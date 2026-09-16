@@ -1,0 +1,16 @@
+SID Tune Information List (STIL) -- 2025-12-25
+
+#  This is a comment header. Skipped during parsing.
+
+/MUSICIANS/H/Hubbard_Rob/Commando.sid
+COMMENT: One of Hubbard's most iconic tunes; widely remixed.
+TITLE: Commando
+ARTIST: Rob Hubbard
+COMMENT: The intro bassline became a signature riff for the scene.
+
+/MUSICIANS/G/Galway_Martin/Wizball.sid
+COMMENT: HVSC Top 100 #1 by community vote.
+COVER: /MUSICIANS/H/Hubbard_Rob/Some_Other_Tune.sid (slight motivic borrow)
+
+/MUSICIANS/T/Tel_Jeroen/Cybernoid.sid
+COMMENT: Filter-heavy lead representative of Maniacs of Noise style.

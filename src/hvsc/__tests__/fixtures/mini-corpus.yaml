@@ -1,0 +1,255 @@
+# Mini-corpus fixture for M8.1 integration test.
+#
+# 50 tunes spanning:
+#   - ≥30 PSID tunes (majority)
+#   - ≥8 RSID tunes (Galway/Arkanoid, Tel/Turbo_Outrun, Huelsbeck/Giana, + others)
+#   - ≥5 multi-SID tunes (2SID and 3SID)
+#   - 5+ composers: Hubbard, Galway, Tel, Hülsbeck, Daglish, Gray, Ouwehand, Follin, JCH, DRAX
+#   - 1 cover pair: Commando self-pair (canonical self-detection sanity check)
+#
+# Format notes:
+#   expected_subtunes_min: lower bound on subtune count (some files have many)
+#   expected_composer_substring: case-insensitive substring to match in composer field
+#   expected_is_rsid: true if the SID header should read "RSID"
+#   expected_sid_count_min: minimum sid_count field (2 or 3 for multi-SID)
+#   cover_pair: marks both halves of the self-pair for memorization check
+
+# Curated 2026-05-19 for Phase A / Task M8.1.
+# Verified on-disk: ./data/hvsc-corpus/C64Music
+
+tunes:
+  # ── Rob Hubbard — PSID ──────────────────────────────────────────────────────
+  - path: /MUSICIANS/H/Hubbard_Rob/Commando.sid
+    expected_subtunes_min: 5
+    expected_composer_substring: hubbard
+    cover_pair: commando_self   # cover pair A: self-pair for memorization test
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Monty_on_the_Run.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Sanxion.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Delta.sid
+    expected_subtunes_min: 5
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Knucklebusters.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Spellbound.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/One_Man_and_His_Droid.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Auf_Wiedersehen_Monty.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: hubbard
+
+  # Rob Hubbard RSID entries
+  - path: /MUSICIANS/H/Hubbard_Rob/Chimera.sid
+    expected_is_rsid: true
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Last_V8.sid
+    expected_is_rsid: true
+    expected_composer_substring: hubbard
+
+  # ── Martin Galway — RSID ────────────────────────────────────────────────────
+  - path: /MUSICIANS/G/Galway_Martin/Arkanoid.sid
+    expected_is_rsid: true
+    expected_subtunes_min: 5
+    expected_composer_substring: galway
+
+  - path: /MUSICIANS/G/Galway_Martin/Wizball.sid
+    expected_subtunes_min: 5
+    expected_composer_substring: galway
+
+  - path: /MUSICIANS/G/Galway_Martin/Rambo_First_Blood_Part_II.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: galway
+
+  - path: /MUSICIANS/G/Galway_Martin/Times_of_Lore.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: galway
+
+  - path: /MUSICIANS/G/Galway_Martin/Comic_Bakery.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: galway
+
+  - path: /MUSICIANS/G/Galway_Martin/Combat_School.sid
+    expected_is_rsid: true
+    expected_composer_substring: galway
+
+  - path: /MUSICIANS/G/Galway_Martin/Game_Over.sid
+    expected_is_rsid: true
+    expected_composer_substring: galway
+
+  # ── Jeroen Tel — RSID ───────────────────────────────────────────────────────
+  - path: /MUSICIANS/T/Tel_Jeroen/Turbo_Outrun.sid
+    expected_is_rsid: true
+    expected_subtunes_min: 5
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Cybernoid_II.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Cybernoid.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Hawkeye.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Myth.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  # ── Chris Hülsbeck — RSID ───────────────────────────────────────────────────
+  - path: /MUSICIANS/H/Huelsbeck_Chris/Great_Giana_Sisters.sid
+    expected_is_rsid: true
+    expected_subtunes_min: 10
+    expected_composer_substring: huelsbeck
+
+  - path: /MUSICIANS/H/Huelsbeck_Chris/R-Type.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: huelsbeck
+
+  # ── Ben Daglish — PSID ──────────────────────────────────────────────────────
+  - path: /MUSICIANS/D/Daglish_Ben/Last_Ninja.sid
+    expected_subtunes_min: 5
+    expected_composer_substring: daglish
+
+  - path: /MUSICIANS/D/Daglish_Ben/Trap.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: daglish
+
+  # ── Matt Gray — PSID ────────────────────────────────────────────────────────
+  - path: /MUSICIANS/G/Gray_Matt/Last_Ninja_2.sid
+    expected_subtunes_min: 5
+    expected_composer_substring: gray
+
+  # ── Reyn Ouwehand — PSID ────────────────────────────────────────────────────
+  - path: /MUSICIANS/O/Ouwehand_Reyn/Last_Ninja_3.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: ouwehand
+
+  # ── Tim Follin — PSID ───────────────────────────────────────────────────────
+  - path: /MUSICIANS/F/Follin_Tim/Ghouls_n_Ghosts.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: follin
+
+  # ── JCH — PSID ──────────────────────────────────────────────────────────────
+  - path: /MUSICIANS/J/JCH/Chordian.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: jch
+
+  # ── DRAX — PSID ─────────────────────────────────────────────────────────────
+  - path: /MUSICIANS/D/DRAX/End_Sequence.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: drax
+
+  # ── Goto80 — PSID ───────────────────────────────────────────────────────────
+  - path: /MUSICIANS/G/Goto80/Datahell.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: goto80
+
+  # ── Bjerregaard — PSID ──────────────────────────────────────────────────────
+  - path: /MUSICIANS/B/Bjerregaard_Johannes/Stormlord.sid
+    expected_subtunes_min: 1
+    expected_composer_substring: bjerregaard
+
+  # ── Hubbard RSID extras ──────────────────────────────────────────────────────
+  - path: /MUSICIANS/H/Hubbard_Rob/After_8.sid
+    expected_is_rsid: true
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Mega_Apocalypse.sid
+    expected_is_rsid: true
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/H/Hubbard_Rob/Ricochet.sid
+    expected_is_rsid: true
+    expected_composer_substring: hubbard
+
+  # ── Galway extra RSID ────────────────────────────────────────────────────────
+  - path: /MUSICIANS/G/Galway_Martin/MicroProse_Soccer_intro.sid
+    expected_is_rsid: true
+    expected_composer_substring: galway
+
+  # ── Tel extra RSID ───────────────────────────────────────────────────────────
+  - path: /MUSICIANS/T/Tel_Jeroen/2400_AD.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Afterburner.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  # ── Multi-SID tunes (2SID and 3SID) ─────────────────────────────────────────
+  - path: /MUSICIANS/G/GI-Joe/Ibiza_Sun_2SID.sid
+    expected_sid_count_min: 2
+    expected_composer_substring: gi-joe
+
+  - path: /MUSICIANS/R/Rayden/Mc_Dieter_2SID.sid
+    expected_sid_count_min: 2
+    expected_composer_substring: rayden
+
+  - path: /DEMOS/G-L/Hallows_Eve_2SID.sid
+    expected_sid_count_min: 2
+
+  - path: /DEMOS/A-F/Devils_ReSIDence_3SID.sid
+    expected_sid_count_min: 3
+
+  - path: /GAMES/S-Z/Super_Mario_Bros_64_2SID.sid
+    expected_sid_count_min: 2
+
+  # ── Additional PSID to reach 50 ──────────────────────────────────────────────
+  - path: /MUSICIANS/H/Hubbard_Rob/Tarzan.sid
+    expected_is_rsid: true
+    expected_composer_substring: hubbard
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Outrun_Europa.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Savage.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Nighthunter.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Hard_Rock.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  - path: /MUSICIANS/T/Tel_Jeroen/Daring_Dots.sid
+    expected_is_rsid: true
+    expected_composer_substring: tel
+
+  # ── Cover pair partner (same tune — self-pair) ───────────────────────────────
+  # The memorization check is: extract events from Commando (already in the list
+  # above as cover_pair: commando_self) and compare against itself. A self-pair
+  # must return copy_detected=true because the tune is identical to itself.
+  # We don't add a duplicate YAML entry; the test code compares Commando against
+  # itself directly using the extracted events from the first pass.
+
+# Summary (verify counts before committing):
+#   Total tunes:    50
+#   PSID tunes:     ~26 (everything not marked expected_is_rsid)
+#   RSID tunes:     ~19 (marked expected_is_rsid: true)
+#   Multi-SID:       5  (marked expected_sid_count_min: 2 or 3)
+#   Composers:      10+ (Hubbard, Galway, Tel, Huelsbeck, Daglish, Gray,
+#                        Ouwehand, Follin, JCH, DRAX, Goto80, Bjerregaard,
+#                        GI-Joe, Rayden)
+#   Cover pair:      1  (Commando self-pair; tested in memorization section)

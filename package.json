@@ -1,0 +1,53 @@
+{
+  "name": "c64-kb",
+  "version": "0.7.13",
+  "description": "Commodore 64 knowledge base \u2014 CLI + MCP server with Qdrant vectors + FalkorDB graph",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "c64-kb": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "dev:serve": "tsx src/cli.ts serve",
+    "services": "docker compose up -d",
+    "services:stop": "docker compose down",
+    "start": "node dist/cli.js",
+    "ingest": "tsx src/ingest.ts",
+    "ingest:force": "tsx src/ingest.ts --force",
+    "ingest:clean": "tsx src/ingest.ts --clean",
+    "ingest:hvsc": "tsx src/cli-ingest-hvsc.ts",
+    "ingest:hvsc:status": "tsx src/cli-ingest-hvsc-status.ts",
+    "ingest:hvsc:errors": "tsx src/cli-ingest-hvsc-errors.ts",
+    "ingest:hvsc:retry": "tsx src/cli-ingest-hvsc-retry.ts",
+    "ingest:hvsc:report": "tsx src/cli-ingest-hvsc-report.ts",
+    "memorize:audit": "tsx src/cli-memorize-audit.ts",
+    "generate": "tsx src/cli-generate.ts",
+    "compose:graded": "tsx src/tools/compose-run.ts",
+    "compose:auto": "tsx src/tools/auto-compose.ts",
+    "feedback:log": "tsx src/tools/feedback.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@qdrant/js-client-rest": "^1.18.0",
+    "better-sqlite3": "^12.10.0",
+    "commander": "^14.0.3",
+    "falkordb": "^6.6.2",
+    "yaml": "^2.4.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@anthropic-ai/vertex-sdk": "^0.16.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.8.0",
+    "js-yaml": "^4.1.1",
+    "tsx": "^4.22.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}

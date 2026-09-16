@@ -1,0 +1,31 @@
+node_modules/
+dist/
+
+# Per-machine corpus data (gitignored)
+data/
+
+# But analyzer-shipped data (tracker signatures, etc.) IS committed
+!analyzer/data/
+storage/
+backups/
+*.db
+.DS_Store
+.serena/
+
+# Per-machine state written by .claude/ hooks (last-docs-hash, last-ingest.log).
+# The hook scripts in scripts/hooks/ are checked in; their state is not.
+.claude/state/
+
+# HVSC corpus (research-use-only, not redistributable)
+data/hvsc-corpus/
+data/hvsc-cache/
+
+# Superpowers brainstorm session artifacts (per-machine browser mockups)
+
+# Python bytecode + per-machine scheduler lock
+scripts/__pycache__/
+**/__pycache__/
+*.pyc
+.claude/scheduled_tasks.lock
+
+# SID render artifacts (regenerable from the .sid via render-sid.sh)

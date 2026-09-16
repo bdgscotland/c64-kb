@@ -1,0 +1,25 @@
+# Build artifacts
+*.prg
+*.map
+*.lbl
+# Oscar64 generates a .asm listing alongside .prg — exclude root-level ones only.
+# Source .asm files in src/asm/ are tracked; see the negation rule below.
+/*.asm
+!/src/asm/*.asm
+*.bin
+build/
+dist/
+
+# Local environment
+.env
+.local
+
+# OS noise
+.DS_Store
+Thumbs.db
+*.int
+
+# KB-briefing marker — per-session, per-checkout. Each fresh clone should
+# force a re-briefing rather than inheriting the previous agent's "done"
+# state. See CLAUDE.md "STOP — Read this first" for what the marker means.
+.kb-briefing-done

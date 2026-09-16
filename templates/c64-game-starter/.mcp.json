@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "c64-kb": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["../../dist/cli.js", "serve"],
+      "env": {}
+    },
+    "vice-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/path/to/vice-mcp/dist/index.js"],
+      "env": {}
+    }
+  }
+}

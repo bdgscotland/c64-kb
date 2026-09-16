@@ -1,0 +1,25 @@
+# c64-kb versions
+#
+# Bumped on specific kinds of change. Each version tracks one axis.
+# See CHANGELOG.md for the human-readable history.
+#
+#   KB_DATA_VERSION   - bumps when docs/ content changes (any technique,
+#                       recipe, pitfall, failure pattern, reference, or
+#                       convention edit). Independent of ontology shape.
+#
+#   KB_SCHEMA_VERSION - bumps when the graph ontology changes (new node
+#                       type, new edge type, field rename, mandatory
+#                       field added). Forces a clean re-ingest.
+#
+#   MCP_TOOL_VERSION  - bumps on MCP tool surface changes per semver:
+#                       major = breaking input/output schema change
+#                       minor = new tool added
+#                       patch = bug fix, no surface change
+#
+# Package version lives in package.json. Bump together with MCP_TOOL_VERSION
+# when shipping.
+
+KB_DATA_VERSION=701
+KB_SCHEMA_VERSION=17
+MCP_TOOL_VERSION=1.21.1
+HVSC_CORPUS_VERSION=hvsc-84-2025-12-25
