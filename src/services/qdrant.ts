@@ -88,16 +88,17 @@ export class QdrantService {
         }
       : undefined;
 
-    const results = await this.client.search(COLLECTION, {
-      vector: { name: "dense", vector },
+    const results = await this.client.query(COLLECTION, {
+      query: vector,
+      using: "dense",
       limit,
-      filter,
+      ...(filter ? { filter } : {}),
       with_payload: true,
     });
 
-    return results.map((r) => ({
+    return (results.points ?? []).map((r) => ({
       ...(r.payload as unknown as ChunkPayload),
-      score: r.score,
+      score: r.score ?? 0,
     }));
   }
 
