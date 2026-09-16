@@ -286,14 +286,6 @@ vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
 
 ---
 
-## SID stylometry sub-project
-
-A companion research strand uses the KB's execution-technique ontology
-for composer stylometry across the full HVSC corpus (87,073 tunes).
-The write-up is in preparation and will be linked here when it ships.
-
----
-
 ## Phase roadmap
 
 | Phase | Description | State |

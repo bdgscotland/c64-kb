@@ -49,8 +49,3 @@ export const config = {
 
 // HVSC (High Voltage SID Collection) extensions — separate graph + collection
 // so HVSC ontology stays isolated from the existing c64 graph (spec decision C5).
-export const FALKOR_HVSC_GRAPH = process.env.FALKOR_HVSC_GRAPH ?? "c64_hvsc";
-export const QDRANT_HVSC_COLLECTION = process.env.QDRANT_HVSC_COLLECTION ?? "c64_hvsc_kb";
-export const HVSC_CORPUS_DIR = process.env.HVSC_CORPUS_DIR ?? "./data/hvsc-corpus";
-export const HVSC_CACHE_DIR = process.env.HVSC_CACHE_DIR ?? "./data/hvsc-cache";
-export const HVSC_CORPUS_VERSION = "hvsc-84-2025-12-25";

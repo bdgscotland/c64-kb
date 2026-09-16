@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@qdrant/js-client-rest": "^1.18.0",
+    "@qdrant/js-client-rest": "^1.19.0",
     "better-sqlite3": "^12.10.0",
     "commander": "^14.0.3",
     "falkordb": "^6.6.2",
@@ -49,5 +49,8 @@
     "tsx": "^4.22.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
