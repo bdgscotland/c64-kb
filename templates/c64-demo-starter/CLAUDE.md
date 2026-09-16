@@ -115,7 +115,7 @@ c64_toolchain_hint(toolchain="oscar64", intent="raster bars")
 
 ## The MCP tools at your disposal
 
-All 19 tools from c64-kb are available once the MCP server is running:
+All 24 tools from c64-kb are available once the MCP server is running:
 
 | Tool | Purpose |
 |------|---------|
