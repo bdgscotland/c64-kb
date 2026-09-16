@@ -119,7 +119,7 @@ function loadOrFitBM25(corpus: string[], forceRefit: boolean): BM25Encoder {
 
 /**
  * Recursively walk a directory and return all *.md paths relative to root.
- * Skips superpowers/ (specs and plans aren't knowledge content).
+ * Skips non-knowledge subtrees (specs and plans).
  *
  * Walk priority is now ONLY load-bearing for FileFormat description authority:
  * docs/formats/c64-file-formats.md must land first so addFileFormat's
@@ -153,7 +153,7 @@ function findMarkdown(root: string): string[] {
     // Strip the root prefix to get the relative path used downstream.
     const parent = entry.parentPath ?? root;
     const rel = parent === root ? entry.name : `${parent.slice(root.length).replace(/^[\/\\]+/, "")}/${entry.name}`;
-    // Skip the superpowers/ subtree (specs + plans, not knowledge content).
+    // Skip non-knowledge subtrees (specs + plans).
     if (rel.startsWith("superpowers/") || rel.startsWith("superpowers\\")) continue;
     // Normalize backslashes to forward slashes for cross-platform stability.
     results.push(rel.replace(/\\/g, "/"));

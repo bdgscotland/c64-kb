@@ -12,12 +12,6 @@ multiplex-24 in PAL?"
 Phase 0 ships only the schema + seed nodes. Other node types and edges
 populate as later phases hydrate the corresponding markdown sources.
 
-> **This doc covers the hardware/technique `c64` graph.** The separate
-> **generative musical ontology** (the `c64_hvsc` graph — SID stylometry +
-> composition) is documented in [`ONTOLOGY-music-formal.md`](ONTOLOGY-music-formal.md)
-> (canonical single-source: conceptual 7-layer "music-as-language" stack
-> plus formal TBox + competency questions + alignment).
-
 Design principles (mirrored from amiga-kb DDR-002):
 - 5–12 node types, 8–20 edge types (maintainable range for a domain KB)
 - Node vs property test: "do you traverse through it?" If yes, node.
