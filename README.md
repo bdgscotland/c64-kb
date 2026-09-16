@@ -194,7 +194,7 @@ Graph schema (11 node types, 12 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md
 
 ### Components
 
-**TypeScript MCP server** (Node 22+, ES2022 modules). Tool logic lives in
+**TypeScript MCP server** (Node 24+, ES2022 modules). Tool logic lives in
 `src/tools/*.ts` as pure functions returning strings. Both the CLI and the
 MCP server call the same functions — the CLI for terminal use and hooks,
 the MCP server as a thin wrapper mapping MCP calls to those functions.
