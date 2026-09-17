@@ -58,6 +58,10 @@ training-data guesses.
 
 ## Quick start
 
+You need Node.js 22+, Docker, and [Ollama](https://ollama.com/) with
+`mxbai-embed-large` pulled. Ollama is optional: without it, search falls
+back to keyword-only and the graph is unaffected.
+
 ```bash
 # Start backing services (Qdrant + FalkorDB)
 docker compose up -d
