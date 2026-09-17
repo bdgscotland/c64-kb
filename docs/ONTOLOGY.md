@@ -251,27 +251,6 @@ Meaning: "if you call A you also need B" (e.g. SETLFS + SETNAM + LOAD).
 
 ---
 
-## HVSC Generative Music Ontology (`c64_hvsc`)
-
-The `c64_hvsc` FalkorDB graph is isolated from the `c64` graph (eng-review
-decision C5). It models SID tunes, composers, trackers, drivers, credits, and
-the full SID generative ontology — the per-composer stylometric fingerprint used
-for composition.
-
-The complete schema is maintained in the **canonical single-source doc** and the diagram:
-
-- **[`docs/ONTOLOGY-music-formal.md`](ONTOLOGY-music-formal.md)** — the canonical
-  music-ontology doc covering both (a) the conceptual 7-layer "music-as-language" stack
-  (Sound/timbre → Execution → Vocabulary → Grammar → Direction → Form → Affect/Function)
-  with roadmap and generation rationale, and (b) the formal TBox: competency questions,
-  typed node/edge definitions (~32 edge types, 18+ node types), ontology design patterns,
-  alignment to Music Ontology / Polifonia, evaluation criteria, and versioning governance.
-  **Authoritative reference for all `c64_hvsc` schema and conceptual details.**
-- **[`docs/hvsc-ontology.dot`](hvsc-ontology.dot)** — Graphviz entity-relation
-  diagram of the `c64_hvsc` graph.
-
----
-
 ## Phase 0 Schema State
 
 `ensureSchema()` creates range indexes for all 11 node types and seeds:

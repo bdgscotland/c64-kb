@@ -1,5 +1,10 @@
 # c64-kb resource catalog
 
+> **Status: manifest only.** This is a list of where things are. None of the
+> sources below has been ingested into the knowledge base; the corpus under
+> `docs/` is original prose written for this project. The ingest pipeline
+> reads `docs/` and nothing else.
+
 `c64_resource_catalog.json` — 137-entry manifest for ingesting the Commodore 64 corpus into your knowledge base. Built to be consumed directly by Claude Code (or any agent) iterating over `resources[]` and dispatching per `fetch_strategy`.
 
 ## Schema at a glance

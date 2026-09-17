@@ -1,5 +1,10 @@
 # c64-kb source corpus catalog
 
+> **Status: manifest only.** This is a list of where things are. None of the
+> sources below has been ingested into the knowledge base; the corpus under
+> `docs/` is original prose written for this project. The ingest pipeline
+> reads `docs/` and nothing else.
+
 `c64_source_corpus_catalog.json` — 71-entry manifest of **source-bearing** C64 games, demos, libraries, and tutorial code. Companion to `c64_resource_catalog.json` (137 entries, schema-scaffolding sources).
 
 ## What this is for

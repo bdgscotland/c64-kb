@@ -38,8 +38,9 @@ briefing pass, write a one-line reason into the marker instead:
 echo "bypass: rename typo in comment" > .kb-briefing-done
 ```
 
-That logs the bypass in git so the next agent (or human reviewer) can
-see what was waved through.
+That leaves the reason in the marker for anyone reading this checkout.
+The marker is not committed (see .gitignore), so a fresh clone is briefed
+again from scratch.
 
 ---
 

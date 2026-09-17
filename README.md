@@ -42,16 +42,16 @@ training-data guesses.
 | Item | Value |
 |------|-------|
 | Phases complete | 0–6 + 7a |
-| MCP tools | 22 |
-| FalkorDB nodes | 538 |
-| FalkorDB edges | 995 |
-| Qdrant chunks | 2312 (across 70 markdown files) |
-| Technique nodes | 72 (9 categories) |
-| Pitfall nodes | 28 (8 categories) |
+| MCP tools | 23 |
+| FalkorDB nodes | 550 |
+| FalkorDB edges | 989 |
+| Qdrant chunks | 2413 (across 74 markdown files) |
+| Technique nodes | 73 (10 categories) |
+| Pitfall nodes | 41 |
 | CrashPattern nodes | 15 |
 | Recipe nodes | 17 |
 | KERNAL routines | 39 |
-| Tests | 110 passing |
+| Tests | 121 passing |
 | License | BSD-3-Clause |
 
 ---
@@ -313,7 +313,7 @@ vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
 | `npm run dev:serve` | Run MCP server via `tsx` |
 | `npm run ingest` | Hydrate KB from `docs/` (idempotent) |
 | `npm run ingest -- --force` | Re-ingest all docs, forcing hash refresh |
-| `npm test` | Run vitest (110 tests) |
+| `npm test` | Run vitest (121 tests) |
 | `npx tsc --noEmit` | Type check without emitting |
 | `./scripts/backup.sh` | Snapshot all stateful data |
 
