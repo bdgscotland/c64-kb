@@ -312,7 +312,7 @@ The TAP format records the raw pulse-width timing of a Commodore Datasette tape 
 
 **Data section** (immediately follows header):
 
-Each byte represents a pulse: the duration is `(byte_value × 8) / 985,248` seconds under the PAL clock (985,248 Hz). The NTSC clock (1,022,730 Hz) produces slightly different timing, but the format stores raw cycle counts so VICE applies the correct clock for the target region.
+Each byte represents a pulse: the duration is `(byte_value × 8) / 985,248` seconds under the PAL clock (985,248 Hz). The NTSC clock (1,022,727 Hz) produces slightly different timing, but the format stores raw cycle counts so VICE applies the correct clock for the target region.
 
 **Version `$00`:** A data byte of `$00` signals a pulse overflow (duration > 255 × 8 cycles); the actual duration is unspecified and varies by implementation.
 

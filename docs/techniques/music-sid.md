@@ -52,7 +52,7 @@ F_PAL  = f * 16777216 / 985248   ~= f * 17.0288
 F_NTSC = f * 16777216 / 1022727  ~= f * 16.4046
 ```
 
-The PAL register value for A4 (440 Hz) is $1D86. Most SID players ship a 96-entry table (8 octaves × 12 semitones) with precomputed PAL and NTSC values rather than computing at runtime.
+The PAL register value for A4 (440 Hz) is $1D45. Most SID players ship a 96-entry table (8 octaves × 12 semitones) with precomputed PAL and NTSC values rather than computing at runtime.
 
 In Oscar64, using `c64/sid.h`:
 

@@ -22,7 +22,7 @@ The two regions covered by this document are:
   63 cycles per scanline.
 - **NTSC** — used in the United States, Canada, Japan, and Mexico. Driven by
   a 14.31818 MHz crystal, divides down to a CPU clock of approximately
-  1,022,730 Hz. Frame rate is ~59.826 Hz (commonly called "60 Hz"), 263
+  1,022,727 Hz. Frame rate is ~59.826 Hz (commonly called "60 Hz"), 263
   scanlines per frame, 65 cycles per scanline.
 
 Two minor variants — **PAL-N** (Argentina/Paraguay/Uruguay) and **PAL-M**
@@ -181,20 +181,20 @@ where `freq_register` is the 16-bit value written to $D400/$D401
 Using the canonical clocks:
 
 - PAL: `output_hz = freq_register * 985248 / 16777216`
-- NTSC: `output_hz = freq_register * 1022730 / 16777216`
+- NTSC: `output_hz = freq_register * 1022727 / 16777216`
 
 To produce the same audio pitch on both regions, the frequency
 register must be scaled:
 
 ```
-freq_ntsc = freq_pal * (985248 / 1022730)
+freq_ntsc = freq_pal * (985248 / 1022727)
           = freq_pal * 0.96334...
 ```
 
 Or in reverse:
 
 ```
-freq_pal = freq_ntsc * (1022730 / 985248)
+freq_pal = freq_ntsc * (1022727 / 985248)
          = freq_ntsc * 1.03804...
 ```
 
@@ -211,17 +211,17 @@ detect at startup which one to use. The tables are typically
 
 Example PAL-vs-NTSC frequency for middle A (A4, ~440 Hz):
 
-- PAL: $D400/$D401 = $1D86 (7558 decimal)
-- NTSC: $D400/$D401 = $1C9F (7327 decimal)
+- PAL: $D400/$D401 = $1D45 (7493 decimal)
+- NTSC: $D400/$D401 = $1C32 (7218 decimal)
 
 A music driver that hard-codes the PAL table and runs on NTSC plays
 A4 at:
 
 ```
-7558 * 1022730 / 16777216 = 460.7 Hz
+7493 * 1022727 / 16777216 = 456.8 Hz
 ```
 
-which is 81 cents sharp — clearly audible.
+which is 65 cents sharp — clearly audible.
 
 ### Filter cutoff and resonance
 
@@ -346,7 +346,7 @@ To play a sample at the same rate on both regions, scale the
 timer value by the clock ratio:
 
 ```
-timer_ntsc = timer_pal * (1022730 / 985248)
+timer_ntsc = timer_pal * (1022727 / 985248)
            = timer_pal * 1.03804
 ```
 

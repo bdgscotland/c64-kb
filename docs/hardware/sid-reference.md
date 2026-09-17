@@ -166,10 +166,11 @@ F_PAL  = f * 16777216 / 985248   ~= f * 17.0288
 F_NTSC = f * 16777216 / 1022727  ~= f * 16.4046
 ```
 
-For middle C (261.626 Hz) the PAL value is $1180; for A4 (440 Hz) it
-is $1D86 (PAL). Music players ship 96-entry frequency tables (8
+For middle C (261.626 Hz) the PAL value is $1167; for A4 (440 Hz) it
+is $1D45 (PAL). Music players ship 96-entry frequency tables (8
 octaves x 12 semitones) tuned to either PAL or NTSC; a PAL tune played
-on an NTSC machine sounds about 3.7% sharp (a half-semitone).
+on an NTSC machine sounds about 3.8% sharp (roughly two-thirds of a
+semitone, 65 cents).
 
 ### ADSR rate table
 
@@ -660,13 +661,13 @@ note number (or equivalent). Each entry is a 16-bit PAL- or NTSC-
 calibrated value. Example (PAL, equal temperament, A4 = 440 Hz):
 
 ```
-; PAL frequency table, semitone 0 = C-1 (~32 Hz)
+; PAL frequency table, semitone 0 = C-0 (~16 Hz)
 ; F = round(freq * 16777216 / 985248)
 freqtbl:
   .word $0117, $0127, $0139, $014B  ; C-1 .. D#-1
   .word $015F, $0174, $018A, $01A1  ; E-1 .. G-1
   ; ...
-  .word $1D86                       ; A-4 = 440 Hz
+  .word $1D45                       ; A-4 = 440 Hz
   ; 8 octaves x 12 semitones = 96 entries
 ```
 
@@ -969,9 +970,9 @@ are not touched.
   $D418.
 
 - **Frequency table tuning depends on system clock.** PAL and NTSC
-  clocks differ by ~3.7%. A tune tuned for PAL plays sharp on NTSC
-  by about a half-semitone. Some music players auto-detect the
-  region and select between two tables.
+  clocks differ by ~3.8%. A tune tuned for PAL plays sharp on NTSC
+  by roughly two-thirds of a semitone (65 cents). Some music
+  players auto-detect the region and select between two tables.
 
 - **Sync requires master oscillator running.** SYNC syncs to the
   previous voice's oscillator MSB. If the master voice has frequency

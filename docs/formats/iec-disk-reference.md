@@ -223,7 +223,7 @@ From the KB's toolchain perspective, a fastloader is an assembly module linked i
 
 The drive's 6502 runs from a clock derived from the disk rotation rate (synchronous with the GCR bit cells), not a fixed oscillator. This means the drive clock speed varies slightly between drive units and can drift. Standard KERNAL code is immune to this because the IEC handshake is fully asynchronous. Custom fastloader code that uses tight cycle counts on both sides must account for this timing variation and include calibration steps.
 
-PAL C64 drives run at 985,248 Hz; NTSC C64 drives run at 1,022,730 Hz. Fastloaders that measure CIA timer ticks for synchronization must check and compensate for the video standard. The `c64_pal_ntsc_diff` tool in this KB can retrieve timing difference data.
+PAL C64 drives run at 985,248 Hz; NTSC C64 drives run at 1,022,727 Hz. Fastloaders that measure CIA timer ticks for synchronization must check and compensate for the video standard. The `c64_pal_ntsc_diff` tool in this KB can retrieve timing difference data.
 
 ---
 

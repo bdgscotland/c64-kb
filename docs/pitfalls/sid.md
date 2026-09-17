@@ -228,8 +228,8 @@ pre-built tuning tables:
 ; Returns zero flag clear if 6581, clear if 8580 — use result to branch
 detect_chip:
         ; Voice 3: triangle waveform, A4 frequency (PAL), fast attack, sustain max
-        lda #$86
-        sta $D40E       ; FRELO3: A4 PAL low byte ($1D86 >> 0 & $FF = $86)
+        lda #$45
+        sta $D40E       ; FRELO3: A4 PAL low byte ($1D45 & $FF = $45)
         lda #$1D
         sta $D40F       ; FREHI3
         lda #$11        ; TRI + GATE
