@@ -42,7 +42,7 @@ training-data guesses.
 | Item | Value |
 |------|-------|
 | Phases complete | 0–6 + 7a |
-| MCP tools | 23 |
+| MCP tools | 24 |
 | FalkorDB nodes | 550 |
 | FalkorDB edges | 989 |
 | Qdrant chunks | 2413 (across 74 markdown files) |
