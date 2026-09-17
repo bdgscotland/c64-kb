@@ -82,15 +82,19 @@ describe("FalkorService — Tool / FileFormat / Recipe", () => {
     expect((edge.data?.[0] as any).cnt).toBe(1);
   });
 
-  it("Tool unique-name constraint rejects duplicates with different home_urls", async () => {
-    await expect(async () => {
-      await f.addTool({
-        name: "oscar64",
-        kind: "c-compiler",
-        home_url: "https://github.com/drmortalwombat/oscar64",
-      });
-      // Second call with different home_url updates, doesn't fail (idempotent MERGE).
-      // Constraint failure path is tested separately by directly inserting via Cypher.
-    }).not.toThrow();
+  it("a second addTool with a different home_url updates rather than failing", async () => {
+    // The unique constraint is on Tool.name, so the MERGE updates in place.
+    // The constraint failure path is covered separately by a direct Cypher insert.
+    await f.addTool({
+      name: "oscar64",
+      kind: "c-compiler",
+      home_url: "https://example.com/oscar64-moved",
+    });
+    const r = await f.roQuery(
+      `MATCH (t:Tool {name: 'oscar64'}) RETURN count(t) AS cnt, collect(t.home_url)[0] AS url`
+    );
+    const row = r.data?.[0] as any;
+    expect(row.cnt).toBe(1);
+    expect(row.url).toBe("https://example.com/oscar64-moved");
   });
 });
