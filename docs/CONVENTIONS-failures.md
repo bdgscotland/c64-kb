@@ -27,7 +27,7 @@ Following each H2 block:
 **Diagnosis steps:** Check $D018 video matrix pointer; verify $DD00 VIC bank bits; inspect $D011 bit 4 (blank).
 **Caused by registers:** D011, D018, DD00
 **Caused by kernal:** SCREEN
-**Caused by techniques:** vic_bank_switch
+**Caused by techniques:** vic_bank_select
 ```
 
 `Likely causes` is a comma-separated list of free-form cause tags

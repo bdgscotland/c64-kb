@@ -13,7 +13,7 @@ graph edges are emitted by the `Caused by …` lines.
 **Likely causes:** vic_bank_misconfigured, screen_pointer_outside_bank, d011_blanked
 **Diagnosis steps:** Read $D011 and check bit 4 (BLANK); read $D018 and verify the screen-RAM pointer nibble points to RAM inside the active VIC bank; read $DD00 bits 0-1 to confirm which 16 KB bank the VIC is addressing; confirm the CPU data bus reaches VIC-II by reading $D012 (raster counter should not be stuck at $FF).
 **Caused by registers:** D011, D018, DD00
-**Caused by techniques:** vic_bank_switch
+**Caused by techniques:** vic_bank_select
 
 The display is completely dark — either a single solid color (usually
 black border plus black background) or a frame that never shows any

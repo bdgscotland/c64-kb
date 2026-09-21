@@ -21,7 +21,7 @@ ghost input.
 **Region:** both
 **Triggered by registers:** DC00
 **Triggered by kernal:** SCNKEY
-**Triggered by techniques:** raster_irq
+**Triggered by techniques:** stable_raster_irq
 
 ### Symptom
 

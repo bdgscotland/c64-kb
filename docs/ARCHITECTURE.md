@@ -40,8 +40,8 @@ Context Protocol (stdio transport).
                       |
                 +-----+------+
                 |  Ollama     |
-                |  nomic-     |
-                |  embed-text |
+                |  mxbai-     |
+                |  embed-large|
                 |  :11434     |
                 +-------------+
 ```
@@ -103,7 +103,7 @@ transport.
 ### Qdrant Service (`src/services/qdrant.ts`)
 
 - Collection: `c64_docs`
-- Vector dimensions: 768 (nomic-embed-text)
+- Vector dimensions: 1024 (mxbai-embed-large)
 - Distance: Cosine
 - Payload indexes: `source` (keyword), `source_project` (keyword), `text`
   (full-text fallback)
@@ -118,8 +118,8 @@ transport.
 
 ### Embedding Service (`src/services/embeddings.ts`)
 
-- Model: `nomic-embed-text` via Ollama (`:11434`)
-- 768-dimensional embeddings
+- Model: `mxbai-embed-large` via Ollama (`:11434`)
+- 1024-dimensional embeddings
 - Concurrency: 8 parallel requests
 - Graceful fallback: returns null on Ollama unavailability; callers fall
   back to keyword search

@@ -1,8 +1,8 @@
 /**
- * Embedding service using Ollama's nomic-embed-text model.
+ * Embedding service using Ollama's mxbai-embed-large model.
  *
- * Requires: ollama running locally with `ollama pull nomic-embed-text`
- * Dimension: 768 (matches Qdrant collection config)
+ * Requires: ollama running locally with `ollama pull mxbai-embed-large`
+ * Dimension: 1024 (matches Qdrant collection config)
  * Fallback: if Ollama is unavailable, returns null and callers
  *           should fall back to keyword search.
  */

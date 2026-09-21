@@ -204,7 +204,7 @@ MCP server call the same functions — the CLI for terminal use and hooks,
 the MCP server as a thin wrapper mapping MCP calls to those functions.
 
 **Qdrant** (Docker, host port 7333): dense + sparse (BM25) hybrid vector
-store. Collection `c64_docs`. Embeddings are 768-dimensional via
+store. Collection `c64_docs`. Embeddings are 1024-dimensional via
 `mxbai-embed-large` on Ollama. Falls back to keyword-only search when
 Ollama is unavailable.
 
