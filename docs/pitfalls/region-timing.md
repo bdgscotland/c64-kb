@@ -42,9 +42,9 @@ raster or CIA IRQ handler. The play routine advances the tracker pattern by one
 tick. The composer sets note durations in ticks, so the audible tempo is directly
 proportional to the tick rate, which equals the frame rate.
 
-PAL frame rate is 50.124 Hz (one frame every 19.95 ms). NTSC frame rate is
+PAL frame rate is 50.125 Hz (one frame every 19.95 ms). NTSC frame rate is
 59.826 Hz (one frame every 16.71 ms). If the play routine fires once per frame
-unconditionally, the NTSC tick rate is 59.826 / 50.124 = 1.194× the PAL rate —
+unconditionally, the NTSC tick rate is 59.826 / 50.125 = 1.194× the PAL rate —
 a 19.4% tempo increase. Rounded to the nearest whole number, this is the "20%
 too fast" figure that has followed European C64 ports to U.S. machines for
 decades.
@@ -59,7 +59,7 @@ Two approaches cover all cases:
 **Approach 1 — 5-of-6 frame skip on NTSC.** Call the play routine every frame
 on PAL. On NTSC, call it every frame *except* every 6th frame (5 calls out of 6).
 The effective NTSC tick rate becomes 59.826 × (5/6) = 49.855 Hz — within 0.54%
-of the 50.124 Hz PAL rate. Tempo error drops from 19.4% to under 1%, which is
+of the 50.125 Hz PAL rate. Tempo error drops from 19.4% to under 1%, which is
 inaudible. Implement this with a single frame counter and a conditional skip:
 
 ```kick

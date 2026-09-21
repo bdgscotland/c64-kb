@@ -41,7 +41,7 @@ codebase64 PAL/NTSC compatibility wiki, and the Bauer "VIC-II Article"
 |-------------------------|------------------------|------------------------|------------------------|
 | CPU clock               | 985,248.444 Hz         | 1,022,727.143 Hz       | 1,022,727.143 Hz       |
 | Dot clock               | 7,881,987 Hz           | 8,181,817 Hz           | 8,181,817 Hz           |
-| Frame rate (nominal)    | 50.124 Hz              | 59.826 Hz              | 60.039 Hz              |
+| Frame rate (nominal)    | 50.125 Hz              | 59.826 Hz              | 60.993 Hz              |
 | Scanlines per frame     | 312                    | 263                    | 262                    |
 | Cycles per scanline     | 63                     | 65                     | 64                     |
 | Cycles per frame        | 19,656                 | 17,095                 | 16,768                 |
@@ -326,14 +326,15 @@ is written.
 A common scheme is to write $D418 once per scanline using a
 raster IRQ. The resulting sample rate is:
 
-- PAL: 50.12 Hz × 312 lines = 15,637 Hz
-- NTSC R8: 59.83 Hz × 263 lines = 15,734 Hz
-- NTSC R56A: 60.04 Hz × 262 lines = 15,729 Hz
+- PAL: 985,248 Hz ÷ 63 cycles per line = 15,639 Hz
+- NTSC R8: 1,022,727 Hz ÷ 65 cycles per line = 15,734 Hz
+- NTSC R56A: 1,022,727 Hz ÷ 64 cycles per line = 15,980 Hz
 
-These rates are close enough (within 1%) that the same digi data
-can play on both regions without resampling and still sound
-correct. The pitch shift is below 20 cents, which is at the limit
-of audibility.
+PAL and NTSC R8 are close enough (0.6% apart, about 10 cents) that
+the same digi data can play on both regions without resampling and
+still sound correct. The pitch shift is below 20 cents, which is at
+the limit of audibility. The rare R56A is the exception: it runs
+2.2% faster than PAL, about 37 cents, which is audible.
 
 However, a digi played by a CIA timer at a fixed cycle interval
 will drift more:
