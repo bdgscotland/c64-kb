@@ -19,7 +19,7 @@ Design principles (mirrored from amiga-kb DDR-002):
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (11)
+## Node Types (12)
 
 ### KernalRoutine
 
@@ -172,6 +172,20 @@ A C64 file format.
 | description | string | One-line summary |
 
 Source: `c64-file-formats.md` (Phase 2).
+
+### Resource
+
+A machine-level resource a technique needs while it is active: every CPU
+cycle on its lines, a constant sprite set, a badline-free region, the KERNAL
+banked out. Seven nodes, one per word of the fixed `**Demands:**` vocabulary
+in `CONVENTIONS-techniques.md`; created on first reference.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | Vocabulary word (e.g. "cpu_every_line") |
+| description | string | One-line meaning |
+
+Source: `techniques/*.md` `**Demands:**` lines.
 
 ## Edge Types (15)
 

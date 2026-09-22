@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "c64-kb": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/cli.js", "serve"],
+      "env": {}
+    }
+  }
+}

@@ -21,13 +21,20 @@ that do not fit in the badline window, SID filter cutoffs that differ between
 chip revisions. A model hallucinating cycle counts will produce code that
 assembles cleanly and crashes at runtime.
 
-c64-kb counters this with a curated, structured reference. 70+ markdown docs
-are chunked and embedded into Qdrant for semantic retrieval, and the
-entities within them — registers, KERNAL routines, memory regions, techniques,
-recipes, pitfalls, and crash patterns — are materialized into a FalkorDB
-knowledge graph. The graph captures relationships that flat search misses:
-which registers a technique uses, which pitfalls it triggers, which recipes
-implement it, whether two techniques share a register in a conflicting way.
+c64-kb counters this with a curated, structured reference. 69 markdown
+reference documents are chunked and embedded into Qdrant for semantic
+retrieval, and the entities within them — registers, KERNAL routines, memory
+regions, techniques, recipes, pitfalls, and crash patterns — are materialized
+into a FalkorDB knowledge graph. The graph captures relationships that flat
+search misses: which registers a technique uses, which pitfalls it triggers,
+which recipes implement it, which machine resources it needs while it runs,
+and therefore which pairs of techniques cannot share a raster line.
+
+Every code listing in the recipes is built with the toolchain it names
+before it lands (`npm run check:listings`), and the KickAssembler recipes
+were run in VICE with the screenshots kept alongside them. That was not
+always so: the first audit found six of eight KickAssembler recipes did not
+assemble. The pages say what was wrong.
 
 The intended consumers are two kinds: an autonomous agent loop (ingest a
 brief, synthesize a technique stack, generate code, iterate with vice-mcp
@@ -42,25 +49,31 @@ training-data guesses.
 | Item | Value |
 |------|-------|
 | Phases complete | 0–6 + 7a |
-| MCP tools | 24 |
-| FalkorDB nodes | 550 |
-| FalkorDB edges | 989 |
-| Qdrant chunks | 2413 (across 74 markdown files) |
-| Technique nodes | 73 (10 categories) |
+| MCP tools | 23 (+ 12 resources, 2 prompts) |
+| FalkorDB nodes | 557 across 12 node types |
+| FalkorDB edges | 1,233 across 15 edge types |
+| Qdrant chunks | 2,422 (from 75 markdown files, 1024-dim) |
+| Technique nodes | 73 (10 categories), 19 with resource demands |
 | Pitfall nodes | 41 |
 | CrashPattern nodes | 15 |
-| Recipe nodes | 17 |
+| Recipe nodes | 17 (8 Oscar64, 8 KickAssembler, 1 cc65), all built by `check:listings` |
+| Register nodes | 109 |
 | KERNAL routines | 39 |
-| Tests | 121 passing |
+| Memory-map regions | 220 |
+| Tests | 133 passing (`npm test`, isolated from the live stores) |
 | License | BSD-3-Clause |
+
+Figures are from the ingest and health output at the commit that last
+touched this table; `npx c64-kb health` prints the live ones.
 
 ---
 
 ## Quick start
 
-You need Node.js 22+, Docker, and [Ollama](https://ollama.com/) with
-`mxbai-embed-large` pulled. Ollama is optional: without it, search falls
-back to keyword-only and the graph is unaffected.
+You need Node.js 24+, Docker, and [Ollama](https://ollama.com/) with
+`mxbai-embed-large` pulled. Ingest needs Ollama (it embeds every chunk and
+stops if it cannot). Once ingested, querying works without it: search falls
+back to keyword-only and the graph tools are unaffected.
 
 ```bash
 # Start backing services (Qdrant + FalkorDB)
@@ -80,9 +93,10 @@ npx c64-kb health
 npm run dev:serve
 ```
 
-The repo ships a `.mcp.json` at the root. When you open this repository
-in Claude Code it auto-discovers and connects to the MCP server without
-any manual wiring.
+The repo ships a `.mcp.json` at the root that runs `node dist/cli.js serve`.
+When you open this repository in Claude Code it discovers and connects to
+the MCP server without further wiring, once `npm run build` has produced
+`dist/`.
 
 ---
 
@@ -106,9 +120,10 @@ To wire c64-kb as an MCP server from a different repository, add
 Substitute the real absolute path on your machine. The server must already
 be built (`npm run build`) before connecting.
 
-A `templates/` directory (scaffolded in parallel as `templates/c64-demo-starter`
-and `templates/c64-game-starter`) provides ready-to-clone starting points
-that already include the `.mcp.json` wiring.
+`templates/c64-demo-starter` and `templates/c64-game-starter` are
+ready-to-copy project skeletons (Makefile, `src/`, `assets/`, a `CLAUDE.md`)
+whose `.mcp.json` points at this repo's `dist/cli.js` by relative path and
+carries a placeholder entry for vice-mcp.
 
 ---
 
@@ -176,15 +191,23 @@ that already include the `.mcp.json` wiring.
 | `c64_suggest_links` | Suggest missing graph edges for a named node |
 | `c64_report_gap` | Record a knowledge gap for triage |
 
+### Evaluation
+
+| Tool | Purpose |
+|------|---------|
+| `c64_run_game` | Spawn VICE (`x64sc`) on a built `.prg` through a local [vice-mcp](https://github.com/barryw/vice-mcp), drive it, and return a state trace and screen render. Needs `x64sc` on PATH and `VICE_MCP_PATH`; none of the reference tools depend on it. |
+
 ### Resources and prompts
 
-11 Resources are exposed at `c64://` URIs:
+11 static resources are exposed at `c64://` URIs, each a whole reference
+document as markdown, plus one template resource:
 
 ```
-c64://memory-map          c64://kernal-jumptable      c64://vic-registers
-c64://sid-registers       c64://cia-registers          c64://6510-opcodes
-c64://illegal-opcodes     c64://techniques-index       c64://recipes-index
-c64://pitfalls-index      c64://crash-patterns
+c64://memory-map       c64://kernal-jumptable   c64://opcodes
+c64://illegal-opcodes  c64://pal-ntsc           c64://vic-ii
+c64://sid              c64://cia                c64://6510-cpu
+c64://registers        c64://ontology
+c64://register/{name}  (structured data for one register, e.g. c64://register/D011)
 ```
 
 2 Prompts: `c64_demo_brief` and `c64_game_brief`.
@@ -194,35 +217,39 @@ c64://pitfalls-index      c64://crash-patterns
 ## Architecture
 
 Full system diagrams and data-flow documentation: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Graph schema (11 node types, 12 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
+Graph schema (12 node types, 15 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
 
 ### Components
 
 **TypeScript MCP server** (Node 24+, ES2022 modules). Tool logic lives in
-`src/tools/*.ts` as pure functions returning strings. Both the CLI and the
-MCP server call the same functions — the CLI for terminal use and hooks,
-the MCP server as a thin wrapper mapping MCP calls to those functions.
+`src/tools/*.ts` as functions returning structured output plus text. Both
+the CLI and the MCP server call the same functions — the CLI for terminal
+use and hooks, the MCP server as a thin wrapper mapping MCP calls to those
+functions.
 
 **Qdrant** (Docker, host port 7333): dense + sparse (BM25) hybrid vector
 store. Collection `c64_docs`. Embeddings are 1024-dimensional via
-`mxbai-embed-large` on Ollama. Falls back to keyword-only search when
-Ollama is unavailable.
+`mxbai-embed-large` on Ollama. Queries fall back to keyword-only search
+when Ollama is unavailable; ingest does not.
 
 **FalkorDB** (Docker, host port 7379): Redis-compatible knowledge graph.
-Graph name `c64`. 11 node types (`Chip`, `Register`, `KernalRoutine`,
-`MemoryRegion`, `Opcode`, `Technique`, `Recipe`, `Pitfall`, `CrashPattern`,
-`ToolRecipe`, `Region`) and 12 edge types. Range indexes on all primary keys.
-Two-pass ingest: node creation in pass 1, edge linking in pass 2, so walk
-order does not affect edge correctness.
+Graph name `c64`. 12 node types (`Chip`, `Region`, `Register`,
+`KernalRoutine`, `MemoryRegion`, `Technique`, `Recipe`, `Pitfall`,
+`CrashPattern`, `Tool`, `FileFormat`, `Resource`) and 15 edge types. Range
+indexes and unique constraints on every primary key. Two-pass ingest: node
+creation in pass 1, edge linking in pass 2, so walk order does not affect
+edge correctness; a reference whose target does not exist is reported, not
+dropped silently.
 
-**Ollama** (host, port 11434): `mxbai-embed-large` for embeddings. Shared
-with amiga-kb if both are running.
+**Ollama** (host, port 11434): `mxbai-embed-large` for embeddings.
 
 **SQLite** (`data/analytics.db`): query analytics and gap detection. Records
 every tool call; surfaces queries with no results as gap candidates.
 
-**70+ markdown reference docs** under `docs/`: the human-readable corpus
-that drives both vector chunks and graph entity extraction.
+**75 markdown files under `docs/`** — 69 reference documents (hardware,
+techniques, pitfalls, recipes, toolchains, formats, design) and 6
+`CONVENTIONS-*.md` files that define the extractable structure. The same
+files drive both the vector chunks and the graph.
 
 ### Ports
 
@@ -231,11 +258,11 @@ that drives both vector chunks and graph entity extraction.
 | Qdrant REST | 7333 |
 | Qdrant gRPC | 7334 |
 | FalkorDB | 7379 |
-| Ollama (shared) | 11434 |
-| Dashboard | 3939 (Phase 7b, pending) |
+| Ollama | 11434 |
 
-Ports are shifted from amiga-kb (6333/6334/6379) so both KBs can run
-in parallel.
+Ports are shifted from the Qdrant/FalkorDB defaults (6333/6334/6379) so
+another instance of either can run alongside. The Phase 7b dashboard
+(planned for 3939) does not exist yet.
 
 ---
 
@@ -244,18 +271,18 @@ in parallel.
 The toolchain ranking is locked as of 2026-05-16 and reflected throughout
 the KB content and the `c64_toolchain_hint` bias enforcer.
 
-**Primary: Oscar64.** Modern C/C++ compiler targeting 6502. Most recipes
-in the KB are written for Oscar64. The `c64_toolchain_hint` tool defaults
+**Primary: Oscar64.** Modern C/C++ compiler targeting 6502. Eight of the
+seventeen recipes are Oscar64, and the `c64_toolchain_hint` tool defaults
 to Oscar64 when no toolchain is specified. This is deliberate: LLM training
 data is saturated with cc65 patterns, which are workable but not idiomatic
 for demo-quality code. c64-kb exists in part to push models toward Oscar64
 idioms.
 
 **Secondary: KickAssembler.** Cycle-tight escape hatch for work where
-C-level abstraction costs too many cycles: stable raster IRQs, sprite
-multiplexers, FLI, scene-quality timing routines. Called from Oscar64 via
-external asm linking. Deep KickAssembler recipes are present alongside
-their Oscar64 equivalents.
+C-level abstraction costs too many cycles: stable raster IRQs, side-border
+opening, FLI, sprite multiplexers. Eight KickAssembler recipes, each
+assembled, run in VICE and measured from the screenshot; the cycle-exact
+ones say which constants were measured rather than derived.
 
 **Tertiary: cc65.** Light coverage. Text-mode utilities and niche cases
 where cc65's large training-data corpus is the path of least resistance.
@@ -276,8 +303,10 @@ hardware.
 
 ## Boundaries with sibling tools
 
-c64-kb is **pure reference** — it describes what code should be. It has
-no runtime or emulator access.
+c64-kb is a **reference** — it describes what code should be. The one
+tool that touches an emulator, `c64_run_game`, drives VICE through a
+locally installed vice-mcp and is an evaluation primitive, not something
+the reference tools use.
 
 | Need | Tool |
 |------|------|
@@ -287,6 +316,11 @@ no runtime or emulator access.
 
 The intended agent loop: c64-kb generates the brief and code scaffold;
 vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
+
+The reference itself was checked the same way: headless `x64sc` with
+`-exitscreenshot`, and the pictures measured rather than eyeballed. Timing
+constants in the recipes are VICE measurements (3.9, PAL, 6569), not
+bench measurements on a 6569, and each page says so.
 
 ---
 
@@ -315,19 +349,21 @@ vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
 | `npm run build` | Compile TypeScript (`tsc`) |
 | `npm run dev` | Run CLI via `tsx` (no build needed) |
 | `npm run dev:serve` | Run MCP server via `tsx` |
-| `npm run ingest` | Hydrate KB from `docs/` (idempotent) |
-| `npm run ingest -- --force` | Re-ingest all docs, forcing hash refresh |
-| `npm test` | Run vitest (121 tests) |
+| `npm run ingest` | Hydrate KB from `docs/` (incremental: unchanged files are skipped) |
+| `npm run ingest:clean` / `npm run ingest -- --force` | Wipe the graph and the vector collection and re-ingest everything. Use after changing any frontmatter or metadata line: the graph merges edges and never removes one a doc stopped asserting, so an incremental run leaves stale edges behind |
+| `npm test` | Run vitest (133 tests) against a throwaway graph (`c64_test`) and collection (`c64_docs_test`); the live stores are never touched |
 | `npm run check:listings` | Build every recipe listing with its real toolchain (KickAssembler, Oscar64, cc65) and assemble every KickAssembler fragment in `docs/`; see the script header for `KICKASS_JAR` / `OSCAR64` / `CL65` |
 | `npx tsc --noEmit` | Type check without emitting |
-| `./scripts/backup.sh` | Snapshot all stateful data |
+| `npm run services` / `npm run services:stop` | Start / stop Qdrant and FalkorDB |
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js 24+
 - Docker (for Qdrant + FalkorDB)
-- [Ollama](https://ollama.com/) with `mxbai-embed-large` pulled
-  (optional — falls back to keyword-only search without it)
+- [Ollama](https://ollama.com/) with `mxbai-embed-large` pulled — required
+  to ingest; optional afterwards (search falls back to keyword-only)
+- To run `check:listings` locally: Java + KickAssembler 5.x, Oscar64, cc65
+  (each optional; missing ones are reported, not skipped silently)
 
 ---
 
@@ -337,19 +373,22 @@ Add new reference material by dropping a markdown file into `docs/` and
 running:
 
 ```bash
-npm run ingest -- --force
+npm run ingest            # new or changed files only
+npm run ingest:clean      # after editing frontmatter or metadata lines
 ```
 
 The ingest pipeline will chunk the file, embed it, upsert into Qdrant,
 and extract graph entities (registers, KERNAL routines, techniques,
-pitfalls, recipes) into FalkorDB.
+pitfalls, recipes) into FalkorDB. It prints a warning for every reference
+that names a node the graph does not have; fix the doc, do not ignore it.
 
 For doc structure, follow the conventions files:
 
 - `docs/CONVENTIONS-pitfalls.md` — pitfall doc format
 - `docs/CONVENTIONS-failures.md` — failure pattern doc format
-- Other `docs/CONVENTIONS-*.md` — hardware, toolchain, recipe, technique
-  conventions
+- `docs/CONVENTIONS-techniques.md` — technique doc format, including the
+  `**Demands:**` vocabulary the compatibility checker reads
+- Other `docs/CONVENTIONS-*.md` — hardware, toolchain, recipe conventions
 
 Tests live in `test/`. Run `npm test` before committing. Run
 `npx tsc --noEmit` to catch type errors.
