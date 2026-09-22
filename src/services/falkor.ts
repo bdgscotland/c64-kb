@@ -592,6 +592,56 @@ export class FalkorService {
     );
   }
 
+  /**
+   * REQUIRES: a technique presupposes another one being set up before, or
+   * running underneath, it (see CONVENTIONS-techniques.md). Both ends must
+   * already exist — a MERGE on the target, as linkRecipeImplements does,
+   * would manufacture a stub Technique out of a typo. A reference that would
+   * close a cycle (the required technique already requires this one, directly
+   * or through others) is refused, as is a self-reference. The back-path
+   * check walks at most twelve REQUIRES edges, the same bound as
+   * techniquesFor's chain filter; a longer chain would not be checked. The
+   * longest authored chain is two. Returns whether the edge landed; every
+   * refusal is warned about by name.
+   */
+  async linkTechniqueRequires(techniqueName: string, requiresName: string): Promise<boolean> {
+    const g = this.graph();
+    if (techniqueName === requiresName) {
+      console.warn(`[falkor] linkTechniqueRequires: ${techniqueName} -> itself — refused`);
+      return false;
+    }
+    const ends = await g.roQuery(
+      `MATCH (t:Technique {name: $techniqueName})
+       MATCH (p:Technique {name: $requiresName})
+       RETURN 1`,
+      { params: { techniqueName, requiresName } } as Parameters<typeof g.roQuery>[1]
+    );
+    if ((ends.data?.length ?? 0) === 0) {
+      console.warn(
+        `[falkor] linkTechniqueRequires: ${techniqueName} -> ${requiresName} — one or both techniques not found, edge dropped`
+      );
+      return false;
+    }
+    const back = await g.roQuery(
+      `MATCH (p:Technique {name: $requiresName})-[:REQUIRES*1..12]->(t:Technique {name: $techniqueName})
+       RETURN 1 LIMIT 1`,
+      { params: { techniqueName, requiresName } } as Parameters<typeof g.roQuery>[1]
+    );
+    if ((back.data?.length ?? 0) > 0) {
+      console.warn(
+        `[falkor] linkTechniqueRequires: ${techniqueName} -> ${requiresName} would close a cycle (${requiresName} already requires ${techniqueName}) — refused`
+      );
+      return false;
+    }
+    await g.query(
+      `MATCH (t:Technique {name: $techniqueName})
+       MATCH (p:Technique {name: $requiresName})
+       MERGE (t)-[:REQUIRES]->(p)`,
+      { params: { techniqueName, requiresName } } as Parameters<typeof g.query>[1]
+    );
+    return true;
+  }
+
   async addPitfall(p: {
     name: string;
     title: string;
@@ -633,6 +683,30 @@ export class FalkorService {
     if (!landed) {
       console.warn(
         `[falkor] linkTriggeredBy: ${pitfallName} -> ${targetName} (${targetKind}) — target not found, edge dropped`
+      );
+    }
+    return landed;
+  }
+
+  /**
+   * MITIGATED_BY: applying this technique is the pitfall's Fix (see
+   * CONVENTIONS-pitfalls.md). Technique targets only; both ends are MATCHed,
+   * never MERGEd, so a misspelt name drops the edge with a warning instead
+   * of creating a stub node. Returns whether the edge landed.
+   */
+  async linkMitigatedBy(pitfallName: string, techniqueName: string): Promise<boolean> {
+    const g = this.graph();
+    const result = await g.query(
+      `MATCH (p:Pitfall {name: $pitfallName})
+       MATCH (t:Technique {name: $techniqueName})
+       MERGE (p)-[:MITIGATED_BY]->(t)
+       RETURN 1`,
+      { params: { pitfallName, techniqueName } } as Parameters<typeof g.query>[1]
+    );
+    const landed = (result.data?.length ?? 0) > 0;
+    if (!landed) {
+      console.warn(
+        `[falkor] linkMitigatedBy: ${pitfallName} -> ${techniqueName} (Technique) — pitfall or technique not found, edge dropped`
       );
     }
     return landed;

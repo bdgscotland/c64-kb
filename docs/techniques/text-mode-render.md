@@ -151,4 +151,4 @@ ignore the optimization.
 
 ### Recipes
 
-- (No worked example recipe yet — `c64_report_gap` filed.)
+- `recipes/oscar64/text-overlay-playfield.md`

@@ -125,6 +125,8 @@ export type ToolchainHintOutput = z.infer<typeof ToolchainHintSchema>;
 export type RecipeLookupOutput = z.infer<typeof RecipeLookupSchema>;
 export type RecipesForOutput = z.infer<typeof RecipesForSchema>;
 
+const TechniqueRefSchema = z.object({ name: z.string(), title: z.string() });
+
 export const TechniqueLookupSchema = z.object({
   name: z.string(),
   title: z.string(),
@@ -135,6 +137,12 @@ export const TechniqueLookupSchema = z.object({
   uses_registers: z.array(z.object({ name: z.string(), address: z.string() })),
   uses_kernal: z.array(z.object({ name: z.string(), address: z.string() })),
   recipes: z.array(z.object({ name: z.string(), toolchain: z.string() })),
+  // REQUIRES edges: techniques that must be set up before, or run underneath,
+  // this one (requires) and techniques that presuppose this one (required_by).
+  requires: z.array(TechniqueRefSchema).optional(),
+  required_by: z.array(TechniqueRefSchema).optional(),
+  // MITIGATED_BY edges pointing here: pitfalls whose Fix is this technique.
+  mitigates: z.array(z.object({ name: z.string(), title: z.string(), severity: z.string() })).optional(),
   documentation: z.array(DocChunkSchema),
 });
 
@@ -145,6 +153,7 @@ export const TechniquesForSchema = z.object({
     region: z.string().optional(),
     register: z.string().optional(),
     recipe: z.string().optional(),
+    requires: z.string().optional(),
   }),
   techniques: z.array(z.object({
     name: z.string(),
@@ -163,6 +172,7 @@ export const CompatibilityConflictSchema = z.object({
     "cpu_vs_irq",        // one needs every CPU cycle; the other takes interrupts mid-frame
     "sprite_set",        // one needs a constant sprite set; the other changes it mid-frame
     "kernal_banked_out", // one runs with the KERNAL ROM out; the other calls KERNAL routines
+    "prerequisite_conflict", // a hard rule fires between a technique and a REQUIRES prerequisite of another
     "shared_register",   // both touch the same register (soft)
     "shared_kernal",     // both call the same KERNAL routine (soft)
   ]),
@@ -172,12 +182,18 @@ export const CompatibilityConflictSchema = z.object({
   shared: z.array(z.string()),
   rationale: z.string(),
   resolution: z.string().optional(),
+  // prerequisite_conflict only: the closure members the rule actually fired
+  // between, when they differ from a and b (which name the input techniques).
+  via: z.array(z.string()).optional(),
 });
 
 export const SharedInfrastructureSchema = z.object({
   name: z.string(),
-  kind: z.enum(["Register", "KernalRoutine", "discipline"]),
+  kind: z.enum(["Register", "KernalRoutine", "discipline", "missing_prerequisite"]),
   via_recipes: z.array(z.string()),
+  // missing_prerequisite only: the input techniques whose REQUIRES closure
+  // contains this technique, which was not itself in the input set.
+  required_by: z.array(z.string()).optional(),
 });
 
 // What the graph actually knows about each technique named in the check.
@@ -191,6 +207,9 @@ export const CompatibilityCoverageSchema = z.object({
   kernal_routines: z.number(),
   demands: z.array(z.string()),
   known: z.boolean(),
+  // Present when the technique was not in the input set but entered the
+  // check through another technique's REQUIRES closure.
+  implied_by: z.array(z.string()).optional(),
 });
 
 export const CompatibilityCheckSchema = z.object({
@@ -233,6 +252,8 @@ export const PitfallsForSchema = z.object({
     region: z.enum(["pal", "ntsc", "both"]),
     category: z.string(),
     triggered_by: z.array(TriggeredBySchema),
+    // Techniques whose application is this pitfall's Fix (MITIGATED_BY).
+    mitigated_by: z.array(TriggeredBySchema),
   })),
   search_results: z.array(z.object({
     source: z.string(),
@@ -337,6 +358,7 @@ export const SuggestLinksSchema = z.object({
       "technique_uses_register",
       "recipe_implements_technique",
       "pitfall_triggered_by_technique",
+      "pitfall_mitigated_by_technique",
     ]),
     from: z.object({
       kind: z.string(),

@@ -24,6 +24,7 @@ Symptom: cycle-tight code overruns its scanline budget...
 **Region:** NTSC
 **Triggered by registers:** D012
 **Triggered by techniques:** stable_raster_irq
+**Mitigated by techniques:** pal_ntsc_detection, \`double_irq\`, pal_ntsc_detection, Not A Name
 
 Symptom: raster IRQ fires twice or never...
 `;
@@ -60,6 +61,26 @@ describe("extractGraphEntities — pitfall-reference doc", () => {
       target: "stable_raster_irq",
       targetKind: "Technique",
     });
+  });
+
+  it("emits MITIGATED_BY edges from the Mitigated-by line, deduplicated, refusing non-names", () => {
+    const warnings: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: string) => { warnings.push(String(msg)); };
+    let entities;
+    try {
+      entities = extractGraphEntities(PITFALL_DOC, "docs/pitfalls/raster-and-badline.md");
+    } finally {
+      console.warn = orig;
+    }
+    const mitigated = entities.filter(e => e.type === "mitigated_by");
+    expect(mitigated).toEqual([
+      { type: "mitigated_by", pitfall: "d012_wrap_around", target: "pal_ntsc_detection" },
+      { type: "mitigated_by", pitfall: "d012_wrap_around", target: "double_irq" },
+    ]);
+    expect(warnings.some(w => /Not A Name/.test(w) && /not a snake_case technique name/.test(w))).toBe(true);
+    // A pitfall without the line emits nothing.
+    expect(mitigated.some(m => m.type === "mitigated_by" && m.pitfall === "badline_cycle_loss")).toBe(false);
   });
 });
 

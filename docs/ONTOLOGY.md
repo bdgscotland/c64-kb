@@ -187,7 +187,7 @@ in `CONVENTIONS-techniques.md`; created on first reference.
 
 Source: `techniques/*.md` `**Demands:**` lines.
 
-## Edge Types (15)
+## Edge Types (17)
 
 ### BELONGS_TO
 
@@ -215,11 +215,59 @@ Direction: `Recipe → Recipe`
 
 Meaning: "this recipe depends on a prior recipe — learn that first."
 
+Listed since the ontology was drafted, but no extractor emits it and no
+tool reads it (checked 2026-09-22: `BUILDS_ON` occurs nowhere in `src/`
+or `test/`). The prerequisite relation the docs actually state is between
+techniques, and that is `REQUIRES` below.
+
+### REQUIRES
+
+Direction: `Technique → Technique`
+
+Meaning: "this technique presupposes that one is already set up or running
+underneath it" — `text_zoom` REQUIRES `stable_raster_irq` (an IRQ on every
+scanline of its zone), `infinite_scroll_h` REQUIRES `soft_scroll_h` and
+`char_scroll_buffer_h`, `sid_filter_routing` REQUIRES `sid_voice_setup`.
+Authored per technique with a `**Requires:**` line
+(`CONVENTIONS-techniques.md`). It is not "see also" and not "variant of":
+`double_irq` is a variant of `stable_raster_irq`, not a prerequisite, and
+neither carries the edge. Both ends are MATCHed at ingest, never MERGEd,
+so a misspelt name drops the edge with a warning instead of creating a
+stub; an edge that would close a cycle is refused. Read by
+`c64_technique_lookup` (`requires`, `required_by`), `c64_techniques_for`
+(`requires` filter, following the chain) and `c64_check_compatibility`,
+which takes each input's REQUIRES closure and runs the hard DEMANDS rules
+between one technique's prerequisites and the other technique, reporting a
+hit as `prerequisite_conflict` — never against a prerequisite the technique
+declared itself, and never by folding a prerequisite's demands into its
+dependant's.
+
 ### TRIGGERED_BY
 
 Direction: `Pitfall → Register/KernalRoutine/Technique`
 
-Meaning: "this pitfall is provoked when using this thing."
+Meaning: "this pitfall is provoked when using this thing." For a Technique
+target this is the technique in whose code the pitfall arises; the
+technique that cures it is `MITIGATED_BY`, which the single vocabulary used
+to carry as well (`sprite_dma_overflow` was TRIGGERED_BY
+`sprite_multiplex_8` while its Fix said the multiplexer is the fix).
+
+### MITIGATED_BY
+
+Direction: `Pitfall → Technique`
+
+Meaning: "applying this technique is the Fix section's remedy for this
+pitfall" — `raster_irq_first_line_jitter` MITIGATED_BY `double_irq`, the
+three region-timing pitfalls MITIGATED_BY `pal_ntsc_detection`. Authored
+with a `**Mitigated by techniques:**` line (`CONVENTIONS-pitfalls.md`);
+Technique targets only, both ends MATCHed, misses warned about and counted
+beside triggered_by. A technique may be on both lines only when the pitfall
+arises in a naive version of it and a correct version cures it, and the
+Mechanism says so. Where the remedy is not a Technique node (the SID hard
+restart, a `$0318` handler) there is no edge and the Fix stays prose. Read
+by `c64_pitfalls_for` (a Technique topic matches either relation;
+`mitigated_by[]` is reported apart from `triggered_by[]`) and
+`c64_technique_lookup` (`mitigates`).
 
 ### CAUSED_BY
 
@@ -304,5 +352,7 @@ primary key of every node label (12) and seeds:
 - 2 `Region` nodes (PAL, NTSC)
 
 Everything else is produced by `npm run ingest` from `docs/`. At the
-commit that last touched this file the graph held 557 nodes and 1,233
-edges; `npx c64-kb health` prints the live figures.
+commit that last touched this file a clean ingest under schema 19 gave
+574 nodes and 1,294 edges, with 15 of the 17 edge types populated —
+`BUILDS_ON` and `REQUIRES_TOOL` are defined here and emitted by nothing.
+`npx c64-kb health` prints the live figures.

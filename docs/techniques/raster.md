@@ -330,6 +330,7 @@ Bauer's article and the VICE source, not from a run.
 **Region:** both
 **Uses registers:** SCROLX
 **Demands:** cpu_every_line, constant_sprite_set, badline_free_region
+**Requires:** double_irq
 
 ### Why
 
@@ -410,48 +411,46 @@ Border-opening IRQ overhead combined with a sprite multiplex update on the same 
 
 The VIC-II's top and bottom borders are solid-color regions above and below the active display rows. In 25-row mode (RSEL=1, $D011 bit 3 set), the display area spans raster lines 51-250 and the borders fill lines 16-50 (top) and 251-299 (bottom) on PAL. In 24-row mode (RSEL=0), the display area shrinks to lines 55-246 and the borders expand correspondingly.
 
-Opening the top and bottom borders allows the full frame — minus only the genuine vertical blanking interval — to render sprites and bitmap data, extending the effective display height from 200 pixels to roughly 240 on PAL (approximately 192 on NTSC). This is used for effects that require full-frame coverage: overscan demos, raster bars that extend into the borders, sprite effects that "bleed" above and below the traditional display area.
+Opening the top and bottom borders lets the whole frame, minus only the vertical blank, show sprites and the idle-state graphics byte (`$3FFF`, which can be changed per line) instead of border colour. The character or bitmap display itself does not grow — there are no badlines outside lines 48–247, so no new rows are fetched — but sprites and background colour reach every drawable line. Measured in VICE x64sc 3.10, every row of the emulator's viewport is drawable with the borders open: 272 lines on PAL and 247 on NTSC, against the display window's 200 (an earlier version of this paragraph gave "roughly 240 on PAL, approximately 192 on NTSC"). This is used for effects that require full-frame coverage: overscan demos, raster bars that extend into the borders, sprite effects that "bleed" above and below the traditional display area.
 
 Hardware sprites can be positioned at any Y value 0-255 and will render wherever they land. Opening the top/bottom border does not enable additional sprite rendering per se — sprites already render in the border area when their Y position places them there. What border opening does is suppress the border color so that the background color shows through instead, making any sprites or bitmap data in that region visible.
 
 ### How
 
-The top/bottom border suppression works by toggling $D011 bit 3 (RSEL) from 1 to 0 and back to 1 at specific raster line numbers. The VIC-II uses RSEL to determine the start and end of the active display area vertically. Toggling RSEL at the lines adjacent to the border boundaries confuses the VIC's vertical state machine into not entering border mode.
+One mechanism, two writes per frame, both at the bottom of the display:
 
-The sequence:
+- Clear RSEL ($D011 bit 3) on a line from 248 to 250 — after the raster has passed line 247 and before it reaches line 251 — with a read-modify-write that keeps YSCROLL, DEN and the mode bits and masks off bit 7 (which reads back as the raster's ninth bit, not the compare value).
+- Set RSEL again anywhere from line 252 to line 246 of the next frame, so that the next frame's line 247 is not a bottom comparison either.
 
-- To open the bottom border: write $D011 with RSEL=0 on raster line 248 (decimal), then restore RSEL=1 on raster line 252 or later. The chip's bottom-border transition logic fires at line 251 with RSEL=1, but if RSEL=0 it fires at line 247 — toggling between these values crosses the transition point in a way that prevents the bottom border from activating.
-- To open the top border: write $D011 with RSEL=0 on raster line 55 (one line after the last possible top-border-close point), then restore RSEL=1 before line 51 of the next frame. The logic is symmetric.
+That is all. The bottom border of this frame and the top border of the next frame both open, because the vertical border flip-flop is never set. Nothing is written near line 51 or 55, and plain raster IRQs through $0314 are precise enough: the target is a line, not a cycle.
 
-In practice, a demo using this technique sets RSEL=0 near the end of the display area and RSEL=1 near the beginning, permanently suppressing the top and bottom borders for every frame where those writes land at the right raster lines.
+An earlier version of this section described a separate top-border write (RSEL=0 on line 55, "symmetric" with the bottom) and a top-only variant. The vertical border flip-flop has no top-side set, so the top opens as a consequence of suppressing the bottom set — measured in VICE x64sc 3.10: the line-55 write on its own leaves both borders closed and moves the bottom border up to line 247, while the two bottom-side writes on their own open both borders.
 
 ### Why it works
 
-The VIC-II maintains a vertical border flag (VBORDER) that is set and cleared based on the raster counter reaching specific lines — lines 51/$33 (display start) and 251/$FB (display end) in 25-row mode, or 55/$37 and 247/$F7 in 24-row mode. When VBORDER is set, the chip outputs border color rather than display data. The flag is latched based on RSEL at the transition point.
+The VIC-II's vertical border flip-flop (Bauer §3.9) is **set** only when the raster reaches the bottom comparison line — 251 with RSEL=1, 247 with RSEL=0 — checked in cycle 63 of the line and again when the beam reaches the left comparison X; it is **reset** only when the raster reaches the top comparison line — 51 with RSEL=1, 55 with RSEL=0 — at the same two moments, and only while DEN is set. Comparisons match on equality, never over a range, and no frame-start event touches the flip-flop. While it is set, the main border flip-flop cannot be reset at the left edge and the graphics sequencer outputs background colour, so the border is drawn; while it is clear, whatever the sequencer and the sprites produce is shown.
 
-By toggling RSEL from 1 to 0 before the end-of-display transition at line 251 (making the chip look for the 24-row boundary at 247 instead) and then back to 1 after that line, the chip never sets VBORDER because neither transition point is hit cleanly. The flag stays cleared, and the border is not rendered.
+RSEL=1 while line 247 passes means both of that line's checks look for 251; RSEL=0 while line 251 passes means both of its checks look for 247. Neither matches, the flip-flop stays clear, and there is no other set event until the next frame's bottom comparison — the vertical blank and lines 0–50 go by with the flip-flop clear, so the top border is not drawn either. At line 51 the top comparison resets a flip-flop that is already clear. Restoring RSEL=1 before the next line 247 keeps the cycle going frame after frame.
 
-The horizontal borders are not affected by this technique; RSEL only governs the vertical extent of the display area. Sprites and background color show through in the opened border area because the chip is outputting display-mode data (background color, or bitmap/character cell data) instead of border-mode data.
+The window for the clearing write is smaller than "before line 251 ends": the left-edge check on line 251 comes at X=24, about cycle 16, before a raster IRQ handler through $0314 has been entered (cycle 37–43). Measured in VICE x64sc 3.10: a clear on line 247 closes the border from line 248 (the cycle-63 check on 247 saw RSEL=0), clears on 248, 249 and 250 open it, and clears on 251 and 252 leave an ordinary frame with the border from line 251.
+
+The side borders are not affected; RSEL only governs the vertical comparison lines. In the opened area the VIC is in its idle state and shows the byte at `$3FFF` in colour 0 over the background colour, so `$3FFF` should be zero — VICE's RAM starts so; hardware RAM is not guaranteed to. Sprites are visible there because the border is no longer drawn over them, not because they render anywhere new.
 
 ### Variations
 
-**Bottom border only.** Suppress only the bottom border by performing the RSEL toggle around line 248-252. The top border remains visible. More common in demos that want floor effects or a status bar at the bottom of a large display.
-
-**Top border only.** Symmetric with bottom-border-only. Less common because the top border is narrower on PAL (approximately 35 lines vs the bottom's ~50 usable lines).
+**Bottom only, top only.** Neither exists with RSEL alone: the flip-flop has one set (a bottom comparison) and one reset (a top comparison), and once the bottom set has been suppressed nothing can set it again before the next frame's line 247, so the two borders open as a pair. An earlier version of this section listed both as variations; the recipe below writes nothing near line 51 and the top opens anyway. A demo that shows one of them closed is painting it back — `$D021` set to the border colour over those lines from another raster interrupt — not closing it.
 
 **Full vertical open with sprite coverage.** Open both borders and position 8 sprites to tile vertically across the entire frame (possible because sprites at Y positions above the visible area wrap around in the sprite's own 0-255 coordinate space). Combined with sprite multiplexing this covers nearly the full frame height with sprites.
 
-**RSEL held at 0 for the full frame.** This permanently opens both borders and also shifts the top of the display area down to line 55 and the bottom up to line 247, shrinking the display area by 4 lines top and bottom while opening the border regions. Not typically used for border opening since it shrinks the display, but useful to know the side effect.
+**RSEL held at 0 for the full frame.** Opens nothing: both comparison lines simply move (top 55, bottom 247) and the border is drawn four lines further in at top and bottom. An earlier version of this paragraph said it "permanently opens both borders"; the control build with RSEL=0 from line 55 to line 0 shows a closed frame whose bottom border begins on line 247 (VICE x64sc 3.10). Worth knowing as the side effect of a raster split that leaves RSEL clear when line 247 arrives.
 
 ### Cycle budget
 
-The top/bottom border toggle is not cycle-exact in the same way as sideborder_open. The writes need to land on the correct raster line number, which is a coarser target than a specific cycle within a line. A raster IRQ set to fire on line 248 with any reasonable handler latency will hit the correct line in time to write RSEL=0. The write just needs to land before the end of line 248.
-
-However, RSEL is part of $D011 which also carries YSCROLL (bits 2-0), the display mode bits ECM and BMM (bits 6 and 5), and DEN (bit 4). A read-modify-write is required to toggle only RSEL without disturbing the other bits. The RMW sequence costs 3 cycles (LDA abs, AND or ORA imm, STA abs = 4+2+4 = 10 cycles). Plan for 10-12 cycles per toggle.
+Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–250 clears RSEL in time with the KERNAL dispatcher's latency included; 247 is too early and 251 too late for a write that lands after cycle 37 (see Why it works). RSEL is part of $D011 with YSCROLL (bits 2–0), DEN (bit 4), BMM and ECM (bits 5 and 6) and RST8 (bit 7), so the toggle is a read-modify-write — `LDA $D011`, `AND` or `ORA` immediate, `STA $D011`: 4 + 2 + 4 = 10 cycles — with bit 7 masked off. With the interrupt bookkeeping ($D012, $0314/$0315, the $D019 acknowledge and the exit) each handler body is about 40 cycles plus the 29-cycle dispatcher, twice per frame — except that the restore handler exits through `$EA31`, the full KERNAL service, which is about a thousand cycles once per frame by `recipes/kickassembler/raster-bars.md`'s figure; the opening handler exits through `$EA81`. An earlier version of this paragraph said the write "just needs to land before the end of line 248" and gave the RMW as "3 cycles"; both are replaced by the measured window and the cycle count above.
 
 ### Recipes
 
-(No standalone recipe yet — typically bundled with sideborder-open in full-border-open demos.)
+- `recipes/kickassembler/topbottom-border-open.md`
 
 ---
 
@@ -513,3 +512,63 @@ The $D018 write is the most timing-sensitive of the three. The character/bitmap 
 ### Recipes
 
 (Standalone recipe not yet written — raster_split_modes is demonstrated as part of larger demo or game layout recipes.)
+
+---
+
+## pal_ntsc_detection — Detect PAL vs NTSC at boot
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D011, D012
+
+### Why
+
+A C64 does not know which video standard it was built for, and neither does the program it is running: no register says PAL or NTSC. Yet almost everything timed by the frame or by the CPU clock differs between the two — 312 raster lines a frame against 263 (6567R8) or 262 (6567R56A), 63 cycles a line against 65 or 64, 985,248 Hz against 1,022,727 Hz (settled figures; `hardware/pal-ntsc-reference.md` has the tables). Music ticked once a frame runs a fifth too fast on NTSC, a CIA reload drifts 3.8 %, a raster interrupt set for line 280 never fires on a chip whose frame ends at 262; `pitfalls/region-timing.md` walks through all three. The cure in each case is the same: find out once, at boot, which chip this is, store the answer in a byte, and branch on it. This technique is that one measurement.
+
+### How
+
+The VIC-II's raster counter is nine bits wide: `$D012` holds the low eight and bit 7 of `$D011` (RST8) is the ninth. RST8 is therefore set for exactly the raster lines from 256 upward, and the frames of the three chips differ only in how many of those lines they have — 56 on PAL (256–311), 7 on the 6567R8 (256–262), 6 on the 6567R56A (256–261). The routine reads the length of that band:
+
+1. Disable interrupts (`SEI`). A handler that ran for longer than a raster line would hide a line from the loop.
+2. Wait until RST8 is clear. This is not for calls that land in the middle of the band — the lines such a call skips are the smaller values, and a loop that keeps the latest one is indifferent to them (measured: the loop with this wait deleted, entered on PAL lines 256 and 300, still returned `$37`). It closes a race at the far end of the band. A call landing in the last cycles of the frame's final line takes its first `$D012` sample on that line and its RST8 check on line 0, so step 5 is reached before any value has been kept and the result is whatever the register held before the call (measured: the same wait-less loop entered on PAL line 311 with its result register preloaded to `$EE`, and the entry phase swept in 4-cycle steps, returned `$EE` at two of sixteen phases and `$37` at the other fourteen; with the wait restored, both racing phases returned `$37`). Waiting for RST8 to be clear first means step 3 can only exit at line 256, never at line 311. This page gave the mid-band reason until 2026-09-22; it was wrong.
+3. Wait until RST8 is set. That is line 256 on every chip, and `$D012` reads `$00` there.
+4. While RST8 stays set, read `$D012` and keep the value — the most recent one, or the highest; inside the band they are the same. Read `$D012` first and RST8 second, and keep the sample only if RST8 was still set after it, so a read that has already wrapped to `$00` on line 0 is never recorded. The Oscar64 recipe tests RST8 at the top of its loop instead, because that is where the compiler puts a `while` condition, and keeps the highest value, which makes the wrapped `$00` harmless without the ordering; the two forms agree.
+5. When RST8 clears, the kept value is the low byte of the last line of the frame: `$37` on the 6569, `$06` on the 6567R8, `$05` on the 6567R56A. Store it, or reduce it to one flag, and re-enable interrupts. Anything that became pending during the wait — the KERNAL's 60 Hz timer interrupt, if its vector is still installed — is serviced the moment interrupts are back on, so call the routine before the KERNAL interrupt is replaced, or expect one KERNAL service to run right after it returns.
+
+For a two-way PAL/NTSC answer a shortcut suffices: any `$D012` value of `$10` or more seen while RST8 is set means PAL, because lines 272–311 exist on no NTSC chip. Keeping the whole value costs nothing more and tells the two NTSC chips apart.
+
+Measured in VICE x64sc 3.10 (rung 1): the kept value was `$37` on the default PAL model, `$06` with `-model ntsc` and `$05` with `-model oldntsc`, read back from the screen as hex digits, and the same when the run was stopped at 5,000,000 and at 8,000,000 cycles. The same wait-and-track loop, entered deliberately from raster lines 100, 300 and 311 on PAL and from 100 and 262 on NTSC, gave the right answer every time.
+
+**What does not work, and stood in this knowledge base until 2026-09-21:** polling for RST8 to become set and then reading `$D012` once. That read lands on line 256, the first line of the band, and returns `$00` on every chip — measured as `00` on all three VICE models — so a `cmp #$10` after it says NTSC unless the routine was called from inside lines 272–311 by luck. Both copies of the "shortest reliable detect" here did exactly that (`hardware/pal-ntsc-reference.md` Method 2, and the fix in `pitfalls/region-timing.md`, whose copy also fell through a `bne` after `lda #0` and so answered NTSC from either branch). Both are corrected on their own pages, with the measurements.
+
+### Why it works
+
+The counter is incremented at the start of each raster line and reset to zero for line 0 (Bauer, §3.6.3; not measured here beyond the wrap values above). RST8 is nothing more than bit 8 of that counter, so it is a level, not an event: it reads 1 for the whole of lines 256 onward and 0 for the whole of lines 0–255, and a polling loop can watch it change without a raster interrupt and without touching `$D019`. The last line of the frame is the only place the three chips disagree, and it is the last line on which RST8 reads 1 — sampling the low byte until RST8 falls therefore reads that line's number without knowing it in advance. The display window is not involved: lines 256 and up are lower border or vertical blanking on every chip, and no badline can occur there since the badline condition needs a raster line between `$30` and `$F7` (Bauer, §3.5; not measured here), so with no sprites enabled — the state at boot; sprite DMA would take cycles from these lines too, since the sprite Y compare uses the low byte of the raster counter (Bauer, §3.8; not measured here) — the CPU keeps every cycle of every line in the band and a loop of fifteen to twenty-two cycles samples each line two to four times.
+
+The frame is the same length however the routine is entered, so the answer does not depend on when the program started; the two waits guarantee that sampling begins at line 256 and ends at line 0, so the band's last line is always among the samples. How long the routine holds the CPU does depend on the entry line. Called from line L below 256 it runs N − L lines, the rest of the frame; called from inside the band it runs 2N − L lines — the rest of that band, the 256 lines with RST8 clear, and the whole of the next band. So it takes at least N − 255 lines — 57 on PAL (3,591 cycles, about 3.6 ms), 8 on the 6567R8 (520 cycles, about 0.5 ms), 7 on the 6567R56A — and at most 2N − 256 lines — 368 on PAL (23,184 cycles, about 23.5 ms, 1.18 frames), 270 on the 6567R8 (17,550 cycles, about 17.2 ms, 1.03 frames), 268 on the 6567R56A (arithmetic from the settled constants). Measured in VICE x64sc 3.10 with CIA 1 timer A wrapped around the 26-byte tracking loop that `detect_region` in `pitfalls/region-timing.md` extends with its flag store, CIA interrupts masked and any pending one acknowledged first, and the wrapper's own 17 cycles taken off by a null-call control: 3,575 cycles from PAL line 255 and 23,172 from line 256; 500 and 17,535 on the 6567R8; 432 and 17,131 on the 6567R56A; 13,337 from PAL line 100 and 19,707 from line 311 — each within one line of the arithmetic. **Correction (2026-09-22):** until this date this page said the measurement "takes between one and two frames — about 40 ms on PAL, 33 ms on NTSC". That was a bound written from the shape of the loop, not measured, and it is wrong at both ends: the routine never reaches two frames, and from most entry lines it takes well under one.
+
+### Variations
+
+**Time a frame with a CIA timer.** Start a CIA timer at one raster line 0 and read it at the next: about 19,656 cycles on PAL (312 × 63), 17,095 on the 6567R8 (263 × 65), 16,768 on the 6567R56A (262 × 64) — arithmetic from the settled constants; this variant was not run here. `hardware/pal-ntsc-reference.md` Method 1 lists it. It yields the cycle count, which the raster method does not, at the cost of a CIA timer, more code and a threshold to choose. On a stock machine the raster band is the shorter and more direct read.
+
+**Store, do not repeat.** Take the measurement once, before interrupts are installed, into a byte the rest of the program branches on: the music tick (`pal_ntsc_tempo_mismatch`), CIA reloads (`cia_timer_phi2_difference`), raster tables (`raster_line_count_difference`). Nothing about the chip changes later.
+
+**Three-way or two-way.** Keep the raw last-line byte if the program counts cycles per line or lines per frame on NTSC — the R8 and the R56A differ in both, 65 against 64 and 263 against 262 (settled); reduce it to PAL/NTSC with one compare against `$10` otherwise.
+
+**The KERNAL's own answer.** The stock KERNAL takes a two-way measurement of its own at reset and leaves it at `$02A6` (PALNTS): 1 for PAL, 0 for NTSC. The mechanism is in the ROM bytes (`kernal-901227-03.bin`, read here): the reset path at `$FF5B` initialises the VIC from a table that sets the raster compare to line 311 and acknowledges `$D019`, clears the screen, waits for `$D012` to read zero, then reads `$D019`, keeps bit 0 and stores it at `$02A6` — the raster-compare flag can only have been raised if a line 311 exists. It cannot tell the R8 from the R56A, a replacement KERNAL or an earlier program may have left anything there, and its reliability was not measured here; `hardware/pal-ntsc-reference.md` Method 3 has the detail. Measure the chip yourself when the answer matters.
+
+### Cycle budget
+
+None per line. The routine runs once, with interrupts disabled, and holds the CPU for between 57 and 368 lines on PAL (about 3.6 to 23.5 ms) or between 8 and 270 lines on the 6567R8 (about 0.5 to 17 ms) depending on where in the frame it is entered — a fifth of a frame at best, 1.2 frames at worst, measured as described above; nothing else is expected to run during it. It takes no raster interrupt and writes neither `$D011` nor `$D012`. 36 bytes with the compare and flag store as `detect_region` in `pitfalls/region-timing.md` (assembler count); the hardware page's Method 1 `detect_region` returns a three-way code in A and its Method 2 `detect_pal` a carry flag, both with the same `wait_lo` guard.
+
+### Recipes
+
+- `recipes/oscar64/pal-ntsc-detect.md`
+
+### Sources
+
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its application in the Commodore 64", https://www.cebix.net/VIC-Article.txt — §3.2 (RST8), §3.4 (lines per frame per chip), §3.5 (bad line condition), §3.6.3 (raster counter increment and reset), §3.8 (sprite DMA and the Y compare).
+- VICE 3.10, `x64sc`, models `default`, `ntsc`, `oldntsc` — the instrument for every figure marked measured above; the durations were read from CIA 1 timer A, the verdicts from the screen.
+- KickAssembler 5.25 — the listing the durations were measured on is the hardware page's, and the byte counts are its.
+- VICE's `kernal-901227-03.bin` — the bytes at `$FF5B`, `$ECB9` and `$FDDD` behind the `$02A6` variation.
+- This repository: `hardware/pal-ntsc-reference.md`, `pitfalls/region-timing.md`, `recipes/oscar64/pal-ntsc-detect.md`.

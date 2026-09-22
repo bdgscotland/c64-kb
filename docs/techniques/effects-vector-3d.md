@@ -370,6 +370,8 @@ Multi-layer (8 sprites + 40-column row-shift for character layer):
 **Complexity:** high
 **Region:** both
 **Uses registers:** D016, D011
+**Demands:** midframe_raster_irqs
+**Requires:** stable_raster_irq
 
 ### Why
 

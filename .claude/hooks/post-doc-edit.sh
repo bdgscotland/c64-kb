@@ -45,7 +45,7 @@ fi
 
 # 2. Metadata lines feed the graph; a change needs a clean re-ingest.
 if git diff --quiet -- "$REL" 2>/dev/null; then :; else
-  if git diff -U0 -- "$REL" | grep -qE '^[+-](\*\*(Region|Uses registers|Uses kernal|Demands|Triggered by [a-z]+|Caused by [a-z]+|Likely causes|Severity|Complexity):\*\*|(techniques|uses_registers|uses_kernal|file_formats|region|toolchain|recipe|category|chip):)'; then
+  if git diff -U0 -- "$REL" | grep -qE '^[+-](\*\*(Region|Uses registers|Uses kernal|Demands|Requires|Mitigated by techniques|Triggered by [a-z]+|Caused by [a-z]+|Likely causes|Severity|Complexity):\*\*|(techniques|uses_registers|uses_kernal|file_formats|region|toolchain|recipe|category|chip):)'; then
     CONTEXT="$CONTEXT
 Metadata changed in $REL: run 'npm run ingest:clean' before committing (MERGE never removes an edge the doc stopped asserting) and read the summary line for dropped references."
   fi

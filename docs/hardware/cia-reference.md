@@ -22,8 +22,10 @@ each chip is wired into the C64 motherboard, *what* its pins connect to, and
   bank (bits 0-1 of port A), drives the serial-IEC bus (disk drive,
   printer) on port A bits 3-7, drives the RS-232 user-port lines, and
   exposes the user-port PB pins. Its `/IRQ` output pin drives the 6510
-  `/NMI` line, which is also tied to the keyboard `RESTORE` key through
-  a 100 ms one-shot.
+  `/NMI` line, which the keyboard's `RESTORE` key also pulls low through
+  its own one-shot (one half of the 556 dual timer at U20 on the 1982-86
+  boards; this page used to give the pulse as "100 ms", a figure that is
+  not measured here).
 
 The naming is unfortunate: from the 6526's point of view both chips
 generate IRQs — the chip has no idea one of its IRQ outputs is wired to
@@ -76,10 +78,11 @@ of `I`. The only way to "mask" an NMI from CIA2 is to disable the
 interrupt-source bits in `$DD0D`.
 
 The `RESTORE` key is wired to the CPU's `/NMI` pin *in parallel* with
-CIA2's `/IRQ` output, through a 555 timer one-shot that prevents
-key-bounce. This means pressing `RESTORE` will fire `/NMI` even with
-all CIA2 interrupts disabled, and any code that uses CIA2 to generate
-NMIs must coexist with the RESTORE wiring.
+CIA2's `/IRQ` output, through a one-shot — one half of the 556 dual
+timer at U20 on the 1982-86 boards (this page used to say "a 555"). This
+means pressing `RESTORE` will fire `/NMI` even with all CIA2 interrupts
+disabled, and any code that uses CIA2 to generate NMIs must coexist
+with the RESTORE wiring.
 
 ## CIA1 quick reference
 
@@ -326,7 +329,8 @@ is released by reading `$DC08` (tenths). Read order: hours, minutes,
 seconds, tenths. The counter keeps running underneath the latch, so a
 read of tenths after a long-held latch jumps straight to the live time.
 (An earlier version of this page had the two registers swapped;
-measured in VICE x64sc.)
+measured in VICE x64sc; the probe is in `pitfalls/cia.md`,
+`tod_read_order_latch`.)
 
 **Writes** go to the running clock when the ALARM bit of `$DC0F` is 0
 and to the alarm when it is 1. With ALARM = 0, writing `$DC0B` (hours)
@@ -1042,6 +1046,19 @@ measured here. (Earlier text said the 555 held `/NMI` low for ~100 ms
 and that this needed handling; see Pitfalls for what a held-low line
 actually does.)
 
+**Disabling RESTORE.** It cannot be done in `$DD0D`: the key's pulse never
+passes through the CIA, and the KERNAL handler above recognises RESTORE
+precisely by finding *no* CIA2 flag after its `LDY $DD0D` (the branch is
+`BMI` at `$FE54`, from the ROM bytes). Two things work: point `$0318` at a
+handler that ends in `RTI`, or hold an unacknowledged CIA2 NMI so `/NMI`
+never returns high — the 6510's NMI input is edge-triggered, so a line held
+low is not re-entered (the "NMI lock": measured in VICE x64sc 3.10, a
+second Timer A underflow with `/NMI` already low produced no second NMI;
+the key itself was not pressed in that run, so its case follows from the
+edge-triggered input rather than from a measurement). Both, with their
+costs and the RUN/STOP detail, are in `pitfalls/kernal-and-io.md` →
+`restore_nmi_not_maskable`.
+
 ## VIC bank selection (CIA2 port A bits 0-1)
 
 The VIC-II has a 14-bit address bus (16 KiB) but the C64 has 64 KiB of
@@ -1171,6 +1188,8 @@ The SRQ line is not used by the standard C64 KERNAL.
   out the pulse with Timer A as workarounds; the mechanism was the IRQ
   one, and neither workaround touches the ICR — measured: that handler
   leaves the line low and the next event is still lost.)
+  The dispatch table, the 20-cycle cost and the lock, measured, are in
+  `pitfalls/kernal-and-io.md` → `restore_nmi_not_maskable`.
 - **Reading a running timer gives torn values**: low byte decrements
   between the two-byte read. Stop the timer before reading, or use the
   read-high / read-low / re-read-high consistency loop. The 6526A
@@ -1218,7 +1237,9 @@ The SRQ line is not used by the standard C64 KERNAL.
   `$DC08` (tenths) releases it. If you read hours and then never read
   tenths, the TOD registers appear frozen on subsequent reads while the
   clock keeps counting underneath (earlier text had tenths latching and
-  hours releasing; measured in VICE x64sc, PAL and NTSC).
+  hours releasing; measured in VICE x64sc, PAL and NTSC). The probe and the write-side twin —
+  hours-write stops the clock, tenths-write starts it — are in
+  `pitfalls/cia.md` (`tod_read_order_latch`).
 - **TOD BCD**: TOD registers are BCD-encoded. Code that increments
   them via `INC` will produce invalid BCD digits (e.g. `$09` + 1 =
   `$0A`, not `$10`). Either write decoded values or use ADC with the
@@ -1235,7 +1256,7 @@ The SRQ line is not used by the standard C64 KERNAL.
   time-critical operation can still be interrupted by a CIA2 NMI or a
   RESTORE press. To truly disable all interrupts, mask CIA2's ICR
   (`STA $DD0D` with `A = $7F`) AND set `I` AND ideally point
-  `($0318)` at a `RTI` to absorb any 555-RESTORE NMI.
+  `($0318)` at a `RTI` to absorb a RESTORE NMI.
 - **The "all-output trick" on $DC02**: setting `$DC02 = $FF` and
   `$DC00 = $00` drives all eight keyboard columns low. Reading
   `$DC01` then returns the OR of every pressed-key row — useful for

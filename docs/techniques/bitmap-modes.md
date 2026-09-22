@@ -229,6 +229,7 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Uses registers:** D011, D018, D016
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
+**Requires:** stable_raster_irq, multicolor_bitmap
 
 ### Why
 
@@ -329,6 +330,7 @@ On NTSC, the same timing window exists but the badline onset relative to IRQ fir
 **Uses registers:** D011, D018
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
+**Requires:** stable_raster_irq
 
 ### Why
 
@@ -373,6 +375,7 @@ AFLI IRQ handlers are marginally more expensive than FLI because $D018 carries m
 **Uses registers:** D011, D018
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
+**Requires:** fli_image
 
 ### Why
 

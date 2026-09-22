@@ -370,6 +370,13 @@ on a real 6569 here. An earlier version of this page gave lines
 247-251 / 5 lines / ~315 cycles, with the two modes' thresholds
 swapped.
 
+There is no separate top-border write. Once the bottom comparison has
+been suppressed the flip-flop stays clear through the vertical blank
+and the next frame's top border, and line 51's top comparison resets a
+flip-flop that is already clear; a write near line 55 on its own opens
+nothing (measured in VICE x64sc 3.10 — the two writes, the window sweep
+and the controls are in `recipes/kickassembler/topbottom-border-open.md`).
+
 ### Side border (horizontal) opening
 
 The side-border open is a one-cycle target per scanline, not a window.
@@ -466,6 +473,9 @@ line 0 about 40% of the time (measured in VICE x64sc: 24 of 72 starts).
 // Region by last raster line. On exit A = 0 PAL (6569), 1 NTSC 6567R8, 2 NTSC 6567R56A.
 // Trashes X, Y. Call with interrupts disabled. Measured in VICE x64sc 3.10 on all three models.
 detect_region:
+wait_lo:
+    lda $D011
+    bmi wait_lo         // a band already in progress: let it finish (see below)
 wait_hi:
     lda $D011
     bpl wait_hi         // wait for RST8 = 1 (line >= 256)
@@ -488,6 +498,22 @@ wrapped:
 done:
     rts
 ```
+
+The `wait_lo` loop closes a race at the end of the band, not the start.
+A call landing in the last cycles of line 311 reads $D012 on that line
+and $D011 on line 0, so `bpl wrapped` is taken before the first `tay`
+and Y is still 0: the routine would answer R56A on a PAL machine. A call
+landing mid-band needs no guard — the lines it skips are the smaller
+values — but with the guard `wait_hi` can only exit at line 256.
+Measured on the equivalent tracking loop (`pal_ntsc_detection` in
+`techniques/raster.md`, VICE x64sc 3.10): without the guard, entered on
+PAL line 311 with the entry phase swept in 4-cycle steps, 2 of 16 phases
+returned the register's preloaded junk; with it, all 16 returned $37.
+Runtime depends on the entry line: 57 lines at best on PAL (called from
+line 255) and 368 at worst (called as RST8 rises — the rest of that
+band, 256 clear lines, and a whole band again), 8 to 270 lines on the
+6567R8; that loop measured 3,575 and 23,172 cycles on PAL, 500 and
+17,535 on the R8, 432 and 17,131 on the R56A against CIA 1 timer A.
 
 A simpler and more common approach is to time a frame:
 
@@ -572,6 +598,9 @@ the value is ever $10 or higher, you're on PAL.
 ; carry set = PAL.
 detect_pal:
     sei
+wait_lo:
+    lda $D011
+    bmi wait_lo         ; a band already in progress: let it finish (see below)
 wait_hi:
     lda $D011
     bpl wait_hi         ; wait for RST8=1 (raster >= 256)
@@ -592,7 +621,10 @@ An earlier version of this listing read $D012 once, immediately after
 RST8 rose — i.e. on line 256, where $D012 is 0 — and so returned NTSC
 on a PAL machine from every raster phase below 272 (six of eight phases
 measured in VICE x64sc); the prose above it already described polling,
-the code did not.
+the code did not. The `wait_lo` guard is the end-of-band race from
+Method 1: a call in the last cycles of line 311 would pass `wait_hi`
+there and take `bpl is_ntsc` on line 0. Technique: `pal_ntsc_detection`
+in `techniques/raster.md`; recipe: `recipes/oscar64/pal-ntsc-detect.md`.
 
 This is the shortest reliable detect. It does not distinguish R8 from
 R56A — for that, use the Method 1 `detect_region` routine above, whose
@@ -714,8 +746,10 @@ the following:
   sample rates on PAL vs NTSC. For accurate cross-region digi,
   scale the timer or use a raster-IRQ-driven (per-line) digi.
 - **Cross-region 6567R56A**: The R56A has 262 lines / 64 cycles
-  rather than 263 / 65. R56A-targeted code must detect via
-  frame timing (Method 1), not raster wrap (Method 2).
+  rather than 263 / 65. Method 1's `detect_region` tells it from the
+  R8 by the frame's last line, $05 against $06; the flag-only
+  `detect_pal` (Method 2) cannot, and `time_frame` sees 16,768 against
+  17,095 cycles.
 - **PAL-N / PAL-M misdetection**: Raster-wrap, frame-timing and
   KERNAL ($02A6) detection all report a PAL-N (Drean, 6572) machine
   as PAL, but its lines are 65 cycles, not 63 (measured in VICE x64sc
@@ -757,5 +791,12 @@ the following:
   and its application in the Commodore 64" (cebix mirror):
   https://www.cebix.net/VIC-Article.txt — per-region cycle tables,
   raster geometry, border-open cycle windows.
+- VICE 3.10, `x64sc`, models `default`, `ntsc`, `oldntsc` — the
+  instrument behind every figure marked measured under Method 2
+  (the three wrap bytes, the entry-line runs, the `wait_lo` race,
+  the CIA-timed durations). https://vice-emu.sourceforge.io/
+- KickAssembler 5.25 — assembled the Method 1 and Method 2 listings.
+- VICE's `kernal-901227-03.bin` — the bytes at $FF5B, $E518,
+  $ECB9 and $FDDD behind Method 3 and the IOINIT timer values.
 
 <!-- doc-type: hardware-reference -->

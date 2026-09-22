@@ -236,46 +236,93 @@ hardware but causes errors on borderline machines.
 
 ### Fix
 
-**Detect the drive before installing the fast loader.** Send a `M-R` (memory read)
-command to the drive at a known address in the 1541 ROM and check the response.
-The 1541 ROM has a specific signature byte at `$E5C3` (the DOS version byte,
-value `$41`). An SD2IEC will either return an error or return a different value.
-A 1571 returns the 1571's ROM content at that address, which differs. A
-detection sequence:
+**Detect the drive before installing the fast loader.** Ask the DOS for its own
+version string. `M-R` on the command channel returns raw bytes of drive memory,
+and the 1541's power-on message `CBM DOS V2.6 1541` sits in ROM at
+`$E5B7`–`$E5C7`, so the four bytes from `$E5C4` read `1541` — the last of them
+`$B1`, `'1'` with bit 7 set, which is the message table's end marker, so strip
+bit 7 before comparing. A 1571 answers `1571` from the same address, a 1581
+answers `$FF $FF $FF $FF` (its ROM has nothing there), and what an SD2IEC answers
+was not measured here. `1541` at `$E5C4` is rung 1 from the two 1541 ROM images
+VICE 3.10 ships (325302-01+901229-05 and the 1541-II's 251968-03); the
+behaviour is rung 1 in VICE x64sc 3.10 with `-drive8truedrive` on drive types
+1541, 1541-II, 1571 and 1581, where the routine below returned carry clear for
+the 1541 and carry set for the 1571. What the test identifies is the firmware,
+not the mechanism. A 1540 — the same mechanism, older DOS — answers `V170` from
+that address (rung 1, its ROM image), and a 1541 whose ROM has been replaced
+(JiffyDOS, SpeedDOS, Dolphin DOS) will not say `1541` there either (rung 4; no
+such ROM ships with VICE), so the routine sends both down the KERNAL path. That
+is the safe side to fail on, but note it is stricter than the Mechanism paragraph
+above, which says Krill's drive code usually runs on a JiffyDOS 1541. The table of
+images and addresses is in `../formats/iec-disk-reference.md`, "Identifying the
+drive over the command channel".
 
 ```kick
-// Open command channel to drive 8
-LDA #15
-STA cmd_channel
-LDA #8
-STA device_num
+    jsr detect_1541
+    bcc install_krill
+    jmp use_kernal_load     // anything that is not a 1541: KERNAL path
 
-// ... (SETLFS/SETNAM/OPEN sequence omitted for brevity)
-
-// Send M-R $E5C3 $E5C3 (1 byte)
-// If response is $41: stock 1541. Install Krill.
-// Otherwise: skip Krill install, use KERNAL LOAD.
-
+// Carry clear on return: the drive says "1541" at $E5C4. Carry set: anything
+// else, including a drive that never answered.
 detect_1541:
-    // Simplified: check return value of M-R
-    // Full implementation: send "M-R" + address bytes over command channel
-    // then CHKIN the command channel and read response byte
-    JSR read_drive_response
-    CMP #$41
-    BEQ install_krill
-    JMP use_kernal_load     // fallback path
-
-install_krill:
-    // ... Krill installation sequence
-    JMP done
-
-use_kernal_load:
-    // KERNAL LOAD path — no fast protocol
-    // Slower but compatible with all drives
-    JMP done
-
-done:
+    lda #15
+    ldx #8
+    ldy #15
+    jsr $ffba          // SETLFS 15,8,15
+    lda #cmd_end-cmd
+    ldx #<cmd
+    ldy #>cmd
+    jsr $ffbd          // SETNAM: the command text goes where a filename would
+    jsr $ffc0          // OPEN sends "M-R" $C4 $E5 $04
+    bcs no_answer
+    ldx #15
+    jsr $ffc6          // CHKIN channel 15
+    ldy #0
+read:
+    jsr $ffcf          // CHRIN: one reply byte per call
+    and #$7f           // the last byte of the ROM string has bit 7 set
+    sta reply,y
+    iny
+    cpy #4
+    bne read
+    jsr $ffcc          // CLRCHN
+    lda #15
+    jsr $ffc3          // CLOSE
+    ldy #3
+compare:
+    lda reply,y
+    cmp expect,y
+    bne mismatch
+    dey
+    bpl compare
+    clc
+    rts
+mismatch:
+    sec
+    rts
+no_answer:
+    lda #15
+    jsr $ffc3
+    sec
+    rts
+cmd:
+    .byte $4d, $2d, $52   // "M-R" in PETSCII
+    .byte $c4, $e5        // $E5C4, low byte first
+    .byte $04             // four bytes
+cmd_end:
+expect:
+    .byte $31, $35, $34, $31   // "1541"
+reply:
+    .byte 0, 0, 0, 0
 ```
+
+**Correction (2026-09-21).** The earlier text expected `$41` at `$E5C3` and called
+it "the DOS version byte". `$E5C3` is `$20` — the space between `V2.6` and `1541`
+— in every 1541-family ROM VICE ships (1540, 1541, 1541-II, 1570, 1571), so that
+test never matched and the fast path was never installed. `$41` ("A") is the
+DOS-version marker at offset 2 of the BAM sector, track 18 sector 0, which the
+format routine writes to the disk; the ROM keeps that constant at `$FED5`, not at
+`$E5C3`.
 
 **Provide a KERNAL fallback branch.** The most robust approach is to ship two
 load paths: the GCR fast path for stock 1541 hardware, and a `JSR $FFD5` KERNAL
@@ -302,6 +349,11 @@ a single frame).
 - Technique `sparkle_irq_loader` — PAL-only by default; NTSC needs explicit timing constants
 - Technique `krill_loader_integration` — NTSC build flag, drive detection discussion
 - `docs/formats/iec-disk-reference.md` — IEC bus signal levels, timing diagrams, 1541 GCR zones
+
+**Sources for the Fix.** The drive ROM images VICE 3.10 ships in
+`/opt/homebrew/opt/vice/share/vice/DRIVES/` and the KERNAL 901227-03 image, read
+byte by byte (rung 1); VICE x64sc 3.10 with `-drive8truedrive` for the runs
+(rung 1); `../formats/iec-disk-reference.md` for the per-image table.
 
 ---
 

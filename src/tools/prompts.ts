@@ -47,7 +47,7 @@ ${description}
 Please:
 
 1. Identify which C64 techniques apply (raster effects, sprite multiplexer, scroll, etc.). Use c64_techniques_for or c64_search to find them.
-2. For each technique, use c64_technique_lookup to get the structured metadata (registers, kernal routines, recipes, REQUIRES_REGION).
+2. For each technique, use c64_technique_lookup to get the structured metadata (registers, kernal routines, recipes, REQUIRES_REGION, requires/required_by prerequisites, pitfalls it mitigates).
 3. Use c64_check_compatibility on the technique list to surface known register/region conflicts before designing.
 4. Use c64_timing_budget for each raster-critical technique to confirm cycle headroom on the target region.
 5. List the registers each technique uses. Use c64_lookup_register for each.

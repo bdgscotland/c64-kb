@@ -545,7 +545,7 @@ source is the video chip.
 | Disable all CIA1 IRQs (e.g. for raster work)     | $DC0D = $7F (clear all)   |
 | Acknowledge any pending CIA1 IRQ                 | Read $DC0D                |
 | Read the TOD clock                               | Read $DC0B first (latches), then $DC0A, $DC09, $DC08 |
-| Set the TOD clock                                | $DC0F bit 7 = 0, then write $DC0B (hours; stops the clock), $DC0A, $DC09, $DC08 (tenths; restarts it). With bit 7 = 1 the same four writes program the ALARM and leave the clock untouched — this row used to say bit 7 = 1 (measured in VICE x64sc). Write the alarm while the clock cannot equal any intermediate alarm value: a partially written alarm that matches the running clock sets $DC0D bit 2 at once (observed in VICE) |
+| Set the TOD clock                                | $DC0F bit 7 = 0, then write $DC0B (hours; stops the clock), $DC0A, $DC09, $DC08 (tenths; restarts it). With bit 7 = 1 the same four writes program the ALARM and leave the clock untouched — this row used to say bit 7 = 1 (measured in VICE x64sc). Write the alarm while the clock cannot equal any intermediate alarm value: a partially written alarm that matches the running clock sets $DC0D bit 2 at once (observed in VICE). Both rules and the probe behind them: `pitfalls/cia.md` → `tod_read_order_latch` |
 | Toggle TOD source frequency (50 vs 60 Hz)        | $DC0E bit 7               |
 
 ## CIA1 shadow registers ($DC10-$DCFF)
@@ -659,7 +659,9 @@ Key wiring points (the per-pin table is in
   version of this page said RESTORE came in on /FLAG, bit 4, and that the
   KERNAL armed it; IOINIT at $FDA3 writes $7F to $DD0D, which disables
   FLAG, and the only KERNAL code that enables FLAG is RS-232 receive at
-  $EF7E — read from kernal-901227-03.bin.)
+  $EF7E — read from kernal-901227-03.bin.) The dispatch table, the
+  20-cycle cost of taking $0318 and the NMI lock are in
+  `pitfalls/kernal-and-io.md` → `restore_nmi_not_maskable`.
 
 ### CIA2 quick lookup by function
 
@@ -670,7 +672,7 @@ Key wiring points (the per-pin table is in
 | Read IEC serial bus status                       | $DD00 bits 6,7 + $DD01 (user-port-routed) |
 | Set up an RS-232 receive                         | $DD0C, $DD04, $DD05, $DD0E |
 | Use Timer A for music IRQ via NMI                | $DD04, $DD05, $DD0E, $DD0D bit 0 |
-| Neutralise the RESTORE key                       | Point $0318/$0319 at an RTI or your own handler ($FE43 does SEI / JMP ($0318) with nothing pushed, so a bare RTI is valid). No $DD0D value masks it — an earlier revision of this row said $DD0D = $10, which clears an already-clear bit and leaves RESTORE armed |
+| Neutralise the RESTORE key                       | Point $0318/$0319 at an RTI or your own handler ($FE43 does SEI / JMP ($0318) with nothing pushed, so a bare RTI is valid). No $DD0D value masks it — an earlier revision of this row said $DD0D = $10, which clears an already-clear bit and leaves RESTORE armed. Pitfall: `restore_nmi_not_maskable` |
 | Acknowledge any pending CIA2 NMI                 | Read $DD0D                |
 | Use the user port as 8 GPIO lines                | $DD01, $DD03 (DDR)        |
 
@@ -910,7 +912,11 @@ the RS-232 enable byte $02A1.
   counter keeps running, subsequent reads of seconds/minutes return
   the latched value until tenths is read. Code that "peeks" at the
   hour without intending to read the rest of the clock will silently
-  freeze its own view of the time.
+  freeze its own view of the time. The write side has the mirror rule
+  — writing $DC0B stops the clock until $DC08 is written — and $DC0F
+  bit 7 must be 0 for those writes to reach the clock rather than the
+  alarm; `pitfalls/cia.md` → `tod_read_order_latch` carries both rules
+  and the VICE measurement behind them.
 
 - **$DD00 bits are inverted for VIC bank select.** Bits 0-1 of $DD00
   drive the high two address pins of the VIC-II, but they are

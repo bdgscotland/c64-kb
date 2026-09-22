@@ -316,9 +316,11 @@ async function collectPitfallTechniqueSuggestions(
   const pitfallsRes = await f.roQuery(
     `MATCH (p:Pitfall)
      OPTIONAL MATCH (p)-[:TRIGGERED_BY]->(t:Technique)
-     RETURN p.name AS name, p.category AS category, collect(t.name) AS triggered_by`
+     WITH p, collect(DISTINCT t.name) AS triggered_by
+     OPTIONAL MATCH (p)-[:MITIGATED_BY]->(m:Technique)
+     RETURN p.name AS name, p.category AS category, triggered_by, collect(DISTINCT m.name) AS mitigated_by`
   );
-  const pitfalls = pitfallsRes.data as Array<{ name: string; category: string; triggered_by: string[] }>;
+  const pitfalls = pitfallsRes.data as Array<{ name: string; category: string; triggered_by: string[]; mitigated_by: string[] }>;
   const seen = new Set<string>();
 
   for (const pitfall of pitfalls) {
@@ -327,17 +329,25 @@ async function collectPitfallTechniqueSuggestions(
     for (const ch of chunks) {
       if (suggestions.length >= limit) return;
       const text = (ch.text as string | undefined) ?? "";
+      const section = ((ch.section as string | undefined) ?? "").toLowerCase();
+      // The chunker's heading path ends in the H3 ("... > name — title > Fix").
+      // A technique named in the Fix is evidence for MITIGATED_BY, not for
+      // TRIGGERED_BY: the two relations were conflated here until schema 19.
+      const h3 = (section.split(">").pop() ?? "").trim();
+      const isFix = h3.startsWith("fix");
+      const kind = isFix ? "pitfall_mitigated_by_technique" : "pitfall_triggered_by_technique";
+      const existing = isFix ? (pitfall.mitigated_by ?? []) : (pitfall.triggered_by ?? []);
       for (const techName of allTechNames) {
-        if (pitfall.triggered_by.includes(techName)) continue;
-        const dedupKey = `${pitfall.name}::${techName}`;
+        if (existing.includes(techName)) continue;
+        const dedupKey = `${pitfall.name}::${techName}::${kind}`;
         if (seen.has(dedupKey)) continue;
         if (text.includes(techName)) {
-          const section = ((ch.section as string | undefined) ?? "").toLowerCase();
-          const confidence: "high" | "medium" | "low" =
-            section.includes("triggered") || section.includes("techniques") ? "high"
+          const confidence: "high" | "medium" | "low" = isFix
+            ? "medium"
+            : section.includes("triggered") || section.includes("techniques") ? "high"
             : section.includes("pitfall") ? "medium" : "low";
           suggestions.push({
-            kind: "pitfall_triggered_by_technique",
+            kind,
             from: { kind: "Pitfall", name: pitfall.name },
             to: { kind: "Technique", name: techName },
             evidence: text.slice(0, 150).trim(),

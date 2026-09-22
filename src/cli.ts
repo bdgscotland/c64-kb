@@ -192,13 +192,14 @@ program
 
 program
   .command("techniques-for")
-  .description("List techniques filtered by category/chip/region/register/recipe")
+  .description("List techniques filtered by category/chip/region/register/recipe/requires")
   .option("--category <category>", "Filter by category (raster, sprite, scroll, bitmap, banking...)")
   .option("--chip <chip>", "Filter by chip (e.g. VIC-II, SID)")
   .option("--region <region>", "Filter by required region (PAL or NTSC)")
   .option("--register <register>", "Filter by register used (e.g. D011)")
   .option("--recipe <recipe>", "Filter by recipe that implements the technique")
-  .action(async (opts: { category?: string; chip?: string; region?: string; register?: string; recipe?: string }) => {
+  .option("--requires <technique>", "Filter to techniques that build on this one (REQUIRES chain, e.g. stable_raster_irq)")
+  .action(async (opts: { category?: string; chip?: string; region?: string; register?: string; recipe?: string; requires?: string }) => {
     const { techniquesFor } = await import("./tools/query.js");
     const result = await techniquesFor({
       category: opts.category,
@@ -206,6 +207,7 @@ program
       region: opts.region,
       register: opts.register,
       recipe: opts.recipe,
+      requires: opts.requires,
     });
     console.log(result.text);
     process.exit(0);
@@ -234,7 +236,7 @@ program
 
 program
   .command("pitfalls-for <topic>")
-  .description("Look up pitfalls triggered by a register, KERNAL routine, or technique")
+  .description("Look up pitfalls triggered by a register, KERNAL routine, or technique (for a technique, also the pitfalls it is the fix for)")
   .action(async (topic: string) => {
     const { pitfallsFor } = await import("./tools/pitfalls.js");
     const result = await pitfallsFor(topic);

@@ -1,6 +1,6 @@
 # c64-kb — instructions for Claude Code
 
-This repository is a reference for AI coding agents: 67 markdown documents
+This repository is a reference for AI coding agents: 72 markdown documents
 about the Commodore 64 (hardware, techniques, pitfalls, recipes,
 toolchains), indexed two ways (Qdrant vectors, FalkorDB graph) and served
 over MCP. Thousands of people have read about it; fifty have cloned it. A
@@ -27,7 +27,8 @@ wrong number here becomes a torn screen in someone's demo. Work accordingly.
    mechanism an agent might have relied on, one clause says what was
    wrong. The pages that were rewritten this way are the model.
 5. **Metadata lines drive the graph.** Frontmatter and the `**Region:**`,
-   `**Uses registers:**`, `**Demands:**`, `**Triggered by …:**` lines become
+   `**Uses registers:**`, `**Demands:**`, `**Requires:**`,
+   `**Triggered by …:**`, `**Mitigated by techniques:**` lines become
    nodes and edges. After changing any of them run `npm run ingest:clean`
    (the graph merges edges and never removes one a doc stopped asserting).
    Unknown `Demands` words are refused; unresolved trigger targets are
@@ -46,7 +47,7 @@ wrong number here becomes a torn screen in someone's demo. Work accordingly.
 | Oscar64 | `$OSCAR64 -tm=c64 -O2 -o=out.prg file.c` (`OSCAR64` env or `oscar64` on PATH; headers in `<oscar64>/include/`) |
 | cc65 | `cl65 -t c64 -O -o out.prg file.c` |
 | VICE 3.10 headless (PAL 6569) | `GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot out.png -autostart out.prg` (`-model ntsc` for 6567R8). ~10–20 s per run; wrap in `timeout`. |
-| Screenshot geometry | 384×272 PNG; screenshot row = raster line − 14; x = 8 is VIC X coordinate 0; left border x 0–31, right border 352–383. Measure with PIL, never by eye. |
+| Screenshot geometry | PAL 384×272 PNG, screenshot row = raster line − 16 (rows 0–271 are lines 16–287); NTSC (`-model ntsc`) 384×247, row = line − 28, and rows 235–246 are lines 0–11 of the next frame. x = 8 is VIC X coordinate 0; left border x 0–31, right border 352–383. Measure with PIL, never by eye. An earlier version of this row said − 14; 16 and 28 were each derived from three boundaries in `docs/recipes/kickassembler/topbottom-border-open.md`. |
 | KERNAL / BASIC / char ROM | `/opt/homebrew/opt/vice/share/vice/C64/kernal-901227-03.bin` ($E000), `basic-901226-01.bin` ($A000), `chargen-901225-01.bin` ($D000). Read bytes with python to settle any address or vector claim. |
 
 ## Gates before a commit
@@ -54,7 +55,7 @@ wrong number here becomes a torn screen in someone's demo. Work accordingly.
 ```bash
 npm run check:listings     # every listing builds; fails on a missing toolchain unless --allow-missing
 npx tsc --noEmit
-npm test                   # 133 tests, against c64_test / c64_docs_test — never the live stores
+npm test                   # 155 tests, against c64_test / c64_docs_test — never the live stores
 npm run ingest:clean       # if any doc changed: rebuild graph + vectors; read the summary line
 npx c64-kb health          # live counts for README's table if you touched it
 ```
@@ -73,7 +74,7 @@ The pre-commit gate is you. There is no CI yet.
   MCP. `src/server.ts` — MCP registration and tool descriptions.
 - `scripts/check-listings.ts` — the build gate. `--file <path>` checks one file.
 - `test/` — vitest; `vitest.config.ts` isolates the stores.
-- `docs/ONTOLOGY.md` — 12 node labels, 15 edge types, what each means.
+- `docs/ONTOLOGY.md` — 12 node labels, 17 edge types, what each means.
 - `CHANGELOG.md`, `VERSION` — bump `KB_DATA_VERSION` for content,
   `KB_SCHEMA_VERSION` for ontology shape, package version with tool surface.
 

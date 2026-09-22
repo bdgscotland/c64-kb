@@ -79,6 +79,31 @@ demand the technique's own text supports.
 | `continuous_interrupts` | takes timer or NMI interrupts every few raster lines, all frame (digi playback) |
 | `kernal_rom_out` | runs with the KERNAL ROM banked out |
 
+An optional `**Requires:**` line names the techniques this one presupposes:
+the named technique is set up before, or runs underneath, this one. The
+extractor makes one `REQUIRES` edge per item, Technique to Technique.
+
+```
+**Requires:** stable_raster_irq
+```
+
+Each word is the snake_case name of an existing Technique H2, same comma
+rules as `**Uses kernal:**`. It is a statement about what must be in place,
+never a "see also": a technique that merely cites another for background
+does not list it, and a *variant* is not a prerequisite — `double_irq` is
+a variant of `stable_raster_irq` (raster.md), so neither lists the other.
+Only add a line the technique's own text supports ("the technique requires
+a stable raster IRQ set to fire on every scanline" earns one; "IRQ jitter,
+see stable_raster_irq" does not). A word that is not a snake_case name is
+refused at extract time; one that names no Technique node is dropped at
+link time with a warning and counted in the ingest summary, as is a line
+that would make A require B and B require A. `c64_technique_lookup` shows
+the edge in both directions; `c64_techniques_for` filters on it ("what
+builds on stable_raster_irq"); `c64_check_compatibility` runs its hard
+rules between one technique's prerequisites and the other technique and
+reports a hit as `prerequisite_conflict`, without changing anyone's
+`**Demands:**`.
+
 An optional `**Uses kernal:**` line lists KERNAL routines:
 
 ```

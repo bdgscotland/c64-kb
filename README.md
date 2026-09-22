@@ -50,26 +50,25 @@ training-data guesses.
 |------|-------|
 | Phases complete | 0–6 + 7a |
 | MCP tools | 23 (+ 12 resources, 2 prompts) |
-| FalkorDB nodes | 557 across 12 node types |
-| FalkorDB edges | 1,233 across 15 edge types |
-| Qdrant chunks | 2,516 (from 73 markdown files, 1024-dim) |
-| Technique nodes | 73 (10 categories), 19 with resource demands |
-| Pitfall nodes | 41 |
+| FalkorDB nodes | 574 across 12 node types |
+| FalkorDB edges | 1,294 across 15 populated edge types (schema 19 defines 17; `BUILDS_ON` and `REQUIRES_TOOL` are emitted by nothing) |
+| Qdrant chunks | 2,550 (from 78 markdown files, 1024-dim) |
+| Technique nodes | 74 (10 categories), 20 with resource demands, 14 REQUIRES edges between them |
+| Pitfall nodes | 43 (7 with a MITIGATED_BY remedy) |
 | CrashPattern nodes | 15 |
-| Recipe nodes | 17 (8 Oscar64, 8 KickAssembler, 1 cc65), all built by `check:listings` |
+| Recipe nodes | 20 (10 Oscar64, 9 KickAssembler, 1 cc65), all built by `check:listings` |
 | Register nodes | 109 |
 | KERNAL routines | 39 |
 | Memory-map regions | 220 |
-| Tests | 133 passing (`npm test`, isolated from the live stores) |
+| Tests | 155 passing (`npm test`, isolated from the live stores) |
 | License | BSD-3-Clause |
 
-Figures are from the ingest and health output at the commit that last
-touched this table; `npx c64-kb health` prints the live ones. The Qdrant
-chunk count is measured by running `chunkMarkdown` over all 73 files at
-this commit — what a clean ingest would upsert. It is not a live
-collection reading: run `npm run ingest:clean` to make the store agree.
-The previous figure, 2,422, had gone stale across two docs commits that
-did not update it.
+Figures are from a clean ingest (`npm run ingest:clean`) at the commit
+that last touched this table: 2,550 chunks upserted from 78 files, 574
+nodes, 1,294 edges, 0 dropped references. `npx c64-kb health` prints the
+live ones. An earlier version of this table carried a chunk figure that
+had gone stale across two docs commits; the number here is re-measured
+whenever `docs/` changes.
 
 ---
 
@@ -164,21 +163,21 @@ carries a placeholder entry for vice-mcp.
 |------|---------|
 | `c64_recipe_lookup` | Structured Recipe lookup by canonical name (e.g. `oscar64-stable-raster-irq`) |
 | `c64_recipes_for` | List recipes filtered by toolchain / region / technique / file format |
-| `c64_technique_lookup` | Technique lookup with USES Registers/KernalRoutines + implementing recipes + REQUIRES_REGION |
-| `c64_techniques_for` | List techniques filtered by category / chip / region / register / recipe |
+| `c64_technique_lookup` | Technique lookup with USES Registers/KernalRoutines + implementing recipes + REQUIRES_REGION + REQUIRES in both directions + pitfalls it mitigates |
+| `c64_techniques_for` | List techniques filtered by category / chip / region / register / recipe / requires (what builds on a technique, following the REQUIRES chain) |
 
 ### Compatibility and timing
 
 | Tool | Purpose |
 |------|---------|
-| `c64_check_compatibility` | Conflict detection across a list of techniques: hard conflicts from authored resource demands (CPU every line, constant sprite set, KERNAL banked out) and region mismatch; soft ones from shared registers / KERNAL routines; reports what the graph does not know about each technique |
+| `c64_check_compatibility` | Conflict detection across a list of techniques: hard conflicts from authored resource demands (CPU every line, constant sprite set, KERNAL banked out) and region mismatch; soft ones from shared registers / KERNAL routines; runs the hard rules through each technique's REQUIRES closure (`prerequisite_conflict`) and names the prerequisites the set leans on without naming; reports what the graph does not know about each technique |
 | `c64_timing_budget` | Per-scanline + per-frame cycle math for a technique on PAL or NTSC |
 
 ### Pitfalls and failure analysis
 
 | Tool | Purpose |
 |------|---------|
-| `c64_pitfalls_for` | Pitfalls triggered by a register, KERNAL routine, or technique name |
+| `c64_pitfalls_for` | Pitfalls triggered by a register, KERNAL routine, or technique name, and the pitfalls a technique mitigates (`triggered_by[]` and `mitigated_by[]` apart) |
 | `c64_failure_diagnose` | Match a symptom description against CrashPattern nodes (relevance ranked) |
 
 ### Synthesis and briefings
@@ -222,7 +221,7 @@ c64://register/{name}  (structured data for one register, e.g. c64://register/D0
 ## Architecture
 
 Full system diagrams and data-flow documentation: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Graph schema (12 node types, 15 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
+Graph schema (12 node types, 17 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
 
 ### Components
 
@@ -240,7 +239,7 @@ when Ollama is unavailable; ingest does not.
 **FalkorDB** (Docker, host port 7379): Redis-compatible knowledge graph.
 Graph name `c64`. 12 node types (`Chip`, `Region`, `Register`,
 `KernalRoutine`, `MemoryRegion`, `Technique`, `Recipe`, `Pitfall`,
-`CrashPattern`, `Tool`, `FileFormat`, `Resource`) and 15 edge types. Range
+`CrashPattern`, `Tool`, `FileFormat`, `Resource`) and 17 edge types. Range
 indexes and unique constraints on every primary key. Two-pass ingest: node
 creation in pass 1, edge linking in pass 2, so walk order does not affect
 edge correctness; a reference whose target does not exist is reported, not
@@ -251,7 +250,7 @@ dropped silently.
 **SQLite** (`data/analytics.db`): query analytics and gap detection. Records
 every tool call; surfaces queries with no results as gap candidates.
 
-**73 markdown files under `docs/`** — 67 reference documents (hardware,
+**78 markdown files under `docs/`** — 72 reference documents (hardware,
 techniques, pitfalls, recipes, toolchains, formats, design) and 6
 `CONVENTIONS-*.md` files that define the extractable structure. The same
 files drive both the vector chunks and the graph.
@@ -356,7 +355,7 @@ bench measurements on a 6569, and each page says so.
 | `npm run dev:serve` | Run MCP server via `tsx` |
 | `npm run ingest` | Hydrate KB from `docs/` (incremental: unchanged files are skipped) |
 | `npm run ingest:clean` / `npm run ingest -- --force` | Wipe the graph and the vector collection and re-ingest everything. Use after changing any frontmatter or metadata line: the graph merges edges and never removes one a doc stopped asserting, so an incremental run leaves stale edges behind |
-| `npm test` | Run vitest (133 tests) against a throwaway graph (`c64_test`) and collection (`c64_docs_test`); the live stores are never touched |
+| `npm test` | Run vitest (155 tests) against a throwaway graph (`c64_test`) and collection (`c64_docs_test`); the live stores are never touched |
 | `npm run check:listings` | Build every recipe listing with its real toolchain (KickAssembler, Oscar64, cc65) and assemble every KickAssembler fragment in `docs/`; see the script header for `KICKASS_JAR` / `OSCAR64` / `CL65` |
 | `npx tsc --noEmit` | Type check without emitting |
 | `npm run services` / `npm run services:stop` | Start / stop Qdrant and FalkorDB |

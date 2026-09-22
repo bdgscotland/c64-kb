@@ -886,6 +886,9 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
       uses_registers: [],
       uses_kernal: [],
       recipes: [],
+      requires: [],
+      required_by: [],
+      mitigates: [],
       documentation: [],
     };
     const text =
@@ -937,6 +940,37 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     return { name: rr.name, toolchain: rr.toolchain };
   });
 
+  // REQUIRES → techniques that must be set up before, or run underneath, this one
+  const toRef = (r: unknown) => {
+    const rr = r as { name: string; title: string };
+    return { name: rr.name, title: rr.title ?? "" };
+  };
+  const requiresRows = await f.roQuery(
+    `MATCH (t:Technique {name: $name})-[:REQUIRES]->(p:Technique)
+     RETURN p.name AS name, p.title AS title ORDER BY p.name`,
+    { name }
+  );
+  const requires = (requiresRows.data ?? []).map(toRef);
+
+  // REQUIRES (reverse) → techniques that presuppose this one
+  const requiredByRows = await f.roQuery(
+    `MATCH (t:Technique {name: $name})<-[:REQUIRES]-(d:Technique)
+     RETURN d.name AS name, d.title AS title ORDER BY d.name`,
+    { name }
+  );
+  const required_by = (requiredByRows.data ?? []).map(toRef);
+
+  // MITIGATED_BY (reverse) → pitfalls whose Fix is this technique
+  const mitigatesRows = await f.roQuery(
+    `MATCH (t:Technique {name: $name})<-[:MITIGATED_BY]-(p:Pitfall)
+     RETURN p.name AS name, p.title AS title, p.severity AS severity ORDER BY p.name`,
+    { name }
+  );
+  const mitigates = (mitigatesRows.data ?? []).map((r) => {
+    const pr = r as { name: string; title: string; severity: string };
+    return { name: pr.name, title: pr.title ?? "", severity: pr.severity ?? "" };
+  });
+
   // Documentation chunks from Qdrant
   const queryStr = `${name} ${row.title ?? ""}`.trim();
   const vec = await embed(queryStr);
@@ -962,6 +996,9 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     uses_registers,
     uses_kernal,
     recipes,
+    requires,
+    required_by,
+    mitigates,
     documentation,
   };
 
@@ -976,6 +1013,15 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   }
   if (uses_kernal.length > 0) {
     out += `**Uses KERNAL:** ${uses_kernal.map((k) => k.name).join(", ")}\n`;
+  }
+  if (requires.length > 0) {
+    out += `**Requires:** ${requires.map((r) => r.name).join(", ")}\n`;
+  }
+  if (required_by.length > 0) {
+    out += `**Required by:** ${required_by.map((r) => r.name).join(", ")}\n`;
+  }
+  if (mitigates.length > 0) {
+    out += `**Mitigates:** ${mitigates.map((m) => `${m.name} (${m.severity})`).join(", ")}\n`;
   }
   if (recipes.length > 0) {
     out += `\n## Recipes\n\n`;
@@ -999,6 +1045,7 @@ export async function techniquesFor(filter: {
   region?: string;
   register?: string;
   recipe?: string;
+  requires?: string;
 }): Promise<TechniquesForResult> {
   const f = await getFalkor();
   const a = getAnalytics();
@@ -1010,6 +1057,14 @@ export async function techniquesFor(filter: {
   if (filter.chip) {
     cypher += ` -[:BELONGS_TO]-> (ch:Chip {name: $chip})`;
     params.chip = filter.chip;
+  }
+  if (filter.requires) {
+    // "What builds on X": techniques whose REQUIRES chain reaches X, directly
+    // or through other techniques (ifli_image -> fli_image -> stable_raster_irq),
+    // up to twelve edges deep (the longest authored chain is two). Variants
+    // are not unified: double_irq has no edge to stable_raster_irq.
+    cypher += ` , (t)-[:REQUIRES*1..12]->(req:Technique {name: $requires})`;
+    params.requires = filter.requires;
   }
   if (filter.region) {
     cypher += ` , (t)-[:REQUIRES_REGION]->(reg:Region {name: $region})`;
@@ -1067,9 +1122,61 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   const f = await getFalkor();
   const a = getAnalytics();
 
+  // --- REQUIRES closure --------------------------------------------------
+  // A technique's prerequisites (**Requires:** in CONVENTIONS-techniques.md)
+  // take part in the check without being named: text_zoom presupposes
+  // stable_raster_irq, so the stable IRQ's demands are in play whenever
+  // text_zoom is. impliedBy maps each technique reached through REQUIRES to
+  // the input techniques whose chain reaches it; chainOf keeps one such chain
+  // per (input, member) for the rationale text. The walk is a plain BFS over
+  // direct edges — ingest refuses cycles, and the visited set guards anyway.
+  const inputSet = new Set(techniques);
+  const impliedBy = new Map<string, Set<string>>();
+  const chainOf = new Map<string, string[]>();
+  const requiresCache = new Map<string, string[]>();
+  const requiresOf = async (name: string): Promise<string[]> => {
+    let r = requiresCache.get(name);
+    if (r === undefined) {
+      const rows = await f.roQuery(
+        `MATCH (t:Technique {name: $name})-[:REQUIRES]->(p:Technique)
+         RETURN p.name AS name ORDER BY p.name`,
+        { name }
+      );
+      r = (rows.data ?? []).map((row) => (row as { name: string }).name).filter(Boolean);
+      requiresCache.set(name, r);
+    }
+    return r;
+  };
+  for (const input of techniques) {
+    const visited = new Set<string>([input]);
+    const queue: Array<{ name: string; chain: string[] }> = [{ name: input, chain: [input] }];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const p of await requiresOf(cur.name)) {
+        if (visited.has(p)) continue;
+        visited.add(p);
+        const chain = [...cur.chain, p];
+        if (!impliedBy.has(p)) impliedBy.set(p, new Set());
+        impliedBy.get(p)!.add(input);
+        chainOf.set(`${input}|${p}`, chain);
+        queue.push({ name: p, chain });
+      }
+    }
+  }
+  // Techniques that entered the check only through a REQUIRES chain.
+  const closureOnly = [...impliedBy.keys()].filter((n) => !inputSet.has(n)).sort();
+  const allNames = [...techniques, ...closureOnly];
+  // closure(x): everything x's REQUIRES chain reaches, inputs included.
+  const closureOf = (x: string): string[] => allNames.filter((n) => n !== x && (impliedBy.get(n)?.has(x) ?? false));
+  const describeChain = (input: string, member: string): string => {
+    const chain = chainOf.get(`${input}|${member}`) ?? [input, member];
+    const middle = chain.slice(1, -1);
+    return `${input} requires ${member}${middle.length > 0 ? ` (via ${middle.join(" → ")})` : ""}`;
+  };
+
   // Resolve each technique to its region requirement
   const regionMap = new Map<string, string | null>();
-  for (const tname of techniques) {
+  for (const tname of allNames) {
     const rr = await f.roQuery(
       `MATCH (t:Technique {name: $name})
        OPTIONAL MATCH (t)-[:REQUIRES_REGION]->(reg:Region)
@@ -1088,7 +1195,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // instead of passing as compatible.
   type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[] };
   const facts = new Map<string, Facts>();
-  for (const tname of techniques) {
+  for (const tname of allNames) {
     const rr = await f.roQuery(
       `MATCH (t:Technique {name: $name})
        OPTIONAL MATCH (t)-[:DEMANDS]->(res:Resource)
@@ -1108,72 +1215,84 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     });
   }
 
-  // Hard rules over DEMANDS. Each is symmetric; `has` tests one side.
-  const hard = (
-    a_name: string, b_name: string, kind: CompatibilityCheckOutput["conflicts"][number]["kind"],
-    shared: string[], rationale: string, resolution: string,
-  ) => conflicts.push({ a: a_name, b: b_name, kind, severity: "hard", shared, rationale, resolution });
+  // Hard rules over DEMANDS and region, evaluated for one pair of technique
+  // names. Each rule is symmetric; `has` tests one side. Returned rather than
+  // pushed so the same rules serve the input pairs and the REQUIRES closure.
+  type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
+  type HardHit = { kind: ConflictKind; shared: string[]; rationale: string; resolution: string };
+  const hardRules = (a_name: string, b_name: string): HardHit[] => {
+    const hits: HardHit[] = [];
+    const A = facts.get(a_name)!;
+    const B = facts.get(b_name)!;
+    const hard = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) =>
+      hits.push({ kind, shared, rationale, resolution });
 
-  // Check each pair
+    // Region mismatch
+    const aRegion = regionMap.get(a_name);
+    const bRegion = regionMap.get(b_name);
+    if (aRegion && bRegion && aRegion !== bRegion) {
+      hard("region_mismatch", [aRegion, bRegion],
+        `${a_name} requires ${aRegion} but ${b_name} requires ${bRegion}.`,
+        `Detect the machine at start and ship both variants, or drop one.`);
+    }
+
+    // Both need every CPU cycle on their lines.
+    if (A.demands.has("cpu_every_line") && B.demands.has("cpu_every_line")) {
+      hard("cpu_exclusive", ["cpu_every_line"],
+        `Both need every CPU cycle on every raster line they cover; they cannot share a raster line.`,
+        `Give each its own band of lines and switch between them in the border.`);
+    }
+
+    // One needs every CPU cycle; the other interrupts mid-frame.
+    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+      if (!X.demands.has("cpu_every_line")) continue;
+      if (Y.demands.has("midframe_raster_irqs")) {
+        hard("cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
+          `${xn} needs every CPU cycle on its lines; a raster interrupt from ${yn} inside that region breaks its cycle count.`,
+          `Keep ${yn}'s interrupts on lines outside ${xn}'s region (the borders, or a separate band).`);
+      }
+      if (Y.demands.has("continuous_interrupts")) {
+        hard("cpu_vs_irq", ["cpu_every_line", "continuous_interrupts"],
+          `${xn} needs every CPU cycle on its lines; ${yn} takes interrupts every few raster lines throughout the frame.`,
+          `Pause ${yn} while ${xn}'s region is being drawn, or do not combine them.`);
+      }
+      if (Y.demands.has("changes_sprite_set") && !X.demands.has("constant_sprite_set")) {
+        hard("cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
+          `${yn} rewrites sprite registers from interrupts during the frame; inside ${xn}'s region that breaks its cycle count.`,
+          `Multiplex only outside ${xn}'s region.`);
+      }
+    }
+
+    // One needs the same sprites active on every line; the other changes them.
+    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+      if (X.demands.has("constant_sprite_set") && Y.demands.has("changes_sprite_set")) {
+        hard("sprite_set", ["constant_sprite_set", "changes_sprite_set"],
+          `${xn}'s per-line timing depends on the same sprites being active on every line of its region; ${yn} changes the active set during the frame.`,
+          `Multiplex only outside ${xn}'s region, or keep the sprite set fixed while ${xn}'s lines are drawn.`);
+      }
+    }
+
+    // One runs with the KERNAL ROM out; the other calls KERNAL routines.
+    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+      if (X.demands.has("kernal_rom_out") && Y.kernal.length > 0) {
+        hard("kernal_banked_out", Y.kernal,
+          `${xn} runs with the KERNAL ROM banked out; ${yn} calls KERNAL routine(s) ${Y.kernal.join(", ")}, which are not there.`,
+          `Bank the KERNAL in ($01 bit 1) around the calls, or replace them with RAM-resident code.`);
+      }
+    }
+    return hits;
+  };
+
+  // Check each input pair. Named techniques are checked as named, even when
+  // one requires the other: the caller put both on the list, and the
+  // resolution says how to keep them apart.
   for (let i = 0; i < techniques.length; i++) {
     for (let j = i + 1; j < techniques.length; j++) {
       const a_name = techniques[i];
       const b_name = techniques[j];
-      const A = facts.get(a_name)!;
-      const B = facts.get(b_name)!;
 
-      // Region mismatch
-      const aRegion = regionMap.get(a_name);
-      const bRegion = regionMap.get(b_name);
-      if (aRegion && bRegion && aRegion !== bRegion) {
-        hard(a_name, b_name, "region_mismatch", [aRegion, bRegion],
-          `${a_name} requires ${aRegion} but ${b_name} requires ${bRegion}.`,
-          `Detect the machine at start and ship both variants, or drop one.`);
-      }
-
-      // Both need every CPU cycle on their lines.
-      if (A.demands.has("cpu_every_line") && B.demands.has("cpu_every_line")) {
-        hard(a_name, b_name, "cpu_exclusive", ["cpu_every_line"],
-          `Both need every CPU cycle on every raster line they cover; they cannot share a raster line.`,
-          `Give each its own band of lines and switch between them in the border.`);
-      }
-
-      // One needs every CPU cycle; the other interrupts mid-frame.
-      for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
-        if (!X.demands.has("cpu_every_line")) continue;
-        if (Y.demands.has("midframe_raster_irqs")) {
-          hard(xn, yn, "cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
-            `${xn} needs every CPU cycle on its lines; a raster interrupt from ${yn} inside that region breaks its cycle count.`,
-            `Keep ${yn}'s interrupts on lines outside ${xn}'s region (the borders, or a separate band).`);
-        }
-        if (Y.demands.has("continuous_interrupts")) {
-          hard(xn, yn, "cpu_vs_irq", ["cpu_every_line", "continuous_interrupts"],
-            `${xn} needs every CPU cycle on its lines; ${yn} takes interrupts every few raster lines throughout the frame.`,
-            `Pause ${yn} while ${xn}'s region is being drawn, or do not combine them.`);
-        }
-        if (Y.demands.has("changes_sprite_set") && !X.demands.has("constant_sprite_set")) {
-          hard(xn, yn, "cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
-            `${yn} rewrites sprite registers from interrupts during the frame; inside ${xn}'s region that breaks its cycle count.`,
-            `Multiplex only outside ${xn}'s region.`);
-        }
-      }
-
-      // One needs the same sprites active on every line; the other changes them.
-      for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
-        if (X.demands.has("constant_sprite_set") && Y.demands.has("changes_sprite_set")) {
-          hard(xn, yn, "sprite_set", ["constant_sprite_set", "changes_sprite_set"],
-            `${xn}'s per-line timing depends on the same sprites being active on every line of its region; ${yn} changes the active set during the frame.`,
-            `Multiplex only outside ${xn}'s region, or keep the sprite set fixed while ${xn}'s lines are drawn.`);
-        }
-      }
-
-      // One runs with the KERNAL ROM out; the other calls KERNAL routines.
-      for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
-        if (X.demands.has("kernal_rom_out") && Y.kernal.length > 0) {
-          hard(xn, yn, "kernal_banked_out", Y.kernal,
-            `${xn} runs with the KERNAL ROM banked out; ${yn} calls KERNAL routine(s) ${Y.kernal.join(", ")}, which are not there.`,
-            `Bank the KERNAL in ($01 bit 1) around the calls, or replace them with RAM-resident code.`);
-        }
+      for (const h of hardRules(a_name, b_name)) {
+        conflicts.push({ a: a_name, b: b_name, kind: h.kind, severity: "hard", shared: h.shared, rationale: h.rationale, resolution: h.resolution });
       }
 
       // Shared registers (soft)
@@ -1214,6 +1333,78 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     }
   }
 
+  // Prerequisite closure. For each input pair (x, y), the hard rules run
+  // between x's implied techniques and y, between y's and x, and between the
+  // two implied sets. A technique is never reported against something it
+  // says it runs on top of, from either direction: a candidate is dropped
+  // when the other input declared it as its own prerequisite too (the okOn
+  // sets), and when one member of the pair is on the other's own REQUIRES
+  // chain (reaches) — with ifli_image → fli_image → stable_raster_irq and
+  // stable_raster_irq named, fli_image is not turned against the IRQ it
+  // declared. A hit is its own kind, prerequisite_conflict, attributed to
+  // the input techniques with the implied ones in `via`; no technique's
+  // demand set is changed by this. Only the hard rules run here: shared
+  // registers between a prerequisite and a named technique would be noise.
+  const reaches = async (from: string, to: string): Promise<boolean> => {
+    // Every technique in the closure went through requiresOf above, so this
+    // is a walk over the cache.
+    const seen = new Set<string>([from]);
+    const queue = [from];
+    while (queue.length > 0) {
+      for (const p of await requiresOf(queue.shift()!)) {
+        if (p === to) return true;
+        if (!seen.has(p)) {
+          seen.add(p);
+          queue.push(p);
+        }
+      }
+    }
+    return false;
+  };
+  for (let i = 0; i < techniques.length; i++) {
+    for (let j = i + 1; j < techniques.length; j++) {
+      const x = techniques[i];
+      const y = techniques[j];
+      const cx = closureOf(x);
+      const cy = closureOf(y);
+      const okOnX = new Set([x, ...cx]);
+      const okOnY = new Set([y, ...cy]);
+      const candidates: Array<[string, string]> = [];
+      for (const u of cx) if (!okOnY.has(u)) candidates.push([u, y]);
+      for (const v of cy) if (!okOnX.has(v)) candidates.push([x, v]);
+      for (const u of cx) {
+        if (okOnY.has(u)) continue;
+        for (const v of cy) {
+          if (u !== v && !okOnX.has(v)) candidates.push([u, v]);
+        }
+      }
+      for (const [u, v] of candidates) {
+        // Two named techniques are the input loop's business, whichever
+        // chain also reached them.
+        if (inputSet.has(u) && inputSet.has(v)) continue;
+        // One of the pair declared the other as its prerequisite.
+        if ((await reaches(u, v)) || (await reaches(v, u))) continue;
+        const via = [u, v].filter((n) => n !== x && n !== y);
+        const chainText = [
+          u !== x ? describeChain(x, u) : null,
+          v !== y ? describeChain(y, v) : null,
+        ].filter((s): s is string => s !== null).join("; ");
+        for (const h of hardRules(u, v)) {
+          conflicts.push({
+            a: x,
+            b: y,
+            kind: "prerequisite_conflict",
+            severity: "hard",
+            shared: h.shared,
+            rationale: `${chainText}. ${h.rationale}`,
+            resolution: h.resolution,
+            via,
+          });
+        }
+      }
+    }
+  }
+
   const verdict: CompatibilityCheckOutput["verdict"] =
     conflicts.some((c) => c.severity === "hard")
       ? "incompatible"
@@ -1221,7 +1412,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
         ? "warnings"
         : "compatible";
 
-  const data_coverage: CompatibilityCheckOutput["data_coverage"] = techniques.map((t) => {
+  const coverageOf = (t: string): CompatibilityCheckOutput["data_coverage"][number] => {
     const F = facts.get(t)!;
     return {
       technique: t,
@@ -1231,11 +1422,26 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       demands: [...F.demands].sort(),
       known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0),
     };
-  });
+  };
+  const data_coverage: CompatibilityCheckOutput["data_coverage"] = [
+    ...techniques.map(coverageOf),
+    ...closureOnly.map((c) => ({ ...coverageOf(c), implied_by: [...impliedBy.get(c)!].sort() })),
+  ];
 
   // --- Shared infrastructure (info-level, not hard conflicts) ---
 
   const shared_infrastructure: CompatibilityCheckOutput["shared_infrastructure"] = [];
+
+  // Prerequisites the set leans on without naming them. Not a conflict: a
+  // note that the check included them, and that they have to be set up.
+  for (const c of closureOnly) {
+    shared_infrastructure.push({
+      name: c,
+      kind: "missing_prerequisite",
+      via_recipes: [],
+      required_by: [...impliedBy.get(c)!].sort(),
+    });
+  }
 
   // Transitive USES: find Recipes that implement >=2 of the input techniques,
   // then surface any Register/KernalRoutine that Recipe USES.
@@ -1307,11 +1513,17 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
   const structured: CompatibilityCheckOutput = { techniques, conflicts, shared_infrastructure, data_coverage, verdict };
 
-  const unknown = data_coverage.filter((d) => !d.known);
+  // "Not covered" is about the named techniques; implied ones are listed
+  // separately so the silence-vs-clearance sentence keeps its denominator.
+  const unknown = data_coverage.filter((d) => !d.known && d.implied_by === undefined);
+  const unknownImplied = data_coverage.filter((d) => !d.known && d.implied_by !== undefined);
   let out = `# Compatibility: ${techniques.join(" + ")}\n\n`;
   out += `**Verdict:** ${verdict.toUpperCase()}`;
   if (verdict === "incompatible") out += ` — not as combined; each hard conflict below says how to separate them.`;
   out += `\n\n`;
+  if (closureOnly.length > 0) {
+    out += `Checked with ${closureOnly.length} implied prerequisite(s): ${closureOnly.join(", ")}.\n\n`;
+  }
   if (conflicts.length === 0) {
     out += unknown.length === techniques.length
       ? `No conflicts detected, but the graph holds no register, KERNAL or resource data for any of these techniques, so this is silence, not a clearance.\n`
@@ -1319,18 +1531,22 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   } else {
     for (const c of conflicts) {
       out += `## ${c.kind} (${c.severity}): ${c.a} × ${c.b}\n`;
+      if (c.via && c.via.length > 0) out += `**Via prerequisite(s):** ${c.via.join(", ")}\n`;
       out += `**Shared:** ${c.shared.join(", ")}\n`;
       out += `${c.rationale}\n`;
       if (c.resolution) out += `**Resolution:** ${c.resolution}\n`;
       out += `\n`;
     }
   }
-  if (unknown.length > 0) {
+  if (unknown.length > 0 || unknownImplied.length > 0) {
     out += `\n## Not covered\n`;
     for (const d of unknown) {
       out += d.found
         ? `- **${d.technique}**: the graph has no registers, KERNAL routines or demands for it; the verdict says nothing about it.\n`
         : `- **${d.technique}**: no such technique in the graph (check the name with c64_techniques_for).\n`;
+    }
+    for (const d of unknownImplied) {
+      out += `- **${d.technique}** (prerequisite of ${(d.implied_by ?? []).join(", ")}): the graph has no registers, KERNAL routines or demands for it.\n`;
     }
   }
   if (shared_infrastructure.length > 0) {
@@ -1338,6 +1554,8 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     for (const s of shared_infrastructure) {
       if (s.kind === "discipline") {
         out += `- **${s.name}**: Multiple raster-discipline techniques present. Verify IRQ stack ordering and timing budget.\n`;
+      } else if (s.kind === "missing_prerequisite") {
+        out += `- **${s.name}** (prerequisite, not in the set): required by ${(s.required_by ?? []).join(", ")}; included in the check as implied. Set it up first.\n`;
       } else {
         out += `- **${s.name}** (${s.kind}) shared via recipe(s): ${s.via_recipes.join(", ")}\n`;
       }

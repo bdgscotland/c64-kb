@@ -34,6 +34,19 @@ is a node that never exists.
   `badline_free_region`, `midframe_raster_irqs`, `changes_sprite_set`,
   `continuous_interrupts`, `kernal_rom_out`). Only add one the text
   supports; these decide `c64_check_compatibility`'s hard conflicts.
+- `**Requires:**` (techniques) — snake_case names of existing Technique
+  H2s this one is set up on top of; one REQUIRES edge each, Technique to
+  Technique. Only what the entry's own text supports: not a "see also",
+  and a variant is not a prerequisite (`double_irq` and `stable_raster_irq`
+  list neither). A line that would close a cycle is refused; a name with
+  no Technique node is warned about and counted. These feed
+  `c64_check_compatibility`'s prerequisite closure and the `requires`
+  filter of `c64_techniques_for`.
+- `**Mitigated by techniques:**` (pitfalls) — the existing Technique(s)
+  whose application is the Fix; one MITIGATED_BY edge each, Pitfall to
+  Technique. Never a register or KERNAL routine; may repeat a Triggered-by
+  name when a naive form causes and a correct form cures, said so in
+  Mechanism. Misses are warned about and counted.
 - `**Triggered by registers/kernal/techniques:**` (pitfalls) and
   `**Caused by …:**` (failure patterns) — every name must be an existing
   node; ingest warns and counts each one that is not.

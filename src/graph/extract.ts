@@ -30,9 +30,11 @@ export type GraphEntity =
   | { type: "technique_uses_kernal"; technique: string; kernal: string }
   | { type: "technique_requires_region"; technique: string; region: string }
   | { type: "technique_belongs_to"; technique: string; chip: string }
+  | { type: "technique_requires"; technique: string; requires: string }
   | { type: "pitfall"; name: string; title: string; severity: string; region: string; category: string }
   | { type: "crash_pattern"; symptom: string; description: string; likely_causes: string[]; diagnosis_steps: string }
   | { type: "triggered_by"; pitfall: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
+  | { type: "mitigated_by"; pitfall: string; target: string }
   | { type: "caused_by"; symptom: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" };
 
 const DOC_TYPE_MARKER = "<!-- doc-type: hardware-reference -->";
@@ -52,6 +54,12 @@ const PITFALL_REGION_LINE = REGION_LINE;
 const USES_REGISTERS = /^\*\*Uses registers:\*\*\s+(.+)$/;
 const USES_KERNAL = /^\*\*Uses kernal:\*\*\s+(.+)$/;
 const DEMANDS_LINE = /^\*\*Demands:\*\*\s+(.+)$/;
+// **Requires:** names other Technique H2s that must be set up before, or run
+// underneath, this one (docs/CONVENTIONS-techniques.md). Each word must be a
+// snake_case technique name; whether it names an existing node is settled at
+// link time, where a miss is warned about and counted.
+const REQUIRES_LINE = /^\*\*Requires:\*\*\s+(.+)$/;
+const TECHNIQUE_NAME = /^[a-z][a-z0-9_]*$/;
 
 // The fixed vocabulary for **Demands:** (docs/CONVENTIONS-techniques.md).
 // A word outside it is a doc error and is reported, not ingested.
@@ -75,6 +83,9 @@ const SEVERITY_LINE = /^\*\*Severity:\*\*\s+(critical|high|medium|low)\s*$/im;
 const TRIGGERED_REGS = /^\*\*Triggered by registers:\*\*\s+(.+)$/m;
 const TRIGGERED_KERNAL = /^\*\*Triggered by kernal:\*\*\s+(.+)$/m;
 const TRIGGERED_TECHS = /^\*\*Triggered by techniques:\*\*\s+(.+)$/m;
+// **Mitigated by techniques:** names the Technique(s) whose application is the
+// Fix section's remedy (docs/CONVENTIONS-pitfalls.md). Techniques only.
+const MITIGATED_TECHS = /^\*\*Mitigated by techniques:\*\*\s+(.+)$/m;
 const LIKELY_CAUSES = /^\*\*Likely causes:\*\*\s+(.+)$/m;
 const DIAGNOSIS_STEPS = /^\*\*Diagnosis steps:\*\*\s+(.+)$/m;
 const CAUSED_REGS = /^\*\*Caused by registers:\*\*\s+(.+)$/m;
@@ -383,7 +394,7 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
     // Split body at H2 boundaries (each H2 = one Technique).
     const lines = rest.split("\n");
     let currentTech: { name: string; title: string; category: string; complexity?: string; chip?: string } | null = null;
-    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[] } = {};
+    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[]; requires?: string[] } = {};
 
     const flush = () => {
       if (!currentTech) return;
@@ -397,6 +408,20 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
           continue;
         }
         entities.push({ type: "technique_demands", technique: currentTech.name, resource: d, description: DEMAND_VOCABULARY[d] });
+      }
+      const seenRequires = new Set<string>();
+      for (const r of pendingMeta.requires ?? []) {
+        if (!TECHNIQUE_NAME.test(r)) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} requires "${r}", which is not a snake_case technique name — not ingested (see CONVENTIONS-techniques.md)`);
+          continue;
+        }
+        if (r === currentTech.name) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} lists itself under **Requires:** — not ingested`);
+          continue;
+        }
+        if (seenRequires.has(r)) continue;
+        seenRequires.add(r);
+        entities.push({ type: "technique_requires", technique: currentTech.name, requires: r });
       }
       if (pendingMeta.region && pendingMeta.region !== "both") {
         entities.push({ type: "technique_requires_region", technique: currentTech.name, region: pendingMeta.region });
@@ -459,6 +484,13 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
         pendingMeta.demands = isEmptySentinel(dm[1])
           ? []
           : dm[1].split(",").map((s) => s.trim()).filter((s) => s !== "" && !isEmptySentinel(s));
+        continue;
+      }
+      const rq = line.match(REQUIRES_LINE);
+      if (rq) {
+        pendingMeta.requires = isEmptySentinel(rq[1])
+          ? []
+          : rq[1].split(",").map((s) => s.trim().replace(/`/g, "")).filter((s) => s !== "" && !isEmptySentinel(s));
       }
     }
     flush();
@@ -501,6 +533,19 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
       if (techs) {
         for (const t of techs.split(",").map(s => s.trim()).filter(Boolean)) {
           entities.push({ type: "triggered_by", pitfall: name, target: t, targetKind: "Technique" });
+        }
+      }
+      const mitigators = matchField(section.body, MITIGATED_TECHS);
+      if (mitigators) {
+        const seen = new Set<string>();
+        for (const t of mitigators.split(",").map(s => s.trim().replace(/`/g, "")).filter(Boolean)) {
+          if (!TECHNIQUE_NAME.test(t)) {
+            console.warn(`[extract] ${sourcePath}: pitfall ${name} is mitigated by "${t}", which is not a snake_case technique name — not ingested (see CONVENTIONS-pitfalls.md)`);
+            continue;
+          }
+          if (seen.has(t)) continue;
+          seen.add(t);
+          entities.push({ type: "mitigated_by", pitfall: name, target: t });
         }
       }
     }

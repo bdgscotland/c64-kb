@@ -284,6 +284,7 @@ multiplex_done_nmos:
 **Severity:** high
 **Region:** both
 **Triggered by techniques:** jump_table_dispatch
+**Mitigated by techniques:** jump_table_dispatch
 
 ### Symptom
 
@@ -323,6 +324,11 @@ page-aligned table at $xx00 and 2-byte strides, all slots are at even offsets
 from $xx00 and none land at $xxFF. The only dangerous placement is when the
 assembler places the table at an offset that puts any entry's low-byte at an
 address ending in $FF.
+
+`jump_table_dispatch` is on both metadata lines above for that reason: the
+bug arises in the naive form of the technique, a `JMP ($abs)` through an
+unaligned table, and the technique's store-then-jump form (self-modified
+`JMP $abs`, or a page-aligned table) is what sidesteps it.
 
 **CMOS note:** The 65C02 corrects this bug — it always fetches the high byte
 from `$addr + 1` with correct carry. Code targeting both 6510 and 65C02 must
