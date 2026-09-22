@@ -5,7 +5,7 @@ output_format: PRG
 region: both
 techniques: [sprite_multiplex_24, sprite_multiplex_8]
 file_formats: [PRG]
-uses_registers: [D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01C, D01D, D027]
+uses_registers: [D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01C, D01D, D020, D021, D027]
 uses_kernal: []
 ---
 
@@ -134,7 +134,9 @@ start:
 
 // ---------------------------------------------------------------------------
 // WriteBand(n): copy logical sprites 8n..8n+7 into the eight hardware slots.
-// 8 x (Y, X low, pointer, colour) plus the assembled $D010 byte: 176 cycles.
+// 8 x (Y, X low, pointer, colour) plus the assembled $D010 byte: 374 cycles
+// (8 x 32 for the copies, 2 + 8 x 14 + 4 for the $D010 byte; an earlier
+// version of this comment said 176).
 // ---------------------------------------------------------------------------
 .macro WriteBand(n) {
     .for (var i = 0; i < 8; i++) {
@@ -251,22 +253,30 @@ Screenshot from the VICE run this page describes: `screenshots/sprite-multiplex-
 ### The reuse rule
 
 The VIC-II compares each sprite's Y register with the raster line at cycle
-55 of every line and turns that sprite's DMA on when they match. From then
-on it draws 21 lines (42 if Y-expanded) from the pointer and X the
-registers held when each line was drawn, and turns the DMA off. So a slot
+55 of every line (VICE's PAL cycle table checks the switch-on in cycles
+55–57; see `docs/techniques/sprite.md`) and turns that sprite's DMA on when
+they match. The first drawn row is the line after the match, so a sprite at
+Y occupies lines Y+1 to Y+21 (measured in VICE 3.10 on PAL and NTSC: Y=100
+draws lines 101–121). From then on it draws 21 lines (42 if Y-expanded) from
+the pointer and X the registers held when each line was drawn, and turns
+the DMA off. So a slot
 whose sprite has finished — its Y plus 21 has passed — can be given a new
 Y, X, pointer and colour, and will draw a second sprite lower down the same
 frame. Eight slots, three passes, twenty-four sprites.
 
 The rule that makes it safe is: rewrite a slot only after its current
 sprite's last line and before its next sprite's first line. Here band 0's
-sprites live in lines 52-89 (Y 60 ± 8, plus 21), band 1's in 116-153,
-band 2's in 180-217. Band 1's IRQ fires at line 99, after band 0's lowest
-possible last line (89) and 17 lines before band 1's highest possible first
-line (116); band 2's at 163; band 0's at 227, after band 2 and long before
-the next frame's band 0. Each IRQ has 17 lines, over a thousand cycles, to
-do its 176 cycles of register writes plus the interrupt overhead, so it
-does not need a stable entry.
+sprites live in lines 53-89 (Y 60 ± 8, drawn from Y+1 to Y+21), band 1's
+in 117-153, band 2's in 181-217 (an earlier version of this page counted
+each band from Y rather than Y+1: 52-89, 116-153, 180-217). Band 1's IRQ
+fires at line 99, after band 0's lowest possible last line (89) and 17
+lines before band 1's highest possible Y (116, first drawn line 117);
+band 2's at 163; band 0's at 227, after band 2 and long before the next
+frame's band 0. Each IRQ has 17 lines — about 940 cycles once the three
+badlines in the gap (with YSCROLL=3, lines 99, 107 and 115 for band 1)
+have taken their 43 each, not the "over a thousand" an earlier version
+said — to do its 374 cycles of register writes plus the interrupt
+overhead, so it does not need a stable entry.
 
 ### Why no sort
 
@@ -303,6 +313,9 @@ every handler; unacknowledged, the VIC re-raises the interrupt on RTI.
 ### Region
 
 `region: both`. Line numbers up to 227 are inside both PAL's 312 and
-NTSC's 263 lines, and nothing is cycle-counted. On NTSC the bottom band's
-sprites (to line 217) are close to the bottom border at about line 235 but
-still inside it.
+NTSC's 263 lines, and nothing is cycle-counted. The bottom border opens at
+line 251 in 25-row mode on PAL and NTSC alike (measured in VICE 3.10 on
+both models; `docs/hardware/pal-ntsc-reference.md` gives the same line), so
+the bottom band's sprites (to line 217) sit well inside the display area on
+either. An earlier version of this page put the NTSC bottom border at
+"about line 235", which was wrong.

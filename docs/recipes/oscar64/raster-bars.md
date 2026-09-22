@@ -31,7 +31,8 @@ compose into a full multi-split raster effect.
 
 // 16 C64 palette entries in rainbow order. Names match Oscar64's c64/vic.h
 // enum exactly — note PURPLE (not VIOLET) and DARK_GREY (no plain GREY).
-// Index 16 duplicates index 0 for clean modulo wrap.
+// Index 16 duplicates index 0; the animation loop indexes with `& 15`, so
+// the sentinel is never read and is kept only for a plain-loop variant.
 static const byte rainbow[17] = {
     VCOL_BLACK, VCOL_BROWN, VCOL_RED, VCOL_ORANGE,
     VCOL_YELLOW, VCOL_LT_GREEN, VCOL_GREEN, VCOL_CYAN,
@@ -72,11 +73,13 @@ int main(void)
     }
 
     // The reset slot fires after the last bar and sets both colors to black,
-    // so the area between the last bar and the frame bottom is clean.
+    // so the area between the last bar and the frame bottom is clean. Same
+    // "one line early" rule as the bars: without the -1 the last bar is 14
+    // lines tall, which is what the earlier version of this recipe drew.
     rirq_build(&reset_slot, 2);
     rirq_write(&reset_slot, 0, &vic.color_border, VCOL_BLACK);
     rirq_write(&reset_slot, 1, &vic.color_back,   VCOL_BLACK);
-    rirq_set(NUM_BARS, FIRST_LINE + NUM_BARS * BAR_HEIGHT, &reset_slot);
+    rirq_set(NUM_BARS, FIRST_LINE + NUM_BARS * BAR_HEIGHT - 1, &reset_slot);
 
     rirq_sort();
     rirq_start();
@@ -131,10 +134,19 @@ Fifteen horizontal color bands fill the display area, each 13 raster lines
 tall, cycling through the C64 16-color palette. The entire stack of bars
 drifts upward smoothly at half the frame rate (one color step every two
 frames). Below the bar stack the border and background are black. The color
-boundaries are straight horizontal lines.
+boundaries are straight horizontal lines, with two exceptions: the bars that
+begin on lines 51 and 155 start on badlines, and on those two lines the
+background write (sometimes the border write too) lands after the display
+window has been drawn, so that one row keeps the previous bar's colour under
+an already-changed border. See "Badline interaction" below. The program does
+not clear the screen, so the BASIC start-up text stays visible in light blue
+on top of the bars.
 
 Verified with Oscar64 (build 2026-05-19) and VICE x64sc after the slot-count
-fix described below.
+fix described below. Measured on the PAL render of 2026-09-22: fifteen bands
+on lines 51-245, each 13 lines (the earlier listing set the reset slot one
+line late and drew the last bar 14 lines tall, 233-246), black from line 246
+down, line 155 showing a cyan border over a still-green display row.
 
 On PAL (50 Hz) the palette completes one full cycle in 32 frames (0.64 seconds).
 On NTSC (60 Hz) the same 32-frame cycle completes in 0.53 seconds, running
@@ -146,9 +158,13 @@ slightly faster.
 
 This recipe is a direct extension of `stable-raster-irq.md`. Every slot in the
 `bars` array is entered on the line above its target and spins on `CMP $D012`
-until the target line begins, so its two writes complete by about cycle 12,
-in the horizontal blank; see that recipe for what the library does and does
-not guarantee. The `rirq_init(true)` call disables CIA timer interrupts and
+until the target line begins. The loop exits within the first 1-7 cycles of
+the target line, the first write (`STY $D020`) completes by about cycle 12
+and the second (`STX $D021`) by about cycle 16, per the cycle comment above
+`rirq_build` in `rasterirq.c` and the opcodes it emits; both are before the display window opens, and
+the rendered edges are straight on every non-badline boundary. (This text
+used to say both writes complete by about cycle 12; that is only the first
+one.) See that recipe for what the library does and does not guarantee. The `rirq_init(true)` call disables CIA timer interrupts and
 installs the dispatcher through the KERNAL vector. Without the polling loop,
 each bar boundary would show a step two-thirds of the way across its first
 line.
@@ -172,11 +188,13 @@ size, pass `-dNUM_IRQS=17` on the command line so every unit agrees, or stay
 within 16.
 
 Each `RIRQCode` holds two write slots (border and background). Two writes per
-slot consume 8 cycles (two `STA abs` instructions at 4 cycles each). With
-`BAR_HEIGHT = 12`, there are 12 raster lines between each consecutive pair of
-slots, giving the dispatcher ample time to exit one IRQ and enter the next. The
-minimum safe gap between two slots is approximately 4-5 raster lines on PAL,
-accounting for IRQ entry/exit overhead.
+slot consume 8 cycles (`STY abs` then `STX abs`, 4 cycles each). With
+`BAR_HEIGHT = 13`, there are 13 raster lines between each consecutive pair of
+slots (this section said 12 while the listing said 13; 13 is what the code
+builds and what the render shows), giving the dispatcher ample time to exit
+one IRQ and enter the next. The minimum safe gap between two slots is
+approximately 4-5 raster lines on PAL, accounting for IRQ entry/exit
+overhead; that figure is an estimate and was not measured here.
 
 ### `rirq_data` for animation without rebuilding
 
@@ -201,11 +219,21 @@ $D021 would change the display area interior without touching the border.
 ### Badline interaction
 
 Badlines occur every 8 raster lines on PAL (when the low 3 bits of the raster
-counter match YSCROLL, default 3). On a badline, the VIC-II steals 40 CPU
-cycles from the CPU. If a raster IRQ slot fires on a badline, those 40 stolen
-cycles delay the handler's write by up to 40 cycles — potentially placing the
-border color write late enough to bleed onto the next line. The standard defense
-is to target splits at non-badline rows. With `FIRST_LINE = 51` and
-`BAR_HEIGHT = 12`, most bar boundaries land on non-badlines naturally; the
-visual result is clean. For pixel-perfect bar boundaries on any line, use the
-cycle-exact double-IRQ technique described in `docs/techniques/raster.md`.
+counter match YSCROLL, default 3). On a badline the VIC-II takes the bus for
+cycles 15-54 and pulls BA low on cycle 12, so the CPU loses 40-43 cycles;
+plan on 43 (this text said a flat 40; see `docs/pitfalls/raster-and-badline.md`).
+For this recipe the poll loop exits in cycles 1-7 of the target line and the
+6510 is halted at its first read after BA has been low for three cycles, so
+a write that has not completed by cycle 14 waits until cycle 55 or later —
+after the display window, and in the right border. The standard defense is
+to target splits at non-badline rows. With `FIRST_LINE = 51` and
+`BAR_HEIGHT = 13` that is not fully possible: 13 is coprime to 8, so the
+fifteen boundaries cover every residue and two of them are badlines whatever
+`FIRST_LINE` is chosen — with 51, the bars starting on lines 51 and 155
+(this text used to say
+`BAR_HEIGHT = 12` and "the visual result is clean"; the render shows the
+background write landing late on both lines, and on line 51 the border
+write too in one of two runs). A bar height that is a multiple of 8 keeps
+every boundary on one residue so a single `FIRST_LINE` clears them all. For
+pixel-perfect bar boundaries on any line, use the cycle-exact double-IRQ
+technique described in `docs/techniques/raster.md`.

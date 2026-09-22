@@ -38,8 +38,10 @@ middle of the screen and moves left.
 // character is placed on the row the sine table gives for that column.
 //
 // Region: both. Nothing here is cycle-exact; the redraw runs in the
-// vertical blank and takes about 4,500 cycles of the 7,000 available
-// between raster line 250 and the top of the next frame on PAL.
+// vertical blank and takes about 4,650 cycles in an ordinary frame and
+// about 5,300 in a frame that also shifts the buffer (measured with a
+// CIA timer), of the roughly 7,100 available between raster line 250
+// and the first badline of the next frame on PAL.
 
 .const BAND_TOP   = 8        // first screen row of the band
 .const CENTER     = 12       // row the wave is centred on
@@ -221,11 +223,14 @@ java -jar KickAss.jar sine-scroller.asm -o sine-scroller.prg
 ## Expected output
 
 A blue screen with the message in white, one character per column, each
-column on a row between 8 and 16 so the text forms a sine wave about 1.7
-periods wide. The text moves left one pixel per frame (50 px/s PAL,
+column on a row between 8 and 16 so the text forms a sine wave just under
+one period wide (40 columns × STEP 6 = 240 of the 256 table entries; an
+earlier version of this page said "about 1.7 periods", which the picture
+contradicts). The text moves left one pixel per frame (50 px/s PAL,
 60 px/s NTSC) and the wave rolls with it, two table steps per frame. The
-leftmost and rightmost columns are hidden by the 38-column mode, so
-characters enter and leave under the border rather than popping.
+38-column mode covers the left 7 and right 9 pixels of the 40-column
+window, so characters slide out under the left border and in from under
+the right one a pixel at a time rather than popping.
 
 Screenshot from the VICE run this page describes: `screenshots/sine-scroller.png`.
 
@@ -243,10 +248,18 @@ anyway, so shifting the buffer is the whole carry step. This is the
 `soft_scroll_h` and `char_scroll_buffer_h` pair from
 `docs/techniques/scroll.md`.
 
-Bit 3 of $D016 (CSEL) is cleared, giving 38 columns. Columns 0 and 39 are
-still written but fall under the border, so a new character appears fully
-formed as it scrolls in from under the right border instead of appearing at
-XSCROLL=7 with a visible jump.
+Bit 3 of $D016 (CSEL) is cleared, giving 38 columns: the window narrows
+from X 24–343 to X 31–334, 7 pixels off the left and 9 off the right
+(`docs/hardware/vic-ii-reference.md`). All forty columns are still written
+and fetched; what changes is how much of columns 0, 38 and 39 the border
+covers. Measured in VICE x64sc: column 39 is never visible at any XSCROLL;
+column 38 is hidden at XSCROLL=7 and shows 7 pixels at XSCROLL=0; column 0
+is fully visible at XSCROLL=7 and down to its last pixel at XSCROLL=0. So
+as XSCROLL counts down the newest character (written to column 39, moved
+to 38 by the shift) emerges from under the right border a pixel at a time,
+and the oldest slides out under the left one — no character pops in whole
+at XSCROLL=7. An earlier version of this paragraph said columns 0 and 39
+both "fall under the border"; column 0 does not.
 
 ### The wave
 
@@ -266,10 +279,17 @@ about 2,000 cycles.
 
 The interrupt is at line 250, the last visible line on PAL. Everything —
 the shift, the clear and the forty placements — happens between there and
-the next frame's first badline at line 51, roughly 7,000 cycles on PAL and
-6,000 on NTSC, of which this code uses about 4,500. Because all screen
-writes finish before the VIC begins fetching the band, there is no tearing
-without any further raster work. The handler exits through `$EA31` so the
+the next frame's first badline at line 51: 113 lines × 63 = about 7,100
+cycles on PAL, but only 64 lines × 65 = about 4,200 on NTSC (263 lines).
+Measured with a CIA timer in VICE x64sc, the handler body takes 4,648
+cycles in an ordinary frame and 5,312 in a frame that also shifts the
+buffer, so on NTSC it runs some ten to eighteen lines past line 51. That
+does no harm: the only rows it writes are 8–16, whose first badline is at
+line 115, so on both models every screen write finishes long before the
+VIC fetches the band and there is no tearing without any further raster
+work. (An earlier version of this paragraph said "6,000 on NTSC" and
+"about 4,500"; both figures were wrong, and the NTSC one implied a margin
+that does not exist at line 51.) The handler exits through `$EA31` so the
 KERNAL still scans the keyboard and runs the jiffy clock once a frame; CIA1
 is masked so that routine's `$DC0D` read is harmless.
 
@@ -292,4 +312,8 @@ is masked so that routine's `$DC0D` read is harmless.
 ### Region
 
 `region: both`. The mechanism is the same on NTSC; the animation runs 20 %
-faster and the blank is about 1,000 cycles shorter, still ample.
+faster and the blank between line 250 and line 51 is about 2,900 cycles
+shorter (about 4,200 against PAL's 7,100 — an earlier version said "about
+1,000 cycles shorter, still ample"). The handler overruns line 51 on NTSC
+but finishes well before the band's first badline at line 115; run on the
+6567R8 model in VICE x64sc, the wave draws correctly.

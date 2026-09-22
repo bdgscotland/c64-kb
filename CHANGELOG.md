@@ -5,7 +5,40 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 706, schema 20, tools 1.22.1.
+Data 707, schema 20, tools 1.22.1.
+
+**Every recipe, toolchain and runtime page audited against the installed
+tools, and every recipe now has a reproducible screenshot.** The seven
+toolchain and runtime references went through the same auditor, three
+refuters and fixer procedure as the earlier waves: 95 corrections, among
+them x64sc 3.10 options that do not exist, Oscar64 API names and
+signatures checked against the headers on disk, KickAssembler behaviour
+measured on 5.25, the cc65 CPU flag for illegal mnemonics, and the
+binary-monitor claims. The twenty recipe pages went through a lean pass
+instead, one instrument-backed agent per page with no refuter fleet,
+because the maintainer asked for the token spend to come down: 102
+corrections, 60 claims qualified as not measured here. Among the
+corrections: the KERNAL's full interrupt service costs about 190 cycles
+idle and about 1,600 with a key held, not "about a thousand" (raster-bars
+and the pages that quoted it); the FLI entry pad was one cycle late and
+the committed picture showed the symptom on line 52; the side-border
+recipe's sixth sprite had the wrong MSB and sat invisible; the Oscar64
+soft-scroller wrote PETSCII where screen codes were needed and never
+showed its message; the Koala viewer cleared CSEL while enabling
+multicolour and embedded a zero-filled stub, and now draws a computed
+test image; `vspr_init` does not call `rirq_init`, so two recipes ran
+without an IRQ dispatcher; PSID header offsets were shifted by a word;
+the filter-cutoff byte split was backwards; `joy_poll(1)` read port 1
+where port 2 was documented. Then `verify:recipes` re-ran all twenty
+recipes at pinned cycles and every baseline was looked at against its
+page before adoption: nine recipes that had no committed picture have one,
+six unpinned or wrong-path baselines were replaced, and the NTSC playfield
+picture is now taken at the same cycle count as the PAL one. The
+soft-scroller's coarse shift still takes about four frames and tears;
+that is issue #18. Two cross-page debts the agents flagged were closed by
+hand: the raster technique page's KERNAL figure and the stable-raster
+recipe's register list. Clean ingest afterwards: 2,605 chunks from 79
+files, 574 nodes, 1,308 edges, 0 dropped references, no category refused.
 
 **Schema 20: technique categories for game and application foundations,
 and the category set is enforced.** `input`, `logic`, `maths`, `text` and

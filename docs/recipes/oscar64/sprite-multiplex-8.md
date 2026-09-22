@@ -5,7 +5,7 @@ output_format: PRG
 region: both
 techniques: [sprite_multiplex_8]
 file_formats: [PRG]
-uses_registers: [D015, D000, D001, D010, D027, D012, D019, D01A]
+uses_registers: [D015, D000, D001, D010, D027, D012, D019, D01A, D020, D021]
 uses_kernal: []
 ---
 
@@ -18,9 +18,13 @@ uses_kernal: []
 Displays 12 independently moving logical sprites using only the VIC-II's 8
 hardware sprite slots, via `sprites.h` virtual sprite (`vspr_*`) functions.
 The `vspr_*` layer sorts logical sprites by Y position each frame and uses
-`rasterirq.h` slots to reposition hardware sprites mid-screen, multiplexing
-them across two vertical passes. Each hardware sprite is reused once, giving
-12 visible objects at a time. This is the `sprite_multiplex_8` technique from
+`rasterirq.h` slots to reposition hardware sprites mid-screen. Each logical
+sprite beyond the eighth gets its own raster IRQ slot that re-arms one
+hardware sprite as soon as that sprite's first draw has finished, so with 12
+logical sprites four of the eight hardware sprites are reused once and the
+other four are not (an earlier version of this page described "two vertical
+passes" with every hardware sprite reused; the library does not work that
+way). This is the `sprite_multiplex_8` technique from
 `docs/techniques/sprite.md`.
 
 ## Source
@@ -63,9 +67,16 @@ static char spriteset[2048];   // 32 × 64-byte blocks; first 12 used
 
 #pragma data(data)
 
-// --- Sine table for circular motion ---
-// 128 entries covering one full cycle, range -90..+90 (scaled to fit screen).
-static int sintab[128];
+// --- Sine tables for circular motion ---
+// 128 entries covering one full cycle, pre-scaled to the orbit radius so the
+// frame loop is a table lookup. An earlier version kept one -90..+90 table
+// and scaled it in the loop with a 16-bit multiply and divide per axis; that
+// loop measured 23,213-26,694 cycles per frame in VICE, more than a 19,656-
+// cycle PAL frame, so rirq_wait() returned at arbitrary raster lines and
+// vspr_update() rewrote the hardware sprites mid-frame, losing up to half the
+// sprites. The table-only loop below measured 6,292-9,162 cycles.
+static int sinx[128];   // -RADIUS_X..+RADIUS_X
+static int siny[128];   // -RADIUS_Y..+RADIUS_Y
 
 // Number of logical sprites to display.
 #define NUM_SPRITES  12
@@ -81,9 +92,11 @@ static int sintab[128];
 
 int main(void)
 {
-    // --- Initialize sine table ---
-    for (int i = 0; i < 128; i++)
-        sintab[i] = (int)(90.0 * sin(i * 3.14159265 / 64.0));
+    // --- Initialize sine tables (floating point once, at start-up) ---
+    for (int i = 0; i < 128; i++) {
+        sinx[i] = (int)(RADIUS_X * sin(i * 3.14159265 / 64.0));
+        siny[i] = (int)(RADIUS_Y * sin(i * 3.14159265 / 64.0));
+    }
 
     // --- Initialize sprite bitmaps in place ---
     // Paint each block with a distinct simple pattern so sprites are
@@ -105,8 +118,14 @@ int main(void)
     }
 
     // --- Initialize raster IRQ system ---
-    // vspr_init internally calls rirq_init, so do not call rirq_init separately.
-    // It occupies rirq slots 0 through (VSPRITES_MAX/8 - 1) for reuse IRQs.
+    // rirq_init must be called by the program: vspr_init does NOT call it.
+    // Without it the raster IRQ lands in the KERNAL handler, is never
+    // acknowledged, and the main loop hangs in rirq_wait() with only the
+    // first eight sprites on screen (measured in VICE; an earlier version of
+    // this listing omitted the call). true = hook the KERNAL $0314 vector.
+    rirq_init(true);
+    // vspr_init occupies rirq slots 0 through VSPRITES_MAX-8 : one reuse
+    // slot per virtual sprite beyond the eighth, plus a sync slot at line 250.
     vspr_init(Screen);
 
     // --- Configure 12 logical sprites ---
@@ -117,8 +136,8 @@ int main(void)
     for (char i = 0; i < NUM_SPRITES; i++) {
         // Stagger starting phase so sprites spread around the circle.
         char phase = (i * 128) / NUM_SPRITES;
-        int  sx    = CENTER_X + sintab[phase & 127];
-        int  sy    = CENTER_Y + sintab[(phase + 32) & 127];
+        int  sx    = CENTER_X + sinx[phase & 127];
+        int  sy    = CENTER_Y + siny[(phase + 32) & 127];
 
         // Color cycles through the 8 non-black palette entries.
         byte col = (byte)(8 + (i & 7));
@@ -127,9 +146,9 @@ int main(void)
     }
 
     // --- Initial sort and update ---
-    // vspr_sort orders the 12 logical sprites by ascending Y before the
+    // vspr_sort orders the logical sprites by ascending Y before the
     // first frame. vspr_update programs the 8 hardware sprites with the
-    // top 8 by Y, and installs raster IRQ slots for subsequent groups.
+    // top 8 by Y, and arms one reuse IRQ slot per remaining sprite.
     vspr_sort();
     vspr_update();
     rirq_sort();
@@ -148,13 +167,15 @@ int main(void)
         // Advance animation counter.
         frame++;
 
-        // Compute new positions for each logical sprite.
+        // Compute new positions for each logical sprite. Keep this cheap:
+        // everything between one rirq_wait() and the next must fit in a
+        // frame, or the hardware sprites get rewritten mid-screen.
         for (char i = 0; i < NUM_SPRITES; i++) {
             // Each sprite orbits the center with a unique phase offset.
-            // sintab has 128 entries; the frame counter drives the angle.
+            // The tables have 128 entries; the frame counter drives the angle.
             char phase = (char)frame + (char)((i * 128) / NUM_SPRITES);
-            int  nx    = CENTER_X + (int)(RADIUS_X * sintab[phase & 127] / 90);
-            int  ny    = CENTER_Y + (int)(RADIUS_Y * sintab[(phase + 32) & 127] / 90);
+            int  nx    = CENTER_X + sinx[phase & 127];
+            int  ny    = CENTER_Y + siny[(phase + 32) & 127];
             vspr_move(i, nx, ny);
         }
 
@@ -192,12 +213,26 @@ Outputs: `sprite-multiplex-8.prg`, `.map`, `.asm`, `.lbl`.
 
 ## Expected output
 
-Twelve sprites orbit a common center in a circular pattern, each a distinct
-color. Eight are visible at any instant in the top half of the screen; as the
-beam reaches the midpoint, the raster IRQ fires and the hardware sprites are
-repositioned to the four remaining logical sprites in the bottom half. All 12
-are visible simultaneously across the full frame. The motion is smooth at 50
-frames per second (PAL) with no flicker and no sprite-boundary glitches.
+Twelve filled 21×21 diamonds orbit a common center on an 80×60-pixel ellipse
+over the untouched power-on text screen (the listing never clears it, so the
+BASIC banner and `READY.`/`RUN` stay on the top rows). Colours are 8–15 with
+8–11 used twice, so the twelve are not all distinct. All 12 are visible
+simultaneously: the eight topmost by Y sit on the hardware sprites, and each
+of the other four is put on screen by its own reuse IRQ, which fires 23 lines
+below the Y of one of the four topmost sprites and re-arms that hardware
+sprite. The main loop is paced by `rirq_wait()`, one iteration per frame.
+
+Measured in VICE 3.10 (PAL) with the positions held at frame 200: twelve
+221-pixel diamonds at raster lines 92–230, at exactly the Y values the
+arithmetic gives (the first drawn row is at raster line Y+1). On the orbit
+used here the ninth-lowest sprite is always at least ~60 lines below the
+lowest, well past the 23-line reuse point, so no reused slot is asked to
+draw before its first sprite has finished (arithmetic, not a flicker sweep).
+
+An earlier version of this page said eight sprites sat "in the top half" and
+one IRQ "at the midpoint" moved them to the bottom half; there is no single
+midpoint IRQ, and the listing as then published never called `rirq_init()`,
+which left it frozen with eight sprites at their starting positions.
 
 ## Why this works
 
@@ -209,40 +244,66 @@ passed), it renders for 21 lines even if the Y register changes. This gives the
 CPU a 21-line safe window per sprite to reprogram Y and the image pointer before
 the chip needs those values for the next activation.
 
-The multiplexer exploits this window. After sorting 12 logical sprites by Y, the
-top 8 are written to hardware at frame start. A raster IRQ fires just before
-logical sprites 9-12 are reached; the handler reprograms the hardware slots that
-just finished their previous 21-row draw.
+The multiplexer exploits this window. After sorting the logical sprites by Y,
+the top 8 are written to hardware at frame start. For each sorted sprite `8+n`
+a raster IRQ slot `n` is moved to `Y(sorted sprite n) + 23`, the line after
+hardware sprite `n & 7` has finished its first 21-row draw; that handler writes
+the new Y, X, colour, image pointer and MSB-X mask for that one hardware sprite
+(read from `sprites.c`: `rirq_move(ti, spriteYPos[ti + 1] + 23)`). An earlier
+version of this page said one IRQ fired "just before logical sprites 9-12";
+there is one per reused sprite, keyed to the finished sprite, not the next one.
 
 ### `vspr_init` and the rirq slot reservation
 
-`vspr_init(Screen)` calls `rirq_init(true)` internally and reserves
-`VSPRITES_MAX / 8 - 1` rirq slots for reuse IRQs. With the default
-`VSPRITES_MAX = 16`, one slot is reserved: it fires before the 9th-sorted
-sprite's Y position and reprograms the hardware slots that just finished their
-first-pass draw. To display more than 16 logical sprites, rebuild with
-`-dVSPRITES_MAX=24` (or higher); each additional group of 8 needs one more
-rirq slot and a 21-line gap between consecutive sprite Y positions.
+`vspr_init(Screen)` does **not** call `rirq_init()`; the program must, before
+`vspr_init`, as Oscar64's own `samples/sprites/multiplexer.c` does. It sets
+`$D015 = $FF`, clears both expand registers, and reserves `VSPRITES_MAX - 8`
+rirq slots for reuse IRQs plus one empty sync slot at line 250 — slots 0–8
+with the default `VSPRITES_MAX = 16` (read from `sprites.c`; the header
+comment says the same). With 12 logical sprites, `vspr_update` arms slots 0–3
+and clears 4–7 every frame. An earlier version of this page said `vspr_init`
+called `rirq_init(true)` and reserved `VSPRITES_MAX / 8 - 1` slots ("one
+slot"); both were wrong, and the missing `rirq_init` call left the listing
+frozen. To display more than 16 logical sprites, rebuild with
+`-dVSPRITES_MAX=24` (or higher) **and** raise `-dNUM_IRQS=` so that
+`VSPRITES_MAX - 7` slots fit (the default `NUM_IRQS` is 16; Oscar64's
+`sprmux32` sample builds with `-dVSPRITES_MAX=32 -dNUM_IRQS=28`). Each
+additional logical sprite, not each group of eight, costs one rirq slot, and
+its Y must be at least 23 lines plus a few lines of IRQ latency below the
+sprite whose hardware slot it reuses.
 
 ### `vspr_sort`, `vspr_update`, `rirq_sort` — the per-frame triple
 
 These three calls form the per-frame multiplexer ritual:
 
 1. **`vspr_sort()`** — insertion sort on the logical sprite array by ascending Y.
-   Cache-friendly on nearly-sorted lists; approximately 20-40 cycles for 12 sprites.
+   It always walks all `VSPRITES_MAX` entries (the four unused ones sit at
+   Y = $FF). Measured with a CIA 2 timer around the call in this program on
+   VICE 3.10, over 200 frames: 457 cycles minimum, 2,018 maximum (the maximum
+   includes interrupts landing inside the call). An earlier version of this
+   page said "approximately 20-40 cycles", which is too small by an order of
+   magnitude.
 
-2. **`rirq_wait()`** — blocks until the last rirq slot of the current frame has
-   fired. Must precede `vspr_update()` to prevent writing into the slot table
-   while the IRQ engine is reading it. Without this guard, a race between the
-   main loop and a reuse IRQ would corrupt sprite positions.
+2. **`rirq_wait()`** — returns once `rirq_count` has changed since the last
+   `rirq_wait()`/`rirq_sort()`; the ISR increments it after the last slot of
+   the frame (the sync slot at line 250). Must precede `vspr_update()` to
+   prevent writing into the slot table while the IRQ engine is reading it.
+   **It only paces the loop if the loop is faster than a frame.** If the work
+   since the last `rirq_sort()` already took longer than a frame, the count
+   has already changed and `rirq_wait()` returns at once, wherever the beam
+   is. Measured here with the earlier multiply-and-divide position loop: the
+   raster line on return ranged over 1–311, and the screenshot showed six of
+   the twelve sprites. That is why the listing uses pre-scaled tables.
 
 3. **`vspr_update()`** — writes the sorted list to hardware: Y positions, image
    pointers in the sprite pointer block (`Screen + $3F8`), colors (`$D027-$D02E`),
-   and the combined MSB-X byte (`$D010`). Also reprograms the reuse rirq slots
-   to fire at the correct Y positions for the new frame.
+   and the combined MSB-X byte (`$D010`). Also moves each active reuse slot
+   `n` to `Y(sorted sprite n) + 23` and stores the reused sprite's registers
+   in that slot's code with `rirq_data`. Measured as above: 554–1,853 cycles.
 
 4. **`rirq_sort()`** — re-sorts the rirq slot table after `vspr_update` has
-   moved any reuse slots to new Y positions.
+   moved any reuse slots to new Y positions. Measured as above: 441–1,430
+   cycles.
 
 The sprite pointer block at `Screen + $3F8` (address `$07F8` for the default
 $0400 screen) holds one byte per hardware sprite indicating which 64-byte block

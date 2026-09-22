@@ -46,7 +46,9 @@ the prompt. The fire exit was not exercised (no joystick in the headless run).
 // IRQ ring, one frame:
 //   line 250  irq_vbl     SID play, scroller state and redraw, fire check,
 //                         XSCROLL back to 0 for the top of the next frame
-//   line  87  irq_bar0    first of ten chained bar handlers (6 lines each)
+//   line  87  irq_bar0    first of ten chained bar handlers (6 lines each);
+//                         bars 1-9 and the end are armed two lines ahead of
+//                         their line, because line 99, 123 and 147 are badlines
 //   line 193  irq_scroll  XSCROLL for the scroller rows
 //
 // Memory:
@@ -57,7 +59,8 @@ the prompt. The fire exit was not exercised (no joystick in the headless run).
 .const SID_INIT    = $1000
 .const SID_PLAY    = $1003
 
-.const BAR_START   = 88      // 88 & 7 = 0; with BAR_H = 6 no bar starts on a badline
+.const BAR_START   = 88      // 88 & 7 = 0; with BAR_H = 6 no bar starts on a badline,
+                             // but the line BEFORE bars 2 and 6 and the end is one
 .const BAR_H       = 6
 .const NUM_BARS    = 10
 
@@ -273,16 +276,16 @@ irq_vbl:
     jmp $ea81
 }
 
-irq_bar0: BarIRQ(0, irq_bar1, BAR_START + 1 * BAR_H - 1)
-irq_bar1: BarIRQ(1, irq_bar2, BAR_START + 2 * BAR_H - 1)
-irq_bar2: BarIRQ(2, irq_bar3, BAR_START + 3 * BAR_H - 1)
-irq_bar3: BarIRQ(3, irq_bar4, BAR_START + 4 * BAR_H - 1)
-irq_bar4: BarIRQ(4, irq_bar5, BAR_START + 5 * BAR_H - 1)
-irq_bar5: BarIRQ(5, irq_bar6, BAR_START + 6 * BAR_H - 1)
-irq_bar6: BarIRQ(6, irq_bar7, BAR_START + 7 * BAR_H - 1)
-irq_bar7: BarIRQ(7, irq_bar8, BAR_START + 8 * BAR_H - 1)
-irq_bar8: BarIRQ(8, irq_bar9, BAR_START + 9 * BAR_H - 1)
-irq_bar9: BarIRQ(9, irq_bar_end, BAR_START + 10 * BAR_H - 1)
+irq_bar0: BarIRQ(0, irq_bar1, BAR_START + 1 * BAR_H - 2)
+irq_bar1: BarIRQ(1, irq_bar2, BAR_START + 2 * BAR_H - 2)
+irq_bar2: BarIRQ(2, irq_bar3, BAR_START + 3 * BAR_H - 2)
+irq_bar3: BarIRQ(3, irq_bar4, BAR_START + 4 * BAR_H - 2)
+irq_bar4: BarIRQ(4, irq_bar5, BAR_START + 5 * BAR_H - 2)
+irq_bar5: BarIRQ(5, irq_bar6, BAR_START + 6 * BAR_H - 2)
+irq_bar6: BarIRQ(6, irq_bar7, BAR_START + 7 * BAR_H - 2)
+irq_bar7: BarIRQ(7, irq_bar8, BAR_START + 8 * BAR_H - 2)
+irq_bar8: BarIRQ(8, irq_bar9, BAR_START + 9 * BAR_H - 2)
+irq_bar9: BarIRQ(9, irq_bar_end, BAR_START + 10 * BAR_H - 2)
 
 // After the last bar: back to black, then on to the scroller split.
 irq_bar_end:
@@ -428,8 +431,11 @@ About 11 KB, most of it the 1,000-byte screen image and the tables.
 
 Top four rows: a blue/light-blue/white/light-blue banner with the two title
 lines. Lines 88-147: ten six-line raster bars cycling through the palette one
-step per frame, with the four greetings rows in white on top of them. Below
-that, black. Rows 18-22: the scroll text in white on a two-row sine wave,
+step per frame — border and screen background take adjacent palette entries,
+so each bar is two-tone — with the four greetings rows in white on top of
+them. Every colour change lands in the left border, measured at x=0..1 of the
+VICE screenshot (an earlier build of this listing tore three of them
+mid-line; see "Bar lines and badlines"). Below that, black. Rows 18-22: the scroll text in white on a two-row sine wave,
 moving left a pixel a frame. Row 24: `PRESS FIRE TO CONTINUE` in dark grey.
 Fire on joystick port 2 silences the SID, restores the default colours and
 the KERNAL interrupt, and jumps to `GAME_ENTRY` (BASIC's warm start, `$A474`,
@@ -464,13 +470,29 @@ which are 0, 6, 4, 2 (mod 8) in rotation and never 3, so no bar's first line
 is a badline with the default YSCROLL. The old layout started at line 91,
 which is a badline, and its own text noticed and left it as a TODO.
 
+That is not the whole story, and the version of this listing before
+2026-09-22 showed it. Each handler is armed for the line *before* its bar and
+spins on `$D012` from there, and the lines before bars 2, 6 and the end — 99,
+123 and 147 — are badlines (3 mod 8). An IRQ raised on a badline is not taken
+until the VIC gives the bus back around cycle 55, so the handler reached its
+spin loop late and its colour write landed part-way across line 100, 124 and
+148: measured in the VICE screenshot, the new border colour on line 100 began
+at x=343 and the black on line 148 at x=176, both well inside the picture.
+The fix is two characters: bars 1-9 and `irq_bar_end` are now armed at
+`start - 2` instead of `start - 1`, so the badline is spent inside the spin
+loop, which catches `start` in its first cycles as usual. After the change
+all eleven colour changes are in the left border (screenshot x=0..1).
+`irq_vbl` still arms `irq_bar0` at 87, which is not a badline.
+
 ### The scroller region
 
 The band is rows 18-22 (lines 195-234). `$D016` is written with the current
 XSCROLL at line 194 — the last line of row 17, which is blank — and cleared
 at line 250. Because 38-column mode is on for the whole screen, the logo and
-greetings lose their edge columns too; that is why the screen image keeps
-columns 0 and 39 empty. The redraw and the buffer shift are the routines from
+greetings lose their edge columns too; that is why the text rows of the
+screen image keep columns 0 and 39 empty (the earlier text said the whole
+image did; rows 0 and 3 are solid reverse-space bars and simply get clipped
+by the wider border). The redraw and the buffer shift are the routines from
 `sine-scroller.md` with a two-row amplitude.
 
 ### The SID hook
@@ -490,7 +512,10 @@ the VIC's interrupt source off and acknowledges it, puts `$EA31` back in
 `$0314/$0315`, re-enables CIA1 timer A with `$81` (bit 7 set means "set these
 bits"), drops any pending CIA flag, and jumps. Interrupts are still disabled
 at that point, which is what a game entry expects; the BASIC warm start
-placeholder re-enables them itself. The earlier version jumped to `$xxxx`,
+placeholder re-enables them itself (checked in VICE: `SEI`, jiffy clock
+zeroed, `JMP $A474`, then `PRINT TI` gives a non-zero count — the `READY.`
+print goes out through CHROUT, whose screen path ends in `CLI` at `$E6B4`
+in the 901227-03 KERNAL). The earlier version jumped to `$xxxx`,
 which is not a number and did not assemble.
 
 ### Region

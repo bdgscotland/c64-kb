@@ -1,9 +1,11 @@
 # Screenshots
 
-One PNG per Oscar64 recipe that has been run, taken from the run that
-verified it: Oscar64 (build 2026-05-19) compiled the listing exactly as it
-appears in the recipe page, `-tm=c64 -O2`, and VICE x64sc 3.10 ran the PRG
-headless:
+One PNG per Oscar64 recipe, and every one of them is reproducible:
+`npm run verify:recipes` compiles the listing exactly as it appears in the
+recipe page with Oscar64 (build 2026-05-19), `-tm=c64 -O2`, runs the PRG
+headless in VICE x64sc 3.10 with the parameters pinned in
+`docs/recipes/runs.json`, and fails on any pixel that differs from the
+picture here. The default pinned run is:
 
 ```bash
 x64sc -default -warp +sound -autostartprgmode 1 +autostart-delay-random \
@@ -25,11 +27,17 @@ build aborts before it draws.
   digits each must show. The NTSC pictures are 384×247, not 384×272, and
   the same colour index has different RGB values in them.
 - `text-overlay-playfield.png` — the recipe at tick 654 (16,000,000
-  cycles). `-gameover` is the same program run to its end state;
-  `-notrail-control` and `-ungated-control` are the same source with one
-  thing removed, run to show the pitfall the recipe avoids. The page says
-  what was removed and what each picture measures. `-ntsc` is the recipe
-  under `-model ntsc` at 8,000,000 cycles (tick 281), 384×247.
+  cycles, pinned in `runs.json`). `-ntsc` is the recipe under
+  `-model ntsc` at the same 16,000,000 cycles (tick 745), 384×247; an
+  earlier picture was taken at 8,000,000 cycles (tick 281) and could not
+  be reproduced by the pinned run. `-gameover` is the same program run to
+  its end state; `-notrail-control` and `-ungated-control` are the same
+  source with one thing removed, run to show the pitfall the recipe
+  avoids. The page says what was removed and what each picture measures.
+  These three are not pinned and not verified by the gate.
+- The other pictures were adopted on 2026-09-22 after each was looked at
+  against its page's "Expected output"; before that these recipes had no
+  committed screenshot at all.
 
 Geometry of the PAL captures, measured rather than assumed: 384×272; text
 row 0 of the 25-row display window begins at PNG row 35 and column 0 at

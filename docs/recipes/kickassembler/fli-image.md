@@ -5,7 +5,7 @@ output_format: PRG
 region: pal
 techniques: [fli_image, stable_raster_irq, double_irq]
 file_formats: [PRG]
-uses_registers: [D011, D012, D016, D018, D019, D01A, DD00]
+uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD00]
 uses_kernal: []
 ---
 
@@ -32,9 +32,16 @@ shows eight one-line-tall colour stripes repeating down the whole screen,
 with the three leftmost columns light grey. Replace the three `.fill`
 blocks with converter output for a real image.
 
-Verified in VICE x64sc: all 200 display rows are single-coloured across
-columns 3-39, the colour sequence repeats with period 8, and columns 0-2
-are light grey on every row.
+Verified in VICE x64sc (PAL, `ENTRY_PAD` 197): all 200 display rows are
+single-coloured across columns 3-39; lines 52-247 carry three light grey
+columns and the page-per-line colour sequence; line 51, the natural
+badline, has no grey columns because its fetch was complete; and lines
+248-250 repeat line 247's colours, because the badline condition only
+holds on lines $30-$F7 and the last three lines cannot be forced. An
+earlier version of this page shipped `ENTRY_PAD` 198 and said columns 0-2
+were grey "on every row"; with 198 line 52 shows column 0 in line 51's
+colour and grey in columns 1-3, the one-cycle-late symptom described under
+"Expected output", and it was the only row that differed.
 
 ## Source
 
@@ -59,7 +66,7 @@ are light grey on every row.
 .const LAST_LINE  = 250
 .const SYNC_LINE  = 48       // stable raster here; 48 & 7 = 0, not a badline
 .const SYNC_PAD   = 11       // as measured for stable-raster-irq
-.const ENTRY_PAD  = 198      // from the sync to cycle 55 of FIRST_LINE (see text)
+.const ENTRY_PAD  = 197      // from the sync to cycle 55 of FIRST_LINE (see text; was 198)
 .const LINE_PAD   = 11       // cycles between the end of one line's stall and the next block
 
 // VIC bank 1 ($4000-$7FFF): eight screen pages at $4000 + p*$400, bitmap at $6000.
@@ -203,17 +210,26 @@ saved_sp: .byte 0
 java -jar KickAss.jar fli-image.asm -o fli-image.prg
 ```
 
-The PRG is about 19 KB: 8 KB of screen pages, 8 KB of bitmap and 3.2 KB of
-unrolled per-line code.
+The PRG is 30,529 bytes: KickAssembler writes one block from $0801 to
+$7F40 and zero-fills the gap between the end of the code (about 3.2 KB
+from $0900) and the screen pages at $4000, so the 8 KB of pages and 8 KB
+of bitmap are joined by some 11 KB of padding. (An earlier version said
+"about 19 KB", the sum of the parts without the gap.)
 
 ## Expected output
 
-Black border. Inside the display, 200 horizontal stripes one raster line
-tall in the sequence black, white, red, cyan, purple, green, blue, yellow,
-repeating 25 times: the eight page colours, one line each. The three
-leftmost character columns (24 pixels) are light grey on every line. With a
-converted image in place of the fills, the picture, with the same grey band
-down the left.
+Black border. Inside the display, horizontal stripes one raster line tall
+in the sequence black, white, red, cyan, purple, green, blue, yellow: the
+eight page colours, one line each, page `line & 7`, so line 51 is cyan and
+line 52 purple. The sequence runs from line 51 to line 247 and the last
+three lines, 248-250, stay yellow: the badline condition holds only on
+lines $30-$F7, so line 247's fetch is the last one and its colours are
+shown three times. The three leftmost character columns (24 pixels) are
+light grey on lines 52-247; line 51 is a natural badline with a complete
+fetch and has no grey. (An earlier version said the sequence repeats 25
+times and the grey is on every line; neither is what the picture shows.)
+With a converted image in place of the fills, the picture, with the same
+grey band down the left.
 
 If every eighth line is wrong or the picture repeats one character row
 down the screen, the $D011 write is landing on cycle 14 or earlier and
@@ -272,12 +288,20 @@ has to be counted: `LINE_PAD` cycles, `LDA #`/`STA $D018` (6),
 `LDA #`/`STA $D011` (6). The 200 blocks are emitted unrolled by a `.for`
 loop; a counted loop would need its own cycles inside a budget of about 20.
 
-The same stall is what makes `ENTRY_PAD` uncritical: line 51 is a natural
-badline (YSCROLL 3, 51 & 7 = 3), the CPU stalls there from cycle 12 until
-55 no matter where the entry delay put it, and the first block starts on
-cycle 55 of line 51 as intended. The double IRQ is still needed so the
-delay arrives at line 51 at all, not two lines off; any value of
-`ENTRY_PAD` from 196 to 200 gives the same picture.
+The stall does not make `ENTRY_PAD` uncritical, and an earlier version of
+this page said it did ("any value from 196 to 200 gives the same
+picture"). Line 51 is a natural badline (YSCROLL 3, 51 & 7 = 3) and the
+CPU does stall there until cycle 55 wherever the entry delay has got to,
+but the stall pauses the delay rather than absorbing it: whatever NOPs
+remain run after cycle 55 and push the first block, so line 52 is timed
+by the remainder of `ENTRY_PAD`, not by the stall. Measured in VICE x64sc
+(PAL), line 52 only: 196 gives two grey columns, 197 three, 198 column 0
+in line 51's colour and grey in columns 1-3, 200 the same as 198. Lines
+53-250 are identical in all four, because from the first block onwards
+every line is timed by its own stall. The double IRQ is needed so the
+delay arrives at line 51 at all, not two lines off. (The all-$55 bitmap
+cannot show an RC reset, so whether 196 is the cycle-14 case was not
+checked here.)
 
 ### The 8-page layout and the bank
 
@@ -300,6 +324,13 @@ timing; FLI pictures with sprites time them into the budget deliberately.
 
 ### Region
 
-`region: pal`. The NTSC 6567R8 line is 65 cycles and the badline stall
-ends on a different cycle; the block structure is the same, `LINE_PAD` is
-not.
+`region: pal`. The NTSC 6567R8 line is 65 cycles; the c-accesses still
+occupy cycles 15-54 and the stall still ends on cycle 55 (an earlier
+version said it "ends on a different cycle"), so the block structure is
+the same and only the padding grows with the line: `LINE_PAD` 13 on the
+6567R8, 12 on the 64-cycle 6567R56A. Measured in VICE x64sc `-model ntsc`
+with `LINE_PAD` 13 and `ENTRY_PAD` 204: lines 53-250 match the PAL picture
+line for line, three grey columns and the same colour sequence; line 52
+comes out with two grey columns, as `ENTRY_PAD` 196 does on PAL, so 204 is
+one cycle early for the R8 entry and the right R8 value was not settled
+here. `techniques/bitmap-modes.md` gives the NTSC padding.

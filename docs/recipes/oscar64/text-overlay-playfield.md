@@ -387,6 +387,13 @@ anyway (99, 250, 654 and 281 are not multiples of 8). One capture did land
 mid-write: a 16 M NTSC run (tick 745) caught `show_number` between the two
 overlay digits and the decoder refused that cell. It is not in the table,
 and it is the reason the counter, not the cycle count, names a frame.
+(Audit note, 2026-09-22, rung 1: `docs/recipes/runs.json` pins this
+recipe at 16,000,000 cycles for *both* models, so `verify-recipes` renders
+that same tick-745 NTSC frame — `OVERLAY 8?` with the units digit
+half-written — and reports it as differing from the committed NTSC picture,
+which is the 8 M capture at tick 281. The PAL arm matches pixel for pixel
+at 16 M. Until the NTSC pin is 8,000,000 that mismatch is the pin, not the
+listing.)
 
 The two numbers on row 24 (rung 1, read from the same captures):
 

@@ -15,7 +15,8 @@ uses_kernal: []
 
 ## Synopsis
 
-Opens the left and right side borders over a 42-line region and stands
+Opens the left and right side borders over a 42-line loop region (41 lines
+of open border in the measured picture, see Expected output) and stands
 sprites in them. The mechanism is one register write per line: the VIC-II
 sets its border flip-flop when the beam reaches X=344 with CSEL=1, or X=335
 with CSEL=0; switch CSEL from 1 to 0 between the two, on cycle 56 of the
@@ -76,8 +77,12 @@ BasicUpstart2(start)
 d011_table:
     .fill REGION_LINES, $18 | ((REGION_TOP + i + 4) & 7)
 // X positions: one sprite in each side border, six across the screen.
+// Sprites 0, 6 and 7 are past X=255, so bits 0, 6 and 7 of $D010 are set
+// (an earlier version set only bits 0 and 7 and put sprite 6 at X=24).
 spr_x:      .byte <500, <40, <88, <136, <184, <232, <280, <344
-spr_x_msb:  .byte %10000001
+spr_x_msb:  .byte %11000001
+// Colours: none of them 6 (blue), which is the background and invisible on it.
+spr_col:    .byte 1, 2, 3, 4, 5, 13, 7, 8
 
 // A solid 24x21 sprite.
 * = $0e00
@@ -99,7 +104,7 @@ start:
         sta $d001 + s * 2    // all eight on the same lines
         lda #sprite_block / 64
         sta $07f8 + s
-        lda #1 + s           // white, red, cyan, purple, green, blue, yellow, orange
+        lda spr_col + s      // white, red, cyan, purple, green, light green, yellow, orange
         sta $d027 + s
     }
     lda spr_x_msb
@@ -191,14 +196,24 @@ java -jar KickAss.jar sideborder-open.asm -o sideborder-open.prg
 
 ## Expected output
 
-The normal BASIC screen, with a 42-line band starting at raster line 102 in
-which the light-blue side borders are gone: the blue background runs from
-the left edge of the frame to the right edge. In that band, eight solid
-sprites stand on the same lines, Y-expanded to 42 lines: a white one in the
-left border, an orange one in the right border, and six more (red, cyan,
-purple, green, blue, yellow) across the screen. Inside the band the
-character display is idle (see below), so the text rows the band crosses
-are blank; above and below it the screen is untouched.
+The normal BASIC screen, with a band in which the light-blue side borders
+are gone: the blue background runs from the left edge of the frame to the
+right edge. Measured in the VICE PNG (PAL, screenshot row = raster line
+minus 16): the right border is open on raster lines 102-142 and the left
+border on lines 103-143, 41 lines each, the left lagging by one line because
+each write opens this line's right border and the next line's left. The
+earlier text said a 42-line band from line 102; the loop does run 42 lines
+(101-142), but the first line's `DEC` does not open line 101 in any pad
+tried (see the paddings section). In that band, eight solid sprites stand
+on the same lines, Y-expanded to 42 lines (102-143): a white one in the
+left border (visible from 103, where the left border first opens), an
+orange one in the right border, and six more (red, cyan, purple, green,
+light green, yellow) across the screen at X=40, 88, 136, 184, 232, 280. An
+earlier version of the listing put the yellow sprite at X=24 (missing $D010
+bit 6) and coloured the sixth sprite blue, which is the background colour
+and therefore invisible; both are fixed. Inside the band the character
+display is idle (see below), so the text rows the band crosses are blank;
+above and below it the screen is untouched.
 
 If the borders stay closed, the `DEC $D016` is not writing on cycle 56. If
 the band opens for a few lines and then stops, something changed the
@@ -225,8 +240,11 @@ line has nothing to reset, the next line's left border is not drawn either.
 That is the whole trick, and it is one write per line: `DEC $D016` on $C8
 gives $C7 (CSEL=0, and XSCROLL=7 as a side effect, which does not matter on
 an idle display), `INC $D016` afterwards restores $C8 in time for the next
-line's comparisons. The earlier recipe's separate "left border toggle at
-cycle 1" does not correspond to anything in the chip.
+line's comparisons. The restore has the whole of the next line up to cycle
+55: measured in VICE x64sc 3.10 for this page, a variant of the loop that
+puts the `INC $D016` on cycles 42-47 of the following line gives a picture
+identical to the shipped one. The earlier recipe's separate "left border
+toggle at cycle 1" does not correspond to anything in the chip.
 
 ### Why the write can land on cycle 56 with sprites active
 
@@ -256,11 +274,17 @@ one write on one cycle, every line.
 ### Why the region has no badlines
 
 A badline (`(line & 7) == YSCROLL`, lines $30-$F7, DEN set) takes the bus
-from cycle 12 (BA low) to cycle 54. Every store's write cycle is preceded
-by at least one read, and a read cannot happen between 12 and 54 on a
-badline, so there is no way to place a write on cycle 56 on such a line:
-the earliest read after the stall is cycle 55, and the earliest write after
-that is cycle 58. The region therefore has to be badline-free. The loop
+from cycle 12 (BA low) to cycle 54. The 6510 stops on its first read at or
+after cycle 12 and that read completes on cycle 55, so a fresh instruction
+cannot start before 55 and this loop's `DEC $D016`, whose new value is
+written on its sixth cycle, cannot reach cycle 56 on a badline; that is why
+the region is kept badline-free. The earlier text went further and said
+there is "no way to place a write on cycle 56" on a badline, with the
+earliest write on 58. That is not established: by the same cycle budget, a
+`STA $D016` whose high address byte is the read stalled on cycle 12
+completes that read on 55 and writes on 56 (arithmetic from the stated
+cycles, not measured here; `docs/techniques/raster.md` still states the
+absolute form). The loop
 writes $D011 on every line with YSCROLL = (line+4)&7, which never matches,
 so no badline condition arises during the region. Line 101 itself, the
 first, has YSCROLL 3 and 101&7 = 5, and is safe without help.
@@ -277,11 +301,18 @@ badline rows or use the tricks catalogued under `fld` and `vsp` in
 
 `SYNC_PAD` is the double-IRQ sync padding from `stable-raster-irq.md`,
 unchanged because the code path before the sync is identical. `ENTRY_PAD`
-puts the first `DEC` on cycle 51 of line 101; it was set by trying 41-45
-in VICE and all five open the region, because a `DEC` that starts a cycle
-or two off still gets its writes into the BA-low window on the first line
-and the sprite stall re-phases everything from the second line on. That
-tolerance is a property of this code path with sprites, not of the trick.
+is meant to put the first `DEC` on cycle 51 of line 101; it was set by
+trying 41-45 in VICE and all five open the region, because a `DEC` that
+starts a cycle or two off still gets its writes into the BA-low window on
+the first line and the sprite stall re-phases everything from the second
+line on. That tolerance is a property of this code path with sprites, not
+of the trick. Re-measured for this page with pads 41, 42, 43 and 44: all
+four give a pixel-identical picture, and in none of them does line 101's
+own right border open (the band starts on 102), so which pad, if any, lands
+the first `DEC` on cycle 51 of line 101 has not been identified; the
+"cycle 51" in the source comments is the loop's steady state from line 102
+on, inferred from the stall ending on cycle 11, not a measured cycle on
+line 101.
 
 `REGION_TOP = 101` because the sync line 100 must not be a badline
 (100&7 = 4) while the badline 99 falls inside irq1's NOP slide, where a
@@ -292,8 +323,9 @@ stall is harmless; see the line-selection note in `stable-raster-irq.md`.
 X coordinates run 0-503 on PAL, wrapping inside the left border: the
 visible left border is X 480-503 then 0-23, the right border 344-375 on a
 typical display. X=500 puts a sprite across the wrap in the left border;
-X=344 puts one at the start of the right border. Both need bit 8 of X,
-hence `%10000001` in $D010. A sprite with Y=101 has its DMA turned on at
+X=344 puts one at the start of the right border. Both need bit 8 of X, as
+does the yellow sprite at X=280, hence `%11000001` in $D010 (the earlier
+`%10000001` left sprite 6 at X=24). A sprite with Y=101 has its DMA turned on at
 cycle 55 of line 101 and is drawn from line 102, which is why the region
 loop starts its `DEC` on line 101 and the opened band is seen from 102.
 

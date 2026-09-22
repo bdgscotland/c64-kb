@@ -18,11 +18,14 @@ uses_kernal: []
 A minimal but complete vertical-scrolling shoot-em-up implemented in Oscar64 C.
 The player controls a ship via joystick port 2, fires bullets upward, and must
 avoid enemies that enter from the top in sine-wave formations. A starfield scrolls
-downward using `$D016` YSCROLL (one-pixel-per-frame soft scroll). Eight hardware
+downward using `$D011` YSCROLL (one-pixel-per-frame soft scroll; an earlier
+version of this sentence said `$D016`, which is XSCROLL). Eight hardware
 sprites are multiplexed via `vspr_*` to display the player, four enemies, and up
-to three active bullets simultaneously. Sprite-sprite collisions are detected
-through `$D01E`. A background SID tune drives the play-routine pattern at 50/60 Hz
-from a raster IRQ. The program is fully playable: load in VICE, push joystick
+to three active bullets simultaneously. Collisions are software bounding-box
+tests; `$D01E`/`$D01F` are read only to clear them (see "Collision detection"
+below — an earlier version of this sentence said collisions were detected
+through `$D01E`). A background SID stub drives the play-routine pattern once per
+frame from a raster IRQ. The program is fully playable: load in VICE, push joystick
 port 2, and shoot the enemies.
 
 This is the hero recipe of Phase 4. It demonstrates the full agent-loop
@@ -228,9 +231,15 @@ static void stars_update(void)
             Color [star_row[i] * COLS + star_x[i]] = VCOL_WHITE;
         }
     }
-    // Write YSCROLL into $D011, preserving other bits (DEN, BMM, ECM, raster MSB).
+    // Write YSCROLL into $D011, preserving DEN, BMM, ECM and RSEL but NOT
+    // bit 7: on a read, bit 7 is the CURRENT raster line's MSB, and on a
+    // write it is bit 8 of the raster-compare value. This runs right after
+    // rirq_wait(), i.e. with the beam past line 255, so a read-modify-write
+    // that kept bit 7 (mask 0xF8, as an earlier version had) moved the
+    // compare to line 256+ and the raster IRQ never fired again: the game
+    // froze after exactly one frame. Mask with 0x78.
     // YSCROLL is bits 2-0; default KERNAL value is 3 (center).
-    vic.ctrl1 = (vic.ctrl1 & 0xF8) | yscroll;
+    vic.ctrl1 = (vic.ctrl1 & 0x78) | yscroll;
 }
 
 // ============================================================================
@@ -383,16 +392,19 @@ static void update_player(void)
         return;
     }
 
-    // Read joystick port 2 (joy_poll(1) = port 2 = typical player 1 in games)
-    joy_poll(1);
+    // Read joystick port 2. Oscar64's joy_poll(n) reads $DC00+n, and $DC00
+    // (CIA1 port A) is joystick PORT 2; $DC01 is port 1. So joy_poll(0) is
+    // port 2, the usual player-1 port. An earlier version of this listing
+    // called joy_poll(1) here and read port 1 while claiming port 2.
+    joy_poll(0);
 
     // Move player horizontally: clamp to sprite display range (24..311 for X)
-    player_x += (int)(joyx[1]) * PLAYER_SPEED;
+    player_x += (int)(joyx[0]) * PLAYER_SPEED;
     if (player_x < 24)  player_x = 24;
     if (player_x > 311) player_x = 311;
 
     // Move player vertically: clamp to rows 1-24 (Y 58..234 roughly)
-    player_y += (char)(joyy[1]) * (char)PLAYER_SPEED;
+    player_y += (char)(joyy[0]) * (char)PLAYER_SPEED;
     if (player_y < 58)  player_y = 58;
     if (player_y > 234) player_y = 234;
 
@@ -401,7 +413,7 @@ static void update_player(void)
     // Fire bullet on button press, with cooldown
     if (fire_cooldown)
         fire_cooldown--;
-    else if (joyb[1]) {
+    else if (joyb[0]) {
         for (char b = 0; b < MAX_BULLETS; b++) {
             if (!bullets[b].active) {
                 bullets[b].x      = player_x;
@@ -571,7 +583,10 @@ static void check_collisions(void)
 
             if (dx < 0) dx = -dx;
 
-            if ((char)dx <= (BULLET_HW + ENEMY_HW) && dy <= (BULLET_HH + ENEMY_HH)) {
+            // Compare dx as an int: |dx| can reach 287, and a (char) cast
+            // here (as an earlier version had) would fold 256..277 down to a
+            // false hit across the screen.
+            if (dx <= (BULLET_HW + ENEMY_HW) && dy <= (BULLET_HH + ENEMY_HH)) {
                 // Hit!
                 bullets[b].active = false;
                 vspr_hide(b + 1);
@@ -601,7 +616,7 @@ static void check_collisions(void)
 
             if (dx < 0) dx = -dx;
 
-            if ((char)dx <= (PLAYER_HW + ENEMY_HW) && dy <= (PLAYER_HH + ENEMY_HH)) {
+            if (dx <= (PLAYER_HW + ENEMY_HW) && dy <= (PLAYER_HH + ENEMY_HH)) {
                 // Player hit!
                 player_alive         = false;
                 player_explode_timer = 24;
@@ -698,10 +713,19 @@ int main(void)
     stars_init();
     hud_draw();
 
-    // --- Initialize vspr multiplexer ---
-    // vspr_init reserves rirq slots 0..(VSPRITES_MAX/8 - 1) for the sprite
-    // reuse IRQs.  With VSPRITES_MAX=16 (default) and 8 logical sprites, one
-    // reuse slot is used (fires at mid-screen to reprogramme the second pass).
+    // --- Initialize raster IRQ tables and the vspr multiplexer ---
+    // rirq_init MUST come first: vspr_init does not call it (sprites.c),
+    // and without it rirq_wait() never returns because the IRQ never reaches
+    // the rasterirq dispatcher. An earlier version of this listing omitted
+    // it and froze on the first rirq_wait() -- the screenshot never moved.
+    // true = KERNAL IRQ vector at $0314; KERNAL is still mapped under
+    // MMAP_NO_BASIC.
+    rirq_init(true);
+
+    // vspr_init reserves rirq slots 0..(VSPRITES_MAX-8) -- with the default
+    // VSPRITES_MAX=16 that is slots 0-7 (one reuse IRQ per sprite of the
+    // second pass, rows 80+4*i) plus slot 8 (a sync IRQ at row 250).
+    // vspr_update() re-arms or clears slots 0-7 EVERY frame.
     vspr_init(Screen);
 
     // Assign all 8 logical sprites initial positions (off-screen or visible)
@@ -715,13 +739,18 @@ int main(void)
     vspr_sort();
     vspr_update();
 
-    // --- Raster IRQ for music (slot after sprite slots) ---
-    // vspr_init uses slot 0 (and 1 for the reuse IRQ with 16 vsprites).
-    // Music IRQ goes into the next free slot.  Use rirq_set with slot number
-    // 2 (slots 0 and 1 are owned by vspr_init with default VSPRITES_MAX).
+    // --- Raster IRQ for music (first slot after the vspr slots) ---
+    // vspr_init owns slots 0..8 with the default VSPRITES_MAX=16, so the
+    // music IRQ goes in slot 9 (NUM_IRQS is 16). An earlier version used
+    // slot 2, which is one of the multiplexer's reuse slots: vspr_update()
+    // calls rirq_clear() on every unused reuse slot each frame, so the music
+    // call was silently cleared after the first frame.
     rirq_build(&music_rirq, 1);
     rirq_call(&music_rirq, 0, (void *)music_play);
-    rirq_set(2, 0, &music_rirq);   // fire at raster line 0 (top of frame)
+    // Note rasterirq programs row-1 into $D012, so row 0 is compare 255,
+    // i.e. the call physically lands at line 255, after the vspr sync IRQ
+    // at 250, not at the top of the frame.
+    rirq_set(9, 0, &music_rirq);
 
     rirq_sort();
     rirq_start();
@@ -784,22 +813,39 @@ simple-shmup.prg`. Joystick port 2. Push to move; fire button to shoot.
 
 ## Expected output
 
-Black screen with a top HUD row reading `SCORE: 000000`. A light-blue player
-ship sprite sits at the bottom-center. White dot stars scroll smoothly downward
-at one pixel per frame. Press the fire button: three green bullet sprites advance
-upward and vanish at the top. After 120 frames, four red enemy diamond sprites
-enter from the top in a horizontal formation and descend while oscillating
-horizontally in a sine wave. When a bullet overlaps an enemy, both vanish (the
-enemy flickers orange for 12 frames) and the score increments by 10. If an enemy
-reaches the player sprite, both explode, the score stops, and the player respawns
-after 90 frames. A simple C-major-triad arpeggio plays on SID voice 0 throughout.
+Black screen with a top HUD row reading `SCORE: 000000` in yellow and white. A
+light-blue player ship sprite sits at the bottom-center (sprite X 160, Y 220).
+Sixteen white stars, each a solid 8x8 block character (`$A0`, not a dot), scroll
+smoothly downward. Press the fire button: up to three light-green bullet sprites
+advance upward and vanish at the top. Four red enemy diamond sprites are
+spawned on the very first frame (the wave timer starts at 0 and no enemy is
+active; an earlier version said "after 120 frames") and descend one pixel per
+loop iteration while oscillating horizontally in a triangle-wave approximation
+of a sine. When a bullet overlaps an enemy, the bullet vanishes, the enemy
+flickers yellow (`VCOL_YELLOW`, not orange as an earlier version said) for 12
+frames, and the score increments by 10. If an enemy reaches the player sprite,
+both explode (the player in orange), and the player respawns after 90 frames. A
+simple C-major-triad arpeggio plays on SID voice 0 throughout (not listened to
+here).
+
+Measured in headless VICE (PAL, 8,000,000 cycles, no joystick input): the
+verify screenshot shows the HUD, the player at the bottom centre and four red
+diamonds in a row about two-thirds of the way down the play field (sprite Y
+about 178), with the star
+blocks displaced from their start rows. In an instrumented build the main loop
+had run 123 times while the music call had run about 245 times over the same
+interval; whether the loop runs every second frame or the two counters measure
+different intervals was not settled here.
 
 ## Why this works
 
 ### Game loop structure
 
-The main loop follows the canonical Oscar64 game loop pattern visible in
-`~/Developer/c64/oscar64/samples/games/breakout.c` and `hscrollshmup.c`:
+The main loop follows the Oscar64 pattern shown in the `sprites.h` header
+comment and in `samples/sprites/multiplexer.c` and `sprmux32.c` (an earlier
+version pointed at `samples/games/breakout.c` and `hscrollshmup.c`, which do
+not use `vspr_*` or `rirq_wait` at all). Both samples call `rirq_init()`
+before `vspr_init()`; `vspr_init()` does not call it for you:
 
 ```
 rirq_wait();          // sync: all IRQs for last frame are done
@@ -820,14 +866,18 @@ reuse IRQ trigger line.
 ### Sprite multiplexer: eight slots for nine objects
 
 `vspr_init(Screen)` initializes the `vspr_*` layer and claims raster IRQ slots
-0 and 1 for the multiplexer's internal use. With `VSPRITES_MAX = 16` (default),
-the multiplexer supports up to 16 logical sprites displayed via two passes of 8
+0 to `VSPRITES_MAX-8` for the multiplexer's internal use: with the default
+`VSPRITES_MAX = 16` that is slots 0-7, one reuse IRQ per second-pass sprite
+(initially rows 80, 84, ... 108), plus slot 8 for a sync IRQ at row 250 (read
+from `sprites.c`; an earlier version of this paragraph said "slots 0 and 1").
+The multiplexer supports up to 16 logical sprites displayed via two passes of 8
 hardware sprites each. This recipe uses 8 logical sprites: one player, three
 bullets, four enemies. Eight logical sprites fit in a single hardware pass, so
-the second-pass reuse IRQ fires but finds no second-group sprites to reprogram
-(it is a no-op). This is wasteful in IRQ slots but correct. With a second wave
-of enemies adding up to eight more sprites, the reuse IRQ would automatically
-activate to handle the second group.
+`vspr_update()` finds no ninth sprite and calls `rirq_clear()` on every reuse
+slot each frame; only the sync IRQ fires. Anything you put in slots 0-7 is
+therefore cleared on the next `vspr_update()`, which is why the music slot is 9.
+With a second wave of enemies adding up to eight more sprites, the reuse IRQs
+would automatically activate to handle the second group.
 
 The sprite pointer block at `Screen + $3F8` (address `$07F8`) holds one byte per
 hardware slot telling the VIC which 64-byte block of sprite data that slot
@@ -849,10 +899,17 @@ in `docs/recipes/oscar64/soft-scroll-h.md` applied to the Y axis.
 The star positions are tracked in the `star_row[]` array. Each star is a solid
 block character (screen code `$A0`) drawn directly into the screen RAM. When the
 carry fires (`yscroll` wraps), each star's row is incremented modulo 24 (rows
-1-24, preserving HUD row 0). The write to `vic.ctrl1 = (vic.ctrl1 & 0xF8) |
+1-24, preserving HUD row 0). The write to `vic.ctrl1 = (vic.ctrl1 & 0x78) |
 yscroll` preserves the DEN bit (display enable), the BMM bit (0 = text mode),
-and the raster MSB while updating only YSCROLL. The read-modify-write is a
-single expression thanks to Oscar64's volatile struct field access.
+ECM and RSEL while updating YSCROLL — and deliberately drops bit 7. On a read
+bit 7 is the current raster line's bit 8, on a write it is bit 8 of the raster
+compare (`docs/hardware/vic-ii-reference.md`, `docs/pitfalls/raster-and-badline.md`).
+This write runs just after `rirq_wait()` returns, with the beam past line 255,
+so an earlier version of this listing that masked with `0xF8` and "preserved
+the raster MSB" wrote a 1 back into the compare, moved the raster IRQ to line
+256+, and froze the game after exactly one frame (measured: the exit screenshot
+was identical at 8 and 12 million cycles). The read-modify-write is a single
+expression thanks to Oscar64's volatile struct field access.
 
 The cost per frame is one write to `$D011` plus (on carry frames, once per 8
 frames) `NUM_STARS` screen RAM updates. At 16 stars that is 32 byte writes
@@ -899,8 +956,9 @@ and entry/removal logic clearly.
 
 ### Music via `rirq_call` and the play-routine pattern
 
-The arpeggio function `music_play()` is installed as a raster IRQ call at line 0
-using `rirq_call`. This is the `sid_play_routine_pattern` technique from
+The arpeggio function `music_play()` is installed as a raster IRQ call in slot
+9 with row 0 using `rirq_call` (rasterirq programs row-1 into `$D012`, so the
+call actually lands at line 255, after the vspr sync IRQ at 250). This is the `sid_play_routine_pattern` technique from
 `docs/techniques/music-sid.md` applied to a hand-written play stub rather than
 an embedded SID binary. Each call advances `music_tick`; every 6 frames it
 writes a new note frequency to SID voice 0 and re-gates the envelope. The call

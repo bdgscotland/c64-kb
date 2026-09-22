@@ -57,7 +57,9 @@ show precomputed C64 artwork as a background layer. It implements the
 // Place code and data below $2000, bitmap at $2000, everything else above.
 #pragma region( lower, 0x0a00, 0x2000, , , {code, data} )
 
-#pragma section( bitmap, 0 )
+// The bss flag keeps the 8000-byte destination out of the PRG file; it is
+// filled at run time.
+#pragma section( bitmap, 0, , , bss )
 #pragma region( bitmap_region, 0x2000, 0x4000, , , {bitmap} )
 
 #pragma region( upper, 0x4000, 0xa000, , , {code, data, bss, heap, stack} )
@@ -68,14 +70,15 @@ show precomputed C64 artwork as a background layer. It implements the
 // The full 10003-byte .kla file (including the 2-byte load-address header)
 // is embedded here.  The viewer extracts each region by known byte offsets.
 //
-// To embed a real file: replace "image.kla" with its path.
-// A stub image of all zeros is provided so the recipe compiles without a file.
-//
-// Real use:
-//   static const char koala_file[] = { #embed "image.kla" };
-//
-// Stub (displays a solid background-colored screen):
-static const char koala_file[10003] = {0};  // all zeros
+// Set USE_TEST_IMAGE to 0 and put your .kla next to the source to display
+// a real picture.  With USE_TEST_IMAGE at 1 the program draws a computed
+// test card instead, so the recipe shows the mode working without a file.
+// (An earlier version embedded a 10003-byte all-zero stub, which produced a
+// black screen and demonstrated nothing.)
+#define USE_TEST_IMAGE 1
+#if !USE_TEST_IMAGE
+static const char koala_file[] = { #embed "image.kla" };
+#endif
 
 // Offset constants for the Koala layout (skipping the 2-byte load address)
 #define KLA_BITMAP_OFFSET   2
@@ -86,11 +89,15 @@ static const char koala_file[10003] = {0};  // all zeros
 // ---------------------------------------------------------------------------
 // Bitmap destination (placed at $2000 by the bitmap_region linker region)
 // ---------------------------------------------------------------------------
-// The #pragma data(bitmap) directive routes this array into the bitmap section.
-// The linker region bitmap_region spans $2000-$4000, so bitmap_dest lands at $2000.
-#pragma data(bitmap)
+// #pragma bss(bitmap) routes this UNINITIALISED array into the bitmap
+// section; the linker region bitmap_region spans $2000-$4000, so bitmap_dest
+// lands at $2000 (check the .map: "2000 - 3f40 : bitmap_dest").  An earlier
+// version used #pragma data(bitmap), which only affects initialised data:
+// the array silently landed in the upper region at $6713 and the VIC never
+// saw a byte of it.
+#pragma bss(bitmap)
 static char bitmap_dest[8000];
-#pragma data(data)
+#pragma bss(bss)
 
 // Screen RAM and Color RAM pointers
 static byte * const Screen = (byte *)0x0400;
@@ -126,9 +133,43 @@ static void display_enable(byte bgcol)
     // the mode bits take effect at the next line boundary.
     vic.ctrl1 = (vic.ctrl1 & ~(VIC_CTRL1_ECM)) | VIC_CTRL1_BMM;
 
-    // Enable MCM bit in $D016, preserve CSEL (40-column mode, bit 3).
-    vic.ctrl2 = (vic.ctrl2 & 0xF7) | VIC_CTRL2_MCM;
+    // Enable MCM bit in $D016; leave CSEL (bit 3, 40 columns) and XSCROLL
+    // alone.  An earlier version of this recipe masked with 0xF7, which
+    // CLEARS CSEL and gave a 38-column picture with the outer cells hidden.
+    vic.ctrl2 |= VIC_CTRL2_MCM;
 }
+
+#if USE_TEST_IMAGE
+// Computed test image in Koala layout, written straight to the display areas.
+// Four horizontal bands use pixel patterns %00, %01, %10, %11 (char rows 0-5,
+// 6-11, 12-17, 18-24), a one-pixel diagonal runs top-left to bottom-right in
+// pattern %11 (pattern %00 inside the %11 band).  Screen RAM is $25 in every
+// cell (high nibble 2 = red for %01, low nibble 5 = green for %10); Color RAM
+// alternates 1 (white) and 7 (yellow) by column; background is 6 (blue).
+#define TEST_BGCOL 6
+static void make_test_image(void)
+{
+    for (int y = 0; y < 200; y++)
+    {
+        char row  = y >> 3;
+        char band = row / 6;
+        if (band > 3) band = 3;
+        char fill = band * 0x55;                // %00, %01, %10 or %11 x4
+        char dpat = (band == 3) ? 0 : 3;
+        int  px   = (y * 4) / 5;                // 0..159 along the diagonal
+        char * line = bitmap_dest + row * 320 + (y & 7);
+        for (char col = 0; col < 40; col++)
+            line[col * 8] = fill;
+        char shift = 6 - 2 * (px & 3);
+        line[(px >> 2) * 8] = (fill & ~(3 << shift)) | (dpat << shift);
+    }
+    for (int i = 0; i < 1000; i++)
+    {
+        Screen[i] = 0x25;
+        Color[i]  = (i % 40) & 1 ? 7 : 1;
+    }
+}
+#endif
 
 int main(void)
 {
@@ -143,6 +184,10 @@ int main(void)
     vic_waitBottom();
     vic_waitTop();
 
+#if USE_TEST_IMAGE
+    make_test_image();
+    display_enable(TEST_BGCOL);
+#else
     // --- Copy bitmap (8000 bytes) ---
     // koala_file + KLA_BITMAP_OFFSET points at the 8000-byte bitmap body.
     // bitmap_dest is placed at $2000 by the linker region.
@@ -156,6 +201,7 @@ int main(void)
 
     // --- Enable multicolor bitmap mode ---
     display_enable(koala_file[KLA_BGCOL_OFFSET] & 0x0F);
+#endif
 
     // Image is now displayed. Spin forever.
     for (;;) { }
@@ -170,21 +216,35 @@ int main(void)
 oscar64 -O2 -o=bitmap-koala-viewer.prg -tf=prg bitmap-koala-viewer.c
 ```
 
-To embed a real Koala file, replace the stub array with:
+To embed a real Koala file, set `USE_TEST_IMAGE` to 0 and point the `#embed`
+at your file:
 
 ```c
 static const char koala_file[] = { #embed "yourimage.kla" };
 ```
 
 and rebuild. No other changes are needed provided the file is a standard 10003-byte
-Koala `.kla` with a 2-byte load address prefix.
+Koala `.kla` with a 2-byte load address prefix. Check the `.map` after any layout
+change: the line `2000 - 3f40 : bitmap_dest, DATA:bitmap` is what proves the
+bitmap is where `$D018` says it is.
 
 Outputs: `bitmap-koala-viewer.prg`, `.map`, `.asm`, `.lbl`.
 
 ## Expected output
 
-With the zero-filled stub, the screen displays a plain black background (all
-bitmap bits zero, all screen RAM zero, Color RAM zero, background color zero).
+With `USE_TEST_IMAGE` at 1 (as listed), border and background are blue (6) and
+the 40x25 display area shows four horizontal bands, one per pixel pattern, with
+all four colour sources visible: char rows 0-5 blue (%00, `$D021`), rows 6-11
+red (%01, screen RAM high nibble 2), rows 12-17 green (%10, screen RAM low
+nibble 5), rows 18-24 vertical stripes alternating white and yellow one cell
+wide (%11, Color RAM 1/7 by column). A one-pixel-wide diagonal runs from the
+top-left to the bottom-right of the display, taking the cell's Color RAM colour
+(white or yellow) in the first three bands and the blue background inside the
+fourth. Measured on the VICE screenshot (PAL, 8,000,000 cycles): red starts at
+PNG row 83 (raster line 99) and at column 32 (VIC X 24), so the picture is a
+full 40 columns; the earlier version's `& 0xF7` cleared CSEL and the outer
+seven pixels of each side were border. (The earlier version's zero-filled stub
+showed a plain black screen.)
 With a real `.kla` file embedded, the screen shows the full 160x200 multicolor
 image filling the display area, border and background colors matching the image's
 background register byte, no sprites, no HUD. The image is displayed from the
@@ -207,7 +267,7 @@ The three data regions map to the VIC-II's three memory accesses:
 |--------|-------------|-------|-----------------|
 | Bitmap | 2 | 8000 | g-access (pixel data per scanline) |
 | Screen RAM | 8002 | 1000 | c-access (per-cell color nibbles on badlines) |
-| Color RAM | 9002 | 1000 | c-access alternate (read by chip from $D800 direct) |
+| Color RAM | 9002 | 1000 | same c-access: the nibble arrives as the upper 4 bits of the 12-bit fetch (see `docs/hardware/vic-ii-reference.md`, access-type table) |
 | Background | 10002 | 1 | $D021 register |
 
 The 8000-byte bitmap stores the display as 25 rows of 40 cells, each cell

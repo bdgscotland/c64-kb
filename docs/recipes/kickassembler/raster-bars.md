@@ -5,7 +5,7 @@ output_format: PRG
 region: both
 techniques: [raster_bars]
 file_formats: [PRG]
-uses_registers: [D011, D012, D019, D01A, D020, D021]
+uses_registers: [D011, D012, D019, D01A, D020, D021, DC0D]
 uses_kernal: []
 ---
 
@@ -19,7 +19,10 @@ Ten horizontal colour bars, sixteen raster lines each, from a ring of
 chained raster IRQs: handler N writes bar N's border and background colours,
 arms $D012 for bar N+1, re-points $0314/$0315 at handler N+1, acknowledges
 $D019 and returns. The last handler rotates the palette by one entry and
-wraps to handler 0, so the bars cascade downward at one step per frame. Each
+wraps to handler 0, so the colour pattern moves up the screen by one bar per
+frame: each bar takes the pair the bar below it showed (an earlier version
+of this page said the bars cascade downward; two VICE frames one frame apart
+show the opposite). Each
 IRQ is armed one line early and spins on $D012 until its bar's first line
 begins, which puts the colour write in the horizontal blank rather than in
 the middle of the line. This is the plain chained-IRQ pattern; it does not
@@ -125,7 +128,7 @@ start:
         sta $0315
         lda #$01
         sta $d019
-        jmp $ea81            // pla/tay/pla/tax/pla/rti: 300 cycles cheaper than $EA31
+        jmp $ea81            // pla/tay/pla/tax/pla/rti: 25 cycles; $EA31 is ~190 idle, ~1,600 with a key held (measured)
     }
 }
 
@@ -209,9 +212,17 @@ stores stand between the loop exit and the register writes.
 
 ### Badlines
 
-A badline steals 40 cycles from the CPU starting at cycle 12. If the spin
-loop exits on a badline the stores are pushed to cycle 55 or later and the
-notch becomes a two-thirds-line step. `BAR_START = 56` with `BAR_H = 16`
+A badline steals the bus from cycle 15 to 54; BA drops on cycle 12 and the
+CPU stalls on its next read after that. If the spin loop exits on a badline
+the outcome depends on the exit cycle. With this recipe's timing the border
+store still completes (its cycles fall in the three the CPU keeps after BA
+drops) but the background store is held to cycle 55 and lands after the
+display window has closed, so the background edge appears one full line
+below the border edge, not a two-thirds-line step as an earlier version of
+this page said (measured in VICE x64sc with `BAR_START = 59`). Exit a few
+cycles later and the border store is held too: it lands in the right border
+of the bar's first line and the left border only changes on the next line.
+`BAR_START = 56` with `BAR_H = 16`
 puts every bar's first line on `line & 7 == 0`; badlines with the default
 YSCROLL are `line & 7 == 3`. If you change either constant, keep
 `(BAR_START + n * BAR_H) & 7 != 3` for every bar, or move YSCROLL.
@@ -223,11 +234,20 @@ register-restore exit: `PLA, TAY, PLA, TAX, PLA, RTI`. The tenth exits
 through `JMP $EA31`, the full KERNAL interrupt service: jiffy clock, cursor
 blink, keyboard scan, then the same exit. That keeps `TI$` and the keyboard
 alive at one call per frame, which is what the KERNAL expects, and costs
-about a thousand cycles once per frame instead of ten times. $EA31 reads
+about 190 cycles once per frame instead of ten times while no key is held
+(measured in VICE x64sc with CIA1 masked and the cursor off: `JMP $EA31`
+through its RTI is 186 cycles, against 25 for `JMP $EA81`; a badline it
+crosses adds about 40). With a key held the keyboard scan stops taking its
+early exit on the first `$DC01` read and walks all 64 matrix positions, and
+the same path is about 1,600 cycles. An earlier version of this page said
+"about a thousand cycles"; that figure was not measured and matches neither
+case. $EA31 reads
 $DC0D near its end; with CIA1 masked that read returns nothing pending and
 is harmless. Calling $EA31 from every bar handler, as the earlier version
-did, would have spent more than a bar's worth of raster time in the keyboard
-scan on every bar.
+did, would have cost about a fifth of each bar's 1,008 cycles (16 × 63)
+while idle, for no benefit, and more than a bar and a half whenever a key
+was held — the earlier version said it was more than a bar on every bar,
+which is true only with a key down.
 
 ### Acknowledge before you leave
 

@@ -5,7 +5,7 @@ output_format: PRG
 region: pal
 techniques: [stable_raster_irq, double_irq]
 file_formats: [PRG]
-uses_registers: [D011, D012, D019, D01A, D020, D021]
+uses_registers: [D011, D012, D019, D01A, D020, D021, DC0D]
 uses_kernal: []
 ---
 
@@ -24,7 +24,8 @@ build of the same source draws the bars from a plain raster IRQ and shows
 what the jitter looks like.
 
 The sync padding was measured in VICE x64sc (3.9, PAL, 6569), not on
-hardware, and the numbers below say so where it matters.
+hardware, and re-run in 3.10 on 2026-09-22 with a pixel-identical result;
+the numbers below say so where it matters.
 
 ## Source
 
@@ -203,16 +204,32 @@ Ten white bars, six raster lines tall, sixteen lines apart, starting on line
 too. The main loop increments memory at $C000, so the BASIC text at the top
 of the screen is left alone.
 
-In the control build the bars are at the same height and width but their
-left edges are staggered by one or two 8-pixel steps from bar to bar, and
-the pattern changes from frame to frame. That is the interrupt entry jitter:
-the 7-cycle `INC abs,X` instructions in the main loop delay the interrupt by
-up to six cycles depending on where in the instruction it arrives.
+In the control build the bars are the same width but sit one line lower
+(62 to 67), and their left edges are staggered by up to four 8-pixel steps
+from bar to bar (measured in one VICE frame: leftmost edges from x=89 to
+x=121 in the 384-pixel screenshot; an earlier version of this paragraph
+said "one or two" steps and "the same height"). Because the control's
+sixth line is the badline 67, its white edge write slips by the badline
+stall and lands in the border of the next line, so each control bar shows
+five clean lines and a stray white strip at the far left one line below.
+That the stagger changes from frame to frame was not re-checked here; note
+that the main loop is 26 cycles and a PAL frame is 19,656 = 756 × 26
+cycles, so the pattern may repeat exactly. The stagger itself is the
+interrupt entry jitter: the 7-cycle `INC abs,X` instructions in the main
+loop delay the interrupt by up to six cycles depending on where in the
+instruction it arrives.
 
-Measured in VICE x64sc: with `SYNC_PAD = 11` all ten left edges fall on one
-column; with 10 or 12 they split into two columns eight pixels apart, one
-cycle of residual jitter. That sensitivity to a single cycle of padding is
-the evidence that the sync is doing the work, not luck.
+Measured in VICE x64sc 3.10 (2026-09-22): with `SYNC_PAD = 11` all ten
+left edges fall on one column; with 12 they split into two columns eight
+pixels apart, alternating from block to block, and 9 splits the same way.
+But 10 gives the same single column as 11, and 13 gives a single column
+two cycles (16 pixels) to the right. An earlier version of this paragraph
+said 10 and 12 both split and called the result a one-cycle notch; it is
+not that clean, because the length of irq2 feeds back into where the next
+irq1 lands in the main loop, so which jitter phase each block sees depends
+on the padding under test. Read the single column at 11 together with the
+alternating split at 12: the split shows the blocks do arrive in both
+phases, and the single column shows the sync absorbs them.
 
 Screenshot from the VICE run this page describes: `screenshots/stable-raster-irq.png` and the `STABLE = 0` control is `screenshots/stable-raster-irq-control.png`.
 
@@ -241,7 +258,8 @@ is guaranteed to interrupt a NOP, and a NOP is two cycles long, so the
 second handler's entry jitter is 0 or 1 cycle instead of 0 to 6.
 
 Two lines rather than one, because the first handler's own late entry plus
-its setup (30 cycles) ends on the next line. With the KERNAL dispatcher in
+its setup (34 cycles from the first `LDA` to the `CLI`, counted from the
+listing; an earlier version said 30) ends on the next line. With the KERNAL dispatcher in
 the path there is not enough room in one line for the setup to finish and
 the NOP slide to be under way before the next interrupt is raised. Code that
 patches $FFFE/$FFFF directly and skips the dispatcher can use one line.
@@ -249,8 +267,9 @@ patches $FFFE/$FFFF directly and skips the dispatcher can use one line.
 ### Killing the last cycle
 
 Two consecutive reads of $D012 are four cycles apart. If the padding is
-chosen so that in the zero-jitter case the first read lands on cycle 59 and
-the second on cycle 63 of the same line, both reads return the same line
+chosen so that in the zero-jitter case the first read lands on, say, cycle
+59 and the second on cycle 63 of the same line (illustrative cycle numbers,
+not measured here), both reads return the same line
 number. In the one-cycle-late case the second read lands on cycle 64, which
 is cycle 1 of the next line, and the values differ. `BEQ` then costs 3
 cycles when they matched and 2 when they did not, so both cases leave the
@@ -284,8 +303,10 @@ drawn twice.
 ### Which lines
 
 A badline (`(line & 7) == YSCROLL`, so lines 51, 59, 67, ... with the
-default YSCROLL of 3) stalls the CPU for 40 cycles. The sync line and the
-six drawn lines must not be badlines, or the 63-cycle loop slips by 40. The
+default YSCROLL of 3) stalls the CPU for 40 to 43 cycles — plan on 43, the
+CPU keeps 20 of the 63 (an earlier version said a flat 40). The sync line
+and the six drawn lines must not be badlines, or the 63-cycle loop slips by
+that much; the control build's sixth line shows exactly this. The
 two-line gap between irq1 and irq2 can contain one: the NOP slide just
 stalls and resumes. `FIRST = 61` puts irq1 on line 58, the badline 59 inside
 the slide, the sync on 60, and the bars on 61 to 66, with the next badline on
@@ -308,11 +329,13 @@ ROM image:
 | $FFFE/$FFFF | $48 $FF: the hardware IRQ vector points at $FF48 |
 | $FF48 | the dispatcher: PHA, TXA, PHA, TYA, PHA, TSX, LDA $0104,X, AND #$10, BEQ, JMP ($0314) — 29 cycles to reach your handler |
 | $EA31 | the default target of $0314: the full service routine (JSR $FFEA first) |
-| $EA81 | PLA, TAY, PLA, TAX, PLA, RTI: the bare exit, about 12 cycles |
+| $EA81 | PLA, TAY, PLA, TAX, PLA, RTI: the bare exit, 22 cycles (25 with the `JMP $EA81` that reaches it; an earlier version said "about 12") |
 
 `JMP $EA31` at the end of a handler is not "restore registers and RTI"; it
-is the whole KERNAL interrupt, roughly a thousand cycles with the keyboard
-scan. `JMP $EA81` is the cheap exit.
+is the whole KERNAL interrupt: about 190 cycles when no key is held and
+about 1,600 with a key held, as measured for the 6510 CPU reference in this
+knowledge base (an earlier version said "roughly a thousand"). `JMP $EA81`
+is the cheap exit.
 
 ### $D019
 
