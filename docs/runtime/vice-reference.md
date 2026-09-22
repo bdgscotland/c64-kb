@@ -93,13 +93,19 @@ VICE accepts many more; run `x64sc --help` for the full list.
 | `-binarymonitor` | — | Enable the TCP binary monitor |
 | `-binarymonitoraddress <addr>` | `ip4://127.0.0.1:6502` | Monitor listen address and port |
 | `-moncommands <file>` | path to text file | Execute text-monitor commands at startup (useful for loading labels) |
-| `-warp` | — | Disable real-time throttle; run as fast as the host allows |
-| `-limitcycles <n>` | cycles | Quit after n emulated cycles (985,248 per PAL second, 1,022,727 per NTSC second); VICE exits with a non-zero status when the limit fires, so a wrapper must not treat rc=1 alone as failure |
+| `-warp` | — | Disable real-time throttle; run as fast as the host allows (`-help`: "Initially enable warp mode"; `+warp` is the default). The pinned run uses it so 8,000,000 cycles take seconds, not eight of them |
+| `-limitcycles <n>` | cycles | Quit after n emulated cycles (985,248 per PAL second, 1,022,727 per NTSC second); VICE exits with a non-zero status when the limit fires (`-help`: "quitting with an error"), so a wrapper must not treat rc=1 alone as failure. The pinned run's exit point: the frame on screen when it fires is the one `-exitscreenshot` writes, so a recipe's cycle count is part of its identity |
+| `-exitscreenshot <file>` | PNG path | Write the current frame to `<file>` when the emulator exits, including the `-limitcycles` exit. The only picture the verification protocol reads; the file is 384x272 RGBA on PAL and 384x247 on NTSC (see "Reading the exit screenshot" below) |
+| `-autostartprgmode <n>` | 0, 1, 2 | How `-autostart file.prg` gets the PRG into memory (`-help`: "0: VirtualFS, 1: Inject, 2: Disk image"). 0 types `LOAD"HELLO.PRG",8,1` and expects VICE's host-directory device to answer; 1 writes the PRG into RAM once the KERNAL reaches `READY.` and types `RUN`; 2 puts the file on a disk image and loads it through the emulated drive as `LOAD"HELLO",8,1`. The protocol pins 1: it is the fastest, and under `-default` mode 0 never ran the program at all; measurements below |
+| `-default` | — | "Restore default settings": start from VICE's built-in configuration rather than whatever the user last saved, so a run on another machine starts from the same settings. Without it a saved palette, model or drive setting would change the picture (the effect of a saved settings file was not measured here) |
+| `+sound` | — | "Disable sound playback". No audio device is opened, so a headless run cannot stall or fail on the host's audio stack; SID emulation itself still runs |
+| `+autostart-delay-random` | — | "Disable random initial autostart delay". VICE otherwise adds a random delay before autostart, so the same `-limitcycles` would land on a different frame each run; with it off the exit screenshot is reproducible pixel for pixel |
+| `-console` | — | "Console mode (for music playback)": the flag under which this page's option names were confirmed (`x64sc -default -console`). The pinned run does not use it; every screenshot cited on this page was produced without it, and whether it changes the screenshot was not measured here |
 | `-pal` | — | Force PAL machine model |
 | `-ntsc` | — | Force NTSC machine model |
-| `-model <name>` | `c64`, `c64c`, … | Select machine sub-model |
+| `-model <name>` | `c64`, `c64c`, `c64old`, `ntsc`, `newntsc`, `oldntsc`, `drean`, `jap`, `c64gs`, `pet64`, `ultimax` | Select machine sub-model (list from `x64sc -help`; there is no `pal` value, the PAL 6569 is the default `c64`). The protocol's second run adds `-model ntsc` for the 6567R8; that changes the frame height, the timing and eleven of the sixteen palette entries |
 | `-drive8type <n>` | 1541, 1571, … | Drive type for device 8 |
-| `-8 <file>` | D64, G64, … | Attach disk image to device 8 |
+| `-8 <file>` | D64, G64, … | Attach disk image to device 8 (`-help`: "Attach <name> as a disk image in unit #8"). A recipe whose `runs.json` entry carries `"disk": {"name": "TEST,01"}` gets a D64 freshly formatted with `c1541 -format "test,01" d64` attached this way before every run, so the program always sees the same empty disk |
 | `-1 <file>` | T64, TAP | Attach a tape image to the datasette (unit 1) |
 | `-soundvolume <n>` | 0–100 | Audio output level (0 = mute) |
 | `-keymap <n>` | 0 symbolic, 1 positional, 2/3 user files | Keymap type (default 0) |
@@ -114,6 +120,42 @@ An earlier revision of this page listed `-quitafter <seconds>`, `-1541-8`,
 `-tape1 <file>`, `-snapshot <file>` and `-keyboard <layout>`; x64sc 3.10 has none of
 them and rejects each as an unknown (or, for `-keyboard`, ambiguous) option, aborting
 startup. The rows above hold the real names (measured with `x64sc -default -console`).
+
+Every flag in the table was checked again on 2026-09-22 against the output of
+`x64sc -help` from the Homebrew VICE 3.10 on this machine (1,929 lines); the quoted
+phrases in the table are that output's own wording. The ten flags the pinned
+verification run uses (`-default -warp +sound +autostart-delay-random
+-autostartprgmode 1 -limitcycles N [-model ntsc] [-8 disk.d64] -exitscreenshot
+out.png -autostart out.prg`) all appear in it under exactly those names.
+
+### What `-autostartprgmode` does to a run
+
+Measured with the committed `docs/recipes/kickassembler/hello-world.md` listing
+(assembled with KickAssembler 5.25, 44-byte PRG), the pinned command with
+`GSETTINGS_SCHEMA_DIR` set, PAL, one run per cell, decoding the screenshot's text
+cells against the character ROM. A PNG was written in all fourteen runs and every run
+exited with status 1, which is the `-limitcycles` exit, not a failure.
+
+| Mode | 2,000,000 | 2,500,000 | 3,000,000 | 3,500,000 to 4,500,000 | 5,000,000 | 5,500,000 to 8,000,000 |
+|---|---|---|---|---|---|---|
+| 1 Inject | all-black frame | `READY.` only | `RUN` / `HELLO, WORLD!` / `READY.` | not run | not run | not run |
+| 0 VirtualFS | not run | not run | `LOAD"HELLO.PRG",8,1` typed | `SEARCHING FOR HELLO.PRG` | not run | `?FILE NOT FOUND  ERROR` at 6,000,000 and 8,000,000 |
+| 2 Disk image | not run | not run | `LOAD"HELLO",8,1` typed | 4,500,000: all-black frame | `SEARCHING` / `LOADING` / `READY.` / `RUN` / `HELLO, WORLD!` / `READY.` | same as 5,000,000 |
+
+So the smallest `-limitcycles`, to the nearest 500,000, at which the program's
+output is on screen is **3,000,000 for mode 1** and **5,000,000 for mode 2**; under
+`-default` **mode 0 never shows it**: the typed `LOAD` ends in
+`?FILE NOT FOUND  ERROR`. The likely reason is that `-default` turns true drive
+emulation on, so unit 8 is an empty 1541 and the host-directory device never
+answers; that is an inference, since no run was made with `+drive8truedrive` or a
+virtual device enabled, and whether mode 0 works under some other configuration
+was not measured here. Two runs produced a frame in which every one of the 104,448 pixels is
+(0, 0, 0), border included: mode 1 at 2,000,000 and mode 2 at 4,500,000. The cause
+was not established. A machine reset would blank the border like this (the VIC-II
+registers read zero after reset), but the mode 2 run at 5,000,000 shows the whole
+load already finished, which a reset at 4,500,000 does not leave time for. Treat an
+all-black exit screenshot as a cycle count that landed somewhere the frame was not
+drawn, not as evidence about the program; move `-limitcycles` and look again.
 
 ---
 
@@ -433,6 +475,128 @@ at a given execution point without requiring a visible window.
 
 On Linux CI, add `Xvfb` or set `SDL_VIDEODRIVER=offscreen` (SDL2 build) to suppress the
 display requirement.
+
+---
+
+## Reading the exit screenshot
+
+`-exitscreenshot` writes an 8-bit RGBA PNG (IHDR colour type 6, no interlace) of the
+whole frame including borders. Everything below was measured on 2026-09-22 from the
+two pictures of `docs/recipes/kickassembler/palette-cells.md` and the fourteen
+`hello-world` runs above, all VICE x64sc 3.10 with `-default`.
+
+### Geometry
+
+| | PAL (default `c64`) | NTSC (`-model ntsc`) |
+|---|---|---|
+| PNG size | 384 x 272 | 384 x 247 |
+| Display rows (y) | 35 to 234 | 23 to 222 |
+| Display columns (x) | 32 to 351 | 32 to 351 |
+| Screenshot row from raster line | y = line - 16 | y = line - 28 |
+| Border sample point | (2, 100) | (2, 100) |
+
+The display bounds are the first and last row and column whose pixel is not the
+border colour, read off the palette pictures; they agree with the bounds
+`docs/pitfalls/cia.md` measured independently for its tenths-of-a-second probe. The
+line offsets are `CLAUDE.md`'s figures, derived from three boundaries in
+`docs/recipes/kickassembler/topbottom-border-open.md`; they were not re-measured here.
+`x = 8` is VIC-II X coordinate 0 (same source, not re-measured).
+
+A text cell is 8 x 8 pixels. Screen row `r` (0 to 24) and column `c` (0 to 39) sit
+at
+
+```
+x = 32 + 8 * c
+y = 35 + 8 * r        # PAL
+y = 23 + 8 * r        # NTSC
+```
+
+so the centre of a cell is `(x + 4, y + 4)`, which is the safe place to sample a
+colour. Any pixel in the left border (x 0 to 31) reads the border colour; (2, 100)
+is used throughout the KB because it is inside the display's vertical range on both
+models, well clear of the corner. `hello-world`'s `HELLO, WORLD!` at screen row 7 is
+at y 91 to 98 on PAL: the decoder below finds it there, which is the check that the
+arithmetic is right.
+
+### The default palette
+
+With `-default` VICE 3.10 uses its internally generated palette, not one of the
+`.vpl` files in its data directory: the sixteen triples below match none of the
+27 files installed under `/opt/homebrew/opt/vice/share/vice/C64/`, compared entry
+for entry. The triples come from the palette recipe, one solid 32-cell band per
+colour index, all 2,048 pixels of each band identical.
+
+| Index | PAL RGB | NTSC RGB | Index | PAL RGB | NTSC RGB |
+|---|---|---|---|---|---|
+| 0 | (0, 0, 0) | (0, 0, 0) | 8 | (183, 99, 30) | (196, 98, 65) |
+| 1 | (255, 255, 255) | (255, 255, 255) | 9 | (119, 83, 0) | (151, 64, 0) |
+| 2 | (175, 60, 88) | (169, 71, 100) | 10 | (238, 123, 149) | (230, 134, 163) |
+| 3 | (126, 243, 214) | (138, 230, 203) | 11 | (98, 98, 98) | (98, 98, 98) |
+| 4 | (170, 64, 245) | (154, 88, 185) | 12 | (148, 148, 148) | (148, 148, 148) |
+| 5 | (98, 213, 50) | (114, 189, 103) | 13 | (183, 255, 134) | (198, 255, 186) |
+| 6 | (44, 61, 236) | (25, 73, 180) | 14 | (115, 133, 255) | (98, 145, 251) |
+| 7 | (255, 255, 70) | (255, 248, 141) | 15 | (205, 205, 205) | (205, 205, 205) |
+
+Indices 0, 1, 11, 12 and 15 are the same on both models; the other eleven differ,
+so a script that recognises colours by exact triple needs a table per model. The
+power-on screen is index 6 on index 14: PAL (44, 61, 236) text area, (115, 133, 255)
+border, as every `hello-world` run above shows. A screenshot taken with a user
+configuration, another VICE version or `-VICIIextpal` will not match this table;
+run the palette recipe on that setup first.
+
+### Decoding with PIL
+
+```python
+from PIL import Image
+im = Image.open('out.png').convert('RGB')
+px = im.load()
+w, h = im.size                     # (384, 272) PAL, (384, 247) NTSC
+y0 = 35 if h == 272 else 23
+border = px[2, 100]
+def cell_colour(row, col):         # centre pixel of a text cell
+    return px[32 + 8*col + 4, y0 + 8*row + 4]
+```
+
+To read text, compare each cell's 8 x 8 pattern with the character ROM. Take the
+text area's most common colour as background; a pixel is "ink" if it differs from
+it. Each glyph in `chargen-901225-01.bin` is eight bytes, bit 7 the leftmost pixel;
+the first 2 KiB is the upper-case/graphics set the machine powers on with, codes 0
+to 255. Codes 128 to 255 are the reversed forms, stored as separate glyphs: 127 of
+them are the exact complement of code - 128, and one is not. Reversed `@` (code 128)
+has row 6 as `$99` where the complement of `@`'s `$62` would be `$9D`, one pixel
+different (ROM bytes read on this machine; the lower-case set at offset 2048 has the
+same single exception). Build the lookup from the ROM bytes, not from complementing,
+and match the packed rows:
+
+```python
+rom = open('/opt/homebrew/opt/vice/share/vice/C64/chargen-901225-01.bin', 'rb').read()
+glyph = {}
+for code in range(256):
+    glyph.setdefault(tuple(rom[code*8:code*8+8]), code)   # first code wins: $20 for blank, not $60
+def cell_code(row, col, bg):
+    return glyph.get(tuple(
+        sum((px[32 + 8*col + xx, y0 + 8*row + yy] != bg) << (7 - xx) for xx in range(8))
+        for yy in range(8)))
+```
+
+Screen codes 1 to 26 are `A` to `Z`, `$20` to `$3F` are space, punctuation and
+digits as in ASCII, 0 is `@`. Two blank glyphs share the all-zero pattern (`$20`
+space and `$60` shifted space); `setdefault` keeps the lower code. Reversed text
+comes back as code + 128 because the ROM holds those forms; mask with `& 0x7f` to
+get the character, and note the palette recipe's solid bands are `$A0`, reversed
+space. A cell whose pattern is not in the table returns `None`: a sprite, a custom
+character set, a colour that happens to equal the background, or a screenshot taken
+mid-frame with two frames' contents in it.
+
+### Decoding without PIL
+
+The PNG is small enough to decode in pure Python. Concatenate the `IDAT` chunks,
+`zlib.decompress` them, and undo the per-row filter byte (0 none, 1 Sub, 2 Up,
+3 Average, 4 Paeth; the two palette PNGs use 1, 2 and 4). Each row is one filter
+byte followed by `384 * 4` bytes of RGBA. A 40-line implementation of that on this
+machine returned the same border pixel and the same sixteen triples as PIL from
+both palette pictures. Ignore the alpha byte; every pixel VICE wrote had it at 255
+in the pictures checked, but nothing here depends on that.
 
 ---
 

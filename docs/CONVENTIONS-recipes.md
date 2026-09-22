@@ -57,11 +57,18 @@ A recipe page is not done when it reads well. Before it lands:
 1. The listing is extracted from the page and built with the toolchain the
    page names — `npm run check:listings` does exactly that and is run by
    `npm test`. A listing that does not build does not land.
-2. For anything that draws, the PRG is run headless in VICE
-   (`x64sc -warp -autostartprgmode 1 -limitcycles N -exitscreenshot out.png`)
-   and the screenshot is measured against the "Expected output" section;
-   the PNG goes in `recipes/<toolchain>/screenshots/<recipe>.png` and the
-   page names it.
+2. For anything that draws, the PRG is run headless in VICE with the
+   pinned command (`x64sc -default -warp +sound +autostart-delay-random
+   -autostartprgmode 1 -limitcycles N [-model ntsc] -exitscreenshot
+   out.png -autostart recipe.prg`) and the screenshot is measured against
+   the "Expected output" section; the PNG goes in
+   `recipes/<toolchain>/screenshots/<recipe>.png` and the page names it.
+   The cycle count, models, extra flags and any fresh disk are pinned per
+   recipe in `recipes/runs.json`, and `npm run verify:recipes` re-runs
+   every recipe from that manifest and fails on a pixel that differs from
+   the committed PNG. The pixel geometry, the palette RGB values per model
+   and a decode snippet are in `runtime/vice-reference.md`, section
+   "Reading the exit screenshot".
 3. Any timing constant that was found by trying values (a sync padding, a
    line padding) is labelled as measured in VICE, with what the picture
    looks like when it is off by one. VICE is the instrument; the pages do

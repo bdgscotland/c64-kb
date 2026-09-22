@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 709, schema 20, tools 1.22.1.
+Data 710, schema 20, tools 1.22.1.
+
+**Batch three: object pool, KERNAL file I/O, and the instrument itself
+documented.** An "Object pool" section on the game-design patterns page
+with the `object-pool` recipe: slot table, spawn scan and free list,
+wave-table byte layout, despawn, per-slot timers, iterating active slots
+only, each timed, and the scripted scenario checksummed on the 6502. A
+new page `techniques/file-io.md` under the `io` category with
+`kernal_file_write_seq`, `kernal_file_read_seq`, `error_channel_check`
+and `kernal_load_to_address`, linked from three existing pitfalls, and
+the `file-io-roundtrip` recipe, which writes a file to a fresh disk,
+reads it back, checks the error channel before and after and prints the
+match and checksum; the verifier formats that disk with c1541 before
+every run. The VICE reference gained rows for every flag the KB's own
+protocol uses, each confirmed against `x64sc -help` and the
+autostart modes measured, and a section "Reading the exit screenshot"
+with the pixel geometry for both models, the sixteen palette RGB triples
+measured by the new `palette-cells` recipe, and a decode snippet; the
+recipe conventions, CLAUDE.md and the screenshot READMEs now point at it
+instead of carrying their own copies.
 
 **Game foundations, batch two: tile maps, printing numbers, random
 numbers, lookup tables.** Four more gap-map items (#13, #16), same

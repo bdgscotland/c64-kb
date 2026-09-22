@@ -358,6 +358,156 @@ patrol routes; use reactive for chasers and bosses.
 
 ---
 
+### Object pool: slot table, spawn and despawn
+
+The slot table above is an object pool. The parts that recur in every
+game are the allocator, the spawner that feeds it, and the tick that
+walks only the live slots. All figures below are cycles measured with
+CIA1 timer A in VICE x64sc 3.10, Oscar64 -O2, eight slots, net of the
+call and loop around them (rung 1; the listing is
+`../recipes/oscar64/object-pool.md`).
+
+**Parallel arrays, not structs.** One array per attribute, indexed by
+slot number, so every access is `lda obj_x,y` with the slot in a register.
+A struct array needs a multiply or a stride-added pointer per field.
+Oscar64 compiles the C below to the same absolute-indexed code.
+
+**Find a free slot by scanning for state 0.** Cost grows with the slot
+number found: 27 cycles when slot 0 is free, 64 when slot 3 is the first
+free one, 124 for a full pool that refuses. About 12 cycles per slot
+examined, so a 16-slot pool costs up to about 220 on a refusal (rung 3,
+from the measured eight-slot figures). Refusals are the normal case in a
+busy frame, so the full-pool number is the one to budget.
+
+**Free-list alternative.** Keep a stack of free slot numbers; allocate by
+popping, free by pushing. A pop and a push together measured 44 cycles,
+constant whatever the pool size. The trade-offs: eight bytes plus a top
+index; every free must go through the push, so a handler that clears
+`obj_state` directly leaks the slot for good; and slots come back in
+free order, not lowest first, which changes draw order on a multiplexer
+that walks slots in index order. Use it for pools of 16 or more where the
+scan's worst case matters; the scan is fine at eight.
+
+**Spawn from a wave table.** Five bytes per entry, in frame order,
+terminated by a frame byte of $ff:
+
+| byte | meaning |
+|---|---|
+| 0 | frame on which the entry fires |
+| 1 | type (indexes the per-type tables) |
+| 2 | x of the first object |
+| 3 | y |
+| 4 | count; objects are placed 16 pixels apart in x |
+
+The spawner keeps one position into the table and fires every entry
+whose frame byte equals the current frame. A spawn into a full pool is
+dropped, not queued: the wave loses that object and the game goes on.
+The game skeleton recipe in issue #1 reuses this layout. A spawn that
+fills slot 0 and frees it again measured 146 cycles, of which 27 is the
+scan; the rest is six stores and, in the listing, two counters and a log
+store that a game would not have.
+
+**Despawn.** Writing 0 to `obj_state` frees the slot; the other fields
+are left stale and overwritten by the next spawn. Two paths free a slot
+inside the tick: y at or past the bottom of the window (the constant is
+the game's choice; 250 in the listing) and a per-slot countdown timer
+reaching 0. A hit does not free the slot: it sets a dying state and a
+short timer, so the explosion frames play from the same slot and the
+timer does the freeing. Timer 0 means no timer, for bosses and scenery.
+
+**Iterate only active slots.** The tick tests `obj_state` and skips free
+slots. Eight active slots: 380 cycles for the move, off-screen test and
+timer, 47.5 per slot. Eight free slots: 106 cycles, 13.25 per slot
+skipped. A 16-slot pool with 8 active is therefore about 486 cycles a
+frame before any per-type behaviour runs (rung 3).
+
+```c
+// Object pool: parallel arrays, scan allocator, wave table, per-frame tick.
+#define MAX_OBJ    8
+#define NO_SLOT    0xff
+#define OFF_BOTTOM 250
+
+char obj_state[MAX_OBJ];    // 0 = free; anything else is active
+char obj_type[MAX_OBJ];
+char obj_x[MAX_OBJ];
+char obj_y[MAX_OBJ];
+char obj_dy[MAX_OBJ];
+char obj_timer[MAX_OBJ];    // frames left; 0 = no timer
+
+static const char type_life[4] = { 0, 12, 12, 40 };
+static const char type_dy[4]   = { 0,  1,  1,  2 };
+
+// frame, type, x, y, count; $ff ends the table. Entries in frame order.
+static const char wave_table[] = {
+    0, 1,  24, 50, 8,
+    1, 3, 100, 70, 3,
+    0xff };
+static char wave_pos;
+
+char pool_alloc(void)
+{
+    for (char i = 0; i < MAX_OBJ; i++)
+        if (obj_state[i] == 0)
+            return i;
+    return NO_SLOT;
+}
+
+char spawn(char type, char x, char y)
+{
+    char s = pool_alloc();
+    if (s == NO_SLOT)
+        return NO_SLOT;             // pool full: the wave loses this one
+    obj_type[s]  = type;
+    obj_x[s]     = x;
+    obj_y[s]     = y;
+    obj_dy[s]    = type_dy[type];
+    obj_timer[s] = type_life[type];
+    obj_state[s] = 1;               // last: the slot is visible once set
+    return s;
+}
+
+void wave_step(char frame)
+{
+    while (wave_table[wave_pos] == frame)
+    {
+        char type  = wave_table[wave_pos + 1];
+        char x     = wave_table[wave_pos + 2];
+        char y     = wave_table[wave_pos + 3];
+        char count = wave_table[wave_pos + 4];
+        for (char k = 0; k < count; k++)
+            spawn(type, x + (k << 4), y);
+        wave_pos += 5;
+    }
+}
+
+void update_all(void)
+{
+    for (char i = 0; i < MAX_OBJ; i++)
+    {
+        if (obj_state[i] == 0)
+            continue;               // free slot: skip
+        char y = obj_y[i] + obj_dy[i];
+        obj_y[i] = y;
+        if (y >= OFF_BOTTOM)
+            obj_state[i] = 0;       // left the screen
+        else if (obj_timer[i] != 0 && --obj_timer[i] == 0)
+            obj_state[i] = 0;       // timer ran out
+    }
+}
+```
+
+The fragment compiles with Oscar64 -O2 as written once a `main` calls
+`wave_step` and `update_all` once a frame; the listing gate does not
+build C fragments on this page. In the recipe's build the compiler emits
+`update_all` as one absolute-indexed loop with the timer decrement
+folded into an `sbc #0` that borrows from the off-screen compare, which
+is the code a hand assembler would write (read from Oscar64's `.asm`
+output for the recipe listing, not from this fragment). `../recipes/oscar64/simple-shmup.md` spawns
+its four enemies inline into a fixed `enemies[]` array with an `active`
+flag; the pool is what that becomes once counts vary per wave.
+
+---
+
 ## Game loop patterns
 
 ---
@@ -512,6 +662,9 @@ KERNAL `OPEN`/`PRINT#`/`CLOSE` sequence and write the persistent state
 block. A 256-byte block writes in under 1 second. Disk save is the standard
 for C64 RPGs and adventure games. Requires the KERNAL to remain available
 (do not page it out) during the save, or rebank it in for the save routine.
+The call sequences, the error-channel check and a measured write-and-read
+round-trip are `kernal_file_write_seq`, `kernal_file_read_seq` and
+`error_channel_check` in `../techniques/file-io.md`.
 
 ---
 

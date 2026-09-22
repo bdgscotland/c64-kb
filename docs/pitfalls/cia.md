@@ -237,7 +237,9 @@ which first finds the display area as the run of non-border pixels
 (border red, background blue): the PAL screenshot is 384×272 with the
 display at y 35-234, so screen row 0 is at PNG y = 35, and the NTSC one
 384×247 with the display at y 23-222, row 0 at y = 23; the display
-spans x 32-351 in both, so screen column c is x = 32 + 8c. The decoder
+spans x 32-351 in both, so screen column c is x = 32 + 8c (this geometry,
+the palette values per model and a decode snippet are now collected in
+`../runtime/vice-reference.md`, "Reading the exit screenshot"). The decoder
 then demands exactly one lit cell per test row, all 64 of its pixels
 lit, and no lit cell anywhere else on the screen; every run below
 passed that. The runs (2026-09-22, after rows G, H and I were added;

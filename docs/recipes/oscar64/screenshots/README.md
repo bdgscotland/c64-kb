@@ -64,6 +64,12 @@ x 32, so a character cell is the 8×8 block at `(32 + 8·col, 35 + 8·row)`
 and the window occupies rows 35–234 (raster 51–250 minus 16). The border
 pixel at (2, 100) is a safe place to read the border colour.
 
-The pictures are evidence about VICE, not about a 6569 on a bench. Where a
-recipe quotes a number from a picture, the recipe text says how it was
-measured.
+- `object-pool.png` / `-ntsc.png` at 8,000,000 cycles: the scripted
+  spawn, despawn and respawn scenario with its checksum and PASS line and
+  the per-call cycle figures.
+
+The pixel geometry, the palette RGB triples per model and a decode snippet
+are in `docs/runtime/vice-reference.md`, section "Reading the exit
+screenshot". The pictures are evidence about VICE, not about a 6569 on a
+bench. Where a recipe quotes a number from a picture, the recipe text says
+how it was measured.

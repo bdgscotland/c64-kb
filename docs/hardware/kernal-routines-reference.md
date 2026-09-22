@@ -1261,6 +1261,8 @@ SYS stub, or `$C000` for a standalone ML program).
 
 #### Reading the disk error channel
 
+As a technique with a measured round-trip: `error_channel_check` in `../techniques/file-io.md` and `../recipes/kickassembler/file-io-roundtrip.md`.
+
 A common "is my disk command happy?" check — open the command
 channel (secondary 15), read the response into a buffer until
 end-of-file or CR, then close.
@@ -1306,6 +1308,8 @@ After this call, `buf` contains the drive status line like
 "00, OK,00,00" or "21,READ ERROR,18,01" (terminated by CR).
 
 #### Writing a sequential disk file
+
+As techniques with a measured round-trip: `kernal_file_write_seq` and `kernal_file_read_seq` in `../techniques/file-io.md`.
 
 Write a small block to a new disk file. Two SETLFS+SETNAM
 sequences are used: one to scratch any existing file with the

@@ -107,5 +107,41 @@
     "shots": {
       "pal": "screenshots/lfsr-random-seed2.png"
     }
+  },
+  "oscar64/object-pool": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/object-pool.png",
+      "ntsc": "screenshots/object-pool-ntsc.png"
+    }
+  },
+  "kickassembler/file-io-roundtrip": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/file-io-roundtrip.png",
+      "ntsc": "screenshots/file-io-roundtrip-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/palette-cells": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/palette-cells.png",
+      "ntsc": "screenshots/palette-cells-ntsc.png"
+    }
   }
 }

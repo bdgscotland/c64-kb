@@ -32,6 +32,15 @@ the page says what changed.
 pinned and not verified by the gate; its stagger depends on autostart
 timing.
 
+`palette-cells.png` / `-ntsc.png` are the sixteen colours painted into
+known cells; they are the measurement behind the palette table in
+`docs/runtime/vice-reference.md`, section "Reading the exit screenshot",
+which also gives the pixel geometry and a decode snippet.
+`file-io-roundtrip.png` / `-ntsc.png` are at 16,000,000 cycles against a
+fresh `TEST,01` disk that `verify:recipes` formats with c1541 before the
+run (`"disk"` in `runs.json`); true drive emulation is on, so the run
+takes real C64 time.
+
 The pictures are evidence about VICE, not about a 6569 on a bench. Where a
 recipe's timing constant was found by measurement (`SYNC_PAD`, `LINE_PAD`,
 `ENTRY_PAD`), the recipe text says so and says what the picture looks like
