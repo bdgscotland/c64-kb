@@ -10,13 +10,13 @@ const BudgetSchema = BriefingSchema.shape.budget;
 describe("computeBudget", () => {
   it("says over for a set whose cycles exceed a PAL frame, and names the weakest basis", () => {
     const b = computeBudget([
-      { name: "soft_scroll_h", cost: { cycles_per_frame: 40043, basis: "measured-vice" } },
+      { name: "soft_scroll_h", cost: { cycles_per_frame: 74041, basis: "measured-vice" } },
       { name: "sprite_multiplex_24", cost: { cycles_per_frame: 700, bytes_code: 900, basis: "estimated" } },
-      { name: "sid_play_routine_pattern", cost: { cycles_per_frame: 332, basis: "measured-vice" } },
+      { name: "sid_play_routine_pattern", cost: { cycles_per_frame: 327, basis: "measured-vice" } },
     ]);
     expect(b.region).toBe("PAL");
     expect(b.frame_cycles).toBe(19656);
-    expect(b.cycles_per_frame_sum).toBe(41075);
+    expect(b.cycles_per_frame_sum).toBe(75068);
     expect(b.cycles_verdict).toBe("over");
     expect(b.bytes_sum).toBe(900);
     expect(b.bytes_verdict).toBe("under");
@@ -29,11 +29,11 @@ describe("computeBudget", () => {
   it("says under for a set within the frame and names the techniques without a cost line", () => {
     const b = computeBudget([
       { name: "stable_raster_irq", cost: { cycles_per_frame: 124, basis: "arithmetic" } },
-      { name: "sid_play_routine_pattern", cost: { cycles_per_frame: 332, basis: "measured-vice" } },
+      { name: "sid_play_routine_pattern", cost: { cycles_per_frame: 327, basis: "measured-vice" } },
       { name: "plasma" },
       { name: "standard_bitmap" },
     ]);
-    expect(b.cycles_per_frame_sum).toBe(456);
+    expect(b.cycles_per_frame_sum).toBe(451);
     expect(b.cycles_verdict).toBe("under");
     expect(b.without_cost).toEqual(["plasma", "standard_bitmap"]);
     expect(b.is_floor).toBe(true);
@@ -87,7 +87,7 @@ describe("computeBudget", () => {
 
   it("renders the verdicts, the floor and the weakest basis in the text", () => {
     const text = renderBudgetText(computeBudget([
-      { name: "soft_scroll_h", cost: { cycles_per_frame: 40043, basis: "measured-vice" } },
+      { name: "soft_scroll_h", cost: { cycles_per_frame: 74041, basis: "measured-vice" } },
       { name: "plasma" },
     ]));
     expect(text).toContain("over budget");

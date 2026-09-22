@@ -1616,7 +1616,6 @@ export async function timingBudget(opts: {
   technique: string;
   region: string;
 }): Promise<TimingBudgetResult> {
-  const f = await getFalkor();
   const a = getAnalytics();
 
   const regionKey = opts.region.toUpperCase() as "PAL" | "NTSC";
@@ -1627,8 +1626,7 @@ export async function timingBudget(opts: {
   // read always fell through to the default; the dead read was removed in
   // tools 1.25.0 rather than given a writer, because the per-technique cost
   // line (cost_cycles_per_line and friends) is the model that carries a
-  // technique's own figures.
-  void f;
+  // technique's own figures, and the graph connection went with it.
   const irq_overhead = DEFAULT_IRQ_OVERHEAD;
 
   const cycles_per_line = rc.cycles_per_line;

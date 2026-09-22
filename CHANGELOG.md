@@ -28,6 +28,11 @@ whose recipe pages state figures carry a line, each figure taking the
 basis its page supports and no more; a figure the page measured in VICE is `measured-vice`, one
 read off a build's segment listing is `derived-listing`, one worked
 from settled constants is `arithmetic`, and a judgement is `estimated`.
+`cycles_per_frame` is the worst frame the technique produces, not an
+average, and it is the technique's own work: the soft scroller states
+its carry frame as the shipped listing measured it, the frame-sync loop
+does not state its demonstration's stand-in payload, and a level-start
+map expand states nothing per frame.
 `c64_timing_budget` no longer reads `t.irq_overhead`, a property nothing
 ever wrote; the read always fell through to the 36-cycle default and
 the constant now stands alone.

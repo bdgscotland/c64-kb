@@ -26,7 +26,7 @@ horizontal panning.
 **Region:** both
 **Uses registers:** D016
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=40043
+**Cost:** cycles_per_frame=74041
 **Cost basis:** measured-vice
 
 ### Why
@@ -653,8 +653,8 @@ buffer) is the real budget item and is scene-specific.
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=10731
-**Cost basis:** measured-vice
+**Cost:** cycles_per_frame=268
+**Cost basis:** arithmetic
 
 ### Why
 
@@ -792,7 +792,9 @@ only):
 The edge decoders above were not timed. One column decode touches 11
 metatiles and writes four bytes for each, half of what `expand_row`
 writes per metatile, so a figure in the low hundreds of cycles is
-arithmetic from the expand figure (rung 3), not a measurement. A full-map expand at 10,731
+arithmetic from the expand figure (rung 3), not a measurement: half of
+48.8 is 24.4 per metatile, and eleven metatiles come to about 268
+cycles, which is the figure on the Cost line above. A full-map expand at 10,731
 cycles is about 55% of the ~19,656-cycle PAL frame, so it belongs at level
 start, not inside the scroll loop; the scroll loop does one edge decode
 per character step.

@@ -234,7 +234,7 @@ Changing $D416 while voices are playing produces a live filter sweep — this is
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418
 **Requires:** sid_voice_setup
-**Cost:** cycles_per_frame=332, irq_slots=1
+**Cost:** cycles_per_frame=327, irq_slots=1
 **Cost basis:** measured-vice
 
 ### Why
@@ -827,7 +827,8 @@ off, in `recipes/oscar64/sfx-engine.md` (rung 1): the engine costs 263
 cycles on a frame it owns the voice (seven stores, four byte copies for the
 checksum, and the row advance) and 55 cycles when idle, both including the
 harness's 5 cycles of start/stop overhead. The stub tune's play routine
-costs 332. Against a PAL frame of 19,656 cycles the engine is about 1.3 %
+costs 332, or 327 net of that overhead, which is the figure on the Cost
+line above. Against a PAL frame of 19,656 cycles the engine is about 1.3 %
 active and 0.25 % idle (arithmetic). A real player's play routine is
 typically several times the stub; its figure is the player's, not this
 technique's.

@@ -107,7 +107,7 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | category | string | One of: raster, sprite, scroll, bitmap, effect, music, cpu, banking, loader, render, input, logic, maths, text, io. Enforced at extract (schema 20): a technique doc outside the set is refused with a warning. `render` had been in use since the text-mode page without being listed; input, logic, maths, text and io were added for game and application foundations (issue #17). |
 | complexity | string | "low", "medium", "high", "scene-tier" |
 | cost_cycles_per_line | integer, optional | CPU cycles the technique takes on each raster line it is active on. From the page's `**Cost:**` line (schema 22). |
-| cost_cycles_per_frame | integer, optional | CPU cycles the technique takes per frame, a PAL frame of 19,656 unless the page says otherwise. For a routine called on demand, one call per frame. |
+| cost_cycles_per_frame | integer, optional | CPU cycles the technique takes per frame, a PAL frame of 19,656 unless the page says otherwise. The worst frame, not an average. For a routine called on demand, one call per frame; a routine the page places outside the frame loop has no value here. |
 | cost_lines_active | integer, optional | Raster lines per frame on which the technique runs code. |
 | cost_bytes_code | integer, optional | Bytes of code in the built recipe's segments. When the page states only a PRG size, that size less the two-byte load address. |
 | cost_bytes_data | integer, optional | Bytes of tables, buffers and other data in the built recipe's segments. |

@@ -591,7 +591,7 @@ None per line. The routine runs once, with interrupts disabled, and holds the CP
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D012, D020
-**Cost:** cycles_per_frame=10400, bytes_code=985
+**Cost:** bytes_code=985
 **Cost basis:** arithmetic
 
 ### Why
