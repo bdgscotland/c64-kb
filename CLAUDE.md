@@ -3,12 +3,15 @@
 This repository is a reference for AI coding agents: markdown documents
 about the Commodore 64 (hardware, techniques, pitfalls, recipes,
 toolchains), indexed two ways (Qdrant vectors, FalkorDB graph) and served
-over MCP. It is public and read. A wrong number here becomes a torn screen
-in someone's demo. Work accordingly.
+over MCP. It is public, and agents build C64 software from it: games,
+demos, tools, anything on the stock machine. A wrong cycle count, register
+bit or timing value in a page becomes a torn screen or a crash in
+someone's program. Work accordingly.
 
-Counts (documents, nodes, edges, tests, recipes) do not go in README.md,
-this file or any page's prose; they go stale within commits. `npx c64-kb
-health` prints the live ones; `CHANGELOG.md` records what an audit changed.
+Tallies are a different kind of number. How many documents, nodes, edges,
+tests or recipes there are does not go in README.md, this file or any
+page's prose; it goes stale within commits. `npx c64-kb health` prints
+the live figures; `CHANGELOG.md` records what an audit changed.
 
 ## The rules that are enforced
 

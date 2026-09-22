@@ -1,21 +1,21 @@
 <p align="center">
-  <img src="hero.png" alt="c64-kb — Commodore 64 knowledge base for AI-assisted demo and game development" width="900">
+  <img src="hero.png" alt="c64-kb — Commodore 64 knowledge base for AI-assisted development" width="900">
 </p>
 
-# c64-kb — Commodore 64 knowledge base for AI-assisted demo and game development
+# c64-kb — Commodore 64 knowledge base for AI-assisted development
 
 A shared reference KB served via MCP. Combines Qdrant vector search with
 FalkorDB knowledge graph over C64 hardware, techniques, toolchains, and
-pitfalls. Designed to power AI agent loops that design and build C64 demos
-and games.
+pitfalls. Designed to power AI agent loops that build C64 software: games,
+demos, tools, anything on the stock machine.
 
 ---
 
 ## The pitch
 
 An LLM writing C64 code has two problems that compound. Its training data
-is mostly cc65, which is common on GitHub and not what demo-quality work
-uses. And its timing claims are wrong often enough to matter: a raster
+is mostly cc65, which is common on GitHub and not what cycle-tight work on
+the machine uses. And its timing claims are wrong often enough to matter: a raster
 split on the wrong line, a sprite multiplexer that does not fit the badline
 window, a SID filter cutoff that differs between chip revisions. The code
 assembles cleanly and tears the screen at runtime.
@@ -266,7 +266,7 @@ the KB content and the `c64_toolchain_hint` bias enforcer.
 recipes are Oscar64, and the `c64_toolchain_hint` tool defaults
 to Oscar64 when no toolchain is specified. This is deliberate: LLM training
 data is saturated with cc65 patterns, which are workable but not idiomatic
-for demo-quality code. c64-kb exists in part to push models toward Oscar64
+for cycle-tight code. c64-kb exists in part to push models toward Oscar64
 idioms.
 
 **Secondary: KickAssembler.** Cycle-tight escape hatch for work where
