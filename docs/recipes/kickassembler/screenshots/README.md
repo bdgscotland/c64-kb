@@ -1,11 +1,13 @@
 # Screenshots
 
-One PNG per KickAssembler recipe, and every one of them is reproducible:
-`npm run verify:recipes` assembles the listing exactly as it appears in
-the recipe page with KickAssembler 5.25, runs the PRG headless in VICE
-x64sc 3.10 (PAL, 6569) with the parameters pinned in
+One PNG per KickAssembler recipe and model (`<stem>.png` for PAL,
+`<stem>-ntsc.png` where the recipe is pinned on NTSC too), and every one
+of them is reproducible: `npm run verify:recipes` assembles the listing
+exactly as it appears in the recipe page with KickAssembler 5.25, runs
+the PRG headless in VICE x64sc 3.10 with the parameters pinned in
 `docs/recipes/runs.json`, and fails on any pixel that differs from the
-picture here. The pinned run is:
+picture here. The default pinned run is the one below; a recipe that
+needs a different cycle count or a disk says so in its `runs.json` entry:
 
 ```bash
 x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \

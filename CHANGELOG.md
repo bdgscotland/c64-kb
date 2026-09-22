@@ -5,7 +5,27 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 721, schema 22, tools 1.25.2.
+Data 722, schema 22, tools 1.25.2.
+
+**Batch 9b: text and demo effects the gap map still owed.** Four new
+techniques, each with a pinned, measured recipe. `big_font_2x2` on the
+text page: a 2x2 charset built from the ROM font at start (about 58,000
+cycles once) and a two-row scroller whose rotate costs 708 cycles on
+either model, with the KickAssembler recipe `big-font-scroller`.
+`charset_animation` on the render page: rewriting a glyph's eight bytes
+in place against flipping whole charsets with `$D018`, 196 cycles a frame
+for the rewrite, with the Oscar64 recipe `charset-animation`; the writer
+found and fixed an NTSC ordering fault of its own on the way, a HUD write
+that spilled past the shorter vertical blank. `speedcode_generation` on
+the CPU page: a generator that emits unrolled load and store pairs into
+RAM from address tables, measured against a loop for the same copy, with
+the KickAssembler recipe `speedcode-generator`, whose text records that
+its first verdict was placed after the timed loop and passed a red case
+until it was moved. `dycp_scroller` on the scroll page: letters on a sine
+wave by copying glyph rows into per-column charset strips, with the
+KickAssembler recipe `dycp-scroller` pinned at nine million cycles and
+its PAL and NTSC timer readings as a clean illustration of the badline
+cost. Every new technique is anchored on the pitfalls its code meets.
 
 **Batch 9a: what the three-arm build test said was missing.** A new
 technique page, `techniques/logic.md`, opens with `tile_grid_collision`

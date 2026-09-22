@@ -226,3 +226,112 @@ the wrap to raster 51, about 6,700 cycles — not the whole frame.
 ### Recipes
 
 - `recipes/oscar64/text-overlay-playfield.md`
+
+---
+
+## charset_animation — Animating tiles by changing the glyph, not the cells
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D018
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=196
+**Cost basis:** measured-vice
+
+### Why
+
+Water, fire, lava, conveyor belts and blinking lights are the same tile
+repeated across a field. Redrawing every cell that shows the tile each
+frame costs cycles in proportion to the field: 12 cycles a cell from an
+Oscar64 `-O2` store loop, 2,429 for 200 cells (recipe, CIA-timed in VICE
+x64sc), so 240 water cells would be about 2,880 and a full screen of
+them more than a blank window. The VIC has no copy of a glyph. It fetches
+the 8 bytes for each cell's code from the character base on every raster
+line it draws, so changing those 8 bytes changes every cell that shows
+the code at once, whatever the field holds. That is the whole technique,
+in two forms.
+
+### How
+
+**(a) Rewrite the glyph in place.** Keep an animation table of N phases,
+8 bytes each, and once per frame copy phase `frame mod N` over the
+glyph's 8 bytes in the charset the VIC is showing. Every cell with that
+code animates. The cost is one 8-byte copy per animated glyph per frame,
+independent of how many cells show it: 196 cycles in Oscar64 with the
+call and pointer set-up inside the timed window, of which the eight
+`LDA (zp),Y / STA (zp),Y` pairs with their index loads are 120
+(recipe); 64 cycles in hand assembly as eight `LDA abs,Y / STA abs`
+pairs (arithmetic, not measured here). An eight-phase table is 64 bytes.
+
+**(b) Flip whole charsets.** Prepare two or more 2 KB charsets in the VIC
+bank that differ in the animated glyphs, and once per frame write the
+one to show into `$D018` bits 1 to 3. One 4-cycle store (the recipe's
+harness reads 14 with its index load and its own stop store) moves the
+glyph source for the whole screen. The cost is the same whether one cell
+or a thousand shows the animated code, and the same however many glyphs
+differ between the sets: a fire glyph, a water glyph and a belt glyph
+can all step at once for the same store. The price is memory, 2 KB a
+phase, and the bank: all the sets, the screen and any sprites must sit
+in the one 16 KB VIC bank, and a compiler will not stop code growing
+into a hardcoded set address (`charset_blit_overruns_grown_code`).
+
+### Why it works
+
+`$D018` bits 1 to 3 give the character base in 2 KB steps inside the VIC
+bank, and the character generator reads glyph row `line & 7` of each
+code at `base + code * 8` as it draws. Both forms change what that read
+returns. (a) changes the bytes at the address; (b) changes the address.
+The difference is atomicity. A `$D018` store is one write and the VIC
+reads the register at each fetch, so there is no half state: rows above
+the store show the old set, rows below it the new one, and if the store
+is made below the display nobody sees the seam. An 8-byte rewrite is
+eight writes. If a fetch of that glyph falls between them, the rows
+above show the old glyph, the rows below the new one, and the text row
+the beam is in can show old and new pixel rows of the same glyph. Do the
+rewrite after the last display line and before the first badline: from
+line 256 that is 107 lines on PAL and 58 on the 6567R8 (arithmetic from
+the settled frame lengths). The recipe rewrites first thing after
+`vic_waitFrame()`, 196 cycles, inside four raster lines of line 256
+(arithmetic at 63 cycles a line).
+
+Reading `$D018` back gives bit 0 as 1 whatever was written; mask it
+before comparing (measured: the monitor shows `1D` for a stored `1C`).
+
+### Variations
+
+- **Animate a subset of rows.** The glyph is global, so cells that must
+  not animate need a different code with a static copy of the glyph. A
+  raster split that writes `$D018` mid-frame gives the rows below it a
+  different set; it needs a stable raster IRQ and the store must land in
+  the horizontal blank or the seam line shows both sets.
+- **Double-buffered charsets.** Combine the two forms: rewrite glyphs
+  into the set that is not being shown, anywhere in the frame, and flip
+  `$D018` to it in the blank. The rewrite can then be spread across the
+  frame and the flip is atomic. The recipe's in-place band does the
+  single-buffered version, writing only the set about to be shown.
+- **Colour RAM alongside.** The glyph carries shape, colour RAM carries
+  the cell's colour; cycling colour RAM under an animated glyph gives a
+  second axis (a fire glyph stepping through yellow, orange, red) at one
+  store per cell, which is the redraw cost again. Use it on few cells.
+- **More phases in (a) than (b).** An eight-phase table costs 64 bytes;
+  eight charsets cost 16 KB, the whole bank. Long animations go in (a),
+  many simultaneous glyphs in (b).
+
+### Cycle budget
+
+Per frame, in the blank: 196 cycles for one in-place glyph and 14 for a
+flip as the recipe's harness reads them, 3,368 for the recipe's whole
+loop including its 200-cell redraw comparison and the self-check, all
+measured in VICE x64sc on both models with identical figures because
+nothing runs across a badline. Against the 107-line PAL blank (about
+6,700 cycles) an in-place glyph is 3 %; the 58-line NTSC blank (about
+3,770) holds nineteen of them. The Cost line above is the in-place
+form, 196 cycles; its 64-byte table is stated here and not on the line,
+so that the line keeps the basis of its measured figure. The flip form's
+per-frame cost is under 20 cycles and its data cost is 2,048 bytes a
+set, which the line does not carry because the set count is the
+design's.
+
+### Recipes
+
+- `recipes/oscar64/charset-animation.md`

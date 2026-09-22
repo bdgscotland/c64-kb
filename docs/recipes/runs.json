@@ -356,5 +356,53 @@
       "pal": "screenshots/fixed-point-jump-velocity.png",
       "ntsc": "screenshots/fixed-point-jump-velocity-ntsc.png"
     }
+  },
+  "kickassembler/big-font-scroller": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/big-font-scroller.png",
+      "ntsc": "screenshots/big-font-scroller-ntsc.png"
+    }
+  },
+  "oscar64/charset-animation": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/charset-animation.png",
+      "ntsc": "screenshots/charset-animation-ntsc.png"
+    }
+  },
+  "kickassembler/speedcode-generator": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/speedcode-generator.png",
+      "ntsc": "screenshots/speedcode-generator-ntsc.png"
+    }
+  },
+  "kickassembler/dycp-scroller": {
+    "cycles": 9000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/dycp-scroller.png",
+      "ntsc": "screenshots/dycp-scroller-ntsc.png"
+    }
   }
 }

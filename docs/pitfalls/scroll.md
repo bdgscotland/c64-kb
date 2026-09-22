@@ -20,7 +20,7 @@ when it does not.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D016
-**Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h, parallax_dual_layer, raster_split_modes
+**Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h, parallax_dual_layer, raster_split_modes, big_font_2x2, dycp_scroller
 
 ### Symptom
 
@@ -121,7 +121,7 @@ for (;;) {
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D016
-**Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h, parallax_dual_layer, raster_split_modes, multicolor_bitmap, mcm_text
+**Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h, parallax_dual_layer, raster_split_modes, multicolor_bitmap, mcm_text, big_font_2x2, dycp_scroller
 
 ### Symptom
 

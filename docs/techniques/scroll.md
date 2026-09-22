@@ -803,3 +803,114 @@ per character step.
 
 - `recipes/oscar64/tile-map-render.md`
 - `recipes/oscar64/tile-grid-collision.md` (tests a sprite against the decoded map array this technique fills; `tile_grid_collision` in `logic.md`)
+
+---
+
+## dycp_scroller — DYCP: each text column at its own pixel Y, drawn through the charset
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D012, D016, D018
+**Uses kernal:** (none)
+**Requires:** frame_sync_loop
+**Cost:** cycles_per_frame=5343, bytes_code=4117, bytes_data=1090, zp_bytes=2, irq_slots=1
+**Cost basis:** derived-listing
+
+### Why
+
+A sine scroller that moves whole characters between rows
+(`recipes/kickassembler/sine-scroller.md`) steps eight pixels at a time
+vertically. DYCP, Different Y Character Position, puts every column at
+its own pixel height. The trick is to stop moving characters around the
+screen at all. Each column of the band is a fixed vertical strip of
+character cells that never changes; what moves is the glyph inside the
+strip, copied every frame into a custom charset at the pixel row the wave
+gives. The VIC-II reads the charset afresh on every raster line, so a
+glyph written at byte offset `y` of a strip appears `y` pixels down it.
+
+### How
+
+1. **Lay the strips once.** Give the band N screen rows. Column `c`,
+   cell `k` holds charset slot `base + c*N + k`. Because a slot is eight
+   consecutive bytes, the N cells of one column are `8N` consecutive
+   charset bytes, and pixel row `y` of the strip is the single byte
+   `strip + y`. Set `$D018` to point at the charset and never write the
+   band's screen RAM again. Everything outside the band shows a blank
+   slot from the same charset, and any text elsewhere on the screen has
+   to be drawn from slots the strips do not use.
+2. **Each frame, per column:** blank the eight bytes the glyph occupied
+   last frame; look the column's new `Y` up (`sine[phase + c*STEP]`);
+   copy the glyph's eight rows to `strip + Y .. strip + Y + 7`. Seen as
+   cells, rows `0 .. 7 - (Y & 7)` of the glyph land in cell `Y >> 3` at
+   row offset `Y & 7` and the rest in the cell below; the address form
+   does that split for nothing. `Y` runs from 0 to `8N - 8`, so a strip
+   N cells tall gives `8N - 8` pixels of travel: six cells, 40 pixels.
+3. **Keep the glyph source indexable.** A copy of the glyphs the message
+   uses, 32 of them, in 256 bytes: `glyph * 8` then fits a byte and one
+   `lda font+r,y` reaches any row of any glyph. Screen codes for space
+   and punctuation lie above 31, so the message is remapped onto the 32
+   slots when it is assembled or when it is fed into the ring buffer.
+4. **Scroll horizontally as usual.** `$D016` XSCROLL a pixel a frame and
+   a ring-buffer shift every eighth frame (`soft_scroll_h` and
+   `char_scroll_buffer_h` above); the shift changes which glyph a column
+   copies, nothing else.
+
+### Why it works
+
+The character generator reads eight bytes per glyph at charset base plus
+code times eight, one byte per raster line of the row. Consecutive slots
+are consecutive in memory, so a column of consecutive slots is one
+unbroken run of bytes and a glyph can be placed at any byte offset in
+it. Where the old and new positions overlap, the write after the clear
+wins, so clearing the previous eight rows and then writing the new eight
+is correct for any move up to eight pixels a frame. The screen RAM never
+changes, so nothing is redrawn on the character grid and no part of the
+effect costs screen or colour writes. `$D016` still applies: the fine
+scroll shifts every row including any caption outside the band.
+
+### Variations
+
+- **Two charsets, `$D018` flip.** Copy into the charset the VIC is not
+  showing and swap at the frame sync. Buys the freedom to run the copy
+  inside the display at 2 KB per charset and one register write; not
+  needed when the copy is budgeted to finish above the band, which the
+  recipe measures.
+- **Cheaper clear.** When the per-frame move is at most one pixel, two
+  zero stores (the row above and the row below the new glyph) replace
+  the eight-store clear, six stores a column fewer. Ties the copy to the
+  wave's speed.
+- **1x2 letters.** Sixteen-row glyphs in strips two cells wider apart:
+  twice the copy per column, half the columns for the same slot budget.
+- **Wave tables.** Separate speed and amplitude tables indexed by frame
+  give a wave that breathes; a second sine added to the first gives a
+  compound wave. Amplitude is bounded by `8N - 8` less the glyph height.
+
+### Cycle budget
+
+Per column per frame: 16 stores and 8 loads, plus the table lookups.
+Unrolled with absolute-indexed addressing, the recipe's copy is 136
+cycles a column: 39 columns in 5,305 to 5,343 cycles over 304 PAL frames,
+measured with CIA2 timer A in VICE x64sc 3.10 (the spread is the page
+crossing of the sine lookup in some columns). The `**Cost:**` line above
+states that worst frame, the code segment (`$0900-$1914`, of which the
+unrolled copy is most) and the table segment (`$2000-$2441`) from
+KickAssembler's memory map; the 2 KB charset the copy writes is cleared
+at run time and is in neither segment.
+
+Where in the frame the copy runs is the whole budget. A column's strip
+bytes are read by the VIC on every raster line of the band, so the copy
+must finish before the band's first line, or run into a charset the VIC
+is not showing. From an interrupt at line 250 the recipe's copy ends by
+line 35 on PAL and by line 84 on NTSC, against a band starting at line
+122. The NTSC figure is 49 lines later for the same CPU work because the
+263-line frame leaves 13 lines of blank after 250, so the copy runs over
+the top of the display and crosses three to five badlines, each 40 to 43
+cycles: the timer reads 5,433 to 5,556 on NTSC against 5,305 to 5,343 on
+PAL. Each extra column costs 136 cycles and about two lines; each extra
+strip cell costs eight slots and nothing per frame. The slot budget
+binds first: with 22 slots kept for a blank and a caption, 39 columns
+of six cells is 234, and a seventh cell would allow only 33 columns.
+
+### Recipes
+
+- `recipes/kickassembler/dycp-scroller.md`

@@ -803,3 +803,199 @@ Cycle figures are measured in VICE x64sc with the CIA harness above; the PAL fra
 - `recipes/kickassembler/cracktro-template.md` (the same form, plus `row_lo` / `row_hi` screen tables)
 - `recipes/oscar64/sprite-multiplex-8.md` (fills `sinx` / `siny` at start-up with the float `sin` loop; the compile-time or integer forms above are the cheaper replacement)
 - No recipe yet for the reciprocal table; `techniques/effects-vector-3d.md` describes the projection it serves.
+
+---
+
+## speedcode_generation — Generating unrolled code into RAM at run time
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=8000, bytes_code=849, bytes_data=1185
+**Cost basis:** derived-listing
+
+The figures on the Cost line are for the recipe's job, a 1,000-byte copy:
+8,000 cycles each time the generated code runs, measured, and the PRG's
+own segment read off the listing, 849 bytes of generator and harness code
+and 1,185 bytes of row tables, source block and text. The 6,001-byte
+block the generator fills is RAM, not load, so it is not on the line; it
+scales with the byte count, as the cycle figure does, and belongs in the
+memory plan. The generation itself runs once and is not on the line
+either; it is 92,485 cycles for that job, measured.
+
+### Why
+
+`unrolled_loops` removes the loop overhead by having the assembler
+replicate the body, and pays for it in bytes of PRG: a fully unrolled
+1,000-byte copy is 6,000 bytes on disk and in the load. `self_modifying_code`
+patches an operand inside code that already exists. Speedcode generation
+is the run-time form of the first, built with the mechanism of the
+second: a short generator writes the whole unrolled instruction stream
+into RAM from tables when the program starts, or when a part starts, so
+the load carries a 90-byte generator and four small tables instead of
+6 KB of straight-line code. It is `table_generation` for code rather than
+data: the same trade of start-up cycles for bytes in the file, and the
+same choice of when to pay.
+
+### How
+
+The generator knows the opcode bytes and writes them itself. `LDA abs` is
+`$AD lo hi`, `STA abs` is `$8D lo hi`, `LDA #imm` is `$A9 imm`, and the
+stream ends with `RTS`, `$60`. For a copy, each byte moved is one
+`LDA abs / STA abs` pair, six bytes of code; for a fill, `LDA #imm` once
+and then `STA abs` per byte, three bytes each. The source and destination
+addresses come from tables, typically one low and one high byte per row,
+and the generator increments a working copy of each address as it emits:
+
+```asm
+// Emit COLS pairs of LDA abs / STA abs for one row. out is a zero-page
+// pointer to the next free byte of the code block; cur_src and cur_dst
+// were loaded from the row tables. Y counts bytes of code, so one row of
+// 40 pairs is Y = 0..239, so the pointer advances by 240 per row.
+.const OP_LDA_ABS = $ad
+.const OP_STA_ABS = $8d
+.const COLS = 40
+.const out = $fb
+        ldy #$00
+pair:   lda #OP_LDA_ABS
+        sta (out),y
+        iny
+        lda cur_src
+        sta (out),y
+        iny
+        lda cur_src+1
+        sta (out),y
+        iny
+        lda #OP_STA_ABS
+        sta (out),y
+        iny
+        lda cur_dst
+        sta (out),y
+        iny
+        lda cur_dst+1
+        sta (out),y
+        iny
+        inc cur_src
+        bne !+
+        inc cur_src+1
+!:      inc cur_dst
+        bne !+
+        inc cur_dst+1
+!:      cpy #COLS * 6
+        bne pair
+        rts
+cur_src: .word $0c18
+cur_dst: .word $4000
+```
+
+The size is fixed before the generator runs: bytes per emitted unit times
+the count, plus one for the `RTS`. A 1,000-byte copy is 1,000 × 6 + 1 =
+6,001 bytes; a 1,000-byte fill is 2 + 1,000 × 3 + 1 = 3,003. That number
+goes in the memory plan next to the charset and the screen, because
+nothing else will check it. In the recipe the block is at `$5000` and the
+`RTS` was read back at `$6770` over the monitor.
+
+Generated code is called like any subroutine. The pairs read and write
+with absolute addressing, so there is no index register to set up and no
+page-crossing penalty on the reads: `LDA abs` is 4 cycles at any address,
+where `LDA abs,X` is 5 when the sum crosses a page.
+
+### Why it works
+
+The 6510 fetches every instruction from memory with no cache, so bytes
+written by `STA (zp),Y` are the instruction stream the moment the CPU
+reaches them; this is the same property `self_modifying_code` rests on.
+The generated stream has no loop counter, no compare and no branch, so
+its cost is exactly the sum of its instructions. Measured with a CIA2
+timer in VICE x64sc 3.10 (recipe below, harness overhead subtracted):
+
+| Job: copy 1,000 bytes | Cycles | Per byte |
+|---|---|---|
+| Generated `LDA abs / STA abs` stream | 8,000 | 8.0 |
+| Indexed loop, `LDA abs,X / STA abs,X`, four 250-byte strides | 10,787 | 10.8 |
+| Generating the stream, once | 92,485 | 92.5 per pair |
+
+8,000 is the arithmetic (4 + 4 per pair) and the loop count is too: 2 for
+the `LDX`, 250 iterations of 43 less the final untaken branch, plus 36
+cycles of page crossings on the reads, which move when the source block
+moves. The generated code is 1.35 times the speed of a loop that is
+already partly unrolled; against a naive `(zp),Y` loop the ratio is
+larger, not measured here. The generator costs about 11.6 runs of the
+code it generates, so it pays back after a dozen copies.
+
+The measurement was taken with the screen blanked (DEN cleared and a
+frame waited out). A CIA timer counts phi2 whether or not the CPU has the
+bus, so 8,000 cycles of generated code running across the display take
+8,000 plus 40 to 43 for every badline they cross, and a plan that
+schedules them by the measured figure is short by that much;
+`badline_cycle_loss` in `pitfalls/raster-and-badline.md`.
+
+### When to generate
+
+**Once at init.** The common case: the code depends only on constants
+(a fixed source, a fixed screen) and is generated before the first frame.
+The 92,485 cycles are under five PAL frames and invisible behind a
+blanked screen or a loading picture.
+
+**Per part.** A demo whose parts want different speedcode regenerates
+between them, into the same block. The generator is small enough to keep
+resident; the block is reused, so the memory plan holds one block, not
+one per part.
+
+**Per frame.** When the code itself has to move, for example a copy whose
+source row shifts each frame for a scroll, or a plot whose addresses come
+from this frame's sine positions, the generator runs every frame and its
+cost joins the frame budget. At 92.5 cycles per emitted pair that is
+affordable for tens or hundreds of pairs, not thousands; beyond that,
+generate once and patch the operands that change (`self_modifying_code`),
+or keep the addresses in tables and index them.
+
+### Variations
+
+**Generated with page-crossing avoided.** Straight-line `LDA abs / STA
+abs` has no page-crossing cost, so the recipe's stream needs nothing. A
+generator that emits indexed reads (`LDA abs,X`, `$BD`) or branches to
+tie sections together does, and then it can choose the bases and the
+section lengths so no read crosses a page, or align each section's start;
+`branch_page_cross_extra_cycle` in `pitfalls/cpu.md` is the branch case
+and does not arise in a stream with no branches.
+
+**Generated into a bank the VIC does not see.** The recipe's block at
+`$5000` to `$6770` is in VIC bank 1, which a stock machine never
+displays, so 6 KB of code costs no screen, charset or sprite space.
+The ROM windows at `$A000` to `$BFFF` (inside bank 2) and `$E000` to
+`$FFFF` (inside bank 3) give another 8 KB each, but sit under BASIC and
+the KERNAL: the generator's writes land in the
+RAM and the CPU fetches the ROM until `$01` banks it out, and then the
+KERNAL's interrupt vectors and `CHROUT` are gone too;
+`ram_under_rom_traps` in `pitfalls/banking.md`.
+
+**STA-only sequences from a value table.** For a fill, or a screen whose
+contents are known at generation time, emit `LDA #imm` (`$A9 v`) only
+when the value changes and `STA abs` for every address: a run of equal
+bytes costs 4 cycles a byte instead of 8 and 3 bytes instead of 6. The
+generator reads the values from a table beside the addresses and
+compares each with the last one loaded. The result is a routine that
+paints a fixed picture at 4 cycles a byte with no source buffer at all.
+
+### Cycle budget
+
+Per byte moved, at any address: `LDA abs` 4 + `STA abs` 4 = 8 cycles,
+measured as 8,000 for 1,000. A full 1,000-byte screen copy is therefore
+8,000 cycles, about 127 PAL raster lines, and longer than the PAL
+vertical blank of about 7,100 cycles between line 250 and the next
+frame's first badline (`recipes/kickassembler/sine-scroller.md`), so a
+per-frame full-screen speedcopy run from a raster interrupt at the
+bottom of the display finishes some 14 lines into the next frame's
+top rows, and with badlines inside those rows later still;
+`full_field_redraw_exceeds_vblank` in `pitfalls/text-mode-render.md`.
+Split the copy across two interrupts, copy fewer rows, or write the top
+rows first so the VIC fetches finished cells. Generation: 92.5 cycles
+per emitted pair with the generator above, which is about 68 cycles of
+six `STA (zp),Y` stores with their loads and increments plus the
+address and loop bookkeeping; 1,000 pairs are 4.7 PAL frames.
+
+### Recipes
+
+- `recipes/kickassembler/speedcode-generator.md` (generates a 1,000-byte copy from row tables, verifies it and times it against the indexed loop; the three figures above)

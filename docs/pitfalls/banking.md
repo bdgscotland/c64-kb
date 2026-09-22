@@ -22,7 +22,7 @@ hardcoded charset/bitmap blit address.
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank
+**Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank, big_font_2x2
 
 ### Symptom
 
@@ -168,7 +168,7 @@ over 2048 bytes does the same job.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00, D018
-**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image
+**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image, charset_animation, big_font_2x2, dycp_scroller
 
 ### Symptom
 
@@ -318,7 +318,7 @@ setup_bank1:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation
+**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation
 
 ### Symptom
 
@@ -475,7 +475,7 @@ custom_nmi:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D018
-**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation
+**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller
 
 ### Symptom
 
