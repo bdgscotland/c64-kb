@@ -12,7 +12,7 @@ home_url: https://github.com/barryw/sim6502
 
 ## Tool
 
-sim6502 is a unit-test framework for 6502 assembly programs. It loads assembled `.prg` binaries into an execution backend, runs test routines via a small DSL, and asserts against register state, memory contents, and cycle counts. It exits 0 on pass and 1 on any failure, making it suitable for CI.
+sim6502 is a unit-test framework for 6502 assembly programs. It loads assembled `.prg` binaries into an execution backend, runs test routines via a small DSL, and asserts against register state, memory contents, and cycle counts. It exits 0 on pass and non-zero on any failure (see Exit codes below), making it suitable for CI.
 
 **Targets:** 6510
 
@@ -39,7 +39,7 @@ dotnet Sim6502TestRunner.dll -s mytest.6502          # default: --backend sim
 dotnet Sim6502TestRunner.dll -s mytest.6502 -t        # -t prints instruction trace
 ```
 
-**Exit codes:** `0` = all tests passed, `1` = one or more tests failed.
+**Exit codes:** `0` all tests passed · `1` a test failed, or the run aborted (unhandled error such as an unsupported opcode on `sim`, an undefined `[symbol]`, a missing suite file, or a bad command line) · `2` DSL parse error · `3` semantic/resource error reported after parsing (e.g. a `load()` or `rom()` file that does not exist). Any non-zero value fails CI. (From `Sim6502CLI.cs` and measured on v3.4.0; an earlier version of this page listed only `0` and `1`.)
 
 **Filter tests:**
 
@@ -89,7 +89,7 @@ Comments use `;` (same as 6502 assembly).
 | `system(generic_6502)` | Flat 64 KB RAM, MOS 6502 |
 | `system(generic_6510)` | Flat 64 KB RAM, MOS 6510 with `$00`/`$01` I/O port |
 | `system(generic_65c02)` | Flat 64 KB RAM, WDC 65C02 opcodes |
-| `processor(6502)` | Deprecated alias for `system(generic_6502)` |
+| `processor(6502 \| 6510 \| 65c02)` | Deprecated; equivalent to `system(generic_6502 \| generic_6510 \| generic_65c02)` respectively (the spelling `65C02` is also accepted). Prints a deprecation warning naming the `system()` form to use. If a suite declares both, `system()` takes precedence and `processor()` is ignored. An earlier version of this row listed only `6502`. |
 | `symbols("file.sym")` | Load KickAssembler symbol file; enables `[SymbolName]` references |
 | `load("file.prg", strip_header = true)` | Load binary, strip 2-byte load-address header |
 | `load("rom.bin", address = $e000)` | Load binary at explicit address |
@@ -135,6 +135,8 @@ $d020 = $0e          ; write byte to border color register
 [r1] = $1234         ; write 16-bit word to symbol address
 [Loc1] + $02 = $d0   ; write to symbol + offset
 ```
+
+On the right-hand side of an assignment, `[sym]` evaluates to the symbol's VALUE (its address, or the constant a `.label` was given), not the byte stored there: `y = [r0L]` loads Y with `$5d`, the address of `r0L`, and `[r3H] = [SPR_X_EXPAND]` stores the constant `$1d`. To load a register from memory use `y = peekbyte([r0L])` (or `peekword`). A bare `[sym]` reads memory only when it is the left-hand side of a comparison (`==`, `!=`, `<`, ... optionally with `.b`/`.w`), and writes memory only when it is the left-hand side of `=`. `[sym].l` / `[sym].h` on the right-hand side give the low/high byte of the symbol's value, not of memory. (Measured on v3.4.0: with `$5d = $77` and `r0L = $5d`, `y = [r0L]` left Y at `$5d`.)
 
 ### JSR execution
 
@@ -212,14 +214,15 @@ assert(memcmp($e000, $4000, $2000), "8 KB regions match")
 ### Test options
 
 ```
-test("test-id", "Description", skip = true, trace = true, timeout = 10000, tags = "smoke,regression") {
+test("test-id", "Description", skip = true, trace = true, tags = "smoke,regression") {
+; timeout = N is also accepted but has no effect (see table)
 ```
 
 | Option | Description |
 |--------|-------------|
 | `skip = true` | Skip this test (appears in results but does not run) |
 | `trace = true` | On failure, print a full instruction trace with register state per instruction |
-| `timeout = N` | Cycle limit; test fails if exceeded; `0` disables |
+| `timeout = N` | Parsed and accepted but not enforced: the value is stored and never read (sim6502 at commit d6f6812 / tag v3.14.0; the binary self-reports 3.4.0 because the project version was never bumped). A `timeout = 1` test around a 328,000-cycle loop passes. Bound run time with `assert(cycles < N, "...")` instead. The upstream README's "cycle limit; test fails if exceeded" describes intended behaviour, not what the code does; an earlier version of this row repeated it. |
 | `tags = "tag1,tag2"` | Comma-separated tags for `--filter-tag` / `--exclude-tag` |
 
 ### Complete example
@@ -304,7 +307,7 @@ dotnet Sim6502TestRunner.dll -s tests.6502 --backend vice --launch-vice   # auto
 dotnet Sim6502TestRunner.dll -s tests.6502 --backend vice --vice-warp false  # real-time speed
 ```
 
-Note: the VICE backend used by sim6502 (`--mcpserver`, port 6510) is a different integration point than the standalone vice-mcp MCP server (port 6502). They are compatible tools that can coexist.
+Note: the VICE backend used by sim6502 (`--mcpserver`, port 6510) is a different integration point than the standalone vice-mcp MCP server (port 6502): sim6502 uses HTTP JSON-RPC; vice-mcp uses the binary monitor. They are compatible tools that can coexist.
 
 ## Loading a Program
 
@@ -324,7 +327,7 @@ load("kernal.rom", address = $e000)
 load("program.prg")
 ```
 
-If neither `address` nor `strip_header = true` is given, sim6502 reads the first 2 bytes as the load address and places the remaining bytes starting there.
+If `address` is omitted, sim6502 reads the load address from the first 2 bytes, but it does not strip them unless `strip_header = true`: a bare `load("program.prg")` puts the two header bytes at the load address and shifts the code up by two, so every `.sym` symbol points two bytes early. Giving `address =` does not strip either — `load("program.prg", address = $3000)` puts the header at `$3000`. For a KickAssembler `.prg` always write `strip_header = true` (measured on sim6502 v3.4.0, source `SimBaseListener.cs` `LoadResources()`; an earlier version of this page said the remaining bytes were placed at the embedded address).
 
 ### Symbol files
 
@@ -368,7 +371,7 @@ suite("C64 with ROMs") {
 
 ## Cycle Counting
 
-`cycles` is the total cycle count consumed by the last `jsr` call. It is available in assertions and resets with each `jsr`:
+`cycles` is reset once per test, before the suite's `setup` block (if any) runs, and then accumulates across every `jsr` in that test — including any `jsr` inside `setup`. It is not reset by `jsr`. Measured on sim6502 commit d6f6812 (banner v3.4.0, tag v3.14.0), `sim` backend: after a 328,713-cycle call followed by an 8-cycle call, `cycles` read 328,721; a `setup { jsr(...) }` of 8 cycles plus an 8-cycle test call read 16. The `vice` backend has the same semantics (the stopwatch is reset only at test start). To time one routine, give it its own test with no `setup` `jsr`, or assert on `cycles` before the second `jsr`. An earlier version of this page said it reset with each `jsr`. It is available in assertions:
 
 ```
 jsr([StableRasterSetup], stop_on_rts = true, fail_on_brk = true)
@@ -386,7 +389,7 @@ For stable-raster-IRQ recipes, always verify cycle counts with `--backend vice` 
 
 ## CI Integration
 
-sim6502 exits `0` if all tests pass, `1` if any test fails. This maps directly to standard CI exit-code conventions.
+sim6502 exits `0` if all tests pass and non-zero otherwise — `1` test failure or abort, `2` parse error, `3` semantic error. This maps directly to standard CI exit-code conventions.
 
 **GitHub Actions example:**
 
@@ -399,13 +402,13 @@ sim6502 exits `0` if all tests pass, `1` if any test fails. This maps directly t
       -s /code/tests/suite.6502
 ```
 
-**Output format:** Test results print to stdout. Each test prints `PASSED: test-id` or `FAILED: test-id — message`. A summary line at the end shows pass/fail counts.
+**Output format:** Test results print to stdout. Every line carries an NLog record prefix (`timestamp | LEVEL | logger | text`). Each test prints `'test-id - description' : PASSED` or `'test-id - description' : FAILED`, followed on failure by one `'test-id' - <message> in assertion '<assertion text>'` line per failed assertion, where `<message>` depends on the comparator (register/flag compares print `Expected <expected> <op> <actual>`, e.g. `Expected 0 == 1`; memory compares print a prose description of the location and values). Two summary lines end the run: `N of M tests ran successfully in suite '…'.` and `N of M suites passed.` Do not grep for `PASSED:` — the colon follows the quoted test name, not the word. (Measured on v3.4.0, `SimBaseListener.cs`; an earlier version of this page gave the form `PASSED: test-id` / `FAILED: test-id — message`, which the runner never prints.)
 
 With `trace = true` on a test, a failure includes a full instruction trace:
 
 ```
-FAILED: buggy-code — Carry should be set
-Expected: c == true, Got: c == false
+'buggy-code - Debug this' : FAILED
+'buggy-code' - Expected 0 == 1 in assertion 'Should set carry'
 
 Execution trace (247 instructions):
 $1832: LDA $2157      A=$B6 X=$74 Y=$00 SP=$F7 NV-bdizc
@@ -443,17 +446,17 @@ sim6502 and vice-mcp cover two different phases of the development loop:
 5. Fix code → return to step 1
 ```
 
-Because sim6502's VICE backend and vice-mcp both connect to the same VICE binary, they cannot run simultaneously against the same VICE instance. Run sim6502 tests first, then start a vice-mcp session for interactive debugging.
+sim6502's `vice` backend and vice-mcp are different servers, not one integration point. sim6502 posts JSON-RPC 2.0 (`tools/call`, tools such as `vice.registers.get` and `vice.checkpoint.add`) over HTTP to the MCP server compiled into the barryw/vice-mcp VICE fork (`x64sc -mcpserver -mcpserverport 6510`); stock VICE 3.9 has no `-mcpserver` option (checked with `x64sc -help`). vice-mcp speaks the VICE binary-monitor protocol over TCP to any VICE started with `-binarymonitor` (port 6502), which the fork should also accept but which no one has tested here. In practice run the sim6502 suite against the fork first, then open a vice-mcp session against a `-binarymonitor` instance for interactive debugging; the two do not share a connection, and the sequencing is a workflow choice, not a technical exclusion. An earlier version of this paragraph said both connected to the same VICE binary and could not run at once.
 
 ## Pitfalls
 
-**Undocumented opcode behavior differs between backends.** The `sim` backend uses the 6502Net simulator, which implements documented opcodes accurately but may differ from VICE on illegal/undocumented opcodes (LAX, SAX, DCP, ISC, etc.). If a recipe uses illegal opcodes, declare `--backend vice` as canonical for that recipe and note this in the recipe frontmatter. Do not use the `sim` backend to certify cycle counts for code that relies on undocumented behavior.
+**Undocumented opcodes abort the `sim` backend.** The `sim` backend (Aaron Mell's 6502Net core) implements only the 151 documented opcodes; the 6510 table is the 6502 table. Executing any of the other 105 — LAX, SAX, DCP, ISC, the undocumented NOPs such as $1A, all of them — throws `The OpCode xx @ address yyyy is not supported on MOS6510`, and the runner stops the whole run at that point with exit code 1: later tests in the suite never execute and no summary is printed (measured on v3.4.0 with LAX zp $A7 and NOP $1A). An earlier version of this paragraph said the sim backend "may differ from VICE" on these opcodes, which implied they ran. Recipes that use undocumented opcodes must declare `--backend vice` as canonical in their frontmatter; VICE x64sc executes the stable NMOS set.
 
 **CIA timers and IRQs fire on `vice` but not on `sim`.** A test that asserts `cycles < 1000` may pass on `sim` (no interrupts) and fail on `vice` (CIA timer fires, pushes registers, runs IRQ handler, adds overhead). For timing-sensitive tests, measure on `vice` and set the cycle budget accordingly.
 
 **Oscar64 does not emit KickAssembler `.sym` files.** Oscar64 generates `.lbl` label files (different format). The `symbols()` directive in sim6502 only accepts KickAssembler `.sym` format. When testing Oscar64 output, either hardcode addresses in tests or add a build step to convert `.lbl` to `.sym`.
 
-**`stop_on_rts` and nested JSR depth.** On `--backend vice`, `stop_on_rts` is implemented via breakpoints and synthetic stack manipulation (not native call-depth tracking). If your subroutine uses tail calls or self-modifying return addresses, the depth calculation may mis-fire. Use `stop_on_address` for routines with non-standard return patterns.
+**`stop_on_rts` and non-standard returns.** The two backends stop on a different mechanism. On `--backend sim`, the simulator keeps a JSR/RTS counter and stops when it returns to zero, so any RTS that was not paired with a JSR — the push-address-then-RTS dispatch idiom, or a routine that pops its own return address before returning — throws the count off and the run stops early or not at all. On `--backend vice`, `stop_on_rts` pushes a synthetic return address so the routine's final RTS lands on `$0000`, where a checkpoint halts execution; there is no depth calculation, and nested calls and JMP tail calls all return through the real stack and stop correctly. What defeats it is a routine that never returns through the stack entry it was called with (it discards or rewrites that return address), or code that legitimately runs at `$0000`. For such routines use `stop_on_address` on an instruction the routine is known to execute; note that `stop_on_address = 0` is treated as unset on both backends. (From `ViceBackend.cs`; an earlier version of this pitfall said the `vice` backend did a depth calculation that tail calls could upset.)
 
 **Snapshot restore race on `vice` backend.** The VICE backend saves a snapshot after loading all binaries, and restores it before each test. If VICE's snapshot directory is out of space or has a permissions issue, the run fails immediately. Check VICE logs if you see `Failed to save snapshot 'sim6502_suite_N'`.
 

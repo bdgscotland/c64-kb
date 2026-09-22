@@ -2,7 +2,7 @@
 tool: oscar64
 tool_kind: c-compiler
 maintainer: drmortalwombat
-license: MIT
+license: GPL-3.0
 home_url: https://github.com/drmortalwombat/oscar64
 ---
 
@@ -44,8 +44,10 @@ This compiles `hello.c` to `hello.prg` with native code generation (the current 
 **Common build command for a game or demo:**
 
 ```bash
-oscar64 -n -O2 -tf=prg main.c -o game.prg
+oscar64 -n -O2 -tf=prg -o=game.prg main.c
 ```
+
+The output name is `-o=file`, flag and name joined by `=`. The space form `-o game.prg`, which an earlier version of this page showed, is rejected (`error 3004: Invalid command line argument '-o'`, then `game.prg` is opened as a source file; verified on build 2026-05-19).
 
 **Expected outputs** for a typical build:
 
@@ -55,7 +57,9 @@ oscar64 -n -O2 -tf=prg main.c -o game.prg
 | `game.map` | Always — memory layout report |
 | `game.asm` | Always — assembler listing |
 | `game.lbl` | Always — VICE monitor label commands |
+| `game.int` | Always — intermediate-code listing |
 | `game.dbj` | With `-g` — full JSON debug info |
+| `game.csz` | With `-gp` — static profile data |
 
 ## Build pipeline
 
@@ -67,7 +71,7 @@ Oscar64 takes one or more `.c` or `.cpp` source files and produces a runnable ar
 
 **Produced by:** oscar64, kickassembler, cc65
 
-The default output format. A `.prg` file starts with a two-byte load address header followed by the program body. For the `c64` target the load address is `$0801`, where the BASIC stub lives. The BASIC stub contains a single SYS line that jumps to the compiled entry point. The `main` region spans `$0A00` to `$A000` by default. Loading the file in VICE and typing `RUN` (or using autostart) launches the program.
+The default output format. A `.prg` file starts with a two-byte load address header followed by the program body. For the `c64` target the load address is `$0801`, where the BASIC stub lives. The BASIC stub contains a single SYS line that jumps to the compiled entry point. In the default native build the `startup` region is `$0801`–`$0880` and `main` is `$0880`–`$A000` (Compiler.cpp region table; the compiler sets native code generation by default and only `-bc` clears it). The `$0801`–`$0900` startup, `$0900`–`$0A00` bytecode and `$0A00`–`$A000` main layout quoted by the upstream manual — and by an earlier version of this sentence — is what `-bc` produces. When checking a `.map`, its `regions` line prints `main` as `0880 - 9000` because the linker has already carved the 4 KB `stack` section (`$9000`–`$A000`) off the top of the declared region; the sections list shows `stack 9000 - a000`. Loading the file in VICE and typing `RUN` (or using autostart) launches the program.
 
 **Consumed by:** vice, c1541
 
@@ -138,7 +142,7 @@ oscar64 {-i=path} [-o=output] [-rt=runtime.c] [-tf=format] [-tm=machine] [-e] [-
 | `-ep` | Execute and profile in the integrated emulator |
 | `-bc` | Compile all functions to bytecode |
 | `-n` | Compile all functions to native 6502 code (current default) |
-| `-d=SYM[=val]` | Define a preprocessor symbol |
+| `-dSYM[=val]` | Define a preprocessor symbol (no `=` between `-d` and the name: `-dNOFLOAT`, `-dNUM_IRQS=4`; `-d=SYM`, which an earlier version of this row showed, silently defines nothing useful) |
 | `-D NAME=VALUE` | GCC-compatible symbol define |
 | `-O0` | Disable optimizations |
 | `-O1` / `-O` | Default optimizations |
@@ -175,8 +179,10 @@ oscar64 {-i=path} [-o=output] [-rt=runtime.c] [-tf=format] [-tm=machine] [-e] [-
 | `NOLONG` | Exclude `long` support from `printf` |
 | `NOFLOAT` | Exclude `float` support from `printf` |
 | `HEAPCHECK` | Validate heap alloc/free; jam on error |
-| `NOBSSCLR` | Skip clearing the BSS segment at startup |
-| `NOZPCLR` | Skip clearing the zero-page BSS at startup |
+| `NOBSSCLEAR` | Skip clearing the BSS segment at startup |
+| `NOZPCLEAR` | Skip clearing the zero-page BSS at startup |
+
+These are the spellings `crt.c` tests (`#ifndef NOBSSCLEAR`, line 238; `#ifndef NOZPCLEAR`, line 262). An earlier version of this table gave `NOBSSCLR` and `NOZPCLR`; those compile cleanly and change nothing.
 
 ## Target machines
 
@@ -236,7 +242,7 @@ The 6502 has no multiply instruction and no indirect-plus-offset addressing mode
 
 ```c
 __striped struct Particle { int px, py; char color; } particles[64];
-// pixels[0].px, particles[1].px, ..., particles[63].px are contiguous
+// particles[0].px, particles[1].px, ..., particles[63].px are contiguous
 // compiler uses absolute+Y indexing, no multiply needed
 ```
 
@@ -248,7 +254,7 @@ The `auto` keyword from C++ enables typed pointers into striped arrays: `auto p 
 __zeropage int counter;
 ```
 
-Places a global variable into the zero-page BSS segment (normally `$80`–`$FF`). Zero-page addressing saves one byte per instruction and runs slightly faster on the 6502. Only useful when the KERNAL is not present (or when operating in a region the KERNAL does not use), because the KERNAL and BASIC interpreters use much of the low zero page themselves. Zero-page global variables are not initialized on startup.
+Places a global variable into the zero-page BSS region. On the `c64` target that region is by default only `$F7`–`$FF` (nine bytes; measured in the `.map` of build 2026-05-19, and set in Compiler.cpp's region table), so a handful of `__zeropage` variables exhausts it. `-xz` widens it to `$80`–`$FF` at the cost of no return to BASIC. The upstream manual's phrase "usually 0x80 to 0xff" — which an earlier version of this sentence repeated — describes the `-xz` layout, not the default. Zero-page addressing saves one byte per instruction and runs slightly faster on the 6502. The default region sits in the KERNAL's RS-232 pointers (`$F7`–`$FA`) and the four free bytes `$FB`–`$FE`, so it is safe with the ROMs mapped; widening the region into BASIC's (`$03`–`$8F`) or the KERNAL's (`$90`–`$F6`) workspace is what collides. Zero-page globals are zero-cleared by the startup code (crt.c, `ZeroStart`..`ZeroEnd`) just like the ordinary BSS, unless built with `-dNOZPCLEAR`; an earlier version of this sentence said they were not initialised. An initializer on a `__zeropage` global is not honoured in memory: the storage is emitted as zero bytes and cleared at startup (the optimiser may constant-fold reads of a never-written initialised variable, which can mask this), so assign non-zero values in code.
 
 ### `__native` and `__noinline`
 
@@ -263,20 +269,26 @@ __hwinterrupt void raster_irq(void) {
 }
 ```
 
-`__interrupt` saves and restores all zero-page registers used by the function on entry and exit. `__hwinterrupt` additionally saves the CPU registers (A, X, Y, processor status) and exits with `RTI` instead of `RTS`. Use `__hwinterrupt` for the top-level interrupt handler installed at `$FFFE`/`$FFFF`. Never read volatile hardware registers in a function called from both interrupt and non-interrupt context without `__interrupt` protection — the optimizer may cache the register value across the IRQ boundary.
+`__interrupt` saves and restores all zero-page registers used by the function on entry and exit. `__hwinterrupt` additionally saves and restores A, X and Y (the generated prologue is `PHA / TXA / PHA / TYA / PHA`, the epilogue `PLA / TAY / PLA / TAX / PLA`) and exits with `RTI` instead of `RTS`; the processor status is not saved by generated code — the 6510 pushes it on interrupt entry and `RTI` restores it (an earlier version of this sentence listed it among the saved registers). Use `__hwinterrupt` for the top-level interrupt handler installed at `$FFFE`/`$FFFF`. Never read volatile hardware registers in a function called from both interrupt and non-interrupt context without `__interrupt` protection — the optimizer may cache the register value across the IRQ boundary.
 
 ### `#embed`
 
 Imports binary file content directly into an array initializer:
 
 ```c
-byte spritedata[] = { #embed "../resources/sprites.bin" };
+byte spritedata[] = {
+#embed "../resources/sprites.bin"
+};
 ```
+
+`#embed` is a preprocessor directive and consumes the rest of its source line, so it must stand alone on its own line inside the initializer braces and the closing `};` must go on the following line; the one-line form `= { #embed "file" };`, which an earlier version of this page used in every example, loses the closing brace and fails with error 3006 / 3008 (verified with Oscar64 build 2026-05-19).
 
 An optional limit and offset select a slice: `#embed 4096 128 "data.bin"` imports 4096 bytes starting at offset 128. In-line compression is available:
 
 ```c
-char charset[] = { #embed 2048 0 lzo "../resources/charset.bin" };
+char charset[] = {
+#embed 2048 0 lzo "../resources/charset.bin"
+};
 // runtime: oscar_expand_lzo(CharsetDest, charset);
 ```
 
@@ -286,7 +298,7 @@ Supported compression methods: `lzo` (LZ-based) and `rle` (run-length). The `wor
 
 ### Console I/O and PETSCII
 
-The C64 uses PETSCII rather than ASCII, and `CR` (13) as the line terminator instead of `LF` (10). Oscar64 handles translation via `iocharmap(IOCHM_PETSCII_2)` (switch to lowercase font and translate all subsequent I/O) or PETSCII string literals with the `p` prefix (`printf(p"Hello\n")`). Screen-code literals use the `s` or `S` prefix. The `-psci` compiler flag makes PETSCII the default encoding for all unadorned string literals. Per-character mapping can be customized with `#pragma charmap(char, code)`.
+The C64 uses PETSCII rather than ASCII, and `CR` (13) as the line terminator instead of `LF` (10). Oscar64 handles translation via `iocharmap(IOCHM_PETSCII_2)` (switch to lowercase font and translate all subsequent I/O) or PETSCII string literals with the `p` prefix (`printf(p"Hello\n")`). Screen-code literals use the `s` or `S` prefix. The `-psci` compiler flag makes PETSCII the default encoding for all unadorned string literals. Per-character mapping can be customized with `#pragma charmap(index, code [, count])` — both are integer character codes (a `'a'` literal is refused with error 3031); `count` maps a run.
 
 ### Preprocessor extensions
 
@@ -304,13 +316,14 @@ A shorthand for single-line expansion: `#for(i, COUNT) text_with_i` replicates `
 
 ## Memory layout and banking
 
-Oscar64's linker works with three levels: regions (physical memory areas), sections (logical groupings), and objects (functions and data items). The default layout for the `c64` target with `-tf=prg` is:
+Oscar64's linker works with three levels: regions (physical memory areas), sections (logical groupings), and objects (functions and data items). The default layout for `c64`/`-tf=prg` on build 2026-05-19 with the default native code generation is:
 
 ```
-$0801–$0900  startup   — BASIC stub and optional interpreter loop
-$0900–$0A00  bytecode  — interpreter jump table (only when using bytecode)
-$0A00–$A000  main      — code, data, bss, heap, stack
+$0801–$0880  startup   — BASIC stub and crt entry
+$0880–$A000  main      — code, data, bss, heap, stack (the 4 KB stack is carved from the top, so the .map prints the region as 0880 - 9000 with stack at 9000 - A000)
 ```
+
+There is no bytecode region and code begins at `$0880`. The vendor manual's `$0801–$0900 startup / $0900–$0A00 bytecode / $0A00–$A000 main` figures, which an earlier version of this table repeated, describe the layout selected when the bytecode interpreter is in use (`-bc`, or any non-native function); building the same file with `-bc` reproduces them exactly. The `#pragma region( main, 0x0a00, ... )` examples below still work in a native build, but starting at `0x0a00` leaves `$0880`–`$0A00` unused; use `0x0880` as the lower bound if you want it back. Verify against your own `.map`, since the split depends on the codegen mode.
 
 To use memory up to `$D000` (displacing BASIC ROM but keeping I/O and KERNAL), include `<c64/memmap.h>` and add:
 
@@ -328,11 +341,13 @@ To place a character set at a fixed address while splitting code around it:
 #pragma region( upper, 0x2800, 0xa000, , , {code, data, bss, heap, stack} )
 
 #pragma data(charset)
-char MyCharset[2048] = { #embed "../resources/charset.bin" };
+char MyCharset[2048] = {
+#embed "../resources/charset.bin"
+};
 #pragma data(data)
 ```
 
-Heap and stack sizes default to 4 KB and 1 KB respectively. Override with:
+On the C64 target the stack defaults to 4 KB and the heap to a 1 KB minimum; the linker then grows the heap to fill all free space between the end of bss and the start of the stack (an earlier version of this sentence gave heap 4 KB, stack 1 KB; the `.map` shows `stack 9000 - a000` and the heap filling everything below it). `#pragma stacksize(n)` sets the stack reservation exactly; `#pragma heapsize(n)` sets the heap's minimum, and the linker reports "Cannot place heap section" if that minimum does not fit. Other targets use smaller defaults (512/512 on VIC-20 and 8 KB PET, 1 KB/1 KB on X16 and 16 KB+ VIC-20/PET, 256/256 on NES). Override with:
 
 ```c
 #pragma stacksize(4096)
@@ -393,7 +408,7 @@ Oscar64 produces two debug-support files on every build. The `.lbl` file contain
 For deeper source-level debugging, compile with `-n -g -O0`:
 
 ```bash
-oscar64 -n -g -O0 -o game.prg main.c
+oscar64 -n -g -O0 -o=game.prg main.c
 ```
 
 This produces a `.dbj` JSON file alongside the `.lbl`. The Modern VICE PDB Monitor (https://github.com/MihaMarkic/modern-vice-pdb-monitor) consumes `.dbj` for breakpoints, variable inspection, and step-through at the C source level.
@@ -433,6 +448,7 @@ The `sprites.h` functions handle the MSB of the X coordinate transparently, mana
 **Oscar64 — correct:**
 
 ```c
+#include <c64/vic.h>        // vic and VCOL_* live here; rasterirq.h does not pull it in
 #include <c64/rasterirq.h>
 
 RIRQCode colorBar;
@@ -455,7 +471,7 @@ void setup(void) {
 *(void **)0x0314 = my_irq;           // kernal IRQ vector
 ```
 
-The `rasterirq.h` system handles CIA disable, vector installation, slot sorting, and stable-IRQ timing in optimized assembly. The hand-rolled approach is error-prone on PAL vs NTSC and does not compose for multi-split effects.
+The `rasterirq.h` system handles CIA disable, vector installation, slot sorting, and line-accurate entry in optimized assembly (every RIRQCode built by `rirq_build` begins with a `CMP $D012 / BCS` spin that lands the first write early in the target line, with up to six cycles of residual jitter — line-stable, not cycle-exact, which an earlier version of this sentence called "stable-IRQ timing"; for $D016/$D018 splits use the double-IRQ method in `recipes/kickassembler/stable-raster-irq.md`). The hand-rolled approach is error-prone on PAL vs NTSC and does not compose for multi-split effects.
 
 ### SID playback: sid.h helpers vs raw frequency writes
 
@@ -533,6 +549,7 @@ Oscar64 provides a working `printf` that calls `CHROUT` internally. It supports 
 
 ```c
 #include <stdio.h>
+#include <conio.h>   // iocharmap() and IOCHM_* live here, not in stdio.h
 iocharmap(IOCHM_PETSCII_2);
 printf("Score: %d\n", score);
 ```
@@ -562,7 +579,9 @@ This pattern is the idiomatic way to handle per-sprite or per-tile parallel arra
 Avoid runtime file loading for assets that ship with the program. Use `#embed` to bake them into the `.prg` at compile time:
 
 ```c
-const char charset_lzo[] = { #embed lzo "../gfx/charset.bin" };
+const char charset_lzo[] = {
+#embed lzo "../gfx/charset.bin"
+};
 // at startup:
 oscar_expand_lzo((char *)0xD000, charset_lzo);
 ```
@@ -581,6 +600,7 @@ The `__asm { }` block embeds 6502 instructions directly inside any function:
 void fast_copy(const char * src, char * dst, char count) {
     __asm {
         ldx count
+        ldy #0         // the compiler emits no ldy; without it the copy starts at whatever Y holds
     loop:
         lda (src),y    // src is a zero-page pointer pair
         sta (dst),y
@@ -595,29 +615,35 @@ Local variables and parameters are accessed by name inside `__asm` blocks; the c
 
 The assembler optimizer runs on inline assembly at `-O2` and above. To suppress it for timing-sensitive code: `__asm volatile { ... }` or `#pragma optimize(noasm)` around the block.
 
-### External KickAssembler linking
+### Calling KickAssembler code from Oscar64
 
-For a pure-assembly hot loop, write it as a `.asm` source file compiled by KickAssembler, then declare the function extern in the Oscar64 C file:
+Oscar64 has no object linker and no external-symbol resolution (measured on build 2026-05-19): `extern "C"` is a parse error (`error 3006: Declaration starts with invalid token 'string literal'`), a call to a declared function with no body is `error 3022: Calling undefined function`, and a `.prg` given on the command line is accepted and silently ignored — the output is byte-identical to the build without it. An earlier version of this page described an extern/link workflow; it never worked. To use hand-written assembly either write it as an `__asm { }` block, or assemble it with KickAssembler at a fixed address (`* = $C000`), embed the bytes past the two-byte load address into a placed, exported array, and JSR to the address from inline assembly (a `const` function pointer to a literal address crashes the compiler, see Pitfalls):
 
 ```c
-// In main.c (Oscar64 side):
-extern "C" void unrolled_scroller(char * screen, char scroll_x);
-
-// call normally:
-unrolled_scroller(Screen, xoff);
+#pragma section( asmcode, 0 )
+#pragma region( asmreg, 0xc000, 0xc100, , , { asmcode } )
+#pragma data( asmcode )
+__export const char scroller_code[] = {
+#embed 256 2 "scroller.prg"
+};
+#pragma data( data )
+// ...
+__asm { jsr $c000 }
 ```
 
-KickAssembler side (the function must observe the Oscar64 calling convention — first argument in the zero-page register pair at `$02`/`$03`, etc.). The `.prg` output from KickAssembler is linked into the build by adding it as a source file to the Oscar64 invocation. This hybrid approach lets you use KickAssembler's macro system and cycle-accurate timing tools while keeping the rest of the project in C.
+Put `#embed` on its own line: the directive consumes the rest of the line, so the one-line `{ #embed "f" };` form loses the closing brace and fails with `error 3006` on this build.
+
+Any arguments must be passed through zero-page locations or globals the assembly side knows about; the Oscar64 parameter registers are not a stable interface. If the assembly does read the compiler's slots, it must observe the Oscar64 calling convention. For functions the compiler classifies as leaf calls, parameters are passed in the zero-page block from `$0D` upward (`P0` = `$0D/$0E`, `P2` = `$0F/$10`, `P4` = `$11/$12`, …; each parameter takes as many bytes as its type, so a `char` occupies one slot and a pointer two). `$02` is the compiler's Y-register spill byte, not an argument register — an earlier version of this page said the first argument lived at `$02`/`$03` (vendor manual, "Zero page usage" table; `BC_REG_FPARAMS = 0x0d` in the compiler source). Slot assignment is decided per function by the global analyzer — parameters that constant-fold away free their slots — and non-leaf or recursive functions receive arguments on the software stack instead, so always read the generated `.asm` listing for the exact slots of the function you are replacing. A concrete example: for `void unrolled_scroller(char *screen, char scroll_x)` the listing gives `screen` at `$0D/$0E` and `scroll_x` at `$0F`.
 
 ## Pitfalls
 
 **Always set `-tf=`** when targeting anything other than `.prg`. Omitting `-tf=crt` when building for EasyFlash produces a `.prg` with the BASIC stub still present — it will crash when the cartridge reset vector fires.
 
-**`__zeropage` lifetime.** Zero-page globals are not initialized and are not cleared by NOBSSCLR. They survive across `STOP`/`RESTORE` unless you explicitly clear them. More importantly, they occupy the zero-page BSS segment which is shared with the KERNAL. If you use `__zeropage` variables while the KERNAL ROM is mapped, collisions with KERNAL workspace locations (`$02`–`$61` and others) will produce mysterious crashes. Zero-page variables are safe only in KERNAL-off (`MMAP_NO_ROM`) or KERNAL-less (`MMAP_RAM`) configurations.
+**`__zeropage` lifetime.** `__zeropage` variables go to the linker's `zeropage` region, which on the `c64` target defaults to `$F7`–`$FE` (Compiler.cpp: `AddRegion(zeropage, 0x00f7, 0x00ff)`; read your `.map`). That is the KERNAL's RS-232 buffer pointers (`$F7`–`$FA`, only live if device 2 is opened) plus the four free bytes `$FB`–`$FE`, so with the ROMs mapped and no RS-232 in use they are safe by default. What causes crashes is widening the region — `-xz` moves it to `$80`–`$FE` (upstream: "no return to basic"), and `#pragma region(zeropage, ...)` into `$03`–`$8F` (BASIC's workspace) or `$90`–`$F6` (KERNAL's). They ARE zero-filled at startup by crt.c on every entry through the startup code, including a second `RUN` after `STOP`/`RESTORE`, unless you build with `-dNOZPCLEAR` (`-dNOBSSCLEAR` covers the main BSS; the spellings `NOBSSCLR`/`NOZPCLR` are not recognised and silently do nothing). "Not initialized" means only that an initializer such as `__zeropage char z = 0x55;` is silently ignored — the byte still starts at 0. An earlier version of this pitfall said the default region was `$02`–`$61`, that the variables were never cleared and that the flag was `NOBSSCLR`; all three were wrong.
 
 **Banked-RAM context.** When accessing data in an EasyFlash bank, the `eflash.bank` write must not be reordered relative to subsequent reads from that bank. The `__memmap` qualifier on the bank register (already present in the `EasyFlash` struct definition) provides the necessary memory fence. Do not cast the bank register to plain `volatile byte *` — that loses the fence semantics.
 
-**Register stomping in `__interrupt`.** A function marked `__interrupt` saves and restores only the zero-page registers it uses. If it calls a non-interrupt function that uses additional zero-page locations, those locations are not protected. Either mark the called function `__interrupt` as well, or use `__hwinterrupt` for the top-level handler and keep the handler body short. A common mistake is calling `printf` or any standard library function from inside an IRQ handler — these functions use extensive zero-page workspace.
+**Register stomping in `__interrupt`.** An `__interrupt`/`__hwinterrupt` function saves and restores the zero-page registers used by itself *and* by every function it reaches through direct calls: the compiler walks the static call graph, adding each callee's zero-page set and a fixed ACCU/WORK set for each runtime routine (measured: a handler calling a plain function that multiplies saves that function's WORK `$03`–`$06` and ACCU `$1B`–`$1E`). An earlier version of this pitfall said callees were unprotected; they are not. Calls it cannot follow are rejected, not left unprotected — a call through a function pointer fails with error 3035 `No recursive functions in interrupt`, and `printf` or anything else needing a stack frame fails with error 3035 `Function to complex for interrupt`. The hole that does exist is the runtime scratch byte `__tmpy` at `$02`: runtime routines such as `mul16by8` use it, it is not in the saved set, and a handler that multiplies (directly or via a callee) corrupts a multiply the main code was in the middle of — measured 1,706 wrong products in 30,000 with a multiplying IRQ handler, 0 with a control handler whose multiply skips `$02`. Avoid multiplication, division and other runtime-routine arithmetic inside interrupt handlers, or save `$02` yourself around the call.
 
 **Avoid recursion and function pointers.** The compiler's static call graph analysis — which eliminates the need for a runtime software stack — fails in the presence of recursion or indirect calls through function pointers. Recursive functions and indirect calls force the compiler to allocate stack frames dynamically, which is expensive on the 6502. Use switch statements instead of vtable-style function-pointer dispatch, and convert recursive algorithms to iterative form.
 

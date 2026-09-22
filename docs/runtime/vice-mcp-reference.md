@@ -44,14 +44,16 @@ git clone https://github.com/simen/vice-mcp.git
 cd vice-mcp && npm install && npm run build && npm start
 ```
 
-**Manual config** — add to `~/.claude/claude_desktop_config.json`:
+These lines install upstream simen/vice-mcp (1.0.1, last pushed 2025-12-30), which has no Input Injection tools. For `sendKey` and `pressJoystick` install the fork instead: `claude mcp add vice-mcp -- npx github:bdgscotland/vice-mcp` (1.1.0, pushed 2026-05-18; no pull request against upstream exists as of 2026-09-22, so do not expect `github:simen/vice-mcp` to pick it up). The fork's own README still shows the upstream install lines; ignore them. An earlier version of this page gave only the upstream lines and then documented the fork's tools as if they came with them.
+
+**Manual config** — `claude mcp add` (above) is the normal route; it writes the entry to Claude Code's own store (`~/.claude.json`, or the project's `.mcp.json` with `-s project`). To register by hand, put the block below in the project's `.mcp.json`, or under the top-level `mcpServers` key of `~/.claude.json` for user scope. The upstream README's `~/.claude/claude_desktop_config.json` (which this page used to repeat) is not a path Claude Code reads — `claude_desktop_config.json` is Claude Desktop's file, which lives under `~/Library/Application Support/Claude/` and is only consulted by `claude mcp add-from-claude-desktop`.
 
 ```json
 {
   "mcpServers": {
     "vice-mcp": {
       "command": "npx",
-      "args": ["github:simen/vice-mcp"]
+      "args": ["github:bdgscotland/vice-mcp"]
     }
   }
 }
@@ -61,7 +63,7 @@ Restart Claude Code after adding the server. The server connects lazily; call `c
 
 ## Tool Surface
 
-All 24 tools registered in `src/index.ts` are listed below, grouped by category. These are the exact names an LLM should call.
+The tables below list the 28 tools registered in `src/index.ts` of the bdgscotland fork at 1.1.0 (origin/main commit 7e40b8a): the 26 of simen/vice-mcp 1.0.1 (upstream commit d06d2ef) plus the two Input Injection tools. Counted from `server.registerTool` calls on 2026-09-22; later fork branches add more. An earlier version of this line said 24, copied from the upstream README's architecture diagram, which is stale. These are the exact names an LLM should call.
 
 ### Connection
 
@@ -83,7 +85,7 @@ All 24 tools registered in `src/index.ts` are listed below, grouped by category.
 | Tool | Description |
 |------|-------------|
 | `getRegisters` | Return A, X, Y, SP, PC, and the processor flags register decoded into individual boolean fields and a compact `NV-BDIZC` string |
-| `step` | Execute one or more instructions; optional `stepOver` to treat JSR as a single instruction |
+| `step` | Execute one or more instructions (`count`, default 1); optional `stepOver` to treat JSR as a single instruction |
 | `continue` | Resume emulation from a paused state |
 | `reset` | Perform a soft or hard reset |
 | `runTo` | Set a temporary breakpoint at an address and continue; breakpoint auto-deletes on hit |
@@ -118,12 +120,12 @@ All 24 tools registered in `src/index.ts` are listed below, grouped by category.
 
 ### Input Injection
 
-Available in vice-mcp ≥ 1.1.0 (bdgscotland fork). Closes the agent loop for game-style code that reads the keyboard or joystick — no more JSR-NOP patching joystick poll routines.
+Available only in the bdgscotland fork (1.1.0); see the install note in Quick Reference. Closes the agent loop for game-style code that reads the keyboard or joystick — no more JSR-NOP patching joystick poll routines.
 
 | Tool | Description |
 |------|-------------|
 | `sendKey` | Feed PETSCII bytes and/or symbolic key names (`RETURN`, `RUN_STOP`, `F1`–`F8`, cursor keys, color keys, case shift) into the kernal keyboard buffer. Max 255 bytes per call. RESTORE cannot be injected — it is a hardwired NMI key, not a buffer entry. |
-| `pressJoystick` | Set the state of control port 1 or 2. Inputs: `port` (1 or 2), `directions` (subset of `up`/`down`/`left`/`right`), `fire`. Pure state setter — call again with empty directions and `fire:false` to release. Hold timing is the caller's responsibility (compose with `continue` + wall-clock waits or `step`/`advanceInstructions`). |
+| `pressJoystick` | Set the state of control port 1 or 2. Inputs: `port` (1 or 2), `directions` (subset of `up`/`down`/`left`/`right`), `fire`. Pure state setter — call again with empty directions and `fire:false` to release. Hold timing is the caller's responsibility (compose with `continue` + wall-clock waits, or with `step` using its `count` parameter — `step` wraps binary-monitor command 0x71 Advance Instructions; there is no separate `advanceInstructions` tool, though an earlier version of this row named one). |
 
 Typical loop:
 
@@ -158,7 +160,8 @@ The four semantic-layer tools are the primary reason to prefer vice-mcp over raw
 
 Reads all 47 VIC-II registers ($D000–$D02E) and CIA2 ($DD00 for bank selection). Returns:
 
-- `graphicsMode` — one of `"standard text"`, `"multicolor text"`, `"standard bitmap"`, `"multicolor bitmap"`, `"extended color text"`, or combinations thereof
+- `graphicsMode` — one of `"standard text"`, `"multicolor text"`, `"standard bitmap"`, `"multicolor bitmap"`, or `"extended background color"`; ECM set together with BMM or MCM is reported as the single string `"invalid (ECM + other modes)"` (strings from `src/utils/c64.ts`; an earlier version of this line said `"extended color text"` and "combinations thereof", neither of which the code emits)
+- `bitmap` / `multicolor` / `extendedColor` — the raw BMM ($D011 bit 5), MCM ($D016 bit 4) and ECM ($D011 bit 6) flags as booleans, so an invalid combination can still be read bit by bit
 - `borderColor` / `backgroundColor` — objects with `value` (0–15) and `name` (e.g., `"light blue"`)
 - `vicBank` — bank index (0–3) and `baseAddress` ($0000, $4000, $8000, $C000)
 - `screenAddress` / `charAddress` — absolute addresses derived from $D018 and the active bank
@@ -196,7 +199,13 @@ Watchpoints stop emulation when a memory address is read or written. The canonic
    → Emulation stops the next time code writes to the raster compare register
 4. continue()
 5. getRegisters()
-   → PC now points to the instruction that wrote $D012
+   → PC is the instruction AFTER the one that wrote $D012, and the write has already landed.
+     VICE stops at the instruction boundary once the writer retires (measured in x64sc 3.10:
+     a store watchpoint on screen RAM stopped with PC=$EA20, the STA ($D1),Y at $EA1E;
+     a test STA $0400 at $081C stopped with PC=$081F). The writer is the instruction
+     immediately before PC — back up by its own length (3 for STA abs, 2 for STA (zp),Y),
+     or disassemble from a few bytes earlier and read forward to PC, since a backward
+     6502 disassembly can mis-align. An earlier version of this step said PC was the writer.
 6. disassemble()
    → See the raster IRQ setup code
 7. readVicState()
@@ -208,13 +217,13 @@ For screen RAM writes (debugging sprite or character corruption):
 ```
 setWatchpoint(startAddress: 0x0400, endAddress: 0x07FF, type: "store")
 continue()
-getRegisters()   → PC is the writer
+getRegisters()   → PC is just past the writer; the writer ends at PC-1
 disassemble()    → Understand what wrote there
 ```
 
 Breakpoints and watchpoints share the same ID namespace. `deleteBreakpoint(id)` removes both.
 
-**Watchpoint count limit:** VICE has an internal limit on simultaneous checkpoints (breakpoints + watchpoints combined). Exceeding it causes `setWatchpoint` or `setBreakpoint` to return an error. Delete unused checkpoints with `deleteBreakpoint` before adding new ones.
+**Checkpoint count:** no ceiling was found in x64sc 3.10 — 20,000 simultaneous checkpoints were accepted over the binary monitor with no error response, IDs 1..20000, and one set afterwards still fired (measured 2026-09-22; a malformed request in the same run did return an error, so the zero-error count is real). An earlier version of this paragraph claimed an internal limit that made `setWatchpoint`/`setBreakpoint` fail; no such limit was reached. Delete checkpoints you no longer need anyway: a forgotten one with stop set halts the emulator somewhere you did not expect, and `listBreakpoints`/`listWatchpoints` only know about the ones this vice-mcp session created.
 
 ## State Checkpoints
 
@@ -232,7 +241,7 @@ loadSnapshot("before-sprite-test.vsf")
 ; machine is back to the saved state exactly
 ```
 
-Snapshot/restore is significantly faster than a full machine `reset` + `loadProgram` cycle. It is also how sim6502's VICE backend achieves per-test isolation (see [sim6502-reference.md](sim6502-reference.md)).
+Snapshot/restore is significantly faster than a full machine `reset` + `loadProgram` cycle.
 
 Snapshot files accumulate on disk. The VICE binary monitor protocol codes for these operations are `0x41` (Dump) and `0x42` (Undump).
 
@@ -319,13 +328,13 @@ Use vice-mcp interactively:
 Fix code → repeat
 ```
 
-sim6502's snapshot-based isolation uses `saveSnapshot` / `loadSnapshot` under the hood, so the same VICE instance can serve both sim6502 and interactive vice-mcp sessions (though not simultaneously).
+sim6502's `--backend vice` does not talk to this server: it connects to the embedded MCP server of barryw/vice-mcp, a separate VICE fork (`x64sc -mcpserver`, port 6510, see [sim6502-reference.md](sim6502-reference.md)), which is not a fork of simen/vice-mcp and does not expose these tool names. Run sim6502 tests first, then start an interactive vice-mcp session against `-binarymonitor` on port 6502; do not assume one VICE instance is serving both at once. An earlier version of this paragraph said sim6502 used this server's `saveSnapshot`/`loadSnapshot`; no document in this repo shows that.
 
 ## Pitfalls
 
 **Connection drops require VICE restart.** If `x64sc` crashes or is restarted while vice-mcp is connected, the TCP socket becomes invalid. Call `disconnect()`, restart VICE with `-binarymonitor`, then call `connect()` again. The MCP server process itself does not need to be restarted.
 
-**Watchpoint count limits.** The VICE binary monitor has a finite internal checkpoint table. When the limit is reached, checkpoint creation silently fails or returns an error. Always call `listWatchpoints` and `listBreakpoints` before adding more, and delete any that are no longer needed.
+**Stale checkpoints.** There is no known checkpoint ceiling (see Watchpoint Workflow; an earlier version of this pitfall claimed a finite table that failed silently), but a checkpoint you forgot, with stop set, halts the emulator at an unexpected place, and the list tools cannot show you one set outside this session. Call `listWatchpoints` and `listBreakpoints` and delete what you no longer need.
 
 **Screenshot performance.** `screenshot` transfers the full display buffer (raw pixel data, base64-encoded). This is substantially larger than any other vice-mcp response. On slow machines or over network connections, it can be a bottleneck. Prefer `readScreen` (text) or `readVicState` (semantic) for non-visual checks.
 

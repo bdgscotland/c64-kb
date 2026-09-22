@@ -12,7 +12,7 @@ home_url: https://github.com/drmortalwombat/oscar64/tree/main/include/c64
 
 ## Tool
 
-The `include/c64/` directory in the Oscar64 source tree contains a suite of C headers that give Oscar64 programs structured, type-safe access to C64 hardware and operating-system services. Each header declares structs that map directly to the hardware register layout, named constants for all bit flags and enumerations, and helper functions that encapsulate common sequences. Every header uses a `#pragma compile("filename.c")` directive to automatically pull in its implementation: including the header is sufficient to use the library, with no separate link step.
+The `include/c64/` directory in the Oscar64 source tree contains a suite of C headers that give Oscar64 programs structured, type-safe access to C64 hardware and operating-system services. Each header declares structs that map directly to the hardware register layout, named constants for all bit flags and enumerations, and helper functions that encapsulate common sequences. Every header with an implementation file uses a `#pragma compile("filename.c")` directive to automatically pull in its implementation (`types.h` and `easyflash.h` are header-only; an earlier version of this page said every header carries the pragma). Including the header is sufficient to link the library, with no separate link step — but a header does not re-export the `vic.h`/`rasterirq.h` names its own API uses, so a fence that calls `vic_waitLine()` or `rirq_wait()` still needs those headers included (see the fences below).
 
 This document is the per-header API reference. For broader context on when to reach for these headers, see [oscar64-reference.md](oscar64-reference.md). The rule of thumb: whenever an Oscar64 recipe needs to touch a hardware register, there is almost certainly a header that makes it cleaner, safer, and more portable between PAL and NTSC builds than direct POKE/PEEK patterns.
 
@@ -68,7 +68,7 @@ vic_waitFrame();               // sync to vertical blank
 Public functions and macros:
 
 - `sid` — macro reference to the SID struct at `$D400`
-- `NOTE_C(octave)` through `NOTE_B(octave)` — 16-bit frequency register values for musical notes, precomputed for PAL clock
+- `NOTE_C(octave)` through `NOTE_B(octave)` — the note's frequency in **Hz**, not a SID register value: `NOTE_A(o)` is `28160U >> (10 - o)`, so `NOTE_A(4)` = 440 (header-read; measured in VICE). Pass the result through `SID_FREQ_PAL()` / `SID_FREQ_NTSC()` before writing it to `freq`; written raw on PAL, 440 plays 440 × 985248 / 2^24 ≈ 25.8 Hz. The values are integer-truncated (`NOTE_C(4)` = 261, not 261.63) and the octave argument must be 0..10 (the macro shifts right by 10 − octave). An earlier version of this page called them PAL-precomputed register values.
 - `SID_FREQ_PAL(hz)` / `SID_FREQ_NTSC(hz)` — convert Hz to frequency register value for the respective clock
 - `SID_CLOCK_PAL` (985248), `SID_CLOCK_NTSC` (1022727) — clock constants in Hz
 - `SID_CTRL_*` constants — `GATE`, `SYNC`, `RING`, `TEST`, `TRI`, `SAW`, `RECT`, `NOISE`
@@ -78,7 +78,7 @@ Public functions and macros:
 ```c
 #include <c64/sid.h>
 
-sid.voices[0].freq   = NOTE_A(4);            // 440 Hz, octave 4
+sid.voices[0].freq   = SID_FREQ_PAL(NOTE_A(4)); // 440 Hz, octave 4 -> register 7492
 sid.voices[0].ctrl   = SID_CTRL_SAW | SID_CTRL_GATE;
 sid.voices[0].attdec = SID_ATK_8 | SID_DKY_24;
 sid.voices[0].susrel = 0xA0;
@@ -106,40 +106,43 @@ cia_init();              // kill CIA IRQs; raster IRQs take over
 
 ## rasterirq.h — Raster interrupt system
 
-`rasterirq.h` is the demo-development backbone. It manages up to 16 simultaneous raster interrupt slots (configurable with `-dNUM_IRQS=n`). Each slot fires at a specified raster line and executes up to five memory writes in hand-optimized assembly. The system handles IRQ vector installation, CIA disabling, stable-raster timing, and slot sorting so that slots always fire in scanline order even when moved between frames.
+`rasterirq.h` is the demo-development backbone. It manages up to 16 simultaneous raster interrupt slots (configurable with `-dNUM_IRQS=n`). Each slot fires at a specified raster line and executes up to five memory writes in hand-optimized assembly. The system handles IRQ vector installation and slot sorting so that slots always fire in scanline order even when moved between frames. It does not disable the CIAs: no `rirq_init_*` variant writes `$DC0D`/`$DD0D` (header-read, `rasterirq.c`), so call `cia_init()` first when using `rirq_init_crt`, `rirq_init_crt_noio`, `rirq_init_io` or `rirq_init_memmap` (the variants whose handler does not fall through to the kernal), otherwise the CIA1 timer IRQ keeps entering a handler that never acknowledges it and the splits break up. The two kernal-routed variants (`rirq_init_kernal`, `rirq_init_kernal_noio`, i.e. `rirq_init(true)`) acknowledge `$DC0D` and continue into `$EA31`, so they run without `cia_init()`. It is also not cycle-exact: each slot busy-polls `CMP $D012`, so its writes land at the start of the line below `row`, inside horizontal blanking with a few cycles of jitter — a clean full-line colour split, but not a base for FLI, side-border or other cycle-exact effects. An earlier version of this page claimed CIA disabling and stable-raster timing.
 
-`RIRQCode` is a 31-byte structure that encodes up to five writes (address + data pairs). Larger variants `RIRQCode10` and `RIRQCode20` hold 10 and 20 writes respectively. A sixth slot in the sequence (`size` field) is a wait value for sub-line delay.
+`RIRQCode` is 32 bytes: a `size` byte plus a 31-byte code area (`RIRQ_SIZE`), holding up to five operations (address + data pairs). `RIRQCode10` (62 bytes, 61-byte code area) and `RIRQCode20` (107 bytes, 106-byte code area) hold up to 10 and 20 operations. `sizeof(RIRQCode)` measured in VICE = 32; an earlier version of this page said 31. The `size` byte is the number of operations (0–25; `rirq_build` asserts `size < 26`, larger counts need `RIRQCode10`/`RIRQCode20`). A delay is not a sixth slot: an `RIRQCode` carries either five writes or one delay plus four writes, because `rirq_delay()` re-uses write slot 0 — its data byte becomes the loop count and its STY is overwritten with a DEY/BNE loop (about 5 cycles per count; the header comment's own words). The earlier text described the `size` field as a wait value, a misreading of the header's "size (wait + #ops)" comment.
 
 Public API:
 
-- `rirq_build(RIRQCode * ic, byte size)` — initializes an `RIRQCode` for `size` writes (1–5); `size` = 0 is a no-op slot
+- `rirq_build(RIRQCode * ic, byte size)` — initialises the code for `size` operations; the implementation accepts 0–25 (`__assume(size < 26)`, and the setters index 26-entry tables) but only as much room as the caller supplied: the RTS lands at code offset 12 for size 1 and 15+5·(size−2) above that, so size 5 ends at byte 30 (fits `RIRQCode`), size 10 at 55 (fits `RIRQCode10`), size 20 at 105 (exactly fills `RIRQCode20`); sizes 21–25 overflow every declared struct and are only safe in a `rirq_alloc()` block (`malloc(1 + 31 + 5*size)`) or a caller's own larger buffer. `size` = 0 builds a bare RTS. An earlier version of this page gave the range as 1–5.
 - `rirq_alloc(byte size)` — heap-allocates an `RIRQCode`
 - `rirq_write(RIRQCode * ic, byte n, void * addr, byte data)` — sets write slot `n` to store `data` at `addr`
 - `rirq_call(RIRQCode * ic, byte n, void * addr)` — sets slot `n` to JSR `addr` (calls a C function from within the IRQ)
 - `rirq_addr(RIRQCode * ic, byte n, void * addr)` — changes the target address of write slot `n` at runtime
 - `rirq_addrhi(RIRQCode * ic, byte n, byte hi)` — changes only the high byte of the address (fast path for moving through memory pages)
 - `rirq_data(RIRQCode * ic, byte n, byte data)` — changes the data byte of write slot `n` at runtime
-- `rirq_delay(RIRQCode * ic, byte cycles)` — adds a 5-cycle delay (per count) before the first write; used for horizontal positioning
+- `rirq_delay(RIRQCode * ic, byte cycles)` — converts write slot 0 into a delay of roughly 5 × `cycles` before the remaining writes, for horizontal positioning. Call it after `rirq_build()` (which rebuilds slot 0 as a write) and then only use `rirq_write`/`rirq_data`/`rirq_addr` on slots 1..4 — slot 0's data byte IS the delay count, so `rirq_data(ic, 0, x)` changes the delay. Measured from the emitted bytes in VICE: after `rirq_build(&rc, 2)`, two `rirq_write`, `rirq_delay(&rc, 3)` the code is `A0 03 A2 02 CD 12 D0 B0 FB 88 D0 FD 8E 20 D0 60` with `size` still 2 — write 0 is gone. An earlier version of this page said the delay was added before the first write at no cost to a slot.
 - `rirq_set(byte n, byte row, RIRQCode * write)` — installs `write` into slot `n` to fire one line below `row`
 - `rirq_clear(byte n)` — removes slot `n`
 - `rirq_move(byte n, byte row)` — changes the trigger line of slot `n` without rebuilding the code
-- `rirq_init(bool kernalIRQ)` — initializes the system; `true` = route through kernal IRQ vector (safe, slower), `false` = install hardware vector directly
+- `rirq_init(bool kernalIRQ)` — `true` = `rirq_init_kernal()` (routes via `$0314`, works with the KERNAL ROM in, chains to the KERNAL handler); `false` = `rirq_init_io()`, which writes only the RAM copy of `$FFFE` and does not change `$01`. With the KERNAL ROM in (the default map) the CPU reads `$FFFE` from ROM and the handler never runs — the header's own wording is "if the kernal ROM is turned off". To use `false`: call `cia_init()` (the RAM-vector ISRs do not test `$D019`, so a live CIA timer IRQ would also enter them and misplace the writes), then `mmap_set(MMAP_NO_ROM)`, then `rirq_init(false)` — the order `sprmux32.c` uses. If the ROM may be in or out, use `rirq_init_crt()` / `rirq_init_crt_noio()`, which write both `$0314` and `$FFFE`. An earlier version of this page described `false` as a drop-in "install hardware vector directly".
 - `rirq_init_kernal()` / `rirq_init_kernal_noio()` — kernal-routed variants
 - `rirq_init_crt()` / `rirq_init_crt_noio()` — cartridge-safe variants
 - `rirq_init_io()` / `rirq_init_memmap()` — RAM vector variants
 - `rirq_start()` — enables the raster IRQ system
 - `rirq_stop()` — disables it
-- `rirq_sort(bool inirq)` — re-sorts slots by scanline after moving any; call once per frame after changes; pass `true` when calling from within an interrupt
+- `rirq_sort(bool inirq)` — sorts the slots by scanline and builds the dispatch schedule (`rasterIRQNext[]`); call once after the initial `rirq_set()` calls and before `rirq_start()`, and again after any `rirq_set`/`rirq_move`/`rirq_clear`; pass `true` when calling from within an interrupt
 - `rirq_wait_done()` — blocks until the last slot of the current frame has fired; call before `rirq_sort`
-- `rirq_wait()` — waits for the next IRQ tick
-- `rirq_count` — volatile counter incremented on each raster IRQ (useful for timing)
+- `rirq_wait()` — blocks until the raster IRQ chain has completed one more pass (end of frame), i.e. until `rirq_count` changes; an earlier version of this page said "the next IRQ tick"
+- `rirq_count` — volatile byte incremented once per frame, by the ISR after the last active slot has run (not once per slot: with two slots it advances by 1 per frame, not 2 — header-read, `inc rirq_count` sits only at the "no more interrupts" exit of each ISR variant). `rirq_wait()` returns when it has changed since the last `rirq_wait()`/`rirq_sort()`, which is why `vspr_update()`/`rirq_sort()` are placed after it. With no slots set it never advances and `rirq_wait()` will not return.
 
 ```c
+#include <c64/vic.h>
 #include <c64/rasterirq.h>
 
 RIRQCode topBar, botBar;
 
 void setup_raster(void) {
+    rirq_init(true);
+
     rirq_build(&topBar, 2);
     rirq_write(&topBar, 0, &vic.color_back,   VCOL_RED);
     rirq_write(&topBar, 1, &vic.color_border, VCOL_RED);
@@ -150,12 +153,12 @@ void setup_raster(void) {
     rirq_write(&botBar, 1, &vic.color_border, VCOL_BLACK);
     rirq_set(1, 150, &botBar);
 
-    rirq_init(true);
+    rirq_sort(false);
     rirq_start();
 }
 ```
 
-This sets up two color splits: a red band from raster 51 to 151, and black above and below it.
+This sets up two color splits: a red band from raster 51 to 151, and black above and below it. The order matters: `rirq_init()` resets every slot's row to 255, so it must come before any `rirq_set()`; and `rirq_sort()` is the only routine that builds the dispatch schedule (`rasterIRQNext[]`) and programs the first `$D012` line — `rirq_start()` only enables the raster IRQ. Without `rirq_sort()` the IRQ fires but no slot ever runs. Measured in VICE: with set-before-init, or with init-first but no sort, no band appears at all; with init → set → sort → start the text area is red from raster 51 through 150 and black from 151 (x64sc PAL exit PNG, rows 35–134 red and row 135 black at x = 200, row = line − 16), i.e. the slot set at `row` 150 fires on line 151, as the `rirq_set` bullet says. An earlier version of this fence called `rirq_set()` before `rirq_init()` and never called `rirq_sort()`, and it also lacked `#include <c64/vic.h>` (`rasterirq.h` includes only `types.h`, so `vic` and `VCOL_RED` were undefined).
 
 ## sprites.h — Hardware and multiplexed sprite control
 
@@ -188,6 +191,7 @@ Public API — virtual (multiplexed) sprites:
 
 ```c
 #include <c64/sprites.h>
+#include <c64/rasterirq.h>   // rirq_wait / rirq_sort; sprites.h does not include it
 
 vspr_init((char *)0x0400);
 vspr_set(0, 160, 100, 1, VCOL_YELLOW);
@@ -225,7 +229,7 @@ if (joyb[0]) fire();
 
 Note: `joy_poll` must be called once per frame (typically at the start of the game loop) to get a fresh snapshot. Multiple reads within one frame all see the same snapshot from the last `joy_poll` call.
 
-**Pitfall — port 2 and the keyboard column drive share `$DC00`.** With the KERNAL IRQ enabled (the default), the keyboard scanner writes `$00` to `$DC00` (drives all columns active-low) while checking for any-key-pressed. If your main loop calls `joy_poll(0)` during that window, all four direction bits and the fire bit read as pressed — phantom input. See `pitfalls/input.md` for fixes (disable IRQ around the poll, or use `keyboard.h` / `getchx()` instead).
+**Note — port 2 and the keyboard column drive share `$DC00`, but a main-loop `joy_poll(0)` cannot see the scan.** SCNKEY is called from inside the KERNAL jiffy IRQ handler (`JSR $EA87` at `$EA7B`) and restores `$7F` before the handler's RTI, so the main loop is never running while the columns are driven (measured in VICE x64sc: 0 of 76,144 main-loop samples caught the `$00` window — `pitfalls/input.md`, joystick2_scan_phantom_press). Only an NMI handler, or an IRQ handler that `cli`s before chaining to `$EA31`, can read the all-pressed phantom value; if you poll from such a context, treat `$00` as "scan in progress" and re-read, or take over the IRQ. An earlier version of this page blamed the main loop and advised `sei`/`cli` around the poll, which changes nothing there. Port 1 (`joy_poll(1)`) has no timing hazard either, but a held `1`, LEFT-ARROW, CTRL, `2` or SPACE reads as joystick 1 continuously because the KERNAL leaves column 7 selected.
 
 ## keyboard.h — Keyboard matrix scan
 
@@ -275,6 +279,7 @@ Public API highlights:
 `_raw` variants (`cwin_put_char_raw`, `cwin_putat_string_raw`, etc.) write screen codes directly without PETSCII translation. Use `_raw` when your data is already in screen-code format (e.g. tile indices).
 
 ```c
+#include <c64/vic.h>       // VCOL_* — charwin.h does not include vic.h
 #include <c64/charwin.h>
 
 CharWin win;
@@ -297,12 +302,16 @@ Public API:
 - `mouse_lb` / `mouse_rb` — `bool`: left and right button state
 
 ```c
+#include <c64/vic.h>       // vic_waitLine — mouse.h includes only types.h
 #include <c64/mouse.h>
 
 mouse_init();
 // in frame loop:
 mouse_arm(0);
-vic_waitLine(200);   // ~4ms delay
+vic_waitLine(200);   // busy-waits until raster line 200: 0-20 ms after arming,
+                     // depending on beam position. The pot needs ~4 ms, so either
+                     // frame-sync the loop (vic_waitBottom() before mouse_arm) or
+                     // wait a fixed line only when mouse_arm ran at a known beam position.
 mouse_poll();
 cursor_x += mouse_dx;
 cursor_y += mouse_dy;
@@ -383,10 +392,15 @@ Public API:
 - `EFlashCall<fn>` — C++ wrapper class; `operator()` resolves the current bank and calls `ef_call_p`
 - `EF_CALL(fn)` — declares an `EFlashCall<fn_p>` variable named `fn` for clean call syntax
 
-```c
+The template wrapper and `EF_CALL` are only defined under `__cplusplus`, so this must be compiled in C++ mode — either a `.cpp` source file or a `.c` file built with `-pp`. Compiled as plain C it fails with `Identifier not defined 'EF_CALL'` (build, Oscar64 2026-05-19 with `-tf=crt`; the same text as `.cpp` builds). `EF_CALL(render_level)` declares an `EFlashCall<render_level_p>` object named `render_level`, so you must have defined the real function as `render_level_p`. An earlier version of this page tagged the fence as C and omitted the `_p` definition.
+
+```cpp
 #include <c64/easyflash.h>
 
-// Declare a cross-bank callable function (defined in bank 2):
+// The real function, placed in bank 2, carries the _p suffix:
+int render_level_p(const char *data) { /* lives in bank 2 */ return 0; }
+
+// Declare the cross-bank callable wrapper (EFlashCall<render_level_p> named render_level):
 EF_CALL(render_level);
 
 // At call site (works from any bank):
@@ -423,7 +437,21 @@ mmap_set(MMAP_NO_ROM);       // extra 28 KB of code+data space
 // Now $A000–$BFFF and $E000–$FFFF are RAM
 ```
 
-After `mmap_set(MMAP_NO_ROM)` or `MMAP_RAM`, direct KERNAL calls via JSR to ROM addresses will crash. Use `krnio_*` wrappers (which handle the memory map) or the trampoline.
+After `mmap_set(MMAP_NO_ROM)` or `mmap_set(MMAP_RAM)` the KERNAL is gone, and every KERNAL call crashes — including the `krnio_*` wrappers, which are plain `JSR $FFxx` calls into the jump table and never touch `$01` (header-read, `kernalio.c`: on the C64 their `BANKIN`/`BANKOUT` macros are empty; only the Plus/4 build banks the ROM in). `mmap_trampoline()` covers only the IRQ/NMI entry path; it does nothing for a `JSR` from your own code. An earlier version of this page said the `krnio_*` wrappers handle the memory map; they do not. To do KERNAL I/O while running with the ROM out, bank it back in around the call and restore the previous map afterwards:
+
+```c
+#include <c64/memmap.h>
+#include <c64/kernalio.h>
+
+char old = mmap_set(MMAP_ROM);
+krnio_setnam(P"SCORES");
+krnio_open(2, 8, 2);
+/* ... krnio_read / krnio_write ... */
+krnio_close(2);
+mmap_set(old);
+```
+
+`MMAP_NO_BASIC` (`$36`) keeps the KERNAL in, so `krnio_*` works unchanged under it. While the ROM is banked in, a buffer that lives under `$A000–$BFFF` or `$E000–$FFFF` reads back as ROM bytes, so keep I/O buffers below `$A000` or in `$C000–$CFFF`.
 
 ## reu.h — RAM Expansion Unit DMA
 
@@ -474,14 +502,16 @@ Public API — addressing mode wrappers (each returns instruction size):
 ```c
 #include <c64/asm6502.h>
 
-// Emit a short routine into a RAM buffer
-byte codebuf[16];
+// Emit a short routine into a RAM buffer (static: see the note below)
+static byte codebuf[16];
 byte * p = codebuf;
 p += asm_im(p, ASM_LDA, 0x0E);          // LDA #$0E
 p += asm_ab(p, ASM_STA, 0xD020);        // STA $D020
 p += asm_np(p, ASM_RTS);                // RTS
-// codebuf now contains a 7-byte routine that sets the border to light blue
-((void (*)(void))codebuf)();             // call it
+// codebuf now holds a 6-byte routine (A9 0E 8D 20 D0 60) that sets the border to light blue
+__asm { jsr codebuf }                    // call it
 ```
+
+As of the 2026-05-19 build, calling a byte buffer through a cast function pointer (`((void (*)(void))codebuf)();`) crashes the compiler — exit 139, no `.prg`, no diagnostic — when the buffer is a local, whether the call is direct or through a pointer variable (build; the same class as the `const` function-pointer segfault in the project gotchas). With a global buffer the same cast call compiles, but at `-O2` the stores into the buffer are dead-store-eliminated and the JSR lands on zeroed BSS, so use the inline-asm `jsr`. And `__asm { jsr codebuf }` on a LOCAL (stack) buffer assembles to `JSR $0000` with only a "nullptr dereferenced" warning, which is why the buffer must be `static` or file-scope. The routine is 6 bytes (`asm_im` 2 + `asm_ab` 3 + `asm_np` 1; bytes measured in VICE); an earlier version of this page said 7 and showed the crashing cast call.
 
 Use `asm6502.h` as a last resort — it bypasses all compiler optimizations and type checking. Prefer `__asm { }` inline blocks for most performance-critical code.

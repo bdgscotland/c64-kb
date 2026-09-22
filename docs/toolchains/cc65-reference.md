@@ -100,7 +100,7 @@ Common flags:
 | `-o hello.prg` | Name the output file |
 | `-Cl` | Static locals (faster, not reentrant; see Pitfalls) |
 | `--config path.cfg` | Use a custom linker config instead of the built-in c64 one |
-| `-T` | Keep intermediate `.s` and `.o` files for inspection |
+| `-T` (`--add-source`) | Interleave the C source as comments in the generated assembly. An earlier version of this row said `-T` keeps intermediate files; it does not, and `cl65` has no such flag. To inspect the `.s`, stop the pipeline with `-S` (or run `cc65 -O -t c64 file.c` directly); `-c` stops after assembling. `cl65` leaves the `.o` files in place by default. |
 
 The `-Cl` flag places local variables in BSS rather than on the software stack.
 This cuts call overhead noticeably but breaks reentrancy. Acceptable for most
@@ -112,6 +112,29 @@ For multi-file projects, name each `.c` and `.s` source on the command line and
 ```bash
 cl65 -O -t c64 -Cl -o game.prg main.c sprite.c irq.s
 ```
+
+### ca65 notes
+
+Hand-written `.s` files go through `ca65`, which differs from KickAssembler in
+three ways that bite (measured with ca65 V2.18, Homebrew cc65 2.19):
+
+- Illegal opcodes (`lax`, `sax`, `dcp`, …) need `.setcpu "6502X"` in the file
+  or `--cpu 6502X` on the command line; without it every illegal mnemonic
+  fails with `Error: ':' expected`, a message that does not name the CPU.
+  `lsr a` is accepted. Spellings are in
+  [6502-illegal-opcodes.md](../hardware/6502-illegal-opcodes.md) (Pitfalls).
+- Under `-t c64` a string literal is translated to PETSCII, not screen codes:
+  `.byte "FILM"` emits `$C6 $C9 $CC $CD` (shifted letters, which `CHROUT`
+  draws as graphics glyphs on the power-on charset) and `.byte "film"` emits
+  `$46 $49 $4C $4D` (which `CHROUT` draws as `FILM`). Write lowercase in
+  source for uppercase on screen. For screen RAM use `.macpack cbm` and
+  `scrcode "film"`, which emits `$06 $09 $0C $0D`. There is no
+  `cbm_screen_charmap.inc` for ca65; `cbm_screen_charmap.h` is the C-side
+  equivalent.
+- A `.s` file linked on its own needs
+  `cl65 -t c64 -C c64-asm.cfg -u __EXEHDR__`; the default `c64.cfg` expects
+  the C runtime and fails with "Start address of memory area 'BSS' is not
+  constant".
 
 ## Standard library highlights
 
@@ -156,11 +179,22 @@ require casts through pointers.
 - **Demos, raster effects, sprite multiplexers** — cycle-exact timing work.
   cc65 is not cycle-aware. Use Oscar64 for C code and KickAssembler for
   hand-rolled timing routines.
-- **Anything that needs bitfields or packed structs** — cc65 supports bitfields
-  only for int-sized-or-smaller types and with several restrictions; Oscar64
-  treats them as first-class.
+- **Anything that needs bitfields or packed structs** — cc65 as installed
+  (V2.18; the Homebrew Cellar directory says 2.19 but `cl65 --version` reports
+  V2.18) accepts bit-fields only of type `int`, `unsigned int` or `enum`. It
+  is not a size rule, as an earlier version of this page said ("int-sized or
+  smaller"): `unsigned char x:3;` AND `unsigned short x:3;` (int-sized on
+  cc65) both fail with `Bit-field has invalid type` (measured 2026-09-22).
+  Newer git cc65 is reported to relax this (unverified here); do not rely on
+  char-typed bit-fields from a distro package. Oscar64 treats them as
+  first-class.
 - **Code-size-sensitive releases** — cc65 produces larger binaries for
-  equivalent logic. On a platform with 38 KB of usable RAM, this matters.
+  equivalent logic. Under the built-in `c64.cfg` a program gets
+  `$080D`–`$D000`: 51,187 bytes, about 50 KB, the top 2 KB of it the software
+  stack (`cl65 -Ln` symbols `__MAIN_START__`, `__HIMEM__`, `__STACKSIZE__`;
+  the startup code banks BASIC ROM out). An earlier version of this page said
+  38 KB, which is BASIC's free-bytes figure, not cc65's. Code size still
+  matters on a machine this small.
 
 The rule of thumb: if Oscar64 has a clear idiom for the task (see
 [oscar64-reference.md](oscar64-reference.md)), use Oscar64. Reach for cc65 only
@@ -175,11 +209,31 @@ ready-made config for the C64 at `cfg/c64.cfg`. For most programs, the
 
 The built-in config maps the standard segments:
 
-- `CODE` — starts at `$0801` (after the BASIC stub)
+- `EXEHDR` — the BASIC stub (`SYS 2061`) at `$0801`–`$080C`; `STARTUP` — the
+  C runtime entry, at `$080D` (the stub's SYS target); `LOWCODE` (optional)
+  then `CODE` — your compiled code, after STARTUP (`$0840` for a minimal
+  conio program built with cc65 2.19 — read the `--mapfile` segment list
+  rather than assuming a fixed address; an earlier version of this page put
+  `CODE` at `$0801`, which is the stub itself); then `RODATA`, `DATA`,
+  `INIT`, `ONCE` in that order within MAIN.
 - `RODATA` — read-only data, placed after CODE
 - `DATA` — initialized writable data
 - `BSS` — zero-initialised (cleared at startup by the runtime)
-- `ZEROPAGE` — zero-page variables (limited; allocate sparingly)
+- `ZEROPAGE` — `$02–$1B`, 26 bytes, all consumed by the cc65 runtime
+  (`zpspace = 26` in `asminc/zeropage.inc`). An earlier version of this page
+  said "allocate sparingly"; there is nothing to allocate. Adding even one
+  byte to this segment under the built-in c64 config fails to link
+  (`Segment 'ZEROPAGE' overflows memory area 'ZP' by 1 byte`, measured with
+  cc65 2.19). For your own zero-page variables, copy `cfg/c64.cfg` and add a
+  second zero-page area on the four bytes BASIC and the KERNAL leave free —
+  e.g. `ZP2: file = "", start = $00FB, size = $0004;` in MEMORY and
+  `EXTZP: load = ZP2, type = zp, optional = yes;` in SEGMENTS — then define
+  the variable in assembly (`.segment "EXTZP" : zeropage` / `_myzp: .res 1`)
+  and expose it to C with `extern unsigned char myzp; #pragma zpsym("myzp")`
+  (the pragma must follow the declaration). Do not simply enlarge `ZP` past
+  `$1B`: `$1C` onward is BASIC/KERNAL workspace. Six of the runtime's 26
+  bytes are the `register` bank, so `register` locals (with `-Or`) are the
+  only zero-page you get without a custom config.
 
 For non-standard layouts — cartridges, custom load addresses, split-bank
 programs — write a custom `.cfg` file and pass it with `--config`. The
@@ -192,16 +246,25 @@ cc65 and Oscar64 differ in ways that matter at the codegen level. The agent
 should recognize these patterns to avoid inadvertently reaching for the weaker
 option.
 
-**Function call overhead.** cc65 uses a software stack in zero page for
-passing arguments. Each call pushes and pops arguments through this stack,
-adding several cycles per parameter. Oscar64 uses register-based calling
-conventions and performs whole-function optimization; inner loops are
-substantially cheaper. If a function is called in a tight raster IRQ or per-
-scanline loop, the cc65 overhead accumulates into missed raster windows.
+**Function call overhead.** cc65 uses a software stack (pointed to by `sp`
+in zero page, but located in main RAM below `__HIMEM__`; an earlier version
+of this page put the stack itself in zero page) for passing arguments. Each
+call pushes and pops arguments through this stack, adding several cycles per
+parameter. Oscar64 passes leaf-function arguments in fixed zero-page slots
+(what its manual calls "zero-page registers": `$0D` upward, `P0`/`P1`/…),
+chosen by whole-program analysis, and falls back to its own software stack
+only for non-leaf or recursive functions (see
+[oscar64-reference.md](oscar64-reference.md)); nothing is passed in A/X/Y.
+cc65's default `__fastcall__` convention does put the rightmost argument in
+A/X and pushes the rest through its `sp`-indexed software stack. Oscar64's
+inner loops are substantially cheaper. If a function is called in a tight
+raster IRQ or per-scanline loop, the cc65 overhead accumulates into missed
+raster windows.
 
 **Bitfields.** Oscar64 supports bitfields in structs natively and maps them
 to efficient read-modify-write sequences. cc65 supports them with restrictions
-(int-sized or smaller) and the codegen is less predictable. Writing a hardware
+(only `int`/`unsigned int`/`enum` members; `unsigned char` fields do not
+compile) and the codegen is less predictable. Writing a hardware
 register struct like `VIC_CR1` with bitfields is idiomatic Oscar64; in cc65
 the same code requires explicit masks and shifts or falls back to `POKE`.
 
@@ -229,12 +292,18 @@ initialized writable data. If a custom linker config accidentally places `DATA`
 in a ROM region, initialized globals silently read back as zeros at runtime.
 Always verify the segment map with `--mapfile` output.
 
-**Stack overflow with deep call trees.** cc65's software stack lives in zero
-page and is small by default (typically 256 bytes). Recursive functions or
-deep call chains overflow it silently, corrupting zero-page state. Keep call
-depth shallow; use iterative algorithms where recursion would naturally arise.
-The `-Cl` flag mitigates this by promoting locals out of the stack, but does
-not protect against deep recursion itself.
+**Stack overflow with deep call trees.** cc65's software stack is 2 KB by
+default on the C64 (`__STACKSIZE__ = $0800` in `c64.cfg`); it starts at
+`__HIMEM__` ($D000) and grows downward through $C800, immediately above the
+heap and BSS. Only the two-byte stack pointer `sp` lives in zero page
+($02/$03). An earlier version of this page said the stack was in zero page
+and about 256 bytes; both were wrong. Deep recursion overflows it silently
+downward into heap and BSS data, not into zero page. Raise it with
+`-Wl -D,__STACKSIZE__=0x1000` (if you write `$1000`, quote it — an unquoted
+`$1000` is eaten by the shell and ld65 reports `Invalid definition`) or a
+custom linker config; keep call depth shallow and prefer iterative
+algorithms. `-Cl` moves locals off the stack, which reduces per-frame usage,
+but does not protect against deep recursion itself.
 
 **`printf` code size.** `printf` from `stdio.h` pulls in the full format-string
 parser, adding roughly 2–3 KB to the binary. For output in a C64 program,
