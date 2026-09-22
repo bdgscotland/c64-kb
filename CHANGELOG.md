@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 718, schema 22, tools 1.25.0.
+Data 718, schema 22, tools 1.25.1.
+
+**Two tool faults from the blind build test.** An agent that built a
+game from the knowledge base alone logged what got in its way; two of
+the items were the tools, not the pages. Every CLI lookup now honours
+the global `--json` flag and prints the same structured object the MCP
+server returns; only the briefings did before. And a briefing given a
+partial archetype name resolves it when exactly one archetype contains
+every word of it (`racing`, `cracktro`), reports the candidates when
+several do (`platformer` names two, `shmup` two), and only then falls
+back to listing every known name; the builder had spent a call learning
+that `platformer` was not a name. Tools 1.25.1.
 
 **A cost line per technique, so a briefing can add a plan up (#17).** A
 technique page may now carry `**Cost:**` with integer pairs from a fixed

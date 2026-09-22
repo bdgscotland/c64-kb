@@ -19,6 +19,17 @@ import { startMcpServer } from "./server.js";
 
 const program = new Command();
 
+// Every lookup command prints its markdown, or, under the global --json
+// flag, the same tool's structured object (the shape the MCP server
+// returns). Until data 718 only the briefings honoured the flag.
+function emit(result: { text: string; structured?: unknown }): void {
+  if (program.opts().json) {
+    console.log(JSON.stringify(result.structured ?? result, null, 2));
+  } else {
+    console.log(result.text);
+  }
+}
+
 program
   .name("c64-kb")
   .description("Commodore 64 knowledge base")
@@ -69,7 +80,7 @@ program
   .action(async (query: string, opts: { limit: string; source?: string }) => {
     const { search } = await import("./tools/query.js");
     const result = await search(query, parseInt(opts.limit, 10), opts.source);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -92,7 +103,7 @@ program
   .action(async (name: string) => {
     const { lookupRegister } = await import("./tools/query.js");
     const result = await lookupRegister(name);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -102,7 +113,7 @@ program
   .action(async (name: string) => {
     const { lookupKernal } = await import("./tools/query.js");
     const result = await lookupKernal(name);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -112,7 +123,7 @@ program
   .action(async (addr: string) => {
     const { memoryMap } = await import("./tools/query.js");
     const result = await memoryMap(addr);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -122,7 +133,7 @@ program
   .action(async (op: string) => {
     const { lookupOpcode } = await import("./tools/query.js");
     const result = await lookupOpcode(op);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -136,7 +147,7 @@ program
       ? (opts.region as "pal" | "ntsc" | "both")
       : "both";
     const result = await palNtscDiff(topic, region);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -147,7 +158,7 @@ program
   .action(async (intent: string, opts: { toolchain?: string }) => {
     const { toolchainHint } = await import("./tools/query.js");
     const result = await toolchainHint(opts.toolchain, intent);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -157,7 +168,7 @@ program
   .action(async (name: string) => {
     const { recipeLookup } = await import("./tools/query.js");
     const result = await recipeLookup(name);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -176,7 +187,7 @@ program
       technique: opts.technique,
       file_format: opts.fileFormat,
     });
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -186,7 +197,7 @@ program
   .action(async (name: string) => {
     const { techniqueLookup } = await import("./tools/query.js");
     const result = await techniqueLookup(name);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -209,7 +220,7 @@ program
       recipe: opts.recipe,
       requires: opts.requires,
     });
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -219,7 +230,7 @@ program
   .action(async (techniques: string[]) => {
     const { checkCompatibility } = await import("./tools/query.js");
     const result = await checkCompatibility(techniques);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -230,7 +241,7 @@ program
   .action(async (technique: string, opts: { region: string }) => {
     const { timingBudget } = await import("./tools/query.js");
     const result = await timingBudget({ technique, region: opts.region });
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -240,7 +251,7 @@ program
   .action(async (topic: string) => {
     const { pitfallsFor } = await import("./tools/pitfalls.js");
     const result = await pitfallsFor(topic);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -250,7 +261,7 @@ program
   .action(async (symptom: string) => {
     const { failureDiagnose } = await import("./tools/pitfalls.js");
     const result = await failureDiagnose(symptom);
-    console.log(result.text);
+    emit(result);
     process.exit(0);
   });
 
@@ -264,7 +275,7 @@ program
     if (program.opts().json) {
       console.log(JSON.stringify(result.structured, null, 2));
     } else {
-      console.log(result.text);
+      emit(result);
     }
     process.exit(0);
   });
@@ -280,7 +291,7 @@ program
     if (program.opts().json) {
       console.log(JSON.stringify(result.structured, null, 2));
     } else {
-      console.log(result.text);
+      emit(result);
     }
     process.exit(0);
   });

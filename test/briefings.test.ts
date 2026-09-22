@@ -498,6 +498,24 @@ describe("gameBriefing reads the archetype from the graph", () => {
     expect(r.text).toContain("archetype risk");
   });
 
+  it("resolves a partial archetype name when exactly one archetype contains it, and says what it resolved from", async () => {
+    // Only vertical_shmup contains "shmup" in this fixture.
+    const r = await gameBriefing("a shooter", "shmup");
+    expect(r.structured.archetype?.name).toBe("vertical_shmup");
+    expect(r.structured.archetype?.resolved_from).toBe("shmup");
+    expect(r.structured.archetype_not_found).toBeUndefined();
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("reports candidates instead of guessing when a partial name matches several archetypes", async () => {
+    // "zzle" is contained by puzzle and action_puzzle.
+    const r = await gameBriefing("a thinky game", "zzle");
+    expect(r.structured.archetype).toBeUndefined();
+    expect(r.structured.archetype_not_found?.candidates?.sort()).toEqual(["action_puzzle", "puzzle"]);
+    expect(r.structured.archetype_not_found?.known).toContain("vertical_shmup");
+    expect(r.text).toContain("Did you mean one of");
+  });
+
   it("does not read the fallback tables when the graph has archetypes", async () => {
     // "puzzle" in the fallback table forced text_mode_overlay_render; this
     // fixture's puzzle fingerprint does not name it, so it must not appear.
@@ -533,9 +551,10 @@ describe("gameBriefing reads the archetype from the graph", () => {
   });
 
   it("reports archetype_not_found with the known names for a name the graph lacks", async () => {
-    const r = await gameBriefing("vertical scrolling shoot-em-up", "shmup");
+    // "racer" shares no word with any fixture archetype, so nothing resolves or is offered.
+    const r = await gameBriefing("vertical scrolling shoot-em-up", "racer");
     expect(r.structured.archetype).toBeUndefined();
-    expect(r.structured.archetype_not_found).toEqual({ requested: "shmup", known: ["action_puzzle", "puzzle", "vertical_shmup"] });
+    expect(r.structured.archetype_not_found).toEqual({ requested: "racer", known: ["action_puzzle", "puzzle", "vertical_shmup"] });
     expect(r.structured.brief).toContain("not an archetype the graph knows");
     expect(r.text).toContain("Known archetypes: action_puzzle, puzzle, vertical_shmup");
     // The plan is still built from the description; nothing is forced.

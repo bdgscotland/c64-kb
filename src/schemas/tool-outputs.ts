@@ -370,10 +370,12 @@ export const BriefingSchema = z.object({
     kind: z.string(),
     features: z.array(z.string()),
     risks: z.array(z.string()),
+    resolved_from: z.string().optional(),
   }).optional(),
   archetype_not_found: z.object({
     requested: z.string(),
     known: z.array(z.string()),
+    candidates: z.array(z.string()).optional(),
   }).optional(),
 });
 export type BriefingOutput = z.infer<typeof BriefingSchema>;

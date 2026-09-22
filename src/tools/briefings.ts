@@ -269,8 +269,8 @@ export function whyProposed(techniqueName: string, category: string, description
 
 type ArchetypeRow = { name: string; title: string; kind: string };
 type ArchetypeResolution =
-  | { mode: "graph"; archetype: ArchetypeRow; features: string[]; risks: string[] }
-  | { mode: "not_found"; requested: string; known: string[] }
+  | { mode: "graph"; archetype: ArchetypeRow; features: string[]; risks: string[]; resolved_from?: string }
+  | { mode: "not_found"; requested: string; known: string[]; candidates?: string[] }
   | { mode: "fallback" };
 
 /** "Vertical Shmup" / "vertical-shmup" / "Vertical_Shmup" all read as vertical_shmup. */
@@ -294,7 +294,19 @@ async function resolveArchetype(raw: string, preferKind: "game" | "demo"): Promi
   const wanted = normaliseArchetypeName(raw);
   // Names are unique across every archetype page (the ingest MERGEs on
   // name alone), so at most one row matches. preferKind is a guard only.
-  const hits = rows.filter(r => r.name === wanted);
+  let hits = rows.filter(r => r.name === wanted);
+  let resolvedFrom: string | undefined;
+  if (hits.length === 0 && wanted) {
+    // A partial name ("platformer", "shmup") resolves when exactly one
+    // archetype contains every word of it; several matches are reported as
+    // candidates rather than guessed between. The first blind build spent
+    // a call learning that "platformer" is not a name.
+    const words = wanted.split("_").filter(Boolean);
+    const partial = rows.filter(r => { const parts = r.name.split("_"); return words.every(w => parts.includes(w) || r.name.includes(w)); });
+    const distinct = [...new Set(partial.map(r => r.name))];
+    if (distinct.length === 1) { hits = partial; resolvedFrom = raw; }
+    else if (distinct.length > 1) return { mode: "not_found", requested: raw, known: [...new Set(rows.map(r => r.name))], candidates: distinct };
+  }
   const hit = hits.find(r => r.kind === preferKind) ?? hits[0];
   if (!hit) return { mode: "not_found", requested: raw, known: [...new Set(rows.map(r => r.name))] };
   const f = await fk.roQuery(
@@ -310,6 +322,7 @@ async function resolveArchetype(raw: string, preferKind: "game" | "demo"): Promi
     archetype: { name: hit.name, title: hit.title ?? hit.name, kind: hit.kind ?? "game" },
     features: ((f.data ?? []) as Array<{ name: string }>).map(x => x.name),
     risks: ((r.data ?? []) as Array<{ name: string }>).map(x => x.name),
+    ...(resolvedFrom ? { resolved_from: resolvedFrom } : {}),
   };
 }
 
@@ -749,10 +762,10 @@ async function buildBriefing(
     build_order,
     budget,
     ...(resolved?.mode === "graph"
-      ? { archetype: { ...resolved.archetype, features: resolved.features, risks: resolved.risks } }
+      ? { archetype: { ...resolved.archetype, features: resolved.features, risks: resolved.risks, ...(resolved.resolved_from ? { resolved_from: resolved.resolved_from } : {}) } }
       : {}),
     ...(resolved?.mode === "not_found"
-      ? { archetype_not_found: { requested: resolved.requested, known: resolved.known } }
+      ? { archetype_not_found: { requested: resolved.requested, known: resolved.known, ...(resolved.candidates ? { candidates: resolved.candidates } : {}) } }
       : {}),
   };
 
@@ -775,7 +788,9 @@ function renderBriefingText(b: BriefingOutput, isGame: boolean): string {
   let out = `# C64 ${isGame ? "Game" : "Demo"} Briefing\n\n`;
   out += `**Brief:** ${b.brief}\n\n`;
   if (b.archetype_not_found) {
-    out += `**Archetype not found:** "${b.archetype_not_found.requested}". Known archetypes: ${b.archetype_not_found.known.join(", ")}\n\n`;
+    out += `**Archetype not found:** "${b.archetype_not_found.requested}".` +
+      (b.archetype_not_found.candidates?.length ? ` Did you mean one of: ${b.archetype_not_found.candidates.join(", ")}?` : "") +
+      ` Known archetypes: ${b.archetype_not_found.known.join(", ")}\n\n`;
   }
   if (b.archetype) {
     out += `**Archetype:** ${b.archetype.name} (${b.archetype.title}, ${b.archetype.kind})\n`;
