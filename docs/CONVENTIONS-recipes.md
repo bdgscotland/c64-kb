@@ -45,3 +45,23 @@ Recipes are atomic — no "and another variation". Variations are separate recip
 The filename matches the `recipe:` frontmatter value. Directory matches `toolchain:`.
 `oscar64/hello-world.md` produces a Recipe node with `name: oscar64-hello-world`
 (directory and basename joined with `-`).
+
+## Verification (required)
+
+A recipe page is not done when it reads well. Before it lands:
+
+1. The listing is extracted from the page and built with the toolchain the
+   page names — `npm run check:listings` does exactly that and is run by
+   `npm test`. A listing that does not build does not land.
+2. For anything that draws, the PRG is run headless in VICE
+   (`x64sc -warp -autostartprgmode 1 -limitcycles N -exitscreenshot out.png`)
+   and the screenshot is measured against the "Expected output" section;
+   the PNG goes in `recipes/<toolchain>/screenshots/<recipe>.png` and the
+   page names it.
+3. Any timing constant that was found by trying values (a sync padding, a
+   line padding) is labelled as measured in VICE, with what the picture
+   looks like when it is off by one. VICE is the instrument; the pages do
+   not claim bench measurements.
+4. If the page corrects an earlier version, it says what was wrong. That
+   history is worth more to the next reader than a clean surface.
+

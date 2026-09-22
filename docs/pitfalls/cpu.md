@@ -94,8 +94,10 @@ in VICE x64sc using the `cpuhistory` monitor command.
 
 stable_raster_entry:
     pha
-    txa : pha
-    tya : pha
+    txa
+    pha
+    tya
+    pha
 
     // Double-IRQ jitter removal loop
     // If this loop straddles a page boundary, the BNE costs 4 cycles on
@@ -114,8 +116,10 @@ jitter_loop:
 .align $100
 stable_raster_entry_fixed:
     pha
-    txa : pha
-    tya : pha
+    txa
+    pha
+    tya
+    pha
 
 jitter_loop_fixed:
     lda $d012           // 4 cycles
@@ -236,14 +240,14 @@ extra cycles and 1–2 extra bytes per site. See `illegal_opcode_tricks` in
 // Works on real C64 and VICE. Silently produces wrong output on SuperCPU.
 
 multiplex_loop:
-    lax sprite_y,x      // A = X = sprite_y[x] — NMOS only ($A7,x)
-    dcp compare_y       // compare_y-- ; cmp A, new compare_y — NMOS only ($C3)
+    lax sprite_y,y      // A = X = sprite_y[y] — NMOS only ($B7: LAX zp,Y; there is no zp,X form)
+    dcp compare_y       // compare_y-- ; cmp A, new compare_y — NMOS only ($C7: DCP zp)
     bcc multiplex_done
-    inx
+    iny
     bne multiplex_loop
 
 multiplex_done:
-    stx active_sprites
+    sty active_sprites
 
 
 // GOOD: same logic with documentation and legal fallback comments
@@ -251,12 +255,12 @@ multiplex_done:
 // NMOS-ONLY section: LAX ($B7 zp,Y) and DCP ($D7 zp,X) used for cycle savings.
 // Tested on: 6510 (real HW), 8500 (real HW), VICE x64sc PAL.
 // NOT portable to 65C02 or 65816/SuperCPU.
-.macro LAX_ZPY(addr) { !byte $b7, addr }   // assembler won't accept LAX zp,Y natively on all versions
-.macro DCP_ZPX(addr) { !byte $d7, addr }
+.macro LAX_ZPY(addr) { .byte $b7, addr }   // assembler won't accept LAX zp,Y natively on all versions
+.macro DCP_ZPX(addr) { .byte $d7, addr }
 
 multiplex_loop_nmos:
-    LAX_ZPY sprite_y    // A = X = sprite_y[Y] — 4 cycles / 2 bytes
-    DCP_ZPX compare_y   // compare_y[X]-- ; sets flags vs A — 6 cycles / 2 bytes
+    LAX_ZPY(sprite_y)   // A = X = sprite_y[Y] — 4 cycles / 2 bytes
+    DCP_ZPX(compare_y)  // compare_y[X]-- ; sets flags vs A — 6 cycles / 2 bytes
     bcc multiplex_done_nmos
     iny
     bne multiplex_loop_nmos
@@ -389,11 +393,21 @@ dispatch_table_bad:
     // If the table started at $27C2 instead, handler_31 would be at $27FF
     // — the bug would fire silently
 
+// The 6510 has no JMP (abs,X) — that is a 65C02 instruction, and an earlier
+// version of this example used it. The 6502 idiom that hits the bug is an
+// indirect JMP whose operand is patched to point at the table entry:
 dispatch_bad:
     lda current_state
     asl
-    tax
-    jmp (dispatch_table_bad,x)   // Uses indirect JMP — page-wrap bug possible
+    clc
+    adc #<dispatch_table_bad
+    sta jmp_ind+1
+    lda #>dispatch_table_bad
+    adc #0
+    sta jmp_ind+2
+jmp_ind:
+    jmp ($0000)                  // reads the vector from the table entry; if that
+                                 // entry sits at $xxFF the high byte comes from $xx00
 
 
 // GOOD: page-aligned table + self-modified absolute JMP
@@ -411,10 +425,10 @@ dispatch_good:
     asl                 // 2 cycles — word offset
     tax                 // 2 cycles
     lda dispatch_table_good,x   // 4 cycles — low byte
-    sta .jmp_abs+1              // 4 cycles — patch low byte of JMP operand
+    sta jmp_abs+1              // 4 cycles — patch low byte of JMP operand
     lda dispatch_table_good+1,x // 4 cycles — high byte
-    sta .jmp_abs+2              // 4 cycles — patch high byte
-.jmp_abs:
+    sta jmp_abs+2              // 4 cycles — patch high byte
+jmp_abs:
     jmp $0000           // 3 cycles — absolute, not indirect; no page-wrap bug
 
 

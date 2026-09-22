@@ -131,14 +131,16 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
 // ---------------------------------------------------------------------------
 const MNEMONIC = /^\s*(lda|sta|ldx|stx|ldy|sty|inc|dec|jmp|jsr|sei|cli|nop|bit|cmp|adc|sbc|and|ora|eor|pha|pla|rts|rti)\b/m;
 const KICK_MARKS = /^\s*(\/\/|\.const|\.var|\.label|\.macro|\.for|\.pc|\.fill|\.byte|\.word|\.text|\.encoding|BasicUpstart)/m;
-const OPERAND = /\b(?:jmp|jsr|bne|beq|bcc|bcs|bpl|bmi|bvc|bvs|lda|sta|ldx|ldy|stx|sty|inc|dec|cmp|cpx|cpy|adc|sbc|and|ora|eor|bit|asl|lsr|rol|ror)\s+#?[<>]?\(?([A-Za-z_]\w*)\b/g;
+const OPERAND = /\b(?:jmp|jsr|bne|beq|bcc|bcs|bpl|bmi|bvc|bvs|lda|sta|ldx|ldy|stx|sty|inc|dec|cmp|cpx|cpy|adc|sbc|and|ora|eor|bit|asl|lsr|rol|ror|lax|sax|dcp|isc|isb|slo|rla|sre|rra|alr|arr|anc|axs|sbx)\s+#?[<>]?\(?([A-Za-z_]\w*)\b/g;
+// Identifiers passed to a macro call, e.g. LAX_ZPY(sprite_y).
+const MACRO_ARGS = /\b[A-Za-z_]\w*\(([^)]*)\)/g;
 
 if (tools.kickass && tools.java) {
   for (const md of walk(DOCS)) {
     if (md.includes(`${join("docs", "recipes")}/`)) continue;
     const rel = relative(ROOT, md);
     for (const f of fences(readFileSync(md, "utf8"))) {
-      const isKick = f.lang === "kickassembler" || f.lang === "kickass" || (f.lang === "asm" && KICK_MARKS.test(f.code) && !/^\s*;/m.test(f.code));
+      const isKick = f.lang === "kickassembler" || f.lang === "kickass" || f.lang === "kick" || (f.lang === "asm" && KICK_MARKS.test(f.code) && !/^\s*;/m.test(f.code));
       if (!isKick || !MNEMONIC.test(f.code)) continue;
       if (/\.import\s+(source|binary|c64|text)/.test(f.code) || /LoadSid|LoadBinary|LoadPicture/.test(f.code)) continue; // needs files
       const defined = new Set<string>();
@@ -146,14 +148,34 @@ if (tools.kickass && tools.java) {
       for (const m of f.code.matchAll(/\.(?:const|var|label)\s+([A-Za-z_]\w*)/g)) defined.add(m[1]);
       for (const m of f.code.matchAll(/^([A-Za-z_]\w*)\s*=/gm)) defined.add(m[1]);
       for (const m of f.code.matchAll(/\.macro\s+([A-Za-z_]\w*)/g)) defined.add(m[1]);
+      // Undefined names become stubs. Branch targets have to be within range,
+      // so they are emitted as real labels after the fragment (error handlers
+      // are almost always forward); everything else is a far constant.
       const stubs = new Set<string>();
+      const branchTargets = new Set<string>();
       for (const m of f.code.matchAll(OPERAND)) {
         const name = m[1];
-        if (!defined.has(name) && !/^[axy]$/i.test(name)) stubs.add(name);
+        if (defined.has(name) || /^[axy]$/i.test(name)) continue;
+        stubs.add(name);
+        if (/^\s*b(ne|eq|cc|cs|pl|mi|vc|vs)\b/i.test(m[0])) branchTargets.add(name);
       }
-      const prelude = "* = $1000\n" + [...stubs].map((s) => `.label ${s} = $c000\n`).join("");
+      for (const m of f.code.matchAll(MACRO_ARGS)) {
+        for (const tok of m[1].split(",")) {
+          const name = tok.trim().match(/^[<>]?([A-Za-z_]\w*)$/)?.[1];
+          if (name && !defined.has(name) && !/^[axy]$/i.test(name)) stubs.add(name);
+        }
+      }
+      // Names in .word / .byte tables (vector tables of handlers a fragment does not define).
+      for (const m of f.code.matchAll(/^\s*\.(?:word|byte)\s+([^/\n]+)/gm)) {
+        for (const tok of m[1].split(",")) {
+          const name = tok.trim().match(/^[<>]?([A-Za-z_]\w*)$/)?.[1];
+          if (name && !defined.has(name)) stubs.add(name);
+        }
+      }
+      const prelude = "* = $1000\n" + [...stubs].filter((s) => !branchTargets.has(s)).map((s) => `.label ${s} = $c000\n`).join("");
+      const trailer = "\n" + [...branchTargets].map((s) => `${s}: rts\n`).join("");
       const src = join(work, `${basename(md, ".md")}-${f.index}.asm`);
-      writeFileSync(src, prelude + f.code);
+      writeFileSync(src, prelude + f.code + trailer);
       const r = runKick(src, join(work, `${basename(md, ".md")}-${f.index}.prg`));
       report(r.ok, `${rel} #${f.index} (fragment, ${stubs.size} stubbed labels)`, r.ok ? "" : r.log);
     }

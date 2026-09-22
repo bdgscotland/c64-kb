@@ -639,4 +639,4 @@ The next four were found by compiling and running this knowledge base's own reci
 - [recipes/oscar64/hello-world.md](../recipes/oscar64/hello-world.md) — First buildable example
 - [formats/c64-file-formats.md](../formats/c64-file-formats.md) — PRG, CRT, D64 format details
 - [hardware/vic-ii-reference.md](../hardware/vic-ii-reference.md) — VIC-II register reference
-- [hardware/sid.md](../hardware/sid.md) — SID register reference
+- [hardware/sid-reference.md](../hardware/sid-reference.md) — SID register reference

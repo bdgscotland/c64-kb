@@ -337,4 +337,4 @@ sim6502's snapshot-based isolation uses `saveSnapshot` / `loadSnapshot` under th
 
 - [vice-reference.md](vice-reference.md) — The VICE emulator itself: how to install, launch options, disk image handling
 - [sim6502-reference.md](sim6502-reference.md) — Deterministic 6502 unit tests; pairs with vice-mcp for the full test loop
-- [../hardware/registers.md](../hardware/registers.md) — C64 register reference; use with `c64_lookup_register` to interpret vice-mcp readouts
+- [../hardware/c64-registers-reference.md](../hardware/c64-registers-reference.md) — C64 register reference; use with `c64_lookup_register` to interpret vice-mcp readouts

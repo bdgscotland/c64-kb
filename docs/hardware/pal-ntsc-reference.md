@@ -53,7 +53,7 @@ codebase64 PAL/NTSC compatibility wiki, and the Bauer "VIC-II Article"
 | Vertical blank starts   | line 300               | line 13                | line 13                |
 | Top border opens at     | line 51 ($33)          | line 51 ($33)          | line 51 ($33)          |
 | Bottom border opens at  | line 251 ($FB)         | line 251 ($FB)         | line 251 ($FB)         |
-| Side border open window | 23 cycles              | 25 cycles              | 24 cycles              |
+| Side border CSEL write  | cycle 56 (one cycle)   | not measured here      | not measured here      |
 | CIA timer A for frame   | $4CC7 (19,655)         | $42C6 (17,094)         | $417F (16,767)         |
 
 Note on $D012 wrap: $D012 is only 8 bits wide. The 9th bit lives in

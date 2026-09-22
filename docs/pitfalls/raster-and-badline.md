@@ -65,17 +65,20 @@ Two approaches, often combined:
    status bar split at line 200 (200 & 7 = 0) is safe; at line 203 (203 & 7 = 3)
    it is not. Move the split by 1 line.
 
-2. **DEN suppression for effect zones:** When the effect doesn't need the
-   character display running, write $D011 bit 4 (DEN) = 0. With DEN clear, the
-   VIC-II does not trigger badlines at all — the CPU gets all 63 cycles (PAL)
-   per line. Sprite DMA still occurs. Restore DEN before the character display
-   area begins.
+2. **DEN off for the whole frame:** the VIC latches DEN once, during raster
+   line $30 (48); if it is clear then, no line of that frame is a badline and
+   the display is blank. Clearing DEN later in the frame does *not* stop the
+   remaining badlines — an earlier version of this entry said it did. Sprite
+   DMA still occurs either way.
 
-3. **YSCROLL shift:** Write new YSCROLL bits in $D011 to move the badline pattern
-   away from a critical effect window. Write YSCROLL only at a cycle where the
-   change cannot trigger an accidental badline on the current line — specifically
-   after the BA-low assertion point for the current line has passed (after cycle
-   ~12 of the line).
+3. **YSCROLL steering for a region:** on each line of the region write $D011
+   with YSCROLL set to a value the line number cannot match (for instance
+   `(line + 4) & 7`, written early in the line). The badline condition is
+   evaluated every cycle, so no line in the region becomes bad; the character
+   display goes idle there (it shows the background colour). This is what
+   `recipes/kickassembler/sideborder-open.md` does and measures. Elsewhere,
+   rewrite YSCROLL only after the current line's window has passed (from
+   cycle 55) so the write cannot create a badline on the line it lands in.
 
 ### Worked example
 
@@ -93,23 +96,30 @@ irq_handler:
     asl $d019           // Ack VIC interrupt
     rti
 
-// GOOD: suppress display to kill badlines in the effect zone.
-// DEN=0 removes badlines; all 63 PAL cycles are available.
+// GOOD: keep the split off badline rows. With YSCROLL=3 a line is bad when
+// (line & 7) == 3; arm the IRQ a line early and spin to the target so the
+// colour write lands in the blank, and pick a target with (line & 7) != 3.
+.const SPLIT = 200          // 200 & 7 = 0: not a badline
 effect_irq:
-    lda $d011
-    and #%11101111      // Clear DEN (bit 4) to suppress badlines
-    sta $d011
-    // ... write effect registers with full 63-cycle budget ...
-    lda $d011
-    ora #%00010000      // Restore DEN before display area
-    sta $d011
+    ldx #WHITE
+    lda #SPLIT
+!:  cmp $d012
+    bne !-
+    stx $d020               // cycle <= 15 of line SPLIT
+    // ... other work ...
     asl $d019
-    rti
+    jmp $ea81
+
+// For a whole region with no badlines at all (blank display, all 63 cycles):
+// write YSCROLL = (line + 4) & 7 on every line of the region, as
+// recipes/kickassembler/sideborder-open.md does. Clearing DEN mid-frame
+// does NOT do this; DEN is sampled once, on line $30.
 ```
 
 For code that must run on a potentially bad line (e.g., per-line raster bars),
-subtract 40 from the available cycle count and ensure the handler body fits
-within 23 cycles on PAL or 25 cycles on NTSC.
+subtract 43 from the available cycle count and ensure the handler body fits
+within 20 cycles on PAL or 22 cycles on NTSC (23 and 25 only if the three
+cycles after BA drops on cycle 12 happen to be write cycles).
 
 ### Cross-references
 
@@ -177,7 +187,7 @@ Always perform a read-modify-write on $D011 when setting or clearing RST8:
 
 set_irq_line:
     lda $d011
-    .if TARGET_LINE >= 256 {
+    .if (TARGET_LINE >= 256) {
         ora #%10000000      // Set RST8 (bit 7)
     } else {
         and #%01111111      // Clear RST8
@@ -194,9 +204,9 @@ In a dynamic context where the target line is a variable at runtime:
 set_irq_dynamic:
     lda $d011
     and #%01111111          // Clear RST8
-    bcc +                   // If target < 256, leave RST8 clear
+    bcc !+                   // If target < 256, leave RST8 clear
     ora #%10000000          // Otherwise set RST8
-+   sta $d011
+!:  sta $d011
     stx $d012               // Write low 8 bits
 ```
 
@@ -318,9 +328,9 @@ irq_stable_setup:
     // Poll until raster reaches TARGET_LINE.
     // Each loop iteration: LDA abs (4) + CMP imm (2) + BNE (3) = 9 cycles.
     // The loop exits within 0-8 cycles of the line start, consuming jitter.
--   lda $d012
+!:  lda $d012
     cmp #TARGET_LINE
-    bne -
+    bne !-
     // Now on line TARGET_LINE. Add NOP padding to reach desired cycle.
     nop                     // 2 cycles — tune count for exact cycle target
     nop

@@ -226,10 +226,12 @@ in X and CHROUT only touches A and C, a bare PHA/JSR/PLA suffices.
 
 // GOOD: save and restore around CHKIN.
     ldx #1
-    txa : pha               // save X
+    txa
+    pha    // save X
     jsr $ffc6               // CHKIN — Affects: A, X, C
     bcs chkin_error
-    pla : tax               // restore X = 1
+    pla
+    tax    // restore X = 1
 
 // BAD: tight print loop uses A after CHROUT (A is in Affects).
 print_loop:
@@ -237,13 +239,17 @@ print_loop:
     jsr $ffd2               // CHROUT — A may change
     cmp #0                  // comparing stale A — unreliable
     beq done
-    iny : dex : bne print_loop
+    iny
+    dex
+    bne print_loop
 
 // GOOD: loop on X or Y, not on A's post-call value.
 print_loop_good:
     lda msg,y
     jsr $ffd2
-    iny : dex : bne print_loop_good
+    iny
+    dex
+    bne print_loop_good
 
 msg: .text "HELLO"
 msg_end:
@@ -360,24 +366,40 @@ any other purpose, it needs CLD too.
 // code was between SED and CLD when the IRQ fired.
 // E.g. $15 + $06 = $1B binary, but BCD adjusts it to $21 — wrong sprite Y.
 irq_bad:
-    pha : txa : pha : tya : pha
+    pha
+    txa
+    pha
+    tya
+    pha
     // No CLD!
     lda sprite_y,x
     clc
     adc #21                 // BCD mode if D=1: result may be wrong
     sta $d001
-    pla : tay : pla : tax : pla
+    pla
+    tay
+    pla
+    tax
+    pla
     rti
 
 // GOOD: CLD as the first post-save instruction.
 irq_good:
-    pha : txa : pha : tya : pha
+    pha
+    txa
+    pha
+    tya
+    pha
     cld                     // Mandatory: clears D before any arithmetic
     lda sprite_y,x
     clc
     adc #21                 // Always binary — correct regardless of D on entry
     sta $d001
-    pla : tay : pla : tax : pla
+    pla
+    tay
+    pla
+    tax
+    pla
     rti                     // RTI restores P from stack, including original D flag
 
 // Main-loop BCD block — safe with the corrected handler above.

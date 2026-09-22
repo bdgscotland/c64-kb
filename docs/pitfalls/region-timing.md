@@ -250,17 +250,17 @@ those corrections.
 
 // GOOD: region-conditional latch selection.
     lda region_flag
-    bne +
+    bne !+
     lda #$C6                // PAL lo
     sta $DC04
     lda #$4C                // PAL hi
     sta $DC05
-    beq ++
-+   lda #$C5                // NTSC lo
+    beq !++
+!:  lda #$C5                // NTSC lo
     sta $DC04
     lda #$42                // NTSC hi
     sta $DC05
-++  // timer latch is now correct for both regions
+!:  // timer latch is now correct for both regions
 
 // For CIA2 (DD04/DD05/DD06/DD07): identical arithmetic, different addresses.
 // The 3.8% drift applies equally to CIA2 because both chips are clocked
@@ -441,7 +441,7 @@ irq_reset_good:
 irq_reset_region_aware:
     asl $d019
     lda region_flag
-    bne +
+    bne !+
     // PAL: line 280 (inside 64-line blanking area)
     lda $d011
     ora #%10000000          // Set RST8 — line 280 >= 256
@@ -449,7 +449,7 @@ irq_reset_region_aware:
     lda #<280
     sta $d012
     beq done_reset_irq
-+   // NTSC: line 253 (inside 15-line blanking area)
+!:  // NTSC: line 253 (inside 15-line blanking area)
     lda $d011
     and #%01111111          // Clear RST8
     sta $d011

@@ -9,10 +9,10 @@ crash/failure patterns. Designed to support multi-hop queries like
 registers does this effect touch?" or "is FLI compatible with sprite-
 multiplex-24 in PAL?"
 
-Phase 0 ships only the schema + seed nodes. Other node types and edges
-populate as later phases hydrate the corresponding markdown sources.
+`ensureSchema()` creates the indexes, constraints and the `Chip`/`Region`
+seed nodes; every other node and edge comes from ingesting `docs/`.
 
-Design principles (mirrored from amiga-kb DDR-002):
+Design principles:
 - 5–12 node types, 8–20 edge types (maintainable range for a domain KB)
 - Node vs property test: "do you traverse through it?" If yes, node.
 - Single general type with `category` property (one `Technique` with
@@ -296,11 +296,13 @@ the listing's own load addresses (`* = $0900`, `#pragma region(...)`,
 
 ---
 
-## Phase 0 Schema State
+## Schema state
 
-`ensureSchema()` creates range indexes for all 11 node types and seeds:
+`ensureSchema()` creates a range index and a unique constraint on the
+primary key of every node label (12) and seeds:
 - 5 `Chip` nodes (VIC-II, SID, CIA1, CIA2, 6510)
 - 2 `Region` nodes (PAL, NTSC)
 
-Total: 7 nodes, 0 edges. All other nodes and edges populate as Phases
-1–6 hydrate the corresponding markdown sources.
+Everything else is produced by `npm run ingest` from `docs/`. At the
+commit that last touched this file the graph held 557 nodes and 1,233
+edges; `npx c64-kb health` prints the live figures.

@@ -5,8 +5,8 @@
  * In Docker: services are at their container names (qdrant, falkordb).
  * Local dev: everything is at localhost.
  *
- * Ports are shifted from amiga-kb (6xxx/3838) to (7xxx/3939) so both
- * KBs can run in parallel on the same host.
+ * Ports are shifted off the Qdrant/FalkorDB defaults (6333/6379) to 7333/7379
+ * so another instance of either service can run on the same host.
  */
 
 import path from "path";
@@ -29,7 +29,7 @@ export const config = {
     graphName: process.env.FALKOR_GRAPH ?? "c64",
   },
 
-  // Ollama embeddings (shared with amiga-kb)
+  // Ollama embeddings (a host-level service; other tools may share it)
   ollama: {
     url: process.env.OLLAMA_URL ?? "http://localhost:11434",
     model: process.env.EMBED_MODEL ?? "mxbai-embed-large",

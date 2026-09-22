@@ -487,4 +487,4 @@ P00 is a legacy format predating modern emulators' ability to handle PETASCII tr
 - `../hardware/kernal-routines-reference.md` — LOAD, SAVE, OPEN, CLOSE, CHKIN, CHKOUT
 - `iec-disk-reference.md` — IEC bus protocol and 1541 drive internals
 - `../runtime/vice-reference.md` — VICE emulator usage and debugging
-- `../hardware/memory-map-reference.md` — C64 memory map (tape buffer at `$033C`, disk buffer at `$0200`)
+- `../hardware/c64-memory-map.md` — C64 memory map (tape buffer at `$033C`, disk buffer at `$0200`)

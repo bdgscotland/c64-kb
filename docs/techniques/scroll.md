@@ -151,7 +151,7 @@ blank or in a stable raster window above line $30.
 
 ### Recipes
 
-- `recipes/oscar64/soft-scroll-v.md`
+- No recipe yet for vertical soft scroll; `recipes/oscar64/soft-scroll-h.md` is the horizontal counterpart.
 
 ---
 
@@ -291,7 +291,7 @@ pre-populated during the next frame's active display period.
 
 ### Recipes
 
-- `recipes/oscar64/soft-scroll-v.md`
+- No recipe yet for vertical soft scroll; `recipes/oscar64/soft-scroll-h.md` is the horizontal counterpart.
 
 ---
 
@@ -449,7 +449,7 @@ in positional math plus the occasional carry. Well within PAL budget.
 
 ### Recipes
 
-- `recipes/oscar64/parallax-dual-layer.md`
+- No recipe yet for parallax layers.
 
 ---
 
@@ -562,4 +562,4 @@ buffer) is the real budget item and is scene-specific.
 
 ### Recipes
 
-- `recipes/oscar64/bitmap-scroll.md`
+- No recipe yet for bitmap scrolling.

@@ -1,6 +1,6 @@
 {
   "name": "c64-kb",
-  "version": "0.7.13",
+  "version": "0.8.0",
   "description": "Commodore 64 knowledge base \u2014 CLI + MCP server with Qdrant vectors + FalkorDB graph",
   "license": "BSD-3-Clause",
   "type": "module",

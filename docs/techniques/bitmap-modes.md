@@ -63,7 +63,7 @@ Drawing into the bitmap from the main program is safe in the vertical blank or i
 
 ### Recipes
 
-- `recipes/oscar64/standard-bitmap.md` — allocate and clear a bitmap framebuffer, set up $D018, enable BMM.
+- No standalone recipe yet. `recipes/oscar64/bitmap-koala-viewer.md` sets up $D018 and BMM for the multicolour case; the hires setup differs only in $D016.
 
 ---
 
@@ -117,7 +117,7 @@ Multicolor bitmap mode has the same CPU cycle budget as standard bitmap mode. Ba
 
 ### Recipes
 
-- `recipes/oscar64/multicolor-bitmap.md` — set up multicolor bitmap, populate screen/color RAM, display a static image.
+- `recipes/oscar64/bitmap-koala-viewer.md` — set up multicolor bitmap, populate screen/color RAM, display a static image.
 
 ---
 
@@ -165,7 +165,7 @@ ECM is a text mode; the cycle budget is identical to standard text mode. No addi
 
 ### Recipes
 
-- `recipes/oscar64/ecm-zones.md` — set up four background color regions using ECM character code remapping.
+- No recipe yet for ECM zones.
 
 ---
 
@@ -218,7 +218,7 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 
 ### Recipes
 
-- `recipes/oscar64/mcm-charset.md` — define a 64-glyph multicolor character set, configure Color RAM, render a tiled background.
+- No recipe yet for a multicolour character set.
 
 ---
 
@@ -474,6 +474,6 @@ For real-time conversion from disk, the raw data rate of the 1541 (approximately
 
 ### Recipes
 
-- `recipes/oscar64/koala-display.md` — load a .kla file, copy to display RAM, enable multicolor bitmap mode.
+- `recipes/oscar64/bitmap-koala-viewer.md` — embed a .kla file, copy it to display RAM, enable multicolor bitmap mode.
 
 <!-- doc-type: technique-reference -->
