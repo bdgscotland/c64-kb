@@ -608,7 +608,13 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
       const title = section.heading.replace(/^##\s+/, "").trim();
       const nameM = section.body.match(ARCHETYPE_NAME_LINE);
       if (!nameM) {
-        console.warn(`[extract] ${sourcePath}: H2 "${title}" has no **Archetype:** line — not ingested (see CONVENTIONS-archetypes.md)`);
+        // A prose H2 on an archetype page (history, cross-references, a
+        // buildable-reference table) is allowed and silent. Only a section
+        // that carries a fingerprint or pitfall line without naming its
+        // archetype is a mistake worth a warning.
+        if (ARCHETYPE_FINGERPRINT.test(section.body) || ARCHETYPE_PITFALLS.test(section.body)) {
+          console.warn(`[extract] ${sourcePath}: H2 "${title}" has a fingerprint or pitfall line but no **Archetype:** line — not ingested (see CONVENTIONS-archetypes.md)`);
+        }
         continue;
       }
       const name = nameM[1];

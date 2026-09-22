@@ -511,6 +511,8 @@ Headers in `include/c64/`:
 
 ## Debugging
 
+
+Reaching the monitor prompt headless, the register line, breakpoints, watchpoints and measuring cycles between two points are in `../runtime/vice-reference.md`, "Text monitor for debugging".
 Oscar64 produces two debug-support files on every build. The `.lbl` file contains `al` commands for the VICE monitor; loading it with `ll game.lbl` or `-moncommands game.lbl` makes the disassembler show symbolic names. The `.asm` file is the annotated assembler listing; with `-g`, each native instruction is preceded by the source file and line number that generated it.
 
 For deeper source-level debugging, compile with `-n -g -O0`:

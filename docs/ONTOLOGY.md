@@ -201,7 +201,8 @@ pitfalls, which is why it is a node and not a keyword table in the tool.
 | kind | string | "game" or "demo", from file frontmatter; defaults to game |
 | source_doc | string | Path of the page that defines it |
 
-Source: `game-design/c64-game-archetypes.md` (one Archetype per H2 that
+Source: `game-design/c64-game-archetypes.md` and, for kind `demo`,
+`demo-design/intro-cracktro-patterns.md` (one Archetype per H2 that
 carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
 schema 21 the briefing tool held four archetype keywords and two forced
 techniques in code and the page's fingerprints were read by nobody.

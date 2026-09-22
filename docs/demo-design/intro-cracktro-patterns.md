@@ -1,4 +1,8 @@
-<!-- doc-type: reference -->
+---
+kind: demo
+---
+
+<!-- doc-type: archetype-reference -->
 
 # Cracktro and One-Screen Intro Patterns
 
@@ -9,9 +13,17 @@ demo or game intro, because the cracktro is where every single technique — sta
 raster, side-border open, sprite animation, SID player, scroller — appears in its
 simplest combined form.
 
+This page is also the archetype reference for demo forms. Each form below is an
+`Archetype` node of kind `demo` in the graph, named by its `**Archetype:**` line;
+its `**Technique fingerprint:**` line becomes `FEATURES` edges to techniques and its
+`**Common pitfalls:**` line `RISKS` edges to pitfalls, and `c64_demo_briefing` reads
+them when called with an `archetype` (`../CONVENTIONS-archetypes.md`). Technique
+names match H2s in `../techniques/`; pitfall names match H2s in `../pitfalls/`.
+A section without an `**Archetype:**` line is prose and is not a node.
+
 ---
 
-## 1. History
+## History
 
 From approximately 1985 to 1995 the cracktro was a functional artifact. Cracking
 groups stripped the copy protection from commercial games and prefixed the cracked
@@ -39,14 +51,17 @@ cracktro remains alive as a constrained art form distinct from the full demo.
 
 ---
 
-## 2. The 5 Canonical Cracktro Elements
+## Crack Intro
 
-A canonical cracktro consists of exactly five elements assembled in a fixed spatial
+**Archetype:** `cracktro`
+
+The crack intro is the canonical form, built from five elements. A canonical cracktro
+consists of exactly five elements assembled in a fixed spatial
 layout. Each element maps to one or more C64 techniques. The five elements are not
 optional: omitting any one of them produces something that reads as incomplete to a
 scene-literate viewer.
 
-### 2.1 Group Logo
+### Group Logo
 
 The logo occupies roughly the top half of the visible screen — approximately 80 to
 100 pixels tall, spanning the full 320-pixel width. It is the first thing the viewer
@@ -68,9 +83,9 @@ Logo placement in screen coordinates: top edge at raster line ~40 (the first vis
 line below the top border), bottom edge at approximately raster line 140. This leaves
 roughly 100 raster lines for the sprite layer and 40 lines for the scroller bar.
 
-Color conventions: see Section 4.
+Color conventions: see Conventions below.
 
-### 2.2 Side-Border Sprites
+### Side-Border Sprites
 
 The left and right side borders are normally invisible extensions of the border
 region; the VIC-II's horizontal blank window cuts them off. Side-border opening
@@ -91,7 +106,7 @@ the correct scanline for each horizontal blank crossing. The two VIC-II writes
 In intros smaller than 1 KB, side-border opening is sometimes omitted to save code
 space. In any intro above approximately 512 bytes it is expected.
 
-### 2.3 Sprite-Chain Animation
+### Sprite-Chain Animation
 
 Eight hardware sprites are available simultaneously. A cracktro typically devotes all
 eight to an animated element in the middle of the screen — between the logo and the
@@ -120,7 +135,7 @@ or three colors, chosen to complement the palette of the logo region. Multicolor
 sprites (bit set in $D01C) give three colors plus transparent; hi-res sprites give
 one color with sharper edges. Cracktros almost universally use multicolor.
 
-### 2.4 SID Tune
+### SID Tune
 
 Every cracktro carries a SID tune. The tune plays in the background while the scroller
 runs; it loops for as long as the user lets the intro run before pressing a key.
@@ -141,7 +156,7 @@ the expected range. A tune that loops in under 20 seconds becomes annoying. A tu
 longer than 90 seconds was historically impractical because the tracker data would
 overflow the available RAM.
 
-### 2.5 Scroller Bar
+### Scroller Bar
 
 The scroller is the text layer at the bottom of the screen, typically occupying one
 character row (8 raster lines) or a double-height zone (16 lines). It scrolls
@@ -159,16 +174,10 @@ distinct background color (set via color RAM for that row) to separate it visual
 from the sprite layer. A common layout places it at character row 24 (the last
 row before the border).
 
-The text in the scroller is the human-readable content of the cracktro. See Section 4
-for text conventions.
+The text in the scroller is the human-readable content of the cracktro. See Conventions
+below for text conventions.
 
----
-
-## 3. Variants
-
-The core cracktro pattern scales up and down into four recognized variant formats.
-
-### Crack Intro
+### Size and Exit
 
 The canonical form: one screen, often under 1 KB, sometimes 256 bytes. All five
 elements are present in minimal form. The code is hand-optimized machine language
@@ -179,7 +188,27 @@ sometimes synthesize audio from a tiny engine rather than shipping tracker data.
 The crack intro exits to the game when the user presses a key or fire. The exit
 routine patches the game's reset vector or JSRs directly into the game entry point.
 
-### Demo Intro
+The core cracktro pattern scales up and down into the variant formats that follow:
+the demo intro, the pack intro, the dentro and the 4K party intro.
+
+**Technique fingerprint:** `stable_raster_irq`, `sideborder_open`, `sprite_sine_chain`, `soft_scroll_h`, `raster_bars`, `sid_play_routine_pattern`
+
+**Common pitfalls:** `raster_irq_first_line_jitter`, `d016_unmasked_rmw_clobbers_csel_mcm`, `xscroll_applies_to_all_rows`, `sprite_x_high_bit_wrong_register`, `pal_ntsc_tempo_mismatch`
+
+The fingerprint is the Technique Checklist's five core names plus `raster_bars`, which the
+canonical recipe builds behind the scroller; `sprite_multiplex_24` is the checklist's
+alternative for larger intros and is not forced. The pitfalls follow from the elements:
+the stable IRQ (`raster_irq_first_line_jitter`), two users of `$D016` on one screen
+(`d016_unmasked_rmw_clobbers_csel_mcm`), a scroller on one row under a static logo
+(`xscroll_applies_to_all_rows`), the `$D010` wrap in the sprite chain
+(`sprite_x_high_bit_wrong_register`) and a play call once a frame on both models
+(`pal_ntsc_tempo_mismatch`).
+
+---
+
+## Demo Intro
+
+**Archetype:** `demo_intro`
 
 A demo intro is the opening part of a longer multi-part demo, released as a
 standalone production in its own right. Size ceiling is typically 1 KB to 4 KB.
@@ -190,7 +219,18 @@ or hard-cut. The fade is `colour_fade` in `../techniques/transitions.md`, a
 sixteen-step luminance-ordered table measured in the `colour-fade` recipe;
 a fade done by arithmetic on the colour numbers flickers through hues.
 
-### Pack Intro
+**Technique fingerprint:** `stable_raster_irq`, `soft_scroll_h`, `sid_play_routine_pattern`, `colour_fade`
+
+**Common pitfalls:** `raster_irq_first_line_jitter`, `pal_ntsc_tempo_mismatch`
+
+The effect that previews the demo (plasma, vector, tunnel) is the intro's own choice
+and is not in the fingerprint; the fade out of the intro screen is.
+
+---
+
+## Pack Intro
+
+**Archetype:** `pack_intro`
 
 A pack intro is the interface wrapper for a compilation (a "pack" or "disk magazine").
 It presents a menu of productions loadable from the disk. The pack intro's scroller
@@ -199,7 +239,18 @@ collection. Functionally the pack intro replaces the exit-to-game logic with a
 disk directory reader and a loader invocation. Pack intros from the late 1980s are
 some of the earliest examples of C64 software with a designed UI.
 
-### Mini-Demo / Dentro
+**Technique fingerprint:** `stable_raster_irq`, `soft_scroll_h`, `sid_play_routine_pattern`, `multi_load_sequencing`
+
+**Common pitfalls:** `raster_irq_first_line_jitter`, `pal_ntsc_tempo_mismatch`, `fastloader_kernal_dependency`
+
+The loader that replaces the exit-to-game logic is `multi_load_sequencing` in
+`../techniques/loaders-packers.md`; which loader sits under it is the pack's choice.
+
+---
+
+## Mini-Demo / Dentro
+
+**Archetype:** `dentro`
 
 The "dentro" (a mid-1990s portmanteau of "demo" and "dentro") is a multi-part
 production in the 8 KB to 16 KB range, typically 2 to 4 parts. Each part is a
@@ -209,9 +260,17 @@ the one-screen intro and the full competition demo requiring multiple disk sides
 A two-part dentro might open with a cracktro-style screen, transition to a plasma
 or sprite-multiplexed effect, then roll credits.
 
+**Technique fingerprint:** `stable_raster_irq`, `sid_play_routine_pattern`, `multi_load_sequencing`, `colour_fade`
+
+**Common pitfalls:** `raster_irq_first_line_jitter`, `pal_ntsc_tempo_mismatch`, `fastloader_kernal_dependency`
+
+Each part brings its own raster setup and tune, so the stable IRQ and the play
+convention are per part; the sequencing loader and the transitions between parts
+are what the dentro adds over the one-screen intro.
+
 ---
 
-## 4. Conventions
+## Conventions
 
 ### Scroller Text Format
 
@@ -277,9 +336,12 @@ READING THIS SOURCE CODE`. The format must be present; the content is context-de
 
 ---
 
-## 5. Modern Reinvention
+## 4K Party Intro
 
-The cracktro format has outlasted the software piracy context that created it. Several
+**Archetype:** `party_intro_4k`
+
+The 4K party intro is the form's modern reinvention. The cracktro format has outlasted
+the software piracy context that created it. Several
 groups have continued producing cracktros as releases in their own right through the
 2000s and 2010s. Triad (Sweden) has been releasing cracks with attached intros since
 the mid-1980s and was still active into the 2010s. Genesis Project and Onslaught
@@ -300,9 +362,17 @@ techniques interact. A working cracktro is a proof that stable raster, side-bord
 sprite animation, SID playback, and hardware scroll can coexist in a single binary
 without conflicts.
 
+**Technique fingerprint:** `stable_raster_irq`, `soft_scroll_h`, `sprite_sine_chain`, `sid_play_routine_pattern`
+
+**Common pitfalls:** `raster_irq_first_line_jitter`, `pal_ntsc_tempo_mismatch`
+
+The fingerprint is the cracktro spatial layout the compo entry keeps; the plasma
+and vector work that the best entries add is not required of every one and is left
+to the brief.
+
 ---
 
-## 6. Buildable Reference
+## Buildable Reference
 
 ### Canonical Recipe
 
@@ -310,6 +380,13 @@ The canonical buildable cracktro is at `../recipes/kickassembler/cracktro-templa
 It implements all five elements in KickAssembler. Readers building a cracktro should
 start there: the recipe provides the full memory map, IRQ handler structure, sprite
 sine table, scroller main loop, and SID relocation pattern.
+
+The current revision of that recipe builds a text logo, ten raster bars from a
+chained IRQ ring, a sine scroller and a SID play call, and says in its synopsis that
+it no longer opens the side borders or drives a sprite layer; those two come from
+`../recipes/kickassembler/sideborder-open.md` and
+`../recipes/kickassembler/sprite-sine-chain.md`. Read the recipe's own synopsis for
+what it builds today.
 
 KickAssembler is the primary toolchain for cracktros because it gives cycle-exact
 control over the raster timing required by `sideborder_open`. Oscar64 is suitable for
@@ -340,7 +417,7 @@ raster band.
 
 ---
 
-## 7. Cross-References
+## Cross-References
 
 - `./demo-design-philosophy.md` — broader scene philosophy; cracktros as the atomic
   unit of demo culture

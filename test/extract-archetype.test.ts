@@ -72,6 +72,39 @@ describe("extractGraphEntities — archetype-reference doc", () => {
     warn.mockRestore();
   });
 
+  it("is silent about a prose H2 without a name line, and warns only when such a section carries a fingerprint", () => {
+    const doc = `---
+kind: demo
+---
+
+<!-- doc-type: archetype-reference -->
+
+# Demo forms
+
+## History
+
+Plain prose, no node.
+
+## Cracktro
+
+**Archetype:** \`cracktro\`
+
+**Technique fingerprint:** \`raster_bars\`
+
+## Orphan
+
+**Technique fingerprint:** \`sine_scroller\`
+`;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const entities = extractGraphEntities(doc, "demo-design/x.md");
+    const msgs = warn.mock.calls.map(c => String(c[0]));
+    warn.mockRestore();
+    const names = entities.filter(e => e.type === "archetype").map(e => (e as { name: string }).name);
+    expect(names).toEqual(["cracktro"]);
+    expect(msgs.some(m => m.includes('"History"'))).toBe(false);
+    expect(msgs.some(m => m.includes('"Orphan"'))).toBe(true);
+  });
+
   it("emits RISKS sources from the common-pitfalls line, deduped", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);

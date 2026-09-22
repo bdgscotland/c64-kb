@@ -351,12 +351,18 @@ tables that map label names to addresses. Two formats are relevant:
 |--------|-----------|-------------|---------------|
 | Oscar64 label file | `.lbl` | oscar64 (written alongside the `.prg` by default; there is no flag, and `-l` is rejected) | `al 0880 .main` |
 | KickAssembler vice symbol file | `.vs` | KickAssembler (`-vicesymbols`) | `al C:1000 .main` |
+| cc65 VICE label file | any (`.lbl` by convention) | ld65 via `cl65 -Ln name` | `al 000840 ._main` |
 
 Oscar64 entries carry a bare 4-digit hex address with no `C:` memspace prefix
 (`al HHHH .name`, as [../formats/c64-file-formats.md](../formats/c64-file-formats.md)
 describes); KickAssembler's `-vicesymbols` output uses `al C:HHHH .name`. The VICE
 monitor accepts both, and `break .main` works after `ll` either way. An earlier version
-of this table gave Oscar64 a `-l` flag and a `C:` prefix; neither exists.
+of this table gave Oscar64 a `-l` flag and a `C:` prefix; neither exists. cc65's
+`-Ln` file uses six hex digits, no prefix, and a leading underscore on every C
+symbol (`_main`, `_cputs`); it also lists the KERNAL names the library imports
+(`al 00FFD2 .BSOUT`). `break ._main` after `ll` stopped at `$0840` (measured,
+cc65 V2.18, VICE 3.10; the session is in
+[../toolchains/cc65-reference.md](../toolchains/cc65-reference.md)).
 
 Load a symbol file in the monitor with:
 
@@ -838,6 +844,249 @@ with `Quit` instead of waiting for the cycle limit; it is the one to grow
 into a test runner. All three agree on both builds. None of them was run
 against `sim6502-reference.md`'s VICE backend, which uses a different
 server on port 6510.
+
+---
+
+## Text monitor for debugging
+
+Everything in this section was measured on 2026-09-22 with VICE x64sc
+3.10 `-default` (PAL) on the PRG built from
+`docs/recipes/kickassembler/stable-raster-irq.md` with `-vicesymbols`.
+Every command and output line below is quoted from those sessions.
+Disassembly from the monitor is the subject of
+[issue #3](https://github.com/bdgscotland/c64-kb/issues/3) and is not
+covered here.
+
+### Getting a prompt
+
+The GTK build's `-console` flag does not put the monitor on stdio. With
+`-console`, a `-moncommands` file containing `break .start`, and stdin
+fed from a pipe or a pty, the machine stopped at the breakpoint (it never
+reached `-limitcycles`) but no stop line and no prompt ever appeared on
+stdout: `timeout 60` killed it and a `logname`/`log on` monitor log stayed
+empty. The route that works headless is the remote
+text monitor, a TCP port that speaks the same commands:
+
+```bash
+GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -warp +sound \
+  +autostart-delay-random -autostartprgmode 1 -limitcycles 6000000 \
+  -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6510 \
+  -moncommands session.mon -autostart stable-raster-irq.prg
+```
+
+`session.mon` loads the labels and arms the first stop before the program
+runs:
+
+```text
+ll "stable-raster-irq.vs"
+break .start
+```
+
+Connect to the port with a TCP client, and connect it before the first
+checkpoint fires. A stop with no client connected leaves the machine
+stopped with no way in: a client that connected 8 seconds after launch,
+once `break .start` had already fired, received nothing, its `r` and `x`
+got no reply, and x64sc was still stopped 20 seconds later when it was
+killed. That is the same hang as `-console`. Under `-warp` the `break
+.start` stop fired 0.40 s after launch (the client had connected at
+0.09 s) and a boot-time watch fires sooner still, so start the client
+from the same script and poll the port from the moment x64sc is
+launched; the sessions here used a Python socket polling every 0.3 s for
+the break and every 0.01 s for the watch, which the slower poll missed
+twice. `nc 127.0.0.1 6510` by hand only works when the first stop is far
+enough out: drop `-warp`, or arm the watch from the prompt after a
+scripted first break. Once the client is connected VICE writes each stop
+to it and reads commands from it. Port 6510 is the one
+`sim6502-reference.md`'s VICE backend uses;
+choose another if both run. `-initbreak 0x900` (or `-initbreak 2304`)
+sets the same first breakpoint with no file and no labels. `-initbreak
+$0900` is refused before the emulator starts:
+
+```text
+Argument '$0900' not valid for option `-initbreak'.
+Error parsing command-line options, bailing out. For help use '-help'
+```
+
+### The stop and the register line
+
+```text
+#1 (Stop on  exec 0900)   36/$024,  59/$3b
+.C:0900  78          SEI            - A:00 X:00 Y:00 SP:f6 ..-.....    2970383
+(C:$0900)
+```
+
+The first line is the checkpoint number, its kind and address, then the
+raster line and the cycle within it, each as decimal/hex. The second is
+the instruction about to execute, not yet executed: memory space and PC,
+opcode bytes, the disassembly with labels substituted, the registers, the
+flags as `NV-BDIZC` with a letter for set and `.` for clear, and the
+stopwatch, a cycle count since power-on. The prompt carries the current
+address.
+
+`r` prints the same state as a table:
+
+```text
+(C:$0900) r
+  ADDR A  X  Y  SP 00 01 NV-BDIZC LIN CYC  STOPWATCH
+.;0900 00 00 00 f6 2f 37 00100000 036 059    2970383
+```
+
+`00` and `01` are the 6510 port bytes at `$0000` and `$0001`. `LIN` and
+`CYC` are the raster line and the cycle within it, decimal. Two steps
+later (`SEI` then `LDA #$7F`, 2 cycles each) the line read `037 000` at
+stopwatch `2970387`: cycle 59 plus 4 is 63, which wraps to cycle 0 of the
+next line. That is the PAL 63 cycles per line, seen from the register
+line.
+
+### step, next and until
+
+```text
+(C:$0900) step
+.C:0901  A9 7F       LDA #$7F       - A:00 X:00 Y:00 SP:f6 ..-..I..    2970385
+(C:$0901) step
+.C:0903  8D 0D DC    STA $DC0D      - A:7F X:00 Y:00 SP:f6 ..-..I..    2970387
+(C:$0903) next
+.C:0906  AD 0D DC    LDA $DC0D      - A:7F X:00 Y:00 SP:f6 ..-..I..    2970391
+```
+
+`step` (abbreviation `z`) executes one instruction and prints the next.
+`next` (`n`) does the same but runs a `JSR` through to its `RTS` as one
+instruction. Both take an optional count. `until .irq2` (`un`) sets a
+one-shot breakpoint and resumes; it printed `UNTIL: 2  C:$0976  (Stop on
+exec)`, and when another checkpoint fired first that one won and the
+one-shot stayed armed. `x` resumes.
+
+### break, watch and conditions
+
+The monitor's own `help` lines:
+
+```text
+Syntax: break [load|store|exec] [address [address] [if <cond_expr>]]
+Syntax: watch [load|store|exec] [address [address] [if <cond_expr>]]
+Syntax: condition <checknum> if <cond_expr>
+```
+
+`break` defaults to `exec`; `watch` defaults to `load` and `store`
+(`watch .irq2_line` was listed as `WATCH: 2  C:$09d8  (Stop on load
+store)`). A store watchpoint on a program variable fires before the
+program runs,
+because the KERNAL reset's RAM test writes every byte. `watch store
+.irq2_line` in the `-moncommands` file stopped three times at boot:
+
+```text
+#1 (Stop on store 09d8)   24/$018,  50/$32
+.C:fd73  91 C1       STA ($C1),Y    - A:55 X:00 Y:D8 SP:fd ..-..I.C      80186
+```
+
+then at `$FD7A` with `A:AB` and `$FD81` with `A:00`, and only on the
+fourth `x` at the program's own store, with the label in the operand:
+
+```text
+#1 (Stop on store 09d8)   68/$044,  23/$17
+.C:09be  8D D8 09    STA .irq2_line - A:4C X:01 Y:00 SP:f0 ..-..I..    2972363
+```
+
+Type `x` through the boot hits, or arm the watch from the prompt after a
+breakpoint in the program.
+
+A condition compares registers (`A`, `X`, `Y`, `PC`, `SP`, `FL`), `RL`
+(the raster line), `CY` (the cycle within it) or memory
+(`@io:$d020 == $f0`) with `==`, `!=`, `<`, `>`, `<=`, `>=`, and joins
+them with `&&`, `||` and arithmetic. `break .bar_line if Y == 3` in the
+`-moncommands` file stopped at:
+
+```text
+#1 (Stop on  exec 098e)   64/$040,  13/$0d
+.C:098e  A9 01       LDA #$01       - A:06 X:00 Y:03 SP:f0 ..-..I..    2972101
+(C:$098e) break
+BREAK: 1  C:$098e  (Stop on exec)
+	Condition: Y == $03
+(C:$098e) cond 1 if Y == 1
+Setting checkpoint 1 condition to: Y == $01
+(C:$098e) x
+#1 (Stop on  exec 098e)   66/$042,  13/$0d
+.C:098e  A9 01       LDA #$01       - A:06 X:00 Y:01 SP:f0 ..-..I..    2972227
+```
+
+`break` or `watch` with no argument lists the checkpoints of that kind.
+`delete 1` removes one; `delete` alone prints `Deleting all checkpoints`.
+Numbers are reused: after deleting checkpoints 1 and 2 the next `break`
+was numbered 1 again. `cond` on a number that does not exist says `#3 not
+a valid checkpoint`. A bare number in a condition is hex: `break
+.bar_line if RL == 70 && Y == 2` was echoed as `Setting checkpoint 3
+condition to: RL == $70 && Y == $02`, which is raster line 112, not 70.
+Write `RL == $c8` or `RL == c8` for line 200.
+
+### Measuring cycles between two points
+
+Two register lines at the same breakpoint, one `x` apart. `.bar_line` is
+the top of the recipe's one-raster-line loop:
+
+```text
+.;098e 3c f0 06 f0 2f 37 00100100 061 013    2971912
+.;098e 06 00 05 f0 2f 37 00100100 062 013    2971975
+```
+
+2971975 − 2971912 = 63 cycles: `LIN` went up by one and `CYC` stayed at
+13. The third hit was at 2972038, 63 again. Cross-checked two ways.
+Arithmetic from the listing's own cycle column: 2 + 4 + 4 + 2 + 4 + 2 +
+4 + 2 + (7 × 5 − 1) + 2 + 3 = 63. sim6502 (`--backend sim`, commit
+d6f6812) on the same PRG with `jsr([bar_line], stop_on_address = $09a8)`
+reported 129 cycles with `y = 2` and 66 with `y = 1`, a difference of 63;
+each figure carries 4 cycles beyond the loop itself, the difference does
+not.
+
+The stopwatch counts only while the machine runs. Twenty seconds of real
+time at the prompt left it at `2970383`; `r` before and after read the
+same line.
+
+### Memory dump and save
+
+```text
+(C:$0906) m 0900 090f
+>C:0900  78 a9 7f 8d  0d dc ad 0d  dc a9 34 8d  14 03 a9 09   X..
+(C:$0910)
+```
+
+Sixteen bytes per row, a PETSCII column after them (trimmed here), and
+the prompt moves to the byte after the dump. `m .irq2_line` with a label
+and no end address printed nine rows (`$09D8` to `$0A67`) and left the
+prompt at `(C:$0a68)`. The full syntax is
+`mem [<data_type>] [<address_opt_range>]`.
+
+```text
+(C:$0900) save "/tmp/saved.prg" 0 0900 09ff
+Saving file '/tmp/saved.prg' from $0900 to $09ff
+```
+
+Device 0 is the host file system. The file was 258 bytes: the two-byte
+load address `00 09` and the 256 bytes, a PRG that loads back where it
+came from.
+
+### `-limitcycles` and a stopped machine
+
+`-limitcycles` counts emulated cycles and the monitor stops the clock.
+Three consequences, each measured:
+
+- A breakpoint past the limit never fires. With `-limitcycles 1000000`
+  and `break .start`, which fires at stopwatch 2,970,383 on this PRG,
+  VICE exited with status 1 and printed no stop.
+- A machine left at the prompt never exits. A session that ended stopped
+  at `.bar_line` was still there when `timeout` killed it. After `x` with
+  no further stop ahead the remaining cycles run and the limit exit
+  happens as usual, status 1.
+- Real time at the prompt costs nothing on the stopwatch (the twenty
+  seconds above).
+
+This is the fact behind Route 2's warning: a stopping checkpoint in a
+`-moncommands` file with no client connected hangs the run.
+
+Related pages: the binary monitor for the same operations from a
+program is "The Binary Monitor Protocol" above and
+[vice-mcp-reference.md](vice-mcp-reference.md); cycle assertions without
+an emulator are [sim6502-reference.md](sim6502-reference.md); the label
+files each toolchain writes are in "Symbol Files" above and in the
+KickAssembler, Oscar64 and cc65 pages' debugging sections.
 
 ---
 

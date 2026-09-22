@@ -93,6 +93,8 @@ The tables below list the 28 tools registered in `src/index.ts` of the bdgscotla
 
 ### Breakpoints and Watchpoints
 
+The text monitor is the interactive twin of this API; its commands, register line and a measured cycle delta between two breakpoints are in `vice-reference.md`, "Text monitor for debugging".
+
 | Tool | Description |
 |------|-------------|
 | `setBreakpoint` | Set an execution breakpoint; returns a numeric breakpoint ID |

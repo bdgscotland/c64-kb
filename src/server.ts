@@ -720,13 +720,13 @@ Limitations: Scoring is token-overlap only — no semantic similarity. Uncommon 
 
 Purpose: Replaces the 9-tool manual composition that the c64_demo_brief Prompt requires from the agent. One call returns the full structured plan as typed JSON plus a human-readable markdown summary.
 
-Inputs: 'description' is a free-form demo brief (e.g. "sprite scroller with raster bars and SID music"). The tool extracts implied techniques via hybrid vector + keyword search, enriches each from the graph, and synthesises the plan.
+Inputs: 'description' is a free-form demo brief (e.g. "sprite scroller with raster bars and SID music"). The tool extracts implied techniques via hybrid vector + keyword search, enriches each from the graph, and synthesises the plan. 'archetype' (optional) is the snake_case name of a demo form from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k); "Demo Intro" and "demo-intro" are read as demo_intro. Its technique fingerprint is forced into the proposal past the three-per-category cap and its common pitfalls are added to the pitfalls, exactly as c64_game_briefing does for a game archetype.
 
-Output: {brief, proposed_techniques[], compatibility{conflicts, warnings, shared_infrastructure}, pitfalls[], toolchain_split{primary, cycle_tight_handoff[], rationale}, build_order[{step, label, recipes[]}]}. 'brief' is a one-sentence summary. 'proposed_techniques' carry register/KERNAL sets and implementing recipe names. 'toolchain_split.primary' is always "oscar64"; 'cycle_tight_handoff' names the raster/effect techniques handed to KickAssembler.
+Output: {brief, proposed_techniques[], compatibility{conflicts, warnings, shared_infrastructure}, pitfalls[], toolchain_split{primary, cycle_tight_handoff[], rationale}, build_order[{step, label, recipes[]}]}. 'brief' is a one-sentence summary. 'proposed_techniques' carry register/KERNAL sets and implementing recipe names. 'toolchain_split.primary' is always "oscar64"; 'cycle_tight_handoff' names the raster/effect techniques handed to KickAssembler. With 'archetype' given, 'archetype' {name, title, kind, features[], risks[]} repeats what the graph holds, or 'archetype_not_found' {requested, known[]} lists every Archetype name the graph has (game and demo) when the name matches none; the plan is then built from the description alone and nothing is guessed.
 
 When to use: Start every new C64 demo design session with this tool. The structured output guides all follow-up tool calls (c64_technique_lookup, c64_check_compatibility, c64_pitfalls_for, c64_recipe_lookup) if deeper drill-down is needed.
 
-Examples: {"description": "sprite scroller with raster bars"} → plan with scroll + raster + stable_raster_irq techniques, compatibility check, pitfalls, build order. {"description": "FLI image viewer with music"} → bitmap + SID techniques, fli_image recipe in build order.
+Examples: {"description": "sprite scroller with raster bars"} → plan with scroll + raster + stable_raster_irq techniques, compatibility check, pitfalls, build order. {"description": "FLI image viewer with music"} → bitmap + SID techniques, fli_image recipe in build order. {"description": "a small cracktro", "archetype": "cracktro"} → the cracktro page's fingerprint (stable raster, side border, sprite chain, scroller, raster bars, SID play) forced in, with its pitfalls.
 
 See also: c64_game_briefing for game-framed plans. c64_demo_brief Prompt as an alternate entry point (agent-composed, less structured).
 
@@ -735,11 +735,15 @@ Limitations: Technique selection is heuristic (vector search + keyword overlap).
         description: z
           .string()
           .describe("Natural-language demo brief (e.g. 'sprite scroller with raster bars and SID music')"),
+        archetype: z
+          .string()
+          .optional()
+          .describe("Optional demo form: snake_case name of an Archetype node of kind demo from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)"),
       },
       outputSchema: BriefingSchema.shape,
     },
-    async ({ description }) => {
-      const result = await demoBriefing(description);
+    async ({ description, archetype }) => {
+      const result = await demoBriefing(description, archetype);
       return {
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
@@ -755,11 +759,11 @@ Limitations: Technique selection is heuristic (vector search + keyword overlap).
 
 Purpose: Replaces the 9-tool manual composition that the c64_game_brief Prompt requires from the agent. One call returns the full structured plan: proposed techniques for the game mechanic, register/KERNAL sets, pitfalls to avoid, Oscar64-primary + KickAssembler-for-hot-paths toolchain split, and a step-by-step build order.
 
-Inputs: 'description' is a free-form game brief (e.g. "vertical scrolling shoot-em-up with enemy sprites"). 'archetype' is the snake_case name of an Archetype node from docs/game-design/c64-game-archetypes.md (vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, text_adventure, action_puzzle, sports, racing, beat_em_up); "Vertical Shmup" and "vertical-shmup" are read as vertical_shmup. Optional, but without it the tool is c64_demo_briefing.
+Inputs: 'description' is a free-form game brief (e.g. "vertical scrolling shoot-em-up with enemy sprites"). 'archetype' is the snake_case name of an Archetype node from docs/game-design/c64-game-archetypes.md (vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, text_adventure, action_puzzle, sports, racing, beat_em_up); "Vertical Shmup" and "vertical-shmup" are read as vertical_shmup. Optional; without it the plan is demo-framed.
 
 What the archetype does: its FEATURES edges (the page's technique fingerprint) are forced into proposed_techniques regardless of the keyword scorer and exempt from the per-category cap; its RISKS edges (the page's common pitfalls) are added to pitfalls[]; its title is appended to the search text. The page is the source of truth, not a table in this tool.
 
-Output: c64_demo_briefing's schema plus two optional fields: 'archetype' {name, title, kind, features[], risks[]} repeating what the graph holds, or 'archetype_not_found' {requested, known[]} when the name matches no Archetype node. In the not-found case the plan is still built from the description alone; nothing is guessed. The build order's step 1 is a game scaffold; the only seed recipe the corpus has is oscar64-simple-shmup, offered for the two shmup archetypes.
+Output: the briefing schema; 'archetype' {name, title, kind, features[], risks[]} repeating what the graph holds, or 'archetype_not_found' {requested, known[]} when the name matches no Archetype node, as for c64_demo_briefing, plus the game scaffold step. In the not-found case the plan is still built from the description alone; nothing is guessed. The build order's step 1 is a game scaffold; the only seed recipe the corpus has is oscar64-simple-shmup, offered for the two shmup archetypes.
 
 When to use: Start every new C64 game design session with this tool. Read 'archetype_not_found.known' if the name you tried was not accepted.
 

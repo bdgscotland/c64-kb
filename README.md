@@ -42,6 +42,29 @@ it.
 
 ---
 
+## What the recipes draw
+
+Every picture below is the committed screenshot of a recipe, taken by the
+verifier from the listing on the page at a pinned cycle count; a later
+run that differs by one pixel fails the gate.
+
+<table>
+<tr>
+<td align="center"><a href="docs/recipes/kickassembler/cracktro-template.md"><img src="docs/recipes/kickassembler/screenshots/cracktro-template.png" width="220" alt="Cracktro template: logo, raster bars, sine scroller"></a><br><sub>Cracktro template</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sideborder-open.md"><img src="docs/recipes/kickassembler/screenshots/sideborder-open.png" width="220" alt="Side border opened with sprites in it"></a><br><sub>Side border open</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sprite-multiplex-24.md"><img src="docs/recipes/kickassembler/screenshots/sprite-multiplex-24.png" width="220" alt="24 sprites from eight hardware slots"></a><br><sub>24-sprite multiplexer</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/fli-image.md"><img src="docs/recipes/kickassembler/screenshots/fli-image.png" width="220" alt="FLI image with the three grey columns"></a><br><sub>FLI</sub></td>
+</tr>
+<tr>
+<td align="center"><a href="docs/recipes/oscar64/tile-map-render.md"><img src="docs/recipes/oscar64/screenshots/tile-map-render.png" width="220" alt="RLE-compressed metatile map decoded to the screen"></a><br><sub>Tile map from RLE</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/text-overlay-playfield.md"><img src="docs/recipes/oscar64/screenshots/text-overlay-playfield.png" width="220" alt="Text-mode playfield with a falling piece"></a><br><sub>Text-mode playfield</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/simple-shmup.md"><img src="docs/recipes/oscar64/screenshots/simple-shmup.png" width="220" alt="Vertical shmup with starfield and enemies"></a><br><sub>Simple shmup</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/colour-fade.md"><img src="docs/recipes/kickassembler/screenshots/colour-fade.png" width="220" alt="Luminance fade caught mid-way"></a><br><sub>Luminance fade, step 9</sub></td>
+</tr>
+</table>
+
+---
+
 ## Current state
 
 Counts (documents, chunks, nodes, edges, recipes, tests) change with every

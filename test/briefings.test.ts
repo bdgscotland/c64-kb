@@ -525,3 +525,109 @@ describe("gameBriefing reads the archetype from the graph", () => {
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 });
+
+// Demo forms ride the same Archetype node with kind: demo
+// (docs/demo-design/intro-cracktro-patterns.md, docs/CONVENTIONS-archetypes.md).
+// demoBriefing with an archetype must read FEATURES and RISKS from the graph
+// the way gameBriefing does, and a name the graph lacks must be reported.
+describe("demoBriefing reads a demo archetype from the graph", () => {
+  let f: FalkorService;
+
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+
+    // Four raster techniques in the fingerprint: the three-per-category cap
+    // must not cut one of them. Nothing in the description "a small intro"
+    // names any of these, so a proposal can only come from FEATURES.
+    await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
+    await f.addTechnique({ name: "sideborder_open", title: "Open the side borders", category: "raster", complexity: "high" });
+    await f.addTechnique({ name: "raster_bars", title: "Raster bars", category: "raster", complexity: "low" });
+    await f.addTechnique({ name: "irq_chain_table", title: "Table-driven IRQ chain", category: "raster", complexity: "medium" });
+    await f.addTechnique({ name: "soft_scroll_h", title: "Hardware horizontal soft-scroll", category: "scroll", complexity: "low" });
+    await f.addTechnique({ name: "sid_play_routine_pattern", title: "SID init/play convention", category: "sid", complexity: "low" });
+    // In the graph, not in the fingerprint: must not be forced.
+    await f.addTechnique({ name: "plasma", title: "Plasma", category: "effect", complexity: "high" });
+
+    await f.addPitfall({ name: "raster_irq_first_line_jitter", title: "First raster IRQ after enable has unpredictable entry timing", severity: "medium", region: "both", category: "raster" });
+    await f.linkTriggeredBy("raster_irq_first_line_jitter", "stable_raster_irq", "Technique");
+    // A risk no proposed technique triggers: reaches the plan only through RISKS.
+    await f.addPitfall({ name: "d016_unmasked_rmw_clobbers_csel_mcm", title: "Writing $D016 without masking destroys CSEL and MCM", severity: "high", region: "both", category: "scroll" });
+
+    await f.addArchetype({ name: "cracktro", title: "Crack Intro", kind: "demo", source_doc: "docs/demo-design/intro-cracktro-patterns.md" });
+    for (const t of ["stable_raster_irq", "sideborder_open", "raster_bars", "irq_chain_table", "soft_scroll_h", "sid_play_routine_pattern"]) {
+      await f.linkArchetypeFeatures("cracktro", t);
+    }
+    await f.linkArchetypeRisks("cracktro", "raster_irq_first_line_jitter");
+    await f.linkArchetypeRisks("cracktro", "d016_unmasked_rmw_clobbers_csel_mcm");
+    await f.addArchetype({ name: "dentro", title: "Mini-Demo / Dentro", kind: "demo", source_doc: "docs/demo-design/intro-cracktro-patterns.md" });
+    await f.linkArchetypeFeatures("dentro", "sid_play_routine_pattern");
+    // A game archetype beside the demo ones: the known list spans both kinds.
+    await f.addArchetype({ name: "puzzle", title: "Puzzle", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
+    await f.linkArchetypeFeatures("puzzle", "stable_raster_irq");
+  });
+
+  afterAll(async () => f?.close());
+
+  it("forces every FEATURES target into the proposal, past the per-category cap", async () => {
+    const r = await demoBriefing("a small intro", "cracktro");
+    const names = r.structured.proposed_techniques.map(t => t.name);
+    for (const t of ["stable_raster_irq", "sideborder_open", "raster_bars", "irq_chain_table", "soft_scroll_h", "sid_play_routine_pattern"]) {
+      expect(names).toContain(t);
+    }
+    expect(names).not.toContain("plasma");
+    expect(r.structured.archetype).toEqual({
+      name: "cracktro",
+      title: "Crack Intro",
+      kind: "demo",
+      features: ["irq_chain_table", "raster_bars", "sid_play_routine_pattern", "sideborder_open", "soft_scroll_h", "stable_raster_irq"],
+      risks: ["d016_unmasked_rmw_clobbers_csel_mcm", "raster_irq_first_line_jitter"],
+    });
+    expect(r.structured.archetype_not_found).toBeUndefined();
+    expect(r.structured.brief).toContain("C64 demo plan");
+    expect(r.structured.brief).toContain("form: cracktro");
+    expect(r.text).toContain("# C64 Demo Briefing");
+    expect(r.text).toContain("**Archetype:** cracktro (Crack Intro, demo)");
+    // No game scaffold step on a demo plan.
+    expect(r.structured.build_order.some(s => /scaffold/i.test(s.label))).toBe(false);
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("adds every RISKS target to the pitfalls, including one no proposed technique triggers", async () => {
+    const r = await demoBriefing("a small intro", "cracktro");
+    const names = r.structured.pitfalls.map(p => p.name);
+    expect(names).toContain("raster_irq_first_line_jitter");
+    expect(names).toContain("d016_unmasked_rmw_clobbers_csel_mcm");
+    const orphan = r.structured.pitfalls.find(p => p.name === "d016_unmasked_rmw_clobbers_csel_mcm");
+    expect(orphan?.triggered_by_proposed).toEqual([]);
+    expect(r.text).toContain("archetype risk");
+  });
+
+  it("reads a title-cased or hyphenated name as the snake_case node", async () => {
+    const r = await demoBriefing("a small intro", "Cracktro");
+    expect(r.structured.archetype?.name).toBe("cracktro");
+    const r2 = await demoBriefing("two parts and a loader", "Dentro");
+    expect(r2.structured.archetype?.name).toBe("dentro");
+    expect(r2.structured.proposed_techniques.map(t => t.name)).toContain("sid_play_routine_pattern");
+  });
+
+  it("reports archetype_not_found with the known names of both kinds for a name the graph lacks", async () => {
+    const r = await demoBriefing("a small intro", "trackmo");
+    expect(r.structured.archetype).toBeUndefined();
+    expect(r.structured.archetype_not_found).toEqual({ requested: "trackmo", known: ["cracktro", "dentro", "puzzle"] });
+    expect(r.structured.brief).toContain('form "trackmo" is not an archetype the graph knows');
+    expect(r.text).toContain("Known archetypes: cracktro, dentro, puzzle");
+    // Nothing forced: the fingerprint techniques are not in the plan.
+    expect(r.structured.proposed_techniques.map(t => t.name)).not.toContain("sideborder_open");
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("without an archetype builds the plan as before, with neither field", async () => {
+    const r = await demoBriefing("a small intro");
+    expect(r.structured.archetype).toBeUndefined();
+    expect(r.structured.archetype_not_found).toBeUndefined();
+    expect(r.structured.brief).toContain("C64 demo plan");
+  });
+});

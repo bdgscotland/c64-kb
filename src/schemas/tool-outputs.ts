@@ -312,11 +312,12 @@ export const BriefingSchema = z.object({
     label: z.string(),
     recipes: z.array(z.string()),
   })),
-  // Game briefings only. When the archetype names an Archetype node, its
-  // FEATURES targets were forced into proposed_techniques and its RISKS
-  // targets added to pitfalls; both lists are repeated here as the graph
-  // holds them. When it names none, archetype_not_found lists the names
-  // the graph does have.
+  // Present when an archetype was asked for (game genre or demo form).
+  // When the archetype names an Archetype node, its FEATURES targets were
+  // forced into proposed_techniques and its RISKS targets added to
+  // pitfalls; both lists are repeated here as the graph holds them. When
+  // it names none, archetype_not_found lists the names the graph does
+  // have, across both kinds.
   archetype: z.object({
     name: z.string(),
     title: z.string(),

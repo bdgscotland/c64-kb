@@ -1,11 +1,13 @@
 # Archetype Reference Conventions
 
 Archetype docs describe the shapes a C64 game or demo takes: the vertical
-shooter, the single-screen platformer, the text adventure. Today there is
-one, `docs/game-design/c64-game-archetypes.md`. Each H2 in it is one
-`Archetype` node, and two lines under the H2 become its edges: the
-technique fingerprint (`FEATURES`, Archetype to Technique) and the common
-pitfalls (`RISKS`, Archetype to Pitfall). `c64_game_briefing` reads both.
+shooter, the single-screen platformer, the text adventure, the crack
+intro. Today there are two: `docs/game-design/c64-game-archetypes.md`
+for kind `game` and `docs/demo-design/intro-cracktro-patterns.md` for
+kind `demo`. Each H2 in them is one `Archetype` node, and two lines under
+the H2 become its edges: the technique fingerprint (`FEATURES`, Archetype
+to Technique) and the common pitfalls (`RISKS`, Archetype to Pitfall).
+`c64_game_briefing` and `c64_demo_briefing` read both.
 
 The marker `<!-- doc-type: archetype-reference -->` MUST appear in the
 first 10 lines for the extractor to process the file.
@@ -20,6 +22,20 @@ kind: game                    # game | demo; optional, defaults to game
 
 `kind` applies to every archetype in the file. Any other word refuses the
 whole file with a warning, the way an unknown technique category does.
+
+`kind: demo` is the demo forms: the source is
+`docs/demo-design/intro-cracktro-patterns.md`, whose crack intro, demo
+intro, pack intro, dentro and 4K party intro are each one `Archetype`
+node. A form is the node; the parts a multi-part production is cut into
+are not a node type, and a page must not try to make them one. The entry
+format, the edge lines and the ingest counts are the same as for games,
+and `c64_demo_briefing` with `archetype` reads the node exactly as
+`c64_game_briefing` does. Archetype names are unique across every
+archetype page, not just within one: the ingest merges the node on its
+name alone, so a name repeated on a second page overwrites the first
+page's node (its kind, title and source) and both pages' edges land on
+the one node. The extractor only refuses a repeat within a single file.
+`archetype_not_found` lists the names of both kinds.
 
 ## Archetype entries
 

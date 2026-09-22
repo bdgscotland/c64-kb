@@ -366,6 +366,64 @@ library built around `conio.h`, is worth more than a theoretically optimal
 Oscar64 translation that may contain ABI errors. When the task is creative
 (new code, not porting), default to Oscar64.
 
+## Debugging with VICE
+
+`cl65 -Ln <file>` makes the linker write a VICE label file. Built from
+[recipes/cc65/hello-world-conio.md](../recipes/cc65/hello-world-conio.md):
+
+```bash
+cl65 -O -t c64 -Ln hello.lbl -o hello.prg hello.c
+```
+
+`hello.lbl` is one `al` command per symbol, six hex digits, no memspace
+prefix, and a leading underscore on every C symbol. The file also names
+the KERNAL entries the library imports:
+
+```text
+al 000840 ._main
+al 0008EA ._cputs
+al 00E544 ._clrscr
+al 00FFD2 .BSOUT
+```
+
+Load it and arm a breakpoint from a `-moncommands` file:
+
+```text
+ll "hello.lbl"
+break ._main
+```
+
+Run with the remote text monitor and connect to the port (the flags and
+the reason `-console` is not used are in
+[../runtime/vice-reference.md](../runtime/vice-reference.md), "Text
+monitor for debugging"):
+
+```bash
+GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -warp +sound \
+  +autostart-delay-random -autostartprgmode 1 -limitcycles 6000000 \
+  -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6510 \
+  -moncommands hello.mon -autostart hello.prg
+```
+
+The break hit, with the label resolved in both the stop and the
+disassembly of the first instruction of `main()`:
+
+```text
+#1 (Stop on  exec 0840)   55/$037,  52/$34
+.C:0840  20 44 E5    JSR ._clrscr   - A:00 X:00 Y:04 SP:f4 ..-....C    2971573
+(C:$0840) break
+BREAK: 1  C:$0840  (Stop on exec)
+```
+
+`$0840` is `_main` in the label file and in `--mapfile`'s Exports list
+(see Multi-file projects). Measured with cc65 V2.18 and VICE x64sc 3.10.
+`print ._main` is refused with `Wrong syntax`; the label is usable as an
+address in `break`, `watch`, `m` and `until`, not as an expression to
+print. The symbol export material for the other toolchains is in
+[kickassembler-reference.md](kickassembler-reference.md) ("Symbol export
+for VICE/vice-mcp" and "Debugging with VICE") and
+[oscar64-reference.md](oscar64-reference.md) ("Debugging").
+
 ## Pitfalls
 
 **Static initializers in ROM sections.** The cc65 `DATA` segment holds

@@ -5,7 +5,33 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 716, schema 21, tools 1.23.0.
+Data 717, schema 21, tools 1.24.0.
+
+**The text monitor for debugging, and cc65 symbols in it (#15).** The
+VICE reference gained a section written from real sessions: how to reach
+the monitor prompt headless (the `-console` route fails on this build,
+measured; the remote monitor works), the stop and register lines and
+what their columns mean, step, next and until, break, watch and
+conditional breaks with their transcripts, measuring cycles between two
+breakpoints from two register lines and cross-checking the delta against
+sim6502 and arithmetic, memory dump and save, and what `-limitcycles`
+does to a stopped machine. The cc65 page gained "Debugging with VICE":
+build with the label-file flag, load the labels, break on `_main`, the
+hit quoted. The symbol-file table names the cc65 route.
+
+**Demo forms are archetypes too (#17).** The cracktro pattern page is now
+an archetype reference of kind `demo`: the crack intro, the demo intro,
+the pack intro, the dentro and the 4K party intro are each an `Archetype`
+node with the same `FEATURES` and `RISKS` edges the game page has, every
+name taken from the page's own text and checklist and resolving in the
+graph. Demo parts are not a node type; a form is one node. `c64_demo_briefing`
+gains an optional `archetype` input and the path `c64_game_briefing`
+already had: the form's fingerprint is forced into the plan past the
+three-per-category cap, its pitfalls join the pitfalls, and the output
+carries `archetype` or `archetype_not_found` with every known name across
+both kinds. A demo form has no built-in fallback table. The CLI's
+`demo-briefing` gains `--archetype` and honours `--json`. Tools 1.24.0
+for the input; data 717 for the page.
 
 **Batch seven: multi-file projects and error tables on the toolchain
 pages, a sprite sine chain, a luminance fade.** Each toolchain page has

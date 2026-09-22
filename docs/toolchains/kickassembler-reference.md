@@ -794,6 +794,8 @@ convention by hand. `#embed` consumes the rest of its line:
 
 ## Debugging with VICE
 
+
+Reaching the monitor prompt headless, the register line, breakpoints, watchpoints and measuring cycles between two points are in `../runtime/vice-reference.md`, "Text monitor for debugging".
 Generate the `.vs` symbol file during assembly:
 
 ```

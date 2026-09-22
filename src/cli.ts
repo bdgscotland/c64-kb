@@ -257,10 +257,15 @@ program
 program
   .command("demo-briefing <description>")
   .description("Generate a structured C64 demo plan from a brief (Phase 5 anchor tool)")
-  .action(async (description: string) => {
+  .option("--archetype <name>", "Demo form from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)")
+  .action(async (description: string, opts: { archetype?: string }) => {
     const { demoBriefing } = await import("./tools/briefings.js");
-    const result = await demoBriefing(description);
-    console.log(result.text);
+    const result = await demoBriefing(description, opts.archetype);
+    if (program.opts().json) {
+      console.log(JSON.stringify(result.structured, null, 2));
+    } else {
+      console.log(result.text);
+    }
     process.exit(0);
   });
 

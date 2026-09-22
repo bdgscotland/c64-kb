@@ -1,8 +1,10 @@
 /**
  * Briefing tools — Phase 5 anchor tools.
  *
- * demoBriefing(description): one-shot structured demo plan — orchestrates
+ * demoBriefing(description, archetype?): one-shot structured demo plan — orchestrates
  *   search → techniqueLookup → checkCompatibility → pitfallsFor → build order.
+ *   The optional archetype is a demo form from
+ *   docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, ...).
  *
  * gameBriefing(description, archetype?): same but game-framed. The archetype
  *   is looked up as an Archetype node (docs/game-design/c64-game-archetypes.md,
@@ -11,6 +13,12 @@
  *   search. A name the graph does not have is reported as archetype_not_found
  *   with the known names. A graph with no Archetype nodes at all (the test
  *   fixtures) falls back to a small built-in table.
+ *
+ * Both tools share one archetype path. Archetype names are unique across
+ * every archetype page: the ingest MERGEs the node on name alone, so a name
+ * reused on a second page overwrites the first page's node rather than
+ * adding a second. The known-names list in archetype_not_found spans both
+ * kinds.
  *
  * These replace the manual 9-tool composition that a consuming agent had to
  * perform when using the c64_demo_brief / c64_game_brief MCP Prompts. One
@@ -276,7 +284,7 @@ export function normaliseArchetypeName(raw: string): string {
  * "fallback" and the caller uses the built-in tables; a graph with
  * archetypes never falls back, so an unknown name is reported, not guessed.
  */
-async function resolveArchetype(raw: string): Promise<ArchetypeResolution> {
+async function resolveArchetype(raw: string, preferKind: "game" | "demo"): Promise<ArchetypeResolution> {
   const fk = await getFalkor();
   const all = await fk.roQuery(
     `MATCH (a:Archetype) RETURN a.name AS name, a.title AS title, a.kind AS kind ORDER BY name`
@@ -284,8 +292,11 @@ async function resolveArchetype(raw: string): Promise<ArchetypeResolution> {
   const rows = ((all.data ?? []) as ArchetypeRow[]).filter(r => r.name);
   if (rows.length === 0) return { mode: "fallback" };
   const wanted = normaliseArchetypeName(raw);
-  const hit = rows.find(r => r.name === wanted);
-  if (!hit) return { mode: "not_found", requested: raw, known: rows.map(r => r.name) };
+  // Names are unique across every archetype page (the ingest MERGEs on
+  // name alone), so at most one row matches. preferKind is a guard only.
+  const hits = rows.filter(r => r.name === wanted);
+  const hit = hits.find(r => r.kind === preferKind) ?? hits[0];
+  if (!hit) return { mode: "not_found", requested: raw, known: [...new Set(rows.map(r => r.name))] };
   const f = await fk.roQuery(
     `MATCH (a:Archetype {name: $name})-[:FEATURES]->(t:Technique) RETURN t.name AS name ORDER BY name`,
     { name: hit.name }
@@ -316,22 +327,27 @@ const FALLBACK_FORCED_TECHNIQUES: Record<string, string[]> = {
   adventure: ["text_mode_overlay_render"],
 };
 
-export async function demoBriefing(description: string): Promise<BriefingResult> {
-  return buildBriefing(description, undefined);
+export async function demoBriefing(
+  description: string,
+  archetype?: string
+): Promise<BriefingResult> {
+  return buildBriefing(description, archetype, false);
 }
 
 export async function gameBriefing(
   description: string,
   archetype?: string
 ): Promise<BriefingResult> {
-  return buildBriefing(description, archetype);
+  // gameBriefing without an archetype has always framed itself as a demo
+  // plan (no scaffold step); that is kept so its callers see no change.
+  return buildBriefing(description, archetype, archetype !== undefined);
 }
 
 async function buildBriefing(
   description: string,
-  archetype: string | undefined
+  archetype: string | undefined,
+  isGame: boolean
 ): Promise<BriefingResult> {
-  const isGame = archetype !== undefined;
 
   // -------------------------------------------------------------------------
   // Step 1: Resolve proposed techniques
@@ -342,14 +358,15 @@ async function buildBriefing(
   // not guess them), its RISKS join the pitfalls. Only a graph with no
   // Archetype nodes reads the built-in tables.
   const resolved: ArchetypeResolution | undefined = archetype !== undefined
-    ? await resolveArchetype(archetype)
+    ? await resolveArchetype(archetype, isGame ? "game" : "demo")
     : undefined;
   let searchDescription = description;
   const forced: string[] = [];
   if (resolved?.mode === "graph") {
     searchDescription = `${description} ${resolved.archetype.title}`;
     forced.push(...resolved.features);
-  } else if (resolved?.mode === "fallback" && archetype) {
+  } else if (resolved?.mode === "fallback" && archetype && isGame) {
+    // The built-in tables are game genres; a demo form has no fallback.
     const key = archetype.toLowerCase();
     if (FALLBACK_ARCHETYPE_TERMS[key]) searchDescription = `${description} ${FALLBACK_ARCHETYPE_TERMS[key]}`;
     forced.push(...(FALLBACK_FORCED_TECHNIQUES[key] ?? []));
@@ -606,11 +623,12 @@ async function buildBriefing(
   // -------------------------------------------------------------------------
   // Step 8: Compose brief summary text
   // -------------------------------------------------------------------------
+  const kindWord = isGame ? "genre" : "form";
   const archetypeLabel = resolved?.mode === "graph"
-    ? ` (genre: ${resolved.archetype.name}, ${resolved.archetype.title})`
+    ? ` (${kindWord}: ${resolved.archetype.name}, ${resolved.archetype.title})`
     : resolved?.mode === "not_found"
-      ? ` (genre "${archetype}" is not an archetype the graph knows)`
-      : archetype ? ` (genre: ${archetype})` : "";
+      ? ` (${kindWord} "${archetype}" is not an archetype the graph knows)`
+      : archetype ? ` (${kindWord}: ${archetype})` : "";
   const brief =
     `C64 ${isGame ? "game" : "demo"} plan for: "${description}"${archetypeLabel}. ` +
     `Proposed ${proposed_techniques.length} technique(s) across ${new Set(proposed_techniques.map(t => t.category)).size} categories. ` +
@@ -636,11 +654,11 @@ async function buildBriefing(
   // -------------------------------------------------------------------------
   // Step 9: Render human-readable text
   // -------------------------------------------------------------------------
-  const text = renderBriefingText(structured, description, archetype);
+  const text = renderBriefingText(structured, isGame);
 
   const a = getAnalytics();
   a.logQuery({
-    tool: archetype !== undefined ? "c64_game_briefing" : "c64_demo_briefing",
+    tool: isGame ? "c64_game_briefing" : "c64_demo_briefing",
     query: description,
     resultCount: validTechs.length,
   });
@@ -648,12 +666,7 @@ async function buildBriefing(
   return { structured, text };
 }
 
-function renderBriefingText(
-  b: BriefingOutput,
-  description: string,
-  archetype: string | undefined
-): string {
-  const isGame = archetype !== undefined;
+function renderBriefingText(b: BriefingOutput, isGame: boolean): string {
   let out = `# C64 ${isGame ? "Game" : "Demo"} Briefing\n\n`;
   out += `**Brief:** ${b.brief}\n\n`;
   if (b.archetype_not_found) {

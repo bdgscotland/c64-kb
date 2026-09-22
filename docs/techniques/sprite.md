@@ -761,7 +761,7 @@ cycle budget for the KERNAL-vector figures).
 ### Why
 
 The middle band of a cracktro (`docs/demo-design/intro-cracktro-patterns.md`,
-section 2.3) is eight sprites moving as one ribbon, chain or bouncing logo.
+the Sprite-Chain Animation subsection of "Crack Intro") is eight sprites moving as one ribbon, chain or bouncing logo.
 All eight hardware sprites are on at once and none is reused inside the
 frame, so the whole effect is one table lookup per sprite per frame and a
 single block of register writes in the vertical blank. It needs no raster
@@ -770,8 +770,8 @@ interrupt inside the display.
 This is not `sprite_multiplex_8`. A multiplexer re-arms the eight sprites
 between raster bands and demands `midframe_raster_irqs` and
 `changes_sprite_set`; the chain keeps a constant sprite set and writes the
-registers once a frame. `intro-cracktro-patterns.md` names
-`sprite_multiplex_8` for the chain in its section 2.3 and its technique
+registers once a frame. `intro-cracktro-patterns.md` named
+`sprite_multiplex_8` for the chain in an earlier version of its Sprite-Chain Animation subsection (it names `sprite_sine_chain` now) and its technique
 checklist; that is the wrong name, and a compatibility check run with it
 reports conflicts the chain does not have. `cracktro-template.md` does not
 drive sprites at all: its sine table moves the scroller.
