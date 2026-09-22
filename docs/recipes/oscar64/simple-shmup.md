@@ -896,6 +896,11 @@ snaps back 8 pixels upward; to cancel this visible snap, the character layer is
 shifted down by one row simultaneously. This is the same carry mechanic described
 in `docs/recipes/oscar64/soft-scroll-h.md` applied to the Y axis.
 
+The star positions come from the C library's `rand()`, which is fine for a
+demonstration and deterministic from one run to the next. A game wants a
+seeded generator that costs a few cycles a call; that is `lfsr_random` in
+`docs/techniques/maths.md`, with the recipe `lfsr-random.md` beside this one.
+
 The star positions are tracked in the `star_row[]` array. Each star is a solid
 block character (screen code `$A0`) drawn directly into the screen RAM. When the
 carry fires (`yscroll` wraps), each star's row is incremented modulo 24 (rows

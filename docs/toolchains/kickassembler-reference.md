@@ -203,7 +203,7 @@ The assembler directive set covers both classic output and the script layer.
 | `.dword` / `.dw` | `.dword $12341234` | Output 32-bit little-endian values |
 | `.text` / `.te` | `.text "Hello"` | Output text using current encoding |
 | `.encoding` | `.encoding "petscii_upper"` | Set character encoding for `.text` |
-| `.fill` | `.fill 256, 127.5+127.5*sin(toRadians(i*360/256))` | Fill N bytes with an expression (loop var: `i`) |
+| `.fill` | `.fill 256, 127.5+127.5*sin(toRadians(i*360/256))` | Fill N bytes with an expression (loop var: `i`); sine, reciprocal and multiply table forms and their verification are `table_generation` in `../techniques/cpu-cycle-tricks.md` |
 | `.fillword` | `.fillword 5, i*$80` | Fill N words |
 | `.lohifill` | `.lohifill $100, i*40` | Fill a lo-byte table followed by a hi-byte table |
 | `.const` | `.const DELAY=7` | Define an immutable script constant |

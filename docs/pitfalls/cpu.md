@@ -510,3 +510,69 @@ jmp_abs:
 - Doc `docs/hardware/6510-cpu-reference.md` — the Indirect addressing mode
   section documents the bug; only opcode $6C (`JMP ($abs)`) triggers the wrap,
   not `JMP $abs` ($4C)
+
+## lfsr_zero_state_lockup — An LFSR seeded with zero outputs zero for ever
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** lfsr_random
+**Mitigated by techniques:** lfsr_random
+
+### Symptom
+
+Every "random" value the game produces is zero: enemies spawn in the
+same corner, the starfield is one column, the noise pattern is blank.
+It works on the developer's machine and fails on another, or fails
+only after a reset, because the seed happened to be zero there.
+
+### Mechanism
+
+A Galois LFSR shifts its state right and XORs the tap mask in when the
+bit that fell out was 1. From state zero the bit that falls out is 0,
+nothing is XORed in, and the state is zero again; the map fixes zero
+and never leaves it. The 2^n - 1 non-zero states form the one cycle
+the period figures on `lfsr_random` describe (255 and 65535, measured
+in VICE x64sc 3.10); zero is not on it. Any seed source can deliver
+zero: two `$D41B` reads that both return `$00`, a timer read at a
+phase where its low and high bytes happen to be zero, a frame count
+of zero because the player pressed fire on the first frame, or a
+variable the loader never initialised. The technique is on both
+metadata lines above because the lockup arises in a naive seeding of
+`lfsr_random` and the seed check the technique specifies cures it.
+
+### Fix
+
+Test the seed before the first step and replace zero with a non-zero
+constant. Test the 8-bit and 16-bit registers separately: a 16-bit
+seed can be non-zero while its low byte, used to seed an 8-bit
+register, is zero.
+
+### Worked example
+
+```c
+// BAD: whatever the sources gave is the seed
+seed = (sid.random << 8) | sid.random;
+s16 = seed;                      // zero stays zero for ever
+
+// FIXED: zero is replaced before the first step
+seed = (sid.random << 8) | sid.random;
+if (seed == 0)
+    seed = 0xACE1;
+s16 = seed;
+seed8 = (char)seed;
+if (seed8 == 0)
+    seed8 = 0x01;
+```
+
+The 6502 form is `lda seed / ora seed+1 / bne ok / lda #$e1 / sta seed /
+lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
+
+### Cross-references
+
+- Technique `lfsr_random` in `docs/techniques/maths.md` — taps, periods,
+  seeding from `$D41B`, a CIA timer and player input
+- Recipe `docs/recipes/oscar64/lfsr-random.md` — the seed check in a
+  built and run listing
+- `docs/hardware/sid-reference.md` (`$D41B`) — the noise register drifts
+  to all ones under TEST and never reads zero there, but a running noise
+  voice can return `$00`

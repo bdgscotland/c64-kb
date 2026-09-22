@@ -642,3 +642,157 @@ buffer) is the real budget item and is scene-specific.
 ### Recipes
 
 - No recipe yet for bitmap scrolling.
+
+---
+
+## tile_map_render — Metatile map decode to screen and colour RAM
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+
+### Why
+
+A scrolling game level is far larger than the 1000 cells of one text
+screen, and a level stored as raw screen codes plus colour costs two bytes
+a cell. Storing the level as a grid of metatiles (here 2x2 characters plus
+one colour) divides that by eight, and run-length coding the metatile
+rows takes it down further: the recipe's 20 x 11 map is 135 stream bytes
+for 220 metatiles, which expand to 880 screen bytes and 880 colour
+nibbles. The decoder is also the thing that feeds `char_scroll_buffer_h`
+and `char_scroll_buffer_v`: both say "write fresh data into column 39"
+or "into the new row" from an off-screen source, and this technique is
+that source.
+
+### How
+
+Three tables and two decoders.
+
+1. **Metatile table.** One entry per metatile: four screen codes
+   (top-left, top-right, bottom-left, bottom-right) and one colour. A
+   per-character colour variant stores four colour bytes instead of one;
+   the write count is the same, the table is three bytes larger per
+   metatile.
+2. **Map.** One byte per metatile, MAP_W wide by MAP_H high, decoded once
+   into RAM at level start. It is indexed as `map[my * MAP_W + mx]`. For
+   a level wider than the screen MAP_W is the level width, not 20.
+3. **RLE row streams.** Each map row is its own stream of control bytes.
+   In the recipe's format bit 7 set means a run (the next byte repeated
+   `c & 0x7f` times), bit 7 clear means `c` literal bytes follow, and zero
+   ends the row. The decoder returns the address after the terminator, so
+   the rows are walked in sequence with no offset table.
+4. **Row decode.** Draw the top or bottom character row of one map row
+   into one screen row: for each metatile write two screen codes and two
+   colours. This is the new-row source for `char_scroll_buffer_v` and
+   `soft_scroll_v`: a vertical scroll steps one character row at a time,
+   so it asks for half a metatile row per step and alternates `half`
+   between 0 and 1.
+5. **Column decode.** Draw the left or right character column of one
+   map column into screen column 0 or 39, all rows: for each metatile row
+   write one screen code and one colour at `s[0]` and again at `s[40]`,
+   then step 80 bytes. This is the new-column source for
+   `char_scroll_buffer_h` and `soft_scroll_h`, and again `half` alternates
+   because a metatile is two columns wide.
+
+The two edge decoders, as built in scratch with Oscar64 build 2026-05-19
+at `-O2` to confirm they compile (they are not the recipe's listing and
+their cost is not measured here):
+
+```c
+struct Metatile { char c[4]; char col; };
+extern const struct Metatile tiles[];
+extern char map[MAP_W * MAP_H];      // one byte per metatile, decoded once
+
+// Left (half 0) or right (half 1) character column of map column mx,
+// into screen column sx (0 or 39), every metatile row.
+void decode_column(char mx, char half, char sx)
+{
+    char *s = Screen + MAP_ROW * 40 + sx;
+    char *k = Color + MAP_ROW * 40 + sx;
+    const char *m = map + mx;
+    for (char y = 0; y < MAP_H; y++) {
+        const struct Metatile *t = tiles + *m;
+        s[0] = t->c[half]; s[40] = t->c[half + 2];
+        k[0] = t->col;     k[40] = t->col;
+        s += 80; k += 80; m += MAP_W;
+    }
+}
+
+// Top (half 0) or bottom (half 1) character row of map row my, starting
+// at map column mx, into screen row sy.
+void decode_row(char mx, char my, char half, char sy)
+{
+    char *s = Screen + sy * 40;
+    char *k = Color + sy * 40;
+    const char *m = map + my * MAP_W + mx;
+    for (char x = 0; x < 20; x++) {
+        const struct Metatile *t = tiles + m[x];
+        s[0] = t->c[2 * half]; s[1] = t->c[2 * half + 1];
+        k[0] = t->col;         k[1] = t->col;
+        s += 2; k += 2;
+    }
+}
+```
+
+### Why it works
+
+Screen RAM holds screen codes and colour RAM at `$D800` holds one nibble
+per cell, so a metatile is nothing more than a fixed pattern of writes to
+both. The VIC-II reads the two arrays every badline; nothing in the chip
+knows about metatiles, which is why the decoder can write at any time
+the cell is off-screen or about to be overwritten anyway. Keeping the map
+as one byte per metatile in RAM, rather than decoding the RLE on demand,
+is what makes the column decode cheap: a column of a run-length coded row
+cannot be reached without decoding the row up to it, but an unpacked map
+is a stride-MAP_W walk.
+
+### Variations
+
+- **Per-character colour.** `char col[4]` in the metatile instead of one
+  byte. Same write count; use it when a metatile mixes, say, a green tree
+  top over a brown trunk.
+- **Larger metatiles.** 4x4 characters with a 16-byte pattern divides the
+  map size by a further four. The edge decoders then alternate `half`
+  over four values.
+- **CharPad import.** CharPad's `.ctm` (version 8) already holds
+  characters, tiles, attributes and a map, and Oscar64's `#embed` extracts
+  each channel directly: `ctm_chars`, `ctm_tiles8` / `ctm_tiles16`,
+  `ctm_map8` / `ctm_map16`, `ctm_attr1` / `ctm_attr2`
+  (`docs/toolchains/oscar64-reference.md`, "Embedding" section, the
+  `#embed ctm_chars` paragraph; the Oscar64 manual `oscar64.md`,
+  "Embedding sprite and graphics data", is the source). The directive
+  must stand alone on its own line inside the initialiser braces. The
+  `.ctm` layout is summarised in `docs/art/asset-pipelines.md` under
+  "Charsets (.ctm from CharPad)". A CharPad tile maps onto the
+  `Metatile` struct here as its character indices plus its attribute
+  byte; the RLE streams are then whatever the build produces, or
+  `#embed ... rle` for a plain run-length pass. No page in this KB ships
+  a `.ctm`, and the recipe below needs none.
+- **RLE variants.** The recipe's format caps a run at 127 and has no
+  escape for a single repeated pair. A two-byte `(count, value)` format
+  with no literal mode is smaller code and worse on noisy rows.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with a CIA1 timer B harness, display blanked
+and interrupts masked, Oscar64 `-O2`, the recipe's listing (rung 1; the
+figures are identical on PAL and NTSC because they count CPU cycles
+only):
+
+| Step | Cycles | Per unit |
+|---|---|---|
+| RLE decode, 11 rows, 135 stream bytes to 220 map bytes | 8,828 | 40.1 per decoded byte |
+| Expand 220 metatiles (880 screen + 880 colour writes) | 10,731 | 48.8 per metatile |
+
+The edge decoders above were not timed. One column decode touches 11
+metatiles and writes four bytes for each, half of what `expand_row`
+writes per metatile, so a figure in the low hundreds of cycles is
+arithmetic from the expand figure (rung 3), not a measurement. A full-map expand at 10,731
+cycles is about 55% of the ~19,656-cycle PAL frame, so it belongs at level
+start, not inside the scroll loop; the scroll loop does one edge decode
+per character step.
+
+### Recipes
+
+- `recipes/oscar64/tile-map-render.md`

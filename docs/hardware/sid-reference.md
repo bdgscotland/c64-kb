@@ -51,7 +51,9 @@ Each of the three voices contains:
 Voice 3 is special in two ways: its oscillator output is readable at
 $D41B (OSC3) and its envelope output is readable at $D41C (ENV3),
 making it the C64's only built-in random-number source and a free
-LFO. Voice 3 can also be muted via $D418 bit 7 without disturbing its
+LFO (the noise setup for seeding, and the LFSR it should seed rather than
+be read every frame, are `lfsr_random` in `../techniques/maths.md`).
+Voice 3 can also be muted via $D418 bit 7 without disturbing its
 oscillator, which is how OSC3/ENV3 are used as control signals without
 making them audible.
 

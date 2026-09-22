@@ -264,7 +264,9 @@ both "fall under the border"; column 0 does not.
 ### The wave
 
 For column `c` the row is `CENTER + sine[(phase + c*STEP) & 255]`, with
-`sine` a 256-entry table of `round(sin(θ) * AMPLITUDE)`. `phase` advances by
+`sine` a 256-entry table of `round(sin(θ) * AMPLITUDE)` (the scalings and
+the byte-level check of such tables are `table_generation` in
+`../../techniques/cpu-cycle-tricks.md`). `phase` advances by
 `SPEED` per frame. `STEP = 6` across forty columns spans 240 table entries,
 just under a full period. Rows are reached through a 25-entry table of row
 start addresses, loaded into a zero-page pointer and indexed by the column

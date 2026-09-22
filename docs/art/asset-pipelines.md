@@ -115,7 +115,9 @@ authored at the correct reduced resolution.
 
 CharPad's native `.ctm` (CharPad Tilemap) format is a structured binary with a
 32-byte header, followed by character data, attribute data, and optional tile/map
-data. For a charset-only extraction (no tiles):
+data. Drawing the tile and map data it carries is `tile_map_render` in
+`../techniques/scroll.md`; the Oscar64 `#embed ctm_*` specifiers are in
+`../toolchains/oscar64-reference.md`. For a charset-only extraction (no tiles):
 
 - **Character data:** 8 bytes per character × N characters. A full 256-char
   charset is 2048 bytes.

@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 708, schema 20, tools 1.22.1.
+Data 709, schema 20, tools 1.22.1.
+
+**Game foundations, batch two: tile maps, printing numbers, random
+numbers, lookup tables.** Four more gap-map items (#13, #16), same
+writer, reviewer and reviser shape. `tile_map_render` on the scroll page
+with the `tile-map-render` recipe: a hand-written RLE-compressed metatile
+map decoded to screen and colour RAM, every one of its 880 cells compared
+against a Python render of the same source data with zero differences,
+and the decoder's cost measured. A "Printing numbers" section on the
+game-design patterns page with the `print-number` recipe: subtract-powers
+and double-dabble in C and in assembly, every value from 0 to 65535
+rendered on the 6502 and folded into a checksum that matches Python, and
+the routes timed, which corrected the page's earlier "about 300 cycles"
+for double-dabble. `lfsr_random` on the maths page with the
+`lfsr-random` recipe and a fixed-seed companion: 8- and 16-bit LFSRs
+with measured periods and a histogram, seeding from SID voice 3 noise
+with the output muted, the CIA timer and player timing, and a new
+pitfall `lfsr_zero_state_lockup` with its MITIGATED_BY edge.
+`table_generation` on the CPU tricks page: sine, reciprocal and multiply
+tables at KickAssembler assembly time and in Oscar64, with the table bytes
+dumped from the built PRG and diffed to zero against Python for two
+scalings. Cross-links added from the pages that already used these
+things without naming them (the scroll pattern, the CharPad section, the
+sine scroller, the `.fill` row, the perspective divide, the $D41B
+paragraph).
 
 **Game foundations, batch one: input, the frame loop, fixed-point
 movement.** The first additive batch from the gap map (#12, #13),

@@ -598,3 +598,208 @@ A demo that disables sprites on 100 of the 200 visible lines recovers about 1900
 
 - `recipes/kickassembler/fli-image.md` (forces a badline on every line and lays its $D018/$D011 writes out around the 40-cycle steal; the opposite of avoidance, useful as the worked cost example)
 - An earlier version of this list also named `recipes/kickassembler/sprite-multiplex-24.md` for per-line sprite enable/disable; that recipe writes `sta $d015` with all eight slots on for the whole frame.
+
+## table_generation — Lookup-table generation at build time or at start-up
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+
+### Why
+
+A sine, a reciprocal or a product costs hundreds to thousands of cycles to compute on a 6510 and 4 cycles to read from a table. Almost every effect on this machine reads a table instead of computing. The question is where the table comes from: the assembler, the compiler, a generator that runs at start-up, or a file built on the host and embedded. Each has a different cost in bytes, in start-up time and in exactness, and the choice is rarely written down. The figures below were measured on this machine: KickAssembler 5.25, Oscar64 (build 2026-05-19), VICE x64sc 3.10.
+
+### How
+
+**KickAssembler builds the table at assembly time.** `.fill N, expr` evaluates `expr` once per entry with `i` running 0 to N-1 and emits the low byte. The scalings that matter:
+
+```asm
+// Sine tables at assembly time. Each expression is evaluated by the
+// assembler; nothing runs on the C64.
+.const AMP = 40
+.const MID = 100
+
+* = $2000
+// Unsigned, 0..255 centred on 128, floor form: 128 + 127.5 * sin.
+// Range 0..255, entry 64 is 255, entry 192 is 0.
+sin_u8:     .fill 256, floor(128 + 127.5 * sin(toRadians(i * 360 / 256)))
+// Unsigned, rounded, amplitude 127 about 128. Range 1..255, symmetric:
+// entry 128+k is 256 minus entry k. Use this one when a quarter wave
+// or an integer unfold must reproduce it exactly.
+sin_r127:   .fill 256, 128 + round(127 * sin(toRadians(i * 360 / 256)))
+// Signed two's complement, -127..127. Read with a signed add.
+sin_s8:     .fill 256, round(127 * sin(toRadians(i * 360 / 256)))
+// Arbitrary amplitude and offset: MID plus or minus AMP.
+sin_a40:    .fill 256, round(MID + AMP * sin(toRadians(i * 360 / 256)))
+// Quarter wave, 65 entries covering 0 to 90 degrees inclusive.
+sin_q:      .fill 65, round(127 * sin(toRadians(i * 90 / 64)))
+// 16-bit table split into a low page and a high page. The 65-byte
+// sin_q in front of it is odd-sized, so realign or both halves
+// straddle a page and every read with X >= $BF costs 5 cycles.
+.align $100
+sin_w:      .lohifill 256, round(1000 + 1000 * sin(toRadians(i * 360 / 256)))
+
+// Reading them: X is the angle, 0..255 is one turn.
+            ldx #$40
+            lda sin_u8,x        // 255
+            lda sin_w.lo,x      // low byte of 2000
+            lda sin_w.hi,x      // high byte of 2000
+            rts
+```
+
+The 256-entry form is the norm because the angle is then a byte that wraps by itself. The quarter-wave form saves 191 bytes and costs an unfold at start-up or a branch on every read (mirror the index for 90 to 180 degrees, negate the value for 180 to 360). `sine-scroller.md` and `cracktro-template.md` use the round form with an `AMPLITUDE` constant and no offset; `kickassembler-reference.md` documents `.fill` with the `127.5 + 127.5 * sin` form.
+
+Rounding matters. `round()` behaved as `floor(x + 0.5)` in every table below, including the negative half of `sin_s8`; no entry fell on an exact half, so the tie rule is not established here. `floor()` on `128 + 127.5 * sin` gives the same bytes as a C `(char)` cast of the same expression, which truncates towards zero and is floor for a non-negative value. `.fill` wraps a value outside 0..255 without an error: `.fill 4, 254 + i` assembled to `$FE $FF $00 $01` (measured, KickAssembler 5.25). The `127.5 + 127.5 * sin` round form does not reach 256, because `sin(90 degrees)` evaluates to exactly 1.0 and the peak is 255 (measured; an earlier draft of this section assumed it wrapped).
+
+**Oscar64 folds a table at compile time when the initialiser is constant.** `math.h` declares `sin` and `cos` as intrinsics (`#pragma intrinsic(sin)`, `math.h` line 33), and the preprocessor `#for(i,N) text` directive (Oscar64 manual, "Pre-Processor control") repeats a one-line template N times with `i` substituted. Together they put the table in the data segment with no floating point in the binary:
+
+```c
+#include <math.h>
+
+// Unsigned, 0..255 centred on 128. (char) truncates towards zero; the
+// value is never negative, so this is the floor form.
+__export const char sin_u8[256] = {
+#for(i,256) (char)(128 + 127.5 * sin(i * PI / 128)),
+};
+#pragma align(sin_u8, 256)
+
+// Rounded, amplitude 127 about 128: add 0.5 before the cast.
+__export const char sin_r127[256] = {
+#for(i,256) (char)(128 + 127 * sin(i * PI / 128) + 0.5),
+};
+
+// Signed: round half away from zero on both sides.
+__export const signed char sin_s8[256] = {
+#for(i,256) (signed char)(127 * sin(i * PI / 128) + (i < 128 ? 0.5 : -0.5)),
+};
+```
+
+Compiled with `oscar64 -tm=c64 -O2 -n` and an empty `main`, this gives a 1,025-byte PRG; the map file places `sin_u8` at `$0900` in `DATA:data` with the other two on the pages after it, and no `sin`, `crt_fmul` or `crt_fdiv` symbol is linked (measured). Two details cost a rebuild each. Without `__export`, a table nothing references is dropped by the linker and the PRG is 137 bytes. `#pragma align(name, 256)` page-aligns a table but must come after the declaration; before it the compiler reports `error 3005: Variable not found`. `PI` is `3.141592653` in `math.h`; a Python reference has to use that constant, not `math.pi`, although for these three tables both gave identical bytes. Not built by the listings gate: these fragments were compiled in scratch and their bytes diffed as described under Verification.
+
+**What Oscar64 does not fold.** A start-up loop that calls `sin` is compiled as written. `samples/rasterirq/movingbars.c` and `samples/sprites/multiplexer.c` in the Oscar64 tree do this, and so does `sprite-multiplex-8.md` in this repo. The cost is the floating-point library plus the time: the loop below links `sin` (396 bytes), `crt_fmul`, `crt_fdiv` and `sint16_to_float`, and takes 3,739,920 cycles for 256 entries, about 14,600 per entry or 190 PAL frames, measured with a CIA1 timer A harness in VICE x64sc (harness below, base overhead of 54 cycles subtracted).
+
+```c
+void gen_float(char *t)
+{
+	for (int i = 0; i < 256; i++)
+		t[i] = (char)(128 + 127.5 * sin(i * PI / 128));
+}
+```
+
+**An integer start-up generator.** When the table has to live in RAM and 256 bytes of data is too much, unfold a quarter wave with integer arithmetic. It reproduces `sin_r127` exactly, because that scaling is symmetric by construction, and it links no floating point:
+
+```c
+// 65 entries, round(127 * sin(i * PI / 128)) for i = 0..64,
+// generated by Python and embedded (or written as a #for initialiser).
+static const char quarter[65] = {
+#embed "quarter.bin"
+};
+
+void gen_int(char *t)
+{
+	for (char i = 0; i <= 64; i++)
+	{
+		char a = quarter[i];
+		t[i] = 128 + a;
+		t[(char)(128 - i)] = 128 + a;
+		t[(char)(128 + i)] = 128 - a;
+		t[(char)(256 - i)] = 128 - a;
+	}
+}
+```
+
+Measured cost: 5,190 cycles, about a quarter of a PAL frame, and a 65-byte table in place of 256. The `(char)` casts on the indices keep `256 - 0` at 0 rather than at 256.
+
+**Embedding a host-built table.** `#embed "file"` (Oscar64 manual, "Embedding binary data") pastes a binary file into an initialiser; `#embed LIMIT SKIP "file"` takes a slice. A table Python wrote is then data, with no start-up cost and no dependence on the compiler's arithmetic. This is the pragmatic route for anything `#for` cannot express on one line, such as a curve that needs a loop to generate, and for tables shared with a KickAssembler build.
+
+**Reciprocal table for the perspective divide.** `effects-vector-3d.md` projects with `screen_x = cx + (tx * FOCAL) / (tz + DEPTH_OFFSET)`. A division per point per frame is out of budget; a table indexed by depth turns it into a multiply, which `table_multiply_8x8` in `maths.md` does in 52 cycles. Store `FOCAL * 256 / (z + DEPTH)` rounded, and the projection becomes `(tx * recip[z]) >> 8`:
+
+```asm
+// Reciprocal table: recip[z] = round(FOCAL * 256 / (z + DEPTH)).
+// DEPTH >= 1 keeps z = 0 off a divide by zero; FOCAL * 256 / DEPTH
+// must be at most 255 or the entry wraps (128 * 256 / 160 = 204.8).
+.const FOCAL = 128
+.const DEPTH = 160
+
+* = $2000
+recip:      .fill 256, round(FOCAL * 256 / (i + DEPTH))
+
+            ldx #0
+            lda recip,x         // 205 at z = 0, 79 at z = 255
+            rts
+```
+
+The `DEPTH = 160` here is chosen so that the 8-bit form holds, and it is not the value `effects-vector-3d.md` suggests. With the `DEPTH_OFFSET` of 4 to 8 that page quotes, an 8-bit reciprocal does not fit: `128 * 256 / 4` is 8,192 and the whole near range wraps. Either build the table 16-bit (`.lohifill 256, round(FOCAL * 256 / (i + DEPTH))`, read as low and high pages) or clamp the near range so the largest entry is at most 255.
+
+An 8-bit reciprocal carries a rounding error of at most half a unit in 79 at the far end, about 0.6 % of the projected coordinate (arithmetic from the table's own values, not measured on screen). The multiply table itself is covered by `table_multiply_8x8` in `maths.md` and is not repeated here.
+
+### Why it works
+
+The assembler and the compiler evaluate the expression on the host with double precision and emit bytes; the 6510 never sees a float. That is why the two toolchains agree byte for byte with each other and with Python on every scaling above: all three round the same real number the same way, and the only decisions left are the cast (truncate or round) and the scaling. Oscar64's intrinsic declaration is what lets its constant folder treat `sin(constant)` as a constant; a call with a loop variable is not constant and is compiled against its 32-bit float library, which is where the 14,600 cycles per entry go.
+
+The integer unfold works because a rounded, zero-offset sine is odd about 180 degrees and even about 90 degrees, so 65 values determine all 256. The floor form `128 + 127.5 * sin` is not symmetric once floored: entry 64 is 255, so the mirror rule `t[128 + k] = 256 - t[k]` would put 1 at entry 192, where the floored table has 0. That is why the unfold targets `sin_r127` and not `sin_u8`.
+
+### Variations
+
+**Cosine from the same table.** `cos(a) = sin(a + 64)` for a 256-entry turn; index with `(x + 64) & 255`, which a byte index does for free. `effects-vector-3d.md` describes the 512-entry form that avoids even the add.
+
+**Two amplitudes from one table.** Store amplitude 127 and shift right for 63, 31, 15. For a signed table the shift must be arithmetic (`CMP #$80 : ROR`), and each shift loses a bit of precision; for non-power-of-two amplitudes build a second table.
+
+**Screen row tables.** `.fill 25, <(SCREEN + i * 40)` and the `>` twin, or `.lohifill 25, SCREEN + i * 40`, give the row address split into pages; Oscar64's `#for(i,25) Screen + 40 * i,` in a pointer array does the same (Oscar64 manual example).
+
+### Verification
+
+Every table above was dumped from the built binary and compared with a table generated by stdlib Python; every comparison was zero differences.
+
+KickAssembler: assemble with a symbol file, then slice the PRG at the label's address minus the load address.
+
+```
+java -jar KickAss.jar tables.asm -o tables.prg -symbolfile
+grep sin_u8 tables.sym            # .label sin_u8=$2000
+python3 -c "
+import math,re
+prg=open('tables.prg','rb').read(); load=prg[0]|prg[1]<<8
+a=int(re.search(r'sin_u8=\\\$([0-9a-f]+)',open('tables.sym').read())[1],16)
+got=prg[2+a-load:2+a-load+256]
+ref=bytes(math.floor(128+127.5*math.sin(math.radians(i*360/256))) for i in range(256))
+print(sum(1 for i in range(256) if got[i]!=ref[i]))"    # 0
+```
+
+Repeated for `sin_r127` (`128 + floor(127 * sin + 0.5)`), `sin_s8`, `sin_a40`, `sin_q` (65 entries), the `127.5 + 127.5` round form, the 512 bytes of `sin_w` and `recip`: 0, 0, 0, 0, 0, 0, 0 differences. `sin_q` is byte-identical to the 65-byte `quarter.bin` the Oscar64 generator embeds, and `sin_r127` is byte-identical to the 256-byte table that generator produces.
+
+Oscar64: `-n` writes a `.map` beside the PRG with one line per symbol (`0900 (0100) : sin_u8, DATA:data`); slice the PRG at that address.
+
+```
+oscar64 -tm=c64 -O2 -n -o=fold.prg fold.c
+grep sin_u8 fold.map | head -1    # 0900 - 0a00 : sin_u8, DATA:data
+python3 -c "
+import math
+prg=open('fold.prg','rb').read(); load=prg[0]|prg[1]<<8
+got=prg[2+0x900-load:2+0x900-load+256]
+ref=bytes(int(128+127.5*math.sin(i*3.141592653/128)) for i in range(256))
+print(sum(1 for i in range(256) if got[i]!=ref[i]))"    # 0
+```
+
+`sin_u8` from Oscar64 is byte-identical to `sin_u8` from KickAssembler, and the Oscar64 `sin_r127` and `sin_s8` folds matched Python with 0 differences each.
+
+The runtime generators were checked on the C64 itself: a self-checking program folds each 256-byte table into a 16-bit checksum (`chk = ((chk ^ byte) * 5 + 1) & 0xffff`) and prints PASS against the value Python computed. The float loop, the integer unfold and the `#embed` copy all printed PASS in VICE x64sc (`$6A73` for the floor form, `$A15E` for `sin_r127`, twice). The timer harness in the same program: stop CIA1, load timer A and timer B with `$FFFF`, start B counting A underflows (`CRB = $51`) and A counting phi2 (`CRA = $11`), call the generator, stop A, and read `(0xFFFF - TB) << 16 | (0xFFFF - TA)`; an empty call measured 54 cycles and was subtracted. Interrupts were off for the measurement, since the KERNAL's jiffy IRQ runs on the same timer A.
+
+### Cycle budget
+
+| Method | Bytes in PRG | Start-up cycles (PAL frames) | Exact to Python |
+|---|---|---|---|
+| KickAssembler `.fill`, 256 entries | 256 | 0 | yes, 0 diffs |
+| Oscar64 `#for` + `sin` in a const initialiser | 256 | 0 | yes, 0 diffs |
+| Oscar64 `#embed` of a host-built file | 256 | 0 | by construction |
+| Oscar64 integer quarter-wave unfold | 65 + code | 5,190 (0.26) | yes, checksum PASS |
+| Oscar64 runtime `sin` loop | 256 bss + float library | 3,739,920 (190) | yes, checksum PASS |
+
+Cycle figures are measured in VICE x64sc with the CIA harness above; the PAL frame is 19,656 cycles (63 x 312). A read from any of these tables is `LDA abs,X` at 4 cycles, 5 across a page boundary, which is why the KickAssembler tables sit at `* = $2000` and the Oscar64 one carries `#pragma align`; without the pragma the linker put `sin_u8` at `$0888` (measured). Placing the block on a page boundary is not enough on its own: each 256-byte table that follows is aligned only because the one before it is exactly 256 bytes. The 16-bit `sin_w` needs its own `.align $100` because the odd-sized 65-byte `sin_q` precedes it. Without the align it assembled to `$2441`, so its low half straddled `$2441` to `$2540` and its high half `$2541` to `$2640`, and every read with X at or above `$BF` crossed a page on both halves; with it, `sin_w` sits at `$2500` and its halves at `$2500` and `$2600` (measured from the symbol file of the page fragment, 0 diffs against Python at the new address). The align pads the gap with 191 bytes.
+
+### Recipes
+
+- `recipes/kickassembler/sine-scroller.md` (assembly-time `.fill` with `round()` and an `AMPLITUDE` constant)
+- `recipes/kickassembler/cracktro-template.md` (the same form, plus `row_lo` / `row_hi` screen tables)
+- `recipes/oscar64/sprite-multiplex-8.md` (fills `sinx` / `siny` at start-up with the float `sin` loop; the compile-time or integer forms above are the cheaper replacement)
+- No recipe yet for the reciprocal table; `techniques/effects-vector-3d.md` describes the projection it serves.

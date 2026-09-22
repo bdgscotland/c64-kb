@@ -216,7 +216,10 @@ than the visible area. The classic layout for a horizontally scrolling game:
 
 The soft-scroll register ($D016 XSCROLL) handles the 0–7 pixel fine phase.
 When XSCROLL wraps, the column copy fires. This is the canonical
-soft-scroll pattern described in `../techniques/scroll.md`.
+soft-scroll pattern described in `../techniques/scroll.md`. Decoding the
+map into that column (metatiles to characters and colour RAM, the RLE
+decoder, the CharPad import path) is `tile_map_render` on the same page,
+with the recipe `../recipes/oscar64/tile-map-render.md`.
 
 Vertical scrolling uses $D011 YSCROLL the same way, with a row copy at the
 8-pixel boundary.
@@ -600,8 +603,325 @@ digit glyphs.
 
 **Full-number convert (BCD to screen RAM):** If points are awarded in
 binary (e.g. physics-derived values), convert to BCD using the double-dabble
-algorithm before storing. Double-dabble on a 16-bit value costs ~300 cycles.
-Run it in VBlank or on score-change events, not every frame.
+algorithm before storing. Double-dabble on a 16-bit value costs 875
+cycles in assembly with decimal mode, including the unpack to five screen
+codes (measured in VICE x64sc 3.10 with CIA1 timer A; see "Printing
+numbers" below). An earlier version of this page said ~300 cycles, which
+was not measured. Run it in VBlank or on score-change events, not every
+frame.
+
+---
+
+### Printing numbers
+
+A binary value (a timer, a coordinate, a physics-derived score) has to
+become digits on the screen. That is two jobs: converting binary to
+decimal digits, and writing those digits into screen RAM.
+
+**Screen codes, no KERNAL.** Digits `0`-`9` are screen codes `$30`-`$39`,
+the same values as their PETSCII codes, so `digit + $30` is right whether
+you think in screen codes or PETSCII. Space is `$20` in both. Letters are
+not the same: `A` is screen code `$01` and PETSCII `$41`, so the hex
+digits `A`-`F` are `$01`-`$06` on screen. Store the byte at
+`$0400 + 40 * row + column` and set colour RAM at `$D800` once at start.
+CHROUT is not needed for a HUD: it costs a cursor, a colour write and a
+scroll check per character.
+
+**Subtract-powers.** For each power of ten from 10000 down to 10, count
+how many times it can be subtracted from the value; the count is the
+digit, and what is left after 10 is the units. A 16-bit value needs four
+powers, an 8-bit value two (100 and 10). The cost is proportional to the
+digit sum: 65535 takes 19 subtractions, 59999 takes 32 (the 16-bit worst
+case), 10000 takes one.
+
+**Double-dabble.** Shift the value out from the top bit into a BCD
+accumulator, doubling the accumulator each time. Before each doubling,
+any BCD nibble of 5 or more has 3 added so the doubling carries a ten out
+of it. On the 6502 the whole adjust step disappears: in decimal mode
+(`SED`) `adc` of a byte to itself doubles a packed BCD pair correctly.
+Sixteen passes of `asl / rol` on the value and three `adc` on the
+accumulator give five BCD digits in a fixed time, with no tables. C has
+no decimal mode, so a C double-dabble has to test every nibble and is the
+slowest route measured below.
+
+**Zero suppression and right alignment.** Print into a field of fixed
+width. Keep a `lead` flag set until the first non-zero digit; while it is
+set, a zero digit writes `$20` instead of `$30`. The last digit always
+prints, so 0 shows as `0`. Because the field is fixed and the leading
+cells are spaces, the value is right-aligned with no second pass. An
+arcade score with leading zeros is the same routine without the `lead`
+test.
+
+**Hexadecimal for debugging.** High nibble by four `lsr`, low nibble by
+`and #$0F`, each through a 16-entry screen-code table
+(`$30`-`$39`, `$01`-`$06`). Two cells per byte, 74 cycles from C
+(measured below), and it never lies about the byte the way a decimal
+routine with a bug can.
+
+**Measured cost of each route.** VICE x64sc 3.10, CIA1 timer A
+force-loaded from `$FFFF`, display blanked and the timing started at the
+next frame so no badline steals cycles, empty call subtracted: the
+figures are the body of the routine without `JSR` and `RTS` (rung 1).
+PAL and NTSC gave the same figures. The C listings are in
+`recipes/oscar64/print-number.md` and both KickAssembler routines are
+below; the same source assembled in a harness with the timer gave these
+numbers.
+
+| Route | Value | Cycles |
+|---|---|---|
+| KickAssembler subtract-powers (listing below) | 65535 | 879 |
+| KickAssembler subtract-powers | 59999, worst case | 1,243 |
+| KickAssembler double-dabble, decimal mode (listing below) | 65535 and 59999 | 875 |
+| Oscar64 C subtract-powers, `fmt_dec_sub` | 65535 | 957 |
+| Oscar64 C subtract-powers, `fmt_dec_sub` | 59999, worst case | 1,361 |
+| Oscar64 C double-dabble, nibble adjust, `fmt_dec_dab` | 65535 | 2,537 |
+| Oscar64 C hex byte, `fmt_hex8` | $FF | 74 |
+
+The last few cycles depend on code placement: the same double-dabble
+read 860 in an earlier build where its inner loop did not cross a page,
+and 875 after a 12-byte insertion moved it (fifteen taken branches at
+one extra cycle each, rung 3). A first version of the harness that
+blanked the display and timed at once read 9 per cent higher on NTSC,
+because the VIC-II samples the DEN bit once per frame, on line `$30`
+(VIC-II documentation, not measured here; what was measured is that the
+wait closes the 9 per cent NTSC gap). Both decimal routes were checked
+against Python over
+all 65,536 values (the `PASS` lines in the recipe).
+
+**Which to use where.**
+
+- Score kept in BCD (the routines above): no conversion at all. Unpack
+  nibbles, add `$30`, write. Cheapest by far.
+- 16-bit binary in assembly: double-dabble with `SED` (`dab_u16` below).
+  Fixed 875 cycles, no tables, 106 bytes with the unpack (the
+  subtract-powers routine below is 90 with its tables; both from the
+  assembler's symbol file, rung 1).
+  Subtract-powers wins only when
+  values are usually small, since its cost falls with the digit sum
+  (rung 3, not measured for small values here).
+- 16-bit binary from Oscar64 C: subtract-powers. The C double-dabble is
+  2.6 times slower. If the fixed cost matters, call the assembly
+  double-dabble through `__asm`.
+- 8-bit binary: subtract-powers with two powers, or a 256-entry table of
+  packed BCD if the 256 bytes are spare (not measured here).
+- Budget: 1,000 cycles is about 16 PAL raster lines (63 cycles per line,
+  rung 3). Fine once per frame in VBlank for one or two fields, and fine
+  on a score-change event. Do not convert inside a raster IRQ with a
+  deadline, and do not convert per actor per frame.
+
+**KickAssembler routine.** `num` holds the value and is destroyed; `dst`
+is a zero-page pointer to the first of five cells. The demo below prints
+65535 at the top left of the screen and returns to BASIC. This is the
+exact text that measured 879 and 1,243 cycles above.
+
+```asm
+// print_u16.asm -- 16-bit binary to five screen codes, right-aligned,
+// leading zeros as spaces, written straight to screen RAM.
+BasicUpstart2(start)
+
+.label dst   = $fb        // zero page pointer to the 5-cell field
+.label num   = $fd        // 16-bit value, destroyed by the routine
+.label digit = $02
+.label lead  = $03
+
+* = $0810
+start:
+    lda #<65535
+    sta num
+    lda #>65535
+    sta num+1
+    lda #<$0400           // top left of the default screen
+    sta dst
+    lda #>$0400
+    sta dst+1
+    jsr print_u16
+    rts
+
+// --- subtract-powers ------------------------------------------------------
+// In: num (16-bit, destroyed), dst -> 5 cells. Out: value right-aligned,
+// leading zeros as spaces. Uses digit, lead, A, X, Y.
+print_u16:
+    lda #$01
+    sta lead
+    ldy #$00
+    ldx #$00
+pu_loop:
+    lda #$2f              // one below '0': the first pass always increments
+    sta digit
+    sec
+pu_sub:
+    inc digit
+    lda num
+    sbc pow_lo,x
+    sta num
+    lda num+1
+    sbc pow_hi,x
+    sta num+1
+    bcs pu_sub            // still non-negative: subtract again
+    lda num               // overshot by one power: add it back (C is clear)
+    adc pow_lo,x
+    sta num
+    lda num+1
+    adc pow_hi,x
+    sta num+1
+pu_done:
+    lda digit
+    cmp #$30
+    bne pu_emit           // a real digit
+    lda lead
+    beq pu_zero           // a zero after a real digit
+    lda #$20              // a leading zero: space
+    sta (dst),y
+    bne pu_next           // always
+pu_zero:
+    lda #$30
+pu_emit:
+    sta (dst),y
+    lda #$00
+    sta lead
+pu_next:
+    iny
+    inx
+    cpx #$04
+    bne pu_loop
+    lda num               // 0..9 remains
+    ora #$30
+    sta (dst),y
+    rts
+
+pow_lo: .byte <10000, <1000, <100, <10
+pow_hi: .byte >10000, >1000, >100, >10
+```
+
+**KickAssembler double-dabble.** The same `num` and `dst`, plus three
+zero-page bytes at `bcd` for the packed accumulator. The demo prints
+65535 at the top left and returns to BASIC (run in VICE, rung 1). This
+is the exact text that measured 875 cycles above, and the `db_loop`
+whose page crossing moved the figure from 860.
+
+```asm
+// dab_u16.asm -- 16-bit binary to five screen codes by double-dabble in
+// decimal mode, right-aligned, leading zeros as spaces, written straight
+// to screen RAM. This is the text that measured 875 cycles.
+BasicUpstart2(start)
+
+.label dst   = $fb        // zero page pointer to the 5-cell field
+.label num   = $fd        // 16-bit value, destroyed by the routine
+.label lead  = $03
+.label bcd   = $04        // 3 bytes packed BCD
+
+* = $0810
+start:
+    lda #<65535
+    sta num
+    lda #>65535
+    sta num+1
+    lda #<$0400           // top left of the default screen
+    sta dst
+    lda #>$0400
+    sta dst+1
+    jsr dab_u16
+    rts
+
+// --- double-dabble with decimal mode -------------------------------------
+// In: num (16-bit, destroyed), dst -> 5 cells. Doubles a 3-byte packed BCD
+// accumulator in decimal mode 16 times, shifting one bit of num in each
+// time, then unpacks with the same zero suppression.
+dab_u16:
+    lda #$00
+    sta bcd
+    sta bcd+1
+    sta bcd+2
+    ldx #$10
+    sed
+db_loop:
+    asl num
+    rol num+1             // C = next bit, MSB first
+    lda bcd
+    adc bcd
+    sta bcd
+    lda bcd+1
+    adc bcd+1
+    sta bcd+1
+    lda bcd+2
+    adc bcd+2
+    sta bcd+2
+    dex
+    bne db_loop
+    cld
+    ldy #$00
+    lda #$01
+    sta lead
+    lda bcd+2
+    and #$0f
+    jsr db_digit
+    lda bcd+1
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr db_digit
+    lda bcd+1
+    and #$0f
+    jsr db_digit
+    lda bcd
+    lsr
+    lsr
+    lsr
+    lsr
+    jsr db_digit
+    lda bcd
+    and #$0f
+    ora #$30
+    sta (dst),y
+    rts
+db_digit:                 // A = 0..9
+    bne db_nz
+    ldx lead
+    beq db_nz             // zero after a real digit prints
+    lda #$20
+    sta (dst),y
+    iny
+    rts
+db_nz:
+    ora #$30
+    sta (dst),y
+    iny
+    lda #$00
+    sta lead
+    rts
+```
+
+**Oscar64 routine.** `fmt_dec_sub` from `recipes/oscar64/print-number.md`,
+which measured 957 and 1,361 cycles above. The recipe page carries the
+whole program, the exhaustive check and the timer harness; this is the
+routine on its own (not built by the gate on this page; it is the text
+the recipe built).
+
+```c
+// Subtract-powers. Writes five screen codes to dst: the value right-aligned,
+// leading zeros as spaces, so 0 becomes "    0" and 65535 fills the field.
+__noinline void fmt_dec_sub(unsigned v, char *dst)
+{
+    static const unsigned pow10[4] = { 10000, 1000, 100, 10 };
+    char lead = 1;
+    for (char i = 0; i < 4; i++)
+    {
+        unsigned p = pow10[i];
+        char d = 0x30;
+        while (v >= p) { v -= p; d++; }
+        if (d != 0x30 || !lead) { dst[i] = d; lead = 0; }
+        else dst[i] = 0x20;
+    }
+    dst[4] = 0x30 + v;               // v is 0..9 here
+}
+```
+
+Oscar64 -O2 keeps `v` in zero page and the digit count in a zero-page
+temporary, and the inner loop is a compare-and-subtract of about 32
+cycles per step (read from the compiler's `.asm` output, rung 1 for the
+shape, rung 3 for the per-step figure). `__noinline` is documented in the
+Oscar64 README; without it the compiler may inline the call at -O2.
 
 ---
 

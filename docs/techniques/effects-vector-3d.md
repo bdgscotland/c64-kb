@@ -34,7 +34,7 @@ The per-frame sequence is:
 1. Advance the rotation angles (two 8-bit counters, one per axis, incremented by a speed constant each frame).
 2. Recompute the six rotation coefficients from the sine/cosine table: `cos(ax)`, `sin(ax)`, `cos(ay)`, `sin(ay)`, and the four products needed for the combined matrix.
 3. For each point in the cloud, apply the rotation: compute transformed X, Y, Z from the original coordinates and the coefficients.
-4. Apply perspective projection: `screen_x = cx + (tx * FOCAL) / (tz + DEPTH_OFFSET)`, `screen_y = cy + (ty * FOCAL) / (tz + DEPTH_OFFSET)`. Division is a second lookup table: a reciprocal table indexed by Z.
+4. Apply perspective projection: `screen_x = cx + (tx * FOCAL) / (tz + DEPTH_OFFSET)`, `screen_y = cy + (ty * FOCAL) / (tz + DEPTH_OFFSET)`. Division is a second lookup table: a reciprocal table indexed by Z (built as in `table_generation`, `cpu-cycle-tricks.md`).
 5. Output the projected point to the display.
 
 Two display strategies exist:

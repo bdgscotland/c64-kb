@@ -65,5 +65,47 @@
       "pal": "screenshots/fixed-point-jump.png",
       "ntsc": "screenshots/fixed-point-jump-ntsc.png"
     }
+  },
+  "oscar64/tile-map-render": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/tile-map-render.png",
+      "ntsc": "screenshots/tile-map-render-ntsc.png"
+    }
+  },
+  "oscar64/print-number": {
+    "cycles": 400000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/print-number.png",
+      "ntsc": "screenshots/print-number-ntsc.png"
+    }
+  },
+  "oscar64/lfsr-random": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/lfsr-random.png",
+      "ntsc": "screenshots/lfsr-random-ntsc.png"
+    }
+  },
+  "oscar64/lfsr-random-seed2": {
+    "cycles": 20000000,
+    "models": [
+      "pal"
+    ],
+    "shots": {
+      "pal": "screenshots/lfsr-random-seed2.png"
+    }
   }
 }

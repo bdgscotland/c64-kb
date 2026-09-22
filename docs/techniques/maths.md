@@ -498,3 +498,144 @@ add sweep: the domain is symmetric in `i` and `j` and the xor cancelled.
 The `+ 13` breaks that. sim6502 was not used; `dotnet` runs on the
 machine but the harness above answers the question in one VICE run and
 its result is a screen the character ROM can decode.
+
+## lfsr_random — Linear-feedback shift register random numbers
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E
+
+### Why
+
+A game needs cheap pseudo-random bytes for spawn positions, noise
+pixels and starfields, and it needs the sequence to differ from one
+play to the next. A linear-feedback shift register (LFSR) gives the
+bytes in a dozen cycles with no table. The seed is what makes each game
+different, and the C64 has three sources for it: SID voice 3 noise, a
+CIA timer, and the moment the player first touches the controls.
+
+### How
+
+Galois form, shifting right. Shift the state right one bit; if the bit
+that fell out was 1, XOR the tap mask into the state. The state after
+each step is the output.
+
+- 8-bit: taps `$B8` (x^8 + x^6 + x^5 + x^4 + 1). Period measured at 255
+  from the three seeds the recipes ran (`$9219`, `$7A80`, `$BEEF`): the
+  recipe walks the full cycle from its live seed and counts (rung 1,
+  VICE x64sc 3.10). The full-cycle argument below covers the rest.
+- 16-bit: taps `$B400` (x^16 + x^14 + x^13 + x^11 + 1). Period measured
+  at 65535 the same way (rung 1).
+
+```
+step8:      lda s8          step16:     lsr s16+1
+            lsr                         ror s16
+            bcc +                       bcc +
+            eor #$b8                    lda s16+1
++           sta s8                      eor #$b4
+                                        sta s16+1
+                                    +
+```
+
+Seeding from SID voice 3. Write `$FFFF` to voice 3's frequency
+(`$D40E/$D40F`), gate the noise waveform (`$D412 = $81`), and set bit 7
+of `$D418` (3OFF) so voice 3 is silent while the volume nibble a music
+player owns is left alone; a game ORs the bit into its own `$D418`
+shadow rather than storing a fresh value. Then read `$D41B` twice, a
+few thousand cycles apart (the recipe calls an empty function 100 times
+between the reads, about 3,700 cycles by its own timing figure of 9,476
+cycles for 256 calls), for a 16-bit seed. In the recipe 255 of 255
+consecutive `$D41B` read pairs differed (rung 1), the reads a C loop
+iteration apart, so the register is moving at every read. In a headless
+VICE run the two reads land on the same values every time (the seed was
+`$9219` on PAL in every run, `$7A80` on NTSC), because the emulator's
+noise register starts from a fixed state and the program runs the same
+number of cycles to the read; that the seed varies on a real machine,
+where power-on state and load timing differ, is not measured here
+(rung 4). The seed is the noise register's state, not a clock, so it is
+only as unpredictable as the time between power-on and the read.
+
+Seeding from a CIA timer. `$DC04/$DC05` is CIA1 timer A, which the
+KERNAL leaves free-running for its jiffy interrupt. Read it as a 16-bit
+value and XOR it into the seed. Read at a fixed point after boot it is
+as reproducible as the SID read (the recipe prints `$251C` on PAL every
+run); read at a moment the player chose it is a good seed.
+
+Seeding from player input. Step the LFSR once per frame, or count
+frames, while the title screen waits for the first fire press
+(`joystick_edge_detect` in `techniques/input.md` gives the press). The
+count of frames the player took is the seed, and the timer read at that
+moment adds sixteen bits of sub-frame phase. The recipe cannot show this
+because a headless run has no player; the text here is the design, not
+a measurement.
+
+The all-zero state. A Galois LFSR maps state 0 to state 0: nothing falls
+out, nothing is XORed in, and every output is zero for ever. Check the
+seed and replace zero with a constant before the first step (the recipe
+uses `$ACE1`, and `$01` for the 8-bit register when its byte is zero).
+Two `$D41B` reads are both `$00` rarely, but the check costs four
+instructions and the failure is a game that never varies again. See the
+pitfall `lfsr_zero_state_lockup` in `pitfalls/cpu.md`.
+
+### Why it works
+
+The tap mask is a primitive polynomial over GF(2), so the shift-and-XOR
+map is a permutation of the 2^n - 1 non-zero states in one cycle. That
+is why the period is 255 and 65535 exactly and why a byte histogram over
+one period is flat. The recipe counts the low byte of every 16-bit state
+over the full period: each value 256 times, except `$00` 255 times,
+because state `$0000` is the one that is never visited (rung 1; the
+same figures come from the Python model). For the 8-bit register the
+same argument gives every non-zero byte once and zero never.
+
+A flat histogram is not independence. Successive states of a
+right-shifting register are the previous state shifted right with the
+taps folded into a few high bits, so the low byte of state n+1 is the
+low byte of state n shifted right with one new bit at the top. The
+recipe's first bytes show it: `86 43 A1 D0 E8 74 3A` is a right shift
+each step. For a byte a player could not guess by eye, take the high
+byte XOR the low byte, or step the register eight times per byte at
+eight times the cost. Noise pixels and spawn tables do not care; the
+recipe's mosaic paints the low nibble directly and every one of the 16
+colours lands between 43 and 53 times over 760 cells (measured off the
+PAL screenshot).
+
+The SID noise source is itself a 23-bit LFSR clocked by voice 3's
+oscillator; `hardware/sid-reference.md` (`$D41B`) has its readback
+rules, including that a held TEST bit drifts it to all ones and never to
+zero. `hardware/c64-registers-reference.md` lists the voice 3 and CIA
+registers.
+
+### Variations
+
+- 8-bit only: the whole state is the byte, 13 to 14 cycles a step, 255
+  bytes before repeating; enough for a starfield, not for a level
+  generator.
+- Fibonacci form (XOR several state bits into the new bit) gives the same
+  sequences at a higher cost; on the 6510 the Galois form is the one to
+  use because the feedback is a single `eor`.
+- Step several times per read, or XOR two registers of coprime period,
+  when the shift structure of consecutive bytes would show.
+
+### Cycle budget
+
+Measured with CIA1 timer A in the recipe: force-load `$FFFF`, 256 calls
+through a function pointer, read the count, with DEN clear so no badline
+interrupts the count (rung 1). Empty loop 9,476 cycles; 8-bit step
+12,933; 16-bit step 14,441. Per step: 13.5 cycles for the 8-bit register
+(13 without the tap, 14 with, absolute addressing) and 19.4 for the
+16-bit one (15 without, 24 with; half the steps take the tap). In zero
+page the same sequences cost 11 to 12 and 13 to 20 (rung 3, from the
+instruction table, not measured).
+
+### Recipes
+
+- `recipes/oscar64/lfsr-random.md` — seed from `$D41B`, mosaic, period,
+  checksum and histogram self-check, timing.
+- `recipes/oscar64/lfsr-random-seed2.md` — the same listing with a
+  fixed seed, to show a different seed gives a different picture.
+
+The checksum fold in those pages is `chk = ((chk ^ value) * 5 + 1) &
+0xFFFF`, folded from state 1 round the whole cycle so the expected
+value does not depend on the live seed; it is not the rotate fold used
+by `fpcheck.c` above.

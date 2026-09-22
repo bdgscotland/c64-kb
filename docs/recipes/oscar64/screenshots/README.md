@@ -47,6 +47,16 @@ build aborts before it draws.
   non-zero dropped counter are both in frame. `fixed-point-jump.png` /
   `-ntsc.png` are the jump arc at 8,000,000 cycles; the page quotes the
   table value and the sprite Y measured from the picture at that frame.
+- `tile-map-render.png` / `-ntsc.png` at 8,000,000 cycles: the decoded
+  metatile map, compared cell by cell (screen code and colour) against a
+  Python render of the same source data. `print-number.png` / `-ntsc.png`
+  at 400,000,000 cycles: the pinned run is long because the listing first
+  renders every value from 0 to 65535 through both decimal routes and
+  folds the digits into the checksums it prints. `lfsr-random.png` /
+  `-ntsc.png` at 20,000,000 cycles and `lfsr-random-seed2.png` (the same
+  listing with a fixed compile-time seed) show that a different seed gives
+  a different picture; the headless run seeds identically every time, so
+  the seed variation itself is stated on the page, not shown.
 
 Geometry of the PAL captures, measured rather than assumed: 384×272; text
 row 0 of the 25-row display window begins at PNG row 35 and column 0 at
