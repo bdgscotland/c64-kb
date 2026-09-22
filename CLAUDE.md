@@ -1,6 +1,6 @@
 # c64-kb — instructions for Claude Code
 
-This repository is a reference for AI coding agents: 69 markdown documents
+This repository is a reference for AI coding agents: 67 markdown documents
 about the Commodore 64 (hardware, techniques, pitfalls, recipes,
 toolchains), indexed two ways (Qdrant vectors, FalkorDB graph) and served
 over MCP. Thousands of people have read about it; fifty have cloned it. A

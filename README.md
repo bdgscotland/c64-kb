@@ -21,7 +21,7 @@ that do not fit in the badline window, SID filter cutoffs that differ between
 chip revisions. A model hallucinating cycle counts will produce code that
 assembles cleanly and crashes at runtime.
 
-c64-kb counters this with a curated, structured reference. 69 markdown
+c64-kb counters this with a curated, structured reference. 67 markdown
 reference documents are chunked and embedded into Qdrant for semantic
 retrieval, and the entities within them — registers, KERNAL routines, memory
 regions, techniques, recipes, pitfalls, and crash patterns — are materialized
@@ -52,7 +52,7 @@ training-data guesses.
 | MCP tools | 23 (+ 12 resources, 2 prompts) |
 | FalkorDB nodes | 557 across 12 node types |
 | FalkorDB edges | 1,233 across 15 edge types |
-| Qdrant chunks | 2,422 (from 75 markdown files, 1024-dim) |
+| Qdrant chunks | 2,516 (from 73 markdown files, 1024-dim) |
 | Technique nodes | 73 (10 categories), 19 with resource demands |
 | Pitfall nodes | 41 |
 | CrashPattern nodes | 15 |
@@ -64,7 +64,12 @@ training-data guesses.
 | License | BSD-3-Clause |
 
 Figures are from the ingest and health output at the commit that last
-touched this table; `npx c64-kb health` prints the live ones.
+touched this table; `npx c64-kb health` prints the live ones. The Qdrant
+chunk count is measured by running `chunkMarkdown` over all 73 files at
+this commit — what a clean ingest would upsert. It is not a live
+collection reading: run `npm run ingest:clean` to make the store agree.
+The previous figure, 2,422, had gone stale across two docs commits that
+did not update it.
 
 ---
 
@@ -246,7 +251,7 @@ dropped silently.
 **SQLite** (`data/analytics.db`): query analytics and gap detection. Records
 every tool call; surfaces queries with no results as gap candidates.
 
-**75 markdown files under `docs/`** — 69 reference documents (hardware,
+**73 markdown files under `docs/`** — 67 reference documents (hardware,
 techniques, pitfalls, recipes, toolchains, formats, design) and 6
 `CONVENTIONS-*.md` files that define the extractable structure. The same
 files drive both the vector chunks and the graph.
