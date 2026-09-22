@@ -46,11 +46,15 @@ low, can still complete any instruction that has no remaining bus cycles, but
 cannot issue new memory accesses. Three cycles later, the VIC takes the phi2
 bus for 40 cycles of screen RAM fetch, then releases it.
 
-The net CPU stall is 40 cycles — from 23 cycles available per line (PAL) instead
-of 63. Any raster handler that assumes a fixed 63-cycle budget per line will slip
-by 40 cycles on every badline it hits. With 8 sprites active, sprite DMA adds
-2 cycles per sprite on the sprite's first active line, pushing the stall to 43
-cycles and leaving only 20 usable cycles on a PAL badline.
+The VIC takes the bus for 40 cycles (15-54) and pulls BA low three cycles
+earlier, on cycle 12; the CPU can spend those three cycles only on write
+cycles. So a PAL badline leaves 20 CPU cycles guaranteed (1-11 and 55-63) and
+23 at best, not 23 flat. Any raster handler that assumes a fixed 63-cycle
+budget per line will slip by 40 or 43 cycles on every badline it hits. Sprite
+DMA is on top of that: each active sprite takes two bus cycles at the end of
+the line (cycles 55-62 for sprites 0-2, 1-10 of the next line for 3-7), with
+another three cycles of BA warning before the first, so a badline with all
+eight sprites active leaves the CPU almost nothing.
 
 ### Fix
 

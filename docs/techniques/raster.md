@@ -9,7 +9,7 @@ chip: VIC-II
 
 The VIC-II's raster counter is not merely a diagnostic readout — it is the primary synchronization primitive for every visual effect on the C64. The chip advances through 312 scanlines per frame on PAL (263 on NTSC), and the CPU can receive an interrupt the moment that counter matches a programmed compare value. That single mechanism, when exploited precisely, allows software to reconfigure VIC-II registers mid-frame: changing colors, switching display modes, adjusting scrolling offsets, repositioning sprites, or opening the hardware borders. Without raster control, the C64 renders one static screen per frame like any unadorned character terminal. With it, the same 1 MHz CPU can drive a completely different visual setup on every single scanline if the coder is willing to account for every cycle.
 
-The discipline required is severe. The VIC-II reads its registers continuously and asynchronously — writes take effect on the current dot clock cycle, not at a "safe" point in the frame. Raster compare IRQs fire with 1-2 cycles of jitter due to the variable instruction-completion behavior of the 6510. Badlines steal 40 cycles per line from the CPU without warning unless the coder explicitly tracks them. Opening the side borders requires a write that lands within a window of roughly 23 cycles out of every 63. Every technique in this document exists because the raw mechanism is too imprecise or too resource-hungry on its own, and the C64 demo tradition has refined ways to work around each limitation. Stable raster IRQ is the foundation on which all others rest.
+The discipline required is severe. The VIC-II reads its registers continuously and asynchronously — writes take effect on the current dot clock cycle, not at a "safe" point in the frame. Raster compare IRQs fire with 1-2 cycles of jitter due to the variable instruction-completion behavior of the 6510. Badlines steal 40 cycles per line from the CPU without warning unless the coder explicitly tracks them. Opening the side borders requires a write whose write cycle is one specific cycle of the 63. Every technique in this document exists because the raw mechanism is too imprecise or too resource-hungry on its own, and the C64 demo tradition has refined ways to work around each limitation. Stable raster IRQ is the foundation on which all others rest.
 
 ---
 
@@ -176,11 +176,11 @@ NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), b
 ### Cycle budget
 
 PAL, non-badline: 63 cycles total.
-PAL, badline: 63 - 40 = 23 cycles available (effectively; the 40 cycles are consumed by VIC DMA and the CPU is stalled for them).
+PAL, badline: 20 cycles guaranteed (cycles 1-11 and 55-63). The VIC pulls BA low on cycle 12 and takes the bus for its 40 c-accesses on cycles 15-54; on cycles 12-14 the CPU may only complete write cycles, so "23" is the figure for code that happens to be writing then, and 20 is the one to plan on.
 NTSC, non-badline: 65 cycles total.
-NTSC, badline: 65 - 40 = 25 cycles available.
+NTSC, badline: 22 cycles guaranteed, 25 with three write cycles.
 
-For cycle-tight code running on every line, the badline constraint means the worst case is 23 cycles per line on PAL. Any per-line loop must complete in 23 cycles or less to be badline-safe, or must handle the bad-line case separately.
+For cycle-tight code running on every line, the badline constraint means the worst case is 20 cycles per line on PAL. Any per-line loop must complete in 20 cycles or less to be badline-safe, or must handle the bad-line case separately. Note also that a badline moves every later instruction on that line by 40 cycles: a write planned for cycle 56 cannot be placed there at all, because no read can happen between cycles 12 and 54 and every store's write follows a read.
 
 ### Recipes
 
@@ -330,9 +330,9 @@ The right side border and left side border require separate toggles because the 
 
 ### Cycle budget
 
-PAL: the critical window for the right-border CSEL toggle is cycle 55 ± 0 (1 cycle window in practice, though some implementations claim a 2-cycle margin depending on the VIC-II revision). The left-border toggle must hit cycle 1 or 2.
+PAL: the border flip-flop is set at X=335 when CSEL=0 and at X=344 when CSEL=1, which the beam reaches on cycles 55 and 56. CSEL must go from 1 to 0 between those two comparisons, so the write cycle that clears it has to be cycle 56, a one-cycle window. There is no separate left-border toggle: once the flip-flop has not been set on the right, the next line's left border is not drawn either. CSEL goes back to 1 any time before the next line's cycle 55.
 
-Per-line cost for full side-border opening (both sides): 4 writes to $D016 = 16 cycles. On PAL non-badlines (63 cycles available), this leaves 47 cycles for other work. On badlines (23 cycles available), a full 16-cycle border-open write set consumes 70% of the line's available budget.
+Per-line cost: one `DEC $D016` (6 cycles, new value written on its last cycle) and one `INC $D016` to restore, 12 cycles, plus whatever keeps the loop at exactly 63. On a badline it cannot be done at all: the CPU has no read cycle between 12 and 54, and a write on 56 needs a read on 55 at the latest, which puts the write on 58. Side-border regions are therefore badline-free (idle display, or YSCROLL rewritten each line) or accept a closed border on badline rows. With sprites active the write still lands: BA drops on cycle 55 for sprite 0, the 6510 completes up to three write cycles after BA drops, and `DEC`'s two writes are on 55 and 56. See `recipes/kickassembler/sideborder-open.md`, where this is measured.
 
 Border-opening IRQ overhead combined with a sprite multiplex update on the same line can push the line's cycle budget into deficit on badlines. The standard mitigation is to move the sprite Y coordinate update to the preceding line.
 
@@ -445,7 +445,7 @@ The YSCROLL field ($D011 bits 2-0) interacts with mode changes: if YSCROLL chang
 
 Each raster split costs: 3 writes ($D011, $D016, $D018) × 4 cycles = 12 cycles minimum. With IRQ overhead (13-20 cycles), a mode split consumes approximately 25-35 cycles on the split line.
 
-On a badline, a mode-split IRQ has only 23 usable cycles on PAL. A 12-cycle triple write fits, but combined with IRQ overhead it is tight. The standard mitigation is to position the mode split on a non-badline.
+On a badline, a mode-split IRQ has only 20 usable cycles on PAL (cycles 1-11 and 55-63; 12-14 for writes only). A 12-cycle triple write fits, but combined with IRQ overhead it is tight. The standard mitigation is to position the mode split on a non-badline.
 
 YSCROLL manipulation during a mode split requires a fourth write to $D011 — but since $D011 carries both YSCROLL and mode bits, the YSCROLL write and the mode-bit write must be combined into one read-modify-write, costing 10 cycles instead of 4 for two separate stores. If the mode bits and YSCROLL value are known in advance, a precomputed combined value can be stored directly in 4 cycles.
 

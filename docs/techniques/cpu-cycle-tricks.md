@@ -49,11 +49,11 @@ The same pattern applies to the low byte of an absolute-address operand (at `ins
 KickAssembler provides a clean way to express this without computing the +1 offset manually:
 
 ```asm
-; KickAssembler: define the operand label explicitly
+// KickAssembler: define the operand label explicitly
 lda_color:
     lda #$00
     .const lda_color_operand = lda_color + 1
-; later:
+// later:
     lda desired_color
     sta lda_color_operand
 ```
@@ -305,13 +305,13 @@ Demos that take over the machine fully (disable BASIC and KERNAL ROMs, install c
 In KickAssembler, declare zero-page variables explicitly:
 
 ```asm
-.var zp_counter = $02
-.var zp_color   = $03
-.var zp_ptr_lo  = $FA
-.var zp_ptr_hi  = $FB
+.const zp_counter = $02
+.const zp_color   = $03
+.const zp_ptr_lo  = $FA
+.const zp_ptr_hi  = $FB
 
-    lda (zp_ptr_lo),y   ; 5 cycles — indirect indexed from zero page
-    sta zp_counter      ; 3 cycles — write to zero page
+    lda (zp_ptr_lo),y   // 5 cycles — indirect indexed from zero page
+    sta zp_counter      // 3 cycles — write to zero page
 ```
 
 ### Why it works
@@ -408,13 +408,13 @@ The canonical pattern is a dual-entry loader:
 
 ```asm
 entry_a:
-    lda #$01            ; 2 bytes: opcode $A9, operand $01
-    .byte $2C           ; 1 byte: BIT abs opcode — eats next 2 bytes
+    lda #$01            // 2 bytes: opcode $A9, operand $01
+    .byte $2C           // 1 byte: BIT abs opcode — eats next 2 bytes
 entry_b:
-    lda #$02            ; 2 bytes: opcode $A9, operand $02
-                        ; When fallen through from entry_a: these 2 bytes
-                        ; are consumed as the "abs" operand of BIT, and
-                        ; execution continues at the instruction AFTER lda #$02
+    lda #$02            // 2 bytes: opcode $A9, operand $02
+                        // When fallen through from entry_a: these 2 bytes
+                        // are consumed as the "abs" operand of BIT, and
+                        // execution continues at the instruction AFTER lda #$02
 do_work:
     sta result
 ```
@@ -482,11 +482,11 @@ The BIT trick saves 1 byte at the cost of 1 extra cycle on the "path A" executio
 
 VIC-II bus-stealing (also called "bad lines") occurs when the VIC needs to fetch character or bitmap data for the current raster line. During these fetches, the VIC asserts AEC (Address Enable Control) low for a fixed number of phi1 half-cycles, placing the address bus under VIC control and preventing the CPU from completing bus cycles. The CPU is effectively halted for 40 cycles on each badline (every 8th displayed line in the character set window).
 
-The standard response is to work around bad lines: minimize computation, precompute, and accept that badline rows cost 40 cycles of CPU time. The advanced response is phase-inverted IRQ scheduling: instead of firing IRQs at the start of each line (where they may or may not land on a badline), fire IRQs timed to land in the free portion of the cycle budget where VIC bus activity is light or absent. On non-badlines, the full 63 cycles are available to the CPU; on badlines, 23 usable cycles remain (63 - 40). By scheduling IRQs to avoid the 40-cycle steal window, code can maintain a more predictable per-IRQ cycle budget.
+The standard response is to work around bad lines: minimize computation, precompute, and accept that badline rows cost 40 cycles of CPU time. The advanced response is phase-inverted IRQ scheduling: instead of firing IRQs at the start of each line (where they may or may not land on a badline), fire IRQs timed to land in the free portion of the cycle budget where VIC bus activity is light or absent. On non-badlines, the full 63 cycles are available to the CPU; on badlines, 20 cycles are guaranteed (23 if the CPU happens to be in write cycles when BA drops on cycle 12). By scheduling IRQs to avoid the 40-cycle steal window, code can maintain a more predictable per-IRQ cycle budget.
 
 ### How
 
-Badlines occur at raster lines where `(raster_y & 7) == (YSCROLL & 7)`. With default YSCROLL = 3, they fall every 8th visible line (rows 51, 59, 67, ... 243 on PAL). Within each badline, VIC steals cycles 15-54 — leaving 23 free cycles (cycles 0-14 and 55-62).
+Badlines occur at raster lines where `(raster_y & 7) == (YSCROLL & 7)`. With default YSCROLL = 3, they fall every 8th visible line (rows 51, 59, 67, ... 243 on PAL). Within each badline, VIC steals cycles 15-54 and holds BA low from cycle 12 — leaving 20 free cycles (1-11 and 55-63) plus cycles 12-14 for write accesses only.
 
 A phase-inverted IRQ fires on the non-badline immediately preceding the target badline. The IRQ handler executes in the full 63-cycle non-badline, busy-waits through the badline steal window, then performs cycle-exact writes in the post-steal free cycles:
 

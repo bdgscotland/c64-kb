@@ -237,27 +237,57 @@ FLI (Flexible Line Interpretation) breaks this constraint by re-uploading new sc
 
 ### How
 
-FLI requires a stable raster IRQ (see `docs/techniques/raster.md` stable_raster_irq) on each visible scanline. The IRQ handler executes during the badline cycle and updates $D018 to point to a new 1 KB screen RAM segment for the upcoming scanline. By preparing 200 different screen RAM areas — one per visible row — and cycling through them, each scanline renders with a fresh color palette.
+FLI makes *every* display line a badline. The chip only reloads its 40-entry
+colour latch on a badline, and a badline is any line where `(line & 7) ==
+YSCROLL`; so on each line the code writes YSCROLL = line & 7 into $D011, and
+before that writes $D018 to point at the screen page that holds this line's
+colours. Two writes per line, 200 lines, from one stable raster entry at the
+top of the frame; there are no per-line interrupts, and could not be, since
+a badline leaves the CPU 20 cycles.
 
 The full FLI setup:
 
-1. Prepare 200 (or 25 groups of 8) screen RAM buffers, each 1000 bytes, positioned at valid $D018 VM boundaries within the VIC bank. In practice, FLI typically uses 8 screen RAM pages of 1 KB each, cycling modulo 8.
-2. Pre-fill each screen RAM page with the color nibbles appropriate for cells on that scanline.
-3. Place the 8000-byte multicolor bitmap at $0000 or $2000 in the VIC bank.
-4. Set up stable raster IRQs, one per scanline, in the visible range.
-5. In each IRQ, write the next screen RAM page index into $D018 bits 7-4.
+1. Eight 1 KB screen RAM pages in the same 16 KB VIC bank as the bitmap
+   (line `l` uses page `l & 7`), each pre-filled with that line's colour
+   nibbles. Bank 0 is too crowded below $2000; FLI displays usually live in
+   bank 1 or 3.
+2. The 8000-byte multicolor bitmap at offset $2000 in the bank; $D016 with
+   MCM set.
+3. A stable raster IRQ (double IRQ) a few lines above the display, then a
+   delay to the first display line, which is a natural badline and stalls
+   the CPU to cycle 55 whatever the delay's exact length was.
+4. For each line from the second to the last, unrolled: `LDA #page / STA
+   $D018 / LDA #$38|(line&7) / STA $D011`, padded so the $D011 write's
+   badline condition arises on cycle 15. The CPU then stalls until cycle 55,
+   which is what makes each line's block start on the same cycle as the
+   last without any counting of the stall itself.
 
-The timing demand is severe: $D018 must be written before the chip begins its c-accesses for the upcoming badline. On PAL, the stable IRQ handler must commit the write within roughly 23 CPU cycles of the start of the badline scanline. This is why FLI is PAL-focused: NTSC has a marginally different timing relationship between IRQ entry and the badline window, making stable writes harder to achieve consistently.
+Why cycle 15 and not earlier: in cycle 14 the VIC resets its row counter RC
+to 0 if the badline condition holds *in that cycle*. A condition already
+true in cycle 14 on every line would keep RC at 0 and display the first
+line of the first character row forever. With the previous line's YSCROLL
+still in the register during cycle 14, the condition is false there, RC
+counts normally and the rows advance; the write on 15 then triggers the
+c-accesses late. Why not later: c-accesses start three cycles after BA
+drops and skip the columns whose slot has passed, and those columns read
+$FF. Cycle 15 loses three columns; every cycle later loses one more.
 
-The first scanline of each character row is a badline; the remaining seven are not. The FLI trick works by writing $D018 on the non-badline before a badline, causing the chip to reload its internal 40-entry color latch from the newly pointed screen RAM on the next badline. On the seven non-badlines between two badlines, the chip uses the latch it loaded on the last badline — updating $D018 on non-badlines changes what the chip will load on the *next* badline, not what is currently displayed.
+That is the FLI bug: the three leftmost character columns of every line
+show colour $F in both nibbles, light grey (in multicolour mode, both the
+%01 and %10 pixels). It is intrinsic to the method on the 6569 and the
+6567; FLI pictures cover it with sprites, a border, or content that does
+not mind.
 
-The actual achievable color resolution of FLI on real hardware is 160x200 with one full set of four colors per 8x8 cell per scanline, for an effective 8000 distinct color quad-sets rather than 1000.
+The colour resolution is 160x200 with four colours per 4x1 cell-line
+(background, two from the line's screen page, one from Colour RAM, which is
+not paged and stays per 8x8 cell), for 8000 distinct colour sets instead of
+1000.
 
 ### Why it works
 
-The VIC-II's c-access mechanism fetches 40 screen RAM bytes into an internal 40x12-bit latch during cycles 15-54 of each badline. The chip uses that latch to drive per-cell color output for the next 8 raster lines until the next badline. Crucially, the address it uses for the c-fetch comes from $D018 VM bits at the time of the c-access, not at the time of the last write. By updating $D018 between the chip's observation of the "this line is a badline" condition and its actual c-fetch window (cycles 15-54), the handler redirects the fetch to a fresh page.
+The VIC-II's c-access mechanism fetches 40 screen RAM bytes into an internal 40x12-bit latch during cycles 15-54 of each badline, and uses that latch for every line until the next badline. The address it fetches from is whatever $D018's VM bits say at the moment of each c-access. FLI forces a badline on every line and has $D018 already pointing at the line's page when the condition arises, so every line's latch is filled from a different page. The badline condition is evaluated every cycle, not only at the start of the line, which is what allows the code to *create* one mid-line with a $D011 write.
 
-The stable raster technique ensures the IRQ handler runs at a known cycle, enabling the $D018 write to land consistently before cycle 15.
+The stable raster entry is needed once, at the top: after that the natural badline on the first display line and the forced badlines on every line after it re-phase the CPU to cycle 55 each time, so the per-line code is straight-line and self-timing. Measured in VICE for `recipes/kickassembler/fli-image.md`: with the $D011 write placed for cycle 15 the picture shows three grey columns; one cycle later the grey band is a column to the right and column 0 keeps a stale colour; one cycle earlier the display repeats a row.
 
 ### Variations
 
@@ -269,15 +299,19 @@ The stable raster technique ensures the IRQ handler runs at a known cycle, enabl
 
 ### Cycle budget (PAL)
 
-FLI on PAL budgets roughly as follows per scanline:
+FLI on PAL, per display line:
 
-- IRQ entry overhead (push + dispatch): ~7 cycles
-- Stable raster synchronization (double-IRQ overhead): ~14 cycles on the setup scanline
-- $D018 write: 4 cycles (lda #value, sta $d018)
-- IRQ exit and ack ($D019): 4 cycles
-- Total handler per line: ~25-30 cycles
+- VIC bus: 40 cycles (15-54), BA low from 12.
+- `LDA # / STA $D018 / LDA # / STA $D011`: 12 cycles, the last write on 15.
+- Padding between the end of one line's stall (cycle 55) and the next
+  block: 11 cycles.
+- Left for anything else: nothing. Sprites active in the FLI region would
+  add their own bus cycles and move the stall; music and logic run in the
+  112 border lines.
 
-On a PAL badline, the CPU has approximately 20 cycles. The $D018 write must occur before cycle 15. A tightly written FLI handler that enters via double-IRQ and writes immediately uses fewer than 10 cycles before the critical write, making this achievable with careful cycle counting.
+Code size: 16 bytes per line unrolled, 3.2 KB for 200 lines. The old
+figure of "25-30 cycles per line" for an IRQ-per-line handler described
+something that does not fit in a badline and was never run.
 
 On NTSC, the same timing window exists but the badline onset relative to IRQ fire differs by one to two cycles due to the different cycles-per-line count (65 vs 63). NTSC FLI is possible but requires separate cycle counting from PAL.
 
