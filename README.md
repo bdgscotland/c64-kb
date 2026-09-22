@@ -51,9 +51,9 @@ training-data guesses.
 | Phases complete | 0–6 + 7a |
 | MCP tools | 23 (+ 12 resources, 2 prompts) |
 | FalkorDB nodes | 557 across 12 node types |
-| FalkorDB edges | 1,233 across 15 edge types |
+| FalkorDB edges | 1,233 across 15 edge types (schema 18; schema 19 adds REQUIRES and MITIGATED_BY, 17 types — re-count after `npm run ingest:clean`) |
 | Qdrant chunks | 2,422 (from 75 markdown files, 1024-dim) |
-| Technique nodes | 73 (10 categories), 19 with resource demands |
+| Technique nodes | 73 (10 categories), 19 with resource demands (20 after `npm run ingest:clean`: `text_zoom` gains `**Demands:** midframe_raster_irqs`) |
 | Pitfall nodes | 41 |
 | CrashPattern nodes | 15 |
 | Recipe nodes | 17 (8 Oscar64, 8 KickAssembler, 1 cc65), all built by `check:listings` |
@@ -159,21 +159,21 @@ carries a placeholder entry for vice-mcp.
 |------|---------|
 | `c64_recipe_lookup` | Structured Recipe lookup by canonical name (e.g. `oscar64-stable-raster-irq`) |
 | `c64_recipes_for` | List recipes filtered by toolchain / region / technique / file format |
-| `c64_technique_lookup` | Technique lookup with USES Registers/KernalRoutines + implementing recipes + REQUIRES_REGION |
-| `c64_techniques_for` | List techniques filtered by category / chip / region / register / recipe |
+| `c64_technique_lookup` | Technique lookup with USES Registers/KernalRoutines + implementing recipes + REQUIRES_REGION + REQUIRES in both directions + pitfalls it mitigates |
+| `c64_techniques_for` | List techniques filtered by category / chip / region / register / recipe / requires (what builds on a technique, following the REQUIRES chain) |
 
 ### Compatibility and timing
 
 | Tool | Purpose |
 |------|---------|
-| `c64_check_compatibility` | Conflict detection across a list of techniques: hard conflicts from authored resource demands (CPU every line, constant sprite set, KERNAL banked out) and region mismatch; soft ones from shared registers / KERNAL routines; reports what the graph does not know about each technique |
+| `c64_check_compatibility` | Conflict detection across a list of techniques: hard conflicts from authored resource demands (CPU every line, constant sprite set, KERNAL banked out) and region mismatch; soft ones from shared registers / KERNAL routines; runs the hard rules through each technique's REQUIRES closure (`prerequisite_conflict`) and names the prerequisites the set leans on without naming; reports what the graph does not know about each technique |
 | `c64_timing_budget` | Per-scanline + per-frame cycle math for a technique on PAL or NTSC |
 
 ### Pitfalls and failure analysis
 
 | Tool | Purpose |
 |------|---------|
-| `c64_pitfalls_for` | Pitfalls triggered by a register, KERNAL routine, or technique name |
+| `c64_pitfalls_for` | Pitfalls triggered by a register, KERNAL routine, or technique name, and the pitfalls a technique mitigates (`triggered_by[]` and `mitigated_by[]` apart) |
 | `c64_failure_diagnose` | Match a symptom description against CrashPattern nodes (relevance ranked) |
 
 ### Synthesis and briefings
@@ -217,7 +217,7 @@ c64://register/{name}  (structured data for one register, e.g. c64://register/D0
 ## Architecture
 
 Full system diagrams and data-flow documentation: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Graph schema (12 node types, 15 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
+Graph schema (12 node types, 17 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
 
 ### Components
 
@@ -235,7 +235,7 @@ when Ollama is unavailable; ingest does not.
 **FalkorDB** (Docker, host port 7379): Redis-compatible knowledge graph.
 Graph name `c64`. 12 node types (`Chip`, `Region`, `Register`,
 `KernalRoutine`, `MemoryRegion`, `Technique`, `Recipe`, `Pitfall`,
-`CrashPattern`, `Tool`, `FileFormat`, `Resource`) and 15 edge types. Range
+`CrashPattern`, `Tool`, `FileFormat`, `Resource`) and 17 edge types. Range
 indexes and unique constraints on every primary key. Two-pass ingest: node
 creation in pass 1, edge linking in pass 2, so walk order does not affect
 edge correctness; a reference whose target does not exist is reported, not

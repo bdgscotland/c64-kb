@@ -250,11 +250,16 @@ timer A latch value is:
 and the reload takes one cycle.)
 
 The KERNAL's default IRQ setup uses CIA #1 timer A to fire at roughly
-60 Hz on NTSC and 50 Hz on PAL. The default latch values written by
-KERNAL reset on a stock NTSC machine are $42C5; on a stock PAL machine,
-$4CC6. Many games disable the KERNAL IRQ and reprogram timer A to
-their own value (often once-per-frame, sometimes higher rates for
-music routines that run faster than the frame rate).
+60 Hz on both regions, not once per frame: IOINIT at $FDDD loads
+$4025 (16,421 cycles, 60.0 Hz at 985,248 Hz) when $02A6 says PAL and
+$4295 (17,045 cycles, 60.0 Hz at 1,022,727 Hz) when it says NTSC —
+the bytes of `kernal-901227-03.bin`, read here. **Correction
+(2026-09-22):** this paragraph said the reset values were $4CC6 on
+PAL and $42C5 on NTSC, the once-per-frame values from the table
+above; the ROM does not write those. Many games disable the KERNAL
+IRQ and reprogram timer A to their own value (often once-per-frame,
+sometimes higher rates for music routines that run faster than the
+frame rate).
 
 ### Music tempo
 
@@ -281,20 +286,38 @@ horizontal) must be toggled differs slightly between PAL and NTSC.
 
 ### Top/bottom border (vertical) opening
 
-To open the top or bottom border, code must clear $D011 bit 3 (24
-rows mode) just before the VIC-II compares the current raster line
-against the bottom-border-enable threshold (line 251 in 24-row mode,
-line 247 in 25-row mode), then restore it.
+The vertical border flip-flop is set when the raster reaches the
+bottom comparison line — 251 in 25-row mode (RSEL=1), 247 in 24-row
+mode (RSEL=0) — and reset at the top comparison line (51 or 55) while
+DEN is set; nothing else sets it (Bauer §3.9). To open the borders,
+code clears $D011 bit 3 after line 247 has passed and before line 251
+arrives, and sets it again before the next frame's line 247. The
+bottom comparison then never matches, and both the bottom border and
+the next frame's top border are drawn as background; there is no
+separate top-border write. An earlier version of this paragraph had
+the two lines swapped (251 for 24-row mode, 247 for 25-row mode).
+Measured in VICE x64sc 3.10; see
+`recipes/kickassembler/topbottom-border-open.md`.
 
-The open window is:
+The window for the clearing write, for a raster IRQ whose store lands
+after the handler is entered on cycle 37 or later:
 
-- PAL: lines 247-251 (5 lines, ~315 cycles)
-- NTSC R8: lines 247-251 (5 lines, ~325 cycles)
-- NTSC R56A: lines 247-251 (5 lines, ~320 cycles)
+- PAL: lines 248-250 (3 lines, 189 cycles)
+- NTSC R8: lines 248-250 (3 lines, 195 cycles)
+- NTSC R56A: lines 248-250 (3 lines, 192 cycles; arithmetic from the
+  line length, not measured)
 
-The line range is identical because the comparison register is
-internal to the VIC-II and uses the same constant. The cycle
-budget differs because each line has a different cycle count.
+Line 247 is too early — the write lands before that line's cycle-63
+comparison, which then sees RSEL=0 and matches — and line 251 is too
+late, because the comparison at the left edge of 251 (X=24) has
+already set the flip-flop before the handler runs. Both measured on
+PAL and NTSC R8. The earlier text gave the window as lines 247-251,
+five lines.
+
+The line range is identical across chips because the comparison
+values are internal to the VIC-II and do not depend on the line
+count. The cycle budget differs because each line has a different
+cycle count.
 
 ### Side border (horizontal) opening
 
@@ -410,7 +433,9 @@ not_high:
     ; $137 (PAL), $106 (NTSC R8), or $105 (R56A). The cleanest
     ; discriminator is to read $D012 one more time at the
     ; moment $D011 RST8 went from 1 -> 0 (that's the wrap).
-    ; Simpler: read $D012 when RST8=1 just before wrap.
+    ; Simpler: keep the last $D012 seen while RST8=1 -- that is
+    ; Method 2 below. A single read taken as RST8 rises returns
+    ; $00 on every chip (see the correction under Method 2).
     ...
     cli
     rts
@@ -477,51 +502,121 @@ between the NTSC R8 cycle count (17,095) and the PAL cycle count
 
 ### Method 2: Read $D012 wrap point
 
-Wait for $D011 bit 7 to go high (i.e., raster line ≥ 256), then
-poll $D012 until it stops counting up. The last value before wrap
-is the discriminator:
+Wait for $D011 bit 7 (RST8) to be clear, then set; while it
+stays set keep the most recent $D012; when it clears, the kept
+value is the low byte of the frame's last line:
 
-- PAL: $D012 reaches $37 (55) then wraps -> max line 311
-- NTSC R8: $D012 reaches $06 (6) then wraps -> max line 262
-- NTSC R56A: $D012 reaches $05 (5) then wraps -> max line 261
+- PAL 6569: $37 (55) -> last line 311, 312 lines per frame
+- NTSC 6567R8: $06 (6) -> last line 262, 263 lines
+- NTSC 6567R56A: $05 (5) -> last line 261, 262 lines
 
-Practical discriminator: read $D012 when $D011 bit 7 is 1. If
-the value is ever $10 or higher, you're on PAL.
+The line counts are the settled figures; the three bytes were
+measured in VICE x64sc 3.10 (`-model` default, `ntsc`,
+`oldntsc`). For a PAL/NTSC answer alone, any $D012 of $10 or
+more while RST8 is set means PAL — lines 272–311 exist on no
+NTSC chip.
 
-```
-; Detect PAL vs NTSC by raster line wrap. Carry clear = NTSC,
-; carry set = PAL.
-detect_pal:
+```kick
+// Detect the VIC-II by the last raster line of the frame.
+// On exit: A = last $D012 value seen while RST8 was set:
+//   $37 = 6569 (PAL)   $06 = 6567R8 (NTSC)   $05 = 6567R56A (NTSC)
+// For PAL/NTSC only, cmp #$10 afterwards: carry set = PAL.
+detect_region:
     sei
+wait_lo:
+    bit $d011
+    bmi wait_lo             // if already inside the RST8 band, let it finish
 wait_hi:
-    lda $D011
-    bpl wait_hi         ; wait for RST8=1
-    lda $D012
-    cmp #$10            ; >= $10 means PAL (NTSC tops at $06/$05)
-    bcs is_pal
-    clc
-    rts
-is_pal:
-    sec
+    bit $d011
+    bpl wait_hi             // RST8 rises: line 256 on every chip
+track:
+    lda $d012               // sample the low byte...
+    bit $d011
+    bpl band_over           // ...kept only if RST8 was still set
+    tax
+    jmp track
+band_over:
+    txa
+    cli
     rts
 ```
 
-This is the shortest reliable detect. It does not distinguish
-R8 from R56A — for that, a longer frame-counting routine like
-Method 1 is needed.
+26 bytes (assembler count). The sampling loop is 15 cycles, so
+every line of the band is read at least four times and the last
+line cannot be missed. The `wait_lo` loop is not there for calls
+that land mid-band — the lines such a call skips are the smaller
+values, and this listing with `wait_lo` deleted still returned
+$37 when entered on PAL lines 256 and 300 (VICE x64sc 3.10). It
+closes a race at the other end of the band: a call landing in the
+last cycles of line 311 takes `lda $d012` on that line and
+`bit $d011` on line 0, so `bpl band_over` is taken before the
+first `tax` and A is whatever X held before the call. Measured:
+the listing without `wait_lo`, entered on PAL line 311 with X
+preloaded to $EE and the entry phase swept in 4-cycle steps,
+returned $EE at two of sixteen phases and $37 at the rest; with
+`wait_lo` restored both of those phases returned $37. With it,
+`wait_hi` can only exit at line 256. (Until 2026-09-22 this
+paragraph gave the mid-band reason; it was wrong.) How long the
+routine runs depends on the entry line: 57 lines at best on PAL,
+called from line 255, and 368 at worst, called as RST8 rises —
+the rest of that band, 256 lines, and a whole band again — and 8
+to 270 lines on the 6567R8; measured with CIA 1 timer A around
+this listing as 3,575 and 23,172 cycles on PAL, 500 and 17,535
+on the 6567R8, 432 and 17,131 on the 6567R56A.
 
-### Method 3: Check the KERNAL detect byte (some KERNALs only)
+**Correction (2026-09-21).** The listing that stood here until
+this date polled for RST8 = 1 and then read $D012 once, comparing
+it with $10. That read lands on line 256 — the first line of the
+band — and returns $00 on every chip, so the routine reported
+NTSC on a PAL machine whenever it was entered outside the band.
+Measured in VICE x64sc 3.10: called from raster line 100 on the
+default PAL model it painted the NTSC verdict; the same single
+read, shown as hex on screen, was `00` on the PAL, `ntsc` and
+`oldntsc` models alike. It only appeared to work when called from
+inside lines 272–311, where the one read happened to be $10 or
+more. The wait-and-track loop above, followed by `cpx #$10` and
+called from line 100, answers PAL on the PAL model and NTSC on
+`-model ntsc`; the same loop with a flag store (the
+`detect_region` in `pitfalls/region-timing.md`) was entered from
+lines 100, 300 and 311 on PAL and from 100 and 262 on NTSC and
+was right each time. The pitfall's copy carried a
+second fault of its own and is corrected there.
+
+This is the shortest reliable detect, and it tells all three
+chips apart in at most about 1.2 frames — 368 of PAL's 312
+lines, 270 of the 6567R8's 263 — and usually in far less.
+Technique: `pal_ntsc_detection` in `techniques/raster.md`;
+recipe: `recipes/oscar64/pal-ntsc-detect.md`.
+
+### Method 3: Read the KERNAL's own flag at $02A6 (PALNTS)
 
 The C128 KERNAL stores a region flag at $D030 (read-only on the
 C128, the value reflects 1MHz vs 2MHz CPU mode and is not a
-region flag — do not use). Stock C64 KERNAL does not store a
-region byte anywhere reliable. Some replacement KERNALs
-(JiffyDOS, EasyFlash) do; those are not portable enough to
-rely on.
+region flag — do not use). The stock C64 KERNAL does keep a
+PAL/NTSC byte: $02A6 (PALNTS), 1 for PAL and 0 for NTSC,
+written once at reset. The mechanism, from the bytes of
+`kernal-901227-03.bin` (read here, not from memory): the reset
+path at $FF5B calls the screen initialiser at $E518, whose VIC
+table at $ECB9 sets $D011 to $9B and $D012 to $37 (raster
+compare 311) and writes $0F to $D019 (acknowledging every VIC
+flag), then clears the screen; back at $FF5E it waits for $D012
+to read zero, reads $D019, keeps bit 0 and stores it at $02A6.
+The raster-compare flag can only have been raised if a line 311
+went by, which happens on PAL and never on NTSC. IOINIT at
+$FDDD then branches on $02A6 to load CIA 1 timer A with $4025
+on PAL or $4295 on NTSC. Three limits: it is a two-way flag and
+cannot tell the R8 from the R56A; it is RAM, and a replacement
+KERNAL or an earlier program may have left anything in it; and
+it depends on the screen clear taking longer than the gap to
+line 311, which was not measured here. Until 2026-09-22 this
+section said the stock KERNAL "does not store a region byte
+anywhere reliable" — it does store one, and the ROM says how.
 
-**Recommendation:** Use Method 2 (read $D012 after RST8=1) for
-simple PAL/NTSC distinction. Use Method 1 (frame timing) if
-you need to distinguish R8 from R56A or want extra confidence.
+**Recommendation:** Use Method 2 (track $D012 through the RST8
+band) — it answers PAL / NTSC R8 / NTSC R56A in at most about
+1.2 frames, usually much less. Use Method 1 (frame timing) when
+you want a second, independent measurement or need the cycle
+count itself. Read $02A6 only as a cross-check.
 
 ## Region-portability checklist
 
@@ -593,8 +688,9 @@ the following:
   sample rates on PAL vs NTSC. For accurate cross-region digi,
   scale the timer or use a raster-IRQ-driven (per-line) digi.
 - **Cross-region 6567R56A**: The R56A has 262 lines / 64 cycles
-  rather than 263 / 65. R56A-targeted code must detect via
-  frame timing (Method 1), not raster wrap (Method 2).
+  rather than 263 / 65. The raster-wrap detect (Method 2) tells it
+  from the R8 by its last line, $05 against $06; a detect reduced
+  to one PAL/NTSC flag cannot.
 - **PAL-N / PAL-M misdetection**: Detection routines see these
   variants as PAL. That is the correct answer for CPU timing
   purposes; do not add code that tries to distinguish them
@@ -628,5 +724,13 @@ the following:
   and its application in the Commodore 64" (cebix mirror):
   https://www.cebix.net/VIC-Article.txt — per-region cycle tables,
   raster geometry, border-open cycle windows.
+- VICE 3.10, `x64sc`, models `default`, `ntsc`, `oldntsc` — the
+  instrument behind every figure marked measured under Method 2
+  (the three wrap bytes, the entry-line runs, the `wait_lo` race,
+  the CIA-timed durations). https://vice-emu.sourceforge.io/
+- KickAssembler 5.25 — assembled the Method 2 listing; the 26-byte
+  count is its.
+- VICE's `kernal-901227-03.bin` — the bytes at $FF5B, $E518,
+  $ECB9 and $FDDD behind Method 3 and the IOINIT timer values.
 
 <!-- doc-type: hardware-reference -->

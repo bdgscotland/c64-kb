@@ -64,3 +64,60 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
     expect((r.data?.[0] as { n: number }).n).toBe(1);
   });
 });
+
+describe("FalkorService - Technique REQUIRES", () => {
+  let f: FalkorService;
+  const warnings: string[] = [];
+  const origWarn = console.warn;
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+    for (const name of ["stable_raster_irq", "fli_image", "ifli_image", "text_zoom"]) {
+      await f.addTechnique({ name, title: name, category: "raster", complexity: "high" });
+    }
+    console.warn = (msg: string) => { warnings.push(String(msg)); };
+  });
+  afterAll(async () => {
+    console.warn = origWarn;
+    await f.close();
+  });
+
+  const count = async (a: string, b: string): Promise<number> => {
+    const r = await f.roQuery(
+      `MATCH (a:Technique {name: $a})-[:REQUIRES]->(b:Technique {name: $b}) RETURN count(*) AS n`,
+      { a, b }
+    );
+    return Number((r.data?.[0] as { n: number }).n);
+  };
+
+  it("creates a REQUIRES edge between two existing techniques and is idempotent", async () => {
+    expect(await f.linkTechniqueRequires("fli_image", "stable_raster_irq")).toBe(true);
+    expect(await f.linkTechniqueRequires("fli_image", "stable_raster_irq")).toBe(true);
+    expect(await count("fli_image", "stable_raster_irq")).toBe(1);
+  });
+
+  it("MATCHes both ends: a missing target drops the edge and creates no stub", async () => {
+    expect(await f.linkTechniqueRequires("text_zoom", "no_such_technique")).toBe(false);
+    const stub = await f.roQuery(`MATCH (t:Technique {name: 'no_such_technique'}) RETURN count(t) AS n`);
+    expect(Number((stub.data?.[0] as { n: number }).n)).toBe(0);
+    expect(warnings.some((w) => /text_zoom -> no_such_technique/.test(w) && /dropped/.test(w))).toBe(true);
+  });
+
+  it("refuses an edge that would close a cycle, directly or through a chain", async () => {
+    expect(await f.linkTechniqueRequires("ifli_image", "fli_image")).toBe(true);
+    // stable_raster_irq -> fli_image would make fli_image -> stable_raster_irq -> fli_image
+    expect(await f.linkTechniqueRequires("stable_raster_irq", "fli_image")).toBe(false);
+    // stable_raster_irq -> ifli_image would close the three-step loop
+    expect(await f.linkTechniqueRequires("stable_raster_irq", "ifli_image")).toBe(false);
+    expect(await count("stable_raster_irq", "fli_image")).toBe(0);
+    expect(await count("stable_raster_irq", "ifli_image")).toBe(0);
+    expect(warnings.filter((w) => /would close a cycle/.test(w)).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("refuses a self-reference", async () => {
+    expect(await f.linkTechniqueRequires("text_zoom", "text_zoom")).toBe(false);
+    expect(await count("text_zoom", "text_zoom")).toBe(0);
+  });
+});

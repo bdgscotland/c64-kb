@@ -476,7 +476,7 @@ source is the video chip.
 | Disable all CIA1 IRQs (e.g. for raster work)     | $DC0D = $7F (clear all)   |
 | Acknowledge any pending CIA1 IRQ                 | Read $DC0D                |
 | Read the TOD clock                               | Read $DC0B first (latches), then $DC0A, $DC09, $DC08 |
-| Set the TOD clock                               | $DC0F bit 7 = 1, then write hours...tenths |
+| Set the TOD clock                                | $DC0F bit 7 = 0 (bit 7 = 1 writes the ALARM), then write $DC0B, $DC0A, $DC09, $DC08 — the clock is stopped from the hours write until the tenths write |
 | Toggle TOD source frequency (50 vs 60 Hz)        | $DC0E bit 7               |
 
 ## CIA1 shadow registers ($DC10-$DCFF)
@@ -559,10 +559,17 @@ Key wiring points (the per-pin table is in
 - **$DD00 bits 2-5** — IEC serial bus (ATN out, clock out/in, data
   out/in).
 - **$DD0D** — write 1 to bit 7 + bit n to enable NMI source n; read
-  clears all source bits. The RESTORE key is wired to /FLAG of CIA2
-  and triggers NMI through bit 4. The KERNAL sets up this NMI to
-  enter the warm-start routine, which is why RESTORE is "almost a
-  reset".
+  clears all source bits. The RESTORE key is **not** one of those
+  sources: it reaches the 6510 /NMI pin in parallel with CIA2's /IRQ
+  output, through its own monostable (the wiring is rung 4 here — the
+  schematic as the C64-Wiki describes it, not measured; the KERNAL's
+  side that follows is from the ROM bytes), and no value in $DD0D
+  affects it. The KERNAL's NMI handler treats "NMI with no CIA2 flag set" as a
+  RESTORE press and, with RUN/STOP also held, warm-starts BASIC — which
+  is why RESTORE is "almost a reset". (This entry used to say RESTORE
+  was wired to /FLAG and arrived through bit 4; it is not, and the
+  `$DD0D = $10` the lookup below recommended did nothing. See
+  `pitfalls/kernal-and-io.md` → `restore_nmi_not_maskable`.)
 
 ### CIA2 quick lookup by function
 
@@ -573,7 +580,7 @@ Key wiring points (the per-pin table is in
 | Read IEC serial bus status                       | $DD00 bits 6,7 + $DD01 (user-port-routed) |
 | Set up an RS-232 receive                         | $DD0C, $DD04, $DD05, $DD0E |
 | Use Timer A for music IRQ via NMI                | $DD04, $DD05, $DD0E, $DD0D bit 0 |
-| Disable the RESTORE key NMI                      | $DD0D = $10 (mask FLG)    |
+| Disable the RESTORE key NMI                      | Not possible via $DD0D. Point $0318 at an RTI, or hold an unacknowledged CIA2 NMI — pitfall `restore_nmi_not_maskable` |
 | Acknowledge any pending CIA2 NMI                 | Read $DD0D                |
 | Use the user port as 8 GPIO lines                | $DD01, $DD03 (DDR)        |
 
@@ -688,11 +695,11 @@ Highlights of the KERNAL-set state (cold boot, NTSC):
 | $D020   | $0E        | Border color = light blue                                |
 | $D021   | $06        | Background color = blue                                  |
 | $D400-$D418 | $00    | SID all silent, volume = 0                               |
-| $DC00   | $7F        | All keyboard columns high                                 |
+| $DC00   | $7F        | Column 7 driven low, the rest high — pre-selects the RUN/STOP column so the NMI handler's STOP sample at $F6BC can see the key (IOINIT's store at $FDAB; this row used to say "all columns high") |
 | $DC0D   | $81        | Timer A IRQ enabled (the jiffy clock)                    |
 | $DC0E   | $11        | Timer A running, continuous mode                         |
 | $DD00   | $07 (low bits) | VIC bank 0 selected ($0000-$3FFF), serial bus idle    |
-| $DD0D   | $00        | All NMI sources off except FLAG (RESTORE key)            |
+| $DD0D   | $00        | All NMI sources masked (RESTORE needs none — it drives /NMI directly) |
 
 A "soft reset" via RUN/STOP+RESTORE or the NMI vector does not reset
 every register — the SID retains its state, the VIC-II keeps the
@@ -778,7 +785,11 @@ sound.
   counter keeps running, subsequent reads of seconds/minutes return
   the latched value until tenths is read. Code that "peeks" at the
   hour without intending to read the rest of the clock will silently
-  freeze its own view of the time.
+  freeze its own view of the time. The write side has the mirror rule
+  — writing $DC0B stops the clock until $DC08 is written — and $DC0F
+  bit 7 must be 0 for those writes to reach the clock rather than the
+  alarm; `pitfalls/cia.md` → `tod_read_order_latch` carries both rules
+  and the VICE measurement behind them.
 
 - **$DD00 bits are inverted for VIC bank select.** Bits 0-1 of $DD00
   drive the high two address pins of the VIC-II, but they are

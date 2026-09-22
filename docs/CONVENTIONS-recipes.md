@@ -6,7 +6,11 @@ description of why it's done this way. The same conceptual demo MAY have one
 recipe per toolchain (e.g. `oscar64/raster-bars.md`, `kickassembler/raster-bars.md`)
 — they are distinct Recipe nodes IMPLEMENTS-edged to the same Technique.
 
-The marker `<!-- doc-type: recipe -->` MUST appear in the first 10 lines.
+The marker `<!-- doc-type: recipe -->` MUST appear immediately after the
+frontmatter — line 12 of every recipe, after the ten frontmatter lines and
+one blank; the extractor matches it anywhere in the file. An earlier
+version of this line said "in the first 10 lines", which no recipe
+satisfied.
 
 ## File-level frontmatter (required)
 

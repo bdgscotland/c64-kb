@@ -50,8 +50,12 @@ timeout 120 x64sc -default -warp +sound -autostartprgmode 1 \
 
 ## 3. Measure
 
-Geometry: 384×272; screenshot row = raster line − 14; x = 8 is VIC X 0;
-left border x 0–31, right border 352–383, display x 32–351.
+Geometry: PAL 384×272, screenshot row = raster line − 16 (rows 0–271 are
+lines 16–287); NTSC 384×247, row = line − 28, with rows 235–246 being
+lines 0–11 of the next frame. x = 8 is VIC X 0; left border x 0–31, right
+border 352–383, display x 32–351. An earlier version of this line said
+− 14; both offsets are derived from three boundaries each in
+`docs/recipes/kickassembler/topbottom-border-open.md`.
 
 ```python
 from PIL import Image

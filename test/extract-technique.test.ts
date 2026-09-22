@@ -89,6 +89,67 @@ Body.
     expect(ents.filter((e) => e.type === "technique")).toHaveLength(2);
   });
 
+  it("emits one technique_requires entity per **Requires:** word, deduplicated", () => {
+    const doc = `---
+category: scroll
+---
+
+<!-- doc-type: technique-reference -->
+
+# Scroll
+
+## infinite_scroll_h — Combine soft + buffer
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D016
+**Requires:** soft_scroll_h, \`char_scroll_buffer_h\`, soft_scroll_h
+
+Body.
+
+## soft_scroll_h — Horizontal soft scroll
+
+**Requires:** (none)
+
+Body.
+`;
+    const ents = extractGraphEntities(doc, "techniques/scroll.md");
+    const req = ents.filter((e) => e.type === "technique_requires") as Array<{ technique: string; requires: string }>;
+    expect(req.map((r) => `${r.technique}:${r.requires}`).sort()).toEqual([
+      "infinite_scroll_h:char_scroll_buffer_h",
+      "infinite_scroll_h:soft_scroll_h",
+    ]);
+  });
+
+  it("refuses a self-reference and a name that is not snake_case under **Requires:**", () => {
+    const warnings: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: string) => { warnings.push(String(msg)); };
+    try {
+      const doc = `---
+category: raster
+---
+
+<!-- doc-type: technique-reference -->
+
+# Raster
+
+## double_irq — Double IRQ
+
+**Requires:** double_irq, Stable Raster IRQ, stable_raster_irq
+
+Body.
+`;
+      const ents = extractGraphEntities(doc, "techniques/raster.md");
+      const req = ents.filter((e) => e.type === "technique_requires") as Array<{ technique: string; requires: string }>;
+      expect(req).toEqual([{ type: "technique_requires", technique: "double_irq", requires: "stable_raster_irq" }]);
+      expect(warnings.some((w) => /lists itself/.test(w))).toBe(true);
+      expect(warnings.some((w) => /not a snake_case technique name/.test(w))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
   it("skips files without the technique-reference marker", () => {
     const doc = `## stable_raster_irq — Stable raster IRQ
 

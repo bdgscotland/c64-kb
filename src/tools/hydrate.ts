@@ -182,12 +182,21 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
       case "technique_belongs_to":
         await f.linkTechniqueBelongsTo(entity.technique, entity.chip);
         break;
+      case "technique_demands":
+        await f.linkTechniqueDemands(entity.technique, entity.resource, entity.description);
+        break;
+      case "technique_requires":
+        await f.linkTechniqueRequires(entity.technique, entity.requires);
+        break;
       case "pitfall":
         await f.addPitfall(entity);
         graphCount++;
         break;
       case "triggered_by":
         await f.linkTriggeredBy(entity.pitfall, entity.target, entity.targetKind);
+        break;
+      case "mitigated_by":
+        await f.linkMitigatedBy(entity.pitfall, entity.target);
         break;
       case "crash_pattern":
         await f.addCrashPattern(entity);
@@ -196,6 +205,17 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
       case "caused_by":
         await f.linkCausedBy(entity.symptom, entity.target, entity.targetKind);
         break;
+      case "recipe_occupies":
+        await f.linkRecipeOccupies(entity.recipe, entity.start, entity.end);
+        break;
+      default: {
+        // Every entity type the extractor emits has a case above; a new one
+        // is a tsc error here, not a silent skip. technique_demands was
+        // skipped by single-file ingest for a release, and recipe_occupies
+        // until this guard was added and named it.
+        const _exhaustive: never = entity;
+        void _exhaustive;
+      }
     }
   }
 

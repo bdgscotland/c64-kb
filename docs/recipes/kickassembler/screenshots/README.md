@@ -2,7 +2,9 @@
 
 One PNG per KickAssembler recipe, taken from the run that verified it:
 KickAssembler 5.25 assembled the listing exactly as it appears in the
-recipe page, and VICE x64sc (3.9, PAL, 6569) ran the PRG headless:
+recipe page, and VICE x64sc ran the PRG headless — 3.9 (PAL, 6569) for
+every picture except `topbottom-border-open.png`, which is from 3.10 (PAL,
+6569), as its page says:
 
 ```bash
 x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 \

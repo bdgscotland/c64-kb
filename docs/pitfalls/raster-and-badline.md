@@ -255,6 +255,7 @@ set_irq_dynamic:
 **Region:** both
 **Triggered by registers:** D011, D012
 **Triggered by techniques:** stable_raster_irq
+**Mitigated by techniques:** stable_raster_irq, double_irq
 
 ### Symptom
 
@@ -287,6 +288,10 @@ main loop is a tight `JMP *` or a counted NOP sled, the interrupted instruction
 is always the same (a 2-cycle branch or a 2-cycle NOP), so the jitter narrows
 — but it does not disappear. The stable-raster double-IRQ trick eliminates
 jitter by consuming it deliberately before the cycle-tight register writes begin.
+That is why `stable_raster_irq` is on both metadata lines above: the pitfall
+is what a raster interrupt does before the technique is applied to it (the
+naive form), and the technique's polling loop — with `double_irq` for the
+last cycle — is the cure.
 
 ### Fix
 

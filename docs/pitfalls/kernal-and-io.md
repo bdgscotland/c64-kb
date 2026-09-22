@@ -826,3 +826,318 @@ In a `switch`, add `case 0x0a:` alongside `case 0x0d:`.
 - Discovered wiring RETURN-to-start on the Tideline level-select screen; the
   select→play path had only ever been exercised via the test-harness action
   byte, which masked the remap.
+
+---
+
+## restore_nmi_not_maskable — RESTORE drives /NMI directly; masking $DD0D does nothing, only the $0318 vector or an NMI lock neutralises it
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DD0D
+**Triggered by kernal:** RESTOR, VECTOR
+
+### Symptom
+
+A demo or game drops to a cleared blue screen and `READY.` when the user
+presses RUN/STOP+RESTORE, even though its init wrote `$10` (or `$7F`) to
+`$DD0D` "to switch the RESTORE NMI off". Everything the program held through
+the KERNAL goes with it: `$0314` is back at `$EA31`, the jiffy IRQ is running
+again, `$01` is back to the stock map, the VIC is in text mode at `$0400`. The
+code is still in memory, which is the whole point of the key.
+
+RESTORE alone, without RUN/STOP, is quieter: a stable-raster split tears or a
+sprite multiplexer misplaces for one frame per press — the KERNAL's handler
+ran 182 cycles at an unpredictable point in the frame, from the NMI sequence
+to its `RTI`, with no cartridge, `$02A1 = 0` and no key held (rung 1: measured
+in VICE x64sc 3.10 as 189 cycles across a CIA1 Timer A count, 7 of them the
+trampoline described under Mechanism; the instruction path summed by hand
+from the bytes gives the same 189) — while `$DD0D` reads `$00` and no CIA2
+source is enabled. A program with its own NMI-timed player is not in this
+case: it owns `$0318`, so the KERNAL path never runs for it, and a press hands
+its handler one extra, early entry instead — spurious unless the handler
+tests bit 7 of `$DD0D` before acting.
+
+A third form: the protection was there and vanished. The program pointed
+`$0318` at its own handler, then later ran the customary "put the KERNAL
+vectors back" line. `JSR $FF8A` (RESTOR) copies the ROM table at `$FD30` and
+writes `$FE47` back unconditionally. VECTOR with C = 0 (`$FF8D`) installs
+whatever 32-byte table the caller points at — `$FD1A` is `LDA ($C3),Y : STA
+$0314,Y` — so it puts `$FE47` back when that table was captured with C = 1
+before `$0318` was changed, which is the usual snapshot-then-restore idiom.
+Either way `$0318` is `$FE47` again.
+
+### Mechanism
+
+There are two halves, and they stand on different rungs.
+
+**The wiring — rung 4 for the circuit, rung 2–3 for the part list.** RESTORE
+is one of the two keys outside the 8×8 matrix that CIA1 scans (SHIFT LOCK is
+the other, and it is only LSHIFT's wire); the C64-Wiki's keyboard page has it
+as "tied to the NMI line and not part of the matrix". The switch is coupled
+through a capacitor, C38, to a monostable whose output pulls the 6510's /NMI
+pin low for the length of its pulse. CIA2's /IRQ output is on the same pin.
+The two are in parallel: either can assert /NMI, neither passes through the
+other, and nothing about the key touches CIA2's FLAG pin, its interrupt
+control register, or any bit you can write in `$DD0D`. The monostable is one
+half of the 556 dual timer at U20 on the boards whose parts lists the
+C64-Wiki's motherboard page carries — ASSY 326298 (1982, schematic 326106),
+250407 (1983), 250425 (1984) and 250466 (1986, schematic 252278); on the
+250469 (1987 on) U20 is the 8701 clock generator and the RESTORE one-shot was
+not traced for this entry. On early boards C38 is 51 pF, small enough that a
+slow press does not fire the one-shot (the German C64-Wiki's cure is 4.7 nF).
+No figure for the pulse length is claimed here; it was not measured. The key
+was not pressed for this entry — `-keybuf` stuffs the KERNAL's keyboard
+buffer, and RESTORE is not a matrix key — so the circuit itself stands on the
+C64-Wiki's description; what the KERNAL does with the resulting NMI, below,
+is from the bytes. An earlier draft cited "drawing 252278, reproduced in the
+Programmer's Reference Guide": 252278 is the 250466's schematic and the 1982
+Guide cannot contain it.
+
+**The KERNAL's side — rung 1, from the bytes of `kernal-901227-03.bin`.**
+The CPU vector at `$FFFA` holds `$FE43`. What runs from there:
+
+| Where | Bytes | Does |
+|---|---|---|
+| `$FE43` | `78` `6C 18 03` | `SEI`, then `JMP ($0318)`. The `SEI` (2 cycles) is the only thing that runs before the RAM vector — harmless to a handler, since `RTI` restores P. The vector's default is `$FE47` (vector table at `$FD30`). |
+| `$FE47` | `48 8A 48 98 48` | Push A, X, Y. No BRK test — that is the IRQ dispatcher's job at `$FF48`, not this one's. |
+| `$FE4C` | `A9 7F 8D 0D DD` | `LDA #$7F : STA $DD0D` — mask every CIA2 source. |
+| `$FE51` | `AC 0D DD` | `LDY $DD0D` — read the flags, which also clears them. |
+| `$FE54` | `30 1C` | `BMI $FE72` — bit 7 set means some enabled CIA2 source fired: take the RS-232 path. |
+| `$FE56` | `20 02 FD` `D0 03` `6C 02 80` | No flag. `JSR $FD02` compares `$8004-$8008` with `CBM80`; on a match, `JMP ($8002)` — a cartridge's warm-start vector. |
+| `$FE5E` | `20 BC F6` | `JSR $F6BC` — the tail of UDTIM: reads `$DC01` until two reads agree. Bit 7 set (nothing in column 7): store the row in `$91`. Bit 7 clear: re-read with `$DC00 = $BD` (columns 1 and 6, where the SHIFT keys are), write the first row value back to `$DC00` (`$F6D4`), and if anything in those columns is down skip the store (`INX : BNE $F6DC`) — SHIFT held with STOP leaves `$91` unwritten. A fresh hardware sample, not the IRQ scan's leftover. |
+| `$FE61` | `20 E1 FF` | `JSR $FFE1` — STOP, through `($0328)` = `$F6ED`: `LDA $91 : CMP #$7F`. Z is set only when `$91` is exactly `$7F`: RUN/STOP down and no other column-7 key with it (1, ←, CTRL, 2, SPACE, C=, Q) — a second key in that column clears another bit and blinds the check the same way a wrong `$DC00` does. |
+| `$FE64` | `D0 0C` | `BNE $FE72` — not held: join the RS-232 path, which finds nothing to do, writes `$02A1` back to `$DD0D` (`$FEB6`-`$FEBB`), pulls Y, X, A and `RTI`s (`$FEBC`-`$FEC1`). |
+| `$FE66` | `20 15 FD` `20 A3 FD` `20 18 E5` `6C 02 A0` | Held: RESTOR, IOINIT, the screen editor's VIC and screen reset, then `JMP ($A002)` — the BASIC warm start. |
+
+Read the branch at `$FE54` again. The handler decides "this was RESTORE" by
+finding **no** CIA2 flag. It never sees the key; it cannot. Masking FLAG — or
+every source — in `$DD0D` only guarantees that the flag is absent, which *is*
+the RESTORE case. `$DD0D = $10` is a no-op twice over: bit 7 clear makes it a
+CLEAR-mask write, so it clears a FLAG mask that IOINIT had already cleared,
+and the key was never going to raise that flag in the first place.
+
+The same bytes give one more thing for free. The `LDA #$7F : STA $DD0D` at
+`$FE4C` wipes whatever CIA2 mask the program had set, and the exit at `$FEB6`
+re-enables only what `$02A1` — the KERNAL's RS-232 shadow — holds. A program
+that arms a CIA2 timer NMI while leaving `$0318` at `$FE47` loses that mask
+on the first RESTORE press or RS-232 event (rung 1, from the bytes; not run).
+
+Measured (rung 1; VICE x64sc 3.10, PAL 6569 — the build on this machine, the
+rest of this repository was checked against 3.9): a CIA2 Timer A one-shot NMI
+was sent through `$0318` to a trampoline of `BIT $DD0D` and `JMP $FE47`,
+preceded by a counter increment, with IRQs off and `$91` pre-set to `$00`.
+After the NMI, `$91`
+read `$FF`: the KERNAL's handler took the no-flag branch and `$F6BC` wrote the
+keyboard row into it. The control — the same trampoline without the `BIT` —
+left `$91` at `$00`: the standing flag sent it down the `BMI`. The screen
+cells that displayed `$91` were decoded against the character ROM, not read
+by eye. The warm-start branch itself (`$FE66` onward) was not exercised: it
+needs RUN/STOP held, and a headless run has no keys.
+
+**RUN/STOP without the IRQ.** Because `$F6BC` samples the hardware,
+RUN/STOP+RESTORE warm-starts with IRQs disabled and the keyboard scan stopped.
+What it does need is `$DC00` still driving column 7 low: IOINIT leaves
+`$DC00 = $7F` (the store at `$FDAB`) and SCNKEY writes `$7F` back on exit
+(`$EB42`), so the row read at `$F6BC` sees STOP on bit 7. A program that has
+left another value in `$DC00` with bit 7 high blinds the check, and
+RUN/STOP+RESTORE then behaves like RESTORE alone. Read from the bytes; not
+measured.
+
+### Fix
+
+**A — take the vector (`$0318`).** `$FE43` runs `SEI` and then jumps through
+`$0318`, so a handler there replaces the whole dispatch from its second
+instruction on. The smallest one is a single `RTI`; from BASIC, `POKE
+792,193` aims `$0318` at `$FEC1`, which is the `RTI` at the end of the
+KERNAL's own handler (the byte at `$FEC1` is `$40`). Conditions and costs:
+
+- Every press still costs 20 cycles — the NMI sequence (7), the `SEI` (2),
+  the `JMP ($0318)` (5) and the `RTI` (6) — at an arbitrary point in the
+  frame; cycle-exact code shows it once per press. Measured (rung 1, VICE
+  x64sc 3.10): CIA1 Timer A counting across a 200-cycle block of `NOP`s with
+  DEN off read `$FF2C` with the CIA2 NMI masked and `$FF18` with it taken,
+  through a RAM `rti` and through the `$FEC1` stub alike — 20 either way. An
+  earlier draft of this entry said 13, having left out the `SEI` and the
+  indirect jump.
+- The handler gets control with nothing saved. The KERNAL's `PHA : TXA : PHA
+  : TYA : PHA` is at `$FE47`, after the vector, not before it — a handler
+  that does more than `RTI` saves what it touches.
+- Do not read `$DD0D` in this handler "to be safe" if the program also uses
+  CIA2 NMIs: the read discards a CIA2 flag that may have arrived, and with it
+  the timer or RS-232 event it announced. If both are in play, test bit 7 of
+  `$DD0D` and read it only when you mean to.
+- It holds only while `$0318` does. RESTOR (`$FF8A`) copies the ROM table
+  and writes `$FE47` back unconditionally, and so does the warm start, which
+  calls it (`$FE66`). VECTOR with C = 0 (`$FF8D`) installs whatever table the
+  caller passes — the usual snapshot-then-restore idiom passes one captured
+  before `$0318` was changed, and that one holds `$FE47`. That is why those
+  two routines are on this entry's Triggered-by line.
+- It needs the KERNAL ROM mapped in (`$01` bit 1 set). With HIRAM = 0 the CPU
+  fetches `$FFFA` from RAM and the vector is yours to supply there;
+  `ram_under_rom_traps` in `pitfalls/banking.md` shows the pattern.
+
+**B — the NMI lock.** The 6510's NMI input is edge-sensitive: an NMI is taken
+on the high-to-low transition of /NMI, and a line that then stays low is not
+taken again. Arm a CIA2 Timer A one-shot with its NMI mask set and give it a
+handler that never reads `$DD0D`. The timer underflows once, CIA2 sets its IR
+bit and pulls /NMI low, the handler runs once — and /NMI then stays low for as
+long as the flag stands. No later source can make an edge: not a second
+underflow, not the 556. The lock holds until something reads `$DD0D`.
+
+Measured (rung 1; VICE x64sc 3.10): with the handler in the listing below, two
+one-shots produced one NMI (the counter cell showed `1`); the same program
+with `LDA $DD0D` in the handler produced two (`2`); and the locked program
+with a single `LDA $DD0D` from the main loop before a third one-shot produced
+two — the read, and nothing else, re-arms the edge. Costs: every CIA2 NMI is
+forfeited (RS-232, NMI-timed digi and music players), and any code that reads
+`$DD0D` — yours, or a KERNAL RS-232 routine — silently unlocks it.
+
+**What does not work.** Any value written to `$DD0D`; `SEI` (it masks /IRQ
+only); stopping the KERNAL IRQ scan (the NMI path samples STOP itself).
+
+### Worked example
+
+The pattern the registers page used to recommend. It clears a mask that is
+already clear, and the key never went through the CIA anyway:
+
+```kick
+// DOES NOTHING TO RESTORE. Bit 7 clear = CLEAR-mask write; FLAG's mask is
+// already clear after IOINIT, and RESTORE never raises a CIA2 flag.
+        lda #$10
+        sta $dd0d
+```
+
+Fix A. Only the `SEI` at `$FE43` runs between the CPU's vector fetch and
+`($0318)`, so the stub is the whole story of a RESTORE press:
+
+```kick
+// Fix A: take the NMI vector. $FE43 is SEI / JMP ($0318); only the SEI runs
+// before the vector, and RTI puts P back.
+install_nmi_stub:
+        sei
+        lda #<nmi_stub
+        sta $0318
+        lda #>nmi_stub
+        sta $0319
+        cli
+        rts
+
+nmi_stub:
+        rti                     // a press now costs 20 cycles (7 NMI + 2 SEI
+                                // + 5 JMP ind + 6 RTI, measured) and does
+                                // nothing (do not add "lda $dd0d" here if
+                                // CIA2 NMIs are also in use — it discards
+                                // their flag)
+```
+
+Fix B, exactly as run and measured. Cell 0 of the screen counts NMIs, cell 1
+gets a `*` when the program reaches its end; `pause` busy-waits about a
+second (3 × 256 × 1286 cycles, rung 3). Two one-shots, one NMI:
+
+```kick
+// lock.asm — fix B, the NMI lock. Handler never reads $DD0D, so CIA2 keeps
+// /NMI low; a second Timer A underflow produces no new edge.
+// Expected: cell 0 = '1', cell 1 = '*'.
+BasicUpstart2(start)
+* = $0810
+start:
+        sei
+        ldx #39
+        lda #$20
+clr:    sta $0400,x
+        dex
+        bpl clr
+        lda #<nmi
+        sta $0318
+        lda #>nmi
+        sta $0319
+        lda #$30                // '0'
+        sta $0400
+        lda #$7f
+        sta $dd0d               // mask every CIA2 source
+        lda $dd0d               // drop anything pending
+        lda #$ff
+        sta $dd04
+        lda #$00
+        sta $dd05               // Timer A latch = 255: 256 cycles to underflow
+        lda #$81
+        sta $dd0d               // Timer A underflow -> /NMI
+        lda #$19
+        sta $dd0e               // force load, one-shot, start
+        jsr pause
+        lda #$19
+        sta $dd0e               // second one-shot: a second underflow
+        jsr pause
+        lda #$2a                // '*' = reached the end
+        sta $0401
+hang:   jmp hang
+
+nmi:    inc $0400
+        rti                     // no read of $DD0D: /NMI stays low
+
+pause:  lda #3
+        sta $02
+p1:     ldx #0
+p2:     ldy #0
+p3:     dey
+        bne p3
+        dex
+        bne p2
+        dec $02
+        bne p1
+        rts
+```
+
+Change the handler to `inc $0400 : pha : lda $dd0d : pla : rti` and the same
+program shows `2`. That variant is also the shape of fix A when the program
+has its own CIA2 NMI source: the handler runs, acknowledges, returns, and the
+main program continues.
+
+The experiment behind the "absence of a flag" claim. Put this at `$0318`,
+fire a CIA2 timer NMI, and the KERNAL's own handler cannot tell it from a
+RESTORE press — with RUN/STOP held it would warm-start:
+
+```kick
+tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
+        jmp $fe47               // KERNAL NMI handler, as if from RESTORE
+```
+
+### Cross-references
+
+- `hardware/cia-reference.md` → "NMI vector (CIA2 + RESTORE)" — the dispatch
+  summary; its "Disabling RESTORE" paragraph points back here.
+- `hardware/c64-registers-reference.md` → CIA2 key wiring points and quick
+  lookup — corrected together with this entry; they used to name FLAG bit 4
+  and recommend `$DD0D = $10`.
+- `hardware/kernal-routines-reference.md` → Vectors table (NMINV `$0318`,
+  ISTOP `$0328`), RESTOR (`$FF8A`), VECTOR (`$FF8D`).
+- Pitfall `decimal_mode_in_irq_handler` — an NMI handler that does arithmetic
+  needs `CLD` as well.
+- Pitfall `ram_under_rom_traps` (`pitfalls/banking.md`) — the all-RAM case,
+  where `$FFFA` is yours and the KERNAL dispatch is out of the picture.
+- Technique `stable_raster_irq` — the routine whose once-per-press jitter is
+  the RESTORE-alone symptom.
+
+### Sources
+
+- Commodore 64 KERNAL ROM 901227-03 (`kernal-901227-03.bin` as shipped with
+  VICE), bytes read and disassembled by hand for this entry — rung 1.
+- VICE x64sc 3.10, headless PAL runs of the listings above and their controls,
+  screen cells decoded against `chargen-901225-01.bin` — rung 1.
+- C64-Wiki, "RESTORE (Key)", https://www.c64-wiki.com/wiki/RESTORE_(Key) —
+  the direct connection to the CPU, `POKE 792,193`, the edge-triggered lock.
+- C64-Wiki, "Keyboard", https://www.c64-wiki.com/wiki/Keyboard — RESTORE and
+  SHIFT LOCK outside the matrix.
+- C64-Wiki (German), "RESTORE (Taste)",
+  https://www.c64-wiki.de/wiki/RESTORE_(Taste) — the capacitor coupling
+  (C38, 51 pF on early boards, 4.7 nF as the cure) and early boards'
+  insensitivity to a slow press.
+- C64-Wiki, "Motherboard", https://www.c64-wiki.com/wiki/Motherboard
+  (fetched 2026-09-22) — the per-board parts lists: U20 = LM556/NE556 dual
+  timer on ASSY 326298, 250407, 250425 and 250466, U20 = 8701 clock generator
+  on 250469; schematic drawing numbers 326106 (326298) and 252278 (250466).
+  Rung 2–3. An earlier draft of this list cited "drawing 252278, reproduced in
+  the Programmer's Reference Guide", from memory; the Guide is from 1982 and
+  252278 is the 1986 board's drawing.
+- Joe Forster/STA, "Commodore 64 memory map", https://sta.c64.org/cbm64mem.html
+  — `$0318` default `$FE47`, `$02A1`.

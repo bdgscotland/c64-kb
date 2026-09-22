@@ -301,6 +301,7 @@ pre-populated during the next frame's active display period.
 **Region:** both
 **Uses registers:** D016
 **Uses kernal:** (none)
+**Requires:** soft_scroll_h, char_scroll_buffer_h
 
 ### Why
 
@@ -378,6 +379,7 @@ game that can afford ~18,000 CPU cycles per frame.
 **Region:** both
 **Uses registers:** D016, D000-D00F, D010
 **Uses kernal:** (none)
+**Requires:** infinite_scroll_h
 
 ### Why
 

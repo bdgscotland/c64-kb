@@ -23,6 +23,7 @@ before the CPU can read them. All four have bitten experienced C64 coders.
 **Region:** both
 **Triggered by registers:** D015, D010, D000, D001
 **Triggered by techniques:** sprite_multiplex_8, stable_raster_irq
+**Mitigated by techniques:** sprite_multiplex_8
 
 ### Symptom
 
@@ -59,6 +60,11 @@ error, without a flag, and without any signal visible to the programmer.
 Because the chip walks indices in ascending order, the overflow always
 discards the highest-indexed sprites on the contested line. Sprite 0 always
 wins; sprite 7 is always the first casualty.
+
+`sprite_multiplex_8` is on both metadata lines above for that reason: the
+overflow arises inside a naive multiplexer — one whose IRQ fires late or
+whose sort leaves two groups on one line — and a correct one, sorted and
+spaced as the Fix describes, is what prevents it.
 
 ### Fix
 

@@ -378,6 +378,7 @@ boundaries track visual content rather than bounding boxes.
 **Uses registers:** D017
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs
+**Requires:** stable_raster_irq
 
 ### Why
 
@@ -535,6 +536,7 @@ foreground pixels even when rendered behind them.
 **Uses registers:** D027, D028, D029, D02A, D02B, D02C, D02D, D02E
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs
+**Requires:** stable_raster_irq
 
 ### Why
 

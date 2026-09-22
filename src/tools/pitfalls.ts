@@ -2,8 +2,10 @@
  * Pitfall and failure-diagnosis query tools — Phase 5.
  *
  * pitfallsFor(topic): resolves a Register, KernalRoutine, or Technique topic
- *   to Pitfall nodes via TRIGGERED_BY traversal. Falls back to "search"
- *   placeholder when no direct graph match is found.
+ *   to Pitfall nodes via TRIGGERED_BY traversal — and, for a Technique, via
+ *   MITIGATED_BY as well, so a technique that is the Fix for a pitfall answers
+ *   from the graph with the relation named. Falls back to "search" when no
+ *   direct graph match is found.
  *
  * failureDiagnose(symptom): keyword-overlap scoring against all CrashPattern
  *   nodes, returns top 5 matches with CAUSED_BY enrichment.
@@ -78,10 +80,14 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
     } else {
       matchClause = `(t:${kind} {name: $key})`;
     }
+    // MITIGATED_BY only ever points at a Technique, so only that branch
+    // widens the relation; a pitfall reached solely through its Fix still
+    // counts as an answer for the technique that fixes it.
+    const rel = kind === "Technique" ? "TRIGGERED_BY|MITIGATED_BY" : "TRIGGERED_BY";
 
     const r = await f.roQuery(
-      `MATCH (p:Pitfall)-[:TRIGGERED_BY]->${matchClause}
-       RETURN p.name AS name, p.title AS title, p.severity AS severity,
+      `MATCH (p:Pitfall)-[:${rel}]->${matchClause}
+       RETURN DISTINCT p.name AS name, p.title AS title, p.severity AS severity,
               p.region AS region, p.category AS category
        ORDER BY
          ${severityCase},
@@ -106,6 +112,14 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
         const triggered_by = (edges.data as Array<{ tname: string; tkind: string }>)
           .filter(e => e.tname && e.tkind)
           .map(e => ({ name: e.tname, kind: e.tkind as EntityKind }));
+        const remedies = await f.roQuery(
+          `MATCH (p:Pitfall {name: $name})-[:MITIGATED_BY]->(t:Technique)
+           RETURN t.name AS tname ORDER BY tname`,
+          { name: row.name }
+        );
+        const mitigated_by = (remedies.data as Array<{ tname: string }>)
+          .filter(e => e.tname)
+          .map(e => ({ name: e.tname, kind: "Technique" as EntityKind }));
 
         return {
           name: row.name ?? "",
@@ -114,6 +128,7 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
           region: (row.region ?? "both") as PitfallsForOutput["pitfalls"][0]["region"],
           category: row.category ?? "",
           triggered_by,
+          mitigated_by,
         };
       }));
 
@@ -250,11 +265,13 @@ function formatPitfallsText(
   const header = `Found ${pitfalls.length} pitfall(s) for ${kind} "${topic}":\n\n`;
   const rows = pitfalls.map(p => {
     const triggers = p.triggered_by.map(t => `${t.name} (${t.kind})`).join(", ");
+    const remedies = p.mitigated_by.map(t => t.name).join(", ");
     return (
       `### ${p.name} [${p.severity}, ${p.region}]\n` +
       `**${p.title}**\n` +
       `**Category:** ${p.category}\n` +
-      (triggers ? `**Triggered by:** ${triggers}\n` : "")
+      (triggers ? `**Triggered by:** ${triggers}\n` : "") +
+      (remedies ? `**Mitigated by:** ${remedies}\n` : "")
     );
   });
   return header + rows.join("\n");

@@ -135,6 +135,7 @@ Voice setup writes are not time-critical — they happen before the note sounds.
 **Complexity:** medium
 **Region:** both
 **Uses registers:** D415, D416, D417, D418
+**Requires:** sid_voice_setup
 
 ### Why
 
@@ -229,6 +230,7 @@ Changing $D416 while voices are playing produces a live filter sweep — this is
 **Complexity:** low
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418
+**Requires:** sid_voice_setup
 
 ### Why
 
@@ -470,6 +472,7 @@ The technique works specifically because the 6581's DAC has a non-zero DC offset
 **Region:** both
 **Uses registers:** D418, D404, D405, D406
 **Demands:** continuous_interrupts
+**Requires:** sid_voice_setup
 
 ### Why
 
@@ -488,7 +491,7 @@ For each sample byte (8-bit, one per IRQ tick):
 2. Set TEST bit ($D404 bit 3) to hold the oscillator at zero output.
 3. Write the 8-bit sample value into... the envelope? Not directly — the envelope value is not writable. Instead, the trick is to set a specific ATTACK value such that the envelope ramps from 0 to the target value in exactly one sample period.
 
-In practice the "Hermit method" as used in VICE test cases and documented in Codebase64 works as follows for voice 1:
+In practice the "Hermit method" as used in VICE test cases and documented in Codebase64 works as follows for voice 1 — the routine writes that voice's control, attack/decay and sustain/release registers ($D404–$D406) itself on every tick, the per-voice layout `sid_voice_setup` describes, which is why this entry requires it:
 
 ```asm
 digi_8bit_irq:

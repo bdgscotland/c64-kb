@@ -77,7 +77,9 @@ type PendingEdge =
   | { kind: "triggered_by"; pitfall: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
   | { kind: "caused_by"; symptom: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
   | { kind: "recipe_occupies"; recipe: string; start: number; end: number }
-  | { kind: "technique_demands"; technique: string; resource: string; description: string };
+  | { kind: "technique_demands"; technique: string; resource: string; description: string }
+  | { kind: "technique_requires"; technique: string; requires: string }
+  | { kind: "mitigated_by"; pitfall: string; target: string };
 
 function loadHashes(): Record<string, string> {
   try {
@@ -238,10 +240,16 @@ async function main() {
   // trigger twice is not reported as a dropped edge after MERGE folds them.
   const triggeredByRequested = new Set<string>();
   const causedByRequested = new Set<string>();
+  const requiresRequested = new Set<string>();
+  const mitigatedByRequested = new Set<string>();
   // References whose target name matched no node. Requests can exceed edges
   // legitimately (two spellings of one register), so this is the real signal.
   let triggeredByDropped = 0;
   let causedByDropped = 0;
+  // For REQUIRES a drop is a missing technique OR a refused cycle; the
+  // [falkor] line above it says which.
+  let requiresDropped = 0;
+  let mitigatedByDropped = 0;
 
   // All edge operations are deferred to pass 2 so that every node exists
   // before any edge tries to reference it. This removes the implicit
@@ -414,6 +422,12 @@ async function main() {
             case "technique_demands":
               pendingEdges.push({ kind: "technique_demands", technique: e.technique, resource: e.resource, description: e.description });
               break;
+            case "technique_requires":
+              pendingEdges.push({ kind: "technique_requires", technique: e.technique, requires: e.requires });
+              break;
+            case "mitigated_by":
+              pendingEdges.push({ kind: "mitigated_by", pitfall: e.pitfall, target: e.target });
+              break;
           }
         }
       } catch (err) {
@@ -502,6 +516,14 @@ async function main() {
           if (!(await falkor.linkCausedBy(edge.symptom, edge.target, edge.targetKind))) causedByDropped++;
           causedByRequested.add(`${edge.symptom}|${edge.targetKind}|${edge.target}`);
           break;
+        case "technique_requires":
+          if (!(await falkor.linkTechniqueRequires(edge.technique, edge.requires))) requiresDropped++;
+          requiresRequested.add(`${edge.technique}|${edge.requires}`);
+          break;
+        case "mitigated_by":
+          if (!(await falkor.linkMitigatedBy(edge.pitfall, edge.target))) mitigatedByDropped++;
+          mitigatedByRequested.add(`${edge.pitfall}|${edge.target}`);
+          break;
       }
       consecutiveFailures = 0;
     } catch (err: any) {
@@ -554,15 +576,20 @@ async function main() {
   };
   const triggeredByLanded = await countEdges("TRIGGERED_BY");
   const causedByLanded = await countEdges("CAUSED_BY");
+  const requiresLanded = await countEdges("REQUIRES");
+  const mitigatedByLanded = await countEdges("MITIGATED_BY");
   const totalTriggeredBy = triggeredByRequested.size;
   const totalCausedBy = causedByRequested.size;
+  const totalRequires = requiresRequested.size;
+  const totalMitigatedBy = mitigatedByRequested.size;
   console.log(`\nQdrant: ${qStats.total_points} vectors`);
   console.log(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
-  console.log(`Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by: ${triggeredByLanded} edges in graph, ${totalTriggeredBy} distinct references, ${triggeredByDropped} dropped. caused_by: ${causedByLanded} edges in graph, ${totalCausedBy} distinct references, ${causedByDropped} dropped.`);
-  if (triggeredByDropped > 0 || causedByDropped > 0) {
-    console.warn(`[ingest] WARNING: ${triggeredByDropped + causedByDropped} trigger/cause references named no existing node and were dropped; see the [falkor] lines above.`);
+  console.log(`Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by: ${triggeredByLanded} edges in graph, ${totalTriggeredBy} distinct references, ${triggeredByDropped} dropped. caused_by: ${causedByLanded} edges in graph, ${totalCausedBy} distinct references, ${causedByDropped} dropped. requires: ${requiresLanded} edges in graph, ${totalRequires} distinct references, ${requiresDropped} dropped. mitigated_by: ${mitigatedByLanded} edges in graph, ${totalMitigatedBy} distinct references, ${mitigatedByDropped} dropped.`);
+  const droppedRefs = triggeredByDropped + causedByDropped + requiresDropped + mitigatedByDropped;
+  if (droppedRefs > 0) {
+    console.warn(`[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`);
   }
-  log(`DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${triggeredByLanded}/${totalTriggeredBy}/dropped=${triggeredByDropped} caused_by=${causedByLanded}/${totalCausedBy}/dropped=${causedByDropped}`);
+  log(`DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${triggeredByLanded}/${totalTriggeredBy}/dropped=${triggeredByDropped} caused_by=${causedByLanded}/${totalCausedBy}/dropped=${causedByDropped} requires=${requiresLanded}/${totalRequires}/dropped=${requiresDropped} mitigated_by=${mitigatedByLanded}/${totalMitigatedBy}/dropped=${mitigatedByDropped}`);
 
   await falkor.close();
   process.exit(0);

@@ -1510,7 +1510,9 @@ ticks via CIA #1 Timer A.
 | $DD0F  | Control B                                       |
 
 CIA #2's IRQ line drives the 6510's NMI pin (not IRQ). The RESTORE key
-also generates an NMI through CIA #2.
+also pulls /NMI low — in parallel with CIA2's /IRQ, not through the CIA,
+so no $DD0D write touches it (this line used to say "through CIA #2";
+see `pitfalls/kernal-and-io.md` → `restore_nmi_not_maskable`).
 
 **$DD00 bits 0-1** select the VIC-II bank, *inverted*:
 

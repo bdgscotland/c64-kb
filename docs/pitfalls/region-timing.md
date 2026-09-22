@@ -10,8 +10,9 @@ All three pitfalls in this file stem from the same root: the C64 shipped in two
 incompatible clock domains. PAL runs at 985,248 Hz with 312 raster lines per
 frame; NTSC runs at 1,022,727 Hz with 263 lines per frame. Any hard-coded
 assumption about frame rate, clock speed, or line count breaks when code crosses
-regions. The fix in every case is to detect the region at boot — under 30 bytes
-— and branch on it.
+regions. The fix in every case is to detect the region at boot — 36 bytes of
+6502 and just over one frame of waiting at worst, usually much less — and
+branch on it.
 
 ---
 
@@ -20,6 +21,7 @@ regions. The fix in every case is to detect the region at boot — under 30 byte
 **Severity:** high
 **Region:** both
 **Triggered by techniques:** sid_play_routine_pattern, sid_voice_setup
+**Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom
 
@@ -63,23 +65,29 @@ of the 50.125 Hz PAL rate. Tempo error drops from 19.4% to under 1%, which is
 inaudible. Implement this with a single frame counter and a conditional skip:
 
 ```kick
-// Region-detect at boot (Method 2 from pal-ntsc-reference.md).
-// On exit: region_flag = 0 for PAL, 1 for NTSC.
+// Region-detect at boot (Method 2 from pal-ntsc-reference.md; technique
+// pal_ntsc_detection). On exit: region_flag = 0 for PAL, 1 for NTSC.
 detect_region:
     sei
+wait_lo:
+    bit $d011
+    bmi wait_lo             // If already inside the RST8 band, let it finish
 wait_hi:
-    lda $d011
-    bpl wait_hi             // Wait for RST8 = 1 (raster >= 256)
-    lda $d012
-    cmp #$10                // PAL reaches >= $37 before wrap; NTSC tops at $06
-    bcc is_ntsc
-    lda #0
+    bit $d011
+    bpl wait_hi             // RST8 rises: raster line 256 on every chip
+track:
+    lda $d012               // Sample the low byte...
+    bit $d011
+    bpl band_over           // ...kept only if RST8 was still set
+    tax
+    jmp track
+band_over:
+    lda #0                  // Last line seen: PAL $37, NTSC $06 or $05
+    cpx #$10
+    bcs set_flag            // $10 or more exists only on PAL: flag 0
+    lda #1                  // Below $10: NTSC, flag 1
+set_flag:
     sta region_flag
-    bne done_detect
-is_ntsc:
-    lda #1
-    sta region_flag
-done_detect:
     cli
     rts
 
@@ -104,6 +112,21 @@ skip_play:
 region_flag:        .byte 0
 ntsc_frame_counter: .byte 0
 ```
+
+**Correction (2026-09-21).** The `detect_region` above replaces one that had
+two faults. It read `$D012` once, immediately after RST8 rose — that read is
+line 256, the first line of the band, and returns `$00` on every chip, so
+its `cmp #$10` always failed. And its PAL path ran `lda #0` / `sta
+region_flag` / `bne done_detect`: `lda #0` sets Z, so the `bne` never
+branched and execution fell through into `is_ntsc`, leaving `region_flag`
+at 1 whichever way the compare had gone. Measured in VICE x64sc 3.10: the old
+fragment, unchanged, in a wrapper that paints `region_flag` to the border,
+reported NTSC on the default PAL model both when entered from raster line 100
+and when entered from line 288 — inside the band, where the single read was
+`$20` and the compare passed, which isolates the second fault. The fragment
+above reported PAL when entered from lines 100, 300 and 311 on the PAL model,
+and NTSC when entered from lines 100 and 262 with `-model ntsc` and from 100
+with `-model oldntsc`.
 
 **Approach 2 — Ship two tempo tables.** Some music drivers (GoatTracker,
 SID-Wizard) support a per-region speed table embedded in the music data. The
@@ -142,6 +165,7 @@ just reached 6 (then reset it and return without calling play).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DC04, DC05, DC06, DC07
+**Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom
 
@@ -285,6 +309,7 @@ those corrections.
 **Region:** both
 **Triggered by registers:** D012, D011
 **Triggered by techniques:** stable_raster_irq
+**Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom
 
@@ -353,9 +378,11 @@ raster-table structure — one parameterized for PAL (lines 0-311) and one for
 NTSC (lines 0-262). Select the active table at boot based on the detected region.
 This is the pattern used by production demos that target both regions.
 
-The region-detect reads $D011 bit 7 (RST8) when high, then checks $D012
-against $10: PAL reaches $37 before wrap; NTSC tops at $06. The full snippet
-is in `pal-ntsc-reference.md` — Method 2, under 20 bytes.
+The region-detect waits for $D011 bit 7 (RST8) to clear and then set, keeps
+the last $D012 seen while it stays set, and compares that value against $10
+once it clears: PAL ends its frame at $37, NTSC at $06 or $05. The full
+routine is in `pal-ntsc-reference.md` — Method 2, 26 bytes — and, with the
+flag store, as `detect_region` in the first pitfall above.
 
 ```kick
 // BROKEN: raster table loop hard-coded for 312 lines.
@@ -473,3 +500,18 @@ done_reset_irq:
   frame, $D012 wrap values, and the post-display blanking line counts.
 - Pitfall: `d012_wrap_around` — the complementary pitfall about RST8 and the
   9-bit raster counter; the two pitfalls often co-occur.
+
+## Sources
+
+- VICE 3.10, `x64sc`, models `default`, `ntsc`, `oldntsc` — the instrument
+  behind every "measured" figure on this page (the `detect_region`
+  correction and the entry-line runs). https://vice-emu.sourceforge.io/
+- KickAssembler 5.25 — assembled every `kick` fragment here; the 36-byte
+  count is its.
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64", https://www.cebix.net/VIC-Article.txt —
+  §3.2 (RST8 as bit 8 of the raster register), §3.4 (lines per frame for
+  the 6569, 6567R8 and 6567R56A).
+- This repository: `hardware/pal-ntsc-reference.md` (clock rates, frame
+  rates, CIA latch table, Method 2), `techniques/raster.md`
+  (`pal_ntsc_detection`, with the duration and race measurements).

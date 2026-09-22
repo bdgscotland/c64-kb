@@ -71,6 +71,29 @@ describe("FalkorService — Pitfall + CrashPattern", () => {
     expect(r.data).toHaveLength(0);
   });
 
+  it("linkMitigatedBy creates MITIGATED_BY edge to an existing Technique and is idempotent", async () => {
+    await f.addTechnique({ name: "double_irq", title: "Double IRQ", category: "raster", complexity: "scene-tier" });
+    await f.addPitfall({ name: "raster_irq_first_line_jitter", title: "T", severity: "high", region: "both", category: "raster" });
+    expect(await f.linkMitigatedBy("raster_irq_first_line_jitter", "double_irq")).toBe(true);
+    expect(await f.linkMitigatedBy("raster_irq_first_line_jitter", "double_irq")).toBe(true);
+
+    const r = await f.roQuery(
+      `MATCH (p:Pitfall {name: "raster_irq_first_line_jitter"})-[:MITIGATED_BY]->(t:Technique) RETURN t.name`
+    );
+    expect(r.data).toHaveLength(1);
+    expect((r.data[0] as any)["t.name"]).toBe("double_irq");
+  });
+
+  it("linkMitigatedBy MATCHes both ends: a missing technique drops the edge and creates no stub", async () => {
+    expect(await f.linkMitigatedBy("raster_irq_first_line_jitter", "no_such_technique")).toBe(false);
+    const stub = await f.roQuery(`MATCH (t:Technique {name: "no_such_technique"}) RETURN count(t) AS n`);
+    expect((stub.data[0] as { n: number }).n).toBe(0);
+    const edges = await f.roQuery(
+      `MATCH (p:Pitfall {name: "raster_irq_first_line_jitter"})-[:MITIGATED_BY]->(t) RETURN count(t) AS n`
+    );
+    expect((edges.data[0] as { n: number }).n).toBe(1);
+  });
+
   it("addCrashPattern stores likely_causes as JSON-encoded string", async () => {
     await f.addCrashPattern({
       symptom: "black_screen",

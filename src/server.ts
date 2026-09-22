@@ -18,7 +18,7 @@
  *     - c64_techniques_for        (Phase 3)
  *     - c64_check_compatibility   (Phase 3, graph-traversal conflict detection)
  *     - c64_timing_budget         (Phase 3, PAL/NTSC cycle math)
- *     - c64_pitfalls_for          (Phase 5, TRIGGERED_BY traversal)
+ *     - c64_pitfalls_for          (Phase 5, TRIGGERED_BY + MITIGATED_BY traversal)
  *     - c64_failure_diagnose      (Phase 5, CrashPattern keyword scoring)
  *     - c64_demo_briefing         (Phase 5, anchor tool — one-shot demo plan)
  *     - c64_game_briefing         (Phase 5, anchor tool — one-shot game plan)
@@ -491,9 +491,9 @@ Limitations: Returns graph metadata only — use c64_recipe_lookup to get the ac
     "c64_technique_lookup",
     {
       description:
-        `Look up a Commodore 64 programming technique by canonical snake_case name (e.g. 'stable_raster_irq'). Returns technique metadata, chip, region requirements, all USES edges to Registers and KERNAL routines, the list of recipes that implement it, and the top documentation chunks.
+        `Look up a Commodore 64 programming technique by canonical snake_case name (e.g. 'stable_raster_irq'). Returns technique metadata, chip, region requirements, all USES edges to Registers and KERNAL routines, the techniques it REQUIRES (must be set up before, or run underneath, it) and those that require it, the pitfalls it is the Fix for (MITIGATED_BY), the list of recipes that implement it, and the top documentation chunks.
 
-Guidelines: Use when you know a specific technique name and want its full profile — registers it touches, KERNAL calls it makes, and buildable recipe examples. For discovery ("what raster techniques exist?"), use c64_techniques_for instead.
+Guidelines: Use when you know a specific technique name and want its full profile — registers it touches, KERNAL calls it makes, what it presupposes (text_zoom requires stable_raster_irq on every scanline of its zone), and buildable recipe examples. For discovery ("what raster techniques exist?", "what builds on stable_raster_irq?"), use c64_techniques_for instead.
 
 Limitations: Returns structured data from FalkorDB; documentation chunks from Qdrant. Technique must be indexed (ingested from docs/techniques/). Partial or hyphenated names trigger a suggestion list.
 
@@ -503,7 +503,7 @@ Expected length: 1 technique header + register/kernal/recipe lists + up to 3 doc
 
 Example: {"name": "stable_raster_irq"} returns the stable raster IRQ technique with its register list (D011, D012, D019), recipes, and documentation.
 
-Returns structured: {name, title, category, complexity, chip?, requires_region?, uses_registers[], uses_kernal[], recipes[], documentation[]}.`,
+Returns structured: {name, title, category, complexity, chip?, requires_region?, uses_registers[], uses_kernal[], recipes[], requires[{name,title}], required_by[{name,title}], mitigates[{name,title,severity}], documentation[]}. requires/required_by are direct REQUIRES edges authored from **Requires:** lines (CONVENTIONS-techniques.md); a variant of a technique (double_irq of stable_raster_irq) is not a prerequisite and does not appear here.`,
       inputSchema: {
         name: z
           .string()
@@ -524,19 +524,19 @@ Returns structured: {name, title, category, complexity, chip?, requires_region?,
     "c64_techniques_for",
     {
       description:
-        `List C64 techniques matching an optional set of filters: category, chip, region, register, or recipe. All filters are optional — omitting all returns the full technique catalog.
+        `List C64 techniques matching an optional set of filters: category, chip, region, register, recipe, or requires. All filters are optional — omitting all returns the full technique catalog.
 
 Purpose: Lets the agent discover what techniques are documented before committing to a specific one. Use before c64_technique_lookup to find the right technique name.
 
-Inputs: All optional. 'category' is one of raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader. 'chip' is a chip name (e.g. 'VIC-II', 'SID'). 'region' is PAL or NTSC (techniques that REQUIRE a specific region). 'register' is a register name (e.g. 'D011') to find techniques that USE it. 'recipe' is a recipe canonical name to find what techniques it implements.
+Inputs: All optional. 'category' is one of raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader. 'chip' is a chip name (e.g. 'VIC-II', 'SID'). 'region' is PAL or NTSC (techniques locked to that region by a REQUIRES_REGION edge). 'register' is a register name (e.g. 'D011') to find techniques that USE it. 'recipe' is a recipe canonical name to find what techniques it implements. 'requires' is a technique name to find what builds on it — techniques whose REQUIRES chain reaches it directly or through other techniques.
 
 Output: {filter, techniques[{name, title, category, complexity}]}. Empty array means no matches.
 
-Examples: {"category": "raster"} → all raster techniques. {"chip": "VIC-II"} → ~30+ rows. {"register": "D011"} → techniques that use SCROLY.
+Examples: {"category": "raster"} → all raster techniques. {"chip": "VIC-II"} → ~30+ rows. {"register": "D011"} → techniques that use SCROLY. {"requires": "stable_raster_irq"} → every technique that presupposes a stable raster IRQ.
 
 See also: c64_technique_lookup for full profile of a specific technique.
 
-Limitations: region filter matches only techniques with an explicit REQUIRES_REGION edge (PAL/NTSC-locked). Most techniques work on both regions and won't appear in a region filter.`,
+Limitations: region filter matches only techniques with an explicit REQUIRES_REGION edge (PAL/NTSC-locked). Most techniques work on both regions and won't appear in a region filter. The requires filter follows REQUIRES edges only and does not unify variants: double_irq is a variant of stable_raster_irq with no edge between them, so {"requires": "stable_raster_irq"} does not list sideborder_open (which requires double_irq) — ask for double_irq as well. Chains longer than twelve edges are not followed.`,
       inputSchema: {
         category: z
           .string()
@@ -558,11 +558,15 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
           .string()
           .optional()
           .describe("Recipe canonical name — returns techniques that this recipe implements"),
+        requires: z
+          .string()
+          .optional()
+          .describe("Technique name — returns techniques whose REQUIRES chain reaches it (what builds on it)"),
       },
       outputSchema: TechniquesForSchema.shape,
     },
-    async ({ category, chip, region, register, recipe }) => {
-      const result = await techniquesFor({ category, chip, region, register, recipe });
+    async ({ category, chip, region, register, recipe, requires }) => {
+      const result = await techniquesFor({ category, chip, region, register, recipe, requires });
       return {
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
@@ -574,17 +578,17 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
     "c64_check_compatibility",
     {
       description:
-        `Check whether two or more C64 techniques can be combined. Hard conflicts come from authored resource demands on the techniques (DEMANDS edges): two techniques that each need every CPU cycle on their lines, a cycle-exact technique against one that takes interrupts mid-frame, a constant-sprite-set technique against a multiplexer, a KERNAL-out technique against KERNAL calls, and PAL-vs-NTSC requirements. Soft conflicts come from shared registers and shared KERNAL routines.
+        `Check whether two or more C64 techniques can be combined. Hard conflicts come from authored resource demands on the techniques (DEMANDS edges): two techniques that each need every CPU cycle on their lines, a cycle-exact technique against one that takes interrupts mid-frame, a constant-sprite-set technique against a multiplexer, a KERNAL-out technique against KERNAL calls, and PAL-vs-NTSC requirements. Soft conflicts come from shared registers and shared KERNAL routines. The check also takes each technique's REQUIRES closure — the techniques it must have set up underneath it — and runs the hard rules between one technique's prerequisites and the other technique, reporting a hit as prerequisite_conflict; a technique is never reported against a prerequisite it declared itself, and no technique's own demand set is changed by this.
 
 Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). Order doesn't matter — all pairwise combinations are checked.
 
-Output: {techniques[], conflicts[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
+Output: {techniques[], conflicts[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b and the implied ones in 'via'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
 
-Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, region_mismatch (hard); shared_register, shared_kernal (soft).
+Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, region_mismatch, prerequisite_conflict (hard); shared_register, shared_kernal (soft).
 
-Examples: {"techniques": ["fli_image", "sprite_multiplex_24"]} → incompatible (cpu_vs_irq and sprite_set; resolution: multiplex outside the FLI region). {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019).
+Examples: {"techniques": ["fli_image", "sprite_multiplex_24"]} → incompatible (cpu_vs_irq and sprite_set; resolution: multiplex outside the FLI region). {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019). {"techniques": ["fli_image", "digi_4bit"]} → incompatible (cpu_vs_irq: continuous interrupts inside the FLI region).
 
-Limitations: demands are authored per technique in docs/techniques (see CONVENTIONS-techniques.md); a technique without them only participates in the soft checks. Regions are not modelled, so 'incompatible' means 'not on the same raster lines', and the resolution says so.`,
+Limitations: demands and prerequisites are authored per technique in docs/techniques (see CONVENTIONS-techniques.md); a technique without them only participates in the soft checks. Named techniques are checked as named even when one requires the other. Regions are not modelled, so 'incompatible' means 'not on the same raster lines', and the resolution says so.`,
       inputSchema: {
         techniques: z
           .array(z.string())
@@ -644,17 +648,17 @@ Limitations: irq_overhead is taken from the Technique node's irq_overhead proper
     "c64_pitfalls_for",
     {
       description:
-        `Look up C64 coding pitfalls triggered by a specific Register, KERNAL routine, or Technique. Returns all Pitfall nodes that have a TRIGGERED_BY edge to the named entity, ordered by severity (critical → high → medium → low).
+        `Look up C64 coding pitfalls connected to a specific Register, KERNAL routine, or Technique. Returns all Pitfall nodes that have a TRIGGERED_BY edge to the named entity — and, for a Technique, those with a MITIGATED_BY edge to it, i.e. pitfalls whose Fix is that technique — ordered by severity (critical → high → medium → low).
 
-Purpose: Surfaces the gotchas a developer will hit when using a particular register, routine, or technique. Intended as a proactive "what can go wrong?" check before implementing a technique.
+Purpose: Surfaces the gotchas a developer will hit when using a particular register, routine, or technique, and the pitfalls a technique exists to cure. Intended as a proactive "what can go wrong?" check before implementing a technique.
 
 Inputs: 'topic' is the entity name to look up. The tool tries three interpretations in order: (1) Register — matched by canonical name, hex address, or alias (e.g. "D012", "$D012"); (2) KernalRoutine — matched by canonical name (e.g. "CHROUT"); (3) Technique — matched by snake_case name (e.g. "stable_raster_irq"). The first interpretation that returns at least one Pitfall wins.
 
-Output: {topic, topic_kind, pitfalls[{name, title, severity, region, category, triggered_by[]}]}. topic_kind is the winning interpretation (Register | KernalRoutine | Technique) or "search" if no direct match was found. pitfalls is ordered severity-descending. Each pitfall's triggered_by list contains all entities that trigger it, not just the queried entity.
+Output: {topic, topic_kind, pitfalls[{name, title, severity, region, category, triggered_by[], mitigated_by[]}]}. topic_kind is the winning interpretation (Register | KernalRoutine | Technique) or "search" if no direct match was found. pitfalls is ordered severity-descending. Each pitfall's triggered_by list contains all entities that trigger it, not just the queried entity; mitigated_by lists the techniques whose application is its Fix (CONVENTIONS-pitfalls.md **Mitigated by techniques:**). Read the two lists separately: sprite_dma_overflow is triggered by a naive multiplexer and mitigated by a correct one.
 
 When no direct match is found, topic_kind is "search" and pitfalls is empty. Use c64_search or c64_technique_lookup to explore related content.
 
-Examples: {"topic": "D012"} → pitfalls triggered by $D012 (raster line register). {"topic": "stable_raster_irq"} → pitfalls triggered by the stable-raster-IRQ technique. {"topic": "CHROUT"} → pitfalls triggered by the KERNAL CHROUT routine.
+Examples: {"topic": "D012"} → pitfalls triggered by $D012 (raster line register). {"topic": "stable_raster_irq"} → pitfalls triggered by, or fixed by, the stable-raster-IRQ technique. {"topic": "pal_ntsc_detection"} → the three region-timing pitfalls it is the remedy for. {"topic": "CHROUT"} → pitfalls triggered by the KERNAL CHROUT routine.
 
 See also: c64_failure_diagnose to match symptoms to known failure patterns. c64_technique_lookup for a technique's full profile (registers, KERNAL calls, recipes).
 
@@ -815,7 +819,7 @@ Inputs:
   - kind (optional): "technique-register" | "recipe-technique" | "pitfall-technique" | "all" (default "all")
   - limit (optional): max suggestions to return (1-100, default 20)
 
-Output: structured SuggestLinksOutput with suggestions[], generated_at.
+Output: structured SuggestLinksOutput with suggestions[], generated_at. Suggestion kinds: technique_uses_register, recipe_implements_technique, pitfall_triggered_by_technique, pitfall_mitigated_by_technique. "pitfall-technique" emits the last two: a technique named in a pitfall's Fix section is proposed as MITIGATED_BY, one named elsewhere in the pitfall as TRIGGERED_BY.
 
 Example: {"kind": "technique-register", "limit": 10}`,
       inputSchema: {
