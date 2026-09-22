@@ -13,37 +13,35 @@ demos, tools, anything on the stock machine.
 
 ## The pitch
 
-An LLM writing C64 code has two problems that compound. Its training data
-is mostly cc65, which is common on GitHub and not what cycle-tight work on
-the machine uses. And its timing claims are wrong often enough to matter: a raster
-split on the wrong line, a sprite multiplexer that does not fit the badline
-window, a SID filter cutoff that differs between chip revisions. The code
-assembles cleanly and tears the screen at runtime.
+Ask a coding model about the Commodore 64 and you get its training data
+back: forum lore, decades of copied listings, and figures that are close
+enough to assemble and wrong enough to fail on the machine. The model
+cannot tell which of its numbers were measured and which were repeated.
 
-c64-kb is a reference built to be checked rather than trusted. Its
-documents on the hardware, the techniques, the toolchains and the pitfalls
-are chunked into Qdrant for semantic search, and the entities in them
-(registers, KERNAL routines, memory regions, techniques, recipes, pitfalls,
-crash patterns) are materialised into a FalkorDB graph. The graph answers
-what flat search cannot: which registers a technique touches, which
-pitfalls it triggers, which recipes implement it, what it needs from the
-machine while it runs, and so which two techniques cannot share a raster
-line.
+c64-kb is the reference an agent should have had instead. It covers the
+hardware, the techniques, the toolchains, the recipes and the pitfalls of
+the stock machine, and every number in it says where it came from:
+measured in VICE or read from the ROM images, agreed by independent
+documents, derived by arithmetic, or marked unverifiable. Every code
+listing is built with the toolchain it names before it lands. Recipes are
+re-run headless in VICE and their pictures compared pixel for pixel with
+the committed screenshots. When an audit finds a page wrong, the
+correction is written beside the old claim, not over it, so anything that
+relied on the old value can see what changed.
 
-Every number in it stands on a named rung: measured in VICE or read from
-the ROM images, agreed by two independent documents, derived by
-arithmetic, or marked unverifiable. Every code listing is built with the
-toolchain it names before it lands. Recipes are re-run headless in VICE at
-pinned cycles and their pictures compared pixel for pixel with the
-committed screenshots. When an audit finds a page wrong, the correction is
-written beside the old claim, not over it, so an agent that relied on the
-old value can see what changed. The changelog says what each audit
-corrected.
+The pages are indexed in two ways. Qdrant holds them as chunks for
+semantic search. FalkorDB holds the things in them as a graph: registers,
+KERNAL routines, memory regions, techniques, recipes, pitfalls, crash
+patterns, and the relations between them. The graph answers what search
+cannot: which registers a technique touches, which pitfalls it triggers,
+which recipes implement it, what it needs from the machine while it runs,
+and so which techniques cannot share a raster line.
 
-It is written for two readers: an agent loop that takes a brief, chooses a
-technique stack, generates the code and iterates against vice-mcp and
-sim6502, and a developer in Claude Code who wants an answer about the C64
-that came from an instrument rather than from training data.
+Both are served over MCP, so an agent can look things up as it works. It
+is written for an agent loop that takes a brief, chooses a technique
+stack, writes the code and iterates against an emulator, and for a
+developer who wants an answer about the C64 that came from an instrument
+rather than from a model's memory.
 
 ---
 
