@@ -13,35 +13,32 @@ demos, tools, anything on the stock machine.
 
 ## The pitch
 
-Ask a coding model about the Commodore 64 and you get its training data
-back: forum lore, decades of copied listings, and figures that are close
-enough to assemble and wrong enough to fail on the machine. The model
-cannot tell which of its numbers were measured and which were repeated.
+Coding models know the Commodore 64 from training data. Much of it is
+copied listings and forum posts, and its timing figures are often wrong.
+A model has no way to tell a measured figure from a repeated one.
 
-c64-kb is the reference an agent should have had instead. It covers the
-hardware, the techniques, the toolchains, the recipes and the pitfalls of
-the stock machine, and every number in it says where it came from:
-measured in VICE or read from the ROM images, agreed by independent
-documents, derived by arithmetic, or marked unverifiable. Every code
-listing is built with the toolchain it names before it lands. Recipes are
-re-run headless in VICE and their pictures compared pixel for pixel with
-the committed screenshots. When an audit finds a page wrong, the
-correction is written beside the old claim, not over it, so anything that
-relied on the old value can see what changed.
+c64-kb is a reference for the stock C64 that an agent can query while it
+works. It covers the hardware, the techniques, the toolchains, the
+recipes and the pitfalls. Each number states its source: measured in
+VICE, read from the ROM images, agreed by independent documents, derived
+by arithmetic, or marked unverifiable. Each code listing is built with the
+toolchain it names before it lands. Recipes are re-run headless in VICE
+and the picture is compared pixel for pixel with the committed
+screenshot. When an audit finds a page wrong, the correction is written
+beside the old claim and the old claim stays visible.
 
-The pages are indexed in two ways. Qdrant holds them as chunks for
-semantic search. FalkorDB holds the things in them as a graph: registers,
-KERNAL routines, memory regions, techniques, recipes, pitfalls, crash
-patterns, and the relations between them. The graph answers what search
-cannot: which registers a technique touches, which pitfalls it triggers,
-which recipes implement it, what it needs from the machine while it runs,
-and so which techniques cannot share a raster line.
+The pages are indexed in two ways. Qdrant stores them as chunks for
+semantic search. FalkorDB stores the things in them as a graph:
+registers, KERNAL routines, memory regions, techniques, recipes,
+pitfalls, crash patterns, and their relations. The graph answers
+questions search cannot: which registers a technique touches, which
+pitfalls it triggers, which recipes implement it, what it needs from the
+machine while it runs, and which techniques cannot share a raster line.
 
-Both are served over MCP, so an agent can look things up as it works. It
-is written for an agent loop that takes a brief, chooses a technique
-stack, writes the code and iterates against an emulator, and for a
-developer who wants an answer about the C64 that came from an instrument
-rather than from a model's memory.
+Both indexes are served over MCP. The intended users are an agent loop
+that takes a brief, chooses techniques, writes the code and tests it in
+an emulator, and a developer who wants a C64 answer with a source behind
+it.
 
 ---
 
