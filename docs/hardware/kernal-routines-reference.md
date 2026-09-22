@@ -10,9 +10,19 @@ its real ROM addresses — those moved between Commodore machines (VIC-20, PET,
 C64, C128, Plus/4). Instead, the KERNAL exposes a **jump table** in the last
 128 bytes of the address space, from `$FF81` upward, where each entry is a
 3-byte `JMP abs` instruction to the real routine. Commodore promised this
-table would be source-compatible across machines; in practice, every
-Commodore-8-bit shares the entries from `$FF81` onward and a sub-table from
-`$FFC0` onward in identical positions.
+table would be source-compatible across machines; in practice the shared
+part is narrower than the whole table. The block from `$FFC0` (OPEN) to
+`$FFEA` (UDTIM) sits at the same positions on every machine from the PET
+onward; BASIC 4 PETs also carry `$FF93-$FFBD`; the VIC-20's table starts at
+`$FF8A` (RESTOR) and holds 36 of the 39 entries slot-for-slot with the C64's,
+with `$FF7F-$FF84` occupied by its IRQ/BRK `JMP ($0316)`/`JMP ($0314)` tails;
+SCREEN/PLOT/IOBASE at `$FFED-$FFF3` first appear on the VIC-20 and
+CINT/IOINIT/RAMTAS at `$FF81-$FF87` first on the C64. The Plus/4 and C128
+keep all 39 entries at the C64 positions. (An earlier version of this page
+said every Commodore 8-bit shared the table from `$FF81`; the PET and VIC-20
+ROMs do not. Read from the VICE ROM images: PET 901439-04-07 / 901465-03 /
+901465-22, VIC-20 901486-07, C64 901227-03, Plus/4 318004-05, C128
+318020-05.)
 
 There are **39 jump-table entries** spanning `$FF81-$FFF3`. The portion from
 `$FFC0-$FFF5` is the historically-documented "user jump table" that the
@@ -24,10 +34,20 @@ for application code as well.
 
 Every routine in this document is documented at its **jump-table address**,
 not its real ROM address. Calling code should always `JSR $FFD2` (CHROUT),
-never `JSR $E716` (the actual ROM address for CHROUT in the C64 KERNAL).
-The jump-table addresses are the stable contract; the ROM-internal addresses
-are private implementation detail and can move between KERNAL revisions
-(901227-01, -02, -03 all differ in places).
+never `JSR $F1CA` (CHROUT's own body, reached through the `$0326` vector) or
+`JSR $E716` (the screen-output routine CHROUT dispatches to when the output
+device is 3; device 4 and up goes to IECOUT at `$EDDD`). An earlier version
+of this page named `$E716` as CHROUT's ROM address; it is the screen editor's
+print routine — `$0326` defaults to `$F1CA` in every 901227 ROM (read from
+the ROM images). The jump-table addresses are the stable contract; the
+ROM-internal addresses are private implementation detail and can move
+between KERNAL revisions and do move between Commodore machines. (The three
+C64 revisions 901227-01, -02 and -03 differ in 277 bytes of in-place patches
+spread over several dozen byte ranges — e.g. `$E4AC-$E4FF`, `$F428-$F44C`,
+`$FF5B-$FF80` — and no entry address moved; `$F1CA`, `$E716` and `$F49E` are
+at the same addresses in all three, so the examples here illustrate the
+contract, not a case where it bit. Other Commodore machines put every
+routine elsewhere.)
 
 The 39 routines group naturally into eight categories:
 
@@ -64,25 +84,63 @@ below.
 Three production-run KERNAL ROMs shipped in the C64 lifetime, identified
 by the Commodore part number printed on the ROM chip:
 
-- **901227-01** — original 1982 KERNAL. Identifiable by the slower
-  IEC bus protocol (about 400 bytes/sec). Quickly superseded.
-- **901227-02** — early-1983 revision. Tweaked the cassette routines,
-  fixed a power-on RAM-test bug.
+- **901227-01** — the original KERNAL. No PAL/NTSC detection: CINT's
+  entry is `JMP $E518` and IOINIT hard-codes the jiffy timer at `$411B`;
+  the screen clear fills colour RAM with white (`LDA #$01` at `$EA0B`);
+  after the tape FOUND message it waits for any key (`$F761`).
+  `$FF5B-$FF80` is unused filler.
+- **901227-02** — adds PAL/NTSC detection: CINT's entry becomes a
+  wrapper at `$FF5B` that runs the old `$E518`, watches for raster line
+  311 (the VIC init table now sets `$D011`/`$D012` to `$9B`/`$37`),
+  stores the result in `$02A6` and lets IOINIT pick a jiffy timer of
+  `$4025` (PAL) or `$4295` (NTSC); RS-232 gains a PAL baud table at
+  `$E4EC` and region-aware OPEN/NMI code; BASIC's CHKOUT wrapper
+  (`$E118`) preserves A via a patch at `$E4AD`; the screen clear fills
+  colour RAM with the background colour (`$E4DA` = `LDA $D021`); the wait
+  after the tape FOUND message becomes a timed wait on the jiffy clock
+  that a keypress also ends (`$E4E0`). This is the only cassette change;
+  no tape timing constant differs (`$F767-$FCFB` identical).
 - **901227-03** — the most common ROM, shipped in the bulk of C64
-  units sold from mid-1983 onward. Source of all addresses in this
-  doc and the source most other documentation cites by default.
+  units sold from mid-1983 onward, and the source of all addresses in
+  this doc and the source most other documentation cites by default.
+  The screen clear fills colour RAM with the current text colour
+  (`$E4DA` = `LDA $0286`), plus small screen-editor (`$E57C-$E599`,
+  `$E621`) and RS-232 (`$EF94` -> `$E4D3`) patches.
+
+Identify the revision from the byte at `$FF80`: `PEEK(65408)` returns
+170 (-01), 0 (-02) or 3 (-03).
 
 All three expose **the same 39-entry jump table at the same
-addresses**. Only the ROM-internal routine addresses change between
-revisions. Code that always calls via `JSR $FFxx` works on every
-KERNAL revision unchanged; code that calls a ROM-internal address
-(`JSR $E716`, `JSR $F49E`, etc.) is silently broken on a different
-revision. This is the entire point of the jump table.
+addresses**, and the differences between them are in-place patches:
+-01 and -03 differ in 277 bytes (-01/-02 227, -02/-03 57; `cmp` on the
+VICE ROM images). No routine's entry address moved — 38 of 39
+jump-table targets and all sixteen default RAM vectors are identical,
+and the one changed entry (CINT) points at a wrapper that still calls
+`$E518`. The IEC bus routines, RAMTAS, LOAD, CHROUT's body (`$F1CA`)
+and the screen-output routine (`$E716`) are byte-identical in all
+three, so `JSR $F1CA`, `JSR $E716` or `JSR $F49E` would in fact work on
+every 901227 revision. Use the jump table anyway: it is the contract
+Commodore kept across machines (the VIC-20, C128 and Plus/4 internals
+are elsewhere), and it survives the RAM-vector hooks that direct calls
+bypass. An earlier version of this section said -01 had a slower IEC
+protocol, that -02 fixed a RAM-test bug, that internal addresses moved
+between revisions and that `JSR $E716` was "silently broken" on another
+revision; none of that is in the ROM bytes.
 
-The C128 in C64 mode uses a separate KERNAL ROM (318020-05) but
-exposes the same 39-entry jump table at the same addresses, with
-identical semantics — programs that use only the jump table run
-unchanged on a C128 in C64 mode.
+The C128 in C64 mode maps a plain C64 KERNAL image, not the C128
+KERNAL. An earlier revision of this page named 318020-05 here; that
+part is the C128-mode KERNAL/editor ROM, a different program (its jump
+table points into `$C000`/`$E1xx` and its reset vector is `$FF3D`).
+VICE x128 loads `kernal64-901227-03.bin` for C64 mode, byte-identical
+to the C64's 901227-03 — measured by dumping the `c64rom` bank from
+x128 3.10 in `-go64` mode. VICE also ships two variants for that slot,
+`kernal64-325179-01` and `-325182-01`, differing from 901227-03 in 54
+and 24 bytes (table bytes and one small patch; none in the
+`$FF81-$FFF4` jump table). The part number on a real C128's C64-ROM
+chip (usually given as 251913-01, a combined BASIC+KERNAL mask) is from
+documentation, not measured here. Either way the 39-entry jump table is
+at the same addresses with identical semantics — programs that use only
+the jump table run unchanged on a C128 in C64 mode.
 
 ### Sources
 
@@ -102,7 +160,7 @@ The full 39-entry jump table, in address order. Each entry is a 3-byte
 |---------|---------|--------------------------------------------------------------------|
 | `$FF81` | CINT    | Initialize screen editor + VIC-II (cold-screen setup)              |
 | `$FF84` | IOINIT  | Initialize CIA1/CIA2/SID; set up jiffy IRQ                         |
-| `$FF87` | RAMTAS  | RAM test, set top/bottom of memory, clear page 0/1/2/3             |
+| `$FF87` | RAMTAS  | RAM test, set top/bottom of memory, clear `$0002-$00FF` and `$0200-$03FF` (not the stack page) |
 | `$FF8A` | RESTOR  | Restore RAM vectors at `$0314-$0333` to KERNAL defaults            |
 | `$FF8D` | VECTOR  | Read or write all RAM vectors as a block                           |
 | `$FF90` | SETMSG  | Control KERNAL error / control-message verbosity                   |
@@ -197,6 +255,19 @@ fname:  .byte "FILE,S,R"
 fname_end:
 ```
 
+Listings in this document are generic 6502 assembler syntax — `;`
+comments and `.byte "…"` strings, as ca65 accepts them — not
+KickAssembler fragments, and `npm run check:listings` does not build
+them (it assembles only `asm` fences written in KickAssembler syntax
+with no `;` lines). In KickAssembler use `//` comments and `.text "…"`;
+Kick's default `.text` encoding is screen codes, which for upper-case
+letters, digits and punctuation coincide with the unshifted PETSCII a
+drive expects (`FILE,S,R` -> `46 49 4C 45 2C 53 2C 52`; `petscii_mixed`
+would give `C6 C9 CC C5 …`). Under ca65 `-t c64` the same literal
+assembles to shifted PETSCII `C6 C9 CC C5 …`, so set the filename bytes
+deliberately in whichever assembler you use (both byte sequences
+measured with KickAssembler 5.25 and ca65 2.19).
+
 Three rules trip up first-time KERNAL programmers:
 
 - **SETLFS + SETNAM state survives across calls** until you overwrite it.
@@ -219,13 +290,32 @@ Three rules trip up first-time KERNAL programmers:
 **Description:** Stores the three file parameters that the next OPEN, LOAD,
 or SAVE will use. The logical file number (A) is a program-chosen tag in the
 range 1-255; it appears in subsequent CHKIN/CHKOUT/CLOSE calls to identify
-this file. Numbers 1-127 cause LF to be passed verbatim to the device;
-128-255 add an implicit linefeed after each carriage return on output.
+this file. The KERNAL stores the number in `$B8` and never interprets
+it. The familiar rule that file numbers 128-255 get a linefeed after
+every carriage return is BASIC's, not the KERNAL's: PRINT#, CMD and any
+PRINT while CMD is active send `$0A` after `$0D` when bit 7 of the
+current channel byte `$13` is set (BASIC ROM `$AAD7`, `BIT $13`). CHROUT
+adds no byte of its own whatever the file number — measured in VICE
+x64sc: `SETLFS` 200 followed by `CHROUT $0D` delivers `$0D` alone, while
+BASIC's `PRINT#200` hands CHROUT `$0D,$0A` and `PRINT#100` hands `$0D`.
+(An earlier revision placed this rule under SETLFS as if the KERNAL
+applied it.)
 The device number (X) selects the bus device: 0=keyboard, 1=tape (Datasette),
 2=RS-232 (user port), 3=screen, 4-7=printer/plotter, 8-30=IEC disk/printer
 units. Secondary address (Y) is device-specific: for the 1541 disk drive,
-0=load PRG, 1=save PRG, 2-14=open named channel, 15=command channel, `$FF`
-means "no secondary" (used by tape).
+0=load PRG, 1=save PRG, 2-14=open named channel, 15=command channel. `$FF`
+(any value with bit 7 set) means "send no secondary address" on the
+serial bus: OPEN, CHKIN, CHKOUT and CLOSE then skip the
+secondary-address byte, and OPEN sends nothing at all — not even the
+filename — so it suits an unnamed channel such as a printer, not a named
+disk file. It is what BASIC's OPEN supplies for device 3 and above when
+the third parameter is omitted; for tape and RS-232 BASIC defaults to 0.
+Tape reads the secondary address: for OPEN, 0 = read, 1 = write, 2 =
+write followed by an end-of-tape marker at CLOSE (measured in VICE
+x64sc: SA `$FF` on device 1 takes the write path and prompts PRESS
+RECORD & PLAY ON TAPE); for SAVE, bit 0 = absolute-address header, bit 1
+= write an end-of-tape marker after the data; for LOAD, see `$FFD5`
+below. An earlier revision said `$FF` was "used by tape"; it is not.
 
 ### $FFBD — SETNAM — Set filename
 
@@ -253,10 +343,28 @@ secondary-address (`$F0 | sec`) over the IEC bus, then sends the
 filename bytes one at a time via IECOUT, then UNLISTEN. On success the
 KERNAL records the logical file number in its open-file table
 (`$0259-$0262` for LF, `$0263-$026C` for device, `$026D-$0276` for
-secondary). Errors: 1=too many open files (max 10), 2=file already
-open (logical file number reused), 4=file not found (LOAD only),
-5=device not present, 6=not input file, 7=not output file. On error
-the file is not added to the open-file table.
+secondary). Errors: 1=too many open files (10 already open), 2=logical
+file number already open, 5=device not present, 6=logical file number 0
+(the only 6 OPEN returns; OPEN never returns 7 — 6 and 7 as direction
+errors belong to CHKIN/CHKOUT), 9=illegal device (tape OPEN with the
+tape-buffer pointer `$B2/$B3` below `$0200`). OPEN's own code-4 exit is
+on the tape branch only and is reached only through the STOP key during
+the header search, and then only when `$93` (the load/verify flag left
+by the last LOAD or VERIFY) is non-zero; with `$93` = 0 the same STOP
+returns C=1, A=0. A name that is not on the tape does not produce 4: the
+search reads on until an end-of-tape marker, which OPEN returns as C=1,
+A=5 (BASIC prints ?DEVICE NOT PRESENT). Disk OPEN never reports a
+missing file — read the error channel. Errors 1, 2 and 6 are detected
+before the table entry is stored; for 4, 5 and 9 the entry has already
+been added (`$98` incremented, LFN/device/secondary stored at
+`$0259/$0263/$026D,X`) and stays there, so a retry with the same logical
+file number returns 2 — CLOSE it (or CLALL) first. (An earlier version
+of this entry listed 6 and 7 as direction errors, called 4 LOAD-only and
+said a failed OPEN left no table entry; all three were checked against
+the KERNAL ROM bytes and in VICE x64sc.) OPEN on tape (device 1) also
+returns C=1 with A=0 if RUN/STOP is pressed while it waits for
+PLAY/RECORD or during the header search or write (`$F399`/`$F3B8` ->
+`$F3D4`); the serial OPEN path has no STOP check (ROM bytes).
 
 ### $FFC3 — CLOSE — Close a logical file
 
@@ -280,7 +388,18 @@ the file is currently the active input or output channel, CLOSE does
 **Description:** Tells the KERNAL that subsequent CHRIN / GETIN calls
 should read from the named logical file rather than the keyboard. For
 IEC devices, sends TALK + secondary (`$60 | sec`). Errors: 3=file not
-open, 6=not input file (the device was opened for write).
+open; 6=not input file, raised only for a tape file whose secondary
+address is not 0 (opened for write; `$F22A-$F230` compares the stored SA
+with `$60`). CHKIN does not check direction on a serial device: on a
+disk channel opened `,S,R` it returns C=0 (measured in VICE x64sc).
+There is a device-not-present exit (5) at `$F24D` but it is not
+reachable for a missing serial device: TKSA falls through into the bus
+turnaround at `$EDCC`, whose wait for the talker's clock at `$EDD6` has
+no timeout, so CHKIN on a serial device that does not answer hangs the
+machine rather than returning (measured in VICE x64sc: an
+open-file-table entry for device 9 hung CHKIN both on an empty bus and
+with a 1541 on device 8). An earlier version of this entry said 6 meant
+the device was opened for write; that is the tape rule only.
 
 ### $FFC9 — CHKOUT — Redirect output to logical file
 
@@ -291,7 +410,16 @@ open, 6=not input file (the device was opened for write).
 **Description:** Tells the KERNAL that subsequent CHROUT calls should
 write to the named logical file rather than the screen. For IEC
 devices, sends LISTEN + secondary (`$60 | sec`). Errors: 3=file not
-open, 7=not output file (the device was opened for read).
+open; 5=device not present (no serial device pulled DATA low in answer
+to ATN during LISTEN/SECOND, `$ED40-$ED47`, ST bit 7; measured C=1, A=5
+in VICE x64sc both on an empty bus and with another drive present);
+7=not output file, raised for the keyboard (device 0) and for a tape
+file opened with secondary address 0 (read). Disk channels are not
+direction-checked: CHKOUT on a channel opened `,S,R` returns C=0 (A=8),
+the bytes you CHROUT afterwards are accepted, and with the 1541-II DOS
+in VICE the drive's error channel still read 00 afterwards, so nothing
+reports the mistake. An earlier version said 7 meant the device was
+opened for read; that is the tape rule only.
 
 ### $FFCC — CLRCHN — Reset default I/O channels
 
@@ -334,13 +462,38 @@ RAM. If the secondary address from SETLFS is 0, the file is loaded at
 the address in X/Y (passed in by the caller). If secondary is 1
 (non-zero), the file's first two bytes are used as the load address
 (this is how `LOAD "FILE",8,1` works in BASIC). On the C64 the load
-goes into RAM even where ROM is mapped, because the KERNAL stores
-via indirect indexed addressing through page 1 and the CPU writes
-always go to RAM. After a successful load, X/Y hold the address
+goes into RAM even where BASIC or KERNAL ROM is mapped: the serial path
+stores each byte with `STA ($AE),Y` through the zero-page pointer
+`$AE/$AF` (EAL/EAH, the store at `$F51C`; the tape path stores through
+`$AC/$AD` at `$FB41`), and a 6510 write to a ROM-mapped address always
+lands in the RAM beneath. An earlier version of this page said the
+pointer was in page 1 — that is the stack. The rule does *not* extend
+to `$D000-$DFFF`: LOAD never touches `$01`, so it runs with I/O mapped
+in, and a file whose load address falls there is written into the
+VIC/SID/CIA registers or colour RAM while the RAM underneath is left
+untouched (measured in VICE x64sc: a `,8,1` load of two bytes to
+`$D020` set the border and background registers and left the RAM
+beneath at its prefill). You cannot bank I/O out around the call — the
+serial routines drive the IEC bus through CIA2 at `$DD00` and the tape
+routines time pulses through CIA1 — so LOAD such data elsewhere and
+copy it under I/O yourself with interrupts disabled. Loading straight
+into colour RAM at `$D800` is the one case where writing the chips is
+what you want. After a successful load, X/Y hold the address
 immediately *past* the last byte loaded. With A=1, LOAD compares the
 file against memory instead of writing — sets the status byte's "verify
 mismatch" bit on differences. Errors: 4=file not found, 5=device not
-present, 8=missing filename, 9=illegal device.
+present, 8=missing filename, 9=illegal device. A C=1 return with A=0 is
+none of these: RUN/STOP aborted the transfer. The serial loop calls
+STOP before every byte (`$F4F9`); the tape path polls it while waiting
+for PLAY and throughout the IRQ-driven block transfer, so pressing STOP
+at the PRESS PLAY prompt returns the same way. The KERNAL has already
+closed the serial channel or stopped the tape motor. BASIC reports this
+return as ?BREAK ERROR; Commodore's own KERNAL error table numbers it
+0, "routine terminated by the STOP key" (Programmer's Reference Guide,
+not verified here). Test A=0 before indexing an error-message table.
+(Measured in VICE x64sc 3.10: LOAD from device 8 with STOP forced true
+on its 10th poll returned A=`$00`, C=1 after nine bytes; ROM bytes
+`$F4F9`/`$F633`.)
 
 ### $FFD8 — SAVE — Save memory to file
 
@@ -353,9 +506,21 @@ The start address is read indirectly through the zero-page byte
 pointed to by A (the BASIC start-of-program pointer at `$2B/$2C`
 is the conventional value, which is why BASIC `SAVE` saves the
 current program). The end-address+1 is passed directly in X/Y.
-On tape and serial bus the first two bytes written are the load
-address (matching the LOAD format), then the data. Errors: 5=device
-not present, 8=missing filename, 9=illegal device.
+On the serial bus the first two bytes sent are the start address (low,
+high), then the data — the format LOAD expects. On tape the addresses
+are not in the data stream at all: the KERNAL writes a separate
+192-byte header block first (`$F76A`: type byte — 1 relocatable, 3
+non-relocatable when the secondary address has bit 0 set — then start
+address, end-address+1, and the filename, space-padded), and the data
+block that follows is the raw memory bytes with no address prefix. An
+earlier version of this page said both tape and serial began with the
+load address; only serial does (KERNAL 901227-03, `$F617-$F621` vs
+`$F76A`/`$F867`). Errors: 5=device not present, 8=missing filename,
+9=illegal device. As with LOAD, C=1 with A=0 means RUN/STOP aborted the
+transfer — polled before every byte on the serial bus (`$F62E`), and
+while waiting for RECORD/PLAY and during the block write on tape — not
+an I/O error; BASIC reports it as ?BREAK ERROR (ROM bytes
+`$F62E`/`$F633`, `$F8D0`).
 
 ## Character I/O
 
@@ -381,7 +546,10 @@ their named action — `$0D` = carriage return, `$11` = cursor down,
 case. When writing to the screen, CHROUT *does* modify VIC-II state:
 PETSCII `$0E` and `$8E` write to `$D018` to switch the character
 ROM source between charset 1 and charset 2; color changes write to
-the current-color zero-page byte at `$0286`. To suppress these side
+the current-color byte at `$0286` (page 2, not zero page — earlier
+text called it zero-page; the KERNAL stores it with an absolute
+`STX $0286` at `$E8D6`, measured in VICE x64sc: CHROUT `$1C` leaves
+`$0286` = 2). To suppress these side
 effects, write directly to screen RAM (`$0400`) and color RAM
 (`$D800`) instead. A and the carry flag are conventionally preserved
 on success.
@@ -457,9 +625,17 @@ conventions.
 sequence: programs the VIC-II registers for 25-row x 40-column text
 mode, sets screen RAM to `$0400-$07E7` and color RAM to `$D800-$DBE7`,
 fills screen with `$20` (space) and color RAM with the current
-foreground color, sets the cursor to row 0 column 0, sets all
-keyboard-tables pointers (`$028F-$0290`, `$F5/$F6`) to their KERNAL
-defaults, and initializes the IRQ-driven keyboard queue. CINT is
+foreground color, sets the cursor to row 0 column 0, sets the
+keyboard-decode vector `$028F/$0290` to `$EB48`, the keyboard-buffer
+size `$0289` = 10, the key-repeat delay `$028C` = 10 and speed `$028B`
+= 4, and the default character colour `$0286` = 14 (light blue), and
+initializes the IRQ-driven keyboard queue. (An earlier version of this
+page said CINT also set the keyboard-table pointer `$F5/$F6`; it does
+not — read from the 901227-03 ROM and confirmed in VICE, `$E518-$E598`
+never stores to `$F5/$F6`. That pointer is written by SCNKEY only on a
+scan that finds a key held: first to `$EB81` at `$EA9D/$EAA1`, then
+re-selected by shift state through the `$028F` vector at `$EB48`; an
+idle scan leaves it alone.) CINT is
 called once at power-on after RAMTAS and IOINIT. Applications can
 re-invoke it to recover from screen corruption (e.g. after a wild
 write to `$D000` zeroed half the VIC registers), but doing so
@@ -470,12 +646,12 @@ overwrites screen and color RAM.
 ### $FFE1 — STOP — Test the RUN/STOP key
 
 **Input:** None
-**Output:** Z=1 if RUN/STOP currently down (and was pressed since last STOP call), Z=0 otherwise; A = `$7F` if pressed, else unchanged
-**Affects:** A, Z
+**Output:** Z=1 if `$91` = `$7F` (the last UDTIM sample of the STOP-key column showed RUN/STOP down with no shift key), Z=0 otherwise. A is always overwritten: when STOP is not detected A = `$91`, the raw column-7 row byte (`$FF` with nothing in that column held; the *Programmer's Reference Guide* documents using it to test the other keys in that column); when STOP is detected A = 0, because CLRCHN's final `LDA #0` is what is left in A. An earlier version of this page said A = `$7F` when pressed and unchanged otherwise, and that STOP latched "since the last call" — measured in VICE x64sc against the ROM bytes, none of that holds: `$FFE1` -> `$F6ED` = `LDA $91 / CMP #$7F / BNE / PHP / JSR CLRCHN / STA $C6 / PLP / RTS`, and the only writer of `$91` in the ROMs is UDTIM at `$F6DA`, so nothing is consumed by reading it.
+**Affects:** A, N, Z, C (the flags are those of `CMP #$7F` against `$91`). When STOP is detected it also calls CLRCHN (`$FFCC`): input device `$99` is reset to 0 and output device `$9A` to 3, with UNTALK/UNLISTEN sent first only if the current device number was above 3, and the keyboard queue is emptied (`$C6` = 0).
 **Pairs with:** GETIN, UDTIM
-**Description:** Reads the STOP-key flag (zero page `$91`, set by the
-IRQ-driven keyboard scan to `$7F` when STOP is in the bottom row of
-the matrix) and returns Z=1 if STOP is currently pressed. The
+**Description:** Reads the STOP-key flag (zero page `$91`, set by UDTIM
+(`$FFEA`), not SCNKEY, to `$7F` when STOP is held in its matrix column)
+and returns Z=1 if STOP is currently pressed. The
 canonical interruptible-loop pattern is:
 
 ```asm
@@ -490,7 +666,13 @@ abort:  ; restore state, exit
 STOP reads `$91`, not the keyboard matrix directly, so it depends on
 the IRQ handler running. If the user has disabled IRQs (`SEI` without
 re-enabling), STOP will never return Z=1. To make STOP work in an
-IRQ-disabled context, call SCNKEY (`$FF9F`) inside the loop. STOP
+IRQ-disabled context, `JSR $FFEA` (UDTIM) inside the loop (this also
+advances the jiffy clock, so call it at most once per frame if `TI$`
+matters). An earlier version of this page said to call SCNKEY (`$FF9F`)
+here; SCNKEY never writes `$91` — the only store to `$91` in the KERNAL
+is UDTIM's at `$F6DA` — so that advice could not have worked. UDTIM
+reads the STOP column through `$DC01` without selecting it, relying on
+`$DC00` still holding `$7F` as SCNKEY and the KERNAL IRQ leave it. STOP
 also serves a secondary purpose in some KERNAL routines: when called
 from inside disk I/O, it aborts the operation, and when called from
 the cassette routines, it aborts the tape transfer.
@@ -640,9 +822,14 @@ sound and reset the keyboard-scan IRQ rate to the KERNAL default.
 **Description:** Performs the RAM-test portion of cold start: walks
 through each page from `$0800` upward writing `$55` then `$AA` then
 reading back, until it finds a page that doesn't echo back the
-written value, which becomes the top-of-RAM. Zeroes pages 2 and 3
-(`$0200-$03FF`, including the BASIC input buffer and the screen-editor
-work area), sets MEMTOP to the discovered top and MEMBOT to `$0800`,
+written value, which becomes the top-of-RAM. Zeroes `$0002-$00FF` and
+`$0200-$03FF` (zero page below the stack, the BASIC input buffer and
+the screen-editor work area); the stack page is not cleared apart from
+the two bytes `$0100-$0101` that the `STA $0002,Y` loop spills into.
+Earlier versions of this page said "pages 0/1/2/3" in the table and
+"pages 2 and 3" here; the ROM loop at `$FD50` is `STA $0002,Y / STA
+$0200,Y / STA $0300,Y` with Y 0-255, confirmed in VICE x64sc 3.10. It
+sets MEMTOP to the discovered top and MEMBOT to `$0800`,
 clears the cassette buffer at `$033C-$03FB`. RAMTAS is destructive
 and is normally called only at power-on. Calling it from a running
 program will erase the BASIC input buffer and the open-file table.
@@ -863,10 +1050,14 @@ device and is set by LISTEN/TALK if no device acknowledges.
 and B, decodes the pressed key against the current keyboard table
 (four tables: unshifted, shifted, Commodore-shifted, control), and
 pushes the resulting PETSCII byte into the keyboard queue. SCNKEY
-also detects shift-key state and updates the STOP-key flag at
-`$91`. It is called from the IRQ handler at `$EA31`; an application
-that disables IRQs must call SCNKEY manually if it wants the
-keyboard queue and the STOP key to keep working.
+also tracks the shift/Commodore/CTRL state at `$028D`. It does not
+touch the STOP flag at `$91` (an earlier version of this page said it
+did; the only store to `$91` in the KERNAL is in UDTIM at `$F6DA`).
+SCNKEY is called from the IRQ handler at `$EA31`, after UDTIM, and
+exits with `$DC00` = `$7F`, which is the column drive UDTIM's `$DC01`
+read relies on. An application that disables IRQs must call SCNKEY
+itself to keep the keyboard queue filling and UDTIM (`$FFEA`) to keep
+the STOP flag and jiffy clock updating.
 
 ### $FFA2 — SETTMO — Set IEEE timeout flag
 
@@ -1288,8 +1479,9 @@ SETLFS+SETNAM dependencies in one query.
   program has set up a custom bitmap or a charset other than the
   KERNAL defaults, sending a `$0E` or `$8E` byte will revert it.
   Color-code PETSCII bytes (`$05`, `$1C`-`$1F`, `$81`, `$90`-`$9F`)
-  similarly write to the current-color zero-page byte at `$0286` and
-  change the foreground color of subsequent character writes. To
+  similarly write to the current-color byte at `$0286` (page 2, not
+  zero page) and change the foreground color of subsequent character
+  writes. To
   send a literal `$0E` to a file (e.g. when dumping binary to disk),
   use IECOUT directly rather than CHROUT after CHKOUT.
 
@@ -1301,10 +1493,13 @@ SETLFS+SETNAM dependencies in one query.
   the misleading error 3. Always re-check carry after each
   KERNAL call.
 
-- **CHKOUT to a read-only file returns error 7, not silent failure.**
-  If you OPEN a disk file with secondary 2 to read (the disk drive
-  treats `,R` as read-only) and then call CHKOUT on it, you'll get
-  error 7. Use CHKIN instead.
+- **CHKOUT to a disk file opened for read does NOT fail.** Measured
+  in VICE x64sc: `OPEN 2,8,2,"FILE,S,R"` then CHKOUT 2 returns C=0; the
+  bytes are accepted and, with the 1541-II DOS, the error channel still
+  reads 00. Error 7 comes only from the keyboard (device 0) or a tape
+  file opened for read. Use CHKIN for a read channel; nothing will tell
+  you if you do not. (Earlier text said CHKOUT returned error 7 here;
+  it does not.)
 
 - **CLOSE without CLRCHN leaves a dangling channel.** Subsequent
   CHRIN/CHROUT will read/write to a closed file's slot. Symptoms:
@@ -1342,10 +1537,14 @@ SETLFS+SETNAM dependencies in one query.
   and pass A=`$FB`.
 
 - **STOP depends on the IRQ handler.** Reading `$91` only returns
-  `$7F` if the IRQ handler has been calling SCNKEY each jiffy. In
-  an SEI-protected critical section, STOP will never trigger. To
-  make STOP work inside SEI code, call SCNKEY explicitly inside
-  your loop.
+  `$7F` if UDTIM (`$FFEA`) has been sampling the STOP column each
+  jiffy — the IRQ handler at `$EA31` calls it before SCNKEY. In an
+  SEI-protected critical section, STOP will never trigger. To make
+  STOP work inside SEI code, `JSR $FFEA` explicitly inside your loop
+  (at most once per frame if `TI$` matters, since it also advances
+  the jiffy clock). An earlier version of this bullet said to call
+  SCNKEY; SCNKEY does not write `$91` — the only store to it in the
+  KERNAL is UDTIM's at `$F6DA`.
 
 - **UDTIM is required by STOP.** If you install a custom IRQ
   handler that doesn't `JSR $FFEA`, the jiffy clock will stop and

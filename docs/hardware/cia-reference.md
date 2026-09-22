@@ -12,9 +12,11 @@ each chip is wired into the C64 motherboard, *what* its pins connect to, and
   16-byte mirrors of the same registers). CIA1 is the user-input chip:
   keyboard matrix, control-port 1 and 2 (joysticks, paddles, light pen),
   and the paddle-fire button lines. Its `/IRQ` output pin drives the 6510
-  `/IRQ` line. CIA1 also generates the default 60 Hz (NTSC) or 50 Hz (PAL)
-  jiffy interrupt that drives the KERNAL `IRQ` handler and the TI/TI$
-  jiffy clock.
+  `/IRQ` line. CIA1 also generates the KERNAL jiffy interrupt — about
+  60 Hz on BOTH PAL and NTSC machines, not once per frame — that drives
+  the KERNAL `IRQ` handler and the TI/TI$ jiffy clock. (An earlier
+  version of this page said 50 Hz on PAL; the ROM and a VICE x64sc
+  measurement say otherwise — see `$DC04`.)
 - **CIA2** lives at `$DD00-$DD0F` (with `$DD00-$DDFF` again being 16-byte
   mirrors). CIA2 is the system-interface chip: it picks the 16 KiB VIC-II
   bank (bits 0-1 of port A), drives the serial-IEC bus (disk drive,
@@ -33,13 +35,18 @@ Both chips share the same internal layout:
 - Two 8-bit parallel I/O ports (port A on pins PA0-PA7, port B on pins
   PB0-PB7), each with an independent data-direction register (DDR).
 - Two 16-bit down-counting timers, Timer A and Timer B. Each timer can
-  count system phi-2 clocks, falling edges on the CNT pin, Timer A
-  underflows (Timer B only), or Timer A underflows gated by CNT high
-  (Timer B only).
+  count system phi-2 clocks, rising (positive) edges on the CNT pin,
+  Timer A underflows (Timer B only), or Timer A underflows while CNT is
+  high (Timer B only). An earlier revision of this bullet said falling
+  edges; the CRA/CRB tables and the Count-modes section below were
+  already right. The polarity is the 6526 datasheet's, not measured
+  here: CNT is a user-port pin, and VICE does not count edges the CIA
+  itself puts out in SP-output mode.
 - A 24-bit BCD time-of-day (TOD) clock with hours/minutes/seconds/tenths,
   plus an alarm register that fires on match.
-- An 8-bit synchronous serial shift register (SDR/SP), used by C64 for
-  RS-232 receive on CIA2 only (the C64 doesn't use it on CIA1).
+- An 8-bit synchronous serial shift register (SDR/SP), clocked by CNT.
+  The C64 KERNAL uses it on neither chip — its RS-232 driver is
+  bit-banged (see `$DD0C`).
 - A single interrupt-control register that masks five interrupt sources
   (Timer A underflow, Timer B underflow, TOD alarm match, serial register
   full/empty, FLAG pin transition) and aggregates them into the chip's
@@ -54,8 +61,8 @@ external wiring).
 
 ### IRQ vs NMI — the critical distinction
 
-The 6510 has two maskable-interrupt pins. The 6526 has no idea which of
-the two it is wired to.
+The 6510 has two interrupt pins, `/IRQ` (maskable) and `/NMI`
+(non-maskable). The 6526 has no idea which of the two it is wired to.
 
 | CIA  | Address       | CPU pin driven | Vector RAM addr | Typical user                            |
 |------|---------------|----------------|-----------------|-----------------------------------------|
@@ -117,7 +124,7 @@ CIA2 occupies `$DD00-$DD0F` with 16-byte mirrors filling `$DD00-$DDFF`.
 | `$DD09` | `DD09`   | RW  | Time-of-day seconds (BCD)                                 |
 | `$DD0A` | `DD0A`   | RW  | Time-of-day minutes (BCD)                                 |
 | `$DD0B` | `DD0B`   | RW  | Time-of-day hours (BCD)                                   |
-| `$DD0C` | `DD0C`   | RW  | Serial shift register (RS-232 receive)                    |
+| `$DD0C` | `DD0C`   | RW  | Serial shift register (unused by the KERNAL)              |
 | `$DD0D` | `DD0D`   | RW  | Interrupt-control register (drives 6510 /NMI)             |
 | `$DD0E` | `DD0E`   | RW  | Control register A — Timer A mode                         |
 | `$DD0F` | `DD0F`   | RW  | Control register B — Timer B mode                         |
@@ -147,11 +154,16 @@ Data port A. Output pins are PA0-PA7. On the C64 these pins are wired to:
 | 6   | Keyboard column 6 drive / paddle select bit 0                  |
 | 7   | Keyboard column 7 drive / paddle select bit 1                  |
 
-To scan a column, write `$00` in the chosen bit and `$FF` (well, `$01`)
-in the others, then read `$DC01` to see which rows pulled low.
-The control-port 2 joystick is wired in parallel — when joy2 is pushed
-up, PA0 is pulled low externally, which the C64 keyboard scanner reads
-as a phantom keypress on the column-0 row.
+To scan a column, clear the chosen column's bit in `$DC00` and set the
+other seven (the KERNAL walks `$FE`, `$FD`, ... `$7F`), then read
+`$DC01` to see which rows were pulled low.
+The control-port 2 joystick is wired in parallel with the column lines,
+so a pushed direction grounds PA0-PA4 externally. On its own that
+produces no phantom key: the KERNAL scanner's no-key test writes `$00`
+to `$DC00` and reads `$DC01`, and nothing on port A can lower a row line
+unless a key is closed. (An earlier version said joy 2 up read as a
+phantom INST/DEL; corrected from the SCNKEY code at `$EA87-$EADD` and
+measured in VICE x64sc.)
 
 ### $DC01 — DC01 — Data Port B (RW)
 
@@ -192,10 +204,17 @@ the corresponding port-A pin:
 - `0` = pin is input (high-impedance, internally pulled up)
 - `1` = pin is output (driven by the corresponding bit of `$DC00`)
 
-The KERNAL keyboard scanner sets `$DC02` to `$FF` (all-output) so that
-PA0-PA7 drive the keyboard columns, then writes a single zero-bit to
-`$DC00` to ground exactly one column at a time. After RESET the default
-is `$FF`.
+IOINIT (`$FDA3`; the store is `STX $DC02` at `$FDC8` with X = `$FF`)
+sets `$DC02` to `$FF` — at reset, again on RUN/STOP+RESTORE (the NMI
+handler calls IOINIT at `$FE69`), and whenever `$FF84` is called. The
+keyboard scanner (SCNKEY, `$EA87`) relies on that and only ever writes
+`$DC00`; it never touches a DDR, so if you clear `$DC02` to read
+joystick 2 you must restore `$FF` yourself — the jiffy scan will not.
+The chip's own reset leaves the DDR at `$00` (all input): measured in
+VICE x64sc 3.10 from a cartridge cold start, which the RESET entry runs
+before IOINIT. An earlier version of this page said the scanner set
+`$DC02` and that `$FF` was the reset default; both were the KERNAL's
+doing.
 
 ### $DC03 — DC03 — Data Direction Register B (RW)
 
@@ -227,8 +246,19 @@ then restart.
 
 After RESET the latch is `$FFFF`.
 
-The KERNAL initializes CIA1 Timer A to `$4295` (PAL) or `$4025` (NTSC)
-to fire the jiffy IRQ at the correct frame rate.
+The KERNAL programs CIA1 Timer A for the jiffy IRQ from the code at
+`$FDDD` (inside IOINIT, and entered again from the tail of CINT at
+`$FF5B` once it has set the PAL/NTSC flag at `$02A6`, which is the write
+that sticks: 1 = PAL, 0 = NTSC). It writes the latch `$4025` on PAL
+(period 16,422 cycles; 985,248 / 16,422 = 59.996 Hz) and `$4295` on
+NTSC (period 17,046 cycles; 1,022,727 / 17,046 = 59.998 Hz) — so one
+jiffy is 1/60 s in both regions and only the VIC frame rate differs. An
+earlier version of this page had the two values swapped and said the
+timer matched the frame rate. Values read from kernal-901227-03.bin at
+`$FDDD-$FDF6` and confirmed in VICE x64sc by reading the latch back
+(stop + LOAD strobe) and by counting 299 jiffies in 250 PAL frames; the
++1 in the period is the 6526's count-to-zero-then-reload behaviour, not
+measured separately here.
 
 ### $DC05 — DC05 — Timer A High Byte (RW)
 
@@ -248,8 +278,30 @@ new value without an explicit LOAD).
 Timer B low byte. Same semantics as Timer A's `$DC04`. Writes go to the
 latch, reads return the counter.
 
-CIA1 Timer B is not used by the KERNAL. It is free for application use
-(common: SID timing, custom timer interrupts, raster effects timing).
+CIA1 Timer B is free for application use only while no KERNAL
+serial-bus or tape I/O is running. Every byte the KERNAL sends on the
+IEC bus (LISTEN/TALK command bytes, secondary addresses, CIOUT data)
+ends with `LDA #$04 / STA $DC07 / LDA #$19 / STA $DC0F` at `$ED92` and a
+poll of `$DC0D` bit 1 at `$ED9F` (the listener-acknowledge timeout), and
+every byte ACPTR receives starts with the same sequence using `#$01` at
+`$EE20`, polled at `$EE30` (the EOI timeout). Only the high latch byte
+is written; the low byte is whatever was there before (`$FF` from reset
+— IOINIT never touches `$DC06` — so the one-shots are `$04FF` and
+`$01FF` cycles, about 1.3 ms and 0.5 ms, not `$0400`/`$0100`). CRB is
+rewritten wholesale to `$19`: a continuous timer becomes one-shot and
+stops after its next underflow, PBON, OUTMODE, INMODE and the ALARM
+select are cleared, and the `$DC0D` reads discard every pending CIA1
+flag, not just Timer B's. Measured in VICE x64sc with a true-emulated
+1541: a Timer B programmed to `$1234`, continuous and running, read back
+CRB = `$08` (one-shot, stopped), counter `$0434` and `$DC0D` bit 1
+pending after a single KERNAL TALK/TKSA/ACPTR/UNTLK. The tape code owns
+the timer outright: tape write runs on Timer B underflow interrupts
+(mask `$82` written at `$F87A`; half-pulse latches `$0060`/`$00B0` set
+at `$FBB1-$FBBC`) and tape read measures pulse widths on it at `$F92C`
+and restarts it from a `$FFFF` latch at `$F93D-$F945`. A music or
+raster timer on CIA1 Timer B does not survive a KERNAL LOAD or SAVE
+over IEC or tape. (An earlier version of this page said the KERNAL
+never used it; read from kernal-901227-03.bin and measured in VICE.)
 
 ### $DC07 — DC07 — Timer B High Byte (RW)
 
@@ -268,13 +320,24 @@ The TOD clock is driven by the **TOD pin** on the 6526, which on the
 C64 is wired to the AC mains 50 Hz (PAL) or 60 Hz (NTSC) line via the
 power supply. The CRA bit 7 of `$DC0E` selects 50 Hz vs 60 Hz division.
 
-**Reads** of `$DC08` *latch* the rest of the TOD registers
-(`$DC09`/`$DC0A`/`$DC0B`) so a full read sequence sees a coherent time.
-The latch is released when `$DC0B` (hours) is read.
+**Reading `$DC0B` (hours) latches** all four TOD registers
+(`$DC08`-`$DC0B`) so a multi-byte read sees a coherent time; the latch
+is released by reading `$DC08` (tenths). Read order: hours, minutes,
+seconds, tenths. The counter keeps running underneath the latch, so a
+read of tenths after a long-held latch jumps straight to the live time.
+(An earlier version of this page had the two registers swapped;
+measured in VICE x64sc.)
 
-**Writes** update either the running clock or the alarm depending on
-the ALARM bit of `$DC0F`. After writing `$DC0B` the clock starts
-running (or the alarm becomes armed).
+**Writes** go to the running clock when the ALARM bit of `$DC0F` is 0
+and to the alarm when it is 1. With ALARM = 0, writing `$DC0B` (hours)
+STOPS the clock so all four registers can be set coherently, and writing
+`$DC08` (tenths) restarts it; set hours, minutes, seconds, tenths in
+that order — a clock whose tenths are never written stays stopped
+(VICE's TOD is stopped at power-up until the first tenths write). With
+ALARM = 1 the same four writes program the alarm and leave the clock
+running; there is no separate arming step, the alarm compare is always
+live. (An earlier version of this page said the hours write started the
+clock; measured in VICE x64sc.)
 
 ### $DC09 — DC09 — Time-of-Day Seconds (RW)
 
@@ -296,9 +359,15 @@ Minutes, BCD. Bits 0-3 = units, bits 4-6 = tens (0-5), bit 7 = 0.
 Hours, BCD. Bits 0-3 = units, bit 4 = tens digit (0 or 1), bits 5-6 = 0,
 bit 7 = AM/PM flag (0 = AM, 1 = PM).
 
-Writing `$DC0B` while the alarm/clock select is on the clock starts
-the clock running. Reading `$DC0B` releases the latch grabbed by a
-prior read of `$DC08`.
+Writing `$DC0B` with `$DC0F` bit 7 = 0 stops the clock; it does not run
+again until `$DC08` (tenths) is written. With bit 7 = 1 the write sets
+the alarm hours and the clock keeps running (measured in VICE x64sc;
+this page used to say the hours write started the clock).
+
+Reading `$DC0B` latches all four TOD registers; the latch is released
+by a later read of `$DC08` (tenths). If you peek at the hours and never
+read tenths, every subsequent TOD read returns the frozen value.
+(Previously stated the other way round; measured in VICE x64sc.)
 
 ### $DC0C — DC0C — Serial Shift Register (RW)
 
@@ -376,8 +445,20 @@ Controls Timer A.
 | 6   | SPMODE     | 0 = SDR input; 1 = SDR output (Timer A clocks SP)       |
 | 7   | TODIN      | 0 = TOD counts 60 Hz; 1 = TOD counts 50 Hz              |
 
-On C64 the TODIN bit is set to `1` on PAL and `0` on NTSC — this is
-done by the KERNAL based on the system's region.
+The KERNAL never sets TODIN. IOINIT (`$FDAE`) writes `$08` to `$DC0E`,
+`$DC0F`, `$DD0E` and `$DD0F` on every machine; the jiffy-timer tail at
+`$FF6E` then rewrites `$DC0E` as (`$DC0E` AND `$80`) OR `$11`, which
+keeps the 0 IOINIT put there. So after boot `$DC0E` reads `$01` and
+`$DD0E` reads `$08` on PAL and NTSC alike, and both TOD clocks are in
+60 Hz mode even on a PAL C64. A PAL program that wants a correct TOD
+must set bit 7 itself, and must do it read-modify-write
+(`LDA $DC0E : ORA #$80 : STA $DC0E`) because a plain store would clear
+bit 0 and stop the Timer A jiffy IRQ that drives the keyboard scan. Left
+at 0 on a 50 Hz supply the clock counts 5/6 of real time (measured in
+VICE x64sc: 4.1 s on the TOD for 4.9 s elapsed); the mirror case,
+TODIN = 1 on an NTSC machine, runs 6/5 fast. (An earlier version said
+the KERNAL set this bit by region; read from kernal-901227-03.bin
+`$FDAE`/`$FF6E` and confirmed in VICE x64sc on both models.)
 
 LOAD is a write-only strobe; reading bit 4 always returns 0.
 
@@ -394,7 +475,7 @@ Controls Timer B.
 | 2   | OUTMODE    | 0 = pulse PB7 once; 1 = toggle PB7                       |
 | 3   | RUNMODE    | 0 = continuous; 1 = one-shot                             |
 | 4   | LOAD       | 1 = strobe: force-load counter from latch                |
-| 5-6 | INMODE     | 00 = phi-2; 01 = CNT edges; 10 = Timer A underflows;     |
+| 5-6 | INMODE     | 00 = phi-2; 01 = rising CNT edges; 10 = Timer A underflows; |
 |     |            | 11 = Timer A underflows gated by CNT high                |
 | 7   | ALARM      | 0 = TOD writes set clock; 1 = TOD writes set alarm       |
 
@@ -443,10 +524,21 @@ character ROM (it only appears at `$1000-$1FFF` and `$9000-$9FFF`); to
 use custom charsets in banks 1 or 3, copy the ROM character set to RAM
 first.
 
-The IEC sense lines (bits 6, 7) are *inverted*: when the bus is idle
-the line is high and the bit reads `0`; when a device pulls the line
-low the bit reads `1`. The IEC output lines (bits 3, 4, 5) are also
-inverted: writing a `1` pulls the bus line low.
+The IEC input bits (6, 7) are *not* inverted at the register: bit 6
+(CLK IN) and bit 7 (DATA IN) read `1` when the line is high (released)
+and `0` when this C64 or any device is pulling it low. Only the output
+side is inverted: writing `1` to bits 3, 4, 5 pulls ATN/CLK/DATA low
+(the KERNAL's CLKLO at `$EE8E` is `ORA #$10`, CLKHI at `$EE85` is
+`AND #$EF`). The KERNAL relies on the input polarity: LISTEN's
+device-not-present test at `$ED47` is `BCS` on bit 7 after `ASL` (DATA
+still high after releasing it under ATN = nobody home), and ACPTR at
+`$EE1B` waits for bit 6 = 1, the talker releasing CLK. Measured in VICE
+x64sc: with all three outputs released `$DD00` reads `$C7`; setting
+bit 5 makes bit 7 read `0`; with a 1541 attached and ATN asserted the
+drive pulls DATA and bit 7 reads `0`. After boot it reads `$97` because
+the KERNAL leaves CLK OUT (bit 4) set, so bit 6 is `0` while the C64
+holds CLK low. (An earlier version of this page had the inputs inverted
+as well as the outputs.)
 
 ### $DD01 — DD01 — Data Port B — user port (RW)
 
@@ -461,8 +553,9 @@ C-L. These are general-purpose I/O pins commonly used for:
 - Hardware MIDI interfaces
 - Centronics printer cables
 
-The KERNAL RS-232 driver uses CIA2 Timer A as a bit-clock and bit-bangs
-RXD/TXD through `$DD01` bit 0 and `$DD00` bit 2.
+The KERNAL RS-232 driver uses CIA2 Timer A as the transmit bit-clock
+and Timer B as the receive bit-clock, bit-banging TXD on `$DD00` bit 2
+and sampling RXD on `$DD01` bit 0 (`$FED6`).
 
 After RESET all bits are inputs (`$DD03` = `$00`).
 
@@ -543,15 +636,23 @@ Minutes, BCD.
 
 Hours, BCD with AM/PM in bit 7.
 
-### $DD0C — DD0C — Serial Shift Register (RS-232 receive) (RW)
+### $DD0C — DD0C — Serial Shift Register (RW)
 
 **Chip:** CIA2
 
-CIA2's SDR. On the C64, CIA2 SP and CNT pins are wired to the user
-port. The KERNAL uses CIA2's SDR (in shift-in mode) for RS-232 receive
-when configured for high-speed (synchronous) RS-232.
-
-For application code that doesn't use RS-232, the SDR is free.
+CIA2's SDR. The KERNAL never touches either CIA's shift register —
+there is no reference to `$DC0C` or `$DD0C` anywhere in the 901227-03
+KERNAL or 901226-01 BASIC ROMs (byte census, any alignment). KERNAL
+RS-232 is bit-banged under NMI: CIA2 Timer A paces transmit on PA2
+(`$F047` writes `$11` to `$DD0E`), the FLAG input catches the start bit
+(`$EF7E` writes `$90` to `$DD0D`), and Timer B paces receive sampling
+of PB0 (`$FED6`: `LDA $DD01 / AND #$01 / STA $A7`; `$FEF1`/`$FF13`
+write `$11` to `$DD0F`). There is no "high-speed synchronous" RS-232
+mode in the KERNAL. The SP2/CNT2 pins reach the user port, so
+third-party serial hardware and drivers can use the SDR; for
+KERNAL-only code it is free. (An earlier version of this section said
+the KERNAL used the SDR in shift-in mode for a synchronous RS-232
+receive; it does not — read from kernal-901227-03.bin.)
 
 ### $DD0D — DD0D — Interrupt Control Register (drives /NMI) (RW)
 
@@ -576,9 +677,15 @@ is wired to — see Overview.
 
 Reading `$DD0D` clears all pending NMI flags and de-asserts the chip's
 output pin. An NMI handler **must** read `$DD0D` (or otherwise
-acknowledge) before `RTI`, or the NMI line stays low and the handler
-will re-enter immediately on `RTI` — see Pitfalls below for the
-classic RESTORE-key NMI re-entrancy hazard.
+acknowledge) before `RTI`; otherwise `/NMI` stays low and, because the
+6510 takes NMI on a falling edge only, no further CIA2 NMI — and no
+RESTORE press — can be taken until something reads `$DD0D`. (An
+earlier version of this page said the handler would re-enter on `RTI`;
+that is the IRQ symptom, not the NMI one. Measured in VICE x64sc 3.10:
+CIA2 Timer A one-shot NMI with a handler that never reads `$DD0D` —
+entered once; a second underflow while `/NMI` stayed low produced no
+NMI; one `LDA $DD0D` and the next underflow produced one. See
+Pitfalls.)
 
 The KERNAL initializes `$DD0D` to `$7F` (clear all masks) followed by
 no explicit enables, leaving CIA2 NMIs disabled by default.
@@ -587,9 +694,12 @@ no explicit enables, leaving CIA2 NMIs disabled by default.
 
 **Chip:** CIA2
 
-Same bit layout as CIA1's `$DC0E`. Same notes about LOAD strobe and
-TODIN frequency. CIA2's TODIN bit is similarly set by the KERNAL
-based on PAL/NTSC.
+Same bit layout as CIA1's `$DC0E`. Same notes about the LOAD strobe and
+TODIN frequency. The KERNAL leaves CIA2's TODIN at 0 as well — IOINIT
+writes `$08` here and nothing later touches bit 7 (the only other
+KERNAL writes, `$F030`/`$F049` in the RS-232 code, store `$10`/`$11`)
+— so a PAL program using CIA2's TOD must OR in bit 7 itself. (An
+earlier version said the KERNAL set it by region.)
 
 ### $DD0F — DD0F — Control Register B (Timer B) (RW)
 
@@ -612,8 +722,10 @@ to LEFT-SHIFT) exist outside the matrix.
 - CIA1 port B (`$DC01`) reads the 8 *rows* (input with internal pull-ups
   to `1`). A pressed key in the active column pulls its row to `0`.
 
-The KERNAL keyboard scanner runs once per jiffy interrupt (60 Hz NTSC,
-50 Hz PAL):
+The KERNAL keyboard scanner runs once per jiffy interrupt (about 60 Hz
+on both PAL and NTSC — see `$DC04`). A minimal scanner in the KERNAL's
+style (the ROM's SCNKEY sets the DDRs nowhere; IOINIT did that at
+boot):
 
 ```asm
         LDA #$FF
@@ -651,11 +763,32 @@ the result. Standard caveat: three keys whose row+column rectangle forms
 a triangle produce a "ghost" reading on the fourth corner — there are
 no diodes in the matrix.
 
-**Joystick interference**: see the joystick section. Pressing joy 2 up
-pulls PA0 low externally, which the keyboard scanner reads as the
-INST/DEL key (col 0, row 0) being pressed. The KERNAL has no way to
-distinguish; games that read both joy 2 and the keyboard usually
-freeze keyboard input during play.
+**Joystick interference**: Joystick 2 alone cannot make the KERNAL type
+anything: its lines are columns, and the scanner's no-key test
+(`$DC00` = `$00`, `$DC01` == `$FF`) looks only at rows. Measured in
+VICE x64sc 3.10 with PA0, and then PA0-PA4, held low through six
+seconds of scanning: SFDX stays `$40`, the buffer stays empty. It is
+joystick 1, on the row lines PB0-PB4, that the scanner mistakes for
+keys — and not quite as folklore has it. The column loop
+(`$EAA3-$EADA`) walks `$DC00` from `$FE` to `$7F` and keeps the LAST
+matching matrix index (`$EAC9`: `STY $CB`), then makes one more pass
+with `$DC00` = `$FF` (the mask is rotated with carry set and
+`BNE $EAA8` is taken) that tests row 0 once more at index 64 — the
+tables' 65th entry, `$FF`, "no key". A real key cannot appear there
+because no column is selected; a joystick-grounded row does. With the
+default tables: UP is swallowed (index 64 → no key); DOWN types
+LEFT-ARROW (`$5F`); LEFT lands on CTRL (col 7, row 2), which the
+scanner treats as a modifier (`$028D` = 4), so the key kept is `;`
+(col 6) read through the CTRL table: `$1D`, cursor right; RIGHT types
+`2`; FIRE passes R-SHIFT (col 6, row 4) before SPACE, so SHFLAG = 1 and
+the shifted table gives `$A0`, shift-space, which prints blank — the
+"joystick in port 1 types spaces" effect. All five measured in VICE
+x64sc 3.10 by holding the single port-B line low while the KERNAL
+scanner ran. Joystick 2 held while a real key on rows 1-7 of column 0
+is pressed makes that key read as its column-7 neighbour (RETURN reads
+as LEFT-ARROW), because the grounded column shows in every column pass;
+from the code, not measured. Games read `$DC00`/`$DC01` directly and
+keep the KERNAL scanner out of the way during play.
 
 ## Joystick reading (CIA1 port A = joy2, port B = joy1)
 
@@ -686,11 +819,18 @@ different CIA1 ports):
 To read joy 2:
 
 ```asm
-        LDA #$00
-        STA $DC02       ; port A = input (so joystick can pull lines low)
-        LDA $DC00       ; read joy 2 state
-        ; bit 0 = 0 means UP, bit 4 = 0 means FIRE, etc.
+        LDA $DC00       ; joy 2: bits 0-4, 0 = pressed (UP, DOWN, LEFT, RIGHT, FIRE)
+        AND #$1F        ; idle reads $7F, not $FF: bit 7 is the KERNAL's column-7 drive
 ```
+
+No DDR change is needed. The KERNAL leaves `$DC02` = `$FF` and `$DC00` =
+`$7F` between scans (IOINIT `$FDC8`, SCNKEY exit `$EB42`), the CIA
+returns the pin level rather than the output latch, and a closed switch
+holds a pin low whether or not it is configured as an output (measured
+in VICE x64sc with an external device on control port 2: the same bytes
+read under DDR = `$FF`/PRA = `$7F` as under DDR = `$00`). An earlier
+revision of this section wrote `$00` to `$DC02` "so the joystick can
+pull lines low"; that was the wrong reason.
 
 To read joy 1:
 
@@ -699,9 +839,12 @@ To read joy 1:
         ; bit 0 = 0 means UP, etc.
 ```
 
-If you're scanning the keyboard, **temporarily set `$DC02` to `$00`**
-(all input) before reading joy 2, because the keyboard scanner drives
-columns and will fight any joystick lines pulling low.
+If you do change `$DC02`, restore `$FF` before the next jiffy IRQ.
+SCNKEY never rewrites the DDR (the only writes in the KERNAL are
+IOINIT's), so with `$DC02` = `$00` no column is ever driven low, `$DC01`
+reads `$FF` on every pass, and the keyboard — RUN/STOP included, which
+UDTIM tests through the same port — is dead until something writes
+`$FF` back.
 
 **Paddles** (POT-X / POT-Y) are read through the SID chip's
 `$D419`/`$D41A` registers. CIA1 port A bits 6-7 select which of the
@@ -725,7 +868,7 @@ or `$DD0E`):
 **Timer B** has four count modes, selected by bits 5-6 of CRB:
 
 - `00`: count phi-2 clocks.
-- `01`: count CNT edges.
+- `01`: count rising edges on the CNT pin.
 - `10`: count Timer A underflows.
 - `11`: count Timer A underflows while CNT is high.
 
@@ -810,12 +953,21 @@ operational rules:
 
 **An interrupt handler MUST read its CIA's `$xx0D` to acknowledge.**
 The 6526 latches an asserted `/IRQ` line; it stays low until the ICR
-read clears the flags. If you `RTI` without reading the ICR, the CPU
-will immediately re-enter the handler.
+read clears the flags. For CIA1, on the level-sensitive `/IRQ` pin, an
+`RTI` without reading the ICR means the CPU immediately re-enters the
+handler (measured in VICE x64sc 3.10: a CIA1 Timer B one-shot with a
+`$0314` handler that never read `$DC0D` was entered 100 times, the cap
+at which the handler finally acked).
 
-This applies to NMIs too: a CIA2 NMI handler must read `$DD0D`. The
-RESTORE key, however, goes through a separate 555 one-shot that
-generates its own NMI pulse independent of CIA2's ICR — see Pitfalls.
+A CIA2 NMI handler must read `$DD0D` too, but the failure mode is
+silence, not re-entry: the 6510 takes NMI on a falling edge, so a line
+left low cannot produce another one. Measured in the same run: CIA2
+Timer A one-shot NMI with a handler that never reads `$DD0D` — entered
+once; a second underflow while `/NMI` stayed low produced no NMI; one
+`LDA $DD0D` and the next underflow produced one; in continuous mode 1
+entry without ack against 99 with ack in the same window. (An earlier
+version of this section said NMIs re-entered like IRQs and that RESTORE
+needed separate handling — see Pitfalls.)
 
 ### Mask-write semantics
 
@@ -835,7 +987,10 @@ CIA1's `/IRQ` reaches the 6510 `/IRQ` pin. With KERNAL ROM mapped in,
 the CPU jumps through `$FFFE-$FFFF` to `$FF48`, which:
 
 1. Pushes A, X, Y.
-2. Reads `$01` and checks IRQ vs BRK (BRK has bit 4 of pushed P set).
+2. `TSX / LDA $0104,X / AND #$10` — reads the status byte pushed by the
+   interrupt and tests the B flag; a BRK goes through `($0316)`, a
+   hardware IRQ through `($0314)`. (`$01` is the 6510 port and is not
+   involved; an earlier version of this page said `$FF48` read it.)
 3. For IRQ, jumps through `($0314)` (default = `$EA31`, the KERNAL
    IRQ handler that scans keyboard and updates the jiffy clock).
 4. KERNAL handler ends by reading `$DC0D` and `RTI`.
@@ -848,19 +1003,44 @@ scan and just `RTI`.
 ### NMI vector (CIA2 + RESTORE)
 
 CIA2's `/IRQ` and the RESTORE key both reach the 6510 `/NMI` pin. The
-CPU jumps through `$FFFA-$FFFB` to `$FE43`, which:
+CPU jumps through `$FFFA-$FFFB` to `$FE43`, which is only
+`SEI / JMP ($0318)` — nothing is pushed there. The default `($0318)`
+target is `$FE47`, and that is where the register saves live (read from
+kernal-901227-03.bin at `$FE43`: `78 6C 18 03 48 8A 48 98 48`):
 
-1. Saves A, X, Y.
-2. Jumps through `($0318)` (default = `$FE47`).
-3. The KERNAL NMI handler checks for BRK first (it shares the same
-   "checked BRK" path), then either runs RS-232 receive code (if
-   CIA2 SDR triggered) or branches to a STOP-key/RUN-STOP check
-   leading to the `WARM START` vector `($A002)`.
+1. `$FE47`: pushes A, X, Y (`PHA / TXA / PHA / TYA / PHA`) — after the
+   vector, not before it, which is exactly why a bare `RTI` at `$0318`
+   is valid.
+2. Writes `$7F` to `$DD0D` (disable every CIA2 source) and reads
+   `$DD0D` into Y, clearing the pending flags.
+3. `BMI $FE72`: if a CIA2 source was pending, runs the RS-232 code (if
+   an enabled CIA2 source — Timer A for transmit, Timer B or FLAG for
+   receive — is pending; `$FE72` tests ICR bits 0, 1 and 4 only, never
+   the SDR bit 3). RESTORE alone falls through the RS-232 dispatcher at
+   `$FE72` with no enabled bit set, rewrites `$DD0D` from the enable
+   mirror at `$02A1`, restores Y, X, A and `RTI`s (`$FEBC-$FEC1`).
+4. Otherwise `JSR $FD02` (cartridge check: compares `$8004-$8008` with
+   `CBM80`); if a cartridge answers, `JMP ($8002)`.
+5. `JSR $F6BC` (UDTIM, which is what samples the keyboard row that
+   `$FFE1` then reads from `$91`), then `JSR $FFE1` (STOP test); if STOP
+   is not held, restore the registers and `RTI`.
+6. RUN/STOP + RESTORE: `JSR $FD15` (RESTOR), `JSR $FDA3` (IOINIT),
+   `JSR $E518` (CINT), `JMP ($A002)` — the BASIC warm-start vector.
+
+There is no BRK test anywhere in it. (An earlier version of this page
+said `$FE43` saved A/X/Y before jumping through `($0318)`, that the
+handler checked for BRK first, and that the RS-232 code ran when the
+SDR triggered; a `$0318` handler written to that description would pull
+three registers nothing had pushed. Read from kernal-901227-03.bin
+`$FE43-$FEC1`.)
 
 To install a custom NMI, replace `$0318-$0319`. Your NMI handler must
-read `$DD0D` to ack CIA2 NMIs, but a RESTORE-key NMI will *not* be
-acked by reading `$DD0D` because it came from the 555 one-shot, not
-the CIA. The 555 holds `/NMI` low for ~100 ms then auto-releases.
+read `$DD0D` to acknowledge a CIA2 NMI. A RESTORE press is one falling
+edge on `/NMI`, so one NMI, however long the pulse; there is nothing in
+the CIA to acknowledge for it, and the pulse width itself is not
+measured here. (Earlier text said the 555 held `/NMI` low for ~100 ms
+and that this needed handling; see Pitfalls for what a held-low line
+actually does.)
 
 ## VIC bank selection (CIA2 port A bits 0-1)
 
@@ -920,12 +1100,14 @@ pulling.
 | 3   | Output    | ATN OUT (1 = drive ATN low)    |
 | 4   | Output    | CLK OUT (1 = drive CLK low)    |
 | 5   | Output    | DATA OUT (1 = drive DATA low)  |
-| 6   | Input     | CLK IN (1 = some device pulling CLK low) |
-| 7   | Input     | DATA IN (1 = some device pulling DATA low) |
+| 6   | Input     | CLK IN (0 = CLK pulled low by some device, 1 = released) |
+| 7   | Input     | DATA IN (0 = DATA pulled low by some device, 1 = released) |
 
-Note the inversion: writing `1` to bit 3 pulls ATN to ground;
-reading `1` from bit 6 means the bus is being held low (either by
-this C64 or by a peripheral).
+Note the asymmetry: writing `1` to bit 3 pulls ATN to ground, but
+reading `1` from bit 6 means CLK is *released* (high); reading `0`
+means it is being held low, either by this C64 or by a peripheral.
+(An earlier version of this table had the inputs inverted too — see
+`$DD00`.)
 
 **ATN** (attention) is the talker/listener-select line. The C64
 pulls ATN low to broadcast a command (e.g. "drive 8, talk channel 0"),
@@ -933,7 +1115,12 @@ all devices listen, then C64 releases ATN and the talker starts
 clocking out data.
 
 **Slow loader** (KERNAL-default IEC): software-driven on every bit,
-takes ~400 µs per bit, ~50 bytes per second — agonizingly slow. Most
+roughly 300–400 bytes per second on a 1541, about 2.5 ms per byte end
+to end — measured in VICE x64sc with true drive emulation, where an
+8,002-byte KERNAL LOAD took 20.1 M PAL cycles (20.4 s, ~390 bytes/s),
+the same range the loader and IEC pages use. An earlier revision of
+this page said ~50 bytes per second, which its own 400 µs-per-bit
+figure contradicted. A 50 KB part takes over two minutes. Most
 games and demos replace the KERNAL loader with a fastloader that
 uses Timer A on CIA1 or CIA2 to pace high-speed bit transfers,
 either by reusing CLK/DATA in non-standard timing or by adding new
@@ -960,25 +1147,41 @@ The SRQ line is not used by the standard C64 KERNAL.
   the counter from the latch if the timer is stopped) or strobe LOAD
   via bit 4 of the CRA/CRB. Writing high then low does NOT load the
   counter — you must finish with the high byte or with a LOAD strobe.
-- **NMI re-entrancy on RESTORE**: the RESTORE key fires `/NMI` through
-  a 555 one-shot that asserts `/NMI` low for ~100 ms regardless of any
-  CIA2 register state. An NMI handler that simply reads `$DD0D` and
-  returns will be re-entered immediately because the 555 still holds
-  the line low. Standard workaround: at the start of the NMI handler,
-  `LDA #$00 / STA $DD0E` to stop CIA2 Timer A, then proceed; or
-  install a custom NMI vector that delays-and-dismisses by setting up
-  Timer A to count out the rest of the 555 pulse. Some demoware
-  disables RESTORE entirely by pointing `$0318` at a `RTI` instruction
-  and never re-enabling.
+- **An un-acknowledged CIA2 NMI silences NMI**: the hazard is lost
+  NMIs, not re-entry. The 6510 takes NMI on a falling edge; a CIA2 NMI
+  handler that returns without reading `$DD0D` leaves `/NMI` low, and
+  no later CIA2 event can produce another edge until something reads
+  the ICR. Measured in VICE x64sc 3.10: CIA2 Timer A one-shot NMI with a
+  handler that never reads `$DD0D` — entered once; a second underflow
+  while `/NMI` stayed low produced no NMI; one `LDA $DD0D` and the next
+  underflow produced one; in continuous mode 1 entry without ack
+  against 99 with ack in the same window. The demo trick to kill
+  RESTORE is exactly this: fire a CIA2 Timer A one-shot NMI into a
+  handler that never reads `$DD0D`, and the line stays low. RESTORE
+  itself was not measured here (VICE headless cannot press it); that a
+  held-low CIA2 line also swallows RESTORE presses is the standard
+  scene trick and follows from the shared pin, not a measurement. The
+  other option, pointing `$0318` at an `RTI`, still *takes* the NMI —
+  the 7-cycle interrupt sequence, `SEI`, `JMP ($0318)` and the `RTI`,
+  about 20 cycles of jitter per press with the ROM in; with the KERNAL
+  banked out it is `$FFFA/$FFFB` that must point at the `RTI` — whereas
+  the held-low trick prevents the interrupt from being taken at all.
+  (An earlier version of this bullet described NMI re-entrancy on a
+  ~100 ms RESTORE pulse and offered `LDA #$00 / STA $DD0E` or counting
+  out the pulse with Timer A as workarounds; the mechanism was the IRQ
+  one, and neither workaround touches the ICR — measured: that handler
+  leaves the line low and the next event is still lost.)
 - **Reading a running timer gives torn values**: low byte decrements
   between the two-byte read. Stop the timer before reading, or use the
   read-high / read-low / re-read-high consistency loop. The 6526A
   revision exposes a latched-read mode the original 6526 does not.
 - **Forgetting to acknowledge an IRQ**: a custom IRQ handler must read
   `$DC0D` (CIA1) or `$DD0D` (CIA2) to clear the pending flags and
-  release the `/IRQ`/`/NMI` line. Without this, the handler will
-  re-enter immediately after `RTI` and the CPU will appear to hang in
-  the handler.
+  release the `/IRQ`/`/NMI` line. Without this a CIA1 `/IRQ` handler
+  will re-enter immediately after `RTI` and the CPU will appear to hang
+  in the handler; for CIA2 the symptom is the opposite: NMIs stop
+  arriving (see the bullet above). (Earlier text gave the re-entry
+  symptom for both chips.)
 - **ICR write SET/CLEAR confusion**: bit 7 of an ICR write is the
   SET/CLEAR control bit, not an interrupt-enable. `STA $DC0D` with
   `A = $01` *disables* Timer A IRQ; you want `$81` to enable it. A
@@ -986,13 +1189,18 @@ The SRQ line is not used by the standard C64 KERNAL.
   has bit 7 = 0 (CLEAR), bits 0-6 = 1 (every source) → "clear masks for
   all sources" → disable all. Conversely `$FF` would *enable* all
   sources.
-- **Keyboard scan vs joystick 2**: when scanning the keyboard, port A
-  is output (driving columns). If joy 2 is pushed up, it pulls PA0
-  externally low — fighting the keyboard scanner's drive. This can
-  corrupt keyboard reads (showing a phantom INST/DEL) and on early
-  boards can sink enough current to stress the CIA. Best practice:
-  treat keyboard input as unreliable while joy 2 is active, or
-  re-scan and de-bounce.
+- **Keyboard scan vs joystick 1**: the KERNAL scanner reads rows; a
+  joystick in port 1 grounds row lines and is decoded as keys — DOWN as
+  LEFT-ARROW, LEFT as CTRL+; (cursor right), RIGHT as `2`, FIRE as
+  shift-space; UP is swallowed by the scanner's final no-column pass.
+  Joystick 2 alone types nothing, but held together with a column-0 key
+  it moves that key to column 7 (RETURN reads as LEFT-ARROW). If your
+  program uses the KERNAL scanner and a joystick, read the joystick
+  from a raster or timer interrupt with the scanner disabled, or clear
+  the buffer. (Earlier text blamed joy 2 for a phantom INST/DEL and
+  said the contention could stress the CIA on early boards; wrong port
+  and wrong key — see the SCNKEY reading in the keyboard section — and
+  the electrical claim has no source in this repo, so it is dropped.)
 - **VIC bank bits are inverted**: setting `$DD00` bits 1-0 to `00`
   selects bank 3 (`$C000-$FFFF`), not bank 0. The bit-to-bank table is
   in the VIC bank section.
@@ -1005,11 +1213,12 @@ The SRQ line is not used by the standard C64 KERNAL.
   emulate the mains line (most), the TOD clock is faked from phi-2 or
   doesn't tick at all. Don't rely on TOD for precise wall-clock timing
   in cross-emulator code.
-- **TOD latch on read**: reading `$DC08` (or `$DD08`) latches the
-  remaining three TOD registers so a multi-byte read is coherent.
-  Reading `$DC0B` (hours) releases the latch. If you read tenths and
-  then forget to read hours, the TOD registers will appear frozen on
-  subsequent reads (latch never released).
+- **TOD latch on read**: reading `$DC0B` (or `$DD0B`, hours) latches
+  all four TOD registers so a multi-byte read is coherent; reading
+  `$DC08` (tenths) releases it. If you read hours and then never read
+  tenths, the TOD registers appear frozen on subsequent reads while the
+  clock keeps counting underneath (earlier text had tenths latching and
+  hours releasing; measured in VICE x64sc, PAL and NTSC).
 - **TOD BCD**: TOD registers are BCD-encoded. Code that increments
   them via `INC` will produce invalid BCD digits (e.g. `$09` + 1 =
   `$0A`, not `$10`). Either write decoded values or use ADC with the

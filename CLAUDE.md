@@ -45,7 +45,7 @@ wrong number here becomes a torn screen in someone's demo. Work accordingly.
 | KickAssembler 5.25 | `java -jar $KICKASS_JAR file.asm -o out.prg` (set `KICKASS_JAR`; default location `~/Developer/c64/kickassembler/KickAss.jar`) |
 | Oscar64 | `$OSCAR64 -tm=c64 -O2 -o=out.prg file.c` (`OSCAR64` env or `oscar64` on PATH; headers in `<oscar64>/include/`) |
 | cc65 | `cl65 -t c64 -O -o out.prg file.c` |
-| VICE 3.9 headless (PAL 6569) | `GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot out.png -autostart out.prg` (`-model ntsc` for 6567R8). ~10–20 s per run; wrap in `timeout`. |
+| VICE 3.10 headless (PAL 6569) | `GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot out.png -autostart out.prg` (`-model ntsc` for 6567R8). ~10–20 s per run; wrap in `timeout`. |
 | Screenshot geometry | 384×272 PNG; screenshot row = raster line − 14; x = 8 is VIC X coordinate 0; left border x 0–31, right border 352–383. Measure with PIL, never by eye. |
 | KERNAL / BASIC / char ROM | `/opt/homebrew/opt/vice/share/vice/C64/kernal-901227-03.bin` ($E000), `basic-901226-01.bin` ($A000), `chargen-901225-01.bin` ($D000). Read bytes with python to settle any address or vector claim. |
 
@@ -113,5 +113,5 @@ in `src/tools/query.ts`; check which before editing either.
 
 ## What "verified" means here
 
-Verified against VICE x64sc 3.9 and the ROM images, not a 6569 on a bench.
+Verified against VICE x64sc 3.10 and the ROM images, not a 6569 on a bench.
 The pages say so. Do not upgrade that wording.

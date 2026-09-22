@@ -32,10 +32,11 @@ work since the late 1970s. The C64 demoscene in particular treats them as
 first-class instructions: a saved cycle here, a saved byte there, and a
 50-frame-per-second multiplexer suddenly fits in the badline budget.
 Modern cycle-exact emulators (VICE, x64sc, Kowalski) implement them
-faithfully, and modern assemblers (acme, kickass, ca65, dasm) accept their
-mnemonics directly.
+faithfully, and modern assemblers accept their mnemonics once told the CPU
+is NMOS (acme `!cpu 6510`, ca65 `.setcpu "6502X"`; KickAssembler needs
+nothing; dasm not measured here).
 
-This document covers the ~30 illegal opcodes most relevant to C64 software,
+This document covers all 105 undocumented opcodes (20 mnemonics),
 distilled from the canonical Oxyron table, Masswerk's reference, and the
 NESdev wiki. Per-revision differences are called out where they matter.
 
@@ -57,8 +58,9 @@ keep behaving the same way. In practice:
   run on a 65C02.
 - The **65816** (Apple IIGS, SNES) does not preserve any illegal-opcode
   behavior either. The same warning applies.
-- The C64's 6510 and the C128's 8500 are NMOS parts and *do* support the
-  illegal opcodes. The SuperCPU accelerator uses a 65816 and *does not*.
+- The C64's 6510 and 8500 and the C128's 8502 are NMOS parts and *do*
+  support the illegal opcodes. The SuperCPU accelerator uses a 65816 and
+  *does not*.
 
 In short: on a stock C64, illegal opcodes are safe. Outside the C64
 NMOS family, they are not portable.
@@ -69,9 +71,17 @@ The illegal opcodes fall into three reliability tiers:
 
 | Tier | Examples | Use in production? |
 |------|----------|--------------------|
-| Safe (stable) | LAX, SAX, ANC, ARR, ALR, RLA, RRA, SLO, SRE, ISC, DCP, NOPs | Yes — universal across NMOS 6502/6510 |
-| Unstable | XAA, AHX, TAS, LAS, SHX, SHY | Risky — output depends on chip and surrounding state |
+| Safe (stable) | LAX, SAX, ANC, ARR, ALR, RLA, RRA, SLO, SRE, ISC, DCP, AXS, LAS (see note), NOPs | Yes — universal across NMOS 6502/6510 |
+| Unstable | XAA, LAX #imm, AHX, TAS, SHX, SHY | Risky — output depends on chip and surrounding state |
 | Fatal | KIL/JAM (12 opcodes) | Never — hangs the CPU |
+
+LAS ($BB) was in the unstable tier in an earlier version of this page. None
+of the sources this page cites marks it unstable — Oxyron and Masswerk
+footnote exactly XAA, LAX #imm, AHX, SHX, SHY and TAS — and Oxyron records
+only that one source called it "probably unreliable". Its stability cannot
+be measured in VICE, which implements one behaviour; the classification
+follows the cited tables. It still overwrites S, so it is deterministic,
+not harmless.
 
 The safe tier is what almost every demoscene production uses. The unstable
 tier shows up in a small number of effects where the instability itself is
@@ -85,8 +95,11 @@ Tested behavior of the safe illegal opcodes is **identical** on:
 
 - 6502 (Apple I, Apple II, Atari 2600/400/800, NES, BBC Micro early)
 - 6510 (Commodore 64)
-- 8500 (Commodore 64C, late breadbins, C128)
-- 8502 (C128 fast mode — same logic, 2 MHz capable)
+- 8500 (Commodore 64C, late breadbins — an earlier revision of this page
+  also listed the C128 here; the C128 has no 8500)
+- 8502 (Commodore 128 — its only 65xx CPU, in C128 mode and C64 mode
+  alike; same logic as the 8500, 2 MHz capable. The C128 part name is as
+  VICE x128 reports it, not measured on hardware)
 - 2A03 (NES — a 6502 with disabled BCD)
 
 Tested behavior of the unstable illegal opcodes **varies** between these
@@ -96,9 +109,10 @@ only reliable answer.
 
 ## Quick reference
 
-All 30 documented illegal opcodes covered in this document are listed
-below. Each has a full H3 entry later with cycles, flags, and behavioral
-notes.
+All 105 undocumented opcodes are listed below — 20 mnemonics, of which 27
+opcodes are NOPs and 12 are KIL/JAM. (An earlier revision omitted eight
+SRE/RRA/RLA addressing modes and the $EB SBC alias.) Each has a full H3
+entry later with cycles, flags, and behavioral notes.
 
 | Opcode | Mnemonic   | Mode    | Operation                         | Cycles | Stable? |
 |--------|------------|---------|-----------------------------------|--------|---------|
@@ -107,8 +121,9 @@ notes.
 | $4B    | ALR #imm   | imm     | A = (A & imm) >> 1                | 2      | yes     |
 | $6B    | ARR #imm   | imm     | A = ((A & imm) >> 1) + ROR carry  | 2      | yes     |
 | $8B    | XAA #imm   | imm     | A = (A \| magic) & X & imm        | 2      | NO      |
-| $AB    | LAX #imm   | imm     | A = X = imm (magic-mask)          | 2      | NO      |
+| $AB    | LAX #imm   | imm     | A = X = (A \| magic) & imm        | 2      | NO      |
 | $CB    | AXS #imm   | imm     | X = (A & X) - imm; sets C as CMP  | 2      | yes     |
+| $EB    | SBC #imm   | imm     | A = A - imm - !C (alias of $E9)   | 2      | yes     |
 | $A3    | LAX (zp,X) | (zp,X)  | A = X = M                         | 6      | yes     |
 | $A7    | LAX zp     | zp      | A = X = M                         | 3      | yes     |
 | $AF    | LAX abs    | abs     | A = X = M                         | 4      | yes     |
@@ -143,20 +158,28 @@ notes.
 | $23    | RLA (zp,X) | (zp,X)  | M = ROL M ; A &= M                | 8      | yes     |
 | $27    | RLA zp     | zp      | M = ROL M ; A &= M                | 5      | yes     |
 | $2F    | RLA abs    | abs     | M = ROL M ; A &= M                | 6      | yes     |
+| $33    | RLA (zp),Y | (zp),Y  | M = ROL M ; A &= M                | 8      | yes     |
 | $37    | RLA zp,X   | zp,X    | M = ROL M ; A &= M                | 6      | yes     |
 | $3B    | RLA abs,Y  | abs,Y   | M = ROL M ; A &= M                | 7      | yes     |
 | $3F    | RLA abs,X  | abs,X   | M = ROL M ; A &= M                | 7      | yes     |
 | $43    | SRE (zp,X) | (zp,X)  | M >>= 1 ; A ^= M                  | 8      | yes     |
 | $47    | SRE zp     | zp      | M >>= 1 ; A ^= M                  | 5      | yes     |
 | $4F    | SRE abs    | abs     | M >>= 1 ; A ^= M                  | 6      | yes     |
+| $53    | SRE (zp),Y | (zp),Y  | M >>= 1 ; A ^= M                  | 8      | yes     |
+| $57    | SRE zp,X   | zp,X    | M >>= 1 ; A ^= M                  | 6      | yes     |
+| $5B    | SRE abs,Y  | abs,Y   | M >>= 1 ; A ^= M                  | 7      | yes     |
 | $5F    | SRE abs,X  | abs,X   | M >>= 1 ; A ^= M                  | 7      | yes     |
 | $63    | RRA (zp,X) | (zp,X)  | M = ROR M ; ADC M                 | 8      | yes     |
 | $67    | RRA zp     | zp      | M = ROR M ; ADC M                 | 5      | yes     |
 | $6F    | RRA abs    | abs     | M = ROR M ; ADC M                 | 6      | yes     |
+| $73    | RRA (zp),Y | (zp),Y  | M = ROR M ; ADC M                 | 8      | yes     |
+| $77    | RRA zp,X   | zp,X    | M = ROR M ; ADC M                 | 6      | yes     |
+| $7B    | RRA abs,Y  | abs,Y   | M = ROR M ; ADC M                 | 7      | yes     |
+| $7F    | RRA abs,X  | abs,X   | M = ROR M ; ADC M                 | 7      | yes     |
 | $93    | AHX (zp),Y | (zp),Y  | M = A & X & (H+1)                 | 6      | NO      |
 | $9F    | AHX abs,Y  | abs,Y   | M = A & X & (H+1)                 | 5      | NO      |
 | $9B    | TAS abs,Y  | abs,Y   | S=A&X ; M=A&X&(H+1)               | 5      | NO      |
-| $BB    | LAS abs,Y  | abs,Y   | A = X = S = M & S                 | 4      | NO      |
+| $BB    | LAS abs,Y  | abs,Y   | A = X = S = M & S  (+1 on page cross) | 4  | yes     |
 | $9E    | SHX abs,Y  | abs,Y   | M = X & (H+1)                     | 5      | NO      |
 | $9C    | SHY abs,X  | abs,X   | M = Y & (H+1)                     | 5      | NO      |
 | $02    | KIL/JAM    | impl    | halts CPU                         | —      | fatal   |
@@ -220,16 +243,21 @@ legal operations they combine.
 
 **LAX** = LDA + LDX from the same memory operand. Stores the loaded byte
 into both A and X in a single 3- or 4-cycle instruction instead of two
-separate 4- or 5-cycle loads. Available in every addressing mode that LDA
-and LDX share (zero page, zp,Y, absolute, abs,Y, (zp,X), (zp),Y) — but
-*not* zp,X or abs,X (X is the destination, so X-indexing would conflict).
+separate 3- or 4-cycle loads (6–8 cycles). Available in zp, zp,Y, abs,
+abs,Y, (zp,X) and (zp),Y — and *not* zp,X or abs,X. That is not the set of
+modes LDA and LDX have in common (only zp, abs, abs,Y and immediate are):
+LAX takes LDA's modes with the zp,X and abs,X slots replaced by LDX's zp,Y
+and abs,Y, and keeps (zp,X). An earlier version of this page called the six
+"the modes LDA and LDX share" (KickAssembler 5.25: `lda $10,y` is silently
+promoted to abs,Y $B9, and `ldx ($10),y`, `ldx ($10,x)`, `lax $10,x` are
+refused).
 
 The N and Z flags are set from the loaded byte. C, V, D, I are unchanged.
 
 The immediate form `LAX #imm` ($AB) is **unstable** — see
 [XAA/LAX immediate](#ab--lax-imm--load-a-and-x-immediate-unstable).
 
-### Combined store: SAX (a.k.a. AXS, AAX)
+### Combined store: SAX (other references call it AXS or AAX — in this document, in KickAssembler and in ca65, AXS is the $CB subtract-into-X, and neither assembler accepts `axs` with an address operand or knows `aax`; see the Pitfalls note on mnemonics)
 
 **SAX** = STA bitwise-ANDed with X. Stores the value `A & X` to memory.
 No flags are affected. Useful when you have a precomputed mask in X and
@@ -244,15 +272,25 @@ without losing X.
 
 ### AND-then-set-carry: ANC
 
-**ANC** = AND + ASL-carry-bit-7. Performs A &= imm and then copies bit 7
-of the result into the C flag (i.e., the same effect as `AND #imm : CMP
-#$80` but in one 2-cycle instruction). Sets N and Z from the AND result.
+**ANC** = AND + copy-bit-7-to-carry. Performs A &= imm, sets N and Z from
+the result, and copies bit 7 of the result into C, in one 2-cycle
+instruction. The C it leaves is the one `AND #imm : CMP #$80` would leave,
+but N and Z are not: CMP #$80 inverts N and sets Z only for a result of
+$80 (measured in VICE x64sc: with A=$C5, `anc #$80` leaves A=$80, N=1 Z=0
+C=1; `and #$80 : cmp #$80` leaves N=0 Z=1 C=1). An earlier version of this
+page called the two sequences identical.
 
 The 6502 silicon has two opcodes for this — $0B and $2B — that do
 identical things. Most assemblers accept either.
 
-Useful for sign-test patterns where you want to branch on the sign of an
-AND result without a separate compare.
+Useful when the sign of a masked value has to end up in C — for a
+following ROL/ROR/ADC/SBC, or so that a later instruction that rewrites N
+still leaves the sign test in C. It saves nothing on a plain sign branch:
+`and #$80 : bmi` needs no compare either, and takes the same branch as
+`anc #$80 : bcs` for every value of A (measured in VICE x64sc, 0
+mismatches over 256). An earlier version of this page gave "branch on the
+sign without a separate compare" as the use; that compare was never
+needed.
 
 ### AND-then-shift-right: ALR (a.k.a. ASR)
 
@@ -260,36 +298,51 @@ AND result without a separate compare.
 bit 0 of the AND result (i.e., the bit shifted out). Sets N (always 0,
 since LSR clears bit 7) and Z from the shifted result. Two cycles.
 
-Equivalent in effect to `AND #imm : LSR A` (4 cycles, 4 bytes) compressed
-into 2 cycles, 2 bytes.
+Equivalent in effect to `AND #imm : LSR A` (4 cycles, 3 bytes — an
+earlier version said 4 bytes) compressed into 2 cycles, 2 bytes.
 
 ### AND-then-rotate-right: ARR
 
-**ARR** = AND + ROR but with quirky flag semantics that *only* match
-"AND + ROR" in decimal mode. In binary mode:
+**ARR** = AND + ROR with different flags. In binary mode the accumulator
+is exactly what `AND #imm : ROR A` would leave (measured in VICE x64sc: 0
+of 512 operand/carry-in cases differ); only C and V differ:
 
 - `A = (A & imm) >> 1`, with C-in shifted into bit 7
 - C = bit 6 of the result (NOT bit 0 — this is what makes it unusual)
 - V = bit 6 XOR bit 5 of the result
 - N, Z from the result
 
-The C and V semantics are the *output* of an internal half-adder used for
-BCD ADC, which is why ARR's behavior changes in decimal mode. It's
-genuinely useful for shift-and-test sequences in checksum and CRC code
-because C ends up holding what would have been the carry-out of an ADC.
+In decimal mode (D=1) ARR diverges further: the ROR result is BCD-adjusted
+(+$06 if the low nibble of the AND result plus its bit 0 exceeds 5, +$60
+if the high nibble plus its bit 4 exceeds $50), C is 1 exactly when the
++$60 fix-up fires rather than bit 6 of the result, and N is the carry-in
+rather than bit 7 of the final A. So in decimal mode the accumulator
+itself differs from AND + ROR (462 of 512 cases in VICE x64sc) and N no
+longer reads the result's sign (352 of 512). An earlier version of this
+page had the two modes the wrong way round. The C/V rule is genuinely
+useful in shift-and-test sequences because C ends up holding what would
+have been the carry-out of an add.
 
 ### Rotate-then-OR/AND/EOR/ADC families (RMW)
 
 These four are the **most demoscene-friendly** of all illegal opcodes
-because they save 3 cycles every time you need to bit-shift a byte in
-memory and update the accumulator with it:
+because they save three to five cycles, depending on addressing mode,
+every time you need to bit-shift a byte in memory and update the
+accumulator with it:
 
 | Mnemonic | Equivalent legal pair | Bytes saved | Cycles saved |
 |----------|-----------------------|-------------|--------------|
-| SLO     | ASL mem : ORA mem     | 2           | 2-3          |
-| RLA     | ROL mem : AND mem     | 2           | 2-3          |
-| SRE     | LSR mem : EOR mem     | 2           | 2-3          |
-| RRA     | ROR mem : ADC mem     | 2           | 2-3          |
+| SLO     | ASL mem : ORA mem     | 2 (zp, zp,X, (zp,X), (zp),Y) / 3 (abs, abs,X, abs,Y) | 3 (zp), 4 (abs, zp,X), 4-5 (abs,X: the legal ORA pays the page-cross cycle, the RMW never does) |
+| RLA     | ROL mem : AND mem     | 2 (zp, zp,X, (zp,X), (zp),Y) / 3 (abs, abs,X, abs,Y) | 3 (zp), 4 (abs, zp,X), 4-5 (abs,X) |
+| SRE     | LSR mem : EOR mem     | 2 (zp, zp,X, (zp,X), (zp),Y) / 3 (abs, abs,X, abs,Y) | 3 (zp), 4 (abs, zp,X), 4-5 (abs,X) |
+| RRA     | ROR mem : ADC mem     | 2 (zp, zp,X, (zp,X), (zp),Y) / 3 (abs, abs,X, abs,Y) | 3 (zp), 4 (abs, zp,X), 4-5 (abs,X) |
+
+(An earlier version of this table said 2 bytes and 2-3 cycles for every
+mode; a 2-cycle saving never occurs. Measured in VICE x64sc: zp 5 vs 8,
+abs 6 vs 10, zp,X 6 vs 10, abs,X 7 vs 11 or 12.) The legal shifts have no
+abs,Y, (zp,X) or (zp),Y form, so the "equivalent legal pair" column does
+not apply to those three modes; there the saving is against a
+load/shift/store/ORA sequence and is larger.
 
 Available in every RMW addressing mode (zp, zp,X, abs, abs,X, abs,Y,
 (zp,X), (zp),Y). Cycle counts match the equivalent legal RMW (5/6/7/8
@@ -315,7 +368,11 @@ value without restoring A:
 ```
 
 In legal-only code this needs `DEC counter : LDA #target : CMP counter`
-(7+ cycles); DCP zp is 5 cycles flat.
+(10 cycles with a zero-page counter, 12 absolute; an earlier version said
+7+); DCP zp is 5 cycles flat. The shortest legal equivalent that, like
+DCP, compares A against the decremented value is `dec counter : cmp
+counter` (8 cycles zp, measured in VICE x64sc), so the saving DCP actually
+buys is 3 cycles, not 5.
 
 ### Increment-then-subtract: ISC (a.k.a. ISB, INS)
 
@@ -333,6 +390,15 @@ ignores decimal mode for subtraction.
 
 Useful as a "test-then-decrement-X" combo when X holds a loop counter
 masked against the accumulator.
+
+### Load A, X and S: LAS (a.k.a. LAR)
+
+**LAS** = `A = X = S = M & S`, abs,Y only ($BB). Reads memory, ANDs it
+with the current stack pointer and writes the result into A, X and S at
+once; N and Z from the result; 4 cycles, +1 on page cross. It writes S,
+so restore the stack pointer before the next push or return. An earlier
+version of this page listed it among the unstable opcodes — see the note
+under the tier table and the $BB entry.
 
 ### Undocumented NOPs
 
@@ -367,15 +433,29 @@ production code** unless your goal is to exploit the instability itself
 ### XAA (a.k.a. ANE)
 
 `A = (A | magic) & X & imm`. The "magic" constant is the value the chip's
-internal A-input bus floats to, which on most 6502s is $FF, $EE, $EF, or
-$00 depending on the part. The result is therefore *usually* `A = X & imm`
-on stable conditions but degrades to garbage on others.
+internal bus floats to during the operand fetch. Values reported for NMOS
+parts include $EE, $EF, $FF and $00, and on one chip it can differ between
+fetches depending on whether the VIC-II held RDY low (a badline or sprite
+DMA) on that cycle. None of this is measured on silicon here. VICE (x64sc
+and x64, 3.10 on this machine) uses $EF — measured: `lda #$00 : ldx #$ff :
+xaa #$ff` leaves A=$EF — and substitutes $EE when the operand fetch fell on
+a RDY cycle (from VICE's own release notes, not measured here). The result
+equals `X & imm` only for the bits of `imm` that are set in `A | magic`;
+with A=$FF preloaded it is `X & imm` for every magic value. An earlier
+revision of this page said magic was $FF on most silicon; none of the
+sources it cites says so and VICE does not model it.
 
-### LAX #imm
+### LAX #imm (a.k.a. LXA)
 
-The immediate-mode LAX ($AB) has the same instability as XAA for similar
-electrical reasons. On most parts it computes `A = X = imm`, but the
-"magic" floating bus can corrupt the load on a minority of chips.
+`A = X = (A | magic) & imm` — not `A = X = imm`. Same mechanism as XAA,
+without the X term. VICE uses $EE (its NEWS: 3.5 set $EF, 3.6 "changed to
+0xEE as required by wizball"), measured: `lda #$00 : lax #$ff` gives
+A=X=$EE and `lda #$00 : lax #$55` gives $44. It loads `imm` only for the
+bits set in `A | magic`; preload A=$FF if the instruction cannot be
+avoided. Oxyron's table, this page's primary source, reports that on the
+author's own C64-II the opcode "loses bits" (`ORA #? : AND #imm : TAX`),
+so "works on most parts" was never what the source said; the
+memory-addressed LAX forms are unaffected.
 
 ### AHX (a.k.a. SHA, AXA)
 
@@ -390,14 +470,6 @@ result is unpredictable.
 `S = A & X ; M[addr] = A & X & (H+1)`. Has the same `(H+1)` instability
 as AHX, plus it clobbers the stack pointer S, which makes it doubly
 dangerous: even an emulator-stable form will trash the stack.
-
-### LAS (a.k.a. LAR)
-
-`A = X = S = M & S`. Reads memory, ANDs with the current stack pointer,
-stores the result in A, X, and S simultaneously. This one is *less*
-unstable in practice than the other unstable opcodes — most chips
-produce a clean read — but it is still classified as unstable because a
-small number of parts exhibit anomalies on the AND path.
 
 ### SHX / SHY (a.k.a. SXA / SYA)
 
@@ -431,8 +503,11 @@ the same behavior.
 **Legal:** no
 
 Performs `A &= imm` and copies bit 7 of the result into the C flag.
-Identical to the sequence `AND #imm : CMP #$80`. The duplicate opcode
-$2B does the same thing. Stable on all NMOS parts.
+Leaves the same C as `AND #imm : CMP #$80`, but N and Z come from the AND
+result, which CMP would not give — the two are not identical (an earlier
+version said identical; N is inverted and Z differs, measured in VICE
+x64sc; see the ANC section). The duplicate opcode $2B does the same
+thing. Stable on all NMOS parts.
 
 ### $2B — ANC #imm — AND immediate, copy bit 7 to carry (illegal alias)
 
@@ -469,9 +544,12 @@ output flags do *not* match a simple ROR:
 - C = bit 6 of the final result
 - V = bit 6 XOR bit 5 of the final result
 
-In decimal mode (D=1) the half-adder is engaged and ARR's C/V semantics
-exactly equal the C/V of an ADC half-instruction, which is the
-internal-design reason this opcode exists.
+In decimal mode (D=1) the result is BCD-adjusted (+$06 / +$60 fix-ups as
+for ADC), C = 1 iff the high-nibble fix-up fired, N = carry-in, V = bit 6
+XOR bit 5 of the un-adjusted ROR result. Example, measured in VICE x64sc:
+SED CLC LDA #$FF ARR #$60 gives A=$90 C=1 where binary mode gives A=$30
+C=0. (An earlier version of this entry said the decimal-mode C/V equal an
+ADC's; the accumulator itself changes, not only the flags.)
 
 Used in CRC and shift-and-detect-pattern routines.
 
@@ -481,11 +559,15 @@ Used in CRC and shift-and-detect-pattern routines.
 **Flags:** N Z
 **Legal:** no
 
-`A = (A | magic) & X & imm`. The magic constant is the floating value
-of the chip's internal A-input bus and varies between $00 and $FF across
-parts. On *most* 6502/6510 silicon `magic = $FF`, in which case the
-instruction reduces to `A = X & imm`, but the behavior is not
-guaranteed. **Unstable.** Do not use in production.
+`A = (A | magic) & X & imm`. The magic constant is the value the chip's
+internal bus floats to during the operand fetch; values reported for NMOS
+parts include $EE, $EF, $FF and $00, none measured on silicon here. VICE
+(x64sc and x64, 3.10 on this machine) uses $EF, measured: `lda #$00 : ldx
+#$ff : xaa #$ff` leaves A=$EF. The result equals `X & imm` only for the
+bits of `imm` that are set in `A | magic`; with A=$FF preloaded it is
+`X & imm` for every magic value. An earlier revision of this entry said
+magic was $FF on most silicon; none of the cited sources says so and VICE
+does not model it. **Unstable.** Do not use in production.
 
 Also known as ANE.
 
@@ -495,11 +577,15 @@ Also known as ANE.
 **Flags:** N Z
 **Legal:** no
 
-Immediate-mode LAX. Should produce `A = X = imm` but the same internal
-floating-bus issue that destabilizes XAA also affects $AB. On most parts
-it works; on some it doesn't. **Unstable.** The zero-page and absolute
-LAX forms ($A3/$A7/$AF/$B3/$B7/$BF) are stable; only the immediate form
-is risky.
+Immediate-mode LAX. `A = X = (A | magic) & imm` — not `A = X = imm`. Same
+floating-bus mechanism as XAA, without the X term. VICE uses $EE,
+measured: `lda #$00 : lax #$ff` gives A=X=$EE and `lda #$00 : lax #$55`
+gives $44; it loads `imm` only for the bits set in `A | magic`, so
+preload A=$FF if the instruction cannot be avoided. An earlier revision of
+this entry said it works on most parts; Oxyron's table reports that it
+"loses bits" on the author's own C64-II. **Unstable.** The zero-page and
+absolute LAX forms ($A3/$A7/$AF/$B3/$B7/$BF) are stable; only the
+immediate form is risky.
 
 ### $CB — AXS #imm — AND A with X, subtract immediate into X (illegal)
 
@@ -512,6 +598,17 @@ if no borrow). Decimal mode is *ignored* — AXS always executes binary
 subtraction. Useful as a fused "mask-and-decrement-X" in tight loops.
 
 Also called SBX.
+
+### $EB — SBC #imm — Subtract immediate (undocumented alias of $E9)
+
+**Cycles:** 2
+**Flags:** N Z C V
+**Legal:** no
+
+`A = A - imm - !C`. Identical arithmetic and flags to the official
+`SBC #imm` ($E9), decimal mode included; 2 cycles, measured in VICE x64sc.
+Assemblers never emit it for `sbc #`, so it only appears in hand-assembled
+or obfuscated code. Stable.
 
 ### $A3 — LAX (zp,X) — Load A and X indirect-X (illegal)
 
@@ -803,6 +900,16 @@ multiplexer mask-rotation. Stable.
 
 `M[abs] = ROL(M[abs]) ; A &= M[abs]`. Stable.
 
+### $33 — RLA (zp),Y — ROL memory then AND indirect-Y (illegal)
+
+**Cycles:** 8
+**Flags:** N Z C
+**Legal:** no
+
+`M[ind16(zp)+Y] = ROL(M) ; A &= M`. RMW form — page-cross cost already
+included; cycles measured in VICE x64sc; no page-cross penalty (RMW).
+Stable. (Omitted from an earlier revision of this page.)
+
 ### $37 — RLA zp,X — ROL zp,X then AND (illegal)
 
 **Cycles:** 6
@@ -851,6 +958,36 @@ multiplexer mask-rotation. Stable.
 
 `M[abs] >>= 1 ; A ^= M[abs]`. Stable.
 
+### $53 — SRE (zp),Y — LSR memory then EOR indirect-Y (illegal)
+
+**Cycles:** 8
+**Flags:** N Z C
+**Legal:** no
+
+`M[ind16(zp)+Y] >>= 1 ; A ^= M`. RMW form — page-cross cost already
+included; cycles measured in VICE x64sc; no page-cross penalty (RMW).
+Stable. (Omitted from an earlier revision of this page.)
+
+### $57 — SRE zp,X — LSR zp,X then EOR (illegal)
+
+**Cycles:** 6
+**Flags:** N Z C
+**Legal:** no
+
+`M[zp+X] >>= 1 ; A ^= M[zp+X]`. Wraps in zero page. Cycles measured in
+VICE x64sc; no page-cross penalty (RMW). Stable. (Omitted from an earlier
+revision of this page.)
+
+### $5B — SRE abs,Y — LSR abs,Y then EOR (illegal)
+
+**Cycles:** 7
+**Flags:** N Z C
+**Legal:** no
+
+`M[abs+Y] >>= 1 ; A ^= M[abs+Y]`. Cycles measured in VICE x64sc; no
+page-cross penalty (RMW). Stable. (Omitted from an earlier revision of
+this page.)
+
 ### $5F — SRE abs,X — LSR abs,X then EOR (illegal)
 
 **Cycles:** 7
@@ -882,6 +1019,46 @@ multiplexer mask-rotation. Stable.
 **Legal:** no
 
 `M[abs] = ROR(M[abs]) ; A = A + M[abs] + C`. Stable.
+
+### $73 — RRA (zp),Y — ROR memory then ADC indirect-Y (illegal)
+
+**Cycles:** 8
+**Flags:** N Z C V
+**Legal:** no
+
+`M[ind16(zp)+Y] = ROR(M) ; A = A + M + C`. RMW form — page-cross cost
+already included; cycles measured in VICE x64sc; no page-cross penalty
+(RMW). Stable. (Omitted from an earlier revision of this page.)
+
+### $77 — RRA zp,X — ROR zp,X then ADC (illegal)
+
+**Cycles:** 6
+**Flags:** N Z C V
+**Legal:** no
+
+`M[zp+X] = ROR(M[zp+X]) ; A = A + M[zp+X] + C`. Wraps in zero page.
+Cycles measured in VICE x64sc; no page-cross penalty (RMW). Stable.
+(Omitted from an earlier revision of this page.)
+
+### $7B — RRA abs,Y — ROR abs,Y then ADC (illegal)
+
+**Cycles:** 7
+**Flags:** N Z C V
+**Legal:** no
+
+`M[abs+Y] = ROR(M[abs+Y]) ; A = A + M[abs+Y] + C`. Cycles measured in
+VICE x64sc; no page-cross penalty (RMW). Stable. (Omitted from an earlier
+revision of this page.)
+
+### $7F — RRA abs,X — ROR abs,X then ADC (illegal)
+
+**Cycles:** 7
+**Flags:** N Z C V
+**Legal:** no
+
+`M[abs+X] = ROR(M[abs+X]) ; A = A + M[abs+X] + C`. Cycles measured in
+VICE x64sc; no page-cross penalty (RMW). Stable. (Omitted from an earlier
+revision of this page.)
 
 ### $93 — AHX (zp),Y — Store A AND X AND (H+1) indirect-Y (unstable)
 
@@ -915,7 +1092,7 @@ side effect of clobbering S.
 
 Also called SHS or XAS.
 
-### $BB — LAS abs,Y — Load A, X, and S from memory AND S (unstable)
+### $BB — LAS abs,Y — Load A, X, and S from memory AND S
 
 **Cycles:** 4
 **Flags:** N Z
@@ -924,8 +1101,11 @@ Also called SHS or XAS.
 
 `A = X = S = M[abs+Y] & S`. Reads memory ANDed with the stack pointer
 and writes the result into A, X, and S simultaneously. Page-cross
-penalty applies. Classified as **unstable** historically though it is
-relatively reliable in practice on most parts.
+penalty applies. An earlier version of this page classed it unstable; the
+cited tables do not, and Oxyron notes only that one source called it
+"probably unreliable". Measured in VICE x64sc: S=$F0, M=$3F gives
+A=X=S=$30, N and Z from the result, 4 cycles, 5 on page cross. It writes
+S — restore the stack pointer before the next push or return.
 
 Also called LAR.
 
@@ -988,13 +1168,22 @@ When you have a precomputed bitmask in X and need to write a masked
 version of A to memory without disturbing either register:
 
 ```asm
-  ldx #$0F               ; nibble mask
+  .const cell = 40*12 + 20   // colour-RAM cell for row 12, column 20
+  ldx #$0F                   // nibble mask
   lda color_byte
-  sax $D800,y            ; store (color_byte & $0F) to color RAM
+  sax $D800+cell             // SAX abs ($8F, 3 bytes, 4 cycles): store color_byte & $0F
 ```
 
-Color RAM is nibble-wide on the C64, and SAX makes the masked store a
-3-byte/4-cycle instruction instead of 5+/8+.
+Color RAM is nibble-wide on the C64, and SAX abs makes the masked store
+one 3-byte/4-cycle instruction against `AND #$0F : STA abs` at 5 bytes/6
+cycles. SAX has no abs,Y or abs,X form; the $9F slot that abs,Y would
+occupy is SHA/AHX, which stores A & X & (high byte + 1) — measured in
+VICE x64sc: $9F to $0300 with A=$FF, X=$0F stores $04, not $0F. If the
+cell has to be indexed, the index has to live in the address, not in Y:
+with X holding the mask, SAX can only be unindexed (abs/zp) or zp,Y, and
+zp,Y cannot reach $D800 at all. An earlier version of this page wrote
+`sax $D800,y`, which does not assemble (KickAssembler 5.25: "'sax'
+doesn't support ABSOLUTEY mode").
 
 ### SLO/RLA for sprite multiplexers
 
@@ -1007,8 +1196,8 @@ and OR new sprite enables into a register-image table:
   sta sprite_enable_image
 ```
 
-Equivalent to `asl $FB : lda $FB : ora ...` in 7+ cycles, but SLO fuses
-it to 5.
+Equivalent to `asl $FB : lda $FB : ora ...` in 8+ cycles (an earlier
+version said 7+; ASL zp is 5 and LDA zp 3), but SLO fuses it to 5.
 
 RLA is the AND-rotate version, used when rotating a sprite priority mask
 into a `$D01B`-bound register image.
@@ -1026,38 +1215,59 @@ on-screen counter and branch in one instruction:
     bne loop
 ```
 
-This is 5 cycles per iteration vs. ~7 for `dec scroll_phase : lda
-#wrap_value : cmp scroll_phase : bne loop`.
+This is 8 cycles per iteration (`dcp` zp 5 + taken `bne` 3) vs. 13 for
+`dec scroll_phase : lda #wrap_value : cmp scroll_phase : bne loop` (an
+earlier version said 5 vs. ~7, which omitted the branch on one side and
+undercounted the other). All counts measured in VICE x64sc.
 
 ### NOPs for timing alignment
 
-Cycle-exact raster code regularly needs 1- or 2-cycle padding to align
-register writes to the badline boundary. The 1-byte $1A/$3A/$5A/$7A/$DA/
-$FA undocumented NOPs are perfect — they are 2 cycles and a single byte,
-which preserves branch reach and code-page alignment better than a
-`bit $00` (3 cycles, 2 bytes) or a labelled-jump trick.
+Cycle-exact raster code regularly needs padding of a few cycles to align
+register writes to the badline boundary. An earlier version of this page
+recommended the 1-byte $1A/$3A/$5A/$7A/$DA/$FA undocumented NOPs for this;
+that was wrong — they are exactly the shape of the legal `nop` ($EA,
+1 byte, 2 cycles; all seven measured 2 cycles in VICE x64sc) and buy
+nothing except a 65C02 incompatibility. No 6502 instruction takes fewer
+than 2 cycles, so a 1-cycle adjustment is made by swapping a 2-cycle
+instruction for a 3-cycle one, and that is where the illegal family earns
+its place: `nop zp` ($04, 2 bytes, 3 cycles) pads three cycles and leaves
+N, V and Z untouched (measured: P unchanged, where `bit zp` at the same
+point rewrote all three), and it is a byte shorter than `jmp *+3`.
+`nop #imm` ($80, 2 bytes, 2 cycles) is the no-side-effect 2-byte pad, and
+the one-byte skip. For 4 cycles two legal `nop`s (2 bytes) are already the
+smallest form; `nop abs` ($0C, 3 bytes, 4 cycles) is a 2-byte skip, not a
+pad. Prefer `bit $00` only when you can afford the flag change; it is
+3 cycles, 2 bytes, and legal.
 
 ### AXS for fused mask-and-loop
 
 A bit-mask-then-counter pattern: `X = (A & X) - 1; if X != 0 goto loop`
-becomes a 4-cycle two-instruction loop body:
+becomes a 5-cycle two-instruction loop body (2 for `axs #1` + 3 for the
+taken branch; an earlier version said 4 and 9):
 
 ```asm
   axs #1
   bne loop
 ```
 
-vs. `txa : and #mask : tax : dex : bne loop` (9 cycles).
+vs. `txa : and #mask : tax : dex : bne loop` (11 cycles, measured in VICE
+x64sc).
 
-### ANC for sign-test fall-through
+### ANC for sign-to-carry
 
-A signed-comparison branch can use ANC to fold a "test against zero" or
-"test bit 7" into the next branch without a separate compare:
+When the sign of a masked value is needed in C for the code that follows,
+ANC folds the `CMP #$80` away:
 
 ```asm
-  anc #$80           ; A &= $80 ; C = bit 7 of result
-  bcs negative       ; branch if A's top bit was set
+  anc #$80           // A &= $80 ; C = N = bit 7 of the result
+  ror                // shifts the sign in: 4 cycles, where and/cmp/ror is 6
 ```
+
+For a plain branch on the sign, use the legal `and #$80 : bmi`:
+`anc #$80 : bcs` takes the same branch at the same cost and gives up CMOS
+compatibility for nothing. (The earlier example here, `anc #$80 : bcs
+negative`, was sold as saving a compare; AND sets N, so no compare was
+ever needed.)
 
 ## Pitfalls
 
@@ -1068,31 +1278,44 @@ A signed-comparison branch can use ANC to fold a "test against zero" or
   ideally don't. Emulators often pick *one* behavior and call it "the"
   behavior, which masks the real-hardware variance.
 - **Not portable to 65C02**: the CMOS-revision 6502 (Apple //c, Apple
-  //e Enhanced, BBC Master, SuperCPU's host accelerator) implements
+  //e Enhanced, BBC Master) implements
   almost every illegal opcode as a NOP of varying byte/cycle counts.
   Code that compiles for the C64 with illegal opcodes will not run on
   any 65C02-based machine. The same applies to the 65816 (Apple IIGS,
   SNES, SuperCPU).
 - **Assembler-dependent mnemonics**: different references use different
-  mnemonics for the same opcode (LAX vs. LXA, SAX vs. AXS vs. AAX, AXS
-  vs. SBX, AHX vs. SHA vs. AXA, KIL vs. JAM vs. HLT vs. CIM). Always
+  mnemonics for the same opcode ($87-family store: SAX vs. AXS vs. AAX;
+  $CB subtract: AXS vs. SBX; $AB: LAX #imm vs. LXA; AHX vs. SHA vs. AXA;
+  KIL vs. JAM vs. HLT vs. CIM). Always
   consult your assembler's documentation, and prefer the Oxyron names
   for portability between code shared with other coders.
 - **3-cycle and 4-cycle NOPs perform a memory read**: `NOP zp`, `NOP
   abs`, `NOP abs,X` *do* drive an address-bus read of the operand.
-  This is harmless for normal RAM but can have side effects on
-  memory-mapped I/O. Don't use `NOP $D019` as filler — it's harmless
-  there but the principle is general; `NOP $D41B` (SID oscillator-3
-  output) reads silently but resets some internal state.
+  Harmless in RAM, but the read reaches memory-mapped I/O exactly as an
+  `LDA` would. `NOP $D019` is harmless (a read of the VIC interrupt
+  register acknowledges nothing; only a write does), but `NOP $DC0D` or
+  `NOP $DD0D` clears the CIA's pending interrupt flags: after a Timer A
+  underflow, `.byte $0C,$0D,$DC` left a following `LDA $DC0D` reading $00
+  where the control read $01, and `NOP abs,X` ($1C) did the same
+  (measured in VICE x64sc). `NOP $D41B` does not disturb the SID: voice
+  3's OSC3 ramp advanced identically across sixteen `NOP $D41B` and
+  sixteen `NOP` reads of RAM (measured in VICE x64sc reSID); its only
+  visible effect is the one any read of $D419-$D41C has, refreshing the
+  value the write-only SID registers read back (see
+  c64-registers-reference). An earlier revision of this page said
+  `NOP $D41B` "resets some internal state"; nothing in the SID does that
+  on a read.
 - **KIL is one-way**: $02 and its siblings hang the CPU until reset.
   This is occasionally weaponized in copy protection, but in normal
   code, hitting a KIL means execution has gone wrong (corrupted PC,
   errant indirect jump, mistyped opcode). Most emulators will pop a
   debugger on KIL — VICE in particular shows a "JAM" dialog.
-- **ARR's flags only match ROR in decimal mode**: in binary mode ARR's
-  C and V come from an internal half-adder, not from the LSB. If you
-  use ARR as "AND then ROR", remember the C/V semantics are different
-  from what `AND #imm : ROR A` would produce.
+- **ARR's flags never match ROR's, and in decimal mode neither does the
+  result**: in binary mode `ARR #imm` leaves the same accumulator as
+  `AND #imm : ROR A` but C is bit 6 of the result and V is bit 6 XOR
+  bit 5; in decimal mode the accumulator is BCD-adjusted as well and N
+  holds the carry-in. An earlier version said the flags matched in
+  decimal mode — the reverse of what VICE x64sc measures.
 - **AXS ignores decimal mode**: AXS ($CB) is the *only* 6502 instruction
   with subtraction that does not honor the D flag. The result is always
   binary regardless of D=0 or D=1. Most other illegal opcodes that
@@ -1101,10 +1324,18 @@ A signed-comparison branch can use ANC to fold a "test against zero" or
   in their abs,X / abs,Y / (zp),Y modes always take the worst-case
   cycle count (7 or 8) — there is no page-cross saving on RMW
   instructions, illegal or otherwise.
-- **Some assemblers reject illegal opcodes**: dasm (with `processor 6502`)
-  accepts them; acme requires `!cpu 6510`; kickass and ca65 accept them
-  by default; xa65 needs `--no-undefined-opcodes` to be *not* set.
-  Check your toolchain.
+- **Some assemblers reject illegal opcodes**: acme requires `!cpu 6510`
+  (or `--cpu 6510`); ca65 requires `.setcpu "6502X"` or `--cpu 6502X` —
+  an earlier version of this page said ca65 accepts them by default; it
+  does not, and reports `':' expected` on every illegal mnemonic
+  (measured with ca65 V2.18 as the binary reports it, Homebrew cc65
+  2.19). KickAssembler accepts them with no directive (its default
+  `.cpu _6502` includes them; measured with 5.25, which has no
+  `kil`/`jam` mnemonic). dasm (`processor 6502`) and xa65
+  (`--no-undefined-opcodes`) are not installed here and those two claims
+  are not measured. Even with the CPU set, spellings differ: acme wants
+  `asr` where Oxyron says ALR, and ca65 wants `axs` where some tables
+  say SBX (both measured). Check your toolchain.
 - **VICE accuracy**: VICE's `x64sc` cycle-exact emulator implements all
   illegal opcodes, including the unstable ones with a configurable
   model. The faster `x64` emulator may not handle every unstable opcode

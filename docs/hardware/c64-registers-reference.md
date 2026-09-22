@@ -258,10 +258,14 @@ $D419-$D41C — a read of ENV3 or OSC3 refreshes it too. It is not $FF,
 not $00, and not the CPU's last fetched byte, on either chip model.
 Measured in VICE 3.10 x64sc with reSID (`-sound -sounddev dummy
 -sidengine 1`, both `-sidmodel 0` and `1`): after STA $D400,#$AA the
-reads of $D401 and $D41D-$D41F all return $AA and still do ~1.3 M
-cycles later; after LDA $D41C (=$00) a read of $D41D returns $00. Real
-chips let the held byte fade — how fast, and whether the 6581 fades
-faster than the 8580, is not measured here. Never use these addresses
+reads of $D401 and $D41D-$D41F all return $AA; after LDA $D41C (=$00)
+a read of $D41D returns $00. The held byte fades to $00 — in reSID
+after about 7k cycles on the 6581 model and about 660k on the 8580
+model, measured on [sid-reference.md](sid-reference.md) ("Write-only
+registers"); an earlier version of this paragraph said the byte was
+still there 1.3 M cycles later, which the SID page's measurement and
+reSID's own time-to-live constants contradict. Real chips fade too;
+the rates are not measured here. Never use these addresses
 as a constant source or for read-modify-write; keep a software shadow.
 Earlier versions of this page gave $FF, $00-on-8580 and the CPU's last
 fetch; none matched the instrument. Harness note: with sound disabled
