@@ -1,8 +1,11 @@
 # Technique Reference Conventions
 
 Technique docs live in `docs/techniques/<category>.md`. Each doc covers ONE category
-(raster, sprite, scroll, bitmap, banking, etc.) and contains multiple Technique
+(raster, sprite, scroll, bitmap, banking, input, etc.) and contains multiple Technique
 entries as H2 sections. The extractor parses each H2 as one Technique node.
+The category must be one of the words listed below; a doc with any other
+category is refused at extract with a warning and contributes no techniques,
+so a typo cannot create a category the briefing tools do not know.
 
 The marker `<!-- doc-type: technique-reference -->` MUST appear in the first 10
 lines for the extractor to process the file.
@@ -11,7 +14,8 @@ lines for the extractor to process the file.
 
 ```yaml
 ---
-category: raster              # raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader
+category: raster              # raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader | render
+                              # | input | logic | maths | text | io   (game and application foundations)
 chip: VIC-II                  # primary chip; optional
 ---
 ```

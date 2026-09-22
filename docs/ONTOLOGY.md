@@ -104,7 +104,7 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Snake_case name (e.g. "stable_raster_irq") |
-| category | string | One of: raster, sprite, scroll, bitmap, effect, music, cpu, banking, loader |
+| category | string | One of: raster, sprite, scroll, bitmap, effect, music, cpu, banking, loader, render, input, logic, maths, text, io. Enforced at extract (schema 20): a technique doc outside the set is refused with a warning. `render` had been in use since the text-mode page without being listed; input, logic, maths, text and io were added for game and application foundations (issue #17). |
 | complexity | string | "low", "medium", "high", "scene-tier" |
 
 Source: `techniques/*.md` (Phase 3+).

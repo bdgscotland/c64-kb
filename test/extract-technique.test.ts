@@ -41,6 +41,56 @@ Body text.
     expect(usesK).toHaveLength(1);
   });
 
+  it("refuses a technique doc whose category is outside the ontology's set, with a warning", () => {
+    const doc = `---
+category: bogus
+---
+
+<!-- doc-type: technique-reference -->
+
+# Bogus
+
+## some_trick — Some trick
+
+**Region:** both
+
+Body.
+`;
+    const warnings: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: unknown) => { warnings.push(String(msg)); };
+    try {
+      const ents = extractGraphEntities(doc, "techniques/bogus.md");
+      expect(ents.filter((e) => e.type === "technique")).toHaveLength(0);
+    } finally {
+      console.warn = orig;
+    }
+    expect(warnings.some((w) => w.includes('category "bogus"'))).toBe(true);
+  });
+
+  it("accepts the game-foundation categories added in schema 20", () => {
+    for (const category of ["input", "logic", "maths", "text", "io", "render"]) {
+      const doc = `---
+category: ${category}
+---
+
+<!-- doc-type: technique-reference -->
+
+# ${category}
+
+## example_${category} — Example
+
+**Region:** both
+
+Body.
+`;
+      const ents = extractGraphEntities(doc, `techniques/${category}.md`);
+      const tech = ents.find((e) => e.type === "technique");
+      expect(tech, category).toBeDefined();
+      if (tech && tech.type === "technique") expect(tech.category).toBe(category);
+    }
+  });
+
   it("emits REQUIRES_REGION when Region is not both", () => {
     const doc = `---
 category: raster

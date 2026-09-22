@@ -204,6 +204,21 @@ export function whyProposed(techniqueName: string, category: string, description
   if (category === "music") {
     return "SID music / audio requested in brief";
   }
+  if (category === "input") {
+    return "Player input (joystick / keyboard) the brief's controls need";
+  }
+  if (category === "maths") {
+    return "Arithmetic or lookup-table support the brief's mechanics need";
+  }
+  if (category === "logic") {
+    return "Frame loop / game-state structure the brief needs";
+  }
+  if (category === "text") {
+    return "Text, font or number display mentioned or implied in brief";
+  }
+  if (category === "io") {
+    return "Disk load / save or persistence mentioned in brief";
+  }
   if ((name.includes("scroll") || name.includes("soft_scroll")) &&
       (desc.includes("scroll") || desc.includes("scroller"))) {
     return "Scroller effect mentioned in brief";
@@ -428,13 +443,18 @@ async function buildBriefing(
     raster: 1,
     banking: 2,
     cpu: 2,
+    input: 2,
+    maths: 2,
     sprite: 3,
     scroll: 3,
     bitmap: 3,
     effect: 3,
     render: 3,
+    logic: 3,
+    text: 3,
     music: 4,
     loader: 5,
+    io: 5,
   };
 
   const grouped = new Map<number, typeof validTechs>();
@@ -446,10 +466,10 @@ async function buildBriefing(
 
   const STEP_LABELS: Record<number, string> = {
     1: "Raster IRQ foundation",
-    2: "Memory layout and banking",
-    3: "Visual / text-mode rendering",
+    2: "Memory layout, banking, input and maths",
+    3: "Visual / text-mode rendering and game logic",
     4: "SID audio",
-    5: "Loader and compression",
+    5: "Loader, compression and file I/O",
   };
 
   const build_order: BriefingOutput["build_order"] = [];

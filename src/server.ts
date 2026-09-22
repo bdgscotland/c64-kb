@@ -618,11 +618,11 @@ Inputs: 'technique' is the canonical technique name (e.g. 'stable_raster_irq'). 
 
 Output: {technique, region, cycles_per_line, cycles_per_frame, badline_cycles_lost, irq_overhead_cycles, user_cycles_per_line_normal, user_cycles_per_line_badline, notes[]}.
 
-Constants: PAL: 63 cycles/line × 312 lines = 19656 cycles/frame. NTSC: 65 cycles/line × 263 lines = 17095 cycles/frame. Badline: 23 cycles lost to VIC DMA. Default IRQ overhead: 14 cycles.
+Constants: PAL: 63 cycles/line × 312 lines = 19656 cycles/frame. NTSC: 65 cycles/line × 263 lines = 17095 cycles/frame. Badline: 43 cycles to plan on (the VIC holds the bus for cycles 15-54 and BA drops on cycle 12; only writes fit in 12-14). Default IRQ overhead: 36 cycles (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314).
 
-Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_line=63, user_cycles_per_line_normal=49, user_cycles_per_line_badline=26.
+Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_line=63, user_cycles_per_line_normal=27, user_cycles_per_line_badline=0 (a handler entered on a badline through the KERNAL vector has nothing left on that line).
 
-Limitations: irq_overhead is taken from the Technique node's irq_overhead property (if set) or the default 14 cycles. Custom IRQ handlers with different prologues may vary.`,
+Limitations: irq_overhead is taken from the Technique node's irq_overhead property (if set) or the default 36 cycles; a handler on $FFFE with the KERNAL banked out pays 7 plus its own register saves. An earlier version of this description said 23 badline cycles and 14 overhead, which was not what the tool computed.`,
       inputSchema: {
         technique: z
           .string()

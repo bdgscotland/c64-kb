@@ -63,6 +63,16 @@ const TECHNIQUE_NAME = /^[a-z][a-z0-9_]*$/;
 
 // The fixed vocabulary for **Demands:** (docs/CONVENTIONS-techniques.md).
 // A word outside it is a doc error and is reported, not ingested.
+// Technique categories the graph accepts. A technique doc whose frontmatter
+// names a category outside this set is refused with a warning, the same way
+// an unknown Demands word is; before this set existed `render` reached the
+// graph without ever appearing in ONTOLOGY.md. Keep in step with
+// docs/ONTOLOGY.md (Technique.category) and docs/CONVENTIONS-techniques.md.
+export const TECHNIQUE_CATEGORIES: ReadonlySet<string> = new Set([
+  "raster", "sprite", "scroll", "bitmap", "effect", "music", "cpu", "banking", "loader", "render",
+  "input", "logic", "maths", "text", "io",
+]);
+
 export const DEMAND_VOCABULARY: Record<string, string> = {
   cpu_every_line: "needs every CPU cycle on every raster line of its region",
   constant_sprite_set: "the set of active sprites must not change inside its region",
@@ -390,6 +400,10 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
     const category = fm.category;
     const docChip = fm.chip;
     if (!category) return entities;
+    if (!TECHNIQUE_CATEGORIES.has(category)) {
+      console.warn(`[extract] ${sourcePath}: technique doc category "${category}" is not in the ontology's category set — no techniques ingested from this file (see CONVENTIONS-techniques.md)`);
+      return entities;
+    }
 
     // Split body at H2 boundaries (each H2 = one Technique).
     const lines = rest.split("\n");

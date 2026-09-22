@@ -5,7 +5,23 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 706, schema 19, tools 1.22.0.
+Data 706, schema 20, tools 1.22.1.
+
+**Schema 20: technique categories for game and application foundations,
+and the category set is enforced.** `input`, `logic`, `maths`, `text` and
+`io` join the Technique category set, and `render`, which the text-mode
+page had used since it was written without ever being listed, is now
+listed. The extractor refuses a technique doc whose category is outside
+the set, with a warning, the way it already refused an unknown Demands
+word; before this a typo would have created a category the briefing
+tools do not know. Briefings place input and maths in the memory-layout
+step, logic and text in the rendering step, io in the loader step, and
+give each a reason string. This is item ONTO-01 of the gap map (#12,
+#17) and lands first because the game-foundation pages file under
+categories that did not exist. Tools 1.22.1: the `c64_timing_budget`
+description said 23 badline cycles and a 14-cycle default IRQ overhead
+while the tool computed 43 and 36; the description now matches the
+computation and its worked example is the tool's actual output.
 
 **Every technique and pitfall page audited against the instruments.** The
 same procedure as the hardware pages — one auditor per page, three
