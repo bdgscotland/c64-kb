@@ -38,6 +38,20 @@ wrong number here becomes a torn screen in someone's demo. Work accordingly.
    land. Commit messages say what was wrong and what the evidence was.
 7. **Do not invent.** No recipe, register, routine or link that does not
    exist. "No recipe yet" is the honest form; a dangling link is a defect.
+8. **Plain English, concise, cognitively efficient.** Everything written
+   here — pages, commit messages, issues, replies — is read by people and
+   agents under load. Say the fact, the number and its rung, and stop.
+   Short sentences. No filler, no hedging that carries no information, no
+   jargon before it is explained, no metaphor where a measurement will do.
+   One idea per paragraph. If a table says it, do not repeat it in prose.
+9. **Big rocks become GitHub issues.** Any piece of work too large for the
+   current session, any gap that needs a source or an instrument this
+   machine lacks, and any deferred item from an audit or a discovery run
+   is filed as an issue on this repository with acceptance criteria, not
+   left in a chat reply, a scratch file or a "later" note. Label it
+   (`big-rock`, `content`, `harness`, `ontology`, `audit-follow-up`,
+   `hardware-verification`); link the page or line it concerns; close it
+   with the commit that lands the work. Issues #1–#9 are the model.
 
 ## Instruments on this machine and how to call them
 
