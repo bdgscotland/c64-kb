@@ -220,6 +220,8 @@ The mathematical foundation: let `J1` be the jitter in the first IRQ (0-6 cycles
 
 The combination of knowing the instruction between IRQs (always a NOP in the loop) and knowing the second IRQ fires at a fixed cycle within its line is what eliminates jitter entirely.
 
+Measured form (`recipes/kickassembler/stable-raster-irq.md`, VICE x64sc): through the KERNAL vector the handler's first instruction starts on cycle 37-43 of the line (7 interrupt sequence + 29 dispatcher + 0-6 jitter), so the first handler cannot finish its setup and be sliding through NOPs before the *next* line's interrupt; it arms the second IRQ two lines down, not one. Entered from a NOP, the second handler has one cycle of residual jitter, which two consecutive reads of $D012 four cycles apart plus a `BEQ` remove: with the right padding the reads straddle the line boundary in one case and not the other, and the branch costs 3 or 2 cycles to compensate. The padding is found by measurement — the recipe's bars align at `SYNC_PAD = 11` and split into two columns at 10 or 12. Two traps: the KERNAL dispatcher executes `TSX` itself, so a stack pointer saved in X by the first handler does not survive into the second (save it in memory); and every line the two handlers and the timed code occupy must be a non-badline except the one inside the NOP slide, where a stall is harmless.
+
 ### Variations
 
 **NOP-padded single entry.** Some implementations fold the double-IRQ logic into a single handler that spins until the raster counter advances, then executes a counted NOP sequence to reach the target cycle. This is cleaner to write but harder to reason about cycle-exactly. The explicit two-handler approach is preferred for documentation and maintenance.

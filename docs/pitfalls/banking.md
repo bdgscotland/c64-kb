@@ -22,7 +22,7 @@ hardcoded charset/bitmap blit address.
 
 **Severity:** medium
 **Region:** both
-**Triggered by registers:** 01, D018, DD00
+**Triggered by registers:** D018, DD00
 **Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank
 
 ### Symptom
@@ -292,7 +292,6 @@ setup_bank1:
 
 **Severity:** medium
 **Region:** both
-**Triggered by registers:** 01
 **Triggered by techniques:** cpu_io_port_bank, ram_under_kernal
 
 ### Symptom

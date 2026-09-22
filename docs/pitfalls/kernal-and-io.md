@@ -415,7 +415,7 @@ sprite_y: .fill 8, i * 21 + 50
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** SETLFS, LOAD, SAVE, OPEN, CLOSE
-**Triggered by registers:** 01
+**Triggered by techniques:** cpu_io_port_bank
 
 ### Symptom
 
@@ -566,7 +566,6 @@ zero-page scratch byte.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** SAVE, OPEN, CLOSE
-**Triggered by techniques:** disk_save_load
 
 ### Symptom
 
@@ -664,7 +663,6 @@ returns false.
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** SETNAM, OPEN
-**Triggered by techniques:** disk_save_load
 
 ### Symptom
 

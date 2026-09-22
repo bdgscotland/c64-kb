@@ -326,7 +326,7 @@ stack overflow, reduce handler nesting depth and prevent IRQ re-entry.
 **Likely causes:** pal_ntsc_tempo_mismatch, cia_timer_misconfigured
 **Diagnosis steps:** Read $DC04/$DC05 (CIA1 Timer A low/high bytes) — on PAL the canonical frame timer value is $4CC7; on NTSC it is $42C6; detect region by reading $D012 after writing known $D011 values or by measuring frame length; check $DC0E bit 0 (timer A running) and bit 3 (one-shot vs continuous).
 **Caused by registers:** D012
-**Caused by techniques:** pal_ntsc_tempo_mismatch, cia_timer_phi2_difference, sid_voice_setup
+**Caused by techniques:** sid_play_routine_pattern, sid_voice_setup
 
 Music is audibly off-tempo — notes hold too long or too short, and the
 overall BPM differs from the intended tempo by approximately 4% or by
@@ -649,7 +649,7 @@ KERNAL I/O routine.
 
 **Likely causes:** decimal_mode_in_irq_handler, register_not_saved
 **Diagnosis steps:** Check whether the mainline code uses BCD (SED instruction); inspect the IRQ handler prologue for PHA/TXA/PHA/TYA/PHA and corresponding epilogue; look for JSR to a subroutine inside the IRQ that modifies zero-page variables shared with mainline; confirm the IRQ returns via RTI not RTS.
-**Caused by techniques:** decimal_mode_in_irq_handler
+**Caused by techniques:** decimal_mode_pitfalls
 
 Code that runs correctly in the main loop produces wrong results or
 corrupts variables when invoked from inside an IRQ handler. The bug is
