@@ -26,25 +26,25 @@ For the IEC bus hardware details underlying all fast-loader operation, see `../f
 
 ### Why
 
-The KERNAL LOAD path at `$FFD5` is rate-limited by the 1541's software serial protocol, which delivers roughly 300-400 bytes per second in practice. Loading a packed 50 KB part takes around 130 seconds at KERNAL speed — more than two minutes. Krill's fast loader (by Krill of Plush, active development since around 2010 with frequent revisions through 2024) achieves approximately 7,500-7,800 bytes per second on PAL, a roughly 20x improvement over the KERNAL. At that speed, the same 50 KB loads in about six seconds. The difference is the boundary between a production that feels responsive and one that tries the audience's patience.
+The KERNAL LOAD path at `$FFD5` is rate-limited by the 1541's software serial protocol, which delivers roughly 300-400 bytes per second in practice. Loading a packed 50 KB part takes around 130 seconds at KERNAL speed — more than two minutes. Krill's fast loader (by Krill of Plush, active development since around 2010 with frequent revisions through 2024) achieves about 7 kB/s typical and 7.7 kB/s peak on a 1541 (the v194 README's figures; an earlier version of this page said 7,500-7,800 B/s), a roughly 18-20x improvement over the KERNAL. At that speed, the same 50 KB loads in about seven seconds. The difference is the boundary between a production that feels responsive and one that tries the audience's patience.
 
 ### How
 
-Krill uses a parallel protocol: instead of the KERNAL's bit-banged serial handshake driven by software on the C64 side, it loads custom 6502 machine code into the 1541 drive's RAM via the drive's memory-write (`M-W`) command followed by a memory-execute (`M-E`) command. The drive-side code replaces the 1541's normal serial-protocol loop with a tighter loop that uses the 1541's VIA shift register and hardware handshake lines to move bytes more efficiently. On the C64 side, Krill patches the KERNAL LOAD vector at `$0330`/`$0331` (the RAM-based LOAD vector that `$FFD5` jumps through) so that subsequent calls to `JSR $FFD5` take the fast path transparently.
+Krill uses a parallel protocol: instead of the KERNAL's bit-banged serial handshake driven by software on the C64 side, it loads custom 6502 machine code into the 1541 drive's RAM via the drive's memory-write (`M-W`) command followed by a memory-execute (`M-E`) command. The drive-side code replaces the 1541's normal serial-protocol loop with a tighter loop that drives the IEC lines directly through VIA1 port B in a tight handshake loop (the VIA shift register is used for GCR reading from the disk, not for the bus transfer — an earlier version of this page said the transfer used it). On the C64 side the program calls the resident's own entry points (`loadraw`, `loadcompd`) directly: Krill v194 does not hook the KERNAL LOAD vector at `$0330`/`$0331` and its source contains no write to it — that is how the classic cartridge fastloaders work, see `pitfalls/loader.md` (`fastloader_kernal_dependency`). An earlier version of this paragraph said Krill patched `$0330` so that `JSR $FFD5` took the fast path.
 
 The installation sequence is:
 
 1. Open a command channel to drive 8 (or whichever device number): `SETLFS 15, 8, 15`, `SETNAM ""`, `OPEN`. See `../hardware/kernal-routines-reference.md` for the SETLFS/SETNAM/OPEN sequence.
-2. Send the drive-side code via `M-W` commands over the command channel. Krill's distribution includes a pre-assembled drive binary; the installer routine sends it in blocks of 32 bytes (the `M-W` maximum per command).
+2. Send the drive-side code via `M-W` commands over the command channel. Krill's distribution includes a pre-assembled drive binary; the installer sends it in 35-byte `M-W` blocks (35 is the DOS maximum per command — v194 `src/install.s` compares against `#35`; an earlier version of this page said 32).
 3. Send `M-E $0500` (or whatever address the drive code was loaded to) via the command channel. The 1541 begins executing the receiver loop.
-4. The C64-side stub (a few hundred bytes, typically placed at a known spare area like `$0200` or tacked above the BASIC program area) initializes its state, installs itself into `$0330`/`$0331`, and signals the drive that the handshake is ready.
-5. All subsequent `JSR $FFD5` / `LOAD` calls now use the fast protocol. `CHKIN` and `CHKOUT` still work for command-channel interaction; the fast path applies only to LOADs.
+4. The C64-side stub (a few hundred bytes, typically placed at a known spare area like `$0200` or tacked above the BASIC program area) initializes its state and signals the drive that the handshake is ready; it does not touch `$0330`/`$0331` (an earlier version of this step said it installed itself there).
+5. Loads are made by calling the resident directly — `loadraw` for a raw file, `loadcompd` for a crunched one, filename pointer in X/Y (see the v194 reference below). `JSR $FFD5` is not accelerated, and while the drive is in loader mode every KERNAL serial call (`$FFD5`, `krnio`, `CHKIN`/`CHKOUT` on device 8) stalls until `uninstall` returns the drive to DOS. An earlier version of this step said all subsequent `JSR $FFD5` calls took the fast protocol and that `CHKIN`/`CHKOUT` kept working.
 
-Because the patched vector intercepts the KERNAL jump table's LOAD entry rather than replacing the ROM, the KERNAL's file-open state management (logical file numbers, SETLFS/SETNAM bookkeeping) is preserved. Programs that already open a file via `OPEN` and then `CHKIN` can also benefit from the fast path if the Krill stubs are configured to handle open channels — consult the Krill README for the version-specific `KRILL_OPEN_CHANNEL` build option.
+Because the patched vector intercepts the KERNAL jump table's LOAD entry rather than replacing the ROM, the KERNAL's file-open state management (logical file numbers, SETLFS/SETNAM bookkeeping) is preserved. (An earlier version of this page described a `KRILL_OPEN_CHANNEL` build option for servicing `OPEN`/`CHKIN` channels; no such option exists in v194, which exposes only `loadraw`/`loadcompd` and does not service KERNAL logical-file channels — see the v194 note below.)
 
 ### Why it works
 
-The 1541's standard serial protocol is slow because it was designed for robustness on a bus shared with printers and other peripherals, and because Commodore's engineers optimized for component cost rather than speed. The tight software loop in the KERNAL's `IECIN`/`IECOUT` routines introduces handshake overhead for every bit. Krill's drive-side code takes full control of the 1541's 6502 and VIA chip, eliminating that overhead. The transfer uses the VIA's parallel output register to clock multiple bits per cycle and exploits the ATN line (CIA2 `$DD00` bit 4 on the C64 side, VIA pin on the drive side) as an out-of-band handshake signal. On C64 hardware the IEC CLK and DATA lines are wired to CIA2 `$DD00` bits 4, 3, and 2 — the C64-side stub manages those bits directly in the tight loop, bypassing the KERNAL's slower bit-banging.
+The 1541's standard serial protocol is slow because it was designed for robustness on a bus shared with printers and other peripherals, and because Commodore's engineers optimized for component cost rather than speed. The tight software loop in the KERNAL's `IECIN`/`IECOUT` routines introduces handshake overhead for every bit. Krill's drive-side code takes full control of the 1541's 6502 and VIA chip, eliminating that overhead. The transfer sends two bits per handshake, one on CLK and one on DATA, with ATN as the clock: it exploits the ATN line (CIA2 `$DD00` bit 3 on the C64 side, VIA pin on the drive side) as the out-of-band handshake signal. On C64 hardware the IEC lines are CIA2 `$DD00` bits 3-7: ATN OUT bit 3, CLK OUT bit 4, DATA OUT bit 5, CLK IN bit 6, DATA IN bit 7 — the C64-side stub drives and samples those bits directly in the tight loop, bypassing the KERNAL's slower bit-banging. (Bit 2 is the RS-232 TXD output and is not part of the IEC bus; an earlier version of this page put ATN on bit 4 and CLK/DATA on bits 4, 3 and 2, and spoke of the VIA clocking "multiple bits per cycle". See `../hardware/cia-reference.md` §`$DD00`.)
 
 NTSC compatibility: Krill includes an NTSC-compatible build option (the `NTSC_COMPATIBILITY` define in `loaderconfig.inc` for the cc65 build — **not** a KickAssembler `-DNTSC=1` flag; older KB text was wrong about the toolchain) because the timing loop on the C64 side is tuned to clock counts. NTSC's slightly different system clock (1.022 MHz vs PAL's 0.985 MHz) shifts the timing window slightly. Enabling `NTSC_COMPATIBILITY` makes a single resident binary run on both PAL and NTSC at a slight PAL-speed cost. Important: **PAL vs NTSC is not auto-detected by the install routine**, and no error is returned when running a PAL-only build on NTSC — for maximum speed you detect the machine yourself and select either the PAL-only or the NTSC-compatible resident. Using a PAL-only build on NTSC hardware typically causes load corruption or hangs.
 
@@ -54,11 +54,11 @@ NTSC compatibility: Krill includes an NTSC-compatible build option (the `NTSC_CO
 
 **Multiple drive support.** Krill can be configured to install on drives at device addresses 8 through 11. On a multi-drive system, install separate drive stubs; the C64-side dispatch table selects the drive by device number before each LOAD call.
 
-**Resetting the drive after use.** If the fast-loader stubs are in the 1541's RAM and the C64 resets, the drive stubs remain active and may interfere with a subsequent cold KERNAL LOAD attempt. A `UJ` (soft reset) or `UI-` command to the drive's command channel forces the drive to reload its ROM and discard the RAM code.
+**Resetting the drive after use.** If the fast-loader stubs are in the 1541's RAM and the C64 resets, the drive stubs remain active and may interfere with a subsequent cold KERNAL LOAD attempt. A `UJ` (power-on reset: it jumps through the 1541's own reset vector, `$FFFC` -> `$EAA0`) or a bare `UI` (soft/warm reset via the vector at `$65`, default `$EB22`) sent over the command channel restarts the DOS and abandons RAM-resident code. `UI-` and `UI+` do not reset anything — they only set the drive's bus-timing flag at `$23` (`UI-` = VIC-20 timing, `UI+` = C64 timing) and return; an earlier version of this page named `UI-` as a reset. Krill also offers an `uninstall` entry point when built with `UNINSTALL_API`, which returns the drive to DOS cleanly without a reset.
 
 ### Cycle budget
 
-Krill's C64-side loop runs a per-byte receive sequence taking approximately 17-22 cycles per byte at PAL clock, including the VIA handshake polling. The drive side sends a byte every ~85 1541 cycles (~85 µs at 1 MHz), which paces the transfer at around 11,700 bytes per second theoretical; real-world throughput is 7,500-7,800 bytes per second due to track-seek overhead, sector gaps, and inter-block handshaking. The C64 CPU is fully occupied during the receive loop and cannot run other code. Sparkle (see `sparkle_irq_loader`) addresses this limitation for productions that need concurrent visuals.
+Krill's 2-bit+ATN protocol moves each byte as four bit pairs on CLK/DATA, clocked by the host toggling ATN. Both ends are handshake loops of about 72 cycles per byte (v194 source: four 18-cycle phases on the C64 side, 69 cycles in the 1541's sendloop; the README states "72 cycles per byte"), which is a raw ceiling of roughly 13.7 kB/s; sector reads, GCR decoding, head stepping and per-block handshakes bring it down to the README's figures: 7.7 kB/s peak on a 1541, about 7 kB/s typical. The loading call blocks the mainline, but the receive loop leaves interrupts enabled and the drive simply waits on the handshake, so IRQ/NMI, sprites and badlines are allowed without restriction — music and IRQ-driven effects normally keep running while a part loads. (An earlier version of this page gave 17-22 C64 cycles and ~85 drive cycles per byte, 7,500-7,800 B/s, and said the CPU could run no other code during a load; the v194 README contradicts all three.) What Sparkle (see `sparkle_irq_loader`) adds is loading that proceeds without a blocking mainline call.
 
 ### v194 concrete integration reference (cc65 build)
 
@@ -84,7 +84,7 @@ All three are relocatable via the `INSTALL=`/`RESIDENT=`/`ZP=` make args. **Watc
 - `loadcompd` — load + depack (needs a `DECOMPRESSOR`).
 - `fileexists`, `memdecomp`, `save` (`SAVE_OVERWRITE` — Krill **can** save, by overwriting an existing file of the same block size), `swapdrvcod` (run custom drive code), `uninstall` (if `UNINSTALL_API`). Status codes: `OK=$00`, `FILE_NOT_FOUND=$FF`, `DEVICE_NOT_PRESENT=$FE`, `GENERIC_KERNAL_ERROR=$FD`, `TOO_MANY_DEVICES=$FC`, `DEVICE_INCOMPATIBLE=$FB`.
 
-Note: the documented usage calls `install`/`loadraw` **directly**, so the generic "patches the `$0330` LOAD vector so `JSR $FFD5` is fast" model above is not how v194 is normally integrated — that vector-interposition concern (and the `fastloader_kernal_dependency` pitfall) chiefly applies to loaders that hook `$FFD5`, or to Krill's optional `LOAD_VIA_KERNAL_FALLBACK` mode.
+Note: the documented usage calls `install`/`loadraw` **directly**, so the `$0330` vector-interposition model — which an earlier version of the How section above presented as Krill's mechanism — is not how v194 works at all: that concern (and the `fastloader_kernal_dependency` pitfall) applies to loaders that hook `$FFD5`. Krill's optional `LOAD_VIA_KERNAL_FALLBACK` mode does not hook it either; its fallback path calls `OPEN`/`CHKIN`/`BASIN` byte by byte and writes no vector.
 
 **Raw-file load addressing.** Raw files are standard PRGs: `loadraw` consumes the first two bytes as the load address. To land a *header-less* data blob at a known buffer, build with `LOAD_TO_API=1` and set `loadaddrlo`/`loadaddrhi` with `C=1` — but the file must still carry a 2-byte prefix (those bytes are consumed even when the destination is overridden). Give author-time data files a 2-byte prefix.
 
@@ -94,14 +94,14 @@ Note: the documented usage calls `install`/`loadraw` **directly**, so the generi
 
 **Drive compatibility + fallback.** `ONLY_1541_AND_COMPATIBLE=1` shrinks install code by treating every drive as a 1541. `LOAD_VIA_KERNAL_FALLBACK=1` makes the loader fall back to the KERNAL load path when drive-code installation fails (incompatible drive such as SD2IEC, or true-drive emulation disabled) — directly mitigating `gcr_timing_assumes_stock_drive` at the cost of speed on those devices. Other tunables: `FILENAME_MAXLENGTH`, `DIRTRACK`/`DIRTRACK81` (shadow directory for dir-art), `FILE_EXISTS_API`, `UNINSTALL_API`, `LOAD_UNDER_D000_DFFF`, `END_ADDRESS_API` (progress displays).
 
-**Emulator requirement.** Krill needs cycle-accurate **true-drive emulation** — in VICE keep true-drive enabled (the `x64sc` default); do **not** pass `+truedrive` (the IEC fast-path breaks the GCR protocol). See `../runtime/vice-reference.md`.
+**Emulator requirement.** Krill needs cycle-accurate **true-drive emulation** — in VICE keep true-drive enabled (the `x64sc` default — the monitor reports `Drive8TrueEmulation=1`); do **not** pass `+drive8truedrive` (per unit, 9-11 likewise; disabling it breaks the GCR protocol). An earlier version of this page named a `+truedrive` option, which `x64sc` rejects as unknown. See `../runtime/vice-reference.md`.
 
 **Bundled tooling.** `loader/tools/` ships the compressors (exomizer-3.1, b2/ByteBoozer2, tscrunch, dali/zx0, bitnax, lzsa, pucrunch, nucrunch, subsizer, tinycrunch, doynamite, wcrush) and `cc1541` for building disk images.
 
 **Embedding into an Oscar64 program (verified recipe, 2026-05-20).** Oscar64 cannot link the cc65 `.lib`, so use the `prg` target and embed the blobs:
 - Build with git cc65: `make PLATFORM=c64 prg INSTALL=c000 RESIDENT=cd00 ZP=e0 EXTCONFIGPATH=<cfg> LOAD_RAW_API=1 LOAD_TO_API=1 NTSC_COMPATIBILITY=1 ONLY_1541_AND_COMPATIBLE=1 UNINSTALL_API=1`. Sizes: installer ~3.2 KB (transient), resident ~250 B.
-- **Put the resident OFF page 2.** `RESIDENT=$0200` collides with the KERNAL file tables at `$0259+`, which `install` writes when it opens the drive command channel for the `M-W` upload → install hangs. Put the resident in the free `$C000` block above the transient installer (e.g. `INSTALL=$C000`, `RESIDENT=$CD00`). After install, the installer's RAM is reusable.
-- Convert each blob to a C array (strip the 2-byte PRG header), `memcpy` to its origin at boot, then call the entry points via `__asm` (`jsr $C000` install, `jsr $CD00` loadraw with `X/Y`=filename ptr and `SEC`+`loadaddrlo/hi` for LOAD_TO). Disable the CIA1 timer IRQ (`$DC0D=$7F`) is *not* required for install to succeed but is good hygiene during cycle-exact transfers.
+- **Copy the resident after install, or put it OFF page 2.** Copying the resident to `$0200` *before* calling `install` lets install's KERNAL file-table writes (`$0259+`, made when it opens the drive command channel for the `M-W` upload) corrupt it, and the copy itself replaces the IRQ/BRK/NMI vectors at `$0314-$0319` with loader code; either copy after install with the CIA1 timer IRQ masked, or relocate (e.g. `INSTALL=$C000`, `RESIDENT=$CD00` in the free `$C000` block above the transient installer). `$0200` is Krill's own prebuilt default and the README requires only that a sub-`$0400` resident be copied *after* install — the hang an earlier version of this page attributed to page 2 itself is the ordering mistake. After install, the installer's RAM is reusable.
+- Convert each blob to a C array (strip the 2-byte PRG header), `memcpy` to its origin at boot, then call the entry points via `__asm` (`jsr $C000` install, `jsr $CD00` loadraw with `X/Y`=filename ptr and `SEC`+`loadaddrlo/hi` for LOAD_TO). Disabling the CIA1 timer IRQ (`$DC0D=$7F`) is *not* required for install to succeed for a resident placed off page 2, but is good hygiene during cycle-exact transfers; a `$0200` resident destroys the `$0314` vector, so it is mandatory there.
 - **Filename matching:** Krill compares the name bytes you pass against the directory entry. A file written by `c1541 -write host.bin name` (lowercase host arg) matches an **uppercase** ASCII request (`"TDLVL00"`, `0x54...`) — same convention as KERNAL `krnio`. A lowercase request gives FILE_NOT_FOUND.
 - **Raw data files need a 2-byte prefix:** `loadraw` consumes the first two bytes of a raw file as a load address even with `LOAD_TO_API` overriding the destination. Prepend two dummy bytes to header-less data blobs at authoring time.
 - **Save coexistence:** while the loader is resident the drive is in loader mode, so *all* KERNAL serial (`krnio` / `$FFD5`) stalls. To save via KERNAL: `uninstall` (drive returns to DOS) → KERNAL write → `install` again. Loads (incl. load-game) go through `loadraw`. Validated round-trip: install → loadraw → uninstall → krnio save+readback → reinstall → loadraw.
@@ -109,7 +109,7 @@ Note: the documented usage calls `install`/`loadraw` **directly**, so the generi
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` — includes Krill installation as the opening step before the main part begins
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe is a single self-contained PRG with no loader, no disk access and `uses_kernal: []`. For the blob-embedding pattern see Krill's own `samples/minexample/minexample.s`, already cited above — external, not a recipe in this set.)
 
 ---
 
@@ -143,7 +143,7 @@ LZ77 compression works because real data (code and screen graphics especially) c
 
 ### Cycle budget
 
-WCF depacking speed for a typical 50 KB block is approximately 80-120ms at 1 MHz, varying with compression ratio. The depacker size is approximately 150-200 bytes; specific figures depend on the version of the tool in use (no publicly canonical version number; tool was distributed through the warez scene with no formal release cycle).
+Decompressing a 50 KB part takes on the order of seconds on PAL, not milliseconds: writing 50 KB with a bare `LDA (zp),Y` / `STA (zp),Y` copy loop alone costs about 820,000 cycles (0.83 s, measured in VICE with the screen blanked), and an LZ depacker adds bit-decoding on top of that — tens of cycles per output byte, so roughly 2-5 s depending on the data and the depacker (an estimate; no WCF binary is on this machine to time). An earlier version of this page gave 80-120 ms, which is under one CPU cycle per byte and impossible. The depacker size is approximately 150-200 bytes; specific figures depend on the version of the tool in use (no publicly canonical version number; tool was distributed through the warez scene with no formal release cycle).
 
 ---
 
@@ -167,7 +167,7 @@ exomizer sfx sys -o packed.prg unpacked.prg
 
 The `-o packed.prg` specifies the output; `unpacked.prg` is the source file. The `sfx sys` variant embeds a depacker that, on SYS, decompresses the payload and jumps to the original entry point. The depacker executes from a scratch area (default: `$0100` stack page, which Exomizer can use since the stack is not needed during decompression).
 
-For raw streams without a SYS stub — used when integrating with Krill's callback hook or your own loader — use:
+For raw streams without a SYS stub — used when Krill's `loadcompd` decrunches the file on the fly (built with the Exomizer decompressor selected) or when your own loader calls the depacker — use:
 
 ```
 exomizer raw -o packed.raw unpacked.prg
@@ -179,27 +179,27 @@ The raw format carries no entry-point metadata; the calling code is responsible 
 
 ### Why it works
 
-Exomizer uses a variant of the LZMA algorithm adapted for 8-bit targets. It models the input with an LZ77 sliding-window matcher combined with a Huffman-like variable-length coding stage that assigns shorter codes to more frequent literals and match lengths. The result approaches 60-80% of original size for typical C64 machine code and 40-60% for graphics data (lower ratios for already-structured bitmap data). A typical 50 KB block decompresses in roughly 50-80ms at 1 MHz (measured on real hardware using the timer in the CIA chip; Exomizer 3.x documentation gives approximate cycle counts for specific data patterns).
+Exomizer uses a variant of the LZMA algorithm adapted for 8-bit targets. It models the input with an LZ77 sliding-window matcher combined with a Huffman-like variable-length coding stage that assigns shorter codes to more frequent literals and match lengths. The result approaches 60-80% of original size for typical C64 machine code and 40-60% for graphics data (lower ratios for already-structured bitmap data). Decompression is slow relative to a plain copy: roughly 75-110 cycles per output byte for the sfx decruncher (Exomizer 3.1's `exo31info.txt` tables), so a 50 KB block takes seconds, not milliseconds — see the cycle budget below. An earlier version of this page said 50-80 ms per 50 KB, which is about one CPU cycle per byte and impossible.
 
-Exomizer's depacker executes forward: it writes output bytes in order from low address to high, consuming the packed data from the end of the packed buffer backward. This means the depacker safe model requires that the packed data ends below the destination, or that they do not overlap. The `sfx sys` mode handles layout automatically; when using `raw` mode you must ensure non-overlapping placement.
+Exomizer's standard depacker (`exodecrunch.s`, and the sfx stub built from it) decrunches backwards: it writes output from the highest destination address down, reading the packed data from its end toward its start. This is what makes in-place expansion work — the packed buffer is placed so that its end sits at (or just above) the end of the destination range, and every packed byte is consumed before output reaches it. The `sfx sys` mode handles this layout automatically; in `raw` mode you must place the packed data accordingly (or leave the ranges non-overlapping). Forward decrunching (low to high) is an option, not the default: a forward decruncher contributed by Krill shipped with 2.0beta5 (2006), and since 3.1.0 (2020-12-22) it is a build switch in `exodecrunch.s` (`DECRUNCH_FORWARDS = 1`; the file defaults it to 0); the data must then be crunched with the matching forward option, since the stream direction is fixed at crunch time. An earlier version of this section said the default was forward.
 
 ### Variations
 
-**Exomizer 3 vs Exomizer 2.** Version 3 (available from `https://bitbucket.org/magli143/exomizer`) introduced improved compression for small files and the explicit `level` and `raw` modes. Version 2 had a slightly different raw format; if interfacing with Krill's decruncher hook, verify which Exomizer version the hook was compiled to expect — the Krill README specifies this per Krill release.
+**Exomizer 3 vs Exomizer 2.** Version 3 (available from `https://bitbucket.org/magli143/exomizer`) introduced improved compression for small files and the explicit `level` and `raw` modes. Version 2 had a slightly different raw format; if using Krill's built-in Exomizer decompression (`loadcompd`), verify which Exomizer version the loader build expects — the Krill README specifies this per Krill release.
 
-**Multi-file batch packing.** Exomizer accepts multiple input files and can pack a sequence:
+**Multiple input files.** Exomizer accepts several input files, but it does not chain them:
 ```
-exomizer sfx sys -o demo.prg part1.prg part2.prg part3.prg
+exomizer sfx sys -o part.prg code.prg gfx.prg music.prg
 ```
-Each part decompresses in sequence; the combined PRG automates a simple multi-part intro without a custom loader. For larger productions, the Krill + Exomizer raw integration is more flexible.
+All inputs are loaded into one 64 KiB memory image in command-line order (a later file overwrites any earlier one at the same addresses), and that single image — from the lowest start to the highest end, gaps zero-filled — is crunched once and decrunched once, with one entry point (the SYS at the BASIC start, or the address given with `sfx <jmpaddress>`). The `sfx` usage text says so: "All infiles are merged into the outfile. They are loaded in the order given." This is for assembling one part from separate code, graphics and music files, not for running parts one after another; a multi-part production still needs a loader such as Krill with Exomizer `raw` streams. An earlier version of this page said the parts "decompress in sequence".
 
 ### Cycle budget
 
-Depacker size: approximately 200 bytes for the `sfx sys` variant (Exomizer 3.1.2, measured from the default depacker template). Decompression time: approximately 50-80ms per 50 KB on PAL (roughly 50,000-80,000 cycles at 0.985 MHz). Time is data-dependent; near-random data approaches the upper bound. Code-heavy blocks with many repeated patterns sit at the lower bound.
+Depacker size: approximately 200 bytes for the `sfx sys` variant (Exomizer 3.1.2, measured from the default depacker template). Decompression time: roughly 75-110 cycles per output byte for the sfx decruncher and roughly 60-100 for the raw/memory decruncher (Exomizer 3.1's `exo31info.txt` tables; measured here at 45 KB in 3.37 M cycles with `exomizer desfx -S` and 3.4-3.8 M cycles end-to-end in VICE x64sc), so a 50 KB part takes about 4-6 seconds on PAL, not milliseconds. An earlier version of this page said 50-80 ms (50,000-80,000 cycles) per 50 KB, about 50x too fast. Time is data-dependent; highly compressible data (long matches) is at the low end.
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` — uses Exomizer `sfx sys` to pack the final PRG
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe is assembled to a plain PRG and is not packed with Exomizer, ByteBoozer or any cruncher.)
 
 ---
 
@@ -211,17 +211,17 @@ Depacker size: approximately 200 bytes for the `sfx sys` variant (Exomizer 3.1.2
 
 ### Why
 
-Doynax LZ (by Doynax, also known as Johan Forsberg) is a compact LZ-family packer designed with an unusually small runtime depacker. Where Exomizer's depacker sits at approximately 200 bytes, Doynax's depacker runs to approximately 100 bytes — roughly half the footprint. The trade-off is a modestly worse compression ratio compared to Exomizer for the same input data; typical code files compress to around 65-85% of original size versus Exomizer's 60-80%. The Doynax packer is a niche choice: it appears most often in cracktros and 256-byte intros where the 100-byte overhead saving matters but the ratio difference does not.
+Doynamite (by Doynax; the author's real name is not verifiable here and an earlier version's "Johan Forsberg" attribution is dropped) is a compact, fast LZ depacker of roughly 225-260 bytes: the regular `decrunch.asm` assembles to 259 bytes with ACME, the stripped "simple" variant to `$E1` = 225 bytes (as its readme states), and the self-extracting form measured 309 bytes of total sfx overhead — comparable to Exomizer's depacker, not half of it (an earlier version of this page said ~100 bytes). The trade-off against Exomizer is a modestly worse compression ratio for the same input data; typical code files compress to around 65-85% of original size versus Exomizer's 60-80%. The Doynax packer is a niche choice, valued for depack speed rather than depacker size; a 225-259-byte depacker cannot be the reason a 256-byte intro would use it.
 
 ### How
 
 The Doynax packer toolchain workflow is similar to Exomizer:
 
-1. Compress offline: `doynax-pack input.prg output.packed`. The compressor is distributed as source (C) and pre-built binaries alongside its runtime depacker asm source (`decrunch.asm`).
-2. Assemble the depacker with the packed data appended: the depacker is a position-independent subroutine that takes a source pointer in ZP and a destination pointer in ZP, expands the data, and returns with `RTS`. Include it in your project's assembler source.
+1. Compress offline: `lz [-o out.lz] [--sfx addr | --raw | --level] [--binfile] in.prg` from the Doynamite 1.1 distribution bundled in Krill's `loader/tools/doynamite1.1/` (`lz.c` source, plus the depacker sources `decrunch.asm` and `sfx.asm` in ACME syntax). An earlier version of this page named a `doynax-pack` command, which does not exist.
+2. Assemble the depacker with the packed data appended: the depacker is a subroutine that takes a source pointer in ZP and a destination pointer in ZP, expands the data, and returns with `RTS`. It is not position-independent — it self-modifies absolute pointer operands (`lz_sector_ptr1..3 = *+1`) and the shipped `sfx.asm` relocates it with `!pseudopc` — so assemble it for the address it will run at. Include it in your project's assembler source.
 3. At runtime: store source and destination pointers, `JSR decrunch_entry`.
 
-The depacker source is available in the Doynax packer repository (GitHub: `doynax/doynax-lz` — consult for current revision; the tool has not had a formal version-numbered release but the source has been stable since approximately 2015).
+The depacker source is in the Doynamite 1.1 distribution shipped with Krill's loader (v194); an earlier version of this page pointed at a `doynax/doynax-lz` GitHub path, which is not verifiable from this machine.
 
 ### Why it works
 
@@ -229,13 +229,13 @@ Doynax uses a two-level LZ scheme: a literal run mode and a back-reference mode,
 
 ### Variations
 
-**Integrate with Krill hook.** Like Exomizer raw, Doynax packed data can be decompressed via Krill's post-load callback. The Doynax depacker subroutine is invoked with ZP pointers set to the loaded data block; the callback wrapper is a dozen bytes. This is the most common deployment: load packed block via Krill, decompress in-place, continue.
+**Integrate with Krill.** Krill v194 decrunches Doynamite streams on the fly through `loadcompd` when the Doynamite decompressor is selected in `loaderconfig.inc` (the same `DECOMPRESSOR` switch as the ByteBoozer 2 and Exomizer options); there is no post-load callback hook — an earlier version of this paragraph described one. The alternative is `loadraw` into a buffer followed by a `JSR` to the depacker with ZP pointers set to the loaded block: load, decompress in place, continue.
 
-**Stack-page depacker.** Because the depacker is position-independent and only 100 bytes, it fits comfortably in the stack page (`$0100-$01FF`) at runtime, freeing it from any fixed address dependency. This is useful in productions where low-RAM real estate is fully allocated.
+**Zero-page/stack-page depacker.** The shipped `sfx.asm` copies the ~227-byte depacker to `$00C2`, where it spans the top of zero page and the low stack page, freeing the `$0801` area for the payload. This is useful in productions where low-RAM real estate is fully allocated. (An earlier version of this page said a 100-byte position-independent depacker "fits comfortably in the stack page"; it is neither 100 bytes nor position-independent.)
 
 ### Cycle budget
 
-Decompression time: approximately 40-60ms per 50 KB at PAL (data-dependent, similar proportional scaling to Exomizer but with slightly less favorable ratio, so slightly more bytes to decompress per original byte). Depacker size: approximately 100-110 bytes (measured from `decrunch.asm` in the Doynax repository, circa 2015 revision; exact count depends on assembler and any position-independence preamble).
+Decompression time: decompressing a 50 KB part takes on the order of seconds on PAL, not milliseconds: writing 50 KB with a bare `LDA (zp),Y` / `STA (zp),Y` copy loop alone costs about 820,000 cycles (0.83 s, measured in VICE with the screen blanked), and an LZ depacker adds bit-decoding on top of that — tens of cycles per output byte, so roughly 2-5 s depending on the data and the depacker (an estimate; Doynamite's depacker was not timed here). Its per-token overhead is lower than Exomizer's, so it sits toward the fast end. An earlier version of this page gave 40-60 ms per 50 KB, which is under one CPU cycle per byte and impossible. Depacker size: 259 bytes for the regular `decrunch.asm`, 225 (`$E1`) for the "simple" variant (Doynamite 1.1 as shipped in Krill v194, assembled with ACME; an earlier version said 100-110).
 
 ---
 
@@ -248,7 +248,7 @@ Decompression time: approximately 40-60ms per 50 KB at PAL (data-dependent, simi
 
 ### Why
 
-Both the KERNAL LOAD and Krill's fast loader occupy the CPU entirely during the transfer: the C64-side receive loop is a tight polling or timing loop that cannot yield to other code. This means that while a part is loading, the screen goes dark or freezes at whatever state the previous part left it. For high-quality demo productions, this is unacceptable — the audience should see live visuals continuously, even during disk access. Sparkle (by JackAsser, with contributions from Hollowman, active circa 2010-2018 based on demoscene release credits) solves this by interleaving loading and rendering at the IRQ level: the main program runs its visual effects during normal execution, and a raster IRQ at a specific scan line briefly services the IEC bus to receive the next byte or block during the raster blanking period.
+Both the KERNAL LOAD and Krill's fast loader block the calling mainline; KERNAL LOAD additionally masks interrupts during byte transfer, whereas Krill leaves IRQ/NMI free, so with Krill the screen freezes only if the effect itself runs in the mainline (an earlier version of this page said both occupied the CPU entirely and the screen went dark; Krill's README says IRQ/NMI/DMA/sprites/badlines are allowed without restriction). For high-quality demo productions, this is unacceptable — the audience should see live visuals continuously, even during disk access. Sparkle (by JackAsser, with contributions from Hollowman, active circa 2010-2018 based on demoscene release credits) solves this by interleaving loading and rendering at the IRQ level: the main program runs its visual effects during normal execution, and a raster IRQ at a specific scan line briefly services the IEC bus to receive the next byte or block during the raster blanking period.
 
 ### How
 
@@ -266,7 +266,7 @@ PAL caveat: Sparkle's IRQ timing is tuned to PAL's 63-cycle scan lines and 312-l
 
 ### Why it works
 
-The key insight is that the IEC bus does not require continuous CPU attention — the bus handshake signals can be sampled at intervals as long as the interval is short enough that the drive's state machine does not time out. The 1541 drive-side code holds CLK low (stalling the protocol) while the C64 is running effects and releases CLK only when it has a byte ready to send. The C64-side IRQ handler detects the CLK release (by polling `$DD00` bit 6 for the DATA line and bit 7 for CLK), accepts the byte, and acknowledges. The drive interprets the acknowledgment and queues the next byte.
+The key insight is that the IEC bus does not require continuous CPU attention — the bus handshake signals can be sampled at intervals as long as the interval is short enough that the drive's state machine does not time out. The 1541 drive-side code holds CLK low (stalling the protocol) while the C64 is running effects and releases CLK only when it has a byte ready to send. The C64-side IRQ handler detects the CLK release (by polling `$DD00` bit 6 for CLK IN and bit 7 for DATA IN — an earlier version of this page had the two swapped; see `../hardware/cia-reference.md` §`$DD00`), accepts the byte, and acknowledges. The drive interprets the acknowledgment and queues the next byte.
 
 The raster IRQ machinery (`$D012` compare, `$D019` acknowledge, `$D01A` mask) is the same as in `stable_raster_irq`. What is unusual is the cooperative scheduling: the IRQ handler is part of the main IRQ chain but has a hard cycle budget, and it must complete within that budget or risk corrupting the raster timing for the visible display. Productions using Sparkle typically allocate a dedicated scan-line region (often the lower or upper border) where the background-loader IRQ is permitted to run with relaxed timing constraints.
 
@@ -280,7 +280,7 @@ The raster IRQ machinery (`$D012` compare, `$D019` acknowledge, `$D01A` mask) is
 
 ### Cycle budget
 
-The IRQ handler at line 0 on PAL operates in the VBlank window where approximately 100 cycles are available before the VIC begins the top-border DMA. Sparkle's IRQ handler per byte receive takes approximately 30-40 cycles for the handshake polling and byte capture, limiting background throughput to around 2,500-3,000 bytes per second (versus Krill's 7,500 in full-CPU mode). This lower rate is the cost of concurrency. Total loading time for a 50 KB block is approximately 17-20 seconds in background mode, versus 6 seconds with Krill in blocking mode.
+The IRQ handler at line 0 on PAL operates in the VBlank window where approximately 100 cycles are available before the VIC begins the top-border DMA. Sparkle's IRQ handler per byte receive takes approximately 30-40 cycles for the handshake polling and byte capture, limiting background throughput to around 2,500-3,000 bytes per second (versus Krill's ~7,000-7,700 with a blocking mainline call). This lower rate is the cost of concurrency. Total loading time for a 50 KB block is approximately 17-20 seconds in background mode, versus 6 seconds with Krill in blocking mode.
 
 ---
 
@@ -292,23 +292,24 @@ The IRQ handler at line 0 on PAL operates in the VBlank window where approximate
 
 ### Why
 
-ByteBoozer (by HCL, Booze Design) provides the smallest runtime depacker of any commonly-used C64 packer: approximately 85 bytes in its standard form (ByteBoozer 2.0, release 2016, available from HCL's site). The compression ratio is modestly worse than Exomizer — typical code files compress to around 65-80% of original size versus Exomizer's 60-75% for comparable input — but the 85-byte depacker fits in the 256-byte BASIC stub area and leaves room for other setup code. This makes ByteBoozer the standard choice for 256-byte and 1-kilobyte intros where every byte of depacker overhead directly reduces the payload available for the actual effect code.
+ByteBoozer 2 (by HCL, Booze Design; its decruncher source is headed "ByteBoozer Decruncher /HCL May.2003" and "B2 Decruncher December 2014") ships in Krill's `loader/tools/b2/`. The standalone decruncher `Decruncher.inc` assembles to 245 bytes including its 8-byte offset table. The tool's own executable form (`b2 -c 0801 file.prg`, which writes `file.prg.b2`) prepends a 213-byte block at `$0801`: a 12-byte BASIC line (`SYS 2061`), a 17-byte entry at `$080D` that banks out ROM (`LDA #$34` / `STA $01`) and copies 183 bytes to zero page `$0010`, and a zero-page-resident decruncher plus exit that restores `$01` to `$37` and JMPs to the start address. An earlier version of this page said the depacker was 85 bytes, dated B2 to 2016 and named a `byteboozer2` command; the measured b2 build from Krill v194 contradicts all three. The compression ratio is modestly worse than Exomizer — typical code files compress to around 65-80% of original size versus Exomizer's 60-75% for comparable input — and the depacker's speed, not its size, is its selling point: a ~200-byte depacker is not what 256-byte intros use.
 
 ### How
 
 Offline workflow:
 
 ```
-byteboozer2 input.prg output.b2
+b2 input.prg              (raw; writes input.prg.b2)
+b2 -c 0801 input.prg      (runnable sfx form; writes input.prg.b2)
 ```
 
-The output `.b2` file is the packed data without a SYS stub. To create a runnable PRG, prepend a minimal BASIC stub and depacker:
+The usage string is `b2 [-[c|e|r] xxxx] <filename>`; output is always `<filename>.b2`, there is no separate output-file argument, and there is no `byteboozer2` command (an earlier version of this page gave `byteboozer2 input.prg output.b2`). The raw `.b2` is the packed data without a SYS stub. The `-c` form is a runnable PRG:
 
-1. The BASIC stub occupies `$0801` in the standard layout: `10 SYS 2061` followed by the machine-code depacker at address 2061 (`$080D`).
-2. The depacker entry point at `$080D` sets up ZP source/destination pointers and decompresses to the original load address.
-3. After decompression, the depacker JMPs to the original entry point.
+1. The BASIC stub occupies `$0801` in the standard layout: `10 SYS 2061` (12 bytes) followed by the machine-code entry at address 2061 (`$080D`).
+2. The 17-byte entry at `$080D` banks out ROM (`LDA #$34` / `STA $01`), copies the 183-byte decruncher to zero page `$0010` and runs it there; it decompresses to the original load address.
+3. After decompression, the exit restores `$01` to `$37` and JMPs to the original entry point.
 
-The depacker source is available in the ByteBoozer 2.0 distribution (`depack.asm`, approximately 85 bytes when assembled). The packed data is typically appended immediately after the depacker in the PRG, or loaded to a scratch area first and then decompressed.
+The depacker source is `Decruncher.inc` in the b2 distribution (not `depack.asm`; 245 bytes assembled standalone including its 8-byte offset table). The packed data follows the 213-byte stub in the sfx PRG, or in raw form is loaded to a scratch area first and then decompressed.
 
 ### Why it works
 
@@ -316,19 +317,19 @@ ByteBoozer uses a proprietary LZ-style compression that prioritizes depacker sim
 
 ### Variations
 
-**ByteBoozer 1 vs ByteBoozer 2.** ByteBoozer 1 (circa 2004) used a slightly different token format and a larger depacker (~120 bytes). ByteBoozer 2 (2016) revised the format for a smaller depacker; the two formats are incompatible. All current scene usage targets ByteBoozer 2.
+**ByteBoozer 1 vs ByteBoozer 2.** ByteBoozer 1 dates from May 2003 and ByteBoozer 2 from December 2014 (the dates in the decruncher source's own header; an earlier version of this page said 2004 and 2016, and gave an unverified ~120-byte B1 depacker size, dropped here). B2 revised the token format; the two formats are incompatible. All current scene usage targets ByteBoozer 2.
 
-**Krill integration.** ByteBoozer 2's packed data can be decompressed via Krill's post-load hook (Krill includes a `DECRUNCH_BYTEBOOZER2` option in its build system). This is the canonical fast-load + decrunch pipeline in modern cracktro construction.
+**Krill integration.** Krill decrunches ByteBoozer 2 data on the fly through its `loadcompd` entry point when built with `LOAD_COMPD_API` enabled and `DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER2` in `loaderconfig.inc` (v194); there is no separate post-load hook, and the `DECRUNCH_BYTEBOOZER2` option an earlier version of this page named does not exist in the v194 archive.
 
-**Depacker placement.** The 85-byte depacker can be placed on the zero page (free ZP above `$02`), in the stack page, or in the BASIC stub area. Zero-page placement gives the fastest depacker execution because ZP addressing modes cost one fewer cycle per access.
+**Depacker placement.** The depacker can be placed on the zero page, in the stack page, or in the BASIC stub area; the b2 sfx form does run from zero page, but occupies ~184 bytes of it (`$0010-$00C6`), not 85. Zero-page placement does not make the depacker run faster: instruction fetches cost the same from any page, and the depacker's source/destination pointers and bit buffer are zero-page variables wherever the code itself sits (only a self-modifying depacker that reads or writes its own operand bytes with zero-page addressing would gain a cycle per such access). Measured: identical depacker-style code at `$0040` and `$0300` took 11,382 cycles each under VICE. An earlier version of this page claimed a speed gain from zero-page placement. The reason to put the depacker in zero page or the stack page is space: it frees the `$0801` area for the packed payload, as in the layout in `crunched_data_in_basic_stub` below.
 
 ### Cycle budget
 
-Depacker size: approximately 85 bytes (ByteBoozer 2.0, `depack.asm` measured). Decompression time: approximately 30-50ms per 50 KB at PAL (faster than Exomizer for similar data because the simpler token format has lower per-token overhead, partially offset by the somewhat lower compression ratio meaning slightly more bytes to read). For 256-byte intro use the depacker + packed payload typically fits within 200-220 bytes total, leaving 36-56 bytes for the actual effect code.
+Depacker size: 245 bytes standalone (`Decruncher.inc` with its 8-byte offset table), 213 bytes of sfx overhead in the `b2 -c` form (measured from the b2 build in Krill v194; an earlier version of this page said 85 bytes). Decompression time: decompressing a 50 KB part takes on the order of seconds on PAL, not milliseconds: writing 50 KB with a bare `LDA (zp),Y` / `STA (zp),Y` copy loop alone costs about 820,000 cycles (0.83 s, measured in VICE with the screen blanked), and an LZ depacker adds bit-decoding on top of that — tens of cycles per output byte, so roughly 2-5 s depending on the data and the depacker (an estimate; the b2 depacker was not timed here). It is faster than Exomizer for similar data because the simpler token format has lower per-token overhead, partially offset by the somewhat lower compression ratio meaning slightly more bytes to read. An earlier version of this page gave 30-50 ms per 50 KB, which is under one CPU cycle per byte and impossible. With a 213-byte sfx stub, a 256-byte PRG leaves 41 bytes of packed data, so a general-purpose packer is not what 256-byte intros use.
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` — illustrates ByteBoozer as an alternative to Exomizer for packing the final output
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe is assembled to a plain PRG and is not packed with Exomizer, ByteBoozer or any cruncher.)
 
 ---
 
@@ -367,7 +368,7 @@ All of these tricks work because the 1541 provides raw access to the GCR bitstre
 
 **Burst Nibbler / Maverick.** The most widely used copy tools of the era (Burst Nibbler, Maverick, Copy II PC, Final Cartridge) progressively learned to capture each new protection technique by reading raw GCR tracks and reproducing the exact bit patterns. The arms race between protection authors and copy-tool authors drove the GCR techniques to ever more exotic territory, culminating in protections that required specialized hardware or multi-pass reading to defeat.
 
-**Preservation approach.** Modern preservation uses drive-introspection tools (notably Kryoflux, an open-source USB floppy controller that captures raw flux transitions) to create full magnetic images of disks, including all half-tracks and malformed sectors. These images can be loaded in VICE under `-floppytype 1541` with flux-image support.
+**Preservation approach.** Modern preservation uses drive-introspection tools (notably Kryoflux, an open-source USB floppy controller that captures raw flux transitions) to create full magnetic images of disks, including all half-tracks and malformed sectors. VICE reads G64 (GCR bit-level) and P64 (flux-pulse-level) images, attached with `-8 image.g64` (or `-autostart`); true drive emulation, on by default, is required for them. It does not read raw KryoFlux stream or SCP dumps — convert to G64/P64 with the KryoFlux/nibtools/HxC tools first. There is no `-floppytype` option (an earlier version of this page named one; `x64sc -help` lists `-drive8type`, which only matters when a different drive mechanism is wanted — the default type reads G64/P64).
 
 ---
 
@@ -388,8 +389,16 @@ The canonical multi-load memory layout dedicates a fixed "persistent zone" that 
 ```
 $0000-$00FF  Zero page — persistent (ZP variables used by loader + IRQ)
 $0100-$01FF  Stack — persistent (loader subroutine calls)
-$0200-$02FF  Loader stubs (Krill C64-side code, ~256 bytes)
-$0300-$03FF  Loader state, file I/O vectors, persistent flag byte
+$0200-$0407  Krill resident (v194 prebuilt default RESIDENT=0200, 519 B with the
+             ZX0 loadcompd entry; a raw-load-only build is ~250 B, see the Oscar64
+             notes in krill_loader_integration). Copy it here only AFTER `install`
+             returns: install's KERNAL OPEN/CLOSE calls write the file tables at
+             $0259-$0276 and other lowmem. This placement also overwrites the
+             KERNAL RAM vectors at $0314-$0333, so either mask the CIA1 timer IRQ
+             ($DC0D=$7F, as Krill's minexample does) or relocate with RESIDENT=
+             (Krill's own sample uses RESIDENT=$2000). An earlier version of this
+             layout gave the resident 256 bytes at $0200-$02FF and called
+             $0300-$03FF persistent vectors, which the default resident overwrites.
 $0800-$0FFF  Music data + SID player (persistent across parts if music loops)
 $1000-$BFFF  Part area (fully reclaimed between parts — code + graphics)
 ```
@@ -414,17 +423,17 @@ The persistent music zone (`$0800-$0FFF` in the layout above) requires careful n
 
 **Load during effects vs load-then-start.** The simpler approach is to load the entire next part before starting its effect — load screen displayed, then JMP. The sophisticated approach (concurrent load + effect) requires that the effect code use only persistent-zone resources. Which approach is appropriate depends on whether the production has a "loading screen" aesthetic or demands seamless flow.
 
-**Packed vs unpacked part files.** Loading a packed file via Krill + Exomizer into the part area and decompressing in-place is the most space-efficient strategy. The part area must be large enough to hold the packed data plus the headroom for the depacker to work (depacker expands the packed data in-place from high address to low, so no extra buffer is needed for the Exomizer `raw` format if expansion is backward).
+**Packed vs unpacked part files.** Loading a packed file via Krill + Exomizer into the part area and decompressing in-place is the most space-efficient strategy. The part area must be large enough to hold the packed data plus the headroom for the depacker to work (the default depacker expands in-place from high address to low, so no extra buffer is needed for the Exomizer `raw` format — see `exomizer_basics`).
 
 **Part numbering and disk layout.** For fastest sequential loading, lay the parts out on disk in the order they will be read. The 1541's track-seek time is the dominant latency for multi-part sequencing: seeking from track 5 to track 30 takes approximately 500ms; sequential parts on adjacent tracks load with minimal seek overhead. Krill does not manage disk layout; use a custom disk-image builder (e.g., `cc1541` or `cbmconvert`) to place files in the desired track order.
 
 ### Cycle budget
 
-Per-part load time (Krill fast loader, 50 KB packed part, ~30 KB after Exomizer compression): approximately 4 seconds transfer + 50ms decompression = approximately 4.05 seconds total. A 5-second transition effect covers this with 0.95 seconds of margin. Timing varies with disk geometry and seek distance — measure on real hardware or in VICE with accurate 1541 emulation enabled.
+Per-part load time (Krill fast loader, 50 KB packed part, ~30 KB after Exomizer compression): approximately 4 s transfer plus 2-5 s decompression (Exomizer measured at roughly 4-6 s per 50 KB of output, see `exomizer_basics`; faster depackers toward the low end) — roughly 6-9 s total. A 5-second transition does NOT cover this on its own: either decompress while the next transfer streams (Krill's `loadcompd` path, ideally with a faster decompressor such as ZX0 or TSCrunch) or budget the transition for 6-9 s. An earlier version of this page costed decompression at 50 ms and claimed 0.95 s of margin. Timing varies with disk geometry and seek distance — measure on real hardware or in VICE with accurate 1541 emulation enabled.
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` — implements a single-load cracktro; the same sequencing logic extends to multi-part productions
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; it is a one-part PRG whose only hand-off is a fire-button JMP to a configured entry address, with no load between parts.)
 
 ---
 
@@ -436,7 +445,7 @@ Per-part load time (Krill fast loader, 50 KB packed part, ~30 KB after Exomizer 
 
 ### Why
 
-Every C64 PRG file that auto-runs loads to `$0801` and begins with the standard BASIC stub: two bytes of link address, two bytes of line number, a `SYS` token, the address digits as PETSCII characters, and a pair of null bytes for end-of-line and end-of-program. The canonical form `10 SYS 2061\x00\x00\x00` occupies 13 bytes; the first machine-code instruction sits at `$080D` (decimal 2061). For a 256-byte intro, 13 bytes of stub overhead before the first instruction byte represents 5% of the total budget. For a 1-kilobyte intro it is 1.3%. For any production where byte count matters, eliminating or compressing this overhead is worthwhile.
+Every C64 PRG file that auto-runs loads to `$0801` and begins with the standard BASIC stub: two bytes of link address, two bytes of line number, a `SYS` token, the address digits as PETSCII characters, and a pair of null bytes for end-of-line and end-of-program. The canonical form `10 SYS2061` (link, line number, `$9E`, the four PETSCII digits, EOL, end-of-program: `0B 08 0A 00 9E 32 30 36 31 00 00 00`) occupies 12 bytes; the first machine-code instruction sits at `$080D` (decimal 2061), and `$080D - $0801 = 12`. An earlier version of this page said 13 bytes, which is probably KickAssembler's default `BasicUpstart2`: it emits `10 SYS2062` with one pad byte (13 bytes to `$080D`, code at `$080E`). For a 256-byte intro, 12 bytes of stub overhead before the first instruction byte is about 4.7% of the total budget. For a 1-kilobyte intro it is 1.2%. For any production where byte count matters, eliminating or compressing this overhead is worthwhile.
 
 The technique of placing the compressed payload immediately after the SYS and pointing the SYS target to a depacker changes the layout so that the entire PRG (from `$0801` onward) is either BASIC stub or executable code — there is no gap of dead bytes and no separate load address overhead beyond the 2-byte PRG load address prefix.
 
@@ -446,20 +455,21 @@ The compressed-stub layout:
 
 ```
 $0000-$0001  PRG load address (2 bytes: $01, $08 — loads to $0801)
-$0801-$080C  BASIC stub: 10 SYS 2061 (13 bytes)
-$080D-$...   Depacker code (e.g., ByteBoozer: ~85 bytes, ends at ~$0862)
-$0862-$...   Packed payload (compressed code + data)
+$0801-$080C  BASIC stub: 10 SYS 2061 (12 bytes)
+$080D-$08D5  Depacker/entry code (e.g., the b2 -c sfx form: 201 bytes, which copy
+             a 183-byte decruncher to zero page $0010 before running it)
+$08D6-$...   Packed payload (compressed code + data)
 ```
 
 The SYS target (`2061` = `$080D`) jumps directly to the depacker. The depacker reads the packed payload beginning at the byte immediately following its last instruction, decompresses to the original target address (which could be `$0801` itself, or any other address), then JMPs to the original entry point.
 
-For a 256-byte intro using ByteBoozer:
+For a 256-byte intro the arithmetic does not favour a general-purpose packer:
 
-- BASIC stub: 13 bytes
-- ByteBoozer 2 depacker: 85 bytes
-- Remaining for packed payload: 256 - 2 (PRG header) - 13 (stub) - 85 (depacker) = **156 bytes**
+- BASIC stub: 12 bytes
+- ByteBoozer 2 sfx stub (BASIC line + entry + decruncher): 213 bytes in total, measured from `b2 -c 0801` in Krill v194
+- Remaining for packed payload: 256 - 2 (PRG header) - 213 = **41 bytes**
 
-If the packed payload compresses the actual effect code to 156 bytes, and ByteBoozer achieves 70% compression, the original uncompressed effect code can be approximately 223 bytes — a meaningful expansion of the effective code budget.
+An earlier version of this page put the depacker at 85 bytes and computed 156 bytes of payload expanding to ~223 bytes of effect code; with the measured stub size that budget does not exist, which is why 256-byte intros hand-roll their own tiny depackers (or none) rather than embed ByteBoozer or Exomizer.
 
 ### Why it works
 
@@ -471,16 +481,16 @@ An important constraint: the depacker itself must not overlap its output destina
 
 **Zero-page depacker.** Instead of placing the depacker at `$080D`, a very small depacker (under 30 bytes) can reside in free zero-page space (`$02-$7F` is largely free on a stock C64 with KERNAL + BASIC disabled, though care is needed around VIC-II pointer ZP variables and KERNAL workspace). This frees the `$0801-$...` area entirely for the payload. Assembling to zero page requires position-independent or zero-page-addressed code.
 
-**Combined load + unpack stub.** A self-installing production that loads additional packed files can place the Krill loader stubs in the `$0200-$02FF` area (which the BASIC stub does not reach), leaving the full `$0800` range available for the effect proper. The BASIC stub then calls Krill install, then starts the effect — a two-stage boot in 256 bytes that downloads the real content from disk before playing it.
+**Combined load + unpack stub.** A self-installing production that loads additional packed files can place the Krill resident at its default `$0200-$0407` (~520 B in the v194 prebuilt; a raw-load-only build is ~250 B), which the BASIC stub does not reach, leaving the `$0800` range available for the effect proper. The resident must be copied there only *after* `install` returns (install's KERNAL calls write the file tables at `$0259+`), and the installer itself is ~3-7 KB of transient code, so this is a two-stage boot whose first stage is a few kilobytes, not 256 bytes — an earlier version of this page put the stubs in 256 bytes at `$0200-$02FF`. See `multi_load_sequencing` for the layout.
 
-**BASIC stub compression.** Technically the BASIC stub itself (`10 SYS 2061`) can be shortened: `0 SYS826` uses a line number of 0 and decimal address 826 = `$033A`. If the depacker can live at `$033A` (free on a stock machine with KERNAL ROM disabled), the BASIC stub shrinks from 13 to 11 bytes. Combined with the zero-page depacker variant, this squeezes 2 more bytes into the payload at the cost of careful ZP + low-RAM placement.
+**BASIC stub compression.** Technically the BASIC stub itself (`10 SYS 2061`) can be shortened: `0 SYS826` uses a line number of 0 and decimal address 826 = `$033A`. If the depacker can live at `$033A` (free on a stock machine with KERNAL ROM disabled), the BASIC stub shrinks from 12 to 11 bytes. Combined with the zero-page depacker variant, this squeezes 1 more byte into the payload at the cost of careful ZP + low-RAM placement (an earlier version of this page counted the saving as 2 bytes, from the 13-byte figure corrected above).
 
 ### Cycle budget
 
-The depacker execution overhead (BASIC calls SYS, depacker runs, jumps to effect entry) adds approximately 100-300ms for a typical 200-byte intro payload (most of which is the ByteBoozer or Doynax decompression time). For a 256-byte intro this overhead is invisible to the user — the PRG loads in under a second and the effect begins immediately. For larger payloads, scale proportionally: 2 KB of packed data at 85 bytes/ms (ByteBoozer typical rate) decompresses in roughly 24ms, negligible on human timescales.
+The depacker execution overhead (BASIC calls SYS, depacker runs, jumps to effect entry) is small for a tiny payload: a 200-byte payload decompresses in roughly 10,000-20,000 cycles (10-20 ms) at tens of cycles per output byte, so the SYS-plus-depack overhead is invisible to the user — the PRG loads in under a second and the effect begins immediately. For larger payloads, scale proportionally: 2 KB of packed output at tens of cycles per byte is on the order of 0.1-0.2 s, still negligible. (An earlier version of this page gave "100-300 ms for a 200-byte payload" and "85 bytes/ms ... roughly 24 ms for 2 KB", two figures that disagreed with each other by 40-100x; the 85 bytes/ms rate is 11.6 cycles per byte, below the 16-cycle cost of a bare `LDA (zp),Y` / `STA (zp),Y` / `INY` / `BNE` copy loop.)
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` — demonstrates the SYS + ByteBoozer + Exomizer packing workflow as the final build step
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe is assembled to a plain PRG and is not packed with Exomizer, ByteBoozer or any cruncher.)
 
 ---

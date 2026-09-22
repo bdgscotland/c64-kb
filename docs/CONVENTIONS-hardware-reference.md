@@ -146,7 +146,8 @@ End-of-doc H2 `## Pitfalls` with bullet list:
 ## Pitfalls
 
 - **$D012 raster wrap**: comparing $D012 against >=256 requires combining
-  with $D011 bit 7 — see [c64-pitfalls.md](c64-pitfalls.md#d012-raster-wrap).
+  with $D011 bit 7 — see `d012_wrap_around` in
+  [pitfalls/raster-and-badline.md](pitfalls/raster-and-badline.md).
 - ...
 ```
 

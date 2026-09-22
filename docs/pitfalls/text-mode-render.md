@@ -8,10 +8,20 @@ category: render
 
 Bugs that show up when implementing a moving-piece overlay on a
 text-mode playfield (Tetris-likes, Sokoban-likes, Boulder Dash, etc.).
-All of them stem from over-thinking the rendering layer: a C64 text-mode
-field redraw is cheap enough that the simplest "rewrite everything every
-frame, overlay last" loop just works. Optimizing it is usually a
-self-inflicted wound.
+Two of them come from over-thinking the rendering layer; the third comes
+from under-budgeting it. An earlier version of this page opened by saying
+a C64 text-mode field redraw is "cheap enough that the simplest 'rewrite
+everything every frame, overlay last' loop just works". It does not: the
+10×20 `render_field` listed below costs about 16,400 cycles (15,500 with
+the display blanked; VICE x64sc PAL, Oscar64 -O2, CIA-timed), and the
+race-free budget is much smaller — `vic_waitBottom` returns at raster
+256 and the display window resumes at 51, 107 lines, ~6,700 cycles — so
+the full repaint runs to about line 205 of the next frame. The shape
+that works is: paint the field on state changes only, and per frame
+erase the piece's previous cells from `field[][]` and draw its current
+ones. The first pitfall below is what goes wrong when the erase is
+skipped; the third is what goes wrong when the whole field is repainted
+instead.
 
 ---
 
@@ -77,7 +87,10 @@ then draw current piece. Both passes use the piece-cells table — no
 separate dirty-rectangle tracking on the field.
 
 ```c
-// Correct: unconditional field redraw, piece overlay second.
+// render_field: unconditional field repaint. Call it on state changes
+// only (line clear, restart, initial paint) — NOT every frame; measured
+// at about 16,400 cycles in Oscar64 -O2, see full_field_redraw_exceeds_vblank.
+// (An earlier version of this comment called it the correct per-frame shape.)
 void render_field(void) {
     for (unsigned char r = 0; r < FIELD_H; r++) {
         unsigned char *srow = Screen + (FIELD_ROW0 + r) * COLS + FIELD_COL0;
@@ -93,15 +106,16 @@ void render_field(void) {
 }
 
 void render_piece(void) {
-    // Walks the 4 cells of the active piece, writes 0xA0 + color.
-    // No interaction with field[][]; the next frame's render_field()
-    // call clears the piece's prior position.
+    // Erase pass first: repaint the prev-position cells from field[][],
+    // then draw the current cells (0xA0 + color) — see
+    // full_field_redraw_exceeds_vblank for the listing. Do not rely on a
+    // per-frame render_field() to erase the prior position.
     ...
 }
 ```
 
-If you genuinely need the optimization (e.g. a 40×25 full-screen
-redraw is too slow for your frame budget), you must EITHER:
+Because even the 10×20 field redraw is too slow for the per-frame
+budget on an Oscar64 build, you must EITHER:
 
 - Track the piece's prior position separately and explicitly write
   spaces there before drawing the new position (a "dirty rectangle"
@@ -109,9 +123,13 @@ redraw is too slow for your frame budget), you must EITHER:
 - Skip the optimization for the rows the piece currently occupies +
   the rows it occupied last frame.
 
-The first approach is cleaner. But neither is needed on a 10×20
-playfield — the unconditional rewrite is simpler, well within budget,
-and bug-free.
+The first approach is cleaner, and it is the one the listing under
+`full_field_redraw_exceeds_vblank` shows. An earlier version of this
+section ended by saying neither was needed on a 10×20 playfield because
+the unconditional rewrite was "well within budget"; it is not — the
+listing above measures about 16,400 cycles a call against a ~6,700-cycle
+race-free window (VICE x64sc, PAL, CIA-timed), which is the third
+pitfall on this page.
 
 ### Worked example
 
@@ -225,9 +243,9 @@ update function.
 ### Symptom
 
 A Tetris-like (or any per-frame text-mode redraw game) shows the
-playfield correctly in the BOTTOM 4-5 rows but the UPPER rows look
-empty or stale, even though a memory dump of screen RAM shows the
-piece at the correct upper row. The piece appears to "teleport" into
+piece correctly in the bottom few rows (at most screen rows 20-24) but
+the UPPER rows look empty or stale, even though a memory dump of
+screen RAM shows the piece at the correct upper row. The piece appears to "teleport" into
 the lower screen — you can see it land but never see it descend from
 the top.
 
@@ -239,29 +257,70 @@ CPU and the VIC raster are racing.
 
 The C64 has no frame buffer. The VIC reads screen RAM line by line
 during the visible portion of the raster (PAL lines ~50-249), and the
-CPU can write to screen RAM at any time. Between frames there's a
-vblank window of about 56 raster lines × 63 cycles ≈ **3,500 cycles**
-where the CPU can write screen RAM without the raster racing it.
+CPU can write to screen RAM at any time. After `vic_waitBottom`
+returns at raster 256 there are 107 raster lines — 56 of lower border
+and blanking to the wrap at 311, then 51 of upper border — before the
+display window resumes at raster 51 and the VIC fetches screen RAM
+again: 107 × 63 ≈ **6,700 cycles** in which the CPU can write screen
+RAM without the raster racing it. (The 56 lines to the wrap alone are
+~3,500 cycles, which is what an earlier version of this page called
+"the vblank window"; the race-free budget is nearly twice that.)
 
 A naïve full-field redraw — walk every cell of a 10×20 playfield
 (rendered 2-chars-wide = 200 cells × 2 chars), write screen RAM + color
-RAM — costs ~92 cycles per cell in Oscar64 -O2 output. That's
-**~18,400 cycles** for 200 cells. The vblank window is 3,500 cycles.
+RAM — costs about 78-86 cycles per cell in Oscar64 -O2 output: the
+listing in the first section measures 15,519 cycles with the display
+blanked and about 16,400 wall-clock started at raster 256 with badline
+stalls counted in (CIA-timed in VICE x64sc), and the recipe's
+`paint_cell` version 17,100-17,450. Call it **15,500-17,500 cycles**
+for 200 cells. (An earlier version of this page said ~92 a cell /
+~18,400; that was an estimate, not a measurement.) The race-free
+window is ~6,700 cycles.
 
 When `render_field` is called every frame after `vic_waitBottom`:
 
-1. Frame N's render runs in vblank, then continues into frame N+1's
-   visible draw (lines 0 → 156, ~76 lines past vblank end).
-2. By the time the CPU is clearing row 0..7 of the playfield, the VIC
-   raster has ALREADY drawn screen rows 0..7 for frame N+1 using
-   whatever stale data was there.
-3. The CPU eventually catches up around row 8 of the playfield (= screen
-   row ~20). Lower screen rows are drawn with the new data.
+1. Started at raster 256 (where `vic_waitBottom` returns), the redraw
+   runs about 16,400 cycles for the listing in the first section
+   (measured in VICE x64sc, PAL, CIA2 timer; 17,100-17,450 for the
+   recipe's version) and does not finish until about raster 205-220 of
+   the NEXT frame — well past the top of the display window, which
+   resumed at line 51. An earlier version of this page said "lines 0 →
+   156, ~76 lines past vblank end"; neither number follows from its own
+   figures (18,400 / 63 is 292 lines, which from 256 wraps to about
+   236) and neither was measured.
+2. The field rows themselves are not what you see go wrong. The loop
+   advances about 13 raster lines per field row while the VIC's badlines
+   advance 8, so each playfield row is rewritten before the VIC fetches
+   it, for every playfield origin from screen row 1 down: rows 0-3 land
+   in the previous frame's bottom border, and row r after that at about
+   line 13r − 43 against a badline at 51 + 8·(FIELD_ROW0 + r). Measured:
+   a cell written by `render_field` is displayed in every one of the 20
+   rows. Only the last row is marginal, and only in the slower recipe
+   build with FIELD_ROW0 = 2 (its last cells land a line or two after
+   the row's badline, so that row can show the field one frame late
+   after a lock). An earlier version of this page said the CPU was
+   still clearing playfield rows 0..7 after the VIC had drawn them and
+   "caught up around row 8 of the playfield (= screen row ~20)" — which
+   is also impossible on its face, since a 20-row field on a 25-row
+   screen puts playfield row 8 on screen row 13 at the lowest.
+3. What loses the race is the piece overlay. `render_piece` runs only
+   after `render_field` returns, at about raster 205-220, when every
+   screen row whose badline (51 + 8·row) is earlier than that — rows 0
+   to about 19 — has already been fetched for this frame; and the next
+   frame's `render_field` erases the piece again before the badline of
+   every row it could have reached. So only piece cells on screen rows
+   whose fetch falls after the overlay write — screen rows 20-24 at
+   most, whose badlines are 211-243, and fewer the longer the overlay
+   takes — are ever displayed. With FIELD_ROW0 = 4 that is the bottom
+   two to four playfield rows (rows 16-19); with a field ending higher
+   on the screen, fewer or none. Every row above that shows the piece
+   erased.
 
-Net effect: upper playfield rows show stale (or in-between-clear-and-
-overlay) content for every frame; lower playfield rows show the
-intended new content. The piece can only "appear" once the gravity has
-moved it past the screen row where CPU writes beat the VIC raster.
+Net effect: the field content is current everywhere, but the piece is
+invisible in every row above the bottom few; it "appears" only once
+gravity has moved it into the screen rows whose badline falls after
+the overlay write — which is the "teleports into the lower screen"
+symptom.
 
 This is a frame-budget bug, not a logic bug. The unconditional redraw
 pattern that "feels safe" because it has no caching, no dirty-cell
@@ -303,9 +362,17 @@ void render_piece(void) {
 }
 ```
 
-Per-frame cost drops to ~8 cell writes ≈ **~120 cycles**, easily
-inside vblank. Call `render_field()` only when persistent state
-actually changes:
+Per-frame cost drops to 8 cell writes — about **~2,000 cycles** in
+Oscar64 -O2 (`render_piece` measured at 1,998 cycles on CIA 2 timer A,
+~250 a call through `paint_cell`; see
+`recipes/oscar64/text-overlay-playfield.md`), or roughly 150–200 cycles
+in hand assembly with precomputed addresses. Either fits the ~3,500
+cycles to the frame wrap with room to spare, and the 107 raster lines
+(~6,700 cycles) between raster 256 and the display window resuming at
+line 51 are the real race-free budget. An earlier version of this page
+said ~120 cycles, which is 15 a cell against the ~92 it had just priced
+an Oscar64 cell write at. Call `render_field()` only when persistent
+state actually changes:
 
 - After a line-clear shift (rare).
 - After game-over restart (rare).
@@ -324,9 +391,11 @@ This pitfall corrects an earlier version of `text_mode_overlay_render`
 and `dirty_cell_skip_leaves_overlay_trail` that claimed full redraw
 is cheap on C64 ("4800 cycles, 24% of a PAL frame"). That estimate
 under-counted Oscar64's loop overhead and ignored the cost of color
-RAM writes. Empirical measurement in puzzle-tetris-c64-kb showed
-~18,000 cycles, which crashes through vblank and into the visible
-draw of the next frame.
+RAM writes. puzzle-tetris-c64-kb put it at ~18,000 cycles — an
+estimate in the fix commit, never timed; the same listing measures
+15,500-16,400 in VICE and the recipe's version 17,100-17,450 — any of
+which runs through the 107-line race-free window and well into the
+visible draw of the next frame.
 
 The takeaway: 200 cell writes IS expensive on a 1 MHz 6502 when
 each "write" is actually 2 STA-absolute + 2 color-RAM STA + indexed

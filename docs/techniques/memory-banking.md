@@ -98,10 +98,19 @@ with the GAME and EXROM lines from the cartridge port. For any given combination
 of those five inputs it asserts or deasserts the chip-select lines for each ROM
 and the I/O devices. The RAM is always physically present; the PLA merely disables
 the RAM's CAS line in a specific address range when it wants a ROM or I/O device
-to win that range on reads. Writes always go to the underlying RAM regardless of
-banking state, because the PLA never blocks write cycles. This means you can write
-code or data into $E000-$FFFF even while KERNAL ROM is banked in — the bytes land
-in RAM and become visible once KERNAL is banked out.
+to win that range on reads. Writes to a ROM-mapped range always go to the
+underlying RAM — the PLA routes a write cycle at $A000-$BFFF or $E000-$FFFF to
+RAM whatever $01 says, and the same holds for $D000-$DFFF while character ROM is
+mapped there (CHAREN = 0 with LORAM or HIRAM set). It is NOT true of $D000-$DFFF
+while I/O is mapped ($35/$36/$37): there the write goes to the VIC/SID/CIA/colour-RAM
+register and the RAM beneath is untouched (measured in VICE x64sc: RAM under $D000
+seeded $1D in mode $34; $2D written to $D000 with $01 = $37 read back as $2D — the
+sprite-0 X register — and the RAM under it still read $1D once I/O was banked out;
+the same test with $E000 put the byte in RAM). An earlier version of this page
+said writes go to RAM in every banking state. So you can write code or data into
+$E000-$FFFF even while KERNAL ROM is banked in — the bytes land in RAM and become
+visible once KERNAL is banked out; to put data under I/O, bank it out first ($34,
+or $33 if char ROM is acceptable) with interrupts disabled.
 
 ### Variations
 
@@ -118,10 +127,18 @@ disable IRQs (SEI), write $33 to $01 to swap char ROM into $D000-$DFFF, perform
 the copy loop, then write $37 back to restore normal layout, then CLI. The copy
 must be complete before re-enabling the I/O chips.
 
-**Preserving bits 3-5.** Bits 3, 4, and 5 of $01 control the datasette motor and
-write line. Always read-modify-write when changing banking bits: read $01, mask
-the lower three bits, OR in the new banking value, write back. Clobbering bits
-3-5 accidentally starts the datasette motor or corrupts a cassette write.
+**Preserving bits 3-5.** Bits 3 and 5 of $01 are datasette outputs — bit 3 the
+write line, bit 5 the motor (0 = motor ON) — and bit 4 is the tape-button sense
+input (DDR $2F leaves it an input, so writes to it do nothing). The constants
+above ($33-$37) all keep bit 5 set, so writing them directly does not start the
+motor; a value with bit 5 clear does — `LDA #$05 / STA $01` banks out the ROMs
+and switches the motor on, and under mode $35 nothing turns it off again, because
+the interlock that does so ($EA61) is part of the KERNAL IRQ you have just
+removed. Prefer read-modify-write when changing only the banking bits so that
+bits 3 and 5 are left as the tape code set them: read $01, AND #$F8, OR in the
+new banking value, write back. (An earlier version of this paragraph called bit 4
+an output that controls the datasette; it is the switch-sense input, as the DDR
+note above says.)
 
 ### Cycle budget
 
@@ -245,9 +262,9 @@ VIC banks 0 and 2 at specific offsets:
 
 | VIC bank | CPU range     | Char ROM visible to VIC at | VIC-relative address |
 |----------|---------------|---------------------------|----------------------|
-| 0        | $0000-$3FFF   | Yes                       | $1000-$1FFF          |
+| 0        | $0000-$3FFF   | Yes                       | $1000-$1FFF (CPU $1000-$1FFF) |
 | 1        | $4000-$7FFF   | No — VIC sees RAM only    | n/a                  |
-| 2        | $8000-$BFFF   | Yes                       | $9000-$9FFF          |
+| 2        | $8000-$BFFF   | Yes                       | $1000-$1FFF (CPU $9000-$9FFF) |
 | 3        | $C000-$FFFF   | No — VIC sees RAM only    | n/a                  |
 
 In VIC bank 0, addresses $1000-$1FFF in VIC's view return char ROM data even
@@ -262,21 +279,28 @@ Common choices:
 
 - Bank 0, char base at $2000 (VIC-relative): no char ROM interference.
   CPU loads the charset into RAM at $2000-$27FF.
-  $D018 CB field = %100 (= 4), giving $D018 value $14 for VM at $0400 + CB at $2000.
+  $D018 CB field = %100 (= 4), giving $D018 = $18 for VM at $0400 + CB at $2000.
+  (An earlier version said $14; $14 is CB = %010 = $1000, the char ROM shadow,
+  i.e. the KERNAL default.)
 
 - Bank 1 (any address): no char ROM shadow in bank 1 at all.
   CPU loads the charset anywhere in $4000-$7FFF.
 
-- Bank 2, char base at $8000 (VIC-relative, i.e. $8000 in CPU view):
-  Clear of the $9000 shadow. CPU loads charset at $8000.
+- Bank 2, char base at VIC-relative $0000 (CPU $8000), $D018 CB field = %000:
+  clear of the char ROM shadow, which in bank 2 sits at VIC-relative $1000-$1FFF
+  (CPU $9000-$9FFF). CPU loads the charset into RAM at $8000-$87FF. (An earlier
+  version of this bullet and of the table above put CPU addresses in the
+  VIC-relative slots for bank 2; VIC-relative addresses only run $0000-$3FFF.
+  Measured in VICE x64sc: bank 2, CB=0 reads CPU $8000; bank 2, CB=2 reads char
+  ROM although CPU $9000 RAM is zero.)
 
 ### Why it works
 
 Inside the C64 motherboard, the character ROM's chip-select line responds not
 only to the CPU-side address decoder but also to a separate signal derived from
 VIC's address bus via the same PLA. When VIC is in bank 0 or bank 2, and VIC
-generates an internal address in the $1000-$1FFF window (bank 0) or $9000-$9FFF
-window (bank 2), the PLA asserts char ROM's chip-select instead of RAM's CAS
+generates an internal address in the $1000-$1FFF window — CPU $1000-$1FFF in
+bank 0, CPU $9000-$9FFF in bank 2 — the PLA asserts char ROM's chip-select instead of RAM's CAS
 line. The CPU never knows this is happening — from the CPU's side those are
 ordinary RAM locations whose content is readable and writable. The char ROM
 shadow is VIC-only hardware behavior, not a side-effect of CPU banking.
@@ -346,7 +370,9 @@ With VM_bits ranging from 0 to 15, the 16 possible positions are:
 
 The default KERNAL value of $D018 is $14 (binary 0001 0100), giving VM = %0001
 = 1, which places screen RAM at offset $0400 within bank 0, i.e. CPU address
-$0400. This is the "READY." screen you see at boot.
+$0400. This is the "READY." screen you see at boot. ($14 is the value the KERNAL
+writes; the register reads back as $15 because bit 0 is unused and reads 1 —
+measured in VICE x64sc.)
 
 Sprite pointers always follow the screen RAM: the 8 bytes at screen_base + $3F8
 (screen_base + 1016) hold the sprite data-block pointers. When screen RAM moves,
@@ -365,8 +391,12 @@ output will write to the old location.
 ### Why it works
 
 The VIC-II uses the VM bits to generate the high bits of its 14-bit address bus
-during the video matrix fetch phase. On each character clock during the visible
-display area the VIC fetches one byte from video_matrix_base + character_position.
+during the video matrix fetch phase. During cycles 15-54 of each badline the VIC
+fetches the 40 bytes for that character row from video_matrix_base + row*40 +
+column into an internal latch, and reuses the latch for the row's remaining
+seven lines; sprite pointers at video_matrix_base + $3F8 are fetched once per
+raster line. (An earlier version said one byte was fetched on each character
+clock of the visible area, which is not how the video matrix is read.)
 Only the upper bits of that address come from VM; the lower 10 bits are the
 running character clock counter. The effect is that moving VM simply shifts the
 entire screen fetch window by multiples of 1 KB within the VIC bank — a pure
@@ -374,7 +404,8 @@ hardware address-offset operation with no software overhead per character.
 
 ### Variations
 
-**Screen at $3C00.** Placing screen RAM at the top of VIC bank 0 ($3C00-$3FEF)
+**Screen at $3C00.** Placing screen RAM at the top of VIC bank 0 ($3C00-$3FE7,
+the 1 KB block running to $3FFF; an earlier version said $3FEF, which is 1008 bytes)
 frees the lower 15 KB for code and graphics. The 8 bytes of sprite pointers at
 $3FF8-$3FFF are conveniently at the very top of the bank. This is a common
 layout for demos that use a full custom layout in bank 0.
@@ -382,13 +413,21 @@ layout for demos that use a full custom layout in bank 0.
 **Double-buffered screen RAM.** Two screen buffers can live at different VM
 offsets (e.g., $0000 and $0400 within the bank). The visible buffer flips by
 changing VM bits; the invisible buffer is updated by the CPU. This avoids all
-screen-tearing artifacts on text-mode displays.
+screen-tearing artifacts on text-mode displays; the flip lands at the next
+badline, so write $D018 during the border or vertical blank for a whole-frame
+swap.
 
 ### Cycle budget
 
-The $D018 write takes effect from the start of the next video matrix fetch cycle.
-In practice the screen RAM base changes silently with no cycle overhead — you
-pay only for the write instruction itself.
+A VM change is not seen until the next badline: the VIC fetches the 40
+video-matrix bytes only during cycles 15-54 of a badline and reuses that latch
+for the remaining seven lines of the character row, so a $D018 write mid-row
+leaves the current row on the old base and moves the display from the next row
+down (measured in VICE x64sc: written on line 54, effective from line 59).
+Sprite pointers are the exception — they are fetched every line and follow the
+new base from the next line. There is no cycle overhead beyond the write. (An
+earlier version said the write took effect at the next video matrix fetch, which
+read as "immediately".)
 
 ### Recipes
 
@@ -445,13 +484,16 @@ two from 0 to 8192 are legal — an 8 KB block must land on an 8 KB boundary.
 
 ### Variations
 
-**FLI (Flexible Line Interpretation).** FLI exploits a VIC quirk where, during
-the idle fetch at the start of each raster line, the programmer rapidly toggles
-$D018 to point to a different video matrix row. By having 200 different "screen
-RAM" blocks, each one row tall, the color attribute resolution of multicolor
-bitmap is increased from one color-block per 8×8 pixel cell to one per 8×1
-strip. This technique depends on the $D018 write timing being cycle-exact,
-not on changing the bitmap base — only the VM nibble is toggled in FLI.
+**FLI (Flexible Line Interpretation).** FLI forces a badline on every raster
+line by writing $D011 (YSCROLL = line & 7) so the badline condition becomes true
+on cycle 15; each forced badline re-fetches the 40 video-matrix bytes
+(c-accesses, cycles 15-54) from whatever page the VM nibble of $D018 selects, so
+with $D018 changed once per line (before the $D011 write) each 8×1 strip gets its
+own colour bytes. The cycle-exact write is the $D011 one; $D018 only has to be
+in place before it. The bitmap base is not changed. See fli_image in
+bitmap-modes.md and recipes/kickassembler/fli-image.md. (An earlier version of
+this paragraph described FLI as a cycle-exact $D018 write during an idle fetch
+and did not mention $D011 or the forced badline.)
 
 **Bitmap at $0000 and sprite multiplexing.** The $0000-$1FFF bitmap position
 overlaps with zero page and the stack ($0000-$01FF). Sprites whose data blocks
@@ -462,7 +504,10 @@ $0000-$1FFF for code, zero-page variables, and stack.
 ### Cycle budget
 
 No per-line cycle cost. The bitmap base is a one-time configuration write.
-FLI timing is covered in the raster techniques doc.
+FLI timing is covered under `fli_image` in `docs/techniques/bitmap-modes.md`
+(Cycle budget (PAL)) and in `docs/recipes/kickassembler/fli-image.md`. (An
+earlier version pointed at the raster techniques doc, which declares FLI out of
+scope.)
 
 ### Recipes
 
@@ -489,36 +534,55 @@ or demo that exceeds the 64 KB address space.
 
 ### How
 
-When an EasyFlash cartridge is inserted, the GAME and EXROM lines on the
-cartridge port signal the C64 PLA that 16 KB cartridge ROM mode is active. In
-this mode:
+An EasyFlash does not power up in 16 KB mode with the KERNAL present, as an
+earlier version of this section said. With boot enabled (the EasyFlash jumper in
+its start position; VICE's default, `-easyflashjumper` disables it and the
+machine boots to BASIC with the cartridge invisible) the cartridge comes up in
+Ultimax mode: bank 0's HIROM is mapped at $E000-$FFFF (ROML at $8000 in Ultimax
+per the memory-map reference; not measured here), the CPU fetches its reset
+vector from $FFFC of that HIROM, and the KERNAL is not mapped. The startup code
+therefore lives in bank 0 HIROM, not LOROM. It typically copies a stub to RAM
+and writes $07 to $DE02 (MODE=1, EXROM=1, GAME=1 — bit set means the line is
+asserted) to enter 16 KB mode, in which:
 
 - $8000-$9FFF is LOROM (cartridge ROM, low bank)
 - $A000-$BFFF is HIROM (cartridge ROM, high bank)
 - $D000-$DFFF is I/O (as normal when CHAREN = 1)
 - $E000-$FFFF is KERNAL ROM
 
+Measured in VICE x64sc 3.10 with a two-bank type-$0020 .CRT: a CBM80 stub in
+bank 0 LOROM is never executed at power-on (the same stub in a generic 16 KB
+.CRT is), the HIROM reset vector is, and the CRT header's EXROM/GAME bytes do
+not change this.
+
 The EasyFlash hardware decodes two I/O addresses in expansion area 1:
 
 | Register  | Address | Function                                          |
 |-----------|---------|---------------------------------------------------|
 | EF_BANK   | $DE00   | Select the active 16 KB flash bank (0-63)         |
-| EF_CONTROL| $DE02   | LED control + GAME/EXROM line override (mode bits) |
+| EF_CONTROL| $DE02   | Control: GAME (bit 0), EXROM (bit 1), MODE (bit 2), LED (bit 7) |
 
 Writing a bank number (0-63) to $DE00 immediately pages in the corresponding
 16 KB chunk of flash. The low 8 KB of that chunk appears at $8000-$9FFF; the
 high 8 KB appears at $A000-$BFFF. This happens on the next CPU cycle — the switch
 is instantaneous.
 
-Bank 0 is the entry bank: it is active when the cartridge powers on and its LOROM
-typically contains the startup and loader stub. The remaining banks hold game
+Bank 0 is the entry bank: it is active when the cartridge powers on and its
+HIROM (not LOROM, as an earlier version said — see above) contains the reset
+vector and the startup and loader stub. The remaining banks hold game
 chapters, level data, music, graphics, or further code segments. The cartridge
 author decides how to partition and use the 64 banks.
 
-$DE02 bit 0 controls the GAME line and bit 1 controls the EXROM line, allowing
-the cartridge firmware to switch between 8 KB, 16 KB, Ultimax, and off modes at
-runtime. For standard EasyFlash operation during gameplay these bits are left at
-their cartridge-active values.
+$DE02 is the control register: bit 0 = GAME, bit 1 = EXROM (1 = line asserted),
+bit 2 = MODE, bit 7 = LED. Bit 1 always drives EXROM, but bit 0 drives GAME only
+while bit 2 is set; with bit 2 clear, GAME follows the cartridge's boot jumper
+instead, so on a cartridge set to boot, writes of $00-$03 only ever give Ultimax
+($00, $01) or 16 KB ($02, $03) and neither 8 KB nor off can be selected. Always
+write with bit 2 set: $07 = 16 KB, $06 = 8 KB, $05 = Ultimax, $04 = cartridge
+off. Bit names from Oscar64's easyflash.h; mode table measured in VICE x64sc
+(3.10) against its EasyFlash emulation, not against hardware. (An earlier
+version described $DE02 as a two-bit GAME/EXROM register and omitted MODE.) For
+standard EasyFlash operation during gameplay the register is left at $07.
 
 ### Why it works
 
@@ -539,7 +603,7 @@ source flash page changes.
 in cartridge ROM ranges but writes still reach RAM, any write to $8000-$BFFF
 (while cartridge ROM is mapped there) actually writes to the underlying RAM.
 This allows a program to maintain RAM buffers at $8000-$BFFF and bank the
-cartridge ROM out ($DE02 GAME/EXROM override) when the program needs to write
+cartridge ROM out ($DE02 = $04) when the program needs to write
 them back, then bank cartridge ROM in for read-only access. Advanced EasyFlash
 programs use this technique for per-level score tables, save states, and
 configuration data.
@@ -550,11 +614,18 @@ or SD card access, but the basic $DE00 bank-switch mechanism is the same.
 
 ### Cycle budget
 
-No cycle constraints for bank switching itself. The $DE00 write is processed by
-the cartridge hardware on the same cycle it is decoded. Programs that mix bank
-switches and banked-ROM execution should align bank switches to instruction
-boundaries to avoid the extremely rare case of a multi-cycle instruction
-spanning a bank boundary during the switch.
+No cycle constraints for bank switching itself. The bank latch takes the value
+on the write cycle of the STA $DE00 — the instruction's last cycle — so the STA
+itself always completes correctly (its opcode and operand were fetched before the
+write) and a switch can never fall inside an instruction. The hazard is the cycle
+after it: the very next opcode fetch already comes from the new bank. Execute the
+switching code from RAM, or from a region whose bytes are identical in every
+bank, never from the $8000-$BFFF window being switched unless the code that
+follows the STA is present at the same address in the target bank. The same
+applies to $DE02 mode changes, which can swap $E000-$FFFF from HIROM to KERNAL
+under the executing PC — which is why the EasyFlash start-up stub copies itself
+to RAM before writing $DE02. (An earlier version advised aligning switches to
+instruction boundaries against a mid-instruction switch, which cannot happen.)
 
 ### Recipes
 
@@ -632,10 +703,13 @@ $34 requires temporarily toggling CHAREN: write $35 to $01 for a VIC/SID/CIA
 access, then write $34 back. Most demo engines instead use mode $35 (I/O always
 visible) and accept that $D000-$DFFF is occupied by I/O rather than RAM.
 
-**Stack at $E1xx.** With KERNAL banked out and the stack page at $0100-$01FF
-potentially scarce due to nested interrupts, some complex interrupt-driven engines
-relocate a secondary stack into the $E000 range using the S register and TXS/TSX.
-This is unusual and rarely necessary.
+**The stack cannot move under the KERNAL.** The stack cannot leave page 1: S is
+8 bits and the 6510 fixes stack accesses to $0100-$01FF, so RAM under the KERNAL
+cannot host a hardware stack. Engines short of stack keep page 1 free of other
+data and use a software stack (indexed store through a pointer) for bulk state.
+Measured: TXS with X=$50 followed by PHA writes $0150 (VICE x64sc). (An earlier
+version of this variation claimed a secondary stack could be relocated to $E1xx
+via TXS/TSX; it cannot.)
 
 ### Cycle budget
 

@@ -78,11 +78,11 @@ Compared to a load-from-variable approach:
 | LDA #baked (after self-mod patch) | 2 cycles |
 | Savings per access | 2 cycles |
 
-For a 256-iteration inner loop, the savings are 512 cycles per outer-loop iteration — approximately 26 full raster lines worth of CPU time on PAL.
+For a 256-iteration inner loop, the savings are 512 cycles per outer-loop iteration — approximately 8 full raster lines worth of CPU time on PAL (512 / 63 = 8.1; an earlier version of this page said 26 lines, which does not follow from 63 cycles per line).
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` (uses self-modification to cycle raster bar colors per frame)
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe writes zero-page pointers for `(zp),y` indirection and rotates its bar colours through a `palette` table, and contains no self-modifying code.)
 
 ---
 
@@ -179,24 +179,24 @@ The most useful illegal opcodes by use case:
 
 **LAX (Load A and X)** — `A = X = M`. Zero-page form ($A7): 3 cycles / 2 bytes vs. `LDA zp : LDX zp` at 6 cycles / 4 bytes. Classic sprite-multiplexer use: load a Y-coordinate and simultaneously have it as a table index. Note: `LAX #imm` ($AB) is **unstable** — floating internal bus produces wrong results on some 6510 runs. Use only memory-addressed forms.
 
-**SAX (Store A AND X)** — `M = A & X`. No flags affected. When X holds a nibble mask, `SAX zp` writes the masked accumulator in 3 cycles/2 bytes vs. `AND #mask : STA zp` at 7 cycles/4 bytes.
+**SAX (Store A AND X)** — `M = A & X`. No flags affected. When X holds a nibble mask, `SAX zp` writes the masked accumulator in 3 cycles/2 bytes vs. `AND #mask : STA zp` at 5 cycles/4 bytes (and A keeps its unmasked value, so SAX is not a drop-in replacement where the masked A is needed afterwards). Measured in VICE x64sc: AND #imm 2 + STA zp 3 = 5; an earlier version of this page said 7.
 
-**AXS (AND A with X, subtract into X)** — `X = (A & X) - imm`. Sets flags like CMP. Decimal mode ignored — always binary. Fused mask-and-decrement: `AXS #1 : BNE loop` = 4 cycles vs. `TXA : AND #mask : TAX : DEX : BNE loop` = 9 cycles.
+**AXS (AND A with X, subtract into X)** — `X = (A & X) - imm`. Sets flags like CMP. Decimal mode ignored — always binary. Fused mask-and-decrement: `AXS #1 : BNE loop` = 5 cycles vs. `TXA : AND #mask : TAX : DEX : BNE loop` = 11 cycles (measured in VICE x64sc: AXS #imm 2 + BNE taken 3; TXA/AND/TAX/DEX 8 + BNE taken 3; an earlier version of this page said 4 and 9).
 
-**ALR (AND then LSR)** — `A = (A & imm) >> 1`. Two cycles / 2 bytes. Equivalent to `AND #imm : LSR A` (4 cycles / 4 bytes).
+**ALR (AND then LSR)** — `A = (A & imm) >> 1`. Two cycles / 2 bytes. Equivalent to `AND #imm : LSR A` (4 cycles / 3 bytes — AND #imm is 2 bytes and LSR A is 1; an earlier version of this page said 4 bytes).
 
 **ARR (AND then ROR with quirky flags)** — `A = ROR(A & imm)`. In binary mode, C = bit 6 of result (not bit 0 as normal ROR). V = bit 6 XOR bit 5. The non-standard flag semantics come from an internal half-adder; useful in CRC routines.
 
-**DCP (Decrement then Compare)** — `M-- ; compare A to new M`. Zero-page form ($C7): 5 cycles. Legal `DEC zp : CMP zp`: 7 cycles.
+**DCP (Decrement then Compare)** — `M-- ; compare A to new M`. Zero-page form ($C7): 5 cycles. Legal `DEC zp : CMP zp`: 8 cycles (DEC zp 5 + CMP zp 3, measured in VICE x64sc; an earlier version of this page said 7).
 
-**RMW family — SLO, RLA, SRE, RRA:** Each combines a memory read-modify-write (ASL/ROL/LSR/ROR) with an accumulator combine (ORA/AND/EOR/ADC). Every one saves 2 bytes and 2-3 cycles vs. the equivalent legal pair. These are the workhorses of cycle-tight sprite multiplexer and raster code.
+**RMW family — SLO, RLA, SRE, RRA:** Each combines a memory read-modify-write (ASL/ROL/LSR/ROR) with an accumulator combine (ORA/AND/EOR/ADC). Every one saves 2 bytes and 3 cycles in zero page (4 in abs and zp,X, 4-5 in abs,X) vs. the equivalent legal pair — the legal pair is 5 + 3 = 8 in zero page against the illegal's 5 (an earlier version of this page said 2-3 cycles and tabulated 2). These are the workhorses of cycle-tight sprite multiplexer and raster code.
 
 | Mnemonic | Equivalent legal pair | Cycles saved (zp) |
 |---|---|---|
-| SLO | ASL zp : ORA zp | 2 |
-| RLA | ROL zp : AND zp | 2 |
-| SRE | LSR zp : EOR zp | 2 |
-| RRA | ROR zp : ADC zp | 2 |
+| SLO | ASL zp : ORA zp | 3 |
+| RLA | ROL zp : AND zp | 3 |
+| SRE | LSR zp : EOR zp | 3 |
+| RRA | ROR zp : ADC zp | 3 |
 
 ### Why it works
 
@@ -208,12 +208,11 @@ The 6502 decode matrix assigns addressing modes to columns and operations to row
 
 ### Cycle budget
 
-Per call site: LAX zp saves 3 cycles vs LDA+LDX; SAX zp saves 5 vs AND+STA; ALR saves 2 vs AND+LSR; DCP zp saves 2 vs DEC+CMP; SLO zp saves 2 vs ASL+ORA. In a 20-entry sprite multiplexer, these accumulate to 30-60 cycles per raster line — enough to free an extra badline slot.
+Per call site: LAX zp saves 3 cycles vs LDA+LDX; SAX zp saves 2 vs AND+STA; ALR saves 2 vs AND+LSR; DCP zp saves 3 vs DEC+CMP; SLO zp saves 3 vs ASL+ORA (measured in VICE x64sc; an earlier version of this page had SAX saving 5 and DCP/SLO saving 2). In a 20-entry sprite multiplexer, these accumulate to 30-60 cycles per raster line — enough to free an extra badline slot.
 
 ### Recipes
 
-- `recipes/kickassembler/sprite-multiplex-24.md` (uses DCP, SLO, LAX for tight badline multiplexer)
-- `recipes/kickassembler/cracktro-template.md` (uses SAX for color-RAM nibble stores)
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/sprite-multiplex-24.md` and `recipes/kickassembler/cracktro-template.md`; neither uses an illegal opcode.)
 
 ---
 
@@ -225,7 +224,7 @@ Per call site: LAX zp saves 3 cycles vs LDA+LDX; SAX zp saves 5 vs AND+STA; ALR 
 
 ### Why
 
-A CMP/BEQ chain costs 5 cycles per case — O(N) in the worst case. A jump table reduces any N-way dispatch to a fixed ~26 cycles regardless of N, using two table lookups and a self-modified JMP.
+A CMP #imm/BEQ pair costs 4 cycles when it falls through and 5 when it matches (6 if the taken branch crosses a page), so an N-way chain costs 4N+1 cycles in the worst case — O(N). (An earlier version of this page charged 5 cycles per case; the untaken BEQ is 2, not 3.) A jump table reduces any N-way dispatch to a fixed ~26 cycles regardless of N, using two table lookups and a self-modified JMP.
 
 ### How
 
@@ -255,7 +254,7 @@ Total: 3+2+2+4+4+4+4+3 = 26 cycles for any dispatch, regardless of the number of
 
 The self-modification pattern used here (`STA jmp_target+1 / +2`) is the same technique described in `self_modifying_code`. The JMP absolute opcode ($4C) occupies 3 bytes: opcode at `jmp_target`, low byte at `jmp_target+1`, high byte at `jmp_target+2`.
 
-An alternative is `JMP ($abs)` (opcode $6C, 5 cycles): the table holds word pointers and X indexes to the correct entry. This avoids self-modification but costs 2 extra cycles vs the direct form. Caveat: the 6502 JMP indirect page-wrap bug — if the low byte of the pointer is at $xxFF, the high byte is fetched from $xx00 instead of $(xx+1)00. Keep jump tables away from page boundaries.
+An alternative is `JMP (ind)` ($6C, 5 cycles) through a zero-page pointer: copy the table entry into the pointer (`STA ptr` / `STA ptr+1`, 3 cycles each) and jump through it. The 6510 has no `JMP (abs,X)`, so the copy is unavoidable; the total is 3+2+2+4+3+4+3+5 = 26 cycles — the same as the STA-patch form (measured 27 vs 27 in VICE x64sc with an absolute state byte, 26 vs 26 with a zero-page one). Its only advantage is that the code stays read-only (usable from ROM or shared code). An earlier version of this page described X indexing the table directly through `JMP ($abs)` at 21 cycles; that addressing mode does not exist on the 6510. Caveat: the 6502 JMP indirect page-wrap bug — if the pointer's low byte sits at $xxFF, the high byte is fetched from $xx00 instead of $(xx+1)00. With this form the constraint is on the *pointer*, not the table; a zero-page pointer at $FF/$00 would trigger it, so avoid $FF. Separately, keep the table itself from straddling a page: each `LDA table,X` that crosses adds a cycle (measured 28 rather than 26 with the table at $09FE).
 
 ### Why it works
 
@@ -263,24 +262,24 @@ An alternative is `JMP ($abs)` (opcode $6C, 5 cycles): the table holds word poin
 
 ### Variations
 
-**RTS table dispatch.** Store `(address - 1)` in the table. Push high then low byte, execute `RTS`. The 6510's RTS adds 1 to the popped address. Avoids self-modification but costs 12-15 cycles vs 26 for the STA-patch form — slower for large N.
+**RTS table dispatch.** Store `(address - 1)` in the table. Push high then low byte, execute `RTS`. The 6510's RTS adds 1 to the popped address. Avoids self-modification but is not faster: `LDA tbl+1,X / PHA / LDA tbl,X / PHA / RTS` is 4+3+4+3+6 = 20 cycles (measured in VICE x64sc; 4 for each `LDA abs,X` assumes the table does not cross a page boundary, +1 each if it does), and with the same LDA/ASL/TAX prologue (7) the dispatch is 27 cycles — one more than the 26 of the STA-patch form. An earlier version of this page said 12-15 cycles and "slower for large N"; the cost is constant in N.
 
-**Persistent X.** If the state index is already in X, the prologue shrinks to `TXA : ASL : TAX` (6 cycles), saving 1-4 cycles.
+**Persistent X.** If the state index is already in X, the prologue shrinks to `TXA : ASL : TAX` (6 cycles), saving 1-2 cycles (the listed prologue is 7 with a zero-page state byte, 8 with an absolute one; an earlier version said 1-4); store the index pre-doubled and the prologue disappears entirely (dispatch = 19 cycles).
 
 ### Cycle budget
 
 | Approach | Cycles (N=4) | Cycles (N=8) | Cycles (N=16) |
 |---|---|---|---|
-| CMP/BEQ chain (worst case) | 20 | 40 | 80 |
-| CMP/BEQ chain (average case) | 13 | 25 | 50 |
+| CMP/BEQ chain (worst case) | 17 | 33 | 65 |
+| CMP/BEQ chain (average case, uniform) | 11 | 19 | 35 |
 | Jump table (self-mod) | 26 | 26 | 26 |
-| Jump table (indirect JMP) | 21 | 21 | 21 |
+| Jump table (indirect JMP via pointer) | 26 | 26 | 26 |
 
-Jump table becomes faster than CMP/BEQ chains at N=6 (self-mod) or N=5 (indirect JMP) for average-case dispatch, and at N=4 (self-mod) or N=3 (indirect JMP) for worst-case dispatch. For state machines with 8+ states, the jump table is always preferred.
+Worst case is 4(N−1)+5 = 4N+1; the uniform average of 4k+5 over k = 0..N−1 is 2N+3. Either jump table (26 cycles) beats the chain from N=7 in the worst case (a 6-way chain is 25) and from N=12 on average. For state machines with 8+ states the jump table is preferred for its bounded worst case. An earlier version of this table charged the chain 5 cycles per case (20/40/80 worst case), gave the indirect-JMP table 21 cycles through a non-existent `JMP (abs,X)`, and put the break-even at N=3-6.
 
 ### Recipes
 
-- `recipes/oscar64/simple-shmup.md` (game-state dispatcher uses jump table for scene transitions)
+- No recipe yet. (An earlier version of this page pointed at `recipes/oscar64/simple-shmup.md`; that recipe has no switch or jump-table dispatcher.)
 
 ---
 
@@ -292,13 +291,13 @@ Jump table becomes faster than CMP/BEQ chains at N=6 (self-mod) or N=5 (indirect
 
 ### Why
 
-The 6510 has two addressing modes that reference the first 256 bytes of the address space (the "zero page"): zero-page and zero-page indexed. These modes encode the address in one byte instead of two, making zero-page instructions 1 byte shorter than their absolute equivalents. More importantly, they execute 1 cycle faster: `LDA zp` costs 3 cycles versus `LDA abs` at 4 cycles; `STA zp` costs 3 versus 4; `LDA zp,X` costs 4 versus 5.
+The 6510 has two addressing modes that reference the first 256 bytes of the address space (the "zero page"): zero-page and zero-page indexed. These modes encode the address in one byte instead of two, making zero-page instructions 1 byte shorter than their absolute equivalents. More importantly, they execute 1 cycle faster: `LDA zp` costs 3 cycles versus `LDA abs` at 4 cycles; `STA zp` costs 3 versus 4; `LDA zp,X` costs 4 versus 4 for `LDA abs,X` (5 only when the indexed address crosses a page) — for indexed loads the zero-page form saves a byte, and a cycle only on page-crossing accesses; indexed stores are the exception, `STA zp,X` at 4 versus `STA abs,X` at a fixed 5. (Measured in VICE x64sc; an earlier version of this page gave `LDA abs,X` a flat 5.)
 
-For a tight inner loop that accesses the same variable many times, moving that variable to zero page saves 1 cycle per access. In a loop that runs 256 iterations and reads two variables, that is 512 cycles — about 26 PAL raster lines.
+For a tight inner loop that accesses the same variable many times, moving that variable to zero page saves 1 cycle per access. In a loop that runs 256 iterations and reads two variables, that is 512 cycles — about 8 PAL raster lines (512 / 63 = 8.1; an earlier version of this page said 26).
 
 ### How
 
-Identify the hot variables in your inner loops and map them to zero-page addresses. The C64's zero-page layout has pre-allocated areas: $00 (CPU DDR) and $01 (I/O port / banking) are off-limits. $02-$0F is free in most demo contexts. $10-$8F is nominally BASIC workspace — safe when BASIC ROM is disabled. $90-$BF is KERNAL working storage — unsafe without a full KERNAL replacement. $FA-$FB is the conventional demo 16-bit pointer; $FC is often used as a frame counter; $FD-$FF as scratch. See `docs/hardware/c64-memory-map.md` for the full layout.
+Identify the hot variables in your inner loops and map them to zero-page addresses. The C64's zero-page layout has pre-allocated areas: $00 (CPU DDR) and $01 (I/O port / banking) are off-limits. $02 and $FB-$FE are the only bytes neither ROM touches after reset. $03-$8F is BASIC workspace (free once you never return to BASIC). $90-$FA is KERNAL working storage — the jiffy clock ($A0-$A2), keyboard buffer count ($C6), cursor/blink state ($CC-$CF), screen-line pointer ($D1-$D2), cursor column ($D3) and line-link table ($D9-$F2) are all above $BF and are written by the default IRQ every frame, so this range is unsafe while the KERNAL IRQ or CHROUT is in use, not merely without a full KERNAL replacement. $F7-$FA are the RS-232 buffer pointers, touched only by OPEN/CLOSE of device 2, which is why the demo convention of a 16-bit pointer at $FA-$FB survives in practice. $FF is BASIC's FOUT (number-to-string) scratch. (An earlier version of this page ended the KERNAL range at $BF and listed $FA-$FF as conventional free scratch.) See `docs/hardware/c64-memory-map.md` for the full layout.
 
 Demos that take over the machine fully (disable BASIC and KERNAL ROMs, install custom IRQ/NMI/RESET handlers) can use $02-$FF minus $00/$01.
 
@@ -307,7 +306,7 @@ In KickAssembler, declare zero-page variables explicitly:
 ```asm
 .const zp_counter = $02
 .const zp_color   = $03
-.const zp_ptr_lo  = $FA
+.const zp_ptr_lo  = $FA     // safe only because RS-232 (device 2) is never opened; $FB/$FC is the ROM-free choice
 .const zp_ptr_hi  = $FB
 
     lda (zp_ptr_lo),y   // 5 cycles — indirect indexed from zero page
@@ -339,7 +338,7 @@ For very tight raster effects (stable raster IRQ handlers, sprite multiplexers) 
 
 ### Recipes
 
-- `recipes/kickassembler/sprite-multiplex-24.md` (sprite coordinate tables in zero page for 3-cycle LDA)
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/sprite-multiplex-24.md`; its sprite tables sit at `* = $1000`, not in zero page.)
 
 ---
 
@@ -360,17 +359,23 @@ The rule: any IRQ handler that uses ADC or SBC must clear D on entry with `CLD` 
 ```asm
 my_irq_handler:
     pha                 ; save A
-    txa : pha           ; save X
-    tya : pha           ; save Y
+    txa                 ; save X
+    pha
+    tya                 ; save Y
+    pha
     cld                 ; clear decimal mode — MANDATORY
     ; ... handler body using ADC/SBC safely ...
-    pla : tay
-    pla : tax
+    pla                 ; restore Y
+    tay
+    pla                 ; restore X
+    tax
     pla
     rti
 ```
 
-The KERNAL IRQ handler at $EA31 already executes `CLD` early in its sequence — this is one reason KERNAL-routed IRQs are safe for code that uses BCD. Custom handlers must do this manually.
+(Generic 6502 syntax, one instruction per line; an earlier version wrote `txa : pha`, which is ACME/64tass statement syntax that KickAssembler and ca65 reject.)
+
+The KERNAL IRQ path never executes CLD: neither the dispatcher at $FF48 nor the default service routine at $EA31 (nor the NMI path) contains a CLD — the KERNAL clears D only once, in its reset routine at $FCE6 (the sole CLD opcode on the reset/interrupt paths). Verified on the ROM bytes and in VICE x64sc: P captured at the service routine's exit ($EA7E) still has D=1 when the interrupted code had executed SED. The default KERNAL IRQ nevertheless does no harm to BCD code, by accident rather than design: RTI restores the interrupted P including D, and the only ADC/SBC on the whole default path are UDTIM's three compare-style SBCs ($F6AA/$F6AE/$F6B2), which use only the carry — and on the NMOS 6510 SBC's carry-out is identical in decimal and binary mode (all 65,536 operand pairs checked in VICE). Do not rely on that: any handler you chain through ($0314) or ($0318) inherits the caller's D, so a custom handler that uses ADC/SBC must CLD on entry. (An earlier version of this page said $EA31 executed CLD early in its sequence; the ROM bytes show no $D8 anywhere on that path.)
 
 For code that deliberately uses BCD, bracket the BCD section as tightly as possible with `SED`/`CLD` to minimize the window where an IRQ can fire with D=1 active.
 
@@ -428,19 +433,9 @@ Execution from `entry_b`:
 1. `LDA #$02` — A = 2.
 2. Execution continues at `sta result` with A = 2.
 
-Total cost for the "skip" path: 2 (LDA #$01) + 4 (BIT abs) = 6 cycles, versus 2 (LDA #$01) + 3 (JMP do_work) = 5 cycles for a branch. The BIT trick saves 1 byte (no JMP instruction needed) at the cost of 1 extra cycle for the BIT. The real win is code density and eliminates a forward-reference label.
+Total cost for the "skip" path: 2 (LDA #$01) + 4 (BIT abs) = 6 cycles, versus 2 (LDA #$01) + 3 (JMP do_work) = 5 cycles for a branch. The BIT trick saves 2 bytes (no 3-byte JMP instruction needed; an earlier version of this page said 1 byte, counting JMP as one) at the cost of 1 extra cycle for the BIT. The real win is code density and eliminates a forward-reference label. (Against an always-taken 2-byte relative branch — `BNE` after `LDA #$01`, since a non-zero immediate clears Z — the saving is 1 byte at the same 5 cycles.)
 
-KickAssembler can encode this cleanly:
-
-```asm
-entry_a:
-    lda #$01
-    !byte $2C           ; raw byte — BIT abs opcode
-entry_b:
-    lda #$02
-do_work:
-    sta result
-```
+The fence above is already the KickAssembler encoding (`.byte $2C` with `//` comments); an earlier version of this page repeated it with `!byte $2C` and a `;` comment under the same heading, which is ACME syntax and does not assemble in KickAssembler.
 
 ### Why it works
 
@@ -465,9 +460,9 @@ Dual-entry with BIT trick vs explicit branch:
 | Approach | Bytes | Cycles (path A) | Cycles (path B) |
 |---|---|---|---|
 | BIT skip trick | 5 total | 6 (LDA + BIT) | 2 (LDA only) |
-| Explicit JMP label | 6 total (adds JMP) | 5 (LDA + JMP) | 2 (LDA only) |
+| Explicit JMP label | 7 total (adds JMP) | 5 (LDA + JMP) | 2 (LDA only) |
 
-The BIT trick saves 1 byte at the cost of 1 extra cycle on the "path A" execution. In code-size-constrained scenarios (fitting into a 255-byte page, keeping a sequence within branch reach) the byte saving is worth the extra cycle.
+The BIT trick saves 2 bytes at the cost of 1 extra cycle on the "path A" execution (2 + 1 + 2 = 5 bytes against 2 + 3 + 2 = 7; an earlier version of this table counted the JMP form as 6 bytes and the saving as 1). In code-size-constrained scenarios (fitting into a 255-byte page, keeping a sequence within branch reach) the byte saving is worth the extra cycle.
 
 ---
 
@@ -492,29 +487,32 @@ Badlines occur at raster lines where `(raster_y & 7) == (YSCROLL & 7)`. With def
 A phase-inverted IRQ fires on the non-badline immediately preceding the target badline. The IRQ handler executes in the full 63-cycle non-badline, busy-waits through the badline steal window, then performs cycle-exact writes in the post-steal free cycles:
 
 ```asm
+// phase-inverted IRQ handler, installed at $0314/$0315
 irq_pre_badline:
     lda #$19
-    sta $D019               ; acknowledge
-.wait:
+    sta $D019               // acknowledge
+!:
     lda $D012
-    cmp #TARGET_LINE + 1    ; spin until the badline itself is done
-    bne .wait
+    cmp #TARGET_LINE + 1    // spin until the badline itself is done
+    bne !-
     lda new_color
-    sta $D020               ; write lands in post-steal free cycles
+    sta $D020               // write lands in post-steal free cycles
     lda #NEXT_LINE
     sta $D012
-    jmp ($0314)
+    jmp $EA81               // PLA/TAY/PLA/TAX/PLA/RTI: entered through $0314, so the dispatcher pushed A, X, Y
 ```
+
+The handler is installed at $0314/$0315 with the KERNAL in, which is why it exits through $EA81 (see `stable_raster_irq` in `docs/techniques/raster.md`, interrupt vector placement). An earlier version of this fence used an ACME local label (`.wait:`), `;` comments, and exited with `jmp ($0314)` — which from a handler installed at $0314 is an infinite loop; it did not assemble in KickAssembler.
 
 ### Why it works
 
-VIC's AEC signal halts the CPU for 40 cycles during each badline. The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. IRQ jitter (see `stable_raster_irq` in `docs/techniques/raster.md`) is absorbed by the polling loop; the 15-cycle pre-steal window is wide enough to contain worst-case jitter.
+VIC's AEC signal halts the CPU for 40 cycles during each badline. The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. IRQ jitter (see `stable_raster_irq` in `docs/techniques/raster.md`) is absorbed by the polling loop; the 11-cycle pre-steal window (cycles 1-11; stores may also land on 12-14) is wide enough to contain worst-case jitter (an earlier version said 15 cycles).
 
 ### Variations
 
-**Sprite fetch avoidance.** Active sprites steal additional cycles per line (4 cycles per sprite in two 2-cycle windows). Disable sprites on critical lines or account for their steal in the cycle budget.
+**Sprite fetch avoidance.** Active sprites steal additional cycles per line: 2 bus cycles of s-accesses per enabled sprite, plus a 3-cycle BA lead-in (write-only for the CPU) paid once per contiguous group of active sprite slots — up to 3 + 8 × 2 = 19 cycles per line with all eight on (measured in VICE x64sc: 105 / 399 / 210 cycles over the 21 DMA lines for one sprite / eight sprites / sprites 0+7, the last forming two BA groups; badline + eight sprites measured 40 + 19 = 59 stolen, 4 left). An earlier version of this page counted 4 cycles per sprite in two 2-cycle windows, which double-counts the single 2-cycle s-access window per sprite. Disable sprites on critical lines or account for their steal in the cycle budget.
 
-**Blanking the display.** $D011 bit 4 = 0 stops all VIC fetches, eliminating badlines entirely. Useful during loaders or computation phases that need the full 63 cycles/line.
+**Blanking the display.** DEN ($D011 bit 4) is sampled once per frame, on raster line $30 (48): hold it clear across line $30 and that frame has no badlines at all, so every line gives the CPU 63 cycles (measured in VICE x64sc: a 14-cycle poll loop over lines 100-199 ran 450 iterations with DEN clear across $30 against 412 with DEN set). Clearing DEN later in the frame does not remove the remaining badlines of that frame — the same loop with DEN cleared at line 100 still ran 412 — so this is a per-frame choice for loaders and compute phases, not a per-line one; an earlier version of this page implied it worked mid-frame. Keep DEN clear across line 51 too if you want the border colour over the whole screen; clear on $30 but set again before 51 gives a badline-free frame whose window still opens on idle-state graphics (see `docs/hardware/vic-ii-reference.md`, $D011).
 
 ### Cycle budget
 
@@ -523,15 +521,17 @@ PAL per-raster-line budget:
 | Line type | Total cycles | VIC-stolen | CPU-available |
 |---|---|---|---|
 | Non-badline (no sprites) | 63 | 0 | 63 |
-| Badline (no sprites) | 63 | 40 | 23 |
-| Non-badline (8 sprites active) | 63 | 32 (approx) | ~31 |
-| Badline (8 sprites active) | 63 | 40+32 (overlapping) | ~11-15 |
+| Badline (no sprites) | 63 | 40 (bus 15–54; BA low from 12, so 12–14 are write-only) | 20 (+3 write-only) |
+| Non-badline (8 sprites active) | 63 | up to 19 (3 BA lead-in + 8 × 2) | ~44 |
+| Badline (8 sprites active) | 63 | 40 + 19 | 4 (measured in VICE x64sc) |
 
-A full-screen effect that runs IRQs on every visible line (200 lines) at a badline rate of 1 in 8 has: 175 non-badlines * 63 + 25 badlines * 23 = 11025 + 575 = 11600 CPU cycles available per frame for the effect work, before overhead. This is approximately 59% of the total frame cycles.
+Sprite rows are the all-eight figure on lines where the sprites are displayed; an earlier version of this table had 32 stolen per line for eight sprites (~31 / ~11-15 left), from the 4-cycles-per-sprite count corrected above.
+
+A full-screen effect that runs IRQs on every visible line (200 lines) at a badline rate of 1 in 8 has: 175 non-badlines * 63 + 25 badlines * 20 = 11025 + 500 = 11525 CPU cycles available per frame for the effect work, before overhead. This is approximately 59% of the total frame cycles (11525 / 19656). An earlier version of this table and sum used 23 per badline, which counted the three BA-low cycles 12–14 as free; they are usable only by write cycles, as the prose above says.
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` (phase-inverted IRQ scheduling for stable raster bars around the logo sprite)
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe has a text logo, not a sprite, and its bars avoid badlines by choosing `BAR_START = 88` from an IRQ ring — not phase-inverted scheduling.)
 
 ---
 
@@ -554,17 +554,17 @@ The VIC-II bus-steal schedule for a fully-enabled PAL display (based on Christia
 
 **Badline steal:** Cycles 15-54 (40 cycles), active every 8th displayed line where `(raster_y & 7) == (YSCROLL & 7)`.
 
-**Sprite DMA steal:** Each enabled sprite steals approximately 4 cycles per line in two 2-cycle windows near the end of the line. The exact per-sprite slots are in `docs/hardware/vic-ii-reference.md`.
+**Sprite DMA steal:** Each enabled sprite steals 2 bus cycles per line (its s-accesses; the p-access is a phi1 access and costs the CPU nothing), plus a 3-cycle BA lead-in — write-only for the CPU — paid once per contiguous group of active sprite slots, so all eight together cost up to 3 + 8 × 2 = 19 cycles per line (measured in VICE x64sc: 105 / 399 / 210 cycles over the 21 DMA lines for one sprite / eight sprites / sprites 0+7 as two BA groups). An earlier version of this page said approximately 4 cycles per sprite in two 2-cycle windows, which double-counts the single 2-cycle window. The exact per-sprite slots are in `docs/hardware/vic-ii-reference.md`.
 
 **Avoidance strategies:**
 
 1. **Disable sprites on critical lines.** Write 0 to the relevant bits of $D015 on lines that need contiguous CPU cycle blocks. Re-enable on the following line.
 
-2. **Blank the display on heavy-compute lines.** $D011 bit 4 = 0 stops all VIC character/bitmap fetch, eliminating badlines. Full 63 cycles/line available to CPU.
+2. **Blank the display on heavy-compute frames.** DEN ($D011 bit 4) held clear across raster line $30 removes every badline of that frame: full 63 cycles/line for the CPU. DEN is sampled only on line $30, so clearing it on a particular line does not free the badlines that follow in the same frame; use it for whole-frame compute or load phases, and use strategies 1, 3 and 4 for per-line scheduling. (An earlier version of this item was titled "on heavy-compute lines" and implied a mid-frame clear worked.)
 
-3. **Sequence writes to non-stolen cycles.** Target IRQ handlers on non-badlines, schedule critical writes to cycles 0-14 or 55-62 (outside the steal window). Requires stable-raster IRQ (see `docs/techniques/raster.md`).
+3. **Sequence writes to non-stolen cycles.** Target IRQ handlers on non-badlines, schedule critical writes to cycles 1-11 or 55-63 (outside the steal window; 12-14 admit writes only), cycles numbered 1-63 as in `docs/hardware/vic-ii-reference.md` (an earlier version wrote 0-14 / 55-62). Requires stable-raster IRQ (see `docs/techniques/raster.md`).
 
-4. **Use the steal window for background work.** An STA issued just before a steal window has its write deferred until AEC goes high — the steal was happening anyway, so the write costs 0 extra programmer cycles. Known as "lazy writes."
+4. **Put a write in the BA tail, not a read.** When BA drops (cycle 12 on a badline; three cycles before the first sprite's DMA) the CPU keeps running until its next read cycle and stops there; write cycles are never halted. So a store whose fetches are done by cycle 11 and whose write cycle lands on cycle 12 completes before the halt, and the halt then costs 41-42 cycles instead of 43 — one write cycle for STA/STX/STY, two for a read-modify-write (INC/DEC/ASL/LSR/ROL/ROR abs), three only for the interrupt push sequence. That is where the "23 versus 20 cycles" figure above comes from. Nothing is deferred and no write is free: an instruction whose read cycle meets BA low simply stretches by the whole steal (measured in VICE x64sc: an STA stream spanning a PAL badline loses 42 or 43 cycles, a NOP stream 43, an INC stream 41-43). An earlier version of this item said a store issued before a steal was "deferred until AEC goes high" at no cost and called it "lazy writes"; neither the mechanism nor the term has a source in this repo or in Bauer's article.
 
 ### Why it works
 
@@ -574,7 +574,7 @@ The authoritative per-cycle schedule is in Christian Bauer's "The MOS 6567/6569 
 
 ### Variations
 
-**Open borders + steal avoidance.** Side border opening requires writes to $D016 and $D011 within a 23-cycle window near the right of the line. If sprites are active on the same line, their steal windows can overlap. Avoidance: disable all sprites on border-open lines.
+**Open borders + steal avoidance.** Side border opening needs one `$D016` write per covered line whose store cycle is cycle 56 (PAL) — CSEL taken from 1 to 0 between the X=335 and X=344 border comparisons — and CSEL set back to 1 before cycle 55 of the next line; `$D011` (RSEL) governs the top/bottom border and is not involved. It is a one-cycle target, not a window, so the CPU must be cycle-exact on every line covered; sprite DMA on those lines shifts the CPU's position, which is why the recipe (`recipes/kickassembler/sideborder-open.md`) keeps the sprite set identical on every line of the region, or you disable sprites there. (An earlier version of this page said `$D016` and `$D011` writes within a 23-cycle window.)
 
 **Sprite crunch.** Enable sprites only on the lines where they are displayed. A 24-sprite multiplexer that activates each sprite for exactly the lines it occupies has far lower steal overhead than one that leaves all 8 hardware sprites enabled across all 200 visible lines.
 
@@ -585,14 +585,16 @@ Total DMA steal per frame on a fully-featured PAL display (all borders open, 8 s
 | Source | Steal cycles |
 |---|---|
 | Badlines (25 lines * 40 cycles) | 1000 |
-| Sprite DMA (8 sprites * 2 * 2 cycles * 200 lines) | 6400 |
-| Total steal | ~7400 |
-| Available CPU cycles per frame (63 * 312 = 19656 - 7400) | ~12256 |
-| Available as % of frame | ~62% |
+| Sprite DMA (3 BA lead-in + 8 sprites * 2 cycles = 19 * 200 lines, upper bound) | 3800 |
+| Total steal | ~4800 |
+| Available CPU cycles per frame (63 * 312 = 19656 - 4800) | ~14856 |
+| Available as % of frame | ~76% |
 
-A demo that disables sprites on 100 of the 200 visible lines recovers 3200 steal cycles — a 26% improvement in usable CPU time. Combined with display blanking on heavy-compute segments, most C64 demo effects stay within budget by applying avoidance selectively on the lines where tight register writes are needed.
+The sprite row is an upper bound: sprite DMA occurs only on lines where a sprite is displayed, and the 3-cycle lead-in is per contiguous group of active slots, so a sparse enable pattern can cost slightly more per sprite than the all-eight figure. An earlier version of this table counted 4 cycles per sprite in two 2-cycle windows (32 per line, 6400 per frame, ~62% available), which double-counts the single 2-cycle s-access window per sprite; the 19-per-line figure is measured in VICE x64sc (399 cycles over the 21 DMA lines of eight sprites).
+
+A demo that disables sprites on 100 of the 200 visible lines recovers about 1900 steal cycles (an earlier version said 3200) — roughly a 13% improvement in usable CPU time. Combined with display blanking on heavy-compute segments, most C64 demo effects stay within budget by applying avoidance selectively on the lines where tight register writes are needed.
 
 ### Recipes
 
-- `recipes/kickassembler/sprite-multiplex-24.md` (explicit per-line sprite enable/disable to stay within cycle budget)
-- `recipes/kickassembler/fli-image.md` (badline steal avoidance for FLI color writes)
+- `recipes/kickassembler/fli-image.md` (forces a badline on every line and lays its $D018/$D011 writes out around the 40-cycle steal; the opposite of avoidance, useful as the worked cost example)
+- An earlier version of this list also named `recipes/kickassembler/sprite-multiplex-24.md` for per-line sprite enable/disable; that recipe writes `sta $d015` with all eight slots on for the whole frame.

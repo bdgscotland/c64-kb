@@ -9,8 +9,9 @@ chip: VIC-II
 
 The VIC-II provides two hardware scroll registers that shift the visible
 display area up to 7 pixels in either axis without touching screen RAM.
-Used alone, each register gives one pixel of range per frame before the
-effect wraps. The real power comes from combining the hardware offset with
+Used alone, each register gives only eight positions — seven pixels of
+travel — before it wraps (an earlier version said "one pixel of range per
+frame", conflating the range with the 1 px/frame step rate). The real power comes from combining the hardware offset with
 timed screen-RAM rotation: the hardware register handles sub-character
 granularity while a CPU-side copy updates the coarser character grid. The
 techniques in this document cover the full range from a single-axis
@@ -43,12 +44,18 @@ bits into $D016, preserving the CSEL and MCM bits in bits 3 and 4. The
 display shifts by the number of pixels indicated without any change to
 screen RAM or color RAM.
 
-To scroll right (display content moves left), increment XSCROLL each
-frame: 0 → 1 → 2 → ... → 7, then roll to 0 and simultaneously shift
-the screen-RAM columns one character to the right.
+XSCROLL = n places the display n pixels to the RIGHT of the character grid
+(measured in VICE x64sc: a block at column 0 sat at x 32-39 with XSCROLL=0
+and at x 36-43 with XSCROLL=4). An earlier version of the next two
+paragraphs had the directions reversed.
 
-To scroll left (display content moves right), decrement XSCROLL: 7 → 6
-→ ... → 0, then roll to 7 and shift screen-RAM one column to the left.
+To move the display content to the right, increment XSCROLL each frame:
+0 → 1 → 2 → ... → 7, then roll to 0 and simultaneously shift the
+screen-RAM columns one character to the right.
+
+To move the display content to the left (the usual "scrolling" direction
+for a ticker), decrement XSCROLL: 7 → 6 → ... → 0, then roll to 7 and
+shift screen-RAM one column to the left.
 
 The XSCROLL = 0 case produces no visual shift relative to the character
 grid. XSCROLL = 7 shifts seven pixels, placing the display one pixel
@@ -74,9 +81,12 @@ remains 40 and the visible width is unchanged.
 
 ### Cycle budget
 
-Reading and writing $D016 costs 4 cycles (LDA immediate + STA absolute).
-Preserving the non-scroll bits requires one extra AND/OR pair: roughly
-10 cycles total. This technique has no raster-critical timing requirement.
+Writing $D016 costs 6 cycles (LDA #imm 2 + STA abs 4; an earlier version
+said 4). Preserving CSEL, MCM and RES from a shadow byte — LDA shadow /
+AND #$F8 / ORA new / STA $D016 — is 11-14 cycles depending on whether the
+shadow and new value are immediate, zero-page or absolute (cycle counts
+from `docs/hardware/6510-cpu-reference.md`). This technique has no
+raster-critical timing requirement.
 
 ### Recipes
 
@@ -126,8 +136,11 @@ displayed image upward by one raster line. The effect is a pure hardware
 shift with no pixel-by-pixel CPU work.
 
 **Critical side effect:** changing YSCROLL shifts the entire set of
-badlines for the current frame. Because badlines steal up to 40 CPU
-cycles per occurrence, smooth-scrolling code that changes YSCROLL must
+badlines for the current frame. Because a badline costs the CPU 40 to 43
+of the line's 63 cycles (the VIC holds the bus for cycles 15-54, and BA
+drops three cycles earlier at cycle 12, where the CPU halts on its first
+read; ordinary code therefore keeps only 20 cycles on a badline — an
+earlier version said "up to 40"), smooth-scrolling code that changes YSCROLL must
 ensure any time-sensitive raster IRQ code is written to tolerate the
 resulting change in badline positions. This is most relevant when
 combining vertical scroll with raster split bars.
@@ -145,7 +158,8 @@ combining vertical scroll with raster split bars.
 
 Writing $D011 requires a careful read-modify-write to preserve the mode
 bits. The safest pattern is: LDA yscroll_shadow, AND #$F8, ORA new_yscroll,
-STA $D011 — 10-12 cycles. Because changing YSCROLL inside a visible
+STA $D011 — 12-14 cycles (3 + 2 + 3 + 4 with zero-page operands, 14 with
+absolute ones; an earlier version said 10-12). Because changing YSCROLL inside a visible
 raster can produce glitches, the write should happen during the vertical
 blank or in a stable raster window above line $30.
 
@@ -183,13 +197,18 @@ column:
 2. Write fresh data into column 39 (the new rightmost column) from an
    off-screen content buffer.
 3. Repeat the same move on color RAM at $D800.
-4. Reset XSCROLL to 0 in $D016.
+4. Reset XSCROLL to 7 in $D016 (it has just wrapped from 0; the column
+   move cancels the 8-pixel snap). An earlier version of this step said
+   "reset to 0", which produces an 8-pixel jump every eighth frame.
 
 The net result: the visible content has shifted one full character to the
-left, and XSCROLL is back at 0 ready for seven more single-pixel steps.
+left, and XSCROLL is back at 7 ready for the next seven single-pixel steps
+down to 0.
 
 For scrolling right, mirror the process: copy columns 0-38 to columns
-1-39, write fresh data into column 0, reset XSCROLL to 7.
+1-39, write fresh data into column 0, reset XSCROLL to 0 (it has just
+wrapped from 7). This matches the `if (xscroll == 0) { shift; xscroll = 7; }`
+form in `recipes/oscar64/soft-scroll-h.md`.
 
 ### Why it works
 
@@ -204,9 +223,12 @@ shift and a memory copy.
 
 - **Double-buffered screen RAM:** Maintain two screen-RAM pages and
   alternate which one $D018 points to, avoiding tearing on fast machines.
-- **Hardware copy with DMA:** On stock C64 there is no DMA, but the same
-  technique applies even when unrolled into a tight LDA/STA loop — unrolled
-  40×25 moves can complete inside the vertical blank on both PAL and NTSC.
+- **Unrolled move:** On stock C64 there is no DMA. Unrolling the copy
+  into straight LDA abs / STA abs pairs brings it to 8 cycles per byte
+  (8,000 cycles for 40×25), which still exceeds the off-screen span on
+  both PAL (~7,056 cycles) and NTSC (~4,095); unrolling reduces the cost,
+  it does not make the move fit in the blank. An earlier version of this
+  item claimed the unrolled move "can complete inside the vertical blank".
 - **Wide content ring buffer:** Keep the source content in a ring buffer
   wider than 40 columns. Advance the ring pointer each time a column shift
   fires instead of precomputing content on demand.
@@ -259,9 +281,17 @@ bottom):
 For scrolling downward, copy rows 0-23 to rows 1-24, write row 0 from
 the source, and reset YSCROLL to 0.
 
-The row shift should be performed during vertical blank or spread across
-raster interrupts to avoid visible tearing. In practice the 960-byte
-move fits inside the vertical blank interval on PAL.
+The row shift should be performed while the VIC is not fetching display
+data, or spread across raster interrupts, to avoid visible tearing. The
+row shift does not fit in the blanking period (an earlier version said it
+did). Even fully unrolled as LDA abs / STA abs it costs 8 cycles per byte
+— 960 × 8 = 7,680 cycles for screen RAM alone, doubled again for colour
+RAM — against an off-screen span of only 112 lines × 63 = 7,056 cycles on
+PAL (lines 251-311 and 0-50) and 63 × 65 = 4,095 on NTSC; the hardware
+vertical blank proper (PAL lines 300-15) is far smaller still. Production
+scrollers therefore spread the move across the frames between carries,
+shift only the rows that scroll, or write the shifted copy into a second
+screen page during the active frame and flip $D018 in the border.
 
 ### Why it works
 
@@ -282,12 +312,24 @@ pixel-level motion.
 
 ### Cycle budget
 
-A 960-byte row shift at ~10 cycles per byte costs ~9,600 cycles. PAL
-vertical blank (lines 300-311 + 0-47, approximately 60 lines) provides
-roughly 60 × 63 = 3,780 cycles, of which many are non-badline. If the
-shift does not fit in VBL alone, spread it across the first several
-non-visible raster lines or use a double-buffer scheme where row 24 is
-pre-populated during the next frame's active display period.
+A 960-byte row shift at ~10 cycles per byte costs ~9,600 cycles (7,680
+fully unrolled). Between the last display line (250, RSEL=1) and the
+first badline of the next frame (48 + YSCROLL) there are no badlines and
+no character/bitmap fetches: with the default YSCROLL=3 that is lines
+251-311 and 0-50, 112 raster lines = 7,056 cycles on PAL; because this
+technique itself drives YSCROLL through 0-7, the span guaranteed at every
+scroll position is lines 251-311 and 0-47, 109 lines = 6,867 cycles
+(VICE shows the first badline at 48, 51 and 55 for YSCROLL 0, 3 and 7;
+window and badline bounds from `docs/hardware/vic-ii-reference.md`). Only
+lines 300-15 are vertical blanking in the video sense — 28 lines, 1,764
+cycles (`docs/hardware/pal-ntsc-reference.md`); the rest of the span is
+visible border, which is equally free of display DMA. Enabled sprites
+still take their DMA in these lines. An earlier version of this paragraph
+offered a 3,780-cycle "vertical blank" of lines 300-311 + 0-47 "of which
+many are non-badline"; no line in that span is a badline. Since the shift
+does not fit in the off-screen span, spread it across several frames or
+use a double-buffer scheme where row 24 is pre-populated during the next
+frame's active display period.
 
 ### Recipes
 
@@ -401,10 +443,11 @@ speed and carry to the screen-RAM column shift when needed.
 
 **Foreground layer:** hardware sprites. Each frame, update each sprite's
 X position by the foreground speed. For a leftward-scrolling foreground
-faster than the background, increment each sprite's X position at a higher
-rate. When a sprite's X coordinate decrements below the left edge, wrap
-it around to the right edge and update its content pointer to the next
-foreground object.
+faster than the background, decrement each sprite's X position by more
+pixels per frame than the background moves (sprite X grows to the right;
+an earlier version said "increment"). When a sprite's X coordinate drops
+below the left edge, wrap it to the right edge and update its content
+pointer to the next foreground object.
 
 Sprite X positions are set via $D000 (sprite 0 X low byte), $D002, $D004,
 $D006, $D008, $D00A, $D00C, $D00E for sprites 0-7 respectively. Because
@@ -432,12 +475,16 @@ hardware level.
   raster IRQ — the top half of the screen uses one $D018 character base,
   the bottom half uses another, with independent scroll variables for
   each half.
-- **Sprite foreground at 4x speed:** At 4 px/frame the foreground makes
-  25 full-screen traversals per second on PAL, convincingly simulating
-  fast-moving near objects (bullets, sparks, foreground pillars).
-- **Sprite-multiplexed deep parallax:** Combine the `sprite_multiplex`
-  technique (see `docs/techniques/sprite.md`) with parallax to field more
-  than 8 visible foreground objects at different parallax depths.
+- **Sprite foreground at 4x speed:** At 4 px/frame a foreground object
+  crosses the 320-px screen in 80 frames — 1.6 s on PAL — against 6.4 s
+  for a 1 px/frame background, a 4:1 depth cue that convincingly simulates
+  fast-moving near objects (bullets, sparks, foreground pillars). An
+  earlier version claimed "25 full-screen traversals per second", which
+  would need 160 px per frame.
+- **Sprite-multiplexed deep parallax:** Combine a sprite multiplexer
+  (`sprite_multiplex_8`, or `sprite_multiplex_24` for larger counts — see
+  `docs/techniques/sprite.md`) with parallax to field more than 8 visible
+  foreground objects at different parallax depths.
 
 ### Cycle budget
 
@@ -481,15 +528,31 @@ The difference is how the coarser carry is handled.
 **Approach 1 — memshift per frame.**
 
 When the hardware XSCROLL register wraps (after 8 sub-pixel steps), shift
-the entire 8000-byte bitmap left by 8 bits. The VIC-II bitmap in standard
-mode is arranged as 40 columns × 200 rows × 8 bytes per cell, so shifting
-left by 8 bits means shifting left by one byte per 8-row band for all 40
-columns. In practice this is a 40-byte-wide sliding window moved across
-200 rows. After the shift, draw the new rightmost 8-pixel column from
-source content.
+the entire 8000-byte bitmap left by one cell. The standard bitmap is 8000
+bytes laid out as 25 bands (one per character row) × 40 cells × 8 bytes;
+the 8 bytes of a cell are its 8 scanlines, so cell (col,row) starts at
+(row*40+col)*8 and the cell to its right is 8 bytes further on (layout
+from `docs/techniques/bitmap-modes.md`; an earlier version of this
+paragraph gave "40 columns × 200 rows × 8 bytes", which is 64,000 bytes,
+and "one byte per 8-row band"). Shifting the picture left by one cell
+therefore moves every 8-byte cell to the cell before it — a memmove of the
+whole 8000-byte bitmap down by 8 bytes — after which the last cell of each
+of the 25 bands (40 × 8 = 320 bytes per band) is redrawn from source; the
+1000-byte screen RAM (and Color RAM in multicolor mode) shifts by one byte
+in step.
 
-For vertical scrolling, shift the bitmap data by 40 bytes (one row of
-characters, 8 raster lines) and fill the newly exposed bottom row.
+For vertical scrolling by one character row, the coarse carry is one
+band: move the bitmap up by 320 bytes (40 cells × 8 bytes = one row of
+characters, 8 raster lines) — a 7,680-byte memmove — and refill the
+bottom 320 bytes. An earlier version said "40 bytes", which shifts by
+five cells horizontally within the same band, not by one row. The
+screen-RAM attribute matrix (1000 bytes) moves by 40 bytes at the same
+time, and in multicolor bitmap mode colour RAM at $D800 moves by 40 bytes
+as well. Note that a vertical shift of fewer than 8 lines is not a
+memmove at all — each scanline byte moves within its own cell, and line 0
+of a cell takes line 7 of the cell in the band above — which is why
+bitmap scrollers carry vertically by whole bands and use YSCROLL for the
+intermediate lines.
 
 Cycle cost: an 8000-byte shift at ~10 cycles per byte = ~80,000 cycles.
 PAL provides ~18,500 CPU cycles per frame (after badlines). An 8000-byte
@@ -499,19 +562,29 @@ significant compromises.
 
 **Approach 2 — double-buffer with $D018 page flip.**
 
-Maintain two 8000-byte bitmap buffers in the VIC bank (possible if the
-bank is at $4000 or $8000 where two 8 KB windows fit). Each frame, render
+Maintain two 8000-byte bitmap buffers at offsets $0000 and $2000 of the
+VIC bank. Use bank 1 ($4000-$7FFF) or bank 3 ($C000-$FFFF): in banks 0
+and 2 the VIC sees character ROM at bank offset $1000-$1FFF (CPU $1000 /
+$9000), which lands inside the low bitmap page
+(`docs/hardware/vic-ii-reference.md`, character ROM shadowing). In bank 3
+the low page spans $D000-$DFFF, which the CPU sees as I/O, so the CPU
+must bank I/O out via $01 (e.g. $34) while writing that page. An earlier
+version of this section named $8000, which is one of the banks that does
+not work. Each frame, render
 (draw and scroll) into the invisible back buffer, then toggle $D018 to
 flip the two buffers at the start of vertical blank. This prevents tearing
 and decouples the rendering time from the frame deadline — as long as
 rendering completes before the vertical blank of the target frame.
 
-$D018 bits 7-4 select the video matrix base (screen RAM in text mode, or
-the character generator pointer in text mode); bits 3-1 select the bitmap
-or character generator base within the VIC bank. For bitmap mode, bits
-3-1 determine whether the 8000-byte bitmap starts at the low or high 8 KB
-half of the 16 KB VIC bank. Toggling bit 3 of $D018 switches between the
-two bitmap pages.
+$D018 bits 7-4 select the 1 KB video matrix within the VIC bank (screen
+RAM in text mode; in bitmap mode it holds the per-cell
+foreground/background colour nibbles). Bits 3-1 select the 2 KB character
+generator in text mode; in bitmap mode only bit 3 matters: 0 puts the
+8000-byte bitmap at bank offset $0000, 1 at $2000, and bits 2-1 are
+ignored. Toggling bit 3 of $D018 therefore switches between the two
+bitmap pages. (An earlier version of this paragraph described the video
+matrix as "the character generator pointer in text mode" and never said
+what it holds in bitmap mode.)
 
 Even with double buffering, filling 8000 bytes per frame is expensive.
 Practical scrolling bitmap scenes either reduce the scrolling area to a
@@ -553,9 +626,13 @@ Fine-scroll step (XSCROLL or YSCROLL write only, no carry): ~10 cycles.
 Coarse carry, memshift approach (fires once per 8 frames at 1 px/frame):
 8000 bytes × 10 cycles/byte = 80,000 cycles. Spread across 8 frames:
 10,000 cycles/frame average, or ~54% of the PAL per-frame budget.
-Combined with color RAM (4000 nibbles = 4000 bytes effective in byte
-reads, but color RAM in bitmap mode is read by the VIC as character colors
-and is a separate 4000-byte array only if you track it) the overhead is
+The colour carry must move in lockstep with the pixel carry: the
+1000-byte video matrix (each byte holds the cell's foreground and
+background nibbles), plus the 1000 nibbles at $D800 in multicolour bitmap
+mode — a further ~10,000-20,000 cycles per coarse step, about an eighth
+to a quarter of the bitmap shift. (An earlier version spoke of a
+"4000-byte" colour array; there are 40 × 25 = 1000 cells and no
+4000-entry structure anywhere in the VIC.) Combined, the overhead is
 practical only for slow-scrolling backgrounds or sub-screen viewports.
 
 Double-buffer approach: the page flip itself costs ~10 cycles ($D018

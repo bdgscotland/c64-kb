@@ -41,7 +41,7 @@ Two display strategies exist:
 
 **Sprite-based plot.** Each hardware sprite is treated as a single large pixel. With 8 sprites enabled and multiplexed across the frame, up to approximately 24–32 points can be displayed simultaneously before flicker sets in (the VIC-II's 8-sprite-per-line limit means points at the same Y coordinate compete for sprite slots). Individual point size is one sprite with all-pixels-on data (a solid 24×21 block, typically clipped to 8×8 via masking). Color can be varied per point by writing the sprite color registers.
 
-**Charset-based plot.** Points are rendered by writing custom 8×8 character cells (a small dot pattern: a single lit pixel at a specific bit position) into character RAM and then filling the corresponding screen RAM positions. Up to 256 distinct per-cell dot positions are possible with a 256-entry custom charset. This allows far more than 8 points per scanline at the cost of character-aligned resolution (points snap to 8×8 cell boundaries). Multicolor character mode halves horizontal resolution but allows colored dots against a background.
+**Charset-based plot.** Points are rendered by writing custom 8×8 character cells (a small dot pattern: a single lit pixel at a specific bit position) into character RAM and then filling the corresponding screen RAM positions. A fixed charset of 64 single-dot glyphs (plus one blank) gives every pixel position inside a cell — an 8×8 cell has only 64 pixel positions, so an earlier version of this paragraph claiming "256 distinct per-cell dot positions" from a 256-entry charset was wrong; the remaining codes can hold a selection of two-dot combinations. Points are therefore pixel-positioned, not cell-aligned; the cost is that two points falling in the same cell collide unless a glyph for that pair exists. The alternative is to allocate a fresh character to each occupied cell per frame and OR the point's bit into it, which never collides but is limited to 255 occupied cells per frame and requires clearing the used glyphs each frame (hence the double-buffered charset below). This allows far more than 8 points per scanline. Multicolor character mode halves horizontal resolution but allows colored dots against a background.
 
 ### Why it works
 
@@ -72,7 +72,7 @@ For a 32-point cloud at ~75 cycles per point: approximately 2400 cycles per fram
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` (demonstrates sprite-based dot rotator in a demo context)
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe has no sprite layer and no dot rotator — its only rotation is of the bar palette.)
 
 ---
 
@@ -80,7 +80,7 @@ For a 32-point cloud at ~75 cycles per point: approximately 2400 cycles per fram
 
 **Complexity:** scene-tier
 **Region:** both
-**Uses registers:** D011, D018, D016
+**Uses registers:** D011, D018, D016, DD00
 
 ### Why
 
@@ -100,17 +100,17 @@ The VIC-II bitmap mode is used for output. Standard bitmap mode ($D011 bit 5 set
 
 ### Why it works
 
-The fill loop exploits the VIC-II's bitmap memory layout: pixels are stored 8 per byte, left to right, top to bottom, in row-major order. Filling a horizontal span of N pixels from column Xl to column Xr on scanline Y requires computing the byte addresses for Xl and Xr, masking the partial bytes at each end, and filling the interior bytes with $FF (all pixels on for the face color). This is a standard horizontal span fill, fast on the 6510 because interior bytes require only `LDA #$FF : STA address` — two instructions per 8 pixels.
+The fill loop has to respect the VIC-II's bitmap memory layout, which is cell-major, not a linear framebuffer: cell (col,row) occupies 8 consecutive bytes at (row*40+col)*8, one byte per scanline of the cell, so horizontally adjacent bytes on one scanline are 8 bytes apart (see `bitmap-modes.md`; an earlier version of this paragraph described the bitmap as row-major, left to right, top to bottom, which would make a `STA base,X` walk fill a vertical 8-line strip instead of a row). Filling a horizontal span of N pixels from column Xl to column Xr on scanline Y requires computing the byte addresses for Xl and Xr, masking the partial bytes at each end, and filling the interior bytes with $FF (all pixels on for the face color). A span fill therefore either steps X by 8 along a scanline, or (the fast form) fills a cell column with eight consecutive `STA base+0..7` stores, and the interior needs only one STA per 8 (hires) or 4 (multicolour) pixels with $FF or the fill pattern pre-loaded in A.
 
 Color RAM for multicolor mode is updated once per visible face (one byte per 8×8 cell the face overlaps), not once per pixel. For a quad-polygon face covering 32×32 pixels, color RAM updates hit 16 cells — 16 stores — against a pixel fill covering potentially 128 bytes. The fill dominates the cycle budget.
 
-Frame rate is the key constraint. A typical C64 solid vector demo running on PAL operates at 12.5fps (rendering a new frame every 4 VIC-II frames). At this rate, the CPU has approximately 4 × 19,600 = 78,400 cycles per rendered frame. A 6-face cube with each face averaging 50 scanlines of 80-pixel fill: 50 scanlines × 10 bytes per line fill × ~8 cycles per byte = 4,000 cycles per face × 6 faces = 24,000 cycles, leaving ample room for edge computation and matrix math. Increasing to 12 faces (icosahedron) or larger polygons begins to strain the budget.
+Frame rate is the key constraint. A typical C64 solid vector demo running on PAL operates at 12.5fps (rendering a new frame every 4 VIC-II frames). At this rate, the CPU has approximately 4 × 19,600 = 78,400 cycles per rendered frame. A cube shows at most three faces after back-face culling. With each visible face averaging 50 scanlines of 80–160-pixel fill (10–20 bytes per row), at 5 cycles per interior byte for an unrolled `STA abs,X` fill (7 if each byte is `LDA #$FF : STA abs,X`) plus ~30 cycles per row for edge masking and pointer advance: roughly 4,000–8,500 cycles per face, 12,000–25,000 cycles per frame for fill, leaving ample room in the 78,400 available at 12.5fps. (An earlier version of this paragraph costed six faces at ~8 cycles per byte and disagreed with the Cycle budget below by a factor of two; the per-byte figures now follow the 6510 reference.) Increasing to 12 faces (icosahedron) or larger polygons begins to strain the budget.
 
 ### Variations
 
 **Flat shading with Lambert lighting.** Compute the dot product of each face's (rotated) normal with a fixed light-direction vector. Map the result to a VIC-II color index. The face is filled in that color. On the C64, this is typically done with a 16-entry lookup table (angle range → color index), approximating continuous shading with the available palette.
 
-**Double buffering.** Maintain two bitmap areas in VIC bank memory. While one is displayed, the other is cleared and redrawn. Swap $D018 in the vertical blank. Eliminates partial-frame updates visible as tearing. Requires 16 KB of contiguous VIC bank memory (two 8 KB bitmap areas), limiting sprite and character data layout.
+**Double buffering.** Maintain two bitmap areas in VIC bank memory. While one is displayed, the other is cleared and redrawn. Swap $D018 in the vertical blank. Eliminates partial-frame updates visible as tearing. A full-height (25-row) double buffer does not fit one 16 KB bank, as an earlier version of this paragraph implied: the bitmap can only sit at offset $0000 or $2000, so two 8,000-byte bitmaps leave two 192-byte gaps and no 1 KB-aligned slot for the 1,000-byte video matrix (see `bitmap-modes.md`, Koala animation). The usual layout is therefore two VIC banks, each holding one bitmap at offset $2000 plus its own matrix (and its own copy of sprite pointers and sprite data), with the swap a $DD00 bank write alongside $D018. A single-bank alternative is to draw only 22 character rows (7,040 bytes) so the matrix fits at offset $1C00 or $3C00 in the same bank and hide the bottom three rows with a raster split or the border; this only works in banks 1 or 3, because in banks 0 and 2 the VIC reads character ROM at $1000-$1FFF, where the offset-$0000 bitmap would lie. Neither scheme double-buffers Colour RAM at $D800, which is a single 1 KB, so in multicolor mode per-cell colour changes are written once per swap.
 
 **Outline vectors (wireframe).** Skip the fill loop entirely; draw only the polygon edges as lines. Each edge is Bresenham line-drawn into the bitmap. Wireframe rendering is 10–20× faster than filled, enabling higher polygon counts or higher frame rates.
 
@@ -118,19 +118,19 @@ Frame rate is the key constraint. A typical C64 solid vector demo running on PAL
 
 Critical inner loop (fill loop, multicolor bitmap, 160-pixel-wide row):
 
-- 160 pixels / 8 per byte = 20 bytes to fill.
-- Interior fill: `LDA #$FF : STA bitmap_addr,X` per byte = 6 cycles × 20 bytes = 120 cycles per fully-covered row.
+- A fully covered 160-pixel hires row is 20 bytes (a full 160-pixel multicolour row is 40 bytes, 4 double-wide pixels per byte).
+- Interior fill with A pre-loaded: `STA abs,X` is 5 cycles per byte = 100 cycles per 20 bytes (7 cycles per byte if the `LDA #imm` is repeated: `LDA #imm` 2 + `STA abs,X` 5; `STA abs,X` never takes a page-cross penalty). So 100–140 cycles per fully-covered row; an earlier version of this line said 6 cycles × 20 bytes = 120.
 - Left/right partial-byte masking: approximately 20–30 cycles per row.
 - Row pointer advancement: approximately 8 cycles per row.
-- Total per-row: approximately 150–160 cycles on a non-badline.
-- On a badline (every 8th row): add 40 cycles = 190–200 cycles per row.
-- A 50-row face: approximately 7,500–8,000 cycles (approximate; depends on face width and badline distribution).
+- Total per-row: approximately 130–180 cycles on a non-badline.
+- On a badline (every 8th row): add 40 cycles = 170–220 cycles per row.
+- A 50-row, 20-byte face: approximately 7,000–9,000 cycles (approximate; depends on face width and badline distribution).
 
-Per-frame total (6-face cube, 25fps): approximately 45,000–50,000 cycles for fill alone. Achievable within the ~78,400 available at 12.5fps, tight at 25fps. Most scene-tier demos choose 12.5fps or 25fps based on polygon complexity.
+Per-frame total (cube, 3 visible faces): approximately 12,000–25,000 cycles for fill alone, depending on face width. Comfortable within the ~78,400 available at 12.5fps; at 25fps (~39,200 cycles) it fits but leaves little for edge tables and matrix math. (An earlier version of this paragraph costed a 6-face cube at 45,000–50,000 cycles; a convex cube shows at most three faces after culling.) Most scene-tier demos choose 12.5fps or 25fps based on polygon complexity.
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` (includes a filled-box vector sequence in the intro)
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; it contains no filled-box or vector sequence.)
 
 ---
 
@@ -158,7 +158,7 @@ In both cases, erasing each BOB between frames is the bottleneck. Character-mode
 
 ### Why it works
 
-The VIC-II displays the screen using screen RAM (character indices) and character RAM (pixel data for those indices) or bitmap RAM. Because both are writable by the CPU at any time, the CPU can modify the displayed image dynamically. The VIC-II reads character RAM during character fetch cycles (badlines) and character pixel data during character display cycles; these reads happen at specific times in the raster scan. Writes that land before the VIC reads that data are reflected in the current frame; writes that land after miss the frame and show up one frame later. For BOBs, the simplest approach is to update all BOBs during the vertical blank (the interval between frames where the VIC is not actively rendering), guaranteeing all updates take effect on the next frame.
+The VIC-II displays the screen using screen RAM (character indices) and character RAM (pixel data for those indices) or bitmap RAM. Because both are writable by the CPU at any time, the CPU can modify the displayed image dynamically. The VIC-II reads screen RAM (the character codes, together with Colour RAM) during the badline c-accesses, once per character row, and reads the pixel data (character generator bytes, or bitmap bytes in bitmap mode) in the g-accesses on every visible line. A screen-RAM write therefore shows only from the next badline for that row — in practice the next frame if that row's badline has already passed; a character-RAM or bitmap write shows at the next g-access of that pixel row, which is the next raster line if that row of the cell has not yet been drawn this frame, otherwise the next frame. (An earlier version of this sentence had the two fetches swapped, saying badlines read character RAM.) For BOBs, the simplest approach is to update all BOBs during the vertical blank (the interval between frames where the VIC is not actively rendering), guaranteeing all updates take effect on the next frame.
 
 The critical limitation: **BOBs leave background residue.** When a BOB moves from position A to position B, the pixel data from the BOB remains in screen RAM at position A until explicitly erased. The programmer must track old positions and clear them each frame. Failure to do so produces the characteristic "smearing" artifact. Maintaining a double-buffered list of dirty regions and processing it systematically each frame is the standard solution.
 
@@ -188,7 +188,7 @@ The character-mode approach dominates for bulk object counts. The bitmap approac
 
 ### Recipes
 
-- `recipes/kickassembler/cracktro-template.md` (uses character-mode BOBs for logo elements)
+- No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; its logo is a static screen image copied to $0400, not character-mode BOBs.)
 
 ---
 
@@ -196,7 +196,7 @@ The character-mode approach dominates for bulk object counts. The bitmap approac
 
 **Complexity:** medium
 **Region:** both
-**Uses registers:** D018, D021, D022, D023
+**Uses registers:** D011, D018, D021, D022, D023, D024
 
 ### Why
 
@@ -216,15 +216,15 @@ For richer plasma patterns, three or four sine terms are summed:
 
 Each additional term requires an additional table lookup and addition, increasing the per-cell cycle cost linearly.
 
-The result is written to color RAM (at $D800 in the standard VIC bank layout). Screen RAM is filled with space characters ($20) or a constant character value so that the background color of each cell shows through as the visible color. Writing to color RAM rather than screen RAM is important: the VIC-II's character display color comes from color RAM, not from the character data itself, for the background pixels.
+The result is written to color RAM (at $D800 in the standard VIC bank layout). Screen RAM is filled with an all-set glyph — $A0 (reverse space) from the ROM font, or a custom character of eight $FF bytes — so that the colour-RAM colour fills the whole cell. An earlier version of this paragraph said to fill the screen with spaces ($20) "so that the background color shows through"; that is backwards. In standard text mode Colour RAM sets the foreground (set-bit) pixels of a cell and the background (clear-bit) pixels are always $D021, so a plasma written to Colour RAM over space characters displays nothing but $D021. Writing to color RAM rather than screen RAM is still what makes the effect cheap: one 4-bit store per cell selects the visible colour without touching the character data.
 
 Alternatively, for a full-color plasma that uses foreground pixels rather than background color, fill screen RAM with custom charset entries (varying dot patterns) and write both screen RAM and color RAM. This doubles the write count per cell but allows richer color patterns.
 
 ### Why it works
 
-The VIC-II color RAM ($D800–$DBE7) stores a 4-bit color value for each of the 40×25 = 1,000 screen cells. In standard character mode, this color is applied to all foreground (set-bit) pixels in the character cell. The background color ($D021) is applied to all background (clear-bit) pixels. By using a character whose bit pattern is all zeros (a space character, or a custom "blank" character), only the background color is visible in each cell — which is overridden by color RAM for each cell's foreground color.
+The VIC-II color RAM ($D800–$DBE7) stores a 4-bit color value for each of the 40×25 = 1,000 screen cells. In standard character mode, this color is applied to all foreground (set-bit) pixels in the character cell. The background color ($D021) is applied to all background (clear-bit) pixels. By using a character whose bit pattern is all ones (reverse space $A0, or a custom all-$FF glyph), every pixel of the cell takes the colour-RAM colour and the plasma is a pure Colour RAM write. (An earlier version of this section said an all-zero character shows the colour-RAM colour, then contradicted itself in the next sentence; the rule above is the one in `vic-ii-reference.md`.)
 
-Wait: color RAM overrides the foreground color, not the background. The trick for background-only plasma is to use extended background color (ECM) mode, which provides four independently-settable background colors ($D021–$D024). Each character's high two bits (bits 7 and 6) select which of the four backgrounds to use for that cell. This gives a 2-bit-per-cell color selection driven by screen RAM content, with four palette entries (the four background registers). The plasma write loop updates $D021–$D023 per line (via raster IRQ, cycling through sets of four colors) or per frame, and updates screen RAM bits 7-6 per cell. This approach is common in 4-color plasmas.
+The trick for a screen-RAM-driven plasma is extended background color (ECM) mode, which provides four independently-settable background colors ($D021–$D024). Each character's high two bits (bits 7 and 6) select which of the four backgrounds to use for that cell, leaving only 6 bits of character index (64 glyphs). Colour RAM still sets the set-bit pixels in ECM, so each of the four 64-glyph banks should use a blank (all-zero) glyph — then the cell shows only the selected background register. This gives a 2-bit-per-cell color selection driven by screen RAM content, with four palette entries (the four background registers). The plasma write loop updates $D021–$D024 per line (via raster IRQ, cycling through sets of four colors) or per frame, and updates screen RAM bits 7-6 per cell. This approach is common in 4-color plasmas.
 
 For full 16-color plasma, color RAM must be written every frame for every cell. At 1,000 color RAM writes per frame × 4 cycles each = 4,000 cycles minimum (stores only), the color RAM update loop is the dominant cost.
 
@@ -242,7 +242,7 @@ Full 16-color plasma (40×25 color RAM update), per frame on PAL:
 
 - Per-cell: two sine lookups (approximately 10 cycles each), one addition, one palette-table lookup, one color RAM write (4 cycles) = approximately 30–40 cycles per cell.
 - 1,000 cells × 35 cycles = approximately 35,000 cycles per frame.
-- PAL frame budget: ~19,600 cycles. Result: full plasma requires approximately 1.8 PAL frames of CPU time — runs at 12–13fps (every other frame) in practice.
+- PAL frame budget: ~19,600 cycles (63 × 312 = 19,656). Result: full plasma requires approximately 1.8 PAL frames of CPU time — so it renders every other frame, which at 50 frames/s is 25fps, not the "12–13fps" an earlier version of this line said. Anything over ~39,300 cycles drops to every third frame, 16.7fps.
 
 4-color ECM plasma (1,000 screen RAM writes, no color RAM updates):
 
@@ -283,7 +283,7 @@ The mathematical foundation is polar coordinate projection. Each screen cell's d
 
 By pre-computing both tables at startup, the per-frame inner loop does only table lookups and array indexing — no trigonometry or division at runtime. The time offset (added to the distance table index before texture access) scrolls the texture "into" the screen, simulating forward motion. The rotation offset (added to the angle table index) rotates the texture around the tunnel axis, simulating camera roll.
 
-The VIC-II's character mode is used exactly as in the plasma technique: color RAM holds per-cell color values; screen RAM holds a fixed character pattern (usually a blank character so that only the background color contributes).
+The VIC-II's character mode is used exactly as in the plasma technique: color RAM holds per-cell color values; screen RAM holds a fixed all-set character ($A0 reverse space or a custom all-$FF glyph) so that the colour-RAM colour fills the cell. (An earlier version of this sentence said a blank character "so that only the background color contributes"; in standard text mode Colour RAM sets the set-bit pixels, and a blank cell shows only $D021.)
 
 ### Variations
 
@@ -299,8 +299,8 @@ Per-frame, full 40×25 color RAM update:
 
 - Per-cell: two table lookups (approximately 10 cycles each, self-modifying index or indexed indirect), one 2D texture access (approximately 10–15 cycles, depending on texture layout), one color RAM write (4 cycles) = approximately 35–45 cycles per cell.
 - 1,000 cells × 40 cycles = approximately 40,000 cycles per frame.
-- PAL frame budget: ~19,600 cycles. Runs at approximately 12fps (every other frame) with the remaining cycles used for offset update and loop overhead.
-- With screen RAM writes as well (character selection per cell): add 4,000 cycles (1,000 × 4), approximately 44,000 cycles per frame.
+- PAL frame budget: ~19,600 cycles. ~40,000 cycles is just over two PAL frames (2 × 19,656 = 39,312), so the render falls to every third frame, 16.7fps; trimming the loop under ~39,000 cycles (leaving room for the IRQ and offset update) recovers every-other-frame, 25fps. (An earlier version of this line said "approximately 12fps (every other frame)"; every other PAL frame is 25fps.)
+- With screen RAM writes as well (character selection per cell): add 4,000 cycles (1,000 × 4), approximately 44,000 cycles per frame — also every third frame, 16.7fps.
 
 The dominant optimization is the inner loop structure. Using an unrolled loop over 40 cells per row (8 unrolled iterations of 5 cells each, or fully unrolled at 40 cells per row) eliminates loop branch and counter-increment overhead. A fully unrolled 40-cell row costs fewer cycles than a tight loop due to the absence of branch instructions.
 
@@ -384,16 +384,16 @@ The technique requires a stable raster IRQ set to fire on every scanline within 
 1. Acknowledge the VIC-II interrupt ($D019).
 2. Advance the IRQ to the next target scanline ($D012 = current + 1 or current + 8).
 3. Compute the new XSCROLL value for this line: index a sine table using `(line_index + time_offset) & 255`, extract the low 3 bits of the result as the XSCROLL value.
-4. Write the XSCROLL to $D016 (preserving bits 4–7: the MCM flag and other bits). Common implementation: precompute a table of $D016 values where each entry combines the desired XSCROLL with the constant $D016 bit settings, avoiding a read-modify-write cycle.
+4. Write the XSCROLL to $D016 (preserving bits 3–7: CSEL, MCM; mask with `AND #$F8` or use a precomputed table — an earlier version of this step said bits 4–7, which drops CSEL and puts the display in 38 columns). Common implementation: precompute a table of $D016 values where each entry combines the desired XSCROLL with the constant $D016 bit settings, avoiding a read-modify-write cycle.
 5. Optionally write a new YSCROLL to $D011 for vertical displacement (less common; creates a vertical sine wobble in addition to horizontal).
 
 The raster IRQ chain fires on each of the 8 scanlines within a character row (one IRQ per scanline for maximum sine resolution) or once per character row (one IRQ per 8 scanlines, giving coarser per-row resolution but using far fewer IRQ slots). For a 25-row text display with per-row precision, 25 IRQ slots per frame are needed. Per-scanline precision requires up to 200 IRQ slots — approaching the limit of practical IRQ chains, but achievable with a highly optimized dispatcher.
 
 ### Why it works
 
-The VIC-II samples $D016 bits 2-0 (XSCROLL) during the horizontal sync period at the beginning of each raster line (before dot generation starts for that line). The sampled value is used for the entire line's horizontal start position. By writing a new value before the line begins, the display appears shifted horizontally by that amount for the entire line.
+XSCROLL is not latched once per line: the display sequencer applies the current $D016 value continuously, so a write that lands mid-line shifts the remainder of that line (measured in VICE x64sc: a write landing around cycle 38–39 of line 100 left cells 0–21 at offset 0 and cells 22–39 at +7 on the same line, with line 101 fully shifted). An earlier version of this section said the VIC sampled XSCROLL "during the horizontal sync period" and held it for the whole line, with a latch "at approximately cycle 13"; neither is true, and `pitfalls/scroll.md` says the same — the value that lives in XSCROLL when the beam draws a given character is the one that applies.
 
-Because the write must land before the VIC samples the register, the timing is approximately: write $D016 during the last few cycles of the previous raster line or during the first cycles of the current line. The VIC's XSCROLL latch is updated at a specific cycle (approximately cycle 13 of the line on PAL, during the idle cycles before the active display region starts). The raster IRQ fires at the start of each line, giving a window of approximately 10–13 cycles to write $D016 before the latch is read. A stable raster IRQ (which eliminates jitter) is essential; without it, some lines take the write and some do not, producing irregular wobble rather than a smooth sine curve.
+For a clean per-line effect the write must complete before the first character's pixels start to shift out — on PAL that is X coordinate $18 at cycle 17, so the STA must finish by cycle 16 — or on the previous line only after its last character's pixels have left the sequencer, i.e. once the right border has begun (about cycle 58 on PAL), not merely after the last g-access on cycle 55. (The cycle-17/58 figures are arithmetic from the VIC X-coordinate table; the mid-line split is the measurement.) A stable raster IRQ (which eliminates jitter) is what makes that window reliable; without it, some lines take the write in time and some take it mid-line, producing a torn cell boundary rather than a smooth sine curve.
 
 The sine table produces a smooth displacement value for each line. By advancing the time offset each frame, the displacement function appears to "move" through the text, creating the animation. Using different amplitude scaling or multiple sine terms produces more complex deformation patterns (figure-eight wobble, standing waves, etc.).
 
@@ -414,7 +414,7 @@ Per-scanline IRQ (one IRQ per raster line, 200 lines covered):
 - $D016 write: 4 cycles.
 - $D012 advance and RTI: approximately 8 cycles.
 - Total per IRQ: approximately 37–42 cycles out of 63 available on PAL (non-badline).
-- On badlines: 37–42 cycles out of ~23 available. Exceeds the badline budget.
+- On badlines: 37–42 cycles out of 20 available on PAL (63 − 43; 23 only if the three cycles before BA takes hold happen to be write cycles — see `raster.md`, `badline_synchronization`). Exceeds the badline budget. An earlier version of this line said ~23.
 - Standard mitigation: skip XSCROLL writes on badlines. The visual effect shows a 1-line horizontal glitch at each badline row (every 8 lines), usually acceptable.
 
 Per-character-row IRQ (one IRQ per 8 scanlines, 25 rows):
@@ -456,11 +456,11 @@ The key insight of voxel-space rendering is that each screen column is independe
 
 The C64 can store a 64×64 or 128×128 heightfield comfortably within the 64 KB address space. Larger maps require memory banking, adding complexity. The texture map (color for each height value) is a simple 256-entry table: height byte → VIC-II color index. The VIC-II's 4-bit color system means 16 distinct terrain colors, which is sufficient for a basic landscape (rock, grass, water, snow).
 
-Frame rate is the dominant limitation. A 160-column 200-row bitmap with a 64-depth walk per column, with early exit typically cutting the average to 30–40 depth steps per column: 160 × 35 × (cost per step). Per-step cost: one heightfield lookup, one height compare, one conditional vertical fill increment — approximately 25–35 cycles per step. Total: approximately 160 × 35 × 30 = 168,000 cycles per frame. On PAL this is approximately 8–9 PAL frames per rendered frame, yielding approximately 2–4fps. This is the realistic target for a C64 voxel renderer without extreme optimization.
+Frame rate is the dominant limitation. A 160-column 200-row bitmap with a 64-depth walk per column, with early exit typically cutting the average to 30–40 depth steps per column: 160 × 35 × (cost per step). Per-step cost: one heightfield lookup, one height compare, one conditional vertical fill increment — approximately 25–35 cycles per step. Total: approximately 160 × 35 × 30 = 168,000 cycles per frame. On PAL (19,656 cycles per frame) this is 8.5 PAL frames of work, so a new frame every ninth PAL frame: 50 / 9 = 5.6fps. An earlier version of this sentence said 2–4fps, which does not follow from its own cycle count. This is the realistic target for a C64 voxel renderer without extreme optimization.
 
 ### Variations
 
-**Lower resolution.** Reduce to 40 character columns (using character mode, one character = one vertical column) and 100 depth steps. The visual resolution is coarser but the cycle cost drops proportionally: approximately 40 × 50 × 30 = 60,000 cycles per frame, achievable at approximately 3 PAL frames per rendered frame.
+**Lower resolution.** Reduce to 40 character columns (using character mode, one character = one vertical column) and 100 depth steps. The visual resolution is coarser but the cycle cost drops proportionally: approximately 40 × 50 × 30 = 60,000 cycles per frame, just over 3 PAL frames of work (3 × 19,656 = 58,968), so a render every fourth frame: 12.5fps.
 
 **Precomputed direction tables.** Move all `cos`/`sin` multiplications into precomputed per-column tables. At startup, for each column compute and store the per-step `(dx, dy)` fixed-point vector. The inner loop then needs only two additions (advance `hx` and `hy`) rather than a multiply. This is the standard approach for any real C64 voxel implementation.
 
@@ -473,8 +473,8 @@ Per column, per frame, 40-step depth walk (approximate):
 - Per-step (after precomputed direction table optimization): map coordinate advance (2 additions: ~6 cycles), heightfield lookup (~5 cycles), height compare (~4 cycles), conditional bitmap column write (~10 cycles if writing, ~4 if skipping) = approximately 25–30 cycles per depth step.
 - 40 steps × 27 cycles = approximately 1,080 cycles per column.
 - 40 columns × 1,080 = approximately 43,200 cycles per frame.
-- PAL: approximately 2.2 PAL frames per rendered frame at this resolution = approximately 11fps. Reasonable target for scene-tier production.
-- At 160-column multicolor bitmap mode: approximately 4× more columns = approximately 4× the cost = approximately 8–9fps is more realistic.
+- PAL: 43,200 cycles is 2.2 PAL frames of work, so a render every third frame = 16.7fps at this resolution (an earlier version of this line said 11fps). Reasonable target for scene-tier production.
+- At 160-column multicolor bitmap mode: approximately 4× more columns = approximately 4× the cost = 172,800 cycles, 8.8 PAL frames, so a render every ninth frame = 5.6fps. (An earlier version of this line said 8–9fps, confusing PAL frames per render with frames per second.)
 
 All cycle estimates above are approximate. Actual performance depends heavily on inner-loop implementation, memory layout, and whether the early-exit optimization eliminates a significant fraction of depth steps.
 
@@ -494,17 +494,17 @@ The SNES's Mode 7 hardware applies a per-scanline affine transformation (scale, 
 
 The standard approach uses a precomputed scaling table indexed by raster line number. The fundamental observation: as scanlines approach the horizon (the vertical midpoint of the display), the rendered row must show a wider field of view (the pixels are farther apart in world space), which means the bitmap should "shrink" horizontally toward the horizon. Below the horizon, rows are near the camera and show a narrow field of view (pixels close together), so the bitmap appears large.
 
-In practice on the C64, this is implemented by changing $D018 bits 4-7 (the bitmap base address within the VIC bank) and $D016 bits 0-2 (XSCROLL) on each scanline. Changing $D018 mid-frame redirects the bitmap data fetch for subsequent scanlines to a different memory address, allowing the effective horizontal position of the bitmap to be shifted. Combined with XSCROLL (which shifts by 0–7 pixels without changing the base address), the combined address + scroll offset gives enough control to simulate the affine scale.
+In practice on the C64, this is implemented by changing $D018 bit 3 (which of the two 8 KB halves of the VIC bank holds the bitmap; bits 4-7 select the video matrix, i.e. the per-cell colour bytes, not the bitmap — an earlier version of this paragraph had the bits wrong) and $D016 bits 0-2 (XSCROLL) on each scanline. Changing bit 3 mid-frame redirects the bitmap fetch for the following lines to the other 8 KB half, so the two halves can hold differently laid-out row data. Combined with XSCROLL (which shifts by 0–7 pixels without changing the base address), the combined address + scroll offset gives enough control to simulate the affine scale.
 
 A full implementation uses double-buffering: while one bitmap bank is displayed, the other is prepared with a set of pre-scaled row data. The row data is pre-rendered offline (or at startup) as a series of 40-byte rows at different scales: row 0 (near the camera) uses full-width bitmap data from the source texture; row 100 (near the horizon) uses a compressed version where the source texture is sampled at every 4th or 8th pixel. Each row in the pre-scaled buffer is drawn from this pre-compressed source. Swapping $D018 between frames (pointing to the newly-prepared buffer) completes the double-buffer.
 
 ### Why it works
 
-The VIC-II reads bitmap data from the address determined by $D018 bits 4-7 combined with the current scan position. Changing $D018 during the active display region causes the chip to fetch subsequent character rows from a different base address. This does not produce an immediate visible effect for the current character row (the VIC has already fetched the screen codes for the current row on the preceding badline), but from the next character row onward the new base address is used.
+The VIC-II reads bitmap data from the 8 KB half selected by $D018 bit 3 (bitmap base: $0000 or $2000 within the VIC bank; bits 7-4 select the video matrix, not the bitmap) combined with the current scan position. The bitmap base is read on every g-access, so a mid-row write changes the source from the very line it lands on (measured in VICE x64sc: a write landing on line 100, the second line of character row 6, switched the displayed bitmap on line 100 itself, not on line 107; see `raster.md`, `raster_split_modes`) — land it before cycle 16 of the target line, or after cycle 55 of the previous one. Only the video-matrix half (bits 7-4) is deferred: its 40 cells are fetched by the badline c-accesses and held in the row buffer, so a VM change shows from the next character row. An earlier version of this paragraph said a $D018 bitmap-base change waits for the next character row; that is true only of the video-matrix bits.
 
-Per-scanline XSCROLL ($D016) changes take effect more immediately: the XSCROLL value is sampled at the beginning of each raster line (approximately cycle 13 of the line), before the first pixel is output. By writing $D016 in the first few cycles of a raster line (or in the last cycles of the preceding line), a different XSCROLL can be applied to each individual scanline. This provides 0–7 pixel horizontal offset granularity per scanline.
+Per-scanline XSCROLL ($D016) changes are not latched either: the display sequencer applies the current value continuously, so a write that lands mid-line shifts only the remainder of that line (measured in VICE x64sc; see `text_zoom` above — an earlier version of this paragraph said XSCROLL was "sampled at approximately cycle 13", which is not how the sequencer behaves). By finishing the $D016 write by cycle 16 of a raster line, or in the right border of the preceding line (from about cycle 58 on PAL), a different XSCROLL can be applied cleanly to each individual scanline. This provides 0–7 pixel horizontal offset granularity per scanline.
 
-The combination of per-character-row $D018 changes (coarser: 8 lines apart) and per-scanline $D016 changes (finer: every line) produces the visual scaling illusion. Rows near the horizon use small $D018 offsets and large XSCROLL values (the bitmap is shifted to center the horizon point), while rows near the camera use progressively larger $D018 offsets (accessing wider sections of the pre-scaled buffer) and small XSCROLL values.
+The combination of per-line $D018 changes and per-scanline $D016 changes produces the visual scaling illusion — but the two levers are not symmetrical. The bitmap base has only two positions per bank (bit 3), so $D018 is a coarse two-way switch, useful for double-buffering or for splitting the display between two differently prepared buffers; it cannot supply a graded per-row offset. The per-row scale therefore has to come from the pre-scaled row data laid out in the buffer itself, with XSCROLL adding the 0–7 pixel fine shift that centres each row on the horizon point. (An earlier version of this paragraph described "small" and "progressively larger $D018 offsets" per row; no such graded offsets exist in the register.)
 
 ### Variations
 
@@ -512,7 +512,7 @@ The combination of per-character-row $D018 changes (coarser: 8 lines apart) and 
 
 **Rotation overlay.** Add a per-frame rotation offset to the per-row XSCROLL table (shifting all rows by a sine-derived offset). This rotates the apparent "camera heading" over the floor plane without redrawing the bitmap data. Fast: only 200 XSCROLL writes per frame (one per scanline via the IRQ chain), approximately 800 cycles.
 
-**Animated texture.** Each frame, copy a new section of a larger source texture into the bitmap buffer, offset by a camera-position variable. Combined with the per-line scaling, this produces the impression of flying over a moving terrain. Very expensive (copying an entire bitmap buffer each frame = approximately 8,000 cycles for a 8 KB buffer), but achievable at 12–15fps on PAL.
+**Animated texture.** Each frame, copy a new section of a larger source texture into the bitmap buffer, offset by a camera-position variable. Combined with the per-line scaling, this produces the impression of flying over a moving terrain. Very expensive: the 6510 has no block move, and even a fully unrolled `LDA abs,X` / `STA abs,X` copy costs 9-10 cycles per byte including page-cross penalties and loop overhead, so copying an entire 8,000-byte bitmap costs roughly 75,000-80,000 cycles (measured 79,041 in VICE with the screen blanked) — four PAL frames on its own, and nearer six or seven once the per-line IRQ chain below has taken its ~39% of each frame. An earlier version of this sentence said "approximately 8,000 cycles", i.e. one cycle per byte. A full-buffer animated texture therefore lands around 7-12fps on PAL; most implementations copy only the rows that change, or scroll the source through $D018/$DD00 bank selection instead of copying it.
 
 ### Cycle budget
 
@@ -521,6 +521,6 @@ Per-scanline IRQ chain (one IRQ per raster line, 200 active lines):
 - Per-IRQ: acknowledge ($D019), advance $D012 (+1), look up XSCROLL from precomputed table (approximately 5 cycles), write $D016 (4 cycles), look up $D018 from table (5 cycles), write $D018 (4 cycles), RTI (6 cycles) = approximately 35–40 cycles per line.
 - 200 lines × 38 cycles = approximately 7,600 cycles per frame for IRQ-chain overhead alone.
 - PAL budget: ~19,600 cycles. The IRQ chain consumes approximately 39% of the frame. Remaining ~12,000 cycles are available for camera position update, input handling, and bitmap buffer preparation.
-- $D018 changes take effect at character row boundaries (every 8 lines), so only 25 $D018 writes are needed per frame (one per character row). Writing $D018 in only 25 of the 200 per-line IRQs saves approximately 5 × 175 = 875 cycles. Worth doing.
+- $D018 does not need writing on every line. With only two bitmap bases available (bit 3), the register only needs writing on the lines where the source actually changes, which a per-row layout limits to at most 25 per frame — and if $D018 is being used only as the double-buffer flip, it is one write per frame. Writing $D018 in 25 rather than 200 of the per-line IRQs saves approximately 5 × 175 = 875 cycles. Worth doing. (An earlier version of this line justified the saving by saying $D018 "takes effect at character row boundaries (every 8 lines)"; that timing holds for the video-matrix bits 7-4, not for the bitmap-base bit, which takes effect on the line it is written.)
 
 All cycle counts above are approximate and will vary with handler implementation, table layout, and whether badlines are handled separately.

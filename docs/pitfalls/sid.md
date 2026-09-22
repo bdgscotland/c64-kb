@@ -34,9 +34,11 @@ attention when writing cross-compatible SID music.
 ### Symptom
 
 Code that reads a SID control register expecting to see what was
-previously written instead gets corrupted data — typically the high
-byte of the read address, the last byte the VIC-II fetched, or
-floating-bus noise. A read-modify-write pattern like "set bit 3 of
+previously written instead gets corrupted data — the last byte
+written to (or read from) the SID, not the register's value (an
+earlier version of this sentence said "the high byte of the read
+address, the last byte the VIC-II fetched, or floating-bus noise";
+neither of the first two ever appears). A read-modify-write pattern like "set bit 3 of
 $D418 without touching the other bits" silently destroys the filter
 mode and volume settings if no shadow register is maintained.
 The failure mode is usually silent (the wrong register value takes
@@ -47,16 +49,23 @@ control register that clears the GATE bit unintentionally.
 
 ### Mechanism
 
-The SID chip ($D400-$D41F) exposes 29 write-only registers at
-$D400-$D418, followed by four read-only registers at $D419-$D41C.
-The chip's internal design has no read latches on the write-side
-registers. When the C64's CPU issues a read cycle to $D400-$D418,
-the SID tri-states its data bus drivers; the CPU reads whatever
-is floating on the bus at that moment. In most cases this is the
-high byte of the address being read (the C64's data bus retains the
-last value driven by the address multiplexer), but this depends on
-bus capacitance, recent VIC-II activity, and other factors. The value
-is unpredictable and must never be used as register state.
+The SID chip ($D400-$D41F) exposes 25 write-only registers at
+$D400-$D418 (an earlier version of this sentence said 29; $D418 −
+$D400 + 1 = 25, the same count the Fix below uses), followed by four
+read-only registers at $D419-$D41C. The SID has no read path for
+these registers. A read does not float the bus: the chip drives it
+with the byte it last held — the last value written to any of its 32
+addresses ($D400-$D41F and every mirror through $D7FF) or the last
+value read from $D419-$D41C. That byte decays to $00 after roughly
+7k cycles on a 6581 and roughly 660k cycles on an 8580 (measured in
+VICE 3.10 reSID with the SID being clocked; real chips also decay but
+were not measured here — see sid-reference.md). It is not the address
+high byte and not a VIC-II fetch, which is what an earlier version of
+this paragraph said; either way it is not register state and must
+never be used as such. (For testers: in VICE, a run with sound
+disabled (`+sound`) returns $00 from these reads via a fallback path
+and does not emulate this behaviour, and with the dummy driver or
+warp mode the held byte never fades.)
 
 The four read-only registers ($D419-$D41C) are a completely different
 story: POTX ($D419) and POTY ($D41A) return real paddle A/D values;
@@ -79,23 +88,30 @@ Never read back from the SID hardware to determine the current state.
 The shadow RAM write and the hardware write must stay in lock-step;
 mixing in any hardware reads is the source of the bug.
 
-Recommended layout: a contiguous block of 25 bytes starting at a
-zero-page or low-RAM address (e.g. `shadow_sid = $C5` through `$DD`
-for compatibility with many SID player conventions), mapped 1:1 to
-the SID register layout.
+Recommended layout: a contiguous block of 25 bytes in RAM you own,
+mapped 1:1 to the SID register layout. Under BASIC/KERNAL the free
+zero page is only $02 and $FB-$FE, so a 25-byte shadow cannot live
+there; $033C-$03FB is the cassette buffer, free only when tape I/O is
+not in use, or use any RAM above your program. An earlier version of
+this paragraph recommended `$C5` through `$DD` — that block is the
+KERNAL's keyboard and screen-editor state ($C5 LSTX, $C6 NDX, $CB-$CD
+key/cursor, $D1-$D6 screen line and cursor, $D9-$F2 the line link
+table; see c64-memory-map.md), and a shadow there corrupts the
+keyboard scan and screen editor on every IRQ. No "SID player
+convention" places a shadow there.
 
 ### Worked example
 
 ```asm
 ; WRONG: read-modify-write directly on hardware register
 ; This reads garbage from $D418 and sets an incorrect value.
-        lda $D418           ; BUG: returns open-bus, not previous write
+        lda $D418           ; BUG: returns the SID's last-held bus byte, not this register
         ora #$0F            ; intended: set volume to 15, keep filter bits
         sta $D418           ; writes garbage|0x0F — wrong filter mode likely set
 
 ; CORRECT: shadow-RAM pattern
 ; Declare shadow at top of file:
-;   shadow_d418:  .byte 0     ; somewhere in RAM, e.g. $C5
+;   shadow_d418:  .byte 0     ; in RAM you own, e.g. $0340 (not zero page unless you own it)
 ;
         lda shadow_d418     ; read from RAM shadow — always coherent
         ora #$0F            ; set volume bits to 15, preserve filter/3OFF bits
@@ -178,8 +194,9 @@ to the analog design and cannot be corrected in software without
 chip-specific calibration.
 
 **8580 filter — linear and consistent.** The 8580 redesigned the
-filter cell for a near-linear cutoff response. A $D416 value of $40
-is roughly half the nominal maximum cutoff; a sweep of $D416 from
+filter cell for a near-linear cutoff response. A $D416 value of $80
+is roughly half the nominal maximum cutoff (an earlier version said
+$40, which is a quarter of the register's range); a sweep of $D416 from
 $00 to $FF produces a perceptually even frequency sweep. The curve
 is consistent between 8580 chips.
 
@@ -198,16 +215,22 @@ identical on both chips. The standard approaches are:
 
 **Per-chip cutoff tables.** Ship two cutoff frequency tables, one
 calibrated for 6581 and one for 8580. At startup, detect the chip
-revision (see the chip-detect probe below) and select the appropriate
+revision (see the $D41B detection method below, and
+`sid_8580_vs_6581_differences`) and select the appropriate
 table. GoatTracker implements this with its "chip-select" toggle that
 exports per-chip filter tuning. SidFactory II has similar per-chip
 compensation.
 
 **Target one chip explicitly.** For scene-quality demos or game
 music, choose a target chip and tune all filter patches against that
-chip. Document the target in the SID file header (byte $77 in the
-.SID format, bits 0-1 for first SID chip model: 1=6581, 2=8580,
-3=either). Accept that the other chip will sound different.
+chip. Document the target in the .SID header's 16-bit big-endian
+flags word at $76-$77: bits 4-5 of byte $77 give the first SID's
+model (00=unknown, 01=6581, 10=8580, 11=either); bits 0-1 are the
+MUS-data and PlaySID/BASIC flags and bits 2-3 the video standard, so
+mask `byte[$77] >> 4 & 3`, not `& 3` (an earlier version of this
+sentence put the model in bits 0-1, which would classify MUS files as
+6581). See formats/c64-file-formats.md. Accept that the other chip
+will sound different.
 
 **Use filter-independent timbres.** Unfiltered voices (FILT bits
 clear in $D417) pass straight to the volume DAC and are not subject
@@ -215,51 +238,35 @@ to cutoff curve differences. For cross-compatible patches, minimize
 filter use or use the filter only for broad tonal shaping rather than
 a precise tuned-resonance effect.
 
-**Chip-detect probe.** The simplest runtime detection method writes
-a known value to a voice's frequency register, then routes it through
-the filter at a known cutoff and reads the envelope output of voice 3
-($D41C, ENV3). Because the 6581 and 8580 filter curves differ, the
-same $D416 value produces different attenuation and thus a different
-ENV3 reading. This is imprecise but sufficient to select between two
-pre-built tuning tables:
+**Chip detection at runtime.** The filter cannot be observed from
+software: the only readable voice-3 registers are $D41B (OSC3) and
+$D41C (ENV3), and both sit before the filter in the signal path (see
+sid-reference.md, Filter signal flow), so no cutoff, mode or routing
+write changes what they return. An earlier version of this section
+proposed reading ENV3 through the filter, which cannot work — $D41B
+and $D41C sit before the filter; run in VICE reSID, ENV3 read $FF
+with cutoff $00, cutoff $FF, FILT3 = 0 and 3OFF = 1 alike on both chip
+models, and the deleted listing returned "8580-like" on both chips by
+its own comment (its value was just how far a rate-0 attack had got in
+the ~1,000-cycle settle loop). That listing was also self-inconsistent:
+its header comment named the same flag state for both chips and its
+carry sense was the inverse of its own prose. Anyone who copied it got
+both the mechanism and the branch wrong.
 
-```asm
-; Chip detection probe (voice 3 must be set up as a filtered test tone)
-; Returns zero flag clear if 6581, clear if 8580 — use result to branch
-detect_chip:
-        ; Voice 3: triangle waveform, A4 frequency (PAL), fast attack, sustain max
-        lda #$45
-        sta $D40E       ; FRELO3: A4 PAL low byte ($1D45 & $FF = $45)
-        lda #$1D
-        sta $D40F       ; FREHI3
-        lda #$11        ; TRI + GATE
-        sta $D412
-        lda #$00        ; fastest attack/decay
-        sta $D413
-        lda #$F0        ; sustain max, release 0
-        sta $D414
-
-        ; Route voice 3 through filter, low-pass, high cutoff, no resonance
-        lda #$04        ; FILT3=1
-        sta $D417
-        lda #$1F        ; LP mode, volume 15
-        sta $D418
-        lda #$40        ; mid-range cutoff — the key probe value
-        sta $D416
-        lda #$00
-        sta $D415
-
-        ; Wait ~1 ms for filter to settle (about 1000 cycles at PAL)
-        ldx #200
-wait:   dex
-        bne wait
-
-        ; Read ENV3 — on 6581 the filter is more attenuating at $40,
-        ; so ENV3 reads lower; on 8580 at $40 the filter is mostly open
-        lda $D41C       ; ENV3: 0-255
-        cmp #$80        ; threshold: below $80 = likely 6581
-        rts             ; carry set = 6581-like, carry clear = 8580-like
-```
+The standard detection routine uses $D41B instead: write $FF to
+$D412, $D40E and $D40F, then write $20 to $D412 (sawtooth, TEST and
+GATE cleared) and read $D41B immediately. The value differs between
+revisions because the two chips reset and restart the accumulator
+differently — measured in VICE x64sc reSID, `-sidmodel 0` returns 3
+and `-sidmodel 1` returns 2; real-hardware values are unverified here,
+treat them as the same. Detection is imprecise (some SIDs answer
+ambiguously) — use it only to select between precomputed cutoff
+tables, and offer a settings toggle as the fallback. When testing this
+in headless VICE, the $D41B/$D41C reads are only meaningful with a
+real sound sink (`-sound -sounddev wav -soundarg out.wav`); the usual
+`+sound` invocation returns meaningless values and would make the
+detection look non-deterministic (see `sidasid_emulation_notes` in
+music-sid).
 
 ### Worked example
 
@@ -303,7 +310,7 @@ write_cutoff:
 
 ---
 
-## sid_adsr_bug_8580 — 8580 ADSR-reset bug on hard restart; rate-0 attack timing differs from 6581
+## sid_adsr_bug_8580 — 8580 ADSR-reset bug on hard restart; the rate-counter wrap is ~33 ms on both chips
 
 **Severity:** high
 **Region:** both
@@ -312,15 +319,16 @@ write_cutoff:
 
 ### Symptom
 
-A hard-restart digi sequence that sounds correct on a 6581 produces
-different envelope shapes on an 8580: a note that attacks cleanly
-on 6581 lingers slightly before starting its attack on 8580, or a
-digi sample that has the right amplitude profile on 6581 sounds
-louder, quieter, or with a shifted peak on 8580. A music player
-that sounds clean on one chip revision has envelope timing drift
-on the other. The effect is most audible on fast-changing note
-sequences (arpeggios) and on digi sample playback that relies on
-precise envelope-level timing.
+A hard restart that behaves on a 6581 leaves an 8580 voice holding
+its level for a moment before the attack starts (the 8580 reset-path
+difference below), and on either chip a note whose AD/SR nibbles were
+lowered while the rate counter had already passed the new period
+starts up to 33 ms late (the rate-counter wrap). The effect is most
+audible on fast-changing note sequences (arpeggios). An earlier version
+of this Symptom also described digi samples coming out "louder, quieter,
+or with a shifted peak on 8580" and players with "envelope timing drift
+on the other chip"; both rested on a per-chip attack-step difference
+that the Mechanism below withdraws — none has been measured.
 
 ### Mechanism
 
@@ -334,73 +342,103 @@ before the envelope generator reads the new rate and produces the
 next envelope increment. At PAL clock (985248 Hz), a full 15-bit
 wrap takes up to 32768 cycles — approximately 33 milliseconds.
 
-**6581 behavior.** On the 6581 the rate-counter wrap time at rate-0
-is typically close to the 2 ms attack time listed in the datasheet.
-The ADSR bug still occurs (any rate reduction that the counter has
-already passed forces a wrap) but the wrap time at the most common
-fast-attack (rate 0) is short enough that hard-restart sequences
-timed for a 1- to 2-frame window usually work reliably.
+The wrap length does not depend on the chip or on the new rate: it
+is up to 32768 cycles (~33 ms at PAL) on both the 6581 and the 8580,
+because the 15-bit counter must come back round to the new compare
+value however small that value is (measured in VICE reSID: writing
+attack 0 after the counter had run 5,120 cycles stalled the envelope
+27,627 cycles on the 6581 model and 27,240 on the 8580; writing
+attack 1 instead gave 27,173 / 27,350; the rate-0 attack itself takes
+~2,280 cycles, which is where the 2 ms figure belongs). An earlier
+version of this paragraph said the 6581's wrap at rate 0 was "close
+to the 2 ms attack time" — that confused the attack duration with the
+wrap. Hard restart works by writing AD/SR = 0 two frames before the
+gate: 2 × 19,705 = 39,410 cycles covers the worst-case wrap, one
+frame (19,705) does not.
 
 **8580 behavior and the reset bug.** The 8580 introduced an internal
 difference in the envelope reset path. On hard restart — where the
 code writes AD=0 and SR=0 then clears GATE — the 8580's envelope
 can enter an intermediate "hold at level" state caused by the reset
-bug before it begins the release phase. Additionally, the 8580
-rate-0 attack increment timing is slightly different: at PAL clock
-the internal increment fires every ~15 φ2 cycles per envelope step
-on both chips per the datasheet (985248 Hz / 256 steps / 0.001 s
-per step at rate-0 nominal 2 ms ≈ 15 cycles/step), but silicon
-measurements show the 8580 sometimes takes 1-2 more cycles per step
-than the 6581 at attack rate 0. For digi techniques that rely on
-the envelope reaching a specific level in an exact number of IRQ
-cycles, this delta causes perceived amplitude drift.
+bug before it begins the release phase. At rate 0 the envelope steps
+roughly every 9 φ2 cycles on either chip (2 ms / 256 steps = 7.7 µs
+by the datasheet; measured in VICE reSID, 6581 and 8580 models, the
+255 steps to peak take about 2,100-2,300 cycles ≈ 2.1-2.3 ms, with
+the two models within half a cycle per step of each other). An
+earlier version said ~15 cycles on the 6581 and 17 on the 8580 and
+attributed the 17 to a silicon measurement; neither number came from
+a measurement, and the quoted formula did not evaluate to 15.
 
 **Hard-restart digi (digi_8bit_hard_restart) cross-chip impact.**
 The Hermit-style hard-restart digi technique depends on the voice's
-envelope reaching a known level within a precisely-timed window.
-If the rate-0 attack takes marginally more cycles on the 8580, the
-envelope level sampled at the end of each digi IRQ interval is
-systematically off by 1-3 counts. Over a sample buffer this
-manifests as reduced amplitude or a compressed dynamic range on
-8580. Scene-quality digi routines that were tuned on 6581 exhibit
-this drift on stock 8580s.
+envelope reaching a known level within a precisely-timed window. No
+per-chip rate-0 step difference has been measured (in reSID the two
+models reach peak within the same poll count), so an earlier version
+of this paragraph, which derived a systematic 1-3 count envelope
+offset on the 8580 from a slower attack step, rested on a premise
+that has been withdrawn. Digi routines do drift between real chips,
+but for other reasons — DC offset, the volume DAC's mixing
+nonlinearity and the filter — not from the attack step rate.
 
 ### Fix
 
-**Always use the full hard-restart sequence.** Both chip revisions
-benefit from the two-frame hard restart: one frame with AD=0/SR=0
-and GATE cleared, one frame with the TEST bit set to lock the
-oscillator, then the real note gate on the third frame. This forces
-the rate counter to the lowest possible starting position before the
-new note begins, minimizing the window in which the wrap can
-interfere.
+**Always use a hard-restart sequence.** Both chip revisions benefit
+from a two-frame hard restart. The one shown in the worked example
+below is the **test-bit restart** variant listed under hard-restart
+variants in sid-reference.md: one frame with AD=0/SR=0 and GATE
+cleared, one frame with the TEST bit set (GATE still clear) to lock
+the oscillator, then the real note gate on the third frame, so the
+note frame supplies the 0→1 GATE edge and the attack begins from
+zero. The "Classic" form that sid-reference.md and music-sid.md show
+is a different sequence: SR = $F0 (not 0) on the first frame and $09
+= TEST+GATE on the middle frame, so the envelope is already gated at
+the note frame (ENV3 $FF before and after the note-frame write in
+reSID) and that write does not start a fresh attack. An earlier
+version of this entry presented the test-bit form as "the full
+hard-restart sequence" without distinguishing it from the classic
+one. Do not mix the two: with AD=0/SR=0 on frame 1, a $09 middle
+frame would let the envelope decay to zero during the TEST+GATE frame
+and, because a GATE-held write does not retrigger the attack
+(measured in VICE reSID), the note frame would play silently. Either
+form forces the rate counter through its wrap before the new note
+begins.
 
-**Avoid rate-0 for cross-chip digi.** For digi routines targeting
-both chips, tune the attack rate to 1 (8 ms on 6581) rather than 0
-(2 ms). Rate-1 timing is more consistent between chip revisions than
-rate-0, at the cost of requiring a larger IRQ interval per sample.
+**Do not pick an attack rate for cross-chip consistency without
+measuring it.** No source supports rate 1 being more consistent
+between revisions than rate 0 (an earlier version of this paragraph
+said it was). In VICE reSID both rates jitter by the rate counter's
+phase at gate-on and neither shows a systematic 6581/8580 difference:
+the rate-0 attack reached $FF in 2,080-2,300 cycles and the rate-1
+attack in 7,460-8,070 cycles on both chip models (x64sc, `-sound
+-sounddev wav`, 16 trials per rate; runs made with `+sound` return
+meaningless ENV3 values, see music-sid). What does change the rate-0
+time is the ADSR delay bug: lowering the attack nibble while the rate
+counter has passed the new period cost one trial 33 ms (the full
+15-bit wrap), which is why the hard-restart sequence above matters
+more than the rate you choose.
 
-**Chip-detect then branch.** Detect the SID revision at startup
-(see `sid_filter_chip_variation` above for the ENV3 probe), then
-select per-chip digi timing constants:
-
-```asm
-; Per-chip digi timing constants
-; At PAL 985248 Hz, attack rate 0 = ~15 cycles/step
-digi_cycles_per_step_6581:  .byte 15
-digi_cycles_per_step_8580:  .byte 17    ; empirically measured on 8580 silicon
-```
+**Chip-detect then branch.** Detect the SID revision at startup (see
+the $D41B method in `sid_filter_chip_variation` above, or
+`sid_8580_vs_6581_differences`) if you need per-chip filter tables.
+An earlier version of this section followed with a listing of
+per-chip digi timing constants (`.byte 15` for the 6581, `.byte 17
+; empirically measured on 8580 silicon` for the 8580); neither value
+came from a measurement, the only measured figure is one number for
+both chips (~9 cycles per attack step at rate 0, VICE reSID), and the
+listing has been removed rather than corrected — do not keep a
+per-chip constant.
 
 **For music (not digi):** the standard hard restart is sufficient
-for music playback on both revisions. The 1-2 cycle timing difference
-at rate-0 is inaudible in normal three-voice music; only digi routines
-that require sub-millisecond envelope-level precision need per-chip
-compensation.
+for music playback on both revisions. Only digi routines that
+require sub-millisecond envelope-level precision need to care about
+the attack step timing at all, and no per-chip difference in it has
+been measured.
 
 ### Worked example
 
 ```asm
-; Mahoney-style hard restart with explicit cycle-count comments
+; Test-bit hard restart (sid-reference.md's "Test-bit restart" variant,
+; not the "Classic" SR=$F0 / $09 form) with explicit cycle-count comments
 ; Applied to voice 1 two frames before the new note
 
 ; FRAME N-2: disable ADSR, gate off
@@ -422,8 +460,9 @@ hard_restart_frame2:
         ora #$08            ; set TEST bit (bit 3)
         sta shadow_d404
         sta $D404           ; oscillator locked at zero DC           [4 cycles]
-        ; On 8580: this also stabilizes the envelope reset path
-        ; giving the rate counter a clean zero-point for the next gate
+        ; GATE stays clear here (test-bit variant): the note frame
+        ; supplies the 0->1 GATE edge. The classic form writes $09
+        ; (TEST+GATE) instead, but only with SR=$F0 on frame 1.
         rts
 
 ; FRAME N (note frame): release TEST, set real waveform + GATE
@@ -436,28 +475,24 @@ hard_restart_note:
         sta shadow_d404
         sta $D404           ; clears TEST, sets waveform, sets GATE
         ; Attack begins from zero; oscillator released from phase-zero lock
-        ; On 6581: attack ramp starts within ~15 cycles/step
-        ; On 8580: attack ramp starts within ~15-17 cycles/step (chip variation)
-        rts
-
-; Cross-chip digi: per-chip attack step timing
-; (used by digi_8bit_hard_restart routines to calibrate sample IRQ intervals)
-compute_digi_irq_interval:
-        lda chip_is_8580
-        bne digi_8580_timing
-        lda #15             ; 6581: ~15 φ2 cycles per attack step at rate 0
-        rts
-digi_8580_timing:
-        lda #17             ; 8580: ~15-17 φ2 cycles (use 17 for headroom)
+        ; attack steps every ~9 cycles at rate 0 (VICE reSID, both models)
         rts
 ```
+
+An earlier version of this listing ended with a
+`compute_digi_irq_interval` routine returning 15 for the 6581 and 17
+for the 8580 as "cycles per attack step"; neither figure was measured
+and the two chips show no difference in reSID, so it has been removed.
 
 ### Cross-references
 
 - Registers: D404, D40B, D412 (VCREG for all three voices — hard restart
   applies to whichever voice is being gated)
-- Technique: `digi_8bit_hard_restart` — full Hermit/Mahoney digi routine
-  documentation and the complete rate-0 timing analysis
+- Technique: `digi_8bit_hard_restart` — the hard-restart digi family and
+  the measured rate-0 envelope timing (9 φ2 cycles per attack step in
+  reSID on both chip models; the exact Hermit/Mahoney register sequences
+  are not documented in this knowledge base — an earlier version of this
+  line promised "full Hermit/Mahoney digi routine documentation")
 - Pitfall: `sid_write_only_registers` — always use shadow for D404 read-modify-write
 
 ---

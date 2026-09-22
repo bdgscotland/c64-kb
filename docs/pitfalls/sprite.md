@@ -17,7 +17,7 @@ before the CPU can read them. All four have bitten experienced C64 coders.
 
 ---
 
-## sprite_dma_overflow — More than 8 active sprites on one raster line silently drops the higher-indexed ones
+## sprite_dma_overflow — A logical sprite re-armed while its hardware slot is still busy, or after its Y line has passed, is silently not drawn
 
 **Severity:** critical
 **Region:** both
@@ -29,9 +29,11 @@ before the CPU can read them. All four have bitten experienced C64 coders.
 
 A multiplexed sprite engine that is supposed to show twelve, sixteen, or
 more objects on screen displays only the first eight on any given raster
-line. The higher-indexed logical sprites silently disappear on lines where
-they compete with the lower-indexed group. There is no visible corruption
-or tearing — sprites simply are not drawn, as if they were never enabled.
+line. Logical sprites whose slot was re-armed too early or too late silently
+disappear; in a naively ordered multiplexer these are the later entries in
+the list, which is a software ordering, not a hardware one. There is no
+visible corruption or tearing — sprites simply are not drawn, as if they
+were never enabled.
 The bug is easy to miss when objects are spread vertically because each
 frame only a few lines have more than eight sprites active simultaneously.
 The effect becomes obvious when objects cluster near the same Y coordinate:
@@ -41,25 +43,32 @@ its sprites.
 ### Mechanism
 
 The VIC-II has exactly eight sprite DMA channels — one per sprite index
-(0 through 7). On each raster line the chip walks through sprite indices
-0 to 7 in order, checks whether each sprite's Y register matches the
-current raster line (within the 21-line active window), and, if so,
-fetches that sprite's 63-byte bitmap data via the s-access cycles for that
-channel. There are no additional DMA channels hiding behind software flags.
-The hardware simply has eight slots, and eight is the absolute maximum
-simultaneously active sprites per raster line.
+(0 through 7). On each raster line the chip checks every enabled sprite's Y
+register against the current raster line and, for any slot whose 21-line
+(42 if Y-expanded) DMA is already running, fetches that slot's three data
+bytes via the s-access cycles for that channel; the eight slots are
+independent and no slot has priority over another for activation. There
+are no additional DMA channels hiding behind software flags. The hardware
+simply has eight slots, and eight is the absolute maximum simultaneously
+active sprites per raster line.
 
 A multiplexer that repositions sprites by writing new Y coordinates between
-groups relies on the VIC not seeing two logical sprites at the same Y at
-the same time. If the IRQ fires too late — or if the sort fails to separate
-two groups by at least one line — the chip sees nine or more enabled sprite
-indices all claiming to be active on the same line. It still only fetches
-data for indices 0-7. Indices with no available channel are ignored without
-error, without a flag, and without any signal visible to the programmer.
-
-Because the chip walks indices in ascending order, the overflow always
-discards the highest-indexed sprites on the contested line. Sprite 0 always
-wins; sprite 7 is always the first casualty.
+groups relies on each hardware slot being free when its next logical sprite
+is due. The chip compares each enabled slot's Y with the raster line late in
+every line (cycles 55-56 in Bauer's timing; measured in VICE, a Y write
+landing before roughly cycle 55 of the target line still starts the sprite
+on the next line) and starts the sprite's DMA only if that slot's DMA is
+currently off. Two things therefore lose a sprite, without error, without a
+flag, and without any signal visible to the programmer: a slot re-armed to a
+Y that matches while the slot's own DMA is still running (the incoming
+sprite is skipped for the rest of the frame — measured in VICE x64sc, a slot
+at Y=100 rewritten on line 112 to Y=120 never re-appeared, while Y=121 did),
+and a Y written after the raster has already passed it, which the compare
+never matches again that frame. $D015 has only eight bits; the chip never
+"sees nine enabled indices", and no index has priority over another. (An
+earlier version of this paragraph said the chip walks indices 0-7 in
+ascending order and always discards the highest-indexed sprite on a
+contested line; the drop is per slot and depends on timing, not on index.)
 
 `sprite_multiplex_8` is on both metadata lines above for that reason: the
 overflow arises inside a naive multiplexer — one whose IRQ fires late or
@@ -150,10 +159,22 @@ irq_group2:
     rti
 ```
 
-Critical invariant: every element of `logicY[8..15]` must be at least 22
-lines below every element of `logicY[0..7]` that uses the same hardware
-slot. If that gap is violated, the old sprite's DMA is still active when
-the new one tries to start, and one of them is silently dropped.
+Critical invariant: every element of `logicY[8..15]` that reuses a hardware
+slot must be at least 21 lines below that slot's previous Y (42 if
+Y-expanded). Measured in VICE x64sc 3.10: a slot rewritten to old Y + 21
+re-displays on the very next line with no gap, old Y + 20 never appears
+again that frame, old Y + 22 leaves one blank line (Y-expanded: + 42
+seamless, + 41 dropped). The mechanism — the outgoing sprite's DMA switches
+off in cycle 16 of line Y + 21 and the Y compare that would re-arm the slot
+runs in cycle 55 of that same line — is from Bauer's VIC article, not
+measured here. An earlier revision of this paragraph said 22 and claimed a
+21-line gap dropped a sprite; it does not. The 3-4 lines of slack in the Fix
+come on top of the 21 for a different reason: the IRQ at `logicY[8] - 4`
+also rewrites the slot's X, pointer and colour, and those act on the
+still-running outgoing sprite from the next line (a colour write on line 112
+recolours a Y = 100 sprite's rows 113-121, measured in VICE), so with that
+IRQ scheme the practical same-slot spacing is 21 plus the slack, and a
+20-line gap silently drops the incoming sprite for that frame.
 
 ### Cross-references
 
@@ -169,7 +190,7 @@ the new one tries to start, and one of them is silently dropped.
 
 ---
 
-## sprite_y_expand_double_register_write — Changing Y-expand mid-display requires a double $D017 write or scan-line artifacts appear
+## sprite_y_expand_double_register_write — Clearing Y-expand mid-display crunches the sprite if the write lands on one cycle; a second write does not help
 
 **Severity:** high
 **Region:** both
@@ -178,71 +199,91 @@ the new one tries to start, and one of them is silently dropped.
 
 ### Symptom
 
-A sprite that is supposed to switch between normal and Y-expanded height
-mid-frame (or at the start of a new frame while the sprite is still in the
-display area) shows a single corrupted scanline at the point of transition.
-The artifact looks like a repeated row or a skipped row — the sprite bitmap
-shifts out of alignment at the moment the expansion bit is toggled. The
-glitch is one line tall, repeatable every frame, and does not move with the
-sprite's Y position: it appears at the specific raster line where the
-register write landed, regardless of the sprite's logical position.
-
-On some chip revisions (especially the 8565 HMOS-II) the glitch is subtler
-— a faint half-pixel shift rather than a full row repeat — but it is still
-present and still caused by the same internal latch desynchronization.
+A sprite that is supposed to switch from Y-expanded to normal height
+mid-frame, while it is still in the display area, is occasionally the wrong
+length: it comes out of the switch with its rows out of order and ends many
+lines lower than it should — the "sprite crunch". The fault depends on the
+exact cycle the $D017 write lands on within the raster line, so it comes and
+goes with IRQ jitter: at almost every cycle position the switch is clean
+(the sprite simply continues unexpanded from its current row), and at one
+cycle position it crunches. An earlier version of this section described a
+one-line artifact — a single repeated or skipped row at the line of the
+write — on every mid-sprite write. Measured in VICE x64sc 3.10 PAL, no such
+artifact exists: a clear at 62 of 64 cycle positions gave a clean switch
+with no repeated or skipped row, and the remaining 2 positions gave the
+crunch (a +21-line change, rows re-fetched out of order). A sentence here
+about a subtler "half-pixel shift" on the 8565 was removed as unverifiable
+on this machine (VICE was run as a 6569 only).
 
 ### Mechanism
 
-The VIC-II implements Y expansion via an internal per-sprite expansion
-toggle called MCBASE in the chip's state machine (documented in Christian
-Bauer's VIC-II article and visible in the VICE emulator source). On each
-raster line where a sprite is active, the chip consults its $D017 bit for
-that sprite. If the bit is set (Y-expand enabled), the chip toggles the
-MCBASE flag instead of incrementing the sprite's internal row counter — so
-each logical row of the bitmap is displayed on two physical raster lines.
-If the bit is clear, the row counter increments normally every line.
+The VIC-II implements Y expansion with a per-sprite expansion flip-flop
+(the "advance line" / expansion flip-flop of Bauer's VIC-II article;
+`exp_flop` in the VICE source). While the sprite's $D017 bit is clear the
+flip-flop is held set; while the bit is set and the sprite's DMA is on, it
+is inverted once per line (Bauer places this in cycle 55; VICE 3.10's PAL
+cycle table, as read for `sprite_y_stretch_glitch` in
+`docs/techniques/sprite.md`, at cycle 56). In cycle 16 of the following
+line the 6-bit sprite data counter base MCBASE is loaded from the data
+counter MC — moving the sprite on to its next 3-byte row — only if the
+flip-flop is set; otherwise MCBASE is left alone and the same row is
+fetched again. MCBASE is a counter, not the toggle; neither it nor the
+flip-flop appears in the Programmer's Reference Guide. (An earlier version
+of this paragraph called the toggle itself "MCBASE".)
 
-The problem arises when the CPU writes $D017 while the sprite is mid-render
-and the chip's MCBASE toggle is in its "second half" state. At that
-moment, the chip has already decided whether to increment the row counter
-for the current line based on the previous value of $D017. A single write
-that arrives in the wrong half of the toggle cycle leaves MCBASE in an
-inconsistent state for exactly one line — the chip either repeats a row
-(if the toggle was suppressed) or skips one (if it fired twice before the
-write landed). The artifact is one line high.
-
-The same mechanism produces the intentional "sprite crunch" effect
-(`sprite_y_stretch_glitch`) when exploited deliberately. Here it is an
-accidental side effect of an otherwise normal register update.
+A $D017 clear that lands anywhere else in the line does nothing worse than
+set the flip-flop: from the next cycle-16 step the sprite advances a row
+every line and finishes as a plain unexpanded sprite from its current row.
+The problem is one cycle only. If the clear lands on cycle 15 (VICE 3.10's
+PAL cycle table) of one of the sprite's display lines after the first —
+immediately before the cycle-16 MCBASE step — the chip does not handle the
+transition cleanly and MCBASE is loaded with a blend of its old value and
+MC rather than either; the sprite's remaining length changes once, by a
+data-dependent amount, and the rows come out of order. This is the "sprite
+crunch" that `sprite_y_stretch_glitch` exploits deliberately; here it is an
+accidental side effect of an otherwise normal register update. Which line
+the write must land on is characterised in that technique entry (it
+measured the second display line of a sprite at Y=100); in the
+verification of this entry the crunching clear was pinned to raster line
+169 for a Y-expanded sprite at Y=150, a line on which the expanded sprite
+would otherwise have repeated its row. State the cycle; whether the line
+is one on which MCBASE advances has not been measured and is not claimed.
 
 ### Fix
 
-The fix is the "double-write trick": write $D017 twice in rapid succession,
-with the sprite's bit in the desired new state for both writes. The first
-write forces the chip's input latch to the new value. The second write,
-issued one CPU cycle later, ensures the latch has settled through both
-halves of the internal toggle before the chip makes its next row-counter
-decision. The pair of writes resynchronizes the MCBASE state machine
-regardless of which half-cycle it was in when the first write arrived.
-
-The double write must be issued at a known horizontal position within the
-raster line. Using a stable raster IRQ to fire exactly at the start of the
-target line, then issuing the two STA instructions without any intervening
-cycles, satisfies the requirement. The window for the writes is
-approximately two consecutive CPU cycles; spacing them further apart (e.g.,
-with an intervening LDA) risks catching a toggle event between the two
-writes, which negates the fix.
+The fix is to control *where in the line* the single $D017 write lands, not
+to write the register twice. Fire a stable raster IRQ on the target line and
+issue one `sta $D017` at a known cycle position that is not the crunch
+cycle; anywhere on the sprite's first display line, or on a line before the
+sprite starts, is also safe. A second write does not help: an earlier
+version of this entry prescribed a "double-write trick" — two back-to-back
+STAs to "resynchronize" the toggle — and said a single write produced a
+one-line repeated or skipped row. A 64-position single-vs-double sweep in
+VICE x64sc 3.10 PAL (a clear of one sprite's bit at every cycle position of
+a display line, once as `sta $D017 / nop / nop` and once as
+`sta $D017 / sta $D017` at the identical first-write cycle) found the two
+identical at every position, including the crunch cycle, where the double
+write produced byte-for-byte the same crunch. The earlier text also said
+the second write came "one CPU cycle later"; two consecutive `sta $D017`
+instructions in fact write four cycles apart (STA abs is 4 cycles and the
+write is its last cycle), well past the cycle-16 step it would have needed
+to influence. Do not reach for a read-modify-write (`inc`/`dec`/`asl
+$D017`) to get consecutive-cycle writes either: an RMW does write twice on
+consecutive cycles, but its first write is the old register value.
 
 If the sprite's Y expand state only needs to change between frames (not
-mid-frame), the safest moment is during vertical blank, before the sprite's
-Y position comes into view. No double-write is needed there because the
-chip is not in mid-render for that sprite and MCBASE is in its reset state.
+mid-frame), the simplest moment is during vertical blank, before the
+sprite's Y position comes into view: the sprite's DMA is off, so the
+expansion flip-flop is held set and the crunch cycle cannot be hit.
 
 ### Worked example
 
 The following KickAssembler snippet fires a stable raster IRQ one line
-above the sprite's current top edge, then issues the double-write to flip
-sprite 3's Y-expand bit off cleanly.
+above the sprite's current top edge, then issues a single write to flip
+sprite 3's Y-expand bit off cleanly. On that line the sprite's DMA has not
+started, so the write cannot land on the crunch cycle. (An earlier version
+of this listing wrote $D017 twice; the second write changed nothing in a
+64-position VICE sweep and has been removed.)
 
 ```kickassembler
 // Stable raster IRQ fires at rasterTarget (one line above sprite top)
@@ -256,10 +297,9 @@ irq_clear_yexpand:
     lda #$01
     sta $D019            // acknowledge VIC raster IRQ
 
-    // Double-write: clear bit 3 of $D017 (sprite 3 Y-expand off)
+    // Single write: clear bit 3 of $D017 (sprite 3 Y-expand off)
     lda #%11110111       // new value: sprite 3 bit clear, others unchanged
-    sta $D017            // first write — forces latch to new value
-    sta $D017            // second write (next cycle) — settles MCBASE state
+    sta $D017            // one write is enough; the flip-flop is held set from here
 
     // Re-arm IRQ for next occurrence
     lda #<nextIrqLine
@@ -272,22 +312,24 @@ irq_clear_yexpand:
 ```
 
 If the target is to toggle expansion *on* (set the bit) rather than off,
-the same double-write pattern applies with the appropriate mask. The chip
-does not distinguish between enable and disable transitions — both require
-the double-write to avoid the single-line artifact.
+the same single write applies with the appropriate mask. Only the *clear*
+transition was swept for the crunch in the verification above; setting the
+bit mid-sprite was not measured here and is not claimed to be safe at every
+cycle.
 
 For situations where multiple sprites need simultaneous Y-expand state
-changes, include all sprite bits in the mask value and issue the same
-double-write pair once. A single pair of STAs covering all eight sprites
-is sufficient; one pair per sprite is wasteful and risks introducing
-timing skew between sprites.
+changes, include all sprite bits in the mask value and issue the one write.
+A single STA covering all eight sprites is sufficient; one write per sprite
+is wasteful and risks introducing timing skew between sprites. (An earlier
+version of these two paragraphs said both transitions "require the
+double-write"; see the Fix above for the measurement that retired it.)
 
 ### Cross-references
 
-- Technique: `stable_raster_irq` — prerequisite for placing the double-write
-  at the correct horizontal cycle position
+- Technique: `stable_raster_irq` — prerequisite for placing the $D017
+  write at a known horizontal cycle position, away from the crunch cycle
 - Technique: `sprite_y_stretch_glitch` — the intentional exploitation of
-  the same MCBASE state-machine quirk to produce tall sprites
+  the same expansion flip-flop / MCBASE-load quirk to produce tall sprites
 - Register: `D017` — sprite Y-expand control register
 
 ---
@@ -327,13 +369,19 @@ still clear — the sprite teleports to X=0 on screen. Setting the MSB in
 $D010 when X ≥ 256 would place the sprite correctly at the screen position
 corresponding to the full 9-bit value, but the write never happens.
 
-The VIC-II coordinate space maps X=0 to the first dot-clock of the visible
-area boundary (approximately column 24 in the default display window,
-though exact positioning depends on the display edge). X=256 (9-bit value
-`%1_00000000`) is 256 dot-clocks into the visible area and corresponds
-roughly to column 280 on a PAL screen — slightly past the right edge of
-the 320-pixel-wide visible window. Sprites positioned at X=256 to X=344 are
-partially or fully clipped at the right border.
+Sprite X is a 9-bit coordinate, 0-511, in the VIC-II's own pixel space. The
+320-pixel display window spans X=24..343 (X=31..334 with CSEL=0); X=0 is 24
+pixels into the left border, so a sprite needs X ≥ 24 to be fully inside
+the window, and the right-hand 88 pixels of the window (X=256..343) are
+reachable only with the $D010 bit set. A sprite at X=256 therefore sits
+about 232 pixels from the window's left edge and is fully visible; it is
+still fully visible at X=320 (occupying 320..343), begins to be covered by
+the right border from X=321, and is entirely hidden in the border from
+X=344 (measured in VICE x64sc: X=256 renders at VIC X 256..279, screenshot
+x 264-287). Note the helper below already assumes this range (0-343). An
+earlier version of this paragraph put X=0 at the window's left edge and
+X=256 "slightly past the right edge", with X=256..344 clipped; both were
+wrong.
 
 ### Fix
 
@@ -483,7 +531,9 @@ frameStart:
 ```
 
 **For per-line IRQ-driven collision response:** Enable the collision IRQ via
-$D01A bits 1 (sprite-sprite) and 2 (sprite-background). The VIC fires an
+$D01A bit 2 (EMMC, sprite-sprite) and bit 1 (EMBC, sprite-background) — the
+same layout as $D019. (An earlier version of this sentence had the two bits
+swapped.) The VIC fires an
 IRQ on the same line the collision is latched. Inside the IRQ handler, read
 $D019 first to identify the interrupt source (bit 2 = sprite-sprite, bit
 1 = sprite-background), then read $D01E or $D01F as appropriate. Acknowledge

@@ -33,8 +33,9 @@ fraction of a semitone); only the rhythm is wrong. On an NTSC machine running a
 PAL-authored music driver, a track meant to run at 120 BPM plays at roughly 144
 BPM.
 
-The inverse problem — NTSC-authored music played on PAL — produces a tempo 17%
-too slow. Energetic chiptunes become sluggish. This is rarer in practice because
+The inverse problem — NTSC-authored music played on PAL — produces a tempo about
+16% too slow (50.125 / 59.826 = 0.838, the inverse of the 19.4% below; an
+earlier version said 17%). Energetic chiptunes become sluggish. This is rarer in practice because
 most C64 music was authored in Europe on PAL machines.
 
 ### Mechanism
@@ -91,7 +92,10 @@ set_flag:
     cli
     rts
 
-// Per-frame IRQ handler calling music play.
+// Per-frame IRQ handler calling music play. Installed at $0314, so the
+// KERNAL dispatcher at $FF48 has already pushed A, X, Y; the handler exits
+// through $EA81 (PLA/TAY/PLA/TAX/PLA/RTI), which pops them. Use $EA31
+// instead if the KERNAL's jiffy clock and keyboard scan are wanted.
 frame_irq:
     asl $d019               // Ack VIC raster IRQ
     lda region_flag
@@ -107,11 +111,20 @@ frame_irq:
 call_play:
     jsr music_play
 skip_play:
-    rti
+    jmp $ea81               // Not rti: the dispatcher's A, X, Y are still on the stack
 
 region_flag:        .byte 0
 ntsc_frame_counter: .byte 0
 ```
+
+**Correction (2026-09-22).** `frame_irq` used to end in a bare `rti`. From a
+`$0314` handler that pops the dispatcher's saved Y, X and A as P, PCL and
+PCH, so the first interrupt returns to whatever address the interrupted
+code's A:X happened to form (measured in VICE x64sc 3.10: the verbatim
+listing warm-starts on the first frame; with A:X pointed at a label,
+execution lands on that label). It is not a 3-byte-per-frame stack leak.
+The same change applies to the three `irq_reset_*` handlers in the third
+pitfall below, which also write `$0314`.
 
 **Correction (2026-09-21).** The `detect_region` above replaces one that had
 two faults. It read `$D012` once, immediately after RST8 rose — that read is
@@ -135,9 +148,25 @@ cleanest solution when the music driver already has the infrastructure — no
 frame-skipping artefacts, no timing drift. Approach 1 is preferable when
 modifying the driver is not an option (e.g., a pre-built binary player).
 
-**What not to do:** Do not adjust the CIA timer A reload to force a 50 Hz rate
-on NTSC. The CIA controls the IRQ rate, not the VIC's frame rate; mismatching
-them causes tearing and audio artefacts.
+**A 50 Hz CIA tick is a valid third approach for the music alone.** Set CIA1
+Timer A to one tick per 20 ms of the *local* φ2 clock — latch $4FE5 (20,454
+cycles) on NTSC R8, $4CE5 (19,686) on PAL — and call the play routine from its
+IRQ; CIA-timed and multi-speed tunes already run this way (see music-sid.md,
+`sid_play_routine_pattern` Variations). Measured in VICE x64sc 3.10: on the
+NTSC model that latch fired 251 times in 300 frames (300 × 17,095 / 20,454 =
+250.7), a 50.0 Hz tick, so the tempo is correct without frame-skipping. Two
+costs come with it. The latch must be region-corrected — the same NTSC latch
+on PAL fired 289 times in 300 frames, 3.8% slow (see
+`cia_timer_phi2_difference` below) — and the IRQ is not locked to the frame:
+across those 300 frames it entered on every raster line ($D012 min 0, max
+255), so any screen update placed in the same handler lands mid-frame and
+drifts against the display, and a long play routine in it can delay a raster
+IRQ it collides with. Keep the music IRQ to the play call, or re-enable IRQs
+around it, and do screen work from the raster IRQ. **What not to do** is run
+one per-frame latch or one per-frame raster tick unchanged on both regions.
+An earlier version of this paragraph forbade a 50 Hz CIA tick on NTSC and
+claimed it caused tearing and audio artefacts; a music tick does not draw,
+and no instrument or independent page supported the claim.
 
 ### Worked example
 
@@ -169,8 +198,11 @@ just reached 6 (then reset it and return without calling play).
 
 ### Symptom
 
-A CIA timer calibrated for one second on PAL fires after 1.038 seconds on NTSC
-(38 ms drift per second, accumulating without bound). A digi sample played via a
+A CIA timer calibrated for one second on PAL fires after 0.963 s on NTSC
+(985,248 counts at 1,022,727 Hz — about 37 ms early per intended second; a
+PAL-calibrated software clock reads 1.038 s after one real NTSC second, and
+the error accumulates without bound; an earlier version had the direction
+backwards, "fires after 1.038 seconds"). A digi sample played via a
 CIA-timed loop pitches 3.8% sharp on NTSC — well above the ~20-cent audibility
 threshold. RS-232 via CIA2 is the most immediately obvious failure: wrong baud-
 rate timer values cause framing errors on every byte, making the user port
@@ -185,26 +217,42 @@ that clocks the 6510 through each instruction.
 
 The φ2 clock frequency differs by region:
 
-- **PAL:** 985,248.444 Hz (derived from 17.734475 MHz crystal ÷ 18)
+- **PAL:** 985,248.444 Hz (derived from 17.734472 MHz crystal ÷ 18; an earlier
+  version paired this quotient with a 17.734475 MHz crystal, which gives
+  985,248.61 Hz)
 - **NTSC R8:** 1,022,727.143 Hz (derived from 14.31818 MHz crystal ÷ 14)
 
 The ratio is 1,022,727 / 985,248 = 1.03804. Any timer reload value calibrated on
 PAL fires 3.8% too soon on NTSC, and vice versa.
 
-For a 1-second interval on PAL, the reload value is 985,248 (0xF0960 — but CIA
+For a 1-second interval on PAL, the reload value is 985,248 ($F08A0, not the
+$F0960 an earlier version gave — but CIA
 timers are 16-bit, so the maximum interval is 65,536 cycles, i.e., 66.5 ms on
 PAL or 64.1 ms on NTSC). Long intervals require a software counter to chain
 multiple timer underflows. Each hardware underflow fires 64.1 ms apart on NTSC
 vs 66.5 ms on PAL — a 2.4 ms difference per underflow that accumulates linearly.
 
-Common affected uses: 1-second countdown timers (38 ms drift per second,
-visible in under 10 seconds), CIA-driven music ticks (same 20% tempo jump as
-the frame-rate pitfall above), $D418 digi via CIA (3.8% pitch shift — ≈ 63
-cents, clearly audible), and RS-232 baud-rate timers (wrong baud fails
-immediately with framing errors on every byte).
+Common affected uses: 1-second countdown timers (about 37 ms short per second,
+visible in under 10 seconds), CIA-driven music ticks (3.8% fast, not 20%: a
+CIA tick is insulated from the frame-rate difference but not from the φ2
+clock difference; measured in VICE x64sc 3.10 as 217 CIA underflows of the
+PAL latch $4CC6 per 250 NTSC frames versus 250 per 250 PAL frames — an
+earlier version claimed the "same 20% tempo jump" as the frame-rate pitfall,
+which only a per-frame latch set for the wrong region gives), $D418 digi via
+CIA (3.8% pitch shift — ≈ 65 cents, clearly audible; 1200 × log2(1.03804) =
+64.6, not the 63 given earlier), and RS-232 baud-rate timers (wrong baud
+fails immediately with framing errors on every byte).
 
-The pal-ntsc-reference.md CIA timer section gives the per-frame timer values:
-PAL $4CC6 (19,654), NTSC R8 $42C5 (17,093).
+The pal-ntsc-reference.md CIA timer section gives the once-per-frame timer
+latches: PAL $4CC7 (19,655) for a 19,656-cycle frame, NTSC R8 $42C6 (17,094)
+for 17,095. Latch = cycles − 1, because a continuous timer with latch N
+repeats every N + 1 cycles. An earlier version of this page gave $4CC6 /
+$42C5 and attributed them to the reference; those are one cycle short of a
+frame (63 × 312 = 19,656; 65 × 263 = 17,095) and the reference measured them
+drifting one cycle per frame — in VICE x64sc a continuous $4CC7 timer holds
+the same PAL raster line indefinitely while $4CC6 walks one raster line every
+63 frames; $42C6 / $42C5 behave the same way on the 6567R8 (one line every 65
+frames).
 
 ### Fix
 
@@ -219,12 +267,13 @@ both constants as named symbols and branch on the region flag:
 .const CIA1_TA_HI = $DC05
 .const CIA1_CRA   = $DC0E
 
-// Timer A latch values for once-per-frame IRQ.
-// PAL:  19,654 cycles = $4CC6. Timer fires after $4CC6+1 = 19,655 cycles.
-// NTSC: 17,093 cycles = $42C5. Timer fires after $42C5+1 = 17,094 cycles.
-.const PAL_FRAME_LATCH_LO  = $C6
+// Timer A latch values for once-per-frame IRQ (latch = cycles - 1).
+// PAL:  latch $4CC7 = 19,655. Timer fires after $4CC7+1 = 19,656 cycles = 63 x 312.
+// NTSC: latch $42C6 = 17,094. Timer fires after $42C6+1 = 17,095 cycles = 65 x 263.
+// (An earlier version used $4CC6 / $42C5, one cycle short of a frame.)
+.const PAL_FRAME_LATCH_LO  = $C7
 .const PAL_FRAME_LATCH_HI  = $4C
-.const NTSC_FRAME_LATCH_LO = $C5
+.const NTSC_FRAME_LATCH_LO = $C6
 .const NTSC_FRAME_LATCH_HI = $42
 
 setup_frame_timer:
@@ -264,23 +313,24 @@ those corrections.
 
 ```kick
 // BAD: hard-coded PAL latch value used on both regions.
-// On NTSC, timer fires after 19,655 phi2 cycles.
-// NTSC phi2 = 1,022,727 Hz, so interval = 19655 / 1022727 = 19.22 ms.
+// On NTSC, timer fires after 19,656 phi2 cycles ($4CC7+1).
+// NTSC phi2 = 1,022,727 Hz, so interval = 19656 / 1022727 = 19.22 ms.
 // PAL frame = 19.95 ms. Delta = 0.73 ms per frame — visible in seconds.
-    lda #$C6
-    sta $DC04               // $4CC6 = PAL frame latch (WRONG on NTSC)
+    lda #$C7
+    sta $DC04               // $4CC7 = PAL frame latch (WRONG on NTSC)
     lda #$4C
     sta $DC05
 
 // GOOD: region-conditional latch selection.
     lda region_flag
     bne !+
-    lda #$C6                // PAL lo
+    lda #$C7                // PAL lo
     sta $DC04
     lda #$4C                // PAL hi
     sta $DC05
-    beq !++
-!:  lda #$C5                // NTSC lo
+    bne !++                 // Always taken: A = $4C, Z clear (same idiom as
+                            // setup_frame_timer's bne timer_go); jmp also works
+!:  lda #$C6                // NTSC lo
     sta $DC04
     lda #$42                // NTSC hi
     sta $DC05
@@ -291,13 +341,24 @@ those corrections.
 // from the same phi2 source.
 ```
 
+**Correction (2026-09-22).** The GOOD block above used to leave the PAL path
+with `beq !++`. `lda #$4C` clears Z, so that branch was never taken and the
+PAL path fell straight through into the NTSC stores. Measured in VICE x64sc
+3.10 on the PAL model: with the block assembled verbatim and `region_flag` =
+0, stopping Timer A and force-loading the latch (`$DC0E` = $10) read
+`$DC04`/`$DC05` = $C5/$42 — the NTSC value — and the same with
+`region_flag` = 1. The same run confirmed that `setup_frame_timer`'s `bne
+timer_go` is always taken (PAL gave $C6/$4C, NTSC $C5/$42, before the latch
+constants themselves were corrected to $4CC7 / $42C6 as noted above).
+
 ### Cross-references
 
 - Registers: `DC04`, `DC05` (CIA1 Timer A latch/counter), `DC06`, `DC07`
   (CIA1 Timer B latch/counter). CIA2 equivalents at `DD04`, `DD05`, `DD06`,
   `DD07` — same arithmetic, different base address.
-- Reference: `pal-ntsc-reference.md` CIA timer values table — canonical latch
-  constants for PAL ($4CC6) and NTSC R8 ($42C5).
+- Reference: `pal-ntsc-reference.md` CIA timer values table — canonical
+  once-per-frame latch constants for PAL ($4CC7) and NTSC R8 ($42C6), with
+  the latch = cycles − 1 rule and the drift measurement for $4CC6.
 - Pitfall: `pal_ntsc_tempo_mismatch` — the music-tempo problem; closely
   related when a CIA timer drives the music tick instead of the VIC raster IRQ.
 
@@ -316,21 +377,35 @@ those corrections.
 A raster table loop that walks through IRQ entries for lines 0-311 appears to
 work on PAL. On NTSC the same loop reaches line 263 and then either:
 
-- **Fires at the wrong line** — $D012 wraps at line 263 on NTSC. A hard-coded
-  target of line 280 becomes target 280 - 263 = 17 (with RST8 clear) — firing
-  during the top border instead of the expected bottom area.
-- **Never fires** — if the code sets $D012 = 280 without clearing RST8, the
-  VIC sees line 280 + 256 = 536, which never occurs on NTSC. The IRQ chain
-  halts and the screen freezes.
-- **Fires twice per frame** — a target at line 250 is inside the valid range on
-  both PAL (250 < 312) and NTSC (250 < 263), but a loop that then increments to
-  line 264 wraps to line 1 on NTSC. An IRQ chain that should have terminated at
-  "bottom of frame" keeps chaining through the invisible lines and fires again
-  inside the next frame's visible area.
+- **Fires at the wrong line** — the raster compare is a 9-bit equality against
+  the counter; nothing is reduced modulo the line count. A hard-coded target
+  of 280 with RST8 clear is the low byte alone: 280 → $18 → line 24, inside
+  the NTSC vertical blank / PAL top border (measured in VICE x64sc 3.10, both
+  models: RST8 clear + $D012 = $18 fires at $D012 = $18 = 24) instead of the
+  expected bottom area. An earlier version said the target "wraps" to 280 −
+  263 = 17; the VIC does no such reduction.
+- **Never fires** — if the code sets RST8 and $D012 = $18 (the 9-bit value
+  280), the NTSC counter never reaches 280. The IRQ chain halts and the screen
+  freezes. (280 cannot be written to $D012 at all; it is RST8 = 1 with low
+  byte $18. An earlier version described this as "280 + 256 = 536".)
+- **Stalls, or wraps on both chips** — a target at line 250 is inside the
+  valid range on both PAL (250 < 312) and NTSC (250 < 263), but a chain that
+  then steps to 264 behaves in one of two ways, neither of them "wrap to line
+  1 on NTSC" as an earlier version said. A chain that sets RST8 for 264 stalls
+  on NTSC (0 fires) and fires at 264 on PAL — a region difference. A chain
+  that steps only $D012 and never sets RST8 arms $08 and fires at line 8 on
+  BOTH chips (measured: RST8 clear + $08 → line 8 on PAL and NTSC); that is
+  the 8-bit wrap covered by `d012_wrap_around`, not a region difference.
 
-More subtly: PAL has 64 post-display blanking lines (248-311); NTSC has only 15
-(248-262). A sprite multiplexer that updates Y positions during the blanking area
-has enough cycles on PAL; on NTSC it runs into the next frame's visible area.
+More subtly: PAL has 64 lines past the badline window (248-311, where no
+badline can steal cycles: the window is $30-$F7); NTSC has only 15 (248-262).
+A sprite multiplexer that updates Y positions in that range has enough cycles
+on PAL; on NTSC it runs into the next frame's visible area. These lines are
+not blanking, as an earlier version called them: on PAL, 248-250 are the last
+three lines of the 25-row display window, 251-299 are visible lower border
+and only 300-311 (12 lines) are in vertical blank; on NTSC all of 248-262 is
+display or border and visible (NTSC vertical blank is 13-40). A $D020/$D021 or
+sprite write in that range is visible in the border on both regions.
 
 ### Mechanism
 
@@ -359,10 +434,13 @@ Code that hard-codes the line count fails in two ways:
    creates a compare that the NTSC VIC never reaches. The IRQ chain stalls. The
    program hangs or loses its raster chain permanently.
 
-PAL has 64 lines in the post-display blanking region (248-311). NTSC has 15
-(248-262). The practical consequence: NTSC blanking-region work must complete in
-15 × 65 = 975 cycles vs PAL's 64 × 63 = 4,032 cycles — a 4× cycle-budget
-reduction that makes some PAL effects impossible on NTSC without redesign.
+PAL has 64 lines past the badline window (248-311). NTSC has 15 (248-262).
+The practical consequence: NTSC end-of-frame work must complete in 15 × 65 =
+975 cycles vs PAL's 64 × 63 = 4,032 cycles — a 4× cycle-budget reduction that
+makes some PAL effects impossible on NTSC without redesign. (Anchored on the
+last badline, line 243, pal-ntsc-reference.md counts 68 and 19 lines after
+it: 4,284 vs 1,235 cycles; the ratio is the same. Most of those lines are
+visible border, not blanking — see the Symptom above.)
 
 ### Fix
 
@@ -370,8 +448,9 @@ Two strategies:
 
 **Strategy 1 — Clamp line targets to the safe range.** The "safe" raster
 lines that exist on both PAL and NTSC are 0-262. Schedule all raster IRQs and
-table-driven effects within this range. Accept that the bottom blanking area for
-NTSC-targeted code is only 15 lines (248-262) rather than 64 lines.
+table-driven effects within this range. Accept that the bottom-of-frame window
+past the badlines for NTSC-targeted code is only 15 lines (248-262) rather
+than 64 lines.
 
 **Strategy 2 — Region-conditional line tables.** Maintain two versions of any
 raster-table structure — one parameterized for PAL (lines 0-311) and one for
@@ -387,29 +466,54 @@ the flag-store form is `detect_region` in the first pitfall above (36 bytes).
 ```kick
 // BROKEN: raster table loop hard-coded for 312 lines.
 // On NTSC, entries for lines 263-311 don't exist — IRQs misfire or stall.
+// Illustrative only: KickAssembler 5.25 assembles `cpx #312` as `cpx #$38`
+// (the immediate is truncated to 8 bits, no error), and an 8-bit X cannot
+// count to 312 anyway. The fault shown is the hard-coded constant.
 .const NUM_LINES_PAL = 312
 setup_irq_table:
     ldx #0
 loop_irq:
-    lda raster_targets,x
+    lda raster_lo,x
     sta $d012
+    lda raster_hi,x         // 0 or 1: the 9th bit of the target
+    lsr                     // ... into carry
+    lda $d011
+    and #%01111111
+    bcc !+
+    ora #%10000000          // Set RST8 for targets >= 256
+!:  sta $d011
     // ... install handler ...
     inx
-    cpx #NUM_LINES_PAL      // Hard-coded 312 — WRONG on NTSC
+    cpx #NUM_LINES_PAL      // Hard-coded 312 — WRONG on NTSC (and truncated to $38)
     bne loop_irq
     rts
 
-// FIXED: cap the loop at num_lines_active, set at boot.
-// For NTSC: 263 entries max. For PAL: 312.
+// FIXED: walk a table of NUM_ENTRIES 9-bit targets (two bytes each) and skip
+// any entry at or above num_lines_active, a 16-bit line count set at boot.
+.const NUM_ENTRIES = 8      // Table length (< 256) — not the frame's line count
 setup_irq_table_fixed:
     ldx #0
 loop_irq_fixed:
-    cpx num_lines_active    // Region-adjusted at boot
+    cpx #NUM_ENTRIES
     beq done_loop
-    lda raster_targets,x
-    cmp num_lines_active    // Skip any target that exceeds the frame
-    bcs skip_entry
+    // 16-bit compare: target (hi:lo) against num_lines_active; skip if >=.
+    lda raster_hi,x
+    cmp num_lines_active+1
+    bcc install_entry       // hi below: target is in range
+    bne skip_entry          // hi above: target is past the frame
+    lda raster_lo,x
+    cmp num_lines_active
+    bcs skip_entry          // hi equal, lo at or above: past the frame
+install_entry:
+    lda raster_lo,x
     sta $d012
+    lda raster_hi,x
+    lsr                     // 9th bit into carry
+    lda $d011
+    and #%01111111
+    bcc !+
+    ora #%10000000          // Set RST8 for targets >= 256
+!:  sta $d011
     // ... install handler ...
 skip_entry:
     inx
@@ -417,25 +521,43 @@ skip_entry:
 done_loop:
     rts
 
-num_lines_active: .byte 0  // 0 = needs init; set to 56 (low byte of 312) PAL, 7 (263) NTSC
+num_lines_active: .word 0   // set to 312 (PAL) or 263 (NTSC) at boot
+raster_lo: .fill NUM_ENTRIES, <(50 + i * 30)   // example targets 50, 80, ... 260
+raster_hi: .fill NUM_ENTRIES, >(50 + i * 30)
 ```
 
+**Correction (2026-09-22).** An earlier FIXED listing kept `num_lines_active`
+as one byte "set to 56 (low byte of 312) PAL, 7 (263) NTSC" and compared
+8-bit targets against it. 312 & 255 = 56 and 263 & 255 = 7, so `cpx
+num_lines_active` stopped the walk after 56 entries on PAL and 7 on NTSC, and
+`cmp num_lines_active / bcs skip_entry` skipped every target at or above 56
+(PAL) or 7 (NTSC) — nearly the whole frame. Neither listing installed RST8,
+so a 9-bit target could not be armed. Both now carry two-byte targets, and
+the FIXED one loops on the table length and compares 16 bits (arithmetic;
+the truncation of `cpx #312` was confirmed by assembling it: `E0 38`).
+
 For most effects the simplest fix is to cap all IRQ line targets at 262 and
-avoid scheduling work in the PAL-only blanking region (lines 263-311). This
-sacrifices 49 lines of blanking-region CPU time on PAL but produces code that
-works unmodified on both regions.
+avoid scheduling work in the PAL-only lines (263-311; visible lower border up
+to 299, vertical blank from 300). This sacrifices 49 lines of end-of-frame CPU
+time on PAL but produces code that works unmodified on both regions.
 
 ### Worked example
 
 ```kick
 // Scenario: raster bar effect that colors every other scanline
 // from line 50 to line 250, then resets at the start of each frame.
-// The reset IRQ is placed at line 280 — inside PAL blanking, outside NTSC frame.
+// The reset IRQ is placed at line 280 — PAL lower border, outside NTSC frame.
+// All three handlers are installed at $0314 and exit via $EA81, which pops
+// the A, X, Y that the KERNAL dispatcher at $FF48 pushed.
 
 // BAD: reset IRQ targets line 280.
-// On PAL: fires in blanking area — works.
-// On NTSC: line 280 doesn't exist. IRQ fires at 280 - 263 = 17 (mod 263)
-//          during next frame's top border — corrupts the display.
+// On PAL: fires in the lower border — the line exists, so the chain runs;
+//         any colour/sprite change there is visible.
+// On NTSC: line 280 doesn't exist. With RST8 cleared as below the compare
+//          is the low byte alone, $18 = line 24 (inside the NTSC vertical
+//          blank) — the reset runs during the next frame's top and corrupts
+//          the display. (The VIC does not reduce 280 modulo 263 to 17, as an
+//          earlier comment said; measured in VICE x64sc 3.10, both models.)
 irq_reset_bad:
     asl $d019
     lda $d011
@@ -447,7 +569,7 @@ irq_reset_bad:
     sta $0314
     lda #>irq_color
     sta $0315
-    rti
+    jmp $ea81
 
 // GOOD: reset IRQ targets line 255 (safe on both PAL and NTSC).
 // Both regions have raster lines 0-254 inside the active / border area.
@@ -462,21 +584,21 @@ irq_reset_good:
     sta $0314
     lda #>irq_color
     sta $0315
-    rti
+    jmp $ea81
 
-// When you need region-specific blanking lines, select at runtime:
+// When you need region-specific end-of-frame lines, select at runtime:
 irq_reset_region_aware:
     asl $d019
     lda region_flag
     bne !+
-    // PAL: line 280 (inside 64-line blanking area)
+    // PAL: line 280 (lower border; 64 lines past the badline window)
     lda $d011
     ora #%10000000          // Set RST8 — line 280 >= 256
     sta $d011
     lda #<280
     sta $d012
-    beq done_reset_irq
-!:  // NTSC: line 253 (inside 15-line blanking area)
+    jmp done_reset_irq      // Not a conditional branch: <280 = $18 leaves Z clear
+!:  // NTSC: line 253 (lower border; 15 lines past the badline window)
     lda $d011
     and #%01111111          // Clear RST8
     sta $d011
@@ -487,17 +609,35 @@ done_reset_irq:
     sta $0314
     lda #>irq_color
     sta $0315
-    rti
+    jmp $ea81
 ```
+
+**Correction (2026-09-22).** The PAL path of `irq_reset_region_aware` ended
+`lda #<280` / `sta $d012` / `beq done_reset_irq`; `<280` is $18, so Z was
+clear, the branch never taken, and the code fell through into the NTSC
+branch — clearing RST8 and arming line 253. Measured in VICE x64sc 3.10 on
+the PAL model with `region_flag` = 0: the next raster IRQ read $D012 = $FD,
+$D011 = $1B; with the branch replaced by `jmp done_reset_irq` it read $D012 =
+$18, $D011 = $9B (9-bit line 280). `jmp` rather than `bne` because `bne`
+would only work while the low byte happens to be non-zero — a target of 256
+or 512 would silently break it again, the same failure the `detect_region`
+correction in the first pitfall records. All three handlers also ended in a
+bare `rti`, which from a `$0314` handler pops the dispatcher's saved
+registers as the return frame (see the `frame_irq` correction above); they
+exit through `$EA81` now.
 
 ### Cross-references
 
-- Technique: `stable_raster_irq` — the double-IRQ pattern that this pitfall
-  affects; the technique's NTSC notes discuss the narrower blanking window.
+- Technique: `stable_raster_irq` — the double-IRQ pattern this pitfall
+  affects (its NTSC notes cover the per-line budget only; the narrower
+  post-display window is in pal-ntsc-reference.md, Badline range).
 - Registers: `D012` (RASTER — low 8 bits of raster counter and compare
   target), `D011` (SCROLY — bit 7 is RST8, the 9th raster bit).
 - Reference: `pal-ntsc-reference.md` — quick-reference table for lines per
-  frame, $D012 wrap values, and the post-display blanking line counts.
+  frame and $D012 wrap values; its "Badline range" section gives the lines
+  after the last badline (68 PAL, 19 NTSC R8) and its "Visible region"
+  section the vertical blank (300-15 PAL, 13-40 NTSC). It does not give the
+  "post-display blanking" counts an earlier version of this entry cited.
 - Pitfall: `d012_wrap_around` — the complementary pitfall about RST8 and the
   9-bit raster counter; the two pitfalls often co-occur.
 
@@ -505,7 +645,9 @@ done_reset_irq:
 
 - VICE 3.10, `x64sc`, models `default`, `ntsc`, `oldntsc` — the instrument
   behind every "measured" figure on this page (the `detect_region`
-  correction and the entry-line runs). https://vice-emu.sourceforge.io/
+  correction and the entry-line runs; the 2026-09-22 corrections' latch
+  reads, raster-compare targets, CIA tick counts and handler-exit runs).
+  https://vice-emu.sourceforge.io/
 - KickAssembler 5.25 — assembled every `kick` fragment here; the 36-byte
   count is its.
 - Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its

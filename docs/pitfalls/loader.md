@@ -24,11 +24,10 @@ mechanisms are completely deterministic.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** LOAD
-**Triggered by techniques:** krill_loader_integration, sparkle_irq_loader
 
 ### Symptom
 
-A production installs Krill or Sparkle successfully during startup. The first
+A production installs a `$FFD5`-hooking fast loader successfully during startup. The first
 part loads at full speed. After the first part installs its own raster IRQ handler
 — or after any block of initialization code that includes "restore KERNAL vectors"
 as a housekeeping step — subsequent LOAD calls revert to the slow KERNAL serial
@@ -37,20 +36,36 @@ with a serial bus that has even marginal IEC signal quality, the slow KERNAL
 protocol may also produce read errors that never appeared with the fast path
 active.
 
-A subtler variant: code that calls KERNAL `RESTOR` ($FF8D, mode=0) at the start
-of initialization resets all KERNAL RAM vectors to their ROM defaults, including
-`$0330/$0331` (the LOAD vector). This silently undoes the fastloader installation
-before the first LOAD call ever happens.
+A subtler variant: code that calls KERNAL `RESTOR` (`$FF8A`, no arguments — an
+earlier version of this page said `$FF8D, mode=0`; `$FF8D` is `VECTOR`) at the
+start of initialization resets all sixteen KERNAL RAM vectors `$0314-$0333` to
+their ROM defaults, including `$0330/$0331` (the LOAD vector). This silently undoes
+the fastloader installation before the first LOAD call ever happens.
 
 ### Mechanism
 
-Fast loaders such as Krill and Sparkle install themselves by patching the KERNAL's
-RAM-based indirect jump vectors. The KERNAL jump table entry at `$FFD5` (LOAD)
-does not call ROM code directly — it executes an indirect jump through `$0330`
-(`ILOAD` vector, two bytes, little-endian). On a cold machine these bytes point
-to the ROM's own serial-load routine. The Krill installation routine overwrites
-`$0330/$0331` with the address of its own C64-side receive loop. All subsequent
-`JSR $FFD5` calls take the fast path transparently.
+Loaders that interpose on the KERNAL LOAD hook `ILOAD` at `$0330/$0331` so that
+`JSR $FFD5` takes the fast path; the classic cartridge fastloaders work this way.
+The KERNAL jump table entry at `$FFD5` (LOAD) is `JMP $F49E`; `$F49E` saves X/Y
+to `$C3/$C4` and then jumps through `$0330` (`ILOAD`, two bytes, little-endian),
+whose ROM default is `$F4A5` (KERNAL 901227-03, read from the `$FD30` vector
+table — rung 1; an earlier version of this page gave `$FA31`, which is inside the
+tape-read code). A hooking loader overwrites `$0330/$0331` with the address of
+its own C64-side receive loop, and all subsequent `JSR $FFD5` calls take the fast
+path transparently.
+
+Krill v194 does NOT work this way, and neither does Sparkle — an earlier version
+of this page said both did. Krill's API (`install`/`loadraw`/`loadcompd`) is
+called directly and its source contains no write to `$0330` — not even in
+`LOAD_VIA_KERNAL_FALLBACK` mode, whose fallback path calls `OPEN`/`CHKIN`/`BASIN`
+byte-by-byte rather than `$FFD5` (from the v194 source as read for this
+correction; the source is not on this machine, so rung 4 here — the technique
+page `../techniques/loaders-packers.md` "v194 concrete integration reference"
+agrees that the documented usage never goes through `$FFD5`). Sparkle's IRQ
+loader uses no KERNAL routine at all (see `sparkle_irq_loader`, "Uses kernal:
+(none)"). For Krill and Sparkle this pitfall does not apply: restoring `$0330` or
+calling `RESTOR` (`$FF8A`) leaves them working. The real Krill hazards are listed
+at the end of the Fix below.
 
 The problem arises when anything restores these vectors to their default ROM
 targets. Three common culprits:
@@ -59,34 +74,47 @@ targets. Three common culprits:
    bases include a block like this as part of IRQ installation:
 
    ```kick
-   SEI
-   LDA #$31        // ROM ILOAD lo
-   STA $0330
-   LDA #$FA        // ROM ILOAD hi  ($FA31 = ROM LOAD in KERNAL 901227-03)
-   STA $0331
-   CLI
+   sei
+   lda #$a5        // ROM ILOAD lo
+   sta $0330
+   lda #$f4        // ROM ILOAD hi ($F4A5 = LOAD body in KERNAL 901227-03; the $FD30 table value. $FFD5 -> $F49E does JMP ($0330))
+   sta $0331
+   cli
    ```
+
+   (An earlier version of this block wrote `$FA31`, which is inside the KERNAL's
+   tape-read code, and spelled the mnemonics in capitals, which KickAssembler 5.25
+   rejects — "Pseudo command SEI not defined"; the fence had never been assembled.)
 
    This pattern appears in generic IRQ-setup templates where the author
    intended only to stabilize the IRQ vector (`$0314/$0315`) but copied a
    broader vector-reset block that also clobbers the LOAD vector.
 
-2. **KERNAL RESTOR call.** `JSR $FF8D` with A=0 restores all fifteen KERNAL
-   RAM vectors to their ROM defaults in a single call. Any init sequence that
-   includes `JSR $FF8D` after Krill's install routine runs will silently undo
+2. **KERNAL RESTOR call.** `JSR $FF8A` restores all sixteen KERNAL RAM vectors
+   `$0314-$0333` to their ROM defaults in a single call; it takes no argument
+   (`VECTOR` at `$FF8D` with carry clear writes the same block from a
+   caller-supplied table at X/Y, and with carry set reads it out). An earlier
+   version of this page said `JSR $FF8D` with A=0 and fifteen vectors; the ROM
+   bytes are `$FF8A: JMP $FD15` (RESTOR: `LDX #$30 / LDY #$FD / CLC`, falling
+   into VECTOR) and `$FF8D: JMP $FD1A` (VECTOR, which copies `$1F`+1 = 32 bytes
+   and selects direction on the carry), rung 1. Any init sequence that includes
+   `JSR $FF8A` after a hooking loader's install routine runs will silently undo
    the installation.
 
 3. **Cold-start or warm-start flow.** A production that jumps to `$FCE2`
-   (KERNAL cold-start) or `$FD15` (KERNAL warm-start) as part of a "reset to
-   safe state" sequence will reinitialize RAM vectors. This is rare but
-   occasionally appears in cracktros that chain off a previous production's
-   reset path.
+   (KERNAL RESET / cold start) or `$FE66` (the KERNAL RUN/STOP-RESTORE warm
+   start) as part of a "reset to safe state" sequence will reinitialize RAM
+   vectors — both paths run RESTOR (`$FD15`, the body behind `$FF8A`), which
+   rewrites `$0314-$0333` from the ROM table. An earlier version of this page
+   named `$FD15` itself as the warm start; it is the RESTOR body, rung 1 from
+   the ROM bytes. This is rare but occasionally appears in cracktros that chain
+   off a previous production's reset path.
 
 The fastloader's drive-side code is unaffected — it remains running in the
 1541's RAM until the drive is reset. The C64 side is what breaks: the receive
 loop address is gone, and `JSR $FFD5` now calls the slow ROM routine. Because
 the drive is still in its fast-protocol mode, the slow ROM routine and the fast
-drive protocol are completely mismatched. Depending on the Krill version and
+drive protocol are completely mismatched. Depending on the loader and the
 drive state, this manifests as extremely slow loading (the drive times out and
 falls back to a safe state), as a hung bus (the drive is waiting for the fast
 handshake that never comes), or as a "?FILE NOT FOUND" error.
@@ -98,27 +126,27 @@ Two approaches, depending on what the IRQ setup code actually needs:
 **Option A — Save and restore the LOAD vector around IRQ install:**
 
 ```kick
-SEI
+sei
 
 // Save the current LOAD vector (fast path or ROM, whichever is live)
-LDA $0330
-STA saved_load_lo
-LDA $0331
-STA saved_load_hi
+lda $0330
+sta saved_load_lo
+lda $0331
+sta saved_load_hi
 
 // Install IRQ handler into $0314/$0315 only — do NOT touch $0330/$0331
-LDA #<irq_handler
-STA $0314
-LDA #>irq_handler
-STA $0315
+lda #<irq_handler
+sta $0314
+lda #>irq_handler
+sta $0315
 
 // Restore the LOAD vector in case anything above clobbered it
-LDA saved_load_lo
-STA $0330
-LDA saved_load_hi
-STA $0331
+lda saved_load_lo
+sta $0330
+lda saved_load_hi
+sta $0331
 
-CLI
+cli
 
 // ...
 
@@ -126,36 +154,51 @@ saved_load_lo: .byte 0
 saved_load_hi: .byte 0
 ```
 
-The save is before `SEI` only for illustration; in practice save the vector
-before any code that might disturb it and restore after `CLI`.
+(An earlier version of this listing was in capitals, which KickAssembler 5.25
+rejects; it now assembles.) Both the save and the restore sit inside the
+`SEI`/`CLI` window here only to keep the example compact; in practice, save the
+vector before any code that might disturb it, and restore it as soon as that code
+has run — before `CLI` if an IRQ handler reads the LOAD vector. (An earlier
+version of this sentence said the save was "before `SEI`", which described a
+different listing.)
 
 **Option B — Audit the init sequence and remove LOAD-vector writes:**
 
 Search the codebase for writes to `$0330` and `$0331` and for calls to
-`JSR $FF8D`. Unless there is a deliberate reason to restore the LOAD vector,
+`JSR $FF8A` (RESTOR) and `JSR $FF8D` (VECTOR, which with carry clear writes the
+same block from a caller-supplied table; an earlier version of this page named
+only `$FF8D`, so a search that followed it missed every real `JSR $FF8A`). Unless
+there is a deliberate reason to restore the LOAD vector,
 delete those writes. The IRQ vector at `$0314/$0315` can be patched without
 touching the LOAD vector — they are independent RAM vectors.
 
-**Option C — Re-run Krill install after IRQ setup:**
+**What this page used to say, and no longer does.** An earlier version carried an
+"Option C — re-run Krill install after IRQ setup", claiming the installer was
+idempotent and re-patched `$0330/$0331`, and a paragraph saying Sparkle's raster
+IRQ dispatched through the LOAD vector on every block. Neither loader touches
+`$0330`, so there is no vector to re-patch; Krill's `install` tests CIA2 DDRA for
+an existing installation and returns OK without doing anything, and if that test
+fails while the drive is already in loader mode a second `install` hangs on the
+KERNAL serial path (rung 4 here — the Krill source is not on this machine). Both
+passages were deleted.
 
-If the init sequence is too intertwined to safely audit, run Krill's C64-side
-install sequence again after all IRQ setup is complete. Krill's C64-side
-installer is idempotent: calling it when the drive is already in fast mode
-re-patches `$0330/$0331` and resynchronizes the handshake. This is the
-fallback when the init sequence is provided by a third-party library that
-cannot be modified.
+**The real Krill hazards** are the ones `../techniques/loaders-packers.md`
+already documents, and they have nothing to do with `$0330`:
 
-Note that Sparkle's IRQ handler itself depends on `$0330/$0331` being intact —
-its raster IRQ uses the patched LOAD vector internally for each block receive.
-Clobbering the vector while Sparkle's IRQ is active causes the same hang
-described above, but now from within the IRQ handler. Always audit IRQ chains
-for hidden vector writes before integrating Sparkle.
+- Any raw write to `$DD00`/`$DD02` (a VIC-bank switch, a generic CIA init) while
+  the loader is armed corrupts its bus-lock/installed-state test — see
+  `fastloader_dd00_write_corrupts_resident` below.
+- Any KERNAL serial call (`JSR $FFD5`, a `krnio` save) while the drive is in
+  loader mode stalls, because the drive is no longer running DOS; call
+  `uninstall` first.
 
 ### Cross-references
 
-- KERNAL routine `LOAD` (`$FFD5`), RAM vector `ILOAD` at `$0330/$0331`
-- Technique `krill_loader_integration` — installation and NTSC/PAL build flags
-- Technique `sparkle_irq_loader` — IRQ-driven loader with the same vector dependency
+- KERNAL routine `LOAD` (`$FFD5` → `$F49E` → `JMP ($0330)`), RAM vector `ILOAD` at `$0330/$0331`, ROM default `$F4A5`
+- KERNAL routines `RESTOR` (`$FF8A`) and `VECTOR` (`$FF8D`) — `../hardware/kernal-routines-reference.md`
+- Technique `krill_loader_integration` — called directly through its own API; this pitfall does not apply to it (see Mechanism)
+- Technique `sparkle_irq_loader` — uses no KERNAL routine; this pitfall does not apply to it
+- Pitfall `fastloader_dd00_write_corrupts_resident` — the hazard that does apply to a resident Krill
 
 ---
 
@@ -227,12 +270,27 @@ drive code during a multi-part load sequence.
 
 **NTSC timing.** The C64-side receive loop's cycle counts are valid at PAL's
 0.985 MHz system clock. NTSC runs at 1.022 MHz — approximately 3.8% faster.
-At Krill's default timing, this shifts every wait window by roughly 3-4 cycles.
-For bit transitions that are already near the edge of the timing window, this
-causes intermittent bit errors on NTSC. Krill provides an NTSC build flag
-(`-DNTSC=1` in its KickAssembler distribution) that adjusts the window constants.
-Using the PAL binary on NTSC hardware is reliable enough on fast, well-terminated
-hardware but causes errors on borderline machines.
+Each of the four 18-cycle handshake phases in Krill's receive loop resynchronises
+on an ATN edge, so the drift does not accumulate across a byte; what matters is
+the fixed gap of about 10 C64 cycles between toggling ATN and reading the bus,
+which the 1541 (whose 1 MHz clock does not change with the video standard) needs
+up to 14 of its own cycles to beat. At 3.8% that gap shrinks by well under one
+cycle — Krill's own `NTSC_COMPATIBILITY` build restores it by adding exactly one
+cycle to each phase — which is enough to push a phase already at the edge of its
+window over it. (An earlier version of this page said the shift was "roughly 3-4
+cycles" per window; 3.8% of an 18-cycle phase is 0.7 cycles, and of the whole
+72-cycle byte 2.7 — rung 3 from the phase lengths in
+`../techniques/loaders-packers.md` "Cycle budget".) Krill's build has an NTSC
+switch — the `NTSC_COMPATIBILITY` define in `loaderconfig.inc` (the config file
+selected with `EXTCONFIGPATH=`, or `include/config.inc`) of its cc65/ca65 build;
+it is not a KickAssembler `-D` flag, and it is not a `make` command-line variable
+either (the Makefile does not forward one to ca65). An earlier version of this
+page said `-DNTSC=1`. Enabling it pads the C64-side transfer loop by one cycle at
+each ATN sync point (and one NOP in the send routine) so a single resident works
+on PAL and NTSC at a small PAL-speed cost; PAL/NTSC is not auto-detected by the
+installer and a PAL-only resident gives no error on NTSC. Using the PAL binary on
+NTSC hardware is reliable enough on fast, well-terminated hardware but causes
+errors on borderline machines.
 
 ### Fix
 
@@ -340,14 +398,17 @@ cost is a larger host-side stub and KERNAL-speed loading on those devices; see
 **Compile NTSC binaries separately.** If the production targets both PAL and NTSC,
 compile the Krill C64-side stub twice with the appropriate clock constant and
 select the right binary at startup based on the CIA timer reading (standard PAL/
-NTSC detection: count CIA1 timer ticks per VBL interrupt; PAL = ~19,656 cycles,
-NTSC = ~16,715 cycles — a 15% difference that is easy to detect reliably within
-a single frame).
+NTSC detection: count CIA1 timer ticks per VBL interrupt; PAL = 19,656 cycles,
+NTSC = 17,095 on the 6567R8 (16,768 on the older 6567R56A) — a 15% difference
+that is easy to detect reliably within a single frame. An earlier version of this
+page gave NTSC as ~16,715, which is the NTSC frame time in microseconds, not its
+cycle count; 65 × 263 = 17,095 and 64 × 262 = 16,768, rung 3, matching
+`../hardware/pal-ntsc-reference.md`).
 
 ### Cross-references
 
 - Technique `sparkle_irq_loader` — PAL-only by default; NTSC needs explicit timing constants
-- Technique `krill_loader_integration` — NTSC build flag, drive detection discussion
+- Technique `krill_loader_integration` — `NTSC_COMPATIBILITY` config define, drive detection discussion
 - `docs/formats/iec-disk-reference.md` — IEC bus signal levels, timing diagrams, 1541 GCR zones
 
 **Sources for the Fix.** The drive ROM images VICE 3.10 ships in
@@ -373,8 +434,9 @@ a corrupt sprite, or a character set starting at `$0800` is garbled in its first
 glyph. The bug manifests only when the program is launched from BASIC via `RUN`;
 loading with a custom autostart that jumps directly to the entry point (bypassing
 the BASIC stub execution) produces correct behavior. The data corruption is
-precisely in the first 12-13 bytes of the program's data area, which coincides
-with the BASIC stub's footprint.
+in the first 12 bytes of the program's data area (13 where the assembler pads the
+stub so code starts at `$080E`, as KickAssembler's `BasicUpstart2` does), which
+coincides with the BASIC stub's footprint.
 
 A second pattern: a program that places data at `$0801` and tests it at startup
 reads the correct data in the assembler's simulation but reads BASIC stub bytes
@@ -386,7 +448,8 @@ overwritten by the stub in the final PRG layout.
 
 A C64 PRG file that auto-starts via BASIC begins at address `$0801`. The BASIC
 interpreter's program area starts at `$0801`. The canonical autostart stub
-occupies the first 13 bytes of that area:
+occupies the first 12 bytes of that area (an earlier version of this sentence
+said 13; the table below and the Option B listing's `cpx #12` both count 12):
 
 ```
 Address  Byte   Meaning
@@ -456,7 +519,7 @@ is negligible in any context except a 256-byte intro.
 
 * = $080D           // machine code entry
 entry:
-    JMP main
+    jmp main
 
 * = $0820           // data safely after stub
 lookup_table:
@@ -481,22 +544,25 @@ data:
 * = $080D
 entry:
     // Overwrite the now-dead BASIC stub area with real data
-    LDX #0
+    ldx #0
 overwrite_loop:
-    LDA real_data, X
-    STA $0801, X
-    INX
-    CPX #12
-    BNE overwrite_loop
+    lda real_data,x
+    sta $0801,x
+    inx
+    cpx #12
+    bne overwrite_loop
     // $0801-$080C now contains real_data[0..11]
-    JMP main
+    jmp main
 
 real_data:
     .byte $00, $01, $04, $09, $10, $19, $24, $31, $40, $51, $64, $79
 ```
 
 This technique is common in 256-byte intros where every available byte of address
-space is used and the stub area must double as a data carrier.
+space is used and the stub area must double as a data carrier. (The Option A and
+Option B listings were in capitals until 2026-09-22, which KickAssembler 5.25
+rejects — "Pseudo command JMP not defined" — so neither had ever been assembled;
+both build now.)
 
 **Option C — Use a CRT (cartridge) format to bypass the BASIC stub entirely.**
 
@@ -626,8 +692,10 @@ switch; the hang then looks unrelated to graphics.
 
 ### Mechanism
 
-`$DD00` is shared: bits 0-1 select the VIC bank, bits 2-7 are the IEC bus lines the
-loader bit-bangs. While the loader is installed it owns the IEC bits and keeps a
+`$DD00` is shared: bits 0-1 select the VIC bank, bit 2 is the user-port RS-232 TXD
+line, and bits 3-7 are the IEC bus lines the loader bit-bangs (3-5 ATN/CLK/DATA
+out, 6-7 CLK/DATA in — an earlier version of this page said bits 2-7; see
+`../hardware/cia-reference.md` §`$DD00`). While the loader is installed it owns the IEC bits and keeps a
 "bus-lock" state in them. A raw write of the whole `$DD00` byte — exactly what a
 VIC-bank set does, including Oscar64's `vic_setmode()` and any
 `STA $DD00` / `LDA #v:STA $DD00` — overwrites the IEC bits with values the loader
@@ -652,5 +720,5 @@ Don't keep the loader resident across VIC mode/bank switches. Two options:
 ### Cross-references
 
 - Technique `krill_loader_integration` — VIC-bank / bus-lock protocol; lazy-install recipe
-- Register `$DD00` (CIA2) — VIC bank select bits 0-1 vs IEC lines bits 2-7
+- Register `$DD00` (CIA2) — VIC bank select bits 0-1 vs IEC lines bits 3-7
 - Pitfall `fastloader_kernal_dependency` — the other "first load works, later loads break" trap

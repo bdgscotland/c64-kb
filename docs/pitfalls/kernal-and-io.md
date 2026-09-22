@@ -7,8 +7,12 @@ category: kernal
 # KERNAL and I/O Pitfalls
 
 Most pitfalls in this document share a common thread: they arise from
-the KERNAL's implicit contract with the surrounding hardware state (the final
-entry is a host-tooling/PETSCII-encoding trap in the same disk-I/O workflow). The KERNAL
+the KERNAL's implicit contract with the surrounding hardware state (three
+entries sit outside that thread — the Oscar64 `krnio_save()` splat, the c1541
+uppercase-filename PETSCII shift and the Oscar64 `getchx()` RETURN remap are
+library and host-tooling traps in the same disk-and-keyboard I/O workflow — and
+the last entry is a hardware-wiring trap: RESTORE drives /NMI directly, so no
+CIA mask reaches it). The KERNAL
 was written assuming a specific execution environment — interrupts enabled,
 registers free to clobber, the CPU memory map at its stock $37 configuration,
 and decimal mode cleared. Each entry below describes one way that assumption
@@ -21,13 +25,13 @@ IRQs, banked memory, or BCD arithmetic.
 
 **Severity:** high
 **Region:** both
-**Triggered by kernal:** SETLFS, OPEN, LOAD, CHKIN, CHKOUT
+**Triggered by kernal:** OPEN, LOAD, SAVE, CHKIN, CHKOUT, CLOSE, CLRCHN
 **Triggered by techniques:** stable_raster_irq
 
 ### Symptom
 
 A raster IRQ scheme runs cleanly until the code issues a disk or tape I/O call.
-Immediately after the JSR to OPEN, LOAD, or SETLFS, the raster split collapses:
+Immediately after the JSR to OPEN, LOAD or CHKIN, the raster split collapses:
 color bars bleed, sprites misplace, or the entire display tears. In more subtle
 cases the raster handler appears to execute twice on the same frame, or the
 stable-raster double-IRQ polling loop hangs indefinitely. With tape routines the
@@ -42,11 +46,35 @@ fired mid-section.
 
 ### Mechanism
 
-Many KERNAL file I/O routines contain one or more CLI instructions in their
-bodies. This is by design: OPEN, LOAD, and SAVE can take tens of thousands of
-cycles (an IEC disk LOAD at standard speed takes roughly 1 second per kilobyte),
-and the jiffy clock IRQ at $EA31 must continue running during that time to keep
-the 60/50 Hz time base accurate and to service the keyboard queue. The KERNAL
+The CLIs are not in OPEN, LOAD, SAVE, CHKIN, CHKOUT, CLOSE or CLRCHN
+themselves — none of those bodies contains a CLI (ROM census of
+`kernal-901227-03.bin`: no $58 byte in OPEN $F34A-$F3D4, CHKIN $F20E-$F24F,
+CHKOUT $F250-$F290, LOAD $F49E-$F5DC or SAVE $F5DD-$F68E; an earlier version
+of this entry said the CLIs were "in their bodies") — but in the serial-bus
+primitives they call (LISTEN, TALK, SECOND, TKSA, ACPTR, CIOUT, UNTALK,
+UNLSN, $ED09-$EEB2). Each primitive brackets its bit-level handshake in
+SEI ... CLI: the byte transfer itself runs with interrupts DISABLED, and the
+routine exits with an unconditional CLI ($EDAB and $EDB5 after LISTEN/TALK/
+SECOND, $EDDB after the bus turnaround, $EE82 after ACPTR) whatever the I flag
+the caller had. Every routine that reaches them on a serial device — OPEN,
+CHKIN, CHKOUT, CLOSE, CLRCHN, LOAD and SAVE — therefore returns with
+interrupts enabled (measured in VICE x64sc with a true-drive 1541 and traps
+off: all seven return with I=0 when entered under SEI). Tape does the same by
+a different route: tape LOAD and SAVE set up their own IRQ under SEI and then
+execute an unconditional CLI at $F8BD, run the whole transfer with interrupts
+enabled, and the restore at $FC93 (PHP/SEI ... PLP) puts back that post-CLI
+state, so they too return with I=0.
+
+This is by design: OPEN, LOAD, and SAVE can take millions of cycles (a
+standard KERNAL IEC LOAD from a 1541 runs at roughly 300-600 bytes per
+second, i.e. two to three seconds per kilobyte — measured in VICE x64sc with
+true drive emulation: 8,192 bytes in 871 jiffies, about 14.5 s;
+`hardware/cia-reference.md`, `formats/iec-disk-reference.md` and
+`techniques/loaders-packers.md` measure the same order. An earlier version of
+this entry said "tens of thousands of cycles" and "roughly 1 second per
+kilobyte", which understated the exposure window by half), and the jiffy
+clock IRQ at $EA31 must continue running during that time to keep the
+60/50 Hz time base accurate and to service the keyboard queue. The KERNAL
 authors assumed the caller had IRQs enabled at the time of the JSR — the machine
 boots with CLI, BASIC runs with CLI, and the KERNAL's own IRQ handler at $EA31
 is designed to be re-entrant only in specific ways.
@@ -59,9 +87,16 @@ the KERNAL routine, and the KERNAL either hangs or corrupts its own zero-page
 workspace because the handler saved new state on top of the KERNAL's
 partially-built stack frame.
 
-SETLFS does not contain CLI (it merely stores three values in zero page), but
-OPEN, LOAD, SAVE, CHKIN, and CHKOUT all drive the IEC bus with interrupts
-enabled.
+SETLFS and SETNAM do not contain CLI (they merely store values in zero page —
+SETLFS at $FE00 is STA $B8/STX $BA/STY $B9/RTS, and P measured after
+SEI;SETLFS is $35, I still set), but OPEN, LOAD, SAVE, CHKIN, CHKOUT, CLRCHN
+and CLOSE all return with interrupts enabled when the channel is a serial-bus
+(IEC) device — the CLI sits in the byte-send tail at $EDAB and the receive
+tail at $EE82, so LISTEN/TALK/SECOND/TKSA/ACPTR/UNLSN/UNTLK inherit it.
+Addressed to the screen or keyboard (devices 0-3) the same calls leave the I
+flag untouched (measured: CHKIN on a screen file under SEI left P = $36).
+An earlier version of this entry listed SETLFS on the trigger line and left
+CLOSE, CLRCHN and SAVE off it.
 
 ### Fix
 
@@ -91,7 +126,7 @@ the stack is at its natural depth.
 
 ```kick
 // BAD: KERNAL OPEN called from inside the raster IRQ handler.
-// OPEN executes CLI internally; the raster scheme re-enters at wrong stack depth.
+// OPEN's serial primitives execute CLI; the raster scheme re-enters at wrong stack depth.
 raster_irq_bad:
     lda #WHITE
     sta $d020
@@ -100,7 +135,7 @@ raster_irq_bad:
     rti
 
 // GOOD: queue a flag; main loop services I/O with IRQs naturally enabled.
-io_requested: .byte 0       // zero-page flag
+io_requested: .byte 0       // flag byte (lives with the code, not in zero page)
 
 raster_irq_good:
     lda #WHITE
@@ -133,10 +168,15 @@ fname_end:
 ### Cross-references
 
 - Technique: `stable_raster_irq` — the raster scheme most likely to be
-  disrupted by unexpected CLI from KERNAL; the technique doc covers stack
-  depth and IRQ vector discipline.
+  disrupted by an unexpected CLI from the KERNAL; the technique doc covers
+  IRQ vector placement ($0314 through the $FF48 dispatcher versus
+  $FFFE/$FFFF with the KERNAL out). Stack depth across a chained pair of
+  handlers is covered by `double_irq` (the dispatcher's own TSX clobbers X,
+  so a saved stack pointer goes through memory) and in detail by
+  `recipes/kickassembler/stable-raster-irq.md`, section "The stack".
 - KERNAL routines: `SETLFS` ($FFBA), `OPEN` ($FFC0), `LOAD` ($FFD5),
-  `CHKIN` ($FFC6), `CHKOUT` ($FFC9).
+  `SAVE` ($FFD8), `CHKIN` ($FFC6), `CHKOUT` ($FFC9), `CLOSE` ($FFC3),
+  `CLRCHN` ($FFCC).
 - Pitfall: `kernal_io_mapping_dependency` — the two pitfalls often appear
   together; banking out the KERNAL while also calling OPEN is doubly fatal.
 
@@ -150,18 +190,29 @@ fname_end:
 
 ### Symptom
 
-A loop that calls CHROUT to print characters loses its loop counter. A sprite
+A loop that calls GETIN to poll the keyboard loses its Y index. A sprite
 multiplex routine that calls GETIN to check for keypresses returns with the
-sprite index in Y overwritten with zero. A character output sequence that builds
-a string index in X finds X reset to a garbage value after CHKOUT. The bugs are
-particularly elusive because they surface only on certain code paths — if the
-developer tests the loop without any KERNAL calls inserted, everything is fine;
-adding even a single JSR $FFD2 breaks the loop silently if the developer assumed
-A was preserved.
+sprite index in Y replaced by the key code and X by the old queue length — but
+only when a key was waiting; with an empty queue both come back intact, so the
+bug appears only while the player types (measured in VICE x64sc: empty queue,
+X=$77/Y=$88 unchanged; one key queued, X=$01, Y=$41 — an earlier version of
+this entry said Y came back as zero, which it never does for a real key). A
+character output sequence that builds a string index in X finds X reset to a
+garbage value after CHKOUT. The bugs are particularly elusive because they
+surface only on certain code paths — if the developer tests the loop without
+any KERNAL calls inserted, everything is fine; adding a single JSR $FFE4 breaks
+the loop silently if the developer assumed Y was preserved. (An earlier version
+of this entry used CHROUT as the example; CHROUT preserves A on success, so
+that loop worked as written — see the contract list below.)
 
 A subtler variant: the code saves only A around CHKIN, assumes X and Y are
-untouched, then finds X = 0 on return (CHKIN's internal table index) and
-mistakes it for an error sentinel.
+untouched, then finds X changed on return — on a disk or other serial-bus
+channel it is the device number (8), on a keyboard or screen file it is the
+open-file-table index (0 for the first file), on a tape file it is the stored
+secondary address ($60) — and mistakes it for an error sentinel. An earlier
+version of this entry said X was always the table index; ROM $F237 is TAX on
+the device number before TALK, and CHKIN on logical file 1, device 8 was
+measured in VICE x64sc returning X=$08.
 
 ### Mechanism
 
@@ -174,10 +225,17 @@ any register not explicitly listed as output is potentially clobbered.
 
 Specific contracts for the most-called routines:
 
-- **CHROUT ($FFD2):** Affects A, C. X and Y are preserved.
+- **CHROUT ($FFD2):** Affects C; A is preserved on success (C=0) and comes
+  back as 0 on the error return (C=1) — KERNAL reference; measured in VICE
+  x64sc (LDA #$41 / JSR $FFD2 to the screen returned A=$41) and in ROM ($E716
+  PHA … $E6B0 PLA/TAX/PLA/CLC/CLI/RTS; error tail $F201 LDA $9E / BCC +2 /
+  LDA #0 / RTS). X and Y are preserved. An earlier version of this entry listed A
+  as clobbered.
 - **CHRIN ($FFCF):** Affects A, X, Y, C — all three registers may change.
 - **GETIN ($FFE4):** Affects A, X, Y, C — same as CHRIN.
-- **CHKIN ($FFC6):** Affects A, X, C.
+- **CHKIN ($FFC6):** Affects A, X, C. A returns the device number on success
+  (A=8 disk, A=3 screen, A=0 keyboard, measured; ROM $F233 STA $99 with
+  A = FA).
 - **CHKOUT ($FFC9):** Affects A, X, C.
 
 OPEN, CLOSE, LOAD, and SAVE clobber A, X, Y, and C. Only SETLFS and SETNAM
@@ -192,7 +250,10 @@ for Y.
 
 Unless you have verified the Affects line and confirmed which registers the
 caller doesn't need after the call, preserve all three around every KERNAL JSR.
-The cost is 15 cycles — negligible outside of tight raster loops.
+The cost is 29 cycles (13 to save, 16 to restore, from the 6510 reference's
+per-instruction figures: PHA 3, PLA 4, the transfers 2 each) plus the
+JSR/RTS — negligible outside of tight raster loops. An earlier version of this
+entry said 15, which no subset that saves all three registers can reach.
 
 ```kick
 // Canonical full-preservation wrapper macro.
@@ -213,13 +274,16 @@ The cost is 15 cycles — negligible outside of tight raster loops.
 ```
 
 In tight loops, check Affects and save only what is needed. If the counter is
-in X and CHROUT only touches A and C, a bare PHA/JSR/PLA suffices.
+in X and the routine touches only A and C (e.g. CHROUT), a bare PHA/JSR/PLA
+suffices — and for CHROUT even that is only needed if you take the error path.
 
 ### Worked example
 
 ```kick
 // BAD: assumes CHKIN leaves X untouched.
-// CHKIN Affects A and X; X comes back as the internal table index, not 1.
+// CHKIN Affects A and X; on a disk channel X comes back as the device number
+// (8 here), not 1; on a screen or keyboard file it is the open-file-table
+// index (measured in VICE x64sc).
     ldx #1                  // logical file number
     jsr $ffc6               // CHKIN — X is clobbered
     cpx #1                  // WRONG: comparing clobbered X
@@ -233,23 +297,34 @@ in X and CHROUT only touches A and C, a bare PHA/JSR/PLA suffices.
     pla
     tax    // restore X = 1
 
-// BAD: tight print loop uses A after CHROUT (A is in Affects).
+// BAD: keyboard poll loop keeps its count in Y across GETIN (Y is in Affects).
+// With the queue empty Y survives, so the loop works until the player types;
+// then GETIN hands back the key code in Y and the count is gone.
+poll_loop:
+    jsr $ffe4               // GETIN — A, X, Y may change
+    dey                     // WRONG: Y may now be the key code
+    bne poll_loop
+
+// GOOD: save Y around GETIN.
+poll_loop_good:
+    tya
+    pha
+    jsr $ffe4               // GETIN — Affects: A, X, Y, C
+    pla
+    tay
+    dey
+    bne poll_loop_good
+
+// CHROUT is the exception this entry used to get wrong: A comes back intact
+// when C=0 and as 0 when C=1, so test C after CHROUT, not A.
 print_loop:
     lda msg,y
-    jsr $ffd2               // CHROUT — A may change
-    cmp #0                  // comparing stale A — unreliable
-    beq done
+    jsr $ffd2               // CHROUT — A preserved on success, C=1 on error
+    bcs print_error
     iny
     dex
     bne print_loop
-
-// GOOD: loop on X or Y, not on A's post-call value.
-print_loop_good:
-    lda msg,y
-    jsr $ffd2
-    iny
-    dex
-    bne print_loop_good
+print_error:
 
 msg: .text "HELLO"
 msg_end:
@@ -270,7 +345,6 @@ msg_end:
 **Severity:** critical
 **Region:** both
 **Triggered by techniques:** stable_raster_irq
-**Triggered by kernal:** SETLFS
 
 ### Symptom
 
@@ -423,7 +497,14 @@ sprite_y: .fill 8, i * 21 + 50
 ### Cross-references
 
 - Technique: `stable_raster_irq` — the raster handler this pitfall most
-  commonly hits; the technique doc discusses the canonical IRQ prelude.
+  commonly hits. The technique doc does not show a handler prelude (it only
+  notes that the KERNAL dispatcher pushes A, X and Y); the
+  PHA/TXA/PHA/TYA/PHA + CLD stanza above is the reference form. Neither
+  stable-raster recipe currently executes CLD, and on the Oscar64 side
+  `rasterirq.h`'s own ISRs do not either — the KERNAL's $FF48 dispatcher and
+  $EA31 service routine contain no CLD, so a handler reached through $0314
+  inherits whatever D was. (An earlier version of this entry said the
+  technique doc discussed the prelude; it does not.)
 - Opcodes: `SED` ($F8), `CLD` ($D8) — the two instructions that set and clear
   the decimal flag.
 - Pitfall: `kernal_clobbers_a_x_y` — the PHA/TXA/PHA/TYA/PHA prelude described
@@ -571,8 +652,10 @@ zero-page scratch byte.
 
 ### Cross-references
 
-- Register: `01` — the 6510 processor port data register; bits 0-2 control
-  LORAM/HIRAM/CHAREN.
+- Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port)
+  — the 6510 processor port data register; bits 0-2 control
+  LORAM/HIRAM/CHAREN. Resolvable via `c64_memory_map 0001`, not
+  `c64_register_lookup` (the KB has no Register node for the CPU port).
 - KERNAL routines: `SETLFS` ($FFBA), `OPEN` ($FFC0), `CLOSE` ($FFC3),
   `LOAD` ($FFD5), `SAVE` ($FFD8).
 - Pitfall: `kernal_assumes_sei_cleared` — the two pitfalls are frequently
@@ -583,7 +666,7 @@ zero-page scratch byte.
 
 ---
 
-## krnio_save_leaves_splat_file — Oscar64 krnio_save() writes a *PRG splat instead of a structured file
+## krnio_save_leaves_splat_file — a *PRG splat after krnio_save() means the emulator was stopped before the drive finished, not that SAVE is broken
 
 **Severity:** high
 **Region:** both
@@ -596,9 +679,11 @@ persist a struct to a `.d64` attached as drive 8. The function returns
 `true` (apparent success) and a directory entry appears with the chosen
 filename — but the entry is marked `*PRG` with 0 blocks, and the file
 cannot be read back via `c1541 -read`, via the game's own `krnio_load`,
-or via BASIC `LOAD"NAME",8`. Sometimes blocks ARE allocated on disk
-(the free-block count drops), but the directory record never records
-them; sometimes no blocks are written at all.
+or via BASIC `LOAD"NAME",8`. It appears in two forms: no blocks allocated
+at all; or blocks allocated (the free-block count drops) with no directory
+record of them. Both forms were reproduced on demand by terminating x64sc
+with `-limitcycles` while the 1541 was still writing — which is what the
+symptom means (see Mechanism).
 
 The `*` flag preceding `PRG` in a `c1541 -list` output is the
 "improperly closed" marker: the directory entry was created, but the
@@ -607,16 +692,31 @@ splat bit never completed.
 
 ### Mechanism
 
-Oscar64's `krnio_save()` wraps KERNAL `SAVE` ($FFD8), which is the same
-routine that BASIC's `SAVE"NAME",8` invokes. The KERNAL SAVE flow is
-specialised for snapshotting a contiguous memory block as a BASIC PRG
-file (two-byte load address header + raw bytes). It assumes the caller
-will accept whatever the drive's DOS does for end-of-file housekeeping
-— there is no application-level signal to drive that the write is
-complete, and the directory close sequence is fragile in environments
-where the IEC bus emulation deviates even slightly from the original
-1541 timing (notably observed under VICE 3.x with a `.d64` attached
-on drive 8, with and without `-drive8truedrive`).
+Oscar64's `krnio_save()` wraps KERNAL `SAVE` ($FFD8) — SETLFS plus
+`JSR $FFD8`, per `kernalio.c` — which is the same routine that BASIC's
+`SAVE"NAME",8` invokes. The KERNAL SAVE flow snapshots a contiguous memory
+block as a PRG file (two-byte load address header + raw bytes): it forces
+the secondary address to $61 at $F5FA (ROM bytes A9 61 85 B9) and closes the
+file through the KERNAL's own IEC close path. It is not broken. Under VICE
+3.10 with true drive emulation — the default, and the only configuration
+in which drive 8 exists under `-default`; with `+drive8truedrive` there is
+no device 8 at all and the program never returns from its first IEC call —
+`krnio_save()` of a 64-byte struct to a fresh c1541-formatted `.d64`
+produces a clean 1-block PRG (`c1541 -list`: `1 "tideline" prg`, no `*`,
+662 blocks free) that reads back intact (66 bytes = load address + struct),
+and `krnio_save` returns true. Built with Oscar64 2026-05-19 and run in
+x64sc 3.10; an earlier version of this entry said the splat was
+"observed under VICE 3.x with and without -drive8truedrive", and that
+does not reproduce.
+
+The splat arises when the emulator exits (`-limitcycles`,
+`-exitscreenshot`, window close) or the program resets while the 1541 is
+still writing: the directory entry has been created but the DOS-side
+close that finalises the block count has not happened yet. A 64-byte SAVE
+needs on the order of 1-2 M emulated cycles after autostart with true drive
+on. The open/write/close pattern splats identically when cut at the same
+point (measured: `*prg`, 643 blocks free), so it is not a remedy for this
+symptom.
 
 The Oscar64 sample at `samples/kernalio/filewrite.c` does NOT use
 `krnio_save`. It uses the structured file API instead:
@@ -629,29 +729,40 @@ The Oscar64 sample at `samples/kernalio/filewrite.c` does NOT use
 4. `krnio_close(fnum)` — close, which gives the DOS the explicit
    "end of file" signal that finalises the directory entry
 
-This sequence does not rely on the KERNAL SAVE routine at all. The
-DOS-side close handshake is driven by `UNLISTEN` after a clean write,
-and the splat bit is cleared as a side effect.
+This sequence does not rely on the KERNAL SAVE routine at all; it produces
+a file with no 2-byte load-address header, reads back symmetrically with
+`krnio_read`, and takes the `@0:` replace prefix.
 
 ### Fix
 
-Don't use `krnio_save()` to persist program data. Reserve it for
-genuinely BASIC-compatible memory snapshots (e.g. embedding a sprite
-table at a fixed address that BASIC will `LOAD` into the right place).
-For arbitrary structured data — game state, score tables, scenario
-maps — use `krnio_open` / `krnio_write` / `krnio_close`.
+Give the drive time to finish. In a headless run, do not cut x64sc before
+the program's own done marker appears on screen; interactively, wait for
+the busy LED to go out or for `krnio_save` to return — and check the disk
+only afterwards. An earlier version of this entry told you to avoid
+`krnio_save()`; the splat it described was the emulator being stopped
+mid-write, and the same cut splats the open/write/close pattern too.
+
+`krnio_open` / `krnio_write` / `krnio_close` is still the better fit for
+arbitrary structured data — game state, score tables, scenario maps — on
+its real merits: no 2-byte load-address header in the file, a symmetric
+read with `krnio_read`, and `@0:` replace semantics. Reserve `krnio_save()`
+for genuinely BASIC-compatible memory snapshots (e.g. a sprite table at a
+fixed address that BASIC will `LOAD` into the right place).
 
 ### Worked example
 
 ```c
-// BAD: krnio_save leaves a splat file under VICE.
+// krnio_save produces a clean PRG (load address + bytes) when the drive is
+// allowed to finish; measured under VICE 3.10 with true drive emulation.
 krnio_setnam("TIDELINE,P,W");
 bool ok = krnio_save(8,
     (const char*)&state,
     (const char*)&state + sizeof(state));
-// ok == true, but the disk shows "TIDELINE" *PRG with 0 blocks.
+// ok == true; c1541 -list shows 1 "tideline" prg, 1 block, reads back as
+// 66 bytes ($0B00 load address + the 64-byte struct).
 
-// CORRECT: open/write/close as in samples/kernalio/filewrite.c.
+// PREFERRED for structured data: open/write/close as in
+// samples/kernalio/filewrite.c (no load-address header, symmetric read).
 krnio_setnam("@0:TIDELINE,P,W");
 if (krnio_open(2, 8, 2)) {
     krnio_write(2, (const char*)&state, sizeof(state));
@@ -661,16 +772,24 @@ if (krnio_open(2, 8, 2)) {
 //                          read(2, &state, sizeof(state)); close(2).
 ```
 
-The `@0:` replace prefix is important if the file might already
-exist; without it the OPEN fails with "file exists" and the call
-returns false.
+The `@0:` replace prefix is important if the file might already exist.
+Without it the drive refuses the open with DOS error 63 FILE EXISTS — but
+`krnio_open()` still returns true, because it only reports KERNAL OPEN's
+carry, which a serial device sets for device-not-present or too-many-files,
+never for a DOS error. The following `krnio_write()` also reports the full
+byte count, yet nothing reaches the disk and the old file is left as it was
+(measured under VICE 3.10: open returned true, write returned 64, command
+channel read 63, file contents unchanged; an earlier version of this entry
+said the call returned false). If you need to know, open the command channel
+(secondary address 15) and `krnio_read` the status line after the open.
 
 ### Cross-references
 
 - Oscar64 sample: `samples/kernalio/filewrite.c` and `fileread.c` —
   the authoritative pattern.
-- Oscar64 header: `c64/kernalio.h` exposes both `krnio_save` (don't
-  use for data) and `krnio_open`/`write`/`close` (do use).
+- Oscar64 header: `c64/kernalio.h` exposes both `krnio_save` (memory
+  snapshots with a load address) and `krnio_open`/`write`/`close`
+  (structured data).
 - KERNAL routines: `SETNAM` ($FFBD), `SETLFS` ($FFBA), `OPEN`
   ($FFC0), `CHKOUT` ($FFC9), `CHROUT` ($FFD2), `CLRCHN` ($FFCC),
   `CLOSE` ($FFC3). `krnio_open` chains setlfs + open; `krnio_write`
@@ -692,7 +811,11 @@ A host tool authors a data file onto a `.d64` with
 `c1541 -attach disk.d64 -write host.bin TDLVL00`. The file appears in the
 directory, and `c1541 -read TDLVL00` round-trips it byte-for-byte. But the C64
 program that opens it with `krnio_setnam("TDLVL00")` + `krnio_open(2, 8, 2)`
-gets a failed open (`krnio_open` returns false / FILE NOT FOUND). Listing the
+gets an open that appears to succeed — `krnio_open` returns true, because
+KERNAL OPEN's carry reports only device-not-present and table errors, never a
+DOS error — but `krnio_read` returns 0 bytes and the command channel (open
+15,8,15 and read) answers `62, FILE NOT FOUND` (measured in VICE x64sc; an
+earlier version of this entry said `krnio_open` returned false). Listing the
 disk directory from inside the emulator (`LOAD"$",8` then `LIST`) shows the
 filename rendered as graphics characters (e.g. `#####00`) instead of `TDLVL00`.
 A file the *game itself* wrote with the same logical name (via `krnio_write`)
@@ -713,8 +836,9 @@ So `-write host.bin TDLVL00` stores the filename bytes
 A C64 program (e.g. Oscar64) sends the bytes of its C-string literal to SETNAM.
 The char literals `'T','D','L','V','L'` are ASCII / PETSCII-uppercase
 `0x54,0x44,0x4C,0x56,0x4C`. The 1541 DOS matches directory filenames
-**byte-for-byte**, so `0x54...` never matches the stored `0xD4...`, and OPEN
-returns file-not-found.
+**byte-for-byte**, so `0x54...` never matches the stored `0xD4...`, and the
+drive answers 62, FILE NOT FOUND on the command channel; KERNAL OPEN itself
+still returns C=0, so the C64 side sees a successful open with an empty file.
 
 Game-written files are immune because the game both writes and reads with the
 same ASCII byte sequence — they match each other regardless of absolute
@@ -730,7 +854,7 @@ the bytes the game's uppercase-ASCII C string requests, and they render
 correctly as `TDLVL00` in the C64 directory.
 
 ```bash
-# BAD: uppercase c64 name -> shifted PETSCII; game krnio_open("TDLVL00") fails.
+# BAD: uppercase c64 name -> shifted PETSCII; game krnio_open("TDLVL00") returns true but reads 0 bytes (DOS error 62).
 c1541 -attach disk.d64 -write tdlvl00.bin TDLVL00
 
 # GOOD: lowercase c64 name -> 0x54... matches the game's request + renders right.
@@ -739,8 +863,10 @@ c1541 -attach disk.d64 -write tdlvl00.bin tdlvl00
 
 Diagnose a suspected mismatch by listing the directory from inside the running
 emulator (`LOAD"$",8` then `LIST`): a name rendered as graphics characters is
-the tell. (The autostart program name's encoding does not matter — autostart
-loads by directory position, not by name match.)
+the tell. Test for the condition by reading the error channel after OPEN, or
+by checking `krnio_read`'s byte count — not by testing `krnio_open`'s return
+value, which is true either way. (The autostart program name's encoding does
+not matter — autostart loads by directory position, not by name match.)
 
 ### Worked example
 
@@ -758,7 +884,9 @@ subprocess.run(["c1541", "-attach", "disk.d64", "-write", "tdlvl00.bin", c64name
 - KERNAL routines: `SETNAM` ($FFBD), `OPEN` ($FFC0). The 1541 DOS matches
   directory filenames byte-for-byte; SETNAM passes the bytes verbatim.
 - Pitfall: `krnio_save_leaves_splat_file` — the other half of the host↔C64
-  disk-data round-trip; both live in the structured-file save/load workflow.
+  disk-data round-trip; both live in the structured-file save/load workflow,
+  and both are cases where `krnio_open`/`krnio_save` return true and the
+  evidence is on the disk or the command channel, not in the return value.
 - Tooling: VICE `c1541 -write` / `-read` perform ASCII→PETSCII on the c64
   filename; their conversion is self-consistent, which is why a host-only
   round-trip hides the bug.
@@ -767,7 +895,7 @@ subprocess.run(["c1541", "-attach", "disk.d64", "-write", "tdlvl00.bin", c64name
 
 ---
 
-## getchx_petscii_remaps_return — Oscar64 getchx() delivers RETURN as $0A (not $0D) under IOCHM_PETSCII_2
+## getchx_petscii_remaps_return — Oscar64 getchx() delivers RETURN as $0A (not $0D) under every charmap except IOCHM_TRANSPARENT — including the default IOCHM_ASCII
 
 **Severity:** medium
 **Region:** both
@@ -796,6 +924,15 @@ if (giocharmap >= IOCHM_ASCII) {
 }
 ```
 
+`giocharmap` starts at IOCHM_ASCII (`conio.c` line 3: `static IOCharMap
+giocharmap = IOCHM_ASCII;`), so the remap is on unless you call
+`iocharmap(IOCHM_TRANSPARENT)` — a program that never calls `iocharmap()` at
+all is affected. Measured in VICE 3.10 with Oscar64 2026-05-19 (`-keybuf` with
+a newline, which puts PETSCII $0D in the KERNAL buffer): raw GETIN $0D;
+`getchx()` on the default map $0A; after `iocharmap(IOCHM_TRANSPARENT)` $0D;
+after `iocharmap(IOCHM_PETSCII_2)` $0A. An earlier version of this entry named
+only IOCHM_PETSCII_2 as the cause.
+
 So a RETURN keypress (PETSCII `$0D`) reaches your code as `$0A`. Any comparison
 against `$0D` silently misses. (The reverse map preserves `$0D` on *output*, so
 printing is unaffected — only keyboard input is remapped.)
@@ -810,7 +947,7 @@ automated tests but is broken for a real keypress.
 Accept `$0A` (or both `$0A` and `$0D`) everywhere you test for RETURN:
 
 ```c
-// bad — never matches RETURN under IOCHM_PETSCII_2
+// bad — never matches RETURN unless iocharmap(IOCHM_TRANSPARENT) was called
 if (key == 0x0d) start_level();
 
 // good
@@ -819,10 +956,15 @@ if (key == 0x0d || key == 0x0a) start_level();
 
 In a `switch`, add `case 0x0a:` alongside `case 0x0d:`.
 
+The alternative is `iocharmap(IOCHM_TRANSPARENT)`, which disables the
+rewrite — but it also disables the PETSCII case-swap, so use it only if you
+want raw PETSCII throughout.
+
 ### Cross-references
 
-- Oscar64 `include/conio.c` (`convch`); the active map is set by
-  `iocharmap(IOCHM_PETSCII_2)`.
+- Oscar64 `include/conio.c` (`convch`); the active map defaults to
+  IOCHM_ASCII and is changed by `iocharmap()`; only IOCHM_TRANSPARENT
+  disables the $0D→$0A rewrite.
 - Discovered wiring RETURN-to-start on the Tideline level-select screen; the
   select→play path had only ever been exercised via the test-harness action
   byte, which masked the remap.
@@ -861,8 +1003,11 @@ A third form: the protection was there and vanished. The program pointed
 `$0318` at its own handler, then later ran the customary "put the KERNAL
 vectors back" line. `JSR $FF8A` (RESTOR) copies the ROM table at `$FD30` and
 writes `$FE47` back unconditionally. VECTOR with C = 0 (`$FF8D`) installs
-whatever 32-byte table the caller points at — `$FD1A` is `LDA ($C3),Y : STA
-$0314,Y` — so it puts `$FE47` back when that table was captured with C = 1
+whatever 32-byte table the caller points at — VECTOR (`$FF8D` → `$FD1A`)
+copies through a 32-byte loop at `$FD20`, whose C = 0 path is `LDA ($C3),Y`
+(`$FD25`) `: STA ($C3),Y : STA $0314,Y` (`$FD29`); an earlier draft put the
+pair at `$FD1A`, which is the entry's `STX $C3` — so it puts `$FE47` back
+when that table was captured with C = 1
 before `$0318` was changed, which is the usual snapshot-then-restore idiom.
 Either way `$0318` is `$FE47` again.
 

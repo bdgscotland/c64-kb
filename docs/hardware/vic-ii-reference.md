@@ -1611,25 +1611,36 @@ Sprites can subtract another 50–100K cycles/s if used heavily.
 
 - **Badline cycle steal**: any raster line where (raster ≥ $30 AND
   raster ≤ $F7 AND raster & 7 == YSCROLL AND DEN was set on line $30)
-  steals 40+ CPU cycles. A worst-case PAL line with 8 sprites and a
-  badline leaves only ~14 CPU cycles. See
-  [c64-pitfalls.md](c64-pitfalls.md#badline-cycle-steal).
+  steals 40-43 CPU cycles. A worst-case PAL line with 8 sprites and a
+  badline leaves the CPU one guaranteed cycle — 43 + 19 = 62 of 63 stolen,
+  measured in VICE x64sc (an earlier version of this bullet said ~14, which
+  disagreed with this page's own 19-cycle sprite figure). See
+  [raster-and-badline.md](../pitfalls/raster-and-badline.md)
+  (`badline_cycle_loss`, `vic_bus_takeover_on_dma`).
 - **$D012 raster wrap**: comparing $D012 against ≥ 256 requires combining
   with $D011 bit 7. Forgetting the MSB makes raster IRQs misfire at
   line N mod 256 instead of line N. See
-  [c64-pitfalls.md](c64-pitfalls.md#d012-raster-wrap).
+  [raster-and-badline.md](../pitfalls/raster-and-badline.md) (`d012_wrap_around`).
 - **Color RAM high nibble garbage**: reading $D800+n returns garbage in
-  bits 4–7. Always mask with #$0F. See
-  [c64-pitfalls.md](c64-pitfalls.md#color-ram-high-nibble).
-- **Sprite DMA timing**: enabled sprites steal 2 cycles (p-access + 3
-  s-accesses spread across one line) per active sprite per line.
-  Worst-case 19 stolen cycles on top of any badline. See
-  [c64-pitfalls.md](c64-pitfalls.md#sprite-dma-timing).
-- **Sprite crunch**: clearing a Y-expand bit ($D017) at a precise cycle
-  during the sprite's display row can confuse the expansion flip-flop
-  and shorten the sprite to ≤ 21 lines. Used intentionally for tricks;
-  bites unwary multiplexer code. See
-  [c64-pitfalls.md](c64-pitfalls.md#sprite-crunch).
+  bits 4–7 — the byte the VIC fetched in the preceding phi1 cycle, not
+  the address high byte. Always mask with #$0F. See
+  [c64-registers-reference.md](c64-registers-reference.md) (Color RAM).
+- **Sprite DMA timing**: each sprite steals 2 bus cycles per line while
+  its DMA is on (the two phi2 s-accesses; the p-access and the third
+  s-access are phi1), plus 3 cycles of BA lead-in per contiguous group
+  of active slots. Worst-case 19 stolen cycles on top of any badline. See
+  [raster-and-badline.md](../pitfalls/raster-and-badline.md)
+  (`vic_bus_takeover_on_dma`).
+- **Sprite crunch**: clearing a Y-expand bit ($D017) on one particular
+  cycle (cycle 15 in VICE's PAL numbering, just before the cycle-16
+  MCBASE step) of one of the sprite's display lines after the first
+  changes the sprite's remaining length once, by a data-dependent amount
+  — every crunch measured in VICE x64sc lengthened the sprite, by 4 to 21
+  lines (an earlier version of this bullet said it shortened the sprite to
+  ≤ 21 lines). Used intentionally for tricks; bites unwary multiplexer
+  code. See [sprite.md](../pitfalls/sprite.md)
+  (`sprite_y_expand_double_register_write`) and
+  `sprite_y_stretch_glitch` in `techniques/sprite.md`.
 - **DEN must be set on line $30 (48)**: if $D011 bit 4 is clear for all
   of line 48, badlines are inhibited for the entire frame — a write
   setting it on any cycle of that line is enough to enable them (an

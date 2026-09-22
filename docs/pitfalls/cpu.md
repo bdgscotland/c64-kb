@@ -76,14 +76,31 @@ raster_loop:
 ```
 
 **Eliminate the branch.** Branchless equivalents remove the variable entirely.
-Tight polling loops can be replaced with NOP chains (`NOP` = 2 cycles;
-undocumented single-byte NOPs $1A/$3A/$5A also = 2 cycles) or the `BIT $abs`
+Tight polling loops can be replaced with NOP chains (`NOP` = 2 cycles; the
+undocumented one-byte NOPs $1A/$3A/$5A are also 2 cycles and 1 byte, so they
+buy nothing over `NOP` except a CMOS incompatibility — an earlier version of
+this sentence recommended them; on a 65816 $1A/$3A/$5A are `INC A`/`DEC A`/
+`PHY`, measured in xscpu64, so the third one corrupts the stack — see
+illegal_opcode_portability below. For a 3-cycle pad use the
+legal `bit zp`, or `nop zp` ($04) if the flags must survive — noting that $04
+is itself undocumented and carries the same portability caveat; see the
+padding section of `docs/hardware/6502-illegal-opcodes.md`) or the `BIT $abs`
 skip trick. A spin-wait with `DEC zp / BNE` that straddles a page boundary
 can be replaced with an unrolled NOP sequence calibrated at link time.
 
 **Empirical rule for stable raster IRQs.** Place the entire timing-critical
-section in a 256-byte aligned region using `.align $100`. The section must be
-under 128 bytes to ensure branches stay on-page. Verify the final cycle count
+section in a 256-byte aligned region using `.align $100`. Two separate
+constraints apply. Page: a taken branch pays the +1 only when the high byte of
+PC+2 differs from the target's, so inside a page-aligned section a branch to a
+target in that section crosses only if its opcode sits on the page's last two
+bytes (offset $FE or $FF) — a branch at offset $F0 back to offset $80 still
+costs 3. Range: the displacement is -128..+127 from PC+2, so a backward branch
+to the aligned start can sit no further than offset 126. Keeping the whole
+section under 128 bytes satisfies both at once, which is why it is a safe rule
+of thumb, but it is the range limit, not the page rule, that the 128 figure
+comes from (an earlier version of this paragraph attributed it to the page
+rule; measured in x64sc: `BNE` at $2FFD to $3000 costs 4, at $20FD back to
+$20EE costs 3, at $21FF back to $21D0 costs 4). Verify the final cycle count
 in VICE x64sc using the `cpuhistory` monitor command.
 
 ### Worked example
@@ -153,9 +170,13 @@ jitter_loop_fixed:
 Code using LAX, SAX, AXS, ALR, ARR, DCP, or the RMW family works perfectly on
 real C64 hardware and under VICE. The same code loaded into a SuperCPU-equipped
 machine executes differently or hangs. A sim6502 unit test in strict CMOS mode
-fails on every illegal opcode. An assembler targeting a 65C02 silently treats
-each illegal opcode byte as a NOP — the routine produces garbage with no error.
-The assumption that the target CPU is NMOS was never documented.
+fails on every illegal opcode. An assembler in 65C02 mode refuses the
+mnemonics outright (KickAssembler `.cpu _65c02`: "Pseudo command 'lax' not
+defined"; ca65 `.setcpu "65C02"`: error) — but a routine emitted with `.byte`
+sails through and mis-executes on the CMOS part with no error at all. (An
+earlier version of this sentence said the assembler silently treats the bytes
+as NOPs; it does not — measured with KickAssembler 5.25 and ca65.) The
+assumption that the target CPU is NMOS was never documented.
 
 ### Mechanism
 
@@ -171,15 +192,24 @@ The portability boundary is the NMOS / CMOS divide:
 
 **65C02 (CMOS revision):** All undefined opcode slots were deliberately filled
 with explicit NOPs of varying byte lengths and cycle counts. The decode matrix
-was redesigned. Code that emits $A7 (LAX zero-page) on a 65C02 executes a
-2-cycle 2-byte NOP — the instruction is consumed silently, A and X are
-unchanged, and the program continues from the wrong state. On the 6510, $A7
-executes `A = X = M[zp]` — a completely different side effect.
+was redesigned. On a 65C02 the byte $A7 (LAX zero-page) is either a NOP of
+vendor-specific length or, on Rockwell/WDC parts, a bit-manipulation
+instruction (the $x7 column is SMB/RMB there); either way A and X are not
+loaded and the program continues from the wrong state. (An earlier version of
+this paragraph stated flatly "a 2-cycle 2-byte NOP"; that varies by 65C02
+vendor and was not measured here.) On the 6510, $A7 executes `A = X = M[zp]`
+— a completely different side effect.
 
 **65816 (WDC 16-bit extension, used in SuperCPU):** The SuperCPU accelerator for
-the C64 fits a 65816 CPU and runs C64 code in emulation mode. The 65816 does not
-implement NMOS illegal opcodes. Code that runs identically on 6510 and 8500 will
-misbehave on SuperCPU.
+the C64 fits a 65816 CPU and runs C64 code in emulation mode. The 65816 has no
+undefined opcodes: every NMOS illegal-opcode byte is a live 65816 instruction
+with its own memory, stack or register side effects, not a silent NOP. (An
+earlier version of this paragraph and the table below said these bytes execute
+as NOPs on the SuperCPU; measured in xscpu64, VICE 3.10: $A7 $F0 loaded A
+through the 24-bit pointer at $F0 and left X unchanged, $87 $F0 stored A
+through that pointer, $C7 $F0 compared without decrementing, $4B pushed one
+byte, $1A incremented A, $EB swapped A with B.) Code that runs identically on
+6510 and 8500 will misbehave on SuperCPU.
 
 **8500 (late C64 and C64C):** The 8500 is the same NMOS microarchitecture as the
 6510, shrunk to a smaller process. The safe illegal opcodes behave identically
@@ -198,17 +228,22 @@ The second portability concern is the **unstable tier:** XAA (ANE), LAX #imm
 varies by chip revision and thermal state. They must never appear in shipping
 code.
 
-| Opcode | NMOS 6510 | 65C02 / SuperCPU | Notes |
-|--------|-----------|------------------|-------|
-| LAX zp | A=X=M | NOP | Safe NMOS only |
-| SAX zp | M=A&X | NOP | Safe NMOS only |
-| ALR #imm | A=(A&imm)>>1 | NOP | Safe NMOS only |
-| ARR #imm | A=ROR(A&imm) quirky flags | NOP | Safe NMOS only |
-| AXS #imm | X=(A&X)-imm | NOP | Safe NMOS only |
-| DCP zp | M--; CMP A,M | NOP | Safe NMOS only |
-| SLO/RLA/SRE/RRA | RMW+combine | NOP | Safe NMOS only |
-| XAA #imm | unstable | NOP | **NEVER USE** |
-| LAX #imm | unstable | NOP | **NEVER USE** |
+| Opcode | NMOS 6510 | 65C02 (varies by vendor; not measured here) | 65816 / SuperCPU (xscpu64 unless marked) | Notes |
+|--------|-----------|------------------|------------------|-------|
+| LAX zp ($A7) | A=X=M | NOP or SMB/RMB | `LDA [dp]` — 24-bit pointer read, X untouched (measured) | Safe NMOS only |
+| SAX zp ($87) | M=A&X | NOP or SMB/RMB | `STA [dp]` — writes A through a 24-bit pointer (measured) | Safe NMOS only |
+| ALR #imm ($4B) | A=(A&imm)>>1 | NOP | `PHK` — pushes one byte (measured) | Safe NMOS only |
+| ARR #imm ($6B) | A=ROR(A&imm) quirky flags | NOP | `RTL` — pops a 24-bit return address and jumps there (measured) | Safe NMOS only |
+| AXS #imm ($CB) | X=(A&X)-imm | NOP | `WAI` — stalls until the next IRQ/NMI assertion, even with I set; permanent only if no source is running (measured: 58-line stall) | Safe NMOS only |
+| DCP zp ($C7) | M--; CMP A,M | NOP or SMB/RMB | `CMP [dp]` — compares, no decrement (measured) | Safe NMOS only |
+| SLO/RLA/SRE/RRA zp ($07/$27/$47/$67) | RMW+combine | NOP or RMB | `ORA [dp]` / `AND [dp]` / `EOR [dp]` / `ADC [dp]` — plain reads through a 24-bit pointer, no RMW ($07 measured; the other three from the opcode map) | Safe NMOS only |
+| XAA #imm ($8B) | unstable | NOP | `PHB` — pushes the data bank (measured) | **NEVER USE** |
+| LAX #imm ($AB) | unstable | NOP | `PLB` — pulls one byte into the data bank, A untouched (measured) | **NEVER USE** |
+
+The table's third column used to read "NOP" for every row under a single
+"65C02 / SuperCPU" heading; the SuperCPU column was wrong in every row, and the
+65C02 column depends on which vendor's part is fitted. The one-byte NOPs are
+not exempt either: $1A is `INC A` and $EB is `XBA` on the 65816 (measured).
 
 ### Fix
 
@@ -220,7 +255,8 @@ why, and that the code requires a stock C64 NMOS 6510 or 8500 CPU:
 // This file uses LAX ($A7), DCP ($C7), and SLO ($07) for cycle savings
 // in the sprite multiplexer inner loop. These are NMOS-only opcodes.
 // They work on: 6510 (C64), 8500 (C64C), 8502 (C128 native mode).
-// They do NOT work on: SuperCPU (65816), any CMOS board, 65C02.
+// They misbehave on: SuperCPU (65816 — each byte is a live instruction
+// with side effects), any CMOS board, 65C02.
 // Verify under x64sc (VICE) before shipping. Do not run in sim6502 strict mode.
 ```
 
@@ -237,7 +273,8 @@ extra cycles and 1–2 extra bytes per site. See `illegal_opcode_tricks` in
 
 ```kick
 // BAD: uses LAX and DCP without documentation
-// Works on real C64 and VICE. Silently produces wrong output on SuperCPU.
+// Works on real C64 and VICE. Misbehaves on SuperCPU — the bytes are not
+// skipped, they execute as 65816 instructions with other side effects.
 
 multiplex_loop:
     lax sprite_y,y      // A = X = sprite_y[y] — NMOS only ($B7: LAX zp,Y; there is no zp,X form)
@@ -252,15 +289,13 @@ multiplex_done:
 
 // GOOD: same logic with documentation and legal fallback comments
 
-// NMOS-ONLY section: LAX ($B7 zp,Y) and DCP ($D7 zp,X) used for cycle savings.
+// NMOS-ONLY section: LAX ($B7 zp,Y) and DCP ($C7 zp) used for cycle savings.
 // Tested on: 6510 (real HW), 8500 (real HW), VICE x64sc PAL.
-// NOT portable to 65C02 or 65816/SuperCPU.
-.macro LAX_ZPY(addr) { .byte $b7, addr }   // assembler won't accept LAX zp,Y natively on all versions
-.macro DCP_ZPX(addr) { .byte $d7, addr }
+// Misbehaves on 65C02 and 65816/SuperCPU (see table above).
 
 multiplex_loop_nmos:
-    LAX_ZPY(sprite_y)   // A = X = sprite_y[Y] — 4 cycles / 2 bytes
-    DCP_ZPX(compare_y)  // compare_y[X]-- ; sets flags vs A — 6 cycles / 2 bytes
+    lax sprite_y,y      // A = X = sprite_y[Y] — $B7 zp,Y, 4 cycles / 2 bytes
+    dcp compare_y       // compare_y-- ; flags vs A — $C7 zp, 5 cycles / 2 bytes
     bcc multiplex_done_nmos
     iny
     bne multiplex_loop_nmos
@@ -268,6 +303,18 @@ multiplex_loop_nmos:
 multiplex_done_nmos:
     sty active_sprites
 ```
+
+An earlier version of the GOOD listing wrapped both instructions in `.byte`
+macros ("assembler won't accept LAX zp,Y natively") and used $D7 (DCP zp,X)
+where the BAD listing used $C7 (DCP zp) — different addressing, different
+logic, and a 6-cycle count that belonged to the wrong mode. KickAssembler 5.25
+assembles `lax sprite_y,y` to `B7` and `dcp compare_y` to `C7` natively
+(measured), so the macros were unnecessary; worse, `.byte $b7, addr` with a
+non-zero-page `addr` silently truncated the label to its low byte with no
+error. If a `.byte` escape is ever kept, guard it with
+`.errorif addr >= $100, "operand not in zero page"`, not `.assert` — measured
+on KickAssembler 5.25, a failed `.assert` still writes the PRG and exits 0,
+while `.errorif` aborts with exit 1 and no output file.
 
 ### Cross-references
 
@@ -289,8 +336,12 @@ multiplex_done_nmos:
 ### Symptom
 
 A jump table dispatch jumps to a completely wrong address. Changing the target
-address in the table has no effect. Moving the table by one or two bytes in
-memory makes the bug disappear; moving it back brings it back. The bug is
+address in the table has no effect. Moving the table by one byte in memory
+makes the bug disappear; moving it back brings it back. Moving it by two does
+not help in general — a 2-byte stride keeps every entry's parity, so the fault
+just shifts to the neighbouring entry (it only clears if that neighbour would
+fall off the end of the table); an earlier version of this sentence said one
+or two bytes. The bug is
 deterministic: it fires whenever a jump table entry's low-byte slot falls at
 an address ending in $FF. The same bug occurs when `JMP ($addr)` is used
 directly and the vector is placed at $xxFF.
@@ -376,11 +427,15 @@ If `JMP ($abs)` must be used directly (for code-size reasons, or when the
 vector table is not under the programmer's control), add a build-time assertion:
 
 ```kick
-// KickAssembler build-time check: assert the vector is not at $xxFF
-.assert "jmp_vector not at page boundary", (jmp_vector & $FF) != $FF, true
+// KickAssembler build-time guard: refuse to build if the vector sits at $xxFF
+.errorif (jmp_vector & $FF) == $FF, "jmp_vector at $xxFF: JMP ($abs) would fetch the wrong high byte"
 ```
 
-This turns a silent runtime misfire into an assembler error at build time.
+This turns a silent runtime misfire into a failed build. Use `.errorif`,
+not `.assert`: measured on KickAssembler 5.25, a failed `.assert` prints a
+message but still writes the PRG and exits 0, so a build script never sees
+it, while `.errorif` aborts with exit 1 and no output file (an earlier
+version of this guard used `.assert`).
 
 ### Worked example
 
@@ -396,8 +451,10 @@ dispatch_table_bad:
     // ... 15 more entries ...
     .word handler_17    // at $27E2 — safe
     .word handler_18    // at $27E4 — safe
-    // If the table started at $27C2 instead, handler_31 would be at $27FF
-    // — the bug would fire silently
+    // If the table started at $27C1 instead, handler_31 would be at $27FF
+    // ($27C1 + $3E) — the bug would fire silently. (An earlier version said
+    // $27C2, which puts handler_31 at $2800: an even base can never land a
+    // 2-byte-stride entry on $xxFF.)
 
 // The 6510 has no JMP (abs,X) — that is a 65C02 instruction, and an earlier
 // version of this example used it. The 6502 idiom that hits the bug is an
@@ -438,10 +495,11 @@ jmp_abs:
     jmp $0000           // 3 cycles — absolute, not indirect; no page-wrap bug
 
 
-// BUILD-TIME GUARD: if you must use JMP ($abs), assert the address is safe.
-// Place this near any JMP ($abs) in the codebase.
+// BUILD-TIME GUARD: if you must use JMP ($abs), refuse to build an unsafe address.
+// Place this near any JMP ($abs) in the codebase. (.errorif aborts the build;
+// .assert, which an earlier version used here, only prints and still emits the PRG.)
 .var MY_VECTOR = $2802
-.assert "MY_VECTOR safe from JMP indirect bug", (MY_VECTOR & $FF) != $FF, true
+.errorif (MY_VECTOR & $FF) == $FF, "MY_VECTOR at $xxFF: JMP indirect page-wrap bug"
 ```
 
 ### Cross-references

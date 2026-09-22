@@ -19,7 +19,7 @@ when it does not.
 
 **Severity:** medium
 **Region:** both
-**Triggered by registers:** D016, SCROLX
+**Triggered by registers:** D016
 **Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h
 
 ### Symptom
@@ -28,8 +28,11 @@ A horizontal soft-scroller works on the dedicated scroller row, but every
 other text row on the screen (titles, score panels, status bars) jitters
 horizontally in lockstep with the scroller. Most visibly: every 8 frames,
 when XSCROLL wraps from 0 back to 7, the static text rows appear to "snap
-back" by 8 pixels. The scroller itself looks correct because its screen
-RAM is being shifted in sync; the static rows have no compensating shift.
+back" by 7 pixels: XSCROLL going 0->7 moves every row 7 px, and only the
+scroller row has the 8-px screen-RAM column shift that cancels it into a
+smooth 1-px step. (An earlier version of this page said 8 pixels.) The
+scroller itself looks correct because its screen RAM is being shifted in
+sync; the static rows have no compensating shift.
 
 ### Mechanism
 
@@ -44,28 +47,45 @@ becomes a visible snap.
 
 ### Fix
 
-Gate XSCROLL with a raster IRQ: set it to the desired value before the
-scroller row's first raster line, then reset it to 0 before the next row
-starts. Two more IRQ slots, no per-frame CPU cost beyond the slot dispatch.
+Gate XSCROLL with a raster IRQ: set it to the desired value on the line
+*before* the scroller row's first raster line, then reset it to 0 on the
+line before the next row starts. Two more IRQ slots, no per-frame CPU cost
+beyond the slot dispatch. The line matters: the row's first line is a
+badline, and a `rasterirq.h` write aimed at it can land one line late.
 
 ```c
-// Row 22 spans raster lines 227..234. scroll_set fires at 226 → applies
-// at line 227 (top of row 22). scroll_reset fires at 234 → applies at
-// line 235 (top of row 23).
-rirq_build(&scroll_set_slot, 1);
-rirq_write(&scroll_set_slot, 0, &vic.ctrl2, D016_BASE | xscroll_value);
-rirq_set(slot_n, 226, &scroll_set_slot);
+// Row 22 spans raster lines 227..234 (YSCROLL=3), so lines 227 and 235
+// are both badlines. An earlier version of this page set the slots at
+// 226 and 234, which puts the write on the badline itself: rirq_set
+// fires the op one line below the row you give it, and the op's
+// CMP $D012/BCS spin is 7 cycles long, so in one of its seven phases
+// the STY's operand fetch lands on cycle 12 where BA is low, the CPU
+// halts until ~cycle 55 and the write misses the line; how often that
+// phase is hit depends on the main loop's instruction timing (measured
+// in VICE x64sc: 2 of 6 frames with this listing's main loop, 4 of 13
+// in another run). Fire one line earlier and pad with rirq_delay: the
+// delayed write lands at the end of line 226 or in the first ~4 cycles
+// of line 227, both before BA drops at cycle 12 and before the display
+// window. Same for the reset at 233/234. Measured: 10 of 10 writes on
+// the intended line across 5 runs.
+rirq_build(&scroll_set_slot, 2);
+rirq_delay(&scroll_set_slot, 11);                       // op 0: 5*11 cycles
+rirq_write(&scroll_set_slot, 1, &vic.ctrl2, D016_BASE | xscroll_value);
+rirq_set(slot_n, 225, &scroll_set_slot);                // fires on line 226
 
-rirq_build(&scroll_reset_slot, 1);
-rirq_write(&scroll_reset_slot, 0, &vic.ctrl2, D016_BASE);  // XSCROLL=0
-rirq_set(slot_n + 1, 234, &scroll_reset_slot);
+rirq_build(&scroll_reset_slot, 2);
+rirq_delay(&scroll_reset_slot, 11);
+rirq_write(&scroll_reset_slot, 1, &vic.ctrl2, D016_BASE);  // XSCROLL=0
+rirq_set(slot_n + 1, 233, &scroll_reset_slot);          // fires on line 234
 ```
 
 In the main loop, update only the data byte of the scroll_set slot — don't
-write $D016 directly anywhere outside the raster IRQ:
+write $D016 directly anywhere outside the raster IRQ. The write is op 1:
+op 0 is the delay, and `rirq_data(..., 0, ...)` would overwrite the delay
+count.
 
 ```c
-rirq_data(&scroll_set_slot, 0, D016_BASE | xscroll_value);
+rirq_data(&scroll_set_slot, 1, D016_BASE | xscroll_value);
 ```
 
 ### Worked example
@@ -82,7 +102,7 @@ for (;;) {
 for (;;) {
     rirq_wait();
     if (xscroll == 0) { shift_screen_row(); xscroll = 7; } else xscroll--;
-    rirq_data(&scroll_set_slot, 0, D016_BASE | xscroll);  // gated by IRQ
+    rirq_data(&scroll_set_slot, 1, D016_BASE | xscroll);  // gated by IRQ; op 0 is the delay
 }
 ```
 
@@ -100,7 +120,7 @@ for (;;) {
 
 **Severity:** high
 **Region:** both
-**Triggered by registers:** D016, SCROLX
+**Triggered by registers:** D016
 **Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h
 
 ### Symptom
@@ -108,9 +128,12 @@ for (;;) {
 Writing the XSCROLL value directly to $D016 each frame causes the display
 to switch into a different graphics mode or column width. Symptoms vary
 by which bits are clobbered: clobbering CSEL (bit 3) toggles between 38
-and 40 column mode, producing 2-pixel border breathing on each frame.
-Clobbering MCM (bit 4) flips between high-resolution and multicolor mode
-mid-frame; bitmap and sprite-multicolor displays go to garbage.
+and 40 column mode, so the side borders breathe by 7 pixels on the left
+and 9 on the right every frame (16 px in all, measured in VICE x64sc; an
+earlier version of this page said 2 pixels). Clobbering MCM (bit 4) flips
+text/bitmap graphics between hires and multicolor mid-frame; multicolor
+character and bitmap displays go to garbage. (Sprite multicolor is $D01C
+and is not affected.)
 
 ### Mechanism
 
@@ -121,11 +144,13 @@ $D016 packs three independent fields into one register:
 | 2-0  | XSCROLL | Fine horizontal scroll (0-7 pixels) |
 | 3    | CSEL  | 0 = 38-column mode, 1 = 40-column mode |
 | 4    | MCM   | 0 = hires, 1 = multicolor |
+| 5    | RES   | Stored and read back, no function on a 6567/6569 |
+| 7-6  | —     | Unused; always read 1 |
 
 The naive `STA $D016` or `vic.ctrl2 = xscroll` zeroes CSEL and MCM along
 with bits 5-7. The KERNAL boot leaves CSEL=1 and MCM=0 (40-col hires);
-writing 0..7 directly resets to 38-col hires and flickers the borders by
-1 character column.
+writing 0..7 directly resets to 38-col hires and widens the side borders
+by 7 px left / 9 px right — roughly one character column each side.
 
 ### Fix
 
@@ -146,12 +171,18 @@ For multicolor or 38-col mode, hard-code the appropriate base byte
 instead of reading $D016 every time (saves 4 cycles):
 
 ```c
-#define D016_BASE  0xC8     // CSEL=1, MCM=0, bits 5-7 ignored on write
+#define D016_BASE  0xC8     // CSEL=1, MCM=0; bits 6-7 read as 1, bit 5 (RES) inert
 vic.ctrl2 = D016_BASE | xscroll;
 ```
 
-Bits 5-7 of $D016 are read as 1 but ignored on write, so any base byte
-in `[0x00, 0xFF]` with the right CSEL/MCM bits is fine.
+Bits 6-7 of $D016 always read as 1 and take nothing from a write; bit 5
+(RES) is stored and reads back as written (measured in VICE x64sc: write
+$00 reads $C0, write $20 reads $E0, write $FF reads $FF) but has no
+function on a production 6567/6569 per Bauer's VIC-II article — not
+measured on hardware here. So any base byte with the right CSEL/MCM bits
+works; $C8 is simply what the register reads back after the KERNAL's boot
+write of $08 ($ECB9 table). An earlier version of this page said bits 5-7
+read as 1 regardless of the write.
 
 ### Worked example
 

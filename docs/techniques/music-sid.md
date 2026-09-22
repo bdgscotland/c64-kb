@@ -48,11 +48,11 @@ f = F * Phi2 / 2^24
 where `Phi2` is the system clock: 985248 Hz on PAL, 1022727 Hz on NTSC. Inverting for a target note frequency:
 
 ```
-F_PAL  = f * 16777216 / 985248   ~= f * 17.0288
-F_NTSC = f * 16777216 / 1022727  ~= f * 16.4046
+F_PAL  = f * 16777216 / 985248   ~= f * 17.0284
+F_NTSC = f * 16777216 / 1022727  ~= f * 16.4044
 ```
 
-The PAL register value for A4 (440 Hz) is $1D45. Most SID players ship a 96-entry table (8 octaves × 12 semitones) with precomputed PAL and NTSC values rather than computing at runtime.
+(Earlier figures of 17.0288 and 16.4046 here were arithmetic slips; the quotients are 17.02842 and 16.40439.) The PAL register value for A4 (440 Hz) is $1D45 (7492.5, rounded up); note that `sid.h`'s `SID_FREQ_PAL(440)` truncates to $1D44, one step below. Most SID players ship a 96-entry table (8 octaves × 12 semitones) with precomputed PAL and NTSC values rather than computing at runtime.
 
 In Oscar64, using `c64/sid.h`:
 
@@ -99,16 +99,16 @@ The VCREG control byte bit layout (all three voices share this format):
 | 6 | PULSE/RECT | Enable pulse waveform (duty cycle from PW11-PW0) |
 | 5 | SAW | Enable sawtooth waveform |
 | 4 | TRI | Enable triangle waveform |
-| 3 | TEST | Reset accumulator to zero and hold (noise LFSR also reset) |
+| 3 | TEST | Reset accumulator to zero and hold; the noise LFSR stops shifting and keeps its contents (it is not reset — an earlier version of this row said it was) |
 | 2 | RING | Ring-modulate triangle with previous voice's oscillator MSB |
 | 1 | SYNC | Hard-sync accumulator to previous voice's oscillator MSB transitions |
 | 0 | GATE | 0 = release phase; 1 = attack-decay-sustain phase |
 
-Setting GATE starts the attack. Clearing GATE starts the release from the current envelope level. Waveform bits can be ORed together; the output is the bitwise AND of each enabled waveform's 12-bit value. See the [sid-reference](../hardware/sid-reference.md#d404-vcreg1) for combined-waveform behavior.
+Setting GATE starts the attack. Clearing GATE starts the release from the current envelope level. Waveform bits can be ORed together; the output is the bitwise AND of each enabled waveform's 12-bit value. See the [sid-reference](../hardware/sid-reference.md#d404--vcreg1--voice-1-control-register-w) for combined-waveform behavior.
 
 ### Why it works
 
-The phase accumulator advances by F every cycle. When it overflows the 24-bit range it wraps, completing one oscillator period. The waveform generator derives its output from the accumulator's upper bits: the sawtooth is the top 12 bits directly; the triangle folds them symmetrically; the pulse compares the top 12 bits against PW11-PW0 and outputs either $FFF or $000. The noise waveform taps bit positions from a 23-bit LFSR clocked by the accumulator's MSB transition. The ADSR envelope generator multiplies the waveform output by the current envelope level (0-$FF), giving notes their amplitude shape.
+The phase accumulator advances by F every cycle. When it overflows the 24-bit range it wraps, completing one oscillator period. The waveform generator derives its output from the accumulator's upper bits: the sawtooth is the top 12 bits directly; the triangle folds them symmetrically; the pulse compares the top 12 bits against PW11-PW0 and outputs either $FFF or $000. The noise waveform takes eight bits from a 23-bit LFSR that is shifted each time bit 19 of the accumulator rises — sixteen shifts per oscillator period, not one per period (measured in VICE x64sc reSID: at F=$1000 the $D41B value holds for about 256 cycles between changes, where once-per-period clocking would hold it for 4,096; over 65,536 back-to-back polls it changed 5,617 times against roughly 313 expected from MSB clocking; an earlier version of this sentence said the LFSR was clocked by the accumulator's MSB). The ADSR envelope generator multiplies the waveform output by the current envelope level (0-$FF), giving notes their amplitude shape.
 
 ### Variations
 
@@ -118,7 +118,7 @@ The phase accumulator advances by F every cycle. When it overflows the 24-bit ra
 
 **Oscillator sync.** Set the SYNC bit. When the modulator voice's accumulator MSB rises, this voice's accumulator resets. Sweep this voice's frequency while holding the modulator steady for a classic sync sweep sound.
 
-**Noise drums.** Set the NOISE bit with a short attack, zero sustain, and short release. Each gate-on starts a percussive burst. Setting TEST briefly after the drum to re-seed the LFSR ensures each hit sounds the same.
+**Noise drums.** Set the NOISE bit with a short attack, zero sustain, and short release. Each gate-on starts a percussive burst. Setting TEST briefly before each hit restarts the oscillator from accumulator zero, so the pitched part of the drum and the LFSR's clocking phase are locked; it does not re-seed the noise, which resumes from wherever the LFSR stopped (an earlier version said TEST re-seeded the LFSR). Only a TEST held for about two PAL frames on a 6581 leaves the register at a known all-ones state — see the sid-reference TEST entry; on an 8580 that takes seconds.
 
 ### Cycle budget
 
@@ -191,7 +191,8 @@ void init_filter_sweep(void)
     sid.fmodevol = SID_FMODE_LP | 15;
 
     // Initial cutoff: mostly closed (low frequency)
-    sid.ffreq = 0x0200;  // low 3 bits zero, high byte = $40
+    // ffreq low byte -> $D415 (bits 2-0), high byte -> $D416 (FC10-FC3)
+    sid.ffreq = 0x4000;  // $D415 = 0, $D416 = $40 (cutoff11 = $200)
 }
 
 // Call this from a raster IRQ or main loop to sweep the filter
@@ -200,12 +201,14 @@ void update_filter_cutoff(unsigned cutoff11)
     // cutoff11: 0-2047
     // ffreq is the 16-bit register: low byte = D415, high byte = D416
     // but D415 only uses bits 2-0; the upper 5 bits of the low byte are ignored
-    sid.ffreq = (cutoff11 >> 3) | ((cutoff11 & 7) << 13);
+    sid.ffreq = (cutoff11 & 7) | ((cutoff11 >> 3) << 8);
     // equivalent to: D415 = cutoff11 & 7, D416 = cutoff11 >> 3
 }
 ```
 
-Note: the `SID` struct in `c64/sid.h` maps `ffreq` as `volatile unsigned`, so a 16-bit write writes both $D415 and $D416 in a single instruction (low byte first, which is correct — $D415 must be written before $D416 for a clean atomic update on any write ordering).
+An earlier version of this example wrote `sid.ffreq = 0x0200` and `(cutoff11 >> 3) | ((cutoff11 & 7) << 13)`; compiled with `oscar64 -O2 -n`, those put $02 (not $40) in $D416 and sent the eight high cutoff bits to $D415, where bits 7-3 are ignored, so every cutoff it wrote was wrong. The values above compile to `$D415 = cutoff11 & 7`, `$D416 = cutoff11 >> 3` as the comment says.
+
+Note: the `SID` struct in `c64/sid.h` declares `ffreq` as `volatile unsigned`, so one C assignment compiles to two separate 8-bit stores — the 6502 has no 16-bit store (an earlier version of this note said "a single instruction"). Oscar64 currently emits the low byte ($D415) first, then the high byte ($D416), but C does not guarantee that order. Neither the SID datasheet nor this knowledge base's SID reference documents any write-order requirement or latching of the cutoff pair: each byte takes effect as it is written, so the filter briefly sees a mixed old/new value between the two stores. That transient lasts a handful of cycles and is inaudible in practice; the order does not matter for correctness.
 
 ### Why it works
 
@@ -268,8 +271,8 @@ extern void sid_tune_play(void);
 
 __interrupt void raster_irq(void)
 {
-    // Acknowledge VIC interrupt
-    vic.irq = 1;
+    // Acknowledge raster IRQ
+    vic.intr_ctrl = 1;
 
     // Call SID play routine
     sid_tune_play();
@@ -277,7 +280,7 @@ __interrupt void raster_irq(void)
     // ...rest of frame work...
 }
 
-void main(void)
+int main(void)
 {
     // Set up raster IRQ at line 0
     // ... VIC IRQ setup ...
@@ -290,22 +293,28 @@ void main(void)
     {
         // Game logic, not audio
     }
+    return 0;
 }
 ```
 
+(An earlier version of this fragment wrote `vic.irq = 1` and `void main(void)`; neither compiles — `vic.h` names the field `intr_ctrl`, and Oscar64's `crt.c` declares `int main`, so `void main` is refused with "Function declaration differs".)
+
 **PSID and RSID file formats.** SID tune files (.SID) carry the `init` and `play` addresses in a fixed header:
 
-- Bytes $06-$07: `load_address` — where to load the tune data
-- Bytes $08-$09: `init_address` — entry point for init
-- Bytes $0A-$0B: `play_address` — entry point for play (0 = CIA timer driven)
-- Byte $0F: `songs` — total number of subtunes
-- Byte $10: `start_song` — default subtune (1-based)
+- Bytes $06-$07: `data_offset` — offset of the tune body from the start of the file ($007C for v2)
+- Bytes $08-$09: `load_address` — where to load the tune data (0 = the body's first two bytes hold the address, little-endian, and are not part of the code)
+- Bytes $0A-$0B: `init_address` — entry point for init
+- Bytes $0C-$0D: `play_address` — entry point for play (0 = init installs its own IRQ handler, raster or CIA)
+- Bytes $0E-$0F: `songs` — total number of subtunes
+- Bytes $10-$11: `start_song` — default subtune (1-based)
 
-PSID format (most common) is for "pseudo-SID" tunes that run in ROM-on mode and may call KERNAL routines. RSID format ("real SID") demands full C64 environment including correct CIA timing and does not allow KERNAL calls. Most SID players in emulators handle both formats; extracting tunes into Oscar64 projects is simpler with PSID.
+All header words are big-endian. An earlier version of this list was shifted one word — it called $06-$07 the load address, $08-$09 init, $0A-$0B play, and read `songs` and `start_song` from single bytes $0F and $10, the second of which is the always-zero high byte of a big-endian word; the offsets above agree with [formats/c64-file-formats.md](../formats/c64-file-formats.md).
+
+PSID (most common) is the player-driven variant: the player itself calls init and then play on a VBI or CIA tick, and before each call it sets $01 from the routine's address ($37 below $A000, $36 below $D000, $35 at $E000 and above — KERNAL banked out — and $34 in the $D000 page), so a PSID tune cannot assume the KERNAL is mapped in and should be self-contained. RSID ("Real SID") is the opposite: the tune gets the C64 power-on environment as-is — $01 = $37 with KERNAL and BASIC ROMs banked in, CIA 1 timer A interrupting at 60 Hz — and must configure the hardware and install its own interrupt handler, so play_address, load_address (in the header) and speed are all 0 and init must live in RAM at or above $07E8. KERNAL and BASIC use is legitimate in RSID (the RSID-only BASIC flag even runs the tune as a BASIC program). An earlier version of this paragraph had the emphasis backwards, saying PSID tunes may call the KERNAL and RSID tunes may not. Most emulator players handle both; extracting a tune into an Oscar64 project is simpler with PSID because you call init/play yourself. See formats/c64-file-formats.md for the header.
 
 ### Why it works
 
-The play routine is called once per frame (every 20 ms on PAL, every 16.7 ms on NTSC). This gives the music 312 × 50 = 15600 SID register writes per second on PAL. The player's job each frame is to advance its internal sequencer by one tick (or by a fraction of a tick if the tune runs at a sub-frame rate), compute any pitch slides, vibrato, or arpeggio values for each voice, and write the result to SID. Because SID registers are write-only and take effect immediately, the writes can happen at any point in the frame without synchronization — the SID does not have a "register latch" mode that defers application.
+The play routine is called once per frame (every 20 ms on PAL, every 16.7 ms on NTSC). That gives the player 50 opportunities per second on PAL (about 60 on NTSC) to rewrite any of the 25 registers — at most 1,250 writes a second, not the 15,600 an earlier version of this sentence claimed (312 × 50 counts raster lines, not register writes). The player's job each frame is to advance its internal sequencer by one tick (or by a fraction of a tick if the tune runs at a sub-frame rate), compute any pitch slides, vibrato, or arpeggio values for each voice, and write the result to SID. Because SID registers are write-only and take effect immediately, the writes can happen at any point in the frame without synchronization — the SID does not have a "register latch" mode that defers application.
 
 The reason for placing the call inside a raster IRQ rather than the main loop is timing stability. A main loop with variable per-frame work produces jitter in the audio write timing. The raster IRQ fires at a fixed line number every frame, guaranteeing the play routine runs at the same point in every frame regardless of what the main loop is doing.
 
@@ -327,7 +336,7 @@ The reason for placing the call inside a raster IRQ rather than the main loop is
 
 **Complexity:** low
 **Region:** both
-**Uses registers:** D415, D416, D417, D418, D404
+**Uses registers:** D404, D405, D406, D40E, D40F, D412, D415, D416, D417, D418, D41B
 
 ### Why
 
@@ -348,24 +357,38 @@ Standard practice: SID players ship two filter-cutoff tables (one per chip revis
 Both chips share a hardware quirk in the envelope rate counter: if you write a smaller rate value to $D405 or $D406 than the 15-bit internal rate counter has already counted past for the current phase, the counter must wrap through its full 15-bit range (up to 32768 cycles, approximately 33 ms at PAL) before the envelope generator acts on the new rate. This causes new notes to play at the wrong envelope shape until the counter wraps. The standard workaround is the "hard restart" sequence (see the `Programming patterns` section in [sid-reference.md](../hardware/sid-reference.md#hard-restart-adsr-bug-workaround)):
 
 ```asm
-; Hard restart: apply 2 frames before the next gate
+// Hard restart: three steps over two frames, starting 2 frames before the note
+hard_restart:
     lda #0
-    sta $D405       ; AD = 0 (attack 2ms, decay 6ms — fastest possible)
+    sta $D405       // AD = 0 (attack 2ms, decay 6ms — fastest possible)
     lda #$F0
-    sta $D406       ; SR = $F0 (sustain max, release 0 — no decay hang)
-    lda $D404_shadow
+    sta $D406       // SR = $F0 (sustain max, release 0 — no decay hang)
+    lda ctrl_shadow
     and #$FE
-    sta $D404       ; clear GATE bit to start release
-    ; ... 1 frame passes ...
+    sta $D404       // clear GATE bit to start release
+    rts
+// ... 1 frame later ...
+hard_restart_test:
+    lda #$09
+    sta $D404       // TEST+GATE: reset oscillator, start attack
+    rts
+// ... 1 frame later (the note frame) ...
+hard_restart_note:
     lda real_ad
     sta $D405
     lda real_sr
     sta $D406
     lda real_ctrl_with_gate
-    sta $D404       ; GATE + waveform, correct values
+    sta $D404       // release TEST; GATE + waveform, correct values
+    rts
+
+ctrl_shadow:         .byte 0   // software copy of $D404 (write-only register)
+real_ad:             .byte 0
+real_sr:             .byte 0
+real_ctrl_with_gate: .byte 0
 ```
 
-The 6581 exhibits the ADSR bug more visibly at certain rate combinations; the 8580 is slightly less severe in some cases, but the bug exists on both and should always be worked around.
+An earlier version of this listing had only two steps — it went from the gate-off frame straight to the note frame, dropping the TEST+GATE frame that sid-reference.md's hard-restart pattern puts between them — and its comment said "2 frames" while the body waited one; it also read a `$D404_shadow` label that no assembler accepts. The three-step form above mirrors the reference. The 6581 exhibits the ADSR bug more visibly at certain rate combinations; the 8580 is slightly less severe in some cases, but the bug exists on both and should always be worked around.
 
 #### $D418 sample replay (digi) difference
 
@@ -383,7 +406,7 @@ This is a hardware concern, not a software one, but it affects anyone testing ag
 
 ### Variations
 
-**Chip detection at runtime.** Because the 6581 and 8580 respond differently to specific cutoff values, runtime detection is possible by writing a known cutoff and measuring the filter's effect on a test tone read via $D41C (envelope of voice 3 routed through the filter). Some SID players autodetect; others expose a settings toggle. Detection is imprecise — use only to select between precomputed tuning tables.
+**Chip detection at runtime.** Runtime detection cannot observe the filter from software: the only readable voice-3 registers are $D41B (oscillator) and $D41C (envelope), and both sit before the filter in the signal path, so no cutoff, mode or routing write changes what they return (see sid-reference.md, Filter signal flow; an earlier version of this paragraph said the filter's effect could be measured through $D41C). The standard detection routine instead uses $D41B: write $FF to $D412, $D40E and $D40F, then write $20 to $D412 (sawtooth, TEST and GATE cleared) and read $D41B immediately — the value differs between revisions because the two chips reset and restart the accumulator differently. In VICE 3.10 reSID the read returns 3 for the 6581 model and 2 for the 8580 model; treat the real-hardware values as the same but unverified here. Some SID players autodetect; others expose a settings toggle. Detection is imprecise (some SIDs answer ambiguously) — use it only to select between precomputed cutoff tables, and offer a settings toggle as the fallback.
 
 **Per-chip optimization.** Scene-quality SID music is often composed explicitly for one chip revision. The composer notes the target in the HVSC (High Voltage SID Collection) metadata (`STIL.txt` or the SID file header `SID model` field). Accept that cross-revision playback will sound different.
 
@@ -398,7 +421,7 @@ This is a hardware concern, not a software one, but it affects anyone testing ag
 
 ### Why
 
-The C64 has no dedicated PCM audio hardware. The SID chip was designed as a synthesizer, not a sample player. Yet some of the most memorable audio moments in C64 history — Ghostbusters speech, Arkanoid title track, Mahoney's "Musik Runs in the Family" sampled instruments — are PCM playback at what sounds like reasonable audio quality. The mechanism is a hardware accident in the 6581: the master volume register doubles as a 4-bit DAC for anyone willing to write to it fast enough. This technique is how C64 demos and games play speech and percussion samples.
+The C64 has no dedicated PCM audio hardware. The SID chip was designed as a synthesizer, not a sample player. Yet some of the most memorable audio moments in C64 history — Ghostbusters speech, Arkanoid title track, Mahoney's "Musik Run/Stop" sampled instruments — are PCM playback at what sounds like reasonable audio quality. The mechanism is a hardware accident in the 6581: the master volume register doubles as a 4-bit DAC for anyone willing to write to it fast enough. This technique is how C64 demos and games play speech and percussion samples.
 
 ### How
 
@@ -406,47 +429,58 @@ The $D418 register's lower nibble (VOL, bits 3-0) sets the master output volume.
 
 Sample rate is determined by the IRQ frequency: any timer that fires and writes a new nibble to $D418 contributes one sample. The practical range on PAL is:
 
-- **Low rate (4-8 kHz):** One IRQ every 123-246 cycles. This is approximately every 2-4 raster lines. Sufficient for speech (e.g. GoatTracker `ADSR bug` workaround timing) and simple percussion. ~20-30 IRQs per raster line is achievable but needs careful cycle accounting.
-- **Higher rate (up to ~15.6 kHz):** One IRQ per raster line (PAL: 63 cycles/line × 312 lines × 50 Hz = 982080 cycles/sec; one IRQ per line gives 312 × 50 = 15600 samples/sec). This is the theoretical ceiling for raster-line-based digi; practical implementations are limited by the IRQ overhead and the need for the main program to do anything else.
+- **Low rate (4-8 kHz):** One IRQ every 123-246 cycles. This is approximately every 2-4 raster lines. Sufficient for speech (e.g. GoatTracker `ADSR bug` workaround timing) and simple percussion. The handler below costs roughly 25-35 cycles per sample plus the 7-cycle interrupt entry and 6-cycle RTI, so at one IRQ every 2-4 lines it leaves well over half the CPU free. (An earlier version of this bullet said "~20-30 IRQs per raster line is achievable"; a PAL line is 63 cycles and entry plus RTI alone cost 13, so at most four empty interrupts fit in one line.)
+- **Higher rate (up to ~15.6 kHz):** One IRQ per raster line. PAL: 985,248 cycles/s ÷ 63 cycles/line ≈ 15,639 samples/s (312 lines × 50.125 Hz). NTSC: 1,022,727 ÷ 65 ≈ 15,734 samples/s (263 × 59.826 Hz). An earlier version put the PAL clock at "63 × 312 × 50 = 982080" — that product is 982,800, and the clock is 985,248 Hz. This is the theoretical ceiling for raster-line-based digi; practical implementations are limited by the IRQ overhead and the need for the main program to do anything else.
 
-A minimal 4-bit digi IRQ (assembly):
+A minimal 4-bit digi IRQ (KickAssembler syntax; `sample_ptr` must be a zero-page pair because `(zp),y` has no absolute form, and KickAssembler assembles `(label),y` with a non-zero-page label silently and reads the wrong pointer):
 
 ```asm
-; Setup: set SID master volume to mid-range, all voices gated off
-; Sample data: array of bytes, each byte = two 4-bit samples packed as hi|lo nibble
-; nibble_hi: flag byte, 0 = output low nibble, nonzero = output high nibble
+// Setup: set SID master volume to mid-range, all voices gated off
+// Sample data: array of bytes, each byte = two 4-bit samples packed as hi|lo nibble
+// nibble_hi: flag byte, 0 = output low nibble, nonzero = output high nibble
+// sample_ptr: zero-page pointer to the current sample byte
+.label sample_ptr = $FB
 
 digi_irq:
     pha
+    tya
+    pha
+    ldy #0
     lda nibble_hi
     bne output_hi
-    ; Low nibble
-    lda (sample_ptr)
+    // Low nibble
+    lda (sample_ptr),y
     and #$0F
     sta $D418
     inc nibble_hi
     jmp digi_irq_done
 output_hi:
-    lda (sample_ptr)
-    lsr a
-    lsr a
-    lsr a
-    lsr a
+    lda (sample_ptr),y
+    lsr
+    lsr
+    lsr
+    lsr
     sta $D418
     lda #0
     sta nibble_hi
-    inc sample_ptr       ; advance to next byte
+    inc sample_ptr       // advance to next byte
     bne digi_irq_done
-    inc sample_ptr+1     ; carry into high byte
+    inc sample_ptr+1     // carry into high byte
 digi_irq_done:
     pla
-    ; ... ACK IRQ (CIA or VIC as appropriate) ...
+    tay
+    pla
+    // ... ACK IRQ (CIA or VIC as appropriate) ...
     rti
+
+nibble_hi: .byte 0
 ```
+
+An earlier version of this listing loaded the sample with `lda (sample_ptr)` — zero-page indirect with no index register, which is a 65C02 addressing mode the 6510 does not have (KickAssembler: "'lda' doesn't support INDIRECT mode"); the 6510's indirect loads are `(zp,X)` and `(zp),Y` only, hence the `ldy #0` and the extra Y save/restore.
 
 The upper nibble (bits 7-4 of $D418) contains the filter mode and voice-3 mute bits; the sample writes should preserve those bits or accept that the filter mode is overwritten on every sample byte. A common approach for digi that coexists with music is to set the filter mode to a fixed value and OR it with each sample nibble.
 
-On Oscar64, the play-routine pattern applies: an `__interrupt` function writes the next nibble to `sid.fmodevol & 0xF0 | next_sample_nibble` on each IRQ tick.
+On Oscar64, the play-routine pattern applies: an `__interrupt` function writes `sid.fmodevol = filter_shadow | next_sample_nibble;` on each IRQ tick, where `filter_shadow` is a software copy of the intended bits 7-4 — $D418 cannot be read back (a read returns the last byte written to any SID register, measured in VICE reSID on both models), so `sid.fmodevol & 0xF0`, which an earlier version of this sentence used, is not the filter mode but the high nibble of whatever the music routine last wrote.
 
 ### Why it works
 
@@ -460,7 +494,7 @@ The technique works specifically because the 6581's DAC has a non-zero DC offset
 
 **Sample rate selection.** PAL gives more cycles per frame (19656) vs NTSC (17095), so PAL can sustain a higher sample rate before competing IRQs are starved. Most classic digi tunes were composed for PAL systems.
 
-**NTSC consideration.** On NTSC (60 Hz frame rate), the same raster-line-based sample rate gives 263 × 60 = 15780 samples/sec — slightly higher than PAL. However, the shorter frame (17095 cycles) leaves fewer cycles for the main program.
+**NTSC consideration.** On NTSC (59.826 Hz frame rate), the same raster-line-based sample rate gives 1,022,727 ÷ 65 ≈ 15,734 samples/sec (263 × 59.826 Hz) — slightly higher than PAL's 15,639 (an earlier version said 263 × 60 = 15,780, using a rounded frame rate). However, the shorter frame (17095 cycles) leaves fewer cycles for the main program.
 
 **8580 hardware fix.** A 330-740 kΩ resistor between SID pin 26 (EXT IN) and ground restores audible digi on 8580 by feeding back signal through the filter input. The exact resistor value affects the amplitude and frequency response of the digi; values around 470 kΩ are common.
 
@@ -487,60 +521,52 @@ The technique family exploits the relationship between the ADSR bug, the TEST bi
 **Hard-restart digi (Hermit method, basic form):**
 
 For each sample byte (8-bit, one per IRQ tick):
-1. Gate off the voice. Write $D405 = 0, $D406 = 0 (fastest ADSR). This triggers the ADSR rate counter reset.
+1. Gate off the voice. Write $D405 = 0, $D406 = 0 (fastest rates). No register write resets the 15-bit rate counter — it only clears when it reaches the current rate period, so a rate lowered below where the counter already sits must wrap the full range first (the ADSR bug, see above; an earlier version of this step said the write "triggers the ADSR rate counter reset", which is the opposite of the bug). This loop is safe because it writes rate 0 on every tick and never lowers the rate mid-count; a music-player hard restart gets the same guarantee by writing AD/SR = 0 a frame or two before the gate.
 2. Set TEST bit ($D404 bit 3) to hold the oscillator at zero output.
 3. Write the 8-bit sample value into... the envelope? Not directly — the envelope value is not writable. Instead, the trick is to set a specific ATTACK value such that the envelope ramps from 0 to the target value in exactly one sample period.
 
-In practice the "Hermit method" as used in VICE test cases and documented in Codebase64 works as follows for voice 1 — the routine writes that voice's control, attack/decay and sustain/release registers ($D404–$D406) itself on every tick, the per-voice layout `sid_voice_setup` describes, which is why this entry requires it:
+No working hard-restart / envelope-DAC listing is given here: the 8-bit envelope path described above and below is described, not demonstrated. An earlier version of this entry carried a "Hermit method" fence for voice 1 that did not do what its comments said — it loaded the sample byte and then overwrote A with `lda #$00` / `lda #$08`, so its `and #$0F` / `sta $D418` stored the constant $08 on every tick, it never set GATE, and it never acknowledged the interrupt; an agent copying it got silence at fixed volume 8. What follows instead is an explicitly plain 4-bit $D418 player that takes 8-bit sample bytes, so that the per-tick structure a hard-restart routine would also need — fetch, scale, write, acknowledge, restore — is shown by something that assembles. It uses the voice-1 registers only through the `filter_shadow` convention of `digi_4bit`; the entry still requires `sid_voice_setup` because the envelope technique it describes is built on the per-voice $D404-$D406 layout.
 
 ```asm
+// Plain 4-bit $D418 player, one 8-bit sample byte per tick (high nibble used).
+// This is NOT the hard-restart / envelope-DAC routine; see the text above.
 digi_8bit_irq:
     pha
-    ; Load next sample byte (0-255)
+    tya
+    pha
+    // Load next sample byte (0-255)
     ldy sample_idx
     lda sample_data,y
     inc sample_idx
-
-    ; Step 1: gate off, clear TEST, set AD=0 SR=0
-    lda #$00
-    sta $D404       ; gate off, no waveform, no TEST
-    sta $D405       ; AD=0 (2ms attack, 6ms decay)
-    sta $D406       ; SR=0 (sustain 0, release 6ms)
-
-    ; Step 2: set TEST bit (freezes oscillator at DC level)
-    lda #$08
-    sta $D404       ; TEST only
-
-    ; Step 3: gate on with TEST+TRI
-    ; The attack phase begins; attack rate 0 = 2ms
-    ; Write the sample as a volume nibble (mixed technique)
-    and #$0F        ; low nibble of sample
-    sta $D418       ; 4-bit portion to volume DAC
-    ; For full 8-bit via envelope, different timing required (see below)
-
+    // Keep the high nibble: a 4-bit $D418 digi wants bits 7-4, not 3-0
+    lsr
+    lsr
+    lsr
+    lsr
+    ora filter_shadow   // software copy of $D418 bits 7-4 ($D418 cannot be read back)
+    sta $D418
+    lda $DC0D           // acknowledge CIA 1 timer IRQ (use dec $D019 for a raster source)
     pla
-    ; ACK IRQ
+    tay
+    pla
     rti
+
+sample_idx:    .byte 0
+filter_shadow: .byte 0
+sample_data:   .fill 256, 0
 ```
 
-The full 8-bit envelope technique requires precisely timed gate sequences spanning multiple IRQ slots. The envelope counter increments once per specific number of cycles depending on the ATTACK rate value 0 (one increment every ~15 cycles at PAL clock; PAL φ2 = 985248 Hz, attack-rate-0 spec = 2 ms to peak, 256 envelope steps → 7.7 µs/step → ~15 φ2 cycles/step). Counting exactly enough IRQ cycles to arrive at the target amplitude requires very precise IRQ timing — this is why this is classified scene-tier. The Hermit technique in its simplest deployable form produces 5-6 effective bits; the most refined variants (Mahoney "Musik Runs in the Family") achieve perceptual quality close to 8 bits.
+The full 8-bit envelope technique requires precisely timed gate sequences spanning multiple IRQ slots. The envelope counter increments once per specific number of cycles depending on the ATTACK rate value 0 (one increment every ~8-9 cycles at PAL clock: PAL φ2 = 985248 Hz, attack-rate-0 spec = 2 ms to peak, 256 envelope steps → ~7.8 µs/step ≈ 8 φ2 cycles/step by the datasheet figure; measured in VICE reSID, both 6581 and 8580 models, ENV3 rises 3 levels per 27 cycles, i.e. 9 cycles per step, and reaches 255 about 2,080 cycles ≈ 2.1 ms after gate-on. An earlier revision said ~15 cycles per step, which is double the value its own arithmetic gives.) Counting exactly enough IRQ cycles to arrive at the target amplitude requires very precise IRQ timing — this is why this is classified scene-tier. The Hermit technique in its simplest deployable form produces 5-6 effective bits; the most refined variants (Mahoney's "Musik Run/Stop") achieve perceptual quality close to 8 bits.
 
-**Mahoney technique (8580-specific).** Jan Lund Thomsen documented in detail (published as "Musik Runs in the Family," 1994) that the 8580 can be driven to produce high-resolution audio by exploiting the resonance self-oscillation at high Q values combined with carefully timed pulse-width writes:
-
-1. Set voice 3 to pulse waveform, TEST bit set (oscillator locked at DC).
-2. Set resonance to 15 in $D417; route voice 3 to filter.
-3. Write sample bytes to $D411 (PWHI3 — pulse width high nibble of voice 3).
-4. The locked accumulator means the comparator output is entirely determined by the pulse width vs. the locked accumulator value. Because the accumulator is at zero (TEST held), the pulse output is $FFF or $000 depending on whether PW > 0. By setting TEST, the output is always $000 (output low = silence) until we manipulate something...
-
-Actually the precise mechanism used in practice: set voice 3 to pulse, set GATE, do NOT set TEST. Use the pulse width as a DAC: when PW = $000 the output is constant low; when PW = $800 it is constant $FFF (or close). Drive PWHI3 with the sample high nibble each IRQ. At resonance 15 the filter ring amplifies the result. This is approximate; the exact implementation details are in Hermit's and Mahoney's original source (Codebase64 forum).
+**Mahoney technique (8580-specific).** Mahoney's 8580 digi routine (released as "Musik Run/Stop", 2014 — title and year from published descriptions, not verified against the release or any document on this machine) drives the 8580 to high-resolution audio by combining the envelope, the volume DAC and the filter's resonance gain. The exact Mahoney and Hermit register sequences are not documented here. An earlier version of this entry named Jan Lund Thomsen and 1994 and called the release "Musik Runs in the Family", while the same page credited Mahoney two paragraphs earlier — two people for one work; the name and year have been dropped rather than resolved, since nothing on this machine settles them. That version also gave a four-step recipe built on holding voice 3 in PULSE+TEST and driving its pulse width as a DAC, followed by a paragraph contradicting it; that mechanism does not work (see the PWM digi variation below) and has been removed.
 
 ### Why it works
 
-The core insight is that the SID has multiple analog signal paths that can be driven by digital writes at different resolutions. The $D418 volume register gives 4 bits directly. The pulse-width register gives 12 bits of comparator control, of which only the high nibble needs to change to get 4-bit-equivalent control with the oscillator locked via TEST. Combining both paths gives more effective resolution. The filter resonance adds gain at the cutoff frequency, boosting low-amplitude signals to audible levels on the 8580 where the raw DAC change is too small to hear without it.
+The core insight is that the SID has multiple analog signal paths that can be driven by digital writes at different resolutions. The $D418 volume register gives 4 bits directly. The pulse comparator output is binary ($000 or $FFF), and with TEST set it is forced to $FFF whatever PW holds, so the extra resolution in these techniques comes from the envelope and the volume DAC, not from PW (an earlier version of this sentence said the pulse width gave "12 bits of comparator control" with the oscillator locked via TEST; it does not). Combining the envelope and volume paths gives more effective resolution. The filter resonance adds gain at the cutoff frequency, boosting low-amplitude signals to audible levels on the 8580 where the raw DAC change is too small to hear without it.
 
 ### Variations
 
-**PWM digi (8580 software-only).** Set a voice to PULSE+TEST (oscillator locked at zero). Modulate PWHI (the 4-bit high nibble of pulse width) with sample values each IRQ. Because the locked oscillator produces a DC level determined by the PW comparator, modulating PW changes the DC level, which drives the analog output. This is the most reliable software-only digi method on stock 8580.
+**PWM digi (8580 software-only) — does not work as once described here.** With TEST set the pulse output is held at full scale regardless of PW: measured in VICE reSID on both models, OSC3 reads $FF for PW = $000, $080, $800 and $FFF alike, so PW cannot act as a DAC while TEST is held (an earlier version of this variation said modulating PWHI under TEST changed the DC level, and the How section above said the TEST-locked output was $000; both were wrong). The usable software-only 8580 form is the test-bit DC digi in [sid-reference.md](../hardware/sid-reference.md): PULSE+TEST+GATE ($49) on all three voices as constant full-scale sources through their envelopes, with $D418 as the 4-bit DAC. The exact Mahoney/Hermit sequences are not documented here.
 
 **Test-bit digi.** Rapidly toggle the TEST bit at audio frequency. The duty cycle of the toggling produces an average DC level that the filter and volume DAC amplify. Produces lower effective resolution but requires only one bit manipulation per sample.
 
@@ -569,9 +595,9 @@ The first SID is always at $D400-$D418 (stock C64 mapping). The second SID addre
 | Ultimate II+ | Configurable | Settings in Ultimate menu |
 | SidCard v2 | $D500 | Rare; 1980s hardware |
 
-**$D420 vs. mirroring.** The stock C64 SID is mirrored every 32 bytes through $D7FF (the PLA decodes only bits 5-0 of the address for SID chip select, so $D420, $D440, $D460... all hit the same chip). On boards with a hardware second SID, the chip select is modified so $D420 addresses the second chip instead of mirroring the first. Code that writes $D420 on stock hardware writes to the first SID voice 1 registers (same as writing $D400). Graceful degradation is therefore automatic on stock hardware — two-SID music defaults to single-SID behavior, just with duplicate writes.
+**$D420 vs. mirroring.** The stock C64 SID is mirrored every 32 bytes through $D7FF (the SID has only five address inputs, A0-A4, and the C64's I/O address decoding selects it for the whole $D400-$D7FF range, so $D420, $D440, $D460... all address the same chip; an earlier version said "bits 5-0", which would be a 64-byte period). On boards with a hardware second SID, the chip select is modified so $D420 addresses the second chip instead of mirroring the first. Code that writes $D420 on stock hardware writes to the first SID voice 1 registers (same as writing $D400). Graceful degradation is therefore automatic on stock hardware — two-SID music defaults to single-SID behavior, just with duplicate writes.
 
-**Detecting second SID presence.** A common detection method reads the SID's open-bus behavior: all real SID registers are write-only and return open-bus on read. On real hardware the open-bus value for a SID register is typically the last byte placed on the data bus by the VIC-II (the high byte of the last VIC address fetch). Some detection schemes write a known value to a SID register, then try to write a different value to $D420 and read back $D420 — if the read returns a different bus state, a second SID is likely present. This detection is fragile; more reliable methods require a combination of reads across multiple cycles. Recommended practice: expose a user toggle rather than auto-detecting.
+**Detecting second SID presence.** $D400-$D418 are write-only; $D419-$D41C read live state (paddles, OSC3, ENV3). A read of a write-only address does not float and is not the last VIC-II fetch (an earlier version of this paragraph said both): the SID drives the bus with the last byte written to any of its 32 addresses (or last read from $D419-$D41C), fading to $00 after roughly 7k cycles on a 6581 and roughly 660k on an 8580 (measured in VICE reSID; see [sid-reference.md](../hardware/sid-reference.md)). So writing a value to $D420 and reading $D420 back returns that value whether or not a second chip is there — with one chip $D420 is a mirror of $D400. A read-back test has to read the FIRST chip: write $AA to $D401, write $55 to $D421, then read $D401 promptly — a single SID returns $55 (the mirror write was its last write), a second chip at $D420 leaves the first chip's held byte at $AA. This works in VICE with a second SID configured; on real add-on boards the result depends on the board's address decoding and the read must land well inside the 6581's fade window, so treat it as a hint and expose a user toggle.
 
 An Oscar64 approach:
 
@@ -596,7 +622,7 @@ void init_both_sids(void)
 }
 ```
 
-**Composing for two SIDs.** Two-SID tunes use six voices total. Conventional assignment: SID1 voices 1-3 for melody + bass, SID2 voices 1-3 for chords + extra percussion or samples. GoatTracker 2.x supports stereo SID output with configurable second-chip address. SidFactory II has native two-SID editing. HVSC metadata identifies stereo SID files with the `stereo` flag and the second SID address in the header's `secondSIDAddress` field.
+**Composing for two SIDs.** Two-SID tunes use six voices total. Conventional assignment: SID1 voices 1-3 for melody + bass, SID2 voices 1-3 for chords + extra percussion or samples. GoatTracker 2.x supports stereo SID output with configurable second-chip address. SidFactory II has native two-SID editing. HVSC has no `stereo` flag (an earlier version of this sentence said it had); a second SID is indicated by a non-zero `secondSIDAddress` byte at header offset $7A (PSID v3+), holding the middle byte of $Dxx0 — valid values $42-$7F and $E0-$FE, even only, e.g. $42 = $D420, $50 = $D500, $E0 = $DE00 — with the third SID's address at $7B in v4.
 
 ### Why it works
 
@@ -659,7 +685,7 @@ reSID is not cycle-exact in VICE's default mode (it runs with a cycle granularit
 
 #### $D41B/$D41C sampling
 
-VICE samples $D41B (OSC3) and $D41C (ENV3) correctly but with the caveat that the values lag by one clock cycle compared to the CPU's write clock in some edge cases. Code that reads $D41B immediately after changing voice 3's frequency may get the previous accumulator value. A one-cycle NOP between the write and the read eliminates this.
+NOP takes two cycles, not one (an earlier version of this paragraph prescribed "a one-cycle NOP"). Whether VICE's $D41B/$D41C reads are offset from silicon by a cycle is not something we have measured; what is measured (VICE 3.10, reSID) is that reads are clocked per CPU cycle — with F=$FFFF each extra NOP between a TEST-clear and an OSC3 read advances the value by exactly 2 — so inserting a NOP only reads a later value, it does not remove any offset. The caveat that actually bites in headless testing: with `-sound -sounddev dummy`, warp on or off, $D41B and $D41C do not advance between CPU reads (OSC3 read a constant $55 across 80,000 cycles of a running sawtooth; ENV3 stayed $00 through an attack), and with `+sound` they return changing but meaningless values (ENV3 non-monotonic during an attack, different on every run). A test that reads OSC3/ENV3 must run with a real sound sink: `-sound -sounddev wav -soundarg out.wav` or `-sound -sounddev dump -soundarg out.txt` (no audio device needed); both showed OSC3 advancing and ENV3 reaching $FF normally.
 
 ### Why it works
 
@@ -667,9 +693,9 @@ reSID is an analog-circuit simulation using a mix of analytical models (for the 
 
 ### Variations
 
-**Testing against multiple VICE SID backends.** VICE supports three SID engines at runtime: `fastsid` (simple model, fast, inaccurate), `reSID` (default, described above), and `reSID-fp` (floating-point version of reSID, slightly more accurate at filter extremes, slower). For verifying SID techniques, use reSID. For final hardware validation, test on a real C64 with both 6581 and 8580 if possible, or use the 1541 Ultimate II+ with its SID emulation mode as an intermediate step.
+**Testing against multiple VICE SID backends.** Current VICE builds expose a single SID engine: `-sidengine 1` (reSID). FastSID is a compile-time option that has been off by default since VICE 3.5 (`--with-fastsid`, marked deprecated), so a stock install rejects `-sidengine 0`; the separate reSID-fp engine that VICE 2.1 added is no longer offered as a selectable engine (an earlier version of this paragraph listed `fastsid`, `reSID` and `reSID-fp` as three runtime choices; `x64sc -help` on VICE 3.10 offers only ReSID). Choose the chip with `-sidmodel 0` (6581), `1` (8580) or `2` (8580 + digiboost), and trade speed for accuracy inside reSID with `-residsamp 0` (fast) … `3` (fast resampling) rather than by switching engines. For verifying SID techniques, use reSID. For final hardware validation, test on a real C64 with both 6581 and 8580 if possible, or use the 1541 Ultimate II+ with its SID emulation mode as an intermediate step.
 
-**HVSC SID compatibility metadata.** The High Voltage SID Collection tags each tune with the target SID model (6581/8580/both) in the `.SID` file header byte $77 (`SID model` flags: bits 0-1 for first SID, bits 2-3 for optional second). STIL.txt adds human-readable notes. When ingesting SID files into a game, check this field to select the appropriate per-chip frequency and filter tables.
+**HVSC SID compatibility metadata.** The High Voltage SID Collection tags each tune with the target SID model (6581/8580/both) in the `.SID` file header's 16-bit big-endian `flags` word at $76-$77: bits 4-5 of byte $77 give the first SID's model (00 unknown, 01 6581, 10 8580, 11 both). Bits 0-1 are the MUS-data and PlaySID/BASIC flags and bits 2-3 the video standard, so mask `byte[$77] >> 4 & 3`, not `& 3` (an earlier version of this sentence put the first SID's model in bits 0-1 and the second's in bits 2-3, which would classify MUS files as 6581). In PSID v3+ bits 6-7 give the second SID's model (00 = same as the first), and in v4 bits 8-9 (low bits of byte $76) give the third's. See [c64-file-formats.md](../formats/c64-file-formats.md). STIL.txt adds human-readable notes. When ingesting SID files into a game, check this field to select the appropriate per-chip frequency and filter tables.
 
 **GoatTracker's chip selection.** GoatTracker 2.x has a per-instrument SID model toggle. Tunes exported from GoatTracker for specific hardware use different filter tuning tables per chip. The exported `.sid` file header encodes the target chip. Load these into VICE with the emulated chip set to match.
 

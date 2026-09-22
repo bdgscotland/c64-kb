@@ -17,8 +17,12 @@ up or down by roughly 4%.
 The two regions covered by this document are:
 
 - **PAL** — used in Europe, Australia, parts of South America, and most of
-  Asia. Driven by a 17.734475 MHz crystal, divides down to a CPU clock of
-  approximately 985,248 Hz. Frame rate is 50 Hz, 312 scanlines per frame,
+  Asia. Driven by a 17.734472 MHz crystal divided by 18 (some sources give
+  17.734475 MHz, four times the PAL colour subcarrier; the 0.17 Hz that
+  makes on the CPU clock is below anything measured here — an earlier
+  version of this line paired 17.734475 with the 985,248.444 Hz quotient
+  below, which belongs to 17.734472), a CPU clock of approximately
+  985,248 Hz. Frame rate is 50 Hz, 312 scanlines per frame,
   63 cycles per scanline.
 - **NTSC** — used in the United States, Canada, Japan, and Mexico. Driven by
   a 14.31818 MHz crystal, divides down to a CPU clock of approximately

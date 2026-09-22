@@ -22,7 +22,6 @@ hardcoded charset/bitmap blit address.
 
 **Severity:** medium
 **Region:** both
-**Triggered by registers:** D018, DD00
 **Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank
 
 ### Symptom
@@ -69,10 +68,18 @@ in bank 0, $9000-$9FFF in bank 2) regardless of $01. This is why the default
 screen works correctly out of reset — VIC reads the char ROM via its own path
 while the CPU cannot see it at all.
 
-The second trap is interrupt safety. While $01 = $33, I/O is invisible: a raster
-IRQ that fires will try to acknowledge via $D019 but that address now reads char
-ROM, not the VIC. The acknowledge is lost and the system hangs. Always SEI before
-swapping I/O out.
+The second trap is interrupt safety. While $01 = $33, I/O is invisible: any IRQ
+that fires — the KERNAL's own 60 Hz CIA-1 timer interrupt as much as a raster
+IRQ you set up — cannot acknowledge its source. The KERNAL handler's LDA $DC0D
+at $EA7E reads character ROM instead of the CIA, and a raster handler's write to
+$D019 lands in the RAM under the ROM instead of the VIC. The flag stays set,
+/IRQ stays low, the handler re-enters after every RTI and the main program never
+runs another instruction (measured in VICE x64sc: with $01 = $33, no raster IRQ
+configured and a counting $0314 handler, 28,695 handler passes and 0 main-loop
+iterations in 20M cycles, against 1,028 passes and 31,183 iterations with
+$01 = $37). An earlier version of this paragraph blamed only a raster IRQ's
+$D019 acknowledge, which read as if SEI were optional without one; it is not.
+Always SEI before swapping I/O out.
 
 ### Fix
 
@@ -106,20 +113,27 @@ copy_charset_from_rom:
     ora #%00000011      // $33: CHAREN=0, HIRAM=1, LORAM=1 → char ROM visible
     sta $01
 
-    // Primary font: $D000-$D7FF (2048 bytes)
+    // Primary font: $D000-$D7FF = eight 256-byte pages (256 chars × 8 bytes)
     ldx #0
-copy_lo:
+copy_page:
     lda $d000, x    // Now reads char ROM glyph data
     sta $2000, x    // Store into custom RAM charset location
+    lda $d100, x
+    sta $2100, x
+    lda $d200, x
+    sta $2200, x
+    lda $d300, x
+    sta $2300, x
+    lda $d400, x
+    sta $2400, x
+    lda $d500, x
+    sta $2500, x
+    lda $d600, x
+    sta $2600, x
+    lda $d700, x
+    sta $2700, x
     inx
-    bne copy_lo
-
-    ldx #0
-copy_hi:
-    lda $d100, x    // Handles the high 256 bytes of the first 512 bytes
-    sta $2100, x    // (loop runs 8 times total for all 256 chars × 8 rows)
-    inx
-    bne copy_hi
+    bne copy_page
 
     // Restore I/O layout
     lda $01
@@ -130,13 +144,18 @@ copy_hi:
     rts
 ```
 
-For a full 2 KB copy (256 characters × 8 rows per character) spanning $D000-$D7FF,
-use two 256-byte loops as shown, or a 16-bit loop with pointer arithmetic if
-using Oscar64's C compiler rather than raw KickAssembler.
+A full copy of the primary font is 2 KB (256 characters × 8 bytes = eight
+256-byte pages, $D000-$D7FF), which is why the loop above has eight load/store
+pairs; a single-page or two-page loop copies only the first 32 or 64 characters.
+An earlier version of this listing had two pages and claimed to copy the whole
+font — it moved 512 bytes, and the remaining 1,536 were never copied (measured in
+VICE x64sc: 174 mismatches against char ROM in $2200-$27FF; the eight-pair loop
+leaves $2000-$27FF byte-identical). In Oscar64 or cc65, a 16-bit pointer loop
+over 2048 bytes does the same job.
 
 ### Cross-references
 
-- Register `01` — CPU I/O port; bits 0-2 = LORAM/HIRAM/CHAREN.
+- Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 = LORAM/HIRAM/CHAREN; resolvable via `c64_memory_map 0001`, not `c64_register_lookup` (the KB has no Register node for the CPU port).
 - Register `D018` — VIC video matrix and charset base; independent of CPU char ROM visibility.
 - Register `DD00` — CIA2 port A; selects the VIC 16 KB bank.
 - Technique `char_rom_under_vic` — char ROM shadow in VIC banks 0 and 2.
@@ -227,7 +246,12 @@ ROM shadow. When switching:
 1. Pick the VIC bank; use bank 1 or 3 for custom graphics (no char ROM shadow).
 2. Write $DD00: `lda $DD00 / and #$FC / ora #<inverted_bank_bits> / sta $DD00`.
    Inverted codes: bank 0 = %11, bank 1 = %10, bank 2 = %01, bank 3 = %00.
-3. Set $D018: hi-nibble = screen_offset / $0400; lo-nibble = charset_offset / $0800.
+3. Set $D018: hi-nibble = screen_offset / $0400; low nibble =
+   (charset_offset / $0800) << 1 — the 3-bit charset field occupies bits 1-3 and
+   bit 0 is unused (reads as 1). In bitmap mode only bit 3 matters:
+   (bitmap_offset / $2000) << 3. An earlier version of this step omitted the
+   shift, which for the example below yields $D018 = $11 and a charset fetched
+   from bank offset $0000, not $0800.
 4. Compute sprite pointer bytes: `ptr = (shape_addr - bank_base) / 64`.
    Store at `screen_base + $03F8` through `+ $03FF`.
 5. Make bank changes during vertical blank to avoid mid-frame tears.
@@ -237,7 +261,7 @@ ROM shadow. When switching:
 ```kick
 // Target layout: VIC bank 1 ($4000-$7FFF)
 //   Screen RAM at $4400 → D018 hi-nibble = %0001
-//   Charset at $4800    → D018 lo-nibble = %0100
+//   Charset at $4800    → D018 lo-nibble = %0010 (offset $0800 / $0800 = 1, << 1)
 //   Sprite 0 at $4FC0   → sprite ptr = ($4FC0-$4000)/64 = 63 = $3F
 //   Sprite pointer table at screen_base + $03F8 = $47F8
 
@@ -247,7 +271,7 @@ ROM shadow. When switching:
     ora #%00000010      // Bank 1 selected (inverted: %10 = bank 1)
     sta $dd00
     // $D018 hi-nibble still %0001 → VIC reads screen from $4400 (uninitialized)
-    // Sprite pointers still at $07F8 (bank 0) → VIC reads ptrs from $43F8 (garbage)
+    // Sprite pointers still written at $07F8 (bank 0) → VIC reads ptrs from $47F8 (garbage)
 
 // ─── GOOD: full bank-1 layout ────────────────────────────────────────────────
 setup_bank1:
@@ -256,7 +280,9 @@ setup_bank1:
     ora #%00000010      // Bank 1: inverted bits = %10
     sta $dd00
 
-    lda #%00010100      // hi=%0001 → screen at $4400; lo=%0100 → charset at $4800
+    lda #%00010010      // hi=%0001 → screen at $4400; lo=%0010 → charset at $4800
+                        // ($12 — an earlier version wrote $14, which selects
+                        // bank offset $1000 = $5000, verified in VICE)
     sta $d018
 
     // Clear screen RAM at $4400
@@ -311,8 +337,19 @@ and the bytes were waiting in RAM all along.
 ### Mechanism
 
 The PLA enforces an asymmetric rule: reads honour the banking state (ROM wins
-when banked in), but writes always reach the underlying DRAM regardless. The ROM
-chips' output enables are deasserted during write cycles by design. This means:
+when banked in), but a write to a ROM-mapped range reaches the underlying DRAM —
+$A000-$BFFF and $E000-$FFFF whatever $01 says, and $D000-$DFFF while character
+ROM is mapped there (CHAREN = 0 with LORAM or HIRAM set, e.g. $33). It is NOT
+true of $D000-$DFFF while I/O is mapped ($35/$36/$37): there the write lands in
+the VIC/SID/CIA/colour-RAM register and the RAM beneath is untouched (measured in
+VICE x64sc: RAM under $D000 seeded $A5 at $34, $2D written at $37 read back $2D —
+the sprite-0 X register — and the RAM still read $A5 once I/O was banked out; the
+same write at $A000 and $E000 landed in RAM). An earlier version of this
+paragraph said writes reach RAM "regardless" of the banking state, which is
+false for the I/O window. To put data under I/O, bank it out first ($34, or $33
+if char ROM is acceptable) with interrupts disabled. See
+techniques/memory-banking.md and hardware/c64-memory-map.md, which record the
+same measurement. This means:
 
 ```kick
 // $01 = $37 — BASIC ROM at $A000
@@ -324,8 +361,18 @@ lda $a000       // Returns BASIC ROM content, not $42 — the ROM wins the read
 | Range         | ROM content   | Bank-out bit         | Safe $01 value |
 |---------------|---------------|----------------------|----------------|
 | $A000-$BFFF   | BASIC (8 KB)  | LORAM (bit 0) = 0    | $36 or $34     |
-| $D000-$DFFF   | Char ROM (4K) | CHAREN (bit 2) = 0   | $33            |
+| $D000-$DFFF   | I/O (default), or char ROM when CHAREN=0 | LORAM=0 AND HIRAM=0 (CHAREN then ignored) | $30 or $34 |
 | $E000-$FFFF   | KERNAL (8 KB) | HIRAM (bit 1) = 0    | $35 or $34     |
+
+$33 is the value for READING the char ROM at $D000 (see above), not for reaching
+the RAM under it — an earlier version of this table listed $33 on the $D000 row,
+which banks the char ROM *in* (measured in VICE x64sc: $D000 under $31/$32/$33
+reads $3C, glyph '@' row 0; RAM seeded $A5 under $D000 is seen only at $30 and
+$34). $30/$34 also bank out KERNAL, BASIC and all I/O, so SEI first and touch no
+VIC/SID/CIA register until $01 is restored. The write asymmetry in this section
+applies to the ROM windows only: with I/O banked in ($35-$37) a write to
+$D000-$DFFF goes to the I/O chip, not to the RAM beneath; with the char ROM
+banked in ($31-$33) the write does reach RAM.
 
 Banking KERNAL out moves the CPU's interrupt vectors ($FFFA-$FFFF) from ROM to
 the RAM underneath. Pre-write custom IRQ/NMI addresses to those RAM locations
@@ -409,8 +456,10 @@ custom_nmi:
 
 ### Cross-references
 
-- Register `01` — the CPU I/O port; bits 0-2 are LORAM, HIRAM, CHAREN; the
+- Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 are LORAM, HIRAM, CHAREN; the
   read-modify-write pattern for bits 3-5 (datasette lines) must be preserved.
+  Resolvable via `c64_memory_map 0001`, not `c64_register_lookup` (the KB has no
+  Register node for the CPU port).
 - Technique `cpu_io_port_bank` — the full table of all seven CPU memory
   configurations, including the exact $01 values for each combination of banked
   ROMs. The technique doc has the full discussion of the PLA's write-transparency
@@ -464,7 +513,9 @@ simply be relocated to wherever the linker has free space.
 ### Fix
 
 1. **Diagnose with the linker map.** Oscar64 emits a `.MAP` on every build; its
-   region list shows `DATA, code : <start> - <end>`. Compare the code-section end
+   `sections` list shows `<start> - <end> : DATA, code` (address range first,
+   then the name — an earlier version of this step had the order reversed, so a
+   grep for `DATA, code :` finds nothing). Compare the code-section end
    against every hardcoded blit address. If `code_end > charset_addr`, that is the
    bug. (cc65: read the map's segment list the same way.)
 2. **Move the blit targets to the top of the bank**, above the projected code
@@ -491,7 +542,8 @@ simply be relocated to wherever the linker has free space.
 #define CHARSET             ((unsigned char *)0x3800u)   // $3800-$3FFF
 #define SELSPRITE_DATA_ADDR 0x3780u                      // 64-byte aligned
 #define SELSPRITE_PTR_VALUE 0xdeu                        // $3780 / 64
-// vic_setmode(VICM_TEXT, SCREEN, CHARSET) → $D018 = $1F (screen $0400, charset $3800)
+// vic_setmode(VICM_TEXT, SCREEN, CHARSET) → writes $D018 = $1E (screen $0400, charset $3800;
+// reads back as $1F because bit 0 always reads 1)
 ```
 
 ### Cross-references

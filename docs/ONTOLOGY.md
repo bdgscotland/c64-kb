@@ -119,7 +119,7 @@ A known gotcha or non-obvious behavior.
 | severity | string | "critical", "high", "medium", "low" |
 | region_specific | string | "pal", "ntsc", "both" |
 
-Source: `c64-pitfalls.md` (Phase 5).
+Source: `pitfalls/*.md` (one Pitfall per H2; the file an earlier version of this line named, `c64-pitfalls.md`, does not exist).
 
 ### CrashPattern
 

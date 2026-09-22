@@ -10,8 +10,13 @@ chip: VIC-II
 The VIC-II provides eight hardware sprites (MOBs — Movable Object Blocks) per
 frame. Each sprite is a 24×21 pixel bitmap (or 12×21 in multicolor mode) stored
 as 63 bytes plus one padding byte (64 bytes, 64-byte aligned). The chip fetches
-sprite data via DMA on every raster line where a sprite is enabled — this is
-the s-access cycle budget that the CPU pays regardless of register writes.
+sprite data via DMA only on the raster lines where a sprite is vertically
+active (its 21, or 42 expanded, lines): two stolen CPU cycles per active sprite
+per line plus a 3-cycle BA lead-in, up to 19 per line with all eight — the
+s-access budget the CPU pays whether or not you touch a register. (The
+pointer p-access happens every line for every sprite, enabled or not, and costs
+the CPU nothing; an earlier version of this paragraph said data DMA runs on
+every line a sprite is enabled.)
 
 The eight sprites are individually positioned, colored, expanded, and
 prioritized via registers at $D000–$D02E. The fundamental constraint every
@@ -103,14 +108,25 @@ same-image, same-color sprite swarms (bullet patterns, particle effects).
 
 ### Cycle budget
 
-On PAL, each raster line is 63 cycles. The interrupt handler overhead
-(entry/acknowledge/exit) is approximately 15 cycles on a kernel-routing IRQ
-handler. With 8 sprites per group, writing each sprite's Y ($D001+2n), image
-pointer (screen + $3F8 + n), and color ($D027+n) costs 3 stores × 4 cycles
-each = 12 cycles per sprite × 8 sprites = 96 cycles. You therefore need at
-least 2 lines of slack between the IRQ trigger line and the first new sprite's
-Y position to safely complete all writes before the VIC latches the next
-activation. In practice, target 3–4 lines of slack.
+On PAL, each raster line is 63 cycles. Through the KERNAL vector ($0314) your
+handler's first instruction runs 36 cycles after the interrupt is taken — 7 for
+the interrupt sequence and 29 for the $FF48 dispatcher (PHA TXA PHA TYA PHA TSX
+LDA $0104,X AND #$10 BEQ JMP ($0314)) — plus 0–6 cycles of jitter from the
+interrupted instruction, and more if the interrupt lands on a badline.
+Acknowledging $D019 costs about 6 more, and the bare exit through $EA81 (PLA
+TAY PLA TAX PLA RTI) 22, so the round trip is about 64 cycles, a full raster
+line, of which the 36–42 before your first write are what eat into the slack.
+Banking the KERNAL out and pointing $FFFE/$FFFF at the handler removes the
+29-cycle dispatcher. (An earlier version of this section put the whole
+entry/acknowledge/exit overhead at about 15 cycles, which is not consistent
+with the 29-cycle dispatcher documented in `raster.md`.) With 8 sprites per
+group, writing each sprite's Y ($D001+2n), image pointer (screen + $3F8 + n),
+and color ($D027+n) costs 3 stores × 4 cycles each = 12 cycles per sprite × 8
+sprites = 96 cycles. Entry of 36–42 cycles plus 96 cycles of writes is 132–138
+cycles, already more than two 63-cycle lines, so you need at least 3 lines of
+slack (not 2, as this section used to say) between the IRQ trigger line and the
+first new sprite's Y position to complete all writes before the VIC latches the
+next activation. In practice, target 3–4 lines of slack.
 
 ### Recipes
 
@@ -150,11 +166,20 @@ The algorithm scales naturally from the 8-sprite multiplexer:
    `vspr_update()` handles this, writing all eight positions, images, colors,
    and the MSB-X byte ($D010) in one pass.
 
-3. **Schedule reuse IRQs for subsequent groups:** For each group beyond the
-   first, `vspr_update()` calls `rirq_move()` to place a raster IRQ just above
-   the first sprite in that group. The raster IRQ code template writes the new
-   Y position, X position (low byte), image pointer, and color for the
-   corresponding hardware sprite slot.
+3. **Schedule reuse IRQs per hardware slot:** For each logical sprite beyond
+   the first eight (sorted index ti+8, hardware slot ti & 7), `vspr_update()`
+   calls `rirq_move(ti, spriteYPos[ti + 1] + 23)` — the raster line two below
+   the bottom of the sprite that slot is currently showing (the previous
+   occupant's Y + 21 lines + 2 lines of IRQ latency margin), not a line derived
+   from the incoming sprite's Y. It then stores the incoming sprite's Y, X (low
+   byte), image pointer, colour and the accumulated $D010 mask as that slot's
+   five data bytes (`rirq_data`). Once the next incoming sprite's Y is ≥ 250,
+   that slot and all later ones are cleared (`rirq_clear`). There are no fixed
+   eight-sprite "groups" or "passes": each slot is reused as soon as its own
+   previous sprite has finished, and the `80 + 4*i` rows set in `vspr_init()`
+   are placeholders overwritten every frame. (An earlier version of this step
+   said the IRQ was placed "just above the first sprite in the group"; the
+   incoming sprite's Y is only written as data — `sprites.c` L318/L330.)
 
 4. **MSB-X accumulation:** Sprites whose X position exceeds 255 require bit n
    of $D010 to be set. Because $D010 covers all eight sprites in a single byte,
@@ -169,46 +194,72 @@ The algorithm scales naturally from the 8-sprite multiplexer:
 ### Why it works
 
 Oscar64's virtual sprite system (`vspr_*` API) implements this algorithm using
-the `rasterirq` library's sorted IRQ slot table. Each reuse pass beyond the
-first gets one slot in the `spirq` array (up to `VSPRITES_MAX - 8` entries, 8
+the `rasterirq` library's sorted IRQ slot table. Each virtual sprite beyond the
+first eight gets one slot in the `spirq` array (`VSPRITES_MAX - 8` entries, 8
 by default for 16 total; raise `VSPRITES_MAX` to extend). The raster IRQ
 executor in `rasterirq.c` fires each slot when the raster counter matches the
-programmed line, writes up to five register values per slot, and immediately
-re-arms for the next slot. Because the IRQ code is pre-built (the templates are
-populated at `vspr_init` time and only the data bytes change each frame), the
-per-slot overhead is dominated by the five STA instructions in the template —
-roughly 25 cycles per reuse event.
+programmed line, runs that slot's code template, and immediately re-arms for
+the next slot. The template is not just "five STAs": each `rirq_build` template
+starts with a raster busy-wait (LDY #/LDX #/CMP $D012/BCS) that holds the CPU
+from the IRQ at row−1 (row−2 via the KERNAL vector) until $D012 reads row+1,
+then does the five writes (Y, X low byte, image pointer, colour, $D010 mask),
+re-arms $D012/$D019 and exits. Measured in VICE (PAL, `rirq_init_io`, RAM
+vector): about 160 cycles of handler code plus the wait, roughly 225–280 cycles
+stolen per slot (about 3.5–4.5 raster lines); via `rirq_init_kernal` about
+300–330 cycles. An earlier version of this section put a slot at "roughly 25
+cycles", which counted only the five stores and none of the entry, busy-wait,
+re-arm or exit.
 
-For 24 sprites (three passes), PAL has 312 × 63 = 19,656 total cycles per frame
-with roughly 200 lines of display area. Three passes spaced 67 lines apart each
-cost about 40 cycles (handler overhead + five writes), leaving the remaining
-~19,400 cycles for game logic. The real constraint is Y-band density: if ten
-logical sprites cluster within a 21-line band, you only get one pass over them,
-not ten; duplicates at the same Y simply are not all visible simultaneously.
+Because `vspr_init` builds one slot per virtual sprite beyond the first eight
+(hardware sprite i & 7, moved to that sprite's Y + 23 each frame), 24 vspr
+sprites cost 16 reuse IRQs per frame — roughly 16 × 250 ≈ 4,000 cycles, about
+20 % of PAL's 312 × 63 = 19,656 cycles per frame, not the 120 cycles this
+section used to claim. A hand-scheduled three-pass multiplexer that rewrites
+all eight sprites per IRQ (as the KickAssembler recipe does) is a different
+design with three IRQs per frame; the figures above are for the `vspr_*`
+per-slot design. The other constraint is Y-band density: if ten logical
+sprites cluster within a 21-line band, you only get one pass over them, not
+ten; duplicates at the same Y simply are not all visible simultaneously.
 
 ### Variations
 
-**32+ sprites:** Raise `VSPRITES_MAX` beyond 16 (rebuild required). Each
-additional 8 logical sprites adds one raster IRQ slot and one 21-line minimum
-gap. On PAL, up to roughly 48 logical sprites before IRQ overhead exceeds 10%
-of total frame cycles.
+**32+ sprites:** Raise `VSPRITES_MAX` beyond 16 (rebuild required; pass it as
+`-dVSPRITES_MAX=24` on the Oscar64 command line, since a `#define` in your own
+file does not reach `sprites.c`, and raise `NUM_IRQS` with it or `rasterirq.c`
+warns "Index out of bounds"). Each additional logical sprite adds one raster
+IRQ slot and needs a 21-line gap below its slot's previous occupant. With vspr
+slots at ~250 cycles each, 10 % of a PAL frame is about eight reuse IRQs, i.e.
+about 16 logical sprites — not the "roughly 48" this section used to say,
+which assumed 25-cycle slots.
 
 **Per-sprite priority within a pass:** Within one pass (one set of eight
 hardware sprites), hardware priority is fixed: sprite 0 is always in front of
 sprite 1. Design the sort order so that in areas of overlap, the intended
 top-priority sprite ends up in a lower-numbered hardware slot.
 
-**Cross-reference:** The Phase 4 deep recipe `recipes/kickassembler/sprite-multiplex-24.md`
-demonstrates a hand-scheduled KickAssembler version with
-cycle-exact slot placement for demoscene use.
+**Cross-reference:** `recipes/kickassembler/sprite-multiplex-24.md` is the
+fixed three-band variant (the "Fixed three-pass" option above) in
+KickAssembler: one raster IRQ above each band rewrites all eight hardware
+slots, with no per-frame Y sort and nothing cycle-exact; the recipe's own text
+says what that restriction costs. (An earlier version of this paragraph called
+it a hand-scheduled, cycle-exact demoscene multiplexer, which it is not.)
 
 ### Cycle budget
 
-Three passes on PAL, spaced 67 lines apart: each pass IRQ costs approximately
-40 cycles (entry, five STAs, exit). Three passes = 120 cycles. Sorting 24
-sprites per frame costs roughly 80–100 cycles (insertion sort on a nearly-sorted
-list). Total sprite-system overhead: under 250 cycles per 19,656-cycle frame
-(~1.3%).
+With Oscar64's `vspr_*` system and `VSPRITES_MAX=24`, each of the 16 reuse
+slots costs roughly 225–280 cycles (entry, busy-wait to row+1, five writes,
+re-arm, exit — measured in VICE, PAL, RAM vector), about 4,000 cycles per
+frame. `vspr_sort()` (`sprites.c`, a byte-array insertion sort) costs about
+1,100 cycles per frame on an already-sorted list (~44–48 cycles per element ×
+23), about 1,750 when one sprite has moved past a neighbour, and about 10,000
+in the worst reverse-order case, measured in VICE with a CIA timer; the
+16-sprite default already costs ~750 cycles sorted. Sort overhead alone is
+therefore ~5.7 % of a 19,656-cycle PAL frame, and with the reuse IRQs (and
+`vspr_update()`, not measured here) the total is well over 5,000 cycles, more
+than a quarter of the frame. An earlier version of this section gave "40 cycles
+per pass, 80–100 cycles to sort, under 250 cycles total (~1.3 %)"; every one of
+those figures was too small by an order of magnitude, and they described a
+three-pass design that `vspr_*` does not implement.
 
 ### Recipes
 
@@ -278,13 +329,18 @@ C64 pixel sizes.
 expanded while sprites 1–7 (small bullets) are unexpanded — the registers are
 per-sprite. Mix freely.
 
-**Fake 48×84 via two Y-expanded sprites stacked:** Two Y-expanded sprites at
+**Fake 48×84 via two expanded sprites stacked:** Two X+Y-expanded sprites at
 the same X but offset 42 lines apart produce a visual object 84 lines tall —
-two-thirds of the PAL screen height.
+about 42 % of the 200-line display window (three stacked reach 126). An
+earlier version of this paragraph called 84 lines "two-thirds of the PAL screen
+height"; two-thirds of 200 is 133.
 
 ### Recipes
 
-- `recipes/oscar64/sprite-multiplex-8.md` (demonstrates `spr_expand()` usage)
+- `recipes/kickassembler/sideborder-open.md` (sets $D017 Y-expand for 42-line
+  sprite DMA). No Oscar64 recipe calls `spr_expand()`; an earlier version of
+  this list pointed at `recipes/oscar64/sprite-multiplex-8.md`, which does not
+  use it.
 
 ---
 
@@ -312,9 +368,17 @@ as you read $D01E, all bits reset to zero. A nonzero value means at least one
 collision occurred since the last read.
 
 **Sprite-background collision ($D01F, SPBGCL):** Each bit n is set whenever any
-non-transparent pixel of sprite n overlaps a *foreground pixel* in the current
-display mode (any pixel that is not background color 0 in text/bitmap modes).
-Also read-to-clear.
+non-transparent pixel of sprite n overlaps a *foreground* pixel of the display,
+where foreground means: in standard hires text and hires bitmap, any pixel not
+drawn in background colour 0 ($D021); in ECM, any pixel not drawn in one of
+BGCOL0–3 — the four background colours are all background; in multicolor text
+and multicolor bitmap, only the %10 and %11 bit-pairs — %01 pixels (BGCOL1/$D022
+in MC text, the video-matrix high nibble in MC bitmap) count as background and
+do NOT set $D01F. This is the same foreground/background split that $D01B
+priority uses. Measured in VICE x64sc (solid sprites over MC-text, MC-bitmap
+and ECM cells: $D01F = $2E, $2E, $28); an earlier version of this section said
+any pixel not in background colour 0, which over-reports collisions on MC %01
+and ECM BGCOL1–3 pixels. Also read-to-clear.
 
 Typical polling pattern: once per frame (in the vertical blank or at the end of
 the main game loop), read $D01E and $D01F and store both values. Then inspect
@@ -367,7 +431,9 @@ boundaries track visual content rather than bounding boxes.
 
 ### Recipes
 
-- `recipes/oscar64/sprite-multiplex-8.md` (demonstrates reading $D01E in game loop)
+- `recipes/oscar64/simple-shmup.md` (reads $D01E/$D01F each frame). An earlier
+  version of this list pointed at `recipes/oscar64/sprite-multiplex-8.md`,
+  which never reads the collision registers.
 
 ---
 
@@ -382,77 +448,111 @@ boundaries track visual content rather than bounding boxes.
 
 ### Why
 
-The VIC-II's Y-expansion mechanism contains a documented timing quirk: if $D017
-is cleared at the exact raster line where the chip's internal expansion toggle
-would normally flip, the chip loses track of which "half line" it is on. The
-result is that the sprite's row counter stalls, repeating one or more rows
-indefinitely until the register is written again. Demoscene coders call this
-the "sprite crunch" or "Y stretch glitch." While accidental sprite crunch is a
-bug, deliberate use produces stretchable sprites taller than 42 lines — up to
-the full screen height.
+The VIC-II's Y-expansion mechanism contains a documented timing quirk: if a
+sprite's $D017 bit is cleared on one particular cycle of one of its display
+lines while its DMA is running, the sprite's remaining length changes — once,
+by a data-dependent amount — and the sprite then ends on its own. Demoscene
+coders call this the "sprite crunch"; the per-line variant that is meant to
+hold a sprite on one row is the "Y stretch". An earlier version of this section
+said a single clear at line Y−1 makes "the sprite's row counter stall,
+repeating one or more rows indefinitely until the register is written again".
+Measured in VICE x64sc (PAL), that is wrong on both counts: a clear at Y−1, or
+anywhere on the first display line, simply gives a plain unexpanded 21-line
+sprite, and a crunching clear on a later line lengthened the sprite by 4, 16 or
+21 lines and then let it finish well before $D017 was touched again. Nothing
+is left "stuck" waiting for a re-write.
 
 ### How
 
-The VIC-II's Y expansion works via an internal toggle bit, called MCBASE in the
-Commodore 64 Programmer's Reference Guide and the Frodo/VICE emulator source.
-On each raster line, if the corresponding $D017 bit is set, the chip toggles
-the MCBASE flag instead of incrementing the sprite row counter. When MCBASE is
-0 (first half), the row counter holds; when it is 1 (second half), the row
-counter increments. This is how each row is displayed twice.
+The VIC-II's Y expansion works via a per-sprite flip-flop — the "advance line"
+flip-flop in Bauer's VIC-II article (older editions and the VICE source call it
+the expansion flip-flop, `exp_flop`). It is held set while the sprite's $D017
+bit is clear; while the bit is set and the sprite's DMA is on, it is inverted
+in cycle 56 of every line. In cycle 16 of the next line, only if the flip-flop
+is set, the 6-bit sprite data counter base MCBASE is loaded from the data
+counter MC — which has advanced by 3 during that line's fetches — so the sprite
+moves on to its next 3-byte row; if the flip-flop is clear, MCBASE stays and
+the row is fetched again. MCBASE is a counter, not the toggle, and neither it
+nor the flip-flop is documented in the Commodore 64 Programmer's Reference
+Guide; the source is Bauer's article and the VICE emulator source. (An earlier
+version of this paragraph called the toggle itself "MCBASE" and attributed the
+name to the Programmer's Reference Guide; `docs/pitfalls/sprite.md` still uses
+that wording.)
 
 To crunch a sprite:
 
-1. Enable Y expansion on the target sprite ($D017 bit n set).
-2. Wait for the raster line immediately preceding the sprite's first rendered
-   row (Y-1). At that line, clear bit n in $D017 (disable Y expansion).
-3. The chip evaluates the expansion toggle at the line boundary. Because
-   $D017 was cleared before the evaluation, the MCBASE flag is not toggled but
-   the row counter is also not incremented — the chip is left in a half-expanded
-   state where it never advances.
-4. Re-enable $D017 on a later line to "unstick" the sprite. The number of
-   scanlines between disable and re-enable determines how many extra rows are
-   emitted before the sprite continues normally.
+1. Enable Y expansion on the target sprite ($D017 bit n set) and let it start
+   displaying.
+2. On one of the sprite's display lines *after the first*, clear bit n in
+   $D017 so that the STA's write cycle lands on the crunch cycle. In VICE 3.10's
+   PAL cycle table (`viciisc` `cycle_tab_pal`) the crunch check is cycle 15,
+   the MCBASE advance is cycle 16, the flip-flop inversion is cycle 56 and
+   sprite DMA switch-on is checked in cycles 55–57. Measured: in a 260-position
+   sweep over lines 98–103 for a sprite at Y=100, the only write position that
+   crunched was cycle ~15 of the sprite's second display line.
+3. The sprite's remaining length changes once, by an amount that depends on
+   the row it is on: +21 lines at one row in the single-sprite sweep, +4 and
+   +16 lines at other rows in the eight-sprite runs. Every crunch measured here
+   lengthened the sprite; none shortened it. The sprite then finishes on its
+   own — $D017 does not have to be re-written to release it, and re-writing it
+   later does nothing to a sprite that has already ended.
+
+A write at any cycle of the line before the sprite starts (Y−1), or of its
+first display line, does not crunch: it yields an unexpanded 21-line sprite.
+That is the write an earlier version of these steps prescribed.
 
 The write to $D017 must happen with cycle precision on the correct raster line.
 A stable raster IRQ (see `raster.md`, `stable_raster_irq`) is a prerequisite.
 
 ### Why it works
 
-The VIC-II checks the expansion toggle on the line where the sprite's Y register
-matches the raster counter. The check happens in the phi1 half-cycle when the
-VIC has the bus. If $D017 is 0 for that sprite at that instant, the chip marks
-the sprite as "not expanded this line" and increments the row counter — but the
-sprite is also not in the normal unexpanded path, because the transition away
-from expansion mode left the internal state machine in an inconsistent state.
-On the 6569 PAL chip (and most 8565 HMOS-II parts), this inconsistency causes
-the row counter to freeze rather than increment.
-
-The exact cycle window for the clearing write is chip-revision-dependent. On
-the 6569, the write must occur in cycles 55–56 of the preceding line (using the
-raster-cycle numbering from the Vic-II article). The 8565 (HMOS-II) is slightly
-more forgiving due to its longer input setup time.
+On an ordinary display line the cycle-16 step either copies MC into MCBASE
+(advance a row) or leaves MCBASE alone (repeat the row). A $D017 clear that
+lands on the crunch cycle immediately before it is the one case the chip does
+not handle cleanly: the cycle-16 step then loads MCBASE with a bitwise blend of
+the old MCBASE and the current MC rather than either value (the formula is in
+Bauer's article and the VICE source; it was not derived here — rung 4 for the
+formula, rung 1 for the effect). Because the blend depends on the two counter
+values at that instant, the number of rows the sprite has left afterwards
+depends on which row it was on, which is why the measured change was +21 at
+one row and +4 or +16 at others. From the next line on, MC and MCBASE advance
+normally again, so the effect is one-shot and the sprite ends by itself when
+MCBASE reaches 63. An earlier version of this section described an
+"inconsistent state" that "freezes" the row counter and placed the write "in
+cycles 55–56 of the preceding line"; neither matched the measurement, and its
+sentence about the 8565 being "more forgiving" is dropped as unverifiable on
+this machine (VICE was run as a 6569 only).
 
 ### Variations
 
-**Partial stretch:** Crunch for only a few lines to produce a wavy
-magnification effect — useful for heat-shimmer or water-reflection animations.
+**Y stretch (unverified):** The demoscene "stretcher" — clearing and re-setting
+the sprite's $D017 bit every line around cycle 55 so that the sprite repeats
+one row for as long as the toggling continues, reaching the full display
+height for waterfall and flag effects — is a widely described technique, but
+no instrument run on this machine produced a clean stalled row from a per-line
+clear+set (four write phases were tried; all gave irregular, data-dependent
+rows). Treat it as an unverified demoscene technique pending a VICE-verified
+recipe. An earlier version of this section stated it as fact, together with a
+"partial stretch" heat-shimmer variant and a "crunch from line 50 to line 250"
+full-screen sprite; those were not measured.
 
-**Full-screen tall sprite:** Crunch from line 50 to line 250 for a sprite that
-spans most of the PAL display height. Combined with a raster color bar the same
-width as the sprite, this technique was used for title-screen waterfalls and
-flag animations in 8-bit demoscene productions.
-
-**Crunch with multicolor:** The crunch also works on multicolor sprites. Because
-multicolor sprites are already half-resolution horizontally, the vertical crunch
-produces a 12×tall result, useful for very tall but narrow design elements.
+**Crunch with multicolor:** The crunch is a row-counter effect and does not
+depend on the horizontal mode, so it applies to multicolor sprites as well
+(not separately measured here). An earlier version of this paragraph claimed a
+"12×tall result", which meant nothing.
 
 ### Cycle budget
 
-The critical window is 2 cycles wide on the 6569, located at raster cycles 55–56
-of the line preceding the sprite's Y position. The write itself is 4 cycles (STA
-absolute). A stable raster IRQ fires the CPU approximately 3 cycles before cycle
-55 (with a nop sled for fine adjustment). Total IRQ entry + alignment + STA = 15
-cycles. Crossing the line boundary costs nothing — the VIC does that automatically.
+The crunching write must land on one specific cycle — cycle 15 of the chosen
+display line in VICE's PAL numbering — so the tolerance is a single cycle, and
+the write has to be on one of the sprite's own display lines after the first,
+not the line before it. Place the STA absolute (4 cycles; the write is its last
+cycle) with a stable raster IRQ (see `raster.md`) whose entry-to-STA cost you
+have counted, padded with NOPs to the cycle. The effect is one-shot, so no
+further writes are needed on the lines that follow. An earlier version of this
+section gave a "2-cycle window at cycles 55–56 of the preceding line" and a
+"15 cycles total" budget; both are withdrawn (the sweep found no crunching
+position on the preceding line at all).
 
 ---
 
@@ -503,10 +603,17 @@ One important constraint: sprite-vs-sprite priority is **not** affected by
 $D01B. Sprite 0 is always in front of sprite 1 regardless of their $D01B bits.
 $D01B only modulates each sprite's relationship with the *background plane*.
 
-A second constraint: the background-priority check uses the *rendered* foreground
-signal, not the color value. The border region counts as background for this
-purpose, so a sprite set to background priority that moves into the border area
-becomes fully visible again (it re-enters front-of-background territory).
+A second constraint: the border is the front-most layer of the VIC-II's output
+and is drawn over every sprite regardless of $D01B. A sprite that moves under
+the (unopened) border disappears whether its priority bit is set or clear; it
+does not become visible again. Border pixels are also not foreground for $D01F:
+a sprite sitting entirely in the border latches no sprite-background collision
+(measured in VICE x64sc). Only when the border has been opened (side- or
+top/bottom-border tricks) are sprites drawn there, and then they are composited
+against the idle-state graphics by the normal $D01B rule. An earlier version of
+this paragraph said the border "counts as background" and that a
+background-priority sprite "becomes fully visible again" in it; measured, both
+a $D01B-set and a $D01B-clear sprite at X=0 are hidden by the border.
 
 ### Variations
 
@@ -525,7 +632,11 @@ foreground pixels even when rendered behind them.
 
 ### Recipes
 
-- `recipes/oscar64/sprite-multiplex-8.md` (shows `spr_set()` priority parameter)
+- No recipe yet. Oscar64's `spr_set()` has no priority argument (its signature
+  is `spr_set(sp, show, xpos, ypos, image, color, multi, xexpand, yexpand)`);
+  write `vic.spr_priority` ($D01B) directly. An earlier version of this list
+  pointed at `recipes/oscar64/sprite-multiplex-8.md` for a "`spr_set()`
+  priority parameter" that does not exist.
 
 ---
 
@@ -581,12 +692,16 @@ splits the sprite's pixel output into two color regions: pixels rendered before
 the write use the old color, pixels after use the new one.
 
 The cycle precision requirement comes from the VIC-II bus timing. On a PAL
-machine running at 0.985 MHz, each cycle is approximately 1 microsecond. The
-sprite's 24-pixel output spans 24 color clocks (approximately 6 CPU cycles in
-hires mode, or 12 in multicolor). To achieve a specific horizontal split, the
-write must complete within ±1 CPU cycle of the target clock. This demands a
-stable IRQ with no jitter and a fixed cycle offset from the IRQ entry point to
-the STA instruction.
+machine running at 0.985 MHz, each cycle is approximately 1 microsecond, and
+one CPU cycle is eight pixels: the 40 character columns of 8 pixels are fetched
+over the 40 g-access cycles 16–55. A sprite's 24 pixels are therefore 3 CPU
+cycles wide, in both hires and multicolor — multicolor halves the resolution to
+12 double-width pixels, not the width — and an X-expanded sprite's 48 pixels
+are 6 cycles. (An earlier version of this paragraph said 6 cycles in hires and
+12 in multicolor, which is wrong by a factor of two and inverts what multicolor
+changes.) To achieve a specific horizontal split, the write must complete on
+one particular CPU cycle. This demands a stable IRQ with no jitter and a fixed
+cycle offset from the IRQ entry point to the STA instruction.
 
 ### Variations
 
@@ -605,19 +720,31 @@ every multicolor sprite simultaneously — useful for palette flashes but
 destructive if sprites need independent colors.
 
 **Combined with Y-expand glitch:** A color swap on a Y-crunched sprite produces
-banded gradients on tall stretched sprites — flame and waterfall effects.
+banded gradients on tall stretched sprites — flame and waterfall effects. This
+depends on the Y stretch, which `sprite_y_stretch_glitch` now marks as
+unverified on this machine.
 
 ### Cycle budget
 
-On PAL, a sprite occupying screen columns 24–47 renders its hires pixels during
-approximately CPU cycles 30–35 of the raster line (using the VIC-II dot clock
-to CPU cycle mapping). A stable IRQ entry at cycle 0 of the target line needs a
-30-cycle delay before the STA to hit the sprite's left edge, or a 33-cycle delay
-for a midpoint split. Use `rirq_delay()` (5 cycles per unit) plus NOP padding
-(2 cycles) for sub-5-cycle alignment. Total IRQ cost per swap: approximately 50
-cycles (entry 15 + delay 30 + STA 4 + exit 4), fitting comfortably within one
-raster line.
+On PAL (VICE 3.10 x64sc, 6569) a write to $D027+n that completes on CPU cycle
+c — cycles numbered 1–63, the numbering in which the CSEL side-border pulse
+lands on cycle 56 — takes effect from sprite X ≈ 8c − 111. So a write on cycle
+16 recolours a sprite at X=24 (the left edge of the display window) from its
+first pixel, cycle 18 splits it at X=33, and cycle 34 splits a sprite at X=152
+at X=161. Equivalently, the STA's write cycle must be ≈ 16 + (X_split − 24)/8;
+subtract your stable IRQ's entry-to-STA cost to get the delay. Use
+`rirq_delay()` (5 cycles per unit) plus NOP padding (2 cycles) for sub-5-cycle
+alignment. An earlier version of this section placed a sprite at X 24–47 "during
+approximately CPU cycles 30–35" and asked for a "30-cycle delay for the left
+edge, 33 for a midpoint"; cycles 30–35 are where a sprite at X ≈ 128–175 is
+drawn, not one at X=24. The whole swap still fits within one raster line: STA 4
+cycles plus whatever your IRQ entry and exit cost (see the `sprite_multiplex_8`
+cycle budget for the KERNAL-vector figures).
 
 ### Recipes
 
-- `recipes/oscar64/sprite-multiplex-8.md` (see rirq_write / rirq_delay patterns)
+- `recipes/oscar64/stable-raster-irq.md` and `recipes/oscar64/raster-bars.md`
+  (`rirq_write` patterns). No recipe currently demonstrates `rirq_delay()`; it
+  is documented only in `docs/toolchains/oscar64-headers-reference.md`. An
+  earlier version of this list pointed at `recipes/oscar64/sprite-multiplex-8.md`,
+  which uses neither call.
