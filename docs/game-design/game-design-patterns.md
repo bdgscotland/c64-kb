@@ -553,14 +553,19 @@ the jump arc are `techniques/maths.md`.
 
 ### Double-buffer
 
-Two full screen RAM areas (2 KB each) alternate: the CPU draws into the
-back buffer while the VIC-II displays the front buffer. At VBlank, swap
-the VIC-II base address ($D018) to flip.
+Two full screen RAM areas (1 KB each: 1,000 cells plus the sprite pointer
+block in the last eight bytes of the page) alternate: the CPU draws into
+the back buffer while the VIC-II displays the front buffer. At VBlank,
+swap the VIC-II base address ($D018) to flip. The layout, the sprite
+pointer block that moves with the page, and the frame-parity discipline
+are `screen_double_buffer_d018` in `../techniques/memory-banking.md`, with
+the recipe `../recipes/oscar64/double-buffer.md` and a companion that shows
+the corrupted sprite you get without the pointer mirror.
 
-Memory cost: 2 KB for the second screen RAM. On a 64 KB machine this is
-not free. Color RAM ($D800–$DBFF) cannot be double-buffered (only one
-color RAM exists in hardware), so double-buffering only eliminates screen-
-RAM tearing, not color-RAM tearing.
+Memory cost: 1 KB for the second screen RAM (an earlier version of this
+section said 2 KB). Color RAM ($D800–$DBFF) cannot be double-buffered
+(only one color RAM exists in hardware), so double-buffering only
+eliminates screen-RAM tearing, not color-RAM tearing.
 
 Use double-buffer only when the game redraws most of the screen each frame
 (3D wireframe, full-screen bitmap effects) and tearing is visually

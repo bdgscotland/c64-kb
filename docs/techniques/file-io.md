@@ -178,6 +178,7 @@ afterwards was not measured here. Two ways round it:
 ### Recipes
 
 - `recipes/kickassembler/file-io-roundtrip.md`
+- `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
 
 ---
 
@@ -301,6 +302,7 @@ interaction with file I/O".
 ### Recipes
 
 - `recipes/kickassembler/file-io-roundtrip.md`
+- `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
 
 ---
 
@@ -429,6 +431,7 @@ filled in.
 ### Recipes
 
 - `recipes/kickassembler/file-io-roundtrip.md`
+- `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
 
 ---
 

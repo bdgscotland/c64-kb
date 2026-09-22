@@ -15,9 +15,11 @@
  *     "disk": {"name": "TEST,01"} }
  * Anything not listed gets the defaults: 8,000,000 cycles, PAL, one shot at
  * screenshots/<stem>.png, no disk. With "disk", a fresh D64 is formatted
- * with c1541 (`-format NAME,ID`) before every run and attached as drive 8,
- * so a recipe that writes or reads files starts from the same empty disk
- * each time and nothing in the repo is modified by the run.
+ * with c1541 (`-format NAME,ID`) before every run and attached as drive 8
+ * with the drive's RPM wobble switched off (-drive8wobbleamplitude 0
+ * -drive8wobblefrequency 0), so a recipe that writes or reads files starts
+ * from the same empty disk each time, takes the same number of cycles, and
+ * nothing in the repo is modified by the run.
  *
  * Usage:
  *   npx tsx scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
@@ -147,7 +149,11 @@ function runVice(prg: string, png: string, cycles: number, model: string, extra:
     const d64 = png.replace(/\.png$/, ".d64");
     const f = spawnSync(tools.c1541, ["-format", disk.name, "d64", d64], { encoding: "utf8" });
     if (!existsSync(d64)) return `c1541 could not format ${d64} (exit ${f.status}): ${(f.stderr || f.stdout).split("\n").slice(-2).join(" | ")}`;
-    diskArgs.push("-8", d64);
+    // VICE 3.10 adds a random-phase RPM wobble to the emulated drive by
+    // default, which moves a disk operation by a handful of cycles from run
+    // to run; a recipe that prints its elapsed time would then differ by a
+    // digit. Pin the drive to a constant speed so the run is repeatable.
+    diskArgs.push("-8", d64, "-drive8wobbleamplitude", "0", "-drive8wobblefrequency", "0");
   }
   const args = ["-default", "-warp", "+sound", "+autostart-delay-random", "-autostartprgmode", "1",
     "-limitcycles", String(cycles), ...(MODEL_FLAG[model] ?? []), ...extra, ...diskArgs, "-exitscreenshot", png, "-autostart", prg];

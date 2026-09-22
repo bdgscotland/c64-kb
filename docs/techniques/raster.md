@@ -768,3 +768,301 @@ same figure.
 - This repository: `pitfalls/region-timing.md`,
   `game-design/game-design-patterns.md` (game loop patterns),
   `recipes/oscar64/simple-shmup.md` (a full game on the same loop shape).
+
+## irq_chain_table — Table-driven raster IRQ chain
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D012, D019, D01A, D020
+**Demands:** midframe_raster_irqs
+
+### Why
+
+A raster interrupt fires once per frame at one line. A program that wants
+several things done at several lines has two choices: one handler per line,
+each re-pointing `$0314` at the next handler and arming `$D012` for it, which
+is the ring in `recipes/kickassembler/raster-bars.md` and
+`recipes/kickassembler/cracktro-template.md`; or one dispatcher that walks a
+table of (line, handler) pairs. The ring spreads the arming and acknowledge
+logic across every handler, and a slot cannot be added, removed or moved
+without editing its neighbours. The table puts that logic in one place, so a
+slot is one table row and a handler is a plain subroutine that ends in
+`RTS`. Oscar64's `rasterirq.h` is this shape with a sorter in front of it
+(`recipes/oscar64/raster-bars.md`); this entry is the same thing on the page
+for KickAssembler, with each step measured in VICE.
+
+### How
+
+**The table.** Two parallel byte arrays for the line, low eight bits and
+the ninth bit already shifted into bit 7 so it can be ORed straight into
+`$D011`, and two for the handler address. Rows are in raster order. A
+slot index byte says which row runs next. The chain below is the one the
+recipe runs: three slots at lines 40, 130 and 260, so one slot is above the
+display, one inside it and one needs RST8.
+
+**The dispatcher.** One routine behind `$0314`. In this order:
+
+1. Acknowledge: `LDA #$01 / STA $D019`.
+2. Compute the next index (wrap to 0 at the table's end) and arm its line:
+   low byte to `$D012`, then `$D011` with bit 7 replaced by the row's ninth
+   bit and the other seven bits kept.
+3. Call this slot's handler through the table: copy the address into the
+   operand of a `JSR` and run it. The 6510 has no `JMP (abs,X)`, and a
+   `JSR` lets the handler end in `RTS` and leave the exit to the dispatcher.
+4. Store the next index. If it wrapped to 0, the frame is complete:
+   increment the frame counter, call the music player, do anything else that
+   runs once per frame.
+5. Exit through `$EA81` (register restore and `RTI`).
+
+```asm
+.const NSLOTS = 3
+
+irq:
+    lda #$01
+    sta $d019                // 1. acknowledge
+
+    ldx slot                 // 2. arm the next slot's line, all nine bits
+    inx
+    cpx #NSLOTS
+    bne !+
+    ldx #0
+!:  stx next
+    lda line_lo,x
+    sta $d012
+    lda $d011
+    and #$7f
+    ora line_hi,x
+    sta $d011
+
+    ldx slot                 // 3. call this slot's handler
+    lda handler_lo,x
+    sta call + 1
+    lda handler_hi,x
+    sta call + 2
+call:
+    jsr $ffff
+
+    ldx next                 // 4. advance; a wrap to 0 is the once-a-frame point
+    stx slot
+    bne done
+    inc frame_lo
+    bne !+
+    inc frame_hi
+!:  jsr music_tick
+done:
+    jmp $ea81                // 5. restore A, X, Y and RTI
+
+line_lo:    .byte <40, <130, <260
+line_hi:    .byte (40 >> 8) << 7, (130 >> 8) << 7, (260 >> 8) << 7
+handler_lo: .byte <slot0, <slot1, <slot2
+handler_hi: .byte >slot0, >slot1, >slot2
+
+slot0:      lda #2
+            sta $d020
+            rts
+slot1:      lda #5
+            sta $d020
+            rts
+slot2:      lda #6
+            sta $d020
+            rts
+music_tick: rts
+
+slot:       .byte 0
+next:       .byte 0
+frame_lo:   .byte 0
+frame_hi:   .byte 0
+```
+
+**Install.** `SEI`; mask CIA1 with `$7F` to `$DC0D` and read `$DC0D` once,
+so the only interrupt that reaches `$0314` is the raster one; set the slot
+index to 0 and arm row 0's line the same way step 2 does; point `$0314/$0315`
+at the dispatcher; `$01` to `$D01A`; `$01` to `$D019` to drop any flag left
+from before; `CLI`. If the KERNAL's timer interrupt is left enabled it
+arrives through the same vector and the dispatcher runs a slot early.
+
+**Acknowledge first, arm second.** The order matters when a handler runs
+long. Measured in VICE x64sc 3.10 (PAL, 8,000,000 cycles) with slot 1's
+handler padded to about 9,000 cycles so that it returns after slot 2's line
+260 has gone by: with the order above, the raster flag raised at line 260 is
+still set when the dispatcher exits, the CPU takes the interrupt again at
+once, slot 2 runs late (its colour write first appears at line 287, the
+last line in the picture; from line 130, 9,000 cycles is 143 lines and the
+fifteen badlines crossed add about ten more) and the frame counter reads
+254, the same as the unpadded chain. With the acknowledge moved to the end
+of the dispatcher, the same padded chain reads 127: the flag from line 260
+is cleared by the late acknowledge, slot 2 waits for line 260 of the next
+frame, and the chain takes two frames per lap. A late slot is recoverable; a
+lost one halves the frame rate. Arming the next line before the handler
+runs is what makes the pending interrupt possible: with the arm after the
+handler, `$D012` still holds the current line while the handler overruns and
+nothing is raised at all, which is the same lost frame.
+
+**The next-line arm and RST8.** `$D012` holds bits 0 to 7 of the compare
+line and `$D011` bit 7 holds bit 8. Writing only `$D012` for a line at or
+above 256 arms line minus 256. The `AND #$7F / ORA` keeps YSCROLL, DEN, RSEL
+and the mode bits, so the dispatcher can arm any line without knowing what
+the display is doing. The recipe's slot at 260 lands where the table says
+(measured: blue border from line 261 in the right border, 262 at the left,
+both models).
+
+**The wrap at the frame top.** The last row arms the first row's line,
+which is smaller than its own. The compare is not reached again in this
+frame, so the next interrupt is at that line in the next frame. Nothing
+special is needed for the wrap beyond the index going back to 0; the
+raster counter's own reset to 0 does it. This is also why the index and
+the table order must agree: a row out of raster order is armed after its
+line has passed and the whole chain waits a frame for it.
+
+**A frame counter and the music tick.** Step 4 runs once per lap of the
+table, which is once per frame as long as no slot is lost. Put the 16-bit
+frame counter increment and the `JSR` to the music player there and only
+there. A music call in a slot handler runs once per frame too, but it then
+sits on that slot's line and its data-dependent length eats that slot's
+margin (frame_sync_loop above measures a player's band with the border).
+The counter is the game's clock: in the recipe it reads 254 after
+8,000,000 cycles on PAL and 458 after 12,000,000, a difference of 204 for
+4,000,000 cycles, which is 4,000,000 / 19,656 = 203.5 frames (measured in
+VICE; the frame length is the settled constant).
+
+**A slot's handler must finish before the next slot's line.** The deadline
+for a handler is the next row's line minus the dispatcher's exit and
+re-entry: the handler's `RTS`, steps 4 and 5 (about 40 cycles idle, plus the
+frame work at the wrap), the interrupt sequence and the KERNAL dispatcher
+(36 cycles to `$0314`, settled) and steps 1 and 2 again. A handler that ends
+later than that makes the next slot late by the overrun; one that ends
+after the next line has been and gone makes it late by the whole overrun
+plus the re-entry, as measured above. Budget each slot as (next line minus
+this line) × 63 cycles on PAL, less 40 to 43 for each badline in between
+and less about 150 for the dispatcher (arithmetic from the settled
+constants and the cycle counts below).
+
+### Why it works
+
+The VIC raises IRST in `$D019` when its raster counter equals the nine-bit
+compare value, once per frame per value, and holds /IRQ low while IRST and
+ERST (`$D01A` bit 0) are both set. Writing 1 to `$D019` bit 0 clears IRST
+and nothing else. The compare value can be changed at any time; the next
+match is at the new line, in this frame if it is still ahead of the beam
+and in the next frame if not. That is the whole mechanism: one compare
+register, re-pointed once per interrupt, walks the beam through the table.
+Because the interrupt is level-triggered, a match that arrives while the
+CPU has interrupts disabled is not lost as long as IRST is still set when
+`RTI` clears the I flag; that is why the acknowledge belongs at the start of
+the dispatcher and not at its end.
+
+The colour write of the recipe's handlers completes about 111 cycles after
+the start of the interrupt's line, plus 0 to 6 cycles of jitter: 36 to the
+first instruction of the dispatcher (settled), 69 through steps 1 to 3 to
+the handler's first instruction, and 6 for its `LDA #` and `STA` (counted
+from the listing). That is cycle 48 of the line after the one in the table,
+so every band in the recipe begins one line below its table entry, part-way
+across. The picture agrees: on line 41, which is all border, the new colour
+begins at x = 305 in the PAL PNG (x = 304 is one light grey pixel, VICE's
+rendering of the VIC's grey dot on a colour-register write, not examined
+further here) and at x = 281 on NTSC, and lines 132 and 261 show the change
+in the right border and not the left. With the KERNAL out (the variant
+below) the same write lands at x = 169 on PAL, 136 pixels or 17 cycles
+earlier, against 16 from the listing: the 29-cycle KERNAL dispatcher
+replaced by 13 cycles of the handler's own register saves. A chain that
+needs the change at the left edge of the line arms each row one line early
+and spins on `$D012` inside the handler, as `raster_bars` describes, or
+uses `stable_raster_irq` for the slots that need it; this technique on its
+own does neither, and the recipe says where its edges are.
+
+### Variations
+
+**Hardware vector, KERNAL out.** Point `$FFFE/$FFFF` at the dispatcher and
+set `$01` to `$35`. The dispatcher must then save and restore A, X and Y
+itself and end in `RTI`; there is no `$EA81`. CIA2's NMI needs masking too
+(`$7F` to `$DD0D`, read once) or a vector at `$FFFA/$FFFB`. Measured in VICE
+with the recipe's table: identical band lines and an identical frame count
+of 254 at 8,000,000 cycles, and the colour write 17 cycles earlier as above.
+The entry and exit of that variant:
+
+```asm
+irq:
+    pha                      // no KERNAL dispatcher: save the registers yourself
+    txa
+    pha
+    tya
+    pha
+    lda #$01
+    sta $d019
+    // ... steps 2 to 4 as in the $0314 form ...
+    pla                      // what $EA81 would have done
+    tay
+    pla
+    tax
+    pla
+    rti
+
+install:
+    sei
+    lda #$7f
+    sta $dc0d
+    sta $dd0d
+    lda $dc0d
+    lda $dd0d
+    lda #<irq
+    sta $fffe                // RAM under the ROM; read once $01 = $35
+    lda #>irq
+    sta $ffff
+    lda #<nmi
+    sta $fffa
+    lda #>nmi
+    sta $fffb
+    lda #$35
+    sta $01
+    lda #$01
+    sta $d01a
+    sta $d019
+    cli
+    rts
+nmi:
+    rti
+```
+
+**KERNAL housekeeping once a frame.** Exit through `$EA31` instead of
+`$EA81` at the wrap only, with CIA1 left masked, to keep the jiffy clock and
+keyboard scan alive: about 186 cycles idle and about 1,600 with a key held
+(`recipes/kickassembler/raster-bars.md`, measured there). Every other exit
+stays on `$EA81`.
+
+**Data-only slots.** For slots that only write registers, replace the
+handler address with a (register, value) list and let the dispatcher write
+it, which is what Oscar64's `rirq_write` compiles to. Fewer bytes per slot
+and a fixed time per write; no code per slot.
+
+**Stable slots.** A row whose handler needs cycle-exact timing can carry a
+flag that makes the dispatcher enter it through the `double_irq` protocol
+while the other rows use the plain entry. Not run here.
+
+### Cycle budget
+
+Per interrupt, from the interrupt's line start, counted from the listing:
+36 cycles to the dispatcher (settled), 69 through the acknowledge, arm and
+call to the handler's first instruction, 6 for its `RTS`, 14 through the
+advance to `JMP $EA81` when the index does not wrap, 25 for `$EA81` through
+`RTI` (measured for `recipes/kickassembler/raster-bars.md`). About 150
+cycles of overhead per slot with the handler empty, two and a half PAL
+lines; the x position of the colour write above is consistent with the
+count but was not converted to a cycle number here. The wrap adds the
+16-bit increment and whatever the music player and frame work cost; the
+recipe's decimal print is a few hundred cycles, not measured.
+
+### Recipes
+
+- `recipes/kickassembler/irq-chain.md`
+
+### Sources
+
+- VICE 3.10, `x64sc`, models `default` and `ntsc`, 8,000,000 and
+  12,000,000 cycles: every figure marked measured, read from the exit PNG
+  with PIL and the character ROM.
+- This repository: `recipes/kickassembler/raster-bars.md` (the ring form,
+  `$EA31` and `$EA81` costs, where the write lands),
+  `recipes/kickassembler/cracktro-template.md` (a thirteen-handler ring and
+  its badline lesson), `recipes/oscar64/raster-bars.md` (`rasterirq.h`,
+  the same table with a sorter), `frame_sync_loop` above (the once-a-frame
+  tick).

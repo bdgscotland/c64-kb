@@ -453,16 +453,16 @@ READ BACK 32 BYTES ST=40
 MATCH
 CHK 8605 PASS
 STATUS 2: 00, OK,00,00
-ELAPSED JIFFIES $000D
-ELAPSED CYCLES $0049F1FE
+ELAPSED JIFFIES $000E
+ELAPSED CYCLES $0049E80E
 
 READY.
 ```
 
 Light blue text on blue, the ordinary power-on screen. The two elapsed
 lines are the run's own measurement and are the only lines that may
-differ between runs and regions: the NTSC picture shows `$0011` jiffies
-and `$004CC8D9` cycles. Screenshots from the VICE runs this page
+differ between runs and regions: the NTSC picture shows `$0010` jiffies
+and `$004CBED6` cycles (with the emulated drive's RPM wobble switched off, as the verifier pins it; with VICE's default wobble the figures moved by a few hundred cycles between runs and an earlier version of this page quoted one such run). Screenshots from the VICE runs this page
 describes: `screenshots/file-io-roundtrip.png` (PAL) and
 `screenshots/file-io-roundtrip-ntsc.png` (NTSC), both from the pinned
 command above with a disk formatted as `TEST,01` immediately before the

@@ -385,7 +385,7 @@ cursor_y += mouse_dy;
 
 ## kernalio.h — KERNAL file I/O wrappers
 
-`kernalio.h` wraps the C64 KERNAL file I/O routines (SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE) in a C-callable interface. It uses logical file numbers (0–15) as handles and returns `krnioerr` status codes.
+`kernalio.h` wraps the C64 KERNAL file I/O routines (SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE) in a C-callable interface. It uses logical file numbers (0–15) as handles and returns `krnioerr` status codes. A measured write, read-back, status-check and provoked-error run is `../recipes/oscar64/save-load-seq-file.md`; the call sequences as techniques are `../techniques/file-io.md`.
 
 Public API:
 

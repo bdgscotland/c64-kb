@@ -17,7 +17,8 @@ uses_kernal: []
 
 A cracktro skeleton assembled from parts that are each verified on their own
 in this set: a text logo with per-row colours, ten raster bars from a chained
-IRQ ring (`raster-bars.md`), a sine scroller redrawn in the vertical blank
+IRQ ring (`raster-bars.md`; the table-driven form of such a ring is
+`irq_chain_table` in `../../techniques/raster.md`), a sine scroller redrawn in the vertical blank
 (`sine-scroller.md`), a SID play call once a frame against a stub player at
 $1000, and a fire-button exit that silences the SID, restores the VIC and the
 KERNAL interrupt, and jumps to a configurable entry address. Everything runs

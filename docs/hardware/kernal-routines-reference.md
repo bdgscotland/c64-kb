@@ -573,6 +573,9 @@ EOI (last byte of file just delivered).
 
 ### $FFE4 — GETIN — Get a character (non-blocking)
 
+A line-entry loop on top of GETIN (echo, DEL, RETURN, length cap, blinking
+cursor) is `text_input_line` in `../techniques/text.md`.
+
 **Input:** None
 **Output:** A = PETSCII byte (0 if no byte available); C=0 on success
 **Affects:** A, X, Y, C

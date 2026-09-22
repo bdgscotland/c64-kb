@@ -5,7 +5,25 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 710, schema 20, tools 1.22.1.
+Data 711, schema 20, tools 1.22.1.
+
+**Batch four: double buffer, Oscar64 save and load, text input, the IRQ
+chain.** `screen_double_buffer_d018` on the banking page with the
+`double-buffer` recipe and a companion built without the sprite-pointer
+mirror, whose corrupted sprite is identified byte for byte; the
+game-design page's "2 KB per page" corrected to 1 KB. The
+`save-load-seq-file` recipe: Oscar64's kernalio.h writing a score table,
+reading it back with the library status after every step and the drive's
+own reply, and a provoked 62 FILE NOT FOUND. A new page
+`techniques/text.md` (category `text`) with `text_input_line` and the
+`text-input` recipe, driven headless through VICE's keyboard buffer with
+the escape syntax that actually works quoted. `irq_chain_table` on the
+raster page with the `irq-chain` recipe: a three-slot table walked by one
+dispatcher, band boundaries measured from the picture and the frame
+counter predicted and matched. The verifier now switches the emulated
+drive's RPM wobble off for disk recipes: with it on, a disk run's elapsed
+cycles moved by a digit between runs and the NTSC round-trip picture
+failed to repeat.
 
 **Batch three: object pool, KERNAL file I/O, and the instrument itself
 documented.** An "Object pool" section on the game-design patterns page

@@ -410,7 +410,9 @@ frees the lower 15 KB for code and graphics. The 8 bytes of sprite pointers at
 $3FF8-$3FFF are conveniently at the very top of the bank. This is a common
 layout for demos that use a full custom layout in bank 0.
 
-**Double-buffered screen RAM.** Two screen buffers can live at different VM
+**Double-buffered screen RAM.** (Worked through, with the sprite pointer
+mirror and a measured recipe, as `screen_double_buffer_d018` below.) Two
+screen buffers can live at different VM
 offsets (e.g., $0000 and $0400 within the bank). The visible buffer flips by
 changing VM bits; the invisible buffer is updated by the CPU. This avoids all
 screen-tearing artifacts on text-mode displays; the flip lands at the next
@@ -720,3 +722,129 @@ is gone from the very next read after the write completes.
 
 No Phase 3 recipes. Custom-IRQ-with-RAM-KERNAL infrastructure is prerequisite
 to the raster and sprite recipes landing in Phase 4+.
+
+---
+
+## screen_double_buffer_d018 — Screen double buffer via $D018
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D011
+**Requires:** screen_ram_relocation
+
+### Why
+
+A program that redraws most of the text screen every frame cannot finish
+before the VIC reads the cells it is still writing. The result is a frame
+that is half old and half new. Two screen pages fix it: the CPU draws into
+the page the VIC is not showing, then one write to $D018 swaps them. The
+swap is atomic from the viewer's side, so a frame is always whole.
+
+### How
+
+1. Pick two 1 KB pages in the same VIC bank. Each starts on a 1 KB boundary
+   and is selected by the VM nibble (bits 7-4 of $D018), so the two flip
+   values differ only in their upper nibble. The pages must not overlap the
+   character set (the ROM font the VIC sees at $1000-$1FFF in banks 0 and
+   2, or a 2 KB custom set) or a bitmap. The recipe below uses $2800 (VM 10)
+   and $2C00 (VM 11) in bank 0 with the ROM font, flip values $A4 and $B4.
+2. Keep an index `hidden`. Every draw of the frame goes to `page[hidden]`
+   and nowhere else.
+3. When the frame is drawn, wait for the vertical blank and write
+   `(vm[hidden] << 4) | charset_bits` to $D018. Then `hidden ^= 1`. The
+   toggle sits next to the write so no draw can land between them.
+4. Before the flip, make the hidden page's sprite pointer block (bytes
+   +$3F8 to +$3FF) equal to the visible page's. The VIC reads the pointers
+   from whichever page is on display.
+
+Waiting for the blank: poll bit 7 of $D011 (RST8). It sets on line 256,
+after the last display line (250 for 25 rows), and clears at line 0. Wait
+for it to be clear and then set, not just set: a draw that finishes inside
+the bottom border would otherwise see RST8 already high and flip twice in
+one frame. Oscar64's `vic_waitFrame()` does exactly this (`vic.c`: while
+RST8 set, then while clear).
+
+### Why it works
+
+The VM nibble is only read when the VIC fetches the video matrix, on a
+badline, and the 40 bytes are held in a latch for the rest of the character
+row (`screen_ram_relocation`, measured there: written on line 54, effective
+from line 59). A write in the blank is therefore complete before the first
+badline of the next frame, and the whole frame comes from the new page.
+The sprite pointers are the exception: they are fetched every raster line
+from `visible_page + $3F8`, so a flip moves them on the next line. That is
+why the hidden page's pointer block has to be right before the flip and
+not after.
+
+Colour RAM at $D800 is not selected by $D018. There is one 1,000-byte
+colour map and both pages share it. A colour written while page A is shown
+changes A's cell now and B's cell after the flip. Three ways to live with
+that: keep the colour map fixed and change only characters (the recipe
+sets all 1,000 cells white once); write colour changes in the blank, after
+the flip, so the character and its colour arrive together; or confine
+colour changes to cells whose character is the same on both pages. The
+blank is short for a full colour rewrite. By arithmetic from 312 lines at
+63 cycles and 263 lines at 65: lines 251-311 plus 0-50 give 112 lines,
+about 7,000 cycles on PAL; 251-262 plus 0-50 give 63 lines, about 4,100
+on NTSC. A 1,000-byte fill does not fit the NTSC figure with a C loop.
+
+Frame parity. The page being drawn holds what was on screen two frames
+ago, not one. A full redraw does not care. A partial (dirty-cell) update
+does: each change has to be applied to both pages, one frame apart, or the
+page you flip to shows a cell two frames stale. Keep a change list and
+apply it to `page[hidden]` on two consecutive frames, or redraw everything.
+
+Sprite pointers and libraries. Anything that writes sprite pointers
+through a single screen address assumes one page. Oscar64's `vspr_init(char
+* screen)` stores `screen + 0x3f8` once and bakes the absolute address of
+that block into its raster IRQ entries (`c64/sprites.c`); `spr_init` keeps
+the same single pointer. `vspr_screen(char * screen)` re-points them. With
+two pages, either keep both blocks identical by hand after every image
+change, or call `vspr_screen()` with the page about to be shown before the
+update that writes the pointers. The second path is not measured here.
+The cheapest failure is a clear routine that works in whole 1 KB pages:
+bytes 1000 to 1023 hold the pointer block, and a fill that runs to the end
+of the page rewrites it every frame. The companion recipe shows the sprite
+that results.
+
+If the KERNAL prints to the screen (CHROUT), it prints to the page named by
+HIBASE ($0288), which is one page. Set $0288 to the hidden page's high byte
+before printing. Not measured here.
+
+### Variations
+
+**Two bitmap pages.** A bitmap needs 8 KB and can only sit at offset $0000
+or $2000 in a bank, so two full bitmaps plus their matrices do not fit one
+bank; the usual layout is two banks and a $DD00 write alongside the $D018
+one (`effects-vector-3d.md`, Double buffering; `bitmap-modes.md`,
+Two-bitmap pages).
+
+**Two pages, one charset, two fonts.** With two pages the CB bits can
+differ between the two flip values as well, so each page can carry its own
+2 KB character set. The cost is 4 KB of charset instead of 2 KB and the
+same 1 KB rule for the pages.
+
+**Triple buffering.** A third page lets the draw run more than one frame
+without stalling the flip. Three 1 KB pages plus the ROM font still fit
+bank 0. Not built here.
+
+### Cycle budget
+
+The flip is one store. The draw has one frame minus nothing: it runs during
+the display, so badline and sprite DMA cycles come out of it. Measured in
+VICE x64sc 3.10 with the recipe below at `-O2`: a whole-page fill from a
+256-byte template (`LDA (zp),y` plus four `STA abs,y`, 30 cycles per four
+bytes) plus a 30-cell caption costs 12,598 cycles on PAL and 13,165 on
+NTSC, the difference being the badlines and sprite fetches it overlapped.
+Both are under a frame (19,656 PAL, 17,095 NTSC), and two runs one PAL
+frame apart show consecutive frame numbers on opposite pages. The first
+draft filled the page with `memcpy` and `memset` in 40-byte rows at 17,437
+and 22,760 cycles; PAL still alternated on the short draw, and NTSC showed
+the same frame number in two runs one frame apart, because neither draw
+fit in 17,095 cycles. If the counter stops advancing once per frame, the
+draw is too slow, not the flip.
+
+### Recipes
+
+- `recipes/oscar64/double-buffer.md` — two pages, one sprite, flip every frame, pointer block mirrored
+- `recipes/oscar64/double-buffer-nomirror.md` — the same listing without the mirror, and the sprite it shows

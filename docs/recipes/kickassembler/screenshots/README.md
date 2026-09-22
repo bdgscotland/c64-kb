@@ -39,7 +39,11 @@ which also gives the pixel geometry and a decode snippet.
 `file-io-roundtrip.png` / `-ntsc.png` are at 16,000,000 cycles against a
 fresh `TEST,01` disk that `verify:recipes` formats with c1541 before the
 run (`"disk"` in `runs.json`); true drive emulation is on, so the run
-takes real C64 time.
+takes real C64 time, and the drive's RPM wobble is switched off for the
+run so the elapsed figures the recipe prints repeat exactly (with the
+wobble on, one digit moved between runs). `irq-chain.png` / `-ntsc.png`
+at 8,000,000 cycles: three border bands from a three-slot table and the
+frame counter the page predicts.
 
 The pictures are evidence about VICE, not about a 6569 on a bench. Where a
 recipe's timing constant was found by measurement (`SYNC_PAD`, `LINE_PAD`,

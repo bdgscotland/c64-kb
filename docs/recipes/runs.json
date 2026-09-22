@@ -143,5 +143,69 @@
       "pal": "screenshots/palette-cells.png",
       "ntsc": "screenshots/palette-cells-ntsc.png"
     }
+  },
+  "kickassembler/irq-chain": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/irq-chain.png",
+      "ntsc": "screenshots/irq-chain-ntsc.png"
+    }
+  },
+  "oscar64/double-buffer": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/double-buffer.png",
+      "ntsc": "screenshots/double-buffer-ntsc.png"
+    }
+  },
+  "oscar64/double-buffer-nomirror": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/double-buffer-nomirror.png"
+    }
+  },
+  "oscar64/save-load-seq-file": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/save-load-seq-file.png",
+      "ntsc": "screenshots/save-load-seq-file-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "oscar64/text-input": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "abc\\x14d\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/text-input.png",
+      "ntsc": "screenshots/text-input-ntsc.png"
+    }
   }
 }

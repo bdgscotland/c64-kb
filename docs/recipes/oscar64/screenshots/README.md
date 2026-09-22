@@ -67,6 +67,15 @@ pixel at (2, 100) is a safe place to read the border colour.
 - `object-pool.png` / `-ntsc.png` at 8,000,000 cycles: the scripted
   spawn, despawn and respawn scenario with its checksum and PASS line and
   the per-call cycle figures.
+- `double-buffer.png` / `-ntsc.png` at 8,000,000 cycles: the visible page
+  at that frame (A on PAL, B on NTSC, as the pages' frame counters
+  predict) with the sprite intact; `double-buffer-nomirror.png` is the
+  same listing without the sprite-pointer mirror and shows the corrupted
+  sprite. `save-load-seq-file.png` / `-ntsc.png` at 16,000,000 cycles on
+  a fresh `TEST,01` disk with the drive's RPM wobble off (the verifier
+  pins both), so the elapsed cycle figures on screen repeat run to run.
+  `text-input.png` / `-ntsc.png` at 8,000,000 cycles with
+  `-keybuf "abc\x14d\x0d"`: the entry loop after A, B, C, DEL, D, RETURN.
 
 The pixel geometry, the palette RGB triples per model and a decode snippet
 are in `docs/runtime/vice-reference.md`, section "Reading the exit
