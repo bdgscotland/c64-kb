@@ -623,6 +623,16 @@ KickAssembler side (the function must observe the Oscar64 calling convention —
 
 **Prefer `unsigned` and 8-bit types.** Signed arithmetic (signed shifts, signed compares, signed multiply) generates more code than unsigned equivalents. The compiler narrows 16-bit operations to 8-bit when it can prove the range fits, but it cannot do so through global variables or pointer-accessed values without help. Add `__assume(x < 256)` where you know the range, and declare loop counters as `char` or `byte` rather than `int`.
 
+The next four were found by compiling and running this knowledge base's own recipes with Oscar64 (build 2026-05-19, commit c1270bc) and VICE; see `scripts/check-listings.ts`.
+
+**A call through a `const` function pointer initialised with a literal address crashes the compiler.** `static void (* const f)(void) = (void (*)(void))0x1003; f();` is a segmentation fault at every `-O` level, with no diagnostic. Casting the pointer without calling it is fine, so `rirq_call(&slot, 0, (void *)0x1003)` works; for a direct call use `__asm { jsr $1003 }`.
+
+**Data nobody references is dropped, even in a placed section.** A `static const` array in a `#pragma data(section)` block that exists only to be at a fixed address — a SID stub at `$1000` that will be `JSR`ed by address — is removed by the linker because no C code names it, and the `JSR` then lands on zero bytes (`BRK`, so BASIC's warm start and a cleared screen). Declare it `__export` to keep it. The `.map` file shows the section's size as 0000 when this has happened.
+
+**`NUM_IRQS` and the other library table sizes are per translation unit.** `rasterirq.c` is compiled as its own unit through the header's `#pragma compile`, so a `#define NUM_IRQS 17` in your main file changes what your file believes and not what the library allocates; slot 16 then overwrites something else, silently. Pass `-dNUM_IRQS=17` on the command line so every unit agrees, or stay within the default 16. `rirq_set` has no bounds check.
+
+**GCC attribute syntax is not accepted.** `__attribute__((unused))` is a parse error; use `(void)x;` for a deliberately unused read. Oscar64's own qualifiers are keywords (`__interrupt`, `__zeropage`, `__striped`, `__export`, ...).
+
 ## See also
 
 - [oscar64-headers-reference.md](oscar64-headers-reference.md) — Full per-header API reference

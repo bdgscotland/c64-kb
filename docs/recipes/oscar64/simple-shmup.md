@@ -542,8 +542,13 @@ static void check_collisions(void)
 {
     // Read and clear collision registers (read-to-clear).
     // We don't use the raw bits here but must clear them each frame.
-    volatile byte sps __attribute__((unused)) = vic.spr_coll;
-    volatile byte spb __attribute__((unused)) = vic.bkg_coll;
+    // (GCC's __attribute__((unused)) is not Oscar64 C; the casts to void
+    // keep the reads and say the values are deliberately dropped. The field
+    // names are Oscar64's: spr_sprcol is $D01E, spr_backcol is $D01F.)
+    byte sps = vic.spr_sprcol;
+    byte spb = vic.spr_backcol;
+    (void)sps;
+    (void)spb;
 
     if (!player_alive)
         return;

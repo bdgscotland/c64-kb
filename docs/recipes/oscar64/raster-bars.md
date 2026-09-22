@@ -15,7 +15,7 @@ uses_kernal: []
 
 ## Synopsis
 
-Sixteen color bars cycling down the screen, one per raster split, using
+Fifteen color bars cycling down the screen, one per raster split, using
 `rasterirq.h`. Each bar changes both the border color (`$D020`) and the
 background color (`$D021`) for its band. The bars shift upward by one slot
 every two frames, producing a smooth rainbow animation. This recipe builds
@@ -41,11 +41,11 @@ static const byte rainbow[17] = {
 };
 
 // Number of visible bars. Each bar is one rirq slot that writes D020 + D021.
-#define NUM_BARS  16
+// 15 bars plus the reset slot below = 16 slots, the library's NUM_IRQS.
+#define NUM_BARS  15
 
-// Bar height in raster lines. 200 visible lines / 16 bars = 12 lines per bar,
-// with a few lines of top and bottom margin absorbed.
-#define BAR_HEIGHT  12
+// Bar height in raster lines: 15 bars * 13 lines = 195 of the 200 visible.
+#define BAR_HEIGHT  13
 
 // First raster line for the top bar (just below the top border on PAL).
 #define FIRST_LINE  51
@@ -127,12 +127,14 @@ Load with `LOAD"RASTER-BARS",8,1 : RUN` or via VICE autostart.
 
 ## Expected output
 
-Sixteen horizontal color bands fill the display area, each approximately 12
-raster lines tall, cycling through the full C64 16-color palette. The entire
-stack of bars drifts upward smoothly at half the frame rate (one color step
-every two frames). Above and below the bar stack the border and background are
-black. The color boundaries are sharp horizontal lines with no jitter or
-diagonal bleeding.
+Fifteen horizontal color bands fill the display area, each 13 raster lines
+tall, cycling through the C64 16-color palette. The entire stack of bars
+drifts upward smoothly at half the frame rate (one color step every two
+frames). Below the bar stack the border and background are black. The color
+boundaries are straight horizontal lines.
+
+Verified with Oscar64 (build 2026-05-19) and VICE x64sc after the slot-count
+fix described below.
 
 On PAL (50 Hz) the palette completes one full cycle in 32 frames (0.64 seconds).
 On NTSC (60 Hz) the same 32-frame cycle completes in 0.53 seconds, running
@@ -143,23 +145,31 @@ slightly faster.
 ### Foundation: stable raster IRQ
 
 This recipe is a direct extension of `stable-raster-irq.md`. Every slot in the
-`bars` array fires at a stable, jitter-free cycle offset from its target line,
-exactly as described in that recipe. The `rirq_init(true)` call disables CIA
-timer interrupts and installs the dispatcher through the KERNAL vector; the
-dispatcher's built-in polling loop absorbs instruction-completion jitter before
-any write fires. Without the stable-IRQ foundation, each bar boundary would
-show a 1-2 pixel diagonal streak at the left edge of the display.
+`bars` array is entered on the line above its target and spins on `CMP $D012`
+until the target line begins, so its two writes complete by about cycle 12,
+in the horizontal blank; see that recipe for what the library does and does
+not guarantee. The `rirq_init(true)` call disables CIA timer interrupts and
+installs the dispatcher through the KERNAL vector. Without the polling loop,
+each bar boundary would show a step two-thirds of the way across its first
+line.
 
 ### Multiple slots: the rirq slot table
 
-`rasterirq.h` maintains a sorted table of up to 16 IRQ slots (configurable with
-`-dNUM_IRQS=n`). After `rirq_sort()`, the dispatcher walks this table on every
-frame, firing each slot when the raster beam reaches the programmed line.
-`colorbars.c` in `~/Developer/c64/oscar64/samples/rasterirq/colorbars.c` uses
-exactly this pattern with 15 slots. This recipe extends it to 16 bars plus a
-reset slot (17 slots total), which fits within the default `NUM_IRQS = 16` only
-because the reset slot is the 17th — raise `-dNUM_IRQS=20` if you need both 16
-bars and a full reset slot simultaneously, or fold the reset into the last bar.
+`rasterirq.h` maintains a sorted table of `NUM_IRQS` IRQ slots, 16 by
+default. After `rirq_sort()`, the dispatcher walks this table on every frame,
+firing each slot when the raster beam reaches the programmed line. Oscar64's
+own `colorbars.c` sample uses exactly this pattern with 15 slots. This recipe
+uses 15 bars plus a reset slot: 16, the whole table.
+
+The earlier version of this recipe used 16 bars plus the reset slot.
+`rirq_set(16, ...)` wrote one entry past a 16-entry table, the program fell
+back to BASIC with no bars drawn, and nothing reported an error: there is no
+bounds check in `rirq_set`. A `#define NUM_IRQS 17` at the top of the main
+file does not fix it either, and that was tried: `rasterirq.c` is compiled
+as its own translation unit through the header's `#pragma compile`, so it
+sees the default 16 while the main file believes 17. To change the table
+size, pass `-dNUM_IRQS=17` on the command line so every unit agrees, or stay
+within 16.
 
 Each `RIRQCode` holds two write slots (border and background). Two writes per
 slot consume 8 cycles (two `STA abs` instructions at 4 cycles each). With

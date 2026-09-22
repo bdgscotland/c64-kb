@@ -449,19 +449,20 @@ start:
     ldx #0
     ldy #0
     lda #music.startSong-1
-    jsr music.init        ; init points into loaded SID data
+    jsr music.init        // init points into loaded SID data
 
     sei
     lda #<irq
     sta $0314
     lda #>irq
     sta $0315
-    lda #$81
-    sta $d01a
-    lda #$7b
-    sta $dc0d
+    lda #$01
+    sta $d01a             // raster IRQ source only
+    lda #$7f
+    sta $dc0d             // mask every CIA1 source
+    lda $dc0d             // and drop a pending one
     asl $d019
-    lda #$7e              ; raster line for IRQ
+    lda #$7e              // raster line for IRQ
     sta $d012
     lda #$1b
     sta $d011
@@ -470,7 +471,7 @@ start:
 
 irq:
     asl $d019
-    jsr music.play        ; play points into loaded SID data
+    jsr music.play        // play points into loaded SID data
     pla
     tay
     pla
@@ -644,6 +645,40 @@ similar archives written before 2014, check the separator.
 **`LoadPicture` accepts GIF and JPEG as well as PNG.** The manual's
 examples use GIF files. PNG works but the function name does not imply it;
 do not assume the function is PNG-only.
+
+The next five were each found by assembling this knowledge base's own
+listings with KickAssembler 5.25 (see `scripts/check-listings.ts`); every
+one of them had shipped in a recipe.
+
+**`(addr),y` with a non-zero-page operand assembles without a diagnostic.**
+Indirect-indexed addressing exists only for zero page. Give it a label in
+ordinary RAM and the assembler emits the zero-page opcode with the low byte
+of the address, so the code reads a pointer from wherever `$xx` happens to
+be — BASIC's workspace, in the case that was caught (`sine-scroller`
+printed a screen of `3`s). Keep every `(ptr),y` pointer below `$0100` and
+check with `-showmem` or a `.vs` dump if in doubt.
+
+**`.if (n)` on a number is an error, not a truthiness test.** "Can't get a
+boolean representation from a value of type number." Write `.if (n != 0)`.
+The same applies to the ternary `n ? a : b` in expressions.
+
+**Semicolons do not start comments.** KickAssembler comments are `//` and
+`/* */`. A `;` is parsed as code: `; SID player` becomes "pseudo command
+'SID' not defined". Listings pasted from ca65 or ACME sources fail this
+way, as do `txa : pha` colon-chained statements, which ca65 accepts and
+KickAssembler does not.
+
+**`!:` multi-labels inside a `.for` body all share one scope.** A `bpl !-`
+at the end of an unrolled `.for` body does not branch to the current
+iteration's `!:`; it resolves once, for the whole expansion, and the
+assembler reports "jump distance is too far" when the body is long. Use a
+named label outside the loop, or unroll only the body and keep the branch
+outside it.
+
+**A branch target more than 127 bytes away is an assembly error, and
+unrolled `.for` bodies get there fast.** `beq exit` across 700 bytes of
+macro expansion fails with "relative address is illegal". Invert the branch
+around a `jmp`.
 
 ## See also
 

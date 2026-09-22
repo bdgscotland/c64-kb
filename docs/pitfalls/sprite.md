@@ -114,8 +114,10 @@ sta $D01A                    // enable raster IRQ
 // --- Raster IRQ handler (fires above Y of logical sprite 8) ---
 irq_group2:
     pha
-    txa : pha
-    tya : pha
+    txa
+    pha
+    tya
+    pha
 
     lda #$01
     sta $D019                // acknowledge VIC IRQ
@@ -134,8 +136,10 @@ irq_group2:
     lda xMsbGroup2
     sta $D010
 
-    pla : tay
-    pla : tax
+    pla
+    tay
+    pla
+    tax
     pla
     rti
 ```
@@ -240,7 +244,8 @@ sprite 3's Y-expand bit off cleanly.
 
 irq_clear_yexpand:
     pha
-    txa : pha
+    txa
+    pha
 
     lda #$01
     sta $D019            // acknowledge VIC raster IRQ
@@ -254,7 +259,8 @@ irq_clear_yexpand:
     lda #<nextIrqLine
     sta $D012
 
-    pla : tax
+    pla
+    tax
     pla
     rti
 ```

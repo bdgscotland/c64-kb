@@ -73,13 +73,16 @@ pattern for integrating SID files from HVSC or GoatTracker.
 //
 // Real use:
 //   #pragma data(sidtune)
-//   const char sid_binary[] = { #embed "mytune.bin" };
+//   __export const char sid_binary[] = { #embed "mytune.bin" };
 //   #pragma data(data)
 //
 // Stub tune: init at $1000 (RTS), play at $1003 (RTS).
 // This lets the recipe compile and run silently while you supply a real tune.
+// __export keeps the array in the build: nothing in C refers to it (the
+// calls are by address), and without __export the linker drops it, the
+// sidtune section ends up empty, and JSR $1000 executes zero bytes: BRK.
 #pragma data(sidtune)
-static const char sid_binary[] = {
+__export const char sid_binary[] = {
     0x60,               // $1000: RTS  (init stub)
     0x00, 0x00,         // $1001-$1002: padding
     0x60,               // $1003: RTS  (play stub)
@@ -88,21 +91,25 @@ static const char sid_binary[] = {
 #pragma data(data)
 
 // ---------------------------------------------------------------------------
-// Extern declarations for the tune entry points
+// The tune's entry points
 // ---------------------------------------------------------------------------
-// The linker places sid_binary at $1000. init is at offset 0, play at +3.
-// Declare them as naked extern functions; Oscar64 emits JSR to the address
-// of the symbol, which the linker resolves to $1000 and $1003.
-extern void sid_tune_init(byte song_index);
-extern void sid_tune_play(void);
+// The linker places sid_binary at $1000: init at $1000, play at $1003.
+// They are called by address. Do NOT write them as
+//     static void (* const tune_play)(void) = (void (*)(void))0x1003;
+// and call through it: Oscar64 (build 2026-05-19) crashes with a
+// segmentation fault compiling a call through a const function pointer
+// initialised with a literal address. Inline assembly for init, and the
+// raw address for rirq_call, work.
+#define TUNE_INIT  0x1000
+#define TUNE_PLAY  0x1003
 
-// Linker alias: point the extern names at the offsets inside sid_binary.
-// The #pragma linker_alias directive creates a symbol alias.
-// Alternatively, use a function-pointer approach (see play_rirq below).
-// Here we use a direct call via a code pointer stored in zero-page at build time.
-// Oscar64 supports calling through a function pointer; declare as:
-static void (* const tune_play)(void)  = (void (*)(void))0x1003;
-static void (* const tune_init)(byte)  = (void (*)(byte))0x1000;
+static void tune_init(void)
+{
+    __asm {
+        lda #0          // subtune 0
+        jsr TUNE_INIT
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Raster IRQ: call the play routine once per frame at raster line 0
@@ -226,7 +233,7 @@ int main(void)
     // The raster engine calls it every frame at the top of the screen.
     rirq_init(true);
     rirq_build(&play_rirq, 1);
-    rirq_call(&play_rirq, 0, (void *)tune_play);
+    rirq_call(&play_rirq, 0, (void *)TUNE_PLAY);
     rirq_set(0, 0, &play_rirq);
     rirq_sort();
     rirq_start();
@@ -234,7 +241,7 @@ int main(void)
     // --- Initialize the SID tune (song index 0) ---
     // The init routine resets all SID registers and sets up player state.
     // Call AFTER rirq_start so the play routine is already armed.
-    tune_init(0);
+    tune_init();
 
     // --- Main loop ---
     // All audio work happens in the raster IRQ.  The main loop handles
@@ -288,8 +295,16 @@ Load and run: `LOAD"SID-MUSIC-PLAYER",8,1` then `RUN`, or pass
 
 ## Expected output
 
-The screen displays `SID PLAYER` on a black background. With the stub tune no
-audio is produced. With a real PSID tune embedded at `$1000`, the tune plays
+The screen displays `SID PLAYER` in cyan on a black background with a black
+border. With the stub tune no audio is produced.
+
+Verified with Oscar64 (build 2026-05-19) and VICE x64sc. Two things kept the
+earlier version of this recipe from getting that far: the compiler crashed
+on its function-pointer calls (see below), and once that was worked around
+the linker had discarded the unreferenced stub array, so `JSR $1000`
+executed zeros — a `BRK` — and the machine dropped to BASIC's warm start
+with a cleared screen. `__export` on the array is the fix; the `.map` file
+shows the `sidtune` section at five bytes instead of zero. With a real PSID tune embedded at `$1000`, the tune plays
 continuously at 50 Hz (PAL) or 60 Hz (NTSC). Every three seconds voice 2
 triggers a sawtooth tone on A5 that sweeps through a low-pass filter from fully
 open to closed over 40 frames, then releases. The filter sweep does not interrupt
@@ -314,10 +329,19 @@ CPU registers on entry and exit so that `play` is safe to call from any context.
 The recipe strips the 124-byte PSID header and embeds only the raw 6502 binary
 body, which starts at the tune's load address. By placing the `sidtune` section
 at `$1000` via the linker region pragma, the embedded bytes land at exactly
-`$1000`, and the function pointers `tune_init` / `tune_play` resolve to
-`$1000` and `$1003` respectively. This is the conventional distance between
-init and play for single-subtune PSID files; multi-subtune or non-standard
-tunes may have different offsets — always read the header.
+`$1000`, so `TUNE_INIT` is `$1000` and `TUNE_PLAY` is `$1003`. This is the
+conventional distance between init and play for single-subtune PSID files;
+multi-subtune or non-standard tunes may have different offsets — always read
+the header.
+
+The calls are by literal address: `rirq_call` takes a `void *` and gets
+`(void *)TUNE_PLAY`; init is a two-line `__asm` block. The earlier version of
+this recipe declared `static void (* const tune_play)(void) = (void
+(*)(void))0x1003;` and called through it, which is idiomatic C and makes the
+Oscar64 compiler (build 2026-05-19) segfault before it emits anything; the
+minimal reproduction is a one-line `main` that calls such a pointer. Casting
+the pointer to `void *` without calling it compiles, so the `rirq_call` form
+was never the problem.
 
 ### `rirq_call` and the per-frame play cadence
 

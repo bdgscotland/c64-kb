@@ -30,6 +30,7 @@ foundational pattern that all other raster effects in this KB build on.
 // RIRQCode is a 31-byte struct that encodes up to five writes.
 // Declare it at file scope so it lives in static storage.
 RIRQCode rirq;
+RIRQCode restore;
 
 int main(void)
 {
@@ -56,6 +57,14 @@ int main(void)
     // raster line below line 100 (i.e., at the start of raster line 101).
     // Slots are numbered 0-15 (up to NUM_IRQS, default 16).
     rirq_set(0, 100, &rirq);
+
+    // A second slot puts the border back to light blue at line 201. Without
+    // it the first interrupt leaves the whole border white for good and
+    // there is nothing to see: a register write persists until something
+    // writes the register again.
+    rirq_build(&restore, 1);
+    rirq_write(&restore, 0, &vic.color_border, VCOL_LT_BLUE);
+    rirq_set(1, 200, &restore);
 
     // rirq_sort orders all installed slots by ascending raster line.
     // Always call this after any rirq_set or rirq_move before rirq_start,
@@ -89,14 +98,17 @@ Load with `LOAD"STABLE-RASTER-IRQ",8,1` followed by `RUN`, or pass
 
 ## Expected output
 
-The screen splits horizontally at raster line 101. Above that line the border
-retains whatever color BASIC left it (light blue, `VCOL_LT_BLUE`). From line 101
-downward the border is white. The split is sharp, stable, and jitter-free: no
-wavering edge, no visible vertical stripe artifacts.
+A white band in the border from raster line 101 to line 200; light blue above
+and below. Both edges are straight across the frame: the dispatcher's polling
+loop (below) puts the write in the horizontal blank.
 
 On both PAL (50 Hz, 312 lines) and NTSC (60 Hz, 263 lines) the effect is
-identical in appearance. The only difference is that the white region covers
-slightly fewer raster lines on NTSC before the vertical blank.
+identical in appearance.
+
+Verified with Oscar64 (build 2026-05-19) and VICE x64sc. The earlier version
+of this recipe had only the first slot and described a split at line 101;
+what it produced was an all-white border, because nothing ever wrote light
+blue back.
 
 ## Why this works
 
@@ -112,19 +124,27 @@ doing its standard register save. Third, it programs `$D01A` bit 0 to enable
 VIC-II raster interrupts. The CIA disable is the step that confuses hand-rolled
 IRQ code most often; `rirq_init` handles it automatically.
 
-### The stable-raster guarantee
+### What "stable" means here, and what it does not
 
-The `rasterirq.h` implementation delivers writes at a stable, jitter-free cycle
-offset from the target raster line. Raw VIC-II raster IRQs carry 0-6 cycles of
-jitter because the CPU finishes its current instruction before entering the
-handler, and 6510 instructions range from 2 to 7 cycles. A write that arrives
-a cycle late produces a visible vertical stripe at the left edge of the display
-area. `rasterirq.c` eliminates this jitter by using a tight polling loop that
-reads `$D012` until the counter advances, consuming the variable instruction-
-completion time before executing any writes. By the time the first `STA $D020`
-fires, the cycle offset from the raster line boundary is fixed. This is the
-"stable raster IRQ" technique from `docs/techniques/raster.md`, implemented
-once in assembly so every Oscar64 recipe gets it for free.
+Raw VIC-II raster IRQs carry 0-6 cycles of jitter because the CPU finishes
+its current instruction before entering the handler, and on top of that the
+KERNAL dispatcher adds 29 fixed cycles, so the handler starts on cycle 37-43
+of the line. A colour write from there lands two-thirds of the way across the
+visible line.
+
+What `rasterirq.c` does about it can be read in `rirq_build`: every
+`RIRQCode` begins with `CMP $D012 / BCS -5`, a 7-cycle loop that spins until
+the raster counter passes the programmed row. The dispatcher is entered on
+the row *before* the target, so the loop exits within the first 1-7 cycles of
+the target line and the first `STA` completes by about cycle 12, inside the
+horizontal blank. That is why the band edges are straight: the write is
+early, not exact. The residual jitter is the loop's granularity, up to six
+cycles, which is invisible for a border colour and would not be for a
+$D016 side-border write or an FLI $D018 write. The genuinely cycle-exact
+entry — the double-IRQ method — is in
+`docs/recipes/kickassembler/stable-raster-irq.md`; `rasterirq.h` does not
+implement it, and the earlier text of this recipe, which said the offset
+was "fixed" and "jitter-free", overstated the library.
 
 ### `rirq_build`, `rirq_write`, `rirq_set`
 
