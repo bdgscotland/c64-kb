@@ -55,6 +55,11 @@ describe("demoBriefing", () => {
     await f.linkTechniqueUsesRegister("sid_play_routine_pattern", "D400");
     await f.linkTechniqueUsesRegister("sid_play_routine_pattern", "D418");
 
+    // --- DEMANDS edges (what the toolchain handoff reads) ---
+    // stable_raster_irq takes interrupts inside the display; raster_bars, in
+    // the same category, declares nothing and stays in C.
+    await f.linkTechniqueDemands("stable_raster_irq", "midframe_raster_irqs", "takes raster interrupts inside the display area");
+
     // --- Recipes ---
     await f.addRecipe({
       name: "oscar64-stable-raster-irq",
@@ -143,6 +148,18 @@ describe("demoBriefing", () => {
   it("proposes Oscar64 as primary toolchain", async () => {
     const r = await demoBriefing("simple bitmap demo");
     expect(r.structured.toolchain_split.primary).toBe("oscar64");
+  });
+
+  it("hands a technique to KickAssembler by what it demands, not by its category", async () => {
+    const r = await demoBriefing("stable raster bars");
+    const proposed = r.structured.proposed_techniques.map(t => t.name);
+    const handoff = r.structured.toolchain_split.cycle_tight_handoff;
+    // Both are category raster. Only stable_raster_irq declares a demand
+    // (midframe_raster_irqs), so only it is handed off; deciding by category
+    // used to hand off raster_bars as well.
+    if (proposed.includes("stable_raster_irq")) expect(handoff).toContain("stable_raster_irq");
+    expect(handoff).not.toContain("raster_bars");
+    expect(proposed).toContain("raster_bars");
   });
 
   // P5-4 regression: sideborder_open must not be tagged as SID music

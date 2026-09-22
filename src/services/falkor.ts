@@ -516,12 +516,14 @@ export class FalkorService {
     );
   }
 
+  // The recipe-to-tool link is REQUIRES_TOOL, as the ontology defines it. Until
+  // data 713 this wrote USES, which left REQUIRES_TOOL populated by nothing.
   async linkRecipeUsesTool(recipeName: string, toolName: string): Promise<void> {
     const g = this.graph();
     await g.query(
       `MATCH (r:Recipe {name: $recipeName})
        MERGE (t:Tool {name: $toolName})
-       MERGE (r)-[:USES]->(t)`,
+       MERGE (r)-[:REQUIRES_TOOL]->(t)`,
       { params: { recipeName, toolName } } as Parameters<typeof g.query>[1]
     );
   }

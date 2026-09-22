@@ -413,9 +413,27 @@ async function buildBriefing(
   // -------------------------------------------------------------------------
   // Step 6: Toolchain split
   // -------------------------------------------------------------------------
-  const CYCLE_TIGHT_CATEGORIES = new Set(["raster", "effect"]);
+  // The handoff is decided by what a technique DEMANDS of the machine (the
+  // DEMANDS edges the compatibility checker already reads), not by its
+  // category name. Deciding by category handed starfield (effect) to
+  // assembly and sprite_multiplex_24 (sprite) to C, which was backwards.
+  const CYCLE_TIGHT_DEMANDS = new Set([
+    "cpu_every_line", "midframe_raster_irqs", "continuous_interrupts", "badline_free_region", "changes_sprite_set",
+  ]);
+  const fk = await getFalkor();
+  const demandRows = validTechs.length
+    ? await fk.roQuery(
+        `MATCH (t:Technique)-[:DEMANDS]->(r:Resource) WHERE t.name IN $names
+         RETURN t.name AS name, collect(r.name) AS demands`,
+        { names: validTechs.map(t => t.name) }
+      )
+    : { data: [] as unknown[] };
+  const demandsOf = new Map<string, string[]>();
+  for (const row of (demandRows.data ?? []) as Array<{ name: string; demands: string[] }>) {
+    demandsOf.set(row.name, (row.demands ?? []).filter(Boolean));
+  }
   const cycloTightTechs = validTechs.filter(
-    t => CYCLE_TIGHT_CATEGORIES.has(t.category) || t.complexity === "scene-tier"
+    t => (demandsOf.get(t.name) ?? []).some(d => CYCLE_TIGHT_DEMANDS.has(d)) || t.complexity === "scene-tier"
   );
   const cycle_tight_handoff = cycloTightTechs.map(t => t.name);
 
@@ -426,8 +444,8 @@ async function buildBriefing(
       "Oscar64 is the primary toolchain per c64-kb policy (modern C/C++ → 6502, idiomatic patterns). " +
       (cycle_tight_handoff.length > 0
         ? `KickAssembler handles cycle-tight work for: ${cycle_tight_handoff.join(", ")} ` +
-          `(category: raster/effect or complexity: scene-tier).`
-        : "No cycle-tight techniques identified — Oscar64 can handle all components."),
+          `(each demands the CPU every line, raster interrupts inside the display, interrupts all frame, a badline-free region or a changing sprite set, or is scene-tier).`
+        : "No technique in this set demands cycle-exact timing of the machine — Oscar64 can handle all components."),
   };
 
   // -------------------------------------------------------------------------

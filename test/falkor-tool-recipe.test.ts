@@ -70,6 +70,7 @@ describe("FalkorService — Tool / FileFormat / Recipe", () => {
     });
     await f.linkRecipeProducesFormat("oscar64-hello-world", "PRG");
     await f.linkRecipeUsesKernal("oscar64-hello-world", "CHROUT");
+    await f.linkRecipeUsesTool("oscar64-hello-world", "oscar64");
 
     const recipe = await f.roQuery(
       `MATCH (r:Recipe {name: 'oscar64-hello-world'}) RETURN r.toolchain AS toolchain, r.output_format AS output_format, r.region AS region`
@@ -80,6 +81,17 @@ describe("FalkorService — Tool / FileFormat / Recipe", () => {
       `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:USES]->(k:KernalRoutine {name: 'CHROUT'}) RETURN count(*) AS cnt`
     );
     expect((edge.data?.[0] as any).cnt).toBe(1);
+
+    // The recipe-to-tool link carries the ontology's name, REQUIRES_TOOL; it
+    // was written as USES until data 713, which left REQUIRES_TOOL empty.
+    const tool = await f.roQuery(
+      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:REQUIRES_TOOL]->(t:Tool {name: 'oscar64'}) RETURN count(*) AS cnt`
+    );
+    expect((tool.data?.[0] as any).cnt).toBe(1);
+    const wrong = await f.roQuery(
+      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:USES]->(t:Tool) RETURN count(*) AS cnt`
+    );
+    expect((wrong.data?.[0] as any).cnt).toBe(0);
   });
 
   it("a second addTool with a different home_url updates rather than failing", async () => {

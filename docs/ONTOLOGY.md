@@ -281,6 +281,13 @@ Direction: `Recipe → Tool`
 
 Meaning: "this recipe needs this tool to build."
 
+Source: every recipe's frontmatter `toolchain` names a Tool node
+(`oscar64`, `kickassembler`, `cc65`) and the ingester links the recipe to
+it. Until data 713 that link was written as `USES`, so this edge type was
+defined and populated by nothing while the same fact sat under the wrong
+label; the ingester now writes `REQUIRES_TOOL` and a query for
+`(:Recipe)-[:REQUIRES_TOOL]->(:Tool)` returns every recipe.
+
 ### REQUIRES_REGION
 
 Direction: `Technique → Region`
@@ -351,8 +358,10 @@ primary key of every node label (12) and seeds:
 - 5 `Chip` nodes (VIC-II, SID, CIA1, CIA2, 6510)
 - 2 `Region` nodes (PAL, NTSC)
 
-Everything else is produced by `npm run ingest` from `docs/`. At the
-commit that last touched this file a clean ingest under schema 19 gave
-574 nodes and 1,296 edges, with 15 of the 17 edge types populated —
-`BUILDS_ON` and `REQUIRES_TOOL` are defined here and emitted by nothing.
-`npx c64-kb health` prints the live figures.
+Everything else is produced by `npm run ingest` from `docs/`. Of the
+edge types defined here, one is populated by nothing: `BUILDS_ON`, which
+no page asserts and no tool reads (its fate is issue #17). `REQUIRES_TOOL`
+was in that state until data 713, when the recipe-to-tool link the
+ingester had been writing as `USES` was given its ontology name.
+`npx c64-kb health` prints the live node and edge figures; they are not
+repeated here because they change with every docs commit.

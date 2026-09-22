@@ -17,7 +17,7 @@ satisfied.
 ```yaml
 ---
 recipe: hello-world             # short identifier, lowercase, hyphen-separated
-toolchain: oscar64              # canonical toolchain name (matches a Tool node)
+toolchain: oscar64              # canonical toolchain name (matches a Tool node; becomes a REQUIRES_TOOL edge)
 output_format: PRG              # one of PRG, CRT, BIN, D64
 region: both                    # pal | ntsc | both
 techniques: []                  # array of Technique names this recipe implements (Phase 2: empty for hello-worlds)

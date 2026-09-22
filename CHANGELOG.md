@@ -5,7 +5,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 712, schema 20, tools 1.22.1.
+Data 713, schema 20, tools 1.22.2.
+
+**Two ontology repairs from the gap map (#17).** The briefing's toolchain
+handoff now decides by what a technique demands of the machine, read from
+the DEMANDS edges the compatibility checker already uses, instead of by
+category name: a technique that needs the CPU every line, raster
+interrupts inside the display, interrupts all frame, a badline-free
+region or a changing sprite set goes to KickAssembler, as does anything
+scene-tier. By category, starfield (effect) was handed to assembly and
+sprite_multiplex_24 (sprite) to C. And the recipe-to-tool link the
+ingester had always written now carries the ontology's name,
+`REQUIRES_TOOL`; it had been written as `USES`, which is why the
+ontology listed `REQUIRES_TOOL` as populated by nothing while the fact
+sat in the graph under the wrong label. Only `BUILDS_ON` remains
+unpopulated. Tools 1.22.2 for the handoff change (no surface change).
 
 **Batch five: save-file policy, a sound-effect engine, memory layout in
 three toolchains, headless verification.** A "Save-file policy" section
