@@ -318,7 +318,6 @@ export class QdrantService {
       ["formats/", "formats"],
       ["recipes/", "recipes"],
       ["techniques/", "techniques"],
-      ["catalogs/", "catalogs"],
     ];
     const categories = new Map<string, Map<string, number>>();
     for (const [source, count] of sourceCounts) {

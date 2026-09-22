@@ -69,6 +69,31 @@ VICE x64sc 3.10. `cia-reference.md`'s NMI-vector list and its
 rewritten; `c64-registers-reference.md` and `c64-memory-map.md` wiring
 lines corrected; the reset table's `$DC00 = $7F` now reads "column 7 low".
 
+**Source catalogs removed from `docs/`.** `docs/catalogs/` held two
+manifests — `source-catalog.json` (137 entries) and
+`source-corpus-catalog.json` (71 entries) — plus their two readmes. They
+listed third-party C64 sources, per-author repository inventories, and
+in-repo path fingerprints (`pattern_signals`) for code this project never
+ingested, and the readmes cross-referenced unrelated projects of the
+author's. None of it fed the knowledge base: the ingest reads `*.md` only,
+so the two JSON manifests were never indexed at all, and the two readmes
+carried no frontmatter and no metadata lines, so they extracted zero graph
+entities. The measured impact is 18 Qdrant chunks and the `catalogs` bucket
+in `c64-kb health`, whose entry in `C64_BUCKETS` (`src/services/qdrant.ts`)
+is dropped with them. No graph node, edge, tool, recipe, listing or test
+referenced the directory. Doc counts in `README.md` and `CLAUDE.md` drop
+from 75/69 markdown files to 73/67.
+
+**README chunk figure re-measured.** It read 2,422 and was stale: neither
+`36d1843` nor the 6510 audit in `5526a80` updated it, and the 6510 page
+alone went 258 -> 264 chunks. Running `chunkMarkdown` over all 73 files at
+this commit gives 2,516, which is what a clean ingest would upsert. The
+table now says it is a chunker measurement, not a live collection reading.
+
+Note: the files remain in git history from `fac663a` onward and in the
+public fork. Removing them here removes them from the working tree, not
+from the record.
+
 ## 0.8.0 — 2026-09-22
 
 Data 702, schema 18, tools 1.21.1.

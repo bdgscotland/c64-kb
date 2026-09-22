@@ -380,9 +380,9 @@ This is the pattern used by production demos that target both regions.
 
 The region-detect waits for $D011 bit 7 (RST8) to clear and then set, keeps
 the last $D012 seen while it stays set, and compares that value against $10
-once it clears: PAL ends its frame at $37, NTSC at $06 or $05. The full
-routine is in `pal-ntsc-reference.md` — Method 2, 26 bytes — and, with the
-flag store, as `detect_region` in the first pitfall above.
+once it clears: PAL ends its frame at $37, NTSC at $06 or $05. The
+three-way form is `detect_region` in `pal-ntsc-reference.md` (Method 1);
+the flag-store form is `detect_region` in the first pitfall above (36 bytes).
 
 ```kick
 // BROKEN: raster table loop hard-coded for 312 lines.
