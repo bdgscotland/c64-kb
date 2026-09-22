@@ -28,6 +28,7 @@ against those constraints.
 **Region:** both
 **Uses registers:** D015, D000, D001, D027, D012, D019, D01A
 **Uses kernal:** (none)
+**Demands:** midframe_raster_irqs, changes_sprite_set
 
 ### Why
 
@@ -123,6 +124,7 @@ activation. In practice, target 3–4 lines of slack.
 **Region:** both
 **Uses registers:** D015, D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E
 **Uses kernal:** (none)
+**Demands:** midframe_raster_irqs, changes_sprite_set
 
 ### Why
 
@@ -375,6 +377,7 @@ boundaries track visual content rather than bounding boxes.
 **Region:** both
 **Uses registers:** D017
 **Uses kernal:** (none)
+**Demands:** midframe_raster_irqs
 
 ### Why
 
@@ -531,6 +534,7 @@ foreground pixels even when rendered behind them.
 **Region:** both
 **Uses registers:** D027, D028, D029, D02A, D02B, D02C, D02D, D02E
 **Uses kernal:** (none)
+**Demands:** midframe_raster_irqs
 
 ### Why
 

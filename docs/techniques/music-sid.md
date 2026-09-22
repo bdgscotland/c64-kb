@@ -392,6 +392,7 @@ This is a hardware concern, not a software one, but it affects anyone testing ag
 **Complexity:** high
 **Region:** both
 **Uses registers:** D418
+**Demands:** continuous_interrupts
 
 ### Why
 
@@ -468,6 +469,7 @@ The technique works specifically because the 6581's DAC has a non-zero DC offset
 **Complexity:** scene-tier
 **Region:** both
 **Uses registers:** D418, D404, D405, D406
+**Demands:** continuous_interrupts
 
 ### Why
 

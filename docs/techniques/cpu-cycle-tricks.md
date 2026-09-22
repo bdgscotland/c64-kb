@@ -477,6 +477,7 @@ The BIT trick saves 1 byte at the cost of 1 extra cycle on the "path A" executio
 **Region:** both
 **Uses registers:** D012, D019, D01A
 **Uses kernal:** (none)
+**Demands:** midframe_raster_irqs
 
 ### Why
 

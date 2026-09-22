@@ -56,6 +56,29 @@ An optional `**Uses registers:**` line lists registers the technique reads or wr
 
 Comma-separated. The extractor emits one `USES` edge per register.
 
+An optional `**Demands:**` line names the machine-level resources the
+technique needs while it is active, from a fixed vocabulary. The extractor
+makes one `DEMANDS` edge per item to a `Resource` node, and
+`c64_check_compatibility` derives hard conflicts from them (two techniques
+that both need every CPU cycle cannot share a raster line; a technique that
+needs a constant sprite set cannot coexist with a multiplexer on the same
+lines). Unknown words are rejected at ingest with a warning. Only add a
+demand the technique's own text supports.
+
+```
+**Demands:** cpu_every_line, constant_sprite_set
+```
+
+| Demand | Meaning |
+|---|---|
+| `cpu_every_line` | needs every CPU cycle on every raster line of its region (FLI, side border) |
+| `constant_sprite_set` | the set of active sprites must not change inside its region |
+| `badline_free_region` | no badline may occur inside its region |
+| `midframe_raster_irqs` | takes raster interrupts inside the display area |
+| `changes_sprite_set` | changes which hardware sprites are active during the frame (multiplexers) |
+| `continuous_interrupts` | takes timer or NMI interrupts every few raster lines, all frame (digi playback) |
+| `kernal_rom_out` | runs with the KERNAL ROM banked out |
+
 An optional `**Uses kernal:**` line lists KERNAL routines:
 
 ```

@@ -173,7 +173,7 @@ A C64 file format.
 
 Source: `c64-file-formats.md` (Phase 2).
 
-## Edge Types (12)
+## Edge Types (15)
 
 ### BELONGS_TO
 
@@ -248,6 +248,37 @@ Meaning: "this tool targets this chip (e.g. GoatTracker targets SID)."
 Direction: `KernalRoutine → KernalRoutine`
 
 Meaning: "if you call A you also need B" (e.g. SETLFS + SETNAM + LOAD).
+
+### DEMANDS
+
+Direction: `Technique → Resource`
+
+Meaning: "while this technique is active it needs this machine-level
+resource" — every CPU cycle on its lines, a constant sprite set, a
+badline-free region, the KERNAL banked out, and so on. Authored per
+technique with a `**Demands:**` line from the fixed vocabulary in
+`CONVENTIONS-techniques.md`. `c64_check_compatibility` derives its hard
+conflicts from these: two `cpu_every_line` techniques cannot share a raster
+line; `cpu_every_line` against `midframe_raster_irqs` or
+`continuous_interrupts` cannot either; `constant_sprite_set` against
+`changes_sprite_set`; `kernal_rom_out` against any technique that USES a
+KernalRoutine.
+
+### IN_REGION
+
+Direction: `Register → MemoryRegion`, `KernalRoutine → MemoryRegion`
+
+Meaning: "this address lies inside this memory-map region." Derived from
+the numeric addresses after ingest; before this edge existed the 220
+MemoryRegion nodes were all orphans.
+
+### OCCUPIES
+
+Direction: `Recipe → MemoryRegion`
+
+Meaning: "this recipe loads code or data into this region." Derived from
+the listing's own load addresses (`* = $0900`, `#pragma region(...)`,
+`.org`), not from prose.
 
 ---
 

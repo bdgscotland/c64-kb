@@ -564,6 +564,7 @@ phase focused on distribution formats.
 ---
 
 ## ram_under_kernal — Hide RAM under KERNAL ROM
+**Demands:** kernal_rom_out
 
 **Complexity:** medium
 **Region:** both

@@ -18,6 +18,7 @@ The discipline required is severe. The VIC-II reads its registers continuously a
 **Complexity:** medium
 **Region:** both
 **Uses registers:** SCROLY, RASTER, VICIRQ, IRQMSK
+**Demands:** midframe_raster_irqs
 
 ### Why
 
@@ -53,7 +54,7 @@ The re-acknowledge step (write $01 to $D019) is critical. $D019 bit 0 is the ras
 
 **Double IRQ.** When zero jitter is required, use two IRQs on adjacent lines. The first IRQ sets up the second; the second uses a tightly-counted busy-wait-then-NOP sequence to land on cycle 1 of the target line. See the `double_irq` technique for the full protocol.
 
-**Interrupt vector placement.** On stock C64 with KERNAL ROM enabled, the hardware /IRQ vector at $FFFE/$FFFF points into the KERNAL's IRQ dispatcher ($EA31), which costs about 15 cycles before reaching user code. Patching $0314/$0315 (the KERNAL IRQ vector, which the KERNAL dispatcher jumps through) saves those cycles for user code. Disabling KERNAL ROM and pointing $FFFE/$FFFF directly at the handler removes dispatcher overhead entirely, saving an additional 7-8 cycles, but requires the handler to manage CIA interrupts manually.
+**Interrupt vector placement.** With the KERNAL ROM in, the hardware vector at $FFFE/$FFFF points at the KERNAL dispatcher at $FF48, which pushes A, X and Y, checks for BRK and jumps through $0314/$0315: 29 cycles before the first instruction of whatever $0314 points at. Patching $0314 is the normal way in and pays all 29. Banking the KERNAL out and pointing $FFFE/$FFFF at the handler removes the dispatcher, leaving the 7-cycle interrupt sequence plus whatever registers the handler saves itself, at the cost of servicing CIA interrupts and the keyboard yourself.
 
 **NMI-based raster timing.** Some advanced techniques use the CIA2 timer firing an NMI for raster work to avoid contention with the IRQ chain. Outside scope of this document — see CIA2 reference.
 
@@ -83,6 +84,7 @@ Badlines cost 40 cycles of CPU stall within the line. A handler that fires on a 
 **Complexity:** low
 **Region:** both
 **Uses registers:** EXTCOL, BGCOL0, RASTER, VICIRQ
+**Demands:** midframe_raster_irqs
 
 ### Why
 
@@ -138,6 +140,7 @@ Each IRQ on a non-badline has roughly 50-55 usable cycles after overhead. Writin
 **Region:** PAL
 
 **Uses registers:** SCROLY, RASTER
+**Demands:** midframe_raster_irqs
 
 ### Why
 
@@ -193,6 +196,7 @@ For cycle-tight code running on every line, the badline constraint means the wor
 **Complexity:** scene-tier
 **Region:** both
 **Uses registers:** RASTER, VICIRQ, IRQMSK
+**Demands:** midframe_raster_irqs
 
 ### Why
 
@@ -248,9 +252,10 @@ Total cost per raster split in double-IRQ mode: approximately 35-45 cycles sprea
 ## vsp_glitch — VSP (Variable Screen Position)
 
 **Complexity:** scene-tier
-**Region:** PAL
+**Region:** both
 
-**Uses registers:** SCROLX, SCROLY
+**Uses registers:** SCROLY, VMCSB
+**Demands:** midframe_raster_irqs
 
 ### Why
 
@@ -260,33 +265,58 @@ VSP (Variable Screen Position) is a hardware glitch, not a designed feature, tha
 
 ### How
 
-The VSP glitch is triggered by toggling $D016 bit 3 (CSEL — column select, 38/40 column toggle) at a specific cycle within the raster line. Normally CSEL determines whether the display shows 40 columns (CSEL=1) or 38 columns (CSEL=0). The VIC-II uses CSEL to determine the horizontal extent of the active display window. Crucially, the chip also uses the CSEL state to decide when to begin fetching screen data for the next row.
-
-By toggling CSEL from 1 to 0 and back to 1 at cycle 56 of a raster line (the precise timing that exploits the glitch), the VIC-II is tricked into thinking the current character row has ended and a new one is starting. This causes the chip to advance its internal video matrix row pointer one character row early. If the video matrix base address in $D018 has been updated between the trick cycle and the fetch, the new address takes effect for the advancing row.
-
-The net effect: by applying the VSP trigger to each raster line of a character row and updating the video matrix pointer, the horizontal display address can be advanced by any number of character columns on any line — enabling smooth, unlimited horizontal scrolling within standard 40-column text mode.
+VSP is a $D011 trick — the CSEL toggle described here before belongs to
+`sideborder_open`. On the line that is about to be a badline for a
+character row, arrange for the badline condition to be *false* in cycle 14
+(YSCROLL not equal to `line & 7` at that moment), then at a chosen cycle
+between 15 and 53 write $D011 with YSCROLL = `line & 7`, so the condition
+becomes true late. The VIC starts its c-accesses three cycles after BA drops,
+from whichever column slot the beam has reached, and the columns before it
+are not fetched for this row. Because the video counter VC advances only by
+the number of c-accesses actually performed, the row ends with VC short by
+that many characters, and every row after it — and every frame after it,
+until the counter is re-based — starts that many characters earlier in
+screen RAM. The display has moved left by N characters, N being the cycle
+the condition became true minus 15. One cycle-exact write per character row,
+plus a matching adjustment of the screen base, scrolls the whole screen by
+whole characters at no per-line cost; XSCROLL still handles the seven pixel
+steps in between.
 
 ### Why it works
 
-The VIC-II's internal VC (video counter) advances by 40 on each badline and resets at the top of the display. The chip uses VC to address into the video matrix. When VSP is triggered, the chip's state machine is confused into incrementing VC by 40 prematurely — as if a badline had occurred at a non-badline position. The fetch that follows uses the new VC value, which points to a different 40-character window in the video matrix.
+The VIC loads VC from VCBASE and clears VMLI in cycle 14, and only then; a
+badline condition that becomes true later leaves those alone and starts the
+c-access sequence mid-row, with VMLI counting from where the accesses start.
+Christian Bauer's VIC-II article documents this as "DMA delay" (§3.14.6),
+and it is the same mechanism FLI uses to lose its three leftmost columns —
+VSP uses it to lose N columns and keep the offset.
 
-The effect is cycle-exact. The CSEL toggle must hit within approximately a 2-cycle window at cycles 55-56 of the raster line on PAL. Outside this window, toggling CSEL is harmless (it only affects the width of the display border). Inside this window, it corrupts the VIC's row-counter state in the specific, exploitable way that produces VSP.
+The write cycle is N, so the write has to be placed from a stable raster
+entry. The technique is not PAL-specific.
 
-This is a documented-undocumented effect: it appears in the Commodore 64 Programmer's Reference Guide in no form, but it was discovered empirically by demo coders and is reproduced accurately by the VICE emulator as of version 2.x. The timing is specific to the 6569 (PAL) and varies slightly between the NMOS and HMOS-II parts; NTSC versions of the VIC-II do not exhibit the same glitch at the same cycle positions.
+**The VSP crash.** On a proportion of machines a badline that starts
+mid-line corrupts RAM: a few bytes elsewhere in memory change value. It
+depends on the DRAM chips fitted, not on the VIC revision; Linus Åkesson's
+"Safe VSP" work (2013) analysed the DRAM timing behind it and how to detect
+susceptible machines. VICE emulates the effect optionally and prints "VSP
+bug: safe channels" at start. Productions that use VSP test for it at start
+and fall back, or accept the risk.
 
 ### Variations
 
-**Full-screen VSP scroll.** Apply the trigger on every line of every character row, updating the video matrix address each time. This produces unlimited horizontal pixel scrolling across the full 40-column display. The runtime cost is high: each line requires a cycle-exact CSEL toggle plus a $D018 update, leaving approximately 30 cycles per line for other work.
-
-**Partial-screen VSP.** Apply VSP only to the character rows comprising a horizontal scroll zone. Rows above and below scroll normally or are static. Used in games that need wide scrolling for a play field but want a fixed HUD above and below.
-
-**VSP with multi-color mode.** The same VC corruption occurs in multi-color character mode. The video matrix pointer advances the same way; only the pixel data interpretation changes. No additional technique work required.
+**Whole-screen scroll.** One write per character row, on the row's badline,
+plus the base-pointer adjustment. **Partial zone.** Only the rows of the
+play field; rows above and below are ordinary. **Combined with XSCROLL.**
+Whole characters by VSP, pixels by $D016 bits 2-0.
 
 ### Cycle budget
 
-PAL only. The VSP trigger window is approximately cycles 55-56 out of 63 per line (the exact cycle depends on the CSEL value and the HMOS vs NMOS variant of the VIC-II). On a badline, the CPU is stalled during cycles 15-54 and cannot execute the trigger — VSP cannot be applied on badlines. Because badlines occur every 8 lines within the display area, a full-screen VSP scroll must handle 7 out of 8 lines per character row with the trigger, and deal with the badline the VIC generates naturally.
-
-Per-line cost: the CSEL write at cycle 55 is a 4-cycle `STA abs`; the restore at cycle 57 is another 4 cycles; the video matrix update is another 4 cycles. Total: 12 cycles per triggered line, leaving 51 usable cycles on non-badlines (PAL).
+One cycle-exact `STA $D011` per character row on the badline row, plus the
+stable entry that positions it; the badline still costs its 40 cycles.
+Nothing per line. The earlier figure of 12 cycles per line via a CSEL toggle
+described the side-border mechanism, misattributed. Not yet measured in this
+knowledge base — there is no VSP recipe, and the account above is from
+Bauer's article and the VICE source, not from a run.
 
 ### Recipes
 
@@ -299,6 +329,7 @@ Per-line cost: the CSEL write at cycle 55 is a 4-cycle `STA abs`; the restore at
 **Complexity:** high
 **Region:** both
 **Uses registers:** SCROLX
+**Demands:** cpu_every_line, constant_sprite_set, badline_free_region
 
 ### Why
 
@@ -308,27 +339,51 @@ Opening the side borders means suppressing the border rendering so that sprites 
 
 ### How
 
-The side border is suppressed by toggling $D016 bit 3 (CSEL) from 1 to 0 and back to 1 at a specific cycle within each raster line. The VIC-II uses CSEL to determine the horizontal extent of the active display window and correspondingly when to render border color vs display color. When CSEL transitions from 1 to 0 at the right cycle, the chip interprets the display window as having ended (and border as having begun) slightly earlier than it would otherwise — but if CSEL is quickly returned to 1, the chip is confused into not rendering the border for the right portion of the line.
+One write per line. Change CSEL ($D016 bit 3) from 1 to 0 with the write
+cycle landing on cycle 56 of the line (PAL): `DEC $D016` on a value of $C8,
+started on cycle 51, writes $C7 on exactly that cycle. Restore CSEL=1 any time
+before the next line's cycle 55; `INC $D016` straight after does. Every line
+of the region gets the write, from a loop of exactly 63 cycles per line
+entered through a stable raster (`double_irq`).
 
-The precise window: write $D016 with CSEL=0 at cycle 55 (PAL), and $D016 with CSEL=1 at or before cycle 56. This causes the VIC to suppress the right side border for the remainder of the current line. The left side border requires a separate toggle — write CSEL=0 at cycle 0-1 of the line and restore CSEL=1 before the active display starts at cycle 12-13. Both toggles must be performed on every line where border suppression is wanted.
+Two constraints on the region. No line in it may be a badline: the VIC holds
+the bus from cycle 12 to 54, no read cycle is possible in between, and every
+store's write follows a read, so the write cannot be placed on cycle 56 —
+either idle the character display inside the region by rewriting YSCROLL
+every line so no line matches, or accept a closed border on those rows. And
+if sprites are active in the region, the same sprites must be active on
+every line of it: sprite DMA stalls the CPU from cycle 55 to cycle 10 of the
+next line and that stall sets the loop's phase; the `DEC`'s two write cycles
+on 55 and 56 fall inside the three write cycles the CPU is still allowed
+after BA drops. Both are measured in
+`recipes/kickassembler/sideborder-open.md`.
 
 ### Why it works
 
-The VIC-II's border logic is a state machine that transitions between "border mode" and "display mode" based on the horizontal dot counter reaching specific values that depend on CSEL. Specifically: with CSEL=1, the display window starts at dot position 24 and ends at dot position 344. With CSEL=0, those boundaries are 31 and 335 instead (the 38-column mode). The state machine latches the transition state on specific cycles, not on the register value itself.
-
-By toggling CSEL between values at the right cycles, the state machine can be made to latch "display mode starts here" based on the CSEL=0 boundary, then see CSEL=1 while still outside the CSEL=1 boundary, putting it in a state where the border suppressor is confused. The chip stops rendering the border color for that region.
-
-This is not a glitch in the sense of unexpected behavior — the VIC-II behavior is fully deterministic and reproducible. It is a consequence of the sequential, cycle-exact register read behavior of the chip and has been documented extensively by the C64 demo community since the late 1980s.
-
-The right side border and left side border require separate toggles because the VIC-II's horizontal state machine has separate transition points for the left and right boundaries. PAL allows a 23-cycle window for the critical right-border toggle; NTSC allows 25 cycles. The left border toggle window is similarly tight.
+The main border flip-flop is *set* when the beam reaches X=344 with CSEL=1
+or X=335 with CSEL=0, and *reset* at X=24 or X=31 respectively, while the
+vertical border flip-flop is clear. On PAL the beam is at X=335 during cycle
+55 and at X=344 during cycle 56. If CSEL is 1 at the 335 comparison and 0 at
+the 344 comparison, neither sets the flip-flop; it stays clear for the rest
+of the line, so the right border is not drawn, and because it was never set,
+the next line's reset has nothing to do and the left border is not drawn
+either. There is no separate left-border toggle and no multi-cycle window:
+one write cycle, cycle 56. Earlier text here described a 23-cycle window and
+a left-border write at cycle 1; neither exists.
 
 ### Variations
 
-**Right border only.** Open only the right border by performing only the cycle-55 CSEL toggle. The left border remains visible. Used when sprites only extend into the right edge.
+**Sprites in the border.** The usual reason for the technique. X coordinates
+run 0-503; the visible left border is X 480-503 then 0-23, the right border
+344-375. A sprite at X=500 straddles the wrap; X=344 starts the right
+border. Both need bit 8 in $D010.
 
-**Full-width open on every line.** Perform both the left and right border toggles on every display line. Requires approximately 16 cycles per line for the two pairs of CSEL writes. On badlines, the CPU stall means the cycle-exact CSEL write must be handled carefully — typically the writes are pre-computed and the raster handler adjusts its loop entry point on badlines.
+**Region-limited opening.** Open only the lines the sprites occupy so the
+character display keeps its badlines everywhere else. The stable entry is
+per region.
 
-**Selective line opening.** Open the border on only the lines where sprites appear. For a sprite multiplexer, the border is opened only on lines covered by sprites, closed on lines between sprites. Saves cycles on blank lines.
+**Graphics on the same lines.** Needs the badline rows handled by other
+means, since the write cannot happen on them; beyond this document.
 
 ### Cycle budget
 
@@ -349,6 +404,7 @@ Border-opening IRQ overhead combined with a sprite multiplex update on the same 
 **Complexity:** high
 **Region:** both
 **Uses registers:** SCROLY
+**Demands:** midframe_raster_irqs
 
 ### Why
 
@@ -404,6 +460,7 @@ However, RSEL is part of $D011 which also carries YSCROLL (bits 2-0), the displa
 **Complexity:** medium
 **Region:** both
 **Uses registers:** SCROLY, SCROLX, VMCSB
+**Demands:** midframe_raster_irqs
 
 ### Why
 
