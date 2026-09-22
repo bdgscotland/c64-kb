@@ -157,9 +157,21 @@ export const TechniquesForSchema = z.object({
 export const CompatibilityConflictSchema = z.object({
   a: z.string(),
   b: z.string(),
-  kind: z.enum(["region_mismatch", "shared_register", "shared_kernal"]),
+  kind: z.enum([
+    "region_mismatch",   // one needs PAL, the other NTSC
+    "cpu_exclusive",     // both need every CPU cycle on the lines they cover
+    "cpu_vs_irq",        // one needs every CPU cycle; the other takes interrupts mid-frame
+    "sprite_set",        // one needs a constant sprite set; the other changes it mid-frame
+    "kernal_banked_out", // one runs with the KERNAL ROM out; the other calls KERNAL routines
+    "shared_register",   // both touch the same register (soft)
+    "shared_kernal",     // both call the same KERNAL routine (soft)
+  ]),
+  // hard: cannot coexist as combined; the resolution says how to separate them.
+  // soft: combinable with coordination.
+  severity: z.enum(["hard", "soft"]),
   shared: z.array(z.string()),
   rationale: z.string(),
+  resolution: z.string().optional(),
 });
 
 export const SharedInfrastructureSchema = z.object({
@@ -168,10 +180,24 @@ export const SharedInfrastructureSchema = z.object({
   via_recipes: z.array(z.string()),
 });
 
+// What the graph actually knows about each technique named in the check.
+// A technique with no registers, no KERNAL routines and no demands cannot
+// conflict with anything by construction; `known: false` says the verdict
+// is silent about it, not that it is safe.
+export const CompatibilityCoverageSchema = z.object({
+  technique: z.string(),
+  found: z.boolean(),
+  registers: z.number(),
+  kernal_routines: z.number(),
+  demands: z.array(z.string()),
+  known: z.boolean(),
+});
+
 export const CompatibilityCheckSchema = z.object({
   techniques: z.array(z.string()),
   conflicts: z.array(CompatibilityConflictSchema),
   shared_infrastructure: z.array(SharedInfrastructureSchema),
+  data_coverage: z.array(CompatibilityCoverageSchema),
   verdict: z.enum(["compatible", "warnings", "incompatible"]),
 });
 

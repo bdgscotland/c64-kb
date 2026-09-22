@@ -78,7 +78,7 @@ describe("timingBudget", () => {
     expect(r.structured.cycles_per_line).toBe(63);
     expect(r.structured.cycles_per_frame).toBe(63 * 312);
     expect(r.structured.user_cycles_per_line_normal).toBeLessThan(63);
-    expect(r.structured.badline_cycles_lost).toBe(23);
+    expect(r.structured.badline_cycles_lost).toBe(43); // 40 bus cycles + 3 BA cycles the CPU can only write in
   });
 
   it("returns NTSC cycle math", async () => {

@@ -21,6 +21,8 @@ export type GraphEntity =
   | { type: "consumes"; tool: string; format: string }
   | { type: "targets"; tool: string; chip: string }
   | { type: "recipe"; name: string; toolchain: string; output_format: string; region: string; techniques: string[]; file_formats: string[]; uses_registers: string[]; uses_kernal: string[]; source_doc: string }
+  | { type: "recipe_occupies"; recipe: string; start: number; end: number }
+  | { type: "technique_demands"; technique: string; resource: string; description: string }
   | { type: "implements"; recipe: string; technique: string }
   | { type: "produces_format"; recipe: string; format: string }
   | { type: "technique"; name: string; title: string; category: string; complexity?: string; chip?: string }
@@ -49,6 +51,25 @@ const REGION_LINE = /^\*\*Region:\*\*\s+(PAL|NTSC|both)\s*$/im;
 const PITFALL_REGION_LINE = REGION_LINE;
 const USES_REGISTERS = /^\*\*Uses registers:\*\*\s+(.+)$/;
 const USES_KERNAL = /^\*\*Uses kernal:\*\*\s+(.+)$/;
+const DEMANDS_LINE = /^\*\*Demands:\*\*\s+(.+)$/;
+
+// The fixed vocabulary for **Demands:** (docs/CONVENTIONS-techniques.md).
+// A word outside it is a doc error and is reported, not ingested.
+export const DEMAND_VOCABULARY: Record<string, string> = {
+  cpu_every_line: "needs every CPU cycle on every raster line of its region",
+  constant_sprite_set: "the set of active sprites must not change inside its region",
+  badline_free_region: "no badline may occur inside its region",
+  midframe_raster_irqs: "takes raster interrupts inside the display area",
+  changes_sprite_set: "changes which hardware sprites are active during the frame",
+  continuous_interrupts: "takes timer or NMI interrupts every few raster lines, all frame",
+  kernal_rom_out: "runs with the KERNAL ROM banked out",
+};
+
+// Recipe listings declare where they load: KickAssembler `* = $0900`,
+// Oscar64 `#pragma region( name, 0x0a00, 0x1000, ...)`, ca65 `.org $0801`.
+const KICK_ORIGIN = /^\s*\*\s*=\s*\$([0-9A-Fa-f]{4})\b/gm;
+const CA65_ORIGIN = /^\s*\.org\s+\$([0-9A-Fa-f]{4})\b/gm;
+const OSCAR_REGION = /#pragma\s+region\s*\(\s*\w+\s*,\s*0x([0-9A-Fa-f]+)\s*,\s*0x([0-9A-Fa-f]+)/g;
 
 const SEVERITY_LINE = /^\*\*Severity:\*\*\s+(critical|high|medium|low)\s*$/im;
 const TRIGGERED_REGS = /^\*\*Triggered by registers:\*\*\s+(.+)$/m;
@@ -336,6 +357,18 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
       for (const fmt of file_formats) {
         entities.push({ type: "produces_format", recipe: name, format: fmt });
       }
+      // Load addresses from the listing itself -> OCCUPIES edges to the
+      // MemoryRegion nodes those addresses fall in.
+      const seen = new Set<string>();
+      const occupy = (start: number, end: number) => {
+        const key = `${start}:${end}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        entities.push({ type: "recipe_occupies", recipe: name, start, end });
+      };
+      for (const m of content.matchAll(KICK_ORIGIN)) occupy(parseInt(m[1], 16), parseInt(m[1], 16));
+      for (const m of content.matchAll(CA65_ORIGIN)) occupy(parseInt(m[1], 16), parseInt(m[1], 16));
+      for (const m of content.matchAll(OSCAR_REGION)) occupy(parseInt(m[1], 16), parseInt(m[2], 16) - 1);
     }
     return entities;
   }
@@ -350,13 +383,20 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
     // Split body at H2 boundaries (each H2 = one Technique).
     const lines = rest.split("\n");
     let currentTech: { name: string; title: string; category: string; complexity?: string; chip?: string } | null = null;
-    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[] } = {};
+    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[] } = {};
 
     const flush = () => {
       if (!currentTech) return;
       entities.push({ type: "technique", ...currentTech });
       if (currentTech.chip) {
         entities.push({ type: "technique_belongs_to", technique: currentTech.name, chip: currentTech.chip });
+      }
+      for (const d of pendingMeta.demands ?? []) {
+        if (!(d in DEMAND_VOCABULARY)) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} demands unknown resource "${d}" — not ingested (see CONVENTIONS-techniques.md)`);
+          continue;
+        }
+        entities.push({ type: "technique_demands", technique: currentTech.name, resource: d, description: DEMAND_VOCABULARY[d] });
       }
       if (pendingMeta.region && pendingMeta.region !== "both") {
         entities.push({ type: "technique_requires_region", technique: currentTech.name, region: pendingMeta.region });
@@ -412,6 +452,13 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
         pendingMeta.usesKernal = isEmptySentinel(uk[1])
           ? []
           : uk[1].split(",").map((s) => s.trim()).filter((s) => s !== "" && !isEmptySentinel(s));
+        continue;
+      }
+      const dm = line.match(DEMANDS_LINE);
+      if (dm) {
+        pendingMeta.demands = isEmptySentinel(dm[1])
+          ? []
+          : dm[1].split(",").map((s) => s.trim()).filter((s) => s !== "" && !isEmptySentinel(s));
       }
     }
     flush();

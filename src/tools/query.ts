@@ -1082,26 +1082,101 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
   const conflicts: CompatibilityCheckOutput["conflicts"] = [];
 
+  // What the graph holds for each technique: demands, register and KERNAL
+  // counts. Drives the hard-conflict rules below and the data_coverage
+  // report, so a technique the graph knows nothing about is named as such
+  // instead of passing as compatible.
+  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[] };
+  const facts = new Map<string, Facts>();
+  for (const tname of techniques) {
+    const rr = await f.roQuery(
+      `MATCH (t:Technique {name: $name})
+       OPTIONAL MATCH (t)-[:DEMANDS]->(res:Resource)
+       WITH t, collect(DISTINCT res.name) AS demands
+       OPTIONAL MATCH (t)-[:USES]->(reg:Register)
+       WITH t, demands, count(DISTINCT reg) AS registers
+       OPTIONAL MATCH (t)-[:USES]->(k:KernalRoutine)
+       RETURN demands, registers, collect(DISTINCT k.name) AS kernal`,
+      { name: tname }
+    );
+    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[] } | undefined;
+    facts.set(tname, {
+      found: row !== undefined,
+      demands: new Set((row?.demands ?? []).filter(Boolean)),
+      registers: Number(row?.registers ?? 0),
+      kernal: (row?.kernal ?? []).filter(Boolean),
+    });
+  }
+
+  // Hard rules over DEMANDS. Each is symmetric; `has` tests one side.
+  const hard = (
+    a_name: string, b_name: string, kind: CompatibilityCheckOutput["conflicts"][number]["kind"],
+    shared: string[], rationale: string, resolution: string,
+  ) => conflicts.push({ a: a_name, b: b_name, kind, severity: "hard", shared, rationale, resolution });
+
   // Check each pair
   for (let i = 0; i < techniques.length; i++) {
     for (let j = i + 1; j < techniques.length; j++) {
       const a_name = techniques[i];
       const b_name = techniques[j];
+      const A = facts.get(a_name)!;
+      const B = facts.get(b_name)!;
 
       // Region mismatch
       const aRegion = regionMap.get(a_name);
       const bRegion = regionMap.get(b_name);
       if (aRegion && bRegion && aRegion !== bRegion) {
-        conflicts.push({
-          a: a_name,
-          b: b_name,
-          kind: "region_mismatch",
-          shared: [aRegion, bRegion],
-          rationale: `${a_name} requires ${aRegion} but ${b_name} requires ${bRegion}. Both cannot run on the same target without region detection.`,
-        });
+        hard(a_name, b_name, "region_mismatch", [aRegion, bRegion],
+          `${a_name} requires ${aRegion} but ${b_name} requires ${bRegion}.`,
+          `Detect the machine at start and ship both variants, or drop one.`);
       }
 
-      // Shared registers
+      // Both need every CPU cycle on their lines.
+      if (A.demands.has("cpu_every_line") && B.demands.has("cpu_every_line")) {
+        hard(a_name, b_name, "cpu_exclusive", ["cpu_every_line"],
+          `Both need every CPU cycle on every raster line they cover; they cannot share a raster line.`,
+          `Give each its own band of lines and switch between them in the border.`);
+      }
+
+      // One needs every CPU cycle; the other interrupts mid-frame.
+      for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+        if (!X.demands.has("cpu_every_line")) continue;
+        if (Y.demands.has("midframe_raster_irqs")) {
+          hard(xn, yn, "cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
+            `${xn} needs every CPU cycle on its lines; a raster interrupt from ${yn} inside that region breaks its cycle count.`,
+            `Keep ${yn}'s interrupts on lines outside ${xn}'s region (the borders, or a separate band).`);
+        }
+        if (Y.demands.has("continuous_interrupts")) {
+          hard(xn, yn, "cpu_vs_irq", ["cpu_every_line", "continuous_interrupts"],
+            `${xn} needs every CPU cycle on its lines; ${yn} takes interrupts every few raster lines throughout the frame.`,
+            `Pause ${yn} while ${xn}'s region is being drawn, or do not combine them.`);
+        }
+        if (Y.demands.has("changes_sprite_set") && !X.demands.has("constant_sprite_set")) {
+          hard(xn, yn, "cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
+            `${yn} rewrites sprite registers from interrupts during the frame; inside ${xn}'s region that breaks its cycle count.`,
+            `Multiplex only outside ${xn}'s region.`);
+        }
+      }
+
+      // One needs the same sprites active on every line; the other changes them.
+      for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+        if (X.demands.has("constant_sprite_set") && Y.demands.has("changes_sprite_set")) {
+          hard(xn, yn, "sprite_set", ["constant_sprite_set", "changes_sprite_set"],
+            `${xn}'s per-line timing depends on the same sprites being active on every line of its region; ${yn} changes the active set during the frame.`,
+            `Multiplex only outside ${xn}'s region, or keep the sprite set fixed while ${xn}'s lines are drawn.`);
+        }
+      }
+
+      // One runs with the KERNAL ROM out; the other calls KERNAL routines.
+      for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+        if (X.demands.has("kernal_rom_out") && Y.kernal.length > 0) {
+          hard(xn, yn, "kernal_banked_out", Y.kernal,
+            `${xn} runs with the KERNAL ROM banked out; ${yn} calls KERNAL routine(s) ${Y.kernal.join(", ")}, which are not there.`,
+            `Bank the KERNAL in ($01 bit 1) around the calls, or replace them with RAM-resident code.`);
+        }
+      }
+
+      // Shared registers (soft)
       const sharedRegRows = await f.roQuery(
         `MATCH (a:Technique {name: $a})-[:USES]->(reg:Register)<-[:USES]-(b:Technique {name: $b})
          RETURN reg.name AS shared`,
@@ -1113,12 +1188,13 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
           a: a_name,
           b: b_name,
           kind: "shared_register",
+          severity: "soft",
           shared: sharedRegs,
-          rationale: `Both techniques USE register(s): ${sharedRegs.join(", ")}. Coordination required to avoid clobbering each other's writes.`,
+          rationale: `Both techniques touch register(s) ${sharedRegs.join(", ")}. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.`,
         });
       }
 
-      // Shared KERNAL routines
+      // Shared KERNAL routines (soft)
       const sharedKernalRows = await f.roQuery(
         `MATCH (a:Technique {name: $a})-[:USES]->(k:KernalRoutine)<-[:USES]-(b:Technique {name: $b})
          RETURN k.name AS shared`,
@@ -1130,19 +1206,32 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
           a: a_name,
           b: b_name,
           kind: "shared_kernal",
+          severity: "soft",
           shared: sharedKernals,
-          rationale: `Both techniques USE KERNAL routine(s): ${sharedKernals.join(", ")}. Concurrent use may clobber KERNAL state.`,
+          rationale: `Both techniques call KERNAL routine(s) ${sharedKernals.join(", ")}. Concurrent use may clobber KERNAL state.`,
         });
       }
     }
   }
 
   const verdict: CompatibilityCheckOutput["verdict"] =
-    conflicts.length === 0
-      ? "compatible"
-      : conflicts.some((c) => c.kind === "region_mismatch")
-        ? "incompatible"
-        : "warnings";
+    conflicts.some((c) => c.severity === "hard")
+      ? "incompatible"
+      : conflicts.length > 0
+        ? "warnings"
+        : "compatible";
+
+  const data_coverage: CompatibilityCheckOutput["data_coverage"] = techniques.map((t) => {
+    const F = facts.get(t)!;
+    return {
+      technique: t,
+      found: F.found,
+      registers: F.registers,
+      kernal_routines: F.kernal.length,
+      demands: [...F.demands].sort(),
+      known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0),
+    };
+  });
 
   // --- Shared infrastructure (info-level, not hard conflicts) ---
 
@@ -1216,17 +1305,32 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
   a.logQuery({ tool: "c64_check_compatibility", query: techniques.join("+"), resultCount: conflicts.length });
 
-  const structured: CompatibilityCheckOutput = { techniques, conflicts, shared_infrastructure, verdict };
+  const structured: CompatibilityCheckOutput = { techniques, conflicts, shared_infrastructure, data_coverage, verdict };
 
+  const unknown = data_coverage.filter((d) => !d.known);
   let out = `# Compatibility: ${techniques.join(" + ")}\n\n`;
-  out += `**Verdict:** ${verdict.toUpperCase()}\n\n`;
+  out += `**Verdict:** ${verdict.toUpperCase()}`;
+  if (verdict === "incompatible") out += ` — not as combined; each hard conflict below says how to separate them.`;
+  out += `\n\n`;
   if (conflicts.length === 0) {
-    out += `No conflicts detected. These techniques can be combined.\n`;
+    out += unknown.length === techniques.length
+      ? `No conflicts detected, but the graph holds no register, KERNAL or resource data for any of these techniques, so this is silence, not a clearance.\n`
+      : `No conflicts detected among what the graph knows about these techniques.\n`;
   } else {
     for (const c of conflicts) {
-      out += `## ${c.kind}: ${c.a} × ${c.b}\n`;
+      out += `## ${c.kind} (${c.severity}): ${c.a} × ${c.b}\n`;
       out += `**Shared:** ${c.shared.join(", ")}\n`;
-      out += `${c.rationale}\n\n`;
+      out += `${c.rationale}\n`;
+      if (c.resolution) out += `**Resolution:** ${c.resolution}\n`;
+      out += `\n`;
+    }
+  }
+  if (unknown.length > 0) {
+    out += `\n## Not covered\n`;
+    for (const d of unknown) {
+      out += d.found
+        ? `- **${d.technique}**: the graph has no registers, KERNAL routines or demands for it; the verdict says nothing about it.\n`
+        : `- **${d.technique}**: no such technique in the graph (check the name with c64_techniques_for).\n`;
     }
   }
   if (shared_infrastructure.length > 0) {

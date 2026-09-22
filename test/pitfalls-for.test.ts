@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
 import { FalkorService } from "../src/services/falkor.js";
+import { getQdrant } from "../src/context.js";
+import { ingestDoc } from "../src/tools/hydrate.js";
 import { pitfallsFor } from "../src/tools/pitfalls.js";
 
 describe("pitfallsFor", () => {
@@ -10,6 +13,15 @@ describe("pitfallsFor", () => {
     await f.connect();
     await f.clean();
     await f.ensureSchema();
+
+    // The search fallback reads the (isolated, see vitest.config.ts) Qdrant
+    // collection, so seed it with the one doc the fallback test needs
+    // instead of relying on whatever a previous ingest left in the live one.
+    const q = await getQdrant();
+    await q.ensureCollection();
+    const rel = "pitfalls/raster-and-badline.md";
+    const seeded = await ingestDoc(rel, readFileSync(new URL(`../docs/${rel}`, import.meta.url), "utf8"));
+    if (/not available/i.test(seeded)) throw new Error(`test collection could not be seeded: ${seeded}`);
 
     // Seed the registers and techniques needed for TRIGGERED_BY edges
     await f.addRegister("D011", "$D011", "VIC-II", "RW", ["SCROLY"]);

@@ -28,7 +28,15 @@ const NODE_INDEXES: ReadonlyArray<readonly [string, string]> = [
   ["Tool", "name"],
   ["Recipe", "name"],
   ["FileFormat", "name"],
+  ["Resource", "name"],
 ];
+
+// "$D011" -> 0xD011; null when the string is not a 16-bit hex address.
+function hexAddr(s: string | undefined): number | null {
+  if (!s) return null;
+  const m = s.trim().match(/^\$?([0-9A-Fa-f]{1,4})$/);
+  return m ? parseInt(m[1], 16) : null;
+}
 
 // Unique constraints on the primary key for every node label. Constraint
 // violations fail at write time instead of silently merging duplicates.
@@ -65,6 +73,7 @@ const CLEANABLE_LABELS: readonly string[] = [
   "Tool",
   "Recipe",
   "FileFormat",
+  "Resource",
 ];
 
 const CHIPS: ReadonlyArray<{ name: string; variants: string; role: string }> = [
@@ -252,7 +261,7 @@ export class FalkorService {
     aliases: string[] = []
   ): Promise<void> {
     const g = this.graph();
-    const props = { address, chip, rw, aliases };
+    const props = { address, chip, rw, aliases, addr_n: hexAddr(address) ?? -1 };
     await g.query(
       `MERGE (r:Register {name: $name})
        ON CREATE SET r += $props, r.created_at = timestamp()
@@ -263,7 +272,7 @@ export class FalkorService {
 
   async addKernalRoutine(name: string, address: string, description: string): Promise<void> {
     const g = this.graph();
-    const props = { address, description };
+    const props = { address, description, addr_n: hexAddr(address) ?? -1 };
     await g.query(
       `MERGE (k:KernalRoutine {name: $name})
        ON CREATE SET k += $props, k.created_at = timestamp()
@@ -280,12 +289,68 @@ export class FalkorService {
     bankSwitchable: boolean
   ): Promise<void> {
     const g = this.graph();
-    const props = { start, end, default_use: defaultUse, bank_switchable: bankSwitchable };
+    const props = {
+      start,
+      end,
+      default_use: defaultUse,
+      bank_switchable: bankSwitchable,
+      start_n: hexAddr(start) ?? -1,
+      end_n: hexAddr(end) ?? -1,
+    };
     await g.query(
       `MERGE (m:MemoryRegion {name: $name})
        ON CREATE SET m += $props, m.created_at = timestamp()
        ON MATCH SET m += $props, m.updated_at = timestamp()`,
       { params: { name, props } } as Parameters<typeof g.query>[1]
+    );
+  }
+
+  /**
+   * IN_REGION: every Register and KernalRoutine whose address falls inside a
+   * MemoryRegion. Run once after all nodes exist. Without this the 220
+   * MemoryRegion nodes had no edges at all.
+   */
+  async linkAddressesToRegions(): Promise<{ registers: number; kernal: number }> {
+    const g = this.graph();
+    const r = await g.query(
+      `MATCH (x:Register), (m:MemoryRegion)
+       WHERE x.addr_n >= 0 AND m.start_n >= 0 AND x.addr_n >= m.start_n AND x.addr_n <= m.end_n
+       MERGE (x)-[:IN_REGION]->(m)
+       RETURN count(*) AS n`
+    );
+    const k = await g.query(
+      `MATCH (x:KernalRoutine), (m:MemoryRegion)
+       WHERE x.addr_n >= 0 AND m.start_n >= 0 AND x.addr_n >= m.start_n AND x.addr_n <= m.end_n
+       MERGE (x)-[:IN_REGION]->(m)
+       RETURN count(*) AS n`
+    );
+    const n = (res: typeof r) => Number((res.data?.[0] as { n?: number } | undefined)?.n ?? 0);
+    return { registers: n(r), kernal: n(k) };
+  }
+
+  /** OCCUPIES: a recipe loads code or data into [start, end]; link every MemoryRegion that overlaps. */
+  async linkRecipeOccupies(recipeName: string, start: number, end: number): Promise<number> {
+    const g = this.graph();
+    const r = await g.query(
+      `MATCH (r:Recipe {name: $recipeName})
+       MATCH (m:MemoryRegion)
+       WHERE m.start_n >= 0 AND m.start_n <= $end AND m.end_n >= $start
+       MERGE (r)-[:OCCUPIES]->(m)
+       RETURN count(m) AS n`,
+      { params: { recipeName, start, end } } as Parameters<typeof g.query>[1]
+    );
+    return Number((r.data?.[0] as { n?: number } | undefined)?.n ?? 0);
+  }
+
+  /** DEMANDS: a technique needs a machine-level resource while active (see CONVENTIONS-techniques.md). */
+  async linkTechniqueDemands(techniqueName: string, resource: string, description: string): Promise<void> {
+    const g = this.graph();
+    await g.query(
+      `MATCH (t:Technique {name: $techniqueName})
+       MERGE (res:Resource {name: $resource})
+       ON CREATE SET res.description = $description, res.created_at = timestamp()
+       MERGE (t)-[:DEMANDS]->(res)`,
+      { params: { techniqueName, resource, description } } as Parameters<typeof g.query>[1]
     );
   }
 

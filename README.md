@@ -151,7 +151,7 @@ that already include the `.mcp.json` wiring.
 
 | Tool | Purpose |
 |------|---------|
-| `c64_check_compatibility` | Graph-traversal conflict detection across a list of techniques (shared register / KERNAL / region mismatch) |
+| `c64_check_compatibility` | Conflict detection across a list of techniques: hard conflicts from authored resource demands (CPU every line, constant sprite set, KERNAL banked out) and region mismatch; soft ones from shared registers / KERNAL routines; reports what the graph does not know about each technique |
 | `c64_timing_budget` | Per-scanline + per-frame cycle math for a technique on PAL or NTSC |
 
 ### Pitfalls and failure analysis

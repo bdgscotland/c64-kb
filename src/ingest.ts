@@ -12,7 +12,7 @@
  *
  * Run: npm run ingest          # incremental (skips unchanged files)
  *      npm run ingest:clean    # wipe graph + cache and re-ingest
- *      npm run ingest -- --force  # rehash and re-upsert every file
+ *      npm run ingest -- --force  # wipe graph + collection, rehash and re-upsert every file
  */
 
 import { QdrantService } from "./services/qdrant.js";
@@ -75,7 +75,9 @@ type PendingEdge =
   | { kind: "recipe_uses_register"; recipe: string; register: string }
   | { kind: "recipe_uses_kernal"; recipe: string; kernal: string }
   | { kind: "triggered_by"; pitfall: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
-  | { kind: "caused_by"; symptom: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" };
+  | { kind: "caused_by"; symptom: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
+  | { kind: "recipe_occupies"; recipe: string; start: number; end: number }
+  | { kind: "technique_demands"; technique: string; resource: string; description: string };
 
 function loadHashes(): Record<string, string> {
   try {
@@ -171,7 +173,10 @@ function findMarkdown(root: string): string[] {
 
 async function main() {
   const forceAll = process.argv.includes("--force");
-  const cleanFirst = process.argv.includes("--clean");
+  // --force re-ingests every file, and MERGE never removes an edge a doc no
+  // longer asserts, so a forced run is also a clean one; otherwise a changed
+  // frontmatter list leaves its old edges behind (seen with recipe techniques).
+  const cleanFirst = process.argv.includes("--clean") || forceAll;
 
   const flags = `${forceAll ? " --force" : ""}${cleanFirst ? " --clean" : ""}`;
   console.log(`c64-kb ingest${flags}`);
@@ -403,6 +408,12 @@ async function main() {
             case "caused_by":
               pendingEdges.push({ kind: "caused_by", symptom: e.symptom, target: e.target, targetKind: e.targetKind });
               break;
+            case "recipe_occupies":
+              pendingEdges.push({ kind: "recipe_occupies", recipe: e.recipe, start: e.start, end: e.end });
+              break;
+            case "technique_demands":
+              pendingEdges.push({ kind: "technique_demands", technique: e.technique, resource: e.resource, description: e.description });
+              break;
           }
         }
       } catch (err) {
@@ -477,6 +488,12 @@ async function main() {
         case "recipe_uses_kernal":
           await falkor.linkRecipeUsesKernal(edge.recipe, edge.kernal);
           break;
+        case "recipe_occupies":
+          await falkor.linkRecipeOccupies(edge.recipe, edge.start, edge.end);
+          break;
+        case "technique_demands":
+          await falkor.linkTechniqueDemands(edge.technique, edge.resource, edge.description);
+          break;
         case "triggered_by":
           if (!(await falkor.linkTriggeredBy(edge.pitfall, edge.target, edge.targetKind))) triggeredByDropped++;
           triggeredByRequested.add(`${edge.pitfall}|${edge.targetKind}|${edge.target}`);
@@ -510,6 +527,11 @@ async function main() {
   // --- P0-2: Stub-Technique scan ---
   // Technique nodes created by linkRecipeImplements MERGE stubs have no title
   // or category — they indicate a typo in a recipe's techniques: array.
+  // Address-derived edges: every Register and KERNAL routine into the
+  // memory-map region that contains it. Needs all nodes to exist first.
+  const inRegion = await falkor.linkAddressesToRegions();
+  console.log(`IN_REGION: ${inRegion.registers} registers, ${inRegion.kernal} KERNAL routines placed in memory regions`);
+
   const stubResult = await falkor.roQuery(
     `MATCH (t:Technique)
      WHERE t.title IS NULL OR t.title = ""

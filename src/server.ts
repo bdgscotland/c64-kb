@@ -574,19 +574,17 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
     "c64_check_compatibility",
     {
       description:
-        `Check whether two or more C64 techniques can be combined safely. Detects shared register writes, shared KERNAL calls, and region mismatches by traversing the FalkorDB USES and REQUIRES_REGION edges.
-
-Purpose: Before combining techniques in a demo or game, check for known conflicts. Shared register usage doesn't always mean incompatibility, but requires coordination; the rationale string explains the specific risk.
+        `Check whether two or more C64 techniques can be combined. Hard conflicts come from authored resource demands on the techniques (DEMANDS edges): two techniques that each need every CPU cycle on their lines, a cycle-exact technique against one that takes interrupts mid-frame, a constant-sprite-set technique against a multiplexer, a KERNAL-out technique against KERNAL calls, and PAL-vs-NTSC requirements. Soft conflicts come from shared registers and shared KERNAL routines.
 
 Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). Order doesn't matter — all pairwise combinations are checked.
 
-Output: {techniques[], conflicts[], verdict}. verdict is 'compatible' (no conflicts), 'warnings' (shared registers/kernal — combinable with care), or 'incompatible' (region mismatch — cannot run together on same target).
+Output: {techniques[], conflicts[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
 
-Conflict kinds: 'shared_register' (both WRITE same register), 'shared_kernal' (both call same KERNAL routine), 'region_mismatch' (one needs PAL, other needs NTSC).
+Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, region_mismatch (hard); shared_register, shared_kernal (soft).
 
-Examples: {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019). {"techniques": ["stable_raster_irq", "soft_scroll_h"]} → compatible or warnings.
+Examples: {"techniques": ["fli_image", "sprite_multiplex_24"]} → incompatible (cpu_vs_irq and sprite_set; resolution: multiplex outside the FLI region). {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019).
 
-Limitations: Phase 3 heuristic only — detects structural sharing, not semantic conflicts. A future phase adds explicit CONFLICTS_WITH edges for known incompatibilities not visible from register sharing alone.`,
+Limitations: demands are authored per technique in docs/techniques (see CONVENTIONS-techniques.md); a technique without them only participates in the soft checks. Regions are not modelled, so 'incompatible' means 'not on the same raster lines', and the resolution says so.`,
       inputSchema: {
         techniques: z
           .array(z.string())
