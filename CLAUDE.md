@@ -1,10 +1,14 @@
 # c64-kb — instructions for Claude Code
 
-This repository is a reference for AI coding agents: 72 markdown documents
+This repository is a reference for AI coding agents: markdown documents
 about the Commodore 64 (hardware, techniques, pitfalls, recipes,
 toolchains), indexed two ways (Qdrant vectors, FalkorDB graph) and served
-over MCP. Thousands of people have read about it; fifty have cloned it. A
-wrong number here becomes a torn screen in someone's demo. Work accordingly.
+over MCP. It is public and read. A wrong number here becomes a torn screen
+in someone's demo. Work accordingly.
+
+Counts (documents, nodes, edges, tests, recipes) do not go in README.md,
+this file or any page's prose; they go stale within commits. `npx c64-kb
+health` prints the live ones; `CHANGELOG.md` records what an audit changed.
 
 ## The rules that are enforced
 
@@ -70,9 +74,9 @@ wrong number here becomes a torn screen in someone's demo. Work accordingly.
 npm run check:listings     # every listing builds; fails on a missing toolchain unless --allow-missing
 npm run verify:recipes     # every recipe runs headless in VICE at its pinned cycles (docs/recipes/runs.json) and matches its committed PNG pixel-for-pixel; --update re-baselines after a deliberate change, --allow-missing tolerates a recipe with no PNG yet
 npx tsc --noEmit
-npm test                   # 155 tests, against c64_test / c64_docs_test — never the live stores
+npm test                   # vitest against c64_test / c64_docs_test — never the live stores
 npm run ingest:clean       # if any doc changed: rebuild graph + vectors; read the summary line
-npx c64-kb health          # live counts for README's table if you touched it
+npx c64-kb health          # live counts; README carries none, so nothing to update there
 ```
 
 The pre-commit gate is you. There is no CI yet.

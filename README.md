@@ -13,62 +13,48 @@ and games.
 
 ## The pitch
 
-LLMs trained on public C64 code suffer two compounding problems: their
-training data skews heavily toward cc65 patterns (which are common on GitHub
-but not idiomatic for demo-quality work), and timing claims are routinely
-wrong — raster splits at incorrect scanlines, sprite-multiplex cycle counts
-that do not fit in the badline window, SID filter cutoffs that differ between
-chip revisions. A model hallucinating cycle counts will produce code that
-assembles cleanly and crashes at runtime.
+An LLM writing C64 code has two problems that compound. Its training data
+is mostly cc65, which is common on GitHub and not what demo-quality work
+uses. And its timing claims are wrong often enough to matter: a raster
+split on the wrong line, a sprite multiplexer that does not fit the badline
+window, a SID filter cutoff that differs between chip revisions. The code
+assembles cleanly and tears the screen at runtime.
 
-c64-kb counters this with a curated, structured reference. 67 markdown
-reference documents are chunked and embedded into Qdrant for semantic
-retrieval, and the entities within them — registers, KERNAL routines, memory
-regions, techniques, recipes, pitfalls, and crash patterns — are materialized
-into a FalkorDB knowledge graph. The graph captures relationships that flat
-search misses: which registers a technique uses, which pitfalls it triggers,
-which recipes implement it, which machine resources it needs while it runs,
-and therefore which pairs of techniques cannot share a raster line.
+c64-kb is a reference built to be checked rather than trusted. Its
+documents on the hardware, the techniques, the toolchains and the pitfalls
+are chunked into Qdrant for semantic search, and the entities in them
+(registers, KERNAL routines, memory regions, techniques, recipes, pitfalls,
+crash patterns) are materialised into a FalkorDB graph. The graph answers
+what flat search cannot: which registers a technique touches, which
+pitfalls it triggers, which recipes implement it, what it needs from the
+machine while it runs, and so which two techniques cannot share a raster
+line.
 
-Every code listing in the recipes is built with the toolchain it names
-before it lands (`npm run check:listings`), and the KickAssembler recipes
-were run in VICE with the screenshots kept alongside them. That was not
-always so: the first audit found six of eight KickAssembler recipes did not
-assemble. The pages say what was wrong.
+Every number in it stands on a named rung: measured in VICE or read from
+the ROM images, agreed by two independent documents, derived by
+arithmetic, or marked unverifiable. Every code listing is built with the
+toolchain it names before it lands. Recipes are re-run headless in VICE at
+pinned cycles and their pictures compared pixel for pixel with the
+committed screenshots. When an audit finds a page wrong, the correction is
+written beside the old claim, not over it, so an agent that relied on the
+old value can see what changed. The changelog says what each audit
+corrected.
 
-The intended consumers are two kinds: an autonomous agent loop (ingest a
-brief, synthesize a technique stack, generate code, iterate with vice-mcp
-and sim6502) and a human-in-the-loop developer using Claude Code who wants
-accurate, structured answers about C64 hardware and idioms rather than
-training-data guesses.
+It is written for two readers: an agent loop that takes a brief, chooses a
+technique stack, generates the code and iterates against vice-mcp and
+sim6502, and a developer in Claude Code who wants an answer about the C64
+that came from an instrument rather than from training data.
 
 ---
 
 ## Current state
 
-| Item | Value |
-|------|-------|
-| Phases complete | 0–6 + 7a |
-| MCP tools | 23 (+ 12 resources, 2 prompts) |
-| FalkorDB nodes | 574 across 12 node types |
-| FalkorDB edges | 1,296 across 15 populated edge types (schema 19 defines 17; `BUILDS_ON` and `REQUIRES_TOOL` are emitted by nothing) |
-| Qdrant chunks | 2,597 (from 78 markdown files, 1024-dim) |
-| Technique nodes | 74 (10 categories), 20 with resource demands, 14 REQUIRES edges between them |
-| Pitfall nodes | 43 (7 with a MITIGATED_BY remedy) |
-| CrashPattern nodes | 15 |
-| Recipe nodes | 20 (10 Oscar64, 9 KickAssembler, 1 cc65), all built by `check:listings` |
-| Register nodes | 109 |
-| KERNAL routines | 39 |
-| Memory-map regions | 220 |
-| Tests | 155 passing (`npm test`, isolated from the live stores) |
-| License | BSD-3-Clause |
-
-Figures are from a clean ingest (`npm run ingest:clean`) at the commit
-that last touched this table: 2,597 chunks upserted from 78 files, 574
-nodes, 1,296 edges, 0 dropped references. `npx c64-kb health` prints the
-live ones. An earlier version of this table carried a chunk figure that
-had gone stale across two docs commits; the number here is re-measured
-whenever `docs/` changes.
+Counts (documents, chunks, nodes, edges, recipes, tests) change with every
+docs commit and are not repeated here. `npx c64-kb health` prints the live
+ones from your own ingest. `VERSION` carries the data, schema and
+tool-surface versions, and `CHANGELOG.md` says what each audit changed and
+why. An earlier version of this section was a table of figures that went
+stale within two commits.
 
 ---
 
@@ -203,7 +189,7 @@ carries a placeholder entry for vice-mcp.
 
 ### Resources and prompts
 
-11 static resources are exposed at `c64://` URIs, each a whole reference
+Static resources are exposed at `c64://` URIs, each a whole reference
 document as markdown, plus one template resource:
 
 ```
@@ -214,14 +200,14 @@ c64://registers        c64://ontology
 c64://register/{name}  (structured data for one register, e.g. c64://register/D011)
 ```
 
-2 Prompts: `c64_demo_brief` and `c64_game_brief`.
+Prompts: `c64_demo_brief` and `c64_game_brief`.
 
 ---
 
 ## Architecture
 
 Full system diagrams and data-flow documentation: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Graph schema (12 node types, 17 edge types): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
+Graph schema (node and edge types, what each means): [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
 
 ### Components
 
@@ -237,10 +223,11 @@ store. Collection `c64_docs`. Embeddings are 1024-dimensional via
 when Ollama is unavailable; ingest does not.
 
 **FalkorDB** (Docker, host port 7379): Redis-compatible knowledge graph.
-Graph name `c64`. 12 node types (`Chip`, `Region`, `Register`,
-`KernalRoutine`, `MemoryRegion`, `Technique`, `Recipe`, `Pitfall`,
-`CrashPattern`, `Tool`, `FileFormat`, `Resource`) and 17 edge types. Range
-indexes and unique constraints on every primary key. Two-pass ingest: node
+Graph name `c64`. Node types for chips, regions, registers, KERNAL
+routines, memory regions, techniques, recipes, pitfalls, crash patterns,
+tools, file formats and machine resources; the edge types between them are
+listed in `docs/ONTOLOGY.md`. Range indexes and unique constraints on every
+primary key. Two-pass ingest: node
 creation in pass 1, edge linking in pass 2, so walk order does not affect
 edge correctness; a reference whose target does not exist is reported, not
 dropped silently.
@@ -250,10 +237,10 @@ dropped silently.
 **SQLite** (`data/analytics.db`): query analytics and gap detection. Records
 every tool call; surfaces queries with no results as gap candidates.
 
-**78 markdown files under `docs/`** — 72 reference documents (hardware,
-techniques, pitfalls, recipes, toolchains, formats, design) and 6
-`CONVENTIONS-*.md` files that define the extractable structure. The same
-files drive both the vector chunks and the graph.
+**Markdown under `docs/`**: the reference documents (hardware, techniques,
+pitfalls, recipes, toolchains, formats, design) and the `CONVENTIONS-*.md`
+files that define the extractable structure. The same files drive both the
+vector chunks and the graph.
 
 ### Ports
 
@@ -275,8 +262,8 @@ another instance of either can run alongside. The Phase 7b dashboard
 The toolchain ranking is locked as of 2026-05-16 and reflected throughout
 the KB content and the `c64_toolchain_hint` bias enforcer.
 
-**Primary: Oscar64.** Modern C/C++ compiler targeting 6502. Eight of the
-seventeen recipes are Oscar64, and the `c64_toolchain_hint` tool defaults
+**Primary: Oscar64.** Modern C/C++ compiler targeting 6502. Most of the
+recipes are Oscar64, and the `c64_toolchain_hint` tool defaults
 to Oscar64 when no toolchain is specified. This is deliberate: LLM training
 data is saturated with cc65 patterns, which are workable but not idiomatic
 for demo-quality code. c64-kb exists in part to push models toward Oscar64
@@ -284,9 +271,9 @@ idioms.
 
 **Secondary: KickAssembler.** Cycle-tight escape hatch for work where
 C-level abstraction costs too many cycles: stable raster IRQs, side-border
-opening, FLI, sprite multiplexers. Eight KickAssembler recipes, each
-assembled, run in VICE and measured from the screenshot; the cycle-exact
-ones say which constants were measured rather than derived.
+opening, FLI, sprite multiplexers. Each KickAssembler recipe is assembled,
+run in VICE and measured from the screenshot; the cycle-exact ones say
+which constants were measured rather than derived.
 
 **Tertiary: cc65.** Light coverage. Text-mode utilities and niche cases
 where cc65's large training-data corpus is the path of least resistance.
@@ -323,8 +310,9 @@ vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
 
 The reference itself was checked the same way: headless `x64sc` with
 `-exitscreenshot`, and the pictures measured rather than eyeballed. Timing
-constants in the recipes are VICE measurements (3.9, PAL, 6569), not
-bench measurements on a 6569, and each page says so.
+constants in the recipes are VICE 3.10 measurements (PAL 6569, and NTSC
+6567R8 where a page says so), not bench measurements on a 6569, and each
+page says so.
 
 ---
 
@@ -355,8 +343,9 @@ bench measurements on a 6569, and each page says so.
 | `npm run dev:serve` | Run MCP server via `tsx` |
 | `npm run ingest` | Hydrate KB from `docs/` (incremental: unchanged files are skipped) |
 | `npm run ingest:clean` / `npm run ingest -- --force` | Wipe the graph and the vector collection and re-ingest everything. Use after changing any frontmatter or metadata line: the graph merges edges and never removes one a doc stopped asserting, so an incremental run leaves stale edges behind |
-| `npm test` | Run vitest (155 tests) against a throwaway graph (`c64_test`) and collection (`c64_docs_test`); the live stores are never touched |
+| `npm test` | Run vitest against a throwaway graph (`c64_test`) and collection (`c64_docs_test`); the live stores are never touched |
 | `npm run check:listings` | Build every recipe listing with its real toolchain (KickAssembler, Oscar64, cc65) and assemble every KickAssembler fragment in `docs/`; see the script header for `KICKASS_JAR` / `OSCAR64` / `CL65` |
+| `npm run verify:recipes` | Build every recipe, run it headless in VICE at the cycles pinned in `docs/recipes/runs.json`, and compare the PNG pixel for pixel with the committed screenshot. `--file` scopes to one page, `--update` adopts a new baseline after a deliberate change, `--allow-missing` tolerates a recipe with no picture yet |
 | `npx tsc --noEmit` | Type check without emitting |
 | `npm run services` / `npm run services:stop` | Start / stop Qdrant and FalkorDB |
 
@@ -400,9 +389,11 @@ Tests live in `test/`. Run `npm test` before committing. Run
 Code listings are built, not just read: `npm run check:listings` assembles
 or compiles every recipe with the toolchain it names and fails on any
 error, and `npm test` runs the same check for whichever toolchains it can
-find. A recipe that does not build does not land. The KickAssembler
-recipes were also run in VICE and the screenshots are in
-`docs/recipes/kickassembler/screenshots/`.
+find. A recipe that does not build does not land. `npm run verify:recipes`
+then runs every recipe in VICE and fails on any pixel that differs from
+the committed screenshot in `docs/recipes/<toolchain>/screenshots/`; a
+listing change that changes the picture is adopted with `--update` and
+explained on the page.
 
 ### Working on this repo with Claude Code
 
@@ -410,11 +401,13 @@ The repo carries its own harness for agents:
 
 - `CLAUDE.md` — the rules (a listing is built before it lands; anything
   that draws is run in VICE and measured; every number names its evidence;
-  corrections are recorded; metadata changes need `ingest:clean`), the
+  corrections are recorded; metadata changes need `ingest:clean`; plain
+  English; work too big for a session becomes a GitHub issue), the
   instruments with exact commands, the gates, and the gotchas that cost
   time this year.
 - `.claude/settings.json` — hooks: after any edit to a `docs/**/*.md` the
-  file's listings are built and the result is shown to the agent; a
+  file's listings are built and the result is shown to the agent, and a
+  recipe page is re-run in VICE and compared with its screenshot; a
   metadata change adds a reminder to re-ingest; `src/` edits are
   type-checked and `dist/` rebuilt; `git add -A`, `--no-verify` and
   force-pushing `main` are refused; session start reports versions, store
