@@ -25,6 +25,7 @@ handler — and the static crosstalk between held keys and port 1.
 **Region:** both
 **Triggered by registers:** DC00
 **Triggered by kernal:** SCNKEY
+**Triggered by techniques:** joystick_edge_detect, joystick_autorepeat, keyboard_matrix_scan
 
 ### Symptom
 
@@ -215,3 +216,67 @@ bool fire = key == ' ';
   → `joystick.h`, `keyboard.h`, `conio.h`.
 
 ---
+
+## cia1_ddr_cleared_kills_keyboard — Clearing `$DC02` to read joystick 2 leaves the keyboard dead until something writes `$FF` back
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DC02, DC00
+**Triggered by kernal:** SCNKEY
+**Triggered by techniques:** joystick_edge_detect, joystick_autorepeat, keyboard_matrix_scan
+
+### Symptom
+
+The joystick works, the game plays, and no key does anything: not the
+pause key, not RUN/STOP, not RUN/STOP+RESTORE's usual effect on a BASIC
+program either, until a reset. Nothing in a headless run shows it,
+because a headless run never presses a key.
+
+### Mechanism
+
+Joystick 2 shares port A (`$DC00`) with the keyboard's column drive.
+IOINIT sets the port A data-direction register `$DC02` to `$FF` (all
+output) at reset and on RUN/STOP+RESTORE, and the KERNAL keyboard
+scanner SCNKEY relies on that: it writes column patterns to `$DC00` and
+never touches a DDR. A program that clears `$DC02` "to make port A an
+input for the joystick" turns every column line into a high-impedance
+input. SCNKEY's column writes then drive nothing, `$DC01` reads `$FF`
+whatever is held, and the jiffy scan reports no key for as long as the
+DDR stays clear. The reference page states this directly
+(`hardware/cia-reference.md`, the `$DC02` entry): "if you clear `$DC02`
+to read joystick 2 you must restore `$FF` yourself; the jiffy scan will
+not."
+
+The joystick still reads correctly either way, which is why the fault
+survives testing: the stick grounds its lines, and a read of `$DC00`
+returns the pin level.
+
+### Fix
+
+Leave the direction registers as IOINIT set them, `$DC02` = `$FF` and
+`$DC03` = `$00`, and read `$DC00` directly for joystick 2. That is what
+`recipes/oscar64/joystick-input.md` does (it writes those two values
+itself rather than trusting the state it inherited). If some other code
+must clear `$DC02`, write `$FF` back before the next jiffy interrupt, or
+keep the keyboard scan out of the picture by disabling the KERNAL IRQ
+and scanning the matrix yourself (`keyboard_matrix_scan`).
+
+### Worked example
+
+A platformer built for a blind test on 2026-09-22 wrote `cia1.ddra = 0`
+once before its main loop, with the comment "port A input for joystick
+2", and never wrote it again. Its joystick build was never run with a
+key pressed, so the run looked fine. The consequence is read from the
+reference page's statement of what SCNKEY needs, not measured on a
+keyboard here: there is no headless way to press a key in this harness,
+and the code was found by reading the source against the page.
+
+### Cross-references
+
+- **Hardware:** `hardware/cia-reference.md`, the `$DC02` entry: IOINIT's
+  store, when it runs again, and that SCNKEY never writes a DDR.
+- **Sibling pitfall:** `joystick2_scan_phantom_press` covers the other
+  direction of the same shared-pin problem, a main-loop read seeing the
+  scanner's column pattern.
+- **Recipe:** `recipes/oscar64/joystick-input.md` sets both DDRs to the
+  IOINIT values before its first read.

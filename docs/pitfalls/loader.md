@@ -24,6 +24,7 @@ mechanisms are completely deterministic.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** LOAD
+**Triggered by techniques:** multi_load_sequencing
 
 ### Symptom
 
@@ -206,7 +207,7 @@ already documents, and they have nothing to do with `$0330`:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration
+**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks
 
 ### Symptom
 
@@ -423,6 +424,7 @@ byte by byte (rung 1); VICE x64sc 3.10 with `-drive8truedrive` for the runs
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** LOAD
+**Triggered by techniques:** crunched_data_in_basic_stub, exomizer_basics
 
 ### Symptom
 

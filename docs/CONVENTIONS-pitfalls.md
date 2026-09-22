@@ -44,7 +44,7 @@ Following each Pitfall H2 block:
 **Triggered by techniques:** stable_raster_irq, sprite_multiplex_8
 ```
 
-All `Triggered by …` lines are optional and additive — the extractor emits one TRIGGERED_BY edge per item. At least ONE Triggered-by line must be present (otherwise the pitfall has no graph anchor and won't surface through `c64_pitfalls_for`).
+All `Triggered by …` lines are optional and additive — the extractor emits one TRIGGERED_BY edge per item. At least ONE Triggered-by line must be present (otherwise the pitfall has no graph anchor and won't surface through `c64_pitfalls_for`). The other direction matters too: a technique no pitfall names cannot reach any pitfall through the graph, and `c64_pitfalls_for` falls back to a semantic guess for it. `npm run check:pitfall-anchors` lists those techniques and fails on a name that matches no Technique H2; when you add a technique, add it to the Triggered-by line of every pitfall whose mechanism its code meets.
 
 After the `Triggered by …` lines, one optional additive line names the
 technique(s) whose application is the Fix section's remedy:

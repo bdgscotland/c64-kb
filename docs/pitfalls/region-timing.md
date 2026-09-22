@@ -20,7 +20,7 @@ branch on it.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** sid_play_routine_pattern, sid_voice_setup
+**Triggered by techniques:** sid_play_routine_pattern, sid_voice_setup, frame_sync_loop, sfx_engine_beside_music, colour_fade
 **Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom
@@ -194,6 +194,7 @@ just reached 6 (then reset it and return without calling play).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DC04, DC05, DC06, DC07
+**Triggered by techniques:** frame_sync_loop
 **Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom
@@ -369,7 +370,7 @@ constants themselves were corrected to $4CC7 / $42C6 as noted above).
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D012, D011
-**Triggered by techniques:** stable_raster_irq
+**Triggered by techniques:** stable_raster_irq, frame_sync_loop, irq_chain_table, raster_split_modes, sideborder_open
 **Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom

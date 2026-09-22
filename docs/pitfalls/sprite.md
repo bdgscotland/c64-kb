@@ -22,7 +22,7 @@ before the CPU can read them. All four have bitten experienced C64 coders.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D015, D010, D000, D001
-**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq
+**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq, sprite_multiplex_24, sprite_sine_chain
 **Mitigated by techniques:** sprite_multiplex_8
 
 ### Symptom
@@ -195,7 +195,7 @@ IRQ scheme the practical same-slot spacing is 21 plus the slack, and a
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D017
-**Triggered by techniques:** stable_raster_irq
+**Triggered by techniques:** stable_raster_irq, sprite_expand, sprite_y_stretch_glitch
 
 ### Symptom
 
@@ -339,6 +339,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24
 
 ### Symptom
 
@@ -454,6 +455,7 @@ lingering in $D010.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D01E, D01F, D019
+**Triggered by techniques:** sprite_collision_detect, mob_priority
 
 ### Symptom
 

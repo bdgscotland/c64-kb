@@ -30,6 +30,7 @@ attention when writing cross-compatible SID music.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D400, D404, D40B, D412, D418
+**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip
 
 ### Symptom
 
@@ -160,7 +161,7 @@ convention" places a shadow there.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D415, D416, D417, D418
-**Triggered by techniques:** sid_filter_routing
+**Triggered by techniques:** sid_filter_routing, sid_8580_vs_6581_differences
 
 ### Symptom
 
@@ -315,7 +316,7 @@ write_cutoff:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D404, D40B, D412
-**Triggered by techniques:** digi_8bit_hard_restart
+**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences
 
 ### Symptom
 
@@ -502,7 +503,7 @@ and the two chips show no difference in reSID, so it has been removed.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D418
-**Triggered by techniques:** sid_voice_setup
+**Triggered by techniques:** sid_voice_setup, lfsr_random
 
 ### Symptom
 

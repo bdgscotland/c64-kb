@@ -23,7 +23,7 @@ you know the mechanism.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars
+**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance
 
 ### Symptom
 
@@ -144,7 +144,7 @@ cycles after BA drops on cycle 12 happen to be write cycles).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, raster_bars
+**Triggered by techniques:** stable_raster_irq, raster_bars, irq_chain_table, raster_split_modes, pal_ntsc_detection, frame_sync_loop
 
 ### Symptom
 
@@ -269,7 +269,7 @@ set_irq_dynamic:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq
+**Triggered by techniques:** stable_raster_irq, irq_chain_table, phase_inverted_irq, frame_sync_loop, raster_split_modes
 **Mitigated by techniques:** stable_raster_irq, double_irq
 
 ### Symptom
@@ -418,7 +418,7 @@ IRQ").
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D015
-**Triggered by techniques:** sprite_multiplex_8
+**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization
 
 ### Symptom
 

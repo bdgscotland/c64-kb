@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 718, schema 22, tools 1.25.1.
+Data 719, schema 22, tools 1.25.1.
+
+**Pitfall anchors for the new techniques.** A briefing agent asked
+`pitfalls-for frame_sync_loop` and got nothing, although the badline,
+raster-jitter, `$D012` wrap and PAL/NTSC pitfalls all apply to it: the
+techniques added this month had no pitfall naming them, so the graph had
+no edge to follow. Twenty-seven pitfall entries now name the techniques
+whose code meets their mechanism, added only where the pitfall's own text
+supports it; a double buffer is listed as a mitigation of the full-field
+redraw overrun rather than a trigger of it. One pitfall is new,
+`cia1_ddr_cleared_kills_keyboard`: clearing `$DC02` to read joystick 2
+leaves the KERNAL keyboard scan driving nothing, which a blind build did
+today and no headless run can see. `npm run check:pitfall-anchors`
+reports the techniques still without an anchor and fails on a dangling
+name; the ones that remain are mostly effects and packers for which no
+written pitfall applies yet.
 
 **Two tool faults from the blind build test.** An agent that built a
 game from the knowledge base alone logged what got in its way; two of
