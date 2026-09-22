@@ -26,6 +26,8 @@ horizontal panning.
 **Region:** both
 **Uses registers:** D016
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=40043
+**Cost basis:** measured-vice
 
 ### Why
 
@@ -651,6 +653,8 @@ buffer) is the real budget item and is scene-specific.
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=10731
+**Cost basis:** measured-vice
 
 ### Why
 

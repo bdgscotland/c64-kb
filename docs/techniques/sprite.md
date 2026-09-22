@@ -34,6 +34,8 @@ against those constraints.
 **Uses registers:** D015, D000, D001, D027, D012, D019, D01A
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs, changes_sprite_set
+**Cost:** cycles_per_frame=9162
+**Cost basis:** measured-vice
 
 ### Why
 
@@ -141,6 +143,8 @@ next activation. In practice, target 3–4 lines of slack.
 **Uses registers:** D015, D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs, changes_sprite_set
+**Cost:** cycles_per_frame=700, irq_slots=3, bytes_code=900
+**Cost basis:** estimated
 
 ### Why
 
@@ -757,6 +761,8 @@ cycle budget for the KERNAL-vector figures).
 **Region:** both
 **Uses registers:** D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D012, D015, D017, D01D
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=200, bytes_data=512, irq_slots=1
+**Cost basis:** estimated
 
 ### Why
 

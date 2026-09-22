@@ -19,13 +19,22 @@ describe("techniqueLookup", () => {
     await f.linkTechniqueUsesRegister("stable_raster_irq", "D011");
     // REQUIRES in both directions, and a pitfall this technique is the Fix for.
     await f.addTechnique({ name: "text_zoom", title: "Text zoom", category: "effect", complexity: "high" });
-    await f.addTechnique({ name: "double_irq", title: "Double IRQ", category: "raster", complexity: "scene-tier" });
+    await f.addTechnique({ name: "double_irq", title: "Double IRQ", category: "raster", complexity: "scene-tier", cost: { cycles_per_frame: 160, lines_active: 2, irq_slots: 2 }, cost_basis: "arithmetic" });
     await f.linkTechniqueRequires("text_zoom", "stable_raster_irq");
     await f.addPitfall({ name: "raster_irq_first_line_jitter", title: "First raster IRQ jitters", severity: "high", region: "both", category: "raster" });
     await f.linkMitigatedBy("raster_irq_first_line_jitter", "stable_raster_irq");
     await f.linkMitigatedBy("raster_irq_first_line_jitter", "double_irq");
   });
   afterAll(async () => f.close());
+
+  it("returns the cost object only for a technique whose page carried a Cost line", async () => {
+    const withCost = await techniqueLookup("double_irq");
+    expect(withCost.structured.cost).toEqual({ cycles_per_frame: 160, lines_active: 2, irq_slots: 2, basis: "arithmetic" });
+    expect(withCost.text).toContain("**Cost:** cycles_per_frame=160, lines_active=2, irq_slots=2");
+    expect(withCost.text).toContain("**Cost basis:** arithmetic");
+    const without = await techniqueLookup("text_zoom");
+    expect(without.structured.cost).toBeUndefined();
+  });
 
   it("returns Technique metadata + USES edges", async () => {
     const r = await techniqueLookup("stable_raster_irq");

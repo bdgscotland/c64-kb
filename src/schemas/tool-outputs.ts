@@ -127,6 +127,24 @@ export type RecipesForOutput = z.infer<typeof RecipesForSchema>;
 
 const TechniqueRefSchema = z.object({ name: z.string(), title: z.string() });
 
+// Cost model (schema 22): the technique page's **Cost:** and **Cost basis:**
+// lines. Only the keys the page carried are present. `basis` says how the
+// figures were obtained, strongest first: measured-vice (run in VICE),
+// derived-listing (read off a built listing or map), arithmetic (worked
+// from settled constants), estimated (a judgement, not a measurement).
+export const CostBasisSchema = z.enum(["measured-vice", "derived-listing", "arithmetic", "estimated"]);
+export const TechniqueCostSchema = z.object({
+  cycles_per_line: z.number().int().optional(),
+  cycles_per_frame: z.number().int().optional(),
+  lines_active: z.number().int().optional(),
+  bytes_code: z.number().int().optional(),
+  bytes_data: z.number().int().optional(),
+  zp_bytes: z.number().int().optional(),
+  irq_slots: z.number().int().optional(),
+  basis: CostBasisSchema,
+});
+export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
+
 export const TechniqueLookupSchema = z.object({
   name: z.string(),
   title: z.string(),
@@ -144,6 +162,8 @@ export const TechniqueLookupSchema = z.object({
   // MITIGATED_BY edges pointing here: pitfalls whose Fix is this technique.
   mitigates: z.array(z.object({ name: z.string(), title: z.string(), severity: z.string() })).optional(),
   documentation: z.array(DocChunkSchema),
+  // Absent when the technique's page has no **Cost:** line.
+  cost: TechniqueCostSchema.optional(),
 });
 
 export const TechniquesForSchema = z.object({
@@ -312,6 +332,32 @@ export const BriefingSchema = z.object({
     label: z.string(),
     recipes: z.array(z.string()),
   })),
+  // The plan added up (schema 22, tools 1.25.0). cycles_per_frame_sum is the
+  // sum of cost_cycles_per_frame over the proposed techniques that have one,
+  // against the region's frame; bytes_sum is bytes_code + bytes_data over
+  // the same, against the stated RAM budget. without_cost names the
+  // proposed techniques with no Cost line, so both sums are floors when it
+  // is non-empty. weakest_basis is the least trustworthy basis word among
+  // the contributors, or null when nothing contributed.
+  budget: z.object({
+    region: z.enum(["PAL", "NTSC"]),
+    frame_cycles: z.number().int(),
+    cycles_per_frame_sum: z.number().int(),
+    cycles_verdict: z.enum(["over", "under", "no_data"]),
+    ram_budget_bytes: z.number().int(),
+    bytes_sum: z.number().int(),
+    bytes_verdict: z.enum(["over", "under", "no_data"]),
+    contributors: z.array(z.object({
+      name: z.string(),
+      cycles_per_frame: z.number().int().optional(),
+      bytes: z.number().int().optional(),
+      basis: CostBasisSchema,
+    })),
+    without_cost: z.array(z.string()),
+    weakest_basis: CostBasisSchema.nullable(),
+    is_floor: z.boolean(),
+    assumptions: z.array(z.string()),
+  }),
   // Present when an archetype was asked for (game genre or demo form).
   // When the archetype names an Archetype node, its FEATURES targets were
   // forced into proposed_techniques and its RISKS targets added to

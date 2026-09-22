@@ -23,6 +23,8 @@ measured here.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** GETIN
+**Cost:** cycles_per_frame=200
+**Cost basis:** estimated
 
 ### Why
 

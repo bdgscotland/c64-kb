@@ -536,17 +536,34 @@ export class FalkorService {
     title: string;
     category: string;
     complexity?: string;
+    // Cost model (schema 22): each present key lands as cost_<key>; the
+    // basis word lands as cost_basis. A technique without a Cost line gets
+    // none of these properties, so `IS NOT NULL` finds the costed ones. A
+    // re-ingest that drops the line clears them, so a stale figure cannot
+    // outlive its page.
+    cost?: Partial<Record<string, number>>;
+    cost_basis?: string;
   }): Promise<void> {
     const g = this.graph();
-    const props = {
+    const props: Record<string, string | number> = {
       title: t.title,
       category: t.category,
       complexity: t.complexity ?? "",
     };
+    const costKeys = ["cycles_per_line", "cycles_per_frame", "lines_active", "bytes_code", "bytes_data", "zp_bytes", "irq_slots"];
+    const cleared: string[] = [];
+    for (const k of costKeys) {
+      const v = t.cost?.[k];
+      if (typeof v === "number" && Number.isInteger(v)) props[`cost_${k}`] = v;
+      else cleared.push(`t.cost_${k}`);
+    }
+    if (t.cost && t.cost_basis) props.cost_basis = t.cost_basis;
+    else cleared.push("t.cost_basis");
     await g.query(
       `MERGE (t:Technique {name: $name})
        ON CREATE SET t += $props, t.created_at = timestamp()
-       ON MATCH SET t += $props, t.updated_at = timestamp()`,
+       ON MATCH SET t += $props, t.updated_at = timestamp()
+       SET ${cleared.length > 0 ? cleared.map((c) => `${c} = NULL`).join(", ") : "t.name = t.name"}`,
       { params: { name: t.name, props } } as Parameters<typeof g.query>[1]
     );
   }

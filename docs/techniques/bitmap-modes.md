@@ -230,6 +230,8 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** stable_raster_irq, multicolor_bitmap
+**Cost:** cycles_per_line=63, lines_active=200, cycles_per_frame=12600, bytes_code=3277, bytes_data=16384, irq_slots=1
+**Cost basis:** estimated
 
 ### Why
 

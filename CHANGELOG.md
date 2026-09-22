@@ -5,7 +5,33 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 717, schema 21, tools 1.24.0.
+Data 718, schema 22, tools 1.25.0.
+
+**A cost line per technique, so a briefing can add a plan up (#17).** A
+technique page may now carry `**Cost:**` with integer pairs from a fixed
+vocabulary (`cycles_per_line`, `cycles_per_frame`, `lines_active`,
+`bytes_code`, `bytes_data`, `zp_bytes`, `irq_slots`) and a companion
+`**Cost basis:**` line that says how the figures were obtained, one word
+from `measured-vice`, `derived-listing`, `arithmetic` or `estimated`.
+The extractor skips an unknown key or a non-integer value with a
+warning and drops the whole line for a basis word outside the set or a
+missing basis line; the values land on the `Technique` node as
+`cost_<key>` and `cost_basis` (schema 22), cleared again when a page
+drops the line. `c64_technique_lookup` returns them as `cost`.
+`c64_demo_briefing` and `c64_game_briefing` gain a `budget` block: the
+sum of `cycles_per_frame` over the proposed set against the region's
+frame (PAL 19,656; NTSC 17,095) and the sum of code and data bytes
+against a stated 38,911-byte budget, with the techniques that have no
+cost line named so the sums read as floors, an over or under verdict,
+and the weakest basis word among the contributors. The techniques
+whose recipe pages state figures carry a line, each figure taking the
+basis its page supports and no more; a figure the page measured in VICE is `measured-vice`, one
+read off a build's segment listing is `derived-listing`, one worked
+from settled constants is `arithmetic`, and a judgement is `estimated`.
+`c64_timing_budget` no longer reads `t.irq_overhead`, a property nothing
+ever wrote; the read always fell through to the 36-cycle default and
+the constant now stands alone.
+
 
 **The text monitor for debugging, and cc65 symbols in it (#15).** The
 VICE reference gained a section written from real sessions: how to reach

@@ -23,9 +23,10 @@ describe("demoBriefing", () => {
     // --- Techniques ---
     await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
     await f.addTechnique({ name: "raster_bars", title: "Raster color bars", category: "raster", complexity: "low" });
-    await f.addTechnique({ name: "soft_scroll_h", title: "Hardware horizontal soft-scroll", category: "scroll", complexity: "low" });
+    await f.addTechnique({ name: "soft_scroll_h", title: "Hardware horizontal soft-scroll", category: "scroll", complexity: "low", cost: { cycles_per_frame: 40043 }, cost_basis: "measured-vice" });
     await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite", complexity: "medium" });
-    await f.addTechnique({ name: "sid_play_routine_pattern", title: "The init+play subroutine convention", category: "music", complexity: "low" });
+    await f.addTechnique({ name: "sid_play_routine_pattern", title: "The init+play subroutine convention", category: "music", complexity: "low", cost: { cycles_per_frame: 332, irq_slots: 1 }, cost_basis: "measured-vice" });
+    await f.addTechnique({ name: "sprite_multiplex_24", title: "24-sprite multiplexer", category: "sprite", complexity: "high", cost: { cycles_per_frame: 700, irq_slots: 3, bytes_code: 900 }, cost_basis: "estimated" });
     await f.addTechnique({ name: "sid_voice_setup", title: "Frequency / waveform / ADSR per voice", category: "music", complexity: "low" });
     await f.addTechnique({ name: "standard_bitmap", title: "Standard bitmap mode", category: "bitmap", complexity: "low" });
     await f.addTechnique({ name: "plasma", title: "Plasma effect via sine table additions", category: "effect", complexity: "medium" });
@@ -138,6 +139,24 @@ describe("demoBriefing", () => {
     expect(names.some(n => n.includes("scroll") || n.includes("sprite"))).toBe(true);
     expect(names.some(n => n.includes("raster") || n.includes("bar"))).toBe(true);
     expect(names.some(n => n.includes("sid"))).toBe(true);
+  });
+
+  it("adds the plan up from the graph's cost properties and names the techniques without a line", async () => {
+    const r = await demoBriefing("sprite scroller with raster bars and SID music");
+    const b = r.structured.budget;
+    expect(b.region).toBe("PAL");
+    expect(b.frame_cycles).toBe(19656);
+    const names = r.structured.proposed_techniques.map(t => t.name);
+    const costed = names.filter(n => ["soft_scroll_h", "sid_play_routine_pattern", "sprite_multiplex_24"].includes(n));
+    expect(costed.length).toBeGreaterThanOrEqual(1);
+    for (const n of costed) expect(b.contributors.map(c => c.name)).toContain(n);
+    for (const n of names.filter(n => !costed.includes(n))) expect(b.without_cost).toContain(n);
+    expect(b.is_floor).toBe(b.without_cost.length > 0);
+    const expected = b.contributors.reduce((s, c) => s + (c.cycles_per_frame ?? 0), 0);
+    expect(b.cycles_per_frame_sum).toBe(expected);
+    expect(b.cycles_verdict).toBe(expected > 19656 ? "over" : "under");
+    expect(r.text).toContain("## Budget (PAL)");
+    expect(BriefingSchema.parse(r.structured)).toBeTruthy();
   });
 
   it("includes pitfalls relevant to proposed techniques", async () => {

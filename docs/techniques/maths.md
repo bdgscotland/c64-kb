@@ -104,6 +104,8 @@ were removed and are not claimed here.
 **Complexity:** medium
 **Region:** both
 **Uses registers:** (none)
+**Cost:** cycles_per_frame=52, bytes_data=2048
+**Cost basis:** arithmetic
 
 ### Why
 
@@ -504,6 +506,8 @@ its result is a screen the character ROM can decode.
 **Complexity:** low
 **Region:** both
 **Uses registers:** D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E
+**Cost:** cycles_per_frame=14, bytes_code=1947
+**Cost basis:** arithmetic
 
 ### Why
 

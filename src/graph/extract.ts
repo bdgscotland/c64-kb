@@ -25,7 +25,7 @@ export type GraphEntity =
   | { type: "technique_demands"; technique: string; resource: string; description: string }
   | { type: "implements"; recipe: string; technique: string }
   | { type: "produces_format"; recipe: string; format: string }
-  | { type: "technique"; name: string; title: string; category: string; complexity?: string; chip?: string }
+  | { type: "technique"; name: string; title: string; category: string; complexity?: string; chip?: string; cost?: TechniqueCost; cost_basis?: CostBasis }
   | { type: "technique_uses_register"; technique: string; register: string }
   | { type: "technique_uses_kernal"; technique: string; kernal: string }
   | { type: "technique_requires_region"; technique: string; region: string }
@@ -71,6 +71,31 @@ const DEMANDS_LINE = /^\*\*Demands:\*\*\s+(.+)$/;
 // link time, where a miss is warned about and counted.
 const REQUIRES_LINE = /^\*\*Requires:\*\*\s+(.+)$/;
 const TECHNIQUE_NAME = /^[a-z][a-z0-9_]*$/;
+// **Cost:** carries key=value pairs from COST_VOCABULARY and **Cost basis:**
+// one word from COST_BASIS_WORDS (docs/CONVENTIONS-techniques.md). A pair
+// with an unknown key or a non-integer value is warned about and skipped; a
+// basis word outside the set, or a Cost line with no basis line at all,
+// drops the whole Cost line, because a number without an honest basis is
+// worse than no number.
+const COST_LINE = /^\*\*Cost:\*\*\s+(.+)$/;
+const COST_BASIS_LINE = /^\*\*Cost basis:\*\*\s+(.+)$/;
+const COST_PAIR = /^([a-z_]+)\s*=\s*(-?\d+)$/;
+const INTEGER = /^-?\d+$/;
+
+export const COST_VOCABULARY: Record<string, string> = {
+  cycles_per_line: "CPU cycles the technique takes on each raster line it is active on",
+  cycles_per_frame: "CPU cycles the technique takes per frame (PAL 19,656 unless the page says otherwise)",
+  lines_active: "raster lines per frame on which the technique runs code",
+  bytes_code: "bytes of code in the built recipe's segments",
+  bytes_data: "bytes of tables, buffers and other data in the built recipe's segments",
+  zp_bytes: "zero-page bytes the technique claims",
+  irq_slots: "raster or timer interrupts the technique needs per frame",
+};
+export type CostKey = keyof typeof COST_VOCABULARY;
+export type TechniqueCost = Partial<Record<CostKey, number>>;
+
+export const COST_BASIS_WORDS = ["measured-vice", "derived-listing", "arithmetic", "estimated"] as const;
+export type CostBasis = (typeof COST_BASIS_WORDS)[number];
 
 // The fixed vocabulary for **Demands:** (docs/CONVENTIONS-techniques.md).
 // A word outside it is a doc error and is reported, not ingested.
@@ -419,11 +444,34 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
     // Split body at H2 boundaries (each H2 = one Technique).
     const lines = rest.split("\n");
     let currentTech: { name: string; title: string; category: string; complexity?: string; chip?: string } | null = null;
-    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[]; requires?: string[] } = {};
+    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[]; requires?: string[]; cost?: TechniqueCost; costBasis?: string } = {};
 
     const flush = () => {
       if (!currentTech) return;
-      entities.push({ type: "technique", ...currentTech });
+      // Cost rides the technique entity itself, not an edge, so it must be
+      // settled before the push.
+      let cost: TechniqueCost | undefined;
+      let costBasis: CostBasis | undefined;
+      if (pendingMeta.cost !== undefined) {
+        const basis = pendingMeta.costBasis;
+        if (basis === undefined) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has a **Cost:** line but no **Cost basis:** line — Cost not ingested (see CONVENTIONS-techniques.md)`);
+        } else if (!(COST_BASIS_WORDS as readonly string[]).includes(basis)) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has cost basis "${basis}", which is not one of ${COST_BASIS_WORDS.join(", ")} — Cost not ingested (see CONVENTIONS-techniques.md)`);
+        } else if (Object.keys(pendingMeta.cost).length === 0) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has a **Cost:** line with no usable pair — Cost not ingested`);
+        } else {
+          cost = pendingMeta.cost;
+          costBasis = basis as CostBasis;
+        }
+      } else if (pendingMeta.costBasis !== undefined) {
+        console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has a **Cost basis:** line but no **Cost:** line — ignored`);
+      }
+      entities.push({
+        type: "technique",
+        ...currentTech,
+        ...(cost !== undefined && costBasis !== undefined ? { cost, cost_basis: costBasis } : {}),
+      });
       if (currentTech.chip) {
         entities.push({ type: "technique_belongs_to", technique: currentTech.name, chip: currentTech.chip });
       }
@@ -516,6 +564,36 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
         pendingMeta.requires = isEmptySentinel(rq[1])
           ? []
           : rq[1].split(",").map((s) => s.trim().replace(/`/g, "")).filter((s) => s !== "" && !isEmptySentinel(s));
+        continue;
+      }
+      const cb = line.match(COST_BASIS_LINE);
+      if (cb) {
+        pendingMeta.costBasis = cb[1].trim().replace(/`/g, "");
+        continue;
+      }
+      const co = line.match(COST_LINE);
+      if (co) {
+        const techName = currentTech.name;
+        const cost: TechniqueCost = {};
+        const pairs = isEmptySentinel(co[1])
+          ? []
+          : co[1].split(",").map((s) => s.trim().replace(/`/g, "")).filter((s) => s !== "");
+        for (const pair of pairs) {
+          const m = pair.match(COST_PAIR);
+          const eq = pair.indexOf("=");
+          const key = (eq >= 0 ? pair.slice(0, eq) : pair).trim();
+          const val = eq >= 0 ? pair.slice(eq + 1).trim() : "";
+          if (!(key in COST_VOCABULARY)) {
+            console.warn(`[extract] ${sourcePath}: technique ${techName} has cost key "${key}", which is not in the cost vocabulary — pair skipped (see CONVENTIONS-techniques.md)`);
+            continue;
+          }
+          if (!m || !INTEGER.test(val) || Number(val) < 0) {
+            console.warn(`[extract] ${sourcePath}: technique ${techName} has cost ${key}=${JSON.stringify(val)}, which is not a non-negative integer — pair skipped (see CONVENTIONS-techniques.md)`);
+            continue;
+          }
+          cost[key as CostKey] = Number(val);
+        }
+        pendingMeta.cost = cost;
       }
     }
     flush();

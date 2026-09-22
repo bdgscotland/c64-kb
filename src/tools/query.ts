@@ -36,6 +36,7 @@ import type {
   RecipeLookupOutput,
   RecipesForOutput,
   TechniqueLookupOutput,
+  TechniqueCostOutput,
   TechniquesForOutput,
   CompatibilityCheckOutput,
   TimingBudgetOutput,
@@ -856,7 +857,11 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
      OPTIONAL MATCH (t)-[:BELONGS_TO]->(c:Chip)
      OPTIONAL MATCH (t)-[:REQUIRES_REGION]->(rr:Region)
      RETURN t.name AS name, t.title AS title, t.category AS category,
-            t.complexity AS complexity, c.name AS chip, toLower(rr.name) AS requires_region
+            t.complexity AS complexity, c.name AS chip, toLower(rr.name) AS requires_region,
+            t.cost_cycles_per_line AS cost_cycles_per_line, t.cost_cycles_per_frame AS cost_cycles_per_frame,
+            t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
+            t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
+            t.cost_irq_slots AS cost_irq_slots, t.cost_basis AS cost_basis
      LIMIT 1`,
     { name }
   );
@@ -905,7 +910,30 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     complexity: string;
     chip: string | null;
     requires_region: string | null;
+    cost_cycles_per_line: number | null;
+    cost_cycles_per_frame: number | null;
+    cost_lines_active: number | null;
+    cost_bytes_code: number | null;
+    cost_bytes_data: number | null;
+    cost_zp_bytes: number | null;
+    cost_irq_slots: number | null;
+    cost_basis: string | null;
   };
+
+  // Cost model (schema 22): only the keys the page's **Cost:** line carried
+  // are present, and the object is absent when the page has no line.
+  const cost: TechniqueCostOutput | undefined = row.cost_basis
+    ? {
+        ...(typeof row.cost_cycles_per_line === "number" ? { cycles_per_line: row.cost_cycles_per_line } : {}),
+        ...(typeof row.cost_cycles_per_frame === "number" ? { cycles_per_frame: row.cost_cycles_per_frame } : {}),
+        ...(typeof row.cost_lines_active === "number" ? { lines_active: row.cost_lines_active } : {}),
+        ...(typeof row.cost_bytes_code === "number" ? { bytes_code: row.cost_bytes_code } : {}),
+        ...(typeof row.cost_bytes_data === "number" ? { bytes_data: row.cost_bytes_data } : {}),
+        ...(typeof row.cost_zp_bytes === "number" ? { zp_bytes: row.cost_zp_bytes } : {}),
+        ...(typeof row.cost_irq_slots === "number" ? { irq_slots: row.cost_irq_slots } : {}),
+        basis: row.cost_basis as TechniqueCostOutput["basis"],
+      }
+    : undefined;
 
   // USES → Registers
   const regRows = await f.roQuery(
@@ -1000,6 +1028,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     required_by,
     mitigates,
     documentation,
+    ...(cost ? { cost } : {}),
   };
 
   let out = `# Technique: ${row.name} — ${row.title}\n\n`;
@@ -1007,6 +1036,11 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   out += `**Complexity:** ${row.complexity || "(not set)"}\n`;
   if (row.chip) out += `**Chip:** ${row.chip}\n`;
   if (row.requires_region) out += `**Requires region:** ${row.requires_region}\n`;
+  if (cost) {
+    const { basis, ...figures } = cost;
+    out += `**Cost:** ${Object.entries(figures).map(([k, v]) => `${k}=${v}`).join(", ")}\n`;
+    out += `**Cost basis:** ${basis}\n`;
+  }
   out += `\n`;
   if (uses_registers.length > 0) {
     out += `**Uses registers:** ${uses_registers.map((r) => r.name).join(", ")}\n`;
@@ -1588,13 +1622,14 @@ export async function timingBudget(opts: {
   const regionKey = opts.region.toUpperCase() as "PAL" | "NTSC";
   const rc = REGION_CONSTANTS[regionKey] ?? REGION_CONSTANTS.PAL;
 
-  // Look up technique's irq_overhead if stored; fall back to default
-  const techRows = await f.roQuery(
-    `MATCH (t:Technique {name: $name}) RETURN t.irq_overhead AS irq_overhead`,
-    { name: opts.technique }
-  );
-  const storedOverhead = (techRows.data?.[0] as { irq_overhead: number | null } | undefined)?.irq_overhead;
-  const irq_overhead = typeof storedOverhead === "number" ? storedOverhead : DEFAULT_IRQ_OVERHEAD;
+  // The IRQ overhead is the KERNAL-vector constant. An earlier version read
+  // t.irq_overhead here, a property no extractor or ingest ever wrote, so the
+  // read always fell through to the default; the dead read was removed in
+  // tools 1.25.0 rather than given a writer, because the per-technique cost
+  // line (cost_cycles_per_line and friends) is the model that carries a
+  // technique's own figures.
+  void f;
+  const irq_overhead = DEFAULT_IRQ_OVERHEAD;
 
   const cycles_per_line = rc.cycles_per_line;
   const cycles_per_frame = cycles_per_line * rc.lines_per_frame;

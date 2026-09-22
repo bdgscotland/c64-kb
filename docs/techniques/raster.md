@@ -19,6 +19,8 @@ The discipline required is severe. The VIC-II reads its registers continuously a
 **Region:** both
 **Uses registers:** SCROLY, RASTER, VICIRQ, IRQMSK
 **Demands:** midframe_raster_irqs
+**Cost:** cycles_per_frame=124, lines_active=2, irq_slots=1, zp_bytes=0
+**Cost basis:** arithmetic
 
 ### Why
 
@@ -86,6 +88,8 @@ Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badlin
 **Region:** both
 **Uses registers:** EXTCOL, BGCOL0, RASTER, VICIRQ
 **Demands:** midframe_raster_irqs
+**Cost:** cycles_per_frame=990, lines_active=10, irq_slots=10, bytes_code=600
+**Cost basis:** estimated
 
 ### Why
 
@@ -198,6 +202,8 @@ For cycle-tight code running on every line, the badline constraint means the wor
 **Region:** both
 **Uses registers:** RASTER, VICIRQ, IRQMSK
 **Demands:** midframe_raster_irqs
+**Cost:** cycles_per_frame=160, lines_active=2, irq_slots=2
+**Cost basis:** arithmetic
 
 ### Why
 
@@ -332,6 +338,8 @@ Bauer's article and the VICE source, not from a run.
 **Uses registers:** SCROLX
 **Demands:** cpu_every_line, constant_sprite_set, badline_free_region
 **Requires:** double_irq
+**Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2
+**Cost basis:** arithmetic
 
 ### Why
 
@@ -407,6 +415,8 @@ Border-opening IRQ overhead combined with a sprite multiplex update on the same 
 **Region:** both
 **Uses registers:** SCROLY
 **Demands:** midframe_raster_irqs
+**Cost:** cycles_per_frame=132, lines_active=2, irq_slots=2
+**Cost basis:** arithmetic
 
 ### Why
 
@@ -581,6 +591,8 @@ None per line. The routine runs once, with interrupts disabled, and holds the CP
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D012, D020
+**Cost:** cycles_per_frame=10400, bytes_code=985
+**Cost basis:** arithmetic
 
 ### Why
 
@@ -775,6 +787,8 @@ same figure.
 **Region:** both
 **Uses registers:** D011, D012, D019, D01A, D020
 **Demands:** midframe_raster_irqs
+**Cost:** cycles_per_frame=273, lines_active=3, irq_slots=3
+**Cost basis:** estimated
 
 ### Why
 

@@ -19,6 +19,8 @@ raster sweep, a charset flicker and a DRAM fade have no recipe yet.
 **Complexity:** low
 **Region:** both
 **Uses registers:** D020, D021, D012
+**Cost:** cycles_per_frame=400, bytes_data=272
+**Cost basis:** estimated
 
 ### Why
 

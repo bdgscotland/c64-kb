@@ -108,6 +108,45 @@ rules between one technique's prerequisites and the other technique and
 reports a hit as `prerequisite_conflict`, without changing anyone's
 `**Demands:**`.
 
+An optional `**Cost:**` line states what the technique costs, as
+comma-separated `key=value` pairs, every value a non-negative integer and
+every key from the vocabulary below. It must be paired with a
+`**Cost basis:**` line whose value is one word saying how the figures
+were obtained. The extractor warns about and skips a pair with an unknown
+key or a non-integer value; a basis word outside the set, or a Cost line
+with no basis line, drops the whole Cost line with a warning, because a
+number without an honest basis is worse than no number.
+
+```
+**Cost:** cycles_per_frame=332, irq_slots=1
+**Cost basis:** measured-vice
+```
+
+| Key | Meaning |
+|---|---|
+| `cycles_per_line` | CPU cycles the technique takes on each raster line it is active on. A technique that needs every cycle of the line (FLI, side border) states 63, the whole PAL line. |
+| `cycles_per_frame` | CPU cycles the technique takes per frame, a PAL frame of 19,656 cycles unless the technique's own page states otherwise. For a routine that is called on demand (a multiply, a random step), the cost of one call, on the assumption of one call per frame; the page's per-call figure is the number to state. |
+| `lines_active` | raster lines per frame on which the technique runs code (the region of a side-border loop, the two lines of a double IRQ). |
+| `bytes_code` | bytes of code in the built recipe's segments, as `-showmem` or the Oscar64 map reports them. When the page states only a PRG size, that size less the two-byte load address. |
+| `bytes_data` | bytes of tables, buffers and other data in the built recipe's segments (a sine table, an image, a fade table). |
+| `zp_bytes` | zero-page bytes the technique claims. |
+| `irq_slots` | the raster or timer interrupts the technique needs per frame (a stable raster IRQ is one, a double IRQ two, a ten-bar raster-bar ring ten). |
+
+| Basis | Meaning |
+|---|---|
+| `measured-vice` | the figure was measured in a VICE run, by a CIA timer harness or the exit screenshot, and the page states it as measured. |
+| `derived-listing` | the figure was read off a built listing, `-showmem` output or a linker map. |
+| `arithmetic` | the figure was worked from settled constants (63 cycles a line, the instruction table, a stated table size). |
+| `estimated` | the figure is a judgement, not a measurement; a briefing will name it as the weakest basis in a sum. |
+
+One basis word covers the whole line, so it is the weakest that applies to
+any figure on it: a line with a measured cycle count and an estimated byte
+count says `estimated`. Never write `measured-vice` for a number you did
+not measure or that the page does not state as measured. The values ride
+the Technique node as `cost_<key>` and `cost_basis`; `c64_technique_lookup`
+returns them as `cost` and the briefing tools add them up over a proposed
+set, naming the techniques with no line so the sum reads as a floor.
+
 An optional `**Uses kernal:**` line lists KERNAL routines:
 
 ```
@@ -124,7 +163,7 @@ After the H2 + metadata lines, free-form prose covering:
 2. **How** — algorithm at conceptual level (asm-language-agnostic)
 3. **Why it works** — chip-level explanation (which register reads/writes drive the effect)
 4. **Variations** — 1-3 common variants
-5. **Cycle budget** — for raster-critical techniques, the per-line cycle accounting
+5. **Cycle budget** — for raster-critical techniques, the per-line cycle accounting in prose; the `**Cost:**` line above carries the summable figures
 6. **Recipes** — bullet list of `recipes/<toolchain>/<name>.md` files that implement this
 
 H3 inside a Technique is OK for sub-sections; the extractor only consumes H2 + the

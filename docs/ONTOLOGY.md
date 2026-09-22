@@ -106,6 +106,21 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | name | string | Snake_case name (e.g. "stable_raster_irq") |
 | category | string | One of: raster, sprite, scroll, bitmap, effect, music, cpu, banking, loader, render, input, logic, maths, text, io. Enforced at extract (schema 20): a technique doc outside the set is refused with a warning. `render` had been in use since the text-mode page without being listed; input, logic, maths, text and io were added for game and application foundations (issue #17). |
 | complexity | string | "low", "medium", "high", "scene-tier" |
+| cost_cycles_per_line | integer, optional | CPU cycles the technique takes on each raster line it is active on. From the page's `**Cost:**` line (schema 22). |
+| cost_cycles_per_frame | integer, optional | CPU cycles the technique takes per frame, a PAL frame of 19,656 unless the page says otherwise. For a routine called on demand, one call per frame. |
+| cost_lines_active | integer, optional | Raster lines per frame on which the technique runs code. |
+| cost_bytes_code | integer, optional | Bytes of code in the built recipe's segments. When the page states only a PRG size, that size less the two-byte load address. |
+| cost_bytes_data | integer, optional | Bytes of tables, buffers and other data in the built recipe's segments. |
+| cost_zp_bytes | integer, optional | Zero-page bytes the technique claims. |
+| cost_irq_slots | integer, optional | Raster or timer interrupts the technique needs per frame. |
+| cost_basis | string, optional | How the cost figures were obtained, one of "measured-vice", "derived-listing", "arithmetic", "estimated"; present exactly when any cost_* property is. The word is the weakest that applies to any figure on the line. |
+
+A technique whose page has no `**Cost:**` line has none of the `cost_*`
+properties, so `WHERE t.cost_cycles_per_frame IS NOT NULL` finds the
+costed ones; a re-ingest that drops the line clears them. The briefing
+tools sum `cost_cycles_per_frame` and `cost_bytes_code + cost_bytes_data`
+over a proposed set and name the techniques without a line, so the sum
+reads as a floor.
 
 Source: `techniques/*.md` (Phase 3+).
 

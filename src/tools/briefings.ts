@@ -327,6 +327,99 @@ const FALLBACK_FORCED_TECHNIQUES: Record<string, string[]> = {
   adventure: ["text_mode_overlay_render"],
 };
 
+// ---------------------------------------------------------------------------
+// The plan added up (schema 22, tools 1.25.0).
+// ---------------------------------------------------------------------------
+// PAL: 63 cycles × 312 lines; NTSC: 65 × 263. The same constants
+// c64_timing_budget uses.
+export const FRAME_CYCLES = { PAL: 19656, NTSC: 17095 } as const;
+// The RAM budget the byte sum is judged against: $0801 to $9FFF, the BASIC
+// program area a PRG loads into with the ROMs in place (0x9FFF - 0x0801 + 1
+// = 38,911 bytes, the figure the boot banner prints). It is an assumption,
+// stated in the output; a program that banks BASIC out or loads under the
+// KERNAL has more, and the caller can re-judge the sum against its own map.
+export const RAM_BUDGET_BYTES = 38911;
+// Strongest first. The weakest contributor sets the confidence of the sum.
+const BASIS_STRENGTH: readonly BriefingCostBasis[] = ["measured-vice", "derived-listing", "arithmetic", "estimated"];
+type BriefingCostBasis = BriefingOutput["budget"]["weakest_basis"] & string;
+
+export type BudgetInput = {
+  name: string;
+  requires_region?: string;
+  cost?: { cycles_per_frame?: number; bytes_code?: number; bytes_data?: number; basis: BriefingCostBasis };
+};
+
+/**
+ * Add a proposed set up against a frame and a RAM budget. Pure, so a test
+ * can hand it a fixture. The region is PAL unless every region-locked
+ * technique in the set is NTSC-locked; the choice is written into
+ * `assumptions`. Both sums are floors when any technique lacks a Cost line.
+ */
+export function computeBudget(techs: BudgetInput[], regionHint?: "PAL" | "NTSC"): BriefingOutput["budget"] {
+  const locked = techs.map(t => (t.requires_region ?? "").toUpperCase()).filter(r => r === "PAL" || r === "NTSC");
+  const region: "PAL" | "NTSC" = regionHint
+    ?? (locked.length > 0 && locked.every(r => r === "NTSC") ? "NTSC" : "PAL");
+  const frame_cycles = FRAME_CYCLES[region];
+
+  const contributors: BriefingOutput["budget"]["contributors"] = [];
+  const without_cost: string[] = [];
+  let cycles_per_frame_sum = 0;
+  let bytes_sum = 0;
+  let sawCycles = false;
+  let sawBytes = false;
+  for (const t of techs) {
+    if (!t.cost) {
+      without_cost.push(t.name);
+      continue;
+    }
+    const c = t.cost;
+    const bytes = c.bytes_code !== undefined || c.bytes_data !== undefined
+      ? (c.bytes_code ?? 0) + (c.bytes_data ?? 0)
+      : undefined;
+    if (typeof c.cycles_per_frame === "number") {
+      cycles_per_frame_sum += c.cycles_per_frame;
+      sawCycles = true;
+    }
+    if (typeof bytes === "number") {
+      bytes_sum += bytes;
+      sawBytes = true;
+    }
+    contributors.push({
+      name: t.name,
+      ...(typeof c.cycles_per_frame === "number" ? { cycles_per_frame: c.cycles_per_frame } : {}),
+      ...(typeof bytes === "number" ? { bytes } : {}),
+      basis: c.basis,
+    });
+  }
+  let weakest_basis: BriefingCostBasis | null = null;
+  for (const c of contributors) {
+    if (weakest_basis === null || BASIS_STRENGTH.indexOf(c.basis) > BASIS_STRENGTH.indexOf(weakest_basis)) {
+      weakest_basis = c.basis;
+    }
+  }
+  const is_floor = without_cost.length > 0;
+  const assumptions = [
+    `Region ${region}: ${frame_cycles} cycles per frame${regionHint ? "" : locked.length > 0 ? " (chosen from the set's REQUIRES_REGION edges)" : " (no technique in the set is region-locked; PAL assumed)"}.`,
+    `RAM budget ${RAM_BUDGET_BYTES} bytes: the BASIC program area $0801-$9FFF with the ROMs in place. Re-judge the byte sum against your own memory map if you bank BASIC out or load under the KERNAL.`,
+    "Each technique's figures are what its own page states; cycles_per_frame is per PAL frame unless that page says otherwise, and bytes are the built recipe's segments, not a minimal implementation.",
+    ...(is_floor ? [`${without_cost.length} proposed technique(s) have no Cost line, so both sums are floors.`] : []),
+  ];
+  return {
+    region,
+    frame_cycles,
+    cycles_per_frame_sum,
+    cycles_verdict: sawCycles ? (cycles_per_frame_sum > frame_cycles ? "over" : "under") : "no_data",
+    ram_budget_bytes: RAM_BUDGET_BYTES,
+    bytes_sum,
+    bytes_verdict: sawBytes ? (bytes_sum > RAM_BUDGET_BYTES ? "over" : "under") : "no_data",
+    contributors,
+    without_cost,
+    weakest_basis,
+    is_floor,
+    assumptions,
+  };
+}
+
 export async function demoBriefing(
   description: string,
   archetype?: string
@@ -621,6 +714,15 @@ async function buildBriefing(
   }
 
   // -------------------------------------------------------------------------
+  // Step 7b: The plan added up
+  // -------------------------------------------------------------------------
+  const budget = computeBudget(validTechs.map(t => ({
+    name: t.name,
+    requires_region: t.requires_region,
+    cost: t.cost,
+  })));
+
+  // -------------------------------------------------------------------------
   // Step 8: Compose brief summary text
   // -------------------------------------------------------------------------
   const kindWord = isGame ? "genre" : "form";
@@ -634,7 +736,9 @@ async function buildBriefing(
     `Proposed ${proposed_techniques.length} technique(s) across ${new Set(proposed_techniques.map(t => t.category)).size} categories. ` +
     `Compatibility: ${compatResult.structured.verdict}. ` +
     `Pitfalls to watch: ${pitfalls.length}. ` +
-    `Toolchain: Oscar64 primary${cycle_tight_handoff.length > 0 ? `, KickAssembler for ${cycle_tight_handoff.length} cycle-tight component(s)` : ""}.`;
+    `Toolchain: Oscar64 primary${cycle_tight_handoff.length > 0 ? `, KickAssembler for ${cycle_tight_handoff.length} cycle-tight component(s)` : ""}. ` +
+    `Budget: ${budget.cycles_verdict === "no_data" ? "no cycle figures" : `${budget.cycles_per_frame_sum} of ${budget.frame_cycles} ${budget.region} cycles per frame, ${budget.cycles_verdict}`}` +
+    `${budget.is_floor ? " (a floor)" : ""}.`;
 
   const structured: BriefingOutput = {
     brief,
@@ -643,6 +747,7 @@ async function buildBriefing(
     pitfalls,
     toolchain_split,
     build_order,
+    budget,
     ...(resolved?.mode === "graph"
       ? { archetype: { ...resolved.archetype, features: resolved.features, risks: resolved.risks } }
       : {}),
@@ -733,5 +838,29 @@ function renderBriefingText(b: BriefingOutput, isGame: boolean): string {
     out += `\n`;
   }
 
+  out += renderBudgetText(b.budget);
+
+  return out;
+}
+
+export function renderBudgetText(g: BriefingOutput["budget"]): string {
+  let out = `\n## Budget (${g.region})\n\n`;
+  out += `| Sum | Value | Limit | Verdict |\n|-----|-------|-------|---------|\n`;
+  out += `| Cycles per frame | ${g.cycles_per_frame_sum} | ${g.frame_cycles} | ${g.cycles_verdict === "no_data" ? "no data" : `${g.cycles_verdict} budget`} |\n`;
+  out += `| Bytes (code + data) | ${g.bytes_sum} | ${g.ram_budget_bytes} | ${g.bytes_verdict === "no_data" ? "no data" : `${g.bytes_verdict} budget`} |\n`;
+  if (g.contributors.length > 0) {
+    out += `\nContributors:\n`;
+    for (const c of g.contributors) {
+      const parts: string[] = [];
+      if (c.cycles_per_frame !== undefined) parts.push(`${c.cycles_per_frame} cycles/frame`);
+      if (c.bytes !== undefined) parts.push(`${c.bytes} bytes`);
+      out += `- ${c.name}: ${parts.join(", ") || "(no summable figure)"} (${c.basis})\n`;
+    }
+  }
+  out += `\nWeakest basis: ${g.weakest_basis ?? "(nothing contributed)"}.\n`;
+  if (g.without_cost.length > 0) {
+    out += `No Cost line, so the sums are a floor: ${g.without_cost.join(", ")}.\n`;
+  }
+  for (const a of g.assumptions) out += `- ${a}\n`;
   return out;
 }
