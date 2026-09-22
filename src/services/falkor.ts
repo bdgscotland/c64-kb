@@ -546,7 +546,7 @@ export class FalkorService {
     pitfallName: string,
     targetName: string,
     targetKind: "Register" | "KernalRoutine" | "Technique"
-  ): Promise<void> {
+  ): Promise<boolean> {
     const g = this.graph();
     // For Register targets, match by canonical name OR hex address OR alias so
     // pitfall docs can reference registers by hex form (D011) or mnemonic (SCROLY).
@@ -561,11 +561,16 @@ export class FalkorService {
        RETURN 1`,
       { params: { pitfallName, targetName, addr: `$${targetName}` } } as Parameters<typeof g.query>[1]
     );
-    if ((result.data?.length ?? 0) === 0 && process.env.INGEST_VERBOSE) {
+    // A reference that names no node is a defect in the doc, not a debug
+    // detail: say so every time. (It used to be behind INGEST_VERBOSE, and
+    // seven such references sat unnoticed.)
+    const landed = (result.data?.length ?? 0) > 0;
+    if (!landed) {
       console.warn(
-        `[falkor] linkTriggeredBy: ${pitfallName} -> ${targetName} (${targetKind}) — target not found, skipping`
+        `[falkor] linkTriggeredBy: ${pitfallName} -> ${targetName} (${targetKind}) — target not found, edge dropped`
       );
     }
+    return landed;
   }
 
   async addCrashPattern(c: {
@@ -593,7 +598,7 @@ export class FalkorService {
     symptom: string,
     targetName: string,
     targetKind: "Register" | "KernalRoutine" | "Technique"
-  ): Promise<void> {
+  ): Promise<boolean> {
     const g = this.graph();
     // For Register targets, match by canonical name OR hex address OR alias so
     // failure docs can reference registers by hex form (D018) or mnemonic (VMCSB).
@@ -608,10 +613,12 @@ export class FalkorService {
        RETURN 1`,
       { params: { symptom, targetName, addr: `$${targetName}` } } as Parameters<typeof g.query>[1]
     );
-    if ((result.data?.length ?? 0) === 0 && process.env.INGEST_VERBOSE) {
+    const landed = (result.data?.length ?? 0) > 0;
+    if (!landed) {
       console.warn(
-        `[falkor] linkCausedBy: ${symptom} -> ${targetName} (${targetKind}) — target not found, skipping`
+        `[falkor] linkCausedBy: ${symptom} -> ${targetName} (${targetKind}) — target not found, edge dropped`
       );
     }
+    return landed;
   }
 }

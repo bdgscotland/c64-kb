@@ -1247,8 +1247,14 @@ const REGION_CONSTANTS = {
   NTSC: { cycles_per_line: 65, lines_per_frame: 263 },
 } as const;
 
-const BADLINE_CYCLES_LOST = 23;
-const DEFAULT_IRQ_OVERHEAD = 14;
+// A badline takes the bus for 40 cycles (15-54) and pulls BA low three cycles
+// earlier; the CPU can spend those three only on write cycles, so 43 is the
+// figure to plan on (20 of 63 left on PAL, 22 of 65 on NTSC).
+const BADLINE_CYCLES_LOST = 43;
+// Through the KERNAL vector: 7 cycles of interrupt sequence + 29 for the
+// dispatcher at $FF48 before the handler's first instruction. A handler on
+// $FFFE with the KERNAL out pays 7 plus its own register saves.
+const DEFAULT_IRQ_OVERHEAD = 36;
 
 export async function timingBudget(opts: {
   technique: string;
@@ -1271,12 +1277,15 @@ export async function timingBudget(opts: {
   const cycles_per_line = rc.cycles_per_line;
   const cycles_per_frame = cycles_per_line * rc.lines_per_frame;
   const user_cycles_per_line_normal = cycles_per_line - irq_overhead;
-  const user_cycles_per_line_badline = cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST;
+  // A handler entered on a badline through the KERNAL vector has nothing
+  // left on that line (63 - 43 - 36 < 0); report 0, and the note below says
+  // to put splits on non-badlines.
+  const user_cycles_per_line_badline = Math.max(0, cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST);
 
   const notes: string[] = [
     `${regionKey}: ${cycles_per_line} cycles/line × ${rc.lines_per_frame} lines = ${cycles_per_frame} cycles/frame.`,
-    `Badline: VIC steals ~40 cycles on badline vs 17 on normal line (net cost to user code: ${BADLINE_CYCLES_LOST} cycles).`,
-    `IRQ overhead: ${irq_overhead} cycles (push A/X/Y + JMP indirect + handler entry).`,
+    `Badline: the VIC takes the bus on cycles 15-54 and drops BA on cycle 12, so ${BADLINE_CYCLES_LOST} cycles are lost to code that is not writing on 12-14 (40 to code that is). No read cycle is possible between 12 and 54.`,
+    `IRQ overhead: ${irq_overhead} cycles before the handler's first instruction (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314; 7 via $FFFE with the KERNAL out), plus 0-6 cycles of jitter unless a double IRQ is used.`,
     `User cycles/line normal: ${cycles_per_line} - ${irq_overhead} = ${user_cycles_per_line_normal}.`,
     `User cycles/line badline: ${cycles_per_line} - ${irq_overhead} - ${BADLINE_CYCLES_LOST} = ${user_cycles_per_line_badline}.`,
   ];

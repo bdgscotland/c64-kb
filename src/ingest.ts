@@ -198,6 +198,9 @@ async function main() {
   if (cleanFirst) {
     await falkor.clean();
     console.log("  falkordb: cleaned per-label nodes (schema + Chip/Region seeds preserved)");
+    await qdrant.dropCollection();
+    await qdrant.ensureCollection();
+    console.log("  qdrant: collection dropped and recreated");
     fs.rmSync(HASH_FILE, { force: true });
     console.log("  ingest-hashes.json removed");
   }
@@ -226,8 +229,14 @@ async function main() {
   let skipped = 0;
   let totalPitfalls = 0;
   let totalCrashPatterns = 0;
-  let totalTriggeredBy = 0;
-  let totalCausedBy = 0;
+  // Distinct (source, target, kind) requests, so that a doc naming the same
+  // trigger twice is not reported as a dropped edge after MERGE folds them.
+  const triggeredByRequested = new Set<string>();
+  const causedByRequested = new Set<string>();
+  // References whose target name matched no node. Requests can exceed edges
+  // legitimately (two spellings of one register), so this is the real signal.
+  let triggeredByDropped = 0;
+  let causedByDropped = 0;
 
   // All edge operations are deferred to pass 2 so that every node exists
   // before any edge tries to reference it. This removes the implicit
@@ -277,6 +286,10 @@ async function main() {
       })
       .filter((p): p is NonNullable<typeof p> => p !== null);
 
+    // Point ids are derived from (file, section, index), so a section that
+    // was renamed or removed would otherwise stay in the collection for ever
+    // and keep being retrieved. Drop the file's old chunks before upserting.
+    await qdrant.deleteBySource(file);
     if (points.length > 0) {
       await qdrant.upsertChunks(points);
       totalChunks += points.length;
@@ -465,12 +478,12 @@ async function main() {
           await falkor.linkRecipeUsesKernal(edge.recipe, edge.kernal);
           break;
         case "triggered_by":
-          await falkor.linkTriggeredBy(edge.pitfall, edge.target, edge.targetKind);
-          totalTriggeredBy++;
+          if (!(await falkor.linkTriggeredBy(edge.pitfall, edge.target, edge.targetKind))) triggeredByDropped++;
+          triggeredByRequested.add(`${edge.pitfall}|${edge.targetKind}|${edge.target}`);
           break;
         case "caused_by":
-          await falkor.linkCausedBy(edge.symptom, edge.target, edge.targetKind);
-          totalCausedBy++;
+          if (!(await falkor.linkCausedBy(edge.symptom, edge.target, edge.targetKind))) causedByDropped++;
+          causedByRequested.add(`${edge.symptom}|${edge.targetKind}|${edge.target}`);
           break;
       }
       consecutiveFailures = 0;
@@ -511,10 +524,23 @@ async function main() {
 
   const qStats = await qdrant.getStats();
   const gStats = await falkor.getStats();
+  // Count what actually landed: an edge whose target name matches no node is
+  // dropped by the MERGE, and the request counters above cannot see that.
+  const countEdges = async (rel: string): Promise<number> => {
+    const r = await falkor.roQuery(`MATCH ()-[e:${rel}]->() RETURN count(e) AS n`);
+    return Number((r.data?.[0] as { n?: number } | undefined)?.n ?? 0);
+  };
+  const triggeredByLanded = await countEdges("TRIGGERED_BY");
+  const causedByLanded = await countEdges("CAUSED_BY");
+  const totalTriggeredBy = triggeredByRequested.size;
+  const totalCausedBy = causedByRequested.size;
   console.log(`\nQdrant: ${qStats.total_points} vectors`);
   console.log(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
-  console.log(`Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by edges: ${totalTriggeredBy}. caused_by edges: ${totalCausedBy}.`);
-  log(`DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${totalTriggeredBy} caused_by=${totalCausedBy}`);
+  console.log(`Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by: ${triggeredByLanded} edges in graph, ${totalTriggeredBy} distinct references, ${triggeredByDropped} dropped. caused_by: ${causedByLanded} edges in graph, ${totalCausedBy} distinct references, ${causedByDropped} dropped.`);
+  if (triggeredByDropped > 0 || causedByDropped > 0) {
+    console.warn(`[ingest] WARNING: ${triggeredByDropped + causedByDropped} trigger/cause references named no existing node and were dropped; see the [falkor] lines above.`);
+  }
+  log(`DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${triggeredByLanded}/${totalTriggeredBy}/dropped=${triggeredByDropped} caused_by=${causedByLanded}/${totalCausedBy}/dropped=${causedByDropped}`);
 
   await falkor.close();
   process.exit(0);

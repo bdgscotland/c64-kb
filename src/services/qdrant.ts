@@ -185,6 +185,14 @@ export class QdrantService {
     });
   }
 
+  /** Drop the whole collection. `ingest --clean` follows this with ensureCollection(). */
+  async dropCollection(): Promise<void> {
+    const collections = await this.client.getCollections();
+    if (collections.collections.some((c) => c.name === COLLECTION)) {
+      await this.client.deleteCollection(COLLECTION);
+    }
+  }
+
   async getStats(): Promise<{ total_points: number; segments: number }> {
     const info = await this.client.getCollection(COLLECTION);
     return {
