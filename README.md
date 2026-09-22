@@ -318,6 +318,7 @@ vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
 | `npm run ingest` | Hydrate KB from `docs/` (idempotent) |
 | `npm run ingest -- --force` | Re-ingest all docs, forcing hash refresh |
 | `npm test` | Run vitest (121 tests) |
+| `npm run check:listings` | Build every recipe listing with its real toolchain (KickAssembler, Oscar64, cc65) and assemble every KickAssembler fragment in `docs/`; see the script header for `KICKASS_JAR` / `OSCAR64` / `CL65` |
 | `npx tsc --noEmit` | Type check without emitting |
 | `./scripts/backup.sh` | Snapshot all stateful data |
 
@@ -352,6 +353,13 @@ For doc structure, follow the conventions files:
 
 Tests live in `test/`. Run `npm test` before committing. Run
 `npx tsc --noEmit` to catch type errors.
+
+Code listings are built, not just read: `npm run check:listings` assembles
+or compiles every recipe with the toolchain it names and fails on any
+error, and `npm test` runs the same check for whichever toolchains it can
+find. A recipe that does not build does not land. The KickAssembler
+recipes were also run in VICE and the screenshots are in
+`docs/recipes/kickassembler/screenshots/`.
 
 ---
 

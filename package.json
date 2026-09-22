@@ -28,6 +28,7 @@
     "compose:graded": "tsx src/tools/compose-run.ts",
     "compose:auto": "tsx src/tools/auto-compose.ts",
     "feedback:log": "tsx src/tools/feedback.ts",
+    "check:listings": "tsx scripts/check-listings.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
