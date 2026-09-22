@@ -166,7 +166,7 @@ carries a placeholder entry for vice-mcp.
 | Tool | Purpose |
 |------|---------|
 | `c64_demo_briefing` | Synthesise techniques + pitfalls + toolchain split + build order for a demo brief |
-| `c64_game_briefing` | Same synthesis for a game brief; genre hint selects archetype recipe as scaffold |
+| `c64_game_briefing` | Same synthesis for a game brief; the archetype name is looked up in the graph and its technique fingerprint and pitfalls shape the plan, and an unknown name is reported together with the known ones |
 
 ### Self-improvement (Phase 7a)
 
@@ -220,8 +220,8 @@ when Ollama is unavailable; ingest does not.
 **FalkorDB** (Docker, host port 7379): Redis-compatible knowledge graph.
 Graph name `c64`. Node types for chips, regions, registers, KERNAL
 routines, memory regions, techniques, recipes, pitfalls, crash patterns,
-tools, file formats and machine resources; the edge types between them are
-listed in `docs/ONTOLOGY.md`. Range indexes and unique constraints on every
+tools, file formats, machine resources and game archetypes; the edge types
+between them are listed in `docs/ONTOLOGY.md`. Range indexes and unique constraints on every
 primary key. Two-pass ingest: node
 creation in pass 1, edge linking in pass 2, so walk order does not affect
 edge correctness; a reference whose target does not exist is reported, not

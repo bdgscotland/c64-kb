@@ -48,7 +48,10 @@ frame counter the page predicts. `memory-layout.png` / `-ntsc.png` at
 in KickAssembler, charset and sprite visible and the addresses printed.
 `headless-verify.png` / `-ntsc.png` at 8,000,000 cycles: the green case
 of the result-byte pattern from the VICE reference's "Verifying a run
-without a human".
+without a human". `dos-error-codes.png` / `-ntsc.png` at 32,000,000
+cycles on a fresh `TEST,01` disk: the drive's channel-15 replies for the
+codes the recipe provokes, the measurement behind the 1541 DOS error
+table in `docs/formats/iec-disk-reference.md`.
 
 The pictures are evidence about VICE, not about a 6569 on a bench. Where a
 recipe's timing constant was found by measurement (`SYNC_PAD`, `LINE_PAD`,

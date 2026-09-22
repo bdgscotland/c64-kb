@@ -318,11 +318,14 @@ describe("gameBriefing", () => {
   });
 });
 
-// FORCED_TECHNIQUES_FOR_ARCHETYPE enforcement (puzzle-tetris dogfood, 2026-05-18):
+// Forced-technique enforcement (puzzle-tetris dogfood, 2026-05-18):
 // A pre-Phase-7 puzzle briefing didn't surface the text-mode rendering
 // foundation, so the dirty_cell_skip_leaves_overlay_trail pitfall never made
-// it to the agent. Now puzzle/adventure briefings are required to include
-// text_mode_overlay_render so the pitfall cascades deterministically.
+// it to the agent. This fixture has no Archetype nodes, so it exercises the
+// FALLBACK_FORCED_TECHNIQUES table only. With the archetype page ingested
+// the same guarantee comes from the page's fingerprint (puzzle and
+// action_puzzle both name text_mode_overlay_render); the graph path is
+// covered in "gameBriefing reads the archetype from the graph" below.
 describe("gameBriefing FORCED_TECHNIQUES_FOR_ARCHETYPE enforcement", () => {
   let f: FalkorService;
 
@@ -394,5 +397,131 @@ describe("gameBriefing FORCED_TECHNIQUES_FOR_ARCHETYPE enforcement", () => {
     const r = await gameBriefing("a tetris clone", undefined);
     const names = r.structured.proposed_techniques.map(t => t.name);
     expect(names).toContain("text_mode_overlay_render");
+  });
+});
+
+// Archetypes live in the graph (schema 21, docs/CONVENTIONS-archetypes.md).
+// With Archetype nodes present the briefing reads FEATURES and RISKS and
+// never consults the built-in fallback tables; the describes above build
+// graphs WITHOUT Archetype nodes and exercise the fallback.
+describe("gameBriefing reads the archetype from the graph", () => {
+  let f: FalkorService;
+
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+
+    // Four sprite techniques: with the fingerprint forcing all four, the
+    // three-per-category cap must not cut one of them.
+    await f.addTechnique({ name: "sprite_multiplex_24", title: "24-sprite multiplexer", category: "sprite", complexity: "high" });
+    await f.addTechnique({ name: "sprite_collision_detect", title: "Hardware sprite collision", category: "sprite", complexity: "low" });
+    await f.addTechnique({ name: "sprite_expand", title: "Sprite X/Y expand", category: "sprite", complexity: "low" });
+    await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite", complexity: "medium" });
+    await f.addTechnique({ name: "soft_scroll_v", title: "Hardware vertical soft-scroll", category: "scroll", complexity: "low" });
+    await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
+    // Present in the graph, not in the fingerprint: must not be forced.
+    await f.addTechnique({ name: "text_mode_overlay_render", title: "Playfield overlay in text mode", category: "render", complexity: "low" });
+
+    await f.addPitfall({ name: "sprite_dma_overflow", title: "Too many sprites on one line", severity: "high", region: "both", category: "sprite" });
+    await f.linkTriggeredBy("sprite_dma_overflow", "sprite_multiplex_24", "Technique");
+    // A risk no proposed technique triggers: reaches the plan only through RISKS.
+    await f.addPitfall({ name: "raster_line_count_difference", title: "PAL and NTSC frames differ in length", severity: "medium", region: "both", category: "region" });
+
+    await f.addArchetype({ name: "vertical_shmup", title: "Vertical Shmup", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
+    for (const t of ["soft_scroll_v", "sprite_multiplex_24", "sprite_collision_detect", "sprite_expand", "sprite_multiplex_8", "stable_raster_irq"]) {
+      await f.linkArchetypeFeatures("vertical_shmup", t);
+    }
+    await f.linkArchetypeRisks("vertical_shmup", "sprite_dma_overflow");
+    await f.linkArchetypeRisks("vertical_shmup", "raster_line_count_difference");
+    await f.addArchetype({ name: "puzzle", title: "Puzzle", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
+    await f.linkArchetypeFeatures("puzzle", "stable_raster_irq");
+
+    // Shaped like the page's action_puzzle: the fingerprint names the
+    // text-mode technique, and the pitfall behind it must reach the plan
+    // through FEATURES alone, with nothing in the description to match.
+    await f.addPitfall({ name: "dirty_cell_skip_leaves_overlay_trail", title: "Skipping unchanged cells leaves the moving piece's prior position un-cleared", severity: "high", region: "both", category: "render" });
+    await f.linkTriggeredBy("dirty_cell_skip_leaves_overlay_trail", "text_mode_overlay_render", "Technique");
+    await f.addArchetype({ name: "action_puzzle", title: "Action Puzzle", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
+    await f.linkArchetypeFeatures("action_puzzle", "stable_raster_irq");
+    await f.linkArchetypeFeatures("action_puzzle", "text_mode_overlay_render");
+
+    await f.addRecipe({ name: "oscar64-simple-shmup", toolchain: "oscar64", output_format: "PRG", region: "both", source_doc: "recipes/oscar64/simple-shmup.md" });
+    await f.linkRecipeImplements("oscar64-simple-shmup", "sprite_multiplex_8");
+  });
+
+  afterAll(async () => f?.close());
+
+  it("forces every FEATURES target into the proposal, past the per-category cap", async () => {
+    const r = await gameBriefing("a shooter", "vertical_shmup");
+    const names = r.structured.proposed_techniques.map(t => t.name);
+    for (const t of ["soft_scroll_v", "sprite_multiplex_24", "sprite_collision_detect", "sprite_expand", "sprite_multiplex_8", "stable_raster_irq"]) {
+      expect(names).toContain(t);
+    }
+    expect(names.filter(n => n.startsWith("sprite_"))).toHaveLength(4);
+    expect(r.structured.archetype).toEqual({
+      name: "vertical_shmup",
+      title: "Vertical Shmup",
+      kind: "game",
+      features: ["soft_scroll_v", "sprite_collision_detect", "sprite_expand", "sprite_multiplex_24", "sprite_multiplex_8", "stable_raster_irq"],
+      risks: ["raster_line_count_difference", "sprite_dma_overflow"],
+    });
+    expect(r.structured.archetype_not_found).toBeUndefined();
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("adds every RISKS target to the pitfalls, including one no proposed technique triggers", async () => {
+    const r = await gameBriefing("a shooter", "vertical_shmup");
+    const byName = new Map(r.structured.pitfalls.map(p => [p.name, p]));
+    expect(byName.get("sprite_dma_overflow")?.triggered_by_proposed).toEqual(["sprite_multiplex_24"]);
+    expect(byName.get("raster_line_count_difference")?.triggered_by_proposed).toEqual([]);
+    expect(r.text).toContain("archetype risk");
+  });
+
+  it("does not read the fallback tables when the graph has archetypes", async () => {
+    // "puzzle" in the fallback table forced text_mode_overlay_render; this
+    // fixture's puzzle fingerprint does not name it, so it must not appear.
+    const r = await gameBriefing("a thinky logic game", "puzzle");
+    const names = r.structured.proposed_techniques.map(t => t.name);
+    expect(names).toContain("stable_raster_irq");
+    expect(names).not.toContain("text_mode_overlay_render");
+    expect(r.structured.archetype?.name).toBe("puzzle");
+  });
+
+  it("surfaces dirty_cell_skip_leaves_overlay_trail through a FEATURES edge alone (2026-05-18 dogfood guard, graph path)", async () => {
+    // No rendering keyword in the description: the technique arrives only
+    // because the archetype's fingerprint names it, and the pitfall only
+    // because that technique triggers it.
+    const r = await gameBriefing("a thinky logic game", "action_puzzle");
+    const names = r.structured.proposed_techniques.map(t => t.name);
+    expect(names).toContain("text_mode_overlay_render");
+    const pitfall = r.structured.pitfalls.find(p => p.name === "dirty_cell_skip_leaves_overlay_trail");
+    expect(pitfall?.triggered_by_proposed).toEqual(["text_mode_overlay_render"]);
+    expect(r.structured.archetype?.features).toEqual(["stable_raster_irq", "text_mode_overlay_render"]);
+  });
+
+  it("reads a title-cased or hyphenated name as the snake_case node", async () => {
+    const r = await gameBriefing("a shooter", "Vertical-Shmup");
+    expect(r.structured.archetype?.name).toBe("vertical_shmup");
+    expect(r.structured.brief).toContain("vertical_shmup");
+  });
+
+  it("seeds the shmup scaffold recipe from the graph name, not the string 'shmup'", async () => {
+    const r = await gameBriefing("a shooter", "vertical_shmup");
+    expect(r.structured.build_order[0].label).toContain("vertical_shmup");
+    expect(r.structured.build_order[0].recipes).toEqual(["oscar64-simple-shmup"]);
+  });
+
+  it("reports archetype_not_found with the known names for a name the graph lacks", async () => {
+    const r = await gameBriefing("vertical scrolling shoot-em-up", "shmup");
+    expect(r.structured.archetype).toBeUndefined();
+    expect(r.structured.archetype_not_found).toEqual({ requested: "shmup", known: ["action_puzzle", "puzzle", "vertical_shmup"] });
+    expect(r.structured.brief).toContain("not an archetype the graph knows");
+    expect(r.text).toContain("Known archetypes: action_puzzle, puzzle, vertical_shmup");
+    // The plan is still built from the description; nothing is forced.
+    expect(r.structured.build_order[0].label).toContain("Game scaffold");
+    expect(r.structured.build_order[0].recipes).toEqual([]);
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 });

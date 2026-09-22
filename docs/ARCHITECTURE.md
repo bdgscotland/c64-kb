@@ -33,8 +33,8 @@ and to the terminal through the same functions as a CLI.
                   +-----------v-----+    +---------v----------+
                   |  Qdrant :7333   |    |  FalkorDB :7379    |
                   |  c64_docs       |    |  graph c64         |
-                  |  dense + BM25   |    |  12 labels,        |
-                  +--------+--------+    |  17 edge types     |
+                  |  dense + BM25   |    |  node labels and   |
+                  +--------+--------+    |  edge types        |
                            |             +--------------------+
                   +--------v--------+
                   |  Ollama :11434  |
@@ -108,9 +108,10 @@ Tool logic lives in `src/tools/*.ts` as functions returning
 ### FalkorDB (`src/services/falkor.ts`)
 
 - Graph `c64` (env `FALKOR_GRAPH`); host port 7379, Redis protocol.
-- 12 node labels (`Chip`, `Region`, `Register`, `KernalRoutine`,
+- Node labels `Chip`, `Region`, `Register`, `KernalRoutine`,
   `MemoryRegion`, `Technique`, `Recipe`, `Pitfall`, `CrashPattern`, `Tool`,
-  `FileFormat`, `Resource`), 17 edge types; see `ONTOLOGY.md`.
+  `FileFormat`, `Resource` and `Archetype`, and the edge types between
+  them; `ONTOLOGY.md` defines each and says which page line produces it.
 - Range index and unique constraint on every primary key; `Chip` and
   `Region` seeded by `ensureSchema()`.
 - Registers, KERNAL routines and memory regions carry numeric address

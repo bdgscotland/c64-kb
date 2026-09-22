@@ -29,6 +29,7 @@ const NODE_INDEXES: ReadonlyArray<readonly [string, string]> = [
   ["Recipe", "name"],
   ["FileFormat", "name"],
   ["Resource", "name"],
+  ["Archetype", "name"],
 ];
 
 // "$D011" -> 0xD011; null when the string is not a 16-bit hex address.
@@ -53,6 +54,7 @@ const UNIQUE_CONSTRAINTS: ReadonlyArray<readonly [string, string]> = [
   ["Tool", "name"],
   ["Recipe", "name"],
   ["FileFormat", "name"],
+  ["Archetype", "name"],
 ];
 
 // Full-text indexes for "find a thing that does X" queries (Phase 2+).
@@ -74,6 +76,7 @@ const CLEANABLE_LABELS: readonly string[] = [
   "Recipe",
   "FileFormat",
   "Resource",
+  "Archetype",
 ];
 
 const CHIPS: ReadonlyArray<{ name: string; variants: string; role: string }> = [
@@ -709,6 +712,69 @@ export class FalkorService {
     if (!landed) {
       console.warn(
         `[falkor] linkMitigatedBy: ${pitfallName} -> ${techniqueName} (Technique) — pitfall or technique not found, edge dropped`
+      );
+    }
+    return landed;
+  }
+
+  /**
+   * Archetype: a game or demo shape from docs/game-design/c64-game-archetypes.md
+   * (docs/CONVENTIONS-archetypes.md). Keyed by snake_case name.
+   */
+  async addArchetype(a: {
+    name: string;
+    title: string;
+    kind: "game" | "demo";
+    source_doc: string;
+  }): Promise<void> {
+    const g = this.graph();
+    await g.query(
+      `MERGE (a:Archetype {name: $name})
+       SET a.title = $title, a.kind = $kind, a.source_doc = $source_doc`,
+      { params: { name: a.name, title: a.title, kind: a.kind, source_doc: a.source_doc } } as Parameters<typeof g.query>[1]
+    );
+  }
+
+  /**
+   * FEATURES: the archetype's technique fingerprint names this technique.
+   * Both ends MATCHed, never MERGEd, so a name the graph does not have drops
+   * the edge with a warning instead of creating a stub. Returns whether it landed.
+   */
+  async linkArchetypeFeatures(archetypeName: string, techniqueName: string): Promise<boolean> {
+    const g = this.graph();
+    const result = await g.query(
+      `MATCH (a:Archetype {name: $archetypeName})
+       MATCH (t:Technique {name: $techniqueName})
+       MERGE (a)-[:FEATURES]->(t)
+       RETURN 1`,
+      { params: { archetypeName, techniqueName } } as Parameters<typeof g.query>[1]
+    );
+    const landed = (result.data?.length ?? 0) > 0;
+    if (!landed) {
+      console.warn(
+        `[falkor] linkArchetypeFeatures: ${archetypeName} -> ${techniqueName} (Technique) — archetype or technique not found, edge dropped`
+      );
+    }
+    return landed;
+  }
+
+  /**
+   * RISKS: the archetype's common-pitfalls line names this pitfall. Same
+   * MATCH-both discipline as FEATURES. Returns whether the edge landed.
+   */
+  async linkArchetypeRisks(archetypeName: string, pitfallName: string): Promise<boolean> {
+    const g = this.graph();
+    const result = await g.query(
+      `MATCH (a:Archetype {name: $archetypeName})
+       MATCH (p:Pitfall {name: $pitfallName})
+       MERGE (a)-[:RISKS]->(p)
+       RETURN 1`,
+      { params: { archetypeName, pitfallName } } as Parameters<typeof g.query>[1]
+    );
+    const landed = (result.data?.length ?? 0) > 0;
+    if (!landed) {
+      console.warn(
+        `[falkor] linkArchetypeRisks: ${archetypeName} -> ${pitfallName} (Pitfall) — archetype or pitfall not found, edge dropped`
       );
     }
     return landed;

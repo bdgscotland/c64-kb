@@ -198,6 +198,86 @@ Reading from the command channel after any operation returns the drive status st
 
 **Random access files** (REL type) allow seeking to arbitrary records. They use a fixed record length declared at file-open time and maintain side-sectors — dedicated bookkeeping sectors that map logical record numbers to physical track/sector locations. REL files are rarely used in demo/game code but common in productivity applications.
 
+### The 1541 DOS Error Codes
+
+The status line is `cc,message,tt,ss` followed by a CR: a two-digit code, the text, then a track and a sector in decimal. The 1541 ROM assembles it at `$E6C7` into the buffer at `$02D5`: two BCD digits from the code, a comma, the text looked up in the table below, a comma, the track, a comma, the sector (rung 1: the `dos1541-325302-01+901229-05` image in `/opt/homebrew/opt/vice/share/vice/DRIVES/`, bytes `$E6C7`–`$E705`). Every code the ROM can put in that line is in this table. The message column is the text field exactly as it comes back, including the leading space some messages have; the "Provoked" column says whether the recipe `../recipes/kickassembler/dos-error-codes.md` produced that reply in VICE x64sc 3.10 (rung 1) or whether the text is only read from the ROM.
+
+| Code | Message field | Cause | Class | Provoked |
+|---|---|---|---|---|
+| 00 | ` OK` | no error; the line reads `00, OK,00,00` | none | yes |
+| 01 | ` FILES SCRATCHED` | the reply to SCRATCH; the track field is the number of files removed, so `01, FILES SCRATCHED,00,00` means nothing matched | none | yes (`S0:T` after writing T: `01, FILES SCRATCHED,01,00`) |
+| 20 | `READ ERROR` | block header not found (job code 2) | media | ROM text only |
+| 21 | `READ ERROR` | no sync found (job code 3): unformatted track, no disk, or the drive did not come up to speed | media | ROM text only |
+| 22 | `READ ERROR` | data block not found after the header (job code 4) | media | ROM text only |
+| 23 | `READ ERROR` | checksum error in the data block (job code 5) | media | ROM text only |
+| 24 | `READ ERROR` | job code 6, and also job code 0 (the ROM maps both here); the 1541 manual calls it a byte-decoding error (rung 4) | media | ROM text only |
+| 25 | ` WRITE ERROR` | write-verify mismatch (job code 7) | retry, then media | ROM text only |
+| 26 | ` WRITE PROTECT ON` | write attempted with the notch covered (job code 8) | user error | yes, in a side run with `-attach8ro`: `26, WRITE PROTECT ON,18,00` |
+| 27 | `READ ERROR` | checksum error in the block header (job code 9) | media | ROM text only |
+| 28 | ` WRITE ERROR` | no sync after the data block was written, a long data block (job code 10) | media | ROM text only |
+| 29 | ` DISK ID MISMATCH` | the sector header's ID is not the one in the BAM (job code 11): a disk was changed without INITIALIZE, or a disk was formatted over | user error | ROM text only |
+| 30 | `SYNTAX ERROR` | the command parser could not make sense of the string (issued at `$C263`, `$C923`, `$CC2B`, `$D837`) | program bug | yes (`R0:A`, a RENAME with no `=`) |
+| 31 | `SYNTAX ERROR` | the command letter does not exist, or the letter after `M-` or `B-` is not one the DOS has (`$C175`, `$C8C1`, `$CB4B`, `$CC26`) | program bug | yes (`XYZ`) |
+| 32 | `SYNTAX ERROR` | the command string is too long (`$C2D7`) | program bug | ROM text only |
+| 33 | `SYNTAX ERROR` | a wildcard in a name where none is allowed (`$D8F0`, `$EE14`) | program bug | yes (`T*,S,W`) |
+| 34 | `SYNTAX ERROR` | no file name after the command (`$C1F3`) | program bug | yes (`N` alone) |
+| 39 | ` FILE NOT FOUND` | raised at one site only, `$E7C0`; that it is the `&` utility-loader command's not-found case is rung 4 | user error | ROM text only |
+| 50 | ` RECORD NOT PRESENT` | REL file: positioned past the last record; the DOS also reports it when a write extends the file (`$D9BE`, `$E169`, `$E449`) | program bug, or expected when extending | ROM text only |
+| 51 | `OVERFLOW IN RECORD` | REL file: more bytes written than the record length (`$E297`) | program bug | ROM text only |
+| 52 | ` FILE TOO LARGE` | REL file: the record position would need more blocks than the disk has (`$E363`) | program bug | ROM text only |
+| 60 | ` WRITE FILE OPEN` | opening a file that is still open for write, an unclosed entry (`$D957`) | program bug | ROM text only |
+| 61 | ` FILE NOT OPEN` | a data channel used with no file open on it (`$CFF8`) | program bug | ROM text only |
+| 62 | ` FILE NOT FOUND` | the name is not in the directory (`$CAE1`, `$D945`); OPEN on the C64 side still returns C=0 | user error | yes (`NOFILE,S,R`) |
+| 63 | ` FILE EXISTS` | open for write on a name that exists, without `@` (`$CAEF`, `$D8EB`) | user error | yes (`T,S,W` a second time) |
+| 64 | ` FILE TYPE MISMATCH` | the type in the open string is not the entry's type (`$C982`, `$D965`, `$E223`) | program bug | yes (`T,P,R` on a SEQ file) |
+| 65 | `NO BLOCK` | B-A on a block already allocated; the track and sector fields give the next free block, or `00,00` if none (`$CD31`) | program bug | ROM text only |
+| 66 | `ILLEGAL TRACK OR SECTOR` | a block command named a track or sector that does not exist; the fields echo the request (`$D54D`) | program bug | yes (`B-R 2 0 40 0`: `66,ILLEGAL TRACK OR SECTOR,40,00`) |
+| 67 | `ILLEGAL TRACK OR SECTOR` | a file chain or the BAM points at a block that does not exist (`$DC01`, `$E202`, `$F1DA`); same text as 66 | media | ROM text only |
+| 70 | `NO CHANNEL` | no drive buffer free: the 1541 lends four to data channels (seven sites, among them `$CBA0`, `$D212`, `$E214`) | program bug | yes (a fifth `#` open) |
+| 71 | `DIR ERROR` | the BAM disagrees with itself while allocating (`$F1F5`, `$F246`); VALIDATE rebuilds it | media | ROM text only |
+| 72 | ` DISK FULL` | no free block, or no free directory entry (`$F15A`) | user error | ROM text only |
+| 73 | `CBM DOS V2.6 1541` | the power-on message, put there at reset (`$EBD5`); also raised as an error at `$D575` when the BAM's DOS-version byte is not the ROM's `$41` and a write was attempted | none on the first read; media after an access | yes (first read) |
+| 74 | `DRIVE NOT READY` | no disk, or the drive could not read it (job code 15, and `$C41B`) | user error | yes, in a side run with no image attached: `74,DRIVE NOT READY,00,00` |
+
+The provoked lines are the twelve on the recipe's screenshot plus the two side runs. The side runs used the same PRG; `-attach8ro` before `-8 disk.d64` attaches the image read-only and the write step answered 26 (an `-attach8rw` option also exists), and a run with no `-8` at all answered 74 on the first OPEN. For codes marked "ROM text only" the message field is assembled from the table below by the same routine, so the text is rung 1; the cause column for those rows is from the 1541 manual and the ROM's call sites, and the track and sector fields were not measured.
+
+The class column is for an agent deciding what to do with the line: **retry** means try the operation again once, **media** means the disk or drive is at fault and no retry will help, **user error** means the program is fine and the person needs to act (insert a disk, free space, remove a file), **program bug** means the command string or call sequence is wrong. Codes 20 to 29 all carry the failing track and sector.
+
+**How the text is stored.** The message table runs from `$E4FC` to `$E5D4`, and a word table from `$E5D5` to `$E609` follows it (rung 1). An entry is one or more BCD code bytes followed by the text; the first and the last byte of a text carry bit 7 set, which is how the reader finds the ends, and several codes share one text (`20 21 22 23 24 27` precede `READ ERROR`, `25 28` precede `WRITE ERROR`, `30`–`34` precede `SYNTAX ERROR`, `39 62` precede `FILE NOT FOUND`, `66 67` precede `ILLEGAL TRACK OR SECTOR`). Nine words are stored once and referred to by a byte below `$10`:
+
+| Token | Word | At |
+|---|---|---|
+| `$03` | FILE | `$E5E1` |
+| `$04` | OPEN | `$E5E6` |
+| `$05` | MISMATCH | `$E5EB` |
+| `$06` | NOT | `$E5F4` |
+| `$07` | FOUND | `$E5F8` |
+| `$08` | DISK | `$E5FE` |
+| `$09` | ERROR | `$E5D5` |
+| `$0A` | WRITE | `$E5DB` |
+| `$0B` | RECORD | `$E603` |
+
+The lookup at `$E706` scans from `$E4FC` for a byte equal to the code, skips to the text, and copies it byte by byte; a byte below `$20` is a token, and the copier at `$E754` writes a space and then looks the token up through the same routine (the scan runs on past `$E5D5` into the word table). That space is why `62` reads `62, FILE NOT FOUND` with a space after the comma while `31` reads `31,SYNTAX ERROR` without one: a message that starts with a token gets the token's space, a message that starts with a literal letter does not, and `00` has its space stored as a literal `$A0`. Entry 62 is the three bytes `83 06 87` at `$E58F`, tokens FILE, NOT, FOUND with the end bits on the first and last. A code that is not in the table at all comes back with an empty text field; the scan stops at `$E60A`.
+
+**D64 error bytes.** The per-sector error byte a `.d64` image can carry (683 bytes after the sector data, see `c64-file-formats.md`) is not the DOS number. It is the drive's job return code, the value the sector routines hand back, and the conversion to a DOS number is at `$E60A`–`$E62C` (rung 1): the code is masked to its low four bits; 0 becomes 24, 15 becomes 74, and anything else is ORed with `$20` and decremented twice, which reads as a decimal code because the results stay below `$2A`.
+
+| Byte in the image | DOS code | Message |
+|---|---|---|
+| `$01` | none | sector read cleanly |
+| `$02` | 20 | READ ERROR, header not found |
+| `$03` | 21 | READ ERROR, no sync |
+| `$04` | 22 | READ ERROR, data block not found |
+| `$05` | 23 | READ ERROR, data checksum |
+| `$06` | 24 | READ ERROR |
+| `$07` | 25 | WRITE ERROR, verify |
+| `$08` | 26 | WRITE PROTECT ON |
+| `$09` | 27 | READ ERROR, header checksum |
+| `$0A` | 28 | WRITE ERROR |
+| `$0B` | 29 | DISK ID MISMATCH |
+| `$0F` | 74 | DRIVE NOT READY |
+
+A `$00` byte is treated as no error by image tools. So a D64 can carry 20 to 29 and 74 and nothing else; the 3x, 5x, 6x and 7x codes are conditions of a command or a file, not of a sector, and no image byte produces them. That the image's byte is the job code is the D64 format's convention (rung 4, from the format's documentation); the arithmetic from job code to DOS number is the ROM's. Which of these bytes VICE's 1541 emulation reproduces when the image is read was not measured here.
+
 ---
 
 ## Identifying the drive over the command channel

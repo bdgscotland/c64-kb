@@ -1,16 +1,22 @@
-<!-- doc-type: reference -->
+---
+kind: game
+---
+
+<!-- doc-type: archetype-reference -->
 
 # C64 Game Archetypes
 
 This catalog documents the eleven canonical game archetypes (genres) that shaped the Commodore 64 library. Each entry is structured as a reference card: the defining mechanic, the scene tradition around that genre, a technique fingerprint that names the graph Technique nodes an agent should consider when implementing that archetype, the pitfalls most likely to surface during development, three to five historical reference titles, and any known modern or homebrew revivals. The catalog is intended to feed `c64_game_briefing` and serve as a starting point for agent-driven game construction plans.
 
-The technique fingerprints use snake_case names that match Technique nodes loaded into the graph. Only confirmed node names appear here. Where a natural technique concept lacks a graph node, the prose section describes it in plain terms and the agent should use `c64_search` or `c64_techniques_for` to find related content. Pitfall names match H2 headings in `docs/pitfalls/`.
+The technique fingerprints use snake_case names that match Technique nodes loaded into the graph. Only confirmed node names appear here. Where a natural technique concept lacks a graph node, the prose section describes it in plain terms and the agent should use `c64_search` or `c64_techniques_for` to find related content. Pitfall names match H2 headings in `docs/pitfalls/`. Each archetype is an `Archetype` node in the graph, named by its `**Archetype:**` line; the fingerprint and pitfall lines become its `FEATURES` and `RISKS` edges, and `c64_game_briefing` reads them (`docs/CONVENTIONS-archetypes.md`).
 
 A brief note on scope: the catalog covers stock PAL and NTSC C64 hardware only. No C128-specific tricks, no REU scrolling shortcuts, no EasyFlash-required game designs. Where NTSC compatibility is relevant, the pal_ntsc_diff tool and the region-timing pitfalls section should be consulted before finalising any timing-sensitive loop.
 
 ---
 
 ## Vertical Shmup
+
+**Archetype:** `vertical_shmup`
 
 The vertical shooter is one of the oldest and most demanding C64 archetypes. The play field scrolls continuously toward the player, enemies arrive from the top of the screen in waves or patterns, and the player's ship moves freely within a defined zone near the bottom. The CPU budget is extreme: the scroll consumes bandwidth every frame, the enemy fleet may number a dozen or more simultaneous sprites, and the SID must maintain music and sound effects without dropping beats. Titles like Uridium and Delta set the benchmark in 1986-87, and Armalyte's vertical mode demonstrated that the hardware could sustain truly dense sprite populations when the multiplexer was tuned correctly.
 
@@ -30,6 +36,8 @@ Enemy bullets and player missiles are typically rendered as sprites in the multi
 
 ## Horizontal Shmup
 
+**Archetype:** `horizontal_shmup`
+
 The horizontal shooter scrolls the play field from right to left while the player ship maneuvers vertically against side-scrolling enemy formations. Armalyte (1988) and Katakis (1987) are the canonical C64 examples; R-Type's official conversion (1988) was commercially significant. The defining challenge is parallax: a convincing sense of depth requires at least two independently scrolling layers moving at different rates, which on character hardware means maintaining two logical screen buffers or blending sprite tiles over a slower-moving background.
 
 Horizontal scrolling in character mode is handled by $D016's fine-scroll field (0-7 pixels), with a coarse column-shift performed by moving data within screen RAM. The column shift is more expensive than a row shift because C64 screen RAM is laid out row-major: moving a column requires touching 25 non-contiguous bytes. The standard optimization is the infinite scroll technique, where a logical screen buffer wider than 40 columns is maintained and a hardware window reveals the correct slice via $D016 plus a column-rotation step that only touches one column per frame.
@@ -47,6 +55,8 @@ Sprite use in horizontal shmups is slightly different from vertical: enemy forma
 ---
 
 ## Single-Screen Platformer
+
+**Archetype:** `single_screen_platformer`
 
 The single-screen platformer presents a fixed-height arena that fits entirely on the 40x25 character display. Platforms, ladders, and hazards are encoded in character tiles; the player and enemies are sprites that must respect tile-based collision rules. Bubble Bobble (1987) and Bombuzal (1988) are the clearest examples, though earlier titles like Manic Miner (1983) established the template. The lack of scroll removes the frame-split complexity but replaces it with a different problem: collision detection must be fast enough to run for multiple actors on every frame within the character grid.
 
@@ -66,6 +76,8 @@ Enemy AI state machines occupy a significant fraction of the CPU budget in this 
 
 ## Scrolling Platformer
 
+**Archetype:** `scrolling_platformer`
+
 The scrolling platformer combines continuous horizontal (sometimes also vertical) scroll with multi-layer environments, large tile-based worlds, and complex player physics. Mayhem in Monsterland (1993) and Turrican (1990) are the genre peaks on C64. The defining constraint is that every frame must advance the scroll, render the new column of tile data into the off-screen buffer edge, update the sprite multiplex for all visible actors, run physics and collision for the player, and call the SID play routine — all within approximately 16,000 cycles on PAL. There is no slack.
 
 The tilemap is the central data structure. A world wider than 40 columns is stored as a compressed array of tile indices. Each frame the scroll counter increments, a new column of tile data is decoded and written into the screen-RAM edge, and the VIC's fine-scroll register advances. When the fine scroll reaches 7, the coarse shift happens and the process repeats. Parallax layers are usually separate character-mode or sprite-mode backgrounds scrolled at a fractional rate — typically half or quarter speed — by updating their scroll registers independently on a raster split below the play field.
@@ -83,6 +95,8 @@ Physics simulation (gravity, jumping arcs, enemy movement) must be integer-based
 ---
 
 ## Top-Down Adventure
+
+**Archetype:** `top_down_adventure`
 
 The top-down adventure renders a world from above, using character tiles to represent terrain and sprites for the player and NPCs. The Last Ninja (1987) adds an isometric perspective, treating the tile grid as a diamond layout; Bruce Lee (1984) uses pure top-down; Beyond the Forbidden Forest (1983) mixes vertical scrolling with top-down exploration. The defining challenge is world representation: a large multi-room or multi-zone world must be loaded from disk incrementally, and the tile art must carry enough visual information to convey walkable versus blocked terrain without a scrolling parallax layer.
 
@@ -102,13 +116,15 @@ Isometric projection (Last Ninja style) adds a geometric transform: the logical 
 
 ## Puzzle
 
+**Archetype:** `puzzle`
+
 Puzzle games operate on a tile grid without continuous scroll. The player moves tiles, characters, or objects according to fixed rules; the goal is to reach a target state. Boulder Dash (1984) is the canonical example: a grid of earth, boulders, and diamonds where physics-like rules (boulders fall, diamonds slide) are simulated one cell at a time on a 40x25 grid. Lemmings-style games require actor pathfinding and state transitions per entity. Pipe Dream (1990) is placement-based. The common factor is that the CPU spends most of its budget on game-logic simulation rather than rendering.
 
 The display is typically a static or near-static character grid. Screen RAM is updated by writing individual character codes to the relevant cells when a tile changes state — no scroll, no full-screen refresh. This makes the rendering cheap and allows the CPU budget to be directed almost entirely at game logic. A 40x25 board with 32 distinct cell types fits in a single character set page (256 chars with spares). The trick is animation: tiles that cycle through frames (a twinkling diamond, a pulsing exit door) need a per-frame update list that walks only the animated cells rather than the full screen.
 
 Puzzle games are one of the few C64 genres where the SID play routine can share the main loop without raster scheduling, because the frame rate need not be pixel-perfect. A simple top-of-frame raster wait (spin on $D011 bit 7 until the blanking period) is sufficient. The bigger engineering challenge is implementing the puzzle rules correctly and efficiently: Boulder Dash's diagonal-fall and explosion logic is a small state machine per cell, and running it for all 1000 cells 50 times a second requires careful ordering to avoid simulation artifacts.
 
-**Technique fingerprint:** `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_multiplex_8`, `zero_page_burst`, `self_modifying_code`
+**Technique fingerprint:** `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_multiplex_8`, `zero_page_burst`, `self_modifying_code`, `text_mode_overlay_render`
 
 **Common pitfalls:** `badline_cycle_loss`, `kernal_clobbers_a_x_y`, `d012_wrap_around`, `sprite_priority_collision_silent`
 
@@ -119,6 +135,8 @@ Puzzle games are one of the few C64 genres where the SID play routine can share 
 ---
 
 ## Text Adventure / Parser-Driven
+
+**Archetype:** `text_adventure`
 
 Text adventure games present a prose narrative and accept natural-language commands typed at a prompt. Infocom's C64 ports (Zork, Hitchhiker's Guide, etc.) are the commercial standard; homegrown AGT and GAC-built games followed. The defining characteristic is that nearly all CPU time goes to parsing, string matching, and world-state management. Sprites are rare or absent; the display is pure character mode, often rendering 40-column text with no scrolling. KERNAL I/O routines (CHRIN, CHROUT, GETIN) handle keyboard input and terminal output.
 
@@ -138,13 +156,15 @@ The SID is typically used only for simple sound effects (a beep on input, a chor
 
 ## Action-Puzzle
 
+**Archetype:** `action_puzzle`
+
 The action-puzzle genre combines real-time input with a falling-tile or placement mechanic. Tetris is the archetype: pieces fall at a rate that increases over time, and the player rotates and drops them to complete rows. Klax (1990) adds diagonal placement. The defining feature is a small, well-defined play field (typically 10-20 columns wide, 20 rows tall) rendered in the center of the screen, with a score HUD flanking it. Pieces are often rendered as large sprites used as oversized tiles rather than as character cells, allowing smooth per-pixel movement during the drop animation.
 
 The play field in Tetris-style games uses only a fraction of the 40x25 character grid. The outer area is filled with HUD elements (score, level, next-piece preview) drawn as character data. The active play field itself can be character-mode (using custom charset tiles to represent filled and empty cells) or sprite-mode (each falling piece rendered as 2x2 or 3x3 sprites). The sprite approach allows sub-character-cell positioning during the drop animation but consumes the sprite slots quickly if multiple pieces are on screen simultaneously.
 
 Real-time input handling in action-puzzle games requires debounce logic: the player holds a direction key and the piece should shift once immediately, then repeat after a delay. The KERNAL's keyboard scan table is not ideally suited for this because GETIN returns a single character per call and does not distinguish held-from-newly-pressed. Most implementations read the CIA keyboard matrix directly (CIA1 $DC00/$DC01) and maintain their own key-state array with per-key age counters; that pattern, with its delay and repeat rates in frames and an exhaustive check of the logic, is `joystick_autorepeat` and `keyboard_matrix_scan` in `techniques/input.md`. The SID play routine is called once per frame from the main loop.
 
-**Technique fingerprint:** `stable_raster_irq`, `sprite_multiplex_8`, `sprite_expand`, `sid_voice_setup`, `sid_play_routine_pattern`, `mcm_text`, `joystick_edge_detect`, `joystick_autorepeat`, `keyboard_matrix_scan`, `frame_sync_loop`
+**Technique fingerprint:** `stable_raster_irq`, `sprite_multiplex_8`, `sprite_expand`, `sid_voice_setup`, `sid_play_routine_pattern`, `mcm_text`, `joystick_edge_detect`, `joystick_autorepeat`, `keyboard_matrix_scan`, `frame_sync_loop`, `text_mode_overlay_render`
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `kernal_clobbers_a_x_y`, `d012_wrap_around`
 
@@ -155,6 +175,8 @@ Real-time input handling in action-puzzle games requires debounce logic: the pla
 ---
 
 ## Sports
+
+**Archetype:** `sports`
 
 Sports games range from one-on-one fighting (International Karate, 1985) to multi-event track-and-field competitions (Summer Games, 1984). The defining technical challenge is animation complexity: athletes require many frames of motion — a sprinter may have 8-12 unique stride frames, a judoka a library of throws and stances — and switching between them based on game state. Sprite multiplex is usually critical because athletes are large (2-3 sprites wide) and there may be two to four players on screen simultaneously.
 
@@ -174,6 +196,8 @@ Multi-event sports games (Summer Games, World Games) present a different challen
 
 ## Racing
 
+**Archetype:** `racing`
+
 Racing games simulate speed and perspective by warping the road ahead of the player. The pseudo-3D road technique on the C64 uses raster IRQs to modify $D016 (horizontal scroll) or character widths per scanline to create the illusion of a curving road receding into a vanishing point. Pitstop II (1984) uses a split-screen view; Buggy Boy (1988) renders a wide, tree-lined track; Outrun-style racers require horizon color changes and road-stripe scheduling. The raster IRQ is not merely useful here — it is the rendering primitive.
 
 The road is not drawn as a sprite or bitmap shape. Instead, each scanline of road is a row of character cells, and the per-scanline horizontal shift applied via $D016 fine scroll creates the road curve. Wider curves require larger shifts on consecutive lines; hills are approximated by varying the scanline count assigned to near versus far road sections. Scaled sprites represent other cars: a car at the horizon is rendered with a small sprite; as it approaches, the sprite is repositioned to a larger Y coordinate and optionally expanded with $D017 (Y-expand) or $D01D (X-expand). The scaling is not continuous — it steps through discrete sizes — but with enough sprite frames the illusion holds.
@@ -191,6 +215,8 @@ Color changes for road stripes, sky gradients, and roadside scenery are all rast
 ---
 
 ## Beat-em-up
+
+**Archetype:** `beat_em_up`
 
 The beat-em-up scrolls horizontally through a sequence of urban or fantasy environments while the player character fights multiple on-screen opponents simultaneously. Renegade (1987) and Target: Renegade (1988) are the defining C64 examples; IK+ (1987) bridges sports and beat-em-up. The genre demands the highest simultaneous sprite count of any non-shmup archetype: a player character (2-3 sprites wide), three to four enemy characters (2 sprites each), health bars and HUD elements, and possibly projectiles — easily twelve to sixteen hardware sprite slots in use, requiring a multiplexer even when enemies are constrained to one plane.
 

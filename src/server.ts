@@ -751,21 +751,23 @@ Limitations: Technique selection is heuristic (vector search + keyword overlap).
     "c64_game_briefing",
     {
       description:
-        `**Phase 5 anchor tool.** Generate a complete, structured C64 game plan from a natural-language brief and optional genre/archetype hint in a single call. Internally orchestrates: vector search → technique lookup → compatibility check → pitfall surfacing → toolchain split → build order (with genre-specific seed recipes like oscar64-simple-shmup for shmup archetype).
+        `**Phase 5 anchor tool.** Generate a complete, structured C64 game plan from a natural-language brief and an archetype name in a single call. Internally orchestrates: archetype lookup → vector search → technique lookup → compatibility check → pitfall surfacing → toolchain split → build order.
 
-Purpose: Replaces the 9-tool manual composition that the c64_game_brief Prompt requires from the agent. One call returns the full structured plan: proposed techniques for the game mechanic, register/KERNAL sets, pitfalls to avoid, Oscar64-primary + KickAssembler-for-hot-paths toolchain split, and a step-by-step build order starting from a matching seed recipe.
+Purpose: Replaces the 9-tool manual composition that the c64_game_brief Prompt requires from the agent. One call returns the full structured plan: proposed techniques for the game mechanic, register/KERNAL sets, pitfalls to avoid, Oscar64-primary + KickAssembler-for-hot-paths toolchain split, and a step-by-step build order.
 
-Inputs: 'description' is a free-form game brief (e.g. "vertical scrolling shoot-em-up with enemy sprites"). 'archetype' is an optional genre hint (shmup | platformer | puzzle | adventure | etc.) used to seed the build order with the closest matching recipe scaffold.
+Inputs: 'description' is a free-form game brief (e.g. "vertical scrolling shoot-em-up with enemy sprites"). 'archetype' is the snake_case name of an Archetype node from docs/game-design/c64-game-archetypes.md (vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, text_adventure, action_puzzle, sports, racing, beat_em_up); "Vertical Shmup" and "vertical-shmup" are read as vertical_shmup. Optional, but without it the tool is c64_demo_briefing.
 
-Output: Same schema as c64_demo_briefing: {brief, proposed_techniques[], compatibility{…}, pitfalls[], toolchain_split{…}, build_order[…]}. 'brief' embeds the archetype string (e.g. "C64 game plan … (genre: shmup)"). build_order step 1 is the game scaffold recipe when archetype is recognised.
+What the archetype does: its FEATURES edges (the page's technique fingerprint) are forced into proposed_techniques regardless of the keyword scorer and exempt from the per-category cap; its RISKS edges (the page's common pitfalls) are added to pitfalls[]; its title is appended to the search text. The page is the source of truth, not a table in this tool.
 
-When to use: Start every new C64 game design session with this tool. The plan guides follow-up tool calls for deeper drill-down on specific techniques, timing budgets, or failure patterns.
+Output: c64_demo_briefing's schema plus two optional fields: 'archetype' {name, title, kind, features[], risks[]} repeating what the graph holds, or 'archetype_not_found' {requested, known[]} when the name matches no Archetype node. In the not-found case the plan is still built from the description alone; nothing is guessed. The build order's step 1 is a game scaffold; the only seed recipe the corpus has is oscar64-simple-shmup, offered for the two shmup archetypes.
 
-Examples: {"description": "vertical shoot-em-up", "archetype": "shmup"} → plan with sprite_multiplex_8/24, soft_scroll_v, sid_play_routine_pattern, oscar64-simple-shmup in build order. {"description": "single-screen platformer"} → platform-game technique set with sprite collision.
+When to use: Start every new C64 game design session with this tool. Read 'archetype_not_found.known' if the name you tried was not accepted.
+
+Examples: {"description": "vertical shoot-em-up", "archetype": "vertical_shmup"} → the eight fingerprint techniques (soft_scroll_v, sprite_multiplex_24, stable_raster_irq, double_irq, sid_voice_setup, sid_play_routine_pattern, sprite_collision_detect, raster_bars) plus the four named pitfalls, oscar64-simple-shmup in step 1. {"description": "a tetris clone", "archetype": "shmup"} → archetype_not_found with the known names.
 
 See also: c64_demo_briefing for demo (non-game) plans. c64_game_brief Prompt as an alternate entry point (agent-composed, less structured).
 
-Limitations: Same heuristic selection as c64_demo_briefing. Archetype matching is currently a simple string equality check — "shmup" seeds oscar64-simple-shmup; other archetypes get the same technique selection without a seed recipe. More archetypes will be added in future phases.`,
+Limitations: Technique discovery beyond the fingerprint is the same heuristic as c64_demo_briefing. A graph ingested before schema 21 has no Archetype nodes; the tool then falls back to a four-word keyword table and reports neither field.`,
       inputSchema: {
         description: z
           .string()
@@ -773,7 +775,7 @@ Limitations: Same heuristic selection as c64_demo_briefing. Archetype matching i
         archetype: z
           .string()
           .optional()
-          .describe("Optional genre/archetype hint: shmup | platformer | puzzle | adventure | etc."),
+          .describe("Archetype node name from docs/game-design/c64-game-archetypes.md: vertical_shmup | horizontal_shmup | single_screen_platformer | scrolling_platformer | top_down_adventure | puzzle | text_adventure | action_puzzle | sports | racing | beat_em_up"),
       },
       outputSchema: BriefingSchema.shape,
     },

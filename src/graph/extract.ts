@@ -35,7 +35,10 @@ export type GraphEntity =
   | { type: "crash_pattern"; symptom: string; description: string; likely_causes: string[]; diagnosis_steps: string }
   | { type: "triggered_by"; pitfall: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
   | { type: "mitigated_by"; pitfall: string; target: string }
-  | { type: "caused_by"; symptom: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" };
+  | { type: "caused_by"; symptom: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
+  | { type: "archetype"; name: string; title: string; kind: "game" | "demo"; source_doc: string }
+  | { type: "archetype_features"; archetype: string; technique: string }
+  | { type: "archetype_risks"; archetype: string; pitfall: string };
 
 const DOC_TYPE_MARKER = "<!-- doc-type: hardware-reference -->";
 const TOOLCHAIN_MARKER = "<!-- doc-type: toolchain-reference -->";
@@ -44,7 +47,15 @@ const FORMAT_MARKER = "<!-- doc-type: format-reference -->";
 const TECHNIQUE_MARKER = "<!-- doc-type: technique-reference -->";
 const PITFALL_MARKER = "<!-- doc-type: pitfall-reference -->";
 const FAILURE_MARKER = "<!-- doc-type: failure-reference -->";
+const ARCHETYPE_MARKER = "<!-- doc-type: archetype-reference -->";
 const ENTITY_H2 = /^##\s+([a-z][a-z0-9_]*)\s+(?:—|--)\s+(.+)$/;
+// Archetype pages (docs/CONVENTIONS-archetypes.md): the H2 is the free-form
+// title and an **Archetype:** line under it carries the snake_case name.
+// The two lines that already existed on the page are the edge sources.
+const ARCHETYPE_NAME_LINE = /^\*\*Archetype:\*\*\s+`?([a-z][a-z0-9_]*)`?\s*$/m;
+const ARCHETYPE_FINGERPRINT = /^\*\*Technique fingerprint:\*\*\s+(.+)$/m;
+const ARCHETYPE_PITFALLS = /^\*\*Common pitfalls:\*\*\s+(.+)$/m;
+const ARCHETYPE_KINDS: ReadonlySet<string> = new Set(["game", "demo"]);
 const TECHNIQUE_H2 = ENTITY_H2;
 const PITFALL_H2 = ENTITY_H2;
 const CRASH_H2 = ENTITY_H2;
@@ -561,6 +572,57 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
           seen.add(t);
           entities.push({ type: "mitigated_by", pitfall: name, target: t });
         }
+      }
+    }
+    return entities;
+  }
+
+  // ── archetype-reference ───────────────────────────────────────────────────
+  if (content.includes(ARCHETYPE_MARKER)) {
+    const { fm, rest } = parseFrontmatter(content);
+    const kind = fm.kind ?? "game";
+    if (!ARCHETYPE_KINDS.has(kind)) {
+      console.warn(`[extract] ${sourcePath}: archetype doc kind "${kind}" is not game or demo — no archetypes ingested from this file (see CONVENTIONS-archetypes.md)`);
+      return entities;
+    }
+    const seenNames = new Set<string>();
+    // Split a backticked, comma-separated name list; refuse anything that is
+    // not a snake_case name here. Whether a name exists in the graph is
+    // settled at link time, where a miss is warned about and counted.
+    const nameList = (line: string | undefined, archetype: string, label: string): string[] => {
+      if (!line) return [];
+      const out: string[] = [];
+      for (const raw of line.split(",")) {
+        const n = raw.trim().replace(/`/g, "");
+        if (!n) continue;
+        if (!TECHNIQUE_NAME.test(n)) {
+          console.warn(`[extract] ${sourcePath}: archetype ${archetype} lists "${n}" under ${label}, which is not a snake_case name — not ingested (see CONVENTIONS-archetypes.md)`);
+          continue;
+        }
+        if (out.includes(n)) continue;
+        out.push(n);
+      }
+      return out;
+    };
+    for (const section of splitH2Sections(rest)) {
+      const title = section.heading.replace(/^##\s+/, "").trim();
+      const nameM = section.body.match(ARCHETYPE_NAME_LINE);
+      if (!nameM) {
+        console.warn(`[extract] ${sourcePath}: H2 "${title}" has no **Archetype:** line — not ingested (see CONVENTIONS-archetypes.md)`);
+        continue;
+      }
+      const name = nameM[1];
+      if (seenNames.has(name)) {
+        console.warn(`[extract] ${sourcePath}: archetype name "${name}" appears under two H2s — second one not ingested`);
+        continue;
+      }
+      seenNames.add(name);
+      entities.push({ type: "archetype", name, title, kind: kind as "game" | "demo", source_doc: sourcePath });
+      for (const t of nameList(matchField(section.body, ARCHETYPE_FINGERPRINT), name, "**Technique fingerprint:**")) {
+        entities.push({ type: "archetype_features", archetype: name, technique: t });
+      }
+      for (const p of nameList(matchField(section.body, ARCHETYPE_PITFALLS), name, "**Common pitfalls:**")) {
+        entities.push({ type: "archetype_risks", archetype: name, pitfall: p });
       }
     }
     return entities;

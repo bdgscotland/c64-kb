@@ -267,11 +267,16 @@ program
 program
   .command("game-briefing <description>")
   .description("Generate a structured C64 game plan from a brief (Phase 5 anchor tool)")
-  .option("--genre <genre>", "Optional genre/archetype hint (shmup, platformer, puzzle, adventure, etc.)")
-  .action(async (description: string, opts: { genre?: string }) => {
+  .option("--archetype <name>", "Archetype name from docs/game-design/c64-game-archetypes.md (vertical_shmup, puzzle, racing, ...)")
+  .option("--genre <genre>", "Alias of --archetype")
+  .action(async (description: string, opts: { archetype?: string; genre?: string }) => {
     const { gameBriefing } = await import("./tools/briefings.js");
-    const result = await gameBriefing(description, opts.genre);
-    console.log(result.text);
+    const result = await gameBriefing(description, opts.archetype ?? opts.genre);
+    if (program.opts().json) {
+      console.log(JSON.stringify(result.structured, null, 2));
+    } else {
+      console.log(result.text);
+    }
     process.exit(0);
   });
 

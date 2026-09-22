@@ -293,5 +293,20 @@
       "pal": "screenshots/memory-layout.png",
       "ntsc": "screenshots/memory-layout-ntsc.png"
     }
+  },
+  "kickassembler/dos-error-codes": {
+    "cycles": 32000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/dos-error-codes.png",
+      "ntsc": "screenshots/dos-error-codes-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
   }
 }

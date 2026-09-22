@@ -4,9 +4,13 @@
  * demoBriefing(description): one-shot structured demo plan — orchestrates
  *   search → techniqueLookup → checkCompatibility → pitfallsFor → build order.
  *
- * gameBriefing(description, archetype?): same but game-framed, with archetype
- *   embedded in the brief field and the simple-shmup recipe surfaced in
- *   build_order when applicable.
+ * gameBriefing(description, archetype?): same but game-framed. The archetype
+ *   is looked up as an Archetype node (docs/game-design/c64-game-archetypes.md,
+ *   docs/CONVENTIONS-archetypes.md): its FEATURES targets are forced into the
+ *   proposal, its RISKS targets into the pitfalls, and its title into the
+ *   search. A name the graph does not have is reported as archetype_not_found
+ *   with the known names. A graph with no Archetype nodes at all (the test
+ *   fixtures) falls back to a small built-in table.
  *
  * These replace the manual 9-tool composition that a consuming agent had to
  * perform when using the c64_demo_brief / c64_game_brief MCP Prompts. One
@@ -253,6 +257,65 @@ export function whyProposed(techniqueName: string, category: string, description
 // Public API
 // ---------------------------------------------------------------------------
 
+// Archetype resolution against the graph. ---------------------------------
+
+type ArchetypeRow = { name: string; title: string; kind: string };
+type ArchetypeResolution =
+  | { mode: "graph"; archetype: ArchetypeRow; features: string[]; risks: string[] }
+  | { mode: "not_found"; requested: string; known: string[] }
+  | { mode: "fallback" };
+
+/** "Vertical Shmup" / "vertical-shmup" / "Vertical_Shmup" all read as vertical_shmup. */
+export function normaliseArchetypeName(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+/**
+ * Look the archetype up. When the graph holds no Archetype nodes at all
+ * (fixture graphs, a store ingested before schema 21) the result is
+ * "fallback" and the caller uses the built-in tables; a graph with
+ * archetypes never falls back, so an unknown name is reported, not guessed.
+ */
+async function resolveArchetype(raw: string): Promise<ArchetypeResolution> {
+  const fk = await getFalkor();
+  const all = await fk.roQuery(
+    `MATCH (a:Archetype) RETURN a.name AS name, a.title AS title, a.kind AS kind ORDER BY name`
+  );
+  const rows = ((all.data ?? []) as ArchetypeRow[]).filter(r => r.name);
+  if (rows.length === 0) return { mode: "fallback" };
+  const wanted = normaliseArchetypeName(raw);
+  const hit = rows.find(r => r.name === wanted);
+  if (!hit) return { mode: "not_found", requested: raw, known: rows.map(r => r.name) };
+  const f = await fk.roQuery(
+    `MATCH (a:Archetype {name: $name})-[:FEATURES]->(t:Technique) RETURN t.name AS name ORDER BY name`,
+    { name: hit.name }
+  );
+  const r = await fk.roQuery(
+    `MATCH (a:Archetype {name: $name})-[:RISKS]->(p:Pitfall) RETURN p.name AS name ORDER BY name`,
+    { name: hit.name }
+  );
+  return {
+    mode: "graph",
+    archetype: { name: hit.name, title: hit.title ?? hit.name, kind: hit.kind ?? "game" },
+    features: ((f.data ?? []) as Array<{ name: string }>).map(x => x.name),
+    risks: ((r.data ?? []) as Array<{ name: string }>).map(x => x.name),
+  };
+}
+
+// Built-in tables, used ONLY when the graph has no Archetype nodes. With the
+// archetype page ingested (schema 21) the page is the source of truth and
+// these are never read.
+const FALLBACK_ARCHETYPE_TERMS: Record<string, string> = {
+  shmup: "sprite multiplex scroll raster SID music shoot enemy",
+  platformer: "sprite scroll character collision SID music jump",
+  puzzle: "text mode overlay render playfield piece field character SID music logic",
+  adventure: "text mode overlay render character scroll SID music KERNAL",
+};
+const FALLBACK_FORCED_TECHNIQUES: Record<string, string[]> = {
+  puzzle: ["text_mode_overlay_render"],
+  adventure: ["text_mode_overlay_render"],
+};
+
 export async function demoBriefing(description: string): Promise<BriefingResult> {
   return buildBriefing(description, undefined);
 }
@@ -273,28 +336,25 @@ async function buildBriefing(
   // -------------------------------------------------------------------------
   // Step 1: Resolve proposed techniques
   // -------------------------------------------------------------------------
-  // For game briefs, augment the description with the archetype to improve
-  // technique discovery (e.g. "shmup" → sprite multiplexer, scroll, SID music)
-  const ARCHETYPE_TERMS: Record<string, string> = {
-    shmup: "sprite multiplex scroll raster SID music shoot enemy",
-    platformer: "sprite scroll character collision SID music jump",
-    puzzle: "text mode overlay render playfield piece field character SID music logic",
-    adventure: "text mode overlay render character scroll SID music KERNAL",
-  };
-  const searchDescription = archetype && ARCHETYPE_TERMS[archetype.toLowerCase()]
-    ? `${description} ${ARCHETYPE_TERMS[archetype.toLowerCase()]}`
-    : description;
-
-  // Archetypes that MUST surface specific techniques even if keyword scoring
-  // misses them. Each entry must include techniques whose pitfalls would
-  // bite the typical implementation of the archetype — see the
-  // text_mode_overlay_render → dirty_cell_skip_leaves_overlay_trail edge
-  // for the canonical example. Deterministic-by-design: these techniques
-  // are always proposed regardless of the keyword scorer's verdict.
-  const FORCED_TECHNIQUES_FOR_ARCHETYPE: Record<string, string[]> = {
-    puzzle: ["text_mode_overlay_render"],
-    adventure: ["text_mode_overlay_render"],
-  };
+  // For game briefs the archetype comes from the graph: its title widens the
+  // search, its FEATURES are forced into the proposal (they survive the
+  // per-category cap below: the page authored them, the keyword scorer did
+  // not guess them), its RISKS join the pitfalls. Only a graph with no
+  // Archetype nodes reads the built-in tables.
+  const resolved: ArchetypeResolution | undefined = archetype !== undefined
+    ? await resolveArchetype(archetype)
+    : undefined;
+  let searchDescription = description;
+  const forced: string[] = [];
+  if (resolved?.mode === "graph") {
+    searchDescription = `${description} ${resolved.archetype.title}`;
+    forced.push(...resolved.features);
+  } else if (resolved?.mode === "fallback" && archetype) {
+    const key = archetype.toLowerCase();
+    if (FALLBACK_ARCHETYPE_TERMS[key]) searchDescription = `${description} ${FALLBACK_ARCHETYPE_TERMS[key]}`;
+    forced.push(...(FALLBACK_FORCED_TECHNIQUES[key] ?? []));
+  }
+  const archetypeForced = new Set(resolved?.mode === "graph" ? resolved.features : []);
   // Description-level signals that force specific techniques regardless of
   // archetype (e.g. a demo brief mentioning "text-mode playfield" should
   // still get the rendering pitfall surfaced).
@@ -304,10 +364,6 @@ async function buildBriefing(
       techniques: ["text_mode_overlay_render"],
     },
   ];
-  const forced: string[] = [];
-  if (archetype) {
-    forced.push(...(FORCED_TECHNIQUES_FOR_ARCHETYPE[archetype.toLowerCase()] ?? []));
-  }
   for (const rule of FORCED_BY_DESCRIPTION_PATTERN) {
     if (rule.pattern.test(description)) {
       for (const t of rule.techniques) if (!forced.includes(t)) forced.push(t);
@@ -335,6 +391,7 @@ async function buildBriefing(
   const categoryCounts = new Map<string, number>();
   const validTechs = enriched.filter(t => {
     if (t.name === "") return false;
+    if (archetypeForced.has(t.name)) return true;
     const cat = t.category || "_uncategorized";
     const count = categoryCounts.get(cat) ?? 0;
     if (count >= MAX_PER_CATEGORY) return false;
@@ -398,6 +455,28 @@ async function buildBriefing(
         title: p.title,
         severity: p.severity,
         triggered_by_proposed: triggeredByProposed.length > 0 ? triggeredByProposed : [techName],
+      });
+    }
+  }
+
+  // The archetype's RISKS: pitfalls the page names for this shape of game,
+  // added when no proposed technique already surfaced them.
+  if (resolved?.mode === "graph" && resolved.risks.length > 0) {
+    const fkRisks = await getFalkor();
+    const rows = await fkRisks.roQuery(
+      `MATCH (p:Pitfall) WHERE p.name IN $names
+       OPTIONAL MATCH (p)-[:TRIGGERED_BY]->(t:Technique)
+       RETURN p.name AS name, p.title AS title, p.severity AS severity, collect(t.name) AS triggers`,
+      { names: resolved.risks }
+    );
+    for (const row of (rows.data ?? []) as Array<{ name: string; title: string; severity: string; triggers: string[] }>) {
+      if (seenPitfalls.has(row.name)) continue;
+      seenPitfalls.add(row.name);
+      pitfallsRaw.push({
+        name: row.name,
+        title: row.title ?? "",
+        severity: row.severity ?? "low",
+        triggered_by_proposed: (row.triggers ?? []).filter(t => t && validTechs.some(vt => vt.name === t)),
       });
     }
   }
@@ -495,11 +574,23 @@ async function buildBriefing(
 
   // Add a game scaffold step for game briefs
   if (isGame) {
-    const shmupRecipe = isGame && archetype === "shmup" ? ["oscar64-simple-shmup"] : [];
+    // The one seed recipe the corpus has is the shmup scaffold; it is offered
+    // when the archetype (graph name or fallback key) is a shmup and the
+    // recipe node exists. No other archetype has a scaffold recipe yet.
+    // In the not-found case the label says "generic": the graph did not
+    // recognise the name, so the scaffold must not be labelled with it.
+    const archetypeKey = resolved?.mode === "graph"
+      ? resolved.archetype.name
+      : resolved?.mode === "not_found" ? "" : (archetype ?? "").toLowerCase();
+    let scaffoldRecipes: string[] = [];
+    if (/shmup/.test(archetypeKey)) {
+      const rr = await fk.roQuery(`MATCH (r:Recipe {name: "oscar64-simple-shmup"}) RETURN r.name AS name`);
+      if ((rr.data?.length ?? 0) > 0) scaffoldRecipes = ["oscar64-simple-shmup"];
+    }
     build_order.push({
       step: stepNum++,
-      label: `Game scaffold (${archetype ?? "generic"} archetype)`,
-      recipes: shmupRecipe,
+      label: `Game scaffold (${archetypeKey || "generic"} archetype)`,
+      recipes: scaffoldRecipes,
     });
   }
 
@@ -515,7 +606,11 @@ async function buildBriefing(
   // -------------------------------------------------------------------------
   // Step 8: Compose brief summary text
   // -------------------------------------------------------------------------
-  const archetypeLabel = archetype ? ` (genre: ${archetype})` : "";
+  const archetypeLabel = resolved?.mode === "graph"
+    ? ` (genre: ${resolved.archetype.name}, ${resolved.archetype.title})`
+    : resolved?.mode === "not_found"
+      ? ` (genre "${archetype}" is not an archetype the graph knows)`
+      : archetype ? ` (genre: ${archetype})` : "";
   const brief =
     `C64 ${isGame ? "game" : "demo"} plan for: "${description}"${archetypeLabel}. ` +
     `Proposed ${proposed_techniques.length} technique(s) across ${new Set(proposed_techniques.map(t => t.category)).size} categories. ` +
@@ -530,6 +625,12 @@ async function buildBriefing(
     pitfalls,
     toolchain_split,
     build_order,
+    ...(resolved?.mode === "graph"
+      ? { archetype: { ...resolved.archetype, features: resolved.features, risks: resolved.risks } }
+      : {}),
+    ...(resolved?.mode === "not_found"
+      ? { archetype_not_found: { requested: resolved.requested, known: resolved.known } }
+      : {}),
   };
 
   // -------------------------------------------------------------------------
@@ -555,6 +656,14 @@ function renderBriefingText(
   const isGame = archetype !== undefined;
   let out = `# C64 ${isGame ? "Game" : "Demo"} Briefing\n\n`;
   out += `**Brief:** ${b.brief}\n\n`;
+  if (b.archetype_not_found) {
+    out += `**Archetype not found:** "${b.archetype_not_found.requested}". Known archetypes: ${b.archetype_not_found.known.join(", ")}\n\n`;
+  }
+  if (b.archetype) {
+    out += `**Archetype:** ${b.archetype.name} (${b.archetype.title}, ${b.archetype.kind})\n`;
+    out += `Fingerprint: ${b.archetype.features.join(", ") || "(none)"}\n`;
+    out += `Common pitfalls: ${b.archetype.risks.join(", ") || "(none)"}\n\n`;
+  }
 
   out += `## Proposed Techniques (${b.proposed_techniques.length})\n\n`;
   out += `| Name | Category | Complexity | Why |\n|------|----------|------------|-----|\n`;
@@ -591,7 +700,7 @@ function renderBriefingText(
   } else {
     for (const p of b.pitfalls) {
       out += `- **[${p.severity.toUpperCase()}]** ${p.name}: ${p.title}\n`;
-      out += `  Triggered by: ${p.triggered_by_proposed.join(", ")}\n`;
+      out += `  Triggered by: ${p.triggered_by_proposed.length > 0 ? p.triggered_by_proposed.join(", ") : "(archetype risk; no proposed technique triggers it)"}\n`;
     }
   }
 

@@ -5,7 +5,38 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 713, schema 20, tools 1.22.2.
+Data 715, schema 21, tools 1.23.0.
+
+**The 1541 DOS error codes (#14).** The IEC disk reference gained a
+table of every channel-15 code the 1541 DOS 2.6 ROM can produce, with the
+message text as the ROM spells it, the cause, and a class for an agent
+(retry, media, user error, program bug), read from the drive ROM image on
+this machine with the offsets cited, plus the mapping from D64 error
+bytes to DOS codes, which are not the same numbers. Four codes are
+provoked against a fresh disk by the `dos-error-codes` recipe and the
+replies pinned on both models; the codes that come only from the ROM text
+are marked as such. The file I/O page's two "not measured here" notes on
+message length and on codes 74 and 01 are closed by this and by the
+persistence recipe.
+
+**Game archetypes are graph nodes (#17).** The archetype page had a
+technique fingerprint and a pitfall list for every archetype, and
+`c64_game_briefing` read none of them: it widened the search from a four-word table in code,
+forced techniques from a two-entry table and seeded a recipe for the one
+string "shmup". The page is now the source of truth. Each H2 with an
+`**Archetype:**` line is an `Archetype` node; its fingerprint becomes
+`FEATURES` edges to techniques and its common-pitfalls line `RISKS` edges
+to pitfalls, both MATCHed at both ends so a misspelt name is warned about
+and counted in the ingest summary, never dropped in silence
+(`docs/CONVENTIONS-archetypes.md`). The briefing looks the archetype up,
+forces every `FEATURES` target into the plan (exempt from the
+three-per-category cap), adds every `RISKS` target to the pitfalls and
+searches on the archetype's title; the output gains an `archetype` field
+repeating what the graph held, and a name the graph does not have returns
+`archetype_not_found` with the known names instead of doing nothing. The
+built-in tables survive only for a graph with no Archetype nodes, which
+is what the test fixtures build. Schema 21 for the label and two edge
+types; tools 1.23.0 for the two output fields; data 714 for the page.
 
 **Two ontology repairs from the gap map (#17).** The briefing's toolchain
 handoff now decides by what a technique demands of the machine, read from

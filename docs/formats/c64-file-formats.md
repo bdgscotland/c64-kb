@@ -106,7 +106,7 @@ Total: **683 sectors, 174,848 bytes** (standard, no error bytes).
 | 196,608 | 40 tracks (SpeedDOS/Dolphin extension), no errors |
 | 197,376 | 40 tracks + 768 error bytes |
 
-Error bytes, when present, are appended after all sector data: one byte per sector indicating the error code that the 1541 ROM would have returned (0 = no error, 20–29 = various read errors).
+Error bytes, when present, are appended after all sector data: one byte per sector indicating the error code that the 1541 ROM would have returned (0 = no error, 20–29 = various read errors). The byte values are not the DOS numbers; the mapping from error byte to DOS code is tabulated in `iec-disk-reference.md`, "The 1541 DOS Error Codes".
 
 **Directory and BAM (track 18):**
 

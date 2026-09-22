@@ -96,7 +96,8 @@ The pre-commit gate is you. There is no CI yet.
   MCP. `src/server.ts` — MCP registration and tool descriptions.
 - `scripts/check-listings.ts` — the build gate. `--file <path>` checks one file.
 - `test/` — vitest; `vitest.config.ts` isolates the stores.
-- `docs/ONTOLOGY.md` — 12 node labels, 17 edge types, what each means.
+- `docs/ONTOLOGY.md` — every node label and edge type, what each means,
+  and which page line produces it.
 - `CHANGELOG.md`, `VERSION` — bump `KB_DATA_VERSION` for content,
   `KB_SCHEMA_VERSION` for ontology shape, package version with tool surface.
 

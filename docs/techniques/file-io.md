@@ -332,7 +332,9 @@ cares about.
 3. CHKIN 15, then CHRIN/READST as in kernal_file_read_seq. The line ends
    with a CR and the drive raises EOI on that CR. The longest line seen
    in these runs was 27 bytes including the CR; 40 is a comfortable
-   buffer (whether every 1541 message fits is not measured here).
+   buffer (every message in the ROM's table, read from the drive ROM on this
+   machine, is in `../formats/iec-disk-reference.md`, "The 1541 DOS Error
+   Codes").
 4. CLRCHN, CLOSE 15. Reading the line is what resets it to `00, OK,00,00`
    (the DOS rule; not measured separately here).
 
@@ -411,12 +413,17 @@ FOUND,00,00` after LOAD of a name that was not on the disk (LOAD itself
 returned C=1, A=4); `63, FILE EXISTS,00,00` after OPEN of `,P,W` on an
 existing name (OPEN itself returned C=0).
 
-Not measured here, from the 1541 DOS message set (rung 4): `26, WRITE
-PROTECT ON` when the notch is covered; `72, DISK FULL` when the last
-block goes; `74, DRIVE NOT READY` when there is no disk in the drive;
-`01, FILES SCRATCHED,nn,00` after a scratch, where the track field is the
-count. Codes 20 to 29 are read or write errors with the track and sector
-filled in.
+Measured since, in `../recipes/oscar64/high-score-persist.md`: `74,DRIVE
+NOT READY,00,00` with no disk attached and `01, FILES SCRATCHED,01,00`
+after a scratch, where the track field is the count. Not measured here,
+from the 1541 DOS message set (rung 4): `26, WRITE PROTECT ON` when the
+notch is covered; `72, DISK FULL` when the last block goes. Codes 20 to
+29 are read or write errors with the track and sector filled in. The
+full table of codes, message text as the ROM spells it, causes and an
+agent's class for each (retry, media, user error, program bug), read
+from the 1541 ROM with four codes provoked in VICE, is
+`../formats/iec-disk-reference.md`, "The 1541 DOS Error Codes", with
+the recipe `../recipes/kickassembler/dos-error-codes.md`.
 
 ### Variations
 

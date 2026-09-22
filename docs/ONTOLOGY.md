@@ -19,7 +19,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (12)
+## Node Types (13)
 
 ### KernalRoutine
 
@@ -187,7 +187,26 @@ in `CONVENTIONS-techniques.md`; created on first reference.
 
 Source: `techniques/*.md` `**Demands:**` lines.
 
-## Edge Types (17)
+### Archetype
+
+A shape a game or demo takes: the vertical shooter, the single-screen
+platformer, the text adventure. Traversed through, not read as a
+property: `c64_game_briefing` walks Archetype to its techniques and
+pitfalls, which is why it is a node and not a keyword table in the tool.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | snake_case canonical name, from the `**Archetype:**` line (e.g. "vertical_shmup") |
+| title | string | The H2 text (e.g. "Vertical Shmup") |
+| kind | string | "game" or "demo", from file frontmatter; defaults to game |
+| source_doc | string | Path of the page that defines it |
+
+Source: `game-design/c64-game-archetypes.md` (one Archetype per H2 that
+carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
+schema 21 the briefing tool held four archetype keywords and two forced
+techniques in code and the page's fingerprints were read by nobody.
+
+## Edge Types (19)
 
 ### BELONGS_TO
 
@@ -349,12 +368,38 @@ Meaning: "this recipe loads code or data into this region." Derived from
 the listing's own load addresses (`* = $0900`, `#pragma region(...)`,
 `.org`), not from prose.
 
+### FEATURES
+
+Direction: `Archetype → Technique`
+
+Meaning: "a game of this shape is built on this technique" —
+`vertical_shmup` FEATURES `sprite_multiplex_24`, `text_adventure` FEATURES
+`ram_under_kernal`. Authored with the `**Technique fingerprint:**` line
+(`CONVENTIONS-archetypes.md`); both ends MATCHed, a name that matches no
+Technique is warned about and counted in the ingest summary as
+`archetype_features … dropped`. Read by `c64_game_briefing`, which forces
+every target into the proposal for that archetype, exempt from the
+per-category cap.
+
+### RISKS
+
+Direction: `Archetype → Pitfall`
+
+Meaning: "a game of this shape commonly meets this pitfall" —
+`racing` RISKS `raster_line_count_difference`, `top_down_adventure` RISKS
+`vic_bank_visibility_collision`. Authored with the `**Common pitfalls:**`
+line; same MATCH-both discipline, misses counted as `archetype_risks …
+dropped`. Read by `c64_game_briefing`, which adds each target to the
+plan's pitfalls when no proposed technique already surfaced it. It is a
+statement about the genre, not a trigger: TRIGGERED_BY still says which
+technique's code the pitfall arises in.
+
 ---
 
 ## Schema state
 
 `ensureSchema()` creates a range index and a unique constraint on the
-primary key of every node label (12) and seeds:
+primary key of every node label (13) and seeds:
 - 5 `Chip` nodes (VIC-II, SID, CIA1, CIA2, 6510)
 - 2 `Region` nodes (PAL, NTSC)
 
