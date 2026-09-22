@@ -70,6 +70,7 @@ const work = mkdtempSync(join(tmpdir(), "c64kb-listings-"));
 let failures = 0;
 let built = 0;
 let skipped = 0;
+let recipesSeen = 0;
 const missing = new Set<string>();
 
 function report(ok: boolean, label: string, detail = "") {
@@ -93,7 +94,8 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
   for (const md of walk(dir)) {
     const rel = relative(ROOT, md);
     const text = readFileSync(md, "utf8");
-    if (!/^---\n[\s\S]*?\nrecipe:/.test(text)) continue; // not a recipe page (e.g. screenshots/README.md)
+    if (!/^---\n(?:[\s\S]*?\n)?recipe:/m.test(text)) continue; // not a recipe page (e.g. screenshots/README.md)
+    recipesSeen++;
     const all = fences(text);
     const stem = basename(md, ".md");
     if (toolchain === "kickassembler") {
@@ -160,8 +162,13 @@ if (tools.kickass && tools.java) {
   missing.add("KickAssembler (KICKASS_JAR + java)");
 }
 
+if (recipesSeen === 0) {
+  console.log("FAIL no recipe pages found under docs/recipes (frontmatter filter broken?)");
+  failures++;
+}
+
 // ---------------------------------------------------------------------------
-console.log(`\n${built} built, ${failures} failed, ${skipped} recipes skipped for missing tools`);
+console.log(`\n${built} built, ${recipesSeen} recipe pages seen, ${failures} failed, ${skipped} recipes skipped for missing tools`);
 if (missing.size) {
   console.log(`${allowMissing ? "warning" : "error"}: toolchains not found: ${[...missing].join(", ")}`);
   if (!allowMissing) failures++;
