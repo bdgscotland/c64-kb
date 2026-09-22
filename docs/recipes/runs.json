@@ -1,5 +1,5 @@
 {
-  "_comment": "Pinned VICE runs for scripts/verify-recipes.ts. Key = <toolchain>/<page stem>. Defaults when absent: 8000000 cycles, PAL, screenshots/<stem>.png. Every run adds +autostart-delay-random so the frame captured is the same every time.",
+  "_comment": "Pinned VICE runs for scripts/verify-recipes.ts. Key = <toolchain>/<page stem>. Defaults when absent: 8000000 cycles, PAL, screenshots/<stem>.png, no extra flags, no disk. Every run adds +autostart-delay-random so the frame captured is the same every time. Optional per key: \"flags\" (extra x64sc arguments), \"disk\": {\"name\": \"NAME,ID\"} (a fresh D64 formatted with c1541 before each run and attached as drive 8).",
   "oscar64/pal-ntsc-detect": {
     "cycles": 8000000,
     "models": [

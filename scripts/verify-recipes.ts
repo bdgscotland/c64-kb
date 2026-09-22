@@ -11,9 +11,13 @@
  * or the emulator — all of which the page must then account for.
  *
  * Run parameters live in docs/recipes/runs.json, keyed "<toolchain>/<stem>":
- *   { "cycles": 8000000, "models": ["pal"], "flags": [], "shots": {"pal": "screenshots/x.png"} }
+ *   { "cycles": 8000000, "models": ["pal"], "flags": [], "shots": {"pal": "screenshots/x.png"},
+ *     "disk": {"name": "TEST,01"} }
  * Anything not listed gets the defaults: 8,000,000 cycles, PAL, one shot at
- * screenshots/<stem>.png.
+ * screenshots/<stem>.png, no disk. With "disk", a fresh D64 is formatted
+ * with c1541 (`-format NAME,ID`) before every run and attached as drive 8,
+ * so a recipe that writes or reads files starts from the same empty disk
+ * each time and nothing in the repo is modified by the run.
  *
  * Usage:
  *   npx tsx scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
@@ -47,7 +51,7 @@ const onlyFile = opt("--file");
 const keepDir = opt("--keep");
 const jobsOpt = Number(opt("--jobs") ?? 0);
 
-type Run = { cycles: number; models: string[]; flags: string[]; shots: Record<string, string> };
+type Run = { cycles: number; models: string[]; flags: string[]; shots: Record<string, string>; disk?: { name: string } };
 type Manifest = Record<string, Partial<Run>>;
 
 const manifest: Manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, "utf8")) : {};
@@ -63,6 +67,7 @@ const tools = {
   oscar64: process.env.OSCAR64 && existsSync(process.env.OSCAR64) ? process.env.OSCAR64 : which("oscar64"),
   cl65: which("cl65"),
   x64sc: which("x64sc"),
+  c1541: which("c1541"),
   python3: which("python3"),
 };
 if (!process.env.GSETTINGS_SCHEMA_DIR && existsSync("/opt/homebrew/share/glib-2.0/schemas")) {
@@ -104,7 +109,7 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
     const m = manifest[`${toolchain}/${stem}`] ?? {};
     const models = m.models ?? ["pal"];
     const shots = m.shots ?? Object.fromEntries(models.map((mo) => [mo, `screenshots/${stem}${mo === "pal" ? "" : `-${mo}`}.png`]));
-    jobs.push({ rel, toolchain, stem, md, run: { cycles: m.cycles ?? 8000000, models, flags: m.flags ?? [], shots } });
+    jobs.push({ rel, toolchain, stem, md, run: { cycles: m.cycles ?? 8000000, models, flags: m.flags ?? [], shots, disk: m.disk } });
   }
 }
 if (!jobs.length) { console.log(onlyFile ? `no recipe page at ${onlyFile}` : "FAIL no recipe pages found"); process.exit(onlyFile ? 0 : 1); }
@@ -135,9 +140,17 @@ function build(job: Job): { prg: string | null; log: string } {
   return { prg: r.status === 0 ? prg : null, log: (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n") };
 }
 
-function runVice(prg: string, png: string, cycles: number, model: string, extra: string[]): string {
+function runVice(prg: string, png: string, cycles: number, model: string, extra: string[], disk?: { name: string }): string {
+  const diskArgs: string[] = [];
+  if (disk) {
+    if (!tools.c1541) return "runs.json asks for a disk but c1541 is not on PATH";
+    const d64 = png.replace(/\.png$/, ".d64");
+    const f = spawnSync(tools.c1541, ["-format", disk.name, "d64", d64], { encoding: "utf8" });
+    if (!existsSync(d64)) return `c1541 could not format ${d64} (exit ${f.status}): ${(f.stderr || f.stdout).split("\n").slice(-2).join(" | ")}`;
+    diskArgs.push("-8", d64);
+  }
   const args = ["-default", "-warp", "+sound", "+autostart-delay-random", "-autostartprgmode", "1",
-    "-limitcycles", String(cycles), ...(MODEL_FLAG[model] ?? []), ...extra, "-exitscreenshot", png, "-autostart", prg];
+    "-limitcycles", String(cycles), ...(MODEL_FLAG[model] ?? []), ...extra, ...diskArgs, "-exitscreenshot", png, "-autostart", prg];
   const r = spawnSync(tools.x64sc!, args, { encoding: "utf8", timeout: 300_000 });
   if (!existsSync(png)) return `x64sc produced no screenshot (exit ${r.status}${r.signal ? ` ${r.signal}` : ""}): ${(r.stderr || r.stdout).split("\n").slice(-3).join(" | ")}`;
   return "";
@@ -182,7 +195,7 @@ const runOne = (job: Job) => {
     if (!shotRel) { failures++; say(false, `${job.rel} [${model}]`, "no shot path in runs.json for this model"); continue; }
     const baseline = join(dirname(job.md), shotRel);
     const fresh = join(work, `${job.toolchain}-${job.stem}-${model}.png`);
-    const err = runVice(prg, fresh, job.run.cycles, model, job.run.flags);
+    const err = runVice(prg, fresh, job.run.cycles, model, job.run.flags, job.run.disk);
     if (err) { failures++; say(false, `${job.rel} [${model}]`, err); continue; }
     if (!existsSync(baseline)) {
       if (update) { mkdirSync(dirname(baseline), { recursive: true }); copyFileSync(fresh, baseline); updated++; say(true, `${job.rel} [${model}]`, `baseline written: ${relative(ROOT, baseline)} (look at it)`); }
