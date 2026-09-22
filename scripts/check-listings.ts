@@ -32,6 +32,15 @@ import { basename, join, relative } from "node:path";
 const ROOT = new URL("..", import.meta.url).pathname;
 const DOCS = join(ROOT, "docs");
 const allowMissing = process.argv.includes("--allow-missing");
+// --file <path> (repo-relative or absolute): check only that markdown file.
+// Used by the PostToolUse hook after an edit, so one file is checked in a
+// second or two instead of the whole tree.
+const fileArgIdx = process.argv.findIndex((a) => a === "--file" || a.startsWith("--file="));
+const onlyFile = fileArgIdx === -1
+  ? null
+  : (process.argv[fileArgIdx].includes("=") ? process.argv[fileArgIdx].split("=")[1] : process.argv[fileArgIdx + 1]);
+const onlyRel = onlyFile ? relative(ROOT, onlyFile.startsWith("/") ? onlyFile : join(ROOT, onlyFile)) : null;
+const inScope = (p: string) => !onlyRel || relative(ROOT, p) === onlyRel;
 
 type Fence = { lang: string; code: string; index: number };
 
@@ -91,7 +100,7 @@ function runKick(src: string, out: string): { ok: boolean; log: string } {
 for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
   const dir = join(DOCS, "recipes", toolchain);
   if (!existsSync(dir)) continue;
-  for (const md of walk(dir)) {
+  for (const md of walk(dir).filter(inScope)) {
     const rel = relative(ROOT, md);
     const text = readFileSync(md, "utf8");
     if (!/^---\n(?:[\s\S]*?\n)?recipe:/m.test(text)) continue; // not a recipe page (e.g. screenshots/README.md)
@@ -136,7 +145,7 @@ const OPERAND = /\b(?:jmp|jsr|bne|beq|bcc|bcs|bpl|bmi|bvc|bvs|lda|sta|ldx|ldy|st
 const MACRO_ARGS = /\b[A-Za-z_]\w*\(([^)]*)\)/g;
 
 if (tools.kickass && tools.java) {
-  for (const md of walk(DOCS)) {
+  for (const md of walk(DOCS).filter(inScope)) {
     if (md.includes(`${join("docs", "recipes")}/`)) continue;
     const rel = relative(ROOT, md);
     for (const f of fences(readFileSync(md, "utf8"))) {
@@ -184,7 +193,7 @@ if (tools.kickass && tools.java) {
   missing.add("KickAssembler (KICKASS_JAR + java)");
 }
 
-if (recipesSeen === 0) {
+if (recipesSeen === 0 && !onlyRel) {
   console.log("FAIL no recipe pages found under docs/recipes (frontmatter filter broken?)");
   failures++;
 }

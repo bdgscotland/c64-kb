@@ -400,6 +400,30 @@ find. A recipe that does not build does not land. The KickAssembler
 recipes were also run in VICE and the screenshots are in
 `docs/recipes/kickassembler/screenshots/`.
 
+### Working on this repo with Claude Code
+
+The repo carries its own harness for agents:
+
+- `CLAUDE.md` — the rules (a listing is built before it lands; anything
+  that draws is run in VICE and measured; every number names its evidence;
+  corrections are recorded; metadata changes need `ingest:clean`), the
+  instruments with exact commands, the gates, and the gotchas that cost
+  time this year.
+- `.claude/settings.json` — hooks: after any edit to a `docs/**/*.md` the
+  file's listings are built and the result is shown to the agent; a
+  metadata change adds a reminder to re-ingest; `src/` edits are
+  type-checked and `dist/` rebuilt; `git add -A`, `--no-verify` and
+  force-pushing `main` are refused; session start reports versions, store
+  health, installed toolchains and whether `docs/` changed since last time.
+- `.claude/skills/` — `verify-listing` (build → headless VICE → measured
+  screenshot), `audit-doc` (claim-by-claim fact-check with the evidence
+  ladder), `add-doc` (a page the extractor can read, with the metadata
+  that becomes edges).
+
+Set `KICKASS_JAR` (and `OSCAR64` if it is not on PATH) in your shell so the
+hooks can build listings; without them they report the gap instead of
+passing silently.
+
 ---
 
 ## License
