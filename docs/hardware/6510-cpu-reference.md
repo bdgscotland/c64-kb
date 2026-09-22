@@ -18,11 +18,19 @@ software.
 For the assembly programmer the practical consequences are:
 
 - All 151 official 6502 opcodes work unchanged.
-- All ~30 commonly-used "illegal" / unofficial opcodes work unchanged. They
-  are documented separately in [6502-illegal-opcodes.md](6502-illegal-opcodes.md).
+- The ~30 documented "illegal" / unofficial opcodes behave exactly as on
+  any NMOS 6502: the stable majority identically across 6502/6510/8500,
+  and the small unstable group (XAA/ANE, LAX #imm and the AHX/SHX/SHY/TAS
+  family) varying per chip on the 6510 just as on the 6502. They are
+  documented, with per-opcode stability ratings, in
+  [6502-illegal-opcodes.md](6502-illegal-opcodes.md).
 - The classic 6502 errata are all present: the JMP indirect page-wrap bug,
-  the BRK 2-byte signature, the undefined decimal flag at reset, the lack of
-  carry-propagation through ADC/SBC in decimal mode on overflow, and so on.
+  the BRK 2-byte signature, the undefined decimal flag at reset, the
+  invalid N/V/Z flags after ADC/SBC in decimal mode (C is correct; an
+  earlier version of this bullet named a "lack of carry-propagation" in
+  decimal mode, which is not a real erratum — measured in VICE,
+  SED / CLC / LDA #$99 / ADC #$01 gives A=$00 with C=1, see
+  [BCD mode](#bcd-mode)), and so on.
 - Reading address $00 returns the data-direction register; reading $01
   returns the value at the port pins, AND-ed with the direction mask in a
   way that depends on which lines are configured as outputs vs inputs.
@@ -41,7 +49,7 @@ legal instruction. Illegal/undocumented opcodes are in a companion document.
 | Item | 6502 | 6510 |
 |------|------|------|
 | Instruction set | 56 mnemonics, 151 opcodes | identical |
-| Illegal opcodes | per-die varies | identical NMOS behavior |
+| Illegal opcodes | NMOS behaviour: most stable, a handful unstable per chip | identical — same NMOS core, same stable set, same unstable set |
 | Address space | full 64 KB visible | full 64 KB visible (banked via $01) |
 | Built-in I/O port | none | 6-bit port at $00 (DDR) / $01 (data) |
 | Clock | external | external, divided from VIC dot clock |
@@ -185,9 +193,18 @@ Example: `LDA $80` loads from address $0080.
 
 Zero page is the most precious resource on the 6510 — fast access and the
 only location where indirect addressing modes can dereference pointers.
-On the C64 the KERNAL and BASIC reserve most of $00–$8F; usable free
-zero page is mostly $02–$07 and $FB–$FE during BASIC, much wider with
-the KERNAL switched out. See [c64-memory-map.md](c64-memory-map.md).
+On the C64, BASIC's workspace occupies most of $02–$8F and the KERNAL's
+most of $90–$FA ($00–$01 are the 6510 port, $FF is BASIC's
+number-formatting scratch). With BASIC running, the only bytes both
+leave alone are $02 and $FB–$FE — not "$02–$07", as an earlier version
+of this paragraph said. $03–$06 hold the float↔integer conversion
+vectors that BASIC's cold start installs ($B1AA at $03/$04, $B391 at
+$05/$06, stored at $E3D4–$E3DE); BASIC never calls through them itself,
+so they are usable only if nothing else on the machine relies on them.
+$07–$08 are live BASIC temporaries — string literals, DATA/READ, GOTO
+line numbers, AND/OR and INT all write them — and are not free while
+BASIC runs. Much more is usable once BASIC is not in use. See
+[c64-memory-map.md](c64-memory-map.md).
 
 ### Zero page,X — `$xx,X`
 
@@ -291,8 +308,11 @@ low byte and always points to the next free byte. Operations:
 
 Notes on the JSR / RTS pairing:
 
-- JSR pushes the address of *its last operand byte* — i.e. (PC + 2)
-  *minus one*. RTS pulls that and adds 1, landing on the correct next
+- JSR pushes the address of *its last operand byte* — PC + 2 where PC
+  is the address of the JSR opcode, which is one less than the address
+  of the next instruction (an earlier version of this note said
+  "(PC + 2) minus one", using PC in a different sense from the table
+  above). RTS pulls that and adds 1, landing on the correct next
   instruction. This means you can JSR to a location whose return path
   is constructed by hand on the stack — push (target − 1) and execute
   RTS to "jump" to `target`.
@@ -324,8 +344,16 @@ Notes on stack overflow:
 
 Set whenever the most significant bit of the most recent ALU result is
 1. Loads, transfers, arithmetic, logical, increment, decrement, and
-shifts all set N. CMP/CPX/CPY set N based on the result of the
-implied subtraction (operand − A/X/Y).
+shifts all set N. CMP/CPX/CPY set N to bit 7 of the implied subtraction
+(A/X/Y − operand), the same direction as the C rule below (C set if
+register ≥ operand) and as the CMP entry in the instruction reference;
+an earlier version of this sentence had the operands the other way
+round (measured in VICE: LDA #$10 / CMP #$20 leaves N=1, C=0). Because
+this is bit 7 of an 8-bit unsigned difference, N after CMP is not a
+signed less-than test (e.g. A=$80 CMP #$01 gives N=0, C=1 although
+−128 < +1): use C (BCS/BCC) for unsigned ≥/<, and for a signed compare
+use SEC / SBC and test N XOR V (BVC/BVS then BMI/BPL) — CMP itself
+never writes V.
 
 BIT is the exception: BIT sets N to bit 7 of the *operand*, regardless
 of A. This is the standard trick for reading the high bit of a memory
@@ -408,10 +436,20 @@ Key behaviors and gotchas:
 - BCD applies only to ADC and SBC. INC/DEC/INX/INY/DEX/DEY ignore D.
 - CLD before regular arithmetic; SED only when entering a BCD block;
   always CLD before returning to caller code that may not expect D=1.
-- The KERNAL clears D at reset and at the start of every IRQ/NMI it
-  handles, so a BCD-mode mid-frame interrupt cannot corrupt a
-  KERNAL-driven routine. But if you install your own IRQ handler you
-  must do this yourself.
+- The KERNAL clears D only in its reset routine ($FCE6, the sole CLD
+  instruction in either ROM). Neither the IRQ dispatcher at $FF48, the
+  default IRQ service at $EA31, nor the NMI path at $FE43/$FE47
+  executes CLD, so KERNAL interrupt code runs with whatever D the
+  interrupted code left — an earlier version of this bullet said the
+  KERNAL clears D at the start of every IRQ/NMI, and it does not. The
+  default IRQ path survives D=1 only by accident: its only ADC/SBC are
+  UDTIM's three compare-style SBCs ($F6AA/$F6AE/$F6B2), which use just
+  the carry, and on the NMOS 6510 SBC's carry-out is the same in
+  decimal and binary mode. Do not rely on that — anything else you
+  route through ($0314)/($0318) inherits the caller's D. Keep SED/CLD
+  pairs short, SEI around them if an interrupt that does arithmetic
+  could land inside, and CLD first thing in any handler of your own
+  that uses ADC/SBC.
 
 ### Flag-modification summary
 
@@ -444,14 +482,19 @@ The top six bytes of the address space hold three 16-bit interrupt vectors:
 
 | Address     | Vector | Triggered by |
 |-------------|--------|--------------|
-| $FFFA / $FFFB | NMI  | Falling edge on NMI pin (CIA2 IRQ line on C64) |
+| $FFFA / $FFFB | NMI  | Falling edge on NMI pin (on the C64: CIA2's /IRQ output and the RESTORE key — an earlier version of this row named only CIA2; the expansion port's /NMI line shares the pin, which is why the KERNAL's NMI handler at $FE47 tests for a cartridge signature and jumps through $8002 when CIA2 was not the source) |
 | $FFFC / $FFFD | RESET | RESET pin held low then released |
 | $FFFE / $FFFF | IRQ/BRK | Low level on IRQ pin (with I=0), or BRK instruction |
 
-All three vectors are 16-bit little-endian pointers. On the C64 these
-sit in KERNAL ROM at the top of $FFxx and contain pointers to small
-ROM dispatchers, which in turn read user-modifiable RAM vectors in
-zero page or page 3:
+All three vectors are 16-bit little-endian pointers. On the C64 they
+sit in KERNAL ROM at the top of $FFxx. The IRQ/BRK and NMI vectors
+point to small ROM dispatchers ($FF48 and $FE43) which in turn jump
+through user-modifiable RAM vectors in page 3 ($0314–$0319) — page 3
+only; an earlier version of this sentence said "zero page or page 3",
+and nothing in zero page is involved. The RESET vector points to the
+KERNAL reset routine ($FCE2), which ends in `JMP ($A000)` (or
+`JMP ($8000)` when a cartridge signature is present) and reads no
+page-3 vector:
 
 | RAM vector | Address  | What ROM dispatcher reads here |
 |------------|----------|--------------------------------|
@@ -467,8 +510,16 @@ For a custom IRQ on the C64, the typical pattern is:
    so that the KERNAL dispatcher jumps to your handler.
 
 Option 2 is more common in BASIC-friendly code; option 1 is the
-demo-coder default because the ROM dispatcher adds ~40 cycles of
-overhead.
+demo-coder default because the ROM dispatcher at $FF48 (PHA TXA PHA TYA
+PHA TSX LDA $0104,X AND #$10 BEQ JMP ($0314)) costs 29 cycles before
+your handler's first instruction, on top of the 7-cycle interrupt
+sequence you pay either way (measured in VICE: a $0314 handler starts
+exactly 29 cycles after a $FFFE handler does; an earlier version of
+this paragraph said "~40", which matches no path through the ROM).
+Returning through $EA81 (PLA TAY PLA TAX PLA RTI) costs 22. A direct
+handler that saves and restores the same three registers pays 13 in
+and 22 out itself, so the net saving is the 16 cycles of
+TSX/LDA/AND/BEQ/JMP plus whatever register saves your handler can skip.
 
 ### IRQ / NMI / BRK detail
 
@@ -831,9 +882,9 @@ Typical idiom after CMP: BCC is "branch if A < operand" (unsigned).
 
 ### $90 — BCC rel — Branch if carry clear
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### BCS — Branch if Carry Set
 
@@ -842,9 +893,9 @@ A ≥ operand" (unsigned).
 
 ### $B0 — BCS rel — Branch if carry set
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### BEQ — Branch if Equal (Z=1)
 
@@ -853,9 +904,9 @@ or after CMP, branch when A equals the operand.
 
 ### $F0 — BEQ rel — Branch if equal (Z=1)
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### BIT — Test Bits
 
@@ -883,9 +934,9 @@ If N=1, branch.
 
 ### $30 — BMI rel — Branch if minus (N=1)
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### BNE — Branch if Not Equal (Z=0)
 
@@ -893,9 +944,9 @@ If Z=0, branch.
 
 ### $D0 — BNE rel — Branch if not equal (Z=0)
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### BPL — Branch if Plus (N=0)
 
@@ -903,9 +954,9 @@ If N=0, branch.
 
 ### $10 — BPL rel — Branch if plus (N=0)
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### BRK — Force Interrupt
 
@@ -929,9 +980,9 @@ If V=0, branch.
 
 ### $50 — BVC rel — Branch if overflow clear (V=0)
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### BVS — Branch if Overflow Set (V=1)
 
@@ -942,9 +993,9 @@ flow based on BIT's bit-6 readout.
 
 ### $70 — BVS rel — Branch if overflow set (V=1)
 
-**Cycles:** 2
+**Cycles:** 2 (+1 if taken)
 **Flags:** —
-**Page-cross:** +1
+**Page-cross:** +1 (only when the branch is taken; total 4)
 
 ### CLC — Clear Carry
 
@@ -1844,8 +1895,14 @@ the address space:
 | $00     | DDR  | Data direction register: bit n = 1 means "pin n is output", bit n = 0 means "pin n is input" |
 | $01     | DATA | Data register: writing sets output-pin levels; reading returns pin levels (output pins return what was last written; input pins return live pin state) |
 
-The port has six physical pins on the chip; bits 6 and 7 of $00 / $01
-are unconnected on the 6510 (and behave as if always 0).
+The port has six physical pins on the chip. Bits 6 and 7 have no pins
+on the 6510. If configured as outputs they read back whatever was last
+written; if configured as inputs they read the last driven value,
+decaying to 0 over hundreds of milliseconds (see
+[Reading the port](#reading-the-port)). Mask them off (AND #$3F) before
+comparing $01. An earlier version of this paragraph said the two bits
+"behave as if always 0"; measured in VICE, $F7 written to $01 with
+DDR=$EF reads back as $F7.
 
 ### What each bit controls on the C64
 
@@ -1856,20 +1913,43 @@ ROM/RAM/IO banking and the Datasette interface:
 |-----|----------------|---------------|
 | 0   | LORAM: bank BASIC ROM at $A000–$BFFF (0=RAM, 1=ROM) | (output) |
 | 1   | HIRAM: bank KERNAL ROM at $E000–$FFFF (0=RAM, 1=ROM) | (output) |
-| 2   | CHAREN: route $D000–$DFFF (0=character ROM if HIRAM, 1=I/O) | (output) |
+| 2   | CHAREN: when LORAM or HIRAM is 1, 0 = character ROM at $D000–$DFFF, 1 = I/O. When LORAM=HIRAM=0 the region is RAM regardless of CHAREN (an earlier version of this row conditioned the character ROM on HIRAM alone; mode %001 shows it with HIRAM=0) | (output) |
 | 3   | Datasette write line | (output) |
-| 4   | (no output) | Datasette read sense |
+| 4   | (no output — input only) | Datasette switch sense: 0 = a tape button is pressed, 1 = none. Not the tape data line — tape READ pulses arrive on CIA1 /FLAG ($DC0D bit 4). |
 | 5   | Datasette motor (0=motor on, 1=motor off) | (output) |
 
-The KERNAL initializes DDR=$2F (bits 0,1,2,3,5 as output; bit 4 as
-input) and DATA=$37 (LORAM=HIRAM=CHAREN=1, datasette write=0,
-motor off). This gives the default boot configuration: BASIC ROM at
-$A000, KERNAL ROM at $E000, I/O at $D000, datasette idle.
+The KERNAL uses bit 4 only as a button switch: its cassette-switch test
+at $F82E (`LDA #$10 / BIT $01`) drives the "PRESS PLAY ON TAPE" wait at
+$F817 and the "PRESS RECORD & PLAY ON TAPE" wait at $F838 — the same
+single bit, so software cannot tell which button is down — and the
+default IRQ's motor interlock at $EA61 turns the motor off (bit 5 = 1)
+while bit 4 reads 1 and on while it reads 0. Tape data is never read
+from this port: the tape-read setup enables the CIA1 FLAG interrupt
+(clears $DC0D, then writes $90 to it, at $F877/$F87A) and the read IRQ
+at $F92C times pulses with CIA1 timer B. An earlier version of the
+table above called bit 4 the "Datasette read sense", which reads as the
+data line; it is the switch.
+
+The KERNAL's IOINIT ($FDA3; entered from RESET at $FCE2 and from the
+jump table at $FF84) writes DATA=$E7 to $01 first and then DDR=$2F to
+$00 (`LDA #$E7 / STA $01 / LDA #$2F / STA $00` at $FDD5) — an earlier
+version of this paragraph said "DATA=$37", which is what the port
+*reads back*, not what is written. DDR=$2F makes bits 0,1,2,3,5 outputs
+and bit 4 an input. With no tape button pressed, $01 then reads back as
+$37: LORAM=HIRAM=CHAREN=1, datasette write=0, sense=1 (input, pulled
+high), motor off; bits 6/7 are not connected on the 6510 and read as 0
+once the written 1s have decayed. This gives the default boot
+configuration: BASIC ROM at $A000, KERNAL ROM at $E000, I/O at $D000,
+datasette idle.
 
 ### The seven banking modes
 
-The bottom three bits of $01 select one of seven banking
-configurations (configuration 6 and 7 are identical):
+The bottom three bits of $01 select one of eight combinations, seven of
+them distinct: %000 and %100 are both all-RAM. %110 ($36) and %111 ($37)
+are NOT the same — %110 has RAM at $A000–$BFFF, %111 has BASIC ROM
+there (an earlier version of this sentence called 6 and 7 the identical
+pair; the table below, and a VICE read of $A000 in each mode, say
+otherwise):
 
 | Bits 210 | $A000–$BFFF | $D000–$DFFF | $E000–$FFFF |
 |----------|-------------|-------------|-------------|
@@ -1906,21 +1986,44 @@ When reading $01, the value returned is:
 
 Reading $00 returns the data direction register itself.
 
-A subtle hardware effect: each pin has a small parasitic capacitance,
-so if a pin is switched from output to input while at logic-1, it
-will read as 1 for several milliseconds before discharging. Defensive
-code that toggles DDR mid-frame should account for this — the
-[c64-pitfalls](c64-memory-map.md#01-port) section in the memory map
-covers the timing.
+A subtle hardware effect on the two pin-less bits: bits 6 and 7 have
+no package pin, so when they are switched from output to input the
+last driven level lingers on the floating input. A 1 written there
+keeps reading as 1 for a few hundred milliseconds before decaying to 0
+(VICE models 350,000–420,000 cycles, about 0.35–0.43 s, randomised
+independently for each bit, and its source notes a measured average of
+roughly 350 ms for a 6510 and 1.5 s for an 8500, varying with
+temperature); a driven 0 stays 0. An earlier version of this paragraph
+said "several milliseconds" and attributed the effect to every pin —
+two orders of magnitude short, and wrong about the wired pins. The six
+wired pins do not behave this way on a C64 board: LORAM/HIRAM/CHAREN
+(bits 0–2) have pull-ups and read 1 as inputs regardless of what was
+last driven, bit 4 is always an input, and bits 3 and 5 read whatever
+the cassette circuitry holds them at (VICE: bit 3 keeps its last driven
+level, bit 5 reads 0). Do not rely on bits 6/7 for anything; the memory
+map's $0000–$0001 entry says the same. Defensive code that toggles DDR
+mid-frame should account for this — see
+[$0000-$0001 — Processor I/O port](c64-memory-map.md#0000-0001--processor-io-port)
+and the [Pitfalls](c64-memory-map.md#pitfalls) bullet on bits 6/7 in
+the memory map, which note the decay but give no figure.
 
 ### Why this matters for code
 
 Any code that writes to $00 or $01 changes the visible memory map for
 the very next instruction fetch. If your code is running from a
 location that gets banked out, the *next* fetch returns the new
-mapping's contents. Standard practice: run banking-switch code from
-a location that is unaffected by the switch — RAM at $0200–$BFFF is
-always present, so put banking switchers there.
+mapping's contents. Standard practice: run banking-switch code from a
+location that maps to RAM in BOTH the old and the new configuration.
+With no cartridge, $0002–$9FFF and $C000–$CFFF are RAM in every $01
+setting (in practice use $0200 upward, clear of zero page and the
+stack), so put general-purpose banking switchers there. $A000–$BFFF,
+$D000–$DFFF and $E000–$FFFF are the multiplexed region (see the table
+above) — code there is fetched from BASIC ROM, character ROM/I/O or
+KERNAL ROM the instant a write to $01 selects them, so only place a
+switcher there if neither configuration it switches between maps ROM
+or I/O over it. An earlier version of this paragraph said "$0200–$BFFF
+is always present"; $A000–$BFFF is BASIC ROM whenever LORAM and HIRAM
+are both 1.
 
 The very common idiom:
 
