@@ -95,15 +95,38 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
       { key: matchKey, addr: `$${matchKey}` }
     );
 
-    if ((r.data as unknown[]).length > 0) {
+    // A technique also meets every pitfall that a register or KERNAL routine
+    // it declares (Uses registers / Uses kernal) triggers. Both sides of that
+    // join are exact declarations on the pages, so the edge is derived, not
+    // guessed, and the answer names the register or routine that carried it.
+    type Row = { name: string; title: string; severity: string; region: string; category: string };
+    const viaOf = new Map<string, Array<{ name: string; kind: "Register" | "KernalRoutine"; address?: string }>>();
+    let rows = (r.data ?? []) as Row[];
+    if (kind === "Technique") {
+      const m = await f.roQuery(
+        `MATCH (t:Technique {name: $key})-[:USES]->(x)<-[:TRIGGERED_BY]-(p:Pitfall)
+         WHERE x:Register OR x:KernalRoutine
+         RETURN p.name AS name, p.title AS title, p.severity AS severity,
+                p.region AS region, p.category AS category,
+                collect(DISTINCT (x.name + '|' + labels(x)[0] + '|' + coalesce(x.address, ''))) AS via`,
+        { key: matchKey }
+      );
+      const direct = new Set(rows.map(x => x.name));
+      for (const row of (m.data ?? []) as Array<Row & { via: string[] }>) {
+        if (!row.name || direct.has(row.name)) continue;
+        viaOf.set(row.name, (row.via ?? []).map(v => {
+          const [name, label, address] = v.split("|");
+          return { name, kind: (label === "KernalRoutine" ? "KernalRoutine" : "Register") as "Register" | "KernalRoutine", ...(address ? { address } : {}) };
+        }));
+        rows = [...rows, row];
+      }
+      const sev = (s: string) => { const i = (SEVERITY_ORDER as readonly string[]).indexOf(s); return i < 0 ? SEVERITY_ORDER.length : i; };
+      rows.sort((a, b) => sev(a.severity) - sev(b.severity) || a.name.localeCompare(b.name));
+    }
+
+    if (rows.length > 0) {
       // Found pitfalls — enrich each with its full triggered_by list
-      const pitfalls = await Promise.all((r.data as Array<{
-        name: string;
-        title: string;
-        severity: string;
-        region: string;
-        category: string;
-      }>).map(async (row) => {
+      const pitfalls = await Promise.all(rows.map(async (row) => {
         const edges = await f.roQuery(
           `MATCH (p:Pitfall {name: $name})-[:TRIGGERED_BY]->(t)
            RETURN t.name AS tname, labels(t)[0] AS tkind`,
@@ -129,6 +152,7 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
           category: row.category ?? "",
           triggered_by,
           mitigated_by,
+          ...(viaOf.has(row.name) ? { via: viaOf.get(row.name) } : {}),
         };
       }));
 
@@ -271,7 +295,8 @@ function formatPitfallsText(
       `**${p.title}**\n` +
       `**Category:** ${p.category}\n` +
       (triggers ? `**Triggered by:** ${triggers}\n` : "") +
-      (remedies ? `**Mitigated by:** ${remedies}\n` : "")
+      (remedies ? `**Mitigated by:** ${remedies}\n` : "") +
+      (p.via && p.via.length ? `**Reached through:** ${p.via.map(v => `${v.name}${v.address ? " " + v.address : ""} (${v.kind})`).join(", ")}, which this technique uses\n` : "")
     );
   });
   return header + rows.join("\n");

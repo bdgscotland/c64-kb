@@ -274,6 +274,9 @@ export const PitfallsForSchema = z.object({
     triggered_by: z.array(TriggeredBySchema),
     // Techniques whose application is this pitfall's Fix (MITIGATED_BY).
     mitigated_by: z.array(TriggeredBySchema),
+    // Present when the pitfall was reached through a register or KERNAL
+    // routine the technique declares, not through a direct edge.
+    via: z.array(z.object({ name: z.string(), kind: z.enum(["Register", "KernalRoutine"]), address: z.string().optional() })).optional(),
   })),
   search_results: z.array(z.object({
     source: z.string(),

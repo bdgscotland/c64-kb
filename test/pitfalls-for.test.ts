@@ -38,6 +38,13 @@ describe("pitfallsFor", () => {
 
     await f.addPitfall({ name: "d012_wrap_around", title: "$D012 wraps at line 255; bit 7 of $D011 holds the 9th bit", severity: "high", region: "both", category: "raster" });
     await f.linkTriggeredBy("d012_wrap_around", "D011", "Register");
+    // Register-mediated: soft_scroll_h declares $D016; a pitfall triggered
+    // only by that register must reach the technique through it.
+    await f.addRegister("D016", "$D016", "VIC-II", "RW", ["SCROLX"]);
+    await f.addTechnique({ name: "soft_scroll_h", title: "Hardware horizontal soft-scroll", category: "scroll", complexity: "low" });
+    await f.linkTechniqueUsesRegister("soft_scroll_h", "D016");
+    await f.addPitfall({ name: "d016_unmasked_rmw_clobbers_csel_mcm", title: "Writing $D016 without masking destroys CSEL and MCM", severity: "high", region: "both", category: "scroll" });
+    await f.linkTriggeredBy("d016_unmasked_rmw_clobbers_csel_mcm", "D016", "Register");
     await f.linkTriggeredBy("d012_wrap_around", "D012", "Register");
     await f.linkTriggeredBy("d012_wrap_around", "stable_raster_irq", "Technique");
 
@@ -87,6 +94,18 @@ describe("pitfallsFor", () => {
     expect(r.structured.pitfalls.length).toBeGreaterThanOrEqual(2);
     const names = r.structured.pitfalls.map(p => p.name);
     expect(names).toContain("d012_wrap_around");
+  });
+
+  it("reaches a pitfall through a register the technique declares, and says so", async () => {
+    const r = await pitfallsFor("soft_scroll_h");
+    expect(r.structured.topic_kind).toBe("Technique");
+    const p = r.structured.pitfalls.find(x => x.name === "d016_unmasked_rmw_clobbers_csel_mcm");
+    expect(p).toBeDefined();
+    expect(p?.via).toEqual([{ name: "D016", kind: "Register", address: "$D016" }]);
+    expect(r.text).toContain("**Reached through:** D016 $D016 (Register)");
+    // A directly triggered pitfall carries no via.
+    const direct = (await pitfallsFor("stable_raster_irq")).structured.pitfalls.find(x => x.name === "badline_cycle_loss");
+    expect(direct?.via).toBeUndefined();
   });
 
   it("returns pitfalls for a technique topic (stable_raster_irq)", async () => {

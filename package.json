@@ -22,6 +22,7 @@
     "feedback:log": "tsx src/tools/feedback.ts",
     "check:listings": "tsx scripts/check-listings.ts",
     "check:pitfall-anchors": "tsx scripts/check-pitfall-anchors.ts",
+    "graph:report": "tsx scripts/graph-report.ts",
     "verify:recipes": "tsx scripts/verify-recipes.ts",
     "test": "vitest run",
     "test:watch": "vitest"
