@@ -127,7 +127,17 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
         report(r.status === 0, rel, r.status === 0 ? "" : log || `exit ${r.status}${r.signal ? ` (${r.signal})` : ""}`);
       } else {
         if (!tools.cl65) { missing.add("cl65"); skipped++; continue; }
-        const r = spawnSync(tools.cl65, ["-t", "c64", "-O", "-o", join(work, `${stem}.prg`), src], { encoding: "utf8", cwd: work });
+        // A cc65 recipe may carry its linker configuration in a ```cfg fence;
+        // it is written beside the source and passed with -C, as the page's
+        // own build line does. Without the fence the stock c64.cfg applies.
+        const cfgFence = all.find((x) => x.lang === "cfg");
+        const cfgArgs: string[] = [];
+        if (cfgFence) {
+          const cfg = join(work, `${stem}.cfg`);
+          writeFileSync(cfg, cfgFence.code);
+          cfgArgs.push("-C", cfg);
+        }
+        const r = spawnSync(tools.cl65, ["-t", "c64", "-O", ...cfgArgs, "-o", join(work, `${stem}.prg`), src], { encoding: "utf8", cwd: work });
         const log = (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n");
         report(r.status === 0, rel, r.status === 0 ? "" : log);
       }

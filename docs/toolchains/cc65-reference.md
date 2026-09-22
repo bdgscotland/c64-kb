@@ -325,3 +325,4 @@ sequences.
 - [oscar64-reference.md](oscar64-reference.md) — primary toolchain; most C64 code should start here
 - [kickassembler-reference.md](kickassembler-reference.md) — cycle-tight assembly escape hatch
 - [recipes/cc65/hello-world-conio.md](../recipes/cc65/hello-world-conio.md) — minimal working cc65 program
+- [memory-layout-planning.md](memory-layout-planning.md) — whole-program layout: the constraints, one worked layout in all three toolchains, confirmed from `--mapfile`

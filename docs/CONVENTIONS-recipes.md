@@ -68,7 +68,10 @@ A recipe page is not done when it reads well. Before it lands:
    every recipe from that manifest and fails on a pixel that differs from
    the committed PNG. The pixel geometry, the palette RGB values per model
    and a decode snippet are in `runtime/vice-reference.md`, section
-   "Reading the exit screenshot".
+   "Reading the exit screenshot"; a program that reports its own verdict
+   through a result byte and the border colour, with a harness that turns
+   it into a shell exit code, is the section "Verifying a run without a
+   human" on the same page and the two `headless-verify` recipes.
 3. Any timing constant that was found by trying values (a sync padding, a
    line padding) is labelled as measured in VICE, with what the picture
    looks like when it is off by one. VICE is the instrument; the pages do

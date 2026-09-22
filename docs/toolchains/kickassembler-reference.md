@@ -227,6 +227,8 @@ illegal opcodes), `dtv`, `_65c02`.
 
 ## Memory layout
 
+The whole-program view (which constraints decide a layout, one worked layout in all three toolchains, and how to confirm it from `-showmem`) is `memory-layout-planning.md`, with the recipe `../recipes/kickassembler/memory-layout.md`.
+
 The program counter is set with `*=` (preferred in 5.x) or the older `.pc=`
 alias:
 
@@ -802,3 +804,4 @@ around a `jmp`.
 - [oscar64-reference.md](../toolchains/oscar64-reference.md) — primary C compiler; use as the project driver when mixing C and asm
 - [recipes/kickassembler/hello-world.md](../recipes/kickassembler/hello-world.md) — minimal working PRG with BASIC upstart
 - [vice-reference.md](../runtime/vice-reference.md) — VICE emulator flags, monitor commands, `.vs` file loading
+- [memory-layout-planning.md](memory-layout-planning.md) — whole-program layout: the constraints, one worked layout in all three toolchains, confirmed from `-showmem`; recipe `../recipes/kickassembler/memory-layout.md`

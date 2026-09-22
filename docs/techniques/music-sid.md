@@ -329,6 +329,7 @@ The reason for placing the call inside a raster IRQ rather than the main loop is
 ### Recipes
 
 - `recipes/oscar64/sid-music-player.md`
+- `recipes/oscar64/sfx-engine.md` (a table-driven effect borrowing a voice from a play routine that writes all three, and giving it back; register-level checksum, nobody has listened)
 
 ---
 
@@ -698,6 +699,138 @@ reSID is an analog-circuit simulation using a mix of analytical models (for the 
 **HVSC SID compatibility metadata.** The High Voltage SID Collection tags each tune with the target SID model (6581/8580/both) in the `.SID` file header's 16-bit big-endian `flags` word at $76-$77: bits 4-5 of byte $77 give the first SID's model (00 unknown, 01 6581, 10 8580, 11 both). Bits 0-1 are the MUS-data and PlaySID/BASIC flags and bits 2-3 the video standard, so mask `byte[$77] >> 4 & 3`, not `& 3` (an earlier version of this sentence put the first SID's model in bits 0-1 and the second's in bits 2-3, which would classify MUS files as 6581). In PSID v3+ bits 6-7 give the second SID's model (00 = same as the first), and in v4 bits 8-9 (low bits of byte $76) give the third's. See [c64-file-formats.md](../formats/c64-file-formats.md). STIL.txt adds human-readable notes. When ingesting SID files into a game, check this field to select the appropriate per-chip frequency and filter tables.
 
 **GoatTracker's chip selection.** GoatTracker 2.x has a per-instrument SID model toggle. Tunes exported from GoatTracker for specific hardware use different filter tuning tables per chip. The exported `.sid` file header encodes the target chip. Load these into VICE with the emulated chip set to match.
+
+---
+
+## sfx_engine_beside_music — Sound-effect engine beside a music player
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D418
+**Requires:** sid_play_routine_pattern, sid_voice_setup
+
+Nobody on this machine has listened to anything in this entry. Every claim
+below is register-level: what bytes reach which SID register in which
+order, measured in VICE x64sc 3.10 with a trace checkpoint and a checksum.
+Whether an effect built this way sounds right is not established here.
+
+### Why
+
+A game needs gun shots and explosions while the tune keeps playing, and a
+tune's play routine writes all three voices every frame
+(`sid_play_routine_pattern`). Writing an effect's registers once, as
+`simple-shmup.md` does, works only until the player's next frame overwrites
+them. An engine that owns one voice for the life of the effect, runs after
+the player each frame, and stops when the effect ends, gives effects that
+survive the player and a tune that comes back on its own.
+
+### How
+
+**The table.** An effect is a header and a list of rows, one row per frame.
+The header holds a priority byte and the ADSR pair, written when the effect
+starts. Each row holds the 16-bit frequency, the 16-bit pulse width and the
+control byte for that frame. The list ends with a terminator row; the recipe
+uses control `$FF`, a value no row wants because it combines every waveform
+with TEST and GATE. The engine keeps a pointer to the current row, writes it,
+advances, and on reaching the terminator releases the voice.
+
+**Priority.** Each effect carries a small priority number. A request to
+start an effect is refused if an effect is running and the new one's
+priority is lower; equal or higher priority cuts the running effect and
+starts the new one from its first row. Equal priority restarting is what a
+repeated shot wants. One byte per effect and two comparisons is the whole
+scheme; count refusals in a debug counter so a level whose effects never
+sound has a number to show.
+
+**Taking the voice and handing it back.** Two cases, decided by the
+player:
+
+- A player that writes all three voices every frame (most tracker exports,
+  and the stub tune in the recipe): call the player first and the engine
+  second, every frame, in that order. While the engine owns the voice it
+  re-pokes all seven of the voice's registers after the player has written
+  its own, including AD and SR, which the effect meant to write "once at
+  start" but the player has just overwritten. The SID keeps the last write,
+  so the engine's values stand. Handing back is the engine not writing: the
+  frame after the terminator, the player's own writes are the last ones and
+  the tune's voice is back. No restore, no shadow copy.
+- A player with a voice mask (a byte telling it which voices to leave
+  alone): set the mask bit when an effect starts, clear it when the
+  terminator is reached, and the engine can write ADSR once and rows of
+  frequency, pulse width and control only. Whether a given player has such a
+  mask is a property of that player's source, not of the SID; the recipe
+  does not assume one.
+
+**Gating and restart.** The engine inherits whatever envelope state the
+tune left in the voice. The sid-reference hard-restart entry's classic
+sequence ends with a TEST+GATE (`$09`) frame and then the real waveform
+with GATE one frame later; the recipe uses those two frames, without the
+AD=0/SR=$F0 frame before them. (That page's "test-bit restart" variant is
+TEST alone, cleared on the gate frame, and is not what the recipe does.)
+The recipe makes the `$09` frame the first row of every effect, so the oscillator
+restarts from zero and the attack starts from a known state, and its last
+gated row drops GATE so the tune's first gate-on after the hand-back begins
+a fresh attack instead of joining a sustain. Nothing more than the SID page
+already documents is claimed: the ADSR bug and the two-frame classic hard
+restart are covered there, and an effect that needs them uses the same rows.
+
+The per-frame order in the interrupt or the frame loop:
+
+```asm
+frame_tick:
+    jsr tune_play       // the player writes all three voices
+    jsr sfx_update      // the engine re-pokes the borrowed voice: last write wins
+    rts
+tune_play:  rts         // stand-ins so the fragment assembles alone
+sfx_update: rts
+```
+
+### Why it works
+
+The SID has no register latch or double buffer: each write takes effect
+when it lands, and the register holds the last byte written until the next
+write. Two writers to one voice in one frame therefore resolve by order,
+not by conflict, and a fixed call order is a complete arbitration. AD and
+SR are rate settings for the envelope generator, so rewriting the same
+value mid-envelope should change nothing; that is what makes the re-poke
+safe. This is stated from the register's function (rung 4, not measured
+here as audio); what is measured is that the bytes land in order. The
+trace in `recipes/oscar64/sfx-engine.md` shows the tune's four bytes for
+`$D408-$D40B` landing on raster lines 261 to 262 and the engine's four on
+267 to 268 in the same frame, and in the frame after the terminator only the
+tune's four.
+
+### Variations
+
+**Two effect voices.** Run two engine slots, one per borrowed voice, with
+the priority rule per slot and a rule for which slot a new effect takes
+(the free one, else the lower-priority one). The tune loses two voices while
+both are busy.
+
+**Effects on the tune's quietest voice.** Pick the borrowed voice per tune
+rather than fixing it: the voice a tune uses for a hi-hat or an echo costs
+less to lose than its bass. This is a composer's choice, not a code change.
+
+**Row compression.** A row per frame is simple and costs five bytes; a
+falling sweep can be one row plus a per-frame delta applied by the engine,
+at the cost of a second table format. Do this only when the tables are
+measured to be the problem.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer A around each call, interrupts
+off, in `recipes/oscar64/sfx-engine.md` (rung 1): the engine costs 263
+cycles on a frame it owns the voice (seven stores, four byte copies for the
+checksum, and the row advance) and 55 cycles when idle, both including the
+harness's 5 cycles of start/stop overhead. The stub tune's play routine
+costs 332. Against a PAL frame of 19,656 cycles the engine is about 1.3 %
+active and 0.25 % idle (arithmetic). A real player's play routine is
+typically several times the stub; its figure is the player's, not this
+technique's.
+
+### Recipes
+
+- `recipes/oscar64/sfx-engine.md`
 
 ---
 

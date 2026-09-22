@@ -316,6 +316,8 @@ A shorthand for single-line expansion: `#for(i, COUNT) text_with_i` replicates `
 
 ## Memory layout and banking
 
+The whole-program view (the constraints, one worked layout in all three toolchains, and confirming it from the map file) is `memory-layout-planning.md`, with the recipe `../recipes/oscar64/memory-layout.md`.
+
 Oscar64's linker works with three levels: regions (physical memory areas), sections (logical groupings), and objects (functions and data items). The default layout for `c64`/`-tf=prg` on build 2026-05-19 with the default native code generation is:
 
 ```
@@ -666,3 +668,4 @@ The next four were found by compiling and running this knowledge base's own reci
 - [formats/c64-file-formats.md](../formats/c64-file-formats.md) — PRG, CRT, D64 format details
 - [hardware/vic-ii-reference.md](../hardware/vic-ii-reference.md) — VIC-II register reference
 - [hardware/sid-reference.md](../hardware/sid-reference.md) — SID register reference
+- [memory-layout-planning.md](memory-layout-planning.md) — whole-program layout: the constraints, one worked layout in all three toolchains, confirmed from the map file; recipe `../recipes/oscar64/memory-layout.md`

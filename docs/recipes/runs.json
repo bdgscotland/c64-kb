@@ -207,5 +207,91 @@
       "pal": "screenshots/text-input.png",
       "ntsc": "screenshots/text-input-ntsc.png"
     }
+  },
+  "oscar64/sfx-engine": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sfx-engine.png",
+      "ntsc": "screenshots/sfx-engine-ntsc.png"
+    }
+  },
+  "oscar64/high-score-persist": {
+    "cycles": 24000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/high-score-persist.png",
+      "ntsc": "screenshots/high-score-persist-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/memory-layout": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/memory-layout.png",
+      "ntsc": "screenshots/memory-layout-ntsc.png"
+    }
+  },
+  "oscar64/memory-layout": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/memory-layout.png",
+      "ntsc": "screenshots/memory-layout-ntsc.png"
+    }
+  },
+  "kickassembler/headless-verify": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/headless-verify.png",
+      "ntsc": "screenshots/headless-verify-ntsc.png"
+    }
+  },
+  "oscar64/headless-verify": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/headless-verify.png",
+      "ntsc": "screenshots/headless-verify-ntsc.png"
+    }
+  },
+  "cc65/memory-layout": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/memory-layout.png",
+      "ntsc": "screenshots/memory-layout-ntsc.png"
+    }
   }
 }

@@ -600,6 +600,247 @@ in the pictures checked, but nothing here depends on that.
 
 ---
 
+## Verifying a run without a human
+
+A test program can grade itself and leave the verdict where a script can
+read it. The pattern, and three routes for reading it back, were measured
+on 2026-09-22 with VICE x64sc 3.10 `-default` and the two `headless-verify`
+recipes (`docs/recipes/kickassembler/headless-verify.md`,
+`docs/recipes/oscar64/headless-verify.md`). Every exit code quoted below
+came from a run on this machine.
+
+### The result-byte contract
+
+The program does its computation, then, at one checkpoint and in this
+order:
+
+1. stores a result code at `$02FF`: `$01` pass, `$02` fail;
+2. sets the border (`$D020`) to 5 (green) on pass or 2 (red) on fail;
+3. prints the code and returns to BASIC.
+
+`$02FF` is the last byte of the KERNAL's unused `$02A7`-`$02FF`
+(`docs/hardware/c64-memory-map.md`); BASIC does not touch it after the
+program returns, so the exit screenshot and a late memory read see the
+same value. It is not untouched before the program runs: the KERNAL reset
+clears page 2 (`STA $0200,Y` at `$FD56`, `A = 0`, cycle 5305 in the
+monitor log), so `$02FF` is `00` when the program starts and a store
+watchpoint on it fires once at boot. Codes therefore start at `01`, and a
+harness that reads `00` has a program that never reached its checkpoint,
+which is a different failure from `02`.
+
+The harness returns the verdict as a shell exit code: 0 pass, 1 fail,
+2 no verdict. `x64sc`'s own exit status was 1 on every `-limitcycles` run
+made for this section, pass or fail; it carries nothing.
+
+### Route 1: the exit screenshot
+
+No monitor, no second process: run the pinned command and read the border
+pixel. The palette triples are the ones in "The default palette" above,
+selected by the picture's height.
+
+```bash
+#!/bin/bash
+# usage: verdict_shot.sh prog.prg [pal|ntsc]   exit 0 = PASS, 1 = FAIL, 2 = no verdict
+prg=$1; model=${2:-pal}; shot=$(mktemp -t verdict).png
+flags=""; [ "$model" = ntsc ] && flags="-model ntsc"
+GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -warp +sound \
+  +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 $flags \
+  -exitscreenshot "$shot" -autostart "$prg" >/dev/null 2>&1
+python3 - "$shot" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB')
+pal = im.size[1] == 272
+green = (98, 213, 50) if pal else (114, 189, 103)     # index 5
+red   = (175, 60, 88) if pal else (169, 71, 100)      # index 2
+border = im.getpixel((2, 100))
+verdict = {green: 0, red: 1}.get(border, 2)
+print('border', border, ['PASS', 'FAIL', 'NONE'][verdict])
+sys.exit(verdict)
+PY
+```
+
+Measured: the KickAssembler recipe on PAL printed `border (98, 213, 50)
+PASS` and exited 0; the Oscar64 recipe built with `FORCE_FAIL 1` on NTSC
+printed `border (169, 71, 100) FAIL` and exited 1. The route reads only
+the border, so it tells pass from fail from "still the power-on light
+blue"; it cannot read the code itself. For that, decode row 7 with the
+char ROM snippet above (`RESULT 01 PASS` or `RESULT 02 FAIL` in the
+recipes), or use a machine route.
+
+### Route 2: the machine, over `-moncommands`
+
+A `-moncommands` file runs at startup, before the program, so it cannot
+simply dump `$02FF`. It can arm a tracepoint that dumps it when the store
+happens, and log everything the monitor prints to a file:
+
+```
+logname "/tmp/verdict.log"
+log on
+trace store 02ff
+command 1 "m 02ff 02ff"
+```
+
+`trace` does not stop the machine; `command 1` runs the memory dump each
+time checkpoint 1 hits; `-limitcycles` still ends the run. The log from
+the green KickAssembler build:
+
+```
+#1 (Trace store 02ff)   84/$054,  13/$0d
+.C:fd56  99 00 02    STA $0200,Y    - A:00 X:FF Y:FF SP:fd N.-..I.C       5305
+Executing: m 02ff 02ff
+>C:02ff  00
+#1 (Trace store 02ff)  129/$081,   2/$02
+.C:086f  8D FF 02    STA $02FF      - A:01 X:00 Y:05 SP:f6 ..-....C    2995841
+Executing: m 02ff 02ff
+>C:02ff  01
+```
+
+The first hit is the reset clearing page 2; the second is the program.
+The dump runs after the store: the value on the second hit is `01`, not
+the `00` that was there before it. A harness takes the last `>C:02ff`
+line:
+
+```bash
+x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 \
+  -moncommands verdict.mon -autostart prog.prg >/dev/null 2>&1
+code=$(grep '^>C:02ff' /tmp/verdict.log | tail -1 | awk '{print $2}')
+case "$code" in 01) exit 0;; 02) exit 1;; *) exit 2;; esac
+```
+
+The red Oscar64 build logged `00` then `02` with this file. Do not use
+`watch` or `break` here: a stopping checkpoint enters the monitor with
+nothing to type `x`, cycles stop counting, `-limitcycles` never fires and
+the run hangs. Measured: `watch store 02ff` with the same `command`
+line sat until `timeout 180` killed it (exit 124) and the log was empty.
+The `command` text is one monitor command; whether it can chain a
+continue was not measured here.
+
+### Route 3: the machine, over the binary monitor
+
+A Python client that speaks the frame format in "The Binary Monitor
+Protocol" above. It sets a store watchpoint on `$02FF` first and only then
+autostarts the program from the monitor, because a client that connects
+to an already-autostarted VICE in warp mode is too late: a first version
+that passed `-autostart` on the command line missed the store on every
+run and reported no verdict. Each stop is handled the same way: read
+`$02FF`; if it is `01` or `02` that is the verdict, otherwise resume.
+
+```python
+#!/usr/bin/env python3
+"""Run a PRG in x64sc, watch $02FF over the binary monitor, exit 0 on PASS ($01), 1 on FAIL ($02), 2 otherwise."""
+import socket, struct, subprocess, sys, time, os
+
+PRG = sys.argv[1]
+PORT = 6502
+env = dict(os.environ, GSETTINGS_SCHEMA_DIR='/opt/homebrew/share/glib-2.0/schemas')
+vice = subprocess.Popen(['x64sc', '-default', '-warp', '+sound', '+autostart-delay-random',
+                         '-autostartprgmode', '1', '-limitcycles', '8000000',
+                         '-binarymonitor', '-binarymonitoraddress', 'ip4://127.0.0.1:%d' % PORT],
+                        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def frame(op, body=b'', rid=1):
+    return b'\x02\x02' + struct.pack('<II', len(body), rid) + bytes([op]) + body
+
+def recvn(s, n):
+    buf = b''
+    while len(buf) < n:
+        chunk = s.recv(n - len(buf))
+        if not chunk:
+            raise EOFError
+        buf += chunk
+    return buf
+
+def response(s):
+    stx, api, blen, rtype, err, rid = struct.unpack('<BBIBBI', recvn(s, 12))
+    return rtype, err, rid, recvn(s, blen)
+
+def wait_for(s, rtype, rid=None):
+    while True:
+        t, e, r, body = response(s)
+        if t == rtype and (rid is None or r == rid):
+            return e, body
+
+s = None
+for _ in range(100):                      # VICE takes a moment to open the port
+    try:
+        s = socket.create_connection(('127.0.0.1', PORT), timeout=1)
+        break
+    except OSError:
+        time.sleep(0.1)
+if s is None:
+    sys.exit(2)
+s.settimeout(30)
+
+# Checkpoint Set (0x12): start, end, stop, enabled, operation (2 = store), temporary, memspace
+s.sendall(frame(0x12, struct.pack('<HHBBBBB', 0x02ff, 0x02ff, 1, 1, 2, 0, 0), rid=10))
+err, info = wait_for(s, 0x11, 10)
+# Autostart (0xdd) only now, so the watchpoint is in place before the program runs:
+# run after load, file index, filename length, filename
+name = os.path.abspath(PRG).encode()
+s.sendall(frame(0xdd, struct.pack('<BHB', 1, 0, len(name)) + name, rid=11))
+err, _ = wait_for(s, 0xdd, 11)
+verdict = 2
+try:
+    while True:
+        e, body = wait_for(s, 0x62)          # Stopped event: body is the PC
+        pc = struct.unpack('<H', body[:2])[0]
+        # Memory Get (0x01): side effects, start, end, memspace, bank
+        s.sendall(frame(0x01, struct.pack('<BHHBH', 0, 0x02ff, 0x02ff, 0, 0), rid=20))
+        e, body = wait_for(s, 0x01, 20)
+        value = body[2]                      # u16 length, then the bytes
+        print('stopped at PC=$%04X  $02FF=$%02X' % (pc, value))
+        if value in (1, 2):
+            verdict = 0 if value == 1 else 1
+            break
+        s.sendall(frame(0xaa, rid=30))       # Exit the monitor: resume
+        wait_for(s, 0xaa, 30)
+except (EOFError, socket.timeout):
+    print('VICE went away before a verdict was stored')
+try:
+    s.sendall(frame(0xbb, rid=40))           # Quit VICE
+    wait_for(s, 0xbb, 40)
+except (EOFError, socket.timeout, OSError):
+    pass
+vice.wait(timeout=30)
+print('verdict', ['PASS', 'FAIL', 'NONE'][verdict])
+sys.exit(verdict)
+```
+
+Measured output, green KickAssembler build:
+
+```
+stopped at PC=$FD59  $02FF=$00
+stopped at PC=$0872  $02FF=$01
+verdict PASS
+```
+
+exit 0; red Oscar64 build: `PC=$FD59 $02FF=$00`, `PC=$08C6 $02FF=$02`,
+`verdict FAIL`, exit 1. The stop lands after the store (the PC is the
+next instruction, `$FD59` after the three-byte `STA $0200,Y` at `$FD56`),
+so the read is the stored value. The body layouts in the comments are
+the ones VICE 3.10 accepted; they were taken from the VICE binary monitor
+documentation and confirmed only by these runs, not by a wider survey of
+the protocol. The event type `0x62` (stopped) is not in the opcode table above,
+which lists commands only; the reply to Checkpoint Set arrives as type
+`0x11` and the Autostart reply echoes `0xdd`. If VICE exits on `-limitcycles` before a verdict is
+stored the socket closes, `recvn` raises `EOFError`, and the script exits
+2.
+
+### Choosing a route
+
+The screenshot route needs nothing but the pinned command and is the one
+`npm run verify:recipes` already exercises; it sees the border, not the
+code. The `-moncommands` route sees the byte and needs no second process,
+but its output is a text log to parse. The binary monitor route sees the
+byte, the PC and anything else in the machine, and ends the run itself
+with `Quit` instead of waiting for the cycle limit; it is the one to grow
+into a test runner. All three agree on both builds. None of them was run
+against `sim6502-reference.md`'s VICE backend, which uses a different
+server on port 6510.
+
+---
+
 ## Integration with vice-mcp
 
 vice-mcp is a separate MCP server that acts as a bridge between agents and a running

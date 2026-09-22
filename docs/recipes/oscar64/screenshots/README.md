@@ -76,6 +76,16 @@ pixel at (2, 100) is a safe place to read the border colour.
   pins both), so the elapsed cycle figures on screen repeat run to run.
   `text-input.png` / `-ntsc.png` at 8,000,000 cycles with
   `-keybuf "abc\x14d\x0d"`: the entry loop after A, B, C, DEL, D, RETURN.
+- `high-score-persist.png` / `-ntsc.png` at 24,000,000 cycles on a fresh
+  `TEST,01` disk: the first-run path (62, defaults written), the rewrite
+  by scratch-then-write with the scratch reply read, and the read-back,
+  all in one run because every verifier run starts from an empty disk.
+  `sfx-engine.png` / `-ntsc.png` at 8,000,000 cycles: the priority and
+  borrow counters and the register-write checksum; nobody has listened to
+  it. `memory-layout.png` / `-ntsc.png` at 8,000,000 cycles: the worked
+  layout's charset, sprite and printed addresses. `headless-verify.png` /
+  `-ntsc.png` at 8,000,000 cycles: the green (pass) case of the
+  result-byte pattern.
 
 The pixel geometry, the palette RGB triples per model and a decode snippet
 are in `docs/runtime/vice-reference.md`, section "Reading the exit

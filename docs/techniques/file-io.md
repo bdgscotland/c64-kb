@@ -179,6 +179,7 @@ afterwards was not measured here. Two ways round it:
 
 - `recipes/kickassembler/file-io-roundtrip.md`
 - `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
+- `recipes/oscar64/high-score-persist.md` (the policy around the calls: first run, scratch-then-write, version byte, no drive; 74 and the scratch reply measured)
 
 ---
 
@@ -303,6 +304,7 @@ interaction with file I/O".
 
 - `recipes/kickassembler/file-io-roundtrip.md`
 - `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
+- `recipes/oscar64/high-score-persist.md` (the policy around the calls: first run, scratch-then-write, version byte, no drive; 74 and the scratch reply measured)
 
 ---
 
@@ -432,6 +434,7 @@ filled in.
 
 - `recipes/kickassembler/file-io-roundtrip.md`
 - `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
+- `recipes/oscar64/high-score-persist.md` (the policy around the calls: first run, scratch-then-write, version byte, no drive; 74 and the scratch reply measured)
 
 ---
 

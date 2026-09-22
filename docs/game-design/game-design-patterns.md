@@ -671,6 +671,91 @@ The call sequences, the error-channel check and a measured write-and-read
 round-trip are `kernal_file_write_seq`, `kernal_file_read_seq` and
 `error_channel_check` in `../techniques/file-io.md`.
 
+### Save-file policy: first run, replace, version, missing drive
+
+The file calls are the small part. What a game has to decide around
+them is below; every figure is from
+`../recipes/oscar64/high-score-persist.md`, measured in VICE x64sc 3.10
+with its 1541 emulation and a disk formatted by c1541, unless marked.
+The bare call sequences are in `../recipes/oscar64/save-load-seq-file.md`
+and `../recipes/kickassembler/file-io-roundtrip.md` and are not repeated
+here.
+
+**Allow for the banner.** A 1541 answers its first status read after
+reset with `73,CBM DOS V2.6 1541,00,00` (measured with a probe that
+reads the channel before any other command). A check that treats any
+non-zero code as failure refuses a healthy drive. The recipe's first
+call is the OPEN of the save file, and the `62` or `00` that raises
+replaces the banner before the channel is read; a game that reads the
+channel first must accept `73` as healthy. The `2.6` in that line is
+the DOS version the replies below come from.
+
+**First run.** Try to read the file before writing anything. On a disk
+that has never held it, OPEN for read succeeds (ST `00`), the read
+returns 0 bytes with ST `$42`, and the error channel says `62, FILE NOT
+FOUND,00,00`. That is the first-run signal, not a fault: show the
+default table and write it at once, so the next run finds the file.
+
+**Replace by scratch, then write.** OPEN of `NAME,S,W` on a name that
+exists is refused with `63, FILE EXISTS,00,00`, and every byte written
+into that channel afterwards comes back with ST `$80`, the
+device-not-present bit (`KRNIO_NODEVICE` in Oscar64's `kernalio.h`): the
+drive did not acknowledge bytes on a channel it never opened, and the
+disk is unchanged. `@0:NAME,S,W` asks
+DOS 2.6 for save-with-replace, a command with a long-reported
+corruption defect that this KB has not measured (rung 4) and does not
+recommend relying on (`../techniques/file-io.md`,
+`kernal_file_write_seq`). Send `S0:NAME` on the command channel
+instead, read the reply on the same open channel (`01, FILES
+SCRATCHED,01,00`; closing channel 15 and reopening it reads `00, OK`
+instead), then OPEN for write. Scratching a name that is not there
+answers `01, FILES SCRATCHED,00,00` (count `00`) and changes nothing
+(measured in VICE). Either way the close must be allowed to finish: a
+run cut
+before it leaves a splat file (`../pitfalls/kernal-and-io.md`,
+`krnio_save_leaves_splat_file`).
+
+**Version byte and a fixed-size record.** Put a magic pair and a
+version byte at the head of the record and keep the record one fixed
+size. On read, accept it only when the byte count, the magic and the
+version all match; otherwise say so on screen, scratch it and write the
+defaults. Run against a 15-byte version-0 file planted with c1541, the
+recipe printed `OLD FORMAT 15 BYTES V0: RESET`, replaced it and read a
+good record back. An old save is then readable or cleanly replaced,
+never half-parsed.
+
+**When drive 8 does not answer.** Two cases, and they look different.
+A drive with no disk (VICE `-default` with no `-8`, which still
+emulates a 1541) lets the OPEN for read succeed, returns 0 bytes with
+ST `$42`, and says `74,DRIVE NOT READY,00,00`. Treat any first-read
+code other than `00` or `62` as saving off for the session: show the
+defaults, say that scores will not be saved, keep playing, and do not
+attempt the write. No device on the bus at all (VICE with
+`-drive8type 0`) is caught one call earlier: an OPEN that sends a
+filename or command returns C=1 with ST bit 7 set (`KRNIO_NODEVICE`;
+the KERNAL's code for it is 5, device not present), because nothing
+pulled DATA low in answer to the
+LISTEN (`../hardware/kernal-routines-reference.md`, CHKOUT entry; the
+recipe prints `OPEN 0 ST=80` and `NO DEVICE`). An OPEN of channel 15
+with an empty name cannot see this: the KERNAL sends nothing on the bus
+when the filename length is zero, so it returns success with ST `00`
+whether or not a drive exists (measured: `1 ST=00` with no drive, where
+`I0` on the same channel gave `0 ST=80`). The first CHKIN on such a
+channel then hangs with no timeout (same page, CHKIN entry), and a
+status read through `krnio_gets` starts with CHKIN; an earlier build of
+the recipe did exactly that and sat with its title line alone on screen
+after 24,000,000 cycles. So the OPEN whose result decides whether the
+drive exists must be one that sends bytes, the save file's own OPEN for
+read is the natural one, and no status read may run before it has
+succeeded.
+
+**KERNAL banked in.** Every call in the sequence is a KERNAL call and
+the serial code drives CIA2 directly, so the ROM at $E000-$FFFF and
+the I/O area at $D000-$DFFF must both be mapped from the first OPEN to
+the last CLOSE. A game that runs with the KERNAL out banks it back in
+around the save routine and keeps its own interrupts off, or its
+handler reachable through the ROM's $0314 vector, while the ROM is in.
+
 ---
 
 ## Scoring, lives, and HUD

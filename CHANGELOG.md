@@ -5,7 +5,32 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 711, schema 20, tools 1.22.1.
+Data 712, schema 20, tools 1.22.1.
+
+**Batch five: save-file policy, a sound-effect engine, memory layout in
+three toolchains, headless verification.** A "Save-file policy" section
+on the game-design page with the `high-score-persist` recipe: first run
+with no file, scratch-then-write with the scratch reply read, a version
+byte, and what the KERNAL reports with no disk (74) and with no drive
+emulated at all (the OPEN never returns in VICE; a real empty bus is not
+measured). Two things it measured that the file I/O page had marked as
+not measured: the drive's 74 reply and the command channel's "01, FILES
+SCRATCHED" reply, which is lost if channel 15 is closed before it is
+read. `sfx_engine_beside_music` on the SID page with the `sfx-engine`
+recipe: a table-driven effect with priority, borrowing a voice from a
+tune that writes all three and giving it back, verified at register
+level with a checksum over the writes; the page says nobody has listened
+to it. A new page `toolchains/memory-layout-planning.md`: the constraints
+that decide a layout and one worked layout expressed in KickAssembler,
+Oscar64 and cc65, each confirmed from its map output and each with a
+`memory-layout` recipe pinned on both models; the cc65 one needed a
+linker configuration, so `check:listings` and `verify:recipes` now pass
+a config a cc65 page carries in a fence tagged `cfg`, which is what let
+that recipe land instead of being held back. "Verifying a run without a
+human" on the VICE reference with two `headless-verify` recipes: a
+result byte at $02FF and the border colour, read back either from the
+exit screenshot or over the monitor, returning a shell exit code; both
+routes run on the green and the red case.
 
 **Batch four: double buffer, Oscar64 save and load, text input, the IRQ
 chain.** `screen_double_buffer_d018` on the banking page with the

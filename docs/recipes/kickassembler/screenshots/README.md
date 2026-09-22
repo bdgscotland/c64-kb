@@ -43,7 +43,12 @@ takes real C64 time, and the drive's RPM wobble is switched off for the
 run so the elapsed figures the recipe prints repeat exactly (with the
 wobble on, one digit moved between runs). `irq-chain.png` / `-ntsc.png`
 at 8,000,000 cycles: three border bands from a three-slot table and the
-frame counter the page predicts.
+frame counter the page predicts. `memory-layout.png` / `-ntsc.png` at
+8,000,000 cycles: the worked layout from `docs/toolchains/memory-layout-planning.md`
+in KickAssembler, charset and sprite visible and the addresses printed.
+`headless-verify.png` / `-ntsc.png` at 8,000,000 cycles: the green case
+of the result-byte pattern from the VICE reference's "Verifying a run
+without a human".
 
 The pictures are evidence about VICE, not about a 6569 on a bench. Where a
 recipe's timing constant was found by measurement (`SYNC_PAD`, `LINE_PAD`,

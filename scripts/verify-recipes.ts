@@ -138,7 +138,16 @@ function build(job: Job): { prg: string | null; log: string } {
     return { prg: r.status === 0 ? prg : null, log: (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n") || (r.status === 0 ? "" : `exit ${r.status}`) };
   }
   if (!tools.cl65) return { prg: null, log: "cl65 not found" };
-  const r = spawnSync(tools.cl65, ["-t", "c64", "-O", "-o", prg, src], { encoding: "utf8", cwd: work });
+  // A cc65 recipe may carry its linker configuration in a ```cfg fence; it is
+  // written beside the source and passed with -C, as the page's build line does.
+  const cfgFence = all.find((x) => x.lang === "cfg");
+  const cfgArgs: string[] = [];
+  if (cfgFence) {
+    const cfg = join(work, `${job.stem}.cfg`);
+    writeFileSync(cfg, cfgFence.code);
+    cfgArgs.push("-C", cfg);
+  }
+  const r = spawnSync(tools.cl65, ["-t", "c64", "-O", ...cfgArgs, "-o", prg, src], { encoding: "utf8", cwd: work });
   return { prg: r.status === 0 ? prg : null, log: (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n") };
 }
 
