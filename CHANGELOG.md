@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 715, schema 21, tools 1.23.0.
+Data 716, schema 21, tools 1.23.0.
+
+**Batch seven: multi-file projects and error tables on the toolchain
+pages, a sprite sine chain, a luminance fade.** Each toolchain page has
+a "Multi-file projects" section with a real two-file project built and
+the failing forms provoked (Oscar64 pulls a library's source in through
+`#pragma compile` from its header; one positional file with an extern
+fails with 3022; KickAssembler's `.import source` without a namespace
+clashes), and a "Reading the errors" table whose every message was
+provoked against the installed tool and quoted verbatim, the minimal
+sources kept under `toolchains/error-sources/`. `sprite_sine_chain` on
+the sprite page with the `sprite-sine-chain` recipe: eight sprites
+phased along one table across the full width with the $D010 wrap on the
+picture; the cracktro pattern page had named a multiplexer for this. A
+new `techniques/transitions.md` with `colour_fade` and the `colour-fade`
+recipe: a sixteen-step luminance-ordered fade, pinned mid-way on both
+models with every bar's colour checked against the table's formula; the
+first listing had an index overflow at the last step that the review
+caught. Colour cycling and the screen wipe are still to be written on
+that page.
 
 **The 1541 DOS error codes (#14).** The IEC disk reference gained a
 table of every channel-15 code the 1541 DOS 2.6 ROM can produce, with the

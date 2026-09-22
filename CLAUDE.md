@@ -126,7 +126,11 @@ in `src/tools/query.ts`; check which before editing either.
   segfaults the compiler; an unreferenced placed array is dropped by the
   linker (`__export`); `NUM_IRQS` is per translation unit (`-dNUM_IRQS=`);
   `__attribute__` is not accepted; `rasterirq.h` polls, it is not
-  cycle-exact.
+  cycle-exact; there is no object linker, a library's `.c` is pulled in by
+  `#pragma compile("file.c")` from its header; an undefined `extern`
+  variable links silently; an immediate-mode `sta` in `__asm` emits opcode
+  $FF with no diagnostic. The verbatim messages are in each toolchain
+  page's "Reading the errors".
 - VICE headless: without `GSETTINGS_SCHEMA_DIR` the GTK build aborts;
   without `-autostartprgmode 1` large PRGs are still loading at exit; an
   exit screenshot can land mid-frame, so a spurious boundary moves when

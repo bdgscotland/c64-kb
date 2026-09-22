@@ -27,7 +27,10 @@ x64sc 3.10; the recipes that carry the layout are
 [oscar64/memory-layout](../recipes/oscar64/memory-layout.md) and
 [cc65/memory-layout](../recipes/cc65/memory-layout.md). The cc65 build
 needs `-C memory-layout.cfg`; the recipe gates pass a linker config the
-page carries in a `cfg` fence.
+page carries in a `cfg` fence. Each toolchain page also has a "Multi-file
+projects" section (how a second source file joins the build, with the
+failing forms provoked) and a "Reading the errors" table of provoked
+messages.
 
 **Targets:** 6510, VIC-II
 

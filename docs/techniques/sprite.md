@@ -748,3 +748,140 @@ cycle budget for the KERNAL-vector figures).
   is documented only in `docs/toolchains/oscar64-headers-reference.md`. An
   earlier version of this list pointed at `recipes/oscar64/sprite-multiplex-8.md`,
   which uses neither call.
+
+---
+
+## sprite_sine_chain — Eight sprites phased along one sine table
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D012, D015, D017, D01D
+**Uses kernal:** (none)
+
+### Why
+
+The middle band of a cracktro (`docs/demo-design/intro-cracktro-patterns.md`,
+section 2.3) is eight sprites moving as one ribbon, chain or bouncing logo.
+All eight hardware sprites are on at once and none is reused inside the
+frame, so the whole effect is one table lookup per sprite per frame and a
+single block of register writes in the vertical blank. It needs no raster
+interrupt inside the display.
+
+This is not `sprite_multiplex_8`. A multiplexer re-arms the eight sprites
+between raster bands and demands `midframe_raster_irqs` and
+`changes_sprite_set`; the chain keeps a constant sprite set and writes the
+registers once a frame. `intro-cracktro-patterns.md` names
+`sprite_multiplex_8` for the chain in its section 2.3 and its technique
+checklist; that is the wrong name, and a compatibility check run with it
+reports conflicts the chain does not have. `cracktro-template.md` does not
+drive sprites at all: its sine table moves the scroller.
+
+### How
+
+One 256-entry sine table, built by the assembler (`table_generation` in
+`docs/techniques/cpu-cycle-tricks.md`), serves all eight sprites. Each
+frame a base index advances by `STRIDE` steps; sprite `n` reads the table at
+`base + n * PHASE`. `STRIDE` sets the speed (2 steps per frame is one period
+in 128 frames), `PHASE` sets the spacing along the curve (16 spreads the
+eight over 112 steps, under half a period; 32 over 224 steps, seven-eighths
+of it, so the chain nearly closes on itself). The index arithmetic is 8-bit and wraps on its
+own; the table must be page-aligned so no indexed read crosses a page.
+
+**X across the full width.** Sprite X is 9 bits: `$D000 + 2n` holds the low
+byte and bit `n` of `$D010` the MSB. To sweep the whole window the table
+holds `X = round(171.5 + 171.5 * sin)`, 0 to 343, stored as two tables (low
+byte, high byte) so no run-time arithmetic is needed. Each frame the loop
+starts a mask at zero, ORs in bit `n` for every sprite whose high byte is
+non-zero, and writes the mask to `$D010` once after the loop. Writing
+`$D010` last, after all sixteen position registers, means the MSB and the
+low byte change on the same frame. The wrap from X 255 to 256 is the MSB
+setting and the low byte going to 0 in the same update; a chain whose
+positions are set per frame in the blank never shows it.
+
+**Y from the same table.** A second table gives Y its own centre and
+amplitude (`Y = round(150 + 50 * sin)`, so the sprite stays inside the
+200-line window with its 21 rows). Reading it at `index + 64`, a quarter
+period ahead of X, makes each sprite trace an ellipse and the chain a
+rotating ring; reading it at the same index gives a diagonal line;
+reading it at `2 * index` gives a figure of eight.
+
+**Bounce.** Replace the Y table with a half-period table: a parabola
+(`jump_arc_table` in `docs/techniques/maths.md` builds one from 8.8
+gravity) or `|sin|`, for instance
+`round(200 - 90 * abs(sin(toRadians(i * 180 / 64))))` over 64 entries,
+played forwards and repeated. The X table stays as it is.
+A table played forwards then backwards bounces symmetrically; one played
+forwards only snaps back to the floor.
+
+**Update in the blank.** Wait for a raster line below the window (the
+listing polls `$D012` for 255, which both models reach), then write all
+eight X and Y registers and `$D010`. A position written while that sprite
+is being drawn can split it between the old and the new place; one written
+below the window cannot. Then leave line 255 before polling again, or a fast update re-triggers on
+the same line.
+
+### Why it works
+
+A sprite's first row is drawn on the raster line after the one numbered
+in `$D001 + 2n`, and its first column at its 9-bit X. Measured in VICE
+x64sc from the recipe's pictures: a sprite with Y 200 has its top row on
+screenshot row 185, which is line 201, and one with X 163 starts at
+screenshot column 171, which is X 163 plus the 8-pixel offset of the
+picture. Both registers are compared every line; no image data is fetched
+until a sprite starts. A constant set of eight enabled sprites costs the
+same DMA every frame (2 cycles per sprite plus 3 per group of consecutive
+sprites, on the lines where they are displayed), regardless of where the
+table puts them, so the CPU cost of the effect is the update loop alone.
+
+The side borders have priority over sprites. A sprite at X 320 to 343 is
+progressively hidden under the right border and a sprite at X 0 to 23 under
+the left one; at X 343 one column shows, at X 344 none. Measured in VICE
+x64sc from the recipe's pictures: a sprite at X 343 covers screenshot
+column 351 only, and one at X 16 starts at column 32. The chain therefore
+slides off both edges without any clipping code, which is what the sweep
+across 0 to 343 is for. Sprites in the border are visible only with
+`sideborder_open`.
+
+### Variations
+
+**Sprite-built logo, bounced as one object.** Set bit 0 to 7 in both
+`$D01D` and `$D017` (`sprite_expand`) so every sprite is 48 by 42. Lay
+sprites 0 to 3 across one row at X spacing 48 and sprites 4 to 7 across a
+second row 42 lines lower: a 192 by 84 pixel logo from eight 24 by 21
+images, 512 bytes of sprite data. The eight pointers at screen + `$03F8`
+are the eight tiles of the logo in reading order and never change; only
+the positions move. Each frame read one X and one Y from the tables for
+the logo's top-left corner and add `48 * (n & 3)` to X and `42 * (n >> 2)`
+to Y, with the 9-bit add producing the `$D010` bit for each sprite as
+above. Because every sprite gets the same table index the logo moves as
+one piece; a per-sprite `PHASE` of 0 is the whole difference from the
+chain. The X table must be narrowed so the right-hand tile stays on the
+picture: with a left edge of 0 to 152 the right-hand tile sits at 144 to
+296 and its last column at 343.
+Not measured here; the arithmetic follows from the register widths and the
+recipe's measured positions.
+
+**Two tables, two speeds.** Give X and Y different `STRIDE` values (read
+Y at `2 * base` or `3 * base`) for Lissajous figures. The 8-bit index
+still wraps for free.
+
+**Colour cycling along the chain.** Rotate the eight colour registers
+`$D027` to `$D02E` one place every few frames so a hue runs down the
+chain. This is a register write per sprite in the same blank; no extra
+cost elsewhere.
+
+### Cycle budget
+
+Rung 3, from the instruction costs of the recipe's loop: about 68 cycles
+per sprite, plus 12 for a sprite whose high byte is set, plus the
+`$D010` write and the counter, so roughly 600 cycles or ten raster lines
+per frame for all eight. It runs below the window, where the CPU is
+otherwise idle. Not measured with a timer here. Sprite DMA is unchanged
+by the effect: the eight sprites are on every frame whether or not they
+move.
+
+### Recipes
+
+- `recipes/kickassembler/sprite-sine-chain.md` (the eight-sprite chain
+  across the full width, MSB wrap, frame counter on screen, positions
+  measured on PAL and NTSC). No logo or bounce recipe yet.

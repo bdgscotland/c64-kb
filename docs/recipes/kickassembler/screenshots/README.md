@@ -51,7 +51,12 @@ of the result-byte pattern from the VICE reference's "Verifying a run
 without a human". `dos-error-codes.png` / `-ntsc.png` at 32,000,000
 cycles on a fresh `TEST,01` disk: the drive's channel-15 replies for the
 codes the recipe provokes, the measurement behind the 1541 DOS error
-table in `docs/formats/iec-disk-reference.md`.
+table in `docs/formats/iec-disk-reference.md`. `sprite-sine-chain.png` /
+`-ntsc.png` at 8,000,000 cycles: eight sprites phased along one table
+with at least one past X 255, positions stated on the page from the table
+and from the picture. `colour-fade.png` / `-ntsc.png` at 3,725,000 cycles:
+the luminance fade caught mid-way, with the step number on screen; the
+page quotes the luma at the start, the middle and the end.
 
 The pictures are evidence about VICE, not about a 6569 on a bench. Where a
 recipe's timing constant was found by measurement (`SYNC_PAD`, `LINE_PAD`,

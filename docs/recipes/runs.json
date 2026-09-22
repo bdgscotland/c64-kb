@@ -308,5 +308,29 @@
     "disk": {
       "name": "TEST,01"
     }
+  },
+  "kickassembler/sprite-sine-chain": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-sine-chain.png",
+      "ntsc": "screenshots/sprite-sine-chain-ntsc.png"
+    }
+  },
+  "kickassembler/colour-fade": {
+    "cycles": 3725000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/colour-fade.png",
+      "ntsc": "screenshots/colour-fade-ntsc.png"
+    }
   }
 }

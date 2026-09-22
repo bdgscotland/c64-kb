@@ -136,6 +136,87 @@ three ways that bite (measured with ca65 V2.18, Homebrew cc65 2.19):
   the C runtime and fails with "Start address of memory area 'BSS' is not
   constant".
 
+## Multi-file projects
+
+`cl65` compiles each `.c` with `cc65`, assembles each `.s` (and each
+generated `.s`) with `ca65` into a `.o`, and links every `.o` with `ld65`
+in one command; the `cl65` line above is the whole build system. Symbols
+cross the C/assembly boundary by name, with one rule: a C identifier `x`
+is the assembler symbol `_x`. Measured with cl65 V2.18 (Homebrew cc65 2.19)
+on the three files below; the 290-byte `out.prg` turned the border and
+screen green in VICE x64sc 3.10.
+
+The header is ordinary C. `__fastcall__` passes the last (here the only)
+argument in A instead of on the software stack, which is what an assembly
+routine wants:
+
+```text
+/* border.h */
+#ifndef BORDER_H
+#define BORDER_H
+extern unsigned char border_calls;   /* defined in border.s as _border_calls */
+void __fastcall__ border_set(unsigned char colour);
+#endif
+```
+
+The module exports the underscored names. `.bss` with `.res` is a variable,
+`.code` is code; both segments are ones `c64.cfg` already places:
+
+```text
+; border.s: ca65 module. C sees border_set and border_calls; the
+; assembler names carry a leading underscore.
+        .export _border_set
+        .export _border_calls
+
+        .bss
+_border_calls:  .res 1
+
+        .code
+; void __fastcall__ border_set(unsigned char colour): colour arrives in A
+_border_set:
+        sta $d020
+        sta $d021
+        inc _border_calls
+        rts
+```
+
+```text
+/* main.c */
+#include "border.h"
+int main(void)
+{
+    border_set(5);
+    while (border_calls) ;
+    return 0;
+}
+```
+
+```
+cl65 -t c64 -O -o out.prg main.c border.s --mapfile out.map
+```
+
+The other direction is `.import _name` in the `.s` for a C function or
+variable, and `jsr _name` (not measured here). `--mapfile` is how to
+confirm what linked. Its "Segment list" gives every segment's start, end
+and size (`CODE 000840 0008B5 000076`, `BSS 0008FB 0008FB 000001` for this
+build) and its "Exports list" gives every cross-unit symbol with its
+address and the module that defined it: `_main 000840`,
+`_border_set 00084C`, `_border_calls 0008FB`, each followed by `RLA`
+(relocatable label address). A symbol you expected and cannot find in the
+Exports list was never `.export`ed, which is the failing form. Delete the
+`.export _border_set` line and the link stops:
+
+```text
+Unresolved external '_border_set' referenced in:
+  main.s(29)
+ld65: Error: 1 unresolved external(s) found - cannot create output file
+```
+
+`main.s(29)` is the generated assembly of `main.c`, not a line of the C
+file; `cl65 -S main.c` writes it if you need the line. The whole-program
+view of where each segment lands, and how to move one, is
+[memory-layout-planning.md](memory-layout-planning.md).
+
 ## Standard library highlights
 
 cc65 ships extensive C64-specific headers alongside the standard ones. The
@@ -319,6 +400,64 @@ text output, or bypass it entirely and drive the hardware directly.
 get promoted to `int` (16-bit) in C. cc65 emits 16-bit arithmetic sequences
 for these promotions. Use explicit `uint8_t` casts in hot paths to get 8-bit
 sequences.
+
+## Reading the errors
+
+Every message below was provoked with cl65 V2.18 (Homebrew cc65 2.19,
+`cl65 -t c64 -O`) on the minimal source named in the second column; the
+sources are files in `error-sources/cc65/` and are shown after the table.
+Compiler and assembler errors read `file(line): Error: text`; linker errors
+are prefixed `ld65:` and name the linker config and its line, not your
+source. Each build exits 1 and writes no PRG.
+
+| Message (verbatim) | Source | Cause | Fix |
+|---|---|---|---|
+| `ld65: Warning: .../cfg/c64.cfg(15): Segment 'BSS' overflows memory area 'BSS' by 1088 bytes` then `ld65: Error: Cannot generate most of the files due to memory area overflow` | `segment-overflow.c` | The program's data (here a 50,000-byte array) does not fit between the end of the code and the software stack under `$D000`. The overflow is reported as a warning; the error line is the one that stops the build | Shrink the data, lower `__STACKSIZE__` (see Pitfalls), or a custom config: [memory-layout-planning.md](memory-layout-planning.md) |
+| `Unresolved external '_missing' referenced in:` then `  unresolved-external.s(27)` then `ld65: Error: 1 unresolved external(s) found - cannot create output file` | `unresolved-external.c` | A function or variable was declared and used but no object defined it: a `.s` module without `.export _name`, or a `.c` or `.s` left off the `cl65` line. The reference is located in the generated `.s`, not in the C source | Add the `.export`, or the file to the command line (see Multi-file projects) |
+| `range-error.s(3): Error: Range error (300 not in [0..255])` | `range-error.s` | An 8-bit operand or `.byte` given a value outside 0..255, here `lda #300`. A `.word` beyond 65535 gives the same shape with `[0..65535]` (arithmetic, not measured here) | Use `#<value` / `#>value` for one byte of a 16-bit constant, or `.word` |
+| `missing-setcpu.s(3): Error: ':' expected` then `missing-setcpu.s(3): Error: Unexpected trailing garbage characters` | `missing-setcpu.s` | An illegal mnemonic (`lax $10`) under the default CPU. `ca65` does not know the word, reads it as a label and expects a colon; the message never names the CPU (see ca65 notes) | `.setcpu "6502X"` at the top of the file, or `--cpu 6502X` on the command line; both assemble the file (measured) |
+
+Sources (each is meant to fail, so none is in a buildable fence):
+
+`segment-overflow.c`
+
+```text
+unsigned char big[50000U];
+int main(void)
+{
+    big[0] = 1;
+    return big[1];
+}
+```
+
+`unresolved-external.c`
+
+```text
+extern void missing(void);
+int main(void)
+{
+    missing();
+    return 0;
+}
+```
+
+`range-error.s`
+
+```text
+        .export _main
+_main:
+        lda #300
+        rts
+```
+
+`missing-setcpu.s`
+
+```text
+        .export _main
+_main:
+        lax $10
+        rts
+```
 
 ## See also
 

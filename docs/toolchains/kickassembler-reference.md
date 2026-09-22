@@ -294,6 +294,133 @@ Switch the active segment with `.segment SegName`. Use
 `.file [name="out.prg", segments="Code,Data"]` to write a combined `.prg`
 from multiple segments.
 
+## Multi-file projects
+
+KickAssembler has no object files and no linker. A program is split in one of
+two ways. Both were built on 5.25 with the files below and produced a
+byte-identical `main.prg` (2,056 bytes); each PRG was run in VICE x64sc 3.10
+and turned the border and screen green.
+
+**`#import`: one assembly.** The module is pasted into the caller's parse, so
+it shares one symbol table, one memory map and every macro and `.const`.
+This is the right form for almost everything: shared macros, constants,
+zero-page allocations, and code that changes as often as the caller does.
+Put `#importonce` at the top of a library file (see Preprocessor). The module
+wraps its labels in a `.namespace` so the caller writes `border.set`:
+
+```asm
+// border_inc.asm
+.namespace border {
+*=$1000 "border module"
+set:
+    sta $d020
+    sta $d021
+    rts
+}
+```
+
+```text
+// inc_main.asm
+#import "border_inc.asm"
+*=$0801 "basic"
+BasicUpstart2(main)
+*=$0810 "main"
+main:
+    lda #5
+    jsr border.set
+    jmp *
+```
+
+```
+java -jar KickAss.jar inc_main.asm -o main.prg -showmem
+```
+
+**Separate assembly: `-symbolfile` plus `.import source`.** Each file is
+assembled on its own. The module writes a `.sym` file of its label addresses;
+the caller reads that file for the addresses and the module's `.prg` for the
+bytes. This is the right form when the module is large and rarely changes (a
+music player, a converted picture), lives at a fixed address, or is assembled
+by a different build step. The module declares `.filenamespace`, which is what
+puts its labels in a named block in the `.sym`:
+
+```asm
+// border.asm: assembled first, on its own
+.filenamespace border
+*=$1000 "border module"
+set:            // A = colour
+    sta $d020
+    sta $d021
+    rts
+```
+
+```
+java -jar KickAss.jar border.asm -o border.prg -symbolfile
+```
+
+That writes `border.prg` (9 bytes: a two-byte load address and seven bytes of
+code) and `border.sym`, which is exactly:
+
+```text
+.namespace border {
+  .label set=$1000
+}
+```
+
+The caller imports the addresses and places the bytes at the same `*=`; the
+`, 2` on `.import binary` skips the module's load address:
+
+```asm
+// main.asm: assembled second
+.import source "border.sym"
+*=$0801 "basic"
+BasicUpstart2(main)
+*=$0810 "main"
+main:
+    lda #5
+    jsr border.set
+    jmp *
+*=$1000 "border bytes"
+.import binary "border.prg", 2
+```
+
+```
+java -jar KickAss.jar main.asm -o main.prg -showmem
+```
+
+Two things go wrong with this form, both measured on 5.25 (sources in
+`error-sources/kickassembler/`):
+
+- The module has no `.filenamespace`, so its `.sym` is a flat
+  `.label set=$1000` and a namespaced call fails. The shipped source
+  (`import-source-no-namespace.asm`, against `flat-lib.sym`) calls
+  `jsr lib.set`:
+
+  ```text
+  Error: Unknown symbol 'lib'
+  at line 4, column 9 in import-source-no-namespace.asm
+  ```
+
+  Either add `.filenamespace border` to the module, or call the flat name
+  (`jsr set`).
+
+- Without a namespace the module's labels land in the caller's own scope, so a
+  label both files use (here `main`) collides:
+
+  ```text
+  Error: The symbol 'main' is already defined
+  at line 4, column 1 in symbol-clash-main.asm
+  ```
+
+  `.filenamespace` in the module is the fix for this too.
+
+The `.sym` holds addresses, nothing else: no macros, no `.const` values, no
+code. And it is a snapshot. Rebuild the module and the caller's copy of the
+addresses is stale until the caller is assembled again, so a build script
+always assembles the module first and the caller second. For the `.sym` and
+`.vs` formats themselves see "Symbol export for VICE/vice-mcp" below;
+`-showmem` on the caller lists the imported bytes as an ordinary block
+(`$1000-$1006 border bytes`).
+
 ## Macros and pseudocommands
 
 ### Macros
@@ -779,7 +906,9 @@ The same applies to the ternary `n ? a : b` in expressions.
 `/* */`. A `;` is parsed as code: `; SID player` becomes "pseudo command
 'SID' not defined". Listings pasted from ca65 or ACME sources fail this
 way, as do `txa : pha` colon-chained statements, which ca65 accepts and
-KickAssembler does not.
+KickAssembler does not. Worse than the error is the comment that does not
+fail: `; inc $d020` assembles the `inc` (measured on 5.25, exit 0), so a
+commented-out instruction in pasted code is live.
 
 **A `!:` outside a `.for` is one label for every iteration.** `bpl !-`
 inside the body then resolves to the single `!:` above the loop and, once the
@@ -798,6 +927,96 @@ said the opposite — that a `!:` inside the body was shared across iterations
 unrolled `.for` bodies get there fast.** `beq exit` across 700 bytes of
 macro expansion fails with "relative address is illegal". Invert the branch
 around a `jmp`.
+
+## Reading the errors
+
+Every message below was provoked on KickAssembler 5.25 with the minimal
+source named in the second column; the sources are files in
+`error-sources/kickassembler/` and are shown after the table. Each error
+prints the offending line, a caret under the token, the `Error:` line and an
+`at line L, column C in file` line, and the assembler exits 1 with no PRG
+written. The one exception is the failed `.assert`, which exits 0 and writes
+the PRG.
+
+| Message (verbatim) | Source | Cause | Fix |
+|---|---|---|---|
+| `Error: Unknown symbol 'nowhere'` | `unknown-symbol.asm` | A label or constant is used and never defined; also a typo, a label inside a `.namespace` or `.filenamespace` used without its prefix, or a `.sym` import whose module had no namespace (see Multi-file projects) | Define it, prefix it, or add `.filenamespace` to the module |
+| `Error: relative address is illegal (jump distance is too far: -202).` | `branch-out-of-range.asm` | A branch to a target more than 128 bytes back or 127 forward. There is no message with the words "branch out of range"; this is the wording | Invert the branch around a `jmp`, or move the code |
+| `Error: In segment 'Default' the memoryblock 'first' ($1000-$100f) overlaps 'second' ($1008-$1017)` | `memory-block-overlap.asm` | Two `*=` blocks in the same segment write the same bytes. The message names both blocks and their ranges; unnamed blocks appear as `Unnamed` | Move one block, or mark a reservation `virtual` (see Memory layout) |
+| `  one plus one=2 (3) -- ERROR IN ASSERTION!!!` then `Made 1 asserts , 1 FAILED!` | `failed-assert.asm` | `.assert "name", actual, expected` disagreed. The build still says `Writing prg file:`, still writes it (3 bytes here) and exits 0 | Grep the build log for `FAILED` in scripts; the exit code will not tell you |
+| `Error: Pseudo command 'Blink' not defined` | `macro-without-parentheses.asm` | A macro called without parentheses (`Blink` for `Blink()`) is parsed as a pseudocommand. A `;` line pasted from a ca65 source is parsed the same way, not skipped, and what it prints depends on the words: on 5.25 `;comment` gives `Pseudo command 'comment' not defined`, `; Comment text` gives that plus `Unknown symbol 'text'`, `; a comment here` gives `Syntax error`, and `; inc $d020` or `; lda #0` gives no error at all, the instruction after the `;` assembles into the PRG. The silent case is the one to look for | Write `Blink()`; use `//` for comments |
+| `Error: The symbol 'main' is already defined` | `symbol-clash-main.asm` with `symbol-clash-lib.asm` | Two definitions of one label in one scope, here through a flat `.sym` import | Rename, or give the module a `.filenamespace` |
+
+Sources (each is meant to fail, so none is in a buildable fence):
+
+`unknown-symbol.asm`
+
+```text
+*=$1000
+    lda #0
+    jsr nowhere
+    rts
+```
+
+`branch-out-of-range.asm`
+
+```text
+*=$1000
+loop:
+    .fill 200, $ea
+    bne loop
+```
+
+`memory-block-overlap.asm`
+
+```text
+*=$1000 "first"
+    .fill 16, 0
+*=$1008 "second"
+    .fill 16, 0
+```
+
+`failed-assert.asm`
+
+```text
+*=$1000
+    rts
+.assert "one plus one", 1+1, 3
+```
+
+`macro-without-parentheses.asm`
+
+```text
+.macro Blink() {
+    inc $d020
+}
+*=$1000
+    Blink
+    rts
+```
+
+`import-source-no-namespace.asm`, after `flat-lib.asm` (no `.filenamespace`)
+has been assembled with `-symbolfile`:
+
+```text
+// flat-lib.sym was written by a flat-lib.asm that has no .filenamespace
+.import source "flat-lib.sym"
+*=$0810
+    jsr lib.set
+    rts
+```
+
+`symbol-clash-main.asm`, after `symbol-clash-lib.asm` (which defines a flat
+`main:` at `$1000`) has been assembled with `-symbolfile`:
+
+```text
+.import source "symbol-clash-lib.sym"
+*=$0801 "basic"
+BasicUpstart2(main)
+main:
+    jsr main
+    jmp *
+```
 
 ## See also
 

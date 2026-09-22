@@ -105,7 +105,12 @@ per-sprite phase offset. The phase advances by a fixed amount each frame, and ea
 sprite's phase is offset from the previous by a constant (typically 256/8 = 32 units
 for an evenly spaced chain over a full sine period).
 
-For showier intros with more than 8 simultaneous sprite objects, `sprite_multiplex_8`
+The chain animation itself (eight sprites phased along one table, the `$D010`
+high-bit wrap, the bounce, the expanded-sprite logo) is `sprite_sine_chain` in
+`../techniques/sprite.md`, with the recipe `../recipes/kickassembler/sprite-sine-chain.md`;
+`sprite_multiplex_8` is a multiplexer and is only needed when more than eight
+objects are on screen at once (an earlier version of this page named it for the
+chain). For showier intros with more than 8 simultaneous sprite objects, `sprite_multiplex_8`
 is replaced by `sprite_multiplex_24`, which reuses the eight hardware sprites across
 multiple raster bands. The trade-off is IRQ complexity and a minimum vertical spacing
 requirement between bands.
@@ -181,7 +186,9 @@ standalone production in its own right. Size ceiling is typically 1 KB to 4 KB.
 It may combine the cracktro layout with a simple effect — a plasma, a vector cube,
 or a tunnel — that previews the demo's aesthetic. The transition from the intro
 screen to the first effect is itself a design moment: fade-to-black, raster wipe,
-or hard-cut.
+or hard-cut. The fade is `colour_fade` in `../techniques/transitions.md`, a
+sixteen-step luminance-ordered table measured in the `colour-fade` recipe;
+a fade done by arithmetic on the colour numbers flickers through hues.
 
 ### Pack Intro
 
@@ -319,7 +326,7 @@ the knowledge graph):
 |---|---|
 | `stable_raster_irq` | Prerequisite for all timed writes; provides the cycle-stable IRQ baseline |
 | `sideborder_open` | Opens left and right borders; requires `stable_raster_irq` |
-| `sprite_multiplex_8` | Drives the 8-sprite chain animation in the middle band |
+| `sprite_sine_chain` | Phases the eight sprites of the middle band along one table (sweep, bounce, logo); `sprite_multiplex_8` is only needed above eight objects |
 | `sprite_multiplex_24` | Alternative for showier intros with more than 8 simultaneous objects |
 | `soft_scroll_h` | Drives the bottom scroller bar one pixel per frame |
 | `sid_play_routine_pattern` | Standard init+play convention for the background SID tune |

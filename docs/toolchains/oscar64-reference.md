@@ -378,6 +378,112 @@ krnio_load(1, 8, 1);
 
 The overlay file is stored as a `.prg` entry in the D64 directory. Use `oscar_expand_lzo` from `oscar.h` to decompress inlays at runtime.
 
+## Multi-file projects
+
+There are no object files and no separate link step. Every source file is
+compiled in one run and the linker inside the compiler keeps only what is
+reachable from `main`. The manual (`oscar64.md`, "Using libraries") says it
+in one sentence: "Source files are added to the build with the help of a
+pragma: `#pragma compile("stdio.c")`". A second unit reaches the build in
+one of two ways, measured on build 2026-05-19 with the three files below;
+both ways produced a byte-identical 140-byte `out.prg`, which turned the
+border and screen green in VICE x64sc 3.10.
+
+**The header pulls in its own `.c`.** This is how every shipped library
+works: `include/c64/vic.h` ends with `#pragma compile("vic.c")`,
+`include/c64/sprites.h` with `#pragma compile("sprites.c")`, and the file
+named is found next to the header, not in the current directory (with `-v`
+the build prints `Compiling ".../include/c64/vic.c"` from any working
+directory). Do the same for your own module:
+
+```text
+/* border.h */
+#ifndef BORDER_H
+#define BORDER_H
+extern char border_calls;
+void border_set(char colour);
+#pragma compile("border.c")
+#endif
+```
+
+```text
+/* border.c */
+#include "border.h"
+#include <c64/vic.h>
+char border_calls;
+void border_set(char colour)
+{
+    vic.color_border = colour;
+    vic.color_back = colour;
+    border_calls++;
+}
+```
+
+```text
+/* main.c */
+#include "border.h"
+int main(void)
+{
+    border_set(5);
+    for (;;) ;
+    return border_calls;
+}
+```
+
+```
+oscar64 -tm=c64 -O2 -o=out.prg main.c
+```
+
+**Or name every unit on the command line.** The manual's "A list of source
+files can be provided" is literal: `oscar64 -tm=c64 -O2 -o=out.prg main.c
+border.c` builds the same program with the pragma line deleted from
+`border.h`. Use this when a module must not know it is a module (a file
+shared with another compiler), or to swap implementations per build. The
+header form is the one to prefer, because a unit that is only reachable
+through the command line is silently missing from any build that forgets
+it, which is the failing form:
+
+```text
+border.h(5, 6) : error 3022: Calling undefined function 'border_set(u8)->void'
+border.h(5, 6) : error 3022: Calling undefined function 'border_set(u8)->void'
+main.c(5, 5) : info 1003: Called from here
+border.h(5, 6) : error 3022: Calling undefined function 'border_set(u8)->void'
+```
+
+That is `oscar64 -tm=c64 -O2 -o=out.prg main.c` with the files exactly as
+shown above, the `#pragma compile` line deleted from the header and
+`border.c` not on the command line. The positions are the declaration on
+line 5 of `border.h` and the call on line 5 of `main.c`. The compiler exits
+20 and writes no PRG.
+
+**`extern` across units** works as in any C: declare in the header, define
+once in the `.c`; `border_calls` above is defined in `border.c`, written
+there and readable from `main.c`. Two things differ from a linker you know. A `#define` in
+one unit does not reach another, so a library table size such as `NUM_IRQS`
+has to be passed as `-dNUM_IRQS=17` on the command line (see Pitfalls). And
+an `extern` variable that is never defined anywhere is not an error: the
+build exits 0 and the linker allocates it in `bss` (measured;
+`error-sources/oscar64/undefined-extern-var.c` builds, and its `.map` shows
+`088b - 088c : missing_var, DATA:bss`). Only an undefined function is
+refused.
+
+**What the build reports.** `-n` selects native code and is already the
+default (see CLI flags), so it shows nothing new. `-v` is the flag that
+shows the units: it prints one `Compiling "..."` line per source file and one
+`Including "..."` line per header, in the order the pragmas and includes
+pulled them in, so a missing unit is visible as a missing line. The `.map`
+written next to the PRG lists sections, regions and objects. Objects are
+functions and variables, not files: after this build its `objects` block has
+`main` (`0880 - 088a : main, NATIVE_CODE:code`), the startup code and the
+section markers, and neither `border_set` nor `border_calls`: at `-O2` the
+call was inlined into `main`, and because nothing after the `for (;;)` can
+read `border_calls`, the increment and the variable were removed with it
+(`bss` is empty, `BSSStart` and `BSSEnd` both at `088b`). A variant of
+`main.c` that spun on `while (border_calls) ;` kept it, at
+`0899 - 089a : border_calls, DATA:bss`. A function or variable you expect
+to see and do not is usually inlined, or unreferenced and dropped (see
+Pitfalls, "Data nobody references is dropped"), not missing from the build.
+
 ## Header library overview
 
 Oscar64 ships a suite of C64-specific headers in `include/c64/`. Including any of these headers automatically adds the corresponding `.c` implementation to the build via `#pragma compile`. No makefile or explicit library link step is needed.
@@ -660,6 +766,103 @@ The next four were found by compiling and running this knowledge base's own reci
 **`NUM_IRQS` and the other library table sizes are per translation unit.** `rasterirq.c` is compiled as its own unit through the header's `#pragma compile`, so a `#define NUM_IRQS 17` in your main file changes what your file believes and not what the library allocates; slot 16 then overwrites something else, silently. Pass `-dNUM_IRQS=17` on the command line so every unit agrees, or stay within the default 16. `rirq_set` has no bounds check.
 
 **GCC attribute syntax is not accepted.** `__attribute__((unused))` is a parse error; use `(void)x;` for a deliberately unused read. Oscar64's own qualifiers are keywords (`__interrupt`, `__zeropage`, `__striped`, `__export`, ...).
+
+## Reading the errors
+
+Every message below was provoked on build 2026-05-19 (`oscar64 -tm=c64 -O2`)
+with the minimal source named in the second column; the sources are files in
+`error-sources/oscar64/` and are shown after the table. The format is
+`path(line, column) : error NNNN: text`, followed on some errors by an
+`info` line with the call site or the sizes. A build with an error exits 20
+and writes no PRG. Paths are printed absolute; they are shortened here.
+
+| Message (verbatim) | Source | Cause | Fix |
+|---|---|---|---|
+| `error 3022: Calling undefined function 'missing()->void'` then `info 1003: Called from here` | `undefined-extern.c` | A function is declared and called but no unit in the build defines it. With a module of your own this means its `.c` was neither named by `#pragma compile` nor on the command line (see Multi-file projects). The error is printed against the declaration, twice before and once after the `info` line | Add `#pragma compile("file.c")` to the header, or the `.c` to the command line |
+| (no error; exit 0) | `undefined-extern-var.c` | An `extern` variable with no definition is allocated by the linker in `bss`, silently | Define it once; check the `.map` if a value is unexpectedly zero |
+| `error 3034: Could not place object 'big'` then `info 1004: Size 40000 Available 34672 in section 'bss'` | `region-overflow.c` | An object is larger than the free space in its section. The `info` line gives both numbers; 34,672 is the default `main` region (`$0880` to `$9000`, the 4 KB stack already carved off the top) less this program's own 16 bytes of code | Shrink the object, move it to its own region with `#pragma region` / `#pragma section` (see Memory layout and banking), or lower `#pragma stacksize` |
+| `error 3006: ',y' expected` then `error 3006: End of line expected`, both at the same column | `asm-addressing-mode.c` | Inside `__asm`, an indirect operand in a form the 6502 lacks, here `lda ($fb),x`. `lda ($fb,x),y` gives only the `End of line expected` line; an unknown mnemonic gives `error 3006: ':' expected` then `error 3028: Invalid assembler token`, because the word is taken for a label | Use `($fb),y` or `($fb,x)` |
+| (no error; exit 0) | `asm-addressing-mode.c`, second form | `sta #5`, `inc #5` and `jmp #$1000` are accepted. The `.asm` listing shows the opcode byte emitted as `ff` (`INV`), so the program executes an invalid opcode at run time. Only the indirect forms above are diagnosed | Read the `.asm` listing of any `__asm` block once; look for `INV` |
+| `crt.c(30, 5) : error 3025: Function declaration differs 'main'` | `void-main.c` | `void main(void)`: the startup code in `include/crt.c` calls `main` as `int main(void)`, so the error is reported in crt.c, not in your file | Declare `int main(void)` and return a value |
+| `error 3005: Struct member identifier not found 'border'` | `unknown-vic-field.c` | A field name `vic.h` does not have. The border colour register is `vic.color_border`, the background `vic.color_back` | Read the struct in `include/c64/vic.h`, or the [headers reference](oscar64-headers-reference.md) |
+
+One thing seen while building this section is a crash, not an error. With
+`while (border_calls) ;` as the idle loop in `main.c` (a global `char`,
+nothing else in the loop), `-O0` and `-O1` aborted with `Assertion failed:
+(size > 0), function Last, file Array.h, line 569.` (exit 134), and `-O2`
+printed `Oops 29` repeatedly, after `warning 2007: Optimizer locked in
+infinite loop 'main'`, and still wrote a PRG. How many times depends on the
+surrounding source: eleven with the `main.c` shown above and `while
+(border_calls) ;` in place of `for (;;) ;`, a different count with a shorter
+file. `for (;;) ;` builds cleanly at every level. Not reduced further than
+that.
+
+Sources (each is meant to fail or misbehave, so none is in a buildable
+fence):
+
+`undefined-extern.c`
+
+```text
+extern void missing(void);
+int main(void)
+{
+    missing();
+    return 0;
+}
+```
+
+`undefined-extern-var.c`
+
+```text
+extern char missing_var;
+int main(void)
+{
+    return missing_var;
+}
+```
+
+`region-overflow.c`
+
+```text
+char big[40000];
+int main(void)
+{
+    big[0] = 1;
+    return big[39999];
+}
+```
+
+`asm-addressing-mode.c` (the file holds the diagnosed form; the accepted
+forms were tried one at a time in the same frame)
+
+```text
+int main(void)
+{
+    __asm {
+        lda ($fb),x
+    }
+    return 0;
+}
+```
+
+`void-main.c`
+
+```text
+void main(void)
+{
+}
+```
+
+`unknown-vic-field.c`
+
+```text
+#include <c64/vic.h>
+int main(void)
+{
+    vic.border = 5;
+    return 0;
+}
+```
 
 ## See also
 

@@ -1,0 +1,1 @@
+Minimal sources that provoke the messages in the "Reading the errors" table of ../../kickassembler-reference.md; each is meant to fail (except failed-assert.asm, which exits 0), so none is in a buildable fence.
