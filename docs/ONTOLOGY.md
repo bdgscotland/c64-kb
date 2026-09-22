@@ -353,6 +353,6 @@ primary key of every node label (12) and seeds:
 
 Everything else is produced by `npm run ingest` from `docs/`. At the
 commit that last touched this file a clean ingest under schema 19 gave
-574 nodes and 1,294 edges, with 15 of the 17 edge types populated —
+574 nodes and 1,296 edges, with 15 of the 17 edge types populated —
 `BUILDS_ON` and `REQUIRES_TOOL` are defined here and emitted by nothing.
 `npx c64-kb health` prints the live figures.

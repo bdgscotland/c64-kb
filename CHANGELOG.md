@@ -5,7 +5,29 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 705, schema 19, tools 1.22.0.
+Data 706, schema 19, tools 1.22.0.
+
+**Every technique and pitfall page audited against the instruments.** The
+same procedure as the hardware pages — one auditor per page, three
+refuters per finding, majority-upheld corrections only — over all 22
+pages: 259 corrections landed, each with the earlier wrong statement named
+beside it. The largest: the stable-raster polling loop bounds jitter to
+one iteration and does not remove it (`double_irq` does); the KERNAL's IRQ
+path never executes CLD; a `$0314` handler that ends in RTI pops the
+dispatcher's registers as its return frame, and four listings did; the
+`$D017` "double-write" trick does nothing and the sprite crunch is one
+cycle, one shot and lengthens the sprite; sprite DMA is 2 cycles per
+sprite plus 3 per group, never 4; badlines cost 40-43 cycles, plan on 43;
+the main-loop joystick "phantom press" race cannot happen; Krill v194
+hooks no KERNAL vector; ByteBoozer 2's depacker is about 200 bytes, not
+85; every depacker time quoted in milliseconds was under one cycle per
+byte; the Oscar64 vspr multiplexer costs about 250 cycles a slot, not 25;
+a 1000-cell text redraw does not fit a frame; PSID header offsets were
+shifted by a word; the filter cannot be observed from software, so the
+ENV3 chip-detect probe never worked. Sixteen findings nothing on this
+machine can reach are listed for follow-up. Metadata lines changed on
+eight pages, so the graph was rebuilt clean: 2,597 chunks from 78 files,
+574 nodes, 1,296 edges, 0 dropped references.
 
 **Every hardware reference page audited against the instruments.** Nine
 pages (6510, VIC-II, PAL/NTSC, registers, KERNAL routines, CIA, SID,

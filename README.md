@@ -51,8 +51,8 @@ training-data guesses.
 | Phases complete | 0–6 + 7a |
 | MCP tools | 23 (+ 12 resources, 2 prompts) |
 | FalkorDB nodes | 574 across 12 node types |
-| FalkorDB edges | 1,294 across 15 populated edge types (schema 19 defines 17; `BUILDS_ON` and `REQUIRES_TOOL` are emitted by nothing) |
-| Qdrant chunks | 2,550 (from 78 markdown files, 1024-dim) |
+| FalkorDB edges | 1,296 across 15 populated edge types (schema 19 defines 17; `BUILDS_ON` and `REQUIRES_TOOL` are emitted by nothing) |
+| Qdrant chunks | 2,597 (from 78 markdown files, 1024-dim) |
 | Technique nodes | 74 (10 categories), 20 with resource demands, 14 REQUIRES edges between them |
 | Pitfall nodes | 43 (7 with a MITIGATED_BY remedy) |
 | CrashPattern nodes | 15 |
@@ -64,8 +64,8 @@ training-data guesses.
 | License | BSD-3-Clause |
 
 Figures are from a clean ingest (`npm run ingest:clean`) at the commit
-that last touched this table: 2,550 chunks upserted from 78 files, 574
-nodes, 1,294 edges, 0 dropped references. `npx c64-kb health` prints the
+that last touched this table: 2,597 chunks upserted from 78 files, 574
+nodes, 1,296 edges, 0 dropped references. `npx c64-kb health` prints the
 live ones. An earlier version of this table carried a chunk figure that
 had gone stale across two docs commits; the number here is re-measured
 whenever `docs/` changes.
