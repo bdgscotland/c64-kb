@@ -455,3 +455,314 @@ the directory holds a splat file (`../../pitfalls/kernal-and-io.md`,
 `krnio_save_leaves_splat_file`). The bare write-and-read sequence
 without the policy is `save-load-seq-file.md` in this directory and
 `../kickassembler/file-io-roundtrip.md` in assembly.
+
+## A raster IRQ during file I/O
+
+The listing above runs with the KERNAL's own IRQ only. A game that
+saves from a screen with a `rasterirq.h` split on it needs to know what
+the file calls do to that split. Measured on 2026-09-22 in VICE x64sc
+3.10, true-drive 1541, fresh `TEST,01` disk, PAL and `-model ntsc`, with
+the program quoted at the end of this section: a border split at rows
+100 (white) and 200 (light blue), a `rirq_call` handler on the row-100
+slot that counts its entries and keeps the lowest and highest `$D012` it
+saw on entry, and a 2,048-byte sequential file written and read back
+with a 16-bit fold checked against the buffer that went out. Time is
+CIA2 timers A and B cascaded into one 32-bit cycle counter, which the
+KERNAL never touches; frames are those cycles over 19,656 or 17,095,
+arithmetic.
+
+| Build | Model | Write | Handler entries during it | `$D012` at entry | Read | Handler entries during it | `$D012` at entry |
+|---|---|---|---|---|---|---|---|
+| armed throughout | PAL | 9,359,321 cycles, 476 frames | 145 | 101 to 240 | 5,656,966 cycles, 288 frames | 226 | 101 to 234 |
+| armed throughout | NTSC | 9,702,621 cycles, 568 frames | 169 | 101 to 241 | 5,991,068 cycles, 350 frames | 268 | 101 to 242 |
+| `rirq_stop()` / `rirq_start()` around each call | PAL | 9,359,424 cycles, 476 frames | 144 | 101 to 238 | 5,659,833 cycles, 288 frames | 226 | 101 to 233 |
+| `rirq_stop()` / `rirq_start()` around each call | NTSC | 9,702,713 cycles, 568 frames | 168 | 101 to 240 | 5,983,652 cycles, 350 frames | 270 | 101 to 247 |
+| `$D01A = 0` around each call | PAL | 9,158,718 cycles, 466 frames | 0 | none | 5,553,710 cycles, 283 frames | 0 | none |
+| `$D01A = 0` around each call | NTSC | 9,498,969 cycles, 556 frames | 0 | none | 5,765,998 cycles, 337 frames | 0 | none |
+
+Every row: `OPEN=1`, 2,048 bytes written with ST `00` after the close,
+2,048 bytes read with ST `40`, `CHK F000/F000 PASS`, `DRIVE: 00, OK,00,00`.
+Idle before and after, the handler entered on line 101 in every frame
+(50 of 50 before; 48 or 49 of the 50 `rirq_wait()` calls after, the
+first call returning early on the count already in flight). The file is
+never at risk; the picture and the frame count are.
+
+Read the armed rows against the idle line. In 476 PAL frames of writing
+the row-100 handler ran 145 times, and when it ran it entered anywhere
+from line 101 to line 240. The KERNAL's serial primitives run every
+byte with the I flag set and hold it while they wait for the drive, with
+no timeout on those waits (`$ED50` to `$ED5D`, `$EDD6`, `$EE1B`; ROM
+bytes, rung 1). Under the monitor one such wait, the TALK that follows a
+directory lookup, held the flag for 1,512,351 cycles. A raster match
+inside the window is delivered at the `CLI`, late; a second match in the
+same window is lost. `rirq_stop()` is `sei` alone (`rasterirq.c`), and
+the first primitive's `CLI` cancels it, which is why its rows repeat the
+armed rows to within a frame. Clearing `$D01A` is the stop that holds:
+no entries, and the transfer two per cent shorter.
+
+The exit screenshot at 8,000,000 cycles lands inside the write. Armed
+on PAL, the left border is white on lines 240 to 242 only: the row-100
+slot was delivered around line 240 and the row-200 slot ran straight
+after it. Armed on NTSC, white on lines 104 to 201 against 101 to 200
+idle. With `$D01A` cleared, one colour for the whole frame, white on PAL
+and light blue on NTSC, whichever the border held when the register
+was cleared. In every split the right border changes one row above the
+left, the store landing mid-line. These pictures are not pinned; the
+recipe's own run is.
+
+Recommendation: save and load on a static screen. Set the border and
+the screen to what you want held, clear `$D01A`, make the calls, then
+write 1 to `$D019` and set `$D01A` again; `rasterirq.h` resumes on its
+next row. Do not use `rirq_stop()` for this. If the IRQ must stay armed,
+do not count frames or drive music from it across the calls; the
+pitfall is `../../pitfalls/kernal-and-io.md`,
+`raster_irq_during_serial_io`. The transfer rate, about 216 bytes per
+second writing and 355 reading on either model, is the KERNAL's.
+
+The test program, built three ways with `-dMODE=0`, `1` and `2`. It is
+not a recipe listing; the numbers above are its output, read from the
+exit screenshots of runs at 40,000,000 cycles:
+
+```text
+// iotest.c -- a rirq border split kept armed while 2 KB goes to a
+// SEQ file on drive 8 and comes back. Build with -dMODE=0 (armed
+// throughout), -dMODE=1 (rirq_stop()/rirq_start() around each file
+// call) or -dMODE=2 ($D01A cleared around each file call).
+// Prints, per phase: KERNAL status, CIA2 cycles, frames from that,
+// raster IRQs counted by the handler, and the min/max $D012 seen at
+// handler entry for the split slot (row SPLIT_ROW).
+#include <stdio.h>
+#include <string.h>
+#include <c64/vic.h>
+#include <c64/cia.h>
+#include <c64/rasterirq.h>
+#include <c64/kernalio.h>
+
+#ifndef MODE
+#define MODE 0
+#endif
+#define DRIVE       8
+#define SIZE        2048
+#define SPLIT_ROW   100
+#define RESTORE_ROW 200
+
+static RIRQCode split, restore;
+static char buf[SIZE];
+static char back[SIZE];
+static char reply[40];
+
+static volatile unsigned irqs;      // split-slot handler entries
+static volatile char     rmin, rmax; // $D012 at handler entry
+
+__interrupt void on_split(void)
+{
+    char r = vic.raster;
+    if (r < rmin) rmin = r;
+    if (r > rmax) rmax = r;
+    irqs++;
+}
+
+static void stats_reset(void)
+{
+    irqs = 0; rmin = 255; rmax = 0;
+}
+
+// CIA2 timer A counts cycles, timer B counts A underflows: a 32-bit
+// down counter the KERNAL never touches (its serial timeout is CIA1 B).
+static void clock_init(void)
+{
+    cia2.cra = 0x00; cia2.crb = 0x00;
+    cia2.ta = 0xffff; cia2.tb = 0xffff;
+    cia2.crb = 0x51;                 // count TA underflows, force load, start
+    cia2.cra = 0x11;                 // cycles, force load, start
+}
+
+static unsigned long clock_now(void)
+{
+    unsigned hi, lo, hi2;
+    do {
+        hi = cia2.tb; lo = cia2.ta; hi2 = cia2.tb;
+    } while (hi != hi2);
+    return 0xffffffffUL - (((unsigned long)hi << 16) | lo);
+}
+
+static unsigned fold(const char *p, int n)
+{
+    unsigned c = 0;
+    for (int i = 0; i < n; i++)
+        c = (c ^ p[i]) * 5 + 1;
+    return c;
+}
+
+static unsigned long period;        // cycles per frame for this model
+
+static void report(const char *tag, char st, unsigned long cyc)
+{
+    printf("%s ST=%02X CYC=%lu F=%lu IRQ=%u R=%u..%u\n",
+           tag, st, cyc, cyc / period, irqs, rmin, rmax);
+}
+
+static void io_begin(void)
+{
+#if MODE == 1
+    rirq_stop();
+#elif MODE == 2
+    vic.intr_enable = 0;
+#endif
+}
+
+static void io_end(void)
+{
+#if MODE == 1
+    rirq_start();
+#elif MODE == 2
+    vic.intr_ctrl = 1;
+    vic.intr_enable = 1;
+#endif
+}
+
+static void drive_reply(void)
+{
+    reply[0] = 0;
+    krnio_setnam("");
+    io_begin();
+    if (krnio_open(15, DRIVE, 15)) {
+        int n = krnio_gets(15, reply, sizeof(reply));
+        if (n > 0 && reply[n - 1] == 13) reply[n - 1] = 0;
+        krnio_close(15);
+    }
+    io_end();
+    printf("DRIVE: %s\n", reply);
+}
+
+int main(void)
+{
+    printf("%cIOTEST MODE %d\n", 147, MODE);
+
+    // model: the highest raster line seen in one frame
+    char top = 0;
+    for (unsigned i = 0; i < 20000; i++) {
+        char r = vic.raster;
+        if ((vic.ctrl1 & 0x80) && r > top) top = r;
+    }
+    bool pal = top >= 0x37;          // 0x137 = 311 on PAL; NTSC tops at 0x106
+    period = pal ? 19656UL : 17095UL;
+    printf("%s\n", pal ? "PAL" : "NTSC");
+
+    for (int i = 0; i < SIZE; i++) buf[i] = (char)(i * 7 + 3);
+    unsigned want = fold(buf, SIZE);
+
+    rirq_init(true);
+    rirq_build(&split, 2);
+    rirq_write(&split, 0, &vic.color_border, VCOL_WHITE);
+    rirq_call(&split, 1, on_split);
+    rirq_set(0, SPLIT_ROW, &split);
+    rirq_build(&restore, 1);
+    rirq_write(&restore, 0, &vic.color_border, VCOL_LT_BLUE);
+    rirq_set(1, RESTORE_ROW, &restore);
+    rirq_sort();
+    rirq_start();
+    clock_init();
+
+    // idle baseline: 50 frames of the split with the bus quiet
+    stats_reset();
+    unsigned long t0 = clock_now();
+    for (char i = 0; i < 50; i++) rirq_wait();
+    report("IDLE", 0, clock_now() - t0);
+
+    // write
+    stats_reset();
+    krnio_setnam("IOTEST,S,W");
+    t0 = clock_now();
+    io_begin();
+    bool ok = krnio_open(2, DRIVE, 2);
+    int n = ok ? krnio_write(2, buf, SIZE) : 0;
+    krnio_close(2);
+    char st = krnio_status();
+    io_end();
+    report("WRITE", st, clock_now() - t0);
+    printf(" OPEN=%d N=%d\n", ok, n);
+
+    // read back
+    stats_reset();
+    krnio_setnam("IOTEST,S,R");
+    t0 = clock_now();
+    io_begin();
+    ok = krnio_open(2, DRIVE, 2);
+    n = ok ? krnio_read(2, back, SIZE) : 0;
+    st = krnio_pstatus[2];
+    krnio_close(2);
+    io_end();
+    report("READ", st, clock_now() - t0);
+    unsigned got = fold(back, n);
+    printf(" OPEN=%d N=%d CHK=%04X/%04X %s\n", ok, n, got, want,
+           (n == SIZE && got == want) ? "PASS" : "FAIL");
+
+    drive_reply();
+
+    // idle again: does the split come back the same
+    stats_reset();
+    t0 = clock_now();
+    for (char i = 0; i < 50; i++) rirq_wait();
+    report("AFTER", 0, clock_now() - t0);
+    printf("DONE\n");
+    for (;;) ;
+    return 0;
+}
+```
+
+One defect in it, left as run: the model check at the top read `PAL` on
+NTSC in the `MODE=1` and `MODE=2` builds, so their printed `F=` values
+divided by 19,656. The frames in the table were recomputed from the
+printed cycle counts, which do not depend on it. The `MODE=0` NTSC build
+detected NTSC and its printed frames agree with the table.
+
+## A start-up hang seen in VICE, located but not explained
+
+A game built from this recipe, whose first act after its own set-up was
+`krnio_open` of `HISCORE,S,R` on a fresh disk, hung in that OPEN's
+read-back on PAL every time and not on NTSC (VICE x64sc 3.10,
+`-autostart` with `-8`, true drive, `+autostart-delay-random`; three
+plain PAL runs hung, one plain NTSC run and one under the monitor did
+not, and the game's own author had seen the same split before the
+delay went in). Fifty `vic_waitFrame()` calls
+before the OPEN, or an unrelated change of code size, removed it. What
+follows is what the remote monitor showed on 2026-09-22, rung 1. The
+figures come from three monitor sessions with different breakpoint
+sets; they agree to the cycle at OPEN and drift apart by about 70,000
+cycles after the first drive-side stop, so read each bullet as its own
+run:
+
+- The drive was not resetting. Its idle loop at `$EBE7` was first
+  reached 1,002,456 drive cycles after reset; the program's OPEN
+  entered `$F34A` at C64 cycle 3,173,695, about two seconds later.
+- OPEN itself completed. LISTEN, the eleven name bytes and UNLISTEN
+  each went out in about 1,150 cycles. The TALK byte for the read
+  entered `$ED40` at 3,196,393 and left through `$EDAB` at 4,708,744:
+  the drive served ATN (`$E85B`) only when its directory search had
+  finished, and the C64 stayed inside `$ED40`'s `SEI` bracket for those
+  1,512,351 cycles. By the ROM flow the wait is the DATA loop at
+  `$ED5A`, not stopped on here. TKSA (`$62`) followed at 4,709,842 to
+  4,710,959.
+- The spin is `$EDD6`, the loop after TKSA that waits for the drive to
+  pull CLK low and become the talker. It has no timeout. `$DD00` read
+  `$67` on every pass: DATA held low by the C64, CLK released by both
+  sides. The drive's port `$1800` read `$01` (DATA OUT set, CLK OUT
+  clear), its secondary-address cell `$84` held `$62`, its ATN-pending
+  flag `$7C` was 0. The drive had taken TALK and TKSA and stayed a
+  listener.
+- Reading the drive CPU's registers from the monitor at each C64 stop
+  made the same run pass: the drive went through `$E8E5`, `$E8F4` and
+  `$E909`, the C64 reached ACPTR at `$EE13`, and the program went on
+  to its next OPEN. Memory dumps alone did not change the outcome. Two
+  runs each way.
+
+What was measured is consistent with a race at the TALK turnaround
+between the C64 releasing ATN and CLK and the drive sampling them. Why
+the drive misses the release, and whether a real drive can, is not
+measured here: the drive's state in the hanging case could only be read
+by an act that changed it. What a program can do is what the
+game did: give the bus a moment before the first OPEN, and check the
+status and the error channel after it rather than assuming the read
+returns. A wait of fifty frames was enough in every run tried; the
+smallest wait that suffices was not measured.

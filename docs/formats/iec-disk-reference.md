@@ -437,7 +437,7 @@ Similarly, code that uses CIA2 for RS-232 (via the user port ACIA emulation) mus
 
 ### Drive-Not-Ready and Timeout Errors
 
-The KERNAL IEC routines enforce a timeout via CIA1 timer B. If the drive does not respond within approximately 64 ms, the KERNAL declares a timeout, sets bit 1 of the READST status byte, and returns. This happens silently on a powered-off or absent drive. Code that depends on drive presence should check READST after every OPEN/CHKIN/CHKOUT and handle the timeout gracefully rather than spinning forever.
+The KERNAL has one timeout on the bus, and it is short and narrow. The byte-send routine arms CIA1 timer B for about 1,024 cycles (it writes 4 to the timer's high byte at `$ED92`) while it waits for a listener to acknowledge; if nothing answers it sets the READST bit and returns, which is how an absent or unpowered drive is detected on the first byte of an OPEN. The talk turnaround and the byte-receive waits have no timeout at all: a drive that has accepted TALK and never pulls CLK leaves the CPU waiting for ever, which is the start-up hang measured in VICE and described on `recipes/oscar64/high-score-persist.md`. An earlier version of this page said "approximately 64 ms" and implied every stall returns; neither is so. Check READST after every OPEN/CHKIN/CHKOUT for the errors the KERNAL can report, and do not rely on it to return from a stalled transfer.
 
 ### Directory Track Corruption
 

@@ -5,7 +5,40 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 720, schema 22, tools 1.25.2.
+Data 721, schema 22, tools 1.25.2.
+
+**Batch 9a: what the three-arm build test said was missing.** A new
+technique page, `techniques/logic.md`, opens with `tile_grid_collision`
+(requires `tile_map_render`; 2,345 cycles on its worst frame, measured
+with the CIA timer inside the vertical blank) and `object_pool` (the
+update pass over eight live slots, 380 cycles, from the object-pool
+recipe's own harness); both platformer fingerprints now name the
+collision, so a platformer briefing proposes it. The recipe
+`tile-grid-collision` walks a scripted sprite through a landing, a wall,
+a ceiling bump, a ladder and a pit with an assert every frame, and found
+on the way that side probes must sit no further apart than a tile. The
+recipe `fixed-point-jump-velocity` jumps from two different heights with
+one velocity table, which the fixed-ground table on the older recipe
+cannot do. `headless-verify` gained an autopilot input (one define swaps
+the joystick read for a scripted port byte through the same edge
+detector) and a self-test (a forced-fault build must make the same
+verify script exit 1 before its green is trusted), and the VICE page a
+palette-safe border grading by channel dominance. Measured, a raster
+IRQ left armed through a 2 KB file write and read back corrupts nothing
+on either model, but its handler enters up to about 240 lines late while
+the bus is busy, so a border split wanders; `rirq_stop()` is a bare
+`sei` that the KERNAL's own `cli` cancels, so wrapping the calls in it
+changes nothing, and clearing `$D01A` is what actually keeps the
+interrupt out. That is the new pitfall `raster_irq_during_serial_io` and
+a section on the high-score recipe. The PAL start-up hang a blind build
+hit is located but not explained: the KERNAL waits with no timeout for
+the drive to pull CLK at the talk turnaround, and why the emulated 1541
+does not is open. Two lines elsewhere were wrong and are corrected: the
+IEC page's "approximately 64 ms" timeout (the only timeout is about
+1,024 cycles around the acknowledge wait, and a stalled turnaround never
+returns) and the Oscar64 header page's `rirq_stop()` "disables it".
+Three more pitfall anchors on the KERNAL page for the decimal-mode,
+IRQ-chain and text-input techniques.
 
 **The briefing proposer, measured against a real brief.** The three-arm
 build test handed the game briefing a nine-part platformer brief and it

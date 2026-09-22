@@ -187,6 +187,7 @@ fname_end:
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** CHROUT, CHRIN, GETIN, CHKIN, CHKOUT
+**Triggered by techniques:** text_input_line
 
 ### Symptom
 
@@ -344,7 +345,7 @@ msg_end:
 
 **Severity:** critical
 **Region:** both
-**Triggered by techniques:** stable_raster_irq
+**Triggered by techniques:** stable_raster_irq, decimal_mode_pitfalls, irq_chain_table
 
 ### Symptom
 
@@ -901,6 +902,7 @@ subprocess.run(["c1541", "-attach", "disk.d64", "-write", "tdlvl00.bin", c64name
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** GETIN
+**Triggered by techniques:** text_input_line
 
 ### Symptom
 
@@ -1287,3 +1289,157 @@ tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
   252278 is the 1986 board's drawing.
 - Joe Forster/STA, "Commodore 64 memory map", https://sta.c64.org/cbm64mem.html
   — `$0318` default `$FE47`, `$02A1`.
+
+---
+
+## raster_irq_during_serial_io — A raster IRQ armed across KERNAL disk I/O misses most frames, and rirq_stop() does not stop it
+
+**Severity:** medium
+**Region:** both
+**Triggered by kernal:** OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE
+**Triggered by techniques:** stable_raster_irq, frame_sync_loop, kernal_file_write_seq, kernal_file_read_seq
+
+### Symptom
+
+A border split at rows 100 and 200 is clean while the bus is idle. While
+a 2 KB sequential file is written to drive 8 the split is gone from most
+frames; when it appears it is a few lines low, or a three-line white
+sliver near line 240 with the rest of the border in the idle colour. A
+frame counter kept in the raster handler falls behind by two frames in
+three. Wrapping the file calls in `rirq_stop()` and `rirq_start()`
+changes nothing. The file itself is correct: status `$00` after the
+write, `$40` after the read, the read-back checksum matches.
+
+Measured in VICE x64sc 3.10 with a true-drive 1541 on a fresh D64, an
+Oscar64 `rasterirq.h` split (row 100 white, row 200 light blue) and a
+`rirq_call` handler on the row-100 slot that counts entries and records
+the lowest and highest `$D012` at entry; the test source is quoted on
+`recipes/oscar64/high-score-persist.md`, section "A raster IRQ during
+file I/O". Cycles are CIA2 timers A and B cascaded; frames are those
+cycles over 19,656 (PAL) or 17,095 (NTSC), arithmetic.
+
+| Build | Model | Write 2,048 B | Handler entries | `$D012` at entry | Read 2,048 B | Handler entries | `$D012` at entry |
+|---|---|---|---|---|---|---|---|
+| IRQ armed | PAL | 9,359,321 cycles, 476 frames | 145 | 101 to 240 | 5,656,966 cycles, 288 frames | 226 | 101 to 234 |
+| IRQ armed | NTSC | 9,702,621 cycles, 568 frames | 169 | 101 to 241 | 5,991,068 cycles, 350 frames | 268 | 101 to 242 |
+| `rirq_stop()` around each call | PAL | 9,359,424 cycles, 476 frames | 144 | 101 to 238 | 5,659,833 cycles, 288 frames | 226 | 101 to 233 |
+| `rirq_stop()` around each call | NTSC | 9,702,713 cycles, 568 frames | 168 | 101 to 240 | 5,983,652 cycles, 350 frames | 270 | 101 to 247 |
+| `$D01A` cleared around each call | PAL | 9,158,718 cycles, 466 frames | 0 | none | 5,553,710 cycles, 283 frames | 0 | none |
+| `$D01A` cleared around each call | NTSC | 9,498,969 cycles, 556 frames | 0 | none | 5,765,998 cycles, 337 frames | 0 | none |
+
+Idle, the same handler entered on line 101 in every one of 50 frames on
+both models. Every row above ended with status `$00` after the write,
+`$40` (EOF) after the read, 2,048 bytes back, checksum `F000` matching,
+and `00, OK` on the error channel.
+
+### Mechanism
+
+The KERNAL's serial primitives run each byte with interrupts off. The
+send routine at `$ED40` opens with `SEI` and exits through `CLI` at
+`$EDAB`; the receive routine at `$EE13` does the same and exits at
+`$EE82`; the talk turnaround at `$EDCC` to `$EDDB` is bracketed the same
+way (ROM `kernal-901227-03.bin`, rung 1; `kernal_assumes_sei_cleared`
+above has the census). Inside those brackets are wait loops with no
+timeout: `$ED50` to `$ED5D` wait on DATA for the listener to be ready
+before each byte, `$EE1B` waits on CLK for the talker, `$EDD6` waits on
+CLK for the drive to take the bus. Between bytes the drive is doing its
+own work, and while it is the C64 sits in one of those loops with the I
+flag set. Under the monitor, the byte that follows a directory lookup
+spent 1,512,351 cycles between `$ED40` and `$EDAB`, about 77 PAL frames
+in one `SEI` bracket.
+
+The VIC raster latch holds one interrupt. A match that lands inside a
+bracket is delivered at the `CLI`, wherever the beam is by then, which is
+the handler entering at line 240 for a slot armed at row 100. A second
+match inside the same bracket is not remembered, which is the 331 PAL
+frames out of 476 with no entry at all. The `rasterirq.h` slot code spins
+on `CMP $D012` until the counter passes its row, so a handler that is
+delivered after the counter has wrapped waits for the next pass of its
+row and reads 101 again; the recorded maximum is therefore a floor on
+the lateness, not its extent.
+
+`rirq_stop()` is one instruction, `SEI` (`rasterirq.c`), and the first
+serial primitive's `CLI` cancels it. That is why the second pair of rows
+matches the first. Clearing `$D01A` removes the source instead of masking
+the CPU, and the transfer then runs about two per cent faster, the
+handler time it no longer pays.
+
+The split in the exit screenshot at 8,000,000 cycles, mid-write: IRQ
+armed on PAL, white on lines 240 to 242 only, the row-100 slot delivered
+late and the row-200 slot run straight after it; IRQ armed on NTSC, white
+on lines 104 to 201 against 101 to 200 idle; `$D01A` cleared, one colour
+for the whole frame, white on PAL and light blue on NTSC, whichever the
+border held when the register was cleared. The right border changes one
+row before the left in every split, the store landing mid-line.
+
+### Fix
+
+Do not run file I/O under a raster effect you want to keep. For a game,
+save and load on a static screen with the raster IRQ off, and put the
+screen and border into the state you want held before the first call:
+
+```c
+    vic.color_border = VCOL_BLACK;      // whatever the static screen wants
+    vic.intr_enable = 0;                // $D01A: no raster IRQ source
+    krnio_setnam("HISCORE,S,W");
+    if (krnio_open(2, 8, 2)) {
+        krnio_write(2, buf, sizeof(buf));
+        krnio_close(2);
+    }
+    vic.intr_ctrl = 1;                  // $D019: drop a match latched meanwhile
+    vic.intr_enable = 1;                // re-arm; rasterirq.h resumes on its next row
+```
+
+`rirq_stop()` is not a substitute; it cannot outlive the first byte on
+the bus. If the raster IRQ must stay armed, expect it to enter late or
+not at all for the length of the transfer, and do not count frames or
+drive music from it across the calls: the cascaded CIA2 timer the test
+used kept time, the handler did not. The transfer speed (about 216
+bytes per second writing and 355 reading, either model, measured above)
+is the KERNAL's; the IRQ costs it two per cent.
+
+### Worked example
+
+```text
+// BAD: the split is expected to survive the write
+rirq_stop();                     // sei -- undone at $EDAB by the first byte
+krnio_open(2, 8, 2); krnio_write(2, buf, 2048); krnio_close(2);
+rirq_start();
+// measured: 144 handler entries in 476 PAL frames, entry as late as line 238
+
+// GOOD: take the source away, hold the picture still, put it back after
+vic.intr_enable = 0;
+krnio_open(2, 8, 2); krnio_write(2, buf, 2048); krnio_close(2);
+vic.intr_ctrl = 1; vic.intr_enable = 1;
+// measured: 0 entries during the write, the split back on line 101 after
+```
+
+### Cross-references
+
+- Pitfall `kernal_assumes_sei_cleared` above: where the `SEI`/`CLI`
+  pairs are; this entry is what they do to a raster IRQ that is armed
+  when the bus is busy.
+- Technique `stable_raster_irq`, `frame_sync_loop`
+  (`techniques/raster.md`): the schemes whose handler and frame counter
+  this measurement stalled.
+- Techniques `kernal_file_write_seq`, `kernal_file_read_seq`
+  (`techniques/file-io.md`): the calls that hold the bus.
+- Recipe `recipes/oscar64/high-score-persist.md`, section "A raster IRQ
+  during file I/O": the test program and the same figures beside the
+  save-file recipe.
+- `recipes/oscar64/stable-raster-irq.md`, "What `rirq_init` actually
+  does": the dispatcher shares the IRQ line with the CIA jiffy timer,
+  which the brackets above stall in the same way (not measured here).
+
+### Sources
+
+- Commodore 64 KERNAL ROM 901227-03 (`kernal-901227-03.bin` as shipped
+  with VICE), `$ED40`-`$EDB9`, `$EDC7`-`$EDDC`, `$EE13`-`$EE84`,
+  disassembled for this entry, rung 1.
+- VICE x64sc 3.10 `-default` with `-8` and a fresh `TEST,01` D64, PAL and
+  `-model ntsc`, six builds run to completion at 40,000,000 cycles and
+  again to an exit screenshot at 8,000,000; screen cells decoded against
+  `chargen-901225-01.bin`, border colour read down x = 2 and x = 380,
+  rung 1.
+- Oscar64 `include/c64/rasterirq.c`, `rirq_start` and `rirq_stop`,
+  rung 1.

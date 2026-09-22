@@ -321,6 +321,10 @@ What each line proves:
   `repeat_step`, same fold with `value = age | fire << 8`. Python gives
   `D1CC`.
 
+To put presses through `joy_edge` in a headless run, swap the port read
+for a scripted byte behind a define, the pattern measured in
+`recipes/oscar64/headless-verify.md`, section "Autopilot input".
+
 A first version of the fold rotated the checksum by one bit and XORed the
 case in; over the symmetric 65,536-pair domain that cancelled to `0000`, a
 checksum that cannot fail. The multiply-and-add fold replaced it before

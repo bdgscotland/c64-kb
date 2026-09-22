@@ -802,3 +802,4 @@ per character step.
 ### Recipes
 
 - `recipes/oscar64/tile-map-render.md`
+- `recipes/oscar64/tile-grid-collision.md` (tests a sprite against the decoded map array this technique fills; `tile_grid_collision` in `logic.md`)

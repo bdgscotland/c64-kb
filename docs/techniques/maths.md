@@ -272,9 +272,26 @@ faster in wall-clock time (60 frames per second against 50);
 region for that reason. The recipe keeps one table and shows the frame
 number so the two pictures can be compared frame for frame.
 
+### Variations
+
+Velocity table, launch from any height. `arc_y[]` is absolute sprite Y
+from one fixed ground, so a platformer cannot play it from a platform.
+Store the per-frame velocity instead, `vy_tab[n] = V0 + (n + 1) * G`
+clamped to a terminal velocity, and do `y += vy_tab[n]` from whatever
+`y` the jump starts at; the caller decides what a landing is (a floor
+under the sprite, a tile lookup). With `-$0380`, `+$0024` and terminal
+`+$0210` the 52 entries sum to exactly zero, so a sprite that launches
+from a floor is back on it exactly, and the terminal run at the end of
+the table is what a longer fall holds. `recipes/oscar64/fixed-point-jump-velocity.md`
+runs two sprites from floors 64 pixels apart off one table and checks
+the exact landing on the 6510 every jump; the constants were picked in
+Python for the zero sum, and the pair `-3.5` with `+$28` does not give
+one for any terminal velocity from 1.5 to 4.0 in steps of 1/32.
+
 ### Recipes
 
 - `recipes/oscar64/fixed-point-jump.md`
+- `recipes/oscar64/fixed-point-jump-velocity.md`
 
 ### The measuring program
 

@@ -194,7 +194,7 @@ Public API:
 - `rirq_init_crt()` / `rirq_init_crt_noio()` — cartridge-safe variants
 - `rirq_init_io()` / `rirq_init_memmap()` — RAM vector variants
 - `rirq_start()` — enables the raster IRQ system
-- `rirq_stop()` — disables it
+- `rirq_stop()` — a bare `sei` (`rasterirq.c`); it does not clear `$D01A`, so the KERNAL's own `cli` inside serial I/O re-enables the raster IRQ, and measured in VICE a file write with `rirq_stop()` around it behaved the same as one with the IRQ left armed (`recipes/oscar64/high-score-persist.md`). To keep the raster IRQ out of a transfer, clear `$D01A` and acknowledge `$D019`, then restore them
 - `rirq_sort(bool inirq)` — sorts the slots by scanline and builds the dispatch schedule (`rasterIRQNext[]`); call once after the initial `rirq_set()` calls and before `rirq_start()`, and again after any `rirq_set`/`rirq_move`/`rirq_clear`; pass `true` when calling from within an interrupt
 - `rirq_wait_done()` — blocks until the last slot of the current frame has fired; call before `rirq_sort`
 - `rirq_wait()` — blocks until the raster IRQ chain has completed one more pass (end of frame), i.e. until `rirq_count` changes; an earlier version of this page said "the next IRQ tick"

@@ -64,7 +64,7 @@ Tile-based collision on the C64 is a CPU operation, not a hardware one. The game
 
 Enemy AI state machines occupy a significant fraction of the CPU budget in this genre. Each enemy has a movement state (wandering, chasing, fleeing, dying), an animation frame counter, and often a simple finite automaton for reversals and turnarounds. The pattern is identical to the sprite state machines used in sports games but simpler because there is no scroll to synchronize with. Music and sound effects share the SID: a play routine is called once per frame from the main loop rather than from a raster IRQ, which is acceptable because the frame rate is locked by a waiting-for-raster spin at the top of the game loop rather than by interrupt-driven timing.
 
-**Technique fingerprint:** `stable_raster_irq`, `sprite_collision_detect`, `sprite_multiplex_8`, `sid_voice_setup`, `sid_play_routine_pattern`, `self_modifying_code`, `zero_page_burst`
+**Technique fingerprint:** `stable_raster_irq`, `sprite_collision_detect`, `tile_grid_collision`, `sprite_multiplex_8`, `sid_voice_setup`, `sid_play_routine_pattern`, `self_modifying_code`, `zero_page_burst`
 
 **Common pitfalls:** `sprite_priority_collision_silent`, `sprite_dma_overflow`, `badline_cycle_loss`, `kernal_clobbers_a_x_y`
 
@@ -84,7 +84,7 @@ The tilemap is the central data structure. A world wider than 40 columns is stor
 
 Physics simulation (gravity, jumping arcs, enemy movement) must be integer-based and fast. Fixed-point arithmetic using 8.8 or 16.8 representation is standard; the representation, the signed add, the table multiply and a measured jump arc are `fixed_point_8_8`, `table_multiply_8x8` and `jump_arc_table` in `techniques/maths.md`. Platform collision uses the same tile-lookup approach as the single-screen platformer but must account for the scroll offset when converting sprite positions to tile indices. With a large world map, the agent must also design a streaming tile cache: only the visible columns plus a small lookahead need to be in screen RAM at any time. Exomizer or Krill's loader can decompress world chunks from disk into RAM on the fly, but the load must complete before the scroll reaches the new section — a multi-load sequencing problem.
 
-**Technique fingerprint:** `soft_scroll_h`, `infinite_scroll_h`, `parallax_dual_layer`, `sprite_multiplex_24`, `stable_raster_irq`, `double_irq`, `sid_play_routine_pattern`, `self_modifying_code`, `exomizer_basics`, `krill_loader_integration`, `multi_load_sequencing`, `sprite_collision_detect`, `fixed_point_8_8`, `jump_arc_table`, `joystick_edge_detect`, `frame_sync_loop`, `tile_map_render`, `lfsr_random`
+**Technique fingerprint:** `soft_scroll_h`, `infinite_scroll_h`, `parallax_dual_layer`, `sprite_multiplex_24`, `stable_raster_irq`, `double_irq`, `sid_play_routine_pattern`, `self_modifying_code`, `exomizer_basics`, `krill_loader_integration`, `multi_load_sequencing`, `sprite_collision_detect`, `fixed_point_8_8`, `jump_arc_table`, `joystick_edge_detect`, `frame_sync_loop`, `tile_map_render`, `tile_grid_collision`, `lfsr_random`
 
 **Common pitfalls:** `badline_cycle_loss`, `sprite_dma_overflow`, `raster_irq_first_line_jitter`, `sprite_x_high_bit_wrong_register`
 

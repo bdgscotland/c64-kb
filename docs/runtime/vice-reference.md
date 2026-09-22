@@ -667,12 +667,47 @@ PY
 ```
 
 Measured: the KickAssembler recipe on PAL printed `border (98, 213, 50)
-PASS` and exited 0; the Oscar64 recipe built with `FORCE_FAIL 1` on NTSC
+PASS` and exited 0; the Oscar64 recipe built with `FORCE_FAIL 1` (the
+define is now `FORCE_FAULT`, set with `-dFORCE_FAULT=1`) on NTSC
 printed `border (169, 71, 100) FAIL` and exited 1. The route reads only
 the border, so it tells pass from fail from "still the power-on light
 blue"; it cannot read the code itself. For that, decode row 7 with the
 char ROM snippet above (`RESULT 01 PASS` or `RESULT 02 FAIL` in the
 recipes), or use a machine route.
+
+**Palette-safe grading by channel dominance.** The exact-triple test
+above fails closed on any picture that did not come from `-default` on
+this VICE version: a `.vpl` palette, another release, a capture from a
+real machine. When the program paints only index 5 or index 2, grade by
+which channel dominates instead:
+
+```python
+def is_green(c): return c[1] > c[0] + 60 and c[1] > c[2] + 60
+def is_red(c):   return c[0] > c[1] + 60 and c[0] > c[2] + 60
+verdict = 0 if is_green(border) else 1 if is_red(border) else 2
+```
+
+Against the triples in "The default palette": PAL green (98, 213, 50) has
+G over R by 115 and over B by 163; NTSC green (114, 189, 103) by 75 and
+86. PAL red (175, 60, 88) has R over G by 115 and over B by 87; NTSC red
+(169, 71, 100) by 98 and 69. The power-on border, index 14, is neither on
+either model. Any margin up to 68 accepts NTSC red, whose R exceeds B by
+69; sixty leaves a little room and was the value checked. Run over all
+sixteen triples of both models
+(arithmetic from the table), `is_green` also accepts index 13, light
+green, on PAL (G over R by 72; on NTSC only by 57, so it is rejected
+there), and `is_red` also accepts 8 and 10 on both models and 9 on NTSC.
+Measured on the six exit screenshots of the Oscar64 `headless-verify`
+recipe (default, `-dAUTOPILOT=1` and `-dFORCE_FAULT=1`, PAL and NTSC),
+the dominance test and the exact-triple test gave the same verdict on
+every one.
+
+The exact triple remains the right test when the harness must tell the
+pass shade from any other green, index 13 in particular, or red from
+orange and light red; a program that uses those colours elsewhere on the
+screen, or a bar that grades several things by shade, keeps the table
+per model. It is also the test `npm run verify:recipes` implies, since
+that compares whole pictures.
 
 ### Route 2: the machine, over `-moncommands`
 

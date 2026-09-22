@@ -202,3 +202,9 @@ colour, position and enable in one call. The frame is paced by
 `vic_waitFrame()`, so on PAL the arc takes 63/50 of a second and on NTSC
 63/60; the table is in frames, not time, which is why the two pictures
 show different frame counts for the same cycle budget.
+
+`arc_y[]` is absolute Y from `GROUND_Y`, so it only plays from that one
+ground. A jump that has to start from a platform stores the per-frame
+velocity instead and adds it to whatever `y` it starts from;
+`fixed-point-jump-velocity.md` is that variant, with two sprites on
+floors 64 pixels apart driven by one table.

@@ -332,5 +332,29 @@
       "pal": "screenshots/colour-fade.png",
       "ntsc": "screenshots/colour-fade-ntsc.png"
     }
+  },
+  "oscar64/tile-grid-collision": {
+    "cycles": 7200000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/tile-grid-collision.png",
+      "ntsc": "screenshots/tile-grid-collision-ntsc.png"
+    }
+  },
+  "oscar64/fixed-point-jump-velocity": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fixed-point-jump-velocity.png",
+      "ntsc": "screenshots/fixed-point-jump-velocity-ntsc.png"
+    }
   }
 }

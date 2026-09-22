@@ -3,7 +3,7 @@ recipe: object-pool
 toolchain: oscar64
 output_format: PRG
 region: both
-techniques: []
+techniques: [object_pool]
 file_formats: [PRG]
 uses_registers: [DC04, DC05, DC0E, D011, D020, D021]
 uses_kernal: []
@@ -25,7 +25,7 @@ leaves the screen. It folds the final slot table into a checksum that
 must match the value computed in Python and compiled in, prints PASS or
 FAIL, and prints the cycle cost of the allocator (best, middle and full
 cases), a free-list pop and push, the update pass with eight and with no
-active slots, and a spawn, all timed with CIA1 timer A. The pattern is
+active slots, and a spawn, all timed with CIA1 timer A. It implements `object_pool` (`techniques/logic.md`); the pattern is
 described under "Object pool" in `../../game-design/game-design-patterns.md`.
 
 ## Source
