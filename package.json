@@ -21,6 +21,7 @@
     "memorize:audit": "tsx src/cli-memorize-audit.ts",
     "feedback:log": "tsx src/tools/feedback.ts",
     "check:listings": "tsx scripts/check-listings.ts",
+    "verify:recipes": "tsx scripts/verify-recipes.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

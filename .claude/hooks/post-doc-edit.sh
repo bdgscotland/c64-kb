@@ -43,6 +43,28 @@ $(printf '%s\n' "$OUT" | grep -E '^FAIL|Error|error' -A3 | head -30)"
   fi
 fi
 
+# 1b. A recipe page must still draw what its committed screenshot shows.
+#     verify-recipes builds the listing, runs it headless in VICE with the
+#     pinned parameters (docs/recipes/runs.json) and compares the PNG
+#     pixel-for-pixel with the baseline. ~3 s per recipe. A mismatch after a
+#     deliberate listing change is re-baselined with --update, and the page
+#     says what changed; a mismatch you did not intend is a regression.
+case "$REL" in
+  docs/recipes/*/*.md)
+    if [ "$(basename "$REL")" != "README.md" ] && command -v x64sc >/dev/null 2>&1; then
+      if VOUT=$(npx tsx scripts/verify-recipes.ts --allow-missing --file "$REL" 2>&1); then
+        CONTEXT="$CONTEXT
+verify-recipes on $REL: $(printf '%s\n' "$VOUT" | grep -E '^(ok  |FAIL)' | sed 's/^/  /' | head -6)"
+      else
+        CONTEXT="$CONTEXT
+RECIPE SCREENSHOT MISMATCH in $REL — the listing no longer draws what the committed PNG shows:
+$(printf '%s\n' "$VOUT" | grep -E '^FAIL' | head -6)
+If the listing changed on purpose, look at the fresh PNG, run 'npx tsx scripts/verify-recipes.ts --update --file $REL', and say in the page what changed. Otherwise this is a regression."
+      fi
+    fi
+    ;;
+esac
+
 # 2. Metadata lines feed the graph; a change needs a clean re-ingest.
 if git diff --quiet -- "$REL" 2>/dev/null; then :; else
   if git diff -U0 -- "$REL" | grep -qE '^[+-](\*\*(Region|Uses registers|Uses kernal|Demands|Requires|Mitigated by techniques|Triggered by [a-z]+|Caused by [a-z]+|Likely causes|Severity|Complexity):\*\*|(techniques|uses_registers|uses_kernal|file_formats|region|toolchain|recipe|category|chip):)'; then

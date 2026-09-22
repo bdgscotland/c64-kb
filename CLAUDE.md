@@ -68,6 +68,7 @@ wrong number here becomes a torn screen in someone's demo. Work accordingly.
 
 ```bash
 npm run check:listings     # every listing builds; fails on a missing toolchain unless --allow-missing
+npm run verify:recipes     # every recipe runs headless in VICE at its pinned cycles (docs/recipes/runs.json) and matches its committed PNG pixel-for-pixel; --update re-baselines after a deliberate change, --allow-missing tolerates a recipe with no PNG yet
 npx tsc --noEmit
 npm test                   # 155 tests, against c64_test / c64_docs_test — never the live stores
 npm run ingest:clean       # if any doc changed: rebuild graph + vectors; read the summary line

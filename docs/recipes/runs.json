@@ -1,0 +1,13 @@
+{
+  "_comment": "Pinned VICE runs for scripts/verify-recipes.ts. Key = <toolchain>/<page stem>. Defaults when absent: 8000000 cycles, PAL, screenshots/<stem>.png. Every run adds +autostart-delay-random so the frame captured is the same every time.",
+  "oscar64/pal-ntsc-detect": {
+    "cycles": 8000000,
+    "models": ["pal", "ntsc", "oldntsc"],
+    "shots": { "pal": "screenshots/pal-ntsc-detect-pal.png", "ntsc": "screenshots/pal-ntsc-detect-ntsc.png", "oldntsc": "screenshots/pal-ntsc-detect-oldntsc.png" }
+  },
+  "oscar64/text-overlay-playfield": {
+    "cycles": 16000000,
+    "models": ["pal", "ntsc"],
+    "shots": { "pal": "screenshots/text-overlay-playfield.png", "ntsc": "screenshots/text-overlay-playfield-ntsc.png" }
+  }
+}
