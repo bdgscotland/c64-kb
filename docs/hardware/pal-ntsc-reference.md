@@ -84,8 +84,9 @@ point.
 PAL frames are 19,656 cycles long (312 lines × 63 cycles). NTSC frames
 on the modern 6567R8 are 17,095 cycles (263 × 65). The older 6567R56A
 NTSC chip uses 262 lines × 64 cycles = 16,768 cycles per frame; the
-R56A is rare and only shipped in the earliest "silver-label" U.S. C64s
-from 1982. Any code that assumes a fixed cycle count per frame must be
+R56A is uncommon and is reported to have shipped only in the earliest
+U.S. machines (production history from published sources, not verified
+here). Any code that assumes a fixed cycle count per frame must be
 parameterized per region. PAL-N (6572): 312 × 65 = 20,280 cycles per
 frame, measured in VICE x64sc `-model drean`.
 
@@ -171,9 +172,10 @@ detect by timing or by the raster line counter (see
 
 ### 6569 — PAL VIC-II family
 
-- **6569R1 / 6569R3** — early PAL VIC-II revisions. 6569R1 is the
-  original NMOS part; 6569R3 fixes a sprite-vs-background priority
-  bug. Both have the same timing.
+- **6569R1 / 6569R3** — early PAL VIC-II revisions with the same
+  timing. (An earlier version of this page said R3 "fixes a
+  sprite-vs-background priority bug"; nothing on this machine can check
+  a revision history, so that claim is withdrawn rather than repeated.)
 - **6569R4 / 6569R5** — later NMOS revisions, same timing as R3.
 - **8565** — HMOS-II PAL VIC-II shipped in the C64C (C64-II, 1986+).
   Same timing as 6569R3 but with slightly different colour output
@@ -185,9 +187,10 @@ Commodore's largest market for the C64.
 
 ### 6567 — NTSC VIC-II family
 
-- **6567R56A** — the original NTSC chip, 1982. 262 scanlines per
-  frame, 64 cycles per scanline. Shipped in early "silver-label"
-  C64s sold in the U.S. and Canada in 1982-1983. Extremely rare.
+- **6567R56A** — the original NTSC chip. 262 scanlines per frame, 64
+  cycles per scanline (measured in VICE x64sc `-model oldntsc`). Its
+  shipping history — early U.S. machines, 1982-83 — is from published
+  sources and not verified here.
 - **6567R8** — the standard NTSC chip from 1983 onward. 263
   scanlines per frame, 65 cycles per scanline. This is what
   virtually all NTSC software is written for.
@@ -247,10 +250,13 @@ played on PAL plays roughly 0.65 semitones flat.
 
 ### Common approach: two frequency tables
 
-Most music drivers (Goattracker, SID-Wizard, Cubase64) ship two
-precomputed 12-note frequency tables — one for each region — and
-detect at startup which one to use. The tables are typically
-~192 bytes each (96 notes × 2 bytes), so carrying both is cheap.
+The usual approach is one precomputed frequency table per region —
+96 notes × 2 bytes = 192 bytes each, so carrying both is cheap — and a
+region flag read once at start-up (`pal_ntsc_detection` in
+`techniques/raster.md`) to choose between them. Which named editors and
+players do this, and how, is not verified here; an earlier version of
+this paragraph named three and called the tables "12-note", which its
+own byte count contradicted.
 
 Example PAL-vs-NTSC frequency for middle A (A4, ~440 Hz):
 

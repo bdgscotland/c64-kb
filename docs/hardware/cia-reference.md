@@ -381,8 +381,11 @@ read tenths, every subsequent TOD read returns the frozen value.
 from SP. Direction (input/output) is selected by the SPMODE bit of
 `$DC0E`.
 
-CIA1's SDR is **not used by the C64**. There is no useful external
-wiring of CIA1's SP/CNT pins on the standard motherboard.
+CIA1's SDR is **not used by the KERNAL**. Its SP1 and CNT1 pins do
+reach the user port (pins 5 and 4, beside CIA2's SP2/CNT2 on 7 and 6 —
+the C64 user-port pinout, not measured here), so third-party hardware
+can drive it. An earlier version of this page said the pins had no
+external wiring.
 
 After a full byte has been shifted in or out, the SDR bit of the ICR
 (`$DC0D` bit 3) goes high.
@@ -925,9 +928,9 @@ Standard idioms:
    restart. Loses a few cycles of count.
 2. **Read high, read low, read high**: if the second high read matches
    the first, the low read was valid. Otherwise retry.
-3. **Use the latched read**: the 6526 doesn't expose the latched
-   atomic-read mode that the 6526A revision adds. On stock 6526, use
-   one of the above.
+3. There is no atomic two-byte timer read on the 6526. (An earlier
+   version of this list said the 6526A revision added one; no datasheet
+   on this machine supports that, and the claim is withdrawn.)
 
 ### Setting up a timer IRQ
 
@@ -1192,8 +1195,9 @@ The SRQ line is not used by the standard C64 KERNAL.
   `pitfalls/kernal-and-io.md` → `restore_nmi_not_maskable`.
 - **Reading a running timer gives torn values**: low byte decrements
   between the two-byte read. Stop the timer before reading, or use the
-  read-high / read-low / re-read-high consistency loop. The 6526A
-  revision exposes a latched-read mode the original 6526 does not.
+  read-high / read-low / re-read-high consistency loop. (An earlier
+  version of this bullet said the 6526A added a latched-read mode; it
+  is withdrawn, unsupported by anything on this machine.)
 - **Forgetting to acknowledge an IRQ**: a custom IRQ handler must read
   `$DC0D` (CIA1) or `$DD0D` (CIA2) to clear the pending flags and
   release the `/IRQ`/`/NMI` line. Without this a CIA1 `/IRQ` handler

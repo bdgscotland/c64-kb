@@ -1337,14 +1337,15 @@ ever needed.)
   `asr` where Oxyron says ALR, and ca65 wants `axs` where some tables
   say SBX (both measured). Check your toolchain.
 - **VICE accuracy**: VICE's `x64sc` cycle-exact emulator implements all
-  illegal opcodes, including the unstable ones with a configurable
-  model. The faster `x64` emulator may not handle every unstable opcode
-  the same way. Use `x64sc` for any code that relies on illegal
-  opcodes.
+  illegal opcodes; for the unstable ones it picks one fixed behaviour
+  (XAA magic `$EF`, LAX #imm `$EE` — measured above), not a
+  configurable model as an earlier version of this bullet said. Whether
+  the faster `x64` differs from `x64sc` on them was not measured here.
+  Use `x64sc` for any code that relies on illegal opcodes.
 
 ## Sources
 
-- Oxyron, "Frodo's 6502 opcode table" — https://www.oxyron.de/html/opcodes02.html
+- Oxyron (Graham), "6502/6510/8500/8502 Opcodes" — https://www.oxyron.de/html/opcodes02.html (page heading and credit as fetched 2026-09-22; an earlier version of this line called it "Frodo's 6502 opcode table")
 - Masswerk (Norbert Landsteiner), "6502 illegal opcodes" — https://www.masswerk.at/nowgobang/2021/6502-illegal-opcodes
 - NESdev wiki, "CPU unofficial opcodes" — https://www.nesdev.org/wiki/CPU_unofficial_opcodes
 - Pagetable / c64ref opcode reference — https://www.pagetable.com/c64ref/6502/

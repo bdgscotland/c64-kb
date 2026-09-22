@@ -253,8 +253,9 @@ high — selecting BASIC ROM + KERNAL ROM + I/O visible.
   bit to 1 first, then write the data register.
 - **Reading $01 can be glitchy.** When CASSMOT is driving low (motor on)
   and you read $01, the input bit CASSSENS may read back as the most
-  recent value the line was driven to during the cassette sense window;
-  this is documented in *Mapping the Commodore 64* p. 32.
+  recent value the line was driven to during the cassette sense window.
+  This is reported in *Mapping the Commodore 64* (p. 32) and is not
+  checked here — no tape device is attached in the headless runs.
 - **Bit 6/7 unconnected.** On a stock C64 these pins are not bonded out
   and read as their previous output state with very slow capacitive
   decay. *Do not rely on bit 6/7 values for anything.* An earlier version
@@ -2955,7 +2956,9 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   `LDA #$2F / STA $00 / LDA #$35 / STA $01`.
 
 - **$01 bit 6/7 — unconnected pins on stock C64.** Bits 6 and 7 of $01
-  are not bonded out on a stock C64 (some C128 and SX-64 boards differ).
+  are not bonded out on a stock C64 (the C128's 8502 gives bit 6 to the
+  CAPS LOCK key; whether SX-64 boards differ is sometimes claimed and
+  not verified here).
   Reading them yields the last-driven value with very slow capacitive
   decay. Treat as undefined and mask off when reading $01 for the
   bank-config bits.

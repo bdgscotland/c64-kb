@@ -361,9 +361,10 @@ as loudly as a direct write to $D418, and it can do so in code that
 never mentions $D418 by name. See the [Pitfalls](#pitfalls) section
 below.
 
-Some commercial SID-cartridge add-ons (StereoSID, SID-Wizard 8-bit
-DAC, etc.) decode a second SID at $D420 or $D500 or another base
-inside this shadow window, gating the original SID's chip-select.
+Second-SID boards decode a second chip at $D420 or $D500 (or another
+base inside this shadow window), gating the original SID's chip-select
+— which products, and at which base, is not verified here (an earlier
+version named "SID-Wizard 8-bit DAC", which is a tracker, not a board).
 On stock hardware, however, the entire $D420-$D7FF range is one
 chip — the same SID, mirrored.
 
@@ -400,10 +401,13 @@ Word-of-warning patterns:
   cached in zero page, not to write a raw nibble. Writing a raw
   nibble silently un-mutes voice 3 and switches the filter to "no
   filter" mode.
-- The 8580 ear-test value for $D418 voice-3-mute differs from the
-  6581 — the 8580 actually mutes when bit 7 is set, the 6581 has
-  the same wiring but the analog mixer leaks. Tunes calibrated on
-  one chip can sound different on the other.
+- How completely $D418 bit 7 (3OFF) silences voice 3 on real silicon
+  is reported differently for the two chips in different sources, and
+  is not measured here (an earlier version of this bullet asserted
+  that the 6581's mixer leaks; `pitfalls/sid.md` asserts the reverse).
+  In reSID both models drop voice 3 from the direct path. Do not rely
+  on 3OFF for silence on either chip — set the voice's volume to zero
+  through its envelope instead.
 
 ## Color RAM ($D800-$DBFF)
 
@@ -536,7 +540,7 @@ source is the video chip.
 | Scan the keyboard                                | $DC00 (drive col), $DC01 (read row), $DC02/$DC03 (DDR) |
 | Read joystick port 2                             | $DC00 bits 0-4 (low = pressed) |
 | Read joystick port 1                             | $DC01 bits 0-4 (low = pressed) |
-| Read paddle button (fire)                        | $DC00 / $DC01 bit 4 (same wiring) |
+| Read paddle buttons                              | $DC00 (port 2) / $DC01 (port 1) bits 2 and 3 — paddle A and paddle B buttons appear on the joystick LEFT and RIGHT lines, not on FIRE (bit 4). From the Programmer's Reference Guide's paddle section, not measured here: a headless VICE cannot press a paddle button. An earlier version of this row said bit 4 |
 | Switch which paddle pair is multiplexed in       | $DC00 bits 6-7 (%01 = port 1, %10 = port 2; $DC02 bits 6-7 must be outputs, which the KERNAL leaves them). Measured in VICE x64sc; an earlier revision of this row said $DD00, whose bits 6-7 are IEC CLK IN / DATA IN and have nothing to do with paddles. The KERNAL keyboard scan rewrites $DC00 every jiffy IRQ, so select the pair with IRQs masked or re-select before each read, and allow the ~512-cycle settle |
 | Program Timer A as a one-shot                    | $DC04, $DC05, $DC0E bit 3 = 1 |
 | Program Timer A as continuous                    | $DC04, $DC05, $DC0E bit 3 = 0 |
