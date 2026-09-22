@@ -389,7 +389,12 @@ Raster IRQ fires at HUD split line:
 
 The main loop processes input, advances actor states, resolves collision,
 and updates score. On PAL (50 Hz) the loop has ~19 700 cycles of CPU time
-per frame after IRQ overhead.
+per frame after IRQ overhead. The loop's wait-for-frame, frame counter,
+dropped-frame detection and border-colour budget bar are the technique
+`frame_sync_loop` in `techniques/raster.md` (recipe
+`recipes/oscar64/frame-sync-loop.md`); reading the controls as press
+events with auto-repeat is `techniques/input.md`; sub-pixel movement and
+the jump arc are `techniques/maths.md`.
 
 ---
 

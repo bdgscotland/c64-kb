@@ -38,6 +38,15 @@ build aborts before it draws.
 - The other pictures were adopted on 2026-09-22 after each was looked at
   against its page's "Expected output"; before that these recipes had no
   committed screenshot at all.
+- `joystick-input.png` / `-ntsc.png` are at 24,000,000 cycles (pinned in
+  `runs.json`): the recipe runs two exhaustive self-checks before its live
+  loop and 8,000,000 cycles does not reach the loop. `frame-sync-loop.png`
+  / `-ntsc.png` are the budget-bar loop at 8,000,000 cycles and
+  `frame-sync-loop-overrun.png` is the same listing built with a workload
+  that does not fit, at 8,050,000 cycles so the wrapped bar and the
+  non-zero dropped counter are both in frame. `fixed-point-jump.png` /
+  `-ntsc.png` are the jump arc at 8,000,000 cycles; the page quotes the
+  table value and the sprite Y measured from the picture at that frame.
 
 Geometry of the PAL captures, measured rather than assumed: 384×272; text
 row 0 of the 25-row display window begins at PNG row 35 and column 0 at

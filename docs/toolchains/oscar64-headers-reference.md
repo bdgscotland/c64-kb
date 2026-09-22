@@ -61,6 +61,72 @@ vic.color_back   = VCOL_BLACK;
 vic_waitFrame();               // sync to vertical blank
 ```
 
+### The raster waits, line by line
+
+The one-line summaries above are the header's own comments (`vic.h` lines
+106 to 128, comments and declarations; the declarations themselves are
+lines 107 to 128). What each routine actually waits for is in `vic.c` (Oscar64
+build 2026-05-19; line numbers are that file's, read here). All of them
+poll; none installs an interrupt or touches `$D019`. "RST8" is bit 7 of
+`$D011` (`VIC_CTRL1_RST8`, `vic.h` line 10), the ninth bit of the raster
+counter, set for raster lines 256 and up on every VIC-II.
+
+- `vic_isBottom()` (`vic.c` 56 to 59): returns true if RST8 is set, that is,
+  if the beam is on line 256 or later. No wait.
+- `vic_waitBottom()` (62 to 66): spins while RST8 is clear. Returns on line
+  256 if the beam was above it, and at once if it was already at or past
+  256. The header's "bottom of the visual area" means line 256, six lines
+  below the 25-row display window's last line, 250.
+- `vic_waitTop()` (68 to 72): spins while RST8 is set. Returns on line 0 if
+  the beam was in the RST8 band, and at once if it was anywhere in lines 0
+  to 255. "Top of the frame" means line 0.
+- `vic_waitFrame()` (74 to 80): `vic_waitTop()` then `vic_waitBottom()` in
+  one function: spins until RST8 is clear, then until it is set. Always
+  returns on line 256 of a frame that had not yet reached 256 when the call
+  was made, so consecutive calls are exactly one frame apart. It is not
+  "one full frame" from an arbitrary call, as the bullet above says: called
+  from line 100 it returns 156 lines later. `vic_waitBottom()` alone does
+  not give this guarantee: called twice inside the band it returns twice in
+  the same frame, and the band is only 7 lines on the 6567R8 (256 to 262;
+  settled frame length, arithmetic).
+- `vic_waitFrames(char n)` (82 to 89): `vic_waitFrame()` `n` times. With
+  `n == 0` it returns immediately.
+- `vic_waitLine(int line)` (91 to 101; compiled native by the `#pragma` on
+  line 140): splits the target into a low byte and bit 8 shifted into the
+  RST8 position, spins until `$D012` equals the low byte, then checks RST8
+  against the target's bit 8 and goes round again if they differ. So it
+  distinguishes line 20 from line 276. It is an equality wait: if the
+  target line passes while something else holds the CPU for longer than a
+  line, it waits for the next frame, and a line the chip does not have (312
+  and up on PAL, 263 and up on the 6567R8) never returns.
+- `vic_waitBelow(int line)` (103 to 121): waits until the beam is past the
+  line. For a target below 256 it spins while `$D012 <= low byte` and
+  returns as soon as the raster reads greater, so it cannot miss the line,
+  only end late. It compares the low byte alone and never reads RST8 in
+  this case, so a call made from inside the RST8 band with a target below
+  the band's low-byte range (below 56 on PAL, below 7 on the 6567R8) returns
+  inside the band: target 20, called on PAL line 260, returns on line 277,
+  whose low byte 21 is the first greater than 20, not on line 21 of the
+  next frame (arithmetic from the source, not run here). A target of 100
+  from the same place behaves: the band's low bytes are all at most 55, the
+  spin continues through line 0, and it returns on line 101. For a target
+  of 256 or more it spins on the low byte and then requires RST8 to be set,
+  repeating if it is not.
+- `vic_waitRange(char below, char above)` (123 to 138): both arguments are
+  low bytes, so the range is within lines 0 to 255. It first spins while
+  RST8 is set (gets out of the band), then, if `$D012` is already at or
+  past `above`, waits through the next band (RST8 set, then clear) to reach
+  the following frame, and finally spins while `$D012 < below`. It returns
+  with the beam at or after `below` and, on entry, before `above`. The
+  header's comment says "in a given range on screen"; the order of the
+  arguments is `(below, above)`, lower line first.
+
+For a loop that must run once a frame, `vic_waitFrame()` is the one to call
+from the wait-only form; `techniques/raster.md` `frame_sync_loop` covers it,
+with the interrupt-driven form and its dropped-frame counter, and
+`recipes/oscar64/frame-sync-loop.md` measures both the fitting and the
+overrunning case.
+
 ## sid.h — SID sound chip access
 
 `sid.h` maps the SID chip at `$D400` to a `SID` struct with three nested `Voice` structs. It provides named constants for all attack, decay, sustain, release, waveform control, and filter mode bits, plus frequency calculation macros for PAL and NTSC clock rates.

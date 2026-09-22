@@ -5,7 +5,29 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 707, schema 20, tools 1.22.1.
+Data 708, schema 20, tools 1.22.1.
+
+**Game foundations, batch one: input, the frame loop, fixed-point
+movement.** The first additive batch from the gap map (#12, #13),
+written by one writer, one reviewer and one reviser per item. Two new
+technique pages and one new entry: `techniques/input.md` with
+`joystick_edge_detect`, `joystick_autorepeat` and `keyboard_matrix_scan`
+(category `input`); `techniques/maths.md` with `fixed_point_8_8`,
+`table_multiply_8x8` and `jump_arc_table` (category `maths`); and
+`frame_sync_loop` on the raster page, with the seven `vic_wait*`
+functions documented on the Oscar64 headers page from the header and its
+source. Each has an Oscar64 recipe with pinned, measured screenshots on
+PAL and NTSC: `joystick-input`, `frame-sync-loop` (plus a deliberate
+overrun build that shows the budget bar wrap and the dropped-frame
+counter climb), and `fixed-point-jump`. The arithmetic is checked
+exhaustively on the 6502 itself: the edge and repeat logic over all
+65,536 previous/current port pairs, the tick arithmetic over all 65,536
+counter pairs, the multiply and signed add over all 65,536 operand
+pairs, each folded to a checksum that matches the same computation in
+Python and is quoted on the page. What could not be done headless is
+said plainly: no joystick or key was pressed in any run, so the live
+counters prove the no-input state and the logic is proven by the
+exhaustive checks.
 
 **Every recipe, toolchain and runtime page audited against the installed
 tools, and every recipe now has a reproducible screenshot.** The seven

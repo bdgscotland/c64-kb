@@ -63,7 +63,7 @@ The VIC-II cooperates by allowing sprite X and Y registers to be reprogrammed be
 
 Per-point cost (approximate, varies by implementation):
 
-- Sine/cosine lookups and matrix multiply: approximately 60–90 cycles per point using 8-bit fixed-point arithmetic (6 multiply-via-table lookups, each roughly 10–15 cycles including index computation and 8-bit shift for scaling).
+- Sine/cosine lookups and matrix multiply: approximately 60–90 cycles per point using 8-bit fixed-point arithmetic (6 multiply-via-table lookups, each roughly 10–15 cycles including index computation and 8-bit shift for scaling). The table multiply itself, with its measured cost, is `table_multiply_8x8` in `techniques/maths.md`.
 - Perspective divide (reciprocal table lookup): approximately 15–20 cycles.
 - Sprite register writes (X, Y, pointer, color): approximately 20 cycles per sprite, all 8 sprites written in the vertical blank = ~160 cycles total for sprite output.
 - Charset-based output (write one char cell + screen RAM byte): approximately 8–12 cycles per point.

@@ -573,3 +573,198 @@ None per line. The routine runs once, with interrupts disabled, and holds the CP
 - KickAssembler 5.25 — the listing the durations were measured on is the hardware page's, and the byte counts are its.
 - VICE's `kernal-901227-03.bin` — the bytes at `$FF5B`, `$ECB9` and `$FDDD` behind the `$02A6` variation.
 - This repository: `hardware/pal-ntsc-reference.md`, `pitfalls/region-timing.md`, `recipes/oscar64/pal-ntsc-detect.md`.
+
+---
+
+## frame_sync_loop — Raster-synced frame loop
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D011, D012, D020
+
+### Why
+
+A game loop that runs as fast as the CPU allows draws at a rate the VIC-II
+does not share: sprites move while the beam is drawing them, screen writes
+land half-way down a character row, and the speed of the game changes with
+the amount on screen. Locking the loop to the frame fixes all three. Once a
+frame, at a raster line of your choosing, the loop wakes, does its work, and
+goes back to waiting. Everything that follows needs an answer to three
+questions: how does the loop know a new frame has begun, how much of the
+frame did the work take, and did any frame go by without it. This technique
+is the standard answer to each, and it is the first thing to put in a game
+before anything else is written, because the budget bar it gives you is the
+profiler you will use for the rest of the project.
+
+### How
+
+**The wait, without an interrupt.** The raster counter is nine bits, the low
+eight in `$D012` and RST8 in bit 7 of `$D011`, and RST8 is a level: it reads
+1 for the whole of lines 256 upward and 0 for lines 0 to 255 (see
+`pal_ntsc_detection` above). Spinning until RST8 is set therefore returns at
+line 256 on every chip. That is what Oscar64's `vic_waitBottom()` does
+(`vic.c` lines 62 to 66), and `vic_waitFrame()` first spins until RST8 is
+clear and then until it is set (lines 74 to 80), so two calls in a row are
+always one frame apart. The distinction matters: the RST8 band is 56 lines
+on PAL and 7 on the 6567R8 (settled frame lengths), so a loop that calls
+`vic_waitBottom()` twice with less than seven lines of work between the
+calls on NTSC gets two returns from one frame (arithmetic from the source
+and the constants; not run here). Prefer `vic_waitFrame()`, or a wait that
+compares a line.
+
+**Why the wrap line matters.** `$D012` on its own is ambiguous. Its low byte
+wraps to zero twice a frame, once at line 256 and once at line 0, so the
+values 0 to 55 each occur on two lines of a PAL frame (0 to 6 on the
+6567R8), and a loop that watches for the counter to "wrap" fires twice a
+frame unless it also reads RST8. A spin on `$D012 == N` for a line at or
+above 256 needs the ninth bit or it matches the low line too; Oscar64's
+`vic_waitLine()` does exactly this, matching the low byte and then checking
+RST8 against bit 8 of the target (`vic.c` lines 91 to 101). An equality spin
+has a second weakness: if anything holds the CPU for longer than a line
+while it is spinning, the target line goes by unseen and the loop waits a
+whole extra frame. A line is 63 cycles on PAL; the KERNAL's own timer
+service, if its vector is still installed, is about 190 cycles idle and
+about 1,600 with a key held (measured in VICE for
+`recipes/kickassembler/raster-bars.md`, quoted in `topbottom_border_open`
+above), so either is enough. A compare that accepts "at or past" the line, which is the
+form `vic_waitBelow()` uses (`vic.c` lines 103 to 121), can end late but
+cannot miss. And a target line the chip does not have, 300 on NTSC, never
+matches at all: the loop hangs (`pitfalls/region-timing.md`).
+
+**The wait, with an interrupt.** The cleaner form takes one raster interrupt
+at the sync line and lets it do one thing: increment a byte. The main loop
+keeps its own copy of the byte and spins while the two are equal. The
+interrupt only ever increments and the main loop only ever catches up;
+nothing is cleared across the boundary, so a tick cannot be lost between a
+read and a clear, and the byte is one byte so the read needs no `SEI`. In
+Oscar64, `rirq_count` and `rirq_wait()` (`rasterirq.c` lines 606 to 614) are
+this exact loop, with the byte incremented once per frame by the dispatcher
+after the last slot of the schedule; a `rirq_call` to an `__interrupt`
+function that increments a byte of your own is the same thing with the
+counting on the page. The recipe below does the latter. A plain flag,
+set by the interrupt and cleared by the loop, works too, but it cannot count
+how many frames were missed; the tick byte can.
+
+**A frame counter.** Count the loop's iterations in a 16-bit variable owned
+by the main loop. That is the game's clock: animation phases, spawn timers
+and music tempo divide it. Count ticks separately if you also want a clock
+that keeps running while the loop is late.
+
+**Dropped-frame detection.** When the wait ends, subtract the copy from the
+tick byte in eight bits. The result is 1 when the loop kept up and more when
+it did not; every count above one is a frame that passed while the loop was
+still working. Add them to a dropped counter, then set the copy equal to the
+tick so every tick seen is consumed. The eight-bit subtraction makes the
+counter's wrap from 255 to 0 harmless for up to 255 missed frames, and the
+whole arithmetic was run over all 65,536 (tick, copy) byte pairs on the 6502
+against the same fold in Python (`recipes/oscar64/frame-sync-loop.md`). With
+the tick form a loop that overran does not wait: the tick has already moved,
+so the next frame starts at once and the game runs at the speed of the work.
+With a line-compare wait the same loop would sit out the rest of the frame
+and run at a whole number of frames per iteration, two for anything between
+one and two frames of work (arithmetic; only the tick form was run here).
+
+**The budget bar.** Write a bright colour to `$D020` as the first thing after
+the wait and the background colour as the last thing before it. The beam
+paints whatever `$D020` holds into the border as it goes, so the border is
+lit for exactly the lines the loop was working and the band's lower end is
+the budget used. Every C64 programmer does this; it costs two stores and it
+turns the raster into a profiler with a resolution of one line, which is 63
+cycles. Measured in VICE x64sc 3.10, rung 1 (`recipes/oscar64/frame-sync-loop.md`,
+PNG read down the border column): an IRQ on rirq row 250, landing on
+line 251, gives a bar that begins on line 254 and, for a fixed 8-unit
+workload, ends on line 106 on PAL and line 158 on the 6567R8: 165 and 168
+lines, 53 % of the PAL frame and 64 % of the NTSC one. The same cycles are a
+bigger slice of the shorter frame, and cover slightly more lines because
+the NTSC bar crosses twice as many badlines. Tripled to 24 units
+(`recipes/oscar64/frame-sync-loop-overrun.md`, the same listing with the
+constant changed, pinned separately) the bar has no end: the border is lit
+on every visible line, the only black is a
+one-line gap where the loop's two stores fall a few cycles apart, and that
+gap walks about two thirds of a frame down the picture every loop because
+each loop is 1.65 frames long. The dropped counter read 100 against 153
+loops in that run. An all-white border is the usual face of an overrun; do
+not wait for a gap to appear before believing the counter.
+
+### Why it works
+
+The VIC-II increments its raster counter at the start of every line and
+resets it to zero for line 0 (Bauer, §3.6.3; not measured here beyond the
+wrap values on this page). RST8 is bit 8 of that counter, read back through
+`$D011` bit 7, which is why a read of `$D011` and a read of `$D012` together
+name a line without ambiguity and a read of `$D012` alone does not. A raster
+interrupt fires when the counter equals the nine-bit compare value written
+to `$D012` and `$D011` bit 7, once per frame per compare value, so an
+interrupt at the sync line is a once-a-frame event by construction; a spin
+is the same comparison done by the CPU. `$D020` is read by the VIC every
+pixel it draws as border, so a change shows within the same line, which is
+what makes the border a display of the CPU's timeline.
+
+Where the sync line sits decides what the loop can safely touch. From line
+251, the first line after the 25-row display window, the beam spends the
+bottom border, the vertical blank and the top border before the first
+badline of the next frame at line 51: 112 lines on PAL, 63 on the 6567R8
+(settled frame lengths). Screen RAM, colour RAM, the sprite registers and
+the scroll registers written in that window are all read by the VIC after
+the write, so nothing tears. Work that spills past line 51 pays the
+badlines it crosses, 40 to 43 cycles each, and any sprite fetches on those
+lines; the bar shows the cost as extra lines.
+
+### Variations
+
+**Flag instead of tick.** The interrupt sets a byte to 1 and the main loop
+clears it. Simplest possible form; cannot count missed frames, and a loop
+that runs long finds the flag already set and starts the next frame at once,
+exactly as the tick form does.
+
+**Spin-only, no interrupt.** `vic_waitFrame()` or `vic_waitLine(n)` at the
+top of the loop, nothing installed. Fine for a demo or a tool, and the
+only choice while the KERNAL interrupt is left running for the keyboard. It
+cannot detect a dropped frame, because a wait that ends does not know how
+many lines went by before it started; pair it with the tick byte if that
+matters.
+
+**Bar per subsystem.** Change the colour between stages, red for the
+sprite multiplexer sort, green for the game logic, blue for the music call,
+and the border becomes a stacked bar chart of the frame. The music player's
+band in particular should be flat from frame to frame; one that is not is a
+player with a data-dependent path.
+
+**Sync to a line inside the display.** A loop whose display writes all go to
+the lower half of the screen can sync higher, to the last line above them,
+and gain the top of the display as working time. The rule is only that the
+writes land before the beam reaches what they change.
+
+### Cycle budget
+
+None per line. The wait costs nothing useful, only the cycles until the
+line arrives. The interrupt form pays the interrupt's entry and exit once
+per frame, 36 cycles to the handler through `$0314` (settled) plus whatever
+the dispatcher and the handler body add; not broken down here. The bar is
+two absolute stores. What the loop has left is the frame: 312 × 63 =
+19,656 cycles on PAL and 263 × 65 = 17,095 on the 6567R8, less 40 to 43
+for each of the 25 badlines and less any sprite DMA (arithmetic from
+the settled constants); `game-design/game-design-patterns.md` budgets
+about 19,700 after interrupt overhead on PAL, which is a rounding of the
+same figure.
+
+### Recipes
+
+- `recipes/oscar64/frame-sync-loop.md`
+- `recipes/oscar64/frame-sync-loop-overrun.md`
+
+### Sources
+
+- Oscar64 (build 2026-05-19), `include/c64/vic.h` lines 107 to 128 (the
+  declarations; the comment above the first is line 106) and
+  `include/c64/vic.c` lines 56 to 138, read here; `include/c64/rasterirq.c`
+  lines 606 to 614 (`rirq_wait`) and the `inc rirq_count` after the last
+  slot of the schedule.
+- VICE 3.10, `x64sc`, models `default` and `ntsc`: the instrument for every
+  figure marked measured above, read from the exit PNG.
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64", https://www.cebix.net/VIC-Article.txt,
+  §3.6.3 (raster counter) and §3.2 (RST8).
+- This repository: `pitfalls/region-timing.md`,
+  `game-design/game-design-patterns.md` (game loop patterns),
+  `recipes/oscar64/simple-shmup.md` (a full game on the same loop shape).

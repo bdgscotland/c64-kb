@@ -722,6 +722,10 @@ The C64 keyboard is an 8x8 matrix of 64 key switches. Two extra
 non-matrix switches (`RESTORE` to NMI, `SHIFT LOCK` mechanically tied
 to LEFT-SHIFT) exist outside the matrix.
 
+Technique: scanning the matrix from a program without the KERNAL, and
+why a main-loop scan interferes with joystick port 1, is
+`keyboard_matrix_scan` in `techniques/input.md`.
+
 **Wiring:**
 
 - CIA1 port A (`$DC00`) drives the 8 *columns* (output, all `1`s except
@@ -802,6 +806,11 @@ keep the KERNAL scanner out of the way during play.
 The C64 has two control ports (the DE-9 connectors on the right side of
 the case). Each port has 5 active-low switch lines (up, down, left,
 right, fire) plus two analog "potentiometer" lines.
+
+Technique: turning the port byte into press events, held frames and
+delayed auto-repeat is `joystick_edge_detect` and `joystick_autorepeat`
+in `techniques/input.md`, with the recipe
+`recipes/oscar64/joystick-input.md`.
 
 - **Joy 2** (control port 2) → CIA1 port A, bits 0-4.
 - **Joy 1** (control port 1) → CIA1 port B, bits 0-4.
