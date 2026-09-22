@@ -5,7 +5,33 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 719, schema 22, tools 1.25.1.
+Data 720, schema 22, tools 1.25.2.
+
+**The briefing proposer, measured against a real brief.** The three-arm
+build test handed the game briefing a nine-part platformer brief and it
+proposed eight techniques the brief did not need while missing eight of
+its nouns. Four causes, each fixed and tested on the fixture graph. The
+keyword scorer matched substrings, so "budget bar" proposed raster bars
+and "tile map" reached every bitmap technique through the category word;
+it matches whole words now. It kept ten candidates whatever the brief's
+length, so the LFSR fell off the end; the limit scales with the brief.
+The vector supplement filled every remaining slot with guesses; it adds
+at most four when the brief's own words already found most of the plan.
+And the toolchain handoff sent stable raster IRQs, raster bars and the
+multiplexer to KickAssembler although this knowledge base carries an
+Oscar64 recipe for each; a cycle-tight technique with a recipe in the
+primary toolchain now stays there and is named as kept, and only one
+that needs every cycle of the line, is scene-tier, or has no Oscar64
+recipe is handed off. Every plan now ends with a headless verification
+step naming the Oscar64 harness recipe, because a brief that asks for a
+harness had no technique node to reach it through. Two nouns that
+existed only as recipes have technique nodes: `decimal_print` in
+`techniques/text.md`, with the print-number recipe's measured cycle
+figures as its cost line, and `memory_layout_plan` in
+`techniques/memory-banking.md`, implemented by the memory-layout recipe.
+On the same brief the proposal now carries the LFSR, the file read, the
+fixed-point and jump-table techniques and the decimal print it missed,
+and the handoff is one technique instead of three.
 
 **Pitfall anchors for the new techniques.** A briefing agent asked
 `pitfalls-for frame_sync_loop` and got nothing, although the badline,

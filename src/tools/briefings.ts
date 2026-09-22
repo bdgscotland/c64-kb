@@ -94,7 +94,7 @@ const COMPLEXITY_PENALTY_NORMAL: Record<string, number> = {
  * has multiple worked examples for it"; the complexity penalty counters the
  * vector-search bias toward rare-but-dense exotic technique pages.
  */
-async function findTechniquesByKeyword(description: string): Promise<string[]> {
+async function findTechniquesByKeyword(description: string, keep: number = 12): Promise<string[]> {
   const f = await getFalkor();
   const rows = await f.roQuery(
     `MATCH (t:Technique)
@@ -131,13 +131,22 @@ async function findTechniquesByKeyword(description: string): Promise<string[]> {
     const title = (r.title ?? "").toLowerCase();
     const category = (r.category ?? "").toLowerCase();
     const complexity = (r.complexity ?? "medium").toLowerCase();
-    const haystack = `${name} ${title} ${category}`;
-    const hits = tokens.filter(t => haystack.includes(t)).length;
+    // Whole words only. Substring matching let "budget bar" propose
+    // raster_bars and "tile map" reach every bitmap technique through the
+    // category word, so a long brief filled its slots with misses
+    // (three-arm build test, 2026-09-22).
+    const nameWords = new Set(name.split("_").filter(Boolean));
+    const words = new Set([
+      ...nameWords,
+      ...title.split(/[^a-z0-9$.]+/).filter(w => w.length >= 3),
+      category,
+    ]);
+    const hits = tokens.filter(t => words.has(t)).length;
 
-    // Bonus: if a token directly matches the technique category
-    const categoryBonus = tokens.some(t => category === t || category.includes(t)) ? 0.5 : 0;
-    // Bonus: if a token is a substring of the technique name itself (strong match)
-    const nameBonus = tokens.some(t => name.includes(t)) ? 0.5 : 0;
+    // Bonus: if a token is the technique's category word
+    const categoryBonus = tokens.some(t => category === t) ? 0.5 : 0;
+    // Bonus: if a token is one of the words of the snake_case name (strong match)
+    const nameBonus = tokens.some(t => nameWords.has(t)) ? 0.5 : 0;
 
     // Recipe-evidence bonus: techniques with implementing recipes are more
     // idiomatic and should outrank exotic siblings with no worked example.
@@ -156,7 +165,7 @@ async function findTechniquesByKeyword(description: string): Promise<string[]> {
     // stable across runs (Array.sort is now stable in V8 but the input
     // order from the graph query is not guaranteed).
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-    .slice(0, 12)  // take top 12 from keyword to give merging more to work with
+    .slice(0, keep)  // keyword candidates; merging takes what it needs
     .map(s => s.name);
 }
 
@@ -181,7 +190,7 @@ async function resolveProposedTechniques(
   // Run both sources in parallel for speed
   const [searchResult, fromKeyword] = await Promise.all([
     search(description, 20),
-    findTechniquesByKeyword(description),
+    findTechniquesByKeyword(description, Math.max(12, limit)),
   ]);
 
   // 1. Collect technique names from vector search (technique-doc chunks only)
@@ -196,12 +205,25 @@ async function resolveProposedTechniques(
 
   // 2. Merge: keyword names first (recipe + complexity weighted), then
   // vector names that aren't already included as a semantic supplement.
+  // When the brief's own words already found most of the plan, the vector
+  // side adds at most four: on a long brief it was filling the remaining
+  // slots with guesses (a colour fade and a scroll buffer for a platformer
+  // that named neither). A vague brief still gets the full supplement.
   const merged: string[] = [...fromKeyword];
+  const supplementCap = fromKeyword.length >= 6 ? 4 : Infinity;
+  let supplemented = 0;
   for (const name of fromSearch) {
-    if (!merged.includes(name)) merged.push(name);
+    if (merged.length >= limit || supplemented >= supplementCap) break;
+    if (!merged.includes(name)) {
+      merged.push(name);
+      supplemented++;
+    }
   }
 
-  return merged.slice(0, limit);
+  // Hand back a few more than the limit: the caller caps per category, and
+  // a slice taken here before that cap let sixteen raster and sprite hits
+  // crowd out the brief's one maths noun.
+  return merged.slice(0, limit + 8);
 }
 
 /**
@@ -493,7 +515,11 @@ async function buildBriefing(
     }
   }
 
-  const techNames = await resolveProposedTechniques(searchDescription, 10);
+  // A long, specific brief names more parts than a short one. Ten slots
+  // made a nine-part platformer brief drop its LFSR; scale with the brief.
+  const briefWords = description.split(/\s+/).filter(Boolean).length;
+  const proposalLimit = briefWords >= 40 ? 16 : briefWords >= 20 ? 13 : 10;
+  const techNames = await resolveProposedTechniques(searchDescription, proposalLimit);
   // Prepend forced techniques so they survive the per-category MAX cap.
   for (const name of forced.slice().reverse()) {
     if (!techNames.includes(name)) techNames.unshift(name);
@@ -509,16 +535,20 @@ async function buildBriefing(
     })
   );
 
-  // Filter out any that weren't found (empty name) and cap at 3 per category (P5-6)
+  // Filter out any that weren't found (empty name), cap at 3 per category
+  // (P5-6), then cap the non-forced total at the brief's proposal limit.
   const MAX_PER_CATEGORY = 3;
   const categoryCounts = new Map<string, number>();
+  let nonForced = 0;
   const validTechs = enriched.filter(t => {
     if (t.name === "") return false;
     if (archetypeForced.has(t.name)) return true;
     const cat = t.category || "_uncategorized";
     const count = categoryCounts.get(cat) ?? 0;
     if (count >= MAX_PER_CATEGORY) return false;
+    if (nonForced >= proposalLimit) return false;
     categoryCounts.set(cat, count + 1);
+    nonForced++;
     return true;
   });
 
@@ -637,17 +667,32 @@ async function buildBriefing(
   const cycloTightTechs = validTechs.filter(
     t => (demandsOf.get(t.name) ?? []).some(d => CYCLE_TIGHT_DEMANDS.has(d)) || t.complexity === "scene-tier"
   );
-  const cycle_tight_handoff = cycloTightTechs.map(t => t.name);
+  // A cycle-tight technique the primary toolchain already has a recipe for
+  // stays in C: the KB's own Oscar64 stable-raster-irq, raster-bars and
+  // multiplexer recipes are the evidence that it can be done there. Only a
+  // technique that needs every cycle of the line, or is scene-tier, is
+  // handed off regardless of recipes.
+  const PRIMARY_TOOLCHAIN = "oscar64";
+  const hasPrimaryRecipe = (t: typeof validTechs[number]) =>
+    t.recipes.some(r => r.toolchain === PRIMARY_TOOLCHAIN || r.name.startsWith(`${PRIMARY_TOOLCHAIN}-`));
+  const mustHandOff = (t: typeof validTechs[number]) =>
+    (demandsOf.get(t.name) ?? []).includes("cpu_every_line") || t.complexity === "scene-tier";
+  const handedOff = cycloTightTechs.filter(t => mustHandOff(t) || !hasPrimaryRecipe(t));
+  const keptInPrimary = cycloTightTechs.filter(t => !handedOff.includes(t)).map(t => t.name);
+  const cycle_tight_handoff = handedOff.map(t => t.name);
 
   const toolchain_split: BriefingOutput["toolchain_split"] = {
-    primary: "oscar64",
+    primary: PRIMARY_TOOLCHAIN,
     cycle_tight_handoff,
     rationale:
       "Oscar64 is the primary toolchain per c64-kb policy (modern C/C++ → 6502, idiomatic patterns). " +
       (cycle_tight_handoff.length > 0
         ? `KickAssembler handles cycle-tight work for: ${cycle_tight_handoff.join(", ")} ` +
-          `(each demands the CPU every line, raster interrupts inside the display, interrupts all frame, a badline-free region or a changing sprite set, or is scene-tier).`
-        : "No technique in this set demands cycle-exact timing of the machine — Oscar64 can handle all components."),
+          `(each needs every cycle of the line or is scene-tier, or takes raster interrupts inside the display, interrupts all frame, a badline-free region or a changing sprite set and has no Oscar64 recipe).`
+        : "No technique in this set demands cycle-exact timing of the machine that Oscar64 has no recipe for — Oscar64 can handle all components.") +
+      (keptInPrimary.length > 0
+        ? ` Cycle-tight but kept in Oscar64 because a recipe exists: ${keptInPrimary.join(", ")}.`
+        : ""),
   };
 
   // -------------------------------------------------------------------------
@@ -723,6 +768,19 @@ async function buildBriefing(
       step: stepNum++,
       label: STEP_LABELS[priority] ?? `${techs[0].category} techniques`,
       recipes: [...new Set(recipes)],
+    });
+  }
+
+  // Every plan ends with the harness: the exit code from the $02FF byte and
+  // the border is how a build proves itself without a human, and a brief
+  // that asks for a "headless harness" has no technique node to reach it
+  // through. Offered when the primary toolchain's recipe is in the graph.
+  const harness = await fk.roQuery(`MATCH (r:Recipe {name: "oscar64-headless-verify"}) RETURN r.name AS name`);
+  if ((harness.data?.length ?? 0) > 0) {
+    build_order.push({
+      step: stepNum++,
+      label: "Headless verification (exit code from the $02FF byte and the border)",
+      recipes: ["oscar64-headless-verify"],
     });
   }
 

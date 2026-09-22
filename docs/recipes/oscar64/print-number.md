@@ -3,7 +3,7 @@ recipe: print-number
 toolchain: oscar64
 output_format: PRG
 region: both
-techniques: []
+techniques: [decimal_print]
 file_formats: [PRG]
 uses_registers: [DC04, DC05, DC0E, D011, D012]
 uses_kernal: []
@@ -24,10 +24,9 @@ C double-dabble (`fmt_dec_dab`, for comparison). Both are run over all
 16-bit checksum shown with `PASS` or `FAIL` against the value Python
 computed. A CIA1 timer A harness then prints the cycle cost of each
 route, so the screenshot proves the digits and the figures. Use it for a
-HUD score, timer, coordinate readout or a debugging display. The
-`techniques` list is empty: no technique page covers number formatting;
-the design-level notes are in `game-design/game-design-patterns.md`
-under "Printing numbers".
+HUD score, timer, coordinate readout or a debugging display. It
+implements `decimal_print` (`techniques/text.md`); the design-level notes
+are in `game-design/game-design-patterns.md` under "Printing numbers".
 
 ## Source
 

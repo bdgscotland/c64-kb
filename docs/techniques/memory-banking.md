@@ -848,3 +848,41 @@ draw is too slow, not the flip.
 
 - `recipes/oscar64/double-buffer.md` — two pages, one sprite, flip every frame, pointer block mirrored
 - `recipes/oscar64/double-buffer-nomirror.md` — the same listing without the mirror, and the sprite it shows
+
+## memory_layout_plan — Plan the memory map before the first build
+
+**Complexity:** low
+**Uses registers:** D018, DD00
+
+**Why.** The toolchain places code where it likes; the VIC-II does not.
+A music player expects `$1000`, a charset must start on a 2 KB boundary
+inside the VIC's 16 KB bank, a screen on a 1 KB boundary, a sprite on 64
+bytes, and none of them may overlap code that grows with the next
+feature. A layout decided after the fact produces the collision the
+`charset_blit_overruns_grown_code` pitfall describes: a build that boots
+and shows garbage where the font was.
+
+**How.** List every asset with a fixed address or alignment; choose the
+VIC bank; place the aligned assets first, largest alignment first; then
+let code and data fill what remains, and read the map file back after
+every build to see that nothing moved into a reserved range. Write the
+plan down as the toolchain's own words: Oscar64 regions and sections,
+the cc65 linker configuration, KickAssembler `.pc` and segments. The
+toolchain page `toolchains/memory-layout-planning.md` walks through it
+for all three.
+
+**Why it works.** The VIC reads through its own 16 KB window with fixed
+alignments set by `$D018` and the bank bits of `$DD00`; the CPU sees the
+whole 64 KB and does not care where anything is. Planning the VIC's
+constraints first and letting the CPU's flexible material fill the gaps
+means the constraints are met by construction, not by luck.
+
+**Variations.** Two VIC banks with the assets split between them; data
+under the ROMs for the CPU only (`ram_under_kernal`); a loader that owns
+the top of RAM, which the plan leaves free.
+
+**Cycle budget.** None: this is a build-time decision.
+
+### Recipes
+
+- `recipes/oscar64/memory-layout.md` — stub, music, charset, sprite, screen and code at planned addresses, printing each symbol's address so the screen can be read against the map

@@ -169,16 +169,21 @@ describe("demoBriefing", () => {
     expect(r.structured.toolchain_split.primary).toBe("oscar64");
   });
 
-  it("hands a technique to KickAssembler by what it demands, not by its category", async () => {
+  it("decides the handoff by what a technique demands and whether Oscar64 has a recipe for it, not by its category", async () => {
     const r = await demoBriefing("stable raster bars");
     const proposed = r.structured.proposed_techniques.map(t => t.name);
     const handoff = r.structured.toolchain_split.cycle_tight_handoff;
     // Both are category raster. Only stable_raster_irq declares a demand
-    // (midframe_raster_irqs), so only it is handed off; deciding by category
-    // used to hand off raster_bars as well.
-    if (proposed.includes("stable_raster_irq")) expect(handoff).toContain("stable_raster_irq");
+    // (midframe_raster_irqs); deciding by category used to hand off
+    // raster_bars as well. And since 2026-09-22 a cycle-tight technique
+    // that an Oscar64 recipe implements stays in Oscar64: this fixture has
+    // oscar64-stable-raster-irq, so stable_raster_irq is named as kept.
     expect(handoff).not.toContain("raster_bars");
     expect(proposed).toContain("raster_bars");
+    if (proposed.includes("stable_raster_irq")) {
+      expect(handoff).not.toContain("stable_raster_irq");
+      expect(r.structured.toolchain_split.rationale).toContain("kept in Oscar64 because a recipe exists: stable_raster_irq");
+    }
   });
 
   // P5-4 regression: sideborder_open must not be tagged as SID music
@@ -667,5 +672,70 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
     expect(r.structured.archetype).toBeUndefined();
     expect(r.structured.archetype_not_found).toBeUndefined();
     expect(r.structured.brief).toContain("C64 demo plan");
+  });
+});
+
+// Proposer precision and the handoff rule (three-arm build test,
+// 2026-09-22): a platformer brief with a "budget bar" was offered
+// raster_bars and every bitmap technique through the category word, and the
+// KB's own Oscar64 raster recipes were handed to KickAssembler.
+describe("gameBriefing proposer precision and handoff", () => {
+  let f: FalkorService;
+
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+    await f.addTechnique({ name: "raster_bars", title: "Raster color bars", category: "raster", complexity: "low" });
+    await f.addTechnique({ name: "frame_sync_loop", title: "Frame-synchronised main loop with a budget bar", category: "raster", complexity: "low" });
+    await f.addTechnique({ name: "koala_format", title: "Koala bitmap file format", category: "bitmap", complexity: "low" });
+    await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite", complexity: "medium" });
+    await f.addTechnique({ name: "sprite_multiplex_24", title: "24-sprite multiplexer", category: "sprite", complexity: "high" });
+    await f.linkTechniqueDemands("sprite_multiplex_8", "changes_sprite_set", "re-points sprites mid-frame");
+    await f.linkTechniqueDemands("sprite_multiplex_24", "changes_sprite_set", "re-points sprites mid-frame");
+    const recipes: Array<[string, string, string | null]> = [
+      ["oscar64-sprite-multiplex-8", "oscar64", "sprite_multiplex_8"],
+      ["kickassembler-sprite-multiplex-24", "kickassembler", "sprite_multiplex_24"],
+      ["oscar64-frame-sync-loop", "oscar64", "frame_sync_loop"],
+      ["oscar64-headless-verify", "oscar64", null],
+    ];
+    for (const [name, toolchain, tech] of recipes) {
+      await f.addRecipe({ name, toolchain, output_format: "PRG", region: "both", source_doc: `recipes/${toolchain}/${name}.md` });
+      if (tech) await f.linkRecipeImplements(name, tech);
+    }
+  });
+
+  afterAll(async () => f?.close());
+
+  it("matches whole words: a budget bar is not raster bars and a tile map is not a bitmap format", async () => {
+    const r = await gameBriefing("a frame loop with a budget bar and a tile map", undefined);
+    const names = r.structured.proposed_techniques.map(t => t.name);
+    expect(names).toContain("frame_sync_loop");
+    expect(names).not.toContain("raster_bars");
+    expect(names).not.toContain("koala_format");
+  });
+
+  it("still proposes raster bars when the brief asks for raster bars", async () => {
+    const r = await gameBriefing("raster bars behind the playfield", undefined);
+    expect(r.structured.proposed_techniques.map(t => t.name)).toContain("raster_bars");
+  });
+
+  it("keeps a cycle-tight technique in Oscar64 when an Oscar64 recipe implements it, and hands off one that has none", async () => {
+    const r = await gameBriefing("a sprite multiplexer for 8 sprites and a 24 sprite multiplexer", undefined);
+    const names = r.structured.proposed_techniques.map(t => t.name);
+    expect(names).toContain("sprite_multiplex_8");
+    expect(names).toContain("sprite_multiplex_24");
+    expect(r.structured.toolchain_split.cycle_tight_handoff).toContain("sprite_multiplex_24");
+    expect(r.structured.toolchain_split.cycle_tight_handoff).not.toContain("sprite_multiplex_8");
+    expect(r.structured.toolchain_split.rationale).toContain("kept in Oscar64 because a recipe exists: sprite_multiplex_8");
+  });
+
+  it("ends every build order with the headless verification step when the recipe exists", async () => {
+    const r = await gameBriefing("a frame loop", "shmup");
+    const last = r.structured.build_order[r.structured.build_order.length - 1];
+    expect(last.label).toContain("Headless verification");
+    expect(last.recipes).toEqual(["oscar64-headless-verify"]);
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 });

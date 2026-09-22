@@ -3,7 +3,7 @@ recipe: memory-layout
 toolchain: oscar64
 output_format: PRG
 region: both
-techniques: [cpu_io_port_bank, char_rom_under_vic]
+techniques: [cpu_io_port_bank, char_rom_under_vic, memory_layout_plan]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D012, D015, D018, D027, DD00]
 uses_kernal: [CHROUT]

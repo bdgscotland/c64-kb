@@ -148,3 +148,44 @@ frame, well inside any frame budget; the cost was not measured here.
 ### Recipes
 
 - `recipes/oscar64/text-input.md`
+
+## decimal_print — Decimal score and counters written as screen codes
+
+**Complexity:** low
+**Cost:** cycles_per_frame=1361, bytes_code=0
+**Cost basis:** measured-vice
+
+**Why.** A HUD shows a score, a timer, lives, a coordinate, and it shows
+them every frame or every time they change. The KERNAL's number printing
+goes through the screen editor, moves the cursor, and clobbers registers;
+a game wants five screen codes written straight into screen RAM.
+
+**How.** The 6502 has no divide instruction, so the digits come from
+repeated subtraction of powers of ten: subtract 10,000 while it fits,
+counting; then 1,000; then 100; then 10; what is left is the units digit.
+Each digit is `$30` plus the count as a screen code. Leading zeros become
+spaces or stay as zeros by choice. Redraw only the fields that changed,
+because the cost is per call, not per frame.
+
+**Why it works.** The worst case is nine subtractions per digit, each a
+16-bit compare and subtract of a constant, which is cheap on the 6502.
+Double-dabble (shift and add-three) is the textbook alternative and is
+more than twice as slow here, because the 6502 shifts and adjusts one
+byte at a time.
+
+**Variations.** BCD counters kept in decimal mode (`SED`) give one digit
+per nibble and print with a shift and a mask, at the price of the decimal
+flag inside an interrupt (`decimal_mode_in_irq_handler`). Hex output for a
+debugging display is a table lookup per nibble. A changed-field redraw
+compares the new value with the last one drawn.
+
+**Cycle budget.** Measured on the recipe with CIA1 timer A around the
+call body, less the 17 cycles of an empty call: 957 cycles for 65,535 and
+1,361 for 59,999 by subtraction of powers of ten (the count of
+subtractions is what varies), 2,537 by double-dabble for 65,535, 74 for
+an 8-bit hex value. The Cost line carries the worst measured decimal
+case; `bytes_code` is not measured on the page.
+
+### Recipes
+
+- `recipes/oscar64/print-number.md` — both decimal routes and the hex route, checked over every 16-bit value against Python, with the cycle harness on screen
