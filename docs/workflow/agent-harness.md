@@ -51,6 +51,7 @@ is filled.
 | `make selftest` | Builds with FORCE_FAULT and shoots it; passes only when `check.py` exits 1 with FAIL lines |
 | `make disk` | `build/<name>.d64` with the PRG and `DISK_FILES`, then lists it |
 | `make claims` | c64-kb's `scripts/claims-watch.ts` over the AUTOPILOT PRG, when the checkout has it |
+| `make zp` | The zero-page addresses the compiled C touches, read from Oscar64's listing; with `ZP_CLAIM='$02-$55'` a gate |
 | `make clean` | Removes `build/` and `shots/` |
 
 The headless runs use `-default -warp +sound +autostart-delay-random
@@ -214,10 +215,50 @@ allows in silence (a blob at `$0810` linked, and the program never
 started); `asm.h`'s `#error` stops that build with "error 3032: the
 KickAssembler blob starts below $0880". Past `$1000` the link fails with
 "Could not place object". Arguments go through bytes the blob owns, not
-Oscar64's zero page: the compiler's registers run from `$02` to `$52`
-(`BC_REG_WORK_Y` to below `BC_REG_TMP_SAVED` in its `MachineTypes.cpp`).
+Oscar64's zero page. The compiler's fixed registers start at `$02`
+(`BC_REG_WORK_Y`) and each function's temporaries run from `$43`
+(`BC_REG_TMP`) up by that function's own temp count, past
+`BC_REG_TMP_SAVED` (`$53`): temps above it are saved and restored around
+calls but still live in zero page (`MachineTypes.cpp`, `InterCode.cpp`,
+read). So the top depends on the program; `make zp` reads it from the
+build's listing (see "Zero page a build uses"). An earlier version of this
+paragraph gave `$02` to `$52` as the whole range; hello's code reaches
+`$55`, platformer's `$5B`, shmup-vertical's `$5D`.
 The routine may change A, X and Y. A pure KickAssembler starter leaves
 `C_MAIN` empty and `KICK_SRC` is the whole program.
+
+## Zero page a build uses
+
+`zp-used.py` reads the `.asm` listing Oscar64 writes beside the PRG. A
+listed instruction two bytes long that is not immediate and not a branch
+addresses zero page through its second byte; the BASIC stub at
+`$0801`-`$080C`, which the listing decodes as instructions, is skipped.
+It sees the compiled C and inline `__asm`; a KickAssembler blob is data
+in the listing, so its zero page is what its own source says.
+
+Measured on 2026-09-23 with the local Oscar64: hello's code touches
+`$0D`-`$11`, `$13`, `$16`, `$19`-`$20`, `$23`-`$24` and `$43`-`$55` (plus
+`$00` from the startup's indexed clear); platformer's reaches `$5B` and
+shmup-vertical's `$5D`. claims-watch agreed on hello: its run stored to
+`$53`-`$55`, outside the `$02`-`$52` it then claimed.
+
+## Text under another YSCROLL
+
+`text` and `meter` checks read cells on the grid a screen with YSCROLL 3
+draws (rows start on line 51 + 8r). A panel that starts on another line,
+as the one under a vertically scrolled playfield does (YSCROLL 7, rows on
+line 55 + 8r), is read with `"dy": 4`: the pixel offset below that grid,
+0 to 7. Measured on a panel at line 215 with YSCROLL 7: with `"dy": 4` the
+score row decoded as written, without it every cell read `?`.
+
+## A fresh disk per run
+
+With `SHOT_DISK = 1` each headless run attaches its own copy of
+`build/<name>.d64` (`shots/pal.d64`, `shots/ntsc.d64`), made just before the
+run. VICE writes a save back into the image it attached, so two runs on one
+shared image start from different disks and the pinned shot moves. Measured
+with hello and `SHOT_DISK=1`: two `make shot` runs gave byte-identical
+PNGs and `build/hello.d64` kept its checksum.
 
 ## The frame meter
 
@@ -324,8 +365,12 @@ Oscar64's zero page and the `$FF` store to `$DC00` were undeclared, and so
 was the meter's one `$DD0D` store, which claims-watch counts against
 `cia2_timer_b` and `cia2_tod` as well as `cia2_timer_a`. With
 `zero_page $02-$52` and `cia1_port_a` claimed and all three CIA2 units
-declared as harness, hello and hello-kick both report `PASS: 0 stores in 0
-violation groups`.
+declared as harness, hello and hello-kick both reported `PASS: 0 stores in 0
+violation groups`. Against main's claims-watch on 2026-09-23 hello failed
+again: 309 stores to `$53`-`$55` outside the claim, and the KERNAL IRQ's
+zero-page stores with no routine declared. Its claim is now
+`zero_page $02-$55` with `--kernal IRQ`, and `make claims` reports `PASS: 0
+stores in 0 violation groups`.
 
 ## End-to-end transcript
 

@@ -34,6 +34,11 @@ function briefWordList(line: string | undefined): string[] {
   return [...new Set(words.filter((w) => w !== ""))];
 }
 
+// The starter project in templates/ that plays this archetype. That the
+// directory exists is a test (test/extract-archetype-starters.test.ts), not an
+// extract-time read: the extractor does no file IO.
+const ARCHETYPE_STARTER = /^\*\*Starter:\*\*\s+`?([a-z][a-z0-9-]*)`?\s*$/m;
+
 type ArchetypeKind = "game" | "demo";
 
 function isArchetypeKind(kind: string): kind is ArchetypeKind {
@@ -105,8 +110,18 @@ function sectionEntities(section: Section, ctx: Context): GraphEntity[] {
   );
   const risks = nameList(matchField(section.body, ARCHETYPE_PITFALLS), where, "**Common pitfalls:**");
   const briefWords = briefWordList(matchField(section.body, ARCHETYPE_BRIEF_WORDS));
+  const starterM = ARCHETYPE_STARTER.exec(section.body);
+  const starter = starterM ? { starter: group(starterM, 1) } : {};
   return [
-    { type: "archetype", name, title, kind: ctx.kind, source_doc: ctx.sourcePath, brief_words: briefWords },
+    {
+      type: "archetype",
+      name,
+      title,
+      kind: ctx.kind,
+      source_doc: ctx.sourcePath,
+      brief_words: briefWords,
+      ...starter,
+    },
     ...features.map((technique): GraphEntity => ({ type: "archetype_features", archetype: name, technique })),
     ...risks.map((pitfall): GraphEntity => ({ type: "archetype_risks", archetype: name, pitfall })),
   ];

@@ -44,9 +44,13 @@ Types:
            area; default the expected box grown by 16 pixels each way) have
            exactly that bounding box.
   text     "row", "col", "text": the cells decode to that text (upper case).
+           Optional "dy" (0-7): the rows sit that many pixels below the
+           YSCROLL-3 grid, as a panel under a scrolled playfield does (a
+           panel starting on line 55 + 8k has YSCROLL 7: "dy": 4).
   same     "cells": [row0, col0, row1, col1] inclusive, or "area": every pixel
            has the same colour index on PAL and NTSC.
   meter    "row", "col": the frame meter's readout "F00000 W00000 T00000".
+           Optional "dy" as for text.
            Optional "frames" (exact count recorded), "max_worst" (cycles;
            default one frame: 19,656 PAL / 17,095 NTSC), "min_typical"
            (default 1: the meter has finished recording). Prints the figures.
@@ -96,6 +100,9 @@ NAMES = ["black", "white", "red", "cyan", "purple", "green", "blue", "yellow", "
 
 CHARGEN_PATHS = [
     os.environ.get("C64_CHARGEN", ""),
+    # The data directory of c64-kb's own headless VICE (npm run vice:headless),
+    # the only copy on a CI runner.
+    os.path.join(os.environ.get("C64KB", "/nonexistent"), ".tools/vice-headless/data/C64/chargen-901225-01.bin"),
     "/opt/homebrew/opt/vice/share/vice/C64/chargen-901225-01.bin",
     "/usr/local/share/vice/C64/chargen-901225-01.bin",
     "/usr/share/vice/C64/chargen-901225-01.bin",
@@ -129,9 +136,9 @@ def area_box(a: dict, model: str):
     return x0, y0, x0 + a["width"] - 1, y0 + a["height"] - 1
 
 
-def cells_box(cells, model: str):
+def cells_box(cells, model: str, dy: int = 0):
     r0, c0, r1, c1 = cells
-    y0 = GEOMETRY[model]["text_y0"]
+    y0 = GEOMETRY[model]["text_y0"] + dy
     return TEXT_X0 + 8 * c0, y0 + 8 * r0, TEXT_X0 + 8 * c1 + 7, y0 + 8 * r1 + 7
 
 
@@ -180,8 +187,11 @@ def boxes_for(c, name):
         return lambda m: area_box(a, m)
     if t in ("text", "meter"):
         need_int(c, ("row", "col"), name)
+        dy = c.get("dy", 0)
+        if not isinstance(dy, int) or not 0 <= dy <= 7:
+            raise SpecError(f"check '{name}': 'dy' must be a whole number from 0 to 7")
         n = 20 if t == "meter" else len(c["text"])
-        return lambda m: cells_box([c["row"], c["col"], c["row"], c["col"] + n - 1], m)
+        return lambda m: cells_box([c["row"], c["col"], c["row"], c["col"] + n - 1], m, dy)
     if "area" in c:
         a = area_of(c, name, "area")
         return lambda m: area_box(a, m)
@@ -235,9 +245,9 @@ class Shot:
     def index(self, x: int, y: int):
         return self.lookup.get(self.px[x, y])
 
-    def cell_pattern(self, row: int, col: int):
+    def cell_pattern(self, row: int, col: int, dy: int = 0):
         """The cell's 8 rows as bytes: ink is any pixel not the cell's majority colour."""
-        x0, y0 = TEXT_X0 + 8 * col, self.g["text_y0"] + 8 * row
+        x0, y0 = TEXT_X0 + 8 * col, self.g["text_y0"] + 8 * row + dy
         pix = [[self.px[x0 + xx, y0 + yy] for xx in range(8)] for yy in range(8)]
         flat = [p for r in pix for p in r]
         bg = max(set(flat), key=flat.count)
@@ -282,8 +292,8 @@ def screen_to_char(code):
     return "?"
 
 
-def read_text(shot: Shot, glyphs, row: int, col: int, n: int) -> str:
-    return "".join(screen_to_char(glyphs.get(shot.cell_pattern(row, col + i))) for i in range(n))
+def read_text(shot: Shot, glyphs, row: int, col: int, n: int, dy: int = 0) -> str:
+    return "".join(screen_to_char(glyphs.get(shot.cell_pattern(row, col + i, dy))) for i in range(n))
 
 
 def colour_name(i):
@@ -334,7 +344,7 @@ def check_sprite(c, shot, _ctx):
 
 def check_text(c, shot, ctx):
     want = c["text"].upper()
-    got = read_text(shot, ctx["glyphs"](c), c["row"], c["col"], len(want))
+    got = read_text(shot, ctx["glyphs"](c), c["row"], c["col"], len(want), c.get("dy", 0))
     return got == want, f"row {c['row']} col {c['col']} reads '{got}', want '{want}'"
 
 
@@ -361,7 +371,7 @@ def check_same(c, shot, ctx):
 
 
 def check_meter(c, shot, ctx):
-    got = read_text(shot, ctx["glyphs"](c), c["row"], c["col"], 20)
+    got = read_text(shot, ctx["glyphs"](c), c["row"], c["col"], 20, c.get("dy", 0))
     m = re.fullmatch(r"F(\d{5}) W(\d{5}) T(\d{5})", got)
     if not m:
         return False, f"no meter readout at row {c['row']} col {c['col']}: reads '{got}'"

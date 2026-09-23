@@ -5,7 +5,37 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 764, schema 30, tools 2.2.0, package 0.15.0.
+Data 765, schema 31, tools 2.3.0, package 0.16.0.
+
+**Issue #39: one harness, and the briefing names the starter.** Two
+sessions built #39 in parallel; the maintainer asked for one harness, the
+best of both. Main's harness stays; four #42 items from the other build
+are now in it:
+- text and meter checks take `"dy"` (0-7 pixels) for a panel under a
+  scrolled playfield, which the YSCROLL-3 grid could not read;
+- with `SHOT_DISK = 1` each headless run gets its own copy of the D64,
+  since VICE writes a save back into the image and the next run then
+  started from another disk (hello: two shots byte-identical, the release
+  D64 unchanged);
+- `make zp` lists the zero page a build's C touches, from Oscar64's
+  listing. The pages said Oscar64 owns `$02`-`$52`; its temporaries run
+  from `$43` up by each function's temp count, and hello reaches `$55`,
+  platformer `$5B`, shmup-vertical `$5D`. hello's claim `$02`-`$52` failed
+  `make claims` (309 stores to `$53`-`$55`, KERNAL IRQ undeclared); it is
+  now `$02`-`$55` with `--kernal IRQ` and passes;
+- `check.py` finds the character ROM in the repo's headless VICE, the
+  only copy on a CI runner.
+
+A `**Starter:**` line under an archetype becomes the Archetype's
+`starter` property (schema 31). `c64_game_briefing` and
+`c64_demo_briefing` return it as `archetype.starter` and print the
+`npm run new-project` command (tools 2.3.0: an added output field). A
+test fails when a page names a starter with no Makefile and expect.json.
+Lines for vertical_shmup, scrolling_platformer and puzzle.
+
+`mixed_sprite_char_actors` had a measured Cost line and no
+`**Cost measured on:**` line, so `plan-budget` printed "recipe not
+stated"; it names `oscar64-mixed-fighters` now.
 
 **Issue #39: the `shmup-vertical` starter.** It is a vertical shooter:
 - Oscar64 game logic, with a KickAssembler IRQ chain, panel split,

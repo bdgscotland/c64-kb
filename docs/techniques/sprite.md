@@ -2403,6 +2403,7 @@ counters are not in these figures.
 **Requires:** mob_priority
 **Cost:** cycles_per_frame=6108, sprites_per_line=2
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-mixed-fighters (worst tick of the whole actor update, PAL)
 
 ### Why
 

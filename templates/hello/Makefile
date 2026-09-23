@@ -19,12 +19,17 @@ SHOT_CYCLES_PAL  := 8000000
 SHOT_CYCLES_NTSC := 8000000
 
 # What the program may write, for make claims (claims-watch's own grammar).
-# zero_page $02-$52 is Oscar64's register block on the c64 target, from
-# BC_REG_WORK_Y ($02) to below BC_REG_TMP_SAVED ($53) in its MachineTypes.cpp.
+# zero_page $02-$55: Oscar64's fixed registers start at BC_REG_WORK_Y ($02)
+# and each function's temporaries run from BC_REG_TMP ($43) up by its own
+# temp count, past BC_REG_TMP_SAVED ($53), so the top depends on the program.
+# Measured, not assumed: `make zp` lists what this build's code touches ($43
+# to $55 here), and claims-watch saw stores to $53-$55. An earlier version
+# claimed $02-$52 and failed make claims with 309 stores to $53-$55. IRQ is
+# declared because the KERNAL's IRQ handler runs and writes its own zero page.
 # The meter's one $DD0D store ($01: mask timer A only) is listed under
 # cia2_timer_b and cia2_tod too, because claims-watch maps any $DD0D store
 # to every CIA2 source; so all three are declared as harness.
-CLAIMS_ARGS := --claim 'sprite_0, cia1_port_a, zero_page $$02-$$52' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,spritedata=$$0340-$$037F,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
+CLAIMS_ARGS := --claim 'sprite_0, cia1_port_a, zero_page $$02-$$55' --kernal IRQ --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,spritedata=$$0340-$$037F,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.

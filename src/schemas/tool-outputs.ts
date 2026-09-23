@@ -525,6 +525,9 @@ export const BriefingSchema = z.object({
       // Set when the game brief named no archetype and these words from
       // the archetype's **Brief words:** line routed it.
       inferred_from: z.array(z.string()).optional(),
+      // The playable starter in templates/ for this archetype, from the
+      // page's **Starter:** line: `npm run new-project -- <starter> <dir>`.
+      starter: z.string().optional(),
     })
     .optional(),
   archetype_not_found: z

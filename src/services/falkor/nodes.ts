@@ -254,12 +254,15 @@ export class FalkorNodes extends FalkorBase {
     kind: "game" | "demo";
     source_doc: string;
     brief_words?: readonly string[];
+    starter?: string;
   }): Promise<void> {
     const props = {
       title: a.title,
       kind: a.kind,
       source_doc: a.source_doc,
       brief_words: [...(a.brief_words ?? [])],
+      // null clears a starter line a page stopped carrying.
+      starter: a.starter ?? null,
     };
     await this.setNode("Archetype", { name: a.name }, props);
   }
