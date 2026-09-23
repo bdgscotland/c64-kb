@@ -5,7 +5,19 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 733, schema 24, tools 1.28.1.
+Data 734, schema 24, tools 1.28.1.
+
+**Issue #21, ES-19 to ES-22.** `reu_dma` (one cycle a byte blanked;
+badlines and sprites slow it with the screen on), `four_player_read`
+(the user-port adapter; directions under the select are from the sources,
+since VICE cannot drive them headless), `cartridge_save` (EasyFlash flash
+writes need Ultimax mode; a save survives across two runs) and
+`raster_profile_bars` (border bars and a CIA table agree within a line),
+each with a recipe pinned on PAL and NTSC. `verify:recipes` now runs
+cartridge recipes: a `cartridge` key in runs.json boots the `.crt` the
+listing writes, once or several times on the same copy. A new Oscar64
+gotcha: `#define A()` with an empty parameter list is refused.
+
 
 **Design layer, slice 1 (data 733).** Four pages above the mechanics
 layer, written as original prose from public sources by people who
