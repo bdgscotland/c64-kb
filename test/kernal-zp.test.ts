@@ -64,7 +64,7 @@ describe.skipIf(!rom)("kernal-zp-walk against the ROM", () => {
     expect(byName("SETLFS")?.bytes).not.toContain("$A7");
   });
 
-  it("expands the line-link table stores to their rows, not all of zero page, not all of zero page", () => {
+  it("expands the line-link table stores to their rows, not all of zero page", () => {
     const cint = rom ? new KernalWalker(rom.bytes).walk(0xff81) : null;
     expect(formatClobberRanges(toRanges(cint?.bytes ?? []))).toContain("$D9-$F4");
     expect(cint?.bytes.has(0x02)).toBe(false);

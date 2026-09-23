@@ -38,24 +38,41 @@ function dollar(ranges: Range[]): string {
     .join(", ");
 }
 
-/** The finding for `user`'s KERNAL calls against `holder`'s zero-page claims, or null. */
-function oneWay(
+/** One routine of `user` whose may set meets bytes `holder` claims. */
+export interface ClobberHit {
+  routine: string;
+  bytes: Range[];
+}
+
+/** `user`'s routines whose may sets overlap `holder`'s zero-page claims. */
+function clobberHits(
   user: KernalSide,
   holder: KernalSide,
   mayWrites: ReadonlyMap<string, string>,
-): KernalZpHit | null {
-  const held = holder.claims.filter((c) => c.unit === "zero_page" && c.ranges);
-  if (held.length === 0) return null;
-  const heldRanges = held.flatMap((c) => zeroPageRangesFromCanonical(c.ranges ?? ""));
-  const relocatable = held.some((c) => c.relocatable === true);
-  const hits: { routine: string; bytes: Range[] }[] = [];
+): ClobberHit[] {
+  const heldRanges = holder.claims
+    .filter((c) => c.unit === "zero_page" && c.ranges)
+    .flatMap((c) => zeroPageRangesFromCanonical(c.ranges ?? ""));
+  if (heldRanges.length === 0) return [];
+  const hits: ClobberHit[] = [];
   for (const routine of [...user.kernal].sort()) {
     const may = mayWrites.get(routine);
     if (may === undefined) continue;
     const bytes = overlap(zeroPageRangesFromCanonical(may), heldRanges);
     if (bytes.length > 0) hits.push({ routine, bytes });
   }
+  return hits;
+}
+
+/** A stable key for one hit, so a caller can drop one it already reported. */
+export function clobberKey(user: string, holder: string, h: ClobberHit): string {
+  return `${user}>${holder}:${h.routine}:${dollar(h.bytes)}`;
+}
+
+/** The finding for `hits` of `user`'s KERNAL calls on `holder`'s claims, or null. */
+function finding(user: KernalSide, holder: KernalSide, hits: readonly ClobberHit[]): KernalZpHit | null {
   if (hits.length === 0) return null;
+  const relocatable = holder.claims.some((c) => c.unit === "zero_page" && c.relocatable === true);
   const merged: Range[] = [];
   for (const r of hits.flatMap((h) => h.bytes).sort((x, y) => x[0] - y[0])) {
     const prev = merged.at(-1);
@@ -64,22 +81,43 @@ function oneWay(
   }
   const each = hits.map((h) => `${h.routine} may write ${dollar(h.bytes)}`).join("; ");
   const routines = hits.map((h) => h.routine).join(", ");
+  const whose = user.name === holder.name ? "bytes it claims itself" : `bytes ${holder.name} claims`;
   return {
     kind: "kernal_clobbers_zp",
     severity: "soft",
     shared: [`zero_page ${dollar(merged)}`, ...hits.map((h) => h.routine)],
-    rationale: `${user.name} calls the KERNAL, and ${each}, bytes ${holder.name} claims. "May": the set is a static walk of the ROM, an upper bound; a given call need not reach every store (the KERNAL reference page lists each routine's set, and what a traced call wrote).`,
+    rationale: `${user.name} calls the KERNAL, and ${each}, ${whose}. "May": the set is a static walk of the ROM through the power-on vectors, an upper bound; a given call need not reach every store, and a program that repoints a vector (such as $0326 for CHROUT) changes the set (the KERNAL reference page lists each routine's set, and what a traced call wrote).`,
     resolution: relocatable
       ? `Rebuild ${holder.name} with its zero-page base moved off these bytes (its page names the build option), or save and restore them around each call to ${routines}.`
       : `Move ${holder.name}'s zero-page variables off these bytes, or save and restore them around each call to ${routines}, or make no such call while ${holder.name}'s bytes are live.`,
   };
 }
 
-/** kernal_clobbers_zp in both directions between two techniques. */
+/**
+ * kernal_clobbers_zp in both directions between two techniques, or once
+ * when `a` and `b` are the same technique (its own calls against its own
+ * claims). `keep` may drop a routine's hit, e.g. one already reported.
+ */
 export function kernalClobberRules(
   a: KernalSide,
   b: KernalSide,
   mayWrites: ReadonlyMap<string, string>,
+  keep: (user: KernalSide, holder: KernalSide, h: ClobberHit) => boolean = () => true,
 ): KernalZpHit[] {
-  return [oneWay(a, b, mayWrites), oneWay(b, a, mayWrites)].filter((h): h is KernalZpHit => h !== null);
+  const pairs: [KernalSide, KernalSide][] =
+    a.name === b.name
+      ? [[a, a]]
+      : [
+          [a, b],
+          [b, a],
+        ];
+  return pairs
+    .map(([u, h]) =>
+      finding(
+        u,
+        h,
+        clobberHits(u, h, mayWrites).filter((x) => keep(u, h, x)),
+      ),
+    )
+    .filter((h): h is KernalZpHit => h !== null);
 }

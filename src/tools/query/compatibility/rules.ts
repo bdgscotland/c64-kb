@@ -8,7 +8,7 @@ import { requiresClosure, type RequiresClosure } from "./closure.ts";
 import { factsOf, inputPairs, pairKey, type CompatibilityFacts } from "./facts.ts";
 import { hardRules, type BandSeparated, type HardRuleResult } from "./hard-rules.ts";
 import { absorbInto, unitRules, type ClaimSide, type PairRelation, type UnitHit } from "./unit-rules.ts";
-import { kernalClobberRules, type KernalZpHit } from "./kernal-zp-rule.ts";
+import { clobberKey, kernalClobberRules, type KernalSide, type KernalZpHit } from "./kernal-zp-rule.ts";
 
 type Conflict = CompatibilityCheckOutput["conflicts"][number];
 type Coverage = CompatibilityCheckOutput["data_coverage"][number];
@@ -57,11 +57,34 @@ class RuleRunner {
   ): (UnitHit | KernalZpHit)[] {
     const sa = absorb.a ? absorbInto(this.side(a), this.side(absorb.a)) : this.side(a);
     const sb = absorb.b ? absorbInto(this.side(b), this.side(absorb.b)) : this.side(b);
-    const kernal = (s: ClaimSide) => ({ ...s, kernal: factsOf(this.all, s.name).kernal });
-    return [
-      ...unitRules(sa, sb, rel),
-      ...kernalClobberRules(kernal(sa), kernal(sb), this.all.kernalClobbers ?? new Map()),
-    ];
+    return [...unitRules(sa, sb, rel), ...this.kernal(sa, sb, absorb.a ?? a, absorb.b ?? b)];
+  }
+  /** Each routine hit reported so far, keyed by the inputs it is attributed to. */
+  private readonly reported = new Set<string>();
+  /**
+   * kernal_clobbers_zp (schema 26) between two sides, attributed to inputs
+   * `inA` and `inB`. A routine hit already reported for the same inputs,
+   * routine and bytes is dropped: an input and its prerequisite that both
+   * call CHROUT give one finding, not two.
+   */
+  kernal(sa: ClaimSide, sb: ClaimSide, inA: string, inB: string): KernalZpHit[] {
+    const withKernal = (s: ClaimSide): KernalSide => ({ ...s, kernal: factsOf(this.all, s.name).kernal });
+    const input = (n: string) => (n === sa.name ? inA : inB);
+    return kernalClobberRules(
+      withKernal(sa),
+      withKernal(sb),
+      this.all.kernalClobbers ?? new Map(),
+      (user, holder, h) => {
+        const key = clobberKey(input(user.name), input(holder.name), h);
+        if (this.reported.has(key)) return false;
+        this.reported.add(key);
+        return true;
+      },
+    );
+  }
+  /** kernal_clobbers_zp between two techniques of one input's own chain. */
+  ownChain(u: string, v: string, input: string): KernalZpHit[] {
+    return this.kernal(this.side(u), this.side(v), input, input);
   }
 }
 
@@ -207,6 +230,56 @@ function closureConflicts(opts: {
   }));
 }
 
+/**
+ * kernal_clobbers_zp inside one input's own chain: the input against
+ * itself, against each technique its REQUIRES closure implies, and those
+ * against each other. The unit rules do not run here, since a technique and
+ * its prerequisite hold units together by design; a KERNAL call clobbers
+ * zero page whoever declared the bytes. a and b are both the input. Other
+ * named techniques are left to the input pairs.
+ */
+function ownChainConflicts(all: CompatibilityFacts, closure: RequiresClosure, rules: RuleRunner): Conflict[] {
+  const inputSet = new Set(all.techniques);
+  // A pair of implied techniques two inputs share is reported once.
+  const done = new Set<string>();
+  const out: Conflict[] = [];
+  for (const x of all.techniques) {
+    const chain = [x, ...closure.closureOf(x).filter((t) => !inputSet.has(t))];
+    chain.forEach((u, i) => {
+      for (const v of chain.slice(i)) {
+        if (u !== x && v !== x) {
+          if (done.has(`${u}|${v}`)) continue;
+          done.add(`${u}|${v}`);
+        }
+        for (const h of rules.ownChain(u, v, x)) out.push(ownChainConflict(closure, x, [u, v], h));
+      }
+    });
+  }
+  return out;
+}
+
+function ownChainConflict(
+  closure: RequiresClosure,
+  x: string,
+  members: [string, string],
+  h: KernalZpHit,
+): Conflict {
+  const via = [...new Set(members.filter((n) => n !== x))];
+  if (via.length === 0) return { a: x, b: x, ...h };
+  const chainText = via.map((m) => closure.describeChain(x, m)).join("; ");
+  return {
+    a: x,
+    b: x,
+    kind: "prerequisite_conflict",
+    underlying_kind: h.kind,
+    severity: h.severity,
+    shared: h.shared,
+    rationale: `${chainText}. ${h.rationale}`,
+    resolution: h.resolution,
+    via,
+  };
+}
+
 function verdictOf(conflicts: readonly Conflict[]): CompatibilityCheckOutput["verdict"] {
   if (conflicts.some((c) => c.severity === "hard")) return "incompatible";
   // info (init_order) says what order keeps a pair working; it does not warn.
@@ -294,6 +367,7 @@ export function evaluateCompatibility(all: CompatibilityFacts): CompatibilityEva
   const conflicts = [
     ...inputPairConflicts(all, closure, rules),
     ...prerequisiteConflicts(all, closure, rules),
+    ...ownChainConflicts(all, closure, rules),
   ];
   return {
     conflicts,

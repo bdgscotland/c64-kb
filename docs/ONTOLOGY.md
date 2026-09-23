@@ -468,12 +468,16 @@ the routine drops its old CLOBBERS_ZP edges first.
 |----------|------|-------------|
 | ranges | string | canonical bytes $00-$FF, e.g. "90-9A,B7"; "" for none. $00-$01 (the 6510 port) can appear; no Claims line can name them |
 | bound | string | may: a static walk of the ROM, an upper bound, written and checked by `scripts/kernal-zp-walk.ts`. must: what one call wrote in a VICE store trace (`scripts/kernal-zp-trace.ts`), a lower bound for that call |
-| basis | string | where the set came from: "ROM walk from $FFD2", or "VICE x64sc store trace, <the call>". A routine has one may edge and a must edge per traced call |
+| basis | string | where the set came from: "ROM walk from $FFD2, power-on vectors", or "VICE x64sc store trace, <the call>". A routine has one may edge and a must edge per traced call |
 
 `c64_check_compatibility` reads the may edges: a technique that USES a
 KernalRoutine beside a technique whose CLAIMS on `zero_page` share bytes
 with that routine's may set is `kernal_clobbers_zp` (soft; "may", since
-a given call need not reach every store the walk counts). `npm test`
+a given call need not reach every store the walk counts). Unlike the
+unit rules it also runs inside one input's own chain, the technique
+against itself and against its own prerequisites (`a` = `b` = the
+input), since a KERNAL call clobbers the bytes whoever declared them.
+`npm test`
 fails when the page and the ROM walk disagree, or a must byte lies
 outside the may set.
 

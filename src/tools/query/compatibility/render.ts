@@ -44,7 +44,9 @@ function renderConflicts(r: Output, unknownCount: number): string {
   }
   let out = "";
   for (const c of r.conflicts) {
-    out += `## ${c.kind} (${c.severity}): ${c.a} × ${c.b}\n`;
+    // a = b: one technique's own KERNAL calls against its own (or its prerequisites') zero page.
+    const pair = c.a === c.b ? `${c.a}, within its own chain` : `${c.a} × ${c.b}`;
+    out += `## ${c.kind} (${c.severity}): ${pair}\n`;
     if (c.via && c.via.length > 0) out += `**Via prerequisite(s):** ${c.via.join(", ")}\n`;
     if (c.underlying_kind) out += `**Rule:** ${c.underlying_kind}\n`;
     out += `**Shared:** ${c.shared.join(", ")}\n`;
