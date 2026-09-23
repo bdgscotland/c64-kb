@@ -313,3 +313,8 @@ rather than relying on any static claim here.
   loader integration, and the GCR-level disk tricks that enable fast loading. Full demos depend
   on this infrastructure; the lifecycle section above describes how loaders fit into the
   integration phase of production.
+
+- `./demo-composition.md`: the design patterns for a multi-part demo, one level below the
+  lifecycle in section 4: what a part hands to the next, the three ways a part ends, dwell and
+  length norms, keeping the music play call one frame apart across every join, and the order
+  the linking work goes in.

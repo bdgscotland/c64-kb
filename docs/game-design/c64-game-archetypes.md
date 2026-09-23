@@ -231,3 +231,5 @@ Enemy AI in beat-em-ups is necessarily more complex than in platformers or puzzl
 **Reference titles:** Renegade (1987), Target: Renegade (1988), IK+ (1987), Double Dragon (1988), Barbarian (1987)
 
 **Modern examples:** none widely known
+
+- Production planning for any archetype (build order, memory budget, scope and region, editors): `./production-planning.md`.

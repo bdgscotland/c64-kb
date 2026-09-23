@@ -1185,3 +1185,5 @@ Oscar64 README; without it the compiler may inline the call at -O2.
 - `./c64-game-archetypes.md` — which archetype (shmup, platformer,
   adventure, maze, racer) pairs with which patterns from this document,
   with recommended default pattern combinations per archetype.
+- `./game-structure.md`: the state layer above these patterns (game state machine, level end conditions, level transition, front end and attract) with per-pattern checks a harness can run.
+- `./enemy-behaviour-and-difficulty.md`: the design layer above the actor state machines in this document (Öörni's interaction patterns, enemy personality by target, attack pattern tables, the difficulty ramp and a playtest protocol), each with checks a harness can run.
