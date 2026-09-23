@@ -168,7 +168,7 @@ over 2048 bytes does the same job.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00, D018
-**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image, charset_animation, big_font_2x2, dycp_scroller, sprite_cache_flip, sprite_animation_table, wireframe_pipeline, eight_way_scroll_double_buffer, hires_plot, bresenham_line
+**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image, charset_animation, big_font_2x2, dycp_scroller, sprite_cache_flip, sprite_animation_table, wireframe_pipeline, eight_way_scroll_double_buffer, hires_plot, bresenham_line, solid_vector_3d
 
 ### Symptom
 
@@ -318,7 +318,7 @@ setup_bank1:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation, irq_owns_processor_port, cartridge_save
+**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation, irq_owns_processor_port, cartridge_save, cartridge_bank_easyflash
 
 ### Symptom
 
@@ -377,6 +377,11 @@ banked in ($31-$33) the write does reach RAM.
 Banking KERNAL out moves the CPU's interrupt vectors ($FFFA-$FFFF) from ROM to
 the RAM underneath. Pre-write custom IRQ/NMI addresses to those RAM locations
 while KERNAL is still visible (writes go to RAM), then SEI and switch.
+
+Cartridge ROM at $8000-$BFFF (ROML and ROMH) is a fourth ROM-mapped range with
+the same asymmetry: while a cartridge maps it, a write lands in the RAM beneath
+and a read returns the cartridge byte (recorded under `cartridge_bank_easyflash`
+in techniques/memory-banking.md; not re-measured here).
 
 ### Fix
 
@@ -476,6 +481,7 @@ custom_nmi:
 **Region:** both
 **Triggered by registers:** D018
 **Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets, charset_parallax, destructible_char_terrain, hires_plot
+**Mitigated by techniques:** memory_layout_plan
 
 ### Symptom
 
@@ -676,7 +682,7 @@ developed.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** CHROUT
-**Triggered by techniques:** zx0_lzsa_decrunchers, pucrunch_decruncher, doynax_decruncher
+**Triggered by techniques:** zx0_lzsa_decrunchers, pucrunch_decruncher, doynax_decruncher, zero_page_burst, byteboozer_packer
 **Mitigated by techniques:** cpu_io_port_bank
 
 ### Symptom
@@ -887,3 +893,175 @@ d4: 00 > 08   quote-mode flag set
 - Technique `memory_layout_plan`: where the payload's own zero-page claims should be written down, so the stub's span is checked against them.
 - Pitfall `ram_under_rom_traps`: the other consequence of a `$01` left at `$34`, reads that return RAM where ROM was expected.
 - Hardware `c64-memory-map.md`: `$0099`/`$009A` (DFLTN/DFLTO), `$00C7`, `$00D1`-`$00D4`.
+
+---
+
+## cartridge_bank_switch_under_executing_pc — A bank or mode write executed from the window it switches
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** cartridge_bank_easyflash
+
+`$DE00` and `$DE02` are not Register nodes in this knowledge base (the
+hardware pages carry `$DE00-$DEFF` as a memory region, not as registers),
+so this entry anchors on the technique alone.
+
+### Symptom
+
+The first bank switch of an EasyFlash program is also its last sane
+instruction. Code that runs to the `STA $DE00` and then crashes, or runs a
+routine nobody called, or leaves the screen and border colours the previous
+bank's code would never have chosen. The same routine works when the test
+build copies it to RAM and runs it there, and fails again the moment it is
+run from the cartridge. Debugging is confusing because the store itself is
+fine: a monitor confirms the bank register took the value.
+
+The mode-register form is worse. A `STA $DE02` written in bank 0 HIROM at
+`$E000` (where the cartridge boots, in Ultimax mode) swaps the KERNAL ROM in
+under the program counter, and the CPU runs the KERNAL's floating-point
+code from wherever the PC happened to be.
+
+### Mechanism
+
+The 6510 does not know a bank switch happened. `STA $DE00` is four cycles:
+opcode, operand low, operand high, write. The cartridge latches the new bank
+number on the write, which is the instruction's last cycle, so the store
+always completes and the accumulator keeps its value. The very next cycle is
+the next opcode fetch, at the next address, and if that address is inside
+`$8000-$9FFF` (or `$A000-$BFFF` in 16 KB mode) the fetch is served by the
+NEW bank. Whatever bytes the new bank holds at that offset are executed as
+code. Nothing is skipped and nothing is delayed by an instruction: the
+switch lands on the first fetch after the write.
+
+Measured in VICE x64sc 3.10 (windowless build, PAL and NTSC, same bytes in
+both) with a two-bank type `$0020` EasyFlash `.crt`. Bank 0 LOROM at `$8000`
+held `LDX #0 / LDA #1 / STA $DE00 / LDA #$41 / STA $0400 / STA $0401 / STX $0402 / INC $D020`.
+Bank 1 LOROM held `$FF` bytes up to `$8006` and, at `$8007`, `LDX #$42 /
+STX $0400 / STA $0401 / STX $0402 / LDA #6 / STA $D020`. The monitor trace
+(`trace exec 8000 8020`, which prints the bytes actually fetched):
+
+```text
+.C:8004  8D 00 DE    STA $DE00      - A:01 X:00    cycle 193
+.C:8007  A2 42       LDX #$42       - A:01 X:00    cycle 197   <- bank 1's bytes
+.C:8009  8E 00 04    STX $0400      - A:01 X:42    cycle 199
+```
+
+The store began at cycle 193, wrote on cycle 196 (arithmetic, four-cycle
+STA), and the opcode fetched at cycle 197 was `$A2`, bank 1's byte, not the
+`$A9` that bank 0 holds at `$8007`. Final memory, from `m 0400 0403` and
+`m d020 d020` on the last store:
+
+```text
+run                          $0400 $0401 $0402   $D020        border in the screenshot
+BAD: switch from $8004         42    01    42     F6 (blue)   (44, 61, 236)
+CONTROL: STA $DE00 with #0     41    41    00     FF (grey)   (205, 205, 205)
+FIX: sequence run from $0200   41    41    00     FF (grey)   (205, 205, 205)
+FIX: bank 1 identical here     41    41    00     FF (grey)   (205, 205, 205)
+```
+
+`$0400` never reads `$41` in the bad build: the `LDA #$41` that follows the
+store in bank 0 was never fetched. `$0401` reads `$01`, the accumulator as
+the STA left it, so the write itself was whole. The control build writes
+bank 0 back into `$DE00` and reads `$41`, `$41`, `$00`, which is the same
+instruction stream with the same store and no switch, so the fault is the
+switch and not the store. (`$D020` reads with its upper nibble set, `$F6`
+for blue and `$FF` for `$0F`, light grey.)
+
+The mode write was measured the same way. Bank 0 HIROM at `$E022` ran
+`LDA #$07 / STA $DE02 / LDA #$41 / STA $0400 / INC $D020` from Ultimax mode:
+
+```text
+.C:e024  8D 02 DE    STA $DE02      - A:07 X:00    cycle 52
+.C:e027  10 F5       BPL $E01E      - A:07 X:00    cycle 56    <- KERNAL's bytes
+.C:e026  CA          DEX
+.C:e029  A5 56       LDA $56
+.C:e02d  20 53 B8    JSR $B853
+```
+
+The bytes fetched from `$E027` onwards (`10 F5 ... A5 56 85 70 20 53 B8`)
+are the KERNAL ROM's (901227-03, offsets `$0027-$002F`), not the
+cartridge's. `$0400` stayed `$00` and the border stayed light blue: nothing
+after the store in HIROM ever ran.
+
+The whole of the pitfall is therefore in the bytes at the ADDRESS AFTER the
+store. Two things make it safe: the code after the store lives in RAM, which
+no bank register touches; or every bank that can be selected carries the
+same bytes at that address, so it does not matter which one serves the
+fetch. The fix build that made bank 1 a byte-for-byte copy of bank 0 at the
+switch site read `$41` like the RAM build, and its trace shows `A9 41` at
+`$8007` served by bank 1.
+
+### Fix
+
+Run the switch from RAM. Copy a stub of `LDA #bank / STA $DE00 / JMP entry`
+to a page the cartridge does not map (`$0200`, or the `$DF00` cartridge RAM
+if the program already uses it), jump to the stub, and let it jump into the
+new bank at an address the new bank guarantees is code. Do the same for
+`$DE02`: the EasyFlash start-up stub in the recipe copies its main code to
+RAM before it writes `$07`, for this reason.
+
+If the switch must stay in ROM, put the switch routine at the same offset in
+every bank, byte for byte, in the linker or the assembler's segment layout,
+and check that claim with a byte compare of the built `.crt` rather than by
+reading the source. A common shape is a small shared trampoline in the top
+page of LOROM present in all banks.
+
+Never put the store at the end of a routine and rely on the `RTS` after it:
+the `RTS` is fetched from the new bank too. The same holds for a subroutine
+in RAM that switches banks and returns to a caller in ROM: the return
+address is in the old bank's code, and the new bank's bytes are there now
+(not measured here; it follows from the fetch order above).
+
+### Worked example
+
+```kick
+// BAD: the switch runs from the LOROM it switches. Measured: after the
+// STA the next opcode fetch, at switch_from_rom+5, already comes from
+// bank 1, and the LDA #$41 below is never executed.
+switch_from_rom:
+    lda #$01
+    sta $de00           // latches bank 1 on this instruction's last cycle
+    lda #$41            // bank 1's byte at this address runs instead
+    sta $0400
+    rts
+
+// GOOD: copy the switch and the entry jump to RAM and run them there.
+// Measured: $0400 reads $41 with the same two banks in the cartridge.
+switch_from_ram:
+    ldx #$00
+copy_stub:
+    lda stub, x
+    sta $0200, x
+    inx
+    cpx #stub_end - stub
+    bne copy_stub
+    jmp $0200
+stub:
+    .pseudopc $0200 {
+    lda #$01
+    sta $de00           // fetched from RAM: what $8000 shows no longer matters
+    jmp $8000           // an address that is code in bank 1
+    }
+stub_end:
+```
+
+The alternative fix is not code but layout: the bytes at the switch site
+must be the same in every bank. That is a property of the built `.crt`, so
+check it there.
+
+### Cross-references
+
+- Technique `cartridge_bank_easyflash` (techniques/memory-banking.md): the
+  bank and mode registers, the Ultimax boot, and its Cycle budget section,
+  which states this hazard; the measurement here is the one that section
+  did not have.
+- Recipe `recipes/kickassembler/easyflash-save.md`: a boot stub that copies
+  its main code to `$0800` before writing `$DE02`, and a two-bank `.crt`
+  emitted from one listing (the rig above was built the same way).
+- Technique `cartridge_save` (techniques/file-io.md): keeps its flash
+  writing code in RAM below `$1000` because Ultimax mode maps nothing else,
+  which also keeps it clear of this pitfall; it is not on the Triggered-by
+  line because its text never switches banks from cartridge code.
+- Pitfall `ram_under_rom_traps`: the other direction of the same PLA rule,
+  a write that reaches the RAM under `$8000-$BFFF` while a read returns the
+  cartridge byte.

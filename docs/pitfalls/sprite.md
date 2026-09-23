@@ -23,7 +23,7 @@ hides them. All of them have bitten experienced C64 coders.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D015, D010, D000, D001
-**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq, sprite_multiplex_24, sprite_sine_chain, sprite_multiplex_game
+**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq, sprite_multiplex_24, sprite_sine_chain, sprite_multiplex_game, dot_3d_rotator
 **Mitigated by techniques:** sprite_multiplex_8
 
 ### Symptom
@@ -340,7 +340,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
-**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield
 
 ### Symptom
 
@@ -587,7 +587,7 @@ the cached variable is immediately populated.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D000, D010
-**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms, lane_depth_engine
+**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms, lane_depth_engine, starfield
 
 ### Symptom
 

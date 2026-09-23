@@ -110,8 +110,9 @@ __noinline void div16_8(void)
 }
 
 // 16-bit dividend / 16-bit divisor. Quotient in dvd, remainder in rem16.
-// The partial remainder reaches 17 bits when the divisor is $8000 or
-// more; the bcs after the second rol catches that bit.
+// The bcs after the second rol is kept for symmetry with div16_8; with
+// equal widths the remainder cannot reach 17 bits (the sweep passes with
+// it deleted; see pitfalls/maths.md, division_loop_missing_ninth_bit_guard).
 __noinline void div16_16(void)
 {
     __asm volatile
@@ -534,10 +535,19 @@ without a compare, because a remainder with its ninth bit set is always
 at least any 8-bit divisor. The carry is also already set, which is what
 `sbc` needs. On the other path `cmp` leaves the carry set exactly when
 the subtract should happen, so the two paths meet at `sbc` with the
-carry right either way. The 16/16 loop does the same with a 17th bit and
-a two-byte compare that stops early when the high bytes differ. A
-routine that drops the `bcs` is wrong for every divisor of `$8000` or
-more; the `65535/$8000` row and the sweep are there to catch that.
+carry right either way. The 16/16 loop keeps the same `bcs` and a
+two-byte compare that stops early when the high bytes differ, but with
+equal widths the extra bit never appears: the remainder can only exceed
+the divisor's width once the loop has consumed more dividend bits than
+the divisor has, which takes a seventeenth pass. Measured by rebuilding
+this page with all three `bcs` guards deleted: `8/8 ALL` and `16/16
+SWEEP` still pass with 0 misses, `16/8 ALL` fails with 24,400 misses
+(checksum `4223` against `BBC4`), and the threshold is a divisor of
+`$81`, so `256 / 255` comes out as 0 remainder 0. An earlier version of
+this paragraph said a routine without the `bcs` "is wrong for every
+divisor of `$8000` or more"; the `65535/$8000` row passes without it.
+The measurement is in `pitfalls/maths.md` under
+`division_loop_missing_ninth_bit_guard`.
 
 `div10_8` replaces the loop with an approximation of `n / 10` built
 from shifts: `n/2 + n/4` is `0.75n`, adding a sixteenth of that gives

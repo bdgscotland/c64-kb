@@ -5,7 +5,38 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 752, schema 27, tools 2.0.0, package 0.13.0.
+Data 753, schema 27, tools 2.0.0, package 0.13.0.
+
+**Every technique a pitfall can reach now has one, bar seven (data
+753).** A read-only triage of the techniques no pitfall named sorted each
+into an existing pitfall its text meets, a new measured pitfall, or none
+with the reason. Eighteen anchors were added to existing entries on seven
+pitfall pages, each checked against the technique sentence that meets the
+mechanism, and `ram_under_rom_traps` gained cartridge ROM at `$8000` to
+`$BFFF` as a fourth ROM-mapped range. Five new pitfall entries, each
+measured first: a bank or mode write executed from the cartridge window
+it switches hands the very next opcode fetch to the new bank (traced at
+the cycle; the fix runs the switch from RAM or makes the switch site
+identical in every bank); setting ECM while MCM is still on selects an
+invalid mode that draws the whole window black while sprite collisions
+and priority still work against the invisible field, on both models,
+with ECM plus BMM tabled beside it; a new maths pitfall page with a sine
+table of amplitude 128 that peaks at 256 and wraps seven entries to zero
+under both toolchains, and a shift-and-subtract divide whose missing
+carry guard is a 16/8 fault only, wrong for divisors of `$81` and above
+(24,400 misses over the recipe's sweep) while the 8/8 and 16/16 loops
+pass with the guard deleted; and Oscar64's assembler optimiser at `-O2`
+rewriting a non-volatile inline block and duplicating it, so a store into
+an operand byte lands in a copy that never runs (the executed and the
+dead listings quoted; `volatile`, `#pragma optimize(noasm)` and a
+data-patch form each measured as fixes). The divide measurement
+corrected the technique page and the divide-check recipe, which had said
+the guardless loop fails for divisors of `$80` or `$8000` and above; the
+multiply technique's account of what the mis-optimised routine computes
+was corrected from the executed listing. The seven techniques still
+without an anchor are two loader notes and three logic entries the triage
+judged to need none, and two whose anchors wait on the raster pitfall
+page another agent is writing.
 
 **Four pitfalls met while landing the night's recipes, each measured
 before it was written (data 752).** A VIC colour register reads back as

@@ -169,9 +169,14 @@ alignment the high address byte would need a carry as well.
 In Oscar64 the block above must be written `__asm volatile`. Without
 `volatile` the assembler optimiser at `-O2` rewrote `ldy / lda ,y` as
 `ldx / lda ,x`, duplicated the block, and left the four `sta m1 + 1`
-stores pointing into the other copy. Every product came out as
-`q(a + b) - q(b)`; the first version of the harness on this page read
-`$C080` for `0 * 0`. `toolchains/oscar64-reference.md` (the assembler
+stores pointing into the other copy. The running copy keeps the
+operands it was assembled with, so every product came out as
+`q(b) - q(|b - 255|)`, which is `$C080` for `0 * 0`, the figure the
+first version of the harness on this page read (an earlier version of
+this sentence gave the formula as `q(a + b) - q(b)`, which is 0 for
+`0 * 0` and does not fit that reading; the executed sequence is quoted
+in `pitfalls/cpu.md#asm_optimiser_moves_self_modified_instruction`).
+`toolchains/oscar64-reference.md` (the assembler
 optimizer paragraph) documents the switch; the symptom is recorded here because the compiled
 listing looked right in the copy that was inspected first.
 
@@ -264,10 +269,17 @@ it was less than the divisor, and it has just been doubled plus one.
 That bit is the carry out of `rol rem`. Taking `bcs` straight to `sbc`
 handles it, because a remainder with that bit set is at least any
 divisor of the narrower width, and because `rol` left the carry set,
-which is the state `sbc` needs. A loop without the `bcs` is right for
-small divisors and wrong for every divisor of `$80` (8-bit) or `$8000`
-(16-bit) and above; the recipe's sweep puts about half its 16-bit
-divisors there.
+which is the state `sbc` needs. The bit can only appear once the loop
+has consumed more dividend bits than the divisor is wide, so it is a
+16/8 hazard: without the `bcs` that loop is wrong for divisors of `$81`
+and above (24,400 misses over the recipe's 65,536 dividends; `256 / 255`
+comes out as 0 remainder 0), while the 8/8 and 16/16 loops pass their
+sweeps with the guard deleted, because an 8-bit dividend runs out of
+passes before its remainder can reach `$80` and a 16-bit divisor would
+need a seventeenth pass. An earlier version of this paragraph said the
+guardless loop was wrong "for every divisor of `$80` (8-bit) or `$8000`
+(16-bit) and above"; the measurement is in
+`pitfalls/maths.md#division_loop_missing_ninth_bit_guard`.
 
 A divisor of zero is not trapped. Every compare succeeds, so the
 quotient comes out as all ones and the remainder as the dividend (its

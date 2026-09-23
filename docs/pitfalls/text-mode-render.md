@@ -34,7 +34,7 @@ instead.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** text_mode_overlay_render, mixed_sprite_char_actors
+**Triggered by techniques:** text_mode_overlay_render, mixed_sprite_char_actors, bobs_effect
 
 ### Symptom
 
@@ -243,7 +243,7 @@ update function.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller, colour_cycling, char_bullets, software_sprite_preshifted, charset_parallax, flip_screen_rooms, creature_state_machine, mixed_sprite_char_actors, eight_way_scroll_double_buffer
+**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller, colour_cycling, char_bullets, software_sprite_preshifted, charset_parallax, flip_screen_rooms, creature_state_machine, mixed_sprite_char_actors, eight_way_scroll_double_buffer, tunnel, voxel_landscape
 **Mitigated by techniques:** screen_double_buffer_d018
 
 ### Symptom
@@ -839,3 +839,164 @@ POKE53281,3:PRINTPEEK(53281);PEEK(53281)AND15   ->  243  3
 - Pitfall: `sid_write_only_registers` (`pitfalls/sid.md`), the
   neighbouring chip, where the whole byte is garbage rather than one
   nibble
+
+## ecm_with_mcm_set_is_invalid_black_mode — Setting ECM while MCM is still on selects an invalid mode that draws the whole window black
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D011, D016
+**Triggered by techniques:** ecm_mode, mcm_text, raster_split_modes
+
+### Symptom
+
+The program switches a text screen to Extended Colour Mode and the
+display window goes black. Not blank: black. The border keeps its
+colour, the raster interrupts keep firing, and sprites still show, so
+the machine is plainly running. The four background bands the code set
+up are not there, and neither are the glyphs. Worse, the game keeps
+playing against the field nobody can see: the sprite-to-background
+collision bit still sets when a sprite crosses a glyph, and a sprite
+set to run behind the playfield is still cut by the glyph pixels, which
+are now the same black as everything round them.
+
+The usual route in is a mode change. The previous screen was a
+multicolour character screen, so `$D016` still holds `$D8` with MCM
+(bit 4) set. The ECM screen's setup writes `$D011` with bit 6 and never
+touches `$D016`, because ECM is a `$D011` mode and the writer's mental
+model of `$D016` is "scroll and 38-column". ECM and MCM are now both
+set, and that pair is not a mode.
+
+### Mechanism
+
+The VIC-II decodes its display mode from three bits: ECM (`$D011` bit
+6), BMM (`$D011` bit 5) and MCM (`$D016` bit 4). Five of the eight
+combinations are modes. The other three, every combination in which ECM
+is set alongside BMM or MCM, are the invalid modes: the audited
+`hardware/vic-ii-reference.md` lists ECM+MCM text, ECM+BMM and
+ECM+BMM+MCM as "output is black", and says that in those modes "the
+display sequencer still runs, but the pixel data output is forced to
+black. Collisions and sprites still function."
+
+That last sentence is the trap. The sequencer still classifies each
+pixel as foreground or background, and the sprite unit still compares
+against that classification for `$D01F` and for the `$D01B` priority
+mask; only the colour lookup is replaced by black. So the picture
+disappears while every part of the logic that reads the picture through
+the VIC carries on as if it were there.
+
+Measured in VICE 3.10 x64sc, PAL and NTSC, with a screen of four
+character bands (codes 1, 65, 129, 193), white colour RAM, `$D021` to
+`$D024` set to blue, green, red and yellow, a light blue border and one
+solid white sprite parked over the second band. Setting `$D011` bit 6
+with `$D016` at `$C8` gave the four coloured bands with white glyphs on
+both models. Setting the same bit with `$D016` at `$D8` gave a window of
+63,496 black pixels and 504 white ones, and the 504 are the 24 by 21
+sprite. The border stayed light blue. `$D01F` read `$01` two frames
+after the mode write and `$01` again a frame later, on both models, in
+the black mode exactly as in the good one. With `$D01B` bit 0 set in
+the black mode, 210 of the sprite's 504 pixels were black: the glyphs
+under it still masked it. ECM with BMM (`$D011` written with bits 6 and
+5) gave the same 63,496 black pixels and the same `$D01F` of `$01`.
+
+Whether a real VIC of any revision matches VICE pixel for pixel in the
+invalid modes is not measured here; the black output and the live
+collisions are what the hardware page states and what the emulator
+showed.
+
+A mid-frame split that goes from a multicolour character zone to an ECM
+zone meets the same pair for the cells between its two stores if it
+writes `$D011` before `$D016`; `raster_split_modes` warns of an
+"undefined intermediate mode" between the writes, and for this pair the
+intermediate mode is black. How many cells that covers is not measured
+here.
+
+### Fix
+
+Clear MCM before you set ECM, or in the same handful of cycles, and
+never assume `$D016` from the last screen. Write the whole `$D016` byte
+for the new screen (`$C8` for a 40-column, unscrolled ECM screen) rather
+than leaving whatever the previous mode put there. If you must
+read-modify-write, `and #$EF` clears the bit without disturbing CSEL and
+XSCROLL. In a raster split from multicolour text to ECM, store `$D016`
+first and `$D011` second, so the only intermediate state is plain text
+rather than black.
+
+Write a sanity check into the setup routine during development: after
+the mode writes, `lda $d011`, `and #$40`, and if it is set, `lda $d016`,
+`and #$10`, which must be zero. Bits 7 and 6 of `$D016` read as ones
+(`vic_colour_register_upper_nibble_reads_set` above), so mask before
+you compare.
+
+### Worked example
+
+The fragment builds as written. The first block is the bug as it
+arrives from a multicolour screen; the second is the fix.
+
+```asm
+// Bad: $D016 still holds $D8 from the multicolour text screen.
+// Setting ECM on top of it selects the ECM+MCM invalid mode.
+        lda #$d8               // MCM on, as the previous screen left it
+        sta $d016
+        lda $d011
+        ora #$40               // ECM on: the window goes black
+        sta $d011
+
+// Good: put $D016 into its ECM-screen state first, then set ECM.
+        lda #$c8               // MCM off, CSEL on, XSCROLL 0
+        sta $d016
+        lda $d011
+        ora #$40               // ECM on: four background bands appear
+        sta $d011
+
+// Also good, when $D016 carries scroll state you want to keep.
+        lda $d016
+        and #$ef               // clear MCM only
+        sta $d016
+        lda $d011
+        ora #$40
+        sta $d011
+        rts
+```
+
+The runs behind the table used the register writes above on a screen of
+four bands with one white sprite at (100, 110). Each row is the bytes a
+`-moncommands` trace dumped after the program stored them, followed by
+the exit screenshot's pixel count over the 320 by 200 window. The two
+models gave identical bytes and identical counts:
+
+```text
+variant                    $D011  $D016  $D01F   $D01F   window pixels (PAL and NTSC)
+                                         +2 fr   +3 fr
+plain text (control)        $1B    $C8    $01     $01    64,000 non-black: blue field, white glyphs
+A: ECM, $D016 = $C8         $DB    $C8    $01     $01    64,000 non-black: blue/green/red/yellow bands
+B: ECM, $D016 = $D8         $DB    $D8    $01     $01    63,496 black + 504 white (the sprite)
+B with $D01B bit 0 set      $DB    $D8    $01     $01    63,706 black + 294 white (sprite cut by glyphs)
+C: ECM + BMM, $D016 = $C8   $FB    $C8    $01     $01    63,496 black + 504 white (the sprite)
+fix: $D016 -> $C8, then ECM $DB    $C8    $01     $01    64,000 non-black, identical to A
+
+Border pixel (2, 100): light blue in every run, both models.
+$D01E: $00 in every run (one sprite).
+```
+
+`$D016` reads back with bits 7 and 6 set, so `$C8` is the byte written
+as `$C8` and also the byte written as `$08`; the low nibble is what the
+table is about.
+
+### Cross-references
+
+- Technique: `ecm_mode` (`techniques/bitmap-modes.md`), which names
+  ECM+BMM as invalid and is silent on ECM+MCM
+- Technique: `mcm_text` (`techniques/bitmap-modes.md`), the screen that
+  leaves MCM set on the way in
+- Technique: `raster_split_modes` (`techniques/raster.md`), whose
+  "undefined intermediate mode" between the `$D011` and `$D016` stores
+  is this pair when the split runs from multicolour text to ECM
+- Registers: `$D011`, `$D016` (`hardware/vic-ii-reference.md`, the mode
+  table and "Illegal display modes")
+- Pitfall: `d016_unmasked_rmw_clobbers_csel_mcm` (`pitfalls/scroll.md`),
+  the other way to end up with the wrong MCM bit
+- Pitfall: `sprite_priority_collision_silent` (`pitfalls/sprite.md`),
+  the `$D01F` read that clears; the reads in the table were the only
+  reads after the mode write
+- Pitfall: `vic_colour_register_upper_nibble_reads_set` (this page), why
+  the `$D016` check masks before comparing
