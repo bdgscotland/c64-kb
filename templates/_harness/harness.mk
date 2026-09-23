@@ -167,11 +167,16 @@ selftest:
 	  grep '^FAIL' shots/fault-check.txt | head -5; echo "selftest: PASS, check.py rejected the $(FAULT_DEFINE) build"; \
 	fi
 
+lc = $(shell echo '$(1)' | tr A-Z a-z)
+
 # ---- disk: a .d64 with the PRG and DISK_FILES ---------------------------------------
 disk: $(D64)
 $(D64): $(PRG) $(DISK_FILES)
 	@rm -f $@
-	$(C1541) -format "$(DISK_NAME),$(DISK_ID)" d64 $@ -write $(PRG) $(NAME) $(foreach f,$(DISK_FILES),-write $(f) $(basename $(notdir $(f)))) > build/c1541.log
+	@# Names go to c1541 in lower case: an upper-case host name is stored as
+	@# shifted PETSCII that the KERNAL cannot open by its plain name
+	@# (c64-kb pitfall c1541_uppercase_filename_petscii_shift).
+	$(C1541) -format "$(DISK_NAME),$(DISK_ID)" d64 $@ -write $(PRG) $(call lc,$(NAME)) $(foreach f,$(DISK_FILES),-write $(f) $(call lc,$(basename $(notdir $(f))))) > build/c1541.log
 	$(C1541) -attach $@ -list
 
 # ---- claims: every store the autopilot run makes, against what it declared ------------
