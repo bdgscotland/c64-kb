@@ -3,7 +3,7 @@ recipe: sprite-multiplex-24
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [sprite_multiplex_24, sprite_multiplex_8]
+techniques: [sprite_multiplex_24]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01C, D01D, D020, D021, D027]
 uses_kernal: []
@@ -26,6 +26,11 @@ give up for that.
 
 Verified in VICE x64sc: three rows of eight sprites, three shapes, fifteen
 colours, drifting right and bobbing.
+
+The `techniques` list names `sprite_multiplex_24` only. An earlier version
+also named `sprite_multiplex_8`, which is a second multiplexer; this listing
+is one, the banded form of `sprite_multiplex_24`, and the
+`sprite_multiplex_8` entry lists only the Oscar64 recipe.
 
 ## Source
 

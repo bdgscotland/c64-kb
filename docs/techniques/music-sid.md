@@ -237,7 +237,7 @@ Changing $D416 while voices are playing produces a live filter sweep — this is
 **Cost:** cycles_per_frame=327, irq_slots=1
 **Cost basis:** measured-vice
 **Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
-**Claims basis:** derived-listing
+**Claims basis:** estimated
 
 ### Why
 
@@ -249,6 +249,8 @@ The canonical contract:
 
 - **init(A = song_index):** Call once. Accumulator A selects which subtune to play (0-based). The routine initializes all SID registers, sets up internal player state, and returns. Multiple calls to init (with the same or different song index) must be safe — a well-written player zeroes or resets all state on every init call.
 - **play():** Call once per frame (typically from a raster IRQ at line 0 or wherever the game places its audio IRQ). The routine reads the current frame count from internal state, computes the SID register values for this frame, writes them to $D400-$D418, and returns. The play routine must not corrupt the CPU registers it uses without saving and restoring them; well-written players save A, X, Y on the stack and restore before returning.
+
+The Claims line rests on this contract: a player writes all three voices and $D415-$D418 every frame. The recipes that implement the pattern here do not show it. `sid-music-player.md` plays voice 2 only, `simple-shmup.md` plays its music on voice 1, and `cracktro-template.md` calls a stub that returns at once. The basis is therefore `estimated`.
 
 In assembly the pattern is:
 

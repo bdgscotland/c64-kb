@@ -233,6 +233,13 @@ without a basis is refused at extract with a warning, and the whole line
 with it: a partial set would read as complete. The technique then reads
 as unknown.
 
+A technique that is a way into a handler rather than an effect claims
+the unit as `shares`: `stable_raster_irq` and `double_irq` say
+`vic_raster_irq (shares)`, because the effect run from the handler owns
+the one raster compare. Where the page says an effect is built on such a
+technique, state it on the **Requires:** line too: the check does not set
+a technique against its own prerequisite as a rival owner.
+
 A technique claims what every implementation needs. What one recipe
 chooses (which vector, which zero-page bytes) is the recipe's claim, not
 the technique's. A measurement harness is not a claim: the CIA timers a

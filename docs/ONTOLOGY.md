@@ -439,10 +439,16 @@ claim the page stopped making does not outlive it.
 `zero_page_overlap` (hard, soft when either side is relocatable);
 `owns` against `shares`, or two `shares`, is `unit_shared` (soft);
 `owns` against `reads` is `unit_read_while_driven` (soft); `init`
-against `owns` or `shares` is `init_order` (info). The two ownership
-rules do not run between a technique and its own REQUIRES prerequisite,
-which holds the unit on its behalf; the soft and info rules still do. A technique with
-no Claims line is reported as unknown, never as claiming nothing.
+against `owns` or `shares` is `init_order` (info). Between a technique
+and its own REQUIRES prerequisite the two ownership rules do not run, and
+`unit_shared` runs only when the sharer is the one that requires the
+owner (`sfx_engine_beside_music` requires the player it writes after;
+`fli_image` runs the stable raster IRQ it requires inside its own
+handler). Through the REQUIRES closure, a prerequisite's claims on units
+its input technique holds are the input's, and the input's own pair
+reports them; the hit that remains carries the rule in `underlying_kind`.
+A technique with no Claims line is reported as unknown, never as
+claiming nothing.
 `c64_techniques_for` filters on a claimed unit.
 
 ### IN_REGION
