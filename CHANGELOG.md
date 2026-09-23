@@ -5,7 +5,36 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 762, schema 30, tools 2.2.0, package 0.15.0.
+Data 763, schema 30, tools 2.2.0, package 0.15.0.
+
+**Candidate list, batch 16: four items from fixed designs, each a
+technique entry and a pinned KickAssembler recipe (data 763).** The
+sprites-only screen mode: the display enable bit held clear through line
+48 so no badline occurs all frame, set for line 51 so the vertical
+border flip-flop resets, and the select bit toggled around line 251 so
+it never sets again; eight sprites drawn at every height from line 8 to
+the frame wrap, a free-CPU meter reading 904 iterations of a 20-cycle
+loop per PAL frame against 847 with a normal display (the badline and
+border cost by subtraction), the closed-border control hiding three
+sprites and the display-off-only control showing none. BASIC ROM
+floating-point routines called from machine code, every entry point
+read from the 901226-01 ROM image with the monitor before it was used:
+square root of two, 355 over 113, 0.1 plus 0.2 and the five bytes of
+one tenth printed and compared against asserted strings, FMULT 1,079
+cycles, FDIV 2,409, FSQR 43,752 and FOUT 7,412 with the display off, the
+zero-page bytes the sequence changes listed, and the same calls with
+BASIC banked out as the control. Depth-sorted sprite vector balls: eight
+balls on a tilted ring, a single bubble pass per frame assigning sprite
+numbers by depth so the hardware's fixed priority draws the nearer ball
+on top (1,318 cycles a frame, the order unsorted only on the first six
+frames), and a control without the sort drawing the farther ball over
+the nearer one at the same overlap. Shade bobs: a blob adding one shade
+step to a colour-RAM shade buffer under a luminance-ordered palette with
+a decay pass every fourth frame, 590 cycles for the add, 26,514 for the
+decay pass (over a frame, so it cannot fit the blank), and the buffer
+dumped from memory matching colour RAM through the palette in all 1,000
+cells. Eight pins byte-identical on two runs per model, each reproduced
+by a reviewer from the page listing.
 
 **The pseudo-3D road, with its per-line shift measured to work (data
 762).** A coarse layer of thirteen multicolour character rows redrawn in

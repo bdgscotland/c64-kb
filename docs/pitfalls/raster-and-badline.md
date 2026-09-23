@@ -144,7 +144,7 @@ cycles after BA drops on cycle 12 happen to be write cycles).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, raster_bars, irq_chain_table, raster_split_modes, pal_ntsc_detection, frame_sync_loop, big_font_2x2, dycp_scroller, logic_rate_decoupling, sprite_multiplex_game, sprite_border_scroller
+**Triggered by techniques:** stable_raster_irq, raster_bars, irq_chain_table, raster_split_modes, pal_ntsc_detection, frame_sync_loop, big_font_2x2, dycp_scroller, logic_rate_decoupling, sprite_multiplex_game, sprite_border_scroller, sprites_only_screen_mode
 
 ### Symptom
 
@@ -418,7 +418,7 @@ IRQ").
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D015
-**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization, sprite_multiplex_game, reu_dma, raster_profile_bars
+**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization, sprite_multiplex_game, reu_dma, raster_profile_bars, sprites_only_screen_mode
 
 ### Symptom
 
@@ -654,7 +654,7 @@ delay:  dec count
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D011
-**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open
+**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open, sprites_only_screen_mode
 
 ### Symptom
 

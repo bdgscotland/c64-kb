@@ -1530,5 +1530,53 @@
       "pal": "screenshots/pseudo-3d-road.png",
       "ntsc": "screenshots/pseudo-3d-road-ntsc.png"
     }
+  },
+  "kickassembler/sprites-only-screen": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprites-only-screen.png",
+      "ntsc": "screenshots/sprites-only-screen-ntsc.png"
+    }
+  },
+  "kickassembler/basic-float-calls": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/basic-float-calls.png",
+      "ntsc": "screenshots/basic-float-calls-ntsc.png"
+    }
+  },
+  "kickassembler/vector-balls": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/vector-balls.png",
+      "ntsc": "screenshots/vector-balls-ntsc.png"
+    }
+  },
+  "kickassembler/shadebobs": {
+    "cycles": 11000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/shadebobs.png",
+      "ntsc": "screenshots/shadebobs-ntsc.png"
+    }
   }
 }
