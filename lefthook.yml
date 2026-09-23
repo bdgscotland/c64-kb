@@ -20,5 +20,8 @@ pre-commit:
       run: npm run -s test:unit
 pre-push:
   commands:
+    # The build type-checks what typecheck cannot: emit-only errors.
+    build:
+      run: npm run -s build
     tests:
       run: npm test
