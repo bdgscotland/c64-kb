@@ -240,7 +240,7 @@ update function.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller, colour_cycling, char_bullets, software_sprite_preshifted
+**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller, colour_cycling, char_bullets, software_sprite_preshifted, charset_parallax
 **Mitigated by techniques:** screen_double_buffer_d018
 
 ### Symptom
@@ -419,7 +419,7 @@ for per-frame text-mode work; measure or budget explicitly.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D018
-**Triggered by techniques:** petscii_screen_code_conversion, text_input_line, decimal_print
+**Triggered by techniques:** petscii_screen_code_conversion, text_input_line, decimal_print, password_encoding
 **Mitigated by techniques:** petscii_screen_code_conversion
 
 ### Symptom

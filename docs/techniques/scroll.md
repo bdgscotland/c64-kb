@@ -609,6 +609,131 @@ in positional math plus the occasional carry. Well within PAL budget.
 
 ---
 
+## charset_parallax — Parallax inside the character layer by rolling reserved glyphs
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018
+**Uses kernal:** (none)
+**Requires:** infinite_scroll_h
+**Cost:** cycles_per_frame=378, bytes_code=26
+**Cost basis:** derived-listing
+
+### Why
+
+`parallax_dual_layer` gets its second layer from sprites, and a raster
+band split gets it from a second scroll value per band, so its layers
+cannot overlap. Character parallax needs neither. The background is a
+repeating pattern drawn with a few reserved glyphs, and the glyph bytes
+are shifted so the pattern moves at a different speed from the
+foreground tiles that share the screen. It costs a few hundred cycles a
+frame, no sprites and no raster interrupt.
+
+### How
+
+1. **Reserve the background glyphs.** Pick a tile of glyphs, 2x2 is
+   usual (A B over C D, a 16x16 pattern), in a RAM charset. Fill every
+   background cell with A, B, C or D by world column and row parity:
+   `code = base + (world_col & 1) + 2 * (row & 1)`. Foreground tiles use
+   other codes, never these four.
+2. **Scroll the whole screen as the foreground.** `$D016` XSCROLL each
+   frame and a one-column shift of screen RAM on the carry
+   (`infinite_scroll_h`). Background cells ride along with it, so
+   without step 3 the pattern moves at the foreground's speed.
+3. **Shift the glyph bytes against the scroll.** Each pixel row of the
+   tile is a 16-bit word, left glyph's byte high. One pixel right is
+   `LDA right,X / LSR / ROR left,X / ROR right,X`: LSR drops the right
+   byte's last pixel into carry, the first ROR takes it in at the left
+   edge and drops the left byte's last pixel into carry, the second ROR
+   takes that in. That is 20 cycles a pixel row, 320 for the 16 rows of
+   a 2x2 tile. One pixel left is the mirror: `LDA left,X / ASL / ROL
+   right,X / ROL left,X`.
+4. **Pick the rate.** The pattern's speed on screen is the foreground's
+   speed minus the glyph shift speed. A foreground at 1 px a frame
+   leftward with a one-pixel right roll every second frame puts the
+   background at 1/2 px a frame leftward. A roll every frame holds it
+   still; a roll in the same direction as the scroll makes it faster
+   than the foreground.
+5. **Do it in the blank.** The glyph bytes are read on every raster
+   line of every background row, so the roll must finish before the
+   first background row is fetched, or that frame shows old rows above
+   the write and new rows below it.
+
+Vertical is byte rotation, not bit rotation: to move the tile down one
+pixel, each 16-byte column (A over C, B over D) moves every byte to the
+next row's address, and the last row's byte wraps to the first. Unrolled, that
+is a load and a store per byte, about 128 cycles a column (arithmetic
+from 4-cycle absolute loads and stores, not built here).
+
+### Why it works
+
+The VIC-II has no copy of a glyph. It reads eight bytes from the
+charset for each cell's code on every line of the row, so changing the
+tile's 32 bytes changes every background cell on the screen at once,
+however many there are. The screen RAM is untouched; the scroll code
+still moves the cells, and the cell grid and the glyph content add. In
+the recipe the foreground moved 203 px in 203 frames and the pattern
+101 px against it, so the pattern moved 102 px, which the exit
+screenshot confirms to the pixel.
+
+### Variations
+
+- **Pre-shifted copies instead of a roll.** Keep every phase of the
+  tile in a table (16 phases of 32 bytes for a 2x2 hires tile, 512
+  bytes) and copy this frame's phase in. The copy does not accumulate
+  error and can jump phases, but in the recipe it cost 560 cycles,
+  including the pointer set-up for the phase, against 378 for the roll.
+  The roll is cheaper because it touches each byte in place.
+- **One charset per phase.** Store each phase in its own charset and
+  flip `$D018` (Hawkeye used four charsets switched continuously, per
+  C64-Wiki; not measured here). One store a frame, 2 KB of RAM per
+  phase, and every other glyph copied into every charset.
+- **Multicolour.** A multicolour pixel is two bits, so one pixel step is
+  two rolls, twice the cycles (codebase64; not built here).
+- **Shared cells.** Where a foreground tile and the background share a
+  cell, that cell needs its own glyph, rebuilt after each roll as
+  `(background AND NOT mask) OR foreground` per byte, the merge
+  `char_bullets` does for bullets. The recipe forbids shared cells
+  instead: foreground tiles are whole cells, so a tile's edge is a cell
+  edge.
+- **Animated glyphs.** Rewriting a glyph's bytes in place is
+  `charset_animation`; this technique is that method with the new bytes
+  computed from the old ones by a shift.
+
+### Cycle budget
+
+The roll of a 2x2 hires tile is 378 cycles measured with CIA1 timer B,
+which includes about five cycles of the timer's stop; the instruction
+count is 373 with `JSR` and `RTS`. Measured in VICE x64sc 3.10 on PAL and NTSC alike,
+because it runs in the vertical blank where no cycles are stolen. It
+runs every second frame at half speed, so the typical frame is 378 or 0.
+The worst frame is a roll frame; the `**Cost:**` line states it, and
+the 26-byte routine from the Oscar64 map. A larger tile scales the roll
+linearly: 20 cycles per pixel row per glyph pair. The recipe's screen
+shift on the carry frame, 12,321 cycles on PAL and 12,537 on NTSC, is
+`infinite_scroll_h`'s cost, not this technique's.
+
+### Recipes
+
+- `recipes/oscar64/charset-parallax.md` — a 2x2 background tile rolled
+  one pixel every second frame under a foreground scrolled at 1 px a
+  frame; the program checks the glyph bytes against a model and every
+  cell against the map after 203 frames, and prints both methods'
+  cycles; PAL and NTSC
+
+### Sources
+
+- https://codebase.c64.org/doku.php?id=base:simple_parallax_shifting
+  (2x2 tile, ASL/ROL and LSR/ROR across the glyph pair, byte moves for
+  vertical, a call every second frame for a slower layer, twice per
+  frame in multicolour). Read for facts; no code is taken from it.
+- https://www.c64-wiki.com/wiki/Parallax_Scrolling (bits "rolled
+  (horizontally) or copied (all directions) within one or several
+  chars"; X-Out, Snare and Parallax named; Hawkeye's four charsets;
+  raster-band layers "cannot overlap"). Not measured here.
+
+---
+
 ## bitmap_scroll — Bitmap-mode scroll via $D016 + bitmap shuffling
 
 **Complexity:** high

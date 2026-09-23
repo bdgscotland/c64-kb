@@ -677,5 +677,53 @@
       "pal": "screenshots/slope-collision.png",
       "ntsc": "screenshots/slope-collision-ntsc.png"
     }
+  },
+  "oscar64/password-state": {
+    "cycles": 80000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/password-state.png",
+      "ntsc": "screenshots/password-state-ntsc.png"
+    }
+  },
+  "oscar64/multi-sprite-object": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/multi-sprite-object.png",
+      "ntsc": "screenshots/multi-sprite-object-ntsc.png"
+    }
+  },
+  "oscar64/nav-area-pathfinding": {
+    "cycles": 26000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/nav-area-pathfinding.png",
+      "ntsc": "screenshots/nav-area-pathfinding-ntsc.png"
+    }
+  },
+  "oscar64/charset-parallax": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/charset-parallax.png",
+      "ntsc": "screenshots/charset-parallax-ntsc.png"
+    }
   }
 }
