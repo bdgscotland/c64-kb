@@ -15,11 +15,17 @@ static const char ap_pattern[] = { A_PUNCH, A_PUNCH, A_PUNCH, A_KICK, A_JUMP };
 static char ap_move, ap_last;
 static unsigned ap_frames;
 
-// The meter records from the first stage clear on: those frames walk,
-// scroll and fight, where the first stage's frames never scroll.
+// Which 255 play frames the meter records (-dMETER_WINDOW=n):
+// 0, the default: from the second stage's lock, the crowded fight (four
+//    fighters, knock-downs, the hero's KO), where the camera stands still;
+// 1: from the first stage clear, the walk to that lock: every frame
+//    scrolls, one fighter on the screen.
+#ifndef METER_WINDOW
+#define METER_WINDOW 0
+#endif
 static bool ap_recording(void)
 {
-    return (events & EV_UNLOCK) != 0;
+    return METER_WINDOW ? (events & EV_UNLOCK) != 0 : locks >= 2;
 }
 
 static bool ap_target_ok(char f)

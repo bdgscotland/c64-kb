@@ -38,8 +38,9 @@ __export const char asm_blob[] = {
 
 // PROF=n (a build define) meters one subsystem instead of the whole frame:
 // 1 hero, AI, moves and hits; 2 camera and scroll; 3 the sprite bands and
-// publish; 4 music, effects and HUD. README.md has the figures. The IRQs
-// are added to the whole-frame figure only (PROF=0).
+// publish; 4 music, effects and HUD; 5 the three IRQs alone (no main-loop
+// bracket, so every IRQ times itself on CIA2 timer B). README.md has the
+// figures. The whole-frame figure (PROF=0) holds the IRQs too.
 #ifndef PROF
 #define PROF 0
 #endif
@@ -282,7 +283,7 @@ int main(void)
                 late++;             // this frame's work ran past the next line 251
             if (!PROF)
                 METER_PAUSE;        // the main loop's share
-            fold_irq_time(!PROF);   // the IRQs' share outside it
+            fold_irq_time(!PROF || PROF == 5);  // the IRQs' share outside it
             meter_frame();          // the frame's own work ends here
         }
         else

@@ -24,6 +24,6 @@
     { "name": "the kerb's yellow edge, line 174, right of the hero", "type": "rect", "colour": 7, "vic_x": 150, "line": 174, "width": 184, "height": 1 },
     { "name": "row 20, between street and HUD, is blank", "type": "rect", "colour": 11, "vic_x": 31, "line": 211, "width": 304, "height": 8 },
     { "name": "display the same on both models", "type": "same", "cells": [0, 0, 23, 39] },
-    { "name": "frame meter, 255 play frames from the first stage clear", "type": "meter", "row": 24, "col": 20, "frames": 255 }
+    { "name": "frame meter, 255 play frames from the second stage's lock (the crowded fight)", "type": "meter", "row": 24, "col": 20, "frames": 255 }
   ]
 }

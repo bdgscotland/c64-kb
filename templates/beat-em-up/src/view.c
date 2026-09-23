@@ -272,9 +272,13 @@ void view_sprites(void)
         if (!shown(f))
             continue;
         const struct Part *pt = pose_part[anim_pose(&fanim[f])];
+        int ox = (int)fx[f] - (int)camx + 31;           // part_vic_x, once a fighter
+        bool left = fface[f] == FACE_LEFT;
+        char mirror = left ? B_MIRROR : 0;
+        char kind = fkind[f];
         for (char p = 0; p < 2; p++)
         {
-            int sx = part_vic_x(f, p);
+            int sx = left ? ox - 24 - pt[p].dx : ox + pt[p].dx;
             if (sx <= 0 || sx >= 344)
                 continue;                   // under a border: off (sprite_x_range_hidden_and_seam)
             if (k >= limit)
@@ -286,8 +290,8 @@ void view_sprites(void)
             char s = back + k;
             BLOB(ASM_BX1 + s) = (char)sx;
             BLOB(ASM_BY1 + s) = sy;
-            BLOB(ASM_BP1 + s) = SPR_BLOCK + pt[p].block + (fface[f] == FACE_LEFT ? B_MIRROR : 0);
-            BLOB(ASM_BC1 + s) = p ? trousers[fkind[f]] : shirt[fkind[f]];
+            BLOB(ASM_BP1 + s) = SPR_BLOCK + pt[p].block + mirror;
+            BLOB(ASM_BC1 + s) = p ? trousers[kind] : shirt[kind];
             if (sx & 0x100)
                 msb |= 1 << k;
             en |= 1 << k;

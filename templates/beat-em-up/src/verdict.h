@@ -1,24 +1,28 @@
 // verdict.h: the AUTOPILOT build's pictures and self-check. Included by
 // main.c only when AUTOPILOT is set.
 //
-// Photo stops. At the first three crowded moments (four fighters on the
-// screen, eight parts in the fighter band, ground lines within 24) the
-// game is held for PHOTO_FRAMES frames: nothing moves, the IRQs run as in
-// play, and HUD rows 21-23 show the fighter band's table instead of the
-// bars and faces. tools/flickercheck.py shoots inside the stops, renders
-// the eight parts from the table and SPRITE-ART, and matches the picture.
+// Photo stops. At three crowded moments (four fighters in view, every part
+// inside the sprite X range, ground lines within 24: all eight sprites of
+// the fighter band on the same lines), two in stage 2 and one in stage 3,
+// the game is held for PHOTO_FRAMES frames: nothing moves, the IRQs run as
+// in play, and HUD rows 21-23 show the fighters' state instead of the bars
+// and faces. tools/flickercheck.py shoots inside the stops, builds the
+// eight parts from art.c itself, and matches the picture.
 //
 // The verdict. After stage 3's first wave is beaten the program grades
 // itself and freezes: $02FF = $01 and a green border on a pass, $02 and
-// red on a fail; row 21 says which checks failed (c64-kb headless-verify).
+// red on a fail; on a fail row 24 column 12 shows the failed checks as bits
+// (the `fails` bits in grade()) (c64-kb headless-verify).
 //
 // DEBUG_AT=n (a build define) freezes at frame n instead and prints the
-// state on row 21: frame, hero x, y, mode, hp, camera, stage, wave, events.
+// state: row 21 frame, hero x, y, mode, hp, camera, stage, wave, events;
+// row 22 each enemy's x, y, mode and AI state.
 #ifndef DEBUG_AT
 #define DEBUG_AT 0
 #endif
 #define PHOTO_FRAMES 64
 #define PHOTOS       3
+#define PHOTO_GAP    400            // frames between stops, so they are not all in one fight
 #define GRADE_DELAY  20             // frames after the wave is beaten: before the next spawns (40)
 
 static char photo_left, photos, grade_wait;
@@ -66,46 +70,53 @@ static void debug_print(void)
 }
 
 // ---- photo stops ---------------------------------------------------------------
+// From the model, not the sprite table (FLICKER_DEMO drops a part from the
+// table, and its stops must fall where the real build's do): four fighters
+// in view, none blinking, every part inside the sprite X range, the ground
+// lines within 24.
 static bool crowded(void)
 {
     char lo = 255, hi = 0;
     for (char f = 0; f < NFIGHT; f++)
     {
-        if (fmode[f] == M_OFF)
+        if (fmode[f] == M_OFF || fmode[f] == M_KO || finvuln[f])
             return false;
+        for (char k = 0; k < 2; k++)
+        {
+            int x = part_vic_x(f, k);
+            if (x <= 0 || x >= 344)
+                return false;
+        }
         if (fy[f] < lo)
             lo = fy[f];
         if (fy[f] > hi)
             hi = fy[f];
     }
-    char back = *(volatile char *)ASM_FRONT ^ 8;
-    return hi - lo <= 24 && *(volatile char *)(ASM_BEN1 + (back >> 3)) == 0xff;
+    return hi - lo <= 24;
 }
 
-// The fighter band as view_sprites just built it (the half the next blank
-// shows), on HUD rows 21-23: "PHOTO n EN ee MSB mm", then per sprite
-// "xxxyyppc": X (9 bits), the Y register, the pointer, the colour, in hex.
+// The model the picture must show, not the sprite table: on HUD rows 21-23,
+// "PHOTO n CAM cccc", then per fighter "xxxxyyhhpfk": world x, ground line,
+// height, pose, facing, kind, in hex, two fighters a row. The tool builds
+// the parts from art.c's pose table itself, so a part the multiplexer
+// dropped or showed wrong is a mismatch.
 static void photo_dump(void)
 {
-    char back = *(volatile char *)ASM_FRONT ^ 8;
-    char bi = back >> 3;
-    char msb = *(volatile char *)(ASM_BMSB1 + bi);
     for (unsigned i = 21 * 40; i < 24 * 40; i++)
         HUDPAGE[i] = CH_SPACE;
     put_text(21, 0, "photo");
     put_num(21, 6, photos, 1);
-    put_text(21, 8, "en");
-    put_hex(HUDPAGE + 21 * 40 + 11, *(volatile char *)(ASM_BEN1 + bi), 2);
-    put_text(21, 14, "msb");
-    put_hex(HUDPAGE + 21 * 40 + 18, msb, 2);
-    for (char s = 0; s < 8; s++)
+    put_text(21, 8, "cam");
+    put_hex(HUDPAGE + 21 * 40 + 12, camx, 4);
+    for (char f = 0; f < NFIGHT; f++)
     {
-        char *p = HUDPAGE + (22 + (s >> 2)) * 40 + (s & 3) * 9;
-        unsigned x = *(volatile char *)(ASM_BX1 + back + s) | ((msb >> s) & 1 ? 0x100 : 0);
-        put_hex(p, x, 3);
-        put_hex(p + 3, *(volatile char *)(ASM_BY1 + back + s), 2);
-        put_hex(p + 5, *(volatile char *)(ASM_BP1 + back + s), 2);
-        put_hex(p + 7, *(volatile char *)(ASM_BC1 + back + s) & 15, 1);
+        char *p = HUDPAGE + (22 + (f >> 1)) * 40 + (f & 1) * 14;
+        put_hex(p, fx[f], 4);
+        put_hex(p + 4, fy[f], 2);
+        put_hex(p + 6, fh[f], 2);
+        put_hex(p + 8, anim_pose(&fanim[f]), 1);
+        put_hex(p + 9, fface[f], 1);
+        put_hex(p + 10, fkind[f], 1);
     }
 }
 
@@ -124,7 +135,9 @@ static void photo_frame(void)
         }
         return;
     }
-    if (photos < PHOTOS && state == ST_PLAY && frame - photo_last > 150 && crowded())
+    // Two in the second stage's fights, the third in the last stage's.
+    bool due = stage == 2 ? photos < PHOTOS : photos < PHOTOS - 1;
+    if (due && state == ST_PLAY && frame - photo_last > PHOTO_GAP && crowded())
     {
         photos++;
         photo = true;
