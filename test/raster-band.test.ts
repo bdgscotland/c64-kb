@@ -29,6 +29,7 @@ Body text.
 describe("parseRasterBand", () => {
   it("reads ranges, single lines and movable, and drops a trailing note", () => {
     expect(parseRasterBand("45-250")).toEqual({ kind: "lines", ranges: [[45, 250]], canonical: "45-250" });
+    expect(parseRasterBand("45–250")).toEqual({ kind: "lines", ranges: [[45, 250]], canonical: "45-250" });
     expect(parseRasterBand("251-311, 0-50 (both borders)")).toEqual({
       kind: "lines", ranges: [[0, 50], [251, 311]], canonical: "0-50,251-311",
     });
@@ -81,7 +82,7 @@ describe("extractGraphEntities - Raster band line", () => {
         }
       }
       expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("Raster band"))).toEqual([]);
-      expect(banded).toContain("fli_image=45-250");
+      expect(banded).toContain("fli_image=45-251");
     } finally {
       warn.mockRestore();
     }

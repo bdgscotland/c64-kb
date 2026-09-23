@@ -230,7 +230,7 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** stable_raster_irq, multicolor_bitmap
-**Raster band:** 45-250 (the fli-image recipe's first IRQ is on line 45, its last FLI line is 250)
+**Raster band:** 45-251 (the fli-image recipe's first IRQ is on line 45; its last FLI line is 250 and the handler exits near cycle 50 of line 251)
 **Cost:** cycles_per_line=63, lines_active=200, cycles_per_frame=12600, bytes_code=3277, bytes_data=16384, irq_slots=1
 **Cost basis:** estimated
 
@@ -334,7 +334,7 @@ On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
-**Raster band:** 45-250 (fli_image's engine, which How says this reuses unchanged)
+**Raster band:** 45-251 (fli_image's engine, which How says this reuses unchanged)
 
 ### Why
 
@@ -374,7 +374,7 @@ The cycle budget is identical to `fli_image`: two writes per line (`STA $D018`, 
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
-**Raster band:** 45-250 (fli_image's per-line engine; the image swap is a few writes in the border)
+**Raster band:** 45-251 (fli_image's per-line engine only; the page does not say on which line the image swap runs)
 
 ### Why
 

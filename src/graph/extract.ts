@@ -127,7 +127,7 @@ export function parseRasterBand(raw: string): RasterBand | { error: string } {
   if (value === "movable") return { kind: "movable", canonical: "movable" };
   const ranges: Array<[number, number]> = [];
   for (const part of value.split(",").map((s) => s.trim())) {
-    const m = part.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+    const m = part.match(/^(\d+)(?:\s*[-–]\s*(\d+))?$/);
     if (!m) return { error: `"${part}" is not a line number, a range N-M, or "movable"` };
     const first = Number(m[1]);
     const last = m[2] !== undefined ? Number(m[2]) : first;

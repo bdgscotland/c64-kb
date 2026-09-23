@@ -120,10 +120,12 @@ reports a hit as `prerequisite_conflict`, without changing anyone's
 `**Demands:**`.
 
 An optional `**Raster band:**` line names the raster lines on which the
-technique holds the CPU. It rides the Technique node as `raster_band`.
+technique holds the CPU. It rides the Technique node as `raster_band`. For a technique
+that works by raster IRQs, the band is every line on which its IRQs run,
+from the first IRQ line to the line on which the last handler exits.
 
 ```
-**Raster band:** 45-250 (the fli-image recipe's first IRQ is on line 45, its last FLI line is 250)
+**Raster band:** 45-251 (the fli-image recipe's first IRQ is on line 45; its handler exits on line 251)
 ```
 
 The value is one of:

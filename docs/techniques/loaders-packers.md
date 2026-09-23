@@ -377,7 +377,7 @@ All of these tricks work because the 1541 provides raw access to the GCR bitstre
 
 **Complexity:** medium
 **Region:** both
-**Uses kernal:** LOAD
+**Uses kernal:** (none — loads go through Krill's own entry points, not $FFD5; an earlier version of this line said LOAD, which made the compatibility check report a false serial-bus conflict with krill_loader_integration)
 
 ### Why
 

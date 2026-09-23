@@ -1793,7 +1793,7 @@ export async function timingBudget(opts: {
     `Badline: the VIC takes the bus on cycles 15-54 and drops BA on cycle 12, so ${BADLINE_CYCLES_LOST} cycles are lost to code that is not writing on 12-14 (40 to code that is). No read cycle is possible between 12 and 54.`,
     `IRQ overhead: ${irq_overhead} cycles before the handler's first instruction (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314; 7 via $FFFE with the KERNAL out), plus 0-6 cycles of jitter unless a double IRQ is used.`,
     sprites > 0
-      ? `Sprite DMA: ${sprites} sprite(s) on the line (${sprites_source === "input" ? "from the request" : `from ${opts.technique}'s Cost line`}) take ${SPRITE_BA_LEAD_IN} + ${SPRITE_CYCLES_EACH} × ${sprites} = ${sprite_dma_cycles} cycles, measured in VICE x64sc for sprites numbered without gaps (5 for one, 19 for eight); each gap in the numbering adds up to ${SPRITE_BA_LEAD_IN} more (sprites 0 and 7 measured 10). The BA lead-in cycles are usable by writes only.`
+      ? `Sprite DMA: ${sprites} sprite(s) on the line (${sprites_source === "input" ? "from the request" : `from ${opts.technique}'s Cost line`}) take ${SPRITE_BA_LEAD_IN} + ${SPRITE_CYCLES_EACH} × ${sprites} = ${sprite_dma_cycles} cycles, measured in VICE x64sc for sprites numbered without gaps (5 for one, 19 for eight). This is the minimum for that many sprites: each gap in the numbering adds up to ${SPRITE_BA_LEAD_IN} more (sprites 0 and 7 measured 10). The BA lead-in cycles are usable by writes only.`
       : sprites_source === "none"
         ? `Sprite DMA: not counted. ${opts.technique} states no sprites_per_line; pass sprites_per_line to count it (3 + 2 per sprite, 19 for eight, measured in VICE x64sc).`
         : `Sprite DMA: none (0 sprites on the line).`,
