@@ -505,7 +505,7 @@ Expected length: 1 technique header + register/kernal/recipe lists + up to 3 doc
 
 Example: {"name": "stable_raster_irq"} returns the stable raster IRQ technique with its register list (D011, D012, D019), recipes, and documentation.
 
-Returns structured: {name, title, category, complexity, chip?, requires_region?, uses_registers[], uses_kernal[], recipes[], requires[{name,title}], required_by[{name,title}], mitigates[{name,title,severity}], documentation[], cost?}. requires/required_by are direct REQUIRES edges authored from **Requires:** lines (CONVENTIONS-techniques.md); a variant of a technique (double_irq of stable_raster_irq) is not a prerequisite and does not appear here. 'cost' is present only when the page carries a **Cost:** line: {cycles_per_line?, cycles_per_frame?, lines_active?, bytes_code?, bytes_data?, zp_bytes?, irq_slots?, basis}, integers, with only the keys the page stated; 'basis' is one of measured-vice, derived-listing, arithmetic, estimated and says how the figures were obtained (measured-vice means run in VICE; estimated means a judgement). Cycles are per PAL frame of 19,656 unless the page says otherwise; bytes are the built recipe's segments.`,
+Returns structured: {name, title, category, complexity, chip?, requires_region?, uses_registers[], uses_kernal[], recipes[], requires[{name,title}], required_by[{name,title}], mitigates[{name,title,severity}], documentation[], cost?}. requires/required_by are direct REQUIRES edges authored from **Requires:** lines (CONVENTIONS-techniques.md); a variant of a technique (double_irq of stable_raster_irq) is not a prerequisite and does not appear here. 'cost' is present only when the page carries a **Cost:** line: {cycles_per_line?, cycles_per_frame?, lines_active?, bytes_code?, bytes_data?, zp_bytes?, irq_slots?, basis}, integers, with only the keys the page stated; 'basis' is one of measured-vice, derived-listing, arithmetic, estimated and says how the figures were obtained (measured-vice means run in VICE; estimated means a judgement). Cycles are per PAL frame of 19,656 unless the page says otherwise; bytes are the built recipe's segments. 'claims' [{unit, mode, ranges?, relocatable?}] lists the HardwareUnits the technique holds (**Claims:** line; units such as sid_voice_2, sprite_0..7, vic_raster_irq, irq_vector_0314, zero_page with ranges like "E0-EF"); mode is owns, shares (writes under the owner's protocol), reads or init (once, before the frame loop). 'claims_stated' is stated, none (claims no unit) or unknown (the page states nothing: never read unknown as none); 'claims_basis' is measured-vice, derived-listing or estimated.`,
       inputSchema: {
         name: z
           .string()
@@ -526,11 +526,11 @@ Returns structured: {name, title, category, complexity, chip?, requires_region?,
     "c64_techniques_for",
     {
       description:
-        `List C64 techniques matching an optional set of filters: category, chip, region, register, recipe, or requires. All filters are optional — omitting all returns the full technique catalog.
+        `List C64 techniques matching an optional set of filters: category, chip, region, register, recipe, requires, or claims. All filters are optional — omitting all returns the full technique catalog.
 
 Purpose: Lets the agent discover what techniques are documented before committing to a specific one. Use before c64_technique_lookup to find the right technique name.
 
-Inputs: All optional. 'category' is one of raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader. 'chip' is a chip name (e.g. 'VIC-II', 'SID'). 'region' is PAL or NTSC (techniques locked to that region by a REQUIRES_REGION edge). 'register' is a register name (e.g. 'D011') to find techniques that USE it. 'recipe' is a recipe canonical name to find what techniques it implements. 'requires' is a technique name to find what builds on it — techniques whose REQUIRES chain reaches it directly or through other techniques.
+Inputs: All optional. 'category' is one of raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader. 'chip' is a chip name (e.g. 'VIC-II', 'SID'). 'region' is PAL or NTSC (techniques locked to that region by a REQUIRES_REGION edge). 'register' is a register name (e.g. 'D011') to find techniques that USE it. 'recipe' is a recipe canonical name to find what techniques it implements. 'requires' is a technique name to find what builds on it — techniques whose REQUIRES chain reaches it directly or through other techniques. 'claims' is a HardwareUnit name (e.g. 'sid_voice_3', 'vic_raster_irq', 'zero_page') to find the techniques that claim it in any mode; a technique whose page states no claims is not listed, which does not mean it leaves the unit alone.
 
 Output: {filter, techniques[{name, title, category, complexity}]}. Empty array means no matches.
 
@@ -564,11 +564,15 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
           .string()
           .optional()
           .describe("Technique name — returns techniques whose REQUIRES chain reaches it (what builds on it)"),
+        claims: z
+          .string()
+          .optional()
+          .describe("HardwareUnit name (e.g. 'sid_voice_3', 'vic_raster_irq') — returns techniques with a CLAIMS edge to it"),
       },
       outputSchema: TechniquesForSchema.shape,
     },
-    async ({ category, chip, region, register, recipe, requires }) => {
-      const result = await techniquesFor({ category, chip, region, register, recipe, requires });
+    async ({ category, chip, region, register, recipe, requires, claims }) => {
+      const result = await techniquesFor({ category, chip, region, register, recipe, requires, claims });
       return {
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
@@ -587,6 +591,8 @@ Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). O
 Output: {techniques[], conflicts[], band_separated[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b and the implied ones in 'via'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
 
 Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, serial_bus_busy (a resident fast loader against KERNAL disk I/O), region_mismatch, prerequisite_conflict (hard); shared_register, shared_kernal (soft).
+
+Unit claims (**Claims:** lines, CLAIMS edges to HardwareUnit nodes): unit_contention (hard: both own the same unit, e.g. two raster-IRQ owners, since there is one raster compare, or two owners of sprite_0..7); zero_page_overlap (hard, soft when either side is relocatable; 'shared' lists the bytes); unit_shared (soft: one owns and the other shares, e.g. SFX on voice 2 beside a music player); unit_read_while_driven (soft: one reads a port the other drives); init_order (info: one uses the unit once at start-up; info does not change the verdict). The claim rules do not run between a technique and its own prerequisite. data_coverage carries claims: stated | none | unknown per technique, and the text says for how many inputs claims are stated; an unknown claim set is never treated as "claims nothing", so a unit conflict with it cannot be ruled out.
 
 Examples: {"techniques": ["fli_image", "sprite_multiplex_24"]} → incompatible (cpu_vs_irq and sprite_set; resolution: multiplex outside the FLI region). {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019). {"techniques": ["fli_image", "digi_4bit"]} → incompatible (cpu_vs_irq: continuous interrupts inside the FLI region).
 

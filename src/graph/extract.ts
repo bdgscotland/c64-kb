@@ -26,7 +26,8 @@ export type GraphEntity =
   | { type: "technique_demands"; technique: string; resource: string; description: string }
   | { type: "implements"; recipe: string; technique: string }
   | { type: "produces_format"; recipe: string; format: string }
-  | { type: "technique"; name: string; title: string; category: string; complexity?: string; chip?: string; cost?: TechniqueCost; cost_basis?: CostBasis; raster_band?: string }
+  | { type: "technique"; name: string; title: string; category: string; complexity?: string; chip?: string; cost?: TechniqueCost; cost_basis?: CostBasis; raster_band?: string; claims_stated?: "stated" | "none"; claims_basis?: ClaimsBasis }
+  | { type: "claims"; owner: string; ownerKind: "Technique"; unit: string; mode: ClaimMode; ranges?: string; relocatable?: boolean; basis: ClaimsBasis }
   | { type: "technique_uses_register"; technique: string; register: string }
   | { type: "technique_uses_kernal"; technique: string; kernal: string }
   | { type: "technique_requires_region"; technique: string; region: string }
@@ -106,6 +107,186 @@ export type TechniqueCost = Partial<Record<CostKey, number>>;
 
 export const COST_BASIS_WORDS = ["measured-vice", "derived-listing", "arithmetic", "estimated"] as const;
 export type CostBasis = (typeof COST_BASIS_WORDS)[number];
+
+// ── Resource claims (schema 25) ─────────────────────────────────────────────
+// **Claims:** names the pieces of hardware a technique holds while it runs,
+// and how (docs/CONVENTIONS-techniques.md); **Claims basis:** says how the
+// claims were established. Each unit is a seeded HardwareUnit node. No line
+// means "unknown", which is not the same as `none` ("claims no unit").
+const CLAIMS_LINE = /^\*\*Claims:\*\*\s+(.+)$/;
+const CLAIMS_BASIS_LINE = /^\*\*Claims basis:\*\*\s+(.+)$/;
+
+export type HardwareUnitKind =
+  | "sid_voice" | "sid_shared" | "sprite" | "timer" | "tod" | "port" | "bus"
+  | "irq_source" | "vector" | "io_page" | "zero_page";
+export type HardwareUnit = { name: string; kind: HardwareUnitKind; addresses: string; chip?: string };
+
+const spriteUnit = (n: number): HardwareUnit => ({
+  name: `sprite_${n}`,
+  kind: "sprite",
+  addresses: `$${(0xd000 + 2 * n).toString(16).toUpperCase()}-$${(0xd001 + 2 * n).toString(16).toUpperCase()}, $${(0xd027 + n).toString(16).toUpperCase()}, bit ${n} of $D010/$D015/$D017/$D01B-$D01D, pointer at screen+$${(0x3f8 + n).toString(16).toUpperCase()}`,
+  chip: "VIC-II",
+});
+
+// The seed. Addresses from docs/hardware/c64-registers-reference.md and
+// docs/techniques/input.md (CIA1 ports). Keep in step with docs/ONTOLOGY.md.
+export const HARDWARE_UNITS: readonly HardwareUnit[] = [
+  { name: "sid_voice_1", kind: "sid_voice", addresses: "$D400-$D406", chip: "SID" },
+  { name: "sid_voice_2", kind: "sid_voice", addresses: "$D407-$D40D", chip: "SID" },
+  { name: "sid_voice_3", kind: "sid_voice", addresses: "$D40E-$D414", chip: "SID" },
+  { name: "sid_filter_volume", kind: "sid_shared", addresses: "$D415-$D418", chip: "SID" },
+  { name: "sid_voice_3_readback", kind: "sid_shared", addresses: "$D41B-$D41C", chip: "SID" },
+  { name: "sid_pots", kind: "port", addresses: "$D419-$D41A", chip: "SID" },
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map(spriteUnit),
+  { name: "cia1_timer_a", kind: "timer", addresses: "$DC04-$DC05, $DC0E", chip: "CIA1" },
+  { name: "cia1_timer_b", kind: "timer", addresses: "$DC06-$DC07, $DC0F", chip: "CIA1" },
+  { name: "cia2_timer_a", kind: "timer", addresses: "$DD04-$DD05, $DD0E", chip: "CIA2" },
+  { name: "cia2_timer_b", kind: "timer", addresses: "$DD06-$DD07, $DD0F", chip: "CIA2" },
+  { name: "cia1_tod", kind: "tod", addresses: "$DC08-$DC0B", chip: "CIA1" },
+  { name: "cia2_tod", kind: "tod", addresses: "$DD08-$DD0B", chip: "CIA2" },
+  { name: "cia1_port_a", kind: "port", addresses: "$DC00 (keyboard column drive, control port 2, POT select)", chip: "CIA1" },
+  { name: "cia1_port_b", kind: "port", addresses: "$DC01 (keyboard rows, control port 1)", chip: "CIA1" },
+  { name: "cia2_vic_bank", kind: "port", addresses: "$DD00 bits 0-1", chip: "CIA2" },
+  { name: "serial_bus", kind: "bus", addresses: "$DD00 bits 3-7 and the drive", chip: "CIA2" },
+  { name: "user_port", kind: "port", addresses: "$DD01", chip: "CIA2" },
+  { name: "vic_raster_irq", kind: "irq_source", addresses: "$D012, $D011 bit 7, $D019/$D01A bit 0", chip: "VIC-II" },
+  { name: "irq_vector_0314", kind: "vector", addresses: "$0314-$0315", chip: "6510" },
+  { name: "irq_vector_fffe", kind: "vector", addresses: "$FFFE-$FFFF", chip: "6510" },
+  { name: "nmi_vector_0318", kind: "vector", addresses: "$0318-$0319", chip: "6510" },
+  { name: "nmi_vector_fffa", kind: "vector", addresses: "$FFFA-$FFFB", chip: "6510" },
+  { name: "expansion_io1", kind: "io_page", addresses: "$DE00-$DEFF" },
+  { name: "expansion_io2", kind: "io_page", addresses: "$DF00-$DFFF" },
+  { name: "zero_page", kind: "zero_page", addresses: "$02-$FF", chip: "6510" },
+];
+const HARDWARE_UNIT_NAMES: ReadonlySet<string> = new Set(HARDWARE_UNITS.map((u) => u.name));
+
+export const CLAIM_MODES = ["owns", "shares", "reads", "init"] as const;
+export type ClaimMode = (typeof CLAIM_MODES)[number];
+export const CLAIMS_BASIS_WORDS = ["measured-vice", "derived-listing", "estimated"] as const;
+export type ClaimsBasis = (typeof CLAIMS_BASIS_WORDS)[number];
+
+export type Claim = { unit: string; mode: ClaimMode; ranges?: string; relocatable?: boolean };
+
+/** Parse zero-page byte ranges written `$02-$0D+$24-$2F` into merged [first, last] pairs. */
+export function parseZeroPageRanges(raw: string): Array<[number, number]> | { error: string } {
+  const out: Array<[number, number]> = [];
+  for (const part of raw.split("+").map((s) => s.trim())) {
+    const m = part.match(/^\$([0-9A-Fa-f]{2})(?:\s*-\s*\$([0-9A-Fa-f]{2}))?$/);
+    if (!m) return { error: `"${part}" is not a zero-page byte $XX or range $XX-$YY` };
+    const first = parseInt(m[1], 16);
+    const last = m[2] !== undefined ? parseInt(m[2], 16) : first;
+    if (first > last) return { error: `range ${part} runs backwards` };
+    if (first < 0x02) return { error: `${part} includes $00-$01, the 6510 port, which is not zero-page RAM` };
+    out.push([first, last]);
+  }
+  out.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const r of out) {
+    const prev = merged[merged.length - 1];
+    if (prev && r[0] <= prev[1] + 1) prev[1] = Math.max(prev[1], r[1]);
+    else merged.push([r[0], r[1]]);
+  }
+  return merged;
+}
+
+const hex2 = (n: number): string => n.toString(16).toUpperCase().padStart(2, "0");
+/** Canonical form stored on a CLAIMS edge: "02-0D,24-2F", a single byte as "B7". */
+export function formatZeroPageRanges(ranges: Array<[number, number]>): string {
+  return ranges.map(([a, b]) => (a === b ? hex2(a) : `${hex2(a)}-${hex2(b)}`)).join(",");
+}
+/** Inverse of formatZeroPageRanges; returns [] for anything malformed. */
+export function zeroPageRangesFromCanonical(canonical: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const part of canonical.split(",").filter((s) => s !== "")) {
+    const m = part.match(/^([0-9A-F]{2})(?:-([0-9A-F]{2}))?$/i);
+    if (!m) return [];
+    out.push([parseInt(m[1], 16), parseInt(m[2] ?? m[1], 16)]);
+  }
+  return out;
+}
+
+/** Split on commas that are not inside parentheses. */
+function splitTopLevel(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of s) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      parts.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  parts.push(cur);
+  return parts.map((p) => p.trim()).filter((p) => p !== "");
+}
+
+/**
+ * Parse the value of a **Claims:** line. `none` alone returns an empty list
+ * (claims no unit). Anything outside the grammar returns an error and the
+ * whole line is refused: a partial claim set would read as a complete one.
+ */
+export function parseClaims(raw: string): Claim[] | { error: string } {
+  const value = raw.replace(/`/g, "").trim();
+  const items = splitTopLevel(value);
+  if (items.length === 0) return { error: "empty Claims line" };
+  if (items.length === 1 && items[0].toLowerCase() === "none") return [];
+  const claims: Claim[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (item.toLowerCase() === "none") return { error: `"none" must stand alone` };
+    const m = item.match(/^([a-z][a-z0-9_]*(?:-\d+)?)(?:\s+(\$[^()]*?))?\s*(?:\(([^()]*)\))?$/);
+    if (!m) return { error: `"${item}" is not <unit>[ (<mode>)]` };
+    const [, unitWord, addr, mods] = m;
+    let mode: ClaimMode = "owns";
+    let relocatable = false;
+    let modeSeen = false;
+    for (const word of (mods ?? "").split(",").map((w) => w.trim()).filter((w) => w !== "")) {
+      if ((CLAIM_MODES as readonly string[]).includes(word)) {
+        if (modeSeen) return { error: `"${item}" names two modes` };
+        mode = word as ClaimMode;
+        modeSeen = true;
+      } else if (word === "relocatable") {
+        relocatable = true;
+      } else {
+        return { error: `"${word}" in "${item}" is not a mode (${CLAIM_MODES.join(", ")}) or "relocatable"` };
+      }
+    }
+    // A unit range: sprite_0-7, sid_voice_1-3.
+    let units: string[];
+    const range = unitWord.match(/^(.*_)(\d+)-(\d+)$/);
+    if (range) {
+      const first = Number(range[2]);
+      const last = Number(range[3]);
+      if (first > last) return { error: `unit range "${unitWord}" runs backwards` };
+      units = [];
+      for (let n = first; n <= last; n++) units.push(`${range[1]}${n}`);
+    } else {
+      units = [unitWord];
+    }
+    for (const u of units) {
+      if (!HARDWARE_UNIT_NAMES.has(u)) return { error: `"${u}" is not a hardware unit (see docs/ONTOLOGY.md, HardwareUnit)` };
+    }
+    if (units.includes("zero_page")) {
+      if (!addr) return { error: `zero_page needs its bytes, e.g. "zero_page $FB-$FE"` };
+      const zp = parseZeroPageRanges(addr);
+      if ("error" in zp) return { error: zp.error };
+      if (seen.has("zero_page")) return { error: `zero_page is claimed twice; join the ranges with "+"` };
+      seen.add("zero_page");
+      claims.push({ unit: "zero_page", mode, ranges: formatZeroPageRanges(zp), ...(relocatable ? { relocatable: true } : {}) });
+      continue;
+    }
+    if (addr) return { error: `"${item}": only zero_page takes addresses` };
+    if (relocatable) return { error: `"${item}": only zero_page can be relocatable` };
+    for (const u of units) {
+      if (seen.has(u)) return { error: `${u} is claimed twice` };
+      seen.add(u);
+      claims.push({ unit: u, mode });
+    }
+  }
+  return claims;
+}
 
 // Highest raster line number on either machine: PAL has 312 lines (0-311),
 // NTSC 263 (0-262). A band is stated in raster line numbers, the same
@@ -500,7 +681,7 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
     // Split body at H2 boundaries (each H2 = one Technique).
     const lines = rest.split("\n");
     let currentTech: { name: string; title: string; category: string; complexity?: string; chip?: string } | null = null;
-    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[]; requires?: string[]; cost?: TechniqueCost; costBasis?: string; rasterBand?: string } = {};
+    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[]; requires?: string[]; cost?: TechniqueCost; costBasis?: string; rasterBand?: string; claims?: Claim[]; claimsRefused?: boolean; claimsBasis?: string } = {};
 
     const flush = () => {
       if (!currentTech) return;
@@ -523,12 +704,36 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
       } else if (pendingMeta.costBasis !== undefined) {
         console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has a **Cost basis:** line but no **Cost:** line — ignored`);
       }
+      // Claims ride edges, but whether the page states them rides the node:
+      // "stated", "none", or absent (unknown). A line refused for its
+      // grammar, or with no usable basis, leaves the technique unknown.
+      let claims: Claim[] | undefined;
+      let claimsBasis: ClaimsBasis | undefined;
+      if (pendingMeta.claims !== undefined) {
+        const basis = pendingMeta.claimsBasis;
+        if (basis === undefined) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has a **Claims:** line but no **Claims basis:** line — Claims not ingested, so its claims read as unknown (see CONVENTIONS-techniques.md)`);
+        } else if (!(CLAIMS_BASIS_WORDS as readonly string[]).includes(basis)) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has claims basis "${basis}", which is not one of ${CLAIMS_BASIS_WORDS.join(", ")} — Claims not ingested (see CONVENTIONS-techniques.md)`);
+        } else {
+          claims = pendingMeta.claims;
+          claimsBasis = basis as ClaimsBasis;
+        }
+      } else if (pendingMeta.claimsBasis !== undefined && !pendingMeta.claimsRefused) {
+        console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has a **Claims basis:** line but no **Claims:** line — ignored`);
+      }
       entities.push({
         type: "technique",
         ...currentTech,
         ...(cost !== undefined && costBasis !== undefined ? { cost, cost_basis: costBasis } : {}),
         ...(pendingMeta.rasterBand !== undefined ? { raster_band: pendingMeta.rasterBand } : {}),
+        ...(claims !== undefined && claimsBasis !== undefined
+          ? { claims_stated: claims.length > 0 ? ("stated" as const) : ("none" as const), claims_basis: claimsBasis }
+          : {}),
       });
+      for (const c of claims ?? []) {
+        entities.push({ type: "claims", owner: currentTech.name, ownerKind: "Technique", ...c, basis: claimsBasis! });
+      }
       if (currentTech.chip) {
         entities.push({ type: "technique_belongs_to", technique: currentTech.name, chip: currentTech.chip });
       }
@@ -630,6 +835,22 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
           console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has **Raster band:** ${JSON.stringify(rb[1].trim())}: ${band.error} — band not ingested, so the technique conflicts as if it had none (see CONVENTIONS-techniques.md)`);
         } else {
           pendingMeta.rasterBand = band.canonical;
+        }
+        continue;
+      }
+      const clb = line.match(CLAIMS_BASIS_LINE);
+      if (clb) {
+        pendingMeta.claimsBasis = clb[1].trim().replace(/`/g, "");
+        continue;
+      }
+      const cl = line.match(CLAIMS_LINE);
+      if (cl) {
+        const parsed = parseClaims(cl[1]);
+        if ("error" in parsed) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has **Claims:** ${JSON.stringify(cl[1].trim())}: ${parsed.error} — Claims not ingested, so its claims read as unknown (see CONVENTIONS-techniques.md)`);
+          pendingMeta.claimsRefused = true;
+        } else {
+          pendingMeta.claims = parsed;
         }
         continue;
       }

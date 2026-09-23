@@ -170,6 +170,9 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
         await f.addTechnique(entity);
         graphCount++;
         break;
+      case "claims":
+        await f.linkClaims(entity);
+        break;
       case "technique_uses_register":
         await f.linkTechniqueUsesRegister(entity.technique, entity.register);
         break;

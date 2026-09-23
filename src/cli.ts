@@ -203,14 +203,15 @@ program
 
 program
   .command("techniques-for")
-  .description("List techniques filtered by category/chip/region/register/recipe/requires")
+  .description("List techniques filtered by category/chip/region/register/recipe/requires/claims")
   .option("--category <category>", "Filter by category (raster, sprite, scroll, bitmap, banking...)")
   .option("--chip <chip>", "Filter by chip (e.g. VIC-II, SID)")
   .option("--region <region>", "Filter by required region (PAL or NTSC)")
   .option("--register <register>", "Filter by register used (e.g. D011)")
   .option("--recipe <recipe>", "Filter by recipe that implements the technique")
   .option("--requires <technique>", "Filter to techniques that build on this one (REQUIRES chain, e.g. stable_raster_irq)")
-  .action(async (opts: { category?: string; chip?: string; region?: string; register?: string; recipe?: string; requires?: string }) => {
+  .option("--claims <unit>", "Filter to techniques that claim this HardwareUnit (e.g. sid_voice_3, vic_raster_irq)")
+  .action(async (opts: { category?: string; chip?: string; region?: string; register?: string; recipe?: string; requires?: string; claims?: string }) => {
     const { techniquesFor } = await import("./tools/query.ts");
     const result = await techniquesFor({
       category: opts.category,
@@ -219,6 +220,7 @@ program
       register: opts.register,
       recipe: opts.recipe,
       requires: opts.requires,
+      claims: opts.claims,
     });
     emit(result);
     process.exit(0);

@@ -83,7 +83,8 @@ type PendingEdge =
   | { kind: "technique_requires"; technique: string; requires: string }
   | { kind: "mitigated_by"; pitfall: string; target: string }
   | { kind: "archetype_features"; archetype: string; technique: string }
-  | { kind: "archetype_risks"; archetype: string; pitfall: string };
+  | { kind: "archetype_risks"; archetype: string; pitfall: string }
+  | { kind: "claims"; owner: string; ownerKind: "Technique"; unit: string; mode: string; ranges?: string; relocatable?: boolean; basis: string };
 
 function loadHashes(): Record<string, string> {
   try {
@@ -263,6 +264,9 @@ async function main() {
   let archetypeRisksDropped = 0;
   // A recipe's scaffolds: entry that names no Archetype node.
   let scaffoldsDropped = 0;
+  // A **Claims:** item whose technique or HardwareUnit is missing.
+  const claimsRequested = new Set<string>();
+  let claimsDropped = 0;
 
   // All edge operations are deferred to pass 2 so that every node exists
   // before any edge tries to reference it. This removes the implicit
@@ -455,6 +459,9 @@ async function main() {
             case "archetype_risks":
               pendingEdges.push({ kind: "archetype_risks", archetype: e.archetype, pitfall: e.pitfall });
               break;
+            case "claims":
+              pendingEdges.push({ ...e, kind: "claims" });
+              break;
           }
         }
       } catch (err) {
@@ -559,6 +566,10 @@ async function main() {
           if (!(await falkor.linkArchetypeRisks(edge.archetype, edge.pitfall))) archetypeRisksDropped++;
           archetypeRisksRequested.add(`${edge.archetype}|${edge.pitfall}`);
           break;
+        case "claims":
+          if (!(await falkor.linkClaims(edge))) claimsDropped++;
+          claimsRequested.add(`${edge.owner}|${edge.unit}`);
+          break;
         case "scaffolds":
           if (!(await falkor.linkRecipeScaffolds(edge.recipe, edge.archetype))) scaffoldsDropped++;
           scaffoldsRequested.add(`${edge.recipe}|${edge.archetype}`);
@@ -620,18 +631,19 @@ async function main() {
   const featuresLanded = await countEdges("FEATURES");
   const risksLanded = await countEdges("RISKS");
   const scaffoldsLanded = await countEdges("SCAFFOLDS");
+  const claimsLanded = await countEdges("CLAIMS");
   const totalTriggeredBy = triggeredByRequested.size;
   const totalCausedBy = causedByRequested.size;
   const totalRequires = requiresRequested.size;
   const totalMitigatedBy = mitigatedByRequested.size;
   console.log(`\nQdrant: ${qStats.total_points} vectors`);
   console.log(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
-  console.log(`Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by: ${triggeredByLanded} edges in graph, ${totalTriggeredBy} distinct references, ${triggeredByDropped} dropped. caused_by: ${causedByLanded} edges in graph, ${totalCausedBy} distinct references, ${causedByDropped} dropped. requires: ${requiresLanded} edges in graph, ${totalRequires} distinct references, ${requiresDropped} dropped. mitigated_by: ${mitigatedByLanded} edges in graph, ${totalMitigatedBy} distinct references, ${mitigatedByDropped} dropped. Archetypes: ${totalArchetypes}. archetype_features: ${featuresLanded} edges in graph, ${archetypeFeaturesRequested.size} distinct references, ${archetypeFeaturesDropped} dropped. archetype_risks: ${risksLanded} edges in graph, ${archetypeRisksRequested.size} distinct references, ${archetypeRisksDropped} dropped. scaffolds: ${scaffoldsLanded} edges in graph, ${scaffoldsRequested.size} distinct references, ${scaffoldsDropped} dropped.`);
-  const droppedRefs = triggeredByDropped + causedByDropped + requiresDropped + mitigatedByDropped + archetypeFeaturesDropped + archetypeRisksDropped + scaffoldsDropped;
+  console.log(`Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by: ${triggeredByLanded} edges in graph, ${totalTriggeredBy} distinct references, ${triggeredByDropped} dropped. caused_by: ${causedByLanded} edges in graph, ${totalCausedBy} distinct references, ${causedByDropped} dropped. requires: ${requiresLanded} edges in graph, ${totalRequires} distinct references, ${requiresDropped} dropped. mitigated_by: ${mitigatedByLanded} edges in graph, ${totalMitigatedBy} distinct references, ${mitigatedByDropped} dropped. Archetypes: ${totalArchetypes}. archetype_features: ${featuresLanded} edges in graph, ${archetypeFeaturesRequested.size} distinct references, ${archetypeFeaturesDropped} dropped. archetype_risks: ${risksLanded} edges in graph, ${archetypeRisksRequested.size} distinct references, ${archetypeRisksDropped} dropped. scaffolds: ${scaffoldsLanded} edges in graph, ${scaffoldsRequested.size} distinct references, ${scaffoldsDropped} dropped. claims: ${claimsLanded} edges in graph, ${claimsRequested.size} distinct references, ${claimsDropped} dropped.`);
+  const droppedRefs = triggeredByDropped + causedByDropped + requiresDropped + mitigatedByDropped + archetypeFeaturesDropped + archetypeRisksDropped + scaffoldsDropped + claimsDropped;
   if (droppedRefs > 0) {
-    console.warn(`[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`);
+    console.warn(`[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds/claims references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`);
   }
-  log(`DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${triggeredByLanded}/${totalTriggeredBy}/dropped=${triggeredByDropped} caused_by=${causedByLanded}/${totalCausedBy}/dropped=${causedByDropped} requires=${requiresLanded}/${totalRequires}/dropped=${requiresDropped} mitigated_by=${mitigatedByLanded}/${totalMitigatedBy}/dropped=${mitigatedByDropped} archetypes=${totalArchetypes} archetype_features=${featuresLanded}/${archetypeFeaturesRequested.size}/dropped=${archetypeFeaturesDropped} archetype_risks=${risksLanded}/${archetypeRisksRequested.size}/dropped=${archetypeRisksDropped} scaffolds=${scaffoldsLanded}/${scaffoldsRequested.size}/dropped=${scaffoldsDropped}`);
+  log(`DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${triggeredByLanded}/${totalTriggeredBy}/dropped=${triggeredByDropped} caused_by=${causedByLanded}/${totalCausedBy}/dropped=${causedByDropped} requires=${requiresLanded}/${totalRequires}/dropped=${requiresDropped} mitigated_by=${mitigatedByLanded}/${totalMitigatedBy}/dropped=${mitigatedByDropped} archetypes=${totalArchetypes} archetype_features=${featuresLanded}/${archetypeFeaturesRequested.size}/dropped=${archetypeFeaturesDropped} archetype_risks=${risksLanded}/${archetypeRisksRequested.size}/dropped=${archetypeRisksDropped} scaffolds=${scaffoldsLanded}/${scaffoldsRequested.size}/dropped=${scaffoldsDropped} claims=${claimsLanded}/${claimsRequested.size}/dropped=${claimsDropped}`);
 
   await falkor.close();
   process.exit(0);

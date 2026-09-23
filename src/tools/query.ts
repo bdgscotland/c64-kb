@@ -23,7 +23,7 @@ import { getQdrant, getFalkor, getAnalytics } from "../context.ts";
 import { embed } from "../services/embeddings.ts";
 import { BM25Encoder, type SparseVector } from "../services/bm25.ts";
 import { config } from "../config.ts";
-import { parseRasterBand, rasterBandsOverlap } from "../graph/extract.ts";
+import { parseRasterBand, rasterBandsOverlap, zeroPageRangesFromCanonical, formatZeroPageRanges, type Claim, type ClaimMode } from "../graph/extract.ts";
 import fs from "fs";
 import path from "path";
 import type {
@@ -893,7 +893,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
             t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
             t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
             t.cost_irq_slots AS cost_irq_slots, t.cost_sprites_per_line AS cost_sprites_per_line, t.cost_basis AS cost_basis,
-            t.raster_band AS raster_band
+            t.raster_band AS raster_band, t.claims_stated AS claims_stated, t.claims_basis AS claims_basis
      LIMIT 1`,
     { name }
   );
@@ -952,6 +952,8 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     cost_sprites_per_line: number | null;
     cost_basis: string | null;
     raster_band: string | null;
+    claims_stated: string | null;
+    claims_basis: string | null;
   };
 
   // Cost model (schema 22): only the keys the page's **Cost:** line carried
@@ -969,6 +971,19 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
         basis: row.cost_basis as TechniqueCostOutput["basis"],
       }
     : undefined;
+
+  // CLAIMS → HardwareUnits (schema 25). No Claims line reads as "unknown".
+  const claimRows = await f.roQuery(
+    `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
+     RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
+    { name }
+  );
+  const claims = (claimRows.data ?? []).map((r) => {
+    const c = r as { unit: string; mode: ClaimMode; ranges: string | null; relocatable: boolean | null };
+    return { unit: c.unit, mode: c.mode, ...(c.ranges ? { ranges: c.ranges } : {}), ...(c.relocatable ? { relocatable: true } : {}) };
+  });
+  const claims_stated: "stated" | "none" | "unknown" =
+    row.claims_stated === "stated" || row.claims_stated === "none" ? row.claims_stated : "unknown";
 
   // USES → Registers
   const regRows = await f.roQuery(
@@ -1065,6 +1080,9 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     mitigates,
     documentation,
     ...(cost ? { cost } : {}),
+    claims,
+    claims_stated,
+    ...(row.claims_basis ? { claims_basis: row.claims_basis } : {}),
   };
 
   let out = `# Technique: ${row.name} — ${row.title}\n\n`;
@@ -1077,6 +1095,12 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     const { basis, ...figures } = cost;
     out += `**Cost:** ${Object.entries(figures).map(([k, v]) => `${k}=${v}`).join(", ")}\n`;
     out += `**Cost basis:** ${basis}\n`;
+  }
+  if (claims_stated === "unknown") {
+    out += `**Claims:** unknown (the page states no unit claims; a unit conflict with it cannot be ruled out)\n`;
+  } else {
+    out += `**Claims:** ${claims_stated === "none" ? "none" : claims.map((c) => `${c.unit}${c.ranges ? ` $${c.ranges.replace(/,/g, "+$").replace(/-/g, "-$")}` : ""} (${c.mode}${c.relocatable ? ", relocatable" : ""})`).join(", ")}\n`;
+    out += `**Claims basis:** ${row.claims_basis ?? ""}\n`;
   }
   out += `\n`;
   if (uses_registers.length > 0) {
@@ -1117,6 +1141,7 @@ export async function techniquesFor(filter: {
   register?: string;
   recipe?: string;
   requires?: string;
+  claims?: string;
 }): Promise<TechniquesForResult> {
   const f = await getFalkor();
   const a = getAnalytics();
@@ -1148,6 +1173,11 @@ export async function techniquesFor(filter: {
   if (filter.recipe) {
     cypher += ` , (rec:Recipe {name: $recipe})-[:IMPLEMENTS]->(t)`;
     params.recipe = filter.recipe;
+  }
+  if (filter.claims) {
+    // "Who claims sid_voice_3": a CLAIMS edge to that HardwareUnit, any mode.
+    cypher += ` , (t)-[:CLAIMS]->(hu:HardwareUnit {name: $claims})`;
+    params.claims = filter.claims;
   }
   if (filter.category) {
     where.push(`t.category = $category`);
@@ -1264,7 +1294,9 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // counts. Drives the hard-conflict rules below and the data_coverage
   // report, so a technique the graph knows nothing about is named as such
   // instead of passing as compatible.
-  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[]; band: string | null };
+  // claims: the CLAIMS edges (schema 25); claimsStated "unknown" when the
+  // page has no usable Claims line, which is never read as "none".
+  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[]; band: string | null; claims: Claim[]; claimsStated: "stated" | "none" | "unknown" };
   const facts = new Map<string, Facts>();
   for (const tname of allNames) {
     const rr = await f.roQuery(
@@ -1274,16 +1306,28 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
        OPTIONAL MATCH (t)-[:USES]->(reg:Register)
        WITH t, demands, count(DISTINCT reg) AS registers
        OPTIONAL MATCH (t)-[:USES]->(k:KernalRoutine)
-       RETURN demands, registers, collect(DISTINCT k.name) AS kernal, t.raster_band AS band`,
+       RETURN demands, registers, collect(DISTINCT k.name) AS kernal, t.raster_band AS band, t.claims_stated AS claims_stated`,
       { name: tname }
     );
-    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[]; band: string | null } | undefined;
+    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[]; band: string | null; claims_stated: string | null } | undefined;
+    const claimRows = await f.roQuery(
+      `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
+       RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
+      { name: tname }
+    );
+    const claims: Claim[] = (claimRows.data ?? []).map((r) => {
+      const c = r as { unit: string; mode: ClaimMode; ranges: string | null; relocatable: boolean | null };
+      return { unit: c.unit, mode: c.mode, ...(c.ranges ? { ranges: c.ranges } : {}), ...(c.relocatable ? { relocatable: true } : {}) };
+    });
+    const stated = row?.claims_stated;
     facts.set(tname, {
       found: row !== undefined,
       demands: new Set((row?.demands ?? []).filter(Boolean)),
       registers: Number(row?.registers ?? 0),
       kernal: (row?.kernal ?? []).filter(Boolean),
       band: row?.band ?? null,
+      claims,
+      claimsStated: stated === "stated" || stated === "none" ? stated : "unknown",
     });
   }
 
@@ -1291,7 +1335,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // names. Each rule is symmetric; `has` tests one side. Returned rather than
   // pushed so the same rules serve the input pairs and the REQUIRES closure.
   type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
-  type HardHit = { kind: ConflictKind; shared: string[]; rationale: string; resolution: string };
+  type HardHit = { kind: ConflictKind; shared: string[]; rationale: string; resolution: string; severity?: "hard" | "soft" | "info" };
   // Raster bands (**Raster band:**, schema 24). The rules about sharing
   // raster lines (cpu_exclusive; cpu_vs_irq through mid-frame IRQs or
   // sprite-set changes; sprite_set) do not fire when both techniques state
@@ -1331,8 +1375,98 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     }
     bandSeparated.push({ a: a_name, b: b_name, a_band: facts.get(a_name)!.band!, b_band: facts.get(b_name)!.band!, rules: [rule] });
   };
-  const hardRules = (a_name: string, b_name: string): HardHit[] => {
+  // Unit claims (schema 25). Rules over the CLAIMS edges of one pair; skipped
+  // between a technique and its own REQUIRES prerequisite, whose unit it
+  // holds by design (the multiplexer's raster IRQ is the stable raster IRQ).
+  const claimRules = (a_name: string, b_name: string): HardHit[] => {
+    const A = facts.get(a_name)!;
+    const B = facts.get(b_name)!;
+    const byKind = new Map<string, { kind: ConflictKind; severity: "hard" | "soft" | "info"; units: string[]; pairs: Array<[string, string]>; relocatable: string[]; bothShare: boolean }>();
+    const add = (kind: ConflictKind, severity: "hard" | "soft" | "info", unit: string, first: string, second: string, relocatable: string[] = [], bothShare = false) => {
+      const key = `${kind}|${severity}|${first}|${second}|${bothShare}`;
+      let e = byKind.get(key);
+      if (!e) byKind.set(key, (e = { kind, severity, units: [], pairs: [], relocatable: [], bothShare }));
+      e.units.push(unit);
+      e.pairs.push([first, second]);
+      for (const r of relocatable) if (!e.relocatable.includes(r)) e.relocatable.push(r);
+    };
+    for (const ca of A.claims) {
+      for (const cb of B.claims) {
+        if (ca.unit !== cb.unit) continue;
+        let unitLabel = ca.unit;
+        if (ca.unit === "zero_page") {
+          const bytes = zeroPageOverlap(ca.ranges ?? "", cb.ranges ?? "");
+          if (bytes.length === 0) continue;
+          unitLabel = `zero_page $${formatZeroPageRanges(bytes).replace(/,/g, ",$").replace(/-/g, "-$")}`;
+          if (ca.mode === "owns" && cb.mode === "owns") {
+            const reloc = [ca.relocatable ? a_name : null, cb.relocatable ? b_name : null].filter((x): x is string => x !== null);
+            add("zero_page_overlap", reloc.length > 0 ? "soft" : "hard", unitLabel, a_name, b_name, reloc);
+            continue;
+          }
+        }
+        const m = [ca.mode, cb.mode];
+        const has = (x: ClaimMode, y: ClaimMode) => (m[0] === x && m[1] === y) || (m[0] === y && m[1] === x);
+        // [first, second] orders the pair as the resolution text reads it.
+        const ordered = (firstMode: ClaimMode): [string, string] => (ca.mode === firstMode ? [a_name, b_name] : [b_name, a_name]);
+        if (has("owns", "owns")) add("unit_contention", "hard", unitLabel, a_name, b_name);
+        else if (has("owns", "shares")) add("unit_shared", "soft", unitLabel, ...ordered("owns"));
+        else if (has("shares", "shares")) add("unit_shared", "soft", unitLabel, a_name, b_name, [], true);
+        else if (has("owns", "reads")) add("unit_read_while_driven", "soft", unitLabel, ...ordered("owns"));
+        else if (has("init", "owns")) add("init_order", "info", unitLabel, ...ordered("init"));
+        else if (has("init", "shares")) add("init_order", "info", unitLabel, ...ordered("init"));
+      }
+    }
+    const out: HardHit[] = [];
+    for (const e of byKind.values()) {
+      const [first, second] = e.pairs[0];
+      const units = compressUnits(e.units);
+      const list = units.join(", ");
+      switch (e.kind) {
+        case "unit_contention": {
+          const irq = e.units.includes("vic_raster_irq");
+          out.push({ kind: e.kind, severity: e.severity, shared: units,
+            rationale: `Both ${first} and ${second} own ${list}: each writes or holds it every frame and expects no one else to.`,
+            resolution: irq
+              ? `There is one raster compare. Run both as handlers in one interrupt chain (irq_chain_table): one technique owns $D012 and the other's handler becomes a chain entry that shares it${e.units.length > 1 ? "; for the other units, give one technique different ones (another sprite range, another voice)" : ""}.`
+              : `Give one of them other units (another sprite range, another SID voice), or rewrite one to share the unit under the other's protocol.` });
+          break;
+        }
+        case "zero_page_overlap":
+          out.push({ kind: e.kind, severity: e.severity, shared: units,
+            rationale: `${first} and ${second} both own ${list}.${e.relocatable.length > 0 ? ` ${e.relocatable.join(" and ")} can be relocated, so this is soft.` : ""}`,
+            resolution: e.relocatable.length > 0
+              ? `Rebuild ${e.relocatable[0]} with its zero-page base moved off these bytes (its page names the build option).`
+              : `Move one side's zero-page variables to bytes the other does not use.` });
+          break;
+        case "unit_shared":
+          out.push({ kind: e.kind, severity: e.severity, shared: units,
+            rationale: e.bothShare
+              ? `${first} and ${second} both write ${list} under an owner's protocol.`
+              : `${first} owns ${list}; ${second} writes it under ${first}'s protocol.`,
+            resolution: e.bothShare
+              ? `Both must follow the owner's protocol, and in an order the owner sets: one after the other in the frame, or as successive entries in one interrupt chain.`
+              : `${second} must follow ${first}'s protocol: write after ${first}'s write in the frame, or run inside ${first}'s interrupt chain.` });
+          break;
+        case "unit_read_while_driven":
+          out.push({ kind: e.kind, severity: e.severity, shared: units,
+            rationale: `${second} reads ${list}, which ${first} drives; what ${second} reads depends on ${first}'s writes.`,
+            resolution: e.units.includes("cia1_port_a")
+              ? `Read where ${first} has left the port in a known state: after a keyboard scan, restore $DC00 before reading the joystick.`
+              : `Read at a point in the frame where ${first} has left the unit in a known state.` });
+          break;
+        case "init_order":
+          out.push({ kind: e.kind, severity: e.severity, shared: units,
+            rationale: `${first} uses ${list} once at start-up; ${second} then uses it every frame.`,
+            resolution: `Run ${first}'s use before ${second} starts.` });
+          break;
+      }
+    }
+    return out;
+  };
+
+  const hardRules = (a_name: string, b_name: string, opts: { skipClaims?: boolean } = {}): HardHit[] => {
     const hits: HardHit[] = [];
+    if (!opts.skipClaims) hits.push(...claimRules(a_name, b_name));
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
     const hard = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) =>
@@ -1424,8 +1558,11 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       const a_name = techniques[i];
       const b_name = techniques[j];
 
-      for (const h of hardRules(a_name, b_name)) {
-        conflicts.push({ a: a_name, b: b_name, kind: h.kind, severity: "hard", shared: h.shared, rationale: h.rationale, resolution: h.resolution });
+      // A named technique and its own prerequisite hold the same units by
+      // design; the claim rules do not run between them.
+      const related = closureOf(a_name).includes(b_name) || closureOf(b_name).includes(a_name);
+      for (const h of hardRules(a_name, b_name, { skipClaims: related })) {
+        conflicts.push({ a: a_name, b: b_name, kind: h.kind, severity: h.severity ?? "hard", shared: h.shared, rationale: h.rationale, resolution: h.resolution });
       }
 
       // Shared registers (soft)
@@ -1527,7 +1664,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
             a: x,
             b: y,
             kind: "prerequisite_conflict",
-            severity: "hard",
+            severity: h.severity ?? "hard",
             shared: h.shared,
             rationale: `${chainText}. ${h.rationale}`,
             resolution: h.resolution,
@@ -1541,7 +1678,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   const verdict: CompatibilityCheckOutput["verdict"] =
     conflicts.some((c) => c.severity === "hard")
       ? "incompatible"
-      : conflicts.length > 0
+      : conflicts.some((c) => c.severity === "soft")
         ? "warnings"
         : "compatible";
 
@@ -1554,7 +1691,8 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       kernal_routines: F.kernal.length,
       demands: [...F.demands].sort(),
       ...(F.band ? { raster_band: F.band } : {}),
-      known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0),
+      known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0 || F.claimsStated !== "unknown"),
+      claims: F.claimsStated,
     };
   };
   const data_coverage: CompatibilityCheckOutput["data_coverage"] = [
@@ -1658,6 +1796,17 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   if (closureOnly.length > 0) {
     out += `Checked with ${closureOnly.length} implied prerequisite(s): ${closureOnly.join(", ")}.\n\n`;
   }
+  // Unit claims: say how many inputs state them, and name the ones that do
+  // not, because an unknown claim set is never read as "claims nothing".
+  {
+    const inputs = data_coverage.filter((d) => d.implied_by === undefined);
+    const statedCount = inputs.filter((d) => d.claims !== "unknown").length;
+    const unknownInputs = inputs.filter((d) => d.claims === "unknown").map((d) => d.technique);
+    const unknownPrereqs = data_coverage.filter((d) => d.implied_by !== undefined && d.claims === "unknown").map((d) => d.technique);
+    out += `Unit claims are stated for ${statedCount} of ${inputs.length} techniques`;
+    const notRuledOut = [...unknownInputs, ...unknownPrereqs.map((p) => `${p} (prerequisite)`)];
+    out += notRuledOut.length > 0 ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.\n\n` : `.\n\n`;
+  }
   if (conflicts.length === 0) {
     out += unknown.length === techniques.length
       ? `No conflicts detected, but the graph holds no register, KERNAL or resource data for any of these techniques, so this is silence, not a clearance.\n`
@@ -1702,6 +1851,38 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     }
   }
   return { structured, text: out };
+}
+
+// Bytes two canonical zero-page range strings ("02-0D,24-2F") share.
+function zeroPageOverlap(a: string, b: string): Array<[number, number]> {
+  const rb = zeroPageRangesFromCanonical(b);
+  const out: Array<[number, number]> = [];
+  for (const [a0, a1] of zeroPageRangesFromCanonical(a)) {
+    for (const [b0, b1] of rb) {
+      const lo = Math.max(a0, b0);
+      const hi = Math.min(a1, b1);
+      if (lo <= hi) out.push([lo, hi]);
+    }
+  }
+  return out.sort((x, y) => x[0] - y[0]);
+}
+
+// sprite_0, sprite_1, ... sprite_7 -> sprite_0-7, for the conflict text.
+function compressUnits(units: string[]): string[] {
+  const out: string[] = [];
+  const sorted = [...new Set(units)].sort((x, y) => x.localeCompare(y, "en", { numeric: true }));
+  for (let i = 0; i < sorted.length; i++) {
+    const m = sorted[i].match(/^(.*_)(\d+)$/);
+    if (!m) {
+      out.push(sorted[i]);
+      continue;
+    }
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === `${m[1]}${Number(m[2]) + (j + 1 - i)}`) j++;
+    out.push(j > i ? `${sorted[i]}-${Number(m[2]) + (j - i)}` : sorted[i]);
+    i = j;
+  }
+  return out;
 }
 
 // KERNAL routines that talk on the serial bus (serial_bus_exclusive rule).

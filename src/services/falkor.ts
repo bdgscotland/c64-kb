@@ -11,6 +11,7 @@
 
 import { FalkorDB, ConstraintType, EntityType } from "falkordb";
 import { config } from "../config.ts";
+import { HARDWARE_UNITS } from "../graph/extract.ts";
 
 const GRAPH_NAME = config.falkor.graphName;
 
@@ -30,6 +31,7 @@ const NODE_INDEXES: ReadonlyArray<readonly [string, string]> = [
   ["FileFormat", "name"],
   ["Resource", "name"],
   ["Archetype", "name"],
+  ["HardwareUnit", "name"],
 ];
 
 // "$D011" -> 0xD011; null when the string is not a 16-bit hex address.
@@ -55,6 +57,7 @@ const UNIQUE_CONSTRAINTS: ReadonlyArray<readonly [string, string]> = [
   ["Recipe", "name"],
   ["FileFormat", "name"],
   ["Archetype", "name"],
+  ["HardwareUnit", "name"],
 ];
 
 // Full-text indexes for "find a thing that does X" queries (Phase 2+).
@@ -64,7 +67,7 @@ const FULLTEXT_INDEXES: ReadonlyArray<readonly [string, string]> = [
 ];
 
 // Node labels that hold ingested-doc entities. clean() wipes these,
-// preserving Chip/Region seeds which ensureSchema re-MERGEs.
+// preserving Chip/Region/HardwareUnit seeds which ensureSchema re-MERGEs.
 const CLEANABLE_LABELS: readonly string[] = [
   "KernalRoutine",
   "Register",
@@ -172,6 +175,24 @@ export class FalkorService {
           },
         } as Parameters<typeof g.query>[1]
       );
+    }
+
+    // HardwareUnit seeds (schema 25): the pieces of hardware a CLAIMS edge
+    // names. Seeded, like Chip and Region, so a Claims line can only point at
+    // a unit that exists; BELONGS_TO its chip where it has one.
+    for (const u of HARDWARE_UNITS) {
+      await g.query(
+        `MERGE (h:HardwareUnit {name: $name})
+         ON CREATE SET h += $props, h.created_at = timestamp()
+         ON MATCH SET h += $props, h.updated_at = timestamp()`,
+        { params: { name: u.name, props: { kind: u.kind, addresses: u.addresses, chip: u.chip ?? "" } } } as Parameters<typeof g.query>[1]
+      );
+      if (u.chip) {
+        await g.query(
+          `MATCH (h:HardwareUnit {name: $name}) MATCH (c:Chip {name: $chip}) MERGE (h)-[:BELONGS_TO]->(c)`,
+          { params: { name: u.name, chip: u.chip } } as Parameters<typeof g.query>[1]
+        );
+      }
     }
 
     for (const region of REGIONS) {
@@ -575,6 +596,10 @@ export class FalkorService {
     // **Raster band:** (schema 24), canonical form from parseRasterBand:
     // "45-250", "0-50,251-311" or "movable". Cleared when the page drops it.
     raster_band?: string;
+    // **Claims:** (schema 25): "stated" or "none"; absent means unknown. The
+    // CLAIMS edges themselves land in pass 2 (linkClaims).
+    claims_stated?: string;
+    claims_basis?: string;
   }): Promise<void> {
     const g = this.graph();
     const props: Record<string, string | number> = {
@@ -593,6 +618,10 @@ export class FalkorService {
     else cleared.push("t.cost_basis");
     if (t.raster_band) props.raster_band = t.raster_band;
     else cleared.push("t.raster_band");
+    if (t.claims_stated && t.claims_basis) {
+      props.claims_stated = t.claims_stated;
+      props.claims_basis = t.claims_basis;
+    } else cleared.push("t.claims_stated", "t.claims_basis");
     await g.query(
       `MERGE (t:Technique {name: $name})
        ON CREATE SET t += $props, t.created_at = timestamp()
@@ -600,6 +629,43 @@ export class FalkorService {
        SET ${cleared.length > 0 ? cleared.map((c) => `${c} = NULL`).join(", ") : "t.name = t.name"}`,
       { params: { name: t.name, props } } as Parameters<typeof g.query>[1]
     );
+    // The page owns its CLAIMS edges outright: drop the old ones so a claim
+    // the page stopped making does not outlive it (pass 2 re-adds the rest).
+    await g.query(
+      `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`,
+      { params: { name: t.name } } as Parameters<typeof g.query>[1]
+    );
+  }
+
+  /**
+   * CLAIMS (schema 25): a technique holds a HardwareUnit in a mode (owns,
+   * shares, reads, init); zero_page carries its byte ranges. Both ends must
+   * exist: the unit is a seed and the technique came from pass 1, so a MERGE
+   * could only manufacture a stub out of a typo. Returns whether it landed.
+   */
+  async linkClaims(c: { owner: string; ownerKind: "Technique"; unit: string; mode: string; ranges?: string; relocatable?: boolean; basis: string }): Promise<boolean> {
+    const g = this.graph();
+    const ends = await g.roQuery(
+      `MATCH (t:${c.ownerKind} {name: $owner}) MATCH (h:HardwareUnit {name: $unit}) RETURN 1`,
+      { params: { owner: c.owner, unit: c.unit } } as Parameters<typeof g.roQuery>[1]
+    );
+    if ((ends.data?.length ?? 0) === 0) {
+      console.warn(`[falkor] linkClaims: ${c.owner} -> ${c.unit} — ${c.ownerKind} or HardwareUnit not found, edge dropped`);
+      return false;
+    }
+    await g.query(
+      `MATCH (t:${c.ownerKind} {name: $owner})
+       MATCH (h:HardwareUnit {name: $unit})
+       MERGE (t)-[e:CLAIMS]->(h)
+       SET e.mode = $mode, e.ranges = $ranges, e.relocatable = $relocatable, e.basis = $basis`,
+      {
+        params: {
+          owner: c.owner, unit: c.unit, mode: c.mode,
+          ranges: c.ranges ?? null, relocatable: c.relocatable === true, basis: c.basis,
+        },
+      } as Parameters<typeof g.query>[1]
+    );
+    return true;
   }
 
   async linkTechniqueUsesRegister(techniqueName: string, registerName: string): Promise<void> {

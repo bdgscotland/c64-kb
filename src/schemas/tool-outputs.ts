@@ -152,6 +152,16 @@ export const TechniqueCostSchema = z.object({
 });
 export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
 
+// A CLAIMS edge (schema 25): the HardwareUnit, the mode, and for zero_page
+// the canonical byte ranges ("02-0D,24-2F") and whether they relocate.
+export const ClaimSchema = z.object({
+  unit: z.string(),
+  mode: z.enum(["owns", "shares", "reads", "init"]),
+  ranges: z.string().optional(),
+  relocatable: z.boolean().optional(),
+});
+export const ClaimsStatedSchema = z.enum(["stated", "none", "unknown"]);
+
 export const TechniqueLookupSchema = z.object({
   name: z.string(),
   title: z.string(),
@@ -172,6 +182,11 @@ export const TechniqueLookupSchema = z.object({
   documentation: z.array(DocChunkSchema),
   // Absent when the technique's page has no **Cost:** line.
   cost: TechniqueCostSchema.optional(),
+  // **Claims:** (schema 25). claims_stated is "unknown" when the page has no
+  // usable Claims line, which is not the same as "none" (claims no unit).
+  claims: z.array(ClaimSchema).optional(),
+  claims_stated: ClaimsStatedSchema.optional(),
+  claims_basis: z.string().optional(),
 });
 
 export const TechniquesForSchema = z.object({
@@ -182,6 +197,8 @@ export const TechniquesForSchema = z.object({
     register: z.string().optional(),
     recipe: z.string().optional(),
     requires: z.string().optional(),
+    // A HardwareUnit name: techniques with a CLAIMS edge to it (any mode).
+    claims: z.string().optional(),
   }),
   techniques: z.array(z.object({
     name: z.string(),
@@ -204,10 +221,18 @@ export const CompatibilityConflictSchema = z.object({
     "prerequisite_conflict", // a hard rule fires between a technique and a REQUIRES prerequisite of another
     "shared_register",   // both touch the same register (soft)
     "shared_kernal",     // both call the same KERNAL routine (soft)
+    // Resource claims (schema 25), from **Claims:** lines:
+    "unit_contention",   // both own the same HardwareUnit (hard)
+    "zero_page_overlap", // both own zero-page bytes in common (hard; soft if either side relocates)
+    "unit_shared",       // one owns a unit the other shares, or both share it (soft)
+    "unit_read_while_driven", // one owns a unit the other only reads (soft)
+    "init_order",        // one uses a unit once at start-up that the other then owns (info)
   ]),
   // hard: cannot coexist as combined; the resolution says how to separate them.
   // soft: combinable with coordination.
-  severity: z.enum(["hard", "soft"]),
+  // info: combinable; the text says what order or protocol keeps it so. It
+  // does not change the verdict.
+  severity: z.enum(["hard", "soft", "info"]),
   shared: z.array(z.string()),
   rationale: z.string(),
   resolution: z.string().optional(),
@@ -238,6 +263,9 @@ export const CompatibilityCoverageSchema = z.object({
   // The page's **Raster band:** in canonical form ("45-250", "movable").
   raster_band: z.string().optional(),
   known: z.boolean(),
+  // Whether the page states unit claims: "unknown" when it has no Claims
+  // line, so a unit conflict involving it cannot be ruled out.
+  claims: ClaimsStatedSchema,
   // Present when the technique was not in the input set but entered the
   // check through another technique's REQUIRES closure.
   implied_by: z.array(z.string()).optional(),
