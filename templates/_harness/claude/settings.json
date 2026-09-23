@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "h=\"$CLAUDE_PROJECT_DIR/harness/hooks/plan-gate.sh\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/../_harness/hooks/plan-gate.sh\"; exec sh \"$h\"",
+            "command": "h=\"$CLAUDE_PROJECT_DIR/harness/hooks/plan-gate.py\"; [ -f \"$h\" ] || h=\"$CLAUDE_PROJECT_DIR/../_harness/hooks/plan-gate.py\"; exec python3 \"$h\"",
             "timeout": 10
           }
         ]

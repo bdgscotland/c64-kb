@@ -11,10 +11,10 @@ NAME     := hello
 C_MAIN   := src/main.c
 KICK_SRC := src/sprite.asm
 
-# Pinned after the meter's 200 recorded frames. From then on nothing on the
-# screen changes, so the pin can land anywhere in the frame: 7,600,000 and
-# 8,000,000 cycles gave byte-identical PAL pictures, 8,000,000 and
-# 12,000,000 identical NTSC ones (VICE x64sc 3.10, windowless build).
+# Pinned after the script's 144 play frames and the grade at frame 150. From
+# then on nothing on the screen changes, so the pin can land anywhere in the
+# frame: 7,000,000 and 8,000,000 cycles gave byte-identical PAL pictures,
+# 8,000,000 and 12,000,000 identical NTSC ones (VICE x64sc 3.10, windowless).
 SHOT_CYCLES_PAL  := 8000000
 SHOT_CYCLES_NTSC := 8000000
 
@@ -29,4 +29,5 @@ CLAIMS_ARGS := --claim 'sprite_0, cia1_port_a, zero_page $$02-$$52' --range 'scr
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
+$(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
 include $(HARNESS)/harness.mk

@@ -1,8 +1,11 @@
 # Plan
 
-Fill this in before any code. `make` and the Claude Code hook refuse to
-build or write under `src/` while a `FILL:` line is left, or while the
-Compatibility and Budget sections lack the tools' own output.
+Fill this in before any code. `make` (every target that builds) and the
+Claude Code hook refuse to build or write under `src/` while a `FILL:` line
+is left, while the Compatibility and Budget sections lack the tools' whole
+output, or while a technique those outputs name is missing from the table
+below. With C64KB set, `make` also re-runs `check-compatibility` and wants
+the same Verdict line.
 
 Run the tools in the c64-kb checkout: `cd $C64KB && npx tsx src/cli.ts <command>`.
 
@@ -19,6 +22,8 @@ FILL: the parts of the briefing you are acting on: techniques kept, techniques
 dropped and why, the pitfalls it named that this program meets.
 
 ## Techniques
+
+The first cell is the technique's snake_case name as the tools print it.
 
 | Technique | Why | Recipe it starts from | Pitfalls read (`pitfalls-for`) |
 |---|---|---|---|
@@ -38,14 +43,16 @@ FILL: one line per warning, or "none".
 
 ## Budget
 
-Command: `npx tsx src/cli.ts plan-budget <technique> ... --region both [--sprites n --sprite-lines n]`
+Command: `npx tsx src/cli.ts plan-budget <technique> ... --region both [--sprites n --sprite-lines n]`,
+on the same techniques as check-compatibility.
 
 ```text
 FILL: paste the whole output here. It starts "# Budget plan:".
 ```
 
-The frame meter measures the real figure once the loop runs; record it here
-with its model and the command (`make shot check` prints it).
+The frame meter measures the real figure once the loop runs: worst, and
+typical as the median of the autopilot's play frames. Record both here with
+the model and the command (`make shot check` prints them).
 
 FILL: what is unknown in the budget and how the meter will settle it.
 

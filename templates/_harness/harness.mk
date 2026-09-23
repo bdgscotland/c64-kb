@@ -22,8 +22,14 @@
 # Tools, each from the environment first:
 #   OSCAR64, KICKASS_JAR, JAVA, X64SC (headless runs), X64SC_WINDOWED (make run),
 #   C1541, PYTHON, C64KB (the c64-kb checkout, default ../.. from the starter)
+#   A local.mk beside the Makefile, if present, is read first.
 
 HARNESS_DIR := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+STARTER_MAKEFILE := $(firstword $(MAKEFILE_LIST))
+
+# A project made by c64-kb's `npm run new-project` keeps its machine settings
+# (C64KB, tool paths) here, so nothing has to be exported by hand.
+-include local.mk
 
 # ---- defaults a starter may leave out ---------------------------------------
 C_DEPS           ?= $(wildcard src/*.c src/*.h)
@@ -32,7 +38,7 @@ SHOT_CYCLES_PAL  ?= 8000000
 SHOT_CYCLES_NTSC ?= 8000000
 AUTOPILOT_DEFINE ?= AUTOPILOT
 FAULT_DEFINE     ?= FORCE_FAULT
-DISK_NAME        ?= $(shell echo $(NAME) | tr a-z A-Z)
+DISK_NAME        ?= $(NAME)
 DISK_ID          ?= 01
 SHOT_DISK        ?= 0
 CLAIMS_ARGS      ?=
@@ -44,6 +50,7 @@ OSCAR64_FLAGS ?= -tm=c64 -O2
 KICKASS_JAR ?= $(HOME)/Developer/c64/kickassembler/KickAss.jar
 JAVA ?= java
 KICKASS = $(JAVA) -jar $(KICKASS_JAR)
+KICKASS_FLAGS ?=
 # Headless runs prefer the windowless VICE build (no window, no focus theft).
 X64SC ?= $(firstword $(wildcard $(HOME)/Developer/c64/vice-headless/bin/x64sc) $(shell command -v x64sc 2>/dev/null) x64sc)
 X64SC_WINDOWED ?= $(firstword $(shell command -v x64sc 2>/dev/null) x64sc)
@@ -82,43 +89,45 @@ all: plan-gate build
 build: $(PRG)
 
 # ---- PLAN.md gate: no build until the plan holds the tool output ----------
+# Every PRG depends on it (order-only), so make, shot, check, selftest, disk,
+# claims and run all stop while the plan does not pass.
 plan-gate:
 ifeq ($(PLAN_GATE),on)
-	@sh $(HARNESS_DIR)/hooks/plan-gate.sh --check PLAN.md
+	@$(PYTHON) $(HARNESS_DIR)/hooks/plan-gate.py --check PLAN.md --c64kb "$(C64KB)" --cache build/.plan-gate
 endif
 
 # ---- build ------------------------------------------------------------------------
 ifneq ($(strip $(C_MAIN)),)
 ifneq ($(strip $(KICK_SRC)),)
 ASM_OUT := build/asm.bin build/asm.h
-build/asm.bin: $(KICK_SRC) $(KICK_DEPS) $(HARNESS_DIR)/gen-asm-header.py
+build/asm.bin: $(KICK_SRC) $(KICK_DEPS) $(HARNESS_DIR)/gen-asm-header.py | plan-gate
 	@mkdir -p build
-	$(KICKASS) $(KICK_SRC) -binfile -vicesymbols -libdir $(HARNESS_DIR)/meter -odir $(CURDIR)/build -o $(CURDIR)/build/asm.bin > build/asm.log || { cat build/asm.log; exit 1; }
-	$(PYTHON) $(HARNESS_DIR)/gen-asm-header.py build/asm.log build/$(basename $(notdir $(KICK_SRC))).vs build/asm.bin build/asm.h
+	$(KICKASS) $(KICK_SRC) $(KICKASS_FLAGS) -binfile -symbolfile -vicesymbols -libdir $(HARNESS_DIR)/meter -odir $(CURDIR)/build -o $(CURDIR)/build/asm.bin > build/asm.log || { cat build/asm.log; exit 1; }
+	$(PYTHON) $(HARNESS_DIR)/gen-asm-header.py build/asm.log build/$(basename $(notdir $(KICK_SRC))).sym build/asm.bin build/asm.h || { rm -f build/asm.bin; exit 1; }
 build/asm.h: build/asm.bin
 endif
 
 OSCAR64_BUILD = $(OSCAR64) $(OSCAR64_FLAGS) -i=$(CURDIR)/build -i=$(abspath $(HARNESS_DIR))/meter
 
-$(PRG): $(C_DEPS) $(ASM_OUT) $(METER_DEPS)
+$(PRG): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -o=$@ $(C_MAIN)
-$(PRG_AUTO): $(C_DEPS) $(ASM_OUT) $(METER_DEPS)
+$(PRG_AUTO): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -o=$@ $(C_MAIN)
-$(PRG_FAULT): $(C_DEPS) $(ASM_OUT) $(METER_DEPS)
+$(PRG_FAULT): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -d$(FAULT_DEFINE)=1 -o=$@ $(C_MAIN)
 else
-KICK_BUILD = $(KICKASS) $(KICK_SRC) -libdir $(HARNESS_DIR)/meter -vicesymbols -odir $(CURDIR)/build
+KICK_BUILD = $(KICKASS) $(KICK_SRC) $(KICKASS_FLAGS) -libdir $(HARNESS_DIR)/meter -vicesymbols -odir $(CURDIR)/build
 
-$(PRG): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS)
+$(PRG): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(KICK_BUILD) -o $(CURDIR)/$@ > build/kick.log || { cat build/kick.log; exit 1; }
-$(PRG_AUTO): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS)
+$(PRG_AUTO): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(KICK_BUILD) -define $(AUTOPILOT_DEFINE) -o $(CURDIR)/$@ > build/kick-auto.log || { cat build/kick-auto.log; exit 1; }
-$(PRG_FAULT): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS)
+$(PRG_FAULT): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(KICK_BUILD) -define $(AUTOPILOT_DEFINE) -define $(FAULT_DEFINE) -o $(CURDIR)/$@ > build/kick-fault.log || { cat build/kick-fault.log; exit 1; }
 endif
@@ -140,13 +149,24 @@ define vice_shot
 	@echo "shot: $(4) ($(2) cycles$(if $(3), $(3),), $(notdir $(1)))"
 endef
 
-shots/pal.png: $(PRG_AUTO) $(SHOT_DISK_DEP)
+# A shot is stale when the PRG, the starter's Makefile or the pin changes.
+# The pin stamp's name carries the cycle count; a new count deletes the old
+# stamp, so switching back also re-shoots.
+PIN_PAL  := build/pin/pal-$(SHOT_CYCLES_PAL)
+PIN_NTSC := build/pin/ntsc-$(SHOT_CYCLES_NTSC)
+$(PIN_PAL) $(PIN_NTSC):
+	@mkdir -p build/pin
+	@rm -f build/pin/$(firstword $(subst -, ,$(notdir $@)))-*
+	@touch $@
+SHOT_DEPS = $(STARTER_MAKEFILE) $(SHOT_DISK_DEP)
+
+shots/pal.png: $(PRG_AUTO) $(PIN_PAL) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_AUTO),$(SHOT_CYCLES_PAL),,$@)
-shots/ntsc.png: $(PRG_AUTO) $(SHOT_DISK_DEP)
+shots/ntsc.png: $(PRG_AUTO) $(PIN_NTSC) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_AUTO),$(SHOT_CYCLES_NTSC),-model ntsc,$@)
-shots/fault-pal.png: $(PRG_FAULT) $(SHOT_DISK_DEP)
+shots/fault-pal.png: $(PRG_FAULT) $(PIN_PAL) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_FAULT),$(SHOT_CYCLES_PAL),,$@)
-shots/fault-ntsc.png: $(PRG_FAULT) $(SHOT_DISK_DEP)
+shots/fault-ntsc.png: $(PRG_FAULT) $(PIN_NTSC) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_FAULT),$(SHOT_CYCLES_NTSC),-model ntsc,$@)
 
 shot:
@@ -161,10 +181,15 @@ check: $(SHOTS)
 selftest:
 	@rm -f $(FAULT_SHOTS)
 	@$(MAKE) --no-print-directory $(FAULT_SHOTS)
-	@if $(PYTHON) $(HARNESS_DIR)/check.py expect.json $(FAULT_SHOTS) > shots/fault-check.txt 2>&1; then \
+	@# Only a graded failure counts: exit 1 with FAIL lines. Exit 0 is a checker
+	@# that passed a broken build; exit 2 or a traceback is one that never graded.
+	@$(PYTHON) $(HARNESS_DIR)/check.py expect.json $(FAULT_SHOTS) > shots/fault-check.txt 2>&1; st=$$?; \
+	if [ $$st -eq 1 ] && grep -q '^FAIL' shots/fault-check.txt; then \
+	  grep '^FAIL' shots/fault-check.txt | head -8; echo "selftest: PASS, check.py rejected the $(FAULT_DEFINE) build"; \
+	elif [ $$st -eq 0 ]; then \
 	  cat shots/fault-check.txt; echo "selftest: FAIL, check.py passed the $(FAULT_DEFINE) build"; exit 1; \
 	else \
-	  grep '^FAIL' shots/fault-check.txt | head -5; echo "selftest: PASS, check.py rejected the $(FAULT_DEFINE) build"; \
+	  cat shots/fault-check.txt; echo "selftest: FAIL, check.py did not grade the shots (exit $$st)"; exit 1; \
 	fi
 
 lc = $(shell echo '$(1)' | tr A-Z a-z)
@@ -173,10 +198,10 @@ lc = $(shell echo '$(1)' | tr A-Z a-z)
 disk: $(D64)
 $(D64): $(PRG) $(DISK_FILES)
 	@rm -f $@
-	@# Names go to c1541 in lower case: an upper-case host name is stored as
-	@# shifted PETSCII that the KERNAL cannot open by its plain name
-	@# (c64-kb pitfall c1541_uppercase_filename_petscii_shift).
-	$(C1541) -format "$(DISK_NAME),$(DISK_ID)" d64 $@ -write $(PRG) $(call lc,$(NAME)) $(foreach f,$(DISK_FILES),-write $(f) $(call lc,$(basename $(notdir $(f))))) > build/c1541.log
+	@# Names and the header go to c1541 in lower case: an upper-case host name
+	@# is stored as shifted PETSCII that the KERNAL cannot open by its plain
+	@# name (c64-kb pitfall c1541_uppercase_filename_petscii_shift).
+	$(C1541) -format "$(call lc,$(DISK_NAME)),$(DISK_ID)" d64 $@ -write $(PRG) $(call lc,$(NAME)) $(foreach f,$(DISK_FILES),-write $(f) $(call lc,$(basename $(notdir $(f))))) > build/c1541.log
 	$(C1541) -attach $@ -list
 
 # ---- claims: every store the autopilot run makes, against what it declared ------------
