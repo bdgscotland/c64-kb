@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 724, schema 23, tools 1.26.0.
+Data 724, schema 23, tools 1.27.0.
+
+**The recipe lookup carries the listing.** `c64_recipe_lookup` and the
+CLI's `recipe-lookup` returned a recipe's Build, Synopsis and Expected
+output sections and never its Source listing, so a caller with no file
+access, an MCP client on another machine or a model that will not open a
+page, could not copy the code. Nine builds of one game showed it: the two
+strong models that read the page file shipped the recipe; the one that
+trusted the answer built from prose. The answer now ends with the page's
+Source fence, the one the listing gate builds and the pinned screenshot was
+made from, and the structured output carries it as `source_code`. Tools
+1.27.0.
 
 **Batch 9c: transitions, disk work and a release disk.** The transitions
 page is complete: `colour_cycling` (one step over eight rows of colour RAM,

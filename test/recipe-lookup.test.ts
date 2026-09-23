@@ -29,6 +29,14 @@ describe("recipeLookup", () => {
     expect(r.structured.region).toBe("both");
   });
 
+  it("carries the page's Source listing so a caller with no file access can copy the code", async () => {
+    const r = await recipeLookup("oscar64-hello-world");
+    expect(r.structured.source_code?.language).toBe("c");
+    expect(r.structured.source_code?.text).toContain("main");
+    expect(r.text).toContain("## Source listing (c, ");
+    expect(r.text).toContain("copy as-is");
+  });
+
   it("returns helpful suggestions when not found", async () => {
     const r = await recipeLookup("oscar64-hello");
     expect(r.structured.name).toBe("");

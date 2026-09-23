@@ -109,6 +109,9 @@ export const RecipeLookupSchema = z.object({
   region: z.string(),
   source_doc: z.string(),
   documentation: z.array(DocChunkSchema),
+  // The page's Source listing, the fence the listing gate builds; absent
+  // only when the page is not on disk beside the server.
+  source_code: z.object({ language: z.string(), text: z.string() }).optional(),
 });
 
 export const RecipesForSchema = z.object({

@@ -758,6 +758,14 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
 
   a.logQuery({ tool: "c64_recipe_lookup", query: name, resultCount: 1 });
 
+  // The listing itself. The vector chunks carry Build, Synopsis and Expected
+  // output; a caller with no file access (an MCP client on another machine,
+  // or a small model that will not open a page) could never copy the code.
+  // Three of the night's build arms proved it: the two that read the page
+  // file shipped the recipe, the one that trusted this answer built from
+  // prose (2026-09-22).
+  const source_code = readRecipeListing(source_doc);
+
   const structured: RecipeLookupOutput = {
     name,
     toolchain,
@@ -765,6 +773,7 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     region,
     source_doc,
     documentation,
+    ...(source_code ? { source_code } : {}),
   };
 
   let out = `# Recipe: ${name}\n\n`;
@@ -775,7 +784,29 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
   for (const d of documentation) {
     out += `## ${d.section}\n${d.text}\n\n---\n\n`;
   }
+  if (source_code) {
+    out += `## Source listing (${source_code.language}, ${source_code.text.split("\n").length} lines, copy as-is)\n\n`;
+    out += "```" + source_code.language + "\n" + source_code.text + (source_code.text.endsWith("\n") ? "" : "\n") + "```\n";
+  }
   return { structured, text: out };
+}
+
+/**
+ * The first buildable fence on a recipe page: its Source listing. The
+ * listing gate builds exactly this fence, so it is the code the pinned
+ * screenshot was made from. Returns null when the page is not on disk.
+ */
+function readRecipeListing(source_doc: string): { language: string; text: string } | null {
+  try {
+    const file = path.join(config.docs.dir, source_doc);
+    const page = fs.readFileSync(file, "utf-8");
+    const m = page.match(/```(c|asm|kick|kickassembler|kickass)\r?\n([\s\S]*?)```/);
+    if (!m) return null;
+    const language = m[1] === "kick" || m[1] === "kickassembler" || m[1] === "kickass" ? "asm" : m[1];
+    return { language, text: m[2] };
+  } catch {
+    return null;
+  }
 }
 
 export async function recipesFor(filter: {
