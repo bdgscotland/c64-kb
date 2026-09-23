@@ -82,6 +82,17 @@ demand the technique's own text supports.
 | `changes_sprite_set` | changes which hardware sprites are active during the frame (multiplexers) |
 | `continuous_interrupts` | takes timer or NMI interrupts every few raster lines, all frame (digi playback) |
 | `kernal_rom_out` | runs with the KERNAL ROM banked out |
+| `serial_bus_exclusive` | owns the drive and its serial bus while resident: KERNAL disk I/O to that drive stalls until it is uninstalled (a drive-code fast loader such as Krill's). `c64_check_compatibility` reports `serial_bus_busy` against a technique that uses LOAD, SAVE, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN or the low-level serial calls. |
+
+Four loader words were considered and left out, because no page in this
+repo can state them truthfully yet. `dd00_plain_stores` is Bitfire's rule
+(plain stores of `$00`-`$03`, no read-modify-write); the KB has no Bitfire
+page, and Krill's rule is close to the reverse: a whole-byte store breaks
+it, and a read-modify-write of bits 0-1 while it is idle is tolerated
+(`pitfalls/loader.md`, `fastloader_dd00_write_corrupts_resident`).
+`io_visible_in_irq`, `loads_in_background` and `no_concurrent_loading` are
+Bitfire and Spindle rules; the only background-loader page, Sparkle's, is
+being rewritten under issue #20.
 
 An optional `**Requires:**` line names the techniques this one presupposes:
 the named technique is set up before, or runs underneath, this one. The

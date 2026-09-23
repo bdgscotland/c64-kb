@@ -194,8 +194,9 @@ Source: `c64-file-formats.md` (Phase 2).
 
 A machine-level resource a technique needs while it is active: every CPU
 cycle on its lines, a constant sprite set, a badline-free region, the KERNAL
-banked out. Seven nodes, one per word of the fixed `**Demands:**` vocabulary
-in `CONVENTIONS-techniques.md`; created on first reference.
+banked out, the drive's serial bus. One node per word of the fixed
+`**Demands:**` vocabulary in `CONVENTIONS-techniques.md`; created on first
+reference.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -368,7 +369,9 @@ conflicts from these: two `cpu_every_line` techniques cannot share a raster
 line; `cpu_every_line` against `midframe_raster_irqs` or
 `continuous_interrupts` cannot either; `constant_sprite_set` against
 `changes_sprite_set`; `kernal_rom_out` against any technique that USES a
-KernalRoutine. The rules about sharing lines are cleared, and the pair is
+KernalRoutine; `serial_bus_exclusive` (schema 24, a resident drive-code
+loader) against any technique that USES a KERNAL serial or file routine
+(`serial_bus_busy`). The rules about sharing lines are cleared, and the pair is
 listed as band-separated, when both techniques carry a `raster_band` of
 line ranges and the ranges share no line. Before schema 24 there was no
 band, and any two `cpu_every_line` techniques were reported as a conflict.

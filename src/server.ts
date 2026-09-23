@@ -586,7 +586,7 @@ Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). O
 
 Output: {techniques[], conflicts[], band_separated[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b and the implied ones in 'via'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
 
-Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, region_mismatch, prerequisite_conflict (hard); shared_register, shared_kernal (soft).
+Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, serial_bus_busy (a resident fast loader against KERNAL disk I/O), region_mismatch, prerequisite_conflict (hard); shared_register, shared_kernal (soft).
 
 Examples: {"techniques": ["fli_image", "sprite_multiplex_24"]} → incompatible (cpu_vs_irq and sprite_set; resolution: multiplex outside the FLI region). {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019). {"techniques": ["fli_image", "digi_4bit"]} → incompatible (cpu_vs_irq: continuous interrupts inside the FLI region).
 

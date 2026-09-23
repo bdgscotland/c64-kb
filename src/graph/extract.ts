@@ -165,6 +165,7 @@ export const DEMAND_VOCABULARY: Record<string, string> = {
   changes_sprite_set: "changes which hardware sprites are active during the frame",
   continuous_interrupts: "takes timer or NMI interrupts every few raster lines, all frame",
   kernal_rom_out: "runs with the KERNAL ROM banked out",
+  serial_bus_exclusive: "owns the drive and its serial bus while resident: KERNAL disk I/O to that drive stalls until it is uninstalled",
 };
 
 // Recipe listings declare where they load: KickAssembler `* = $0900`,

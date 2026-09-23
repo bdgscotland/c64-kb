@@ -23,6 +23,7 @@ For the IEC bus hardware details underlying all fast-loader operation, see `../f
 **Region:** both
 **Uses registers:** DD00
 **Uses kernal:** LOAD, CHKIN, CHKOUT
+**Demands:** serial_bus_exclusive
 
 ### Why
 

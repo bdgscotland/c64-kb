@@ -1391,6 +1391,21 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       }
     }
 
+    // One owns the drive's serial bus while resident; the other does KERNAL
+    // disk I/O. The routines are the KERNAL's serial-bus entries and the
+    // file calls built on them; CHRIN/CHROUT/GETIN are left out because they
+    // touch the bus only through a redirected channel, which CHKIN/CHKOUT
+    // already name.
+    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+      if (!X.demands.has("serial_bus_exclusive")) continue;
+      const serial = Y.kernal.filter((k) => SERIAL_KERNAL.has(k));
+      if (serial.length > 0) {
+        hard("serial_bus_busy", serial.sort(),
+          `${xn} owns the drive's serial bus while it is resident; ${yn} calls KERNAL serial I/O (${serial.join(", ")}), which stalls on that drive until the loader is uninstalled.`,
+          `Do the KERNAL I/O before installing ${xn} or after uninstalling it (Krill: UNINSTALL_API), or use the loader's own entries (Krill: save, fileexists) instead.`);
+      }
+    }
+
     // One runs with the KERNAL ROM out; the other calls KERNAL routines.
     for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
       if (X.demands.has("kernal_rom_out") && Y.kernal.length > 0) {
@@ -1689,6 +1704,12 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   }
   return { structured, text: out };
 }
+
+// KERNAL routines that talk on the serial bus (serial_bus_exclusive rule).
+const SERIAL_KERNAL: ReadonlySet<string> = new Set([
+  "LOAD", "SAVE", "OPEN", "CLOSE", "CHKIN", "CHKOUT", "CLRCHN",
+  "TALK", "LISTEN", "TKSA", "SECOND", "ACPTR", "CIOUT", "UNTLK", "UNLSN",
+]);
 
 const REGION_CONSTANTS = {
   PAL: { cycles_per_line: 63, lines_per_frame: 312 },

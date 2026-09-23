@@ -197,6 +197,7 @@ export const CompatibilityConflictSchema = z.object({
     "cpu_vs_irq",        // one needs every CPU cycle; the other takes interrupts mid-frame
     "sprite_set",        // one needs a constant sprite set; the other changes it mid-frame
     "kernal_banked_out", // one runs with the KERNAL ROM out; the other calls KERNAL routines
+    "serial_bus_busy",   // one owns the drive's serial bus while resident; the other does KERNAL disk I/O
     "prerequisite_conflict", // a hard rule fires between a technique and a REQUIRES prerequisite of another
     "shared_register",   // both touch the same register (soft)
     "shared_kernal",     // both call the same KERNAL routine (soft)
