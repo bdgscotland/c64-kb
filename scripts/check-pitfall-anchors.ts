@@ -13,6 +13,7 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { group } from "./lib/markdown.ts";
 
 const root = join(import.meta.dirname, "..");
 const techDir = join(root, "docs", "techniques");
@@ -26,7 +27,7 @@ const techniques = new Map<string, { category: string; file: string }>();
 for (const f of readdirSync(techDir).filter((n) => n.endsWith(".md"))) {
   const text = readFileSync(join(techDir, f), "utf8");
   const category = CATEGORY.exec(text)?.[1] ?? "?";
-  for (const m of text.matchAll(H2)) techniques.set(m[1], { category, file: f });
+  for (const m of text.matchAll(H2)) techniques.set(group(m, 1), { category, file: f });
 }
 
 const anchored = new Map<string, Set<string>>();
@@ -34,11 +35,16 @@ const dangling: { name: string; file: string }[] = [];
 for (const f of readdirSync(pitDir).filter((n) => n.endsWith(".md"))) {
   const text = readFileSync(join(pitDir, f), "utf8");
   for (const m of text.matchAll(ANCHOR)) {
-    for (const raw of m[1].split(/[,\s`]+/)) {
+    for (const raw of group(m, 1).split(/[,\s`]+/)) {
       const name = raw.trim();
       if (!name) continue;
-      if (!techniques.has(name)) dangling.push({ name, file: f });
-      else (anchored.get(name) ?? anchored.set(name, new Set()).get(name)!).add(f);
+      if (!techniques.has(name)) {
+        dangling.push({ name, file: f });
+        continue;
+      }
+      const files = anchored.get(name) ?? new Set<string>();
+      files.add(f);
+      anchored.set(name, files);
     }
   }
 }
