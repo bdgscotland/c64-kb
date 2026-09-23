@@ -5,7 +5,98 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 764, schema 30, tools 2.2.0, package 0.15.0.
+Data 766, schema 31, tools 2.3.0, package 0.16.0.
+
+**Issue #39: the `demo` starter lands, and the two stub skeletons are
+removed.** `templates/demo` is pure KickAssembler:
+- a part table with init, update, out step and teardown, and a
+  table-driven IRQ chain;
+- a stable double-IRQ raster-bar kernel, a sprite sine chain, a
+  scroller, and an original tune with NTSC tempo skips.
+
+It checks itself on PAL and NTSC with 229 screenshot checks, 8
+jittered probe shots of the bar kernel, dispatcher counters (late and
+bad frames), a deadline test on the frame slot, and a SID store trace
+(`make audio`). Measured worst 7,332 / typical 6,586 cycles on PAL.
+`templates/c64-demo-starter` and `templates/c64-game-starter` are
+removed. The game starter fed a `.prg` to Oscar64 as source, which
+Oscar64 ignores.
+
+**Issue #39: the `adventure` starter, STARWATCH.** It is a 12-room text
+adventure in Oscar64:
+- the world is data in `tools/world.py`, and a Python model checks the
+  game line by line;
+- a two-word parser with synonyms;
+- text packed by byte-pair coding, 40% smaller;
+- picture strips coded row by row;
+- one window line printed per frame;
+- SAVE and LOAD on drive 8, with the record versioned from the world.
+
+Measured in VICE x64sc 3.10:
+- worst 15,272 / typical 8,543 cycles on PAL; 15,488 / 8,842 on NTSC;
+- `make disktest` saves, cold-resets and loads under true 1541
+  emulation, and refuses three bad saves.
+
+Its review found a picture that overran the frame. `gen.py` now refuses
+a script that does not show every picture. The other #39 session's
+comparator chose this version as the base and its disk extras were
+ported.
+
+**Harness: `make released`, and the keypad joystick on `make run` (#39).**
+The starters are verified with a patched Oscar64 (#25) while a downstream
+agent has a release. `make released OSCAR64_RELEASED=<path>` builds the
+autopilot program with that compiler and grades its PAL and NTSC shots
+with the starter's own `expect.json`. On v1.32.273 it found the platformer
+graded 7 of 23: `surface_at` inlined into `surface_walk` reads the slope
+table with a stale X (listings on #30; `__noinline` passes 23 of 23).
+action-puzzle graded 41 of 41. `make run` now passes `-joydev2 1`, so the
+numeric keypad is joystick 2.
+
+**Issue #39: one harness, and the briefing names the starter.** Two
+sessions built #39 in parallel; the maintainer asked for one harness, the
+best of both. Main's harness stays; four #42 items from the other build
+are now in it:
+- text and meter checks take `"dy"` (0-7 pixels) for a panel under a
+  scrolled playfield, which the YSCROLL-3 grid could not read;
+- with `SHOT_DISK = 1` each headless run gets its own copy of the D64,
+  since VICE writes a save back into the image and the next run then
+  started from another disk (hello: two shots byte-identical, the release
+  D64 unchanged);
+- `make zp` lists the zero page a build's C touches, from Oscar64's
+  listing. The pages said Oscar64 owns `$02`-`$52`; its temporaries run
+  from `$43` up by each function's temp count, and hello reaches `$55`,
+  platformer `$5B`, shmup-vertical `$5D`. hello's claim `$02`-`$52` failed
+  `make claims` (309 stores to `$53`-`$55`, KERNAL IRQ undeclared); it is
+  now `$02`-`$55` with `--kernal IRQ` and passes;
+- `check.py` finds the character ROM in the repo's headless VICE, the
+  only copy on a CI runner.
+
+A `**Starter:**` line under an archetype becomes the Archetype's
+`starter` property (schema 31). `c64_game_briefing` and
+`c64_demo_briefing` return it as `archetype.starter` and print the
+`npm run new-project` command (tools 2.3.0: an added output field). A
+test fails when a page names a starter with no Makefile and expect.json.
+Lines for vertical_shmup, scrolling_platformer and puzzle.
+
+`mixed_sprite_char_actors` had a measured Cost line and no
+`**Cost measured on:**` line, so `plan-budget` printed "recipe not
+stated"; it names `oscar64-mixed-fighters` now.
+
+**Issue #39: the `shmup-vertical` starter.** It is a vertical shooter:
+- Oscar64 game logic, with a KickAssembler IRQ chain, panel split,
+  multiplexer, row copy and music player;
+- the playfield scrolls through all eight YSCROLL phases above a fixed
+  panel;
+- waves on paths, character bullets, hitboxes per sprite frame, effects
+  on voice 3, and a disk high score.
+
+Measured in VICE x64sc 3.10:
+- worst 12,472 / typical 7,103 cycles on PAL; 12,721 / 7,293 on NTSC;
+- the staged heaviest frame (`make stage`) is 14,073 PAL / 14,740 NTSC;
+- `make phases` compares the panel at all eight phases.
+
+Its review found that sprites on badlines during KERNAL serial I/O hang
+a save in VICE (#43).
 
 **Candidate list, batch 17, two of four: the tech-tech wobbler and DYSP,
 from fixed designs with measured write-cycle sweeps (data 764).** The

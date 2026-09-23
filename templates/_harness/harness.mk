@@ -16,7 +16,7 @@
 #   FAULT_DEFINE     the define that makes the program fail its own check (default FORCE_FAULT)
 #   DISK_NAME        disk header for make disk (default: NAME, upper case)
 #   DISK_FILES       extra host files make disk writes beside the PRG
-#   SHOT_DISK        1: attach build/$(NAME).d64 as drive 8 during make shot (default 0)
+#   SHOT_DISK        1: each headless run attaches a fresh copy of build/$(NAME).d64 as drive 8 (default 0)
 #   CLAIMS_ARGS      arguments to c64-kb's scripts/claims-watch.ts after the PRG
 #
 # Tools, each from the environment first:
@@ -70,19 +70,26 @@ endif
 PRG       := build/$(NAME).prg
 PRG_AUTO  := build/$(NAME)-auto.prg
 PRG_FAULT := build/$(NAME)-fault.prg
+PRG_RELEASED := build/$(NAME)-released.prg
 D64       := build/$(NAME).d64
 SHOTS     := shots/pal.png shots/ntsc.png
 FAULT_SHOTS := shots/fault-pal.png shots/fault-ntsc.png
+RELEASED_SHOTS := shots/released-pal.png shots/released-ntsc.png
 
 METER_DEPS := $(wildcard $(HARNESS_DIR)/meter/*)
 
 VICE_FLAGS = -default -warp +sound +autostart-delay-random -autostartprgmode 1
-ifeq ($(SHOT_DISK),1)
-SHOT_DISK_FLAGS = -8 $(D64) -drive8wobbleamplitude 0 -drive8wobblefrequency 0
+# With SHOT_DISK = 1 every headless run attaches its own fresh copy of the
+# release D64 (shots/<shot>.d64), never build/$(NAME).d64 itself: VICE writes
+# a save back into the image it attached, so a run on the shared image would
+# start the next one from a different disk and the pinned shot would move.
+ifeq ($(strip $(SHOT_DISK)),1)
 SHOT_DISK_DEP = $(D64)
+shot_disk = @cp $(D64) $(1:.png=.d64)
+shot_disk_flags = -8 $(1:.png=.d64) -drive8wobbleamplitude 0 -drive8wobblefrequency 0
 endif
 
-.PHONY: all build run run-auto shot check selftest disk claims clean plan-gate tools
+.PHONY: all build run run-auto shot check selftest disk claims zp released clean plan-gate tools
 .DELETE_ON_ERROR:
 
 all: plan-gate build
@@ -118,6 +125,11 @@ $(PRG_AUTO): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 $(PRG_FAULT): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -d$(FAULT_DEFINE)=1 -o=$@ $(C_MAIN)
+# The autopilot build from a second compiler, for `make released`.
+$(PRG_RELEASED): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	@test -n "$(OSCAR64_RELEASED)" || { echo "released: set OSCAR64_RELEASED=/path/to/a released oscar64"; exit 2; }
+	$(OSCAR64_RELEASED) $(OSCAR64_FLAGS) -i=$(CURDIR)/build -i=$(abspath $(HARNESS_DIR))/meter -d$(AUTOPILOT_DEFINE)=1 -o=$@ $(C_MAIN)
 else
 KICK_BUILD = $(KICKASS) $(KICK_SRC) $(KICKASS_FLAGS) -libdir $(HARNESS_DIR)/meter -vicesymbols -odir $(CURDIR)/build
 
@@ -133,8 +145,9 @@ $(PRG_FAULT): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
 endif
 
 # ---- run: the windowed emulator, for a human ----------------------------------------
+# Joystick port 2 on the numeric keypad (8 2 4 6, fire 0): -joydev2 1.
 run: $(PRG)
-	$(X64SC_WINDOWED) -autostart $(PRG)
+	$(X64SC_WINDOWED) -joydev2 1 -autostart $(PRG)
 run-auto: $(PRG_AUTO)
 	$(X64SC_WINDOWED) -autostart $(PRG_AUTO)
 
@@ -143,7 +156,8 @@ run-auto: $(PRG_AUTO)
 define vice_shot
 	@mkdir -p shots
 	@rm -f $(4)
-	@$(TIMEOUT) $(VICE_TIMEOUT) $(X64SC) $(VICE_FLAGS) -limitcycles $(2) $(3) $(SHOT_DISK_FLAGS) -exitscreenshot $(4) -autostart $(1) > $(4:.png=.log) 2>&1 || true
+	$(call shot_disk,$(4))
+	@$(TIMEOUT) $(VICE_TIMEOUT) $(X64SC) $(VICE_FLAGS) -limitcycles $(2) $(3) $(call shot_disk_flags,$(4)) -exitscreenshot $(4) -autostart $(1) > $(4:.png=.log) 2>&1 || true
 	@# x64sc exits 1 after -limitcycles, pass or fail; the PNG is the result.
 	@test -s $(4) || { echo "shot: $(X64SC) wrote no $(4); see $(4:.png=.log)"; exit 1; }
 	@echo "shot: $(4) ($(2) cycles$(if $(3), $(3),), $(notdir $(1)))"
@@ -168,6 +182,10 @@ shots/fault-pal.png: $(PRG_FAULT) $(PIN_PAL) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_FAULT),$(SHOT_CYCLES_PAL),,$@)
 shots/fault-ntsc.png: $(PRG_FAULT) $(PIN_NTSC) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_FAULT),$(SHOT_CYCLES_NTSC),-model ntsc,$@)
+shots/released-pal.png: $(PRG_RELEASED) $(PIN_PAL) $(SHOT_DEPS)
+	$(call vice_shot,$(PRG_RELEASED),$(SHOT_CYCLES_PAL),,$@)
+shots/released-ntsc.png: $(PRG_RELEASED) $(PIN_NTSC) $(SHOT_DEPS)
+	$(call vice_shot,$(PRG_RELEASED),$(SHOT_CYCLES_NTSC),-model ntsc,$@)
 
 shot:
 	@rm -f $(SHOTS)
@@ -175,7 +193,7 @@ shot:
 
 # ---- check: grade both shots against expect.json ---------------------------------
 check: $(SHOTS)
-	$(PYTHON) $(HARNESS_DIR)/check.py expect.json shots/pal.png shots/ntsc.png
+	C64KB="$(C64KB)" $(PYTHON) $(HARNESS_DIR)/check.py expect.json shots/pal.png shots/ntsc.png
 
 # The check must fail on a build that fails its own test. Passes when it does.
 selftest:
@@ -183,7 +201,7 @@ selftest:
 	@$(MAKE) --no-print-directory $(FAULT_SHOTS)
 	@# Only a graded failure counts: exit 1 with FAIL lines. Exit 0 is a checker
 	@# that passed a broken build; exit 2 or a traceback is one that never graded.
-	@$(PYTHON) $(HARNESS_DIR)/check.py expect.json $(FAULT_SHOTS) > shots/fault-check.txt 2>&1; st=$$?; \
+	@C64KB="$(C64KB)" $(PYTHON) $(HARNESS_DIR)/check.py expect.json $(FAULT_SHOTS) > shots/fault-check.txt 2>&1; st=$$?; \
 	if [ $$st -eq 1 ] && grep -q '^FAIL' shots/fault-check.txt; then \
 	  grep '^FAIL' shots/fault-check.txt | head -8; echo "selftest: PASS, check.py rejected the $(FAULT_DEFINE) build"; \
 	elif [ $$st -eq 0 ]; then \
@@ -212,6 +230,33 @@ claims: $(PRG_AUTO)
 	  echo "claims: not available. $(C64KB)/scripts/claims-watch.ts does not exist (it lands in c64-kb with issue #22 step 6)."; \
 	  echo "claims: set C64KB=/path/to/c64-kb to a checkout that has it. Nothing was checked."; \
 	fi
+
+# ---- released: the same checks on a build from another Oscar64 ------------------
+# The starters are verified with a locally patched Oscar64 (c64-kb #25); an
+# agent downstream has a release. `make released OSCAR64_RELEASED=...` builds
+# the autopilot program with that compiler and grades its shots with this
+# starter's expect.json. A failure here is worth reading in the .asm listing:
+# two v1.32.273 miscompiles were found this way (#30).
+released:
+ifneq ($(strip $(C_MAIN)),)
+	@rm -f $(PRG_RELEASED) $(RELEASED_SHOTS)
+	@$(MAKE) --no-print-directory $(RELEASED_SHOTS)
+	C64KB="$(C64KB)" $(PYTHON) $(HARNESS_DIR)/check.py expect.json $(RELEASED_SHOTS)
+else
+	@echo "released: $(NAME) has no C part; no Oscar64 is involved."
+endif
+
+# ---- zp: the zero page the compiled C touches, from Oscar64's listing ----------
+# Oscar64's temporaries run from $43 up by each function's temp count, so the
+# top of its zero page depends on the program. ZP_CLAIM ('$$02-$$55' in a
+# Makefile, '$02-$55' on the command line) makes it a
+# gate: exit 1 when the code touches an address outside the claim.
+zp: $(PRG_AUTO)
+ifneq ($(strip $(C_MAIN)),)
+	@$(PYTHON) $(HARNESS_DIR)/zp-used.py build/$(NAME)-auto.asm $(if $(value ZP_CLAIM),--claim '$(value ZP_CLAIM)')
+else
+	@echo "zp: $(NAME) has no C part; a KickAssembler program's zero page is what its source says."
+endif
 
 tools:
 	@echo "OSCAR64=$(OSCAR64)"; echo "KICKASS_JAR=$(KICKASS_JAR)"; echo "X64SC=$(X64SC)"

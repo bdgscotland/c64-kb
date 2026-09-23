@@ -31,6 +31,8 @@ Prose about the vertical shooter.
 
 **Archetype:** text_adventure
 
+**Starter:** \`adventure\`
+
 **Technique fingerprint:** \`ram_under_kernal\`
 
 **Common pitfalls:** \`kernal_clobbers_a_x_y\`, \`kernal_clobbers_a_x_y\`
@@ -64,6 +66,14 @@ describe("extractGraphEntities — archetype-reference doc", () => {
       title: "Text Adventure / Parser-Driven",
       brief_words: [],
     });
+  });
+
+  it("carries the **Starter:** line as a starter property, and none when the line is absent", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const nodes = extractGraphEntities(ARCHETYPE_DOC, SRC).filter((e) => e.type === "archetype");
+    warn.mockRestore();
+    expect(nodes[1]).toMatchObject({ name: "text_adventure", starter: "adventure" });
+    expect(nodes[0]).not.toHaveProperty("starter");
   });
 
   it("emits FEATURES sources from the fingerprint line, deduped, keeping an unknown snake_case name for link time", () => {

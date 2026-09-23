@@ -68,7 +68,12 @@ function renderArchetype(b: BriefingOutput): string {
       out += `Routed from the brief's words: ${b.archetype.inferred_from.join(", ")} (pass archetype to choose another)\n`;
     }
     out += `Fingerprint: ${b.archetype.features.join(", ") || "(none)"}\n`;
-    out += `Common pitfalls: ${b.archetype.risks.join(", ") || "(none)"}\n\n`;
+    out += `Common pitfalls: ${b.archetype.risks.join(", ") || "(none)"}\n`;
+    if (b.archetype.starter) {
+      out += `Starter: templates/${b.archetype.starter} (a playable project on the build-and-check harness; `;
+      out += `start with \`npm run new-project -- ${b.archetype.starter} <dir>\` in the c64-kb checkout)\n`;
+    }
+    out += "\n";
   }
   for (const d of b.designs ?? []) {
     const measured = d.measured

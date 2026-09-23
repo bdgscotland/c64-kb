@@ -18,6 +18,8 @@ A brief note on scope: the catalog covers stock PAL and NTSC C64 hardware only. 
 
 **Archetype:** `vertical_shmup`
 
+**Starter:** `shmup-vertical`
+
 The vertical shooter is one of the oldest and most demanding C64 archetypes. The play field scrolls continuously toward the player, enemies arrive from the top of the screen in waves or patterns, and the player's ship moves freely within a defined zone near the bottom. The CPU budget is extreme: the scroll consumes bandwidth every frame, the enemy fleet may number a dozen or more simultaneous sprites, and the SID must maintain music and sound effects without dropping beats. Titles like Uridium and Delta set the benchmark in 1986-87, and Armalyte's vertical mode demonstrated that the hardware could sustain truly dense sprite populations when the multiplexer was tuned correctly.
 
 The central technical constraint is that vertical scrolling on the C64 is cheap at the hardware level — $D011's fine-scroll field moves the display by up to seven pixels before a coarse row-shift must be performed — but coarse shifts require rotating the entire screen RAM buffer, a CPU-intensive operation that must complete within the blanking period or produce visible tearing. Raster IRQs partition the frame into zones: a scroll update zone near the top, a sprite-multiplexer zone through the middle, and a SID service call near the bottom. Every cycle counts.
@@ -90,6 +92,8 @@ Enemy AI state machines occupy a significant fraction of the CPU budget in this 
 
 **Archetype:** `scrolling_platformer`
 
+**Starter:** `platformer`
+
 The scrolling platformer combines continuous horizontal (sometimes also vertical) scroll with multi-layer environments, large tile-based worlds, and complex player physics. Mayhem in Monsterland (1993) and Turrican (1990) are the genre peaks on C64. The defining constraint is that every frame must advance the scroll, render the new column of tile data into the off-screen buffer edge, update the sprite multiplex for all visible actors, run physics and collision for the player, and call the SID play routine — all within approximately 16,000 cycles on PAL. There is no slack.
 
 The tilemap is the central data structure. A world wider than 40 columns is stored as a compressed array of tile indices. Each frame the scroll counter increments, a new column of tile data is decoded and written into the screen-RAM edge, and the VIC's fine-scroll register advances. When the fine scroll reaches 7, the coarse shift happens and the process repeats. Parallax layers are usually separate character-mode or sprite-mode backgrounds scrolled at a fractional rate — typically half or quarter speed — by updating their scroll registers independently on a raster split below the play field.
@@ -133,6 +137,8 @@ Isometric projection (Last Ninja style) adds a geometric transform: the logical 
 ## Puzzle
 
 **Archetype:** `puzzle`
+
+**Starter:** `action-puzzle`
 
 Puzzle games operate on a tile grid without continuous scroll. The player moves tiles, characters, or objects according to fixed rules; the goal is to reach a target state. Boulder Dash (1984) is the canonical example: a grid of earth, boulders, and diamonds where physics-like rules (boulders fall, diamonds slide) are simulated one cell at a time on a 40x25 grid. Lemmings-style games require actor pathfinding and state transitions per entity. Pipe Dream (1990) is placement-based. The common factor is that the CPU spends most of its budget on game-logic simulation rather than rendering.
 

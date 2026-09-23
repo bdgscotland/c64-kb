@@ -270,6 +270,7 @@ pitfalls, which is why it is a node and not a keyword table in the tool.
 | kind | string | "game" or "demo", from file frontmatter; defaults to game |
 | source_doc | string | Path of the page that defines it |
 | brief_words | string[] | From the `**Brief words:**` line, normalised (lower case, punctuation as one space); empty when the entry has none. `c64_game_briefing` with no `archetype` routes the brief to the game archetype whose words it contains most (schema 30) |
+| starter | string? | Directory in `templates/` holding a playable starter for it, from the optional `**Starter:**` line (schema 31); absent when the page names none |
 
 Source: `game-design/c64-game-archetypes.md` and, for kind `demo`,
 `demo-design/intro-cracktro-patterns.md` (one Archetype per H2 that
