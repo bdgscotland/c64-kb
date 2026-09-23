@@ -4,8 +4,9 @@
 //
 // AUTOPILOT=1 plays a scripted game (tools/gen.py writes the script and what
 // the model says the game must end with) and grades itself: $02FF = $01 and
-// a green border on pass, $02 and red on fail. FORCE_FAULT=1 scores 11 a gem
-// instead of 10, so the score, the table and the verdict all change.
+// a green border on pass, $02 and red on fail. FORCE_FAULT=1 flips one byte
+// of the high-score file as it is read back after the save (hiscore.c), so
+// the verdict and the table's save line change.
 #include <c64/vic.h>
 #include <c64/cia.h>
 #include "frame_meter.h"            // templates/_harness/meter
@@ -27,8 +28,7 @@
 #pragma region( main, 0x2800, 0xa000, , , { code, data, bss, heap, stack } )
 
 #if AUTOPILOT
-#include "gen_autopilot.h"
-#define EXPECT_RANK 3               // 158 goes below 200 and above 100 in the default table
+#include "gen_autopilot.h"       // the script and the model's EXPECT_ values
 #endif
 
 #define RESULT  (*(volatile char *)0x02ff)   // $01 pass, $02 fail, $00 not reached
@@ -41,7 +41,7 @@
 
 #define SLICES        4             // display frames per cave frame; tools/gen.py SLICE_FRAMES
 #define SLICE_ROWS    5             // 20 interior rows / SLICES
-#define DEATH_FRAMES  8             // cave frames from a death to the next life; tools/gen.py
+#define DEATH_FRAMES  6             // cave frames from a death to the next life; tools/gen.py
 #define LIVES         3
 #define DISK_WAIT     50            // frames before the first OPEN (pitfall first_open_after_reset_hangs_on_pal)
 
@@ -55,9 +55,13 @@ static unsigned play_frames;        // play frames this game (the meter's hold)
 
 static unsigned long score;         // banked score; the cave's own points are added on leaving it
 static char lives, cave_index, slice, dead_frames, total_gems;
-static unsigned cave_frames;        // cave frames in this cave: the autopilot's script index
+static unsigned cave_frames;        // cave frames since this start: the autopilot's script index
+static char starts;                 // cave starts this game (new cave or restart): the script's key
 static char pending = NO_MOVE;      // a direction tapped since the last cave frame
-static unsigned end_fold;           // the cave's fold at game over
+static unsigned end_fold;           // the fold chained over every cave the game left
+static char dropped;                // play frames whose work ran past line 250 (a frame lost)
+static bool seen_ok = true;         // the scan met the living player once in every cave frame
+static bool screen_ok = true;       // the screen matched the cave at every cave end
 
 static char name[3], name_pos, letter;
 static char rank;
@@ -82,17 +86,14 @@ static void ap_build_name(void)
     }
 }
 
+// The move for this cave frame, keyed to the game's own counters: which
+// start this is (starts, 1 for the first) and the cave frame within it.
 static char ap_move_byte(void)
 {
-    if (cave_index >= SCRIPT_CAVES)
+    char k = starts - 1;
+    if (k >= SCRIPT_STARTS || cave_frames >= script_len[k])
         return 0xff;
-    const char *s = script_for[cave_index];
-    unsigned n = 0;
-    while (s[n])
-        n++;
-    if (cave_frames >= n)
-        return 0xff;
-    char m = s[cave_frames];
+    char m = script_for[k][cave_frames];
     return m == 'L' ? 0xff & ~JOY_LEFT : m == 'U' ? 0xff & ~JOY_UP :
            m == 'R' ? 0xff & ~JOY_RIGHT : m == 'D' ? 0xff & ~JOY_DOWN : 0xff;
 }
@@ -142,10 +143,16 @@ static char held_direction(void)
 // ---- frame -------------------------------------------------------------------
 // frame_sync_loop: line 250 is below the last badline on PAL and NTSC and
 // occurs once a frame, so the 8-bit compare needs no ninth bit.
-static void wait_frame(void)
+// It also says whether line 250 passed since the last call: the VIC sets
+// bit 0 of $D019 on every raster compare match, with the interrupt itself
+// left disabled, so a set bit on entry means the frame's work overran.
+static bool wait_frame(void)
 {
+    bool late = vic.intr_ctrl & 0x01;
     while (vic.raster == 250) ;
     while (vic.raster != 250) ;
+    vic.intr_ctrl = 0x01;                       // acknowledge this frame's match
+    return late;
 }
 
 // PAL has lines up to $137, NTSC (6567R8) up to $106: look for a line
@@ -247,6 +254,7 @@ static void draw_box(const char *title)
 // ---- the game -----------------------------------------------------------------
 static void start_cave(void)
 {
+    starts++;
     render_clear();
     level_load(cave_index);         // the RLE decode, timed on CIA1 timer B
     draw_cave();
@@ -260,9 +268,9 @@ static void start_cave(void)
     set_state(ST_NEXT);
 }
 
+// The fold is chained over every cave the game leaves, as tools/gen.py does.
 static void game_over(void)
 {
-    end_fold = cave_fold();
     rank = hi_rank(score);
     if (rank < HI_ROWS)
     {
@@ -278,8 +286,26 @@ static void game_over(void)
         set_state(ST_TABLE);
 }
 
+// At every cave end (AUTOPILOT): the renderer finishes its queued rows, then
+// every cell on screen must show the cave's element. This gates the dirty
+// list, the overflow row queue and draw_row in every cave, not only the one
+// on screen at the verdict. It runs between caves, outside the meter.
+static void check_screen(void)
+{
+#if AUTOPILOT
+    for (char k = 0; k < CH; k++)
+        draw_pending();
+    const char *s = SCREEN + CW * CAVE_ROW0;
+    for (unsigned i = 0; i < CW * CH; i++)
+        if (s[i] != GLYPH_BASE + (cave[i] & 0x1f))
+            screen_ok = false;
+#endif
+}
+
 static void lose_life(void)
 {
+    check_screen();
+    end_fold = cave_fold(end_fold);
     score += cave_points;
     total_gems += cave_got;
     put_num(0, 39, --lives, 1, VCOL_YELLOW);
@@ -291,6 +317,8 @@ static void lose_life(void)
 
 static void leave_cave(void)
 {
+    check_screen();
+    end_fold = cave_fold(end_fold);
     score += cave_points + cave_time;           // time bonus: what is left of the counter
     total_gems += cave_got;
     if (++cave_index == level_count)
@@ -316,6 +344,7 @@ static void play_frame_work(void)
     {
         cave_move = d != NO_MOVE ? d : pending;
         pending = NO_MOVE;
+        cave_seen = 0;
     }
     else if (d != NO_MOVE && (joy_prev & 0x0f) == 0x0f)
         pending = d;                            // a tap between two cave frames is kept
@@ -328,9 +357,14 @@ static void play_frame_work(void)
         cave_overflow = false;
         cave_end_frame();                       // exit, clock
         draw_dirty(1, CH - 1);
+        // The scan met the living player exactly once (cave-scan's scanned
+        // bit); a dead one at most once. SCAN_FLAG=0 breaks this.
+        if (cave_dead ? cave_seen > 1 : cave_seen != 1)
+            seen_ok = false;
         update_hud();
         cave_frames++;
     }
+    draw_pending();                             // rows an overflowed slice queued
     effects_for(cave_events);
     cave_events = 0;
     render_animate(play_frame++);
@@ -386,7 +420,8 @@ static void table_enter(void)
     draw_table(11, 13);
     if (rank < HI_ROWS)
     {
-        put_text(17, 9, hi_saving ? "SAVED TO DISK     (  )" : "NOT SAVED         (  )", VCOL_LT_GREY);
+        put_text(17, 9, hi_verified ? "SAVED TO DISK     (  )" :
+                        hi_saving   ? "READ BACK BAD     (  )" : "NOT SAVED         (  )", VCOL_LT_GREY);
         put_num(17, 28, hi_code, 2, VCOL_LT_GREY);
     }
     else
@@ -396,23 +431,49 @@ static void table_enter(void)
 #if AUTOPILOT
 // The verdict: real state read back against tools/gen.py's model, after the
 // table is on screen. It runs outside the meter's bracket.
+//
+// Each failed test prints its letter after the fold, so a red run says why:
+// F fold, S score, G gems, C cave, P play frames, K cave starts, T the table
+// row, L a cave decode, E the scan met the player other than once, D a
+// dropped frame, V the save's read-back, M the screen against the cave.
+static char fails[12], nfails;
+
+static void need(bool ok, char letter)
+{
+    if (!ok)
+        fails[nfails++] = letter - 'A' + 1;
+}
+
 static void verdict(void)
 {
-    bool ok = level_ok && end_fold == EXPECT_FOLD && score == EXPECT_SCORE &&
-              total_gems == EXPECT_GEMS && cave_index == EXPECT_CAVE &&
-              play_frames == EXPECT_PLAY_FRAMES && rank == EXPECT_RANK &&
-              hi.row[EXPECT_RANK].score == EXPECT_SCORE;
+    bool row_ok = rank == EXPECT_RANK && hi.row[EXPECT_RANK].score == EXPECT_SCORE;
     for (char k = 0; k < 3; k++)
         if (hi.row[EXPECT_RANK].name[k] != NAME_AUTOPILOT[k] - 'A' + 1)
-            ok = false;
+            row_ok = false;
+    need(end_fold == EXPECT_FOLD, 'F');
+    need(score == EXPECT_SCORE, 'S');
+    need(total_gems == EXPECT_GEMS, 'G');
+    need(cave_index == EXPECT_CAVE, 'C');
+    need(play_frames == EXPECT_PLAY_FRAMES, 'P');
+    need(starts == EXPECT_STARTS, 'K');
+    need(row_ok, 'T');
+    need(level_ok, 'L');
+    need(seen_ok, 'E');
+    need(dropped == 0, 'D');
+    need(screen_ok, 'M');
+    need(hi_verified, 'V');
+    bool ok = nfails == 0;
     RESULT = ok ? 0x01 : 0x02;
     vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
     put_text(23, 0, ok ? "RESULT 01 PASS" : "RESULT 02 FAIL", VCOL_WHITE);
     put_text(23, 16, "FOLD", VCOL_WHITE);
     put_num(23, 21, end_fold, 5, VCOL_WHITE);
+    put_codes(23, 27, fails, nfails, VCOL_YELLOW);
     put_text(24, 0, "                    ", VCOL_WHITE);
     put_text(24, 0, "DECODE", VCOL_WHITE);
     put_num(24, 7, level_cycles, 5, VCOL_WHITE);
+    put_text(24, 13, "DROP", VCOL_WHITE);
+    put_num(24, 18, dropped, 2, VCOL_WHITE);
 }
 #endif
 
@@ -422,10 +483,15 @@ static void new_game(void)
     total_gems = 0;
     cave_index = 0;
 #if AUTOPILOT
-    lives = LIVES_AUTOPILOT;            // one: the scripted death is game over
+    lives = LIVES_AUTOPILOT;            // the script plays every life to game over
 #else
     lives = LIVES;
 #endif
+    starts = 0;
+    end_fold = 0;
+    dropped = 0;
+    seen_ok = true;
+    screen_ok = true;
     play_frames = 0;
     play_frame = 0;
     rank = HI_ROWS;
@@ -440,6 +506,12 @@ int main(void)
     *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
 #endif
     render_init();
+    // The compare line wait_frame's late test reads: 250. Bit 7 of $D011 is
+    // its ninth bit, and the KERNAL leaves compare line 311 behind (bit 8
+    // set), so it is cleared here; without that the latch never set in VICE
+    // (0 of 200 frames, against 199 of 200 with it; a test program here).
+    vic.ctrl1 = vic.ctrl1 & 0x7f;
+    vic.raster = 250;
     ntsc = detect_ntsc();
     sound_init(ntsc);
 #if AUTOPILOT
@@ -460,7 +532,9 @@ int main(void)
 
     for (;;)
     {
-        wait_frame();
+        bool late = wait_frame();
+        if (late && state == ST_PLAY)
+            dropped++;                          // the last play frame's work overran line 250
         joy_prev = joy;
         joy = port_read();
 
@@ -473,6 +547,18 @@ int main(void)
             METER_STOP;                         // the frame's own work ends here
             if (slice == 0)
                 after_cave_frame();             // state changes: outside the bracket
+#if AUTOPILOT
+            // A watchdog: past the model's play frames the game has gone
+            // another way (a broken rule, SCAN_FLAG=0), so end it and grade.
+            if (state == ST_PLAY && play_frames > EXPECT_PLAY_FRAMES)
+            {
+                check_screen();
+                end_fold = cave_fold(end_fold);
+                score += cave_points;
+                total_gems += cave_got;
+                game_over();
+            }
+#endif
         }
         else
         {

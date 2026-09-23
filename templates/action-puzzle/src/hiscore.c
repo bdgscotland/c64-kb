@@ -5,13 +5,18 @@
 // then write, because OPEN ...,S,W over an existing name fails with 63.
 #include "hiscore.h"
 #include <c64/kernalio.h>
+#include <string.h>
+
+#ifndef FORCE_FAULT
+#define FORCE_FAULT 0
+#endif
 
 #define DRIVE   8
 #define VERSION 1
 
 HiTable hi;
 char hi_state, hi_code;
-bool hi_saving;
+bool hi_saving, hi_verified;
 
 static char back[64];                           // read buffer, bigger than the file
 static char reply[40];                          // one line from channel 15
@@ -73,24 +78,34 @@ static void drive_reply(const char *cmd)
     }
 }
 
-void hi_load(void)
+// Read HISCORE into back[] (filled with $FF first, so a short read cannot
+// pass on old bytes). Returns the byte count; hi_code holds the drive's
+// reply, 99 when no device answered the named OPEN.
+static int read_file(void)
 {
-    hi_defaults();
-    hi_saving = false;
-    hi_state = HI_OFF;
+    memset(back, 0xff, sizeof(back));
     krnio_setnam("HISCORE,S,R");
     bool ok = krnio_open(2, DRIVE, 2);
     if (!ok && (krnio_status() & KRNIO_NODEVICE))
     {
         krnio_close(2);                         // nothing answered: leave the bus alone
         hi_code = 99;
-        return;
+        return 0;
     }
     int n = 0;
     if (ok)
         n = krnio_read(2, back, sizeof(back));
     krnio_close(2);
     drive_reply("");
+    return n;
+}
+
+void hi_load(void)
+{
+    hi_defaults();
+    hi_saving = false;
+    hi_state = HI_OFF;
+    int n = read_file();
     const HiTable *got = (const HiTable *)back;
     if (hi_code == 0 && n == sizeof(HiTable) && got->magic[0] == 'C' &&
         got->magic[1] == 'R' && got->version == VERSION)
@@ -122,5 +137,16 @@ bool hi_save(void)
     krnio_close(2);
     drive_reply("");
     hi_saving = hi_code == 0;
-    return hi_saving;
+    hi_verified = false;
+    if (!hi_saving)
+        return false;
+    // Read the file back and compare it with what was written: the drive's
+    // 00 says the write was accepted, not that these bytes are on the disk.
+    int n = read_file();
+#if FORCE_FAULT
+    back[3] ^= 1;                               // the self-test: a bad read-back must fail
+#endif
+    hi_verified = hi_code == 0 && n == sizeof(HiTable) &&
+                  memcmp(back, &hi, sizeof(HiTable)) == 0;
+    return hi_verified;
 }
