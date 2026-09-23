@@ -942,43 +942,86 @@ node scripts/claims-watch.ts game.prg --recipe docs/recipes/kickassembler/x.md \
   `(may; ...)` sets in `kernal-routines-reference.md`.
 
 Exit 1 on a program store to a unit or byte nobody declared (or declared
-`reads` only), or on a KERNAL zero-page store outside the may-sets.
+`reads` only), on a KERNAL zero-page store outside the may-sets, or on a
+store the watch cannot attribute (see the banking bullet below).
 
 How it reads the log (VICE x64sc 3.10, measured):
 
 - The register line of a store hit shows the registers after the
-  instruction: a PHA logged `SP:f5` and stored `$01F6`. So STA, STX and STY
-  give the value, and a push lands at `$0100 + SP + 1` to `+3`. Pushes are
-  dropped; other stores to page 1 are judged like any RAM.
+  instruction: a PHA logged `SP:f5` and stored `$01F6`. The hit does not
+  log the byte written. So STA, STX and STY give the value, and a push
+  lands at `$0100 + SP + 1` to `+3`. Pushes are dropped; other stores to
+  page 1 are judged like any RAM.
+- A read-modify-write logs one hit (two `DEC $01` gave two hits). On `$00`
+  and `$01` the watch computes the new byte from the last one: INC, DEC,
+  ASL, LSR, and ROR (its new bit 7 is the N flag after it). ROL's new
+  bit 0 is the carry it shifted in, which the log does not show, so ROL
+  leaves the port unknown unless Z is set.
 - An I/O store counts against a unit only for the bits it changes, by the
   last value stored there: `STA $D015` with `$03` over `$01` touches
   sprite 1 only. The first `STA $D011` of a program usually clears bit 7
   that the KERNAL's boot left set (`$9B`), which touches `vic_raster_irq`.
   A read-modify-write touches every unit bit of its register.
+- `$D019` and the CIA interrupt control registers `$DC0D`/`$DD0D` are read
+  by the value, not the change. On `$D019` a 1 bit acknowledges its source.
+  On an ICR, bits 0-4 name the sources whose mask bit the write sets
+  (bit 7 = 1) or clears (bit 7 = 0); timer A is bit 0, timer B bit 1, the
+  TOD alarm bit 2 (`cia-reference.md`). `lda #$7f : sta $dc0d` touches
+  `cia1_timer_a`, `cia1_timer_b` and `cia1_tod`. Before this rule the
+  write changed no unit's bits and was reported as unowned I/O.
 - A store is the KERNAL's when its PC is `$E000` or above and HIRAM is set
   in the last value stored to `$01`; BASIC's when `$A000-$BFFF` with LORAM and
   HIRAM set; otherwise the program's. So code in RAM under a banked-out
-  KERNAL is attributed to the program.
+  KERNAL is attributed to the program. While `$01` is unknown (after a
+  ROL), a store from `$A000-$BFFF` or `$E000-$FFFF` could be either, and it
+  fails the run as unattributed. An earlier version assumed ROM there, and
+  also left `$01` unknown after any INC or DEC: a program that banked the
+  KERNAL out with `dec $01` and wrote the SID from `$E000` passed.
 - Judging starts at the `SYS` address of the BASIC stub (a `trace exec`
-  there) and stops at the first execution of BASIC's READY entry, `$A474`.
-  The KickAssembler file round trip, which returns to BASIC, was flagged
-  for `$9D` before this cut: BASIC's READY calls SETMSG.
+  there). At the first execution of BASIC's READY entry, `$A474`, with
+  BASIC ROM mapped in, the watch stops judging ROM stores: the
+  KickAssembler file round trip, which returns to BASIC, was flagged for
+  `$9D` before this cut, because READY calls SETMSG. The program's own
+  stores after READY (its IRQ or NMI handler) are still judged. An earlier
+  version stopped judging everything at `$A474`, and took a jump to RAM at
+  `$A474` with BASIC banked out as READY; both let a violation pass.
 
 Four recipes, built and run with `--all-ram` at 8,000,000 cycles PAL (the
 file round trip at 40,000,000 with a fresh D64):
 
 | Recipe | Declared from the page alone: violations | What had to be added to pass |
 |---|---|---|
-| `kickassembler/sprite-multiplex-game` | `irq_vector_fffe`, `nmi_vector_fffa`, zero page `$02-$39`, screen, colour RAM, `cia2_timer_a`, `cia2_timer_b` | `ram_under_kernal` (the recipe banks the KERNAL out; its `techniques:` omits it), the zero page, the screen and colour RAM, the two timers as harness |
+| `kickassembler/sprite-multiplex-game` | `irq_vector_fffe`, `nmi_vector_fffa`, zero page `$02-$39`, screen, colour RAM, `cia2_timer_a`, `cia2_timer_b`; since the ICR rule also `cia1_timer_a`, `cia1_timer_b`, `cia1_tod` (`sta $dc0d`) and `cia2_tod` (`sta $dd0d`) | `ram_under_kernal` (the recipe banks the KERNAL out; its `techniques:` omits it), the zero page, the screen and colour RAM, the two timers and `cia2_tod` as harness, `cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)` |
 | `kickassembler/scroll-panel-split` | `irq_vector_fffe`, screen `$0400-$0747`, panel `$0F20-$0FE7`, `$3FFF`, colour RAM | `ram_under_kernal`, the ranges; `soft_scroll_v` and `char_scroll_buffer_v` have no Claims line |
 | `oscar64/sfx-engine` | Oscar64 runtime zero page (`$0D-$56` seen), BSS, its stack at `$9FFC-$9FFF`, screen, colour RAM, `cia1_timer_a` | the zero page, the map file's BSS and stack, the screen and colour RAM, `cia1_timer_a` as harness |
 | `kickassembler/file-io-roundtrip` | `cia2_timer_a`, `cia2_timer_b` | the two timers as harness; every KERNAL zero-page store fell inside the ten routines' may-sets |
 
 A variant of the multiplexer with `sta $d40b` and `sta $fb` added at its
 entry failed with exactly those two stores, `sid_voice_2` and zero page
-`$FB`. The KERNAL's serial routines in the file round trip wrote
-`$DC07`/`$DC0F` 212 times: a program that owns `cia1_timer_b` loses it
+`$FB`. The KERNAL's serial routines in the file round trip write
+`cia1_timer_b`: `STA $DC07` and `STA $DC0F` at `$ED94`/`$ED99` and
+`$EE22`/`$EE27` (ROM bytes `8D 07 DC`, `8D 0F DC`). The count varies by
+run (212 and 314 seen). A program that owns `cia1_timer_b` loses it
 across a disk call.
+
+Four probes, built with KickAssembler and run in x64sc, fail on their
+`sta $d40b`: an IRQ handler that writes it after the program returns to
+BASIC; a jump to `$A474` with BASIC banked out; `dec $01` twice, then code
+at `$E000`; `rol $01`, then code at `$A000` (unattributed).
+
+What the watch does not see:
+
+- Writes by DMA (an REU, a cartridge) are not CPU stores, and `trace store`
+  is not expected to log them (not measured here).
+- The register mirrors (VIC `$D040-$D3FF`, SID `$D420-$D7FF`, each CIA's
+  `$xx10-$xxFF`) are not mapped to units: a store to one is reported as
+  unowned I/O and never fails the run.
+- ROM stores to I/O and RAM outside zero page are listed, not judged; after
+  READY, ROM stores are dropped.
+- Without `--all-ram`, stores to `$0400-$CFFF` and `$E000-$FFF9` are not
+  traced.
+- A read-modify-write on an I/O register is valued as unknown, so it
+  touches every unit bit there.
 
 ---
 
