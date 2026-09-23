@@ -256,7 +256,7 @@ void player_update(char joy, char pressed)
     touch(px, fy - 14);
 
     if (!pground)
-        anim_set(&panim, an_jump);
+        anim_set(&panim, pjump >= JUMP_APEX ? an_fall : an_jump);
     else if (moved)
         anim_set(&panim, an_run);
     else

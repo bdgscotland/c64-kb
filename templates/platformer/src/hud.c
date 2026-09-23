@@ -33,21 +33,36 @@ static void put_digits(char row, char col, const char *d, char n)
 }
 
 // Row 22: "SCORE 000000  COINS 00  LIVES 3". Row 23: "HI 000000".
-// Only when something changed: most frames it costs one test.
+// The labels once per level (hud_labels); the figures only when one
+// changed, at fixed cells, with no division: a dirty frame costs a few
+// hundred cycles (an earlier version redrew the labels and divided, and
+// its dirty frame was the HUD's 2,000-cycle worst).
+#define HUD22 (HUDPAGE + 22 * 40)
+
+void hud_labels(void)
+{
+    put_text(22, 0, "score");
+    put_text(22, 14, "coins");
+    put_text(22, 24, "lives");
+    hud_hiscore();
+    hud_dirty = true;
+}
+
 void hud_draw(void)
 {
     if (!hud_dirty)
         return;
     hud_dirty = false;
-    put_text(22, 0, "score");
-    put_digits(22, 6, score, 6);
-    put_text(22, 14, "coins");
-    char *p = HUDPAGE + 22 * 40 + 20;
-    p[0] = '0' + coins / 10;
-    p[1] = '0' + coins % 10;
-    put_text(22, 24, "lives");
-    HUDPAGE[22 * 40 + 30] = '0' + lives;
-    hud_hiscore();
+    put_digits(22, 6, score, 6);    // a loop storing to HUD22[6 + i] kept only the first digit on Oscar64 v1.32.273
+    char c = coins, t = '0';
+    while (c >= 10)
+    {
+        c -= 10;
+        t++;
+    }
+    HUD22[20] = t;
+    HUD22[21] = '0' + c;
+    HUD22[30] = '0' + lives;
 }
 
 void hud_hiscore(void)

@@ -113,6 +113,38 @@ static bool sprites_match(void)
            (vic.spr_color[0] & 15) == COL_PLAYER;
 }
 
+// Invariants checked after every play frame's work (outside the meter's
+// bracket), each with its own bit in the verdict, so a fault that heals
+// before the end of the script is still caught.
+static unsigned frame_faults;
+#define FF_POPIN   0x0800           // a dormant, living enemy inside the view: woken too late
+#define FF_DROP    0x1000           // a live enemy outside the drop window it was judged against
+#define FF_GROUND  0x2000           // a grounded player not exactly on its cell's surface
+#define FF_CAMERA  0x4000           // the page to show is not the camera's column, or not whole
+
+static void check_frame(void)
+{
+    char cc = camx >> 3;
+    for (char i = 0; i < lvl_count; i++)
+        if (!(lvl_flags[i] & (LF_LIVE | LF_DEAD)) && lvl_col[i] >= cc && lvl_col[i] < cc + 40)
+            frame_faults |= FF_POPIN;
+    for (char s = 0; s < NSLOT; s++)
+    {
+        char c = slot_x[s] >> 3;
+        if (slot_lvl[s] != NO_SLOT && !slot_squashed[s] && (c < drop_lo || c > drop_top))
+            frame_faults |= FF_DROP;
+    }
+    if (pground)
+    {
+        char fy = py >> 8, row = fy >> 3;
+        char a = cell_attr(px >> 3, row);
+        if (!(a & A_GROUND) || surface_at(px, row, a) != fy || (py & 0xff))
+            frame_faults |= FF_GROUND;
+    }
+    if (shown_col != cc || page_col[shown_page] != (int)cc || page_rows[shown_page] != PF_ROWS)
+        frame_faults |= FF_CAMERA;
+}
+
 static void grade(void)
 {
     unsigned value = 0;
@@ -131,7 +163,11 @@ static void grade(void)
         fails |= 0x0100;                                    // stomped stays dead; the walker left behind sleeps
     if (!sprites_match())                                   fails |= 0x0200;
     if (late)                                               fails |= 0x0400;
+    fails |= frame_faults;
 
+#if STAGE_CROWD
+    fails &= 0x0400;                // the crowded level plays nothing like the script: only late frames count
+#endif
     bool ok = fails == 0;
     RESULT = ok ? 0x01 : 0x02;
     vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
@@ -154,6 +190,8 @@ static void autopilot_frame(void)
 {
     if (state == ST_GRADED)
         return;
+    if (metering && state == ST_PLAY)
+        check_frame();              // a whole play frame ran (not the one that started the game)
     if (DEBUG_AT && frame == DEBUG_AT)
     {
         debug_print();

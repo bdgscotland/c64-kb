@@ -13,6 +13,9 @@
 #ifndef FORCE_FAULT
 #define FORCE_FAULT 0
 #endif
+#ifndef STAGE_CROWD
+#define STAGE_CROWD 0               // 1: the crowded first view of make stage
+#endif
 #ifndef TEAR_DEMO
 #define TEAR_DEMO 0                 // 1: shift the page on display in place (the old, torn way)
 #endif
@@ -105,21 +108,30 @@ void level_column(char *dst, unsigned col);     // 20 glyphs down one page colum
 bool take_coin(unsigned col, char row);         // remove the coin tile over this cell
 
 // ---- art (art.c) ----------------------------------------------------------------
-// Sprite shapes, one per block from SPR_BLOCK. Player shapes 0-3 face right
-// and 4-7 are the same four mirrored at start-up.
+// Sprite shapes, one per block from SPR_BLOCK: all sixteen are used.
+// Player shapes 0-4 face right and 5-9 are the same five mirrored at
+// start-up. SH_FALL is the only frame with a stomp box.
 enum Shape {
-    SH_STAND, SH_RUN1, SH_RUN2, SH_JUMP,
-    SH_MIRROR = 4,
-    SH_HURT = 8, SH_WALK1, SH_WALK2, SH_SQUASH, SH_HOP_SIT, SH_HOP_UP,
+    SH_STAND, SH_RUN1, SH_RUN2, SH_JUMP, SH_FALL,
+    SH_MIRROR = 5,
+    SH_HURT = 10, SH_WALK1, SH_WALK2, SH_SQUASH, SH_HOP_SIT, SH_HOP_UP,
     SH_COUNT
 };
-struct Box { signed char x0, y0, x1, y1; };  // inclusive, from the art's top-left; x0 > x1: none
-extern struct Box shape_box[SH_COUNT];
+
+// Hit boxes per animation frame (c64-kb per_frame_hitbox): a frame owns
+// hb_count[shape] boxes from hb_first[shape]. A box has a group, and a mask
+// of the groups it can hit; only pairs whose mask and group meet are tested.
+#define G_PLAYER 0x01               // the player's body
+#define G_STOMP  0x02               // the player's feet, on the falling frame only
+#define G_ENEMY  0x04
+struct HBox { char x0, y0, x1, y1, group, mask; };  // inclusive, from the art's top-left
+extern struct HBox hbox[];
+extern const char hb_first[SH_COUNT], hb_count[SH_COUNT];
 void art_build(void);                      // charset and sprite shapes into bank 3
 
 // ---- animation (anim.c) ----------------------------------------------------------
 struct Anim { const char *seq; char pos, count, shape; };
-extern const char an_stand[], an_run[], an_jump[], an_hurt[];
+extern const char an_stand[], an_run[], an_jump[], an_fall[], an_hurt[];
 extern const char an_walk[], an_squash[], an_hop_sit[], an_hop_up[];
 void anim_set(struct Anim *a, const char *seq);   // restarts only if it is a new sequence
 void anim_step(struct Anim *a);
@@ -152,7 +164,7 @@ void player_update(char joy, char pressed);
 
 // ---- actors (actors.c) --------------------------------------------------------------------
 #define NLVL   32                   // actors placed in a level, at most
-#define NSLOT  6                    // live at once: sprites 1-6
+#define NSLOT  5                    // live at once: sprites 1-5; six overran NTSC (README, "Enemies on screen")
 #define T_WALKER 0
 #define T_HOPPER 1
 extern char lvl_count;
@@ -161,9 +173,11 @@ extern char lvl_col[NLVL], lvl_ty[NLVL], lvl_type[NLVL], lvl_flags[NLVL];
 #define LF_LIVE 0x40
 #define LF_DEAD 0x80
 extern char slot_lvl[NSLOT];        // level index, or NO_SLOT
+extern char drop_lo, drop_top;      // the drop window actors_update used this frame
 extern unsigned slot_x[NSLOT];      // foot column, world pixels
 extern unsigned slot_y[NSLOT];      // feet row, 8.8
 extern char slot_type[NSLOT];
+extern bool slot_squashed[NSLOT];   // stomped: shows its squash, then frees the slot
 extern struct Anim slot_anim[NSLOT];
 #define NO_SLOT 0xff
 void actors_reset(void);
@@ -194,6 +208,7 @@ extern char lives, coins;
 extern bool hud_dirty;
 void put_text(char row, char col, const char *s);
 void hud_clear(void);
+void hud_labels(void);             // once per level: the words around the figures
 void hud_draw(void);
 void hud_hiscore(void);
 void score_add(char hundreds, char tens);

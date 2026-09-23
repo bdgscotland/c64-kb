@@ -65,3 +65,19 @@ $(PRG_JOY): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 
 .PHONY: joy
 joy: $(PRG_JOY)
+
+# ---- stage: the worst frame with every enemy slot full ------------------------------
+# STAGE_CROWD puts ten enemies in the first view (src/level.c), so all six
+# slots are live from the first play frame; the autopilot runs as usual and
+# grades only late frames. stage-expect.json wants the meter's worst inside
+# one frame on each model.
+PRG_STAGE := build/$(NAME)-stage.prg
+$(PRG_STAGE): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dSTAGE_CROWD=1 -o=$@ $(C_MAIN)
+
+.PHONY: stage
+stage: $(PRG_STAGE) $(PIN_PAL) $(PIN_NTSC)
+	$(call vice_shot,$(PRG_STAGE),$(SHOT_CYCLES_PAL),,shots/stage-pal.png)
+	$(call vice_shot,$(PRG_STAGE),$(SHOT_CYCLES_NTSC),-model ntsc,shots/stage-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py stage-expect.json shots/stage-pal.png shots/stage-ntsc.png
