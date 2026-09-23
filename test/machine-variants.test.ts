@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
-import { MACHINE_VARIANTS, RUNS_MODEL_VARIANT, verifiedOnEdges } from "../src/graph/machine-variants.ts";
+import {
+  MACHINE_VARIANTS,
+  RUNS_MODEL_VARIANT,
+  effectiveChips,
+  verifiedOnEdges,
+} from "../src/graph/machine-variants.ts";
 
 // Schema 29: VERIFIED_ON edges come from docs/recipes/runs.json, as
 // scripts/verify-recipes.ts runs each page.
@@ -110,5 +115,39 @@ describe("verifiedOnEdges", () => {
     expect(r.unknownModels).toEqual([]);
     expect(r.missingShots).toEqual([]);
     expect(r.edges.length).toBeGreaterThan(pages.length);
+  });
+});
+
+describe("effectiveChips", () => {
+  const c64c = { vic: "8565", sid: "8580", cia: "8521" };
+
+  it("leaves the variant's chips when no chip flag is given", () => {
+    expect(effectiveChips(c64c, "-keybuf abc")).toEqual({ ...c64c, overrides: [] });
+  });
+
+  it("applies -ciamodel 0, as cia-revision-detect runs", () => {
+    expect(effectiveChips(c64c, "-ciamodel 0")).toEqual({
+      vic: "8565",
+      sid: "8580",
+      cia: "6526",
+      overrides: ["CIA 8521 -> 6526 (-ciamodel 0)"],
+    });
+  });
+
+  it("says nothing when the flag names the chip already fitted", () => {
+    expect(effectiveChips({ vic: "6567R8", sid: "6581", cia: "6526" }, "-ciamodel 0").overrides).toEqual([]);
+  });
+
+  it("splits the CIA pair for -cia2model, applies -sidmodel and -VICIImodel", () => {
+    const r = effectiveChips(c64c, "-cia2model 0 -sidmodel 0 -VICIImodel 6569");
+    expect(r.cia).toBe("8521/6526");
+    expect(r.sid).toBe("6581");
+    expect(r.vic).toBe("6569");
+    expect(r.overrides).toHaveLength(3);
+  });
+
+  it("marks an unknown value and a -model flag rather than guessing", () => {
+    expect(effectiveChips(c64c, "-sidmodel 9").sid).toBe("?");
+    expect(effectiveChips(c64c, "-model c64").overrides[0]).toMatch(/machine replaced/);
   });
 });

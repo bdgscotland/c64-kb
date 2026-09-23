@@ -9,6 +9,7 @@ import { z } from "zod";
 import { getFalkor, getAnalytics } from "../../context.ts";
 import { config } from "../../config.ts";
 import type { RecipeLookupOutput, RecipesForOutput } from "../../schemas/tool-outputs.ts";
+import { effectiveChips } from "../../graph/machine-variants.ts";
 import { describeFilter, names, parseRows, searchChunks, suggestNames, toDocChunk } from "./shared.ts";
 import type { RecipeLookupResult, RecipesForResult } from "./types.ts";
 
@@ -24,11 +25,16 @@ const VerifiedOnRow = z.object({
   flags: z.string(),
   pinned: z.boolean(),
 });
-type VerifiedOnRow = z.infer<typeof VerifiedOnRow>;
+type VerifiedOnRow = z.infer<typeof VerifiedOnRow> & { overrides: string[] };
 
+/**
+ * The runs of one recipe, each with the chips it actually had: a chip flag
+ * in runs.json (cia-revision-detect's `-ciamodel 0`) replaces the variant's
+ * chip, and `overrides` says which.
+ */
 async function verifiedOnOf(name: string): Promise<VerifiedOnRow[]> {
   const f = await getFalkor();
-  return parseRows(
+  const rows = parseRows(
     VerifiedOnRow,
     await f.roQuery(
       `MATCH (:Recipe {name: $name})-[e:VERIFIED_ON]->(v:MachineVariant)
@@ -38,6 +44,7 @@ async function verifiedOnOf(name: string): Promise<VerifiedOnRow[]> {
       { name },
     ),
   );
+  return rows.map((r) => ({ ...r, ...effectiveChips(r, r.flags) }));
 }
 
 function verifiedOnText(rows: VerifiedOnRow[]): string {
@@ -45,7 +52,7 @@ function verifiedOnText(rows: VerifiedOnRow[]): string {
     return `**Verified on:** no VICE run is compared with a committed screenshot for this recipe\n`;
   const parts = rows.map(
     (v) =>
-      `${v.variant} (${v.vic}, ${v.sid}, ${v.cia}; runs.json "${v.model}"${v.flags ? ` ${v.flags}` : ""}) at ${v.cycles.toLocaleString("en-GB")} cycles${v.pinned ? "" : ", no pinned run: verify:recipes defaults"}`,
+      `${v.variant} (${v.vic}, ${v.sid}, ${v.cia}; runs.json "${v.model}"${v.flags ? ` ${v.flags}` : ""}${v.overrides.length ? `; the flags replace the variant's chips: ${v.overrides.join(", ")}` : ""}) at ${v.cycles.toLocaleString("en-GB")} cycles${v.pinned ? "" : ", no pinned run: verify:recipes defaults"}`,
   );
   return `**Verified on:** ${parts.join("; ")}. verify:recipes compares each run's exit screenshot with ${rows.map((v) => v.shot).join(", ")} pixel for pixel\n`;
 }

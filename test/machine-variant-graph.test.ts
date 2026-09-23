@@ -14,13 +14,13 @@ describe("MachineVariant and VERIFIED_ON in the graph", () => {
       region: "both",
       source_doc: `recipes/oscar64/${stem}.md`,
     });
-  const edge = (stem: string, variant: string, model: string) => ({
+  const edge = (stem: string, variant: string, model: string, flags = "") => ({
     source_doc: `recipes/oscar64/${stem}.md`,
     variant,
     model,
     cycles: 8000000,
     shot: `screenshots/${stem}.png`,
-    flags: "",
+    flags,
     pinned: true,
   });
   beforeAll(async () => {
@@ -55,7 +55,7 @@ describe("MachineVariant and VERIFIED_ON in the graph", () => {
       edge("pal-ntsc-detect", "c64c", "pal"),
       edge("pal-ntsc-detect", "ntsc", "ntsc"),
       edge("pal-ntsc-detect", "oldntsc", "oldntsc"),
-      edge("hello-world", "c64c", "pal"),
+      edge("hello-world", "c64c", "pal", "-ciamodel 0"),
       edge("no-such-page", "c64c", "pal"),
     ]);
     warn.mockRestore();
@@ -80,6 +80,21 @@ describe("MachineVariant and VERIFIED_ON in the graph", () => {
       "oldntsc:oldntsc",
     ]);
     expect(text).toContain("**Verified on:** c64c (8565, 8580, 8521");
+  });
+
+  it("c64_recipe_lookup applies a chip flag to the variant's chips", async () => {
+    const { structured, text } = await recipeLookup("oscar64-hello-world");
+    RecipeLookupSchema.parse(structured);
+    expect(structured.verified_on).toMatchObject([
+      {
+        variant: "c64c",
+        vic: "8565",
+        sid: "8580",
+        cia: "6526",
+        overrides: ["CIA 8521 -> 6526 (-ciamodel 0)"],
+      },
+    ]);
+    expect(text).toContain("the flags replace the variant's chips: CIA 8521 -> 6526 (-ciamodel 0)");
   });
 
   it("c64_recipes_for filters by variant name or region word", async () => {
