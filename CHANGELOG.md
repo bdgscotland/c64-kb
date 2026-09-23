@@ -5,7 +5,41 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 739, schema 25, tools 1.30.0.
+Data 740, schema 26, tools 1.31.0, package 0.11.0.
+
+**Issue #22, step 2: the zero page each KERNAL routine writes (schema 26,
+tools 1.31.0, package 0.11.0).** A `CLOBBERS_ZP` edge from each
+KernalRoutine to the `zero_page` unit, from new `**Clobbers zero page:**`
+lines on `hardware/kernal-routines-reference.md`. A `may` line per
+jump-table routine is a static walk of the 901227-03 ROM through the
+power-on vectors (`scripts/kernal-zp-walk.ts`; `npm test` fails when the
+page and the walk disagree). `must` lines, 18 calls of 17 routines, are
+what a VICE x64sc store trace saw with every interrupt masked
+(`scripts/kernal-zp-trace.ts`); every traced byte lies inside its may
+set. `c64_check_compatibility` has a new soft kind, `kernal_clobbers_zp`:
+a technique's KERNAL calls may write bytes a technique claims. It also
+runs inside one input's own chain, the technique against itself and its
+own prerequisites.
+
+The design's sets were too small. It put CHROUT, OPEN and the other large
+routines at 49-55 bytes; the walk gives 88-94. A tape routine installs
+one of four IRQ handlers at `$0314` (table at `$FD9B`) that runs inside
+the call, and those handlers write `$92`, `$96`, `$A7`, `$B1` and `$BF`.
+SCNKEY dispatches through `$028F`, a vector RESTOR does not set; the walk
+follows it to `$EB48`, the value CINT stores, which adds `$F5-$F6`. The
+IRQ entry's BRK branch (`JMP ($0316)` at `$FF55`) is not followed: the
+tape code's fake IRQ through `$FF43` never takes it, and following it ran
+the warm start and counted all of zero page. The traced CHROUT, scrolling
+the screen, wrote `$D9-$F4`, the line-link table, so Krill's default
+zero page `$E0-$EF` is inside what printing writes.
+
+`krill_loader_integration`'s `**Uses kernal:**` said LOAD, CHKIN, CHKOUT.
+The v194 source calls no LOAD; the line now lists the fifteen routines
+`install` calls and the fallback's TKSA. Every check naming Krill now
+carries a soft `kernal_clobbers_zp` of Krill against itself (a lead to
+trace, on #22). The `serial_bus_busy` rule listed CIOUT and ACPTR, names
+no KernalRoutine node has; it now uses IECOUT and IECIN. The trace ran
+only on the windowed x64sc; it now runs on the windowless build too.
 
 **Issue #21, GR-01 to GR-04.** Four small complete games, each a
 technique plus a self-playing recipe checked against a Python model of

@@ -151,8 +151,9 @@ KERNAL.
 - `(may; ROM walk from $FFxx, power-on vectors)` is an upper bound:
   every byte `$00-$FF` that code reachable from the jump-table slot can
   store to (STA, STX, STY, INC, DEC and the shifts; an indexed store
-  counts the index range read off the ROM at that site). Error paths count. So does a tape IRQ handler the routine
-  installs at `$0314` while it runs (the four in the table at `$FD9B`).
+  counts the index range read off the ROM at that site). Error paths
+  count. So does a tape IRQ handler the routine installs at `$0314`
+  while it runs (the four in the table at `$FD9B`).
   Vectors are followed through their power-on values: RESTOR's table at
   `$FD30`, and `$028F` → `$EB48`, which CINT sets. A program that repoints
   a vector, such as `$0326` for CHROUT, changes what the routine runs, and
