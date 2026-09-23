@@ -84,7 +84,8 @@ make run              # windowed VICE, for a human
 - A KickAssembler part called from C is a raw blob at its own `* =` address,
   `$0880` or above; `build/asm.h` gives C its labels as `ASM_<LABEL>`
   (`ASM_<SCOPE>_<LABEL>` inside a scope). Pass arguments through bytes in the
-  blob, not Oscar64's zero page (`$02` to `$52`).
+  blob, not Oscar64's zero page (`$02` up; the top depends on the program:
+  `make zp` lists what the build's code touches).
 - The meter takes CIA2 timer A. Do not open RS-232 (device 2) while it runs.
 - The KERNAL serial routines end in `CLI` (ROM bytes `58 60` / `58 18` at
   `$EDAB`, `$EDB5`, `$EDDB`, `$EE82`). After any disk call, `SEI` again if
