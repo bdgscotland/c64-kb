@@ -301,13 +301,31 @@ VSP uses it to lose N columns and keep the offset.
 The write cycle is N, so the write has to be placed from a stable raster
 entry. The technique is not PAL-specific.
 
-**The VSP crash.** On a proportion of machines a badline that starts
-mid-line corrupts RAM: a few bytes elsewhere in memory change value. It
-depends on the DRAM chips fitted, not on the VIC revision; Linus Åkesson's
-"Safe VSP" work (2013) analysed the DRAM timing behind it and how to detect
-susceptible machines. VICE emulates the effect optionally and prints "VSP
-bug: safe channels" at start. Productions that use VSP test for it at start
-and fall back, or accept the risk.
+**The VSP crash.** On some machines the VSP write corrupts RAM. Linus
+Åkesson's "Safe VSP" article (2013) traced it to DRAM metastability and
+gives the rule a programmer can use: call every address ending in `$7` or
+`$F` fragile; during a VSP, each bit of a fragile byte may take the value of
+the same bit in another fragile byte of the same 256-byte page. No other
+address is affected. It offers three workarounds: make every fragile byte in
+a page identical (all `$EA` in code, a blank bottom line in each character of
+a font); leave the fragile bytes unused, skipping them in code with `$80`
+(NOP immediate) and leaving gaps in data; or keep safe copies of data that
+cannot have gaps, such as graphics, and restore from them continuously. The
+article gives no way to detect a susceptible machine. It says the timing
+depends on temperature, VIC revision, trace capacitance and resistance,
+power-supply ripple, and the colour carrier's phase against the dot clock,
+which is set at random at power-on. A test at start cannot therefore show a
+machine is safe (an inference from those factors, not measured here).
+Kodiak64 draws the same conclusion ("no automated VSP vulnerability
+detection routine makes much sense") and puts the cost of the gap method in
+code at "128 NOPs ... per 1K of executable code", 12.5 % of the code (his
+arithmetic, not measured here). VICE x64sc 3.10 can emulate the corruption
+(`-VICIIvspbug`, "Enable VSP bug emulation" in its `-help`) and logs "VSP
+Bug: safe channels are: ...". (An earlier version of this paragraph said
+the crash depended on the DRAM chips and not the VIC revision, that Safe
+VSP showed how to detect susceptible machines, and that productions test
+for it at start; the article names the VIC revision as a factor and
+describes no detection.)
 
 ### Variations
 
@@ -328,6 +346,11 @@ Bauer's article and the VICE source, not from a run.
 ### Recipes
 
 (No standalone recipe yet — VSP is primarily a KickAssembler technique given its cycle-exact assembly requirements.)
+
+### Sources
+
+- Linus Åkesson, "Safe VSP" (2013): https://www.linusakesson.net/scene/safevsp/index.php
+- Kodiak64, "The future of VSP scrolling": https://kodiak64.co.uk/blog/future-of-VSP-scrolling
 
 ---
 

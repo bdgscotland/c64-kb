@@ -91,8 +91,9 @@ page, and Krill's rule is close to the reverse: a whole-byte store breaks
 it, and a read-modify-write of bits 0-1 while it is idle is tolerated
 (`pitfalls/loader.md`, `fastloader_dd00_write_corrupts_resident`).
 `io_visible_in_irq`, `loads_in_background` and `no_concurrent_loading` are
-Bitfire and Spindle rules; the only background-loader page, Sparkle's, is
-being rewritten under issue #20.
+Bitfire and Spindle rules; no page here describes a loader that loads in
+the background (Sparkle's calls block, per its manual; an earlier version of
+this sentence called Sparkle a background loader).
 
 An optional `**Requires:**` line names the techniques this one presupposes:
 the named technique is set up before, or runs underneath, this one. The

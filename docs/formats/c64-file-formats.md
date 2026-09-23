@@ -138,7 +138,7 @@ Each 4-byte BAM entry: first byte = free sector count, next 3 bytes = 24-bit bit
 | $05–$14 | 16 | Filename (PETASCII, `$A0`-padded) |
 | $1E–$1F | 2 | File size in sectors (little-endian) |
 
-File data uses a 10-sector interleave chain (each sector's first two bytes are the track/sector link to the next; the remaining 254 bytes are data). The last sector in a chain uses `$00` as the next-track link and stores the count of valid data bytes in what would normally be the next-sector byte.
+File data uses a 10-sector interleave chain (each sector's first two bytes are the track/sector link to the next; the remaining 254 bytes are data). The last sector in a chain uses `$00` as the next-track link and stores the index of the last used byte in what would normally be the next-sector byte, so the sector holds that value minus one data bytes (an earlier version said it stored the count of data bytes; a 91-byte last sector written by the 1541 in VICE holds 92).
 
 **Typical use:** release distribution, fastloader authoring (Krill/Loader, Spindle, DreamLoad), scene release packaging via c1541 or CBM FileBrowser.
 

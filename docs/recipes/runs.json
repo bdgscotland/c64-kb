@@ -754,5 +754,56 @@
       "pal": "screenshots/password-state.png",
       "ntsc": "screenshots/password-state-ntsc.png"
     }
+  },
+  "oscar64/iffl-kernal-skip": {
+    "cycles": 36000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/iffl-kernal-skip.png",
+      "ntsc": "screenshots/iffl-kernal-skip-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/runtime-relocation": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/runtime-relocation.png",
+      "ntsc": "screenshots/runtime-relocation-ntsc.png"
+    }
+  },
+  "kickassembler/irq-owns-port": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/irq-owns-port.png",
+      "ntsc": "screenshots/irq-owns-port-ntsc.png"
+    }
+  },
+  "kickassembler/sfx-in-player": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sfx-in-player.png",
+      "ntsc": "screenshots/sfx-in-player-ntsc.png"
+    }
   }
 }

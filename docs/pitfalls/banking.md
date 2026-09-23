@@ -318,7 +318,7 @@ setup_bank1:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation
+**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation, irq_owns_processor_port
 
 ### Symptom
 
@@ -566,7 +566,7 @@ simply be relocated to wherever the linker has free space.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DC0D, D019
-**Triggered by techniques:** charset_copy_rom_to_ram, char_rom_under_vic, cpu_io_port_bank
+**Triggered by techniques:** charset_copy_rom_to_ram, char_rom_under_vic, cpu_io_port_bank, irq_owns_processor_port
 
 ### Symptom
 
