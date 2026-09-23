@@ -237,6 +237,7 @@ the wrap to raster 51, about 6,700 cycles — not the whole frame.
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=196
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-charset-animation (one glyph a frame, in the vertical blank)
 
 ### Why
 
@@ -346,6 +347,7 @@ design's.
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=3995
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-char-bullets (eight bullets, worst frame)
 
 ### Why
 

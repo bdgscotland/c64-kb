@@ -813,6 +813,7 @@ Cycle figures are measured in VICE x64sc with the CIA harness above; the PAL fra
 **Requires:** table_generation
 **Cost:** bytes_code=221, bytes_data=256, zp_bytes=12
 **Cost basis:** derived-listing
+**Cost measured on:** kickassembler-sine-table-runtime (one-off at start, screen blanked)
 
 ### Why
 
@@ -1032,6 +1033,7 @@ unfold 5,190.
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=8000, bytes_code=849, bytes_data=1185
 **Cost basis:** derived-listing
+**Cost measured on:** kickassembler-speedcode-generator (one 1,000-byte copy, screen blanked; bytes are the whole PRG)
 
 The figures on the Cost line are for the recipe's job, a 1,000-byte copy:
 8,000 cycles each time the generated code runs, measured, and the PRG's
@@ -1227,6 +1229,7 @@ address and loop bookkeeping; 1,000 pairs are 4.7 PAL frames.
 **Uses registers:** DD04, DD05, DD0D, DD0E
 **Cost:** cycles_per_frame=20
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-nmi-timer-tick (per press)
 
 ### Why
 
@@ -1387,6 +1390,7 @@ worst frame.
 **Uses registers:** DC08, DC09, DC0A, DC0B, DC0D, DC0E, DC0F
 **Cost:** cycles_per_frame=122
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-tod-alarm (on the frame the alarm fires)
 
 ### Why
 

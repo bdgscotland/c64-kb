@@ -210,6 +210,7 @@ For cycle-tight code running on every line, the badline constraint means the wor
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=160, lines_active=2, irq_slots=2
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-stable-raster-irq (one zero-jitter entry)
 **Claims:** vic_raster_irq (shares)
 **Claims basis:** derived-listing
 
@@ -374,6 +375,7 @@ Bauer's article and the VICE source, not from a run.
 **Requires:** badline_synchronization, stable_raster_irq
 **Cost:** cycles_per_line=63, lines_active=40, irq_slots=2
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-fld (40 lines, the recipe's largest)
 
 ### Why
 
@@ -423,6 +425,7 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 **Raster band:** movable (the program picks the lines; the sideborder-open recipe loops on lines 101-142)
 **Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2, sprites_per_line=8
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-sideborder-open (42 lines, eight sprites on the line)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -502,6 +505,7 @@ Border-opening IRQ overhead combined with a sprite multiplex update on the same 
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=132, lines_active=2, irq_slots=2
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-topbottom-border-open (two handlers, without the $EA31 exit)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -682,6 +686,7 @@ None per line. The routine runs once, with interrupts disabled, and holds the CP
 **Uses registers:** D011, D012, D020
 **Cost:** bytes_code=985
 **Cost basis:** arithmetic
+**Cost measured on:** oscar64-frame-sync-loop (bytes are the whole PRG)
 
 ### Why
 
@@ -878,6 +883,7 @@ same figure.
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=273, lines_active=3, irq_slots=3
 **Cost basis:** estimated
+**Cost measured on:** kickassembler-irq-chain (three empty slots)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -1180,6 +1186,7 @@ recipe's decimal print is a few hundred cycles, not measured.
 **Requires:** frame_sync_loop
 **Cost:** cycles_per_frame=467
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-raster-profile-bars (worst frame, screen blanked)
 
 ### Why
 

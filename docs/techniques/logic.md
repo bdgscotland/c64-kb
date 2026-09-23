@@ -22,6 +22,7 @@ measured here.
 **Requires:** tile_map_render
 **Cost:** cycles_per_frame=2345
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-tile-grid-collision (worst frame, one actor, in the vertical blank)
 
 ### Why
 
@@ -262,6 +263,7 @@ check, was not timed separately.
 **Complexity:** low
 **Cost:** cycles_per_frame=380
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-object-pool (eight live slots, screen blanked)
 
 **Why.** A game spawns and kills enemies, bullets and explosions all the
 time, and it has no heap worth the name: eight sprites, a few hundred
@@ -308,6 +310,7 @@ the update pass with all eight slots live, which is the per-frame figure.
 **Requires:** object_pool
 **Cost:** cycles_per_frame=2809
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-actor-activation-window (worst tick, screen blanked)
 
 **Why.** In a scrolling platformer or adventure the level designer puts
 each enemy, item and door at a place in the level. The level is far
@@ -429,6 +432,7 @@ would cost less; the C figures are an upper reference, not a target.
 **Requires:** frame_sync_loop
 **Cost:** cycles_per_frame=384, irq_slots=1
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-logic-rate-decoupling (midpoint frame, eight sprites, in the vertical blank from line 251)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -554,8 +558,10 @@ On NTSC the display is 60 Hz and the logic runs at 30 Hz, so game speed is
 
 **Complexity:** medium
 **Requires:** object_pool
-**Cost:** cycles_per_frame=3188
+**Cost:** cycles_per_frame=3188, cycles_per_frame_typical=1170
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-wave-director (worst frame, screen blanked)
+**Cost includes:** object_pool
 
 **Why.** A scrolling shooter is built from attack waves: a group of enemies
 that enters at a set place in the level, flies a set path and leaves. The
@@ -641,9 +647,11 @@ with eight live enemies mid-MOVE, director and spawner idle, costs 1,170,
 about 146 per enemy with the edge and hit tests included. The worst frame
 measured costs 3,188: seven enemies on the FIRE, LOOP and MOVE step, a
 wave triggering, and its first enemy spawned into the last free slot and
-fetching its first MOVE. The Cost line carries that figure. It covers the
-director, the spawner and the enemy updates; it leaves out the scroll
-advance, the sprite writes, and `gone()` with its end-of-wave accounting,
+fetching its first MOVE. The Cost line carries that figure, and 1,170 as
+the typical frame. It covers the director, the spawner, the spawn into
+`object_pool`'s slots and the enemy updates, so the Cost includes line
+names `object_pool` and a plan that lists both counts the pool once. It
+leaves out the scroll advance, the sprite writes, and `gone()` with its end-of-wave accounting,
 which runs only when an enemy leaves. Code layout moves these figures by
 a few cycles. Hand-written assembly would cost less; the C figures are an upper
 reference.
@@ -673,6 +681,7 @@ the step is scaled (arithmetic from 59.826 / 50.125 Hz).
 **Requires:** tile_grid_collision
 **Cost:** cycles_per_frame=455
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-slope-collision (worst frame, one actor, in the vertical blank)
 
 ### Why
 
@@ -987,6 +996,7 @@ hand-written loop that shifts the word through the carry costs less
 **Region:** both
 **Cost:** cycles_per_frame=369
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-nav-area-pathfinding (per actor, worst line-of-sight step, in the vertical blank)
 
 ### Why
 
@@ -1120,6 +1130,7 @@ at most 16,061 each, and the next-hop pass 105,602.
 **Requires:** joystick_edge_detect, keyboard_matrix_scan
 **Cost:** cycles_per_frame=65, bytes_data=24
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-two-player (the per-frame port read; the swap runs once per death)
 
 ### Why
 
@@ -1239,8 +1250,9 @@ deselects every column sees only the stick.
 **Complexity:** low
 **Region:** both
 **Requires:** pal_ntsc_detection, object_pool, lfsr_random
-**Cost:** cycles_per_frame=415
+**Cost:** cycles_per_frame=415, cycles_per_frame_typical=53
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-difficulty-tables (spawn frame, screen on)
 
 **Why.** A ramp built from constants cannot be tuned without a rebuild
 and cannot be tested by anyone but the programmer. It also cannot be
@@ -1318,8 +1330,9 @@ is not a per-frame figure.
 
 **Complexity:** medium
 **Region:** both
-**Cost:** cycles_per_frame=7227
+**Cost:** cycles_per_frame=7227, cycles_per_frame_typical=4171
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-ghost-targeting (built worst frame, screen blanked)
 
 ### Why
 
@@ -1458,7 +1471,9 @@ figures include one 5-cycle timer pair, the frame figures two.
 | Worst frame of the recipe's 1,600-frame run | 4,171 |
 
 The Cost line states the 7,227-cycle frame, 37% of a PAL frame (19,656
-cycles; arithmetic). A mode switch reverses all four ghosts at once, so
+cycles; arithmetic), and the run's worst frame, 4,171, as its typical
+figure: play reaches it, while the built frame needs every ghost at a
+junction on a mode switch. A mode switch reverses all four ghosts at once, so
 the worst frame is a switch frame that is also a step frame. On the
 three frames in four when no actor steps and no mode changes, the work
 is the mode-timer update only (not timed separately). An assembler version
@@ -1486,6 +1501,7 @@ a 32-byte row stride (Oscar64 map).
 **Requires:** joystick_autorepeat, lfsr_random
 **Cost:** cycles_per_frame=5888
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-falling-blocks (constructed upper bound, screen on)
 
 **Why.** A falling-block game is small, but its rules decide whether it
 feels right. The renderer in `text_mode_overlay_render` draws a board and
@@ -1606,8 +1622,9 @@ with no lock peaked at 2,113 on both.
 
 **Complexity:** medium
 **Region:** both
-**Cost:** cycles_per_frame=19759
+**Cost:** cycles_per_frame=19759, cycles_per_frame_typical=4118
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-dig-and-guards (constructed stress tick, screen on)
 
 ### Why
 
@@ -1774,6 +1791,7 @@ vertical blank.
 **Region:** both
 **Cost:** cycles_per_frame=18559
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-cave-scan (one scan, run every fourth frame; slowest game-cave scan, NTSC, screen on)
 
 **Why.** A Boulder Dash style game is a grid of one-byte cells in which
 every boulder, diamond, enemy and the player act once per game tick.

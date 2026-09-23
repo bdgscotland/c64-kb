@@ -153,8 +153,9 @@ frame, well inside any frame budget; the cost was not measured here.
 ## decimal_print — Decimal score and counters written as screen codes
 
 **Complexity:** low
-**Cost:** cycles_per_frame=1361, bytes_code=0
+**Cost:** cycles_per_frame=1361
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-print-number (one call, worst decimal case)
 
 **Why.** A HUD shows a score, a timer, lives, a coordinate, and it shows
 them every frame or every time they change. The KERNAL's number printing
@@ -185,7 +186,8 @@ call body, less the 17 cycles of an empty call: 957 cycles for 65,535 and
 1,361 for 59,999 by subtraction of powers of ten (the count of
 subtractions is what varies), 2,537 by double-dabble for 65,535, 74 for
 an 8-bit hex value. The Cost line carries the worst measured decimal
-case; `bytes_code` is not measured on the page. The same five digits by
+case; the page does not measure the code size (an earlier Cost line
+said `bytes_code=0`, which a budget summed as zero bytes). The same five digits by
 four shift-and-subtract divisions by ten cost 2,793 cycles for 65,535
 in `recipes/oscar64/divide-check.md`, three times the subtract-powers
 route (`division_8_16bit` in `techniques/maths.md` has the comparison).
@@ -201,6 +203,7 @@ route (`division_8_16bit` in `techniques/maths.md` has the comparison).
 **Uses registers:** (none)
 **Cost:** cycles_per_frame=481
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-high-score-insert (worst insert, once a round, screen blanked)
 
 ### Why
 
@@ -311,6 +314,7 @@ plan for the end-of-round frame is the only one that has to fit it.
 **Uses kernal:** CHROUT
 **Cost:** cycles_per_frame=32
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-petscii-screen-codes (one call, longest path)
 
 ### Why
 
@@ -454,6 +458,7 @@ carries one forward call.
 **Requires:** char_scroll_buffer_h
 **Cost:** cycles_per_frame=672
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-big-font-scroller (carry frame, in the vertical blank from line 251)
 
 ### Why
 

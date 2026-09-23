@@ -211,6 +211,7 @@ mismatches.
 **Uses registers:** (none)
 **Cost:** cycles_per_frame=791
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-divide-check (one call, worst case 65535/1)
 
 ### Why
 
@@ -712,6 +713,7 @@ its result is a screen the character ROM can decode.
 **Uses registers:** D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E
 **Cost:** cycles_per_frame=14, bytes_code=1947
 **Cost basis:** arithmetic
+**Cost measured on:** oscar64-lfsr-random (one 8-bit step, screen blanked; bytes are the whole PRG)
 **Claims:** sid_voice_3 (init), sid_voice_3_readback (init), sid_filter_volume (init), cia1_timer_a (reads)
 **Claims basis:** derived-listing
 
@@ -863,6 +865,7 @@ by `fpcheck.c` above.
 **Uses registers:** (none)
 **Cost:** cycles_per_frame=20
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-compare-16bit-signed (one call, signed 16-bit with overflow)
 
 ### Why
 
@@ -1054,6 +1057,7 @@ the worst of the five, as one call per frame.
 **Uses registers:** (none)
 **Cost:** cycles_per_frame=869
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sqrt-atan2 (one call, worst input)
 
 ### Why
 
@@ -1147,6 +1151,7 @@ one page: a layout with its branch across a page boundary measured
 **Requires:** division_8_16bit
 **Cost:** cycles_per_frame=381
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sqrt-atan2 (one call, worst pair)
 
 ### Why
 

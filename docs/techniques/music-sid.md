@@ -236,6 +236,7 @@ Changing $D416 while voices are playing produces a live filter sweep — this is
 **Requires:** sid_voice_setup
 **Cost:** cycles_per_frame=327, irq_slots=1
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-sfx-engine (the recipe's stub tune; a real player costs several times more)
 **Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
 **Claims basis:** estimated
 
@@ -588,6 +589,7 @@ The core insight is that the SID has multiple analog signal paths that can be dr
 **Requires:** sid_voice_setup
 **Cost:** cycles_per_frame=4774
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-pwm-digi (per-sample work at a 128-cycle period, PAL)
 
 ### Why
 
@@ -761,8 +763,9 @@ reSID is an analog-circuit simulation using a mix of analytical models (for the 
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D418
 **Requires:** sid_play_routine_pattern, sid_voice_setup
-**Cost:** cycles_per_frame=258, irq_slots=1
+**Cost:** cycles_per_frame=258, cycles_per_frame_typical=50, irq_slots=1
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-sfx-engine (a frame the engine owns the voice)
 **Claims:** sid_voice_2 (shares)
 **Claims basis:** derived-listing
 
@@ -881,7 +884,8 @@ cycles on a frame it owns the voice (seven stores, four byte copies for the
 checksum, and the row advance) and 55 cycles when idle, both including the
 harness's 5 cycles of start/stop overhead. The stub tune's play routine
 costs 332, or 327 net of that overhead, which is the figure on the Cost
-line above. Against a PAL frame of 19,656 cycles the engine is about 1.3 %
+line above. The engine's own Cost line carries 258 (263 less the 5) as its worst frame and 50 (55 less the 5,
+idle) as its typical figure. Against a PAL frame of 19,656 cycles the engine is about 1.3 %
 active and 0.25 % idle (arithmetic). A real player's play routine is
 typically several times the stub; its figure is the player's, not this
 technique's.
@@ -900,6 +904,7 @@ technique's.
 **Requires:** sid_play_routine_pattern, sid_voice_setup
 **Cost:** cycles_per_frame=493
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-sfx-in-player (increment over the player, worst effect frame)
 
 Every claim below is register-level: what the player put in its shadow of
 the SID, and so in the SID, measured in VICE x64sc 3.10 by the recipe's

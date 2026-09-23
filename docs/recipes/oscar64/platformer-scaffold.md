@@ -3,7 +3,7 @@ recipe: platformer-scaffold
 toolchain: oscar64
 output_format: PRG
 region: both
-techniques: [tile_map_render, tile_grid_collision, fixed_point_8_8, jump_arc_table, joystick_edge_detect, joystick_autorepeat, object_pool, lfsr_random, frame_sync_loop, decimal_print, sfx_engine_beside_music, kernal_file_write_seq, kernal_file_read_seq, error_channel_check]
+techniques: [tile_map_render, tile_grid_collision, fixed_point_8_8, jump_arc_table, joystick_edge_detect, joystick_autorepeat, object_pool, lfsr_random, frame_sync_loop, decimal_print, sid_play_routine_pattern, sfx_engine_beside_music, kernal_file_write_seq, kernal_file_read_seq, error_channel_check]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D019, D01A, D020, D021, D027, D028, D029, D02A, D02B, D02C, D02D, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D418, D41B, DC00, DC02, DC03, DC06, DC07, DC0F]
 uses_kernal: [SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, READST]

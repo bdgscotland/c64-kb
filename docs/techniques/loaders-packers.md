@@ -532,6 +532,7 @@ The depacker execution overhead (BASIC calls SYS, depacker runs, jumps to effect
 **Region:** both
 **Cost:** bytes_code=43, zp_bytes=4
 **Cost basis:** derived-listing
+**Cost measured on:** kickassembler-runtime-relocation (one-off per load)
 
 ### Why
 

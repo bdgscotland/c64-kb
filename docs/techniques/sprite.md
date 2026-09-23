@@ -36,6 +36,7 @@ against those constraints.
 **Demands:** midframe_raster_irqs, changes_sprite_set
 **Cost:** cycles_per_frame=5301
 **Cost basis:** arithmetic
+**Cost measured on:** oscar64-sprite-multiplex-8 (the three calls' worst cases summed)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -292,6 +293,7 @@ three-pass design that `vspr_*` does not implement.
 **Demands:** midframe_raster_irqs, changes_sprite_set
 **Cost:** cycles_per_frame=16600, irq_slots=17
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-sprite-multiplex-game (worst frame: a reversed sort)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -919,6 +921,7 @@ cycle budget for the KERNAL-vector figures).
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=200, bytes_data=512, irq_slots=1
 **Cost basis:** estimated
+**Cost measured on:** kickassembler-sprite-sine-chain (eight sprites; not timed)
 **Claims:** sprite_0-7 (owns)
 **Claims basis:** derived-listing
 
@@ -1062,8 +1065,9 @@ move.
 **Uses registers:** D01C
 **Uses kernal:** (none)
 **Requires:** table_generation
-**Cost:** cycles_per_frame=2672, bytes_data=1024
+**Cost:** cycles_per_frame=2672, cycles_per_frame_typical=20, bytes_data=1024
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-sprite-cache-flip (one cache miss, screen blanked)
 
 ### Why
 
@@ -1213,6 +1217,7 @@ sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=3693
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-per-frame-hitbox (eight boxes, 28 pairs)
 
 ### Why
 
@@ -1343,8 +1348,9 @@ cycles instead of 10, so a full 9-bit hit is 64. A masked-out pair is
 **Complexity:** low
 **Region:** both
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=747
+**Cost:** cycles_per_frame=747, cycles_per_frame_typical=357
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-sprite-animation-table (six actors, the scenario's worst frame)
 
 ### Why
 
@@ -1497,6 +1503,7 @@ when the entry holds (instruction-table arithmetic, not measured here).
 **Requires:** unrolled_loops
 **Cost:** cycles_per_frame=1890, bytes_code=2608, bytes_data=2688
 **Cost basis:** derived-listing
+**Cost measured on:** kickassembler-software-sprite-preshifted (one object drawn and erased, screen blanked)
 
 ### Why
 
@@ -1638,6 +1645,7 @@ recipe; the timing and print harness is not counted).
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=1342, sprites_per_line=3
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-multi-sprite-object (worst frame, six parts, in the vertical blank)
 
 ### Why
 

@@ -328,6 +328,7 @@ scan can be skipped that frame.
 **Uses registers:** D419, D41A, DC00, DC01, DC02
 **Cost:** cycles_per_frame=1152, zp_bytes=0, irq_slots=0
 **Cost basis:** arithmetic
+**Cost measured on:** kickassembler-paddle-read (two ports in one frame)
 
 ### Why
 
@@ -466,6 +467,7 @@ the worst frame of a two-port read done inside one frame.
 **Uses registers:** D419, D41A, DC00, DC01, DC02
 **Cost:** cycles_per_frame=104, zp_bytes=0, irq_slots=0
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-mouse-1351-read (one call, worst case)
 
 ### Why
 
@@ -605,6 +607,7 @@ select to read paddles on the other port pays `paddle_read`'s settle.
 **Requires:** joystick_edge_detect, lfsr_random, frame_sync_loop
 **Cost:** cycles_per_frame=68
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-attract-replay (longest step)
 
 ### Why
 
@@ -702,6 +705,7 @@ listing.
 **Uses registers:** DC00, DC01, DD01, DD03
 **Cost:** cycles_per_frame=62, irq_slots=0
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-four-player-read (read inlined, once a frame)
 
 ### Why
 

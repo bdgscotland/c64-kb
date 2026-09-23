@@ -28,6 +28,8 @@ horizontal panning.
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=74041
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-soft-scroll-h (carry frame: a 25-row memmove of screen and colour RAM)
+**Cost includes:** char_scroll_buffer_h
 
 ### Why
 
@@ -356,6 +358,7 @@ frame's active display period.
 **Demands:** midframe_raster_irqs
 **Cost:** irq_slots=2, lines_active=5, cycles_per_frame=413
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-scroll-panel-split (two IRQs, screen on; not the carry frame)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -627,6 +630,7 @@ in positional math plus the occasional carry. Well within PAL budget.
 **Requires:** infinite_scroll_h
 **Cost:** cycles_per_frame=378, bytes_code=26
 **Cost basis:** derived-listing
+**Cost measured on:** oscar64-charset-parallax (roll frame, every second frame, in the vertical blank)
 
 ### Why
 
@@ -894,6 +898,7 @@ buffer) is the real budget item and is scene-specific.
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=268
 **Cost basis:** arithmetic
+**Cost measured on:** oscar64-tile-map-render (one column edge, 11 metatiles)
 
 ### Why
 
@@ -1055,6 +1060,7 @@ per character step.
 **Requires:** frame_sync_loop
 **Cost:** cycles_per_frame=5343, bytes_code=4117, bytes_data=1090, zp_bytes=2, irq_slots=1
 **Cost basis:** derived-listing
+**Cost measured on:** kickassembler-dycp-scroller (worst frame, 39 columns, in the vertical blank)
 
 ### Why
 

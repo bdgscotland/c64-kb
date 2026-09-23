@@ -344,6 +344,7 @@ techniques and will be demonstrated in Phase 4+ recipe docs.
 **Requires:** cpu_io_port_bank
 **Cost:** bytes_code=70, bytes_data=2048
 **Cost basis:** derived-listing
+**Cost measured on:** kickassembler-charset-copy-rom-to-ram (one-off copy)
 
 ### Why
 
@@ -1010,6 +1011,7 @@ the top of RAM, which the plan leaves free.
 **Demands:** kernal_rom_out
 **Cost:** cycles_per_frame=18
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-irq-owns-port (per interrupt taken)
 
 ### Why
 

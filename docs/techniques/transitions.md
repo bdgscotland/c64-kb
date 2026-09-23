@@ -21,6 +21,7 @@ raster sweep, a charset flicker and a DRAM fade have no recipe yet.
 **Uses registers:** D020, D021, D012
 **Cost:** cycles_per_frame=400, bytes_data=272
 **Cost basis:** estimated
+**Cost measured on:** kickassembler-colour-fade (per step)
 
 ### Why
 
@@ -119,6 +120,7 @@ reading step 16.
 **Uses registers:** D012, D021
 **Cost:** cycles_per_frame=3265
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-colour-cycling (one step, in the vertical blank from line 251)
 
 ### Why
 
@@ -204,6 +206,7 @@ the pace differs by a fifth between PAL and NTSC.
 **Uses registers:** D012, D021
 **Cost:** cycles_per_frame=709
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-screen-wipe (one reveal step, worst row)
 
 ### Why
 
