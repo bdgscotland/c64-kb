@@ -1,0 +1,25 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line and the model's fold (0xC0F1)", "type": "text", "row": 23, "col": 0, "text": "RESULT 01 PASS  FOLD 49393" },
+    { "name": "HUD: cave 2's quota and time, the banked score 158, one life", "type": "text", "row": 0, "col": 0, "text": "GEMS 00/08 TIME 120 SCORE 000158 LIVES 1" },
+    { "name": "game-over box", "type": "text", "row": 7, "col": 16, "text": "GAME OVER" },
+    { "name": "table row 4: the scripted name and score, inserted", "type": "text", "row": 14, "col": 13, "text": "4. ABE 000158" },
+    { "name": "table row 5: the old row 4, shifted down", "type": "text", "row": 15, "col": 13, "text": "5. MUD 000100" },
+    { "name": "table row 3 kept", "type": "text", "row": 13, "col": 13, "text": "3. GEM 000200" },
+    { "name": "no disk in the shot: the drive answered 74, nothing saved", "type": "text", "row": 17, "col": 9, "text": "NOT SAVED         (74)" },
+    { "name": "steel border, cave (0, 0)", "type": "pixel", "row": 1, "col": 0, "colour": 12 },
+    { "name": "boulder the model leaves at cave (22, 1)", "type": "pixel", "row": 2, "col": 22, "colour": 15 },
+    { "name": "boulder at cave (11, 2)", "type": "pixel", "row": 3, "col": 11, "colour": 15 },
+    { "name": "gem at cave (14, 3)", "type": "pixel", "row": 4, "col": 14, "colour": 3 },
+    { "name": "spark the model moved to cave (22, 4)", "type": "pixel", "row": 5, "col": 22, "colour": 8 },
+    { "name": "gem that fell into the spark's corridor, cave (24, 4)", "type": "pixel", "row": 5, "col": 24, "colour": 3 },
+    { "name": "exit still shut (looks like steel), cave (29, 4)", "type": "pixel", "row": 5, "col": 29, "colour": 12 },
+    { "name": "the explosion that killed the player left space, cave (5, 3)", "type": "pixel", "row": 4, "col": 5, "colour": 0 },
+    { "name": "where the killing boulder fell from is space, cave (5, 1)", "type": "pixel", "row": 2, "col": 5, "colour": 0 },
+    { "name": "dirt beside the blast, cave (1, 3)", "type": "pixel", "row": 4, "col": 1, "colour": 9 },
+    { "name": "gem at cave (4, 18), below the box", "type": "pixel", "row": 19, "col": 4, "colour": 3 },
+    { "name": "HUD, cave, box and verdict line the same on both models", "type": "same", "cells": [0, 0, 23, 39] },
+    { "name": "frame meter, the script's 140 play frames", "type": "meter", "row": 24, "col": 20, "frames": 140 }
+  ]
+}
