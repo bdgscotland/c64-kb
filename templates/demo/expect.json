@@ -1,0 +1,532 @@
+{
+  "checks": [
+    {
+      "name": "own verdict (border)",
+      "type": "verdict"
+    },
+    {
+      "name": "verdict line",
+      "type": "text",
+      "row": 24,
+      "col": 1,
+      "text": "RESULT 01 PASS"
+    },
+    {
+      "name": "subtitle under the logo (row 5)",
+      "type": "text",
+      "row": 5,
+      "col": 0,
+      "text": "     C64-KB DEMO STARTER * PART ONE     "
+    },
+    {
+      "name": "logo row 0: the D's stem",
+      "type": "pixel",
+      "row": 0,
+      "col": 7,
+      "colour": 4
+    },
+    {
+      "name": "logo row 1: the D's stem",
+      "type": "pixel",
+      "row": 1,
+      "col": 7,
+      "colour": 10
+    },
+    {
+      "name": "logo row 2: the D's stem",
+      "type": "pixel",
+      "row": 2,
+      "col": 7,
+      "colour": 7
+    },
+    {
+      "name": "logo row 3: the D's stem",
+      "type": "pixel",
+      "row": 3,
+      "col": 7,
+      "colour": 10
+    },
+    {
+      "name": "logo row 4: the D's stem",
+      "type": "pixel",
+      "row": 4,
+      "col": 7,
+      "colour": 4
+    },
+    {
+      "name": "logo: the gap between D and E",
+      "type": "pixel",
+      "row": 2,
+      "col": 13,
+      "colour": 0
+    },
+    {
+      "name": "sprite 0 at X 64, Y 103 (lines 104-124), from the sine formula",
+      "type": "sprite",
+      "colour": 13,
+      "vic_x": 64,
+      "line": 104,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 48,
+        "line": 96,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "sprite 1 at X 99, Y 109 (lines 110-130), from the sine formula",
+      "type": "sprite",
+      "colour": 3,
+      "vic_x": 99,
+      "line": 110,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 83,
+        "line": 102,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "sprite 2 at X 132, Y 116 (lines 117-137), from the sine formula",
+      "type": "sprite",
+      "colour": 13,
+      "vic_x": 132,
+      "line": 117,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 116,
+        "line": 109,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "sprite 3 at X 163, Y 121 (lines 122-142), from the sine formula",
+      "type": "sprite",
+      "colour": 3,
+      "vic_x": 163,
+      "line": 122,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 147,
+        "line": 114,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "sprite 4 at X 193, Y 124 (lines 125-145), from the sine formula",
+      "type": "sprite",
+      "colour": 13,
+      "vic_x": 193,
+      "line": 125,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 177,
+        "line": 117,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "sprite 5 at X 223, Y 122 (lines 123-143), from the sine formula",
+      "type": "sprite",
+      "colour": 3,
+      "vic_x": 223,
+      "line": 123,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 207,
+        "line": 115,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "sprite 6 at X 253, Y 117 (lines 118-138), from the sine formula",
+      "type": "sprite",
+      "colour": 13,
+      "vic_x": 253,
+      "line": 118,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 237,
+        "line": 110,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "sprite 7 at X 286, Y 111 (lines 112-132), from the sine formula",
+      "type": "sprite",
+      "colour": 3,
+      "vic_x": 286,
+      "line": 112,
+      "width": 24,
+      "height": 21,
+      "search": {
+        "vic_x": 270,
+        "line": 104,
+        "width": 56,
+        "height": 37
+      }
+    },
+    {
+      "name": "bar lines 155-155: colour 0 across the whole line",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": -8,
+      "line": 155,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 156-156: colour 11 across the whole line",
+      "type": "rect",
+      "colour": 11,
+      "vic_x": -8,
+      "line": 156,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 157-158: colour 12 across the whole line",
+      "type": "rect",
+      "colour": 12,
+      "vic_x": -8,
+      "line": 157,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 159-160: colour 15 across the whole line",
+      "type": "rect",
+      "colour": 15,
+      "vic_x": -8,
+      "line": 159,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 161-162: colour 1 across the whole line",
+      "type": "rect",
+      "colour": 1,
+      "vic_x": -8,
+      "line": 161,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 163-164: colour 15 across the whole line",
+      "type": "rect",
+      "colour": 15,
+      "vic_x": -8,
+      "line": 163,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 165-166: colour 12 across the whole line",
+      "type": "rect",
+      "colour": 12,
+      "vic_x": -8,
+      "line": 165,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 167-167: colour 11 across the whole line",
+      "type": "rect",
+      "colour": 11,
+      "vic_x": -8,
+      "line": 167,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 168-169: colour 0 across the whole line",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": -8,
+      "line": 168,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 170-170: colour 11 across the whole line",
+      "type": "rect",
+      "colour": 11,
+      "vic_x": -8,
+      "line": 170,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 171-172: colour 5 across the whole line",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": -8,
+      "line": 171,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 173-174: colour 13 across the whole line",
+      "type": "rect",
+      "colour": 13,
+      "vic_x": -8,
+      "line": 173,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 175-176: colour 1 across the whole line",
+      "type": "rect",
+      "colour": 1,
+      "vic_x": -8,
+      "line": 175,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 177-178: colour 13 across the whole line",
+      "type": "rect",
+      "colour": 13,
+      "vic_x": -8,
+      "line": 177,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 179-180: colour 5 across the whole line",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": -8,
+      "line": 179,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 181-181: colour 11 across the whole line",
+      "type": "rect",
+      "colour": 11,
+      "vic_x": -8,
+      "line": 181,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 182-189: colour 0 across the whole line",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": -8,
+      "line": 182,
+      "width": 384,
+      "height": 8
+    },
+    {
+      "name": "bar lines 190-191: colour 6 across the whole line",
+      "type": "rect",
+      "colour": 6,
+      "vic_x": -8,
+      "line": 190,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 192-193: colour 14 across the whole line",
+      "type": "rect",
+      "colour": 14,
+      "vic_x": -8,
+      "line": 192,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 194-194: colour 3 across the whole line",
+      "type": "rect",
+      "colour": 3,
+      "vic_x": -8,
+      "line": 194,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 195-196: colour 1 across the whole line",
+      "type": "rect",
+      "colour": 1,
+      "vic_x": -8,
+      "line": 195,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 197-197: colour 3 across the whole line",
+      "type": "rect",
+      "colour": 3,
+      "vic_x": -8,
+      "line": 197,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 198-199: colour 14 across the whole line",
+      "type": "rect",
+      "colour": 14,
+      "vic_x": -8,
+      "line": 198,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 200-201: colour 6 across the whole line",
+      "type": "rect",
+      "colour": 6,
+      "vic_x": -8,
+      "line": 200,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 202-202: colour 10 across the whole line",
+      "type": "rect",
+      "colour": 10,
+      "vic_x": -8,
+      "line": 202,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 203-203: colour 15 across the whole line",
+      "type": "rect",
+      "colour": 15,
+      "vic_x": -8,
+      "line": 203,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 204-205: colour 1 across the whole line",
+      "type": "rect",
+      "colour": 1,
+      "vic_x": -8,
+      "line": 204,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 206-206: colour 15 across the whole line",
+      "type": "rect",
+      "colour": 15,
+      "vic_x": -8,
+      "line": 206,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 207-207: colour 10 across the whole line",
+      "type": "rect",
+      "colour": 10,
+      "vic_x": -8,
+      "line": 207,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 208-208: colour 8 across the whole line",
+      "type": "rect",
+      "colour": 8,
+      "vic_x": -8,
+      "line": 208,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 209-209: colour 2 across the whole line",
+      "type": "rect",
+      "colour": 2,
+      "vic_x": -8,
+      "line": 209,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 210-210: colour 9 across the whole line",
+      "type": "rect",
+      "colour": 9,
+      "vic_x": -8,
+      "line": 210,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "line 154, above the bars: border",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": -8,
+      "line": 154,
+      "width": 32,
+      "height": 1
+    },
+    {
+      "name": "line 154, above the bars: background",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 24,
+      "line": 154,
+      "width": 320,
+      "height": 1
+    },
+    {
+      "name": "line 211, below the bars: border",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": -8,
+      "line": 211,
+      "width": 32,
+      "height": 1
+    },
+    {
+      "name": "line 211, below the bars: background",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 24,
+      "line": 211,
+      "width": 320,
+      "height": 1
+    },
+    {
+      "name": "scroller row 22 after 19 shifts, XSCROLL 0 (columns 1-37)",
+      "type": "text",
+      "row": 22,
+      "col": 1,
+      "text": "B DEMO STARTER. A PART TABLE, A TABLE"
+    },
+    {
+      "name": "rows 0 to 23 the same on PAL and NTSC",
+      "type": "same",
+      "cells": [
+        0,
+        0,
+        23,
+        39
+      ]
+    },
+    {
+      "name": "frame meter, 232 frames: title, wipe and main part",
+      "type": "meter",
+      "row": 24,
+      "col": 20,
+      "frames": 232
+    }
+  ]
+}
