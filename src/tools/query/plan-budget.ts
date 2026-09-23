@@ -15,7 +15,9 @@ import {
   type BudgetPhase,
   type PhaseBudget,
 } from "../../domain/budget.ts";
+import { compareMeasured } from "../../domain/game-design.ts";
 import { CostBasisSchema, type PlanBudgetOutput } from "../../schemas/tool-outputs.ts";
+import { fetchGameDesign, knownGameDesigns, type GameDesignRecord } from "./game-design.ts";
 import { parseRows } from "./shared.ts";
 
 export interface PlanBudgetResult {
@@ -177,8 +179,27 @@ function bytesLine(bytes: PlanBudgetOutput["bytes"]): string {
   return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => c.name).join(", ")}${floor}.${inside}`;
 }
 
+function renderDesign(b: PlanBudgetOutput): string {
+  if (b.design_not_found) {
+    const known = b.design_not_found.known.join(", ") || "(none in this graph)";
+    return `\nNo GameDesign is named "${b.design_not_found.requested}". Known: ${known}.\n`;
+  }
+  const d = b.design;
+  if (!d) return "";
+  let out = `\nDesign: ${d.title} (\`${d.name}\`), ${d.source_doc}. Instance of ${d.instance_of.join(", ") || "(none)"}; realised by ${d.realised_by.join(", ") || "(no recipe)"}.\n`;
+  if (d.measured.length === 0) return `${out}The design states no measured frame.\n`;
+  out += `\nMeasured beside predicted:\n`;
+  for (const m of d.measured) {
+    const typical = m.typical !== null ? `, typical ${m.typical}` : "";
+    out += `- ${m.phase} ${m.region}: worst ${m.worst}${typical} (${m.source}); ${m.finding}\n`;
+  }
+  return out;
+}
+
 function renderPlan(b: PlanBudgetOutput): string {
-  let out = `# Budget plan: ${b.verdict}\n\nTechniques: ${b.techniques.join(", ") || "(none)"}\n`;
+  let out = `# Budget plan: ${b.verdict}\n`;
+  out += renderDesign(b);
+  out += `\nTechniques: ${b.techniques.join(", ") || "(none)"}\n`;
   for (const r of b.refused) out += `- Refused "${r.input}": ${r.why}\n`;
   for (const p of b.phases) out += renderPhase(p);
   out += `\n## Bytes\n\n${bytesLine(b.bytes)}\n`;
@@ -227,21 +248,56 @@ export function parseMemberSpecs(inputs: string[]): {
 }
 
 export interface PlanBudgetRequest extends BudgetOptions {
-  techniques: string[];
+  techniques?: string[] | undefined;
+  /** A GameDesign name: its COMPOSES edges, each in its phase, come before `techniques`. */
+  design?: string | undefined;
+}
+
+/** The design's members as "name" / "name:phase" specs, play first. */
+function designSpecs(d: GameDesignRecord): string[] {
+  return d.composes.map((c) => (c.phase === "play" ? c.technique : `${c.technique}:${c.phase}`));
+}
+
+async function resolveDesign(
+  name: string | undefined,
+): Promise<{ design: GameDesignRecord | null; notFound?: { requested: string; known: string[] } }> {
+  const wanted = name?.trim();
+  if (!wanted) return { design: null };
+  const design = await fetchGameDesign(wanted);
+  if (design) return { design };
+  return { design: null, notFound: { requested: wanted, known: await knownGameDesigns() } };
 }
 
 export async function planBudgetTool(req: PlanBudgetRequest): Promise<PlanBudgetResult> {
-  const { specs, refused } = parseMemberSpecs(req.techniques);
+  const { design, notFound } = await resolveDesign(req.design);
+  const inputs = [...(design ? designSpecs(design) : []), ...(req.techniques ?? [])];
+  if (inputs.length === 0 && !notFound) throw new Error("give techniques, a design, or both");
+  const { specs, refused } = parseMemberSpecs(inputs);
   const members = await fetchBudgetMembers(specs);
-  const plan = planBudget(members, req);
+  // A design's own region is the default; the caller's word overrides it.
+  const region = req.region ?? design?.region ?? undefined;
+  const plan = planBudget(members, { ...req, region });
   const structured: PlanBudgetOutput = {
+    design: design
+      ? {
+          name: design.name,
+          title: design.title,
+          region: design.region,
+          instance_of: design.instance_of,
+          realised_by: design.realised_by,
+          composes: design.composes,
+          source_doc: design.source_doc,
+          measured: compareMeasured(design.measured, plan.phases),
+        }
+      : null,
+    ...(notFound ? { design_not_found: notFound } : {}),
     techniques: specs.map((s) => (s.phase === "play" ? s.name : `${s.name}:${s.phase}`)),
     refused,
     ...plan,
   };
   getAnalytics().logQuery({
     tool: "c64_plan_budget",
-    query: req.techniques.join(","),
+    query: [req.design ? `design=${req.design}` : "", ...(req.techniques ?? [])].filter(Boolean).join(","),
     resultCount: members.length,
   });
   return { structured, text: renderPlan(structured) };

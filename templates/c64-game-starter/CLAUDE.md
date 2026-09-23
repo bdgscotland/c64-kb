@@ -143,7 +143,7 @@ All 24 tools from c64-kb are available once the MCP server is running:
 | `c64_techniques_for` | List techniques filtered by category / chip / region |
 | `c64_check_compatibility` | Conflict detection across a list of techniques |
 | `c64_timing_budget` | Per-scanline cycle math for a technique |
-| `c64_plan_budget` | Add your technique list up against a frame, per phase; names what is unknown |
+| `c64_plan_budget` | Add your technique list, or a game design (`design`), up against a frame, per phase; names what is unknown and sets a design's measured frame beside the prediction |
 | `c64_pitfalls_for` | Pitfalls triggered by a register, KERNAL, or technique |
 | `c64_failure_diagnose` | Match symptom description against CrashPattern nodes |
 | `c64_demo_briefing` | Synthesise techniques + pitfalls + build order for a demo brief |

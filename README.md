@@ -176,7 +176,7 @@ carries a placeholder entry for vice-mcp.
 |------|---------|
 | `c64_check_compatibility` | Conflict detection across a list of techniques: hard conflicts from authored resource demands (CPU every line, constant sprite set, KERNAL banked out) and region mismatch; soft ones from shared registers / KERNAL routines; runs the hard rules through each technique's REQUIRES closure (`prerequisite_conflict`) and names the prerequisites the set leans on without naming; reports what the graph does not know about each technique |
 | `c64_timing_budget` | Per-scanline cycle math for one technique on PAL or NTSC: badline, IRQ entry and sprite DMA losses |
-| `c64_plan_budget` | A list of techniques, each in a phase (play, transition, init), added up against a PAL or NTSC frame: a cycle range from measured typical and worst frames, figures left out and why (multi-frame, included in another figure, inside a raster band), the members with no figure and the recipe to measure each on, and a fits / over / undetermined verdict |
+| `c64_plan_budget` | A list of techniques, each in a phase (play, transition, init), added up against a PAL or NTSC frame: a cycle range from measured typical and worst frames, figures left out and why (multi-frame, included in another figure, inside a raster band), the members with no figure and the recipe to measure each on, and a fits / over / undetermined verdict. Given a game design name instead, it budgets that game's phases and sets its measured frame beside the prediction |
 
 ### Pitfalls and failure analysis
 

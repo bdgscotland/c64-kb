@@ -268,13 +268,13 @@ export const planBudgetTool = defineTool({
 
 Purpose: Answers "does this combination fit a frame?" before code is written. It does not sum blindly: a missing figure is never counted as zero, a figure above one frame is never summed, work one figure already includes is not counted twice, and every figure names the recipe it was measured on.
 
-Inputs: 'techniques' is a list of canonical technique names, each optionally with a phase: "name" (play), "name:play", "name:transition" (level decode, wipe) or "name:init" (one-off setup). Each phase is budgeted alone. 'region' is 'pal', 'ntsc' or 'both' (default: PAL unless every region-locked member is NTSC-locked). 'screen' is 'on' (default) or 'off'. 'sprites_per_line' (0-8) and 'sprite_lines' (default 200) charge sprite DMA, 3 + 2n cycles a line.
+Inputs: 'techniques' is a list of canonical technique names, each optionally with a phase: "name" (play), "name:play", "name:transition" (level decode, wipe) or "name:init" (one-off setup). Each phase is budgeted alone. 'design' is a GameDesign name (a whole game from docs/game-design/designs, e.g. "platformer_scaffold_oscar64"): its COMPOSES edges, each in its phase, are budgeted first, then any 'techniques' given; its region is the default. Give 'techniques', 'design' or both. 'region' is 'pal', 'ntsc' or 'both' (default: PAL unless every region-locked member is NTSC-locked). 'screen' is 'on' (default) or 'off'. 'sprites_per_line' (0-8) and 'sprite_lines' (default 200) charge sprite DMA, 3 + 2n cycles a line.
 
-Output: {techniques, refused[], region, screen, sprites, phases[{phase, region, frame, contributors[{name, low, high, every_frame, basis, charge, measured_on, conditions}], excluded[{name, reason: multi_frame | included_by | inside_band_of, by?, cycles?}], unknown[], not_found[], to_measure[{technique, recipe, why}], fixed_losses{badlines, sprite_dma, charged_for[], badlines_in_bands, floor}, worst_only[], low, high, floor, verdict, weakest_basis, irq_slots, notes[]}], bytes{sum, contributors, excluded (whole_program), inside[{name, by}], without_bytes}, verdict, assumptions[]}.
+Output: {design{name, title, region, instance_of[], realised_by[], composes[{technique, phase}], source_doc, measured[{phase, region, worst, typical, basis, source, predicted{low, high, fixed, verdict, missing[]}, position: below_low | within | above_high | not_predicted, finding}]} | null, design_not_found?{requested, known[]}, techniques, refused[], region, screen, sprites, phases[{phase, region, frame, contributors[{name, low, high, every_frame, basis, charge, measured_on, conditions}], excluded[{name, reason: multi_frame | included_by | inside_band_of, by?, cycles?}], unknown[], not_found[], to_measure[{technique, recipe, why}], fixed_losses{badlines, sprite_dma, charged_for[], badlines_in_bands, floor}, worst_only[], low, high, floor, verdict, weakest_basis, irq_slots, notes[]}], bytes{sum, contributors, excluded (whole_program), inside[{name, by}], without_bytes}, verdict, assumptions[]}.
 
 Rules: low sums each member's cycles_per_frame_typical where the page states a measured one, else its cycles_per_frame; high sums cycles_per_frame (worst frames). A member with no cycles figure goes to unknown and to_measure, with the recipe to measure it on. A figure above the frame (19,656 PAL, 17,095 NTSC) is excluded as multi_frame. A member named in another's **Cost includes:**, followed through the graph (a includes b, b includes c), is excluded as included_by, unless the including member is itself multi-frame; of two members that include each other the first listed is kept. A name listed twice in one phase is counted once and the repeat is listed in refused. A technique that holds every cycle of a stated raster band (cycles_per_line 63 and a line band) is charged band lines × line length, and its REQUIRES closure in the set is excluded as inside_band_of. With the screen on, the badlines (lines 51-243, every eighth, 25 × 43 = 1,075 cycles) outside any band charge, and the stated sprite DMA, are charged as fixed losses unless every summed figure is a band charge or is measured with measured-on conditions that say the screen was on; a figure measured blanked, one that does not say, and an arithmetic, derived-listing or estimated one are all charged. A stall takes its cycles wherever the code runs, so the charge is exact when no summed figure already holds stalls and too high by what a screen-on figure holds; fixed_losses.floor is the part no figure can hold. The low end is not a floor: a typical figure is a common frame or a real run's worst, and worst_only lists members with no typical at all. floor is the band and per-line charges, which run every frame, plus fixed_losses.floor. Verdict per phase: fits when nothing is unknown, missing or multi-frame and high + fixed losses fit the frame; over when floor passes the frame; otherwise undetermined. The overall verdict is the worst phase's. Bytes flagged "(whole PRG)" on their measured-on line are not summed; a member whose work is inside another's figure that states bytes is listed in inside, not summed. 'region' other than pal, ntsc or both is refused.
 
-Examples: {"techniques": ["wave_director", "object_pool"]} → object_pool excluded (included_by wave_director); 1,170-3,188 plus 1,075 fixed, floor 1,075; fits. {"techniques": ["fli_image", "stable_raster_irq", "double_irq"]} → fli_image charged 207 lines × 63 = 13,041; the two prerequisites inside its band; all 25 badlines are inside the band, so no fixed loss. {"techniques": ["soft_scroll_h", "sid_play_routine_pattern"]} → soft_scroll_h multi_frame; undetermined.
+Examples: {"techniques": ["wave_director", "object_pool"]} → object_pool excluded (included_by wave_director); 1,170-3,188 plus 1,075 fixed, floor 1,075; fits. {"techniques": ["fli_image", "stable_raster_irq", "double_irq"]} → fli_image charged 207 lines × 63 = 13,041; the two prerequisites inside its band; all 25 badlines are inside the band, so no fixed loss. {"techniques": ["soft_scroll_h", "sid_play_routine_pattern"]} → soft_scroll_h multi_frame; undetermined. {"design": "falling_blocks_oscar64", "region": "pal"} → init and play phases; play undetermined (text_mode_overlay_render and others unknown); the design's measured PAL worst frame, 6,276 cycles, is set beside the predicted range with where it falls.
 
 See also: c64_timing_budget for the cycles left on one raster line; c64_check_compatibility for hardware claims, zero page and raster-line conflicts; c64_game_briefing, whose budget block uses the same rules on a proposed set in one play phase.
 
@@ -283,7 +283,15 @@ Limitations: the figures are the pages' own, each measured on one recipe; a diff
     techniques: z
       .array(z.string())
       .min(1)
+      .optional()
       .describe('Technique names, each "name" or "name:phase" (phase: play, transition, init)'),
+    design: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "GameDesign name (e.g. 'platformer_scaffold_oscar64'): budgets its composed techniques by phase",
+      ),
     region: z
       .string()
       .regex(BUDGET_REGION, "region is pal, ntsc or both")
@@ -309,9 +317,15 @@ Limitations: the figures are the pages' own, each measured on one recipe; a diff
   },
   outputSchema: PlanBudgetSchema.shape,
   annotations: READ_ONLY,
-  run: ({ techniques, region, screen, sprites_per_line, sprite_lines }) =>
+  run: ({ techniques, design, region, screen, sprites_per_line, sprite_lines }) =>
     planBudgetRun({
-      techniques,
-      ...definedOnly({ region: budgetRegion(region), screen, sprites_per_line, sprite_lines }),
+      ...definedOnly({
+        techniques,
+        design,
+        region: budgetRegion(region),
+        screen,
+        sprites_per_line,
+        sprite_lines,
+      }),
     }),
 });

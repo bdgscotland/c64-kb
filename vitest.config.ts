@@ -12,6 +12,7 @@ const UNIT = [
   "test/config.test.ts",
   "test/extract*.test.ts",
   "test/feedback.test.ts",
+  "test/game-design-compare.test.ts",
   "test/kernal-zp.test.ts",
   "test/kernal-zp-rule.test.ts",
   "test/lint.test.ts",

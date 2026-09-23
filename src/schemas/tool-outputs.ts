@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { BriefingDesignSchema } from "./plan-budget.ts";
 
 const DocChunkSchema = z.object({
   source: z.string(),
@@ -523,6 +524,9 @@ export const BriefingSchema = z.object({
       candidates: z.array(z.string()).optional(),
     })
     .optional(),
+  // The GameDesigns INSTANCE_OF the resolved archetype (schema 28, tools
+  // 2.1.0); c64_plan_budget takes a name as 'design'.
+  designs: z.array(BriefingDesignSchema).optional(),
 });
 export type BriefingOutput = z.infer<typeof BriefingSchema>;
 
