@@ -236,8 +236,8 @@ A technique claims what every implementation needs. What one recipe
 chooses (which vector, which zero-page bytes) is the recipe's claim, not
 the technique's. A measurement harness is not a claim: the CIA timers a
 recipe chains to time its routine, and the counters it keeps for the
-screenshot, are left off the line. Say so in the prose when the recipe's
-listing uses them.
+screenshot, are left off the line, however visible they are in the
+listing.
 
 An optional `**Uses kernal:**` line lists KERNAL routines:
 

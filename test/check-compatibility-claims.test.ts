@@ -52,6 +52,8 @@ describe("resource claims", () => {
     await claim("stable_raster_irq", "vic_raster_irq (owns)");
     await claim("uses_stable", "vic_raster_irq (owns)");
     await f.linkTechniqueRequires("uses_stable", "stable_raster_irq");
+    // As on the real page: the SFX engine requires the player it runs beside.
+    await f.linkTechniqueRequires("sfx_engine_beside_music", "sid_play_routine_pattern");
   });
   afterAll(async () => f.close());
 
@@ -91,7 +93,7 @@ describe("resource claims", () => {
     expect(c?.shared).toEqual(["sid_filter_volume", "sid_voice_1-3"]);
   });
 
-  it("SFX sharing voice 2 beside the player that owns it: unit_shared, soft", async () => {
+  it("SFX sharing voice 2 beside the player that owns it: unit_shared, soft, even though it requires the player", async () => {
     const r = (await checkCompatibility(["sid_play_routine_pattern", "sfx_engine_beside_music"])).structured;
     expect(r.verdict).toBe("warnings");
     const c = r.conflicts.find((x) => x.kind === "unit_shared");
@@ -156,7 +158,7 @@ describe("resource claims", () => {
 
   it("unknown claims are never read as none: coverage and text say so", async () => {
     const res = await checkCompatibility(["unknown_claims", "pure_maths", "sfx_engine_beside_music"]);
-    const cov = Object.fromEntries(res.structured.data_coverage.map((d) => [d.technique, d.claims]));
+    const cov = Object.fromEntries(res.structured.data_coverage.filter((d) => d.implied_by === undefined).map((d) => [d.technique, d.claims]));
     expect(cov).toEqual({ unknown_claims: "unknown", pure_maths: "none", sfx_engine_beside_music: "stated" });
     expect(res.text).toMatch(/Unit claims are stated for 2 of 3 techniques; a unit conflict cannot be ruled out for: unknown_claims\./);
     const all = await checkCompatibility(["pure_maths", "sfx_engine_beside_music"]);

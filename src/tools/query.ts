@@ -1375,9 +1375,12 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     }
     bandSeparated.push({ a: a_name, b: b_name, a_band: facts.get(a_name)!.band!, b_band: facts.get(b_name)!.band!, rules: [rule] });
   };
-  // Unit claims (schema 25). Rules over the CLAIMS edges of one pair; skipped
-  // between a technique and its own REQUIRES prerequisite, whose unit it
-  // holds by design (the multiplexer's raster IRQ is the stable raster IRQ).
+  // Unit claims (schema 25). Rules over the CLAIMS edges of one pair. Between
+  // a technique and its own REQUIRES prerequisite the two ownership rules
+  // (unit_contention, zero_page_overlap) do not run: it holds the unit
+  // through the prerequisite by design (text_zoom's raster IRQ is the stable
+  // raster IRQ). The soft and info rules still do: sfx_engine_beside_music
+  // requires the player and must still be told to write after it.
   const claimRules = (a_name: string, b_name: string): HardHit[] => {
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
@@ -1464,9 +1467,9 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     return out;
   };
 
-  const hardRules = (a_name: string, b_name: string, opts: { skipClaims?: boolean } = {}): HardHit[] => {
+  const hardRules = (a_name: string, b_name: string, opts: { related?: boolean } = {}): HardHit[] => {
     const hits: HardHit[] = [];
-    if (!opts.skipClaims) hits.push(...claimRules(a_name, b_name));
+    hits.push(...claimRules(a_name, b_name).filter((h) => !opts.related || (h.kind !== "unit_contention" && h.kind !== "zero_page_overlap")));
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
     const hard = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) =>
@@ -1559,9 +1562,9 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       const b_name = techniques[j];
 
       // A named technique and its own prerequisite hold the same units by
-      // design; the claim rules do not run between them.
+      // design; the ownership rules do not run between them.
       const related = closureOf(a_name).includes(b_name) || closureOf(b_name).includes(a_name);
-      for (const h of hardRules(a_name, b_name, { skipClaims: related })) {
+      for (const h of hardRules(a_name, b_name, { related })) {
         conflicts.push({ a: a_name, b: b_name, kind: h.kind, severity: h.severity ?? "hard", shared: h.shared, rationale: h.rationale, resolution: h.resolution });
       }
 
