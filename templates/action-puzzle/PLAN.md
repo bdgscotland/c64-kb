@@ -335,28 +335,35 @@ screen; it is timed once with CIA1 timer B and printed, not metered.
 
 ## Autopilot and checks
 
-- The script is a string of moves, one per cave frame (L U R D, `-` still),
-  held on the synthetic joystick byte for the four display frames of that
-  cave frame. It digs, pushes a boulder, collects cave 1's quota, enters the
-  open exit, and in cave 2 walks under a boulder and dies. The autopilot
-  game starts with one life, so that death is game over; the script then
-  enters a name, the table is saved (with no disk attached the drive
-  answers 74 and saving is off) and shown.
+- The script is one string of moves per cave start (L U R D, `-` still),
+  keyed to the game's own counter of starts and held on the synthetic
+  joystick byte for the four display frames of each cave frame. Start 1
+  digs, pushes a boulder, collects cave 1's quota and enters the open exit;
+  starts 2 to 4 are cave 2 after each lost life, each ending under a falling
+  boulder, so the restart path runs twice and all three lives are played.
+  The script then enters a name; the table is saved to the shot's fresh D64
+  (`SHOT_DISK := 1`), read back and compared, and shown.
 - `tools/gen.py` holds the caves, packs them, and runs a Python model of
   the same rules over the same script. It writes `src/gen_caves.h` (the RLE
   streams), `src/gen_autopilot.h` (the script and the model's expected
   values) and `src/gen_notes.h` (the note tables).
-- Verdict, after the table is shown, outside the meter: the model's cave
-  fold at game over, score, gems, cave number, and the table row the new
-  score landed in. `$02FF` and the border.
-- FORCE_FAULT scores 11 a gem instead of 10: the verdict turns red and the
-  score in the HUD and in the table row change on screen.
+- Verdict, after the table is shown, outside the meter, one letter per
+  failed test: the fold chained over every cave left, score, gems, cave,
+  play frames, cave starts, the table row, the decodes, the scan meeting the
+  player once a cave frame, the screen against the cave at every cave end,
+  dropped frames (the `$D019` raster latch), and the save's read-back.
+  `$02FF` and the border. A watchdog ends a game that runs past the model's
+  play frames.
+- FORCE_FAULT flips a byte of the save as it is read back: the verdict turns
+  red and the table shows READ BACK BAD. `make selftest-scan` builds with
+  SCAN_FLAG=0 and must fail with E.
 - expect.json: verdict, the HUD text, the table box text, cave cells the
   model places, the `same` area over the cave, the meter with the recorded
   frame count.
 - A separate `make disktest` proves the save with true drive emulation: the
-  autopilot build writes the table to a fresh D64; a second, cold VICE
-  boots the release PRG from that D64, which loads the table and shows it.
+  autopilot build writes the table to a fresh D64, then saves again over
+  it; a cold VICE boots the release PRG from that D64, which loads the
+  table and shows it.
 
 ## Decisions and open questions
 
@@ -365,9 +372,12 @@ screen; it is timed once with CIA1 timer B and printed, not metered.
   faster in real time (pal_ntsc_tempo_mismatch). The time counter ticks every
   12 cave frames. The tune's note lengths are in frames, so it plays 20 %
   faster on NTSC too; the note frequencies come from a PAL or NTSC table.
-- The meter records at most 255 frames; the script is kept to fit (140).
-- Measured (make shot check, 2026-09-23): worst 10,033 / typical 6,340
-  cycles on PAL, 10,292 / 6,598 on NTSC. A first build passed the cell
+- The meter records at most 255 frames; the script is kept to fit (240).
+- Measured (make shot check, 2026-09-23): worst 13,619 / typical 6,529
+  cycles on PAL, 13,832 / 6,786 on NTSC; the worst is the slice where 16
+  boulders fall and overflow the dirty list. About 440 cycles a moving
+  object, so about 20 a slice fit NTSC. The overflow queues rows, redrawn
+  two a frame. A first build passed the cell
   pointer to `cell()`; Oscar64 then computed it for every cell before the
   test and the scan loop took 42 cycles a cell (typical frame 11,812).
   Passing row and column made it 17 (counted from the generated code).

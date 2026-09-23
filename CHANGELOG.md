@@ -7,6 +7,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 766, schema 31, tools 2.3.0, package 0.16.0.
 
+**Issue #39: `action-puzzle` hardened after the other session's
+comparison.**
+- The redraw is bounded. An overflowing dirty list used to redraw 280
+  cells in one frame (55,305 cycles); rows are now queued, two a frame.
+- The right roll, the restart path over three lives, the high-score
+  read-back and the once-per-scan check are all gated. Each is proved
+  by a mutation.
+- Dropped frames are counted from the `$D019` raster latch.
+- It builds and passes on the released Oscar64 v1.32.273.
+- Staged worst frame (16 boulders falling in one slice): 13,619 PAL /
+  13,832 NTSC cycles.
+
 **Issue #39: the `demo` starter lands, and the two stub skeletons are
 removed.** `templates/demo` is pure KickAssembler:
 - a part table with init, update, out step and teardown, and a

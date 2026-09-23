@@ -49,6 +49,24 @@ The player's direction is latched at the first slice. Each slice redraws
 only the cells it changed. After the fourth slice the exit opens if the
 quota is met and the time counter ticks (once every 12 cave frames).
 
+The dirty list holds 16 cells: 8 moves, since a move marks two cells (an
+explosion marks nine). When a slice changes more, the list overflows and
+the slice's rows (one above to one below) are queued instead;
+`draw_pending` redraws at most two queued rows a frame, 34 cycles a cell
+from the generated code, about 2,800 cycles for two rows. The first version
+redrew all seven rows in the frame of the overflow, 55,305 cycles for 280
+cells (measured in comparison), almost three PAL frames.
+
+**How many objects a slice can move.** Each moving or landing object costs
+about 440 cycles on top of the slice's usual work: 16 boulders falling in
+one slice made a 13,619-cycle PAL frame and a 13,832-cycle NTSC one, against
+a typical frame of about 6,500 to 6,800 (the meter; arithmetic for the per-object
+figure). So about 20 moving objects a slice fit an NTSC frame, and about 25
+fit a PAL one. A cave that moves more in one slice drops frames. The
+autopilot's verdict counts dropped frames (below), so a cave designed past
+that limit fails its own check. The cave-scan recipe's 380-boulder fill is
+far past it; this starter's caves keep falls short and spread out.
+
 The KERNAL IRQ is off during play; the loop polls raster line 250. Disk
 calls happen on a static screen with the sound muted, and `SEI` follows
 each one, because the KERNAL serial routines end in `CLI`.
@@ -57,26 +75,58 @@ each one, because the KERNAL serial routines end in `CLI`.
 
 | Command | What it proves |
 |---|---|
-| `make shot check` | The autopilot game on PAL and NTSC: 41 checks (verdict, HUD, the table row it inserted, cave cells, PAL = NTSC, the meter) |
+| `make shot check` | The autopilot game on PAL and NTSC, each on a fresh D64 (`SHOT_DISK := 1`): 41 checks (verdict, HUD, the table row it inserted, the save read back, cave cells, PAL = NTSC, the meter) |
 | `make modelcheck` | 516 visible cave cells per shot match the model's cave at game over |
-| `make selftest` | The FORCE_FAULT build (11 points a gem) fails: red border, wrong score in the HUD and the table |
-| `make disktest` | The save and the load on a true-drive 1541 (below) |
+| `make selftest` | The FORCE_FAULT build flips one byte of the save as it is read back: red border, letter V, and `READ BACK BAD` in the table |
+| `make selftest-scan` | The build with `SCAN_FLAG=0` (no scanned bit, the cave-scan recipe's double-move bug) fails, and its verdict names E |
+| `make disktest` | The save, a second save over it, and the load on a true-drive 1541 (below) |
 | `make claims` | Every store the autopilot run makes is one the Makefile declares |
 
-The autopilot digs right along row 2, collects four gems, pushes a boulder
-twice, digs down for two more, walks into the open exit, then in cave 2 digs
-out from under a boulder and stands still: the boulder falls and kills him.
-It starts with one life, so that is game over. It enters the name ABE; the
-score 158 goes in row 4. `tools/gen.py` plays the same script through its
-model and writes what the game must end with: the cave's fold (0xC0F1),
-score, gems, cave and play frames. The program compares, then sets `$02FF`
-and the border.
+The autopilot plays a whole game of three lives. Its script is keyed to
+the game's own counter of cave starts: start 1 digs right along row 2,
+collects four gems, pushes a boulder twice, digs down for two more and walks
+into the open exit. Starts 2, 3 and 4 are cave 2 after each lost life: out
+from under a boulder, then under another, then the first again, and each
+time the boulder falls on him. So the restart path (the cave decoded again,
+a life taken, the score banked) runs twice. It enters the name ABE; 158
+goes in row 4, and the table is saved and read back from the shot's fresh
+disk. In cave 1 a boulder on the end of a brick rolls right, and a row of
+16 boulders falls and lands in one slice, which overflows the dirty list.
 
-**The shot pin.** Both models are shot at 16,000,000 cycles. Most of the
-time before the verdict is the start-up read with no disk in the drive
-(reply 74). On PAL the picture still changes at 12,000,000 cycles; at
-13,000,000, 16,000,000, 20,000,000 and 24,000,000 it is byte-identical, and
-so is NTSC at 16,000,000 and 24,000,000 (VICE x64sc 3.10, windowless).
+`tools/gen.py` plays the same script through its model and writes what the
+game must end with. The verdict prints one letter for each test that
+failed, after the fold on row 23:
+
+| Letter | Test |
+|---|---|
+| F | the fold, chained over every cave the game left (0x75FA), against the model's |
+| S, G, C, P, K | score, gems, cave, play frames, cave starts |
+| T | the table row: rank, name and score |
+| L | every cave decode matched its fold |
+| E | the scan met the living player exactly once in every cave frame |
+| M | at every cave end, after the row queue is drained, every screen cell shows its cave cell |
+| D | no play frame's work ran past line 250 (the `$D019` raster latch, below) |
+| V | the save read back byte for byte (`memcmp`) |
+
+A watchdog ends the game once play runs past the model's frame count, so a
+broken rule still reaches the verdict. Each gate was checked with a
+mutation (2026-09-23): no right roll (F), no `dead_frames` reset on restart
+(F P K D), the row queue disabled (M), the save one byte short (V), the
+`memcmp` replaced by true (selftest then passes the fault build and fails),
+a busy loop in one play frame (D), and the E test removed (selftest-scan
+then finds no E).
+
+**Dropped frames.** The VIC sets bit 0 of `$D019` on every raster compare
+match even with the interrupt disabled. `wait_frame` acknowledges it at line
+250, so a set bit on entry means the frame's work overran. The KERNAL leaves
+the compare at line 311 (bit 8 set in `$D011`), so `main` clears that bit
+first: without it the latch never set (0 of 200 frames against 199 of 200,
+a test program in VICE x64sc 3.10).
+
+**The shot pin.** Both models are shot at 24,000,000 cycles. At
+18,000,000 the save is still running on both models; at 20,000,000,
+24,000,000 and 30,000,000 the picture is byte-identical, PAL and NTSC
+(VICE x64sc 3.10, windowless).
 
 **The disk test.** `make disktest` (`DISK_MODEL=ntsc` for NTSC) copies the
 release D64. It runs the autopilot build against the copy with
@@ -108,8 +158,9 @@ python3 tools/drive.py build/action-puzzle-joy.prg "until:FIRE TO START" tap:fir
     tap:fire "until:GAME OVER" print tap:fire "until:FIRE TO START" print
 ```
 
-That run (2026-09-23) held right through three time-outs, entered BAA, and
-showed `4. BAA 000120` in the table and then on the title. Two findings
+That run (2026-09-23) held right through three time-outs (cave 1 each
+time), entered BAA, and showed `4. BAA 000120` in the table, `NOT SAVED
+(74)` with no disk attached, and then the title. Two findings
 behind this design:
 
 - The windowless VICE's joyport commands do not reach `$DC00`. The binary
@@ -122,21 +173,23 @@ behind this design:
 
 ## The measured frame
 
-The harness meter (CIA2 timer A), over the autopilot's 140 play frames,
+The harness meter (CIA2 timer A), over the autopilot's 240 play frames,
 VICE x64sc 3.10:
 
 | Model | Worst | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 10,033 | 6,340 | 19,656 |
-| NTSC | 10,292 | 6,598 | 17,095 |
+| PAL | 13,619 | 6,529 | 19,656 |
+| NTSC | 13,832 | 6,786 | 17,095 |
 
-The worst frame is play frame 80, where the exit opens: the fourth slice,
-the cave-frame end, the HUD rewriting the gem count and the score, and the
-exit's effect starting, in one frame. A debug build that kept the worst
-frame's index found it (its own worst read 10,496, with the extra code). The
-cave decode between caves is not a play frame: 40,057 cycles on PAL and
-40,571 on NTSC for cave 2 (293 bytes packed), screen on, CIA1 timer B,
-printed after the verdict.
+The worst frame is play frame 7, the slice where the 16 boulders fall and
+overflow the dirty list (a debug build that kept the worst frame's index
+found it). The cave decode between caves is not a play frame: 40,041 cycles
+on PAL and 40,519 on NTSC for cave 2, screen on, CIA1 timer B, printed after
+the verdict.
+
+The same checks pass with the released Oscar64 v1.32.273 (make shot check,
+modelcheck, selftest, selftest-scan and disktest on PAL, run 2026-09-23).
+Its meter reads 13,383 / 6,401 cycles on PAL and 13,639 / 6,615 on NTSC.
 
 Against `plan-budget` (the PLAN.md output): it summed the recipe's whole
 scan, 18,559 cycles, into every PAL play frame (range 19,599 to 19,807 plus
@@ -183,5 +236,4 @@ More caves: add them to `CAVES` in `tools/gen.py` and run `make gen`.
 - A real joystick on `$DC00`: the normal game was driven headless through
   `$02FE` (above), which differs from the release build in one line of
   `port_read`.
-- Real hardware, and the released Oscar64 (built with the build c64-kb's
-  CLAUDE.md names).
+- Real hardware.

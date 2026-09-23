@@ -53,7 +53,7 @@ void level_load(char index)
     flags = cia1.icr;
     if (flags & 0x02)
         level_cycles = 0xffff;                      // timer B passed zero: more than 65,535
-    if (n != CW * CH || cave_fold() != ci->fold)
+    if (n != CW * CH || cave_fold(0) != ci->fold)
         level_ok = false;
     cave_start(ci->need, ci->time);
 }
