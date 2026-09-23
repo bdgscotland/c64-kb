@@ -1309,3 +1309,596 @@ is not a per-frame figure.
 ### Recipes
 
 - `recipes/oscar64/difficulty-tables.md` — six-row table, eight-slot pool, coin quota per level, spikes from level 3, one define for the region scaler, frame and CIA time at level 3 printed on both models
+
+---
+
+## ghost_target_tile_ai — Maze-chase ghosts that steer by target tiles: look-ahead, no reversing, per-ghost targets and a scatter/chase timer
+
+**Complexity:** medium
+**Region:** both
+**Cost:** cycles_per_frame=7227
+**Cost basis:** measured-vice
+
+### Why
+
+A maze-chase game needs four or so pursuers that feel different, never
+dither, and fit in a frame together. A path search from each ghost to
+the player every time it reaches a junction does not fit: even the
+twelve-node run-time search of `nav_area_pathfinding` costs about 16,000
+cycles, and a tile maze has hundreds of tiles and dozens of junctions (the recipe's: 245 and 34). Pac-Man (Namco, 1980)
+does no search at all. Each ghost has a target tile and, at each
+junction, takes the exit whose next tile is nearest that target. The
+target rule gives each ghost its character. This page describes that
+rule as Jamey Pittman's Pac-Man Dossier documents it, adapted to a C64
+character maze.
+
+### How
+
+1. **Maze.** One byte per tile: bit d set when the neighbour in
+   direction d is open. Directions are numbered in the tie order: up 0,
+   left 1, down 2, right 3, so the reverse of d is d XOR 2. Build the
+   table at level start from the map. The maze must have no dead ends,
+   because a ghost may not turn back. The arcade screen is 28 x 36 tiles
+   of 8 x 8 pixels (Dossier); a C64 text screen has 8 x 8 character
+   cells, so one character is one tile.
+2. **Look-ahead.** When a ghost enters a tile, it looks at the next tile
+   along its heading and decides now which way it will leave that tile.
+   On arrival it turns to the stored direction and looks ahead again
+   (Dossier: "whenever a ghost enters a new tile, it looks ahead to the
+   next tile").
+3. **Junction test.** Take the look-ahead tile's exit mask and clear
+   the reverse of the heading. One bit left is a corridor or a corner:
+   take it, with no arithmetic. Two or three bits is a decision.
+4. **Choice.** For each remaining exit, the test tile is one step
+   beyond the junction in that direction. Take the exit whose test tile
+   is nearest the target; on a tie take the lowest direction number,
+   that is up, then left, then down, then right. The Dossier says the
+   ghost "triangulates" the distance, a straight-line measure; compare
+   squared distances, dx² + dy², which order the candidates the same
+   way and need only a table of squares (arithmetic: squaring is
+   monotonic for non-negative numbers).
+5. **Targets.** Chase mode, per ghost (Dossier):
+   - Blinky: Pac-Man's tile.
+   - Pinky: four tiles ahead of Pac-Man in his direction of travel.
+   - Inky: take the tile two ahead of Pac-Man, draw the vector from
+     Blinky's tile to it, and double it. Inky needs Blinky's tile, so
+     update Blinky first.
+   - Clyde: Pac-Man's tile while Clyde is more than eight tiles from
+     him, otherwise Clyde's scatter tile. The recipe tests squared
+     distance > 64.
+   Scatter mode: a fixed tile per ghost, outside the maze near its
+   home corner, which it can never reach, so it circles the nearest
+   block of walls.
+6. **The up bug.** In the arcade, when Pac-Man faces up, Pinky's offset
+   is four up and four left, and Inky's intermediate tile two up and two
+   left, from an overflow in the offset code (Dossier). A port chooses
+   whether to reproduce it; the recipe does, behind `UP_BUG`.
+7. **Frightened mode.** A frightened ghost ignores its target. At a
+   decision it takes a pseudo-random direction if that exit is open,
+   otherwise the first open exit in the order up, left, down, right.
+   The arcade reseeds its PRNG to the same value every level and every
+   life (Dossier), so frightened paths repeat. A shift-register PRNG
+   seeded with zero stays at zero, and every frightened ghost then
+   tries up first (`lfsr_zero_state_lockup`); the recipe's xorshift
+   seed is a fixed non-zero constant.
+8. **Reversals.** A ghost never reverses on its own. The game forces
+   every ghost to reverse when the mode changes from chase to scatter,
+   scatter to chase, or either into frightened; not when frightened
+   ends (Dossier). A forced reversal points the ghost back at the tile
+   it came from and makes a fresh look-ahead from there.
+9. **Mode timer.** Scatter and chase alternate on a timer that pauses
+   while the ghosts are frightened. In seconds, from the Dossier:
+
+   | Phase | Level 1 | Levels 2-4 | Level 5 on |
+   |---|---|---|---|
+   | Scatter | 7 | 7 | 5 |
+   | Chase | 20 | 20 | 20 |
+   | Scatter | 7 | 7 | 5 |
+   | Chase | 20 | 20 | 20 |
+   | Scatter | 5 | 5 | 5 |
+   | Chase | 20 | 1033 | 1037 |
+   | Scatter | 5 | 1/60 | 1/60 |
+   | Chase | for good | for good | for good |
+
+   Keep the table in seconds and convert with the region's frame rate
+   (50 PAL, 60 NTSC); frame counts written for PAL run about 20% fast on
+   NTSC (`pal_ntsc_tempo_mismatch`).
+
+### Why it works
+
+A decision looks at no more than three tiles and needs no memory
+between frames beyond each ghost's tile, heading and planned turn. The
+no-reverse rule keeps a ghost from oscillating between two tiles when
+its target moves, and it commits the ghost to a corridor once chosen.
+The four target rules are the whole of the ghosts' personalities: the
+same choice code serves all four modes, and only the target tile
+differs. Pinky aims ahead and so tends to arrive from the front; Inky's
+target depends on Blinky and swings widely; Clyde's switch at eight
+tiles makes him approach and retreat.
+
+What it gets wrong: it is greedy by one tile. A ghost can take an exit
+that leads away from its target round a long wall, and it can circle
+for ever. The Dossier shows Clyde circling one block indefinitely,
+because his target flips between Pac-Man and his corner as he crosses
+the eight-tile ring. Scatter targets exist only to make each ghost
+circle its corner block. A game that wants a pursuer that always finds
+the player needs a path search or a distance map, at the cost above.
+
+### Variations
+
+- **Choose on arrival.** Deciding at the tile the ghost has just
+  entered, not one ahead, drops the planned-turn byte. Targets are then
+  one tile fresher, and the paths differ from the arcade's.
+- **No-up tiles.** The arcade forbids upward turns in two zones of its
+  maze in scatter and chase, not in frightened (Dossier). A
+  per-tile flag that clears the up bit from the mask does it. The
+  recipe's maze has none.
+- **Manhattan distance.** |dx| + |dy| needs no squares, but ties become
+  far more common and the tie order then decides most turns. The paths
+  differ from the arcade's.
+- **Speeds.** The arcade slows frightened ghosts, nearly halves a
+  ghost's speed in the side tunnels, and speeds Blinky up as the dots
+  run out (Dossier).
+  The recipe moves every actor one tile every four frames.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, the display and sprites
+off, Oscar64 `-O2`, identical on PAL and NTSC (rung 1). The single
+figures include one 5-cycle timer pair, the frame figures two.
+
+| Work | Cycles |
+|---|---|
+| One 3-way decision (`choose` only; the target is set before timing) | 578 |
+| One 1-exit tile (a corridor or a corner) | 89 |
+| Built worst frame: scatter ends, all four ghosts reverse onto a 4-way junction, then all four step onto another 3-way decision in chase | 6,943 |
+| The same frame with frightened mode starting too: a second reversal, step decisions from the PRNG | 7,227 |
+| Worst frame of the recipe's 1,600-frame run | 4,171 |
+
+The Cost line states the 7,227-cycle frame, 37% of a PAL frame (19,656
+cycles; arithmetic). A mode switch reverses all four ghosts at once, so
+the worst frame is a switch frame that is also a step frame. On the
+three frames in four when no actor steps and no mode changes, the work
+is the mode-timer update only (not timed separately). An assembler version
+would be cheaper; not measured here. The recipe's technique code is
+757 bytes and its tables 882 bytes, of which 704 are the exit masks at
+a 32-byte row stride (Oscar64 map).
+
+### Recipes
+
+- `recipes/oscar64/ghost-targeting.md` — four ghosts as sprites and a Pac-Man stand-in on a scripted loop in an original 27 x 22 character maze; the level-1 mode table at 16 frames per second with one frightened spell; every frame's ghost tiles checksummed against a Python model; decision and worst-frame cycles on screen, PAL and NTSC
+
+### Sources
+
+- https://www.gamedeveloper.com/design/the-pac-man-dossier (Jamey
+  Pittman, The Pac-Man Dossier): tile grid, look-ahead, test tiles, tie
+  order, no-reverse rule and forced reversals, the four chase targets
+  and the up-direction overflow, scatter targets in dead space,
+  frightened PRNG, the mode table, the no-up zones and Clyde's endless
+  loop. Rules only; no arcade code was read.
+
+## falling_block_rules — Falling-block rules: collision, rotation, gravity table, DAS, lock, line clear, scoring and a 7-bag
+
+**Complexity:** medium
+**Region:** both
+**Requires:** joystick_autorepeat, lfsr_random
+**Cost:** cycles_per_frame=5888
+**Cost basis:** measured-vice
+
+**Why.** A falling-block game is small, but its rules decide whether it
+feels right. The renderer in `text_mode_overlay_render` draws a board and
+a piece; it does not say when the piece falls, how a held direction
+repeats, what rotating against a wall does, or how cleared rows collapse.
+Each of those is a table or a counter, and each has a reference value in
+NES Tetris that players know. This technique is that rules layer, with
+the rules the recipe implements named and their sources cited.
+
+**How.** The rules the recipe implements:
+
+| Rule | This page | Reference |
+|---|---|---|
+| Board | 20 rows of 10 bytes, 0 empty, 1-8 a colour; a fill count per row | own |
+| Pieces | seven, each four cells in a 4x4 box, two tables (x and y) per piece and rotation | own tables; I, S, Z have two states, O one |
+| Rotation | clockwise on the fire press; try the new state in place, then one right, then one left | NES has no kick (tetris.wiki) |
+| Gravity | frames per row by level, 48 at level 0 down to 1 at level 29 on NTSC; 36 down to 1 at level 19 on PAL | NES NTSC and PAL tables (tetris.wiki) |
+| DAS | first step on the press, second 16 frames later, then every 6 (NTSC); 12 and 4 on PAL; the counter clears on release | NES values (tetris.wiki); NES clears the counter on a new press, not on release, and a blocked tap charges it fully; the recipe's DAS is the simple form |
+| Soft drop | down held: one row every 2 frames, or gravity if faster | NES 1/2 G (tetris.wiki) |
+| Lock | at once, on the frame a step down fails | NES has no lock delay (tetris.wiki) |
+| Entry delay | none: the next piece spawns in the lock frame | NES 10-18 frames ARE by lock height, plus a line-clear delay of 17-20 frames (tetris.wiki) |
+| Score | 40, 100, 300, 1200 for 1-4 lines at once, times level + 1, at the level after the clear's level-up | NES the same (tetris.wiki Scoring) |
+| Level | +1 every 10 lines from level 0 | NES from level 0; a higher start level waits min(10s + 10, max(100, 10s - 50)) lines first (tetris.wiki) |
+| Randomiser | 7-bag: a shuffled set of all seven, dealt out, then reshuffled | NES instead rolls 0-7 and rerolls once, 0-6, on a repeat or 7 (tetris.wiki) |
+| Game over | the new piece does not fit where it spawns | NES the same |
+
+The collision test is the whole engine. `fits(piece, rot, x, y)` adds
+each of the four cell offsets to (x, y), refuses a cell outside the well
+and refuses a cell whose board byte is non-zero. Everything else calls
+it: a move tries x ± 1, a gravity step tries y + 1, a rotation tries the
+next state at x, x + 1 and x - 1, and a spawn tries the spawn position.
+Do the range test on the sum as an unsigned byte and one compare catches
+both a negative column and one past 9. With the recipe's tables, an
+upright I at the left wall cannot rotate (every try overlaps the wall)
+and one at the right wall kicks one left (run on the Python model on the
+recipe page; the J kick at the right wall is the one the C program
+checks).
+
+DAS is `joystick_autorepeat` with its delay and rate set per region: one
+age counter per direction, cleared on release, and a step on age 1, on
+age 1 + DELAY, and every RATE frames after that. Gravity is a counter
+compared with the table entry for the level, clamped at level 29; soft
+drop lowers the limit to 2. When the step down fails the piece is written
+into the board and each touched row's fill count goes up by one.
+
+Line clear reads only the fill counts of the rows the piece touched, at
+most four. If none reached 10 the frame is done. Otherwise collapse in
+one pass from the lowest full row upward: skip a full row, copy any other
+row down to the next free destination, and zero the rows left at the
+top. Keep the highest occupied row in a byte: the pass stops there, the
+rows above it are already empty, and only the rows from the old top to
+the lowest cleared row need redrawing.
+
+**Why it works.** The fill count turns the full-row test into one
+compare per touched row instead of ten reads. A single pass from the
+bottom up is enough because a destination is always at or below its
+source, so no row is overwritten before it is copied. Clearing only
+touched rows is complete because a row that was not full before the lock
+and was not touched cannot be full after it. The bag bounds the drought
+of any piece: the longest run between two of the same piece is 12 others,
+when it is first in one bag and last in the next (arithmetic). A plain
+LFSR modulo 7 has no bound. The modulo in the shuffle has a bias of at
+most 7 in 65,535 on a 16-bit state (arithmetic), too small to matter.
+That figure treats each draw as independent, and they are not: a Galois
+step shifts the state one bit right and flips at most the four tap bits
+of `$B400`, so consecutive states share most of their 15 shifted bits
+and the draws within one shuffle are correlated (arithmetic from the
+recipe's `rnd`, not measured as a distribution here).
+
+**Region.** The NES tables are frame counts. The recipe finds the
+region by looking for raster line 280, which only PAL has, and selects
+the NES PAL gravity and DAS tables on PAL. NES PAL runs at 50.007 Hz and
+NTSC at 60.099 Hz (tetris.wiki); the C64 at 50.125 Hz and 59.826 Hz
+(985,248 / 19,656 and 1,022,727 / 17,095, from
+`hardware/pal-ntsc-reference.md`), so the NES tables carry over within
+0.5 per cent (0.24 on PAL, 0.45 on NTSC, arithmetic). One table on both regions makes every
+level a fifth faster on NTSC (`pal_ntsc_tempo_mismatch`).
+
+**Variations.** A lock delay: count frames on the ground and lock at a
+limit, reset by a move or a rotation, with a cap on resets. A wider kick
+table (try ±2 for the I) or none at all, as on the NES. A two-row
+representation where each row is a 16-bit mask with wall bits set: the
+collision test becomes four ANDs of a shifted piece row, at the cost of
+separate colour storage. Hard drop on up: step down until `fits` fails,
+then lock in the same frame. A next-piece preview is the bag's next
+entry.
+
+**Cycle budget.** Measured in VICE x64sc with CIA1 timer A, KERNAL IRQ
+off, screen on, starting at raster line 250, so badline stalls are in
+the figures. The Cost line is the rules part of the recipe's worst-frame
+subject: a full-height stack with column 9 open in every row, an upright
+I locking into the bottom four with fire, left and right held, so three
+rotation tries and both moves are tested and refused before the lock,
+the four-line clear, sixteen rows collapsed and a spawn. It read 5,717
+cycles on PAL and 5,888 on NTSC, 29 and 34 per cent of the 19,656 and
+17,095 cycle frames. That stack cannot occur in play, because the spawn
+would fail first, and a stick cannot hold left and right at once, so it
+is an upper bound. The render of the same frame, timed apart, is
+`text_mode_overlay_render`'s work: erasing and redrawing the locked
+piece, redrawing all twenty rows and drawing the new piece took 9,311
+cycles on PAL and 9,394 on NTSC. The four-line clear in the scripted
+game, rules and render together with the stack top at row 14, took 6,276
+on PAL and 6,491 on NTSC and was the dearest frame of the run; frames
+with no lock peaked at 2,113 on both.
+
+### Recipes
+
+- `recipes/oscar64/falling-blocks.md` — the game in character mode, joystick port 2; the default build plays five scripted pieces through the input path (single, double, triple, four-line clear, level-up, DAS moves, a kick at the wall) and checks board, score, bag and spawn against a Python model and the screen against the board, including a piece moved on its lock frame, with the worst-frame subject's rules and render timed apart on PAL and NTSC
+
+### Sources
+
+- https://tetris.wiki/Tetris_(NES) (NES Tetris): gravity tables (NTSC and PAL), DAS 16/6 and 12/4 and when its counter resets, soft drop 1/2 G, no lock delay, no wall kick, ARE and line-clear delay, level rule, randomiser, frame rates.
+- https://tetris.wiki/Scoring (scoring): 40, 100, 300, 1200 times level + 1, at the level after the clear.
+
+---
+
+## dig_and_refill — Dig-and-refill bricks, trapped guards and a greedy ladder chase (Lode Runner rules)
+
+**Complexity:** medium
+**Region:** both
+**Cost:** cycles_per_frame=19759
+**Cost basis:** measured-vice
+
+### Why
+
+Lode Runner's rules are exact and testable. The player digs a brick,
+the hole traps a guard, the guard climbs out after a while, and a hole
+that refills on a guard kills it. Guards chase over ladders and fall
+into holes. None of that is collision or path search. It is timers on
+map cells and a per-guard state, and it needs a chase rule cheap enough
+for several guards a frame. No C64 primary source was found: what
+follows about the original comes from the Apple II literate disassembly
+(Sources below), read and not run here. The C64 port was not examined.
+
+### How
+
+1. **Tile states.** Map cells are one byte: empty, brick (diggable),
+   solid (not diggable), ladder, hole, refilling. Only brick and solid
+   stop a move. A hole and a refilling cell are passable; an actor in
+   one is below the floor.
+2. **Dig.** The player digs diagonally, below-left or below-right. The
+   dig succeeds only if that cell is brick and the cell above it, beside
+   the player, is empty with no guard in it. The Apple II original also
+   refuses a dig on the bottom row or at the edge column (read from its
+   `TRY_DIGGING_LEFT`).
+3. **Hole list.** A dig writes the hole into the map and puts the cell
+   and a timer into a free slot of a small list. One loop per tick
+   counts each live slot down. At a set count the cell turns to the
+   refilling state, so the player can see it closing. At 0 the cell is
+   brick again and the loop checks the cell: a guard in it dies and
+   respawns on the top row, the player in it dies. The original's dig
+   routine searches 30 slots (`BRICK_FILL_TIMERS`) and starts a timer at
+   180; the timer loop draws two refill frames at 20 and 10, and at
+   expiry bricks over gold lying in the cell and takes it off the gold
+   count (read from `DROP_PLAYER_IN_HOLE` and `HANDLE_TIMERS`, not run
+   here). The recipe keeps 8 slots, 80 ticks, refill glyph from 16.
+4. **Standing.** An actor is held up when its own cell is a ladder, or
+   the cell below is brick, solid or ladder, or the cell below is a hole
+   holding a trapped guard. The last clause is the walk-over rule: the
+   player crosses a hole on the trapped guard's head. It also keeps a
+   second guard out of an occupied hole. Otherwise the actor falls one
+   cell a step.
+5. **Guard states.** Free, trapped, escaping. A free guard that falls
+   into a hole cell becomes trapped with a counter (30 guard ticks in
+   the recipe). At 0 it climbs one cell, into the floor row, and is
+   escaping: on its next tick it steps sideways toward the player
+   without the fall test, so it does not drop straight back into the
+   hole. A hole timer that runs out first kills it (step 3). In the
+   original, a guard that lands in a dug hole has its per-guard timer
+   reset to a value chosen at level start from a 13-entry table (38 to
+   80), and the player scores 75; the move routine reads that timer to
+   send a guard in a hole upward (read, not traced further).
+6. **Greedy chase.** Once per guard move, first match wins:
+   - on the player's row, if every cell up to the player can be stood
+     on, step toward the player;
+   - player above and the guard on a ladder with room above: climb;
+     player below and a ladder or empty cell below: descend;
+   - otherwise scan the guard's row outward, left before right at each
+     distance, for the nearest column offering that vertical move, and
+     step toward it; a side stops at a wall, the map edge or a cell the
+     guard would fall from;
+   - otherwise step toward the player's column.
+
+   The original is also greedy but scores candidates. On the player's
+   row it walks straight at the player when the cells between are
+   ladder, rope or floored. Otherwise it finds how far the guard can go
+   left and right, and scores the up, down, left and right candidates
+   by a pseudo-distance: the column distance if the candidate row is the
+   player's, 100 plus the row distance if it is above the player, 200
+   plus the row distance if below (row 0 is the top). The smallest
+   score wins, so a guard prefers to end above the player, from where
+   it can drop to him (`DETERMINE_GUARD_MOVE`; `PSEUDO_DISTANCE` at
+   `$72D4`). The disassembly's prose describes the two cases the other
+   way round; this follows its code. The recipe's nearest-column rule
+   is its own simplification: it has no above-or-below preference.
+7. **Guards and gold.** In the original each guard has a gold timer.
+   A guard on a cell with gold picks it up, and drops it later on a
+   cell boundary with nothing there, when the timer allows
+   (`CHECK_FOR_GOLD_PICKED_UP_BY_GUARD`, `GUARD_DROP_GOLD`; the timer's
+   full cycle was not traced here). Not built in the recipe.
+
+### Why it works
+
+Every rule reads the map and one small list, so the state is the map,
+the hole slots and a few bytes per guard. The hole slot and the map
+cell change together, so they cannot disagree, and the kill test runs
+only when a slot expires. Putting the trapped guard into the standing
+test gives walk-over for free, with no special case in the player code.
+The chase rule is greedy: it never plans past the next vertical move,
+which is why guards walk into holes the player digs in their way. That
+is the game, not a defect. A route search (`nav_area_pathfinding`)
+would walk round the hole.
+
+### Variations
+
+- **Pseudo-distance scoring.** Score each candidate move as the original
+  does (step 6) instead of taking the nearest column. It prefers a move
+  that ends above the player to one that ends below.
+- **Staggered guards.** Move one or two guards per frame instead of all
+  on the same tick; four full-row scans at once overrun a frame in
+  the recipe (Cycle budget). The original picks a guard move pattern at level start from
+  the guard count (`GUARD_PATTERNS_LIST`) and keeps a phase
+  (`GUARD_PHASE`); how that spreads the moves was not traced here.
+- **Pixel movement.** The original moves actors in sub-cell steps
+  (per-guard `GUARD_X_ADJS`, `GUARD_Y_ADJS`). Draw actors as sprites
+  with the same cell rules;
+  `tile_grid_collision` has the pixel-to-cell conversion.
+- **Bars (ropes).** A cell class the actor hangs from: held up in it,
+  moves sideways along it, drops on down. The original's same-row check
+  treats rope like ladder. Not built in the recipe.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with a CIA1 timer B harness, interrupts
+masked, Oscar64 `-O2`, screen on (rung 1). The Cost line is the recipe's
+stress tick on PAL: 19,759 cycles, 19,716 on NTSC. That is 101% of a PAL
+frame (19,656 cycles) and 115% of an NTSC one (17,095), so it is over a
+frame on both; a budget that sums per-frame costs cannot fit it. The
+tick is built as the worst frame: four free guards each scan their whole
+row, because the player is above and no column offers a climb; eight
+live holes sit off that row, one expiring and one turning to the refill
+glyph (659 cycles for the list); the player tries a dig with the list
+full. More cannot expire at once: one dig a tick and a fixed hole life
+put at most one expiry in any tick. The slowest guard took 4,780
+cycles, about 165 a probed cell by arithmetic over 29 probes.
+
+Four guards scanning full rows overrun a frame in this C, so four or
+more need staggering. With the fourth guard switched off the same tick
+took 15,085 cycles on PAL (77%) and 15,299 on NTSC (89%): three fit.
+
+The row scan is the whole cost, and about 165 cycles a cell is Oscar64
+call overhead per probe, not the rule. Ways to bound it, none measured
+here: stagger guard decisions over frames (Variations); keep a per-row
+table of ladder columns, since ladders do not move, and look up the
+nearest one instead of probing each cell (holes still cut a side short,
+so check the cells between); write the probe loop in assembly.
+
+The typical frame is far smaller. Over the recipe's 168-tick scenario,
+one guard and at most two holes, the worst whole tick is 4,075 cycles on
+PAL and 4,118 on NTSC, one guard's update at most 3,516 and 3,559, and
+the hole list at most 366. The worst player update, a dig, is 505. PAL
+and NTSC differ only by badline cycles, where the work runs past the
+vertical blank.
+
+### Recipes
+
+- `recipes/oscar64/dig-and-guards.md` — 28 x 16 level with bricks and ladders; an autopilot digs two holes, traps a guard, walks over it and lets the second hole refill on it; the guard respawns and chases down a ladder; map and guard states checked every 16 ticks against a Python model (checksum), a built worst-frame stress tick, PASS/FAIL and cycles, PAL and NTSC
+
+### Sources
+
+- https://github.com/XekriRedmane/lode_runner_reveng (Apple II literate
+  disassembly, CC BY-SA 4.0): `main.nw`, sections "Digging" and the
+  guard routines: `BRICK_FILL_TIMERS`, `HANDLE_TIMERS`,
+  `DROP_PLAYER_IN_HOLE`, `DETERMINE_GUARD_MOVE`, `PSEUDO_DISTANCE`,
+  `GUARD_GOLD_TIMER_START_VALUES`, `GUARD_RESURRECTIONS`. Read for
+  facts; no code or prose is taken from it.
+- https://github.com/fschuhi/a2-lode-runner (research built on the
+  above; its platform-neutral game spec is not written yet). Read for
+  context only.
+
+---
+
+## cave_scan_engine — One-pass cave scan with a scanned bit: falling and rolling objects, digging and a wall-following enemy (Boulder Dash rules)
+
+**Complexity:** medium
+**Region:** both
+**Cost:** cycles_per_frame=18559
+**Cost basis:** measured-vice
+
+**Why.** A Boulder Dash style game is a grid of one-byte cells in which
+every boulder, diamond, enemy and the player act once per game tick.
+The cheap way to update it is one scan over the grid per tick, in place,
+with no second buffer. Scanned in place, an object that moves into a
+cell the scan has not reached yet gets processed again when the scan
+arrives there. A boulder falls the whole height of a shaft in one tick;
+the player tunnels across a row on one step. Games of this kind
+(sand, water, push chains) all meet the same bug.
+
+**How.** Keep the cave as a byte per cell: 40x22 with a steel border and
+a 38x20 play area is Boulder Dash I's size (elmerproductions, below).
+Use the low bits for the element and bit 7 as the scanned bit. Give the
+falling state its own code, one above the resting code, because the
+rules differ: only a falling object kills the player. Once per cave
+frame, walk the interior row by row, top to bottom, each row left to
+right, the order the Boulder Dash forum thread describes (below). For
+each cell:
+
+- Space, dirt, brick, steel: nothing. Make this path as short as the
+  compiler allows; it is most of the cave.
+- Bit 7 set: clear it and do nothing else. The object moved here during
+  this scan and has had its turn.
+- Resting boulder or diamond: space below, start falling and move down.
+  A round object below (boulder, diamond or brick in the recipe): roll,
+  left if the left cell and the cell below it are empty, else right
+  under the same test. The recipe's round set and left-first order are
+  its own choice; Boulder Dash's exact rules are not established here. A tick counted in display frames runs 20 % fast
+on NTSC (`pal_ntsc_tempo_mismatch`).
+- Falling boulder or diamond: space below, move down. The player below:
+  kill him. A falling object below: wait. A round object below: try to
+  roll, else land (the resting code). Anything else: land.
+- The player: take this tick's move; enter space or dirt (dig), or a
+  diamond (collect); otherwise stay.
+- An enemy: if the player is next to it, kill him; else turn left if
+  that cell is empty, go on if not, and turn right on the spot if both
+  are blocked. That keeps it running round the wall on its left.
+
+Every move goes through one routine that writes the destination and
+clears the source. When the destination is later in scan order, to the
+right or below, it also sets bit 7. A move left or up lands on a cell
+already passed and needs no mark.
+
+**Why it works.** The scan reaches a cell to the right or below after
+the object that moved there, so the mark always meets the scan before
+the next cave frame, and clearing it on contact leaves the cave with no
+marks at the end of every scan. There is no second pass to clear flags
+(the recipe's model asserts that no cell keeps bit 7). Boulder Dash I
+keeps separate "scanned this frame" codes for its moving elements for
+the same reason (elmerproductions); the forum thread describes the
+states being reset at the end of the frame. Under the recipe's rules,
+top-to-bottom order also spreads a column of falling boulders: the upper
+one sees the lower one still in place, waits a tick, and a gap opens.
+
+A worked example of the bug, from the recipe's Python model with the
+scanned bit left out, whose final cave the unflagged C build matched.
+In cave frame 1 Rockford at column 2 is told to step right once. He moves
+to column 3; the scan reaches column 3, finds him again and moves him
+to 4, and so on: he ends the scan at column 38, having dug the whole
+row. A boulder that rolled right off a brick fell two more cells in the
+same scan. The run's cave differs from the model with the bit in 47 of
+880 cells after 40 cave frames and matches a model without the bit in
+all 880.
+
+**Variations.** Boulder Dash's form: a separate element code for each
+scanned state instead of a shared bit (elmerproductions lists one per
+moving element). A second buffer: read the old grid, write a new one,
+swap. That needs no marks but doubles the RAM and costs a copy or a
+pointer swap per tick. Scan bottom to top for gravity only: falling
+objects then move into cells already passed and need no mark, but
+anything that moves up or sideways needs one again. Scrolling: Boulder
+Dash drew each object as 2x2 characters and scrolled a window of about
+19.5 by 11.5 objects over the cave; with one character per cell, as in
+the recipe, the 40x22 cave fits a 40x25 screen with three rows left for
+the status line.
+
+**Cave frame rate.** The scan runs on a tick slower than the display.
+The recipe runs one cave frame per four display frames, counted by a
+raster IRQ (`frame_sync_loop`), and redraws only the cells the scan
+changed. The logic-at-a-lower-rate pattern is `logic_rate_decoupling`
+above. Boulder Dash's own tick, and how its cave-delay byte maps to it,
+are not established here.
+
+**Cycle budget.** Measured in the recipe with CIA1 timer A cascaded into
+timer B, display on, VICE x64sc 3.10, Oscar64 -O2. The game cave's
+scans took 16,609 to 18,175 cycles on PAL and 17,115 to 18,559 on NTSC:
+close to a whole PAL frame of 19,656 cycles, which is why the recipe
+scans once per four frames. On NTSC every game scan exceeds the 17,095-cycle
+frame (263 x 65, arithmetic), so a scan never fits in one NTSC frame, and
+the NTSC figures include one raster-IRQ service that fires inside the
+timed scan. A 38x20 interior of dirt costs 14,206 (PAL)
+and 14,421 (NTSC), about 19 cycles a cell: the floor for any cave. The
+Cost line carries the game cave's slowest scan (18,559, NTSC), which runs
+in one burst in the frame it starts in. Plan a cave from the measured
+parts: the dirt floor plus about 325 cycles per falling object plus about
+610 per moving enemy (arithmetic). A cave where everything moves is a
+bound spanning several frames, not a per-frame cost: 380 falling
+boulders on odd rows over empty rows took 137,818 cycles on PAL and 138,892 on NTSC, about
+seven PAL frames, about 325 cycles per falling boulder over the dirt
+floor (that scan's 64-entry dirty list fills after 32 moves and records
+no more, so a renderer that records every change costs slightly more).
+190 fireflies moving at once cost 130,451 and 131,531, about 610 each.
+A cave where everything moves cannot be scanned in one frame in this
+C; a scan in assembly would be cheaper, not measured here. The per-cell
+floor is the figure to plan around. In Oscar64 the object rules must
+stay out of the scan loop: with them inline, the dirt scan took about
+48,000 cycles (47,731 when rebuilt with `cell()` inlined).
+
+**Left out of the recipe.** Amoeba, magic wall, explosions, butterflies,
+pushing boulders, the exit and the cave timer. A kill removes Rockford
+from the cave; nothing explodes.
+
+### Recipes
+
+- `recipes/oscar64/cave-scan.md` — a 40x22 original cave; boulders and diamonds fall and roll, Rockford digs, collects one diamond and is killed by a boulder on a scripted path, one firefly; the cave after 40 cave frames checked against a Python model, scan cycles printed on both models; `-dSCAN_FLAG=0` shows the double move
+
+### Sources
+
+- https://www.elmerproductions.com/sp/peterb/rawCaveData.html (Peter
+  Broadribb, Boulder Dash I raw cave data): the 40x22 cave with a steel
+  border, the 38x20 play area, the visible area of 19.5 by 11.5
+  objects, and the element codes with their "scanned this frame"
+  variants, whose purpose it states as stopping an object being scanned
+  more than once per frame. Falling boulders kill Rockford; stationary
+  ones do not.
+- https://www.boulder-dash.nl/forum/viewtopic.php?t=652 ("Cave Scanning
+  Order" thread): scan order row by row, top to bottom, each row left to
+  right; moved or grown elements take a delay state for the rest of the
+  frame; the states reset at the end of the frame. Forum report, not
+  measured here.
