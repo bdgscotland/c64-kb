@@ -82,18 +82,56 @@ static void ship_update(char joy)
 }
 
 // ---- hits (hitbox.c reports them) ---------------------------------------------------
+#ifdef EVENTLOG
+// Measuring only (-dEVENTLOG=1): each kill (1), ram (2) and shot (3) with its
+// play frame, 4 bytes each from $C000 (kind, enemy or bullet, frame low, high).
+static char ev_n;
+static void ev_log(char kind, char who)
+{
+    volatile char *q = (volatile char *)0xc000 + 4 * ev_n++;
+    q[0] = kind; q[1] = who; q[2] = (char)play_frames; q[3] = play_frames >> 8;
+}
+#define EV(k, w) ev_log(k, w)
+#else
+#define EV(k, w)
+#endif
+
 void on_enemy_shot(char e, char bullet)
 {
+    EV(1, e);
     bullet_kill(bullet);
     add_score(enemy_points(e));
     enemy_explode(e);
     sfx(2);
 }
 
+static void ship_lost(void);
+
 void on_player_hit(char e)
 {
-    box_off(BOX_PLAYER);                    // one loss a frame at most
+    EV(2, e);
     enemy_explode(e);
+    ship_lost();
+}
+
+static char ship_shots;                         // times an enemy dot hit the ship
+
+void on_ship_shot(char j)
+{
+    ship_shots++;
+    EV(3, j);
+    enemy_bullet_kill(j);
+    ship_lost();
+}
+
+void on_enemy_fire(char e)
+{
+    enemy_bullet_fire(e_hx[e], e_y[e], p_hx);
+}
+
+static void ship_lost(void)
+{
+    box_off(BOX_PLAYER);                    // one loss a frame at most
     deaths++;
     lives--;
     sfx(3);
@@ -168,21 +206,30 @@ static const char script[][2] = {
 // enemies flying), then fire up a parade column, so bolts, a kill and every
 // enemy share frames. The meter records play frames 150-399. Taken from the
 // review of this starter.
+// -dSD=n waits n frames longer, -dSX=n moves n frames left: the review swept
+// both to find the worst frame.
+#ifndef SD
+#define SD 0
+#endif
+#ifndef SX
+#define SX 16
+#endif
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },
     {  56, 0xf7 },                              // right to hx 140
-    { 190, 0xff },                              // wait for the parade and the swoop
-    {  16, 0xfb },                              // left under a parade column
+    { 190 + SD, 0xff },                         // wait for the parade and the swoop
+    {  SX, 0xfb },                              // left under a parade column
     { 250, 0xef },                              // fire
 };
 #undef PLAY_FRAMES
 #define PLAY_FRAMES 400
 #define STAGE_FROM 150
+#define METER_HOLD (PLAY_FRAMES - STAGE_FROM)   // the meter's hold is a byte: 1-255
 #else
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },               // title: fire starts the game
     {  24, 0xeb }, {  10, 0xef },               // left and fire: shoot the darts there
-    {  24, 0xf7 }, {  30, 0xff },               // back to the start, hold fire: a dart rams
+    {  30, 0xf7 }, {  24, 0xff },               // right, past the start, hold fire: shot
     {  16, 0xeb }, {  32, 0xe7 }, { 16, 0xeb }, // fire and sweep left, right, back
     {  20, 0xff },                              // hold fire: the parade comes down
     {  40, 0xef },                              // fire through the gap between two columns
@@ -218,6 +265,10 @@ static char port_read(void)
 }
 #endif
 
+#ifndef METER_HOLD
+#define METER_HOLD PLAY_FRAMES
+#endif
+
 // ---- frames ------------------------------------------------------------------------
 // A play frame whose work runs past the next frame IRQ (line 252) loses a
 // frame: the scroll and the hidden screen then fall a frame out of step
@@ -236,7 +287,7 @@ static void wait_frame(void)
     char f = K_FRAME_CNT;
     bool counting = state == ST_PLAY && play_frames;
 #if FRAME_METER
-    counting = counting && play_frames <= PLAY_FRAMES;
+    counting = counting && play_frames < PLAY_FRAMES;
 #endif
     if (counting && (char)(f - last_frame_cnt) != 1)
         overruns++;
@@ -315,16 +366,18 @@ static void play_enter(void)
     score = 0;
     lives = START_LIVES;
     deaths = 0;
+    ship_shots = 0;
     play_frames = 0;
     panel_draw();
     p_safe = 0;
     ship_reset();
     bullets_reset();
+    eb_fired = 0;
     waves_reset();
     level_show(0, 0);
     state = ST_PLAY;
 #if FRAME_METER
-    meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, PLAY_FRAMES);
+    meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, METER_HOLD);
 #endif
 }
 
@@ -362,10 +415,15 @@ static void over_enter(void)
 }
 
 #ifdef PROFILE
-// Debug only (-dPROFILE=1): the largest cost of each step, CIA1 timer B, at $0340.
+// Debug only (-dPROFILE=1): CIA1 timer B times each step of play_frame with
+// IRQs held off (badline and sprite DMA stay in). At $0340, words: 0-6 the
+// steps of the frame whose steps summed largest, 7 the largest IRQ time of
+// a frame, 8 that frame's number, 9 its sum, 10 the latest raster line the
+// bullet draw ended on (0 when it ended above line 250).
 #define PROF ((volatile unsigned *)0x0340)
+static unsigned prof_step[7];
 #define P0 { __asm { sei } cia1.crb = 0x00; cia1.tb = 0xffff; cia1.crb = 0x11; }
-#define P1(k) { cia1.crb = 0; unsigned t = 0xffff - cia1.tb; __asm { cli } if (t > PROF[k]) PROF[k] = t; }
+#define P1(k) { cia1.crb = 0; prof_step[k] = 0xffff - cia1.tb; __asm { cli } }
 #else
 #define P0
 #define P1(k)
@@ -374,9 +432,41 @@ static void over_enter(void)
 // One frame of play. The order matters: bullets first, drawn into the showing
 // screen before the beam reaches the playfield; collisions next, on the
 // boxes of what is on screen now; then the moves that show next frame.
+#if AUTOPILOT
+static char bullet_fault;
+#endif
+
 static void play_frame(char joy)
 {
-    P0; bullets_erase(); bullets_move_draw(); P1(0);
+#ifdef DRAWEND
+    // Frames that start late for the harness's sake are left out: the first
+    // (after play_enter), the one after a meter_init (STAGE), and the ones
+    // from the end of the recording (the median is found there).
+    extern char drawend_on;
+    drawend_on = play_frames > 1 && play_frames < PLAY_FRAMES;
+#ifdef STAGE_FROM
+    drawend_on = drawend_on && play_frames != STAGE_FROM + 1;
+#endif
+#endif
+    P0; bullets_erase();
+#if AUTOPILOT
+    if (!bullets_restored()) {              // every cell the last draw changed is the map's again
+        bullet_fault = 1;
+    }
+#endif
+    bullets_move_draw(); P1(0);
+#ifdef DRAWEND
+    // Measuring only (-dDRAWEND=1): the latest raster line the bullet draw
+    // ended on in a play frame, at $0360 (0 while still above line 250 or
+    // after the wrap below line 0... i.e. in the border before the display),
+    // and the play frame, at $0362. Not with PROFILE, whose timing is slower.
+    {
+        char l = vic.raster;
+        unsigned e = (vic.ctrl1 & 0x80) || l >= 250 ? 0 : l;
+        volatile unsigned *d = (volatile unsigned *)0x0360;
+        if (play_frames > 1 && play_frames < PLAY_FRAMES && e > d[0]) { d[0] = e; d[1] = play_frames; }
+    }
+#endif
     P0; collide(); P1(1);
     P0; ship_update(joy); P1(2);
     P0; waves_update(cur_row); P1(3);
@@ -384,7 +474,18 @@ static void play_frame(char joy)
     P0; level_render(); P1(5);
     P0; level_advance(); panel_update(); P1(6);
 #ifdef PROFILE
-    if (play_frames > 1) { unsigned t = K_IRQ_CYC - K_IRQ_CNT * K_IRQ_CAL; if (t > PROF[7]) PROF[7] = t; }
+    if (play_frames > 1) {
+        unsigned t = K_IRQ_CYC - K_IRQ_CNT * K_IRQ_CAL, sum = 0;
+        if (t > PROF[7]) PROF[7] = t;
+        for (char k = 0; k < 7; k++)
+            sum += prof_step[k];
+        if (sum > PROF[9]) {
+            for (char k = 0; k < 7; k++)
+                PROF[k] = prof_step[k];
+            PROF[8] = play_frames;
+            PROF[9] = sum;
+        }
+    }
 #endif
     play_frames++;
 }
@@ -399,16 +500,18 @@ static void play_frame(char joy)
 
 // ---- the verdict, after the script -------------------------------------------------
 // What the script does, by play frame (frame 0 is the second fire frame on
-// the title). A Python model of the script, waves, paths, bullets and boxes,
-// written in the review of this starter, matched the VICE kill log frame
-// for frame:
-//   37 a dart shot (50)    71 a dart rams the ship, in a still segment
-//   94, 113, 121, 128 saucers shot (100 each)
-// 450 points, 5 kills, K 1 4 0. After the ram the ship respawns at the start
-// and the script's last 27 frames move it 24 left and 3 down.
+// the title), from the -dEVENTLOG=1 build's log, the same on PAL and NTSC:
+//   37 a dart shot (50)    71 the first dart's dot hits the ship, in a still
+//   segment    94, 113, 121, 128 saucers shot (100 each)
+// 450 points, 5 kills, K 1 4 0; 10 dots fired: 5 darts at Y 72, 5 saucers at
+// Y 88. Before enemy fire the review's Python model matched the same kills
+// frame for frame, with a ram at 71 where the dot now hits. After the loss
+// the ship respawns at the start and the script's last 27 frames move it 24
+// left and 3 down.
 #define EXPECT_DEATHS 1
 #define EXPECT_SCORE  45                // 450 points: 1 dart, 4 saucers
 #define EXPECT_KILLS  5
+#define EXPECT_FIRED  10              // 5 darts at Y 72, 5 saucers at Y 88; none from the parade
 #define EXPECT_SHOWN  11                // 10 parade bugs and the ship
 #define END_HX        (P_START_HX - 24) // after the loss: 24 frames left
 #define END_Y         (P_START_Y + 6)   // and 3 frames down, 2 lines each
@@ -453,6 +556,14 @@ static char first_fail(void)
     char kills = kills_by_type[0] + kills_by_type[1] + kills_by_type[2];
     unsigned sum = kills_by_type[0] * 5 + kills_by_type[1] * 10 + kills_by_type[2] * 15;
     char n = 1;
+#ifdef STAGE
+    // The staged run grades only what it is for: no play frame ran into the
+    // next, and every bullet cell was restored every frame. stage-expect.json
+    // adds the meter's worst inside a frame.
+    CHECK(overruns == 0)                                // 1
+    CHECK(!bullet_fault)                                // 2
+    return 0;
+#endif
     CHECK(level_intact())                               // 1 bullets restored every cell
     CHECK(deaths == EXPECT_DEATHS)                      // 2 the script's one ram
     CHECK(lives == START_LIVES - EXPECT_DEATHS)         // 3
@@ -468,6 +579,9 @@ static char first_fail(void)
     CHECK(K_SFX_TAKEN != 0)                             // 13 effects ran in the player
     CHECK(disk_round_trip)                              // 14 HISCORE written and read back
     CHECK(overruns == 0)                                // 15 no play frame ran into the next
+    CHECK(!bullet_fault)                                // 16 every bullet cell restored, every frame
+    CHECK(eb_fired == EXPECT_FIRED)                     // 17 the enemies' shots
+    CHECK(ship_shots == EXPECT_DEATHS)                  // 18 the loss was a dot, not a ram
     return 0;
 }
 
@@ -498,6 +612,11 @@ static void verdict(void)
     text_colour(9, 1, 17, TEXT_CRAM);
     text_colour(10, 1, 29, TEXT_CRAM);
     text_colour(11, 1, 38, TEXT_CRAM);
+    put_text(s, 12, 1, "FIRED 00 HIT 0 OVERRUNS 00");
+    put_dec(s + 12 * 40 + 7, eb_fired, 2);
+    put_dec(s + 12 * 40 + 14, ship_shots, 1);
+    put_dec(s + 12 * 40 + 25, overruns, 2);
+    text_colour(12, 1, 26, TEXT_CRAM);
     text_colour(13, 10, 20, TEXT_CRAM);
 }
 #endif
@@ -528,6 +647,10 @@ int main(void)
 #if !AUTOPILOT && defined(JOY_SOURCE)
     *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
 #endif
+#ifdef DRAWEND
+    *(volatile int *)0x0364 = 0x7fff;
+    *(volatile int *)0x0366 = 0x7fff;
+#endif
     hold_screen();                              // show the title while the disk works: the
                                                 // kernel sets the VIC only in kernel_init
 #if AUTOPILOT
@@ -539,7 +662,7 @@ int main(void)
 #if FRAME_METER
     // The readout goes to a scratch row until the verdict copies it onto the
     // playfield; play_enter starts the recording again.
-    meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, PLAY_FRAMES);
+    meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, METER_HOLD);
     K_MTR_OPEN = 0;                            // IRQs time themselves (timer B)
 #else
     K_MTR_OPEN = 1;                             // no meter: IRQs never touch timer B
@@ -572,7 +695,7 @@ int main(void)
 #endif
 #if defined(STAGE) && FRAME_METER
             if (play_frames == STAGE_FROM) {    // record the heavy part only
-                meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, PLAY_FRAMES - STAGE_FROM);
+                meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, METER_HOLD);
                 have_main = 0;
             }
 #endif
@@ -594,6 +717,10 @@ int main(void)
                 hw_d018 = vic.memptr;
                 disk_test();
                 verdict();
+#ifdef STAGE
+                for (char a = 0; a < N_ACTORS; a++)
+                    ACT_Y[a] = OFF_Y;           // no sprite over the meter's readout
+#endif
             }
             actors_draw();
             memcpy(level_screen() + 13 * 40 + 10, SCRATCH + 13 * 40 + 10, 20);
@@ -601,7 +728,11 @@ int main(void)
 #endif
         }
         prev = joy;
-        meter_print();
+        // The readout is read once, after the freeze. Printing it every play
+        // frame cost up to 3,404 cycles outside the bracket (the review) and
+        // made the autopilot build drop frames the game itself does not.
+        if (state != ST_PLAY)
+            meter_print();
     }
     return 0;
 }

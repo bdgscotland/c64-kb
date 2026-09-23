@@ -1,23 +1,35 @@
-// bullets.h: the player's bullets, drawn as characters (char_bullets).
+// bullets.h: the ship's bolts and the enemies' bullets, all drawn as
+// characters (char_bullets).
 #ifndef BULLETS_H
 #define BULLETS_H
 
 #include "game.h"
 
-// Bullets, one reserved glyph each ($F8-$FB). At most 3 fly at once: one
-// shot per 7 frames (P_COOL 6), and a bolt from the lowest ship (Y 180)
-// lives 16 frames (arithmetic). The fourth is room for a faster gun.
+// The ship's bolts, glyphs $F8-$FB. At most 3 fly at once: one shot per 7
+// frames (P_COOL 6), and a bolt from the lowest ship (Y 180) lives 16 frames
+// (arithmetic). The fourth is room for a faster gun.
 #define NB 4
+// The enemies' bullets, glyphs $F2-$F7.
+#define NEB 6
 
 extern char b_live[NB];
 extern char b_hx[NB];           // half X of the bolt's pixel pair
 extern char b_line[NB];         // raster line of the bolt's top row
 
+// The dots live in glyph.asm, which moves and draws them.
+#define eb_live ((char *)ASM_EB_LIVE)
+#define eb_hx   ((char *)ASM_EB_HX)     // half X of the dot's pixel pair
+#define eb_line ((char *)ASM_EB_LINE)   // raster line of the dot's top row
+extern unsigned eb_fired;       // enemy bullets fired this game (play_enter clears it)
+
 void bullets_reset(void);
 bool bullet_fire(char hx, char ship_y);  // from a ship whose sprite Y is ship_y
+void enemy_bullet_fire(char hx, char sy, char target_hx);   // from an enemy sprite
 void bullets_erase(void);                // restore every drawn cell, reverse order
-void bullets_move_draw(void);            // move up, draw into the showing screen
+void bullets_move_draw(void);            // move, draw into the showing screen
 void bullet_kill(char i);
+void enemy_bullet_kill(char j);
+bool bullets_restored(void);             // after bullets_erase: every cell is the map's
 
 #pragma compile("bullets.c")
 

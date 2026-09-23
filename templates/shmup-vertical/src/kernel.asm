@@ -282,51 +282,44 @@ split_prev: .byte 0             // ... and the frame that just ended
 delay_tbl:
         .byte 5, 5, 5, 5, 5, 5, 0, 5
 
-// copy_rows: row_n bytes (even, 2-254) from row_src to row_dst, for
-// level.c, which draws three playfield rows at once. C writes the three
-// values first; the loop patches its own operands (no zero page) and moves
-// two bytes a pass: 25 cycles, about 12.5 a byte.
+// copy_rows: three playfield rows, 120 bytes from row_src to row_dst, for
+// level.c. C writes both addresses; the patch step points each of three
+// load/store pairs at one row (+0, +40, +80), and the loop moves a column of
+// three bytes a pass: 32 cycles a column, 1,280 a call, against 12.5 a byte
+// (about 1,500) for the two-byte loop it replaces (arithmetic). The idea is
+// the other #39 version's copy3.
 row_src: .word 0
 row_dst: .word 0
-row_n:   .byte 0
 copy_rows:
-        sec
-        lda row_src
-        sbc #1
-        sta cr_ld1+1
-        lda row_src+1
-        sbc #0
-        sta cr_ld1+2
-        sec
-        lda row_dst
-        sbc #1
-        sta cr_st1+1
-        lda row_dst+1
-        sbc #0
-        sta cr_st1+2
-        sec
-        lda row_src
-        sbc #2
-        sta cr_ld2+1
-        lda row_src+1
-        sbc #0
-        sta cr_ld2+2
-        sec
-        lda row_dst
-        sbc #2
-        sta cr_st2+1
-        lda row_dst+1
-        sbc #0
-        sta cr_st2+2
-        ldx row_n
-cr_ld1: lda $ffff,x            // byte x-1
-cr_st1: sta $ffff,x
-cr_ld2: lda $ffff,x            // byte x-2
-cr_st2: sta $ffff,x
+        .for (var k = 0; k < 3; k++) {
+            lda row_src
+            clc
+            adc #40 * k
+            sta cr_ld + 6 * k + 1
+            lda row_src+1
+            adc #0
+            sta cr_ld + 6 * k + 2
+            lda row_dst
+            clc
+            adc #40 * k
+            sta cr_ld + 6 * k + 4
+            lda row_dst+1
+            adc #0
+            sta cr_ld + 6 * k + 5
+        }
+        ldx #39
+cr_loop:
+cr_ld:
+        .for (var k = 0; k < 3; k++) {
+            lda $ffff,x         // patched above
+            sta $ffff,x
+        }
         dex
-        dex
-        bne cr_ld1
+        bpl cr_loop
         rts
 
 #import "mux.asm"
 #import "sound.asm"
+#import "glyph.asm"
+#import "hit.asm"
+#import "step.asm"

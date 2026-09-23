@@ -11,8 +11,10 @@ enum {
     G_LAND = 64, G_GRASS, G_TREE, G_ROCK, G_EDGE_L, G_EDGE_R, G_SPARKLE,
     G_LIFE = 96,                // hires: a ship, for the panel's lives
     G_RULE,                     // hires: the panel's top rule
-    G_BULLET = 0xf8             // $F8-$FB: one reserved glyph per bullet;
-};                              // $FF stays blank ($BFFF is the idle byte)
+    G_DOTS = 0xc0,              // $C0-$CF: an enemy dot over open water, pair * 4 + row / 2
+    G_BOLTS = 0xd0,             // $D0-$D3: a bolt over open water, by pair
+    G_BULLET = 0xf8             // $F8-$FB: one reserved glyph per bolt ($F2-$F7 the
+};                              // dots'); $FF stays blank ($BFFF is the idle byte)
 
 // Sprite frames: block SPR_BLOCK + frame.
 enum { F_SHIP, F_DART, F_SAUCER, F_BUG, F_BOOM1, F_BOOM2, SPR_FRAMES };

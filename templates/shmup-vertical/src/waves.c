@@ -10,26 +10,32 @@
 #include "display.h"
 #include "level.h"
 
-char e_state[NE];
-static char e_path[NE], e_pc[NE], e_n[NE], e_lc[NE], e_type[NE], e_timer[NE];
-static signed char e_dx[NE], e_dy[NE];
+static char e_path[NE], e_pc[NE], e_lc[NE], e_type[NE], e_timer[NE];
+// The step itself is step.asm's (en_step); its tables hold the state, the
+// steps left and the step.
+#define e_n  ((char *)ASM_EN_N)
+#define e_dx ((signed char *)ASM_EN_DX)
+#define e_dy ((signed char *)ASM_EN_DY)
 char waves_started;
 char kills_by_type[3];
 
 // ---- paths -----------------------------------------------------------------
 // A byte below $80 is MOVE: that many steps of signed dx (half X) and dy
-// (lines). P_LOOP count, target jumps back count - 1 times. P_END frees the
-// enemy. Nothing else takes a frame.
+// (lines). P_LOOP count, target jumps back count - 1 times. P_FIRE fires a
+// bullet at the ship (on_enemy_fire; only from sprite Y 72 to 140). P_END
+// frees the enemy. Nothing else takes a frame.
 #define P_END  0x80
 #define P_LOOP 0x81
+#define P_FIRE 0x82
 #define S(n) ((char)(signed char)(n))
 
-static const char path_dive[]   = { 127, 0, 3, P_END };
+static const char path_dive[]   = { 16, 0, 3,  P_FIRE,  111, 0, 3, P_END };   // fires at Y 72
 static const char path_weave[]  = { 8, 1, 2,  16, S(-1), 2,  8, 1, 2,   // one sway, 32 steps
+                                    P_FIRE,                             // Y 88, then 152 (too low)
                                     P_LOOP, 3, 0,
                                     127, 0, 3, P_END };
-static const char path_swoop[]  = { 16, 0, 3,  10, 1, 2,  12, 2, 1,  80, 2, 0, P_END };
-static const char path_swoopl[] = { 16, 0, 3,  10, S(-1), 2,  12, S(-2), 1,  80, S(-2), 0, P_END };
+static const char path_swoop[]  = { 16, 0, 3,  P_FIRE,  10, 1, 2,  12, 2, 1,  80, 2, 0, P_END };
+static const char path_swoopl[] = { 16, 0, 3,  P_FIRE,  10, S(-1), 2,  12, S(-2), 1,  80, S(-2), 0, P_END };
 // The parade: down to a row, hold there, then dive. Row A stops at Y 72, row
 // B at Y 102: 30 lines apart, so the multiplexer can reuse all five slots.
 static const char path_parade_a[] = { 16, 0, 3,  127, 0, 0,  60, 0, 0,  127, 0, 3, P_END };
@@ -122,7 +128,10 @@ static char path_fetch(char e)
         char op = p[pc];
         if (op == P_END)
             return 0;
-        if (op == P_LOOP) {
+        if (op == P_FIRE) {
+            on_enemy_fire(e);
+            e_pc[e] = pc + 1;
+        } else if (op == P_LOOP) {
             if (e_lc[e] == 0)
                 e_lc[e] = p[pc + 1];
             e_pc[e] = --e_lc[e] ? p[pc + 2] : pc + 3;
@@ -191,16 +200,8 @@ void waves_update(char row)
     for (char e = 0; e < NE; e++) {
         char s = e_state[e];
         if (s == E_FLYING) {
-            if (!e_n[e] && !path_fetch(e)) {
+            if (!e_n[e] && !path_fetch(e))
                 enemy_free(e);                  // the path ended
-                continue;
-            }
-            e_n[e]--;
-            char x = e_hx[e] + e_dx[e], y = e_y[e] + e_dy[e];
-            e_hx[e] = x;
-            e_y[e] = y;
-            if (y > MAX_SY || x < 4 || x > 170)
-                enemy_free(e);                  // left the screen: no score
         } else if (s == E_BOOM) {
             char t = --e_timer[e];
             if (t == 8)
@@ -209,4 +210,5 @@ void waves_update(char row)
                 enemy_free(e);
         }
     }
+    __asm { jsr ASM_EN_STEP }                   // every flying enemy: one step, or off
 }

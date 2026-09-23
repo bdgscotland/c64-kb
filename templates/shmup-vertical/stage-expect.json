@@ -1,0 +1,6 @@
+{
+  "checks": [
+    { "name": "staged run's own verdict: no overrun, every bullet cell restored", "type": "verdict" },
+    { "name": "frame meter, play frames 150-399 of the staged run", "type": "meter", "row": 13, "col": 10, "frames": 250 }
+  ]
+}

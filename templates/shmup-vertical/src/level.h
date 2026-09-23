@@ -18,6 +18,8 @@ void level_frame(void);                 // after the frame IRQ: next values beco
 void level_render(void);                // three rows of the hidden screen
 void level_advance(void);               // YSCROLL + 1, or a flip at the carry
 char *level_screen(void);               // the screen now showing
+char *level_row(char r);                // screen row r of the screen now showing
+char level_code(char r, char c);        // the map's code at screen row r, column c
 bool level_intact(void);                // the showing screen equals the map
 
 #pragma compile("level.c")

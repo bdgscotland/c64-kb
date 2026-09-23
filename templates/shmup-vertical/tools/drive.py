@@ -15,7 +15,9 @@ VICE's joyport commands never reach $DC00. Steps:
   until:TEXT   run until TEXT is on a playfield screen or the panel (300 s limit)
   print        print the panel's rows and the non-blank text rows of the screen on display
 The machine is left with the monitor's quit command, so the drive's writes reach the .d64.
-Set DRIVE_DISK to a .d64 to attach it as drive 8.
+Set DRIVE_DISK to a .d64 to attach it as drive 8. The monitor port is DRIVE_PORT, or a
+free one the script picks (an earlier version always took 6581, so two drives collided).
+Exit 1 when an until: step times out.
 """
 import os
 import socket
@@ -25,7 +27,16 @@ import sys
 import time
 
 X64SC = os.environ.get("X64SC", os.path.expanduser("~/Developer/c64/vice-headless/bin/x64sc"))
-PORT = int(os.environ.get("DRIVE_PORT", "6581"))
+
+
+def free_port():
+    """A port nothing listens on now, so two drives at once do not collide."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+PORT = int(os.environ.get("DRIVE_PORT") or free_port())
 SCREENS = (0x8000, 0x8400)                            # src/game.h PF0, PF1
 PANEL = 0x8800
 BITS = {"none": 0, "up": 1, "down": 2, "left": 4, "right": 8, "fire": 16}

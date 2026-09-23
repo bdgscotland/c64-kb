@@ -3,81 +3,82 @@
 // across the whole screen, 2-pixel precision) and raster lines, so the test
 // is four one-byte compares and $D010 never enters it.
 //
-// The ship's and the bullets' boxes are emitted where they are drawn. An
-// enemy's box comes from the multiplexer's actor table, which is what the
-// display showed this frame, and its sprite frame: an explosion's frame has
-// no box. Enemies are tested only against the groups they can hurt (the ship
-// and the bullets), never against each other, and only when their lines
-// overlap the band those boxes cover.
+// The ship's and the bolts' boxes are emitted where they are drawn, into
+// hit.asm's tables. An enemy's box comes from the multiplexer's actor table,
+// which is what the display showed this frame, and its sprite frame's box
+// (hit.asm fb_*): an explosion's frame has none. Enemies are tested only
+// against the groups they can hurt (the ship and the bolts), never against
+// each other; the enemies' dots only against the ship. hit.asm's hit_scan
+// does the enemy pairs; this file turns its hits into events.
 #include "hitbox.h"
 #include "display.h"
 #include "waves.h"
+#include "bullets.h"
 
-// Each frame's box, by frame (display.h F_*): offset and size in half X and
-// lines from the sprite's first pixel pair and first line. w = 0: no box.
-static const char fb_x[SPR_FRAMES] = { 3, 3, 1, 2, 0, 0 };
-static const char fb_y[SPR_FRAMES] = { 4, 2, 1, 2, 0, 0 };
-static const char fb_w[SPR_FRAMES] = { 6, 6, 10, 8, 0, 0 };   // ship: hull only
-static const char fb_h[SPR_FRAMES] = { 10, 8, 7, 9, 0, 0 };
-
-// Boxes of the groups enemies can hurt: slot 0 the ship, 1-4 the bullets.
-static char bx_on[BOX_ENEMY], bx_l[BOX_ENEMY], bx_r[BOX_ENEMY], bx_t[BOX_ENEMY], bx_b[BOX_ENEMY];
+#define hb_on ((char *)ASM_HB_ON)
+#define hb_l  ((char *)ASM_HB_L)
+#define hb_r  ((char *)ASM_HB_R)
+#define hb_t  ((char *)ASM_HB_T)
+#define hb_b  ((char *)ASM_HB_B)
+#define fb_x  ((const char *)ASM_FB_X)
+#define fb_y  ((const char *)ASM_FB_Y)
+#define fb_w  ((const char *)ASM_FB_W)
+#define fb_h  ((const char *)ASM_FB_H)
 
 void box_off(char slot)
 {
-    bx_on[slot] = 0;
+    hb_on[slot] = 0;
 }
 
 void box_ship(char hx, char sy)
 {
     char l = hx + fb_x[F_SHIP], t = sy + 1 + fb_y[F_SHIP];
-    bx_l[BOX_PLAYER] = l;
-    bx_r[BOX_PLAYER] = l + fb_w[F_SHIP];
-    bx_t[BOX_PLAYER] = t;
-    bx_b[BOX_PLAYER] = t + fb_h[F_SHIP];
-    bx_on[BOX_PLAYER] = 1;
+    hb_l[BOX_PLAYER] = l;
+    hb_r[BOX_PLAYER] = l + fb_w[F_SHIP];
+    hb_t[BOX_PLAYER] = t;
+    hb_b[BOX_PLAYER] = t + fb_h[F_SHIP];
+    hb_on[BOX_PLAYER] = 1;
 }
 
 // A bolt: one pixel pair wide, four lines tall.
 void box_bullet(char i, char hx, char line)
 {
     char s = BOX_SHOT + i;
-    bx_l[s] = hx;
-    bx_r[s] = hx + 1;
-    bx_t[s] = line;
-    bx_b[s] = line + 4;
-    bx_on[s] = 1;
+    hb_l[s] = hx;
+    hb_r[s] = hx + 1;
+    hb_t[s] = line;
+    hb_b[s] = line + 4;
+    hb_on[s] = 1;
+}
+
+// Enemy dots against the ship's box: a dot is one pixel pair wide and two
+// lines tall.
+static void ship_hit(void)
+{
+    if (!hb_on[BOX_PLAYER])
+        return;
+    char t = hb_t[BOX_PLAYER], b = hb_b[BOX_PLAYER], l = hb_l[BOX_PLAYER], r = hb_r[BOX_PLAYER];
+    for (char j = 0; j < NEB; j++) {
+        if (!eb_live[j])
+            continue;
+        char y = eb_line[j], x = eb_hx[j];
+        if (y < b && t < y + 2 && x < r && l < x + 1) {
+            on_ship_shot(j);
+            return;
+        }
+    }
 }
 
 void collide(void)
 {
-    char att[BOX_ENEMY], na = 0, top = 255, bot = 0;
-    for (char a = 0; a < BOX_ENEMY; a++) {
-        if (bx_on[a]) {
-            att[na++] = a;
-            if (bx_t[a] < top) top = bx_t[a];
-            if (bx_b[a] > bot) bot = bx_b[a];
-        }
-    }
-    if (!na)
-        return;
-    for (char e = 0; e < NE; e++) {
-        if (e_state[e] != E_FLYING)
-            continue;
-        char f = e_ptr[e] - SPR_BLOCK;
-        char t = e_y[e] + 1 + fb_y[f], b = t + fb_h[f];
-        if (b <= top || t >= bot)
-            continue;                           // outside the band: no pair can hit
-        char l = e_hx[e] + fb_x[f], r = l + fb_w[f];
-        for (char k = 0; k < na; k++) {
-            char a = att[k];
-            if (bx_on[a] && t < bx_b[a] && bx_t[a] < b && l < bx_r[a] && bx_l[a] < r) {
-                if (a == BOX_PLAYER)
-                    on_player_hit(e);
-                else
-                    on_enemy_shot(e, a - BOX_SHOT);
-                break;
-            }
-        }
+    ship_hit();
+    __asm { jsr ASM_HIT_SCAN }
+    char n = K_BYTE(ASM_HIT_N);
+    for (char k = 0; k < n; k++) {
+        char e = ((char *)ASM_HIT_E)[k], a = ((char *)ASM_HIT_A)[k];
+        if (a == BOX_PLAYER)
+            on_player_hit(e);
+        else
+            on_enemy_shot(e, a - BOX_SHOT);
     }
 }
