@@ -21,6 +21,7 @@ import {
   feedLog,
   isPush,
   parseHit,
+  portRmwValue,
   storedValue,
   touchedUnits,
 } from "../scripts/lib/claims-trace.ts";
@@ -85,6 +86,20 @@ describe("the log parser", () => {
     expect(store && storedValue({ ...store, mnemonic: "STA" })).toBe(0xff);
     expect(store && storedValue({ ...store, mnemonic: "INC" })).toBeNull();
   });
+  it("values a read-modify-write on the 6510 port from the byte it read", () => {
+    const rmw = (mnemonic: string, read: number | null, flags = "..-..I..") =>
+      store && portRmwValue({ ...store, mnemonic, flags }, read);
+    expect(store?.flags).toBe("..-..I..");
+    expect(rmw("DEC", 0x37)).toBe(0x36);
+    expect(rmw("DCP", 0x37)).toBe(0x36);
+    expect(rmw("INC", 0xff)).toBe(0x00);
+    expect(rmw("ASL", 0x9b)).toBe(0x36);
+    expect(rmw("LSR", 0x6f)).toBe(0x37);
+    expect(rmw("ROR", 0x6f, "N.-..I.C")).toBe(0xb7);
+    expect(rmw("ROL", 0x37)).toBeNull(); // the carry into bit 0 is not logged
+    expect(rmw("ROL", 0x80, "..-..IZC")).toBe(0);
+    expect(rmw("DEC", null)).toBeNull();
+  });
   it("reads an exec hit, which VICE logs with two spaces", () => {
     const exec = parseHit(
       "#4 (Trace  exec 080e)  208/$0d0,  52/$34",
@@ -141,8 +156,11 @@ describe("attribution by PC and the 6510 port", () => {
     expect(port.io).toBe(true);
     port.store(1, 0x34); // all RAM
     expect(port.io).toBe(false);
+    expect(port.read(1)).toBe(0x34); // input bit 4 reads 1, bits 6-7 0
     port.store(1, null);
-    expect(sourceOf(0xea31, port)).toBe("kernal");
+    expect(sourceOf(0xea31, port)).toBe("unknown");
+    expect(sourceOf(0xa474, port)).toBe("unknown");
+    expect(sourceOf(0xc000, port)).toBe("program");
   });
 });
 
@@ -269,6 +287,59 @@ describe("the watch over a log", () => {
       ],
     ]);
     expect(w.violations()).toEqual([]);
+  });
+
+  // After READY: the program's IRQ stores are judged, the KERNAL's dropped.
+  const irqAfterReady = [
+    "#1 (Trace store d40b)   60/$03c,   5/$05",
+    ".C:0830  8D 0B D4    STA $D40B      - A:21 X:00 Y:00 SP:f0 ..-..I..    3200000",
+    "#1 (Trace store 00a2)   60/$03c,  15/$0f",
+    ".C:ea34  E6 A2       INC $A2        - A:21 X:00 Y:00 SP:f0 ..-..I..    3200010",
+  ];
+
+  it("judges the program's stores after READY and drops the ROM's", () => {
+    const w = new ClaimsWatch({ units: map, screen, declared: new Declared(), start: 0x080e });
+    feedLog(w, [...LOG, ...irqAfterReady]);
+    expect(w.endClock).toBe(3100000);
+    expect(w.afterExit).toBe(2);
+    const voice = [...w.tallies.values()].find((t) => t.finding.target === "sid_voice_2");
+    expect(voice?.count).toBe(2);
+    expect(voice?.finding.verdict).toBe("undeclared");
+  });
+
+  it("takes $A474 as READY only with BASIC ROM mapped in, and follows DEC $01", () => {
+    const w = new ClaimsWatch({ units: map, screen, declared: new Declared(), start: 0x080e });
+    feedLog(w, [
+      LOG[2] ?? "",
+      LOG[3] ?? "",
+      "#1 (Trace store 0001)   41/$029,  45/$2d",
+      ".C:0810  C6 01       DEC $01        - A:00 X:00 Y:00 SP:f6 ..-..I..    3049305",
+      `#9 (Trace  exec ${BASIC_READY.toString(16)})   41/$029,  50/$32`,
+      ".C:a474  A9 21       LDA #$21       - A:21 X:00 Y:00 SP:f6 ..-..I..    3049310",
+      "#1 (Trace store d40b)   41/$029,  54/$36",
+      ".C:a476  8D 0B D4    STA $D40B      - A:21 X:00 Y:00 SP:f6 ..-..I..    3049314",
+    ]);
+    expect(w.port.port).toBe(0x36);
+    expect(w.endClock).toBeNull();
+    expect(w.violations().map((t) => `${t.finding.source} ${t.finding.target}`)).toEqual([
+      "program sid_voice_2",
+    ]);
+  });
+
+  it("fails a store from a ROM window while $01 is unknown", () => {
+    const w = new ClaimsWatch({ units: map, screen, declared: new Declared(), start: 0x080e });
+    feedLog(w, [
+      LOG[2] ?? "",
+      LOG[3] ?? "",
+      "#1 (Trace store 0001)   41/$029,  45/$2d",
+      ".C:0810  26 01       ROL $01        - A:00 X:00 Y:00 SP:f6 ..-..I..    3049305",
+      "#1 (Trace store d40b)   41/$029,  54/$36",
+      ".C:a002  8D 0B D4    STA $D40B      - A:21 X:00 Y:00 SP:f6 ..-..I..    3049314",
+    ]);
+    expect(w.unknownBanking).toBe(1);
+    expect(w.violations().map((t) => `${t.finding.verdict} ${t.finding.source} ${t.finding.target}`)).toEqual(
+      ["unattributed unknown sid_voice_2"],
+    );
   });
 
   it("with no entry address, starts at the first store from outside ROM", () => {

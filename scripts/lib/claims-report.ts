@@ -45,7 +45,7 @@ function unitRows(w: ClaimsWatch): string[][] {
     const f = t.finding;
     if (!/^[a-z][a-z0-9_]*$/.test(f.target)) continue;
     const u = units.get(f.target) ?? { program: 0, rom: 0, verdicts: new Set(), by: new Set() };
-    if (f.source === "program") {
+    if (f.source === "program" || f.source === "unknown") {
       u.program += t.count;
       u.verdicts.add(f.verdict);
       if (f.by) u.by.add(f.by);
@@ -83,6 +83,15 @@ export function reportText(w: ClaimsWatch, label: (pc: number) => string): strin
     ...section(
       `VIOLATIONS: KERNAL zero-page stores outside the may-sets of the declared routines (${kernalOut.length})`,
       kernalOut.map((t) => `${addrText(t.addrs, 32)}: ${t.count} stores, ${pcList(t.pcs, label)}`),
+    ),
+  );
+  const unknown = byVerdict(w, ["unattributed"]);
+  out.push(
+    ...section(
+      `VIOLATIONS: stores from a ROM window while $01 is unknown; ROM or program, the trace cannot say (${unknown.length})`,
+      unknown.map(
+        (t) => `${t.finding.target} ${addrText(t.addrs)}: ${t.count} stores, ${pcList(t.pcs, label)}`,
+      ),
     ),
   );
   out.push(

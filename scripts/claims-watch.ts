@@ -29,10 +29,13 @@
  * banking the trace has seen on $01: KERNAL ($E000+ with HIRAM set), BASIC
  * ($A000-$BFFF with LORAM and HIRAM set), else the program. An I/O store is
  * mapped to the HardwareUnits whose bits it changed (src/graph/claims.ts seed).
+ * After BASIC's READY (with BASIC ROM mapped) ROM stores are dropped; the
+ * program's (its IRQ, its NMI) are still judged.
  *
  * Exit 1 on a violation: a program store to a unit or byte it did not
- * declare (or declared `reads` only), or a KERNAL zero-page store outside the
- * may-sets of the declared routines. Exit 2 on a usage or setup error.
+ * declare (or declared `reads` only), a KERNAL zero-page store outside the
+ * may-sets of the declared routines, or a store from a ROM window
+ * ($A000-$BFFF, $E000-$FFFF) while $01 is unknown, which cannot be attributed. Exit 2 on a usage or setup error.
  * Needs x64sc (X64SC_BIN, .tools/vice-headless, PATH); a run of 8M cycles
  * takes about a second.
  */
@@ -241,13 +244,11 @@ function printHeader(prgPath: string, prg: Prg, start: number | undefined): void
 }
 
 function printRun(watch: ClaimsWatch): void {
-  const banking = watch.unknownBanking
-    ? `; ${watch.unknownBanking} stores with $01 unknown (ROM assumed in)`
-    : "";
+  const banking = watch.unknownBanking ? `; ${watch.unknownBanking} stores with $01 unknown` : "";
   const exit =
     watch.endClock === null
       ? ""
-      : `; returned to BASIC READY at clock ${watch.endClock}, ${watch.afterExit} stores after it not judged`;
+      : `; returned to BASIC READY at clock ${watch.endClock}, ${watch.afterExit} ROM stores after it not judged`;
   const ram = opt["all-ram"] ? "" : "; RAM $0400-$CFFF and $E000-$FFF9 not traced (--all-ram)";
   console.log(
     `started at clock ${watch.startClock}; dropped ${watch.bootStores} boot stores and ${watch.pushes} stack pushes${banking}${exit}${ram}`,

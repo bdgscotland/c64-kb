@@ -8,10 +8,12 @@
  *   .C:0819  86 FB       STX $FB        - A:FF X:12 Y:00 SP:f6 ..-..I..    3049325
  *
  * raster line and cycle, then the instruction with the registers as they
- * are after it (measured: a PHA showing SP:f5 stored $01F6). So a store's
- * value is A, X or Y for STA, STX, STY and unknown for a read-modify-write,
- * and a push lands at $0100 + SP + 1..3. An interrupt's pushes show the
- * interrupted instruction.
+ * are after it (measured: a PHA showing SP:f5 stored $01F6). The hit does
+ * not log the byte written. So a store's value is A, X or Y for STA, STX,
+ * STY; a read-modify-write logs one hit (measured: DEC $01 twice, two hits)
+ * and is valued only on the 6510 port, from the port's last value; a push
+ * lands at $0100 + SP + 1..3. An interrupt's pushes show the interrupted
+ * instruction.
  */
 import type { Declared } from "./claims-declared.ts";
 import { CpuPort, sourceOf, type ScreenBytes, type Source, type UnitMap } from "./claims-units.ts";
@@ -26,12 +28,14 @@ export interface Hit {
   x: number;
   y: number;
   sp: number;
+  /** Flags after the instruction, as VICE prints them: `N.-..IZC`. */
+  flags: string;
   clock: number;
 }
 
 const HEAD = /^#\d+ \(Trace\s+(store|exec)\s+([0-9a-f]{4})\)/;
 const INSN =
-  /^\.C:([0-9a-f]{4})\s+(?:[0-9A-F]{2} )+\s*([A-Z]{3})\s*(.*?)\s*- A:([0-9A-F]{2}) X:([0-9A-F]{2}) Y:([0-9A-F]{2}) SP:([0-9a-f]{2})\s+\S+\s+(\d+)/;
+  /^\.C:([0-9a-f]{4})\s+(?:[0-9A-F]{2} )+\s*([A-Z]{3})\s*(.*?)\s*- A:([0-9A-F]{2}) X:([0-9A-F]{2}) Y:([0-9A-F]{2}) SP:([0-9a-f]{2})\s+(\S+)\s+(\d+)/;
 
 /** Parse one hit from its two lines; null for anything else. */
 export function parseHit(head: string, insn: string): Hit | null {
@@ -49,7 +53,8 @@ export function parseHit(head: string, insn: string): Hit | null {
     x: n(5),
     y: n(6),
     sp: n(7),
-    clock: n(8, 10),
+    flags: i[8] ?? "",
+    clock: n(9, 10),
   };
 }
 
@@ -69,6 +74,38 @@ export function storedValue(hit: Hit): number | null {
   }
 }
 
+/**
+ * The byte a read-modify-write left on the 6510 port ($00 or $01), from the
+ * byte it read there. ROR's new bit 7 is the carry it shifted in, which the
+ * N flag after it shows; ROL's new bit 0 is that carry too, known only when
+ * Z says the result is 0. The illegal DCP, ISB, SLO, SRE write what DEC,
+ * INC, ASL, LSR would. Null when the byte cannot be known.
+ */
+export function portRmwValue(hit: Hit, read: number | null): number | null {
+  if (read === null) return null;
+  const flag = (f: string) => hit.flags.includes(f);
+  switch (hit.mnemonic) {
+    case "INC":
+    case "ISB":
+      return (read + 1) & 0xff;
+    case "DEC":
+    case "DCP":
+      return (read - 1) & 0xff;
+    case "ASL":
+    case "SLO":
+      return (read << 1) & 0xff;
+    case "LSR":
+    case "SRE":
+      return read >> 1;
+    case "ROR":
+      return (read >> 1) | (flag("N") ? 0x80 : 0);
+    case "ROL":
+      return flag("Z") ? 0 : null;
+    default:
+      return null;
+  }
+}
+
 /** A push (JSR, PHA, PHP, an interrupt) lands at $0100 + SP + 1..3, SP read after the instruction. */
 export function isPush(hit: Hit): boolean {
   return hit.addr >> 8 === 1 && (((hit.addr & 0xff) - hit.sp - 1) & 0xff) < 3;
@@ -76,6 +113,7 @@ export function isPush(hit: Hit): boolean {
 
 /** What one store was, once sorted. */
 export type Verdict =
+  | "unattributed"
   | "claimed"
   | "harness"
   | "undeclared"
@@ -107,8 +145,12 @@ export interface Tally {
 /**
  * BASIC's READY entry: LDA #$76, LDY #$A3, JSR $AB1E (print "READY."),
  * JSR $FF90 (SETMSG), JMP ($0302); read from basic-901226-01.bin. A
- * program that returns to BASIC ends here, and what BASIC does next is not
- * the program's: its SETMSG call wrote $9D, outside every declared may-set.
+ * program that returns to BASIC comes here, and what BASIC and the KERNAL
+ * do next is not the program's: READY's SETMSG call wrote $9D, outside
+ * every declared may-set. The program's own code can still run after it
+ * (its IRQ, its NMI), so its stores are judged to the end of the run. The
+ * address counts as READY only with BASIC ROM mapped in; otherwise it is
+ * RAM, and code there is the program's.
  */
 export const BASIC_READY = 0xa474;
 
@@ -149,7 +191,7 @@ export class ClaimsWatch {
   readonly shadow = new Map<number, number>();
   started = false;
   startClock: number | null = null;
-  /** When the program returned to BASIC's READY; stores after it are BASIC's, not judged. */
+  /** When the program returned to BASIC's READY; ROM stores after it are not judged, the program's are. */
   endClock: number | null = null;
   afterExit = 0;
   unknownBanking = 0;
@@ -164,16 +206,16 @@ export class ClaimsWatch {
 
   feed(hit: Hit): void {
     if (hit.kind === "exec") {
-      if (hit.addr === this.opt.start && !this.started) this.begin(hit.clock);
-      else if (hit.addr === BASIC_READY && this.started) this.endClock ??= hit.clock;
+      this.exec(hit);
       return;
     }
-    if (this.endClock !== null) {
-      this.afterExit++;
-      return;
-    }
-    const value = storedValue(hit);
+    const value = this.valueOf(hit);
     const source = sourceOf(hit.pc, this.port);
+    if (this.endClock !== null && (source === "kernal" || source === "basic")) {
+      this.afterExit++;
+      this.remember(hit.addr, value);
+      return;
+    }
     if (!this.started && this.opt.start === undefined && source === "program") this.begin(hit.clock);
     if (!this.started) {
       this.bootStores++;
@@ -189,6 +231,24 @@ export class ClaimsWatch {
     this.remember(hit.addr, value);
   }
 
+  private exec(hit: Hit): void {
+    if (hit.addr === this.opt.start && !this.started) this.begin(hit.clock);
+    else if (hit.addr === BASIC_READY && this.started && this.basicMapped()) this.endClock ??= hit.clock;
+  }
+
+  /** The byte stored, when the log lets it be known. */
+  private valueOf(hit: Hit): number | null {
+    const v = storedValue(hit);
+    if (v !== null || hit.addr > 1) return v;
+    return portRmwValue(hit, this.port.read(hit.addr));
+  }
+
+  /** BASIC ROM at $A000: the banking is known and has LORAM and HIRAM set. */
+  private basicMapped(): boolean {
+    const b = this.port.bits;
+    return b !== null && (b & 3) === 3;
+  }
+
   private begin(clock: number): void {
     this.started = true;
     this.startClock = clock;
@@ -202,6 +262,13 @@ export class ClaimsWatch {
 
   /** The findings for one store: one per unit touched, or one for the byte. */
   classify(hit: Hit, source: Source, value: number | null): Finding[] {
+    // Code in a ROM window with $01 unknown: ROM or the program, the trace cannot say.
+    if (source === "unknown")
+      return this.classify(hit, "program", value).map((f) => ({
+        verdict: "unattributed",
+        source,
+        target: f.target,
+      }));
     const { addr } = hit;
     if (addr <= 1) return [{ verdict: "cpu_port", source, target: "6510 port" }];
     const units = this.unitsAt(addr, value);
@@ -267,10 +334,14 @@ export class ClaimsWatch {
     t.pcs.set(hit.pc, (t.pcs.get(hit.pc) ?? 0) + 1);
   }
 
-  /** Violations fail the run: program stores outside the claims, KERNAL zero-page stores outside the may-sets. */
+  /**
+   * Violations fail the run: program stores outside the claims, KERNAL
+   * zero-page stores outside the may-sets, and stores from a ROM window
+   * while $01 is unknown.
+   */
   violations(): Tally[] {
     return [...this.tallies.values()].filter((t) =>
-      ["undeclared", "reads_only", "kernal_outside_may"].includes(t.finding.verdict),
+      ["undeclared", "reads_only", "kernal_outside_may", "unattributed"].includes(t.finding.verdict),
     );
   }
 }

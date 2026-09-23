@@ -116,8 +116,10 @@ export const rangeHolding = (ranges: readonly NamedRange[], addr: number): Named
 /**
  * The 6510 port. $00 is the data direction register, $01 the port; an
  * input bit reads as 1 (pulled up). LORAM, HIRAM, CHAREN are bits 0-2.
- * `null` means a store the trace could not value (INC $01, say): from
- * then on the watch falls back to reading ROM as mapped in, and counts it.
+ * `null` means a store the trace could not value (ROL $01 with Z clear:
+ * the carry it shifted into LORAM is not logged). From then on code in a
+ * ROM window cannot be attributed (sourceOf says "unknown") until $00 and
+ * $01 are stored with known values again.
  */
 export class CpuPort {
   ddr: number | null = 0x2f;
@@ -126,6 +128,17 @@ export class CpuPort {
   store(addr: number, value: number | null): void {
     if (addr === 0) this.ddr = value;
     else if (addr === 1) this.port = value;
+  }
+
+  /**
+   * What a read of $00 or $01 returns: the DDR, or the port with input bits
+   * 0-5 read as 1 and bits 6-7 (no pin) as 0, so a stock C64 reads $37.
+   * Only bits 0-2 steer the watch, and they are outputs after boot.
+   */
+  read(addr: number): number | null {
+    if (addr === 0) return this.ddr;
+    if (this.ddr === null || this.port === null) return null;
+    return (this.port & this.ddr) | (~this.ddr & 0x3f);
   }
 
   /** The three banking bits as the PLA sees them, or null when unknown. */
@@ -153,10 +166,11 @@ export class CpuPort {
   }
 }
 
-/** Who ran the store, by PC and the banking at that moment. */
-export type Source = "program" | "kernal" | "basic";
+/** Who ran the store, by PC and the banking at that moment; "unknown" for a ROM window while $01 is unknown. */
+export type Source = "program" | "kernal" | "basic" | "unknown";
 
 export function sourceOf(pc: number, port: CpuPort): Source {
+  if (port.bits === null && (pc >= 0xe000 || (pc >= 0xa000 && pc <= 0xbfff))) return "unknown";
   if (pc >= 0xe000 && port.kernal) return "kernal";
   if (pc >= 0xa000 && pc <= 0xbfff && port.basic) return "basic";
   return "program";
