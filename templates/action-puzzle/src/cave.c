@@ -4,10 +4,6 @@
 // tools/gen.py (class Cave); change both together.
 #include "cave.h"
 
-#ifndef FORCE_FAULT
-#define FORCE_FAULT 0
-#endif
-
 char cave[CW * CH];
 char cave_move;
 char cave_got, cave_need, cave_time, cave_tick;
@@ -15,6 +11,7 @@ unsigned cave_points;
 unsigned cave_player, cave_exit_at;
 bool cave_dead, cave_exited, cave_exit_open;
 char cave_events;
+char cave_seen;
 
 unsigned cave_dirty[DIRTY_MAX];
 char cave_ndirty;
@@ -36,8 +33,10 @@ static void mark(char *q)
 // the scanned bit, so the scan skips the object when it gets there.
 static void put(char *dst, char v, char *src)
 {
+#if SCAN_FLAG
     if (dst > src)
         v |= SCANNED;
+#endif
     *dst = v;
     *src = SPACE;
     if (v == PLAYER || v == (PLAYER | SCANNED))
@@ -116,7 +115,7 @@ static void player_rules(char *p)
     else if (tv == GEM)
     {
         cave_got++;
-        cave_points += GEM_POINTS + FORCE_FAULT;      // the fault build miscounts
+        cave_points += GEM_POINTS;
         cave_events |= EV_GEM;
         put(t, PLAYER, p);
     }
@@ -187,7 +186,10 @@ static __noinline void cell(char *row, char x)
     else if (v == BOULDER_F || v == GEM_F)
         fall_rules(p, v);
     else if (v == PLAYER)
+    {
+        cave_seen++;                                  // once a cave frame, or the scanned bit failed
         player_rules(p);
+    }
     else if (v >= BLAST)
     {
         if (v == BLAST + 2)
@@ -214,8 +216,16 @@ __noinline void cave_scan_rows(char y0, char y1)
     char *row = cave + CW * y0;
     for (char y = y0; y < y1; y++, row += CW)
         for (char x = 1; x < CW - 1; x++)
-            if (row[x] >= BOULDER)
-                cell(row, x);
+        {
+            char v = row[x];
+            if (v >= BOULDER)
+            {
+                if (v & SCANNED)
+                    row[x] = v & 0x7f;                // moved here this scan: no call
+                else
+                    cell(row, x);
+            }
+        }
 }
 
 void cave_start(char need, char time)
@@ -259,9 +269,8 @@ void cave_end_frame(void)
     }
 }
 
-unsigned cave_fold(void)
+unsigned cave_fold(unsigned chk)
 {
-    unsigned chk = 0;
     for (unsigned i = 0; i < CW * CH; i++)
     {
         unsigned t = chk ^ (cave[i] & 0x7f);

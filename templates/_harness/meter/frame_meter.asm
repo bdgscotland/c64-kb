@@ -118,7 +118,8 @@ fm_read:
     fm_stop_and_read(fm_raw)
     rts
 
-// acc += raw - zero
+// acc += raw - zero, saturating at $FFFF: a frame whose brackets sum past
+// 65,535 cycles reads 65,535, not the sum modulo 65,536
 fm_pause:
     fm_stop_and_read(fm_raw)
 fm_accumulate:
@@ -136,7 +137,11 @@ fm_accumulate:
     tya
     adc fm_acc+1
     sta fm_acc+1
-    rts
+    bcc !+
+    lda #$ff
+    sta fm_acc
+    sta fm_acc+1
+!:  rts
 
 fm_stop:
     fm_stop_and_read(fm_raw)

@@ -54,9 +54,12 @@ extern unsigned cave_player;    // cell index of the player
 extern unsigned cave_exit_at;
 extern bool cave_dead, cave_exited, cave_exit_open;
 extern char cave_events;
+extern char cave_seen;          // times the scan ran the player's rules; main.c resets it each cave frame
 
-// Cells a slice changed, for the renderer. On overflow it redraws the rows.
-#define DIRTY_MAX 64
+// Cells a slice changed, for the renderer. A move marks two cells, an
+// explosion nine, so a slice holds up to 32 moves before the list overflows;
+// then render.c queues the slice's rows and redraws them two a frame.
+#define DIRTY_MAX 16
 extern unsigned cave_dirty[DIRTY_MAX];
 extern char cave_ndirty;
 extern bool cave_overflow;
@@ -64,7 +67,13 @@ extern bool cave_overflow;
 void cave_start(char need, char time);  // after the decode: find the player and exit
 void cave_scan_rows(char y0, char y1);  // scan interior rows y0 .. y1 - 1
 void cave_end_frame(void);              // after the last slice: exit, clock
-unsigned cave_fold(void);               // (chk ^ v) * 5 + 1 over all 880 cells
+unsigned cave_fold(unsigned chk);       // chk = (chk ^ v) * 5 + 1 over all 880 cells
+
+// SCAN_FLAG=0 builds the rules without the scanned bit: the double-move bug
+// of the cave-scan recipe, which make selftest-scan must see fail.
+#ifndef SCAN_FLAG
+#define SCAN_FLAG 1
+#endif
 
 #pragma compile("cave.c")
 

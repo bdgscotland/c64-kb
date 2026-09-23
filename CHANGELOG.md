@@ -5,7 +5,64 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 765, schema 31, tools 2.3.0, package 0.16.0.
+Data 766, schema 31, tools 2.3.0, package 0.16.0.
+
+**Issue #39: `action-puzzle` hardened after the other session's
+comparison.**
+- The redraw is bounded. An overflowing dirty list used to redraw 280
+  cells in one frame (55,305 cycles); rows are now queued, two a frame.
+- The right roll, the restart path over three lives, the high-score
+  read-back and the once-per-scan check are all gated. Each is proved
+  by a mutation.
+- Dropped frames are counted from the `$D019` raster latch.
+- It builds and passes on the released Oscar64 v1.32.273.
+- Staged worst frame (16 boulders falling in one slice): 13,619 PAL /
+  13,832 NTSC cycles.
+
+**Issue #39: the `demo` starter lands, and the two stub skeletons are
+removed.** `templates/demo` is pure KickAssembler:
+- a part table with init, update, out step and teardown, and a
+  table-driven IRQ chain;
+- a stable double-IRQ raster-bar kernel, a sprite sine chain, a
+  scroller, and an original tune with NTSC tempo skips.
+
+It checks itself on PAL and NTSC with 229 screenshot checks, 8
+jittered probe shots of the bar kernel, dispatcher counters (late and
+bad frames), a deadline test on the frame slot, and a SID store trace
+(`make audio`). Measured worst 7,332 / typical 6,586 cycles on PAL.
+`templates/c64-demo-starter` and `templates/c64-game-starter` are
+removed. The game starter fed a `.prg` to Oscar64 as source, which
+Oscar64 ignores.
+
+**Issue #39: the `adventure` starter, STARWATCH.** It is a 12-room text
+adventure in Oscar64:
+- the world is data in `tools/world.py`, and a Python model checks the
+  game line by line;
+- a two-word parser with synonyms;
+- text packed by byte-pair coding, 40% smaller;
+- picture strips coded row by row;
+- one window line printed per frame;
+- SAVE and LOAD on drive 8, with the record versioned from the world.
+
+Measured in VICE x64sc 3.10:
+- worst 15,272 / typical 8,543 cycles on PAL; 15,488 / 8,842 on NTSC;
+- `make disktest` saves, cold-resets and loads under true 1541
+  emulation, and refuses three bad saves.
+
+Its review found a picture that overran the frame. `gen.py` now refuses
+a script that does not show every picture. The other #39 session's
+comparator chose this version as the base and its disk extras were
+ported.
+
+**Harness: `make released`, and the keypad joystick on `make run` (#39).**
+The starters are verified with a patched Oscar64 (#25) while a downstream
+agent has a release. `make released OSCAR64_RELEASED=<path>` builds the
+autopilot program with that compiler and grades its PAL and NTSC shots
+with the starter's own `expect.json`. On v1.32.273 it found the platformer
+graded 7 of 23: `surface_at` inlined into `surface_walk` reads the slope
+table with a stale X (listings on #30; `__noinline` passes 23 of 23).
+action-puzzle graded 41 of 41. `make run` now passes `-joydev2 1`, so the
+numeric keypad is joystick 2.
 
 **Issue #39: one harness, and the briefing names the starter.** Two
 sessions built #39 in parallel; the maintainer asked for one harness, the

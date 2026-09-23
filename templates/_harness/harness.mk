@@ -70,9 +70,11 @@ endif
 PRG       := build/$(NAME).prg
 PRG_AUTO  := build/$(NAME)-auto.prg
 PRG_FAULT := build/$(NAME)-fault.prg
+PRG_RELEASED := build/$(NAME)-released.prg
 D64       := build/$(NAME).d64
 SHOTS     := shots/pal.png shots/ntsc.png
 FAULT_SHOTS := shots/fault-pal.png shots/fault-ntsc.png
+RELEASED_SHOTS := shots/released-pal.png shots/released-ntsc.png
 
 METER_DEPS := $(wildcard $(HARNESS_DIR)/meter/*)
 
@@ -87,7 +89,7 @@ shot_disk = @cp $(D64) $(1:.png=.d64)
 shot_disk_flags = -8 $(1:.png=.d64) -drive8wobbleamplitude 0 -drive8wobblefrequency 0
 endif
 
-.PHONY: all build run run-auto shot check selftest disk claims zp clean plan-gate tools
+.PHONY: all build run run-auto shot check selftest disk claims zp released clean plan-gate tools
 .DELETE_ON_ERROR:
 
 all: plan-gate build
@@ -123,6 +125,11 @@ $(PRG_AUTO): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 $(PRG_FAULT): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -d$(FAULT_DEFINE)=1 -o=$@ $(C_MAIN)
+# The autopilot build from a second compiler, for `make released`.
+$(PRG_RELEASED): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	@test -n "$(OSCAR64_RELEASED)" || { echo "released: set OSCAR64_RELEASED=/path/to/a released oscar64"; exit 2; }
+	$(OSCAR64_RELEASED) $(OSCAR64_FLAGS) -i=$(CURDIR)/build -i=$(abspath $(HARNESS_DIR))/meter -d$(AUTOPILOT_DEFINE)=1 -o=$@ $(C_MAIN)
 else
 KICK_BUILD = $(KICKASS) $(KICK_SRC) $(KICKASS_FLAGS) -libdir $(HARNESS_DIR)/meter -vicesymbols -odir $(CURDIR)/build
 
@@ -138,8 +145,9 @@ $(PRG_FAULT): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
 endif
 
 # ---- run: the windowed emulator, for a human ----------------------------------------
+# Joystick port 2 on the numeric keypad (8 2 4 6, fire 0): -joydev2 1.
 run: $(PRG)
-	$(X64SC_WINDOWED) -autostart $(PRG)
+	$(X64SC_WINDOWED) -joydev2 1 -autostart $(PRG)
 run-auto: $(PRG_AUTO)
 	$(X64SC_WINDOWED) -autostart $(PRG_AUTO)
 
@@ -174,6 +182,10 @@ shots/fault-pal.png: $(PRG_FAULT) $(PIN_PAL) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_FAULT),$(SHOT_CYCLES_PAL),,$@)
 shots/fault-ntsc.png: $(PRG_FAULT) $(PIN_NTSC) $(SHOT_DEPS)
 	$(call vice_shot,$(PRG_FAULT),$(SHOT_CYCLES_NTSC),-model ntsc,$@)
+shots/released-pal.png: $(PRG_RELEASED) $(PIN_PAL) $(SHOT_DEPS)
+	$(call vice_shot,$(PRG_RELEASED),$(SHOT_CYCLES_PAL),,$@)
+shots/released-ntsc.png: $(PRG_RELEASED) $(PIN_NTSC) $(SHOT_DEPS)
+	$(call vice_shot,$(PRG_RELEASED),$(SHOT_CYCLES_NTSC),-model ntsc,$@)
 
 shot:
 	@rm -f $(SHOTS)
@@ -218,6 +230,21 @@ claims: $(PRG_AUTO)
 	  echo "claims: not available. $(C64KB)/scripts/claims-watch.ts does not exist (it lands in c64-kb with issue #22 step 6)."; \
 	  echo "claims: set C64KB=/path/to/c64-kb to a checkout that has it. Nothing was checked."; \
 	fi
+
+# ---- released: the same checks on a build from another Oscar64 ------------------
+# The starters are verified with a locally patched Oscar64 (c64-kb #25); an
+# agent downstream has a release. `make released OSCAR64_RELEASED=...` builds
+# the autopilot program with that compiler and grades its shots with this
+# starter's expect.json. A failure here is worth reading in the .asm listing:
+# two v1.32.273 miscompiles were found this way (#30).
+released:
+ifneq ($(strip $(C_MAIN)),)
+	@rm -f $(PRG_RELEASED) $(RELEASED_SHOTS)
+	@$(MAKE) --no-print-directory $(RELEASED_SHOTS)
+	C64KB="$(C64KB)" $(PYTHON) $(HARNESS_DIR)/check.py expect.json $(RELEASED_SHOTS)
+else
+	@echo "released: $(NAME) has no C part; no Oscar64 is involved."
+endif
 
 # ---- zp: the zero page the compiled C touches, from Oscar64's listing ----------
 # Oscar64's temporaries run from $43 up by each function's temp count, so the

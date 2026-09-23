@@ -52,9 +52,15 @@ void meter_init(unsigned screen, char row, char col, char colour, char hold)
     acc = 0;
 }
 
+// Saturates at 65,535: a frame whose brackets sum past it reads 65,535,
+// not the sum modulo 65,536.
 void meter_add(unsigned raw)
 {
-    acc += raw - meter_zero;
+    unsigned d = raw - meter_zero;
+    if (acc > 65535u - d)
+        acc = 65535u;
+    else
+        acc += d;
 }
 
 // The median of the recorded frames by selection (Wirth's FIND, a
