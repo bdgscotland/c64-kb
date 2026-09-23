@@ -102,8 +102,8 @@ cycles by arithmetic.
 Against `plan-budget` (PLAN.md): it gave 10,167 to 10,765 cycles plus
 1,432 fixed, 11,599 to 12,197 in all, verdict undetermined, with the
 scroll left out (its only figure was the old recipe's 74,041-cycle shift,
-issue #18) and six techniques unknown. The measured worst, 11,758 PAL and
-12,216 NTSC, falls inside that range (an earlier build, before the walker
+issue #18) and six techniques unknown. The measured worst is 11,758 on PAL,
+inside that range, and 12,216 on NTSC, 19 cycles above its top (an earlier build, before the walker
 and HUD cuts below, was 356 and 785 cycles above its top). The parts disagree more than
 the total: the budget charges per-frame-hitbox 3,693 and decimal-print
 1,361 from their recipes, where this game tests a few box pairs and adds
