@@ -134,6 +134,9 @@ export function touchedUnits(
   if (value === null) changed = 0xff;
   // $D019: a 1 bit acknowledges that source; the value is the touch.
   else if (addr === 0xd019) changed = value;
+  // CIA ICR: bits 0-4 name the sources whose mask bit the write sets
+  // (bit 7 = 1) or clears (bit 7 = 0); either way those units are touched.
+  else if (addr === 0xdc0d || addr === 0xdd0d) changed = value & 0x1f;
   else if (shadow === undefined) changed = 0xff;
   else changed = value ^ shadow;
   return owners.filter((o) => o.mask === 0xff || (o.mask & changed) !== 0).map((o) => o.unit);

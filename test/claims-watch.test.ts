@@ -48,6 +48,8 @@ describe("unit map from the HardwareUnit seed", () => {
     expect(unitsAt(0xd019)).toEqual(["vic_raster_irq:1"]);
     expect(unitsAt(0xdd00)).toEqual(["cia2_vic_bank:3", "serial_bus:f8"]);
     expect(unitsAt(0xdc0e)).toEqual(["cia1_timer_a:ff"]);
+    expect(unitsAt(0xdc0d)).toEqual(["cia1_timer_a:1", "cia1_timer_b:2", "cia1_tod:4"]);
+    expect(unitsAt(0xdd0d)).toEqual(["cia2_timer_a:1", "cia2_timer_b:2", "cia2_tod:4"]);
     expect(unitsAt(0xdc00)).toEqual(["cia1_port_a:ff"]);
     expect(unitsAt(0x0315)).toEqual(["irq_vector_0314:ff"]);
     expect(unitsAt(0xffff)).toEqual(["irq_vector_fffe:ff"]);
@@ -118,6 +120,12 @@ describe("bits touched on a shared register", () => {
   it("reads $D019 as acknowledge: a 1 bit touches its source", () => {
     expect(touchedUnits(map, 0xd019, 0x01, 0x01)).toEqual(["vic_raster_irq"]);
     expect(touchedUnits(map, 0xd019, 0x02, undefined)).toEqual([]);
+  });
+  it("reads a CIA ICR write by the sources named in bits 0-4, set or clear", () => {
+    expect(touchedUnits(map, 0xdc0d, 0x7f, 0x7f)).toEqual(["cia1_timer_a", "cia1_timer_b", "cia1_tod"]);
+    expect(touchedUnits(map, 0xdc0d, 0x81, undefined)).toEqual(["cia1_timer_a"]);
+    expect(touchedUnits(map, 0xdd0d, 0x02, undefined)).toEqual(["cia2_timer_b"]);
+    expect(touchedUnits(map, 0xdd0d, 0x18, undefined)).toEqual([]);
   });
 });
 

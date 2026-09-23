@@ -244,7 +244,9 @@ The seed: `sid_voice_1`-`3` ($D400-$D406, $D407-$D40D, $D40E-$D414),
 `sid_filter_volume` ($D415-$D418), `sid_voice_3_readback` ($D41B-$D41C),
 `sid_pots` ($D419-$D41A), `sprite_0`-`7` (position, colour, enable and
 other bits, pointer), `cia1_timer_a`/`b`, `cia2_timer_a`/`b`,
-`cia1_tod`, `cia2_tod`, `cia1_port_a` ($DC00: keyboard column drive,
+`cia1_tod`, `cia2_tod` (each with its bit of the interrupt control
+register $DC0D/$DD0D: timer A bit 0, timer B bit 1, TOD alarm bit 2),
+`cia1_port_a` ($DC00: keyboard column drive,
 control port 2), `cia1_port_b` ($DC01: keyboard rows, control port 1),
 `cia2_vic_bank` ($DD00 bits 0-1), `serial_bus` ($DD00 bits 3-7 and the
 drive), `user_port` ($DD01), `vic_raster_irq` (the one raster compare:
