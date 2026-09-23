@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 760, schema 29, tools 2.1.0, package 0.14.0.
+Data 761, schema 30, tools 2.2.0, package 0.15.0.
+
+**Issue #38: a game brief routes to its archetype (data 761, schema 30,
+tools 2.2.0, package 0.15.0).** `c64_game_briefing` with no `archetype`
+used to run as a demo plan with a "Demo Briefing" heading. For a Spy
+Hunter brief it proposed horizontal scrolls and RAM-banking techniques
+("enemy cars ram"), and it missed the multiplexer, the hitboxes and
+`vehicle_control`.
+
+Each game archetype now has a `**Brief words:**` line
+(`Archetype.brief_words`). A brief routes to the archetype whose words it
+contains most; a tie routes nowhere. `vertical_shmup`'s fingerprint was
+`sprite_multiplex_24` and `raster_bars`; it is now the panel split, the
+game multiplexer, hitboxes and the wave director.
+
+Five faults in discovery are fixed:
+- techniques that match no word of the brief were proposed on their
+  recipe bonus alone;
+- stop words matched name and title words;
+- the verb "ram" matched the acronym RAM;
+- H3 vector hits lost their technique name;
+- a horizontal technique was proposed for a vertical brief.
+
+Output gains an optional `archetype.inferred_from`. Run `ingest:clean`
+after updating.
 
 **Issue #39, part H: a real template harness (data 760).** The two
 starters in `templates/` were stubs. The game starter's KickAssembler
