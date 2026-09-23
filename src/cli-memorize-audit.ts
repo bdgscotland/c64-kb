@@ -65,24 +65,24 @@ try {
   process.exit(1);
 }
 
-if (verdict["kind"] === "error") {
-  console.error("Service error:", verdict["error_kind"], verdict["message"]);
+if (verdict.kind === "error") {
+  console.error("Service error:", verdict.error_kind, verdict.message);
   process.exit(1);
 }
 
 console.log("Memorization audit verdict");
 console.log("==========================");
-console.log(`copy_detected:              ${verdict["copy_detected"]}`);
-console.log(`ssimuse_score:              ${Number(verdict["ssimuse_score"]).toFixed(3)}`);
-console.log(`originality_pct:            ${Number(verdict["originality_pct"]).toFixed(3)}`);
-console.log(`nearest_neighbor_distance:  ${Number(verdict["nearest_neighbor_distance"]).toFixed(3)}`);
+console.log(`copy_detected:              ${verdict.copy_detected}`);
+console.log(`ssimuse_score:              ${Number(verdict.ssimuse_score).toFixed(3)}`);
+console.log(`originality_pct:            ${Number(verdict.originality_pct).toFixed(3)}`);
+console.log(`nearest_neighbor_distance:  ${Number(verdict.nearest_neighbor_distance).toFixed(3)}`);
 console.log("");
 console.log("Thresholds:");
-for (const [k, v] of Object.entries(verdict["thresholds"] as Record<string, unknown>)) {
+for (const [k, v] of Object.entries(verdict.thresholds as Record<string, unknown>)) {
   console.log(`  ${k}: ${v}`);
 }
 console.log("");
-if (verdict["copy_detected"]) {
+if (verdict.copy_detected) {
   console.error("WARNING: Candidate flagged as a possible copy.");
   process.exit(2);
 }

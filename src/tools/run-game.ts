@@ -14,13 +14,13 @@ import { spawn, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { z } from "zod";
 import { resolveX64sc } from "../services/vice-bin.ts";
+import { getVersions } from "../services/versions.ts";
 
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 
-const DEFAULT_VICE_MCP_PATH =
-  process.env.VICE_MCP_PATH ?? "vice-mcp/dist/index.js";
+const DEFAULT_VICE_MCP_PATH = process.env.VICE_MCP_PATH ?? "vice-mcp/dist/index.js";
 
 const DEFAULT_X64SC_ENV: NodeJS.ProcessEnv = {
   ...process.env,
@@ -59,7 +59,9 @@ export const RunGameInputSchema = {
           .int()
           .min(0)
           .describe("Byte offset within the state struct to write. 0 = state.<first field>."),
-        bytes: z.array(z.number().int().min(0).max(255)).describe("Bytes to write (1 byte typical for action codes)"),
+        bytes: z
+          .array(z.number().int().min(0).max(255))
+          .describe("Bytes to write (1 byte typical for action codes)"),
       }),
     )
     .default([])
@@ -81,11 +83,10 @@ export const RunGameInputSchema = {
     .int()
     .min(0)
     .default(5000)
-    .describe("Wait this long after x64sc launch before starting the harness loop (lets autostart complete). Default 5s."),
-  capture_screen: z
-    .boolean()
-    .default(true)
-    .describe("Whether to capture the final PETSCII screen render."),
+    .describe(
+      "Wait this long after x64sc launch before starting the harness loop (lets autostart complete). Default 5s.",
+    ),
+  capture_screen: z.boolean().default(true).describe("Whether to capture the final PETSCII screen render."),
 };
 
 export const RunGameOutputSchema = {
@@ -102,7 +103,9 @@ export const RunGameOutputSchema = {
       }),
     )
     .describe("State snapshots over time"),
-  final_screen: z.string().describe("PETSCII render of the screen at session end (empty if capture_screen=false)"),
+  final_screen: z
+    .string()
+    .describe("PETSCII render of the screen at session end (empty if capture_screen=false)"),
   exit_reason: z.enum(["max_duration", "error"]).describe("Why the session ended"),
   error: z.string().optional().describe("If exit_reason is 'error', the error message"),
 };
@@ -112,7 +115,7 @@ export type RunGameInput = {
   dbj_path: string;
   state_symbol?: string;
   state_read_len?: number;
-  inputs?: Array<{ after_ms: number; offset_in_state: number; bytes: number[] }>;
+  inputs?: { after_ms: number; offset_in_state: number; bytes: number[] }[];
   poll_every_ms?: number;
   max_duration_ms?: number;
   autostart_wait_ms?: number;
@@ -125,7 +128,7 @@ export type RunGameOutput = {
   state_address: number;
   state_size: number;
   inputs_fired: number;
-  trace: Array<{ at_ms: number; bytes: number[] }>;
+  trace: { at_ms: number; bytes: number[] }[];
   final_screen: string;
   exit_reason: "max_duration" | "error";
   error?: string;
@@ -148,18 +151,21 @@ interface DbjFile {
 /** Resolve a top-level variable's (address, size) from a .dbj file. */
 function resolveSymbol(dbjPath: string, symbol: string): { address: number; size: number } {
   const dbj = JSON.parse(readFileSync(dbjPath, "utf8")) as DbjFile;
-  const v = dbj.variables.find(x => x.name === symbol);
+  const v = dbj.variables.find((x) => x.name === symbol);
   if (!v) {
-    throw new Error(`Symbol '${symbol}' not found in ${dbjPath}. Available: ${dbj.variables.map(x => x.name).slice(0, 10).join(", ")}...`);
+    throw new Error(
+      `Symbol '${symbol}' not found in ${dbjPath}. Available: ${dbj.variables
+        .map((x) => x.name)
+        .slice(0, 10)
+        .join(", ")}...`,
+    );
   }
   return { address: v.start, size: v.end - v.start };
 }
 
-const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-interface ViceTool {
-  (name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
-}
+type ViceTool = (name: string, args?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
 export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
   const stateSymbol = opts.state_symbol ?? "state";
@@ -175,8 +181,14 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
 
   const sym = resolveSymbol(opts.dbj_path, stateSymbol);
 
-  // 1. Kill any existing x64sc on port 6502 to ensure a clean session.
-  try { execSync("pkill -f x64sc 2>/dev/null", { stdio: "ignore" }); } catch { /* nothing to kill */ }
+  // 1. Kill the x64sc a previous run left on monitor port 6502, and only
+  //    that one: a bare `pkill -f x64sc` also killed a parallel
+  //    verify:recipes run and any VICE the user had open.
+  try {
+    execSync(`pkill -f "x64sc.*-binarymonitoraddress ip4://127.0.0.1:6502" 2>/dev/null`, { stdio: "ignore" });
+  } catch {
+    /* nothing to kill */
+  }
   await sleep(500);
 
   // 2. Spawn fresh x64sc with -autostart: the repo's windowless build when
@@ -184,11 +196,7 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
   const x64scBin = resolveX64sc()?.path ?? "x64sc";
   const x64sc = spawn(
     x64scBin,
-    [
-      "-binarymonitor",
-      "-binarymonitoraddress", "ip4://127.0.0.1:6502",
-      "-autostart", opts.prg_path,
-    ],
+    ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6502", "-autostart", opts.prg_path],
     { env: DEFAULT_X64SC_ENV, detached: true, stdio: "ignore" },
   );
   x64sc.unref();
@@ -196,18 +204,24 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
 
   // 3. Spawn vice-mcp and connect.
   const transport = new StdioClientTransport({ command: "node", args: [DEFAULT_VICE_MCP_PATH] });
-  const client = new Client({ name: "c64-run-game", version: "0.1.0" }, { capabilities: {} });
+  const client = new Client({ name: "c64-run-game", version: getVersions().package }, { capabilities: {} });
   await client.connect(transport);
 
   const tool: ViceTool = async (name, args = {}) => {
     const r = await client.callTool({ name, arguments: args });
-    const content = (r as { content?: Array<{ type: string; text: string }> }).content;
-    if (!content || !content[0]) throw new Error(`tool ${name}: no content`);
-    try { return JSON.parse(content[0].text); }
-    catch { throw new Error(`tool ${name} returned non-JSON: ${content[0].text}`); }
+    const content = (r as { content?: { type: string; text: string }[] }).content;
+    if (!content?.[0]) throw new Error(`tool ${name}: no content`);
+    // An error reply is text, so without this check it surfaced as the
+    // misleading "returned non-JSON".
+    if (r.isError) throw new Error(`tool ${name} failed: ${content[0].text}`);
+    try {
+      return JSON.parse(content[0].text);
+    } catch {
+      throw new Error(`tool ${name} returned non-JSON: ${content[0].text}`);
+    }
   };
 
-  const trace: Array<{ at_ms: number; bytes: number[] }> = [];
+  const trace: { at_ms: number; bytes: number[] }[] = [];
   let inputsFired = 0;
   let errMsg: string | undefined;
   let exit: "max_duration" | "error" = "max_duration";
@@ -233,7 +247,10 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
       }
 
       // Read state.
-      const mem = await tool("readMemory", { address: sym.address, length: Math.min(stateReadLen, sym.size) });
+      const mem = await tool("readMemory", {
+        address: sym.address,
+        length: Math.min(stateReadLen, sym.size),
+      });
       const bytes = (mem.bytes as number[] | undefined) ?? [];
       trace.push({ at_ms: elapsed, bytes });
 
@@ -247,12 +264,16 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
       finalScreen = (r.render as string | undefined) ?? "";
     }
 
-    await tool("disconnect").catch(() => { /* tolerant teardown */ });
+    await tool("disconnect").catch(() => {
+      /* tolerant teardown */
+    });
   } catch (e) {
     exit = "error";
     errMsg = e instanceof Error ? e.message : String(e);
   } finally {
-    await client.close().catch(() => { /* tolerant teardown */ });
+    await client.close().catch(() => {
+      /* tolerant teardown */
+    });
   }
 
   return {

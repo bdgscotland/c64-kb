@@ -764,6 +764,12 @@ number of cycles to the read; that the seed varies on a real machine,
 where power-on state and load timing differ, is not measured here
 (rung 4). The seed is the noise register's state, not a clock, so it is
 only as unpredictable as the time between power-on and the read.
+On a SID replacement that cannot read back `$D41B`, such as the
+SwinSID, the seed can be constant or low-entropy (an inference from C64-Wiki
+and SIDDetector-II, not measured here); mix in the CIA timer read at a
+moment the player chose, or the player-input
+count below, which do not depend on the SID. See the pitfall
+`sid_replacement_d41b_unreadable` in `pitfalls/sid.md`.
 
 Seeding from a CIA timer. `$DC04/$DC05` is CIA1 timer A, which the
 KERNAL leaves free-running for its jiffy interrupt. Read it as a 16-bit

@@ -6,12 +6,22 @@ import { tmpdir } from "node:os";
 
 let dir: string;
 let db: string;
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "fb-")); db = join(dir, "fb.jsonl"); });
-afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "fb-"));
+  db = join(dir, "fb.jsonl");
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
 
 const rec = (over: Partial<FeedbackRecord> = {}): FeedbackRecord => ({
-  id: "x1", ts: "2026-05-21T00:00:00Z", composer: "Rob Hubbard", method: "ai",
-  title: "t", verdict: "decent", ...over,
+  id: "x1",
+  ts: "2026-05-21T00:00:00Z",
+  composer: "Rob Hubbard",
+  method: "ai",
+  title: "t",
+  verdict: "decent",
+  ...over,
 });
 
 describe("feedback store", () => {
@@ -29,7 +39,10 @@ describe("feedback store", () => {
   });
 
   it("round-trips metrics + notes", () => {
-    appendFeedback(rec({ id: "m", metrics: { consonance_pct: 96.8, in_style_pct: 40.4 }, notes: "octave bass" }), db);
+    appendFeedback(
+      rec({ id: "m", metrics: { consonance_pct: 96.8, in_style_pct: 40.4 }, notes: "octave bass" }),
+      db,
+    );
     const r = loadFeedback(db)[0];
     expect(r.metrics?.consonance_pct).toBe(96.8);
     expect(r.notes).toBe("octave bass");

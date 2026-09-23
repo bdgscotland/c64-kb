@@ -25,7 +25,7 @@ const ANCHOR = /^\*\*(?:Triggered|Mitigated) by techniques:\*\*\s*(.+)$/gm;
 const techniques = new Map<string, { category: string; file: string }>();
 for (const f of readdirSync(techDir).filter((n) => n.endsWith(".md"))) {
   const text = readFileSync(join(techDir, f), "utf8");
-  const category = text.match(CATEGORY)?.[1] ?? "?";
+  const category = CATEGORY.exec(text)?.[1] ?? "?";
   for (const m of text.matchAll(H2)) techniques.set(m[1], { category, file: f });
 }
 
@@ -50,7 +50,9 @@ const missing = [...techniques.entries()]
 const maxArg = process.argv.indexOf("--max");
 const max = maxArg >= 0 ? Number(process.argv[maxArg + 1]) : Infinity;
 
-console.log(`${techniques.size} techniques; ${anchored.size} anchored by a pitfall; ${missing.length} with no anchor`);
+console.log(
+  `${techniques.size} techniques; ${anchored.size} anchored by a pitfall; ${missing.length} with no anchor`,
+);
 for (const [name, t] of missing) console.log(`  ${t.category.padEnd(9)} ${name.padEnd(34)} ${t.file}`);
 if (dangling.length) {
   console.error(`\n${dangling.length} anchor(s) name no technique:`);

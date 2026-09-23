@@ -3,11 +3,7 @@ import { BM25Encoder } from "../src/services/bm25.ts";
 
 describe("BM25Encoder", () => {
   it("builds vocabulary from a corpus and emits sparse vectors", () => {
-    const corpus = [
-      "the quick brown fox",
-      "the lazy dog",
-      "quick fox jumps over",
-    ];
+    const corpus = ["the quick brown fox", "the lazy dog", "quick fox jumps over"];
     const enc = new BM25Encoder();
     enc.fit(corpus);
 

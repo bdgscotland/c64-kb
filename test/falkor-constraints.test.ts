@@ -21,10 +21,10 @@ afterAll(async () => {
 describe("FalkorService unique constraints", () => {
   it("declares unique constraints on every node label's primary key", async () => {
     const result = await svc.roQuery(
-      `CALL db.constraints() YIELD label, properties, type, status RETURN label, properties, type, status`
+      `CALL db.constraints() YIELD label, properties, type, status RETURN label, properties, type, status`,
     );
     const constraints = (result.data ?? []).map(
-      (r) => r as { label: string; properties: string[]; type: string; status: string }
+      (r) => r as { label: string; properties: string[]; type: string; status: string },
     );
     const uniqueByLabel = new Map<string, string[]>();
     for (const c of constraints) {

@@ -1,21 +1,20 @@
 #!/usr/bin/env node
 
 /**
- * c64-kb CLI — terminal access to the Commodore 64 knowledge base.
+ * c64-kb CLI: terminal access to the Commodore 64 knowledge base. The
+ * commands mirror the MCP tools; `c64-kb --help` lists them.
  *
- * Phase 1 + 2 surface (mirrors the MCP tools):
- *   health, serve, search, ingest-doc, lookup-register, lookup-kernal,
- *   memory-map, lookup-opcode, pal-ntsc-diff, toolchain-hint,
- *   recipe-lookup, recipes-for.
- *
- * Phase 3 adds: technique-lookup, techniques-for, check-compatibility, timing-budget.
- * Phase 5 adds: pitfalls-for, failure-diagnose, demo-briefing, game-briefing.
+ * Commands set process.exitCode and return; the postAction hook closes the
+ * service connections so the process ends on its own. Every action used to
+ * end in process.exit(), which can cut off a large --json output piped to
+ * another program (stdout to a pipe is asynchronous).
  */
 
 import { Command } from "commander";
 import { health, formatHealth } from "./tools/intelligence.ts";
 import { getVersions } from "./services/versions.ts";
 import { startMcpServer } from "./server.ts";
+import { closeAll } from "./context.ts";
 
 const program = new Command();
 
@@ -34,7 +33,10 @@ program
   .name("c64-kb")
   .description("Commodore 64 knowledge base")
   .version(getVersions().package)
-  .option("--json", "Output JSON instead of human-readable text");
+  .option("--json", "Output JSON instead of human-readable text")
+  .hook("postAction", async (_program, action) => {
+    if (action.name() !== "serve") await closeAll();
+  });
 
 program
   .command("version")
@@ -61,7 +63,7 @@ program
     } else {
       console.log(formatHealth(result));
     }
-    process.exit(result.healthy ? 0 : 1);
+    process.exitCode = result.healthy ? 0 : 1;
   });
 
 program
@@ -81,7 +83,6 @@ program
     const { search } = await import("./tools/query.ts");
     const result = await search(query, parseInt(opts.limit, 10), opts.source);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -94,7 +95,6 @@ program
     const content = fs.readFileSync(docPath, "utf-8");
     const result = await ingestDoc(docPath, content);
     console.log(result);
-    process.exit(0);
   });
 
 program
@@ -104,7 +104,6 @@ program
     const { lookupRegister } = await import("./tools/query.ts");
     const result = await lookupRegister(name);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -114,7 +113,6 @@ program
     const { lookupKernal } = await import("./tools/query.ts");
     const result = await lookupKernal(name);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -124,7 +122,6 @@ program
     const { memoryMap } = await import("./tools/query.ts");
     const result = await memoryMap(addr);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -134,7 +131,6 @@ program
     const { lookupOpcode } = await import("./tools/query.ts");
     const result = await lookupOpcode(op);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -148,7 +144,6 @@ program
       : "both";
     const result = await palNtscDiff(topic, region);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -159,7 +154,6 @@ program
     const { toolchainHint } = await import("./tools/query.ts");
     const result = await toolchainHint(opts.toolchain, intent);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -169,7 +163,6 @@ program
     const { recipeLookup } = await import("./tools/query.ts");
     const result = await recipeLookup(name);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -188,7 +181,6 @@ program
       file_format: opts.fileFormat,
     });
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -198,7 +190,6 @@ program
     const { techniqueLookup } = await import("./tools/query.ts");
     const result = await techniqueLookup(name);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -209,22 +200,37 @@ program
   .option("--region <region>", "Filter by required region (PAL or NTSC)")
   .option("--register <register>", "Filter by register used (e.g. D011)")
   .option("--recipe <recipe>", "Filter by recipe that implements the technique")
-  .option("--requires <technique>", "Filter to techniques that build on this one (REQUIRES chain, e.g. stable_raster_irq)")
-  .option("--claims <unit>", "Filter to techniques that claim this HardwareUnit (e.g. sid_voice_3, vic_raster_irq)")
-  .action(async (opts: { category?: string; chip?: string; region?: string; register?: string; recipe?: string; requires?: string; claims?: string }) => {
-    const { techniquesFor } = await import("./tools/query.ts");
-    const result = await techniquesFor({
-      category: opts.category,
-      chip: opts.chip,
-      region: opts.region,
-      register: opts.register,
-      recipe: opts.recipe,
-      requires: opts.requires,
-      claims: opts.claims,
-    });
-    emit(result);
-    process.exit(0);
-  });
+  .option(
+    "--requires <technique>",
+    "Filter to techniques that build on this one (REQUIRES chain, e.g. stable_raster_irq)",
+  )
+  .option(
+    "--claims <unit>",
+    "Filter to techniques that claim this HardwareUnit (e.g. sid_voice_3, vic_raster_irq)",
+  )
+  .action(
+    async (opts: {
+      category?: string;
+      chip?: string;
+      region?: string;
+      register?: string;
+      recipe?: string;
+      requires?: string;
+      claims?: string;
+    }) => {
+      const { techniquesFor } = await import("./tools/query.ts");
+      const result = await techniquesFor({
+        category: opts.category,
+        chip: opts.chip,
+        region: opts.region,
+        register: opts.register,
+        recipe: opts.recipe,
+        requires: opts.requires,
+        claims: opts.claims,
+      });
+      emit(result);
+    },
+  );
 
 program
   .command("check-compatibility <techniques...>")
@@ -233,14 +239,16 @@ program
     const { checkCompatibility } = await import("./tools/query.ts");
     const result = await checkCompatibility(techniques);
     emit(result);
-    process.exit(0);
   });
 
 program
   .command("timing-budget <technique>")
   .description("Compute per-scanline cycle budget for a technique")
   .option("--region <region>", "PAL or NTSC (case-insensitive, default: pal)", "pal")
-  .option("--sprites <n>", "sprites displayed on the line, 0-8 (default: the technique's Cost sprites_per_line)")
+  .option(
+    "--sprites <n>",
+    "sprites displayed on the line, 0-8 (default: the technique's Cost sprites_per_line)",
+  )
   .action(async (technique: string, opts: { region: string; sprites?: string }) => {
     const { timingBudget } = await import("./tools/query.ts");
     const result = await timingBudget({
@@ -249,12 +257,13 @@ program
       ...(opts.sprites !== undefined ? { sprites_per_line: Number(opts.sprites) } : {}),
     });
     emit(result);
-    process.exit(0);
   });
 
 program
   .command("lint <file>")
-  .description("Run the pitfall rules over a C or assembly source file (language from the extension, or --language)")
+  .description(
+    "Run the pitfall rules over a C or assembly source file (language from the extension, or --language)",
+  )
   .option("--language <lang>", "c, asm or auto", "auto")
   .option("--toolchain <name>", "Toolchain name recorded in the output")
   .action(async (file: string, opts: { language: string; toolchain?: string }) => {
@@ -268,17 +277,18 @@ program
     }
     const result = lintSourceResult(source, { language, toolchain: opts.toolchain }, file);
     emit(result);
-    process.exit(result.structured.findings.some((f) => f.certainty === "definite") ? 1 : 0);
+    process.exitCode = result.structured.findings.some((f) => f.certainty === "definite") ? 1 : 0;
   });
 
 program
   .command("pitfalls-for <topic>")
-  .description("Look up pitfalls triggered by a register, KERNAL routine, or technique (for a technique, also the pitfalls it is the fix for)")
+  .description(
+    "Look up pitfalls triggered by a register, KERNAL routine, or technique (for a technique, also the pitfalls it is the fix for)",
+  )
   .action(async (topic: string) => {
     const { pitfallsFor } = await import("./tools/pitfalls.ts");
     const result = await pitfallsFor(topic);
     emit(result);
-    process.exit(0);
   });
 
 program
@@ -288,13 +298,15 @@ program
     const { failureDiagnose } = await import("./tools/pitfalls.ts");
     const result = await failureDiagnose(symptom);
     emit(result);
-    process.exit(0);
   });
 
 program
   .command("demo-briefing <description>")
   .description("Generate a structured C64 demo plan from a brief (Phase 5 anchor tool)")
-  .option("--archetype <name>", "Demo form from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)")
+  .option(
+    "--archetype <name>",
+    "Demo form from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)",
+  )
   .action(async (description: string, opts: { archetype?: string }) => {
     const { demoBriefing } = await import("./tools/briefings.ts");
     const result = await demoBriefing(description, opts.archetype);
@@ -303,13 +315,15 @@ program
     } else {
       emit(result);
     }
-    process.exit(0);
   });
 
 program
   .command("game-briefing <description>")
   .description("Generate a structured C64 game plan from a brief (Phase 5 anchor tool)")
-  .option("--archetype <name>", "Archetype name from docs/game-design/c64-game-archetypes.md (vertical_shmup, puzzle, racing, ...)")
+  .option(
+    "--archetype <name>",
+    "Archetype name from docs/game-design/c64-game-archetypes.md (vertical_shmup, puzzle, racing, ...)",
+  )
   .option("--genre <genre>", "Alias of --archetype")
   .action(async (description: string, opts: { archetype?: string; genre?: string }) => {
     const { gameBriefing } = await import("./tools/briefings.ts");
@@ -319,7 +333,12 @@ program
     } else {
       emit(result);
     }
-    process.exit(0);
   });
 
-program.parseAsync(process.argv);
+try {
+  await program.parseAsync(process.argv);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : err);
+  await closeAll();
+  process.exitCode = 1;
+}

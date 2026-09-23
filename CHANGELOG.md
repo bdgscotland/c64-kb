@@ -5,7 +5,78 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 730, schema 24, tools 1.28.0.
+Data 732, schema 24, tools 1.28.1.
+
+**Issue #21, ES-15 to ES-18.** `iffl_single_file` (the KERNAL skip
+fallback, measured; drive-side scan described, not built),
+`runtime_relocation` (two-origin diff, 855 cycles for 19 bytes),
+`sfx_in_player` and `goattracker_player_api`, and
+`irq_owns_processor_port` (18 cycles a handler), each with a recipe
+pinned on PAL and NTSC.
+
+**Issue #20, corrections.** The Sparkle section is rewritten from its
+manual (by Sparta, PAL and NTSC, blocking calls, 72 cycles a byte); the
+`$DD00`/`$DD02` rule is scoped per loader; the VSP crash paragraph follows
+lft's article (no detection method); GoatTracker 2 has one SID model
+setting; a new pitfall for SID replacements that cannot read `$D41B`;
+`c64-file-formats` now says a last sector stores the index of the last
+used byte. Each carries a correction clause.
+
+
+**Candidate list, Tier A batch 4 (data 731).** Three of the four items
+landed. `mouse_1351_read` on the input page with a KickAssembler recipe:
+the 1351's proportional mode is a six-bit position counter in bits 1 to
+6 of the pot registers, not the quadrature the SID page still describes.
+Measured in VICE's 1351 model: the masked counter read 32 on both axes on
+every one of 250 frames on PAL and NTSC, raw bit 0 changed between
+consecutive frames over a hundred times per run, so the picture prints
+the masked value only; the signed modulo-64 delta is checked on ten
+compiled-in samples including both wraps and both half-turn cases; one
+read of both axes costs 104 cycles by the instruction count and 103 by
+the CIA timer, a one-cycle gap the page leaves open. The buttons' lines
+(fire and up) are from the documentation, not pressed here. The SID
+page's quadrature sentence is reported, not edited (see issue 9).
+`fld_flexible_line_distance` on the raster page with a recipe that
+bounces the display by rewriting YSCROLL each line: the top text row sat
+exactly N lines lower on both models, the first badline landed on line
+51 plus N on every frame, and every gap line showed the idle fetch of
+`$3FFF`, which is the new pitfall `idle_fetch_byte_shows_in_gaps`; a
+YSCROLL value that matches the next line only at its first cycle moves
+the display one line, not N. The sideborder recipe's dangling `fld` and
+`vsp` links now point at real techniques. `d64_error_byte_is_a_controller_code`
+on the loader page, with the D64 section of the file-formats page
+corrected in place: the per-sector byte is the controller's job code,
+and read back through the drive's error channel under VICE 3.10 the codes
+`$02`, `$03`, `$04`, `$05`, `$09` and `$0B` are honoured and `$07`, `$08`
+and `$0F` ignored; a lone sector flagged `$03` or `$0B` reads 20, and
+only a whole track carrying the code reads 21 or 29. The IEC page's
+"not measured here" sentence on that point now cites the measurement.
+The eight-way scroller did not land: its writer stalled six times in the
+reading phase and runs again alone.
+
+**Runtime fixes, phase B (tools 1.28.1, package 0.8.1).** Nothing
+listened for the FalkorDB client's `error` event, so a FalkorDB restart
+would throw and end the MCP server; it now logs to stderr and the
+client reconnects. Two tool calls on a cold server each opened a
+connection; the connection promise is now shared. The server ignored
+stdin closing, the MCP spec's shutdown signal; it now closes its
+connections and exits (6 ms after stdin closed, measured by the new
+`test/mcp-stdio.test.ts`, which also asserts stdout carries only
+JSON-RPC). It reported version 0.1.0; it reports the package version.
+`c64_ingest_doc` indexed new content without writing it when the file
+existed, and kept a page's old chunks, so removed sections stayed
+searchable; it now writes the file and replaces the chunks.
+`c64_run_game` and the memorization check returned failures without
+`isError`; the memorization tool is registered only where `analyzer/`
+exists, which is not this repository. `c64_run_game` killed every
+`x64sc` on the machine; it kills only the one on its monitor port.
+`ensureSchema` swallowed every error, not only "already indexed" and
+"Constraint already exists" (messages measured on FalkorDB 4.18.7).
+Gap logging ran select-then-insert without a transaction across two
+processes. CLI commands ended in `process.exit()`, which can truncate
+piped `--json`; they now close their connections and set the exit code.
+A malformed environment variable stops start-up with its name instead of
+becoming `NaN`.
 
 **Issue #21, ES-11 to ES-14.** `nav_area_pathfinding` (a next-hop table
 over platform areas; 0 of 160 hops differ from a Python model),

@@ -28,7 +28,7 @@ export function getVersions(): Versions {
   try {
     const txt = readFileSync(resolve(REPO_ROOT, "VERSION"), "utf-8");
     for (const line of txt.split("\n")) {
-      const m = line.match(/^(KB_DATA_VERSION|KB_SCHEMA_VERSION|MCP_TOOL_VERSION)=(.+)$/);
+      const m = /^(KB_DATA_VERSION|KB_SCHEMA_VERSION|MCP_TOOL_VERSION)=(.+)$/.exec(line);
       if (!m) continue;
       if (m[1] === "KB_DATA_VERSION") v.kb_data = m[2].trim();
       else if (m[1] === "KB_SCHEMA_VERSION") v.kb_schema = m[2].trim();

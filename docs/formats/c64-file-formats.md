@@ -106,7 +106,23 @@ Total: **683 sectors, 174,848 bytes** (standard, no error bytes).
 | 196,608 | 40 tracks (SpeedDOS/Dolphin extension), no errors |
 | 197,376 | 40 tracks + 768 error bytes |
 
-Error bytes, when present, are appended after all sector data: one byte per sector indicating the error code that the 1541 ROM would have returned (0 = no error, 20–29 = various read errors). The byte values are not the DOS numbers; the mapping from error byte to DOS code is tabulated in `iec-disk-reference.md`, "The 1541 DOS Error Codes".
+Error bytes, when present, are appended after all sector data: one byte per sector, in track then sector order (track 1 sector 0 first, track 35 sector 16 last). **The byte is the 1541 floppy controller's job return code, not the DOS error number.** `$01` means the sector read cleanly; `$03` means "no sync", which the error channel reports as `21`. A tool that prints the byte as the DOS number is wrong for every non-zero value. The drive ROM's conversion from job code to DOS number is described in `iec-disk-reference.md`, "The 1541 DOS Error Codes"; the table below gives the codes an image can carry and what a stock 1541 prints for each.
+
+| Byte | Controller condition | DOS number | VICE 3.10 (true drive, `U1` block read of a flagged sector, measured here) |
+|------|----------------------|-----------|---------------------------------------------------------------------------|
+| `$00` | none recorded; image tools treat it as no error | none | `0, OK` |
+| `$01` | job returned OK | none | `0, OK` |
+| `$02` | header not found | 20 | `20, READ ERROR` |
+| `$03` | no sync | 21 | `20, READ ERROR` for one flagged sector; `21, READ ERROR` when every sector of the track carries `$03` |
+| `$04` | data block not present | 22 | `22, READ ERROR` |
+| `$05` | checksum error in the data block | 23 | `23, READ ERROR` |
+| `$07` | verify error (write) | 25 | `0, OK`; a read cannot exercise it |
+| `$08` | write protect on | 26 | `0, OK`; a read cannot exercise it |
+| `$09` | checksum error in the header | 27 | `20, READ ERROR` |
+| `$0B` | disk ID mismatch | 29 | `20, READ ERROR` for one flagged sector; `29, DISK ID MISMATCH` when every sector of the track carries `$0B` |
+| `$0F` | drive not ready | 74 | `0, OK` |
+
+The measurement column comes from one run of the windowless x64sc build of VICE 3.10 with `-drive8truedrive -drive8type 1541` and a 175,531-byte image whose flagged sectors sat one per track; three PAL runs produced byte-identical screens. VICE 3.10 builds each sector's GCR from the byte (its `gcr.c`): `$03` replaces the sync marks, `$02` the header block ID, `$09` the header checksum, `$0B` the header's disk ID, `$04` the data block ID and `$05` the data checksum. It does nothing for `$07`, `$08` and `$0F`, so a read of such a sector succeeds. The two "for one flagged sector" rows come from the drive ROM running under emulation, not from the injection: VICE alters exactly the bytes named and the ROM reports what it reports. The reading is consistent with the ROM matching a wanted header by comparing the raw GCR it reads against an image of the header it expects, so a header with a wrong checksum or ID is never matched and the search times out as `20`; that account of the ROM is not measured here. Codes `$0A` (28) and `$10` (24) were not measured here. Whether a write (`U2`) to a `$08` sector reports `26` was not measured here.
 
 **Directory and BAM (track 18):**
 
@@ -138,7 +154,7 @@ Each 4-byte BAM entry: first byte = free sector count, next 3 bytes = 24-bit bit
 | $05–$14 | 16 | Filename (PETASCII, `$A0`-padded) |
 | $1E–$1F | 2 | File size in sectors (little-endian) |
 
-File data uses a 10-sector interleave chain (each sector's first two bytes are the track/sector link to the next; the remaining 254 bytes are data). The last sector in a chain uses `$00` as the next-track link and stores the count of valid data bytes in what would normally be the next-sector byte.
+File data uses a 10-sector interleave chain (each sector's first two bytes are the track/sector link to the next; the remaining 254 bytes are data). The last sector in a chain uses `$00` as the next-track link and stores the index of the last used byte in what would normally be the next-sector byte, so the sector holds that value minus one data bytes (an earlier version said it stored the count of data bytes; a 91-byte last sector written by the 1541 in VICE holds 92).
 
 **Typical use:** release distribution, fastloader authoring (Krill/Loader, Spindle, DreamLoad), scene release packaging via c1541 or CBM FileBrowser.
 

@@ -18,7 +18,6 @@ afterAll(async () => {
 });
 
 describe("FalkorService — Tool / FileFormat / Recipe", () => {
-
   it("addTool MERGEs by name and is idempotent", async () => {
     await f.addTool({
       name: "oscar64",
@@ -46,7 +45,7 @@ describe("FalkorService — Tool / FileFormat / Recipe", () => {
   it("linkProduces creates a PRODUCES edge", async () => {
     await f.linkProduces("oscar64", "PRG");
     const r = await f.roQuery(
-      `MATCH (t:Tool {name: 'oscar64'})-[:PRODUCES]->(f:FileFormat {name: 'PRG'}) RETURN count(*) AS cnt`
+      `MATCH (t:Tool {name: 'oscar64'})-[:PRODUCES]->(f:FileFormat {name: 'PRG'}) RETURN count(*) AS cnt`,
     );
     expect((r.data?.[0] as any).cnt).toBe(1);
   });
@@ -54,7 +53,7 @@ describe("FalkorService — Tool / FileFormat / Recipe", () => {
   it("linkTargets creates a TARGETS edge to Chip", async () => {
     await f.linkTargets("oscar64", "6510");
     const r = await f.roQuery(
-      `MATCH (t:Tool {name: 'oscar64'})-[:TARGETS]->(c:Chip {name: '6510'}) RETURN count(*) AS cnt`
+      `MATCH (t:Tool {name: 'oscar64'})-[:TARGETS]->(c:Chip {name: '6510'}) RETURN count(*) AS cnt`,
     );
     expect((r.data?.[0] as any).cnt).toBe(1);
   });
@@ -73,23 +72,23 @@ describe("FalkorService — Tool / FileFormat / Recipe", () => {
     await f.linkRecipeUsesTool("oscar64-hello-world", "oscar64");
 
     const recipe = await f.roQuery(
-      `MATCH (r:Recipe {name: 'oscar64-hello-world'}) RETURN r.toolchain AS toolchain, r.output_format AS output_format, r.region AS region`
+      `MATCH (r:Recipe {name: 'oscar64-hello-world'}) RETURN r.toolchain AS toolchain, r.output_format AS output_format, r.region AS region`,
     );
     expect(recipe.data?.[0]).toMatchObject({ toolchain: "oscar64", output_format: "PRG", region: "both" });
 
     const edge = await f.roQuery(
-      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:USES]->(k:KernalRoutine {name: 'CHROUT'}) RETURN count(*) AS cnt`
+      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:USES]->(k:KernalRoutine {name: 'CHROUT'}) RETURN count(*) AS cnt`,
     );
     expect((edge.data?.[0] as any).cnt).toBe(1);
 
     // The recipe-to-tool link carries the ontology's name, REQUIRES_TOOL; it
     // was written as USES until data 713, which left REQUIRES_TOOL empty.
     const tool = await f.roQuery(
-      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:REQUIRES_TOOL]->(t:Tool {name: 'oscar64'}) RETURN count(*) AS cnt`
+      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:REQUIRES_TOOL]->(t:Tool {name: 'oscar64'}) RETURN count(*) AS cnt`,
     );
     expect((tool.data?.[0] as any).cnt).toBe(1);
     const wrong = await f.roQuery(
-      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:USES]->(t:Tool) RETURN count(*) AS cnt`
+      `MATCH (r:Recipe {name: 'oscar64-hello-world'})-[:USES]->(t:Tool) RETURN count(*) AS cnt`,
     );
     expect((wrong.data?.[0] as any).cnt).toBe(0);
   });
@@ -103,7 +102,7 @@ describe("FalkorService — Tool / FileFormat / Recipe", () => {
       home_url: "https://example.com/oscar64-moved",
     });
     const r = await f.roQuery(
-      `MATCH (t:Tool {name: 'oscar64'}) RETURN count(t) AS cnt, collect(t.home_url)[0] AS url`
+      `MATCH (t:Tool {name: 'oscar64'}) RETURN count(t) AS cnt, collect(t.home_url)[0] AS url`,
     );
     const row = r.data?.[0] as any;
     expect(row.cnt).toBe(1);

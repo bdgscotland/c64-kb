@@ -45,7 +45,7 @@ describe("extractGraphEntities — archetype-reference doc", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);
     warn.mockRestore();
-    const nodes = entities.filter(e => e.type === "archetype");
+    const nodes = entities.filter((e) => e.type === "archetype");
     expect(nodes).toHaveLength(2);
     expect(nodes[0]).toEqual({
       type: "archetype",
@@ -62,13 +62,18 @@ describe("extractGraphEntities — archetype-reference doc", () => {
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);
     const features = entities
       .filter((e): e is Extract<typeof e, { type: "archetype_features" }> => e.type === "archetype_features")
-      .filter(e => e.archetype === "vertical_shmup")
-      .map(e => e.technique);
+      .filter((e) => e.archetype === "vertical_shmup")
+      .map((e) => e.technique);
     // soft_scroll_v listed twice -> once. no_such_technique is a well-formed
     // name whose existence is settled at link time, so it is kept here.
-    expect(features).toEqual(["soft_scroll_v", "sprite_multiplex_24", "stable_raster_irq", "no_such_technique"]);
+    expect(features).toEqual([
+      "soft_scroll_v",
+      "sprite_multiplex_24",
+      "stable_raster_irq",
+      "no_such_technique",
+    ]);
     // "Not A Name" is refused at extract time with a warning.
-    expect(warn.mock.calls.some(c => String(c[0]).includes('"Not A Name"'))).toBe(true);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('"Not A Name"'))).toBe(true);
     warn.mockRestore();
   });
 
@@ -97,12 +102,12 @@ Plain prose, no node.
 `;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const entities = extractGraphEntities(doc, "demo-design/x.md");
-    const msgs = warn.mock.calls.map(c => String(c[0]));
+    const msgs = warn.mock.calls.map((c) => String(c[0]));
     warn.mockRestore();
-    const names = entities.filter(e => e.type === "archetype").map(e => (e as { name: string }).name);
+    const names = entities.filter((e) => e.type === "archetype").map((e) => (e as { name: string }).name);
     expect(names).toEqual(["cracktro"]);
-    expect(msgs.some(m => m.includes('"History"'))).toBe(false);
-    expect(msgs.some(m => m.includes('"Orphan"'))).toBe(true);
+    expect(msgs.some((m) => m.includes('"History"'))).toBe(false);
+    expect(msgs.some((m) => m.includes('"Orphan"'))).toBe(true);
   });
 
   it("emits RISKS sources from the common-pitfalls line, deduped", () => {
@@ -111,7 +116,7 @@ Plain prose, no node.
     warn.mockRestore();
     const risks = entities
       .filter((e): e is Extract<typeof e, { type: "archetype_risks" }> => e.type === "archetype_risks")
-      .map(e => `${e.archetype}|${e.pitfall}`);
+      .map((e) => `${e.archetype}|${e.pitfall}`);
     expect(risks).toEqual([
       "vertical_shmup|sprite_dma_overflow",
       "vertical_shmup|badline_cycle_loss",
@@ -122,15 +127,15 @@ Plain prose, no node.
   it("warns about and skips an H2 with no **Archetype:** line", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);
-    expect(warn.mock.calls.some(c => String(c[0]).includes("A Section With No Name Line"))).toBe(true);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes("A Section With No Name Line"))).toBe(true);
     warn.mockRestore();
-    expect(entities.some(e => e.type === "archetype_features" && e.technique === "plasma")).toBe(false);
+    expect(entities.some((e) => e.type === "archetype_features" && e.technique === "plasma")).toBe(false);
   });
 
   it("defaults kind to game and refuses an unknown kind", () => {
     const noFm = ARCHETYPE_DOC.replace("---\nkind: game\n---\n\n", "");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const nodes = extractGraphEntities(noFm, SRC).filter(e => e.type === "archetype");
+    const nodes = extractGraphEntities(noFm, SRC).filter((e) => e.type === "archetype");
     expect(nodes).toHaveLength(2);
     expect(nodes[0]).toMatchObject({ kind: "game" });
 

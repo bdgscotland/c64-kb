@@ -70,16 +70,13 @@ The PRG format is the canonical C64 executable.
     }
     const produces = ents.filter((e) => e.type === "produces");
     expect(produces).toHaveLength(3);
-    expect(produces.map((e) => e.type === "produces" ? e.tool : "").sort()).toEqual([
+    expect(produces.map((e) => (e.type === "produces" ? e.tool : "")).sort()).toEqual([
       "cc65",
       "kickassembler",
       "oscar64",
     ]);
     const consumes = ents.filter((e) => e.type === "consumes");
-    expect(consumes.map((e) => e.type === "consumes" ? e.tool : "").sort()).toEqual([
-      "c1541",
-      "vice",
-    ]);
+    expect(consumes.map((e) => (e.type === "consumes" ? e.tool : "")).sort()).toEqual(["c1541", "vice"]);
   });
 
   it("extracts a Recipe entity from recipe frontmatter", () => {

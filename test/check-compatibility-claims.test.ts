@@ -15,7 +15,13 @@ describe("resource claims", () => {
     }
   };
   const tech = (name: string, category: string, claims_stated?: "stated" | "none") =>
-    f.addTechnique({ name, title: name, category, complexity: "medium", ...(claims_stated ? { claims_stated, claims_basis: "derived-listing" } : {}) });
+    f.addTechnique({
+      name,
+      title: name,
+      category,
+      complexity: "medium",
+      ...(claims_stated ? { claims_stated, claims_basis: "derived-listing" } : {}),
+    });
 
   beforeAll(async () => {
     f = new FalkorService();
@@ -44,7 +50,10 @@ describe("resource claims", () => {
     await claim("lfsr_random", "sid_voice_3 (init), sid_voice_3_readback (init), cia1_timer_a (reads)");
     await claim("sprite_multiplex_game", "sprite_0-7 (owns), vic_raster_irq (owns)");
     await claim("scroll_panel_split", "vic_raster_irq (owns)");
-    await claim("krill_loader_integration", "serial_bus (owns), zero_page $E0-$EF (owns, relocatable), cia2_vic_bank (shares)");
+    await claim(
+      "krill_loader_integration",
+      "serial_bus (owns), zero_page $E0-$EF (owns, relocatable), cia2_vic_bank (shares)",
+    );
     await claim("zp_fixed_a", "zero_page $E8-$F3 (owns)");
     await claim("zp_fixed_b", "zero_page $F0-$F7 (owns)");
     await claim("keyboard_matrix_scan", "cia1_port_a (owns), cia1_port_b (reads)");
@@ -60,16 +69,36 @@ describe("resource claims", () => {
   it("seeds every HardwareUnit, each on its chip", async () => {
     const rows = await f.roQuery(`MATCH (h:HardwareUnit) RETURN h.name AS name, h.kind AS kind`);
     expect((rows.data ?? []).length).toBe(HARDWARE_UNITS.length);
-    const onChip = await f.roQuery(`MATCH (h:HardwareUnit {name: 'sid_voice_2'})-[:BELONGS_TO]->(c:Chip) RETURN c.name AS chip`);
+    const onChip = await f.roQuery(
+      `MATCH (h:HardwareUnit {name: 'sid_voice_2'})-[:BELONGS_TO]->(c:Chip) RETURN c.name AS chip`,
+    );
     expect((onChip.data?.[0] as { chip: string }).chip).toBe("SID");
-    const noChip = await f.roQuery(`MATCH (h:HardwareUnit {name: 'expansion_io1'})-[:BELONGS_TO]->(c:Chip) RETURN c.name AS chip`);
+    const noChip = await f.roQuery(
+      `MATCH (h:HardwareUnit {name: 'expansion_io1'})-[:BELONGS_TO]->(c:Chip) RETURN c.name AS chip`,
+    );
     expect(noChip.data ?? []).toEqual([]);
   });
 
   it("linkClaims matches both ends and never creates a unit or a technique", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(await f.linkClaims({ owner: "sfx_engine_beside_music", ownerKind: "Technique", unit: "sid_voice_9", mode: "owns", basis: "estimated" })).toBe(false);
-    expect(await f.linkClaims({ owner: "no_such_technique", ownerKind: "Technique", unit: "sid_voice_1", mode: "owns", basis: "estimated" })).toBe(false);
+    expect(
+      await f.linkClaims({
+        owner: "sfx_engine_beside_music",
+        ownerKind: "Technique",
+        unit: "sid_voice_9",
+        mode: "owns",
+        basis: "estimated",
+      }),
+    ).toBe(false);
+    expect(
+      await f.linkClaims({
+        owner: "no_such_technique",
+        ownerKind: "Technique",
+        unit: "sid_voice_1",
+        mode: "owns",
+        basis: "estimated",
+      }),
+    ).toBe(false);
     const stray = await f.roQuery(`MATCH (h:HardwareUnit {name: 'sid_voice_9'}) RETURN h`);
     expect(stray.data ?? []).toEqual([]);
     const ghost = await f.roQuery(`MATCH (t:Technique {name: 'no_such_technique'}) RETURN t`);
@@ -81,7 +110,9 @@ describe("resource claims", () => {
     await tech("rewritten", "effect", "stated");
     await claim("rewritten", "sid_voice_1");
     await tech("rewritten", "effect", "none");
-    const rows = await f.roQuery(`MATCH (:Technique {name: 'rewritten'})-[c:CLAIMS]->() RETURN count(c) AS n`);
+    const rows = await f.roQuery(
+      `MATCH (:Technique {name: 'rewritten'})-[c:CLAIMS]->() RETURN count(c) AS n`,
+    );
     expect(Number((rows.data?.[0] as { n: number }).n)).toBe(0);
   });
 
@@ -158,9 +189,15 @@ describe("resource claims", () => {
 
   it("unknown claims are never read as none: coverage and text say so", async () => {
     const res = await checkCompatibility(["unknown_claims", "pure_maths", "sfx_engine_beside_music"]);
-    const cov = Object.fromEntries(res.structured.data_coverage.filter((d) => d.implied_by === undefined).map((d) => [d.technique, d.claims]));
+    const cov = Object.fromEntries(
+      res.structured.data_coverage
+        .filter((d) => d.implied_by === undefined)
+        .map((d) => [d.technique, d.claims]),
+    );
     expect(cov).toEqual({ unknown_claims: "unknown", pure_maths: "none", sfx_engine_beside_music: "stated" });
-    expect(res.text).toMatch(/Unit claims are stated for 2 of 3 techniques; a unit conflict cannot be ruled out for: unknown_claims\./);
+    expect(res.text).toMatch(
+      /Unit claims are stated for 2 of 3 techniques; a unit conflict cannot be ruled out for: unknown_claims\./,
+    );
     const all = await checkCompatibility(["pure_maths", "sfx_engine_beside_music"]);
     expect(all.text).toMatch(/Unit claims are stated for 2 of 2 techniques\./);
   });
@@ -174,7 +211,12 @@ describe("resource claims", () => {
       { unit: "sid_voice_3_readback", mode: "init" },
     ]);
     const krill = await techniqueLookup("krill_loader_integration");
-    expect(krill.structured.claims).toContainEqual({ unit: "zero_page", mode: "owns", ranges: "E0-EF", relocatable: true });
+    expect(krill.structured.claims).toContainEqual({
+      unit: "zero_page",
+      mode: "owns",
+      ranges: "E0-EF",
+      relocatable: true,
+    });
     expect(krill.text).toMatch(/zero_page \$E0-\$EF \(owns, relocatable\)/);
     const unknown = await techniqueLookup("unknown_claims");
     expect(unknown.structured.claims_stated).toBe("unknown");
@@ -185,6 +227,10 @@ describe("resource claims", () => {
 
   it("techniques_for filters on a claimed unit", async () => {
     const r = await techniquesFor({ claims: "sid_voice_3" });
-    expect(r.structured.techniques.map((t) => t.name).sort()).toEqual(["lfsr_random", "second_player", "sid_play_routine_pattern"]);
+    expect(r.structured.techniques.map((t) => t.name).sort()).toEqual([
+      "lfsr_random",
+      "second_player",
+      "sid_play_routine_pattern",
+    ]);
   });
 });

@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
 import { checkCompatibility, techniqueLookup } from "../src/tools/query.ts";
-import { extractGraphEntities, parseRasterBand, rasterBandsOverlap, DEMAND_VOCABULARY } from "../src/graph/extract.ts";
+import {
+  extractGraphEntities,
+  parseRasterBand,
+  rasterBandsOverlap,
+  DEMAND_VOCABULARY,
+} from "../src/graph/extract.ts";
 
 // **Raster band:** (docs/CONVENTIONS-techniques.md, schema 24): the raster
 // lines a technique holds the CPU on. check_compatibility's line-sharing
@@ -31,10 +36,18 @@ describe("parseRasterBand", () => {
     expect(parseRasterBand("45-250")).toEqual({ kind: "lines", ranges: [[45, 250]], canonical: "45-250" });
     expect(parseRasterBand("45–250")).toEqual({ kind: "lines", ranges: [[45, 250]], canonical: "45-250" });
     expect(parseRasterBand("251-311, 0-50 (both borders)")).toEqual({
-      kind: "lines", ranges: [[0, 50], [251, 311]], canonical: "0-50,251-311",
+      kind: "lines",
+      ranges: [
+        [0, 50],
+        [251, 311],
+      ],
+      canonical: "0-50,251-311",
     });
     expect(parseRasterBand("`100`")).toEqual({ kind: "lines", ranges: [[100, 100]], canonical: "100" });
-    expect(parseRasterBand("movable (the recipe opens lines 101-142)")).toEqual({ kind: "movable", canonical: "movable" });
+    expect(parseRasterBand("movable (the recipe opens lines 101-142)")).toEqual({
+      kind: "movable",
+      canonical: "movable",
+    });
   });
 
   it("refuses what is outside the grammar", () => {
@@ -46,22 +59,32 @@ describe("parseRasterBand", () => {
   it("overlap is inclusive at the ends", () => {
     expect(rasterBandsOverlap([[0, 50]], [[51, 250]])).toBe(false);
     expect(rasterBandsOverlap([[0, 51]], [[51, 250]])).toBe(true);
-    expect(rasterBandsOverlap([[0, 10], [251, 311]], [[45, 250]])).toBe(false);
+    expect(
+      rasterBandsOverlap(
+        [
+          [0, 10],
+          [251, 311],
+        ],
+        [[45, 250]],
+      ),
+    ).toBe(false);
   });
 });
 
 describe("extractGraphEntities - Raster band line", () => {
   it("puts the canonical band on the technique entity", () => {
-    const t = extractGraphEntities(doc("**Raster band:** 101-142 (recipe)"), "techniques/raster.md")
-      .find((e) => e.type === "technique");
+    const t = extractGraphEntities(doc("**Raster band:** 101-142 (recipe)"), "techniques/raster.md").find(
+      (e) => e.type === "technique",
+    );
     expect(t && t.type === "technique" ? t.raster_band : null).toBe("101-142");
   });
 
   it("warns about and drops a band it cannot read", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const t = extractGraphEntities(doc("**Raster band:** the lower half"), "techniques/raster.md")
-        .find((e) => e.type === "technique");
+      const t = extractGraphEntities(doc("**Raster band:** the lower half"), "techniques/raster.md").find(
+        (e) => e.type === "technique",
+      );
       expect(t && t.type === "technique" ? t.raster_band : "missing").toBeUndefined();
       expect(warn.mock.calls.some((c) => String(c[0]).includes("Raster band"))).toBe(true);
     } finally {
@@ -96,16 +119,22 @@ describe("checkCompatibility with raster bands", () => {
     await f.connect();
     await f.clean();
     await f.ensureSchema();
-    const techs: Array<[string, string | undefined]> = [
-      ["fli_band", "45-250"],            // FLI in the display window
-      ["border_band", "0-44,251-311"],   // a side-border loop in the borders only
-      ["overlap_band", "101-142"],       // a side-border loop inside the display
-      ["no_band", undefined],            // a cpu_every_line page that states nothing
-      ["movable_band", "movable"],       // lines chosen by the program
-      ["plex_band", "0-40"],             // a multiplexer confined to the top border
+    const techs: [string, string | undefined][] = [
+      ["fli_band", "45-250"], // FLI in the display window
+      ["border_band", "0-44,251-311"], // a side-border loop in the borders only
+      ["overlap_band", "101-142"], // a side-border loop inside the display
+      ["no_band", undefined], // a cpu_every_line page that states nothing
+      ["movable_band", "movable"], // lines chosen by the program
+      ["plex_band", "0-40"], // a multiplexer confined to the top border
     ];
     for (const [name, band] of techs) {
-      await f.addTechnique({ name, title: name, category: "raster", complexity: "high", ...(band ? { raster_band: band } : {}) });
+      await f.addTechnique({
+        name,
+        title: name,
+        category: "raster",
+        complexity: "high",
+        ...(band ? { raster_band: band } : {}),
+      });
     }
     const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, DEMAND_VOCABULARY[r]);
     for (const t of ["fli_band", "border_band", "overlap_band", "no_band", "movable_band"]) {
@@ -138,7 +167,9 @@ describe("checkCompatibility with raster bands", () => {
   it("unknown band on one side: still a conflict, naming the unknown side", async () => {
     const r = (await checkCompatibility(["fli_band", "no_band"])).structured;
     expect(r.verdict).toBe("incompatible");
-    expect(r.conflicts.find((x) => x.kind === "cpu_exclusive")?.rationale).toMatch(/no_band states no raster band/);
+    expect(r.conflicts.find((x) => x.kind === "cpu_exclusive")?.rationale).toMatch(
+      /no_band states no raster band/,
+    );
   });
 
   it("a movable band is not a known band", async () => {

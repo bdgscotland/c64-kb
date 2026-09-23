@@ -998,3 +998,135 @@ the top of RAM, which the plan leaves free.
 ### Recipes
 
 - `recipes/oscar64/memory-layout.md` — stub, music, charset, sprite, screen and code at planned addresses, printing each symbol's address so the screen can be read against the map
+
+## irq_owns_processor_port — Interrupt handlers that save, set and restore $01
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D019, DD0D
+**Requires:** cpu_io_port_bank, ram_under_kernal
+**Demands:** kernal_rom_out
+**Cost:** cycles_per_frame=18
+**Cost basis:** measured-vice
+
+### Why
+
+The 4 KB of RAM under `$D000-$DFFF` is only reachable with I/O banked
+out (`$01` = `$34`, or `$30`). The rule elsewhere on this page and in
+`pitfalls/banking.md` is `SEI` first, because an interrupt handler run
+in that state writes its acknowledge and its register updates into RAM.
+That rule is fine for a short poke. It is not fine for a decruncher or
+a loader filling 4 KB of level data, which takes frames: with `SEI` the
+music stops and the raster splits fall apart for the whole depack. The
+answer games and loaders use is to make every interrupt handler put I/O
+back itself, so main code can leave `$01` at `$34` with interrupts on.
+
+### How
+
+1. Bank the KERNAL out for good. Write the IRQ handler's address to
+   `$FFFE/$FFFF` and the NMI handler's to `$FFFA/$FFFB`; the writes
+   reach the RAM under the ROM (`ram_under_rom_traps`). With HIRAM
+   clear, as it is in both `$34` and `$35`, the CPU takes its vectors
+   from that RAM. The KERNAL's `$0314`/`$0318` vectors are never read.
+2. Every handler, IRQ and NMI alike, starts by saving `$01` and
+   storing `#$35`:
+   `PHA` / `LDA $01` / `PHA` / `LDA #$35` / `STA $01`.
+3. The handler does its work: acknowledge (`$D019`, `$DC0D` or
+   `$DD0D`), raster writes, the music player.
+4. It ends by putting back exactly the value it found:
+   `PLA` / `STA $01` / `PLA` / `RTI`.
+5. Main code may now set `$01` = `$34` and copy, decrunch or load into
+   `$D000-$DFFF` with interrupts enabled, and set `$35` again when it
+   needs I/O itself.
+
+### Why it works
+
+The PLA chip decodes the processor-port lines on every access, so the handler's store of `#$35`
+makes the VIC, SID and CIAs visible from its next instruction, and the
+restore hides them again before `RTI` returns to the interrupted copy.
+The copy never sees I/O, and the handler never sees RAM where it
+expects a register.
+
+The restore must be the saved value, not a constant. The interrupted
+code may be mid-copy at `$34` or may itself be at `$35`; a handler that
+ends with `#$35` returns a `$34` copy into the I/O window, and the rest
+of the copy is written into the VIC, SID and CIA registers. Measured in
+VICE with the recipe below: the display turned to garbage and main code
+never finished its first pass.
+
+The save goes on the stack, or in a byte of the handler's own. An NMI
+can land inside an IRQ handler's wrapper, between its `LDA $01` and its
+restore. With one shared save byte the NMI would overwrite the IRQ's
+saved `$34` with `$35`. With the stack each handler restores its own
+copy.
+
+Store `#$35`, do not `ORA #$01`: from `$34` either gives `$35`, but
+from `$30` the `ORA` gives `$31`, which maps the character ROM, not I/O
+(`hardware/c64-registers-reference.md`, the `$01` bit description). `#$35` keeps bit 5 set, so the
+datasette motor stays off; it does overwrite bits 3-5 while the handler
+runs, and the restore puts back what the main code had.
+
+The NMI needs the same treatment because `SEI` does not mask it: the
+RESTORE key and CIA2 can raise one at any time. An NMI handler without
+the wrapper reads `$DD0D` from RAM, CIA2's flag stays set, `/NMI` never
+rises, and no later NMI, from CIA2 or RESTORE, can happen (pitfall
+`kernal_nmi_handler_runs_stop_check`). The recipe's broken build showed
+exactly one NMI in 115 million cycles.
+
+A handler without the wrapper under `$34` fails at once: its `$D019`
+write goes to RAM, the VIC's interrupt stays asserted, and the handler
+re-enters as soon as it returns. Measured in VICE: the recipe's two
+raster handlers re-entered each other for 115 million cycles (PAL; 100
+million NTSC) and main code never completed a pass. This is the same
+mechanism as `irq_during_charen_window`, with RAM in place of the
+character ROM. The handler's other writes land in the RAM copy
+(`$D020`, `$D012`, `$D400` were all found there).
+
+### Variations
+
+**Save in zero page.** `LDA $01` / `STA save` / `LDA #$35` / `STA $01`
+and `LDA save` / `STA $01` cost 17 cycles, one fewer than the stack
+form (arithmetic from the instruction table). Each handler that can
+nest needs its own byte.
+
+**Music code under I/O.** The wrapper assumes the handler and the
+player live outside `$D000-$DFFF`. A player placed under I/O cannot
+write the SID while its own code is visible. GoatTracker 2's
+"zeropage ghostregs" option has the player write to a zero-page copy
+of the SID registers, which a copy loop moves to `$D400` afterwards
+with I/O banked in (GoatTracker 2 readme, section 5.1, not measured
+here).
+
+**Loaders that do it for you.** Sparkle's loader sets `$35` at each loader
+call and `$34` while a bundle is decrunched under I/O, and its manual requires
+every IRQ to save `$01`, set `$35` and restore it (Sparkle 3.4 manual,
+"Loading to the RAM under I/O registers", not measured here).
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with the recipe below, PAL and NTSC alike:
+the wrapper costs 18 cycles per interrupt taken (`LDA zp` 3, `PHA` 3,
+`LDA #` 2, `STA zp` 3, `PLA` 4, `STA zp` 3, which is what the
+instruction table gives). The recipe's line-120 handler is 61 cycles
+with it and 43 without, each plus the 7-cycle interrupt sequence. The
+Cost line is one interrupt; a frame pays 18 for every IRQ and NMI it
+takes: 36 for a two-split raster chain, 36 plus 18 per NMI with a CIA2
+timer running; the recipe's own frame, 2 IRQs and up to 4 NMIs, is
+108 (arithmetic). The wrapper is 10 bytes per handler (arithmetic from
+the opcode sizes).
+
+### Recipes
+
+- `recipes/kickassembler/irq-owns-port.md` — main code copies 4 KB
+  under I/O at `$34` and checks it by sum 32 times while two raster
+  IRQs, a SID player and a CIA2 NMI keep running; handler cycles with
+  and without the wrapper; two broken builds described.
+
+### Sources
+
+- Sparkle 3.4 user manual (Sparta), "Loading to the RAM under I/O
+  registers ($D000-$DFFF)" and "Common issues" item 6:
+  https://github.com/spartaomg/SparkleCPP
+- GoatTracker 2 readme, section 5.1 "Playroutine options", option
+  "Use zeropage ghostregs":
+  https://sourceforge.net/projects/goattracker2/

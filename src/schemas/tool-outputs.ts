@@ -44,7 +44,7 @@ export const MemoryMapSchema = z.object({
       end: z.string(),
       default_use: z.string(),
       bank_switchable: z.boolean(),
-    })
+    }),
   ),
 });
 
@@ -61,7 +61,7 @@ export const PalNtscDiffSchema = z.object({
       refresh_hz: z.number(),
       lines_per_frame: z.number(),
       cycles_per_line: z.number(),
-    })
+    }),
   ),
   documentation: z.array(DocChunkSchema),
 });
@@ -75,7 +75,7 @@ export const SearchSchema = z.object({
       text: z.string(),
       score: z.number(),
       confidence: z.enum(["HIGH", "MEDIUM", "LOW", "UNSCORED"]),
-    })
+    }),
   ),
 });
 
@@ -200,33 +200,35 @@ export const TechniquesForSchema = z.object({
     // A HardwareUnit name: techniques with a CLAIMS edge to it (any mode).
     claims: z.string().optional(),
   }),
-  techniques: z.array(z.object({
-    name: z.string(),
-    title: z.string(),
-    category: z.string(),
-    complexity: z.string(),
-  })),
+  techniques: z.array(
+    z.object({
+      name: z.string(),
+      title: z.string(),
+      category: z.string(),
+      complexity: z.string(),
+    }),
+  ),
 });
 
 export const CompatibilityConflictSchema = z.object({
   a: z.string(),
   b: z.string(),
   kind: z.enum([
-    "region_mismatch",   // one needs PAL, the other NTSC
-    "cpu_exclusive",     // both need every CPU cycle on the lines they cover
-    "cpu_vs_irq",        // one needs every CPU cycle; the other takes interrupts mid-frame
-    "sprite_set",        // one needs a constant sprite set; the other changes it mid-frame
+    "region_mismatch", // one needs PAL, the other NTSC
+    "cpu_exclusive", // both need every CPU cycle on the lines they cover
+    "cpu_vs_irq", // one needs every CPU cycle; the other takes interrupts mid-frame
+    "sprite_set", // one needs a constant sprite set; the other changes it mid-frame
     "kernal_banked_out", // one runs with the KERNAL ROM out; the other calls KERNAL routines
-    "serial_bus_busy",   // one owns the drive's serial bus while resident; the other does KERNAL disk I/O
+    "serial_bus_busy", // one owns the drive's serial bus while resident; the other does KERNAL disk I/O
     "prerequisite_conflict", // a hard rule fires between a technique and a REQUIRES prerequisite of another
-    "shared_register",   // both touch the same register (soft)
-    "shared_kernal",     // both call the same KERNAL routine (soft)
+    "shared_register", // both touch the same register (soft)
+    "shared_kernal", // both call the same KERNAL routine (soft)
     // Resource claims (schema 25), from **Claims:** lines:
-    "unit_contention",   // both own the same HardwareUnit (hard)
+    "unit_contention", // both own the same HardwareUnit (hard)
     "zero_page_overlap", // both own zero-page bytes in common (hard; soft if either side relocates)
-    "unit_shared",       // one owns a unit the other shares, or both share it (soft)
+    "unit_shared", // one owns a unit the other shares, or both share it (soft)
     "unit_read_while_driven", // one owns a unit the other only reads (soft)
-    "init_order",        // one uses a unit once at start-up that the other then owns (info)
+    "init_order", // one uses a unit once at start-up that the other then owns (info)
   ]),
   // hard: cannot coexist as combined; the resolution says how to separate them.
   // soft: combinable with coordination.
@@ -321,37 +323,53 @@ const TriggeredBySchema = z.object({
 export const PitfallsForSchema = z.object({
   topic: z.string(),
   topic_kind: z.enum(["Register", "KernalRoutine", "Technique", "search"]),
-  pitfalls: z.array(z.object({
-    name: z.string(),
-    title: z.string(),
-    severity: z.enum(["critical", "high", "medium", "low"]),
-    region: z.enum(["pal", "ntsc", "both"]),
-    category: z.string(),
-    triggered_by: z.array(TriggeredBySchema),
-    // Techniques whose application is this pitfall's Fix (MITIGATED_BY).
-    mitigated_by: z.array(TriggeredBySchema),
-    // Present when the pitfall was reached through a register or KERNAL
-    // routine the technique declares, not through a direct edge.
-    via: z.array(z.object({ name: z.string(), kind: z.enum(["Register", "KernalRoutine"]), address: z.string().optional() })).optional(),
-  })),
-  search_results: z.array(z.object({
-    source: z.string(),
-    section: z.string(),
-    text: z.string(),
-    score: z.number(),
-  })).optional(),
+  pitfalls: z.array(
+    z.object({
+      name: z.string(),
+      title: z.string(),
+      severity: z.enum(["critical", "high", "medium", "low"]),
+      region: z.enum(["pal", "ntsc", "both"]),
+      category: z.string(),
+      triggered_by: z.array(TriggeredBySchema),
+      // Techniques whose application is this pitfall's Fix (MITIGATED_BY).
+      mitigated_by: z.array(TriggeredBySchema),
+      // Present when the pitfall was reached through a register or KERNAL
+      // routine the technique declares, not through a direct edge.
+      via: z
+        .array(
+          z.object({
+            name: z.string(),
+            kind: z.enum(["Register", "KernalRoutine"]),
+            address: z.string().optional(),
+          }),
+        )
+        .optional(),
+    }),
+  ),
+  search_results: z
+    .array(
+      z.object({
+        source: z.string(),
+        section: z.string(),
+        text: z.string(),
+        score: z.number(),
+      }),
+    )
+    .optional(),
 });
 
 export const FailureDiagnoseSchema = z.object({
   query: z.string(),
-  matches: z.array(z.object({
-    symptom: z.string(),
-    description: z.string(),
-    likely_causes: z.array(z.string()),
-    diagnosis_steps: z.string(),
-    caused_by: z.array(TriggeredBySchema),
-    relevance: z.number().min(0).max(1),
-  })),
+  matches: z.array(
+    z.object({
+      symptom: z.string(),
+      description: z.string(),
+      likely_causes: z.array(z.string()),
+      diagnosis_steps: z.string(),
+      caused_by: z.array(TriggeredBySchema),
+      relevance: z.number().min(0).max(1),
+    }),
+  ),
 });
 
 export type PitfallsForOutput = z.infer<typeof PitfallsForSchema>;
@@ -381,38 +399,44 @@ export type LintSourceOutput = z.infer<typeof LintSourceSchema>;
 
 export const BriefingSchema = z.object({
   brief: z.string(),
-  proposed_techniques: z.array(z.object({
-    name: z.string(),
-    title: z.string(),
-    category: z.string(),
-    complexity: z.enum(["low", "medium", "high", "scene-tier"]).optional(),
-    why_proposed: z.string(),
-    uses_registers: z.array(z.string()),
-    uses_kernal: z.array(z.string()),
-    region: z.enum(["pal", "ntsc", "both"]).optional(),
-    implementing_recipes: z.array(z.string()),
-  })),
+  proposed_techniques: z.array(
+    z.object({
+      name: z.string(),
+      title: z.string(),
+      category: z.string(),
+      complexity: z.enum(["low", "medium", "high", "scene-tier"]).optional(),
+      why_proposed: z.string(),
+      uses_registers: z.array(z.string()),
+      uses_kernal: z.array(z.string()),
+      region: z.enum(["pal", "ntsc", "both"]).optional(),
+      implementing_recipes: z.array(z.string()),
+    }),
+  ),
   compatibility: z.object({
     conflicts: z.array(CompatibilityConflictSchema),
     warnings: z.array(CompatibilityConflictSchema),
     shared_infrastructure: z.array(SharedInfrastructureSchema),
   }),
-  pitfalls: z.array(z.object({
-    name: z.string(),
-    title: z.string(),
-    severity: z.string(),
-    triggered_by_proposed: z.array(z.string()),
-  })),
+  pitfalls: z.array(
+    z.object({
+      name: z.string(),
+      title: z.string(),
+      severity: z.string(),
+      triggered_by_proposed: z.array(z.string()),
+    }),
+  ),
   toolchain_split: z.object({
     primary: z.string(),
     cycle_tight_handoff: z.array(z.string()),
     rationale: z.string(),
   }),
-  build_order: z.array(z.object({
-    step: z.number(),
-    label: z.string(),
-    recipes: z.array(z.string()),
-  })),
+  build_order: z.array(
+    z.object({
+      step: z.number(),
+      label: z.string(),
+      recipes: z.array(z.string()),
+    }),
+  ),
   // The plan added up (schema 22, tools 1.25.0). cycles_per_frame_sum is the
   // sum of cost_cycles_per_frame over the proposed techniques that have one,
   // against the region's frame; bytes_sum is bytes_code + bytes_data over
@@ -428,12 +452,14 @@ export const BriefingSchema = z.object({
     ram_budget_bytes: z.number().int(),
     bytes_sum: z.number().int(),
     bytes_verdict: z.enum(["over", "under", "no_data"]),
-    contributors: z.array(z.object({
-      name: z.string(),
-      cycles_per_frame: z.number().int().optional(),
-      bytes: z.number().int().optional(),
-      basis: CostBasisSchema,
-    })),
+    contributors: z.array(
+      z.object({
+        name: z.string(),
+        cycles_per_frame: z.number().int().optional(),
+        bytes: z.number().int().optional(),
+        basis: CostBasisSchema,
+      }),
+    ),
     without_cost: z.array(z.string()),
     weakest_basis: CostBasisSchema.nullable(),
     is_floor: z.boolean(),
@@ -445,36 +471,46 @@ export const BriefingSchema = z.object({
   // pitfalls; both lists are repeated here as the graph holds them. When
   // it names none, archetype_not_found lists the names the graph does
   // have, across both kinds.
-  archetype: z.object({
-    name: z.string(),
-    title: z.string(),
-    kind: z.string(),
-    features: z.array(z.string()),
-    risks: z.array(z.string()),
-    resolved_from: z.string().optional(),
-  }).optional(),
-  archetype_not_found: z.object({
-    requested: z.string(),
-    known: z.array(z.string()),
-    candidates: z.array(z.string()).optional(),
-  }).optional(),
+  archetype: z
+    .object({
+      name: z.string(),
+      title: z.string(),
+      kind: z.string(),
+      features: z.array(z.string()),
+      risks: z.array(z.string()),
+      resolved_from: z.string().optional(),
+    })
+    .optional(),
+  archetype_not_found: z
+    .object({
+      requested: z.string(),
+      known: z.array(z.string()),
+      candidates: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 export type BriefingOutput = z.infer<typeof BriefingSchema>;
 
 export const CoverageSchema = z.object({
   dimensions: z.object({
-    technique_categories: z.array(z.object({
-      category: z.string(),
-      count: z.number().int().min(0),
-    })),
-    pitfall_categories: z.array(z.object({
-      category: z.string(),
-      count: z.number().int().min(0),
-    })),
-    recipe_toolchains: z.array(z.object({
-      toolchain: z.string(),
-      count: z.number().int().min(0),
-    })),
+    technique_categories: z.array(
+      z.object({
+        category: z.string(),
+        count: z.number().int().min(0),
+      }),
+    ),
+    pitfall_categories: z.array(
+      z.object({
+        category: z.string(),
+        count: z.number().int().min(0),
+      }),
+    ),
+    recipe_toolchains: z.array(
+      z.object({
+        toolchain: z.string(),
+        count: z.number().int().min(0),
+      }),
+    ),
     kernal_coverage: z.object({
       total_routines: z.number().int().min(0),
       with_doc_chunks: z.number().int().min(0),
@@ -486,37 +522,41 @@ export const CoverageSchema = z.object({
     falkor_nodes: z.number().int().min(0),
     falkor_edges: z.number().int().min(0),
   }),
-  recent_gaps: z.array(z.object({
-    query: z.string(),
-    tool: z.string(),
-    hit_count: z.number().int().min(1),
-    last_seen: z.string(),
-    user_reported: z.number().int(),
-  })),
+  recent_gaps: z.array(
+    z.object({
+      query: z.string(),
+      tool: z.string(),
+      hit_count: z.number().int().min(1),
+      last_seen: z.string(),
+      user_reported: z.number().int(),
+    }),
+  ),
   generated_at: z.string(),
 });
 
 export type CoverageOutput = z.infer<typeof CoverageSchema>;
 
 export const SuggestLinksSchema = z.object({
-  suggestions: z.array(z.object({
-    kind: z.enum([
-      "technique_uses_register",
-      "recipe_implements_technique",
-      "pitfall_triggered_by_technique",
-      "pitfall_mitigated_by_technique",
-    ]),
-    from: z.object({
-      kind: z.string(),
-      name: z.string(),
+  suggestions: z.array(
+    z.object({
+      kind: z.enum([
+        "technique_uses_register",
+        "recipe_implements_technique",
+        "pitfall_triggered_by_technique",
+        "pitfall_mitigated_by_technique",
+      ]),
+      from: z.object({
+        kind: z.string(),
+        name: z.string(),
+      }),
+      to: z.object({
+        kind: z.string(),
+        name: z.string(),
+      }),
+      evidence: z.string(),
+      confidence: z.enum(["high", "medium", "low"]),
     }),
-    to: z.object({
-      kind: z.string(),
-      name: z.string(),
-    }),
-    evidence: z.string(),
-    confidence: z.enum(["high", "medium", "low"]),
-  })),
+  ),
   generated_at: z.string(),
 });
 

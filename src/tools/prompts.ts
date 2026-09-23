@@ -14,7 +14,9 @@
 import { z } from "zod";
 
 export const demoBriefArgs = {
-  description: z.string().describe("Natural-language description of the demo to design (e.g. 'sprite scroller with raster bars')"),
+  description: z
+    .string()
+    .describe("Natural-language description of the demo to design (e.g. 'sprite scroller with raster bars')"),
 };
 
 export const gameBriefArgs = {

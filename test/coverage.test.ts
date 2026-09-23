@@ -13,7 +13,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  try { await f.close(); } catch { /* expected */ }
+  try {
+    await f.close();
+  } catch {
+    /* expected */
+  }
 });
 
 describe("c64_coverage", () => {

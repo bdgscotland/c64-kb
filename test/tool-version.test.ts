@@ -20,13 +20,17 @@ Body.
 
 describe("version_verified on Tool", () => {
   it("is read from frontmatter as a string, quotes dropped", () => {
-    const t = extractGraphEntities(page('version_verified: "5.25"\n'), "toolchains/kickassembler-reference.md")
-      .find((e) => e.type === "tool");
+    const t = extractGraphEntities(
+      page('version_verified: "5.25"\n'),
+      "toolchains/kickassembler-reference.md",
+    ).find((e) => e.type === "tool");
     expect(t && t.type === "tool" ? t.version_verified : null).toBe("5.25");
   });
 
   it("is absent when the page states none", () => {
-    const t = extractGraphEntities(page(""), "toolchains/kickassembler-reference.md").find((e) => e.type === "tool");
+    const t = extractGraphEntities(page(""), "toolchains/kickassembler-reference.md").find(
+      (e) => e.type === "tool",
+    );
     expect(t && t.type === "tool" ? t.version_verified : "missing").toBeUndefined();
   });
 
@@ -35,8 +39,10 @@ describe("version_verified on Tool", () => {
     const path = await import("node:path");
     const got: Record<string, string | undefined> = {};
     for (const rel of [
-      "toolchains/kickassembler-reference.md", "toolchains/oscar64-reference.md",
-      "toolchains/cc65-reference.md", "runtime/vice-reference.md",
+      "toolchains/kickassembler-reference.md",
+      "toolchains/oscar64-reference.md",
+      "toolchains/cc65-reference.md",
+      "runtime/vice-reference.md",
     ]) {
       const text = fs.readFileSync(path.resolve(__dirname, "../docs", rel), "utf8");
       const t = extractGraphEntities(text, rel).find((e) => e.type === "tool");
@@ -52,10 +58,27 @@ describe("version_verified on Tool", () => {
       await f.connect();
       await f.clean();
       await f.ensureSchema();
-      await f.addTool({ name: "kickassembler", kind: "assembler", home_url: "http://theweb.dk/KickAssembler/", version_verified: "5.25" });
+      await f.addTool({
+        name: "kickassembler",
+        kind: "assembler",
+        home_url: "http://theweb.dk/KickAssembler/",
+        version_verified: "5.25",
+      });
       await f.addTool({ name: "cc65", kind: "c-compiler", home_url: "https://cc65.github.io/" });
-      await f.addRecipe({ name: "kickassembler-fli-image", toolchain: "kickassembler", output_format: "PRG", region: "pal", source_doc: "recipes/kickassembler/fli-image.md" });
-      await f.addRecipe({ name: "cc65-hello-world-conio", toolchain: "cc65", output_format: "PRG", region: "both", source_doc: "recipes/cc65/hello-world-conio.md" });
+      await f.addRecipe({
+        name: "kickassembler-fli-image",
+        toolchain: "kickassembler",
+        output_format: "PRG",
+        region: "pal",
+        source_doc: "recipes/kickassembler/fli-image.md",
+      });
+      await f.addRecipe({
+        name: "cc65-hello-world-conio",
+        toolchain: "cc65",
+        output_format: "PRG",
+        region: "both",
+        source_doc: "recipes/cc65/hello-world-conio.md",
+      });
       await f.linkRecipeUsesTool("kickassembler-fli-image", "kickassembler");
       await f.linkRecipeUsesTool("cc65-hello-world-conio", "cc65");
     });
@@ -74,7 +97,11 @@ describe("version_verified on Tool", () => {
     });
 
     it("a re-ingest without the key clears it", async () => {
-      await f.addTool({ name: "kickassembler", kind: "assembler", home_url: "http://theweb.dk/KickAssembler/" });
+      await f.addTool({
+        name: "kickassembler",
+        kind: "assembler",
+        home_url: "http://theweb.dk/KickAssembler/",
+      });
       const r = await recipeLookup("kickassembler-fli-image");
       expect(r.structured.toolchain_version_verified).toBeUndefined();
     });

@@ -702,7 +702,7 @@ reSID is an analog-circuit simulation using a mix of analytical models (for the 
 
 **HVSC SID compatibility metadata.** The High Voltage SID Collection tags each tune with the target SID model (6581/8580/both) in the `.SID` file header's 16-bit big-endian `flags` word at $76-$77: bits 4-5 of byte $77 give the first SID's model (00 unknown, 01 6581, 10 8580, 11 both). Bits 0-1 are the MUS-data and PlaySID/BASIC flags and bits 2-3 the video standard, so mask `byte[$77] >> 4 & 3`, not `& 3` (an earlier version of this sentence put the first SID's model in bits 0-1 and the second's in bits 2-3, which would classify MUS files as 6581). In PSID v3+ bits 6-7 give the second SID's model (00 = same as the first), and in v4 bits 8-9 (low bits of byte $76) give the third's. See [c64-file-formats.md](../formats/c64-file-formats.md). STIL.txt adds human-readable notes. When ingesting SID files into a game, check this field to select the appropriate per-chip frequency and filter tables.
 
-**GoatTracker's chip selection.** GoatTracker 2.x has a per-instrument SID model toggle. Tunes exported from GoatTracker for specific hardware use different filter tuning tables per chip. The exported `.sid` file header encodes the target chip. Load these into VICE with the emulated chip set to match.
+**GoatTracker's chip selection.** GoatTracker 2 (readme v2.72) has one SID model setting for the whole editor, and it chooses what the emulation plays: the `-E` option (`0` = 6581, `1` = 8580, default 6581) or SHIFT+F8 to switch. An instrument's nine parameters include no chip choice, so a tune written on one model sounds different on the other, filters most of all (the readme advises testing filtered tunes on a real C64 or a HardSID card). Since v2.07 the packer writes the PAL/NTSC and 6581/8580 flags of the PSID v2NG header (version history). Load the `.sid` into VICE with `-sidmodel` set to match. (An earlier version of this paragraph said GoatTracker 2.x has a per-instrument SID model toggle and exports different filter tables per chip; the readme describes neither. Source: GoatTracker 2 `readme.txt` v2.72, https://sourceforge.net/projects/goattracker2/, mirrored at https://github.com/leafo/goattracker2/blob/master/readme.txt.)
 
 ---
 
@@ -840,6 +840,250 @@ technique's.
 ### Recipes
 
 - `recipes/oscar64/sfx-engine.md`
+
+---
+
+## sfx_in_player — Sound effects inside the music player: voice stealing, priority and hand-back
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418
+**Requires:** sid_play_routine_pattern, sid_voice_setup
+**Cost:** cycles_per_frame=493
+**Cost basis:** arithmetic
+
+Every claim below is register-level: what the player put in its shadow of
+the SID, and so in the SID, measured in VICE x64sc 3.10 by the recipe's
+own checks. Nobody on this machine has listened to it.
+
+### Why
+
+`sfx_engine_beside_music` is a second routine, called after the player,
+that re-pokes a voice the player has just written. Most games instead give
+the music player itself an effect slot per voice. The player then knows a
+voice is taken, skips its own writes there, and puts the music back when
+the effect ends. There is one call per frame and one writer per register.
+GoatTracker 2's packed player with sound-effect support works this way
+(`goattracker_player_api`, below), and so does the sound code in
+Cadaver's c64gameframework (source read, not run here).
+
+### How
+
+**One slot per voice.** Each voice has an effect number (0 for none) and
+a position in that effect's data. Every frame the player advances the
+music on all three voices, owned or not. Then, per voice, either the music
+or the effect's next row writes the voice. Advancing the music under an
+effect keeps the tune in time, and at hand-back the music's frequency and
+gate are already right for that frame.
+
+**The request: one start per frame, higher number wins.** The game calls
+an entry point with an effect number. The entry point stores it in a
+pending byte only if it is at least the number already pending. The player
+takes the pending effect at the top of its next call and clears the byte.
+Two requests in one frame start one effect, the higher. c64gameframework's
+`QueueSfx` uses the same rule.
+
+**Priority on the voice.** A pending effect takes its voice if its number
+is the same as or higher than the effect already there; a lower one is
+refused. Equal numbers restart, which a repeated shot wants. The number is
+the priority, so number the effect table in order of importance. Which
+voice an effect gets is a design choice: a fixed voice per effect (the
+recipe), a voice the caller names (GoatTracker 2), or a round-robin search
+from the channel after the last one used, taking the first voice whose
+running effect is the same or lower (c64gameframework, source read, not
+run).
+
+**Hand-back.** On the frame an effect's data ends, the player must
+re-apply the music voice's instrument: AD, SR, pulse width, waveform and
+gate. Many players, the recipe's among them, write AD, SR and pulse width
+only on a note's first frame. Without a restore, the voice keeps the effect's envelope and pulse
+width until the music's next note: a held pad comes back with the effect's
+decay, or silent if the effect's sustain level was 0. In the recipe, a
+harness build without the restore failed all three hand-back checks that
+fell mid-note (rung 1). The gate needs care too. If the effect's last row
+leaves GATE set and the music wants GATE set, there is no 0-to-1 edge, so
+no new attack: the music continues from whatever level the effect's
+envelope reached. End every effect with a GATE-clear row, as the recipe
+does, and the music's next gated frame starts a fresh attack. The same
+rule applies at the start: an effect that takes a voice mid-note with
+GATE set gets no attack and runs from the music envelope's level. Give
+the effect a GATE-clear first frame, or a test-bit hard restart.
+
+**Ghost registers.** The player writes a shadow of `$D400`-`$D418` in RAM
+and one loop copies all 25 bytes to the SID at the end of the call, `$18`
+down to `$00`. This gives four things:
+
+- One writer. Music and effect both write the shadow; only the copy writes
+  the SID.
+- A readable copy. The SID's registers are write-only
+  (`sid_write_only_registers` in `pitfalls/sid.md`), so the shadow is the
+  only place to read what the SID holds. The recipe's checks read it.
+- Fixed write order and spacing. A voice's seven writes land within 98
+  cycles (7 × 14, arithmetic), in the same order, whatever path the player
+  took. In an unbuffered player the gap between the AD and SR writes and
+  the GATE write depends on the code path, and the ADSR bug depends on
+  where the envelope's rate counter stands when a new rate is written
+  (`sid_adsr_bug_8580` in `pitfalls/sid.md`). The GoatTracker 2 readme's
+  remedies for ADSR bugs in unbuffered players include making the
+  note-init code take more cycles, buffered writes, and hard-restart
+  attack parameter F for a different write order. A fixed order and
+  spacing makes the timing the same every time rather than removing the
+  bug. That is the mechanism as stated; no audio was measured here (rung 4).
+- A price. The copy costs 351 cycles every frame (instruction table,
+  shadow within one page), which is why the readme says buffered writes
+  take "more memory & rastertime".
+
+Two cautions from the GoatTracker 2 readme, not measured here. With its
+alternative hard restart (attack parameter F) the copy must write each
+voice's waveform, frequency and pulse width, then ADSR last, not in the
+plain descending order. And music and effects share the shadow: after an
+effect ends, a music note that sets no pulse width of its own plays with
+the effect's. A hand-back that rewrites the pulse width, as the recipe's
+does, avoids it.
+
+### Why it works
+
+A SID register holds the last byte written; there is no latch. With one
+writer per register per frame, music and effect never race for a voice.
+The hand-back is right because the music path rewrites the instrument on
+the hand-back frame and the copy delivers it in that frame.
+
+### Variations
+
+**Copy first, compute second.** At the top of the interrupt, copy the
+shadow the last call left, then run the player for the next frame. The SID
+writes then land a fixed number of cycles after the interrupt, whatever
+the player does, at the cost of one frame's delay (20 ms on PAL;
+arithmetic).
+
+**Effects only while the music is off.** A second entry point that drops
+the request while a tune plays, for footsteps and menu clicks
+(c64gameframework's `QueueSfxNoMusic`).
+
+**Beside or inside.** `sfx_engine_beside_music` works with a player binary
+you cannot change and needs no restore code, because the player rewrites
+the voice every frame. Its cost is a second set of writes to the voice.
+This technique needs the player's source, or a player built with effect
+support, and a hand-back written into it.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer A around each play call in the
+recipe (rung 1), identical on PAL and NTSC because the call runs below the
+display with no sprites: 774 cycles on a frame with no effect and no note
+start, 1,058 on the worst music-only frame (a note starts on all three
+voices), and 1,200 on the worst effect frame (a note starts on all three
+voices, one voice is handed back and another voice starts an effect).
+The Cost line is the technique's own work: the 142-cycle increment of
+the worst effect frame over the worst music-only frame plus the 351-cycle
+shadow copy, 493 (arithmetic from measured figures and the instruction
+table). A real player's cost replaces the recipe's music part (1,058
+minus 351 on its worst frame); the effect work adds about 142. 351 cycles of each figure are the shadow copy. The
+worst effect frame is 142 cycles over the worst music-only frame. The
+entry point costs 25 to 34 cycles per request including the `JSR`, by the
+instruction table, 6 of them the recipe's `dropped` counter where it
+runs. 1,200 cycles is 6.1 % of a PAL frame of 19,656 and
+7.0 % of an NTSC frame of 17,095 (arithmetic).
+
+### Recipes
+
+- `recipes/kickassembler/sfx-in-player.md`
+
+### Sources
+
+- https://github.com/leafo/goattracker2/blob/master/readme.txt
+  (GoatTracker 2 v2.72 readme, section 5.1, and warning 6 in section 1.1
+  on ADSR bugs; upstream https://sourceforge.net/projects/goattracker2/).
+- https://github.com/cadaver/c64gameframework (MIT): `sound.s`
+  (`QueueSfx`, `QueueSfxNoMusic`, per-channel `chnSfxNum`) and `raster.s`
+  (the round-robin channel search). Read for facts; no code is taken from it.
+
+---
+
+## goattracker_player_api — GoatTracker 2 packed player: calls, zero page, sound effects and ghost registers
+
+**Complexity:** low
+**Region:** both
+**Requires:** sid_play_routine_pattern
+
+Everything in this entry is from the GoatTracker 2 v2.72 readme (rung 4
+here). Neither GoatTracker nor its relocator is installed on this machine,
+so no packed player was built, run or timed here. The readme gives the
+jump table and the options; it does not give the packed player's internal
+layout, and this entry does not either.
+
+### Why
+
+A game that ships GoatTracker 2 music and wants sound effects from the same
+player needs the calling convention, the memory it takes, and the effect
+data format. It is the ready-made form of `sfx_in_player`.
+
+### How
+
+The packer/relocator is F9 in the editor. It asks for the playroutine
+options, a start address, a zero-page address (two consecutive locations)
+and a file format: PRG, BIN or SID. It strips unused patterns, instruments,
+table entries and player code. A pattern over 64 rows may fail to relocate,
+and no packed pattern may exceed 256 bytes.
+
+| Call | Registers | Address |
+|---|---|---|
+| Init a subtune | `A` = subtune, from 0 | `start` |
+| Play one frame | none | `start+3` |
+| Start an effect (sound-effect support on) | `A` = effect address low, `Y` = high, `X` = channel: 0, 7 or 14 for channels 1 to 3 | `start+6` |
+| Set master volume (volume support on) | `A` = 0 to 15 | `start+6`, or `start+9` with sound-effect support |
+
+The volume call shares its location with the tune's `DXY` master-volume
+command, so the two clash. With "store author-info" on, the author string
+sits at `start+$20` to `start+$3F`, and a timing mark (a `DXY` with a
+parameter of `$10` or more) is copied into `start+$3F` when played.
+
+**Priority.** Fixed by effect address: an effect higher in memory is never
+interrupted by one lower in memory. Lay the effect data out in order of
+importance. The caller picks the channel.
+
+**Options that change the memory and the timing.** Buffered SID writes
+collect a channel's registers and write them in one go at the end of that
+channel's frame: "more memory & rastertime", more stable sound. Sound-effect
+support implies buffered writes. "Use zeropage ghostregs" writes a
+zero-page copy of the SID instead of the SID, and the game copies it after
+every play call with a reverse loop from `X = $18` to 0 into `$D400,X`; this
+also lets the player and its data sit under the I/O area. With the
+alternative hard restart (attack parameter F) that copy must write each
+channel's waveform, frequency and pulse width, then ADSR last. The 1- and
+2-channel relocator optimisation cannot be combined with sound effects or
+ghost registers.
+
+**Effect data.**
+
+| Offset | Content |
+|---|---|
+| +0 | Attack/Decay |
+| +1 | Sustain/Release |
+| +2 | Pulse width with its nybbles swapped (`$800` in the editor is stored `$08`); written to both `$D402` and `$D403` |
+| +3 | Wavetable: `$00` ends the effect, `$01`-`$81` are waveforms, `$82`-`$DF` are absolute notes D-0 to B-7. A waveform may be left out when unchanged; a note may not |
+
+INS2SND2 converts a GoatTracker instrument to this format. It refuses an
+effect over 128 bytes, relative notes, the notes C-0 and C#0, and waveforms
+above `$81`, and it drops the instrument's pulse modulation and filter.
+
+### Cycle budget
+
+Not measured here. The readme points to its example programs and says "No
+promises!". Measure a packed player with the recipe's method (CIA timer
+around `JSR start+3`, below the badlines) before planning a frame around
+it.
+
+### Recipes
+
+- No recipe yet. `recipes/kickassembler/sfx-in-player.md` is an original
+  player of the same shape, not GoatTracker's.
+
+### Sources
+
+- https://github.com/leafo/goattracker2/blob/master/readme.txt
+  (GoatTracker 2 v2.72 readme, sections 5, 5.1 and 6.3, and the v2.34
+  change note; upstream https://sourceforge.net/projects/goattracker2/).
 
 ---
 

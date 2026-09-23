@@ -23,7 +23,14 @@ import { getQdrant, getFalkor, getAnalytics } from "../context.ts";
 import { embed } from "../services/embeddings.ts";
 import { BM25Encoder, type SparseVector } from "../services/bm25.ts";
 import { config } from "../config.ts";
-import { parseRasterBand, rasterBandsOverlap, zeroPageRangesFromCanonical, formatZeroPageRanges, type Claim, type ClaimMode } from "../graph/extract.ts";
+import {
+  parseRasterBand,
+  rasterBandsOverlap,
+  zeroPageRangesFromCanonical,
+  formatZeroPageRanges,
+  type Claim,
+  type ClaimMode,
+} from "../graph/extract.ts";
 import fs from "fs";
 import path from "path";
 import type {
@@ -139,11 +146,7 @@ export interface PalNtscDiffResult {
   text: string;
 }
 
-export async function search(
-  query: string,
-  limit: number = 5,
-  filterSource?: string
-): Promise<SearchResult> {
+export async function search(query: string, limit = 5, filterSource?: string): Promise<SearchResult> {
   const q = await getQdrant();
   const a = getAnalytics();
   const normalized = normalizeQuery(query);
@@ -184,16 +187,14 @@ export async function search(
     .map(
       (r) =>
         `## ${confidenceBadge(r.score, isVector)} ${r.source} > ${r.section}\n` +
-        `(score: ${r.score.toFixed(3)})\n\n${stripSectionPrefix(r.section, r.text)}`
+        `(score: ${r.score.toFixed(3)})\n\n${stripSectionPrefix(r.section, r.text)}`,
     )
     .join("\n\n---\n\n");
 
   return { structured, text };
 }
 
-export async function lookupRegister(
-  nameOrAddr: string
-): Promise<RegisterLookupResult> {
+export async function lookupRegister(nameOrAddr: string): Promise<RegisterLookupResult> {
   const f = await getFalkor();
   const q = await getQdrant();
   const a = getAnalytics();
@@ -222,7 +223,7 @@ export async function lookupRegister(
 
   // Decimal address: e.g. 53265 → D011, 54272 → D400.
   // All C64 I/O registers live in the $D000–$DFFF range (53248–57343).
-  const decimalMatch = cleaned.match(/^(\d{4,5})$/);
+  const decimalMatch = /^(\d{4,5})$/.exec(cleaned);
   if (decimalMatch) {
     const decimal = parseInt(decimalMatch[1], 10);
     if (decimal >= 0xd000 && decimal <= 0xdfff) {
@@ -244,7 +245,7 @@ export async function lookupRegister(
             r.aliases AS aliases,
             c.name AS chip
      LIMIT 1`,
-    { cleaned, addr: `$${cleaned}` }
+    { cleaned, addr: `$${cleaned}` },
   );
 
   const rows = result.data ?? [];
@@ -264,12 +265,10 @@ export async function lookupRegister(
            WHERE r.name CONTAINS $partial
               OR r.address CONTAINS $partial
            RETURN r.name AS name LIMIT 5`,
-          { partial }
+          { partial },
         )
       : { data: [] };
-    const names = (suggestions.data ?? [])
-      .map((r) => (r as { name: string }).name)
-      .filter(Boolean);
+    const names = (suggestions.data ?? []).map((r) => (r as { name: string }).name).filter(Boolean);
 
     return {
       structured: {
@@ -301,9 +300,7 @@ export async function lookupRegister(
   // dense and sparse vectors have multiple shots at the right chunk.
   const queryStr = [reg.name, reg.addr, ...aliases].filter(Boolean).join(" ");
   const vec = await embed(queryStr);
-  const ctx = vec
-    ? await q.hybridSearch(vec, encodeSparse(queryStr), 3)
-    : await q.searchByText(queryStr, 3);
+  const ctx = vec ? await q.hybridSearch(vec, encodeSparse(queryStr), 3) : await q.searchByText(queryStr, 3);
 
   const documentation = ctx.map((c) => ({
     source: c.source,
@@ -342,9 +339,7 @@ export async function lookupRegister(
   return { structured, text: out };
 }
 
-export async function lookupKernal(
-  nameOrAddr: string
-): Promise<KernalLookupResult> {
+export async function lookupKernal(nameOrAddr: string): Promise<KernalLookupResult> {
   const f = await getFalkor();
   const q = await getQdrant();
   const a = getAnalytics();
@@ -354,13 +349,13 @@ export async function lookupKernal(
     `MATCH (k:KernalRoutine {name: $name})
      OPTIONAL MATCH (k)-[:PAIRS_WITH]->(p:KernalRoutine)
      RETURN k.name AS name, k.address AS addr, k.description AS desc, collect(DISTINCT p.name) AS pairs`,
-    { name: cleaned }
+    { name: cleaned },
   );
   const byAddr = await f.roQuery(
     `MATCH (k:KernalRoutine {address: $addr})
      OPTIONAL MATCH (k)-[:PAIRS_WITH]->(p:KernalRoutine)
      RETURN k.name AS name, k.address AS addr, k.description AS desc, collect(DISTINCT p.name) AS pairs`,
-    { addr: `$${cleaned}` }
+    { addr: `$${cleaned}` },
   );
 
   const rows = [...(byName.data ?? []), ...(byAddr.data ?? [])];
@@ -380,12 +375,10 @@ export async function lookupKernal(
            WHERE k.name CONTAINS $partial
               OR k.address CONTAINS $partial
            RETURN k.name AS name LIMIT 5`,
-          { partial }
+          { partial },
         )
       : { data: [] };
-    const names = (suggestions.data ?? [])
-      .map((r) => (r as { name: string }).name)
-      .filter(Boolean);
+    const names = (suggestions.data ?? []).map((r) => (r as { name: string }).name).filter(Boolean);
 
     return {
       structured: {
@@ -437,13 +430,15 @@ export async function lookupKernal(
   return { structured, text: out };
 }
 
-export async function memoryMap(
-  addr: string
-): Promise<MemoryMapResult> {
+export async function memoryMap(addr: string): Promise<MemoryMapResult> {
   const f = await getFalkor();
   const a = getAnalytics();
 
-  const cleaned = addr.trim().toUpperCase().replace(/^\$/, "").replace(/[^0-9A-F]/g, "");
+  const cleaned = addr
+    .trim()
+    .toUpperCase()
+    .replace(/^\$/, "")
+    .replace(/[^0-9A-F]/g, "");
   if (!cleaned) {
     return {
       structured: { address: addr, regions: [] },
@@ -456,7 +451,7 @@ export async function memoryMap(
   // Find regions whose [start, end] contains this address.
   const rows = await f.roQuery(
     `MATCH (m:MemoryRegion)
-     RETURN m.name AS name, m.start AS start, m.end AS end, m.default_use AS use, m.bank_switchable AS bank`
+     RETURN m.name AS name, m.start AS start, m.end AS end, m.default_use AS use, m.bank_switchable AS bank`,
   );
 
   const matches = (rows.data ?? []).filter((r) => {
@@ -499,9 +494,7 @@ export async function memoryMap(
   return { structured, text: out };
 }
 
-export async function lookupOpcode(
-  byteOrMnemonic: string
-): Promise<OpcodeLookupResult> {
+export async function lookupOpcode(byteOrMnemonic: string): Promise<OpcodeLookupResult> {
   const q = await getQdrant();
   const a = getAnalytics();
 
@@ -510,12 +503,12 @@ export async function lookupOpcode(
   const term = byteOrMnemonic.trim().toUpperCase();
   const queryStr = `6510 opcode ${term}`;
   const vec = await embed(queryStr);
-  const results = vec
-    ? await q.hybridSearch(vec, encodeSparse(queryStr), 5)
-    : await q.searchByText(term, 5);
+  const results = vec ? await q.hybridSearch(vec, encodeSparse(queryStr), 5) : await q.searchByText(term, 5);
 
   // Prefer results from the opcode docs
-  const opcodeDocs = results.filter((r) => r.source.includes("6510-cpu") || r.source.includes("illegal-opcodes"));
+  const opcodeDocs = results.filter(
+    (r) => r.source.includes("6510-cpu") || r.source.includes("illegal-opcodes"),
+  );
   const final = opcodeDocs.length > 0 ? opcodeDocs : results;
 
   a.logQuery({
@@ -551,10 +544,7 @@ export async function lookupOpcode(
 
 export type PalNtscRegion = "pal" | "ntsc" | "both";
 
-export async function palNtscDiff(
-  topic: string,
-  region: PalNtscRegion = "both"
-): Promise<PalNtscDiffResult> {
+export async function palNtscDiff(topic: string, region: PalNtscRegion = "both"): Promise<PalNtscDiffResult> {
   const f = await getFalkor();
   const q = await getQdrant();
   const a = getAnalytics();
@@ -562,14 +552,12 @@ export async function palNtscDiff(
   const regionRows = await f.roQuery(
     `MATCH (r:Region) RETURN r.name AS name, r.refresh_hz AS hz,
             r.lines_per_frame AS lines, r.cycles_per_line AS cycles
-     ORDER BY r.name`
+     ORDER BY r.name`,
   );
 
   const queryStr = region === "both" ? `PAL NTSC ${topic}` : `${region.toUpperCase()} ${topic}`;
   const vec = await embed(queryStr);
-  const ctx = vec
-    ? await q.hybridSearch(vec, encodeSparse(queryStr), 5)
-    : await q.searchByText(queryStr, 5);
+  const ctx = vec ? await q.hybridSearch(vec, encodeSparse(queryStr), 5) : await q.searchByText(queryStr, 5);
 
   a.logQuery({
     tool: "c64_pal_ntsc_diff",
@@ -586,10 +574,7 @@ export async function palNtscDiff(
       cycles_per_line: row.cycles,
     };
   });
-  const regions =
-    region === "both"
-      ? allRegions
-      : allRegions.filter((r) => r.name.toLowerCase() === region);
+  const regions = region === "both" ? allRegions : allRegions.filter((r) => r.name.toLowerCase() === region);
 
   const documentation = ctx.slice(0, 3).map((c) => ({
     source: c.source,
@@ -629,22 +614,20 @@ export type RecipesForResult = { structured: RecipesForOutput; text: string };
 
 export async function toolchainHint(
   toolchain: string | undefined,
-  intent: string
+  intent: string,
 ): Promise<ToolchainHintResult> {
   const f = await getFalkor();
   const q = await getQdrant();
   const a = getAnalytics();
 
   // f is referenced for future graph queries (tool node lookups in Phase 3+).
-  void f;
+  f;
 
   const tc = toolchain ?? OSCAR64_BIAS;
 
   const queryStr = `${tc} ${intent}`;
   const vec = await embed(queryStr);
-  const ctx = vec
-    ? await q.hybridSearch(vec, encodeSparse(queryStr), 5)
-    : await q.searchByText(queryStr, 5);
+  const ctx = vec ? await q.hybridSearch(vec, encodeSparse(queryStr), 5) : await q.searchByText(queryStr, 5);
 
   a.logQuery({
     tool: "c64_toolchain_hint",
@@ -664,7 +647,8 @@ export async function toolchainHint(
       ? `No toolchain specified; defaulting to ${OSCAR64_BIAS} per c64-kb's primary-toolchain policy. Pass toolchain explicitly to override.`
       : `Toolchain ${tc} requested.`;
 
-  const snippet = sources.length > 0 ? sources[0].text : "(no snippet found — consider adding a recipe or pattern doc)";
+  const snippet =
+    sources.length > 0 ? sources[0].text : "(no snippet found — consider adding a recipe or pattern doc)";
 
   const structured: ToolchainHintOutput = {
     toolchain: tc,
@@ -702,23 +686,24 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
      RETURN r.toolchain AS toolchain, r.output_format AS output_format,
             r.region AS region, r.source_doc AS source_doc,
             tool.version_verified AS toolchain_version_verified`,
-    { name }
+    { name },
   );
 
   if ((recipeRows.data?.length ?? 0) === 0) {
     // Suggest near matches
     const all = await f.roQuery(`MATCH (r:Recipe) RETURN r.name AS name ORDER BY r.name`);
     const names = (all.data ?? []).map((row) => (row as { name: string }).name);
-    const suggestions = name.length < 3
-      ? []
-      : names
-          .filter((n) => {
-            const lname = name.toLowerCase();
-            if (n.includes(lname)) return true;
-            const stem = n.split("-").slice(1).join("-");
-            return stem !== "" && lname.includes(stem);
-          })
-          .slice(0, 5);
+    const suggestions =
+      name.length < 3
+        ? []
+        : names
+            .filter((n) => {
+              const lname = name.toLowerCase();
+              if (n.includes(lname)) return true;
+              const stem = n.split("-").slice(1).join("-");
+              return stem !== "" && lname.includes(stem);
+            })
+            .slice(0, 5);
 
     a.logQuery({ tool: "c64_recipe_lookup", query: name, resultCount: 0 });
 
@@ -736,15 +721,19 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     return { structured: empty, text };
   }
 
-  const row = recipeRows.data?.[0] as { toolchain: string; output_format: string; region: string; source_doc: string; toolchain_version_verified: string | null };
+  const row = recipeRows.data?.[0] as {
+    toolchain: string;
+    output_format: string;
+    region: string;
+    source_doc: string;
+    toolchain_version_verified: string | null;
+  };
   const { toolchain, output_format, region, source_doc } = row;
   const toolchain_version_verified = row.toolchain_version_verified ?? undefined;
 
   // Pull doc context
   const vec = await embed(name);
-  const ctx = vec
-    ? await q.hybridSearch(vec, encodeSparse(name), 5)
-    : await q.searchByText(name, 5);
+  const ctx = vec ? await q.hybridSearch(vec, encodeSparse(name), 5) : await q.searchByText(name, 5);
   const documentation = ctx
     .filter((c) => c.source === source_doc)
     .slice(0, 5)
@@ -786,7 +775,13 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
   }
   if (source_code) {
     out += `## Source listing (${source_code.language}, ${source_code.text.split("\n").length} lines, copy as-is)\n\n`;
-    out += "```" + source_code.language + "\n" + source_code.text + (source_code.text.endsWith("\n") ? "" : "\n") + "```\n";
+    out +=
+      "```" +
+      source_code.language +
+      "\n" +
+      source_code.text +
+      (source_code.text.endsWith("\n") ? "" : "\n") +
+      "```\n";
   }
   return { structured, text: out };
 }
@@ -800,7 +795,7 @@ function readRecipeListing(source_doc: string): { language: string; text: string
   try {
     const file = path.join(config.docs.dir, source_doc);
     const page = fs.readFileSync(file, "utf-8");
-    const m = page.match(/```(c|asm|kick|kickassembler|kickass)\r?\n([\s\S]*?)```/);
+    const m = /```(c|asm|kick|kickassembler|kickass)\r?\n([\s\S]*?)```/.exec(page);
     if (!m) return null;
     const language = m[1] === "kick" || m[1] === "kickassembler" || m[1] === "kickass" ? "asm" : m[1];
     return { language, text: m[2] };
@@ -842,7 +837,13 @@ export async function recipesFor(filter: {
 
   const rows = await f.roQuery(cypher, params);
   const recipes = (rows.data ?? []).map((row) => {
-    const r = row as { name: string; toolchain: string; output_format: string; region: string; source_doc: string };
+    const r = row as {
+      name: string;
+      toolchain: string;
+      output_format: string;
+      region: string;
+      source_doc: string;
+    };
     return {
       name: r.name,
       toolchain: r.toolchain,
@@ -895,23 +896,24 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
             t.cost_irq_slots AS cost_irq_slots, t.cost_sprites_per_line AS cost_sprites_per_line, t.cost_basis AS cost_basis,
             t.raster_band AS raster_band, t.claims_stated AS claims_stated, t.claims_basis AS claims_basis
      LIMIT 1`,
-    { name }
+    { name },
   );
 
   if ((result.data?.length ?? 0) === 0) {
     // Suggestion logic: mirror recipeLookup but for underscore-separated names
     const all = await f.roQuery(`MATCH (t:Technique) RETURN t.name AS name ORDER BY t.name`);
     const names = (all.data ?? []).map((row) => (row as { name: string }).name);
-    const suggestions = name.length < 3
-      ? []
-      : names
-          .filter((n) => {
-            const lname = name.toLowerCase();
-            if (n.includes(lname)) return true;
-            const stem = n.split("_").slice(1).join("_");
-            return stem !== "" && lname.includes(stem);
-          })
-          .slice(0, 5);
+    const suggestions =
+      name.length < 3
+        ? []
+        : names
+            .filter((n) => {
+              const lname = name.toLowerCase();
+              if (n.includes(lname)) return true;
+              const stem = n.split("_").slice(1).join("_");
+              return stem !== "" && lname.includes(stem);
+            })
+            .slice(0, 5);
 
     a.logQuery({ tool: "c64_technique_lookup", query: name, resultCount: 0 });
 
@@ -935,7 +937,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     return { structured: empty, text };
   }
 
-  const row = result.data![0] as {
+  const row = result.data[0] as {
     name: string;
     title: string;
     category: string;
@@ -960,14 +962,20 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   // are present, and the object is absent when the page has no line.
   const cost: TechniqueCostOutput | undefined = row.cost_basis
     ? {
-        ...(typeof row.cost_cycles_per_line === "number" ? { cycles_per_line: row.cost_cycles_per_line } : {}),
-        ...(typeof row.cost_cycles_per_frame === "number" ? { cycles_per_frame: row.cost_cycles_per_frame } : {}),
+        ...(typeof row.cost_cycles_per_line === "number"
+          ? { cycles_per_line: row.cost_cycles_per_line }
+          : {}),
+        ...(typeof row.cost_cycles_per_frame === "number"
+          ? { cycles_per_frame: row.cost_cycles_per_frame }
+          : {}),
         ...(typeof row.cost_lines_active === "number" ? { lines_active: row.cost_lines_active } : {}),
         ...(typeof row.cost_bytes_code === "number" ? { bytes_code: row.cost_bytes_code } : {}),
         ...(typeof row.cost_bytes_data === "number" ? { bytes_data: row.cost_bytes_data } : {}),
         ...(typeof row.cost_zp_bytes === "number" ? { zp_bytes: row.cost_zp_bytes } : {}),
         ...(typeof row.cost_irq_slots === "number" ? { irq_slots: row.cost_irq_slots } : {}),
-        ...(typeof row.cost_sprites_per_line === "number" ? { sprites_per_line: row.cost_sprites_per_line } : {}),
+        ...(typeof row.cost_sprites_per_line === "number"
+          ? { sprites_per_line: row.cost_sprites_per_line }
+          : {}),
         basis: row.cost_basis as TechniqueCostOutput["basis"],
       }
     : undefined;
@@ -976,11 +984,16 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const claimRows = await f.roQuery(
     `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
      RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
-    { name }
+    { name },
   );
   const claims = (claimRows.data ?? []).map((r) => {
     const c = r as { unit: string; mode: ClaimMode; ranges: string | null; relocatable: boolean | null };
-    return { unit: c.unit, mode: c.mode, ...(c.ranges ? { ranges: c.ranges } : {}), ...(c.relocatable ? { relocatable: true } : {}) };
+    return {
+      unit: c.unit,
+      mode: c.mode,
+      ...(c.ranges ? { ranges: c.ranges } : {}),
+      ...(c.relocatable ? { relocatable: true } : {}),
+    };
   });
   const claims_stated: "stated" | "none" | "unknown" =
     row.claims_stated === "stated" || row.claims_stated === "none" ? row.claims_stated : "unknown";
@@ -989,7 +1002,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const regRows = await f.roQuery(
     `MATCH (t:Technique {name: $name})-[:USES]->(r:Register)
      RETURN r.name AS name, r.address AS address`,
-    { name }
+    { name },
   );
   const uses_registers = (regRows.data ?? []).map((r) => {
     const rr = r as { name: string; address: string };
@@ -1000,7 +1013,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const kernalRows = await f.roQuery(
     `MATCH (t:Technique {name: $name})-[:USES]->(k:KernalRoutine)
      RETURN k.name AS name, k.address AS address`,
-    { name }
+    { name },
   );
   const uses_kernal = (kernalRows.data ?? []).map((r) => {
     const kr = r as { name: string; address: string };
@@ -1011,7 +1024,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const recipeRows = await f.roQuery(
     `MATCH (t:Technique {name: $name})<-[:IMPLEMENTS]-(r:Recipe)
      RETURN r.name AS name, r.toolchain AS toolchain`,
-    { name }
+    { name },
   );
   const recipes = (recipeRows.data ?? []).map((r) => {
     const rr = r as { name: string; toolchain: string };
@@ -1026,7 +1039,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const requiresRows = await f.roQuery(
     `MATCH (t:Technique {name: $name})-[:REQUIRES]->(p:Technique)
      RETURN p.name AS name, p.title AS title ORDER BY p.name`,
-    { name }
+    { name },
   );
   const requires = (requiresRows.data ?? []).map(toRef);
 
@@ -1034,7 +1047,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const requiredByRows = await f.roQuery(
     `MATCH (t:Technique {name: $name})<-[:REQUIRES]-(d:Technique)
      RETURN d.name AS name, d.title AS title ORDER BY d.name`,
-    { name }
+    { name },
   );
   const required_by = (requiredByRows.data ?? []).map(toRef);
 
@@ -1042,7 +1055,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const mitigatesRows = await f.roQuery(
     `MATCH (t:Technique {name: $name})<-[:MITIGATED_BY]-(p:Pitfall)
      RETURN p.name AS name, p.title AS title, p.severity AS severity ORDER BY p.name`,
-    { name }
+    { name },
   );
   const mitigates = (mitigatesRows.data ?? []).map((r) => {
     const pr = r as { name: string; title: string; severity: string };
@@ -1052,9 +1065,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   // Documentation chunks from Qdrant
   const queryStr = `${name} ${row.title ?? ""}`.trim();
   const vec = await embed(queryStr);
-  const ctx = vec
-    ? await q.hybridSearch(vec, encodeSparse(queryStr), 3)
-    : await q.searchByText(queryStr, 3);
+  const ctx = vec ? await q.hybridSearch(vec, encodeSparse(queryStr), 3) : await q.searchByText(queryStr, 3);
   const documentation = ctx.map((c) => ({
     source: c.source,
     section: c.section,
@@ -1093,7 +1104,9 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   if (row.raster_band) out += `**Raster band:** ${row.raster_band}\n`;
   if (cost) {
     const { basis, ...figures } = cost;
-    out += `**Cost:** ${Object.entries(figures).map(([k, v]) => `${k}=${v}`).join(", ")}\n`;
+    out += `**Cost:** ${Object.entries(figures)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(", ")}\n`;
     out += `**Cost basis:** ${basis}\n`;
   }
   if (claims_stated === "unknown") {
@@ -1241,7 +1254,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       const rows = await f.roQuery(
         `MATCH (t:Technique {name: $name})-[:REQUIRES]->(p:Technique)
          RETURN p.name AS name ORDER BY p.name`,
-        { name }
+        { name },
       );
       r = (rows.data ?? []).map((row) => (row as { name: string }).name).filter(Boolean);
       requiresCache.set(name, r);
@@ -1250,7 +1263,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   };
   for (const input of techniques) {
     const visited = new Set<string>([input]);
-    const queue: Array<{ name: string; chain: string[] }> = [{ name: input, chain: [input] }];
+    const queue: { name: string; chain: string[] }[] = [{ name: input, chain: [input] }];
     while (queue.length > 0) {
       const cur = queue.shift()!;
       for (const p of await requiresOf(cur.name)) {
@@ -1268,7 +1281,8 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   const closureOnly = [...impliedBy.keys()].filter((n) => !inputSet.has(n)).sort();
   const allNames = [...techniques, ...closureOnly];
   // closure(x): everything x's REQUIRES chain reaches, inputs included.
-  const closureOf = (x: string): string[] => allNames.filter((n) => n !== x && (impliedBy.get(n)?.has(x) ?? false));
+  const closureOf = (x: string): string[] =>
+    allNames.filter((n) => n !== x && (impliedBy.get(n)?.has(x) ?? false));
   const describeChain = (input: string, member: string): string => {
     const chain = chainOf.get(`${input}|${member}`) ?? [input, member];
     const middle = chain.slice(1, -1);
@@ -1282,7 +1296,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       `MATCH (t:Technique {name: $name})
        OPTIONAL MATCH (t)-[:REQUIRES_REGION]->(reg:Region)
        RETURN toLower(reg.name) AS region`,
-      { name: tname }
+      { name: tname },
     );
     const region = (rr.data?.[0] as { region: string | null } | undefined)?.region ?? null;
     regionMap.set(tname, region);
@@ -1296,7 +1310,15 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // instead of passing as compatible.
   // claims: the CLAIMS edges (schema 25); claimsStated "unknown" when the
   // page has no usable Claims line, which is never read as "none".
-  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[]; band: string | null; claims: Claim[]; claimsStated: "stated" | "none" | "unknown" };
+  type Facts = {
+    found: boolean;
+    demands: Set<string>;
+    registers: number;
+    kernal: string[];
+    band: string | null;
+    claims: Claim[];
+    claimsStated: "stated" | "none" | "unknown";
+  };
   const facts = new Map<string, Facts>();
   for (const tname of allNames) {
     const rr = await f.roQuery(
@@ -1307,17 +1329,30 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
        WITH t, demands, count(DISTINCT reg) AS registers
        OPTIONAL MATCH (t)-[:USES]->(k:KernalRoutine)
        RETURN demands, registers, collect(DISTINCT k.name) AS kernal, t.raster_band AS band, t.claims_stated AS claims_stated`,
-      { name: tname }
+      { name: tname },
     );
-    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[]; band: string | null; claims_stated: string | null } | undefined;
+    const row = rr.data?.[0] as
+      | {
+          demands: string[];
+          registers: number;
+          kernal: string[];
+          band: string | null;
+          claims_stated: string | null;
+        }
+      | undefined;
     const claimRows = await f.roQuery(
       `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
        RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
-      { name: tname }
+      { name: tname },
     );
     const claims: Claim[] = (claimRows.data ?? []).map((r) => {
       const c = r as { unit: string; mode: ClaimMode; ranges: string | null; relocatable: boolean | null };
-      return { unit: c.unit, mode: c.mode, ...(c.ranges ? { ranges: c.ranges } : {}), ...(c.relocatable ? { relocatable: true } : {}) };
+      return {
+        unit: c.unit,
+        mode: c.mode,
+        ...(c.ranges ? { ranges: c.ranges } : {}),
+        ...(c.relocatable ? { relocatable: true } : {}),
+      };
     });
     const stated = row?.claims_stated;
     facts.set(tname, {
@@ -1335,7 +1370,13 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // names. Each rule is symmetric; `has` tests one side. Returned rather than
   // pushed so the same rules serve the input pairs and the REQUIRES closure.
   type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
-  type HardHit = { kind: ConflictKind; shared: string[]; rationale: string; resolution: string; severity?: "hard" | "soft" | "info" };
+  type HardHit = {
+    kind: ConflictKind;
+    shared: string[];
+    rationale: string;
+    resolution: string;
+    severity?: "hard" | "soft" | "info";
+  };
   // Raster bands (**Raster band:**, schema 24). The rules about sharing
   // raster lines (cpu_exclusive; cpu_vs_irq through mid-frame IRQs or
   // sprite-set changes; sprite_set) do not fire when both techniques state
@@ -1363,17 +1404,27 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     const pa = parseRasterBand(facts.get(a_name)?.band ?? "");
     const pb = parseRasterBand(facts.get(b_name)?.band ?? "");
     const bothLines = !("error" in pa) && pa.kind === "lines" && !("error" in pb) && pb.kind === "lines";
-    return ` Raster bands: ${bandText(a_name)}; ${bandText(b_name)}.` +
-      (bothLines ? " The bands overlap." : " Only two stated, disjoint line bands clear this rule.");
+    return (
+      ` Raster bands: ${bandText(a_name)}; ${bandText(b_name)}.` +
+      (bothLines ? " The bands overlap." : " Only two stated, disjoint line bands clear this rule.")
+    );
   };
   const bandSeparated: CompatibilityCheckOutput["band_separated"] = [];
   const noteSeparated = (a_name: string, b_name: string, rule: string) => {
-    const hit = bandSeparated.find((s) => (s.a === a_name && s.b === b_name) || (s.a === b_name && s.b === a_name));
+    const hit = bandSeparated.find(
+      (s) => (s.a === a_name && s.b === b_name) || (s.a === b_name && s.b === a_name),
+    );
     if (hit) {
       if (!hit.rules.includes(rule)) hit.rules.push(rule);
       return;
     }
-    bandSeparated.push({ a: a_name, b: b_name, a_band: facts.get(a_name)!.band!, b_band: facts.get(b_name)!.band!, rules: [rule] });
+    bandSeparated.push({
+      a: a_name,
+      b: b_name,
+      a_band: facts.get(a_name)!.band!,
+      b_band: facts.get(b_name)!.band!,
+      rules: [rule],
+    });
   };
   // Unit claims (schema 25). Rules over the CLAIMS edges of one pair. Between
   // a technique and its own REQUIRES prerequisite the two ownership rules
@@ -1384,8 +1435,26 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   const claimRules = (a_name: string, b_name: string): HardHit[] => {
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
-    const byKind = new Map<string, { kind: ConflictKind; severity: "hard" | "soft" | "info"; units: string[]; pairs: Array<[string, string]>; relocatable: string[]; bothShare: boolean }>();
-    const add = (kind: ConflictKind, severity: "hard" | "soft" | "info", unit: string, first: string, second: string, relocatable: string[] = [], bothShare = false) => {
+    const byKind = new Map<
+      string,
+      {
+        kind: ConflictKind;
+        severity: "hard" | "soft" | "info";
+        units: string[];
+        pairs: Array<[string, string]>;
+        relocatable: string[];
+        bothShare: boolean;
+      }
+    >();
+    const add = (
+      kind: ConflictKind,
+      severity: "hard" | "soft" | "info",
+      unit: string,
+      first: string,
+      second: string,
+      relocatable: string[] = [],
+      bothShare = false,
+    ) => {
       const key = `${kind}|${severity}|${first}|${second}|${bothShare}`;
       let e = byKind.get(key);
       if (!e) byKind.set(key, (e = { kind, severity, units: [], pairs: [], relocatable: [], bothShare }));
@@ -1402,7 +1471,9 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
           if (bytes.length === 0) continue;
           unitLabel = `zero_page $${formatZeroPageRanges(bytes).replace(/,/g, ",$").replace(/-/g, "-$")}`;
           if (ca.mode === "owns" && cb.mode === "owns") {
-            const reloc = [ca.relocatable ? a_name : null, cb.relocatable ? b_name : null].filter((x): x is string => x !== null);
+            const reloc = [ca.relocatable ? a_name : null, cb.relocatable ? b_name : null].filter(
+              (x): x is string => x !== null,
+            );
             add("zero_page_overlap", reloc.length > 0 ? "soft" : "hard", unitLabel, a_name, b_name, reloc);
             continue;
           }
@@ -1410,7 +1481,8 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
         const m = [ca.mode, cb.mode];
         const has = (x: ClaimMode, y: ClaimMode) => (m[0] === x && m[1] === y) || (m[0] === y && m[1] === x);
         // [first, second] orders the pair as the resolution text reads it.
-        const ordered = (firstMode: ClaimMode): [string, string] => (ca.mode === firstMode ? [a_name, b_name] : [b_name, a_name]);
+        const ordered = (firstMode: ClaimMode): [string, string] =>
+          ca.mode === firstMode ? [a_name, b_name] : [b_name, a_name];
         if (has("owns", "owns")) add("unit_contention", "hard", unitLabel, a_name, b_name);
         else if (has("owns", "shares")) add("unit_shared", "soft", unitLabel, ...ordered("owns"));
         else if (has("shares", "shares")) add("unit_shared", "soft", unitLabel, a_name, b_name, [], true);
@@ -1427,40 +1499,61 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       switch (e.kind) {
         case "unit_contention": {
           const irq = e.units.includes("vic_raster_irq");
-          out.push({ kind: e.kind, severity: e.severity, shared: units,
+          out.push({
+            kind: e.kind,
+            severity: e.severity,
+            shared: units,
             rationale: `Both ${first} and ${second} own ${list}: each writes or holds it every frame and expects no one else to.`,
             resolution: irq
               ? `There is one raster compare. Run both as handlers in one interrupt chain (irq_chain_table): one technique owns $D012 and the other's handler becomes a chain entry that shares it${e.units.length > 1 ? "; for the other units, give one technique different ones (another sprite range, another voice)" : ""}.`
-              : `Give one of them other units (another sprite range, another SID voice), or rewrite one to share the unit under the other's protocol.` });
+              : `Give one of them other units (another sprite range, another SID voice), or rewrite one to share the unit under the other's protocol.`,
+          });
           break;
         }
         case "zero_page_overlap":
-          out.push({ kind: e.kind, severity: e.severity, shared: units,
+          out.push({
+            kind: e.kind,
+            severity: e.severity,
+            shared: units,
             rationale: `${first} and ${second} both own ${list}.${e.relocatable.length > 0 ? ` ${e.relocatable.join(" and ")} can be relocated, so this is soft.` : ""}`,
-            resolution: e.relocatable.length > 0
-              ? `Rebuild ${e.relocatable[0]} with its zero-page base moved off these bytes (its page names the build option).`
-              : `Move one side's zero-page variables to bytes the other does not use.` });
+            resolution:
+              e.relocatable.length > 0
+                ? `Rebuild ${e.relocatable[0]} with its zero-page base moved off these bytes (its page names the build option).`
+                : `Move one side's zero-page variables to bytes the other does not use.`,
+          });
           break;
         case "unit_shared":
-          out.push({ kind: e.kind, severity: e.severity, shared: units,
+          out.push({
+            kind: e.kind,
+            severity: e.severity,
+            shared: units,
             rationale: e.bothShare
               ? `${first} and ${second} both write ${list} under an owner's protocol.`
               : `${first} owns ${list}; ${second} writes it under ${first}'s protocol.`,
             resolution: e.bothShare
               ? `Both must follow the owner's protocol, and in an order the owner sets: one after the other in the frame, or as successive entries in one interrupt chain.`
-              : `${second} must follow ${first}'s protocol: write after ${first}'s write in the frame, or run inside ${first}'s interrupt chain.` });
+              : `${second} must follow ${first}'s protocol: write after ${first}'s write in the frame, or run inside ${first}'s interrupt chain.`,
+          });
           break;
         case "unit_read_while_driven":
-          out.push({ kind: e.kind, severity: e.severity, shared: units,
+          out.push({
+            kind: e.kind,
+            severity: e.severity,
+            shared: units,
             rationale: `${second} reads ${list}, which ${first} drives; what ${second} reads depends on ${first}'s writes.`,
             resolution: e.units.includes("cia1_port_a")
               ? `Read where ${first} has left the port in a known state: after a keyboard scan, restore $DC00 before reading the joystick.`
-              : `Read at a point in the frame where ${first} has left the unit in a known state.` });
+              : `Read at a point in the frame where ${first} has left the unit in a known state.`,
+          });
           break;
         case "init_order":
-          out.push({ kind: e.kind, severity: e.severity, shared: units,
+          out.push({
+            kind: e.kind,
+            severity: e.severity,
+            shared: units,
             rationale: `${first} uses ${list} once at start-up; ${second} then uses it every frame.`,
-            resolution: `Run ${first}'s use before ${second} starts.` });
+            resolution: `Run ${first}'s use before ${second} starts.`,
+          });
           break;
       }
     }
@@ -1469,7 +1562,11 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
   const hardRules = (a_name: string, b_name: string, opts: { related?: boolean } = {}): HardHit[] => {
     const hits: HardHit[] = [];
-    hits.push(...claimRules(a_name, b_name).filter((h) => !opts.related || (h.kind !== "unit_contention" && h.kind !== "zero_page_overlap")));
+    hits.push(
+      ...claimRules(a_name, b_name).filter(
+        (h) => !opts.related || (h.kind !== "unit_contention" && h.kind !== "zero_page_overlap"),
+      ),
+    );
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
     const hard = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) =>
@@ -1486,44 +1583,68 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     const aRegion = regionMap.get(a_name);
     const bRegion = regionMap.get(b_name);
     if (aRegion && bRegion && aRegion !== bRegion) {
-      hard("region_mismatch", [aRegion, bRegion],
+      hard(
+        "region_mismatch",
+        [aRegion, bRegion],
         `${a_name} requires ${aRegion} but ${b_name} requires ${bRegion}.`,
-        `Detect the machine at start and ship both variants, or drop one.`);
+        `Detect the machine at start and ship both variants, or drop one.`,
+      );
     }
 
     // Both need every CPU cycle on their lines.
     if (A.demands.has("cpu_every_line") && B.demands.has("cpu_every_line")) {
-      lineRule("cpu_exclusive", ["cpu_every_line"],
+      lineRule(
+        "cpu_exclusive",
+        ["cpu_every_line"],
         `Both need every CPU cycle on every raster line they cover; they cannot share a raster line.`,
-        `Give each its own band of lines and switch between them in the border.`);
+        `Give each its own band of lines and switch between them in the border.`,
+      );
     }
 
     // One needs every CPU cycle; the other interrupts mid-frame.
-    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+    for (const [X, Y, xn, yn] of [
+      [A, B, a_name, b_name],
+      [B, A, b_name, a_name],
+    ] as const) {
       if (!X.demands.has("cpu_every_line")) continue;
       if (Y.demands.has("midframe_raster_irqs")) {
-        lineRule("cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
+        lineRule(
+          "cpu_vs_irq",
+          ["cpu_every_line", "midframe_raster_irqs"],
           `${xn} needs every CPU cycle on its lines; a raster interrupt from ${yn} inside that region breaks its cycle count.`,
-          `Keep ${yn}'s interrupts on lines outside ${xn}'s region (the borders, or a separate band).`);
+          `Keep ${yn}'s interrupts on lines outside ${xn}'s region (the borders, or a separate band).`,
+        );
       }
       if (Y.demands.has("continuous_interrupts")) {
-        hard("cpu_vs_irq", ["cpu_every_line", "continuous_interrupts"],
+        hard(
+          "cpu_vs_irq",
+          ["cpu_every_line", "continuous_interrupts"],
           `${xn} needs every CPU cycle on its lines; ${yn} takes interrupts every few raster lines throughout the frame.`,
-          `Pause ${yn} while ${xn}'s region is being drawn, or do not combine them.`);
+          `Pause ${yn} while ${xn}'s region is being drawn, or do not combine them.`,
+        );
       }
       if (Y.demands.has("changes_sprite_set") && !X.demands.has("constant_sprite_set")) {
-        lineRule("cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
+        lineRule(
+          "cpu_vs_irq",
+          ["cpu_every_line", "changes_sprite_set"],
           `${yn} rewrites sprite registers from interrupts during the frame; inside ${xn}'s region that breaks its cycle count.`,
-          `Multiplex only outside ${xn}'s region.`);
+          `Multiplex only outside ${xn}'s region.`,
+        );
       }
     }
 
     // One needs the same sprites active on every line; the other changes them.
-    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+    for (const [X, Y, xn, yn] of [
+      [A, B, a_name, b_name],
+      [B, A, b_name, a_name],
+    ] as const) {
       if (X.demands.has("constant_sprite_set") && Y.demands.has("changes_sprite_set")) {
-        lineRule("sprite_set", ["constant_sprite_set", "changes_sprite_set"],
+        lineRule(
+          "sprite_set",
+          ["constant_sprite_set", "changes_sprite_set"],
           `${xn}'s per-line timing depends on the same sprites being active on every line of its region; ${yn} changes the active set during the frame.`,
-          `Multiplex only outside ${xn}'s region, or keep the sprite set fixed while ${xn}'s lines are drawn.`);
+          `Multiplex only outside ${xn}'s region, or keep the sprite set fixed while ${xn}'s lines are drawn.`,
+        );
       }
     }
 
@@ -1532,22 +1653,34 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     // file calls built on them; CHRIN/CHROUT/GETIN are left out because they
     // touch the bus only through a redirected channel, which CHKIN/CHKOUT
     // already name.
-    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+    for (const [X, Y, xn, yn] of [
+      [A, B, a_name, b_name],
+      [B, A, b_name, a_name],
+    ] as const) {
       if (!X.demands.has("serial_bus_exclusive")) continue;
       const serial = Y.kernal.filter((k) => SERIAL_KERNAL.has(k));
       if (serial.length > 0) {
-        hard("serial_bus_busy", serial.sort(),
+        hard(
+          "serial_bus_busy",
+          serial.sort(),
           `${xn} owns the drive's serial bus while it is resident; ${yn} calls KERNAL serial I/O (${serial.join(", ")}), which stalls on that drive until the loader is uninstalled.`,
-          `Do the KERNAL I/O before installing ${xn} or after uninstalling it (Krill: UNINSTALL_API), or use the loader's own entries (Krill: save, fileexists) instead.`);
+          `Do the KERNAL I/O before installing ${xn} or after uninstalling it (Krill: UNINSTALL_API), or use the loader's own entries (Krill: save, fileexists) instead.`,
+        );
       }
     }
 
     // One runs with the KERNAL ROM out; the other calls KERNAL routines.
-    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+    for (const [X, Y, xn, yn] of [
+      [A, B, a_name, b_name],
+      [B, A, b_name, a_name],
+    ] as const) {
       if (X.demands.has("kernal_rom_out") && Y.kernal.length > 0) {
-        hard("kernal_banked_out", Y.kernal,
+        hard(
+          "kernal_banked_out",
+          Y.kernal,
           `${xn} runs with the KERNAL ROM banked out; ${yn} calls KERNAL routine(s) ${Y.kernal.join(", ")}, which are not there.`,
-          `Bank the KERNAL in ($01 bit 1) around the calls, or replace them with RAM-resident code.`);
+          `Bank the KERNAL in ($01 bit 1) around the calls, or replace them with RAM-resident code.`,
+        );
       }
     }
     return hits;
@@ -1565,16 +1698,26 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       // design; the ownership rules do not run between them.
       const related = closureOf(a_name).includes(b_name) || closureOf(b_name).includes(a_name);
       for (const h of hardRules(a_name, b_name, { related })) {
-        conflicts.push({ a: a_name, b: b_name, kind: h.kind, severity: h.severity ?? "hard", shared: h.shared, rationale: h.rationale, resolution: h.resolution });
+        conflicts.push({
+          a: a_name,
+          b: b_name,
+          kind: h.kind,
+          severity: h.severity ?? "hard",
+          shared: h.shared,
+          rationale: h.rationale,
+          resolution: h.resolution,
+        });
       }
 
       // Shared registers (soft)
       const sharedRegRows = await f.roQuery(
         `MATCH (a:Technique {name: $a})-[:USES]->(reg:Register)<-[:USES]-(b:Technique {name: $b})
          RETURN reg.name AS shared`,
-        { a: a_name, b: b_name }
+        { a: a_name, b: b_name },
       );
-      const sharedRegs = (sharedRegRows.data ?? []).map((r) => (r as { shared: string }).shared).filter(Boolean);
+      const sharedRegs = (sharedRegRows.data ?? [])
+        .map((r) => (r as { shared: string }).shared)
+        .filter(Boolean);
       if (sharedRegs.length > 0) {
         conflicts.push({
           a: a_name,
@@ -1590,9 +1733,11 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       const sharedKernalRows = await f.roQuery(
         `MATCH (a:Technique {name: $a})-[:USES]->(k:KernalRoutine)<-[:USES]-(b:Technique {name: $b})
          RETURN k.name AS shared`,
-        { a: a_name, b: b_name }
+        { a: a_name, b: b_name },
       );
-      const sharedKernals = (sharedKernalRows.data ?? []).map((r) => (r as { shared: string }).shared).filter(Boolean);
+      const sharedKernals = (sharedKernalRows.data ?? [])
+        .map((r) => (r as { shared: string }).shared)
+        .filter(Boolean);
       if (sharedKernals.length > 0) {
         conflicts.push({
           a: a_name,
@@ -1642,7 +1787,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       const cy = closureOf(y);
       const okOnX = new Set([x, ...cx]);
       const okOnY = new Set([y, ...cy]);
-      const candidates: Array<[string, string]> = [];
+      const candidates: [string, string][] = [];
       for (const u of cx) if (!okOnY.has(u)) candidates.push([u, y]);
       for (const v of cy) if (!okOnX.has(v)) candidates.push([x, v]);
       for (const u of cx) {
@@ -1658,10 +1803,9 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
         // One of the pair declared the other as its prerequisite.
         if ((await reaches(u, v)) || (await reaches(v, u))) continue;
         const via = [u, v].filter((n) => n !== x && n !== y);
-        const chainText = [
-          u !== x ? describeChain(x, u) : null,
-          v !== y ? describeChain(y, v) : null,
-        ].filter((s): s is string => s !== null).join("; ");
+        const chainText = [u !== x ? describeChain(x, u) : null, v !== y ? describeChain(y, v) : null]
+          .filter((s): s is string => s !== null)
+          .join("; ");
         for (const h of hardRules(u, v)) {
           conflicts.push({
             a: x,
@@ -1678,12 +1822,11 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     }
   }
 
-  const verdict: CompatibilityCheckOutput["verdict"] =
-    conflicts.some((c) => c.severity === "hard")
-      ? "incompatible"
-      : conflicts.some((c) => c.severity === "soft")
-        ? "warnings"
-        : "compatible";
+  const verdict: CompatibilityCheckOutput["verdict"] = conflicts.some((c) => c.severity === "hard")
+    ? "incompatible"
+    : conflicts.some((c) => c.severity === "soft")
+      ? "warnings"
+      : "compatible";
 
   const coverageOf = (t: string): CompatibilityCheckOutput["data_coverage"][number] => {
     const F = facts.get(t)!;
@@ -1694,7 +1837,9 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       kernal_routines: F.kernal.length,
       demands: [...F.demands].sort(),
       ...(F.band ? { raster_band: F.band } : {}),
-      known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0 || F.claimsStated !== "unknown"),
+      known:
+        F.found &&
+        (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0 || F.claimsStated !== "unknown"),
       claims: F.claimsStated,
     };
   };
@@ -1728,7 +1873,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
        WHERE size(implements) >= 2
        MATCH (r)-[:USES]->(shared)
        RETURN DISTINCT shared.name AS name, labels(shared)[0] AS kind, r.name AS recipe`,
-      { techs: techniques }
+      { techs: techniques },
     );
 
     // Group by (name, kind) -> via_recipes[]
@@ -1765,7 +1910,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
          OPTIONAL MATCH (t)-[:USES]->(reg:Register)
          WHERE reg.name IN ['D011', 'D012', 'SCROLY', 'RASTER']
          RETURN t.category AS category, collect(reg.name) AS raster_regs`,
-        { name: tname }
+        { name: tname },
       );
       const row = rr.data?.[0] as { category: string; raster_regs: string[] } | undefined;
       if (!row) continue;
@@ -1786,7 +1931,14 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
   a.logQuery({ tool: "c64_check_compatibility", query: techniques.join("+"), resultCount: conflicts.length });
 
-  const structured: CompatibilityCheckOutput = { techniques, conflicts, band_separated: bandSeparated, shared_infrastructure, data_coverage, verdict };
+  const structured: CompatibilityCheckOutput = {
+    techniques,
+    conflicts,
+    band_separated: bandSeparated,
+    shared_infrastructure,
+    data_coverage,
+    verdict,
+  };
 
   // "Not covered" is about the named techniques; implied ones are listed
   // separately so the silence-vs-clearance sentence keeps its denominator.
@@ -1794,7 +1946,8 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   const unknownImplied = data_coverage.filter((d) => !d.known && d.implied_by !== undefined);
   let out = `# Compatibility: ${techniques.join(" + ")}\n\n`;
   out += `**Verdict:** ${verdict.toUpperCase()}`;
-  if (verdict === "incompatible") out += ` — not as combined; each hard conflict below says how to separate them.`;
+  if (verdict === "incompatible")
+    out += ` — not as combined; each hard conflict below says how to separate them.`;
   out += `\n\n`;
   if (closureOnly.length > 0) {
     out += `Checked with ${closureOnly.length} implied prerequisite(s): ${closureOnly.join(", ")}.\n\n`;
@@ -1805,15 +1958,21 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     const inputs = data_coverage.filter((d) => d.implied_by === undefined);
     const statedCount = inputs.filter((d) => d.claims !== "unknown").length;
     const unknownInputs = inputs.filter((d) => d.claims === "unknown").map((d) => d.technique);
-    const unknownPrereqs = data_coverage.filter((d) => d.implied_by !== undefined && d.claims === "unknown").map((d) => d.technique);
+    const unknownPrereqs = data_coverage
+      .filter((d) => d.implied_by !== undefined && d.claims === "unknown")
+      .map((d) => d.technique);
     out += `Unit claims are stated for ${statedCount} of ${inputs.length} techniques`;
     const notRuledOut = [...unknownInputs, ...unknownPrereqs.map((p) => `${p} (prerequisite)`)];
-    out += notRuledOut.length > 0 ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.\n\n` : `.\n\n`;
+    out +=
+      notRuledOut.length > 0
+        ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.\n\n`
+        : `.\n\n`;
   }
   if (conflicts.length === 0) {
-    out += unknown.length === techniques.length
-      ? `No conflicts detected, but the graph holds no register, KERNAL or resource data for any of these techniques, so this is silence, not a clearance.\n`
-      : `No conflicts detected among what the graph knows about these techniques.\n`;
+    out +=
+      unknown.length === techniques.length
+        ? `No conflicts detected, but the graph holds no register, KERNAL or resource data for any of these techniques, so this is silence, not a clearance.\n`
+        : `No conflicts detected among what the graph knows about these techniques.\n`;
   } else {
     for (const c of conflicts) {
       out += `## ${c.kind} (${c.severity}): ${c.a} × ${c.b}\n`;
@@ -1890,8 +2049,21 @@ function compressUnits(units: string[]): string[] {
 
 // KERNAL routines that talk on the serial bus (serial_bus_exclusive rule).
 const SERIAL_KERNAL: ReadonlySet<string> = new Set([
-  "LOAD", "SAVE", "OPEN", "CLOSE", "CHKIN", "CHKOUT", "CLRCHN",
-  "TALK", "LISTEN", "TKSA", "SECOND", "ACPTR", "CIOUT", "UNTLK", "UNLSN",
+  "LOAD",
+  "SAVE",
+  "OPEN",
+  "CLOSE",
+  "CHKIN",
+  "CHKOUT",
+  "CLRCHN",
+  "TALK",
+  "LISTEN",
+  "TKSA",
+  "SECOND",
+  "ACPTR",
+  "CIOUT",
+  "UNTLK",
+  "UNLSN",
 ]);
 
 const REGION_CONSTANTS = {
@@ -1936,10 +2108,9 @@ export async function timingBudget(opts: {
     sprites_source = "input";
   } else {
     const f = await getFalkor();
-    const rr = await f.roQuery(
-      `MATCH (t:Technique {name: $name}) RETURN t.cost_sprites_per_line AS n`,
-      { name: opts.technique }
-    );
+    const rr = await f.roQuery(`MATCH (t:Technique {name: $name}) RETURN t.cost_sprites_per_line AS n`, {
+      name: opts.technique,
+    });
     const n = (rr.data?.[0] as { n: number | null } | undefined)?.n;
     if (typeof n === "number") {
       sprites = n;
@@ -1965,7 +2136,10 @@ export async function timingBudget(opts: {
   // A handler entered on a badline through the KERNAL vector has nothing
   // left on that line (63 - 43 - 36 < 0); report 0, and the note below says
   // to put splits on non-badlines.
-  const user_cycles_per_line_badline = Math.max(0, cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST - sprite_dma_cycles);
+  const user_cycles_per_line_badline = Math.max(
+    0,
+    cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST - sprite_dma_cycles,
+  );
 
   const notes: string[] = [
     `${regionKey}: ${cycles_per_line} cycles/line × ${rc.lines_per_frame} lines = ${cycles_per_frame} cycles/frame.`,
@@ -1980,7 +2154,9 @@ export async function timingBudget(opts: {
     `User cycles/line badline: ${cycles_per_line} - ${irq_overhead} - ${BADLINE_CYCLES_LOST}${sprite_dma_cycles > 0 ? ` - ${sprite_dma_cycles}` : ""} = ${user_cycles_per_line_badline}.`,
   ];
   if (sprites > 0) {
-    notes.push(`Without the IRQ entry, a line with ${sprites} sprite(s) leaves ${Math.max(0, cycles_per_line - sprite_dma_cycles)} cycles, a badline ${Math.max(0, cycles_per_line - BADLINE_CYCLES_LOST - sprite_dma_cycles)} (arithmetic; for eight sprites on a PAL badline cpu-cycle-tricks.md measures 4 including the 3 write-only cycles, which is the 1 this gives plus those 3).`);
+    notes.push(
+      `Without the IRQ entry, a line with ${sprites} sprite(s) leaves ${Math.max(0, cycles_per_line - sprite_dma_cycles)} cycles, a badline ${Math.max(0, cycles_per_line - BADLINE_CYCLES_LOST - sprite_dma_cycles)} (arithmetic; for eight sprites on a PAL badline cpu-cycle-tricks.md measures 4 including the 3 write-only cycles, which is the 1 this gives plus those 3).`,
+    );
   }
   if (user_cycles_per_line_badline <= 0) {
     notes.push(`WARNING: badline leaves no user cycles — tight handler required.`);

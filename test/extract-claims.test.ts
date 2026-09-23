@@ -65,13 +65,17 @@ describe("parseClaims", () => {
       { unit: "zero_page", mode: "owns", ranges: "02-0D,24-2F" },
     ]);
     // The splitter respects parentheses: the comma inside "(owns, relocatable)" is not an item break.
-    expect(parseClaims("serial_bus (owns), zero_page $E0-$EF (owns, relocatable), cia2_vic_bank (shares)")).toEqual([
+    expect(
+      parseClaims("serial_bus (owns), zero_page $E0-$EF (owns, relocatable), cia2_vic_bank (shares)"),
+    ).toEqual([
       { unit: "serial_bus", mode: "owns" },
       { unit: "zero_page", mode: "owns", ranges: "E0-EF", relocatable: true },
       { unit: "cia2_vic_bank", mode: "shares" },
     ]);
     // Out-of-order and adjacent ranges merge; a single byte stays one byte.
-    expect(parseClaims("zero_page $FD-$FE+$FB-$FC+$B7")).toEqual([{ unit: "zero_page", mode: "owns", ranges: "B7,FB-FE" }]);
+    expect(parseClaims("zero_page $FD-$FE+$FB-$FC+$B7")).toEqual([
+      { unit: "zero_page", mode: "owns", ranges: "B7,FB-FE" },
+    ]);
   });
 
   it("treats none alone as an empty claim set", () => {
@@ -81,20 +85,20 @@ describe("parseClaims", () => {
 
   it("refuses unknown units, bad ranges, bad modes and misplaced words", () => {
     for (const bad of [
-      "sid_voice_4",                        // no such unit
-      "sprite_0-9",                         // range runs past the units
-      "sprite_7-0",                         // backwards
-      "sid_voice_2 (borrows)",              // not a mode
-      "sid_voice_2 (owns, shares)",         // two modes
-      "zero_page",                          // zero page needs its bytes
-      "zero_page $00-$0F",                  // $00-$01 is the 6510 port
-      "zero_page $20-$10",                  // backwards
-      "zero_page $2",                       // not two hex digits
-      "sid_voice_2 $D407",                  // only zero_page takes addresses
+      "sid_voice_4", // no such unit
+      "sprite_0-9", // range runs past the units
+      "sprite_7-0", // backwards
+      "sid_voice_2 (borrows)", // not a mode
+      "sid_voice_2 (owns, shares)", // two modes
+      "zero_page", // zero page needs its bytes
+      "zero_page $00-$0F", // $00-$01 is the 6510 port
+      "zero_page $20-$10", // backwards
+      "zero_page $2", // not two hex digits
+      "sid_voice_2 $D407", // only zero_page takes addresses
       "vic_raster_irq (owns, relocatable)", // only zero_page relocates
-      "none, sid_voice_1",                  // none must stand alone
-      "sid_voice_1, sid_voice_1-2",         // a unit twice
-      "",                                   // empty
+      "none, sid_voice_1", // none must stand alone
+      "sid_voice_1, sid_voice_1-2", // a unit twice
+      "", // empty
     ]) {
       const r = parseClaims(bad);
       expect("error" in r, `expected ${JSON.stringify(bad)} to be refused`).toBe(true);
@@ -109,8 +113,19 @@ describe("parseClaims", () => {
 
   it("seeds every unit named in the grammar examples", () => {
     const names = new Set(HARDWARE_UNITS.map((u) => u.name));
-    for (const n of ["sid_voice_1", "sid_filter_volume", "sprite_7", "cia2_timer_b", "cia1_port_a", "serial_bus",
-      "vic_raster_irq", "irq_vector_0314", "nmi_vector_fffa", "expansion_io2", "zero_page"]) {
+    for (const n of [
+      "sid_voice_1",
+      "sid_filter_volume",
+      "sprite_7",
+      "cia2_timer_b",
+      "cia1_port_a",
+      "serial_bus",
+      "vic_raster_irq",
+      "irq_vector_0314",
+      "nmi_vector_fffa",
+      "expansion_io2",
+      "zero_page",
+    ]) {
       expect(names.has(n), n).toBe(true);
     }
     expect(names.size).toBe(HARDWARE_UNITS.length); // no duplicate seeds
@@ -119,22 +134,38 @@ describe("parseClaims", () => {
 
 describe("extractGraphEntities - technique Claims lines", () => {
   it("emits one claims entity per unit and marks the technique stated", () => {
-    const ents = extractGraphEntities(doc("**Claims:** sid_voice_2 (shares)\n**Claims basis:** derived-listing"), "techniques/music-sid.md");
+    const ents = extractGraphEntities(
+      doc("**Claims:** sid_voice_2 (shares)\n**Claims basis:** derived-listing"),
+      "techniques/music-sid.md",
+    );
     expect(techOf(ents).claims_stated).toBe("stated");
     expect(techOf(ents).claims_basis).toBe("derived-listing");
     expect(claimsOf(ents)).toEqual([
-      { type: "claims", owner: "sfx_engine_beside_music", ownerKind: "Technique", unit: "sid_voice_2", mode: "shares", basis: "derived-listing" },
+      {
+        type: "claims",
+        owner: "sfx_engine_beside_music",
+        ownerKind: "Technique",
+        unit: "sid_voice_2",
+        mode: "shares",
+        basis: "derived-listing",
+      },
     ]);
   });
 
   it("accepts the basis line before the Claims line", () => {
-    const ents = extractGraphEntities(doc("**Claims basis:** `estimated`\n**Claims:** vic_raster_irq"), "techniques/music-sid.md");
+    const ents = extractGraphEntities(
+      doc("**Claims basis:** `estimated`\n**Claims:** vic_raster_irq"),
+      "techniques/music-sid.md",
+    );
     expect(claimsOf(ents)).toHaveLength(1);
     expect(techOf(ents).claims_basis).toBe("estimated");
   });
 
   it("none is stated and emits no edges; no line at all is unknown", () => {
-    const none = extractGraphEntities(doc("**Claims:** none\n**Claims basis:** derived-listing"), "techniques/music-sid.md");
+    const none = extractGraphEntities(
+      doc("**Claims:** none\n**Claims basis:** derived-listing"),
+      "techniques/music-sid.md",
+    );
     expect(techOf(none).claims_stated).toBe("none");
     expect(claimsOf(none)).toEqual([]);
     const absent = extractGraphEntities(doc(""), "techniques/music-sid.md");
@@ -158,7 +189,10 @@ describe("extractGraphEntities - technique Claims lines", () => {
 
   it("refuses the whole line when one item is bad, with a warning naming it", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const ents = extractGraphEntities(doc("**Claims:** sid_voice_1, sid_voice_9\n**Claims basis:** derived-listing"), "techniques/music-sid.md");
+    const ents = extractGraphEntities(
+      doc("**Claims:** sid_voice_1, sid_voice_9\n**Claims basis:** derived-listing"),
+      "techniques/music-sid.md",
+    );
     expect(claimsOf(ents)).toEqual([]);
     expect(techOf(ents).claims_stated).toBeUndefined();
     const text = warn.mock.calls.flat().join("\n");

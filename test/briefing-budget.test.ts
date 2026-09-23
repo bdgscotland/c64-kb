@@ -43,7 +43,10 @@ describe("computeBudget", () => {
 
   it("sums bytes_code and bytes_data and judges them against the stated RAM budget", () => {
     const b = computeBudget([
-      { name: "fli_image", cost: { cycles_per_frame: 12600, bytes_code: 3277, bytes_data: 16384, basis: "estimated" } },
+      {
+        name: "fli_image",
+        cost: { cycles_per_frame: 12600, bytes_code: 3277, bytes_data: 16384, basis: "estimated" },
+      },
       { name: "big", cost: { bytes_data: 30000, basis: "derived-listing" } },
     ]);
     expect(b.ram_budget_bytes).toBe(RAM_BUDGET_BYTES);
@@ -77,8 +80,9 @@ describe("computeBudget", () => {
   });
 
   it("orders basis words measured-vice > derived-listing > arithmetic > estimated", () => {
-    const mk = (words: Array<"measured-vice" | "derived-listing" | "arithmetic" | "estimated">) =>
-      computeBudget(words.map((w, i) => ({ name: `t${i}`, cost: { cycles_per_frame: 1, basis: w } }))).weakest_basis;
+    const mk = (words: ("measured-vice" | "derived-listing" | "arithmetic" | "estimated")[]) =>
+      computeBudget(words.map((w, i) => ({ name: `t${i}`, cost: { cycles_per_frame: 1, basis: w } })))
+        .weakest_basis;
     expect(mk(["measured-vice", "derived-listing"])).toBe("derived-listing");
     expect(mk(["arithmetic", "measured-vice"])).toBe("arithmetic");
     expect(mk(["derived-listing", "estimated", "measured-vice"])).toBe("estimated");
@@ -86,10 +90,12 @@ describe("computeBudget", () => {
   });
 
   it("renders the verdicts, the floor and the weakest basis in the text", () => {
-    const text = renderBudgetText(computeBudget([
-      { name: "soft_scroll_h", cost: { cycles_per_frame: 74041, basis: "measured-vice" } },
-      { name: "plasma" },
-    ]));
+    const text = renderBudgetText(
+      computeBudget([
+        { name: "soft_scroll_h", cost: { cycles_per_frame: 74041, basis: "measured-vice" } },
+        { name: "plasma" },
+      ]),
+    );
     expect(text).toContain("over budget");
     expect(text).toContain("Weakest basis: measured-vice");
     expect(text).toContain("No Cost line, so the sums are a floor: plasma");

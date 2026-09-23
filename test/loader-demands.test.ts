@@ -9,7 +9,12 @@ import { extractGraphEntities, DEMAND_VOCABULARY } from "../src/graph/extract.ts
 describe("serial_bus_exclusive", () => {
   it("is in the vocabulary, and the words no page can state are not", () => {
     expect(DEMAND_VOCABULARY.serial_bus_exclusive).toMatch(/serial bus/);
-    for (const w of ["dd00_plain_stores", "io_visible_in_irq", "loads_in_background", "no_concurrent_loading"]) {
+    for (const w of [
+      "dd00_plain_stores",
+      "io_visible_in_irq",
+      "loads_in_background",
+      "no_concurrent_loading",
+    ]) {
       expect(w in DEMAND_VOCABULARY).toBe(false);
     }
   });
@@ -24,8 +29,12 @@ describe("serial_bus_exclusive", () => {
       const d = ents.filter((e) => e.type === "technique_demands");
       expect(d.map((e) => (e.type === "technique_demands" ? `${e.technique}:${e.resource}` : ""))).toEqual([
         "krill_loader_integration:serial_bus_exclusive",
+        "sparkle_irq_loader:serial_bus_exclusive",
+        "sparkle_irq_loader:kernal_rom_out",
       ]);
-      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("demands unknown"))).toEqual([]);
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("demands unknown"))).toEqual(
+        [],
+      );
     } finally {
       warn.mockRestore();
     }
@@ -39,16 +48,29 @@ describe("serial_bus_exclusive", () => {
       await f.clean();
       await f.ensureSchema();
       for (const [name, category] of [
-        ["krill_loader_integration", "loader"], ["kernal_file_read_seq", "io"],
-        ["prints_text", "render"], ["vic_bank_select", "banking"],
+        ["krill_loader_integration", "loader"],
+        ["kernal_file_read_seq", "io"],
+        ["prints_text", "render"],
+        ["vic_bank_select", "banking"],
       ] as const) {
         await f.addTechnique({ name, title: name, category, complexity: "medium" });
       }
-      await f.linkTechniqueDemands("krill_loader_integration", "serial_bus_exclusive", DEMAND_VOCABULARY.serial_bus_exclusive);
-      for (const [name, addr] of [["OPEN", "$FFC0"], ["CHKIN", "$FFC6"], ["CHRIN", "$FFCF"], ["CHROUT", "$FFD2"], ["CLOSE", "$FFC3"]] as const) {
+      await f.linkTechniqueDemands(
+        "krill_loader_integration",
+        "serial_bus_exclusive",
+        DEMAND_VOCABULARY.serial_bus_exclusive,
+      );
+      for (const [name, addr] of [
+        ["OPEN", "$FFC0"],
+        ["CHKIN", "$FFC6"],
+        ["CHRIN", "$FFCF"],
+        ["CHROUT", "$FFD2"],
+        ["CLOSE", "$FFC3"],
+      ] as const) {
         await f.addKernalRoutine(name, addr, name);
       }
-      for (const k of ["OPEN", "CHKIN", "CHRIN", "CLOSE"]) await f.linkTechniqueUsesKernal("kernal_file_read_seq", k);
+      for (const k of ["OPEN", "CHKIN", "CHRIN", "CLOSE"])
+        await f.linkTechniqueUsesKernal("kernal_file_read_seq", k);
       await f.linkTechniqueUsesKernal("prints_text", "CHROUT");
       await f.addRegister("CI2PRA", "$DD00", "CIA2", "RW", ["DD00"]);
       await f.linkTechniqueUsesRegister("krill_loader_integration", "DD00");
