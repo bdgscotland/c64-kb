@@ -53,7 +53,7 @@ const $2 = (n: number) => `$${n.toString(16).toUpperCase().padStart(2, "0")}`;
 
 /** The may line for one walk result. */
 function mayClobbers(r: WalkResult, from: string): KernalClobbers {
-  const notes = [`ROM walk from ${from}`];
+  const notes = [`ROM walk from ${from}, power-on vectors`];
   if (r.unresolved.size > 0)
     notes.push(
       `not followed: ${[...r.unresolved]

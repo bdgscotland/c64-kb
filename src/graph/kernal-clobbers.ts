@@ -4,8 +4,8 @@
 // walk); a `must` line records what a VICE store trace saw. The extractor
 // turns each line into a CLOBBERS_ZP edge to the zero_page HardwareUnit.
 //
-//   **Clobbers zero page:** $B8-$BA (may; ROM walk from $FFBA)
-//   **Clobbers zero page:** none (may; ROM walk from $FFED)
+//   **Clobbers zero page:** $B8-$BA (may; ROM walk from $FFBA, power-on vectors)
+//   **Clobbers zero page:** none (may; ROM walk from $FFED, power-on vectors)
 //   **Clobbers zero page:** $B8-$BA (must; VICE x64sc store trace, SETLFS 2,8,2)
 
 import { group } from "./extract/common.ts";
