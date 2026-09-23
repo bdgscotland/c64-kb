@@ -2,6 +2,8 @@ import { QdrantClient } from "@qdrant/js-client-rest";
 import { config } from "../config.ts";
 
 const COLLECTION = config.qdrant.collection;
+// Extra fused points fetched so a tie at the cut is broken by id, not by Qdrant's order.
+const TIE_MARGIN = 20;
 const VECTOR_SIZE = config.qdrant.vectorSize;
 
 export interface ChunkPayload {
@@ -160,17 +162,23 @@ export class QdrantService {
       });
     }
 
+    // RRF scores tie often (a point first in one list and absent from the
+    // other scores the same as its mirror), and Qdrant returns tied points in
+    // no fixed order: the same query gave four different top-5s in four runs.
+    // Fetch past the cut, then order by score and id so ties break the same
+    // way every time.
     const results = await this.client.query(COLLECTION, {
       prefetch,
       query: { fusion: "rrf" },
-      limit,
+      limit: limit + TIE_MARGIN,
       with_payload: true,
     });
 
-    return (results.points ?? []).map((r) => ({
-      ...(r.payload as unknown as ChunkPayload),
-      score: r.score ?? 0,
-    }));
+    return (results.points ?? [])
+      .map((r) => ({ id: String(r.id), score: r.score ?? 0, payload: r.payload as unknown as ChunkPayload }))
+      .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .slice(0, limit)
+      .map((r) => ({ ...r.payload, score: r.score }));
   }
 
   async deleteBySource(source: string): Promise<void> {
