@@ -40,7 +40,7 @@ void fighter_spawn(char f, char kind, unsigned x, char y, char face)
     fh[f] = 0;
     fface[f] = face;
     fmode[f] = M_FREE;
-    fhp[f] = kind == K_HERO ? 24 : kind == K_THUG ? 8 : 12;
+    fhp[f] = kind == K_HERO ? HP_HERO : kind == K_THUG ? HP_THUG : HP_BRUTE;
     fcombo[f] = 0;
     finvuln[f] = 0;
     flanded[f] = false;
@@ -295,7 +295,11 @@ static void land_hit(char a, char t, char hb)
 }
 
 // Every attacker on an active frame against the other side: the hero
-// against the enemies, an enemy against the hero. One hit an attack.
+// against the enemies, an enemy against the hero. One hit an attack. A
+// target more than three windows away is skipped on one byte compare
+// (lane_depth_engine's order); nearer, the boxes, then the lane window:
+// two fighters a lane apart can overlap on the screen, and that is a miss,
+// counted as EV_LANE_MISS so the verdict sees the gate work.
 void hits_resolve(void)
 {
     for (char a = 0; a < NFIGHT; a++)
@@ -316,16 +320,25 @@ void hits_resolve(void)
             if (!can_be_hit(t))
                 continue;
             char dy = fy[a] > fy[t] ? fy[a] - fy[t] : fy[t] - fy[a];
-            if (dy > WIN)
-                continue;                   // another lane
+            if (dy > 3 * WIN)
+                continue;                   // far off the lane: not even a near miss
             const struct Box *u = &hurt_box[anim_pose(&fanim[t])];
             if (u->y1 == 0)
                 continue;
             int ul, ur;
             box_x(t, u, &ul, &ur);
             char uy0 = fh[t] + u->y0, uy1 = fh[t] + u->y1;
-            if (hl <= ur && ul <= hr && hy0 <= uy1 && uy0 <= hy1)
+            if (!(hl <= ur && ul <= hr && hy0 <= uy1 && uy0 <= hy1))
+                continue;                   // the boxes do not touch
+            if (dy > WIN)
             {
+                events |= EV_LANE_MISS;     // they touch on the screen, a lane apart: no hit
+                continue;
+            }
+            {
+#if AUTOPILOT
+                check_hit(a, t, hb);        // verdict.h: the same hit, recomputed its own way
+#endif
                 land_hit(a, t, hb);
                 flanded[a] = true;
                 break;

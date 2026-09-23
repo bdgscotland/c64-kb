@@ -13,7 +13,6 @@ char score[6], hiscore[6];
 char lives;
 bool hud_dirty;                     // set by whatever changes a figure the HUD shows
 
-#define HP_HERO 24                  // fighter.c's full health, two points a cell
 
 // Lower-case letters in the source become the ROM's upper-case glyphs.
 void put_text(char row, char col, const char *s)
@@ -26,10 +25,18 @@ void put_text(char row, char col, const char *s)
     }
 }
 
+// What the HUD shows now, so hud_draw rewrites only what changed: a hit
+// moves one bar, not the whole HUD (a full redraw was 4,157 cycles at
+// worst, metered with PROF=4). 0xff: not drawn yet.
+static char shown_hp0, shown_hpe, shown_enemy, shown_stage, shown_lives;
+static bool shown_score;
+
 void hud_clear(void)
 {
     for (unsigned i = HUD_ROW * 40; i < 1000; i++)
         HUDPAGE[i] = CH_SPACE;
+    shown_hp0 = shown_hpe = shown_enemy = shown_stage = shown_lives = 0xff;
+    shown_score = false;
 }
 
 static void put_digits(char row, char col, const char *d, char n)
@@ -50,32 +57,56 @@ static void put_bar(char col, char hp, char cells)
     }
 }
 
-// Only when something changed: most frames it costs one test.
+// Only when something changed: most frames it costs one test, and then
+// only the figures that differ from what is on the page.
 void hud_draw(void)
 {
     if (!hud_dirty)
         return;
     hud_dirty = false;
-    put_text(21, 3, "player");
-    put_bar(3, fhp[0], HP_HERO / 2);
-    put_text(23, 3, "score");
-    put_digits(23, 9, score, 6);
-    put_text(23, 23, "stage");
-    HUDPAGE[23 * 40 + 29] = '1' + stage;
-    put_text(23, 32, "lives");
-    HUDPAGE[23 * 40 + 38] = '0' + lives;
+    if (shown_lives == 0xff)
+    {
+        put_text(21, 3, "player");
+        put_text(23, 3, "score");
+        put_text(23, 23, "stage");
+        put_text(23, 32, "lives");
+        hud_hiscore();
+    }
+    if (fhp[0] != shown_hp0)
+    {
+        shown_hp0 = fhp[0];
+        put_bar(3, fhp[0], HP_HERO / 2);
+    }
+    if (!shown_score)
+    {
+        shown_score = true;
+        put_digits(23, 9, score, 6);
+    }
+    if (stage != shown_stage)
+    {
+        shown_stage = stage;
+        HUDPAGE[23 * 40 + 29] = '1' + stage;
+    }
+    if (lives != shown_lives)
+    {
+        shown_lives = lives;
+        HUDPAGE[23 * 40 + 38] = '0' + lives;
+    }
     char f = face_enemy;
-    if (f < NFIGHT && fmode[f] != M_OFF)
+    if (f >= NFIGHT || fmode[f] == M_OFF)
+        f = 0xfe;                                   // no enemy shown
+    char hp = f < NFIGHT ? fhp[f] : 0;
+    if (f != shown_enemy)
     {
-        put_text(21, 23, fkind[f] == K_THUG ? "thug " : "brute");
-        put_bar(23, fhp[f], fkind[f] == K_THUG ? 4 : 6);
+        shown_enemy = f;
+        shown_hpe = 0xff;
+        put_text(21, 23, f >= NFIGHT ? "     " : fkind[f] == K_THUG ? "thug " : "brute");
     }
-    else
+    if (hp != shown_hpe)
     {
-        put_text(21, 23, "     ");
-        put_bar(23, 0, 0);
+        shown_hpe = hp;
+        put_bar(23, hp, f >= NFIGHT ? 0 : (fkind[f] == K_THUG ? HP_THUG : HP_BRUTE) / 2);
     }
-    hud_hiscore();
 }
 
 void hud_hiscore(void)
@@ -99,5 +130,6 @@ void score_add(char hundreds, char tens)
         }
         score[i] = d;
     }
+    shown_score = false;
     hud_dirty = true;
 }

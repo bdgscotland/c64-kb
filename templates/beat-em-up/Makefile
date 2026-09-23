@@ -9,6 +9,8 @@
 #                     match the fighter band pixel for pixel against a render
 #                     of the fighters the program printed (tools/flickercheck.py);
 #                     then prove the check fails on the FLICKER_DEMO=1 build
+#   make gameover     the AP_GIVE_UP=1 build: the bot never fights, three lives
+#                     go, GAME OVER shows; graded by expect-gameover.json
 #   make joy          the normal game reading its port byte from $02FE, for tools/drive.py
 #   make disk         build/beat-em-up.d64
 #   make claims       c64-kb's claims-watch over the autopilot build
@@ -17,9 +19,9 @@ NAME     := beat-em-up
 C_MAIN   := src/main.c
 KICK_SRC := src/engine.asm
 
-# Pinned after the verdict (about frame 5,000: 100M cycles on PAL, 88M on
-# NTSC), where nothing on the screen changes: 120M and 140M gave identical
-# PAL pictures, 110M and 130M identical NTSC ones (VICE x64sc 3.10).
+# Pinned after the verdict (graded before 100M cycles on both models), where
+# nothing on the screen changes: 120M and 130M gave identical PAL pictures,
+# 110M and 130M identical NTSC ones (VICE x64sc 3.10).
 SHOT_CYCLES_PAL  := 120000000
 SHOT_CYCLES_NTSC := 110000000
 
@@ -37,6 +39,9 @@ SHOT_CYCLES_NTSC := 110000000
 # - The whole run, title to verdict, is traced (--cycles, the PAL pin).
 CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$5F' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
 
+# This starter's own proofs, which npm run verify:templates runs too.
+VERIFY_TARGETS := flickercheck gameover
+
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
@@ -48,8 +53,8 @@ include $(HARNESS)/harness.mk
 # scanning the run; a stop is 64 frames, about 1.26M cycles on PAL and
 # 1.09M on NTSC. A changed AI, wave or art moves the stops: re-scan with
 # `-dDEBUG_AT=n` builds or shots, and re-pin.
-FLICKER_PAL  := 32000000 32450000 41000000 41650000 84350000 84800000
-FLICKER_NTSC := 28300000 28800000 36300000 36800000 73950000 74450000
+FLICKER_PAL  := 34200000 34600000 44000000 44500000 80300000 80800000
+FLICKER_NTSC := 30700000 31100000 42600000 43100000 77700000 78100000
 PRG_FLICKER := build/$(NAME)-flicker.prg
 $(PRG_FLICKER): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
@@ -61,6 +66,23 @@ flickercheck: $(PRG_AUTO) $(PRG_FLICKER)
 	$(FLICKER) --expect whole --model pal $(PRG_AUTO) $(FLICKER_PAL)
 	$(FLICKER) --expect whole --model ntsc $(PRG_AUTO) $(FLICKER_NTSC)
 	$(FLICKER) --expect dropped --model pal $(PRG_FLICKER) $(FLICKER_PAL)
+
+# ---- gameover: the game reaches GAME OVER, and the message is whole -----------------
+# The AP_GIVE_UP=1 build presses fire on the title and never fights; the
+# program checks the HUD a second into GAME OVER and freezes (verdict.h,
+# grade_gameover). The pins are past that point on each model.
+PRG_OVER := build/$(NAME)-over.prg
+GAMEOVER_PAL  := 60000000
+GAMEOVER_NTSC := 55000000
+$(PRG_OVER): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dAP_GIVE_UP=1 -o=$@ $(C_MAIN)
+
+.PHONY: gameover
+gameover: $(PRG_OVER)
+	$(call vice_shot,$(PRG_OVER),$(GAMEOVER_PAL),,shots/over-pal.png)
+	$(call vice_shot,$(PRG_OVER),$(GAMEOVER_NTSC),-model ntsc,shots/over-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-gameover.json shots/over-pal.png shots/over-ntsc.png
 
 # The normal game with its port byte read from $02FE instead of $DC00, so a
 # VICE monitor can drive it headless (tools/drive.py).

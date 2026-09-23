@@ -38,7 +38,8 @@ __export const char asm_blob[] = {
 
 // PROF=n (a build define) meters one subsystem instead of the whole frame:
 // 1 hero, AI, moves and hits; 2 camera and scroll; 3 the sprite bands and
-// publish; 4 music, effects and HUD; 5 the three IRQs alone (no main-loop
+// publish; 4 music, effects and HUD; 6 the brute's cells and glyphs (the
+// switch at the frame start, the build at the end); 5 the three IRQs alone (no main-loop
 // bracket, so every IRQ times itself on CIA2 timer B). README.md has the
 // figures. The whole-frame figure (PROF=0) holds the IRQs too.
 #ifndef PROF
@@ -53,7 +54,8 @@ static char state, timer, prev_joy;
 unsigned events;
 char hits_punch, hits_kick, hits_jkick, kos_thug, kos_brute, locks;
 static unsigned frame;              // frames since power-on
-static unsigned late;               // play frames whose work ran past the next frame's line 251
+static unsigned late;               // AUTOPILOT: play frames whose work ran past the next line 251
+static unsigned slow;               // AUTOPILOT: play frames the whole loop overran (a blank missed)
 static bool photo;                  // AUTOPILOT: the game is held for a picture (verdict.h)
 
 #define PLAY_HOLD 255               // play frames the meter records (its maximum)
@@ -63,10 +65,12 @@ static bool photo;                  // AUTOPILOT: the game is held for a picture
 
 // ---- input -------------------------------------------------------------------------
 #if AUTOPILOT
-static char autopilot_port(void);
+// The bot's byte for this frame, worked out at the end of the last one
+// (main loop, after the meter): the bot is not the game's work.
+static char ap_next = 0xff;
 static char port_read(void)
 {
-    return autopilot_port();
+    return ap_next;
 }
 #elif defined(JOY_SOURCE)
 // Headless driving of the normal game (make joy, tools/drive.py): the port
@@ -139,6 +143,7 @@ void hero_hurt(void)
         return;
     }
     fmode[0] = M_OFF;
+    hud_draw();                     // LIVES 0 now: no HUD redraw may follow the message
     put_text(21, 15, "game over");
     state = ST_OVER;
     timer = 150;
@@ -158,6 +163,7 @@ static void play_frame(char joy, char pressed)
     POFF(2)
     if (stage_clear && stage == NSTAGE - 1 && state == ST_PLAY)
     {
+        hud_draw();
         put_text(21, 13, "street clear");
         state = ST_CLEAR;
         timer = 150;
@@ -208,6 +214,7 @@ int main(void)
 #endif
     street_init();
     art_build();                    // leaves $01 = $35: BASIC and KERNAL out
+    brute_build();                  // his pictures at the four shifts
     __asm { jsr ASM_MUSIC_INIT }
     view_init();                    // bank 3, colours, the IRQ chain; CLI
     meter_init((unsigned)HUDPAGE, 24, 20, VCOL_WHITE, PLAY_HOLD);
@@ -216,6 +223,9 @@ int main(void)
     cia2.crb = 0x00;
     cia2.tb = 0xffff;               // the latch the IRQs force-load
     *(volatile char *)ASM_IRQ_METER = 1;
+#endif
+#if AUTOPILOT
+    *(volatile char *)ASM_SNAP_ON = 1;      // band 1's registers copied back each frame (verdict.h)
 #endif
     for (char i = 0; i < 6; i++)
         hiscore[i] = 0;
@@ -226,6 +236,7 @@ int main(void)
     {
         wait_sync();
         char ticks = BLANK_TICKS;
+        bool play = state == ST_PLAY && !photo;    // this frame began in play
 #if AUTOPILOT
         metering = state == ST_PLAY && !photo && ap_recording();
 #else
@@ -234,11 +245,9 @@ int main(void)
         if (metering && !PROF)
             METER_START;
 
-        PON(4)
-        __asm { jsr ASM_MUSIC_PLAY }
-        sfx_update();
-        POFF(4)
-
+        PON(6)
+        brute_draw();               // first: it must beat the beam to the brute's top row
+        POFF(6)
         char joy = port_read();
         char pressed = prev_joy & ~joy;
         prev_joy = joy;
@@ -269,18 +278,29 @@ int main(void)
             break;
         }
         PON(4)
-        if (state != ST_TITLE)
+        __asm { jsr ASM_MUSIC_PLAY }
+        sfx_update();
+        POFF(4)
+        PON(6)
+        brute_prepare();            // the brute's next picture, half a frame at a time
+        POFF(6)
+        PON(4)
+        if (state == ST_PLAY)       // game over and street clear keep their message
             hud_draw();
         POFF(4)
         PON(3)
         view_sprites();
         view_publish();
         POFF(3)
+#if AUTOPILOT
+        if (play && BLANK_TICKS != ticks)
+            late++;                 // a play frame whose work ran past the next line 251
+                                    // (not the frame fire starts a game: it draws both pages)
+#endif
 
+#if FRAME_METER
         if (metering)
         {
-            if (BLANK_TICKS != ticks)
-                late++;             // this frame's work ran past the next line 251
             if (!PROF)
                 METER_PAUSE;        // the main loop's share
             fold_irq_time(!PROF || PROF == 5);  // the IRQs' share outside it
@@ -288,10 +308,19 @@ int main(void)
         }
         else
             fold_irq_time(false);
+#endif
 #if AUTOPILOT
+        if (BLANK_TICKS == ticks)   // (past the next blank the half just built may be the one shown)
+            vic_compare();          // what the IRQ at line 76 wrote, read back (verdict.h)
+        vic_expect();               // what the half just built must show, worked out on its own
+        ap_next = autopilot_port(); // next frame's joystick byte
         autopilot_frame();          // grading and pictures are bookkeeping: outside the bracket
         if (!(frame & 31))
             meter_print();          // it divides: not every frame
+#endif
+#if AUTOPILOT
+        if (play && BLANK_TICKS != ticks)
+            slow++;                 // the loop, bookkeeping and all, missed a blank
 #endif
         frame++;
     }

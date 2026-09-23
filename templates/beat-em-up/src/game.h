@@ -22,11 +22,13 @@
 #define PAGE1     ((char *)0xc400)
 #define HUDPAGE   ((char *)0xc800)  // the HUD rows 21-24 are read from here
 #define CHARSET   ((char *)0xe000)  // RAM under the KERNAL, which is banked out
+#define CHARSET2  ((char *)0xe800)  // the same set but for the brute's glyphs (brute.c)
 #define SPRMEM    ((char *)0xf000)  // sprite blocks 192-254
 #define COLOUR    ((char *)0xd800)
 #define SPR_BLOCK 192               // block number of SPRMEM in bank 3
 #define D018_PAGE0 0x08             // screen $C000, characters $E000
 #define D018_PAGE1 0x18             // screen $C400
+#define D018_CS1   0x02             // | this: characters $E800 instead
 #define D016_PLAY  0x10             // multicolour, 38 columns; | XSCROLL
 #define RESULT    (*(volatile char *)0x02ff)   // $01 pass, $02 fail
 
@@ -34,9 +36,15 @@
 #define HUD_ROW    21               // first HUD row
 
 // ---- colours ------------------------------------------------------------------
-#define COL_ROAD   VCOL_DARK_GREY   // $D021: pavement and road
-#define COL_BRICK  VCOL_BROWN       // $D022
-#define COL_LIGHT  VCOL_YELLOW      // $D023: windows, lamps, road marks
+// On street rows 2-19 the street uses bit pairs 00 and 01 only: the VIC
+// counts both as background, so a sprite with its $D01B bit set goes behind
+// the brute's 10 and 11 pixels and nothing else. Pairs 10 and 11 belong to
+// the brute there (colour RAM holds his body colour); rows 0-1, above every
+// fighter, use 11 for the sky.
+#define COL_ROAD   VCOL_DARK_GREY   // $D021: pavement, road, window glass
+#define COL_BRICK  VCOL_BROWN       // $D022: bricks, kerb, road marks; the brute's belt
+#define COL_BSKIN  VCOL_LT_RED      // $D023: the brute's skin
+#define COL_BBODY  VCOL_PURPLE      // colour RAM, rows 2-20: the brute's body (0-7 only)
 #define COL_SKIN   VCOL_LT_RED      // $D025: sprite pixels 01
 #define COL_INK    VCOL_BLACK       // $D026: sprite pixels 11 (hair, outline, shoes)
 
@@ -57,6 +65,7 @@ extern const unsigned stage_lock[NSTAGE];      // the camera stops here until th
 void street_init(void);                        // decode the text into tile indices, once
 char cell_char(unsigned col, char row);        // glyph at a world character cell
 void level_column(char *dst, unsigned col);    // 20 glyphs down one page column
+void street_block(char *dst, char wcol, char row);  // 30 glyphs under a 5 x 6 block
 
 // Glyphs. 0-63 are the ROM's upper-case set (text, digits, the meter);
 // the street's own glyphs start at CH_FIRST. The HUD's bar glyphs follow.
@@ -78,7 +87,9 @@ void level_column(char *dst, unsigned col);    // 20 glyphs down one page column
 #define CH_BAR_FULL  77             // hires, HUD only
 #define CH_BAR_HALF  78
 #define CH_BAR_EMPTY 79
-#define CH_COUNT   16
+#define CH_ALLEY   80               // the dark gap between buildings, rows 2-9
+#define CH_COUNT   17
+#define CH_BRUTE   128              // the brute's 30 glyphs, 128-157, in each set (brute.c)
 
 // ---- art (art.c) ----------------------------------------------------------------
 // Sprite blocks, facing right; each fighter block has a mirrored twin at
@@ -111,6 +122,19 @@ extern const struct Box hurt_box[P_COUNT];     // y1 = 0: none (cannot be hit)
 enum HitBox { HB_NONE, HB_PUNCH, HB_KICK, HB_JKICK, HB_COUNT };
 extern const struct Box hit_box[HB_COUNT];
 void art_build(void);                          // charset and sprite blocks into bank 3
+extern const char brute_art[3][48][17];        // the brute: stand, slam, down; 16 x 48
+
+// ---- the brute in character cells (brute.c) --------------------------------------
+extern char b_wcol, b_row, b_fy;    // the picture on screen: world column, top row, ground line
+extern bool b_drawn;
+extern char b_cs;                   // the character set on screen: 0 $E000, 1 $E800
+extern unsigned brute_late;         // switches that finished after his top row began
+void brute_build(void);             // the pre-shifted pictures, once
+void brute_reset(void);             // the pages were redrawn: nothing of him is on them
+void brute_prepare(void);           // end of a frame: build the next picture, half a frame at a time
+void brute_draw(void);              // start of a frame: move his cells to match the set just switched
+void brute_patch(char p, char row0, char n);   // after a scroll slice wrote column 39
+char brute_code_at(unsigned wcol, char row);   // his code at a world cell, or 0
 
 // ---- animation (anim.c) ----------------------------------------------------------
 // A sequence is (pose, frames, hit box) triples ending in AN_LOOP n (go to
@@ -133,7 +157,10 @@ bool anim_done(const struct Anim *a);             // an AN_END sequence has fini
 #define PLANE_TOP 150               // ground lines a fighter may stand on
 #define PLANE_BOT 204
 #define WIN       6                 // a hit needs the ground lines within 6 (lane_depth_engine)
-enum Kind { K_HERO, K_THUG, K_BRUTE };
+enum Kind { K_HERO, K_THUG, K_BRUTE };          // the brute is drawn in characters (brute.c)
+#define HP_HERO   24                // hit points; a HUD bar cell is two
+#define HP_THUG   8
+#define HP_BRUTE  12
 enum Mode { M_OFF, M_FREE, M_ATTACK, M_JUMP, M_HURT, M_FLY, M_DOWN, M_KNEEL, M_KO };
 extern char fmode[NFIGHT], fkind[NFIGHT], fface[NFIGHT], fhp[NFIGHT], ftimer[NFIGHT];
 extern unsigned fx[NFIGHT];         // foot column, world pixels
@@ -178,6 +205,8 @@ extern int page_col[NPAGES];
 extern char page_rows[NPAGES];
 extern char order[NFIGHT];          // fighters far to near (the depth sort)
 extern char parts_dropped;          // fighter parts that found no sprite (never, by design)
+extern char sprites_half;           // the table half view_sprites last filled (0 or 1)
+extern bool sprites_fresh;          // view_sprites filled it this frame (it skips a frame the IRQ has not swapped)
 extern bool go_sign;                // blink the GO sign
 extern bool faces_off;              // AUTOPILOT photo stops: no faces over the HUD text
 extern char face_enemy;             // the enemy whose face and bar the HUD shows, or 0xff
@@ -217,13 +246,19 @@ void sfx_update(void);
 #define EV_UNLOCK    0x0400         // a stage was cleared
 #define EV_SCROLL    0x0800         // the camera crossed a column
 #define EV_DEPTH     0x1000         // a fighter changed ground line
+#define EV_LANE_MISS 0x2000         // an attack's boxes touched a fighter a lane away: no hit
+#define EV_ALL       0x3fff
 extern unsigned events;
 extern char hits_punch, hits_kick, hits_jkick, kos_thug, kos_brute, locks;
 void hero_hurt(void);               // main.c owns lives and the state machine
 void enemy_ko(char f);
+#if AUTOPILOT
+void check_hit(char a, char t, char hb);   // verdict.h: each hit recomputed on its own
+#endif
 
 #pragma compile("street.c")
 #pragma compile("art.c")
+#pragma compile("brute.c")
 #pragma compile("anim.c")
 #pragma compile("fighter.c")
 #pragma compile("enemy.c")

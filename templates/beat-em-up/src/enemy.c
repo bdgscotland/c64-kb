@@ -18,6 +18,9 @@ char ai_state[NFIGHT], ai_timer[NFIGHT];
 static bool ai_turn[NFIGHT];        // holds one of the two turns
 static char ai_moves[NFIGHT];       // attacks made: punch, punch, kick, ...
 static char turns;
+static char brute_pace;
+static char ai_next;                // the enemy that thinks this frame
+static signed char ai_dx[NFIGHT], ai_dy[NFIGHT];   // each enemy's step, as think last chose
 char stage, wave;
 bool stage_clear;
 static char wave_timer;
@@ -28,7 +31,8 @@ static char wave_timer;
 #define WAIT_LANE 12                // lines off the hero's lane while waiting
 
 // A wave: up to three enemies, each a kind, a side (0 left, 1 right) and a
-// ground line. kind 0 ends the list.
+// ground line. kind 0 ends the list. At most one brute a wave: his glyphs
+// are one block of 30 codes (brute.c).
 struct Spawn { char kind, side, y; };
 struct Wave { struct Spawn e[NENEMY]; };
 
@@ -42,8 +46,8 @@ static const struct Wave stage1[] = {
     { { { K_THUG, 1, 190 }, { K_THUG, 0, 164 }, { 0 } } },
 };
 static const struct Wave stage2[] = {
-    { { { K_BRUTE, 1, 172 }, { K_THUG, 0, 160 }, { K_THUG, 1, 196 } } },
-    { { { K_BRUTE, 0, 180 }, { K_BRUTE, 1, 164 }, { 0 } } },
+    { { { K_THUG, 1, 172 }, { K_THUG, 0, 160 }, { K_THUG, 1, 196 } } },
+    { { { K_BRUTE, 0, 180 }, { K_THUG, 1, 164 }, { 0 } } },
 };
 // WAVES-END
 static const struct Wave *const stage_waves[NSTAGE] = { stage0, stage1, stage2 };
@@ -88,6 +92,7 @@ static void spawn_wave(const struct Wave *w)
         fighter_spawn(f, s->kind, x, s->y, s->side ? FACE_LEFT : FACE_RIGHT);
         ai_state[f] = AI_ENTER;
         ai_timer[f] = 0;
+        ai_dx[f] = ai_dy[f] = 0;
         ai_turn[f] = false;
         ai_moves[f] = f;
     }
@@ -174,11 +179,11 @@ static void give_turn_back(char f)
 static void think(char f)
 {
     int ex = fx[f], hx = fx[0];
-    bool left_of_hero = ex < hx;
+    // The unsigned positions compared as they are: two ints made from them
+    // would compare wrongly past 32,767 on Oscar64 (c64-kb #30 fault 8).
+    bool left_of_hero = fx[f] < fx[0];
     bool hero_up = fmode[0] != M_KO && fmode[0] != M_OFF && !finvuln[0];
     signed char dx = 0, dy = 0;
-    if (ai_timer[f])
-        ai_timer[f]--;
 
     switch (ai_state[f])
     {
@@ -209,6 +214,7 @@ static void think(char f)
                 fface[f] = left_of_hero ? FACE_RIGHT : FACE_LEFT;
                 fighter_attack(f, (++ai_moves[f] % 3) ? A_PUNCH : A_KICK);
                 ai_state[f] = AI_ATTACK;
+                ai_dx[f] = ai_dy[f] = 0;
                 return;
             }
         }
@@ -230,15 +236,34 @@ static void think(char f)
         }
         break;
     }
-    fighter_walk(f, dx, dy);
-    if (ai_state[f] != AI_ENTER)
-        fface[f] = left_of_hero ? FACE_RIGHT : FACE_LEFT;   // always facing the hero
+    ai_dx[f] = dx;
+    ai_dy[f] = dy;
 }
 
+// Every frame: the step think last chose, facing the hero.
+static void step(char f)
+{
+    signed char dx = ai_dx[f], dy = ai_dy[f];
+    if (fkind[f] == K_BRUTE && (++brute_pace & 1))
+        dx = dy = 0;                        // the brute walks at half speed: he is heavy, and
+                                            // his character picture takes six frames (brute.c)
+    fighter_walk(f, dx, dy);
+    if (ai_state[f] != AI_ENTER)
+        fface[f] = fx[f] < fx[0] ? FACE_RIGHT : FACE_LEFT;  // always facing the hero
+}
+
+// One enemy thinks a frame, in turn; every enemy steps every frame on what
+// it last decided. A decision is at most three frames old: the AI's cost is
+// a third of thinking for all three every frame (metered: the whole frame
+// ran past NTSC's 17,095 cycles with it).
 void enemies_update(void)
 {
+    if (++ai_next >= NFIGHT)
+        ai_next = 1;
     for (char f = 1; f < NFIGHT; f++)
     {
+        if (ai_timer[f])
+            ai_timer[f]--;
         if (fmode[f] == M_OFF)
             continue;
         if (fmode[f] != M_FREE)
@@ -247,6 +272,9 @@ void enemies_update(void)
                 give_turn_back(f);          // hurt or down: the turn goes to another
             continue;
         }
-        think(f);
+        if (f == ai_next || ai_state[f] == AI_ATTACK)
+            think(f);                       // (an attack that ended is noticed at once)
+        if (fmode[f] == M_FREE)
+            step(f);
     }
 }

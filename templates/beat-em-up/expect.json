@@ -3,7 +3,7 @@
     { "name": "own verdict (border)", "type": "verdict" },
     { "name": "verdict line, where the enemy's name goes", "type": "text", "row": 21, "col": 23, "text": "RESULT 01 PASS" },
     { "name": "HUD: the hero's name (40 columns, XSCROLL 0 after the split)", "type": "text", "row": 21, "col": 3, "text": "PLAYER" },
-    { "name": "HUD: score (hits and KOs, pinned from the run; the program checks the sum)", "type": "text", "row": 23, "col": 3, "text": "SCORE 002030" },
+    { "name": "HUD: score (hits and KOs, pinned from the run; the program checks the sum)", "type": "text", "row": 23, "col": 3, "text": "SCORE 001940" },
     { "name": "HUD: stage 3 reached, one life lost", "type": "text", "row": 23, "col": 23, "text": "STAGE 3  LIVES 2" },
     { "name": "HUD: the first cell of the hero's bar is full (yellow, 7 x 6)", "type": "rect", "colour": 7, "vic_x": 48, "line": 228, "width": 7, "height": 6 },
     {
@@ -13,17 +13,17 @@
     },
     {
       "name": "fighter band: the hero's top part, facing left (white shirt; pinned from the run, the program checks its sprite table)",
-      "type": "sprite", "colour": 1, "vic_x": 103, "line": 143, "width": 14, "height": 12
+      "type": "sprite", "colour": 1, "vic_x": 274, "line": 160, "width": 14, "height": 12
     },
     {
-      "name": "fighter band: the hero's legs, feet on ground line 177 (blue trousers)",
-      "type": "sprite", "colour": 6, "vic_x": 99, "line": 157, "width": 18, "height": 19
+      "name": "fighter band: the hero's legs, feet on ground line 194 (blue trousers)",
+      "type": "sprite", "colour": 6, "vic_x": 270, "line": 174, "width": 18, "height": 19
     },
-    { "name": "scrolled street at camera 704: the alley at world column 119 is dark (VIC X 279, rows 2-9)", "type": "rect", "colour": 0, "vic_x": 279, "line": 67, "width": 8, "height": 64 },
-    { "name": "scrolled street at camera 704: the alley lamp at world column 118 (VIC X 271, line 85)", "type": "rect", "colour": 7, "vic_x": 271, "line": 85, "width": 8, "height": 2 },
-    { "name": "the kerb's yellow edge, line 174, right of the hero", "type": "rect", "colour": 7, "vic_x": 150, "line": 174, "width": 184, "height": 1 },
+    { "name": "scrolled street at camera 704: the alley at world column 119 is plain (VIC X 279, rows 2-9)", "type": "rect", "colour": 11, "vic_x": 279, "line": 67, "width": 8, "height": 64 },
+    { "name": "scrolled street at camera 704: the alley lamp at world column 118 (VIC X 271, lines 85-86)", "type": "rect", "colour": 9, "vic_x": 271, "line": 85, "width": 8, "height": 2 },
+    { "name": "the kerb's brown edge, lines 174-175, left of the hero", "type": "rect", "colour": 9, "vic_x": 32, "line": 174, "width": 228, "height": 2 },
     { "name": "row 20, between street and HUD, is blank", "type": "rect", "colour": 11, "vic_x": 31, "line": 211, "width": 304, "height": 8 },
     { "name": "display the same on both models", "type": "same", "cells": [0, 0, 23, 39] },
-    { "name": "frame meter, 255 play frames from the second stage's lock (the crowded fight)", "type": "meter", "row": 24, "col": 20, "frames": 255 }
+    { "name": "frame meter, 255 play frames from the second stage's lock (the brute; METER_WINDOW 0, the run's worst)", "type": "meter", "row": 24, "col": 20, "frames": 255 }
   ]
 }

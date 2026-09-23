@@ -68,12 +68,23 @@ def load_model(src):
     blocks = [b for b in blocks if len(b) == 21][:len(names)]
     view = open(os.path.join(src, "view.c")).read()
 
+    def vcol(name):             # VCOL_X, or a COL_ name game.h defines as one
+        name = name.strip()
+        if not name.startswith("VCOL_"):
+            name = re.search(r"#define " + name + r"\s+(VCOL_\w+)", game).group(1)
+        return VCOL.index(name.replace("VCOL_", ""))
+
     def colours(var):
         m = re.search(var + r"\[3\]\s*=\s*\{([^}]*)\}", view)
-        return [VCOL.index(v.strip().replace("VCOL_", "")) for v in m.group(1).split(",")]
+        return [vcol(v) for v in m.group(1).split(",")]
     skin = VCOL.index(re.search(r"#define COL_SKIN\s+VCOL_(\w+)", game).group(1))
     ink = VCOL.index(re.search(r"#define COL_INK\s+VCOL_(\w+)", game).group(1))
-    return poses, blocks, colours("shirt"), colours("trousers"), skin, ink
+    bart = re.findall(r'"([.bsx]{16})"', block(src, "art.c", "BRUTE-ART-BEGIN", "BRUTE-ART-END"))
+    bpics = [bart[i * 48:(i + 1) * 48] for i in range(3)]
+    belt = VCOL.index(re.search(r"#define COL_BRICK\s+VCOL_(\w+)", game).group(1))
+    bskin = VCOL.index(re.search(r"#define COL_BSKIN\s+VCOL_(\w+)", game).group(1))
+    body = VCOL.index(re.search(r"#define COL_BBODY\s+VCOL_(\w+)", game).group(1))
+    return poses, blocks, colours("shirt"), colours("trousers"), skin, ink, (bpics, belt, bskin, body)
 
 
 def shoot(x64sc, prg, model, cycles, out):
@@ -106,41 +117,96 @@ def read_state(shot, glyphs):
     return int(m.group(1)), int(m.group(2), 16), fighters
 
 
-def render(state, model):
-    """{(vic_x, line): set of acceptable colour indices} for every sprite pixel the model expects,
-    and per part the pixels it owns (for the report)."""
-    poses, blocks, shirt, trousers, skin, ink = model
-    _, cam, fighters = state
-    # Nearest (largest ground line) first; fighters on one line may be in either order.
-    order = sorted(range(4), key=lambda f: -fighters[f]["y"])
-    want, owner = {}, {}
-    for f in order:
-        fi = fighters[f]
-        for k, (b, dx, dy) in enumerate(poses[fi["pose"]]):
-            x0 = fi["x"] - cam + 31
-            x0 = x0 + dx if fi["face"] == 0 else x0 - 24 - dx
-            y0 = fi["y"] - fi["h"] + dy
-            if x0 <= 0 or x0 >= 344:
-                continue
-            art = blocks[b]
-            colour = {"a": skin, "b": ink, "x": trousers[fi["kind"]] if k else shirt[fi["kind"]]}
-            for r in range(21):
-                for c in range(12):
-                    ch = art[r][11 - c] if fi["face"] else art[r][c]
-                    if ch == ".":
+BRUTE = 2                       # the kind drawn in characters (src/brute.c)
+overlap = (0, 0)                # the last render: (his pixels over a sprite behind him, a sprite's over him)
+BRUTE_SLAM = (3, 4, 5, 6)       # P_WIND, P_PUNCH, P_CHAMBER, P_KICK: his slam picture
+BRUTE_DOWN = 10                 # P_DOWN
+
+
+def sprite_layer(fi, f, poses, blocks, shirt, trousers, skin, ink, cam, layer, owner, fighters):
+    """Fighter f's two parts into layer {(vic_x, line): colours}, the nearer first."""
+    for k, (b, dx, dy) in enumerate(poses[fi["pose"]]):
+        x0 = fi["x"] - cam + 31
+        x0 = x0 + dx if fi["face"] == 0 else x0 - 24 - dx
+        y0 = fi["y"] - fi["h"] + dy
+        if x0 <= 0 or x0 >= 344:
+            continue
+        art = blocks[b]
+        colour = {"a": skin, "b": ink, "x": trousers[fi["kind"]] if k else shirt[fi["kind"]]}
+        for r in range(21):
+            for c in range(12):
+                ch = art[r][11 - c] if fi["face"] else art[r][c]
+                if ch == ".":
+                    continue
+                for px in (0, 1):
+                    p = (x0 + 2 * c + px, y0 + 1 + r)
+                    if not X_MIN <= p[0] <= X_MAX:
                         continue
-                    for px in (0, 1):
-                        p = (x0 + 2 * c + px, y0 + 1 + r)
-                        if not X_MIN <= p[0] <= X_MAX:
-                            continue
-                        if p in want:
-                            g = owner[p]
-                            if fighters[g[0]]["y"] == fi["y"] and g[0] != f:
-                                want[p].add(colour[ch])      # a tie: either may be in front
-                            continue
-                        want[p] = {colour[ch]}
-                        owner[p] = (f, k)
-    return want, owner
+                    if p in layer:
+                        g = owner[p]
+                        if fighters[g[0]]["y"] == fi["y"] and g[0] != f:
+                            layer[p].add(colour[ch])     # a tie: either may be in front
+                        continue
+                    layer[p] = {colour[ch]}
+                    owner[p] = (f, k)
+
+
+def brute_layers(fi, f, brute, cam, owner):
+    """His picture in character cells, placed as src/brute.c places it, worked out
+    here: (his 10 and 11 pixels, which cover a sprite behind him; his 01 pixels,
+    which do not)."""
+    art, belt, skin, body = brute
+    px = max(fi["x"] - 16, 0)
+    wcol, shift = px >> 3, (px & 7) >> 1
+    row0 = ((fi["y"] + 1 - 51) >> 3) - 6
+    pose = 2 if fi["pose"] == BRUTE_DOWN else 1 if fi["pose"] in BRUTE_SLAM else 0
+    fg, bg = {}, {}
+    for r in range(48):
+        for c in range(16):
+            ch = art[pose][r][c]
+            if ch == ".":
+                continue
+            for q in (0, 1):
+                p = (8 * wcol - cam + 31 + 2 * (c + shift) + q, 51 + 8 * row0 + r)
+                if not X_MIN <= p[0] <= X_MAX:
+                    continue
+                if ch == "b":
+                    bg[p] = {belt}
+                else:
+                    fg[p] = {skin if ch == "s" else body}
+    return fg, bg
+
+
+def render(state, model):
+    """{(vic_x, line): acceptable colour indices} for every pixel of a fighter the
+    model expects, and who owns each pixel (for the report). Priority, as the VIC
+    has it: a sprite in front of the brute; his 10 and 11 pixels; a sprite behind
+    him ($D01B set: a fighter on a farther ground line); his 01 pixels."""
+    poses, blocks, shirt, trousers, skin, ink, brute = model
+    _, cam, fighters = state
+    order = sorted(range(4), key=lambda f: -fighters[f]["y"])   # nearest first
+    bf = next((f for f in range(4) if fighters[f]["kind"] == BRUTE), None)
+    by = fighters[bf]["y"] if bf is not None else -1
+    front, behind, owner = {}, {}, {}
+    for f in order:
+        if f == bf:
+            continue
+        layer = behind if fighters[f]["y"] < by else front
+        sprite_layer(fighters[f], f, poses, blocks, shirt, trousers, skin, ink, cam, layer, owner, fighters)
+    fg, bg = brute_layers(fighters[bf], bf, brute, cam, owner) if bf is not None else ({}, {})
+    global overlap
+    overlap = (len(set(fg) & set(behind)), len(set(front) & (set(fg) | set(bg))))
+    want, drawn = {}, {}
+    for p in set(front) | set(fg) | set(behind) | set(bg):
+        if p in front:
+            want[p], drawn[p] = front[p], owner[p]
+        elif p in fg:
+            want[p], drawn[p] = fg[p], (bf, "cells")
+        elif p in behind:
+            want[p], drawn[p] = behind[p], owner[p]
+        else:
+            want[p], drawn[p] = bg[p], (bf, "cells")
+    return want, drawn
 
 
 def compare(shot, want, owner):
@@ -185,7 +251,9 @@ def main():
         what = "whole" if not bad else "PART WRONG: " + ", ".join(
             f"fighter {f} part {k} {bad[(f, k)]} of {total[(f, k)]} px" for f, k in sorted(bad))
         print(f"  {a.model.upper()} {c:>10} photo {state[0]} cam {state[1]}: {parts} parts, "
-              f"{len(want) - miss} of {len(want)} sprite pixels match: {what}")
+              f"{len(want) - miss} of {len(want)} pixels match: {what}"
+              + (f" (the brute over a fighter behind him: {overlap[0]} px; a fighter over him: {overlap[1]} px)"
+                 if any(fi["kind"] == BRUTE for fi in state[2]) else ""))
         if bad:
             broken += 1
         else:

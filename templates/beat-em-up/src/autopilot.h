@@ -10,22 +10,34 @@
 // from its first wave until a life is lost, it stands still and takes the
 // blows, so the knock-down, the KO and the respawn run.
 #define AP_IDLE  0xff
+#ifndef AP_GIVE_UP
+#define AP_GIVE_UP 0                // 1 (make gameover): never fight; three lives go, GAME OVER shows
+#endif
 
 static const char ap_pattern[] = { A_PUNCH, A_PUNCH, A_PUNCH, A_KICK, A_JUMP };
 static char ap_move, ap_last;
+static bool ap_cross;               // the one cross-lane punch has been thrown
 static unsigned ap_frames;
 
-// Which 255 play frames the meter records (-dMETER_WINDOW=n):
-// 0, the default: from the second stage's lock, the crowded fight (four
-//    fighters, knock-downs, the hero's KO), where the camera stands still;
-// 1: from the first stage clear, the walk to that lock: every frame
-//    scrolls, one fighter on the screen.
+// Which 255 play frames the meter records (-dMETER_WINDOW=n), each from a
+// point the run reaches, so every window is 255 play frames of the run:
+// 0, the default: from the second stage's lock: the brute in characters,
+//    two thugs, the hero's KO (the run's worst window, measured: README.md);
+// 1: from the third stage's lock: three thugs, eight sprites in the band;
+// 2: from the first stage clear, the walk: every frame scrolls;
+// 3: from the first stage's lock: two thugs, then the brute.
 #ifndef METER_WINDOW
 #define METER_WINDOW 0
 #endif
 static bool ap_recording(void)
 {
-    return METER_WINDOW ? (events & EV_UNLOCK) != 0 : locks >= 2;
+    switch (METER_WINDOW)
+    {
+    case 1:  return locks >= 3;
+    case 2:  return (events & EV_UNLOCK) != 0;
+    case 3:  return locks >= 1;
+    default: return locks >= 2;
+    }
 }
 
 static bool ap_target_ok(char f)
@@ -64,6 +76,32 @@ static char ap_fight(void)
     char t = ap_nearest();
     if (!t)
         return stage_clear ? AP_IDLE ^ JOY_RIGHT : AP_IDLE;
+    // Once, the lane gate on purpose: a punch at an enemy 9 to 17 lines
+    // away, close enough in x that the boxes touch on the screen. fighter.c
+    // must call it a miss (EV_LANE_MISS); the verdict wants that event.
+    if (!ap_cross)
+    {
+        for (char f = 1; f < NFIGHT; f++)
+        {
+            char d = fy[f] > fy[0] ? fy[f] - fy[0] : fy[0] - fy[f];
+            if (ap_target_ok(f) && d > WIN + 2 && d < 3 * WIN)
+            {
+                int cx = (int)fx[f] - (int)fx[0];
+                int acx = cx < 0 ? -cx : cx;
+                bool fc = (cx < 0) == (fface[0] == FACE_LEFT);
+                if (acx > 16)
+                    return AP_IDLE ^ (cx < 0 ? JOY_LEFT : JOY_RIGHT);
+                if (acx < 10)
+                    return AP_IDLE ^ (cx < 0 ? JOY_RIGHT : JOY_LEFT);
+                if (!fc)
+                    return AP_IDLE ^ (cx < 0 ? JOY_LEFT : JOY_RIGHT);
+                if (!(ap_last & JOY_FIRE))
+                    return AP_IDLE;
+                ap_cross = true;
+                return AP_IDLE ^ JOY_FIRE;
+            }
+        }
+    }
     int dx = (int)fx[t] - (int)fx[0];
     int ady = fy[t] > fy[0] ? fy[t] - fy[0] : fy[0] - fy[t];
     int adx = dx < 0 ? -dx : dx;
@@ -102,7 +140,7 @@ static char autopilot_port(void)
     ap_frames++;
     if (state == ST_TITLE)
         out = ap_frames == 20 ? AP_IDLE ^ JOY_FIRE : AP_IDLE;
-    else if (state == ST_PLAY)
+    else if (state == ST_PLAY && !AP_GIVE_UP)
     {
         bool take_blows = stage == 1 && wave >= 1 && !(events & EV_LIFE_LOST);
         if (!take_blows)

@@ -5,10 +5,12 @@
 // screen_double_buffer_d018), for a camera that only moves right:
 // XSCROLL = 7 - (camx & 7) moves the picture a pixel; a column crossing
 // is a $D018 flip to the other page, which already holds the next column.
-// It is prepared five rows a frame, copied one column over from the page on
+// It is prepared four rows a frame, copied one column over from the page on
 // display by slice_copy (engine.asm), plus the new column's cells. The
-// camera moves at most 2 pixels a frame, so a crossing is at least 4 frames
-// after the last, and 4 slices finish the page. No page is written while it
+// camera moves at most a pixel a frame (the hero walks at that speed), so a
+// crossing is at least 8 frames after the last, and 5 slices finish the
+// page. (It was five rows at 2 pixels a frame, the platformer's figures;
+// the brute and the VIC check made the frame too full for it: metered.) No page is written while it
 // is shown: nothing tears, and no frame carries a whole 20-row shift.
 //
 // Sprites, after c64-kb sprite_multiplex_game's double-buffered table and
@@ -20,8 +22,8 @@
 #include <string.h>
 
 #define CAM_LEAD   120              // the hero's screen x the camera keeps him left of
-#define CAM_SPEED  2                // pixels a frame, at most: 4 frames a column
-#define SLICE      5                // rows a prepare step (engine.asm's SLICE)
+#define CAM_SPEED  1                // pixels a frame, at most: 8 frames a column
+#define SLICE      4                // rows a prepare step (engine.asm's SLICE)
 #define NO_PAGE    0xff
 #define COL_MAX    (LEVEL_CW - 40)  // the last column a page can start at
 
@@ -32,6 +34,8 @@ char page_rows[NPAGES];
 static char prep_page;              // the page being prepared, or NO_PAGE
 char order[NFIGHT] = { 0, 1, 2, 3 };
 char parts_dropped;
+char sprites_half;
+bool sprites_fresh;
 bool go_sign;
 bool faces_off;
 char face_enemy = 0xff;
@@ -41,9 +45,10 @@ static char *const page_addr[NPAGES] = { PAGE0, PAGE1 };
 static const char page_d018[NPAGES] = { D018_PAGE0, D018_PAGE1 };
 
 // Shirt (top part) and trousers (legs) by kind, and each kind's face.
-static const char shirt[3]    = { VCOL_WHITE, VCOL_RED, VCOL_ORANGE };
+static const char shirt[3]    = { VCOL_WHITE, VCOL_RED, COL_BBODY };   // the brute's: his face on the HUD
 static const char trousers[3] = { VCOL_BLUE, VCOL_LT_GREY, VCOL_PURPLE };
 static const char face_block[3] = { B_FACE_HERO, B_FACE_THUG, B_FACE_BRUTE };
+static const char bit[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };
 
 #define BLOB(a)    (*(volatile char *)(a))
 #define SLICE_SRC  (*(volatile unsigned *)ASM_SLICE_SRC)
@@ -59,7 +64,7 @@ void view_init(void)
     vic.color_border = VCOL_BLACK;
     vic.color_back = COL_ROAD;
     vic.color_back1 = COL_BRICK;
-    vic.color_back2 = COL_LIGHT;
+    vic.color_back2 = COL_BSKIN;
     vic.spr_mcolor0 = COL_SKIN;
     vic.spr_mcolor1 = COL_INK;
     vic.spr_multi = 0xff;                   // every sprite multicolour
@@ -75,7 +80,7 @@ void view_init(void)
     for (unsigned i = 0; i < 2 * 40; i++)
         COLOUR[i] = 0x08 | VCOL_BLUE;       // rows 0-1: 'k' is the night sky
     for (unsigned i = 2 * 40; i < 21 * 40; i++)
-        COLOUR[i] = 0x08 | VCOL_BLACK;      // rows 2-20: 'k' is black
+        COLOUR[i] = 0x08 | COL_BBODY;       // rows 2-20: 11 is the brute's body
     for (unsigned i = 21 * 40; i < 1000; i++)
         COLOUR[i] = VCOL_WHITE;             // the HUD is hires white
     for (char c = 3; c < 15; c++)
@@ -114,6 +119,7 @@ void view_cut(void)
     page_draw(0, shown_col);
     page_draw(1, (int)shown_col + 1);
     prep_page = NO_PAGE;
+    brute_reset();                          // both pages hold the street alone
 }
 
 // Rows row0 to row0 + n - 1 of world column col, down a page column.
@@ -124,7 +130,7 @@ static void level_cells(char *dst, unsigned col, char row0, char n)
         *dst = cell_char(col, r);
 }
 
-// One slice of the hidden page: five rows copied one column left from the
+// One slice of the hidden page: four rows copied one column left from the
 // page on display, and those rows of the new right-hand column.
 static void prep_step(void)
 {
@@ -135,6 +141,7 @@ static void prep_step(void)
     SLICE_DST = (unsigned)(page_addr[p] + off);
     __asm { jsr ASM_SLICE_COPY }
     level_cells(page_addr[p] + 39, page_col[p] + 39, r, SLICE);
+    brute_patch(p, r, SLICE);               // his cells, where the new column crossed him
     page_rows[p] = r + SLICE;
     if (page_rows[p] >= PF_ROWS)
         prep_page = NO_PAGE;
@@ -246,6 +253,8 @@ void view_sprites(void)
         return;                             // the last set is not shown yet (never, in a synced loop)
     char back = BLOB(ASM_FRONT) ^ 8;
     char bi = back >> 3;
+    sprites_half = bi;
+    sprites_fresh = true;
     blink++;
 
     // Band 0: the GO sign, blinking, top right.
@@ -261,21 +270,26 @@ void view_sprites(void)
     BLOB(ASM_BMSB0 + bi) = 1;
     BLOB(ASM_BEN0 + bi) = en;
 
-    // Band 1: the fighters, near to far.
+    // Band 1: the fighters, near to far. Plain pointers into the back half:
+    // the IRQs never read it while it is being filled.
     depth_sort();
-    char k = 0, msb = 0, top = 255;
+    char *tx = (char *)ASM_BX1 + back, *ty = (char *)ASM_BY1 + back;
+    char *tp = (char *)ASM_BP1 + back, *tc = (char *)ASM_BC1 + back;
+    char k = 0, msb = 0, top = 255, pri = 0;
     en = 0;
     char limit = FLICKER_DEMO ? 7 : 8;
     for (signed char i = NFIGHT - 1; i >= 0; i--)
     {
         char f = order[i];
-        if (!shown(f))
-            continue;
+        if (!shown(f) || fkind[f] == K_BRUTE)
+            continue;                       // the brute is characters, not sprites
+        bool behind = b_drawn && fy[f] < b_fy;  // farther than the brute: behind his pixels
         const struct Part *pt = pose_part[anim_pose(&fanim[f])];
         int ox = (int)fx[f] - (int)camx + 31;           // part_vic_x, once a fighter
         bool left = fface[f] == FACE_LEFT;
         char mirror = left ? B_MIRROR : 0;
         char kind = fkind[f];
+        char base = fy[f] - fh[f];
         for (char p = 0; p < 2; p++)
         {
             int sx = left ? ox - 24 - pt[p].dx : ox + pt[p].dx;
@@ -286,15 +300,17 @@ void view_sprites(void)
                 parts_dropped++;
                 continue;
             }
-            char sy = fy[f] - fh[f] + pt[p].dy;
-            char s = back + k;
-            BLOB(ASM_BX1 + s) = (char)sx;
-            BLOB(ASM_BY1 + s) = sy;
-            BLOB(ASM_BP1 + s) = SPR_BLOCK + pt[p].block + mirror;
-            BLOB(ASM_BC1 + s) = p ? trousers[kind] : shirt[kind];
-            if (sx & 0x100)
-                msb |= 1 << k;
-            en |= 1 << k;
+            char sy = base + pt[p].dy;
+            char b = bit[k];
+            tx[k] = (char)sx;
+            ty[k] = sy;
+            tp[k] = SPR_BLOCK + pt[p].block + mirror;
+            tc[k] = p ? trousers[kind] : shirt[kind];
+            if (sx >= 256)
+                msb |= b;
+            en |= b;
+            if (behind)
+                pri |= b;
             if (sy < top)
                 top = sy;
             k++;
@@ -302,6 +318,7 @@ void view_sprites(void)
     }
     BLOB(ASM_BMSB1 + bi) = msb;
     BLOB(ASM_BEN1 + bi) = en;
+    BLOB(ASM_BPRI1 + bi) = pri;
     BLOB(ASM_BAND_TOP) = top;
 
     // Band 2: the faces beside the health bars.
@@ -330,7 +347,7 @@ void view_publish(void)
 {
     __asm { sei }
     BLOB(ASM_PF_D016) = D016_PLAY | (7 - (camx & 7));
-    BLOB(ASM_PF_D018) = page_d018[shown_page];
+    BLOB(ASM_PF_D018) = page_d018[shown_page] | (b_cs ? D018_CS1 : 0);   // the brute's set too
     BLOB(ASM_PF_PTRHI) = ((unsigned)page_addr[shown_page] >> 8) + 3;   // pointers at page + $3F8
     BLOB(ASM_READY) = 1;
     __asm { cli }

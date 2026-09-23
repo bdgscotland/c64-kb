@@ -1,0 +1,8 @@
+{
+  "checks": [
+    { "name": "own verdict: GAME OVER on the HUD, LIVES 0 (verdict.h, grade_gameover)", "type": "verdict" },
+    { "name": "GAME OVER whole, and nothing written after it where the enemy's name goes (it once read GAME OVETHUG)", "type": "text", "row": 21, "col": 15, "text": "GAME OVER     " },
+    { "name": "the HUD drawn before the message: LIVES 0", "type": "text", "row": 23, "col": 32, "text": "LIVES 0" },
+    { "name": "the verdict line on row 24", "type": "text", "row": 24, "col": 0, "text": "RESULT 01 PASS" }
+  ]
+}

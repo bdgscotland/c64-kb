@@ -5,7 +5,7 @@
 //   irq_blank, irq_band, irq_split   the IRQ chain: lines 251, 76 and 212
 //   band tables (bx0 ... ben2)        what the chain writes to the sprites,
 //                                     double-buffered; C fills the back half
-//   slice_copy                        the scroll: five rows of one page into
+//   slice_copy                        the scroll: four rows of one page into
 //                                     the other, one column to the left
 //   nmi_rti                           RESTORE lands here: the KERNAL is out
 //   music_init, music_play            an original two-voice tune
@@ -21,7 +21,7 @@
 .const HUD_D018   = $28         // screen $C800, characters $E000
 .const HUD_PTRS   = $cbf8       // the HUD page's sprite pointers
 
-* = $0900 "asm"
+* = $0880 "asm"                  // the lowest the harness allows: $0880-$0FFF
 
 // ---- The sprite bands ---------------------------------------------------------
 // The chain reuses all eight sprites three times a frame. Band 0, written at
@@ -62,13 +62,18 @@ bmsb1: .byte 0, 0
 ben1:  .byte 0, 0
 bmsb2: .byte 0, 0
 ben2:  .byte 0, 0
+bpri1: .byte 0, 0               // band 1's $D01B: the fighters behind the brute
+snap_on:    .byte 0             // AUTOPILOT builds: copy band 1's registers back
+snap:       .fill 19, 0         // $D000-$D010, $D015, $D01B as read after band 1's writes
+snap_front: .byte 0             // the table half they came from
+snap_count: .byte 0
 band_top:  .byte 255            // band 1's lowest Y register, for the late check
 band_late: .byte 0              // band 1 IRQs that finished on or after band_top
 
 // Sprites first..first+count-1 from one band's tables, Y = front. The
 // pointer stores go to the page on display; for bands 0 and 1 irq_blank
 // patches their high byte once a frame (ptrs_hi below).
-.macro WriteBand(first, count, tx, ty, tp, tc, tmsb, ten, ptrs) {
+.macro WriteBand(first, count, tx, ty, tp, tc, tmsb, ten, tpri, ptrs) {
 sp: .for (var s = first; s < first + count; s++) {
         lda ty + s, y
         sta $d001 + s * 2
@@ -84,6 +89,12 @@ ptr:    sta ptrs + s
         sta $d010
         lda ten, x
         sta $d015
+    .if (tpri == 0) {
+        lda #0                  // bands 0 and 2: in front of everything
+    } else {
+        lda tpri, x
+    }
+        sta $d01b
 }
 
 // ---- The meter's share of the IRQs -----------------------------------------------
@@ -166,7 +177,7 @@ irq_blank:
         sta band1.sp[s].ptr + 2
     }
         ldy front
-band0:  WriteBand(0, 1, bx0, by0, bp0, bc0, bmsb0, ben0, $c3f8)
+band0:  WriteBand(0, 1, bx0, by0, bp0, bc0, bmsb0, ben0, 0, $c3f8)
         lda #<irq_band
         sta $fffe
         lda #>irq_band
@@ -186,7 +197,22 @@ irq_band:
         cld
         IrqIn()
         ldy front
-band1:  WriteBand(0, 8, bx1, by1, bp1, bc1, bmsb1, ben1, $c3f8)
+band1:  WriteBand(0, 8, bx1, by1, bp1, bc1, bmsb1, ben1, bpri1, $c3f8)
+        lda snap_on             // AUTOPILOT: what the VIC now holds, for the verdict
+        beq !nosnap+
+        ldx #16
+!:      lda $d000, x            // X and Y of sprites 0-7, then $D010
+        sta snap, x
+        dex
+        bpl !-
+        lda $d015
+        sta snap + 17
+        lda $d01b
+        sta snap + 18
+        lda front
+        sta snap_front
+        inc snap_count
+!nosnap:
         lda $d012
         cmp band_top
         bcc !ok+
@@ -215,7 +241,7 @@ irq_split:
         lda #HUD_D018
         sta $d018
         ldy front
-band2:  WriteBand(0, 2, bx2, by2, bp2, bc2, bmsb2, ben2, HUD_PTRS)
+band2:  WriteBand(0, 2, bx2, by2, bp2, bc2, bmsb2, ben2, 0, HUD_PTRS)
         lda #<irq_blank
         sta $fffe
         lda #>irq_blank
@@ -241,13 +267,13 @@ pf_ptrhi:    .byte $c3          // page 0's pointers at $C3F8
 
 // ---- The scroll, a slice at a time ------------------------------------------------
 // The camera only moves right. C prepares the hidden page for the next
-// column in four slices of five rows, one a frame, while the camera
-// travels the 8 pixels to the crossing; the crossing is then a $D018 flip.
-// The page on display is only read. slice_copy copies 39 bytes of each of
-// five rows: dst[k * 40 + x] = src[k * 40 + x + 1], x 0..38, k 0..4. C
-// passes the first cell of each row. Cost by arithmetic: about 2,000
-// cycles (the platformer starter's measure of the same loop).
-.const SLICE = 5
+// column in five slices of four rows, one a frame, while the camera
+// travels the 8 pixels to the crossing (8 frames at most a pixel a frame);
+// the crossing is then a $D018 flip. The page on display is only read.
+// slice_copy copies 39 bytes of each of four rows: dst[k * 40 + x] =
+// src[k * 40 + x + 1], x 0..38, k 0..3. C passes the first cell of each
+// row. Cost by arithmetic: about 1,700 cycles.
+.const SLICE = 4
 
 slice_src: .word 0
 slice_dst: .word 0
@@ -277,6 +303,78 @@ wr:     sta $ffff, x
     }
         dex
         bpl !loop-
+        rts
+
+// ---- The brute's glyphs ------------------------------------------------------------
+// glyph_build: gb_count glyphs of his pre-shifted picture (brute.c), 8 bytes
+// each from gb_src, into gb_dst, each over the street glyph whose code is in
+// gb_under: his pixels, and the street's where his are empty. gb_mask is
+// C's 256-byte table: for a byte of his, 11 in every bit pair he leaves
+// empty. C calls it with 5 glyphs, a row of his block (at most 8 fit
+// gb_under). About 28 cycles a byte by arithmetic: about 1,300 a row.
+gb_src:   .word 0
+gb_dst:   .word 0
+gb_mask:  .word 0
+gb_count: .byte 0
+gb_under: .fill 8, 0
+gb_tmp:   .byte 0
+
+glyph_build:
+        lda gb_mask
+        sta gm + 1
+        lda gb_mask + 1
+        sta gm + 2
+        ldx #0
+g_next: stx gb_tmp
+        lda gb_src
+        sta gs + 1
+        sta gs2 + 1
+        lda gb_src + 1
+        sta gs + 2
+        sta gs2 + 2
+        lda gb_dst
+        sta gd + 1
+        lda gb_dst + 1
+        sta gd + 2
+        lda #0
+        sta gu + 2
+        lda gb_under, x         // the street glyph: $E000 + code * 8
+        asl
+        rol gu + 2
+        asl
+        rol gu + 2
+        asl
+        rol gu + 2
+        sta gu + 1
+        lda gu + 2
+        ora #$e0
+        sta gu + 2
+        ldy #7
+g_byte:
+gs:     lda $ffff, y            // his byte
+        tax
+gm:     lda $ffff, x            // 11 in every pair he leaves empty
+gu:     and $ffff, y            // the street's pixels there
+gs2:    ora $ffff, y            // his
+gd:     sta $ffff, y
+        dey
+        bpl g_byte
+        clc                     // the next glyph: both pointers 8 on
+        lda gb_src
+        adc #8
+        sta gb_src
+        bcc !+
+        inc gb_src + 1
+!:      clc
+        lda gb_dst
+        adc #8
+        sta gb_dst
+        bcc !+
+        inc gb_dst + 1
+!:      ldx gb_tmp
+        inx
+        cpx gb_count
+        bne g_next
         rts
 
 // ---- The tune -------------------------------------------------------------------------

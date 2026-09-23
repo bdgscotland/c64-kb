@@ -7,26 +7,29 @@
 #include <string.h>
 
 // Street glyphs, multicolour: four double-width pixels a row.
-// '.' $D021 grey, 'b' $D022 brown, 'y' $D023 yellow, 'k' colour RAM
-// (blue on rows 0-1, black below).
+// '.' $D021 grey, 'b' $D022 brown, 'k' colour RAM (the blue sky: rows 0-1
+// only). Every glyph used on rows 2-19 is '.' and 'b' alone, background
+// to the VIC's sprite priority, so $D01B hides a sprite behind the brute
+// and behind nothing else (game.h, the colours).
 static const char glyph_code[] = {
     CH_SKY, CH_ROOF, CH_BRICK, CH_WIN_T, CH_WIN_B, CH_DOOR, CH_SIGN,
-    CH_PAVE, CH_KERB, CH_ROAD, CH_DASH, CH_LAMP, CH_POLE
+    CH_PAVE, CH_KERB, CH_ROAD, CH_DASH, CH_LAMP, CH_POLE, CH_ALLEY
 };
 static const char glyph_art[][8][5] = {
-    { "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "kkkk" },   // sky; an alley
-    { "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "bbbb", "....", "bbbb" },   // roof edge
+    { "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "kkkk" },   // sky (rows 0-1)
+    { "kkkk", "kkkk", "kkkk", "kkkk", "kkkk", "bbbb", "....", "bbbb" },   // roof edge (row 1)
     { "bbb.", "bbb.", "....", "b.bb", "b.bb", "....", "bbb.", "bbb." },   // brick
-    { "kkkk", "kyyk", "kyyk", "kyyk", "kyyk", "kyyk", "kkkk", "kyyk" },   // window, top
-    { "kyyk", "kyyk", "kyyk", "kkkk", "bbbb", "....", "bb.b", "bbbb" },   // window, bottom
-    { "bkkb", "bkkb", "bkkb", "bkkb", "bkyb", "bkkb", "bkkb", "bkkb" },   // door
-    { "yyyy", "ykyk", "ykky", "yyky", "ykyk", "yyyy", "bbbb", "...." },   // shop sign
-    { "....", "....", "....", "k...", "....", "....", "....", "..k." },   // pavement
-    { "....", "....", "....", "yyyy", "bbbb", "bbbb", "....", "...." },   // kerb
-    { "....", "....", "..k.", "....", "....", "k...", "....", "...." },   // road
-    { "....", "....", "....", "yyyy", "yyyy", "....", "....", "...." },   // centre line
-    { "kkkk", "kyyk", "yyyy", "yyyy", "kyyk", "k.kk", "k.kk", "k.kk" },   // lamp
-    { "k.kk", "k.kk", "k.kk", "k.kk", "k.kk", "k.kk", "k.kk", "k.kk" },   // lamp post
+    { "bbbb", "b..b", "b..b", "bbbb", "b..b", "b..b", "b..b", "b..b" },   // window, top
+    { "b..b", "b..b", "bbbb", "bbbb", "....", "bbb.", "bbb.", "...." },   // window, bottom
+    { "b..b", "b..b", "b..b", "b..b", "b.bb", "b..b", "b..b", "b..b" },   // door
+    { "bbbb", "b.b.", "..bb", "bb.b", ".b.b", "bbbb", "....", "bbb." },   // shop sign
+    { "....", "....", "....", "b...", "....", "....", "....", "..b." },   // pavement
+    { "....", "....", "....", "bbbb", "bbbb", "....", "....", "...." },   // kerb
+    { "....", "....", "..b.", "....", "....", "b...", "....", "...." },   // road
+    { "....", "....", "....", "bbbb", "bbbb", "....", "....", "...." },   // centre line
+    { "....", ".bb.", "bbbb", "bbbb", ".bb.", "..b.", "..b.", "..b." },   // lamp
+    { "..b.", "..b.", "..b.", "..b.", "..b.", "..b.", "..b.", "..b." },   // lamp post
+    { "....", "....", "....", "....", "....", "....", "....", "...." },   // alley
 };
 
 // HUD bar glyphs, hires ('x' set): a full cell is two hit points.
@@ -180,6 +183,58 @@ static const char sprite_art[][21][13] = {
 };
 // SPRITE-ART-END
 // sprite_art[i] is block i for i < B_FIGHTER_COUNT, then B_GO and the faces.
+
+// The brute, drawn in character cells (brute.c): 16 double-width pixels by
+// 48 lines, feet on the last. '.' shows the street, 'b' $D022 brown (hair,
+// beard, belt, boots), 's' $D023 skin, 'x' colour RAM, his body. One
+// picture serves both facings. Stand, slam (both fists up: every attack),
+// down.
+// BRUTE-ART-BEGIN
+const char brute_art[3][48][17] = {
+    {   // stand
+        ".......bb.......", "......bbbb......", "......ssss......", ".....ssssss.....",
+        ".....sbssbs.....", ".....ssssss.....", ".....sbbbbs.....", "......bbbb......",
+        ".......ss.......", "....xxxxxxxx....", "...xxxxxxxxxx...", "..sxxxxxxxxxxs..",
+        ".ssxxxxxxxxxxss.", ".ssxxxxxxxxxxss.", ".ss.xxxxxxxx.ss.", ".ss.xxxxxxxx.ss.",
+        ".ss.xxxxxxxx.ss.", ".ss.xxxxxxxx.ss.", ".ss.xxxxxxxx.ss.", ".ss.xxxxxxxx.ss.",
+        ".ss.xxxxxxxx.ss.", "..s.xxxxxxxx.s..", "....xxxxxxxx....", "....xxxxxxxx....",
+        "....bbbbbbbb....", "....bbbbbbbb....", "....xxxxxxxx....", "....xxxx.xxx....",
+        "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....",
+        "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....",
+        "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....",
+        "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....", "....xxx..xxx....",
+        "....xxx..xxx....", "....xxx..xxx....", "...bbbb..bbbb...", "...bbbb..bbbb...",
+    },
+    {   // slam
+        ".......bb.......", ".ss...bbbb...ss.", ".ss...ssss...ss.", ".ss..ssssss..ss.",
+        ".ss..sbssbs..ss.", ".ss..ssssss..ss.", ".ss..sbbbbs..ss.", ".sss..bbbb..sss.",
+        "..ss...ss...ss..", "..sxxxxxxxxxxs..", "...xxxxxxxxxx...", "...xxxxxxxxxx...",
+        "...xxxxxxxxxx...", "...xxxxxxxxxx...", "....xxxxxxxx....", "....xxxxxxxx....",
+        "....xxxxxxxx....", "....xxxxxxxx....", "....xxxxxxxx....", "....xxxxxxxx....",
+        "....xxxxxxxx....", "....xxxxxxxx....", "....xxxxxxxx....", "....xxxxxxxx....",
+        "....bbbbbbbb....", "....bbbbbbbb....", "....xxxxxxxx....", "....xxxx.xxx....",
+        "....xxx..xxx....", "....xxx..xxx....", "...xxx...xxx....", "...xxx....xxx...",
+        "...xxx....xxx...", "...xxx....xxx...", "..xxx.....xxx...", "..xxx......xxx..",
+        "..xxx......xxx..", "..xxx......xxx..", "..xxx......xxx..", "..xxx......xxx..",
+        "..xxx......xxx..", "..xxx......xxx..", "..xxx......xxx..", "..xxx......xxx..",
+        "..xxx......xxx..", "..xxx......xxx..", ".bbbb......bbbb.", ".bbbb......bbbb.",
+    },
+    {   // down
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "................",
+        "................", "................", "................", "..bb............",
+        ".bssbxxxxxxx.bb.", "bsbsxxxxxxxxxbbb", "bsssxxxxxxxxxbbb", ".bssbxxxxbbxx.bb",
+        "..ss.xxxxxxxx...", "................", "................", "................",
+    },
+};
+// BRUTE-ART-END
 
 // POSES-BEGIN
 const struct Part pose_part[P_COUNT][2] = {
