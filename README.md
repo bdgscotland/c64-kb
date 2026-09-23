@@ -102,8 +102,8 @@ run that differs by one pixel fails the gate.
 ## What the starters play
 
 Each starter in `templates/` is a small game that plays. `npm run new-project -- <starter> <dir>`
-makes a working project from one; `make run` opens it in VICE. Each picture is the PAL
-screenshot its own `make shot check` grades, with the verdict and the frame meter on screen.
+makes a working project from one; `make run` opens it in VICE. Each picture is a PAL
+screenshot its own checks grade, with the verdict and the frame meter on screen.
 
 <table>
 <tr>
@@ -114,6 +114,7 @@ screenshot its own `make shot check` grades, with the verdict and the frame mete
 </tr>
 <tr>
 <td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Demo part: logo, sprite sine chain, stable raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
+<td align="center"><a href="templates/beat-em-up/README.md"><img src="docs/figures/starters/beat-em-up.png" width="220" alt="Beat-em-up street fight: the hero, two thugs and a character-drawn brute"></a><br><sub>Beat-em-up</sub></td>
 </tr>
 </table>
 
@@ -189,7 +190,7 @@ writes `.mcp.json` with this checkout's absolute `dist/cli.js` path. It then
 runs the starter's headless check to prove the copy works.
 
 The starters are `shmup-vertical`, `platformer`, `action-puzzle`,
-`adventure` and `demo` (KickAssembler), plus
+`adventure`, `beat-em-up` and `demo` (KickAssembler), plus
 two minimal ones: `hello` (C calling assembly) and `hello-kick`
 (KickAssembler only). In each new project:
 - `make run` opens it in VICE;

@@ -5,7 +5,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 768, schema 31, tools 2.3.0, package 0.16.0.
+Data 769, schema 31, tools 2.3.0, package 0.16.0.
+
+**Issue #39: the `beat-em-up` starter lands; `lane_depth_engine`
+corrected (data 769).**
+- `templates/beat-em-up` is a three-stage street brawler in Oscar64 plus
+  KickAssembler:
+  - fighters of two sprites each in a band written near to far;
+  - a brute drawn in characters, with `$D01B` behind bits;
+  - attacks gated by lane and per-frame boxes;
+  - round-robin AI, and a tune with effects.
+- It checks itself with a flicker check that renders every part from the
+  art, a VIC register read-back every frame, an independent hit re-check
+  and a game-over check. It passes on the local Oscar64 and on v1.32.273.
+- Measured worst 14,960 / 9,359 PAL and 16,464 / 9,897 NTSC.
+- The review measured that a Y-sorted multiplexer draws the farther
+  actor in front. `techniques/logic.md` `lane_depth_engine` said the
+  depth and raster orders agree; step 3 and "More actors" now say they
+  are opposite, with a correction clause.
 
 **agent-harness: counting lost frames.** The meter reports cost, not
 lateness, and the page did not say how to count a dropped frame. A check
