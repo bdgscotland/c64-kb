@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { coverage } from "../src/tools/selfimprovement.js";
-import { FalkorService } from "../src/services/falkor.js";
+import { coverage } from "../src/tools/selfimprovement.ts";
+import { FalkorService } from "../src/services/falkor.ts";
 
 const f = new FalkorService();
 
@@ -13,7 +13,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  try { await f.close(); } catch { /* expected */ }
+  try {
+    await f.close();
+  } catch {
+    /* expected */
+  }
 });
 
 describe("c64_coverage", () => {

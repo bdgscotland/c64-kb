@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { demoBriefing, gameBriefing, whyProposed } from "../src/tools/briefings.js";
-import { BriefingSchema } from "../src/schemas/tool-outputs.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { demoBriefing, gameBriefing, whyProposed } from "../src/tools/briefings.ts";
+import { BriefingSchema } from "../src/schemas/tool-outputs.ts";
 
 /**
  * Briefing tests — seed a minimal representative graph so we can test
@@ -21,15 +21,66 @@ describe("demoBriefing", () => {
     await f.ensureSchema();
 
     // --- Techniques ---
-    await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
-    await f.addTechnique({ name: "raster_bars", title: "Raster color bars", category: "raster", complexity: "low" });
-    await f.addTechnique({ name: "soft_scroll_h", title: "Hardware horizontal soft-scroll", category: "scroll", complexity: "low", cost: { cycles_per_frame: 74041 }, cost_basis: "measured-vice" });
-    await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite", complexity: "medium" });
-    await f.addTechnique({ name: "sid_play_routine_pattern", title: "The init+play subroutine convention", category: "music", complexity: "low", cost: { cycles_per_frame: 327, irq_slots: 1 }, cost_basis: "measured-vice" });
-    await f.addTechnique({ name: "sprite_multiplex_24", title: "24-sprite multiplexer", category: "sprite", complexity: "high", cost: { cycles_per_frame: 700, irq_slots: 3, bytes_code: 900 }, cost_basis: "estimated" });
-    await f.addTechnique({ name: "sid_voice_setup", title: "Frequency / waveform / ADSR per voice", category: "music", complexity: "low" });
-    await f.addTechnique({ name: "standard_bitmap", title: "Standard bitmap mode", category: "bitmap", complexity: "low" });
-    await f.addTechnique({ name: "plasma", title: "Plasma effect via sine table additions", category: "effect", complexity: "medium" });
+    await f.addTechnique({
+      name: "stable_raster_irq",
+      title: "Stable raster IRQ",
+      category: "raster",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "raster_bars",
+      title: "Raster color bars",
+      category: "raster",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "soft_scroll_h",
+      title: "Hardware horizontal soft-scroll",
+      category: "scroll",
+      complexity: "low",
+      cost: { cycles_per_frame: 74041 },
+      cost_basis: "measured-vice",
+    });
+    await f.addTechnique({
+      name: "sprite_multiplex_8",
+      title: "8-sprite multiplexer",
+      category: "sprite",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "sid_play_routine_pattern",
+      title: "The init+play subroutine convention",
+      category: "music",
+      complexity: "low",
+      cost: { cycles_per_frame: 327, irq_slots: 1 },
+      cost_basis: "measured-vice",
+    });
+    await f.addTechnique({
+      name: "sprite_multiplex_24",
+      title: "24-sprite multiplexer",
+      category: "sprite",
+      complexity: "high",
+      cost: { cycles_per_frame: 700, irq_slots: 3, bytes_code: 900 },
+      cost_basis: "estimated",
+    });
+    await f.addTechnique({
+      name: "sid_voice_setup",
+      title: "Frequency / waveform / ADSR per voice",
+      category: "music",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "standard_bitmap",
+      title: "Standard bitmap mode",
+      category: "bitmap",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "plasma",
+      title: "Plasma effect via sine table additions",
+      category: "effect",
+      complexity: "medium",
+    });
 
     // --- Registers ---
     await f.addRegister("D011", "$D011", "VIC-II", "RW", ["SCROLY"]);
@@ -59,7 +110,11 @@ describe("demoBriefing", () => {
     // --- DEMANDS edges (what the toolchain handoff reads) ---
     // stable_raster_irq takes interrupts inside the display; raster_bars, in
     // the same category, declares nothing and stays in C.
-    await f.linkTechniqueDemands("stable_raster_irq", "midframe_raster_irqs", "takes raster interrupts inside the display area");
+    await f.linkTechniqueDemands(
+      "stable_raster_irq",
+      "midframe_raster_irqs",
+      "takes raster interrupts inside the display area",
+    );
 
     // --- Recipes ---
     await f.addRecipe({
@@ -135,10 +190,10 @@ describe("demoBriefing", () => {
     const r = await demoBriefing("sprite scroller with raster bars and SID music");
     expect(r.structured.brief).toBeTruthy();
     expect(r.structured.proposed_techniques.length).toBeGreaterThanOrEqual(3);
-    const names = r.structured.proposed_techniques.map(t => t.name);
-    expect(names.some(n => n.includes("scroll") || n.includes("sprite"))).toBe(true);
-    expect(names.some(n => n.includes("raster") || n.includes("bar"))).toBe(true);
-    expect(names.some(n => n.includes("sid"))).toBe(true);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
+    expect(names.some((n) => n.includes("scroll") || n.includes("sprite"))).toBe(true);
+    expect(names.some((n) => n.includes("raster") || n.includes("bar"))).toBe(true);
+    expect(names.some((n) => n.includes("sid"))).toBe(true);
   });
 
   it("adds the plan up from the graph's cost properties and names the techniques without a line", async () => {
@@ -146,11 +201,13 @@ describe("demoBriefing", () => {
     const b = r.structured.budget;
     expect(b.region).toBe("PAL");
     expect(b.frame_cycles).toBe(19656);
-    const names = r.structured.proposed_techniques.map(t => t.name);
-    const costed = names.filter(n => ["soft_scroll_h", "sid_play_routine_pattern", "sprite_multiplex_24"].includes(n));
+    const names = r.structured.proposed_techniques.map((t) => t.name);
+    const costed = names.filter((n) =>
+      ["soft_scroll_h", "sid_play_routine_pattern", "sprite_multiplex_24"].includes(n),
+    );
     expect(costed.length).toBeGreaterThanOrEqual(1);
-    for (const n of costed) expect(b.contributors.map(c => c.name)).toContain(n);
-    for (const n of names.filter(n => !costed.includes(n))) expect(b.without_cost).toContain(n);
+    for (const n of costed) expect(b.contributors.map((c) => c.name)).toContain(n);
+    for (const n of names.filter((n) => !costed.includes(n))) expect(b.without_cost).toContain(n);
     expect(b.is_floor).toBe(b.without_cost.length > 0);
     const expected = b.contributors.reduce((s, c) => s + (c.cycles_per_frame ?? 0), 0);
     expect(b.cycles_per_frame_sum).toBe(expected);
@@ -171,7 +228,7 @@ describe("demoBriefing", () => {
 
   it("decides the handoff by what a technique demands and whether Oscar64 has a recipe for it, not by its category", async () => {
     const r = await demoBriefing("stable raster bars");
-    const proposed = r.structured.proposed_techniques.map(t => t.name);
+    const proposed = r.structured.proposed_techniques.map((t) => t.name);
     const handoff = r.structured.toolchain_split.cycle_tight_handoff;
     // Both are category raster. Only stable_raster_irq declares a demand
     // (midframe_raster_irqs); deciding by category used to hand off
@@ -182,14 +239,16 @@ describe("demoBriefing", () => {
     expect(proposed).toContain("raster_bars");
     if (proposed.includes("stable_raster_irq")) {
       expect(handoff).not.toContain("stable_raster_irq");
-      expect(r.structured.toolchain_split.rationale).toContain("kept in Oscar64 because a recipe exists: stable_raster_irq");
+      expect(r.structured.toolchain_split.rationale).toContain(
+        "kept in Oscar64 because a recipe exists: stable_raster_irq",
+      );
     }
   });
 
   // P5-4 regression: sideborder_open must not be tagged as SID music
   it("does not falsely tag sideborder_open as SID music", async () => {
     const r = await demoBriefing("open sideborder for raster bars");
-    const tech = r.structured.proposed_techniques.find(t => t.name === "sideborder_open");
+    const tech = r.structured.proposed_techniques.find((t) => t.name === "sideborder_open");
     if (tech) {
       expect(tech.why_proposed).not.toContain("SID music");
     }
@@ -197,16 +256,15 @@ describe("demoBriefing", () => {
 
   it("uses category not name-substring for SID classification (direct unit test)", () => {
     // sideborder_open: category=raster — must NOT classify as SID
-    expect(whyProposed("sideborder_open", "raster", "open sideborder raster bars demo"))
-      .not.toContain("SID");
+    expect(whyProposed("sideborder_open", "raster", "open sideborder raster bars demo")).not.toContain("SID");
 
     // sid_play_routine_pattern: category=music — MUST classify as SID
-    expect(whyProposed("sid_play_routine_pattern", "music", "game with background music"))
-      .toBe("SID music / audio requested in brief");
+    expect(whyProposed("sid_play_routine_pattern", "music", "game with background music")).toBe(
+      "SID music / audio requested in brief",
+    );
 
     // sid_voice_setup: category=music — MUST classify as SID
-    expect(whyProposed("sid_voice_setup", "music", "anything"))
-      .toBe("SID music / audio requested in brief");
+    expect(whyProposed("sid_voice_setup", "music", "anything")).toBe("SID music / audio requested in brief");
   });
 
   it("caps techniques per category at 3 (SID over-representation guard)", async () => {
@@ -238,16 +296,24 @@ describe("demoBriefing", () => {
     // Seed an exotic high-complexity technique with no recipes so we can
     // verify the foundation outranks it. text_zoom has no implementing
     // recipe in the live KB, so it should NOT outrank stable_raster_irq.
-    await f.addTechnique({ name: "text_zoom", title: "Per-line $D016 zoom", category: "effect", complexity: "high" });
+    await f.addTechnique({
+      name: "text_zoom",
+      title: "Per-line $D016 zoom",
+      category: "effect",
+      complexity: "high",
+    });
 
     const r = await demoBriefing("raster bars with a horizontal scroller and SID music");
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
 
     // Foundations must appear
     expect(names, "stable_raster_irq is the raster foundation; must surface").toContain("stable_raster_irq");
     expect(names, "soft_scroll_h is the canonical scroll technique; must surface").toContain("soft_scroll_h");
     // At least one SID technique
-    expect(names.some(n => n.startsWith("sid_")), "at least one sid_* technique must surface").toBe(true);
+    expect(
+      names.some((n) => n.startsWith("sid_")),
+      "at least one sid_* technique must surface",
+    ).toBe(true);
 
     // The exotic high-complexity sibling with no recipes must NOT outrank the
     // recipe-backed foundation. Find both indices.
@@ -283,10 +349,30 @@ describe("gameBriefing", () => {
     await f.ensureSchema();
 
     // Seed techniques relevant to shmup
-    await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite", complexity: "medium" });
-    await f.addTechnique({ name: "soft_scroll_v", title: "Hardware vertical soft-scroll", category: "scroll", complexity: "low" });
-    await f.addTechnique({ name: "sid_play_routine_pattern", title: "The init+play subroutine convention", category: "music", complexity: "low" });
-    await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
+    await f.addTechnique({
+      name: "sprite_multiplex_8",
+      title: "8-sprite multiplexer",
+      category: "sprite",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "soft_scroll_v",
+      title: "Hardware vertical soft-scroll",
+      category: "scroll",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "sid_play_routine_pattern",
+      title: "The init+play subroutine convention",
+      category: "music",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "stable_raster_irq",
+      title: "Stable raster IRQ",
+      category: "raster",
+      complexity: "medium",
+    });
 
     // Registers
     await f.addRegister("D011", "$D011", "VIC-II", "RW", ["SCROLY"]);
@@ -327,7 +413,7 @@ describe("gameBriefing", () => {
   it("returns a structured plan with archetype for a shmup brief", async () => {
     const r = await gameBriefing("vertical scrolling shoot-em-up", "shmup");
     expect(r.structured.proposed_techniques.length).toBeGreaterThanOrEqual(3);
-    expect(r.structured.build_order.some(s => s.recipes.some(rec => rec.includes("shmup")))).toBe(true);
+    expect(r.structured.build_order.some((s) => s.recipes.some((rec) => rec.includes("shmup")))).toBe(true);
   });
 
   // P5-9: gameBriefing without archetype — isGame=false (archetype===undefined),
@@ -337,7 +423,7 @@ describe("gameBriefing", () => {
     // isGame = archetype !== undefined → false when undefined, so brief says "demo"
     expect(r.structured.brief).toContain("demo");
     // No scaffold step because isGame is false
-    const scaffoldStep = r.structured.build_order.find(s => s.label.includes("Game scaffold"));
+    const scaffoldStep = r.structured.build_order.find((s) => s.label.includes("Game scaffold"));
     expect(scaffoldStep).toBeUndefined();
   });
 });
@@ -368,7 +454,12 @@ describe("gameBriefing FORCED_TECHNIQUES_FOR_ARCHETYPE enforcement", () => {
     });
 
     // A noise technique the keyword scorer might otherwise rank above the forced one
-    await f.addTechnique({ name: "sid_play_routine_pattern", title: "init+play", category: "music", complexity: "low" });
+    await f.addTechnique({
+      name: "sid_play_routine_pattern",
+      title: "init+play",
+      category: "music",
+      complexity: "low",
+    });
 
     // Pitfall triggered by the forced technique
     await f.addPitfall({
@@ -378,48 +469,44 @@ describe("gameBriefing FORCED_TECHNIQUES_FOR_ARCHETYPE enforcement", () => {
       region: "both",
       category: "render",
     });
-    await f.linkTriggeredBy(
-      "dirty_cell_skip_leaves_overlay_trail",
-      "text_mode_overlay_render",
-      "Technique"
-    );
+    await f.linkTriggeredBy("dirty_cell_skip_leaves_overlay_trail", "text_mode_overlay_render", "Technique");
   });
 
   afterAll(async () => f?.close());
 
   it("puzzle archetype always proposes text_mode_overlay_render even when the description omits rendering keywords", async () => {
     const r = await gameBriefing("a thinky logic game", "puzzle");
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("text_mode_overlay_render");
   });
 
   it("puzzle archetype surfaces dirty_cell_skip_leaves_overlay_trail via the forced technique", async () => {
     const r = await gameBriefing("tetris-like falling pieces", "puzzle");
-    const pitfallNames = r.structured.pitfalls.map(p => p.name);
+    const pitfallNames = r.structured.pitfalls.map((p) => p.name);
     expect(pitfallNames).toContain("dirty_cell_skip_leaves_overlay_trail");
   });
 
   it("adventure archetype also forces text_mode_overlay_render (text-mode adventures share the overlay pattern)", async () => {
     const r = await gameBriefing("a small text adventure", "adventure");
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("text_mode_overlay_render");
   });
 
   it("shmup archetype does NOT force text_mode_overlay_render (sprite-based, not text-mode)", async () => {
     const r = await gameBriefing("vertical shoot-em-up", "shmup");
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).not.toContain("text_mode_overlay_render");
   });
 
   it("demo brief mentioning 'text-mode playfield' forces the render technique regardless of archetype", async () => {
     const r = await demoBriefing("a text-mode playfield demo with falling glyphs");
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("text_mode_overlay_render");
   });
 
   it("description keyword 'tetris' alone (no archetype) is enough to force the render technique", async () => {
     const r = await gameBriefing("a tetris clone", undefined);
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("text_mode_overlay_render");
   });
 });
@@ -439,39 +526,120 @@ describe("gameBriefing reads the archetype from the graph", () => {
 
     // Four sprite techniques: with the fingerprint forcing all four, the
     // three-per-category cap must not cut one of them.
-    await f.addTechnique({ name: "sprite_multiplex_24", title: "24-sprite multiplexer", category: "sprite", complexity: "high" });
-    await f.addTechnique({ name: "sprite_collision_detect", title: "Hardware sprite collision", category: "sprite", complexity: "low" });
-    await f.addTechnique({ name: "sprite_expand", title: "Sprite X/Y expand", category: "sprite", complexity: "low" });
-    await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite", complexity: "medium" });
-    await f.addTechnique({ name: "soft_scroll_v", title: "Hardware vertical soft-scroll", category: "scroll", complexity: "low" });
-    await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
+    await f.addTechnique({
+      name: "sprite_multiplex_24",
+      title: "24-sprite multiplexer",
+      category: "sprite",
+      complexity: "high",
+    });
+    await f.addTechnique({
+      name: "sprite_collision_detect",
+      title: "Hardware sprite collision",
+      category: "sprite",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "sprite_expand",
+      title: "Sprite X/Y expand",
+      category: "sprite",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "sprite_multiplex_8",
+      title: "8-sprite multiplexer",
+      category: "sprite",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "soft_scroll_v",
+      title: "Hardware vertical soft-scroll",
+      category: "scroll",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "stable_raster_irq",
+      title: "Stable raster IRQ",
+      category: "raster",
+      complexity: "medium",
+    });
     // Present in the graph, not in the fingerprint: must not be forced.
-    await f.addTechnique({ name: "text_mode_overlay_render", title: "Playfield overlay in text mode", category: "render", complexity: "low" });
+    await f.addTechnique({
+      name: "text_mode_overlay_render",
+      title: "Playfield overlay in text mode",
+      category: "render",
+      complexity: "low",
+    });
 
-    await f.addPitfall({ name: "sprite_dma_overflow", title: "Too many sprites on one line", severity: "high", region: "both", category: "sprite" });
+    await f.addPitfall({
+      name: "sprite_dma_overflow",
+      title: "Too many sprites on one line",
+      severity: "high",
+      region: "both",
+      category: "sprite",
+    });
     await f.linkTriggeredBy("sprite_dma_overflow", "sprite_multiplex_24", "Technique");
     // A risk no proposed technique triggers: reaches the plan only through RISKS.
-    await f.addPitfall({ name: "raster_line_count_difference", title: "PAL and NTSC frames differ in length", severity: "medium", region: "both", category: "region" });
+    await f.addPitfall({
+      name: "raster_line_count_difference",
+      title: "PAL and NTSC frames differ in length",
+      severity: "medium",
+      region: "both",
+      category: "region",
+    });
 
-    await f.addArchetype({ name: "vertical_shmup", title: "Vertical Shmup", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
-    for (const t of ["soft_scroll_v", "sprite_multiplex_24", "sprite_collision_detect", "sprite_expand", "sprite_multiplex_8", "stable_raster_irq"]) {
+    await f.addArchetype({
+      name: "vertical_shmup",
+      title: "Vertical Shmup",
+      kind: "game",
+      source_doc: "docs/game-design/c64-game-archetypes.md",
+    });
+    for (const t of [
+      "soft_scroll_v",
+      "sprite_multiplex_24",
+      "sprite_collision_detect",
+      "sprite_expand",
+      "sprite_multiplex_8",
+      "stable_raster_irq",
+    ]) {
       await f.linkArchetypeFeatures("vertical_shmup", t);
     }
     await f.linkArchetypeRisks("vertical_shmup", "sprite_dma_overflow");
     await f.linkArchetypeRisks("vertical_shmup", "raster_line_count_difference");
-    await f.addArchetype({ name: "puzzle", title: "Puzzle", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
+    await f.addArchetype({
+      name: "puzzle",
+      title: "Puzzle",
+      kind: "game",
+      source_doc: "docs/game-design/c64-game-archetypes.md",
+    });
     await f.linkArchetypeFeatures("puzzle", "stable_raster_irq");
 
     // Shaped like the page's action_puzzle: the fingerprint names the
     // text-mode technique, and the pitfall behind it must reach the plan
     // through FEATURES alone, with nothing in the description to match.
-    await f.addPitfall({ name: "dirty_cell_skip_leaves_overlay_trail", title: "Skipping unchanged cells leaves the moving piece's prior position un-cleared", severity: "high", region: "both", category: "render" });
+    await f.addPitfall({
+      name: "dirty_cell_skip_leaves_overlay_trail",
+      title: "Skipping unchanged cells leaves the moving piece's prior position un-cleared",
+      severity: "high",
+      region: "both",
+      category: "render",
+    });
     await f.linkTriggeredBy("dirty_cell_skip_leaves_overlay_trail", "text_mode_overlay_render", "Technique");
-    await f.addArchetype({ name: "action_puzzle", title: "Action Puzzle", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
+    await f.addArchetype({
+      name: "action_puzzle",
+      title: "Action Puzzle",
+      kind: "game",
+      source_doc: "docs/game-design/c64-game-archetypes.md",
+    });
     await f.linkArchetypeFeatures("action_puzzle", "stable_raster_irq");
     await f.linkArchetypeFeatures("action_puzzle", "text_mode_overlay_render");
 
-    await f.addRecipe({ name: "oscar64-simple-shmup", toolchain: "oscar64", output_format: "PRG", region: "both", source_doc: "recipes/oscar64/simple-shmup.md" });
+    await f.addRecipe({
+      name: "oscar64-simple-shmup",
+      toolchain: "oscar64",
+      output_format: "PRG",
+      region: "both",
+      source_doc: "recipes/oscar64/simple-shmup.md",
+    });
     await f.linkRecipeImplements("oscar64-simple-shmup", "sprite_multiplex_8");
     // The scaffold is an edge, not a name match: vertical_shmup has one,
     // puzzle and action_puzzle have none.
@@ -490,9 +658,12 @@ describe("gameBriefing reads the archetype from the graph", () => {
     // Once, on the scaffold step only: the same recipe implements
     // sprite_multiplex_8 and so recurs in a later step, which must not
     // repeat the page line.
-    const pageLine = "copy the scaffold from docs/recipes/oscar64/simple-shmup.md (recipe oscar64-simple-shmup)";
+    const pageLine =
+      "copy the scaffold from docs/recipes/oscar64/simple-shmup.md (recipe oscar64-simple-shmup)";
     expect(r.text.split(pageLine).length - 1).toBe(1);
-    expect(r.structured.build_order.slice(1).some(s => s.recipes.includes("oscar64-simple-shmup"))).toBe(true);
+    expect(r.structured.build_order.slice(1).some((s) => s.recipes.includes("oscar64-simple-shmup"))).toBe(
+      true,
+    );
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 
@@ -510,16 +681,30 @@ describe("gameBriefing reads the archetype from the graph", () => {
 
   it("forces every FEATURES target into the proposal, past the per-category cap", async () => {
     const r = await gameBriefing("a shooter", "vertical_shmup");
-    const names = r.structured.proposed_techniques.map(t => t.name);
-    for (const t of ["soft_scroll_v", "sprite_multiplex_24", "sprite_collision_detect", "sprite_expand", "sprite_multiplex_8", "stable_raster_irq"]) {
+    const names = r.structured.proposed_techniques.map((t) => t.name);
+    for (const t of [
+      "soft_scroll_v",
+      "sprite_multiplex_24",
+      "sprite_collision_detect",
+      "sprite_expand",
+      "sprite_multiplex_8",
+      "stable_raster_irq",
+    ]) {
       expect(names).toContain(t);
     }
-    expect(names.filter(n => n.startsWith("sprite_"))).toHaveLength(4);
+    expect(names.filter((n) => n.startsWith("sprite_"))).toHaveLength(4);
     expect(r.structured.archetype).toEqual({
       name: "vertical_shmup",
       title: "Vertical Shmup",
       kind: "game",
-      features: ["soft_scroll_v", "sprite_collision_detect", "sprite_expand", "sprite_multiplex_24", "sprite_multiplex_8", "stable_raster_irq"],
+      features: [
+        "soft_scroll_v",
+        "sprite_collision_detect",
+        "sprite_expand",
+        "sprite_multiplex_24",
+        "sprite_multiplex_8",
+        "stable_raster_irq",
+      ],
       risks: ["raster_line_count_difference", "sprite_dma_overflow"],
     });
     expect(r.structured.archetype_not_found).toBeUndefined();
@@ -528,7 +713,7 @@ describe("gameBriefing reads the archetype from the graph", () => {
 
   it("adds every RISKS target to the pitfalls, including one no proposed technique triggers", async () => {
     const r = await gameBriefing("a shooter", "vertical_shmup");
-    const byName = new Map(r.structured.pitfalls.map(p => [p.name, p]));
+    const byName = new Map(r.structured.pitfalls.map((p) => [p.name, p]));
     expect(byName.get("sprite_dma_overflow")?.triggered_by_proposed).toEqual(["sprite_multiplex_24"]);
     expect(byName.get("raster_line_count_difference")?.triggered_by_proposed).toEqual([]);
     expect(r.text).toContain("archetype risk");
@@ -556,7 +741,7 @@ describe("gameBriefing reads the archetype from the graph", () => {
     // "puzzle" in the fallback table forced text_mode_overlay_render; this
     // fixture's puzzle fingerprint does not name it, so it must not appear.
     const r = await gameBriefing("a thinky logic game", "puzzle");
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("stable_raster_irq");
     expect(names).not.toContain("text_mode_overlay_render");
     expect(r.structured.archetype?.name).toBe("puzzle");
@@ -567,9 +752,9 @@ describe("gameBriefing reads the archetype from the graph", () => {
     // because the archetype's fingerprint names it, and the pitfall only
     // because that technique triggers it.
     const r = await gameBriefing("a thinky logic game", "action_puzzle");
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("text_mode_overlay_render");
-    const pitfall = r.structured.pitfalls.find(p => p.name === "dirty_cell_skip_leaves_overlay_trail");
+    const pitfall = r.structured.pitfalls.find((p) => p.name === "dirty_cell_skip_leaves_overlay_trail");
     expect(pitfall?.triggered_by_proposed).toEqual(["text_mode_overlay_render"]);
     expect(r.structured.archetype?.features).toEqual(["stable_raster_irq", "text_mode_overlay_render"]);
   });
@@ -590,7 +775,10 @@ describe("gameBriefing reads the archetype from the graph", () => {
     // "racer" shares no word with any fixture archetype, so nothing resolves or is offered.
     const r = await gameBriefing("vertical scrolling shoot-em-up", "racer");
     expect(r.structured.archetype).toBeUndefined();
-    expect(r.structured.archetype_not_found).toEqual({ requested: "racer", known: ["action_puzzle", "puzzle", "vertical_shmup"] });
+    expect(r.structured.archetype_not_found).toEqual({
+      requested: "racer",
+      known: ["action_puzzle", "puzzle", "vertical_shmup"],
+    });
     expect(r.structured.brief).toContain("not an archetype the graph knows");
     expect(r.text).toContain("Known archetypes: action_puzzle, puzzle, vertical_shmup");
     // The plan is still built from the description; nothing is forced.
@@ -616,30 +804,94 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
     // Four raster techniques in the fingerprint: the three-per-category cap
     // must not cut one of them. Nothing in the description "a small intro"
     // names any of these, so a proposal can only come from FEATURES.
-    await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
-    await f.addTechnique({ name: "sideborder_open", title: "Open the side borders", category: "raster", complexity: "high" });
-    await f.addTechnique({ name: "raster_bars", title: "Raster bars", category: "raster", complexity: "low" });
-    await f.addTechnique({ name: "irq_chain_table", title: "Table-driven IRQ chain", category: "raster", complexity: "medium" });
-    await f.addTechnique({ name: "soft_scroll_h", title: "Hardware horizontal soft-scroll", category: "scroll", complexity: "low" });
-    await f.addTechnique({ name: "sid_play_routine_pattern", title: "SID init/play convention", category: "sid", complexity: "low" });
+    await f.addTechnique({
+      name: "stable_raster_irq",
+      title: "Stable raster IRQ",
+      category: "raster",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "sideborder_open",
+      title: "Open the side borders",
+      category: "raster",
+      complexity: "high",
+    });
+    await f.addTechnique({
+      name: "raster_bars",
+      title: "Raster bars",
+      category: "raster",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "irq_chain_table",
+      title: "Table-driven IRQ chain",
+      category: "raster",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "soft_scroll_h",
+      title: "Hardware horizontal soft-scroll",
+      category: "scroll",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "sid_play_routine_pattern",
+      title: "SID init/play convention",
+      category: "sid",
+      complexity: "low",
+    });
     // In the graph, not in the fingerprint: must not be forced.
     await f.addTechnique({ name: "plasma", title: "Plasma", category: "effect", complexity: "high" });
 
-    await f.addPitfall({ name: "raster_irq_first_line_jitter", title: "First raster IRQ after enable has unpredictable entry timing", severity: "medium", region: "both", category: "raster" });
+    await f.addPitfall({
+      name: "raster_irq_first_line_jitter",
+      title: "First raster IRQ after enable has unpredictable entry timing",
+      severity: "medium",
+      region: "both",
+      category: "raster",
+    });
     await f.linkTriggeredBy("raster_irq_first_line_jitter", "stable_raster_irq", "Technique");
     // A risk no proposed technique triggers: reaches the plan only through RISKS.
-    await f.addPitfall({ name: "d016_unmasked_rmw_clobbers_csel_mcm", title: "Writing $D016 without masking destroys CSEL and MCM", severity: "high", region: "both", category: "scroll" });
+    await f.addPitfall({
+      name: "d016_unmasked_rmw_clobbers_csel_mcm",
+      title: "Writing $D016 without masking destroys CSEL and MCM",
+      severity: "high",
+      region: "both",
+      category: "scroll",
+    });
 
-    await f.addArchetype({ name: "cracktro", title: "Crack Intro", kind: "demo", source_doc: "docs/demo-design/intro-cracktro-patterns.md" });
-    for (const t of ["stable_raster_irq", "sideborder_open", "raster_bars", "irq_chain_table", "soft_scroll_h", "sid_play_routine_pattern"]) {
+    await f.addArchetype({
+      name: "cracktro",
+      title: "Crack Intro",
+      kind: "demo",
+      source_doc: "docs/demo-design/intro-cracktro-patterns.md",
+    });
+    for (const t of [
+      "stable_raster_irq",
+      "sideborder_open",
+      "raster_bars",
+      "irq_chain_table",
+      "soft_scroll_h",
+      "sid_play_routine_pattern",
+    ]) {
       await f.linkArchetypeFeatures("cracktro", t);
     }
     await f.linkArchetypeRisks("cracktro", "raster_irq_first_line_jitter");
     await f.linkArchetypeRisks("cracktro", "d016_unmasked_rmw_clobbers_csel_mcm");
-    await f.addArchetype({ name: "dentro", title: "Mini-Demo / Dentro", kind: "demo", source_doc: "docs/demo-design/intro-cracktro-patterns.md" });
+    await f.addArchetype({
+      name: "dentro",
+      title: "Mini-Demo / Dentro",
+      kind: "demo",
+      source_doc: "docs/demo-design/intro-cracktro-patterns.md",
+    });
     await f.linkArchetypeFeatures("dentro", "sid_play_routine_pattern");
     // A game archetype beside the demo ones: the known list spans both kinds.
-    await f.addArchetype({ name: "puzzle", title: "Puzzle", kind: "game", source_doc: "docs/game-design/c64-game-archetypes.md" });
+    await f.addArchetype({
+      name: "puzzle",
+      title: "Puzzle",
+      kind: "game",
+      source_doc: "docs/game-design/c64-game-archetypes.md",
+    });
     await f.linkArchetypeFeatures("puzzle", "stable_raster_irq");
   });
 
@@ -647,8 +899,15 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
 
   it("forces every FEATURES target into the proposal, past the per-category cap", async () => {
     const r = await demoBriefing("a small intro", "cracktro");
-    const names = r.structured.proposed_techniques.map(t => t.name);
-    for (const t of ["stable_raster_irq", "sideborder_open", "raster_bars", "irq_chain_table", "soft_scroll_h", "sid_play_routine_pattern"]) {
+    const names = r.structured.proposed_techniques.map((t) => t.name);
+    for (const t of [
+      "stable_raster_irq",
+      "sideborder_open",
+      "raster_bars",
+      "irq_chain_table",
+      "soft_scroll_h",
+      "sid_play_routine_pattern",
+    ]) {
       expect(names).toContain(t);
     }
     expect(names).not.toContain("plasma");
@@ -656,7 +915,14 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
       name: "cracktro",
       title: "Crack Intro",
       kind: "demo",
-      features: ["irq_chain_table", "raster_bars", "sid_play_routine_pattern", "sideborder_open", "soft_scroll_h", "stable_raster_irq"],
+      features: [
+        "irq_chain_table",
+        "raster_bars",
+        "sid_play_routine_pattern",
+        "sideborder_open",
+        "soft_scroll_h",
+        "stable_raster_irq",
+      ],
       risks: ["d016_unmasked_rmw_clobbers_csel_mcm", "raster_irq_first_line_jitter"],
     });
     expect(r.structured.archetype_not_found).toBeUndefined();
@@ -665,16 +931,16 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
     expect(r.text).toContain("# C64 Demo Briefing");
     expect(r.text).toContain("**Archetype:** cracktro (Crack Intro, demo)");
     // No game scaffold step on a demo plan.
-    expect(r.structured.build_order.some(s => /scaffold/i.test(s.label))).toBe(false);
+    expect(r.structured.build_order.some((s) => /scaffold/i.test(s.label))).toBe(false);
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 
   it("adds every RISKS target to the pitfalls, including one no proposed technique triggers", async () => {
     const r = await demoBriefing("a small intro", "cracktro");
-    const names = r.structured.pitfalls.map(p => p.name);
+    const names = r.structured.pitfalls.map((p) => p.name);
     expect(names).toContain("raster_irq_first_line_jitter");
     expect(names).toContain("d016_unmasked_rmw_clobbers_csel_mcm");
-    const orphan = r.structured.pitfalls.find(p => p.name === "d016_unmasked_rmw_clobbers_csel_mcm");
+    const orphan = r.structured.pitfalls.find((p) => p.name === "d016_unmasked_rmw_clobbers_csel_mcm");
     expect(orphan?.triggered_by_proposed).toEqual([]);
     expect(r.text).toContain("archetype risk");
   });
@@ -684,17 +950,20 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
     expect(r.structured.archetype?.name).toBe("cracktro");
     const r2 = await demoBriefing("two parts and a loader", "Dentro");
     expect(r2.structured.archetype?.name).toBe("dentro");
-    expect(r2.structured.proposed_techniques.map(t => t.name)).toContain("sid_play_routine_pattern");
+    expect(r2.structured.proposed_techniques.map((t) => t.name)).toContain("sid_play_routine_pattern");
   });
 
   it("reports archetype_not_found with the known names of both kinds for a name the graph lacks", async () => {
     const r = await demoBriefing("a small intro", "trackmo");
     expect(r.structured.archetype).toBeUndefined();
-    expect(r.structured.archetype_not_found).toEqual({ requested: "trackmo", known: ["cracktro", "dentro", "puzzle"] });
+    expect(r.structured.archetype_not_found).toEqual({
+      requested: "trackmo",
+      known: ["cracktro", "dentro", "puzzle"],
+    });
     expect(r.structured.brief).toContain('form "trackmo" is not an archetype the graph knows');
     expect(r.text).toContain("Known archetypes: cracktro, dentro, puzzle");
     // Nothing forced: the fingerprint techniques are not in the plan.
-    expect(r.structured.proposed_techniques.map(t => t.name)).not.toContain("sideborder_open");
+    expect(r.structured.proposed_techniques.map((t) => t.name)).not.toContain("sideborder_open");
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 
@@ -718,21 +987,52 @@ describe("gameBriefing proposer precision and handoff", () => {
     await f.connect();
     await f.clean();
     await f.ensureSchema();
-    await f.addTechnique({ name: "raster_bars", title: "Raster color bars", category: "raster", complexity: "low" });
-    await f.addTechnique({ name: "frame_sync_loop", title: "Frame-synchronised main loop with a budget bar", category: "raster", complexity: "low" });
-    await f.addTechnique({ name: "koala_format", title: "Koala bitmap file format", category: "bitmap", complexity: "low" });
-    await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite", complexity: "medium" });
-    await f.addTechnique({ name: "sprite_multiplex_24", title: "24-sprite multiplexer", category: "sprite", complexity: "high" });
+    await f.addTechnique({
+      name: "raster_bars",
+      title: "Raster color bars",
+      category: "raster",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "frame_sync_loop",
+      title: "Frame-synchronised main loop with a budget bar",
+      category: "raster",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "koala_format",
+      title: "Koala bitmap file format",
+      category: "bitmap",
+      complexity: "low",
+    });
+    await f.addTechnique({
+      name: "sprite_multiplex_8",
+      title: "8-sprite multiplexer",
+      category: "sprite",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "sprite_multiplex_24",
+      title: "24-sprite multiplexer",
+      category: "sprite",
+      complexity: "high",
+    });
     await f.linkTechniqueDemands("sprite_multiplex_8", "changes_sprite_set", "re-points sprites mid-frame");
     await f.linkTechniqueDemands("sprite_multiplex_24", "changes_sprite_set", "re-points sprites mid-frame");
-    const recipes: Array<[string, string, string | null]> = [
+    const recipes: [string, string, string | null][] = [
       ["oscar64-sprite-multiplex-8", "oscar64", "sprite_multiplex_8"],
       ["kickassembler-sprite-multiplex-24", "kickassembler", "sprite_multiplex_24"],
       ["oscar64-frame-sync-loop", "oscar64", "frame_sync_loop"],
       ["oscar64-headless-verify", "oscar64", null],
     ];
     for (const [name, toolchain, tech] of recipes) {
-      await f.addRecipe({ name, toolchain, output_format: "PRG", region: "both", source_doc: `recipes/${toolchain}/${name}.md` });
+      await f.addRecipe({
+        name,
+        toolchain,
+        output_format: "PRG",
+        region: "both",
+        source_doc: `recipes/${toolchain}/${name}.md`,
+      });
       if (tech) await f.linkRecipeImplements(name, tech);
     }
   });
@@ -741,7 +1041,7 @@ describe("gameBriefing proposer precision and handoff", () => {
 
   it("matches whole words: a budget bar is not raster bars and a tile map is not a bitmap format", async () => {
     const r = await gameBriefing("a frame loop with a budget bar and a tile map", undefined);
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("frame_sync_loop");
     expect(names).not.toContain("raster_bars");
     expect(names).not.toContain("koala_format");
@@ -749,17 +1049,19 @@ describe("gameBriefing proposer precision and handoff", () => {
 
   it("still proposes raster bars when the brief asks for raster bars", async () => {
     const r = await gameBriefing("raster bars behind the playfield", undefined);
-    expect(r.structured.proposed_techniques.map(t => t.name)).toContain("raster_bars");
+    expect(r.structured.proposed_techniques.map((t) => t.name)).toContain("raster_bars");
   });
 
   it("keeps a cycle-tight technique in Oscar64 when an Oscar64 recipe implements it, and hands off one that has none", async () => {
     const r = await gameBriefing("a sprite multiplexer for 8 sprites and a 24 sprite multiplexer", undefined);
-    const names = r.structured.proposed_techniques.map(t => t.name);
+    const names = r.structured.proposed_techniques.map((t) => t.name);
     expect(names).toContain("sprite_multiplex_8");
     expect(names).toContain("sprite_multiplex_24");
     expect(r.structured.toolchain_split.cycle_tight_handoff).toContain("sprite_multiplex_24");
     expect(r.structured.toolchain_split.cycle_tight_handoff).not.toContain("sprite_multiplex_8");
-    expect(r.structured.toolchain_split.rationale).toContain("kept in Oscar64 because a recipe exists: sprite_multiplex_8");
+    expect(r.structured.toolchain_split.rationale).toContain(
+      "kept in Oscar64 because a recipe exists: sprite_multiplex_8",
+    );
   });
 
   it("ends every build order with the headless verification step when the recipe exists", async () => {

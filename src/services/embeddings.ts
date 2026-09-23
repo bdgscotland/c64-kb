@@ -7,7 +7,7 @@
  *           should fall back to keyword search.
  */
 
-import { config } from "../config.js";
+import { config } from "../config.ts";
 
 const OLLAMA_URL = config.ollama.url;
 const MODEL = config.ollama.model;
@@ -29,11 +29,11 @@ export async function embed(text: string): Promise<number[] | null> {
   }
 }
 
-export async function embedBatch(texts: string[]): Promise<Array<number[] | null>> {
+export async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
   // Ollama doesn't have a native batch endpoint, so we parallelize
   // with a concurrency limit to avoid overwhelming it
   const CONCURRENCY = config.ollama.concurrency;
-  const results: Array<number[] | null> = new Array(texts.length).fill(null);
+  const results: (number[] | null)[] = new Array(texts.length).fill(null);
 
   for (let i = 0; i < texts.length; i += CONCURRENCY) {
     const batch = texts.slice(i, i + CONCURRENCY);
@@ -51,7 +51,7 @@ export async function isAvailable(): Promise<boolean> {
   try {
     const resp = await fetch(`${OLLAMA_URL}/api/tags`);
     if (!resp.ok) return false;
-    const data = (await resp.json()) as { models?: Array<{ name: string }> };
+    const data = (await resp.json()) as { models?: { name: string }[] };
     return data.models?.some((m) => m.name.startsWith(MODEL)) ?? false;
   } catch {
     return false;

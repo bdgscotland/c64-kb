@@ -1,6 +1,6 @@
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.0@sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9
     restart: unless-stopped
     ports:
       - "7333:6333"
@@ -16,7 +16,7 @@ services:
       retries: 3
 
   falkordb:
-    image: falkordb/falkordb:latest
+    image: falkordb/falkordb@sha256:e93fcd753fe612fb0a222166a0620a1ae31b826a12f223c3b6d06038d9d7a364  # graph module 4.18.7 (INFO modules ver=41807); pinned 2026-09-22, was :latest
     restart: unless-stopped
     ports:
       - "7379:6379"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractGraphEntities } from "../src/graph/extract.js";
+import { extractGraphEntities } from "../src/graph/extract.ts";
 
 describe("extractGraphEntities — Register", () => {
   it("extracts a single register from a hardware-reference doc", () => {
@@ -90,8 +90,12 @@ Description.
 <!-- doc-type: hardware-reference -->
 `;
     const entities = extractGraphEntities(md, "kernal-routines-reference.md");
-    const routines = entities.filter((e): e is Extract<typeof e, { type: "kernal_routine" }> => e.type === "kernal_routine");
-    const pairs = entities.filter((e): e is Extract<typeof e, { type: "pairs_with" }> => e.type === "pairs_with");
+    const routines = entities.filter(
+      (e): e is Extract<typeof e, { type: "kernal_routine" }> => e.type === "kernal_routine",
+    );
+    const pairs = entities.filter(
+      (e): e is Extract<typeof e, { type: "pairs_with" }> => e.type === "pairs_with",
+    );
     expect(routines).toHaveLength(1);
     expect(routines[0]).toMatchObject({ name: "CHROUT", address: "$FFD2" });
     expect(pairs).toHaveLength(2);
@@ -112,7 +116,9 @@ describe("extractGraphEntities — MemoryRegion", () => {
 <!-- doc-type: hardware-reference -->
 `;
     const entities = extractGraphEntities(md, "c64-memory-map.md");
-    const regions = entities.filter((e): e is Extract<typeof e, { type: "memory_region" }> => e.type === "memory_region");
+    const regions = entities.filter(
+      (e): e is Extract<typeof e, { type: "memory_region" }> => e.type === "memory_region",
+    );
     expect(regions).toHaveLength(1);
     expect(regions[0]).toMatchObject({
       type: "memory_region",

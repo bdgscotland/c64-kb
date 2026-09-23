@@ -7,45 +7,66 @@
  *
  * Ports are shifted off the Qdrant/FalkorDB defaults (6333/6379) to 7333/7379
  * so another instance of either service can run on the same host.
+ *
+ * The environment is parsed once, here, and a bad value stops the process
+ * with the variable's name. `parseInt` used to turn FALKOR_PORT=abc into NaN
+ * and fail later at connect time.
  */
 
-import path from "path";
-import { fileURLToPath } from "url";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const Env = z.object({
+  QDRANT_URL: z.url().default("http://localhost:7333"),
+  QDRANT_COLLECTION: z.string().min(1).default("c64_docs"),
+  FALKOR_HOST: z.string().min(1).default("localhost"),
+  FALKOR_PORT: z.coerce.number().int().min(1).max(65535).default(7379),
+  FALKOR_GRAPH: z.string().min(1).default("c64"),
+  OLLAMA_URL: z.url().default("http://localhost:11434"),
+  EMBED_MODEL: z.string().min(1).default("mxbai-embed-large"),
+  EMBED_CONCURRENCY: z.coerce.number().int().min(1).default(8),
+  DOCS_DIR: z.string().min(1).default(path.resolve(__dirname, "../docs")),
+  ANALYTICS_DB: z.string().min(1).default(path.resolve(__dirname, "../data/analytics.db")),
+});
+
+const parsed = Env.safeParse(process.env);
+if (!parsed.success) {
+  throw new Error(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
+}
+const env = parsed.data;
 
 export const config = {
   // Qdrant vector store
   qdrant: {
-    url: process.env.QDRANT_URL ?? "http://localhost:7333",
-    collection: process.env.QDRANT_COLLECTION ?? "c64_docs",
+    url: env.QDRANT_URL,
+    collection: env.QDRANT_COLLECTION,
     vectorSize: 1024, // mxbai-embed-large
   },
 
   // FalkorDB graph
   falkor: {
-    host: process.env.FALKOR_HOST ?? "localhost",
-    port: parseInt(process.env.FALKOR_PORT ?? "7379", 10),
-    graphName: process.env.FALKOR_GRAPH ?? "c64",
+    host: env.FALKOR_HOST,
+    port: env.FALKOR_PORT,
+    graphName: env.FALKOR_GRAPH,
   },
 
   // Ollama embeddings (a host-level service; other tools may share it)
   ollama: {
-    url: process.env.OLLAMA_URL ?? "http://localhost:11434",
-    model: process.env.EMBED_MODEL ?? "mxbai-embed-large",
-    concurrency: parseInt(process.env.EMBED_CONCURRENCY ?? "8", 10),
+    url: env.OLLAMA_URL,
+    model: env.EMBED_MODEL,
+    concurrency: env.EMBED_CONCURRENCY,
   },
 
   // Knowledge base docs
   docs: {
-    dir: process.env.DOCS_DIR ?? path.resolve(__dirname, "../docs"),
+    dir: env.DOCS_DIR,
   },
 
   // Query analytics
   analytics: {
-    dbPath: process.env.ANALYTICS_DB ?? path.resolve(__dirname, "../data/analytics.db"),
+    dbPath: env.ANALYTICS_DB,
   },
 } as const;
-
-// HVSC (High Voltage SID Collection) extensions — separate graph + collection
-// so HVSC ontology stays isolated from the existing c64 graph (spec decision C5).

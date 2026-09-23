@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reportGap } from "../src/tools/selfimprovement.js";
+import { reportGap } from "../src/tools/selfimprovement.ts";
 
 describe("c64_report_gap", () => {
   it("creates a new gap on first call", async () => {

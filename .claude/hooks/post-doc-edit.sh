@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse hook on Edit/MultiEdit/Write: when a docs/**/*.md file was
+# PostToolUse hook on Edit/Write: when a docs/**/*.md file was
 # edited, build its code listings immediately and tell the agent the result.
 #
 # This is the gate that would have caught six of eight KickAssembler recipes
@@ -31,7 +31,7 @@ CONTEXT=""
 
 # 1. Listings in this file must build.
 if grep -qE '^```(asm|kick|kickassembler|kickass|c)\b' "$FILE_PATH"; then
-  if OUT=$(npx tsx scripts/check-listings.ts --allow-missing --file "$REL" 2>&1); then
+  if OUT=$(node scripts/check-listings.ts --allow-missing --file "$REL" 2>&1); then
     SUMMARY=$(printf '%s\n' "$OUT" | tail -1)
     CONTEXT="check-listings on $REL: $SUMMARY"
     if printf '%s' "$OUT" | grep -q 'toolchains not found'; then
@@ -52,14 +52,14 @@ fi
 case "$REL" in
   docs/recipes/*/*.md)
     if [ "$(basename "$REL")" != "README.md" ] && command -v x64sc >/dev/null 2>&1; then
-      if VOUT=$(npx tsx scripts/verify-recipes.ts --allow-missing --file "$REL" 2>&1); then
+      if VOUT=$(node scripts/verify-recipes.ts --allow-missing --file "$REL" 2>&1); then
         CONTEXT="$CONTEXT
 verify-recipes on $REL: $(printf '%s\n' "$VOUT" | grep -E '^(ok  |FAIL)' | sed 's/^/  /' | head -6)"
       else
         CONTEXT="$CONTEXT
 RECIPE SCREENSHOT MISMATCH in $REL — the listing no longer draws what the committed PNG shows:
 $(printf '%s\n' "$VOUT" | grep -E '^FAIL' | head -6)
-If the listing changed on purpose, look at the fresh PNG, run 'npx tsx scripts/verify-recipes.ts --update --file $REL', and say in the page what changed. Otherwise this is a regression."
+If the listing changed on purpose, look at the fresh PNG, run 'node scripts/verify-recipes.ts --update --file $REL', and say in the page what changed. Otherwise this is a regression."
       fi
     fi
     ;;

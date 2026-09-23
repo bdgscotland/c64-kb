@@ -11,14 +11,14 @@
  *   nodes, returns top 5 matches with CAUSED_BY enrichment.
  */
 
-import { getFalkor, getQdrant, getAnalytics } from "../context.js";
-import { embed } from "../services/embeddings.js";
-import { BM25Encoder, type SparseVector } from "../services/bm25.js";
-import type { ChunkPayload } from "../services/qdrant.js";
-import { config } from "../config.js";
+import { getFalkor, getQdrant, getAnalytics } from "../context.ts";
+import { embed } from "../services/embeddings.ts";
+import { BM25Encoder, type SparseVector } from "../services/bm25.ts";
+import type { ChunkPayload } from "../services/qdrant.ts";
+import { config } from "../config.ts";
 import fs from "fs";
 import path from "path";
-import type { PitfallsForOutput, FailureDiagnoseOutput } from "../schemas/tool-outputs.js";
+import type { PitfallsForOutput, FailureDiagnoseOutput } from "../schemas/tool-outputs.ts";
 
 const VOCAB_FILE = path.resolve(config.analytics.dbPath, "../bm25-vocab.json");
 let bm25Cache: BM25Encoder | null | undefined;
@@ -26,11 +26,17 @@ let bm25Cache: BM25Encoder | null | undefined;
 function getBM25(): BM25Encoder | null {
   if (bm25Cache !== undefined) return bm25Cache;
   try {
-    if (!fs.existsSync(VOCAB_FILE)) { bm25Cache = null; return null; }
+    if (!fs.existsSync(VOCAB_FILE)) {
+      bm25Cache = null;
+      return null;
+    }
     const data = JSON.parse(fs.readFileSync(VOCAB_FILE, "utf-8"));
     bm25Cache = BM25Encoder.fromJSON(data);
     return bm25Cache;
-  } catch { bm25Cache = null; return null; }
+  } catch {
+    bm25Cache = null;
+    return null;
+  }
 }
 
 function encodeSparse(text: string): SparseVector {
@@ -44,7 +50,6 @@ export type FailureDiagnoseResult = { structured: FailureDiagnoseOutput; text: s
 type EntityKind = "Register" | "KernalRoutine" | "Technique";
 
 const SEVERITY_ORDER = ["critical", "high", "medium", "low"] as const;
-type Severity = (typeof SEVERITY_ORDER)[number];
 
 /**
  * Strip the leading "${section}\n\n" prefix from a chunk's stored
@@ -92,7 +97,7 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
        ORDER BY
          ${severityCase},
          p.name`,
-      { key: matchKey, addr: `$${matchKey}` }
+      { key: matchKey, addr: `$${matchKey}` },
     );
 
     // A technique also meets every pitfall that a register or KERNAL routine
@@ -100,7 +105,7 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
     // join are exact declarations on the pages, so the edge is derived, not
     // guessed, and the answer names the register or routine that carried it.
     type Row = { name: string; title: string; severity: string; region: string; category: string };
-    const viaOf = new Map<string, Array<{ name: string; kind: "Register" | "KernalRoutine"; address?: string }>>();
+    const viaOf = new Map<string, { name: string; kind: "Register" | "KernalRoutine"; address?: string }[]>();
     let rows = (r.data ?? []) as Row[];
     if (kind === "Technique") {
       const m = await f.roQuery(
@@ -109,52 +114,64 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
          RETURN p.name AS name, p.title AS title, p.severity AS severity,
                 p.region AS region, p.category AS category,
                 collect(DISTINCT (x.name + '|' + labels(x)[0] + '|' + coalesce(x.address, ''))) AS via`,
-        { key: matchKey }
+        { key: matchKey },
       );
-      const direct = new Set(rows.map(x => x.name));
-      for (const row of (m.data ?? []) as Array<Row & { via: string[] }>) {
+      const direct = new Set(rows.map((x) => x.name));
+      for (const row of (m.data ?? []) as (Row & { via: string[] })[]) {
         if (!row.name || direct.has(row.name)) continue;
-        viaOf.set(row.name, (row.via ?? []).map(v => {
-          const [name, label, address] = v.split("|");
-          return { name, kind: (label === "KernalRoutine" ? "KernalRoutine" : "Register") as "Register" | "KernalRoutine", ...(address ? { address } : {}) };
-        }));
+        viaOf.set(
+          row.name,
+          (row.via ?? []).map((v) => {
+            const [name, label, address] = v.split("|");
+            return {
+              name,
+              kind: label === "KernalRoutine" ? "KernalRoutine" : "Register",
+              ...(address ? { address } : {}),
+            };
+          }),
+        );
         rows = [...rows, row];
       }
-      const sev = (s: string) => { const i = (SEVERITY_ORDER as readonly string[]).indexOf(s); return i < 0 ? SEVERITY_ORDER.length : i; };
+      const sev = (s: string) => {
+        const i = (SEVERITY_ORDER as readonly string[]).indexOf(s);
+        return i < 0 ? SEVERITY_ORDER.length : i;
+      };
       rows.sort((a, b) => sev(a.severity) - sev(b.severity) || a.name.localeCompare(b.name));
     }
 
     if (rows.length > 0) {
       // Found pitfalls — enrich each with its full triggered_by list
-      const pitfalls = await Promise.all(rows.map(async (row) => {
-        const edges = await f.roQuery(
-          `MATCH (p:Pitfall {name: $name})-[:TRIGGERED_BY]->(t)
+      const pitfalls = await Promise.all(
+        rows.map(async (row) => {
+          const edges = await f.roQuery(
+            `MATCH (p:Pitfall {name: $name})-[:TRIGGERED_BY]->(t)
            RETURN t.name AS tname, labels(t)[0] AS tkind`,
-          { name: row.name }
-        );
-        const triggered_by = (edges.data as Array<{ tname: string; tkind: string }>)
-          .filter(e => e.tname && e.tkind)
-          .map(e => ({ name: e.tname, kind: e.tkind as EntityKind }));
-        const remedies = await f.roQuery(
-          `MATCH (p:Pitfall {name: $name})-[:MITIGATED_BY]->(t:Technique)
+            { name: row.name },
+          );
+          const triggered_by = (edges.data as { tname: string; tkind: string }[])
+            .filter((e) => e.tname && e.tkind)
+            .map((e) => ({ name: e.tname, kind: e.tkind as EntityKind }));
+          const remedies = await f.roQuery(
+            `MATCH (p:Pitfall {name: $name})-[:MITIGATED_BY]->(t:Technique)
            RETURN t.name AS tname ORDER BY tname`,
-          { name: row.name }
-        );
-        const mitigated_by = (remedies.data as Array<{ tname: string }>)
-          .filter(e => e.tname)
-          .map(e => ({ name: e.tname, kind: "Technique" as EntityKind }));
+            { name: row.name },
+          );
+          const mitigated_by = (remedies.data as { tname: string }[])
+            .filter((e) => e.tname)
+            .map((e) => ({ name: e.tname, kind: "Technique" as const }));
 
-        return {
-          name: row.name ?? "",
-          title: row.title ?? "",
-          severity: (row.severity ?? "low") as PitfallsForOutput["pitfalls"][0]["severity"],
-          region: (row.region ?? "both") as PitfallsForOutput["pitfalls"][0]["region"],
-          category: row.category ?? "",
-          triggered_by,
-          mitigated_by,
-          ...(viaOf.has(row.name) ? { via: viaOf.get(row.name) } : {}),
-        };
-      }));
+          return {
+            name: row.name ?? "",
+            title: row.title ?? "",
+            severity: (row.severity ?? "low") as PitfallsForOutput["pitfalls"][0]["severity"],
+            region: (row.region ?? "both") as PitfallsForOutput["pitfalls"][0]["region"],
+            category: row.category ?? "",
+            triggered_by,
+            mitigated_by,
+            ...(viaOf.has(row.name) ? { via: viaOf.get(row.name) } : {}),
+          };
+        }),
+      );
 
       const text = formatPitfallsText(topic, kind, pitfalls);
       const a = getAnalytics();
@@ -175,9 +192,7 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
     ? await qdrant.hybridSearch(vec, encodeSparse(topic), 20)
     : await qdrant.searchByText(topic, 20);
 
-  const pitfallHits = raw
-    .filter((r) => r.source.startsWith("pitfalls/"))
-    .slice(0, 5);
+  const pitfallHits = raw.filter((r) => r.source.startsWith("pitfalls/")).slice(0, 5);
 
   const search_results = pitfallHits.map((r) => ({
     source: r.source,
@@ -190,9 +205,10 @@ export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
   a.logQuery({ tool: "c64_pitfalls_for", query: topic, resultCount: search_results.length });
   return {
     structured: { topic, topic_kind: "search", pitfalls: [], search_results },
-    text: search_results.length > 0
-      ? formatSearchFallbackText(topic, pitfallHits)
-      : `No direct match for "${topic}" and no pitfall docs matched semantically. Try a register name (D012, $D012), KERNAL routine name, or technique name (stable_raster_irq). Use c64_search for fuzzy topic queries.`,
+    text:
+      search_results.length > 0
+        ? formatSearchFallbackText(topic, pitfallHits)
+        : `No direct match for "${topic}" and no pitfall docs matched semantically. Try a register name (D012, $D012), KERNAL routine name, or technique name (stable_raster_irq). Use c64_search for fuzzy topic queries.`,
   };
 }
 
@@ -202,19 +218,24 @@ export async function failureDiagnose(symptom: string): Promise<FailureDiagnoseR
   const all = await f.roQuery(
     `MATCH (c:CrashPattern)
      RETURN c.symptom AS symptom, c.description AS description,
-            c.likely_causes AS likely_causes, c.diagnosis_steps AS diagnosis_steps`
+            c.likely_causes AS likely_causes, c.diagnosis_steps AS diagnosis_steps`,
   );
 
-  const queryTokens = symptom.toLowerCase().split(/[\s_-]+/).filter(t => t.length >= 3);
+  const queryTokens = symptom
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .filter((t) => t.length >= 3);
 
-  const scored = (all.data as Array<{
-    symptom: string;
-    description: string;
-    likely_causes: string;
-    diagnosis_steps: string;
-  }>).map(row => {
+  const scored = (
+    all.data as {
+      symptom: string;
+      description: string;
+      likely_causes: string;
+      diagnosis_steps: string;
+    }[]
+  ).map((row) => {
     const haystack = `${row.symptom} ${row.description} ${row.likely_causes}`.toLowerCase();
-    const hits = queryTokens.filter(t => haystack.includes(t)).length;
+    const hits = queryTokens.filter((t) => haystack.includes(t)).length;
     return {
       symptom: row.symptom ?? "",
       description: row.description ?? "",
@@ -225,37 +246,39 @@ export async function failureDiagnose(symptom: string): Promise<FailureDiagnoseR
   });
 
   const ranked = scored
-    .filter(s => s.score > 0)
+    .filter((s) => s.score > 0)
     // Score desc, alphabetical tiebreak so equal-relevance matches sort
     // identically across runs.
     .sort((a, b) => b.score - a.score || a.symptom.localeCompare(b.symptom));
 
-  const matches = await Promise.all(ranked.slice(0, 5).map(async (m) => {
-    const edges = await f.roQuery(
-      `MATCH (c:CrashPattern {symptom: $sym})-[:CAUSED_BY]->(t)
+  const matches = await Promise.all(
+    ranked.slice(0, 5).map(async (m) => {
+      const edges = await f.roQuery(
+        `MATCH (c:CrashPattern {symptom: $sym})-[:CAUSED_BY]->(t)
        RETURN t.name AS tname, labels(t)[0] AS tkind`,
-      { sym: m.symptom }
-    );
-    const caused_by = (edges.data as Array<{ tname: string; tkind: string }>)
-      .filter(e => e.tname && e.tkind)
-      .map(e => ({ name: e.tname, kind: e.tkind as EntityKind }));
+        { sym: m.symptom },
+      );
+      const caused_by = (edges.data as { tname: string; tkind: string }[])
+        .filter((e) => e.tname && e.tkind)
+        .map((e) => ({ name: e.tname, kind: e.tkind as EntityKind }));
 
-    let likely_causes: string[];
-    try {
-      likely_causes = JSON.parse(m.likely_causes_raw);
-    } catch {
-      likely_causes = [];
-    }
+      let likely_causes: string[];
+      try {
+        likely_causes = JSON.parse(m.likely_causes_raw);
+      } catch {
+        likely_causes = [];
+      }
 
-    return {
-      symptom: m.symptom,
-      description: m.description,
-      likely_causes,
-      diagnosis_steps: m.diagnosis_steps,
-      caused_by,
-      relevance: m.score,
-    };
-  }));
+      return {
+        symptom: m.symptom,
+        description: m.description,
+        likely_causes,
+        diagnosis_steps: m.diagnosis_steps,
+        caused_by,
+        relevance: m.score,
+      };
+    }),
+  );
 
   const a = getAnalytics();
   a.logQuery({ tool: "c64_failure_diagnose", query: symptom, resultCount: matches.length });
@@ -265,10 +288,7 @@ export async function failureDiagnose(symptom: string): Promise<FailureDiagnoseR
   };
 }
 
-function formatSearchFallbackText(
-  topic: string,
-  results: Array<ChunkPayload & { score: number }>
-): string {
+function formatSearchFallbackText(topic: string, results: (ChunkPayload & { score: number })[]): string {
   const lines = [`No direct entity match for "${topic}". Top pitfall-doc matches:`, ""];
   for (const r of results) {
     lines.push(`### ${r.source} — ${r.section} (score: ${r.score.toFixed(3)})`);
@@ -281,37 +301,36 @@ function formatSearchFallbackText(
 function formatPitfallsText(
   topic: string,
   kind: EntityKind,
-  pitfalls: PitfallsForOutput["pitfalls"]
+  pitfalls: PitfallsForOutput["pitfalls"],
 ): string {
   if (pitfalls.length === 0) {
     return `No pitfalls found for ${kind} "${topic}".`;
   }
   const header = `Found ${pitfalls.length} pitfall(s) for ${kind} "${topic}":\n\n`;
-  const rows = pitfalls.map(p => {
-    const triggers = p.triggered_by.map(t => `${t.name} (${t.kind})`).join(", ");
-    const remedies = p.mitigated_by.map(t => t.name).join(", ");
+  const rows = pitfalls.map((p) => {
+    const triggers = p.triggered_by.map((t) => `${t.name} (${t.kind})`).join(", ");
+    const remedies = p.mitigated_by.map((t) => t.name).join(", ");
     return (
       `### ${p.name} [${p.severity}, ${p.region}]\n` +
       `**${p.title}**\n` +
       `**Category:** ${p.category}\n` +
       (triggers ? `**Triggered by:** ${triggers}\n` : "") +
       (remedies ? `**Mitigated by:** ${remedies}\n` : "") +
-      (p.via && p.via.length ? `**Reached through:** ${p.via.map(v => `${v.name}${v.address ? " " + v.address : ""} (${v.kind})`).join(", ")}, which this technique uses\n` : "")
+      (p.via?.length
+        ? `**Reached through:** ${p.via.map((v) => `${v.name}${v.address ? " " + v.address : ""} (${v.kind})`).join(", ")}, which this technique uses\n`
+        : "")
     );
   });
   return header + rows.join("\n");
 }
 
-function formatFailureDiagnoseText(
-  query: string,
-  matches: FailureDiagnoseOutput["matches"]
-): string {
+function formatFailureDiagnoseText(query: string, matches: FailureDiagnoseOutput["matches"]): string {
   if (matches.length === 0) {
     return `No failure patterns matched "${query}". Try c64_search for broader lookup.`;
   }
   const header = `# Failure diagnosis: "${query}"\n\nTop ${matches.length} match(es):\n\n`;
-  const rows = matches.map(m => {
-    const causedBy = m.caused_by.map(c => `${c.name} (${c.kind})`).join(", ");
+  const rows = matches.map((m) => {
+    const causedBy = m.caused_by.map((c) => `${c.name} (${c.kind})`).join(", ");
     return (
       `## ${m.symptom} (relevance: ${m.relevance.toFixed(2)})\n` +
       `${m.description}\n\n` +

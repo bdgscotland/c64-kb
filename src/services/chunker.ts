@@ -62,7 +62,7 @@ export function chunkMarkdown(content: string, source: string): DocChunk[] {
     } else if (line.startsWith("### ")) {
       flush();
       const h3 = line.replace(/^###\s+/, "").trim();
-      currentHeading = h2 ? `${h1} > ${h2} > ${h3}` : (h1 ? `${h1} > ${h3}` : h3);
+      currentHeading = h2 ? `${h1} > ${h2} > ${h3}` : h1 ? `${h1} > ${h3}` : h3;
     } else {
       currentText.push(line);
     }

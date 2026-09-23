@@ -13,13 +13,18 @@ import { spawnSync } from "node:child_process";
 
 describe("code listings build", () => {
   it("every recipe builds and every KickAssembler fragment assembles", () => {
-    const r = spawnSync("npx", ["tsx", "scripts/check-listings.ts", "--allow-missing"], {
+    const r = spawnSync("node", ["scripts/check-listings.ts", "--allow-missing"], {
       encoding: "utf8",
       timeout: 600_000,
     });
     const out = r.stdout + r.stderr;
-    if (/toolchains not found/.test(out)) {
-      console.warn(out.split("\n").filter((l) => /toolchains not found|skipped/.test(l)).join("\n"));
+    if (out.includes("toolchains not found")) {
+      console.warn(
+        out
+          .split("\n")
+          .filter((l) => /toolchains not found|skipped/.test(l))
+          .join("\n"),
+      );
     }
     expect(out, out).not.toMatch(/^FAIL/m);
     expect(r.status, out).toBe(0);

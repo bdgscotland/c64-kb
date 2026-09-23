@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { checkCompatibility, timingBudget } from "../src/tools/query.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { checkCompatibility, timingBudget } from "../src/tools/query.ts";
 
 describe("checkCompatibility", () => {
   let f: FalkorService;
@@ -9,8 +9,18 @@ describe("checkCompatibility", () => {
     await f.connect();
     await f.clean();
     await f.ensureSchema();
-    await f.addTechnique({ name: "stable_raster_irq", title: "Stable raster IRQ", category: "raster", complexity: "medium" });
-    await f.addTechnique({ name: "raster_bars", title: "Raster bars", category: "raster", complexity: "low" });
+    await f.addTechnique({
+      name: "stable_raster_irq",
+      title: "Stable raster IRQ",
+      category: "raster",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "raster_bars",
+      title: "Raster bars",
+      category: "raster",
+      complexity: "low",
+    });
     await f.addRegister("D016", "$D016", "VIC-II", "RW", []);
     await f.linkTechniqueUsesRegister("stable_raster_irq", "D016");
     await f.linkTechniqueUsesRegister("raster_bars", "D016");
@@ -25,14 +35,29 @@ describe("checkCompatibility", () => {
   });
 
   it("returns compatible when no shared resources", async () => {
-    await f.addTechnique({ name: "cpu_io_port_bank", title: "CPU I/O port bank", category: "banking", complexity: "low" });
+    await f.addTechnique({
+      name: "cpu_io_port_bank",
+      title: "CPU I/O port bank",
+      category: "banking",
+      complexity: "low",
+    });
     const r = await checkCompatibility(["cpu_io_port_bank", "raster_bars"]);
     expect(r.structured.verdict).toBe("compatible");
   });
 
   it("reports incompatible for region mismatch", async () => {
-    await f.addTechnique({ name: "pal_only_tech", title: "PAL-only", category: "raster", complexity: "high" });
-    await f.addTechnique({ name: "ntsc_only_tech", title: "NTSC-only", category: "raster", complexity: "high" });
+    await f.addTechnique({
+      name: "pal_only_tech",
+      title: "PAL-only",
+      category: "raster",
+      complexity: "high",
+    });
+    await f.addTechnique({
+      name: "ntsc_only_tech",
+      title: "NTSC-only",
+      category: "raster",
+      complexity: "high",
+    });
     await f.linkTechniqueRequiresRegion("pal_only_tech", "PAL");
     await f.linkTechniqueRequiresRegion("ntsc_only_tech", "NTSC");
     const r = await checkCompatibility(["pal_only_tech", "ntsc_only_tech"]);
@@ -41,16 +66,36 @@ describe("checkCompatibility", () => {
   });
 
   it("flags shared raster discipline between sprite_multiplex_24 and fli_image", async () => {
-    await f.addTechnique({ name: "sprite_multiplex_24", title: "24-sprite multiplexer", category: "raster", complexity: "high" });
-    await f.addTechnique({ name: "fli_image", title: "FLI image display", category: "raster", complexity: "high" });
+    await f.addTechnique({
+      name: "sprite_multiplex_24",
+      title: "24-sprite multiplexer",
+      category: "raster",
+      complexity: "high",
+    });
+    await f.addTechnique({
+      name: "fli_image",
+      title: "FLI image display",
+      category: "raster",
+      complexity: "high",
+    });
     const r = await checkCompatibility(["sprite_multiplex_24", "fli_image"]);
     expect(r.structured.shared_infrastructure.length).toBeGreaterThanOrEqual(1);
     expect(r.structured.shared_infrastructure.some((s) => s.kind === "discipline")).toBe(true);
   });
 
   it("does NOT flag shared infra between unrelated techniques", async () => {
-    await f.addTechnique({ name: "plasma", title: "Plasma effect", category: "effect", complexity: "medium" });
-    await f.addTechnique({ name: "sid_voice_setup", title: "SID voice setup", category: "music", complexity: "low" });
+    await f.addTechnique({
+      name: "plasma",
+      title: "Plasma effect",
+      category: "effect",
+      complexity: "medium",
+    });
+    await f.addTechnique({
+      name: "sid_voice_setup",
+      title: "SID voice setup",
+      category: "music",
+      complexity: "low",
+    });
     const r = await checkCompatibility(["plasma", "sid_voice_setup"]);
     expect(r.structured.shared_infrastructure).toEqual([]);
   });
@@ -68,7 +113,7 @@ describe("checkCompatibility", () => {
     await f.linkTechniqueUsesRegister("tech_b", "RASTER");
 
     const r = await checkCompatibility(["tech_a", "tech_b"]);
-    expect(r.structured.shared_infrastructure.some(s => s.name === "raster_discipline")).toBe(true);
+    expect(r.structured.shared_infrastructure.some((s) => s.name === "raster_discipline")).toBe(true);
   });
 });
 

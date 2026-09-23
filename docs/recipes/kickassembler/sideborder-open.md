@@ -294,7 +294,7 @@ to fetch and goes to its idle state, showing the byte at $3FFF (zero on a
 stock machine) in the background colour. The band is blank. Opening the
 side border *with* a live character display on badline rows is a different
 and much harder problem; the recipes that appear to do it either cover the
-badline rows or use the tricks catalogued under `fld` and `vsp` in
+badline rows or use the tricks catalogued under `fld_flexible_line_distance` and `vsp_glitch` in
 `docs/techniques/raster.md`.
 
 ### The stable entry and the two paddings

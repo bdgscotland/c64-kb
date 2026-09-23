@@ -9,7 +9,7 @@
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import { config } from "../config.js";
+import { config } from "../config.ts";
 
 export interface QueryLogOpts {
   tool: string;
@@ -103,9 +103,7 @@ export class AnalyticsService {
   }
 
   private addColumnIfMissing(table: string, column: string, type: string): void {
-    const cols = this.db
-      .prepare(`PRAGMA table_info(${table})`)
-      .all() as Array<{ name: string }>;
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === column)) {
       this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
@@ -117,19 +115,22 @@ export class AnalyticsService {
    * Log a query and track gaps.
    */
   logQuery(opts: QueryLogOpts): void {
-    const {
-      tool,
-      query,
-      resultCount,
-      resultScores,
-      searchMode,
-      resultSources,
-    } = opts;
+    // One IMMEDIATE transaction: the CLI and the MCP server share this file,
+    // and a bare SELECT-then-INSERT let two processes both insert the gap.
+    this.db
+      .transaction(() => {
+        this.logQueryUnlocked(opts);
+      })
+      .immediate();
+  }
+
+  private logQueryUnlocked(opts: QueryLogOpts): void {
+    const { tool, query, resultCount, resultScores, searchMode, resultSources } = opts;
 
     this.db
       .prepare(
         `INSERT INTO query_log (tool, query, result_count, result_scores, search_mode, result_sources)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(
         tool,
@@ -137,42 +138,30 @@ export class AnalyticsService {
         resultCount,
         resultScores ? JSON.stringify(resultScores) : null,
         searchMode ?? null,
-        resultSources ? JSON.stringify(resultSources) : null
+        resultSources ? JSON.stringify(resultSources) : null,
       );
 
     if (resultCount === 0) {
       // Upsert into gaps table
       const existing = this.db
-        .prepare(
-          "SELECT id FROM gaps WHERE query = ? AND tool = ? AND resolved = 0"
-        )
+        .prepare("SELECT id FROM gaps WHERE query = ? AND tool = ? AND resolved = 0")
         .get(query, tool) as { id: number } | undefined;
 
       if (existing) {
         this.db
-          .prepare(
-            "UPDATE gaps SET hit_count = hit_count + 1, last_seen = datetime('now') WHERE id = ?"
-          )
+          .prepare("UPDATE gaps SET hit_count = hit_count + 1, last_seen = datetime('now') WHERE id = ?")
           .run(existing.id);
       } else {
-        this.db
-          .prepare("INSERT INTO gaps (query, tool) VALUES (?, ?)")
-          .run(query, tool);
+        this.db.prepare("INSERT INTO gaps (query, tool) VALUES (?, ?)").run(query, tool);
       }
     }
   }
 
   // ── Hydration logging ──────────────────────────────────────────────
 
-  logHydration(
-    tool: string,
-    docPath: string | null,
-    title: string | null
-  ): void {
+  logHydration(tool: string, docPath: string | null, title: string | null): void {
     this.db
-      .prepare(
-        "INSERT INTO hydration_log (tool, doc_path, title) VALUES (?, ?, ?)"
-      )
+      .prepare("INSERT INTO hydration_log (tool, doc_path, title) VALUES (?, ?, ?)")
       .run(tool, docPath, title);
   }
 
@@ -183,27 +172,23 @@ export class AnalyticsService {
    */
   resolveGap(query: string): void {
     this.db
-      .prepare(
-        "UPDATE gaps SET resolved = 1, resolved_at = datetime('now') WHERE query = ? AND resolved = 0"
-      )
+      .prepare("UPDATE gaps SET resolved = 1, resolved_at = datetime('now') WHERE query = ? AND resolved = 0")
       .run(query);
   }
 
   /**
    * Get unresolved gaps ordered by frequency (most-searched-but-unfound).
    */
-  getGaps(
-    limit: number = 20
-  ): Array<{
+  getGaps(limit = 20): {
     query: string;
     tool: string;
     hit_count: number;
     first_seen: string;
     last_seen: string;
-  }> {
+  }[] {
     return this.db
       .prepare(
-        "SELECT query, tool, hit_count, first_seen, last_seen FROM gaps WHERE resolved = 0 ORDER BY hit_count DESC LIMIT ?"
+        "SELECT query, tool, hit_count, first_seen, last_seen FROM gaps WHERE resolved = 0 ORDER BY hit_count DESC LIMIT ?",
       )
       .all(limit) as any[];
   }
@@ -211,21 +196,21 @@ export class AnalyticsService {
   /**
    * Return the top N recent gaps (resolved=0) ordered by hit_count then last_seen.
    */
-  getRecentGaps(limit: number = 10): Array<{
+  getRecentGaps(limit = 10): {
     query: string;
     tool: string;
     hit_count: number;
     last_seen: string;
     user_reported: number;
     notes: string | null;
-  }> {
+  }[] {
     return this.db
       .prepare(
         `SELECT query, tool, hit_count, last_seen, user_reported, notes
          FROM gaps
          WHERE resolved = 0
          ORDER BY hit_count DESC, last_seen DESC
-         LIMIT ?`
+         LIMIT ?`,
       )
       .all(limit) as any[];
   }
@@ -234,15 +219,30 @@ export class AnalyticsService {
    * Upsert a gap reported explicitly by an agent or user.
    * Returns the gap row's id and updated hit_count + whether it was new.
    */
-  reportGap(query: string, tool: string, notes?: string): {
+  reportGap(
+    query: string,
+    tool: string,
+    notes?: string,
+  ): {
+    gap_id: number;
+    hit_count: number;
+    status: "new" | "incremented";
+  } {
+    // Same race as logQuery: select-then-write in one IMMEDIATE transaction.
+    return this.db.transaction(() => this.reportGapUnlocked(query, tool, notes)).immediate();
+  }
+
+  private reportGapUnlocked(
+    query: string,
+    tool: string,
+    notes?: string,
+  ): {
     gap_id: number;
     hit_count: number;
     status: "new" | "incremented";
   } {
     const existing = this.db
-      .prepare(
-        "SELECT id, hit_count FROM gaps WHERE query = ? AND tool = ? AND resolved = 0"
-      )
+      .prepare("SELECT id, hit_count FROM gaps WHERE query = ? AND tool = ? AND resolved = 0")
       .get(query, tool) as { id: number; hit_count: number } | undefined;
 
     if (existing) {
@@ -253,7 +253,7 @@ export class AnalyticsService {
                last_seen = datetime('now'),
                user_reported = 1,
                notes = COALESCE(?, notes)
-           WHERE id = ?`
+           WHERE id = ?`,
         )
         .run(notes ?? null, existing.id);
       return {
@@ -266,7 +266,7 @@ export class AnalyticsService {
     const result = this.db
       .prepare(
         `INSERT INTO gaps (query, tool, user_reported, notes)
-         VALUES (?, ?, 1, ?)`
+         VALUES (?, ?, 1, ?)`,
       )
       .run(query, tool, notes ?? null);
 
@@ -284,15 +284,13 @@ export class AnalyticsService {
   }
 
   markGapPendingVerify(gapId: number): void {
-    this.db
-      .prepare("UPDATE gaps SET pending_verify = 1 WHERE id = ?")
-      .run(gapId);
+    this.db.prepare("UPDATE gaps SET pending_verify = 1 WHERE id = ?").run(gapId);
   }
 
   getPendingVerifyGaps(): any[] {
     return this.db
       .prepare(
-        "SELECT id, query, tool, hit_count, first_seen, last_seen FROM gaps WHERE resolved = 0 AND pending_verify = 1 ORDER BY last_seen DESC"
+        "SELECT id, query, tool, hit_count, first_seen, last_seen FROM gaps WHERE resolved = 0 AND pending_verify = 1 ORDER BY last_seen DESC",
       )
       .all() as any[];
   }
@@ -304,39 +302,25 @@ export class AnalyticsService {
     endedAt: string,
     queryLogIds: number[],
     resolution: string,
-    resolutionSummary?: string
+    resolutionSummary?: string,
   ): number {
     const result = this.db
       .prepare(
         `INSERT INTO episodes (started_at, ended_at, query_log_ids, resolution, resolution_summary)
-         VALUES (?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(
-        startedAt,
-        endedAt,
-        JSON.stringify(queryLogIds),
-        resolution,
-        resolutionSummary ?? null
-      );
+      .run(startedAt, endedAt, JSON.stringify(queryLogIds), resolution, resolutionSummary ?? null);
     return Number(result.lastInsertRowid);
   }
 
-  updateEpisodeResolution(
-    id: number,
-    resolution: string,
-    summary?: string
-  ): void {
+  updateEpisodeResolution(id: number, resolution: string, summary?: string): void {
     this.db
-      .prepare(
-        "UPDATE episodes SET resolution = ?, resolution_summary = ? WHERE id = ?"
-      )
+      .prepare("UPDATE episodes SET resolution = ?, resolution_summary = ? WHERE id = ?")
       .run(resolution, summary ?? null, id);
   }
 
   getEpisodeCount(): number {
-    return (
-      this.db.prepare("SELECT COUNT(*) as n FROM episodes").get() as any
-    ).n;
+    return (this.db.prepare("SELECT COUNT(*) as n FROM episodes").get() as any).n;
   }
 
   // ── Learning candidates ────────────────────────────────────────────
@@ -348,12 +332,12 @@ export class AnalyticsService {
     evidence: string,
     confidence: string,
     sourceEpisodes: number[],
-    relatedApis: string[]
+    relatedApis: string[],
   ): number {
     const result = this.db
       .prepare(
         `INSERT INTO learning_candidates (type, title, body, evidence, confidence, source_episodes, related_apis)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         type,
@@ -362,66 +346,48 @@ export class AnalyticsService {
         evidence,
         confidence,
         JSON.stringify(sourceEpisodes),
-        JSON.stringify(relatedApis)
+        JSON.stringify(relatedApis),
       );
     return Number(result.lastInsertRowid);
   }
 
   getCandidateById(id: number): any | undefined {
-    return this.db
-      .prepare("SELECT * FROM learning_candidates WHERE id = ?")
-      .get(id);
+    return this.db.prepare("SELECT * FROM learning_candidates WHERE id = ?").get(id);
   }
 
-  updateCandidateStatus(
-    id: number,
-    status: string,
-    promoteManifest?: string
-  ): void {
+  updateCandidateStatus(id: number, status: string, promoteManifest?: string): void {
     if (status === "promoted") {
       this.db
         .prepare(
-          "UPDATE learning_candidates SET status = ?, promoted_at = datetime('now'), promote_manifest = ? WHERE id = ?"
+          "UPDATE learning_candidates SET status = ?, promoted_at = datetime('now'), promote_manifest = ? WHERE id = ?",
         )
         .run(status, promoteManifest ?? null, id);
     } else {
       this.db
-        .prepare(
-          "UPDATE learning_candidates SET status = ?, promote_manifest = ? WHERE id = ?"
-        )
+        .prepare("UPDATE learning_candidates SET status = ?, promote_manifest = ? WHERE id = ?")
         .run(status, promoteManifest ?? null, id);
     }
   }
 
   getProposedCandidates(): any[] {
     return this.db
-      .prepare(
-        "SELECT * FROM learning_candidates WHERE status = 'proposed' ORDER BY created_at DESC"
-      )
+      .prepare("SELECT * FROM learning_candidates WHERE status = 'proposed' ORDER BY created_at DESC")
       .all() as any[];
   }
 
   getPromotedCandidates(): any[] {
     return this.db
-      .prepare(
-        "SELECT * FROM learning_candidates WHERE status = 'promoted' ORDER BY promoted_at DESC"
-      )
+      .prepare("SELECT * FROM learning_candidates WHERE status = 'promoted' ORDER BY promoted_at DESC")
       .all() as any[];
   }
 
   getCandidateCount(): number {
-    return (
-      this.db
-        .prepare("SELECT COUNT(*) as n FROM learning_candidates")
-        .get() as any
-    ).n;
+    return (this.db.prepare("SELECT COUNT(*) as n FROM learning_candidates").get() as any).n;
   }
 
   // ── Windowed queries for episode detection ─────────────────────────
 
-  getUnprocessedQueryWindows(
-    windowMinutes: number
-  ): Array<{ queries: any[] }> {
+  getUnprocessedQueryWindows(windowMinutes: number): { queries: any[] }[] {
     // Get query_log rows that haven't been assigned to any episode yet.
     // Bucket by time windows.
     const rows = this.db
@@ -430,13 +396,13 @@ export class AnalyticsService {
          WHERE ql.id NOT IN (
            SELECT value FROM episodes, json_each(episodes.query_log_ids)
          )
-         ORDER BY ql.timestamp ASC`
+         ORDER BY ql.timestamp ASC`,
       )
       .all() as any[];
 
     if (rows.length === 0) return [];
 
-    const windows: Array<{ queries: any[] }> = [];
+    const windows: { queries: any[] }[] = [];
     let currentWindow: any[] = [rows[0]];
     for (let i = 1; i < rows.length; i++) {
       const prev = new Date(rows[i - 1].timestamp).getTime();
@@ -454,14 +420,9 @@ export class AnalyticsService {
     return windows;
   }
 
-  getHydrationInWindow(
-    start: string,
-    end: string
-  ): any[] {
+  getHydrationInWindow(start: string, end: string): any[] {
     return this.db
-      .prepare(
-        "SELECT * FROM hydration_log WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp ASC"
-      )
+      .prepare("SELECT * FROM hydration_log WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp ASC")
       .all(start, end) as any[];
   }
 
@@ -476,42 +437,28 @@ export class AnalyticsService {
     failed_queries: number;
     success_rate: number;
     unique_queries: number;
-    top_tools: Array<{ tool: string; count: number }>;
-    top_successful: Array<{ query: string; count: number }>;
-    recent_gaps: Array<{ query: string; hit_count: number }>;
+    top_tools: { tool: string; count: number }[];
+    top_successful: { query: string; count: number }[];
+    recent_gaps: { query: string; hit_count: number }[];
   } {
-    const total = (
-      this.db.prepare("SELECT COUNT(*) as n FROM query_log").get() as any
-    ).n;
+    const total = (this.db.prepare("SELECT COUNT(*) as n FROM query_log").get() as any).n;
     const successful = (
-      this.db
-        .prepare(
-          "SELECT COUNT(*) as n FROM query_log WHERE result_count > 0"
-        )
-        .get() as any
+      this.db.prepare("SELECT COUNT(*) as n FROM query_log WHERE result_count > 0").get() as any
     ).n;
-    const unique = (
-      this.db
-        .prepare("SELECT COUNT(DISTINCT query) as n FROM query_log")
-        .get() as any
-    ).n;
+    const unique = (this.db.prepare("SELECT COUNT(DISTINCT query) as n FROM query_log").get() as any).n;
 
     const topTools = this.db
-      .prepare(
-        "SELECT tool, COUNT(*) as count FROM query_log GROUP BY tool ORDER BY count DESC LIMIT 5"
-      )
+      .prepare("SELECT tool, COUNT(*) as count FROM query_log GROUP BY tool ORDER BY count DESC LIMIT 5")
       .all() as any[];
 
     const topSuccessful = this.db
       .prepare(
-        "SELECT query, COUNT(*) as count FROM query_log WHERE result_count > 0 GROUP BY query ORDER BY count DESC LIMIT 10"
+        "SELECT query, COUNT(*) as count FROM query_log WHERE result_count > 0 GROUP BY query ORDER BY count DESC LIMIT 10",
       )
       .all() as any[];
 
     const recentGaps = this.db
-      .prepare(
-        "SELECT query, hit_count FROM gaps WHERE resolved = 0 ORDER BY last_seen DESC LIMIT 10"
-      )
+      .prepare("SELECT query, hit_count FROM gaps WHERE resolved = 0 ORDER BY last_seen DESC LIMIT 10")
       .all() as any[];
 
     return {
@@ -529,7 +476,7 @@ export class AnalyticsService {
   /**
    * Weekly aggregated stats for history/trend tracking.
    */
-  getWeeklyStats(): Array<{
+  getWeeklyStats(): {
     week: string;
     queries: number;
     gaps: number;
@@ -537,7 +484,7 @@ export class AnalyticsService {
     episodes: number;
     candidates_proposed: number;
     candidates_promoted: number;
-  }> {
+  }[] {
     return this.db
       .prepare(
         `SELECT
@@ -551,7 +498,7 @@ export class AnalyticsService {
          FROM query_log
          GROUP BY week
          ORDER BY week DESC
-         LIMIT 12`
+         LIMIT 12`,
       )
       .all()
       .map((row: any) => {
@@ -561,7 +508,7 @@ export class AnalyticsService {
           this.db
             .prepare(
               `SELECT COUNT(*) as n FROM episodes
-               WHERE strftime('%Y-W%W', started_at) = ?`
+               WHERE strftime('%Y-W%W', started_at) = ?`,
             )
             .get(week) as any
         ).n;
@@ -570,7 +517,7 @@ export class AnalyticsService {
           this.db
             .prepare(
               `SELECT COUNT(*) as n FROM learning_candidates
-               WHERE strftime('%Y-W%W', created_at) = ?`
+               WHERE strftime('%Y-W%W', created_at) = ?`,
             )
             .get(week) as any
         ).n;
@@ -579,7 +526,7 @@ export class AnalyticsService {
           this.db
             .prepare(
               `SELECT COUNT(*) as n FROM learning_candidates
-               WHERE status = 'promoted' AND strftime('%Y-W%W', promoted_at) = ?`
+               WHERE status = 'promoted' AND strftime('%Y-W%W', promoted_at) = ?`,
             )
             .get(week) as any
         ).n;
@@ -588,7 +535,7 @@ export class AnalyticsService {
           this.db
             .prepare(
               `SELECT COUNT(*) as n FROM gaps
-               WHERE resolved = 1 AND strftime('%Y-W%W', resolved_at) = ?`
+               WHERE resolved = 1 AND strftime('%Y-W%W', resolved_at) = ?`,
             )
             .get(week) as any
         ).n;

@@ -450,3 +450,143 @@ the worst frame of a two-port read done inside one frame.
 ### Recipes
 
 - `recipes/kickassembler/paddle-read.md`
+
+---
+
+## mouse_1351_read — Read a 1351 mouse's position counter from POTX/POTY once per frame
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D419, D41A, DC00, DC01, DC02
+**Cost:** cycles_per_frame=104, zp_bytes=0, irq_slots=0
+**Cost basis:** measured-vice
+
+### Why
+
+The Commodore 1351 in its proportional mode is not a joystick and not a
+paddle, though it uses both sets of lines. Its movement arrives through
+the SID's pot registers, `$D419` and `$D41A`, as a position counter the
+mouse keeps itself; its two buttons arrive on the control port's switch
+lines. A program that reads it as a paddle sees a value that wanders
+and wraps; a program that reads it as a joystick sees nothing at all
+unless the mouse was powered up in its joystick mode. The 1350, and the
+1351 with the right button held at power-up, report movement as
+joystick direction pulses on the switch lines instead; nothing below
+applies to that mode.
+
+### How
+
+Select the mouse's port through CIA1 port A, bit 6 of `$DC00` for
+control port 1 or bit 7 for port 2, with `$DC02` at `$FF` so the write
+reaches the pins; that is the same select as `paddle_read`, and the
+same 512-cycle conversion follows it. Then, once per frame:
+
+```text
+x = ($D419 >> 1) & $3F        ; bits 1 to 6 are the counter, bit 0 is noise
+dx = (x - prev_x) & $3F       ; the difference modulo 64
+if dx >= 32: dx = dx - 64     ; 0..31 forward, 32..63 back
+prev_x = x
+```
+
+and the same for `$D41A`. The button byte is the port's joystick byte,
+`$DC01` for port 1 or `$DC00` for port 2: the left button is on the
+FIRE line, bit 4, and the right button on the UP line, bit 0, both low
+when pressed.
+
+The register format is from the 1351's documentation and is not
+measured against a real mouse here. What is measured, in VICE x64sc
+3.10 with its 1351 on port 1 (`recipes/kickassembler/mouse-1351-read.md`):
+over 250 frames at rest the masked counter read 32 on every frame on
+both axes and both models, while the raw byte alternated between `$40`
+and `$41`, bit 0 set in 128, 112 and 112 of the 250 frames across three
+runs. Bit 0 is noise from one frame to the next, not a constant offset,
+and any code that compares raw pot bytes will see movement that is not
+there. Shift it off before anything else.
+
+### Why it works
+
+The mouse counts its own quadrature transitions in a 6-bit counter per
+axis and encodes the counter as a voltage on the pot line, timed against
+the SID's conversion cycle, so that the byte the SID finishes every 512
+cycles carries the counter in bits 1 to 6. The period is the SID's, not
+the mouse's, and it is the figure `paddle_read` measured: 512 cycles a
+conversion, about 520 microseconds on PAL and 500 on NTSC (arithmetic
+from the clock rates). A frame is 38 conversions on PAL and 33 on
+NTSC (arithmetic), so the register has been refreshed many times over
+before the next read, and one read per frame loses nothing so long as
+the counter has moved fewer than 32 steps in between. Whether a hand
+can move a 1351 faster than that in one frame, a fiftieth of a second
+on PAL and a sixtieth on NTSC, is not measured here; the delta arithmetic is exact below that speed and
+wrong above it, with no way to tell from the data.
+
+The modulo-64 subtraction is what makes the wrap invisible. 63 to 0 is
+`(0 - 63) & $3F` = 1, a step forward; 0 to 63 is `(63 - 0) & $3F` = 63,
+read as -1. The two half-turn cases, a difference of exactly 32, are
+ambiguous by construction and the recipe's convention reads them as
+-32. The recipe runs ten such pairs, including both wraps and both
+half-turns, against expected values and prints `OK` for each.
+
+The select bits are the ones `paddle_read` describes, with the same
+consequence: the KERNAL's SCNKEY drives `$DC00` from the jiffy IRQ and
+changes bit 6 as it walks the columns, so a conversion started during
+the scan converts the wrong source. `paddle_read` measured about one
+bad read per jiffy interrupt with the KERNAL IRQ live and none under
+`SEI`; the mouse read is the same read on the same register and the
+same three remedies apply, `SEI` around the read, owning the IRQ, or a
+read on a raster line at least 576 cycles after the scan's last column
+write. The recipe reads at raster line 250 with interrupts off. Because
+both ports' pots go through the same two SID registers, a mouse and a
+pair of paddles on the other port share the select and cannot be read
+in the same conversion; `paddle_read`'s interleaved-frame schedule
+handles the pair.
+
+Both button lines are joystick lines, so `joystick2_scan_phantom_press`
+and `cia1_ddr_cleared_kills_keyboard` in `pitfalls/input.md` apply to a
+mouse in port 2 exactly as to a stick: read `$DC00` from the main loop
+or from a handler that cannot interrupt the scan, and never clear
+`$DC02` to do it. A mouse in port 1 has the keyboard problem the other
+way round, and the select makes it worse: `$40` in `$DC00` sets bit 6
+and clears the other seven, so keyboard columns 0 to 5 and 7 are driven
+low for as long as port 1 is selected, and any held key in those
+columns pulls its row line low on `$DC01`, where the mouse's right
+button is row 0 (UP, PB0) and its left button row 4 (FIRE, PB4). That
+is the wiring `keyboard_matrix_scan` describes for port 1 sticks, not
+measured here with a mouse. A game that reads the keyboard as well as a
+port 1 mouse selects with `$7F`, the value SCNKEY itself leaves behind:
+bit 6 still set, only column 7 driven, so only that column's keys can
+alias the mouse lines (1, left-arrow, CTRL, 2 and SPACE, measured for
+port 1 in `pitfalls/input.md`). The recipe uses `$40` with no keyboard
+in play.
+
+### Variations
+
+**Accumulated position.** Add each frame's `dx` and `dy` to a 16-bit
+pointer position and clamp to the screen; the pointer sprite's
+coordinate comes from that sum, never from the counter.
+
+**Acceleration.** Scale `dx` by its own magnitude, doubling a delta of
+8 or more, so slow moves are precise and fast ones cross the screen.
+The threshold is a matter of feel and is not measured here.
+
+**Half-rate reads.** Reading every other frame halves the cost and
+halves the speed at which the 32-step ambiguity is reached; a game that
+reads at half rate should say so in its own budget.
+
+### Cycle budget
+
+One call of the recipe's `read_mouse`, both axes with their deltas and
+including `jsr` and `rts`, costs 102 to 104 cycles by the sign of each
+axis's delta: a delta of 0 to +31 takes a `bcc` (3 cycles), a negative
+delta falls through it and runs the `ora` sign-extend (2 plus 2), one
+cycle more per axis. 102 is both non-negative, 103 one of each, 104
+both negative. The worst case measured 104 cycles by CIA2 timer A
+difference on raster line 250, on both models, with both previous
+counters set to force the negative path (measured in VICE x64sc 3.10).
+The Cost line states that figure. There is no wait in the per-frame
+cost because the
+select is written once and never changed; a program that switches the
+select to read paddles on the other port pays `paddle_read`'s settle.
+
+### Recipes
+
+- `recipes/kickassembler/mouse-1351-read.md`

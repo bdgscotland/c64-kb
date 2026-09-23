@@ -7,6 +7,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -25,12 +26,19 @@ const InputSchema = z.object({
     .describe("List of reference tune event lists. Pass [] to get a neutral (no-reference) verdict."),
 });
 
+const PYTHON = path.join(ANALYZER_DIR, ".venv/bin/python");
+
+/**
+ * Registers the tool only where the Python analyzer is installed. The public
+ * repository has no analyzer/, and the tool used to be listed there anyway
+ * and fail on every call.
+ */
 export function registerMemorizationTool(server: McpServer): void {
+  if (!existsSync(PYTHON)) return;
   server.registerTool(
     "c64_memorization_check",
     {
-      description:
-        `Check whether a candidate's SID note stream resembles any reference tune via SSIMuse + Originality Report detectors.
+      description: `Check whether a candidate's SID note stream resembles any reference tune via SSIMuse + Originality Report detectors.
 
 Purpose: Guards the SID generation pipeline against memorized copies of HVSC canon tunes. Returns a structured verdict with nearest-neighbor distance, similarity scores, and a binary copy_detected flag calibrated against the YAML-configured thresholds.
 
@@ -64,13 +72,14 @@ Limitations: copies[] is always [] in Phase A — identifying WHICH reference ma
       });
 
       const result = await new Promise<string>((resolve, reject) => {
-        const proc = spawn(
-          path.join(ANALYZER_DIR, ".venv/bin/python"),
-          ["-m", "src.memorization.service", "--stdio"],
-          { cwd: ANALYZER_DIR, stdio: ["pipe", "pipe", "inherit"] },
-        );
+        const proc = spawn(PYTHON, ["-m", "src.memorization.service", "--stdio"], {
+          cwd: ANALYZER_DIR,
+          stdio: ["pipe", "pipe", "inherit"],
+        });
         let stdout = "";
-        proc.stdout.on("data", (b: Buffer) => { stdout += b.toString(); });
+        proc.stdout.on("data", (b: Buffer) => {
+          stdout += b.toString();
+        });
         proc.on("error", reject);
         proc.on("close", (code: number | null) => {
           if (code !== 0) {
@@ -83,8 +92,17 @@ Limitations: copies[] is always [] in Phase A — identifying WHICH reference ma
         proc.stdin.end();
       });
 
+      // The service answers {kind: "error", ...} on its own failures; an MCP
+      // client only sees a failure when isError is set.
+      let isError = false;
+      try {
+        isError = (JSON.parse(result) as { kind?: unknown }).kind === "error";
+      } catch {
+        isError = true;
+      }
       return {
         content: [{ type: "text" as const, text: result }],
+        isError,
       };
     },
   );

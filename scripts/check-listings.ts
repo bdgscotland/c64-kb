@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 /**
  * check-listings — build every code listing in the knowledge base with the
  * real toolchain it claims to be for.
@@ -24,7 +24,7 @@
  * This exists because eight recipes shipped without ever having been
  * assembled, and six of them did not.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
@@ -36,9 +36,12 @@ const allowMissing = process.argv.includes("--allow-missing");
 // Used by the PostToolUse hook after an edit, so one file is checked in a
 // second or two instead of the whole tree.
 const fileArgIdx = process.argv.findIndex((a) => a === "--file" || a.startsWith("--file="));
-const onlyFile = fileArgIdx === -1
-  ? null
-  : (process.argv[fileArgIdx].includes("=") ? process.argv[fileArgIdx].split("=")[1] : process.argv[fileArgIdx + 1]);
+const onlyFile =
+  fileArgIdx === -1
+    ? null
+    : process.argv[fileArgIdx].includes("=")
+      ? process.argv[fileArgIdx].split("=")[1]
+      : process.argv[fileArgIdx + 1];
 const onlyRel = onlyFile ? relative(ROOT, onlyFile.startsWith("/") ? onlyFile : join(ROOT, onlyFile)) : null;
 const inScope = (p: string) => !onlyRel || relative(ROOT, p) === onlyRel;
 
@@ -85,12 +88,17 @@ const missing = new Set<string>();
 function report(ok: boolean, label: string, detail = "") {
   if (ok) built++;
   else failures++;
-  console.log(`${ok ? "ok  " : "FAIL"} ${label}${detail ? `\n     ${detail.split("\n").join("\n     ")}` : ""}`);
+  console.log(
+    `${ok ? "ok  " : "FAIL"} ${label}${detail ? `\n     ${detail.split("\n").join("\n     ")}` : ""}`,
+  );
 }
 
 function runKick(src: string, out: string): { ok: boolean; log: string } {
   const r = spawnSync(tools.java!, ["-jar", tools.kickass!, src, "-o", out], { encoding: "utf8" });
-  const log = (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l) || /at line/.test(l)).join("\n");
+  const log = (r.stdout + r.stderr)
+    .split("\n")
+    .filter((l) => /error/i.test(l) || l.includes("at line"))
+    .join("\n");
   return { ok: r.status === 0, log };
 }
 
@@ -109,24 +117,52 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
     const stem = basename(md, ".md");
     if (toolchain === "kickassembler") {
       const f = all.find((x) => x.lang === "asm");
-      if (!f) { report(false, rel, "no ```asm listing"); continue; }
-      if (!tools.kickass || !tools.java) { missing.add("KickAssembler (KICKASS_JAR + java)"); skipped++; continue; }
+      if (!f) {
+        report(false, rel, "no ```asm listing");
+        continue;
+      }
+      if (!tools.kickass || !tools.java) {
+        missing.add("KickAssembler (KICKASS_JAR + java)");
+        skipped++;
+        continue;
+      }
       const src = join(work, `${stem}.asm`);
       writeFileSync(src, f.code);
       const r = runKick(src, join(work, `${stem}.prg`));
       report(r.ok, rel, r.ok ? "" : r.log);
     } else {
       const f = all.find((x) => x.lang === "c" && /\bmain\s*\(/.test(x.code));
-      if (!f) { report(false, rel, "no ```c listing with main()"); continue; }
+      if (!f) {
+        report(false, rel, "no ```c listing with main()");
+        continue;
+      }
       const src = join(work, `${toolchain}-${stem}.c`);
       writeFileSync(src, f.code);
       if (toolchain === "oscar64") {
-        if (!tools.oscar64) { missing.add("oscar64"); skipped++; continue; }
-        const r = spawnSync(tools.oscar64, ["-tm=c64", "-O2", `-o=${join(work, `${stem}.prg`)}`, src], { encoding: "utf8", cwd: work });
-        const log = (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n");
-        report(r.status === 0, rel, r.status === 0 ? "" : log || `exit ${r.status}${r.signal ? ` (${r.signal})` : ""}`);
+        if (!tools.oscar64) {
+          missing.add("oscar64");
+          skipped++;
+          continue;
+        }
+        const r = spawnSync(tools.oscar64, ["-tm=c64", "-O2", `-o=${join(work, `${stem}.prg`)}`, src], {
+          encoding: "utf8",
+          cwd: work,
+        });
+        const log = (r.stdout + r.stderr)
+          .split("\n")
+          .filter((l) => /error/i.test(l))
+          .join("\n");
+        report(
+          r.status === 0,
+          rel,
+          r.status === 0 ? "" : log || `exit ${r.status}${r.signal ? ` (${r.signal})` : ""}`,
+        );
       } else {
-        if (!tools.cl65) { missing.add("cl65"); skipped++; continue; }
+        if (!tools.cl65) {
+          missing.add("cl65");
+          skipped++;
+          continue;
+        }
         // A cc65 recipe may carry its linker configuration in a ```cfg fence;
         // it is written beside the source and passed with -C, as the page's
         // own build line does. Without the fence the stock c64.cfg applies.
@@ -137,8 +173,15 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
           writeFileSync(cfg, cfgFence.code);
           cfgArgs.push("-C", cfg);
         }
-        const r = spawnSync(tools.cl65, ["-t", "c64", "-O", ...cfgArgs, "-o", join(work, `${stem}.prg`), src], { encoding: "utf8", cwd: work });
-        const log = (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n");
+        const r = spawnSync(
+          tools.cl65,
+          ["-t", "c64", "-O", ...cfgArgs, "-o", join(work, `${stem}.prg`), src],
+          { encoding: "utf8", cwd: work },
+        );
+        const log = (r.stdout + r.stderr)
+          .split("\n")
+          .filter((l) => /error/i.test(l))
+          .join("\n");
         report(r.status === 0, rel, r.status === 0 ? "" : log);
       }
     }
@@ -148,9 +191,12 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
 // ---------------------------------------------------------------------------
 // KickAssembler fragments outside the recipes
 // ---------------------------------------------------------------------------
-const MNEMONIC = /^\s*(lda|sta|ldx|stx|ldy|sty|inc|dec|jmp|jsr|sei|cli|nop|bit|cmp|adc|sbc|and|ora|eor|pha|pla|rts|rti)\b/m;
-const KICK_MARKS = /^\s*(\/\/|\.const|\.var|\.label|\.macro|\.for|\.pc|\.fill|\.byte|\.word|\.text|\.encoding|BasicUpstart)/m;
-const OPERAND = /\b(?:jmp|jsr|bne|beq|bcc|bcs|bpl|bmi|bvc|bvs|lda|sta|ldx|ldy|stx|sty|inc|dec|cmp|cpx|cpy|adc|sbc|and|ora|eor|bit|asl|lsr|rol|ror|lax|sax|dcp|isc|isb|slo|rla|sre|rra|alr|arr|anc|axs|sbx)\s+#?[<>]?\(?([A-Za-z_]\w*)\b/g;
+const MNEMONIC =
+  /^\s*(lda|sta|ldx|stx|ldy|sty|inc|dec|jmp|jsr|sei|cli|nop|bit|cmp|adc|sbc|and|ora|eor|pha|pla|rts|rti)\b/m;
+const KICK_MARKS =
+  /^\s*(\/\/|\.const|\.var|\.label|\.macro|\.for|\.pc|\.fill|\.byte|\.word|\.text|\.encoding|BasicUpstart)/m;
+const OPERAND =
+  /\b(?:jmp|jsr|bne|beq|bcc|bcs|bpl|bmi|bvc|bvs|lda|sta|ldx|ldy|stx|sty|inc|dec|cmp|cpx|cpy|adc|sbc|and|ora|eor|bit|asl|lsr|rol|ror|lax|sax|dcp|isc|isb|slo|rla|sre|rra|alr|arr|anc|axs|sbx)\s+#?[<>]?\(?([A-Za-z_]\w*)\b/g;
 // Identifiers passed to a macro call, e.g. LAX_ZPY(sprite_y).
 const MACRO_ARGS = /\b[A-Za-z_]\w*\(([^)]*)\)/g;
 
@@ -159,9 +205,14 @@ if (tools.kickass && tools.java) {
     if (md.includes(`${join("docs", "recipes")}/`)) continue;
     const rel = relative(ROOT, md);
     for (const f of fences(readFileSync(md, "utf8"))) {
-      const isKick = f.lang === "kickassembler" || f.lang === "kickass" || f.lang === "kick" || (f.lang === "asm" && KICK_MARKS.test(f.code) && !/^\s*;/m.test(f.code));
+      const isKick =
+        f.lang === "kickassembler" ||
+        f.lang === "kickass" ||
+        f.lang === "kick" ||
+        (f.lang === "asm" && KICK_MARKS.test(f.code) && !/^\s*;/m.test(f.code));
       if (!isKick || !MNEMONIC.test(f.code)) continue;
-      if (/\.import\s+(source|binary|c64|text)/.test(f.code) || /LoadSid|LoadBinary|LoadPicture/.test(f.code)) continue; // needs files
+      if (/\.import\s+(source|binary|c64|text)/.test(f.code) || /LoadSid|LoadBinary|LoadPicture/.test(f.code))
+        continue; // needs files
       const defined = new Set<string>();
       for (const m of f.code.matchAll(/^\s*([A-Za-z_]\w*):/gm)) defined.add(m[1]);
       for (const m of f.code.matchAll(/\.(?:const|var|label)\s+([A-Za-z_]\w*)/g)) defined.add(m[1]);
@@ -180,18 +231,23 @@ if (tools.kickass && tools.java) {
       }
       for (const m of f.code.matchAll(MACRO_ARGS)) {
         for (const tok of m[1].split(",")) {
-          const name = tok.trim().match(/^[<>]?([A-Za-z_]\w*)$/)?.[1];
+          const name = /^[<>]?([A-Za-z_]\w*)$/.exec(tok.trim())?.[1];
           if (name && !defined.has(name) && !/^[axy]$/i.test(name)) stubs.add(name);
         }
       }
       // Names in .word / .byte tables (vector tables of handlers a fragment does not define).
       for (const m of f.code.matchAll(/^\s*\.(?:word|byte)\s+([^/\n]+)/gm)) {
         for (const tok of m[1].split(",")) {
-          const name = tok.trim().match(/^[<>]?([A-Za-z_]\w*)$/)?.[1];
+          const name = /^[<>]?([A-Za-z_]\w*)$/.exec(tok.trim())?.[1];
           if (name && !defined.has(name)) stubs.add(name);
         }
       }
-      const prelude = "* = $1000\n" + [...stubs].filter((s) => !branchTargets.has(s)).map((s) => `.label ${s} = $c000\n`).join("");
+      const prelude =
+        "* = $1000\n" +
+        [...stubs]
+          .filter((s) => !branchTargets.has(s))
+          .map((s) => `.label ${s} = $c000\n`)
+          .join("");
       const trailer = "\n" + [...branchTargets].map((s) => `${s}: rts\n`).join("");
       const src = join(work, `${basename(md, ".md")}-${f.index}.asm`);
       writeFileSync(src, prelude + f.code + trailer);
@@ -209,7 +265,9 @@ if (recipesSeen === 0 && !onlyRel) {
 }
 
 // ---------------------------------------------------------------------------
-console.log(`\n${built} built, ${recipesSeen} recipe pages seen, ${failures} failed, ${skipped} recipes skipped for missing tools`);
+console.log(
+  `\n${built} built, ${recipesSeen} recipe pages seen, ${failures} failed, ${skipped} recipes skipped for missing tools`,
+);
 if (missing.size) {
   console.log(`${allowMissing ? "warning" : "error"}: toolchains not found: ${[...missing].join(", ")}`);
   if (!allowMissing) failures++;

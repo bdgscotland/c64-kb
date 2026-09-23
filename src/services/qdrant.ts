@@ -1,7 +1,9 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { config } from "../config.js";
+import { config } from "../config.ts";
 
 const COLLECTION = config.qdrant.collection;
+// Extra fused points fetched so a tie at the cut is broken by id, not by Qdrant's order.
+const TIE_MARGIN = 20;
 const VECTOR_SIZE = config.qdrant.vectorSize;
 
 export interface ChunkPayload {
@@ -49,12 +51,12 @@ export class QdrantService {
   }
 
   async upsertChunks(
-    chunks: Array<{
+    chunks: {
       id: string;
       dense: number[];
       sparse: { indices: number[]; values: number[] };
       payload: ChunkPayload;
-    }>
+    }[],
   ): Promise<void> {
     // Batch in groups of 100
     for (let i = 0; i < chunks.length; i += 100) {
@@ -74,9 +76,9 @@ export class QdrantService {
 
   async search(
     vector: number[],
-    limit: number = 5,
-    filterSource?: string
-  ): Promise<Array<ChunkPayload & { score: number }>> {
+    limit = 5,
+    filterSource?: string,
+  ): Promise<(ChunkPayload & { score: number })[]> {
     const filter = filterSource
       ? {
           must: [
@@ -104,13 +106,11 @@ export class QdrantService {
 
   async searchByText(
     text: string,
-    limit: number = 5,
-    filterSource?: string
-  ): Promise<Array<ChunkPayload & { score: number }>> {
+    limit = 5,
+    filterSource?: string,
+  ): Promise<(ChunkPayload & { score: number })[]> {
     // Full-text search fallback using Qdrant's text index (word tokenized)
-    const must: any[] = [
-      { key: "text", match: { text } },
-    ];
+    const must: any[] = [{ key: "text", match: { text } }];
     if (filterSource) {
       must.push({ key: "source", match: { value: filterSource } });
     }
@@ -139,14 +139,12 @@ export class QdrantService {
   async hybridSearch(
     denseVec: number[],
     sparseVec: { indices: number[]; values: number[] },
-    limit: number = 5,
-    filterSource?: string
-  ): Promise<Array<ChunkPayload & { score: number }>> {
-    const filter = filterSource
-      ? { must: [{ key: "source", match: { value: filterSource } }] }
-      : undefined;
+    limit = 5,
+    filterSource?: string,
+  ): Promise<(ChunkPayload & { score: number })[]> {
+    const filter = filterSource ? { must: [{ key: "source", match: { value: filterSource } }] } : undefined;
 
-    const prefetch: Array<Record<string, unknown>> = [
+    const prefetch: Record<string, unknown>[] = [
       {
         query: denseVec,
         using: "dense",
@@ -164,21 +162,30 @@ export class QdrantService {
       });
     }
 
+    // RRF scores tie often (a point first in one list and absent from the
+    // other scores the same as its mirror), and Qdrant returns tied points in
+    // no fixed order: the same query gave four different top-5s in four runs.
+    // Fetch past the cut, then order by score and id so ties break the same
+    // way every time.
     const results = await this.client.query(COLLECTION, {
       prefetch,
       query: { fusion: "rrf" },
-      limit,
+      limit: limit + TIE_MARGIN,
       with_payload: true,
     });
 
-    return (results.points ?? []).map((r) => ({
-      ...(r.payload as unknown as ChunkPayload),
-      score: r.score ?? 0,
-    }));
+    return (results.points ?? [])
+      .map((r) => ({ id: String(r.id), score: r.score ?? 0, payload: r.payload as unknown as ChunkPayload }))
+      .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .slice(0, limit)
+      .map((r) => ({ ...r.payload, score: r.score }));
   }
 
   async deleteBySource(source: string): Promise<void> {
+    // wait: the client defaults to not waiting, so an upsert or a search right
+    // after could still see the old points.
     await this.client.delete(COLLECTION, {
+      wait: true,
       filter: {
         must: [{ key: "source", match: { value: source } }],
       },
@@ -208,10 +215,7 @@ export class QdrantService {
    *
    * Returns up to `limit` points (default 20).
    */
-  async scrollBySource(
-    source: string,
-    limit: number = 20
-  ): Promise<Array<ChunkPayload>> {
+  async scrollBySource(source: string, limit = 20): Promise<ChunkPayload[]> {
     const result = await this.client.scroll(COLLECTION, {
       filter: {
         must: [
@@ -226,9 +230,7 @@ export class QdrantService {
       with_vector: false,
     });
 
-    return (result.points ?? []).map(
-      (r) => r.payload as unknown as ChunkPayload
-    );
+    return (result.points ?? []).map((r) => r.payload as unknown as ChunkPayload);
   }
 
   /**
@@ -242,11 +244,7 @@ export class QdrantService {
    *
    * Returns up to `limit` matching points (default 200).
    */
-  async scrollBySourcePrefix(
-    prefix: string,
-    limit: number = 200,
-    scanLimit: number = 3000
-  ): Promise<Array<ChunkPayload>> {
+  async scrollBySourcePrefix(prefix: string, limit = 200, scanLimit = 3000): Promise<ChunkPayload[]> {
     const results: ChunkPayload[] = [];
     let offset: string | number | undefined = undefined;
     let scanned = 0;
@@ -280,12 +278,14 @@ export class QdrantService {
    * Get document source breakdown by scrolling unique source values.
    * Groups by top-level directory and returns chunk counts per source file.
    */
-  async getSourceBreakdown(): Promise<Array<{
-    category: string;
-    sources: Array<{ source: string; chunks: number }>;
-    totalChunks: number;
-    totalDocs: number;
-  }>> {
+  async getSourceBreakdown(): Promise<
+    {
+      category: string;
+      sources: { source: string; chunks: number }[];
+      totalChunks: number;
+      totalDocs: number;
+    }[]
+  > {
     // Scroll all points collecting source counts (payload only, no vectors)
     const sourceCounts = new Map<string, number>();
     let offset: string | number | undefined = undefined;
@@ -311,7 +311,7 @@ export class QdrantService {
     // directory if it's one we know, "core" for top-level .md files,
     // "other" for anything else. Matches the WALK_PRIORITY order in
     // src/ingest.ts so dashboard buckets line up with ingest order.
-    const C64_BUCKETS: ReadonlyArray<readonly [string, string]> = [
+    const C64_BUCKETS: readonly (readonly [string, string])[] = [
       ["hardware/", "hardware"],
       ["toolchains/", "toolchains"],
       ["runtime/", "runtime"],
@@ -338,17 +338,19 @@ export class QdrantService {
 
     // Build result sorted by total chunks desc, alphabetical tiebreakers
     // so equal counts produce identical ordering across runs.
-    const result = Array.from(categories.entries()).map(([category, sources]) => {
-      const sourceList = Array.from(sources.entries())
-        .map(([source, chunks]) => ({ source, chunks }))
-        .sort((a, b) => b.chunks - a.chunks || a.source.localeCompare(b.source));
-      return {
-        category,
-        sources: sourceList,
-        totalChunks: sourceList.reduce((s, x) => s + x.chunks, 0),
-        totalDocs: sourceList.length,
-      };
-    }).sort((a, b) => b.totalChunks - a.totalChunks || a.category.localeCompare(b.category));
+    const result = Array.from(categories.entries())
+      .map(([category, sources]) => {
+        const sourceList = Array.from(sources.entries())
+          .map(([source, chunks]) => ({ source, chunks }))
+          .sort((a, b) => b.chunks - a.chunks || a.source.localeCompare(b.source));
+        return {
+          category,
+          sources: sourceList,
+          totalChunks: sourceList.reduce((s, x) => s + x.chunks, 0),
+          totalDocs: sourceList.length,
+        };
+      })
+      .sort((a, b) => b.totalChunks - a.totalChunks || a.category.localeCompare(b.category));
 
     return result;
   }
@@ -357,9 +359,14 @@ export class QdrantService {
    * Sample vectors with 2D random projection for visualization.
    * Returns points with x,y coords and metadata.
    */
-  async sampleVectorsForViz(sampleSize: number = 500): Promise<Array<{
-    x: number; y: number; source: string; section: string;
-  }>> {
+  async sampleVectorsForViz(sampleSize = 500): Promise<
+    {
+      x: number;
+      y: number;
+      source: string;
+      section: string;
+    }[]
+  > {
     // Random projection matrix (dense vector dim -> 2), seeded for consistency
     const dim = VECTOR_SIZE;
     const proj = [new Float64Array(dim), new Float64Array(dim)];
@@ -371,7 +378,7 @@ export class QdrantService {
       }
     }
 
-    const allPoints: Array<{ x: number; y: number; source: string; section: string }> = [];
+    const allPoints: { x: number; y: number; source: string; section: string }[] = [];
 
     // Scroll through ALL vectors in batches
     const batchSize = Math.min(sampleSize, 500);
@@ -392,10 +399,12 @@ export class QdrantService {
       for (const p of result.points) {
         // Named vectors return a record { dense: number[], ... }
         const vecField = p.vector as unknown;
-        const vec = (vecField && typeof vecField === "object" && !Array.isArray(vecField)
-          ? (vecField as Record<string, number[]>).dense
-          : (vecField as number[])) ?? [];
-        let x = 0, y = 0;
+        const vec =
+          (vecField && typeof vecField === "object" && !Array.isArray(vecField)
+            ? (vecField as Record<string, number[]>).dense
+            : (vecField as number[])) ?? [];
+        let x = 0,
+          y = 0;
         if (vec && vec.length === dim) {
           for (let i = 0; i < dim; i++) {
             x += vec[i] * proj[0][i];
@@ -404,7 +413,8 @@ export class QdrantService {
         }
         const payload = p.payload as any;
         allPoints.push({
-          x, y,
+          x,
+          y,
           source: payload?.source ?? "",
           section: payload?.section ?? "",
         });
@@ -418,7 +428,10 @@ export class QdrantService {
     if (allPoints.length === 0) return [];
 
     // Normalize to [0, 1]
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
     for (const p of allPoints) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;

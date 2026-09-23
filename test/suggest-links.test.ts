@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { suggestLinks } from "../src/tools/selfimprovement.js";
-import { FalkorService } from "../src/services/falkor.js";
+import { suggestLinks } from "../src/tools/selfimprovement.ts";
+import { FalkorService } from "../src/services/falkor.ts";
 
 const f = new FalkorService();
 
@@ -11,7 +11,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  try { await f.close(); } catch { /* expected on already-closed */ }
+  try {
+    await f.close();
+  } catch {
+    /* expected on already-closed */
+  }
 });
 
 describe("c64_suggest_links", () => {

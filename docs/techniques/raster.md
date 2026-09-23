@@ -354,6 +354,55 @@ Bauer's article and the VICE source, not from a run.
 
 ---
 
+## fld_flexible_line_distance — FLD (Flexible Line Distance)
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** midframe_raster_irqs
+**Requires:** badline_synchronization, stable_raster_irq
+**Cost:** cycles_per_line=63, lines_active=40, irq_slots=2
+**Cost basis:** arithmetic
+
+### Why
+
+The text display starts on the first badline of the frame, line 51 with the default YSCROLL of 3, and nothing in the register set moves it further down than YSCROLL's seven lines. FLD moves it by any number of lines. It is the oldest of the badline tricks and the parent of the rest: linecrunch, FPP and AGSP all begin with the same write.
+
+### How
+
+A badline needs `(line & 7) == YSCROLL` (see `badline_synchronization`). Each line, rewrite YSCROLL so that the current line never matches. The VIC then finds no badline, fetches no character row, and stays in its idle state; the raster lines go by and the first row of text has not been drawn. Stop rewriting after N lines and the next matching line is the first badline of the frame: the whole display appears N lines lower, and its last N lines are cut off by the lower border, which does not move.
+
+The recipe writes, on line L, the value `(L + 2) & 7`. That value differs from `L & 7`, so it does not make L a badline, and from `(L + 1) & 7`, so line L + 1 starts clean and the next write has the whole of it to land in. After the last write on line 49 + N, YSCROLL holds `(51 + N) & 7`, and line 51 + N is the first badline. The rest of the frame keeps that YSCROLL, so the rows below stay eight lines apart; the handler restores YSCROLL 3 before line 50 of the next frame.
+
+In the gap the VIC is in idle state and its g-accesses read one fixed address, `$3FFF` in VIC bank 0 (`$39FF` with ECM set; `$7FFF`, `$BFFF`, `$FFFF` in the other banks). That byte is drawn across the 320 pixels of every gap line, bit 1 in colour 0 (black) over the background colour. A stock machine has zero there and the gap is blank; the recipe plants `%10101010` and the gap shows 160 black and 160 blue pixels on every line (measured in VICE x64sc 3.10, PAL and NTSC). That striped band is the proof that no badline occurred: a row fetch would have replaced it with characters.
+
+### Why it works
+
+The badline condition is evaluated on every cycle of a line in the display window, not once. A match still in force when the row fetch is due starts it; a value that matches at the line's first cycle and is changed early enough in the line does not. The cycle at which that decision falls is not measured here; `badline_synchronization` puts BA low at cycle 12 and the c-accesses at 15-54. That sets the safe constraint: if the value in force when a line starts already differs from the line's own bits, the write during that line can land at any cycle. Measured in VICE x64sc 3.10 with the recipe's listing rebuilt to write `(L + 1) & 7` instead of `(L + 2) & 7`, so that each line begins matching: the display did not move at all, the measured first badline disagreed with the expected one and the verdict byte read `$02`. An earlier build of the same variant, writing two cycles earlier in each line, moved the display one line, so the write on line 51 landed in time there and not in the shipped build. The shift is 0 or 1 by the cycle that write lands on, never N. With `(L + 2) & 7` the display moved exactly N lines on every frame of an 8,000,000-cycle run on both models.
+
+Given a value that is safe for the next line, the write itself may land anywhere in the current line. The recipe polls `$D012` for the line change and writes about ten to twenty cycles in; a cycle-counted 63-cycle loop from a stable raster is the classic form and works the same way, but has to be recounted at 65 cycles for NTSC. Either way the entry has to start on a known line, which is why the technique presupposes a stable raster IRQ and the badline rule.
+
+### Variations
+
+**Linecrunch.** Make a badline happen and then, on the same line, rewrite YSCROLL so the row counter advances without the row being displayed; each crunched line skips one character row. The display moves up instead of down. Not measured here.
+
+**FPP (flexible pixel position).** Rewrite YSCROLL on every line of a row so the VIC repeats or skips single pixel lines of the character data, which stretches and squashes the picture vertically. Not measured here.
+
+**AGSP (any given screen position).** Combine FLD or linecrunch with VSP (`vsp_glitch`) for a whole-screen scroll of any distance in both axes in one frame. Not measured here.
+
+**Border stripes.** With the top and bottom borders open (`topbottom_border_open`) the same idle fetch draws `$3FFF` there too; the byte can be changed per line for a cheap full-height pattern.
+
+### Cycle budget
+
+The CPU is held for every line of the gap: the loop's work is 35 cycles per line (the six-instruction YSCROLL update, the counter and the branch) and the rest is spent polling for the next line, so the technique costs the whole line, 63 cycles on PAL and 65 on NTSC, for N lines. Measured in VICE x64sc 3.10 with CIA2 timer A from just before the first write to the end of the loop: 1,131 cycles for 18 lines on PAL (62.8 a line) and 1,423 cycles for 22 lines on NTSC (64.7 a line); the start and stop follow `$D012` polls, so the figure is within a poll's seven cycles of N times the line. The Cost line states 40 lines, the recipe's largest N. The double IRQ that enters the loop is the two slots.
+
+### Recipes
+
+- `recipes/kickassembler/fld.md` — a bouncing display driven by a sine table, `$3FFF` striped, the first badline read back and checked against 51 + N each frame, PAL and NTSC.
+
+---
+
 ## sideborder_open — Open the side border
 
 **Complexity:** high

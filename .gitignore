@@ -13,7 +13,7 @@ backups/
 .serena/
 
 # Per-machine state written by .claude/ hooks (last-docs-hash, last-ingest.log).
-# The hook scripts in scripts/hooks/ are checked in; their state is not.
+# The hook scripts in .claude/hooks/ are checked in; their state is not.
 .claude/state/
 
 # HVSC corpus (research-use-only, not redistributable)

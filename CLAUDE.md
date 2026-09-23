@@ -10,7 +10,7 @@ someone's program. Work accordingly.
 
 Tallies are a different kind of number. How many documents, nodes, edges,
 tests or recipes there are does not go in README.md, this file or any
-page's prose; it goes stale within commits. `npx c64-kb health` prints
+page's prose; it goes stale within commits. `npm run health` prints
 the live figures; `CHANGELOG.md` records what an audit changed.
 
 ## The rules that are enforced
@@ -76,11 +76,11 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 ```bash
 npm run check:listings     # every listing builds; fails on a missing toolchain unless --allow-missing
 npm run verify:recipes     # every recipe runs headless in VICE at its pinned cycles (docs/recipes/runs.json) and matches its committed PNG pixel-for-pixel; --update re-baselines after a deliberate change, --allow-missing tolerates a recipe with no PNG yet
-npx tsc --noEmit
+npm run typecheck          # src, scripts and test; before 2026-09-22 this was `tsc --noEmit` over src/ alone
 npm test                   # vitest against c64_test / c64_docs_test — never the live stores
 npm run vice:headless      # once: a windowless VICE into .tools/; every emulator launch here prefers it (src/services/vice-bin.ts)
 npm run ingest:clean       # if any doc changed: rebuild graph + vectors; read the summary line
-npx c64-kb health          # live counts; README carries none, so nothing to update there
+npm run health             # live counts; README carries none, so nothing to update there
 ```
 
 The pre-commit gate is you. There is no CI yet.
@@ -105,11 +105,11 @@ The pre-commit gate is you. There is no CI yet.
 ## Read-only ways to see what an agent gets
 
 ```bash
-npx tsx src/cli.ts search "side border cycle 56"
-npx tsx src/cli.ts technique-lookup sideborder_open
-npx tsx src/cli.ts check-compatibility fli_image sprite_multiplex_24
-npx tsx src/cli.ts pitfalls-for stable_raster_irq
-npx tsx src/cli.ts timing-budget fli_image
+node src/cli.ts search "side border cycle 56"
+node src/cli.ts technique-lookup sideborder_open
+node src/cli.ts check-compatibility fli_image sprite_multiplex_24
+node src/cli.ts pitfalls-for stable_raster_irq
+node src/cli.ts timing-budget fli_image
 ```
 
 If a tool's answer is wrong, the fix is usually in a doc's metadata line or

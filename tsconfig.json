@@ -1,18 +1,22 @@
 {
+  // Type-checks everything (src, scripts, test, config files) and emits
+  // nothing. The build uses tsconfig.build.json. Before this split the only
+  // tsconfig included src/ alone, so `tsc --noEmit` never checked scripts/
+  // or test/.
+  "extends": "@tsconfig/node24/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "bundler",
-    "outDir": "dist",
-    "rootDir": "src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "declaration": true,
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"],
     "resolveJsonModule": true,
-    "types": ["node"]
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test"]
+  "include": ["src", "scripts", "test", "*.config.ts"]
 }

@@ -31,7 +31,11 @@ function tokenize(s: string): string[] {
       const start = m.index;
       const end = start + m[0].length;
       let overlap = false;
-      for (let i = start; i < end; i++) if (seen.has(i)) { overlap = true; break; }
+      for (let i = start; i < end; i++)
+        if (seen.has(i)) {
+          overlap = true;
+          break;
+        }
       if (overlap) continue;
       for (let i = start; i < end; i++) seen.add(i);
       tokens.push(transform(m[0]));
@@ -46,8 +50,8 @@ function tokenize(s: string): string[] {
 }
 
 export class BM25Encoder {
-  private vocab: Map<string, number> = new Map();
-  private df: Map<number, number> = new Map(); // token-id → document frequency
+  private vocab = new Map<string, number>();
+  private df = new Map<number, number>(); // token-id → document frequency
   private avgDocLen = 0;
   private numDocs = 0;
   private k1 = 1.2;
@@ -78,7 +82,7 @@ export class BM25Encoder {
   encode(text: string): SparseVector {
     const tokens = tokenize(text);
     if (tokens.length === 0) return { indices: [], values: [] };
-    const tf: Map<number, number> = new Map();
+    const tf = new Map<number, number>();
     for (const tok of tokens) {
       const id = this.vocab.get(tok);
       if (id === undefined) continue;
@@ -92,8 +96,8 @@ export class BM25Encoder {
       if (dfCount === 0) continue;
       // BM25 score component for this term
       const idf = Math.log(1 + (this.numDocs - dfCount + 0.5) / (dfCount + 0.5));
-      const norm = freq * (this.k1 + 1) /
-                   (freq + this.k1 * (1 - this.b + this.b * docLen / this.avgDocLen));
+      const norm =
+        (freq * (this.k1 + 1)) / (freq + this.k1 * (1 - this.b + (this.b * docLen) / this.avgDocLen));
       const score = idf * norm;
       if (score > 0) {
         out.indices.push(id);
@@ -104,8 +108,8 @@ export class BM25Encoder {
   }
 
   toJSON(): {
-    vocab: Array<[string, number]>;
-    df: Array<[number, number]>;
+    vocab: [string, number][];
+    df: [number, number][];
     avgDocLen: number;
     numDocs: number;
     k1: number;

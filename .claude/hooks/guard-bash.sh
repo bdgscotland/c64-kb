@@ -31,7 +31,7 @@ if printf '%s' "$CMD" | grep -qE '(^|[;&|]\s*)git\s+add\s+(-A|--all|\.)(\s|$)'; 
   deny "Refused: 'git add -A' / 'git add .' stages data/, dist/, .claude/state/ and scratch files. Stage named paths (CLAUDE.md rule 6)."
 fi
 if printf '%s' "$CMD" | grep -qE 'git\s+commit[^;&|]*--no-verify'; then
-  deny "Refused: --no-verify skips the gates. Run npm run check:listings, npx tsc --noEmit and npm test, then commit normally."
+  deny "Refused: --no-verify skips the gates. Run npm run check:listings, npm run typecheck and npm test, then commit normally."
 fi
 if printf '%s' "$CMD" | grep -qE 'git\s+push[^;&|]*(-f|--force)([^-]|$)[^;&|]*\b(main|master)\b'; then
   deny "Refused: force-pushing main rewrites a public history that other people have cloned."

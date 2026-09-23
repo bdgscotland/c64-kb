@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { lintSource, lintSourceResult, detectLanguage } from "../src/tools/lint.js";
+import { lintSource, lintSourceResult, detectLanguage } from "../src/tools/lint.ts";
 
 // Two builds of the same platformer, written on 2026-09-22 by agents
 // working from this knowledge base and from nothing, copied here so the
@@ -164,7 +164,8 @@ describe("lintSource on assembly", () => {
   });
 
   it("downgrades the handler finding to heuristic when nothing in the file executes SED", () => {
-    const src = "        lda #<irq\n        sta $0314\n        lda #>irq\n        sta $0315\n        rts\nirq:    lda ptr\n        adc #8\n        sta ptr\n        rti\n";
+    const src =
+      "        lda #<irq\n        sta $0314\n        lda #>irq\n        sta $0315\n        rts\nirq:    lda ptr\n        adc #8\n        sta ptr\n        rti\n";
     const f = lintSource(src, { language: "asm" }).find((x) => x.rule === "decimal_mode_in_irq_handler");
     expect(f).toBeDefined();
     expect(f!.line).toBe(7);
@@ -185,12 +186,16 @@ describe("lintSource on assembly", () => {
 describe("d016 rule reads the load that feeds the store", () => {
   it("is quiet when lda #$c8 feeds sta $d016 even after an earlier lda #<label", () => {
     const src = "        lda #<irq1\n        sta $0314\n        lda #$c8\n        sta $d016\n";
-    expect(lintSource(src, { language: "asm" }).filter((x) => x.rule === "d016_unmasked_rmw_clobbers_csel_mcm")).toEqual([]);
+    expect(
+      lintSource(src, { language: "asm" }).filter((x) => x.rule === "d016_unmasked_rmw_clobbers_csel_mcm"),
+    ).toEqual([]);
   });
 
   it("reports lda #$07 / sta $d016 even when an earlier lda #15 sits in the window", () => {
     const src = "        lda #15\n        sta $fb\n        lda #$07\n        sta $d016\n";
-    const f = lintSource(src, { language: "asm" }).filter((x) => x.rule === "d016_unmasked_rmw_clobbers_csel_mcm");
+    const f = lintSource(src, { language: "asm" }).filter(
+      (x) => x.rule === "d016_unmasked_rmw_clobbers_csel_mcm",
+    );
     expect(f.map((x) => x.line)).toEqual([4]);
   });
 });
@@ -202,7 +207,8 @@ describe("lfsr rule wants a name the file shifts or XORs", () => {
   });
 
   it("reports a zero seed that the file shifts and XORs", () => {
-    const src = "unsigned seed = 0;\nunsigned step(void){ seed ^= seed << 7; seed ^= seed >> 9; return seed; }\n";
+    const src =
+      "unsigned seed = 0;\nunsigned step(void){ seed ^= seed << 7; seed ^= seed >> 9; return seed; }\n";
     expect(lintSource(src, { language: "c" }).map((x) => x.rule)).toEqual(["lfsr_zero_state_lockup"]);
   });
 });
@@ -210,7 +216,11 @@ describe("lfsr rule wants a name the file shifts or XORs", () => {
 describe("detectLanguage", () => {
   it("reads a KickAssembler .for block with a ';' inside a // comment as asm", () => {
     expect(detectLanguage(".for (var i=0; i<8; i++) {\n lda #0\n}\n;\n")).toBe("asm");
-    expect(detectLanguage("        lda #$00\n        sta $d020   // border;\n        .for (var r = 0; r < 25; r++) {\n        rts\n")).toBe("asm");
+    expect(
+      detectLanguage(
+        "        lda #$00\n        sta $d020   // border;\n        .for (var r = 0; r < 25; r++) {\n        rts\n",
+      ),
+    ).toBe("asm");
   });
 
   it("reads a short C fragment as C", () => {

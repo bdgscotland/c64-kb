@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { lookupRegister } from "../src/tools/query.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { lookupRegister } from "../src/tools/query.ts";
 
 // These tests seed just the two registers they need so they are isolated
 // from corpus state. Other test files call clean() which would wipe live data.

@@ -76,9 +76,9 @@ technique or pitfall file, the number of graph entities should equal the
 number of `## name — ` headings. Then look at what an agent gets:
 
 ```bash
-npx tsx src/cli.ts technique-lookup <name>
-npx tsx src/cli.ts pitfalls-for <name>
-npx tsx src/cli.ts search "<a phrase from your page>"
+node src/cli.ts technique-lookup <name>
+node src/cli.ts pitfalls-for <name>
+node src/cli.ts search "<a phrase from your page>"
 ```
 
 ## 5. Before committing

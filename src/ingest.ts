@@ -15,13 +15,13 @@
  *      npm run ingest -- --force  # wipe graph + collection, rehash and re-upsert every file
  */
 
-import { QdrantService } from "./services/qdrant.js";
-import { FalkorService } from "./services/falkor.js";
-import { chunkMarkdown } from "./services/chunker.js";
-import { embedBatch, isAvailable as ollamaAvailable } from "./services/embeddings.js";
-import { extractGraphEntities } from "./graph/extract.js";
-import { BM25Encoder } from "./services/bm25.js";
-import { config } from "./config.js";
+import { QdrantService } from "./services/qdrant.ts";
+import { FalkorService } from "./services/falkor.ts";
+import { chunkMarkdown } from "./services/chunker.ts";
+import { embedBatch, isAvailable as ollamaAvailable } from "./services/embeddings.ts";
+import { extractGraphEntities } from "./graph/extract.ts";
+import { BM25Encoder } from "./services/bm25.ts";
+import { config } from "./config.ts";
 import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
@@ -76,8 +76,18 @@ type PendingEdge =
   | { kind: "recipe_uses_tool"; recipe: string; tool: string }
   | { kind: "recipe_uses_register"; recipe: string; register: string }
   | { kind: "recipe_uses_kernal"; recipe: string; kernal: string }
-  | { kind: "triggered_by"; pitfall: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
-  | { kind: "caused_by"; symptom: string; target: string; targetKind: "Register" | "KernalRoutine" | "Technique" }
+  | {
+      kind: "triggered_by";
+      pitfall: string;
+      target: string;
+      targetKind: "Register" | "KernalRoutine" | "Technique";
+    }
+  | {
+      kind: "caused_by";
+      symptom: string;
+      target: string;
+      targetKind: "Register" | "KernalRoutine" | "Technique";
+    }
   | { kind: "recipe_occupies"; recipe: string; start: number; end: number }
   | { kind: "technique_demands"; technique: string; resource: string; description: string }
   | { kind: "technique_requires"; technique: string; requires: string }
@@ -139,12 +149,12 @@ function loadOrFitBM25(corpus: string[], forceRefit: boolean): BM25Encoder {
  * remains for log readability + the FileFormat race.
  */
 const WALK_PRIORITY: readonly string[] = [
-  "formats/",       // FileFormat catalog: descriptions land first (ON CREATE SET wins). LOAD-BEARING.
-  "hardware/",      // Register / KernalRoutine / MemoryRegion nodes (cosmetic ordering only)
-  "toolchains/",    // Tool nodes (cosmetic)
-  "runtime/",       // More Tool nodes — vice, vice-mcp, sim6502 (cosmetic)
-  "techniques/",    // Technique nodes (cosmetic — edges resolve in pass 2)
-  "recipes/",       // Recipe nodes (cosmetic — edges resolve in pass 2)
+  "formats/", // FileFormat catalog: descriptions land first (ON CREATE SET wins). LOAD-BEARING.
+  "hardware/", // Register / KernalRoutine / MemoryRegion nodes (cosmetic ordering only)
+  "toolchains/", // Tool nodes (cosmetic)
+  "runtime/", // More Tool nodes — vice, vice-mcp, sim6502 (cosmetic)
+  "techniques/", // Technique nodes (cosmetic — edges resolve in pass 2)
+  "recipes/", // Recipe nodes (cosmetic — edges resolve in pass 2)
 ];
 
 function findMarkdown(root: string): string[] {
@@ -160,7 +170,8 @@ function findMarkdown(root: string): string[] {
     // entry.parentPath is the directory the file was discovered in.
     // Strip the root prefix to get the relative path used downstream.
     const parent = entry.parentPath ?? root;
-    const rel = parent === root ? entry.name : `${parent.slice(root.length).replace(/^[\/\\]+/, "")}/${entry.name}`;
+    const rel =
+      parent === root ? entry.name : `${parent.slice(root.length).replace(/^[\/\\]+/, "")}/${entry.name}`;
     // Skip non-knowledge subtrees (specs + plans).
     if (rel.startsWith("superpowers/") || rel.startsWith("superpowers\\")) continue;
     // Normalize backslashes to forward slashes for cross-platform stability.
@@ -233,7 +244,9 @@ async function main() {
     }
   }
   const bm25 = loadOrFitBM25(fullCorpus, forceAll);
-  console.log(`  bm25: ${forceAll || !fs.existsSync(VOCAB_FILE) ? "fitted" : "loaded"} vocab → ${VOCAB_FILE}`);
+  console.log(
+    `  bm25: ${forceAll || !fs.existsSync(VOCAB_FILE) ? "fitted" : "loaded"} vocab → ${VOCAB_FILE}`,
+  );
 
   const prevHashes = loadHashes();
   let totalChunks = 0;
@@ -292,10 +305,7 @@ async function main() {
       .map((c, i) => {
         const vec = vectors[i];
         if (!vec) return null;
-        const id = createHash("sha256")
-          .update(`${file}:${c.section}:${i}`)
-          .digest("hex")
-          .slice(0, 32);
+        const id = createHash("sha256").update(`${file}:${c.section}:${i}`).digest("hex").slice(0, 32);
         const text = `${c.section}\n\n${c.text}`;
         return {
           id,
@@ -338,7 +348,13 @@ async function main() {
               entityCount++;
               break;
             case "memory_region":
-              await falkor.addMemoryRegion(e.name, e.start, e.end, e.default_use ?? "", e.bank_switchable ?? false);
+              await falkor.addMemoryRegion(
+                e.name,
+                e.start,
+                e.end,
+                e.default_use ?? "",
+                e.bank_switchable ?? false,
+              );
               entityCount++;
               break;
             case "tool":
@@ -387,7 +403,12 @@ async function main() {
               totalCrashPatterns++;
               break;
             case "archetype":
-              await falkor.addArchetype({ name: e.name, title: e.title, kind: e.kind, source_doc: e.source_doc });
+              await falkor.addArchetype({
+                name: e.name,
+                title: e.title,
+                kind: e.kind,
+                source_doc: e.source_doc,
+              });
               entityCount++;
               totalArchetypes++;
               break;
@@ -396,7 +417,12 @@ async function main() {
           // Pass 1: collect edge entities for deferred processing
           switch (e.type) {
             case "belongs_to":
-              pendingEdges.push({ kind: "belongs_to", entityType: e.entityType, entityName: e.entityName, chip: e.chip });
+              pendingEdges.push({
+                kind: "belongs_to",
+                entityType: e.entityType,
+                entityName: e.entityName,
+                chip: e.chip,
+              });
               break;
             case "pairs_with":
               pendingEdges.push({ kind: "pairs_with", a: e.a, b: e.b });
@@ -420,28 +446,51 @@ async function main() {
               pendingEdges.push({ kind: "scaffolds", recipe: e.recipe, archetype: e.archetype });
               break;
             case "technique_uses_register":
-              pendingEdges.push({ kind: "technique_uses_register", technique: e.technique, register: e.register });
+              pendingEdges.push({
+                kind: "technique_uses_register",
+                technique: e.technique,
+                register: e.register,
+              });
               break;
             case "technique_uses_kernal":
               pendingEdges.push({ kind: "technique_uses_kernal", technique: e.technique, kernal: e.kernal });
               break;
             case "technique_requires_region":
-              pendingEdges.push({ kind: "technique_requires_region", technique: e.technique, region: e.region });
+              pendingEdges.push({
+                kind: "technique_requires_region",
+                technique: e.technique,
+                region: e.region,
+              });
               break;
             case "technique_belongs_to":
               pendingEdges.push({ kind: "technique_belongs_to", technique: e.technique, chip: e.chip });
               break;
             case "triggered_by":
-              pendingEdges.push({ kind: "triggered_by", pitfall: e.pitfall, target: e.target, targetKind: e.targetKind });
+              pendingEdges.push({
+                kind: "triggered_by",
+                pitfall: e.pitfall,
+                target: e.target,
+                targetKind: e.targetKind,
+              });
               break;
             case "caused_by":
-              pendingEdges.push({ kind: "caused_by", symptom: e.symptom, target: e.target, targetKind: e.targetKind });
+              pendingEdges.push({
+                kind: "caused_by",
+                symptom: e.symptom,
+                target: e.target,
+                targetKind: e.targetKind,
+              });
               break;
             case "recipe_occupies":
               pendingEdges.push({ kind: "recipe_occupies", recipe: e.recipe, start: e.start, end: e.end });
               break;
             case "technique_demands":
-              pendingEdges.push({ kind: "technique_demands", technique: e.technique, resource: e.resource, description: e.description });
+              pendingEdges.push({
+                kind: "technique_demands",
+                technique: e.technique,
+                resource: e.resource,
+                description: e.description,
+              });
               break;
             case "technique_requires":
               pendingEdges.push({ kind: "technique_requires", technique: e.technique, requires: e.requires });
@@ -450,7 +499,11 @@ async function main() {
               pendingEdges.push({ kind: "mitigated_by", pitfall: e.pitfall, target: e.target });
               break;
             case "archetype_features":
-              pendingEdges.push({ kind: "archetype_features", archetype: e.archetype, technique: e.technique });
+              pendingEdges.push({
+                kind: "archetype_features",
+                archetype: e.archetype,
+                technique: e.technique,
+              });
               break;
             case "archetype_risks":
               pendingEdges.push({ kind: "archetype_risks", archetype: e.archetype, pitfall: e.pitfall });
@@ -470,12 +523,7 @@ async function main() {
   // Connection-class errors trigger an immediate abort; per-row malformation
   // is logged and skipped. Ten consecutive failures also abort (catches the
   // case where FalkorDB drops mid-pass but doesn't emit a socket error).
-  const FATAL_PATTERNS = [
-    /ECONNREFUSED/i,
-    /ECONNRESET/i,
-    /Connection is closed/i,
-    /Redis connection/i,
-  ];
+  const FATAL_PATTERNS = [/ECONNREFUSED/i, /ECONNRESET/i, /Connection is closed/i, /Redis connection/i];
   const FAILURE_THRESHOLD = 10;
 
   console.log(`\nPass 2: applying ${pendingEdges.length} deferred edges`);
@@ -536,7 +584,8 @@ async function main() {
           await falkor.linkTechniqueDemands(edge.technique, edge.resource, edge.description);
           break;
         case "triggered_by":
-          if (!(await falkor.linkTriggeredBy(edge.pitfall, edge.target, edge.targetKind))) triggeredByDropped++;
+          if (!(await falkor.linkTriggeredBy(edge.pitfall, edge.target, edge.targetKind)))
+            triggeredByDropped++;
           triggeredByRequested.add(`${edge.pitfall}|${edge.targetKind}|${edge.target}`);
           break;
         case "caused_by":
@@ -552,7 +601,8 @@ async function main() {
           mitigatedByRequested.add(`${edge.pitfall}|${edge.target}`);
           break;
         case "archetype_features":
-          if (!(await falkor.linkArchetypeFeatures(edge.archetype, edge.technique))) archetypeFeaturesDropped++;
+          if (!(await falkor.linkArchetypeFeatures(edge.archetype, edge.technique)))
+            archetypeFeaturesDropped++;
           archetypeFeaturesRequested.add(`${edge.archetype}|${edge.technique}`);
           break;
         case "archetype_risks":
@@ -567,7 +617,7 @@ async function main() {
       consecutiveFailures = 0;
     } catch (err: any) {
       edgeFailures++;
-      const isFatal = FATAL_PATTERNS.some(re => re.test(err?.message ?? ""));
+      const isFatal = FATAL_PATTERNS.some((re) => re.test(err?.message ?? ""));
       if (isFatal) {
         console.error(`[ingest] FATAL: connection-class error in pass 2: ${err.message}`);
         throw err;
@@ -575,7 +625,9 @@ async function main() {
       consecutiveFailures++;
       if (consecutiveFailures >= FAILURE_THRESHOLD) {
         console.error(`[ingest] FATAL: ${consecutiveFailures} consecutive edge failures — aborting`);
-        throw new Error(`Pass-2 edge ingest exceeded failure threshold (${FAILURE_THRESHOLD})`, { cause: err });
+        throw new Error(`Pass-2 edge ingest exceeded failure threshold (${FAILURE_THRESHOLD})`, {
+          cause: err,
+        });
       }
       console.warn(`[ingest] edge failure (${edgeFailures} total): ${err.message}`);
     }
@@ -591,17 +643,21 @@ async function main() {
   // Address-derived edges: every Register and KERNAL routine into the
   // memory-map region that contains it. Needs all nodes to exist first.
   const inRegion = await falkor.linkAddressesToRegions();
-  console.log(`IN_REGION: ${inRegion.registers} registers, ${inRegion.kernal} KERNAL routines placed in memory regions`);
+  console.log(
+    `IN_REGION: ${inRegion.registers} registers, ${inRegion.kernal} KERNAL routines placed in memory regions`,
+  );
 
   const stubResult = await falkor.roQuery(
     `MATCH (t:Technique)
      WHERE t.title IS NULL OR t.title = ""
      RETURN t.name AS name
-     ORDER BY name`
+     ORDER BY name`,
   );
-  const stubTechniques = (stubResult.data as Array<{ name: string }>).map(r => r.name);
+  const stubTechniques = (stubResult.data as { name: string }[]).map((r) => r.name);
   if (stubTechniques.length > 0) {
-    console.warn(`[ingest] stub Technique nodes (typo in recipe.techniques array?): ${stubTechniques.join(", ")}`);
+    console.warn(
+      `[ingest] stub Technique nodes (typo in recipe.techniques array?): ${stubTechniques.join(", ")}`,
+    );
     log(`STUB_TECHNIQUES ${stubTechniques.join(", ")}`);
   }
 
@@ -626,12 +682,25 @@ async function main() {
   const totalMitigatedBy = mitigatedByRequested.size;
   console.log(`\nQdrant: ${qStats.total_points} vectors`);
   console.log(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
-  console.log(`Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by: ${triggeredByLanded} edges in graph, ${totalTriggeredBy} distinct references, ${triggeredByDropped} dropped. caused_by: ${causedByLanded} edges in graph, ${totalCausedBy} distinct references, ${causedByDropped} dropped. requires: ${requiresLanded} edges in graph, ${totalRequires} distinct references, ${requiresDropped} dropped. mitigated_by: ${mitigatedByLanded} edges in graph, ${totalMitigatedBy} distinct references, ${mitigatedByDropped} dropped. Archetypes: ${totalArchetypes}. archetype_features: ${featuresLanded} edges in graph, ${archetypeFeaturesRequested.size} distinct references, ${archetypeFeaturesDropped} dropped. archetype_risks: ${risksLanded} edges in graph, ${archetypeRisksRequested.size} distinct references, ${archetypeRisksDropped} dropped. scaffolds: ${scaffoldsLanded} edges in graph, ${scaffoldsRequested.size} distinct references, ${scaffoldsDropped} dropped.`);
-  const droppedRefs = triggeredByDropped + causedByDropped + requiresDropped + mitigatedByDropped + archetypeFeaturesDropped + archetypeRisksDropped + scaffoldsDropped;
+  console.log(
+    `Ingested ${totalChunks} new chunks. Skipped ${skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${totalPitfalls}. CrashPatterns: ${totalCrashPatterns}. triggered_by: ${triggeredByLanded} edges in graph, ${totalTriggeredBy} distinct references, ${triggeredByDropped} dropped. caused_by: ${causedByLanded} edges in graph, ${totalCausedBy} distinct references, ${causedByDropped} dropped. requires: ${requiresLanded} edges in graph, ${totalRequires} distinct references, ${requiresDropped} dropped. mitigated_by: ${mitigatedByLanded} edges in graph, ${totalMitigatedBy} distinct references, ${mitigatedByDropped} dropped. Archetypes: ${totalArchetypes}. archetype_features: ${featuresLanded} edges in graph, ${archetypeFeaturesRequested.size} distinct references, ${archetypeFeaturesDropped} dropped. archetype_risks: ${risksLanded} edges in graph, ${archetypeRisksRequested.size} distinct references, ${archetypeRisksDropped} dropped. scaffolds: ${scaffoldsLanded} edges in graph, ${scaffoldsRequested.size} distinct references, ${scaffoldsDropped} dropped.`,
+  );
+  const droppedRefs =
+    triggeredByDropped +
+    causedByDropped +
+    requiresDropped +
+    mitigatedByDropped +
+    archetypeFeaturesDropped +
+    archetypeRisksDropped +
+    scaffoldsDropped;
   if (droppedRefs > 0) {
-    console.warn(`[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`);
+    console.warn(
+      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
+    );
   }
-  log(`DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${triggeredByLanded}/${totalTriggeredBy}/dropped=${triggeredByDropped} caused_by=${causedByLanded}/${totalCausedBy}/dropped=${causedByDropped} requires=${requiresLanded}/${totalRequires}/dropped=${requiresDropped} mitigated_by=${mitigatedByLanded}/${totalMitigatedBy}/dropped=${mitigatedByDropped} archetypes=${totalArchetypes} archetype_features=${featuresLanded}/${archetypeFeaturesRequested.size}/dropped=${archetypeFeaturesDropped} archetype_risks=${risksLanded}/${archetypeRisksRequested.size}/dropped=${archetypeRisksDropped} scaffolds=${scaffoldsLanded}/${scaffoldsRequested.size}/dropped=${scaffoldsDropped}`);
+  log(
+    `DONE chunks=${totalChunks} skipped=${skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${pairsWithSkipped} pitfalls=${totalPitfalls} crash_patterns=${totalCrashPatterns} triggered_by=${triggeredByLanded}/${totalTriggeredBy}/dropped=${triggeredByDropped} caused_by=${causedByLanded}/${totalCausedBy}/dropped=${causedByDropped} requires=${requiresLanded}/${totalRequires}/dropped=${requiresDropped} mitigated_by=${mitigatedByLanded}/${totalMitigatedBy}/dropped=${mitigatedByDropped} archetypes=${totalArchetypes} archetype_features=${featuresLanded}/${archetypeFeaturesRequested.size}/dropped=${archetypeFeaturesDropped} archetype_risks=${risksLanded}/${archetypeRisksRequested.size}/dropped=${archetypeRisksDropped} scaffolds=${scaffoldsLanded}/${scaffoldsRequested.size}/dropped=${scaffoldsDropped}`,
+  );
 
   await falkor.close();
   process.exit(0);
