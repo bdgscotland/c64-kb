@@ -819,6 +819,139 @@ All cycle counts above are approximate and will vary with handler implementation
 
 ---
 
+## pseudo_3d_road_raster — Per-line horizontal shift with segment tables for a curving road
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, D019, D01A, D021, D022, D023, DC04, DC05, DC0E
+**Requires:** stable_raster_irq, irq_chain_table
+**Cost:** cycles_per_frame=12855
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-pseudo-3d-road (the coarse redraw, 6,332 cycles, plus the fine chain, 6,523, on PAL, summed; the per-frame table computation of about 5,000 cycles is an estimate and is not in the figure, see Cycle budget)
+
+### Why
+
+A pseudo-3D road effect places a road on the lower half of the display and
+makes it appear to recede toward a horizon and curve left or right. The visual
+impression of depth comes from two sources. First, the road narrows as it
+approaches the horizon: each character row is drawn narrower than the one
+below it, following a Z table of half-widths derived from the formula
+`hw[i] = max(4, round(152 - 1.5 * i))` for i = 0 (nearest) to 99 (farthest).
+Second, a per-line horizontal shift aligns the road's left edge to the pixel,
+not the character: because the left edge rarely falls on an 8-pixel character
+boundary, the remaining 0–7 pixels of misalignment are corrected by writing
+$D016 XSCROLL on every raster line of the road area.
+
+The curvature is produced by a running delta: each step, the road centre cx
+advances by dx, and dx itself advances by the current segment's fixed-point
+curve value. Four segments of 25 lines each (straight, right bend, straight,
+left bend) give one full S-curve over the 100 road lines; as scroll_z advances
+one unit per frame and wraps at 100, the curve pattern scrolls toward the
+viewer continuously.
+
+### How
+
+**Coarse layer.** Once per frame in the vertical blank, thirteen character rows
+(the road area, character rows 6–18) are redrawn. For each row r (r = 0 =
+nearest = row 18, r = 12 = farthest = row 6), the routine samples the cx and
+hw values at the row's middle raster line (i_mid = min(8r + 4, 99)), computes
+`left_char = (cx[i_mid] - hw[i_mid]) >> 3` and `right_char = (cx[i_mid] +
+hw[i_mid]) >> 3`, and writes the 40 character columns: left kerb at
+left_char, road codes from left_char+1 to right_char-1, right kerb at
+right_char, and a centre dash at the midpoint of alternating rows. A
+five-character custom multicolour charset covers the five codes (grass,
+road, left kerb, right kerb, dash); $D021, $D022 and $D023 set the three
+colour values used by %00, %01 and %10 pixel pairs respectively.
+
+**Fine layer.** A stable raster IRQ using the double-IRQ method fires at line 99
+(the horizon). The handler runs an unrolled loop of exactly one raster line per
+iteration: 63 CPU cycles on PAL (65 on NTSC). PAL and NTSC use separate
+unrolled loops, selected at boot by a model-detect routine. Each iteration
+loads a precomputed D016 value from a 100-entry table and stores it to $D016 at
+cycle 11 of the target raster line (before the approximately cycle-14 VIC
+deadline). The table entry for road line offset j is
+`D016_BASE | ((cx[99-j] - hw[99-j]) & 7)`, where D016_BASE carries the MCM and
+CSEL bits. The write shifts the entire character row left or right by 0-7
+pixels, so the kerb character boundary appears at the correct pixel even though
+the character grid is always 8-pixel aligned.
+
+**Badline handling.** Twelve badlines fall in the road area (lines 107, 115,
+123, 131, 139, 147, 155, 163, 171, 179, 187, 195 with YSCROLL=3). On a badline
+the CPU is stalled from cycle 15 to 54 (40 cycles). The unrolled badline body
+uses Delay(15) (PAL) or Delay(17) (NTSC), giving 23 or 25 CPU cycles; the
+40-cycle steal fills the remainder to 63 or 65 elapsed cycles. The STA $D016
+write lands at cycle 11, before the steal begins at cycle 15, so the badline row
+and the row after it each receive their own XSCROLL value (measured: xscroll_d16
+entries for j=7 and j=8 differ in the monitor dump; the adjacent rows show
+distinct kerb pixel positions in the screenshot).
+
+**cx computation.** The forward pass runs from i = 0 (nearest) to i = 99
+(farthest). cx begins at 160.0 in 8.8 fixed point. At each step: cx += dx,
+then dx += curve[segment], where segment = (i + scroll_z) / 25 & 3 and the
+four curve values are 0, +51, 0, -51 in 8.8 (±0.20 pixels per line per line).
+The integer part of cx is stored in cx_hi_buf[i]. The backward pass fills
+xscroll_d16[j] from cx_hi_buf[99-j] for j = 0..99.
+
+**IRQ exit.** The handlers exit via `pla/tay/pla/tax/pla/rti`, which pops the
+A, X and Y saved by the KERNAL dispatcher at $FF48 and then RTIs through the
+CPU interrupt frame. The road_irq2 handler discards its own stack frame first
+(using the saved stack pointer from road_irq1) and returns through road_irq1's
+frame. Exiting with a bare RTI without first popping the KERNAL's three saves
+would leave three bytes on the stack per IRQ call, overflowing page 1 after
+approximately 85 frames.
+
+### Why it works
+
+The VIC-II applies XSCROLL (bits 2–0 of $D016) continuously: a write that
+lands before the first character's pixels leave the sequencer shifts the entire
+remaining line. The deadline is approximately cycle 16 of the raster line (from
+the VIC's horizontal timing; see `mode7_lookalike` for the measured boundary).
+By using a stable raster IRQ entry (`stable_raster_irq`, double-IRQ or
+$D012-polling with a fixed-cycle preamble), the tight loop starts at a known
+cycle relative to the horizon line, and each subsequent iteration stays
+synchronised because it is exactly one raster line long. Any jitter in the
+initial synchronisation displaces all 100 writes by the same constant offset; a
+wrong initial offset means all writes land slightly late, which is measurable
+(the kerb shows at the wrong pixel) and correctable by adjusting the preamble
+delay.
+
+The limit of this technique: one XSCROLL value per line shifts every column of
+that line. The near side and far side of the road both shift together within a
+given character row. This is visible at the character row boundaries (the kerb
+steps in 8-pixel jumps between rows) but invisible within each of the 8 raster
+lines of a row (the kerb slides smoothly). For wider character rows the step
+artifact is more pronounced.
+
+### Cycle budget
+
+Per-frame (measured in VICE x64sc 3.10, `recipes/kickassembler/pseudo-3d-road.md`):
+
+- Coarse redraw (CIA-timed): 6,332 cycles PAL; 6,162 cycles NTSC. The redraw covers 13 rows; without per-row grass clearing, it writes only the road, kerb and dash characters.
+- Fine chain (CIA from road_irq1 start to fine_done stop): 6,523 cycles PAL; 6,729 cycles NTSC. The loop itself is 100 x 63 = 6,300 cycles PAL (100 x 65 = 6,500 NTSC); the surplus is the irq1 code, NOP slide, irq2 KERNAL entry, sync code and CIA stop.
+- Total handler: table computation (approximately 5,000 cycles) + coarse (6,332) + fine chain (6,523) ≈ 18,000 cycles per frame on PAL (arithmetic).
+
+Badline body: 23 CPU cycles PAL (25 NTSC), with the 40-cycle steal filling the remainder to one full raster line. The STA write at cycle 11 lands before the steal begins at cycle 15, so each badline row and its successor each receive their own XSCROLL value.
+
+### Variations
+
+**Write in the right border of the previous line.** Writing xscroll_d16[j] at cycle 58–63 of raster line 99 + j rather than at cycle 1–8 of line 100 + j is valid (the VIC carries the new value into the next line) and is immune to badline stalls (the steal happens at cycles 15–54, after the write). The loop structure is identical; only the initial synchronisation point changes.
+
+**Wider segment table.** The four-segment table (straight, right, straight, left) can be replaced with any pattern. Eight or sixteen entries give richer curvature sequences. The per-frame computation cost scales with the number of distinct curve values, not the number of segments.
+
+**Sprite horizon.** Adding a single expanded sprite or a colour-split at line 99 gives a solid coloured horizon line separating sky from road without additional raster handlers.
+
+### Pitfalls
+
+- `d016_unmasked_rmw_clobbers_csel_mcm` — the precomputed table stores D016_BASE (MCM + CSEL bits) OR'd into each entry. Omitting this and writing the raw XSCROLL value clears MCM (bit 4) and drops the display to 38-column mode on every road line.
+- `badline_cycle_loss` — a loop body not sized for badlines spans the steal window; post-badline writes arrive late. The shipped listing uses separate badline and normal bodies to absorb the 40-cycle steal without displacing subsequent writes.
+- `raster_irq_first_line_jitter` — without a stable raster entry, the first loop iteration starts 0–9 cycles late, displacing all 100 writes by the same offset and pushing them past cycle 16.
+
+### Sources
+
+- Measured in VICE x64sc 3.10 (`recipes/kickassembler/pseudo-3d-road.md`).
+
+---
+
 ## wireframe_pipeline — Rotated, projected, culled and clipped wireframe objects in a hires bitmap
 
 **Complexity:** high

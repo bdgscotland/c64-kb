@@ -5,7 +5,25 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 757, schema 27, tools 2.0.0, package 0.13.0.
+Data 758, schema 27, tools 2.0.0, package 0.13.0.
+
+**The pseudo-3D road, with its per-line shift measured to work (data
+758).** A coarse layer of thirteen multicolour character rows redrawn in
+the vertical blank from a Z table and an 8.8 fixed-point centre
+accumulator, and a fine layer that writes one `$D016` value per road
+raster line from a cycle-locked loop entered by the double-IRQ stable
+raster method, with the write at cycle 11 of each line, a 23-cycle
+iteration on badline rows in place of 63, and separate PAL and NTSC loops
+chosen by region detection at boot. The first build's fine layer had no
+effect because a spin-wait put the writes at cycles 20 to 28, past the
+latch; the recipe records that and the fix. Measured: coarse redraw 6,332
+cycles PAL and 6,162 NTSC, fine chain 6,523 and 6,729; the kerb's left
+edge in the pinned picture moves by one to seven pixels between adjacent
+lines where the first build moved only at row boundaries; rows seven and
+eight of the road now carry their own scroll values. Pinned on both
+models. The page says what one scroll value per line cannot do, that the
+grass is not cleared per frame, and that the geometry is this recipe's,
+not a game's.
 
 **Candidate list, Tier B batch 15: four more items from fixed designs,
 each a technique entry and a pinned KickAssembler recipe (data 757).**

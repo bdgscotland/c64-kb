@@ -1482,5 +1482,17 @@
       "pal": "screenshots/screen-dissolve.png",
       "ntsc": "screenshots/screen-dissolve-ntsc.png"
     }
+  },
+  "kickassembler/pseudo-3d-road": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/pseudo-3d-road.png",
+      "ntsc": "screenshots/pseudo-3d-road-ntsc.png"
+    }
   }
 }
