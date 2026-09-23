@@ -129,8 +129,8 @@ and red on fail.
 
 Oscar64 has no object linker, and a `.prg` given on its command line is
 ignored ([oscar64-reference](../toolchains/oscar64-reference.md), "Calling
-KickAssembler code from Oscar64"). The old `c64-game-starter` fed one in
-that way. The harness uses the placed-blob method that page describes, and
+KickAssembler code from Oscar64"). The old `c64-game-starter`, since removed, fed
+one in that way. The harness uses the placed-blob method that page describes, and
 automates the addresses:
 
 1. KickAssembler assembles `KICK_SRC` with `-binfile -symbolfile`:

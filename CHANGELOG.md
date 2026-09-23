@@ -7,6 +7,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 766, schema 31, tools 2.3.0, package 0.16.0.
 
+**Issue #39: the `demo` starter lands, and the two stub skeletons are
+removed.** `templates/demo` is pure KickAssembler:
+- a part table with init, update, out step and teardown, and a
+  table-driven IRQ chain;
+- a stable double-IRQ raster-bar kernel, a sprite sine chain, a
+  scroller, and an original tune with NTSC tempo skips.
+
+It checks itself on PAL and NTSC with 229 screenshot checks, 8
+jittered probe shots of the bar kernel, dispatcher counters (late and
+bad frames), a deadline test on the frame slot, and a SID store trace
+(`make audio`). Measured worst 7,332 / typical 6,586 cycles on PAL.
+`templates/c64-demo-starter` and `templates/c64-game-starter` are
+removed. The game starter fed a `.prg` to Oscar64 as source, which
+Oscar64 ignores.
+
 **Issue #39: the `adventure` starter, STARWATCH.** It is a 12-room text
 adventure in Oscar64:
 - the world is data in `tools/world.py`, and a Python model checks the

@@ -112,6 +112,9 @@ screenshot its own `make shot check` grades, with the verdict and the frame mete
 <td align="center"><a href="templates/action-puzzle/README.md"><img src="docs/figures/starters/action-puzzle.png" width="220" alt="Boulder Dash style cave with the high-score table"></a><br><sub>Boulder Dash-style cave</sub></td>
 <td align="center"><a href="templates/adventure/README.md"><img src="docs/figures/starters/adventure.png" width="220" alt="Text adventure at its ending: the telescope, the comet and the score"></a><br><sub>Text adventure</sub></td>
 </tr>
+<tr>
+<td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Demo part: logo, sprite sine chain, stable raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
+</tr>
 </table>
 
 ---
@@ -185,8 +188,8 @@ It copies the starter and the shared harness (`templates/_harness/`), and
 writes `.mcp.json` with this checkout's absolute `dist/cli.js` path. It then
 runs the starter's headless check to prove the copy works.
 
-The starters are `shmup-vertical`, `platformer`, `action-puzzle` and
-`adventure`, plus
+The starters are `shmup-vertical`, `platformer`, `action-puzzle`,
+`adventure` and `demo` (KickAssembler), plus
 two minimal ones: `hello` (C calling assembly) and `hello-kick`
 (KickAssembler only). In each new project:
 - `make run` opens it in VICE;
@@ -196,8 +199,8 @@ two minimal ones: `hello` (C calling assembly) and `hello-kick`
 
 Nothing builds until `PLAN.md` holds the KB's compatibility and budget
 output. `docs/workflow/agent-harness.md` explains the loop.
-`templates/c64-demo-starter` and `templates/c64-game-starter` are the older
-skeletons; they will be removed once the demo starter lands (#39).
+The two stub skeletons that were here before, `c64-demo-starter` and
+`c64-game-starter`, were removed when the demo starter landed (#39).
 
 ---
 
