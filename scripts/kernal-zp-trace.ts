@@ -64,10 +64,24 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
-function run(cmd: string, args: string[], cwd: string, okStatus: readonly number[] = [0]): void {
-  const r = spawnSync(cmd, args, { cwd, encoding: "utf8", timeout: 300_000 });
-  if (r.status === null || !okStatus.includes(r.status))
-    fail(`${cmd} ${args.join(" ")} exited ${String(r.status)}: ${(r.stderr || r.stdout).slice(-400)}`);
+/**
+ * Run a tool. `quiet` discards its output: the windowless x64sc echoes every
+ * trace hit to stdout, which overflows a captured pipe (ENOBUFS).
+ */
+function run(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  opts: { ok?: readonly number[]; quiet?: boolean } = {},
+): void {
+  const ok = opts.ok ?? [0];
+  const r = opts.quiet
+    ? spawnSync(cmd, args, { cwd, stdio: "ignore", timeout: 300_000 })
+    : spawnSync(cmd, args, { cwd, encoding: "utf8", timeout: 300_000 });
+  if (r.status === null || !ok.includes(r.status)) {
+    const out = opts.quiet ? String(r.error ?? "") : String(r.stderr || r.stdout);
+    fail(`${cmd} ${args.join(" ")} exited ${String(r.status)}: ${out.slice(-400)}`);
+  }
 }
 
 /** Build, run, and return the trace log text. */
@@ -91,10 +105,10 @@ function trace(): string {
     ]);
     writeFileSync(join(work, "data.prg"), data);
     run(c1541, ["-format", "zptrace,zt", "d64", "disk.d64", "-write", "data.prg", "data"], work);
-    writeFileSync(
-      join(work, "watch.mon"),
-      ['logname "zp.log"', "log on", "trace store 0000 00ff", `trace store 03fc 03fc`, ""].join("\n"),
-    );
+    // The log file goes on the command line (-monlog), not in the .mon file:
+    // the windowless x64sc ignores `logname`/`log on` in -moncommands.
+    writeFileSync(join(work, "watch.mon"), ["trace store 0000 00ff", "trace store 03fc 03fc", ""].join("\n"));
+    const logPath = join(work, "zp.log");
     run(
       x64sc.path,
       [
@@ -107,6 +121,9 @@ function trace(): string {
         "disk.d64",
         "-moncommands",
         "watch.mon",
+        "-monlog",
+        "-monlogname",
+        logPath,
         "-limitcycles",
         "40000000",
         "-autostart",
@@ -114,9 +131,10 @@ function trace(): string {
       ],
       work,
       // -limitcycles ends the run with exit status 1.
-      [0, 1],
+      { ok: [0, 1], quiet: true },
     );
-    return readFileSync(join(work, "zp.log"), "utf8");
+    if (!existsSync(logPath)) fail(`${x64sc.path} wrote no monitor log at ${logPath}`);
+    return readFileSync(logPath, "utf8");
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
