@@ -1324,5 +1324,37 @@
       "pal": "screenshots/unit-test-driver.png",
       "ntsc": "screenshots/unit-test-driver-ntsc.png"
     }
+  },
+  "cc65/cartridge-8k": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/cartridge-8k.png",
+      "ntsc": "screenshots/cartridge-8k-ntsc.png"
+    },
+    "cartridge": {
+      "file": "cartridge-8k.crt",
+      "write": false,
+      "runs": 1
+    }
+  },
+  "kickassembler/drive-job-queue": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/drive-job-queue.png",
+      "ntsc": "screenshots/drive-job-queue-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
   }
 }

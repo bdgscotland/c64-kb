@@ -5,7 +5,37 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 748, schema 27, tools 2.0.0, package 0.13.0.
+Data 749, schema 27, tools 2.0.0, package 0.13.0.
+
+**Candidate list, Tier B batch 7 (data 749).** A cc65 cartridge recipe
+built through the verifier's cartridge path: the linker configuration
+writes the .CRT container itself from a header segment and the result
+is byte-identical to cartconv's, DATA is copied from ROM to RAM at
+start (55 bytes, checksums equal), the runtime from CINT to main costs
+2,281 cycles, and the negative control with DATA left in ROM boots,
+prints nothing and hits a BRK 1,049 cycles into the first print; a
+Cartridge builds section on the cc65 page. The IEC bit timing measured
+from the KERNAL's own port accesses under the monitor: the device-present
+look 1,103 cycles after ATN, a send bit cell of 94 to 96 cycles stretched
+to 136 to 139 by a badline, the listener's EOI acknowledge 539 cycles
+after DATA is released, and the drive's replies as VICE's 1541 gives
+them; the receive-side timer count is `$01FF` not `$0100` because the
+KERNAL writes only timer B's high byte, and the page's older "about
+1,024 cycles" is flagged. `drive_code_upload_and_job_queue` on the
+file-io page with a recipe: 68 bytes uploaded in three M-W commands and
+read back, executed by M-E, a seek job then a read job of track 18
+sector 0 through the queue returning the BAM, a read before any seek
+failing with result `$0B` and a read of track 40 with `$03`, drive-side
+durations by the drive's own clock; a job queue and buffers table on the
+IEC page. A Spindle toolchain page (3.1 built from source with xa65):
+two parts packaged with mkpef and linked with pefchain, the join between
+parts measured at 55 cycles and accounted for instruction by instruction,
+part timings on both models, the D64 layout, and pefchain's page-clash
+warning; the pictures live under docs/figures because the verifier cannot
+boot a prepared disk. Left open: the device-not-present timeout as a
+firing timeout (no run without a responding device could be made under
+VICE); the write, verify, bump and execute job codes; where Spindle's
+drive code lives on the disk.
 
 **Candidate list, Tier B batch 6 (data 748).** `basic_extension_wedge`
 on the text page with a KickAssembler recipe: an IGONE wedge that adds

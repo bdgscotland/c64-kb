@@ -106,13 +106,148 @@ This handshake means transmission speed is limited by the slowest device on the 
 
 ### EOI (End Or Identify)
 
-The talker signals the last byte in a data stream via EOI (End or Identify). After the receiver is ready (DATA released), the talker holds CLK low for more than ~200 µs before beginning the final byte's bit transfer. The listener recognizes this timing as EOI and acknowledges by briefly pulling DATA low before the byte transfer begins.
+The talker signals the last byte in a data stream via EOI (End or Identify). After the receiver is ready (DATA released), the talker leaves CLK *released* and does nothing; a normal byte would have CLK pulled low again within a couple of hundred microseconds. The listener recognises the long gap as EOI and acknowledges by pulling DATA low briefly, then releasing it; only then does the talker pull CLK low and clock the final byte out. The lengths, as the KERNAL produces and accepts them, are in "IEC bit timing, measured" below.
+
+**Correction (2026-09-23).** This paragraph said the talker "holds CLK low for more than ~200 µs" to signal EOI. It is the other way round: CLK is high (released) throughout the EOI gap, and it is the *absence* of the CLK-low edge that the listener times. The trace below shows the C64, as talker, releasing CLK at `$EE8A` and not touching it again until after the drive's DATA pulse; as listener it times the gap with CIA1 timer B and answers after 539 cycles, not 200 µs.
 
 The KERNAL READST routine (`$FFB7`) returns a status byte where bit 6 indicates EOI was received on the last IECIN call.
 
 ### UNLISTEN / UNTALK
 
 After data transfer is complete, the C64 asserts ATN and sends the UNLISTEN (`$3F`) or UNTALK (`$5F`) command to release the addressed devices.
+
+---
+
+## IEC bit timing, measured
+
+The prose above says what the handshake does; this section says how long each part takes when the 901227-03 KERNAL does it, read off a cycle-stamped trace of every `$DD00` access in VICE x64sc 3.10 with `-drive8truedrive -drive8type 1541` and a freshly formatted disk (rung 1). Two probes were traced: one that does `CHKOUT` on channel 15, sends `M-R $00 $00 $04` and reads the four bytes back, and one that only reads the status line, which is the shortest way to get an EOI *from* the drive. The body of the first, without its BASIC stub:
+
+```kick
+iec_timing:
+    lda #15
+    ldx #8
+    ldy #15
+    jsr $ffba            // SETLFS 15,8,15
+    lda #0
+    jsr $ffbd            // SETNAM "": with no name, OPEN sends nothing on the bus
+    jsr $ffc0            // OPEN
+    ldx #15
+    jsr $ffc9            // CHKOUT 15: LISTEN 8, secondary $6F, under ATN
+    ldx #0
+send:
+    lda cmd,x
+    jsr $ffd2            // CHROUT: the KERNAL sends the previous byte, keeps this one
+    inx
+    cpx #6
+    bne send
+    jsr $ffcc            // CLRCHN: last byte goes out with EOI, then UNLISTEN
+    ldx #15
+    jsr $ffc6            // CHKIN 15: TALK 8, secondary $6F, then the turnaround
+    ldx #0
+recv:
+    jsr $ffcf            // CHRIN: one byte from the drive
+    sta buf,x
+    inx
+    cpx #4
+    bne recv
+    jsr $ffcc            // CLRCHN: UNTALK
+    lda #15
+    jmp $ffc3            // CLOSE 15: LISTEN 8, secondary $EF, UNLISTEN
+cmd:
+    .text "M-R"
+    .byte $00, $00, $04
+buf:
+    .fill 4, 0
+```
+
+The monitor file, given to `-moncommands`. `trace` does not stop the machine (`watch` would, and the run would hang; see `../runtime/vice-reference.md`); `command 2` dumps the port after every read so the log carries the value the load returned, which the register line does not show:
+
+```text
+logname "/tmp/iec.log"
+log on
+trace store dd00
+trace load dd00
+command 2 "m dd00 dd00"
+```
+
+The run: `x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 4500000 -8 disk.d64 -drive8truedrive -drive8type 1541 -drive8wobbleamplitude 0 -drive8wobblefrequency 0 -moncommands trace.mon -exitscreenshot out.png -autostart iec.prg`, once PAL and once with `-model ntsc`. Each log was about 8,400 lines; a Python script folds it into one line per bus event, with the port bits named. The parse is two regular expressions:
+
+```text
+import re, sys
+ev, pend = [], None
+for ln in open(sys.argv[1], encoding='latin-1'):       # the dump line carries a PETSCII byte
+    m = re.match(r'\.C:([0-9a-f]{4})\s+.{12}(\w+)\s+\$DD00\s+- A:([0-9A-F]{2}).*?(\d+)\s*$', ln)
+    if m:                                               # ".C:ee93  8D 00 DD    STA $DD00 - A:1F ...  3011202"
+        pc, op, a, cyc = m.group(1), m.group(2), int(m.group(3), 16), int(m.group(4))
+        if op == 'STA': ev.append([cyc, pc, 'W', a]); pend = None
+        else:           pend = [cyc, pc, 'R', None]; ev.append(pend)
+        continue
+    m = re.match(r'>C:dd00\s+([0-9a-f]{2})', ln)          # the value the load saw
+    if m and pend: pend[3] = int(m.group(1), 16); pend = None
+for cyc, pc, k, v in ev:
+    if v is None: continue
+    print('%8d %s %s %02x  ATN%d CLKo%d DATo%d | CLKi%d DATi%d' % (cyc, pc, k, v,
+          (v>>3)&1, (v>>4)&1, (v>>5)&1, (v>>6)&1, (v>>7)&1))
+```
+
+A second script grouped those events into bytes; its figures are the table. The first excerpt is the start of `CHKOUT`'s LISTEN (PAL, cycles are the monitor's stopwatch column; `W` is a store, `R` a load, and the output bits are the C64's own drivers, 1 = pulling low):
+
+```text
+ 3011184 ed33 W 9f  ATN1 CLKo1 DATo0 | CLKi0 DATi1     ATN asserted
+ 3011196 ee8e R 1f  ATN1 CLKo1 DATo0 | CLKi0 DATi0     DATA already low, 12 cycles later
+ 3011224 ee9c W 1f  ATN1 CLKo1 DATo0 | CLKi0 DATi0     DATAHI: C64 releases its own DATA
+ 3012265 ee97 R 1f  ATN1 CLKo1 DATo0 | CLKi0 DATi0     1,041 cycles later: the 1 ms wait is over
+ 3012287 eea9 R 1f  ATN1 CLKo1 DATo0 | CLKi0 DATi0     DEBPIA: DATA low, so a device is present
+ 3012319 ee8a W 0f  ATN1 CLKo0 DATo0 | CLKi0 DATi0     CLKHI: talker ready to send
+ 3012422 eea9 R cf  ATN1 CLKo0 DATo0 | CLKi1 DATi1     drive releases DATA: listener ready
+ 3012454 ee93 W df  ATN1 CLKo1 DATo0 | CLKi1 DATi1     CLKLO: byte starts
+ 3012502 eea5 W bf  ATN1 CLKo1 DATo1 | CLKi0 DATi1     DATALO: bit 0 of $28 is 0
+ 3012527 ee8a W 2f  ATN1 CLKo0 DATo1 | CLKi0 DATi0     CLKHI: bit valid
+ 3012553 ed8b W 5f  ATN1 CLKo1 DATo0 | CLKi1 DATi0     CLK low again, DATA released: cell over
+ 3012666 ee8a W 2f  ATN1 CLKo0 DATo1 | CLKi0 DATi0     next bit valid, 139 cycles after the last (a badline)
+```
+
+The second is the drive's EOI on the status line's closing `$0D`, seen by the C64 as listener:
+
+```text
+ 3070659 eea9 R 67  ATN0 CLKo0 DATo1 | CLKi1 DATi0     drive releases CLK: talker ready
+ 3070703 ee9c W 47  ATN0 CLKo0 DATo0 | CLKi1 DATi0     DATAHI: listener ready, timer B running
+ 3071242 eea5 W e7  ATN0 CLKo0 DATo1 | CLKi1 DATi1     539 cycles, no CLK edge: DATALO, the EOI acknowledge
+ 3071326 ee9c W 07  ATN0 CLKo0 DATo0 | CLKi0 DATi0     DATAHI: acknowledge over after 84 cycles
+ 3071354 eea9 R 87  ATN0 CLKo0 DATo0 | CLKi0 DATi1     drive pulls CLK low 28 cycles later: byte starts
+```
+
+**The figures.** Cycles are what was measured; microseconds are those cycles at 985,248 Hz (PAL) and 1,022,727 Hz (NTSC). Where the NTSC column is a cycle count it came from the NTSC run; the C64's own base intervals came out identical in cycles on both models: they are instruction counts, plus whatever VIC-II stalls the screen state adds, and the stalls land in different places on the two models, so the long variants quoted are the PAL run's unless the row says otherwise. "Whose" says which side sets the interval: the C64's are the KERNAL's own and would be the same on any drive; the drive's are VICE's 1541 answering at VICE's 1541 timing, quoted as the range seen over fifteen sent and thirty-one received bytes, and a real drive, a 1571 or an SD2IEC will differ there.
+
+| Phase | Whose | Cycles | PAL µs | NTSC µs | Where in the KERNAL |
+|---|---|---|---|---|---|
+| ATN asserted to first look at DATA (the device-present test) | C64 | 1,103 with the screen on (two badlines); 1,017 by instruction count | 1,119.5 | 1,078.5 | `STA $DD00` at `$ED33`; DATAHI at `$EE9C` 40 cycles later; the 1 ms loop is `LDX #$B8` at `$EEB4`, 955 cycles by count from the DATAHI store to the `$EE97` load before the next one, 1,041 measured on both models, the 86 being two badline stalls of 43; the test read at `$EEA9` |
+| Drive's DATA response to ATN | drive | ≤ 12 | ≤ 12.2 | ≤ 11.7 | already low at the first read after the ATN store, `$EE8E` |
+| Talker CLK release to listener DATA release (drive ready for a byte) | drive | 49 to 859 | 50 to 872 | 48 to 840 | wait loop at `$EEA9`; the 859 was the drive's `UNLISTEN` after `CLOSE`, the rest 49 to 373 |
+| Listener ready to CLK asserted (byte starts) | C64 | 32; 43 to 98 when the `$EEA9` poll catches the edge late or a badline lands in the gap | 32.5 | 31.3 | `$EE93`; 32 in twelve of the fifteen sent bytes, 43, 75 and 98 in the other three on PAL, 39 and 43 on NTSC |
+| CLK asserted to first bit's CLK release | C64 | 71 to 73 | 72.1 to 74.1 | 69.4 to 71.4 | first pass of the loop at `$ED66` |
+| Bit cell, C64 sending: CLK released | C64 | 26, or 69 with a badline in the released half | 26.4, or 70.0 | 25.4, or 67.5 | `$EE8A` to `$ED8B`; three of the 120 cells in each run were 69 |
+| Bit cell, C64 sending: period | C64 | 94 to 96, or 136 to 139 | 95.4 to 97.4, or 138.0 to 141.1 | 91.9 to 93.9, or 133.0 to 135.9 | `$EE8A` to the next `$EE8A`; the long cells are the ones a badline landed in |
+| Last bit to listener acknowledge (DATA low) | drive | 76 to 80, once 111, once 154 | 77 to 81 | 74 to 78 | wait loop at `$EEA9` after `$ED8B` |
+| EOI, C64 sending: listener ready to the drive's DATA pulse | drive | 609 to 613 | 618 | 599 | the C64 idles at `$EEA9` with CLK released |
+| EOI, C64 sending: the drive's DATA pulse | drive | 80 to 87 | 81 | 85 | then `$EE93`, CLK asserted, 32 cycles after it ends |
+| TALK turnaround: ATN release to C64 CLK release | C64 | 22 | 22.3 | 21.5 | `$EDC3` then `$EE8A` |
+| TALK turnaround: C64 CLK release to drive CLK assert | drive | 70 to 86 | 87 | 68 | wait at `$EEA9` |
+| Receive: drive CLK release to C64 DATA release (listener ready) | C64 | 44 | 44.7 | 43.0 | `$EE9C`, inside ACPTR |
+| Receive: listener ready to drive CLK assert (byte starts) | drive | 63 to 106 | 64 to 108 | 62 to 104 | wait at `$EEA9` |
+| Receive: bit period, drive sending | drive | 157 to 237, mostly 185 to 196 | 188 to 199 | 181 to 192 | CLK-high samples at `$EE5A`/`$EE5D`, CLK-low waits at `$EE67`/`$EE6A` |
+| Receive: last bit to C64 acknowledge (DATA low) | both | 78 to 136 | 79 to 138 | 76 to 133 | `$EEA5` after the loop |
+| EOI, C64 receiving: listener ready to acknowledge | C64 | 539 | 547.1 | 527.0 | timer B armed before `$EE9C`; `$EEA5` when it expires |
+| EOI, C64 receiving: acknowledge pulse | C64 | 84 | 85.3 | 82.1 | `$EEA5` to `$EE9C`, with CLKHI at `$EE8A` between |
+| UNTALK: ATN asserted from a different place | C64 | | | | `STA $DD00` at `$EDF8`, not `$ED33` |
+
+Three things the table settles that the prose could not:
+
+- **The C64's bit cell is not constant.** The send loop is straight-line code, so its cell is 94 to 96 cycles, but a VIC-II badline steals about 40 cycles from whichever cell it lands in, and one or two of every eight bits were 136 to 139 cycles in every byte sent with the screen on. The drive tolerates it because every bit is handshaken; a loader with cycle-counted loops on the drive side does not, which is why fast loaders blank the screen or sit in the border. Pitfalls `gcr_timing_assumes_stock_drive`, `fastloader_dd00_write_corrupts_resident` and `raster_irq_during_serial_io` are the three places this bites.
+- **The EOI window the C64 applies as listener is 539 cycles, not 256.** ACPTR writes `1` to CIA1 timer B's high byte and force-loads the timer; it never writes the low byte, whose latch is left at whatever the last user set, so the count that ran here was `$01FF`, not `$0100`. That is arithmetic from the trace (539 = 511 plus the loop's overhead), not a measurement of the latch (not measured here). The send-side timeout in "Drive-Not-Ready and Timeout Errors" below writes `4` the same way, so "about 1,024 cycles" is the nominal count and the one that runs is likely `$04FF`, 1,279 cycles; a run in which it fires was not produced (see the caveat).
+- **The drive answers ATN by hardware, not by code.** DATA was low 12 cycles after the ATN store, in both runs, before the drive's CPU could have taken an interrupt. The 1541 gates DATA from ATN in logic, and the KERNAL's 1 ms wait before it looks is for the drive's *software* to catch up, not for the line.
+
+**What this measures and what it does not.** The drive rows are VICE's 1541 and nothing else: they are the reply times of an emulated 6502 running the 325302-01+901229-05 ROM under VICE's drive timing, and the real spread across drives, ROM revisions and third-party devices is not in them. The device-not-present path was traced too, in a run with no disk mounted and `-drive8type 0 +drive8truedrive +busdevice8` in place of the drive flags. An earlier version of this paragraph said that run could not be produced and that something still answered ATN; it had been read from a log holding five runs appended (`log on` appends to an existing file, so a log shared between runs must be split per run before it is parsed), and only the first run in it, made with a disk mounted, had been looked at. With nothing on the bus the trace matches the drive run to the cycle up to the test: ATN store at `$ED33`, DATAHI at +40, the second DATAHI at +1,087, the `$EEA9` read at +1,103. There it returns DATA high, the `BCS` at `$ED47` takes the `$EDAD` path, and ATN is released at `$EDC3` 65 cycles after the test read, so the 1,103 window is confirmed from the refusal itself. Not one byte is sent, which is why the send-side timer at `$ED92` was still not seen to fire: that needs a device that answers ATN and then never acknowledges. The `CHKIN` that followed put TALK on the bus at cycle 3,016,512, released ATN at 3,017,723, ran the talk turnaround regardless, and then waited at `$EEA9` for a CLK edge from cycle 3,019,237 to the 4,500,000 limit: the hang "Drive-Not-Ready and Timeout Errors" below describes, with no timeout. The monitor's drive-side breakpoints (`dev 8`, or the `8:` address prefix) were not tried; everything here is the C64's view of the bus.
 
 ---
 
@@ -384,6 +519,45 @@ The 1541 has 2 KiB of general-purpose RAM. Because the drive's 6502 operates ind
 
 The technique requires custom code running on the drive CPU. The C64 uploads the drive-side routine via the command channel's `M-W` (Memory Write) command, then starts it with `M-E` (Memory Execute). Once the drive routine is running, both sides enter a tight handshake loop using the user-port lines for data and the IEC bus for control.
 
+### 1541 job queue and buffers
+
+The addresses uploaded code uses to ask the controller for a sector. The rows marked "run" were exercised by `../recipes/kickassembler/drive-job-queue.md` in VICE x64sc 3.10 with true drive emulation of a 1541 (rung 1); the rest carry the names and meanings of the g3sl.github.io ROM listing (rung 4) and were not run here.
+
+| Address | Name | Meaning | Status |
+|---|---|---|---|
+| `$00`–`$05` | JOBS | one job byte per buffer 0–5; bit 7 set means pending, the controller replaces it with a result code | `$01` run |
+| `$06`–`$11` | HDRS | track and sector for each job, two bytes per buffer: `$06`/`$07` buffer 0, `$08`/`$09` buffer 1, up to `$10`/`$11` buffer 5 | `$08`/`$09` run: read back `12 00` |
+| `$12`–`$13` | DSKID | the master disk ID the controller compares each header against; set by a seek job and by `I` | run: `00 00` until a seek, then `30 31` |
+| `$16`–`$1A` | HEADER | the last header read: ID, ID, track, sector, checksum | not run |
+| `$0300`–`$06FF` | buffers 0–3 | data buffers lent to channels | `$0400` and `$0600` run |
+| `$0700`–`$07FF` | buffer 4 | the BAM | not run |
+
+| Job code | Meaning | Status |
+|---|---|---|
+| `$80` | read the sector into the buffer | run |
+| `$90` | write the buffer to the sector | not run |
+| `$A0` | verify | not run |
+| `$B0` | seek: find any header on the track, keep its ID | run |
+| `$C0` | bump the head to track 1 | not run |
+| `$D0` | jump to code in the buffer | not run |
+| `$E0` | execute code in the buffer once the motor is up to speed | not run |
+
+| Result | Meaning | Status |
+|---|---|---|
+| `$01` | done | seen: seek and read |
+| `$02` | header not found | not seen |
+| `$03` | no sync | seen: read of track 40 on a 35-track image |
+| `$04` | data block not found | not seen |
+| `$05` | data checksum error | not seen |
+| `$07` | verify error | not seen |
+| `$08` | write protect | not seen |
+| `$09` | header checksum error | not seen |
+| `$0A` | data block too long | not seen |
+| `$0B` | ID mismatch | seen: read before any seek or `I` |
+| `$10` | byte decoding error | not seen |
+
+The result codes are the same numbers a `.d64` error block carries; `../pitfalls/loader.md`, `d64_error_byte_is_a_controller_code`, maps them to the error-channel numbers. Two more things measured by the same recipe: a job that fails leaves the error channel at `00, OK,00,00`, and a bare read of channel 15 after an `M-R` has been consumed returns one CR. `M-E` returns to the idle loop on the routine's RTS, and the host's next command waits until it does.
+
 ### Notable Fastloaders
 
 Several widely-used fastloaders from the demoscene implement this approach:
@@ -437,7 +611,7 @@ Similarly, code that uses CIA2 for RS-232 (via the user port ACIA emulation) mus
 
 ### Drive-Not-Ready and Timeout Errors
 
-The KERNAL has one timeout on the bus, and it is short and narrow. The byte-send routine arms CIA1 timer B for about 1,024 cycles (it writes 4 to the timer's high byte at `$ED92`) while it waits for a listener to acknowledge; if nothing answers it sets the READST bit and returns, which is how an absent or unpowered drive is detected on the first byte of an OPEN. The talk turnaround and the byte-receive waits have no timeout at all: a drive that has accepted TALK and never pulls CLK leaves the CPU waiting for ever, which is the start-up hang measured in VICE and described on `recipes/oscar64/high-score-persist.md`. An earlier version of this page said "approximately 64 ms" and implied every stall returns; neither is so. Check READST after every OPEN/CHKIN/CHKOUT for the errors the KERNAL can report, and do not rely on it to return from a stalled transfer.
+The KERNAL has one timeout on the bus, and it is short and narrow. The byte-send routine arms CIA1 timer B for about 1,024 cycles (it writes 4 to the timer's high byte at `$ED92`) while it waits for a listener to acknowledge; if nothing answers it sets the READST bit and returns. An absent or unpowered drive is caught before that, and not by the timer: `LISTEN` and `TALK` look at DATA about 1,100 cycles after asserting ATN, and if no device is holding it low they take the device-not-present path at `$EDAD` without sending a byte (measured in the no-drive run under "IEC bit timing, measured" above; an earlier version of this paragraph credited the timer with that detection). The talk turnaround and the byte-receive waits have no timeout at all: a drive that has accepted TALK and never pulls CLK leaves the CPU waiting for ever, which is the start-up hang measured in VICE and described on `recipes/oscar64/high-score-persist.md`. An earlier version of this page said "approximately 64 ms" and implied every stall returns; neither is so. Check READST after every OPEN/CHKIN/CHKOUT for the errors the KERNAL can report, and do not rely on it to return from a stalled transfer.
 
 ### Directory Track Corruption
 

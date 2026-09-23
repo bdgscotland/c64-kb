@@ -1163,3 +1163,131 @@ here. VICE emulates it with `-gmod2eepromimage <file>` and
 ### Recipes
 
 - `recipes/kickassembler/easyflash-save.md` (a self-built EasyFlash CRT that appends a high-score record to bank 8 each boot; persistence shown across two VICE runs with `-easyflashcrtwrite`; erase and program timed)
+
+---
+
+## drive_code_upload_and_job_queue — Upload code to the 1541 with M-W, start it with M-E, read sectors through its job queue
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, CLRCHN, CLOSE
+**Requires:** error_channel_check
+**Cost:** bytes_code=865, bytes_data=341
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-drive-job-queue (whole PRG less the BASIC stub: 837 bytes of host code and the 28-byte drive routine; the 40-byte ramp, the strings and the 128-byte read buffer are data)
+
+### Why
+
+The DOS reads what its file system describes. A loader that wants a
+sector by track and sector number, a protection check that wants to
+look at a sector the directory does not point to, or a fast loader that
+wants the drive's CPU running its own transfer loop, all need code on
+the drive side. The 1541 has a 6502 of its own, 2 KiB of RAM, and a
+command channel that will write that RAM, read it back and jump into
+it. The drive's disk controller then does the reading: uploaded code
+never has to touch the head or decode GCR to fetch a sector, it asks
+through the job queue.
+
+### How
+
+1. Open channel 15 bare (SETLFS 15, 8, 15; SETNAM length 0; OPEN), as
+   error_channel_check does. It stays open for the whole exchange.
+2. Upload. Each `M-W` is a command on channel 15: CHKOUT 15, then the
+   bytes `M`, `-`, `W`, address low, address high, count, and `count`
+   data bytes, then CLRCHN. The UNLISTEN runs it. Send at most 32 data
+   bytes per command (the DOS parses the command from a fixed buffer
+   and 32 is the figure loaders use; the recipe sends 32, 32 and 4 and
+   a larger count was not measured here). Advance the address by the
+   count each time.
+3. Verify with `M-R`: the six bytes `M`, `-`, `R`, low, high, count,
+   then CHKIN 15 and `count` CHRIN calls, then CLRCHN. Compare with the
+   source. The recipe reads 68 bytes in one command; larger counts were
+   not measured here. The DOS takes the count from the sixth byte of
+   the command.
+4. Start with `M-E`: the five bytes `M`, `-`, `E`, low, high. The drive
+   executes a JSR to that address from its command parser, with
+   interrupts enabled, and returns to its idle loop on the routine's
+   RTS. The host's next command is not accepted until then, so a host
+   that sends `M-E` and then `M-R` simply waits.
+5. Inside the routine, to read a sector: put the track in `$08` and the
+   sector in `$09`, write `$80` to `$01`, and loop while `$01` has bit 7
+   set. The controller, which runs from the drive's timer interrupt,
+   replaces the job code with a result: `$01` is success and the data
+   is in buffer 1 at `$0400`. Slot `$00` uses buffer 0 at `$0300` with
+   its header at `$06`/`$07`; slot 2 buffer 2 at `$0500` with `$0A`/`$0B`;
+   slot 3 buffer 3 at `$0600` with `$0C`/`$0D`; slot 4 buffer 4 at
+   `$0700` with `$0E`/`$0F`; slot 5 has no RAM behind it. Job codes:
+   `$80` read, `$90` write, `$A0` verify, `$B0` seek, `$C0` bump,
+   `$D0` jump, `$E0` execute. The codes as run here were `$80` and
+   `$B0`; the rest are from the ROM disassembly's list and were not run
+   (see `../formats/iec-disk-reference.md`, "1541 job queue and
+   buffers").
+6. Before the first read, teach the controller the disk ID. It checks
+   every header's two ID bytes against its master copy at `$12`/`$13`,
+   and after power-on nothing has set those, so the first read job
+   fails with `$0B` (measured). A seek job, `$B0` with the track in
+   `$08`, reads any header and copies its ID there (measured: `$01`,
+   and `$12`/`$13` then read `30 31` for a `TEST,01` disk). The DOS's
+   own `I0` does the same seek.
+7. Fetch the result and the data with `M-R` from the host: `M-R $0001`
+   for the job byte, `M-R $0400` in chunks for the sector.
+
+### Why it works
+
+The drive's 6502 spends its time in two roles. From its idle loop it
+parses commands and runs the file system; from its timer interrupt,
+every ten milliseconds by the ROM disassembly's account (rung 4), it
+becomes the disk controller, scans `$00` to `$05` for a byte with bit 7
+set, and does that job with the head. `M-W` and `M-R` are ordinary
+commands that read and write the drive's address space; `M-E` is a
+command whose action is a subroutine call. Code started that way runs
+in the file-system role, so it can post jobs for the controller role
+exactly as the DOS does, and the result comes back in the same byte.
+The status line is not involved: after the track-40 job failed with
+`$03` the error channel still read `00, OK,00,00` (measured), because
+only the DOS writes that line and the DOS did not run the job.
+
+Buffer choice: the DOS lends buffers 0 to 3 to data channels and keeps
+the BAM in buffer 4 at `$0700` (the ROM disassembly's note, rung 4; the
+"70, NO CHANNEL" on a fifth `#` open is the four in use). With no files
+open, `$0300` to `$06FF` is free. The recipe puts its code in buffer 3
+and reads into buffer 1; the code survived the four jobs and a seek.
+
+### Variations
+
+- **A resident drive program.** Upload once, `M-E` once, and never
+  return: the routine takes over the bus with its own protocol over
+  CLK and DATA, the host side drives it with a matching routine, and
+  the KERNAL is out of the loop until the drive is reset. That is a
+  fast loader, and the pitfalls are its own: `../pitfalls/loader.md`,
+  `gcr_timing_assumes_stock_drive` (an SD2IEC has no CPU to run the
+  upload, and a 1571 or 1581 has a different ROM and different
+  addresses), `fastloader_resident_in_kernal_workspace` and
+  `fastloader_dd00_write_corrupts_resident` for the host half. Not
+  measured here.
+- **The 1571 and 1581.** Both accept `M-W`, `M-R` and `M-E` (rung 4), but
+  their job queues, buffer addresses and controller codes are their own
+  ROMs' and were not measured here; detect the drive first
+  (`../formats/iec-disk-reference.md`, "Identifying the drive over the
+  command channel").
+- **Writing.** Fill the buffer, post `$90`. Not run here, and it would
+  change the disk, so it does not belong in the recipe's pinned run.
+- **Another buffer.** Point the read at buffer 2 (`$0500`) by posting the
+  job in slot `$02` with the track and sector at `$0A`/`$0B`: the same
+  code, one slot along. Not run here.
+
+### Cycle budget
+
+Bus time, PAL, VICE 3.10 (rung 1): 132,742 host cycles for the three
+`M-W` commands carrying 68 bytes, and 163,545 for the single `M-R` that
+read them back, about 135 ms and 166 ms. On the drive side, in drive
+cycles at 1 MHz: the seek 125,859, the successful read 224,071, the
+failed read before the seek 902,630 and the track-40 failure 766,533;
+the failures are the controller's retries and bumps. A loader that
+uploads a few hundred bytes therefore spends a noticeable fraction of a
+second on the upload alone, which is why resident loaders upload once.
+
+### Recipes
+
+- `recipes/kickassembler/drive-job-queue.md` (upload, readback, execute, a failed read, a seek, the BAM read and compared, a provoked `$03`, and what the error channel says afterwards; drive-side monitor trace of each job)

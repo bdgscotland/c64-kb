@@ -209,7 +209,7 @@ already documents, and they have nothing to do with `$0330`:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks, iffl_single_file
+**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks, iffl_single_file, drive_code_upload_and_job_queue
 
 ### Symptom
 
@@ -757,7 +757,7 @@ is unchanged from earlier versions of this page.
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** disk_protection_tricks
+**Triggered by techniques:** disk_protection_tricks, drive_code_upload_and_job_queue
 
 ### Symptom
 
