@@ -907,6 +907,7 @@ per character step.
 ### Recipes
 
 - `recipes/oscar64/tile-map-render.md`
+- `recipes/oscar64/level-rle-decoder.md` (the same RLE format on three 40 x 22 rooms: ratio, decode cycles and decoder size measured, in C and by hand)
 - `recipes/oscar64/tile-grid-collision.md` (tests a sprite against the decoded map array this technique fills; `tile_grid_collision` in `logic.md`)
 
 ---

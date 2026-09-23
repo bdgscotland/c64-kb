@@ -677,5 +677,34 @@
       "pal": "screenshots/slope-collision.png",
       "ntsc": "screenshots/slope-collision-ntsc.png"
     }
+  },
+  "oscar64/level-rle-decoder": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/level-rle-decoder.png",
+      "ntsc": "screenshots/level-rle-decoder-ntsc.png"
+    }
+  },
+  "kickassembler/paddle-read": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-controlport1device",
+      "3",
+      "-controlport2device",
+      "2"
+    ],
+    "shots": {
+      "pal": "screenshots/paddle-read.png",
+      "ntsc": "screenshots/paddle-read-ntsc.png"
+    }
   }
 }
