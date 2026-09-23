@@ -5,7 +5,82 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 736, schema 24, tools 1.29.0.
+Data 739, schema 25, tools 1.30.0.
+
+**Issue #21, GR-01 to GR-04.** Four small complete games, each a
+technique plus a self-playing recipe checked against a Python model of
+the same rules: `falling_block_rules` (NES tables per region, scoring at
+the level after the clear), `ghost_target_tile_ai` (the Pac-Man Dossier's
+target tiles), `cave_scan_engine` (the scanned flag that stops the double
+move) and `dig_and_refill` (Lode Runner's holes and guards; four guards
+overrun a frame). A third Oscar64 1.32.271 miscompile, reproduced: at -O2
+a loop-invariant `array + signed char` is zero-extended (#30).
+
+
+**Issue #22, steps 0 and 1: hardware claims (schema 25, tools 1.30.0, package 0.10.0).**
+`HardwareUnit` nodes (SID voices, sprites, CIA timers, TOD and ports, the
+VIC bank, the serial bus, the raster IRQ, the four vectors, the expansion
+pages, zero page) and `CLAIMS` edges from a technique's new `**Claims:**`
+line, in four modes: owns, shares, reads, init. `c64_check_compatibility`
+now names the unit two techniques contend for (`unit_contention`,
+`zero_page_overlap`, `unit_shared`, `unit_read_while_driven`,
+`init_order`, the last at a new `info` severity that leaves the verdict
+alone). Before, two raster-IRQ owners or two players on the same voices
+drew at most a soft shared-register warning. A technique with no Claims line reads as unknown,
+never as claiming nothing, and the text says a unit conflict with it
+cannot be ruled out. A `prerequisite_conflict` now carries the rule that
+fired in `underlying_kind`; it was reported as hard whatever the rule.
+Recipe-chosen zero page and vectors are not checked yet (step 8).
+
+A first cut made every raster technique own the raster IRQ, and set
+techniques that the KB's own VICE-verified recipes run together against
+each other as hard conflicts (fli-image, sideborder-open, fld,
+stable-raster-irq, the Oscar64 raster-bars). `stable_raster_irq` and
+`double_irq` are ways into a handler, so they now `share` the raster
+compare and the effect run from the handler owns it. A technique is not
+set against a prerequisite it runs inside its own handler. A test now
+checks every recipe's technique set and fails naming any recipe with a
+hard unit conflict. The Kick `sprite-multiplex-24` recipe also named
+`sprite_multiplex_8`, a second multiplexer it does not contain. `fli_image`
+claims the VIC bank and requires `vic_bank_select`: its layout needs bank
+1 or 3, because banks 0 and 2 show character ROM where four of the eight
+screens go. A resident Krill loader beside a VIC bank owner now says not
+to write `$DD00` raw while the loader is armed; it said Krill should
+follow the bank owner. `irq_chain_table` against a raster effect names
+the table as the host. `sid_play_routine_pattern`'s claims rest on the
+player contract, not a listing: basis `estimated`.
+
+Step 0: `sprite_multiplex_8`'s Cost held the recipe's demo payload
+(9,162); the three multiplexer calls measure at most 5,301. `simple-shmup`
+named `soft_scroll_h` and `sprite_collision_detect`, which it does not
+implement.
+**Candidate list, Tier B batch 1 (data 737).** Four measured items.
+`high_score_table_insert` on the text page with a KickAssembler recipe:
+a BCD compare from the most significant byte, a bounded shift and the
+tie rule, four inserts checked against an expected table byte for byte,
+the worst insert 481 cycles by CIA timer and by the instruction count;
+it realises the "table re-sorted" check on the front-end pattern, which
+the complete-game build of the night before skipped. The CIA revision:
+VICE 3.10 models the one-cycle difference between the old 6526 and the
+6526A or 8521, measured as an alternating latency pair of `$12`/`$11`
+under `-ciamodel 0` and `$10`/`$11` under model 1, the default behaving
+as the new part; new pitfall `cia_revision_irq_one_cycle_late` with a
+detection recipe pinned under the old model on both regions. The
+time-of-day alarm: `tod_alarm_interrupt` with a recipe that sets the
+clock, arms an alarm three seconds ahead and reads the time in the
+handler; it fired after 149 PAL and 179 NTSC frames against 150 and 180
+expected, the one-frame shortfall being the mains tick's phase, and with
+the 50/60 Hz bit the wrong way the same alarm took 180 PAL frames and 149
+NTSC, the drift the page quotes. `isqrt_16bit` and `atan2_8bit` on the
+maths page: the root exact on 35 cases and within bounds on all 65,536
+inputs (869 cycles worst), the angle within one unit of 256 on 36 cases
+on the machine and on all 65,536 pairs in the host model (381 cycles
+worst). The VICE reference now says that the exit screenshot is the
+draw buffer at the cycle the limit hits, rows above the beam new and
+rows below from the previous field, measured on the eight-way scroll
+recipe while its pin was chosen. Left open: the PAL alarm's arrival
+varying by about fifty cycles between identical runs; the machine sweep
+of every atan2 pair; every CIA figure is VICE's, none from silicon.
 
 **Issue #21, ES-19 to ES-22.** `reu_dma` (one cycle a byte blanked;
 badlines and sprites slow it with the screen on), `four_player_read`

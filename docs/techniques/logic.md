@@ -429,6 +429,8 @@ would cost less; the C figures are an upper reference, not a target.
 **Requires:** frame_sync_loop
 **Cost:** cycles_per_frame=384, irq_slots=1
 **Cost basis:** measured-vice
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 

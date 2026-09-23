@@ -24,6 +24,8 @@ For the IEC bus hardware details underlying all fast-loader operation, see `../f
 **Uses registers:** DD00
 **Uses kernal:** LOAD, CHKIN, CHKOUT
 **Demands:** serial_bus_exclusive
+**Claims:** serial_bus (owns), zero_page $E0-$EF (owns, relocatable), cia2_vic_bank (shares)
+**Claims basis:** estimated
 
 ### Why
 

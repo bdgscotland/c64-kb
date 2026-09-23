@@ -958,6 +958,57 @@
       "ntsc": "screenshots/raster-profile-bars-ntsc.png"
     }
   },
+  "kickassembler/sqrt-atan2": {
+    "cycles": 120000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sqrt-atan2.png",
+      "ntsc": "screenshots/sqrt-atan2-ntsc.png"
+    }
+  },
+  "kickassembler/high-score-insert": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/high-score-insert.png",
+      "ntsc": "screenshots/high-score-insert-ntsc.png"
+    }
+  },
+  "kickassembler/cia-revision-detect": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-ciamodel",
+      "0"
+    ],
+    "shots": {
+      "pal": "screenshots/cia-revision-detect.png",
+      "ntsc": "screenshots/cia-revision-detect-ntsc.png"
+    }
+  },
+  "kickassembler/tod-alarm": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/tod-alarm.png",
+      "ntsc": "screenshots/tod-alarm-ntsc.png"
+    }
+  },
   "oscar64/falling-blocks": {
     "cycles": 12500000,
     "models": [

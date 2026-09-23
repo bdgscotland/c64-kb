@@ -7,6 +7,7 @@
  * file adds schema setup, cleaning and stats, and stays the import path.
  */
 
+import { HARDWARE_UNITS } from "../graph/claims.ts";
 import { firstCount } from "./falkor/params.ts";
 import { FalkorLinks } from "./falkor/links.ts";
 import { CHIPS, CLEANABLE_LABELS, REGIONS, createIndexes } from "./falkor/schema.ts";
@@ -26,11 +27,33 @@ export class FalkorService extends FalkorLinks {
       const { name, ...props } = region;
       await this.upsertNode({ label: "Region", name, props });
     }
+    await this.seedHardwareUnits();
+  }
+
+  /**
+   * HardwareUnit seeds (schema 25): the pieces of hardware a CLAIMS edge
+   * names. Seeded, like Chip and Region, so a Claims line can only point at
+   * a unit that exists; BELONGS_TO its chip where it has one.
+   */
+  private async seedHardwareUnits(): Promise<void> {
+    for (const u of HARDWARE_UNITS) {
+      await this.upsertNode({
+        label: "HardwareUnit",
+        name: u.name,
+        props: { kind: u.kind, addresses: u.addresses, chip: u.chip ?? "" },
+      });
+      if (u.chip) {
+        await this.write(
+          `MATCH (h:HardwareUnit {name: $name}) MATCH (c:Chip {name: $chip}) MERGE (h)-[:BELONGS_TO]->(c)`,
+          { name: u.name, chip: u.chip },
+        );
+      }
+    }
   }
 
   /**
    * Per-label DETACH DELETE for all C64 entity nodes. Preserves the
-   * graph itself + indexes + constraints + Chip/Region seeds (which
+   * graph itself + indexes + constraints + Chip/Region/HardwareUnit seeds (which
    * are re-MERGED by ensureSchema on next connect).
    */
   async clean(): Promise<void> {

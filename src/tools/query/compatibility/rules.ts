@@ -7,6 +7,7 @@ import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts"
 import { requiresClosure, type RequiresClosure } from "./closure.ts";
 import { factsOf, inputPairs, pairKey, type CompatibilityFacts } from "./facts.ts";
 import { hardRules, type BandSeparated, type HardRuleResult } from "./hard-rules.ts";
+import { absorbInto, unitRules, type ClaimSide, type PairRelation, type UnitHit } from "./unit-rules.ts";
 
 type Conflict = CompatibilityCheckOutput["conflicts"][number];
 type Coverage = CompatibilityCheckOutput["data_coverage"][number];
@@ -39,16 +40,42 @@ class RuleRunner {
     mergeSeparated(this.separated, r.separated);
     return r.hits;
   }
+  private side(name: string): ClaimSide {
+    return { name, claims: factsOf(this.all, name).claims };
+  }
+  /**
+   * The unit-claim rules (schema 25). `rel` says which of the pair requires
+   * the other; `absorb` names, per side, the input an implied prerequisite
+   * is seen from, whose held units it then does not claim again.
+   */
+  units(a: string, b: string, rel: PairRelation, absorb: { a?: string; b?: string } = {}): UnitHit[] {
+    const sa = absorb.a ? absorbInto(this.side(a), this.side(absorb.a)) : this.side(a);
+    const sb = absorb.b ? absorbInto(this.side(b), this.side(absorb.b)) : this.side(b);
+    return unitRules(sa, sb, rel);
+  }
 }
+
+const NO_RELATION: PairRelation = { aRequiresB: false, bRequiresA: false };
 
 /**
  * Each input pair. Named techniques are checked as named, even when one
  * requires the other: the caller put both on the list, and the resolution
  * says how to keep them apart.
  */
-function inputPairConflicts(all: CompatibilityFacts, rules: RuleRunner): Conflict[] {
+function inputPairConflicts(
+  all: CompatibilityFacts,
+  closure: RequiresClosure,
+  rules: RuleRunner,
+): Conflict[] {
   const conflicts: Conflict[] = [];
   for (const { i, j, a, b } of inputPairs(all.techniques)) {
+    // A named technique and its own prerequisite hold units together by
+    // design; the unit rules are told which one requires the other.
+    const rel = {
+      aRequiresB: closure.closureOf(a).includes(b),
+      bRequiresA: closure.closureOf(b).includes(a),
+    };
+    for (const h of rules.units(a, b, rel)) conflicts.push({ a, b, ...h });
     for (const h of rules.run(a, b)) {
       conflicts.push({
         a,
@@ -114,8 +141,9 @@ function closureCandidates(closure: RequiresClosure, x: string, y: string): [str
  * named, fli_image is not turned against the IRQ it declared. A hit is its
  * own kind, prerequisite_conflict, attributed to the input techniques with
  * the implied ones in `via`; no technique's demand set is changed by this.
- * Only the hard rules run here: shared registers between a prerequisite and
- * a named technique would be noise.
+ * The hard rules and the unit rules run here, the hit keeping its severity
+ * and its rule in underlying_kind; shared registers between a prerequisite
+ * and a named technique would be noise.
  */
 function prerequisiteConflicts(
   all: CompatibilityFacts,
@@ -149,11 +177,19 @@ function closureConflicts(opts: {
   if (u !== x) chains.push(opts.closure.describeChain(x, u));
   if (v !== y) chains.push(opts.closure.describeChain(y, v));
   const chainText = chains.join("; ");
-  return opts.rules.run(u, v).map((h) => ({
+  // An implied prerequisite's claims on units its input holds are the
+  // input's (absorbInto); the input's own pair reports them.
+  const absorb = { ...(u !== x ? { a: x } : {}), ...(v !== y ? { b: y } : {}) };
+  const hits: (UnitHit | (HardRuleResult["hits"][number] & { severity: "hard" }))[] = [
+    ...opts.rules.units(u, v, NO_RELATION, absorb),
+    ...opts.rules.run(u, v).map((h) => ({ ...h, severity: "hard" as const })),
+  ];
+  return hits.map((h) => ({
     a: x,
     b: y,
     kind: "prerequisite_conflict",
-    severity: "hard",
+    underlying_kind: h.kind,
+    severity: h.severity,
     shared: h.shared,
     rationale: `${chainText}. ${h.rationale}`,
     resolution: h.resolution,
@@ -163,7 +199,8 @@ function closureConflicts(opts: {
 
 function verdictOf(conflicts: readonly Conflict[]): CompatibilityCheckOutput["verdict"] {
   if (conflicts.some((c) => c.severity === "hard")) return "incompatible";
-  return conflicts.length > 0 ? "warnings" : "compatible";
+  // info (init_order) says what order keeps a pair working; it does not warn.
+  return conflicts.some((c) => c.severity === "soft") ? "warnings" : "compatible";
 }
 
 /**
@@ -180,7 +217,10 @@ function dataCoverage(all: CompatibilityFacts, closure: RequiresClosure): Covera
       kernal_routines: F.kernal.length,
       demands: [...F.demands].sort(),
       ...(F.band ? { raster_band: F.band } : {}),
-      known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0),
+      known:
+        F.found &&
+        (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0 || F.claimsStated !== "unknown"),
+      claims: F.claimsStated,
     };
   };
   return [
@@ -241,7 +281,10 @@ function sharedInfrastructure(all: CompatibilityFacts, closure: RequiresClosure)
 export function evaluateCompatibility(all: CompatibilityFacts): CompatibilityEvaluation {
   const closure = requiresClosure(all.techniques, all.requires);
   const rules = new RuleRunner(all);
-  const conflicts = [...inputPairConflicts(all, rules), ...prerequisiteConflicts(all, closure, rules)];
+  const conflicts = [
+    ...inputPairConflicts(all, closure, rules),
+    ...prerequisiteConflicts(all, closure, rules),
+  ];
   return {
     conflicts,
     band_separated: rules.separated,

@@ -21,7 +21,8 @@ export type TrackedEdge =
   | "mitigated_by"
   | "archetype_features"
   | "archetype_risks"
-  | "scaffolds";
+  | "scaffolds"
+  | "claims";
 
 /**
  * A key per distinct (source, target, kind) reference, so a doc naming the
@@ -44,6 +45,8 @@ function referenceKey(e: EdgeEntity): [TrackedEdge, string] | null {
       return [e.type, `${e.archetype}|${e.pitfall}`];
     case "scaffolds":
       return [e.type, `${e.recipe}|${e.archetype}`];
+    case "claims":
+      return [e.type, `${e.owner}|${e.unit}`];
     default:
       return null;
   }

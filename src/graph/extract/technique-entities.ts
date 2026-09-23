@@ -4,6 +4,7 @@
  * outside the vocabularies with a warning.
  */
 
+import { CLAIMS_BASIS_WORDS, isClaimsBasis, type Claim, type ClaimsBasis } from "../claims.ts";
 import { warn } from "./common.ts";
 import type { GraphEntity } from "./types.ts";
 import {
@@ -34,6 +35,9 @@ export interface TechniqueMeta {
   cost?: TechniqueCost;
   costBasis?: string;
   rasterBand?: string;
+  claims?: Claim[];
+  claimsRefused?: boolean;
+  claimsBasis?: string;
 }
 
 interface Section {
@@ -75,6 +79,34 @@ function settledCost({
     return null;
   }
   return { cost: meta.cost, cost_basis: basis };
+}
+
+/**
+ * Claims ride edges, but whether the page states them rides the node:
+ * "stated", "none", or absent (unknown). A line refused for its grammar, or
+ * with no usable basis, leaves the technique unknown.
+ */
+function settledClaims({ head, meta, sourcePath }: Section): { claims: Claim[]; basis: ClaimsBasis } | null {
+  const where = `${sourcePath}: technique ${head.name}`;
+  if (meta.claims === undefined) {
+    if (meta.claimsBasis !== undefined && !meta.claimsRefused)
+      warn(`${where} has a **Claims basis:** line but no **Claims:** line — ignored`);
+    return null;
+  }
+  const basis = meta.claimsBasis;
+  if (basis === undefined) {
+    warn(
+      `${where} has a **Claims:** line but no **Claims basis:** line — Claims not ingested, so its claims read as unknown (see CONVENTIONS-techniques.md)`,
+    );
+    return null;
+  }
+  if (!isClaimsBasis(basis)) {
+    warn(
+      `${where} has claims basis "${basis}", which is not one of ${CLAIMS_BASIS_WORDS.join(", ")} — Claims not ingested (see CONVENTIONS-techniques.md)`,
+    );
+    return null;
+  }
+  return { claims: meta.claims, basis };
 }
 
 function demandEntities({ head, meta, sourcePath }: Section): GraphEntity[] {
@@ -121,14 +153,25 @@ export function techniqueEntities(
   const section: Section = { head, meta, sourcePath };
   const technique = head.name;
   const cost = settledCost(section);
+  const claims = settledClaims(section);
   const out: GraphEntity[] = [
     {
       type: "technique",
       ...head,
       ...(cost ?? {}),
       ...(meta.rasterBand !== undefined ? { raster_band: meta.rasterBand } : {}),
+      ...(claims
+        ? {
+            claims_stated: claims.claims.length > 0 ? ("stated" as const) : ("none" as const),
+            claims_basis: claims.basis,
+          }
+        : {}),
     },
   ];
+  if (claims) {
+    for (const c of claims.claims)
+      out.push({ type: "claims", owner: technique, ownerKind: "Technique", ...c, basis: claims.basis });
+  }
   if (head.chip) out.push({ type: "technique_belongs_to", technique, chip: head.chip });
   out.push(...demandEntities(section), ...requiresEntities(section));
   if (meta.region && meta.region !== "both") {

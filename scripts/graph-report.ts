@@ -40,6 +40,14 @@ const isolated = await q(
 const arch = await q(
   `MATCH (a:Archetype) OPTIONAL MATCH (a)-[:FEATURES]->(t) OPTIONAL MATCH (a)-[:RISKS]->(p) OPTIONAL MATCH (r:Recipe)-[:SCAFFOLDS]->(a) RETURN a.name AS name, count(DISTINCT t) AS features, count(DISTINCT p) AS risks, count(DISTINCT r) AS scaffolds ORDER BY name`,
 );
+// Unit claims (schema 25): which units are claimed, and how many techniques
+// state claims, say none, or leave them unknown.
+const unitsClaimed = await q(
+  `MATCH (h:HardwareUnit) OPTIONAL MATCH (t:Technique)-[:CLAIMS]->(h) RETURN h.name AS name, count(t) AS c ORDER BY c DESC, name`,
+);
+const claimsStated = await q(
+  `MATCH (t:Technique) RETURN coalesce(t.claims_stated, 'unknown') AS s, count(*) AS c`,
+);
 
 // Connected components over the undirected edge list, in TypeScript.
 const edges = await q(`MATCH (a)-[r]->(b) RETURN id(a) AS a, id(b) AS b`);
@@ -92,6 +100,11 @@ const report = {
   techniques_without_direct_pitfall: techNoPitDirect.map((r) => String(r.name)),
   techniques_without_any_pitfall_even_via_registers: techNoPitAny.map((r) => String(r.name)),
   pitfalls_without_technique_trigger: pitNoTech.map((r) => String(r.name)),
+  claims: {
+    techniques: Object.fromEntries(claimsStated.map((r) => [String(r.s), n(r.c)])),
+    units_claimed: unitsClaimed.filter((r) => n(r.c) > 0).map((r) => `${String(r.name)}:${n(r.c)}`),
+    units_unclaimed: unitsClaimed.filter((r) => n(r.c) === 0).map((r) => String(r.name)),
+  },
   archetypes: arch.map((r) => ({
     name: String(r.name),
     features: n(r.features),
@@ -120,6 +133,9 @@ if (process.argv.includes("--json")) {
     report.techniques_without_any_pitfall_even_via_registers,
   );
   line("pitfalls with no technique trigger", report.pitfalls_without_technique_trigger);
+  console.log("claims (techniques):", JSON.stringify(report.claims.techniques));
+  line("units claimed", report.claims.units_claimed);
+  line("units no technique claims", report.claims.units_unclaimed);
   console.log(
     "archetypes:",
     report.archetypes.map((a) => `${a.name} f${a.features} r${a.risks} s${a.scaffolds}`).join("; "),

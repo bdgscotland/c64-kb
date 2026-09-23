@@ -5,6 +5,7 @@
  */
 
 import { group, parseFrontmatter, warn } from "./common.ts";
+import { parseClaims } from "../claims.ts";
 import { parseRasterBand } from "./raster-band.ts";
 import { techniqueEntities, type TechniqueHead, type TechniqueMeta } from "./technique-entities.ts";
 import type { GraphEntity } from "./types.ts";
@@ -30,6 +31,11 @@ const RASTER_BAND_LINE = /^\*\*Raster band:\*\*\s+(.+)$/;
 const COST_LINE = /^\*\*Cost:\*\*\s+(.+)$/;
 const COST_BASIS_LINE = /^\*\*Cost basis:\*\*\s+(.+)$/;
 const COST_PAIR = /^([a-z_]+)\s*=\s*(-?\d+)$/;
+// **Claims:** names the hardware units the technique holds while it runs,
+// and how; **Claims basis:** says how that was established (schema 25,
+// src/graph/claims.ts). No line means unknown, which is not `none`.
+const CLAIMS_LINE = /^\*\*Claims:\*\*\s+(.+)$/;
+const CLAIMS_BASIS_LINE = /^\*\*Claims basis:\*\*\s+(.+)$/;
 const INTEGER = /^-?\d+$/;
 
 interface Current {
@@ -106,6 +112,19 @@ function applyRasterBand(value: string, c: Current): void {
   }
 }
 
+/** A Claims line outside the grammar is refused whole: a partial set would read as complete. */
+function applyClaims(value: string, c: Current): void {
+  const parsed = parseClaims(value);
+  if ("error" in parsed) {
+    warn(
+      `${c.sourcePath}: technique ${c.head.name} has **Claims:** ${JSON.stringify(value.trim())}: ${parsed.error} — Claims not ingested, so its claims read as unknown (see CONVENTIONS-techniques.md)`,
+    );
+    c.meta.claimsRefused = true;
+  } else {
+    c.meta.claims = parsed;
+  }
+}
+
 /** Metadata lines under a technique H2, tried in order; the first whose pattern matches handles the line. */
 const LINE_RULES: readonly { re: RegExp; apply: (value: string, c: Current) => void }[] = [
   { re: COMPLEXITY_LINE, apply: (v, c) => (c.head.complexity = v) },
@@ -116,6 +135,8 @@ const LINE_RULES: readonly { re: RegExp; apply: (value: string, c: Current) => v
   { re: REQUIRES_LINE, apply: (v, c) => (c.meta.requires = nameList(v, true)) },
   { re: RASTER_BAND_LINE, apply: applyRasterBand },
   { re: COST_BASIS_LINE, apply: (v, c) => (c.meta.costBasis = v.trim().replace(/`/g, "")) },
+  { re: CLAIMS_BASIS_LINE, apply: (v, c) => (c.meta.claimsBasis = v.trim().replace(/`/g, "")) },
+  { re: CLAIMS_LINE, apply: applyClaims },
   {
     re: COST_LINE,
     apply: (v, c) => (c.meta.cost = parseCost(v, `${c.sourcePath}: technique ${c.head.name}`)),

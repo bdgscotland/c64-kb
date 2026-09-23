@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { getFalkor } from "../../../context.ts";
 import type { FalkorService } from "../../../services/falkor.ts";
+import { CLAIM_MODES, type Claim } from "../../../graph/claims.ts";
 import { parseRows } from "../shared.ts";
 import { inputPairs, pairKey, type CompatibilityFacts, type TechniqueFacts } from "./facts.ts";
 
@@ -50,6 +51,7 @@ const FactsRow = z.object({
   regions: z.array(z.string().nullable()),
   category: z.string().nullable(),
   raster_registers: z.coerce.number(),
+  claims_stated: z.string().nullable(),
 });
 
 const present = (xs: readonly (string | null)[]): string[] => xs.filter((x): x is string => Boolean(x));
@@ -71,7 +73,7 @@ async function fetchFacts(f: FalkorService, names: readonly string[]): Promise<M
        OPTIONAL MATCH (t)-[:USES]->(rr:Register)
        WHERE rr.name IN ['D011', 'D012', 'SCROLY', 'RASTER']
        RETURN name, demands, registers, kernal, t.raster_band AS band, regions,
-              t.category AS category, count(rr) AS raster_registers`,
+              t.category AS category, count(rr) AS raster_registers, t.claims_stated AS claims_stated`,
       { names: [...new Set(names)] },
     ),
   );
@@ -87,9 +89,48 @@ async function fetchFacts(f: FalkorService, names: readonly string[]): Promise<M
         region: present(r.regions)[0] ?? null,
         category: r.category,
         rasterRegisters: r.raster_registers,
+        claims: [],
+        claimsStated:
+          r.claims_stated === "stated" || r.claims_stated === "none" ? r.claims_stated : "unknown",
       },
     ]),
   );
+}
+
+const ClaimRow = z.object({
+  name: z.string(),
+  unit: z.string(),
+  mode: z.enum(CLAIM_MODES),
+  ranges: z.string().nullable(),
+  relocatable: z.boolean().nullable(),
+});
+
+/** CLAIMS edges (schema 25) for every technique in the check, onto the facts already fetched. */
+async function fetchClaims(f: FalkorService, facts: Map<string, TechniqueFacts>): Promise<void> {
+  const rows = parseRows(
+    ClaimRow,
+    await f.roQuery(
+      `UNWIND $names AS name
+       MATCH (t:Technique {name: name})-[c:CLAIMS]->(h:HardwareUnit)
+       RETURN name, h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable
+       ORDER BY name, unit`,
+      { names: [...facts.keys()] },
+    ),
+  );
+  const byName = new Map<string, Claim[]>();
+  for (const r of rows) {
+    const claim: Claim = {
+      unit: r.unit,
+      mode: r.mode,
+      ...(r.ranges ? { ranges: r.ranges } : {}),
+      ...(r.relocatable ? { relocatable: true } : {}),
+    };
+    byName.set(r.name, [...(byName.get(r.name) ?? []), claim]);
+  }
+  for (const [name, claims] of byName) {
+    const F = facts.get(name);
+    if (F) facts.set(name, { ...F, claims });
+  }
 }
 
 const SharedRow = z.object({ pair: z.string(), shared: z.string().nullable() });
@@ -152,5 +193,6 @@ export async function fetchCompatibilityFacts(techniques: readonly string[]): Pr
     fetchShared(f, techniques, "KernalRoutine"),
     fetchRecipeUses(f, techniques),
   ]);
+  await fetchClaims(f, facts);
   return { techniques, requires, facts, sharedRegisters, sharedKernal, recipeUses };
 }

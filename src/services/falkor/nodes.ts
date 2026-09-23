@@ -56,6 +56,10 @@ export interface TechniqueNode {
   // **Raster band:** (schema 24), canonical form from parseRasterBand:
   // "45-250", "0-50,251-311" or "movable". Cleared when the page drops it.
   raster_band?: string | undefined;
+  // **Claims:** (schema 25): "stated" or "none"; absent means unknown. The
+  // CLAIMS edges themselves land in pass 2 (linkClaims).
+  claims_stated?: string | undefined;
+  claims_basis?: string | undefined;
 }
 
 /** The technique's stored properties, and the ones to clear because the page no longer sets them. */
@@ -75,6 +79,10 @@ function techniqueProps(t: TechniqueNode): { props: Record<string, string | numb
   else clear.push("cost_basis");
   if (t.raster_band) props.raster_band = t.raster_band;
   else clear.push("raster_band");
+  if (t.claims_stated && t.claims_basis) {
+    props.claims_stated = t.claims_stated;
+    props.claims_basis = t.claims_basis;
+  } else clear.push("claims_stated", "claims_basis");
   return { props, clear };
 }
 
@@ -184,6 +192,11 @@ export class FalkorNodes extends FalkorBase {
   async addTechnique(t: TechniqueNode): Promise<void> {
     const { props, clear } = techniqueProps(t);
     await this.upsertNode({ label: "Technique", name: t.name, props, clear });
+    // The page owns its CLAIMS edges outright: drop the old ones so a claim
+    // the page stopped making does not outlive it (pass 2 re-adds the rest).
+    await this.write(`MATCH (t:Technique {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`, {
+      name: t.name,
+    });
   }
 
   async addPitfall(p: {

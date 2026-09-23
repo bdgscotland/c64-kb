@@ -21,6 +21,8 @@ import {
   toDocChunk,
   type Chunk,
 } from "./shared.ts";
+import { CLAIM_MODES } from "../../graph/claims.ts";
+import { compressUnits } from "./compatibility/unit-rules.ts";
 import type { TechniqueLookupResult, TechniquesForResult } from "./types.ts";
 
 /** A number property, or null when the node has none (or a non-number). */
@@ -43,6 +45,8 @@ const TechniqueRow = z.object({
   cost_sprites_per_line: OptNumber,
   cost_basis: CostBasisSchema.nullable(),
   raster_band: z.string().nullable(),
+  claims_stated: z.string().nullable(),
+  claims_basis: z.string().nullable(),
 });
 type TechniqueRow = z.infer<typeof TechniqueRow>;
 
@@ -55,7 +59,7 @@ const TECHNIQUE_QUERY = `MATCH (t:Technique {name: $name})
             t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
             t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
             t.cost_irq_slots AS cost_irq_slots, t.cost_sprites_per_line AS cost_sprites_per_line, t.cost_basis AS cost_basis,
-            t.raster_band AS raster_band
+            t.raster_band AS raster_band, t.claims_stated AS claims_stated, t.claims_basis AS claims_basis
      LIMIT 1`;
 
 // Cost figure keys in output order, with the row column each comes from.
@@ -163,6 +167,55 @@ async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
   };
 }
 
+const ClaimRow = z.object({
+  unit: z.string(),
+  mode: z.enum(CLAIM_MODES),
+  ranges: z.string().nullable(),
+  relocatable: z.boolean().nullable(),
+});
+
+type ClaimsPart = Pick<TechniqueLookupOutput, "claims" | "claims_stated" | "claims_basis">;
+
+/** CLAIMS → HardwareUnits (schema 25). No Claims line reads as "unknown", never as "none". */
+async function claimsOf(row: TechniqueRow): Promise<ClaimsPart> {
+  const f = await getFalkor();
+  const rows = parseRows(
+    ClaimRow,
+    await f.roQuery(
+      `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
+       RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
+      { name: row.name },
+    ),
+  );
+  const claims = rows.map((c) => ({
+    unit: c.unit,
+    mode: c.mode,
+    ...(c.ranges ? { ranges: c.ranges } : {}),
+    ...(c.relocatable ? { relocatable: true } : {}),
+  }));
+  const stated =
+    row.claims_stated === "stated" || row.claims_stated === "none" ? row.claims_stated : "unknown";
+  return { claims, claims_stated: stated, ...(row.claims_basis ? { claims_basis: row.claims_basis } : {}) };
+}
+
+/** The Claims line as the page would write it, runs of units compressed (sprite_0-7). */
+function renderClaims(t: TechniqueLookupOutput): string {
+  if (t.claims_stated === undefined || t.claims_stated === "unknown") {
+    return `**Claims:** unknown (the page states no unit claims; a unit conflict with it cannot be ruled out)\n`;
+  }
+  if (t.claims_stated === "none") return `**Claims:** none\n**Claims basis:** ${t.claims_basis ?? ""}\n`;
+  const byMode = new Map<string, string[]>();
+  const items: string[] = [];
+  for (const c of t.claims ?? []) {
+    if (c.ranges) {
+      const bytes = `$${c.ranges.replace(/,/g, "+$").replace(/-/g, "-$")}`;
+      items.push(`${c.unit} ${bytes} (${c.mode}${c.relocatable ? ", relocatable" : ""})`);
+    } else byMode.set(c.mode, [...(byMode.get(c.mode) ?? []), c.unit]);
+  }
+  for (const [mode, units] of byMode) for (const u of compressUnits(units)) items.push(`${u} (${mode})`);
+  return `**Claims:** ${items.join(", ")}\n**Claims basis:** ${t.claims_basis ?? ""}\n`;
+}
+
 export async function techniqueLookup(name: string): Promise<TechniqueLookupResult> {
   const f = await getFalkor();
   const row = parseRows(TechniqueRow, await f.roQuery(TECHNIQUE_QUERY, { name })).at(0);
@@ -170,6 +223,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
 
   const cost = costOf(row);
   const edges = await neighbourhoodOf(name);
+  const claims = await claimsOf(row);
 
   // Documentation chunks from Qdrant
   const { chunks: ctx } = await searchChunks({ query: `${name} ${row.title ?? ""}`.trim(), limit: 3 });
@@ -188,6 +242,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     ...edges,
     documentation,
     ...(cost ? { cost } : {}),
+    ...claims,
   };
   return { structured, text: renderTechnique(structured, cost, documentation) };
 }
@@ -206,7 +261,7 @@ function renderTechniqueHeader(t: TechniqueLookupOutput, cost: TechniqueCostOutp
       .join(", ")}\n`;
     out += `**Cost basis:** ${basis}\n`;
   }
-  return out + `\n`;
+  return out + renderClaims(t) + `\n`;
 }
 
 function renderTechnique(
@@ -256,6 +311,7 @@ export interface TechniquesFilter {
   register?: string | undefined;
   recipe?: string | undefined;
   requires?: string | undefined;
+  claims?: string | undefined;
 }
 
 // Pattern fragment each filter key adds after `MATCH (t:Technique)`, in order.
@@ -269,6 +325,8 @@ const TECHNIQUE_FILTER_PATTERNS: readonly [keyof TechniquesFilter, string][] = [
   ["region", ` , (t)-[:REQUIRES_REGION]->(reg:Region {name: $region})`],
   ["register", ` , (t)-[:USES]->(rg:Register {name: $register})`],
   ["recipe", ` , (rec:Recipe {name: $recipe})-[:IMPLEMENTS]->(t)`],
+  // "Who claims sid_voice_3": a CLAIMS edge to that HardwareUnit, any mode.
+  ["claims", ` , (t)-[:CLAIMS]->(hu:HardwareUnit {name: $claims})`],
 ];
 
 function techniquesForCypher(filter: TechniquesFilter): { cypher: string; params: Record<string, string> } {

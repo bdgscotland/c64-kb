@@ -3,7 +3,7 @@ recipe: simple-shmup
 toolchain: oscar64
 output_format: PRG
 region: both
-techniques: [sprite_multiplex_8, soft_scroll_h, sprite_collision_detect, sid_play_routine_pattern]
+techniques: [sprite_multiplex_8, soft_scroll_v, sid_play_routine_pattern]
 file_formats: [PRG]
 uses_registers: [D015, D000, D001, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, D01E, D01F, D011, D016, D012, D019, D01A, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418]
 uses_kernal: []
@@ -35,6 +35,11 @@ can reconstruct a working shmup shell from scratch. Cross-references:
 `docs/recipes/oscar64/sprite-multiplex-8.md` for `vspr_*` idioms,
 `docs/recipes/oscar64/sid-music-player.md` for the play-routine pattern,
 `docs/recipes/oscar64/soft-scroll-h.md` for `$D016` XSCROLL mechanics.
+
+The `techniques` list names `soft_scroll_v`, the scroll this listing does
+with `$D011` YSCROLL. An earlier version listed `soft_scroll_h` and
+`sprite_collision_detect`; the listing never scrolls with `$D016`, and it
+reads `$D01E` only to clear it, so neither technique is implemented here.
 
 ## Source
 

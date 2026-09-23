@@ -194,6 +194,115 @@ route (`division_8_16bit` in `techniques/maths.md` has the comparison).
 
 - `recipes/oscar64/print-number.md` — both decimal routes and the hex route, checked over every 16-bit value against Python, with the cycle harness on screen
 
+## high_score_table_insert — A new score into a sorted table: rank, shift down, drop the last, write
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=481
+**Cost basis:** measured-vice
+
+### Why
+
+A high-score table is a sorted list, and the game's job at the end of
+a round is to keep it sorted: find where the new score ranks, move the
+rows below that place down by one, drop the last row, and write the
+new one. The fault seen in generated games is to skip the rank and
+write every new entry into row 0, so the table reads in the order the
+games were played, not the order of the scores. `front_end_and_attract`
+in `game-design/game-structure.md` lists "the table re-sorted" among
+its checks; this is the routine that check exercises.
+
+### How
+
+The table is a fixed number of rows of a fixed length: a name of three
+screen codes and a score of three BCD bytes, most significant first.
+Keeping the score in BCD means the digits print by a shift and a mask
+(the variation `decimal_print` describes) and, as shown below, compare
+with plain `CMP`.
+
+1. **Rank.** Walk the rows from the top. For each, compare the new
+   score's most significant byte with the row's; if they differ, that
+   byte decides. If they are equal go to the next byte, and to the
+   third. The first row the new score is strictly higher than is its
+   rank. If no row loses, the score does not qualify and nothing else
+   runs. A full table needs no separate "is it high enough" test: the
+   last row is the threshold, and a score that beats no row is out.
+2. **Tie rule.** Equal on all three bytes is not a win. The search
+   moves on, so the new score lands below the row it equals and the
+   earlier holder keeps the rank. State the rule in the code; a table
+   that puts a tie above its holder is not wrong, but it must be a
+   choice and not an accident of `BCS` where `BEQ` plus `BCS` was
+   meant.
+3. **Hand-off.** Between the rank and the write comes the name entry
+   (`text_input_line`). The rank is known first, so the game can show
+   the place the score will take and can skip the entry when the score
+   does not qualify. The typed name goes into the new row's name bytes
+   and the write follows. Keep rank and place as two calls with the
+   rank held between them.
+4. **Shift.** Start at the last row and copy the row above it down,
+   then step up one row, until the row index equals the rank. The loop
+   test is "stop on equal or below", not "stop on equal", so a rank
+   that is not on a row boundary cannot carry the copy past the top of
+   the table. The last row is never read as a source, which is how it
+   is dropped.
+5. **Write.** Copy the new row's bytes over the row at the rank.
+
+### Why it works
+
+A BCD byte's binary value orders the same way its two digits do:
+`$50` is above `$49` whether it is read as eighty and seventy-three or
+as fifty and forty-nine, because each nibble stays inside 0 to 9.
+`CMP` therefore ranks BCD bytes correctly and the decimal flag is
+never touched; `SED` belongs to the routine that adds to the score,
+not to the one that files it. `CMP` sets `C` when the accumulator is
+at or above the operand and `Z` when equal, so `BNE` then `BCS`
+reads as "differs and is higher", and a `BEQ` past the `BCS` on the
+last byte is the tie rule in one instruction.
+
+Copying from the bottom up is what makes the shift safe in place:
+every row is read before the row that overwrites it is written.
+Going top down would copy row 0 over row 1 before row 1 had been
+read, and fill the table with one entry.
+
+### Variations
+
+- **Binary scores.** A 16-bit or 24-bit binary score compares with the
+  high-byte-first cascade of `compare_16bit_and_signed`
+  (`techniques/maths.md`), the same shape as the BCD compare here, and
+  prints through `decimal_print`. The rank, shift and write do not
+  change.
+- **A table longer than the screen.** Rank and shift do not change in
+  shape; only the printing windows the rows. The recipe's loops index
+  the table with X over six-byte rows, so they reach 42 rows at most:
+  the row count times six must stay under 256 for `CPX #TABLEN` and
+  the `table,X` reads. Within that bound the cost grows by 73 cycles a
+  shifted row and 26 a row rejected on its first byte (arithmetic from
+  the measured recipe), so the worst insert into a 42-row table is
+  3,182 cycles, arithmetic and not run. A longer table needs a
+  `(zp),Y` pointer loop through zero page, whose per-row cost is
+  different and not measured here.
+- **Saving after the insert.** Write the table to disk once, after the
+  write, not on every rank test: `recipes/oscar64/high-score-persist.md`
+  has the file policy (first run, replace, version check) around the
+  table.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/high-score-insert.md`
+on the CIA2 timers, under `SEI` with the screen blanked, less an empty
+call: 481 cycles for the worst insert into a five-row table (the top
+row beaten on the third byte, four rows shifted), 339 for a rank of 4
+after a tie, 284 for a rank of 5, 152 for a score that does not
+qualify. The Cost line carries the worst case as the cost of one call,
+on the assumption of one call in the frame it runs in. The routine is
+called once at the end of a round, so no frame of play carries it; a
+plan for the end-of-round frame is the only one that has to fit it.
+
+### Recipes
+
+- `recipes/kickassembler/high-score-insert.md` — five-row BCD table, four inserts (first, tie, none, last), the table printed after each with rank and cycles, verdict against an expected table
+
 ## petscii_screen_code_conversion — PETSCII to screen code and back, as range arithmetic
 
 **Complexity:** low

@@ -229,10 +229,12 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Uses registers:** D011, D018, D016
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
-**Requires:** stable_raster_irq, multicolor_bitmap
+**Requires:** stable_raster_irq, multicolor_bitmap, vic_bank_select
 **Raster band:** 45-251 (the fli-image recipe's first IRQ is on line 45; its last FLI line is 250 and the handler exits near cycle 50 of line 251)
 **Cost:** cycles_per_line=63, lines_active=200, cycles_per_frame=12600, bytes_code=3277, bytes_data=16384, irq_slots=1
 **Cost basis:** estimated
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -254,8 +256,12 @@ The full FLI setup:
 
 1. Eight 1 KB screen RAM pages in the same 16 KB VIC bank as the bitmap
    (line `l` uses page `l & 7`), each pre-filled with that line's colour
-   nibbles. Bank 0 is too crowded below $2000; FLI displays usually live in
-   bank 1 or 3.
+   nibbles. With the bitmap at offset $2000 the eight screens fill offsets
+   $0000-$1FFF, and in banks 0 and 2 the VIC sees the character ROM at
+   offsets $1000-$1FFF (`memory-banking.md`, `../hardware/c64-memory-map.md`),
+   so this layout needs bank 1 or 3, selected through `$DD00`
+   (`vic_bank_select`). An earlier version said only that bank 0 was
+   crowded and that FLI displays "usually" live in bank 1 or 3.
 2. The 8000-byte multicolor bitmap at offset $2000 in the bank; $D016 with
    MCM set.
 3. A stable raster IRQ (double IRQ) a few lines above the display, then a

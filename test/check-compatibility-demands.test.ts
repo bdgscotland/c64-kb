@@ -378,6 +378,8 @@ describe("evaluateCompatibility (pure rules)", () => {
     region: null,
     category: null,
     rasterRegisters: 0,
+    claims: [],
+    claimsStated: "unknown",
     ...over,
   });
   const facts = (

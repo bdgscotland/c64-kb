@@ -252,6 +252,43 @@ export class FalkorLinks extends FalkorNodes {
     });
   }
 
+  /**
+   * CLAIMS (schema 25): a technique holds a HardwareUnit in a mode (owns,
+   * shares, reads, init); zero_page carries its byte ranges. Both ends must
+   * exist: the unit is a seed and the technique came from pass 1, so a MERGE
+   * could only manufacture a stub out of a typo. Returns whether it landed.
+   */
+  async linkClaims(c: {
+    owner: string;
+    ownerKind: "Technique";
+    unit: string;
+    mode: string;
+    ranges?: string | undefined;
+    relocatable?: boolean | undefined;
+    basis: string;
+  }): Promise<boolean> {
+    const rows = await this.write(
+      `MATCH (t:${c.ownerKind} {name: $owner})
+       MATCH (h:HardwareUnit {name: $unit})
+       MERGE (t)-[e:CLAIMS]->(h)
+       SET e.mode = $mode, e.ranges = $ranges, e.relocatable = $relocatable, e.basis = $basis
+       RETURN 1`,
+      {
+        owner: c.owner,
+        unit: c.unit,
+        mode: c.mode,
+        ranges: c.ranges ?? null,
+        relocatable: c.relocatable === true,
+        basis: c.basis,
+      },
+    );
+    if (rows.length > 0) return true;
+    console.warn(
+      `[falkor] linkClaims: ${c.owner} -> ${c.unit} — ${c.ownerKind} or HardwareUnit not found, edge dropped`,
+    );
+    return false;
+  }
+
   async linkTriggeredBy(pitfallName: string, targetName: string, targetKind: CauseKind): Promise<boolean> {
     return this.mergeOrWarn({
       from: { label: "Pitfall", name: pitfallName },

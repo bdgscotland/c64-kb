@@ -4,6 +4,8 @@
  * pure functions (rules.ts, closure.ts). Tests build these by hand.
  */
 
+import type { Claim } from "../../../graph/claims.ts";
+
 export interface TechniqueFacts {
   /** False when the graph has no Technique node of this name. */
   found: boolean;
@@ -20,6 +22,10 @@ export interface TechniqueFacts {
   category: string | null;
   /** How many of D011/D012/SCROLY/RASTER the technique USES. */
   rasterRegisters: number;
+  /** CLAIMS edges (schema 25), sorted by unit. */
+  claims: readonly Claim[];
+  /** "unknown" when the page has no usable Claims line; never read as "none". */
+  claimsStated: "stated" | "none" | "unknown";
 }
 
 interface RecipeUse {
@@ -61,6 +67,8 @@ const UNKNOWN_TECHNIQUE: TechniqueFacts = {
   region: null,
   category: null,
   rasterRegisters: 0,
+  claims: [],
+  claimsStated: "unknown",
 };
 
 export function factsOf(all: CompatibilityFacts, name: string): TechniqueFacts {

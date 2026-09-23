@@ -1,5 +1,6 @@
 /** The entities the extractor emits. Node types and edge types share one union; see src/graph/apply.ts. */
 
+import type { ClaimMode, ClaimsBasis } from "../claims.ts";
 import type { CostBasis, TechniqueCost } from "./vocabulary.ts";
 
 export type TargetKind = "Register" | "KernalRoutine" | "Technique";
@@ -66,6 +67,19 @@ export type GraphEntity =
       cost?: TechniqueCost;
       cost_basis?: CostBasis;
       raster_band?: string;
+      // Resource claims (schema 25): whether the page states them; absent is unknown.
+      claims_stated?: "stated" | "none";
+      claims_basis?: ClaimsBasis;
+    }
+  | {
+      type: "claims";
+      owner: string;
+      ownerKind: "Technique";
+      unit: string;
+      mode: ClaimMode;
+      ranges?: string;
+      relocatable?: boolean;
+      basis: ClaimsBasis;
     }
   | { type: "technique_uses_register"; technique: string; register: string }
   | { type: "technique_uses_kernal"; technique: string; kernal: string }

@@ -32,6 +32,8 @@ const LABELS = [
   // Resource has a range index but no uniqueness constraint, as before the table existed.
   { label: "Resource", key: "name", unique: false, cleanable: true },
   { label: "Archetype", key: "name", unique: true, cleanable: true },
+  // Seeds (schema 25) that CLAIMS edges point at; ensureSchema re-MERGEs them.
+  { label: "HardwareUnit", key: "name", unique: true, cleanable: false },
 ] as const satisfies readonly LabelSpec[];
 
 export type NodeLabel = (typeof LABELS)[number]["label"];

@@ -161,6 +161,8 @@ Phase 4+.
 **Complexity:** low
 **Region:** both
 **Uses registers:** DD00
+**Claims:** cia2_vic_bank (owns)
+**Claims basis:** estimated
 
 ### Why
 
@@ -751,6 +753,8 @@ instruction boundaries against a mid-instruction switch, which cannot happen.)
 
 **Complexity:** medium
 **Region:** both
+**Claims:** irq_vector_fffe (owns), nmi_vector_fffa (owns)
+**Claims basis:** estimated
 
 ### Why
 

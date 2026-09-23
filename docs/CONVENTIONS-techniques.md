@@ -195,6 +195,58 @@ the Technique node as `cost_<key>` and `cost_basis`; `c64_technique_lookup`
 returns them as `cost` and the briefing tools add them up over a proposed
 set, naming the techniques with no line so the sum reads as a floor.
 
+An optional `**Claims:**` line names the pieces of hardware the technique
+holds while it runs, and how. It must be paired with a `**Claims basis:**`
+line. Each item is a seeded HardwareUnit (`docs/ONTOLOGY.md`) and becomes
+a CLAIMS edge; `c64_check_compatibility` sets two claims on one unit
+against each other.
+
+```
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
+```
+
+Grammar:
+
+- items are comma-separated; commas inside parentheses do not split.
+- an item is `<unit>` or `<unit> (<mode>)`. The mode is one of `owns`
+  (the default: writes or holds the unit every frame, nobody else may),
+  `shares` (writes it under the owner's protocol: after the owner's write
+  in the frame, or as a handler in the owner's interrupt chain), `reads`
+  (reads only; the owner's writes change what it sees), `init` (uses it
+  once before the frame loop, then leaves it).
+- a numbered run of units is one item: `sprite_0-7`, `sid_voice_1-3`.
+- zero page names its bytes: `zero_page $02-$0D+$24-$2F (owns)`. Add
+  `relocatable` when a build option moves them:
+  `zero_page $E0-$EF (owns, relocatable)`. `$00-$01` is the 6510 port,
+  not zero-page RAM, and is refused.
+- `none` alone means the technique claims no unit. That is a claim too:
+  write it only after reading the page and its recipes. No line at all
+  means unknown, and the compatibility check says a unit conflict with
+  that technique cannot be ruled out.
+- the basis is one word: `measured-vice` (a VICE store trace saw the
+  writes), `derived-listing` (read off the built listing or the Oscar64
+  header source), `estimated` (page prose, not checked).
+
+An unknown unit word, a bad range, an unknown mode, or a Claims line
+without a basis is refused at extract with a warning, and the whole line
+with it: a partial set would read as complete. The technique then reads
+as unknown.
+
+A technique that is a way into a handler rather than an effect claims
+the unit as `shares`: `stable_raster_irq` and `double_irq` say
+`vic_raster_irq (shares)`, because the effect run from the handler owns
+the one raster compare. Where the page says an effect is built on such a
+technique, state it on the **Requires:** line too: the check does not set
+a technique against its own prerequisite as a rival owner.
+
+A technique claims what every implementation needs. What one recipe
+chooses (which vector, which zero-page bytes) is the recipe's claim, not
+the technique's. A measurement harness is not a claim: the CIA timers a
+recipe chains to time its routine, and the counters it keeps for the
+screenshot, are left off the line, however visible they are in the
+listing.
+
 An optional `**Uses kernal:**` line lists KERNAL routines:
 
 ```

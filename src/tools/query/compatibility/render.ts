@@ -17,6 +17,25 @@ function renderVerdict(r: Output, closureOnly: readonly string[]): string {
   return out;
 }
 
+/**
+ * Unit claims: how many inputs state them, and which do not, because an
+ * unknown claim set is never read as "claims nothing". Technique claims
+ * only: the vectors and zero-page bytes a recipe picks are not in the graph.
+ */
+function renderClaimsCoverage(r: Output): string {
+  const inputs = r.data_coverage.filter((d) => d.implied_by === undefined);
+  const stated = inputs.filter((d) => d.claims !== "unknown").length;
+  const notRuledOut = [
+    ...inputs.filter((d) => d.claims === "unknown").map((d) => d.technique),
+    ...r.data_coverage
+      .filter((d) => d.implied_by !== undefined && d.claims === "unknown")
+      .map((d) => `${d.technique} (prerequisite)`),
+  ];
+  const tail =
+    notRuledOut.length > 0 ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.` : ".";
+  return `Unit claims are stated for ${stated} of ${inputs.length} techniques${tail} The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).\n\n`;
+}
+
 function renderConflicts(r: Output, unknownCount: number): string {
   if (r.conflicts.length === 0) {
     return unknownCount === r.techniques.length
@@ -27,6 +46,7 @@ function renderConflicts(r: Output, unknownCount: number): string {
   for (const c of r.conflicts) {
     out += `## ${c.kind} (${c.severity}): ${c.a} × ${c.b}\n`;
     if (c.via && c.via.length > 0) out += `**Via prerequisite(s):** ${c.via.join(", ")}\n`;
+    if (c.underlying_kind) out += `**Rule:** ${c.underlying_kind}\n`;
     out += `**Shared:** ${c.shared.join(", ")}\n`;
     out += `${c.rationale}\n`;
     if (c.resolution) out += `**Resolution:** ${c.resolution}\n`;
@@ -82,6 +102,7 @@ export function renderCompatibility(r: Output, closureOnly: readonly string[]): 
   const unknownImplied = r.data_coverage.filter((d) => !d.known && d.implied_by !== undefined);
   return (
     renderVerdict(r, closureOnly) +
+    renderClaimsCoverage(r) +
     renderConflicts(r, unknown.length) +
     renderBandSeparated(r) +
     renderNotCovered(unknown, unknownImplied) +

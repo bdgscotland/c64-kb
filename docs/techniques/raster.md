@@ -21,6 +21,8 @@ The discipline required is severe. The VIC-II reads its registers continuously a
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=124, lines_active=2, irq_slots=1, zp_bytes=0
 **Cost basis:** arithmetic
+**Claims:** vic_raster_irq (shares)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -39,6 +41,8 @@ The sequence is:
 3. In the IRQ handler: write $01 to $D019 (VICIRQ) to acknowledge the interrupt and clear the VIC's interrupt latch; if this is not done, the IRQ line stays low and the CPU re-enters the handler immediately after RTI.
 4. Write the next scheduled interrupt line into $D012.
 5. If sub-cycle precision is needed (double-IRQ variant), see the `double_irq` technique.
+
+**Who owns the raster compare.** A stable raster IRQ is a way into a handler, not an effect. The effect that runs in the handler (raster bars, an FLI display, an open border, a multiplexer zone) owns the compare; this technique is how that handler is entered. Its Claims line therefore says `shares`: two effects that each use a stable entry still contend for the one compare, and a stable entry inside an effect's own handler does not.
 
 The cycle-exact busy-wait variation uses two NOP instructions of known cycle count inserted after the $D012 write to absorb the jitter window, landing the following store instructions on a predictable cycle of the target line.
 
@@ -90,6 +94,8 @@ Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badlin
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=990, lines_active=10, irq_slots=10, bytes_code=600
 **Cost basis:** estimated
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -204,6 +210,8 @@ For cycle-tight code running on every line, the badline constraint means the wor
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=160, lines_active=2, irq_slots=2
 **Cost basis:** arithmetic
+**Claims:** vic_raster_irq (shares)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -220,6 +228,8 @@ The classic implementation of the second handler uses a sequence like:
 - At IRQ entry, the handler immediately acknowledges $D019.
 - It then executes a tight sequence of instructions with a total known cycle count, padded with NOP instructions if needed, to reach cycle C of line N+1.
 - The register write that must be cycle-exact happens at cycle C.
+
+Like `stable_raster_irq`, of which it is the zero-jitter form, this is a way into a handler: the effect the second handler runs owns the raster compare, and the Claims line says `shares`. In `recipes/kickassembler/fli-image.md` and `recipes/kickassembler/sideborder-open.md` the double IRQ is the entry of the FLI and open-border code.
 
 The reason two IRQs work better than one: the first IRQ absorbs all the jitter from the unknown instruction-completion state at IRQ entry. By the time the first IRQ completes and the second fires, the processor is executing a known, counted instruction stream from the end of the first RTI. The second IRQ fires at a fully predictable time relative to the raster line.
 
@@ -413,6 +423,8 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 **Raster band:** movable (the program picks the lines; the sideborder-open recipe loops on lines 101-142)
 **Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2, sprites_per_line=8
 **Cost basis:** arithmetic
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -490,6 +502,8 @@ Border-opening IRQ overhead combined with a sprite multiplex update on the same 
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=132, lines_active=2, irq_slots=2
 **Cost basis:** arithmetic
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -544,6 +558,8 @@ Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–
 **Region:** both
 **Uses registers:** SCROLY, SCROLX, VMCSB
 **Demands:** midframe_raster_irqs
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** estimated
 
 ### Why
 
@@ -862,6 +878,8 @@ same figure.
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=273, lines_active=3, irq_slots=3
 **Cost basis:** estimated
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
