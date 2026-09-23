@@ -90,12 +90,6 @@ export function parseComposes(line: string, where: string): { technique: string;
   return out;
 }
 
-/**
- * `play pal worst=8693 typical=4966; play ntsc worst=10287 (measured-vice, <source>)`.
- * The parenthetical at the end is required: its first word is the basis,
- * the rest names where the figures are. Any malformed part refuses the
- * whole line, as a partial line would read as the whole measurement.
- */
 /** One `<phase> <pal|ntsc> worst=N [typical=N]` entry, or why it is refused. */
 function parseMeasuredEntry(entry: string): Omit<MeasuredFrame, "basis" | "source"> | { error: string } {
   const e = MEASURED_ENTRY.exec(entry);
@@ -115,6 +109,12 @@ function parseMeasuredEntry(entry: string): Omit<MeasuredFrame, "basis" | "sourc
   return { phase, region, worst, ...(typical !== undefined ? { typical } : {}) };
 }
 
+/**
+ * `play pal worst=8693 typical=4966; play ntsc worst=10287 (measured-vice, <source>)`.
+ * The parenthetical at the end is required: its first word is the basis,
+ * the rest names where the figures are. Any malformed part refuses the
+ * whole line, as a partial line would read as the whole measurement.
+ */
 export function parseMeasuredFrame(line: string): MeasuredFrame[] | { error: string } {
   const m = /^(.*?)\(\s*([a-z-]+)\s*,\s*(.+)\)\s*$/.exec(line.trim());
   if (!m) return { error: `no "(basis, source)" at the end` };
