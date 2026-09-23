@@ -74,6 +74,7 @@ image will display with scrambled columns.
 ### Sprites (.spd from SpritePad)
 
 SpritePad's native `.spd` format stores a header followed by 64-byte sprite blocks.
+**Correction (2026-09-23).** The 9-byte table below is the version 1 layout, and its byte at `0x06` is the transparent colour, not a multicolour flag (the version 1 meaning is read from Oscar64's reader, not measured here: no version 1 file was found); the version 5 files SpritePad Pro writes and Oscar64 embeds have a 20-byte header with two-byte counts, decoded per version in `../formats/c64-file-formats.md` under `.SPD`.
 SpritePad 2.x `.spd` files begin with a 9-byte header:
 
 | Offset | Size | Contents                            |
@@ -119,7 +120,7 @@ authored at the correct reduced resolution.
 
 CharPad's native `.ctm` (CharPad Tilemap) format is a structured binary with a
 32-byte header, followed by character data, attribute data, and optional tile/map
-data. Drawing the tile and map data it carries is `tile_map_render` in
+data. **Correction (2026-09-23).** No decoded file has a 32-byte header: version 5 has 20 bytes and version 8 has 14 (both decoded from files), and version 9 has 19 (read from Oscar64's reader, not measured here), followed by marker-framed sections whose presence depends on the flags and colouring method; the per-version field tables are in `../formats/c64-file-formats.md` under `.CTM`. Drawing the tile and map data it carries is `tile_map_render` in
 `../techniques/scroll.md`; the Oscar64 `#embed ctm_*` specifiers are in
 `../toolchains/oscar64-reference.md`. For a charset-only extraction (no tiles):
 

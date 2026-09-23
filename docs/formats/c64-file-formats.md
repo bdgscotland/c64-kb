@@ -676,6 +676,165 @@ Decoded from `examples/consultant.sng` (3,060 bytes): bytes 0–7 are `47 54 53 
 
 ---
 
+## Graphics Assets
+
+Project files from the two editors most C64 artists hand over: CharPad for character sets, tiles and maps, SpritePad for sprites. Both are the editor's own save format, not a raw export, so a header and per-section framing sit in front of the bytes a program wants. Oscar64's `#embed` reads both directly (`../toolchains/oscar64-reference.md`); every other toolchain in this KB wants the editor's raw binary export, or a converter. `../art/asset-pipelines.md` covers the pipeline side.
+
+Every figure below that is not marked otherwise was decoded in Python from a file on disk and checked against that file's length. The sample set: five CharPad version 8 files from the Corescape source tree (`background.ctm` 1,056 bytes, `introfont.ctm` 2,602, `statusfont.ctm` 2,602, `scorefont.ctm` 2,170, `tiles.ctm` 12,455), one CharPad version 5 file from the Death Weapon source tree (`Background.ctm`, 7,372 bytes), two SpritePad version 5 files (Oscar64's `samples/resources/mouse.spd`, 1,044 bytes; Corescape's `sprites.spd`, 8,284 bytes) and one SpritePad file with no signature at all (Death Weapon's `Sprites.spd`, 6,147 bytes). No version 9 file was found on this machine; the version 9 layout is read from Oscar64's own reader (`oscar64/Preprocessor.cpp`, release 1.32.271) and is marked as such.
+
+### .CTM — CharPad character set, tiles and map
+
+**Consumed by:** oscar64
+
+Oscar64 reads it through `#embed` with the specifiers `ctm_chars`, `ctm_attr1`, `ctm_attr2`, `ctm_tiles8`, `ctm_tiles8sw`, `ctm_tiles16`, `ctm_map8` and `ctm_map16`; what each one yields is under "What Oscar64 emits" below. The file begins with the three ASCII bytes `CTM` and a version byte. Version 5 is the CharPad 2.x save; versions 8 and 9 are the Pro edition's, and they are a different shape: a short fixed header, then a run of sections, each one opened by a two-byte marker, in a fixed order, some of them present only when a header flag or the colouring method says so. A reader that assumes version 5's fixed 20-byte header on a version 8 file lands 2 bytes inside the first character (the character section starts at `$12`: 14 header bytes, a 2-byte marker and a 2-byte count), and 3 bytes short of it on a version 9 file.
+
+**Fixed header:**
+
+| Offset (v5) | Offset (v8) | Offset (v9) | Size | Field |
+|-------------|-------------|-------------|------|-------|
+| $00–$02 | $00–$02 | $00–$02 | 3 | Signature `CTM` |
+| $03 | $03 | $03 | 1 | Version: `$05`, `$08` or `$09` |
+| $04 | – | – | 1 | Background colour (v5 sample: `$00`) |
+| $05 | – | – | 1 | Multicolour 1 (v5 sample: `$0B`) |
+| $06 | – | – | 1 | Multicolour 2 (v5 sample: `$0C`) |
+| $07 | – | – | 1 | Character colour (v5 sample: `$0C`) |
+| – | $04 | $04 | 1 | Display mode: `0` hires text and `1` multicolour text in the samples; Oscar64 sizes colour cells at 2 bytes for mode `3` and 3 bytes for mode `4`, which fits hires and multicolour bitmap |
+| $08 | $05 | $05 | 1 | Colouring method: `0` global, `1` per tile, `2` per character |
+| $09 | $06 | $06 | 1 | Flags: bit 0 set means the file carries tiles (v5 sample: `$05`; v8 samples `$00` and `$01`) |
+| – | – | $07–$08 | 2 | Grid width, little-endian (v9 only, not measured here) |
+| – | – | $09–$0A | 2 | Grid height, little-endian (v9 only, not measured here) |
+| – | – | $0B | 1 | Grid configuration (v9 only, not measured here) |
+| – | $07–$0D | $0C–$12 | 7 | Seven colour bytes; Oscar64 skips them, and which byte is which is not measured here (the samples hold `0E 00 0F 0C 09 08 07`, `00 00 01 0C 07 08 07`, `09 00 07 0C 09 08 07`) |
+| $0A–$0B | – | – | 2 | Character count minus one (v5 sample: `$00FF`, 256 characters) |
+| $0C–$0D | – | – | 2 | Tile count minus one (v5 sample: `$007B`, 124 tiles) |
+| $0E | – | – | 1 | Tile width in cells (v5 sample: 4) |
+| $0F | – | – | 1 | Tile height in cells (v5 sample: 4) |
+| $10–$11 | – | – | 2 | Map width in tiles, little-endian (v5 sample: 10) |
+| $12–$13 | – | – | 2 | Map height in tiles, little-endian (v5 sample: 54) |
+| header ends | $14 | $0E | $13 | | |
+
+Version 5's four colour names at `$04`–`$07` are the CharPad 2 ordering as remembered, not measured here; the counts, the tile size and the map size at `$0A`–`$13` are measured, because the section sizes they imply walk the sample to its last byte (see below). Version 9's header is version 8's with five grid bytes inserted between the flags and the colours; Oscar64 reads it that way and treats the rest of the file identically. A sibling signature `CTT` with version 9 is a Pro tile set whose header carries six colour bytes rather than seven; Oscar64 accepts it, no sample was found, not measured here.
+
+**Version 5 sections** follow the header with no framing, in this order, and the walk over the sample lands exactly on byte 7,372:
+
+| Section | Present when | Size | Sample |
+|---------|--------------|------|--------|
+| Characters | always | 8 × characters | 2,048 at `$14` |
+| Character attributes | always | 1 × characters (colour in the low nybble; the high nybble is 0 throughout the sample) | 256 at `$814` |
+| Tiles | flags bit 0 | 2 × tiles × width × height, little-endian character indices | 3,968 at `$914`, largest index 248 |
+| Tile colours | flags bit 0 and colouring method `1` | 1 × tiles | absent (method is `2`) |
+| Map | always | 2 × width × height, little-endian tile indices | 1,080 at `$1894`, largest index 123 |
+
+**Version 8 and 9 sections.** Each section opens with a two-byte marker. In every sample the marker bytes run `DA B0`, `DA B1`, `DA B2`, … in file order (read as little-endian words, `$B0DA`, `$B1DA`, `$B2DA`), so the second byte numbers the section's position in this particular file, not its kind: `background.ctm` has tiles under `DA B2` and its map under `DA B5`, while `introfont.ctm`, which has no tiles, has its map under `DA B2`. Oscar64 reads each marker and discards it. The order and the conditions, as Oscar64 walks them and as the five samples confirm:
+
+| Order | Section | Present when | Section header | Data |
+|-------|---------|--------------|----------------|------|
+| 1 | Characters | always | marker, count minus one (2 bytes) | 8 × count |
+| 2 | Character materials | always | marker | 1 × count |
+| 3 | Character colours | colouring method `2` | marker | 1 × count; 2 × count in display mode `3`; 3 × count in display mode `4` |
+| 4 | Tiles | flags bit 0 | marker, count minus one (2), width (1), height (1) | 2 × count × width × height, little-endian character indices |
+| 5 | Tile colours | flags bit 0 and colouring method `1` | marker | 1 × tiles; 2 × or 3 × in display modes `3` and `4` |
+| 6 | Tile tags | flags bit 0 | marker | 1 × tiles |
+| 7 | Tile names | flags bit 0 | marker | one NUL-terminated string per tile |
+| 8 | Map | always | marker, width (2), height (2) | 2 × width × height, little-endian indices (tiles when the file has them, characters otherwise) |
+
+Walks over the five samples, each ending on the file's last byte:
+
+- `background.ctm`: display `1`, method `0`, flags `$01`; 40 characters (320 bytes at `$12`), 40 materials, 10 tiles of 2×2 (80 bytes), 10 tags, 10 names in 90 bytes, map 20×12 (480 bytes at `$240`); 1,056.
+- `tiles.ctm`: display `1`, method `0`, flags `$01`; 171 characters, 64 tiles of 4×4 (2,048 bytes), 64 names in 576 bytes, map 16×256 (8,192 bytes); 12,455.
+- `introfont.ctm` and `statusfont.ctm` (identical): display `0`, method `0`, flags `$00`; 64 characters, no tiles, map 40×25 (2,000 bytes at `$25A`); 2,602.
+- `scorefont.ctm`: display `1`, method `0`, flags `$00`; 16 characters, map 40×25; 2,170.
+
+No sample has colouring method `1` or `2`, or display mode `3` or `4`, so rows 3 and 5 and the wider colour cells are Oscar64's reading and not measured here.
+
+**Decoder.** The walker that produced the figures above, for a version 8 or 9 `.ctm` or a version 5 `.spd`. It prints each section's offset, marker and size and must end on the file's last byte; a mismatch means a section it does not know about.
+
+```text
+#!/usr/bin/env python3
+# Walk a CharPad v8/v9 .ctm or a SpritePad v5 .spd and print each section's
+# offset and size; the walk must end on the file's last byte.
+# usage: ctm_walk.py FILE
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+u16 = lambda o: struct.unpack_from("<H", b, o)[0]
+sig, ver = b[:3], b[3]
+if sig == b"CTM" and ver in (8, 9):
+    disp, meth, flags = b[4], b[5], b[6]
+    p = 14 if ver == 8 else 19
+    per = {3: 2, 4: 3}.get(disp, 1)          # colour bytes per cell
+    print(f"CTM v{ver} display={disp} method={meth} flags=${flags:02X}")
+    def section(name, size, hdr=0):
+        global p
+        print(f"  ${p:04X} marker ${u16(p):04X} {name}: {size} bytes")
+        p += 2 + hdr + size
+    n = u16(p + 2) + 1
+    section("chars", 8 * n, 2)
+    section("materials", n)
+    if meth == 2: section("char colours", per * n)
+    t = 0
+    if flags & 1:
+        t, w, h = u16(p + 2) + 1, b[p + 4], b[p + 5]
+        section(f"tiles {t} of {w}x{h}", 2 * t * w * h, 4)
+        if meth == 1: section("tile colours", per * t)
+        section("tile tags", t)
+        q = p + 2
+        for _ in range(t):
+            q = b.index(0, q) + 1
+        section("tile names", q - p - 2)
+    mw, mh = u16(p + 2), u16(p + 4)
+    section(f"map {mw}x{mh}", 2 * mw * mh, 4)
+elif sig == b"SPD" and ver == 5:
+    ns, nt, w, h = u16(5), u16(7), b[11], b[12]
+    print(f"SPD v5 sprites={ns} tiles={nt} colours={list(b[13:16])}")
+    p = 20 + 64 * ns + 2 * nt * w * h
+    print(f"  sprites at $14, tiles at ${20 + 64 * ns:04X}, tables after ${p:04X}")
+else:
+    sys.exit(f"not a CTM v8/v9 or SPD v5 file: {sig!r} version {ver}")
+print(f"  walk ends at {p}, file is {len(b)}: {'MATCH' if p == len(b) else 'trailing ' + str(len(b) - p)}")
+```
+
+On `background.ctm` it prints markers `$B0DA` to `$B5DA` at `$000E`, `$0152`, `$017C`, `$01D2`, `$01DE` and `$023A`, and `walk ends at 1056, file is 1056: MATCH`; on `sprites.spd`, `trailing 72`.
+
+**What Oscar64 emits.** `ctm_chars` is the character section, 8 bytes a character. `ctm_attr1` is one byte a character: the material in the high nybble, and in colouring method `2` the character's colour in the low nybble; in colouring method `1` it is instead one byte a tile, the tile colour, with the materials discarded (read from Oscar64's reader, not measured here: no sample uses method `1`); `ctm_attr2` in display mode `4` packs the second and third colour bytes. `ctm_tiles8` and `ctm_map8` take the low byte of each 16-bit cell; `ctm_tiles16` and `ctm_map16` keep the word (declare the array `unsigned` and add the `word` specifier); `ctm_tiles8sw` swaps the array so the tile index is innermost. Measured on the windowless x64sc build of VICE 3.10 with Oscar64 1.32.271 embedding `background.ctm` and `mouse.spd`, the program printed, and Python read the same bytes from the same offsets: `CHARS 320: 00 00 00 FF 00 00 55 00`, `ATTR1 40: 00 20 10 30 40 60 50 70`, `TILES8 40: 00 01 02 03 04 05 06 07`, `TILES16 80: 0000 0001 0002 0003`, `MAP8 240: 06 06 06 06 06 06 06 06`, `SPRITES 1024: 00 00 00 F0 00 00 FC 00`. The exit screenshot is `../figures/ctm-spd-embed-probe.png`, identical bytes on two runs. No recipe page pins it: the verifier compiles a listing alone in a fresh directory, and an `#embed` needs the asset beside the source.
+
+Oscar64's documentation names version 8; its reader also takes version 9, and it checks neither the signature nor any other version. Embedding the version 5 sample with `ctm_chars` compiled without a word of complaint and gave an array of 7,364 bytes: the reader took bytes `$04`–`$05` (`$0B00`) as the first marker, `$06`–`$07` plus one (3,085) as the character count, asked for 24,680 bytes and was handed the rest of the file, header, attributes, tiles and map together. Check the version byte before you embed.
+
+---
+
+### .SPD — SpritePad sprite set
+
+**Consumed by:** oscar64
+
+Oscar64 reads it through `#embed` with the specifiers `spd_sprites` and `spd_tiles`. The file begins with the three ASCII bytes `SPD` and a version byte, then a header whose length depends on the version, then the sprites as 64-byte blocks: 63 bytes of pixel data and one attribute byte. Oscar64's reader accepts versions 1, 3 and 5 and refuses a file without the signature.
+
+**Header:**
+
+| Offset (v1) | Offset (v5) | Size | Field |
+|-------------|-------------|------|-------|
+| $00–$02 | $00–$02 | 3 | Signature `SPD` |
+| $03 | $03 | 1 | Version |
+| – | $04 | 1 | Flags (samples: `$00`, `$02`; meaning not measured here) |
+| $04 | – | 1 | Sprite count minus one (v1, not measured here) |
+| $05 | – | 1 | Animation count minus one (v1, not measured here) |
+| – | $05–$06 | 2 | Sprite count, little-endian, not minus one (samples: 16, 128) |
+| – | $07–$08 | 2 | Tile count, little-endian (samples: 0, 0) |
+| – | $09 | 1 | Sprite animation count (samples: 0, 11) |
+| – | $0A | 1 | Tile animation count |
+| – | $0B | 1 | Tile width in sprites |
+| – | $0C | 1 | Tile height in sprites |
+| $06–$08 | $0D–$0F | 3 | Transparent (background) colour, multicolour 1, multicolour 2 (v5 samples: `09 00 01`, `0E 00 01`; v1: Oscar64's reader, not measured here) |
+| – | $10–$11 | 2 | Sprite overlay distance, signed little-endian (samples: 1) |
+| – | $12–$13 | 2 | Tile overlay distance, signed little-endian (samples: 1) |
+| header ends | $09 | $14 | | |
+
+Version 3 is version 5 without the two overlay distances, a 16-byte header, from Oscar64's reader and not measured here. After the header come `64 × sprites` bytes, then `2 × tiles × width × height` bytes of little-endian sprite indices, then animation tables that this page does not decode: `mouse.spd` ends exactly after its 16 sprites (`$14` + 1,024 = 1,044), and `sprites.spd` has 72 bytes after its 128 sprites, which its 11 sprite animations account for in some layout not measured here.
+
+The attribute byte at offset 63 of each block carries the sprite colour in bits 0–3, an overlay flag in bit 4 and the multicolour flag in bit 7 (Oscar64's reader comment; not measured here beyond the values seen: `$85` for 14 of the 16 mouse sprites, `$85`, `$87`, `$88` and `$8B` across the 128 game sprites, so bit 7 set and colours 5, 7, 8 and 11).
+
+**A file with no signature.** The third sample starts `00 0B 01` and is 6,147 bytes: three bytes then 96 × 64. That is consistent with the older SpritePad's headerless save (three colour bytes, then the blocks), and the three values `00 0B 01` read as plausible colours; the producer is not established here, since nothing in the file names it. Such a file is distinguishable from the signed form only by the missing `SPD`. Oscar64 refuses it with "SPD file format not recognized"; a converter that keys on length can take it as `(size − 3) / 64` sprites.
+
+---
+
 ## Memory Snapshots
 
 ### .VSF — VICE snapshot
@@ -974,3 +1133,4 @@ P00 is a legacy format predating modern emulators' ability to handle PETASCII tr
 - `iec-disk-reference.md` — IEC bus protocol and 1541 drive internals
 - `../runtime/vice-reference.md` — VICE emulator usage and debugging
 - `../hardware/c64-memory-map.md` — C64 memory map (tape buffer at `$033C`, disk buffer at `$0200`)
+- `../art/asset-pipelines.md` — getting CharPad and SpritePad output into a build

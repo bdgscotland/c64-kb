@@ -1356,5 +1356,23 @@
     "disk": {
       "name": "TEST,01"
     }
+  },
+  "kickassembler/drive-via-probe": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/drive-via-probe.png",
+      "ntsc": "screenshots/drive-via-probe-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/tape-turbo-loader": {
+    "skip": "needs a TAP on -1, a PLAY press through -moncommands and +dsresetwithcpu, which the verifier has no keys for; the page's pictures are under docs/figures and its Build section gives the exact command"
   }
 }

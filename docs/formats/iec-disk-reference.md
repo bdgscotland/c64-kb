@@ -579,6 +579,124 @@ Drives still vary — crystals have tolerances and spindles do not all turn at e
 
 ---
 
+## 1541 VIA registers, measured
+
+The drive has two 6522 VIAs: VIA1 at `$1800`, whose port B is the serial bus, and VIA2 at `$1C00`, whose port B drives the mechanism and whose port A is the byte under the head. Every value below was read in VICE x64sc 3.10 with true drive emulation of a 1541 by `../recipes/kickassembler/drive-via-probe.md` (rung 1), on a disk formatted `TEST,01`, in these states:
+
+- **rest**: after power-up, before any job; the host's `M-R` is the first command after the bare open of channel 15.
+- **job**: the drive's own copy of the port, taken by uploaded code the instant a seek job's code byte came back below `$80`, motor still on. Five seeks: track 18 requested twice, then 1, 25, 31.
+- **host**: the host's `M-R` of the same port after `M-E` returned, a few milliseconds later.
+- **idle**: `M-R` after five seconds of C64 time with no command.
+- **init**: `M-R` after `OPEN 2,8,2,"#"` and again after `CLOSE 2`; the open made the DOS initialise the disk.
+- **trace**: a `-moncommands` file with `trace store 8:1c00` and no attached command, logging every write to `$1C00` over the PAL run with the writer's address and the byte.
+
+Bit names are the DOS ROM listing's (g3sl.github.io, from *Inside Commodore DOS*, rung 4); the values are rung 1. The same picture came out byte-identical on two runs per model; PAL and NTSC differed only where the table says.
+
+**VIA1, `$1800`, serial bus.**
+
+| Address | Bit | Name | Read here |
+|---|---|---|---|
+| `$1800` | 0 | DATA IN | rest `1` both models; job `1` (all five); host `1` |
+| `$1800` | 1 | DATA OUT | `0` in every state (output; DDR bit set) |
+| `$1800` | 2 | CLK IN | rest `1` PAL, `0` NTSC; job `0` (all five); host `1` |
+| `$1800` | 3 | CLK OUT | `0` in every state (output) |
+| `$1800` | 4 | ATNA, attention acknowledge | `0` in every state (output) |
+| `$1800` | 5, 6 | device number jumpers | `0 0` in every state: device 8. Another number: not measured here (x64sc 3.10 has no option to move drive 8) |
+| `$1800` | 7 | ATN IN | `1` in every state; ATN was released in all of them. ATN asserted: not measured here |
+| `$1800` | all | port B | rest `85` PAL, `81` NTSC; job `81`; host `85`. Bits 0 and 2 are one instant of the bus handshake and their level-to-bit polarity is not established by this run |
+| `$1801` | all | port A, unused | `00` |
+| `$1802` | all | DDRB | `1A`: bits 1, 3, 4 outputs, the rest inputs |
+| `$1803` | all | DDRA | `FF` |
+| `$1804`-`$1805` | all | timer 1 counter | PAL `A1 00`, NTSC `54 00`: free-running, differs run to run when the program changes |
+| `$1806`-`$1807` | all | timer 1 latch | `FF 01` |
+| `$1808`-`$1809` | all | timer 2 counter | PAL `4C AA`, NTSC `F7 B3` |
+| `$180A` | all | shift register | `00` |
+| `$180B` | all | ACR | `00` |
+| `$180C` | all | PCR | `01`: CA1 (ATN) interrupts on a positive edge |
+| `$180D` | all | IFR | `00` |
+| `$180E` | all | IER | `82`: CA1 enabled, so ATN raises the drive's IRQ |
+| `$180F` | all | port A without handshake | `00` |
+
+**VIA2, `$1C00`, disk controller.**
+
+| Address | Bit | Name | Read here |
+|---|---|---|---|
+| `$1C00` | 0, 1 | stepper motor phase | rest `00`; job `00` for the first track 18 request, `10` for the second, `00` for 1, 25, 31; init `10`. The trace shows `$FA75` writing the low two bits down through `3 2 1 0 3 2 ...` at one write per half-step, 122 writes over the run's five moves (96 for the four seeks that stepped, 26 for the initialise), one write every 14.8 thousand drive cycles |
+| `$1C00` | 2 | motor on | rest `0`; job `1` (all five); host `1`; idle `0`; init `1` after the open, `1` after the close. The trace's motor-on writes came from `$F987`, motor-off from `$F9ED` |
+| `$1C00` | 3 | drive LED | `0` in every `M-R` and every job snapshot. On in the trace only: `$EC98` in the idle loop wrote `DE` twice, 1,108 cycles apart, during the initialise; no other write in the run had bit 3 set. A named-file open, which the ROM's `$C100` path serves: not measured here |
+| `$1C00` | 4 | write-protect sense | `1` with the image attached normally, `0` with `-attach8ro` (rest `F0` against `E0`). Zero-page `$1E` (LWPT) followed it: `10` against `00` |
+| `$1C00` | 5, 6 | density (bit-clock select) | rest `11`; job `10` for track 18, `11` for 1, `01` for 25, `00` for 31; this is the zone index of the Timing section above, now rung 1. Written by `$F35C` in the trace, from the requested track: the first job wrote `D4` for track 18 while the head was still on track 19 (see `$22` below) |
+| `$1C00` | 7 | SYNC detected, inverted | `1` in every read but one: the NTSC host read after the track 1 seek was `74`, a sync mark under the head at that instant |
+| `$1C00` | all | port B | rest `F0` (read-write image) or `E0` (read-only); job `D4 D6 F4 B4 94`; host the same except the NTSC `74`; idle `90`; init `D6` before and after the close; trace also `F7` from `$EB2A` at reset and `60` from `$F260` |
+| `$1C01` | all | port A, the byte from the head | rest `54`. Read by uploaded code with byte-ready after each seek: `A5 4A 94 29`, `52 A5 4A 94`, `52 94 29 52`; GCR of long runs, as in a gap. Byte-ready only arrives with CA2 of `$1C0C` high (SOE); at rest it is low and the read loop times out |
+| `$1C02` | all | DDRB | `6F`: bits 4 and 7 inputs, the rest outputs |
+| `$1C03` | all | DDRA | `00`: read mode |
+| `$1C04`-`$1C05` | all | timer 1 counter | PAL `85 18`, NTSC `D8 20`: free-running |
+| `$1C06`-`$1C07` | all | timer 1 latch | `00 3A`: the controller's interrupt interval is `$3A00` = 14,848 drive cycles, which matches the stepper write spacing above |
+| `$1C08`-`$1C09` | all | timer 2 counter | PAL `66 9B`, NTSC `70 A8` |
+| `$1C0A` | all | shift register | `00` |
+| `$1C0B` | all | ACR | `41`: timer 1 free-running, port A input latching on |
+| `$1C0C` | all | PCR | `EC`: CA1 negative edge, CA2 output low (SOE off), CB1 negative edge, CB2 output high (read mode). The probe writes `EE` while it reads the head and puts `EC` back |
+| `$1C0D` | all | IFR | `00` at rest |
+| `$1C0E` | all | IER | `C0`: timer 1 enabled; that interrupt is the disk controller |
+| `$1C0F` | all | port A without handshake | `54`, the same byte as `$1C01` |
+
+Two things the seeks showed about the controller rather than the VIA. The zero-page track byte `$22` is `00` at rest, and the first job after power-up does not step: the request for track 18 found a header on track 19 (the header image at `$16`-`$1A` read `30 31 13 02 10`, ID `01`, track 19) and left `$22` at `13`; only the second request for track 18 moved the head, two half-steps. And a job that fails to step still sets the density bits for the track it was asked for. Rung 1 for VICE's 1541; whether the initial head position of 19 is the emulator's or a real drive's power-on position is not established here.
+
+Related pitfall: `../pitfalls/loader.md`, `gcr_timing_assumes_stock_drive`, for what happens when uploaded code assumes these bit clocks on a drive that is not a stock 1541.
+
+## 1541 memory map
+
+The 6502 in the drive sees 2 KiB of RAM, two VIAs and 16 KiB of ROM. Names and meanings are the g3sl.github.io ROM listing's (rung 4); "run" marks a location read or exercised here or by `../recipes/kickassembler/drive-job-queue.md` (rung 1); the ROM start is rung 1 from the image.
+
+| Address | Name | What the DOS keeps there | Status |
+|---|---|---|---|
+| `$00`-`$05` | JOBS | job code per buffer, result code when done | run |
+| `$06`-`$11` | HDRS | track and sector per buffer | run |
+| `$12`-`$13` | DSKID | master disk ID | run |
+| `$16`-`$1A` | HEADER | last header read: ID, ID, track, sector, checksum | run: `30 31 12 03 10` after the seek to 18 (PAL) |
+| `$1C` | WPSW | write-protect switch changed | run: `01` at rest |
+| `$1E` | LWPT | last write-protect state | run: `10` read-write, `00` read-only |
+| `$20` | DRVST | drive status | run: `30` after a job (an earlier build of the probe printed it) |
+| `$22` | DRVTRK | track under the head | run: `00` at rest, then the track of the last job |
+| `$30`-`$31` | BUFPNT | pointer to the active buffer | listing |
+| `$3E` | CDRIVE | active drive, `$FF` when idle | listing |
+| `$3F`, `$41` | JOBN, NXTJOB | last and next job slot | listing |
+| `$44` | WORK | scratch; the zone index during the density write | listing, ROM |
+| `$48` | ACLTIM | head acceleration timer | listing |
+| `$4A` | STEPS | half-steps left to move | listing |
+| `$62`-`$63` | NXTST | pointer to the stepping routine, `$FA05` when not stepping | listing |
+| `$6F`-`$74` | T0-T4 | temporaries | listing |
+| `$7F` | DRVNUM | drive number, `0` | listing |
+| `$80`-`$81` | TRACK, SECTOR | the track and sector of the current file operation | listing |
+| `$82`-`$84` | LINDX, SA, ORGSA | current channel index and secondary address | listing |
+| `$99`-`$A6` | BUFTAB | pointers into buffers 0 to 4, the command buffer and the error buffer | listing |
+| `$F9` | JOBNUM | current job number | listing |
+| `$0100`-`$01FF` | stack | the 6502 stack; the trace showed SP at `$43`-`$45` | run |
+| `$0200`-`$0229` | CMDBUF | the command as received on channel 15 | listing |
+| `$022A` | CMDNUM | command code | listing |
+| `$022B`-`$023D` | LINTAB | secondary address to channel table | listing |
+| `$023E`-`$0243` | CHNDAT | last data byte per channel | listing |
+| `$0274` | CMDSIZ | command length | listing |
+| `$027A`-`$027F` | FILTBL | filename pointers | listing |
+| `$02B1`-`$02D4` | NAMBUF | directory name buffer | listing |
+| `$02D5`-`$02F8` | ERRBUF | the error channel text | listing |
+| `$02FA`-`$02FD` | NDBL, NDBK | blocks free | listing |
+| `$02FE` | PHASE | stepper phase | listing |
+| `$0300`-`$03FF` | buffer 0 | data buffer lent to a channel | listing |
+| `$0400`-`$04FF` | buffer 1 | data buffer; read into by both recipes | run |
+| `$0500`-`$05FF` | buffer 2 | data buffer | listing |
+| `$0600`-`$06FF` | buffer 3 | data buffer; both recipes upload code here with only channel 15 open | run |
+| `$0700`-`$07FF` | buffer 4 | the BAM once a disk is initialised | listing |
+| `$0800`-`$17FF` | — | no RAM in a stock 1541; what a read returns here: not measured | — |
+| `$1800`-`$180F` | VIA1 | serial bus; table above | run |
+| `$1C00`-`$1C0F` | VIA2 | disk controller; table above | run |
+| `$C000`-`$FFFF` | ROM | CBM DOS 2.6; entry points in the section "1541 Drive ROM" | run |
+
+Which buffers uploaded code may take: with only channel 15 open, buffers 1 and 3 were free in both recipes and nothing overwrote them between commands (rung 1 for that situation). A file channel takes a buffer from this pool, and the BAM takes buffer 4 once a disk is initialised (listing, rung 4); a loader that opens files while its code is resident must check the channel-to-buffer table before choosing, and that check is not measured here. The mirror addresses between `$0800` and `$17FF` and the register repeats within `$1800`-`$1BFF` and `$1C00`-`$1FFF` are not measured here.
+
+---
+
 ## SD2IEC and Ultimate II+
 
 These modern IEC-compatible peripherals are flagged here for completeness but are **out of scope** for this KB's primary hardware target (stock C64 PAL/NTSC).

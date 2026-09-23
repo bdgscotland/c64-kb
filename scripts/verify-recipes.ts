@@ -89,6 +89,10 @@ const RunSchema = z.object({
   cartridge: z
     .object({ file: z.string(), write: z.boolean().optional(), runs: z.number().int().positive().optional() })
     .optional(),
+  // A recipe the verifier cannot run (it needs a TAP, a prepared disk or a
+  // key press the harness has no flag for) says why here; the listing gate
+  // still builds it and the page carries its own pictures under docs/figures.
+  skip: z.string().optional(),
 });
 type Run = z.infer<typeof RunSchema>;
 const PartialRunSchema = RunSchema.partial();
@@ -177,6 +181,7 @@ function jobFor(toolchain: string, md: string): Job {
   };
 }
 
+let skipped = 0;
 const jobs: Job[] = [];
 for (const toolchain of RECIPE_TOOLCHAINS) {
   const dir = join(RECIPES, toolchain);
@@ -184,10 +189,16 @@ for (const toolchain of RECIPE_TOOLCHAINS) {
   for (const md of walk(dir)) {
     if (!inScope(relative(ROOT, md))) continue;
     if (!isRecipePage(readFileSync(md, "utf8"))) continue;
+    const skip = manifestEntry(`${toolchain}/${basename(md, ".md")}`).skip;
+    if (skip) {
+      skipped++;
+      console.log(`skip ${relative(ROOT, md)} — ${skip}`);
+      continue;
+    }
     jobs.push(jobFor(toolchain, md));
   }
 }
-if (!jobs.length) {
+if (!jobs.length && !skipped) {
   console.log(onlyFile ? `no recipe page at ${onlyFile}` : "FAIL no recipe pages found");
   process.exit(onlyFile ? 0 : 1);
 }
@@ -506,6 +517,6 @@ if (jobsOpt > 1 && !onlyFile) {
 }
 
 console.log(
-  `\n${passes} matched, ${failures} failed, ${missing} without baseline, ${updated} baselines written; fresh files in ${work}`,
+  `\n${passes} matched, ${failures} failed, ${missing} without baseline, ${skipped} skipped by runs.json, ${updated} baselines written; fresh files in ${work}`,
 );
 process.exit(failures ? 1 : 0);

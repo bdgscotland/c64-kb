@@ -860,6 +860,7 @@ Run: `x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -l
 **Region:** both
 **Triggered by registers:** DC04, DC05, DC06, DC07, DC0D
 **Triggered by kernal:** LOAD, SAVE
+**Triggered by techniques:** tape_turbo_loader
 
 ### Symptom
 

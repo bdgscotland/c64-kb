@@ -1291,3 +1291,136 @@ second on the upload alone, which is why resident loaders upload once.
 ### Recipes
 
 - `recipes/kickassembler/drive-job-queue.md` (upload, readback, execute, a failed read, a seek, the BAM read and compared, a provoked `$03`, and what the error channel says afterwards; drive-side monitor trace of each job)
+
+---
+
+## tape_turbo_loader — Read a one-pulse-per-bit tape block by timing FLAG edges against a threshold
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** DC06, DC07, DC0D, DC0F
+**Uses kernal:** (none)
+**Cost:** bytes_code=1060, bytes_data=110, zp_bytes=24
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-tape-turbo-loader (whole PRG less the BASIC stub; the code figure includes the report and the 32-bit division, the data is the strings and counters)
+
+### Why
+
+The KERNAL's tape format spends twenty pulses on a byte, draws them from
+three lengths, and writes every block twice; measured from a SAVE in
+VICE (`../formats/c64-file-formats.md`, "KERNAL bit encoding") a byte
+costs 9,448 cycles, about 104 bytes a second for one copy and half that
+for the pair the KERNAL actually writes. A turbo loader replaces the
+stream, not the reading of it: one pulse per bit, two lengths, eight
+pulses to a byte, one copy. The recipe below moves 321 bytes a second on
+PAL and 334 on NTSC (measured, VICE 3.10), three times the KERNAL's one
+copy and six times its pair, with generous pulses; the trade is that the
+loader now depends on the tape running at the speed the file was
+mastered for, and on a threshold that sits between the two lengths.
+
+### How
+
+1. Master the tape with one pulse per bit. The recipe's script writes a
+   TAP file: a lead-in of 1 bits, a sync byte `$5A`, a two-byte length,
+   the data and an XOR checksum, most significant bit first, a 0 as a
+   256-cycle pulse and a 1 as a 512-cycle pulse. TAP entries are cycles
+   divided by eight, so the two lengths are `$20` and `$40`.
+2. Take the machine over: `SEI`, `$7F` to `$DC0D` to mask CIA 1's
+   interrupt sources, and one read of `$DC0D` to clear what was pending.
+   Reading the register clears every bit in it, so any interrupt handler
+   that reads it (the KERNAL's does) would steal the FLAG edges the
+   loader needs. This is also why the KERNAL's tape routines are not
+   called: they own the same register and the same timers and expect
+   their own stream.
+3. Start CIA 1 Timer B free-running: `$FF` to `$DC06` and `$DC07`, `$11`
+   to `$DC0F` (force load, start, count the system clock, continuous).
+   It is never restarted; each edge's reading is subtracted from the
+   previous one.
+4. Wait for PLAY (bit 4 of `$01` low), then drive bit 5 of `$01` low for
+   the motor. The KERNAL's interrupt normally does this from its own
+   sense logic; with interrupts off the loader must. Blank the screen
+   (bit 4 of `$D011`) so no badline stretches a poll.
+5. Per pulse: spin on bit 4 of `$DC0D`; read Timer B high, low, high
+   again, and take both again if the high byte moved (the low byte can
+   wrap in the seven cycles between the reads, and a version that only
+   re-read on a low byte of `$FF` mismeasured one pulse in about sixty
+   by 256 cycles); length is previous less current; the bit is length
+   at or above the threshold, 384 here.
+6. Sync: count consecutive 1 bits; after sixty-four, the first 0 is bit
+   7 of the sync byte. Rotate seven more bits in and compare with `$5A`;
+   on a mismatch start the count again. Because the tape has run since
+   the KERNAL first saw PLAY, the loader joins the lead-in wherever it
+   happens to be, and this is what makes that harmless.
+7. Read the length, the block and the checksum, eight bits to a byte,
+   most significant first. Verify, motor off, screen on, `$81` to
+   `$DC0D` to give the KERNAL its Timer A interrupt back, `CLI`.
+
+### Why it works
+
+The cassette read line is wired to CIA 1's FLAG input, and the CIA
+records each falling edge as bit 4 of its interrupt control register
+whether or not that source is enabled; VICE raises one such edge per
+TAP entry. The information is entirely in the time between edges, and a
+free-running 16-bit timer at the system clock measures it to the cycle
+with no restart cost and no drift, provided the two-byte read is made
+consistent. The threshold turns a continuous measurement into a bit,
+and its margin is what absorbs everything that moves the edges: tape
+speed, the loader's own polling granularity (nine cycles a turn here,
+and the measured pulses were within 8 cycles of nominal) and the time
+the loader spends between one poll and the next. The lead-in of one
+value followed by a sync byte whose first bit is the other value gives
+byte alignment from a cold start with no marker pulse of a third
+length, which is the KERNAL's answer to the same problem.
+
+### Variations
+
+- **An adaptive threshold.** Measure the lead-in's pulses, which are all
+  the long value, and set the threshold at three quarters of their
+  average (or, with a lead-in that alternates the two values, halfway
+  between the two averages). The loader then follows a tape recorded on
+  a fast or slow deck, or played on one, instead of failing at a fixed
+  figure. Not measured here: the recipe's threshold is a constant. What
+  was measured is the margin it needs: with VICE's default tape speed
+  error and wobble on, the pulse spread grew from 16 cycles to 52 on
+  each value and the block still verified, at least 101 cycles of margin
+  on either side.
+- **Shorter pulses.** The recipe's per-bit path is about 175 cycles,
+  most of it the minimum and maximum bookkeeping for the report, and a
+  208-cycle 0 pulse failed on it (one bit read long after a 170-cycle
+  setup between two bytes). A loader with nothing in the path but the
+  poll, the timer read, the compare and the rotate can run pulses well
+  under 200 cycles; the floor for a given loop is its longest path
+  between two polls, not its average. Not measured here.
+- **The FLAG interrupt instead of a poll.** Enable bit 4 in `$DC0D`
+  (`$90`) and take the IRQ or, on CIA 2, the NMI; the handler reads the
+  timer and stores a bit while the main code decrunches or draws. The
+  interrupt latency and its variation then eat into the margin in the
+  poll's place. Not built here.
+- **A counted loop instead of a timer.** Increment a register while
+  waiting for the edge and compare the count with a constant; that is
+  the classic form and costs no CIA. Its unit is the loop's length, so
+  a badline or an interrupt adds whole units, and the constant is
+  specific to the loop. Not built here.
+- **The mastering side.** A turbo needs its tape written the same way.
+  No host tool for that ships in this knowledge base; the recipe's
+  Python script is the whole of it, and a real cassette would need the
+  TAP played out through a deck or written by a program on the C64 that
+  drives the write line through bit 3 of `$01` with a timer, as the
+  KERNAL's SAVE does. Not built here.
+
+### Cycle budget
+
+Measured, VICE 3.10, `-warp`, screen blanked, tape speed error and
+wobble off (rung 1): 1,540,498 cycles on PAL and 1,540,502 on NTSC from
+the end of the sync byte to the end of the checksum, 503 bytes, which is 3,062
+cycles a byte and 383 cycles a bit for this block's mix of ones and
+zeros (256 for a 0, 512 for a 1). The same cycles are 321 bytes a
+second at the PAL clock and 334 at NTSC: the TAP stores cycles, so a
+tape mastered for one region reads at the other's speed and the same
+thresholds hold. The KERNAL figure it is set against is arithmetic from
+the measured pulse modes on the formats page: 9,448 cycles a byte for
+one copy.
+
+### Recipes
+
+- `recipes/kickassembler/tape-turbo-loader.md` (the TAP-writing script, the loader, the checksum verdict, bytes per second and pulse ranges on both models, and the run with VICE's tape wobble left on)

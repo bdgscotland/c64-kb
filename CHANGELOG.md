@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 749, schema 27, tools 2.0.0, package 0.13.0.
+Data 750, schema 27, tools 2.0.0, package 0.13.0.
+
+**Candidate list, Tier B batch 8 (data 750).** The 1541's VIA registers
+and memory map measured through the command channel and a probe recipe:
+the density bits follow the requested track's zone even when the head
+did not step, the stepper bits move one half-step per write from the
+DOS's routine every 14,848 drive cycles, the motor bit and the
+write-protect sense read as the states say (the latter checked with a
+read-only attach), the LED bit was set only during an auto-initialise,
+byte-ready reaches the CPU only with the port-control register's CA2
+line high, and the first job after power-up does not step. A tape turbo
+loader with a TAP written on the host: one pulse per bit at 256 and 512
+cycles, 321 bytes a second on PAL and 334 on NTSC against the KERNAL's
+own rate, the pulse spread under VICE's default wobble, a 208-cycle bit
+that failed and why, and a timer-read race that mismeasured one pulse in
+sixty until the read was done high, low, high; the recipe cannot be
+pinned by the verifier, which now honours a `"skip"` key in `runs.json`
+with the reason, reports the page as skipped rather than failed, and
+the conventions say so. The CharPad CTM v8 and SpritePad SPD v5 headers
+decoded from the sample files Oscar64 ships and checked against what
+its embed forms produce (v9 read from Oscar64's structures only, not
+measured here); Oscar64's reader checks neither signature nor version,
+so an old v5 file embeds silently and wrongly. The two-bit fast-loader
+transfer did not land: its writer stalled six times on the protocol
+design and runs again alone from a fixed specification.
 
 **Candidate list, Tier B batch 7 (data 749).** A cc65 cartridge recipe
 built through the verifier's cartridge path: the linker configuration
