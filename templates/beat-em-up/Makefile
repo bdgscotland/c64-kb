@@ -26,14 +26,16 @@ SHOT_CYCLES_NTSC := 110000000
 # What the program may write, for make claims (claims-watch's own grammar).
 # - Oscar64's registers start at $02 (BC_REG_WORK_Y). A function with more
 #   temporaries than BC_REG_TMP ($43) to BC_REG_TMP_SAVED ($53) spills
-#   past $53 (its InterCode.cpp, AddSpace): view_sprites stores to $54-$56.
+#   past $53 (its InterCode.cpp, AddSpace): view_sprites stores to $54-$59
+#   (measured; $54-$56 before a local was added). $5A-$5F is headroom for
+#   the next such edit; nothing else lives there.
 # - The KERNAL's IRQ runs until main's SEI, so IRQ is declared.
 # - $DC0D (all CIA1 interrupts off) counts against the three CIA1 units.
 # - CIA2 timer A is the harness meter's; timer B times the IRQs for the
 #   meter (engine.asm); the $DD0D stores count against all three CIA2
 #   units, so all three are declared as the harness's.
 # - The whole run, title to verdict, is traced (--cycles, the PAL pin).
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$56' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$5F' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.

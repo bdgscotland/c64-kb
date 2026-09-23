@@ -5,7 +5,7 @@ produced on 2026-09-23 by c64-kb 0.15.0 and pasted whole.
 
 ## Concept
 
-A side-on street brawler: a street 256 characters long scrolls to the right
+A side-on street brawler: a street 128 characters long scrolls to the right
 through a 38-column window in three stages, and each stage locks the camera
 until its waves of enemies are beaten. The player and up to three enemies
 are two multicolour sprites each and walk on a depth plane; the nearest
@@ -62,7 +62,7 @@ masks colour reads with 15).
 |---|---|---|---|
 | tile_map_render | 2 x 2 metatiles from the street text; one new column per coarse step | oscar64-tile-map-render | full_field_redraw_exceeds_vblank, colour_ram_index_past_last_cell_hits_cia1 |
 | soft_scroll_h | XSCROLL for the pixel; the column step is a page flip | the platformer starter's view.c | xscroll_applies_to_all_rows, d016_unmasked_rmw_clobbers_csel_mcm |
-| screen_double_buffer_d018 | three pages: one shown, one behind, one prepared five rows a frame | the platformer starter's view.c | full_field_redraw_exceeds_vblank, vic_bank_visibility_collision |
+| screen_double_buffer_d018 | two pages: one shown, the other prepared five rows a frame | the platformer starter's view.c | full_field_redraw_exceeds_vblank, vic_bank_visibility_collision |
 | raster_split_modes | the HUD under the street gets 40 columns, hires and its own page at line 212 | the platformer starter's engine.asm | xscroll_applies_to_all_rows, raster_irq_first_line_jitter, idle_fetch_byte_shows_in_gaps |
 | lane_depth_engine | plane Y is depth: sorted every frame, nearest fighter in the lowest sprites, hits gated by a 6-line window | oscar64-beat-em-up-lanes | sprite_x_high_bit_wrong_register, sprite_x_range_hidden_and_seam |
 | multi_sprite_object | a fighter is two parts at per-pose offsets from his feet | oscar64-multi-sprite-object | sprite_registers_persist_across_state_change, sprite_x_range_hidden_and_seam |
@@ -367,16 +367,16 @@ the IRQs included; README.md, "The measured frame", compares the two.
 
 ## Memory and screen
 
-VIC bank 3 ($DD00 bits 0-1 = 0). $C000, $C400 and $C800: the three street
-pages (rows 0-19; row 20 blank); $CC00: the HUD page (rows 21-24);
+VIC bank 3 ($DD00 bits 0-1 = 0). $C000 and $C400: the two street pages
+(rows 0-19; row 20 blank); $C800: the HUD page (rows 21-24);
 $E000-$E7FF: the character set (the ROM's glyphs 0-63 copied in, so text
 and the meter decode; street glyphs from 64); $F000-$FFBF: 63 sprite
 blocks (192-254). BASIC and KERNAL are banked out ($01 = $35), so $FFFE
 and $FFFA point at the IRQ chain and an RTI. Code from $1000; the
 KickAssembler blob (scroll slice copy, the IRQ chain and band writers, the
-tune) at $0900. Colour RAM is never scrolled. In AUTOPILOT builds the
-meter owns HUD row 24, columns 20 to 39; CIA2 timer A is the meter's, and
-CIA2 timer B times the IRQs that land outside the meter's brackets.
+tune) at $0900-$0F59. Colour RAM is never scrolled. In AUTOPILOT builds
+the meter owns HUD row 24, columns 20 to 39; CIA2 timer A is the meter's,
+and CIA2 timer B times the IRQs that land outside the meter's brackets.
 
 Sprites: three bands a frame. Band 0 (from line 251): the GO sign, lines
 53-73. Band 1 (IRQ at line 76): the fighters, two parts each, at most
@@ -389,22 +389,25 @@ bands.
 
 A bot, not a timeline: in AUTOPILOT builds the joystick byte is computed
 from the game state each frame (fire on the title; in play, line up with
-the nearest enemy, close in, then punch, punch, kick, with a jump kick
-now and then; walk right when a stage is clear). For a stretch of stage 2
-it stands still and takes blows, so a life is lost and the respawn runs.
-At three crowded moments (four fighters within 24 lines of depth) it
-holds the game still for 64 frames and prints the fighter band's table on
-the HUD, so `tools/flickercheck.py` can render the eight parts and match
-the picture pixel for pixel.
+the nearest enemy, close in, then punch, punch, punch, kick, jump kick;
+walk right when a stage is clear). In stage 2 it stands still from the
+first wave until a life is lost, so the hero's knock-down, KO and respawn
+run. At three crowded moments (four fighters in view within 24 ground
+lines), two in stage 2 and one in stage 3, it holds the game still for 64
+frames and prints the fighters' state on the HUD, so
+`tools/flickercheck.py` can build the eight parts itself and match the
+picture pixel for pixel.
 
-The verdict, after stage 3's first wave: every event seen (punch, kick,
-jump kick hits, knock-downs, get-ups, KOs, a life lost, three stage
-locks, two unlocks), score equal to the sum of the hits and KOs counted,
-the band IRQ never late, no part ever dropped, the pages equal to the
-street at their columns, the fighter sprite registers against the model.
-expect.json checks the border, the HUD text, the health-bar cells, the
-player's two parts where the model leaves them, the scrolled street at
-the final camera, the blank row 20, PAL and NTSC alike, and the meter.
+The verdict, after stage 3's first wave: every event seen (punch, kick
+and jump-kick hits, a knock-down, a get-up, a KO, the hero hit and down, a
+life lost, the locks, a stage clear, a scroll, a lane change), the score
+equal to the sum of the hits and KOs counted, one life lost, the band IRQ
+never late, no part dropped, both pages equal to the street at their
+columns, the hero's parts in the band the IRQ shows, the camera at the
+last lock, no late frame, three photo stops. expect.json checks the
+border, the HUD text, a health-bar cell, the hero's face in band 2, the
+hero's two parts in band 1, the scrolled street at the final camera, the
+kerb, the blank row 20, PAL and NTSC alike, and the meter.
 
 ## Decisions and open questions
 
@@ -414,9 +417,17 @@ the final camera, the blank row 20, PAL and NTSC alike, and the meter.
   line it needs 12 sprites on those lines, which no multiplexer can give,
   so reach is drawn inside the 24-pixel parts instead.
 - Sprite priority follows the depth sort, not the raster order: the
-  nearest fighter's parts are sprites 0 and 1.
-- The scroll is the platformer's three-page scheme, the camera only
-  moving right.
+  nearest fighter's parts are sprites 0 and 1. (lane_depth_engine's page
+  says a multiplexer's slot order and the depth order "agree because both
+  are Y"; a Y-sorted multiplexer fills slots from the top, so the nearer
+  fighter would get the higher sprite and be drawn behind. Not used here.)
+- The scroll is the platformer's scheme with two pages, not three: the
+  camera only moves right, so the page just left is never needed again.
+- The meter records the crowded fight (from the second stage's lock);
+  `-dMETER_WINDOW=1` records the walk that scrolls. README.md has both.
+- Measured: an Oscar64 `int` converted from an `unsigned` of 32,768 or
+  more is compared as not negative (a 20-line test in VICE). World x is
+  kept below that; an enemy spawned at x -24 walked the wrong way before.
 - NTSC runs the same per-frame steps at 60 Hz: 6/5 as fast. Not corrected.
 - No disk persistence: the high score lives until power-off.
 - Oscar64: the local build named in c64-kb's CLAUDE.md.
