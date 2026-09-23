@@ -19,6 +19,7 @@ order gets a wrong answer without any error to show for it.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DC08, DC0B, DC0F
+**Triggered by techniques:** tod_alarm_interrupt
 
 ### Symptom
 
@@ -559,7 +560,12 @@ counts, rung 3, not run.
   same is true of CIA2's `DD0E` (its `hardware/cia-reference.md` entry
   said otherwise until 2026-09-22).
 - `pitfalls/input.md` — the other CIA1 pitfall family (shared pins).
-- No recipe uses the TOD clock yet.
+- `recipes/kickassembler/tod-alarm.md` — sets the clock and the alarm
+  in this order, reads the four registers in the handler in this order,
+  sets TODIN from the detected model, and quotes the drift with the bit
+  wrong (this bullet said no recipe used the TOD clock until
+  2026-09-23). Technique: `tod_alarm_interrupt`,
+  `techniques/cpu-cycle-tricks.md`.
 
 ### Sources
 
@@ -742,3 +748,189 @@ nmi_stub:
   NTSC, screen cells decoded against `chargen-901225-01.bin`.
 - C64-Wiki, "RESTORE (Key)", https://www.c64-wiki.com/wiki/RESTORE_(Key),
   consulted for the name of the key's connection to the CPU only.
+
+---
+
+## cia_revision_irq_one_cycle_late — An old 6526 raises its timer interrupt one cycle later than a 6526A or 8521
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** DC04, DC05, DC0D, DC0E, DD0D
+**Triggered by techniques:** double_irq
+
+### Symptom
+
+Code whose timing is set by a CIA timer interrupt is right on one
+machine and one cycle out on another, with nothing else changed.
+
+- A raster routine that uses a CIA timer to place its second interrupt
+  a counted number of cycles after the first (the "CIA timer second
+  stage" of `double_irq`) lands one cycle late on an older board: a
+  colour split moves eight pixels right, or a routine that was stable
+  jitters by one cycle on every frame.
+- A loader whose receive loop is tuned so that a timer interrupt or a
+  timer-polled read falls in a fixed bit cell misses the cell on the
+  other revision and reads a wrong bit, so the same disk that loads on
+  the development machine fails on another.
+
+Which machine is "right" is whichever the code was tuned on. Two
+revisions of the chip shipped in the C64 and both are common.
+
+### Mechanism
+
+The C64 carried two CIA revisions over its life: the original 6526,
+and the later 6526A, which the 8521 in the C64C is an HMOS version of
+(board history from the C64-Wiki CIA page, which says only that later
+boards "may also use the 6526A or the 8521"; not verified here). On a
+timer underflow every revision sets the timer's bit in the interrupt
+control register in the same cycle. What differs is when `/IRQ` (or
+`/NMI` for CIA2) follows: the old 6526 pulls the pin one cycle after
+the flag, the newer parts in the same cycle. The 6510 samples the
+interrupt line once per instruction, so a one-cycle change on the pin
+either changes nothing or moves the handler's entry by the length of
+the instruction that was running.
+
+VICE 3.10 models this. `x64sc -help` lists `-ciamodel <0|1>` (both
+chips), `-cia1model` and `-cia2model`, with 0 the "old 6526" and 1 the
+"new 8521"; a run with no flag behaved as model 1 here. In the
+emulator's source (`src/core/ciacore.c`, `cia_run_ifr_cycle`, read at
+the VICE-Team GitHub mirror) the old-model branch always schedules the
+interrupt raise one cycle on, and the new-model branch raises it in
+the same cycle unless the ICR was read in the cycle before. That
+source is the named authority for the real-hardware claim; no 6526 was
+put on a bench for this entry, and the one-cycle figure for hardware
+stands at rung 4.
+
+Measured in VICE x64sc 3.10, the difference is exactly what the model
+says. A probe starts CIA1 Timer B free-running from `$FFFF` and, four
+cycles later, Timer A one-shot from latch `$40 + k` for eight phases
+`k`, then executes 400 cycles of 2-cycle `NOP`s. The handler's first
+instruction is `lda $DC06`. The screen shows `E - N`, where `E` is
+`$FFFF` less the Timer B value read and `N` the Timer A latch; the
+display is blanked (`$D011` bit 4 clear) for the whole test so no
+badline can move anything, and the KERNAL is banked out so `$FFFE`
+reaches the handler directly. Same figures on PAL and NTSC:
+
+| `-ciamodel` | k = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| 0, old 6526 | $12 | $11 | $12 | $11 | $12 | $11 | $12 | $11 |
+| 1, new 8521 | $10 | $11 | $10 | $11 | $10 | $11 | $10 | $11 |
+| none (default) | $10 | $11 | $10 | $11 | $10 | $11 | $10 | $11 |
+
+`-cia1model 0 -cia2model 1` reads as the old row and `-cia1model 1
+-cia2model 0` as the new row, so the flag for the chip under test is
+the one that matters. At every even phase the old part's handler runs
+two cycles later than the new part's, at every odd phase at the same
+cycle; over the two phases the mean difference is one cycle, and the
+alternation is the `NOP` boundary, not the chip. A control read of Timer B eight cycles after
+its start write returned `$FFFA` on both models, so the timers' own
+start delay does not differ between them. Subtracting the fixed parts
+of the path (Timer A's four-cycle later start, the `N + 1` counts to
+underflow, the three cycles from the handler's opcode fetch to the
+`lda`'s read) puts the new part's underflow-to-handler-fetch at 8 or 9
+cycles and the old part's at 9 or 10; that subtraction is arithmetic on
+the timer pipeline, rung 3, and the difference between the rows is the
+measurement.
+
+Not measured here: CIA2 and `/NMI` (the source has one path for both
+chips, so the same one-cycle rule is expected, rung 4), the Timer B
+bug VICE also gates on the old model (an ICR read in the cycle before
+a Timer B underflow loses the flag), and any real chip.
+
+### Fix
+
+Two remedies; use both.
+
+1. **Detect the revision once at start and branch on it.** Run the
+   two-phase form of the probe with interrupts otherwise off, before
+   any timing-critical code is installed, and store a byte: `00` old
+   6526, `01` 6526A or 8521. `recipes/kickassembler/cia-revision-detect.md`
+   is that routine, verdict at `$02FE`. A timer-timed second stage then
+   loads a latch one count shorter on the old part, or the loader picks
+   the delay table for the part it found. The detection is a short
+   routine and costs a little over two raster frames.
+2. **Do not put a bit cell or a pixel on a one-cycle edge.** Where a
+   timer interrupt sets the phase, follow it with a raster-synchronised
+   entry (`stable_raster_irq`) or a self-timing sequence so the CIA's
+   delay is absorbed; where a loader polls a timer, centre the read in
+   the bit cell rather than at its edge. A routine that tolerates one
+   cycle either way is right on both revisions without detection.
+
+### Worked example
+
+The bad pattern: a second-stage interrupt whose latch was tuned on one
+machine.
+
+```text
+        ; first IRQ, raster-triggered, jitter up to 7 cycles
+        lda #<DELAY        ; a value found by trial on the author's C64
+        sta $dc04
+        lda #>DELAY
+        sta $dc05
+        lda #$19           ; one-shot, load, start
+        sta $dc0e
+        ; ... second handler writes $D020 at "the" cycle
+```
+
+On the other revision the write lands one cycle away from where it was
+tuned, and because the 6510 quantises the entry to an instruction
+boundary the visible error is 0 or 2 cycles depending on which
+instruction the interrupt met.
+
+The fix, in outline (the full routine is the recipe):
+
+```text
+        ; at start-up, interrupts masked, display blanked
+        ; run the probe at latch $40 and $41; E-N pairs:
+        ;   $12,$11  -> old 6526        -> revision = 0
+        ;   $10,$11  -> 6526A / 8521    -> revision = 1
+        ; later:
+        lda revision
+        beq old_part
+        lda #<DELAY
+        bne set_latch
+old_part:
+        lda #<DELAY-1      ; the old part raises one cycle later
+set_latch:
+        sta $dc04
+```
+
+Per-model runs of the recipe (VICE x64sc 3.10, `-ciamodel 0` and `1`,
+PAL and NTSC, four runs): row 2 of the screen `12 11` and verdict `OLD
+6526` under model 0, `10 11` and `NEW 8521 OR 6526A` under model 1,
+`$02FF` = `01` and a green border in all four.
+
+### Cross-references
+
+- Recipe `recipes/kickassembler/cia-revision-detect.md`, the detection
+  routine, pinned under `-ciamodel 0`.
+- Technique `double_irq` (`techniques/raster.md`), whose "CIA timer
+  second stage" is the raster case above; `stable_raster_irq` in the
+  same file is the raster-synchronised entry that absorbs the delay.
+- Techniques `krill_loader_integration` and `sparkle_irq_loader`
+  (`techniques/loaders-packers.md`): the loader case. Their pages
+  describe finished loaders and nothing in their text turns on a
+  cycle-exact timer interrupt, so they are not on the Triggered-by
+  line; the pitfall is for a loader written from scratch with a timer
+  in its bit loop. Whether either loader detects the revision was not
+  checked here.
+- `hardware/cia-reference.md`, "IRQ / NMI on underflow" and the
+  "CIA chip revision differences" bullet under its Pitfalls list, which
+  names the revisions without a figure; this entry supplies the one
+  figure that was measured.
+- Pitfall `raster_irq_first_line_jitter` (`pitfalls/raster-and-badline.md`)
+  for the instruction-boundary quantisation that turns one cycle into
+  0 or 2.
+
+### Sources
+
+- VICE x64sc 3.10, the eight-phase probe and the recipe, run under
+  `-ciamodel 0`, `-ciamodel 1`, no flag, and the `-cia1model` /
+  `-cia2model` pairs, PAL and NTSC, screen cells decoded against
+  `chargen-901225-01.bin`.
+- VICE source, `vice/src/core/ciacore.c` at
+  https://github.com/VICE-Team/svn-mirror, function `cia_run_ifr_cycle`,
+  read for the model branches only.
+- `x64sc -help`, VICE 3.10, for the option names and values.
+- C64-Wiki, "CIA", https://www.c64-wiki.com/wiki/CIA, for the sentence
+  on which revisions later boards carried; it gives no timing figure.

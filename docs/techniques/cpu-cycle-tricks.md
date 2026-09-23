@@ -1379,3 +1379,188 @@ worst frame.
 ### Recipes
 
 - `recipes/kickassembler/nmi-timer-tick.md` (the stub, the acknowledging handler, the lock and the unlock, with the counts and the two costs above; CIA2 Timer A stands in for the key, which a headless run cannot press)
+
+## tod_alarm_interrupt — A wall-clock interrupt from the CIA time-of-day alarm
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC08, DC09, DC0A, DC0B, DC0D, DC0E, DC0F
+**Cost:** cycles_per_frame=122
+**Cost basis:** arithmetic
+
+### Why
+
+Every other clock on the machine is a frame or a cycle count: a raster
+IRQ runs 50 or 60 times a second depending on the model, a CIA timer
+counts cycles and wraps in 66 ms. The time-of-day clock is the only one
+that keeps wall time. It counts the mains tick, holds hours, minutes,
+seconds and tenths in BCD, and carries an alarm: four shadow registers
+and a compare that raises an interrupt when the clock reaches them. A
+program that wants "in three seconds" or "at the top of the next
+minute", the same on PAL and NTSC, with no raster line and no timer
+owned, gets it from this alarm. The one thing it does not do for free
+is run at the right rate: the KERNAL leaves the 50/60 Hz bit clear on
+every machine, and a PAL clock left that way loses a sixth of its time.
+
+### How
+
+**The rate.** Bit 7 of `$DC0E` (TODIN) says what the TOD pin carries:
+1 for 50 Hz, 0 for 60 Hz. Set it to match the machine, read-modify-write
+(`LDA $DC0E : ORA #$80 : STA $DC0E` on PAL), because bit 0 of the same
+register is the start bit of the KERNAL's jiffy timer. Decide PAL or
+NTSC at run time from the raster (a line at or above 272 is PAL); a
+build-time choice ships a clock that is wrong on the other model.
+
+**The alarm.** Set bit 7 of `$DC0F` (ALARM), write hours, minutes,
+seconds, tenths to `$DC0B`, `$DC0A`, `$DC09`, `$DC08` in that order, and
+clear bit 7 again. The four writes go to the alarm registers and the
+clock is not touched. Then write `$84` to `$DC0D`: bit 7 means "set",
+bit 2 is the alarm source. There is no other arming step; the compare
+runs whenever the clock runs.
+
+**The clock.** With ALARM clear, the same four writes set the clock. The
+hours write stops it and the tenths write restarts it, so the tenths
+write is the instant the clock begins.
+
+**The handler.** Read `$DC0D` once and keep the copy: the read clears
+every CIA1 flag and drops the IRQ line, and a second read sees zero. Bit
+2 is the alarm; bit 0 is the KERNAL's Timer A, which can arrive in the
+same interrupt. Read the time hours first and tenths last, so the four
+bytes are one instant and the latch is released. Hand a Timer A bit on
+to `$EA31` so the jiffy clock and keyboard scan survive; leave through
+`$EA81` otherwise. `CLD` on entry if the handler does arithmetic.
+
+```asm
+// Alarm at 01:02:06.0, alarm IRQ on, handler chained under the KERNAL.
+arm_alarm:
+        lda $dc0f
+        ora #$80                // ALARM = 1: the next four writes set the alarm
+        sta $dc0f
+        lda #$01
+        sta $dc0b               // hours (BCD, bit 7 = PM)
+        lda #$02
+        sta $dc0a               // minutes
+        lda #$06
+        sta $dc09               // seconds
+        lda #$00
+        sta $dc08               // tenths
+        lda $dc0f
+        and #$7f                // ALARM = 0: writes go to the clock again
+        sta $dc0f
+        lda #<alarm_irq
+        sta $0314
+        lda #>alarm_irq
+        sta $0315
+        lda $dc0d               // drop any flag already standing
+        lda #$84                // set bit 2: alarm interrupt enabled
+        sta $dc0d
+        rts
+
+alarm_irq:
+        cld
+        lda $dc0d               // one read: every flag cleared, line released
+        sta icr_copy
+        and #$04
+        beq alarm_done
+        lda $dc0b               // hours first: the four registers latch
+        sta now_h
+        lda $dc0a
+        sta now_m
+        lda $dc09
+        sta now_s
+        lda $dc08               // tenths last: the latch is released
+        sta now_t
+        inc alarm_count
+alarm_done:
+        lda icr_copy
+        and #$01
+        beq alarm_exit
+        jmp $ea31               // Timer A too: the KERNAL's tick runs
+alarm_exit:
+        jmp $ea81               // pop A, X, Y and RTI
+
+icr_copy:    .byte 0
+alarm_count: .byte 0
+now_h:       .byte 0
+now_m:       .byte 0
+now_s:       .byte 0
+now_t:       .byte 0
+```
+
+### Why it works
+
+The alarm compare is a digit compare against the running clock, done in
+the chip; it raises flag 2 of `$DC0D` at the tick on which all four
+registers match, and if bit 2 of the mask is set the chip pulls its
+interrupt line, which on CIA1 is `/IRQ`. The clock keeps running through
+the match, so the alarm fires once per day for a given setting unless it
+is moved. The rate bit only changes the divider between the pin and the
+tenths digit, five or six ticks a tenth; the compare does not know
+whether the digits are keeping real time, which is why a wrong TODIN is
+invisible to everything except a comparison with something that does.
+
+Measured in VICE x64sc 3.10 (`recipes/kickassembler/tod-alarm.md`, rung
+1): with the clock set to 01:02:03.0 and the alarm at 01:02:06.0, the
+handler was entered after 149 PAL frames and 179 NTSC frames, one frame
+inside the tolerance of one tenth, with `$DC0D` reading `$84` and the
+four registers reading 01:02:06.0 on both models. The same code with
+TODIN the wrong way took 180 PAL frames (six fifths of the time) and
+149 NTSC frames (five sixths). The one-frame shortfall is the tick's
+phase: the clock starts on the tenths write but the mains tick does not
+restart, so the alarm lands early and never late, inside one tenth
+(arithmetic from the tick period, 19,705 PAL cycles or 17,045 NTSC).
+The bound is one tick if the five-or-six-tick divider behind the tenths
+digit restarts with the clock; if it keeps its count across the stop,
+the first tenth can take from one to five ticks and the alarm can be up
+to four ticks early. Neither VICE nor a 6526 has been measured on that
+point; the counts here fit both.
+
+### Variations
+
+- **A game clock in real seconds.** Set the alarm one second on; in the
+  handler, add one second to the alarm time in BCD (`SED : ADC #$01`,
+  carry into minutes and hours by hand, `CLD` after) and write all four
+  alarm registers again with ALARM set, tenths last. The seconds count
+  is then the same on a PAL and an NTSC machine, and the same under a
+  frame drop, which a frame-counted clock is not. Write all four, not
+  just the seconds: the datasheet stops the clock on any hours write and
+  does not say the alarm side is exempt, so the tenths write that ends
+  the sequence is what guarantees a running clock (`pitfalls/cia.md`,
+  `tod_read_order_latch`, which measured VICE and could not measure a
+  6526).
+- **Pausing.** Not reading the clock does not pause it, and reading the
+  hours and stopping does not either: the latch freezes what you see
+  while the counter runs on underneath, and the next tenths read shows
+  the live time. To pause a clock, stop it: write its hours with ALARM
+  clear, which halts the count, and write its tenths to resume; the
+  fraction of a tenth in progress is lost. Or leave it running and
+  subtract the paused span, read at pause and at resume, from the
+  displayed time and add it to the alarm.
+- **CIA2's clock.** `$DD08`-`$DD0F` is a second, independent TOD with
+  its own alarm, whose interrupt is `/NMI`. It cannot be masked, it
+  shares the vector with RESTORE and it needs a `$DD0D` read of its own
+  (`nmi_handler_and_restore_key`). It is the clock to use when CIA1's
+  interrupt line is spoken for by a raster or timer scheme, and its
+  TODIN bit, bit 7 of `$DD0E`, is also left clear by the KERNAL.
+
+### Cycle budget
+
+The `Cost` line is the handler above, `alarm_irq`, for one alarm entry
+under the KERNAL: the IRQ sequence (7), the dispatcher at `$FF48` (29),
+the body from `CLD` to `INC alarm_count` (52), the exit test (12) and
+`$EA81` (22), 122 cycles on the frame the alarm fires and nothing on
+the frames in between. The body's 52 is measured: a build of the recipe
+with only that body between the two Timer A reads gave 68 cycles on PAL
+and on NTSC (VICE x64sc 3.10), and the harness puts 16 cycles inside
+that span, 12 to stash the entry read and 4 for the exit read to reach
+its read cycle. The other four terms are the instruction table, so the
+line's basis is arithmetic. The recipe's own handler, which also records
+the raster line, Timer A, the frame count and the `$DC0D` copy, reads
+130 cycles on the same harness, and its whole entry with the cost
+bookkeeping (about 38) is about 240 (arithmetic). An earlier version of
+this page stated the recipe's 130 as the `Cost` and put the fragment at
+"about 110"; the fragment's sum is 122, and it has now been measured.
+
+### Recipes
+
+- `recipes/kickassembler/tod-alarm.md` (clock set, alarm three seconds on, the alarm taken as a CIA1 IRQ under the KERNAL's jiffy, frames counted against the model, the drift with TODIN wrong)

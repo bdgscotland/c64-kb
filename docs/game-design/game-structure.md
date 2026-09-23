@@ -276,7 +276,7 @@ Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 
 **Kind:** production
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
-**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling, attract_mode_input_replay, oscar64/attract-replay
+**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling, attract_mode_input_replay, oscar64/attract-replay, high_score_table_insert, kickassembler/high-score-insert
 **Sources:** Codebase64 guide to programming games (unattributed, wiki); Lasse Öörni, Rant 18, Interaction patterns in Covert Bitops games; Tony Temple, Anatomy of Arcade High Score Tables, The Arcade Blogger, 2021; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**

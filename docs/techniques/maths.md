@@ -1046,3 +1046,197 @@ the worst of the five, as one call per frame.
 - `recipes/kickassembler/compare-16bit-signed.md` — every idiom over
   the boundary pairs with flags on screen, full sweeps against a
   Python checksum, the bare `BMI` miss count, and the timings.
+
+## isqrt_16bit — Integer square root of a 16-bit value
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=869
+**Cost basis:** measured-vice
+
+### Why
+
+A distance. A homing missile, a proximity trigger, a guard that
+notices the player inside a radius, a spring force that weakens with
+range: each wants `sqrt(dx*dx + dy*dy)`, and the 6510 has no square
+root. Often the game does not need the root itself, only a comparison
+against a radius, and the variation below does that without one. When
+the distance is used as a number, to scale a speed or index a volume
+table, this routine gives the floor of the root of any 16-bit value
+in under 900 cycles with no table. The figures on this technique were
+measured with CIA1 timer A, not the timer B the page's introduction
+names, in `recipes/kickassembler/sqrt-atan2.md` (rung 1, VICE x64sc
+3.10, PAL and NTSC identical).
+
+### How
+
+Restoring shift-and-subtract, the same shape as `division_8_16bit`
+above but taking two bits of the input per pass and testing a trial
+value that grows with the answer. Keep a 16-bit remainder and an
+8-bit root, both zero. Eight passes: shift the top two bits of the
+input into the bottom of the remainder; form the trial
+`4 * root + 1`; double the root; if the remainder is at least the
+trial, subtract it and set the root's new bottom bit. After eight
+passes the root is `floor(sqrt(n))` and the remainder is
+`n - root * root`. The trial reaches 509 and the remainder 1,019,
+so both need two bytes and the compare is a 16-bit one, high bytes
+first, low bytes only when they tie; the branch into the subtract
+arrives with the carry set on both paths, so the `SBC` is exact with
+no `SEC`. The recipe's listing is the reference form; it was checked
+for the exact root on 35 cases against `math.isqrt` and for
+`rem <= 2 * root`, which is `n < (root + 1)^2`, on all 65,536 inputs
+on the machine.
+
+A table-assisted form was considered and not used. A 256-entry table
+gives the root of an 8-bit value directly, but a 16-bit input needs
+either a 64 KB table or a two-stage estimate and a correction step
+with a multiply, and the loop is simpler, needs no memory and is fast
+enough for a routine called a few times a frame.
+
+### Why it works
+
+Each pass decides one bit of the root from the top, keeping the
+invariant `n_seen = root^2 + rem` over the bits consumed so far. If
+the next root bit is 1 the root becomes `2 * root + 1` and its square
+grows by `(2 * root + 1)^2 - (2 * root)^2 = 4 * root + 1`, which is
+the trial; the bit is 1 exactly when the remainder, now holding two
+more bits of `n`, can absorb that. It is long division with a
+divisor that is rebuilt from the quotient so far.
+
+### Variations
+
+- **Compare squares, no root.** For "is the target within radius r"
+  compute `dx*dx + dy*dy` with `table_multiply_8x8` (two multiplies,
+  52 cycles each with the tables in place) and compare the 16-bit sum
+  against `r*r` held as a constant. About 130 cycles by the
+  instruction table (rung 3, not measured here), and exact. This is
+  the common case in a game; take the root only when the distance is
+  used as a number.
+- **Octagonal estimate.** `max + min / 2` over `|dx|` and `|dy|` is
+  within about 12 per cent of the true distance and costs a compare
+  and a shift (rung 4, not measured here). Good enough to rank targets
+  by nearness.
+- **8-bit input.** For `n` below 256 a 256-byte table of roots is one
+  indexed load; the loop above with four passes over an 8-bit input
+  is the same routine at half the cost (rung 3, not measured here).
+
+### Cycle budget
+
+Body only, operands in zero page, net of `JSR` and `RTS`, measured
+over every input: 869 cycles at worst, first reached at 65025, which
+is 255 squared; 65535 costs 862. The instruction-table model of the
+loop gives the same two figures and 869 as its maximum, so the loop is
+about 105 cycles a pass plus 13 of setup. The Cost line carries the
+worst case; one call is 4.4 per cent of a PAL frame. Keep the loop in
+one page: a layout with its branch across a page boundary measured
+876, seven taken branches at one cycle each.
+
+### Recipes
+
+- `recipes/kickassembler/sqrt-atan2.md` — the root and the atan2
+  below, 35 root cases against a Python model, the remainder
+  invariant on every input, and the worst-case timing sweep on
+  screen.
+
+## atan2_8bit — Aim angle from a signed offset, 256 units a turn
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Requires:** division_8_16bit
+**Cost:** cycles_per_frame=381
+**Cost basis:** measured-vice
+
+### Why
+
+A turret that turns toward the player, an enemy that fires along the
+line to the ship, a homing shot: each needs the angle of the offset
+`(dx, dy)` from itself to the target, in the same units as its sine
+table so the angle can be turned straight back into a velocity. A
+byte angle, 256 units a turn, is that unit on this machine. The
+routine here takes signed 8-bit `dx` and `dy` and returns the angle
+to within one unit, measured over every one of the 65,536 pairs by
+the host model and confirmed on the machine over 36 cases in
+`recipes/kickassembler/sqrt-atan2.md` (rung 1, VICE x64sc 3.10). The
+convention is 0 for `+dx`, 64 for `+dy`, so with screen y growing
+downward the angle runs clockwise as seen on the screen.
+
+### How
+
+Three steps. Fold: take `|dx|` and `|dy|` by testing bit 7 of each
+input with `BPL` and negating, remember the two signs, and compare
+the magnitudes; the smaller over the larger is a ratio between 0 and
+1, which is the first octant. Look up: the ratio index is
+`floor(min * 256 / max)`, an 8-bit quotient from an eight-pass
+shift-and-subtract divide, the loop of `division_8_16bit` with the
+dividend's high byte equal to `min` and its low byte zero; because
+`max` is at most 128 the remainder never needs the ninth-bit guard
+the general loop carries. The index reads a 256-byte table whose
+entry `i` is `round(atan(i / 256) * 256 / 2pi)`, 0 to 32; the recipe
+quotes the Python that prints it. Unfold: if `|dy|` was the larger
+the angle is `64 - a`; if `dx` was negative, `128 - a`; if `dy` was
+negative, `256 - a`. Equal magnitudes are exactly 32 and are tested
+for, since the ratio 256 does not fit the index; `(0, 0)` returns 0.
+
+The inputs must be true 8-bit differences. A game that forms `dx` as
+`target_x - x` with `SEC / SBC` over positions more than 127 apart
+gets a wrapped byte whose sign is wrong, and the fold then answers
+for the opposite half of the circle. Clamp the difference, or take
+it in 16 bits and use the high byte's sign with a clamped low byte
+(`pitfalls/cpu.md`, `signed_compare_bmi_overflow`).
+
+### Why it works
+
+`atan2` over the whole plane is eight copies of `atan` over one
+octant, related by reflection in the axes and the diagonal, and each
+reflection is a subtraction from a constant: `64 - a` across the
+diagonal, `128 - a` across the vertical axis, `-a` across the
+horizontal. The octant needs only `atan` of a ratio in `[0, 1)`,
+which is a 256-entry table when the ratio is quantised to 1/256. The
+angle changes by less than 0.2 units across one ratio step, so the
+truncated index costs less than that and the rounding of the table
+entry costs at most half a unit; over every pair the largest error is
+1 unit, on 3,968 of the 65,536 pairs. Those pairs are spread across
+the whole octant, not gathered at the axes: counted by tenths of the
+ratio `min / max`, the first three tenths from the axis hold 1,680 of
+them and the last three before the diagonal 688 (the generator's
+model, rung 3).
+
+### Variations
+
+- **Sixteen directions, no table, no divide.** The sign bits and the
+  magnitude compare give the octant; one more compare, `min * 2 < max`
+  (a shift and a `CMP`), splits each octant at 26.6 degrees, which is
+  `atan(1/2)`, so the two sectors are 26.6 and 18.4 degrees wide, not
+  equal. An equal split at 22.5 degrees needs `min / max < 0.414`,
+  which `min * 2 + min / 2 < max` gives closely: two shifts, an add and
+  the `CMP`, a few cycles more. Sixteen sectors from three compares,
+  about 40 cycles for the unequal form by the instruction table
+  (rung 3, not measured here), enough for a sprite with sixteen facing
+  frames or a shot that picks one of sixteen velocity pairs.
+- **Smaller table.** Index with `ratio >> 2` for a 64-byte table or
+  `ratio >> 3` for 32 bytes; the error grows with the step and was
+  not measured here.
+- **Angle to velocity.** Feed the result to a sine table with 256
+  entries a turn (`sine_table_generation`, `techniques/cpu-cycle-tricks.md`)
+  for `dy` and the same table 64 entries on for `dx`; the angle unit
+  was chosen so no scaling sits between the two.
+
+### Cycle budget
+
+Body only, zero-page operands, net of `JSR` and `RTS`, measured over
+every pair: 381 cycles at worst, first reached at `dx = -127`,
+`dy = -128`, a pair that negates both inputs, takes the second-octant
+path and subtracts on most divide passes. The divide is about 290 of
+that; the fold and unfold about 90 (rung 3, split from the
+instruction table; the total is the measured figure). The Cost line
+carries the worst case, 1.9 per cent of a PAL frame per call. The
+same page-crossing caution as the root applies: the recipe holds both
+routines in one page with an `.assert`.
+
+### Recipes
+
+- `recipes/kickassembler/sqrt-atan2.md` — the fold, divide and table
+  as listed, 36 angle cases over the axes and every octant against a
+  Python model, and the worst-case timing sweep over all 65,536 pairs.

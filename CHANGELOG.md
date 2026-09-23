@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 737, schema 25, tools 1.30.0.
+Data 738, schema 25, tools 1.30.0.
 
 **Issue #22, steps 0 and 1: hardware claims (schema 25, tools 1.30.0, package 0.10.0).**
 `HardwareUnit` nodes (SID voices, sprites, CIA timers, TOD and ports, the
@@ -44,6 +44,33 @@ Step 0: `sprite_multiplex_8`'s Cost held the recipe's demo payload
 (9,162); the three multiplexer calls measure at most 5,301. `simple-shmup`
 named `soft_scroll_h` and `sprite_collision_detect`, which it does not
 implement.
+**Candidate list, Tier B batch 1 (data 737).** Four measured items.
+`high_score_table_insert` on the text page with a KickAssembler recipe:
+a BCD compare from the most significant byte, a bounded shift and the
+tie rule, four inserts checked against an expected table byte for byte,
+the worst insert 481 cycles by CIA timer and by the instruction count;
+it realises the "table re-sorted" check on the front-end pattern, which
+the complete-game build of the night before skipped. The CIA revision:
+VICE 3.10 models the one-cycle difference between the old 6526 and the
+6526A or 8521, measured as an alternating latency pair of `$12`/`$11`
+under `-ciamodel 0` and `$10`/`$11` under model 1, the default behaving
+as the new part; new pitfall `cia_revision_irq_one_cycle_late` with a
+detection recipe pinned under the old model on both regions. The
+time-of-day alarm: `tod_alarm_interrupt` with a recipe that sets the
+clock, arms an alarm three seconds ahead and reads the time in the
+handler; it fired after 149 PAL and 179 NTSC frames against 150 and 180
+expected, the one-frame shortfall being the mains tick's phase, and with
+the 50/60 Hz bit the wrong way the same alarm took 180 PAL frames and 149
+NTSC, the drift the page quotes. `isqrt_16bit` and `atan2_8bit` on the
+maths page: the root exact on 35 cases and within bounds on all 65,536
+inputs (869 cycles worst), the angle within one unit of 256 on 36 cases
+on the machine and on all 65,536 pairs in the host model (381 cycles
+worst). The VICE reference now says that the exit screenshot is the
+draw buffer at the cycle the limit hits, rows above the beam new and
+rows below from the previous field, measured on the eight-way scroll
+recipe while its pin was chosen. Left open: the PAL alarm's arrival
+varying by about fifty cycles between identical runs; the machine sweep
+of every atan2 pair; every CIA figure is VICE's, none from silicon.
 
 **Issue #21, ES-19 to ES-22.** `reu_dma` (one cycle a byte blanked;
 badlines and sprites slow it with the screen on), `four_player_read`
