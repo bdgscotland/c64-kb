@@ -401,6 +401,25 @@ static void vic_compare(void)
         vic_wrong++;
 }
 
+// ---- the brute's cells against his ground line ---------------------------------
+// Every frame he is drawn: the last line of his block (row b_row + 5) must
+// be his ground line or up to 7 lines above it, worked out here from the
+// character grid (row r starts at line 51 + 8r). A picture a row off
+// passes the page and pixel checks that take his row from brute.c; this
+// does not.
+static unsigned brute_rows_seen, brute_rows_wrong;
+
+static void brute_row_check(void)
+{
+    if (!b_drawn)
+        return;
+    brute_rows_seen++;
+    int feet = 51 + 8 * ((int)b_row + 6) - 1;
+    int d = (int)b_fy - feet;
+    if (d < 0 || d > 7)
+        brute_rows_wrong++;
+}
+
 static void grade(void)
 {
     unsigned value = 0;
@@ -421,6 +440,7 @@ static void grade(void)
     if (brute_late || kos_brute < 2)                        fails |= 0x0400;
     if (hits_wrong || hits_seen < 20)                       fails |= 0x0800;
     if (vic_wrong || vic_frames < 2000)                     fails |= 0x1000;
+    if (brute_rows_wrong || brute_rows_seen < 500)          fails |= 0x2000;
 
     bool ok = fails == 0;
     RESULT = ok ? 0x01 : 0x02;
@@ -428,6 +448,11 @@ static void grade(void)
     // Where the enemy's name goes: no enemy is left, so no face covers it.
     put_text(21, 20, "                    ");
     put_text(21, 23, ok ? "result 01 pass" : "result 02 fail");
+    if (METER_WINDOW == 4)
+    {
+        put_text(24, 10, "run");                        // the whole run's worst frame
+        put_num(24, 14, run_worst, 5);
+    }
     if (!ok)
     {
         put_hex(HUDPAGE + 24 * 40 + 12, fails, 4);     // which checks, as bits: row 24
@@ -485,6 +510,7 @@ static void autopilot_frame(void)
         return;
     }
     photo_frame();
+    brute_row_check();
     // Stage 3's first wave beaten: grade before the second arrives.
     bool beaten = stage == 2 && wave == 1 && fmode[1] == M_OFF && fmode[2] == M_OFF && fmode[3] == M_OFF;
     if (state == ST_PLAY && beaten && ++grade_wait == GRADE_DELAY)

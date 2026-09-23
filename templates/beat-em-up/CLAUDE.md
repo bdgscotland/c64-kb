@@ -42,7 +42,7 @@ this program depends on:
 - The scroll never writes the page on display but for the brute's cells:
   it prepares the other page four rows a frame (`src/view.c`). Keep the
   camera at a pixel a frame.
-- The frame is nearly full on NTSC (16,465 of 17,095 at worst, README):
+- The frame is nearly full on NTSC (16,593 of 17,095 at the run's worst, README):
   meter anything you add, with `-dPROF=n` for one subsystem and
   `-dMETER_WINDOW=n` for another part of the run.
 - World x stays below 32,768 and is compared as unsigned: Oscar64 compares

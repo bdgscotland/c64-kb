@@ -25,7 +25,9 @@ static unsigned ap_frames;
 //    two thugs, the hero's KO (the run's worst window, measured: README.md);
 // 1: from the third stage's lock: three thugs, eight sprites in the band;
 // 2: from the first stage clear, the walk: every frame scrolls;
-// 3: from the first stage's lock: two thugs, then the brute.
+// 3: from the first stage's lock: two thugs, then the brute;
+// 4: every play frame, for the whole run's worst (main.c, run_worst; the
+//    meter itself still records only the first 255).
 #ifndef METER_WINDOW
 #define METER_WINDOW 0
 #endif
@@ -36,6 +38,7 @@ static bool ap_recording(void)
     case 1:  return locks >= 3;
     case 2:  return (events & EV_UNLOCK) != 0;
     case 3:  return locks >= 1;
+    case 4:  return true;
     default: return locks >= 2;
     }
 }

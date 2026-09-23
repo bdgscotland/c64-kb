@@ -54,8 +54,8 @@ include $(HARNESS)/harness.mk
 # scanning the run; a stop is 64 frames, about 1.26M cycles on PAL and
 # 1.09M on NTSC. A changed AI, wave or art moves the stops: re-scan with
 # `-dDEBUG_AT=n` builds or shots, and re-pin.
-FLICKER_PAL  := 34250000 34750000 44250000 44750000 80500000 81000000
-FLICKER_NTSC := 30700000 31100000 42900000 43300000 78300000 78450000
+FLICKER_PAL  := 34200000 34700000 44250000 44750000 80700000 81200000
+FLICKER_NTSC := 30600000 31100000 42900000 43400000 78700000 78950000
 PRG_FLICKER := build/$(NAME)-flicker.prg
 $(PRG_FLICKER): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build

@@ -189,7 +189,7 @@ static void end_game(void)
 // (engine.asm times them on CIA2 timer B). meter_add subtracts the empty
 // C bracket once, so it is added back: timer B's own start-stop cost is a
 // few cycles, not the C bracket's.
-static void fold_irq_time(bool add)
+static unsigned fold_irq_time(bool add)
 {
     __asm { sei }
     unsigned c = *(volatile unsigned *)ASM_IRQ_CYC;
@@ -198,7 +198,13 @@ static void fold_irq_time(bool add)
     __asm { cli }
     if (add && c)
         meter_add(c + meter_zero);
+    return add ? c : 0;
 }
+
+// The worst frame of every metered play frame, not only the 255 the meter
+// records: with -dMETER_WINDOW=4 every play frame is metered, and the
+// verdict prints this on row 24 ("RUN nnnnn").
+static unsigned run_worst;
 
 #if AUTOPILOT
 #include "autopilot.h"
@@ -301,9 +307,16 @@ int main(void)
 #if FRAME_METER
         if (metering)
         {
+            unsigned sum = 0;
             if (!PROF)
-                METER_PAUSE;        // the main loop's share
-            fold_irq_time(!PROF || PROF == 5);  // the IRQs' share outside it
+            {
+                unsigned r = meter_read();  // METER_PAUSE, keeping the figure
+                meter_add(r);
+                sum = r - meter_zero;       // the main loop's share
+            }
+            sum += fold_irq_time(!PROF || PROF == 5);  // the IRQs' share outside it
+            if (sum > run_worst)
+                run_worst = sum;
             meter_frame();          // the frame's own work ends here
         }
         else

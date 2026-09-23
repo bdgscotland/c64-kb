@@ -105,10 +105,22 @@ default is the run's worst:
 
 | n | Window (255 play frames from) | PAL worst / typical | NTSC worst / typical |
 |---|---|---|---|
-| 0 (default) | the second stage's lock: the brute, two thugs, the hero's KO | 14,960 / 9,359 | 16,464 / 9,897 |
+| 0 (default) | the second stage's lock: the brute, two thugs, the hero's KO | 14,946 / 9,342 | 16,439 / 9,900 |
 | 1 | the third stage's lock: three thugs, eight sprites in the band | 12,255 / 7,317 | 13,254 / 7,990 |
 | 2 | the first stage clear: the walk, every frame scrolls | 7,343 / 6,979 | 8,215 / 7,304 |
 | 3 | the first stage's lock: two thugs, then the brute | 10,930 / 6,132 | 10,744 / 6,421 |
+| 4 | every play frame of the run (the verdict prints `RUN`, the worst) | 15,246 | 16,593 |
+
+Window 0 is the worst of the 255-frame windows, but not the worst frame of
+the run: with every play frame metered (`-dMETER_WINDOW=4`), the worst is
+15,246 cycles on PAL and 16,593 on NTSC. NTSC then has 502 cycles spare,
+about 250 once the IRQs' uncounted entry and exit are taken off (97% of
+the frame used). One more feature on the fighters (a weapon, a fifth
+fighter, a heavier AI) will drop frames on NTSC: meter it with
+`-dMETER_WINDOW=4` before and after. (Rows 1-3 were measured on the build
+before the brute's row check, which only adds bookkeeping outside the
+bracket; the review's comparator measured the run's worst as 15,257 /
+16,624 on its own copy.)
 
 The frame is 19,656 cycles on PAL and 17,095 on NTSC. The IRQs are in the
 figure: one that lands inside the main loop's bracket is in its wall time;
@@ -117,12 +129,16 @@ one that lands outside times itself on CIA2 timer B and is added
 and exit around the timer, are not counted (arithmetic from the listing,
 the #39 review; an earlier version of this page said 40): a typical frame,
 all three IRQs outside the bracket, reads about 370 low, a worst frame
-about 250. NTSC's worst plus that is about 16,700 of 17,095. No play
+about 250. The run's NTSC worst plus that is about 16,850 of 17,095. No play
 frame's work ran past the next blank in the whole run, on either model
 (the verdict's `late`, 0). The autopilot's own checks (the bot, the VIC
 read-back) run after the work, outside the bracket; with them the loop ran
-past a blank 89 times on PAL and 610 on NTSC, which slows the AUTOPILOT
-run, not the game.
+past a blank 98 times on PAL and 631 on NTSC (the `slow` count, printed on
+a failed verdict, not graded). So the AUTOPILOT run, on NTSC above all, is
+not a real-time image of the release build: its game logic is the same
+frame by frame, but about one loop in seven on NTSC takes two frames. The
+release build has none of that bookkeeping; its frames are the metered
+ones.
 
 Per subsystem in window 0, built with `-dPROF=n` (worst / typical):
 
@@ -180,13 +196,15 @@ The self-check (`src/verdict.h`) grades the game's own state after stage
 - the score equal to the hits and KOs counted; one life lost;
 - no play frame late; the fighter band's IRQ never late; no part dropped;
 - both pages equal to the street and the brute's cells at their columns;
-  his cell moves always before his top row; two brutes beaten;
+  his cell moves always before his top row; two brutes beaten; every
+  frame he is drawn, the last line of his block on his ground line or up
+  to 7 lines above it (a picture a row low passes every other check);
 - every hit recomputed on its own: the lane difference and the box
   overlap (`check_hit`). The bot throws one punch at an enemy a lane away,
   which must count as a miss;
 - the fighter band read back from the VIC every frame (the IRQ at line 76
   copies `$D000`-`$D010`, `$D015` and `$D01B`) against an independent
-  sort: 4,115 frames compared on PAL, 4,068 on NTSC, none wrong
+  sort: 4,112 frames compared on PAL, 4,066 on NTSC, none wrong
   (56 hits recomputed, none wrong);
 - the hero's parts in the table the IRQ shows; the camera at the last
   lock; three photo stops.
@@ -197,7 +215,8 @@ cross-lane miss); the band filled far to near (fails: the VIC read-back,
 1,669 frames); the `$D010` bit dropped (fails: the VIC read-back and the
 hero's parts); `$D01B` never set (fails: the VIC read-back, 495 frames);
 the HUD redraw put back after GAME OVER, as the first draft had it (fails:
-GAME OVE). The figures are from those runs. The FLICKER_DEMO
+GAME OVE); the brute drawn a row low (fails: the brute row check alone,
+fail bits 2000). The figures are from those runs. The FLICKER_DEMO
 build is the flicker check's own mutation.
 
 ## Extending it
@@ -253,8 +272,8 @@ Built and checked with the build named in c64-kb's CLAUDE.md (1.32.271
 plus the local fix c1270bc) and with the released v1.32.273: on both,
 `make shot check` 29 of 29, `make selftest`, `make flickercheck` 12 of 12
 and the demo caught, `make gameover` 8 of 8, `make claims` 0 violations.
-The meter reads a little lower on v1.32.273 (window 0: 14,759 / 9,031 PAL,
-16,283 / 9,588 NTSC). Two faults shape the code:
+The meter reads a little lower on v1.32.273 (window 0: 14,773 / 9,131 PAL,
+16,297 / 9,598 NTSC). Two faults shape the code:
 
 - c64-kb #30 fault 8, on both compilers at every level: an `int` loaded
   from an `unsigned` of 32,768 or more is compared as if it were not
