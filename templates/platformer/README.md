@@ -73,8 +73,8 @@ autopilot run, VICE x64sc 3.10, `make shot check`:
 
 | Model | Worst | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 11,772 | 6,226 | 19,656 |
-| NTSC | 12,222 | 6,585 | 17,095 |
+| PAL | 11,758 | 6,212 | 19,656 |
+| NTSC | 12,216 | 6,573 | 17,095 |
 
 Per subsystem, built with `-dPROF=n` (worst / typical, PAL; NTSC within
 400 cycles of each):
@@ -93,7 +93,7 @@ below the first window's, their typical about 1,000 cycles above it. Not
 re-measured on this build.
 
 The worst frames of the parts do not fall together: the whole frame's
-worst is 11,772, not their sum. Every figure is wall time, so badline and
+worst is 11,758, not their sum. Every figure is wall time, so badline and
 sprite DMA are in it, and so is the split IRQ when it lands inside the
 bracket (work past line 212; about 56 cycles by arithmetic). The IRQ at
 251 falls just before the bracket opens and is not counted: about 66
@@ -102,15 +102,15 @@ cycles by arithmetic.
 Against `plan-budget` (PLAN.md): it gave 10,167 to 10,765 cycles plus
 1,432 fixed, 11,599 to 12,197 in all, verdict undetermined, with the
 scroll left out (its only figure was the old recipe's 74,041-cycle shift,
-issue #18) and six techniques unknown. The measured worst, 11,772 PAL and
-12,222 NTSC, falls inside that range (an earlier build, before the walker
+issue #18) and six techniques unknown. The measured worst, 11,758 PAL and
+12,216 NTSC, falls inside that range (an earlier build, before the walker
 and HUD cuts below, was 356 and 785 cycles above its top). The parts disagree more than
 the total: the budget charges per-frame-hitbox 3,693 and decimal-print
 1,361 from their recipes, where this game tests a few box pairs and adds
 score digits without division. For the player physics it charges only
 slope_collision's 455, with no figure for fixed_point_8_8 or
 jump_arc_table; measured, the player is 4,237 worst. The measured typical
-frame, 6,226, is far under the budget's low end, because most frames have
+frame, 6,212, is far under the budget's low end, because most frames have
 no column slice and no HUD change.
 
 ## Enemies on screen
@@ -124,7 +124,7 @@ and the meter's worst inside one frame on each model.
 |---|---|---|---|---|
 | walkers probing every step, HUD redrawn whole | 6 | 17,105 | 17,262 | yes |
 | walker judges the column ahead once; HUD figures only | 6 | 15,632 | 15,977 in frames 1-255; 17,618 from frame 400 | on NTSC |
-| the same | 5 | 14,523 | 14,829 in frames 1-255; 15,353 from frame 400 | none, either model |
+| the same | 5 | 14,523 | 14,829 in frames 1-255; 15,353 from frame 400 (measured once; no target re-measures that window) | none, either model |
 
 So `NSLOT` is 5: sprites 1-5 are enemies, sprite 6 is free. Six live
 enemies overran an NTSC frame by about 520 cycles; a sixth needs about

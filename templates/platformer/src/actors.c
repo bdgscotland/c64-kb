@@ -91,7 +91,7 @@ static void set_window(void)
 // or low, or a wall there turns the walker. Each step then costs one
 // surface_walk for the ground snap (about 300 cycles by the meter's PROF
 // runs, against about 1,100 when every step also probed walls and the
-// ground ahead; README, "Six live enemies").
+// ground ahead; README, "Enemies on screen").
 #define WALK_AHEAD 6
 
 static void walker(char s)
