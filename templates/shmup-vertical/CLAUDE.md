@@ -26,19 +26,23 @@ What will bite you here:
 
 - `src/kernel.asm` owns the raster IRQ (`$FFFE`, KERNAL banked out). Add a
   split as a new body in its chain; do not install a second handler.
-- Nothing may be on raster lines 209-214 (sprites stop at Y 187): the
-  panel split is timed there. Recheck the split on all eight YSCROLL
-  phases after touching it (`-dFREEZE_Y=0..7`, see PLAN.md).
+- No sprite may reach raster line 214 (sprites stop at Y 187, last line
+  208): a sprite there delays the panel split's writes (measured: 16 of
+  16 PAL shots broken with eight sprites on it; lines 209-213 were clean).
+  `make check` runs `make phases`, which compares the panel at all eight
+  YSCROLL phases; keep it passing after touching the split.
+- `make stage` meters the heaviest frame the game makes; re-run it after
+  adding work to a frame. The verdict fails if a play frame overran.
 - The two playfield screens are drawn from the map; write game text to
   `level_screen()` and give its cells colour RAM below 8 (hires).
-- Oscar64's zero page reached `$55` here; the kernel uses none. Pass values
+- Oscar64's zero page reached `$56` here; the kernel uses none. Pass values
   to the blob through its own bytes (`ASM_<LABEL>` in `build/asm.h`).
 - Disk calls go through `src/hiscore.c`, which stops the chain and turns
   sprites off around them. A shot pin inside a disk write leaves a splat
   file on `build/shmup-vertical.d64`: `make clean`.
 - `-dPROFILE=1` times each step of `play_frame` into `$0340` (CIA1 timer B,
   IRQs held off per step); `-dLOOP_TEST=1` plays to GAME OVER and back to
-  the title.
+  the title; `make joy` with `tools/drive.py` drives the normal game.
 
 ## Before any code
 

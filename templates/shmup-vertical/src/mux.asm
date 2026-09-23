@@ -18,7 +18,12 @@
 .const JOIN    = 4         // sprites within 4 lines of a zone's first join it
 .const LEAD    = 3         // zone IRQ line = first Y - LEAD - sprites in zone
 .const MARGIN  = 3         // late guard: within 3 lines of the next line? run it now
-.const MAX_SY  = 187       // lowest Y shown: its last line is 208, clear of the split
+// Lowest Y shown: its last line is 208. A sprite on line 214 breaks the
+// panel split (its DMA delays the split's writes: with 8 sprites there, 16 of
+// 16 PAL shots and 4 of 16 NTSC broke); sprites ending on line 213 left it
+// clean (0 of 16 on each model). Measured in VICE x64sc 3.10 in the review of
+// this starter. 187 keeps 5 lines of margin; 192 is the measured limit.
+.const MAX_SY  = 187
 .const OFF_Y   = $ff       // an actor with this Y is not shown
 
 // ---- the actor tables C writes ------------------------------------------

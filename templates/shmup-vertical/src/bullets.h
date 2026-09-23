@@ -4,7 +4,10 @@
 
 #include "game.h"
 
-#define NB 4                    // bullets, one reserved glyph each ($F8-$FB)
+// Bullets, one reserved glyph each ($F8-$FB). At most 3 fly at once: one
+// shot per 7 frames (P_COOL 6), and a bolt from the lowest ship (Y 180)
+// lives 16 frames (arithmetic). The fourth is room for a faster gun.
+#define NB 4
 
 extern char b_live[NB];
 extern char b_hx[NB];           // half X of the bolt's pixel pair

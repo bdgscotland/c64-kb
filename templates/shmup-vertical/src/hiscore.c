@@ -12,10 +12,18 @@
 // holds still meanwhile: saving happens on the game-over screen.
 //
 // Sprites go off too. With the autopilot's eleven sprites left on, the
-// status read after writing HISCORE never returned on PAL in 3 of 3 runs on a
-// fresh disk (VICE x64sc 3.10, true drive); with $D015 = 0 it returned in
-// every run, PAL and NTSC. Sprite DMA stealing cycles from the KERNAL's
-// serial timing is the likely cause; it was not isolated further.
+// KERNAL's serial transfers hung: NTSC in 3 of 3 runs (the clock wait in
+// ACPTR), PAL in 1 of 3 (the EOI handshake in ISOUR). The review of this
+// starter isolated the cause with a minimal program: sprite DMA on badline
+// lines during the transfer. It hung with 3 to 8 sprites on screen, not with
+// the sprites above the display (no badlines), not with the screen blanked,
+// not with 0 or 1 sprite; and this game with sprites on but the screen
+// blanked passed 3 of 3 on each model. Measured in VICE x64sc 3.10 with the
+// true 1541; real hardware not measured.
+//
+// A splat file (the drive answers 60, WRITE FILE OPEN: a save cut off by a
+// reset or power-off) is scratched and written again, as a missing one is.
+
 #include "hiscore.h"
 #include <c64/kernalio.h>
 
@@ -102,8 +110,8 @@ void hiscore_load(void)
     drive_reply("");
     if (disk_code == 0 && n == sizeof(record) && back[0] == 'S' && back[1] == 'V' && back[2] == VERSION)
         hiscore = back[3] | (back[4] << 8);
-    else if (disk_code == 62 || disk_code == 0)
-        write_record();                 // first run, or an old layout: write ours
+    else if (disk_code == 62 || disk_code == 0 || disk_code == 60)
+        write_record();                 // first run, an old layout or a splat: write ours
     else
         disk_on = false;                // 74 no disk, or anything unexpected
     io_end();

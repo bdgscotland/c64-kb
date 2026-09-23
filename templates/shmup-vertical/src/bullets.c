@@ -8,8 +8,9 @@
 // rows 2-5 of its cell tall. It moves up 7 lines a frame while the playfield
 // moves down 1, so it stays on rows 2-5 of whatever cell it is in: the
 // invariant b_line - 50 - YSCROLL = 8 * row holds every frame, the carry
-// frame included (YSCROLL 7 to 0, same row). A bolt never straddles two
-// cells and needs one glyph.
+// frame included (YSCROLL 7 to 0, same row). b_line is the raster line of
+// the bolt's top row (row 2 of the cell, whose top is 48 + YSCROLL + 8 *
+// row). A bolt never straddles two cells and needs one glyph.
 //
 // Colour: every playfield cell is multicolour with colour RAM $0F, so the
 // bolt's pair %11 draws in yellow and colour RAM is never touched.

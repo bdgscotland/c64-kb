@@ -15,7 +15,11 @@ lives, game over, back to the title.
 - A three-voice tune plays; shot, explosion and ship-lost effects borrow
   voice 3 and hand it back.
 - The high score is saved to drive 8 and loaded at start. With no drive,
-  the game runs without saving.
+  the game runs without saving. A save that was cut off (a splat file) is
+  scratched and written again.
+
+Fire starts a game on the title only after it has been released: hold it
+through GAME OVER and the title waits.
 
 Make a project from it in c64-kb with
 `npm run new-project -- shmup-vertical <dir>`, then `make run`.
@@ -35,6 +39,9 @@ Make a project from it in c64-kb with
 | `src/kernel.asm` | The raster IRQ chain and the panel split (KickAssembler) |
 | `src/mux.asm` | The sprite multiplexer: sort, build, zone IRQs |
 | `src/sound.asm` | The music player with effects inside it, and the tune |
+| `tools/phases.py` | `make phases`: the panel at every YSCROLL phase against the graded one |
+| `tools/meter.py` | `make stage`: reads the meter off the staged run's shots |
+| `tools/drive.py` | Plays the `make joy` build headless over VICE's binary monitor |
 | `PLAN.md` | The plan, with the c64-kb tool output it was built from |
 | `expect.json` | What the screenshots must show |
 
@@ -58,15 +65,26 @@ VICE x64sc 3.10, the autopilot's 240 play frames, the harness meter:
 
 | Model | Worst frame | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 12,471 cycles | 7,099 | 19,656 |
-| NTSC | 12,715 cycles | 7,283 | 17,095 |
+| PAL | 12,472 cycles | 7,103 | 19,656 |
+| NTSC | 12,721 cycles | 7,293 | 17,095 |
 
-The figures hold the C loop and every IRQ, with badlines and sprite DMA;
-about 45 cycles of entry and exit per IRQ outside the C loop's bracket are
-not in them. The script does not stage the heaviest case (12 enemies, 4
-bullets and a kill on a carry frame); PLAN.md bounds it at about 15,600
-cycles from the steps' separate maxima. The panel was pixel-identical at
-all eight YSCROLL phases on both models. More in PLAN.md.
+The figures hold the C loop's frame and every IRQ, with badlines and
+sprite DMA. Not in them: about 45 cycles of entry and exit per IRQ outside
+the C loop's bracket, and, in AUTOPILOT builds only, `meter_print` and the
+loop head, which run outside the bracket every frame and cost up to 3,404
+cycles on PAL and 3,301 on NTSC. Release builds have no `meter_print`.
+
+The graded script is not the heaviest case. `make stage` plays one that
+puts 12 enemies, bolts and a kill in the same frames: worst 14,073 PAL
+and 14,740 NTSC, typical 9,601 and 10,236. A sweep of its timing in the
+review found at most 14,575 PAL and 15,066 NTSC. At most three bolts fly
+at once, and the carry frame is the cheapest phase. Re-run `make stage`
+after adding work to a frame; the verdict counts frames that ran into the
+next.
+
+`make phases` (part of `make check`) freezes the game on each of the eight
+YSCROLL phases and wants the panel identical to the graded one on both
+models: a bad entry in the split's delay table fails it. More in PLAN.md.
 
 ## Next steps
 
@@ -91,7 +109,8 @@ formation). Paths are the byte arrays above them.
 
 - Colour per map cell: colour RAM cannot be double-buffered, so every
   playfield cell shares one colour RAM value and the map is 4 colours.
-- Sprites below line 208: the panel split is timed on lines 212-215.
+- Sprites below line 208: a sprite on line 214 breaks the panel split
+  (measured); 209-213 were clean, and MAX_SY keeps 5 lines of margin.
 - Enemy fire, power-ups, a boss, a high-score table with names.
 - Keyboard and a second joystick; RESTORE does nothing.
 
@@ -100,9 +119,11 @@ formation). Paths are the byte arrays above them.
 `make shot check` runs the autopilot on PAL and NTSC with drive 8
 attached. The script shoots darts and saucers, takes one ram, fires
 through a parade of ten enemies, then stops; the program freezes on
-YSCROLL 3, saves and reloads the high score and grades 14 facts, printing
+YSCROLL 3, saves and reloads the high score and grades 15 facts, printing
 the number of the first that fails. `expect.json` then checks the verdict,
 the text, the meter, the ship and all ten parade sprites, the river's
 banks at 30 rows scrolled, the split and the panel. `make selftest` starts
 the ship 16 pixels to the right and must fail. `make claims` checks every
-store the program makes against what the Makefile declares.
+store the program makes against what the Makefile declares. `make joy`
+builds the normal game reading its stick from `$02FE`, for
+`python3 tools/drive.py build/shmup-vertical-joy.prg "until:PUSH FIRE" tap:fire ...`.

@@ -162,6 +162,22 @@ static const char script[][2] = {
     { 250, 0xef }, { 250, 0xef }, { 250, 0xef }, { 250, 0xef }, { 250, 0xef }
 };
 #define FREEZE_Y 8
+#elif defined(STAGE)
+// Measuring only (-dSTAGE=1, make stage): the heaviest frame the game makes.
+// Out of the darts' way, wait for the parade and the row-32 swoop (12
+// enemies flying), then fire up a parade column, so bolts, a kill and every
+// enemy share frames. The meter records play frames 150-399. Taken from the
+// review of this starter.
+static const char script[][2] = {
+    {   2, 0xff }, {   2, 0xef },
+    {  56, 0xf7 },                              // right to hx 140
+    { 190, 0xff },                              // wait for the parade and the swoop
+    {  16, 0xfb },                              // left under a parade column
+    { 250, 0xef },                              // fire
+};
+#undef PLAY_FRAMES
+#define PLAY_FRAMES 400
+#define STAGE_FROM 150
 #else
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },               // title: fire starts the game
@@ -185,6 +201,15 @@ static char port_read(void)
     }
     return out;
 }
+#elif defined(JOY_SOURCE)
+// Headless driving of the normal game (make joy, tools/drive.py): the port
+// byte comes from RAM at JOY_SOURCE, which a VICE monitor writes; the
+// windowless VICE's joyport commands do not reach $DC00.
+#define PLAY_FRAMES 1
+static char port_read(void)
+{
+    return *(volatile char *)JOY_SOURCE;
+}
 #else
 #define PLAY_FRAMES 1
 static char port_read(void)
@@ -194,10 +219,28 @@ static char port_read(void)
 #endif
 
 // ---- frames ------------------------------------------------------------------------
+// A play frame whose work runs past the next frame IRQ (line 252) loses a
+// frame: the scroll and the hidden screen then fall a frame out of step
+// (level_frame takes values the screen does not show yet, and level_render
+// can draw into the screen on display). Nothing guards that; overruns counts
+// it, and the verdict wants 0. Keep a frame's work under the frame. In a
+// meter build the count stops with the recording: the frame after it spends
+// several frames finding the median, harness work outside the brackets.
+static char last_frame_cnt;
+static unsigned overruns;
+
 static void wait_frame(void)
 {
     while (!K_FRAME_FLAG) ;
     K_FRAME_FLAG = 0;
+    char f = K_FRAME_CNT;
+    bool counting = state == ST_PLAY && play_frames;
+#if FRAME_METER
+    counting = counting && play_frames <= PLAY_FRAMES;
+#endif
+    if (counting && (char)(f - last_frame_cnt) != 1)
+        overruns++;
+    last_frame_cnt = f;
 }
 
 #if FRAME_METER
@@ -355,9 +398,14 @@ static void play_frame(char joy)
 #endif
 
 // ---- the verdict, after the script -------------------------------------------------
-// The script's own arithmetic and the model's: see PLAN.md. EXPECT_SCORE and
-// EXPECT_KILLS were read from the first passing run; the rest follow from
-// the script and the tables.
+// What the script does, by play frame (frame 0 is the second fire frame on
+// the title). A Python model of the script, waves, paths, bullets and boxes,
+// written in the review of this starter, matched the VICE kill log frame
+// for frame:
+//   37 a dart shot (50)    71 a dart rams the ship, in a still segment
+//   94, 113, 121, 128 saucers shot (100 each)
+// 450 points, 5 kills, K 1 4 0. After the ram the ship respawns at the start
+// and the script's last 27 frames move it 24 left and 3 down.
 #define EXPECT_DEATHS 1
 #define EXPECT_SCORE  45                // 450 points: 1 dart, 4 saucers
 #define EXPECT_KILLS  5
@@ -419,6 +467,7 @@ static char first_fail(void)
     CHECK(p_hx == END_HX && p_y == END_Y)               // 12 the ship where the script ends
     CHECK(K_SFX_TAKEN != 0)                             // 13 effects ran in the player
     CHECK(disk_round_trip)                              // 14 HISCORE written and read back
+    CHECK(overruns == 0)                                // 15 no play frame ran into the next
     return 0;
 }
 
@@ -475,7 +524,12 @@ int main(void)
     display_init();
     ACT_PTR[0] = SPR_BLOCK + F_SHIP;
     ACT_COL[0] = VCOL_LT_BLUE;
-    title_enter();                              // on screen while the disk works
+    title_enter();
+#if !AUTOPILOT && defined(JOY_SOURCE)
+    *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
+#endif
+    hold_screen();                              // show the title while the disk works: the
+                                                // kernel sets the VIC only in kernel_init
 #if AUTOPILOT
     hiscore_forget();                           // every graded run starts from no file
 #endif
@@ -514,6 +568,12 @@ int main(void)
                 bullets_reset();                // moves after this frame
                 state = ST_FROZEN;
                 break;
+            }
+#endif
+#if defined(STAGE) && FRAME_METER
+            if (play_frames == STAGE_FROM) {    // record the heavy part only
+                meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, PLAY_FRAMES - STAGE_FROM);
+                have_main = 0;
             }
 #endif
             meter_open();
