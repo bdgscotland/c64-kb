@@ -46,7 +46,10 @@ export function log(msg: string): void {
  * `forceRefit`) fit a fresh encoder over the full corpus, so all sparse
  * vectors share the same vocabulary indices, and persist it.
  */
-export function loadOrFitBM25(corpus: string[], forceRefit: boolean): { encoder: BM25Encoder; fitted: boolean } {
+export function loadOrFitBM25(
+  corpus: string[],
+  forceRefit: boolean,
+): { encoder: BM25Encoder; fitted: boolean } {
   const loaded = forceRefit ? null : loadBM25Vocab(VOCAB_FILE);
   if (loaded) return { encoder: loaded, fitted: false };
   const encoder = new BM25Encoder();
@@ -95,7 +98,8 @@ export function findMarkdown(root: string): string[] {
     if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
     // entry.parentPath is the directory the file was discovered in.
     const parent = entry.parentPath;
-    const rel = parent === root ? entry.name : `${parent.slice(root.length).replace(/^[/\\]+/, "")}/${entry.name}`;
+    const rel =
+      parent === root ? entry.name : `${parent.slice(root.length).replace(/^[/\\]+/, "")}/${entry.name}`;
     if (rel.startsWith("superpowers/") || rel.startsWith("superpowers\\")) continue;
     results.push(rel.replace(/\\/g, "/"));
   }

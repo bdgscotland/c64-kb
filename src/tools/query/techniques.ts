@@ -218,11 +218,26 @@ function renderTechnique(
   const line = (label: string, items: string[]) => {
     if (items.length > 0) out += `**${label}:** ${items.join(", ")}\n`;
   };
-  line("Uses registers", t.uses_registers.map((r) => r.name));
-  line("Uses KERNAL", t.uses_kernal.map((k) => k.name));
-  line("Requires", (t.requires ?? []).map((r) => r.name));
-  line("Required by", (t.required_by ?? []).map((r) => r.name));
-  line("Mitigates", (t.mitigates ?? []).map((m) => `${m.name} (${m.severity})`));
+  line(
+    "Uses registers",
+    t.uses_registers.map((r) => r.name),
+  );
+  line(
+    "Uses KERNAL",
+    t.uses_kernal.map((k) => k.name),
+  );
+  line(
+    "Requires",
+    (t.requires ?? []).map((r) => r.name),
+  );
+  line(
+    "Required by",
+    (t.required_by ?? []).map((r) => r.name),
+  );
+  line(
+    "Mitigates",
+    (t.mitigates ?? []).map((m) => `${m.name} (${m.severity})`),
+  );
   if (t.recipes.length > 0) {
     out += `\n## Recipes\n\n`;
     for (const r of t.recipes) out += `- \`${r.name}\` (${r.toolchain})\n`;

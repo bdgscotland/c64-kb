@@ -23,8 +23,10 @@ function parseArray(v?: string): string[] {
 /** Load addresses from the listing itself -> OCCUPIES edges to the MemoryRegion nodes they fall in. */
 function occupiesEntities(content: string, recipe: string): GraphEntity[] {
   const ranges: [number, number][] = [];
-  for (const m of content.matchAll(KICK_ORIGIN)) ranges.push([parseInt(group(m, 1), 16), parseInt(group(m, 1), 16)]);
-  for (const m of content.matchAll(CA65_ORIGIN)) ranges.push([parseInt(group(m, 1), 16), parseInt(group(m, 1), 16)]);
+  for (const m of content.matchAll(KICK_ORIGIN))
+    ranges.push([parseInt(group(m, 1), 16), parseInt(group(m, 1), 16)]);
+  for (const m of content.matchAll(CA65_ORIGIN))
+    ranges.push([parseInt(group(m, 1), 16), parseInt(group(m, 1), 16)]);
   for (const m of content.matchAll(OSCAR_REGION))
     ranges.push([parseInt(group(m, 1), 16), parseInt(group(m, 2), 16) - 1]);
   const seen = new Set<string>();

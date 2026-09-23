@@ -52,18 +52,18 @@ describe("failureDiagnose", () => {
     await f.linkCausedBy("sprite_flicker_periodic", "sprite_multiplex_8", "Technique");
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("matches a known symptom keyword (black screen)", async () => {
     const r = await failureDiagnose("black screen");
     expect(r.structured.matches.length).toBeGreaterThanOrEqual(1);
-    expect(r.structured.matches[0].symptom).toBe("black_screen");
+    expect(r.structured.matches[0]!.symptom).toBe("black_screen");
   });
 
   it("ranks matches by relevance", async () => {
     const r = await failureDiagnose("sprites flicker every other frame");
     expect(r.structured.matches.length).toBeGreaterThanOrEqual(1);
-    const top = r.structured.matches[0];
+    const top = r.structured.matches[0]!;
     expect(["sprite_flicker_periodic", "sprite_flicker_random"]).toContain(top.symptom);
   });
 });

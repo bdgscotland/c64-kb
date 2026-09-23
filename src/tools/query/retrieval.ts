@@ -69,7 +69,11 @@ export async function lookupOpcode(byteOrMnemonic: string): Promise<OpcodeLookup
   // The opcode docs use `### $XX — MNEMONIC #addressing — description` headings, so
   // we search for the byte form or the mnemonic and rank by score.
   const term = byteOrMnemonic.trim().toUpperCase();
-  const { chunks: results } = await searchChunks({ query: `6510 opcode ${term}`, limit: 5, keywordText: term });
+  const { chunks: results } = await searchChunks({
+    query: `6510 opcode ${term}`,
+    limit: 5,
+    keywordText: term,
+  });
 
   // Prefer results from the opcode docs
   const opcodeDocs = results.filter(
@@ -114,8 +118,7 @@ export async function palNtscDiff(topic: string, region: PalNtscRegion = "both")
     lines_per_frame: row.lines,
     cycles_per_line: row.cycles,
   }));
-  const regions =
-    region === "both" ? allRegions : allRegions.filter((r) => r.name.toLowerCase() === region);
+  const regions = region === "both" ? allRegions : allRegions.filter((r) => r.name.toLowerCase() === region);
 
   const top = ctx.slice(0, 3);
   const structured: PalNtscDiffOutput = { topic, regions, documentation: top.map(toDocChunk) };

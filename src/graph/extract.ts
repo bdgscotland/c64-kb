@@ -26,7 +26,12 @@ export {
   type CostKey,
   type TechniqueCost,
 } from "./extract/vocabulary.ts";
-export { RASTER_LINE_MAX, parseRasterBand, rasterBandsOverlap, type RasterBand } from "./extract/raster-band.ts";
+export {
+  RASTER_LINE_MAX,
+  parseRasterBand,
+  rasterBandsOverlap,
+  type RasterBand,
+} from "./extract/raster-band.ts";
 
 /**
  * Marker -> parser, in the order the markers are tested. A page carrying

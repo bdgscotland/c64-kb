@@ -31,7 +31,10 @@ export async function findStubTechniques(falkor: FalkorService): Promise<string[
      RETURN t.name AS name
      ORDER BY name`,
   );
-  const stubs = z.array(z.object({ name: z.string() })).parse(stubResult.data).map((r) => r.name);
+  const stubs = z
+    .array(z.object({ name: z.string() }))
+    .parse(stubResult.data)
+    .map((r) => r.name);
   if (stubs.length > 0) {
     console.warn(`[ingest] stub Technique nodes (typo in recipe.techniques array?): ${stubs.join(", ")}`);
     log(`STUB_TECHNIQUES ${stubs.join(", ")}`);

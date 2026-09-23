@@ -46,10 +46,15 @@ interface Section {
  * Cost rides the technique entity itself, not an edge, so it is settled
  * before the push. A Cost line without an honest basis is dropped whole.
  */
-function settledCost({ head, meta, sourcePath }: Section): { cost: TechniqueCost; cost_basis: CostBasis } | null {
+function settledCost({
+  head,
+  meta,
+  sourcePath,
+}: Section): { cost: TechniqueCost; cost_basis: CostBasis } | null {
   const where = `${sourcePath}: technique ${head.name}`;
   if (meta.cost === undefined) {
-    if (meta.costBasis !== undefined) warn(`${where} has a **Cost basis:** line but no **Cost:** line — ignored`);
+    if (meta.costBasis !== undefined)
+      warn(`${where} has a **Cost basis:** line but no **Cost:** line — ignored`);
     return null;
   }
   const basis = meta.costBasis;
@@ -108,7 +113,11 @@ function requiresEntities({ head, meta, sourcePath }: Section): GraphEntity[] {
   return out;
 }
 
-export function techniqueEntities(head: TechniqueHead, meta: TechniqueMeta, sourcePath: string): GraphEntity[] {
+export function techniqueEntities(
+  head: TechniqueHead,
+  meta: TechniqueMeta,
+  sourcePath: string,
+): GraphEntity[] {
   const section: Section = { head, meta, sourcePath };
   const technique = head.name;
   const cost = settledCost(section);
@@ -125,7 +134,8 @@ export function techniqueEntities(head: TechniqueHead, meta: TechniqueMeta, sour
   if (meta.region && meta.region !== "both") {
     out.push({ type: "technique_requires_region", technique, region: meta.region });
   }
-  for (const register of meta.usesReg ?? []) out.push({ type: "technique_uses_register", technique, register });
+  for (const register of meta.usesReg ?? [])
+    out.push({ type: "technique_uses_register", technique, register });
   for (const kernal of meta.usesKernal ?? []) out.push({ type: "technique_uses_kernal", technique, kernal });
   return out;
 }

@@ -138,7 +138,7 @@ const TechniqueRefSchema = z.object({ name: z.string(), title: z.string() });
 // figures were obtained, strongest first: measured-vice (run in VICE),
 // derived-listing (read off a built listing or map), arithmetic (worked
 // from settled constants), estimated (a judgement, not a measurement).
-const CostBasisSchema = z.enum(["measured-vice", "derived-listing", "arithmetic", "estimated"]);
+export const CostBasisSchema = z.enum(["measured-vice", "derived-listing", "arithmetic", "estimated"]);
 const TechniqueCostSchema = z.object({
   cycles_per_line: z.number().int().optional(),
   cycles_per_frame: z.number().int().optional(),

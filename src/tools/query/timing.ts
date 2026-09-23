@@ -42,7 +42,9 @@ async function spritesOnLine(opts: TimingBudgetOptions): Promise<{ sprites: numb
       name: opts.technique,
     }),
   ).at(0);
-  return typeof row?.n === "number" ? { sprites: row.n, source: "technique" } : { sprites: 0, source: "none" };
+  return typeof row?.n === "number"
+    ? { sprites: row.n, source: "technique" }
+    : { sprites: 0, source: "none" };
 }
 
 type Budget = Omit<TimingBudgetOutput, "notes">;
@@ -124,11 +126,18 @@ export async function timingBudget(opts: TimingBudgetOptions): Promise<TimingBud
     // A handler entered on a badline through the KERNAL vector has nothing
     // left on that line (63 - 43 - 36 < 0); report 0, and the notes say
     // to put splits on non-badlines.
-    user_cycles_per_line_badline: Math.max(0, rc.cycles_per_line - irq - BADLINE_CYCLES_LOST - sprite_dma_cycles),
+    user_cycles_per_line_badline: Math.max(
+      0,
+      rc.cycles_per_line - irq - BADLINE_CYCLES_LOST - sprite_dma_cycles,
+    ),
   };
   const structured: TimingBudgetOutput = { ...budget, notes: budgetNotes(budget, rc.lines_per_frame) };
 
-  getAnalytics().logQuery({ tool: "c64_timing_budget", query: `${opts.technique}:${region}`, resultCount: 1 });
+  getAnalytics().logQuery({
+    tool: "c64_timing_budget",
+    query: `${opts.technique}:${region}`,
+    resultCount: 1,
+  });
 
   return { structured, text: renderBudget(structured) };
 }

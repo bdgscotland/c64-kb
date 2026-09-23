@@ -35,11 +35,14 @@ function formatEntities(body: string, tool: string | undefined): GraphEntity[] {
 /** Edges from one line under a FileFormat H3 (`format`), or from a **Targets:** line anywhere. */
 function lineEntities(line: string, format: string | null, tool: string | undefined): GraphEntity[] {
   const p = PRODUCED_BY.exec(line);
-  if (p && format) return splitList(group(p, 1)).map((t): GraphEntity => ({ type: "produces", tool: t, format }));
+  if (p && format)
+    return splitList(group(p, 1)).map((t): GraphEntity => ({ type: "produces", tool: t, format }));
   const c = CONSUMED_BY.exec(line);
-  if (c && format) return splitList(group(c, 1)).map((t): GraphEntity => ({ type: "consumes", tool: t, format }));
+  if (c && format)
+    return splitList(group(c, 1)).map((t): GraphEntity => ({ type: "consumes", tool: t, format }));
   const tg = TARGETS.exec(line);
-  if (tg && tool) return splitList(group(tg, 1)).map((chip): GraphEntity => ({ type: "targets", tool, chip }));
+  if (tg && tool)
+    return splitList(group(tg, 1)).map((chip): GraphEntity => ({ type: "targets", tool, chip }));
   return [];
 }
 

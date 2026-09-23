@@ -184,7 +184,7 @@ describe("demoBriefing", () => {
     await f.linkTriggeredBy("sid_chip_variation", "sid_play_routine_pattern", "Technique");
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("returns a structured plan for a sprite-scroller brief", async () => {
     const r = await demoBriefing("sprite scroller with raster bars and SID music");
@@ -408,7 +408,7 @@ describe("gameBriefing", () => {
     await f.linkRecipeImplements("oscar64-sid-music-player", "sid_play_routine_pattern");
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("returns a structured plan with archetype for a shmup brief", async () => {
     const r = await gameBriefing("vertical scrolling shoot-em-up", "shmup");
@@ -472,7 +472,7 @@ describe("gameBriefing FORCED_TECHNIQUES_FOR_ARCHETYPE enforcement", () => {
     await f.linkTriggeredBy("dirty_cell_skip_leaves_overlay_trail", "text_mode_overlay_render", "Technique");
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("puzzle archetype always proposes text_mode_overlay_render even when the description omits rendering keywords", async () => {
     const r = await gameBriefing("a thinky logic game", "puzzle");
@@ -648,11 +648,11 @@ describe("gameBriefing reads the archetype from the graph", () => {
     expect(await f.linkRecipeScaffolds("oscar64-simple-shmup", "no_such_archetype")).toBe(false);
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("offers the recipe that SCAFFOLDS the archetype, and names its page in the text", async () => {
     const r = await gameBriefing("a shooter", "vertical_shmup");
-    const step = r.structured.build_order[0];
+    const step = r.structured.build_order[0]!;
     expect(step.label).toBe("Game scaffold (vertical_shmup archetype)");
     expect(step.recipes).toEqual(["oscar64-simple-shmup"]);
     // Once, on the scaffold step only: the same recipe implements
@@ -669,14 +669,14 @@ describe("gameBriefing reads the archetype from the graph", () => {
 
   it("gives an archetype with no SCAFFOLDS edge an empty scaffold step", async () => {
     const r = await gameBriefing("a falling-block game", "puzzle");
-    const step = r.structured.build_order[0];
+    const step = r.structured.build_order[0]!;
     expect(step.label).toBe("Game scaffold (puzzle archetype)");
     expect(step.recipes).toEqual([]);
     expect(r.text).not.toContain("copy the scaffold from");
     // No stub Archetype was created by the dropped edge above.
     expect(r.structured.archetype_not_found).toBeUndefined();
     const known = await f.roQuery(`MATCH (a:Archetype {name: "no_such_archetype"}) RETURN a.name AS name`);
-    expect(known.data ?? []).toHaveLength(0);
+    expect(known.data).toHaveLength(0);
   });
 
   it("forces every FEATURES target into the proposal, past the per-category cap", async () => {
@@ -767,8 +767,8 @@ describe("gameBriefing reads the archetype from the graph", () => {
 
   it("seeds the shmup scaffold recipe from the graph name, not the string 'shmup'", async () => {
     const r = await gameBriefing("a shooter", "vertical_shmup");
-    expect(r.structured.build_order[0].label).toContain("vertical_shmup");
-    expect(r.structured.build_order[0].recipes).toEqual(["oscar64-simple-shmup"]);
+    expect(r.structured.build_order[0]!.label).toContain("vertical_shmup");
+    expect(r.structured.build_order[0]!.recipes).toEqual(["oscar64-simple-shmup"]);
   });
 
   it("reports archetype_not_found with the known names for a name the graph lacks", async () => {
@@ -782,8 +782,8 @@ describe("gameBriefing reads the archetype from the graph", () => {
     expect(r.structured.brief).toContain("not an archetype the graph knows");
     expect(r.text).toContain("Known archetypes: action_puzzle, puzzle, vertical_shmup");
     // The plan is still built from the description; nothing is forced.
-    expect(r.structured.build_order[0].label).toContain("Game scaffold");
-    expect(r.structured.build_order[0].recipes).toEqual([]);
+    expect(r.structured.build_order[0]!.label).toContain("Game scaffold");
+    expect(r.structured.build_order[0]!.recipes).toEqual([]);
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 });
@@ -895,7 +895,7 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
     await f.linkArchetypeFeatures("puzzle", "stable_raster_irq");
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("forces every FEATURES target into the proposal, past the per-category cap", async () => {
     const r = await demoBriefing("a small intro", "cracktro");
@@ -1037,7 +1037,7 @@ describe("gameBriefing proposer precision and handoff", () => {
     }
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("matches whole words: a budget bar is not raster bars and a tile map is not a bitmap format", async () => {
     const r = await gameBriefing("a frame loop with a budget bar and a tile map", undefined);
@@ -1066,7 +1066,7 @@ describe("gameBriefing proposer precision and handoff", () => {
 
   it("ends every build order with the headless verification step when the recipe exists", async () => {
     const r = await gameBriefing("a frame loop", "shmup");
-    const last = r.structured.build_order[r.structured.build_order.length - 1];
+    const last = r.structured.build_order.at(-1)!;
     expect(last.label).toContain("Headless verification");
     expect(last.recipes).toEqual(["oscar64-headless-verify"]);
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);

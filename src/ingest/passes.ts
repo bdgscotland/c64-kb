@@ -7,7 +7,14 @@
  */
 
 import { createHash } from "node:crypto";
-import { applyEdge, applyNode, isNodeEntity, recipeEdges, type EdgeEntity, type NodeEntity } from "../graph/apply.ts";
+import {
+  applyEdge,
+  applyNode,
+  isNodeEntity,
+  recipeEdges,
+  type EdgeEntity,
+  type NodeEntity,
+} from "../graph/apply.ts";
 import { extractGraphEntities } from "../graph/extract.ts";
 import type { BM25Encoder } from "../services/bm25.ts";
 import { chunkMarkdown } from "../services/chunker.ts";
@@ -109,7 +116,9 @@ export async function applyPendingEdges(
       consecutiveFailures++;
       if (consecutiveFailures >= FAILURE_THRESHOLD) {
         console.error(`[ingest] FATAL: ${consecutiveFailures} consecutive edge failures — aborting`);
-        throw new Error(`Pass-2 edge ingest exceeded failure threshold (${FAILURE_THRESHOLD})`, { cause: err });
+        throw new Error(`Pass-2 edge ingest exceeded failure threshold (${FAILURE_THRESHOLD})`, {
+          cause: err,
+        });
       }
       console.warn(`[ingest] edge failure (${edgeFailures} total): ${message}`);
     }

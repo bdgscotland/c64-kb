@@ -68,6 +68,9 @@ export const DEMAND_VOCABULARY: Record<string, string> = {
  * The value for `key` when the vocabulary defines it as its own key. A
  * prototype name such as `toString` is not a vocabulary word.
  */
-export function vocabularyEntry(vocabulary: Readonly<Record<string, string>>, key: string): string | undefined {
+export function vocabularyEntry(
+  vocabulary: Readonly<Record<string, string>>,
+  key: string,
+): string | undefined {
   return Object.hasOwn(vocabulary, key) ? vocabulary[key] : undefined;
 }

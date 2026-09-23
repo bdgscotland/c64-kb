@@ -51,7 +51,10 @@ const CALLS: Record<string, [Record<string, unknown>, z.ZodType | null]> = {
   c64_technique_lookup: [{ name: "stable_raster_irq" }, TechniqueLookupSchema],
   c64_techniques_for: [{ category: "raster" }, TechniquesForSchema],
   c64_check_compatibility: [{ techniques: ["stable_raster_irq", "raster_bars"] }, CompatibilityCheckSchema],
-  c64_timing_budget: [{ technique: "stable_raster_irq", region: "pal", sprites_per_line: 2 }, TimingBudgetSchema],
+  c64_timing_budget: [
+    { technique: "stable_raster_irq", region: "pal", sprites_per_line: 2 },
+    TimingBudgetSchema,
+  ],
   c64_pitfalls_for: [{ topic: "D012" }, PitfallsForSchema],
   c64_lint_source: [{ source: "  lda $d418\n  ora #$0f\n  sta $d418\n", language: "asm" }, LintSourceSchema],
   c64_failure_diagnose: [{ symptom: "black screen" }, FailureDiagnoseSchema],

@@ -32,11 +32,7 @@ Body text.
     }
     const usesReg = ents.filter((e) => e.type === "technique_uses_register");
     expect(usesReg).toHaveLength(3);
-    expect(usesReg.map((e) => e.register).sort()).toEqual([
-      "D011",
-      "D012",
-      "D019",
-    ]);
+    expect(usesReg.map((e) => e.register).sort()).toEqual(["D011", "D012", "D019"]);
     const usesK = ents.filter((e) => e.type === "technique_uses_kernal");
     expect(usesK).toHaveLength(1);
   });

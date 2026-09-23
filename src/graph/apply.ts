@@ -42,7 +42,11 @@ export function isNodeEntity(e: GraphEntity): e is NodeEntity {
 export function recipeEdges(r: RecipeEntity): RecipeEdge[] {
   return [
     { type: "recipe_uses_tool", recipe: r.name, tool: r.toolchain },
-    ...r.uses_registers.map((register): RecipeEdge => ({ type: "recipe_uses_register", recipe: r.name, register })),
+    ...r.uses_registers.map((register): RecipeEdge => ({
+      type: "recipe_uses_register",
+      recipe: r.name,
+      register,
+    })),
     ...r.uses_kernal.map((kernal): RecipeEdge => ({ type: "recipe_uses_kernal", recipe: r.name, kernal })),
   ];
 }

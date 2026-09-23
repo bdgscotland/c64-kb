@@ -1,6 +1,14 @@
 /** pitfall-reference pages (docs/CONVENTIONS-pitfalls.md): one Pitfall per `## name — Title` H2. */
 
-import { group, matchField, parseFrontmatter, splitH2Sections, splitList, warn, type Section } from "./common.ts";
+import {
+  group,
+  matchField,
+  parseFrontmatter,
+  splitH2Sections,
+  splitList,
+  warn,
+  type Section,
+} from "./common.ts";
 import { TECHNIQUE_NAME } from "./technique-entities.ts";
 import { ENTITY_H2, REGION_LINE } from "./technique.ts";
 import type { GraphEntity, TargetKind } from "./types.ts";
@@ -48,7 +56,8 @@ function sectionEntities(section: Section, category: string, sourcePath: string)
   for (const [re, targetKind] of TRIGGER_LINES) {
     const line = matchField(section.body, re);
     if (!line) continue;
-    for (const target of splitList(line)) out.push({ type: "triggered_by", pitfall: name, target, targetKind });
+    for (const target of splitList(line))
+      out.push({ type: "triggered_by", pitfall: name, target, targetKind });
   }
   out.push(...mitigatedByEntities(section.body, name, sourcePath));
   return out;

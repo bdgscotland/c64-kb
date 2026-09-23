@@ -24,7 +24,8 @@ function parseBandPart(part: string): [number, number] | { error: string } {
   const lastText = m.at(2);
   const last = lastText !== undefined ? Number(lastText) : first;
   if (first > last) return { error: `range ${first}-${last} runs backwards (write a wrap as two ranges)` };
-  if (last > RASTER_LINE_MAX) return { error: `line ${last} is past the last raster line, ${RASTER_LINE_MAX}` };
+  if (last > RASTER_LINE_MAX)
+    return { error: `line ${last} is past the last raster line, ${RASTER_LINE_MAX}` };
   return [first, last];
 }
 
