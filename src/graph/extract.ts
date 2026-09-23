@@ -26,7 +26,7 @@ export type GraphEntity =
   | { type: "technique_demands"; technique: string; resource: string; description: string }
   | { type: "implements"; recipe: string; technique: string }
   | { type: "produces_format"; recipe: string; format: string }
-  | { type: "technique"; name: string; title: string; category: string; complexity?: string; chip?: string; cost?: TechniqueCost; cost_basis?: CostBasis }
+  | { type: "technique"; name: string; title: string; category: string; complexity?: string; chip?: string; cost?: TechniqueCost; cost_basis?: CostBasis; raster_band?: string }
   | { type: "technique_uses_register"; technique: string; register: string }
   | { type: "technique_uses_kernal"; technique: string; kernal: string }
   | { type: "technique_requires_region"; technique: string; region: string }
@@ -72,6 +72,12 @@ const DEMANDS_LINE = /^\*\*Demands:\*\*\s+(.+)$/;
 // link time, where a miss is warned about and counted.
 const REQUIRES_LINE = /^\*\*Requires:\*\*\s+(.+)$/;
 const TECHNIQUE_NAME = /^[a-z][a-z0-9_]*$/;
+// **Raster band:** says which raster lines a technique holds the CPU on
+// (docs/CONVENTIONS-techniques.md). The value is comma-separated ranges of
+// raster line numbers, `N-M` or `N`, or the word `movable` for a technique
+// whose lines the program chooses. A trailing parenthetical note says where
+// the numbers came from and is not part of the value.
+const RASTER_BAND_LINE = /^\*\*Raster band:\*\*\s+(.+)$/;
 // **Cost:** carries key=value pairs from COST_VOCABULARY and **Cost basis:**
 // one word from COST_BASIS_WORDS (docs/CONVENTIONS-techniques.md). A pair
 // with an unknown key or a non-integer value is warned about and skipped; a
@@ -97,6 +103,44 @@ export type TechniqueCost = Partial<Record<CostKey, number>>;
 
 export const COST_BASIS_WORDS = ["measured-vice", "derived-listing", "arithmetic", "estimated"] as const;
 export type CostBasis = (typeof COST_BASIS_WORDS)[number];
+
+// Highest raster line number on either machine: PAL has 312 lines (0-311),
+// NTSC 263 (0-262). A band is stated in raster line numbers, the same
+// numbers on both machines; a line past 262 simply does not occur on NTSC.
+export const RASTER_LINE_MAX = 311;
+
+export type RasterBand =
+  | { kind: "lines"; ranges: Array<[number, number]>; canonical: string }
+  | { kind: "movable"; canonical: "movable" };
+
+/**
+ * Parse the value of a **Raster band:** line (or the canonical string stored
+ * on the Technique node). Returns an error string for anything outside the
+ * grammar, so the extractor can warn and ingest nothing rather than guess.
+ */
+export function parseRasterBand(raw: string): RasterBand | { error: string } {
+  const value = raw.replace(/`/g, "").replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase();
+  if (value === "") return { error: "empty band" };
+  if (value === "movable") return { kind: "movable", canonical: "movable" };
+  const ranges: Array<[number, number]> = [];
+  for (const part of value.split(",").map((s) => s.trim())) {
+    const m = part.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+    if (!m) return { error: `"${part}" is not a line number, a range N-M, or "movable"` };
+    const first = Number(m[1]);
+    const last = m[2] !== undefined ? Number(m[2]) : first;
+    if (first > last) return { error: `range ${first}-${last} runs backwards (write a wrap as two ranges)` };
+    if (last > RASTER_LINE_MAX) return { error: `line ${last} is past the last raster line, ${RASTER_LINE_MAX}` };
+    ranges.push([first, last]);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const canonical = ranges.map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).join(",");
+  return { kind: "lines", ranges, canonical };
+}
+
+/** True when two line bands share at least one raster line. */
+export function rasterBandsOverlap(a: Array<[number, number]>, b: Array<[number, number]>): boolean {
+  return a.some(([a0, a1]) => b.some(([b0, b1]) => a0 <= b1 && b0 <= a1));
+}
 
 // The fixed vocabulary for **Demands:** (docs/CONVENTIONS-techniques.md).
 // A word outside it is a doc error and is reported, not ingested.
@@ -452,7 +496,7 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
     // Split body at H2 boundaries (each H2 = one Technique).
     const lines = rest.split("\n");
     let currentTech: { name: string; title: string; category: string; complexity?: string; chip?: string } | null = null;
-    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[]; requires?: string[]; cost?: TechniqueCost; costBasis?: string } = {};
+    let pendingMeta: { region?: string; usesReg?: string[]; usesKernal?: string[]; demands?: string[]; requires?: string[]; cost?: TechniqueCost; costBasis?: string; rasterBand?: string } = {};
 
     const flush = () => {
       if (!currentTech) return;
@@ -479,6 +523,7 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
         type: "technique",
         ...currentTech,
         ...(cost !== undefined && costBasis !== undefined ? { cost, cost_basis: costBasis } : {}),
+        ...(pendingMeta.rasterBand !== undefined ? { raster_band: pendingMeta.rasterBand } : {}),
       });
       if (currentTech.chip) {
         entities.push({ type: "technique_belongs_to", technique: currentTech.name, chip: currentTech.chip });
@@ -572,6 +617,16 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
         pendingMeta.requires = isEmptySentinel(rq[1])
           ? []
           : rq[1].split(",").map((s) => s.trim().replace(/`/g, "")).filter((s) => s !== "" && !isEmptySentinel(s));
+        continue;
+      }
+      const rb = line.match(RASTER_BAND_LINE);
+      if (rb) {
+        const band = parseRasterBand(rb[1]);
+        if ("error" in band) {
+          console.warn(`[extract] ${sourcePath}: technique ${currentTech.name} has **Raster band:** ${JSON.stringify(rb[1].trim())}: ${band.error} — band not ingested, so the technique conflicts as if it had none (see CONVENTIONS-techniques.md)`);
+        } else {
+          pendingMeta.rasterBand = band.canonical;
+        }
         continue;
       }
       const cb = line.match(COST_BASIS_LINE);

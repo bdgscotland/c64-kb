@@ -108,6 +108,39 @@ rules between one technique's prerequisites and the other technique and
 reports a hit as `prerequisite_conflict`, without changing anyone's
 `**Demands:**`.
 
+An optional `**Raster band:**` line names the raster lines on which the
+technique holds the CPU. It rides the Technique node as `raster_band`.
+
+```
+**Raster band:** 45-250 (the fli-image recipe's first IRQ is on line 45, its last FLI line is 250)
+```
+
+The value is one of:
+
+- comma-separated raster line numbers and inclusive ranges, `N` or `N-M`,
+  0 to 311. The numbers are `$D012` values with bit 8 from `$D011`, the
+  same numbers on PAL and NTSC; lines past 262 do not occur on NTSC. A band
+  that wraps through line 0 is written as two ranges: `251-311, 0-44`.
+- `movable`: the program chooses the lines (a side-border loop goes where
+  the sprites are). It is not a known band.
+
+A trailing parenthetical says where the numbers came from (the recipe's
+IRQ line constants, a measured screenshot) and is not part of the value.
+Anything else is refused at extract with a warning, and the technique then
+conflicts as if it had no line.
+
+`c64_check_compatibility` uses the band for the rules about sharing raster
+lines: `cpu_exclusive`, `cpu_vs_irq` through `midframe_raster_irqs` or
+`changes_sprite_set`, and `sprite_set`. When both techniques state line
+ranges and no line is in both, those rules do not fire and the pair is
+listed under `band_separated`. When they overlap, or either side has no
+line or says `movable`, the conflict stands and its rationale says which.
+`continuous_interrupts` and `kernal_banked_out` are not about lines and
+ignore bands. The band covers every line the technique owns, including a
+stable-raster entry above its visible region, since an interrupt there
+breaks it as surely as one inside. Take it from the page's own text or its
+recipe's constants; where neither says, write no line.
+
 An optional `**Cost:**` line states what the technique costs, as
 comma-separated `key=value` pairs, every value a non-negative integer and
 every key from the vocabulary below. It must be paired with a

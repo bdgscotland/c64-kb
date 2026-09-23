@@ -155,6 +155,7 @@ export const TechniqueLookupSchema = z.object({
   complexity: z.string(),
   chip: z.string().optional(),
   requires_region: z.string().optional(),
+  raster_band: z.string().optional(),
   uses_registers: z.array(z.object({ name: z.string(), address: z.string() })),
   uses_kernal: z.array(z.object({ name: z.string(), address: z.string() })),
   recipes: z.array(z.object({ name: z.string(), toolchain: z.string() })),
@@ -229,15 +230,28 @@ export const CompatibilityCoverageSchema = z.object({
   registers: z.number(),
   kernal_routines: z.number(),
   demands: z.array(z.string()),
+  // The page's **Raster band:** in canonical form ("45-250", "movable").
+  raster_band: z.string().optional(),
   known: z.boolean(),
   // Present when the technique was not in the input set but entered the
   // check through another technique's REQUIRES closure.
   implied_by: z.array(z.string()).optional(),
 });
 
+export const BandSeparatedSchema = z.object({
+  a: z.string(),
+  b: z.string(),
+  a_band: z.string(),
+  b_band: z.string(),
+  rules: z.array(z.string()), // the conflict kinds the bands cleared
+});
+
 export const CompatibilityCheckSchema = z.object({
   techniques: z.array(z.string()),
   conflicts: z.array(CompatibilityConflictSchema),
+  // Pairs a line-sharing rule would have caught, cleared because both pages
+  // state **Raster band:** line ranges that share no raster line (schema 24).
+  band_separated: z.array(BandSeparatedSchema),
   shared_infrastructure: z.array(SharedInfrastructureSchema),
   data_coverage: z.array(CompatibilityCoverageSchema),
   verdict: z.enum(["compatible", "warnings", "incompatible"]),

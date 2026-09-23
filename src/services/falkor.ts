@@ -567,6 +567,9 @@ export class FalkorService {
     // outlive its page.
     cost?: Partial<Record<string, number>>;
     cost_basis?: string;
+    // **Raster band:** (schema 24), canonical form from parseRasterBand:
+    // "45-250", "0-50,251-311" or "movable". Cleared when the page drops it.
+    raster_band?: string;
   }): Promise<void> {
     const g = this.graph();
     const props: Record<string, string | number> = {
@@ -583,6 +586,8 @@ export class FalkorService {
     }
     if (t.cost && t.cost_basis) props.cost_basis = t.cost_basis;
     else cleared.push("t.cost_basis");
+    if (t.raster_band) props.raster_band = t.raster_band;
+    else cleared.push("t.raster_band");
     await g.query(
       `MERGE (t:Technique {name: $name})
        ON CREATE SET t += $props, t.created_at = timestamp()

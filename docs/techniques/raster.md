@@ -338,6 +338,7 @@ Bauer's article and the VICE source, not from a run.
 **Uses registers:** SCROLX
 **Demands:** cpu_every_line, constant_sprite_set, badline_free_region
 **Requires:** double_irq
+**Raster band:** movable (the program picks the lines; the sideborder-open recipe loops on lines 101-142)
 **Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2
 **Cost basis:** arithmetic
 

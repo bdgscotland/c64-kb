@@ -114,6 +114,7 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | cost_zp_bytes | integer, optional | Zero-page bytes the technique claims. |
 | cost_irq_slots | integer, optional | Raster or timer interrupts the technique needs per frame. |
 | cost_basis | string, optional | How the cost figures were obtained, one of "measured-vice", "derived-listing", "arithmetic", "estimated"; present exactly when any cost_* property is. The word is the weakest that applies to any figure on the line. |
+| raster_band | string, optional | The raster lines the technique holds the CPU on, from the page's `**Raster band:**` line (schema 24), in canonical form: sorted inclusive ranges such as "45-250" or "0-44,251-311", or "movable" when the program chooses the lines. Absent when the page states none; a re-ingest that drops the line clears it. `c64_check_compatibility` clears its line-sharing rules for two techniques whose line bands share no line. |
 
 A technique whose page has no `**Cost:**` line has none of the `cost_*`
 properties, so `WHERE t.cost_cycles_per_frame IS NOT NULL` finds the
@@ -366,7 +367,10 @@ conflicts from these: two `cpu_every_line` techniques cannot share a raster
 line; `cpu_every_line` against `midframe_raster_irqs` or
 `continuous_interrupts` cannot either; `constant_sprite_set` against
 `changes_sprite_set`; `kernal_rom_out` against any technique that USES a
-KernalRoutine.
+KernalRoutine. The rules about sharing lines are cleared, and the pair is
+listed as band-separated, when both techniques carry a `raster_band` of
+line ranges and the ranges share no line. Before schema 24 there was no
+band, and any two `cpu_every_line` techniques were reported as a conflict.
 
 ### IN_REGION
 

@@ -23,6 +23,7 @@ import { getQdrant, getFalkor, getAnalytics } from "../context.js";
 import { embed } from "../services/embeddings.js";
 import { BM25Encoder, type SparseVector } from "../services/bm25.js";
 import { config } from "../config.js";
+import { parseRasterBand, rasterBandsOverlap } from "../graph/extract.js";
 import fs from "fs";
 import path from "path";
 import type {
@@ -892,7 +893,8 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
             t.cost_cycles_per_line AS cost_cycles_per_line, t.cost_cycles_per_frame AS cost_cycles_per_frame,
             t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
             t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
-            t.cost_irq_slots AS cost_irq_slots, t.cost_basis AS cost_basis
+            t.cost_irq_slots AS cost_irq_slots, t.cost_basis AS cost_basis,
+            t.raster_band AS raster_band
      LIMIT 1`,
     { name }
   );
@@ -949,6 +951,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     cost_zp_bytes: number | null;
     cost_irq_slots: number | null;
     cost_basis: string | null;
+    raster_band: string | null;
   };
 
   // Cost model (schema 22): only the keys the page's **Cost:** line carried
@@ -1052,6 +1055,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     complexity: row.complexity ?? "",
     chip: row.chip ?? undefined,
     requires_region: row.requires_region ?? undefined,
+    ...(row.raster_band ? { raster_band: row.raster_band } : {}),
     uses_registers,
     uses_kernal,
     recipes,
@@ -1067,6 +1071,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   out += `**Complexity:** ${row.complexity || "(not set)"}\n`;
   if (row.chip) out += `**Chip:** ${row.chip}\n`;
   if (row.requires_region) out += `**Requires region:** ${row.requires_region}\n`;
+  if (row.raster_band) out += `**Raster band:** ${row.raster_band}\n`;
   if (cost) {
     const { basis, ...figures } = cost;
     out += `**Cost:** ${Object.entries(figures).map(([k, v]) => `${k}=${v}`).join(", ")}\n`;
@@ -1258,7 +1263,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // counts. Drives the hard-conflict rules below and the data_coverage
   // report, so a technique the graph knows nothing about is named as such
   // instead of passing as compatible.
-  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[] };
+  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[]; band: string | null };
   const facts = new Map<string, Facts>();
   for (const tname of allNames) {
     const rr = await f.roQuery(
@@ -1268,15 +1273,16 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
        OPTIONAL MATCH (t)-[:USES]->(reg:Register)
        WITH t, demands, count(DISTINCT reg) AS registers
        OPTIONAL MATCH (t)-[:USES]->(k:KernalRoutine)
-       RETURN demands, registers, collect(DISTINCT k.name) AS kernal`,
+       RETURN demands, registers, collect(DISTINCT k.name) AS kernal, t.raster_band AS band`,
       { name: tname }
     );
-    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[] } | undefined;
+    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[]; band: string | null } | undefined;
     facts.set(tname, {
       found: row !== undefined,
       demands: new Set((row?.demands ?? []).filter(Boolean)),
       registers: Number(row?.registers ?? 0),
       kernal: (row?.kernal ?? []).filter(Boolean),
+      band: row?.band ?? null,
     });
   }
 
@@ -1285,12 +1291,58 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // pushed so the same rules serve the input pairs and the REQUIRES closure.
   type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
   type HardHit = { kind: ConflictKind; shared: string[]; rationale: string; resolution: string };
+  // Raster bands (**Raster band:**, schema 24). The rules about sharing
+  // raster lines (cpu_exclusive; cpu_vs_irq through mid-frame IRQs or
+  // sprite-set changes; sprite_set) do not fire when both techniques state
+  // line bands and the bands share no line: the pair is reported under
+  // band_separated instead. A band that is absent or "movable" keeps the
+  // conflict, and the rationale says which side is unknown.
+  // continuous_interrupts and kernal_banked_out are not about lines and
+  // ignore bands.
+  const bandText = (n: string): string => {
+    const b = facts.get(n)?.band;
+    if (!b) return `${n} states no raster band`;
+    if (b === "movable") return `${n}'s lines are chosen by the program (movable)`;
+    return `${n} holds lines ${b}`;
+  };
+  const bandsDisjoint = (a_name: string, b_name: string): boolean => {
+    const a = facts.get(a_name)?.band;
+    const b = facts.get(b_name)?.band;
+    if (!a || !b) return false;
+    const pa = parseRasterBand(a);
+    const pb = parseRasterBand(b);
+    if ("error" in pa || "error" in pb || pa.kind !== "lines" || pb.kind !== "lines") return false;
+    return !rasterBandsOverlap(pa.ranges, pb.ranges);
+  };
+  const bandNote = (a_name: string, b_name: string): string => {
+    const pa = parseRasterBand(facts.get(a_name)?.band ?? "");
+    const pb = parseRasterBand(facts.get(b_name)?.band ?? "");
+    const bothLines = !("error" in pa) && pa.kind === "lines" && !("error" in pb) && pb.kind === "lines";
+    return ` Raster bands: ${bandText(a_name)}; ${bandText(b_name)}.` +
+      (bothLines ? " The bands overlap." : " Only two stated, disjoint line bands clear this rule.");
+  };
+  const bandSeparated: CompatibilityCheckOutput["band_separated"] = [];
+  const noteSeparated = (a_name: string, b_name: string, rule: string) => {
+    const hit = bandSeparated.find((s) => (s.a === a_name && s.b === b_name) || (s.a === b_name && s.b === a_name));
+    if (hit) {
+      if (!hit.rules.includes(rule)) hit.rules.push(rule);
+      return;
+    }
+    bandSeparated.push({ a: a_name, b: b_name, a_band: facts.get(a_name)!.band!, b_band: facts.get(b_name)!.band!, rules: [rule] });
+  };
   const hardRules = (a_name: string, b_name: string): HardHit[] => {
     const hits: HardHit[] = [];
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
     const hard = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) =>
       hits.push({ kind, shared, rationale, resolution });
+    const disjoint = bandsDisjoint(a_name, b_name);
+    // A rule about sharing raster lines: noted, not fired, on disjoint
+    // bands; otherwise fired with the band facts added to its rationale.
+    const lineRule = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) => {
+      if (disjoint) noteSeparated(a_name, b_name, kind);
+      else hard(kind, shared, rationale + bandNote(a_name, b_name), resolution);
+    };
 
     // Region mismatch
     const aRegion = regionMap.get(a_name);
@@ -1303,7 +1355,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
     // Both need every CPU cycle on their lines.
     if (A.demands.has("cpu_every_line") && B.demands.has("cpu_every_line")) {
-      hard("cpu_exclusive", ["cpu_every_line"],
+      lineRule("cpu_exclusive", ["cpu_every_line"],
         `Both need every CPU cycle on every raster line they cover; they cannot share a raster line.`,
         `Give each its own band of lines and switch between them in the border.`);
     }
@@ -1312,7 +1364,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
       if (!X.demands.has("cpu_every_line")) continue;
       if (Y.demands.has("midframe_raster_irqs")) {
-        hard("cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
+        lineRule("cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
           `${xn} needs every CPU cycle on its lines; a raster interrupt from ${yn} inside that region breaks its cycle count.`,
           `Keep ${yn}'s interrupts on lines outside ${xn}'s region (the borders, or a separate band).`);
       }
@@ -1322,7 +1374,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
           `Pause ${yn} while ${xn}'s region is being drawn, or do not combine them.`);
       }
       if (Y.demands.has("changes_sprite_set") && !X.demands.has("constant_sprite_set")) {
-        hard("cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
+        lineRule("cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
           `${yn} rewrites sprite registers from interrupts during the frame; inside ${xn}'s region that breaks its cycle count.`,
           `Multiplex only outside ${xn}'s region.`);
       }
@@ -1331,7 +1383,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     // One needs the same sprites active on every line; the other changes them.
     for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
       if (X.demands.has("constant_sprite_set") && Y.demands.has("changes_sprite_set")) {
-        hard("sprite_set", ["constant_sprite_set", "changes_sprite_set"],
+        lineRule("sprite_set", ["constant_sprite_set", "changes_sprite_set"],
           `${xn}'s per-line timing depends on the same sprites being active on every line of its region; ${yn} changes the active set during the frame.`,
           `Multiplex only outside ${xn}'s region, or keep the sprite set fixed while ${xn}'s lines are drawn.`);
       }
@@ -1485,6 +1537,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       registers: F.registers,
       kernal_routines: F.kernal.length,
       demands: [...F.demands].sort(),
+      ...(F.band ? { raster_band: F.band } : {}),
       known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0),
     };
   };
@@ -1576,7 +1629,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
   a.logQuery({ tool: "c64_check_compatibility", query: techniques.join("+"), resultCount: conflicts.length });
 
-  const structured: CompatibilityCheckOutput = { techniques, conflicts, shared_infrastructure, data_coverage, verdict };
+  const structured: CompatibilityCheckOutput = { techniques, conflicts, band_separated: bandSeparated, shared_infrastructure, data_coverage, verdict };
 
   // "Not covered" is about the named techniques; implied ones are listed
   // separately so the silence-vs-clearance sentence keeps its denominator.
@@ -1601,6 +1654,12 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       out += `${c.rationale}\n`;
       if (c.resolution) out += `**Resolution:** ${c.resolution}\n`;
       out += `\n`;
+    }
+  }
+  if (bandSeparated.length > 0) {
+    out += `\n## Separated by raster band (info)\n`;
+    for (const s of bandSeparated) {
+      out += `- **${s.a}** (lines ${s.a_band}) and **${s.b}** (lines ${s.b_band}) share no raster line, so ${s.rules.join(", ")} does not apply. Keep each on its own lines: the check trusts the bands the pages state.\n`;
     }
   }
   if (unknown.length > 0 || unknownImplied.length > 0) {
