@@ -832,5 +832,130 @@
       "pal": "screenshots/irq-owns-port.png",
       "ntsc": "screenshots/irq-owns-port-ntsc.png"
     }
+  },
+  "kickassembler/pwm-digi": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/pwm-digi.png",
+      "ntsc": "screenshots/pwm-digi-ntsc.png"
+    }
+  },
+  "oscar64/attract-replay": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/attract-replay.png",
+      "ntsc": "screenshots/attract-replay-ntsc.png"
+    }
+  },
+  "oscar64/difficulty-tables": {
+    "cycles": 40000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/difficulty-tables.png",
+      "ntsc": "screenshots/difficulty-tables-ntsc.png"
+    }
+  },
+  "oscar64/two-player": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/two-player.png",
+      "ntsc": "screenshots/two-player-ntsc.png"
+    }
+  },
+  "oscar64/flip-screen-rooms": {
+    "cycles": 34000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/flip-screen-rooms.png",
+      "ntsc": "screenshots/flip-screen-rooms-ntsc.png"
+    }
+  },
+  "kickassembler/reu-dma": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-reu",
+      "-reusize",
+      "512"
+    ],
+    "shots": {
+      "pal": "screenshots/reu-dma.png",
+      "ntsc": "screenshots/reu-dma-ntsc.png"
+    }
+  },
+  "kickassembler/four-player-read": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-userportdevice",
+      "3",
+      "-extrajoystick1autofire",
+      "-extrajoystick1autofiremode",
+      "1",
+      "-extrajoystick1autofirespeed",
+      "5",
+      "-extrajoystick2autofire",
+      "-extrajoystick2autofiremode",
+      "1",
+      "-extrajoystick2autofirespeed",
+      "7"
+    ],
+    "shots": {
+      "pal": "screenshots/four-player-read.png",
+      "ntsc": "screenshots/four-player-read-ntsc.png"
+    }
+  },
+  "kickassembler/easyflash-save": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "cartridge": {
+      "file": "easyflash-save.crt",
+      "write": true,
+      "runs": 2
+    }
+  },
+  "oscar64/raster-profile-bars": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/raster-profile-bars.png",
+      "ntsc": "screenshots/raster-profile-bars-ntsc.png"
+    }
   }
 }

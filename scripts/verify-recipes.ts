@@ -21,6 +21,15 @@
  * from the same empty disk each time, takes the same number of cycles, and
  * nothing in the repo is modified by the run.
  *
+ * With "cartridge": {"file": "x.crt", "write": true, "runs": 2}, the build
+ * must leave x.crt in the work directory (a KickAssembler listing writes it
+ * with outBin beside its source). Each model gets a fresh copy, attached
+ * with -cartcrt instead of -autostart; "write" adds -easyflashcrtwrite so
+ * VICE writes the flash back into the copy, and "runs" boots the same copy
+ * that many times in sequence. Run 1's shot is keyed by the model ("pal"),
+ * run N's by "<model>-run<N>" ("pal-run2"); the default path for run N is
+ * screenshots/<stem>[-<model>]-run<N>.png.
+ *
  * Usage:
  *   node scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
  *   node scripts/verify-recipes.ts --file docs/recipes/kickassembler/raster-bars.md
@@ -35,7 +44,15 @@
  * needs GSETTINGS_SCHEMA_DIR on macOS/Homebrew; it is set here if unset.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { z } from "zod";
@@ -69,6 +86,9 @@ const RunSchema = z.object({
   flags: z.array(z.string()),
   shots: z.record(z.string(), z.string()),
   disk: z.object({ name: z.string() }).optional(),
+  cartridge: z
+    .object({ file: z.string(), write: z.boolean().optional(), runs: z.number().int().positive().optional() })
+    .optional(),
 });
 type Run = z.infer<typeof RunSchema>;
 const PartialRunSchema = RunSchema.partial();
@@ -119,13 +139,28 @@ function inScope(rel: string): boolean {
   return !onlyFile || relative(ROOT, onlyFile.startsWith("/") ? onlyFile : join(ROOT, onlyFile)) === rel;
 }
 
+/** runs.json "shots" key for boot N of a model: "pal", then "pal-run2", "pal-run3". */
+function shotKey(model: string, n: number): string {
+  return n === 1 ? model : `${model}-run${String(n)}`;
+}
+
+/** Default shot paths: screenshots/<stem>[-<model>][-run<N>].png for each model and boot. */
+function defaultShots(stem: string, models: string[], runs: number): Record<string, string> {
+  return Object.fromEntries(
+    models.flatMap((mo) =>
+      Array.from({ length: runs }, (_, i) => [
+        shotKey(mo, i + 1),
+        `screenshots/${stem}${mo === "pal" ? "" : `-${mo}`}${i ? `-run${String(i + 1)}` : ""}.png`,
+      ]),
+    ),
+  );
+}
+
 function jobFor(toolchain: string, md: string): Job {
   const stem = basename(md, ".md");
   const m = manifestEntry(`${toolchain}/${stem}`);
   const models = m.models ?? ["pal"];
-  const shots =
-    m.shots ??
-    Object.fromEntries(models.map((mo) => [mo, `screenshots/${stem}${mo === "pal" ? "" : `-${mo}`}.png`]));
+  const shots = m.shots ?? defaultShots(stem, models, m.cartridge?.runs ?? 1);
   return {
     rel: relative(ROOT, md),
     toolchain,
@@ -137,6 +172,7 @@ function jobFor(toolchain: string, md: string): Job {
       flags: m.flags ?? [],
       shots,
       ...(m.disk === undefined ? {} : { disk: m.disk }),
+      ...(m.cartridge === undefined ? {} : { cartridge: m.cartridge }),
     },
   };
 }
@@ -228,7 +264,8 @@ function diskArgs(png: string, disk: { name: string }): { args: string[] } | { e
 }
 
 type ViceRun = {
-  prg: string;
+  /** How the program is attached: ["-autostart", prg] or a cartridge's -cartcrt arguments. */
+  attach: string[];
   png: string;
   cycles: number;
   model: string;
@@ -236,7 +273,7 @@ type ViceRun = {
   disk?: { name: string };
 };
 
-/** Run one PRG to its pinned cycle count and write the exit screenshot. Returns "" or an error. */
+/** Run one PRG or cartridge to its pinned cycle count and write the exit screenshot. Returns "" or an error. */
 function runVice(v: ViceRun, x64scPath: string): string {
   const disk = v.disk ? diskArgs(v.png, v.disk) : { args: [] };
   if ("error" in disk) return disk.error;
@@ -254,8 +291,7 @@ function runVice(v: ViceRun, x64scPath: string): string {
     ...disk.args,
     "-exitscreenshot",
     v.png,
-    "-autostart",
-    v.prg,
+    ...v.attach,
   ];
   const r = spawnSync(x64scPath, args, { encoding: "utf8", timeout: 300_000 });
   if (!existsSync(v.png)) {
@@ -317,12 +353,12 @@ function noBaseline(label: string, fresh: string, baseline: string): void {
 
 function compareToBaseline(
   job: Job,
-  model: string,
+  key: string,
   shot: { fresh: string; baseline: string },
   py: string,
 ): void {
   const { fresh, baseline } = shot;
-  const label = `${job.rel} [${model}]`;
+  const label = `${job.rel} [${key}]`;
   const c = compare(py, fresh, baseline);
   if (c.ok) {
     passes++;
@@ -336,27 +372,33 @@ function compareToBaseline(
     say(
       false,
       label,
-      `${c.detail} vs ${relative(ROOT, baseline)} at ${job.run.cycles} cycles${job.run.models.length > 1 ? ` (${model})` : ""}; if the listing changed on purpose, look at ${fresh} and run --update`,
+      `${c.detail} vs ${relative(ROOT, baseline)} at ${job.run.cycles} cycles${job.run.models.length > 1 ? ` (${key})` : ""}; if the listing changed on purpose, look at ${fresh} and run --update`,
     );
   }
 }
 
-function runModel(job: Job, prg: string, model: string, bins: { x64sc: string; python3: string }): void {
-  const label = `${job.rel} [${model}]`;
-  const shotRel = job.run.shots[model];
+type Bins = { x64sc: string; python3: string };
+/** A successful build: the PRG, and the .crt it wrote when runs.json names one. */
+type Output = { prg: string; crt: string | null };
+
+/** Boot N of one model: run VICE, then compare or write the baseline. Returns false to stop further boots. */
+function runBoot(job: Job, boot: { model: string; n: number; attach: string[] }, bins: Bins): boolean {
+  const key = shotKey(boot.model, boot.n);
+  const label = `${job.rel} [${key}]`;
+  const shotRel = job.run.shots[key];
   if (!shotRel) {
     failures++;
-    say(false, label, "no shot path in runs.json for this model");
-    return;
+    say(false, label, `no shot path in runs.json for "${key}"`);
+    return false;
   }
   const baseline = join(dirname(job.md), shotRel);
-  const fresh = join(work, `${job.toolchain}-${job.stem}-${model}.png`);
+  const fresh = join(work, `${job.toolchain}-${job.stem}-${key}.png`);
   const err = runVice(
     {
-      prg,
+      attach: boot.attach,
       png: fresh,
       cycles: job.run.cycles,
-      model,
+      model: boot.model,
       extra: job.run.flags,
       ...(job.run.disk === undefined ? {} : { disk: job.run.disk }),
     },
@@ -365,20 +407,51 @@ function runModel(job: Job, prg: string, model: string, bins: { x64sc: string; p
   if (err) {
     failures++;
     say(false, label, err);
-    return;
+    return false;
   }
   if (!existsSync(baseline)) noBaseline(label, fresh, baseline);
-  else compareToBaseline(job, model, { fresh, baseline }, bins.python3);
+  else compareToBaseline(job, key, { fresh, baseline }, bins.python3);
+  return true;
 }
 
-function runOne(job: Job, bins: { x64sc: string; python3: string }): void {
+/**
+ * The x64sc attach arguments for one model. A cartridge run boots a fresh
+ * copy of the built .crt; with "write" VICE saves the flash back into the
+ * copy, so boot N sees what boot N-1 wrote.
+ */
+function attachFor(job: Job, built: Output, model: string): string[] {
+  const { prg, crt } = built;
+  if (!crt) return ["-autostart", prg];
+  const copy = join(work, `${job.toolchain}-${job.stem}-${model}.crt`);
+  copyFileSync(crt, copy);
+  return [...(job.run.cartridge?.write ? ["-easyflashcrtwrite"] : []), "-cartcrt", copy];
+}
+
+function runModel(job: Job, built: Output, model: string, bins: Bins): void {
+  const attach = attachFor(job, built, model);
+  const runs = job.run.cartridge?.runs ?? 1;
+  for (let n = 1; n <= runs; n++) {
+    if (!runBoot(job, { model, n, attach }, bins)) return;
+  }
+}
+
+function runOne(job: Job, bins: Bins): void {
+  const cart = job.run.cartridge;
+  const crt = cart ? join(work, cart.file) : null;
+  // A stale cartridge from an earlier --keep run must not stand in for this build's.
+  if (crt) rmSync(crt, { force: true });
   const { prg, log } = build(job);
   if (!prg) {
     failures++;
     say(false, `${job.rel} (build)`, log);
     return;
   }
-  for (const model of job.run.models) runModel(job, prg, model, bins);
+  if (crt && !existsSync(crt)) {
+    failures++;
+    say(false, `${job.rel} (build)`, `runs.json names cartridge ${crt} but the build did not write it`);
+    return;
+  }
+  for (const model of job.run.models) runModel(job, { prg, crt }, model, bins);
 }
 
 /** Verify one recipe in a child process of this script; resolves to the child's ok/FAIL lines and exit status. */

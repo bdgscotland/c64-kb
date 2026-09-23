@@ -573,9 +573,56 @@ The core insight is that the SID has multiple analog signal paths that can be dr
 
 ### Variations
 
-**PWM digi (8580 software-only) — does not work as once described here.** With TEST set the pulse output is held at full scale regardless of PW: measured in VICE reSID on both models, OSC3 reads $FF for PW = $000, $080, $800 and $FFF alike, so PW cannot act as a DAC while TEST is held (an earlier version of this variation said modulating PWHI under TEST changed the DC level, and the How section above said the TEST-locked output was $000; both were wrong). The usable software-only 8580 form is the test-bit DC digi in [sid-reference.md](../hardware/sid-reference.md): PULSE+TEST+GATE ($49) on all three voices as constant full-scale sources through their envelopes, with $D418 as the 4-bit DAC. The exact Mahoney/Hermit sequences are not documented here.
+**PWM digi (8580 software-only) — does not work as once described here, and what was described here was not Harsfalvi's method.** The pulse-width-modulation digi of the late 1990s holds no TEST bit: it runs the pulse waveform at `$FFFF` and rewrites the pulse width at the sample rate, and it works on both chip models; it is built and measured under `pwm_digi` below (an earlier version of this paragraph, up to 2026-09-23, called the TEST-bit variant "PWM digi" and drew the conclusion that a pulse-width DAC does not work, which is true only with TEST held). With TEST set the pulse output is held at full scale regardless of PW: measured in VICE reSID on both models, OSC3 reads $FF for PW = $000, $080, $800 and $FFF alike, so PW cannot act as a DAC while TEST is held (an earlier version of this variation said modulating PWHI under TEST changed the DC level, and the How section above said the TEST-locked output was $000; both were wrong). The usable software-only 8580 form is the test-bit DC digi in [sid-reference.md](../hardware/sid-reference.md): PULSE+TEST+GATE ($49) on all three voices as constant full-scale sources through their envelopes, with $D418 as the 4-bit DAC. The exact Mahoney/Hermit sequences are not documented here.
 
 **Test-bit digi.** Rapidly toggle the TEST bit at audio frequency. The duty cycle of the toggling produces an average DC level that the filter and volume DAC amplify. Produces lower effective resolution but requires only one bit manipulation per sample.
+
+---
+
+## pwm_digi — Pulse-width-modulation digi: the sample rides the duty cycle
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D400, D401, D402, D403, D404, D405, D406, D418, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F
+**Demands:** continuous_interrupts
+**Requires:** sid_voice_setup
+**Cost:** cycles_per_frame=4774
+**Cost basis:** arithmetic
+
+### Why
+
+A third way to play a sample, beside the `$D418` volume nibble of `digi_4bit` and the envelope tricks of `digi_8bit_hard_restart`. It needs no volume-register write per sample, no 6581 DAC offset and no 8580 quirk: one voice plays the pulse waveform as fast as the SID can, and the program rewrites the pulse width from the sample. The duty cycle carries the sample and the output stage averages it. It is the method Levente Harsfalvi described in the late 1990s for playing samples on the 8580, where `$D418` digi is nearly silent (name and decade from the candidate list this entry was written against and from memory of the published description; the description itself was not read here, so what follows is the mechanism as built and measured, not a claim about his register sequence). It leaves the volume register to the music.
+
+### How
+
+1. Set the voice up as `sid_voice_setup` describes: frequency `$FFFF`, attack 0, decay 0, sustain 15, release 0, then control `$41` (pulse, gate on) and leave the gate on. Master volume 15.
+2. Choose a sample period in cycles and run a timer at it (CIA 2 timer A in the recipe, so the KERNAL's jiffy timer on CIA 1 is untouched). 128 cycles gives 7,697 samples a second on PAL and 7,990 on NTSC.
+3. On every timer tick write the sample into the pulse width: sample bits 7 to 4 into `$D402` bits 7 to 4, sample bits 3 to 0 into `$D403` bits 3 to 0. Two pre-split tables make that two loads and two stores.
+4. In a program that does anything else, the tick is a timer interrupt every sample period, which is the `continuous_interrupts` demand; the recipe polls the CIA flag under `sei` instead, so it can prove its rate with timer B.
+
+The carrier cannot be put above the audible band. `$FFFF` is the top of the frequency register and gives `65535 × 985,248 ÷ 16,777,216 = 3,848.6 Hz` on PAL (3,995 Hz on NTSC), one pulse period every 256.004 cycles. Every sample rate up to about half of that is usable; the recipe's 128-cycle period puts two pulse-width writes into each pulse period. The pulse width is 12 bits and the sample 8, so the sample sits in bits 11 to 4, and nothing is lost by that: at `$FFFF` the top twelve bits of the accumulator step by 16 each cycle, so the low four bits of the pulse width are below the phase step, and the 8-bit sample already uses every duty level the carrier can resolve in one period, 4,096 ÷ 16 = 256 of them.
+
+### Why it works
+
+The pulse comparator is a one-bit output: high while the top twelve bits of the phase accumulator are at or above the pulse width. With the envelope parked at sustain 15 the voice output is that bit at full scale, and its mean over one pulse period is the duty cycle times full scale. The mixer, the output amplifier and whatever follows the audio pin cannot follow a 3.85 kHz square wave exactly; what comes through at audio rates is the running mean, which is the sample. No register read, no TEST bit and no envelope timing is involved, which is why the write is two plain stores. An earlier version of the `digi_8bit_hard_restart` entry described a pulse-width DAC that held TEST set; that is not this method, and it does not work, since TEST forces the comparator output high whatever the pulse width holds (measured there).
+
+Measured in VICE x64sc 3.10 reSID, PAL, from a WAV the emulator wrote (nobody listened): the strongest raw component is at 3,848.6 Hz, the carrier; after a moving average over one carrier period the dominant component is 240.5 Hz, which is the recipe's synthesised tone, `985,248 ÷ 128 ÷ 32 = 240.54 Hz`; its second harmonic is about 42 dB down. The carrier line sits about 7 dB below the tone line, with sidebands at ±240.5 Hz about 8 dB below it (whole decibels, since the window and segment chosen move these by up to a decibel; the recipe page states the method): the carrier is audible as a whistle, and a filter (the SID's own low-pass on the voice, or the listener's speaker) is what removes it. The figures are the same on the 6581 and 8580 models except level: the 8580 model's averaged signal is 0.74 of the 6581's (2,494 against 3,358 RMS in 16-bit units), about 2.6 dB quieter. Real chips were not measured.
+
+### Variations
+
+**Filtered carrier.** Route the voice through the SID filter in low-pass mode with the cutoff below the carrier, so the whistle is attenuated on chip. Not measured here; on the 6581 the filter's cutoff range and gain vary by chip (`sid_filter_chip_variation`).
+
+**Interrupt-driven.** A CIA timer IRQ every sample period, the handler doing the two loads and two stores and acknowledging the CIA, is the form a game uses. Entry and `rti` add the usual 7 + 6 cycles plus register saves on top of the loop body, and any other interrupt source adds jitter to the write times; the recipe's polled loop under `sei` is the jitter-free floor.
+
+**Loudness on real chips.** 6581 against 8580 loudness on hardware is not measured here; the reSID figure above is the emulator's.
+
+### Cycle budget
+
+Per sample the recipe's loop is a flag poll (`lda $DD0D`, `and #1`, `beq`) and then `lda abs,x` / `sta $D402` / `lda abs,x` / `sta $D403` / `inx` / `bne`, 31 cycles on the passing path by the instruction table: 8 for the poll, 21 for the rest, and one more for each `lda abs,x` because the recipe's two tables start two bytes before a page boundary, so every index from 2 upward crosses it (an earlier version of this paragraph said 32; a `.align $100` on the tables gives 29). The Cost line above is 31 times the samples in a PAL frame, `19,656 ÷ 128 = 154` (rounded up), and its basis is arithmetic; the loads and stores without the poll were timed in VICE at 21.1 cycles a sample, which is the table's 21 plus the outer counter once per 256, so the figure is not far from a measurement. What else was measured: at 128 cycles a sample the loop kept exact pace on both models (timer B agreed with the sample count to the underflow); at every period from 28 to 36 cycles that was tried it did not, with timer B running 4 to 17 per cent ahead of the sample count; and at 36 cycles with the display blanked it kept exact pace. The polled floor with the screen on is the badline, not the loop: the poll clears the flag, a badline holds the CPU for 40 to 43 cycles between two polls, and two underflows in that gap count as one sample, so any period below roughly 31 + 43 cycles loses samples at a rate that scales with the run's length in frames (an earlier version of this paragraph said the floor was not explained; the recipe page has the sweep, the blanked rows and the arithmetic). At 128 cycles a sample, 97 cycles of every 128 are free for the rest of the program, less the badline stall on one line in eight while the display is on.
+
+### Recipes
+
+- `recipes/kickassembler/pwm-digi.md`
 
 ---
 

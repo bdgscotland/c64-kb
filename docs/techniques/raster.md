@@ -1171,3 +1171,144 @@ recipe's decimal print is a few hundred cycles, not measured.
   its badline lesson), `recipes/oscar64/raster-bars.md` (`rasterirq.h`,
   the same table with a sorter), `frame_sync_loop` above (the once-a-frame
   tick).
+
+## raster_profile_bars — Per-subsystem border bars and a CIA timer table
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D020, DD04, DD05, DD0E
+**Requires:** frame_sync_loop
+**Cost:** cycles_per_frame=467
+**Cost basis:** measured-vice
+
+### Why
+
+`frame_sync_loop` above gives one budget bar and a dropped-frame count:
+it says a frame overran, not which part of the game did it. Games answer
+that with one border colour per subsystem, so the border becomes a
+stacked bar of where the frame goes, behind a build switch so the release
+carries none of it. c64gameframework has one assembly-time switch per
+subsystem (`SHOW_PLAYROUTINE_TIME`, `SHOW_SPRITEIRQ_TIME`,
+`SHOW_SCROLLWORK_TIME`, `SHOW_CHARSETANIM_TIME`, `SHOW_SKIPPED_FRAME`,
+`SHOW_FREE_TIME` in `main.s`, used in `raster.s` and `screen.s`); Corescape
+colours the border between its stages under one `TIME_DEBUG` define
+(`enemies.h`, used in `display.cpp`). A bar is readable at a glance but
+only to the line. For exact numbers, bracket each subsystem with a CIA
+timer as well and keep the last and worst count per subsystem in a table.
+
+### How
+
+**Bars.** At the start of each subsystem, store its colour to `$D020`;
+after the last one, store the idle colour. Give every subsystem its own
+colour and keep the order fixed, so a band's position identifies it. Wrap
+the stores in a macro that compiles to nothing when the switch is 0.
+
+**Reading a bar.** Its height in raster lines is the subsystem's
+duration: 63 cycles a line on PAL, 65 on the 6567R8. A screenshot turns
+this into numbers with no eye involved: read the border column (x = 2) of
+VICE's exit PNG with PIL, map each pixel to a subsystem by its palette
+triple, and convert PNG row to raster line (PAL line = row + 16; NTSC line
+= row + 28, and NTSC rows 235 to 246 are lines 0 to 11 of the next frame;
+`runtime/vice-reference.md`, "Reading the exit screenshot"). The recipe
+carries the snippet. Lines 288 to 311 and 0 to 15 on PAL, and 12 to 27 on
+NTSC, are not in the PNG at all, so a bar there cannot be read headless:
+a loop synced at line 251 profiles into that gap, and either moves the
+sync line for a profiling build or relies on the table.
+
+**Bars are wall time.** The beam does not wait for the CPU. On a badline
+the VIC-II takes 40 to 43 cycles (`pitfalls/raster-and-badline.md`,
+`badline_cycle_loss`), so the same code covers more lines inside the
+display window than in the border. Measured in the recipe (VICE x64sc
+3.10): a busy loop of 3,255 CPU cycles took 3,556 cycles in the display,
+seven badlines at 43 each. A bar that grows when its subsystem moves down
+the screen has not got slower. Sprite DMA stretches bars and the timer the
+same way, 5 to 19 cycles a line with sprites on (`vic_bus_takeover_on_dma`).
+
+**The table.** Bracket each subsystem with CIA2 timer A: load the latch
+with `$FFFF` once, write `$11` to `$DD0E` to force-load and start, write
+`$00` to stop, then read `$DD04`/`$DD05` and subtract from `$FFFF`.
+Subtract the count of an empty start/stop pair (5 cycles in the recipe's
+build, measured). Store the result as the subsystem's last value and
+raise its maximum if larger. The timer counts phi2 cycles, stolen or not,
+so it measures the same wall time as the bar, to the cycle. For CPU
+cycles alone, run the same bracket once with the display blanked and
+sprites off (clear DEN and wait until line $30 (48) has passed with DEN
+clear, two `vic_waitFrame()` calls; the VIC-II samples DEN once per frame;
+and write 0 to `$D015`). An interrupt
+that fires inside a bracket is counted in that subsystem; mask them, or
+read `MAX` knowing one may be in it. CIA2 timer A is free while RS-232 is
+unused (`hardware/cia-reference.md`); mask its interrupt so it raises no
+NMI. It is also taken by any CIA2 timer NMI, such as NMI sample playback
+or the NMI lock that disables RESTORE (`hardware/cia-reference.md`); use a
+timer nothing else runs.
+
+**Reading the table headless.** Print it, or dump it from the VICE
+monitor: a `-moncommands` file with `trace store` on the last byte the
+frame writes and `command 1 "m <table> <end>"` logs the table every
+frame, and the last dump in the log is the exit state (recipe, rung 1;
+the screenshot was byte-identical with and without the trace). Take the
+addresses from the build's map file.
+
+### Why it works
+
+`$D020` is read by the VIC-II for every border pixel it draws, so a store
+shows within the same line (`frame_sync_loop` above). The
+interval between two stores is therefore drawn as one band, and its
+height counts the line starts inside the interval: a bar of W cycles is
+W / 63 lines, give or take one. The CIA timer runs on the same phi2 clock
+as the VIC-II's raster, so the two methods must agree to that
+quantisation, and in the recipe they do: bar cycles less the timer's
+figure came to 84 to 135 across all eight bars (PAL and NTSC), against
+117 cycles of profiling code per subsystem outside the timer and one line
+of 63 or 65.
+
+### Variations
+
+**Free time.** Mark the waits instead of the work and the band shows
+what is left. c64gameframework's `SHOW_FREE_TIME` does it with `DEC $D020`
+before each wait loop and `INC $D020` after, which needs no colour table
+and works over any base colour.
+
+**Bars only.** Five `$D020` stores cost 42 cycles a frame for four
+subsystems (measured, below). This is the form to leave in a debug build
+all the time.
+
+**Table only.** For a subsystem shorter than a line, or bars that would
+fall in the lines the PNG does not show.
+
+**Worst frame.** `MAX` is the number a budget needs, not `LAST`. A
+subsystem with a rare expensive frame (a spawn, a column carry) shows it
+only in `MAX`: the recipe's actors subsystem spikes by 10 blocks one frame
+in 64, and its `MAX` read 4,695 against a `LAST` of 3,556 on PAL.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 by timing the recipe's whole frame of work
+with CIA1 while blanked, built four ways
+(`recipes/oscar64/raster-profile-bars.md`): 7,374 cycles with both
+switches off, 7,416 with bars only (+42), 7,818 with the table only
+(+444) and 7,841 with both (+467), for four subsystems. The measured run
+updated all four maxima, the dearest path, so 467 is the worst frame;
+without a new maximum it is about 60 cycles less (arithmetic from the
+listing, not measured). In the recipe's Oscar64 build most of the table's
+cost is the call and 16-bit compare of the record routine; a hand-written
+assembly record would be cheaper (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/raster-profile-bars.md`
+
+### Sources
+
+- c64gameframework (MIT), https://github.com/cadaver/c64gameframework,
+  `main.s` (the `SHOW_*` switches), `raster.s` and `screen.s` (where they
+  colour the border), read here for names only.
+- Corescape (GPL-3.0), https://github.com/drmortalwombat/corescape,
+  `enemies.h` (`TIME_DEBUG`) and `display.cpp` (the border colours between
+  stages), read here for names only.
+- VICE 3.10, `x64sc`, models `default` and `ntsc`, 8,000,000 cycles:
+  every figure marked measured, from the exit PNG and the monitor log.
+- This repository: `frame_sync_loop` above (the single budget bar),
+  `pitfalls/raster-and-badline.md` (`badline_cycle_loss`),
+  `hardware/cia-reference.md` (CIA2 timer A and RS-232),
+  `runtime/vice-reference.md` (screenshot geometry, palette, monitor).

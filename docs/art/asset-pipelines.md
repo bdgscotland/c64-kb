@@ -169,35 +169,78 @@ small Python script to extract just the payload bytes.
 
 ### Music: GoatTracker (.sng) → usable output
 
-GoatTracker 2 is the most common demoscene tracker for producing SID music in a
-build pipeline. Its native format is `.sng` (a binary song file). The conversion
-targets are:
+GoatTracker 2 is the most common cross-platform tracker for SID music in a
+build pipeline. Its native format is `.sng`, a binary song file; the field
+table is in `../formats/c64-file-formats.md` under `.SNG`. The tracker does not
+export source code. Its one export is the packer/relocator, reached with F9 in
+the editor or as the standalone `gt2reloc` utility, and it writes one of three
+things, chosen by the extension of the output file name:
 
-**Option A: Standalone `.prg` with embedded player.** GoatTracker's `gt2reloc`
-tool (included in the GoatTracker distribution) combines the song data with a
-small SID player routine and produces a standalone `.prg`. This is useful for
-quick playback testing or for dropping a complete music PRG into a multi-part demo
-that loads it as a separate segment.
+| Extension | Contents |
+|-----------|----------|
+| `.prg` | two-byte load address, then the player code and the packed song data |
+| `.bin` | the same bytes without the load address |
+| `.sid` | a PSID v2 header (`$7C` bytes), then the `.prg` bytes |
+
+**Option A: Standalone `.prg` with embedded player.**
 
 ```bash
-gt2reloc -f song.sng player.prg $1000
+gt2reloc song.sng music.prg -W10 -ZFC
 ```
 
-The second argument is the output `.prg` and the third is the base address where
-the player+data will be placed in C64 memory. The player entry point is at the
-specified base address; the init call is `JSR base` and the play call is
-`JSR base+3` (standard SID player convention).
+`-Wxx` is the player address high byte in hex (default `10`, so `$1000`) and
+`-Zxx` the first of the two zero-page bytes the player uses (default `$FC`).
+There is no positional address argument. The other options that matter in a
+game build are `-B1` buffered SID writes, `-D1` sound-effect support, `-E1`
+volume-change support, `-H1` store the author string at `base+$20`, `-N` NTSC
+timing and `-Sx` the speed multiplier; `gt2reloc -?` lists them all. The
+relocator drops unused patterns, instruments, table rows and player code, so
+the output size depends on the song. Measured with `gt2reloc` built from the
+GoatTracker 2.77 source (its banner says v2.73): the distribution's
+`consultant.sng` gives 1,786 bytes at `$1000` (1,119 of them player) and a
+1,788-byte `.prg`; `dojo.sng` gives 2,655 bytes.
 
-**Option B: Assembly include file for inline projects.** GoatTracker's `gt2asm`
-converter emits a KickAssembler or 64tass-compatible `.asm` / `.inc` file
-containing the song data as labeled byte tables and a small player stub. Import
-this file into a KickAssembler project with `.import source "music.inc"` and call
-the player entry points from the IRQ handler. This keeps everything in one
-assembled `.prg` and avoids a separate load step.
+The player's jump table is at the start of the output: `JSR base` with the
+subtune number in A (from 0) initialises, `JSR base+3` plays one frame. A third
+entry at `base+6` exists only when `-D1` or `-E1` compiled it in (sound effect,
+or volume; with both, volume is at `base+9`). There is no stop entry. The full
+call contract, zero-page use and ghost-register copy loop are in the
+`goattracker_player_api` entry of the SID techniques page under
+`../techniques/`.
 
-For Oscar64, Option A is usually more practical: compile the music player as a
-separate segment or load it as a raw binary at a known address, then call the
-player entry points via function pointers or inline assembler.
+**Option B: Inline in a KickAssembler build.** Write a `.bin` (or `.prg`) and
+import it at the address it was relocated for:
+
+```text
+.pc = $1000 "music"
+.import binary "music.bin"      ; relocated with -W10
+```
+
+or write a `.sid` and let KickAssembler read the header:
+
+```text
+.var music = LoadSid("music.sid")
+.pc = music.location "music"
+.fill music.size, music.getData(i)
+// music.init and music.play hold the entry addresses
+```
+
+Both fragments were assembled with KickAssembler 5.25 against `dojo.sng`
+relocated to `$1000`; each produced a file byte-identical to the relocator's
+own `.prg`. For Oscar64 the `.bin` goes in through `#embed` into an array
+placed at the relocation address (see "Oscar64 native data inclusion" below),
+or the `.prg` is loaded as a separate file and called through a function
+pointer.
+
+**Correction (2026-09-23).** An earlier version of this section named a
+`gt2asm` converter that emits a `.asm`/`.inc` file with the song as labelled
+tables. No such utility exists: the GoatTracker 2.77 distribution ships
+`goattrk2` (the editor), `gt2reloc` (the packer/relocator), `ins2snd2`
+(instrument to sound-effect data), `sngspli2` (pattern splitter) and `mod2sng`
+(MOD import), and its makefile builds nothing else. The same text gave
+`gt2reloc` a `-f` flag and a positional `$1000` argument, which it does not
+accept, and a `stop` entry at `base+6`, which is the sound-effect or volume
+entry when compiled in.
 
 ---
 
@@ -211,8 +254,8 @@ player entry points via function pointers or inline assembler.
 | CharPad 2.x | .ctm | charset binary, screen binary, color binary | GUI; built-in export |
 | Koala Painter (PC port) | .kla | n/a | Use strip-header script instead |
 | koala-tools (CLI) | .kla | .bin chunks, C headers | Python; strips header, splits regions |
-| gt2reloc | .sng | .prg (player + data) | GoatTracker distribution |
-| gt2asm | .sng | .asm / .inc | GoatTracker distribution |
+| gt2reloc | .sng | .prg / .bin (player + data), .sid | GoatTracker 2 distribution; format chosen by output extension |
+| ins2snd2 | .ins | sound-effect data as DASM-style source or binary (`-b`) | GoatTracker 2 distribution; an earlier row here named a `gt2asm` .sng-to-include converter, which does not exist |
 | Exomizer 3 | any binary | .exo stream or .prg with depacker | Compression; see below |
 | c1541 | .d64 | individual files | Commodore disk image tool |
 
@@ -311,7 +354,7 @@ $(BUILD)/bitmap.bin $(BUILD)/screen.bin $(BUILD)/color.bin $(BUILD)/bgcolor.bin:
 	python3 tools/convert_koala.py $< $(BUILD)
 
 $(BUILD)/music_player.prg: $(SRC_MUS)/song.sng | $(BUILD)
-	gt2reloc -f $< $@ $$1000
+	gt2reloc $< $@ -W10
 
 # Final PRG
 $(BUILD)/game.prg: src/main.c \
@@ -445,26 +488,31 @@ via `$D011`/`$D016`/`$D018`.
 
 ---
 
-### Example 2: GoatTracker → KickAssembler include flow
+### Example 2: GoatTracker → KickAssembler import flow
 
-```bash
-# 1. Convert song to assembly include
-gt2asm -f song.sng music.inc $1000
+```text
+# 1. Pack and relocate the song to $1000 as a headerless binary
+gt2reloc song.sng music.bin -W10
 
 # 2. KickAssembler source fragment
 .pc = $1000 "Music"
-.import source "music.inc"
+.import binary "music.bin"
 
 # 3. In the IRQ handler (after stable raster setup):
-#    JSR $1000   ; init (call once at startup, A = song number 0)
-#    JSR $1003   ; play (call every frame from IRQ)
+#    LDA #0        ; subtune number
+#    JSR $1000     ; init, once at startup
+#    JSR $1003     ; play, every frame from the IRQ
 ```
 
-`gt2asm` emits the player code and song data as labeled tables. The player exposes
-a three-entry-point interface: `init` at base, `play` at base+3, and `stop` at
-base+6. The song data follows immediately after the player code within the same
-`.inc` file. The result is a single `.import source` that brings in both code and
-data, with no separate binary file needed in the build.
+The relocator's output is player code followed by the packed song data, with
+the jump table first: `init` at base and `play` at base+3. A third entry is
+present only when the song was packed with sound-effect (`-D1`) or volume
+(`-E1`) support. One `.import binary` brings in code and data together, so no
+separate load step is needed; the block must sit at the address given to
+`-W`, because the player is not position-independent. An earlier version of
+this example ran a `gt2asm` converter and imported its output with
+`.import source`; no such converter exists in the GoatTracker 2 distribution,
+and the `stop` entry it described at base+6 is not in the player's jump table.
 
 ---
 

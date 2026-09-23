@@ -8,7 +8,7 @@ agents. This page covers the code.
 
     nvm use                 # Node 24.12+, from .nvmrc
     npm ci
-    npx lefthook install    # git hooks: typecheck, lint, format, listings, unit tests
+    npx lefthook install    # git hooks on commit: typecheck, lint, format, listings, unit tests, build
     npm run services        # Qdrant and FalkorDB (pinned digests in docker-compose.yml)
 
 ## Before a commit

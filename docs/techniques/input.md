@@ -596,3 +596,232 @@ select to read paddles on the other port pays `paddle_read`'s settle.
 ### Recipes
 
 - `recipes/kickassembler/mouse-1351-read.md`
+
+## attract_mode_input_replay — The title screen plays the game from a recorded input stream
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00, D012
+**Requires:** joystick_edge_detect, lfsr_random, frame_sync_loop
+**Cost:** cycles_per_frame=68
+**Cost basis:** measured-vice
+
+### Why
+
+A title screen that idles is a still frame. The arcade answer is the
+attract mode: after a while the game plays itself, and anyone watching
+sees what the game is. The cheap way to get one is not a second code
+path that moves the player about; it is the game itself, with its input
+coming from somewhere other than the joystick port. The player code
+reads one input byte. During play the port fills it. During the demo a
+recording fills it. Nothing else changes, so the demo does exactly what
+the game does, and a change to the game's rules is a change to the demo
+for free.
+
+### How
+
+Route every input read through one byte. `joystick_edge_detect` already
+keeps last frame's port byte; put this frame's byte beside it and have
+the game read the pair, never `$DC00` directly. The main loop is the
+only place that writes it: from the port on the title and in play, from
+the recording during the demo.
+
+Store the recording as run-length pairs: the port byte exactly as
+`$DC00` gives it, active low, and the number of frames it was held. A
+joystick changes a few times a second, so a 285-frame demo is eight
+pairs. A count of zero ends the stream. Beside the stream keep the seed
+the random generator had when the recording was made, and the state the
+recording ends in, here the player's X and Y on its last frame, so the
+program can check its own replay.
+
+Count idle frames on the title: a byte that goes up once a frame while
+the port reads nothing and back to zero on any bit. When it reaches the
+attract delay, start the demo: reset the playfield the way a new game
+would, set the LFSR to the recorded seed, and point the stream at its
+first pair. Each demo frame, if the current pair has frames left, hold
+its byte; otherwise load the next pair; when the next pair's count is
+zero the demo is over and the title comes back.
+
+Keep reading the port during the demo. Any bit low is a real press: end
+the demo that frame, before the stream is consulted, and let the title
+take over. The player then starts a game from the title as usual.
+
+### Why it works
+
+The replay is exact because the game is deterministic from its seed.
+Its state on any frame is a function of the state before it and the
+input byte, and the only source of variation is the random generator.
+Reseed the generator, feed the same bytes in the same frames, and every
+intermediate state is the one the recording saw, so the last frame lands
+where the table says. The recipe shows the other side: built with the
+reseed left out, the same 285 bytes end 210 pixels from the recorded
+position, because the title screen had moved the generator on. The
+frame is the unit that makes "the same frames" true on both regions: a
+`frame_sync_loop` runs one step per frame, so a count of 50 is 50 steps
+on PAL and on NTSC, in less wall time on NTSC and with the same result.
+
+The seed must not be zero. An LFSR at zero stays at zero, so the reseed
+maps zero to one; a recording tool should never store zero, and the
+guard costs one compare.
+
+### Variations
+
+Öörni's control override, named on `game-design/game-structure.md`, is
+the same seam used the other way: enemies and cutscene actors read a
+virtual joystick byte that the AI or the script writes, and a
+conversation freezes the player by writing zero. A recorded human run is
+the natural source for the stream: log the byte and the frame count
+through the same variable during a real game and dump the pairs. The
+verdict constants are then whatever the recording ended on, which is how
+a shipped game can check its own attract mode after a rules change. A
+longer attract can chain several recordings, or a recorded run and a
+scripted one, through the same byte.
+
+### Cycle budget
+
+The replay step, the code that decides whether to hold the current pair
+or load the next one and writes the input byte, was timed with CIA1
+timer B, interrupts held off for the timed window, over a 285-frame
+demo. The longest step was 68 cycles on PAL and NTSC and in all three
+builds, and that figure includes the timer's own start and stop stores.
+The Cost line states it; the game step it feeds is the game's own cost,
+not the technique's. The idle counter on the title is one increment and
+one compare a frame. Measured in VICE x64sc 3.10 on the recipe's
+listing.
+
+### Recipes
+
+- `recipes/oscar64/attract-replay.md`
+
+---
+
+## four_player_read — Read joysticks 3 and 4 through a user-port 4-player adapter
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00, DC01, DD01, DD03
+**Cost:** cycles_per_frame=62, irq_slots=0
+**Cost basis:** measured-vice
+
+### Why
+
+The C64 has two control ports. Party and sports games for four players
+add two more joysticks through an adapter on the user port, read through
+CIA2 port B (`$DD01`). The common design, sold by Protovision and
+emulated by VICE as the "CGA userport joy adapter", has seven port-B
+lines (six inputs and a select) for ten switches, so it multiplexes the directions and gives each
+fire button its own line. A game has to know which bit is which, and
+that the adapter types are not interchangeable.
+
+### How
+
+Set PB7 as an output once. It is the adapter's select line; PB0 to PB6
+stay inputs:
+
+```text
+$DD03 = $80          ; DDR B: PB7 out, PB0-PB6 in
+```
+
+Then, each frame:
+
+```text
+j1 = $DC01 & $1F                ; port 1
+j2 = $DC00 & $1F                ; port 2 ($DC00 must drive no keyboard column)
+$DD01 = $80                     ; PB7 = 1: joystick 3's directions on PB0-PB3
+j3 = $DD01 & $1F                ; PB0-PB3 directions, PB4 = fire 3
+$DD01 = $00                     ; PB7 = 0: joystick 4's directions on PB0-PB3
+v  = $DD01
+j4 = (v & $0F) | ((v & $20) >> 1)   ; PB5 = fire 4, moved to bit 4
+```
+
+All four bytes then have the `$DC00` layout: bit 0 up, 1 down, 2 left,
+3 right, 4 fire, 0 when pressed. `joystick_edge_detect` and the rest of
+a game's input code work on them unchanged.
+
+Fire 3 on PB4 and fire 4 on PB5 are present under either select. Only
+the directions go through the select. Joystick 4's fire therefore is not
+bit 4 of its read; forgetting the shift reads joystick 4 as never firing.
+
+### Why it works
+
+Writing `$DD01` with `$DD03` at `$80` drives only PB7; the input bits
+ignore the write. PB7 drives a 74LS257 multiplexer (VICE's pin table)
+that routes one joystick's four direction lines to PB0-PB3. Protovision
+and the icomp wiki both give PB7 = 1 for joystick 3 and PB7 = 0 for
+joystick 4, with fire 4 on PB5. VICE 3.10's source agrees
+(`src/userport/userport_joystick.c`): PB7 high selects joystick 3's
+directions, and the read carries joystick 3's fire on PB4 and joystick
+4's on PB5 whatever the select.
+
+What was run: the recipe, in VICE x64sc 3.10 with the CGA adapter and
+autofire on joysticks 3 and 4 at 5 and 7 presses a second, counted 11
+and 15 presses in 100 PAL frames, 9 and 12 in 100 NTSC frames, and
+found PB4 and PB5 equal under both selects on every frame. Directions on
+joysticks 3 and 4 were not injected: VICE has no headless way to move
+them. The select's effect on PB0-PB3 is therefore from the two sources
+and the VICE source, not measured here.
+
+VICE switches the multiplexer at the store, so a load 4 cycles later
+sees the new joystick. No settle time on hardware is measured here.
+
+### Variations
+
+**Kingsoft adapter.** A different wiring with no select line. In VICE's
+source (`src/userport/userport_hks_joystick.c`, not exercised here
+beyond one control run) joystick 4's directions are on PB0-PB3 in the
+order right, left, down, up; joystick 3's fire is PB4, its right, left
+and down are PB5-PB7 and its up is PA2, bit 2 of `$DD00`; joystick 4's
+fire arrives on CIA2's serial data pin SP2, clocked from CIA1's CNT1. The
+control run in the recipe read a Kingsoft adapter with the CGA code:
+joystick 3's fire counted, joystick 4's never did. VICE also emulates
+HIT and StarByte adapters with other wirings. A game that supports more
+than one adapter needs a menu choice or a per-type read.
+
+**Detecting the adapter.** With no adapter, PB0-PB6 read high under
+both selects (measured in VICE, the recipe's control run with no
+user-port device), which is also what a connected adapter with every
+joystick idle returns.
+There is no reliable detect; ask the player.
+
+**Two reads a frame for responsiveness.** The read is 62 cycles, so a
+game that polls twice a frame, for example once in the IRQ and once in
+the main loop, spends 124.
+
+### Conflicts on the user port
+
+The adapter uses PB0-PB5 and PB7, and its DDR setting owns port B, so it cannot share the port with anything else
+that uses port B. `hardware/cia-reference.md` lists the KERNAL RS-232
+driver (RXD sampled on `$DD01` bit 0 from its NMI) and user-port parallel
+cables for 1541 fastloaders. Either one active at the same time would
+corrupt the other's reads or writes (not measured here), and the adapter's `$DD03` setting is lost
+if the other code rewrites the DDR. The IEC-bus loaders this repository
+covers, Krill and Sparkle, are described in `pitfalls/loader.md` as
+driving `$DD00` only; no `$DD01` use is stated for them, and none was
+measured. A parallel-cable build of a loader is a different case and is
+not covered here.
+
+Ports 1 and 2 share `$DC00` and `$DC01` with the keyboard. The KERNAL
+scan rewrites `$DC00`; `pitfalls/input.md` has what that does to a
+port 2 read.
+
+### Cycle budget
+
+The read is 22 instructions and no branch: 62 cycles every frame,
+measured by CIA1 timer A in VICE on PAL and NTSC, and the same from the
+instruction table. As a subroutine it is 74 with the `jsr` and `rts`
+(arithmetic). The Cost line states 62, the read inlined. The one-off
+`$DD03` write is not part of the frame.
+
+### Sources
+
+- Protovision, 4-player adapter build page:
+  https://www.protovision.games/hardw/build4player.php?language=en
+  (PB7 select, `$DD03` = `$80`, fire 4 on bit 5)
+- icomp wiki, "4 Player Adapter": https://wiki.icomp.de/wiki/4_Player_Adapter
+  (DDR `%10000000`, `$80` selects joystick 3, `$00` joystick 4, fire 4 on PB5)
+- VICE 3.10 source, `src/userport/userport_joystick.c` (CGA adapter) and
+  `src/userport/userport_hks_joystick.c` (HIT, Kingsoft, StarByte)
+
+### Recipes
+
+- `recipes/kickassembler/four-player-read.md`

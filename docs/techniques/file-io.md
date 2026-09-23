@@ -741,3 +741,133 @@ memory and load each byte fresh.
 ### Recipes
 
 - `recipes/oscar64/relative-file-records.md` (create, write 1, 3 and 5, read back with a checksum, the `50` on record 9 and the write that clears it; `51` in a side run)
+
+---
+
+## cartridge_save — Save game data to the cartridge: EasyFlash flash sectors, GMod2 serial EEPROM
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** DE00, DE02
+**Requires:** cartridge_bank_easyflash
+**Demands:** kernal_rom_out
+
+### Why
+
+A game shipped on a cartridge may run on a C64 with no disk drive. Even
+when there is one, the disk in it is not the game's. High scores and
+save games therefore go into the cartridge. Two cartridge types built for
+this are in common use. EasyFlash writes to its own flash chips.
+GMod2 writes to a small serial EEPROM beside its flash. The C64 cannot
+write to ROM, so both need their own write protocol, and both are slow
+compared with a RAM store. This technique describes both and when to
+pick which.
+
+### How: EasyFlash
+
+EasyFlash holds two 512 KB Am29F040-type flash chips, one behind ROML
+(`$8000`) and one behind ROMH. Each 8 KB bank register value
+(`$DE00`) selects the upper chip address lines. Three rules decide
+everything.
+
+1. **Erase is per 64 KB sector, programming is per byte.** Erase sets a
+   whole sector to `$FF`. That is 8 banks of one chip: the ROML halves of
+   banks 8 to 15, for example. Programming can only turn 1 bits into 0
+   bits. So reserve whole sectors for saves, never a sector that also
+   holds code or data. The Am29F040B data sheet gives 1,000,000
+   program/erase cycles per sector at minimum (not measured here).
+2. **Writes need Ultimax mode.** Reads work in 16 KB mode (`$DE02` =
+   `$07`), but writes to ROML in that mode reach only the C64 RAM
+   underneath. Measured in VICE x64sc 3.10: an erase issued in 16 KB mode
+   returned in 130 cycles and changed nothing, and the RAM at `$8555`
+   read back `$A0`, the program command's third byte. EAPI switches to
+   `$85` (Ultimax plus LED) for every write. Write to ROML at
+   `$8000-$9FFF` and to ROMH at `$E000-$FFFF`, the Ultimax addresses.
+   In Ultimax mode only RAM `$0000-$0FFF` is mapped and the KERNAL is
+   gone, so the writing code and its data live below `$1000` (or in the
+   cartridge's 256 bytes of RAM at `$DF00`), with interrupts off.
+3. **Use EAPI in anything you release.** EAPI is the EasyFlash flash
+   driver. A CRT carries it at bank 0 ROMH offset `$1800` (768 bytes
+   reserved). The program copies it to C64 RAM (c64gameframework uses
+   `$C000`) and calls EAPIInit, which builds a jump table in the
+   cartridge RAM at `$DF80`. The calls are
+   EAPIWriteFlash `$DF80`, EAPIEraseSector `$DF83`, EAPISetBank `$DF86`,
+   EAPIGetBank `$DF89`, EAPISetPtr `$DF8C`, EAPISetLen `$DF8F`,
+   EAPIReadFlashInc `$DF92` and EAPIWriteFlashInc `$DF95`. When EasyProg
+   flashes a CRT that has the `eapi` signature there, it swaps in the
+   version for the flash chip actually fitted. Code that sends Am29F040
+   commands itself, as the recipe does, works only on that chip. VICE
+   emulates it and warns `EF: EAPI not found!` when a CRT has no EAPI.
+
+Saving then works like this. Keep the save sector's banks as `$FF` in
+the CRT, because EasyProg erases only the sectors a CRT contains. At
+boot, check a signature and erase the sector if it is foreign. Append
+each save as a fixed-size record in the next all-`$FF` slot, program a
+commit byte last, and load the newest committed record. Erase only when
+no slot is left. A save of a few dozen bytes then costs one sector erase
+every few hundred saves.
+
+Times. VICE's sector erase took 1,000,147 to 1,000,191 cycles over three
+erases (two PAL, one NTSC). That is about 1 s: freeze the game and blank the screen, or show
+a "saving" message before starting. Programming 32 bytes took 2,866 to
+3,123 cycles in VICE (PAL and NTSC), including the code around each byte. The
+Am29F040B data sheet gives 1 s typical and 8 s maximum per sector erase,
+and 7 µs typical and 300 µs maximum per byte (not measured here). VICE
+does not model the byte time or its spread, so budget for the maximum
+on hardware.
+
+The recipe's wait loops poll the toggle bit (DQ6) and do not check DQ5,
+which the data sheet sets when an operation exceeds its time limit; a
+released game should add that check or use EAPI (hardware failure not
+tested here). A power cut is still a risk in two places, and the recipe's
+torn-slot path was not exercised. (a) When the bank is full, the erase
+comes before the new record is written, so a cut there loses every save.
+(b) A cut during an erase can leave the signature and a `$00` commit
+byte over half-erased data, which goes undetected without a checksum.
+Remedies: alternate between two sectors, and add a checksum byte.
+
+### How: GMod2
+
+GMod2 keeps saves in a serial EEPROM behind `$DE00`. The same register
+also selects the ROM bank, so the code keeps a shadow copy and changes
+one bit at a time. The bits, from c64gameframework's `gmod2boot.s`:
+
+| `$DE00` bit | Signal | Direction |
+|---|---|---|
+| 7 | EEPROM data out | read |
+| 6 | chip select | write |
+| 5 | clock | write |
+| 4 | EEPROM data in | write |
+
+Each command is a start bit, a 2-bit opcode and a 10-bit word address,
+clocked out MSB first. Opcode `10` reads and `01` writes. `00` followed
+by `11` enables writes and `00` followed by `00` disables them. Data
+follows as 16-bit words: the framework halves its byte address to get
+the word address, and a write sends one word as two bytes. 1,024 16-bit
+words is 2 KB (arithmetic from the 10-bit address). After each word, the
+code drops and raises chip select, then waits until data out reads 1.
+The framework issues no erase command, so there is no sector to manage.
+It holds only 2 KB, though, and every bit costs several register writes. The part number and its
+write time come from neither the framework nor VICE and are not stated
+here. VICE emulates it with `-gmod2eepromimage <file>` and
+`-gmod2eepromrw`. Nothing on GMod2 was measured here.
+
+### Which one
+
+- **EasyFlash** if the game is on EasyFlash already, the save is large (a
+  whole level state), or saves are rare enough that a 1 s erase is
+  acceptable. Reserve a sector per save area.
+- **GMod2** for a 16-bit-word save of up to 2 KB that must be written
+  often, with no erase planning. Its write time is not established here.
+- **Neither** for data that changes every frame: keep it in RAM and
+  write it on checkpoint or game over.
+
+### Sources
+
+- EasyFlash Programmer's Guide (Thomas Giesel): http://skoe.de/easyflash/files/devdocs/EasyFlash-ProgRef.pdf
+- Am29F040B data sheet, AMD publication 21445: https://instrumentation.obs.carnegiescience.edu/ccd/parts/AM29F040B.pdf
+- c64gameframework (Lasse Öörni, MIT), `efboot.s`, `gmod2boot.s`, `eapi-am29f040-14.bin`: https://github.com/cadaver/c64gameframework
+
+### Recipes
+
+- `recipes/kickassembler/easyflash-save.md` (a self-built EasyFlash CRT that appends a high-score record to bank 8 each boot; persistence shown across two VICE runs with `-easyflashcrtwrite`; erase and program timed)

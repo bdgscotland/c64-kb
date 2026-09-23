@@ -62,8 +62,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: pull the embedding model
-        run: curl -sf http://localhost:11434/api/pull -d '{"model":"mxbai-embed-large"}' | tail -1
+      # Pull, then embed once: loading the model into memory takes longer on a
+      # CPU runner than a test's setup hook allows (10 s timed out, 2026-09-23).
+      - name: pull and load the embedding model
+        run: |
+          curl -sf http://localhost:11434/api/pull -d '{"model":"mxbai-embed-large"}' | tail -1
+          curl -sf http://localhost:11434/api/embed -d '{"model":"mxbai-embed-large","input":"warm"}' > /dev/null
       - run: npm run test:integration
 
   listings:
@@ -112,7 +116,7 @@ jobs:
       - run: npm ci
       - run: >-
           sudo apt-get install -y -qq cc65 build-essential xa65 dos2unix libpng-dev
-          pkg-config flex bison python3-pil
+          pkg-config flex bison libcurl4-openssl-dev python3-pil
       - name: KickAssembler 5.25
         run: |
           mkdir -p .tools/kickass && cd .tools/kickass
@@ -126,4 +130,12 @@ jobs:
       # A Linux build of this script matched every pinned PNG it could run
       # (54 of 54, 2026-09-23); Oscar64 recipes are skipped until #25.
       - run: "[ -x .tools/vice-headless/bin/x64sc ] || npm run vice:headless"
-      - run: npm run verify:recipes -- --allow-missing
+      # verify:recipes fails a recipe whose toolchain is absent, so the
+      # Oscar64 pages are left out by directory until #25 pins a compiler.
+      - name: verify KickAssembler and cc65 recipes
+        run: |
+          fail=0
+          for f in docs/recipes/kickassembler/*.md docs/recipes/cc65/*.md; do
+            node scripts/verify-recipes.ts --file "$f" --allow-missing | tail -1 | grep -q " 0 failed" || { echo "FAILED: $f"; fail=1; }
+          done
+          exit $fail

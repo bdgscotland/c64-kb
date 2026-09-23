@@ -44,6 +44,8 @@ export default defineConfig({
           include: ["test/**/*.test.ts"],
           exclude: UNIT,
           testTimeout: 30000,
+          // Seeding embeds through Ollama; a cold model took over 10 s on a CI runner.
+          hookTimeout: 60000,
           // Every file shares c64_test; two at once clean each other's fixtures.
           fileParallelism: false,
           pool: "forks",

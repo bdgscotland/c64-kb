@@ -318,7 +318,7 @@ setup_bank1:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation, irq_owns_processor_port
+**Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation, irq_owns_processor_port, cartridge_save
 
 ### Symptom
 
