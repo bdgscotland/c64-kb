@@ -271,6 +271,148 @@ three-pass design that `vspr_*` does not implement.
 
 ---
 
+## sprite_multiplex_game — Game multiplexer in assembly: persistent sort, double-buffered table, zone IRQs, late guard
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D000, D001, D010, D012, D015, D019, D01A, D027
+**Uses kernal:** (none)
+**Demands:** midframe_raster_irqs, changes_sprite_set
+**Cost:** cycles_per_frame=16600, irq_slots=17
+**Cost basis:** arithmetic
+
+### Why
+
+`sprite_multiplex_24` covers Oscar64's `vspr_*` path, which takes one IRQ
+per reused sprite and about 20 % of a PAL frame for 24 sprites. The
+KickAssembler three-band recipe keeps every sprite inside a fixed band
+and does not sort. A game needs sprites that go anywhere, a sort that is
+cheap on the frames a game actually produces, and IRQ code it owns and
+can budget. Cadaver found this structure in Ocean and Imagine games such
+as Green Beret and Midnight Resistance (sources below).
+
+### How
+
+1. **Sort by Y, keeping last frame's order.** An index array `order[]` is
+   never reset. Each frame an insertion sort repairs it: an actor that has
+   not passed a neighbour costs one compare, one that has passed k
+   neighbours is shifted k places. This is the "Ocean" or continuous
+   insertion sort.
+2. **Build into the half the IRQs are not reading.** Walk `order[]` and
+   copy each accepted actor's Y, X, pointer, colour and a precalculated
+   $D010 byte into a sorted table. The table has two halves; the main loop
+   builds one while the IRQs show the other, then sets a ready flag. The
+   frame IRQ swaps halves only when the flag is set, so a late build shows
+   the previous frame again instead of a half-written table. The unsorted
+   actor tables are single; only the main loop touches them.
+3. **Reject the ninth sprite on a band.** Accepted entry a goes to slot
+   a mod 8, which last showed entry a − 8. If the new Y is less than 21
+   lines below that entry's Y, the slot cannot show it: reject the actor
+   for this frame (`sprite_dma_overflow` measured Y = 100 then 120 lost,
+   100 then 121 shown).
+4. **Group sprites into zones.** The frame IRQ, below the last sprite
+   line, writes the first eight. Every later sprite belongs to a zone: a
+   run of sorted sprites close enough in Y to be written by one IRQ. The
+   zone's IRQ line is set early enough for all its writes, Y first.
+5. **Guard against a late IRQ.** At the end of each zone, store the next
+   zone's line in $D012, then compare line − 3 with $D012. If the raster is
+   already there, run the next zone now, without exit, acknowledge or
+   entry. Otherwise acknowledge and return.
+
+### Why it works
+
+The VIC-II starts a sprite on the line after its Y matches the raster, and
+only when that slot's DMA is off; it then draws 21 lines from whatever the
+registers hold. A slot is free for a new Y once its old sprite has started,
+provided the new Y is at least 21 lines lower. A Y write that lands after
+the raster has passed it never matches that frame, so the sprite is lost,
+not delayed. The sort and the 21-line rule decide what can be shown; the
+zone lines decide whether each write is in time.
+
+An IRQ line written after the raster has passed it does not fire until
+the next frame. Without the guard, every zone after a late one is lost for
+that frame. In the recipe, a build without the guard showed 11 of 24
+actors in 2 of 16 swept shots (9.3 million cycles, PAL and NTSC) and 24
+in the other 14; with it, 24 of 24 in all 16 (measured in VICE x64sc).
+
+The guard fires in about 80 % of frames. That is zones being merged when
+they sit close together, not IRQs arriving late by accident. A probe
+measured the largest overshoot on the fall-through path as 5 lines past
+line − 3, so at most 2 lines past the scheduled line, which leaves at
+least 2 lines before the zone's first Y (PAL, 309 frames, VICE x64sc). An
+8-sprite zone under full sprite DMA on a badline was not measured here.
+
+### Choosing the sort
+
+| Sort | Cost pattern | Wins when |
+|---|---|---|
+| Insertion from last frame's order (Ocean) | One compare per actor in place; about 30 cycles per place an actor moves. Measured in the recipe for 24 actors: 611 sorted, 5,228 shuffled, 8,783 reversed; 611 to 953 per frame in 16 shots of play, 1,411 the largest seen | Actors move a few lines a frame and rarely overtake many others: most games |
+| Bucket on Y | Nearly the same every frame, whatever the order | Orders change wholesale: spawning waves, teleports, many actors re-entering at once. Falco Paul's Java model put it 18 % slower than Ocean on a game-like pattern, best with 128 buckets (not measured here) |
+| Hybrid: Ocean, falling back to bucket when the swaps pile up | Ocean's cost on quiet frames, bucket's ceiling on bad ones | A frame budget that cannot absorb the insertion sort's worst case |
+
+The Java figures are from a model of 64 sprites, not 6502 code. Cadaver
+recommends the Ocean sort for real projects and uses it in MW4. Linus
+Akesson's Field Sort and radix sorts are further options with published
+6502 figures (sources below; not measured here).
+
+### Variations
+
+**Just after the old sprite.** Fire each reuse IRQ just below the slot's
+previous sprite and write Y last. A late write then drops the new sprite
+instead of drawing a glitch, but tight formations lose sprites. The
+recipe uses "just before the new sprite", which keeps them but lets the
+new X, colour and pointer land during the old sprite's last lines when
+the gap is exactly 21.
+
+**Priority mapping.** Instead of slot a mod 8, pick a free slot by the
+actor's priority class, so that the player or explosions get
+low-numbered slots and draw in front.
+
+**Unrolled writes per slot.** One block of code per hardware slot with
+constant register addresses, entered at the first slot to write, avoids
+the slot lookups at the cost of code size.
+
+### Cycle budget
+
+Measured in the recipe on PAL (VICE x64sc, CIA2 timers): sort 611 cycles
+for 24 sorted actors (26 per compare × 23 + 13 = 611, which matches the
+measurement; 28 per compare when the loop branches cross a page), 611 to
+953 per frame in 16 shots of play and 1,411 the largest seen; build
+3,815; multiplexer IRQs 2,201 to 2,764 per frame with 7 to 13 zones
+(10 in the pinned shot), plus 47 cycles per IRQ taken that the timer
+cannot see (arithmetic from the listing).
+
+The Cost line is the worst frame, by arithmetic: 8,783 (a full
+reversal) + 3,815 + 2,764 + 17 × 47 + 6 × 76 ≈ 16,600 cycles. The last
+term is six zones more than the ten in the 2,764 frame, at about 76
+cycles of timed per-zone code each (arithmetic from the listing). That
+is about 84 % of a PAL frame, and more than an NTSC frame leaves after
+badline and sprite DMA. The double buffer turns the overrun into one
+repeated frame (MISSED), not a torn one. Without a reversal the worst
+frame is about 8,800 (1,411 + 3,815 + 2,764 + 17 × 47). The Cost line includes the
+reversal a respawn of every actor can cause. `irq_slots=17` is a ceiling: the frame
+IRQ plus 16 single-sprite zones, before the late guard merges any. The
+recipe's frames built 7 to 13 zones.
+
+### Sources
+
+Cadaver, "Sprite multiplexing", https://cadaver.github.io/rants/sprite.html
+(continuous insertion sort, 21-line rejection, double buffering,
+precalculated $D010, the late check with a 3-line margin). Falco Paul in
+"Speculative sprite sorting methods",
+https://cadaver.github.io/rants/sorting.html (bucket, Ocean and hybrid
+sorts in Java). Linus Akesson, Field Sort,
+https://www.linusakesson.net/programming/fieldsort/index.php. Codebase64,
+https://codebase.c64.org/doku.php?id=base%3Asprite_multiplexing (sort
+families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
+(`screen.s`, `raster.s`; MIT; read for structure only).
+
+### Recipes
+
+- `recipes/kickassembler/sprite-multiplex-game.md`
+
+---
+
 ## sprite_expand — Hardware-expand sprites
 
 **Complexity:** low
@@ -894,3 +1036,436 @@ move.
 - `recipes/kickassembler/sine-table-runtime.md` (builds the sine table on
   the machine instead of with the assembler, then drives eight sprites
   from it; the way to get the table without `.fill`)
+
+---
+
+## sprite_cache_flip — Sprite cache: frames depacked and mirrored on demand
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D01C
+**Uses kernal:** (none)
+**Requires:** table_generation
+**Cost:** cycles_per_frame=2672, bytes_data=1024
+**Cost basis:** arithmetic
+
+### Why
+
+A 16 KB VIC bank holds 256 sprite blocks of 64 bytes, fewer once the
+screen, a charset and code take their share. A game whose hero and
+enemies face both ways needs every frame twice. The fix is to store each
+frame once, facing right and packed, outside the VIC bank, and to depack
+it into a small cache of sprite blocks inside the bank only when it is
+about to be shown, mirroring it on the way when the object faces left.
+Metal Warrior 4 stores its frames facing right only and mirrors them at
+load time, so 114 stored frames become about 170; Hessian caches 64 frames at $D000 to $DFFF, under the I/O area
+(from Cadaver's articles, not measured here).
+
+### How
+
+**Mirroring a hires row.** A row is 3 bytes, 24 pixels, bit 7 of byte 0
+the leftmost. The mirrored row is `T[b2], T[b1], T[b0]`: the three bytes
+in reverse order, each with its 8 bits reversed. `T` is a 256-byte table
+(HFLIP), so a row costs three indexed loads.
+
+**Mirroring a multicolour row.** A multicolour pixel is a bit pair, four
+to a byte. The mirror reverses the order of the pairs and keeps the bit
+order inside each pair (MFLIP): `%aabbccdd` becomes `%ddccbbaa`. The
+bytes are swapped as for hires. The hires table is wrong here: reversing
+all 8 bits also reverses each pair, so %01 (colour from $D025) and %10
+(the sprite's own colour) change places while %00 and %11 do not. The
+shape comes out mirrored and the colours wrong. Measured in the recipe
+with the hires table forced on the multicolour frames: the same screen
+pixels are set, and 136 of the 156 the fish covers change colour.
+
+**flip(flip(x)) = x does not catch the wrong table.** Both tables are
+their own inverse, so a round trip through the wrong one passes. The
+recipe's negative run showed it: 0 round-trip errors, 62 mirrored bytes
+wrong.
+Check a mirrored frame against a mirror made another way (the recipe has
+the assembler reverse the pixel strings of each frame).
+
+**Build the tables at start.** Each is 256 bytes of loop output, so
+there is no reason to ship them: HFLIP takes 28,161 cycles and MFLIP
+34,817, under two PAL frames each, once (measured, below). Page-align
+both so `lda table,x` never adds a page-cross cycle. `table_generation`
+in `techniques/cpu-cycle-tricks.md` covers the general case.
+
+**Packing.** The recipe stores a 21-bit mask of the rows that are not
+empty, then 3 bytes for each such row. Depacking and mirroring are one
+pass: an empty row is three stores of zero, a present row three loads
+and three stores, plus three table lookups when mirrored. Cadaver packs
+into 6 slices of 7 bytes with one presence bit per slice (from his
+article, not measured here). Any scheme that decodes row by row can
+mirror as it goes.
+
+**The cache.** A slot is one 64-byte block inside the VIC bank, and the
+sprite pointer for it is its offset in the bank divided by 64. Two small
+tables map both ways: `slot_of[key]` ($FF when not cached) and
+`key_of[slot]` ($FF when free), where `key = frame * 2 + facing`. A
+request looks up `slot_of`; a hit costs 20 cycles. A miss takes the next
+slot, clears `slot_of` for the key that slot held, depacks into the
+slot and records the new key. Forgetting to clear the old key is the
+classic bug: its lookup then returns a slot that now holds another
+frame.
+
+**Eviction.** The recipe takes slots round-robin and has no protection,
+which is safe only because it requests each displayed frame once and
+has no more frames on screen than slots. A game must never evict a
+frame that is on screen now or queued for the next frame. Cadaver's
+c64gameframework stamps each slot with the frame counter when it is
+used and skips slots stamped this frame or the last one, continuing the
+search from where the last one stopped (read from its `sprite.s`, not
+run here). Size the cache above the most distinct frames that can be on
+screen in two frames, or the search finds no free slot.
+
+**When to depack.** In the main loop, before the frame is built, never
+in a raster IRQ. A fill costs 2,100 to 2,700 cycles, 33 to 43 PAL lines
+(arithmetic from the measured figures at 63 cycles a line), far more
+than a multiplexer IRQ has to spare. Request every frame the next
+display needs, store the pointer each request returns in the object's
+shadow pointer, and let the IRQ copy pointers only. A slot overwritten
+while the VIC is fetching it can show parts of both frames for one frame
+(not measured here).
+
+**Cache under I/O.** Placing the cache at $D000 to $DFFF in VIC bank 3
+uses RAM the CPU cannot see without banking out I/O through $01, so the
+fill must run with interrupts off around the bank switch (Cadaver's
+MW4 article, not measured here). See `ram_under_rom_traps` in
+`pitfalls/banking.md`.
+
+### Why it works
+
+The VIC fetches sprite data through the pointer each line the sprite is
+displayed, so a pointer change or a new block takes effect on the next
+fetch; nothing is copied at display time. A horizontal mirror reverses
+the pixel order of each row, and a row's pixel order runs from bit 7 of
+byte 0 to bit 0 of byte 2 (hires) or pair by pair (multicolour), which
+is exactly what the byte swap and the table undo. The recipe checks the
+result three ways: every table entry against a table the assembler
+computed, every mirrored frame against the assembler's string-reversed
+frame, and the exit screenshot, where each left-facing sprite is the
+pixel mirror of its right-facing neighbour on PAL and NTSC.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA2 timers, screen blanked, IRQs off,
+the cost of an empty timed call subtracted. Identical on PAL and NTSC.
+
+| Operation | Cycles |
+|---|---|
+| Build HFLIP, 256 entries | 28,161 |
+| Build MFLIP, 256 entries | 34,817 |
+| Mirror one 63-byte sprite into another buffer, either table | 1,597 |
+| Cache miss, 21 rows present, facing right | 2,441 |
+| Cache miss, same frame, facing left | 2,672 |
+| Cache miss, 15 of 21 rows present, right / left | 2,099 / 2,264 |
+| Cache hit | 20 |
+
+Mirroring during the fill costs 11 cycles a row over a plain copy (231
+for 21 rows), so a cache that mirrors costs little more than one that
+does not, and saves 64 bytes of storage per mirrored frame. The miss
+figures include the lookup and the eviction bookkeeping. Moving the
+mirror loop so its branch crossed a page raised the 1,597 to 1,617; the
+recipe page-aligns its inner loops so the figures do not move as code
+grows. The Cost line's `bytes_data` is arithmetic from the table and slot
+sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
+`cycles_per_frame` figure is measured. The frame data is extra.
+
+### Recipes
+
+- `recipes/kickassembler/sprite-cache-flip.md` (both tables built at
+  start and checked, four frames depacked into an 8-slot cache facing
+  both ways, one eviction, figures and PASS on screen, the mirror
+  measured from the screenshot on PAL and NTSC).
+
+### Sources
+
+- Cadaver, on the sprite cache: https://cadaver.github.io/rants/sprcache.html
+- Cadaver, on Metal Warrior 4's packed and mirrored frames:
+  https://cadaver.github.io/rants/mw4trick.html
+- cadaver/c64gameframework (MIT), `sprite.s`,
+  https://github.com/cadaver/c64gameframework
+
+---
+
+## per_frame_hitbox — Collision boxes per animation frame, emitted at draw time, tested by group
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D010
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=3693
+**Cost basis:** measured-vice
+
+### Why
+
+A game needs to know which object hit which, and whether that pair
+matters. `sprite_collision_detect`'s `$D01E` cannot say either. It sets
+one bit per sprite, so three touching sprites give three bits and no
+pairs. It counts every opaque pixel, so a cape or a muzzle flash hits.
+With a multiplexer the bit belongs to a hardware sprite that showed
+several objects this frame. It cannot tell an enemy bullet passing
+through an enemy from one hitting the player.
+
+A single fixed box per actor (game-design-patterns.md, "Software
+bounding-box collision") fixes the identity problem and gets poses
+wrong: a crouching player is hit by a shot that passes over its head, and
+a sword swing has no reach. Shipped engines give each animation frame its
+own box and test boxes, not actors.
+
+### How
+
+**A box table per frame.** Each animation frame has zero or more boxes:
+an offset from the sprite's origin (its top-left corner, or the engine's
+anchor point), a width, a height and a group. A frame with no box is
+harmless: an explosion or a pickup effect. An attack frame can carry a
+body box and a separate weapon box.
+
+**Fill the box list at draw time.** Where the draw sets a sprite's
+position and pointer, it appends that frame's boxes to one list, in
+screen coordinates: left, right, top and bottom edges, the group, and
+the owning actor. An actor that is not drawn (off screen, or not
+visible this frame) adds nothing, so the collision pass never looks at
+it. The list is rebuilt every frame and is at most a few dozen entries.
+
+**Groups and a pair mask.** Give each box one group bit: player, player
+bullet, enemy, enemy bullet. For each group keep the set of groups it is
+tested against: player with enemy and enemy bullet, player bullet with
+enemy. Store that mask with each box when it is emitted; a pair `i, j`
+is tested only when `mask[i] & group[j]` is not zero. Friendly fire is
+then impossible, enemy bullets pass through enemies, and most pairs cost
+one AND and a branch. The mask is symmetric, so each unordered pair is
+visited once (`j > i`).
+
+**The AABB test.** Two boxes overlap when `top[i] < bottom[j]`,
+`top[j] < bottom[i]`, `left[i] < right[j]` and `left[j] < right[i]`,
+with right and bottom exclusive. Any false compare ends the test. Put the
+compare most likely to fail first: in a side-scrolling game most pairs
+are apart in Y; in a vertical shooter, in X.
+
+**8-bit and 9-bit X.** Sprite X is 9 bits, and the right 88 pixels of
+the window are X 256 to 343. A test on the low byte alone wraps: an
+enemy at 304 (low byte 48) is "hit" by a bullet at 52. Either store left
+and right as a low and a high byte and compare the high bytes first (in
+`left[i] < right[j]`: high less, true; high greater, false; equal,
+compare the low bytes), or halve every X when the box is emitted and
+test one byte at 2-pixel precision. Y fits a byte, but a box on a
+sprite near the bottom can pass 255; clip it or halve Y too. Cadaver's
+c64gameframework halves Y as it emits its bounds (`sprite.s`, source
+read here).
+
+### Why it works
+
+The box and the image are chosen by the same frame number in the same
+draw, so the collision shape cannot lag the picture. The pass tests what
+the last draw put on screen. Groups carry the rule "who can hurt whom" in
+data, so adding a type is a table entry, not a new branch in every test.
+This is what c64gameframework does (`actor.s`, `sprite.s`, source read
+here): the sprite draw appends each frame's bounds to one list, with an
+end mark; a bullet skips actors whose group flags equal its own (an EOR
+of the two flag bytes, masked) and actors with 0 hit points; an actor
+may have several boxes, and a flipped frame mirrors its box about the
+anchor.
+
+### Variations
+
+**Bullets against actors only.** Walk the bullet list against the actor
+boxes instead of all pairs; with 8 bullets and 8 actors that is 64 pairs
+before masking instead of 120.
+
+**Several boxes per actor.** A boss or a multi-sprite actor emits one
+box per part; the pass reports the owning actor and the box index, so a
+weak spot can take damage and armour not.
+
+**Flip.** For a frame drawn mirrored, the box's left offset becomes
+`width_of_sprite - offset - box_width`; keep one table and mirror at
+emit time.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked, in the
+Oscar64 recipe: one 9-bit pair test costs 96 cycles when all four
+compares run and 28 when the first fails; the halved 8-bit test costs 59
+and 25 (100 calls less 100 empty calls, screen blanked). A frame with 8
+boxes, 28 pairs of which the masks leave 10, costs 2,037 cycles to test
+and 2,148 to emit on PAL as the recipe shows them. Those two figures
+include the demo's pair counters and the halved-X arrays that only the
+8-bit variant uses; built without them the same frame measured 1,834 to
+test and 1,859 to emit, 3,693 in all, which is the Cost line. The same on
+NTSC except the emit, which runs past the NTSC vertical blank into a
+badline and reads 2,234. Figures move by a few cycles as the code grows
+and the layout shifts.
+
+Hand-written assembly is much cheaper; this is arithmetic from the
+instruction table (rung 3), not measured here. With the box arrays
+indexed by X and Y, an 8-bit compare is `lda abs,y / cmp abs,x / bcs`,
+10 cycles when it passes and 11 when it ends the test, so a full hit is
+40 cycles and a first-compare miss 11. A 9-bit X compare with equal high
+bytes adds a high-byte `lda / cmp / bcc / bne` before the low bytes, 22
+cycles instead of 10, so a full 9-bit hit is 64. A masked-out pair is
+`lda / and / beq`, 11 cycles.
+
+### Recipes
+
+- `recipes/oscar64/per-frame-hitbox.md` (stand, crouch and attack frames
+  with their own boxes, a blade box in the player-bullet group, enemy
+  bullets through enemies, a 9-bit miss that a low-byte test calls a hit,
+  `$D01E` beside the box events, cycles per pair and per frame, the boxes
+  drawn as outlines and measured on PAL and NTSC).
+
+### Sources
+
+- cadaver/c64gameframework (MIT), `actor.s` (CheckActorCollision,
+  CheckBulletCollision, AF_GROUPFLAGS) and `sprite.s` (bounds emitted by
+  the sprite draw), https://github.com/cadaver/c64gameframework
+
+---
+
+## sprite_animation_table — Sprite animation from tables: frames, durations, end actions and events
+
+**Complexity:** low
+**Region:** both
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=747
+**Cost basis:** measured-vice
+
+### Why
+
+Every game animates its sprites. Written as code in each actor's state
+routine ("if timer = 6, next frame; if frame = 4, frame = 1"), the
+frame logic is copied into every state, durations are hard to tune, and
+the moment an attack spawns its bullet drifts from the frame that shows
+the swing. Put the animation in data and the state code only asks for
+one: "walk", "attack", "die".
+
+### How
+
+**The table.** An animation is a list of entries, each a frame (an
+image number) and a duration in frames, then an end entry that says
+what happens next:
+
+| End action | Effect | Typical use |
+|---|---|---|
+| loop to entry N | continue from entry N; N > 0 plays an intro once | walk, idle, a rise then a loop |
+| hold | stay on the last entry for good, report completion | death, a pose held until the next request |
+| return to animation A | start A, report completion | attack, hurt, any one-shot |
+
+A spare bit of the frame byte (bit 7 in the recipe) marks an entry that
+fires an event when it is entered. Two parallel byte arrays for frame
+and duration, plus a table of start indices, keep every lookup an
+indexed load.
+
+**Per-actor state.** The running animation, the current entry, a
+countdown of frames left on it, and a facing: four or five bytes (the
+recipe keeps five, with a held flag).
+
+**The step, once per frame.** Decrement the countdown. When it reaches
+zero, move to the next entry; if that is an end entry, apply its action
+(loop, return or hold) until a real entry is reached; load the
+countdown from its duration; fire its event if marked; write the sprite
+pointer. On most frames the step is only the decrement, and the pointer
+is written only when the entry changes.
+
+**One-shot completion and events.** An attack whose third entry shows
+the swing marks that entry, and the game spawns the bullet when the
+event fires. Changing a duration then moves the shot with the picture,
+and an attack cut off before its third entry never fires. The return
+action reports completion ("done") and starts the default animation, so
+the state code does not have to count frames to know the attack is
+over. Cadaver's c64gameframework uses the same split: `AnimationDelay`,
+a per-actor delay counter the caller uses to step a looping animation,
+and `OneShotAnimation`, which stops on the last frame and
+returns a carry flag, and `TransformActor`, which changes an actor's
+type at the end (an enemy into an explosion) (`actor.s`, source read
+here).
+
+**Priority.** Give each animation a priority and refuse a request whose
+priority is lower than the running animation's: a walk request during
+an attack is refused, a hurt interrupts an attack, nothing overrides
+death. Ignore a request for the animation already running, so a state
+routine can request "walk" every frame without restarting it. Log or
+count refusals while debugging; a refused request that the state code
+expected to succeed is a common stuck-actor bug.
+
+**Facing.** Store left-facing frames at a fixed offset in the block
+numbers (the recipe uses +8) and add the offset when writing the
+pointer: a turn keeps the entry and changes only the pointer. With
+`sprite_cache_flip` on this page, only right-facing frames are stored
+and the cache supplies the mirrored block; the table then yields a
+frame number and a facing, and the cache request turns them into a
+pointer. Dissecting Cadaver's engine, each actor has a base frame per
+facing and the animation frame is added to it (from his article, not
+measured here).
+
+**Hitboxes.** A per-frame hitbox (`per_frame_hitbox` on this page)
+belongs to the frame the table selects, so the draw that writes the
+pointer also emits that frame's boxes. The table then drives the image,
+the collision shape and the event in step.
+
+### Why it works
+
+The VIC reads each sprite's block number from screen + `$3F8` + n
+(`$07F8` with the screen at `$0400`) and fetches 63 bytes from block ×
+64 in the current VIC bank, so the whole animation is one byte written
+per image change. Moving the screen or the bank moves both the pointer
+bytes and the blocks (`vic_bank_visibility_collision` in
+`pitfalls/banking.md`). Write pointers in the vertical blank, or from
+the multiplexer's shadow table, so a change never lands while the VIC
+is fetching that sprite.
+
+The recipe checks the engine against the tables with a second model
+that uses different arithmetic: it spends the elapsed frames entry by
+entry from the animation's start instead of counting down, and reports
+an event only when the time runs out exactly on an entry's first
+frame. An off-by-one in the countdown moves every event and fails the
+check. The check does not catch a wrong table, since both read it; the
+pinned screenshot does.
+
+### Variations
+
+**Transform on completion.** Instead of returning to an animation, the
+end action changes the actor's type (enemy to explosion, pickup to
+nothing), as c64gameframework's `TransformActor` does.
+
+**Speed per actor.** Scale durations by a per-actor rate, or step twice
+on a frame, for a haste effect; a table of durations in 1/2 frames with
+a fractional countdown does the same at finer grain.
+
+**Direction-dependent animations.** Games with eight-way movement keep a
+table of animations per direction instead of one facing offset.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked, in the
+Oscar64 recipe, the same on PAL and NTSC. One step that only
+decrements costs 25 cycles; one that moves to the next entry and writes
+the pointer costs 124 (averaged over a two-entry loop, half the calls
+through the loop action). Both are 100 calls through a function pointer
+less 100 empty calls, screen blanked. Six actors on a frame where all
+only decrement cost 357 cycles, loop and calls included, about 60 each;
+the worst frame of the recipe's scenario is 799, with one return to idle
+and a log entry and three other actors changing entry. Without the
+recipe's log write the same frame measured 747, which is the Cost line.
+Hand-written assembly with the state in arrays indexed by X is
+cheaper: `dec count,x` (7 cycles) and a taken `bne` (3) are 10 cycles
+when the entry holds (instruction-table arithmetic, not measured here).
+
+### Recipes
+
+- `recipes/oscar64/sprite-animation-table.md` (six actors on a scripted
+  run: looping walk, idle, a rise looping from entry 1, an attack firing
+  on its third entry and returning to idle, a hurt cutting an attack
+  off, a held death, two requests refused by priority; the log and the
+  final pointers compared with a second model; cycles per step; the
+  sprite images measured on PAL and NTSC).
+
+### Sources
+
+- Cadaver, dissecting his game engine (base frame per facing):
+  https://cadaver.github.io/rants/dissect.html
+- Cadaver, on actor interaction and transformation:
+  https://cadaver.github.io/rants/interaction.html
+- cadaver/c64gameframework (MIT), `actor.s` (AnimationDelay,
+  OneShotAnimation, TransformActor),
+  https://github.com/cadaver/c64gameframework

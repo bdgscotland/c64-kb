@@ -6,7 +6,7 @@ category: raster
 
 # Raster and Badline Pitfalls
 
-The four pitfalls in this document share a common thread: they all stem from
+The pitfalls in this document share a common thread: they all stem from
 the VIC-II's asynchronous relationship with the CPU. The chip runs on the same
 clock but does not wait for the CPU to finish what it is doing. Badlines steal
 cycles without warning. The raster compare register wraps silently at line 255.
@@ -23,7 +23,7 @@ you know the mechanism.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation
+**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game
 
 ### Symptom
 
@@ -144,7 +144,7 @@ cycles after BA drops on cycle 12 happen to be write cycles).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, raster_bars, irq_chain_table, raster_split_modes, pal_ntsc_detection, frame_sync_loop, big_font_2x2, dycp_scroller
+**Triggered by techniques:** stable_raster_irq, raster_bars, irq_chain_table, raster_split_modes, pal_ntsc_detection, frame_sync_loop, big_font_2x2, dycp_scroller, logic_rate_decoupling, sprite_multiplex_game
 
 ### Symptom
 
@@ -418,7 +418,7 @@ IRQ").
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D015
-**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization
+**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization, sprite_multiplex_game
 
 ### Symptom
 
@@ -559,3 +559,90 @@ sprite_irq_correct:
   lead-in cycles 55-57 are not usable on such a line: BA is already low from
   cycle 12 and does not rise again until cycle 11 of the next line, so a CPU
   halted on a read at cycle 15 cannot reach them.
+
+---
+
+## scroll_phase_breaks_panel_split — A panel split with a fixed delay breaks at one YSCROLL phase
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D012
+**Triggered by techniques:** scroll_panel_split, soft_scroll_v, char_scroll_buffer_v
+**Mitigated by techniques:** scroll_panel_split
+
+### Symptom
+
+A vertically scrolling playfield sits above a fixed score panel. Seven frames
+in eight the panel is clean. On the eighth, the panel's first line keeps the
+playfield's blue and its 38-column left edge, and the next six lines have the
+panel's grey and width but stray light-blue character pixels where the rule
+row should be. The rest of the panel is correct. The flicker repeats every
+eight pixels of scroll. Measured with PIL on the recipe's `USE_TABLE = 0`
+build at YSCROLL 6, PAL and NTSC: line 215 x 39-351 on blue, lines 216-221
+x 32-351 on grey (98, 98, 98), line 222 on identical to the reference.
+
+### Mechanism
+
+The split IRQ polls for the playfield's last line and then waits a fixed
+delay so its stores land in that line's right border. A line is a badline when
+its low three bits equal YSCROLL. The playfield's YSCROLL takes all eight
+values, so the split line is a badline at exactly one of them. At that phase
+the VIC holds the CPU from cycle 12 to cycle 54 during the delay, and the
+stores land about 40 cycles late, inside the panel's first line. The
+panel's `$D011` then makes that line a badline too late for a normal fetch,
+and the `$D016` and `$D018` changes arrive mid-line.
+
+Measured in VICE x64sc 3.10, PAL and NTSC, with
+`recipes/kickassembler/scroll-panel-split.md` and `USE_TABLE = 0` (split
+line 214, the same 5-pass delay at every phase): at YSCROLL 0-5 and 7 the
+panel region, lines 215-250, is pixel-identical to the reference. At YSCROLL
+6, where line 214 is a badline, lines 215-221 differ (1,108 pixels on PAL,
+1,107 on NTSC). Two forum threads name YSCROLL 7 as the bad
+phase (https://www.lemon64.com/forum/viewtopic.php?t=52763 and
+https://www.lemon64.com/forum/viewtopic.php?t=64112, read as search
+snippets, and the site returned 403 for the second; forum reports, not
+measured here); that is the phase for their split line, not a constant.
+
+`scroll_panel_split` is on both lines above: the naive form of the split
+raises the pitfall and the table-driven form cures it.
+
+### Fix
+
+Index the delay by the playfield's YSCROLL and give the phase at which the
+split line is a badline a short or zero delay: the badline stall is the wait.
+Load every register value before the poll, so that after the stall only the
+stores remain. In the recipe the table is 5, 5, 5, 5, 5, 5, 0, 5 passes of 9
+cycles, and all eight phases leave the panel pixel-identical on PAL and NTSC.
+
+A second, separate phase effect: put the panel's first line on a line that is
+7 mod 8. Elsewhere the panel's first row reads a different screen row at
+different phases (measured: panel on line 216 with YSCROLL 0 read screen row
+21 at playfield YSCROLL 0 and row 20 at YSCROLL 3).
+
+### Worked example
+
+```text
+// Naive: one delay for every phase. Breaks when (split line & 7) = YSCROLL.
+        lda #LAST_PF-1
+wait:   cmp $d012
+        bcs wait
+        lda #5
+        sta count
+delay:  dec count
+        bpl delay
+        sty $d016 ...
+
+// Fixed: the delay comes from a table indexed by YSCROLL.
+        ldx yscroll
+        lda delay_tbl,x         // 5, 5, 5, 5, 5, 5, 0, 5 for split line 214
+        sta count
+        ...                     // load the panel values, poll, dec count / bpl
+```
+
+### Cross-references
+
+- Technique: `scroll_panel_split` in `techniques/scroll.md`.
+- Pitfall: `badline_cycle_loss`: the 40-43 cycle stall that moves the stores.
+- Recipe: `recipes/kickassembler/scroll-panel-split.md`, with the per-phase table.
+- Source of the table idea: c64gameframework `raster.s`, `irq4DelayTbl`
+  (https://github.com/cadaver/c64gameframework, read, not run).

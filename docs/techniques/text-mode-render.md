@@ -335,3 +335,129 @@ design's.
 ### Recipes
 
 - `recipes/oscar64/charset-animation.md`
+
+---
+
+## char_bullets — Bullets drawn as characters, merged into reserved glyphs
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=3995
+**Cost basis:** measured-vice
+
+### Why
+
+A shoot-'em-up or run-and-gun runs out of sprites for bullets first.
+Eight hardware sprites go to the player and the enemies, and a
+multiplexer is a poor fit for dozens of objects a few pixels across
+that share raster lines. A bullet drawn into the character screen costs
+no sprite at all. The naive form, writing a bullet glyph into the cell,
+wipes out the background under it. The form here keeps the background
+visible and puts the bullet at pixel precision inside the cell.
+
+### How
+
+Reserve a few screen codes in a RAM charset, one per bullet: eight
+codes, $F8 to $FF, in the recipe. Keep a table per bullet of its pixel
+position, the screen code and colour it saved, and the cell it was
+drawn in. Each frame:
+
+1. **Restore, in reverse draw order.** Write each bullet's saved code
+   and colour back to its cell, last-drawn bullet first.
+2. **Move** the bullets.
+3. **Draw, in forward order.** For each bullet, find its cell from the
+   position (`x >> 3`, `y >> 3` through a row-address table). Save the
+   code and colour there. Copy the saved code's 8 glyph bytes into the
+   bullet's reserved glyph, then OR the bullet's pixels into it at row
+   `y & 7`, shifted by `x & 7`. Write the reserved code into the cell,
+   and a colour if the bullet has one.
+
+**Shared cells.** When bullet B lands in bullet A's cell, it saves A's
+reserved code and builds its glyph from A's merged glyph, so both show.
+Restoring B before A puts A's code back and then the background. That is
+why restore runs in reverse. Forward order leaves A's reserved code on
+screen for good (measured in the recipe: the compare fails).
+
+**Pixel positioning.** The bullet's bits are shifted within the glyph by
+`x & 7` and placed on row `y & 7`. A bullet that stays inside one cell
+needs one reserved glyph. The recipe keeps both coordinates even and the
+bullet 2 by 2, so it never crosses an edge. A bullet that can straddle a
+cell edge needs two cells (four at a corner) and as many reserved glyphs.
+
+**Collision with the background.** The saved code says what the bullet
+is over. Look its class up in a 256-byte table (solid, destructible,
+empty). If the saved code is itself a reserved code, the bullet is over
+another bullet: follow that bullet's saved code until it is below the
+reserved range. Bullets drawn earlier in the same frame have current
+saved codes, so the walk ends. A reserved code left on screen by a
+wrong restore can make a bullet save its own code, and the walk then
+never ends (measured: the recipe's forward-order variant hung).
+
+**Colour RAM.** A hires cell has one foreground colour, so a bullet
+coloured differently from its cell also recolours the background pixels
+in that cell. Either leave colour RAM alone (the bullet takes the
+cell's colour, cost 0) or save and restore it with the code, as the
+recipe does. Colour RAM is 4 bits wide and its upper nibble reads back
+as bus noise; mask it with `$0F` before comparing a saved value.
+
+**What the reserved count limits.** Each bullet on screen needs its own
+reserved glyph, so the reserved count is the bullet limit, and every
+reserved code is lost to the background art. The codebase64 merge page reserves
+eight, $F8 to $FF (not measured here). A bullet that straddles cells needs more than one.
+
+### Why it works
+
+The VIC reads each cell's glyph from the charset on every raster line
+it draws. A reserved glyph that is a copy of the background glyph plus
+bullet bits therefore shows the background cell with the bullet on it.
+The background glyph itself is never written, so every other cell with
+the same code is untouched. Restoring is one code store and one colour
+store per bullet.
+
+The reserved glyphs are rewritten while their codes are off screen: the
+restore runs first, and each glyph is built before its code goes into a
+cell. So a glyph cannot tear the way an in-place glyph rewrite can
+(compare `charset_animation`). What can still show is the gap between
+restore and draw. If the beam passes a bullet's row in that gap, the
+bullet is missing for that frame. Run restore and draw in the lower
+border, or at least before the beam reaches the first row bullets can
+occupy (`full_field_redraw_exceeds_vblank`). In the recipe the draw ends
+on line 108 (PAL) or 156 (NTSC), and the arena starts on line 171.
+
+### Variations
+
+- **Masked bullets.** AND the glyph with an inverted mask before the OR,
+  so a bullet with a dark outline shows on a busy background. That is
+  the form the codebase64 "merge char bullets" page describes. It costs
+  one more operation per glyph row touched.
+- **Whole-cell bullets.** Save the code under the bullet, write one fixed
+  bullet code, restore on move: no glyph build, no pixel positioning,
+  and the background in that cell disappears. Escape From New York uses
+  this form, with 16 bullets moving 8 pixels a frame (Cadaver's source
+  dissection, not measured here).
+- **Hand assembly.** The recipe is Oscar64 C. Hand-written 6502 with an
+  unrolled glyph copy should draw a bullet in fewer cycles than the
+  recipe's 407; not measured here.
+
+### Cycle budget
+
+Measured in VICE x64sc on both models with the recipe's CIA timers
+(Oscar64 `-O2`): 641 cycles to restore eight bullets, 80 a bullet;
+3,258 to 3,354 to draw eight, 407 to 419 a bullet. The Cost line is the
+worst frame seen over about 240 frames on each model, 3,354 + 641 =
+3,995 cycles, about a fifth of a PAL frame. The draw varies with shared
+cells (one more chain step) and wall hits. The recipe's full-arena
+compare, 5,873 cycles on PAL and 6,131 on NTSC, is its self-check and
+not part of the technique.
+
+### Recipes
+
+- `recipes/oscar64/char-bullets.md`
+
+### Sources
+
+- codebase64, "Character bullets": https://codebase.c64.org/doku.php?id=base:character_bullets
+- codebase64, "Merge char bullets": https://codebase.c64.org/doku.php?id=base:merge_char_bullets
+- Cadaver, Escape From New York source dissection: https://cadaver.github.io/rants/dissect.html

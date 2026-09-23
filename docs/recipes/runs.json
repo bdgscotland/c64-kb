@@ -521,5 +521,125 @@
       "pal": "screenshots/sine-table-runtime.png",
       "ntsc": "screenshots/sine-table-runtime-ntsc.png"
     }
+  },
+  "kickassembler/sprite-multiplex-game": {
+    "cycles": 9100000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-multiplex-game.png",
+      "ntsc": "screenshots/sprite-multiplex-game-ntsc.png"
+    }
+  },
+  "kickassembler/logic-rate-decoupling": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/logic-rate-decoupling.png",
+      "ntsc": "screenshots/logic-rate-decoupling-ntsc.png"
+    }
+  },
+  "oscar64/actor-activation-window": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/actor-activation-window.png",
+      "ntsc": "screenshots/actor-activation-window-ntsc.png"
+    }
+  },
+  "oscar64/per-frame-hitbox": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/per-frame-hitbox.png",
+      "ntsc": "screenshots/per-frame-hitbox-ntsc.png"
+    }
+  },
+  "oscar64/char-bullets": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/char-bullets.png",
+      "ntsc": "screenshots/char-bullets-ntsc.png"
+    }
+  },
+  "kickassembler/sprite-cache-flip": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-cache-flip.png",
+      "ntsc": "screenshots/sprite-cache-flip-ntsc.png"
+    }
+  },
+  "kickassembler/scroll-panel-split": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/scroll-panel-split.png",
+      "ntsc": "screenshots/scroll-panel-split-ntsc.png"
+    }
+  },
+  "oscar64/wave-director": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/wave-director.png",
+      "ntsc": "screenshots/wave-director-ntsc.png"
+    }
+  },
+  "oscar64/sprite-animation-table": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-animation-table.png",
+      "ntsc": "screenshots/sprite-animation-table-ntsc.png"
+    }
+  },
+  "oscar64/slope-collision": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/slope-collision.png",
+      "ntsc": "screenshots/slope-collision-ntsc.png"
+    }
   }
 }

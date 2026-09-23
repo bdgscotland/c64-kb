@@ -167,7 +167,7 @@ blank or in a stable raster window above line $30.
 
 ### Recipes
 
-- No recipe yet for vertical soft scroll; `recipes/oscar64/soft-scroll-h.md` is the horizontal counterpart.
+- `recipes/kickassembler/scroll-panel-split.md` scrolls a playfield vertically through all eight YSCROLL phases above a fixed panel; `recipes/oscar64/soft-scroll-h.md` is the horizontal counterpart.
 
 ---
 
@@ -335,7 +335,112 @@ frame's active display period.
 
 ### Recipes
 
-- No recipe yet for vertical soft scroll; `recipes/oscar64/soft-scroll-h.md` is the horizontal counterpart.
+- `recipes/kickassembler/scroll-panel-split.md` shifts the rows on the carry frame and scrolls through all eight YSCROLL phases above a fixed panel.
+
+---
+
+## scroll_panel_split — Vertically scrolled playfield over a fixed score panel
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, D021
+**Uses kernal:** (none)
+**Requires:** soft_scroll_v
+**Demands:** midframe_raster_irqs
+**Cost:** irq_slots=2, lines_active=5, cycles_per_frame=413
+**Cost basis:** measured-vice
+
+### Why
+
+A game whose playfield scrolls vertically still needs a score panel that
+stays still. The playfield's YSCROLL changes every frame; the panel's must
+not. A raster split has to change `$D011`, and usually `$D016`, `$D018` and a
+colour, between the playfield's last line and the panel's first. A split at
+one fixed line with one fixed delay works at seven YSCROLL phases and breaks
+at the eighth (pitfall `scroll_phase_breaks_panel_split`).
+
+### How
+
+1. Put the panel's first line on a line that is 7 mod 8, 48 + 8k + 7, and give
+   the panel YSCROLL 7. The playfield then ends on the line before, at every
+   phase.
+2. Let the playfield scroll with `soft_scroll_v` and `char_scroll_buffer_v`.
+   The last playfield row is cut short by the panel's badline and shows
+   7 − YSCROLL lines.
+3. Take a raster IRQ two lines before the playfield's last line. Load every
+   register value, poll `$D012` for the last line, then wait for a delay read
+   from an eight-entry table indexed by the playfield's YSCROLL.
+4. Store the panel's `$D016`, `$D011` and `$D018` in the right border of the
+   last playfield line.
+5. Poll for the panel's first line and let its badline stall the CPU; store
+   the panel's background colour after the stall.
+6. Below the panel, restore the playfield's registers and write the next
+   frame's YSCROLL before line 48.
+
+### Why it works
+
+A character row is fetched again from its start until it has shown all eight
+lines. A playfield row cut short by the panel's badline therefore does not
+count, and the panel's first row is the screen row after the last complete
+playfield row. With the panel's first badline on 48 + 8k + 7, exactly k
+playfield rows complete at every YSCROLL, so the panel always reads the same
+screen row. Measured in VICE x64sc 3.10 (`recipes/kickassembler/scroll-panel-split.md`):
+with the panel on line 216 at YSCROLL 0 instead, the panel read screen row 21
+at playfield YSCROLL 0 and row 20 at YSCROLL 3. The cut-short playfield row
+and the panel's first row are the same screen row, so the panel needs its own
+screen matrix, selected through `$D018`. They also share one colour RAM row.
+
+The split line L is a badline at exactly one playfield phase, YSCROLL = L mod
+8. At that phase the VIC holds the CPU from cycle 12 to cycle 54 while the
+split code waits (`badline_cycle_loss`), and a full delay lands the stores
+about 40 cycles late, inside the panel's first line. The table entry for that
+phase is 0: the stall is the wait. c64gameframework's panel IRQ uses the same
+scheme, a delay table indexed by `$D011` (source:
+https://github.com/cadaver/c64gameframework, `raster.s` and `aligneddata.s`,
+not run here). Its panel `$D011` value `$57` has YSCROLL 7, which matches the
+row rule above.
+
+The panel's first line is always a badline once the split has run. Any code
+that reads memory across cycle 12 of that line resumes at cycle 55 at every
+phase, so a store after it has no poll jitter. The recipe puts `$D021` there.
+
+### Variations
+
+- **Panel at the top:** the split sets the playfield's YSCROLL below the
+  panel instead. The row-count rule above was measured only for a panel at
+  the bottom.
+- **Horizontal scrolling too:** the split resets XSCROLL in `$D016` and
+  usually switches 38 columns to 40, as the recipe does.
+- **Colour RAM:** a colour-RAM shift for the playfield must not touch the
+  panel's rows; it is usually run while the beam is in the panel or the
+  border (Cadaver, https://cadaver.github.io/rants/scroll.html, not measured
+  here).
+
+### Cycle budget
+
+The measured write window is narrow. At YSCROLL 3 the delay loop (`dec` on an
+absolute counter and `bpl`, 9 cycles a pass) is clean at 4 and 5 passes on
+PAL and NTSC; 3 writes `$D016` before line 214's right border and 6 misses the
+start of line 215. Two consecutive pass counts are clean, so the margin is
+between one and three passes (9-27 cycles) beyond the poll's 0-6 cycle jitter
+(arithmetic; the poll loop is `cmp` absolute 4 + `bcs` taken 3 = 7 cycles). The delay
+counter is at an absolute address (`DEC` opcode `$CE` in the assembled PRG),
+so a pass is 9 cycles.
+
+Two IRQs a frame: the split and the one below the panel. Measured in VICE
+x64sc 3.10 with CIA 2 timer A free-running, read at entry and exit of both
+handlers in a separate build of the recipe, 32 consecutive frames on PAL and
+NTSC, from the IRQ sequence to the end of `rti`: the split takes 267-310
+cycles depending on the phase (267 at YSCROLL 4, when line 212 is a badline)
+and spans five raster lines; the bottom handler takes 103. That is at most 413
+cycles a frame, the same on both models. On the one frame in eight that
+carries, the bottom handler also shifts twenty rows (20 × 560 cycles,
+arithmetic) and took 13,262 cycles on PAL, 13,519 on NTSC; that cost belongs
+to `char_scroll_buffer_v`, not to the split.
+
+### Recipes
+
+- `recipes/kickassembler/scroll-panel-split.md`: playfield scrolling up through all eight phases over a five-row panel, with the per-phase naive-versus-table measurement on PAL and NTSC.
 
 ---
 

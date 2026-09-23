@@ -168,7 +168,7 @@ over 2048 bytes does the same job.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00, D018
-**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image, charset_animation, big_font_2x2, dycp_scroller
+**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image, charset_animation, big_font_2x2, dycp_scroller, sprite_cache_flip, sprite_animation_table
 
 ### Symptom
 
@@ -475,7 +475,7 @@ custom_nmi:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D018
-**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller
+**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets
 
 ### Symptom
 

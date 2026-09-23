@@ -22,7 +22,7 @@ before the CPU can read them. All four have bitten experienced C64 coders.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D015, D010, D000, D001
-**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq, sprite_multiplex_24, sprite_sine_chain
+**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq, sprite_multiplex_24, sprite_sine_chain, sprite_multiplex_game
 **Mitigated by techniques:** sprite_multiplex_8
 
 ### Symptom
@@ -339,7 +339,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
-**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director
 
 ### Symptom
 

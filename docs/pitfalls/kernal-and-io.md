@@ -345,7 +345,7 @@ msg_end:
 
 **Severity:** critical
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, decimal_mode_pitfalls, irq_chain_table
+**Triggered by techniques:** stable_raster_irq, decimal_mode_pitfalls, irq_chain_table, logic_rate_decoupling, sprite_multiplex_game
 
 ### Symptom
 
