@@ -1,0 +1,37 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 9, "col": 1, "text": "RESULT 01 PASS" },
+    { "name": "score, kills, lives", "type": "text", "row": 10, "col": 1, "text": "SCORE 000450 KILLS 05 LIVES 2" },
+    { "name": "sprites shown, waves, ship, kills by type", "type": "text", "row": 11, "col": 1, "text": "SHOWN 11 WAVES 04 SHIP 060 176 K 1 4 0" },
+    { "name": "frame meter, the script's 240 play frames", "type": "meter", "row": 13, "col": 10, "frames": 240 },
+
+    { "name": "ship where the script leaves it (X 120, Y 176): its light blue", "type": "sprite", "colour": 14, "vic_x": 124, "line": 180, "width": 16, "height": 12 },
+    { "name": "parade bug A1 (X 60, Y 72)", "type": "sprite", "colour": 4, "vic_x": 64, "line": 76, "width": 16, "height": 9 },
+    { "name": "parade bug A2 (X 108, Y 72)", "type": "sprite", "colour": 4, "vic_x": 112, "line": 76, "width": 16, "height": 9 },
+    { "name": "parade bug A3 (X 156, Y 72)", "type": "sprite", "colour": 4, "vic_x": 160, "line": 76, "width": 16, "height": 9 },
+    { "name": "parade bug A4 (X 204, Y 72)", "type": "sprite", "colour": 4, "vic_x": 208, "line": 76, "width": 16, "height": 9 },
+    { "name": "parade bug A5 (X 252, Y 72)", "type": "sprite", "colour": 4, "vic_x": 256, "line": 76, "width": 16, "height": 9 },
+    { "name": "parade bug B1 (X 60, Y 102)", "type": "sprite", "colour": 4, "vic_x": 64, "line": 106, "width": 16, "height": 9 },
+    { "name": "parade bug B2 (X 108, Y 102)", "type": "sprite", "colour": 4, "vic_x": 112, "line": 106, "width": 16, "height": 9 },
+    { "name": "parade bug B3 (X 156, Y 102)", "type": "sprite", "colour": 4, "vic_x": 160, "line": 106, "width": 16, "height": 9 },
+    { "name": "parade bug B4 (X 204, Y 102)", "type": "sprite", "colour": 4, "vic_x": 208, "line": 106, "width": 16, "height": 9 },
+    { "name": "parade bug B5 (X 252, Y 102)", "type": "sprite", "colour": 4, "vic_x": 256, "line": 106, "width": 16, "height": 9 },
+
+    { "name": "scrolled 30 rows: map row 36's right bank edge in screen row 14, column 25 (sand)", "type": "pixel", "vic_x": 226, "line": 163, "colour": 7 },
+    { "name": "... water left of that edge", "type": "pixel", "vic_x": 224, "line": 163, "colour": 6 },
+    { "name": "... earth right of it", "type": "pixel", "vic_x": 229, "line": 163, "colour": 9 },
+    { "name": "... map row 35 in screen row 15 is water in that column", "type": "pixel", "vic_x": 226, "line": 171, "colour": 6 },
+    { "name": "... map row 36's left bank edge in column 4 (sand)", "type": "pixel", "vic_x": 60, "line": 163, "colour": 7 },
+
+    { "name": "split: line 214 is still playfield (water in column 25)", "type": "pixel", "vic_x": 224, "line": 214, "colour": 6 },
+    { "name": "split: line 216 is the panel's grey", "type": "pixel", "vic_x": 224, "line": 216, "colour": 11 },
+    { "name": "panel rule, light grey, 40 columns (lines 218-219)", "type": "rect", "colour": 15, "vic_x": 24, "line": 218, "width": 320, "height": 2 },
+    { "name": "panel background, a blank row, 40 columns", "type": "rect", "colour": 11, "vic_x": 24, "line": 231, "width": 320, "height": 8 },
+    { "name": "two lives left: two cyan ships", "type": "rect", "colour": 3, "vic_x": 88, "line": 243, "width": 16, "height": 1 },
+    { "name": "no third life", "type": "rect", "colour": 11, "vic_x": 104, "line": 243, "width": 8, "height": 1 },
+    { "name": "no sprite under the panel: the panel's lines match on both models", "type": "same", "area": { "vic_x": 24, "line": 215, "width": 320, "height": 36 } },
+    { "name": "playfield rows 0-12 the same on both models", "type": "same", "cells": [0, 0, 12, 39] },
+    { "name": "playfield rows 14-20 the same on both models", "type": "same", "cells": [14, 0, 20, 39] }
+  ]
+}
