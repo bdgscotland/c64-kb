@@ -1,0 +1,14 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "title", "type": "text", "row": 1, "col": 1, "text": "HELLO HARNESS" },
+    { "name": "verdict line", "type": "text", "row": 22, "col": 1, "text": "RESULT 01 PASS" },
+    { "name": "sprite top-left, placed by the asm routine (Y 116 is drawn from line 117)", "type": "pixel", "vic_x": 188, "line": 117, "colour": 3 },
+    { "name": "sprite bottom-right", "type": "pixel", "vic_x": 211, "line": 137, "colour": 3 },
+    { "name": "left of the sprite", "type": "pixel", "vic_x": 187, "line": 117, "colour": 0 },
+    { "name": "right of the sprite", "type": "pixel", "vic_x": 212, "line": 117, "colour": 0 },
+    { "name": "below the sprite", "type": "pixel", "vic_x": 188, "line": 138, "colour": 0 },
+    { "name": "display the same on both models", "type": "same", "cells": [0, 0, 23, 39] },
+    { "name": "frame meter", "type": "meter", "row": 24, "col": 20, "frames": 200 }
+  ]
+}
