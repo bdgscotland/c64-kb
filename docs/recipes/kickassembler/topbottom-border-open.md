@@ -33,7 +33,8 @@ with the KERNAL's 29-cycle dispatcher is precise enough; the stable entry of
 `stable-raster-irq.md` is not needed. One solid sprite is parked in the
 opened area so the picture shows more than a colour change.
 
-Verified in VICE x64sc 3.10 (PAL 6569 and NTSC 6567R8): with the border
+Verified in VICE x64sc 3.10 (PAL C64C, VIC-II 8565, and NTSC 6567R8; an
+earlier version said PAL 6569, but `x64sc -default` is the C64C): with the border
 black and the background blue, the column at x=192 of the screenshot is
 background on every row of the frame, the side borders are intact on every
 row, the white sprite is visible in the bottom border, and the two control
@@ -165,7 +166,7 @@ wide; see below). The text is where it always is.
 Screenshot from the VICE run this page describes:
 `screenshots/topbottom-border-open.png`. Measured on it, with every colour
 value taken from a reference build's own pixels rather than from a palette
-table (PAL 6569, 384×272, screenshot row = raster line − 16; see the
+table (PAL C64C, VIC-II 8565, 384×272, screenshot row = raster line − 16; see the
 geometry note at the end):
 
 - x=192 is the background colour on all 272 rows. The rows that would be
@@ -397,8 +398,8 @@ NTSC offset of 28 was derived the same way from the same three boundaries
   data as zero), §3.7.3.1–3.7.3.3 (which nibble colours a "0" and a "1"
   pixel in each mode), §2.4 (the 16 KB bank), §3.10 (DEN gates the reset
   input only). https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
-- VICE 3.10 x64sc, headless, `-model` default (PAL 6569) and `ntsc`
-  (6567R8); KickAssembler 5.25. All row, column and colour figures on this
+- VICE 3.10 x64sc, headless, `-model` default (PAL C64C: 8565, 8580, 8521;
+  an earlier version said PAL 6569) and `ntsc` (6567R8); KickAssembler 5.25. All row, column and colour figures on this
   page are from those runs, measured with a script, none by eye.
 - This repository: `recipes/kickassembler/stable-raster-irq.md` (handler
   entry on cycle 37–43), `recipes/kickassembler/raster-bars.md` (the

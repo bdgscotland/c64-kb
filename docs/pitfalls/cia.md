@@ -221,8 +221,10 @@ startup log; the Homebrew cellar path says the same), headless, `-warp`,
 `-autostartprgmode 1`, `-limitcycles 20000000` (16,000,000 until three
 rows were added on 2026-09-22; the probe now waits about 12 s of C64
 time after boot), `-exitscreenshot`. PAL
-(6569) with CRA bit 7 = 1; NTSC (`-model ntsc`, 6567R8) with CRA bit
-7 = 0. Nothing here was run on a 6526 on a bench. VICE derives the TOD
+(VICE's default C64C: 8565, 8580, CIA 8521) with CRA bit 7 = 1; NTSC (`-model ntsc`, 6567R8) with CRA bit
+7 = 0. Nothing here was run on a 6526 on a bench. An earlier version said
+the PAL run was a 6569; `x64sc -default` is the C64C, whose CIAs are 8521s,
+while the NTSC run's are 6526s. VICE derives the TOD
 tick from emulated cycles, not from the host clock — the probe runs
 under `-warp` and the clock still advances 1.5 s in 75 PAL frames, and
 `src/core/ciacore.c` in the VICE tree schedules the tick as an alarm

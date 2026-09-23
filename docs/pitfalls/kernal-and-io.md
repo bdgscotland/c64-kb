@@ -1071,8 +1071,9 @@ re-enables only what `$02A1` — the KERNAL's RS-232 shadow — holds. A program
 that arms a CIA2 timer NMI while leaving `$0318` at `$FE47` loses that mask
 on the first RESTORE press or RS-232 event (rung 1, from the bytes; not run).
 
-Measured (rung 1; VICE x64sc 3.10, PAL 6569 — the build on this machine, the
-rest of this repository was checked against 3.9): a CIA2 Timer A one-shot NMI
+Measured (rung 1; VICE x64sc 3.10, PAL C64C: 8565, 8580, 8521 — the build on
+this machine, the rest of this repository was checked against 3.9; an
+earlier version said PAL 6569, but `x64sc -default` is the C64C): a CIA2 Timer A one-shot NMI
 was sent through `$0318` to a trampoline of `BIT $DD0D` and `JMP $FE47`,
 preceded by a counter increment, with IRQs off and `$91` pre-set to `$00`.
 After the NMI, `$91`

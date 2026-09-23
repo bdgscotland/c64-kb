@@ -67,7 +67,7 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 | KickAssembler 5.25 | `java -jar $KICKASS_JAR file.asm -o out.prg` (set `KICKASS_JAR`; default location `~/Developer/c64/kickassembler/KickAss.jar`) |
 | Oscar64 | `$OSCAR64 -tm=c64 -O2 -o=out.prg file.c` (`OSCAR64` env, `oscar64` on PATH, or the default build `~/Developer/c64/oscar64/bin/oscar64`; headers in `<oscar64>/include/`). That build reports 1.32.271 but is upstream 709bd70 plus one unpublished local fix (c1270bc, an OptimizeInnerLoop bounds crash). Every Oscar64 recipe was verified with it; upstream 709bd70 fails 46 of them and v1.32.273 fails 57 (issue #25) |
 | cc65 | `cl65 -t c64 -O -o out.prg file.c` |
-| VICE 3.10 headless (PAL 6569) | `GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot out.png -autostart out.prg` (`-model ntsc` for 6567R8). ~10–20 s per run; wrap in `timeout`. |
+| VICE 3.10 headless (PAL c64c: 8565, 8580, 8521) | `GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot out.png -autostart out.prg` (`-model ntsc` for 6567R8). ~10–20 s per run; wrap in `timeout`. With no `-model`, `-default` runs the C64C: VIC-II 8565, SID 8580, CIA 8521 (`-dumpconfig` is identical to `-model c64c`). Every runs.json `pal` run and PAL screenshot is that machine, and stays so (#36). Add `-model c64` (6569, 6581, 6526) to check the older machine: the CIA timer interrupt one cycle later, the 6581 filter and `$D418` digis (not measured here), eleven of the sixteen palette entries (`vice-reference.md`). An earlier version of this row said PAL 6569. |
 | Screenshot geometry | PAL 384×272 PNG, screenshot row = raster line − 16 (rows 0–271 are lines 16–287); NTSC (`-model ntsc`) 384×247, row = line − 28, and rows 235–246 are lines 0–11 of the next frame. x = 8 is VIC X coordinate 0; left border x 0–31, right border 352–383. Measure with PIL, never by eye. An earlier version of this row said − 14; 16 and 28 were each derived from three boundaries in `docs/recipes/kickassembler/topbottom-border-open.md`. The full geometry for both models, the sixteen palette RGB triples VICE emits for each, and a decode snippet are in `docs/runtime/vice-reference.md`, section "Reading the exit screenshot", measured by `docs/recipes/kickassembler/palette-cells.md`. |
 | KERNAL / BASIC / char ROM | `/opt/homebrew/opt/vice/share/vice/C64/kernal-901227-03.bin` ($E000), `basic-901226-01.bin` ($A000), `chargen-901225-01.bin` ($D000). Read bytes with python to settle any address or vector claim. |
 
@@ -166,4 +166,6 @@ in `src/tools/query.ts`; check which before editing either.
 ## What "verified" means here
 
 Verified against VICE x64sc 3.10 and the ROM images, not a 6569 on a bench.
+The VICE PAL runs are its default C64C model (8565, 8580, 8521), not a
+6569 either; an earlier version of this section did not say which model.
 The pages say so. Do not upgrade that wording.

@@ -346,7 +346,8 @@ keeps going.
 ![text-overlay-playfield](screenshots/text-overlay-playfield.png)
 
 The picture is the 16,000,000-cycle capture, tick 654. Verified in VICE
-x64sc 3.10 (PAL, 6569), headless, warp, with `+autostart-delay-random`.
+x64sc 3.10 (PAL, the default C64C: 8565, 8580, 8521; an earlier version said
+6569), headless, warp, with `+autostart-delay-random`.
 That switch is not in the usual invocation and it matters here: without it
 three identical runs at `-limitcycles 8000000` read ticks 249, 238 and 240,
 because VICE adds a random delay before the autostart `RUN` by default;

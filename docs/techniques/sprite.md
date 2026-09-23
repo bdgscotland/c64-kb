@@ -687,7 +687,9 @@ MCBASE reaches 63. An earlier version of this section described an
 "inconsistent state" that "freezes" the row counter and placed the write "in
 cycles 55–56 of the preceding line"; neither matched the measurement, and its
 sentence about the 8565 being "more forgiving" is dropped as unverifiable on
-this machine (VICE was run as a 6569 only).
+this machine: every run was on one model, VICE's default C64C (VIC-II 8565),
+and none was compared with a 6569. An earlier version of this sentence said
+VICE was run as a 6569 only.
 
 ### Variations
 
@@ -926,7 +928,8 @@ unverified on this machine.
 
 ### Cycle budget
 
-On PAL (VICE 3.10 x64sc, 6569) a write to $D027+n that completes on CPU cycle
+On PAL (VICE 3.10 x64sc, default C64C model, VIC-II 8565; an earlier version
+said 6569) a write to $D027+n that completes on CPU cycle
 c — cycles numbered 1–63, the numbering in which the CSEL side-border pulse
 lands on cycle 56 — takes effect from sprite X ≈ 8c − 111. So a write on cycle
 16 recolours a sprite at X=24 (the left edge of the display window) from its

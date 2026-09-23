@@ -104,7 +104,7 @@ VICE accepts many more; run `x64sc --help` for the full list.
 | `-console` | — | "Console mode (for music playback)": the flag under which this page's option names were confirmed (`x64sc -default -console`). The pinned run does not use it; every screenshot cited on this page was produced without it, and whether it changes the screenshot was not measured here |
 | `-pal` | — | Force PAL machine model |
 | `-ntsc` | — | Force NTSC machine model |
-| `-model <name>` | `c64`, `c64c`, `c64old`, `ntsc`, `newntsc`, `oldntsc`, `drean`, `jap`, `c64gs`, `pet64`, `ultimax` | Select machine sub-model (list from `x64sc -help`; there is no `pal` value). With no `-model`, `-default` runs the `c64c` configuration: VIC-II 8565, SID 8580, CIA 8521 (`x64sc -default -dumpconfig` gives VICIIModel=1, SidModel=1, CIA1Model=1, identical to `-model c64c`; `-model c64` gives 0, 0, 0, the 6569, 6581 and 6526). An earlier version of this row said the default was the PAL 6569 `c64`; `recipes/kickassembler/cia-revision-detect.md` reads the new CIA on the default machine and the old one on `-model c64`, which settles it (measured 2026-09-23). Both PAL parts run 312 lines of 63 cycles. The protocol's second run adds `-model ntsc` for the 6567R8 (with a 6581 and a 6526); that changes the frame height, the timing and eleven of the sixteen palette entries |
+| `-model <name>` | `c64`, `c64c`, `c64old`, `ntsc`, `newntsc`, `oldntsc`, `drean`, `jap`, `c64gs`, `pet64`, `ultimax` | Select machine sub-model (list from `x64sc -help`; there is no `pal` value). With no `-model`, `-default` runs the `c64c` configuration: VIC-II 8565, SID 8580, CIA 8521 (`x64sc -default -dumpconfig` gives VICIIModel=1, SidModel=1, CIA1Model=1, identical to `-model c64c`; `-model c64` gives 0, 0, 0, the 6569, 6581 and 6526). An earlier version of this row said the default was the PAL 6569 `c64`; `recipes/kickassembler/cia-revision-detect.md` reads the new CIA on the default machine and the old one on `-model c64`, which settles it (measured 2026-09-23). Both PAL parts run 312 lines of 63 cycles. Decision (#36): the harness keeps this default. Every runs.json `pal` run and PAL screenshot is the C64C, and pages name it "PAL c64c (8565/8580/8521)"; add `-model c64` (6569, 6581, 6526) to check a listing on the older machine, which differs in the CIA timer interrupt (one cycle later on the 6526; `cia-revision-detect` reads `12 11` there and `10 11` on the default), the SID filter and `$D418` digis (not measured here), and eleven palette entries. The protocol's second run adds `-model ntsc` for the 6567R8 (with a 6581 and a 6526); that changes the frame height, the timing and eleven of the sixteen palette entries |
 | `-drive8type <n>` | 1541, 1571, … | Drive type for device 8 |
 | `-8 <file>` | D64, G64, … | Attach disk image to device 8 (`-help`: "Attach <name> as a disk image in unit #8"). A recipe whose `runs.json` entry carries `"disk": {"name": "TEST,01"}` gets a D64 freshly formatted with `c1541 -format "test,01" d64` attached this way before every run, so the program always sees the same empty disk |
 | `-1 <file>` | T64, TAP | Attach a tape image to the datasette (unit 1) |
@@ -560,10 +560,22 @@ colour index, all 2,048 pixels of each band identical.
 | 7 | (255, 255, 70) | (255, 248, 141) | 15 | (205, 205, 205) | (205, 205, 205) |
 
 The PAL column is the default machine, the `c64c` (8565) configuration, not
-the 6569: under `-model c64` index 5 is (94, 214, 56), not (98, 213, 50)
-(the pal-ntsc-detect border, measured 2026-09-23; the other fifteen were not
-compared). An earlier version of this section did not say which PAL chip the
-column was.
+the 6569. Under `-model c64` (6569) indices 0, 1, 11, 12 and 15 match the
+default's and the other eleven differ. Measured 2026-09-23 from the
+`palette-cells` listing run with `-model c64`, one triple per band (each band
+uniform); its default run matched the committed PNG pixel for pixel:
+
+| Index | `-model c64` | Index | `-model c64` |
+|---|---|---|---|
+| 2 | (171, 60, 101) | 8 | (183, 100, 24) |
+| 3 | (135, 240, 203) | 9 | (129, 76, 0) |
+| 4 | (178, 61, 239) | 10 | (234, 121, 163) |
+| 5 | (94, 214, 56) | 13 | (178, 255, 141) |
+| 6 | (58, 49, 255) | 14 | (129, 120, 255) |
+| 7 | (255, 255, 59) | | |
+
+An earlier version of this section did not say which PAL chip the column
+was, and the next one compared index 5 only.
 
 Indices 0, 1, 11, 12 and 15 are the same on both models; the other eleven differ,
 so a script that recognises colours by exact triple needs a table per model. The

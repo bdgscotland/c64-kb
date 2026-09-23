@@ -214,7 +214,9 @@ artifact exists: a clear at 62 of 64 cycle positions gave a clean switch
 with no repeated or skipped row, and the remaining 2 positions gave the
 crunch (a +21-line change, rows re-fetched out of order). A sentence here
 about a subtler "half-pixel shift" on the 8565 was removed as unverifiable
-on this machine (VICE was run as a 6569 only).
+on this machine: every run was on one model, VICE's default C64C (VIC-II
+8565), and none was compared with a 6569. An earlier version of this
+sentence said VICE was run as a 6569 only.
 
 ### Mechanism
 

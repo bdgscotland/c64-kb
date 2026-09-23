@@ -150,7 +150,8 @@ itself is region-independent because it is anchored to the fixed raster
 window $30-$F7 (48-247) and to YSCROLL ($D011 bits 0-2), gated by DEN
 having been set on line $30 — not to the border geometry: RSEL ($D011
 bit 3) and CSEL ($D016 bit 3) move the border, not the badlines.
-Measured in VICE x64sc 3.10 on the 6569, 6567R8 and 6567R56A: clearing
+Measured in VICE x64sc 3.10 on the 8565 (VICE's default C64C; an earlier
+version said 6569), 6567R8 and 6567R56A: clearing
 RSEL or CSEL leaves the badlines on 51, 59, ..., 243; YSCROLL=4 moves
 every one of them to 52, 60, ..., 244. An earlier version of this
 paragraph attributed the anchor to RSEL/CSEL.

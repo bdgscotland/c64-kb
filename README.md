@@ -346,9 +346,10 @@ vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
 
 The reference itself was checked the same way: headless `x64sc` with
 `-exitscreenshot`, and the pictures measured rather than eyeballed. Timing
-constants in the recipes are VICE 3.10 measurements (PAL 6569, and NTSC
-6567R8 where a page says so), not bench measurements on a 6569, and each
-page says so.
+constants in the recipes are VICE 3.10 measurements (PAL on VICE's default
+C64C model: VIC-II 8565, SID 8580, CIA 8521; NTSC 6567R8 where a page says
+so), not bench measurements, and each page says so. An earlier version of
+this paragraph said the PAL runs were a 6569; `-model c64` is that machine.
 
 ---
 
