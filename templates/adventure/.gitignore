@@ -1,0 +1,5 @@
+build/
+shots/
+local.mk
+.DS_Store
+__pycache__/
