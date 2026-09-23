@@ -5,7 +5,45 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 736, schema 24, tools 1.29.0.
+Data 737, schema 25, tools 1.30.0.
+
+**Issue #22, steps 0 and 1: hardware claims (schema 25, tools 1.30.0, package 0.10.0).**
+`HardwareUnit` nodes (SID voices, sprites, CIA timers, TOD and ports, the
+VIC bank, the serial bus, the raster IRQ, the four vectors, the expansion
+pages, zero page) and `CLAIMS` edges from a technique's new `**Claims:**`
+line, in four modes: owns, shares, reads, init. `c64_check_compatibility`
+now names the unit two techniques contend for (`unit_contention`,
+`zero_page_overlap`, `unit_shared`, `unit_read_while_driven`,
+`init_order`, the last at a new `info` severity that leaves the verdict
+alone). Before, two raster-IRQ owners or two players on the same voices
+drew at most a soft shared-register warning. A technique with no Claims line reads as unknown,
+never as claiming nothing, and the text says a unit conflict with it
+cannot be ruled out. A `prerequisite_conflict` now carries the rule that
+fired in `underlying_kind`; it was reported as hard whatever the rule.
+Recipe-chosen zero page and vectors are not checked yet (step 8).
+
+A first cut made every raster technique own the raster IRQ, and set
+techniques that the KB's own VICE-verified recipes run together against
+each other as hard conflicts (fli-image, sideborder-open, fld,
+stable-raster-irq, the Oscar64 raster-bars). `stable_raster_irq` and
+`double_irq` are ways into a handler, so they now `share` the raster
+compare and the effect run from the handler owns it. A technique is not
+set against a prerequisite it runs inside its own handler. A test now
+checks every recipe's technique set and fails naming any recipe with a
+hard unit conflict. The Kick `sprite-multiplex-24` recipe also named
+`sprite_multiplex_8`, a second multiplexer it does not contain. `fli_image`
+claims the VIC bank and requires `vic_bank_select`: its layout needs bank
+1 or 3, because banks 0 and 2 show character ROM where four of the eight
+screens go. A resident Krill loader beside a VIC bank owner now says not
+to write `$DD00` raw while the loader is armed; it said Krill should
+follow the bank owner. `irq_chain_table` against a raster effect names
+the table as the host. `sid_play_routine_pattern`'s claims rest on the
+player contract, not a listing: basis `estimated`.
+
+Step 0: `sprite_multiplex_8`'s Cost held the recipe's demo payload
+(9,162); the three multiplexer calls measure at most 5,301. `simple-shmup`
+named `soft_scroll_h` and `sprite_collision_detect`, which it does not
+implement.
 
 **Issue #21, ES-19 to ES-22.** `reu_dma` (one cycle a byte blanked;
 badlines and sprites slow it with the screen on), `four_player_read`
