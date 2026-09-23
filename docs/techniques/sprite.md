@@ -36,6 +36,8 @@ against those constraints.
 **Demands:** midframe_raster_irqs, changes_sprite_set
 **Cost:** cycles_per_frame=5301
 **Cost basis:** arithmetic
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -153,6 +155,8 @@ sine-table motion, a demonstration payload.
 **Demands:** midframe_raster_irqs, changes_sprite_set
 **Cost:** cycles_per_frame=700, irq_slots=3, bytes_code=900, sprites_per_line=8
 **Cost basis:** estimated
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -288,6 +292,8 @@ three-pass design that `vspr_*` does not implement.
 **Demands:** midframe_raster_irqs, changes_sprite_set
 **Cost:** cycles_per_frame=16600, irq_slots=17
 **Cost basis:** arithmetic
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 

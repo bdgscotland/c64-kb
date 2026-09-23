@@ -21,6 +21,8 @@ The discipline required is severe. The VIC-II reads its registers continuously a
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=124, lines_active=2, irq_slots=1, zp_bytes=0
 **Cost basis:** arithmetic
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -790,6 +792,8 @@ same figure.
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=273, lines_active=3, irq_slots=3
 **Cost basis:** estimated
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 

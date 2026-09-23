@@ -23,6 +23,8 @@ so; the rest is marked as arithmetic or as not measured here.
 **Complexity:** low
 **Region:** both
 **Uses registers:** DC00, DC01
+**Claims:** cia1_port_a (reads), cia1_port_b (reads)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -114,6 +116,8 @@ checksum. The 6502 shows `1800 PASS`; the same fold in Python gives `1800`
 **Region:** both
 **Uses registers:** DC00, DC01
 **Requires:** joystick_edge_detect
+**Claims:** cia1_port_a (reads), cia1_port_b (reads)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -193,6 +197,8 @@ folds `age' | fire << 8` into the same 16-bit checksum. The 6502 shows
 **Complexity:** medium
 **Region:** both
 **Uses registers:** DC00, DC01, DC02, DC03
+**Claims:** cia1_port_a (owns), cia1_port_b (reads)
+**Claims basis:** derived-listing
 
 ### Why
 

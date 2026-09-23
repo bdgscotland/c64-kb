@@ -236,6 +236,8 @@ Changing $D416 while voices are playing produces a live filter sweep — this is
 **Requires:** sid_voice_setup
 **Cost:** cycles_per_frame=327, irq_slots=1
 **Cost basis:** measured-vice
+**Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -712,6 +714,8 @@ reSID is an analog-circuit simulation using a mix of analytical models (for the 
 **Requires:** sid_play_routine_pattern, sid_voice_setup
 **Cost:** cycles_per_frame=258, irq_slots=1
 **Cost basis:** measured-vice
+**Claims:** sid_voice_2 (shares)
+**Claims basis:** derived-listing
 
 Nobody on this machine has listened to anything in this entry. Every claim
 below is register-level: what bytes reach which SID register in which

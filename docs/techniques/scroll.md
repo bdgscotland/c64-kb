@@ -356,6 +356,8 @@ frame's active display period.
 **Demands:** midframe_raster_irqs
 **Cost:** irq_slots=2, lines_active=5, cycles_per_frame=413
 **Cost basis:** measured-vice
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 

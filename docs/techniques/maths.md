@@ -712,6 +712,8 @@ its result is a screen the character ROM can decode.
 **Uses registers:** D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E
 **Cost:** cycles_per_frame=14, bytes_code=1947
 **Cost basis:** arithmetic
+**Claims:** sid_voice_3 (init), sid_voice_3_readback (init), sid_filter_volume (init), cia1_timer_a (reads)
+**Claims basis:** derived-listing
 
 ### Why
 
