@@ -105,6 +105,11 @@ export class FalkorNodes extends FalkorBase {
       name,
       props: { address, description, addr_n: hexAddr(address) },
     });
+    // The page owns the routine's CLOBBERS_ZP edges (schema 26): drop the
+    // old ones so a line the page no longer carries leaves no edge behind.
+    await this.write(`MATCH (k:KernalRoutine {name: $name})-[e:CLOBBERS_ZP]->(:HardwareUnit) DELETE e`, {
+      name,
+    });
   }
 
   addMemoryRegion(m: MemoryRegionNode): Promise<void>;

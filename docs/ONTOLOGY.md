@@ -23,7 +23,8 @@ Design principles:
 
 ### KernalRoutine
 
-A KERNAL ROM jump-table entry ($FFC0+).
+A KERNAL ROM jump-table entry ($FF81-$FFF3). An earlier version of this
+line said $FFC0+; the table starts at $FF81 (CINT).
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -243,7 +244,8 @@ drive), `user_port` ($DD01), `vic_raster_irq` (the one raster compare:
 $D012, $D011 bit 7, $D019/$D01A bit 0), `irq_vector_0314`,
 `irq_vector_fffe`, `nmi_vector_0318`, `nmi_vector_fffa`,
 `expansion_io1` ($DE00-$DEFF), `expansion_io2` ($DF00-$DFFF), and
-`zero_page` ($02-$FF), one unit whose bytes ride the CLAIMS edge.
+`zero_page` ($02-$FF), one unit whose bytes ride the CLAIMS and
+CLOBBERS_ZP edges.
 
 ### Archetype
 
@@ -265,7 +267,7 @@ carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
 schema 21 the briefing tool held four archetype keywords and two forced
 techniques in code and the page's fingerprints were read by nobody.
 
-## Edge Types (21)
+## Edge Types (22)
 
 ### BELONGS_TO
 
@@ -450,6 +452,30 @@ reports them; the hit that remains carries the rule in `underlying_kind`.
 A technique with no Claims line is reported as unknown, never as
 claiming nothing.
 `c64_techniques_for` filters on a claimed unit.
+
+### CLOBBERS_ZP
+
+Direction: `KernalRoutine → HardwareUnit` (always `zero_page`)
+
+Meaning: "calling this routine may write, or did write, these zero-page
+bytes" (schema 26). One edge per `**Clobbers zero page:**` line under the
+routine's H3 in `hardware/kernal-routines-reference.md`
+(`CONVENTIONS-hardware-reference.md`). Both ends MATCHed; a miss is
+counted in the ingest summary as `clobbers_zp … dropped`. Re-ingesting
+the routine drops its old CLOBBERS_ZP edges first.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| ranges | string | canonical bytes $00-$FF, e.g. "90-9A,B7"; "" for none. $00-$01 (the 6510 port) can appear; no Claims line can name them |
+| bound | string | may: a static walk of the ROM, an upper bound, written and checked by `scripts/kernal-zp-walk.ts`. must: what one call wrote in a VICE store trace (`scripts/kernal-zp-trace.ts`), a lower bound for that call |
+| basis | string | where the set came from: "ROM walk from $FFD2", or "VICE x64sc store trace, <the call>". A routine has one may edge and a must edge per traced call |
+
+`c64_check_compatibility` reads the may edges: a technique that USES a
+KernalRoutine beside a technique whose CLAIMS on `zero_page` share bytes
+with that routine's may set is `kernal_clobbers_zp` (soft; "may", since
+a given call need not reach every store the walk counts). `npm test`
+fails when the page and the ROM walk disagree, or a must byte lies
+outside the may set.
 
 ### IN_REGION
 
