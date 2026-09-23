@@ -19,7 +19,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (15)
+## Node Types (16)
 
 ### KernalRoutine
 
@@ -294,7 +294,27 @@ prediction.
 Source: `game-design/designs/*.md`, one GameDesign per H2 that carries a
 `**Game design:**` line (`CONVENTIONS-game-designs.md`).
 
-## Edge Types (25)
+### MachineVariant
+
+A C64 model VICE x64sc 3.10 runs, named by its `-model` word (schema 29).
+Seeded by `ensureSchema()` from `src/graph/machine-variants.ts`, like Chip
+and Region. A variant, not a Region: the 6567R56A (`oldntsc`) and the
+Drean 6572 (`drean`) differ from their region's timing, and a third Region
+would split every region rule.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | `c64`, `c64c`, `c64old`, `ntsc`, `newntsc`, `oldntsc`, `drean` |
+| vice_flag | string | `-model <name>` |
+| vic, sid, cia | string | The chips VICE runs for the model, read from `x64sc -default -model <m> -dumpconfig` (VICIIModel, SidModel, CIA1Model), each VICIIModel number named by `-VICIImodel <chip>` |
+| cycles_per_line, lines | integer | Lines measured on all seven by `recipes/oscar64/pal-ntsc-detect.md`; cycles per line from `hardware/pal-ntsc-reference.md`: measured in VICE there for oldntsc (64) and drean (65), from its sources for the rest (63 PAL, 65 NTSC; the 8565 and 8562 are stated timing-compatible, not measured here) |
+| region | string | "PAL", "NTSC" or "PAL-N"; a property, not an edge |
+| vice_default | boolean | True for `c64c`: `x64sc -default` with no `-model` runs an 8565, 8580 and 8521, the same configuration as `-model c64c` |
+
+`jap`, `c64gs`, `pet64` and `ultimax` also exist in this VICE; they are
+left out until a page needs them.
+
+## Edge Types (26)
 
 ### BELONGS_TO
 
@@ -565,6 +585,22 @@ step for a resolved archetype lists the recipes that SCAFFOLD it and
 names their pages (schema 23; before it the tool matched the string
 "shmup" against the archetype name and offered one recipe by name).
 
+### VERIFIED_ON
+
+Direction: `Recipe → MachineVariant`, properties `model` (the runs.json
+word), `cycles`, `shot`, `flags`, `pinned`
+
+Meaning: "`verify:recipes` runs this recipe on this variant and compares
+its exit screenshot with the committed `shot` pixel for pixel." Built by
+the ingest from `docs/recipes/runs.json`, the only file besides markdown it
+reads, after pass 2; the old edges are deleted first, so the file owns
+them. A recipe with no runs.json entry is run by `verify:recipes` on PAL at
+8,000,000 cycles, and gets that edge with `pinned` false. An edge is made
+only when its screenshot is committed. runs.json `pal` maps to `c64c` (the
+machine `x64sc -default` runs), `ntsc`, `oldntsc` and `drean` to the
+variants of those names. Read by `c64_recipe_lookup` (`verified_on[]`) and
+`c64_recipes_for` (`verified_on` filter) (schema 29).
+
 ### COMPOSES
 
 Direction: `GameDesign → Technique`, property `phase` ("play",
@@ -600,10 +636,11 @@ this listing." From `**Realised by:**`; MATCH both, misses counted as
 ## Schema state
 
 `ensureSchema()` creates a range index and a unique constraint on the
-primary key of every node label (15) and seeds:
+primary key of every node label (16) and seeds:
 - 5 `Chip` nodes (VIC-II, SID, CIA1, CIA2, 6510)
 - 2 `Region` nodes (PAL, NTSC)
 - the `HardwareUnit` nodes listed under HardwareUnit, each BELONGS_TO its chip
+- 7 `MachineVariant` nodes (schema 29)
 
 Everything else is produced by `npm run ingest` from `docs/`. Of the
 edge types defined here, one is populated by nothing: `BUILDS_ON`, which

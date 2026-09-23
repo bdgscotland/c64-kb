@@ -16,6 +16,7 @@ const UNIT = [
   "test/kernal-zp.test.ts",
   "test/kernal-zp-rule.test.ts",
   "test/lint.test.ts",
+  "test/machine-variants.test.ts",
   "test/plan-budget.test.ts",
   "test/report-gap.test.ts",
 ];

@@ -407,6 +407,43 @@ export class FalkorLinks extends FalkorNodes {
     });
   }
 
+  /**
+   * VERIFIED_ON (schema 29): verify:recipes runs this recipe page on this
+   * variant and compares the committed screenshot pixel for pixel. Built
+   * from docs/recipes/runs.json after every ingest, never from a page, so
+   * the old edges are removed first: replaceVerifiedOn owns the edge type.
+   */
+  async replaceVerifiedOn(
+    edges: readonly {
+      source_doc: string;
+      variant: string;
+      model: string;
+      cycles: number;
+      shot: string;
+      flags: string;
+      pinned: boolean;
+    }[],
+  ): Promise<{ landed: number; dropped: string[] }> {
+    await this.write(`MATCH ()-[e:VERIFIED_ON]->() DELETE e`);
+    let landed = 0;
+    const dropped: string[] = [];
+    for (const e of edges) {
+      const rows = await this.write(
+        `MATCH (r:Recipe {source_doc: $source_doc})
+         MATCH (v:MachineVariant {name: $variant})
+         MERGE (r)-[x:VERIFIED_ON {model: $model}]->(v)
+         SET x.cycles = $cycles, x.shot = $shot, x.flags = $flags, x.pinned = $pinned
+         RETURN 1`,
+        e,
+      );
+      if (rows.length > 0) landed++;
+      else dropped.push(`${e.source_doc} -> ${e.variant}`);
+    }
+    if (dropped.length > 0)
+      console.warn(`[falkor] replaceVerifiedOn: ${dropped.length} edge(s) dropped: ${dropped.join(", ")}`);
+    return { landed, dropped };
+  }
+
   async linkCausedBy(symptom: string, targetName: string, targetKind: CauseKind): Promise<boolean> {
     return this.mergeOrWarn({
       from: { label: "CrashPattern", symptom },

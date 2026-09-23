@@ -36,6 +36,8 @@ const LABELS = [
   { label: "GameDesign", key: "name", unique: true, cleanable: true },
   // Seeds (schema 25) that CLAIMS edges point at; ensureSchema re-MERGEs them.
   { label: "HardwareUnit", key: "name", unique: true, cleanable: false },
+  // Seeds (schema 29): the models VICE runs; VERIFIED_ON edges point at them.
+  { label: "MachineVariant", key: "name", unique: true, cleanable: false },
 ] as const satisfies readonly LabelSpec[];
 
 export type NodeLabel = (typeof LABELS)[number]["label"];

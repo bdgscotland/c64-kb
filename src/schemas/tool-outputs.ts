@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { VerifiedOnSchema } from "./machine-variant.ts";
 import { BriefingDesignSchema } from "./plan-budget.ts";
 
 const DocChunkSchema = z.object({
@@ -116,6 +117,11 @@ export const RecipeLookupSchema = z.object({
   // The page's Source listing, the fence the listing gate builds; absent
   // only when the page is not on disk beside the server.
   source_code: z.object({ language: z.string(), text: z.string() }).optional(),
+  // The machine variants verify:recipes runs this recipe on and compares
+  // with a committed screenshot (schema 29, from docs/recipes/runs.json).
+  // Empty when none; pinned false means runs.json has no entry and the
+  // run uses its defaults (PAL, 8,000,000 cycles).
+  verified_on: z.array(VerifiedOnSchema).optional(),
 });
 
 export const RecipesForSchema = z.object({
@@ -124,6 +130,7 @@ export const RecipesForSchema = z.object({
     region: z.string().optional(),
     technique: z.string().optional(),
     file_format: z.string().optional(),
+    verified_on: z.string().optional(),
   }),
   recipes: z.array(RecipeSchema),
 });

@@ -8,6 +8,7 @@
  */
 
 import { HARDWARE_UNITS } from "../graph/claims.ts";
+import { MACHINE_VARIANTS } from "../graph/machine-variants.ts";
 import { firstCount } from "./falkor/params.ts";
 import { FalkorLinks } from "./falkor/links.ts";
 import { CHIPS, CLEANABLE_LABELS, REGIONS, createIndexes } from "./falkor/schema.ts";
@@ -28,6 +29,14 @@ export class FalkorService extends FalkorLinks {
       await this.upsertNode({ label: "Region", name, props });
     }
     await this.seedHardwareUnits();
+    for (const v of MACHINE_VARIANTS) {
+      const { name, ...props } = v;
+      await this.upsertNode({
+        label: "MachineVariant",
+        name,
+        props: { ...props, vice_flag: `-model ${name}` },
+      });
+    }
   }
 
   /**
@@ -53,7 +62,7 @@ export class FalkorService extends FalkorLinks {
 
   /**
    * Per-label DETACH DELETE for all C64 entity nodes. Preserves the
-   * graph itself + indexes + constraints + Chip/Region/HardwareUnit seeds (which
+   * graph itself + indexes + constraints + Chip/Region/HardwareUnit/MachineVariant seeds (which
    * are re-MERGED by ensureSchema on next connect).
    */
   async clean(): Promise<void> {

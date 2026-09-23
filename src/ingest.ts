@@ -28,6 +28,7 @@ import { chunkText } from "./ingest/points.ts";
 import { applyPendingEdges, ingestFile } from "./ingest/passes.ts";
 import { findStubTechniques, linkRegions, reportSummary } from "./ingest/report.ts";
 import { EdgeTally, type NodeTally } from "./ingest/tally.ts";
+import { linkVerifiedOn } from "./ingest/verified-on.ts";
 import { chunkMarkdown } from "./services/chunker.ts";
 import { isAvailable as ollamaAvailable } from "./services/embeddings.ts";
 import { FalkorService } from "./services/falkor.ts";
@@ -133,6 +134,7 @@ async function main(): Promise<void> {
 
   // --- Report ---
   await linkRegions(falkor, print);
+  await linkVerifiedOn(falkor, DOCS_DIR, print);
   const stubTechniques = await findStubTechniques(falkor);
   await reportSummary({ qdrant, falkor, nodes, edges, stubTechniques, print });
 

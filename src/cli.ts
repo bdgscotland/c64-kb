@@ -199,19 +199,29 @@ program
   .addOption(new Option("--region <region>", "Filter by region (pal/ntsc/both)").choices(REGIONS))
   .option("--technique <technique>", "Filter by Technique title")
   .option("--file-format <fmt>", "Filter by FileFormat")
-  .description("List recipes filtered by toolchain/region/technique/format")
-  .action(async (opts: { toolchain?: string; region?: string; technique?: string; fileFormat?: string }) => {
-    const { recipesFor } = await import("./tools/query.ts");
-    const result = await recipesFor(
-      definedOnly({
-        toolchain: opts.toolchain,
-        region: opts.region,
-        technique: opts.technique,
-        file_format: opts.fileFormat,
-      }),
-    );
-    emit(result);
-  });
+  .option("--verified-on <variant>", "MachineVariant name or region word: recipes run in VICE on it")
+  .description("List recipes filtered by toolchain/region/technique/format/verified-on")
+  .action(
+    async (opts: {
+      toolchain?: string;
+      region?: string;
+      technique?: string;
+      fileFormat?: string;
+      verifiedOn?: string;
+    }) => {
+      const { recipesFor } = await import("./tools/query.ts");
+      const result = await recipesFor(
+        definedOnly({
+          toolchain: opts.toolchain,
+          region: opts.region,
+          technique: opts.technique,
+          file_format: opts.fileFormat,
+          verified_on: opts.verifiedOn,
+        }),
+      );
+      emit(result);
+    },
+  );
 
 program
   .command("technique-lookup <name>")

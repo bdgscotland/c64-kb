@@ -65,7 +65,7 @@ Purpose: Gives the agent a ready-to-use, verified example with build instruction
 
 Inputs: 'name' is the canonical recipe identifier — toolchain prefix + hyphen + recipe slug (e.g. 'oscar64-hello-world', 'kickassembler-hello-world', 'cc65-hello-world-conio'). Case-sensitive.
 
-Output: {name, toolchain, output_format, region, source_doc, toolchain_version_verified?, documentation[]}. toolchain_version_verified is the toolchain version this repo's gates built the recipe with (e.g. '5.25' for KickAssembler); a different version may or may not build it. On not-found, 'name' is empty and 'text' lists near-match suggestions.
+Output: {name, toolchain, output_format, region, source_doc, toolchain_version_verified?, documentation[], source_code?, verified_on[{variant, vic, sid, cia, region, model, cycles, shot, flags, pinned}]}. toolchain_version_verified is the toolchain version this repo's gates built the recipe with (e.g. '5.25' for KickAssembler); a different version may or may not build it. verified_on lists the VICE machine variants verify:recipes runs the recipe on and compares with a committed screenshot pixel for pixel (from docs/recipes/runs.json): a runs.json "pal" run is VICE's default machine, which is the c64c variant (VIC-II 8565, SID 8580, CIA 8521), not a 6569; "ntsc" is the 6567R8 with a 6581 and 6526. pinned false means the run uses verify:recipes' defaults. An empty list means no run is compared. On not-found, 'name' is empty and 'text' lists near-match suggestions.
 
 When to use: When you know the specific recipe name or have already identified the toolchain + intent from c64_toolchain_hint and want a complete worked example.
 
@@ -91,13 +91,13 @@ export const recipesForTool = defineTool({
 
 Purpose: Lets the agent discover what buildable examples are available before committing to a specific recipe. All filters are optional — omitting all returns the full recipe catalog.
 
-Inputs: All optional. 'toolchain' is one of oscar64 | kickassembler | cc65. 'region' is pal | ntsc | both (note: recipes with region='both' appear for any region filter). 'technique' is an exact Technique.title match (Phase 2: no techniques yet — omit for now). 'file_format' is an exact FileFormat.name match (e.g. 'PRG').
+Inputs: All optional. 'toolchain' is one of oscar64 | kickassembler | cc65. 'region' is pal | ntsc | both (note: recipes with region='both' appear for any region filter). 'verified_on' is a MachineVariant name (c64c, ntsc, oldntsc, ...) or a region word (PAL, NTSC): only recipes verify:recipes runs on that variant, or on any variant of that region. 'technique' is an exact Technique.title match (Phase 2: no techniques yet — omit for now). 'file_format' is an exact FileFormat.name match (e.g. 'PRG').
 
 Output: {filter, recipes[{name, toolchain, output_format, region, source_doc}]}. Empty recipes array means no matches — try a broader filter.
 
 When to use: Before calling c64_recipe_lookup, use this to discover what names exist. Also useful to audit coverage gaps.
 
-Examples: {"toolchain": "oscar64"} → table of all Oscar64 recipes. {} → full catalog. {"region": "pal"} → PAL-compatible recipes.
+Examples: {"toolchain": "oscar64"} → table of all Oscar64 recipes. {} → full catalog. {"region": "pal"} → PAL-compatible recipes. {"verified_on": "oldntsc"} → the recipes run on the 6567R56A.
 
 See also: c64_recipe_lookup to fetch a specific recipe's full content. c64_toolchain_hint for pattern snippets without a complete recipe.
 
@@ -110,6 +110,12 @@ Limitations: Returns graph metadata only — use c64_recipe_lookup to get the ac
       .describe("Filter by region (recipes with region='both' match any value)"),
     technique: z.string().optional().describe("Filter by Technique title (exact match)"),
     file_format: z.string().optional().describe("Filter by FileFormat name (e.g. 'PRG')"),
+    verified_on: z
+      .string()
+      .optional()
+      .describe(
+        "MachineVariant name (c64c, ntsc, oldntsc) or region word (PAL, NTSC): recipes run in VICE on it",
+      ),
   },
   outputSchema: RecipesForSchema.shape,
   annotations: READ_ONLY,
