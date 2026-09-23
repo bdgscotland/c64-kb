@@ -178,10 +178,24 @@ To wire c64-kb as an MCP server from a different repository, add
 Substitute the real absolute path on your machine. The server must already
 be built (`npm run build`) before connecting.
 
-`templates/c64-demo-starter` and `templates/c64-game-starter` are
-ready-to-copy project skeletons (Makefile, `src/`, `assets/`, a `CLAUDE.md`)
-whose `.mcp.json` points at this repo's `dist/cli.js` by relative path and
-carries a placeholder entry for vice-mcp.
+To start a C64 project from a playable starter (see "What the starters
+play" above), run `npm run new-project -- <starter> <dir>` in this checkout.
+It copies the starter and the shared harness (`templates/_harness/`), and
+writes `.mcp.json` with this checkout's absolute `dist/cli.js` path. It then
+runs the starter's headless check to prove the copy works.
+
+The starters are `shmup-vertical`, `platformer` and `action-puzzle`, plus
+two minimal ones: `hello` (C calling assembly) and `hello-kick`
+(KickAssembler only). In each new project:
+- `make run` opens it in VICE;
+- `make shot check` runs it headless on PAL and NTSC and grades the
+  screenshots;
+- `make disk` builds a `.d64`.
+
+Nothing builds until `PLAN.md` holds the KB's compatibility and budget
+output. `docs/workflow/agent-harness.md` explains the loop.
+`templates/c64-demo-starter` and `templates/c64-game-starter` are the older
+skeletons; they will be removed once the demo starter lands (#39).
 
 ---
 
