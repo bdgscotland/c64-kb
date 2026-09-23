@@ -749,6 +749,27 @@ code=$(grep '^>C:02ff' /tmp/verdict.log | tail -1 | awk '{print $2}')
 case "$code" in 01) exit 0;; 02) exit 1;; *) exit 2;; esac
 ```
 
+### A windowless build for batch runs
+
+The GTK build opens a window on every launch and takes the desktop's focus,
+which a verifier run of sixty recipes turns into a constant interruption;
+`-minimized` does not help, the window still activates before it shrinks.
+VICE 3.10 ships a third front end besides GTK and SDL: configure the
+source with `--enable-headlessui` and the resulting `x64sc` has no window,
+no Dock tile and never registers with the window server, while the exit
+screenshot still works because it is taken from the emulated frame in the
+machine core. Measured 2026-09-22 on macOS: the headless build's exit
+screenshots for four pinned recipes, PAL and NTSC, were byte-identical to
+the pins, and the process never appeared in LaunchServices while a GTK
+instance next to it was listed as the frontmost application. Two things to
+know: a build that is not installed needs `-directory <vice data dir>` and
+it must come after `-default`, because `-default` resets the search path;
+and the exit status on the cycle limit is 1 by design in both builds. The
+build takes under a minute (`brew install dos2unix xa` first; a plain
+top-level `make` succeeds where `make x64sc` races). Point the verifier at
+it with `X64SC_BIN=/path/to/headless/x64sc npm run verify:recipes`; every
+command on this page runs unchanged under it.
+
 The red Oscar64 build logged `00` then `02` with this file. Do not use
 `watch` or `break` here: a stopping checkpoint enters the monitor with
 nothing to type `x`, cycles stop counting, `-limitcycles` never fires and
