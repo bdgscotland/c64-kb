@@ -143,8 +143,7 @@ scan, 18,559 cycles, into every PAL play frame (range 19,599 to 19,807 plus
 1,075 for badlines, "undetermined") and left it out of the NTSC frame as
 multi-frame (1,040 to 1,248 plus 1,075). Neither is this program's frame:
 the scan here runs a quarter at a time. The scan loop takes 17 cycles a
-cell of dirt (counted from the generated code; an earlier version of this
-page said 14, a miscount). The recipe's loop measured 18.7 (14,206 cycles
+cell of dirt (counted from the generated code). The recipe's loop measured 18.7 (14,206 cycles
 for 760 cells, with badlines in). So a slice of 190 cells costs about 3,230
 cycles, plus the objects in it (arithmetic). The tool's
 music figure is the recipe's stub tune; this tune and its effects are

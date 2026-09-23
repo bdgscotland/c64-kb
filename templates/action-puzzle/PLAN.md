@@ -345,8 +345,7 @@ screen; it is timed once with CIA1 timer B and printed, not metered.
 - `tools/gen.py` holds the caves, packs them, and runs a Python model of
   the same rules over the same script. It writes `src/gen_caves.h` (the RLE
   streams), `src/gen_autopilot.h` (the script and the model's expected
-  values) and `src/gen_notes.h` (the note tables). An earlier version of
-  this plan named `tools/caves.py` and `src/cavedata.h`, which never existed.
+  values) and `src/gen_notes.h` (the note tables).
 - Verdict, after the table is shown, outside the meter: the model's cave
   fold at game over, score, gems, cave number, and the table row the new
   score landed in. `$02FF` and the border.
@@ -371,8 +370,7 @@ screen; it is timed once with CIA1 timer B and printed, not metered.
   cycles on PAL, 10,292 / 6,598 on NTSC. A first build passed the cell
   pointer to `cell()`; Oscar64 then computed it for every cell before the
   test and the scan loop took 42 cycles a cell (typical frame 11,812).
-  Passing row and column made it 17 (counted from the generated code; this
-  plan said 41 and 14 before, a miscount).
+  Passing row and column made it 17 (counted from the generated code).
 - Settled: first_open_after_reset_hangs_on_pal. `DISK_WAIT` waits 50 frames
   before the first OPEN (main.c). `make disktest` ran on PAL and NTSC with a
   true-drive 1541: the start-up read, two saves (the second replacing the
