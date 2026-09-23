@@ -23,7 +23,7 @@ you know the mechanism.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted
+**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance
 
 ### Symptom
 
@@ -646,3 +646,76 @@ delay:  dec count
 - Recipe: `recipes/kickassembler/scroll-panel-split.md`, with the per-phase table.
 - Source of the table idea: c64gameframework `raster.s`, `irq4DelayTbl`
   (https://github.com/cadaver/c64gameframework, read, not run).
+
+---
+
+## idle_fetch_byte_shows_in_gaps — The byte at $3FFF is drawn wherever the VIC has no row to show
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open
+
+### Symptom
+
+A band of thin vertical stripes, or a repeated pattern, appears across the
+display window where there should be plain background: in the gap an FLD
+opens above the screen, in the lines a side-border loop keeps badline-free,
+or in the opened top and bottom borders. On the developer's machine or in a
+fresh emulator the same lines are clean. Garbage that "only shows on real
+hardware", or only after another program has run, is the usual report.
+
+### Mechanism
+
+When no badline has loaded the video matrix latch the VIC is in idle state,
+and its g-accesses read one fixed address instead of the character
+generator: `$3FFF` in VIC bank 0, `$7FFF`, `$BFFF` or `$FFFF` in banks 1-3,
+and `$39FF` (or the bank equivalent) with ECM set. The byte fetched is
+drawn as pixels across the whole window on every idle line, bit 1 in colour
+0, bit 0 in the background colour. VICE's RAM starts cleared, so the byte
+is zero and the idle lines look like background. On hardware the byte holds
+whatever was there: the power-on RAM pattern, or the tail of a previous
+program's data, tables or code. Every technique that opens lines the VIC
+does not fetch a row for exposes it: the FLD gap (`fld_flexible_line_distance`),
+a side-border region whose YSCROLL is rewritten each line
+(`sideborder_open`), and the top and bottom borders once opened
+(`topbottom_border_open`). Measured in VICE x64sc 3.10: with `$3FFF` set to
+`%10101010`, every line of an 18-line FLD gap on PAL and a 22-line gap on
+NTSC is 160 black and 160 background pixels across x 32-351, alternating
+from x = 32.
+
+### Fix
+
+Own the byte. Store `$00` at the idle address of the bank in use before the
+effect starts, or store a chosen pattern when the stripes are wanted; in
+bank 3 the address is `$FFFF`, which is RAM to the VIC and to a CPU store
+even with the KERNAL ROM banked in. Do it once at start-up and again
+whenever the VIC bank changes. The address is not free memory: a table
+that ends at `$3FFF` puts its last byte on the screen.
+
+### Worked example
+
+From `recipes/kickassembler/fld.md`: the recipe wants the gap to be
+visible, so it plants the pattern deliberately.
+
+```text
+// Bank 0: the idle fetch reads $3FFF. Plant the stripe once at start-up.
+    lda #%10101010
+    sta $3fff
+
+// The same program wanting a clean gap stores zero instead:
+    lda #0
+    sta $3fff
+
+// Bank 3 ($C000-$FFFF): the equivalent address is $FFFF, RAM under the
+// KERNAL for both the VIC's fetch and the CPU's store.
+    lda #0
+    sta $ffff
+```
+
+### Cross-references
+
+- Technique: `fld_flexible_line_distance` in `techniques/raster.md`: the gap is idle lines by design.
+- Technique: `sideborder_open` and `topbottom_border_open` in `techniques/raster.md`: idle lines as a side effect.
+- Hardware: `hardware/vic-ii-reference.md`, "Idle vs display state" and the `$3FFF` phantom-pixel note.
+- Recipe: `recipes/kickassembler/fld.md`, where the byte is `%10101010` and the stripes are measured.
