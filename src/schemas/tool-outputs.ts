@@ -522,6 +522,9 @@ export const BriefingSchema = z.object({
       features: z.array(z.string()),
       risks: z.array(z.string()),
       resolved_from: z.string().optional(),
+      // Set when the game brief named no archetype and these words from
+      // the archetype's **Brief words:** line routed it.
+      inferred_from: z.array(z.string()).optional(),
     })
     .optional(),
   archetype_not_found: z
