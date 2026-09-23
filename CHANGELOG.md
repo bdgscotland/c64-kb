@@ -7,11 +7,15 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 757, schema 29, tools 2.1.0, package 0.14.0.
 
-**Issue #22, steps 4 and 5: game designs and machine variants (data
-746, schema 29, tools 2.1.0, package 0.14.0).** Two shape changes land
-together, so the schema moves two: 28 is GameDesign, 29 is MachineVariant. Tools 2.1.0 is a
-minor: every change to the surface is additive (a new optional input, new
-output fields). The package moves with the tools minor.
+**Issue #22, steps 4 to 6: game designs, machine variants and the
+claims watch; #36 decided (data 757, schema 29, tools 2.1.0, package
+0.14.0).** One bump over main's data 756, schema 27, tools 2.0.0, package
+0.13.0. Two shape changes land together, so the schema moves two: 28 is
+GameDesign, 29 is MachineVariant. Step 6 changes seed values, not shape.
+Tools 2.1.0 is a minor: every change to the surface is additive (a new
+optional input, new output fields, and `position`, a field new in this
+release, with a value no shipped consumer has seen). The package moves
+with the tools minor.
 
 GameDesign (schema 28). A new doc type, `docs/game-design/designs/*.md`
 (`CONVENTIONS-game-designs.md`), makes a whole game a node: the archetype
@@ -31,11 +35,12 @@ What the validation showed, play phase, scratch graph:
 | Design | Predicted (low-high + badlines) | Measured worst, PAL / NTSC | Members with no figure |
 |---|---|---|---|
 | `platformer_scaffold_oscar64` | 4,477-4,685 + 1,075 | 8,693 / 10,287, above by 2,933 / 4,527 | 5 |
-| `falling_blocks_oscar64` | 5,902 + 1,075 | 6,276 / 6,491, within | 4 |
+| `falling_blocks_oscar64` | 5,902 + 1,075 | 6,276 / 6,491, within_incomplete | 4 |
 | `simple_shmup_oscar64` | 5,628 + 1,075 | not timed | 1 |
 
-The platformer's typical PAL frame (4,966, one frame's reading) lies
-within its range. The falling-block agreement is partial: its one large
+Re-run on a scratch graph of the merged tree; the figures held. The
+platformer's typical PAL frame (4,966, one frame's reading) lies within
+its range. The falling-block agreement is partial: its one large
 figure, `falling_block_rules`' 5,888, is a constructed upper bound, and
 the render has no Cost line.
 
@@ -49,18 +54,44 @@ harness needs or the pages name (`c64`, `c64c`, `c64old`, `ntsc`,
 `newntsc`, `oldntsc`, `drean`), with their chips, line length and lines.
 `VERIFIED_ON` (Recipe to MachineVariant) is rebuilt after every ingest
 from `docs/recipes/runs.json`, as `verify:recipes` runs each page, and
-only where the committed screenshot exists: 204 edges on the scratch graph,
-before main's data 745 was merged. `c64_recipe_lookup`
+only where the committed screenshot exists: 242 edges on a scratch graph
+of this merged tree (data 757), 0 problems; 131 recipes run on the c64c. `c64_recipe_lookup`
 returns `verified_on[]`; `c64_recipes_for` takes `verified_on` (a variant
 or PAL / NTSC). The R56A and the Drean are variants, not Regions, which
 answers #8's question.
 
-VICE's default machine is the `c64c` configuration (VIC-II 8565, SID
-8580, CIA 8521), not the 6569 that `vice-reference.md`, `pal-ntsc-detect.md`
-and the #22 design said. `x64sc -default -dumpconfig` is identical to
-`-model c64c`; the `cia-revision-detect` listing reads the new CIA there
-and the old one under `-model c64`. Every runs.json `pal` run, and the PAL
-palette column in `vice-reference.md`, is therefore the 8565 machine.
+Review fixes, steps 4 and 5. `verified_on[]` applies a run's chip flags:
+`cia-revision-detect` runs the c64c with `-ciamodel 0`, so its CIA is the
+6526, and `overrides[]` says so (it listed the c64c's 8521).
+`c64_plan_budget` gives `within_incomplete` when the measured worst lies
+inside the range while members have no figure; it said `within`. A typical
+frame's excess is a share of the typical, not of the worst. `simple-shmup`
+is an instance of `vertical_shmup` only (the listing scrolls vertically).
+A runs.json page with `skip` (main's tape-turbo-loader) gets no
+`VERIFIED_ON` edge; it was reported as a missing screenshot.
+
+Claims watch (step 6). `scripts/claims-watch.ts` runs a PRG in the
+windowless x64sc with a store trace and judges every store against the
+claims its techniques declare, their REQUIRES closure, a harness list and
+the KERNAL routines it names. Exit 1 on a store outside them. Validated on
+four recipes: each fails on its page's declarations alone and passes once
+its RAM, harness timers and missing units are declared; a multiplexer
+with `sta $d40b` and `sta $fb` added fails on exactly those two stores.
+The CIA timer and TOD units now own their bit of the interrupt control
+register ($DC0D/$DD0D bits 0, 1, 2). `vice-reference.md` says how to run
+it.
+
+#36: VICE's default machine is the `c64c` configuration (VIC-II 8565, SID
+8580, CIA 8521), not the 6569 that `vice-reference.md`, `pal-ntsc-detect.md`,
+CLAUDE.md, the README and twenty page statements said. `x64sc -default
+-dumpconfig` is identical to `-model c64c`. Re-run for this entry:
+`cia-revision-detect` with no `-ciamodel` reads the new CIA on the default,
+`c64c` and `newntsc`, the old one on `c64` and `ntsc`; `palette-cells`
+under `-model c64` differs from the default in eleven of sixteen entries.
+The maintainer's decision: keep the default, say c64c. No screenshot is
+re-baselined; every page that called the VICE PAL run a 6569 now names the
+C64C with a clause saying what it said; `-model c64` is the check for the
+older machine.
 
 **Candidate list, Tier B batch 14: four demo effects, each a technique
 entry and a pinned KickAssembler recipe (data 756).** Multicolour
