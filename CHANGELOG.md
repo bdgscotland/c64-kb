@@ -7,6 +7,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 767, schema 31, tools 2.3.0, package 0.16.0.
 
+**Issue #39: `shmup-vertical` gets enemy fire and a per-frame bullet
+check.**
+- Darts, weaves and swoops fire dots that drift towards the ship, from
+  a 6-dot pool in a fire window at Y 72-140. The dots' step, the
+  bullet draw list, the enemy boxes and the path step moved to
+  KickAssembler: the staged worst had reached 17,882 NTSC cycles, over
+  the frame.
+- Staged worst now 15,991 PAL / 16,136 NTSC, with no frame lost; graded
+  run 12,912 / 13,015.
+- Each bullet cell is read back against the map after every erase.
+- `make joytest` plays to game over, reboots on the same disk and
+  requires the saved high score.
+- It passes on the released Oscar64 v1.32.273.
+
 **`verify:templates --selftest` runs each starter's own proof targets
 (#42).** Several #39 fixes are proved only by a starter's own target: the
 adventure's save validation by `disktest`, the platformer's scroll timing
