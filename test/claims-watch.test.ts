@@ -121,6 +121,20 @@ describe("the log parser", () => {
     // SP $FE after a JSR: the pushes were $01FF and $0100 (wrapped).
     expect(isPush({ ...pha!, addr: 0x0100, sp: 0xfd })).toBe(true);
   });
+  it("counts a JSR's pushes as pushes when an interrupt is taken straight after it", () => {
+    // VICE logged the JSR's two bytes and the IRQ's three with SP:E9.
+    const jsr = parseHit(
+      "#1 (Trace store 01ee)  212/$0d4,  10/$0a",
+      ".C:30a0  20 8B 2A    JSR $2A8B      - A:00 X:00 Y:00 SP:e9 ..-..I..   23089514",
+    );
+    expect(jsr && isPush(jsr)).toBe(true);
+    expect(isPush({ ...jsr!, addr: 0x01ed })).toBe(true);
+    expect(isPush({ ...jsr!, addr: 0x01ef })).toBe(false);
+    // A PHA reaches one byte past the interrupt's three, a store none.
+    expect(isPush({ ...jsr!, mnemonic: "PHA", addr: 0x01ed })).toBe(true);
+    expect(isPush({ ...jsr!, mnemonic: "PHA", addr: 0x01ee })).toBe(false);
+    expect(isPush({ ...jsr!, mnemonic: "STA", addr: 0x01ed })).toBe(false);
+  });
 });
 
 describe("bits touched on a shared register", () => {

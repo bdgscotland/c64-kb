@@ -31,6 +31,26 @@ effect in their own pictures. Linecrunch and Kefrens bars, the other two
 of the batch, stalled six times each on the workflow's watchdog and are
 being rebuilt as standalone runs.
 
+**Issue #39: the `platformer` starter.** It is a side-scrolling game in
+Oscar64 with a KickAssembler part:
+- a 2,048 px tile level with three screen pages;
+- the next page is prepared five rows a frame and flipped in the
+  vertical blank;
+- slopes, ledges and 8.8 jumps;
+- walkers and hoppers wake in an activation window;
+- a HUD under a raster split, and a tune.
+
+Measured in VICE x64sc 3.10:
+- worst frame 12,564 / typical 7,042 cycles on PAL; 12,991 / 7,443 on
+  NTSC;
+- `make tearcheck` compares mid-play shots with the level and catches a
+  torn build.
+
+Its review found Oscar64 fault 7 (#30; now in CLAUDE.md and
+`oscar64-reference`). The harness also changed:
+- claims-watch now recognises a JSR push logged after an IRQ entry;
+- the meter finds its median by selection, not by sorting.
+
 **Issue #39: the `action-puzzle` starter, CAVE RUN.** It is a Boulder
 Dash-style game in Oscar64:
 - the cave scan runs a quarter per frame;
