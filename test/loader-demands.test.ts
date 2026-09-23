@@ -36,6 +36,8 @@ describe("serial_bus_exclusive", () => {
       const d = ents.filter((e) => e.type === "technique_demands");
       expect(d.map((e) => `${e.technique}:${e.resource}`)).toEqual([
         "krill_loader_integration:serial_bus_exclusive",
+        "sparkle_irq_loader:serial_bus_exclusive",
+        "sparkle_irq_loader:kernal_rom_out",
       ]);
       expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("demands unknown"))).toEqual(
         [],

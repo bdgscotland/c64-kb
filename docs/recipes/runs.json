@@ -754,5 +754,83 @@
       "pal": "screenshots/password-state.png",
       "ntsc": "screenshots/password-state-ntsc.png"
     }
+  },
+  "kickassembler/mouse-1351-read": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-controlport1device",
+      "3"
+    ],
+    "shots": {
+      "pal": "screenshots/mouse-1351-read.png",
+      "ntsc": "screenshots/mouse-1351-read-ntsc.png"
+    }
+  },
+  "kickassembler/fld": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fld.png",
+      "ntsc": "screenshots/fld-ntsc.png"
+    }
+  },
+  "oscar64/iffl-kernal-skip": {
+    "cycles": 36000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/iffl-kernal-skip.png",
+      "ntsc": "screenshots/iffl-kernal-skip-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/runtime-relocation": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/runtime-relocation.png",
+      "ntsc": "screenshots/runtime-relocation-ntsc.png"
+    }
+  },
+  "kickassembler/sfx-in-player": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sfx-in-player.png",
+      "ntsc": "screenshots/sfx-in-player-ntsc.png"
+    }
+  },
+  "kickassembler/irq-owns-port": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/irq-owns-port.png",
+      "ntsc": "screenshots/irq-owns-port-ntsc.png"
+    }
   }
 }

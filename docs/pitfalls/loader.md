@@ -187,8 +187,10 @@ passages were deleted.
 already documents, and they have nothing to do with `$0330`:
 
 - Any raw write to `$DD00`/`$DD02` (a VIC-bank switch, a generic CIA init) while
-  the loader is armed corrupts its bus-lock/installed-state test — see
-  `fastloader_dd00_write_corrupts_resident` below.
+  Krill is armed corrupts its bus-lock/installed-state test — see
+  `fastloader_dd00_write_corrupts_resident` below. This is Krill's rule only;
+  Sparkle prescribes a `$DD02` write for the VIC bank (an earlier version of
+  this bullet said "the loader", which read as a rule for every loader).
 - Any KERNAL serial call (`JSR $FFD5`, a `krnio` save) while the drive is in
   loader mode stalls, because the drive is no longer running DOS; call
   `uninstall` first.
@@ -207,7 +209,7 @@ already documents, and they have nothing to do with `$0330`:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks
+**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks, iffl_single_file
 
 ### Symptom
 
@@ -408,7 +410,7 @@ cycle count; 65 × 263 = 17,095 and 64 × 262 = 16,768, rung 3, matching
 
 ### Cross-references
 
-- Technique `sparkle_irq_loader` — PAL-only by default; NTSC needs explicit timing constants
+- Technique `sparkle_irq_loader` — PAL and NTSC, plugins included (Sparkle 3.4 manual p. 3; an earlier version of this line said PAL-only by default with NTSC needing timing constants)
 - Technique `krill_loader_integration` — `NTSC_COMPATIBILITY` config define, drive detection discussion
 - `docs/formats/iec-disk-reference.md` — IEC bus signal levels, timing diagrams, 1541 GCR zones
 
@@ -677,12 +679,12 @@ and the (persistent) resident just above it (e.g. `$CD00`). Verified 2026-05-20:
 
 ---
 
-## fastloader_dd00_write_corrupts_resident — Raw $DD00 writes (VIC bank switch) while a GCR loader is resident corrupt its bus-lock
+## fastloader_dd00_write_corrupts_resident — Raw $DD00 writes (VIC bank switch) while a Krill or Sparkle loader is resident corrupt its bus-lock
 
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00
-**Triggered by techniques:** krill_loader_integration
+**Triggered by techniques:** krill_loader_integration, sparkle_irq_loader
 
 ### Symptom
 
@@ -702,8 +704,11 @@ out, 6-7 CLK/DATA in — an earlier version of this page said bits 2-7; see
 VIC-bank set does, including Oscar64's `vic_setmode()` and any
 `STA $DD00` / `LDA #v:STA $DD00` — overwrites the IEC bits with values the loader
 did not expect, desyncing the drive protocol. The next drive op then waits forever.
-(A read-modify-write that changes *only* bits 0-1 while the loader is idle is
-tolerated; a full-byte write, or any write while the loader is mid-transfer, is not.)
+For Krill, a read-modify-write that changes *only* bits 0-1 while the loader is
+idle is tolerated; a full-byte write, or any write while the loader is
+mid-transfer, is not. Other loaders publish different rules, some the reverse of
+Krill's; the table under Fix gives each. (An earlier version of this page stated
+Krill's rule as the rule for every resident loader.)
 
 ### Fix
 
@@ -716,11 +721,133 @@ Don't keep the loader resident across VIC mode/bank switches. Two options:
    `krnio` with no uninstall dance and no `vic_setmode` ever runs inside the
    install→loads→uninstall window. Cost: one drive-code upload per load batch —
    fine for infrequent loads. (Tideline ships this, VICE-verified 2026-05-20.)
-2. If the loader must stay resident, use its VIC-bank-aware API (Krill's
-   `SET_VIC_BANK` + `ENTER_BUS_LOCK`/`LEAVE_BUS_LOCK`) and never raw-write `$DD00`.
+2. If the loader must stay resident, switch the bank the way that loader
+   documents. None of these was run here; each rule is from the loader's own
+   documentation (rung 4 here).
+
+| Loader | VIC bank switch while resident | Arbitrary `$DD00` values |
+|---|---|---|
+| Krill | `SET_VIC_BANK`; never a raw `$DD00` write | `ENTER_BUS_LOCK` / `LEAVE_BUS_LOCK` |
+| Sparkle 3.4 | Do not write `$DD00`: the loader may read it as a drive command and reset the drive. Write `LDA #$3C+bank : STA $DD02`, bank 0-3 (manual pp. 20-21; common issue 1, p. 29). | "Direct bus lock": `$03` (bits 3-5 clear) to `$DD02`, then any `$DD00` value; restore `$DD00` to `$38` first, then `$DD02` to `$3C`+bank (pp. 22-23). |
+| Bitfire | Plain stores of `$00`-`$03` to `$DD00` "at any time, also while loading"; not a read-modify-write (`LDA $DD00 : AND #$FC : ORA #bank`) (readme, "Bank switching") | Only while idle, between the `bus_lock` and `bus_unlock` macros |
+
+   Sparkle also accepts any `$DD02` value between loader calls, as long as
+   `$3C`+bank is back before the next call (the "indirect bus lock", pp. 21-22).
+   Why the `$DD02` write selects the bank (not stated in the manual; rung 4):
+   the loader leaves `$DD00` bits 0-1 at 0, so a bit set to output drives 0 and a
+   bit set to input floats to 1, and `$3C`+bank gives the inverted bank value the
+   VIC reads.
+
+**Sources.** Sparkle 3.4 user manual, Sparta (OMG), chapters "Switching VIC
+banks", "Bus lock" and "Common issues", `manual/` in
+https://github.com/spartaomg/SparkleCPP. Bitfire `readme.txt`, sections "Bank
+switching" and the macro list, https://github.com/bboxy/bitfire. The Krill row
+is unchanged from earlier versions of this page.
 
 ### Cross-references
 
 - Technique `krill_loader_integration` — VIC-bank / bus-lock protocol; lazy-install recipe
+- Technique `sparkle_irq_loader` — bank switch through `$DD02`, direct and indirect bus lock
 - Register `$DD00` (CIA2) — VIC bank select bits 0-1 vs IEC lines bits 3-7
 - Pitfall `fastloader_kernal_dependency` — the other "first load works, later loads break" trap
+
+---
+
+## d64_error_byte_is_a_controller_code — The D64 error byte is the 1541 job code, not the DOS error number
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** disk_protection_tricks
+
+### Symptom
+
+A tool, a loader's own D64 reader or a page reads the 683-byte error block appended to a `.d64` as DOS error numbers. It then reports "error 3" for a sector the drive would report as `21, READ ERROR`, or looks for the value `21` in the block and never finds it, so a protected disk's bad-sector signature is invisible to it. The other way round, a tool that writes the DOS number into the block produces an image whose byte `21` (`$15`) means nothing to the drive ROM or to VICE, and the protection check that expected a read error gets `0, OK`.
+
+### Mechanism
+
+The 1541 has two processors' worth of logic in one 6502: the floppy controller side runs sector jobs and hands back a one-byte return code, and the DOS side turns that code into the number and text on the error channel. The D64 error block stores the controller's return code, one byte per sector in track then sector order. `$01` is a clean read. The codes an image can carry, and what the error channel prints for each, measured on the windowless x64sc build of VICE 3.10 with `-drive8truedrive -drive8type 1541` and a `U1` block read of each flagged sector:
+
+| Byte | Controller condition | DOS number | Measured on VICE 3.10 |
+|------|----------------------|-----------|-----------------------|
+| `$01` | OK | none | `0, OK` |
+| `$02` | header not found | 20 | `20, READ ERROR` |
+| `$03` | no sync | 21 | `20, READ ERROR` for one flagged sector; `21, READ ERROR` when the whole track is flagged |
+| `$04` | data block not present | 22 | `22, READ ERROR` |
+| `$05` | data checksum error | 23 | `23, READ ERROR` |
+| `$07` | verify error | 25 | `0, OK` (not exercised by a read) |
+| `$08` | write protect on | 26 | `0, OK` (not exercised by a read) |
+| `$09` | header checksum error | 27 | `20, READ ERROR` |
+| `$0B` | disk ID mismatch | 29 | `20, READ ERROR` for one flagged sector; `29, DISK ID MISMATCH` when the whole track is flagged |
+| `$0F` | drive not ready | 74 | `0, OK` |
+
+VICE 3.10 honours `$02`, `$03`, `$04`, `$05`, `$09` and `$0B` by building the sector's GCR with the named field spoiled (`gcr.c` in its source: sync bytes, header block ID, data block ID, the two checksums, the header's disk ID). It ignores `$07`, `$08` and `$0F`, so a read of such a sector returns `0, OK`. Codes `$0A` and `$10` were not measured here.
+
+Two rows say the printed number depends on how many sectors on the track are flagged. That is the drive ROM's doing, not the emulator's: VICE spoils only the flagged sector, and a ROM that cannot find the header it wants reports `20` whether the header is missing, has a wrong checksum or has a wrong ID. `21` (no sync at all) and `29` (ID mismatch) appear when every sector on the track carries the code. A first version of this measurement put all the flags on track 1 and read `29` for the `$02` and `$05` sectors and `20` for the `$0B` one: a wrong-ID header on the same track leaks into the ROM's per-track seek. Keep flagged sectors on separate tracks when you test an image tool.
+
+### Fix
+
+Convert at the boundary, in both directions, and name which side a variable holds. The drive ROM's rule (see `../formats/iec-disk-reference.md`, "The 1541 DOS Error Codes") is: take the low four bits; `0` gives `24`; `15` gives `74`; anything else is ORed with `$20` and decremented twice, read as a decimal number. So `$03` gives `$23 - 2 = $21`, printed as `21`. Treat `$00` and `$01` as no error when reading an image, and write `$01` for a clean sector.
+
+### Worked example
+
+Bad pattern, a Python image reader that prints the block as DOS numbers:
+
+```text
+errs = img[174848:]                  # 683 bytes after the sector data
+for i, b in enumerate(errs):
+    if b:
+        print(f"sector {i}: error {b}")   # prints "error 3"; the drive says 21
+```
+
+Fixed, with the ROM's conversion:
+
+```text
+def dos_number(job):
+    job &= 0x0F
+    if job in (0, 1):
+        return 0 if job == 1 else 24
+    if job == 15:
+        return 74
+    return int(f"{(job | 0x20) - 2:x}")   # $23 - 2 = $21 -> 21
+
+errs = img[174848:]
+for i, b in enumerate(errs):
+    if b not in (0, 1):
+        print(f"sector {i}: job {b:#04x} -> DOS {dos_number(b)}")
+```
+
+The measurement itself. Build the image (a `c1541`-formatted 174,848-byte file plus 683 error bytes, one flagged sector per track, and two whole tracks flagged):
+
+```text
+SPT = [21]*17 + [19]*7 + [18]*6 + [17]*5          # sectors per track, tracks 1..35
+def index(t, s): return sum(SPT[:t-1]) + s
+img = bytearray(open("disk.d64", "rb").read())    # c1541 -format "TEST,01" d64 disk.d64
+errs = bytearray([0x01] * 683)
+for t, code in {1:0x02, 2:0x03, 3:0x04, 4:0x05, 5:0x07, 6:0x08,
+                7:0x09, 8:0x0B, 9:0x0F, 10:0x00, 11:0x01}.items():
+    errs[index(t, 0)] = code
+for s in range(21): errs[index(12, s)] = 0x03     # whole track: no sync
+for s in range(21): errs[index(13, s)] = 0x0B     # whole track: wrong ID
+open("err2.d64", "wb").write(img + errs)          # 175,531 bytes
+```
+
+Read each flagged sector through the command channel (BASIC, tokenised with `petcat -w2` from lowercase source):
+
+```text
+10 open 15,8,15:open 2,8,2,"#"
+20 for i=1 to 14:read t,s
+30 print#15,"u1 2 0";t;s
+40 input#15,e,e$,a,b
+50 print t;s;e;e$
+60 next:close 2:close 15
+70 data 1,0,2,0,3,0,4,0,5,0,6,0,7,0,8,0,9,0,10,0,11,0,8,5,12,0,13,0
+```
+
+Run: `x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 200000000 -drive8truedrive -drive8type 1541 -8 err2.d64 -drive8wobbleamplitude 0 -drive8wobblefrequency 0 -exitscreenshot out.png -autostart read2.prg`. The screen reads, in order: `20`, `20`, `22`, `23`, `0`, `0`, `20`, `20`, `0`, `0`, `0`, then `0` for the control read of 8,5 on the ID-flagged track, `21` for track 12 and `29` for track 13. Three PAL runs gave byte-identical screenshots.
+
+### Cross-references
+
+- `../formats/c64-file-formats.md`, ".D64": the error block's size, position and the same table
+- `../formats/iec-disk-reference.md`, "The 1541 DOS Error Codes": the ROM's conversion and the full DOS table
+- Technique `disk_protection_tricks`: bad-sector signatures are written as controller codes in a preserved image
+- Pitfall `gcr_timing_assumes_stock_drive`: the other place a loader's model of the drive diverges from the drive

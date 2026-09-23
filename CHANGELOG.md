@@ -5,7 +5,80 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 730, schema 24, tools 1.28.1.
+Data 733, schema 24, tools 1.28.1.
+
+**Design layer, slice 1 (data 733).** Four pages above the mechanics
+layer, written as original prose from public sources by people who
+shipped, facts and names only: `game-design/game-structure.md` (the
+state machine, level end conditions, level transitions, the front end
+and attract mode), `game-design/enemy-behaviour-and-difficulty.md`
+(interaction patterns, personality by target, attack pattern tables, the
+difficulty ramp, a playtest protocol), `game-design/production-planning.md`
+(build order, memory budget first, scope and region, tooling and editors,
+where the surviving documents are) and `demo-design/demo-composition.md`
+(the part lifecycle, transition conditions, pacing and length, music
+continuity across parts, the composition workflow). Each pattern is an
+H2 in the technique style with `Kind`, `Applies to` (archetypes that
+exist), `Realised by` (techniques and recipes that exist), `Sources` and
+a `Checks` list of statements a headless harness can test on a build.
+The extractor reads these pages as prose only; the metadata lines are
+laid out so a later extractor can read them without a rewrite (issue 24
+has the plan for Pattern nodes and a Structure section in the briefing).
+The pages exist because every game generated from the base on
+2026-09-22 shared three faults they describe: levels ending on a frame
+counter, sprites and score digits left on the title after game over, no
+working restart. Nothing on them was measured in VICE; every figure is
+its source's or arithmetic, and each page says what its sources did not
+say. Not found in the sweep and therefore not on the pages: attract-mode
+construction from an original developer, music direction from a
+composer, first-person design retrospectives of the major demos.
+
+**Issue #21, ES-15 to ES-18.** `iffl_single_file` (the KERNAL skip
+fallback, measured; drive-side scan described, not built),
+`runtime_relocation` (two-origin diff, 855 cycles for 19 bytes),
+`sfx_in_player` and `goattracker_player_api`, and
+`irq_owns_processor_port` (18 cycles a handler), each with a recipe
+pinned on PAL and NTSC.
+
+**Issue #20, corrections.** The Sparkle section is rewritten from its
+manual (by Sparta, PAL and NTSC, blocking calls, 72 cycles a byte); the
+`$DD00`/`$DD02` rule is scoped per loader; the VSP crash paragraph follows
+lft's article (no detection method); GoatTracker 2 has one SID model
+setting; a new pitfall for SID replacements that cannot read `$D41B`;
+`c64-file-formats` now says a last sector stores the index of the last
+used byte. Each carries a correction clause.
+
+
+**Candidate list, Tier A batch 4 (data 731).** Three of the four items
+landed. `mouse_1351_read` on the input page with a KickAssembler recipe:
+the 1351's proportional mode is a six-bit position counter in bits 1 to
+6 of the pot registers, not the quadrature the SID page still describes.
+Measured in VICE's 1351 model: the masked counter read 32 on both axes on
+every one of 250 frames on PAL and NTSC, raw bit 0 changed between
+consecutive frames over a hundred times per run, so the picture prints
+the masked value only; the signed modulo-64 delta is checked on ten
+compiled-in samples including both wraps and both half-turn cases; one
+read of both axes costs 104 cycles by the instruction count and 103 by
+the CIA timer, a one-cycle gap the page leaves open. The buttons' lines
+(fire and up) are from the documentation, not pressed here. The SID
+page's quadrature sentence is reported, not edited (see issue 9).
+`fld_flexible_line_distance` on the raster page with a recipe that
+bounces the display by rewriting YSCROLL each line: the top text row sat
+exactly N lines lower on both models, the first badline landed on line
+51 plus N on every frame, and every gap line showed the idle fetch of
+`$3FFF`, which is the new pitfall `idle_fetch_byte_shows_in_gaps`; a
+YSCROLL value that matches the next line only at its first cycle moves
+the display one line, not N. The sideborder recipe's dangling `fld` and
+`vsp` links now point at real techniques. `d64_error_byte_is_a_controller_code`
+on the loader page, with the D64 section of the file-formats page
+corrected in place: the per-sector byte is the controller's job code,
+and read back through the drive's error channel under VICE 3.10 the codes
+`$02`, `$03`, `$04`, `$05`, `$09` and `$0B` are honoured and `$07`, `$08`
+and `$0F` ignored; a lone sector flagged `$03` or `$0B` reads 20, and
+only a whole track carrying the code reads 21 or 29. The IEC page's
+"not measured here" sentence on that point now cites the measurement.
+The eight-way scroller did not land: its writer stalled six times in the
+reading phase and runs again alone.
 
 **Runtime fixes, phase B (tools 1.28.1, package 0.8.1).** Nothing
 listened for the FalkorDB client's `error` event, so a FalkorDB restart

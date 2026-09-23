@@ -276,7 +276,7 @@ The lookup at `$E706` scans from `$E4FC` for a byte equal to the code, skips to 
 | `$0B` | 29 | DISK ID MISMATCH |
 | `$0F` | 74 | DRIVE NOT READY |
 
-A `$00` byte is treated as no error by image tools. So a D64 can carry 20 to 29 and 74 and nothing else; the 3x, 5x, 6x and 7x codes are conditions of a command or a file, not of a sector, and no image byte produces them. That the image's byte is the job code is the D64 format's convention (rung 4, from the format's documentation); the arithmetic from job code to DOS number is the ROM's. Which of these bytes VICE's 1541 emulation reproduces when the image is read was not measured here.
+A `$00` byte is treated as no error by image tools. So a D64 can carry 20 to 29 and 74 and nothing else; the 3x, 5x, 6x and 7x codes are conditions of a command or a file, not of a sector, and no image byte produces them. That the image's byte is the job code is the D64 format's convention (rung 4, from the format's documentation); the arithmetic from job code to DOS number is the ROM's. Which of these bytes VICE's 1541 emulation reproduces on a read is measured in `../pitfalls/loader.md` (`d64_error_byte_is_a_controller_code`): VICE 3.10 honours `$02`, `$03`, `$04`, `$05`, `$09` and `$0B` and ignores `$07`, `$08` and `$0F`, and a single sector flagged `$03` or `$0B` reports 20 rather than 21 or 29 unless the whole track carries the code.
 
 ---
 

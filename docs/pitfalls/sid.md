@@ -16,9 +16,10 @@ substantial behavioral differences between the two SID revisions
 audibly on an 8580, or vice versa). The ADSR-reset bug and the voice-3
 silent-bit divergence are both in the second cluster, and both have
 safe workarounds that are easy to apply once you understand the
-underlying mechanism.
+underlying mechanism. SID replacements that do not emulate the read side (the
+SwinSID) are a separate case: `sid_replacement_d41b_unreadable`.
 
-All four pitfalls in this document apply equally to PAL and NTSC
+All pitfalls in this document apply equally to PAL and NTSC
 systems; none of them are timing-region-specific. The filter cutoff
 curve pitfall is the most musically impactful and deserves particular
 attention when writing cross-compatible SID music.
@@ -30,7 +31,7 @@ attention when writing cross-compatible SID music.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D400, D404, D40B, D412, D418
-**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip
+**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip, sfx_in_player
 
 ### Symptom
 
@@ -316,7 +317,7 @@ write_cutoff:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D404, D40B, D412
-**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences
+**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences, sfx_in_player, goattracker_player_api
 
 ### Symptom
 
@@ -652,6 +653,85 @@ lfo_tick:
 - Register: D417 (bit 2 = FILT3 — must be clear for 3OFF to work)
 - Technique: `sid_voice_setup` — full voice 3 LFO and modulation patterns
 - Technique: `sid_filter_routing` — filter voice routing and the FILT3 interaction
+
+---
+
+## sid_replacement_d41b_unreadable — Some SID replacements cannot read back $D41B; a random seed from it can become constant or low-entropy
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D41B
+**Triggered by techniques:** lfsr_random, sid_8580_vs_6581_differences
+
+### Symptom
+
+A game seeded from SID voice 3 noise plays the same "random" sequence
+on every run, or its enemies, spawns and level layouts never vary, on a
+machine fitted with a SID replacement. The same program varies on a
+real 6581 or 8580. Chip-detection code that reads `$D41B` reports the
+wrong chip or none. Nothing here was run on such hardware; this page
+has no instrument for it (rung 4, from the sources below).
+
+### Mechanism
+
+The seeding pattern in `lfsr_random` sets voice 3 to noise at frequency
+`$FFFF` and reads the oscillator output at `$D41B` twice. On a real SID
+the register changes on every read. SID replacements are
+microcontrollers or FPGAs that emulate the chip, and not all of them
+emulate the read side:
+
+- **SwinSID.** C64-Wiki: "SwinSID does not support reading registers",
+  and games that "read from $D41B to generate random numbers" (it names
+  Fort Apocalypse, Uridium, Pirates! and Paradroid) "behave strangely".
+  Paddles and mice do not work either, because SwinSID has no
+  analogue-to-digital converter for `$D419`/`$D41A`.
+- **SwinSID Nano.** The SIDDetector-II README says its `$D41B` does move,
+  but only at about 44 kHz, so back-to-back reads can return the same
+  value; SIDDetector-II uses exactly that to tell it from a real SID.
+  C64-Wiki names the SwinSID Nano as the SwinSID it describes, so the two
+  sources disagree about whether its read moves at all.
+- **No SID, or an Ultimate II+ with its virtual SID off.** The same README
+  reports bus noise at about 44 kHz from the cartridge, which SIDDetector-II
+  cannot tell from a SwinSID Nano.
+- **ARMSID, SwinSID Ultimate and others** echo written values in their
+  voice-3 read registers when sent an identification string (SIDDetector-II
+  README); what they return at `$D41B` during normal play is not stated
+  there.
+
+Where the read does not move, or moves slowly, the two reads can give
+the same bytes on every run and the seed can be constant or low-entropy;
+an undriven read may also return open-bus data. This is an inference from
+the sources (rung 4), not something C64-Wiki states. `$D41B`-based chip detection
+(`sid_8580_vs_6581_differences`, "Chip detection at runtime") fails for
+the same reason.
+
+### Fix
+
+Do not make `$D41B` the only source of the seed. XOR in CIA1 timer A
+(`$DC04/$DC05`) and, better, the frame count until the player's first
+fire press; `lfsr_random` in `techniques/maths.md` already describes
+both. The recipe's own check can also detect the problem: it counts how
+many of 255 consecutive `$D41B` read pairs differ (255 in VICE). A count
+far below 255 means the SID read is not moving and the seed should come
+from the other sources (an inference from the sources above, not
+measured here). Keep the zero check from `lfsr_zero_state_lockup`: a bus
+that reads `$00` gives a zero seed.
+
+Recipes that seed from `$D41B` alone: `recipes/oscar64/lfsr-random.md`
+(it also prints the CIA timer but does not mix it into the seed) and
+`recipes/oscar64/platformer-scaffold.md` (two `sid.random` reads, then
+the zero check). Both can give a constant or low-entropy seed on a SwinSID (rung 4).
+
+### Cross-references
+
+- Technique `lfsr_random` — seeding from SID, CIA timer and player input
+- Technique `sid_8580_vs_6581_differences` — `$D41B` chip detection
+- Pitfall `lfsr_zero_state_lockup` (`pitfalls/cpu.md`) — the zero seed
+- Register `$D41B` (OSC3) — `../hardware/sid-reference.md`
+
+**Sources.** C64-Wiki, "SwinSID": https://www.c64-wiki.com/wiki/SwinSID.
+SIDDetector-II README (steps "SwinSID Nano" and "ARMSID / ARM2SID / Swinsid
+Ultimate"): https://github.com/MichaelTroelsen/SIDDetector-II.
 
 ---
 

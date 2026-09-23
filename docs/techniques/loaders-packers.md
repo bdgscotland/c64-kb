@@ -59,7 +59,7 @@ NTSC compatibility: Krill includes an NTSC-compatible build option (the `NTSC_CO
 
 ### Cycle budget
 
-Krill's 2-bit+ATN protocol moves each byte as four bit pairs on CLK/DATA, clocked by the host toggling ATN. Both ends are handshake loops of about 72 cycles per byte (v194 source: four 18-cycle phases on the C64 side, 69 cycles in the 1541's sendloop; the README states "72 cycles per byte"), which is a raw ceiling of roughly 13.7 kB/s; sector reads, GCR decoding, head stepping and per-block handshakes bring it down to the README's figures: 7.7 kB/s peak on a 1541, about 7 kB/s typical. The loading call blocks the mainline, but the receive loop leaves interrupts enabled and the drive simply waits on the handshake, so IRQ/NMI, sprites and badlines are allowed without restriction — music and IRQ-driven effects normally keep running while a part loads. (An earlier version of this page gave 17-22 C64 cycles and ~85 drive cycles per byte, 7,500-7,800 B/s, and said the CPU could run no other code during a load; the v194 README contradicts all three.) What Sparkle (see `sparkle_irq_loader`) adds is loading that proceeds without a blocking mainline call.
+Krill's 2-bit+ATN protocol moves each byte as four bit pairs on CLK/DATA, clocked by the host toggling ATN. Both ends are handshake loops of about 72 cycles per byte (v194 source: four 18-cycle phases on the C64 side, 69 cycles in the 1541's sendloop; the README states "72 cycles per byte"), which is a raw ceiling of roughly 13.7 kB/s; sector reads, GCR decoding, head stepping and per-block handshakes bring it down to the README's figures: 7.7 kB/s peak on a 1541, about 7 kB/s typical. The loading call blocks the mainline, but the receive loop leaves interrupts enabled and the drive simply waits on the handshake, so IRQ/NMI, sprites and badlines are allowed without restriction — music and IRQ-driven effects normally keep running while a part loads. (An earlier version of this page gave 17-22 C64 cycles and ~85 drive cycles per byte, 7,500-7,800 B/s, and said the CPU could run no other code during a load; the v194 README contradicts all three.) Sparkle (see `sparkle_irq_loader`) is the same kind of loader: 2-bit+ATN, 72 cycles a byte, blocking calls with interrupts free (an earlier version of this sentence said Sparkle loaded without a blocking mainline call; its manual says its calls block).
 
 ### v194 concrete integration reference (cc65 build)
 
@@ -240,48 +240,72 @@ Decompression time: decompressing a 50 KB part takes on the order of seconds on 
 
 ---
 
-## sparkle_irq_loader — Sparkle's IRQ-driven background loader
+## sparkle_irq_loader — Sparkle: an interrupt-tolerant loader and disk builder
 
-**Complexity:** scene-tier
-**Region:** PAL
-**Uses registers:** DD00, D012, D019, D01A
+**Complexity:** high
+**Region:** both
+**Uses registers:** DD00, DD02
 **Uses kernal:** (none)
+**Demands:** serial_bus_exclusive, kernal_rom_out
+
+(An earlier version of this section credited Sparkle to JackAsser and Hollowman, marked it PAL-only, and described a raster IRQ at line 0 that received bytes in the background at 2,500-3,000 B/s while the main program polled a flag, with double-buffered blocks and a pause mode; the Sparkle 3.4 user manual contradicts or does not describe all of it, and the section below is rewritten from that manual. Nothing in it was measured here.)
 
 ### Why
 
-Both the KERNAL LOAD and Krill's fast loader block the calling mainline; KERNAL LOAD additionally masks interrupts during byte transfer, whereas Krill leaves IRQ/NMI free, so with Krill the screen freezes only if the effect itself runs in the mainline (an earlier version of this page said both occupied the CPU entirely and the screen went dark; Krill's README says IRQ/NMI/DMA/sprites/badlines are allowed without restriction). For high-quality demo productions, this is unacceptable — the audience should see live visuals continuously, even during disk access. Sparkle (by JackAsser, with contributions from Hollowman, active circa 2010-2018 based on demoscene release credits) solves this by interleaving loading and rendering at the IRQ level: the main program runs its visual effects during normal execution, and a raster IRQ at a specific scan line briefly services the IEC bus to receive the next byte or block during the raster blanking period.
+Sparkle is a disk builder and loader in one, by Sparta (OMG), released under the BSD 3-Clause licence. A PC tool reads a text script (`.sls`) that lists the files, packs them into bundles and writes a D64 with the loader installer on it (manual pp. 2-4). The C64 side is a small resident loader and depacker. Its loader calls block, like Krill's (manual p. 23: "Sparkle's loader calls ... are blocking calls"), but the transfer is "freely interruptible" (p. 3), so raster IRQs, music and effects keep running while a bundle loads. The manual calls it an "all-in-one" solution: the same tool handles compression, disk layout and multi-side productions (p. 3).
 
 ### How
 
-Sparkle's architecture splits the loading job across two domains:
+1. **Build the disk.** List files in the script; each bundle is loaded by one call. Files bound for `$D000`-`$DFFF` are marked with `*` so the depacker switches `$01` for them (pp. 10, 13).
+2. **Boot.** Every directory entry on a Sparkle disk loads the installer. It installs the C64 resident code and the drive code, sets the I flag, writes `$35` to `$01` (KERNAL and BASIC banked out), cuts the stack to its lower `$60` bytes, and loads the first bundle. It then jumps to the start address with IRQs still disabled; it changes no other vector and no VIC register (pp. 15-16).
+3. **Load the next part.** `JSR Sparkle_LoadNext` (`$021C`) loads the next bundle in script order, with no parameters (p. 17). `LDA #index : JSR Sparkle_LoadA` (`$019C`) loads bundle `$00`-`$7F` by index; `$80`+side requests another disk side (pp. 17-18).
+4. **Prefetch.** `JSR Sparkle_SendCmd` (`$017A`) with a bundle index makes the drive find the bundle's first sector without transferring it; `JSR Sparkle_LoadFetched` (`$019F`) then loads it. `SendCmd` with `A=$FF` resets the drive (p. 18).
+5. **Between parts.** `Sparkle_IRQ` (`$0160`) is a fallback interrupt handler that saves `$01`, sets `$35`, acknowledges `$D019` and calls `Sparkle_IRQ_JSR` (`$016E`, initially pointing at an RTS; patch it to a music player). Its RTI is at `$0179` (pp. 19-20).
 
-1. **Drive side:** Like Krill, Sparkle uploads drive-side code to the 1541 via `M-W`/`M-E`. The drive-side code manages sector reading and queues byte-blocks into a delivery window synchronized to the C64-side IRQ timing.
+Resident memory (pp. 3, 16):
 
-2. **C64 IRQ side:** A raster IRQ is set to fire at a specific scan line (typically line 0, just after VBlank on PAL, where the CPU has the most available slack before the visible display begins). The IRQ handler polls CIA2 `$DD00` for the IEC handshake signals and receives pending bytes from the drive. The handler is cycle-counted to fit within the available slack at that scan line without disturbing the visible raster output.
+| Range | Contents |
+|---|---|
+| `$0100`-`$015F` | the stack, reduced from a full page; restore SP to `$5F`, never `$FF` (p. 30) |
+| `$0160`-`$0179` | `Sparkle_IRQ` |
+| `$017A`-`$019B` | `Sparkle_SendCmd` |
+| `$019C`-`$019E` | `Sparkle_LoadA` |
+| `$019F`-`$02FF` | `Sparkle_LoadNext` and the depacker |
+| `$0300`-`$03FF` | loader buffer; holds the start of the next bundle between sequential calls, so leave it alone or make the next call indexed (p. 16) |
 
-3. **Main program:** Continues executing effects, SID player, sprite updates, and frame logic between IRQs, unaware of the loading in progress. The main program checks a flag variable when it needs the next block; if the block is not ready, it either spins on the flag for one frame or runs a fallback effect.
+Zero page: three bytes, `$02`-`$04` by default, chosen in the script, and free to use between loader calls (pp. 3, 9). Do not load anything into pages 1-3 (p. 30).
 
-The result: a seamless fade or effect while the next part streams in from disk.
-
-PAL caveat: Sparkle's IRQ timing is tuned to PAL's 63-cycle scan lines and 312-line frames. The blanking interval geometry differs on NTSC (65 cycles per line, 263 lines), shifting the IRQ timing window. Some Sparkle configurations include NTSC support via compile-time constants, but this is not universal across the releases that appeared in demoscene productions — treat Sparkle as PAL-only unless the specific version used was verified on NTSC hardware. Check source comments or the associated release notes for NTSC-compat declarations.
+Drives: "Tested on 1541, 1541-II, 1571, and Oceanic drives, compatible with the 1541 Ultimate family" (p. 3). PAL and NTSC are both supported, plugins included (p. 3).
 
 ### Why it works
 
-The key insight is that the IEC bus does not require continuous CPU attention — the bus handshake signals can be sampled at intervals as long as the interval is short enough that the drive's state machine does not time out. The 1541 drive-side code holds CLK low (stalling the protocol) while the C64 is running effects and releases CLK only when it has a byte ready to send. The C64-side IRQ handler detects the CLK release (by polling `$DD00` bit 6 for CLK IN and bit 7 for DATA IN — an earlier version of this page had the two swapped; see `../hardware/cia-reference.md` §`$DD00`), accepts the byte, and acknowledges. The drive interprets the acknowledgment and queues the next byte.
+The C64 talks to the drive through CIA2 `$DD00`, 2 bits at a time plus ATN, at 72 cycles a byte (p. 3). Because the C64 clocks each bit pair with ATN, an interrupt between pairs only delays the transfer; the drive waits. The manual states the result ("Transfer is freely interruptible", p. 3), not this reasoning, which is from `krill_loader_integration`'s description of the same protocol family (rung 4 here).
 
-The raster IRQ machinery (`$D012` compare, `$D019` acknowledge, `$D01A` mask) is the same as in `stable_raster_irq`. What is unusual is the cooperative scheduling: the IRQ handler is part of the main IRQ chain but has a hard cycle budget, and it must complete within that budget or risk corrupting the raster timing for the visible display. Productions using Sparkle typically allocate a dedicated scan-line region (often the lower or upper border) where the background-loader IRQ is permitted to run with relaxed timing constraints.
+Two rules follow from sharing `$DD00` with the VIC bank bits:
+
+- **VIC bank.** Do not write `$DD00`; the loader may read the change as a drive command and reset the drive. Select the bank with `LDA #$3C+bank : STA $DD02`, bank 0-3 (pp. 20-21; common issue 1, p. 29). Any value may go into `$DD02` between loader calls if `$3C`+bank is back before the next call (the "indirect bus lock", pp. 21-22).
+- **Free `$DD00`.** Write `$03` (any value with bits 3-5 clear) to `$DD02` first; then any value may go into `$DD00`. Restore `$DD00` to `$38`, then `$DD02` to `$3C`+bank, in that order (the "direct bus lock", pp. 22-23).
+
+`pitfalls/loader.md` `fastloader_dd00_write_corrupts_resident` compares these rules with Krill's and Bitfire's.
+
+Interrupt handlers must cope with `$01`: each loader call writes `$35` and may switch to `$34` while it depacks under I/O. A handler that touches I/O saves `$01`, sets `$35` and restores it (p. 20). Nested IRQs must save A, X, Y and `$01` to different places, or the outer handler returns the inner one's values to the loader and it crashes (common issue 7, p. 30).
 
 ### Variations
 
-**Double-buffered block receive.** Sparkle can receive into alternating buffers so the main code can process a completed block while the next block is loading. The main code swaps the buffer pointer after consuming each block.
+**More stack.** `Config: noirq` in the script drops the fallback IRQ and frees `$0160`-`$0179` for the stack (SP `$79`); `Config: basic` also drops `SendCmd` and `LoadA`, leaving sequential loading only, and frees the stack up to `$019E` (SP `$9E`) (pp. 9, 16).
 
-**Suspend/resume protocol.** For parts that need exclusive raster control (e.g., a full-screen effect with border tricks), Sparkle supports a "pause loading" mode where the C64-side IRQ handler exits immediately without doing bus work, then re-enables when the critical effect section is complete. This is negotiated by a flag that the effect code sets before starting and clears after finishing.
+**Disk flip without blocking.** `SendCmd` with `$80`+side returns at once; the program then writes `$08` to `$DD00` (the manual's own sanctioned `$DD00` write) and polls `$DD00` for the drive's ready signal from the main loop or an IRQ (pp. 23-24).
 
-**Sparkle vs Krill.** Sparkle is technically more complex to deploy than Krill (requires careful IRQ budget planning) and is specifically a PAL choice unless NTSC timing is explicitly supported. For productions that simply want fast loading without concurrent visuals, Krill is easier. Sparkle is the choice when loading is expected to happen continuously throughout a production, as in a streaming demo.
+**Plugins.** A hi-score saver overwrites pre-defined files, also freely interruptible; a custom drive-code plugin lets a part upload its own drive code and restore Sparkle afterwards (pp. 3, 25-28).
 
 ### Cycle budget
 
-The IRQ handler at line 0 on PAL operates in the VBlank window where approximately 100 cycles are available before the VIC begins the top-border DMA. Sparkle's IRQ handler per byte receive takes approximately 30-40 cycles for the handshake polling and byte capture, limiting background throughput to around 2,500-3,000 bytes per second (versus Krill's ~7,000-7,700 with a blocking mainline call). This lower rate is the cost of concurrency. Total loading time for a 50 KB block is approximately 17-20 seconds in background mode, versus 6 seconds with Krill in blocking mode.
+Transfer: 72 C64 cycles a byte (p. 3). At 985,248 cycles a second on PAL that is a ceiling of about 13.7 kB/s before sector reads, head steps and depacking (rung 3; the manual gives no bytes-per-second figure). The drive's GCR fetch, decode and verify loop is 124 cycles and tolerates 272-314 rpm (p. 3). Real disks can take up to one extra revolution (10 frames) per bundle, more on a checksum retry, so the manual advises a sync buffer of at least 10 frames and preferably 20 after a load (common issue 9, p. 30). No figure here was measured.
+
+### Sources
+
+- Sparkle 3.4 user manual, Sparta (OMG), `manual/` in https://github.com/spartaomg/SparkleCPP (page numbers above are the manual's).
+- Licence: BSD 3-Clause, "Copyright (c) 2019-2026, Sparta/OMG", `LICENSE` in the same repository.
 
 ---
 
@@ -412,7 +436,7 @@ Transition procedure from Part N to Part N+1:
 4. When the load completes (Krill's LOAD returns to the caller), the transition effect finishes its last frame.
 5. Part N JMPs to `$1000` (or the actual entry point specified by the packed PRG's SYS target).
 
-If using Sparkle (see `sparkle_irq_loader`), steps 2-4 happen concurrently rather than sequentially: the load proceeds in the background throughout Part N's final sequence.
+Sparkle (see `sparkle_irq_loader`) follows the same steps: its loader calls block too, and the fade keeps running from interrupts (an earlier version of this sentence said Sparkle loaded in the background so that steps 2-4 ran concurrently; its manual says its calls block).
 
 ### Why it works
 
@@ -493,5 +517,245 @@ The depacker execution overhead (BASIC calls SYS, depacker runs, jumps to effect
 ### Recipes
 
 - No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe is assembled to a plain PRG and is not packed with Exomizer, ByteBoozer or any cruncher.)
+
+---
+
+## runtime_relocation — Load a code overlay at a run-time address and relocate it
+
+**Complexity:** medium
+**Region:** both
+**Cost:** bytes_code=43, zp_bytes=4
+**Cost basis:** derived-listing
+
+### Why
+
+A game that outgrows 64 KB keeps per-level code on disk: a level script,
+a boss routine, a cutscene. Build-time placement (`.pseudopc`) fixes the
+address when you assemble. When the free block is only known at run
+time, because levels load different graphics and music and a heap hands
+out what is left, the code has to be moved after it is loaded. Metal
+Warrior 4 loads its event scripts as 2 KB chunks of native code with a
+jump table at the start, named by a 16-bit id (high byte the file, low
+byte the entry point), instead of running an interpreter (Cadaver's
+MW4 article; not measured here).
+
+### How
+
+1. Assemble the overlay twice, at two origins one page apart (the recipe
+   uses `$3000` and `$3100`).
+2. Diff the two images. A byte one higher in the second image is treated as the
+   high byte of an address inside the overlay; record its offset. A byte
+   that is equal is an opcode, a low byte, a zero-page operand, a
+   constant or an address outside the overlay, and is left alone. A byte
+   that moved by any other amount cannot be page-relocated: refuse the
+   build.
+3. Ship the first image plus the table of offsets (two bytes each for an
+   overlay over 256 bytes).
+4. At run time, take a block of whole pages from the heap, load the
+   image there, and add `delta` = load page − origin page to each listed
+   byte.
+5. Enter the overlay only through a jump table at a fixed offset
+   (`JMP` at offsets 0, 3, 6, …). The host knows the overlay's page and
+   those offsets, nothing else.
+
+The heap can be a bump pointer by pages (free everything at level end),
+or a first-fit list of page runs if overlays come and go during play.
+c64gameframework uses a bump pointer that compacts: loading a chunk ages
+the others from `C_FIRSTPURGEABLE` up, purging one moves every chunk
+above it down, relocates those chunks again by the new delta, and
+patches return addresses on the stack that point into them (`file.s`,
+`PurgeFile`, read here, not run). Because relocation is an add, a copy
+that has moved can be relocated again with the same table, as long as
+nothing has rewritten a listed byte.
+
+### Why it works
+
+Moving by whole pages changes only high bytes, and each by the same
+`delta`. Low bytes, and every byte's position within its page, stay the
+same. So page-aligned tables stay aligned, and no branch or indexed read
+gains or loses a page-crossing cycle: the relocated copy runs in the
+same cycles as the original. The diff finds the immediate `#>label` and
+the high bytes of address words in data tables, which a scan of the
+instruction stream does not.
+
+### What cannot be relocated this way
+
+- An address stored as its low byte only (`#<label` alone, a split
+  low-byte table without its high half) is fine, because whole-page moves
+  leave low bytes alone. A byte-granular move would break it; do not
+  offer one.
+- An expression that is not a plain high byte: `label / 64` (a sprite
+  pointer), `label >> 4`. It moves by some other amount; the diff
+  refuses it. `>label + 1` moves by exactly one and is relocated
+  correctly (assembled at $3000 and $3100 with KickAssembler 5.25).
+- A byte that moves by one but is not an address is relocated wrongly
+  and silently. An offset measured from a fixed origin constant,
+  `>(label - $3000)`, is $00 in one image and $01 in the other, so it is
+  listed and gets the delta added. Measure offsets from an overlay label
+  (`label - base`, where `base` is the overlay's first label); that
+  expression is the same in both images.
+- An operand the overlay builds at run time from its own address (self-
+  modifying code that computes an address with arithmetic rather than
+  `#>label`) is invisible to the diff. Build such operands from
+  `#<label` and `#>label` immediates, which are relocated.
+- An address the host stores that points into the overlay (an IRQ
+  vector, a callback) must come from the jump table after relocation,
+  not from a symbol file.
+- An overlay that has rewritten one of its own listed bytes is no
+  longer the image the table describes. Relocate a fresh load, or keep
+  listed bytes out of self-modification if the heap compacts.
+
+### Variations
+
+**Instruction walker.** Cadaver's scheme assembles overlays at `$8000`,
+inside the dynamic area, and needs no table: a walker steps through the
+code using a 32-byte packed table of instruction lengths, adds the
+delta to every 3-byte operand whose high byte falls inside the dynamic
+area, and stops at a `BRK`. It forbids `BIT`-skip tricks, since they hide
+an instruction inside another's operand, and it cannot see address
+tables, which it replaces with run-time resource lookups (Cadaver's
+relocation article; not measured here). It saves the table's disk space and
+costs a walk over every instruction.
+
+**Bitmap instead of offsets.** One bit per overlay byte costs size / 8
+bytes whatever the count; an offset list costs 2 bytes per entry. The
+list is smaller when fewer than one byte in 16 is relocated (arithmetic).
+Dense code (one in 4.4 in the recipe) favours the bitmap; an overlay that
+is mostly data favours the list.
+
+### Cycle budget
+
+Relocation runs once per load, outside the frame loop, so the Cost line
+carries no per-frame figure. In the recipe, one relocation of a 340-byte
+overlay with 19 listed bytes took 855 cycles: 20 fixed plus 44 per byte while the
+offset tables do not cross a page (one more cycle per read past 213
+entries),
+45.0 per byte overall (measured in VICE x64sc, CIA2 timer, screen
+blanked, PAL and NTSC). The overlay's 79 bytes of code carry 18 of the
+19 entries, one byte in 4.4; a 2 KB chunk of such code would have about
+465 entries and take about 20,500 cycles, about one PAL frame of 19,656
+(arithmetic from the measured per-byte cost). The recipe's count is one
+byte, so a table over 255 entries needs a 16-bit count. The
+43 bytes of code are the recipe's `relocate` routine; the 4 zero-page
+bytes are its pointer, the destination page and `delta`.
+
+### Recipes
+
+- `recipes/kickassembler/runtime-relocation.md`: assembles one overlay
+  twice with `.pseudopc`, diffs the images into a table on the C64 (and
+  gives the host-side Python for shipping), relocates two copies from a
+  page heap and checks both through their jump tables.
+
+### Sources
+
+- Cadaver, relocation article: https://cadaver.github.io/rants/relocation.html
+- Cadaver, Metal Warrior 4 script chunks: https://cadaver.github.io/rants/mw4trick.html
+- c64gameframework (MIT), `main.s` and `file.s`: https://github.com/cadaver/c64gameframework
+
+---
+
+## iffl_single_file — All level files in one disk file, found by a scanned offset table
+
+**Complexity:** medium
+**Region:** both
+**Uses kernal:** SETNAM, SETLFS, OPEN, CHKIN, CHRIN, CLRCHN, CLOSE, READST
+
+### Why
+
+A multi-load game keeps each level's graphics, map and music on disk.
+One disk file per level costs a directory entry each, and the 1541
+directory holds 144 (`formats/c64-file-formats.md`). Every load also
+starts with a directory search by name. IFFL puts all the data files
+into one disk file: one directory entry, no name search after the first,
+and a loader that goes straight to file N. Cadaver notes it in some newer
+cracks of multi-load games.
+
+### How
+
+1. **Pack** on the PC. Concatenate the files with nothing between them
+   and put a table of their lengths in front. Cadaver's format fills the
+   first block with it: 127 low bytes, then 127 high bytes, 254 bytes in
+   all, so the data starts at the second block. That allows 127 files
+   of up to 65,535 bytes each.
+2. **Scan** once, at game start. Walk the file and record, for each
+   subfile, where it starts: the track and sector of the block, and the
+   byte offset in that block. With a 16-bit counter per file, the scan
+   only has to follow the chain of track/sector links, not transfer the
+   data (Cadaver). The table costs 3 bytes per subfile (track, sector,
+   offset), 381 bytes for a full 127, plus the lengths (arithmetic).
+3. **Load** subfile N. Read its first block, send the C64 only the bytes
+   from the recorded offset on, then follow the links until the length
+   runs out.
+
+The scan and the mid-file start are custom drive code. The 1541 DOS
+opens a file only at its start, and the C64 KERNAL has no seek on a
+sequential channel. So:
+
+| Part | Needs drive code | KERNAL-only form |
+|---|---|---|
+| Pack the file | no (PC side) | the same file |
+| Scan | yes, to record track/sector/offset | read the length table and add it up to byte offsets |
+| Start mid-file | yes | open the file and read and discard every byte before subfile N |
+| Transfer speed | a fast-loader protocol | serial bus at KERNAL speed |
+
+The KERNAL-only form keeps the one directory entry and works on any
+drive, including ones that run no custom code. It loses the seek: every
+skipped byte crosses the bus like a kept one.
+
+### Why it works
+
+A disk file is a chain of 256-byte blocks, each starting with the track
+and sector of the next and carrying 254 data bytes. Once the scan has
+turned "subfile N" into "this block, this byte", a drive-side loader
+can read that block directly, as the DOS does for any block, without
+the directory or the earlier blocks. A byte offset in the file maps to
+block `offset / 254`, data byte `offset % 254` of the chain
+(arithmetic); the recipe prints these pairs.
+
+### Variations
+
+**KERNAL skip loader.** The fallback when the fast loader cannot
+install (an SD2IEC, a drive that is not 1541-compatible). Measured in
+`recipes/oscar64/iffl-kernal-skip.md`: the time to load subfile N rises
+by about 2,526 cycles on PAL (2,621 on NTSC) for every byte before its
+end, plus about 0.44 million cycles of `OPEN` and `CLOSE` per load. At
+that rate the last subfile of a file filling a whole disk, 168,656
+bytes, is about 7 minutes away (arithmetic). Keep the KERNAL form to
+small files, or put the most-loaded subfiles first.
+
+**Lengths up front.** If the loader can start at a byte offset, the
+lengths give each subfile's byte offset by arithmetic. A drive-side
+loader still has to walk the chain, because the DOS writes a file's
+blocks with an interleave (`formats/c64-file-formats.md`), so the
+position of block K cannot be worked out from the first block.
+
+**IFFL with a fast loader.** `krill_loader_integration` and
+`sparkle_irq_loader` load by name or by an index into their own file
+table; neither page here documents an IFFL mode, so check the loader's
+own docs before assuming one. Level sequencing on top of either is
+`multi_load_sequencing`.
+
+### Cycle budget
+
+The scan and the loads run between levels, outside the frame loop, so
+there is no Cost line. In the KERNAL recipe (VICE x64sc, CIA2 timer,
+five subfiles, 1,615 bytes): the scan, one `OPEN` and 11 bytes, took
+475,342 cycles on PAL with the drive already running and 1,824,005 on
+first access to a packer-built disk (spin-up included); the loads took
+974,300 cycles (subfile 1, 211 bytes read) to 4,521,555 cycles (subfile
+5, 1,615 bytes read) over all runs. The
+cost of the drive-code scan and seek was not measured here.
+
+### Recipes
+
+- `recipes/oscar64/iffl-kernal-skip.md` — packs five subfiles behind a
+  length table (Python packer, and the same bytes written on the C64
+  when the disk is empty), scans the table, loads subfiles 3, 1, 2, 4
+  and 5 by skipping with KERNAL `CHRIN`, and checks and times each.
+  No recipe yet for the drive-code scan and seek.
+
+### Sources
+
+- Cadaver, "IFFL system": https://cadaver.github.io/rants/iffl.html
 
 ---
