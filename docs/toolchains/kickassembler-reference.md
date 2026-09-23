@@ -1026,3 +1026,4 @@ main:
 - [recipes/kickassembler/hello-world.md](../recipes/kickassembler/hello-world.md) — minimal working PRG with BASIC upstart
 - [vice-reference.md](../runtime/vice-reference.md) — VICE emulator flags, monitor commands, `.vs` file loading
 - [memory-layout-planning.md](memory-layout-planning.md) — whole-program layout: the constraints, one worked layout in all three toolchains, confirmed from `-showmem`; recipe `../recipes/kickassembler/memory-layout.md`
+- [release-disk.md](release-disk.md) — putting the built PRG on a bootable D64 with c1541, proving it boots by autostarting the image headless, and a Makefile target that does both

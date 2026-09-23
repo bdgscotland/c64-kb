@@ -874,3 +874,4 @@ int main(void)
 - [hardware/vic-ii-reference.md](../hardware/vic-ii-reference.md) — VIC-II register reference
 - [hardware/sid-reference.md](../hardware/sid-reference.md) — SID register reference
 - [memory-layout-planning.md](memory-layout-planning.md) — whole-program layout: the constraints, one worked layout in all three toolchains, confirmed from the map file; recipe `../recipes/oscar64/memory-layout.md`
+- [release-disk.md](release-disk.md) — putting the built PRG on a bootable D64 with c1541, proving it boots by autostarting the image headless, and a Makefile target that does both; measured with `../recipes/oscar64/platformer-scaffold.md`

@@ -523,3 +523,4 @@ _main:
 - [kickassembler-reference.md](kickassembler-reference.md) — cycle-tight assembly escape hatch
 - [recipes/cc65/hello-world-conio.md](../recipes/cc65/hello-world-conio.md) — minimal working cc65 program
 - [memory-layout-planning.md](memory-layout-planning.md) — whole-program layout: the constraints, one worked layout in all three toolchains, confirmed from `--mapfile`
+- [release-disk.md](release-disk.md) — putting the built PRG on a bootable D64 with c1541, proving it boots by autostarting the image headless, and a Makefile target that does both

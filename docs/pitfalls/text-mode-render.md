@@ -238,7 +238,7 @@ update function.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller
+**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller, colour_cycling
 **Mitigated by techniques:** screen_double_buffer_d018
 
 ### Symptom

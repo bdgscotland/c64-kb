@@ -1131,6 +1131,10 @@ x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
   -exitscreenshot platformer-scaffold.png -autostart platformer-scaffold.prg
 ```
 
+To ship this PRG on a bootable D64 and prove the image boots headless, with
+the score file landing on the release disk, see
+[release-disk](../../toolchains/release-disk.md).
+
 ## Expected output
 
 Black screen. Row 0 reads `SCORE 00000 LIVES 3 HI 00000 F 00000 D`

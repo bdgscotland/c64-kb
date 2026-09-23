@@ -5,7 +5,32 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 723, schema 23, tools 1.26.0.
+Data 724, schema 23, tools 1.26.0.
+
+**Batch 9c: transitions, disk work and a release disk.** The transitions
+page is complete: `colour_cycling` (one step over eight rows of colour RAM,
+3,265 cycles on either model) and `screen_wipe` (a row written out in 491
+cycles, in at 708 or 709), each with a KickAssembler recipe pinned mid-
+effect and checked pixel by pixel against its own formula; both recipes
+record a first draft whose single-compare busy-wait fell through the
+raster line twice a frame and double-counted. `load-asset-runtime`
+(Oscar64) builds a charset, saves it, loads it back to an address of its
+own choosing and shows it, with the KERNAL's LOAD measured to leave the
+raster interrupt armed and `$D011` alone; the technique page gained the
+secondary-address facts and the header page's `krnio_load` note. The new
+technique `kernal_relative_file_io` and its recipe `relative-file-records`
+create a REL file with 32-byte records, position with the P command, and
+quote what the drive says, including the 50 and 51 replies provoked in
+VICE for the first time here. `toolchains/release-disk.md` builds a D64
+from the platformer scaffold with c1541, lists it, autostarts the disk
+itself headless and shows the game running from it, with the block
+arithmetic and a Makefile target; two screenshots of that boot ride with
+the scaffold recipe. The verifier still only formats a disk; a `files` key
+to place a built PRG on it is proposed on the page and not built.
+Every headless VICE command the verifier and the pages quote now carries
+`-minimized`, so a batch of runs stops taking the desktop's focus; the exit
+screenshot comes from the emulated frame and is byte-identical either way,
+checked against a pinned picture.
 
 **Pitfalls reached through a technique's registers, and a graph report.**
 A technique also meets every pitfall that a register or KERNAL routine it

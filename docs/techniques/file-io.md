@@ -17,7 +17,7 @@ instrument says so. The instrument was VICE 3.10 x64sc with true drive
 emulation of a 1541 (the `-default` configuration) and a disk freshly
 formatted by c1541; a real 1541 was not on the bench.
 
-Two facts run through all four techniques. First, a disk OPEN does not
+Two facts run through every technique below. First, a disk OPEN does not
 report drive-side errors: OPEN returns C=0 for a name that is not on the
 disk (measured: OPEN of `SCORES,S,R` on an empty disk returned C=0,
 CHKIN C=0, and the first CHRIN left ST = `$42`) and for a write to a
@@ -442,6 +442,7 @@ the recipe `../recipes/kickassembler/dos-error-codes.md`.
 - `recipes/kickassembler/file-io-roundtrip.md`
 - `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
 - `recipes/oscar64/high-score-persist.md` (the policy around the calls: first run, scratch-then-write, version byte, no drive; 74 and the scratch reply measured)
+- `recipes/oscar64/relative-file-records.md` (the P command's 50 reply read next to the KERNAL status byte; 51 in a side run)
 
 ---
 
@@ -565,10 +566,178 @@ end address returned in X/Y is that pointer after the last store.
   works and why `$D000-$DFFF` in general is a trap.
 - **Chained loads under an IRQ.** LOAD, like OPEN and the channel
   calls, does not respect a caller's SEI; the `kernal_assumes_sei_cleared`
-  pitfall covers what that does to a raster IRQ.
+  pitfall covers what that does to a raster IRQ. Measured on LOAD
+  itself in `recipes/oscar64/load-asset-runtime.md`: entered with the
+  I flag set, LOAD returned with it clear, and a `rasterirq.h` split
+  armed across a 2 KB load entered in 222 of 283 PAL frames, as late
+  as line 170; the screen was not blanked (`$D011` bit 4 still set,
+  text drawn in a mid-transfer picture). `raster_irq_during_serial_io`
+  has the fix, which is to clear `$D01A` around the call.
+- **From Oscar64.** `krnio_load(fnum, device, channel)` in
+  `kernalio.c` passes X = Y = 0 to LOAD, so with secondary 0 it loads
+  to `$0000`; it is only useful with secondary 1. To choose the address
+  from C, call SETLFS, SETNAM and LOAD from inline assembly as the
+  recipe below does. `krnio_save(device, start, end)` writes the
+  header from `start`, so a file saved from a buffer LOADs back to that
+  buffer with secondary 1 and anywhere with secondary 0.
 
 ### Recipes
 
 - `recipes/kickassembler/file-io-roundtrip.md` (write and read side;
   the LOAD measurements above came from a scratch program that is not a
   recipe)
+- `recipes/oscar64/load-asset-runtime.md` (a 2 KB charset built in
+  RAM, saved as a PRG on the first run, loaded with secondary 0 to
+  `$3800` and shown; the I flag, the raster IRQ and `$D011` measured
+  across the LOAD)
+
+---
+
+## kernal_relative_file_io — Read and write one record of a relative file by number
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+
+### Why
+
+A sequential file gives back its bytes from the start, every time. A
+game with eight save slots, a level bank of sixty rooms or a table of
+player names wants slot 5 or room 42 without streaming everything before
+it, and wants to overwrite one entry without rewriting the file. The
+1541's relative file (directory type `REL`) does that: fixed-length
+records, addressed by number, positioned by a command on channel 15,
+and the same KERNAL calls as a sequential file for the bytes themselves.
+The drive does the seeking; the C64 side sends five bytes and reads a
+reply.
+
+### How
+
+1. SETLFS with a logical file number, device 8 and a secondary address
+   from 2 to 14; SETNAM with the name followed by `,L,` and **one more
+   byte, the record length** (1 to 254). The length byte is binary, not
+   a digit, so the name is set by length and address rather than as a
+   text string. OPEN. On a fresh disk this creates the file; the drive
+   answers `00, OK` on channel 15 and the directory shows a `REL` entry.
+2. Open the command channel (secondary 15, empty name) before the data
+   file or after it, and **keep it open until the data file is closed**:
+   CLOSE of secondary 15 makes the drive close every channel it has, the
+   REL file included.
+3. To reach a record, send the P command on channel 15: CHKOUT 15, then
+   CHROUT of the five bytes `P`, the data channel's secondary address
+   plus 96, the record number low byte, the record number high byte,
+   and the byte offset inside the record, then CLRCHN. Records and
+   offsets count from 1. Then read the reply from channel 15 as
+   error_channel_check does: `00` means the record exists, `50, RECORD
+   NOT PRESENT` means it does not yet.
+4. Read: CHKIN the data file, CHRIN and READST until EOF, CLRCHN. The
+   drive sends the record's bytes up to the last non-zero one and raises
+   EOI there, so a record padded with zeros comes back short.
+5. Write: CHKOUT the data file, CHROUT up to the record length, CLRCHN.
+   The bytes go when the KERNAL sends EOI on the last one, and the
+   drive pads the rest of the record with zeros. More bytes than the
+   record length answer `51,OVERFLOW IN RECORD` on channel 15 and the
+   KERNAL status stays `$00`.
+6. Send a P before every read and every write. The pointer moves as
+   bytes move, so a second read without a P starts on the next record.
+7. CLOSE the data file, then CLOSE 15.
+
+Measured in VICE x64sc 3.10 with the recipe below, a 32-byte record
+length on a fresh disk (rung 1): after the OPEN that created the file
+the disk was two blocks shorter, one data block and one side sector;
+positioning on records 1 to 7 answered `00` before any of them was
+written, and a read of an unwritten one returned a single `$FF` with
+EOF; positioning on record 8, 9 or 20 answered `50, RECORD NOT
+PRESENT,00,00`, and a read after that reply returned a single `$0D`
+with EOF and left the status at `50`; a 32-byte write to record 9 after
+the `50` answered `00, OK`, grew the file by one block, and the next P
+to record 9 answered `00` with all 32 bytes reading back. Seven 32-byte
+records are 224 bytes and an eighth would cross the 254 data bytes of a
+block, so the boundary is the end of the first data block; that the
+open allocates that block and marks each record in it with `$FF` is
+inference from those two measurements (rung 3). The DOS also reports
+`50` when a write extends the file, per the ROM's call sites in
+`../formats/iec-disk-reference.md`; in these runs the write itself
+answered `00` and only the P before it said `50`. `50` and `51` never
+reached the KERNAL's status byte, which read `$00` after every write
+and `$40` after every read; only channel 15 knows. A side run with a
+scratch program, not the recipe, checked steps 3, 4 and 6 (rung 1): a
+record written as ten letters and 22 zeros read back as ten bytes; a P
+with offset 5 read six bytes from the fifth letter, and offset 0
+behaved as 1; a read with no P after a full record returned a single
+byte, the next record's.
+
+### Why it works
+
+The drive holds a record pointer per open relative file and a set of
+side sectors, blocks that list the track and sector of every data block
+in the file in order. A P command is arithmetic on the drive: record
+number times record length gives a byte offset, the side sector turns
+that into a data block, and the drive seeks straight to it. Extending
+the file is where the cost lives: a write past the end allocates the
+data blocks up to and including the new record, plus a side sector for
+every 120 data blocks, and every new record starts with `$FF`. The
+side sectors are why a REL costs one block more than the data on
+creation and why creating a large file takes long; the figure of one
+side sector per 120 data blocks is the format's rule, not measured
+here.
+
+`c1541 -write` can create a REL entry but cannot lay out records. The
+record length goes on the end of the name as one byte, so `c1541
+-write blob.bin "blob,l, "` (the trailing space is byte 32) printed
+`Open new REL file 'BLOB' with record length 32 on channel 1.`, and
+the directory then showed `blob` as `rel` with 662 blocks free. But
+c1541 streams the whole file as one record: a 64-byte blob drew `ERR =
+51, OVERFLOW IN RECORD, 00, 00` once for each byte past the
+thirty-second, so at most record 1 is filled. Without the length byte,
+`c1541 -write blob.bin "blob,l"` answered `Open non-existing REL file
+'BLOB' with unspecified record length on channel 1.` and `floppy write
+failed`, and the directory gained no entry (both rung 1, c1541 3.10).
+
+The KERNAL knows none of this. SETLFS, SETNAM, OPEN and the CHKIN,
+CHKOUT, CHRIN, CHROUT, CLRCHN, CLOSE pairs behave exactly as in
+kernal_file_write_seq and kernal_file_read_seq, and everything on this
+page about interrupts, bus pace and the status byte applies: the calls
+re-enable interrupts (`kernal_assumes_sei_cleared`), a raster IRQ armed
+across them misses most frames (`raster_irq_during_serial_io`), and
+they need the KERNAL ROM in (`kernal_io_mapping_dependency`). In
+assembly, the P command is five CHROUT calls, and CHROUT and CHKOUT
+keep none of A, X or Y, so a record number held in X or Y across them
+is gone by the second byte (`kernal_clobbers_a_x_y`); keep it in
+memory and load each byte fresh.
+
+### When a REL beats a SEQ
+
+- **Random access with rewrites in place.** Save slot 3 of 8, room 42
+  of 60, the name at table entry 17: one P and one read or write, no
+  rewrite of the neighbours. A SEQ needs the whole file read into RAM
+  and written back.
+- **Not for streaming.** A level that is always read whole is a SEQ or
+  a LOAD; the REL's side sector and its per-record P are a cost that
+  gives nothing back.
+- **Not for assets shipped on the disk image.** `c1541 -write` can
+  create the REL entry but fills at most record 1 (measured above), so
+  the program should create and fill the REL on first run; a shipped
+  table is a SEQ or PRG the program copies into a REL if it wants one.
+
+### Variations
+
+- **Record length 254 or less.** Choose a length that divides 254 with
+  no remainder (2, 127, 254) or accept that records straddle blocks,
+  which the drive handles and the program never sees.
+- **Position on a byte inside the record.** The fifth byte of the P
+  command is a 1-based offset (measured above on a read); a P with
+  offset 17 followed by a write of four bytes changes only bytes 17 to
+  20 (the DOS rule; the write at an offset was not measured here).
+- **Pre-size the file.** Position on the highest record you will use
+  and write one byte to it once, at first run, so later writes never
+  extend the file mid-game and pay the block allocation then. The
+  extension cost itself was not measured here.
+- **Ask before reading.** The `50` reply to a P is the cheap way to know
+  a slot is empty: no read, no `$0D`, and no need to reserve a byte in
+  the record as an "in use" flag.
+
+### Recipes
+
+- `recipes/oscar64/relative-file-records.md` (create, write 1, 3 and 5, read back with a checksum, the `50` on record 9 and the write that clears it; `51` in a side run)

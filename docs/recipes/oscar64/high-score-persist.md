@@ -283,6 +283,10 @@ x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
       -exitscreenshot high-score-persist.png -autostart high-score-persist.prg
 ```
 
+Putting a finished game on a D64 that boots from `LOAD"*",8,1`, and what
+its own score file does to that image, is
+[release-disk](../../toolchains/release-disk.md).
+
 ## Expected output
 
 ```

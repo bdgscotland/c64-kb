@@ -419,5 +419,59 @@
     "disk": {
       "name": "TEST,01"
     }
+  },
+  "kickassembler/colour-cycling": {
+    "cycles": 6030000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/colour-cycling.png",
+      "ntsc": "screenshots/colour-cycling-ntsc.png"
+    }
+  },
+  "kickassembler/screen-wipe": {
+    "cycles": 5300000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/screen-wipe.png",
+      "ntsc": "screenshots/screen-wipe-ntsc.png"
+    }
+  },
+  "oscar64/load-asset-runtime": {
+    "cycles": 24000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/load-asset-runtime.png",
+      "ntsc": "screenshots/load-asset-runtime-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "oscar64/relative-file-records": {
+    "cycles": 32000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/relative-file-records.png",
+      "ntsc": "screenshots/relative-file-records-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
   }
 }

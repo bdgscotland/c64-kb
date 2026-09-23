@@ -8,7 +8,7 @@ headless in VICE x64sc 3.10 with the parameters pinned in
 picture here. The default pinned run is:
 
 ```bash
-x64sc -default -warp +sound -autostartprgmode 1 +autostart-delay-random \
+x64sc -default -minimized -warp +sound -autostartprgmode 1 +autostart-delay-random \
       -limitcycles 8000000 -exitscreenshot out.png -autostart recipe.prg
 ```
 

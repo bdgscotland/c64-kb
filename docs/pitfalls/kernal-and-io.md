@@ -26,7 +26,7 @@ IRQs, banked memory, or BCD arithmetic.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** OPEN, LOAD, SAVE, CHKIN, CHKOUT, CLOSE, CLRCHN
-**Triggered by techniques:** stable_raster_irq, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address
+**Triggered by techniques:** stable_raster_irq, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io
 
 ### Symptom
 
@@ -187,7 +187,7 @@ fname_end:
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** CHROUT, CHRIN, GETIN, CHKIN, CHKOUT
-**Triggered by techniques:** text_input_line
+**Triggered by techniques:** text_input_line, kernal_relative_file_io
 
 ### Symptom
 
@@ -519,7 +519,7 @@ sprite_y: .fill 8, i * 21 + 50
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** SETLFS, LOAD, SAVE, OPEN, CLOSE
-**Triggered by techniques:** cpu_io_port_bank, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address
+**Triggered by techniques:** cpu_io_port_bank, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io
 
 ### Symptom
 
@@ -1297,7 +1297,7 @@ tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE
-**Triggered by techniques:** stable_raster_irq, frame_sync_loop, kernal_file_write_seq, kernal_file_read_seq
+**Triggered by techniques:** stable_raster_irq, frame_sync_loop, kernal_file_write_seq, kernal_file_read_seq, kernal_relative_file_io, kernal_load_to_address
 
 ### Symptom
 

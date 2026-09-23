@@ -111,3 +111,172 @@ reading step 16.
 - `recipes/kickassembler/colour-fade.md`
 
 ---
+
+## colour_cycling — Rotate a colour table through a fixed set of cells
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D012, D021
+**Cost:** cycles_per_frame=3265
+**Cost basis:** measured-vice
+
+### Why
+
+Water, a conveyor belt, a glowing rune, a pulsing logo: things that move
+without changing shape. Redrawing them costs screen or bitmap writes every
+frame. Cycling costs colour writes only. The shapes are drawn once, in a
+pattern that steps through a short list of colours, and each step rotates
+which colour each cell shows. The eye reads the rotation as motion along
+the pattern.
+
+### How
+
+1. Choose a short palette, eight colours or fewer, and draw the region so
+   that adjacent cells take consecutive entries. A band that runs down
+   the screen gives each row one entry; a diagonal gives cell `(row, col)`
+   entry `(row + col) mod n`.
+2. Keep a phase counter. Every N frames add one to it, modulo the palette
+   length. The recipe steps every second frame.
+3. On a step, rewrite the region's colour cells: the cell that held entry
+   `k` now takes entry `k + phase`. Write the table twice end to end so an
+   index of `phase + k` never needs masking.
+4. Land the rewrite where the beam is not: after the last text line, or
+   before the first line of the region. Colour RAM is read as each row is
+   drawn, so a rewrite that overlaps the beam shows the old colour above
+   the beam and the new one below it for that frame.
+
+### Why it works
+
+Colour RAM is the picture's colour, not its shape: the VIC-II reads a
+cell's colour nibble on the badline that fetches the row and uses it for
+that row's eight lines (`hardware/vic-ii-reference.md`). A reverse space
+in every cell makes the colour the whole picture, and rotating the colours
+moves the pattern without a single screen-RAM write. The write budget is
+what bounds the region. In the recipe one step rewrites 320 cells at ten
+cycles a cell (`STA abs,X`, `DEX`, `BPL`), and the CIA timer in the
+listing reads 3,265 cycles for it on both models, 52 raster lines,
+measured in VICE. Started at the first line of the lower border, 251,
+that ends on line 303 on PAL and, after the wrap at 263, line 38 on NTSC,
+both before the region's first row is fetched, so no frame shows a torn
+band.
+
+### Variations
+
+**A $D021 triple.** In multicolour text the colours in `$D021`, `$D022`
+and `$D023` are shared by every cell, so rotating three register writes
+cycles the whole screen's pattern in a dozen cycles. It cannot cycle two
+regions differently.
+
+**Sprite colours.** Rotate `$D027` to `$D02E`, or the two shared
+multicolour registers `$D025` and `$D026`, for a glow that costs eight
+writes a step.
+
+**Every frame.** Stepping each frame doubles the speed and the budget
+stays the same per step; the recipe's two-frame step is a choice of pace,
+not a limit.
+
+**Sub-region.** Cycle a list of cell addresses instead of whole rows. The
+cost falls to the cells that carry the pattern; a list of 40 addresses is
+40 indirect stores.
+
+### Cycle budget
+
+Not raster critical as long as the rewrite is off the beam. The step is
+3,265 cycles for eight rows of forty cells, measured by CIA1 timer A in
+the recipe on both models; that is a sixth of a PAL frame and a fifth of
+an NTSC one. A rewrite of the whole thousand cells at the same rate would
+be about 10,200 cycles (arithmetic), which is 162 PAL lines and cannot
+fit between line 251 and the first badline at line 51; a full-screen
+cycle has to run over two frames or use a double buffer, which is the
+`full_field_redraw_exceeds_vblank` case. The step rate is in frames, so
+the pace differs by a fifth between PAL and NTSC.
+
+### Recipes
+
+- `recipes/kickassembler/colour-cycling.md`
+
+---
+
+## screen_wipe — Reveal or hide the screen a row, a column or a line at a time
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D012, D021
+**Cost:** cycles_per_frame=709
+**Cost basis:** measured-vice
+
+### Why
+
+A cut between two parts is a discontinuity the eye notices. A wipe turns
+the cut into an event: the old picture goes out along an edge, the new one
+comes in along another. On the C64 the cheap version needs no picture
+buffer at all. The screen stays where it is and its colour is taken away
+or given back, one strip at a time.
+
+### How
+
+1. Draw the screen. Keep a copy of, or a rule for, each row's colours so
+   the reveal can restore them.
+2. Keep a row counter and a direction. Every N frames take one step: in
+   the hide direction write the current row's forty colour RAM cells to
+   the background colour, in the reveal direction write them back from the
+   copy. Advance the row; at the last row turn the direction round or
+   stop.
+3. Land the step where the beam is not, as for `colour_cycling`. A row
+   write is short, so the lower border is more than enough.
+
+### Why it works
+
+A cell whose colour equals `$D021` is invisible whatever character it
+holds, so writing a row's colour RAM to the background colour hides the
+row without touching screen RAM, and writing it back reveals it. Nothing
+about the picture moves, which is why a wipe of this kind is cheap: the
+per-step cost is forty stores. In the recipe the hide step reads 491
+cycles and the reveal step 708 or 709 by CIA1 timer A, measured in VICE,
+the difference being one indirect load per cell for the reveal. Both are
+under a dozen raster lines. The reveal figure depends on the row, not the
+model: 708 at row 3 and 709 at row 11 on PAL, and 709 at row 11 on NTSC.
+The cause of the per-row cycle is not established.
+
+### Variations
+
+**Column by column.** Write one cell in each of the 25 rows per step
+instead of one row. The addresses stride by 40; a table of 25 row bases
+indexed by the column serves.
+
+**Diagonal by cell.** Hide cell `(row, col)` on step `row + col`. Each
+step touches at most 25 cells, one per row, and the edge runs at 45
+degrees.
+
+**Iris by table.** A table of cell addresses ordered by distance from the
+centre, hidden or revealed so many per step, gives a circle closing or
+opening. The table is the whole cost: a thousand two-byte entries, or a
+one-byte index into a row and column pair.
+
+**A $D011 blank moving down.** Clearing the display-enable bit at a
+raster line blanks from that line to the bottom of the frame and shows
+the border colour there. It needs a compare per frame and a raster split,
+which brings `d012_wrap_around` and `badline_cycle_loss` into the
+account; it is not built here and its timing is not measured here.
+
+**A per-line $D021 split.** Change the background colour at a raster line
+that moves down each frame, so the picture's background sweeps to black
+while its ink stays. The split's write must land in the horizontal border
+of the line or it shows as a step in the colour; the recipe does not do
+this and no figure is given for it here.
+
+### Cycle budget
+
+Not raster critical. The step is a single row's colour RAM, 491 cycles
+to hide and at most 709 to reveal, measured by CIA1 timer A in the recipe.
+Twenty-four rows at two frames each make a 48-frame wipe, 0.96 s on PAL
+and 0.8 s on NTSC (arithmetic from 19,656 and 17,095 cycles a frame). The
+step rate is in frames, so the two models finish at different times for
+the same cycle count; the recipe's verdict is taken on the frame count,
+not the cycle count, so it holds on both.
+
+### Recipes
+
+- `recipes/kickassembler/screen-wipe.md`
+
+---
