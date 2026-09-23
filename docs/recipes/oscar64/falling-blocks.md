@@ -3,7 +3,7 @@ recipe: falling-blocks
 toolchain: oscar64
 output_format: PRG
 region: both
-techniques: [falling_block_rules, joystick_autorepeat, lfsr_random, text_mode_overlay_render]
+techniques: [falling_block_rules, joystick_edge_detect, joystick_autorepeat, lfsr_random, text_mode_overlay_render, frame_sync_loop, pal_ntsc_detection]
 file_formats: [PRG]
 uses_registers: [D011, D012, D020, D021, DC00, DC04, DC05, DC0E]
 uses_kernal: []
