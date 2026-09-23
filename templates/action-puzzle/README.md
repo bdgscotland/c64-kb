@@ -32,6 +32,7 @@ Joystick in port 2. Fire starts; up and down pick a letter, fire sets it.
 | `tools/gen.py` | The caves, the autopilot script, a Python model of the rules, the note table. Writes `src/gen_*.h` |
 | `tools/model_check.py` | Every visible cave cell of both shots against the model (`make modelcheck`) |
 | `tools/disk_check.py` | Grades `make disktest` |
+| `tools/drive.py` | Plays the `make joy` build headless over VICE's binary monitor |
 | `expect.json`, `PLAN.md` | The screenshot checks; the plan with the c64-kb tool output it was made from |
 
 Memory: code and data `$0880`-`$1FFF` and `$2800` up; the character set
@@ -71,15 +72,53 @@ model and writes what the game must end with: the cave's fold (0xC0F1),
 score, gems, cave and play frames. The program compares, then sets `$02FF`
 and the border.
 
+**The shot pin.** Both models are shot at 16,000,000 cycles. Most of the
+time before the verdict is the start-up read with no disk in the drive
+(reply 74). On PAL the picture still changes at 12,000,000 cycles; at
+13,000,000, 16,000,000, 20,000,000 and 24,000,000 it is byte-identical, and
+so is NTSC at 16,000,000 and 24,000,000 (VICE x64sc 3.10, windowless).
+
 **The disk test.** `make disktest` (`DISK_MODEL=ntsc` for NTSC) copies the
-release D64, runs the autopilot build against it with `-drive8truedrive`
-(the emulated 1541 runs its own DOS ROM): it finds no file (62), plays,
-saves (scratch, then write), and shows `SAVED TO DISK (00)`. c1541 then
-reads the 38-byte `HISCORE` file back from the image. A second, cold VICE
-autostarts the D64 itself: the drive loads the release PRG, which reads the
-file and shows the title with `4. ABE 000158` and `SCORES FROM DISK (00)`.
-Both pictures and the file are graded. Run on 2026-09-23: PASS on PAL and
-NTSC; the PAL pictures were byte-identical over two runs.
+release D64. It runs the autopilot build against the copy with
+`-drive8truedrive`, so the emulated 1541 runs its own DOS ROM. The build
+finds no file (62), plays, saves (scratch, then write) and shows
+`SAVED TO DISK (00)`. It then runs a second time on the same image. It
+loads that file, its 158 ties row 4 and goes in row 5, and the save must
+replace the file. Without the scratch the drive answers 63 (FILE EXISTS)
+and nothing is written: a build with the scratch removed fails this test.
+The second run's own verdict is red by design, because it did not start
+from the default table. c1541 reads the 38-byte `HISCORE` file back after
+each save, and the directory must hold one entry. Last, a cold VICE
+autostarts the D64: the drive loads the release PRG, which reads the file
+and shows the title with rows 4 and 5 `ABE 000158` and `SCORES FROM DISK
+(00)`. Three pictures, two files and the directory are graded. Run on
+2026-09-23: PASS on PAL and NTSC.
+
+## Driving it headless
+
+`make joy` builds the normal game (three lives, title, no autopilot) with
+`-dJOY_SOURCE=0x02fe`: the port byte comes from `$02FE` instead of `$DC00`.
+`tools/drive.py` plays that build over VICE's binary monitor. It writes the
+byte, lets the machine run, and reads screen RAM as text:
+
+```bash
+make joy
+python3 tools/drive.py build/action-puzzle-joy.prg "until:FIRE TO START" tap:fire \
+    until:LIVES hold:right "until:ENTER YOUR NAME" hold:none tap:up tap:fire tap:fire \
+    tap:fire "until:GAME OVER" print tap:fire "until:FIRE TO START" print
+```
+
+That run (2026-09-23) held right through three time-outs, entered BAA, and
+showed `4. BAA 000120` in the table and then on the title. Two findings
+behind this design:
+
+- The windowless VICE's joyport commands do not reach `$DC00`. The binary
+  monitor's joyport set was accepted, but `$DC00` never changed, with or
+  without `-joydev2` (found in review).
+- Monitor screenshots from the windowless build came back stale while the
+  game ran, so `drive.py` reads screen RAM. Entering the text monitor during
+  the start-up disk read left that read hung twice here; the binary monitor
+  under warp did not.
 
 ## The measured frame
 
@@ -88,8 +127,8 @@ VICE x64sc 3.10:
 
 | Model | Worst | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 10,037 | 6,371 | 19,656 |
-| NTSC | 10,294 | 6,629 | 17,095 |
+| PAL | 10,033 | 6,340 | 19,656 |
+| NTSC | 10,292 | 6,598 | 17,095 |
 
 The worst frame is play frame 80, where the exit opens: the fourth slice,
 the cave-frame end, the HUD rewriting the gem count and the score, and the
@@ -103,9 +142,11 @@ Against `plan-budget` (the PLAN.md output): it summed the recipe's whole
 scan, 18,559 cycles, into every PAL play frame (range 19,599 to 19,807 plus
 1,075 for badlines, "undetermined") and left it out of the NTSC frame as
 multi-frame (1,040 to 1,248 plus 1,075). Neither is this program's frame:
-the scan here runs a quarter at a time. A scan loop of 14 cycles a cell of
-dirt (from the generated code; the recipe's loop measured about 19) makes a
-slice of 190 cells about 2,700 cycles plus the objects in it. The tool's
+the scan here runs a quarter at a time. The scan loop takes 17 cycles a
+cell of dirt (counted from the generated code; an earlier version of this
+page said 14, a miscount). The recipe's loop measured 18.7 (14,206 cycles
+for 760 cells, with badlines in). So a slice of 190 cells costs about 3,230
+cycles, plus the objects in it (arithmetic). The tool's
 music figure is the recipe's stub tune; this tune and its effects are
 measured only inside the whole frame.
 
@@ -115,13 +156,16 @@ measured only inside the whole frame.
    window over a cave larger than the screen: `tile_map_render` and the
    recipe `oscar64/tile-map-render` (metatiles), then a scroll technique
    from `technique-lookup` (`techniques-for --category scroll`).
-2. **Add amoeba, a magic wall or more enemies.** Add codes in `cave.h`, a
-   branch in `cell()` and the same rule in `tools/gen.py`'s `Cave.cell`;
-   extend the script and run `make gen shot check modelcheck`. The rules and
-   the scanned bit are `cave_scan_engine` (recipe `oscar64/cave-scan`).
+2. **Add amoeba, a magic wall or more enemies.** Add codes in `cave.h`
+   (at most 32: glyphs sit at `$40` + code), a branch in `cell()`, a glyph
+   and a tint in `render.c`, the same colour in `tools/model_check.py`'s
+   `TINT`, and the same rule in `tools/gen.py`'s `Cave.cell`. Extend the
+   script and run `make gen shot check modelcheck`. The rules and the
+   scanned bit are `cave_scan_engine` (recipe `oscar64/cave-scan`).
 3. **Faster scans.** The scan loop is C; the recipe `oscar64/level-rle-decoder`
-   shows a hand-written decoder at about half the C one's cycles, and the same
-   move applies to `cave_scan_rows`. Measure before and after with the meter.
+   shows a hand-written decoder a little under twice as fast as the C one,
+   and the same move applies to `cave_scan_rows`. Measure before and after
+   with the meter.
 
 More caves: add them to `CAVES` in `tools/gen.py` and run `make gen`.
 
@@ -137,8 +181,8 @@ More caves: add them to `CAVES` in `tools/gen.py` and run `make gen`.
   right on both (a PAL and an NTSC table).
 - Anyone listening to the sound: the tune and effects were checked by the
   registers claims-watch saw written, not by ear.
-- A human at the joystick: headless runs drive the autopilot, which feeds
-  the same input path the port does. The title screen was seen from the
-  disk boot; play by hand was not run here.
+- A real joystick on `$DC00`: the normal game was driven headless through
+  `$02FE` (above), which differs from the release build in one line of
+  `port_read`.
 - Real hardware, and the released Oscar64 (built with the build c64-kb's
   CLAUDE.md names).

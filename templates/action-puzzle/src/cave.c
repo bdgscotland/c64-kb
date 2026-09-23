@@ -163,9 +163,11 @@ static void enemy_rules(char *p, char v)
 
 // One object's turn. Called only for codes BOULDER and up. It takes the row
 // and the column, not a cell pointer: with a pointer argument Oscar64 -O2
-// computed row + x for every cell before the test, and the loop cost about
-// 41 cycles a cell instead of 14 (measured here with the frame meter:
-// typical play frame 11,812 cycles before, 7,001 after).
+// computed row + x for every cell before the test, and the loop took 42
+// cycles a cell instead of 17 (counted from the generated code; an earlier
+// comment said 41 and 14, a miscount). The frame meter read a typical play
+// frame of 11,812 cycles before and 7,004 after, on the build whose HUD still
+// rewrote every field each cave frame (6,340 with today's update_hud).
 static __noinline void cell(char *row, char x)
 {
     char *p = row + x;
@@ -202,8 +204,10 @@ static __noinline void cell(char *row, char x)
 }
 
 // Interior rows y0 .. y1 - 1. The loop only reads and compares: LDA (row),Y,
-// CMP, BCC, INY, CPY, BCC, 14 cycles a cell of space, dirt, brick or steel
-// (from the generated code). The dirty list starts empty for each slice.
+// CMP, BCC, INY, CPY, BCC: 5 + 2 + 3 + 2 + 2 + 3 = 17 cycles a cell of space,
+// dirt, brick or steel (from the generated code, both branches taken, no page
+// crossed; an earlier comment said 14, which was wrong). The dirty list starts
+// empty for each slice.
 __noinline void cave_scan_rows(char y0, char y1)
 {
     cave_ndirty = 0;

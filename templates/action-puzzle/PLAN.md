@@ -342,9 +342,11 @@ screen; it is timed once with CIA1 timer B and printed, not metered.
   game starts with one life, so that death is game over; the script then
   enters a name, the table is saved (with no disk attached the drive
   answers 74 and saving is off) and shown.
-- `tools/caves.py` holds the caves, packs them, and runs a Python model of
-  the same rules over the same script. It writes `src/cavedata.h` with the
-  RLE streams, the script and the model's expected values.
+- `tools/gen.py` holds the caves, packs them, and runs a Python model of
+  the same rules over the same script. It writes `src/gen_caves.h` (the RLE
+  streams), `src/gen_autopilot.h` (the script and the model's expected
+  values) and `src/gen_notes.h` (the note tables). An earlier version of
+  this plan named `tools/caves.py` and `src/cavedata.h`, which never existed.
 - Verdict, after the table is shown, outside the meter: the model's cave
   fold at game over, score, gems, cave number, and the table row the new
   score landed in. `$02FF` and the border.
@@ -365,10 +367,14 @@ screen; it is timed once with CIA1 timer B and printed, not metered.
   12 cave frames. The tune's note lengths are in frames, so it plays 20 %
   faster on NTSC too; the note frequencies come from a PAL or NTSC table.
 - The meter records at most 255 frames; the script is kept to fit (140).
-- Measured (make shot check, 2026-09-23): worst 10,037 / typical 6,371
-  cycles on PAL, 10,294 / 6,629 on NTSC. A first build passed the cell
+- Measured (make shot check, 2026-09-23): worst 10,033 / typical 6,340
+  cycles on PAL, 10,292 / 6,598 on NTSC. A first build passed the cell
   pointer to `cell()`; Oscar64 then computed it for every cell before the
-  test and the scan loop cost about 41 cycles a cell (typical frame 11,812).
-  Passing row and column made it 14.
-- Open: first_open_after_reset_hangs_on_pal is a phase effect; the disk test
-  is run on PAL and a hang, if seen, is answered by moving the first OPEN.
+  test and the scan loop took 42 cycles a cell (typical frame 11,812).
+  Passing row and column made it 17 (counted from the generated code; this
+  plan said 41 and 14 before, a miscount).
+- Settled: first_open_after_reset_hangs_on_pal. `DISK_WAIT` waits 50 frames
+  before the first OPEN (main.c). `make disktest` ran on PAL and NTSC with a
+  true-drive 1541: the start-up read, two saves (the second replacing the
+  file) and a cold boot that loads it, all without a hang. It is a phase
+  effect, so any change to the code before the first OPEN needs that test again.

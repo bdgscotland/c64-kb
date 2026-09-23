@@ -2,7 +2,7 @@
   "checks": [
     { "name": "own verdict (border)", "type": "verdict" },
     { "name": "verdict line and the model's fold (0xC0F1)", "type": "text", "row": 23, "col": 0, "text": "RESULT 01 PASS  FOLD 49393" },
-    { "name": "HUD: cave 2's quota and time, the banked score 158, one life", "type": "text", "row": 0, "col": 0, "text": "GEMS 00/08 TIME 120 SCORE 000158 LIVES 1" },
+    { "name": "HUD: cave 2's quota and time, the banked score 158, no lives left", "type": "text", "row": 0, "col": 0, "text": "GEMS 00/08 TIME 120 SCORE 000158 LIVES 0" },
     { "name": "game-over box", "type": "text", "row": 7, "col": 16, "text": "GAME OVER" },
     { "name": "table row 4: the scripted name and score, inserted", "type": "text", "row": 14, "col": 13, "text": "4. ABE 000158" },
     { "name": "table row 5: the old row 4, shifted down", "type": "text", "row": 15, "col": 13, "text": "5. MUD 000100" },

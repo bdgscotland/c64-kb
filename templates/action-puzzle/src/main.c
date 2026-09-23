@@ -108,6 +108,14 @@ static char port_read(void)
         return ap_name[state_frames - 4];
     return 0xff;
 }
+#elif defined(JOY_SOURCE)
+// Headless driving of the normal game: the port byte comes from RAM at
+// JOY_SOURCE, which a VICE monitor writes (make joy; README "Driving it
+// headless"). The windowless VICE's joyport commands do not reach $DC00.
+static char port_read(void)
+{
+    return *(volatile char *)JOY_SOURCE;
+}
 #else
 static char port_read(void)
 {
@@ -178,7 +186,8 @@ static void draw_hud(void)
 // Once a cave frame: rewrite only the fields that changed. The six-digit
 // score in 32-bit arithmetic is the dearest; rewriting all three fields every
 // cave frame made the worst PAL play frame 12,241 cycles instead of 10,037
-// (frame meter, both builds).
+// (frame meter, both builds; later edits moved code and the figure by a few
+// cycles, see README.md for the current one).
 static void update_hud(void)
 {
     if (cave_got != hud_got)
@@ -273,7 +282,8 @@ static void lose_life(void)
 {
     score += cave_points;
     total_gems += cave_got;
-    if (--lives == 0)
+    put_num(0, 39, --lives, 1, VCOL_YELLOW);
+    if (lives == 0)
         game_over();
     else
         start_cave();
@@ -426,6 +436,9 @@ int main(void)
 {
     __asm { sei }                               // no KERNAL IRQ: the loop polls the raster
     cia1.pra = 0xff;                            // no keyboard column selected
+#if !AUTOPILOT && defined(JOY_SOURCE)
+    *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
+#endif
     render_init();
     ntsc = detect_ntsc();
     sound_init(ntsc);

@@ -8,15 +8,18 @@
 #   make claims     c64-kb's claims-watch over the autopilot build, when available
 # and this starter's own:
 #   make gen        re-run tools/gen.py (caves, script, model, note table)
-#   make disktest   the high-score save on a true-drive 1541: save, cold start, load, show
+#   make disktest   the high-score save on a true-drive 1541: save, save over it, cold start, load
+#   make modelcheck every visible cave cell of the shots against tools/gen.py's model
+#   make joy        the normal game reading its port byte from $02FE, for tools/drive.py
 #   make clean
 NAME   := action-puzzle
 C_MAIN := src/main.c
 
-# Pinned after the verdict. The autopilot plays 140 frames, enters a name and
-# grades itself at about frame 330 from its start; from then on nothing on the
-# screen changes, so any pin after it gives the same picture (two pins per
-# model were compared; see README.md).
+# Pinned after the verdict. Most of the time before it is the start-up read
+# with no disk in the drive (drive reply 74). Measured with VICE x64sc 3.10:
+# the PAL picture still changes at 12,000,000 cycles (10,000,000 shows cave
+# 2's GET READY); at 13,000,000, 16,000,000, 20,000,000 and 24,000,000 it is
+# byte-identical, and so is NTSC at 16,000,000 and 24,000,000.
 SHOT_CYCLES_PAL  := 16000000
 SHOT_CYCLES_NTSC := 16000000
 
@@ -47,27 +50,46 @@ build/gen.stamp: tools/gen.py
 gen:
 	$(PYTHON) tools/gen.py
 
-# The disk test: the autopilot build saves its table to a fresh copy of the
-# release D64 on a true-drive 1541 (DISK_MODEL=pal or ntsc); then a second, cold VICE boots the
-# release PRG from that D64 with LOAD"*",8,1, and it loads the table and shows
-# it on the title screen. tools/disk_check.py grades both pictures and the
-# file c1541 reads back from the image.
+# The disk test, on a true-drive 1541 (DISK_MODEL=pal or ntsc):
+#  1. the autopilot build runs against a fresh copy of the release D64: no
+#     file (62), it plays, saves (scratch, then write) and shows SAVED (00);
+#  2. it runs again on the same D64: it loads that file, its score ties row 4
+#     and goes in row 5, and the save must replace the file (without the
+#     scratch the drive answers 63, FILE EXISTS). Its verdict is red by
+#     design: the table it started from is not the default one;
+#  3. a cold VICE boots the release PRG from the D64 with LOAD"*",8,1; it
+#     loads the table and shows it on the title screen.
+# tools/disk_check.py grades the three pictures, both files c1541 read back,
+# and the directory (one HISCORE entry).
 DISKTEST_D64 := build/disktest.d64
 DISK_MODEL ?= pal
 # PAL is the -default machine: "-model pal" selects a 6569R3 whose palette
 # differs from the one check.py matches (border green read (94, 214, 56)).
 DISK_VICE = $(TIMEOUT) $(VICE_TIMEOUT) $(X64SC) $(VICE_FLAGS) $(if $(filter ntsc,$(DISK_MODEL)),-model ntsc) -drive8type 1541 -drive8truedrive -drive8wobbleamplitude 0 -drive8wobblefrequency 0
+# $(1) = the picture's name, $(2) = cycles, $(3) = what to autostart, $(4) = extra flags
+define disk_run
+	@rm -f shots/$(1).png
+	@$(DISK_VICE) -limitcycles $(2) $(4) -exitscreenshot shots/$(1).png -autostart $(3) > shots/$(1).log 2>&1 || true
+	@test -s shots/$(1).png || { echo "disktest: no picture from the $(1) run; see shots/$(1).log"; exit 1; }
+endef
 disktest: $(D64) $(PRG_AUTO)
 	@mkdir -p shots
 	cp $(D64) $(DISKTEST_D64)
-	@rm -f shots/disk-save.png shots/disk-load.png
-	@$(DISK_VICE) -limitcycles 30000000 -8 $(DISKTEST_D64) -exitscreenshot shots/disk-save.png -autostart $(PRG_AUTO) > shots/disk-save.log 2>&1 || true
-	@test -s shots/disk-save.png || { echo "disktest: no picture from the save run; see shots/disk-save.log"; exit 1; }
-	$(C1541) -attach $(DISKTEST_D64) -list
-	$(C1541) -attach $(DISKTEST_D64) -read "hiscore,s" build/hiscore.seq > /dev/null
-	@$(DISK_VICE) -limitcycles 60000000 -exitscreenshot shots/disk-load.png -autostart $(DISKTEST_D64) > shots/disk-load.log 2>&1 || true
-	@test -s shots/disk-load.png || { echo "disktest: no picture from the load run; see shots/disk-load.log"; exit 1; }
-	$(PYTHON) tools/disk_check.py $(HARNESS_DIR) build/hiscore.seq shots/disk-save.png shots/disk-load.png $(DISK_MODEL)
+	$(call disk_run,disk-save,30000000,$(PRG_AUTO),-8 $(DISKTEST_D64))
+	$(C1541) -attach $(DISKTEST_D64) -read "hiscore,s" build/hiscore-1.seq > /dev/null
+	$(call disk_run,disk-save2,30000000,$(PRG_AUTO),-8 $(DISKTEST_D64))
+	$(C1541) -attach $(DISKTEST_D64) -read "hiscore,s" build/hiscore-2.seq > /dev/null
+	$(C1541) -attach $(DISKTEST_D64) -list > build/disktest-dir.txt 2>/dev/null
+	$(call disk_run,disk-load,60000000,$(DISKTEST_D64),)
+	$(PYTHON) tools/disk_check.py $(HARNESS_DIR) build $(DISK_MODEL)
+
+# The normal game with its port byte read from $02FE instead of $DC00, so a
+# VICE monitor can drive it headless (tools/drive.py; README "Driving it headless").
+.PHONY: joy
+joy: build/$(NAME)-joy.prg
+build/$(NAME)-joy.prg: $(C_DEPS) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
 
 # Every visible cave cell of both autopilot shots against tools/gen.py's model.
 modelcheck: $(SHOTS)

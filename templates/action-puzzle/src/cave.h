@@ -30,7 +30,7 @@
 #define MOTH       16           // 16..19: keeps a wall on its right; dies into gems
 #define BLAST      20           // 20..22: explosion stages, then space
 #define BURST      23           // 23..25: explosion stages, then a gem
-#define CODES      26
+#define CODES      26           // at most 32: render.c draws code & 0x1f at glyph $40 + code
 #define SCANNED    0x80
 
 #define NO_MOVE    0xff         // cave_move: headings 0..3 are left, up, right, down

@@ -33,6 +33,9 @@ Rules this starter adds:
   `SEI` and `$DC00 = $FF`. `make disktest` proves the save and the load on a
   true-drive 1541; run it after any change to `hiscore.c` or to what runs
   before the first OPEN (pitfall `first_open_after_reset_hangs_on_pal`).
+- To see the normal game (not the autopilot) headless: `make joy`, then
+  `tools/drive.py` (README, "Driving it headless"). VICE's joyport commands
+  do not reach `$DC00` in the windowless build.
 
 ## Before any code
 
