@@ -1056,5 +1056,53 @@
       "pal": "screenshots/dig-and-guards.png",
       "ntsc": "screenshots/dig-and-guards-ntsc.png"
     }
+  },
+  "oscar64/adventure-engine": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/adventure-engine.png",
+      "ntsc": "screenshots/adventure-engine-ntsc.png"
+    }
+  },
+  "oscar64/game-tree-search": {
+    "cycles": 160000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/game-tree-search.png",
+      "ntsc": "screenshots/game-tree-search-ntsc.png"
+    }
+  },
+  "kickassembler/wireframe-ships": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/wireframe-ships.png",
+      "ntsc": "screenshots/wireframe-ships-ntsc.png"
+    }
+  },
+  "oscar64/destructible-terrain": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/destructible-terrain.png",
+      "ntsc": "screenshots/destructible-terrain-ntsc.png"
+    }
   }
 }

@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 741, schema 27, tools 1.32.0, package 0.12.0.
+Data 742, schema 27, tools 1.32.0, package 0.12.0.
 
 **Issue #22, step 3: the honest budget (schema 27, tools 1.32.0, package
 0.12.0).** New tool `c64_plan_budget` (CLI `plan-budget`) adds a list of
@@ -77,6 +77,16 @@ Validation on PAL. "Old sum" is the previous briefing arithmetic over the same p
 
 `test/plan-budget.test.ts` rebuilds every row from the shipped pages.
 
+
+Data 741, schema 26, tools 1.31.0, package 0.11.0 (#21, below).
+
+**Issue #21, GR-05/10, GR-06, GR-07, GR-11.** Engines for games at the
+scale of Elite and Lemmings, each self-checked against a Python model:
+`wireframe_pipeline` and `procedural_seed_universe` (pixel-exact
+wireframes; Elite's galaxy names reproduced), `adventure_database_engine`,
+`game_tree_search` (with a time-sliced form that misses no frame), and
+`destructible_char_terrain` with `creature_state_machine`. Two more
+Oscar64 faults recorded with their upstream status (#30).
 
 Data 740, schema 26, tools 1.31.0, package 0.11.0 (step 2, below).
 

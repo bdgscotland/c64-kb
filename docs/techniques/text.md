@@ -562,3 +562,202 @@ rows (about 12.5 a byte) or 16 a byte for one row.
 ### Recipes
 
 - `recipes/kickassembler/big-font-scroller.md`
+
+## adventure_database_engine — Two-word parser, action table, occurrences and packed text for a text adventure
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Requires:** text_input_line
+**Cost:** cycles_per_frame=14908
+**Cost basis:** measured-vice
+
+### Why
+
+A text adventure is mostly data: rooms, items, words and rules. Written
+as code, every puzzle is an `if` in the parser, and the game outgrows
+memory on its logic long before its text. The Scott Adams games put the
+whole game in tables and kept one small interpreter to run them; the
+Scott Adams Adventure Compiler (sac) compiles games in that model. The engine below is
+that model: the game is a database, and a turn is a table scan.
+
+### How
+
+**The data.**
+
+- **Rooms.** A description message and six exits, north, south, east,
+  west, up and down, each a room number or 0. A dark room is marked by
+  a bit. Room 0 is "nowhere", where items wait before they enter play.
+- **Items.** A description message, a start room and a current
+  location: a room, `CARRIED` (255), or 0. An item that can be carried
+  names the noun that picks it up. Two states of one object, such as a
+  lamp unlit and lit, are two items; a swap trades their locations.
+- **Vocabulary.** A verb table and a noun table. Each entry is a word
+  cut to its first `WL` letters and an id. Synonyms share an id, so
+  `GET` and `TAKE` are both verb 2. Nouns 1 to 6 are the directions.
+- **Actions.** Each entry is a verb, a noun (0 matches any), up to four
+  conditions and up to four commands. A condition is an opcode and an
+  argument: at room, item carried, item here, item accessible (carried
+  or here), item exists, flag set, flag clear, counter equals, room
+  dark. A command is an opcode and an argument: print a message, go to a
+  room, look, inventory, score, swap two items, place an item here,
+  destroy an item, set a flag, set the counter, decrease the counter,
+  add to the score, die, win.
+- **Occurrences.** Entries with verb 0. They match no command; they run
+  every turn.
+- **State.** The room, one location byte per item, a flag word, a
+  counter, the score, the turn count.
+
+**The parser.** Split the line at spaces and keep the first two words.
+Pad or cut each to `WL` letters and look it up. If the first word is not
+a verb but is a direction, the command is `GO` plus that direction, so
+`N` works alone. An unknown verb prints "I DON'T KNOW HOW TO" and the
+word; a known verb with an unknown noun prints "I DON'T KNOW WHAT A" and
+the word. A parse failure costs no turn and runs no occurrence.
+
+**The turn.**
+
+1. Count the turn.
+2. Scan the action table in order. The first entry whose verb and noun
+   match and whose conditions all hold runs its commands, and the scan
+   stops.
+3. If no entry ran, fall back to the built-ins: `GO` through the exit
+   table, then `GET` and `DROP` by the item's noun. `GET` refuses in a
+   dark room without light and above the carry limit.
+4. Unless the game has ended, run every occurrence whose conditions
+   hold.
+
+Then the terminal prints the buffer, a separate cost.
+
+Order is the rule language. Two entries for the same verb and noun, the
+first with more conditions, give "if it works, else say why": `UNLOCK
+DOOR` with the key carried opens the door; the next entry, without the
+key condition, prints "YOU HAVE NO KEY". A locked door is the same idea
+with no special code: the path's north exit is not in the exit table,
+and an action for `GO NORTH` at that room with the open door present
+moves the player. The entry below it prints "THE DOOR IS LOCKED".
+
+**The light source.** Darkness is a room bit plus a test: the room is
+lit if it is not dark or if the lit lamp is carried or here. Lighting
+the lamp swaps the unlit item for the lit one and sets the counter.
+Three occurrences burn it: while the lit lamp exists, decrease the
+counter; at 3, print a warning; at 0, swap the lit lamp for a dead one.
+
+**The text.** Messages are packed five bits a character, three to a
+16-bit word, with bit 15 set on a message's last word. The alphabet is
+space, `A` to `Z`, full stop, comma, apostrophe and `!`; code 31 pads
+the last word. A table gives each message's first word, 2 bytes a message.
+Decoding writes screen codes into an output buffer; the terminal then
+prints the buffer with word wrap. The recipe's 50 messages are 1,061
+characters and pack into 752 bytes of words, a ratio of 0.709 (the
+program counts both and prints them). With the 100-byte start table the
+total is 852 bytes, 0.803. Three characters in two bytes is 0.667; the
+padding of the last word of each message is the rest of the 0.709. The
+recipe packs at start-up so that the packing itself is checked; a real
+game packs at build time and ships only the words and the table. Numbers are printed as digits
+straight from the value, so the alphabet needs none.
+
+### Why it works
+
+A turn is a linear scan with an early exit, so its cost is the number of
+entries tried and the text it prints. Conditions are tested only on
+entries whose verb and noun match, so most entries cost a byte compare.
+Keeping output in a buffer separates the engine's work from the
+screen's: the recipe times parse, turn and print on their own.
+
+The engine meets the PETSCII and screen-code boundary twice. Typed keys
+arrive from GETIN as PETSCII and are stored as PETSCII for the parser,
+because the vocabulary is compared in that encoding; their echo is
+converted to screen codes. Decoded messages are screen codes from the
+start and go straight into screen RAM. A table stored in PETSCII and
+poked to `$0400` shows graphics where letters belong
+(`petscii_written_to_screen_ram`, `pitfalls/text-mode-render.md`).
+
+### Variations
+
+- **Scott Adams' limits.** The Scott Adams Adventure Compiler (sac)
+  manual's Adventureland data uses 3 significant letters, a carry limit
+  of 6 and a light that lasts 125 turns. ScottFree implements 32 flags (flag 15 is darkness), 16
+  counters and 16 room-save slots, and occurrences can take a
+  percentage chance. Light is only used up while the light source is in
+  the game. None of these limits is measured here; the recipe uses 4
+  letters, a carry limit of 4 and a 7-turn lamp.
+- **Evaluation order in the original.** The manual says the
+  occurrences whose conditions hold run before each turn, then at most
+  one action, the first that matches. The recipe runs them after the
+  player's action and before the next prompt, which is the same
+  sequence seen from the prompt. Its built-ins run only when no action
+  matched, a choice of this recipe.
+- **Longer rules.** Adams' format has a `continue` entry that chains
+  extra commands onto the one before, for rules with more commands than
+  one slot holds. Four slots a record is this recipe's choice.
+- **Dictionary compression.** Replacing common words with one-byte
+  tokens is the other usual scheme. It is not built or measured here.
+- **Story files and paging.** Infocom's Z-machine keeps the game in a
+  story file and pages it from disk; that is a different engine.
+
+### Memory for a 30-room game
+
+Arithmetic, with the recipe's record sizes and assumed counts:
+
+| Part | Assumed count | Bytes each | Bytes |
+|---|---|---|---|
+| Rooms (6 exits, description, dark) | 30 | 8 | 240 |
+| Items (description, noun, start room, location) | 60 | 4 | 240 |
+| Vocabulary (4 letters and an id) | 150 words | 5 | 750 |
+| Actions and occurrences | 200 | 18 | 3,600 |
+| Text, 30 rooms of 150 characters and 250 messages of 45, at 752/1,061 | 15,750 characters | | 11,163 |
+| Message index (first word of each message) | 280 messages | 2 | 560 |
+| Engine, parser and terminal (the recipe's Oscar64 map, `$1444-$1C19`, plus 133 bytes of its divide routine) | | | 2,138 |
+
+That is about 18.7 KB (18,691 bytes), which fits between `$0801` and `$9FFF` with BASIC
+in and room to spare. The text is the largest part, which is why the
+packing matters more than the rule format. The 18-byte action record
+is loose; half of it is empty on most entries.
+
+### Cycle budget
+
+The engine's work for one command fits one PAL frame (14,908). Printing
+its output does not: up to 109,866 cycles, 5.6 frames, almost all of it
+the C scroll at about 17,400 a line. Budget the terminal first; print a
+line per frame or scroll in assembly if anything animates.
+
+Measured on the recipe with CIA2 timer A cascaded into timer B,
+interrupts off and the display on, on PAL (NTSC in brackets):
+
+- **Parse:** 722 to 3,944 cycles (636 to 3,944). The top of the range
+  is `XYZZY`: both tables scanned to the end and an error message
+  decoded.
+- **Turn:** 2,888 to 12,734 (3,017 to 13,161). The top of the range is
+  `LIGHT BEACON`, which wins: 13 entries tried, 4 commands run, about 115
+  characters decoded; a win skips the occurrences. Moving into a room
+  with items listed costs 7,800 to 12,000, depending on how much text
+  is decoded (debug build).
+- **Parse and turn of one command, the worst:** 14,908 (15,206), the
+  winning command. This is the Cost line: one command's work, within a
+  PAL frame of 19,656 cycles.
+- **Scanning the whole table with no match:** 1,695 cycles for 17
+  entries (1,609), about 100 an entry. A 200-entry table would take
+  about 20,000 cycles for a command that matches nothing, a frame on
+  its own (arithmetic from the measured figure).
+- **Printing:** up to 109,866 cycles (110,762) for one command. It is
+  the terminal's cost, not the engine's.
+
+### Recipes
+
+- `recipes/oscar64/adventure-engine.md` — an original seven-room game with a locked door, a lamp that dims and goes out, and a scripted win typed through the KERNAL queue, including a failed command and synonyms; final state and a fold of every printed character checked against a Python model; cycles on screen, PAL and NTSC
+
+### Sources
+
+- https://www.miketaylor.org.uk/tech/advent/sac/Manual.html (the
+  Scott Adams Adventure Compiler (sac) manual): rooms with six exits, items that may start
+  nowhere, verb and noun synonyms, actions of a verb or verb-noun pair
+  with conditions and results, the condition and result names,
+  occurrences with an optional percentage, the evaluation order, the
+  32 flags ScottFree implements with flag 15 as darkness, its 16
+  counters and 16 room-save slots,
+  `continue`, and the Adventureland values `%wordlen 3`, `%maxload 6`
+  and `%lighttime 125`. Not measured here.
+- https://www.ifarchive.org/indexes/if-archive/scott-adams/ (the IF
+  Archive's Scott Adams directory: interpreters and tools). The byte
+  format of the original data files was not read.

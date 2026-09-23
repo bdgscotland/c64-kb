@@ -1245,3 +1245,110 @@ routines in one page with an `.assert`.
 - `recipes/kickassembler/sqrt-atan2.md` — the fold, divide and table
   as listed, 36 angle cases over the axes and every octant against a
   Python model, and the worst-case timing sweep over all 65,536 pairs.
+
+## procedural_seed_universe — A reproducible galaxy from three 16-bit seeds
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=733
+**Cost basis:** measured-vice
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+A trading or exploration game wants hundreds of named places, and the
+machine has no room to store them. Elite's answer is to store six bytes
+and regenerate every system from them on demand. The same seeds always
+give the same galaxy, so nothing but the seeds and the player's
+position needs saving.
+
+### How
+
+Keep three 16-bit seeds `s0`, `s1`, `s2`. One twist is a
+Tribonacci-style step, 16-bit with carries out of bit 15 dropped:
+
+```text
+s0' = s1
+s1' = s2
+s2' = s0 + s1 + s2
+```
+
+A system's data comes from bits of its seeds, and four twists move the
+seeds on to the next system. Elite's rules for galaxy 1 (Mark Moxon's
+deep dives):
+
+- Start seeds `s0 = $5A4A`, `s1 = $0248`, `s2 = $B753` (Tibedied).
+- Galactic x is the high byte of `s1`; y is the high byte of `s0`
+  shifted right once, because the chart is half as tall as it is wide.
+- The name is two-letter pairs. Before each of the first three twists,
+  bits 0-4 of the high byte of `s2` pick a pair from a 32-entry table;
+  0 adds nothing. If bit 6 of the low byte of `s0` is set, the fourth
+  twist adds a fourth pair, for up to 8 letters. One table entry has a
+  silent second letter.
+- A galactic jump rotates each of the six seed bytes left by one bit, so
+  eight jumps return to galaxy 1: 8 galaxies of 256 systems.
+
+In a game, keep the current system's seeds, twist forwards to walk the
+galaxy, and restart from the galaxy's seeds to go back.
+
+### Why it works
+
+The twist is a linear recurrence over 16-bit integers, so it is fully
+determined by its six bytes and cheap on a 6502: two 16-bit adds and
+two moves. The name routine consumes the same twists
+that advance to the next system, so one routine yields the name and the
+next seeds.
+
+Moxon gives a worked example that checks an implementation: Lave's
+seeds are `s0 = $AD38`, `s1 = $149C`, `s2 = $151D`, its name pairs are
+tokens 149 (LA) and 150 (VE), and it is a short name (bit 6 of `$38` is
+clear). The recipe's generator, original code following those rules,
+produces LAVE as the eighth system of galaxy 1 with those seeds, at
+x = 20, y = 86 (`$AD >> 1`). Its first eight names, TIBEDIED, QUBE,
+LELEER, BIARGE, XEQUERIN, TIRAOR, RABEDIRA, LAVE, match its Python model
+on PAL and NTSC. The seed and bit rules are Elite's as Moxon documents
+them. The token string is data from Elite (Ian Bell and David Braben,
+1984) as Moxon lists it at QQ16. Index 0 is written `..` because it is
+never used, and the silent letter is written `.`.
+
+### Variations
+
+- **Your own world.** Keep the twist and choose your own fields: a
+  planet's economy, tech level or government from other seed bits
+  (Elite does this too; Moxon's "Generating system data").
+- **More or fewer twists.** Four twists a system is Elite's choice. Any
+  fixed count gives a reproducible sequence; fewer cost less. How the
+  count changes the look of the galaxy was not measured here.
+- **Contrast with an LFSR.** `lfsr_random` above steps one register and
+  suits noise and dice. The seed twist is the same idea with a 48-bit
+  state and data read straight from the state bits.
+
+### Cycle budget
+
+One system (coordinates, name, four twists) measured 733 cycles at
+worst over the first eight systems, in VICE x64sc on PAL and NTSC with
+the display on, CIA1-timed around the call. A twist is 76 cycles with
+its `JSR` and `RTS`, by the instruction table, so four twists are about
+300 of that. The Cost line is one system per call. Walking all 256
+systems of a galaxy at that rate is about 188,000 cycles (arithmetic),
+nearly ten PAL frames: a galaxy chart is drawn over several frames, or
+its x and y are cached in 512 bytes.
+
+### Recipes
+
+- `recipes/kickassembler/wireframe-ships.md`: generates and prints the
+  first eight systems of galaxy 1 and checks names and coordinates
+  against a Python model.
+
+### Sources
+
+- Mark Moxon, "Twisting the system seeds":
+  https://elite.bbcelite.com/deep_dives/twisting_the_system_seeds.html
+- Mark Moxon, "Generating system names":
+  https://elite.bbcelite.com/deep_dives/generating_system_names.html
+- Mark Moxon, "Generating system data":
+  https://elite.bbcelite.com/deep_dives/generating_system_data.html
+- Mark Moxon, C64 Elite variable QQ16 (the two-letter tokens):
+  https://elite.bbcelite.com/c64/main/variable/qq16.html

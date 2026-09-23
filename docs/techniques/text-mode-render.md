@@ -463,3 +463,126 @@ not part of the technique.
 - codebase64, "Character bullets": https://codebase.c64.org/doku.php?id=base:character_bullets
 - codebase64, "Merge char bullets": https://codebase.c64.org/doku.php?id=base:merge_char_bullets
 - Cadaver, Escape From New York source dissection: https://cadaver.github.io/rants/dissect.html
+
+---
+
+## destructible_char_terrain — Destructible terrain in characters: private glyphs from a pool, pixel edits and pixel probes
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D018
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=1450
+**Cost basis:** measured-vice
+
+### Why
+
+A game where creatures dig tunnels and build bridges through the
+landscape needs terrain that changes one pixel at a time. A bitmap does
+that directly but costs 8 KB. Characters cost
+1 KB of screen and 2 KB of charset, and most of a landscape is a few
+repeated textures. The catch is that a glyph is shared: editing the
+earth glyph to dig one hole digs it in every earth cell on screen. The
+form here gives each edited cell its own copy.
+
+### How
+
+Draw the level with a few **shared glyphs** (the recipe has three:
+empty, earth, and a 2-pixel step) and set aside a block of codes as a
+**pool of private glyphs** ($80 to $FF, 128 codes, in the recipe), kept
+as a stack of free codes.
+
+**Editing a pixel.** Find the cell (`x >> 2`, `y >> 3` in multicolour;
+`x >> 3` in hires) and its screen code.
+
+1. If the pixel already has the wanted value, stop. This keeps a dig
+   through empty air from allocating anything.
+2. If the code is shared, pop a free code, copy the shared glyph's 8
+   bytes into it and write the new code into the cell. If the pool is
+   empty, refuse the edit and count it.
+3. Change the pixel in the private glyph: clear its pair to dig, set it
+   to build.
+4. Compare the private glyph with each shared glyph. On a match, write
+   the shared code back into the cell and push the private code on the
+   free stack.
+
+One cell owns each private glyph, so step 4 needs no reference count: a
+cell dug out completely becomes the empty glyph again and its code goes
+back (the recipe's two side-by-side diggers free two cells this way).
+
+**Probing a pixel.** Cell from the coordinates, screen code from the
+cell, glyph byte at row `y & 7`, then a mask for the pixel (`x & 3` in
+multicolour, `x & 7` in hires). A non-zero result is terrain. The probe
+reads what the VIC shows, so collision and picture cannot disagree.
+Anything drawn into the glyphs that is not terrain, such as creatures
+merged in the `char_bullets` way, must be restored before probes run.
+
+**Pool exhaustion.** Choose a policy and state it. The recipe refuses:
+the pixel stays as it was and a counter goes up. Its digger still steps
+down, into earth it could not remove; a game should end the dig
+instead. The other policy merges: before taking a new
+code, look for a private glyph with the same 8 bytes and share it, which
+needs a reference count per code and a search or hash (not built here).
+Refusing is simpler and cannot corrupt anything; merging helps where
+many edits make identical cells, such as a flat bridge.
+
+**The code budget.** A charset has 256 codes. The recipe spends 64 on
+HUD letters and digits, 3 on shared terrain, 48 on creatures (two per
+creature for 24) and 128 on the pool; 13 are unused. So a level with
+this HUD, these creatures and three shared glyphs can afford at most
+141 private glyphs at once (arithmetic). A private glyph is needed for
+each cell whose pixels match no shared glyph. In the recipe a shaft
+through a 16-pixel platform, dug by two creatures side by side, and a
+twelve-brick staircase used at most 7 at once;
+24 simultaneous dig steps on untouched floor took 36. More shared
+textures cost codes but do not change this: every edited cell that is
+not back to a shared glyph costs one code.
+
+### Why it works
+
+The VIC-II reads each cell's glyph from the charset on every raster
+line it draws, so a changed byte in a private glyph shows the next time
+the beam draws that row of the cell. Shared glyphs are never written, so the cells
+that still use them are untouched. A cell's screen code is the only
+link between the cell and its private glyph, which is why freeing only
+needs the cell's code rewritten.
+
+An edit changes a glyph that is on screen. If the beam is inside that
+cell's rows at that moment, one frame shows the old and new byte on
+different lines. A dig or brick step changes one row of one or two
+cells, so at most that row of a cell is late by a frame. The in-place
+rewrite in `charset_animation` has the same effect over whole glyphs.
+
+### Variations
+
+- **Hires.** 8 pixels a byte, one colour a cell from colour RAM. The
+  probe mask comes from `x & 7`. Pixels are twice as fine and the cells
+  hold one colour, so terrain texture has to come from the pattern.
+- **Different textures.** Every shared texture is one more code and one
+  more comparison in step 4. A private glyph only returns to the pool
+  when it equals one of them exactly.
+- **Two charsets.** A raster interrupt that changes `$D018` part way
+  down the screen gives the lower part its own 256 codes. Not built
+  here.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with the recipe's CIA timers (Oscar64
+`-O2`). A probe costs 52 cycles: 160 probes along one pixel row take
+10,912 cycles and the same loop without the probe 2,580, with the
+display off. The Cost line is one dig step's terrain work, the
+technique called once: 3 pixel edits on untouched floor. The dearest
+of 24 such steps took 1,450 cycles on both models, timer calls
+included; half the steps span two cells and allocate twice.
+
+A frame's terrain cost is edits times about 452. The 72 edits of 24 dig
+steps at once, 36 of which allocate, took 32,037 cycles on PAL and
+32,555 on NTSC, about 452 an edit and 1,356 a dig step. That is more
+than a PAL frame (19,656 cycles) and nearly two NTSC frames (17,095).
+A typical frame of the recipe edits nothing or one or two cells.
+Hand-written assembly with a table of glyph addresses would be cheaper;
+not measured here.
+
+### Recipes
+
+- `recipes/oscar64/destructible-terrain.md` — a 40 by 16 cell multicolour level; 24 creatures dig, build and block; terrain glyph bytes and creature states checked against a Python model after 360 ticks; worst frames timed on both models

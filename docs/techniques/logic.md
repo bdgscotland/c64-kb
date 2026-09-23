@@ -1922,3 +1922,326 @@ from the cave; nothing explodes.
   right; moved or grown elements take a delay state for the rest of the
   frame; the states reset at the end of the frame. Forum report, not
   measured here.
+
+## game_tree_search — Board-game AI: move generation, evaluation and alpha-beta search within a frame budget
+
+**Complexity:** high
+**Region:** both
+**Cost:** cycles_per_frame=9316, bytes_code=704, bytes_data=199
+**Cost basis:** derived-listing
+
+**Why.** A board game needs an opponent that looks ahead. The standard
+method is to generate every legal move, play each on a copy of the
+position, look at the replies to some depth, and score the positions at
+the bottom with a static evaluation. On a 1 MHz 6502 the question is how
+many positions a second it can visit, and how to spend a fixed number of
+frames on one move without freezing the game.
+
+**How.** Five parts.
+
+- **Board.** Use a byte per square with a border of sentinel bytes, so a
+  step off the board reads a value that matches no piece and needs no
+  bounds test. The recipe's Connect Four board is 8x8 bytes for a 7x6
+  game: a sentinel row above and below and a sentinel column, and the
+  four line directions are +1, +8, +9 and +7. Chess programs use the
+  0x88 layout: the square is a byte with the rank in the high nibble and
+  the file in the low one, so `AND #$88` is non-zero exactly when a step
+  has left the board. Microchess (below) tests its moves that way.
+  Bitboards, one bit per square, suit 64-bit CPUs; on the 6502 every
+  shift or mask of a 42- or 64-bit board is six or eight byte operations
+  (arithmetic), so a byte array is the usual choice. The bitboard cost
+  was not measured here.
+- **Move generation.** List the legal moves in the order they will be
+  tried. For Connect Four a move is a column and legality is one compare
+  with the column's height. Chess needs a table of step offsets per
+  piece and a loop along each direction.
+- **Make and unmake.** Change the board in place and undo it on the way
+  back, rather than copying it per ply. Keep anything the evaluation
+  needs up to date in the same two routines: the recipe keeps a sum of
+  per-square weights, so a leaf costs a load and a negate.
+- **Evaluation.** A static score from the view of one side: material,
+  mobility, square weights. The recipe's weight is the number of
+  four-in-a-row windows through a cell, 3 in a corner to 13 in the
+  middle. A win scores a constant less the ply, so a quicker win scores
+  higher and a slower loss scores higher than a quick one.
+- **Search.** Negamax with alpha-beta: each ply returns the best value
+  for the side to move, a child's value is negated on the way up, and a
+  window (alpha, beta) is passed down negated and swapped. When a move
+  scores at least beta, the ply stops: the opponent above already has a
+  better line and will not allow this one.
+
+**Move ordering.** Alpha-beta cuts most when the best move is tried
+first. Counted with the recipe's Python model from the empty board: with
+columns tried centre first, a depth-5 search visits 755 positions and a
+depth-7 search 6,062; tried left to right, 4,072 and 56,996. Without
+pruning a depth-5 search visits 7 + 7^2 + ... + 7^5 = 19,607 (arithmetic;
+no game ends that early). A good static order (centre first, captures
+first in chess) is worth more than a faster evaluation.
+
+**Iterative deepening under a frame budget.** Search to depth 1, then 2,
+then 3, keeping the best move of the last depth that finished. Before
+each node, compare a frame counter with the budget; when it runs out,
+abandon the unfinished depth and play the kept move. The early depths
+are cheap: from the empty board, depths 1 to 5 together visit 7 + 23 +
+75 + 172 + 755 = 1,032 positions against 755 for depth 5 alone, 37 %
+more (model counts, arithmetic). Trying the previous depth's best move
+first at the root cuts that overhead; not measured here. Budget in
+frames on the model the game runs on: an NTSC frame is 17,095 cycles and
+a PAL frame 19,656 (arithmetic). At the recipe's blocking rates, 901
+cycles a node on PAL and 912 on NTSC, that is 21.8 and 18.7 nodes a
+frame: the same frame budget buys 14 % fewer nodes on NTSC (arithmetic).
+
+**Transposition table (optional).** Different move orders reach the same
+position. A hash of the position (Zobrist: an XOR of one random word per
+piece and square, updated in make and unmake) indexes a table of a few
+KB holding each stored position's depth, value and best move; a hit
+saves the subtree, and the stored best move is a good first move to try.
+It pays most at depth; the recipe does not use one, and its gain on a
+C64 was not measured here.
+
+**Recursion and the stack.** Written as a recursive function, the search
+needs a frame per ply. The 6502's hardware stack is 256 bytes, so an
+assembly search keeps its per-ply state in tables indexed by ply and uses
+the stack only for return addresses. Oscar64 allocates locals statically
+from its call graph and cannot do that for a function that calls itself
+(`toolchains/oscar64-reference.md`, "Avoid recursion and function
+pointers"); it gives such a function a frame on its software stack.
+Measured in the recipe, the recursive build took an 18-byte frame per ply
+and ran about 9 % slower (981 cycles a node against 901 on PAL). The
+iterative form has a second use: its state is all in the per-ply tables,
+so it can stop after any node and go on in the next frame.
+
+**Time slicing.** Give the search a node budget per frame and keep the
+game running around it. The recipe's `search_step(n)` makes at most `n`
+nodes; when the budget runs out it stores the ply and the side to move
+and returns, and the per-ply records (window, best value, next move to
+try, move made) hold the rest. The root's state is in the same static
+records, so nothing lives on a stack between frames. The budget is
+tested before each node, so the returns up the plies after a slice's
+last node run in the next slice. Measured in the recipe on PAL and NTSC:
+at four nodes a frame the sliced game made the same 42 moves with the
+same node counts as the blocking search and the Python model, and the
+main loop ran in every one of its 4,880 frames (no frame missed) while
+it advanced a spinner and a frame counter. Size the budget from the
+worst single node, not the average: the worst `search_step(1)` call was
+2,301 cycles on PAL and 2,329 on NTSC, about two and a half times the
+average node. The call includes the returns up the plies before its
+node and the call itself, and can include badlines and the frame
+interrupt; the parts were not separated here. The cost of slicing is time: the recipe's slowest move takes
+591 frames, about 11.8 s on PAL, against 103 frames blocking.
+
+**Scores are signed and span the whole range.** Alpha, beta and the
+values run from -INF to +INF. A 16-bit compare of `v > best` done with a
+subtract and `BMI` gives the wrong order when the difference overflows
+(30,000 - (-30,000) does); use the overflow-corrected compare in
+`compare_16bit_and_signed`. Choose INF at most 32,767 so that -INF can
+be negated.
+
+**Microchess.** Peter Jennings's Microchess (1976, KIM-1) fitted the
+program and its data in 924 bytes of the KIM-1's 1,024 bytes of RAM, by
+his account (benlo.com). From the source on 6502.org: the position is a
+32-byte list of piece squares, one byte per piece, not a board of
+squares; a square byte holds rank and file in nibbles and `AND #$88`
+rejects steps off the board; each move's from-square, piece, captured
+piece and move index are pushed on a second stack, exchanged with the
+hardware stack by `TSX`/`TXS`, so the move can be unmade; and a
+`REVERSE` routine flips the position so one generator serves both sides.
+Jennings describes the search as a state machine that allowed recursion
+and a move stack that retraced moves to the starting position. A full
+chess engine is larger than this technique's recipe; the parts above
+(0x88, piece list, make and unmake from a stack) are the chess-specific
+pieces.
+
+**Cycle budget.** Measured in the recipe (Oscar64 1.32.271 -O2, VICE
+x64sc 3.10, display on, a one-IRQ-a-frame counter running). Blocking:
+901 cycles per node on PAL and 912 on NTSC, averaged over 19,292 nodes,
+about 1,090 and 1,120 nodes a second. A node there is make, a
+four-direction win test, the leaf or descent step and unmake, for a
+seven-column game. The slowest of the 42 depth-5 searches took 2,019,814
+cycles on PAL (103 frames) and 2,043,608 on NTSC (120 frames), about two
+seconds. The blocking search is multi-frame: its cost must not be summed
+into a frame budget. The Cost line's `cycles_per_frame` is the sliced
+form at four nodes a frame: four times the worst single call, 4 x 2,329
+= 9,316 cycles (the NTSC figure, the larger), half a PAL frame. It is a
+bound; the worst four-node slice measured was 5,024 cycles on PAL and
+5,325 on NTSC, and a typical slice is about 4 x 900 (arithmetic from
+the average). A chess node, with a
+longer move generator and evaluation, costs more; not measured here. The
+bytes are the search, make, unmake, win test and leaf routines (704) and
+the board, weights, move order, per-ply tables at depth 5 and the saved
+ply and side (199), from the Oscar64 map.
+
+### Recipes
+
+- `recipes/oscar64/game-tree-search.md` — Connect Four played by the machine against itself at depth 5, 42 moves to a drawn full board, three times: blocking, one node a call and sliced at four nodes a frame with a per-frame counter running and no frame missed; every column and node count of each game checked against a Python model of the same search; nodes per second, cycles per node, frames per move, the worst single call and the worst slice printed on PAL and NTSC; `-dRECURSIVE=1` builds the recursive form
+
+### Sources
+
+- https://benlo.com/microchess/ (Peter Jennings's Microchess history):
+  shipped for the KIM-1 in 1976; the program and data in 924 bytes, the
+  KIM-1 with 1,024 bytes of RAM; a state machine design allowing
+  recursion; a move stack to retrace moves; an evaluation after each
+  generated move.
+- https://6502.org/source/games/uchess/uchess.htm (Microchess source,
+  posted with Jennings's permission; Daryl Rictor's 2002 serial-port
+  adaptation): the 32-byte piece list `BOARD` at $50, the `AND #$88`
+  off-board test in `CMOVE`, the second stack `SP2` swapped with the
+  hardware stack in `MOVE` and `UMOVE`, and the `REVERSE` routine. Read
+  for facts only; no code is reproduced here.
+
+---
+
+## creature_state_machine — Many small creatures, each a state machine on pixel probes: walk, climb, turn, fall, dig, build, block
+
+**Complexity:** medium
+**Region:** both
+**Requires:** destructible_char_terrain, char_bullets
+**Cost:** cycles_per_frame=14465
+**Cost basis:** measured-vice
+
+### Why
+
+A Lemmings-style game has dozens of identical creatures that walk on
+their own and change the landscape when told to. Each one is a few
+bytes of state and a handful of rules, but the rules must agree with
+the terrain to the pixel: a creature that sinks one pixel into a slope
+or walks through a thin wall looks broken. The form here runs one small
+state machine per creature against pixel probes of the character
+terrain in `destructible_char_terrain`, and draws the creatures into
+the characters as well.
+
+### How
+
+Keep per creature: x and y of its feet in pixels, a direction of +1 or
+-1, a state, a fall counter, a step timer and a brick count. Once per
+tick, update every creature in slot order. The recipe's rules, with
+`solid(x, y)` the terrain probe (outside the level counts as solid):
+
+| State | Rule each tick |
+|---|---|
+| walk | `nx = x + dir`. Off the level, or onto a blocker's column within 3 pixels of its height: turn. If `solid(nx, y)`: climb 1 if `(nx, y-1)` is clear, else 2 if `(nx, y-2)` is clear, else turn. Move. If `(x, y+1)` is clear, start falling with the counter at 0 |
+| fall | If `(x, y+1)` is solid, land: dead if the counter is over 32, else walk. At the level's bottom, dead. Otherwise move down 1 and count |
+| dig | Every 2nd tick. If none of `(x-1..x+1, y+1)` is solid, fall. Else clear those 3 pixels and move down 1 |
+| build | Every 4th tick. After 12 bricks, or if `(x+dir, y-1)` is solid, walk. Else set `(x+dir, y)` and `(x+2·dir, y)` and move to `(x+dir, y-1)` |
+| block | Nothing. Walkers turn at its column |
+| dead | Nothing; not drawn |
+
+Roles (dig, build, block) are given only to a walker; an order to a
+creature in any other state is ignored and counted. Blockers go in a
+short list when they are given the role, so a walker checks a few
+entries, not every creature.
+
+**Drawing.** Creatures are drawn after all updates and removed before
+the next tick's updates, so the probes never see them. The recipe draws
+each one into the characters the `char_bullets` way: save the code of
+each cell the 4-pixel body covers (one or two), copy that glyph into a
+code the creature owns, OR the body in, write the creature's code, and
+restore in reverse order. In multicolour, OR-ing pair 11 gives the
+body the colour-RAM colour over any terrain. Hardware sprites do not
+suit this: creatures bunch on the same raster lines (sixteen stand on
+one ledge at the end of the recipe), and eight sprites a line is the
+limit even with a multiplexer. The cost is two codes per creature from
+the charset's 256.
+
+### Why it works
+
+Every rule reads the terrain through the same probe the renderer's
+glyphs feed, so a creature stands exactly on the pixels the player
+sees. Updating in slot order with the terrain edited in place makes the
+result depend only on that order, so a model in another language can
+reproduce it: the recipe's Python model and the C agree on every
+terrain pixel, position and state after 360 ticks, and on the terrain
+after 24 dig steps with the pool cut to 32 codes, where 23 edits are
+refused.
+
+The fall counter makes fatal height a rule of the creature, not of the
+level. The climb test looks at one or two pixels above the obstacle,
+which is what lets a creature walk up a builder's staircase (one pixel
+a step) and turn at an 8-pixel wall.
+
+### Variations
+
+- **Blockers in the terrain.** Write an invisible solid mark into a
+  collision copy instead of keeping a list; walkers then need no
+  blocker check. That needs a second map, since the glyphs are the
+  map here. Not built here.
+- **Fewer updates per frame.** Stagger the step timers, update in
+  groups, or run the logic at a lower rate than the display
+  (`logic_rate_decoupling`), when the count does not fit one frame.
+  The scheme is under "Many creatures" below.
+- **More states.** Climbing walls, floating down and bashing sideways
+  are more rows in the same table, each with its own probes.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with the recipe's CIA timers (Oscar64
+`-O2`). Worst single creature, over the 360-tick scenario and the
+worst-frame subjects:
+
+| Work per creature | PAL | NTSC |
+|---|---|---|
+| fall | 241 | 241 |
+| walk | 562 | 648 |
+| dig step (3 terrain edits included) | 1,403 | 1,532 |
+| brick (2 terrain edits included) | 1,577 | 1,706 |
+| draw, two cells (a 24-creature draw / 24) | about 796 | about 805 |
+| restore (1,633 / 24) | about 68 | about 68 |
+
+A probe is 52 cycles. Of a dig step, about 1,356 on NTSC is terrain
+work (`destructible_char_terrain`, 32,555 for 72 edits / 24); the
+walk, fall and brick figures include the timer reads around each
+update.
+
+The Cost line is the creatures' own logic in its worst frame, without
+terrain edits and without the draw: all 24 walking into a 2-pixel wall
+and climbing it (four probes and a blocker check each), 14,465 cycles
+on NTSC and 14,209 on PAL. Terrain edits belong to
+`destructible_char_terrain`'s Cost line; a plan adds them per edit.
+
+The draw and restore are the `char_bullets`-style render the recipe
+uses, not this technique: 19,319 and 1,633 cycles for 24 creatures on
+NTSC (19,104 and 1,633 on PAL). A whole tick with all 24 on a dig
+step, restore, updates and draw, took 57,606 on NTSC and 57,299 on
+PAL; all 24 laying a brick, 56,701 and 56,357. The scenario's slowest
+tick was 27,802 and 27,280.
+
+**How many fit a frame** (arithmetic from these figures, rung 3). The
+CIA figures already include the badlines, so the budget is the whole
+frame: 19,656 cycles on PAL, 17,095 on NTSC. A walker costs update,
+draw and restore: 1,426 on PAL and 1,521 on NTSC, so about 13 and 11
+fit. A digger costs a twenty-fourth of the dig tick, about 2,390 and
+2,400, so about 8 and 7. With 24 creatures this C cannot run a whole
+tick in one frame on either model.
+
+**Many creatures** (Lemmings scale). The recipe's pattern, restore all,
+update all, draw all, does not scale. Redrawing all 24 costs 20,952
+cycles on NTSC (19,319 + 1,633), more than a frame on its own. And
+between the restore and the draw every creature is off the screen for
+the whole update, about 36,500 cycles in the dig tick, so they flicker.
+This is `full_field_redraw_exceeds_vblank` in another form. What to do
+instead, none of it measured here:
+
+- Offset each creature's step timer by its slot, so only a fraction
+  act on a given tick: diggers start with `ct = slot & 1`, builders
+  with `ct = slot & 3`. Then half the diggers and a quarter of the
+  builders edit terrain on any one tick.
+- Update in groups across frames. For 24 diggers that is at least 4
+  groups on NTSC (57,606 / 4 = 14,402) and 3 on PAL (57,299 / 3 =
+  19,100, which leaves little).
+- Make the probe look through creature glyphs: a screen code from
+  `CR_BASE` up to the pool is a creature's, so read `under[]` for that
+  cell instead, again if that is another creature's code. Then no
+  restore-all is needed before the updates, and only a creature that
+  moved is restored and drawn again.
+- Or draw into a second screen and flip `$D018` when it is complete
+  (`screen_double_buffer_d018`, the pitfall's listed mitigation). The
+  creatures never leave the visible screen. It costs 1 KB, a copy or
+  redraw of the changed cells, and a second set of 48 creature codes,
+  since the draw rewrites the glyphs of the codes the shown screen
+  uses; with the recipe's budget those come out of the pool.
+
+Hand-written assembly would also be cheaper; not measured here.
+
+### Recipes
+
+- `recipes/oscar64/destructible-terrain.md` — 24 creatures released from a hatch, a blocker, two diggers and a builder given their roles at fixed ticks, one fatal-fall rule; terrain and creature states checked against a Python model after 360 ticks; worst frames timed on both models

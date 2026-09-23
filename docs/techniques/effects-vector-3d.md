@@ -524,3 +524,156 @@ Per-scanline IRQ chain (one IRQ per raster line, 200 active lines):
 - $D018 does not need writing on every line. With only two bitmap bases available (bit 3), the register only needs writing on the lines where the source actually changes, which a per-row layout limits to at most 25 per frame — and if $D018 is being used only as the double-buffer flip, it is one write per frame. Writing $D018 in 25 rather than 200 of the per-line IRQs saves approximately 5 × 175 = 875 cycles. Worth doing. (An earlier version of this line justified the saving by saying $D018 "takes effect at character row boundaries (every 8 lines)"; that timing holds for the video-matrix bits 7-4, not for the bitmap-base bit, which takes effect on the line it is written.)
 
 All cycle counts above are approximate and will vary with handler implementation, table layout, and whether badlines are handled separately.
+
+---
+
+## wireframe_pipeline — Rotated, projected, culled and clipped wireframe objects in a hires bitmap
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D018, DD00
+**Requires:** standard_bitmap, table_multiply_8x8
+
+### Why
+
+A space trader, a flight game or a tank game draws solid-looking objects
+as edges only. Lines are cheap on a 1 MHz CPU where filled faces are
+not, and a convex object drawn with its hidden edges removed reads as
+solid. This is the pipeline Elite uses. Each stage has a standard
+6502-sized form, and the stages have to agree on number ranges, or a
+coordinate wraps and a line lands across the screen.
+
+### How
+
+Per object, per update:
+
+1. **Object model.** Signed-byte vertices, faces listed by their vertex
+   indices in a consistent winding, and edges that name their two
+   vertices and the two faces they separate. The object must be convex
+   for culling alone to remove every hidden edge.
+2. **Rotation.** Build a 3x3 fixed-point matrix from the object's angles
+   with a sine table scaled to 64 and quarter-square multiplies
+   (`table_multiply_8x8`, `techniques/maths.md`). Multiply each vertex
+   by it: nine products, summed in 16 bits and shifted right 6.
+3. **Translation and projection.** Add the object's position. Screen x
+   is `cx + x * d / z`. The division is a reciprocal table indexed by z
+   and one more multiply (`table_generation`,
+   `techniques/cpu-cycle-tricks.md`), or the divide in
+   `division_8_16bit` (`techniques/maths.md`).
+4. **Back-face culling.** A face is visible when it faces the camera.
+   Either rotate the face normals and test the sign of the normal dotted
+   with the line of sight (Elite's way), or test the winding of the
+   projected face (`dx1 * dy2 - dy1 * dx2`). The winding test needs no
+   normals and is exact under perspective, up to rounding. An edge is
+   visible when either of its faces is, and is drawn once.
+5. **Clipping.** Give each endpoint an outcode (left, right, above,
+   below). If both endpoints share a bit, drop the line. If both are
+   inside, draw it plainly. Otherwise, either cut the line at the window
+   edge (Cohen-Sutherland, one divide per crossing) or draw it with a
+   plotter that skips pixels outside the window.
+6. **Drawing.** Bresenham along the longer axis, plotting with EOR into
+   the hires bitmap through row and column tables (`standard_bitmap`,
+   `techniques/bitmap-modes.md`).
+7. **Erasing.** Either keep each object's drawn endpoints in a line heap
+   and draw them again with EOR in the next update, or double-buffer:
+   two bitmaps in two VIC banks, clear and draw the hidden one, and
+   switch banks with `$DD00` (and `$D018`) at the frame boundary. The
+   two bitmaps need two banks because one 16 KB bank cannot hold two
+   8,000-byte bitmaps and a matrix (`solid_vector_3d` above).
+
+### Why it works
+
+EOR is its own inverse, so drawing the same line twice leaves the bitmap
+as it was, even where the line crosses another object's lines.
+Erase-by-redraw therefore costs one line draw per old line and nothing
+per empty pixel. Clearing a bitmap costs the whole area: a 4,000-byte
+half-screen at 5 cycles a byte (an unrolled `STA abs,X`, instruction
+table) is 20,000 cycles, whether the objects are small or large. The
+price of redraw is flicker: a line is off the screen between its erase
+and its redraw. Double buffering hides that but pays for the clear and
+for a second bank. Where lines meet, EOR clears every pixel covered an
+even number of times, so two-edge vertices show a missing pixel.
+
+Culling edges through faces keeps the line count low: a cube shows at
+most three faces and nine of its twelve edges. Culling also removes
+every hidden edge of a convex object, so no depth sort is needed.
+
+A per-pixel clip gives the same inside pixels as a cut line, because
+Bresenham's pixels do not depend on where the line is cut. It costs
+time on the outside part of the line, and it needs every coordinate to
+fit the plotter's range. A cut line costs a divide per crossing but
+handles coordinates far off screen.
+
+### Variations
+
+**Elite (C64).** Each ship has a line heap: one size byte, then four
+bytes (X1, Y1, X2, Y2) per visible line; a Sidewinder never shows more
+than 15 edges, so 61 bytes. Each frame, Elite redraws the old heap with
+EOR to erase it, works out face visibility from the dot product of the
+face normal and the line of sight, derives the visible vertices and
+edges from the faces, projects, clips (routines LL145 and LL118), fills
+the heap and draws it. The C64 screen is split by raster interrupts at
+lines 51 and 51 + 143 = 194: a black-and-white standard bitmap space
+view 144 pixels tall above a multicolour bitmap dashboard. Hardware
+sprites draw the laser sights. (Mark Moxon's annotated source; not
+measured here.)
+
+**Double-buffered.** Two VIC banks, each with its own bitmap and matrix,
+clear-and-draw instead of erase, and a `$DD00` write at the frame
+boundary. There is no flicker and no EOR artefact, and plotting can use
+OR. A `$DD00` bank switch also moves every sprite pointer and the
+character set with the bank (`pitfalls/banking.md`,
+`vic_bank_visibility_collision`).
+
+**Faster plotting.** The recipe's plotter looks up the row address on
+every y step. An incremental plotter moves the byte address by 8 and
+rotates the bit mask as x steps, and adds 1 (or 313 from the last line
+of a cell row to the first of the next) as y steps. It is faster, and
+was not measured here.
+
+### Cycle budget
+
+Measured in VICE x64sc with the display on, badlines included, for
+`recipes/kickassembler/wireframe-ships.md`: three objects (8, 5 and 7
+vertices; 12, 8 and 12 edges), each 37 to 70 pixels across on screen
+(model), in a 160 x 120 window.
+
+- Worst update over 48: 155,708 cycles PAL, 157,212 NTSC; the frozen
+  update 131,620 PAL. That is 7.9 PAL frames, about 6 updates a second.
+- Line call (erase or draw): 2,350 PAL, 2,370 NTSC on average, for 32.5
+  pixels a line in the model, so about 72 cycles a pixel including
+  set-up. Line calls average 97,500 PAL cycles an update: 74% of the
+  last update, 63% of the worst.
+- Matrix build: 523 PAL, 522 NTSC.
+- Transform and project: 1,179 PAL, 1,228 NTSC per vertex (nine signed
+  multiplies at 56 to 60 cycles each with the call, by the instruction
+  table, then two projection multiplies, sums and shifts).
+- The ship (7 vertices, 7 faces, 12 edges): 47,467 PAL, 48,152 NTSC per
+  update.
+
+No Cost line: one update of this recipe takes 7.9 PAL frames and is
+not spread across frames, so no per-frame figure was measured. A game
+that spreads an update across frames states its own worst frame. The
+two routines to speed up first are the plotter and the per-vertex
+multiplies. The recipe's plotter is correct and fully measured; it is
+not a fast plotter (`recipes/kickassembler/wireframe-ships.md`, "Why
+the line drawer is slow").
+
+### Recipes
+
+- `recipes/kickassembler/wireframe-ships.md`: a cube, a pyramid and a
+  ship hull in a hires window, winding cull, outcode reject and
+  per-pixel clip, EOR erase-by-redraw, checked pixel-exact against a
+  Python model on PAL and NTSC.
+
+### Sources
+
+- Mark Moxon, "Drawing ships" (line heap, EOR erase, frame order):
+  https://elite.bbcelite.com/deep_dives/drawing_ships.html
+- Mark Moxon, "Back-face culling" (normal dotted with line of sight):
+  https://elite.bbcelite.com/deep_dives/back-face_culling.html
+- Mark Moxon, "Line clipping" (LL145, LL118):
+  https://elite.bbcelite.com/deep_dives/line-clipping.html
+- Mark Moxon, "The split-screen mode in the Commodore 64 version"
+  (lines 51 and 194, 144-pixel space view, sprites for laser sights):
+  https://elite.bbcelite.com/deep_dives/the_split-screen_mode_commodore_64.html
