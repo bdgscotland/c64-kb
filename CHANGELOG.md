@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 724, schema 23, tools 1.27.0.
+Data 725, schema 23, tools 1.27.0.
+
+**Candidate list, Tier A, batch 1: four things every agent reaches for
+and the KB did not have.** `petscii_screen_code_conversion` (text page):
+the PETSCII to screen-code rule measured over all 224 printable codes by
+writing each with CHROUT and reading screen RAM back, the reverse-video
+bit, the shifted set through `$D018`, the colour RAM consequence, and where
+in the KERNAL the fold lives, with the Oscar64 recipe `petscii-screen-codes`
+proving the rule both ways on screen; a new pitfall
+`petscii_written_to_screen_ram` for the letters-come-out-as-graphics
+symptom. `compare_16bit_and_signed` (maths page): unsigned 16-bit compare
+high byte first, the signed idiom with the overflow flag and why a bare
+BMI fails across the boundary, ranged compares, and what Oscar64 emits,
+with the KickAssembler recipe `compare-16bit-signed` sweeping the boundary
+pairs and counting the bad form's failures (16,384 of them); a new pitfall
+`signed_compare_bmi_overflow`. `division_8_16bit` (maths page):
+shift-and-subtract division in three widths, reciprocal multiply with its
+error bound, divide by ten against the subtract-powers route, with the
+Oscar64 recipe `divide-check` checking quotient and remainder over the
+full 8-bit range and timing every route. `sine_table_generation` (CPU
+page): quarter-wave, second-difference and parabola generation with the
+worst and mean error of each against a host table and the cycles to build
+256 entries, with the KickAssembler recipe `sine-table-runtime` driving a
+visible sprite sine from the table it just built. Every new technique is
+anchored on the pitfalls its code meets.
 
 **The recipe lookup carries the listing.** `c64_recipe_lookup` and the
 CLI's `recipe-lookup` returned a recipe's Build, Synopsis and Expected

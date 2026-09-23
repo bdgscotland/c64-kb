@@ -204,6 +204,193 @@ mismatches.
   program at the end of this page; `recipes/oscar64/fixed-point-jump.md`
   does not use a multiply.
 
+## division_8_16bit — Shift-and-subtract division, reciprocals and divide by ten
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=791
+**Cost basis:** measured-vice
+
+### Why
+
+The 6510 has no divide. A game needs one for a tile coordinate from a
+pixel position when the tile is not a power of two, for an average, a
+percentage, a speed from a distance and a time, and for splitting a
+number into decimal digits. A binary shift-and-subtract loop does any
+of these in a few hundred cycles; a divisor that is known at assembly
+time can be turned into a multiply or a table and costs a tenth of
+that. The figures here were measured with CIA1 timer A in
+`recipes/oscar64/divide-check.md` (rung 1, VICE x64sc 3.10), with the
+operands in absolute memory; the zero-page and constant-divisor
+figures are instruction-table arithmetic from those loops (rung 3).
+
+### How
+
+Long division in binary. Clear the remainder. Repeat once per dividend
+bit: shift the dividend left, shifting its top bit into the bottom of
+the remainder; if the remainder is now at least the divisor, subtract
+the divisor from it and set the bit of the dividend that the shift
+vacated. When the passes are done the dividend holds the quotient and
+the remainder is the remainder. The loop for a 16-bit dividend and an
+8-bit divisor, quotient in `dvd`, remainder in `rem`:
+
+```
+        lda #0
+        sta rem
+        ldx #16
+loop:   asl dvd
+        rol dvd+1
+        rol rem         ; ninth bit of the remainder lands in C
+        lda rem
+        bcs sub         ; a nine-bit remainder always exceeds the divisor
+        cmp dvs
+        bcc next        ; remainder < divisor: quotient bit stays 0
+sub:    sbc dvs         ; C is set on both paths, so sbc is exact
+        sta rem
+        inc dvd         ; the bit asl just vacated becomes 1
+next:   dex
+        bne loop
+```
+
+The 8/8 form drops `rol dvd+1` and runs eight passes. The 16/16 form
+keeps a two-byte remainder, catches its 17th bit with the same `bcs`
+after the second `rol`, compares high bytes first and falls through to
+the low bytes only when they are equal, and subtracts two bytes.
+
+The remainder is one bit wider than the divisor before the subtract:
+it was less than the divisor, and it has just been doubled plus one.
+That bit is the carry out of `rol rem`. Taking `bcs` straight to `sbc`
+handles it, because a remainder with that bit set is at least any
+divisor of the narrower width, and because `rol` left the carry set,
+which is the state `sbc` needs. A loop without the `bcs` is right for
+small divisors and wrong for every divisor of `$80` (8-bit) or `$8000`
+(16-bit) and above; the recipe's sweep puts about half its 16-bit
+divisors there.
+
+A divisor of zero is not trapped. Every compare succeeds, so the
+quotient comes out as all ones and the remainder as the dividend (its
+low byte in the 16/8 form; rung 3, from the loop; not run). Test for
+it before the call if the divisor can be zero.
+
+Signed operands: divide the absolute values, negate the quotient if
+the signs differed, and give the remainder the sign of the dividend.
+The tests and negations are about 30 cycles on top of the unsigned
+loop (rung 3, not measured here).
+
+### Division by a constant
+
+A divisor fixed at assembly time is a multiply by its reciprocal. Pick
+a shift `k` and the multiplier `m = ceil(2^k / d)`; then
+`q = (n * m) >> k` equals `n / d` for every `n` with `n * e < 2^k`,
+where `e = m * d - 2^k` is the rounding error of the reciprocal, which
+lies between 0 and `d - 1`. For ten, `m = 205` with `k = 11` has
+`e = 2`, so the quotient is exact for `n` up to 1023; Python over all
+of them agrees. `m = $CCCD` with `k = 19` has `e = 2` as well and is
+exact for every 16-bit `n`, but the product is 32 bits wide. `6554`
+with `k = 16` has `e = 4` and is exact only below 16,384: the first
+wrong value is 16,389. Get the remainder as `n - q * d`.
+
+For an 8-bit `n` the product `n * 205` is an 8x8 multiply, and
+`table_multiply_8x8` above delivers it in 52 cycles; three `lsr` of
+the high byte give the quotient, about 65 cycles with the loads
+(rung 3, not measured here). The multiply then needs its 2 KB of
+tables. A form with no multiply and no table does the same job in
+shifts and adds and was measured:
+
+```
+        lda n
+        lsr
+        sta q           ; n/2
+        lsr
+        clc
+        adc q           ; n/2 + n/4 = 0.75 n
+        sta q
+        lsr
+        lsr
+        lsr
+        lsr
+        clc
+        adc q           ; 0.75 n + 0.75 n / 16 = 0.797 n
+        lsr
+        lsr
+        lsr             ; 0.0996 n, equal to n/10 or one below it
+        sta q
+```
+
+Then `r = n - 10 * q` is 0 to 11 (Python over 0..255; the recipe
+checks every value), and one `cmp #10 / sbc #10 / inc q` fixes it.
+79 cycles for quotient and remainder, any `n`, measured. The 16-bit
+version of the same series adds a `q + q >> 8` term, leaves a
+remainder of 0 to 13, and needs one fix as well (rung 3, Python; not
+run on the machine).
+
+### Division by ten and the decimal print
+
+Splitting a 16-bit number into five digits by repeated 16/8 division
+by ten costs four calls of the loop above, 2,793 cycles in the recipe
+for 65,535 against 936 for the subtract-powers route that
+`decimal_print` (`techniques/text.md`) uses on the same value, three
+times as much. Moving the operands to zero page and writing the
+divisor as an immediate brings a subtracting pass down from 49 to 39
+cycles and a pass without a subtract from 36 to 30 (rung 3), which by
+the same proportion puts the four calls near 2,200, still more than
+double. The divide route gives the units digit first, which is what a
+right-to-left field wants; the subtract route gives the most
+significant digit first and is cheaper. A removed divide by ten should
+be replaced with subtract-powers or a table, not left out.
+
+### When a table wins
+
+An 8-bit dividend and a constant divisor is a 256-byte table, or two
+for quotient and remainder; the recipe's `div10_tab` reads both in 20
+cycles, measured, and the tables build in a counting loop at start
+with no divide. A tile column from a pixel X with 8-pixel tiles is a
+shift, not a divide, and with 12 or 20-pixel tiles it is this table.
+A variable 8-bit divisor cannot be a direct table (64 KB); the usual
+compromise is a 256-byte table of `256 / d` and a multiply by it,
+which is one less than the true quotient for some inputs and needs a
+correction step (rung 4, not measured here).
+
+### Cycle budget
+
+Measured, body only, operands in absolute memory:
+
+| Route | Cycles | Case |
+|---|---|---|
+| 8/8 loop | 351 | 255/1, a subtract on every pass |
+| 8/8 loop | 260 | 255/255, one subtract |
+| 16/8 loop | 791 | 65535/1, worst case |
+| 16/8 loop | 674 | 65535/10 |
+| 16/16 loop | 1,339 | 65535/1, worst case |
+| 16/16 loop | 715 | 65535/$8000 |
+| by 10, shift-add | 79 | any 8-bit value |
+| by 10, two tables | 20 | any 8-bit value |
+| five digits by four 16/8 divides | 2,793 | 65535 |
+| five digits by subtract-powers | 936 | 65535 |
+
+The loop figures are the instruction-table sums: a 16/8 pass with a
+subtract is 49 cycles with the operands absolute (`asl`, `rol`, `rol`
+and `inc` at 6, the loads, compare and stores at 4, the branches and
+`dex` at 2 or 3), 36 without one, and 8 cycles of setup with the
+remainder in absolute memory (7 in zero page); 65535/1 is
+`8 + 16 * 49 - 1`, and the 8/8 figures close the same way: 255/1 is
+`8 + 8 * 43 - 1` and 255/255 is `8 + 7 * 30 + 43 - 1`. In zero page the
+same pass is 41 and 31, so the range is 502 to 662 for 16/8 and 214 to
+294 for 8/8 (rung 3). An immediate divisor takes 1 off the compare and
+1 off the subtract in zero page, so a pass there is 30 without a
+subtract and 39 with one, or 36 when the `bcs` path was taken. The
+Cost line
+carries the measured 16/8 worst case; a routine called once a frame is
+about 4 per cent of a PAL frame in its slowest form (791 of 19,656).
+
+### Recipes
+
+- `recipes/oscar64/divide-check.md` — the three loops, the shift-add
+  and table divide by ten, checked over every 8-bit pair and a 16-bit
+  sweep against Oscar64's `/` and `%` and against Python, with the
+  cycle harness on screen.
+
 ## jump_arc_table — Gravity in 8.8 and a precomputed arc
 
 **Complexity:** low
@@ -660,3 +847,194 @@ The checksum fold in those pages is `chk = ((chk ^ value) * 5 + 1) &
 0xFFFF`, folded from state 1 round the whole cycle so the expected
 value does not depend on the live seed; it is not the rotate fold used
 by `fpcheck.c` above.
+
+## compare_16bit_and_signed — 16-bit, signed and ranged compares
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=20
+**Cost basis:** measured-vice
+
+### Why
+
+`CMP` compares one unsigned byte. A tile collision compares a 16-bit
+world coordinate against a boundary, a fixed-point mover compares a
+signed velocity against a limit, and a bounds check asks whether a
+value lies inside a range. Each needs a sequence of instructions and a
+particular flag read afterwards, and the obvious sequences are wrong
+at the edges: a bare `BMI` after a subtract gives the wrong answer for
+one pair in four. Every flag and cycle figure below was measured in
+VICE x64sc 3.10 by `recipes/kickassembler/compare-16bit-signed.md`,
+which prints the flags on the boundary pairs and checks every idiom
+over full sweeps against a Python model.
+
+### How
+
+**Unsigned 16-bit.** Compare the high bytes; if they differ they decide,
+otherwise compare the low bytes:
+
+```asm
+        lda a_hi
+        cmp b_hi
+        bne done          // high bytes differ: their flags are the answer
+        lda a_lo
+        cmp b_lo          // high bytes equal: the low bytes decide
+done:                     // C clear: a < b.  C set: a >= b.  Z set: a == b
+```
+
+After the first `CMP`, `C` set means `a_hi >= b_hi` and `Z` set means
+the high bytes are equal. `BNE` skips the low bytes when they are not.
+At `done`, `Z` can only be set by the low-byte `CMP` after the high
+bytes matched, so it means the whole words are equal. `$0100` against
+`$00FF` ends with `C` set and `Z` clear from the first `CMP` alone;
+`$00FF` against `$0100` ends with `N` set and `C` clear. For "`a > b`"
+test `C` set and `Z` clear; for "`a <= b`" swap the operands.
+
+**Signed 8-bit.** Subtract, then correct the sign when the subtract
+overflowed:
+
+```asm
+        lda a
+        sec
+        sbc b
+        bvc ok            // V clear: N is the sign of a - b
+        eor #$80          // V set: the sign wrapped, flip it back
+ok:                       // N set: a < b (signed).  N clear: a >= b
+```
+
+Measured flags on the boundary pairs (`N V Z C`, `.` for clear):
+
+| a | b | after `SBC` | after fix-up | idiom says | bare `BMI` says | truth |
+|---|---|---|---|---|---|---|
+| `$80` (-128) | `$7F` (127) | `. V . C` | `N V . C` | less | not less | less |
+| `$7F` (127) | `$80` (-128) | `N V . .` | `. V . .` | not less | less | not less |
+| `$00` | `$00` | `. . Z C` | `. . Z C` | not less | not less | not less |
+| `$FF` (-1) | `$00` | `N . . C` | `N . . C` | less | less | less |
+| `$00` | `$FF` (-1) | `. . . .` | `. . . .` | not less | not less | not less |
+| `$80` | `$80` | `. . Z C` | `. . Z C` | not less | not less | not less |
+| `$7F` | `$7F` | `. . Z C` | `. . Z C` | not less | not less | not less |
+| `$9C` (-100) | `$64` (100) | `. V . C` | `N V . C` | less | not less | less |
+
+`-128 - 127` is `-255`, which does not fit in a byte; the byte result is
+`$01`, `N` clear, and `V` set says so. `EOR #$80` makes it `$81` and
+`EOR` sets `N` from its result, so `N` is the true sign. The bare `BMI`
+is wrong on exactly the rows where `V` is set. Over all 65,536 pairs it
+disagrees with the corrected form on 16,384, one quarter (measured;
+the Python model gives the same count). A value that never crosses
+the overflow boundary hides the fault: two positions within 127 of
+each other compare correctly either way, and the bug appears the first
+time a velocity or an offset is large and of the other sign.
+
+**Signed 16-bit.** Set the borrow from the low bytes with `CMP`, then
+subtract the high bytes and apply the same fix-up:
+
+```asm
+        lda a_lo
+        cmp b_lo          // C = no borrow from the low bytes
+        lda a_hi
+        sbc b_hi
+        bvc ok
+        eor #$80
+ok:                       // N set: a < b (signed)
+```
+
+Measured on the boundary pairs: `$7FFF` against `$8000` ends `. V . .`
+with `N` clear (32,767 is not less than -32,768) where the unsigned
+form ends `N . . .` with `C` clear (as unsigned, `$7FFF` is less);
+`$8000` against `$7FFF` ends `N V . C`, less, where the unsigned form
+says not less; equal values end `. . Z C` in both forms; `$0000`
+against `$FFFF` ends `. . Z .`, not less, and shows that `Z` at the end
+of the signed form is the high byte's alone, not equality. Test equality
+with the unsigned form.
+
+**Ranged, unsigned 8-bit.** Is `x` in `[lo, lo + w)`:
+
+```asm
+        lda x
+        sec
+        sbc lo
+        cmp w             // C clear: inside.  C set: outside
+```
+
+`x - lo` modulo 256 is below `w` exactly when `lo <= x < lo + w`, as
+long as `lo + w` does not exceed 256: an `x` below `lo` wraps to at
+least `256 - lo`, which is at least `w`. One `BCC inside` acts on it.
+Measured over every `x` against every `lo` with `w = 32` (clamped near
+the top): matches the model. The two-compare form, `cmp lo / bcc out /
+cmp hi / bcs out`, needs no width and no wrap condition, and is the
+one to use when `hi` is what you hold.
+
+### Why it works
+
+`CMP` is a subtract that discards the result and does not touch `V`
+(measured: the flag column after `CMP` alone shows the `V` the previous
+instruction left, which is why the recipe clears it first). It sets `C`
+when no borrow was needed, that is when `A >= operand` unsigned, and `Z`
+when the two are equal; `N` after `CMP` is bit 7 of a discarded
+difference and means nothing about order. `SBC` keeps the result and
+does set `V`: the two's complement sign of `a - b` is the order only
+when the difference fits in seven bits plus sign, and `V` is the
+report that it did not. Flipping bit 7 when `V` is set restores the
+sign because overflow in either direction flips it exactly once.
+
+### The C compiler's view
+
+Oscar64 (`-O2`, read from its `.asm` listing; the four functions were
+marked `__noinline` so they stayed separate, since `-O2` had inlined
+them into `main` and dropped three whose result was overwritten)
+emits the same high-byte-first `CMP / BNE / CMP` chain for `unsigned
+int` and turns the carry into a value with `LDA #0 / ROL / EOR #1`. For
+`int` it uses the chain too, but when the high bytes differ it does not
+use `SBC` and `V`: it exclusive-ors the two high bytes and tests the
+sign of that. If the signs agree (`BPL`) the unsigned carry is the
+answer; if they differ the negative one is the smaller, and the carry
+from the unsigned compare already says which is negative. For `signed
+char` it emits `CMP / BEQ / EOR b / BCC / BMI`, the same sign-agreement
+test. For `x >= lo && x < hi` on `unsigned char` it emits `CMP lo / BCS
+/ CMP hi` with the `LDA #0 / ROL / EOR #1` tail. A C `int` compare is
+correct at the boundary; what costs is the value it materialises when
+all you wanted was a branch, and `-O2` folds that away when the result
+feeds an `if`.
+
+### Variations
+
+- **Three-byte and 16.8 compares** extend the unsigned chain one byte
+  from the top, or carry the `CMP` borrow through two `SBC`s for the
+  signed form (rung 3, not measured here).
+- **Signed against a constant** needs no `SBC`: `lda v / cmp #lim` is
+  correct when both are in the same half, and `eor #$80` on both sides
+  (`lda v / eor #$80 / cmp #(lim ^ $80)`) turns any signed compare
+  into an unsigned one, the trick the Oscar64 `signed char` code is
+  a variant of.
+- **Equality only** is `lda a_lo / cmp b_lo / bne no / lda a_hi / cmp
+  b_hi / bne no`; the order of bytes does not matter for it.
+
+### Cycle budget
+
+One call, operands absolute, no result branch, net of an empty
+`JSR / RTS`, identical on PAL and NTSC:
+
+| Idiom | Cycles |
+|---|---|
+| unsigned 16-bit, high bytes differ | 11 |
+| unsigned 16-bit, high bytes equal | 18 |
+| signed 8-bit | 13 (no overflow) / 14 (overflow) |
+| signed 16-bit | 19 (no overflow) / 20 (overflow) |
+| range test | 14 |
+
+Each equals its instruction-table sum. The two signed rows depend on
+the path: when the subtract does not overflow the `BVC` is taken for 3
+and the `EOR` is skipped; when it does, the `BVC` falls through for 2
+and the `EOR #$80` costs 2 more. The recipe times the overflow pairs,
+so its screen shows 14 and 20. Add the branch that acts on the
+result: 2 not taken, 3 taken, 4 taken across a page (`pitfalls/cpu.md`,
+`branch_page_cross_extra_cycle`). Zero-page operands save one cycle per
+access (rung 3). The `**Cost:**` line carries the signed 16-bit figure,
+the worst of the five, as one call per frame.
+
+### Recipes
+
+- `recipes/kickassembler/compare-16bit-signed.md` — every idiom over
+  the boundary pairs with flags on screen, full sweeps against a
+  Python checksum, the bare `BMI` miss count, and the timings.

@@ -576,3 +576,76 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 - `docs/hardware/sid-reference.md` (`$D41B`) — the noise register drifts
   to all ones under TEST and never reads zero there, but a running noise
   voice can return `$00`
+
+## signed_compare_bmi_overflow — BMI after a subtract gives the wrong order when the difference overflows
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision
+**Mitigated by techniques:** compare_16bit_and_signed
+
+### Symptom
+
+A signed limit check works through every test and fails on one input:
+a sprite falling at a large negative velocity is treated as rising, an
+object far to the left of a boundary is placed to its right, a
+platformer's jump never terminates once the velocity passes a certain
+size. The failing cases are the pairs of opposite sign that are far
+apart, so a small test level never shows them.
+
+### Mechanism
+
+`SEC / SBC b` leaves `a - b` in `A` and `N` is bit 7 of that byte. Bit 7
+is the sign of the true difference only when the difference fits in
+-128 to 127. `-128 - 127` is `-255`; the byte is `$01`, `N` is clear,
+and `BMI` says -128 is not less than 127. `127 - (-128)` is `255`; the
+byte is `$FF`, `N` is set, and `BMI` says 127 is less than -128. The
+CPU reports each of these with `V` set. Measured in VICE x64sc 3.10 over
+all 65,536 signed byte pairs: the bare `BMI` disagrees with the
+corrected compare on 16,384, one pair in four, and every one of them
+has `V` set (`recipes/kickassembler/compare-16bit-signed.md`). The
+technique is on both metadata lines above because the fault is the
+naive form of its signed compare and its `BVC` / `EOR #$80` form cures
+it.
+
+### Fix
+
+After the `SBC`, branch on `V`: if it is clear `N` is right; if it is
+set flip bit 7 with `EOR #$80`, which also resets `N`. For 16-bit
+values do the `SBC` on the high byte with the borrow from a `CMP` of
+the low bytes. Where the test is against a constant in the same half
+of the range, or the values can be biased by `$80`, an unsigned `CMP`
+needs no fix-up at all.
+
+### Worked example
+
+```asm
+// BAD: right until a - b leaves -128..127
+        lda vel
+        sec
+        sbc limit
+        bmi below         // wrong for 16,384 of 65,536 pairs
+
+// FIXED: four more bytes, 3 to 4 more cycles
+        lda vel
+        sec
+        sbc limit
+        bvc !+
+        eor #$80
+!:      bmi below
+```
+
+Measured cost of the fixed 8-bit compare with absolute operands: 13 or
+14 cycles before the `BMI` (13 when the subtract did not overflow and
+the `BVC` is taken, 14 when it falls through into the `EOR`), against
+10 for the bad one (rung 1 for the first pair, rung 3 for the second).
+
+### Cross-references
+
+- Technique `compare_16bit_and_signed` in `docs/techniques/maths.md` —
+  the flag table on the boundary pairs, the 16-bit form, and what
+  Oscar64 emits instead
+- Technique `fixed_point_8_8` in `docs/techniques/maths.md` — signed
+  velocities in the high byte, the place this bites first
+- Recipe `docs/recipes/kickassembler/compare-16bit-signed.md` — the
+  sweep that counts the 16,384 misses

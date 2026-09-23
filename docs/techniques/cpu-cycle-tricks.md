@@ -804,6 +804,224 @@ Cycle figures are measured in VICE x64sc with the CIA harness above; the PAL fra
 - `recipes/oscar64/sprite-multiplex-8.md` (fills `sinx` / `siny` at start-up with the float `sin` loop; the compile-time or integer forms above are the cheaper replacement)
 - No recipe yet for the reciprocal table; `techniques/effects-vector-3d.md` describes the projection it serves.
 
+## sine_table_generation — Building a sine table on the machine, with no table from the assembler
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+**Requires:** table_generation
+**Cost:** bytes_code=221, bytes_data=256, zp_bytes=12
+**Cost basis:** derived-listing
+
+### Why
+
+`table_generation` above gives a sine table three ways, and all three
+come from the host: the assembler's `.fill`, the compiler's constant
+folder, or a file. A program that must make its table in RAM has two
+routes on that page, a float loop at 3,739,920 cycles or an integer
+unfold that still embeds 65 host bytes. This entry is the third route:
+compute the values on the 6510 with integer arithmetic, in a few frames,
+close enough to the host table that a scroller or a sprite chain cannot
+tell. It presupposes `table_generation`, whose scaling, symmetry and
+verification it reuses; the Cost line is the quarter-wave route in the
+recipe (its code from the symbol file, the 256-byte table it writes, and
+zero page $02 to $0C and $11; the parabola's own two words at $0D to $10
+are not counted), with no per-frame figure because the build runs
+once. All cycle and error figures below were measured in VICE x64sc 3.10
+by `recipes/kickassembler/sine-table-runtime.md`, which times each
+generator with the CIA2 cascade and checks every entry against the
+assembler's own `128 + round(127 * sin)`.
+
+### How
+
+**Quarter-wave symmetry, first.** A rounded sine of amplitude 127 about
+128 is even about entry 64 and odd about entry 128, so 65 computed
+values fix all 256: entry `128 - i` is entry `i`, and entries `128 + i`
+and `256 - i` are `256 - entry i`. Whatever method makes the quarter,
+generate 65 values and write four entries per value. The floor form
+`128 + 127.5 * sin` is not symmetric once floored (`table_generation`,
+Why it works), so a generated table targets the rounded scaling.
+
+**Second-difference recurrence.** A sampled sine obeys
+`y[n+1] = 2 y[n] - y[n-1] - d y[n]` with `d = 2 - 2 cos(2 pi / 256)`,
+about `0.000602`. Keep the value `y` and its first difference `v` in
+fixed point, and each step is `y += v` then `v -= d * y`. `d` is too
+small for an 8-bit multiplier, but it is a sum of powers of two:
+`2^-11 + 2^-14 + 2^-15 + 2^-16 + 2^-17` is `0.00060272`, 0.06 % over the
+true value (arithmetic), and each term is an arithmetic shift of the one
+before. The amplitude and the phase are set by the two starting values
+alone: `y[0] = 0` and `v[0] = A * sin(2 pi / 256)`, a single constant the
+assembler or compiler folds (`round(127 * sin(toRadians(360 / 256)) *
+65536)` is 204,258 in 8.16); `A * 2 pi / 256` is within 0.1 % of it
+(arithmetic) for a build that will not evaluate a sine at all.
+
+```asm
+// One step of the recurrence in 8.16 fixed point. y and v are 24-bit
+// signed in zero page; the byte for this entry is taken before the
+// state advances. d * y is five arithmetic shifts, each of the last.
+.const y = $02
+.const v = $05
+.const a = $08
+.const t = $0a
+.const o = $11
+
+* = $2000
+step:
+    lda y+1                      // 128 + round(y): carry = bit 15
+    asl
+    lda y+2
+    adc #0
+    eor #$80
+    sta o
+    clc                          // y += v
+    lda y
+    adc v
+    sta y
+    lda y+1
+    adc v+1
+    sta y+1
+    lda y+2
+    adc v+2
+    sta y+2
+    lda y+1                      // a = y >> 11: drop a byte, shift 3
+    sta a
+    lda y+2
+    sta a+1
+    jsr asr3
+    lda a                        // t = y >> 11
+    sta t
+    lda a+1
+    sta t+1
+    jsr asr3                     // + y >> 14
+    jsr addt
+    jsr asr1                     // + y >> 15
+    jsr addt
+    jsr asr1                     // + y >> 16
+    jsr addt
+    jsr asr1                     // + y >> 17
+    jsr addt
+    sec                          // v -= t, sign-extended
+    lda v
+    sbc t
+    sta v
+    lda v+1
+    sbc t+1
+    sta v+1
+    ldy #0
+    lda t+1
+    bpl !+
+    dey
+!:  sty t+1
+    lda v+2
+    sbc t+1
+    sta v+2
+    lda o
+    rts
+
+asr3:
+    jsr asr1
+    jsr asr1
+asr1:                            // 16-bit arithmetic shift right of a
+    lda a+1
+    cmp #$80
+    ror a+1
+    ror a
+    rts
+
+addt:                            // t += a
+    clc
+    lda t
+    adc a
+    sta t
+    lda t+1
+    adc a+1
+    sta t+1
+    rts
+```
+
+Run for 256 steps this gives a table within one unit of the host's
+everywhere, off by one in 21 entries, in 129,190 cycles (505 a step, 6.6
+PAL frames). Run for 65 steps and unfolded, it is off by one in 4
+entries and costs 38,067 cycles, 1.9 frames.
+
+**Parabola.** `p(i) = i * (128 - i)` for `i` 0 to 127 has a constant
+second difference, so a half wave is two 16-bit additions per entry:
+the first difference starts at 127 and falls by 2. Scale to amplitude
+127 with `p - p / 128`, add 16, shift right five times, and mirror the
+half. It costs 25,266 cycles for 256 entries, 99 an entry, and it is a
+parabola: 8 units from the sine at worst, near the zero crossings, and
+3.8 on average. Good enough for a bounce; visibly wrong under a scroller
+that reads it every pixel.
+
+**Amplitude and offset.** For a sprite Y or a scroll position the table
+wants `MID + AMP * sin`, not `128 + 127 * sin`. Three ways, cheapest
+first. Generate at the amplitude: the recurrence's `v[0]` is
+`AMP * sin(2 pi / 256)`, so a different `AMP` is a different constant,
+and the `eor #$80` that turns the signed byte into `128 + y` becomes
+`clc : adc #MID` for any offset (the recipe's sprites take the third
+way instead: read the 127 table, `lsr` for amplitude 63, `adc #100` for
+the offset, 6 cycles a read). Shift a signed table right for 63, 31, 15
+(`table_generation`, Variations). Or multiply on the way out with
+`table_multiply_8x8` from `maths.md` for an amplitude that is not a
+power of two. Whichever way, check the range: an offset plus amplitude
+past 255 wraps silently in a byte table.
+
+### Why it works
+
+The recurrence is exact for a sine when `d` is exact and the arithmetic
+is; its two errors are the approximation of `d`, which is a frequency
+error of 0.03 % and shows as a phase drift, and the floor in each
+arithmetic shift, which under-corrects `v` by a fraction of its last bit
+per step and grows into `y` as the square of the step count. Sixteen
+fraction bits keep both under a unit for one turn (arithmetic bound;
+measured, 21 entries off by one). The quarter-wave form is more accurate
+than the full turn because the drift has 64 steps to grow in rather
+than 256, and the unfold copies the good early values into the second
+half instead of computing it last.
+
+The drift is the reason not to run the recurrence as an oscillator
+across frames: on the host, the same integer algorithm reaches a worst
+error of 2 units in the fifth turn and 267 units summed over the eighth
+(Python, not run on the machine). Generate once and stop, or reset the
+state each turn.
+
+### Variations
+
+**Bhaskara's rational approximation.** `16 x (pi - x) / (5 pi^2 - 4 x
+(pi - x))` for `x` in 0 to pi is within one unit of a rounded 127-sine
+over the whole half wave (host arithmetic, not run on the machine). It
+needs a 16-bit divide per entry, which is why the recurrence is the
+usual choice on a 6510; it earns its place where a table must be exact
+from a cold start with no drift at all.
+
+**Cosine and phase.** Start the recurrence at `y[0] = A`, `v[0] = A *
+(cos(2 pi / 256) - 1)` for a cosine, or index the sine table with
+`(x + 64) & 255`, which a byte index does for free.
+
+**A second harmonic.** A second table at twice the frequency is the same
+recurrence with `d = 2 - 2 cos(4 pi / 256)`, about 0.002409, which is
+the shifts `2^-9 + 2^-12 + 2^-13 + 2^-14 + 2^-15` (arithmetic, not built
+here); adding the two tables entry by entry gives the breathing wave
+`scroll.md` describes under `sine_scroller`.
+
+### Cycle budget
+
+The build runs once, so it has no per-frame cost. Measured for 256
+entries in VICE x64sc with the CIA2 cascade, screen blanked: parabola
+25,266 cycles, quarter-wave recurrence 38,067, full-turn recurrence
+129,190. With the screen on, every badline in the build's span adds its
+40 to 43 stolen cycles; a 38,067-cycle build that starts at the top of
+the display crosses about two frames' worth of them. The float loop in
+`table_generation` is 3,739,920 for the same table, the host-table
+unfold 5,190.
+
+### Recipes
+
+- `recipes/kickassembler/sine-table-runtime.md` (all three generators
+  timed and checked on screen against the assembler's table, then eight
+  sprites on the quarter-wave table)
+
 ---
 
 ## speedcode_generation — Generating unrolled code into RAM at run time

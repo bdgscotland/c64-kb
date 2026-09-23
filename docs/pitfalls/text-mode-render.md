@@ -9,7 +9,9 @@ category: render
 Bugs that show up when implementing a moving-piece overlay on a
 text-mode playfield (Tetris-likes, Sokoban-likes, Boulder Dash, etc.).
 Two of them come from over-thinking the rendering layer; the third comes
-from under-budgeting it. An earlier version of this page opened by saying
+from under-budgeting it; the fourth is an encoding mistake rather than a
+rendering one, PETSCII bytes stored where the VIC expects screen codes.
+An earlier version of this page opened by saying
 a C64 text-mode field redraw is "cheap enough that the simplest 'rewrite
 everything every frame, overlay last' loop just works". It does not: the
 10×20 `render_field` listed below costs about 16,400 cycles (15,500 with
@@ -409,3 +411,94 @@ for per-frame text-mode work; measure or budget explicitly.
 - Related: `dirty_cell_skip_leaves_overlay_trail` (the bug class you
   hit if you try to fix this by adding a dirty-cell cache to
   `render_field` instead of switching to an overlay pattern).
+
+---
+
+## petscii_written_to_screen_ram — PETSCII bytes stored in $0400 show graphics glyphs where the letters should be
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D018
+**Triggered by techniques:** petscii_screen_code_conversion, text_input_line, decimal_print
+**Mitigated by techniques:** petscii_screen_code_conversion
+
+### Symptom
+
+Text written straight into screen RAM comes out wrong in a pattern:
+digits, space and punctuation are right, every letter is a graphics
+character (a `HELLO` written this way shows five box-drawing and
+line glyphs), and text taken from the keyboard with the shift or
+Commodore key held comes out reversed. Sending the same bytes through
+CHROUT shows the right letters. Switching character sets with `$0E`
+or `$8E`, or by writing `$D018`, changes the pictures, and can make the
+unshifted letters look right by accident: in the lower-case set they
+show as upper-case letters, so a program tested after a `$0E` passes
+and breaks when the set changes back. The reversed cells stay reversed
+in both sets. The recipe below has the three rows side by side.
+
+### Mechanism
+
+PETSCII and screen codes are two different encodings of the same
+glyphs and agree only in `$20-$3F`. The VIC-II fetches a glyph at
+`charset base + 8 * byte` and knows nothing of PETSCII; CHROUT is
+where the translation lives, in the KERNAL's screen editor at `$E716`,
+and a store to `$0400` bypasses it. A letter is PETSCII `$41-$5A` but
+screen code `$01-$1A`, so the byte `$48` (`H`) selects glyph `$48`.
+In the upper-case/graphics set that glyph is a vertical bar; in the
+lower-case set glyphs `$41-$5A` are the upper-case letters, byte for
+byte the same bitmaps as `$01-$1A` in the first set (read from the
+`chargen-901225-01.bin` image), so the same wrong byte shows the right
+letter. Shifted PETSCII is `$C1-$DA` with bit 7 set, and bit 7 of a
+screen code is reverse video, so those cells come out reversed in
+either set, and Commodore-key graphics (`$A0-$BF`) likewise. `$D018`
+bit 1 picks which 2 KB of the character ROM supplies the pictures,
+which is why changing it changes the glyphs without touching the bytes
+(measured in VICE x64sc 3.10: CHROUT `$0E` sets `$D018` to `$17`, `$8E`
+back to `$15`, and the bytes in screen RAM are the same before and
+after).
+
+The same mistake in the other direction is quieter: screen codes
+`$01-$1A` are PETSCII control codes, so a name read back from `$0400`
+and handed to CHROUT loses its letters and keeps only its digits,
+spaces and punctuation. Most of those codes print nothing and leave
+the cursor column where it was; some change the colour or move the
+cursor (measured in VICE x64sc 3.10: CHROUT of `$01-$04` after a PLOT
+to column 0 leaves `$0400-$0403` at zero and the column at 0).
+
+### Fix
+
+Convert at the boundary, every time a byte crosses from a PETSCII
+source (keyboard, file, CHROUT-style string) to screen RAM or back.
+The rule is six compares and a mask (`petscii_screen_code_conversion`
+in `techniques/text.md`): `$20-$3F` unchanged, `$40-$5F` less `$40`,
+`$60-$7F` less `$20`, `$A0-$FF` low seven bits with bit 6 set, `$FF`
+to `$5E`. Or write text through CHROUT and let the KERNAL convert,
+accepting the cursor, the wrap and the clobbered registers. In
+KickAssembler, `.text` already emits screen codes; the trap there is
+the other way round, a `.text` string sent through CHROUT
+(`toolchains/kickassembler-reference.md`). Keep stored text in one encoding,
+PETSCII by preference, and convert on the way to the screen.
+
+### Worked example
+
+```c
+// Bad: PETSCII bytes poked into screen RAM; every letter is a graphics glyph.
+const char msg[] = { 0x48, 0x45, 0x4c, 0x4c, 0x4f, 0 };   // HELLO in PETSCII
+for (char i = 0; msg[i]; i++) SCREEN[40 * 4 + i] = msg[i];
+
+// Good: convert on the way in; digits and space pass through unchanged.
+for (char i = 0; msg[i]; i++) SCREEN[40 * 3 + i] = pet2scr(msg[i]);
+```
+
+`pet2scr()` is the routine in `recipes/oscar64/petscii-screen-codes.md`,
+whose screenshot shows both rows.
+
+### Cross-references
+
+- Technique: `petscii_screen_code_conversion` (the rule, measured
+  against CHROUT over every code)
+- Techniques that write screen RAM from a PETSCII source:
+  `text_input_line`, `decimal_print`
+- Register: `$D018` bit 1 (`hardware/vic-ii-reference.md`) selects the
+  set; it never changes the code
+- Recipe: `recipes/oscar64/petscii-screen-codes.md`

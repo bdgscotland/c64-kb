@@ -82,9 +82,10 @@ When RETURN arrives, write a plain space over the cursor cell so it does
 not stay reversed, and hand the stored bytes to the caller. Store the
 PETSCII bytes rather than the screen codes: a high-score file, a CHROUT
 print or a later compare all want PETSCII, and the echo can be recomputed
-from them with the same two-range conversion. The full PETSCII, ASCII and
-screen-code mapping is not on this page; only the part the echo needs is
-given here.
+from them with the same two-range conversion. Only the part the echo
+needs is given here; the whole PETSCII to screen-code rule, measured
+against CHROUT, is `petscii_screen_code_conversion` below (an earlier
+version of this sentence said the full mapping was not on this page).
 
 ### Why it works
 
@@ -184,11 +185,157 @@ call body, less the 17 cycles of an empty call: 957 cycles for 65,535 and
 1,361 for 59,999 by subtraction of powers of ten (the count of
 subtractions is what varies), 2,537 by double-dabble for 65,535, 74 for
 an 8-bit hex value. The Cost line carries the worst measured decimal
-case; `bytes_code` is not measured on the page.
+case; `bytes_code` is not measured on the page. The same five digits by
+four shift-and-subtract divisions by ten cost 2,793 cycles for 65,535
+in `recipes/oscar64/divide-check.md`, three times the subtract-powers
+route (`division_8_16bit` in `techniques/maths.md` has the comparison).
 
 ### Recipes
 
 - `recipes/oscar64/print-number.md` — both decimal routes and the hex route, checked over every 16-bit value against Python, with the cycle harness on screen
+
+## petscii_screen_code_conversion — PETSCII to screen code and back, as range arithmetic
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D018
+**Uses kernal:** CHROUT
+**Cost:** cycles_per_frame=32
+**Cost basis:** measured-vice
+
+### Why
+
+The C64 has two byte codes for a character. PETSCII is what the
+keyboard delivers, what CHROUT accepts, what a file holds and what a
+string in most compilers is. A screen code is what the VIC-II reads from
+screen RAM to pick a glyph. They agree only for space, digits and the
+punctuation in `$20-$3F`; a letter written to `$0400` as its PETSCII
+byte comes out as a graphics character
+(`pitfalls/text-mode-render.md`, `petscii_written_to_screen_ram`). A
+program that writes screen RAM itself, which every game HUD and text
+field does, needs the rule in both directions, and it is small enough
+that no table is needed.
+
+### How
+
+The rule, measured in VICE x64sc 3.10 by sending every PETSCII code `$20`
+to `$FF` through CHROUT at row 0, column 0 and reading the screen RAM
+byte back (recipe below; the same run shows `PASS` for all 224 codes):
+
+| PETSCII | Screen code | Arithmetic |
+|---|---|---|
+| `$20-$3F` space, digits, punctuation | `$20-$3F` | unchanged |
+| `$40-$5F` `@`, unshifted letters, `[`, `£`, `]`, arrows | `$00-$1F` | subtract `$40` |
+| `$60-$7F` shifted letters and graphics | `$40-$5F` | subtract `$20` |
+| `$80-$9F` | none | control codes, nothing printed |
+| `$A0-$BF` Commodore-key graphics | `$60-$7F` | subtract `$40` |
+| `$C0-$DF` shifted letters and graphics | `$40-$5F` | subtract `$80` |
+| `$E0-$FE` graphics | `$60-$7E` | subtract `$80` |
+| `$FF` pi (alias of `$DE`) | `$5E` | special case |
+| `$00-$1F` | none | control codes |
+
+Forward, PETSCII to screen code: below `$20` or in `$80-$9F` it is a
+control code; below `$40` keep it; below `$60` subtract `$40`; below
+`$80` subtract `$20`; `$FF` becomes `$5E`; otherwise take the low seven
+bits and set bit 6 (`(c & $7F) | $40`), which covers `$A0-$FE` in one
+step. Six compares and one mask; the recipe's C version costs 32 cycles
+for `$C1`, the longest path (CIA1 timer A, VICE x64sc, PAL and NTSC
+alike).
+
+Backward, screen code to PETSCII: clear bit 7 first, then below `$20`
+add `$40`; below `$40` keep it; below `$60` add `$80`; otherwise add
+`$40`. This is a choice, not an inverse: screen codes `$40-$7F` each
+have two PETSCII spellings (`$60-$7F` and `$C0-$DF` for the first block,
+`$A0-$BF` and `$E0-$FF` for the second), and the rule picks the ones the
+keyboard delivers, so that converting the result forward again gives the
+same screen code. The recipe checks that round trip over all 128 codes.
+22 cycles for `$41` on the same harness.
+
+Bit 7 of a screen code is reverse video, not part of the character.
+CHROUT sets it on every printable code after a `$12` (RVS ON) until a
+`$92` or a carriage return; the flag is `$C7`, and a `$12` then `$41`
+leaves `$81` in the cell (measured). A direct writer sets the bit itself
+(`code | $80`) and needs no second character set.
+
+The shifted set is a third thing. `$0E` and `$8E` through CHROUT set
+`$D018` to `$17` and back to `$15` (measured), which is bit 1: the VIC
+reads glyphs from the second 2 KB of the character ROM, where screen
+codes `$01-$1A` are lower case and `$41-$5A` are upper case, instead of
+the first, where they are upper case and graphics (the 26 upper case
+bitmaps at `$01-$1A` in the first set are byte-identical to those at
+`$41-$5A` in the second, read from the `chargen-901225-01.bin` image).
+The bytes in screen RAM do not change when the set does; only the
+pictures do.
+
+### When to use CHROUT and when to write screen RAM
+
+CHROUT (`$FFD2`) takes PETSCII, does this conversion for you, handles
+control codes, scrolls, wraps, writes the colour, and moves the cursor.
+Use it for a title screen, a text adventure, a debug print, anything
+that is happy at the editor's cursor and does not run inside a tight
+frame. Its price is the editor: it clobbers A, X and Y
+(`pitfalls/kernal-and-io.md`, `kernal_clobbers_a_x_y`), it needs the
+KERNAL ROM banked in and the editor's zero-page state intact, its cost
+per character is not fixed, a `$22` in the stream flips quote mode and
+turns later control codes into reversed glyphs, and a line that reaches
+column 40 wraps and may scroll the whole screen.
+
+Write screen RAM directly for a HUD, a score, a name field, a tile map,
+anything placed by coordinate or drawn every frame: `$0400 + 40 * row +
+column` on the default screen, one store per cell, with the conversion
+above applied to any PETSCII source. Two consequences follow. Colour is
+now yours: CHROUT writes the current colour from `$0286` into `$D800` for
+every cell it prints (measured: with `$0286` set to 7 the colour RAM cell
+reads 7 afterwards), and a direct write leaves colour RAM as it was, so
+a cell that was never printed on keeps the colour the last clear left
+there, and a cell in a colour that matches the background shows nothing
+at all. And nothing scrolls, wraps or interprets: a byte below `$20`
+written directly is a screen code (`@` and the letters), not a control
+code.
+
+### Why it works
+
+The screen editor's print path at `$E716` in the KERNAL (901227-03, read
+from the ROM image) folds the code with masks before storing it: the
+`$40-$7F` half by clearing one bit or two, the `$A0-$FF` half by clearing
+bit 7 and setting bit 6, with `$FF` replaced by `$5E` first and the
+reverse flag ORed in at the end. The table above is that arithmetic
+written out; the address is named so the routine can be found, not
+copied. The glyph itself is fetched by the VIC from the character
+generator at `charset base + 8 * screen code`, and `$D018` bits 1 to 3
+choose the 2 KB base within the VIC bank, which is why the same screen
+code shows two different pictures in the two sets and why an upper case
+letter typed in the lower case set is a shifted letter in PETSCII terms.
+
+### Variations
+
+- **Two-range echo.** A field that admits only unshifted letters,
+  digits and punctuation needs the first two rows of the table and
+  rejects everything else; `text_input_line` does exactly that.
+- **ASCII source.** A C string in ASCII has lower case at `$61-$7A`,
+  which in PETSCII is the unshifted letters. Subtract `$60` for lower
+  case ASCII and `$40` for upper case to reach screen codes `$01-$1A`,
+  then choose the set with `$D018` bit 1; this is what `put_text` in
+  the recipes does for upper case.
+- **Assembler-time conversion.** KickAssembler's `.text` emits screen
+  codes by default and `.encoding "petscii_mixed"` emits PETSCII
+  (`toolchains/kickassembler-reference.md`), so a string destined for screen RAM
+  needs no run-time conversion at all; the rule matters for bytes that
+  arrive at run time, from the keyboard or a file.
+- **A 256-byte table.** Faster by a few cycles per byte than the
+  compares and needed if the mapping is a custom charset's rather than
+  the ROM's; the arithmetic version is what a stock charset needs.
+
+### Cycle budget
+
+Not raster-critical. One conversion is 32 cycles forward and 22 backward
+in the recipe's C, body only, so a forty-cell row converts in about 1,300
+cycles (arithmetic from the measured per-call figure). The Cost line
+carries one forward call.
+
+### Recipes
+
+- `recipes/oscar64/petscii-screen-codes.md`: both routines checked against CHROUT over every code, the round trip, the `$D018`, reverse and colour RAM readings, and the cycle harness on screen
 
 ## big_font_2x2 — Big-font text: one glyph across four cells, and a two-row scroller
 

@@ -473,5 +473,53 @@
     "disk": {
       "name": "TEST,01"
     }
+  },
+  "oscar64/petscii-screen-codes": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/petscii-screen-codes.png",
+      "ntsc": "screenshots/petscii-screen-codes-ntsc.png"
+    }
+  },
+  "kickassembler/compare-16bit-signed": {
+    "cycles": 100000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/compare-16bit-signed.png",
+      "ntsc": "screenshots/compare-16bit-signed-ntsc.png"
+    }
+  },
+  "oscar64/divide-check": {
+    "cycles": 600000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/divide-check.png",
+      "ntsc": "screenshots/divide-check-ntsc.png"
+    }
+  },
+  "kickassembler/sine-table-runtime": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sine-table-runtime.png",
+      "ntsc": "screenshots/sine-table-runtime-ntsc.png"
+    }
   }
 }

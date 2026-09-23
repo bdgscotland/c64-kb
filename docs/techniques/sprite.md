@@ -891,3 +891,6 @@ move.
 - `recipes/kickassembler/sprite-sine-chain.md` (the eight-sprite chain
   across the full width, MSB wrap, frame counter on screen, positions
   measured on PAL and NTSC). No logo or bounce recipe yet.
+- `recipes/kickassembler/sine-table-runtime.md` (builds the sine table on
+  the machine instead of with the assembler, then drives eight sprites
+  from it; the way to get the table without `.fill`)

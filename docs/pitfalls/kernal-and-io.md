@@ -187,7 +187,7 @@ fname_end:
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** CHROUT, CHRIN, GETIN, CHKIN, CHKOUT
-**Triggered by techniques:** text_input_line, kernal_relative_file_io
+**Triggered by techniques:** text_input_line, kernal_relative_file_io, petscii_screen_code_conversion
 
 ### Symptom
 
