@@ -1258,5 +1258,20 @@
       "pal": "screenshots/bfs-distance-map.png",
       "ntsc": "screenshots/bfs-distance-map-ntsc.png"
     }
+  },
+  "oscar64/two-word-parser": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "look\\x0dtake lamp\\x0dgo north\\x0dinventory\\x0ddance\\x0dtake sword\\x0dtake door\\x0dgo south\\x0dgo down\\x0dopen door\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/two-word-parser.png",
+      "ntsc": "screenshots/two-word-parser-ntsc.png"
+    }
   }
 }

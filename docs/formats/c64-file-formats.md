@@ -157,6 +157,8 @@ Each 4-byte BAM entry: first byte = free sector count, next 3 bytes = 24-bit bit
 | $17 | 1 | REL only: record length (the DOS's stated range is 1 to 254; 32, 100 and 254 measured below) |
 | $1E–$1F | 2 | File size in sectors (little-endian); for a REL file the side sectors are counted in |
 
+Directory art lives entirely in these bytes: a type of `$80` (DEL, closed), a first-sector pointer of `0 0` for an entry that owns no blocks, any PETSCII in the name field and any value at `$1E`, all written from the host by [cc1541](../toolchains/cc1541-reference.md), which also shows what the drive's listing makes of an `$A0` inside a name.
+
 File data uses a 10-sector interleave chain (each sector's first two bytes are the track/sector link to the next; the remaining 254 bytes are data). The last sector in a chain uses `$00` as the next-track link and stores the index of the last used byte in what would normally be the next-sector byte, so the sector holds that value minus one data bytes (an earlier version said it stored the count of data bytes; a 91-byte last sector written by the 1541 in VICE holds 92).
 
 **REL file (type `$84`):**
@@ -302,6 +304,8 @@ Each sector occupies a fixed pattern:
 5. Data block: 325 GCR-encoded bytes (256 data bytes + block ID `$07` + checksum + padding, GCR-encoded at 4 bytes → 5 bytes ratio)
 6. Inter-sector gap: 4–19 bytes (variable; `$55`)
 
+**Correction (2026-09-23).** Item 5 used to be the whole of what this page said about the code: "GCR-encoded at 4 bytes → 5 bytes ratio". The ratio is right and it is not how the code works. The 1541 splits every byte into two nibbles and replaces each nibble with a five-bit word from a sixteen-entry table, so four bytes fill five, and a decoder written from the ratio alone cannot read a sector. Items 3 and 6 gave the gaps as ranges; in the image measured below c1541 writes 9 and 8. The subsection "GCR encoding" gives the table, the two block layouts, the sync and gaps, and the zones, each as decoded from a G64 or read out of the drive ROM.
+
 Speed zones (1541-standard):
 
 | Track range | Zone | Nominal track size |
@@ -310,6 +314,135 @@ Speed zones (1541-standard):
 | 18–24 | 2 | 7,170 bytes |
 | 25–30 | 1 | 6,300 bytes |
 | 31–35 | 0 | 6,020 bytes |
+
+#### GCR encoding
+
+Every figure in this subsection was measured here unless it says otherwise. A G64 was formatted and written on the host with VICE 3.10's `c1541` (`c1541 -format "TEST,01" g64 disk.g64 -write known.prg known`, where `known.prg` is 263 bytes: load address `$0801`, the bytes `$00` to `$FF` in order, then `KNOWN`). The image was decoded with the Python script at the end of the subsection, and it was read back under the windowless x64sc build of VICE 3.10 with true drive emulation, where `LOAD"KNOWN",8,1` printed `LOADING` and then `READY.`. The ROM figures come from the 1541 ROM image VICE ships, `DRIVES/dos1541-325302-01+901229-05.bin`, 16,384 bytes mapped at `$C000`.
+
+**Speed zones.** The image's track table and speed-zone table held, for the 35 tracks with data (every half-track offset was zero):
+
+| Tracks | Zone entry | Track length (bytes) | Sectors | Bit rate at 300 rpm | Bit cell |
+|--------|------------|----------------------|---------|---------------------|----------|
+| 1–17 | 3 | 7,692 | 21 | 307,680 bit/s | 3.25 µs |
+| 18–24 | 2 | 7,142 | 19 | 285,680 bit/s | 3.50 µs |
+| 25–30 | 1 | 6,666 | 18 | 266,640 bit/s | 3.75 µs |
+| 31–35 | 0 | 6,250 | 17 | 250,000 bit/s | 4.00 µs |
+
+The bit-rate and bit-cell columns are arithmetic on the track length: bytes × 8 × 5 revolutions a second. The four rates are 16 MHz divided by 52, 56, 60 and 64, which is the drive's 16 MHz crystal divided by 13, 14, 15 or 16 and then by four per bit cell; the crystal and the divide-by-four are not measured here. The sector counts and the zone boundaries are in the ROM: `$FED1` holds `11 12 13 15` (17, 18, 19 and 21 sectors, zone 0 first) and `$FED7` holds `24 1F 19 12` (36, 31, 25 and 18, the first track above each zone, zone 0 first). The zone numbers in the G64 table are the ROM's: zone 3 is the outermost, fastest zone. The "nominal track size" column in the table above this subsection is not what c1541 3.10 writes; the lengths it wrote are the ones here.
+
+**The code table.** Each byte is split into two nibbles and each nibble becomes a five-bit word, high nibble first, so four bytes occupy five bytes on the track. The table was derived from the image alone, from the bytes whose values were known before decoding (the `$08` and `$07` block IDs, the `$0F $0F` header padding, the track number, the 254 file bytes in the first data block and its `$00 $00` padding), and every one of the sixteen entries then matched the ROM's encode table at `$F77F`, which reads `0A 0B 12 13 0E 0F 16 17 09 19 1A 1B 0D 1D 1E 15` and is the only run of sixteen distinct five-bit values with no three consecutive zero bits in the ROM:
+
+| Nibble | Code | Nibble | Code | Nibble | Code | Nibble | Code |
+|--------|------|--------|------|--------|------|--------|------|
+| `0` | `01010` | `4` | `01110` | `8` | `01001` | `C` | `01101` |
+| `1` | `01011` | `5` | `01111` | `9` | `11001` | `D` | `11101` |
+| `2` | `10010` | `6` | `10110` | `A` | `11010` | `E` | `11110` |
+| `3` | `10011` | `7` | `10111` | `B` | `11011` | `F` | `10101` |
+
+By inspection of the sixteen words: none holds three zero bits in a row, none starts with more than one zero and none ends with more than one, so two words side by side never put more than two zeros together, which is what the drive's read clock needs; and no word starts or ends with more than four ones, so the longest run of ones inside data is eight, short of the ten that make a sync. `F` is `10101`, not `11111`, for the second reason.
+
+**Header block.** After each header sync, 10 GCR bytes decode to 8:
+
+| Offset | Size | Field | Decoded, track 17 sector 0 |
+|--------|------|-------|----------------------------|
+| 0 | 1 | Header block ID | `$08` |
+| 1 | 1 | Checksum, the XOR of bytes 2 to 5 | `$11` |
+| 2 | 1 | Sector | `$00` |
+| 3 | 1 | Track | `$11` (17) |
+| 4 | 1 | Disk ID, second character | `$A0` |
+| 5 | 1 | Disk ID, first character | `$A0` |
+| 6–7 | 2 | Padding | `$0F $0F` |
+
+The 10 GCR bytes were `52 56 B5 29 6B D2 B4 A5 55 55`. All 21 headers on track 17 carried sectors 0 to 20 in order, each with a checksum equal to the XOR of its sector, track and two ID bytes. The disk ID is worth a look: c1541 3.10 wrote `$A0 $A0` into every sector header, while the BAM at track 18 sector 0 (bytes `$A2`–`$A3`) holds `30 31`, the `01` given on the command line, and the directory listing shows `01`. The disk loaded all the same under true drive emulation, as above; the ROM is documented as taking the ID from a sector header when it initialises a disk rather than from the BAM, which would explain that, but the mechanism is not measured here. A tool that expects the header ID to match the directory line will not find that in a c1541-formatted G64. Because both ID bytes were `$A0`, which of the two characters comes first on the track was not measured here; the order in the table is the ROM's as documented, not confirmed by this image. What the ROM's own formatter writes into the header on a real disk is not measured here either.
+
+**Data block.** After each data sync, 325 GCR bytes decode to 260:
+
+| Offset | Size | Field | Decoded, track 17 sector 0 |
+|--------|------|-------|----------------------------|
+| 0 | 1 | Data block ID | `$07` |
+| 1–256 | 256 | Sector data | `11 0A` (link: track 17, sector 10), then `01 08 00 01 02` ... `FB` |
+| 257 | 1 | Checksum, the XOR of the 256 data bytes | `$12` |
+| 258–259 | 2 | Padding | `$00 $00` |
+
+The 256 data bytes were the file's first sector as DOS lays it out: the two-byte link to the next sector, then 254 file bytes (the load address `01 08`, then `$00` to `$FB`), and the XOR of those 256 bytes is `$12`, as stored.
+
+**Sync and gaps.** As c1541 3.10 wrote this image, byte aligned: 5 × `$FF` (40 one bits), the 10 header bytes, 9 × `$55`, 5 × `$FF`, the 325 data bytes, 8 × `$55`, then the next sector's sync. That is 362 bytes a sector, 21 × 362 = 7,602, and the rest of the 7,692-byte track is `$55` (98 bytes in a row after the last data block, the 8-byte gap included). A scan of the bit stream for runs of ten or more one bits finds 42 on the track, one before each header and one before each data block; the drive's detector fires on ten, so a 40-bit sync is four times what it needs and `disk_protection_tricks` in `../techniques/loaders-packers.md` is about what a loader does with that slack and with the fields above. The gaps a real 1541's formatter writes depend on the track's spare space and are not measured here. The bit clock per zone is why `gcr_timing_assumes_stock_drive` in `../pitfalls/loader.md` exists: a drive that is not stepping its clock through those four rates reads the same bits at the wrong cell width.
+
+**Decoder.** The script that produced the figures above. It takes the image, a track, a sector, and the file whose first 254 bytes sit in that sector; the table it prints is learned from the image, never assumed.
+
+```text
+#!/usr/bin/env python3
+# Decode one track of a G64 and derive the 4-to-5 GCR table from known bytes.
+# usage: gcr_g64.py disk.g64 TRACK SECTOR [file whose first 254 bytes sit in SECTOR]
+import struct, sys
+
+img = open(sys.argv[1], "rb").read()
+trk, sec = int(sys.argv[2]), int(sys.argv[3])
+n = img[9]
+offs = [struct.unpack_from("<I", img, 12 + 4 * i)[0] for i in range(n)]
+zone = [struct.unpack_from("<I", img, 12 + 4 * n + 4 * i)[0] for i in range(n)]
+print(img[:8], "version", img[8], "entries", n, "max", struct.unpack_from("<H", img, 10)[0])
+for i in range(0, n, 2):
+    if offs[i]:
+        print("track", 1 + i // 2, "len", struct.unpack_from("<H", img, offs[i])[0], "zone", zone[i])
+
+o = offs[(trk - 1) * 2]
+tb = img[o + 2:o + 2 + struct.unpack_from("<H", img, o)[0]]
+bits = "".join(f"{b:08b}" for b in tb)
+
+syncs, i = [], 0                      # runs of ten or more 1 bits
+while i < len(bits):
+    j = i
+    while j < len(bits) and bits[j] == "1":
+        j += 1
+    if j - i >= 10:
+        syncs.append((i, j))
+    i = j + 1
+print("syncs", len(syncs))
+
+def codes(start, nbytes):             # 5-bit groups for nbytes decoded bytes
+    return [int(bits[start + 5 * k:start + 5 * k + 5], 2) for k in range(2 * nbytes)]
+
+table = {}
+def learn(cs, known):                 # known: list of byte values or None
+    for k, b in enumerate(known):
+        if b is not None:
+            for c, nib in ((cs[2 * k], b >> 4), (cs[2 * k + 1], b & 15)):
+                assert table.setdefault(c, nib) == nib, "table conflict"
+
+blocks = [(e, (syncs[k + 1][0] if k + 1 < len(syncs) else len(bits)) - e)
+          for k, (s, e) in enumerate(syncs)]
+hdrs = [b for b in blocks if b[1] < 2000]
+for start, _ in hdrs:                 # ID, checksum, sector, track, ID2, ID1, $0F, $0F
+    learn(codes(start, 8), [0x08, None, None, trk, None, None, 0x0F, 0x0F])
+for start, _ in blocks:
+    if _ >= 2000:
+        learn(codes(start, 1), [0x07])
+
+def decode(cs):
+    return bytes((table[cs[k]] << 4) | table[cs[k + 1]] for k in range(0, len(cs), 2))
+
+want = None
+for k, (s, e) in enumerate(syncs):
+    cs = codes(e, 8)                  # sector byte is codes 4 and 5
+    if (e, blocks[k][1]) in hdrs and (table.get(cs[4]), table.get(cs[5])) == (sec >> 4, sec & 15):
+        want = k
+if len(sys.argv) > 4:                 # learn the rest from the known file
+    dstart = syncs[want + 1][1]
+    learn(codes(dstart, 260), [None, None, None] + list(open(sys.argv[4], "rb").read()[:254]) + [None, 0, 0])
+print("table:", " ".join(f"{nib:X}={c:05b}" for c, nib in sorted(table.items(), key=lambda t: t[1])))
+
+for start, _ in hdrs:
+    h = decode(codes(start, 8))
+    print("header", h.hex(" "), "checksum", "ok" if h[1] == h[2] ^ h[3] ^ h[4] ^ h[5] else "BAD")
+d = decode(codes(syncs[want + 1][1], 260))
+x = 0
+for b in d[1:257]:
+    x ^= b
+print("data", d.hex(" "), "\nchecksum", hex(d[257]), "computed", hex(x))
+```
+
+Run as `python3 gcr_g64.py disk.g64 17 0 known.prg` it printed the table above, 21 headers each `checksum ok`, and the data block with `checksum 0x12 computed 0x12`. The ROM addresses were found by searching the ROM image for the byte runs quoted, with the file offset plus `$C000` as the address.
 
 **Typical use:** preserving copy-protected originals, testing fastloader sync timing, demoscene releases that rely on non-standard sector ordering or gap manipulation.
 
@@ -550,11 +683,187 @@ Decoded from `examples/consultant.sng` (3,060 bytes): bytes 0–7 are `47 54 53 
 **Produced by:** vice
 **Consumed by:** vice
 
-The VSF (VICE Snapshot File) format saves and restores the complete state of a running VICE emulation session. It captures CPU registers, all RAM banks, chip state (VIC-II, SID, CIA1, CIA2), and peripheral state (disk drive contents, tape position).
+A snapshot is VICE's own dump of the whole emulated machine: the 64 KiB of RAM, the CPU registers, and the state of every emulated chip, drive and port, one module each. VICE reads it back with `undump` or `-autostart` (see `../runtime/vice-reference.md`, Snapshots). ROM images are not stored; the file assumes the ROMs the emulator has loaded. The module layouts are per VICE version, so every offset below is what one file written by one build contained; a different version has to be decoded again with the script at the end of this section.
 
-A VSF file begins with a global file header containing the magic string `"VICE Snapshot File\032\n"`, a version number (major/minor bytes), and the machine type identifier. Following the global header are module snapshots — one per emulated chip or subsystem. Each module has a 15-byte fixed header: a 10-character module name (null-padded), 1-byte major version, 1-byte minor version, and a 4-byte little-endian module data length. Module data follows immediately.
+**Correction (2026-09-23).** This section used to describe a 15-byte module header with a 10-character name, and to list modules called `MEM`, `VICII` and `IEC`. None of that matched a file written by x64sc 3.10: the module header is 22 bytes with a 16-byte name, the memory module is `C64MEM`, the video module is `VIC-II`, and no `IEC` module was present. The tables below replace it, decoded from a file written and read for this page.
 
-Modules typically present in a C64 snapshot: `MAINCPU` (6510 registers and flags), `MEM` (64 KiB RAM + I/O shadow), `VICII` (VIC-II registers and internal state), `SID` (SID register state), `CIA1`, `CIA2`, `IEC` (serial bus state), `DRIVE8` (1541 drive state including its own RAM and ROM image reference).
+**Measured on:** the windowless x64sc 3.10 (`-default`, PAL), a 193,261-byte file written from the remote text monitor after a program had put known bytes in RAM and colour RAM. An NTSC run (`-model ntsc`, 179,053 bytes) gave the same header, the same module names and versions in the same order, and the same offsets inside `C64MEM` and `VIC-II`; only the `VIC-II` module's length differed, which moves every module after it.
+
+**File header (58 bytes):**
+
+| Offset | Size | Field | Value in this file |
+|--------|------|-------|--------------------|
+| $0000 | 19 | Magic string `VICE Snapshot File` followed by `$1A` | as named |
+| $0013 | 1 | Snapshot format major version | 2 |
+| $0014 | 1 | Snapshot format minor version | 0 |
+| $0015 | 16 | Machine name, zero-padded | `C64SC` |
+| $0025 | 13 | Version tag `VICE Version` followed by `$1A` | as named |
+| $0032 | 4 | VICE version, one byte per component | 3, 10, 0, 0 |
+| $0036 | 4 | Revision, little-endian | 0 |
+
+**Module header (22 bytes, one per module):**
+
+| Offset | Size | Field |
+|--------|------|-------|
+| +0 | 16 | Module name, zero-padded |
+| +16 | 1 | Module major version |
+| +17 | 1 | Module minor version |
+| +18 | 4 | Module length, little-endian, counting this 22-byte header |
+
+The length counts the header: adding each module's length to its own offset lands on the next module's name, and the last module ends at byte 193,261, the file's length.
+
+**Modules in this file, in order (PAL run):**
+
+| File offset | Name | Version | Length |
+|-------------|------|---------|--------|
+| 58 | `MAINCPU` | 1.4 | 125 |
+| 183 | `C64MEM` | 0.1 | 65,577 |
+| 65,760 | `C64CART` | 0.1 | 23 |
+| 65,783 | `CIA1` | 2.5 | 99 |
+| 65,882 | `CIA2` | 2.5 | 99 |
+| 65,981 | `SID` | 1.5 | 58 |
+| 66,039 | `SIDEXTENDED` | 1.4 | 155 |
+| 66,194 | `DRIVE8` | 2.0 | 167 |
+| 66,361 | `DRIVE9` | 2.0 | 167 |
+| 66,528 | `DRIVE10` | 2.0 | 167 |
+| 66,695 | `DRIVE11` | 2.0 | 167 |
+| 66,862 | `DRIVECPU0` | 1.3 | 2,174 |
+| 69,036 | `1541VIA1D0` | 2.2 | 50 |
+| 69,086 | `VIA2D0` | 2.2 | 50 |
+| 69,136 | `FSDRIVE` | 0.0 | 280 |
+| 69,416 | `VIC-II` | 1.3 | 123,437 (NTSC: 109,229) |
+| 192,853 | `GLUE` | 1.0 | 25 |
+| 192,878 | `C64MEMHACKS` | 0.0 | 23 |
+| 192,901 | `TAPEPORT` | 1.0 | 24 |
+| 192,925 | `DATASETTE` | 1.5 | 100 |
+| 193,025 | `KEYBOARD` | 1.1 | 118 |
+| 193,143 | `JOYPORT0` | 0.0 | 23 |
+| 193,166 | `JOYSTICK0` | 1.2 | 24 |
+| 193,190 | `JOYPORT1` | 0.0 | 23 |
+| 193,213 | `JOYSTICK1` | 1.2 | 24 |
+| 193,237 | `USERPORT` | 1.0 | 24 |
+
+No drive was attached in these runs, so the `DRIVE8` to `DRIVE11` modules are the 167-byte form and there is one `DRIVECPU0`; what a run with a true-drive 1541 attached adds was not measured here.
+
+**`C64MEM` body (65,555 bytes after the header):**
+
+| Body offset | Size | Field | Confirmed by |
+|-------------|------|-------|--------------|
+| +0 | 1 | Processor port data register (`$01`) | `$37`, the monitor's `01` column at the stop |
+| +1 | 1 | Processor port direction register (`$00`) | `$2F`, the monitor's `00` column |
+| +2 | 2 | Two bytes, both `$00` here | not decoded |
+| +4 | 65,536 | RAM, `$0000` to `$FFFF` in address order | the 256 bytes `i XOR $A5` the program wrote at `$C000` sit at body offset 49,156, which is 4 + `$C000`; the BASIC stub is at 4 + `$0801` |
+| +65,540 | 15 | Trailing bytes | not decoded |
+
+RAM address `A` is therefore file byte 209 + `A` in this file (183 + 22 + 4). RAM bytes `$0000` and `$0001` read `$00 $00`: the port lives in the four bytes ahead of RAM, and reading it out of the RAM image gives the wrong answer.
+
+**`VIC-II` body (123,415 bytes PAL, 109,207 NTSC):**
+
+| Body offset | Size | Field | Confirmed by |
+|-------------|------|-------|--------------|
+| +0 | 1 | One byte: `$01` on the PAL run, `$03` on the NTSC run | meaning not established |
+| +1 | 64 | Register block, `$D000` to `$D03F`, holding the values last written | `$D020` at +33 read `$00` after the program wrote 0 to the border (power-on value `$0E`); `$D021` at +34 read `$06`; `$D018` at +25 read `$14` and `$D016` at +23 read `$08`, the written values, where a CPU read returns `$15` and `$C8` |
+| +65 | 696 | Internal state | not decoded |
+| +761 | 1,024 | Colour RAM, `$D800` to `$DBFF`, one byte per cell, low nybble | the 256 bytes `i AND $0F` the program wrote at `$D800` sit at +761; the cells from `$D900` to `$DBE7` read `$0E`, the KERNAL's text colour after the clear; the 24 cells past the screen's 1,000, `$DBE8` to `$DBFF`, are not touched by the clear and hold other values |
+| +1,785 | rest | Internal state; 14,208 bytes longer on PAL than on NTSC | not decoded |
+
+**`MAINCPU` body (103 bytes):**
+
+| Body offset | Size | Field | Confirmed by |
+|-------------|------|-------|--------------|
+| +0 | 8 | CPU clock, little-endian | 3,022,363, the monitor's `STOPWATCH` at the stop |
+| +8 | 1 | A | `$00` |
+| +9 | 1 | X | `$00` |
+| +10 | 1 | Y | `$00` |
+| +11 | 1 | SP | `$F6`, the monitor's `SP` |
+| +12 | 2 | PC, little-endian | `$0835`, the address the break was set on |
+| +14 | 1 | Status register | `$22`, the monitor's `..-...Z.` |
+| +15 | 88 | Rest of the module | not decoded |
+
+**How the file was made.** This program clears the screen, prints a title, fills `$C000` to `$C0FF` with `i XOR $A5`, fills the first 256 colour cells with `i AND $0F`, sets the border to black and parks in a loop at `done` (`$0835`):
+
+```kickass
+* = $0801
+.byte $0b, $08, $0a, $00, $9e, $32, $30, $36, $31, $00, $00, $00   // 10 SYS2061
+
+* = $080d
+start:
+    lda #$93            // clear screen
+    jsr $ffd2
+    ldx #$00
+print:
+    lda msg,x
+    beq fill
+    jsr $ffd2
+    inx
+    bne print
+fill:
+    ldx #$00
+loop:
+    txa
+    eor #$a5
+    sta $c000,x
+    txa
+    and #$0f
+    sta $d800,x
+    inx
+    bne loop
+    lda #$00
+    sta $d020
+done:
+    jmp done
+
+msg:
+    .text "VSF PATTERN SET"
+    .byte $00
+```
+
+A `-moncommands` file runs before the program does, so it cannot dump at once. It can arm a checkpoint whose attached command dumps when the program reaches a known store (`trace store d020` then `command 1 "dump \"file.vsf\""`; one process, and the last dump wins, so the KERNAL's own border write dumps first and the program's `STA $D020` overwrites it), or a remote-monitor client can stop the machine and dump. The second route is the one used below. `-initbreak 2101` is `$0835` in decimal. A Python socket polled the port from the moment x64sc was launched (it connected at 0.03 s and the stop arrived at 0.17 s), then sent the commands shown:
+
+```text
+timeout 180 x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
+  -limitcycles 8000000 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6577 \
+  -initbreak 2101 -exitscreenshot vsf-pattern.png -autostart vsf-pattern.prg
+```
+
+```text
+#1 (Stop on  exec 0835)  238/$0ee,   1/$01
+.C:0835  4C 35 08    JMP $0835      - A:00 X:00 Y:00 SP:f6 ..-...Z.    3022363
+(C:$0835) r
+  ADDR A  X  Y  SP 00 01 NV-BDIZC LIN CYC  STOPWATCH
+.;0835 00 00 00 f6 2f 37 00100010 238 001    3022363
+(C:$0835) m c000 c00f
+>C:c000  a5 a4 a7 a6  a1 a0 a3 a2  ad ac af ae  a9 a8 ab aa   ..... ..........
+(C:$c010) m d800 d80f
+>C:d800  00 01 02 03  04 05 06 07  08 09 0a 0b  0c 0d 0e 0f   @abcdefghijklmno
+(C:$d810) dump "vsf-pattern.vsf"
+(C:$d810) del 1
+(C:$d810) x
+```
+
+`dump` prints nothing on success; the file appeared at once. Deleting the checkpoint before `x` matters: a break on a `JMP` to itself fires again on every iteration. The decoder that produced the tables above, run on the host against that file:
+
+```text
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+print(d[0:19], d[19], d[20], d[21:37].rstrip(b"\0"), d[37:50], list(d[50:54]), struct.unpack_from("<I", d, 54)[0])
+pos, mods = 58, {}
+while pos < len(d):
+    name = d[pos:pos + 16].rstrip(b"\0").decode()
+    size = struct.unpack_from("<I", d, pos + 18)[0]
+    print(f"{pos:7d} {name:<12} {d[pos + 16]}.{d[pos + 17]:<2} {size:7d}")
+    mods[name] = d[pos + 22:pos + size]
+    pos += size
+mem, vic = mods["C64MEM"], mods["VIC-II"]
+ram = mem.find(bytes(i ^ 0xA5 for i in range(256))) - 0xC000
+print("port bytes", mem[:ram].hex(" "), "| RAM at body+%d, trailing %d" % (ram, len(mem) - ram - 65536))
+col = vic.find(bytes(i & 0x0F for i in range(256)))
+print("colour RAM at body+%d; $D020 at body+%d = %02x" % (col, 1 + 0x20, vic[1 + 0x20]))
+```
+
+Its last two lines for the PAL file were `port bytes 37 2f 00 00 | RAM at body+4, trailing 15` and `colour RAM at body+761; $D020 at body+33 = 00`.
+
+**What a snapshot is good for in a headless pipeline.** Two things. First, a state to diff: after a run, the RAM image at file byte 209 is the whole address space in order, so a test can compare the bytes a program owns against an expected image, or two runs against each other, without printing anything to the screen. Do not expect two snapshots of the same program to be byte-identical: the PAL run above, repeated, gave a file that differed in 946 bytes, 943 of them single bytes scattered through RAM at addresses the program never wrote (the emulated power-on contents) and 3 in the CIA modules, while the CPU clock was the same 3,022,363 in both. Diff the regions the program wrote, the register block and colour RAM, not the whole file. Second, a save point: a long run can be stopped once at a known address, dumped, and every later test can start from that file with `undump "file.vsf"` in a `-moncommands` file, or by passing it to `-autostart`, which skips the boot and the load each time. The VICE reference's Snapshots section has the restore side.
 
 VSF is strictly a VICE internal format. It is not suitable for interchange between emulators and has no use in the toolchain build pipeline.
 

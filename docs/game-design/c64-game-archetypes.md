@@ -144,7 +144,7 @@ The main technical constraint is memory. A large text adventure needs story text
 
 The SID is typically used only for simple sound effects (a beep on input, a chord on success or death) or not at all. The VIC-II runs in its default 40-column character mode with no custom charset. IRQs, if used, exist only to blink the cursor or implement a real-time clock for timed puzzles. This genre places the lightest possible load on C64-specific hardware and the heaviest load on software architecture and data compression.
 
-**Technique fingerprint:** `ram_under_kernal`, `cpu_io_port_bank`, `exomizer_basics`, `sid_voice_setup`
+**Technique fingerprint:** `ram_under_kernal`, `cpu_io_port_bank`, `exomizer_basics`, `sid_voice_setup`, `two_word_parser`
 
 **Common pitfalls:** `kernal_clobbers_a_x_y`, `kernal_io_mapping_dependency`, `kernal_assumes_sei_cleared`, `ram_under_rom_traps`
 

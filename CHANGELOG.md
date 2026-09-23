@@ -5,7 +5,34 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 746, schema 27, tools 2.0.0, package 0.13.0.
+Data 747, schema 27, tools 2.0.0, package 0.13.0.
+
+**Candidate list, Tier B batch 5 (data 747).** The GCR encoding on the
+formats page, measured: the sixteen code words derived from a G64 image
+c1541 wrote and confirmed byte for byte against the 1541 ROM's encode
+table at `$F77F` (the F code is `10101`; the writer's own memory said
+otherwise and the ROM corrected it), the header and data block layouts
+decoded with their checksums, the sync and gap as written, the four zone
+track lengths and their bit cells as arithmetic, the zone tables at
+`$FED1` and `$FED7`; the "4 bytes to 5" sentence corrected with a
+clause; c1541 3.10 writes `$A0 $A0` as the header ID while the BAM holds
+the command-line ID, and the drive ROM loads the disk anyway. A cc1541
+toolchain page (4.2 built from source): how the directory-art tricks are
+stored in the entry bytes (a DEL entry is type `$80`, an art line has no
+blocks, a name's first `$A0` closes the quote in the listing), what a
+LIST shows of them, decoded against the character ROM, and interleave and
+placement options measured on the sector chain. `two_word_parser` on the
+text page with an Oscar64 recipe for the text-adventure archetype (ten
+scripted commands through the KERNAL buffer, parse cost 569 to 2,036
+cycles a command, the end state checked), and the technique added to the
+archetype's fingerprint. The .VSF section rewritten from a snapshot the
+emulator wrote: the previous text claimed a 15-byte module header and
+module names the file does not contain; measured, the header is 22 bytes,
+twenty-six modules in a stated order, the 64 KiB RAM at byte 209 in
+address order, colour RAM at offset 761 of the VIC-II module, and two
+runs of the same program differ in 946 bytes of RAM the program never
+wrote. Left open: which ID character c1541 should have written; the
+meaning of the snapshot's unlabelled bytes; LOAD of a DEL entry.
 
 **Candidate list, Tier B batch 4 (data 746).** A cartconv toolchain page
 with the .CRT header and chip packets decoded from files cartconv wrote,
