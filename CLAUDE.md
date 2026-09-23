@@ -154,7 +154,9 @@ in `src/tools/query.ts`; check which before editing either.
   `a[x] + 1` can store the wrong value (read `a[x]` into a variable); stores to a
   local `volatile` vanish at -O1/-O2 (use a global); two `const char` tables
   shifted `<< 8` with one index in a loop that also calls a `__noinline`
-  function read the second table at the first one's value (-O1 and up). Status per fault against
+  function read the second table at the first one's value (-O1 and up);
+  four fixed-address arrays cleared in one loop send one array's stores
+  to another's page (-O1 and up, upstream too: one `memset` each). Status per fault against
   upstream HEAD is in #30. The verbatim messages are in each toolchain
   page's "Reading the errors".
 - VICE headless: without `GSETTINGS_SCHEMA_DIR` the GTK build aborts;

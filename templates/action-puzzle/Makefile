@@ -1,0 +1,96 @@
+# action-puzzle: CAVE RUN, a Boulder Dash-style starter. Harness targets:
+#   make            build build/action-puzzle.prg (after the PLAN.md gate)
+#   make run        windowed VICE, joystick in port 2
+#   make shot       headless PAL and NTSC exit screenshots of the autopilot build
+#   make check      grade shots/pal.png and shots/ntsc.png against expect.json
+#   make selftest   prove check fails on the FORCE_FAULT=1 build
+#   make disk       build/action-puzzle.d64
+#   make claims     c64-kb's claims-watch over the autopilot build, when available
+# and this starter's own:
+#   make gen        re-run tools/gen.py (caves, script, model, note table)
+#   make disktest   the high-score save on a true-drive 1541: save, save over it, cold start, load
+#   make modelcheck every visible cave cell of the shots against tools/gen.py's model
+#   make joy        the normal game reading its port byte from $02FE, for tools/drive.py
+#   make clean
+NAME   := action-puzzle
+C_MAIN := src/main.c
+
+# Pinned after the verdict. Most of the time before it is the start-up read
+# with no disk in the drive (drive reply 74). Measured with VICE x64sc 3.10:
+# the PAL picture still changes at 12,000,000 cycles (10,000,000 shows cave
+# 2's GET READY); at 13,000,000, 16,000,000, 20,000,000 and 24,000,000 it is
+# byte-identical, and so is NTSC at 16,000,000 and 24,000,000.
+SHOT_CYCLES_PAL  := 16000000
+SHOT_CYCLES_NTSC := 16000000
+
+# What the program may write, for make claims (claims-watch's grammar).
+# zero_page $02-$52 is Oscar64's register block, as in hello; $53-$55 is the
+# start of its BC_REG_TMP_SAVED block (MachineTypes.cpp), which this
+# program's larger functions use (claims-watch found 902 stores there on
+# the first run). --kernal names the routines hiscore.c calls through
+# kernalio.h and the KERNAL IRQ, which runs during those calls only.
+CLAIMS_ARGS := --cycles 16000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ --claim 'sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, cia1_port_a, cia1_timer_b, zero_page $$02-$$55' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$2000-$$27FF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
+
+# The harness sits beside the starter in c64-kb (../_harness) or is vendored
+# into ./harness when the starter is copied out on its own.
+HARNESS ?= $(firstword $(wildcard harness) ../_harness)
+$(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
+include $(HARNESS)/harness.mk
+
+# ---- this starter's own targets ---------------------------------------------------
+# tools/gen.py writes the three src/gen_*.h headers; an edit to it rebuilds them.
+GEN_OUT := src/gen_caves.h src/gen_autopilot.h src/gen_notes.h
+$(GEN_OUT): build/gen.stamp
+build/gen.stamp: tools/gen.py
+	@mkdir -p build
+	$(PYTHON) tools/gen.py
+	@touch $@
+
+.PHONY: gen disktest modelcheck
+gen:
+	$(PYTHON) tools/gen.py
+
+# The disk test, on a true-drive 1541 (DISK_MODEL=pal or ntsc):
+#  1. the autopilot build runs against a fresh copy of the release D64: no
+#     file (62), it plays, saves (scratch, then write) and shows SAVED (00);
+#  2. it runs again on the same D64: it loads that file, its score ties row 4
+#     and goes in row 5, and the save must replace the file (without the
+#     scratch the drive answers 63, FILE EXISTS). Its verdict is red by
+#     design: the table it started from is not the default one;
+#  3. a cold VICE boots the release PRG from the D64 with LOAD"*",8,1; it
+#     loads the table and shows it on the title screen.
+# tools/disk_check.py grades the three pictures, both files c1541 read back,
+# and the directory (one HISCORE entry).
+DISKTEST_D64 := build/disktest.d64
+DISK_MODEL ?= pal
+# PAL is the -default machine: "-model pal" selects a 6569R3 whose palette
+# differs from the one check.py matches (border green read (94, 214, 56)).
+DISK_VICE = $(TIMEOUT) $(VICE_TIMEOUT) $(X64SC) $(VICE_FLAGS) $(if $(filter ntsc,$(DISK_MODEL)),-model ntsc) -drive8type 1541 -drive8truedrive -drive8wobbleamplitude 0 -drive8wobblefrequency 0
+# $(1) = the picture's name, $(2) = cycles, $(3) = what to autostart, $(4) = extra flags
+define disk_run
+	@rm -f shots/$(1).png
+	@$(DISK_VICE) -limitcycles $(2) $(4) -exitscreenshot shots/$(1).png -autostart $(3) > shots/$(1).log 2>&1 || true
+	@test -s shots/$(1).png || { echo "disktest: no picture from the $(1) run; see shots/$(1).log"; exit 1; }
+endef
+disktest: $(D64) $(PRG_AUTO)
+	@mkdir -p shots
+	cp $(D64) $(DISKTEST_D64)
+	$(call disk_run,disk-save,30000000,$(PRG_AUTO),-8 $(DISKTEST_D64))
+	$(C1541) -attach $(DISKTEST_D64) -read "hiscore,s" build/hiscore-1.seq > /dev/null
+	$(call disk_run,disk-save2,30000000,$(PRG_AUTO),-8 $(DISKTEST_D64))
+	$(C1541) -attach $(DISKTEST_D64) -read "hiscore,s" build/hiscore-2.seq > /dev/null
+	$(C1541) -attach $(DISKTEST_D64) -list > build/disktest-dir.txt 2>/dev/null
+	$(call disk_run,disk-load,60000000,$(DISKTEST_D64),)
+	$(PYTHON) tools/disk_check.py $(HARNESS_DIR) build $(DISK_MODEL)
+
+# The normal game with its port byte read from $02FE instead of $DC00, so a
+# VICE monitor can drive it headless (tools/drive.py; README "Driving it headless").
+.PHONY: joy
+joy: build/$(NAME)-joy.prg
+build/$(NAME)-joy.prg: $(C_DEPS) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
+
+# Every visible cave cell of both autopilot shots against tools/gen.py's model.
+modelcheck: $(SHOTS)
+	$(PYTHON) tools/model_check.py $(HARNESS_DIR) shots/pal.png shots/ntsc.png

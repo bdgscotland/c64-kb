@@ -246,7 +246,7 @@ update function.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller, colour_cycling, char_bullets, software_sprite_preshifted, charset_parallax, flip_screen_rooms, creature_state_machine, mixed_sprite_char_actors, eight_way_scroll_double_buffer, tunnel, voxel_landscape, isometric_tile_engine, dot_flag_sine_plotter, fire_effect, twister
+**Triggered by techniques:** text_mode_overlay_render, tile_map_render, char_scroll_buffer_v, soft_scroll_v, bitmap_scroll, colour_fade, plasma, text_zoom, speedcode_generation, charset_animation, dycp_scroller, colour_cycling, char_bullets, software_sprite_preshifted, charset_parallax, flip_screen_rooms, creature_state_machine, mixed_sprite_char_actors, eight_way_scroll_double_buffer, tunnel, voxel_landscape, isometric_tile_engine, dot_flag_sine_plotter, fire_effect, twister, shadebobs
 **Mitigated by techniques:** screen_double_buffer_d018
 
 ### Symptom
@@ -516,7 +516,7 @@ whose screenshot shows both rows.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DC00, DC02, DC04, DC0D, DC0E
-**Triggered by techniques:** tile_map_render, colour_cycling, colour_fade, screen_wipe, text_window_and_menu, text_mode_overlay_render, flip_screen_rooms, plasma, koala_format, char_scroll_buffer_h, difficulty_ramp_tables, fire_effect, screen_dissolve_lfsr
+**Triggered by techniques:** tile_map_render, colour_cycling, colour_fade, screen_wipe, text_window_and_menu, text_mode_overlay_render, flip_screen_rooms, plasma, koala_format, char_scroll_buffer_h, difficulty_ramp_tables, fire_effect, screen_dissolve_lfsr, shadebobs
 
 ### Symptom
 

@@ -23,6 +23,8 @@ Prose about the vertical shooter.
 
 **Common pitfalls:** \`sprite_dma_overflow\`, \`badline_cycle_loss\`
 
+**Brief words:** Vertical Shooter, \`road\`, spy-hunter, road,  Beat 'em   up
+
 **Reference titles:** Uridium (1986)
 
 ## Text Adventure / Parser-Driven
@@ -53,8 +55,15 @@ describe("extractGraphEntities — archetype-reference doc", () => {
       title: "Vertical Shmup",
       kind: "game",
       source_doc: SRC,
+      // Lower case, punctuation read as one space, deduplicated.
+      brief_words: ["vertical shooter", "road", "spy hunter", "beat em up"],
     });
-    expect(nodes[1]).toMatchObject({ name: "text_adventure", title: "Text Adventure / Parser-Driven" });
+    // An entry with no **Brief words:** line routes nothing.
+    expect(nodes[1]).toMatchObject({
+      name: "text_adventure",
+      title: "Text Adventure / Parser-Driven",
+      brief_words: [],
+    });
   });
 
   it("emits FEATURES sources from the fingerprint line, deduped, keeping an unknown snake_case name for link time", () => {

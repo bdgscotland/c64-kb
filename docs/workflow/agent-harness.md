@@ -247,7 +247,12 @@ T<typical>`, five digits each, 20 cells from row 24, column 20.
   title or idle frame counts.
 - **Worst** is the largest recorded frame. **Typical** is the median of the
   recorded frames, computed when recording stops (0 until then): a cost
-  some play frame took, with at least half the frames at or under it. That
+  some play frame took, with at least half the frames at or under it. The
+  C meter finds it by selection (Wirth's FIND). Its first version sorted
+  the samples by insertion, which held the platformer starter's main loop
+  for about 94 frames (1.85M cycles) at its 255th play frame; with the
+  selection its verdict came about 2M cycles sooner. The KickAssembler
+  meter still sorts by insertion (not re-measured here). That
   is the `cycles_per_frame_typical` of
   [CONVENTIONS-techniques](../CONVENTIONS-techniques.md), the frame play
   spends most of its time on, when the recorded frames are play. An
@@ -277,7 +282,8 @@ fixes. The same review saw W move between 1,510 and 1,538 cycles, in steps
 of 14, with code layout alone, which it put down to branches crossing pages
 (not re-measured here): compare two builds' W knowing that.
 
-hello's figures: worst 194, typical 172 cycles; hello-kick's: worst 178,
+hello's figures: worst 194, typical 172 cycles (195 and 173 since the
+selection changed the meter's code layout); hello-kick's: worst 178,
 typical 154; each over the script's 144 play frames and the same on PAL and
 NTSC. Both bracket from raster line 250, below the last badline (`$F7`),
 and the sprite is on lines 117 to 137, so no DMA falls in the bracket. The

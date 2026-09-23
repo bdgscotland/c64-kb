@@ -5,7 +5,137 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 760, schema 29, tools 2.1.0, package 0.14.0.
+Data 764, schema 30, tools 2.2.0, package 0.15.0.
+
+**Candidate list, batch 17, two of four: the tech-tech wobbler and DYSP,
+from fixed designs with measured write-cycle sweeps (data 764).** The
+tech-tech wobbler: a badline forced on every line of a six-row logo band
+after the cycle-14 RC check, so the VIC refetches the video matrix each
+line from whichever of eight pre-shifted screens `$D018` names, plus
+XSCROLL for the remainder; the logo's left edge moves 62 pixels across
+the band exactly as the sine table says, on both models; the sweep over
+five write placements shows the one-early case resetting RC on every
+line and the late cases losing one cell per cycle; the FLI-bug strip's
+three cells and their colour are tabled; the XSCROLL-only control swings
+seven pixels; 3,405 cycles a frame for the band. DYSP: four sprites at
+different heights inside the opened right side border, each on its own
+sine, with the border-opening write timed per line from a table indexed
+by the SET of sprites active on that line; the border stays open on all
+150 band lines and every write lands on the same cycle whatever the set.
+A table indexed by the COUNT of active sprites cannot do it, measured:
+two cycles a sprite closes the border from the first line with a
+non-zero sprite alone, three and four cycles close it earlier, and the
+plain side-border timing closes all 150 lines. Pins byte-identical on two
+runs per model, both reproduced by reviewers who also confirmed the
+effect in their own pictures. Linecrunch and Kefrens bars, the other two
+of the batch, stalled six times each on the workflow's watchdog and are
+being rebuilt as standalone runs.
+
+**Issue #39: the `platformer` starter.** It is a side-scrolling game in
+Oscar64 with a KickAssembler part:
+- a 2,048 px tile level with three screen pages;
+- the next page is prepared five rows a frame and flipped in the
+  vertical blank;
+- slopes, ledges and 8.8 jumps;
+- walkers and hoppers wake in an activation window;
+- a HUD under a raster split, and a tune.
+
+Measured in VICE x64sc 3.10:
+- worst frame 12,564 / typical 7,042 cycles on PAL; 12,991 / 7,443 on
+  NTSC;
+- `make tearcheck` compares mid-play shots with the level and catches a
+  torn build.
+
+Its review found Oscar64 fault 7 (#30; now in CLAUDE.md and
+`oscar64-reference`). The harness also changed:
+- claims-watch now recognises a JSR push logged after an IRQ entry;
+- the meter finds its median by selection, not by sorting.
+
+**Issue #39: the `action-puzzle` starter, CAVE RUN.** It is a Boulder
+Dash-style game in Oscar64:
+- the cave scan runs a quarter per frame;
+- two RLE caves are decoded between levels;
+- enemies follow walls;
+- a two-voice tune plays, with effects on voice 3;
+- a high-score table is saved to drive 8.
+
+Measured in VICE x64sc 3.10:
+- worst frame 10,033 cycles and typical 6,340 on PAL; 10,292 and 6,598
+  on NTSC;
+- `make disktest` saves twice under true 1541 emulation, then cold-boots
+  and loads the table back, on PAL and NTSC;
+- `make joy` with `tools/drive.py` plays the normal build headless.
+
+**Candidate list, batch 16: four items from fixed designs, each a
+technique entry and a pinned KickAssembler recipe (data 763).** The
+sprites-only screen mode: the display enable bit held clear through line
+48 so no badline occurs all frame, set for line 51 so the vertical
+border flip-flop resets, and the select bit toggled around line 251 so
+it never sets again; eight sprites drawn at every height from line 8 to
+the frame wrap, a free-CPU meter reading 904 iterations of a 20-cycle
+loop per PAL frame against 847 with a normal display (the badline and
+border cost by subtraction), the closed-border control hiding three
+sprites and the display-off-only control showing none. BASIC ROM
+floating-point routines called from machine code, every entry point
+read from the 901226-01 ROM image with the monitor before it was used:
+square root of two, 355 over 113, 0.1 plus 0.2 and the five bytes of
+one tenth printed and compared against asserted strings, FMULT 1,079
+cycles, FDIV 2,409, FSQR 43,752 and FOUT 7,412 with the display off, the
+zero-page bytes the sequence changes listed, and the same calls with
+BASIC banked out as the control. Depth-sorted sprite vector balls: eight
+balls on a tilted ring, a single bubble pass per frame assigning sprite
+numbers by depth so the hardware's fixed priority draws the nearer ball
+on top (1,318 cycles a frame, the order unsorted only on the first six
+frames), and a control without the sort drawing the farther ball over
+the nearer one at the same overlap. Shade bobs: a blob adding one shade
+step to a colour-RAM shade buffer under a luminance-ordered palette with
+a decay pass every fourth frame, 590 cycles for the add, 26,514 for the
+decay pass (over a frame, so it cannot fit the blank), and the buffer
+dumped from memory matching colour RAM through the palette in all 1,000
+cells. Eight pins byte-identical on two runs per model, each reproduced
+by a reviewer from the page listing.
+
+**The pseudo-3D road, with its per-line shift measured to work (data
+762).** A coarse layer of thirteen multicolour character rows redrawn in
+the vertical blank from a Z table and an 8.8 fixed-point centre
+accumulator, and a fine layer that writes one `$D016` value per road
+raster line from a cycle-locked loop entered by the double-IRQ stable
+raster method, with the write at cycle 11 of each line, a 23-cycle
+iteration on badline rows in place of 63, and separate PAL and NTSC loops
+chosen by region detection at boot. The first build's fine layer had no
+effect because a spin-wait put the writes at cycles 20 to 28, past the
+latch; the recipe records that and the fix. Measured: coarse redraw 6,332
+cycles PAL and 6,162 NTSC, fine chain 6,523 and 6,729; the kerb's left
+edge in the pinned picture moves by one to seven pixels between adjacent
+lines where the first build moved only at row boundaries; rows seven and
+eight of the road now carry their own scroll values. Pinned on both
+models. The page says what one scroll value per line cannot do, that the
+grass is not cleared per frame, and that the geometry is this recipe's,
+not a game's.
+
+**Issue #38: a game brief routes to its archetype (data 761, schema 30,
+tools 2.2.0, package 0.15.0).** `c64_game_briefing` with no `archetype`
+used to run as a demo plan with a "Demo Briefing" heading. For a Spy
+Hunter brief it proposed horizontal scrolls and RAM-banking techniques
+("enemy cars ram"), and it missed the multiplexer, the hitboxes and
+`vehicle_control`.
+
+Each game archetype now has a `**Brief words:**` line
+(`Archetype.brief_words`). A brief routes to the archetype whose words it
+contains most; a tie routes nowhere. `vertical_shmup`'s fingerprint was
+`sprite_multiplex_24` and `raster_bars`; it is now the panel split, the
+game multiplexer, hitboxes and the wave director.
+
+Five faults in discovery are fixed:
+- techniques that match no word of the brief were proposed on their
+  recipe bonus alone;
+- stop words matched name and title words;
+- the verb "ram" matched the acronym RAM;
+- H3 vector hits lost their technique name;
+- a horizontal technique was proposed for a vertical brief.
+
+Output gains an optional `archetype.inferred_from`. Run `ingest:clean`
+after updating.
 
 **Issue #39, part H: a real template harness (data 760).** The two
 starters in `templates/` were stubs. The game starter's KickAssembler

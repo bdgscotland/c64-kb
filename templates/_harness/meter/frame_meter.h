@@ -25,7 +25,7 @@
 // frames  = frames recorded. Recording stops at `hold` (1 to 255): make hold
 //           the play frames of the autopilot script, so no idle frame counts.
 // worst   = the largest recorded frame.
-// typical = the median of the recorded frames, computed when recording
+// typical = the median of the recorded frames, found by selection when recording
 //           stops (0 until then): a cost some play frame actually took, with
 //           at least half the frames at or under it. This is the KB's
 //           cycles_per_frame_typical (CONVENTIONS-techniques.md) when the
