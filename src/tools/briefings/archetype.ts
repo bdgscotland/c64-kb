@@ -4,11 +4,20 @@
  */
 
 import { getFalkor } from "../../context.ts";
-import { ArchetypeRow, NameRow, parseRows } from "./rows.ts";
+import { normaliseBriefText } from "../../graph/extract/archetype.ts";
+import { ArchetypeRow, BriefWordsRow, NameRow, parseRows } from "./rows.ts";
 
 type Archetype = { name: string; title: string; kind: string };
 export type ArchetypeResolution =
-  | { mode: "graph"; archetype: Archetype; features: string[]; risks: string[]; resolved_from?: string }
+  | {
+      mode: "graph";
+      archetype: Archetype;
+      features: string[];
+      risks: string[];
+      resolved_from?: string;
+      /** Set when no archetype was named and the brief's words chose this one. */
+      inferred_from?: string[];
+    }
   | { mode: "not_found"; requested: string; known: string[]; candidates?: string[] }
   | { mode: "fallback" };
 
@@ -83,6 +92,13 @@ export async function resolveArchetype(
   // preferKind is a guard only: names are unique.
   const hit = match.hits.find((r) => r.kind === preferKind) ?? match.hits.at(0);
   if (!hit) return { mode: "not_found", requested: raw, known: known() };
+  return {
+    ...(await graphResolution(hit)),
+    ...(match.resolvedFrom ? { resolved_from: match.resolvedFrom } : {}),
+  };
+}
+
+async function graphResolution(hit: KnownArchetype) {
   const features = await namesOf(
     `MATCH (a:Archetype {name: $name})-[:FEATURES]->(t:Technique) RETURN t.name AS name ORDER BY name`,
     hit.name,
@@ -92,12 +108,41 @@ export async function resolveArchetype(
     hit.name,
   );
   return {
-    mode: "graph",
+    mode: "graph" as const,
     archetype: { name: hit.name, title: hit.title ?? hit.name, kind: hit.kind ?? "game" },
     features,
     risks,
-    ...(match.resolvedFrom ? { resolved_from: match.resolvedFrom } : {}),
   };
+}
+
+/** The brief words of `words` that the normalised brief contains, a plural "s" or "es" allowed. */
+function wordsInBrief(brief: string, words: readonly string[]): string[] {
+  return words.filter((w) => new RegExp(`(^| )${w}(s|es)?( |$)`).test(brief));
+}
+
+/**
+ * Route a game brief that names no archetype. Each game Archetype's
+ * **Brief words:** line (docs/CONVENTIONS-archetypes.md) is matched against
+ * the brief; the archetype with the most distinct words present wins. A tie
+ * or no match routes nowhere and the plan is built from the description, as
+ * before. The words are data on the page, so no genre or title is spelled
+ * in this code.
+ */
+export async function routeArchetypeFromBrief(description: string): Promise<ArchetypeResolution | undefined> {
+  const fk = await getFalkor();
+  const result = await fk.roQuery(
+    `MATCH (a:Archetype {kind: "game"}) RETURN a.name AS name, a.title AS title, a.kind AS kind, a.brief_words AS brief_words ORDER BY name`,
+  );
+  const brief = normaliseBriefText(description);
+  const scored = parseRows(BriefWordsRow, result.data).flatMap((r) => {
+    if (!r.name) return [];
+    const matched = wordsInBrief(brief, r.brief_words ?? []);
+    return matched.length > 0 ? [{ row: { name: r.name, title: r.title, kind: r.kind }, matched }] : [];
+  });
+  scored.sort((a, b) => b.matched.length - a.matched.length);
+  const [first, second] = scored;
+  if (!first || second?.matched.length === first.matched.length) return undefined;
+  return { ...(await graphResolution(first.row)), inferred_from: first.matched };
 }
 
 // Built-in tables, used ONLY when the graph has no Archetype nodes. With the

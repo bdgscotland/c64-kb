@@ -11,8 +11,13 @@ import {
   type BriefingOutput,
   type TechniqueLookupOutput,
 } from "../../schemas/tool-outputs.ts";
-import { resolveArchetype, seedsFor, type ArchetypeResolution } from "./archetype.ts";
-import { resolveProposedTechniques } from "./discovery.ts";
+import {
+  resolveArchetype,
+  routeArchetypeFromBrief,
+  seedsFor,
+  type ArchetypeResolution,
+} from "./archetype.ts";
+import { contradictsBriefAxis, resolveProposedTechniques } from "./discovery.ts";
 import { whyProposed } from "./why-proposed.ts";
 import { collectPitfalls } from "./plan-pitfalls.ts";
 import { toolchainSplit } from "./toolchain.ts";
@@ -62,7 +67,19 @@ function selectTechniques(
   });
 }
 
-function proposedOf(t: TechniqueLookupOutput, description: string): Proposed {
+/** The reason a technique is in the plan: the archetype's fingerprint when it forced it, else the brief. */
+function reasonFor(t: TechniqueLookupOutput, description: string, resolved: ArchetypeResolution | undefined) {
+  if (resolved?.mode === "graph" && resolved.features.includes(t.name)) {
+    return `In the ${resolved.archetype.name} archetype's technique fingerprint`;
+  }
+  return whyProposed(t.name, t.category, description);
+}
+
+function proposedOf(
+  t: TechniqueLookupOutput,
+  description: string,
+  resolved: ArchetypeResolution | undefined,
+): Proposed {
   // An empty or unknown complexity or region word is left out, as the
   // output schema allows only its enum values.
   const complexity = ComplexitySchema.safeParse(t.complexity || undefined);
@@ -72,7 +89,7 @@ function proposedOf(t: TechniqueLookupOutput, description: string): Proposed {
     title: t.title,
     category: t.category,
     complexity: complexity.success ? complexity.data : undefined,
-    why_proposed: whyProposed(t.name, t.category, description),
+    why_proposed: reasonFor(t, description, resolved),
     uses_registers: t.uses_registers.map((r) => r.name),
     uses_kernal: t.uses_kernal.map((k) => k.name),
     region: region.success ? region.data : undefined,
@@ -104,13 +121,22 @@ async function proposeTechniques(
 ): Promise<TechniqueLookupOutput[]> {
   const seeds = seedsFor({ description, archetype, resolved, isGame });
   const proposalLimit = proposalLimitFor(description);
-  const techNames = await resolveProposedTechniques(seeds.searchDescription, proposalLimit);
+  const techNames = await resolveProposedTechniques(
+    seeds.searchDescription,
+    proposalLimit,
+    seeds.archetypeForced.size,
+  );
   // Prepend forced techniques so they survive the per-category MAX cap.
   for (const name of seeds.forced.slice().reverse()) {
     if (!techNames.includes(name)) techNames.unshift(name);
   }
   const enriched = await Promise.all(techNames.map(async (name) => (await techniqueLookup(name)).structured));
-  return selectTechniques(enriched, seeds.archetypeForced, proposalLimit);
+  // A forced technique stays whatever its axis; a found one on the axis the
+  // brief did not ask for goes.
+  const onAxis = enriched.filter(
+    (t) => seeds.forced.includes(t.name) || !contradictsBriefAxis(t, seeds.searchDescription),
+  );
+  return selectTechniques(onAxis, seeds.archetypeForced, proposalLimit);
 }
 
 function archetypeFields(
@@ -123,6 +149,7 @@ function archetypeFields(
         features: resolved.features,
         risks: resolved.risks,
         ...(resolved.resolved_from ? { resolved_from: resolved.resolved_from } : {}),
+        ...(resolved.inferred_from ? { inferred_from: resolved.inferred_from } : {}),
       },
     };
   }
@@ -156,17 +183,29 @@ async function designFields(
   };
 }
 
+/**
+ * A named archetype is looked up. A game brief that names none is routed by
+ * the archetypes' brief words; a demo brief that names none is not.
+ */
+async function resolutionFor(
+  description: string,
+  archetype: string | undefined,
+  isGame: boolean,
+): Promise<ArchetypeResolution | undefined> {
+  if (archetype !== undefined) return resolveArchetype(archetype, isGame ? "game" : "demo");
+  return isGame ? routeArchetypeFromBrief(description) : undefined;
+}
+
 export async function buildBriefing(
   description: string,
   archetype: string | undefined,
   isGame: boolean,
 ): Promise<BriefingResult> {
-  const resolved =
-    archetype !== undefined ? await resolveArchetype(archetype, isGame ? "game" : "demo") : undefined;
+  const resolved = await resolutionFor(description, archetype, isGame);
   const techs = await proposeTechniques(description, archetype, resolved, isGame);
   const techNames = techs.map((t) => t.name);
 
-  const proposed_techniques = techs.map((t) => proposedOf(t, description));
+  const proposed_techniques = techs.map((t) => proposedOf(t, description, resolved));
   const { verdict, compatibility } = await compatibilityOf(techs);
   const pitfalls = await collectPitfalls(techNames, resolved?.mode === "graph" ? resolved.risks : []);
   const toolchain_split = await toolchainSplit(techs);

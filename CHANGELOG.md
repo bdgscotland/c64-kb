@@ -5,10 +5,10 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 761, schema 29, tools 2.1.0, package 0.14.0.
+Data 762, schema 30, tools 2.2.0, package 0.15.0.
 
 **The pseudo-3D road, with its per-line shift measured to work (data
-761).** A coarse layer of thirteen multicolour character rows redrawn in
+762).** A coarse layer of thirteen multicolour character rows redrawn in
 the vertical blank from a Z table and an 8.8 fixed-point centre
 accumulator, and a fine layer that writes one `$D016` value per road
 raster line from a cycle-locked loop entered by the double-IRQ stable
@@ -24,6 +24,30 @@ eight of the road now carry their own scroll values. Pinned on both
 models. The page says what one scroll value per line cannot do, that the
 grass is not cleared per frame, and that the geometry is this recipe's,
 not a game's.
+
+**Issue #38: a game brief routes to its archetype (data 761, schema 30,
+tools 2.2.0, package 0.15.0).** `c64_game_briefing` with no `archetype`
+used to run as a demo plan with a "Demo Briefing" heading. For a Spy
+Hunter brief it proposed horizontal scrolls and RAM-banking techniques
+("enemy cars ram"), and it missed the multiplexer, the hitboxes and
+`vehicle_control`.
+
+Each game archetype now has a `**Brief words:**` line
+(`Archetype.brief_words`). A brief routes to the archetype whose words it
+contains most; a tie routes nowhere. `vertical_shmup`'s fingerprint was
+`sprite_multiplex_24` and `raster_bars`; it is now the panel split, the
+game multiplexer, hitboxes and the wave director.
+
+Five faults in discovery are fixed:
+- techniques that match no word of the brief were proposed on their
+  recipe bonus alone;
+- stop words matched name and title words;
+- the verb "ram" matched the acronym RAM;
+- H3 vector hits lost their technique name;
+- a horizontal technique was proposed for a vertical brief.
+
+Output gains an optional `archetype.inferred_from`. Run `ingest:clean`
+after updating.
 
 **Issue #39, part H: a real template harness (data 760).** The two
 starters in `templates/` were stubs. The game starter's KickAssembler

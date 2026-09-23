@@ -11,6 +11,28 @@ import type { GraphEntity } from "./types.ts";
 const ARCHETYPE_NAME_LINE = /^\*\*Archetype:\*\*\s+`?([a-z][a-z0-9_]*)`?\s*$/m;
 const ARCHETYPE_FINGERPRINT = /^\*\*Technique fingerprint:\*\*\s+(.+)$/m;
 const ARCHETYPE_PITFALLS = /^\*\*Common pitfalls:\*\*\s+(.+)$/m;
+const ARCHETYPE_BRIEF_WORDS = /^\*\*Brief words:\*\*\s+(.+)$/m;
+
+/**
+ * The **Brief words:** line: comma-separated words or phrases, backticks
+ * optional, that route a game brief naming no archetype to this one. Lower
+ * case; an apostrophe is dropped and any other run of characters that are
+ * not letters or digits reads as one space, so "beat-em-up" and "beat 'em
+ * up" are one phrase. The briefing normalises the brief the same way.
+ */
+export function normaliseBriefText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/['’`]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function briefWordList(line: string | undefined): string[] {
+  if (!line) return [];
+  const words = line.split(",").map((w) => normaliseBriefText(w));
+  return [...new Set(words.filter((w) => w !== ""))];
+}
 
 type ArchetypeKind = "game" | "demo";
 
@@ -82,8 +104,9 @@ function sectionEntities(section: Section, ctx: Context): GraphEntity[] {
     "**Technique fingerprint:**",
   );
   const risks = nameList(matchField(section.body, ARCHETYPE_PITFALLS), where, "**Common pitfalls:**");
+  const briefWords = briefWordList(matchField(section.body, ARCHETYPE_BRIEF_WORDS));
   return [
-    { type: "archetype", name, title, kind: ctx.kind, source_doc: ctx.sourcePath },
+    { type: "archetype", name, title, kind: ctx.kind, source_doc: ctx.sourcePath, brief_words: briefWords },
     ...features.map((technique): GraphEntity => ({ type: "archetype_features", archetype: name, technique })),
     ...risks.map((pitfall): GraphEntity => ({ type: "archetype_risks", archetype: name, pitfall })),
   ];

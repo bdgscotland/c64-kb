@@ -2,6 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
 import { demoBriefing, gameBriefing, whyProposed } from "../src/tools/briefings.ts";
 import { BriefingSchema } from "../src/schemas/tool-outputs.ts";
+import {
+  briefTokens,
+  contradictsBriefAxis,
+  extractTechniqueNameFromSection,
+} from "../src/tools/briefings/discovery.ts";
 
 /**
  * Briefing tests — seed a minimal representative graph so we can test
@@ -419,13 +424,15 @@ describe("gameBriefing", () => {
     expect(r.structured.build_order.some((s) => s.recipes.some((rec) => rec.includes("shmup")))).toBe(true);
   });
 
-  // P5-9: gameBriefing without archetype — isGame=false (archetype===undefined),
-  // so no scaffold step is added and the brief is labelled as a "demo" plan.
-  it("gameBriefing without archetype still builds a valid plan (no scaffold step)", async () => {
+  // P5-9: gameBriefing without archetype. Until 2026-09-23 it was framed as
+  // a demo plan ("# C64 Demo Briefing"); it is a game plan, and with no
+  // archetype named or routed (this fixture has no Archetype nodes) it has
+  // no scaffold step.
+  it("gameBriefing without archetype is still a game plan, with no scaffold step", async () => {
     const r = await gameBriefing("a small arcade game", undefined);
-    // isGame = archetype !== undefined → false when undefined, so brief says "demo"
-    expect(r.structured.brief).toContain("demo");
-    // No scaffold step because isGame is false
+    expect(r.structured.brief).toMatch(/^C64 game plan for/);
+    expect(r.text.split("\n")[0]).toBe("# C64 Game Briefing");
+    expect(r.structured.archetype).toBeUndefined();
     const scaffoldStep = r.structured.build_order.find((s) => s.label.includes("Game scaffold"));
     expect(scaffoldStep).toBeUndefined();
   });
@@ -1073,5 +1080,201 @@ describe("gameBriefing proposer precision and handoff", () => {
     expect(last.label).toContain("Headless verification");
     expect(last.recipes).toEqual(["oscar64-headless-verify"]);
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+});
+
+// Issue #38, briefing routing (2026-09-23). A game brief that names no
+// archetype is routed by the archetypes' **Brief words:** lines. Before, a
+// Spy Hunter brief was framed as a demo, got no archetype, and was proposed
+// char_scroll_buffer_h (the word "scroll"), screen_ram_relocation (the verb
+// "ram") and a tail of techniques that matched no word at all, while the
+// vector hits on vehicle_control's H3 sections contributed no name.
+describe("gameBriefing routes a brief that names no archetype", () => {
+  let f: FalkorService;
+
+  const tech = (name: string, title: string, category: string, complexity = "medium") =>
+    f.addTechnique({ name, title, category, complexity });
+
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+    await tech("soft_scroll_v", "Hardware vertical soft-scroll", "scroll", "low");
+    await tech("soft_scroll_h", "Hardware horizontal soft-scroll", "scroll", "low");
+    await tech(
+      "char_scroll_buffer_h",
+      "Char-mode horizontal scroll with screen-RAM buffer rotation",
+      "scroll",
+    );
+    await tech("scroll_panel_split", "Vertically scrolled playfield over a fixed score panel", "scroll");
+    await tech("screen_ram_relocation", "Move screen RAM via $D018 hi-nibble", "banking", "low");
+    await tech("sprite_multiplex_game", "Game multiplexer in assembly", "sprite", "high");
+    await tech("per_frame_hitbox", "Collision boxes per animation frame", "sprite");
+    await tech("wave_director", "Attack waves triggered by scroll position", "logic");
+    await tech(
+      "vehicle_control",
+      "Top-down driving on a vertical scroll: throttle is the scroll speed",
+      "logic",
+    );
+    await tech("car_contact_response", "Car contact: push apart, crash off the road", "logic");
+    await tech("lane_pursuit_ai", "Road pursuit cars: approach, pull alongside, ram with a lead", "logic");
+    await tech("raster_bars", "Raster color bars", "raster", "low");
+    await tech("decimal_print", "Print a number in decimal", "text", "low");
+    await tech("drive_code_upload_and_job_queue", "Upload code to the 1541 and read sectors", "io");
+
+    // Recipe-rich techniques that share no word with the brief: before the
+    // fix their recipe bonus alone put them in the plan.
+    for (const [recipe, target] of [
+      ["oscar64-decimal-print", "decimal_print"],
+      ["oscar64-decimal-print-2", "decimal_print"],
+      ["oscar64-drive-code", "drive_code_upload_and_job_queue"],
+      ["oscar64-simple-shmup", "soft_scroll_v"],
+    ] as const) {
+      await f.addRecipe({
+        name: recipe,
+        toolchain: "oscar64",
+        output_format: "PRG",
+        region: "both",
+        source_doc: `recipes/oscar64/${recipe}.md`,
+      });
+      await f.linkRecipeImplements(recipe, target);
+    }
+
+    const archetypes: [string, string, string[], string[]][] = [
+      [
+        "vertical_shmup",
+        "Vertical Shmup",
+        ["vertical shooter", "vertically scrolling", "road shooter", "road", "car", "spy hunter"],
+        ["soft_scroll_v", "scroll_panel_split", "sprite_multiplex_game", "per_frame_hitbox", "wave_director"],
+      ],
+      [
+        "horizontal_shmup",
+        "Horizontal Shmup",
+        ["horizontal shooter", "horizontally scrolling"],
+        ["soft_scroll_h"],
+      ],
+      ["racing", "Racing", ["racing", "race", "pseudo 3d"], ["raster_bars"]],
+    ];
+    for (const [name, title, words, features] of archetypes) {
+      await f.addArchetype({ name, title, kind: "game", source_doc: "a.md", brief_words: words });
+      for (const t of features) await f.linkArchetypeFeatures(name, t);
+    }
+    expect(await f.linkRecipeScaffolds("oscar64-simple-shmup", "vertical_shmup")).toBe(true);
+  });
+
+  afterAll(async () => f.close());
+
+  const names = (r: Awaited<ReturnType<typeof gameBriefing>>) =>
+    r.structured.proposed_techniques.map((t) => t.name);
+
+  it("routes 'Spy Hunter style road shooter' to vertical_shmup and proposes the road-shooter parts", async () => {
+    const r = await gameBriefing("Spy Hunter style road shooter");
+    expect(r.structured.archetype?.name).toBe("vertical_shmup");
+    expect(r.structured.archetype?.inferred_from).toEqual(["road shooter", "road", "spy hunter"]);
+    expect(r.text.split("\n")[0]).toBe("# C64 Game Briefing");
+    expect(r.text).toContain("Routed from the brief's words: road shooter, road, spy hunter");
+    expect(r.structured.build_order[0]).toEqual({
+      step: 1,
+      label: "Game scaffold (vertical_shmup archetype)",
+      recipes: ["oscar64-simple-shmup"],
+    });
+    const got = names(r);
+    for (const t of [
+      "sprite_multiplex_game",
+      "scroll_panel_split",
+      "per_frame_hitbox",
+      "wave_director",
+      "vehicle_control",
+      "car_contact_response",
+      "lane_pursuit_ai",
+    ]) {
+      expect(got).toContain(t);
+    }
+    for (const t of ["soft_scroll_h", "char_scroll_buffer_h", "raster_bars", "decimal_print"]) {
+      expect(got).not.toContain(t);
+    }
+    const why = (n: string) => r.structured.proposed_techniques.find((t) => t.name === n)?.why_proposed;
+    expect(why("scroll_panel_split")).toBe("In the vertical_shmup archetype's technique fingerprint");
+    expect(why("vehicle_control")).not.toContain("fingerprint");
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("reads lower-case 'ram' as the verb and drops the other scroll axis", async () => {
+    const r = await gameBriefing("vertically scrolling road shooter: enemy cars ram the player's car");
+    const got = names(r);
+    expect(r.structured.archetype?.name).toBe("vertical_shmup");
+    expect(got).not.toContain("screen_ram_relocation");
+    expect(got).not.toContain("char_scroll_buffer_h");
+    expect(got).not.toContain("drive_code_upload_and_job_queue");
+  });
+
+  it("still reads 'RAM' in capitals as the acronym", async () => {
+    const r = await gameBriefing("move the screen RAM");
+    expect(names(r)).toContain("screen_ram_relocation");
+  });
+
+  it("routes a pseudo-3D racing brief that mentions a road to racing, not vertical_shmup", async () => {
+    const r = await gameBriefing("pseudo-3D racing game with a curving road");
+    expect(r.structured.archetype?.name).toBe("racing");
+    expect(r.structured.archetype?.inferred_from).toEqual(["racing", "pseudo 3d"]);
+  });
+
+  it("routes nowhere on a tie and says Game with no scaffold step", async () => {
+    const r = await gameBriefing("a car racing game");
+    expect(r.structured.archetype).toBeUndefined();
+    expect(r.text.split("\n")[0]).toBe("# C64 Game Briefing");
+    expect(r.structured.build_order.some((s) => s.label.startsWith("Game scaffold"))).toBe(false);
+  });
+
+  it("keeps a named archetype over the brief's words", async () => {
+    const r = await gameBriefing("Spy Hunter style road shooter", "racing");
+    expect(r.structured.archetype?.name).toBe("racing");
+    expect(r.structured.archetype?.inferred_from).toBeUndefined();
+  });
+
+  it("does not route a demo brief", async () => {
+    const r = await demoBriefing("a road shooter intro");
+    expect(r.structured.archetype).toBeUndefined();
+    expect(r.text.split("\n")[0]).toBe("# C64 Demo Briefing");
+  });
+});
+
+describe("briefing discovery helpers", () => {
+  it("reads the technique name from an H3 chunk's section, not only an H2 one", () => {
+    expect(
+      extractTechniqueNameFromSection("Logic Techniques > vehicle_control — Top-down driving > How"),
+    ).toBe("vehicle_control");
+    expect(extractTechniqueNameFromSection("Raster Techniques > stable_raster_irq — Stable raster IRQ")).toBe(
+      "stable_raster_irq",
+    );
+    expect(extractTechniqueNameFromSection("Logic Techniques > Overview > How")).toBeNull();
+  });
+
+  it("drops stop words and a lower-case homograph from the brief's tokens", () => {
+    const tokens = briefTokens("cars ram through the road and RAM with style");
+    expect(tokens).toContain("ram");
+    expect(briefTokens("cars ram the road")).not.toContain("ram");
+    for (const w of ["and", "the", "through", "with", "style"]) expect(tokens).not.toContain(w);
+  });
+
+  it("finds the other scroll axis in a name, a title or a required technique", () => {
+    const brief = "vertically scrolling shooter";
+    expect(contradictsBriefAxis({ name: "soft_scroll_h", title: "x" }, brief)).toBe(true);
+    expect(contradictsBriefAxis({ name: "x", title: "Hardware horizontal soft-scroll" }, brief)).toBe(true);
+    const parallax = {
+      name: "charset_parallax",
+      title: "x",
+      requires: [{ name: "infinite_scroll_h", title: "y" }],
+    };
+    expect(contradictsBriefAxis(parallax, brief)).toBe(true);
+    expect(
+      contradictsBriefAxis({ name: "soft_scroll_v", title: "Hardware vertical soft-scroll" }, brief),
+    ).toBe(false);
+    // A brief naming both axes, or neither, rules nothing out.
+    expect(
+      contradictsBriefAxis({ name: "soft_scroll_h", title: "x" }, "eight-way: vertical and horizontal"),
+    ).toBe(false);
+    expect(contradictsBriefAxis({ name: "soft_scroll_h", title: "x" }, "a scroller")).toBe(false);
   });
 });

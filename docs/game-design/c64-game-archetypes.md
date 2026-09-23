@@ -22,9 +22,17 @@ The vertical shooter is one of the oldest and most demanding C64 archetypes. The
 
 The central technical constraint is that vertical scrolling on the C64 is cheap at the hardware level — $D011's fine-scroll field moves the display by up to seven pixels before a coarse row-shift must be performed — but coarse shifts require rotating the entire screen RAM buffer, a CPU-intensive operation that must complete within the blanking period or produce visible tearing. Raster IRQs partition the frame into zones: a scroll update zone near the top, a sprite-multiplexer zone through the middle, and a SID service call near the bottom. Every cycle counts.
 
-Enemy bullets and player missiles are typically rendered as sprites in the multiplex pool, not as character data, so the total active sprite count can easily exceed eight. The `sprite_multiplex_24` technique handles this through raster-scheduled repositioning — each time the VIC completes one sprite's scanlines, the handler repositions that sprite's Y-coordinate to the next logical object below it. Collision detection uses hardware `$D01E` (sprite-sprite) and `$D01F` (sprite-background) registers, but both are read-to-clear latches that must be polled on every frame without missing a read.
+Enemy bullets and player missiles are typically rendered as sprites in the multiplex pool, not as character data, so the total active sprite count can easily exceed eight. The game multiplexer (`sprite_multiplex_game`) handles this through raster-scheduled repositioning — each time the VIC completes one sprite's scanlines, the handler repositions that sprite's Y-coordinate to the next logical object below it — with a persistent sort and a double-buffered table, so sprites can go anywhere on the screen. Collision detection can use hardware `$D01E` (sprite-sprite) and `$D01F` (sprite-background) registers, but both are read-to-clear latches that must be polled on every frame without missing a read, and a multiplexed sprite's bit does not say which object it was showing; boxes per animation frame, tested by group (`per_frame_hitbox`), say which bullet hit which enemy.
 
-**Technique fingerprint:** `soft_scroll_v`, `sprite_multiplex_24`, `stable_raster_irq`, `double_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`, `raster_bars`
+The score panel is a fixed band under or over the scrolling field: a raster split resets the scroll registers for it every frame (`scroll_panel_split`). The waves are data, not code: each wave starts at a scroll position and each enemy follows a path program (`wave_director`).
+
+The road shooter is the same machine with a car for a ship: in Spy Hunter the road scrolls toward the player and enemy cars and a helicopter attack the player's car. Its extra parts are the car's handling, where throttle is the scroll speed (`vehicle_control`), cars that shove each other off the road (`car_contact_response`), and pursuit cars that pull alongside and ram (`lane_pursuit_ai`). They are not in the fingerprint because a ship shooter has none of them; a brief that names a car or a road finds them by its words.
+
+**Technique fingerprint:** `soft_scroll_v`, `scroll_panel_split`, `sprite_multiplex_game`, `per_frame_hitbox`, `wave_director`, `stable_raster_irq`, `double_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`
+
+An earlier fingerprint named `raster_bars`, which nothing in this section uses, and `sprite_multiplex_24`, whose own page scopes it to Oscar64's `vspr_*` path and the fixed-band demo recipe; it named neither the panel split, the hitboxes nor the wave director.
+
+**Brief words:** vertical shooter, vertical shmup, vertically scrolling, vertical scrolling, vertical scroller, road shooter, road, car, spy hunter
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `sprite_priority_collision_silent`, `raster_irq_first_line_jitter`
 
@@ -48,6 +56,8 @@ Sprite use in horizontal shmups is slightly different from vertical: enemy forma
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `sprite_x_high_bit_wrong_register`, `raster_irq_first_line_jitter`
 
+**Brief words:** horizontal shooter, horizontal shmup, horizontally scrolling, horizontal scrolling, side scrolling shooter, side scroller, katakis, armalyte, r type
+
 **Reference titles:** Katakis (1987), R-Type (1988), Armalyte (1988), Hawkeye (1988), Enforcer (1992)
 
 **Modern examples:** Berzerk Ball 2 (2011, tribute release)
@@ -67,6 +77,8 @@ Enemy AI state machines occupy a significant fraction of the CPU budget in this 
 **Technique fingerprint:** `stable_raster_irq`, `sprite_collision_detect`, `tile_grid_collision`, `sprite_multiplex_8`, `sid_voice_setup`, `sid_play_routine_pattern`, `self_modifying_code`, `zero_page_burst`
 
 **Common pitfalls:** `sprite_priority_collision_silent`, `sprite_dma_overflow`, `badline_cycle_loss`, `kernal_clobbers_a_x_y`
+
+**Brief words:** single screen platformer, single screen, ladder, manic miner, bubble bobble
 
 **Reference titles:** Manic Miner (1983), Bubble Bobble (1987), Rainbow Islands (1990), Toki (1991), Creatures (1990)
 
@@ -88,6 +100,8 @@ Physics simulation (gravity, jumping arcs, enemy movement) must be integer-based
 
 **Common pitfalls:** `badline_cycle_loss`, `sprite_dma_overflow`, `raster_irq_first_line_jitter`, `sprite_x_high_bit_wrong_register`
 
+**Brief words:** scrolling platformer, scrolling platform game, run and gun, turrican, giana sisters
+
 **Reference titles:** Turrican (1990), Turrican II (1991), Creatures (1990), Mayhem in Monsterland (1993), The Great Giana Sisters (1987)
 
 **Modern examples:** Planet Golf (2024, RGCD)
@@ -107,6 +121,8 @@ Isometric projection (Last Ninja style) adds a geometric transform: the logical 
 **Technique fingerprint:** `stable_raster_irq`, `sprite_multiplex_8`, `sprite_collision_detect`, `sid_voice_setup`, `sid_play_routine_pattern`, `mob_priority`, `char_rom_under_vic`, `screen_ram_relocation`, `krill_loader_integration`
 
 **Common pitfalls:** `sprite_priority_collision_silent`, `vic_bank_visibility_collision`, `kernal_io_mapping_dependency`, `ram_under_rom_traps`
+
+**Brief words:** top down adventure, action adventure, rpg, dungeon, overworld
 
 **Reference titles:** Bruce Lee (1984), Green Beret (1986), The Last Ninja (1987), Zak McKracken (1988), Times of Lore (1988)
 
@@ -128,6 +144,8 @@ Puzzle games are one of the few C64 genres where the SID play routine can share 
 
 **Common pitfalls:** `badline_cycle_loss`, `kernal_clobbers_a_x_y`, `d012_wrap_around`, `sprite_priority_collision_silent`
 
+**Brief words:** puzzle, boulder dash, sokoban, pipe dream
+
 **Reference titles:** Boulder Dash (1984), Boulderdash II (1985), Pipe Dream (1990), Oxyd (1990), Sokoban (various ports, 1988)
 
 **Modern examples:** Tileworld64 (2022, hobbyist)
@@ -147,6 +165,8 @@ The SID is typically used only for simple sound effects (a beep on input, a chor
 **Technique fingerprint:** `ram_under_kernal`, `cpu_io_port_bank`, `exomizer_basics`, `sid_voice_setup`, `two_word_parser`
 
 **Common pitfalls:** `kernal_clobbers_a_x_y`, `kernal_io_mapping_dependency`, `kernal_assumes_sei_cleared`, `ram_under_rom_traps`
+
+**Brief words:** text adventure, interactive fiction, parser, zork, infocom
 
 **Reference titles:** Zork I (C64 port, 1982), The Hitchhiker's Guide to the Galaxy (1984), Leather Goddesses of Phobos (1986), Silicon Dreams trilogy (1985), Guild of Thieves (1987)
 
@@ -168,6 +188,8 @@ Real-time input handling in action-puzzle games requires debounce logic: the pla
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `kernal_clobbers_a_x_y`, `d012_wrap_around`
 
+**Brief words:** action puzzle, puzzle, tetris, falling block, falling piece, klax, match three
+
 **Reference titles:** Tetris (1988), Klax (1990), Columns (1990), Dr. Mario (unofficial port), Welltris (1990)
 
 **Modern examples:** Petscii Robots (2020) adjacent; C64Tetris (various homebrew versions, ongoing)
@@ -187,6 +209,8 @@ Multi-event sports games (Summer Games, World Games) present a different challen
 **Technique fingerprint:** `sprite_multiplex_24`, `sprite_color_swap_mid_line`, `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `multi_load_sequencing`, `sprite_collision_detect`, `krill_loader_integration`
 
 **Common pitfalls:** `sprite_dma_overflow`, `sprite_priority_collision_silent`, `sprite_x_high_bit_wrong_register`, `sprite_y_expand_double_register_write`
+
+**Brief words:** sports, football, soccer, tennis, athletics, decathlon, olympic, summer games
 
 **Reference titles:** Summer Games (1984), International Karate (1985), Summer Games II (1985), World Games (1986), International Karate + (1987)
 
@@ -208,6 +232,8 @@ Color changes for road stripes, sky gradients, and roadside scenery are all rast
 
 **Common pitfalls:** `badline_cycle_loss`, `raster_irq_first_line_jitter`, `d012_wrap_around`, `raster_line_count_difference`
 
+**Brief words:** racing, racer, race, pseudo 3d, lap, grand prix, pitstop, out run, outrun
+
 **Reference titles:** Pitstop II (1984), Buggy Boy (1988), Street Surfer (1986), Stunt Car Racer (1989), Super Cycle (1986)
 
 **Modern examples:** Slipstream 5200 (2020, homebrew by Sarah Jane Avory)
@@ -227,6 +253,8 @@ Enemy AI in beat-em-ups is necessarily more complex than in platformers or puzzl
 **Technique fingerprint:** `soft_scroll_h`, `sprite_multiplex_24`, `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`, `self_modifying_code`, `zero_page_burst`, `lane_depth_engine`
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `sprite_x_high_bit_wrong_register`, `sprite_priority_collision_silent`
+
+**Brief words:** beat em up, brawler, fighting game, double dragon, renegade
 
 **Reference titles:** Renegade (1987), Target: Renegade (1988), IK+ (1987), Double Dragon (1988), Barbarian (1987)
 
