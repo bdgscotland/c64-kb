@@ -7,6 +7,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 763, schema 30, tools 2.2.0, package 0.15.0.
 
+**Issue #39: the `action-puzzle` starter, CAVE RUN.** It is a Boulder
+Dash-style game in Oscar64:
+- the cave scan runs a quarter per frame;
+- two RLE caves are decoded between levels;
+- enemies follow walls;
+- a two-voice tune plays, with effects on voice 3;
+- a high-score table is saved to drive 8.
+
+Measured in VICE x64sc 3.10:
+- worst frame 10,033 cycles and typical 6,340 on PAL; 10,292 and 6,598
+  on NTSC;
+- `make disktest` saves twice under true 1541 emulation, then cold-boots
+  and loads the table back, on PAL and NTSC;
+- `make joy` with `tools/drive.py` plays the normal build headless.
+
 **Candidate list, batch 16: four items from fixed designs, each a
 technique entry and a pinned KickAssembler recipe (data 763).** The
 sprites-only screen mode: the display enable bit held clear through line
