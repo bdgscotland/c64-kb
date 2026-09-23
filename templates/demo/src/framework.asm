@@ -62,20 +62,61 @@
 // Acknowledge, arm the next row, call this row's handler, advance. The next
 // row is armed before the handler runs, so a handler that overruns makes the
 // next slot late instead of losing it (irq-chain.md measures this).
+// It also keeps three counters the verdict grades (all saturate at 255):
+//   irq_late     entries that began LATE_LINES or more lines after their row's line
+//   irq_bad      chains whose last row was not entry number (rows in the chain)
+//   frame_late   frame slots that ended past the next chain's first line
+//                (counted in frame_slot)
+// The first chain after the IRQs start is not judged (pitfall
+// raster_irq_first_line_jitter).
 irq:
         FrameMeterStart()              // AUTOPILOT: this IRQ's work is timed
         cld                            // pitfall decimal_mode_in_irq_handler
         lda #$01
         sta $d019
         ldx slot
+        lda $d012                      // lines since this row's line (low bytes)
+        sec
+        sbc slots+0,x
+        cmp #LATE_LINES
+        bcc !+
+        lda watching
+        beq !+
+        inc irq_late
+        bne !+
+        dec irq_late
+!:      inc irq_entries
         ldy chain_first                // the last row wraps to the current chain
         lda slots+4,x
-        bmi !+
+        bmi !wrap+
         txa
         clc
         adc #ROW
         tay
-!:      sty next
+        jmp !arm+
+!wrap:  txa                            // rows in this chain x ROW
+        sec
+        sbc chain_run
+        clc
+        adc #ROW
+        sta irq_tmp
+        lda irq_entries                // entries since the last wrap x ROW
+        asl
+        asl
+        adc irq_entries
+        cmp irq_tmp
+        beq !+
+        lda watching
+        beq !+
+        inc irq_bad
+        bne !+
+        dec irq_bad
+!:      lda #0
+        sta irq_entries
+        sty chain_run
+        lda #1                         // judged from the second chain on
+        sta watching
+!arm:   sty next
         lda slots+0,y                  // arm all nine bits of the next row's line
         sta $d012
         lda $d011
@@ -155,7 +196,22 @@ frame_slot:
         bne !+
         inc frames+1
 !:      jsr sequencer
-        inc frame_flag                 // the main loop's once-a-frame point
+        // Late if this ended at or past the next chain's first line (and
+        // before this slot's own line): that row fired while it ran, so a
+        // split came late or a stable entry lost its line. Lines 256 up have
+        // $D011 bit 7 set and are on time.
+        ldy next
+        lda $d011
+        bmi !+
+        lda $d012
+        cmp slots+0,y
+        bcc !+
+        cmp #FRAME_LINE
+        bcs !+
+        inc frame_late
+        bne !+
+        dec frame_late
+!:      inc frame_flag                 // the main loop's once-a-frame point
         rts
 
 // PAL: play every frame. NTSC: skip every sixth call, so a tune written for
@@ -320,6 +376,13 @@ part:        .byte 0
 part_timer:  .word 0
 tr_step:     .byte 0                   // the transition's own counter
 frame_flag:  .byte 0
+irq_entries: .byte 0                   // dispatcher entries since the last wrap
+irq_tmp:     .byte 0
+chain_run:   .byte 0                   // the chain that started at the last wrap
+watching:    .byte 0
+irq_late:    .byte 0
+irq_bad:     .byte 0
+frame_late:  .byte 0
 frozen:      .byte 0                   // AUTOPILOT: set once the graded frame is reached
 frames:      .word 0                   // frame slots since the start
 ntsc_div:    .byte 0

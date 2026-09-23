@@ -25,6 +25,7 @@ Start a demo from it in c64-kb:
 | `src/music.asm` | The tune and its player at `$1000` (init) / `$1003` (play) |
 | `src/verdict.asm` | AUTOPILOT only: grades the frozen frame |
 | `tools/gen_expect.py` | Recomputes the picture from `config.asm` and writes `expect.json` (`make expect`) |
+| `tools/audio.py` | Counts the tune's SID stores in a claims-watch trace against the frames (`make audio`, run by `make check`) |
 | `tools/probe.py` | Reads where the bar kernel's stores land from the PROBE build (`make probe`) |
 | `expect.json`, `PLAN.md` | The screenshot checks; the plan with the c64-kb tool output |
 
@@ -113,18 +114,22 @@ median is a main-part frame. `make shot check`, VICE x64sc 3.10:
 
 | Model | Worst | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 7,225 | 6,478 | 19,656 |
-| NTSC | 7,360 | 6,615 | 17,095 |
+| PAL | 7,332 | 6,586 | 19,656 |
+| NTSC | 7,480 | 6,734 | 17,095 |
 
 The recorded samples, read with the monitor before the meter sorts them:
 
 | Phase | PAL | NTSC |
 |---|---|---|
-| Title | 1,520 to 1,618 | 1,427 to 1,632 |
-| Wipe | 1,825 to 1,918 | 1,732 to 1,937 |
-| Idle chain while part 1's init runs | 273 | 282 |
-| Idle chain running part 1's first update | 2,382 | 2,401 |
-| Main part | 6,475 to 7,225 | 6,508 to 7,360 |
+| Title | 1,602 to 1,702 | 1,510 to 1,716 |
+| Wipe | 1,906 to 2,000 | 1,824 to 2,029 |
+| Idle chain while part 1's init runs | 371 | 380 |
+| Idle chain running part 1's first update | 2,466 | 2,495 |
+| Main part | 6,583 to 7,332 | 6,626 to 7,480 |
+
+(The dispatcher's lateness counters, below, cost about 30 cycles an IRQ;
+the build before them read 7,225 / 6,478 on PAL and 7,360 / 6,615 on
+NTSC.)
 
 The worst main-part frames are the ones where the scroller moves its row.
 The bar slot is about 3,970 cycles of a main-part frame on PAL and 4,095
@@ -137,15 +142,17 @@ about 17 badlines x 43 = 731 cycles (25 in the display, 7 under the bars
 and 1 in the frame slot are inside) and 400 to 855 cycles of sprite DMA
 on lines 101 to 145 ((3 + 2 x 8) cycles a line on 21 to 45 lines, as
 plan-budget counts it), and the KERNAL's entry and exit take 3 x 61 = 183
-(7 + 29 in, 25 out through `JMP $EA81`). That leaves about 10,700 to
-11,100 cycles a frame on PAL and 8,000 to 8,400 on NTSC in the worst
+(7 + 29 in, 25 out through `JMP $EA81`). That leaves about 10,600 to
+11,000 cycles a frame on PAL and 7,800 to 8,300 on NTSC in the worst
 main-part frame.
 
 The frame slot has a deadline: `update` must finish before line 148 of
 the next frame, where the stable slot fires, or the bars tear. From line
 236 that is 224 lines on PAL and 175 on NTSC, less their badlines (by
 arithmetic; the review of this starter tore the bars on PAL with 12,800
-cycles added to `main_update`, and `make check` caught it).
+cycles added to `main_update`, and `make check` caught it). The program
+now counts it itself, and the verdict grades it: see "Autopilot and
+checks".
 
 `plan-budget` (PLAN.md) predicted 2,381 + 1,873 fixed cycles. Where it
 differs:
@@ -182,6 +189,32 @@ colour table, and the tune's call count against the frame count. `$02FF`
 = `$01` and a green border on pass. `FORCE_FAULT` starts the sprite chain
 sixteen sine steps ahead: the verdict, seven of the eight sprite boxes and
 the border checks fail, on both models (26 FAIL lines).
+
+Three counters, kept in every build, are graded too, and must be 0:
+
+- `irq_late`: dispatcher entries that began `LATE_LINES` (3) or more lines
+  after their row's line;
+- `irq_bad`: chains whose last row was not entry number (rows in the chain);
+- `frame_late`: frame slots that ended at or past the next chain's first
+  line (148 in the main part), the frame slot's deadline.
+
+With 11,520 cycles added to `main_update` the verdict read `irq_late` 255
+(saturated), `irq_bad` 156 and `frame_late` 156, and failed on PAL; on
+NTSC that load never reached the verdict. The shipped build reads 0, 0, 0.
+
+The tune is graded twice. The verdict reads the player's tick and step
+with interrupts held off and checks them against its call count (after c
+calls: tick c mod 7, step (c div 7) mod 32), and the call count against
+the frame count. The SID's own output cannot be read back under the
+harness's `+sound`: `$D41C` returned a changing value with no SID write at
+all (measured here with a test PRG). So `make check` first runs `make
+audio` (`tools/audio.py`): c64-kb's claims-watch traces the PAL run and
+counts the program's SID stores. Voice 2 must be written twice a frame
+from its first store (measured: 444 play calls in 448 frames, the gap
+being the meter's calibration and the title's init), and voices 1 and 3
+at least once a step. With every `STA $D4xx` in `music.asm` made a `CMP`,
+`make check` failed: "no store to voice 2 at all". `make audio` is
+skipped, and says so, where the c64-kb checkout has no claims-watch.
 
 `expect.json` also places row 22's ink at XSCROLL 3: for each of the 37
 visible cells, the leftmost ink pixel of its first inked glyph row (from

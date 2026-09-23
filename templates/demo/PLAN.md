@@ -391,10 +391,11 @@ and the meter with its frame count.
 
 ## Measured
 
-`make shot check`, VICE x64sc 3.10, 232 recorded frames: PAL worst 7,225,
-typical 6,478; NTSC worst 7,360, typical 6,615. (The first build read 7,171
+`make shot check`, VICE x64sc 3.10, 232 recorded frames: PAL worst 7,332,
+typical 6,586; NTSC worst 7,480, typical 6,734. (The first build read 7,171
 / 6,473 and 7,351 / 6,612; the review's fixes moved code and made part 1's
-init clear the screen.) README.md, "The measured
+init clear the screen, and the dispatcher's lateness counters add about 30
+cycles an IRQ.) README.md, "The measured
 frame", has the per-phase samples and the comparison with plan-budget.
 - Open: the sync padding and the kernel's lead are measured in VICE x64sc
   3.10 only, on the 6569 and 6567R8 models. Not on hardware.

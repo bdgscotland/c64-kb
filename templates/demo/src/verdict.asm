@@ -94,7 +94,44 @@ verdict:
         jmp !pass+
 !pal:   cmp #0
         FailNe()
-!pass:  lda #1
+!pass:
+        lda irq_late                   // every IRQ on its line, every chain whole,
+        ora irq_bad                    // every frame slot done before the next chain
+        ora frame_late
+        FailNe()
+        // The player's place against its call count: after c calls the
+        // tick is c mod STEP_FRAMES and the step (c div STEP_FRAMES) mod
+        // STEPS. Read together, with the IRQ that advances them held off.
+        sei
+        lda music_calls
+        sta v_calls
+        lda music_calls+1
+        sta v_calls+1
+        lda m_tick
+        sta v_tick
+        lda m_step
+        sta v_step
+        cli
+        ldx #0                         // v_calls div STEP_FRAMES, low byte in X
+!:      lda v_calls
+        sec
+        sbc #STEP_FRAMES
+        tay
+        lda v_calls+1
+        sbc #0
+        bcc !+
+        sta v_calls+1
+        sty v_calls
+        inx
+        jmp !-
+!:      lda v_calls                    // the remainder
+        cmp v_tick
+        FailNe()
+        txa
+        and #STEPS - 1
+        cmp v_step
+        FailNe()
+        lda #1
         ldy #5
         ldx #0
         jmp !say+
@@ -132,3 +169,7 @@ pass:   .text "RESULT 01 PASS"
 pass_end:
         .text "RESULT 02 FAIL"
 verdict_done: .byte 0
+v_calls: .word 0
+v_tick:  .byte 0
+v_step:  .byte 0
+

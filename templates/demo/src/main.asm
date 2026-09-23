@@ -49,6 +49,7 @@ start:
         FrameMeterInit()               // after the init: the meter tints its own cells
         lda chain_first                // arm the chain's first row
         sta slot
+        sta chain_run
         tax
         lda slots+0,x
         sta $d012

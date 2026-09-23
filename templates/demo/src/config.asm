@@ -21,6 +21,7 @@
 .const SCROLL_LINE  = 224              // XSCROLL on for row 22 (lines 227-234)
 .const BARS_SLOT_LINE = 148            // the stable entry: irq2 fires STABLE_LINES later
 .const STABLE_LINES = 4
+.const LATE_LINES   = 3                // a slot entered this many lines after its line is late
 .const BARS_TOP     = 155              // first bar line (measured lead, see main part)
 .const BARS_LINES   = 56               // bar lines 155-210; rows 13-19 must stay blank
 .const BAR_H        = 12

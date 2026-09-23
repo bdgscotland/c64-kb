@@ -3,6 +3,9 @@
 #   make probe   eight PAL and eight NTSC shots of the PROBE build: proves the
 #                stable entry after any change before or in the bar kernel
 #   make expect  rewrite expect.json from src/config.asm (tools/gen_expect.py)
+#   make audio   the SID stores of the autopilot run against its frames
+#                (tools/audio.py, through c64-kb's claims-watch); make check
+#                runs it first
 NAME     := demo
 KICK_SRC := src/main.asm
 
@@ -31,7 +34,18 @@ $(PRG_PROBE): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(KICK_BUILD) -define $(AUTOPILOT_DEFINE) -define PROBE -o $(CURDIR)/$@ > build/kick-probe.log || { cat build/kick-probe.log; exit 1; }
 
-.PHONY: probe expect
+.PHONY: probe expect audio
+# The demo cannot read its sound back under +sound (tools/audio.py says why),
+# so check first counts its SID stores in a trace. Skipped, and said so,
+# when the c64-kb checkout has no claims-watch.
+check: audio
+audio: $(PRG_AUTO)
+	@if [ -f "$(C64KB)/scripts/claims-watch.ts" ]; then \
+	  $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) tools/audio.py --c64kb "$(C64KB)" --x64sc "$(X64SC)" --cycles $(SHOT_CYCLES_PAL) $(abspath $(PRG_AUTO)); \
+	else \
+	  echo "audio: not checked: $(C64KB)/scripts/claims-watch.ts does not exist"; \
+	fi
+
 # Eight shots a model, at cycle counts that are no whole number of frames
 # apart, of a build whose main loop jitters the IRQ entry (see main.asm).
 PROBE_CYCLES := 12000000 12345677 12777773 13311111 13900001 14444449 15012347 15600011

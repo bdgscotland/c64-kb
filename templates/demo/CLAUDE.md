@@ -41,6 +41,10 @@ What bites in this program:
   changing one, `make expect shot check`.
 - Handlers run inside the dispatcher's meter bracket: keep grading and
   printing in the main loop, outside it.
+- The verdict grades three lateness counters (`irq_late`, `irq_bad`,
+  `frame_late`): the frame slot must finish before the next chain's first
+  line. `make check` also runs `make audio`, which counts the tune's SID
+  stores in a trace; the program cannot hear its own SID under `+sound`.
 - `loader_hook` is the place for an IRQ loader. The KERNAL's LOAD masks
   interrupts for whole bytes and moves the bars.
 
