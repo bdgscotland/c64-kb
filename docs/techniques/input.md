@@ -825,3 +825,122 @@ instruction table. As a subroutine it is 74 with the `jsr` and `rts`
 ### Recipes
 
 - `recipes/kickassembler/four-player-read.md`
+
+---
+
+## irq_keyboard_own_scan — Scan the keyboard from your own IRQ, with per-key age counters and the KERNAL's exit points
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** DC00, DC01, DC02, DC03
+**Requires:** keyboard_matrix_scan
+**Cost:** cycles_per_frame=945, irq_slots=1, zp_bytes=1
+**Cost basis:** measured-vice
+
+### Why
+
+A game that takes the IRQ vector and masks CIA1 has switched off
+SCNKEY, so `GETIN`, the buffer at `$0277` and the STOP key all go
+quiet; the fix a platformer built for a blind test needed on 2026-09-22
+(`pitfalls/input.md`, `cia1_ddr_cleared_kills_keyboard`) is the general
+one. Scan the matrix yourself, once a frame, from the same IRQ that
+drives the game. Done there rather than in the main loop, the scan
+cannot be torn by the KERNAL's column writes, runs at a fixed point in
+the frame, and gives every key a frame-accurate history: pressed this
+frame, held N frames, released this frame.
+
+### How
+
+1. Mask CIA1 (`$DC0D` = `$7F`, then read it) and take `$0314`, or
+   `$FFFE` with the KERNAL out. The direction registers stay as IOINIT
+   left them, `$DC02` = `$FF` and `$DC03` = `$00`; write them anyway,
+   because a loader or a previous program may not have.
+2. In the IRQ, walk a single zero bit across `$DC00` from `$FE` to
+   `$7F` and read `$DC01` after each store into an eight-byte image,
+   one byte a column, bit r clear for a closed switch on row r. The
+   layout is in `hardware/cia-reference.md`.
+3. Write `$FF` back to `$DC00`. A joystick 2 poll later in the frame,
+   or in the same handler, then reads only the port's own switches. The
+   KERNAL leaves `$7F` and a game that copies that habit sees column 7's
+   keys on port 2.
+4. Edges: `prev EOR cur` is the set of changed bits; `AND prev` keeps
+   the presses, `AND cur` the releases. Then `prev` = `cur`.
+5. Ages: for each key the game uses, a byte that is 0 while the key is
+   up and counts up from 1 while it is down, saturating at 255. Age 1 is
+   the press event; age N is "held N frames"; a repeat rule on the age
+   (first at REPEAT_AT, then every second frame) is `joystick_autorepeat`
+   applied to a key.
+6. Leave through the KERNAL's exit that matches what you kept. Read from
+   the ROM image: `$EA81` is `PLA TAY PLA TAX PLA RTI`, the bare exit;
+   `$EA7E` is `LDA $DC0D` then the same, a bare exit that also
+   acknowledges CIA1; `$EA7B` is `JSR $EA87`, the SCNKEY call, then the
+   two above; `$EA31` is the whole service routine, jiffy clock and
+   cursor blink and tape motor and scan. A handler that keeps the KERNAL
+   jiffy IRQ alive and adds its own scan exits through `$EA7E`, or does
+   the acknowledge itself and uses `$EA81`; jumping to `$EA7B` runs the
+   KERNAL scan too and defeats the point.
+
+### Why it works
+
+There are no diodes in the matrix, so one column pulled low lets only
+that column's closed switches pull rows down; eight passes see all 64
+switches (`keyboard_matrix_scan`). SCNKEY can no longer interleave its
+own column writes with yours because it is not running: it is only
+ever called from the handler at `$EA31`, and masking CIA1 stops that
+handler. Everything the KERNAL did with the result, the decode to
+PETSCII, the modifier tables, the ten-byte buffer, the repeat delay
+in `$028B/$028C`, is now the game's to do or to skip; a game that
+steers with keys skips all of it and reads the image directly.
+
+The age counter carries the whole per-key state in one byte. It is
+also the debounce, for the reason `keyboard_matrix_scan` gives: at one
+sample per frame, a bounce costs at worst one extra release-and-press
+pair, which shows as a second age 1.
+
+### Variations
+
+**Ghosting with three keys.** Three closed switches at three corners of
+a rectangle in the matrix make the fourth corner read closed. A
+key-steered game picks its keys so no three of them form three corners
+of a rectangle: SPACE, Z, C, B are all row 4 and can never ghost with
+each other, but Z (column 1, row 4) with W (column 1, row 1) and S
+(column 1, row 5) is fine while Z, W and R (column 2, row 1) ghosts C
+(column 2, row 4) on. From the wiring, not measured: a headless run
+cannot hold three keys.
+
+**The shift and control lines.** Left shift is column 1 row 7, right
+shift column 6 row 4, CTRL column 7 row 2, C= column 7 row 5. They are
+ordinary switches to the scan; a game reads them as modifiers by
+testing those bits alongside the key. SHIFT LOCK is left shift held
+mechanically.
+
+**A keyboard-driven menu.** Ages give a menu its repeat for free: move
+the cursor when a direction key's age is 1, again when it is
+REPEAT_AT, then every second frame. The press set gives one event per
+key per press for the confirm key, whatever the frame rate.
+
+**Keeping the KERNAL IRQ.** If the game needs the jiffy clock or the
+KERNAL's STOP handling, leave `$DC0D` alone, scan in your own raster
+IRQ and exit through `$EA81` after acknowledging `$D019`; the KERNAL's
+own SCNKEY still runs on the CIA timer and still leaves `$7F` on
+`$DC00`. A joystick 2 read then has to tolerate `$7F`, or write `$FF`
+first, and the two scans' column writes can interleave if the raster
+IRQ is allowed to pre-empt the timer one (`pitfalls/input.md`,
+`joystick2_scan_phantom_press`, and `keyboard_matrix_scan`, "Why the
+KERNAL IRQ must be out of the way").
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 Timer A in the recipe's
+handler, PAL and NTSC alike: the scan alone, eight columns with the
+`$FF` restore, is 252 cycles; the scan plus the `$DC00` read-back, the
+edge pass over eight columns and the ageing of four keys is 781 with
+the matrix empty and 945 with all four watched keys held (41 cycles a
+held key, the longer ageing branch). The Cost line carries the 945,
+the worst frame. On PAL that is under 5 % of a 19,656-cycle frame,
+about fifteen raster lines; it runs from line 250 in the recipe, below
+the display, where no badline can stretch it.
+
+### Recipes
+
+- `recipes/kickassembler/own-keyscan.md`

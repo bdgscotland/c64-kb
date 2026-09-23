@@ -26,7 +26,7 @@ IRQs, banked memory, or BCD arithmetic.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** OPEN, LOAD, SAVE, CHKIN, CHKOUT, CLOSE, CLRCHN
-**Triggered by techniques:** stable_raster_irq, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io
+**Triggered by techniques:** stable_raster_irq, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io, directory_read_and_select
 
 ### Symptom
 
@@ -345,7 +345,7 @@ msg_end:
 
 **Severity:** critical
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, decimal_mode_pitfalls, irq_chain_table, logic_rate_decoupling, sprite_multiplex_game, tod_alarm_interrupt
+**Triggered by techniques:** stable_raster_irq, decimal_mode_pitfalls, irq_chain_table, logic_rate_decoupling, sprite_multiplex_game, tod_alarm_interrupt, irq_keyboard_own_scan
 
 ### Symptom
 
@@ -519,7 +519,7 @@ sprite_y: .fill 8, i * 21 + 50
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** SETLFS, LOAD, SAVE, OPEN, CLOSE
-**Triggered by techniques:** cpu_io_port_bank, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io
+**Triggered by techniques:** cpu_io_port_bank, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io, directory_read_and_select
 
 ### Symptom
 
@@ -805,7 +805,7 @@ said the call returned false). If you need to know, open the command channel
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** SETNAM, OPEN
-**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, kernal_load_to_address
+**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, kernal_load_to_address, directory_read_and_select
 
 ### Symptom
 
@@ -1298,7 +1298,7 @@ tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
 **Severity:** medium
 **Region:** both
 **Triggered by kernal:** OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE
-**Triggered by techniques:** stable_raster_irq, frame_sync_loop, kernal_file_write_seq, kernal_file_read_seq, kernal_relative_file_io, kernal_load_to_address
+**Triggered by techniques:** stable_raster_irq, frame_sync_loop, kernal_file_write_seq, kernal_file_read_seq, kernal_relative_file_io, kernal_load_to_address, directory_read_and_select
 
 ### Symptom
 
@@ -1452,7 +1452,7 @@ vic.intr_ctrl = 1; vic.intr_enable = 1;
 **Severity:** high
 **Region:** PAL
 **Triggered by kernal:** OPEN, CHKIN
-**Triggered by techniques:** kernal_file_read_seq, kernal_file_write_seq, error_channel_check, kernal_load_to_address
+**Triggered by techniques:** kernal_file_read_seq, kernal_file_write_seq, error_channel_check, kernal_load_to_address, directory_read_and_select
 
 ### Symptom
 

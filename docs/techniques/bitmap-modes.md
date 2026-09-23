@@ -7,7 +7,7 @@ chip: VIC-II
 
 # Bitmap Modes
 
-The VIC-II supports two hardware bitmap modes — standard hires and multicolor — each with its own memory layout, color resolution, and practical constraints. On top of these two fundamental modes, the scene has developed several scanline-switching techniques (FLI, AFLI, IFLI) that exploit the chip's internal video-matrix pipeline to push color fidelity far beyond what the hardware naively supports. This document covers all eight techniques in the bitmap family, from the simplest mode enable through the most demanding interlaced scanline-switcher.
+The VIC-II supports two hardware bitmap modes — standard hires and multicolor — each with its own memory layout, color resolution, and practical constraints. On top of these two fundamental modes, the scene has developed several scanline-switching techniques (FLI, AFLI, IFLI) that exploit the chip's internal video-matrix pipeline to push color fidelity far beyond what the hardware naively supports. This document covers the techniques in the bitmap family, from the simplest mode enable, a pixel plot and a line, through the most demanding interlaced scanline-switcher.
 
 Understanding the bitmap modes thoroughly is a prerequisite before attempting FLI variants. The FLI family builds entirely on the standard bitmap addressing described here; a mistake in the memory layout will manifest as wrong colors in an FLI image just as much as in a plain bitmap.
 
@@ -63,7 +63,137 @@ Drawing into the bitmap from the main program is safe in the vertical blank or i
 
 ### Recipes
 
-- No standalone recipe yet. `recipes/oscar64/bitmap-koala-viewer.md` sets up $D018 and BMM for the multicolour case; the hires setup differs only in $D016.
+- `recipes/kickassembler/hires-plot-line.md` — the hires setup ($D018 = $18, $D016 = $08, $D011 = $3B) with screen RAM set to white on black, then plots and lines into it.
+- `recipes/oscar64/bitmap-koala-viewer.md` sets up $D018 and BMM for the multicolour case; the hires setup differs only in $D016.
+
+---
+
+## hires_plot — Set one pixel in a hires bitmap through a row table and a mask table
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D011, D016, D018
+**Uses kernal:** (none)
+**Requires:** standard_bitmap
+**Cost:** cycles_per_frame=63
+**Cost basis:** measured-vice
+
+### Why
+
+A hires bitmap is 8000 bytes laid out cell by cell, not scanline by scanline, so the byte that holds pixel (x, y) is not `y * 40 + x / 8`. Working the address out from scratch on each plot means a multiply by 320; a plot is the inner step of every line, circle and fill routine, so it has to be a table lookup and a handful of adds.
+
+### How
+
+Two tables, built at assembly time:
+
+- A row address table with one 16-bit entry per y from 0 to 199: `BITMAP + (y / 8) * 320 + (y & 7)`. That is the address of the leftmost byte on scanline y. Store low bytes in one table and high bytes in another so each is indexed by y in one instruction.
+- A mask table with one byte per x & 7: `$80, $40, $20, $10, $08, $04, $02, $01`. Bit 7 is the leftmost pixel of a byte.
+
+The plot, with x in 16 bits because it reaches 319:
+
+1. Take `x & $F8`. That is the column times eight, which is also the byte offset of that column's cell within the row, because each cell is eight bytes.
+2. Add it to the row table's low byte for y; add x's high byte to the row table's high byte with the carry. The result is the address of the byte holding the pixel.
+3. Read the byte, `ORA` the mask for `x & 7`, write it back.
+
+```text
+    ldy y
+    lda x_lo
+    and #$f8
+    clc
+    adc row_lo,y
+    sta ptr
+    lda row_hi,y
+    adc x_hi
+    sta ptr + 1
+    lda x_lo
+    and #$07
+    tax
+    lda mask,x
+    ldy #0
+    ora (ptr),y
+    sta (ptr),y
+```
+
+Put each row table in its own page (`.align $100` in KickAssembler). `LDA abs,Y` costs one cycle more when the index carries into the next page; with the tables unaligned, the recipe's plot measured 65 cycles at y = 199 instead of 63.
+
+### Why it works
+
+The VIC-II fetches the bitmap in the same order it fetches a character set: on each badline it reads 40 screen RAM bytes, and on the eight lines that follow it reads one byte per cell per line, walking eight bytes per cell. So the eight bytes of a cell are consecutive, a row of 40 cells is 320 consecutive bytes, and the address arithmetic above is the fetch order inverted. `$D018` bit 3 chooses `$0000` or `$2000` within the VIC bank as the base; `$D011` bit 5 turns bitmap mode on; `$D016` bit 4 clear keeps it hires, one bit per pixel. Screen RAM supplies the ink and paper nibbles per cell and is not touched by the plot, so a canvas of one ink colour is set up once.
+
+### Variations
+
+**Multicolour plot.** In multicolour bitmap mode a pixel is two bits wide and x runs 0 to 159. The byte is `row + (x & $FC) * 2`, which is the column times eight; the doubling can carry out of the low byte for x of 128 and above, so add it in 16 bits or use a 40-entry column table. The mask table has four entries, `$C0, $30, $0C, $03`, indexed by `x & 3`, and the colour value is shifted into the same two bits. Clear with `AND` of the inverted mask, then `ORA` the shifted colour, so a plot can set any of the four colours and not just turn a bit on.
+
+**Erase list.** An animated shape drawn with plots is cheapest to remove by replaying its own plots with `AND` of the inverted mask (an `unplot`). Record each plotted address and mask in a list as the shape is drawn; clearing the whole 8000 bytes costs about 8 cycles a byte, an erase list costs one `unplot` per pixel.
+
+**Plot without the high byte.** A routine that only ever plots x below 256 can drop `x_hi` and the second `adc`; the mask and row tables are unchanged.
+
+### Cycle budget
+
+63 cycles for `jsr` and `rts` included, with both tables page-aligned, measured with CIA1 timer A in the `hires-plot-line` recipe with the display blanked; the instruction table gives the same 63. With the display on, a badline under the plot adds 40 to 43 cycles on the CIA's count without making the plot slower. Nothing here depends on the raster position; drawing is safe while the cells being written are not being fetched.
+
+### Recipes
+
+- `recipes/kickassembler/hires-plot-line.md` — the tables, the plot, timed, and 2,056 pixels counted back out of the bitmap.
+
+---
+
+## bresenham_line — Straight line by Bresenham's error term, all eight octants
+
+**Complexity:** medium
+**Region:** both
+**Uses kernal:** (none)
+**Requires:** hires_plot
+**Cost:** cycles_per_frame=43606
+**Cost basis:** measured-vice
+
+### Why
+
+A line between two pixels has one pixel per step along its longer axis, and the shorter axis moves a fraction of a pixel per step. Keeping that fraction as a fixed-point value works but costs a 16-bit add per step and a division at setup. Bresenham's form keeps an integer error term whose sign says when the minor axis is due to move, needs no division, and every pixel it picks is the one nearest the ideal line.
+
+### How
+
+Given (x0, y0) to (x1, y1):
+
+1. `dx = |x1 - x0|`, `dy = |y1 - y0|`, and a step of +1 or -1 for each axis from the signs. x needs 16 bits on a 320-wide bitmap; y fits 8, but a difference of two y values reaches -199, so take it in 16 bits too or sign-extend with care.
+2. The major axis is the one with the larger delta. Two loops, one for each, are simpler and faster than one loop that swaps roles.
+3. Error term `err = 2 * minor - major`, kept in 16 bits with the doubled deltas precomputed.
+4. Loop `major + 1` times: plot; if the count is spent, stop; if `err >= 0`, step the minor axis and `err -= 2 * major`; then `err += 2 * minor` and step the major axis.
+
+The sign test is `LDA err_hi : BMI skip`. The term stays within about -640 to +640 for any line on this screen, so bit 7 of the high byte is the true sign and no overflow case arises. The count is `major`, tested for zero before decrementing, so the last pixel is the end point in every octant and the count of pixels is `max(dx, dy) + 1`.
+
+```text
+shallow_loop:
+    jsr plot
+    lda n : ora n + 1 : beq done
+    (n = n - 1)
+    lda err + 1
+    bmi no_y
+    (y = y + sy ; err = err - dx2)
+no_y:
+    (err = err + dy2 ; x = x + sx)
+    jmp shallow_loop
+```
+
+### Why it works
+
+The error term is twice the signed distance between the ideal line and the pixel just plotted, measured along the minor axis in units of a pixel. Doubling keeps the half-pixel threshold an integer. Each major step moves the ideal line `minor / major` of a pixel, so adding `2 * minor` to a term that was scaled by `major` is that move; when the term reaches zero the ideal line has passed the half-way point, the minor axis steps, and subtracting `2 * major` recentres the term on the new pixel. Because only the sign is ever tested and the term is bounded by the deltas, 16 bits are enough and the test is one branch on one byte.
+
+### Variations
+
+**Clipped line.** Test each end point against 0 to 319 and 0 to 199 before drawing. A line with both ends inside never leaves the screen, because Bresenham's pixels lie between its end points on both axes. For a line with an end outside, clip the end point to the edge first (Cohen-Sutherland style code, not on this page) rather than testing every pixel; a per-pixel test doubles the loop cost.
+
+**Erase list.** Record each pixel's address and mask as the line is drawn and replay the list with `AND` to remove it; see the erase-list variation of `hires_plot`.
+
+**8-bit error term.** When the larger delta is below 64 the term and the doubled deltas fit a signed byte: the term stays within twice the major delta, so 126 at most, and the two 16-bit adds become one 8-bit add each, saving about 12 cycles a step. A line whose larger delta is 64 or more overflows the byte and the sign test then reads the wrong way (`pitfalls/cpu.md`, `signed_compare_bmi_overflow`); guard the setup, do not assume the caller did.
+
+### Cycle budget
+
+Measured with CIA1 timer A in the `hires-plot-line` recipe, display blanked, VICE x64sc, identical on PAL and NTSC: 214 cycles for a one-pixel line (setup, first plot, exit test) and 43,606 for the 320-pixel flat line along the bottom row, the longest line the screen holds. A sweep of flat lines from 2 to 320 pixels fits 214 + 136 per further pixel, plus 4 when the step count's low byte passes zero and 4 when x crosses 255. The 136 is 63 for the plot and 73 for the step, by the instruction table. A steep line costs the same step less the `jsr step_x`, about 130, when its major axis is y. Both figures are for the recipe's layout: the same loop with its `bne` sitting on `$0AFC` and its target on `$0B00` measured 43,925, one cycle more per step (`pitfalls/cpu.md`, `branch_page_cross_extra_cycle`). A frame of 19,656 PAL cycles holds about 140 pixels of line drawn this way; a game that draws more than that per frame unrolls the plot into the loop or draws across frames.
+
+### Recipes
+
+- `recipes/kickassembler/hires-plot-line.md` — eleven lines in every direction, the longest one timed, and the set-bit count checked against the endpoints.
 
 ---
 

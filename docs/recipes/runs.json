@@ -1116,5 +1116,64 @@
       "pal": "screenshots/mixed-fighters.png",
       "ntsc": "screenshots/mixed-fighters-ntsc.png"
     }
+  },
+  "oscar64/seeded-level-fill": {
+    "cycles": 9500000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/seeded-level-fill.png",
+      "ntsc": "screenshots/seeded-level-fill-ntsc.png"
+    }
+  },
+  "oscar64/directory-reader": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/directory-reader.png",
+      "ntsc": "screenshots/directory-reader-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/own-keyscan": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-joydev2",
+      "2",
+      "-joystick2autofire",
+      "-joystick2autofiremode",
+      "1",
+      "-joystick2autofirespeed",
+      "5"
+    ],
+    "shots": {
+      "pal": "screenshots/own-keyscan.png",
+      "ntsc": "screenshots/own-keyscan-ntsc.png"
+    }
+  },
+  "kickassembler/hires-plot-line": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/hires-plot-line.png",
+      "ntsc": "screenshots/hires-plot-line-ntsc.png"
+    }
   }
 }
