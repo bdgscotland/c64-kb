@@ -20,11 +20,15 @@ function archetypeLabel(
 }
 
 function budgetPhrase(budget: BriefingOutput["budget"]): string {
-  const sum =
-    budget.cycles_verdict === "no_data"
-      ? "no cycle figures"
-      : `${budget.cycles_per_frame_sum} of ${budget.frame_cycles} ${budget.region} cycles per frame, ${budget.cycles_verdict}`;
-  return `${sum}${budget.is_floor ? " (a floor)" : ""}`;
+  if (budget.cycles_verdict === "no_data") return "no cycle figures";
+  const range =
+    budget.cycles_low === budget.cycles_per_frame_sum
+      ? `${budget.cycles_per_frame_sum}`
+      : `${budget.cycles_low}-${budget.cycles_per_frame_sum}`;
+  const fixed = budget.fixed_loss_cycles > 0 ? ` + ${budget.fixed_loss_cycles} badlines` : "";
+  const unknown =
+    budget.unknown.length > 0 ? `; ${budget.unknown.length} member(s) with no cycles figure` : "";
+  return `${range}${fixed} of ${budget.frame_cycles} ${budget.region} cycles per frame, ${budget.cycles_verdict}${unknown}`;
 }
 
 export function briefSummary(opts: {

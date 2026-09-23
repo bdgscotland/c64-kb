@@ -43,7 +43,11 @@ const TechniqueRow = z.object({
   cost_zp_bytes: OptNumber,
   cost_irq_slots: OptNumber,
   cost_sprites_per_line: OptNumber,
+  cost_cycles_per_frame_typical: OptNumber,
   cost_basis: CostBasisSchema.nullable(),
+  cost_recipe: z.string().nullable(),
+  cost_conditions: z.string().nullable(),
+  cost_includes: z.array(z.string()).nullable(),
   raster_band: z.string().nullable(),
   claims_stated: z.string().nullable(),
   claims_basis: z.string().nullable(),
@@ -59,6 +63,8 @@ const TECHNIQUE_QUERY = `MATCH (t:Technique {name: $name})
             t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
             t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
             t.cost_irq_slots AS cost_irq_slots, t.cost_sprites_per_line AS cost_sprites_per_line, t.cost_basis AS cost_basis,
+            t.cost_cycles_per_frame_typical AS cost_cycles_per_frame_typical, t.cost_recipe AS cost_recipe,
+            t.cost_conditions AS cost_conditions, t.cost_includes AS cost_includes,
             t.raster_band AS raster_band, t.claims_stated AS claims_stated, t.claims_basis AS claims_basis
      LIMIT 1`;
 
@@ -72,6 +78,7 @@ const COST_FIGURES = [
   ["zp_bytes", "cost_zp_bytes"],
   ["irq_slots", "cost_irq_slots"],
   ["sprites_per_line", "cost_sprites_per_line"],
+  ["cycles_per_frame_typical", "cost_cycles_per_frame_typical"],
 ] as const;
 
 /**
@@ -85,8 +92,15 @@ function costOf(row: TechniqueRow): TechniqueCostOutput | undefined {
     const v = row[column];
     if (v !== null) figures[key] = v;
   }
-  // basis last, as the output has always ordered it.
-  return { ...figures, basis: row.cost_basis };
+  // basis after the figures, as the output has always ordered it; the
+  // provenance lines (schema 27) after the basis.
+  return {
+    ...figures,
+    basis: row.cost_basis,
+    ...(row.cost_recipe ? { measured_on: row.cost_recipe } : {}),
+    ...(row.cost_conditions ? { conditions: row.cost_conditions } : {}),
+    ...(row.cost_includes && row.cost_includes.length > 0 ? { includes: row.cost_includes } : {}),
+  };
 }
 
 async function techniqueNotFound(name: string): Promise<TechniqueLookupResult> {
@@ -255,11 +269,13 @@ function renderTechniqueHeader(t: TechniqueLookupOutput, cost: TechniqueCostOutp
   if (t.requires_region) out += `**Requires region:** ${t.requires_region}\n`;
   if (t.raster_band) out += `**Raster band:** ${t.raster_band}\n`;
   if (cost) {
-    const { basis, ...figures } = cost;
+    const { basis, measured_on, conditions, includes, ...figures } = cost;
     out += `**Cost:** ${Object.entries(figures)
       .map(([k, v]) => `${k}=${v}`)
       .join(", ")}\n`;
     out += `**Cost basis:** ${basis}\n`;
+    if (measured_on) out += `**Cost measured on:** ${measured_on}${conditions ? ` (${conditions})` : ""}\n`;
+    if (includes) out += `**Cost includes:** ${includes.join(", ")}\n`;
   }
   return out + renderClaims(t) + `\n`;
 }

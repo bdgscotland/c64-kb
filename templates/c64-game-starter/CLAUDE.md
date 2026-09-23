@@ -142,7 +142,8 @@ All 24 tools from c64-kb are available once the MCP server is running:
 | `c64_technique_lookup` | Technique lookup with USES registers + recipes |
 | `c64_techniques_for` | List techniques filtered by category / chip / region |
 | `c64_check_compatibility` | Conflict detection across a list of techniques |
-| `c64_timing_budget` | Per-scanline + per-frame cycle math for a technique |
+| `c64_timing_budget` | Per-scanline cycle math for a technique |
+| `c64_plan_budget` | Add your technique list up against a frame, per phase; names what is unknown |
 | `c64_pitfalls_for` | Pitfalls triggered by a register, KERNAL, or technique |
 | `c64_failure_diagnose` | Match symptom description against CrashPattern nodes |
 | `c64_demo_briefing` | Synthesise techniques + pitfalls + build order for a demo brief |
@@ -167,6 +168,7 @@ selects a canonical scaffold recipe accordingly.
                         to get register/KERNAL usage and linked recipes
 4.  Check compatibility: c64_check_compatibility(["tech_a", "tech_b", ...])
 5.  Cycle-budget raster work: c64_timing_budget("technique_name", "pal")
+    and the whole frame: c64_plan_budget(["tech_a", "tech_b", "kernal_file_read_seq:transition"])
 6.  Get the recipe(s): c64_recipe_lookup("oscar64-simple-shmup")
                        Copy the canonical source structure
 7.  Write the Oscar64 entry in src/main.c

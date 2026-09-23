@@ -208,10 +208,13 @@ describe("demoBriefing", () => {
     expect(costed.length).toBeGreaterThanOrEqual(1);
     for (const n of costed) expect(b.contributors.map((c) => c.name)).toContain(n);
     for (const n of names.filter((n) => !costed.includes(n))) expect(b.without_cost).toContain(n);
-    expect(b.is_floor).toBe(b.without_cost.length > 0);
+    // Schema 27: a member with no cycles figure is unknown, never zero, so
+    // the verdict cannot be "under" while one is in the set.
+    for (const n of b.without_cost) expect(b.unknown).toContain(n);
+    expect(b.is_floor).toBe(b.unknown.length > 0);
     const expected = b.contributors.reduce((s, c) => s + (c.cycles_per_frame ?? 0), 0);
     expect(b.cycles_per_frame_sum).toBe(expected);
-    expect(b.cycles_verdict).toBe(expected > 19656 ? "over" : "under");
+    if (b.unknown.length > 0) expect(b.cycles_verdict).toBe("undetermined");
     expect(r.text).toContain("## Budget (PAL)");
     expect(BriefingSchema.parse(r.structured)).toBeTruthy();
   });

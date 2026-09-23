@@ -22,6 +22,7 @@ import {
   techniquesForTool,
   checkCompatibilityTool,
   timingBudgetTool,
+  planBudgetTool,
 } from "./tools-recipes.ts";
 import { pitfallsForTool, lintSourceTool, failureDiagnoseTool } from "./tools-pitfalls.ts";
 import { demoBriefingTool, gameBriefingTool } from "./tools-briefings.ts";
@@ -45,6 +46,7 @@ export const TOOLS: readonly RegistrableTool[] = [
   techniquesForTool,
   checkCompatibilityTool,
   timingBudgetTool,
+  planBudgetTool,
   pitfallsForTool,
   lintSourceTool,
   failureDiagnoseTool,

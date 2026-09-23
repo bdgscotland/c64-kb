@@ -279,6 +279,35 @@ program
   });
 
 program
+  .command("plan-budget <techniques...>")
+  .description(
+    'Budget a set of techniques per phase ("name" or "name:play|transition|init"): cycle range, left-out figures, unknowns, verdict',
+  )
+  .option("--region <region>", "pal, ntsc or both (default: PAL unless every region-locked member is NTSC)")
+  .addOption(new Option("--screen <state>", "display on or off").choices(["on", "off"] as const))
+  .addOption(new Option("--sprites <n>", "sprites displayed on each sprite line, 0-8").argParser(numberArg))
+  .addOption(
+    new Option("--sprite-lines <n>", "raster lines with sprites on them (default 200)").argParser(numberArg),
+  )
+  .action(
+    async (
+      techniques: string[],
+      opts: { region?: string; screen?: "on" | "off"; sprites?: number; spriteLines?: number },
+    ) => {
+      const { planBudgetTool, budgetRegion } = await import("./tools/query.ts");
+      const region = budgetRegion(opts.region);
+      const result = await planBudgetTool({
+        techniques,
+        ...(region !== undefined ? { region } : {}),
+        ...(opts.screen !== undefined ? { screen: opts.screen } : {}),
+        ...(opts.sprites !== undefined ? { sprites_per_line: opts.sprites } : {}),
+        ...(opts.spriteLines !== undefined ? { sprite_lines: opts.spriteLines } : {}),
+      });
+      emit(result);
+    },
+  );
+
+program
   .command("lint <file>")
   .description(
     "Run the pitfall rules over a C or assembly source file (language from the extension, or --language)",

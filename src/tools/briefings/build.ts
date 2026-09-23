@@ -18,6 +18,7 @@ import { collectPitfalls } from "./plan-pitfalls.ts";
 import { toolchainSplit } from "./toolchain.ts";
 import { buildOrder } from "./build-order.ts";
 import { computeBudget } from "./budget.ts";
+import { fetchBudgetMembers } from "../query/plan-budget.ts";
 import { briefSummary, renderBriefingText } from "./render.ts";
 
 export type BriefingResult = { structured: BriefingOutput; text: string };
@@ -151,9 +152,7 @@ export async function buildBriefing(
   const pitfalls = await collectPitfalls(techNames, resolved?.mode === "graph" ? resolved.risks : []);
   const toolchain_split = await toolchainSplit(techs);
   const { build_order, scaffoldPages } = await buildOrder({ techs, isGame, resolved, archetype });
-  const budget = computeBudget(
-    techs.map((t) => ({ name: t.name, requires_region: t.requires_region, cost: t.cost })),
-  );
+  const budget = computeBudget(await fetchBudgetMembers(techNames.map((name) => ({ name, phase: "play" }))));
 
   const plan = { proposed_techniques, pitfalls, toolchain_split, budget };
   const structured: BriefingOutput = {

@@ -6,6 +6,7 @@
  *   - techniques.ts: techniqueLookup, techniquesFor
  *   - compatibility/: checkCompatibility (fetch, pure rules, render)
  *   - timing.ts: timingBudget (constants in src/domain/timing.ts)
+ *   - plan-budget.ts: planBudgetTool (rules in src/domain/budget.ts)
  *
  * This file is the stable import path; every tool is re-exported here.
  */
@@ -16,4 +17,5 @@ export { recipeLookup, recipesFor } from "./query/recipes.ts";
 export { techniqueLookup, techniquesFor } from "./query/techniques.ts";
 export { checkCompatibility } from "./query/compatibility/index.ts";
 export { timingBudget } from "./query/timing.ts";
+export { planBudgetTool, budgetRegion } from "./query/plan-budget.ts";
 export { spriteDmaCycles } from "../domain/timing.ts";

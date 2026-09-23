@@ -42,6 +42,52 @@ export async function findStubTechniques(falkor: FalkorService): Promise<string[
   return stubs;
 }
 
+/**
+ * **Cost measured on:** and **Cost includes:** (schema 27) are properties,
+ * not edges, so no MERGE can drop a bad one: check them against the nodes
+ * here. A recipe that is no Recipe, or an included name that is no
+ * Technique, is warned about and counted, the same as a dropped edge.
+ */
+export async function findCostReferenceMisses(falkor: FalkorService): Promise<string[]> {
+  const Row = z.object({
+    name: z.string(),
+    recipe: z.string().nullable(),
+    includes: z.array(z.string()).nullable(),
+  });
+  const rows = z.array(Row).parse(
+    (
+      await falkor.roQuery(
+        `MATCH (t:Technique) WHERE t.cost_recipe IS NOT NULL OR t.cost_includes IS NOT NULL
+         RETURN t.name AS name, t.cost_recipe AS recipe, t.cost_includes AS includes`,
+      )
+    ).data,
+  );
+  const recipes = new Set(
+    z
+      .array(z.object({ name: z.string() }))
+      .parse((await falkor.roQuery(`MATCH (r:Recipe) RETURN r.name AS name`)).data)
+      .map((r) => r.name),
+  );
+  const techniques = new Set(
+    z
+      .array(z.object({ name: z.string() }))
+      .parse((await falkor.roQuery(`MATCH (t:Technique) WHERE t.title <> "" RETURN t.name AS name`)).data)
+      .map((r) => r.name),
+  );
+  const misses: string[] = [];
+  for (const r of rows) {
+    if (r.recipe && !recipes.has(r.recipe))
+      misses.push(`${r.name}: Cost measured on ${r.recipe} (no such recipe)`);
+    for (const inc of r.includes ?? [])
+      if (!techniques.has(inc)) misses.push(`${r.name}: Cost includes ${inc} (no such technique)`);
+  }
+  if (misses.length > 0) {
+    console.warn(`[ingest] WARNING: ${misses.length} Cost reference(s) name no node: ${misses.join("; ")}`);
+    log(`COST_REFERENCE_MISSES ${misses.join("; ")}`);
+  }
+  return misses;
+}
+
 /** Report label, edge label in the graph, and tally kind, in report order. */
 const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
   ["triggered_by", "TRIGGERED_BY", "triggered_by"],
@@ -81,6 +127,7 @@ export async function reportSummary(opts: {
   print: (line: string) => void;
 }): Promise<void> {
   const { qdrant, falkor, nodes, edges, stubTechniques, print } = opts;
+  const costMisses = await findCostReferenceMisses(falkor);
   const qStats = await qdrant.getStats();
   const gStats = await falkor.getStats();
   const counts: EdgeCount[] = [];
@@ -107,6 +154,7 @@ export async function reportSummary(opts: {
       ...pitfallEdges.map(sentence),
       `Archetypes: ${nodes.archetypes}.`,
       ...archetypeEdges.map(sentence),
+      `Cost references unresolved: ${costMisses.length}.`,
     ].join(" "),
   );
   const droppedRefs = edges.totalDropped();
@@ -121,6 +169,7 @@ export async function reportSummary(opts: {
       ...pitfallEdges.map(record),
       `archetypes=${nodes.archetypes}`,
       ...archetypeEdges.map(record),
+      `cost_reference_misses=${costMisses.length}`,
     ].join(" "),
   );
 }

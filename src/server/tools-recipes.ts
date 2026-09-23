@@ -9,6 +9,8 @@ import {
   techniquesFor,
   checkCompatibility,
   timingBudget,
+  planBudgetTool as planBudgetRun,
+  budgetRegion,
 } from "../tools/query.ts";
 import {
   ToolchainHintSchema,
@@ -18,6 +20,7 @@ import {
   TechniquesForSchema,
   CompatibilityCheckSchema,
   TimingBudgetSchema,
+  PlanBudgetSchema,
 } from "../schemas/tool-outputs.ts";
 import { defineTool, READ_ONLY } from "./define-tool.ts";
 import { definedOnly } from "./defined-only.ts";
@@ -255,4 +258,58 @@ Limitations: irq_overhead is the default 36 cycles for every technique (an earli
   annotations: READ_ONLY,
   run: ({ technique, region, sprites_per_line }) =>
     timingBudget({ technique, region, ...definedOnly({ sprites_per_line }) }),
+});
+
+export const planBudgetTool = defineTool({
+  name: "c64_plan_budget",
+  title: "Frame budget for a set of techniques",
+  description: `Add a set of techniques up against a frame, honestly: per phase and region, a cycle range, what was left out and why, what is unknown, and a verdict.
+
+Purpose: Answers "does this combination fit a frame?" before code is written. It does not sum blindly: a missing figure is never counted as zero, a figure above one frame is never summed, work one figure already includes is not counted twice, and every figure names the recipe it was measured on.
+
+Inputs: 'techniques' is a list of canonical technique names, each optionally with a phase: "name" (play), "name:play", "name:transition" (level decode, wipe) or "name:init" (one-off setup). Each phase is budgeted alone. 'region' is 'pal', 'ntsc' or 'both' (default: PAL unless every region-locked member is NTSC-locked). 'screen' is 'on' (default) or 'off'. 'sprites_per_line' (0-8) and 'sprite_lines' (default 200) charge sprite DMA, 3 + 2n cycles a line.
+
+Output: {techniques, refused[], region, screen, sprites, phases[{phase, region, frame, contributors[{name, low, high, basis, charge, measured_on, conditions}], excluded[{name, reason: multi_frame | included_by | inside_band_of, by?, cycles?}], unknown[], not_found[], to_measure[{technique, recipe, why}], fixed_losses{badlines, sprite_dma, charged_for[]}, worst_only[], low, high, verdict, weakest_basis, irq_slots, notes[]}], bytes{sum, contributors, excluded (whole_program), without_bytes}, verdict, assumptions[]}.
+
+Rules: low sums each member's cycles_per_frame_typical where the page states a measured one, else its cycles_per_frame; high sums cycles_per_frame (worst frames). A member with no cycles figure goes to unknown and to_measure, with the recipe to measure it on. A figure above the frame (19,656 PAL, 17,095 NTSC) is excluded as multi_frame. A member named in another's **Cost includes:** is excluded as included_by. A technique that holds every cycle of a stated raster band (cycles_per_line 63 and a line band) is charged band lines × line length, and its REQUIRES closure in the set is excluded as inside_band_of. With the screen on, 25 badlines × 43 = 1,075 cycles (and the stated sprite DMA) are charged as fixed losses unless every summed figure is measured and its measured-on conditions say the screen was on; a figure measured blanked, one that does not say, and an arithmetic, derived-listing or estimated one are all charged. Verdict per phase: fits when nothing is unknown, missing or multi-frame and high + fixed losses fit the frame; over when low + fixed losses do not and the low end is a floor (a worst frame with no measured typical beside it is not one, and such members are listed in worst_only); otherwise undetermined. The overall verdict is the worst phase's. Bytes flagged "(whole PRG)" on their measured-on line are not summed.
+
+Examples: {"techniques": ["wave_director", "object_pool"]} → object_pool excluded (included_by wave_director); 1,170-3,188 plus 1,075 fixed; fits. {"techniques": ["fli_image", "stable_raster_irq", "double_irq"]} → fli_image charged 207 lines × 63 = 13,041; the two prerequisites inside its band. {"techniques": ["soft_scroll_h", "sid_play_routine_pattern"]} → soft_scroll_h multi_frame; undetermined.
+
+See also: c64_timing_budget for the cycles left on one raster line; c64_check_compatibility for hardware claims, zero page and raster-line conflicts; c64_game_briefing, whose budget block uses the same rules on a proposed set in one play phase.
+
+Limitations: the figures are the pages' own, each measured on one recipe; a different implementation costs differently. Figures are mostly PAL measurements, judged against the NTSC frame unchanged. Claims, zero page and memory are not judged here. The badline charge is a ceiling (code in the border meets no badline).`,
+  inputSchema: {
+    techniques: z
+      .array(z.string())
+      .min(1)
+      .describe('Technique names, each "name" or "name:phase" (phase: play, transition, init)'),
+    region: z
+      .string()
+      .optional()
+      .describe(
+        "Region: 'pal', 'ntsc' or 'both' (case-insensitive; default PAL unless every region-locked member is NTSC)",
+      ),
+    screen: z.enum(["on", "off"]).optional().describe("Display on (default) or blanked"),
+    sprites_per_line: z
+      .number()
+      .int()
+      .min(0)
+      .max(8)
+      .optional()
+      .describe("Sprites displayed on each sprite line (0-8)"),
+    sprite_lines: z
+      .number()
+      .int()
+      .min(0)
+      .max(312)
+      .optional()
+      .describe("Raster lines with sprites on them (default 200)"),
+  },
+  outputSchema: PlanBudgetSchema.shape,
+  annotations: READ_ONLY,
+  run: ({ techniques, region, screen, sprites_per_line, sprite_lines }) =>
+    planBudgetRun({
+      techniques,
+      ...definedOnly({ region: budgetRegion(region), screen, sprites_per_line, sprite_lines }),
+    }),
 });

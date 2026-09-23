@@ -138,7 +138,8 @@ const TechniqueRefSchema = z.object({ name: z.string(), title: z.string() });
 // figures were obtained, strongest first: measured-vice (run in VICE),
 // derived-listing (read off a built listing or map), arithmetic (worked
 // from settled constants), estimated (a judgement, not a measurement).
-export const CostBasisSchema = z.enum(["measured-vice", "derived-listing", "arithmetic", "estimated"]);
+import { CostBasisSchema } from "./cost-basis.ts";
+export { CostBasisSchema };
 const TechniqueCostSchema = z.object({
   cycles_per_line: z.number().int().optional(),
   cycles_per_frame: z.number().int().optional(),
@@ -148,7 +149,15 @@ const TechniqueCostSchema = z.object({
   zp_bytes: z.number().int().optional(),
   irq_slots: z.number().int().optional(),
   sprites_per_line: z.number().int().optional(),
+  // Schema 27: a measured typical frame beside a worst-frame cycles_per_frame.
+  cycles_per_frame_typical: z.number().int().optional(),
   basis: CostBasisSchema,
+  // **Cost measured on:** the recipe the figures came from, and its
+  // conditions ("screen blanked", "whole PRG"); **Cost includes:** the
+  // techniques whose work is inside this figure (schema 27).
+  measured_on: z.string().optional(),
+  conditions: z.string().optional(),
+  includes: z.array(z.string()).optional(),
 });
 export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
 
@@ -318,6 +327,8 @@ export const TimingBudgetSchema = z.object({
   notes: z.array(z.string()),
 });
 
+export { PlanBudgetSchema, type PlanBudgetOutput } from "./plan-budget.ts";
+
 export type TechniqueLookupOutput = z.infer<typeof TechniqueLookupSchema>;
 export type TechniquesForOutput = z.infer<typeof TechniquesForSchema>;
 export type CompatibilityCheckOutput = z.infer<typeof CompatibilityCheckSchema>;
@@ -445,18 +456,23 @@ export const BriefingSchema = z.object({
       recipes: z.array(z.string()),
     }),
   ),
-  // The plan added up (schema 22, tools 1.25.0). cycles_per_frame_sum is the
-  // sum of cost_cycles_per_frame over the proposed techniques that have one,
-  // against the region's frame; bytes_sum is bytes_code + bytes_data over
-  // the same, against the stated RAM budget. without_cost names the
-  // proposed techniques with no Cost line, so both sums are floors when it
-  // is non-empty. weakest_basis is the least trustworthy basis word among
-  // the contributors, or null when nothing contributed.
+  // The plan added up (schema 22, tools 1.25.0; the rules of c64_plan_budget
+  // since schema 27, tools 1.32.0, all members in one play frame).
+  // cycles_per_frame_sum is the high end: worst-frame figures summed, with
+  // multi-frame figures and work another figure includes left out (listed
+  // in excluded). cycles_low sums measured typical frames where a page
+  // states one. fixed_loss_cycles is the badline charge for figures not
+  // measured wall-clock with the screen on. unknown names the members with
+  // no cycles figure; the verdict is then "undetermined", never a sum that
+  // counts them as zero. bytes_sum leaves out figures flagged as a whole
+  // program. without_cost names the members with no Cost line at all.
   budget: z.object({
     region: z.enum(["PAL", "NTSC"]),
     frame_cycles: z.number().int(),
     cycles_per_frame_sum: z.number().int(),
-    cycles_verdict: z.enum(["over", "under", "no_data"]),
+    cycles_low: z.number().int(),
+    fixed_loss_cycles: z.number().int(),
+    cycles_verdict: z.enum(["over", "under", "undetermined", "no_data"]),
     ram_budget_bytes: z.number().int(),
     bytes_sum: z.number().int(),
     bytes_verdict: z.enum(["over", "under", "no_data"]),
@@ -464,10 +480,21 @@ export const BriefingSchema = z.object({
       z.object({
         name: z.string(),
         cycles_per_frame: z.number().int().optional(),
+        cycles_per_frame_typical: z.number().int().optional(),
         bytes: z.number().int().optional(),
         basis: CostBasisSchema,
+        measured_on: z.string().optional(),
       }),
     ),
+    excluded: z.array(
+      z.object({
+        name: z.string(),
+        reason: z.enum(["multi_frame", "included_by", "inside_band_of", "whole_program_bytes"]),
+        by: z.string().optional(),
+      }),
+    ),
+    unknown: z.array(z.string()),
+    to_measure: z.array(z.object({ technique: z.string(), recipe: z.string().nullable() })),
     without_cost: z.array(z.string()),
     weakest_basis: CostBasisSchema.nullable(),
     is_floor: z.boolean(),
