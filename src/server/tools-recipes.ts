@@ -65,7 +65,7 @@ Purpose: Gives the agent a ready-to-use, verified example with build instruction
 
 Inputs: 'name' is the canonical recipe identifier — toolchain prefix + hyphen + recipe slug (e.g. 'oscar64-hello-world', 'kickassembler-hello-world', 'cc65-hello-world-conio'). Case-sensitive.
 
-Output: {name, toolchain, output_format, region, source_doc, toolchain_version_verified?, documentation[]}. toolchain_version_verified is the toolchain version this repo's gates built the recipe with (e.g. '5.25' for KickAssembler); a different version may or may not build it. On not-found, 'name' is empty and 'text' lists near-match suggestions.
+Output: {name, toolchain, output_format, region, source_doc, toolchain_version_verified?, documentation[], source_code?, verified_on[{variant, vic, sid, cia, region, model, cycles, shot, flags, pinned, overrides[]}]}. toolchain_version_verified is the toolchain version this repo's gates built the recipe with (e.g. '5.25' for KickAssembler); a different version may or may not build it. verified_on lists the VICE machine variants verify:recipes runs the recipe on and compares with a committed screenshot pixel for pixel (from docs/recipes/runs.json): a runs.json "pal" run is VICE's default machine, which is the c64c variant (VIC-II 8565, SID 8580, CIA 8521), not a 6569; "ntsc" is the 6567R8 with a 6581 and 6526. vic, sid and cia are the chips the run had: a chip flag in 'flags' (-ciamodel, -cia1model, -cia2model, -sidmodel, -VICIImodel) replaces the variant's chip, and 'overrides' names each one replaced (cia-revision-detect runs the c64c with -ciamodel 0, so its CIA is the 6526). pinned false means the run uses verify:recipes' defaults. An empty list means no run is compared. On not-found, 'name' is empty and 'text' lists near-match suggestions.
 
 When to use: When you know the specific recipe name or have already identified the toolchain + intent from c64_toolchain_hint and want a complete worked example.
 
@@ -91,13 +91,13 @@ export const recipesForTool = defineTool({
 
 Purpose: Lets the agent discover what buildable examples are available before committing to a specific recipe. All filters are optional — omitting all returns the full recipe catalog.
 
-Inputs: All optional. 'toolchain' is one of oscar64 | kickassembler | cc65. 'region' is pal | ntsc | both (note: recipes with region='both' appear for any region filter). 'technique' is an exact Technique.title match (Phase 2: no techniques yet — omit for now). 'file_format' is an exact FileFormat.name match (e.g. 'PRG').
+Inputs: All optional. 'toolchain' is one of oscar64 | kickassembler | cc65. 'region' is pal | ntsc | both (note: recipes with region='both' appear for any region filter). 'verified_on' is a MachineVariant name (c64c, ntsc, oldntsc, ...) or a region word (PAL, NTSC): only recipes verify:recipes runs on that variant, or on any variant of that region. 'technique' is an exact Technique.title match (Phase 2: no techniques yet — omit for now). 'file_format' is an exact FileFormat.name match (e.g. 'PRG').
 
 Output: {filter, recipes[{name, toolchain, output_format, region, source_doc}]}. Empty recipes array means no matches — try a broader filter.
 
 When to use: Before calling c64_recipe_lookup, use this to discover what names exist. Also useful to audit coverage gaps.
 
-Examples: {"toolchain": "oscar64"} → table of all Oscar64 recipes. {} → full catalog. {"region": "pal"} → PAL-compatible recipes.
+Examples: {"toolchain": "oscar64"} → table of all Oscar64 recipes. {} → full catalog. {"region": "pal"} → PAL-compatible recipes. {"verified_on": "oldntsc"} → the recipes run on the 6567R56A.
 
 See also: c64_recipe_lookup to fetch a specific recipe's full content. c64_toolchain_hint for pattern snippets without a complete recipe.
 
@@ -110,6 +110,12 @@ Limitations: Returns graph metadata only — use c64_recipe_lookup to get the ac
       .describe("Filter by region (recipes with region='both' match any value)"),
     technique: z.string().optional().describe("Filter by Technique title (exact match)"),
     file_format: z.string().optional().describe("Filter by FileFormat name (e.g. 'PRG')"),
+    verified_on: z
+      .string()
+      .optional()
+      .describe(
+        "MachineVariant name (c64c, ntsc, oldntsc) or region word (PAL, NTSC): recipes run in VICE on it",
+      ),
   },
   outputSchema: RecipesForSchema.shape,
   annotations: READ_ONLY,
@@ -268,13 +274,13 @@ export const planBudgetTool = defineTool({
 
 Purpose: Answers "does this combination fit a frame?" before code is written. It does not sum blindly: a missing figure is never counted as zero, a figure above one frame is never summed, work one figure already includes is not counted twice, and every figure names the recipe it was measured on.
 
-Inputs: 'techniques' is a list of canonical technique names, each optionally with a phase: "name" (play), "name:play", "name:transition" (level decode, wipe) or "name:init" (one-off setup). Each phase is budgeted alone. 'region' is 'pal', 'ntsc' or 'both' (default: PAL unless every region-locked member is NTSC-locked). 'screen' is 'on' (default) or 'off'. 'sprites_per_line' (0-8) and 'sprite_lines' (default 200) charge sprite DMA, 3 + 2n cycles a line.
+Inputs: 'techniques' is a list of canonical technique names, each optionally with a phase: "name" (play), "name:play", "name:transition" (level decode, wipe) or "name:init" (one-off setup). Each phase is budgeted alone. 'design' is a GameDesign name (a whole game from docs/game-design/designs, e.g. "platformer_scaffold_oscar64"): its COMPOSES edges, each in its phase, are budgeted first, then any 'techniques' given; its region is the default. Give 'techniques', 'design' or both. 'region' is 'pal', 'ntsc' or 'both' (default: PAL unless every region-locked member is NTSC-locked). 'screen' is 'on' (default) or 'off'. 'sprites_per_line' (0-8) and 'sprite_lines' (default 200) charge sprite DMA, 3 + 2n cycles a line.
 
-Output: {techniques, refused[], region, screen, sprites, phases[{phase, region, frame, contributors[{name, low, high, every_frame, basis, charge, measured_on, conditions}], excluded[{name, reason: multi_frame | included_by | inside_band_of, by?, cycles?}], unknown[], not_found[], to_measure[{technique, recipe, why}], fixed_losses{badlines, sprite_dma, charged_for[], badlines_in_bands, floor}, worst_only[], low, high, floor, verdict, weakest_basis, irq_slots, notes[]}], bytes{sum, contributors, excluded (whole_program), inside[{name, by}], without_bytes}, verdict, assumptions[]}.
+Output: {design{name, title, region, instance_of[], realised_by[], composes[{technique, phase}], source_doc, measured[{phase, region, worst, typical, basis, source, predicted{low, high, fixed, verdict, missing[]}, position: below_low | within | within_incomplete | above_high | not_predicted, finding}]} | null, design_not_found?{requested, known[]}, techniques, refused[], region, screen, sprites, phases[{phase, region, frame, contributors[{name, low, high, every_frame, basis, charge, measured_on, conditions}], excluded[{name, reason: multi_frame | included_by | inside_band_of, by?, cycles?}], unknown[], not_found[], to_measure[{technique, recipe, why}], fixed_losses{badlines, sprite_dma, charged_for[], badlines_in_bands, floor}, worst_only[], low, high, floor, verdict, weakest_basis, irq_slots, notes[]}], bytes{sum, contributors, excluded (whole_program), inside[{name, by}], without_bytes}, verdict, assumptions[]}. A design's position places its measured worst against [low, high + fixed]: within_incomplete is inside that range while predicted.missing is non-empty, so the uncounted members could move the range past it and it is not agreement; above_high with members missing may be explained by them; below_low stands, since a missing member can only raise the range.
 
 Rules: low sums each member's cycles_per_frame_typical where the page states a measured one, else its cycles_per_frame; high sums cycles_per_frame (worst frames). A member with no cycles figure goes to unknown and to_measure, with the recipe to measure it on. A figure above the frame (19,656 PAL, 17,095 NTSC) is excluded as multi_frame. A member named in another's **Cost includes:**, followed through the graph (a includes b, b includes c), is excluded as included_by, unless the including member is itself multi-frame; of two members that include each other the first listed is kept. A name listed twice in one phase is counted once and the repeat is listed in refused. A technique that holds every cycle of a stated raster band (cycles_per_line 63 and a line band) is charged band lines × line length, and its REQUIRES closure in the set is excluded as inside_band_of. With the screen on, the badlines (lines 51-243, every eighth, 25 × 43 = 1,075 cycles) outside any band charge, and the stated sprite DMA, are charged as fixed losses unless every summed figure is a band charge or is measured with measured-on conditions that say the screen was on; a figure measured blanked, one that does not say, and an arithmetic, derived-listing or estimated one are all charged. A stall takes its cycles wherever the code runs, so the charge is exact when no summed figure already holds stalls and too high by what a screen-on figure holds; fixed_losses.floor is the part no figure can hold. The low end is not a floor: a typical figure is a common frame or a real run's worst, and worst_only lists members with no typical at all. floor is the band and per-line charges, which run every frame, plus fixed_losses.floor. Verdict per phase: fits when nothing is unknown, missing or multi-frame and high + fixed losses fit the frame; over when floor passes the frame; otherwise undetermined. The overall verdict is the worst phase's. Bytes flagged "(whole PRG)" on their measured-on line are not summed; a member whose work is inside another's figure that states bytes is listed in inside, not summed. 'region' other than pal, ntsc or both is refused.
 
-Examples: {"techniques": ["wave_director", "object_pool"]} → object_pool excluded (included_by wave_director); 1,170-3,188 plus 1,075 fixed, floor 1,075; fits. {"techniques": ["fli_image", "stable_raster_irq", "double_irq"]} → fli_image charged 207 lines × 63 = 13,041; the two prerequisites inside its band; all 25 badlines are inside the band, so no fixed loss. {"techniques": ["soft_scroll_h", "sid_play_routine_pattern"]} → soft_scroll_h multi_frame; undetermined.
+Examples: {"techniques": ["wave_director", "object_pool"]} → object_pool excluded (included_by wave_director); 1,170-3,188 plus 1,075 fixed, floor 1,075; fits. {"techniques": ["fli_image", "stable_raster_irq", "double_irq"]} → fli_image charged 207 lines × 63 = 13,041; the two prerequisites inside its band; all 25 badlines are inside the band, so no fixed loss. {"techniques": ["soft_scroll_h", "sid_play_routine_pattern"]} → soft_scroll_h multi_frame; undetermined. {"design": "falling_blocks_oscar64", "region": "pal"} → init and play phases; play undetermined (text_mode_overlay_render and others unknown); the design's measured PAL worst frame, 6,276 cycles, is set beside the predicted range with where it falls.
 
 See also: c64_timing_budget for the cycles left on one raster line; c64_check_compatibility for hardware claims, zero page and raster-line conflicts; c64_game_briefing, whose budget block uses the same rules on a proposed set in one play phase.
 
@@ -283,7 +289,15 @@ Limitations: the figures are the pages' own, each measured on one recipe; a diff
     techniques: z
       .array(z.string())
       .min(1)
+      .optional()
       .describe('Technique names, each "name" or "name:phase" (phase: play, transition, init)'),
+    design: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "GameDesign name (e.g. 'platformer_scaffold_oscar64'): budgets its composed techniques by phase",
+      ),
     region: z
       .string()
       .regex(BUDGET_REGION, "region is pal, ntsc or both")
@@ -309,9 +323,15 @@ Limitations: the figures are the pages' own, each measured on one recipe; a diff
   },
   outputSchema: PlanBudgetSchema.shape,
   annotations: READ_ONLY,
-  run: ({ techniques, region, screen, sprites_per_line, sprite_lines }) =>
+  run: ({ techniques, design, region, screen, sprites_per_line, sprite_lines }) =>
     planBudgetRun({
-      techniques,
-      ...definedOnly({ region: budgetRegion(region), screen, sprites_per_line, sprite_lines }),
+      ...definedOnly({
+        techniques,
+        design,
+        region: budgetRegion(region),
+        screen,
+        sprites_per_line,
+        sprite_lines,
+      }),
     }),
 });

@@ -19,6 +19,7 @@ import { toolchainSplit } from "./toolchain.ts";
 import { buildOrder } from "./build-order.ts";
 import { computeBudget } from "./budget.ts";
 import { fetchBudgetMembers } from "../query/plan-budget.ts";
+import { designsOfArchetype } from "../query/game-design.ts";
 import { briefSummary, renderBriefingText } from "./render.ts";
 
 export type BriefingResult = { structured: BriefingOutput; text: string };
@@ -137,6 +138,24 @@ function archetypeFields(
   return {};
 }
 
+/** The GameDesigns of a resolved archetype; absent when there are none. */
+async function designFields(
+  resolved: ArchetypeResolution | undefined,
+): Promise<Pick<BriefingOutput, "designs">> {
+  if (resolved?.mode !== "graph") return {};
+  const designs = await designsOfArchetype(resolved.archetype.name);
+  if (designs.length === 0) return {};
+  return {
+    designs: designs.map((d) => ({
+      name: d.name,
+      title: d.title,
+      realised_by: d.realised_by,
+      composes: d.composes,
+      measured: d.measured.map((m) => ({ ...m, typical: m.typical ?? null })),
+    })),
+  };
+}
+
 export async function buildBriefing(
   description: string,
   archetype: string | undefined,
@@ -164,6 +183,7 @@ export async function buildBriefing(
     build_order,
     budget,
     ...archetypeFields(resolved),
+    ...(await designFields(resolved)),
   };
 
   getAnalytics().logQuery({

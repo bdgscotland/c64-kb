@@ -520,7 +520,7 @@ jmp_abs:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill, starfield, procedural_seed_universe, fire_effect
+**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill, starfield, procedural_seed_universe, fire_effect, screen_dissolve_lfsr
 **Mitigated by techniques:** lfsr_random
 
 ### Symptom
@@ -586,7 +586,7 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai
 **Mitigated by techniques:** compare_16bit_and_signed
 
 ### Symptom

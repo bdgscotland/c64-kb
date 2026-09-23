@@ -179,8 +179,8 @@ Y + 1 .. Y + 21 (Y + 1 .. Y + 42 if vertically expanded via $D017). Y = 50
 therefore puts the top of the sprite on line 51, the first line of the
 25-row text display, and Y = 249 shows a single row on line 250 before the
 lower border covers the rest. An earlier revision of this entry said
-Y .. Y + 20, one line too high. Measured in VICE x64sc 3.10 on both the PAL
-6569 and NTSC 6567R8 models; the DMA-on-line-Y / display-on-line-Y+1
+Y .. Y + 20, one line too high. Measured in VICE x64sc 3.10 on the PAL
+C64C (VIC-II 8565, VICE's default) and NTSC 6567R8 models (an earlier version said the VICE PAL run was a 6569; `x64sc -default` is the C64C: 8565, 8580, 8521); the DMA-on-line-Y / display-on-line-Y+1
 mechanism is from Bauer's VIC article, not measured here.
 
 ### $D002 — M1X — Sprite 1 X position (RW)
@@ -738,7 +738,7 @@ selects the uppercase/graphics set from its first 2 KB; CB = 3
 earlier revision of this paragraph called it "the KERNAL ROM character set
 at $D000 in VIC bank 0/2": $D000 is a CPU-side address the VIC cannot
 form, and pointing the VIC at CPU $D000 (bank 3, CB = 2) reads RAM —
-measured in VICE x64sc, not on a 6569 on a bench.
+measured in VICE x64sc (default C64C model, VIC-II 8565), not on a bench.
 
 Cell address inside the character generator:
 
@@ -984,7 +984,8 @@ exact pattern:
 
 1. One **p-access** (pointer fetch) per raster line, always, regardless of
    enable state, on cycles 58, 60, 62, 1, 3, 5, 7, 9 for sprites 0–7 on
-   PAL (6569) — measured in VICE x64sc: with sprites 0..k active the CPU
+   PAL — measured in VICE x64sc on its default C64C model, VIC-II 8565 (an
+   earlier version said 6569): with sprites 0..k active the CPU
    resumes two cycles after sprite k's slot (60, 1, 3, 9, 11 for
    k = 0, 2, 3, 6, 7). On the 65-cycle 6567R8 the slots are 60, 62, 64,
    1, 3, 5, 7, 9 (from Bauer's tables; only the relative structure —

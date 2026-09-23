@@ -687,7 +687,9 @@ MCBASE reaches 63. An earlier version of this section described an
 "inconsistent state" that "freezes" the row counter and placed the write "in
 cycles 55–56 of the preceding line"; neither matched the measurement, and its
 sentence about the 8565 being "more forgiving" is dropped as unverifiable on
-this machine (VICE was run as a 6569 only).
+this machine: every run was on one model, VICE's default C64C (VIC-II 8565),
+and none was compared with a 6569. An earlier version of this sentence said
+VICE was run as a 6569 only.
 
 ### Variations
 
@@ -926,7 +928,8 @@ unverified on this machine.
 
 ### Cycle budget
 
-On PAL (VICE 3.10 x64sc, 6569) a write to $D027+n that completes on CPU cycle
+On PAL (VICE 3.10 x64sc, default C64C model, VIC-II 8565; an earlier version
+said 6569) a write to $D027+n that completes on CPU cycle
 c — cycles numbered 1–63, the numbering in which the CSEL side-border pulse
 lands on cycle 56 — takes effect from sprite X ≈ 8c − 111. So a write on cycle
 16 recolours a sprite at X=24 (the left edge of the display window) from its
@@ -1277,6 +1280,356 @@ Not measured here.
 - `recipes/kickassembler/dypp-sprite-scroller.md` (eight yellow doubled
   capitals, 48 apart, each on its own Y sine; hand-off at X 4; frozen at
   frame 300; CIA-timed update and render; `$D010` control build)
+
+---
+
+## sprite_border_scroller — Sprite border scroller: a text scroller of eight sprites in the opened lower border
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D011, D012, D015, D017, D019, D01A, D01B, D01C, D01D, D027, D028, D029, D02A, D02B, D02C, D02D, D02E
+**Uses kernal:** (none)
+**Requires:** topbottom_border_open, dypp_sprite_sine_scroller
+**Demands:** midframe_raster_irqs
+**Raster band:** 20-46, 249 (the recipe's RESTORE_LINE 20 plus its measured worst frame of 1,586 cycles, about 25 lines; its OPEN_LINE 249)
+**Cost:** cycles_per_frame=1586, cycles_per_frame_typical=829, irq_slots=2, sprites_per_line=8
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sprite-border-scroller (both handlers' brackets summed per frame, above the display; worst frame is a real hand-off frame, typical is 182 of 300 frames)
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
+
+### Why
+
+Text that costs the main screen nothing. A scroller on the character
+screen takes a row of the forty by twenty-five and, if it is a fine
+scroller, `$D016` and a ring buffer as well; a DYPP takes the sprites
+but still lives inside the display, over whatever the screen shows. The
+lower border is a region of the frame that draws nothing but `$D020`,
+and once it is opened it is a strip of background under the display,
+below line 250, that no character cell reaches. Put the sprites there
+and the whole display is free: forty columns and twenty-five rows for
+the game or the picture, and a line of scrolling text underneath that
+touches none of it.
+
+The price is the two raster interrupts that open the border each frame
+and the loss of the top border too, since the method opens both (see
+`topbottom_border_open`, raster.md: there is no bottom-only form). The
+text is limited to what eight sprites carry, so seven doubled capitals
+on screen at once, 48 pixels apart.
+
+### How
+
+**The border.** Exactly `topbottom_border_open`'s recipe: a raster
+interrupt through `$0314` on line 249 reads `$D011`, clears RSEL (bit 3)
+with bit 7 masked, and writes it back; a second interrupt on line 20 of
+the next frame sets RSEL again. Line 249 is the middle of the three
+lines, 248 to 250, that recipe measured as opening with a plain KERNAL
+interrupt; line 20 is inside the window it swept (252 to 246 of the
+next frame) and is chosen so that the same handler can move the sprites
+while none of them is being drawn. `$3FFF`, the last byte of the VIC
+bank, is written to zero, because below the display the VIC is idle and
+fetches its graphics from that byte; zero draws plain background, a
+non-zero byte draws its set bits over the strip.
+
+**The sprites.** Eight single-colour, unexpanded sprites, pointers
+`$80` to `$87` for eight 64-byte slots at `$2000` to `$21C0`, every Y
+register 254. Sprite Y is compared against the low byte of the raster,
+so 254 matches line 254 and the sprite's 21 rows are drawn on lines 255
+to 275: below the display, inside the opened strip, and, on PAL, inside
+the frame. On NTSC the frame ends at line 262 and the rows carry on
+through the wrap onto lines 0 to 12 of the next frame.
+
+**The positions and the wrap.** As `dypp_sprite_sine_scroller`: one
+9-bit `p`, stepped down by 2 a frame, sprite `k` at
+`X = (p + 48k) mod 384`; the low byte to `$D000 + 2k`, the `$D010` bit
+set for X 256 to 343, the sprite disabled in `$D015` for X 344 to 383.
+A sprite that reaches X 4 has its glyph, columns 4 to 19 of the image,
+at X 8 to 23 under the left border, and there it takes the next
+character of the message and is re-rendered from the character ROM into
+its slot, 2 by 2 doubling into rows 2 to 17 and columns 4 to 19. All of
+this runs in the line-20 handler, after the RSEL restore; the main loop
+is empty.
+
+### Why it works
+
+The vertical border flip-flop is the only thing that hides a sprite in
+the border. While it is set the border colour is drawn over graphics
+and sprites alike; while it is clear the sequencer puts out background
+and sprites are drawn as anywhere else. The flip-flop is set only when
+the raster reaches the bottom comparison line, 251 with RSEL set or 247
+with it clear. RSEL is 1 when line 247 passes and 0 when line 251
+arrives, so neither comparison ever matches, the flip-flop stays clear
+from line 251 to the end of the frame, and a sprite at Y 254 is simply
+visible. The control build that never clears RSEL is the proof by
+absence: the same seven sprites, enabled, positioned and pointed at
+their glyphs, and zero white pixels below line 250 on either model.
+
+Measured in VICE x64sc on the recipe's pinned frame (`p = 174`): white
+pixels on screenshot rows 241 to 254 on PAL (raster lines 257 to 270,
+sprite rows 2 to 15, the fourteen rows of a doubled seven-row ROM
+capital) and on rows 229 to 242 on NTSC with identical per-row pixel
+counts; six glyphs whose first lit column is `X + 14` (`X + 16` for
+`I`); `$D010` reading `$0C` for the sprites at X 270 and 318, `$D015`
+reading `$EF` with sprite 4 at X 366 off. On NTSC rows 235 to 242 of
+those are lines 0 to 7 of the following frame, so the sprite is drawn
+across the frame wrap; only sprite row 20, a blank margin row on line
+12, falls outside the emulator's picture. Two runs per model gave
+byte-identical screenshots.
+
+### Cycle budget
+
+Measured with CIA 1 timer A in the recipe, both models giving identical
+logs, raw figures with each bracket's own start and stop stores inside:
+
+- the line-249 handler, the RSEL clear with the compare, vector and
+  acknowledge: 39 cycles, every frame.
+- the line-20 handler, the RSEL restore plus the eight-sprite position
+  update, `$D010` and `$D015`: 790 cycles in 182 of 300 frames, 734 to
+  811 without a hand-off; 1,506 to 1,547 in the thirteen frames with
+  one, the render being the difference.
+- the two together: 829 cycles in 182 frames, worst 1,586, about 25 PAL
+  lines from line 20, all above the display. The KERNAL's 29-cycle
+  entry and the `$EA31` exit once a frame are outside the brackets, as
+  is the DMA of up to eight sprites on lines 254 to 275 (all eight are
+  enabled in four frames of every twenty-four, the eighth under the left
+  border at X 0 to 6).
+
+### Variations
+
+**The upper border.** The method opens both borders, so the same
+sprites could stand at the top instead: a Y of 4 draws from line 5 and
+again from line 261, which is the topbottom recipe's parked sprite and
+is drawn twice; a Y from 0 to 29 draws inside the open top border
+(lines 1 to 50) and, on PAL, a second time on lines 257 to 306 of the
+opened bottom strip, because Y is compared with the low eight bits of
+the raster; only the NTSC frame, ending at 262, drops the second copy
+for Y above 6. A scroller there leaves the bottom strip empty only on
+NTSC. Not built here.
+
+**Expanded sprites for a taller font.** Setting the sprite's bit in
+`$D017` doubles the 21 rows to 42, lines 255 to 296 on PAL, still inside
+the frame; with `$D01D` as well the glyph is 32 by 32 and the spacing
+must grow to 96 with a lap of 768, as the DYPP entry says. On NTSC 42
+rows from line 255 reach line 34 of the next frame, into the top
+border, and the rows past line 262 depend on the set. Not measured
+here.
+
+**DYPP bobbing inside the border.** `dypp_sprite_sine_scroller`'s Y sine
+fits in the strip only within a narrow band, because Y is eight bits
+and is compared with the low eight bits of the raster: on PAL the only
+Y values whose 21 rows stay below the display and match one line are
+250 to 255 (lines 251 to 276), a bob of a few lines about 254; any
+larger bob needs Y 0 to 34 for the lower rows, and each of those also
+matches lines 0 to 34, drawing a mirror copy on lines 1 to 55 at the
+top, into the display from line 51. On NTSC only lines 251 to 262 are
+inside the frame and the rest wraps. Not built here.
+
+### Pitfalls
+
+- `sprite_x_high_bit_wrong_register` (`docs/pitfalls/sprite.md`): every
+  column crosses X 255 once a lap and the `$D010` bit is written per
+  sprite from the high byte, in the same handler as the low byte.
+- `sprite_x_range_hidden_and_seam` (`docs/pitfalls/sprite.md`): the
+  hand-off happens under the left border at X 4 and the sprite is
+  parked disabled through X 344 to 383; the entry uses the hidden range
+  on purpose.
+- `d012_wrap_around` (`docs/pitfalls/raster-and-badline.md`): both
+  handlers read `$D011` and write it back, so bit 7, the raster's ninth
+  bit on a read, is masked off; the topbottom recipe explains why a
+  handler that forgets moves its compare above line 255.
+
+### Sources
+
+- `recipes/kickassembler/sprite-border-scroller.md`: the measurements
+  above, the pinned register and row tables for PAL and NTSC, the
+  mid-motion description, the cycle logs and the `NOOPEN` control.
+- `topbottom_border_open` in `docs/techniques/raster.md` and its recipe
+  for the flip-flop rules, the 248-to-250 window and `$3FFF`;
+  `dypp_sprite_sine_scroller` above for the render and the position
+  rule this entry reuses.
+
+### Recipes
+
+- `recipes/kickassembler/sprite-border-scroller.md` (eight white doubled
+  capitals at Y 254 in the opened lower border, 48 apart; the border
+  opened on line 249 and restored on line 20 with the update in the same
+  handler; hand-off at X 4; frozen at frame 300; CIA-timed handlers;
+  `NOOPEN` control build)
+
+---
+
+## sprite_stretcher_d017 — Sprite stretcher: rows repeated by toggling the Y-expand bit every line
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01B, D01C, D01D, D021, D027, DC04, DC05, DC0D, DC0E
+**Uses kernal:** (none)
+**Requires:** stable_raster_irq
+**Demands:** midframe_raster_irqs, cpu_every_line
+**Raster band:** 97-181 (the recipe's first IRQ on line 97, its sync on 99, the toggled lines 100 to 180, the exit on 181)
+**Cost:** cycles_per_frame=5094, cycles_per_line=63, lines_active=85, irq_slots=2, sprites_per_line=1, bytes_code=2628, bytes_data=67
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sprite-stretcher (CIA1 timer A over the toggled lines 100 to 181, screen on, one sprite; the double-IRQ entry on 97 to 99 is outside the bracket; the bytes are the `-showmem` blocks, code $0900-$1343 and the sprite plus three result bytes)
+**Claims:** sprite_0 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
+
+### Why
+
+A sprite made taller than its 21 rows without touching its data. The
+classic use is the tall logo or the waterfall: one sprite's rows are
+repeated down the screen for as long as the CPU keeps toggling, so a
+24-pixel-wide column of any height costs 63 bytes of sprite data and no
+redraw. The trick is old, widely described and, in this knowledge base,
+was marked unverified: `sprite_y_stretch_glitch` above says that its
+per-line clear+set attempts gave irregular rows. This entry is the
+measurement that closes that. It is reproduced in VICE 3.10, with a
+sharp edge: the setting write must complete in or before cycle 55 of the
+line, the last CPU write cycle before the sprite's own DMA stalls the
+6510, and one cycle later the write is pushed to cycle 61 and gives
+nothing.
+
+### How
+
+1. Put the sprite up as usual (position, colour, pointer, $D015 bit),
+   with its $D017 bit clear.
+2. Take a stable raster interrupt on the line before the first line you
+   want stretched (`stable_raster_irq`; the recipe uses the double-IRQ
+   entry of `stable-raster-irq.md` on line 99 for a sprite at Y 100).
+3. From there, run straight-line code for the whole region, one block
+   per line, each exactly one line long. In each block, clear the
+   sprite's $D017 bit with a store whose write cycle lands on C-4 and set
+   it again with a store landing on C, where C is at most 55 (measured)
+   and at least 17 (arithmetic from the cycle-16 row advance; nothing
+   below C=48 was built); the recipe measures C from 48 to 55 as one
+   plateau and pins 52. Pad the
+   rest of the line with reads. The sprite's own DMA stops the CPU from
+   cycle 55 to 59 on every line it is displayed, so a 58-cycle block is a
+   63-cycle line; the recipe's `POST` constant is that arithmetic.
+4. On a badline the CPU is stopped from cycle 12 to 59 and no write can
+   land in the window; the recipe emits a 15-cycle block there and lets
+   the row advance once. To hold one row across the region the badlines
+   have to be moved out of it (`fld_flexible_line_distance`) or the
+   sprite put where there are none; the recipe does not do this.
+5. On the line after the last toggled one, write the bit clear early in
+   the line and the sprite finishes its remaining rows unexpanded.
+
+Measured (recipe, PAL, VICE 3.10): with C from 48 to 55 the sprite is 91
+lines tall for 81 toggled lines: row 0 on five lines, rows 1 to 9 on
+eight lines each, row 10 on four, rows 11 to 20 once. C=56 gives 24
+lines, only the three rows after a badline doubled. C from 57 to 62
+gives heights of 44 to 94 with rows skipped and, at 60, the sprite
+wrapping through its data twice: the crunch of `sprite_y_stretch_glitch`,
+reached because those builds' code runs longer than the line and the
+writes drift into cycle 15 of the next one. The `NOSTRETCH` control,
+identical code with the two stores aimed at a RAM byte, is 21 lines.
+Three `-define NTSC` builds (C 48, 52, 55) give the same 91 lines on the
+6567R8; the entry's Region rests on those three builds and not on the
+recipe's pinned PRG, which is PAL-timed and on NTSC gives a 113-line
+crunch, not a stretch (the recipe's region is therefore `pal`).
+
+### Why it works
+
+The expansion flip-flop and the counters are described under
+`sprite_y_stretch_glitch` above (Bauer's article and the VICE source).
+The audited hardware page names the flip-flop but not its cycle:
+`hardware/vic-ii-reference.md`, Expansion, says that on the Y axis "the
+chip uses an internal 'expansion flip-flop' that toggles each line", and
+that changing $D017 mid-line "can confuse the flip-flop and cause
+'sprite crunch'". The rule that matters here is the pair: while the bit
+is clear the flip-flop is held set; while the bit is set and the
+sprite's DMA is on it is inverted in cycle 56 (VICE 3.10's PAL cycle
+table, as cited under `sprite_y_stretch_glitch`); and in cycle 16 of the
+next line the row counter base moves on only if the flip-flop is set.
+The clear on C-4 forces it set, the set on C hands it to the inversion,
+cycle 56 clears it, and cycle 16 repeats the row. The sweep confirms the
+placement from the CPU side: C=55 is the last write cycle that can
+complete before the 6510 is stopped by the sprite's DMA (BA low from
+55; a write proceeds under BA low, the read after it does not), and
+C=56 is pushed to cycle 61 and does not stretch. What is measured is
+the CPU write cycle against the DMA stop; the inversion's own cycle is
+taken from the cycle table, and the data are consistent with any
+inversion cycle from 56 to 61.
+
+The C=56 column is the mechanism seen from the other side: its setting
+write lands after the inversion, so on ordinary lines the bit is clear
+at cycle 56, nothing is inverted, and the row advances; only after a
+badline, where no clear was written and the bit stayed set across cycle
+56, is a row doubled.
+
+### Cycle budget
+
+Measured in the recipe's pinned PAL run: 5,094 cycles between the timer
+start on line 100 and its read on line 181 (arithmetic for that bracket
+5,097; the three counts are the CIA's start latency, not separately
+measured). Per line the CPU executes 58 cycles of its own code, eight of
+them the two stores, and is stopped for five by the sprite's DMA; on the
+ten badlines of the region it executes 15 and is stopped for 48. The
+technique owns every cycle of every line it covers: with `cpu_every_line`
+over an 85-line band it leaves nothing on those lines for anything else,
+and nothing on the other lines is touched. The write window is wide (55
+at the top, measured; 17 at the bottom, by arithmetic, with nothing
+below 48 built), so the entry's stability matters more than its exact
+phase: the
+recipe's SYNC_PAD is the stable-raster recipe's 11, and a one-cycle
+error would move C by one inside the plateau.
+
+### Variations
+
+**A toggle table.** The recipe's blocks are generated by a `.for` with a
+constant decision per line; make that decision a byte per line (toggle,
+or pad the same 58 cycles and do not) and the sprite's shape becomes a
+table: N toggled lines then one plain line draws each row N+1 tall, a
+run of plain lines draws the rows at their natural height, and the table
+can be rewritten between frames. The badline positions are fixed by
+YSCROLL and have to be in the table as plain lines unless the region is
+kept clear of them. Not built here.
+
+**All eight sprites.** $D017 is one byte for eight flip-flops, so the two
+stores cost the same for eight sprites as for one; the DMA stop grows to
+19 cycles (`sprites_per_line`, `hardware/vic-ii-reference.md`), which
+moves the padding arithmetic and closes more of the window. Not
+measured; with eight sprites `sprite_dma_overflow` applies.
+
+**One row for the whole region.** Move the badlines out with
+`fld_flexible_line_distance` (an extra $D011 write per line, inside the
+same block) or run the stretch below the display with the lower border
+opened (`topbottom_border_open`), where there are no badlines. Not
+built here; the pinned picture is the eight-line staircase.
+
+### Pitfalls
+
+- `raster_irq_first_line_jitter` (`docs/pitfalls/raster-and-badline.md`):
+  the whole effect is a write on one cycle of every line, and the plain
+  raster IRQ's 0-to-6 cycle entry jitter is larger than the distance
+  from the pinned C=52 to the edge at 55; the double IRQ is what makes
+  the write cycle a constant.
+- `badline_cycle_loss` (`docs/pitfalls/raster-and-badline.md`): the CPU
+  is stopped for 48 of the badline's 63 cycles once the sprite's DMA
+  follows the character fetch, no write can land in the window, and the
+  row advances there. In the sweep every plateau build shows it as the
+  eight-line step; a block that did not allow for the stall would slip
+  the rest of the region by 43 cycles.
+- `sprite_y_expand_double_register_write` (`docs/pitfalls/sprite.md`):
+  the same two writes one line too late, or with the setting write
+  pushed past the sprite's DMA stall so that it lands after cycle 56,
+  are the crunch; the C=57 to C=62 rows of the recipe's table are what
+  that looks like.
+
+### Sources
+
+- `recipes/kickassembler/sprite-stretcher.md`: the fifteen-build sweep,
+  the `CALIB` calibration of the write cycle against the sprite's DMA
+  stop, the control, the NTSC builds and the CIA timer figure.
+- `sprite_y_stretch_glitch` above, for the flip-flop, MCBASE and the
+  crunch cycle; `stable_raster_irq` in `docs/techniques/raster.md` and
+  its recipe for the entry this reuses.
+
+### Recipes
+
+- `recipes/kickassembler/sprite-stretcher.md` (one white sprite with
+  numbered rows at X 160, Y 100; clear on C-4 and set on C every line
+  from 100 to 180 with C=52 pinned; 91 lines tall; `C48` to `C62`,
+  `NOSTRETCH`, `CALIB` and `NTSC` builds)
 
 ---
 
