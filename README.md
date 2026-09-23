@@ -380,6 +380,7 @@ page says so.
 | `npm run ingest:clean` / `npm run ingest -- --force` | Wipe the graph and the vector collection and re-ingest everything. Use after changing any frontmatter or metadata line: the graph merges edges and never removes one a doc stopped asserting, so an incremental run leaves stale edges behind |
 | `npm test` | Run vitest against a throwaway graph (`c64_test`) and collection (`c64_docs_test`); the live stores are never touched |
 | `npm run check:listings` | Build every recipe listing with its real toolchain (KickAssembler, Oscar64, cc65) and assemble every KickAssembler fragment in `docs/`; see the script header for `KICKASS_JAR` / `OSCAR64` / `CL65` |
+| `npm run vice:headless` | Build a windowless VICE 3.10 (`--enable-headlessui`) into `.tools/`; the verifier and the run tool use it automatically, so headless runs stop opening windows; its pictures are byte-identical to the GTK build's |
 | `npm run verify:recipes` | Build every recipe, run it headless in VICE at the cycles pinned in `docs/recipes/runs.json`, and compare the PNG pixel for pixel with the committed screenshot. `--file` scopes to one page, `--update` adopts a new baseline after a deliberate change, `--allow-missing` tolerates a recipe with no picture yet |
 | `npx tsc --noEmit` | Type check without emitting |
 | `npm run services` / `npm run services:stop` | Start / stop Qdrant and FalkorDB |

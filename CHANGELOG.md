@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 727, schema 24, tools 1.28.0.
+Data 728, schema 24, tools 1.28.0.
 
 **Issue #21, engine subsystems ES-01 to ES-10.** Ten techniques from an
 online sweep of how shipped games were built, each with a recipe pinned on
@@ -120,8 +120,10 @@ minimises is worse than one that opens, and the pictures were byte-identical
 either way. The fix landed the same night: VICE 3.10 built with
 `--enable-headlessui` has no window at all and its exit screenshots are
 byte-identical to the pins (four recipes, both models, and the disk-backed
-ones); `scripts/verify-recipes.ts` honours `X64SC_BIN` to use it, and the
-VICE page says how to build one and the one flag-order trap.
+ones); `npm run vice:headless` builds one into `.tools/` from the pinned
+tarball, and every emulator launch in the repository (the verifier, the
+run tool) prefers it when present, with `X64SC_BIN` as an override; the
+VICE page says how it works and the one flag-order trap.
 
 **Pitfalls reached through a technique's registers, and a graph report.**
 A technique also meets every pitfall that a register or KERNAL routine it

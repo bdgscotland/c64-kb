@@ -767,9 +767,11 @@ know: a build that is not installed needs `-directory <vice data dir>` and
 it must come after `-default`, because `-default` resets the search path;
 and the exit status on the cycle limit is 1 by design in both builds. The
 build takes under a minute (`brew install dos2unix xa` first; a plain
-top-level `make` succeeds where `make x64sc` races). Point the verifier at
-it with `X64SC_BIN=/path/to/headless/x64sc npm run verify:recipes`; every
-command on this page runs unchanged under it.
+top-level `make` succeeds where `make x64sc` races). In this repository `npm run vice:headless` builds one into `.tools/` with
+the tarball digest pinned and a wrapper that inserts `-directory`, and every
+emulator launch (the verifier, the run tool) prefers it when present, with
+`X64SC_BIN` as an override; every command on this page runs unchanged under
+it.
 
 The red Oscar64 build logged `00` then `02` with this file. Do not use
 `watch` or `break` here: a stopping checkpoint enters the monitor with

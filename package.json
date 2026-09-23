@@ -23,6 +23,7 @@
     "check:listings": "tsx scripts/check-listings.ts",
     "check:pitfall-anchors": "tsx scripts/check-pitfall-anchors.ts",
     "graph:report": "tsx scripts/graph-report.ts",
+    "vice:headless": "sh scripts/build-vice-headless.sh",
     "verify:recipes": "tsx scripts/verify-recipes.ts",
     "test": "vitest run",
     "test:watch": "vitest"
