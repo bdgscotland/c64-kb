@@ -90,6 +90,13 @@ shadow and new value are immediate, zero-page or absolute (cycle counts
 from `docs/hardware/6510-cpu-reference.md`). This technique has no
 raster-critical timing requirement.
 
+The Cost line's 74,041 cycles is not the register write. It is the carry
+frame of `recipes/oscar64/soft-scroll-h.md`, measured there in VICE: that
+recipe shifts all 25 rows of screen and colour RAM with `memmove`, which
+takes 3.8 PAL frames. The figure belongs to that implementation and
+exceeds a frame; issue #18 tracks rewriting the move to fit the vertical
+blank.
+
 ### Recipes
 
 - `recipes/oscar64/soft-scroll-h.md`
