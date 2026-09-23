@@ -2247,3 +2247,84 @@ Hand-written assembly would also be cheaper; not measured here.
 ### Recipes
 
 - `recipes/oscar64/destructible-terrain.md` — 24 creatures released from a hatch, a blocker, two diggers and a builder given their roles at fixed ticks, one fatal-fall rule; terrain and creature states checked against a Python model after 360 ticks; worst frames timed on both models
+## seeded_level_fill — A whole level from a seed, three thresholds and a short object list
+
+**Complexity:** low
+**Region:** both
+**Requires:** lfsr_random
+**Cost:** bytes_data=880
+**Cost basis:** arithmetic
+
+**Why.** A hand-drawn 40 by 22 tile field is 880 bytes, or a few hundred
+after a run-length pass; sixteen of them are a large share of the
+memory a game has left. A level made from a seed is two bytes plus a
+row of thresholds and a handful of placed objects, and a game can have
+as many levels as it has table rows. Determinism is the design value
+that makes this safe: the same seed gives the same field on every
+machine and every run, so the level a designer tuned is the level the
+player gets, and a recorded input script replays true. The game-design
+page `../game-design/game-structure.md` gives that property as the one
+Liepa wanted for Boulder Dash and the one attract-mode replay depends on.
+
+**How.** One table row per level: a 16-bit seed, thresholds for each
+tile class, and an object list. Generation sets the LFSR state from the
+seed, then visits every cell in one fixed order, steps the generator
+once per cell and reads the low byte of the state. The thresholds are
+cumulative: below the first the cell is wall, below the second dirt,
+below the third a gem, else empty; the frame round the field is forced
+to wall. After the fill, the object list runs and writes over whatever
+the fill left in those cells, so the player start, the exit and any
+guaranteed items are exact. The difficulty table is the threshold
+columns: raising the wall and dirt thresholds and lowering the gem span
+makes a denser, poorer field without touching the generator. Clamp the
+level index to the last row. Keep a checksum routine over the field as
+a test aid: one 16-bit number on screen, or in a byte a harness reads,
+says whether a build still generates the level it did last week. The
+field is a tile map; a text screen draws it one character per cell as
+the recipe does, and a metatile game hands it to its renderer.
+
+**Why it works.** The LFSR is a permutation of its non-zero states, so
+from a given seed the sequence of low bytes is fixed and every cell's
+class is a pure function of the seed and its position in the visiting
+order. The recipe generates level 1 twice into two buffers and finds no
+differing byte in 880, with checksum `$1731` both times; level 2's seed
+and thresholds give `$D622` (measured in VICE x64sc 3.10, both models).
+The low byte over one period takes every value 256 times and zero 255
+(`lfsr_random`), so a threshold of `n` selects close to `n` in 256
+cells: level 2's thresholds of 64, 192 and 204 gave 290 wall cells of
+which 120 are the frame, 400 dirt and 190 empty or sparse-glyph cells in
+the picture. That is a proportion, not a guarantee: successive low bytes
+of a right-shifting register are correlated, so the field has streaks, and
+a design that needs a clean distribution mixes the state, or steps the
+register more than once per cell, or takes a byte from a separate
+8-bit register.
+
+**Variations.** A solvability check: flood-fill from the player start
+through the non-wall cells and require the exit and every guaranteed
+gem to be reached; when one is not, step to the next seed and fill
+again, and store the seed that passed in the table so the check runs
+at design time, not on the player's machine. The design layer's
+difficulty pattern asks that a level be finishable with the starting
+kit; this is that check for a generated field. Described here, not
+built. A zero-seed guard: a table entry of `$0000` never leaves state
+zero (`lfsr_zero_state_lockup`, `pitfalls/cpu.md`), so replace it with a
+constant before the first step, as the recipe does. A per-level
+generator mode byte can select a second tile set or a second threshold
+table for the same seed. A larger field than the screen fills a scroll
+map in the same pass.
+
+**Cycle budget.** Generation is a level-start cost, not a per-frame
+one, so the Cost line above carries only the field buffer (40 by 22)
+and no `cycles_per_frame`. The recipe times one call of its generator
+with CIA1 timers A and B chained, interrupts off, screen on so badline
+stalls are inside the figure: 97,643 cycles on PAL and 98,417 on NTSC,
+about five PAL frames for 880 cells, or about 111 cycles per cell with
+the loop, the compare chain and the frame test (measured in VICE x64sc
+3.10). The LFSR step is a small part of that (`lfsr_random` gives its
+per-call figure); the rest is C loop and classification, and an
+assembler inner loop would cut it. Spread the fill over several frames
+behind a level-start screen if five frames of black matter.
+
+### Recipes
+
+- `recipes/oscar64/seeded-level-fill.md` — three-row table (seed, three thresholds, five objects), 40 by 22 field generated twice and compared, checksums of two seeds, CIA-timed generation, verdict byte and border, levels drawn in turn on both models

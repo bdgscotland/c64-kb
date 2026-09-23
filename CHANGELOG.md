@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 743, schema 27, tools 2.0.0, package 0.13.0.
+Data 744, schema 27, tools 2.0.0, package 0.13.0.
 
 **Issue #22, step 3: the honest budget (schema 27, tools 2.0.0, package
 0.13.0).** Tools 2.0.0 is a major bump because the briefing's output
@@ -113,6 +113,33 @@ Validation on PAL. "Old sum" is the previous briefing arithmetic over the same p
 `test/plan-budget.test.ts` rebuilds every row from the shipped pages.
 
 Data 742, schema 26, tools 1.31.0, package 0.11.0.
+**Candidate list, Tier B batch 2 (data 743).** Four measured items.
+`irq_keyboard_own_scan` on the input page with a KickAssembler recipe: an
+eight-column matrix scan in the game's interrupt with per-key age
+counters, 252 cycles for the scan and 781 for scan, edge pass and ageing
+with the matrix empty; the KERNAL's exit points read from the ROM (the
+candidate list's phrasing of `$EA7B` was inverted and the page states the
+measured one); port 2's fire line does not leak into the matrix image and
+port 1's reads as row 4 closed in every column, both measured; no key was
+pressed, since VICE's keyboard feed writes the KERNAL buffer, and the page
+says so. `directory_read_and_select` on the file-io page with an Oscar64
+recipe that writes three files, streams the "$" channel, parses the
+listing and lets a selector pick one: 160 bytes with status `$40`, the
+transfer 515,635 cycles on PAL and the parse 13,821; the disk name prints
+as graphics glyphs because c1541 stores it as shifted PETSCII, explained
+on the page. `hires_plot` and `bresenham_line` on the bitmap page with a
+recipe: 63 cycles a plot, 136 a further line pixel, a 320-pixel line
+43,606 cycles with the display off and about 47,000 with it on, the
+badline stalls counted by the CIA; the eleven lines set 2,056 pixels,
+matching a host Bresenham and the sum of the endpoints' spans.
+`seeded_level_fill` on the logic page with a recipe: a 40 by 22 field from
+a 16-bit seed against three thresholds and a five-object list, regenerated
+byte for byte, a second seed giving a different checksum, 97,643 cycles a
+generation; a flood-fill solvability check is described and not built, and
+none of the three levels is claimed solvable. Left open: the steep-loop
+line cost is from the instruction table; the standing disagreement between
+the high-score-persist and file-io pages about a bare OPEN 15 with no
+drive, which the lint still records.
 
 **Issue #21, the last items.** `mixed_sprite_char_actors` (a sprite
 fighter and a character fighter, priority per frame), a reference page on

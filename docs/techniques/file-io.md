@@ -446,6 +446,294 @@ the recipe `../recipes/kickassembler/dos-error-codes.md`.
 
 ---
 
+## directory_read_and_select — Read the disk directory into a table and pick an entry
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKIN, CHRIN, CLRCHN, CLOSE, READST
+**Requires:** kernal_file_read_seq
+**Cost:** bytes_data=1539
+**Cost basis:** derived-listing
+
+### Why
+
+A loader menu, a level chooser or a save slot picker needs to know
+what is on the disk. The DOS will tell you: the name `$` opens a
+listing of the directory as if it were a file, and the same CHKIN and
+CHRIN loop that reads a SEQ file reads it. What comes back is not
+text. It is a BASIC program image, with link bytes and line numbers,
+and the block counts live in the line numbers. A parser that knows
+that turns the stream into a table in one pass, and a highlight moved
+by the joystick over that table is the menu.
+
+The trap that makes this worth an entry: `LOAD "$",8` from BASIC puts
+that program image where the BASIC program was, so a BASIC program
+that lists the directory that way has replaced itself. Machine code
+and C programs never meet the trap, because OPEN and CHRIN load
+nothing; the bytes go only where the program puts them.
+
+### How
+
+1. SETLFS with your logical file number, device 8 and secondary
+   address 0. SETNAM with the one byte `$`. OPEN. Test the carry:
+   C=1 with A=5 is device not present.
+2. CHKIN with X = the logical file number. From here CHRIN reads the
+   listing.
+3. The first two bytes are a load address (`$0401`). Skip them.
+4. Each line is two link bytes, a two-byte line number low byte first,
+   PETSCII text and a zero. Two zero link bytes end the listing. The
+   link bytes carry nothing; skip them. The line number is the drive
+   number on the first line, the block count on every entry, and the
+   free block count on the last line.
+5. The first line is the header: `$12` (reverse on), the disk name in
+   quotes padded to sixteen characters with `$A0`, then the id. An
+   entry's text is spaces, the name in quotes, spaces, an optional `*`
+   (a file never closed), the three type letters `PRG`, `SEQ`, `REL`,
+   `USR` or `DEL`, and an optional `<` (locked). The last line has no
+   quotes and reads `BLOCKS FREE.`
+6. Call READST after every CHRIN. Zero means more; `$40` arrives with
+   the last byte; anything else is an error and the loop stops.
+7. CLRCHN, then CLOSE. Do this before the next file operation, since
+   the drive keeps the directory channel until the listing is consumed
+   or closed.
+8. For the selector: draw one row per entry, keep an index, move it on
+   joystick up and down edges, act on fire. Reprint the old row plain
+   and the new row in reverse video rather than redrawing the table.
+
+```asm
+// directory_read_and_select: stream "$" through CHRIN into a table of
+// name, block count and type, one entry per line, no buffer for the listing
+.const SETLFS = $ffba
+.const SETNAM = $ffbd
+.const OPEN   = $ffc0
+.const CLOSE  = $ffc3
+.const CHKIN  = $ffc6
+.const CLRCHN = $ffcc
+.const CHRIN  = $ffcf
+.const READST = $ffb7
+.const MAXENT = 16                   // entries the table holds
+.const ENTLEN = 20                   // 16 name, 1 zero, 2 blocks, 1 type
+.const ptr    = $fb                  // zero page pair for (ptr),y
+
+* = $c000
+read_dir:
+    lda #0
+    sta count
+    sta line
+    sta status
+    lda #2
+    ldx #8
+    ldy #0                       // secondary 0: the load channel
+    jsr SETLFS
+    lda #1
+    ldx #<dollar
+    ldy #>dollar
+    jsr SETNAM
+    jsr OPEN
+    bcc opened
+    jmp dir_failed
+opened:
+    ldx #2
+    jsr CHKIN
+    bcc reading
+    jmp dir_failed
+reading:
+    jsr get                      // load address, two bytes, unused
+    jsr get
+next_line:
+    jsr get                      // link low
+    sta tmp
+    jsr get                      // link high
+    ora tmp
+    beq dir_done                 // a zero link ends the listing
+    jsr get                      // line number = blocks (or free count)
+    sta blocks
+    jsr get
+    sta blocks+1
+    lda line
+    beq skip_text                // line 0 is the disk header
+    ldy #0
+find_quote:
+    jsr get
+    beq end_of_line              // no quote at all: BLOCKS FREE line
+    cmp #$22
+    bne find_quote
+    ldx count
+    cpx #MAXENT
+    bcs skip_text                // table full: drain the rest
+    jsr entry_ptr                // ptr = table + count*ENTLEN
+name_char:
+    jsr get
+    beq end_of_line
+    cmp #$22
+    beq name_done
+    sta (ptr),y
+    iny
+    cpy #16
+    bne name_char
+    jsr get                      // a full 16-byte name: swallow its closing quote
+name_done:
+    lda #0
+    sta (ptr),y                  // terminate the name
+    ldy #17
+    lda blocks
+    sta (ptr),y
+    lda blocks+1
+    iny
+    sta (ptr),y
+type_char:
+    jsr get                      // spaces, maybe '*', then P/S/R/U/D
+    beq end_of_line
+    cmp #' '
+    beq type_char
+    cmp #'*'
+    beq type_char                // a splat: the type letter follows
+    ldy #19
+    sta (ptr),y                  // first letter of the type
+    inc count
+skip_text:
+    jsr get                      // drain to the line's zero
+    bne skip_text
+end_of_line:
+    inc line
+    lda status
+    beq next_line                // ST = 0: more bytes follow
+dir_done:
+    lda blocks
+    sta free
+    lda blocks+1
+    sta free+1                   // the last line number is BLOCKS FREE
+    jsr CLRCHN
+    lda #2
+    jsr CLOSE
+    clc
+    rts
+dir_failed:
+    jsr CLRCHN
+    lda #2
+    jsr CLOSE
+    sec
+    rts
+
+// one byte from the channel; Z reflects the byte, status holds ST
+get:
+    jsr CHRIN
+    sta byte
+    jsr READST
+    sta status
+    lda byte
+    rts
+
+entry_ptr:
+    lda #<table
+    sta ptr
+    lda #>table
+    sta ptr+1
+    txa
+    beq ptr_done
+mul:
+    lda ptr
+    clc
+    adc #ENTLEN
+    sta ptr
+    bcc no_carry
+    inc ptr+1
+no_carry:
+    dex
+    bne mul
+ptr_done:
+    rts
+
+.encoding "petscii_upper"
+dollar: .text "$"
+count:  .byte 0
+line:   .byte 0
+status: .byte 0
+byte:   .byte 0
+tmp:    .byte 0
+blocks: .word 0
+free:   .word 0
+table:  .fill MAXENT*ENTLEN, 0
+```
+
+Assembled and run here from BASIC (`LOAD "DIRTECH",8,1` then
+`SYS 49152`) against a disk holding three files and itself: `count`
+came back 4, `status` `$40` and `free` 655, the figures `c1541 -list`
+printed for the same disk. A second run against a disk holding a
+300-byte SEQ file with a sixteen-character name and the routine itself
+read the table back with PEEK: `count` 2, `status` `$40`, the first
+entry's name bytes `A` to `P` with a zero after them, its block count 2
+and its type letter `S`, the second entry's type `P`. An earlier draft
+of the name loop left the closing quote unread after a full
+sixteen-byte name and stored it as the type; the `jsr get` after the
+loop is what that run checks.
+
+### Why it works
+
+The 1541 DOS recognises `$` at OPEN and builds the listing block by
+block from the directory sectors on track 18, sending it on the data
+channel with EOI on the last byte, which is why READST reads `$40`
+there and nowhere earlier. The image is a BASIC program so that
+`LOAD "$",8` followed by `LIST` shows it without any code on the C64
+side. That convenience is the whole reason for the load address, the
+link bytes and the line numbers, and a parser that reads it as a file
+just has to know the shape. The block count sits in the line number
+because BASIC prints line numbers in decimal for free; the DOS never
+writes it into the text. Each entry costs 32 bytes on the wire (link,
+number, up to 27 bytes of text, zero), so a directory of `n` files is
+about `32 * (n + 2)` bytes, 160 for three files (measured, the recipe
+below).
+
+### Variations
+
+- **More entries than the screen.** A 1541 directory holds up to 144
+  entries and a 25-row screen shows about 22. Keep the whole table
+  (144 entries of 20 bytes is under 3 KB) and draw a window of it,
+  moving the window when the index leaves it. The parse is one pass
+  regardless.
+- **Only PRG files.** Test the first type letter and skip an entry
+  whose type is not `P`; the table stays small and the menu shows only
+  what the loader can use. Skip splat files too, or mark them.
+- **Filtered by the drive.** `$:NAME*` or `$:*=P` asks the DOS to
+  filter by pattern or type before sending, so the C64 receives only
+  the matching lines. Not measured here.
+- **The LOAD "$" trap from BASIC.** A BASIC program that wants a
+  directory opens `$` with `OPEN 2,8,0,"$"` and reads it with `GET#2`,
+  skipping the link and number bytes as above; it never uses LOAD for
+  it. The DOS wedge's `@$` does the same read.
+- **Streaming or buffered.** The listing above parses straight from
+  CHRIN and needs no buffer. The recipe buffers the stream first so the
+  parse can be timed apart from the transfer and the channel is closed
+  before any screen output; either shape gives the same table.
+
+### Cycle budget
+
+Measured in VICE 3.10 x64sc with a true-drive 1541 and wobble off, on
+the recipe below, CIA2 timers chained: the transfer of a 160-byte
+listing (OPEN, CHKIN, 160 CHRIN and READST pairs, CLRCHN, CLOSE) took
+515,635 cycles on PAL and 535,744 on NTSC, about 3,200 cycles a byte.
+The parse of the buffered 160 bytes took 13,821 cycles on PAL and
+14,251 on NTSC, about 86 cycles a byte. Both are one-off costs paid
+when the menu is built, not per frame, so the Cost line carries no
+`cycles_per_frame`; both timings read the chained counter unlatched,
+so each is good to within a few hundred cycles rather than to the
+cycle. The Cost line's `bytes_data` is the recipe's own data: the
+1,024-byte listing buffer, the 411-byte table, the 40-byte reply
+buffer and the 64-byte write block; the linker map's data and BSS
+segments together come to 1,620 bytes with the runtime's own. By
+arithmetic from those rates, a full 144-entry directory of about
+4,700 bytes would take some 15 million cycles to transfer and 400,000
+to parse. The transfer runs with interrupts off inside the KERNAL, so
+a raster IRQ misses most frames during it
+(`raster_irq_during_serial_io`).
+
+### Recipes
+
+- `recipes/oscar64/directory-reader.md` (three files written, the table parsed and checked, a joystick selector with an autopilot pick; transfer and parse timed)
+
+---
+
 ## kernal_load_to_address — LOAD a raw asset to an address of your choosing
 
 **Complexity:** low
