@@ -915,6 +915,71 @@ into a test runner. All three agree on both builds. None of them was run
 against `sim6502-reference.md`'s VICE backend, which uses a different
 server on port 6510.
 
+### Checking every store against the claims: `scripts/claims-watch.ts`
+
+Route 2 applied to every store a program makes. The script runs a PRG
+windowless with `trace store` on `$0000-$03FF`, `$D000-$DFFF` and
+`$FFFA-$FFFF` (add `--all-ram` for `$0400-$CFFF` and `$E000-$FFF9`), and
+checks each store against what the program declared:
+
+```bash
+node scripts/claims-watch.ts game.prg --recipe docs/recipes/kickassembler/x.md \
+  --technique ram_under_kernal --claim 'zero_page $02-$39' \
+  --range 'screen=$0400-$07FF,colour=$D800-$DBFF' --screen 0400 \
+  --harness cia2_timer_a,cia2_timer_b --kernal IRQ,CHROUT --all-ram
+```
+
+- `--technique` and a recipe's `techniques:` add each technique's
+  `**Claims:**` units, and those of the techniques it REQUIRES. A technique
+  with no Claims line is named in the output; declare its units with
+  `--claim`, in the Claims-line grammar.
+- `--range` is the program's own RAM. The PRG's load span is always declared.
+  Colour RAM counts as RAM here, not as a unit.
+- `--harness` names measurement timers and counters. Their stores are
+  listed apart and never fail the run.
+- `--kernal` names the routines the program calls; `IRQ` and `NMI` name the
+  two services. A KERNAL zero-page store must lie inside the union of their
+  `(may; ...)` sets in `kernal-routines-reference.md`.
+
+Exit 1 on a program store to a unit or byte nobody declared (or declared
+`reads` only), or on a KERNAL zero-page store outside the may-sets.
+
+How it reads the log (VICE x64sc 3.10, measured):
+
+- The register line of a store hit shows the registers after the
+  instruction: a PHA logged `SP:f5` and stored `$01F6`. So STA, STX and STY
+  give the value, and a push lands at `$0100 + SP + 1` to `+3`. Pushes are
+  dropped; other stores to page 1 are judged like any RAM.
+- An I/O store counts against a unit only for the bits it changes, by the
+  last value stored there: `STA $D015` with `$03` over `$01` touches
+  sprite 1 only. The first `STA $D011` of a program usually clears bit 7
+  that the KERNAL's boot left set (`$9B`), which touches `vic_raster_irq`.
+  A read-modify-write touches every unit bit of its register.
+- A store is the KERNAL's when its PC is `$E000` or above and HIRAM is set
+  in the last value stored to `$01`; BASIC's when `$A000-$BFFF` with LORAM and
+  HIRAM set; otherwise the program's. So code in RAM under a banked-out
+  KERNAL is attributed to the program.
+- Judging starts at the `SYS` address of the BASIC stub (a `trace exec`
+  there) and stops at the first execution of BASIC's READY entry, `$A474`.
+  The KickAssembler file round trip, which returns to BASIC, was flagged
+  for `$9D` before this cut: BASIC's READY calls SETMSG.
+
+Four recipes, built and run with `--all-ram` at 8,000,000 cycles PAL (the
+file round trip at 40,000,000 with a fresh D64):
+
+| Recipe | Declared from the page alone: violations | What had to be added to pass |
+|---|---|---|
+| `kickassembler/sprite-multiplex-game` | `irq_vector_fffe`, `nmi_vector_fffa`, zero page `$02-$39`, screen, colour RAM, `cia2_timer_a`, `cia2_timer_b` | `ram_under_kernal` (the recipe banks the KERNAL out; its `techniques:` omits it), the zero page, the screen and colour RAM, the two timers as harness |
+| `kickassembler/scroll-panel-split` | `irq_vector_fffe`, screen `$0400-$0747`, panel `$0F20-$0FE7`, `$3FFF`, colour RAM | `ram_under_kernal`, the ranges; `soft_scroll_v` and `char_scroll_buffer_v` have no Claims line |
+| `oscar64/sfx-engine` | Oscar64 runtime zero page (`$0D-$56` seen), BSS, its stack at `$9FFC-$9FFF`, screen, colour RAM, `cia1_timer_a` | the zero page, the map file's BSS and stack, the screen and colour RAM, `cia1_timer_a` as harness |
+| `kickassembler/file-io-roundtrip` | `cia2_timer_a`, `cia2_timer_b` | the two timers as harness; every KERNAL zero-page store fell inside the ten routines' may-sets |
+
+A variant of the multiplexer with `sta $d40b` and `sta $fb` added at its
+entry failed with exactly those two stores, `sid_voice_2` and zero page
+`$FB`. The KERNAL's serial routines in the file round trip wrote
+`$DC07`/`$DC0F` 212 times: a program that owns `cia1_timer_b` loses it
+across a disk call.
+
 ---
 
 ## Text monitor for debugging
