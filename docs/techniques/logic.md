@@ -2550,3 +2550,533 @@ actor on a quiet frame.
 ### Recipes
 
 - `recipes/oscar64/beat-em-up-lanes.md` — four-lane tile plane, a player and three enemies on scripts, persistent insertion sort into sprite 0 to 3 by depth, six-line hit window and reach by facing, a six-frame attack with two active frames from a table, hit log re-checked against the window, counts and sort order as the verdict, sort and engine cycles on screen, PAL and NTSC
+
+## vehicle_control — Top-down driving on a vertical scroll: throttle is the scroll speed, steering with momentum and grip, surface read under the wheels
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Requires:** fixed_point_8_8, tile_grid_collision, soft_scroll_v
+**Cost:** cycles_per_frame=655, cycles_per_frame_typical=557
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-vehicle-control (worst frame is a crash under braking while sliding left on the verge over its limit, one car, in the vertical blank)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+In a top-down road game the car stays in one band of the screen and the
+road moves under it. The player's throttle is therefore the scroll
+speed, and it has to go from standing still to several pixels a frame
+without jerks. Steering has to feel like a car, not a cursor: the car
+keeps sliding after the stick is centred, less on grass, much more on
+water. And the ground under the wheels decides what happens next: road,
+a verge that slows the car, water for a boat, or rock that ends the run.
+None of this touches the VIC-II; it is rules over numbers, and the
+picture follows from them.
+
+### How
+
+**State**, all 8.8 fixed point (`fixed_point_8_8`): the forward speed in
+pixels a frame (unsigned), the lateral velocity (signed), the car's x
+(unsigned), and the distance travelled as 16.8, a whole-pixel word and a
+fraction byte. The car's screen y is a constant. Two bytes more: the
+surface class found last frame and a crash timer.
+
+**One frame, in this order:**
+
+1. **Input.** Read the stick once.
+2. **Speed.** Up adds the acceleration while the speed is below the
+   limit of last frame's surface, down subtracts the brake, no input
+   subtracts a small coast drag; none go below zero. Then, above the
+   limit, the speed falls by a fixed drag a frame, not at once. Up adds
+   nothing over the limit, so driving onto grass at full speed with the
+   throttle held slows the car from 4 to 1.5 pixels a frame over 40
+   frames. If up still added its step, the net fall would be the drag
+   minus the acceleration, and a car at full throttle would barely slow.
+3. **Scroll accumulator.** Add the speed to the distance. The carry out
+   of the fraction byte moves into the pixel word, so 2.81 pixels a frame
+   advances 2 or 3 pixels and never drifts. The picture is a function of
+   the distance alone: YSCROLL is `distance & 7` and the top map row on
+   screen is `BASE - (distance >> 3)`. A change in `distance >> 3` is a
+   row crossing, and the scroll technique redraws or shifts the matrix.
+4. **Lateral.** Left or right adds or subtracts the surface's steering
+   step to the lateral velocity, only above a minimum speed so a car
+   standing still cannot slide sideways. With the stick centred, the
+   surface's grip moves the velocity towards zero by a fixed step a
+   frame. Clamp to the maximum lateral speed, then add it to x.
+5. **Surface probe.** At the new x and the new distance, read the tile
+   map (`tile_grid_collision`) at four wheel points. Screen pixel row
+   `yy` below line 48 shows map pixel row `BASE * 8 + yy - distance`, so
+   each wheel is a row lookup and a column shift. The worst class of the
+   four wins.
+6. **Response.** Rock is a crash. Anything else becomes the surface for
+   next frame's limit, steering and grip.
+
+The probe comes after the scroll so it reads the rows the next picture
+shows. The speed limit uses last frame's surface because the probe needs
+the new position; the lag is one frame.
+
+**Surface table** in the recipe. Tile code bits 7 and 6 are the class;
+speeds in pixels a frame.
+
+| Class | Code bits 7-6 | Speed limit | Steering step | Grip step | Response |
+|---|---|---|---|---|---|
+| road | 00 | 4.00 (`$0400`) | 0.08 (`$0014`) | 0.06 (`$0010`) | none |
+| verge | 01 | 1.50 (`$0180`) | 0.08 | 0.06 | above the limit, speed falls 0.06 (`$0010`) a frame, plus the brake if down is held |
+| water | 10 | 3.00 (`$0300`) | 0.03 (`$0008`) | 0.01 (`$0003`) | boat handling: the drift outlasts the input |
+| rock | 11 | none | none | none | crash |
+
+Lateral speed is capped at 1.50 (`$0180`), acceleration is 0.05
+(`$000C`) a frame and the minimum speed for steering 0.25 (`$0040`).
+
+**Crash rule.** Any wheel on rock: speed and lateral velocity to zero,
+a 50-frame timer starts, and while it runs input is ignored and the
+distance does not change, so the road stands still. When it ends the car
+is put on the road's centre column of the map row under its front
+wheels, from a per-row centre table built with the map, and the surface
+is set to road.
+
+**Several pixels a frame.** The fine scroll moves by the whole speed
+each frame, and a row crossing comes every 8 pixels. Up to 8 pixels a
+frame there is at most one crossing a frame; up to 4, at most one every
+two frames. The recipe caps the road at 4 so it can spread the redraw:
+it draws the hidden screen matrix for the next top row, half a matrix a
+frame, and flips `$D018` on the frame the top row equals it
+(`screen_double_buffer_d018`). A crossing that arrives before the hidden
+matrix is ready is counted and would show a wrong row; a game that can
+outrun its redraw has to hold YSCROLL at its last value until the flip,
+which stalls the picture for a frame and not the logic. Above 8 pixels a
+frame two rows cross in one frame. An in-place shift (`char_scroll_buffer_v`)
+would move the rows twice, at least 26,500 cycles by `scroll_panel_split`'s
+13,262-cycle carry of twenty rows (arithmetic; a full 25-row matrix
+costs more), more than a frame. A redraw from the
+map costs the same however many rows moved, because it copies the whole
+matrix at the new origin. `eight_way_scroll_double_buffer` avoids
+tearing the same way, drawing the spare matrix for the origin the next
+crossing will produce and flipping only on an exact match; its colour
+RAM, which cannot be double buffered, is spread over four fields, so it
+needs five fields between crossings. A vertical scroll that moves colour
+RAM that way is limited to 8 pixels in 5 frames, 1.6 pixels a frame
+(arithmetic). The recipe takes colour from the tile code instead: in
+extended colour mode (`ecm_mode`) bits 7 and 6 pick the background
+register, so the surface class and its colour are the same two bits and
+colour RAM never changes.
+
+### Why it works
+
+Everything the player sees is derived from four numbers, and each is
+advanced by one 8.8 add a frame. The scroll position cannot disagree
+with the probe because both come from the same distance. Momentum is the
+lateral velocity carried from frame to frame; grip is only the size of
+the step that brings it back to zero, so one table row per surface
+changes the handling without new code. Forward speed of at most 4 and
+lateral of at most 1.5 pixels a frame are both under a tile, so the
+front wheels meet every map row the car drives over and no wheel steps
+over a tile sideways. Across the body the wheel columns are 13 pixels
+apart, so a single rock tile can pass between them, as it could between
+a real car's wheels; probe the centre column too if that must crash.
+
+### Variations
+
+- **Steering in proportion to speed.** Scale the steering step by the
+  forward speed with `table_multiply_8x8` instead of the minimum-speed
+  threshold. Not built in the recipe.
+- **Other vehicles.** An enemy car keeps its own distance; its screen y
+  is the player's distance minus its own, plus the player's band, so it
+  scrolls with the road for free. Slots from `object_pool`.
+- **More than 4 pixels a frame.** Redraw the whole matrix in one frame.
+  The recipe's C copy loop measured 20,330 cycles for it on PAL and
+  20,414 on NTSC, more than a frame on either; a fully unrolled `LDA abs` / `STA abs` copy is 8 cycles a
+  byte, 8,000 for the matrix (arithmetic, `char_scroll_buffer_v`).
+- **NTSC tempo.** Speed is per frame, so the road passes 20% faster on
+  a 60 Hz machine for the same numbers (`pal_ntsc_tempo_mismatch`).
+  If the game must feel the same, detect the model at start with
+  `pal_ntsc_detection` and scale on NTSC: speed limits by 5/6; the
+  steps added to a speed every frame (acceleration, brake, coast,
+  over-limit drag, steering, grip) by (5/6)² = 25/36, because they are
+  per frame squared; frame counts such as the 50-frame crash timer by
+  6/5 (arithmetic). `difficulty_ramp_tables` scales frames and speeds
+  the same way.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B around the recipe's
+`car_update`, interrupts masked, Oscar64 `-O2`, over the 508-frame
+script (rung 1): worst frame 655 cycles, at frame 247. The script builds
+that frame on purpose, because it is the longest path through the
+update: the brake, the verge over-limit drag, the grip step on a slide
+to the left (the last branch the lateral update tests), the four probes
+and the crash response. The mean over the 458 frames the car was driving is
+557. A crashed frame is a timer decrement. The figures are the same on
+PAL and NTSC because the update runs from line 256, before the first
+badline, on both. A build with its code laid out differently can move
+them by a cycle (656 and 558 in a variant of the recipe). 655 cycles is
+3.3% of a PAL frame.
+
+The row crossing is not in these figures; it belongs to the scroll. In
+the recipe the half-matrix redraw measured up to 10,110 cycles on PAL
+and 10,368 on NTSC with the display on, and the worst frame's whole
+work, update plus redraw plus the recipe's logging, 11,393 and 11,640.
+The in-place figure for comparison is `scroll_panel_split`'s carry
+frame, twenty rows moved, 13,262 cycles on PAL and 13,519 on NTSC.
+
+### Recipes
+
+- `recipes/oscar64/vehicle-control.md` — a road that scrolls up to 4 pixels a frame over 220 map rows with verges, a narrowing and a water stretch; the car on a scripted input (accelerate, verge at full throttle, a brake into rock while sliding, restart, coast, boat); a per-frame fold of x, speed, distance and surface against a Python model, PASS/FAIL, worst and typical update cycles, PAL and NTSC
+
+## car_contact_response — Car contact: push apart on the shallow axis, trade velocity by mass, crash off the road
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Requires:** fixed_point_8_8, tile_grid_collision
+**Cost:** cycles_per_frame=17549, cycles_per_frame_typical=2081
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-car-contact (worst frame: a built frame, not a bound, eight cars packed so all 28 pairs are in contact and 7 get an impulse, with the tile probe, screen blanked; typical: the mean over one 256-frame pass of the six-car game, screen on, PAL)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+`per_frame_hitbox` says which pair touched. A driving game also has to
+say what the touch does, and players read the answer at once: a car
+nudged sideways must slide, a truck must not, a car shunted from behind
+must pick up speed, and a car pushed off the tarmac must crash. Leave the
+overlap alone and cars drive through each other. Kick velocities every
+frame the boxes overlap and a pair that stays in contact for a few frames
+takes a few kicks and flies apart.
+
+### How
+
+Each car keeps an 8.8 centre and an 8.8 velocity on each axis
+(`fixed_point_8_8`), a half width and a half height, a mass class (light
+or heavy), a cooling counter and a crash flag, in parallel arrays. The
+frame is: drive and move every car, run the pair loop, then probe the
+tiles.
+
+1. **The pair loop.** For each pair `i < j` where neither has crashed,
+   take the Y distance from the high bytes and compare it with the sum of
+   the half heights. On a road the cars are spread along it, so most
+   pairs end at this one compare. Then the same for X.
+2. **The shallow axis.** For a pair that overlaps, the overlap on each
+   axis is the half-size sum less the distance. The smaller one is the
+   axis of contact: side by side, it is X; nose to tail, Y. Resolve on
+   that axis only.
+3. **Separate by mass.** Split that overlap between the two cars, each
+   moved away from the other: half each for equal masses; for a truck
+   and a car, the truck takes `pen >> 2` and the car the rest. That share
+   is a chosen value that keeps a truck nearly still, not the mass ratio
+   (1/8). Do this on every frame of contact, so cars never pass through
+   each other.
+4. **The impulse.** Let `rv` be `v[i] - v[j]` on the contact axis. The
+   pair is closing when `rv` has the sign of the side `j` is on. If it is
+   closing and not both cars are cooling, `j` gains `g` and `i` loses
+   `2 * rv - g`, where `g` is `rv` for equal masses, `rv >> 2` when `j`
+   is the heavy one and `2 * rv - (rv >> 2)` when `i` is. This is the
+   elastic result for masses 1 and 7; no multiply is needed. Equal cars
+   swap their velocities on that axis, so a side-swipe hands the sideways
+   speed to the other car and a bump from behind hands over the forward
+   speed. A light car bounces off a truck and the truck takes a quarter of
+   the closing speed.
+5. **Cooling.** After an impulse, set both cars' counters (eight frames
+   in the recipe). While both cars in a pair are cooling, step 3 still
+   runs but step 4 does not. A car pinned against a truck by its own
+   steering then stays against it instead of kicking it every frame, and
+   a third car that is not cooling can still hit either of them. Because
+   the counter is per car, two cars that have each just hit something
+   else get only the push on their first touch with each other.
+6. **Crash probe.** After the pair loop, look up the tile class under
+   each car's centre in the level map (`tile_grid_collision`). Grass,
+   water or an edge tile sets the crash flag and zeroes the velocity. The
+   probe comes after the pair loop because a push can put a car off the
+   road. A crashed car leaves the pair loop.
+
+### Why it works
+
+The axis of least overlap is the direction of the shortest move that
+separates the boxes. While no car moves more than a few pixels a frame,
+the overlap on the axis they met along is still the smaller one, so the
+push goes back the way they came. The elastic formula for two masses is
+`v_j' = v_j + 2m_i / (m_i + m_j) * rv` and
+`v_i' = v_i - 2m_j / (m_i + m_j) * rv`; choosing
+masses whose sums are powers of two (1 + 1 = 2, 1 + 7 = 8) turns both
+fractions into shifts, and momentum is kept to the rounding of one shift
+(arithmetic, rung 3).
+The closing test stops a pair that is already separating from being
+kicked back together. The cooling rule is per car, not per pair, so it
+costs one byte per car, not one per pair. Because every step is integer
+arithmetic in a fixed order, a model in another language reproduces the
+run bit for bit, which is how the recipe is checked.
+
+### Variations
+
+- **Restitution.** The rule above is fully elastic. Halving both
+  changes, `g >> 1` for `j` and `(2 * rv - g) >> 1` for `i`, gives the
+  fully inelastic result: the pair ends at one common speed on that axis.
+  Not built in the recipe.
+- **Other mass ratios.** Masses 1 and 3, or 1 and 15, also sum to a
+  power of two and change only the shift count. A third class must make
+  a power-of-two sum with each of the others, which 1, 3 and 15 do not
+  (3 + 15 = 18); past two classes, a small table of the two fractions
+  per class pair, rounded to shifts and adds, is the general form.
+- **Spin-out.** A side hit above a speed threshold sets a timer that
+  locks steering, instead of or before a crash.
+- **Scrolling road.** The pair test takes the high byte of an unsigned
+  8.8 centre, so the recipe's world is 256 pixels on each axis. A road
+  longer than that needs either a 16-bit pixel Y (the pair test then
+  compares 16-bit distances), or cars kept in screen coordinates with the
+  scroll subtracted each frame. Either way the probe reads the map row
+  under the car, not the screen row, and must clamp that row: the
+  recipe's probe does no bounds check.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked, Oscar64
+`-O2`, on the recipe (rung 1). One pair costs 87 cycles when the Y test
+ends it and 147 when the X test does. Two light cars in contact cost 634
+with an impulse and 505 while both are cooling. A truck and a light car
+cost 701 with an impulse when the truck is `i` (`g = 2 * rv - (rv >> 2)`),
+666 when it is `j` (`g = rv >> 2`), and 513 while both are cooling. These
+are single calls through a wrapper, screen blanked, less an empty call.
+
+The Cost line's worst frame is a built frame: eight cars packed so that
+all 28 pairs are still in contact when their turn comes and 7 get an
+impulse, 17,549 cycles with the probe. Those counts are the most one pass
+allows: 28 pairs, and 7 impulses, because each impulse needs a car that
+is not yet cooling and the first uses two. The frame is not a bound,
+because its contacts mix light and truck pairs. The bound by arithmetic
+(rung 3), with every impulse at 701 and every other contact at 513, is
+17,549 + 7 x 67 + 21 x 8 = 18,186 cycles, assuming no contact in the
+pile costs less than the light-car figures; not measured. Eight cars in a
+2 x 4 grid, neighbours overlapping by 2 pixels, cost 10,949 (12 contacts,
+7 impulses).
+
+The typical figure is the mean of the timed step over the 256 frames of
+one pass of the recipe's six-car game, screen on: 2,081 on PAL (2,079 for
+the next pass) and 2,152 on NTSC. The worst game frame over two passes is
+3,695 on PAL and 3,910 on NTSC, and the best 828, after the crashes have
+taken cars out of the pair loop. At 634 cycles for a contact, a C pair
+loop is affordable for a handful of cars that rarely touch; hand-written
+assembly would be cheaper, not measured here.
+
+In assembly the two signed steps need care. The closing test is the sign
+of `rv`. The recipe's 8.8 velocities stay within ±1,536 (6 pixels a
+frame, the model's largest over the pass), so the 16-bit difference
+cannot overflow and its high byte has the right sign. It can overflow
+when velocities are kept in signed bytes, where `rv` passes 127, or when
+16-bit velocities can exceed ±16,383: then `bmi` after the subtract gives
+the wrong order (`signed_compare_bmi_overflow`). And `rv >> 2` must be an
+arithmetic shift: `lda hi / cmp #$80 / ror / sta hi / ror lo`, twice,
+where `cmp #$80` copies the sign into the carry (`asr1` in
+`sine_table_generation`). `lsr` would turn a negative velocity positive.
+The recipe's pass includes a negative `rv` of -379, whose floor shift is
+-95; a build using a truncating divide (-94) fails the checksum.
+
+### Recipes
+
+- `recipes/oscar64/car-contact.md` — a road with grass and water edges, a player and five enemy cars of two masses on scripts: a side-swipe into the water, a bump from behind, a truck that moves 5 pixels, two contacts in one frame that put two cars on the grass, a nine-frame shove that exercises the cooling rule and the truck's share of the push; a per-frame checksum of positions, velocities and crash flags against a Python model, PASS/FAIL, cycles per pair (light and truck) and per frame, PAL and NTSC
+
+### Sources
+
+- Elastic collision in one dimension, the two-mass velocity formulas:
+  https://en.wikipedia.org/wiki/Elastic_collision
+
+## lane_pursuit_ai — Road pursuit cars: approach, pull alongside, ram with a lead, back off, leave when hit, with swept look-ahead probes to stay on the road
+
+**Complexity:** medium
+**Region:** both
+**Requires:** fixed_point_8_8, tile_grid_collision, object_pool
+**Cost:** cycles_per_frame=14204, cycles_per_frame_typical=9871
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-lane-pursuit (worst frame: the spawn table's two same-frame spawns, then four cars on the ram path, one in contact, each with an eight-probe swept span and both room scans, screen blanked; typical: worst frame of the 780-step run, screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+The enemy cars in a road shooter are the main threat, and they have to
+drive like drivers: catch up, sit beside the player, swerve into it,
+drop back, and never drive through the scenery. Path bytecode
+(`wave_director`) cannot do it, because the player moves and the road
+changes under both cars. A path search (`nav_area_pathfinding`) is more
+than a road needs: the road is one wide corridor, and the question is
+only where across it to be. The answer is a small state machine per car
+that picks a target point relative to the player, two capped
+proportional controllers that move the car toward it, and a probe of the
+map ahead that overrides the target when the road runs out.
+
+### How
+
+1. **The car record.** Parallel arrays per slot (`object_pool`): state,
+   timer, side, x in 8.8, lateral speed in 8.8, world y, and forward
+   speed relative to the player. World y spans more than 256 pixels, so
+   the recipe keeps y and the forward speed in 1/16 pixel in 16 bits.
+   A spawner (`wave_director`, or a table) fills a slot with state
+   APPROACH, an x, and an offset behind or ahead of the player.
+2. **The states.** Each state names a lateral target and a forward
+   target; the recipe's values:
+
+   | State | Lateral target | Forward target | Next |
+   |---|---|---|---|
+   | APPROACH | player x ± 24 px, on its side | level with the player | within 8 px of level and 6 px of the slot: ALONG |
+   | ALONG | player x ± 24 px | level | after 40 frames: RAM |
+   | RAM | player x + 8 × player's lateral speed | level | bodies within 14 px across and 16 px along: contact, BACK; else after 24 frames: BACK |
+   | BACK | player x ± 40 px | 40 px behind | after 50 frames: APPROACH |
+   | LEAVE | its own x | 200 px behind, higher speed cap | 150 px behind: slot freed |
+
+   A hit sends a car in any state to LEAVE; that is the "give up".
+3. **One car per side.** A car in APPROACH claims the side of the player
+   it is on, or the other side if that is taken. With both taken it
+   queues 40 px behind at its own x. The claim is released on BACK and
+   LEAVE, so rams come one per side at a time.
+4. **Steering rule.** Lateral error e = target x - x in pixels. The wanted
+   lateral speed is e × 16 in 8.8 (1/16 pixel a frame per pixel of
+   error), clamped to the state's speed cap: 1 px a frame, 3 in RAM, 2
+   while avoiding. The lateral speed then moves toward the wanted speed
+   by at most the state's acceleration cap: 1/8 px a frame per frame,
+   3/8 in RAM, 1/2 while avoiding. Add the speed to x. The forward
+   controller has the same shape on the offset from the player: wanted
+   relative speed (target offset - offset) / 8, capped at 1.5 px a
+   frame (3 in LEAVE), changing by at most 1/8 px a frame per frame. The
+   speed is relative, so the pursuers keep pace when the player speeds
+   up (the recipe's player holds one speed). Divide a signed error by
+   shifting its magnitude and restoring the sign. That rounds toward
+   zero, the same way left and right, and does not depend on how a
+   language shifts a negative number, so a model can match the code
+   exactly. A 6502 has no arithmetic shift; `CMP #$80 : ROR` floors
+   instead, which leaves -1 to -7 at -1, a one-unit pull to the left.
+5. **The lead.** RAM aims at the player's x plus eight frames of its
+   lateral speed: where the player will be rather than where it is. In
+   the recipe's model it did not raise the hit rate: 3 contacts from 7
+   rams with the 8-frame lead, 4 from 7 with none, 4 from 6 with 4. The
+   autopilot player's lateral speed is at most 2 px a frame against the
+   ram's 3. A lead matters
+   when the target moves sideways about as fast as the rammer.
+6. **Spacing.** Test the other pursuers: the first one within 20 px
+   across and 32 px along moves this car's lateral target 20 px away
+   from it and, if it is ahead, the forward target to 32 px behind it.
+7. **Look-ahead probe.** Probe the map row 32 px past the car's nose
+   across the span from its x now to the x its lateral speed gives it 16
+   frames on, every 8 pixels and at the far edge, so no tile is skipped
+   (`tile_grid_collision`, step 3). If any probe is not road, count the
+   road tiles in the 8 tiles either side of the span's centre on that
+   row, set the lateral target 32 px toward the side with more road, and
+   use the avoiding caps. At a narrowing that is the open side; at a fork
+   the wider channel, which need not be the player's (see below).
+8. **Side probe.** Otherwise probe one point 12 px beyond the body on the
+   side the car is steering toward, on its rear row and 8 px past its
+   nose. If it is not road, hold the lateral target at the car's own x
+   and brake with the avoiding acceleration cap. The player's slot can
+   lie on the verge; the car then waits beside the edge instead of
+   weaving.
+
+### Why it works
+
+The speed cap limits how fast a car crosses the road. The acceleration
+cap gives it weight: a ram builds over several frames, so the player
+sees it coming and can dodge. The same weight is why the probe must look
+ahead. A car cannot stop sideways at once. The side probe sits 12 px
+beyond the body, so a car moving at most 3 px a frame first sees an
+edge 9 to 12 px away. The hold then brakes at the avoiding cap of 1/2 px
+a frame per frame; the code changes the speed before it moves, so the
+car stops within 7.5 px (arithmetic). At the ram cap of 3/8 it would
+need 10.5 px and could clip the verge by 1.5 px. The look-ahead must
+cover the frames a turn takes. An early draft of the
+recipe's model probed 24 px ahead at the car's current x, with no side
+probe and no spacing, and counted 226 car-frames with a car on the verge
+or the water in 800 frames: ramming cars slid onto the island. The
+final rules, with the swept span, 32 px from the nose and the side
+probe, count 0 in 780.
+
+At a fork the rule is greedy by one row, and it separates pursuers from
+the player. In the recipe's model, on car-frames with the player and a
+pursuer both beside the island, the pursuer is across the water in 375
+of 452. The cause is the lateral cap against the short look. Cars on the
+player's right when it dives into the left channel are 75 px or more
+from it. At the ALONG cap of 1 px a frame that is 75 frames, 150 px of
+road at 2 px a frame (arithmetic), while the probe sees 32 px past the
+nose.
+
+Fixes tried in the model, none kept:
+
+| Rule | Across the water | Off-road car-frames |
+|---|---|---|
+| Room only (the recipe) | 375 of 452 | 0 |
+| Prefer the player's side if the car can clear into it within 24 px | 375 of 452 | 0 |
+| A fork marker per map row, read 96 px past the nose, names the left channel; avoiding caps while it is seen | 20 of 441 | 28 |
+| The same, read 160 px past the nose | 203 of 437 | 1 |
+| The marker's channel is the player's when read, 160 px, ALONG caps | 346 of 394 | 0 |
+
+A marker that names the channel does bring the cars across, but these
+simple forms fight the edge probes and put cars on the water. A game
+that needs pursuers through a split wants a planned lane change: a
+per-row channel table read well ahead, a target moved into the chosen
+channel, and the edge probes told which channel is meant. Until the
+channels join, a pursuer across a split is out of play.
+
+### Variations
+
+- **Edge table.** Store each map row's left edge, right edge and island
+  span, and compare the span against them. That replaces the 16-tile
+  room scan, most of the probe cost below, with a few compares (not
+  measured here).
+- **Personalities.** Per-type rows of speed caps, acceleration caps,
+  timers and slot offsets: a car that only rams from behind, a car that
+  holds ALONG and fires. A heavy truck might take a RAM cap of 2 px and
+  1/4 acceleration, a wider body (CW 16) with the probes widened to
+  match, and a longer ALONG (not built here).
+- **Contact.** The recipe counts a contact and backs off. A game calls
+  `car_contact_response` on contact, and moves a car to LEAVE once that
+  pushes it off the road; the player car itself is `vehicle_control`.
+- **Traffic.** Slower civilian cars that pursuers must not hit go in
+  the spacing scan with the pursuers. The spacing box then steers a
+  pursuer round them (not built here).
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, the display and sprites
+off, Oscar64 `-O2`, identical on PAL and NTSC (rung 1). Badlines and
+sprite DMA lengthen every figure in a game. A "frame" here is one logic
+step. The single-car figures include one 5-cycle timer pair. The run's
+worst frame includes five (spawn and four cars, 25 cycles); the built
+frame includes two.
+
+| Work | Cycles |
+|---|---|
+| One car update, mean over the 780-step run | 1,981 |
+| One car update, worst of the run | 3,162 |
+| One car on the built worst path: contact on the ram step, full spacing scan, eight-probe span blocked at its last probe, both room scans | 3,361 |
+| The edge probes alone: eight probes on a clear row and both room scans | 1,649 |
+| Worst frame of the run: the spawn and four car updates | 9,871 |
+| Built worst frame: the table's two same-frame spawns, then four cars on the ram path (car 0 in contact, three whose ram timer runs out) | 14,204 |
+
+The Cost line carries the built frame, 72% of a PAL frame (19,656
+cycles) and 83% of an NTSC one (17,095; arithmetic), and the run's worst
+frame as the typical figure. Four cars at the mean cost about 7,924
+(arithmetic). These are C figures and an upper reference; hand-written
+assembly would cost less (not measured here).
+
+The recipe's own screen loop does not fit a frame. With the display on,
+its pass 1 runs one step every second video frame: 39,370 cycles a step on
+PAL and 34,130 on NTSC, 2.00 frames each (measured). The step, a
+21-row redraw and the sprite placement overrun one frame.
+
+A game that also scrolls, multiplexes and plays music cannot pay 14,000
+cycles for its pursuers. Two cuts, neither measured here. Run the probes,
+about half the built car's cost, for two cars per frame in turn: each car
+then sees the road every second frame, and its look-ahead shrinks by one
+frame of travel: 2 px forward plus up to 1.5 px of relative speed, 2 to
+3.5 px (arithmetic). Or run the whole AI at 25 Hz under `logic_rate_decoupling`. Timers and speeds are
+per frame, so on NTSC every pursuer runs about 19% faster unless they
+are scaled (arithmetic from 59.826 / 50.125 Hz).
+
+### Recipes
+
+- `recipes/oscar64/lane-pursuit.md` — an original road that narrows and splits round a water island, a weaving autopilot player, four pursuit cars from a spawn table that approach, pull alongside, ram with a lead and back off, one that steers off a narrowing edge and one shot that leaves; every frame's car states and x checksummed against a Python model; per-car and worst-frame cycles on screen, PAL and NTSC
+
+### Sources
+
+- Original rules and code, written for this page; no game's code was
+  read. The state names follow the brief in issue #38
+  (https://github.com/bdgscotland/c64-kb/issues/38).
