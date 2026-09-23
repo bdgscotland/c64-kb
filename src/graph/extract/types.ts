@@ -112,7 +112,15 @@ export type GraphEntity =
   | { type: "triggered_by"; pitfall: string; target: string; targetKind: TargetKind }
   | { type: "mitigated_by"; pitfall: string; target: string }
   | { type: "caused_by"; symptom: string; target: string; targetKind: TargetKind }
-  | { type: "archetype"; name: string; title: string; kind: "game" | "demo"; source_doc: string }
+  | {
+      type: "archetype";
+      name: string;
+      title: string;
+      kind: "game" | "demo";
+      source_doc: string;
+      /** The **Brief words:** line, normalised; empty when the entry has none. */
+      brief_words: string[];
+    }
   | { type: "archetype_features"; archetype: string; technique: string }
   | { type: "archetype_risks"; archetype: string; pitfall: string }
   // Game designs (schema 28): docs/CONVENTIONS-game-designs.md.

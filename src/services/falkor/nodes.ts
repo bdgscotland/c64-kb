@@ -245,14 +245,22 @@ export class FalkorNodes extends FalkorBase {
   /**
    * Archetype: a game or demo shape from docs/game-design/c64-game-archetypes.md
    * (docs/CONVENTIONS-archetypes.md). Keyed by snake_case name.
+   * brief_words is always written, empty when the page has no line, so a
+   * page that drops its line stops routing briefs.
    */
   async addArchetype(a: {
     name: string;
     title: string;
     kind: "game" | "demo";
     source_doc: string;
+    brief_words?: readonly string[];
   }): Promise<void> {
-    const props = { title: a.title, kind: a.kind, source_doc: a.source_doc };
+    const props = {
+      title: a.title,
+      kind: a.kind,
+      source_doc: a.source_doc,
+      brief_words: [...(a.brief_words ?? [])],
+    };
     await this.setNode("Archetype", { name: a.name }, props);
   }
 

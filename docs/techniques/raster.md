@@ -556,6 +556,93 @@ Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–
 
 ---
 
+## sprites_only_screen_mode — Sprites-only screen: no badlines, no vertical border
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** SCROLY, RASTER
+**Demands:** midframe_raster_irqs, badline_free_region
+**Requires:** topbottom_border_open
+**Raster band:** 40-256 (interrupts on lines 40, 50, 53, 249 and 253; the line-253 handler with the meter latch, 178 cycles, exits about three lines later; the mode itself covers the whole frame)
+**Cost:** cycles_per_frame=756, lines_active=5, irq_slots=5, sprites_per_line=2
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sprites-only-screen (five handlers through $0314 with the KERNAL dispatcher, the recipe's meter latch included; 755 on NTSC)
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
+
+### Why
+
+A frame whose only content is sprites has no use for the character display, and the character display is what costs: twenty-five badlines a frame, 40 to 43 cycles each, and a border that hides any sprite outside lines 51 to 250. Switching the display off for the whole frame removes every badline, and opening the top and bottom border as `topbottom_border_open` does lets sprites stand on any of the drawable lines, 272 on PAL and 247 on NTSC in VICE's picture. The CPU keeps every cycle except sprite DMA and the interrupts that run the mode. Measured in VICE x64sc 3.10 with eight sprites on screen: 18,080 cycles a frame free on PAL against 16,940 for the ordinary text screen with the same sprites, 15,520 against 14,460 on NTSC.
+
+This is the natural frame for a sprite multiplexer with nothing behind it, a sprite-built logo or scroller, a vector-ball display, or any effect that wants the screen as a black backdrop and the CPU to itself.
+
+### How
+
+Five writes to `$D011` per frame from plain raster interrupts through `$0314`, the same handler shape as `topbottom_border_open` with three writes added at the top of the frame. `$D020` and `$D021` are the same colour, black, and `$3FFF`, the idle graphics byte, is zero.
+
+| line | `$D011` | what it does |
+|---|---|---|
+| 40 | `$0B` | DEN clear before line 48: the badline condition fails for the whole frame |
+| 50 | `$1B` | DEN set before line 51: the vertical border flip-flop is reset there |
+| 53 | `$0B` | DEN clear again; nothing sets the flip-flop until a bottom comparison |
+| 249 | `$03` | RSEL clear after line 247 and before line 251: 251 is not a match |
+| 253 | `$0B` | RSEL set again so the next frame's line 247 is not a match either |
+
+DEN has to be clear across the whole of line 48, because a write setting it on any cycle of that line enables the frame's badlines. DEN has to be set while line 51 passes, because the flip-flop's reset is the only thing that opens the display, and it happens only then and only with DEN set. Once reset, the flip-flop is set again only by a bottom comparison, so DEN can go back to clear on line 53 and stay clear; leaving DEN clear throughout instead, with no write at line 50, leaves the flip-flop set from the first frame's line 251 and the whole picture is border colour with the sprites under it (the recipe's `NOBORDER` control: zero sprite pixels on both models). The bottom is handled as on `topbottom_border_open`: RSEL cleared in the measured window, lines 248 to 250, and restored after 251.
+
+The writes are whole values, not read-modify-write, because each one sets DEN and RSEL together with a fixed YSCROLL; the table is also what a control build swaps. Bit 7 goes out as zero in every write, correct for compare lines below 256 (`d012_wrap_around`).
+
+### Why it works
+
+Badlines: `hardware/vic-ii-reference.md` states that "DEN must be set at some point during raster line $30 (decimal 48) for badlines to be enabled for the frame" and that "holding DEN clear for the whole of line $30 removes every badline of that frame" (Bauer §3.5). With no badline the VIC never leaves its idle state: no video matrix fetch, no character pointers, no graphics data, and nothing taken from the CPU on lines 51 to 250. The recipe measures this from inside the CPU with a CIA timer in the handler: the line-50 handler, which runs into line 51, costs 105 cycles under the ordinary screen and 62 in this mode, the 43-cycle badline stall gone.
+
+The border: the same page states that "the vertical border flip-flop is reset only if DEN is set at cycle 63 of the top comparison line (51 with RSEL = 1, 55 with RSEL = 0), so with DEN clear across that line the border colour ($D020) covers the whole screen, sprites hidden under it". The flip-flop is set only at a bottom comparison, 251 with RSEL set or 247 with it clear, checked at cycle 63 and at the left edge (Bauer §3.9, and the measured table on `topbottom_border_open`). With DEN set for line 51 the reset happens; with RSEL set while 247 passes and clear while 251 passes neither bottom check matches; and DEN being clear again from line 53 does not matter, because no rule that sets the flip-flop reads DEN. The rest is measured: two colours in the picture, black and white, and the sprites at Y 8 and Y 252 drawn on both models.
+
+The idle sequencer draws the byte at `$3FFF` in colour 0 over the background wherever it has no row to show, which in this mode is everywhere (Bauer §3.7.3.9; `idle_fetch_byte_shows_in_gaps`). With the byte zero it draws background, and with background and border the same colour the only thing that distinguishes an open frame from a closed one is whether the sprites show. Sprite fetch and display do not depend on DEN or on the flip-flop.
+
+### Cycle budget
+
+From the recipe's free-CPU meter, a fixed twenty-cycle loop whose iterations per frame are counted (VICE x64sc 3.10; one iteration, 20 cycles, is the resolution):
+
+| build | PAL free cycles | NTSC free cycles |
+|---|---|---|
+| this mode, eight sprites | 18,080 | 15,520 |
+| ordinary text screen, same sprites | 16,940 | 14,460 |
+| this mode, sprites off | 18,900 | 16,340 |
+| ordinary screen, sprites off | 17,820 | 15,260 |
+
+By subtraction (arithmetic on those measurements): the badlines cost 1,140 cycles on PAL and 1,060 on NTSC with the sprites on, 1,080 on both without; the eight sprites' DMA costs 820 on both models in this mode; and the five interrupts through the KERNAL dispatcher, with the meter's own latch, cost 756 on PAL and 755 on NTSC out of the 19,656 and 17,095 cycle frames. Each handler body measures 58 cycles from timer start to timer read when no sprite stalls it, 62 or 63 when one does.
+
+An interrupt every frame at line 253 is also a free frame tick; the recipe counts frames there.
+
+### Variations
+
+**Side border too.** `sideborder_open` on top of this mode gives the whole picture to sprites. Its region condition is met for free: no line in this mode is a badline, so the cycle-56 `$D016` write can land on every line of the region, and the constant sprite set it needs is a matter of placement.
+
+**A multiplexer in this mode.** `sprite_multiplex_8` gains 272 lines of drawable height on PAL instead of 200, and the raster interrupts it re-arms sprites from share the frame with these five; the two table-driven chains merge into one. The mode does not change the eight-per-line limit or the DMA cost per sprite line.
+
+**Something behind the sprites.** `$3FFF` can be rewritten per line for a one-byte pattern in colour 0, as `topbottom_border_open` notes; the character display cannot be brought back for part of the frame without a badline, and a badline needs DEN set on line 48, which brings back all of them.
+
+### Pitfalls
+
+- `d012_wrap_around` (`pitfalls/raster-and-badline.md`): every write here puts a zero in bit 7; a slot moved above line 255 needs the bit set and the compare written as line and $FF.
+- `idle_fetch_byte_shows_in_gaps` (`pitfalls/raster-and-badline.md`): the whole frame is the gap in this mode; a non-zero `$3FFF` puts a stripe pattern across all of it.
+- `vic_bus_takeover_on_dma` (`pitfalls/raster-and-badline.md`): sprite DMA is the one stall left, 820 cycles a frame for the recipe's eight sprites.
+- `badline_cycle_loss` (`pitfalls/raster-and-badline.md`) is what the mode removes; a DEN write that reaches line 48 set brings every badline back for that frame.
+- `sprite_x_high_bit_wrong_register` (`pitfalls/sprite.md`): the recipe's first build had a sprite at X 256 with `$D010` clear and it stood under the left side border.
+
+### Recipes
+
+- `recipes/kickassembler/sprites-only-screen.md`
+
+### Sources
+
+- Christian Bauer, *The MOS 6567/6569 video controller (VIC-II) and its application in the Commodore 64*, 1996: §3.5 (badline condition), §3.9 (border flip-flops), §3.7.3.9 (idle state).
+- `hardware/vic-ii-reference.md`, the `$D011` section (DEN on line `$30`; the reset needs DEN at cycle 63 of the top comparison line), measured in VICE.
+- `recipes/kickassembler/sprites-only-screen.md`: every cycle, row and colour figure above.
+
+---
+
 ## raster_split_modes — Mid-frame display mode change
 
 **Complexity:** medium

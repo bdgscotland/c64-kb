@@ -1365,3 +1365,160 @@ its x and y are cached in 512 bytes.
   https://elite.bbcelite.com/deep_dives/generating_system_data.html
 - Mark Moxon, C64 Elite variable QQ16 (the two-letter tokens):
   https://elite.bbcelite.com/c64/main/variable/qq16.html
+
+## basic_rom_float_calls — The BASIC ROM's floating-point routines, called from machine code
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Requires:** cpu_io_port_bank
+**Cost:** cycles_per_frame=1079, zp_bytes=26
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-basic-float-calls (one FMULT call, display off; the zero-page span $57 to $70 the calls use)
+
+### Why
+
+A 40-bit float library for free: five-byte add, subtract, multiply,
+divide, square root, powers, logs, trig, integer conversion in both
+directions and a decimal printer, all in the BASIC ROM that a `SYS`
+leaves banked in. When speed does not matter, a level editor's
+statistics, a high-score table's percentage, a one-off table built at
+start-up, a trainer's or a tool's arithmetic, it is not worth writing.
+It is worth nothing in a frame loop: the multiply alone is a twentieth
+of a PAL frame and the root is more than two frames (measured, below).
+The figures on this technique were measured with CIA1 timer A in
+`recipes/kickassembler/basic-float-calls.md` (rung 1, VICE x64sc 3.10,
+PAL and NTSC identical), and every address was read from the ROM with
+the monitor's `d` command before it was used; the dump is on that page.
+
+These are BASIC ROM routines, not KERNAL ones. They have no jump-table
+entry and no vector, so they are not KERNAL routine nodes in this
+knowledge base and the `uses_kernal` line of a recipe does not name
+them; the recipe lists the KERNAL `CHROUT` it prints with and nothing
+else. Their addresses are fixed by the BASIC ROM revision (901226-01
+here) and do not move with a KERNAL swap.
+
+### How
+
+Bank the BASIC ROM in: `$01 = $37`, which is the value at `SYS`. The
+routines, with the first instruction the monitor showed at each and the
+calling convention:
+
+| Name | Address | First instruction | Convention |
+|---|---|---|---|
+| `GIVAYF` | `$B391` | `LDX #$00` | A = high byte, Y = low byte of a signed 16-bit integer; FAC = that value |
+| `MOVFM` | `$BBA2` | `STA $22` | A = low, Y = high of a five-byte float; FAC = it |
+| `MOVMF` | `$BBD4` | `JSR $BC1B` | X = low, Y = high of five bytes; rounds FAC and stores it there |
+| `CONUPK` | `$BA8C` | `STA $22` | A/Y as `MOVFM`; ARG = it. The four arithmetic entries call it first |
+| `FADD` | `$B867` | `JSR $BA8C` | FAC = mem(A/Y) + FAC |
+| `FSUB` | `$B850` | `JSR $BA8C` | FAC = mem(A/Y) - FAC |
+| `FMULT` | `$BA28` | `JSR $BA8C` | FAC = mem(A/Y) * FAC |
+| `FDIV` | `$BB0F` | `JSR $BA8C` | FAC = mem(A/Y) / FAC (the divisor is the one in FAC) |
+| `FSQR` | `$BF71` | `JSR $BC0C` | FAC = FAC ^ 0.5: FAC to ARG, `MOVFM` of `80 00 00 00 00` at `$BF11`, then the power routine at `$BF7B` |
+| `FOUT` | `$BDDD` | `LDY #$01` | PETSCII string of FAC at `$0100`, zero-terminated; returns A = `$00`, Y = `$01`, the pointer |
+| `LINPRT` | `$BDCD` | `STA $62` | prints the unsigned 16-bit integer A (high), X (low) through `CHROUT` |
+
+The pattern for a sum is: get the first operand into memory as five
+bytes (a constant in the listing, or `GIVAYF` then `MOVMF` to a
+scratch), get the second into FAC (`GIVAYF` or `MOVFM`), call the
+arithmetic entry with A/Y pointing at the memory operand, and read FAC
+or `MOVMF` it out. For `x / y` put `y` in FAC and point A/Y at `x`.
+`FOUT` writes into the bottom of the stack page; the string is
+overwritten by the next `FOUT` and, since it starts at `$0100`, by any
+stack that grows deep enough, so copy it or print it at once. `FOUT`
+also alters FAC.
+
+A five-byte float in memory is an exponent byte in excess-128 form
+(`$81` is 2^0, `$00` is the value zero) followed by a 32-bit
+big-endian mantissa whose top bit is implied set and whose bit 7 in
+the first byte carries the sign instead (0 positive). So 1 is
+`81 00 00 00 00`, 2 is `82 00 00 00 00`, 10 is `84 20 00 00 00`, and
+0.1 is `7D 4C CC CC CD`, which the recipe derives and which BASIC's own
+`1 / 10` reproduced byte for byte. The recipe's `0.1 + 0.2` prints
+`.3` and `2^24 + 1` prints `16777217`: the mantissa is 32 bits, so the
+integer that a 24-bit single-precision format loses is exact here.
+
+The calls own zero page `$57` to `$70`, BASIC's work area (the KERNAL
+keeps its own variables from `$90` up, by the memory map, rung 4).
+Over the recipe's whole sequence the bytes that changed were `$57` to
+`$5D`, `$61` to `$66` (FAC), `$69` to `$6B` and `$6D` (ARG) and `$6F`;
+`$5E` to `$60`, `$67`, `$68`, `$6C`, `$6E` and `$70` did not change for
+those inputs, which is not a promise that they never do. A program that
+keeps its own variables in that span loses them on the first call; one
+that returns to BASIC afterwards has clobbered nothing BASIC did not
+expect.
+
+### Why it works
+
+BASIC's expression evaluator is the same code with a parser in front:
+every operator ends as one of these entries with one operand in FAC and
+the other unpacked into ARG by `CONUPK`. Calling the entries directly
+skips the tokeniser, the variable lookup and the type checks, and gets
+the arithmetic at the ROM's own speed. The ROM is visible to the CPU
+only while bit 0 of `$01` is set with bit 1 also set (`$37`, or `$33`
+with the character ROM at `$D000`); with it clear a `JSR` fetches
+whatever the RAM under `$A000` holds. In the recipe's control run that
+was a zero byte, so the first call executed `BRK`, and the KERNAL's
+`BRK` handler ran IOINIT, which writes `$E7` to `$01` and banks the ROM
+back in, cleared the screen and warm-started BASIC: the program
+vanished into a `READY.` prompt with its verdict byte untouched. The
+failure is a silent restart, not a wrong number.
+
+### Cycle budget
+
+One call each, the input shown, display off, net of a 21-cycle empty
+call, PAL and NTSC identical: `FMULT` 1,079 (2 * 2), `FDIV` 2,409
+(355 / 113), `FSQR` 43,752 (sqrt 2), `FOUT` 7,412 (1.41421356). The
+Cost line carries the multiply as the one call a frame a game might
+plausibly make; a root is 2.2 PAL frames and does not belong inside
+one. With the display on the same `FSQR` read 45,975 and `FOUT` 7,969:
+the CIA counts the cycles badlines take from the CPU, so time these
+calls with DEN off or accept the stall in the figure. No worst case was
+sought; the costs vary with the operands' exponents and mantissas and
+`FOUT` with the digit count.
+
+### Variations
+
+- **Print an integer.** `LINPRT` at `$BDCD`, A = high, X = low, prints
+  the unsigned 16-bit value through `CHROUT` with no leading space, as
+  a line number is printed. The recipe prints its four cycle counts
+  with it. It goes through `FOUT` and so costs at least `FOUT`'s
+  7,412 (arithmetic from the measured `FOUT`; `LINPRT` itself was not
+  timed).
+- **Random numbers.** `RND` is at `$E097`, in the KERNAL ROM image
+  (the BASIC interpreter's tail lives there), so it needs both ROMs
+  in. Its first instructions are `JSR $BC2B` (sign of FAC) then `BMI`,
+  `BNE` and `JSR $FFF3` (IOBASE), which is the three-way split of the
+  published listings, negative reseeds, positive steps, zero reads the
+  CIA timers (the roles rung 4, the instructions rung 1). Put
+  the argument in FAC and call it; the result is a float in FAC in
+  [0, 1). The seed's location was not measured here.
+- **Subtract and the missing ones.** `FSUB` at `$B850` is verified
+  above and is `mem - FAC`. Powers, logs and trig were not exercised
+  here; the technique gives no address for them.
+- **Integer out.** For a result back as an integer, the ROM's
+  float-to-integer conversions were not verified in this session; the
+  measured route is `FOUT` and parsing the digits, or `MOVMF` and
+  reading the mantissa against the exponent.
+
+### Pitfalls
+
+- `pitfalls/banking.md`, `ram_under_rom_traps`: a program that stores
+  data at `$A000` to `$BFFF` while the ROM is in writes to the RAM
+  underneath and reads the ROM back; and one that banks the ROM out to
+  use that RAM cannot call these routines until it banks it in again,
+  which the recipe's control shows ends in a `BRK`.
+
+### Recipes
+
+- `recipes/kickassembler/basic-float-calls.md`: the four sums on
+  screen, the string compares, the ROM dump at every entry, the
+  zero-page before-and-after, the four timings and the banked-out
+  control.
+
+### Sources
+
+- The BASIC ROM image 901226-01 and KERNAL 901227-03 as shipped with
+  VICE 3.10, read with the monitor's `d` command (rung 1). The routine
+  names are the conventional labels from the published ROM
+  disassemblies (rung 4); the addresses and first instructions are not.

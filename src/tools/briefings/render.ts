@@ -64,6 +64,9 @@ function renderArchetype(b: BriefingOutput): string {
   }
   if (b.archetype) {
     out += `**Archetype:** ${b.archetype.name} (${b.archetype.title}, ${b.archetype.kind})\n`;
+    if (b.archetype.inferred_from) {
+      out += `Routed from the brief's words: ${b.archetype.inferred_from.join(", ")} (pass archetype to choose another)\n`;
+    }
     out += `Fingerprint: ${b.archetype.features.join(", ") || "(none)"}\n`;
     out += `Common pitfalls: ${b.archetype.risks.join(", ") || "(none)"}\n\n`;
   }

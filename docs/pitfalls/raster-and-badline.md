@@ -23,7 +23,7 @@ you know the mechanism.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, sprite_stretcher_d017
+**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017
 
 ### Symptom
 
@@ -144,7 +144,7 @@ cycles after BA drops on cycle 12 happen to be write cycles).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, raster_bars, irq_chain_table, raster_split_modes, pal_ntsc_detection, frame_sync_loop, big_font_2x2, dycp_scroller, logic_rate_decoupling, sprite_multiplex_game, sprite_border_scroller
+**Triggered by techniques:** stable_raster_irq, raster_bars, irq_chain_table, raster_split_modes, pal_ntsc_detection, frame_sync_loop, big_font_2x2, dycp_scroller, logic_rate_decoupling, sprite_multiplex_game, sprite_border_scroller, sprites_only_screen_mode
 
 ### Symptom
 
@@ -269,7 +269,7 @@ set_irq_dynamic:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, irq_chain_table, phase_inverted_irq, frame_sync_loop, raster_split_modes, mode7_lookalike, vsp_glitch, sprite_stretcher_d017
+**Triggered by techniques:** stable_raster_irq, irq_chain_table, phase_inverted_irq, frame_sync_loop, raster_split_modes, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017
 **Mitigated by techniques:** stable_raster_irq, double_irq
 
 ### Symptom
@@ -418,7 +418,7 @@ IRQ").
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D015
-**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization, sprite_multiplex_game, reu_dma, raster_profile_bars
+**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization, sprite_multiplex_game, reu_dma, raster_profile_bars, sprites_only_screen_mode
 
 ### Symptom
 
@@ -654,7 +654,7 @@ delay:  dec count
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D011
-**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open
+**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open, sprites_only_screen_mode
 
 ### Symptom
 
