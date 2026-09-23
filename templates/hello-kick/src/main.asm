@@ -1,23 +1,23 @@
 // hello-kick: hello in KickAssembler alone. One sprite moved by joystick
 // port 2, fire toggles its colour, the frame meter around the frame's work.
 // -define AUTOPILOT replaces the port with a script and grades the end
-// position; -define FORCE_FAULT makes that grade fail, to test the checker.
+// position; -define FORCE_FAULT starts the sprite one pixel off, so both the
+// program's own grade and the screenshot checks must fail.
 #import "frame_meter.asm"              // templates/_harness/meter, via -libdir
 
 .const SCREEN   = $0400
 .const COLOUR   = $d800
 .const RESULT   = $02ff                // $01 pass, $02 fail, $00 not reached
 .const SPRITE_BLOCK = 13               // $0340, the tape buffer
-.const START_X  = 100
-.const START_Y  = 100
-.const VERDICT_FRAME = 180             // after the script's 174 frames
-.const METER_HOLD = 200
-
 #if FORCE_FAULT
-.const EXPECT_X = 188 ^ 1
+.const START_X  = 101                  // the fault build ends 1 pixel off
 #else
-.const EXPECT_X = 188                  // 100 + 64 + 24, by arithmetic on the script
+.const START_X  = 100
 #endif
+.const START_Y  = 100
+.const PLAY_FRAMES = 144               // the script's length; the meter records these
+.const VERDICT_FRAME = 150             // after the script
+.const EXPECT_X = 188                  // 100 + 64 + 24, by arithmetic on the script
 .const EXPECT_Y = 116                  // 100 + 40 - 24
 .const EXPECT_COLOUR = 3               // cyan: one fire press from yellow
 
@@ -63,8 +63,8 @@ start:
         FrameMeterInit()
 
 loop:
-!:      lda $d012                      // frame_sync_loop on line 250 (lower border,
-        cmp #250                       // PAL and NTSC, once a frame)
+!:      lda $d012                      // frame_sync_loop on line 250: below the last
+        cmp #250                       // badline ($F7), once a frame, PAL and NTSC
         beq !-
 !:      lda $d012
         cmp #250
@@ -136,16 +136,18 @@ no_right:
         sta $d001
         lda colour
         sta $d027
+        FrameMeterStop()               // the frame's own work ends here
 #if AUTOPILOT
+        // Grading is the harness's bookkeeping, not the program's work: it
+        // runs after FrameMeterStop, so it is not in the worst frame.
         lda frame+1
         bne !+
         lda frame
         cmp #VERDICT_FRAME
         bne !+
-        jsr verdict                    // one frame grades as well: the worst frame
+        jsr verdict
 !:
 #endif
-        FrameMeterStop()
         FrameMeterPrint()
         inc frame
         bne !+
@@ -188,10 +190,11 @@ say:    ldy #0
         bne !-
         rts
 
-// { frames, port byte }: wait, right 64, down 40, fire 16, up and right 24.
+// { frames, port byte }: right 64, down 40, fire 16, up and right 24.
+// Every frame plays.
 port_read:
         ldx ap_index
-        cpx #5
+        cpx #4
         bcs idle
         inc ap_used
         lda ap_used
@@ -204,8 +207,8 @@ port_read:
         rts
 idle:   lda #$ff
         rts
-script_frames: .byte 30, 64, 40, 16, 24
-script_byte:   .byte $ff, $f7, $fd, $ef, $f6
+script_frames: .byte 64, 40, 16, 24
+script_byte:   .byte $f7, $fd, $ef, $f6
 ap_index: .byte 0
 ap_used:  .byte 0
 pass:   .text "result 01 pass"
@@ -227,4 +230,4 @@ prev:   .byte $ff
 frame:  .word 0
 
 frame_meter:                           // the meter's macros jsr into this label
-        FrameMeterCode(SCREEN, 24, 20, 1, METER_HOLD)
+        FrameMeterCode(SCREEN, 24, 20, 1, PLAY_FRAMES)

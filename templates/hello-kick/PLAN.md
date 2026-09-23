@@ -167,11 +167,12 @@ No member states a byte figure that can be summed.
 - Sprites: 1 a line on 21 lines, (3 + 2 × 1) × 21 = 105 cycles of DMA a frame (3 + 2n measured in VICE x64sc for sprites numbered without gaps).
 ```
 
-Measured by the meter (`make shot check`, VICE x64sc 3.10, 200 frames): worst
-453 cycles (the frame that grades the result and prints it), typical 136,
-the same on PAL and NTSC. The bracket runs from line 250 in the lower border,
-so no badline and no sprite DMA lands in it; the plan's 1,180 fixed cycles are
-real but fall outside the bracket.
+Measured by the meter (`make shot check`, VICE x64sc 3.10, the script's 144
+play frames): worst 178 cycles, typical (the median) 154, the same on PAL and
+NTSC. The bracket starts on raster line 250, below the last badline ($F7),
+and the sprite is on lines 117 to 137, so no badline and no sprite DMA lands
+in it; the plan's 1,180 fixed cycles are real but fall outside the bracket.
+The grading at frame 150 runs after the bracket and is not in either figure.
 
 ## Memory and screen
 
@@ -183,12 +184,15 @@ real but fall outside the bracket.
 
 ## Autopilot and checks
 
-Script (frames, port byte): 30 idle, 64 right, 40 down, 16 fire, 24 up and
-right, then idle. End state by arithmetic: sprite X 188, Y 116, cyan. Frame 180
-reads the sprite registers back, stores the verdict at `$02FF` and sets the
-border. `expect.json` checks the border, the title and verdict text, the
-sprite's corners and the pixels beside it, rows 0 to 23 identical on PAL and
-NTSC, and the meter (200 frames recorded, worst within one frame).
+Script (frames, port byte): 64 right, 40 down, 16 fire, 24 up and right: 144
+frames, every one playing, then idle. The meter records exactly those 144.
+End state by arithmetic: sprite X 188, Y 116, cyan. Frame 150, after the
+meter's bracket, reads the sprite registers back, stores the verdict at
+`$02FF` and sets the border. FORCE_FAULT starts the sprite at X 101, so it
+ends at 189: the verdict and the sprite checks fail together. `expect.json`
+checks the border, the title and verdict text, the sprite's bounding box and
+that it is solid, the pixel left of it, rows 0 to 23 identical on PAL and
+NTSC, and the meter (144 frames recorded, worst within one frame).
 
 ## Decisions and open questions
 

@@ -1,7 +1,8 @@
 // hello: the minimal starter. One sprite moved by joystick port 2 and placed
 // by a KickAssembler routine called from C, with the frame meter around the
 // frame's work. AUTOPILOT=1 replaces the port with a script and grades the
-// end position; FORCE_FAULT=1 makes that grade fail, to test the checker.
+// end position; FORCE_FAULT=1 starts the sprite one pixel off, so both the
+// program's own grade and the screenshot checks must fail.
 #include <c64/vic.h>
 #include <c64/cia.h>
 #include "asm.h"            // generated from src/sprite.asm by the harness
@@ -16,7 +17,9 @@
 
 // ---- the KickAssembler blob at its own address ------------------------------
 // ASM_ORG comes from the blob; main moves up to $1000 to leave it room. A blob
-// that outgrows $1000 fails the link with "Could not place object".
+// that outgrows $1000 fails the link with "Could not place object"; one that
+// starts below $0880, over Oscar64's startup code, stops at the #error that
+// asm.h carries.
 #pragma section( asmcode, 0 )
 #pragma region( asmreg, ASM_ORG, 0x1000, , , { asmcode } )
 #pragma region( main, 0x1000, 0xa000, , , { code, data, bss, heap, stack } )
@@ -40,27 +43,27 @@ __export const char asm_blob[] = {
 #define JOY_RIGHT 0x08
 #define JOY_FIRE  0x10
 
-#define START_X 100
+#define START_X (100 + FORCE_FAULT)                 // the fault build ends 1 pixel off
 #define START_Y 100
-#define VERDICT_FRAME 180                           // after the script's 174 frames
-#define METER_HOLD 200                              // frames the meter records
+#define PLAY_FRAMES 144                             // the script's length; the meter records these
+#define VERDICT_FRAME 150                           // after the script
 
 #if AUTOPILOT
-// { frames, port byte }, active low as $DC00 reads it: wait, right 64,
-// down 40, fire 16 (one press: yellow to cyan), up and right 24.
-static const char script[5][2] = {
-    { 30, 0xff }, { 64, 0xf7 }, { 40, 0xfd }, { 16, 0xef }, { 24, 0xf6 }
+// { frames, port byte }, active low as $DC00 reads it: right 64, down 40,
+// fire 16 (one press: yellow to cyan), up and right 24. Every frame plays.
+static const char script[4][2] = {
+    { 64, 0xf7 }, { 40, 0xfd }, { 16, 0xef }, { 24, 0xf6 }
 };
 static char ap_index, ap_used;
 // End state by arithmetic on the script: x 100 + 64 + 24, y 100 + 40 - 24.
-#define EXPECT_X (188 ^ FORCE_FAULT)
+#define EXPECT_X 188
 #define EXPECT_Y 116
 #define EXPECT_COLOUR VCOL_CYAN
 
 static char port_read(void)
 {
     char out = 0xff;
-    if (ap_index < 5) {
+    if (ap_index < 4) {
         out = script[ap_index][1];
         if (++ap_used == script[ap_index][0]) { ap_used = 0; ap_index++; }
     }
@@ -84,8 +87,8 @@ static void put_text(char row, char col, const char *s, char colour)
     }
 }
 
-// frame_sync_loop: line 250 is in the lower border on PAL and NTSC and
-// occurs once a frame, so the 8-bit compare needs no ninth bit.
+// frame_sync_loop: line 250 is below the last badline ($F7) on PAL and NTSC
+// and occurs once a frame, so the 8-bit compare needs no ninth bit.
 static void wait_frame(void)
 {
     while (vic.raster == 250) ;
@@ -116,7 +119,7 @@ int main(void)
     char y = START_Y, colour = VCOL_YELLOW, prev = 0xff;
     unsigned frame = 0;
 
-    meter_init(0x0400, 24, 20, VCOL_WHITE, METER_HOLD);
+    meter_init(0x0400, 24, 20, VCOL_WHITE, PLAY_FRAMES);
 
     for (;;) {
         wait_frame();
@@ -136,8 +139,11 @@ int main(void)
         __asm { jsr ASM_PUT_SPRITE }                // the KickAssembler routine
         vic.spr_color[0] = colour;
 
+        METER_STOP;                                 // the frame's own work ends here
+
 #if AUTOPILOT
-        // One frame does the grading as well, so it is the worst frame.
+        // Grading is the harness's bookkeeping, not the program's work: it
+        // runs after METER_STOP, so it is not in the worst frame.
         if (frame == VERDICT_FRAME) {
             char ok = vic.spr_pos[0].x == (char)EXPECT_X
                    && (*(volatile char *)0xd010 & 1) == (EXPECT_X >> 8)
@@ -148,7 +154,6 @@ int main(void)
             put_text(22, 1, ok ? "result 01 pass" : "result 02 fail", VCOL_WHITE);
         }
 #endif
-        METER_STOP;
         meter_print();
         frame++;
     }
