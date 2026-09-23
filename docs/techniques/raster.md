@@ -92,6 +92,8 @@ Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badlin
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=990, lines_active=10, irq_slots=10, bytes_code=600
 **Cost basis:** estimated
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -206,6 +208,8 @@ For cycle-tight code running on every line, the badline constraint means the wor
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=160, lines_active=2, irq_slots=2
 **Cost basis:** arithmetic
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -343,6 +347,8 @@ Bauer's article and the VICE source, not from a run.
 **Raster band:** movable (the program picks the lines; the sideborder-open recipe loops on lines 101-142)
 **Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2, sprites_per_line=8
 **Cost basis:** arithmetic
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -420,6 +426,8 @@ Border-opening IRQ overhead combined with a sprite multiplex update on the same 
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=132, lines_active=2, irq_slots=2
 **Cost basis:** arithmetic
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
@@ -474,6 +482,8 @@ Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–
 **Region:** both
 **Uses registers:** SCROLY, SCROLX, VMCSB
 **Demands:** midframe_raster_irqs
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** estimated
 
 ### Why
 

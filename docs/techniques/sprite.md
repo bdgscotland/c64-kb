@@ -919,6 +919,8 @@ cycle budget for the KERNAL-vector figures).
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=200, bytes_data=512, irq_slots=1
 **Cost basis:** estimated
+**Claims:** sprite_0-7 (owns)
+**Claims basis:** derived-listing
 
 ### Why
 
