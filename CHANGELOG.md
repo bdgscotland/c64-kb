@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 729, schema 24, tools 1.28.0.
+Data 730, schema 24, tools 1.28.0.
+
+**Issue #21, ES-11 to ES-14.** `nav_area_pathfinding` (a next-hop table
+over platform areas; 0 of 160 hops differ from a Python model),
+`multi_sprite_object` (a boss from six sprites across the X 255 seam,
+registers checked every frame), `charset_parallax` (background glyphs
+rolled at half the foreground's speed; 0 of 55,936 pixels differ from a
+model), `world_state_bits` and `password_encoding` (every single-letter
+typo and every neighbour swap caught for all 2^20 states). A new Oscar64
+gotcha, measured: at -O1 to -O3, `c == 255 ? 255 : a[c]` with `a`
+shorter than 256 loses its guard and reads `a[255]`.
+
 
 **Tooling, phase A (no tool surface change).** `tsc --noEmit` checked
 `src/` only, so `scripts/` and `test/` were never type-checked; three

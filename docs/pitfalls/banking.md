@@ -475,7 +475,7 @@ custom_nmi:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D018
-**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets
+**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets, charset_parallax
 
 ### Symptom
 

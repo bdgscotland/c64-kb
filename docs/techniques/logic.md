@@ -667,3 +667,321 @@ for the ground.
 - https://github.com/cadaver/c64gameframework (MIT): `physics.s` (the
   block-info bits and `MoveWithGravity`), `aligneddata.s` (`slopeTbl`).
   Read for facts; no code is taken from it.
+
+---
+
+## world_state_bits — One bit per persistent object, packed per level and written back on level change
+
+**Complexity:** low
+
+**Why.** An adventure or a game with levels you can walk back into has
+to remember what the player changed: the key taken, the door opened, the
+boss killed. `actor_activation_window` keeps that state in the level
+actor table, but only while the level is loaded. When the next level
+loads over it, the table is gone, and without a record the key is back
+on its ledge. The full table is too big to keep for every level. One bit
+per object is enough.
+
+**How.**
+
+1. **Number the persistent objects per level.** Each level lists its
+   objects in a fixed order; an object's index is its bit number. The
+   order must not change between builds that share save files or
+   passwords.
+2. **One packed area for the whole game.** A table of byte offsets, one
+   per level, worked out from the object counts:
+   `start[l + 1] = start[l] + (count[l] + 7) / 8`. Levels of different
+   sizes share one array with no padding beyond the last byte of each.
+3. **Leaving a level.** Clear the level's bytes, then set bit i for each
+   object i that is done (collected, opened, killed). Bit i is byte
+   `i >> 3`, mask `1 << (i & 7)`, from an 8-byte mask table.
+4. **Entering a level.** Rebuild the working state from the bits before
+   the actors are placed. With `actor_activation_window`, a set bit is
+   the entry's dead bit: the scan never wakes that actor.
+5. **Global flags.** Story events that belong to no level (the generator
+   switched on, a character met) go in a separate small bit area,
+   addressed the same way by flag number.
+6. **Saving.** A save file, a checkpoint or a password takes the packed
+   areas and the global flags as they are. Run step 3 for the current
+   level first, or the save misses what happened since it was entered.
+
+**What not to persist.** Anything the game rebuilds on entry: effects,
+bullets, respawning enemies, timers. Position and hit points of a live
+actor: on return the actor starts at its placed position with full
+health, and only its dead bit survives. A design that needs more (an
+actor that follows the player between levels) keeps a few full records
+aside. Hessian keeps 24 such records in a checkpoint (`MAX_SAVEACT`,
+`memory.s`; read, not run).
+
+**Size.** One bit per object (arithmetic): 40 objects is 5 bytes, a game
+of 20 levels with 60 objects each is 160 bytes (8 a level; arithmetic). Hessian's limits are 80
+level actors and 96 level objects a level, at most 22 bytes a level, and
+16 global flags in 2 bytes (`memory.s`; arithmetic from its constants).
+A password holds far less: 6 letters carry 20 bits once a 10-bit
+checksum is paid (`password_encoding` below), so a password game keeps a
+few global flags, not per-level bits.
+
+**Why it works.** The bits are a projection of the level table onto the
+one fact that must outlive it. Clearing the level's bytes before setting
+bits makes the save idempotent, so leaving a level twice writes the same
+bytes. The polarity is a choice: the recipe sets a bit for done and
+starts a new game from all zeros. Hessian sets a bit for an actor that
+still exists, and a new game fills the actor bits with `$FF` and the
+object bits with `$00` (`level.s` `SaveLevelState`, `script00.s`; read,
+not run).
+
+**Variations.**
+
+- **Only some objects persist.** Hessian gives a bit only to objects
+  that are switches or animate, and none to objects that deactivate by
+  themselves (`IsLevelObjectPersistent` in `level.s`; read, not run).
+  That saves bits and keeps a door that closes on a timer from being
+  saved open.
+- **Bits in place of the working copy.** A game with few objects can test
+  and set the bits directly while playing and skip steps 3 and 4. A
+  bit test costs a shift, a table read and an AND each time, so this
+  suits objects touched rarely.
+
+**Cycle budget.** Runs on a level change, outside the frame loop.
+Measured in VICE x64sc 3.10 with CIA1 timer A on the Oscar64 -O2 recipe,
+a 40-object level with every object done, identical on PAL and NTSC:
+leaving 2,224 cycles, entering 2,102, about 55 an object. That is a C
+upper reference; a shift loop in assembly costs less (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/password-state.md` — three levels of 20, 13 and 40 objects in one 10-byte area, done objects restored after two level changes, a global flag, the area checked against a Python value; also the password encoder below; PAL and NTSC
+
+### Sources
+
+- https://github.com/cadaver/hessian (MIT): `level.s` (`ChangeLevel`
+  calls `SaveLevelState`; `SaveLevelState` runs on level change and on
+  save; `IsLevelObjectPersistent`), `memory.s` (`MAX_LVLDATAACT` = 80,
+  `MAX_LVLOBJ` = 96, `MAX_PLOTBITS` = 16, `MAX_SAVEACT` = 24),
+  `script.s` (`DecodeBit`, `SetPlotBit`), `script00.s` (new-game fill).
+  Read for facts; no code is taken from it.
+
+---
+
+## password_encoding — A game state as a short password: bit packing, checksum, scramble and a safe alphabet
+
+**Complexity:** low
+
+**Why.** A tape or cartridge game with no disk has nowhere to save.
+A password shown at the end of a level, and typed back later, carries the
+state instead. Players copy it by hand, misread it and mistype it, so it
+has to be short, use letters that cannot be confused, and reject a wrong
+entry instead of loading a broken state. It should also not be editable:
+if level 3 and level 4 give passwords one letter apart, players find the
+pattern.
+
+**How.**
+
+1. **Choose the state and its bits.** Only what the game cannot rebuild:
+   level 0 to 31 is 5 bits, lives 0 to 7 is 3, eight items 8, four story
+   flags 4. The recipe's total is 20 bits. Pack them into bytes with
+   shifts and masks.
+2. **Checksum.** Append C check bits computed from the state. The recipe
+   uses a 10-bit CRC (polynomial `$233`) over the 20 bits. A random
+   string of valid letters then passes with odds of 1 in 2^C, 1 in 1,024
+   here (arithmetic).
+3. **Length.** With a 32-letter alphabet each letter carries 5 bits, so
+   the password is ⌈(state bits + C) / 5⌉ letters: 30 bits make 6
+   (arithmetic). Each extra 5 bits of state costs one letter.
+4. **Scramble.** Permute the bits, so no field sits in one letter, then
+   XOR each 5-bit group with a fixed key, so the empty state does not
+   print as `000000`. The recipe sends bit i to bit (7 × i) mod 30.
+5. **Alphabet.** 32 letters, with one of each look-alike pair left out:
+   the recipe uses `012345679ABCDEFGHJKMNPQRSTUVWXYZ`, no O, I, L or 8.
+   On decode, O reads as 0, I and L as 1, 8 as B, so a misread copy
+   still works. Keep the password as PETSCII: digits are `$30` to `$39`
+   and letters `$41` to `$5A`, the bytes GETIN delivers. On screen the
+   letters are screen codes `$01` to `$1A`; convert when drawing.
+6. **Decode.** Map each letter to its value, refusing any byte outside
+   the alphabet. Undo the key and the permutation, recompute the
+   checksum from the state bits and compare. On a mismatch load
+   nothing: tell the player, and leave the typed text in the field to
+   correct. Check field ranges too when a field does not use all its
+   values (22 levels in a 5-bit field).
+
+**Why a single mistype is always caught.** The CRC and the permutation
+are linear over bits and the key is a constant XOR. So a wrong letter
+changes the decoded 30 bits by a pattern that depends only on the
+position and the wrong value, never on the state. The recipe's Python
+model tries all 6 × 31 = 186 such patterns and none passes the CRC, which
+covers every state (rung 1 for the model, rung 3 for the argument). The
+C64 program repeats it on 16 passwords, 2,976 strings, all rejected,
+measured in VICE. The model also caught all 5,079,040 swaps of two unequal neighbouring
+letters over all 2^20 states (run here).
+
+**How unrelated neighbouring states look.** A linear scheme cannot
+change every letter. In the model, states one bit apart give passwords
+that differ in 2 to 5 of the 6 letters, and level n and n + 1 at 3 lives
+differ in 3 to 6 (every state from 0 by a stride of 997, and all 31
+level pairs). The CRC does the spreading: one state bit moves one
+password bit, but it changes several CRC bits. A nonlinear mix, such as
+a few Feistel rounds with a table lookup, spreads further, and loses the
+state-independent proof above.
+
+**Variations.**
+
+- **Compress before packing.** Ouroboros, a C64 game, stores 50
+  level-complete flags. It run-length codes them with a prefix-free
+  code, permutes the bits, and prints usually 5 letters from a 32-letter
+  alphabet with no 0, O, 1 or I, with a checksum (devlog; not measured
+  here).
+- **Larger alphabets and longer passwords.** On the NES, Metroid's
+  password is 24 characters from a 64-letter alphabet, 144 bits with an
+  8-bit checksum and a roll byte; Simon's Quest uses 16 characters from
+  32 (forum report, not measured here). A 64-letter alphabet needs lower
+  case or punctuation, which a C64 player types with SHIFT.
+
+**Cycle budget.** Runs once per level end or prompt, outside the frame
+loop. Measured in VICE x64sc 3.10 with CIA1 timer A on the Oscar64 -O2
+recipe, all 20 state bits set, identical on PAL and NTSC: encode 3,639
+cycles, decode 3,737, a decode that fails the checksum 3,702, one that
+meets a bad letter at the first byte 8. The bit loops dominate; a
+hand-written loop that shifts the word through the carry costs less
+(not measured here).
+
+### Recipes
+
+- `recipes/oscar64/password-state.md` — 20 state bits plus a 10-bit CRC in 6 letters; 4,096 states round trip, every single-letter mistype of 16 passwords rejected, look-alike letters folded, a Python model of the encoder, cycles on screen; also per-level world bits; PAL and NTSC
+
+### Sources
+
+- https://aardvark-soup.itch.io/ouroboros64/devlog/1635214/designing-a-retro-password-save-system-thats-not-a-pain-to-use
+  (Ouroboros: 50 flags, run-length and prefix-free coding, bit
+  permutation, 32-letter alphabet without 0, O, 1, I, usually 5 letters,
+  a checksum; devlog, not measured here).
+- https://forums.nesdev.org/viewtopic.php?t=8657 (Metroid and Simon's
+  Quest password formats; forum report, not measured here).
+
+## nav_area_pathfinding — Platform-graph routes for chasing enemies, with a next-hop table and time-sliced line of sight
+
+**Complexity:** medium
+**Region:** both
+**Cost:** cycles_per_frame=369
+**Cost basis:** measured-vice
+
+### Why
+
+A chasing enemy in a side-view game cannot walk straight at the player:
+the player may be on a platform above, reached by a ladder at the far
+end, or below a drop the enemy has to walk off. `tile_grid_collision`
+and `slope_collision` move an actor through the map; they do not say
+which way to go. A search over map cells answers that, but at a cost per
+query the CPU cannot pay for several actors every frame. A platform
+level is mostly runs of floor, so the search can run over those runs
+instead: a graph of a dozen areas rather than hundreds of cells.
+
+### How
+
+1. **Areas.** At level load, scan the map row by row. A cell is
+   standable when it is not solid and the cell below is solid, or is the
+   top rung of a ladder. A maximal run of standable cells on one row is
+   an area: `(row, x_start, x_end)`. Keep an area number per standable
+   cell, or scan the area list, to find an actor's area from its cell.
+2. **Links.** Join the areas with the moves an actor can make, each with
+   a cost (the recipe counts cells moved):
+   - **walk** off an end cell onto an area one row lower, and back up;
+   - **drop** off an end cell onto the first area below, one way only;
+   - **jump** over a gap of one or two cells to an area on the same row,
+     both ways, if the cells over the gap are clear;
+   - **ladder** from the area over its top rung to the area at its foot,
+     both ways.
+   Each link stores its start cell in the source area and its end cell
+   in the target, so the actor knows where to walk before it takes it.
+3. **Next-hop table.** For every pair (from, to), store the first link
+   on a cheapest route: N² bytes for N areas. Build it at level load
+   with one search per destination (Dijkstra over the links read
+   backwards, or Floyd-Warshall over the whole graph), then, for each
+   pair, take the lowest-numbered link whose cost plus the rest of the
+   route equals the route cost. A fixed tie rule makes the table
+   repeatable.
+4. **Per-frame query.** A standing actor looks up its area and the
+   target's, reads the table, and walks one step toward the link's start
+   cell, or starts the link if it is there. In the same area it walks
+   straight at the target. A link in progress is played cell by cell and
+   needs no query.
+5. **Line of sight.** Step a line from the actor's cell to the target's
+   through the tile map, one cell per call, comparing a doubled signed
+   error term with the deltas, and stop at the first solid
+   cell or at the target. One step per actor per frame, on frames the
+   actor does not query, keeps the cost flat; a ray of k cells answers
+   after k frames.
+
+### Why it works
+
+The area count, not the map size, sets the cost. Twelve areas and 43
+links cover the recipe's 40 x 22 map, so one search visits twelve nodes,
+and the whole answer set is 144 bytes. After the build, a decision is
+two lookups and one table read, cheap enough to run for every actor
+every frame. The links carry the movement rules, so the route chosen
+over areas is exactly the path the actor plays out on screen.
+
+### Variations
+
+- **Search at run time.** Without the table, run one search from the
+  target each time it changes area: about 16,000 cycles for twelve areas
+  in the recipe, most of a PAL frame. It saves the N² bytes and suits a
+  level with many areas and one pursuer.
+- **Greedy one hop.** Cadaver's c64gameframework (`ai.s`, MIT) stores
+  up to 48 nav areas per zone (`defines.s`) as left, right, top and
+  bottom bounds plus a type (platform, ladder, slope up-right, slope
+  up-left), built by its editor and loaded after the zone map
+  (`level.s`). It does no global search: an actor picks, among areas
+  whose edges touch its own, the one nearest the target. That is cheap
+  and needs no table, but it can walk into a dead end that a real route
+  avoids.
+- **Walking cost.** The recipe's costs count cells moved during links
+  only, so walking inside an area is free to the search. Splitting
+  areas at link points and adding the walk from entry to exit makes
+  routes exact at the price of more areas.
+- **Hand-placed junctions.** Paradroid's robots follow patrol routes
+  drawn by hand: Braybrook keyed the junction points and the valid
+  directions from each into the assembler, and robots pause at a
+  junction before moving off (his diary, part 3; no search, not measured
+  here).
+- **Rounds of line of sight.** c64gameframework runs one actor's line
+  check per frame, round-robin, capped at 19 steps (`MAX_LINEDIST` in
+  `ai.s`), instead of one step per actor per frame.
+- **Pixel coordinates.** The recipe works in cells, so every coordinate
+  and ray error term fits a signed byte (the listing uses 16-bit `int`
+  anyway). A ray stepped in pixels, or
+  across a map more than 63 cells wide, has deltas or an error term past
+  127, and a `BMI` on its error term gives the wrong answer;
+  compare with the carry or in 16 bits (`signed_compare_bmi_overflow`).
+- **Diagonal corners.** A ray that moves one cell in x and y in one step
+  passes between two solid cells that touch at a corner. Step x and y
+  separately if walls must not leak.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timers, interrupts masked, Oscar64
+`-O2`, one actor, identical on PAL and NTSC (rung 1): the worst query is
+154 cycles and the worst line-of-sight step 369, including 5 cycles of
+timer overhead. They never share a frame, so the technique's worst frame
+is 369 cycles per actor, about 1.9% of a PAL frame; a frame that moves
+the actor along a link in progress runs neither. Eight actors on their
+ray frames at once would be about 2,950 cycles (arithmetic).
+
+The build runs once, at level load: 703,502 cycles on PAL (709,939 on
+NTSC, where the screen's badlines take a larger share), about 36 PAL
+frames. Of that, finding areas and links is 407,948, the twelve searches
+at most 16,061 each, and the next-hop pass 105,602.
+
+### Recipes
+
+- `recipes/oscar64/nav-area-pathfinding.md` — twelve areas joined by walks, drops, jumps and ladders; a chaser follows a player marker over eight waypoints; every hop checked against a Floyd-Warshall table from Python, the trail measured on the screenshot, build, query and ray-step cycles on screen, PAL and NTSC
+
+### Sources
+
+- https://github.com/cadaver/c64gameframework (MIT): `ai.s` (nav area
+  types, the nearest-connected-area choice, `DoLineCheck`,
+  `MAX_LINEDIST`), `actor.s` (one line check per frame), `level.s` and
+  `defines.s` (nav areas loaded per zone, `MAX_NAVAREAS`). Read for
+  facts; no code is taken from it.
+- https://codetapper.com/c64/diary-of-a-game/paradroid/birth-of-a-paradroid-part-3/
+  (Andrew Braybrook's Paradroid diary; patrol junctions; not measured
+  here).

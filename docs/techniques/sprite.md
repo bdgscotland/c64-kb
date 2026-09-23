@@ -1611,3 +1611,184 @@ recipe; the timing and print harness is not counted).
 - `recipes/kickassembler/software-sprite-preshifted.md` (16x4 cell
   canvas, tiled background, a ring and a diamond crossing it in opposite
   directions, the blit timed at all eight shifts, checksum verdict)
+
+---
+
+## multi_sprite_object — Bosses and large objects from several hardware sprites at fixed offsets from one origin
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D000, D001, D010, D015, D017, D01D, D027
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=1342, sprites_per_line=3
+**Cost basis:** measured-vice
+
+### Why
+
+One sprite is 24 x 21 pixels, 48 x 42 expanded. A boss, a tank or a
+mothership is bigger. The game still wants to treat it as one actor: one
+position, one movement routine, one death. The answer is a part table.
+The object has one origin, and each part is a hardware sprite at a fixed
+offset from it.
+
+The offsets break the one-sprite habits. A part can be past X 255 while
+the origin is not, or the reverse, so the ninth X bit belongs to each
+part. A part can be off screen while the object is on screen. The parts
+also use several of the eight sprites on the same raster lines, which a
+multiplexer has to account for.
+
+### How
+
+**A part table.** Per part: `dx` and `dy` from the origin (signed), the
+base frame, the colour, the expand flags and, if it animates, its
+animation length. Keep the table per object type. Keep per object only
+the origin and each part's animation state.
+
+**9-bit X for every part.** Compute `x = origin + dx` in 16 bits for
+each part. Its low byte goes to `$D000 + 2n` and its bit 8 to the part's
+own bit in `$D010`. A part at `dx = -24` under an origin at 264 is at
+240, bit clear, while its neighbours have the bit set. Build the
+object's `$D010` bits in a byte and merge them under the object's sprite
+mask: `$D010 = ($D010 & ~mask) | bits`. `$D015` is merged the same way.
+A plain store would clear the bits of every other object's sprites.
+
+**Clip each part.** Show a part only when some of it is inside the
+window: X from 24 to 343 and Y from 50 to 249 (CSEL = 1, RSEL = 1),
+with the part's own width and height. Otherwise clear its `$D015` bit and
+skip its writes. A part under the border would be invisible anyway,
+but it still takes a hardware sprite, its DMA and a multiplexer slot.
+Past X 511 the 16-bit sum no longer fits the 9 bits and wraps to the
+left side, and on PAL X 504 to 511 is never drawn
+(`sprite_x_range_hidden_and_seam` in `pitfalls/sprite.md`). A part
+partly left of X 0 needs the model's wrap: a probe for this entry put an
+X-expanded sprite at X 500 and found its left edge at pixel -4 on PAL
+and -12 on NTSC, so the wrap is at 504 on PAL and 512 on NTSC (VICE
+x64sc, exit screenshot). Hide such a part, or pick the modulus at
+start-up as that pitfall says. Clip Y in the 16-bit sum too: a part
+at `dy = 42` under an origin at Y 230 is at 272, which `$D001` cannot
+hold.
+
+**Expanded parts cover more with the same sprite.** An X-expanded part
+is 48 wide and a Y-expanded one 42 tall, for the DMA of one sprite
+(`sprite_expand`). The pixel doubles too: 2 screen pixels wide for hires,
+4 for multicolour (arithmetic), and 2 lines tall. Beside an unexpanded
+part the difference shows, so draw the art for it: armour plates and
+wings expanded, the face and the weak spot not. The clip test uses the
+expanded size.
+
+**Animate per part.** Only the parts that move need a countdown and a
+current frame; the frame written is the base frame plus the step. An
+eye blinks, a turret turns, and the other parts' pointers are still
+written each frame without change. Colour and expand bits usually
+stay fixed for the object's life, so they are written once at spawn,
+under the mask.
+
+**Hit boxes per part.** Emit one box per shown part where the part is
+placed, as `per_frame_hitbox` (this page) does in its "Several boxes per
+actor" variation. The collision pass then reports the part as well as
+the actor, so armour can ignore a shot and a weak spot can take it. A
+clipped part emits no box. Corescape gives each of its boss's parts its
+own enemy type and hit count, 8 (16 in hard mode) against the core's 32
+(64) (`enemies.cpp`, source read here).
+
+**Overlap and flip.** Where parts overlap, the lower sprite number is in
+front (`hardware/vic-ii-reference.md`), so put the part that must show
+on top in the lower slot. To face the other way, each part's offset
+becomes `-dx - width` and its image is mirrored (`sprite_cache_flip`).
+c64gameframework stores a mirrored X offset beside the normal one for
+every part, so the flip is a choice of column, not arithmetic
+(`sprite.s`, source read here).
+
+### Why it works
+
+The VIC-II has no idea the parts belong together. Each part is a
+complete sprite with its own X, Y, pointer, colour and expand bits. The
+object stays in one piece because every part is recomputed from the same
+origin in the same frame, before the raster reaches the object. Write
+the parts in the vertical blank, or below the object's last line, and
+the whole object moves at once. Writes that straddle the raster can show
+the top parts at the new origin and the lower parts at the old one for
+a frame (from the mechanism; not measured here).
+
+The Oscar64 recipe checks this against a model each frame: every part's
+X low byte, `$D010` bit, Y, `$D015` bit, pointer, colour and expand bits,
+and the bits of a sprite that belongs to another object. It found no
+mismatch in any frame of a sweep across X 255 and past the right edge,
+on PAL and NTSC. Its screenshots put each part's pixels exactly where
+the model places it, including a part whose register X is 240 while its
+pixels cross X 256 (VICE x64sc).
+
+### With a multiplexer
+
+Each part is one sprite to the multiplexer. An object that is k parts
+wide on a raster line leaves 8 - k sprites for everything else on those
+lines. The recipe's boss is 3 wide on every line it covers, and
+Corescape's boss puts five of its six sprites within 4 lines of each
+other (offsets in `enemies.cpp`), so on those lines only three are free.
+
+`sprite_multiplex_game` rejects the ninth sprite on a band, one sprite
+at a time. A boss part can lose that test while its neighbours pass,
+and the boss shows with a hole in it. Either give the object's parts
+priority in the sort or the acceptance pass so they go in first, or keep
+the boss out of the multiplexer in fixed hardware sprites and multiplex
+only the rest. Corescape does the first kind: each boss part is its own
+virtual sprite (`vspr_set` for each part, `enemies.cpp`).
+
+A Y-expanded part holds its hardware sprite for 42 lines, not 21, so the
+reuse gap for that slot is 42 lines (arithmetic from the Y-expand
+mechanism in `sprite_expand`; not measured here).
+
+### Variations
+
+**Logical sprites.** c64gameframework separates the logical sprite, the
+object's picture, from the physical sprites it is made of, and each
+part carries an expand flag. Its clip test has a separate X limit for
+expanded parts. It drops a part that is outside the X or Y limits and
+keeps the rest, and it stops adding parts when no sprite is left
+(`sprite.s`, `screen.s`, source read here).
+
+**Halved X.** Store every X halved, one byte, and double it when
+writing the registers. Adding `dx / 2` is then an 8-bit add, at 2-pixel
+resolution. c64gameframework keeps sprite X halved: its clip test
+compares against `MAX_SPRX / 2` (`sprite.s`).
+
+**A detachable part.** Give a part its own hit points and a flag that
+drops it from the table when destroyed. The rest of the object keeps its
+offsets, and the freed hardware sprite goes back to the pool.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked, in the
+Oscar64 recipe. Screen blanked, one call each, less an empty call: 197
+cycles for each part shown, 78 for each part clipped, 67 fixed per
+object. During the run, at the top of the vertical blank, a whole
+six-part update took 808 to 1,342 cycles, the same on PAL and NTSC. The
+worst frame, the Cost line, had all six parts shown and above X 255, and
+the animated part stepping. A typical frame with all six shown is about
+1,249 (6 x 197 + 67, arithmetic from the measured figures). The worst
+and best figures include the timer start and stop and the call, 34 cycles
+for an empty call timed the same way (measured here); the per-part figures
+do not. These are
+compiled C. Hand-written assembly with the table indexed by X is
+cheaper; it was not measured here. The model check and the on-screen
+counters are not in these figures.
+
+### Recipes
+
+- `recipes/oscar64/multi-sprite-object.md` (a six-sprite boss, three
+  parts on top and an X-expanded wing, a Y-expanded core and a second
+  wing below, one part animated; on autopilot it sweeps across X 255 and
+  past the right edge; every part's registers, including its `$D010`
+  bit, checked against a model every frame; cycles per update and per
+  part; each part's box measured with PIL on PAL and NTSC)
+
+### Sources
+
+- drmortalwombat/corescape (GPL-3.0), `enemies.cpp`: boss parts at
+  offsets X -48, -24, 0, 24, 48 and Y -4, -2, 21, -2, -4 from the core,
+  each with its own type and hit count, each a `vspr_set` virtual sprite.
+  https://github.com/drmortalwombat/corescape
+- cadaver/c64gameframework (MIT), `sprite.s` and `screen.s`: logical
+  sprites made of physical sprites, per-part flipped X offset, expand
+  flag, and per-part clip limits.
+  https://github.com/cadaver/c64gameframework
