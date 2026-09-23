@@ -143,7 +143,7 @@ next activation. In practice, target 3–4 lines of slack.
 **Uses registers:** D015, D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs, changes_sprite_set
-**Cost:** cycles_per_frame=700, irq_slots=3, bytes_code=900
+**Cost:** cycles_per_frame=700, irq_slots=3, bytes_code=900, sprites_per_line=8
 **Cost basis:** estimated
 
 ### Why

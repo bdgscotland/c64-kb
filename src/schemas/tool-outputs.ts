@@ -144,6 +144,7 @@ export const TechniqueCostSchema = z.object({
   bytes_data: z.number().int().optional(),
   zp_bytes: z.number().int().optional(),
   irq_slots: z.number().int().optional(),
+  sprites_per_line: z.number().int().optional(),
   basis: CostBasisSchema,
 });
 export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
@@ -264,6 +265,12 @@ export const TimingBudgetSchema = z.object({
   cycles_per_frame: z.number(),
   badline_cycles_lost: z.number(),
   irq_overhead_cycles: z.number(),
+  // Sprite DMA (schema 24): the sprites assumed on the line, where that
+  // number came from, and the cycles their DMA takes (3 + 2 per sprite for
+  // sprites numbered without gaps, measured in VICE; see vic-ii-reference.md).
+  sprites_per_line: z.number(),
+  sprites_source: z.enum(["input", "technique", "none"]),
+  sprite_dma_cycles: z.number(),
   user_cycles_per_line_normal: z.number(),
   user_cycles_per_line_badline: z.number(),
   notes: z.array(z.string()),

@@ -577,7 +577,7 @@ export class FalkorService {
       category: t.category,
       complexity: t.complexity ?? "",
     };
-    const costKeys = ["cycles_per_line", "cycles_per_frame", "lines_active", "bytes_code", "bytes_data", "zp_bytes", "irq_slots"];
+    const costKeys = ["cycles_per_line", "cycles_per_frame", "lines_active", "bytes_code", "bytes_data", "zp_bytes", "irq_slots", "sprites_per_line"];
     const cleared: string[] = [];
     for (const k of costKeys) {
       const v = t.cost?.[k];

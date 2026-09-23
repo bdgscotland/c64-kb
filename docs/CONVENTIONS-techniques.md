@@ -164,6 +164,7 @@ number without an honest basis is worse than no number.
 | `bytes_data` | bytes of tables, buffers and other data in the built recipe's segments (a sine table, an image, a fade table). |
 | `zp_bytes` | zero-page bytes the technique claims. |
 | `irq_slots` | the raster or timer interrupts the technique needs per frame (a stable raster IRQ is one, a double IRQ two, a ten-bar raster-bar ring ten). |
+| `sprites_per_line` | the most hardware sprites displayed on one raster line of the technique's lines, 0 to 8; a value above 8 is refused. `c64_timing_budget` subtracts their DMA from the line: 3 + 2 per sprite for sprites numbered without gaps, 19 for eight (measured in VICE x64sc, `hardware/vic-ii-reference.md`, "Sprite DMA"). State it where the page or its recipe puts sprites on the technique's lines. |
 
 | Basis | Meaning |
 |---|---|

@@ -113,6 +113,7 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | cost_bytes_data | integer, optional | Bytes of tables, buffers and other data in the built recipe's segments. |
 | cost_zp_bytes | integer, optional | Zero-page bytes the technique claims. |
 | cost_irq_slots | integer, optional | Raster or timer interrupts the technique needs per frame. |
+| cost_sprites_per_line | integer, optional | The most hardware sprites displayed on one raster line of the technique's lines, 0-8 (schema 24). `c64_timing_budget` subtracts their DMA (3 + 2 per sprite, measured) from the line's user cycles. |
 | cost_basis | string, optional | How the cost figures were obtained, one of "measured-vice", "derived-listing", "arithmetic", "estimated"; present exactly when any cost_* property is. The word is the weakest that applies to any figure on the line. |
 | raster_band | string, optional | The raster lines the technique holds the CPU on, from the page's `**Raster band:**` line (schema 24), in canonical form: sorted inclusive ranges such as "45-250" or "0-44,251-311", or "movable" when the program chooses the lines. Absent when the page states none; a re-ingest that drops the line clears it. `c64_check_compatibility` clears its line-sharing rules for two techniques whose line bands share no line. |
 

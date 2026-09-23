@@ -618,15 +618,15 @@ Limitations: demands and prerequisites are authored per technique in docs/techni
 
 Purpose: Gives the agent the authoritative cycle math for raster-critical technique implementations. Use before writing or evaluating cycle-tight C64 raster code.
 
-Inputs: 'technique' is the canonical technique name (e.g. 'stable_raster_irq'). 'region' is 'pal' or 'ntsc' (case-insensitive).
+Inputs: 'technique' is the canonical technique name (e.g. 'stable_raster_irq'). 'region' is 'pal' or 'ntsc' (case-insensitive). 'sprites_per_line' (optional, 0-8) is the number of sprites displayed on the line; without it the technique's own Cost sprites_per_line is used, and without that sprite DMA is not counted and a note says so.
 
-Output: {technique, region, cycles_per_line, cycles_per_frame, badline_cycles_lost, irq_overhead_cycles, user_cycles_per_line_normal, user_cycles_per_line_badline, notes[]}.
+Output: {technique, region, cycles_per_line, cycles_per_frame, badline_cycles_lost, irq_overhead_cycles, sprites_per_line, sprites_source ('input' | 'technique' | 'none'), sprite_dma_cycles, user_cycles_per_line_normal, user_cycles_per_line_badline, notes[]}.
 
-Constants: PAL: 63 cycles/line × 312 lines = 19656 cycles/frame. NTSC: 65 cycles/line × 263 lines = 17095 cycles/frame. Badline: 43 cycles to plan on (the VIC holds the bus for cycles 15-54 and BA drops on cycle 12; only writes fit in 12-14). Default IRQ overhead: 36 cycles (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314).
+Constants: PAL: 63 cycles/line × 312 lines = 19656 cycles/frame. NTSC: 65 cycles/line × 263 lines = 17095 cycles/frame. Badline: 43 cycles to plan on (the VIC holds the bus for cycles 15-54 and BA drops on cycle 12; only writes fit in 12-14). Default IRQ overhead: 36 cycles (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314). Sprite DMA: 3 + 2 per sprite for sprites numbered without gaps (5 for one, 19 for eight, measured in VICE x64sc); each gap adds up to 3.
 
-Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_line=63, user_cycles_per_line_normal=27, user_cycles_per_line_badline=0 (a handler entered on a badline through the KERNAL vector has nothing left on that line).
+Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_line=63, user_cycles_per_line_normal=27, user_cycles_per_line_badline=0 (a handler entered on a badline through the KERNAL vector has nothing left on that line). {"technique": "stable_raster_irq", "region": "pal", "sprites_per_line": 8} → sprite_dma_cycles=19, user_cycles_per_line_normal=8.
 
-Limitations: irq_overhead is taken from the Technique node's irq_overhead property (if set) or the default 36 cycles; a handler on $FFFE with the KERNAL banked out pays 7 plus its own register saves. An earlier version of this description said 23 badline cycles and 14 overhead, which was not what the tool computed.`,
+Limitations: irq_overhead is the default 36 cycles for every technique (an earlier version of this line said it was read from a Technique irq_overhead property; nothing writes one, and the read was removed in tools 1.25.0); a handler on $FFFE with the KERNAL banked out pays 7 plus its own register saves. An earlier version of this description said 23 badline cycles and 14 overhead, which was not what the tool computed. An earlier version did not subtract sprite DMA at all.`,
       inputSchema: {
         technique: z
           .string()
@@ -636,11 +636,18 @@ Limitations: irq_overhead is taken from the Technique node's irq_overhead proper
           .optional()
           .default("pal")
           .describe("Region: 'pal' or 'ntsc' (case-insensitive, default: 'pal')"),
+        sprites_per_line: z
+          .number()
+          .int()
+          .min(0)
+          .max(8)
+          .optional()
+          .describe("Sprites displayed on the line (0-8). Overrides the technique's Cost sprites_per_line."),
       },
       outputSchema: TimingBudgetSchema.shape,
     },
-    async ({ technique, region }) => {
-      const result = await timingBudget({ technique, region: region ?? "pal" });
+    async ({ technique, region, sprites_per_line }) => {
+      const result = await timingBudget({ technique, region: region ?? "pal", sprites_per_line });
       return {
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,

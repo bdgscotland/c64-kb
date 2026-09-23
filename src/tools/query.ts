@@ -893,7 +893,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
             t.cost_cycles_per_line AS cost_cycles_per_line, t.cost_cycles_per_frame AS cost_cycles_per_frame,
             t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
             t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
-            t.cost_irq_slots AS cost_irq_slots, t.cost_basis AS cost_basis,
+            t.cost_irq_slots AS cost_irq_slots, t.cost_sprites_per_line AS cost_sprites_per_line, t.cost_basis AS cost_basis,
             t.raster_band AS raster_band
      LIMIT 1`,
     { name }
@@ -950,6 +950,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     cost_bytes_data: number | null;
     cost_zp_bytes: number | null;
     cost_irq_slots: number | null;
+    cost_sprites_per_line: number | null;
     cost_basis: string | null;
     raster_band: string | null;
   };
@@ -965,6 +966,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
         ...(typeof row.cost_bytes_data === "number" ? { bytes_data: row.cost_bytes_data } : {}),
         ...(typeof row.cost_zp_bytes === "number" ? { zp_bytes: row.cost_zp_bytes } : {}),
         ...(typeof row.cost_irq_slots === "number" ? { irq_slots: row.cost_irq_slots } : {}),
+        ...(typeof row.cost_sprites_per_line === "number" ? { sprites_per_line: row.cost_sprites_per_line } : {}),
         basis: row.cost_basis as TechniqueCostOutput["basis"],
       }
     : undefined;
@@ -1701,12 +1703,46 @@ const BADLINE_CYCLES_LOST = 43;
 // dispatcher at $FF48 before the handler's first instruction. A handler on
 // $FFFE with the KERNAL out pays 7 plus its own register saves.
 const DEFAULT_IRQ_OVERHEAD = 36;
+// Sprite DMA on a line where n sprites are displayed: BA drops three cycles
+// before the first sprite's slot (usable only by write cycles), then two
+// bus cycles per sprite; the p-access costs the CPU nothing. Measured in
+// VICE x64sc (docs/hardware/vic-ii-reference.md, "Sprite DMA"): 5 for one
+// sprite, 19 for eight, and the CPU resumes where 3 + 2n predicts for
+// sprites 0..k with k = 0, 2, 3, 6, 7. Sprites numbered with a gap pay the
+// three lead-in cycles again per group: sprites 0 and 7 measured 10, not 7.
+const SPRITE_BA_LEAD_IN = 3;
+const SPRITE_CYCLES_EACH = 2;
+export function spriteDmaCycles(sprites: number): number {
+  return sprites > 0 ? SPRITE_BA_LEAD_IN + SPRITE_CYCLES_EACH * sprites : 0;
+}
 
 export async function timingBudget(opts: {
   technique: string;
   region: string;
+  sprites_per_line?: number;
 }): Promise<TimingBudgetResult> {
   const a = getAnalytics();
+
+  // Sprites on the line: the caller's figure wins; otherwise the technique's
+  // own **Cost:** sprites_per_line; otherwise none, and the notes say so.
+  let sprites = 0;
+  let sprites_source: TimingBudgetOutput["sprites_source"] = "none";
+  if (opts.sprites_per_line !== undefined && Number.isFinite(opts.sprites_per_line)) {
+    sprites = Math.max(0, Math.min(8, Math.trunc(opts.sprites_per_line)));
+    sprites_source = "input";
+  } else {
+    const f = await getFalkor();
+    const rr = await f.roQuery(
+      `MATCH (t:Technique {name: $name}) RETURN t.cost_sprites_per_line AS n`,
+      { name: opts.technique }
+    );
+    const n = (rr.data?.[0] as { n: number | null } | undefined)?.n;
+    if (typeof n === "number") {
+      sprites = n;
+      sprites_source = "technique";
+    }
+  }
+  const sprite_dma_cycles = spriteDmaCycles(sprites);
 
   const regionKey = opts.region.toUpperCase() as "PAL" | "NTSC";
   const rc = REGION_CONSTANTS[regionKey] ?? REGION_CONSTANTS.PAL;
@@ -1721,19 +1757,27 @@ export async function timingBudget(opts: {
 
   const cycles_per_line = rc.cycles_per_line;
   const cycles_per_frame = cycles_per_line * rc.lines_per_frame;
-  const user_cycles_per_line_normal = cycles_per_line - irq_overhead;
+  const user_cycles_per_line_normal = Math.max(0, cycles_per_line - irq_overhead - sprite_dma_cycles);
   // A handler entered on a badline through the KERNAL vector has nothing
   // left on that line (63 - 43 - 36 < 0); report 0, and the note below says
   // to put splits on non-badlines.
-  const user_cycles_per_line_badline = Math.max(0, cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST);
+  const user_cycles_per_line_badline = Math.max(0, cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST - sprite_dma_cycles);
 
   const notes: string[] = [
     `${regionKey}: ${cycles_per_line} cycles/line × ${rc.lines_per_frame} lines = ${cycles_per_frame} cycles/frame.`,
     `Badline: the VIC takes the bus on cycles 15-54 and drops BA on cycle 12, so ${BADLINE_CYCLES_LOST} cycles are lost to code that is not writing on 12-14 (40 to code that is). No read cycle is possible between 12 and 54.`,
     `IRQ overhead: ${irq_overhead} cycles before the handler's first instruction (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314; 7 via $FFFE with the KERNAL out), plus 0-6 cycles of jitter unless a double IRQ is used.`,
-    `User cycles/line normal: ${cycles_per_line} - ${irq_overhead} = ${user_cycles_per_line_normal}.`,
-    `User cycles/line badline: ${cycles_per_line} - ${irq_overhead} - ${BADLINE_CYCLES_LOST} = ${user_cycles_per_line_badline}.`,
+    sprites > 0
+      ? `Sprite DMA: ${sprites} sprite(s) on the line (${sprites_source === "input" ? "from the request" : `from ${opts.technique}'s Cost line`}) take ${SPRITE_BA_LEAD_IN} + ${SPRITE_CYCLES_EACH} × ${sprites} = ${sprite_dma_cycles} cycles, measured in VICE x64sc for sprites numbered without gaps (5 for one, 19 for eight); each gap in the numbering adds up to ${SPRITE_BA_LEAD_IN} more (sprites 0 and 7 measured 10). The BA lead-in cycles are usable by writes only.`
+      : sprites_source === "none"
+        ? `Sprite DMA: not counted. ${opts.technique} states no sprites_per_line; pass sprites_per_line to count it (3 + 2 per sprite, 19 for eight, measured in VICE x64sc).`
+        : `Sprite DMA: none (0 sprites on the line).`,
+    `User cycles/line normal: ${cycles_per_line} - ${irq_overhead}${sprite_dma_cycles > 0 ? ` - ${sprite_dma_cycles}` : ""} = ${user_cycles_per_line_normal}.`,
+    `User cycles/line badline: ${cycles_per_line} - ${irq_overhead} - ${BADLINE_CYCLES_LOST}${sprite_dma_cycles > 0 ? ` - ${sprite_dma_cycles}` : ""} = ${user_cycles_per_line_badline}.`,
   ];
+  if (sprites > 0) {
+    notes.push(`Without the IRQ entry, a line with ${sprites} sprite(s) leaves ${Math.max(0, cycles_per_line - sprite_dma_cycles)} cycles, a badline ${Math.max(0, cycles_per_line - BADLINE_CYCLES_LOST - sprite_dma_cycles)} (arithmetic; for eight sprites on a PAL badline cpu-cycle-tricks.md measures 4 including the 3 write-only cycles, which is the 1 this gives plus those 3).`);
+  }
   if (user_cycles_per_line_badline <= 0) {
     notes.push(`WARNING: badline leaves no user cycles — tight handler required.`);
   }
@@ -1747,6 +1791,9 @@ export async function timingBudget(opts: {
     cycles_per_frame,
     badline_cycles_lost: BADLINE_CYCLES_LOST,
     irq_overhead_cycles: irq_overhead,
+    sprites_per_line: sprites,
+    sprites_source,
+    sprite_dma_cycles,
     user_cycles_per_line_normal,
     user_cycles_per_line_badline,
     notes,
@@ -1759,6 +1806,8 @@ export async function timingBudget(opts: {
   out += `| Cycles/frame | ${cycles_per_frame} |\n`;
   out += `| Badline cycles lost | ${BADLINE_CYCLES_LOST} |\n`;
   out += `| IRQ overhead | ${irq_overhead} |\n`;
+  out += `| Sprites on the line | ${sprites}${sprites_source === "none" ? " (not stated)" : ` (${sprites_source})`} |\n`;
+  out += `| Sprite DMA cycles | ${sprite_dma_cycles} |\n`;
   out += `| User cycles/line (normal) | ${user_cycles_per_line_normal} |\n`;
   out += `| User cycles/line (badline) | ${user_cycles_per_line_badline} |\n`;
   out += `\n## Notes\n\n`;

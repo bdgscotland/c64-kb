@@ -97,7 +97,10 @@ export const COST_VOCABULARY: Record<string, string> = {
   bytes_data: "bytes of tables, buffers and other data in the built recipe's segments",
   zp_bytes: "zero-page bytes the technique claims",
   irq_slots: "raster or timer interrupts the technique needs per frame",
+  sprites_per_line: "the most hardware sprites displayed on one raster line of the technique's lines (0-8)",
 };
+// Keys whose value has a hardware ceiling; a figure above it is refused.
+const COST_MAXIMUM: Partial<Record<string, number>> = { sprites_per_line: 8 };
 export type CostKey = keyof typeof COST_VOCABULARY;
 export type TechniqueCost = Partial<Record<CostKey, number>>;
 
@@ -652,6 +655,11 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
           }
           if (!m || !INTEGER.test(val) || Number(val) < 0) {
             console.warn(`[extract] ${sourcePath}: technique ${techName} has cost ${key}=${JSON.stringify(val)}, which is not a non-negative integer — pair skipped (see CONVENTIONS-techniques.md)`);
+            continue;
+          }
+          const ceiling = COST_MAXIMUM[key];
+          if (ceiling !== undefined && Number(val) > ceiling) {
+            console.warn(`[extract] ${sourcePath}: technique ${techName} has cost ${key}=${val}, above the hardware maximum of ${ceiling} — pair skipped (see CONVENTIONS-techniques.md)`);
             continue;
           }
           cost[key as CostKey] = Number(val);
