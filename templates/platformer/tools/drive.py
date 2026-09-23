@@ -10,9 +10,10 @@ build reads its port byte from $02FE (JOY_SOURCE) instead of $DC00, because
 the windowless VICE's joyport commands never reach $DC00. Steps:
   hold:DIR     hold up, down, left, right or fire (DIR+DIR for two); hold:none releases
   tap:DIR      press for 0.05 s of run time, then release for 0.1 s
-  run:SECONDS  let the machine run (warp) that long in real time
+  run:SECONDS  let the machine play that long, at real speed (VICE runs without -warp)
   until:TEXT   run until TEXT is on the HUD (300 s limit)
   print        print the HUD's non-blank rows
+The monitor port is DRIVE_PORT, or a free one the script picks.
 """
 import os
 import socket
@@ -22,7 +23,13 @@ import sys
 import time
 
 X64SC = os.environ.get("X64SC", os.path.expanduser("~/Developer/c64/vice-headless/bin/x64sc"))
-PORT = int(os.environ.get("DRIVE_PORT", "6581"))
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+PORT = int(os.environ.get("DRIVE_PORT") or free_port())   # two drives at once do not collide
 HUD = 0xC800                                          # src/game.h HUDPAGE
 BITS = {"none": 0, "up": 1, "down": 2, "left": 4, "right": 8, "fire": 16}
 
@@ -30,7 +37,7 @@ BITS = {"none": 0, "up": 1, "down": 2, "left": 4, "right": 8, "fire": 16}
 class Vice:
     def __init__(self, prg):
         self.proc = subprocess.Popen(
-            [X64SC, "-default", "-warp", "+sound", "-autostartprgmode", "1", "-binarymonitor",
+            [X64SC, "-default", "+sound", "-autostartprgmode", "1", "-binarymonitor",   # real speed: run:1 is a second of play
              "-binarymonitoraddress", f"ip4://127.0.0.1:{PORT}", "-autostart", prg],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):

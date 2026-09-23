@@ -22,9 +22,14 @@ this program depends on:
   taken coin's cells and the sprite pointers are the only writes to the
   page on display (and a level restart redraws all three pages at a cut).
   Keep the camera at 2 pixels a frame or less, or the slices fall behind.
-- Build with the Oscar64 named in c64-kb's CLAUDE.md (the local build).
-  Upstream 9a902f6 miscompiles `surface_walk` and the run fails (README,
-  "Which Oscar64").
+- It builds on the local Oscar64 and on v1.32.273. Keep `surface_at`
+  `__noinline` and the score written through `put_digits`: both work around
+  v1.32.273 faults (README, "Which Oscar64").
+- `NSLOT` is 5 because six live enemies overran an NTSC frame. After any
+  change to the enemies, run `make stage` (every slot live) as well as
+  `make shot check`.
+- The verdict's per-frame bits (`check_frame` in `src/verdict.h`) catch
+  faults that heal before the end: keep them when you change the rules.
 - `$D016` and `$D018` belong to the two IRQs in `src/engine.asm`. C
   publishes the next picture's pair once a frame (`view_publish`).
 - `make tearcheck` after any change to the scroll, the camera, the level or

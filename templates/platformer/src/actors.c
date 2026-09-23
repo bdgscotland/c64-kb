@@ -1,7 +1,7 @@
 // actors.c: enemies placed in the level wake when they come within a
 // window around the view, and go back to the level table when they leave
 // it, so a patrol survives off screen and a stomped enemy stays dead
-// (c64-kb actor_activation_window). The live ones sit in six slots, one
+// (c64-kb actor_activation_window). The live ones sit in NSLOT slots, one
 // sprite each (object_pool). Hits are tested box against box, each box
 // from the animation frame on show (per_frame_hitbox).
 #include "game.h"
@@ -18,11 +18,14 @@ char lvl_col[NLVL], lvl_ty[NLVL], lvl_type[NLVL], lvl_flags[NLVL];
 
 char slot_lvl[NSLOT];
 unsigned slot_x[NSLOT], slot_y[NSLOT];
-char slot_type[NSLOT], slot_jump[NSLOT], slot_timer[NSLOT], slot_sub[NSLOT];
+char slot_type[NSLOT], slot_jump[NSLOT], slot_timer[NSLOT];
+static char slot_probe[NSLOT];      // the column ahead the walker last judged
+static bool slot_turn[NSLOT];       // and whether it turns there
 bool slot_left[NSLOT], slot_squashed[NSLOT];
 struct Anim slot_anim[NSLOT];
 
-static char scan_pos, win_lo, win_top, drop_lo, drop_top;
+static char scan_pos, win_lo, win_top, tick;
+char drop_lo, drop_top;             // this frame's drop window, in columns
 
 void actors_reset(void)
 {
@@ -36,7 +39,7 @@ static void activate(char i)
     char s = 0;
     while (slot_lvl[s] != NO_SLOT)
         if (++s == NSLOT)
-            return;                         // all six live: it wakes on a later scan
+            return;                         // every slot live: it wakes on a later scan
     slot_lvl[s] = i;
     slot_type[s] = lvl_type[i];
     slot_x[s] = lvl_col[i] * 8 + 8;
@@ -45,6 +48,7 @@ static void activate(char i)
     slot_left[s] = lvl_flags[i] & LF_LEFT;
     slot_timer[s] = HOP_WAIT / 2 + (i & 15);
     slot_squashed[s] = false;
+    slot_probe[s] = 0xff;
     slot_anim[s].seq = nullptr;
     anim_set(&slot_anim[s], lvl_type[i] == T_WALKER ? an_walk : an_hop_sit);
     lvl_flags[i] |= LF_LIVE;
@@ -81,15 +85,41 @@ static void set_window(void)
     drop_top = hi + HYST > 255 ? 255 : hi + HYST;
 }
 
+// Half a pixel a frame; odd and even slots take turns, so a crowd costs
+// half as much on any one frame. The column WALK_AHEAD pixels in front is
+// judged once, when the walker first reaches it: an edge, a step too high
+// or low, or a wall there turns the walker. Each step then costs one
+// surface_walk for the ground snap (about 300 cycles by the meter's PROF
+// runs, against about 1,100 when every step also probed walls and the
+// ground ahead; README, "Six live enemies").
+#define WALK_AHEAD 6
+
 static void walker(char s)
 {
-    if (++slot_sub[s] & 1)
-        return;                             // half a pixel a frame
+    if ((tick ^ s) & 1)
+        return;
     signed char dx = slot_left[s] ? -1 : 1;
     char fy = slot_y[s] >> 8;
-    char ahead = surface_walk(slot_x[s] + dx * 6, fy);
-    if (ahead == 0xff || (ahead > fy && ahead - fy > MAX_SNAP) || ground_step(&slot_x[s], &slot_y[s], dx, ENEMY_H) != 0)
-        slot_left[s] = !slot_left[s];       // an edge or a wall ahead: turn
+    unsigned nx = slot_x[s] + dx;
+    unsigned probe = nx + dx * WALK_AHEAD;
+    char pc = probe >> 3;
+    if (pc != slot_probe[s])
+    {
+        slot_probe[s] = pc;
+        char ahead = surface_walk(probe, fy);
+        slot_turn[s] = ahead == 0xff || (ahead > fy && ahead - fy > MAX_SNAP) ||
+                       (ahead < fy && fy - ahead > MAX_RISE) || wall_at(probe, fy, ENEMY_H);
+    }
+    if (slot_turn[s])
+    {
+        slot_left[s] = !slot_left[s];
+        slot_probe[s] = 0xff;               // judge the other way afresh
+        return;
+    }
+    char sy = surface_walk(nx, fy);
+    slot_x[s] = nx;
+    if (sy != 0xff)
+        slot_y[s] = (unsigned)sy << 8;
 }
 
 static void hopper(char s)
@@ -105,6 +135,7 @@ static void hopper(char s)
 
 void actors_update(void)
 {
+    tick++;
     set_window();
     char i = scan_pos;
     for (char k = 0; k < SCAN_K; k++)
@@ -168,45 +199,91 @@ bool enemy_near(unsigned x, char dist)
     return false;
 }
 
-// Player box against each live enemy box, in world pixels (16-bit X: a
-// low-byte test would hit an enemy 256 pixels away). Falling onto the top
-// of an enemy is a stomp; any other touch hurts.
+// ---- hits: boxes per animation frame, emitted where the sprites are ----
+// Coordinates are bytes relative to the player's foot, placed at (BOX_O,
+// BOX_O); an enemy is listed only within NEAR pixels each way, so every
+// compare in the pass is one byte (16-bit world X is taken apart once per
+// enemy, never per box pair). After c64-kb per_frame_hitbox.
+#define BOX_O 64
+#define NEAR  40
+#define MAXB  (2 + NSLOT)
+static char nbox;
+static char bl[MAXB], br[MAXB], bt[MAXB], bb[MAXB], bg[MAXB], bm[MAXB], bo[MAXB];
+
+static void emit_boxes(char owner, char shape, char left, char top)
+{
+    char k = hb_first[shape], e = k + hb_count[shape], i = nbox;
+    for (; k != e; k++, i++)
+    {
+        const struct HBox *h = &hbox[k];
+        bl[i] = left + h->x0;
+        br[i] = left + h->x1;
+        bt[i] = top + h->y0;
+        bb[i] = top + h->y1;
+        bg[i] = h->group;
+        bm[i] = h->mask;
+        bo[i] = owner;                      // 0 the player, 1 + slot an enemy
+    }
+    nbox = i;
+}
+
+// The slots the feet hit and the slots the body hit, as bit masks.
+char hit_stomp, hit_body;
+
+static void collide(void)
+{
+    hit_stomp = hit_body = 0;
+    for (char i = 0; i + 1 < nbox; i++)
+    {
+        char m = bm[i];
+        for (char j = i + 1; j < nbox; j++)
+        {
+            if (!(m & bg[j]))
+                continue;                   // a pair that cannot hurt each other
+            if (bl[i] <= br[j] && bl[j] <= br[i] && bt[i] <= bb[j] && bt[j] <= bb[i])
+            {
+                char p = bo[i] ? j : i, e = bo[i] ? bo[i] : bo[j];
+                char bit = 1 << (e - 1);
+                if (bg[p] == G_STOMP)
+                    hit_stomp |= bit;
+                else
+                    hit_body |= bit;
+            }
+        }
+    }
+}
+
+// Any enemy the feet reach is stomped; a body touch by any other hurts.
 void actors_collide(void)
 {
     if (pinvuln)
         return;
-    char ps = panim.shape + (pleft && panim.shape < SH_MIRROR ? SH_MIRROR : 0);
-    const struct Box *pb = &shape_box[ps];
-    if (pb->x0 > pb->x1)
-        return;
-    int pl = px - 8 + pb->x0, pr = px - 8 + pb->x1;
-    int pt = (int)(py >> 8) - 21 + pb->y0, pbot = (int)(py >> 8) - 21 + pb->y1;
+    nbox = 0;
+    char fy = py >> 8;
+    emit_boxes(0, panim.shape + (pleft && panim.shape < SH_MIRROR ? SH_MIRROR : 0), BOX_O - 8, BOX_O - 21);
     for (char s = 0; s < NSLOT; s++)
     {
         if (slot_lvl[s] == NO_SLOT || slot_squashed[s])
             continue;
-        const struct Box *eb = &shape_box[slot_anim[s].shape];
-        if (eb->x0 > eb->x1)
-            continue;
-        int el = slot_x[s] - 8 + eb->x0, er = slot_x[s] - 8 + eb->x1;
-        int et = (int)(slot_y[s] >> 8) - 16 + eb->y0, ebot = (int)(slot_y[s] >> 8) - 16 + eb->y1;
-        if (pl > er || el > pr || pt > ebot || et > pbot)
-            continue;
-        if (!pground && pjump >= JUMP_APEX && pbot <= et + 6)
-        {
-            slot_squashed[s] = true;
-            anim_set(&slot_anim[s], an_squash);
-            lvl_flags[slot_lvl[s]] = (lvl_flags[slot_lvl[s]] & ~LF_LIVE) | LF_DEAD;
-            pjump = JUMP_BOUNCE;
-            stomps++;
-            score_add(1, 0);
-            events |= EV_STOMP;
-            sfx_play(SFX_STOMP);
-        }
-        else
-        {
-            player_hurt();
-            return;
-        }
+        int dx = (int)slot_x[s] - (int)px;
+        signed char dy = (char)(slot_y[s] >> 8) - fy;
+        if (dx > -NEAR && dx < NEAR && dy > -NEAR && dy < NEAR)
+            emit_boxes(1 + s, slot_anim[s].shape, (char)dx + (BOX_O - 8), (char)dy + (BOX_O - 16));
     }
+    collide();
+    for (char s = 0; s < NSLOT; s++)
+    {
+        if (!(hit_stomp & (1 << s)))
+            continue;
+        slot_squashed[s] = true;
+        anim_set(&slot_anim[s], an_squash);
+        lvl_flags[slot_lvl[s]] = (lvl_flags[slot_lvl[s]] & ~LF_LIVE) | LF_DEAD;
+        pjump = JUMP_BOUNCE;
+        stomps++;
+        score_add(1, 0);
+        events |= EV_STOMP;
+        sfx_play(SFX_STOMP);
+    }
+    if (hit_body & ~hit_stomp)
+        player_hurt();
 }

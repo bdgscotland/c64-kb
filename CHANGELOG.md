@@ -7,6 +7,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 766, schema 31, tools 2.3.0, package 0.16.0.
 
+**Issue #39: `platformer` hardened after the other session's
+comparison.**
+- It builds and passes on the released Oscar64 v1.32.273, with
+  `surface_at` kept out of line (#30) and the score printed through
+  `put_digits`. v1.32.273 dropped digits from a loop; that fault is not
+  reduced yet.
+- The live-enemy limit is 5: six live enemies overran the NTSC frame
+  (17,618 cycles staged). `make stage` fills every slot.
+- `check_frame` checks four invariants every frame, each with its own
+  fault bit. The slope bit caught a mutation that the tear check missed.
+- Hitboxes come per animation frame, with a group and a mask; the stomp
+  is a feet box on the falling frame.
+- `tools/drive.py` runs at real speed and on a free port.
+
 **Issue #39: `action-puzzle` hardened after the other session's
 comparison.**
 - The redraw is bounded. An overflowing dirty list used to redraw 280

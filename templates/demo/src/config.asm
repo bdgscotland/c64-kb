@@ -63,6 +63,10 @@
 // them into two columns 8 pixels apart.
 .const SYNC_PAD_PAL  = 2
 .const SYNC_PAD_NTSC = 6
+// The column, in the PROBE build's shots, where every bar line's $D021
+// store must land on both models: tools/probe.py fails on any other, so a
+// wrong pad that still gives one column (NTSC 5 gives 89) fails too.
+.const PROBE_COLUMN = 97
 
 // ---- the running order (parts.asm holds the table) --------------------------
 .const PART_COUNT   = 2

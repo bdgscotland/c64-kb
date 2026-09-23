@@ -9,7 +9,8 @@
 
 const char an_stand[]   = { SH_STAND, 1, AN_HOLD };
 const char an_run[]     = { SH_RUN1, 6, SH_STAND, 4, SH_RUN2, 6, SH_STAND, 4, AN_LOOP, 0 };
-const char an_jump[]    = { SH_JUMP, 1, AN_HOLD };
+const char an_jump[]    = { SH_JUMP, 1, AN_HOLD };            // rising
+const char an_fall[]    = { SH_FALL, 1, AN_HOLD };            // falling: the stomp box
 const char an_hurt[]    = { SH_HURT, 1, AN_HOLD };
 const char an_walk[]    = { SH_WALK1, 8, SH_WALK2, 8, AN_LOOP, 0 };
 const char an_squash[]  = { SH_SQUASH, 24, AN_HOLD };

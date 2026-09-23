@@ -28,7 +28,7 @@ static const char glyph_art[][8][5] = {
 // Sprite art, 16 pixels wide, 'x' set. Player art is 21 rows with the feet
 // on row 20; enemy art is 16 rows with the feet on row 15.
 static const char art_shape[] = {
-    SH_STAND, SH_RUN1, SH_RUN2, SH_JUMP, SH_HURT,
+    SH_STAND, SH_RUN1, SH_RUN2, SH_JUMP, SH_FALL, SH_HURT,
     SH_WALK1, SH_WALK2, SH_SQUASH, SH_HOP_SIT, SH_HOP_UP
 };
 static const char sprite_art[][21][17] = {
@@ -62,6 +62,14 @@ static const char sprite_art[][21][17] = {
         "......xxxxx.....", "......xxxxx.....", "......xxxxx.....", "......xxxxx.....",
         ".....xxxxxxx....", "....xxx...xxx...", "...xxx.....xxx..", "...xx.......xx..",
         "...xx.......xx..", "..xxx.......xxx.", "..xxx.......xxx.", "................",
+        "................",
+    },
+    {   // fall: legs down, feet first
+        "..xx..xxxxx..xx.", "..xx.xxxxxxx.xx.", "..xx.xx.xx.x.xx.", "..xx.xxxxxxx.xx.",
+        "...x.xxxx..x.x..", "...xx.xxxxx.xx..", "....xxxxxxxxx...", ".....xxxxxxx....",
+        "......xxxxx.....", "......xxxxx.....", "......xxxxx.....", "......xxxxx.....",
+        "......xxxxx.....", ".....xx...xx....", ".....xx...xx....", ".....xx...xx....",
+        ".....xx...xx....", ".....xx...xx....", "....xxx...xxx...", "....xxx...xxx...",
         "................",
     },
     {   // hurt
@@ -104,16 +112,19 @@ static const char sprite_art[][21][17] = {
     },
 };
 
-// Collision box per shape (c64-kb per_frame_hitbox), from the art's
-// top-left. The hurt and squashed shapes have none (x0 > x1).
-struct Box shape_box[SH_COUNT] = {
-    { 5, 1, 11, 20 }, { 4, 1, 12, 20 }, { 4, 1, 12, 20 }, { 4, 0, 12, 18 },   // player, right
-    { 0 }, { 0 }, { 0 }, { 0 },                                               // mirrored below
-    { 1, 0, 0, 0 },                                                           // hurt: none
-    { 2, 1, 13, 15 }, { 2, 1, 13, 15 },                                       // walker
-    { 1, 0, 0, 0 },                                                           // squashed: none
-    { 2, 4, 13, 15 }, { 3, 0, 12, 15 },                                       // hopper
+// Hit boxes (game.h). The falling frame has two: the body, and the feet
+// in the stomp group. The hurt and squashed frames have none.
+#define PB G_PLAYER, G_ENEMY
+#define EB G_ENEMY, G_PLAYER | G_STOMP
+struct HBox hbox[16] = {
+    { 5, 1, 11, 20, PB }, { 4, 1, 12, 20, PB }, { 4, 1, 12, 20, PB }, { 4, 0, 12, 18, PB },  // 0-3
+    { 4, 0, 12, 13, PB }, { 4, 14, 12, 20, G_STOMP, G_ENEMY },                             // 4-5 fall
+    { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 },                                              // 6-11 mirrored below
+    { 2, 1, 13, 15, EB }, { 2, 1, 13, 15, EB },                                            // 12-13 walker
+    { 2, 4, 13, 15, EB }, { 3, 0, 12, 15, EB },                                            // 14-15 hopper
 };
+const char hb_first[SH_COUNT] = { 0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 0, 12, 13, 0, 14, 15 };
+const char hb_count[SH_COUNT] = { 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 0, 1, 1, 0, 1, 1 };
 
 static char mc_pixel(char c)
 {
@@ -188,12 +199,14 @@ void art_build(void)
             }
         }
     }
-    for (char s = 0; s < SH_MIRROR; s++)
+    for (char i = 0; i < 6; i++)            // the player's six boxes, mirrored
     {
-        struct Box *b = shape_box + s, *m = shape_box + s + SH_MIRROR;
+        struct HBox *b = hbox + i, *m = hbox + i + 6;
         m->x0 = 15 - b->x1;
         m->x1 = 15 - b->x0;
         m->y0 = b->y0;
         m->y1 = b->y1;
+        m->group = b->group;
+        m->mask = b->mask;
     }
 }

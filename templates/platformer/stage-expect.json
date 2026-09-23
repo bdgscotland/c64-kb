@@ -1,0 +1,6 @@
+{
+  "checks": [
+    { "name": "own verdict: no late frame with every slot full", "type": "verdict" },
+    { "name": "frame meter, every enemy slot live from the first play frame", "type": "meter", "row": 24, "col": 20, "frames": 255 }
+  ]
+}

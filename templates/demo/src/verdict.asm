@@ -32,6 +32,10 @@
 }
 
 verdict:
+        jsr hard_cut                   // no part in the table names hard_cut, so the
+        bcs !+                         // verdict runs it: it must end a part (carry set)
+        jmp vfail
+!:
         lda part                       // the transition happened: the main part plays,
         cmp #MAIN_PART                        // the wipe cleared all 40 columns, the
         FailNe()                     // title's teardown ran
