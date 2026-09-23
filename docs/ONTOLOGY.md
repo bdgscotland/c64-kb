@@ -9,8 +9,8 @@ crash/failure patterns. Designed to support multi-hop queries like
 registers does this effect touch?" or "is FLI compatible with sprite-
 multiplex-24 in PAL?"
 
-`ensureSchema()` creates the indexes, constraints and the `Chip`/`Region`
-seed nodes; every other node and edge comes from ingesting `docs/`.
+`ensureSchema()` creates the indexes, constraints and the `Chip`, `Region`
+and `HardwareUnit` seed nodes; every other node and edge comes from ingesting `docs/`.
 
 Design principles:
 - 5–12 node types, 8–20 edge types (maintainable range for a domain KB)
@@ -19,7 +19,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (13)
+## Node Types (14)
 
 ### KernalRoutine
 
@@ -116,6 +116,8 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | cost_sprites_per_line | integer, optional | The most hardware sprites displayed on one raster line of the technique's lines, 0-8 (schema 24). `c64_timing_budget` subtracts their DMA (3 + 2 per sprite, measured) from the line's user cycles. |
 | cost_basis | string, optional | How the cost figures were obtained, one of "measured-vice", "derived-listing", "arithmetic", "estimated"; present exactly when any cost_* property is. The word is the weakest that applies to any figure on the line. |
 | raster_band | string, optional | The raster lines the technique holds the CPU on, from the page's `**Raster band:**` line (schema 24), in canonical form: sorted inclusive ranges such as "45-250" or "0-44,251-311", or "movable" when the program chooses the lines. Absent when the page states none; a re-ingest that drops the line clears it. `c64_check_compatibility` clears its line-sharing rules for two techniques whose line bands share no line. |
+| claims_stated | string, optional | "stated" when the page's `**Claims:**` line names units, "none" when it says `none` (schema 25). Absent means unknown: the page states nothing, which is not the same as "none". The CLAIMS edges carry the units. |
+| claims_basis | string, optional | How the claims were established: "measured-vice", "derived-listing" or "estimated"; present exactly when claims_stated is. |
 
 A technique whose page has no `**Cost:**` line has none of the `cost_*`
 properties, so `WHERE t.cost_cycles_per_frame IS NOT NULL` finds the
@@ -213,6 +215,36 @@ reference.
 
 Source: `techniques/*.md` `**Demands:**` lines.
 
+### HardwareUnit
+
+A named piece of hardware that one technique can hold while another wants
+it: a SID voice, a sprite, a CIA timer, the raster compare, an interrupt
+vector, zero page (schema 25). Seeded by `ensureSchema()` from
+`HARDWARE_UNITS` in `src/graph/extract.ts`, like Chip and Region, so a
+`**Claims:**` line can only name a unit that exists. It answers a
+different question from Resource: a Resource is a kind of machine time
+("every CPU cycle on its lines"), a HardwareUnit is a register set.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | Seed name (e.g. "sid_voice_2", "vic_raster_irq") |
+| kind | string | sid_voice, sid_shared, sprite, timer, tod, port, bus, irq_source, vector, io_page or zero_page |
+| addresses | string | The registers or bytes (e.g. "$D407-$D40D") |
+| chip | string | Owning chip, "" for the expansion I/O pages; also a BELONGS_TO edge |
+
+The seed: `sid_voice_1`-`3` ($D400-$D406, $D407-$D40D, $D40E-$D414),
+`sid_filter_volume` ($D415-$D418), `sid_voice_3_readback` ($D41B-$D41C),
+`sid_pots` ($D419-$D41A), `sprite_0`-`7` (position, colour, enable and
+other bits, pointer), `cia1_timer_a`/`b`, `cia2_timer_a`/`b`,
+`cia1_tod`, `cia2_tod`, `cia1_port_a` ($DC00: keyboard column drive,
+control port 2), `cia1_port_b` ($DC01: keyboard rows, control port 1),
+`cia2_vic_bank` ($DD00 bits 0-1), `serial_bus` ($DD00 bits 3-7 and the
+drive), `user_port` ($DD01), `vic_raster_irq` (the one raster compare:
+$D012, $D011 bit 7, $D019/$D01A bit 0), `irq_vector_0314`,
+`irq_vector_fffe`, `nmi_vector_0318`, `nmi_vector_fffa`,
+`expansion_io1` ($DE00-$DEFF), `expansion_io2` ($DF00-$DFFF), and
+`zero_page` ($02-$FF), one unit whose bytes ride the CLAIMS edge.
+
 ### Archetype
 
 A shape a game or demo takes: the vertical shooter, the single-screen
@@ -233,11 +265,11 @@ carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
 schema 21 the briefing tool held four archetype keywords and two forced
 techniques in code and the page's fingerprints were read by nobody.
 
-## Edge Types (20)
+## Edge Types (21)
 
 ### BELONGS_TO
 
-Direction: `Register → Chip`
+Direction: `Register → Chip`, `Technique → Chip`, `HardwareUnit → Chip`
 
 Meaning: "this register lives on this chip."
 
@@ -384,6 +416,34 @@ listed as band-separated, when both techniques carry a `raster_band` of
 line ranges and the ranges share no line. Before schema 24 there was no
 band, and any two `cpu_every_line` techniques were reported as a conflict.
 
+### CLAIMS
+
+Direction: `Technique → HardwareUnit`
+
+Meaning: "while this technique runs it holds this unit, in this mode"
+(schema 25). Authored with the `**Claims:**` and `**Claims basis:**`
+lines (`CONVENTIONS-techniques.md`). Both ends MATCHed, never MERGEd; a
+miss is warned about and counted in the ingest summary as `claims …
+dropped`. Re-ingesting a technique drops its old CLAIMS edges first, so a
+claim the page stopped making does not outlive it.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| mode | string | owns (writes or holds it every frame; nobody else may), shares (writes it under the owner's protocol: after the owner in the frame, or in the owner's interrupt chain), reads (reads only), init (uses it once before the frame loop) |
+| ranges | string or null | zero_page only: canonical bytes, e.g. "02-0D,24-2F" |
+| relocatable | boolean | zero_page only: the bytes move with a build option |
+| basis | string | measured-vice, derived-listing or estimated |
+
+`c64_check_compatibility` reads them: two `owns` of one unit is
+`unit_contention` (hard); two `owns` of zero page that share bytes is
+`zero_page_overlap` (hard, soft when either side is relocatable);
+`owns` against `shares`, or two `shares`, is `unit_shared` (soft);
+`owns` against `reads` is `unit_read_while_driven` (soft); `init`
+against `owns` or `shares` is `init_order` (info). The rules do not run
+between a technique and its own REQUIRES prerequisite. A technique with
+no Claims line is reported as unknown, never as claiming nothing.
+`c64_techniques_for` filters on a claimed unit.
+
 ### IN_REGION
 
 Direction: `Register → MemoryRegion`, `KernalRoutine → MemoryRegion`
@@ -446,9 +506,10 @@ names their pages (schema 23; before it the tool matched the string
 ## Schema state
 
 `ensureSchema()` creates a range index and a unique constraint on the
-primary key of every node label (13) and seeds:
+primary key of every node label (14) and seeds:
 - 5 `Chip` nodes (VIC-II, SID, CIA1, CIA2, 6510)
 - 2 `Region` nodes (PAL, NTSC)
+- the `HardwareUnit` nodes listed under HardwareUnit, each BELONGS_TO its chip
 
 Everything else is produced by `npm run ingest` from `docs/`. Of the
 edge types defined here, one is populated by nothing: `BUILDS_ON`, which
