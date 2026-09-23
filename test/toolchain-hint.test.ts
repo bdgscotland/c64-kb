@@ -19,8 +19,16 @@ describe("toolchainHint", () => {
     const rel = "toolchains/oscar64-reference.md";
     const seeded = await ingestDoc(rel, readFileSync(new URL(`../docs/${rel}`, import.meta.url), "utf8"));
     if (/not available/i.test(seeded)) throw new Error(`test collection could not be seeded: ${seeded}`);
-    await f.addTool({ name: "oscar64", kind: "c-compiler", home_url: "https://github.com/drmortalwombat/oscar64" });
-    await f.addTool({ name: "kickassembler", kind: "assembler", home_url: "http://theweb.dk/KickAssembler/" });
+    await f.addTool({
+      name: "oscar64",
+      kind: "c-compiler",
+      home_url: "https://github.com/drmortalwombat/oscar64",
+    });
+    await f.addTool({
+      name: "kickassembler",
+      kind: "assembler",
+      home_url: "http://theweb.dk/KickAssembler/",
+    });
     await f.addTool({ name: "cc65", kind: "c-compiler", home_url: "https://cc65.github.io/" });
   });
   afterAll(async () => {

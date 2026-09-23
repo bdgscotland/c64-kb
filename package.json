@@ -31,7 +31,11 @@
     "prepack": "npm run build",
     "health": "node src/cli.ts health",
     "test:unit": "vitest run --project unit",
-    "test:integration": "vitest run --project integration"
+    "test:integration": "vitest run --project integration",
+    "lint": "eslint --max-warnings=0 .",
+    "lint:fix": "eslint --fix .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -42,10 +46,16 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tsconfig/node24": "^24.0.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.8.0",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-sonarjs": "^4.2.1",
+    "prettier": "^3.9.8",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.6"
   },
   "engines": {

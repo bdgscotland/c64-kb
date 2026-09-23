@@ -34,7 +34,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
     await f.addRegister("D011", "$D011", "VIC-II", "RW", ["SCROLY"]);
     await f.linkTechniqueUsesRegister("stable_raster_irq", "D011");
     const r = await f.roQuery(
-      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:USES]->(reg:Register {name: 'D011'}) RETURN count(*) AS n`
+      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:USES]->(reg:Register {name: 'D011'}) RETURN count(*) AS n`,
     );
     expect((r.data?.[0] as { n: number }).n).toBe(1);
   });
@@ -42,7 +42,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
   it("linkTechniqueRequiresRegion creates REQUIRES_REGION edge", async () => {
     await f.linkTechniqueRequiresRegion("stable_raster_irq", "PAL");
     const r = await f.roQuery(
-      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:REQUIRES_REGION]->(reg:Region {name: 'PAL'}) RETURN count(*) AS n`
+      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:REQUIRES_REGION]->(reg:Region {name: 'PAL'}) RETURN count(*) AS n`,
     );
     expect((r.data?.[0] as { n: number }).n).toBe(1);
   });
@@ -50,7 +50,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
   it("linkTechniqueBelongsTo creates BELONGS_TO edge", async () => {
     await f.linkTechniqueBelongsTo("stable_raster_irq", "VIC-II");
     const r = await f.roQuery(
-      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:BELONGS_TO]->(c:Chip {name: 'VIC-II'}) RETURN count(*) AS n`
+      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:BELONGS_TO]->(c:Chip {name: 'VIC-II'}) RETURN count(*) AS n`,
     );
     expect((r.data?.[0] as { n: number }).n).toBe(1);
   });
@@ -59,7 +59,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
     await f.addKernalRoutine("CINT", "$FF81", "Init screen editor.");
     await f.linkTechniqueUsesKernal("stable_raster_irq", "CINT");
     const r = await f.roQuery(
-      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:USES]->(k:KernalRoutine {name: 'CINT'}) RETURN count(*) AS n`
+      `MATCH (t:Technique {name: 'stable_raster_irq'})-[:USES]->(k:KernalRoutine {name: 'CINT'}) RETURN count(*) AS n`,
     );
     expect((r.data?.[0] as { n: number }).n).toBe(1);
   });
@@ -77,7 +77,9 @@ describe("FalkorService - Technique REQUIRES", () => {
     for (const name of ["stable_raster_irq", "fli_image", "ifli_image", "text_zoom"]) {
       await f.addTechnique({ name, title: name, category: "raster", complexity: "high" });
     }
-    console.warn = (msg: string) => { warnings.push(String(msg)); };
+    console.warn = (msg: string) => {
+      warnings.push(String(msg));
+    };
   });
   afterAll(async () => {
     console.warn = origWarn;
@@ -87,7 +89,7 @@ describe("FalkorService - Technique REQUIRES", () => {
   const count = async (a: string, b: string): Promise<number> => {
     const r = await f.roQuery(
       `MATCH (a:Technique {name: $a})-[:REQUIRES]->(b:Technique {name: $b}) RETURN count(*) AS n`,
-      { a, b }
+      { a, b },
     );
     return Number((r.data?.[0] as { n: number }).n);
   };
@@ -102,7 +104,9 @@ describe("FalkorService - Technique REQUIRES", () => {
     expect(await f.linkTechniqueRequires("text_zoom", "no_such_technique")).toBe(false);
     const stub = await f.roQuery(`MATCH (t:Technique {name: 'no_such_technique'}) RETURN count(t) AS n`);
     expect(Number((stub.data?.[0] as { n: number }).n)).toBe(0);
-    expect(warnings.some((w) => /text_zoom -> no_such_technique/.test(w) && /dropped/.test(w))).toBe(true);
+    expect(warnings.some((w) => w.includes("text_zoom -> no_such_technique") && w.includes("dropped"))).toBe(
+      true,
+    );
   });
 
   it("refuses an edge that would close a cycle, directly or through a chain", async () => {
@@ -113,7 +117,7 @@ describe("FalkorService - Technique REQUIRES", () => {
     expect(await f.linkTechniqueRequires("stable_raster_irq", "ifli_image")).toBe(false);
     expect(await count("stable_raster_irq", "fli_image")).toBe(0);
     expect(await count("stable_raster_irq", "ifli_image")).toBe(0);
-    expect(warnings.filter((w) => /would close a cycle/.test(w)).length).toBeGreaterThanOrEqual(2);
+    expect(warnings.filter((w) => w.includes("would close a cycle")).length).toBeGreaterThanOrEqual(2);
   });
 
   it("refuses a self-reference", async () => {

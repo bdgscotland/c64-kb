@@ -11,7 +11,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  try { await f.close(); } catch { /* expected on already-closed */ }
+  try {
+    await f.close();
+  } catch {
+    /* expected on already-closed */
+  }
 });
 
 describe("c64_suggest_links", () => {

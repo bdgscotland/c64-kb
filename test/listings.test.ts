@@ -18,8 +18,13 @@ describe("code listings build", () => {
       timeout: 600_000,
     });
     const out = r.stdout + r.stderr;
-    if (/toolchains not found/.test(out)) {
-      console.warn(out.split("\n").filter((l) => /toolchains not found|skipped/.test(l)).join("\n"));
+    if (out.includes("toolchains not found")) {
+      console.warn(
+        out
+          .split("\n")
+          .filter((l) => /toolchains not found|skipped/.test(l))
+          .join("\n"),
+      );
     }
     expect(out, out).not.toMatch(/^FAIL/m);
     expect(r.status, out).toBe(0);

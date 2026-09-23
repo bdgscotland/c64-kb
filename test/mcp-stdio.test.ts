@@ -19,7 +19,12 @@ describe("MCP server over stdio", () => {
       params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
     });
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
-    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "c64_lookup_register", arguments: { name_or_addr: "D011" } } });
+    send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "c64_lookup_register", arguments: { name_or_addr: "D011" } },
+    });
 
     // Wait for the tool reply, then close stdin.
     await new Promise<void>((resolve) => {
@@ -32,13 +37,20 @@ describe("MCP server over stdio", () => {
     });
     const exited = new Promise<number | null>((resolve) => p.on("exit", resolve));
     p.stdin.end();
-    const code = await Promise.race([exited, new Promise<"hung">((r) => setTimeout(() => r("hung"), 5000))]);
+    const code = await Promise.race([
+      exited,
+      new Promise<"hung">((r) =>
+        setTimeout(() => {
+          r("hung");
+        }, 5000),
+      ),
+    ]);
     if (code === "hung") p.kill("SIGKILL");
 
     expect(code).toBe(0);
     const lines = out.trim().split("\n");
     for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
-    const init = JSON.parse(lines[0]!) as { result: { serverInfo: { version: string } } };
+    const init = JSON.parse(lines[0]) as { result: { serverInfo: { version: string } } };
     expect(init.result.serverInfo.version).not.toBe("0.1.0");
   });
 });

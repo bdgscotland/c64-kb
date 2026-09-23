@@ -59,17 +59,8 @@ import {
   SuggestLinksSchema,
   ReportGapSchema,
 } from "./schemas/tool-outputs.ts";
-import {
-  STATIC_RESOURCES,
-  readStaticResource,
-  readRegisterResource,
-} from "./tools/resources.ts";
-import {
-  demoBriefPrompt,
-  gameBriefPrompt,
-  demoBriefArgs,
-  gameBriefArgs,
-} from "./tools/prompts.ts";
+import { STATIC_RESOURCES, readStaticResource, readRegisterResource } from "./tools/resources.ts";
+import { demoBriefPrompt, gameBriefPrompt, demoBriefArgs, gameBriefArgs } from "./tools/prompts.ts";
 
 export async function startMcpServer(): Promise<void> {
   // The version said "0.1.0" through package 0.8.0.
@@ -78,7 +69,7 @@ export async function startMcpServer(): Promise<void> {
     {
       instructions:
         "Commodore 64 knowledge base. Call c64_health first to see what the stores hold; c64_demo_briefing and c64_game_briefing plan a whole program in one call.",
-    }
+    },
   );
 
   // ---------------------------------------------------------------------------
@@ -88,8 +79,7 @@ export async function startMcpServer(): Promise<void> {
   server.registerTool(
     "c64_health",
     {
-      description:
-        `Health check for c64-kb backing services (Qdrant vector store, FalkorDB graph, Ollama embeddings, SQLite analytics).
+      description: `Health check for c64-kb backing services (Qdrant vector store, FalkorDB graph, Ollama embeddings, SQLite analytics).
 
 Guidelines: Call this before any other tool when a session begins or after suspected service hiccups. The result indicates whether vector search is available (Ollama OK = vector mode; DEGRADED = keyword-only fallback).
 
@@ -103,14 +93,13 @@ Example: {} — no arguments.`,
     async () => {
       const result = await health();
       return { content: [{ type: "text" as const, text: formatHealth(result) }] };
-    }
+    },
   );
 
   server.registerTool(
     "c64_search",
     {
-      description:
-        `Semantic + keyword hybrid search across the entire C64 knowledge base. Returns ranked documentation chunks with confidence badges (HIGH/MEDIUM/LOW based on cosine similarity score).
+      description: `Semantic + keyword hybrid search across the entire C64 knowledge base. Returns ranked documentation chunks with confidence badges (HIGH/MEDIUM/LOW based on cosine similarity score).
 
 Guidelines: Use for fuzzy intent ("how does badline timing work?", "which chip handles joystick?") or when the user's question doesn't map cleanly to a register, KERNAL routine, or opcode. For known identifiers, prefer c64_lookup_register / c64_lookup_kernal / c64_lookup_opcode which return structured data.
 
@@ -140,19 +129,18 @@ Example: {"query": "stable raster IRQ", "limit": 3} returns the top-3 chunks acr
     },
     async ({ query, limit, filter_source }) => {
       const result = await search(query, limit ?? 5, filter_source);
-      let text = result.text;
+      const text = result.text;
       return {
         content: [{ type: "text" as const, text: text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_ingest_doc",
     {
-      description:
-        `Add or update a single knowledge-base document. Writes the content to the file under docs/ (creating or replacing it), removes the page's old chunks, and upserts the new chunked content into Qdrant (dense embeddings + sparse BM25 vector) and its entities into the graph.
+      description: `Add or update a single knowledge-base document. Writes the content to the file under docs/ (creating or replacing it), removes the page's old chunks, and upserts the new chunked content into Qdrant (dense embeddings + sparse BM25 vector) and its entities into the graph.
 
 Guidelines: Use to land new reference material from authoritative sources (codebase 64 manual, VIC-II articles, etc.). Re-running for an existing path replaces that page's chunks. Graph edges are merged, never removed: if the update drops a metadata line, run a clean re-ingest to remove the edge it asserted.
 
@@ -164,20 +152,21 @@ Expected length: Single-line summary, e.g. "Ingested 14 chunks from hardware/foo
 
 Example: {"path": "/abs/path/docs/hardware/sid-tricks.md", "content": "# SID tricks\\n..."}`,
       inputSchema: {
-        path: z.string().describe("Path of the markdown file, absolute or relative to docs/; must resolve inside docs/"),
+        path: z
+          .string()
+          .describe("Path of the markdown file, absolute or relative to docs/; must resolve inside docs/"),
         content: z.string().describe("Full markdown content (body, optionally with frontmatter)"),
       },
     },
     async ({ path: p, content }) => ({
       content: [{ type: "text" as const, text: await ingestDoc(p, content) }],
-    })
+    }),
   );
 
   server.registerTool(
     "c64_lookup_register",
     {
-      description:
-        `Look up a Commodore 64 hardware register by canonical name, mnemonic, or hex address. Returns the register's chip, R/W status, aliases, and the top 3 most relevant documentation chunks.
+      description: `Look up a Commodore 64 hardware register by canonical name, mnemonic, or hex address. Returns the register's chip, R/W status, aliases, and the top 3 most relevant documentation chunks.
 
 Guidelines: Use this when you know a specific register identifier (e.g. "D011", "SCROLY", "$D011") and want its semantics. For fuzzy intent ("which register controls scrolling?"), use c64_search instead.
 
@@ -203,14 +192,13 @@ Returns structured: {name, address, chip, rw, aliases, documentation[]}.`,
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_lookup_kernal",
     {
-      description:
-        `Look up a KERNAL ROM routine by canonical name (e.g. 'CHROUT') or jump-table address (e.g. '$FFD2'). Returns the routine's description, pairs-with partners (e.g. OPEN/CLOSE, CHKIN/CLRCHN), and the top 3 most relevant documentation chunks.
+      description: `Look up a KERNAL ROM routine by canonical name (e.g. 'CHROUT') or jump-table address (e.g. '$FFD2'). Returns the routine's description, pairs-with partners (e.g. OPEN/CLOSE, CHKIN/CLRCHN), and the top 3 most relevant documentation chunks.
 
 Guidelines: Use when you know a KERNAL routine identifier. For "what KERNAL routine should I call to print a string?", use c64_search.
 
@@ -236,14 +224,13 @@ Returns structured: {name, address, description, pairs_with[], documentation[]}.
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_memory_map",
     {
-      description:
-        `Given a hex address, return the memory region(s) the address lives in. Correctly reports banked overlap — e.g. $D011 is BOTH "I/O area" AND "VIC-II registers" depending on the bank-switching state of $01.
+      description: `Given a hex address, return the memory region(s) the address lives in. Correctly reports banked overlap — e.g. $D011 is BOTH "I/O area" AND "VIC-II registers" depending on the bank-switching state of $01.
 
 Guidelines: Use to disambiguate "what is at this address?" when reading existing C64 code. For lookups by region name, query the c64://memory-map resource directly.
 
@@ -257,9 +244,7 @@ Example: {"addr": "$D011"} returns both the I/O area and VIC-II register entries
 
 Returns structured: {address, regions[{name, start, end, default_use, bank_switchable}]}.`,
       inputSchema: {
-        addr: z
-          .string()
-          .describe("Hex address (e.g. '$D011', 'D011'). Non-hex characters stripped."),
+        addr: z.string().describe("Hex address (e.g. '$D011', 'D011'). Non-hex characters stripped."),
       },
       outputSchema: MemoryMapSchema.shape,
     },
@@ -269,14 +254,13 @@ Returns structured: {address, regions[{name, start, end, default_use, bank_switc
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_lookup_opcode",
     {
-      description:
-        `Look up a 6510 opcode by byte (e.g. '$A9') or by mnemonic (e.g. 'LDA'). Returns cycles, flag effects, page-cross penalty, and a description from the 6510-cpu-reference (legal opcodes) or 6502-illegal-opcodes (undocumented opcodes) reference docs.
+      description: `Look up a 6510 opcode by byte (e.g. '$A9') or by mnemonic (e.g. 'LDA'). Returns cycles, flag effects, page-cross penalty, and a description from the 6510-cpu-reference (legal opcodes) or 6502-illegal-opcodes (undocumented opcodes) reference docs.
 
 Guidelines: For a byte lookup, expect the single matching opcode at the top. For a mnemonic, expect all addressing-mode variants (e.g. 'LDA' returns LDA #imm, LDA $zp, LDA $nnnn,X, etc.).
 
@@ -290,9 +274,7 @@ Example: {"byte_or_mnemonic": "$A9"} returns LDA #imm. {"byte_or_mnemonic": "LDA
 
 Returns structured: {query, results[{source, section, text, score}]}.`,
       inputSchema: {
-        byte_or_mnemonic: z
-          .string()
-          .describe("Opcode byte ($A9, A9) or mnemonic (LDA, lda)"),
+        byte_or_mnemonic: z.string().describe("Opcode byte ($A9, A9) or mnemonic (LDA, lda)"),
       },
       outputSchema: OpcodeLookupSchema.shape,
     },
@@ -302,14 +284,13 @@ Returns structured: {query, results[{source, section, text, score}]}.`,
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_pal_ntsc_diff",
     {
-      description:
-        `Compare PAL vs NTSC for a topic. Always returns the canonical region property table (refresh Hz, lines/frame, cycles/line for both PAL and NTSC) plus topic-specific documentation chunks.
+      description: `Compare PAL vs NTSC for a topic. Always returns the canonical region property table (refresh Hz, lines/frame, cycles/line for both PAL and NTSC) plus topic-specific documentation chunks.
 
 Guidelines: Use to surface region-dependent behavior — timing, music tempo, raster mechanics, badline behavior, SID clock. The structured 'regions' array is identical regardless of topic; the 'documentation' array narrows the discussion.
 
@@ -340,14 +321,13 @@ Returns structured: {topic, regions[], documentation[]}.`,
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_toolchain_hint",
     {
-      description:
-        `Surface an idiomatic code snippet for a (toolchain, intent) pair. Defaults to Oscar64 when no toolchain is specified — c64-kb's primary-toolchain bias enforcer.
+      description: `Surface an idiomatic code snippet for a (toolchain, intent) pair. Defaults to Oscar64 when no toolchain is specified — c64-kb's primary-toolchain bias enforcer.
 
 Purpose: Returns a ranked set of documentation chunks most relevant to the intent, scoped to the requested toolchain. The structured output carries the snippet text plus the bias-rationale string so the consuming agent can surface it to the user.
 
@@ -367,7 +347,9 @@ Limitations: Snippet quality depends on corpus coverage. If a pattern doc is mis
           .enum(["oscar64", "kickassembler", "cc65"])
           .optional()
           .describe("Target toolchain (default: oscar64)"),
-        intent: z.string().describe("What you want to do (e.g. 'raster irq', 'sprite multiplex', 'disk load')"),
+        intent: z
+          .string()
+          .describe("What you want to do (e.g. 'raster irq', 'sprite multiplex', 'disk load')"),
       },
       outputSchema: ToolchainHintSchema.shape,
     },
@@ -377,14 +359,13 @@ Limitations: Snippet quality depends on corpus coverage. If a pattern doc is mis
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_recipe_lookup",
     {
-      description:
-        `Look up a complete, buildable C64 recipe by canonical name (e.g. 'oscar64-hello-world'). Returns structured metadata plus the recipe doc body (synopsis, source, build command, expected output, rationale).
+      description: `Look up a complete, buildable C64 recipe by canonical name (e.g. 'oscar64-hello-world'). Returns structured metadata plus the recipe doc body (synopsis, source, build command, expected output, rationale).
 
 Purpose: Gives the agent a ready-to-use, verified example with build instructions rather than requiring it to synthesize code from raw documentation chunks.
 
@@ -412,14 +393,13 @@ Limitations: Only recipes explicitly ingested into the KB are available. Partial
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_recipes_for",
     {
-      description:
-        `List all recipes matching an optional set of filters: toolchain, region, technique, or file format. Returns a structured table of matching Recipe nodes from FalkorDB.
+      description: `List all recipes matching an optional set of filters: toolchain, region, technique, or file format. Returns a structured table of matching Recipe nodes from FalkorDB.
 
 Purpose: Lets the agent discover what buildable examples are available before committing to a specific recipe. All filters are optional — omitting all returns the full recipe catalog.
 
@@ -435,22 +415,13 @@ See also: c64_recipe_lookup to fetch a specific recipe's full content. c64_toolc
 
 Limitations: Returns graph metadata only — use c64_recipe_lookup to get the actual source code. technique filter is a no-op in Phase 2 (no Technique nodes yet).`,
       inputSchema: {
-        toolchain: z
-          .enum(["oscar64", "kickassembler", "cc65"])
-          .optional()
-          .describe("Filter by toolchain"),
+        toolchain: z.enum(["oscar64", "kickassembler", "cc65"]).optional().describe("Filter by toolchain"),
         region: z
           .enum(["pal", "ntsc", "both"])
           .optional()
           .describe("Filter by region (recipes with region='both' match any value)"),
-        technique: z
-          .string()
-          .optional()
-          .describe("Filter by Technique title (exact match)"),
-        file_format: z
-          .string()
-          .optional()
-          .describe("Filter by FileFormat name (e.g. 'PRG')"),
+        technique: z.string().optional().describe("Filter by Technique title (exact match)"),
+        file_format: z.string().optional().describe("Filter by FileFormat name (e.g. 'PRG')"),
       },
       outputSchema: RecipesForSchema.shape,
     },
@@ -460,14 +431,13 @@ Limitations: Returns graph metadata only — use c64_recipe_lookup to get the ac
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_technique_lookup",
     {
-      description:
-        `Look up a Commodore 64 programming technique by canonical snake_case name (e.g. 'stable_raster_irq'). Returns technique metadata, chip, region requirements, all USES edges to Registers and KERNAL routines, the techniques it REQUIRES (must be set up before, or run underneath, it) and those that require it, the pitfalls it is the Fix for (MITIGATED_BY), the list of recipes that implement it, and the top documentation chunks.
+      description: `Look up a Commodore 64 programming technique by canonical snake_case name (e.g. 'stable_raster_irq'). Returns technique metadata, chip, region requirements, all USES edges to Registers and KERNAL routines, the techniques it REQUIRES (must be set up before, or run underneath, it) and those that require it, the pitfalls it is the Fix for (MITIGATED_BY), the list of recipes that implement it, and the top documentation chunks.
 
 Guidelines: Use when you know a specific technique name and want its full profile — registers it touches, KERNAL calls it makes, what it presupposes (text_zoom requires stable_raster_irq on every scanline of its zone), and buildable recipe examples. For discovery ("what raster techniques exist?", "what builds on stable_raster_irq?"), use c64_techniques_for instead.
 
@@ -493,14 +463,13 @@ Returns structured: {name, title, category, complexity, chip?, requires_region?,
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_techniques_for",
     {
-      description:
-        `List C64 techniques matching an optional set of filters: category, chip, region, register, recipe, or requires. All filters are optional — omitting all returns the full technique catalog.
+      description: `List C64 techniques matching an optional set of filters: category, chip, region, register, recipe, or requires. All filters are optional — omitting all returns the full technique catalog.
 
 Purpose: Lets the agent discover what techniques are documented before committing to a specific one. Use before c64_technique_lookup to find the right technique name.
 
@@ -517,11 +486,10 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
         category: z
           .string()
           .optional()
-          .describe("Technique category (raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader)"),
-        chip: z
-          .string()
-          .optional()
-          .describe("Chip name (e.g. 'VIC-II', 'SID', '6510')"),
+          .describe(
+            "Technique category (raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader)",
+          ),
+        chip: z.string().optional().describe("Chip name (e.g. 'VIC-II', 'SID', '6510')"),
         region: z
           .string()
           .optional()
@@ -537,7 +505,9 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
         requires: z
           .string()
           .optional()
-          .describe("Technique name — returns techniques whose REQUIRES chain reaches it (what builds on it)"),
+          .describe(
+            "Technique name — returns techniques whose REQUIRES chain reaches it (what builds on it)",
+          ),
       },
       outputSchema: TechniquesForSchema.shape,
     },
@@ -547,14 +517,13 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_check_compatibility",
     {
-      description:
-        `Check whether two or more C64 techniques can be combined. Hard conflicts come from authored resource demands on the techniques (DEMANDS edges): two techniques that each need every CPU cycle on their lines, a cycle-exact technique against one that takes interrupts mid-frame, a constant-sprite-set technique against a multiplexer, a KERNAL-out technique against KERNAL calls, and PAL-vs-NTSC requirements. Soft conflicts come from shared registers and shared KERNAL routines. The check also takes each technique's REQUIRES closure — the techniques it must have set up underneath it — and runs the hard rules between one technique's prerequisites and the other technique, reporting a hit as prerequisite_conflict; a technique is never reported against a prerequisite it declared itself, and no technique's own demand set is changed by this.
+      description: `Check whether two or more C64 techniques can be combined. Hard conflicts come from authored resource demands on the techniques (DEMANDS edges): two techniques that each need every CPU cycle on their lines, a cycle-exact technique against one that takes interrupts mid-frame, a constant-sprite-set technique against a multiplexer, a KERNAL-out technique against KERNAL calls, and PAL-vs-NTSC requirements. Soft conflicts come from shared registers and shared KERNAL routines. The check also takes each technique's REQUIRES closure — the techniques it must have set up underneath it — and runs the hard rules between one technique's prerequisites and the other technique, reporting a hit as prerequisite_conflict; a technique is never reported against a prerequisite it declared itself, and no technique's own demand set is changed by this.
 
 Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). Order doesn't matter — all pairwise combinations are checked.
 
@@ -571,7 +540,9 @@ Limitations: demands and prerequisites are authored per technique in docs/techni
         techniques: z
           .array(z.string())
           .min(2)
-          .describe("Array of 2+ canonical technique names to check (e.g. ['stable_raster_irq', 'raster_bars'])"),
+          .describe(
+            "Array of 2+ canonical technique names to check (e.g. ['stable_raster_irq', 'raster_bars'])",
+          ),
       },
       outputSchema: CompatibilityCheckSchema.shape,
     },
@@ -581,14 +552,13 @@ Limitations: demands and prerequisites are authored per technique in docs/techni
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_timing_budget",
     {
-      description:
-        `Compute the per-scanline cycle budget for a C64 technique on a given region (PAL or NTSC). Returns the canonical cycle constants plus IRQ overhead and net user-available cycles.
+      description: `Compute the per-scanline cycle budget for a C64 technique on a given region (PAL or NTSC). Returns the canonical cycle constants plus IRQ overhead and net user-available cycles.
 
 Purpose: Gives the agent the authoritative cycle math for raster-critical technique implementations. Use before writing or evaluating cycle-tight C64 raster code.
 
@@ -602,9 +572,7 @@ Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_lin
 
 Limitations: irq_overhead is the default 36 cycles for every technique (an earlier version of this line said it was read from a Technique irq_overhead property; nothing writes one, and the read was removed in tools 1.25.0); a handler on $FFFE with the KERNAL banked out pays 7 plus its own register saves. An earlier version of this description said 23 badline cycles and 14 overhead, which was not what the tool computed. An earlier version did not subtract sprite DMA at all.`,
       inputSchema: {
-        technique: z
-          .string()
-          .describe("Canonical technique name (e.g. 'stable_raster_irq')"),
+        technique: z.string().describe("Canonical technique name (e.g. 'stable_raster_irq')"),
         region: z
           .string()
           .optional()
@@ -626,14 +594,13 @@ Limitations: irq_overhead is the default 36 cycles for every technique (an earli
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_pitfalls_for",
     {
-      description:
-        `Look up C64 coding pitfalls connected to a specific Register, KERNAL routine, or Technique. Returns all Pitfall nodes that have a TRIGGERED_BY edge to the named entity — and, for a Technique, those with a MITIGATED_BY edge to it, i.e. pitfalls whose Fix is that technique — ordered by severity (critical → high → medium → low).
+      description: `Look up C64 coding pitfalls connected to a specific Register, KERNAL routine, or Technique. Returns all Pitfall nodes that have a TRIGGERED_BY edge to the named entity — and, for a Technique, those with a MITIGATED_BY edge to it, i.e. pitfalls whose Fix is that technique — ordered by severity (critical → high → medium → low).
 
 Purpose: Surfaces the gotchas a developer will hit when using a particular register, routine, or technique, and the pitfalls a technique exists to cure. Intended as a proactive "what can go wrong?" check before implementing a technique.
 
@@ -651,7 +618,9 @@ Limitations: Returns only pitfalls indexed in Phase 5 (28 nodes across 8 categor
       inputSchema: {
         topic: z
           .string()
-          .describe("Register name (D012, $D012), KERNAL routine (CHROUT), or technique name (stable_raster_irq)"),
+          .describe(
+            "Register name (D012, $D012), KERNAL routine (CHROUT), or technique name (stable_raster_irq)",
+          ),
       },
       outputSchema: PitfallsForSchema.shape,
     },
@@ -661,14 +630,13 @@ Limitations: Returns only pitfalls indexed in Phase 5 (28 nodes across 8 categor
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_lint_source",
     {
-      description:
-        `Run the knowledge base's pitfall rules over a piece of your own C (Oscar64) or 6502 assembly source. Each rule is compiled from one pitfall or recipe page and points back at it: sid_write_only_registers (a read or read-modify-write of $D400-$D418), cia1_ddr_cleared_kills_keyboard (a store of 0 to $DC02 with no later $FF), empty_name_open_15_hangs_on_read (an empty-name OPEN of channel 15 followed by a read; from the high-score recipe's warning, and the two pages that speak to it disagree, so the finding is heuristic and says so), raster_poll_with_kernal_irq_live (a $D012 busy-wait in a file that never installs an interrupt), lfsr_zero_state_lockup (a zero seed the file shifts or XORs), decimal_mode_in_irq_handler (assembly only: an installed handler that reaches ADC or SBC before any CLD), d016_unmasked_rmw_clobbers_csel_mcm (a $D016 store not derived from a masked read) and jmp_indirect_page_boundary_bug (JMP ($xxFF)).
+      description: `Run the knowledge base's pitfall rules over a piece of your own C (Oscar64) or 6502 assembly source. Each rule is compiled from one pitfall or recipe page and points back at it: sid_write_only_registers (a read or read-modify-write of $D400-$D418), cia1_ddr_cleared_kills_keyboard (a store of 0 to $DC02 with no later $FF), empty_name_open_15_hangs_on_read (an empty-name OPEN of channel 15 followed by a read; from the high-score recipe's warning, and the two pages that speak to it disagree, so the finding is heuristic and says so), raster_poll_with_kernal_irq_live (a $D012 busy-wait in a file that never installs an interrupt), lfsr_zero_state_lockup (a zero seed the file shifts or XORs), decimal_mode_in_irq_handler (assembly only: an installed handler that reaches ADC or SBC before any CLD), d016_unmasked_rmw_clobbers_csel_mcm (a $D016 store not derived from a masked read) and jmp_indirect_page_boundary_bug (JMP ($xxFF)).
 
 Purpose: a self-check an agent runs on the code it just wrote, before building it. No graph or vector store is needed; the rules are text patterns.
 
@@ -681,8 +649,14 @@ Limitations: one file at a time, so an interrupt installed in another file makes
 See also: c64_pitfalls_for for every pitfall a register, routine or technique triggers, most of which have no text pattern to lint.`,
       inputSchema: {
         source: z.string().describe("The source text to lint (one file)"),
-        language: z.enum(["c", "asm", "auto"]).default("auto").describe("c (Oscar64/cc65 C), asm (6502 assembly), or auto"),
-        toolchain: z.string().optional().describe("Toolchain name, recorded in the output (e.g. oscar64, kickassembler)"),
+        language: z
+          .enum(["c", "asm", "auto"])
+          .default("auto")
+          .describe("c (Oscar64/cc65 C), asm (6502 assembly), or auto"),
+        toolchain: z
+          .string()
+          .optional()
+          .describe("Toolchain name, recorded in the output (e.g. oscar64, kickassembler)"),
       },
       outputSchema: LintSourceSchema.shape,
     },
@@ -692,14 +666,13 @@ See also: c64_pitfalls_for for every pitfall a register, routine or technique tr
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_failure_diagnose",
     {
-      description:
-        `Given a symptom description (e.g. "black screen", "sprites flicker every other frame"), find matching CrashPattern nodes from the Phase 5 failure-pattern catalog. Returns up to 5 patterns ranked by keyword overlap, each with its description, likely causes, diagnosis steps, and CAUSED_BY graph edges.
+      description: `Given a symptom description (e.g. "black screen", "sprites flicker every other frame"), find matching CrashPattern nodes from the Phase 5 failure-pattern catalog. Returns up to 5 patterns ranked by keyword overlap, each with its description, likely causes, diagnosis steps, and CAUSED_BY graph edges.
 
 Purpose: Lets an agent or developer describe what they observe and get back structured failure-pattern data: what is probably broken, what graph entities cause it, and how to diagnose it.
 
@@ -715,7 +688,9 @@ Limitations: Scoring is token-overlap only — no semantic similarity. Uncommon 
       inputSchema: {
         symptom: z
           .string()
-          .describe("Description of the observed failure (e.g. 'black screen', 'sprites flicker every other frame', 'music wrong tempo')"),
+          .describe(
+            "Description of the observed failure (e.g. 'black screen', 'sprites flicker every other frame', 'music wrong tempo')",
+          ),
       },
       outputSchema: FailureDiagnoseSchema.shape,
     },
@@ -725,14 +700,13 @@ Limitations: Scoring is token-overlap only — no semantic similarity. Uncommon 
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_demo_briefing",
     {
-      description:
-        `**Phase 5 anchor tool.** Generate a complete, structured C64 demo plan from a natural-language brief in a single call. Internally orchestrates: vector search → technique lookup (graph enrichment per technique) → compatibility check (cross-technique conflict detection) → pitfall surfacing → toolchain split → build order with recipes.
+      description: `**Phase 5 anchor tool.** Generate a complete, structured C64 demo plan from a natural-language brief in a single call. Internally orchestrates: vector search → technique lookup (graph enrichment per technique) → compatibility check (cross-technique conflict detection) → pitfall surfacing → toolchain split → build order with recipes.
 
 Purpose: Replaces the 9-tool manual composition that the c64_demo_brief Prompt requires from the agent. One call returns the full structured plan as typed JSON plus a human-readable markdown summary.
 
@@ -754,7 +728,9 @@ Limitations: Technique selection is heuristic (vector search + keyword overlap).
         archetype: z
           .string()
           .optional()
-          .describe("Optional demo form: snake_case name of an Archetype node of kind demo from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)"),
+          .describe(
+            "Optional demo form: snake_case name of an Archetype node of kind demo from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)",
+          ),
       },
       outputSchema: BriefingSchema.shape,
     },
@@ -764,14 +740,13 @@ Limitations: Technique selection is heuristic (vector search + keyword overlap).
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_game_briefing",
     {
-      description:
-        `**Phase 5 anchor tool.** Generate a complete, structured C64 game plan from a natural-language brief and an archetype name in a single call. Internally orchestrates: archetype lookup → vector search → technique lookup → compatibility check → pitfall surfacing → toolchain split → build order.
+      description: `**Phase 5 anchor tool.** Generate a complete, structured C64 game plan from a natural-language brief and an archetype name in a single call. Internally orchestrates: archetype lookup → vector search → technique lookup → compatibility check → pitfall surfacing → toolchain split → build order.
 
 Purpose: Replaces the 9-tool manual composition that the c64_game_brief Prompt requires from the agent. One call returns the full structured plan: proposed techniques for the game mechanic, register/KERNAL sets, pitfalls to avoid, Oscar64-primary + KickAssembler-for-hot-paths toolchain split, and a step-by-step build order.
 
@@ -795,7 +770,9 @@ Limitations: Technique discovery beyond the fingerprint is the same heuristic as
         archetype: z
           .string()
           .optional()
-          .describe("Archetype node name from docs/game-design/c64-game-archetypes.md: vertical_shmup | horizontal_shmup | single_screen_platformer | scrolling_platformer | top_down_adventure | puzzle | text_adventure | action_puzzle | sports | racing | beat_em_up"),
+          .describe(
+            "Archetype node name from docs/game-design/c64-game-archetypes.md: vertical_shmup | horizontal_shmup | single_screen_platformer | scrolling_platformer | top_down_adventure | puzzle | text_adventure | action_puzzle | sports | racing | beat_em_up",
+          ),
       },
       outputSchema: BriefingSchema.shape,
     },
@@ -805,14 +782,13 @@ Limitations: Technique discovery beyond the fingerprint is the same heuristic as
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_coverage",
     {
-      description:
-        `Snapshot of c64-kb coverage across categories. Returns per-category counts (techniques, pitfalls, recipes by toolchain), KERNAL coverage stats, total graph + Qdrant size, and the top 10 unresolved gaps. Use to assess KB completeness or to inform ingest priorities.
+      description: `Snapshot of c64-kb coverage across categories. Returns per-category counts (techniques, pitfalls, recipes by toolchain), KERNAL coverage stats, total graph + Qdrant size, and the top 10 unresolved gaps. Use to assess KB completeness or to inform ingest priorities.
 
 Inputs: none.
 
@@ -828,14 +804,13 @@ Example: {}`,
         content: [{ type: "text" as const, text: r.text }],
         structuredContent: r.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_suggest_links",
     {
-      description:
-        `Heuristic suggestions for missing edges in the knowledge graph. Compares each entity's doc-chunk text against existing graph edges and flags probable misses (e.g., Technique whose body mentions a Register without a USES edge). v1 is regex-based; surfaces obvious misses, not exhaustive review.
+      description: `Heuristic suggestions for missing edges in the knowledge graph. Compares each entity's doc-chunk text against existing graph edges and flags probable misses (e.g., Technique whose body mentions a Register without a USES edge). v1 is regex-based; surfaces obvious misses, not exhaustive review.
 
 Inputs:
   - kind (optional): "technique-register" | "recipe-technique" | "pitfall-technique" | "all" (default "all")
@@ -848,7 +823,9 @@ Example: {"kind": "technique-register", "limit": 10}`,
         kind: z
           .enum(["technique-register", "recipe-technique", "pitfall-technique", "all"])
           .default("all")
-          .describe('Edge kind to check: "technique-register" | "recipe-technique" | "pitfall-technique" | "all"'),
+          .describe(
+            'Edge kind to check: "technique-register" | "recipe-technique" | "pitfall-technique" | "all"',
+          ),
         limit: z
           .number()
           .int()
@@ -865,14 +842,13 @@ Example: {"kind": "technique-register", "limit": 10}`,
         content: [{ type: "text" as const, text: r.text }],
         structuredContent: r.structured,
       };
-    }
+    },
   );
 
   server.registerTool(
     "c64_report_gap",
     {
-      description:
-        `Record a query that produced no useful result, so the gap surfaces in c64_coverage and (later) the dashboard backlog. Agents should call this when they searched but couldn't ground their answer.
+      description: `Record a query that produced no useful result, so the gap surfaces in c64_coverage and (later) the dashboard backlog. Agents should call this when they searched but couldn't ground their answer.
 
 Inputs:
   - query (required): the query that returned nothing useful
@@ -883,18 +859,9 @@ Output: structured ReportGapOutput with gap_id, hit_count, status (new|increment
 
 Example: {"query": "stable raster IRQ on REU-attached systems", "tool_called": "c64_search", "notes": "no REU coverage in the KB"}`,
       inputSchema: {
-        query: z
-          .string()
-          .min(1)
-          .describe("The query that returned nothing useful"),
-        tool_called: z
-          .string()
-          .optional()
-          .describe("Which c64_kb tool was used (e.g. c64_search)"),
-        notes: z
-          .string()
-          .optional()
-          .describe("Freeform observation about what is missing"),
+        query: z.string().min(1).describe("The query that returned nothing useful"),
+        tool_called: z.string().optional().describe("Which c64_kb tool was used (e.g. c64_search)"),
+        notes: z.string().optional().describe("Freeform observation about what is missing"),
       },
       outputSchema: ReportGapSchema.shape,
     },
@@ -904,7 +871,7 @@ Example: {"query": "stable raster IRQ on REU-attached systems", "tool_called": "
         content: [{ type: "text" as const, text: r.text }],
         structuredContent: r.structured,
       };
-    }
+    },
   );
 
   // ---------------------------------------------------------------------------
@@ -914,8 +881,7 @@ Example: {"query": "stable raster IRQ on REU-attached systems", "tool_called": "
   server.registerTool(
     "c64_run_game",
     {
-      description:
-        `Spawn x64sc with -autostart for the given .prg, drive it via the parallel-input-cell harness pattern (writeMemory into the game's state struct), and return a state trace + final screen render. The eval substrate primitive — used to verify a built game reaches expected states.
+      description: `Spawn x64sc with -autostart for the given .prg, drive it via the parallel-input-cell harness pattern (writeMemory into the game's state struct), and return a state trace + final screen render. The eval substrate primitive — used to verify a built game reaches expected states.
 
 Inputs:
   - prg_path (required): absolute path to the .prg to run
@@ -937,7 +903,7 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
       outputSchema: RunGameOutputSchema,
     },
     async (args) => {
-      const r = await runGame(args as Parameters<typeof runGame>[0]);
+      const r = await runGame(args);
       const summary =
         `c64_run_game: ${r.exit_reason} after ${r.duration_ms}ms\n` +
         `  state @ $${r.state_address.toString(16).padStart(4, "0")} (size ${r.state_size})\n` +
@@ -951,7 +917,7 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
         // isError an MCP client read it as success.
         isError: r.exit_reason === "error",
       };
-    }
+    },
   );
 
   // ---------------------------------------------------------------------------
@@ -972,7 +938,7 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
       async () => {
         const res = readStaticResource(r.uri);
         return { contents: res ? [res] : [] };
-      }
+      },
     );
   }
 
@@ -988,7 +954,7 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
       const name = typeof vars.name === "string" ? vars.name : Array.isArray(vars.name) ? vars.name[0] : "";
       const res = await readRegisterResource(uri.toString(), name);
       return { contents: res ? [res] : [] };
-    }
+    },
   );
 
   // ---------------------------------------------------------------------------
@@ -1002,7 +968,7 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
         "Design a C64 demo from a natural-language brief. Templated body guides the agent through technique identification, register/KERNAL lookup, pitfall surfacing, build order, and toolchain split (Oscar64 vs KickAssembler). Prefer the c64_demo_briefing tool, which runs the lookups itself.",
       argsSchema: demoBriefArgs,
     },
-    demoBriefPrompt
+    demoBriefPrompt,
   );
 
   server.registerPrompt(
@@ -1012,7 +978,7 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
         "Design a C64 game from a natural-language brief. Templated body guides the agent through archetype matching, architecture sketch, technique selection, SID approach, KERNAL usage, and toolchain split. Prefer the c64_game_briefing tool, which runs the lookups itself.",
       argsSchema: gameBriefArgs,
     },
-    gameBriefPrompt
+    gameBriefPrompt,
   );
 
   const transport = new StdioServerTransport();
@@ -1033,8 +999,16 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
       .then(() => closeAll())
       .finally(() => process.exit(code));
   };
-  process.stdin.on("end", () => shutdown(0));
-  process.stdin.on("close", () => shutdown(0));
-  process.on("SIGINT", () => shutdown(0));
-  process.on("SIGTERM", () => shutdown(0));
+  process.stdin.on("end", () => {
+    shutdown(0);
+  });
+  process.stdin.on("close", () => {
+    shutdown(0);
+  });
+  process.on("SIGINT", () => {
+    shutdown(0);
+  });
+  process.on("SIGTERM", () => {
+    shutdown(0);
+  });
 }

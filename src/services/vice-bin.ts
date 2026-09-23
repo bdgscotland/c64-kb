@@ -29,7 +29,9 @@ export function resolveX64sc(): X64scChoice | null {
   if (env && existsSync(env)) return { path: env, kind: "env", windowed: false };
   if (existsSync(HEADLESS_X64SC)) return { path: HEADLESS_X64SC, kind: "headless", windowed: false };
   try {
-    const found = execSync("which x64sc", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    const found = execSync("which x64sc", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
     if (found) return { path: found, kind: "path", windowed: true };
   } catch {
     // no x64sc anywhere

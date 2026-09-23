@@ -16,7 +16,7 @@ const GRAPH_NAME = config.falkor.graphName;
 
 // Node labels we want range-indexed on their primary key property.
 // Keep this list aligned with docs/ONTOLOGY.md §4.1.
-const NODE_INDEXES: ReadonlyArray<readonly [string, string]> = [
+const NODE_INDEXES: readonly (readonly [string, string])[] = [
   ["KernalRoutine", "name"],
   ["Register", "name"],
   ["MemoryRegion", "name"],
@@ -35,14 +35,14 @@ const NODE_INDEXES: ReadonlyArray<readonly [string, string]> = [
 // "$D011" -> 0xD011; null when the string is not a 16-bit hex address.
 function hexAddr(s: string | undefined): number | null {
   if (!s) return null;
-  const m = s.trim().match(/^\$?([0-9A-Fa-f]{1,4})$/);
+  const m = /^\$?([0-9A-Fa-f]{1,4})$/.exec(s.trim());
   return m ? parseInt(m[1], 16) : null;
 }
 
 // Unique constraints on the primary key for every node label. Constraint
 // violations fail at write time instead of silently merging duplicates.
 // Per docs/ONTOLOGY.md §4.1.
-const UNIQUE_CONSTRAINTS: ReadonlyArray<readonly [string, string]> = [
+const UNIQUE_CONSTRAINTS: readonly (readonly [string, string])[] = [
   ["KernalRoutine", "name"],
   ["Register", "name"],
   ["MemoryRegion", "name"],
@@ -58,7 +58,7 @@ const UNIQUE_CONSTRAINTS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 // Full-text indexes for "find a thing that does X" queries (Phase 2+).
-const FULLTEXT_INDEXES: ReadonlyArray<readonly [string, string]> = [
+const FULLTEXT_INDEXES: readonly (readonly [string, string])[] = [
   ["KernalRoutine", "description"],
   // Phase 2+: ["Technique", "description"], ["Pitfall", "description"], ["Recipe", "description"]
 ];
@@ -79,7 +79,7 @@ const CLEANABLE_LABELS: readonly string[] = [
   "Archetype",
 ];
 
-const CHIPS: ReadonlyArray<{ name: string; variants: string; role: string }> = [
+const CHIPS: readonly { name: string; variants: string; role: string }[] = [
   { name: "VIC-II", variants: "6569 PAL / 6567 NTSC", role: "Graphics + raster" },
   { name: "SID", variants: "6581 / 8580", role: "Audio synthesis" },
   { name: "CIA1", variants: "6526", role: "Keyboard / joystick / timer-A IRQ" },
@@ -87,12 +87,12 @@ const CHIPS: ReadonlyArray<{ name: string; variants: string; role: string }> = [
   { name: "6510", variants: "MOS 6510", role: "CPU (6502-compatible + I/O port at $00/$01)" },
 ];
 
-const REGIONS: ReadonlyArray<{
+const REGIONS: readonly {
   name: string;
   refresh_hz: number;
   lines_per_frame: number;
   cycles_per_line: number;
-}> = [
+}[] = [
   { name: "PAL", refresh_hz: 50, lines_per_frame: 312, cycles_per_line: 63 },
   { name: "NTSC", refresh_hz: 60, lines_per_frame: 263, cycles_per_line: 65 },
 ];
@@ -188,7 +188,7 @@ export class FalkorService {
             name: chip.name,
             props: { variants: chip.variants, role: chip.role },
           },
-        } as Parameters<typeof g.query>[1]
+        },
       );
     }
 
@@ -206,7 +206,7 @@ export class FalkorService {
               cycles_per_line: region.cycles_per_line,
             },
           },
-        } as Parameters<typeof g.query>[1]
+        },
       );
     }
   }
@@ -256,10 +256,9 @@ export class FalkorService {
     // queries (Register without BELONGS_TO any Chip, Technique without
     // USES any Register, Recipe without IMPLEMENTS any Technique,
     // etc.). Until then the gap is explicit rather than a silent [].
-    void label;
+    label;
     throw new Error(
-      `findOrphans is not implemented until Phase 7 coverage tooling. ` +
-        `Planned for Phase 7.`
+      `findOrphans is not implemented until Phase 7 coverage tooling. ` + `Planned for Phase 7.`,
     );
   }
 
@@ -280,7 +279,7 @@ export class FalkorService {
     address: string,
     chip: string,
     rw: string,
-    aliases: string[] = []
+    aliases: string[] = [],
   ): Promise<void> {
     const g = this.graph();
     const props = { address, chip, rw, aliases, addr_n: hexAddr(address) ?? -1 };
@@ -288,7 +287,7 @@ export class FalkorService {
       `MERGE (r:Register {name: $name})
        ON CREATE SET r += $props, r.created_at = timestamp()
        ON MATCH SET r += $props, r.updated_at = timestamp()`,
-      { params: { name, props } } as Parameters<typeof g.query>[1]
+      { params: { name, props } },
     );
   }
 
@@ -299,7 +298,7 @@ export class FalkorService {
       `MERGE (k:KernalRoutine {name: $name})
        ON CREATE SET k += $props, k.created_at = timestamp()
        ON MATCH SET k += $props, k.updated_at = timestamp()`,
-      { params: { name, props } } as Parameters<typeof g.query>[1]
+      { params: { name, props } },
     );
   }
 
@@ -308,7 +307,7 @@ export class FalkorService {
     start: string,
     end: string,
     defaultUse: string,
-    bankSwitchable: boolean
+    bankSwitchable: boolean,
   ): Promise<void> {
     const g = this.graph();
     const props = {
@@ -323,7 +322,7 @@ export class FalkorService {
       `MERGE (m:MemoryRegion {name: $name})
        ON CREATE SET m += $props, m.created_at = timestamp()
        ON MATCH SET m += $props, m.updated_at = timestamp()`,
-      { params: { name, props } } as Parameters<typeof g.query>[1]
+      { params: { name, props } },
     );
   }
 
@@ -338,13 +337,13 @@ export class FalkorService {
       `MATCH (x:Register), (m:MemoryRegion)
        WHERE x.addr_n >= 0 AND m.start_n >= 0 AND x.addr_n >= m.start_n AND x.addr_n <= m.end_n
        MERGE (x)-[:IN_REGION]->(m)
-       RETURN count(*) AS n`
+       RETURN count(*) AS n`,
     );
     const k = await g.query(
       `MATCH (x:KernalRoutine), (m:MemoryRegion)
        WHERE x.addr_n >= 0 AND m.start_n >= 0 AND x.addr_n >= m.start_n AND x.addr_n <= m.end_n
        MERGE (x)-[:IN_REGION]->(m)
-       RETURN count(*) AS n`
+       RETURN count(*) AS n`,
     );
     const n = (res: typeof r) => Number((res.data?.[0] as { n?: number } | undefined)?.n ?? 0);
     return { registers: n(r), kernal: n(k) };
@@ -359,7 +358,7 @@ export class FalkorService {
        WHERE m.start_n >= 0 AND m.start_n <= $end AND m.end_n >= $start
        MERGE (r)-[:OCCUPIES]->(m)
        RETURN count(m) AS n`,
-      { params: { recipeName, start, end } } as Parameters<typeof g.query>[1]
+      { params: { recipeName, start, end } },
     );
     return Number((r.data?.[0] as { n?: number } | undefined)?.n ?? 0);
   }
@@ -372,7 +371,7 @@ export class FalkorService {
        MERGE (res:Resource {name: $resource})
        ON CREATE SET res.description = $description, res.created_at = timestamp()
        MERGE (t)-[:DEMANDS]->(res)`,
-      { params: { techniqueName, resource, description } } as Parameters<typeof g.query>[1]
+      { params: { techniqueName, resource, description } },
     );
   }
 
@@ -382,7 +381,7 @@ export class FalkorService {
       `MATCH (e:${entityType} {name: $entityName})
        MATCH (c:Chip {name: $chip})
        MERGE (e)-[:BELONGS_TO]->(c)`,
-      { params: { entityName, chip } } as Parameters<typeof g.query>[1]
+      { params: { entityName, chip } },
     );
   }
 
@@ -393,9 +392,9 @@ export class FalkorService {
        MATCH (b:KernalRoutine {name: $b})
        MERGE (a)-[:PAIRS_WITH]->(b)
        RETURN count(*) AS linked`,
-      { params: { a, b } } as Parameters<typeof g.query>[1]
+      { params: { a, b } },
     );
-    const linkedCount = ((result.data?.[0] as { linked: number } | undefined)?.linked ?? 0);
+    const linkedCount = (result.data?.[0] as { linked: number } | undefined)?.linked ?? 0;
     // Gated behind INGEST_VERBOSE so MCP-host stderr stays clean. Set
     // INGEST_VERBOSE=1 during a clean re-ingest to surface per-pair details
     // in kernal-routines-reference.md.
@@ -428,7 +427,7 @@ export class FalkorService {
        ON CREATE SET t += $props, t.created_at = timestamp()
        ON MATCH SET t += $props, t.updated_at = timestamp()
        ${t.version_verified ? "" : "SET t.version_verified = NULL"}`,
-      { params: { name: t.name, props } } as Parameters<typeof g.query>[1]
+      { params: { name: t.name, props } },
     );
   }
 
@@ -442,7 +441,7 @@ export class FalkorService {
       `MERGE (f:FileFormat {name: $name})
        ON CREATE SET f.description = $description, f.created_at = timestamp()
        ON MATCH SET f.updated_at = timestamp()`,
-      { params: { name, description } } as Parameters<typeof g.query>[1]
+      { params: { name, description } },
     );
   }
 
@@ -452,7 +451,7 @@ export class FalkorService {
       `MATCH (t:Tool {name: $toolName})
        MATCH (f:FileFormat {name: $formatName})
        MERGE (t)-[:PRODUCES]->(f)`,
-      { params: { toolName, formatName } } as Parameters<typeof g.query>[1]
+      { params: { toolName, formatName } },
     );
   }
 
@@ -462,7 +461,7 @@ export class FalkorService {
       `MATCH (t:Tool {name: $toolName})
        MATCH (f:FileFormat {name: $formatName})
        MERGE (t)-[:CONSUMES]->(f)`,
-      { params: { toolName, formatName } } as Parameters<typeof g.query>[1]
+      { params: { toolName, formatName } },
     );
   }
 
@@ -472,7 +471,7 @@ export class FalkorService {
       `MATCH (t:Tool {name: $toolName})
        MATCH (c:Chip {name: $chipName})
        MERGE (t)-[:TARGETS]->(c)`,
-      { params: { toolName, chipName } } as Parameters<typeof g.query>[1]
+      { params: { toolName, chipName } },
     );
   }
 
@@ -494,7 +493,7 @@ export class FalkorService {
       `MERGE (r:Recipe {name: $name})
        ON CREATE SET r += $props, r.created_at = timestamp()
        ON MATCH SET r += $props, r.updated_at = timestamp()`,
-      { params: { name: r.name, props } } as Parameters<typeof g.query>[1]
+      { params: { name: r.name, props } },
     );
   }
 
@@ -504,7 +503,7 @@ export class FalkorService {
       `MATCH (r:Recipe {name: $recipeName})
        MERGE (t:Technique {name: $techniqueName})
        MERGE (r)-[:IMPLEMENTS]->(t)`,
-      { params: { recipeName, techniqueName } } as Parameters<typeof g.query>[1]
+      { params: { recipeName, techniqueName } },
     );
   }
 
@@ -521,12 +520,12 @@ export class FalkorService {
        MATCH (a:Archetype {name: $archetypeName})
        MERGE (r)-[:SCAFFOLDS]->(a)
        RETURN 1`,
-      { params: { recipeName, archetypeName } } as Parameters<typeof g.query>[1]
+      { params: { recipeName, archetypeName } },
     );
     const landed = (result.data?.length ?? 0) > 0;
     if (!landed) {
       console.warn(
-        `[falkor] linkRecipeScaffolds: ${recipeName} -> ${archetypeName} (Archetype) — recipe or archetype not found, edge dropped`
+        `[falkor] linkRecipeScaffolds: ${recipeName} -> ${archetypeName} (Archetype) — recipe or archetype not found, edge dropped`,
       );
     }
     return landed;
@@ -538,7 +537,7 @@ export class FalkorService {
       `MATCH (r:Recipe {name: $recipeName})
        MATCH (f:FileFormat {name: $formatName})
        MERGE (r)-[:PRODUCES]->(f)`,
-      { params: { recipeName, formatName } } as Parameters<typeof g.query>[1]
+      { params: { recipeName, formatName } },
     );
   }
 
@@ -548,7 +547,7 @@ export class FalkorService {
       `MATCH (r:Recipe {name: $recipeName})
        MATCH (k:KernalRoutine {name: $kernalName})
        MERGE (r)-[:USES]->(k)`,
-      { params: { recipeName, kernalName } } as Parameters<typeof g.query>[1]
+      { params: { recipeName, kernalName } },
     );
   }
 
@@ -563,7 +562,7 @@ export class FalkorService {
           OR reg.address = $addr
           OR $registerName IN reg.aliases
        MERGE (r)-[:USES]->(reg)`,
-      { params: { recipeName, registerName, addr: `$${registerName}` } } as Parameters<typeof g.query>[1]
+      { params: { recipeName, registerName, addr: `$${registerName}` } },
     );
   }
 
@@ -575,7 +574,7 @@ export class FalkorService {
       `MATCH (r:Recipe {name: $recipeName})
        MERGE (t:Tool {name: $toolName})
        MERGE (r)-[:REQUIRES_TOOL]->(t)`,
-      { params: { recipeName, toolName } } as Parameters<typeof g.query>[1]
+      { params: { recipeName, toolName } },
     );
   }
 
@@ -601,7 +600,16 @@ export class FalkorService {
       category: t.category,
       complexity: t.complexity ?? "",
     };
-    const costKeys = ["cycles_per_line", "cycles_per_frame", "lines_active", "bytes_code", "bytes_data", "zp_bytes", "irq_slots", "sprites_per_line"];
+    const costKeys = [
+      "cycles_per_line",
+      "cycles_per_frame",
+      "lines_active",
+      "bytes_code",
+      "bytes_data",
+      "zp_bytes",
+      "irq_slots",
+      "sprites_per_line",
+    ];
     const cleared: string[] = [];
     for (const k of costKeys) {
       const v = t.cost?.[k];
@@ -617,7 +625,7 @@ export class FalkorService {
        ON CREATE SET t += $props, t.created_at = timestamp()
        ON MATCH SET t += $props, t.updated_at = timestamp()
        SET ${cleared.length > 0 ? cleared.map((c) => `${c} = NULL`).join(", ") : "t.name = t.name"}`,
-      { params: { name: t.name, props } } as Parameters<typeof g.query>[1]
+      { params: { name: t.name, props } },
     );
   }
 
@@ -633,7 +641,7 @@ export class FalkorService {
           OR r.address = $addr
           OR $registerName IN r.aliases
        MERGE (t)-[:USES]->(r)`,
-      { params: { techniqueName, registerName, addr: `$${registerName}` } } as Parameters<typeof g.query>[1]
+      { params: { techniqueName, registerName, addr: `$${registerName}` } },
     );
   }
 
@@ -643,7 +651,7 @@ export class FalkorService {
       `MATCH (t:Technique {name: $techniqueName})
        MATCH (k:KernalRoutine {name: $kernalName})
        MERGE (t)-[:USES]->(k)`,
-      { params: { techniqueName, kernalName } } as Parameters<typeof g.query>[1]
+      { params: { techniqueName, kernalName } },
     );
   }
 
@@ -653,7 +661,7 @@ export class FalkorService {
       `MATCH (t:Technique {name: $techniqueName})
        MATCH (r:Region {name: $regionName})
        MERGE (t)-[:REQUIRES_REGION]->(r)`,
-      { params: { techniqueName, regionName } } as Parameters<typeof g.query>[1]
+      { params: { techniqueName, regionName } },
     );
   }
 
@@ -663,7 +671,7 @@ export class FalkorService {
       `MATCH (t:Technique {name: $techniqueName})
        MATCH (c:Chip {name: $chipName})
        MERGE (t)-[:BELONGS_TO]->(c)`,
-      { params: { techniqueName, chipName } } as Parameters<typeof g.query>[1]
+      { params: { techniqueName, chipName } },
     );
   }
 
@@ -689,22 +697,22 @@ export class FalkorService {
       `MATCH (t:Technique {name: $techniqueName})
        MATCH (p:Technique {name: $requiresName})
        RETURN 1`,
-      { params: { techniqueName, requiresName } } as Parameters<typeof g.roQuery>[1]
+      { params: { techniqueName, requiresName } },
     );
     if ((ends.data?.length ?? 0) === 0) {
       console.warn(
-        `[falkor] linkTechniqueRequires: ${techniqueName} -> ${requiresName} — one or both techniques not found, edge dropped`
+        `[falkor] linkTechniqueRequires: ${techniqueName} -> ${requiresName} — one or both techniques not found, edge dropped`,
       );
       return false;
     }
     const back = await g.roQuery(
       `MATCH (p:Technique {name: $requiresName})-[:REQUIRES*1..12]->(t:Technique {name: $techniqueName})
        RETURN 1 LIMIT 1`,
-      { params: { techniqueName, requiresName } } as Parameters<typeof g.roQuery>[1]
+      { params: { techniqueName, requiresName } },
     );
     if ((back.data?.length ?? 0) > 0) {
       console.warn(
-        `[falkor] linkTechniqueRequires: ${techniqueName} -> ${requiresName} would close a cycle (${requiresName} already requires ${techniqueName}) — refused`
+        `[falkor] linkTechniqueRequires: ${techniqueName} -> ${requiresName} would close a cycle (${requiresName} already requires ${techniqueName}) — refused`,
       );
       return false;
     }
@@ -712,7 +720,7 @@ export class FalkorService {
       `MATCH (t:Technique {name: $techniqueName})
        MATCH (p:Technique {name: $requiresName})
        MERGE (t)-[:REQUIRES]->(p)`,
-      { params: { techniqueName, requiresName } } as Parameters<typeof g.query>[1]
+      { params: { techniqueName, requiresName } },
     );
     return true;
   }
@@ -728,14 +736,22 @@ export class FalkorService {
     await g.query(
       `MERGE (p:Pitfall {name: $name})
        SET p.title = $title, p.severity = $severity, p.region = $region, p.category = $category`,
-      { params: { name: p.name, title: p.title, severity: p.severity, region: p.region, category: p.category } } as Parameters<typeof g.query>[1]
+      {
+        params: {
+          name: p.name,
+          title: p.title,
+          severity: p.severity,
+          region: p.region,
+          category: p.category,
+        },
+      },
     );
   }
 
   async linkTriggeredBy(
     pitfallName: string,
     targetName: string,
-    targetKind: "Register" | "KernalRoutine" | "Technique"
+    targetKind: "Register" | "KernalRoutine" | "Technique",
   ): Promise<boolean> {
     const g = this.graph();
     // For Register targets, match by canonical name OR hex address OR alias so
@@ -749,7 +765,7 @@ export class FalkorService {
        ${matchClause}
        MERGE (p)-[:TRIGGERED_BY]->(t)
        RETURN 1`,
-      { params: { pitfallName, targetName, addr: `$${targetName}` } } as Parameters<typeof g.query>[1]
+      { params: { pitfallName, targetName, addr: `$${targetName}` } },
     );
     // A reference that names no node is a defect in the doc, not a debug
     // detail: say so every time. (It used to be behind INGEST_VERBOSE, and
@@ -757,7 +773,7 @@ export class FalkorService {
     const landed = (result.data?.length ?? 0) > 0;
     if (!landed) {
       console.warn(
-        `[falkor] linkTriggeredBy: ${pitfallName} -> ${targetName} (${targetKind}) — target not found, edge dropped`
+        `[falkor] linkTriggeredBy: ${pitfallName} -> ${targetName} (${targetKind}) — target not found, edge dropped`,
       );
     }
     return landed;
@@ -776,12 +792,12 @@ export class FalkorService {
        MATCH (t:Technique {name: $techniqueName})
        MERGE (p)-[:MITIGATED_BY]->(t)
        RETURN 1`,
-      { params: { pitfallName, techniqueName } } as Parameters<typeof g.query>[1]
+      { params: { pitfallName, techniqueName } },
     );
     const landed = (result.data?.length ?? 0) > 0;
     if (!landed) {
       console.warn(
-        `[falkor] linkMitigatedBy: ${pitfallName} -> ${techniqueName} (Technique) — pitfall or technique not found, edge dropped`
+        `[falkor] linkMitigatedBy: ${pitfallName} -> ${techniqueName} (Technique) — pitfall or technique not found, edge dropped`,
       );
     }
     return landed;
@@ -801,7 +817,7 @@ export class FalkorService {
     await g.query(
       `MERGE (a:Archetype {name: $name})
        SET a.title = $title, a.kind = $kind, a.source_doc = $source_doc`,
-      { params: { name: a.name, title: a.title, kind: a.kind, source_doc: a.source_doc } } as Parameters<typeof g.query>[1]
+      { params: { name: a.name, title: a.title, kind: a.kind, source_doc: a.source_doc } },
     );
   }
 
@@ -817,12 +833,12 @@ export class FalkorService {
        MATCH (t:Technique {name: $techniqueName})
        MERGE (a)-[:FEATURES]->(t)
        RETURN 1`,
-      { params: { archetypeName, techniqueName } } as Parameters<typeof g.query>[1]
+      { params: { archetypeName, techniqueName } },
     );
     const landed = (result.data?.length ?? 0) > 0;
     if (!landed) {
       console.warn(
-        `[falkor] linkArchetypeFeatures: ${archetypeName} -> ${techniqueName} (Technique) — archetype or technique not found, edge dropped`
+        `[falkor] linkArchetypeFeatures: ${archetypeName} -> ${techniqueName} (Technique) — archetype or technique not found, edge dropped`,
       );
     }
     return landed;
@@ -839,12 +855,12 @@ export class FalkorService {
        MATCH (p:Pitfall {name: $pitfallName})
        MERGE (a)-[:RISKS]->(p)
        RETURN 1`,
-      { params: { archetypeName, pitfallName } } as Parameters<typeof g.query>[1]
+      { params: { archetypeName, pitfallName } },
     );
     const landed = (result.data?.length ?? 0) > 0;
     if (!landed) {
       console.warn(
-        `[falkor] linkArchetypeRisks: ${archetypeName} -> ${pitfallName} (Pitfall) — archetype or pitfall not found, edge dropped`
+        `[falkor] linkArchetypeRisks: ${archetypeName} -> ${pitfallName} (Pitfall) — archetype or pitfall not found, edge dropped`,
       );
     }
     return landed;
@@ -867,14 +883,14 @@ export class FalkorService {
           likelyCausesJson: JSON.stringify(c.likely_causes),
           diagnosis_steps: c.diagnosis_steps,
         },
-      } as Parameters<typeof g.query>[1]
+      },
     );
   }
 
   async linkCausedBy(
     symptom: string,
     targetName: string,
-    targetKind: "Register" | "KernalRoutine" | "Technique"
+    targetKind: "Register" | "KernalRoutine" | "Technique",
   ): Promise<boolean> {
     const g = this.graph();
     // For Register targets, match by canonical name OR hex address OR alias so
@@ -888,12 +904,12 @@ export class FalkorService {
        ${matchClause}
        MERGE (c)-[:CAUSED_BY]->(t)
        RETURN 1`,
-      { params: { symptom, targetName, addr: `$${targetName}` } } as Parameters<typeof g.query>[1]
+      { params: { symptom, targetName, addr: `$${targetName}` } },
     );
     const landed = (result.data?.length ?? 0) > 0;
     if (!landed) {
       console.warn(
-        `[falkor] linkCausedBy: ${symptom} -> ${targetName} (${targetKind}) — target not found, edge dropped`
+        `[falkor] linkCausedBy: ${symptom} -> ${targetName} (${targetKind}) — target not found, edge dropped`,
       );
     }
     return landed;

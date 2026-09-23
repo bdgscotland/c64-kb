@@ -17,11 +17,13 @@ const UNIT = [
 
 // Tests call clean()/deleteBySource() on whatever they connect to. Point
 // them at throwaway names so `npm test` can never empty the ingested graph
-// or collection.
+// or collection. Two runs at once share these names and clean each other's
+// fixtures; give a parallel run its own with C64_TEST_STORE=<suffix>.
+const suffix = process.env.C64_TEST_STORE ? `_${process.env.C64_TEST_STORE}` : "";
 const STORES = {
-  FALKOR_GRAPH: "c64_test",
-  QDRANT_COLLECTION: "c64_docs_test",
-  ANALYTICS_DB: "./data/analytics-test.db",
+  FALKOR_GRAPH: `c64_test${suffix}`,
+  QDRANT_COLLECTION: `c64_docs_test${suffix}`,
+  ANALYTICS_DB: `./data/analytics-test${suffix}.db`,
 };
 
 export default defineConfig({

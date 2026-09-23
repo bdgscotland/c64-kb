@@ -1,0 +1,10 @@
+# Markdown carries metadata lines, tables and listings the extractor and the
+# listing gate read; a reflow would change what they see.
+*.md
+docs/
+templates/
+dist/
+data/
+storage/
+.tools/
+package-lock.json

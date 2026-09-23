@@ -9,7 +9,11 @@ describe("recipeLookup", () => {
     await f.connect();
     await f.clean();
     await f.ensureSchema();
-    await f.addTool({ name: "oscar64", kind: "c-compiler", home_url: "https://github.com/drmortalwombat/oscar64" });
+    await f.addTool({
+      name: "oscar64",
+      kind: "c-compiler",
+      home_url: "https://github.com/drmortalwombat/oscar64",
+    });
     await f.addRecipe({
       name: "oscar64-hello-world",
       toolchain: "oscar64",

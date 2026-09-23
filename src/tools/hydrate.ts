@@ -35,7 +35,7 @@ function loadBM25(): BM25Encoder | null {
 }
 
 export async function ingestDoc(docPath: string, content: string): Promise<string> {
-  if (!await ollamaAvailable()) {
+  if (!(await ollamaAvailable())) {
     return "Ollama not available — cannot embed. Run: ollama pull mxbai-embed-large";
   }
 
@@ -47,9 +47,9 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
   // path.resolve is already clean, then confirm it still lives inside DOCS_DIR.
   const DOCS_DIR = path.resolve(config.docs.dir);
   const sanitized = docPath
-    .replace(/\0/g, "")                         // null bytes
+    .replace(/\0/g, "") // null bytes
     .split(path.sep)
-    .filter((seg) => seg !== "..")              // remove every parent-dir jump
+    .filter((seg) => seg !== "..") // remove every parent-dir jump
     .join(path.sep);
   const resolvedDocPath = path.resolve(DOCS_DIR, sanitized);
   if (!resolvedDocPath.startsWith(DOCS_DIR + path.sep) && resolvedDocPath !== DOCS_DIR) {
@@ -73,10 +73,7 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
     .map((c, i) => {
       const vec = vectors[i];
       if (!vec) return null;
-      const id = createHash("sha256")
-        .update(`${source}:${c.section}:${i}`)
-        .digest("hex")
-        .slice(0, 32);
+      const id = createHash("sha256").update(`${source}:${c.section}:${i}`).digest("hex").slice(0, 32);
       const text = `${c.section}\n\n${c.text}`;
       return {
         id,
@@ -126,7 +123,7 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
           entity.start,
           entity.end,
           entity.default_use ?? "",
-          entity.bank_switchable ?? false
+          entity.bank_switchable ?? false,
         );
         graphCount++;
         break;
@@ -231,7 +228,7 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
         // skipped by single-file ingest for a release, and recipe_occupies
         // until this guard was added and named it.
         const _exhaustive: never = entity;
-        void _exhaustive;
+        _exhaustive;
       }
     }
   }

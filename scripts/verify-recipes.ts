@@ -33,7 +33,16 @@
  * GSETTINGS_SCHEMA_DIR on macOS/Homebrew; it is set here if unset.
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 
@@ -46,7 +55,7 @@ const flag = (name: string) => argv.includes(name);
 const opt = (name: string): string | null => {
   const i = argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
   if (i === -1) return null;
-  return argv[i].includes("=") ? argv[i].split("=")[1] : argv[i + 1] ?? null;
+  return argv[i].includes("=") ? argv[i].split("=")[1] : (argv[i + 1] ?? null);
 };
 const update = flag("--update");
 const allowMissing = flag("--allow-missing");
@@ -54,11 +63,22 @@ const onlyFile = opt("--file");
 const keepDir = opt("--keep");
 const jobsOpt = Number(opt("--jobs") ?? 0);
 
-type Run = { cycles: number; models: string[]; flags: string[]; shots: Record<string, string>; disk?: { name: string } };
+type Run = {
+  cycles: number;
+  models: string[];
+  flags: string[];
+  shots: Record<string, string>;
+  disk?: { name: string };
+};
 type Manifest = Record<string, Partial<Run>>;
 
 const manifest: Manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, "utf8")) : {};
-const MODEL_FLAG: Record<string, string[]> = { pal: [], ntsc: ["-model", "ntsc"], oldntsc: ["-model", "oldntsc"], drean: ["-model", "drean"] };
+const MODEL_FLAG: Record<string, string[]> = {
+  pal: [],
+  ntsc: ["-model", "ntsc"],
+  oldntsc: ["-model", "oldntsc"],
+  drean: ["-model", "drean"],
+};
 
 function which(cmd: string): string | null {
   const r = spawnSync("sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" });
@@ -78,8 +98,14 @@ const tools = {
 if (!process.env.GSETTINGS_SCHEMA_DIR && existsSync("/opt/homebrew/share/glib-2.0/schemas")) {
   process.env.GSETTINGS_SCHEMA_DIR = "/opt/homebrew/share/glib-2.0/schemas";
 }
-if (!tools.x64sc) { console.error("x64sc not found on PATH"); process.exit(2); }
-if (!tools.python3) { console.error("python3 (with PIL) is needed to compare screenshots"); process.exit(2); }
+if (!tools.x64sc) {
+  console.error("x64sc not found on PATH");
+  process.exit(2);
+}
+if (!tools.python3) {
+  console.error("python3 (with PIL) is needed to compare screenshots");
+  process.exit(2);
+}
 
 function fences(md: string): { lang: string; code: string }[] {
   const out: { lang: string; code: string }[] = [];
@@ -98,7 +124,9 @@ function walk(dir: string): string[] {
   return out;
 }
 
-const work = keepDir ? (mkdirSync(keepDir, { recursive: true }), keepDir) : mkdtempSync(join(tmpdir(), "c64kb-verify-"));
+const work = keepDir
+  ? (mkdirSync(keepDir, { recursive: true }), keepDir)
+  : mkdtempSync(join(tmpdir(), "c64kb-verify-"));
 
 type Job = { rel: string; toolchain: string; stem: string; md: string; run: Run };
 const jobs: Job[] = [];
@@ -107,17 +135,29 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
   if (!existsSync(dir)) continue;
   for (const md of walk(dir)) {
     const rel = relative(ROOT, md);
-    if (onlyFile && relative(ROOT, onlyFile.startsWith("/") ? onlyFile : join(ROOT, onlyFile)) !== rel) continue;
+    if (onlyFile && relative(ROOT, onlyFile.startsWith("/") ? onlyFile : join(ROOT, onlyFile)) !== rel)
+      continue;
     const text = readFileSync(md, "utf8");
     if (!/^---\n(?:[\s\S]*?\n)?recipe:/m.test(text)) continue;
     const stem = basename(md, ".md");
     const m = manifest[`${toolchain}/${stem}`] ?? {};
     const models = m.models ?? ["pal"];
-    const shots = m.shots ?? Object.fromEntries(models.map((mo) => [mo, `screenshots/${stem}${mo === "pal" ? "" : `-${mo}`}.png`]));
-    jobs.push({ rel, toolchain, stem, md, run: { cycles: m.cycles ?? 8000000, models, flags: m.flags ?? [], shots, disk: m.disk } });
+    const shots =
+      m.shots ??
+      Object.fromEntries(models.map((mo) => [mo, `screenshots/${stem}${mo === "pal" ? "" : `-${mo}`}.png`]));
+    jobs.push({
+      rel,
+      toolchain,
+      stem,
+      md,
+      run: { cycles: m.cycles ?? 8000000, models, flags: m.flags ?? [], shots, disk: m.disk },
+    });
   }
 }
-if (!jobs.length) { console.log(onlyFile ? `no recipe page at ${onlyFile}` : "FAIL no recipe pages found"); process.exit(onlyFile ? 0 : 1); }
+if (!jobs.length) {
+  console.log(onlyFile ? `no recipe page at ${onlyFile}` : "FAIL no recipe pages found");
+  process.exit(onlyFile ? 0 : 1);
+}
 
 function build(job: Job): { prg: string | null; log: string } {
   const all = fences(readFileSync(job.md, "utf8"));
@@ -125,11 +165,18 @@ function build(job: Job): { prg: string | null; log: string } {
   if (job.toolchain === "kickassembler") {
     const f = all.find((x) => x.lang === "asm");
     if (!f) return { prg: null, log: "no ```asm listing" };
-    if (!tools.kickass || !tools.java) return { prg: null, log: "KickAssembler not found (KICKASS_JAR + java)" };
+    if (!tools.kickass || !tools.java)
+      return { prg: null, log: "KickAssembler not found (KICKASS_JAR + java)" };
     const src = join(work, `${job.stem}.asm`);
     writeFileSync(src, f.code);
     const r = spawnSync(tools.java, ["-jar", tools.kickass, src, "-o", prg], { encoding: "utf8" });
-    return { prg: r.status === 0 ? prg : null, log: (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n") };
+    return {
+      prg: r.status === 0 ? prg : null,
+      log: (r.stdout + r.stderr)
+        .split("\n")
+        .filter((l) => /error/i.test(l))
+        .join("\n"),
+    };
   }
   const f = all.find((x) => x.lang === "c" && /\bmain\s*\(/.test(x.code));
   if (!f) return { prg: null, log: "no ```c listing with main()" };
@@ -138,7 +185,14 @@ function build(job: Job): { prg: string | null; log: string } {
   if (job.toolchain === "oscar64") {
     if (!tools.oscar64) return { prg: null, log: "oscar64 not found" };
     const r = spawnSync(tools.oscar64, ["-tm=c64", "-O2", `-o=${prg}`, src], { encoding: "utf8", cwd: work });
-    return { prg: r.status === 0 ? prg : null, log: (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n") || (r.status === 0 ? "" : `exit ${r.status}`) };
+    return {
+      prg: r.status === 0 ? prg : null,
+      log:
+        (r.stdout + r.stderr)
+          .split("\n")
+          .filter((l) => /error/i.test(l))
+          .join("\n") || (r.status === 0 ? "" : `exit ${r.status}`),
+    };
   }
   if (!tools.cl65) return { prg: null, log: "cl65 not found" };
   // A cc65 recipe may carry its linker configuration in a ```cfg fence; it is
@@ -150,27 +204,60 @@ function build(job: Job): { prg: string | null; log: string } {
     writeFileSync(cfg, cfgFence.code);
     cfgArgs.push("-C", cfg);
   }
-  const r = spawnSync(tools.cl65, ["-t", "c64", "-O", ...cfgArgs, "-o", prg, src], { encoding: "utf8", cwd: work });
-  return { prg: r.status === 0 ? prg : null, log: (r.stdout + r.stderr).split("\n").filter((l) => /error/i.test(l)).join("\n") };
+  const r = spawnSync(tools.cl65, ["-t", "c64", "-O", ...cfgArgs, "-o", prg, src], {
+    encoding: "utf8",
+    cwd: work,
+  });
+  return {
+    prg: r.status === 0 ? prg : null,
+    log: (r.stdout + r.stderr)
+      .split("\n")
+      .filter((l) => /error/i.test(l))
+      .join("\n"),
+  };
 }
 
-function runVice(prg: string, png: string, cycles: number, model: string, extra: string[], disk?: { name: string }): string {
+function runVice(
+  prg: string,
+  png: string,
+  cycles: number,
+  model: string,
+  extra: string[],
+  disk?: { name: string },
+): string {
   const diskArgs: string[] = [];
   if (disk) {
     if (!tools.c1541) return "runs.json asks for a disk but c1541 is not on PATH";
     const d64 = png.replace(/\.png$/, ".d64");
     const f = spawnSync(tools.c1541, ["-format", disk.name, "d64", d64], { encoding: "utf8" });
-    if (!existsSync(d64)) return `c1541 could not format ${d64} (exit ${f.status}): ${(f.stderr || f.stdout).split("\n").slice(-2).join(" | ")}`;
+    if (!existsSync(d64))
+      return `c1541 could not format ${d64} (exit ${f.status}): ${(f.stderr || f.stdout).split("\n").slice(-2).join(" | ")}`;
     // VICE 3.10 adds a random-phase RPM wobble to the emulated drive by
     // default, which moves a disk operation by a handful of cycles from run
     // to run; a recipe that prints its elapsed time would then differ by a
     // digit. Pin the drive to a constant speed so the run is repeatable.
     diskArgs.push("-8", d64, "-drive8wobbleamplitude", "0", "-drive8wobblefrequency", "0");
   }
-  const args = ["-default", "-warp", "+sound", "+autostart-delay-random", "-autostartprgmode", "1",
-    "-limitcycles", String(cycles), ...(MODEL_FLAG[model] ?? []), ...extra, ...diskArgs, "-exitscreenshot", png, "-autostart", prg];
+  const args = [
+    "-default",
+    "-warp",
+    "+sound",
+    "+autostart-delay-random",
+    "-autostartprgmode",
+    "1",
+    "-limitcycles",
+    String(cycles),
+    ...(MODEL_FLAG[model] ?? []),
+    ...extra,
+    ...diskArgs,
+    "-exitscreenshot",
+    png,
+    "-autostart",
+    prg,
+  ];
   const r = spawnSync(tools.x64sc!, args, { encoding: "utf8", timeout: 300_000 });
-  if (!existsSync(png)) return `x64sc produced no screenshot (exit ${r.status}${r.signal ? ` ${r.signal}` : ""}): ${(r.stderr || r.stdout).split("\n").slice(-3).join(" | ")}`;
+  if (!existsSync(png))
+    return `x64sc produced no screenshot (exit ${r.status}${r.signal ? ` ${r.signal}` : ""}): ${(r.stderr || r.stdout).split("\n").slice(-3).join(" | ")}`;
   return "";
 }
 
@@ -198,7 +285,10 @@ function compare(fresh: string, baseline: string): { ok: boolean; detail: string
   return { ok: r.status === 0, detail: (r.stdout || r.stderr).trim() };
 }
 
-let failures = 0, passes = 0, missing = 0, updated = 0;
+let failures = 0,
+  passes = 0,
+  missing = 0,
+  updated = 0;
 const results: string[] = [];
 function say(ok: boolean, label: string, detail = "") {
   results.push(`${ok ? "ok  " : "FAIL"} ${label}${detail ? ` — ${detail}` : ""}`);
@@ -207,23 +297,63 @@ function say(ok: boolean, label: string, detail = "") {
 
 const runOne = (job: Job) => {
   const { prg, log } = build(job);
-  if (!prg) { failures++; say(false, `${job.rel} (build)`, log); return; }
+  if (!prg) {
+    failures++;
+    say(false, `${job.rel} (build)`, log);
+    return;
+  }
   for (const model of job.run.models) {
     const shotRel = job.run.shots[model];
-    if (!shotRel) { failures++; say(false, `${job.rel} [${model}]`, "no shot path in runs.json for this model"); continue; }
+    if (!shotRel) {
+      failures++;
+      say(false, `${job.rel} [${model}]`, "no shot path in runs.json for this model");
+      continue;
+    }
     const baseline = join(dirname(job.md), shotRel);
     const fresh = join(work, `${job.toolchain}-${job.stem}-${model}.png`);
     const err = runVice(prg, fresh, job.run.cycles, model, job.run.flags, job.run.disk);
-    if (err) { failures++; say(false, `${job.rel} [${model}]`, err); continue; }
+    if (err) {
+      failures++;
+      say(false, `${job.rel} [${model}]`, err);
+      continue;
+    }
     if (!existsSync(baseline)) {
-      if (update) { mkdirSync(dirname(baseline), { recursive: true }); copyFileSync(fresh, baseline); updated++; say(true, `${job.rel} [${model}]`, `baseline written: ${relative(ROOT, baseline)} (look at it)`); }
-      else { missing++; if (!allowMissing) failures++; say(allowMissing, `${job.rel} [${model}]`, `no baseline at ${relative(ROOT, baseline)}; run with --update after looking at ${fresh}`); }
+      if (update) {
+        mkdirSync(dirname(baseline), { recursive: true });
+        copyFileSync(fresh, baseline);
+        updated++;
+        say(true, `${job.rel} [${model}]`, `baseline written: ${relative(ROOT, baseline)} (look at it)`);
+      } else {
+        missing++;
+        if (!allowMissing) failures++;
+        say(
+          allowMissing,
+          `${job.rel} [${model}]`,
+          `no baseline at ${relative(ROOT, baseline)}; run with --update after looking at ${fresh}`,
+        );
+      }
       continue;
     }
     const c = compare(fresh, baseline);
-    if (c.ok) { passes++; say(true, `${job.rel} [${model}]`, `identical to ${relative(ROOT, baseline)} at ${job.run.cycles} cycles`); }
-    else if (update) { copyFileSync(fresh, baseline); updated++; say(true, `${job.rel} [${model}]`, `baseline REPLACED (${c.detail}); the page must say why`); }
-    else { failures++; say(false, `${job.rel} [${model}]`, `${c.detail} vs ${relative(ROOT, baseline)} at ${job.run.cycles} cycles${job.run.models.length > 1 ? ` (${model})` : ""}; if the listing changed on purpose, look at ${fresh} and run --update`); }
+    if (c.ok) {
+      passes++;
+      say(
+        true,
+        `${job.rel} [${model}]`,
+        `identical to ${relative(ROOT, baseline)} at ${job.run.cycles} cycles`,
+      );
+    } else if (update) {
+      copyFileSync(fresh, baseline);
+      updated++;
+      say(true, `${job.rel} [${model}]`, `baseline REPLACED (${c.detail}); the page must say why`);
+    } else {
+      failures++;
+      say(
+        false,
+        `${job.rel} [${model}]`,
+        `${c.detail} vs ${relative(ROOT, baseline)} at ${job.run.cycles} cycles${job.run.models.length > 1 ? ` (${model})` : ""}; if the listing changed on purpose, look at ${fresh} and run --update`,
+      );
+    }
   }
 };
 
@@ -235,9 +365,27 @@ if (jobsOpt > 1 && !onlyFile) {
   const runChild = async () => {
     while (queue.length) {
       const j = queue.shift()!;
-      const r = spawnSync(process.execPath, [process.argv[1], "--file", j.rel, ...(update ? ["--update"] : []), ...(allowMissing ? ["--allow-missing"] : []), ...(keepDir ? ["--keep", keepDir] : [])], { encoding: "utf8", env: process.env });
-      process.stdout.write(r.stdout.split("\n").filter((l) => /^(ok  |FAIL)/.test(l)).map((l) => l + "\n").join(""));
-      if (r.status !== 0) failures++; else passes++;
+      const r = spawnSync(
+        process.execPath,
+        [
+          process.argv[1],
+          "--file",
+          j.rel,
+          ...(update ? ["--update"] : []),
+          ...(allowMissing ? ["--allow-missing"] : []),
+          ...(keepDir ? ["--keep", keepDir] : []),
+        ],
+        { encoding: "utf8", env: process.env },
+      );
+      process.stdout.write(
+        r.stdout
+          .split("\n")
+          .filter((l) => /^(ok {2}|FAIL)/.test(l))
+          .map((l) => l + "\n")
+          .join(""),
+      );
+      if (r.status !== 0) failures++;
+      else passes++;
     }
   };
   for (let i = 0; i < jobsOpt; i++) workers.push(runChild());
@@ -246,5 +394,7 @@ if (jobsOpt > 1 && !onlyFile) {
   for (const job of jobs) runOne(job);
 }
 
-console.log(`\n${passes} matched, ${failures} failed, ${missing} without baseline, ${updated} baselines written; fresh files in ${work}`);
+console.log(
+  `\n${passes} matched, ${failures} failed, ${missing} without baseline, ${updated} baselines written; fresh files in ${work}`,
+);
 process.exit(failures ? 1 : 0);

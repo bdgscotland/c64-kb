@@ -38,8 +38,7 @@ export function registerMemorizationTool(server: McpServer): void {
   server.registerTool(
     "c64_memorization_check",
     {
-      description:
-        `Check whether a candidate's SID note stream resembles any reference tune via SSIMuse + Originality Report detectors.
+      description: `Check whether a candidate's SID note stream resembles any reference tune via SSIMuse + Originality Report detectors.
 
 Purpose: Guards the SID generation pipeline against memorized copies of HVSC canon tunes. Returns a structured verdict with nearest-neighbor distance, similarity scores, and a binary copy_detected flag calibrated against the YAML-configured thresholds.
 
@@ -73,13 +72,14 @@ Limitations: copies[] is always [] in Phase A — identifying WHICH reference ma
       });
 
       const result = await new Promise<string>((resolve, reject) => {
-        const proc = spawn(
-          PYTHON,
-          ["-m", "src.memorization.service", "--stdio"],
-          { cwd: ANALYZER_DIR, stdio: ["pipe", "pipe", "inherit"] },
-        );
+        const proc = spawn(PYTHON, ["-m", "src.memorization.service", "--stdio"], {
+          cwd: ANALYZER_DIR,
+          stdio: ["pipe", "pipe", "inherit"],
+        });
         let stdout = "";
-        proc.stdout.on("data", (b: Buffer) => { stdout += b.toString(); });
+        proc.stdout.on("data", (b: Buffer) => {
+          stdout += b.toString();
+        });
         proc.on("error", reject);
         proc.on("close", (code: number | null) => {
           if (code !== 0) {

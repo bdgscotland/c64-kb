@@ -72,7 +72,8 @@ const SID_READABLE = new Set(["potx", "poty", "random", "env3"]);
 
 // ------------------------------------------------------------------ helpers
 
-const MNEMONIC_LINE = /^\s*(?:[\w.@!+-]+:\s*)?(lda|ldx|ldy|sta|stx|sty|jsr|jmp|rts|rti|sei|cli|inc|dec|inx|iny|dex|dey|cmp|cpx|cpy|bne|beq|bcc|bcs|bpl|bmi|bvc|bvs|adc|sbc|and|ora|eor|asl|lsr|rol|ror|bit|pha|pla|php|plp|tax|tay|txa|tya|tsx|txs|nop|brk|sed|cld|sec|clc|clv)\b(?=\s*$|\s+[^=\s])/i;
+const MNEMONIC_LINE =
+  /^\s*(?:[\w.@!+-]+:\s*)?(lda|ldx|ldy|sta|stx|sty|jsr|jmp|rts|rti|sei|cli|inc|dec|inx|iny|dex|dey|cmp|cpx|cpy|bne|beq|bcc|bcs|bpl|bmi|bvc|bvs|adc|sbc|and|ora|eor|asl|lsr|rol|ror|bit|pha|pla|php|plp|tax|tay|txa|tya|tsx|txs|nop|brk|sed|cld|sec|clc|clv)\b(?=\s*$|\s+[^=\s])/i;
 
 /**
  * Detect the language from the text when the caller does not say.
@@ -84,14 +85,25 @@ export function detectLanguage(source: string): LintLanguage {
   if (/^\s*#\s*(include|define|pragma|assign|repeat|embed|ifdef|ifndef)\b/m.test(source)) return "c";
   const asmText = stripAsm(source);
   if (/^\s*\*\s*=/m.test(asmText)) return "asm";
-  if (/^\s*(\.pc\b|\.(for|while|byte|word|fill|var|const|text|encoding|import|macro|label)\b|!byte\b|!word\b|!fill\b|!zone\b|\.org\b|\.byt\b)/m.test(asmText)) return "asm";
+  if (
+    /^\s*(\.pc\b|\.(for|while|byte|word|fill|var|const|text|encoding|import|macro|label)\b|!byte\b|!word\b|!fill\b|!zone\b|\.org\b|\.byt\b)/m.test(
+      asmText,
+    )
+  )
+    return "asm";
   if (/\bBasicUpstart2?\s*\(/.test(asmText)) return "asm";
   const cText = stripC(source);
   if (/__asm\s*\{/.test(cText)) return "c";
   const mnemonicLines = asmText.split("\n").filter((l) => MNEMONIC_LINE.test(l)).length;
   if (mnemonicLines >= 3) return "asm";
   const terminated = /;\s*(\}|$)/m.test(cText);
-  if (terminated && /(^|[^.\w])(void|int|char|unsigned|struct|while|for|if|return|switch|case|byte|word)\b[^;\n]*[;{(:]/.test(cText)) return "c";
+  if (
+    terminated &&
+    /(^|[^.\w])(void|int|char|unsigned|struct|while|for|if|return|switch|case|byte|word)\b[^;\n]*[;{(:]/.test(
+      cText,
+    )
+  )
+    return "c";
   // Bare statements: a call or an assignment ending in `;`.
   if (terminated && /^\s*[\w.>\[\]-]+\s*(\([^;]*\)|=[^=][^;]*)\s*;/m.test(cText)) return "c";
   return "asm";
@@ -189,7 +201,7 @@ function lintC(raw: string, findings: LintFinding[]): void {
     C_SID_PATH.lastIndex = 0;
     while ((m = C_SID_PATH.exec(line)) !== null) {
       const path = m[1];
-      const field = (path.match(/\.(\w+)\s*$/) ?? [])[1] ?? "";
+      const field = (/\.(\w+)\s*$/.exec(path) ?? [])[1] ?? "";
       if (SID_READABLE.has(field)) continue;
       const after = line.slice(m.index + m[0].length);
       const before = line.slice(0, m.index);
@@ -203,8 +215,7 @@ function lintC(raw: string, findings: LintFinding[]): void {
           pitfall: "sid_write_only_registers",
           line: i + 1,
           excerpt: excerptOf(rawLines, i),
-          message:
-            `Read-modify-write of sid${path}: all SID registers $D400-$D418 are write-only, and a read returns the last byte the chip held, not the register's value. Keep a shadow copy in RAM, change the shadow, and write the shadow to the register.`,
+          message: `Read-modify-write of sid${path}: all SID registers $D400-$D418 are write-only, and a read returns the last byte the chip held, not the register's value. Keep a shadow copy in RAM, change the shadow, and write the shadow to the register.`,
           page: PAGES.sid,
           certainty: "definite",
         });
@@ -214,8 +225,7 @@ function lintC(raw: string, findings: LintFinding[]): void {
           pitfall: "sid_write_only_registers",
           line: i + 1,
           excerpt: excerptOf(rawLines, i),
-          message:
-            `Read of sid${path}: all SID registers $D400-$D418 are write-only; reads return the last byte the chip held. Only $D419-$D41C (potx, poty, random, env3) read back anything meaningful. Read your shadow copy instead.`,
+          message: `Read of sid${path}: all SID registers $D400-$D418 are write-only; reads return the last byte the chip held. Only $D419-$D41C (potx, poty, random, env3) read back anything meaningful. Read your shadow copy instead.`,
           page: PAGES.sid,
           certainty: "definite",
         });
@@ -241,8 +251,11 @@ function lintC(raw: string, findings: LintFinding[]): void {
   const ddrZero: number[] = [];
   let ddrRestore = -1;
   lines.forEach((line, i) => {
-    const m = /\bcia1\s*\.\s*ddra\s*=(?!=)\s*([^;]+);/.exec(line)
-      ?? /\*\s*\(\s*(?:volatile\s+)?(?:unsigned\s+)?(?:char|byte)\s*\*\s*\)\s*0x[dD][cC]02\s*=(?!=)\s*([^;]+);/.exec(line);
+    const m =
+      /\bcia1\s*\.\s*ddra\s*=(?!=)\s*([^;]+);/.exec(line) ??
+      /\*\s*\(\s*(?:volatile\s+)?(?:unsigned\s+)?(?:char|byte)\s*\*\s*\)\s*0x[dD][cC]02\s*=(?!=)\s*([^;]+);/.exec(
+        line,
+      );
     if (!m) return;
     const v = m[1].trim();
     if (isZero(v)) ddrZero.push(i);
@@ -286,7 +299,10 @@ function lintC(raw: string, findings: LintFinding[]): void {
     let readLine = -1;
     for (let j = i; j < Math.min(lines.length, i + 20); j++) {
       const l = lines[j];
-      if (new RegExp(`\\bkrnio_(gets|read|getch|chkin|read_lzo)\\s*\\(\\s*${fnum}\\b`).test(l)) { readLine = j; break; }
+      if (new RegExp(`\\bkrnio_(gets|read|getch|chkin|read_lzo)\\s*\\(\\s*${fnum}\\b`).test(l)) {
+        readLine = j;
+        break;
+      }
       if (new RegExp(`\\bkrnio_close\\s*\\(\\s*${fnum}\\b`).test(l)) break;
     }
     if (readLine < 0) return;
@@ -295,21 +311,22 @@ function lintC(raw: string, findings: LintFinding[]): void {
       pitfall: "empty_name_open_15_hangs_on_read",
       line: i + 1,
       excerpt: excerptOf(rawLines, i),
-      message:
-        `OPEN of channel 15 with ${sawSetnam ? "an empty name" : "no name set"} and then a read on it (line ${readLine + 1}). ${OPEN15_MECHANISM}`,
+      message: `OPEN of channel 15 with ${sawSetnam ? "an empty name" : "no name set"} and then a read on it (line ${readLine + 1}). ${OPEN15_MECHANISM}`,
       page: PAGES.open15,
       certainty: "heuristic",
     });
   });
 
   // Raster poll with the KERNAL IRQ live.
-  const installsIrq = /\brirq_\w+|__interrupt|0x0314\b|0x0318\b|0xfffe\b|\$0314|\$fffe|\bsei\b|rasterirq\.h/i.test(src);
+  const installsIrq =
+    /\brirq_\w+|__interrupt|0x0314\b|0x0318\b|0xfffe\b|\$0314|\$fffe|\bsei\b|rasterirq\.h/i.test(src);
   if (!installsIrq) {
     lines.forEach((line, i) => {
-      const poll = /\b(while|for|do)\b[^;{]*\bvic\s*\.\s*raster\b/.test(line)
-        || /\b(while|for)\b[^;{]*0x[dD]012\b/.test(line)
-        || /\bvic_waitLine\s*\(/.test(line)
-        || /\bvic_waitBottom\s*\(/.test(line);
+      const poll =
+        /\b(while|for|do)\b[^;{]*\bvic\s*\.\s*raster\b/.test(line) ||
+        /\b(while|for)\b[^;{]*0x[dD]012\b/.test(line) ||
+        /\bvic_waitLine\s*\(/.test(line) ||
+        /\bvic_waitBottom\s*\(/.test(line);
       if (!poll) return;
       findings.push({
         rule: "raster_poll_with_kernal_irq_live",
@@ -326,7 +343,10 @@ function lintC(raw: string, findings: LintFinding[]): void {
 
   // lfsr_zero_state_lockup: a seed constant of 0.
   lines.forEach((line, i) => {
-    const m = /\b(?:(?:static|unsigned|char|int|short|long|volatile|const|byte|word)\s+)*(\w*(?:seed|lfsr|rng|rand_state|random_state)\w*)\s*=(?!=)\s*(0x0+|0)\s*[;,]/i.exec(line);
+    const m =
+      /\b(?:(?:static|unsigned|char|int|short|long|volatile|const|byte|word)\s+)*(\w*(?:seed|lfsr|rng|rand_state|random_state)\w*)\s*=(?!=)\s*(0x0+|0)\s*[;,]/i.exec(
+        line,
+      );
     if (!m) return;
     const name = m[1];
     // Only a name the file shifts or XORs is an LFSR state; a counter
@@ -340,8 +360,7 @@ function lintC(raw: string, findings: LintFinding[]): void {
       pitfall: "lfsr_zero_state_lockup",
       line: i + 1,
       excerpt: excerptOf(rawLines, i),
-      message:
-        `${name} is set to zero and nothing in this file tests it for zero. An LFSR seeded with zero outputs zero for ever: from state zero the bit that falls out is 0, nothing is XORed in, and the state is zero again. Test the seed before the first step and replace zero with a non-zero constant.`,
+      message: `${name} is set to zero and nothing in this file tests it for zero. An LFSR seeded with zero outputs zero for ever: from state zero the bit that falls out is 0, nothing is XORed in, and the state is zero again. Test the seed before the first step and replace zero with a non-zero constant.`,
       page: PAGES.lfsr,
       certainty: "likely",
     });
@@ -355,11 +374,11 @@ function lintC(raw: string, findings: LintFinding[]): void {
 
   // d016_unmasked_rmw_clobbers_csel_mcm: a store to vic.ctrl2 not derived from a masked read.
   lines.forEach((line, i) => {
-    const m = /\bvic\s*\.\s*ctrl2\s*=(?!=)\s*([^;]+);/.exec(line)
-      ?? /0x[dD]016\b[^;=]*=(?!=)\s*([^;]+);/.exec(line);
+    const m =
+      /\bvic\s*\.\s*ctrl2\s*=(?!=)\s*([^;]+);/.exec(line) ?? /0x[dD]016\b[^;=]*=(?!=)\s*([^;]+);/.exec(line);
     if (!m) return;
     const rhs = m[1].trim();
-    if (/\bvic\s*\.\s*ctrl2\b/.test(rhs) || /&/.test(rhs)) return;
+    if (/\bvic\s*\.\s*ctrl2\b/.test(rhs) || rhs.includes("&")) return;
     const lit = parseNumber(rhs);
     if (lit !== null && (lit & 0x08) !== 0) return;
     if (/\b0x[cC]8\b|\b0x[dD]8\b|\b0x18\b|\b0x08\b|\bVIC_CTRL2_CSEL\b|\bVIC_CTRL2_MCM\b/.test(rhs)) return;
@@ -379,7 +398,10 @@ function lintC(raw: string, findings: LintFinding[]): void {
 // ---------------------------------------------------------------- asm rules
 
 const LABEL = String.raw`(?:[\w.@!+-]+:?\s+)?`;
-const ASM_SID_OPS = new RegExp(String.raw`^\s*${LABEL}(inc|dec|asl|lsr|rol|ror|lda|ldx|ldy|bit|cmp|adc|sbc|and|ora|eor)\s+(\$[0-9a-f]{4}|0x[0-9a-f]{4}|[0-9]{4,5})\s*(,\s*[xy])?\s*$`, "i");
+const ASM_SID_OPS = new RegExp(
+  String.raw`^\s*${LABEL}(inc|dec|asl|lsr|rol|ror|lda|ldx|ldy|bit|cmp|adc|sbc|and|ora|eor)\s+(\$[0-9a-f]{4}|0x[0-9a-f]{4}|[0-9]{4,5})\s*(,\s*[xy])?\s*$`,
+  "i",
+);
 
 function lintAsm(raw: string, findings: LintFinding[]): void {
   const src = stripAsm(raw);
@@ -406,15 +428,14 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
       pitfall: "sid_write_only_registers",
       line: i + 1,
       excerpt: excerptOf(rawLines, i),
-      message:
-        `${m[1].toUpperCase()} on $${hex4(ea)}: all SID registers $D400-$D418 are write-only, and a read returns the last byte the chip held, not the register's value. Keep a shadow copy in RAM and store the shadow.${indexed ? " Likely rather than definite: the index may carry the effective location past $D418, or $01 may have I/O banked out, in which case this reads character ROM or RAM." : ""}`,
+      message: `${m[1].toUpperCase()} on $${hex4(ea)}: all SID registers $D400-$D418 are write-only, and a read returns the last byte the chip held, not the register's value. Keep a shadow copy in RAM and store the shadow.${indexed ? " Likely rather than definite: the index may carry the effective location past $D418, or $01 may have I/O banked out, in which case this reads character ROM or RAM." : ""}`,
       page: PAGES.sid,
       certainty: indexed ? "likely" : "definite",
     });
   });
 
   // cia1_ddr_cleared_kills_keyboard: lda #0 ... sta $dc02 with no later lda #$ff ... sta $dc02.
-  const ddrStores: Array<{ line: number; value: number | null }> = [];
+  const ddrStores: { line: number; value: number | null }[] = [];
   lines.forEach((line, i) => {
     const st = new RegExp(String.raw`^\s*${LABEL}st([axy])\s+(\$dc02|0xdc02|56322)\b`, "i").exec(line);
     if (!st) return;
@@ -422,7 +443,10 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
     let value: number | null = null;
     for (let j = i - 1; j >= Math.max(0, i - 8); j--) {
       const ld = new RegExp(String.raw`^\s*${LABEL}ld${reg}\s+#\s*([^\s,]+)`, "i").exec(lines[j]);
-      if (ld) { value = parseNumber(ld[1]); break; }
+      if (ld) {
+        value = parseNumber(ld[1]);
+        break;
+      }
       if (new RegExp(`\\b(ld${reg}|t[axy]${reg}|pl${reg}|in${reg}|de${reg})\\b`, "i").test(lines[j])) break;
     }
     ddrStores.push({ line: i, value });
@@ -454,7 +478,10 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
         lastSetnamLen = null;
         for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
           const ld = new RegExp(String.raw`^\s*${LABEL}lda\s+#\s*([^\s,]+)`, "i").exec(lines[j]);
-          if (ld) { lastSetnamLen = parseNumber(ld[1]); break; }
+          if (ld) {
+            lastSetnamLen = parseNumber(ld[1]);
+            break;
+          }
         }
         lastSetnamLine = i;
       }
@@ -462,7 +489,10 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
         lastSetlfsSa = null;
         for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
           const ld = new RegExp(String.raw`^\s*${LABEL}ldy\s+#\s*([^\s,]+)`, "i").exec(lines[j]);
-          if (ld) { lastSetlfsSa = parseNumber(ld[1]); break; }
+          if (ld) {
+            lastSetlfsSa = parseNumber(ld[1]);
+            break;
+          }
         }
       }
       if (/\bjsr\s+(\$ffc0|open)\b/i.test(line)) {
@@ -474,8 +504,7 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
           pitfall: "empty_name_open_15_hangs_on_read",
           line: open15Line + 1,
           excerpt: excerptOf(rawLines, open15Line),
-          message:
-            `OPEN of secondary address 15 after a SETNAM of length 0 (line ${lastSetnamLine + 1}) and then a read on it (line ${i + 1}). ${OPEN15_MECHANISM}`,
+          message: `OPEN of secondary address 15 after a SETNAM of length 0 (line ${lastSetnamLine + 1}) and then a read on it (line ${i + 1}). ${OPEN15_MECHANISM}`,
           page: PAGES.open15,
           certainty: "heuristic",
         });
@@ -506,7 +535,10 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
 
   // lfsr_zero_state_lockup: a seed label defined as zero.
   lines.forEach((line, i) => {
-    const def = /^\s*(\w*(?:seed|lfsr|rng)\w*):?\s+(?:\.byte|\.word|!byte|!word|byte|word|dc\.b|dc\.w|db|dw)\s+([^\s,]+)\s*$/i.exec(line);
+    const def =
+      /^\s*(\w*(?:seed|lfsr|rng)\w*):?\s+(?:\.byte|\.word|!byte|!word|byte|word|dc\.b|dc\.w|db|dw)\s+([^\s,]+)\s*$/i.exec(
+        line,
+      );
     if (!def || !isZero(def[2])) return;
     const shifted = new RegExp(`\\b(lsr|asl|ror|rol|eor)\\s+${def[1]}\\b`, "i").test(src);
     if (shifted) {
@@ -515,8 +547,7 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
         pitfall: "lfsr_zero_state_lockup",
         line: i + 1,
         excerpt: excerptOf(rawLines, i),
-        message:
-          `${def[1]} is defined as zero. An LFSR seeded with zero outputs zero for ever: from state zero the bit that falls out is 0, nothing is XORed in, and the state is zero again. Test the seed before the first step and replace zero with a non-zero constant.`,
+        message: `${def[1]} is defined as zero. An LFSR seeded with zero outputs zero for ever: from state zero the bit that falls out is 0, nothing is XORed in, and the state is zero again. Test the seed before the first step and replace zero with a non-zero constant.`,
         page: PAGES.lfsr,
         certainty: "likely",
       });
@@ -529,7 +560,8 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
   // .word/!word after `* = $fffe` or `* = $0314`.
   {
     const handlers = new Map<string, number>();
-    const VEC = /(\$0314|\$0315|\$fffe|\$ffff|0x0314|0x0315|0xfffe|0xffff|\b788|\b789|\b65534|\b65535)(?![0-9a-f])/i;
+    const VEC =
+      /(\$0314|\$0315|\$fffe|\$ffff|0x0314|0x0315|0xfffe|0xffff|\b788|\b789|\b65534|\b65535)(?![0-9a-f])/i;
     lines.forEach((line, i) => {
       if (new RegExp(String.raw`^\s*${LABEL}st[axy]\s+`, "i").test(line) && VEC.test(line)) {
         for (let j = i; j >= Math.max(0, i - 4); j--) {
@@ -548,7 +580,16 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
       if (start < 0) continue;
       for (let j = start; j < lines.length; j++) {
         const l = lines[j];
-        if (j > start && /^\s*[A-Za-z_.@][\w.@]*\s*:/.test(l) && [...handlers.keys()].some((h) => h !== name && new RegExp(String.raw`^\s*${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\s*:`, "i").test(l))) break;
+        if (
+          j > start &&
+          /^\s*[A-Za-z_.@][\w.@]*\s*:/.test(l) &&
+          [...handlers.keys()].some(
+            (h) =>
+              h !== name &&
+              new RegExp(String.raw`^\s*${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\s*:`, "i").test(l),
+          )
+        )
+          break;
         if (new RegExp(String.raw`^\s*${LABEL}cld\b`, "i").test(l)) break;
         if (new RegExp(String.raw`^\s*${LABEL}(rti|rts)\b`, "i").test(l)) break;
         if (new RegExp(String.raw`^\s*${LABEL}jmp\s+(\$ea31|\$ea7e|\$ea81|\$febc)\b`, "i").test(l)) break;
@@ -558,8 +599,13 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
             pitfall: "decimal_mode_in_irq_handler",
             line: j + 1,
             excerpt: excerptOf(rawLines, j),
-            message:
-              `${l.trim().split(/\s+/).find((t) => /^(adc|sbc)$/i.test(t))?.toUpperCase() ?? "ADC"} in the handler ${name} (installed at line ${installLine + 1}) before any CLD. The D flag is not automatically cleared or saved on IRQ entry: the handler runs with D still set if the interrupted code had executed SED and not yet executed CLD, and its ADC and SBC then produce BCD-adjusted results instead of binary. Every IRQ handler must execute CLD as part of its entry stanza, before any arithmetic. RTI restores P from the stack, including D, so no SED is needed on the way out.${fileSetsD ? " Likely rather than definite: a CLD inside a macro or a called routine is not seen." : " Heuristic: nothing in this file executes SED, so D is clear unless a routine outside it sets D; the page still calls the CLD mandatory."}`,
+            message: `${
+              l
+                .trim()
+                .split(/\s+/)
+                .find((t) => /^(adc|sbc)$/i.test(t))
+                ?.toUpperCase() ?? "ADC"
+            } in the handler ${name} (installed at line ${installLine + 1}) before any CLD. The D flag is not automatically cleared or saved on IRQ entry: the handler runs with D still set if the interrupted code had executed SED and not yet executed CLD, and its ADC and SBC then produce BCD-adjusted results instead of binary. Every IRQ handler must execute CLD as part of its entry stanza, before any arithmetic. RTI restores P from the stack, including D, so no SED is needed on the way out.${fileSetsD ? " Likely rather than definite: a CLD inside a macro or a called routine is not seen." : " Heuristic: nothing in this file executes SED, so D is clear unless a routine outside it sets D; the page still calls the CLD mandatory."}`,
             page: PAGES.decimal,
             certainty: fileSetsD ? "likely" : "heuristic",
           });
@@ -579,10 +625,22 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
     let masked = false;
     for (let j = i - 1; j >= Math.max(0, i - 12); j--) {
       const l = lines[j];
-      if (/\b(lda|ldx|ldy)\s+(\$d016|0xd016|53270)\b/i.test(l) || /\band\s+#/i.test(l)) { masked = true; break; }
+      if (/\b(lda|ldx|ldy)\s+(\$d016|0xd016|53270)\b/i.test(l) || /\band\s+#/i.test(l)) {
+        masked = true;
+        break;
+      }
       const imm = new RegExp(String.raw`^\s*${LABEL}lda\s+#\s*([^\s,]+)\s*$`, "i").exec(l);
-      if (imm) { literal = parseNumber(imm[1]); break; }
-      if (new RegExp(String.raw`^\s*${LABEL}(lda|pla|txa|tya|jsr|jmp|rts|rti|b(?:ne|eq|cc|cs|pl|mi|vc|vs))\b`, "i").test(l)) break;
+      if (imm) {
+        literal = parseNumber(imm[1]);
+        break;
+      }
+      if (
+        new RegExp(
+          String.raw`^\s*${LABEL}(lda|pla|txa|tya|jsr|jmp|rts|rti|b(?:ne|eq|cc|cs|pl|mi|vc|vs))\b`,
+          "i",
+        ).test(l)
+      )
+        break;
     }
     if (masked) return;
     if (literal !== null && (literal & 0x08) !== 0) return;
@@ -600,7 +658,10 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
 
   // jmp_indirect_page_boundary_bug
   lines.forEach((line, i) => {
-    const m = new RegExp(String.raw`^\s*${LABEL}jmp\s*\(\s*(\$[0-9a-f]{1,4}|0x[0-9a-f]{1,4}|[0-9]{1,5})\s*\)`, "i").exec(line);
+    const m = new RegExp(
+      String.raw`^\s*${LABEL}jmp\s*\(\s*(\$[0-9a-f]{1,4}|0x[0-9a-f]{1,4}|[0-9]{1,5})\s*\)`,
+      "i",
+    ).exec(line);
     if (!m) return;
     const vec = parseNumber(m[1]);
     if (vec === null || (vec & 0xff) !== 0xff) return;
@@ -609,8 +670,7 @@ function lintAsm(raw: string, findings: LintFinding[]): void {
       pitfall: "jmp_indirect_page_boundary_bug",
       line: i + 1,
       excerpt: excerptOf(rawLines, i),
-      message:
-        `JMP ($${hex4(vec)}): the 6510 fetches the high byte of the destination from $${hex4(vec & 0xff00)}, not $${hex4((vec + 1) & 0xffff)}. The low byte of the pointer wraps within the page. Move the vector so its low-byte slot does not end in $FF.`,
+      message: `JMP ($${hex4(vec)}): the 6510 fetches the high byte of the destination from $${hex4(vec & 0xff00)}, not $${hex4((vec + 1) & 0xffff)}. The low byte of the pointer wraps within the page. Move the vector so its low-byte slot does not end in $FF.`,
       page: PAGES.jmp,
       certainty: "definite",
     });
@@ -632,8 +692,7 @@ const CERTAINTY_ORDER: LintCertainty[] = ["definite", "likely", "heuristic"];
 
 export function summarise(findings: LintFinding[]): string {
   if (findings.length === 0) return "No findings.";
-  const counts = CERTAINTY_ORDER
-    .map((c) => [c, findings.filter((f) => f.certainty === c).length] as const)
+  const counts = CERTAINTY_ORDER.map((c) => [c, findings.filter((f) => f.certainty === c).length] as const)
     .filter(([, n]) => n > 0)
     .map(([c, n]) => `${n} ${c}`)
     .join(", ");
@@ -641,7 +700,11 @@ export function summarise(findings: LintFinding[]): string {
   return `${findings.length} finding${findings.length === 1 ? "" : "s"} (${counts}) across ${rules.length} rule${rules.length === 1 ? "" : "s"}: ${rules.join(", ")}.`;
 }
 
-export function lintSourceResult(source: string, opts: LintOptions = { language: "auto" }, label?: string): LintResult {
+export function lintSourceResult(
+  source: string,
+  opts: LintOptions = { language: "auto" },
+  label?: string,
+): LintResult {
   const language: LintLanguage = opts.language === "auto" ? detectLanguage(source) : opts.language;
   const findings = lintSource(source, { ...opts, language });
   const summary = summarise(findings);

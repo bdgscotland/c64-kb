@@ -32,7 +32,7 @@ Body text.
     }
     const usesReg = ents.filter((e) => e.type === "technique_uses_register");
     expect(usesReg).toHaveLength(3);
-    expect(usesReg.map((e) => e.type === "technique_uses_register" ? e.register : "").sort()).toEqual([
+    expect(usesReg.map((e) => (e.type === "technique_uses_register" ? e.register : "")).sort()).toEqual([
       "D011",
       "D012",
       "D019",
@@ -58,7 +58,9 @@ Body.
 `;
     const warnings: string[] = [];
     const orig = console.warn;
-    console.warn = (msg: unknown) => { warnings.push(String(msg)); };
+    console.warn = (msg: unknown) => {
+      warnings.push(String(msg));
+    };
     try {
       const ents = extractGraphEntities(doc, "techniques/bogus.md");
       expect(ents.filter((e) => e.type === "technique")).toHaveLength(0);
@@ -164,7 +166,10 @@ Body.
 Body.
 `;
     const ents = extractGraphEntities(doc, "techniques/scroll.md");
-    const req = ents.filter((e) => e.type === "technique_requires") as Array<{ technique: string; requires: string }>;
+    const req = ents.filter((e) => e.type === "technique_requires") as {
+      technique: string;
+      requires: string;
+    }[];
     expect(req.map((r) => `${r.technique}:${r.requires}`).sort()).toEqual([
       "infinite_scroll_h:char_scroll_buffer_h",
       "infinite_scroll_h:soft_scroll_h",
@@ -174,7 +179,9 @@ Body.
   it("refuses a self-reference and a name that is not snake_case under **Requires:**", () => {
     const warnings: string[] = [];
     const orig = console.warn;
-    console.warn = (msg: string) => { warnings.push(String(msg)); };
+    console.warn = (msg: string) => {
+      warnings.push(String(msg));
+    };
     try {
       const doc = `---
 category: raster
@@ -191,10 +198,15 @@ category: raster
 Body.
 `;
       const ents = extractGraphEntities(doc, "techniques/raster.md");
-      const req = ents.filter((e) => e.type === "technique_requires") as Array<{ technique: string; requires: string }>;
-      expect(req).toEqual([{ type: "technique_requires", technique: "double_irq", requires: "stable_raster_irq" }]);
-      expect(warnings.some((w) => /lists itself/.test(w))).toBe(true);
-      expect(warnings.some((w) => /not a snake_case technique name/.test(w))).toBe(true);
+      const req = ents.filter((e) => e.type === "technique_requires") as {
+        technique: string;
+        requires: string;
+      }[];
+      expect(req).toEqual([
+        { type: "technique_requires", technique: "double_irq", requires: "stable_raster_irq" },
+      ]);
+      expect(warnings.some((w) => w.includes("lists itself"))).toBe(true);
+      expect(warnings.some((w) => w.includes("not a snake_case technique name"))).toBe(true);
     } finally {
       console.warn = orig;
     }

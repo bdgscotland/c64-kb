@@ -13,9 +13,15 @@ describe("checkCompatibility with resource demands", () => {
     await f.clean();
     await f.ensureSchema();
     for (const [name, category] of [
-      ["fli_image", "bitmap"], ["sideborder_open", "raster"], ["sprite_multiplex_24", "sprite"],
-      ["raster_bars", "raster"], ["digi_4bit", "music"], ["ram_under_kernal", "banking"],
-      ["prints_with_kernal", "render"], ["mystery_technique", "effect"], ["sine_scroller", "scroll"],
+      ["fli_image", "bitmap"],
+      ["sideborder_open", "raster"],
+      ["sprite_multiplex_24", "sprite"],
+      ["raster_bars", "raster"],
+      ["digi_4bit", "music"],
+      ["ram_under_kernal", "banking"],
+      ["prints_with_kernal", "render"],
+      ["mystery_technique", "effect"],
+      ["sine_scroller", "scroll"],
     ] as const) {
       await f.addTechnique({ name, title: name, category, complexity: "high" });
     }
@@ -111,9 +117,15 @@ describe("checkCompatibility with REQUIRES closure", () => {
     await f.clean();
     await f.ensureSchema();
     for (const [name, category] of [
-      ["stable_raster_irq", "raster"], ["text_zoom", "effect"], ["fli_image", "bitmap"],
-      ["ifli_image", "bitmap"], ["sid_voice_setup", "music"], ["digi_4bit", "music"],
-      ["speech_sample", "music"], ["plain_thing", "effect"], ["ntsc_only_thing", "effect"],
+      ["stable_raster_irq", "raster"],
+      ["text_zoom", "effect"],
+      ["fli_image", "bitmap"],
+      ["ifli_image", "bitmap"],
+      ["sid_voice_setup", "music"],
+      ["digi_4bit", "music"],
+      ["speech_sample", "music"],
+      ["plain_thing", "effect"],
+      ["ntsc_only_thing", "effect"],
       ["needs_ntsc_thing", "effect"],
     ] as const) {
       await f.addTechnique({ name, title: name, category, complexity: "high" });
@@ -157,7 +169,10 @@ describe("checkCompatibility with REQUIRES closure", () => {
     const cov = r.structured.data_coverage.find((d) => d.technique === "stable_raster_irq");
     expect(cov?.implied_by).toEqual(["text_zoom"]);
     // fli_image's own demand set is untouched.
-    expect(r.structured.data_coverage.find((d) => d.technique === "fli_image")?.demands).toEqual(["constant_sprite_set", "cpu_every_line"]);
+    expect(r.structured.data_coverage.find((d) => d.technique === "fli_image")?.demands).toEqual([
+      "constant_sprite_set",
+      "cpu_every_line",
+    ]);
   });
 
   it("walks the chain: a two-step prerequisite still reaches the other technique", async () => {
@@ -166,7 +181,10 @@ describe("checkCompatibility with REQUIRES closure", () => {
     expect(c?.via).toEqual(["digi_4bit"]);
     expect(c?.rationale).toMatch(/speech_sample requires digi_4bit/);
     expect(c?.shared).toContain("continuous_interrupts");
-    const names = r.shared_infrastructure.filter((s) => s.kind === "missing_prerequisite").map((s) => s.name).sort();
+    const names = r.shared_infrastructure
+      .filter((s) => s.kind === "missing_prerequisite")
+      .map((s) => s.name)
+      .sort();
     expect(names).toEqual(["digi_4bit", "sid_voice_setup"]);
   });
 
@@ -220,7 +238,9 @@ describe("checkCompatibility: an implied technique against its own prerequisite"
     await f.clean();
     await f.ensureSchema();
     for (const [name, category] of [
-      ["stable_raster_irq", "raster"], ["fli_image", "bitmap"], ["ifli_image", "bitmap"],
+      ["stable_raster_irq", "raster"],
+      ["fli_image", "bitmap"],
+      ["ifli_image", "bitmap"],
       ["raster_bars", "raster"],
     ] as const) {
       await f.addTechnique({ name, title: name, category, complexity: "high" });
@@ -238,7 +258,10 @@ describe("checkCompatibility: an implied technique against its own prerequisite"
   afterAll(async () => f.close());
 
   it("never reports the middle of a chain against the prerequisite at its end", async () => {
-    for (const inputs of [["ifli_image", "stable_raster_irq"], ["stable_raster_irq", "ifli_image"]]) {
+    for (const inputs of [
+      ["ifli_image", "stable_raster_irq"],
+      ["stable_raster_irq", "ifli_image"],
+    ]) {
       const r = (await checkCompatibility(inputs)).structured;
       // fli_image declared stable_raster_irq itself; it is not turned against it.
       expect(r.conflicts.filter((c) => c.kind === "prerequisite_conflict")).toEqual([]);
@@ -293,7 +316,10 @@ chip: VIC-II
 `;
   it("emits one technique_demands entity per known word and drops unknown ones", () => {
     const ents = extractGraphEntities(doc, "techniques/test.md");
-    const demands = ents.filter((e) => e.type === "technique_demands") as Array<{ technique: string; resource: string }>;
+    const demands = ents.filter((e) => e.type === "technique_demands") as {
+      technique: string;
+      resource: string;
+    }[];
     expect(demands.map((d) => `${d.technique}:${d.resource}`).sort()).toEqual([
       "thing_one:constant_sprite_set",
       "thing_one:cpu_every_line",
@@ -324,7 +350,7 @@ data: .byte 0
 `;
   it("emits recipe_occupies for each origin", () => {
     const ents = extractGraphEntities(doc, "recipes/kickassembler/t.md");
-    const occ = ents.filter((e) => e.type === "recipe_occupies") as Array<{ start: number; end: number }>;
+    const occ = ents.filter((e) => e.type === "recipe_occupies") as { start: number; end: number }[];
     expect(occ.map((o) => o.start)).toEqual([0x0900, 0x2000]);
   });
 });

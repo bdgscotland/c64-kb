@@ -200,19 +200,31 @@ program
   .option("--region <region>", "Filter by required region (PAL or NTSC)")
   .option("--register <register>", "Filter by register used (e.g. D011)")
   .option("--recipe <recipe>", "Filter by recipe that implements the technique")
-  .option("--requires <technique>", "Filter to techniques that build on this one (REQUIRES chain, e.g. stable_raster_irq)")
-  .action(async (opts: { category?: string; chip?: string; region?: string; register?: string; recipe?: string; requires?: string }) => {
-    const { techniquesFor } = await import("./tools/query.ts");
-    const result = await techniquesFor({
-      category: opts.category,
-      chip: opts.chip,
-      region: opts.region,
-      register: opts.register,
-      recipe: opts.recipe,
-      requires: opts.requires,
-    });
-    emit(result);
-  });
+  .option(
+    "--requires <technique>",
+    "Filter to techniques that build on this one (REQUIRES chain, e.g. stable_raster_irq)",
+  )
+  .action(
+    async (opts: {
+      category?: string;
+      chip?: string;
+      region?: string;
+      register?: string;
+      recipe?: string;
+      requires?: string;
+    }) => {
+      const { techniquesFor } = await import("./tools/query.ts");
+      const result = await techniquesFor({
+        category: opts.category,
+        chip: opts.chip,
+        region: opts.region,
+        register: opts.register,
+        recipe: opts.recipe,
+        requires: opts.requires,
+      });
+      emit(result);
+    },
+  );
 
 program
   .command("check-compatibility <techniques...>")
@@ -227,7 +239,10 @@ program
   .command("timing-budget <technique>")
   .description("Compute per-scanline cycle budget for a technique")
   .option("--region <region>", "PAL or NTSC (case-insensitive, default: pal)", "pal")
-  .option("--sprites <n>", "sprites displayed on the line, 0-8 (default: the technique's Cost sprites_per_line)")
+  .option(
+    "--sprites <n>",
+    "sprites displayed on the line, 0-8 (default: the technique's Cost sprites_per_line)",
+  )
   .action(async (technique: string, opts: { region: string; sprites?: string }) => {
     const { timingBudget } = await import("./tools/query.ts");
     const result = await timingBudget({
@@ -240,7 +255,9 @@ program
 
 program
   .command("lint <file>")
-  .description("Run the pitfall rules over a C or assembly source file (language from the extension, or --language)")
+  .description(
+    "Run the pitfall rules over a C or assembly source file (language from the extension, or --language)",
+  )
   .option("--language <lang>", "c, asm or auto", "auto")
   .option("--toolchain <name>", "Toolchain name recorded in the output")
   .action(async (file: string, opts: { language: string; toolchain?: string }) => {
@@ -259,7 +276,9 @@ program
 
 program
   .command("pitfalls-for <topic>")
-  .description("Look up pitfalls triggered by a register, KERNAL routine, or technique (for a technique, also the pitfalls it is the fix for)")
+  .description(
+    "Look up pitfalls triggered by a register, KERNAL routine, or technique (for a technique, also the pitfalls it is the fix for)",
+  )
   .action(async (topic: string) => {
     const { pitfallsFor } = await import("./tools/pitfalls.ts");
     const result = await pitfallsFor(topic);
@@ -278,7 +297,10 @@ program
 program
   .command("demo-briefing <description>")
   .description("Generate a structured C64 demo plan from a brief (Phase 5 anchor tool)")
-  .option("--archetype <name>", "Demo form from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)")
+  .option(
+    "--archetype <name>",
+    "Demo form from docs/demo-design/intro-cracktro-patterns.md (cracktro, demo_intro, pack_intro, dentro, party_intro_4k)",
+  )
   .action(async (description: string, opts: { archetype?: string }) => {
     const { demoBriefing } = await import("./tools/briefings.ts");
     const result = await demoBriefing(description, opts.archetype);
@@ -292,7 +314,10 @@ program
 program
   .command("game-briefing <description>")
   .description("Generate a structured C64 game plan from a brief (Phase 5 anchor tool)")
-  .option("--archetype <name>", "Archetype name from docs/game-design/c64-game-archetypes.md (vertical_shmup, puzzle, racing, ...)")
+  .option(
+    "--archetype <name>",
+    "Archetype name from docs/game-design/c64-game-archetypes.md (vertical_shmup, puzzle, racing, ...)",
+  )
   .option("--genre <genre>", "Alias of --archetype")
   .action(async (description: string, opts: { archetype?: string; genre?: string }) => {
     const { gameBriefing } = await import("./tools/briefings.ts");

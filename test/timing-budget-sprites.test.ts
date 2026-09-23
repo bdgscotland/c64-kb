@@ -31,16 +31,23 @@ chip: VIC-II
 Body.
 `;
   it("is read onto the technique's cost", () => {
-    const t = extractGraphEntities(doc("cycles_per_frame=100, sprites_per_line=8"), "techniques/sprite.md")
-      .find((e) => e.type === "technique");
-    expect(t && t.type === "technique" ? t.cost : null).toEqual({ cycles_per_frame: 100, sprites_per_line: 8 });
+    const t = extractGraphEntities(
+      doc("cycles_per_frame=100, sprites_per_line=8"),
+      "techniques/sprite.md",
+    ).find((e) => e.type === "technique");
+    expect(t && t.type === "technique" ? t.cost : null).toEqual({
+      cycles_per_frame: 100,
+      sprites_per_line: 8,
+    });
   });
 
   it("refuses more than eight", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const t = extractGraphEntities(doc("cycles_per_frame=100, sprites_per_line=9"), "techniques/sprite.md")
-        .find((e) => e.type === "technique");
+      const t = extractGraphEntities(
+        doc("cycles_per_frame=100, sprites_per_line=9"),
+        "techniques/sprite.md",
+      ).find((e) => e.type === "technique");
       expect(t && t.type === "technique" ? t.cost : null).toEqual({ cycles_per_frame: 100 });
       expect(warn.mock.calls.some((c) => String(c[0]).includes("hardware maximum"))).toBe(true);
     } finally {
@@ -58,8 +65,12 @@ describe("timingBudget with sprite DMA", () => {
     await f.ensureSchema();
     await f.addTechnique({ name: "plain_split", title: "plain", category: "raster", complexity: "low" });
     await f.addTechnique({
-      name: "eight_sprite_band", title: "eight", category: "sprite", complexity: "high",
-      cost: { cycles_per_frame: 700, sprites_per_line: 8 }, cost_basis: "estimated",
+      name: "eight_sprite_band",
+      title: "eight",
+      category: "sprite",
+      complexity: "high",
+      cost: { cycles_per_frame: 700, sprites_per_line: 8 },
+      cost_basis: "estimated",
     });
   });
   afterAll(async () => f.close());

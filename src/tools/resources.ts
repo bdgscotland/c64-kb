@@ -45,10 +45,7 @@ export interface ResourceContent {
  * Look up a register by name/alias/address and return a structured
  * JSON resource document. Returns null if no match.
  */
-export async function readRegisterResource(
-  uri: string,
-  name: string
-): Promise<ResourceContent | null> {
+export async function readRegisterResource(uri: string, name: string): Promise<ResourceContent | null> {
   // MCP clients may percent-encode the name segment (e.g. "%24D011" for "$D011").
   // Decode before matching; fall back to the raw value if the string is malformed.
   let decodedName = name;
@@ -69,11 +66,10 @@ export async function readRegisterResource(
             r.aliases AS aliases,
             c.name AS chip
      LIMIT 1`,
-    { name: cleaned, addr: `$${cleaned}` }
+    { name: cleaned, addr: `$${cleaned}` },
   );
   const row = result.data?.[0] as
-    | { name: string; addr: string; rw: string; aliases: string[]; chip: string | null }
-    | undefined;
+    { name: string; addr: string; rw: string; aliases: string[]; chip: string | null } | undefined;
   if (!row) return null;
   return {
     uri,
@@ -87,7 +83,7 @@ export async function readRegisterResource(
         aliases: row.aliases ?? [],
       },
       null,
-      2
+      2,
     ),
   };
 }
@@ -98,24 +94,79 @@ export async function readRegisterResource(
  * time from `DOCS_DIR` + a constant, hardcoded relative path —
  * `relPath` is never sourced from MCP client input.
  */
-export const STATIC_RESOURCES: ReadonlyArray<{
+export const STATIC_RESOURCES: readonly {
   readonly name: string;
   readonly uri: string;
   readonly description: string;
   readonly filePath: string;
-}> = (
+}[] = (
   [
-    ["memory-map", "c64://memory-map", "Complete C64 memory map ($0000-$FFFF) with bank-switching details.", "hardware/c64-memory-map.md"],
-    ["kernal-jumptable", "c64://kernal-jumptable", "KERNAL jump-table routines at $FF81-$FFF3 with inputs, outputs, and pairs.", "hardware/kernal-routines-reference.md"],
-    ["opcodes", "c64://opcodes", "6510 CPU opcode reference (cycles, flags, addressing modes, page-cross penalties).", "hardware/6510-cpu-reference.md"],
-    ["illegal-opcodes", "c64://illegal-opcodes", "6502/6510 undocumented (illegal) opcodes reference.", "hardware/6502-illegal-opcodes.md"],
-    ["pal-ntsc", "c64://pal-ntsc", "PAL vs NTSC differences: refresh rate, lines/frame, cycles/line, raster timing.", "hardware/pal-ntsc-reference.md"],
-    ["vic-ii", "c64://vic-ii", "VIC-II video chip reference: registers, sprite mechanics, raster timing, badlines.", "hardware/vic-ii-reference.md"],
-    ["sid", "c64://sid", "SID sound chip reference: voices, ADSR, filter, control registers.", "hardware/sid-reference.md"],
-    ["cia", "c64://cia", "CIA 6526 reference: timers, IRQ sources, keyboard/joystick scanning.", "hardware/cia-reference.md"],
-    ["6510-cpu", "c64://6510-cpu", "6510 CPU architecture: registers, addressing modes, flags, instruction set.", "hardware/6510-cpu-reference.md"],
-    ["registers", "c64://registers", "Consolidated C64 registers reference (VIC-II, SID, CIA, KERNAL vectors).", "hardware/c64-registers-reference.md"],
-    ["ontology", "c64://ontology", "c64-kb knowledge graph ontology: node labels, edge types, property conventions.", "ONTOLOGY.md"],
+    [
+      "memory-map",
+      "c64://memory-map",
+      "Complete C64 memory map ($0000-$FFFF) with bank-switching details.",
+      "hardware/c64-memory-map.md",
+    ],
+    [
+      "kernal-jumptable",
+      "c64://kernal-jumptable",
+      "KERNAL jump-table routines at $FF81-$FFF3 with inputs, outputs, and pairs.",
+      "hardware/kernal-routines-reference.md",
+    ],
+    [
+      "opcodes",
+      "c64://opcodes",
+      "6510 CPU opcode reference (cycles, flags, addressing modes, page-cross penalties).",
+      "hardware/6510-cpu-reference.md",
+    ],
+    [
+      "illegal-opcodes",
+      "c64://illegal-opcodes",
+      "6502/6510 undocumented (illegal) opcodes reference.",
+      "hardware/6502-illegal-opcodes.md",
+    ],
+    [
+      "pal-ntsc",
+      "c64://pal-ntsc",
+      "PAL vs NTSC differences: refresh rate, lines/frame, cycles/line, raster timing.",
+      "hardware/pal-ntsc-reference.md",
+    ],
+    [
+      "vic-ii",
+      "c64://vic-ii",
+      "VIC-II video chip reference: registers, sprite mechanics, raster timing, badlines.",
+      "hardware/vic-ii-reference.md",
+    ],
+    [
+      "sid",
+      "c64://sid",
+      "SID sound chip reference: voices, ADSR, filter, control registers.",
+      "hardware/sid-reference.md",
+    ],
+    [
+      "cia",
+      "c64://cia",
+      "CIA 6526 reference: timers, IRQ sources, keyboard/joystick scanning.",
+      "hardware/cia-reference.md",
+    ],
+    [
+      "6510-cpu",
+      "c64://6510-cpu",
+      "6510 CPU architecture: registers, addressing modes, flags, instruction set.",
+      "hardware/6510-cpu-reference.md",
+    ],
+    [
+      "registers",
+      "c64://registers",
+      "Consolidated C64 registers reference (VIC-II, SID, CIA, KERNAL vectors).",
+      "hardware/c64-registers-reference.md",
+    ],
+    [
+      "ontology",
+      "c64://ontology",
+      "c64-kb knowledge graph ontology: node labels, edge types, property conventions.",
+      "ONTOLOGY.md",
+    ],
   ] as const
 ).map(([name, uri, description, rel]) => ({
   name,
