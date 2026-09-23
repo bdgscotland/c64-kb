@@ -1,0 +1,4 @@
+build/
+shots/
+local.mk
+.DS_Store

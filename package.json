@@ -25,6 +25,8 @@
     "graph:report": "node scripts/graph-report.ts",
     "vice:headless": "sh scripts/build-vice-headless.sh",
     "verify:recipes": "node scripts/verify-recipes.ts",
+    "verify:templates": "node scripts/verify-templates.ts",
+    "new-project": "node scripts/new-project.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
