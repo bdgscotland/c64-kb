@@ -156,7 +156,7 @@ Related: `./game-design-patterns.md` ("Path-based vs reactive AI"), `./c64-game-
 
 **Kind:** structure
 **Applies to:** vertical_shmup, horizontal_shmup
-**Realised by:** wave_director, object_pool, sine_table_generation, actor_activation_window, oscar64/wave-director, oscar64/object-pool, kickassembler/sine-table-runtime
+**Realised by:** wave_director, object_pool, sine_table_generation, actor_activation_window, oscar64/wave-director, oscar64/object-pool, kickassembler/sine-table-runtime, atan2_8bit, kickassembler/sqrt-atan2
 **Sources:** Retro Game Deconstruction Zone, Metamorphosis: From Galaxian to Galaga (2020, author unnamed); Lasse Öörni, Rant 4 (undated); John and Steve Rowlands, Let's Make a Monster part 8, Commodore Format (1993)
 
 **Checks:**

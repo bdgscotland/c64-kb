@@ -492,6 +492,17 @@ whole frame including borders. Everything below was measured on 2026-09-22 from 
 two pictures of `docs/recipes/kickassembler/palette-cells.md` and the fourteen
 `hello-world` runs above, all VICE x64sc 3.10 with `-default`.
 
+The picture is the draw buffer at the cycle the limit hits, not a finished
+frame: the rows the beam has passed in the current field are new and the
+rows below it still hold the previous field. Measured 2026-09-23 on the
+eight-way scroll recipe while its pin was chosen: cycle limits from
+21,000,000 to 21,014,500 gave one identical picture, 21,017,000 differed
+from it only in rows 39 to 59, and 21,019,500 only in rows 59 to 98. So a
+program that changes what a row shows from one field to the next can be
+caught half-way by a pin that lands mid-display, and the split reads as
+a fault in the program. Pin in the blank, or where consecutive fields
+draw the same thing, and say which on the page.
+
 ### Geometry
 
 | | PAL (default `c64`) | NTSC (`-model ntsc`) |

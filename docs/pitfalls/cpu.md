@@ -18,7 +18,7 @@ and portable C64 code to fail in production.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram
+**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram, isqrt_16bit, atan2_8bit
 
 ### Symptom
 
@@ -581,7 +581,7 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit
 **Mitigated by techniques:** compare_16bit_and_signed
 
 ### Symptom

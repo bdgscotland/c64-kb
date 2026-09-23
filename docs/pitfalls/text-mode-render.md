@@ -419,7 +419,7 @@ for per-frame text-mode work; measure or budget explicitly.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D018
-**Triggered by techniques:** petscii_screen_code_conversion, text_input_line, decimal_print, password_encoding
+**Triggered by techniques:** petscii_screen_code_conversion, text_input_line, decimal_print, password_encoding, high_score_table_insert
 **Mitigated by techniques:** petscii_screen_code_conversion
 
 ### Symptom
