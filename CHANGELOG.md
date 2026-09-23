@@ -5,7 +5,44 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 755, schema 27, tools 2.0.0, package 0.13.0.
+Data 756, schema 27, tools 2.0.0, package 0.13.0.
+
+**Candidate list, Tier B batch 14: four demo effects, each a technique
+entry and a pinned KickAssembler recipe (data 756).** Multicolour
+interlace: two multicolour bitmaps in two VIC banks alternated at the
+frame with a one-hires-pixel shift on the odd frame, the diagonal one
+pixel further right in the second field at every row measured, a PIL
+average of the two fields showing four distinct columns per pixel pair
+where one field shows two, and a frame loop of 34 or 32 cycles (the
+brief's single-bank layout did not fit, 18,000 bytes into 16,384, and the
+page says so). Dot flag: a 16 by 8 grid on two sines plotted and erased
+through the hires plot, 119 cycles a dot, 15,233 a frame blanked and up
+to 16,098 with the display on, exactly 128 lit pixels in the pinned
+picture and 3,570 without the erase pass. Fire: a colour-RAM heat map
+over a solid glyph with a luminance-ordered palette, 53,479 cycles for
+the whole screen and 27,301 for the larger half, so the screen refreshes
+every four frames; the pinned picture's colour census is on the page.
+DYPP: a text scroller of eight sprites, each column on its own sine,
+1,147 cycles a frame for the position update and 715 for a character
+re-render, the two sprites past X 255 drawn at 14 and 62 instead of 270
+and 318 when the high-bit write is left out. Eight pins, byte-identical
+on two runs per model, each reproduced by a reviewer from the page's own
+listing; the three new anchors went on the pitfalls whose mechanism the
+code meets.
+
+**The isometric tile engine, built from a fixed specification (data
+756).** Two earlier attempts stalled on the open design; this one was
+handed the map, the projection, the draw order and the depth rule and
+built exactly that: an 8 by 8 room of 2:1 diamond tiles four characters
+wide, blocks one and two tiles tall drawn back to front so nearer cells
+overdraw, a hardware-sprite player whose one priority bit is set when a
+block in front of it overlaps its character box, and a scripted walk.
+Measured: a full room redraw of 42,034 cycles, one block of 527, the
+depth bit set at three of the six positions (the specification predicted
+one; the recipe says why the character box catches two more), and a
+negative control with the painter's order reversed that fails the
+verdict. Pinned on both models. The entry says what one priority bit
+cannot do.
 
 **Four more measured pitfalls, and a logic pitfall page (data 755).** A
 one-byte breadth-first distance map that uses 255 for "unreached" wraps

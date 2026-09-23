@@ -566,6 +566,56 @@ The real cost of IFLI is not cycles but memory: two complete FLI images occupy r
 
 ---
 
+## mci_interlace_bitmap — MCI (Multicolour Interlace): two multicolour bitmaps alternated with a half-pixel shift
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, DD00
+**Uses kernal:** (none)
+**Requires:** multicolor_bitmap, frame_sync_loop
+**Cost:** cycles_per_frame=50, bytes_data=18000
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-mci-interlace
+
+### Why
+
+A multicolour bitmap has 160 pixels across, each two hires pixels wide, and four colours per cell. Showing two different multicolour bitmaps on alternate frames, with the second moved one hires pixel to the right, gives a display with any persistence a picture whose colour changes every hires pixel: twice the horizontal colour resolution of one frame, from plain multicolour bitmap hardware and a three-store switch each frame. The price is that each frame is shown at half the frame rate, 25 Hz on PAL and 30 Hz on NTSC, so wherever the two frames differ the picture flickers; how visible that is on a given display and to a given viewer is not measured here. MCI is the flat-bitmap member of the family whose per-line member is `ifli_image`.
+
+### How
+
+Two multicolour bitmaps with their own screens, one per frame. They do not fit in one VIC bank: two 8000-byte bitmaps and two 1000-byte screens are 18,000 bytes and a bank is 16,384, so frame A lives in one bank and frame B in another (the recipe uses bank 1 for A, bitmap $6000 and screen $5C00, $D018 = $78, and bank 0 for B, bitmap $2000 and screen $0400, $D018 = $18; bank 0's character ROM shadow at $1000 to $1FFF touches neither). Colour RAM is one 1 KB block at $D800, read by the VIC-II whatever bank or $D018 is selected, so the %11 colour of every cell is the same in both frames; a converter preparing an MCI pair has two screen nibbles per cell per frame but one colour RAM nibble per cell for both, and the background $D021 is likewise one value unless it is changed in the blank as well.
+
+Once per frame, below the display (`frame_sync_loop` on raster line 251, which is past the 200-line window on both models), the loop stores $DD00 for the bank, $D018 for the screen and bitmap, and $D016 whole: $D8 on even frames (MCM on, 40 columns, XSCROLL 0) and $D9 on odd frames (XSCROLL 1). XSCROLL moves the display in hires pixels and a multicolour pixel is two of them, so the odd frame is half a multicolour pixel to the right. The switch is made inside one raster line and the loop then waits for $D012 to leave that line, because a switch shorter than a line would otherwise match the same line twice and swap twice in one frame.
+
+Measured in VICE x64sc on the `mci-interlace` recipe, which draws its own test card (eight two-colour bands with the colours swapped between the frames, and one diagonal at the same multicolour position in both bitmaps): the diagonal sits on columns 190 and 191 at row 134 in frame A and on 191 and 192 in frame B, one hires pixel apart at every measured row; with XSCROLL left at 0 on both frames (the control build) the two diagonals coincide at 190 and 191 and only the band colours alternate, a blend without the resolution gain. The pixel average of the two frames puts four distinct columns, pure colour, blend, the other pure colour, blend, where one frame has two; the numbers are on the recipe page. With XSCROLL 1 in 40-column mode the leftmost hires column shows the background colour, so frame B's column 32 is black on every row.
+
+### Why it works
+
+The VIC-II fetches its bitmap and screen bytes from whichever 16 KB the $DD00 bits and $D018 name at the moment of the fetch, so a bank and pointer change made in the vertical blank takes effect cleanly on the next field with no copying; the two frames are both complete pictures in memory all the time. XSCROLL delays the start of pixel output by up to seven hires clocks for the whole display, and in multicolour mode the shift register still emits its pairs two clocks wide, so a shift of one clock puts frame B's pixel boundaries exactly between frame A's. On a display with persistence, or in the eye, the two fields add, and each hires column of the sum carries either one frame's colour where the two agree or the mean of the two where they differ. That is the same perceptual mechanism as `ifli_image`, which adds the per-line colour changes of FLI to it; MCI keeps the plain 8x8 cell colour limits and gets its gain from the alternation alone. The improvement is not in the frame buffer: each field is still a 160-pixel-wide multicolour picture, and VICE's exit screenshot shows one field at a time.
+
+### Cycle budget
+
+Measured with CIA1 timer A on the recipe, the same on PAL and NTSC: 34 cycles on the even frame and 32 on the odd from the timer start after the $D012 match to the read after the last of the three stores (the even path takes a `jmp` the odd path does not), plus 16 from the match to the timer start by the instruction table, so 50 cycles from the raster match to the last store. With the two polls of $D012 the loop is under two raster lines a frame and the rest of the frame is free for other work. Memory, not time, is the cost: 18,000 bytes of bitmaps and screens in two VIC banks, plus the shared 1 KB of colour RAM.
+
+### Variations
+
+**IFLI.** The per-line cousin: two FLI pictures alternated the same way, with eight screen pages per frame and a stable raster engine rewriting $D018 every line; see `ifli_image`. It needs two banks for the same reason MCI does, and inherits FLI's cpu_every_line demand, where MCI leaves the frame free.
+
+**Switch on a raster line inside the frame.** Making the bank and $D018 change at a line inside the display instead of below it gives a picture whose upper part is one frame and lower part the other for that field, so the interlaced region can be confined to a band of lines and the rest of the screen held static and flicker-free; the switch line must then be the same every frame, in the border of the line, or the join tears.
+
+**Same bitmap, shifted.** Alternating one bitmap with itself, XSCROLL 0 and 1 on alternate frames, blends each multicolour pixel with its neighbour and reads as a soft 320-wide picture with no second bitmap and no second bank; the colour count does not rise, only the edges smear, and the flicker is confined to colour boundaries.
+
+### Pitfalls
+
+- `d016_unmasked_rmw_clobbers_csel_mcm` (`pitfalls/scroll.md`): the switch writes $D016 whole every frame; write it from a constant that carries MCM and CSEL, as the recipe does, not from the XSCROLL value alone.
+- `vic_bank_visibility_collision` (`pitfalls/banking.md`): each frame's bitmap and screen must be inside the bank that frame selects, and the two banks are switched with $DD00 every frame; a bitmap or screen placed in the other bank, or a pair that does not fit in one, shows garbage on that frame only, which flickers at 25 Hz and reads as a timing fault.
+
+### Recipes
+
+- `recipes/kickassembler/mci-interlace.md` — two banks, a self-drawn test card, the half-pixel measured against a control, the frame-loop cost timed, and a PIL average of the two fields.
+
+---
+
 ## koala_format — Koala Painter format load and display
 
 **Complexity:** low

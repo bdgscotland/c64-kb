@@ -252,6 +252,235 @@ Full 16-color plasma (40×25 color RAM update), per frame on PAL:
 
 ---
 
+## dot_flag_sine_plotter — A grid of dots on two sines, plotted and erased every frame through the hires plot
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D016, D018
+**Uses kernal:** (none)
+**Requires:** hires_plot, standard_bitmap
+**Cost:** cycles_per_frame=16098
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-dot-flag (the worst of 299 display-on PAL frames; 15,233 with the display blanked)
+**Cost includes:** hires_plot
+
+### Why
+
+The dot flag is the smallest effect that makes a bitmap plot earn its
+keep: a grid of single pixels, each column swung left and right by one
+sine and each dot lifted and dropped by another, so the grid ripples
+like a flag in a wind. It has no lines, no fill and no colour, which
+means every cycle of the frame is either the plot primitive or the work
+of undoing it, and a routine that can carry 128 of these at the frame
+rate can carry the points of a vector object. It is also where the two
+costs an animated bitmap always has, putting pixels down and taking the
+old ones up, are seen side by side and can be measured apart.
+
+### How
+
+Four tables, all built by the assembler:
+
+- `sinx`, 256 signed bytes of `round(100 * sin)`, and `siny`, 256
+  signed bytes of `round(60 * sin)`. Both amplitudes are below 128, so
+  no entry reaches the edge of a signed byte and nothing wraps
+  (`sine_table_peak_wraps_to_zero` in `pitfalls/maths.md` is the
+  unsigned amplitude-128 table whose peak comes out as 0). The recipe
+  stores `siny` twice over so that a fixed offset added to the table's
+  base can be indexed by a whole byte without running off the end.
+- The row address table and the mask table of `hires_plot`, each in its
+  own page, and an inverted copy of the mask table for the erase.
+- A 40-entry table of `column * 8`, the byte offset of a column's cell
+  within a bitmap row, in two bytes because it reaches 312.
+
+Dot (i, j) of the 16 by 8 grid is at `x = 160 + sinx[(t + 12 * i) & 255]`
+and `y = 100 + siny[(2 * t + 24 * j + 6 * i) & 255]`; t advances by 2 a
+frame. The 12 spreads the columns over most of a period so the whole
+flag bends; the 24 does the same for the rows; the `6 * i` term in y is
+what makes the ripple run diagonally across the grid rather than up and
+down in step; the `2 * t` makes the vertical wave run twice as fast as
+the horizontal one. The amplitudes keep x in 60 to 260 and y in 40 to
+160 (arithmetic: 160 ± 100 and 100 ± 60), so there is no clipping code.
+
+Each frame, in this order:
+
+1. Wait for the last display line. The erase runs in the blank.
+2. Erase: walk the saved list of 128 bitmap addresses and inverted
+   masks, and `AND` each byte with its inverted mask. This is the
+   erase-list variation of `hires_plot`.
+3. Plot: for each column, look up x, sign extend it to 16 bits, take
+   the mask pair from `x & 7` and the column offset from `x >> 3`; then
+   for each of the column's eight dots look up y, add the row address
+   for y to the column offset, `ORA` the mask into that byte, and store
+   the address and the inverted mask in the list. x depends only on the
+   column, so it is computed sixteen times a frame and y one hundred
+   and twenty-eight.
+4. Advance t.
+
+Erasing before plotting matters: a dot that lands this frame where
+another dot sat last frame is not then wiped by that dot's erase, and
+two dots that share a pixel are erased cleanly next frame because both
+list entries clear the same bit.
+
+### Why it works
+
+A hires bitmap holds pixel (x, y) at `row[y] + (x >> 3) * 8`, bit
+`7 - (x & 7)`, because the VIC-II fetches it cell by cell, eight
+consecutive bytes per cell and 320 per cell row (the `hires_plot`
+entry in `bitmap-modes.md` has the fetch order). Reading the byte,
+`ORA` with the mask and writing it back sets the pixel without touching
+its seven neighbours, and `AND` with the inverted mask clears it the
+same way, so a dot can be removed without knowing what else is in the
+byte. That is what makes the erase list possible: the list is a record
+of exactly which bits were set, and replaying it with `AND` puts the
+bitmap back as it was, however the dots overlapped. Screen RAM supplies
+one ink and one paper colour per cell and is written once; `$D011` bit
+5 turns bitmap mode on, `$D018` bit 3 puts the bitmap at `$2000` in the
+bank and `$D016` bit 4 clear keeps it hires.
+
+The sines are phases into a 256-entry table, so a phase is a byte, an
+add wraps it, and the whole of the motion is table lookups and 8-bit
+adds. The one 16-bit quantity is x, which reaches 260; it costs a sign
+extension and a three-bit shift across two bytes, once per column.
+
+### Variations
+
+**A third sine for a twist.** Add a term in `i * j` or in `t` alone to
+the y phase, or add a small `siny` term to x, and the flag folds over
+itself rather than rippling. One more lookup and add per dot; the
+amplitudes still have to sum to a range inside the screen.
+
+**Sprites for the dots.** Eight hardware sprites, one per row of the
+flag, each carrying a row of dots in its 24-pixel width, move by
+register writes alone and need no erase; the columns then bend only as
+far as the sprite's width allows and the rows are limited to eight
+without a multiplexer, so the flag is small and stiff. Cheap enough for
+a game's title screen.
+
+**A rotozoom-style grid.** Keep the plot and the erase list and replace
+the two sines with a rotation: x and y of dot (i, j) become
+`cx + i * cos - j * sin` and `cy + i * sin + j * cos` with the angle
+advancing each frame, which is the `dot_3d_rotator` with z held at
+zero. The per-dot cost is the same as here plus two adds, because the
+products are a per-frame table.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer A in the `dot-flag`
+recipe, overhead of an empty measurement removed:
+
+- Erase plus plot of 128 dots, display blanked: 15,233 cycles, the same
+  on PAL and NTSC. Per dot, 15,233 / 128 = 119.0 cycles (arithmetic).
+- The same build without the erase pass, display blanked: 10,866, so the
+  erase is 4,367 cycles, 34.1 per dot, and the plot with its per-column
+  x work and loop overhead 84.9 per dot (arithmetic from the two
+  measured frames).
+- With the display on, the frame costs 16,005 to 16,098 cycles on PAL
+  over 299 frames and 16,261 to 16,356 on NTSC: the plot pass runs while
+  the VIC is fetching and its badline stalls are counted by the timer.
+  Both fit a frame (19,656 on PAL, 17,095 on NTSC, arithmetic) so the
+  effect runs at the frame rate on both models, with about 700 cycles
+  to spare on NTSC.
+
+How many dots fit a frame at this per-dot cost, from the blanked figure
+and with nothing else in the frame (arithmetic, not built): 19,656 / 119
+is 165 on PAL and 17,095 / 119 is 143 on NTSC, and the display-on
+figures say to take about 1,000 cycles off each for badline stalls,
+which is roughly 156 and 135. Beyond that the effect renders every other
+frame.
+
+The frame does not fit the blank. The erase, about 69 lines, does; the
+plot, about 172 lines, runs on into the display window, and a dot whose
+row the beam has already passed is missing from that field and present
+from the next. That is the mechanism of `full_field_redraw_exceeds_vblank`
+in `pitfalls/text-mode-render.md`, and the recipe's mid-motion picture
+shows it as 91 lit pixels of 128. The cure the pitfall names, a second
+buffer swapped by `$D018` in the blank, costs a second 8,000-byte bitmap
+and a second erase list; the recipe does not build it.
+
+### Recipes
+
+- `recipes/kickassembler/dot-flag.md`: the tables, the erase list, the
+  two sines, every frame CIA-timed with the display blanked and on, the
+  128 pixels counted back out of the pinned picture, and the build
+  without the erase pass as the control (3,570 lit pixels after 300
+  frames).
+
+### Sources
+
+- `techniques/bitmap-modes.md`, `hires_plot`: the row table, the mask
+  table, the 63-cycle plot and the erase-list variation this technique
+  is built from.
+- `pitfalls/maths.md`, `sine_table_peak_wraps_to_zero`: why the
+  amplitudes are 100 and 60 and the tables signed.
+- `pitfalls/text-mode-render.md`, `full_field_redraw_exceeds_vblank`:
+  the 107-line, roughly 6,700-cycle blank the plot pass overruns.
+
+---
+
+## fire_effect — Colour-RAM heat map with decay and a luminance-ordered palette
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D020, D021, DC04, DC05, DC0D, DC0E
+**Requires:** lfsr_random
+**Cost:** cycles_per_frame=27301, bytes_code=2548, bytes_data=1065
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-fire-effect (the larger of the two half-screen updates, seed row and rows 23 to 12, PAL, screen on; the whole screen is 53,479 and the other half 26,115; bytes_data is the 1,000-byte heat map plus the 64-byte palette and the LFSR state)
+
+### Why
+
+A flame is the cheapest full-screen effect that reads as alive. Every cell is a number, the number cools and spreads as it rises, and the colour is looked up from the number: no character data, no bitmap, no sprites. Done in colour RAM over a screen of one solid glyph it is a thousand 4-bit stores per update plus the arithmetic, and it fills the whole display with motion from a forty-byte source row.
+
+### How
+
+1. Fill screen RAM with screen code 160, the reverse space, and set `$D021` and `$D020` to black. Every pixel of every cell is now a set pixel, so the cell shows its colour-RAM nibble and nothing else.
+2. Keep a heat map of 40 by 25 bytes in RAM, values 0 to 63.
+3. Seed row 24 each update: one 8-bit LFSR step per column (`lfsr_random`, Galois form, taps `$B8`, a constant non-zero seed), and bit 0 of the state sets the cell to 63 or 0.
+4. For rows 23 down to 0, for every column `c`: `heat[r][c] = (heat[r+1][c-1] + heat[r+1][c] + heat[r+1][c+1] + heat[r+2][c]) / 4 - decay`, floored at 0, with decay 1. Column 0 uses itself in place of `c-1`, column 39 uses itself in place of `c+1`, and row 23 reads row 24 twice because there is no row 25. Going downwards through the rows means each row reads rows that were already updated this pass, which is what lifts the heat.
+5. Four values of at most 63 sum to at most 252, so the sum fits one byte: `lda`, three `adc`, two `lsr`, then `beq` past a `sec` / `sbc #decay` when the quotient is already zero. No 16-bit temporary; that is why the heat range is 0 to 63.
+6. Write `palette[heat]` into colour RAM for every cell, row by row, with the column in X: `sta $D800 + r * 40, x`. The index never passes 39, so it never reaches 1,024 and CIA1.
+7. The palette is 64 bytes mapping heat to a VIC colour in rising luminance order. The recipe uses seven colours, black, brown, red, orange, light red, yellow, white (0, 9, 2, 8, 10, 7, 1), eight steps each for the first five and twelve for yellow and white; the choice of seven and the weighting are design decisions, the order is `colour_fade`'s luminance ranking with the non-fire hues left out.
+8. The whole screen costs more than a frame, so run it in two halves on alternate frames: the seed row and rows 23 to 12 after one line-256 crossing, rows 11 to 0 after the next.
+
+### Why it works
+
+A bitmap fire has to compute a heat value per pixel and pack bits; a character fire computes one per cell and the VIC does the rest, so the arithmetic is 1,000 cells rather than 64,000 pixels and the write is one store per cell. Colour RAM is the right target because it is the only per-cell store that changes a cell's appearance without touching character data: with a solid glyph the nibble is the picture. The averaging kernel is a low-pass filter run once per row per update; heat diffuses sideways as it rises, which rounds the columns into flame shapes, and the constant decay is what makes the flame finite in height rather than a smear. The divide by four also decays, because it truncates: with decay 0 the recipe's fire still tops out at orange and light red rather than white.
+
+Luminance order matters because the eye reads the palette as a temperature scale. A table that runs black, brown, red, orange, yellow, white is monotone in brightness, so a cell's brightness is its heat and the picture reads as a gradient; put a bright colour below a dark one and the flame gets a stripe that reads as a shape rather than heat. `colour_fade` in `transitions.md` gives the VICE PAL luminance order for all sixteen colours; the fire's seven are a subset of it.
+
+### Cycle budget
+
+Measured on the recipe with CIA1 timer A in VICE x64sc, screen on (badline stealing included):
+
+- Whole screen, seed row and rows 23 to 0: 53,479 cycles PAL, 53,695 NTSC. About 2.7 PAL frames.
+- Bottom half, seed row and rows 23 to 12: 27,301 PAL, 27,773 NTSC.
+- Top half, rows 11 to 0: 26,115 PAL, 26,329 NTSC.
+- Per cell in the X-indexed loop, from the listing: `clc`, `lda abs,x`, three `adc abs,x`, two `lsr`, `beq`, `sec`, `sbc #`, `sta abs,x`, `tay`, `lda abs,y`, `sta abs,x`, `inx`, `cpx`, `bne` is 51 cycles (arithmetic from the instruction table). The 950 loop cells are 48,450, the fifty edge cells at about 41 each about 2,050 and the seed row about 1,000: 51,500 before badline stealing, against the measured 53,479.
+
+A half is still 1.3 PAL frames, so with the update synced to a line-256 crossing each half occupies two frames and the whole screen refreshes every four: 12.5 updates a second PAL, 15 NTSC. Fully unrolling the columns to absolute stores and replacing the shift and subtract with a 256-entry table would bring the per-cell cost to about 38 cycles (arithmetic, not built here): 19,000 for a half, which only just fits a PAL frame of 19,656 and does not fit an NTSC frame of 17,095.
+
+### Variations
+
+**2x2 cell fire with a half-height glyph pair.** Give every cell one of two custom glyphs, the top half set or the bottom half set, so a 40 by 25 screen shows 40 by 50 heat cells with two colours per character cell: the colour-RAM nibble for the set half and `$D021` for the clear half. Only one of the two halves can vary per cell, so it is a vertical resolution gain for the bright tip at the cost of a fixed black lower half; a real 2x2 needs four glyphs and the two-colour limit still holds.
+
+**A wider kernel.** Add `heat[r+1][c-2]` and `heat[r+1][c+2]` and divide by eight (three shifts; six values of at most 63 still fit a byte at 378 only if the range is cut to 42, or keep a carry byte). Wider kernels spread the flame sideways faster and soften it; the cost is two more `adc` per cell.
+
+**Wind.** Bias the kernel: read `c-1` twice and drop `c+1` for a flame that leans right, or swap them for left. Alternating the bias every few updates with a slow sine gives a flicker. Costs nothing extra per cell, since the kernel is the same size.
+
+### Pitfalls
+
+`full_field_redraw_exceeds_vblank` (`../pitfalls/text-mode-render.md`): this is a full rewrite of colour RAM every update and it does not fit a frame; the split into halves and the raster-crossing wait are the answer, and a viewer sees the tear within an update as motion because the picture is changing anyway. `colour_ram_index_past_last_cell_hits_cia1` (same page): every store is by row with X at most 39, so the index cannot reach 1,024; write the loop any other way and the first stray store hits `$DC00`. `lfsr_zero_state_lockup` (`../pitfalls/cpu.md`): the seed is a constant `$5A` and a Galois LFSR never enters zero from a non-zero state, so the lockup cannot happen unless the constant is set to zero; a seed taken from a timer or a keypress must be checked.
+
+### Recipes
+
+- `recipes/kickassembler/fire-effect.md`: the design above, seed `$5A`, decay 1, pinned at cycle 6,565,800 on both models with a per-colour cell census of the picture and a decay-0 control.
+
+### Sources
+
+- The measurements on this entry are from the recipe named above, VICE x64sc 3.10, CIA1 timer A; the luminance order is `colour_fade`'s.
+
+---
+
 ## tunnel — Tunnel effect
 
 **Complexity:** high

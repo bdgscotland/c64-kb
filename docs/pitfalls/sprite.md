@@ -340,7 +340,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
-**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield, dypp_sprite_sine_scroller
 
 ### Symptom
 
@@ -587,7 +587,7 @@ the cached variable is immediately populated.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D000, D010
-**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms, lane_depth_engine, starfield
+**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms, lane_depth_engine, starfield, dypp_sprite_sine_scroller
 
 ### Symptom
 

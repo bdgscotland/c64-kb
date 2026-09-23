@@ -1374,5 +1374,65 @@
   },
   "kickassembler/tape-turbo-loader": {
     "skip": "needs a TAP on -1, a PLAY press through -moncommands and +dsresetwithcpu, which the verifier has no keys for; the page's pictures are under docs/figures and its Build section gives the exact command"
+  },
+  "kickassembler/mci-interlace": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/mci-interlace.png",
+      "ntsc": "screenshots/mci-interlace-ntsc.png"
+    }
+  },
+  "kickassembler/dot-flag": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/dot-flag.png",
+      "ntsc": "screenshots/dot-flag-ntsc.png"
+    }
+  },
+  "kickassembler/fire-effect": {
+    "cycles": 6565800,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fire-effect.png",
+      "ntsc": "screenshots/fire-effect-ntsc.png"
+    }
+  },
+  "kickassembler/dypp-sprite-scroller": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/dypp-sprite-scroller.png",
+      "ntsc": "screenshots/dypp-sprite-scroller-ntsc.png"
+    }
+  },
+  "kickassembler/isometric-room": {
+    "cycles": 5000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/isometric-room.png",
+      "ntsc": "screenshots/isometric-room-ntsc.png"
+    }
   }
 }
