@@ -392,6 +392,11 @@ composers who started in software production and came to C64 secondarily.
   architecture, filter modes, 6581 vs 8580 differences, envelope timing
   tables.
 
+- [docs/toolchains/sidreloc.md](../toolchains/sidreloc.md) — Moving a
+  finished `.sid` to another page and zero-page range when the tracker
+  source is not available; the command line, what defeats it, and a
+  register-write comparison to check the result.
+
 - [docs/art/asset-pipelines.md](../art/asset-pipelines.md) — How tracker
   output (player binary, SID file, or raw data blob) is integrated into
   a demo or game build: load address conventions, multi-file PRG assembly,

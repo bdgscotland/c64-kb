@@ -60,8 +60,12 @@ the load address itself.
 
 **Multicolor cell layout.** Each 8×8 cell in the bitmap uses 2 bits per pixel,
 packed high-bit-first within each byte. Bit pairs `%00`, `%01`, `%10`, `%11` map
-to background, screen-RAM low nybble, screen-RAM high nybble, and color-RAM values
-respectively. The cell ordering is left-to-right, top-to-bottom in reading order.
+to background, screen-RAM high nybble, screen-RAM low nybble, and color-RAM values
+respectively. An earlier version of this paragraph had the two screen-RAM nybbles
+the other way round; decoding a png2prg Koala file against its source image gave
+0 wrong pixels with this order and 16,000 of 32,000 with the old one, and VICE
+showed the file pixel-exact (see [png2prg](../toolchains/png2prg.md), "Round trip,
+measured"). The cell ordering is left-to-right, top-to-bottom in reading order.
 A converter that re-packs pixels must replicate this cell-major layout or the
 image will display with scrambled columns.
 
@@ -258,6 +262,8 @@ entry when compiled in.
 | ins2snd2 | .ins | sound-effect data as DASM-style source or binary (`-b`) | GoatTracker 2 distribution; an earlier row here named a `gt2asm` .sng-to-include converter, which does not exist |
 | Exomizer 3 | any binary | .exo stream or .prg with depacker | Compression; see below |
 | c1541 | .d64 | individual files | Commodore disk image tool |
+| [png2prg](../toolchains/png2prg.md) 1.12 | .png (C64 palette, cell rules already met) | Koala, hires, charset, sprite .prg; optional self-running viewer | CLI; refuses colour clashes and a 17th colour instead of fixing them |
+| [sidreloc](../toolchains/sidreloc.md) 1.0 | .sid | .sid moved by whole pages, zero page remapped | CLI; for tunes you have only as a `.sid`; checks its own output |
 
 ### Oscar64 native data inclusion
 

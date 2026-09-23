@@ -340,7 +340,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
-**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors
 
 ### Symptom
 

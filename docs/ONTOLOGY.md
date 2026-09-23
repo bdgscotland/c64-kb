@@ -168,7 +168,7 @@ editor, debugger, packer).
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Tool name (e.g. "oscar64", "kickassembler") |
-| kind | string | The page's `tool_kind`: c-compiler, c-library, assembler, linker, emulator, debug-bridge, unit-test, reference-catalog |
+| kind | string | The page's `tool_kind`: c-compiler, c-library, assembler, linker, emulator, debug-bridge, unit-test, reference-catalog, asset-converter |
 | maintainer | string | Maintainer, or "" |
 | license | string | Licence, or "" |
 | home_url | string | Project home page |

@@ -79,8 +79,18 @@ Validation on PAL. "Old sum" is the previous briefing arithmetic over the same p
 
 `test/plan-budget.test.ts` rebuilds every row from the shipped pages.
 
+Data 742, schema 26, tools 1.31.0, package 0.11.0.
 
-Data 741, schema 26, tools 1.31.0, package 0.11.0 (#21, below).
+**Issue #21, the last items.** `mixed_sprite_char_actors` (a sprite
+fighter and a character fighter, priority per frame), a reference page on
+which game and engine sources may be adapted and which are facts only
+(`game-design/reference-game-sources.md`; the Oscar64 GPL question is
+#31), and tool pages for `sidreloc` and `png2prg`, both run here.
+Corrected, each with a clause: `vic-ii-reference.md` defined sprite
+priority and `$D01F` background by colour register (multicolour pairs 00
+and 01 are background; Bauer 3.8.2 and measured); `asset-pipelines.md`
+had the Koala bit pairs swapped; `bitmap-koala-viewer.md` gave an
+`#embed` form that does not compile and offsets two bytes late.
 
 **Issue #21, GR-05/10, GR-06, GR-07, GR-11.** Engines for games at the
 scale of Elite and Lemmings, each self-checked against a Python model:

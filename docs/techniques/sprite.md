@@ -794,7 +794,7 @@ foreground pixels even when rendered behind them.
 
 ### Recipes
 
-- No recipe yet. Oscar64's `spr_set()` has no priority argument (its signature
+- `recipes/oscar64/mixed-fighters.md` sets `$D01B` per frame to put a sprite actor in front of or behind a character actor, and measures that bit pair 01 in multicolour text is background. Oscar64's `spr_set()` has no priority argument (its signature
   is `spr_set(sp, show, xpos, ypos, image, color, multi, xexpand, yexpand)`);
   write `vic.spr_priority` ($D01B) directly. An earlier version of this list
   pointed at `recipes/oscar64/sprite-multiplex-8.md` for a "`spr_set()`
@@ -1816,3 +1816,175 @@ counters are not in these figures.
   sprites made of physical sprites, per-part flipped X offset, expand
   flag, and per-part clip limits.
   https://github.com/cadaver/c64gameframework
+
+---
+
+## mixed_sprite_char_actors — Large actors drawn partly in hardware sprites and partly in reserved character cells
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D000, D001, D010, D018, D01B
+**Uses kernal:** (none)
+**Requires:** mob_priority
+**Cost:** cycles_per_frame=6108, sprites_per_line=2
+**Cost basis:** measured-vice
+
+### Why
+
+A beat-'em-up or sports fighter is bigger than a sprite. Two fighters
+of 2 x 2 multicolour sprites take all eight, and they stand side by
+side on the same raster lines, so a multiplexer cannot reuse any of
+them: it reuses a sprite only below the lines where it was last shown.
+Nothing is left for a third actor, a ball or an effect. The way round
+is to draw part of the cast in character cells: a block of cells whose
+glyphs belong to that actor alone and are rewritten when it animates
+or moves inside a cell. It costs CPU time when the picture changes and
+no sprite at all, and its size per line is limited only by the cells.
+
+What IK+ (System 3, 1987) did is not established here. Games That
+Weren't has preserved Archer Maclean's IK+ design notes as scanned
+galleries; the page's text does not describe how the fighters were
+drawn, and the source code was not published. A Lemon64 thread titled
+"IK: How sprites and character graphics worked together" is a forum
+report; it could not be read here (HTTP 403).
+
+### How
+
+1. Reserve a glyph range in a RAM font (`$D018`). A block W x H cells
+   uses W x H codes, laid out once: cell `(cx, cy)` of the block shows
+   code `base + cy * W + cx`. Nothing else on screen uses those codes.
+2. Draw the actor's picture into those glyphs. Rewrite them when the
+   animation frame changes, and when the actor moves inside a cell if
+   it moves in steps finer than 8 pixels.
+3. Move the block of codes when the actor crosses a cell boundary:
+   clear the cells it leaves and write the codes at the new column.
+4. Draw the other actor, or the parts that must move freely, in
+   hardware sprites (`multi_sprite_object`).
+5. Decide who is in front each frame with the sprites' `$D01B` bits,
+   and finish every write before the raster reaches the actors' first
+   line, or start it after their last line.
+
+**Whole cells or pre-shifted.** Moving the block in whole cells needs
+no extra table, and the glyphs change only on an animation frame; but
+the actor steps 8 pixels, which shows beside a sprite moving in 1 or 2.
+Pre-shifting stores each frame at every offset inside a cell, one
+column wider, and copies the right one on every move. In multicolour
+text a pixel is 2 screen pixels wide, so four shifts cover every
+position. The recipe's 16 x 48-pixel actor in a 5 x 6 block is 240
+bytes a shift, 1,920 for two poses (the Oscar64 map).
+
+**Colour.** A multicolour cell has one colour of its own, colour RAM
+0 to 7, and shares `$D022` and `$D023` with every multicolour cell on
+the screen. A multicolour sprite has one colour of its own and shares
+`$D025` and `$D026` with every multicolour sprite. Two actors drawn
+different ways can therefore look alike only within those limits.
+
+**Background.** The block replaces the cells under it. Its 00 pixels
+show `$D021`, not the scenery. Keep the actors on a plain band, or
+merge the background into the actor's glyphs as a masked draw
+(`software_sprite_preshifted`), which costs more per frame (not
+measured here). Two character actors that overlap share cells and need
+that merge too; one character actor and one sprite actor do not.
+
+### Overlap and priority
+
+The character actor is playfield, so the sprite actor's `$D01B` bits
+decide who is in front, one bit per sprite (`mob_priority`). Bits clear:
+the sprite actor is in front of every pixel of the character actor.
+Bits set: the character actor's foreground pixels cover the sprite.
+In multicolour text only bit pairs 10 and 11 are foreground for this;
+pairs 00 and 01 are background, so the sprite shows through any part
+drawn in `$D022`. The recipe measured it: with the character fighter in
+front, 344 pixels of it covered the sprite fighter and 44 pixels of
+the sprite fighter showed through its `$D022` belt (VICE x64sc, PAL and
+NTSC, every arena pixel compared with a model). The 344 were 296 of
+pair 11 and 48 of pair 10. Draw the parts that
+must cover the other actor in pairs 10 and 11.
+
+Sprite-to-sprite order is fixed by sprite number and ignores `$D01B`.
+It does not enter between the two actors here, since only one of them
+is sprites. Flip the bits in the same update as the positions, before
+the raster reaches the actors, so one frame never shows the old order.
+
+### Why it works
+
+The VIC reads the glyph bytes on every line that shows the cell, so a
+glyph write shows on the next frame that draws it, and a code write
+moves the whole cell. Because the actor owns its codes, a redraw is a
+copy into a fixed address range: no mask, no read of the screen and no
+search for which cells are affected. The sprite actor costs its
+register writes only. The two meet only in the VIC's priority logic,
+which needs no CPU time.
+
+The Oscar64 recipe hashes the arena's screen codes, the 240 glyph bytes
+and the sprite registers at 17 checkpoints of a scripted fight and
+compares them with a Python model; none differed, on PAL or NTSC. The
+pinned screenshots, and a probe with the sprite fighter in front, match
+the model at every one of the 15,360 arena pixels (VICE x64sc 3.10).
+
+### Against the alternatives
+
+Choose all-sprite fighters when there are two actors and nothing else
+shares their lines: no redraw, free placement, their own colours.
+Choose a multiplexer when the extra actors are above or below one
+another, not side by side. Choose a character actor when actors share
+raster lines and the sprites are needed elsewhere, when an actor is
+bigger than sprites cover, or when it stands still much of the time: a
+standing character actor costs nothing. Choose masked software sprites
+(`software_sprite_preshifted`) when the actor must pass over scenery.
+
+### Variations
+
+**Fewer stores on a move.** The recipe clears all 30 old cells and
+writes 30 new ones. Only the column left behind needs clearing, 36
+stores instead of 60 (arithmetic; not measured here).
+
+**Bitmap actor.** The same idea in a bitmap: the actor owns an area of
+bitmap bytes. There is no code to move, so every move is a copy of the
+whole area, and colour comes from screen RAM per cell.
+
+**Parts in sprites.** A character actor can carry a sprite for the part
+that moves fastest, a fist or a foot, so the body is redrawn only on
+pose changes. Not done in the recipe.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked, in the
+Oscar64 recipe. Screen blanked, one call each, less an empty call: 3,323
+cycles to copy the 240 glyph bytes, about 13.8 a byte; 1,899 to clear
+and rewrite the 5 x 6 block one cell over; 448 to place the four
+sprites, two of them past X 255. The whole update, started at raster
+line 256, took 508 to 6,108 cycles on PAL. The worst tick does all three
+parts, which every walking tick on which the actor crosses a cell
+boundary does; that is the Cost line. A walking tick inside a cell
+skips the block move, about 4,209 (6,108 − 1,899, arithmetic). A hold
+tick is 508. On NTSC the worst was 6,366: from line 256 an update that
+long runs past the end of the 263-line frame into the badlines of the
+top text rows, while on PAL it ends by line 41 (arithmetic from 63 and
+65 cycles a line; the stall was not traced). These are compiled C. An
+unrolled `lda abs,x` / `sta abs,x` copy is 9 or 10 cycles a byte,
+about 2,200 to 2,400 for 240 bytes (arithmetic from the instruction
+table; not measured here). The model check and the on-screen text are
+not in these figures.
+
+### Recipes
+
+- `recipes/oscar64/mixed-fighters.md` (one fighter in four multicolour
+  sprites, one in a 5 x 6 block of pre-shifted multicolour cells moving
+  in 2-pixel steps; on autopilot they overlap, strike, cross with `$D01B`
+  swapped and hold overlapped; screen codes, glyph bytes and sprite
+  registers checked against a Python model at 17 ticks; cycles per
+  glyph copy, block move, sprite update and tick; every arena pixel
+  compared with the model with PIL on PAL and NTSC)
+
+### Sources
+
+- Games That Weren't, "IK+ design and development notes" (Frank
+  Gasking, 19 December 2024): Archer Maclean's IK+ notes preserved as
+  scanned galleries; source code withheld; the text does not describe
+  the rendering method.
+  https://www.gamesthatwerent.com/2024/12/ik-design-and-development-notes/
+- Lemon64 forum, "IK: How sprites and character graphics worked
+  together" (forum report; returned HTTP 403 here, not read).
+  https://www.lemon64.com/forum/viewtopic.php?t=38956
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II)", section 3.8.2 (with MCM set, bit pairs 00 and 01 are background for priority and collisions): http://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
