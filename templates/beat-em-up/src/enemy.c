@@ -84,10 +84,11 @@ static void spawn_wave(const struct Wave *w)
             break;
         char f = i + 1;
         // Just off the screen; on the left never below world x 0. The
-        // positions are unsigned, and the Oscar64 build c64-kb names
-        // treats an int converted from an unsigned as non-negative:
-        // (int)65512 < (int)228 came out false (a 20-line test, run in
-        // VICE), so an enemy spawned at x -24 walked the wrong way.
+        // positions are unsigned, and an int loaded from an unsigned of
+        // 32,768 or more compares as not negative against another
+        // non-constant int, at every level, on the local Oscar64 and
+        // v1.32.273 (c64-kb #30 fault 8): an enemy spawned at x -24
+        // (65,512) walked the wrong way. think() compares the unsigned.
         unsigned x = s->side ? camx + 336 : camx >= 24 ? camx - 24 : 0;
         fighter_spawn(f, s->kind, x, s->y, s->side ? FACE_LEFT : FACE_RIGHT);
         ai_state[f] = AI_ENTER;

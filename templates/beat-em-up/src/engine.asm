@@ -102,8 +102,11 @@ ptr:    sta ptrs + s
 // loop's meter bracket runs (CIA2 timer A started) is already in that wall
 // time; one that lands outside times itself on CIA2 timer B and adds the
 // count to irq_cyc, which C folds into the frame (main.c). The cycles
-// before the start and after the stop, about 40 an IRQ (arithmetic), are
-// not counted.
+// before the start and after the stop are not counted: about 123 an IRQ by
+// instruction count (the #39 review; an earlier comment said 40). Before:
+// the interrupt 7, three pushes 13, CLD 2, IrqIn to its STA $DD0F 26 = 48.
+// After: the rest of IrqOut 47, the $D019 acknowledge, pulls and RTI 28 =
+// 75. With all three IRQs outside the bracket a frame reads about 370 low.
 irq_meter:  .byte 0
 irq_timing: .byte 0
 irq_cyc:    .word 0

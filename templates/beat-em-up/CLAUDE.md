@@ -21,26 +21,37 @@ this program depends on:
   bands a frame (line 251 the GO sign, line 76 the fighters, line 212 the
   HUD faces). C fills the back half of the tables and publishes it with
   the next picture's `$D016` and `$D018` (`view_sprites`, `view_publish`).
-- The fighter band holds eight sprites and never reuses one: four
-  fighters of two parts. A fifth fighter, or a third part, has no sprite on
-  those lines. The nearest fighter takes sprites 0 and 1: depth is the
-  VIC-II's sprite priority. Keep a fighter's highest line at 91 or below
-  (ground line 150, jump 18) so the band's IRQ at line 76 has finished.
+- The fighter band holds eight sprites and never reuses one: four sprite
+  fighters of two parts, or three and the brute. A fifth sprite fighter, or
+  a third part, has no sprite on those lines. The nearest fighter takes
+  sprites 0 and 1: depth is the VIC-II's sprite priority. Keep a fighter's
+  highest line at 91 or below (ground line 150, jump 18) so the band's IRQ
+  at line 76 has finished.
+- The brute is character cells (`src/brute.c`): two character sets at
+  `$E000` and `$E800`, one brute a wave, his cells in both street pages.
+  Street glyphs on rows 2-19 use bit pairs 00 and 01 only, or `$D01B`
+  hides fighters behind the street too. His cell moves must finish before
+  his top row: the verdict counts the ones that did not.
 - `make flickercheck` after any change to the fighters, the art, the poses
-  or the IRQs: `tools/flickercheck.py` renders the fighters from `src/`
-  (the `SPRITE-ART` and `POSES` blocks in `art.c`, the enum in `game.h`,
-  the colours in `view.c`: keep their markers and shapes) and matches
-  shots inside the photo stops. A changed wave, AI or art moves the stops:
-  re-pin `FLICKER_PAL` and `FLICKER_NTSC`.
-- The scroll never writes the page on display: it prepares the other page
-  five rows a frame (`src/view.c`). Keep the camera at 2 pixels a frame
-  or less.
-- World x stays below 32,768: the Oscar64 build treats an `int` made from
-  a larger `unsigned` as not negative (README, "Which Oscar64").
+  or the IRQs: `tools/flickercheck.py` renders the fighters and the brute
+  from `src/` (the `SPRITE-ART`, `BRUTE-ART` and `POSES` blocks in `art.c`,
+  the enums and colours in `game.h`, the colours in `view.c`: keep their
+  markers and shapes) and matches shots inside the photo stops. A changed
+  wave, AI or art moves the stops: re-pin `FLICKER_PAL` and `FLICKER_NTSC`.
+  `make gameover` checks the GAME OVER screen.
+- The scroll never writes the page on display but for the brute's cells:
+  it prepares the other page four rows a frame (`src/view.c`). Keep the
+  camera at a pixel a frame.
+- The frame is nearly full on NTSC (16,465 of 17,095 at worst, README):
+  meter anything you add, with `-dPROF=n` for one subsystem and
+  `-dMETER_WINDOW=n` for another part of the run.
+- World x stays below 32,768 and is compared as unsigned: Oscar64 compares
+  an `int` loaded from a larger `unsigned` as not negative (c64-kb #30
+  fault 8; README, "Which Oscar64").
 - The autopilot is a bot (`src/autopilot.h`), not a timeline: it reads the
   game and plays on. `-dDEBUG_AT=n` freezes at frame n and prints the
-  state on the HUD; `-dPROF=n` meters one subsystem; `-dMETER_WINDOW=1`
-  meters the walk instead of the crowded fight.
+  state on the HUD. On a failed verdict, row 24 shows the failed checks as
+  bits and row 22 the counts behind them.
 
 `PLAN.md` here is this starter's plan, filled from real tool output;
 new-project keeps it as `PLAN-beat-em-up-example.md` and gives the new

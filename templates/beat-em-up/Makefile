@@ -28,8 +28,9 @@ SHOT_CYCLES_NTSC := 110000000
 # What the program may write, for make claims (claims-watch's own grammar).
 # - Oscar64's registers start at $02 (BC_REG_WORK_Y). A function with more
 #   temporaries than BC_REG_TMP ($43) to BC_REG_TMP_SAVED ($53) spills
-#   past $53 (its InterCode.cpp, AddSpace): view_sprites stores to $54-$59
-#   (measured; $54-$56 before a local was added). $5A-$5F is headroom for
+#   past $53 (its InterCode.cpp, AddSpace). Measured by claims-watch:
+#   $54-$5F (view_sprites, vic_compare, vic_expect) and $60 (grade, in the
+#   AUTOPILOT build); the first draft used $54-$56. $61-$6F is headroom for
 #   the next such edit; nothing else lives there.
 # - The KERNAL's IRQ runs until main's SEI, so IRQ is declared.
 # - $DC0D (all CIA1 interrupts off) counts against the three CIA1 units.
@@ -37,7 +38,7 @@ SHOT_CYCLES_NTSC := 110000000
 #   meter (engine.asm); the $DD0D stores count against all three CIA2
 #   units, so all three are declared as the harness's.
 # - The whole run, title to verdict, is traced (--cycles, the PAL pin).
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$5F' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
 
 # This starter's own proofs, which npm run verify:templates runs too.
 VERIFY_TARGETS := flickercheck gameover
@@ -53,8 +54,8 @@ include $(HARNESS)/harness.mk
 # scanning the run; a stop is 64 frames, about 1.26M cycles on PAL and
 # 1.09M on NTSC. A changed AI, wave or art moves the stops: re-scan with
 # `-dDEBUG_AT=n` builds or shots, and re-pin.
-FLICKER_PAL  := 34200000 34600000 44000000 44500000 80300000 80800000
-FLICKER_NTSC := 30700000 31100000 42600000 43100000 77700000 78100000
+FLICKER_PAL  := 34250000 34750000 44250000 44750000 80500000 81000000
+FLICKER_NTSC := 30700000 31100000 42900000 43300000 78300000 78450000
 PRG_FLICKER := build/$(NAME)-flicker.prg
 $(PRG_FLICKER): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build

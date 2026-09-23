@@ -347,7 +347,15 @@ void view_publish(void)
 {
     __asm { sei }
     BLOB(ASM_PF_D016) = D016_PLAY | (7 - (camx & 7));
-    BLOB(ASM_PF_D018) = page_d018[shown_page] | (b_cs ? D018_CS1 : 0);   // the brute's set too
+    // The page's $D018 and the brute's character set, in two steps: written
+    // as one expression, `page_d018[shown_page] | (b_cs ? D018_CS1 : 0)`,
+    // Oscar64 v1.32.273 indexed page_d018 with X before loading X (ORA
+    // $abs,x ahead of LDX shown_page, read in its .asm), and the street
+    // showed the sprite data as characters. The local build was right.
+    char d = page_d018[shown_page];
+    if (b_cs)
+        d |= D018_CS1;
+    BLOB(ASM_PF_D018) = d;
     BLOB(ASM_PF_PTRHI) = ((unsigned)page_addr[shown_page] >> 8) + 3;   // pointers at page + $3F8
     BLOB(ASM_READY) = 1;
     __asm { cli }

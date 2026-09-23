@@ -163,7 +163,7 @@ enum Kind { K_HERO, K_THUG, K_BRUTE };          // the brute is drawn in charact
 #define HP_BRUTE  12
 enum Mode { M_OFF, M_FREE, M_ATTACK, M_JUMP, M_HURT, M_FLY, M_DOWN, M_KNEEL, M_KO };
 extern char fmode[NFIGHT], fkind[NFIGHT], fface[NFIGHT], fhp[NFIGHT], ftimer[NFIGHT];
-extern unsigned fx[NFIGHT];         // foot column, world pixels
+extern unsigned fx[NFIGHT];         // foot column, world pixels, below 32,768 (enemy.c: #30 fault 8)
 extern char fy[NFIGHT];             // ground line (raster line of the feet)
 extern char fh[NFIGHT];             // height above the ground, pixels
 extern char farc[NFIGHT];           // index into the arc table while airborne

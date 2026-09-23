@@ -8,8 +8,9 @@ produced on 2026-09-23 by c64-kb 0.15.0 and pasted whole.
 A side-on street brawler: a street 128 characters long scrolls to the right
 through a 38-column window in three stages, and each stage locks the camera
 until its waves of enemies are beaten. The player and up to three enemies
-are two multicolour sprites each and walk on a depth plane; the nearest
-fighter is drawn in front. Punch, kick and a jump kick land only on the
+walk on a depth plane; the nearest fighter is drawn in front. The player and
+the thugs are two multicolour sprites each; the brute is drawn in character
+cells, and a sprite farther away than he is goes behind him. Punch, kick and a jump kick land only on the
 animation frames that carry a hit box and only on a fighter in the same
 lane. Enemies approach, line up in the lane, attack and back off; a kick or
 a third punch knocks a fighter down and he gets up again. Health bars and
@@ -23,10 +24,11 @@ Command: `npx tsx src/cli.ts game-briefing "A side-on street brawler in the Doub
 Kept from its 16 proposals: lane_depth_engine, multi_sprite_object,
 lane_pursuit_ai (the state names: approach, alongside, attack, back off),
 wave_director (waves start at a scroll position), soft_scroll_h,
-sid_play_routine_pattern. Its sprite_multiplex_24 becomes
-sprite_multiplex_game (the KB's game multiplexer: double-buffered tables
-written by IRQs, $D010 precalculated); mob_priority is not needed (every
-sprite is in front of the street).
+sid_play_routine_pattern, mob_priority ($D01B for a fighter behind the
+brute). Its sprite_multiplex_24 becomes sprite_multiplex_game (the KB's game
+multiplexer: double-buffered tables written by IRQs, $D010 precalculated).
+mixed_sprite_char_actors was not proposed; it came in with the #39 review,
+ported from the other beat-em-up draft (the brute in characters).
 
 Dropped: `vector_balls_sprites` and `dypp_sprite_sine_scroller` (the word
 "scrolls" matched demo effects), `char_scroll_buffer_h` (one buffer shifted
@@ -62,10 +64,12 @@ masks colour reads with 15).
 |---|---|---|---|
 | tile_map_render | 2 x 2 metatiles from the street text; one new column per coarse step | oscar64-tile-map-render | full_field_redraw_exceeds_vblank, colour_ram_index_past_last_cell_hits_cia1 |
 | soft_scroll_h | XSCROLL for the pixel; the column step is a page flip | the platformer starter's view.c | xscroll_applies_to_all_rows, d016_unmasked_rmw_clobbers_csel_mcm |
-| screen_double_buffer_d018 | two pages: one shown, the other prepared five rows a frame | the platformer starter's view.c | full_field_redraw_exceeds_vblank, vic_bank_visibility_collision |
+| screen_double_buffer_d018 | two pages: one shown, the other prepared four rows a frame | the platformer starter's view.c | full_field_redraw_exceeds_vblank, vic_bank_visibility_collision |
 | raster_split_modes | the HUD under the street gets 40 columns, hires and its own page at line 212 | the platformer starter's engine.asm | xscroll_applies_to_all_rows, raster_irq_first_line_jitter, idle_fetch_byte_shows_in_gaps |
 | lane_depth_engine | plane Y is depth: sorted every frame, nearest fighter in the lowest sprites, hits gated by a 6-line window | oscar64-beat-em-up-lanes | sprite_x_high_bit_wrong_register, sprite_x_range_hidden_and_seam |
 | multi_sprite_object | a fighter is two parts at per-pose offsets from his feet | oscar64-multi-sprite-object | sprite_registers_persist_across_state_change, sprite_x_range_hidden_and_seam |
+| mixed_sprite_char_actors | the brute in 5 x 6 character cells, pre-shifted, built a row a frame into the character set not shown | oscar64-mixed-fighters (and the other #39 draft's actors.h) | dirty_cell_skip_leaves_overlay_trail, full_field_redraw_exceeds_vblank, vic_bank_visibility_collision |
+| mob_priority | $D01B for every sprite of a fighter farther away than the brute; the street keeps to bit pairs 00 and 01 | kickassembler-sprite-priority-classes | sprite_registers_persist_across_state_change, sprite_priority_collision_silent |
 | sprite_multiplex_game | three bands a frame (sign, fighters, HUD faces) from double-buffered tables the IRQs write | kickassembler-sprite-multiplex-game | sprite_dma_overflow, decimal_mode_in_irq_handler, d012_wrap_around |
 | per_frame_hitbox | an attack frame carries a hit box; every pose a hurt box | oscar64-per-frame-hitbox | sprite_x_high_bit_wrong_register |
 | sprite_animation_table | fighter moves as (pose, frames, box) tables | oscar64-sprite-animation-table | vic_bank_visibility_collision |
@@ -82,16 +86,16 @@ masks colour reads with 15).
 
 ## Compatibility
 
-Command: `npx tsx src/cli.ts check-compatibility tile_map_render soft_scroll_h screen_double_buffer_d018 raster_split_modes lane_depth_engine multi_sprite_object sprite_multiplex_game per_frame_hitbox sprite_animation_table jump_arc_table lane_pursuit_ai wave_director object_pool sid_play_routine_pattern sfx_engine_beside_music frame_sync_loop joystick_edge_detect decimal_print raster_profile_bars`
+Command: `npx tsx src/cli.ts check-compatibility tile_map_render soft_scroll_h screen_double_buffer_d018 raster_split_modes lane_depth_engine multi_sprite_object mixed_sprite_char_actors mob_priority sprite_multiplex_game per_frame_hitbox sprite_animation_table jump_arc_table lane_pursuit_ai wave_director object_pool sid_play_routine_pattern sfx_engine_beside_music frame_sync_loop joystick_edge_detect decimal_print raster_profile_bars`
 
 ```text
-# Compatibility: tile_map_render + soft_scroll_h + screen_double_buffer_d018 + raster_split_modes + lane_depth_engine + multi_sprite_object + sprite_multiplex_game + per_frame_hitbox + sprite_animation_table + jump_arc_table + lane_pursuit_ai + wave_director + object_pool + sid_play_routine_pattern + sfx_engine_beside_music + frame_sync_loop + joystick_edge_detect + decimal_print + raster_profile_bars
+# Compatibility: tile_map_render + soft_scroll_h + screen_double_buffer_d018 + raster_split_modes + lane_depth_engine + multi_sprite_object + mixed_sprite_char_actors + mob_priority + sprite_multiplex_game + per_frame_hitbox + sprite_animation_table + jump_arc_table + lane_pursuit_ai + wave_director + object_pool + sid_play_routine_pattern + sfx_engine_beside_music + frame_sync_loop + joystick_edge_detect + decimal_print + raster_profile_bars
 
 **Verdict:** INCOMPATIBLE — not as combined; each hard conflict below says how to separate them.
 
 Checked with 4 implied prerequisite(s): fixed_point_8_8, screen_ram_relocation, sid_voice_setup, tile_grid_collision.
 
-Unit claims are stated for 6 of 19 techniques; a unit conflict cannot be ruled out for: tile_map_render, soft_scroll_h, screen_double_buffer_d018, lane_depth_engine, multi_sprite_object, per_frame_hitbox, sprite_animation_table, jump_arc_table, wave_director, object_pool, frame_sync_loop, decimal_print, raster_profile_bars, fixed_point_8_8 (prerequisite), screen_ram_relocation (prerequisite), sid_voice_setup (prerequisite), tile_grid_collision (prerequisite). The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).
+Unit claims are stated for 6 of 21 techniques; a unit conflict cannot be ruled out for: tile_map_render, soft_scroll_h, screen_double_buffer_d018, lane_depth_engine, multi_sprite_object, mixed_sprite_char_actors, mob_priority, per_frame_hitbox, sprite_animation_table, jump_arc_table, wave_director, object_pool, frame_sync_loop, decimal_print, raster_profile_bars, fixed_point_8_8 (prerequisite), screen_ram_relocation (prerequisite), sid_voice_setup (prerequisite), tile_grid_collision (prerequisite). The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).
 
 ## shared_register (soft): soft_scroll_h × raster_split_modes
 **Shared:** SCROLX
@@ -101,9 +105,17 @@ Both techniques touch register(s) SCROLX. This says they write the same register
 **Shared:** VMCSB, SCROLY
 Both techniques touch register(s) VMCSB, SCROLY. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
 
+## shared_register (soft): screen_double_buffer_d018 × mixed_sprite_char_actors
+**Shared:** VMCSB
+Both techniques touch register(s) VMCSB. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
+
 ## shared_register (soft): screen_double_buffer_d018 × frame_sync_loop
 **Shared:** SCROLY
 Both techniques touch register(s) SCROLY. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
+
+## shared_register (soft): raster_split_modes × mixed_sprite_char_actors
+**Shared:** VMCSB
+Both techniques touch register(s) VMCSB. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
 
 ## unit_contention (hard): raster_split_modes × sprite_multiplex_game
 **Shared:** vic_raster_irq
@@ -118,6 +130,10 @@ Both techniques touch register(s) SCROLY. This says they write the same register
 **Shared:** SP0COL, MSIGX, M0Y, M0X
 Both techniques touch register(s) SP0COL, MSIGX, M0Y, M0X. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
 
+## shared_register (soft): lane_depth_engine × mixed_sprite_char_actors
+**Shared:** MSIGX, M0Y, M0X
+Both techniques touch register(s) MSIGX, M0Y, M0X. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
+
 ## shared_register (soft): lane_depth_engine × sprite_multiplex_game
 **Shared:** SP0COL, MSIGX, M0Y, M0X
 Both techniques touch register(s) SP0COL, MSIGX, M0Y, M0X. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
@@ -126,11 +142,27 @@ Both techniques touch register(s) SP0COL, MSIGX, M0Y, M0X. This says they write 
 **Shared:** MSIGX
 Both techniques touch register(s) MSIGX. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
 
+## shared_register (soft): multi_sprite_object × mixed_sprite_char_actors
+**Shared:** MSIGX, M0Y, M0X
+Both techniques touch register(s) MSIGX, M0Y, M0X. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
+
 ## shared_register (soft): multi_sprite_object × sprite_multiplex_game
 **Shared:** SP0COL, SPENA, MSIGX, M0Y, M0X
 Both techniques touch register(s) SP0COL, SPENA, MSIGX, M0Y, M0X. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
 
 ## shared_register (soft): multi_sprite_object × per_frame_hitbox
+**Shared:** MSIGX
+Both techniques touch register(s) MSIGX. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
+
+## shared_register (soft): mixed_sprite_char_actors × mob_priority
+**Shared:** SPBGPR
+Both techniques touch register(s) SPBGPR. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
+
+## shared_register (soft): mixed_sprite_char_actors × sprite_multiplex_game
+**Shared:** MSIGX, M0Y, M0X
+Both techniques touch register(s) MSIGX, M0Y, M0X. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
+
+## shared_register (soft): mixed_sprite_char_actors × per_frame_hitbox
 **Shared:** MSIGX
 Both techniques touch register(s) MSIGX. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
 
@@ -171,7 +203,46 @@ Both techniques touch register(s) EXTCOL. This says they write the same register
 - **screen_ram_relocation** (prerequisite, not in the set): required by screen_double_buffer_d018; included in the check as implied. Set it up first.
 - **sid_voice_setup** (prerequisite, not in the set): required by sfx_engine_beside_music, sid_play_routine_pattern; included in the check as implied. Set it up first.
 - **tile_grid_collision** (prerequisite, not in the set): required by lane_pursuit_ai; included in the check as implied. Set it up first.
-- **SP6COL** (Register) shared via recipe(s): oscar64-platformer-scaffold
+- **DC0E** (Register) shared via recipe(s): oscar64-wave-director, oscar64-flip-screen-rooms, oscar64-falling-blocks
+- **DC05** (Register) shared via recipe(s): oscar64-wave-director, oscar64-flip-screen-rooms, oscar64-falling-blocks
+- **DC04** (Register) shared via recipe(s): oscar64-wave-director, oscar64-flip-screen-rooms, oscar64-falling-blocks
+- **SP0COL** (Register) shared via recipe(s): oscar64-wave-director, oscar64-mixed-fighters, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **BGCOL0** (Register) shared via recipe(s): oscar64-wave-director, kickassembler-cracktro-template, oscar64-mixed-fighters, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms, oscar64-platformer-scaffold, oscar64-falling-blocks
+- **EXTCOL** (Register) shared via recipe(s): oscar64-wave-director, kickassembler-cracktro-template, oscar64-mixed-fighters, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms, oscar64-platformer-scaffold, oscar64-falling-blocks
+- **SPENA** (Register) shared via recipe(s): oscar64-wave-director, oscar64-mixed-fighters, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **RASTER** (Register) shared via recipe(s): oscar64-wave-director, kickassembler-cracktro-template, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms, oscar64-platformer-scaffold, oscar64-falling-blocks
+- **SCROLY** (Register) shared via recipe(s): oscar64-wave-director, kickassembler-cracktro-template, oscar64-mixed-fighters, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms, oscar64-platformer-scaffold, oscar64-falling-blocks
+- **MSIGX** (Register) shared via recipe(s): oscar64-wave-director, oscar64-mixed-fighters, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **M0Y** (Register) shared via recipe(s): oscar64-wave-director, oscar64-mixed-fighters, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **M0X** (Register) shared via recipe(s): oscar64-wave-director, oscar64-mixed-fighters, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **DC0D** (Register) shared via recipe(s): kickassembler-cracktro-template, kickassembler-eight-way-scroll
+- **IRQMSK** (Register) shared via recipe(s): kickassembler-cracktro-template, kickassembler-eight-way-scroll, oscar64-platformer-scaffold
+- **VICIRQ** (Register) shared via recipe(s): kickassembler-cracktro-template, kickassembler-eight-way-scroll, oscar64-platformer-scaffold
+- **VMCSB** (Register) shared via recipe(s): kickassembler-cracktro-template, oscar64-mixed-fighters, kickassembler-eight-way-scroll
+- **SCROLX** (Register) shared via recipe(s): kickassembler-cracktro-template, oscar64-mixed-fighters, kickassembler-eight-way-scroll
+- **SIGVOL** (Register) shared via recipe(s): kickassembler-cracktro-template, oscar64-platformer-scaffold
+- **DC00** (Register) shared via recipe(s): kickassembler-cracktro-template, oscar64-flip-screen-rooms, oscar64-platformer-scaffold, oscar64-falling-blocks
+- **DC0F** (Register) shared via recipe(s): oscar64-mixed-fighters, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **DC07** (Register) shared via recipe(s): oscar64-mixed-fighters, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **DC06** (Register) shared via recipe(s): oscar64-mixed-fighters, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms, oscar64-platformer-scaffold
+- **SP3COL** (Register) shared via recipe(s): oscar64-mixed-fighters, oscar64-platformer-scaffold
+- **SP2COL** (Register) shared via recipe(s): oscar64-mixed-fighters, oscar64-platformer-scaffold
+- **SP1COL** (Register) shared via recipe(s): oscar64-mixed-fighters, oscar64-platformer-scaffold
+- **SPMC1** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **SPMC0** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **BGCOL2** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **BGCOL1** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **XXPAND** (Register) shared via recipe(s): oscar64-mixed-fighters, oscar64-flip-screen-rooms
+- **SPMC** (Register) shared via recipe(s): oscar64-mixed-fighters, oscar64-flip-screen-rooms
+- **SPBGPR** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **YXPAND** (Register) shared via recipe(s): oscar64-mixed-fighters, oscar64-flip-screen-rooms
+- **M3Y** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **M3X** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **M2Y** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **M2X** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **M1Y** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **M1X** (Register) shared via recipe(s): oscar64-mixed-fighters
+- **DD0D** (Register) shared via recipe(s): kickassembler-eight-way-scroll
 - **CHRIN** (KernalRoutine) shared via recipe(s): oscar64-platformer-scaffold
 - **CHROUT** (KernalRoutine) shared via recipe(s): oscar64-platformer-scaffold
 - **CLRCHN** (KernalRoutine) shared via recipe(s): oscar64-platformer-scaffold
@@ -181,30 +252,12 @@ Both techniques touch register(s) EXTCOL. This says they write the same register
 - **OPEN** (KernalRoutine) shared via recipe(s): oscar64-platformer-scaffold
 - **SETNAM** (KernalRoutine) shared via recipe(s): oscar64-platformer-scaffold
 - **SETLFS** (KernalRoutine) shared via recipe(s): oscar64-platformer-scaffold
-- **DC0F** (Register) shared via recipe(s): oscar64-platformer-scaffold, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms
-- **DC07** (Register) shared via recipe(s): oscar64-platformer-scaffold, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms
-- **DC06** (Register) shared via recipe(s): oscar64-platformer-scaffold, kickassembler-eight-way-scroll, oscar64-flip-screen-rooms
 - **DC03** (Register) shared via recipe(s): oscar64-platformer-scaffold
+- **DC02** (Register) shared via recipe(s): oscar64-platformer-scaffold
+- **SP6COL** (Register) shared via recipe(s): oscar64-platformer-scaffold
 - **SP5COL** (Register) shared via recipe(s): oscar64-platformer-scaffold
 - **SP4COL** (Register) shared via recipe(s): oscar64-platformer-scaffold
-- **SP3COL** (Register) shared via recipe(s): oscar64-platformer-scaffold
-- **SP2COL** (Register) shared via recipe(s): oscar64-platformer-scaffold
-- **SP1COL** (Register) shared via recipe(s): oscar64-platformer-scaffold
-- **SP0COL** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-wave-director, oscar64-flip-screen-rooms
-- **BGCOL0** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-falling-blocks, kickassembler-eight-way-scroll, oscar64-wave-director, kickassembler-cracktro-template, oscar64-flip-screen-rooms
-- **EXTCOL** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-falling-blocks, kickassembler-eight-way-scroll, oscar64-wave-director, kickassembler-cracktro-template, oscar64-flip-screen-rooms
-- **IRQMSK** (Register) shared via recipe(s): oscar64-platformer-scaffold, kickassembler-eight-way-scroll, kickassembler-cracktro-template
-- **VICIRQ** (Register) shared via recipe(s): oscar64-platformer-scaffold, kickassembler-eight-way-scroll, kickassembler-cracktro-template
-- **SPENA** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-wave-director, oscar64-flip-screen-rooms
-- **RASTER** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-falling-blocks, kickassembler-eight-way-scroll, oscar64-wave-director, kickassembler-cracktro-template, oscar64-flip-screen-rooms
-- **SCROLY** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-falling-blocks, kickassembler-eight-way-scroll, oscar64-wave-director, kickassembler-cracktro-template, oscar64-flip-screen-rooms
-- **MSIGX** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-wave-director, oscar64-flip-screen-rooms
-- **M0Y** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-wave-director, oscar64-flip-screen-rooms
-- **M0X** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-wave-director, oscar64-flip-screen-rooms
 - **RANDOM** (Register) shared via recipe(s): oscar64-platformer-scaffold
-- **DC02** (Register) shared via recipe(s): oscar64-platformer-scaffold
-- **DC00** (Register) shared via recipe(s): oscar64-platformer-scaffold, oscar64-falling-blocks, kickassembler-cracktro-template, oscar64-flip-screen-rooms
-- **SIGVOL** (Register) shared via recipe(s): oscar64-platformer-scaffold, kickassembler-cracktro-template
 - **SUREL3** (Register) shared via recipe(s): oscar64-platformer-scaffold
 - **ATDCY3** (Register) shared via recipe(s): oscar64-platformer-scaffold
 - **VCREG3** (Register) shared via recipe(s): oscar64-platformer-scaffold
@@ -227,16 +280,6 @@ Both techniques touch register(s) EXTCOL. This says they write the same register
 - **FREHI1** (Register) shared via recipe(s): oscar64-platformer-scaffold
 - **FRELO1** (Register) shared via recipe(s): oscar64-platformer-scaffold
 - **READST** (KernalRoutine) shared via recipe(s): oscar64-platformer-scaffold
-- **DC0E** (Register) shared via recipe(s): oscar64-falling-blocks, oscar64-wave-director, oscar64-flip-screen-rooms
-- **DC05** (Register) shared via recipe(s): oscar64-falling-blocks, oscar64-wave-director, oscar64-flip-screen-rooms
-- **DC04** (Register) shared via recipe(s): oscar64-falling-blocks, oscar64-wave-director, oscar64-flip-screen-rooms
-- **DD0D** (Register) shared via recipe(s): kickassembler-eight-way-scroll
-- **DC0D** (Register) shared via recipe(s): kickassembler-eight-way-scroll, kickassembler-cracktro-template
-- **VMCSB** (Register) shared via recipe(s): kickassembler-eight-way-scroll, kickassembler-cracktro-template
-- **SCROLX** (Register) shared via recipe(s): kickassembler-eight-way-scroll, kickassembler-cracktro-template
-- **XXPAND** (Register) shared via recipe(s): oscar64-flip-screen-rooms
-- **SPMC** (Register) shared via recipe(s): oscar64-flip-screen-rooms
-- **YXPAND** (Register) shared via recipe(s): oscar64-flip-screen-rooms
 - **raster_discipline**: Multiple raster-discipline techniques present. Verify IRQ stack ordering and timing budget.
 ```
 
@@ -253,9 +296,12 @@ What the warnings mean for this program:
   $D016 and $D018 are written only by the IRQs at 251 and 212, from a pair C
   publishes once a frame. $D011 is written once at start.
 - The sprite registers shared by lane_depth_engine, multi_sprite_object,
-  sprite_multiplex_game and per_frame_hitbox: only the IRQs write them. C
-  builds the band tables; the depth sort decides which parts go to which
-  sprite.
+  mixed_sprite_char_actors, mob_priority, sprite_multiplex_game and
+  per_frame_hitbox: only the IRQs write them. C builds the band tables; the
+  depth sort decides which parts go to which sprite and which have $D01B.
+- VMCSB and SCROLY shared by mixed_sprite_char_actors, the double buffer and
+  the split: the brute's character set is a bit of the $D018 C publishes with
+  the page flip; the IRQ at 251 writes it, the one at 212 the HUD's.
 - sid_voice_2 shared by the tune and the effects: the tune plays voices 1
   and 2; the effects own voice 3. The tool's "sid_voice_2" is its own label,
   not this program's split.
@@ -263,21 +309,22 @@ What the warnings mean for this program:
 
 ## Budget
 
-Command: `npx tsx src/cli.ts plan-budget tile_map_render soft_scroll_h screen_double_buffer_d018 raster_split_modes lane_depth_engine multi_sprite_object sprite_multiplex_game per_frame_hitbox sprite_animation_table jump_arc_table lane_pursuit_ai wave_director object_pool sid_play_routine_pattern sfx_engine_beside_music frame_sync_loop joystick_edge_detect decimal_print raster_profile_bars --region both --sprites 8 --sprite-lines 42`
+Command: `npx tsx src/cli.ts plan-budget tile_map_render soft_scroll_h screen_double_buffer_d018 raster_split_modes lane_depth_engine multi_sprite_object mixed_sprite_char_actors mob_priority sprite_multiplex_game per_frame_hitbox sprite_animation_table jump_arc_table lane_pursuit_ai wave_director object_pool sid_play_routine_pattern sfx_engine_beside_music frame_sync_loop joystick_edge_detect decimal_print raster_profile_bars --region both --sprites 8 --sprite-lines 42`
 
 ```text
 # Budget plan: undetermined
 
-Techniques: tile_map_render, soft_scroll_h, screen_double_buffer_d018, raster_split_modes, lane_depth_engine, multi_sprite_object, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, jump_arc_table, lane_pursuit_ai, wave_director, object_pool, sid_play_routine_pattern, sfx_engine_beside_music, frame_sync_loop, joystick_edge_detect, decimal_print, raster_profile_bars
+Techniques: tile_map_render, soft_scroll_h, screen_double_buffer_d018, raster_split_modes, lane_depth_engine, multi_sprite_object, mixed_sprite_char_actors, mob_priority, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, jump_arc_table, lane_pursuit_ai, wave_director, object_pool, sid_play_routine_pattern, sfx_engine_beside_music, frame_sync_loop, joystick_edge_detect, decimal_print, raster_profile_bars
 
 ## play (PAL, 19656 cycles a frame): undetermined
 
-Range 36919-43868 + 1873 fixed cycles; floor 0; weakest basis arithmetic; IRQ slots 19.
+Range 43027-49976 + 1873 fixed cycles; floor 0; weakest basis arithmetic; IRQ slots 19.
 
 Summed:
 - tile_map_render: 268 (arithmetic, on oscar64-tile-map-render (one column edge, 11 metatiles))
 - lane_depth_engine: 1413 (measured-vice, on oscar64-beat-em-up-lanes (four actors: sort, priority draw and hit test in one step, screen on))
 - multi_sprite_object: 1342 (measured-vice, on oscar64-multi-sprite-object (worst frame, six parts, in the vertical blank))
+- mixed_sprite_char_actors: 6108 (measured-vice, on oscar64-mixed-fighters (worst tick of the whole actor update, PAL))
 - sprite_multiplex_game: 16600 (arithmetic, on kickassembler-sprite-multiplex-game (worst frame: a reversed sort))
 - per_frame_hitbox: 3693 (measured-vice, on oscar64-per-frame-hitbox (eight boxes, 28 pairs))
 - sprite_animation_table: 357-747 (measured-vice, on oscar64-sprite-animation-table (six actors, the scenario's worst frame))
@@ -295,24 +342,26 @@ Left out:
 To measure:
 - screen_double_buffer_d018: no **Cost:** line; measure it on kickassembler-eight-way-scroll
 - raster_split_modes: no **Cost:** line; no recipe yet
+- mob_priority: no **Cost:** line; measure it on kickassembler-sprite-priority-classes
 - jump_arc_table: no **Cost:** line; measure it on oscar64-fixed-point-jump
 - frame_sync_loop: the Cost line has no cycles_per_frame (nor cycles_per_line with lines_active); measure it on oscar64-frame-sync-loop
 - joystick_edge_detect: no **Cost:** line; measure it on oscar64-attract-replay
 
 Notes:
-- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because tile_map_render, multi_sprite_object, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact unless a figure already holds stalls: lane_depth_engine was measured with the screen on and already holds the stalls that fell inside it, so the charge is too high by that much and the over test counts 0.
-- The low end, 36919 + 1873, passes the 19656-cycle frame, but it is not a floor: the figures of tile_map_render, lane_depth_engine, multi_sprite_object, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are a common frame or a real run's worst, and those frames need not fall together. tile_map_render, lane_depth_engine, multi_sprite_object, sprite_multiplex_game, per_frame_hitbox, sid_play_routine_pattern, decimal_print, raster_profile_bars have no typical frame, so their low end is a worst frame. The floor, work every frame plus the loss no figure can hold, is 0 and fits. A frame measured whole, with every member running, would settle it.
-- Unknown is not zero: screen_double_buffer_d018, raster_split_modes, jump_arc_table, frame_sync_loop, joystick_edge_detect have no cycles figure, so the verdict cannot be fits.
+- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because tile_map_render, multi_sprite_object, mixed_sprite_char_actors, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact unless a figure already holds stalls: lane_depth_engine was measured with the screen on and already holds the stalls that fell inside it, so the charge is too high by that much and the over test counts 0.
+- The low end, 43027 + 1873, passes the 19656-cycle frame, but it is not a floor: the figures of tile_map_render, lane_depth_engine, multi_sprite_object, mixed_sprite_char_actors, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are a common frame or a real run's worst, and those frames need not fall together. tile_map_render, lane_depth_engine, multi_sprite_object, mixed_sprite_char_actors, sprite_multiplex_game, per_frame_hitbox, sid_play_routine_pattern, decimal_print, raster_profile_bars have no typical frame, so their low end is a worst frame. The floor, work every frame plus the loss no figure can hold, is 0 and fits. A frame measured whole, with every member running, would settle it.
+- Unknown is not zero: screen_double_buffer_d018, raster_split_modes, mob_priority, jump_arc_table, frame_sync_loop, joystick_edge_detect have no cycles figure, so the verdict cannot be fits.
 - Multi-frame: soft_scroll_h (74041) is above one PAL frame of 19656 and not summed; spread the work over frames or budget it as its own phase.
 
 ## play (NTSC, 17095 cycles a frame): undetermined
 
-Range 36919-43868 + 1873 fixed cycles; floor 0; weakest basis arithmetic; IRQ slots 19.
+Range 43027-49976 + 1873 fixed cycles; floor 0; weakest basis arithmetic; IRQ slots 19.
 
 Summed:
 - tile_map_render: 268 (arithmetic, on oscar64-tile-map-render (one column edge, 11 metatiles))
 - lane_depth_engine: 1413 (measured-vice, on oscar64-beat-em-up-lanes (four actors: sort, priority draw and hit test in one step, screen on))
 - multi_sprite_object: 1342 (measured-vice, on oscar64-multi-sprite-object (worst frame, six parts, in the vertical blank))
+- mixed_sprite_char_actors: 6108 (measured-vice, on oscar64-mixed-fighters (worst tick of the whole actor update, PAL))
 - sprite_multiplex_game: 16600 (arithmetic, on kickassembler-sprite-multiplex-game (worst frame: a reversed sort))
 - per_frame_hitbox: 3693 (measured-vice, on oscar64-per-frame-hitbox (eight boxes, 28 pairs))
 - sprite_animation_table: 357-747 (measured-vice, on oscar64-sprite-animation-table (six actors, the scenario's worst frame))
@@ -330,14 +379,15 @@ Left out:
 To measure:
 - screen_double_buffer_d018: no **Cost:** line; measure it on kickassembler-eight-way-scroll
 - raster_split_modes: no **Cost:** line; no recipe yet
+- mob_priority: no **Cost:** line; measure it on kickassembler-sprite-priority-classes
 - jump_arc_table: no **Cost:** line; measure it on oscar64-fixed-point-jump
 - frame_sync_loop: the Cost line has no cycles_per_frame (nor cycles_per_line with lines_active); measure it on oscar64-frame-sync-loop
 - joystick_edge_detect: no **Cost:** line; measure it on oscar64-attract-replay
 
 Notes:
-- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because tile_map_render, multi_sprite_object, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact unless a figure already holds stalls: lane_depth_engine was measured with the screen on and already holds the stalls that fell inside it, so the charge is too high by that much and the over test counts 0.
-- The low end, 36919 + 1873, passes the 17095-cycle frame, but it is not a floor: the figures of tile_map_render, lane_depth_engine, multi_sprite_object, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are a common frame or a real run's worst, and those frames need not fall together. tile_map_render, lane_depth_engine, multi_sprite_object, sprite_multiplex_game, per_frame_hitbox, sid_play_routine_pattern, decimal_print, raster_profile_bars have no typical frame, so their low end is a worst frame. The floor, work every frame plus the loss no figure can hold, is 0 and fits. A frame measured whole, with every member running, would settle it.
-- Unknown is not zero: screen_double_buffer_d018, raster_split_modes, jump_arc_table, frame_sync_loop, joystick_edge_detect have no cycles figure, so the verdict cannot be fits.
+- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because tile_map_render, multi_sprite_object, mixed_sprite_char_actors, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact unless a figure already holds stalls: lane_depth_engine was measured with the screen on and already holds the stalls that fell inside it, so the charge is too high by that much and the over test counts 0.
+- The low end, 43027 + 1873, passes the 17095-cycle frame, but it is not a floor: the figures of tile_map_render, lane_depth_engine, multi_sprite_object, mixed_sprite_char_actors, sprite_multiplex_game, per_frame_hitbox, sprite_animation_table, lane_pursuit_ai, wave_director, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, raster_profile_bars are a common frame or a real run's worst, and those frames need not fall together. tile_map_render, lane_depth_engine, multi_sprite_object, mixed_sprite_char_actors, sprite_multiplex_game, per_frame_hitbox, sid_play_routine_pattern, decimal_print, raster_profile_bars have no typical frame, so their low end is a worst frame. The floor, work every frame plus the loss no figure can hold, is 0 and fits. A frame measured whole, with every member running, would settle it.
+- Unknown is not zero: screen_double_buffer_d018, raster_split_modes, mob_priority, jump_arc_table, frame_sync_loop, joystick_edge_detect have no cycles figure, so the verdict cannot be fits.
 - Multi-frame: soft_scroll_h (74041) is above one NTSC frame of 17095 and not summed; spread the work over frames or budget it as its own phase.
 - Cycles per frame are the pages' figures, most measured on PAL; the same code takes about the same cycles on NTSC, against a 17,095-cycle frame.
 
@@ -356,7 +406,9 @@ No member states a byte figure that can be summed.
 - Sprites: 8 a line on 42 lines, (3 + 2 × 8) × 42 = 798 cycles of DMA a frame (3 + 2n measured in VICE x64sc for sprites numbered without gaps).
 ```
 
-The budget's range, 36,919 to 43,868 plus 1,873 fixed, is two frames. Most
+The budget's range, 43,027 to 49,976 plus 1,873 fixed, is over two frames
+(it was 36,919 to 43,868 before the brute; mixed_sprite_char_actors adds the
+recipe's 6,108, a whole actor update in one tick). Most
 of it is other programs' worst cases: sprite_multiplex_game's 16,600 is a
 reversed sort of 24 actors (here: four fighters, and the bands need no
 sort across them), lane_pursuit_ai's 9,871 to 14,204 is four cars probing a
@@ -369,18 +421,19 @@ the IRQs included; README.md, "The measured frame", compares the two.
 
 VIC bank 3 ($DD00 bits 0-1 = 0). $C000 and $C400: the two street pages
 (rows 0-19; row 20 blank); $C800: the HUD page (rows 21-24);
-$E000-$E7FF: the character set (the ROM's glyphs 0-63 copied in, so text
-and the meter decode; street glyphs from 64); $F000-$FFBF: 63 sprite
-blocks (192-254). BASIC and KERNAL are banked out ($01 = $35), so $FFFE
+$E000-$E7FF and $E800-$EFFF: two character sets, alike but for the brute's
+30 glyphs (codes 128-157); the ROM's glyphs 0-63 copied in, so text and the
+meter decode; street glyphs from 64. $F000-$FFBF: 63 sprite blocks
+(192-254). BASIC and KERNAL are banked out ($01 = $35), so $FFFE
 and $FFFA point at the IRQ chain and an RTI. Code from $1000; the
 KickAssembler blob (scroll slice copy, the IRQ chain and band writers, the
-tune) at $0900-$0F59. Colour RAM is never scrolled. In AUTOPILOT builds
+brute's glyph builder, the tune) at $0880-$0FFF. Colour RAM is never scrolled. In AUTOPILOT builds
 the meter owns HUD row 24, columns 20 to 39; CIA2 timer A is the meter's,
 and CIA2 timer B times the IRQs that land outside the meter's brackets.
 
 Sprites: three bands a frame. Band 0 (from line 251): the GO sign, lines
-53-73. Band 1 (IRQ at line 76): the fighters, two parts each, at most
-eight parts, tops no higher than line 91. Band 2 (IRQ at line 212): two
+53-73. Band 1 (IRQ at line 76): the sprite fighters, two parts each, at most
+eight parts, tops no higher than line 91; with the brute on the street, six. Band 2 (IRQ at line 212): two
 faces in the HUD, lines 219-239. Within a band no sprite is reused, so a
 band never drops a part; the multiplexer reuses all eight sprites between
 bands.
@@ -400,11 +453,15 @@ picture pixel for pixel.
 
 The verdict, after stage 3's first wave: every event seen (punch, kick
 and jump-kick hits, a knock-down, a get-up, a KO, the hero hit and down, a
-life lost, the locks, a stage clear, a scroll, a lane change), the score
-equal to the sum of the hits and KOs counted, one life lost, the band IRQ
-never late, no part dropped, both pages equal to the street at their
-columns, the hero's parts in the band the IRQ shows, the camera at the
-last lock, no late frame, three photo stops. expect.json checks the
+life lost, the locks, a stage clear, a scroll, a lane change, a cross-lane
+miss), the score equal to the sum of the hits and KOs counted, one life
+lost, the band IRQ never late, no part dropped, both pages equal to the
+street and the brute's cells at their columns, the hero's parts in the band
+the IRQ shows, the camera at the last lock, no late play frame, three photo
+stops, the brute's cell moves before his top row and two brutes beaten,
+every hit's lane and boxes recomputed apart, and the fighter band read back
+from the VIC every frame against an independent sort. make gameover runs a
+build that never fights and checks the GAME OVER message. expect.json checks the
 border, the HUD text, a health-bar cell, the hero's face in band 2, the
 hero's two parts in band 1, the scrolled street at the final camera, the
 kerb, the blank row 20, PAL and NTSC alike, and the meter.
@@ -422,12 +479,24 @@ kerb, the blank row 20, PAL and NTSC alike, and the meter.
   are Y"; a Y-sorted multiplexer fills slots from the top, so the nearer
   fighter would get the higher sprite and be drawn behind. Not used here.)
 - The scroll is the platformer's scheme with two pages, not three: the
-  camera only moves right, so the page just left is never needed again.
+  camera only moves right, so the page just left is never needed again. It
+  moves a pixel a frame and prepares four rows a frame, to fit the brute.
+- The brute in characters (the review's port): two character sets switched
+  by $D018, so his picture changes with no cell writes; his cells are
+  rewritten only when he moves a whole cell. Built in C at first it took
+  18,000 cycles a frame; built in KickAssembler, a row a frame, about 1,300.
+- The frame had to shrink for him and for the VIC check: the AI thinks for
+  one enemy a frame, the HUD redraws only what changed, the photo stops
+  restore the HUD by copy. The meter's default window is the run's worst.
 - The meter records the crowded fight (from the second stage's lock);
   `-dMETER_WINDOW=1` records the walk that scrolls. README.md has both.
-- Measured: an Oscar64 `int` converted from an `unsigned` of 32,768 or
-  more is compared as not negative (a 20-line test in VICE). World x is
-  kept below that; an enemy spawned at x -24 walked the wrong way before.
+- Oscar64 #30 fault 8: an int loaded from an unsigned of 32,768 or more is
+  compared as not negative against another non-constant int, at every level,
+  on the local build and v1.32.273. World x is kept below 32,768 and
+  compared as unsigned; an enemy spawned at x -24 walked the wrong way before.
+- v1.32.273 also indexed page_d018 with X before loading X in
+  view_publish's one-expression $D018 (read in its .asm); two statements
+  work on both compilers.
 - NTSC runs the same per-frame steps at 60 Hz: 6/5 as fast. Not corrected.
 - No disk persistence: the high score lives until power-off.
 - Oscar64: the local build named in c64-kb's CLAUDE.md.

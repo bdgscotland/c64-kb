@@ -1,18 +1,25 @@
-// verdict.h: the AUTOPILOT build's pictures and self-check. Included by
+// verdict.h: the AUTOPILOT build's pictures and self-checks. Included by
 // main.c only when AUTOPILOT is set.
 //
-// Photo stops. At three crowded moments (four fighters in view, every part
-// inside the sprite X range, ground lines within 24: all eight sprites of
-// the fighter band on the same lines), two in stage 2 and one in stage 3,
-// the game is held for PHOTO_FRAMES frames: nothing moves, the IRQs run as
-// in play, and HUD rows 21-23 show the fighters' state instead of the bars
-// and faces. tools/flickercheck.py shoots inside the stops, builds the
-// eight parts from art.c itself, and matches the picture.
+// Photo stops. At three crowded moments (four fighters in view within 24
+// ground lines: every sprite of the fighter band on the same lines, the
+// brute's cells among them when he is there), two in stage 2 and one in
+// stage 3, the game is held for PHOTO_FRAMES frames: nothing moves, the
+// IRQs run as in play, and HUD rows 21-23 show the fighters' state instead
+// of the bars and faces. tools/flickercheck.py shoots inside the stops,
+// builds the sprites and the brute's cells from art.c itself, and matches
+// the picture, $D01B priority included.
+//
+// Every frame: check_hit recomputes each hit's lane and boxes on its own;
+// vic_compare reads the fighter band back from the VIC (the IRQ at line 76
+// copies it) and compares it with vic_expect's independent sort.
 //
 // The verdict. After stage 3's first wave is beaten the program grades
 // itself and freezes: $02FF = $01 and a green border on a pass, $02 and
 // red on a fail; on a fail row 24 column 12 shows the failed checks as bits
-// (the `fails` bits in grade()) (c64-kb headless-verify).
+// (the `fails` bits in grade()) and row 22 the counts behind them
+// (c64-kb headless-verify). AP_GIVE_UP=1 (make gameover): the bot never
+// fights, and grade_gameover checks the GAME OVER message instead.
 //
 // DEBUG_AT=n (a build define) freezes at frame n instead and prints the
 // state: row 21 frame, hero x, y, mode, hp, camera, stage, wave, events;
