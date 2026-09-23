@@ -1368,8 +1368,8 @@ export GSETTINGS_SCHEMA_DIR="/opt/homebrew/share/glib-2.0/schemas"
 x64sc -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6502 -autostart hello.prg
 ```
 
-The `templates/c64-demo-starter` and `templates/c64-game-starter` Makefiles
-bake these env vars into the `run` target. They are harmless on Linux (the
+The template harness (`templates/_harness/harness.mk`) exports
+`GSETTINGS_SCHEMA_DIR` for its `run` target, which is enough on this machine. They are harmless on Linux (the
 paths just don't exist).
 
 This is a packaging issue in the Homebrew GTK3 bottle, not a VICE bug.
