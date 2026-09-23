@@ -19,7 +19,7 @@ Pages live in `docs/game-design/designs/`, one design per file. The marker
 **Instance of:** single_screen_platformer
 **Realised by:** oscar64-platformer-scaffold
 **Region:** both
-**Composes:** tile_map_render, decimal_print, lfsr_random (init), kernal_file_write_seq (transition)
+**Composes:** tile_map_render (init), decimal_print, lfsr_random (init), kernal_file_write_seq (transition)
 **Measured frame:** play pal worst=8693 typical=4966; play ntsc worst=10287 typical=6628 (measured-vice, CIA1 timer B around the loop body, recipes/oscar64/platformer-scaffold.md "Expected output")
 ```
 
