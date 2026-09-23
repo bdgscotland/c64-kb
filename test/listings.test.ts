@@ -28,5 +28,8 @@ describe("code listings build", () => {
     }
     expect(out, out).not.toMatch(/^FAIL/m);
     expect(r.status, out).toBe(0);
-  });
+    // The whole-tree build passed vitest's 30 s default on 2026-09-23 (207
+    // listings in 30.3 s on the maintainer's machine); the spawn already
+    // allows ten minutes, so the test does too.
+  }, 600_000);
 });

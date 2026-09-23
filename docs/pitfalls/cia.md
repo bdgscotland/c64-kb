@@ -934,3 +934,212 @@ PAL and NTSC, four runs): row 2 of the screen `12 11` and verdict `OLD
 - `x64sc -help`, VICE 3.10, for the option names and values.
 - C64-Wiki, "CIA", https://www.c64-wiki.com/wiki/CIA, for the sentence
   on which revisions later boards carried; it gives no timing figure.
+
+---
+
+## cia_icr_read_clears_all_flags — One read of $DC0D or $DD0D clears every pending flag, not just the one you tested
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DC0D, DD0D
+**Triggered by techniques:** tape_turbo_loader, nmi_handler_and_restore_key, irq_chain_table, tod_alarm_interrupt, irq_keyboard_own_scan, irq_owns_processor_port
+
+### Symptom
+
+Two routines share one CIA. Each reads the interrupt control register
+to look for its own event, and one of them never sees it.
+
+- A tape or serial routine spins on bit 4 of `$DC0D` waiting for a
+  FLAG edge. A timer on the same chip underflows while it spins. The
+  routine that later checks the timer bit finds it clear, and its
+  timeout, its tick or its bit-cell clock is simply gone.
+- The other way round: a timer poll runs first and a FLAG edge that
+  arrived during it is consumed by the timer poll. The FLAG waiter
+  then waits for an edge that has already been and gone.
+- On CIA2, a read of `$DD0D` from the main program while a Timer A
+  underflow is arriving leaves the NMI handler with nothing to
+  dispatch on, and at one phase the NMI itself is not raised: the read
+  returns `$01`, the handler never runs, and the tick is lost.
+
+Nothing errors. The register just reads `$00` the second time.
+
+### Mechanism
+
+The 6526's interrupt control register at offset `$0D` is two registers
+at one address. A write sets or clears mask bits. A read returns the
+five event flags in bits 0..4 (Timer A, Timer B, TOD alarm, serial,
+FLAG) with bit 7 set if any flagged event is also enabled in the mask,
+and the read clears all of them together. There is no way to read one
+flag and leave the others standing. The data sheet's word for this is
+that the register is cleared on read; the consequence is that whoever
+reads it first owns every event that had arrived by then.
+
+Measured in VICE x64sc 3.10, PAL and NTSC, default CIA model and
+`-ciamodel 0`, same bytes in all three runs unless a row says otherwise.
+Interrupts held off with `SEI` for the CIA1 tests so the flags could
+be read rather than taken; mask bit 7 with bit 0 (`$81`) written so
+the pending bit would show.
+
+1. **One read takes both.** CIA1 Timer A one-shot from latch `$0060`,
+   then twenty back-to-back reads of `$DC0D` stored to RAM, 16 cycles
+   apart. Reads one to six returned `$00`; the seventh returned `$81`
+   (bit 7 pending, bit 0 Timer A, bit 4 FLAG clear); reads eight to
+   twenty returned `$00`. The underflow was seen once, in a read that
+   was looking for FLAG, and never again.
+2. **The losing pattern.** The same timer, then a FLAG poll of twenty
+   reads testing only bit 4, then a "has the timer fired" read. The
+   check read returned `$00` (bit 0 clear) and a further read straight
+   after it `$00`; the control, the same timer with a delay loop that
+   reads `$D020` instead of the ICR, returned `$81`. The poll took the
+   underflow on its way past and left nothing for the check.
+3. **The fix pattern.** The same poll, but each read is ORed into a
+   byte in RAM before bit 4 is tested. After the poll that byte was
+   `$81`; the timer check, made on the copy, saw `$01`; a fresh read of
+   `$DC0D` afterwards returned `$00`, so the copy was the only place
+   the event still existed.
+4. **CIA2, NMI masked.** Timer A of CIA2 one-shot from `$0060` with
+   `$7F` written to `$DD0D` first. After the underflow `$DD0D` read
+   `$01` (flag set, bit 7 clear because nothing was enabled) and the
+   next read `$00`. Masking an interrupt does not stop its flag from
+   being set, and does not stop a read from clearing it.
+5. **CIA2, NMI enabled, handler reads once.** Vector at `$0318`,
+   handler `LDA $DD0D` into a byte. One NMI counted, the handler's
+   copy `$81`, and a main-program read after it `$00`.
+6. **Two timers, one read.** CIA1 Timer A and Timer B one-shot from
+   `$0020` together, mask `$83`. The first read of `$DC0D` returned
+   `$83`; the second `$00`.
+7. **A stray read racing the NMI.** CIA2 Timer A one-shot from latch
+   `$60 + k` for eight phases k while the main program reads `$DD0D`
+   in a 16-cycle loop and the handler of test 5 is installed. PAL,
+   default model: phases 0..3, the main loop read `$81` and the
+   handler read `$00`; phases 4..7, the handler read `$81` and the
+   main loop `$00`; one NMI counted at every phase. NTSC default model
+   and PAL `-ciamodel 0`: the same, except that at phase 3 the main
+   loop read `$01`, the handler read `$00` and **no NMI was counted**.
+   A read that lands in the cycle the chip would raise the line in
+   takes the flag before the line follows it, and bit 7 never sets.
+   Which phase does that depends on where the loop's reads fall
+   against the timer, so treat the phase number as this probe's and
+   the loss as the finding.
+
+Not measured here: any real 6526 or 8521; a FLAG edge itself (no
+cassette or serial input was driven, so bit 4 was never set and the
+lost-FLAG case is the mirror of the lost-timer case, rung 3).
+
+### Fix
+
+One reader per interrupt control register, and one read per event.
+
+1. **Read once into RAM and test the copy.** Whoever polls reads the
+   ICR into a byte, ORs it into a pending byte, and every routine on
+   that chip tests and clears its own bit in the pending byte, never
+   the register. Test 3 above is that pattern; the timer bit survived
+   the FLAG poll in it.
+2. **Give the register one owner.** If the chip has an interrupt
+   handler, the handler is the only code that reads its ICR. It reads
+   once, stores the byte, and dispatches on the copy. Main-program
+   code that wants to know about a CIA event reads the handler's copy,
+   not the chip. Test 7 is what a second reader costs: at some phases
+   the handler sees nothing, and at one the interrupt itself is gone.
+3. **Do not read an ICR you do not own to "be safe".** A stray
+   `LDA $DC0D` in a loader's clean-up, or a `BIT $DD0D` added to a
+   routine that is not the NMI handler, acknowledges events that
+   belong to someone else. The KERNAL's own IRQ exit at `$EA7E` reads
+   `$DC0D`; a raster handler that falls through to it while a CIA1
+   timer is in use hands the timer's flag to the KERNAL.
+
+Setting up is still a read: `$7F` to the ICR and one read to clear
+whatever was standing is right at install time, when nothing owns the
+chip yet. The rule is about steady state.
+
+### Worked example
+
+The losing pattern, two routines and one register:
+
+```asm
+// LOSES THE TIMER: the FLAG poll's read cleared bit 0 on the way past.
+wait_flag:
+        lda $dc0d
+        and #$10
+        beq wait_flag       // measured: an underflow during this loop is gone
+        rts
+
+check_timer:
+        lda $dc0d           // read here: $00 after the poll, $81 without it
+        and #$01
+        rts
+```
+
+The fix, one read kept in RAM:
+
+```asm
+// Correct: every read is banked into a pending byte; routines test the copy.
+poll_icr:
+        lda $dc0d           // the only read of $DC0D outside install
+        ora pending
+        sta pending
+        rts
+
+wait_flag_ok:
+        jsr poll_icr
+        lda pending
+        and #$10
+        beq wait_flag_ok
+        lda pending
+        and #$ef            // consume FLAG, leave the timer bit
+        sta pending
+        rts
+
+check_timer_ok:
+        lda pending         // measured: $81 after the poll, so bit 0 is here
+        and #$01
+        beq no_tick
+        lda pending
+        and #$fe
+        sta pending
+no_tick:
+        rts
+
+pending:
+        .byte $00
+```
+
+For a chip with a handler, the handler is `poll_icr`: it reads once,
+stores, and dispatches on the stored byte; nothing else touches the
+register. On CIA2 that read is also the acknowledge that lets `/NMI`
+rise again (`kernal_nmi_handler_runs_stop_check`).
+
+### Cross-references
+
+- Pitfall `cia_revision_irq_one_cycle_late` (this page): both models
+  have a one-cycle window in which a read takes the flag before the
+  line follows it, the old part because its raise is a cycle later,
+  the new part when the read lands in the cycle before the raise.
+  Which phase of test 7 falls in that window is a matter of
+  alignment, which is why NTSC default and PAL `-ciamodel 0` lost
+  phase 3 and PAL default lost none of the eight tried.
+- Pitfall `kernal_nmi_handler_runs_stop_check` (this page) and
+  `restore_nmi_not_maskable` (`pitfalls/kernal-and-io.md`): the
+  opposite failure, a handler that never reads `$DD0D`. The two rules
+  together: exactly one read, in the handler.
+- Pitfall `tape_bit_is_a_pulse_pair_not_a_pulse` (`pitfalls/loader.md`)
+  and technique `tape_turbo_loader` (`techniques/file-io.md`): the
+  loader whose FLAG spin on bit 4 met this. Its Timer B is read from
+  `$DC06`/`$DC07`, not from the ICR, which is why it survives; a
+  variant that timed out on the Timer B flag would not.
+- Technique `frame_sync_loop` (`techniques/raster.md`) is not on the
+  Triggered-by line: its text waits on `$D012`, and no ICR read
+  appears in it.
+- `hardware/cia-reference.md`, the interrupt control register.
+
+### Sources
+
+- VICE x64sc 3.10 (windowless build), the seven-test probe above,
+  run PAL default model, NTSC default model, PAL `-ciamodel 0`, screen
+  cells decoded against `chargen-901225-01.bin`. Tests 1 to 4 were
+  repeated in a smaller probe with the results dumped from RAM by a
+  monitor tracepoint, same three runs; the test 2 bytes are that
+  probe's.
+- MOS 6526 data sheet, interrupt control register: flags cleared on
+  read, bit 7 the pending summary; the bit assignments above are the
+  sheet's.

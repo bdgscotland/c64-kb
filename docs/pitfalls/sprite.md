@@ -23,7 +23,7 @@ hides them. All of them have bitten experienced C64 coders.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D015, D010, D000, D001
-**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq, sprite_multiplex_24, sprite_sine_chain, sprite_multiplex_game
+**Triggered by techniques:** sprite_multiplex_8, stable_raster_irq, sprite_multiplex_24, sprite_sine_chain, sprite_multiplex_game, dot_3d_rotator
 **Mitigated by techniques:** sprite_multiplex_8
 
 ### Symptom
@@ -340,7 +340,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
-**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield, dypp_sprite_sine_scroller
 
 ### Symptom
 
@@ -587,7 +587,7 @@ the cached variable is immediately populated.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D000, D010
-**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms
+**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms, lane_depth_engine, starfield, dypp_sprite_sine_scroller
 
 ### Symptom
 
@@ -777,3 +777,201 @@ Borders open, sprite 0 at the seam:
   the measurement reused, with a sprite at X 500 in its picture
 - Recipe: `recipes/kickassembler/sprite-sine-chain.md`: X 343 showing
   one column, X 16 starting at column 32
+
+## sprite_registers_persist_across_state_change — A state's setup that writes only the sprite registers it uses inherits the previous state's enables, expansion, multicolour and latched collisions
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D015, D01B, D01C, D01D, D01F
+**Triggered by techniques:** attract_mode_input_replay, flip_screen_rooms, two_player_state_swap
+
+### Symptom
+
+The title screen's pointer, or a piece of its logo, is still sitting on
+the play field after the game starts. The player sprite is twice as wide
+as it should be, or shows in the wrong colours, on the first game after
+the title and looks right after a death. A GAME OVER banner has the
+player sprite parked across it. Or nothing is visibly wrong and the game
+still ends the moment play begins: the collision test fires on the first
+frame from a hit the play state never had. Everything is correct when
+the state is entered from a state that used no sprites, and wrong when
+it is entered from one that did, so the fault seems to move about.
+
+### Mechanism
+
+The VIC-II keeps every register until something writes it. Nothing about
+a game-state change touches the chip: a screen clear, a new character
+set or a new colour table changes what the sprites are drawn over, not
+whether they are drawn. So each state inherits, from whichever state ran
+before it, the enable mask in `$D015`, the expansions in `$D017` and
+`$D01D`, the multicolour mask in `$D01C`, the priority mask in `$D01B`,
+the X high bits in `$D010`, the shape pointers, the colours in
+`$D027` to `$D02E` and the two shared multicolours in `$D025` and
+`$D026`.
+
+A state's setup routine written to set only what the state uses leaves
+all of that standing. The usual shape is a play state that enables its
+player with an `ORA` into `$D015` so as not to disturb anything, sets a
+position and a pointer, and returns. Every other bit of every other
+sprite register is the title screen's. The pointer sprite the title
+enabled stays enabled, at its title position, over the field. The logo's
+X expansion and multicolour bit were set on sprite 0, and the play state
+reuses sprite 0 for the player, so the player is drawn 48 pixels wide
+with its bit pairs read as multicolour, in a colour from `$D025` or
+`$D026` that the play state never set. Nothing goes wrong in the code;
+the chip is doing what it was last told.
+
+`$D01F` and `$D01E` make it a logic fault and not only a picture. Both
+are latches: a bit is set when a hit is drawn and stays set until the
+register is read, and the read clears the whole register. A state that
+never reads them leaves any hit it drew latched for the next state, and
+a stale sprite that the next state did not know it had goes on drawing
+hits of its own. The first `LDA $D01F` in the play state then returns a
+non-zero value from a sprite the play state does not own, and a test of
+the form "any hit means the player is dead" ends the game on its first
+frame.
+
+The same thing happens in the other direction. A play state that leaves
+its sprites enabled and hands over to a text-only game-over screen has
+the player drawn across the banner, and because the banner is drawn in
+the foreground colour the player collides with it and `$D01F` records a
+hit in a state that has no sprites at all.
+
+### Fix
+
+Give every state an entry routine, and make the first thing that routine
+does a VIC sprite baseline: write every sprite register to the value
+this state wants, whether or not this state uses it. Write `$D015` first
+with the state's own mask, so that nothing from the old state is drawn
+while the rest is being set, then `$D010`, `$D017`, `$D01B`, `$D01C` and
+`$D01D` as explicit values, then read `$D01E` and `$D01F` once each and
+discard the result to clear the latches. Only then set the state's own
+pointers, positions and colours. A state that uses no sprites calls the
+same routine with a mask of zero. Do not `ORA` and `AND` a state's bits
+into `$D015`; a state owns the whole register while it runs.
+
+Sprite colours and the shared multicolours are not in the list because a
+sprite that is not enabled shows none of them, but a state that reuses a
+sprite number must set that sprite's colour, and a state that uses
+multicolour must set `$D025` and `$D026`, for the same reason.
+
+If the game reads the collision latches in its per-frame routine, the
+read in the entry routine is still needed: the latch may have been set
+between the old state's last read and the switch.
+
+### Worked example
+
+The play state on the left of the measurement writes only what it uses.
+The baseline on the right is what the fixed build calls at the top of
+every state's entry routine, with the state's own mask in A.
+
+```kickassembler
+// Bad: a play-state setup that touches only the bits it uses.
+// $D015 bits 1 to 7, $D01B, $D01C, $D01D and $D01F are whatever the
+// title screen left.
+play_enter_bad:
+    lda #$82
+    sta $07f8            // player shape
+    lda #160
+    sta $d000
+    lda #133
+    sta $d001
+    lda #1
+    sta $d027
+    lda $d015
+    ora #%00000001       // "enable the player", disturb nothing else
+    sta $d015
+    rts
+
+// Fixed: every state entry starts here. A = the sprites this state uses.
+vic_sprite_baseline:
+    sta $d015            // this state's own mask first
+    lda #0
+    sta $d010            // X high bits
+    sta $d017            // Y expand
+    sta $d01b            // priority
+    sta $d01c            // multicolour
+    sta $d01d            // X expand
+    lda $d01e            // read once to clear the latches
+    lda $d01f
+    rts
+
+play_enter_fixed:
+    lda #%00000001
+    jsr vic_sprite_baseline
+    lda #$82
+    sta $07f8
+    lda #160
+    sta $d000
+    lda #133
+    sta $d001
+    lda #1
+    sta $d027
+    rts
+
+over_enter_fixed:
+    lda #%00000000       // a text-only state: no sprites at all
+    jsr vic_sprite_baseline
+    rts
+```
+
+The measurement behind this entry was one KickAssembler program run in
+VICE x64sc 3.10, windowless, `-default -warp -limitcycles 8000000`, on
+PAL and with `-model ntsc`. Three states, sixty frames each, switched on
+a frame count: a title with sprite 0 as a logo at (100, 62), X expanded
+and multicolour, and sprite 1 as a pointer bar at (250, 190); a play
+state with a solid character field on rows 13 to 24 and sprite 0 as the
+player at (160, 133), whose bottom line 153 is one line above the
+field's first line 154, so the player itself never touches the field;
+and a text-only game-over state with a banner on row 12. Each state read
+`$D015`, `$D01B`, `$D01C`, `$D01D` and `$D01F` once, in that order, on
+its thirtieth frame, and a monitor tracepoint dumped the copies. The bad
+build's play and game-over entries wrote only what they used; the fixed
+build called the baseline above first. The two models gave the same
+bytes and the same pixel counts throughout.
+
+```text
+state          bad build          fixed build
+               15 1B 1C 1D 1F     15 1B 1C 1D 1F
+title          03 00 01 01 00     03 00 01 01 00
+play           03 00 01 01 02     01 00 00 00 00
+game over      03 00 01 01 03     00 00 00 00 00
+
+Play state, bad:   player 48 px wide, solid red (the title's $D025),
+                   1,008 sprite pixels; the pointer bar, 84 white
+                   pixels, standing on the field; $D01F bit 1 is the
+                   pointer's hit on the field. The play state drew no
+                   collision of its own.
+Play state, fixed: player 24 px wide in its 1-pixel stripe pattern,
+                   23 lit columns (the pattern's first is blank), 252
+                   white pixels; no pointer; $D01F 00.
+Game over, bad:    63 of the banner's 185 white pixels visible, the
+                   other 122 under 1,008 red sprite pixels (arithmetic);
+                   the pointer still on screen; $D01F bit 0 is the
+                   player on the banner, bit 1 the pointer's field hit
+                   latched after the play state's one read.
+Game over, fixed:  185 white pixels, no sprite pixels, $D01F 00.
+```
+
+### Cross-references
+
+- Registers: `D015`, `D010`, `D017`, `D01B`, `D01C`, `D01D`: the
+  baseline's write list, in the order above
+- Registers: `D01E`, `D01F`: read-to-clear latches; the entry routine's
+  read is what stops a hit crossing a state boundary
+- Registers: `D025`, `D026`, `D027` to `D02E`: the colours a state that
+  reuses a sprite number must set; the red player above was `$D025`
+- Pitfall: `sprite_priority_collision_silent`: the same latches, read too
+  late within one state rather than not at all across two
+- Pitfall: `render_during_state_transition_clobbers_banner` on
+  `text-mode-render.md`: the character-mode half of the same transition,
+  where the old state's renderer keeps drawing over the new screen
+- Technique: `attract_mode_input_replay`: a title that starts the game
+  and returns to itself crosses this boundary twice per cycle
+- Technique: `flip_screen_rooms`: hides the sprites in `$D015` around its
+  redraw, which is the correct form of the same write
+- Technique: `two_player_state_swap`: a per-player block swapped on death
+  must swap the sprite registers with it
+- Game design: `game_state_machine` in `game-design/game-structure.md`:
+  the entry-routine table this baseline belongs at the top of, and the
+  acceptance checks that read `$D015` on a state's first frame

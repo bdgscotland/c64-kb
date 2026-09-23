@@ -25,8 +25,8 @@ Maximum useful size is bounded by available RAM: roughly 38 KiB for a pure progr
 
 ### .CRT — Cartridge image
 
-**Produced by:** oscar64, kickassembler
-**Consumed by:** vice, easyflash, ef3
+**Produced by:** oscar64, kickassembler, cartconv
+**Consumed by:** vice, easyflash, ef3, cartconv
 
 The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or more ROM banks with metadata about the cartridge hardware type. It is the standard interchange format for C64 cartridge software and EasyFlash cart images used in the demoscene.
 
@@ -40,7 +40,8 @@ The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or
 | $0016 | 2 | Hardware type (big-endian; 0 = generic 8K/16K) |
 | $0018 | 1 | EXROM line state (0 = low/active) |
 | $0019 | 1 | GAME line state (0 = low/active) |
-| $001A | 6 | Reserved (zero) |
+| $001A | 1 | Hardware revision (subtype); 0 unless set. Measured with cartconv 3.10: `-s 1` wrote 1 here and set the version to `$0101`, and `cartconv -f` prints it as "Hardware Revision". An earlier version of this table folded it into six reserved bytes |
+| $001B | 5 | Reserved (zero) |
 | $0020 | 32 | Cartridge name (null-padded ASCII) |
 
 **CHIP packets** follow the header, one per ROM bank:
@@ -59,7 +60,7 @@ The EXROM/GAME line combination determines the cartridge's memory mapping mode. 
 
 EasyFlash carts (hardware type `$0020`) contain up to 64 banks of 16K, each represented by two CHIP packets (one for `$8000`, one for `$A000`).
 
-Oscar64 can target cartridge memory by setting the appropriate linker segment addresses. KickAssembler produces CRT images via the `.crt` and `.bank` directives combined with a post-assembly packaging step.
+Oscar64 writes the container itself with `-tf=crt8`, `-tf=crt16` (type 0) or `-tf=crt` (EasyFlash). KickAssembler has no cartridge directive: in 5.25 `.crt` and `.bank` both fail with `Invalid directive` (run 2026-09-23), so a KickAssembler cartridge is either raw banks written with `outBin` and wrapped by cartconv, or a `.CRT` emitted byte by byte from the source as the `crt-banked` and `easyflash-save` recipes do. An earlier version of this paragraph named those two directives; they do not exist. The header and packet fields as decoded from files built by both tools, the type table, and what each type did when booted are in [cartconv-reference](../toolchains/cartconv-reference.md).
 
 ---
 
@@ -152,9 +153,70 @@ Each 4-byte BAM entry: first byte = free sector count, next 3 bytes = 24-bit bit
 | $02 | 1 | File type (`$82`=PRG, `$81`=SEQ, `$83`=USR, `$84`=REL) |
 | $03–$04 | 2 | First sector of file (track, sector) |
 | $05–$14 | 16 | Filename (PETASCII, `$A0`-padded) |
-| $1E–$1F | 2 | File size in sectors (little-endian) |
+| $15–$16 | 2 | REL only: track and sector of the first side sector (measured below; `$00 $00` on other types, not measured here) |
+| $17 | 1 | REL only: record length (the DOS's stated range is 1 to 254; 32, 100 and 254 measured below) |
+| $1E–$1F | 2 | File size in sectors (little-endian); for a REL file the side sectors are counted in |
+
+Directory art lives entirely in these bytes: a type of `$80` (DEL, closed), a first-sector pointer of `0 0` for an entry that owns no blocks, any PETSCII in the name field and any value at `$1E`, all written from the host by [cc1541](../toolchains/cc1541-reference.md), which also shows what the drive's listing makes of an `$A0` inside a name.
 
 File data uses a 10-sector interleave chain (each sector's first two bytes are the track/sector link to the next; the remaining 254 bytes are data). The last sector in a chain uses `$00` as the next-track link and stores the index of the last used byte in what would normally be the next-sector byte, so the sector holds that value minus one data bytes (an earlier version said it stored the count of data bytes; a 91-byte last sector written by the 1541 in VICE holds 92).
+
+**REL file (type `$84`):**
+
+A relative file is a data chain like any other plus one or more **side sectors**, blocks that list the track and sector of every data block in order so the drive can turn a record number into a block without walking the chain. Everything in this subsection was read off `.d64` images written by the 1541 ROM under VICE x64sc 3.10 (`-drive8truedrive`, windowless build) by the recipe `../recipes/oscar64/rel-side-sectors.md` and a side run of the same shape with 254-byte records; the recipe also prints the same bytes from the C64 side through `U1`. The images were decoded on the host with this script, which walks the directory, the side-sector chain and the data chain (`SPT` is the sectors-per-track table above):
+
+```text
+img = open('disk.d64', 'rb').read()
+SPT = [21]*17 + [19]*7 + [18]*6 + [17]*5
+def blk(t, s):
+    o = (sum(SPT[:t-1]) + s) * 256
+    return img[o:o+256]
+ent = blk(18, 1)[0:32]                      # first directory entry
+print(hex(ent[2]), ent[3], ent[4], ent[0x15], ent[0x16], ent[0x17],
+      ent[0x1e] | ent[0x1f] << 8)
+t, s = ent[0x15], ent[0x16]
+while t:                                    # side-sector chain
+    b = blk(t, s)
+    print(t, s, 'next', b[0], b[1], 'number', b[2], 'reclen', b[3],
+          'group', [(b[4+2*i], b[5+2*i]) for i in range(6)],
+          'data', [(b[16+2*i], b[17+2*i]) for i in range(120) if b[16+2*i]])
+    t, s = b[0], b[1]
+t, s = ent[3], ent[4]                       # data chain
+while t:
+    b = blk(t, s)
+    print(t, s, 'link', b[0], b[1])
+    t, s = b[0], b[1]
+```
+
+The directory entry of the recipe's file `SS`, created with `SS,L,` and the byte 100, eight records written, then closed:
+
+| Offset | Bytes read | Meaning |
+|--------|-----------|---------|
+| $02 | `$84` | REL, closed. The recipe read the entry through `U1` while the file was still open and the byte was already `$84`. |
+| $03–$04 | `$11 $00` | first data block, 17/0 |
+| $15–$16 | `$11 $0A` | first side sector, 17/10 |
+| $17 | `$64` | record length 100 |
+| $1E–$1F | `$05 $00` | 5 blocks: 4 data blocks and 1 side sector. Read while the file was open it was `$00 $00`; the drive writes the count at close. |
+
+The side sector at 17/10, byte by byte:
+
+| Offset | Size | Bytes read | Field |
+|--------|------|-----------|-------|
+| $00–$01 | 2 | `$00 $17` | Track and sector of the next side sector. Track 0 marks the last one, and the sector byte is then the index of the last used byte in this block: `$17` = 23 is the last byte of the fourth data-block pair (16 + 4 × 2 − 1). |
+| $02 | 1 | `$00` | This side sector's number in the group, 0 to 5. |
+| $03 | 1 | `$64` | Record length, the same value as the directory entry's `$17`. |
+| $04–$0F | 12 | `$11 $0A` then ten `$00` | Track and sector of side sectors 0 to 5 of the group, in order, `$00 $00` for those that do not exist. Every side sector carries the whole list. |
+| $10–$FF | 240 | `$11 $00 $11 $0B $11 $01 $11 $0C` then zeros | Track and sector of data blocks, in file order, up to 120 pairs; `$00` in a track position ends the list. |
+
+So the file's data chain is 17/0, 17/11, 17/1, 17/12, and the chain's own links agree with the list: each block's bytes 0 and 1 name the next, and the last block's link is `$00 $EF`. That `$EF` = 239 is the last used byte of the data chain, and it is not where record 8 ends: 4 blocks hold 1,016 data bytes, ten 100-byte records fit, and the drive fills every allocated block with whole records, so records 9 and 10 exist on the disk though nobody wrote them, and 239 = 2 + 1000 − 762 − 1 is the last byte of record 10 (both records read back from the image as `$FF` followed by 99 `$00`; a `P` to record 10 answered `00` and read one `$FF`, a `P` to record 11 answered `50`). The last 16 data bytes of the block, after record 10, hold `$FF` then fifteen `$00`: the drive marks the start of every record slot it allocates, including the slot record 11 would begin in, even though record 11 does not fit and a `P` to it answers `50` (read from the image: `$FF` sits at block bytes 40, 140 and 240 of 17/12, one per 100-byte slot).
+
+**Record contents and padding.** Every record the drive allocates starts as `$FF` followed by zeros. A record written short is padded with `$00` to the record length: record 3 of the recipe was written as ten bytes and reads back from the image as those ten bytes then ninety `$00`, and a read of it through the drive returns ten bytes with EOF, the padding not sent. A record can straddle two blocks: with 100-byte records, record 3 occupies bytes 200 to 253 of the first block and 0 to 45 of the second, and the program never sees the seam.
+
+**Two side sectors.** The side run created `BIG,L,` with the byte 254, sent one `P` to record 125 (reply `50, RECORD NOT PRESENT`) and wrote one byte to it (reply `00, OK`). That single write allocated 125 data blocks and two side sectors; the entry then read `$84`, side sector 17/10, record length `$FE`, 127 blocks. Side sector 0 at 17/10 held next = 12/9, number 0, and 120 data-block pairs; side sector 1 at 12/9 held next = `$00 $19` (25 = 16 + 5 × 2 − 1), number 1, and 5 pairs; both carried the group list `$11 $09 $0C $09` then zeros, that is 17/10 and 12/9. The 125-block data chain matched the two lists end to end, and the last block's link was `$00 $FF` because a 254-byte record fills a block exactly. After that write a `P` to record 125 answered `00` and a `P` to record 126 answered `50`: with 254-byte records no extra records fall out of the allocation.
+
+**Limits.** The record length byte is 1 to 254; the DOS's stated range, and the recipes use 32, 100 and 254 (the length 0 and 255 cases were not measured here). A group holds six side sectors of 120 data blocks each, 720 blocks (arithmetic from the tables above), which is more than a 35-track disk has free, so on a 1541 the disk is the limit, and the DOS's stated reply for a `P` past it is `52, FILE TOO LARGE` (not provoked here; its ROM site is in `iec-disk-reference.md`, "The 1541 DOS Error Codes"). The record number in the `P` command is two bytes, so 65,535 is the highest a program can name (arithmetic; not measured here). Drives with more capacity extend the scheme with a further block that lists groups; that is not measured here and this table is the 1541's.
+
+**The P command's byte order.** Five bytes on the command channel: `P`, the data channel's secondary address plus 96 (`$62` for channel 2), the record number low byte, the record number high byte, and the byte within the record counted from 1. Measured in the recipe and its second run: `P` to record 5 byte 1 read all 100 bytes of record 5; `P` to record 5 byte 7 read 94 bytes starting at the seventh; a `P` to a record that does not fit in the allocated data blocks answers `50` and a read after it returns one `$0D` with the status still `50`; a write after that `50` extends the file and answers `00`. Which records answer `50` depends on the record length and on what is allocated: a record answers `00` when the whole of it fits in the allocated data blocks and `50` when any of it would lie past them. With 100-byte records and one allocated block (254 data bytes), records 1 and 2 answered `00` and record 3, whose bytes 200 to 299 cross the end, answered `50`; after the write to 3 allocated the second block (508 bytes), 4 and 5 answered `00` and 6 (500 to 599) answered `50`; after the third block (762 bytes), 7 answered `00` and 8 (700 to 799) answered `50`. The same rule gives the seven records of 32 bytes that fit one block in `../techniques/file-io.md` (`kernal_relative_file_io`) and the ten of 100 bytes that fit four.
 
 **Typical use:** release distribution, fastloader authoring (Krill/Loader, Spindle, DreamLoad), scene release packaging via c1541 or CBM FileBrowser.
 
@@ -242,6 +304,8 @@ Each sector occupies a fixed pattern:
 5. Data block: 325 GCR-encoded bytes (256 data bytes + block ID `$07` + checksum + padding, GCR-encoded at 4 bytes → 5 bytes ratio)
 6. Inter-sector gap: 4–19 bytes (variable; `$55`)
 
+**Correction (2026-09-23).** Item 5 used to be the whole of what this page said about the code: "GCR-encoded at 4 bytes → 5 bytes ratio". The ratio is right and it is not how the code works. The 1541 splits every byte into two nibbles and replaces each nibble with a five-bit word from a sixteen-entry table, so four bytes fill five, and a decoder written from the ratio alone cannot read a sector. Items 3 and 6 gave the gaps as ranges; in the image measured below c1541 writes 9 and 8. The subsection "GCR encoding" gives the table, the two block layouts, the sync and gaps, and the zones, each as decoded from a G64 or read out of the drive ROM.
+
 Speed zones (1541-standard):
 
 | Track range | Zone | Nominal track size |
@@ -250,6 +314,135 @@ Speed zones (1541-standard):
 | 18–24 | 2 | 7,170 bytes |
 | 25–30 | 1 | 6,300 bytes |
 | 31–35 | 0 | 6,020 bytes |
+
+#### GCR encoding
+
+Every figure in this subsection was measured here unless it says otherwise. A G64 was formatted and written on the host with VICE 3.10's `c1541` (`c1541 -format "TEST,01" g64 disk.g64 -write known.prg known`, where `known.prg` is 263 bytes: load address `$0801`, the bytes `$00` to `$FF` in order, then `KNOWN`). The image was decoded with the Python script at the end of the subsection, and it was read back under the windowless x64sc build of VICE 3.10 with true drive emulation, where `LOAD"KNOWN",8,1` printed `LOADING` and then `READY.`. The ROM figures come from the 1541 ROM image VICE ships, `DRIVES/dos1541-325302-01+901229-05.bin`, 16,384 bytes mapped at `$C000`.
+
+**Speed zones.** The image's track table and speed-zone table held, for the 35 tracks with data (every half-track offset was zero):
+
+| Tracks | Zone entry | Track length (bytes) | Sectors | Bit rate at 300 rpm | Bit cell |
+|--------|------------|----------------------|---------|---------------------|----------|
+| 1–17 | 3 | 7,692 | 21 | 307,680 bit/s | 3.25 µs |
+| 18–24 | 2 | 7,142 | 19 | 285,680 bit/s | 3.50 µs |
+| 25–30 | 1 | 6,666 | 18 | 266,640 bit/s | 3.75 µs |
+| 31–35 | 0 | 6,250 | 17 | 250,000 bit/s | 4.00 µs |
+
+The bit-rate and bit-cell columns are arithmetic on the track length: bytes × 8 × 5 revolutions a second. The four rates are 16 MHz divided by 52, 56, 60 and 64, which is the drive's 16 MHz crystal divided by 13, 14, 15 or 16 and then by four per bit cell; the crystal and the divide-by-four are not measured here. The sector counts and the zone boundaries are in the ROM: `$FED1` holds `11 12 13 15` (17, 18, 19 and 21 sectors, zone 0 first) and `$FED7` holds `24 1F 19 12` (36, 31, 25 and 18, the first track above each zone, zone 0 first). The zone numbers in the G64 table are the ROM's: zone 3 is the outermost, fastest zone. The "nominal track size" column in the table above this subsection is not what c1541 3.10 writes; the lengths it wrote are the ones here.
+
+**The code table.** Each byte is split into two nibbles and each nibble becomes a five-bit word, high nibble first, so four bytes occupy five bytes on the track. The table was derived from the image alone, from the bytes whose values were known before decoding (the `$08` and `$07` block IDs, the `$0F $0F` header padding, the track number, the 254 file bytes in the first data block and its `$00 $00` padding), and every one of the sixteen entries then matched the ROM's encode table at `$F77F`, which reads `0A 0B 12 13 0E 0F 16 17 09 19 1A 1B 0D 1D 1E 15` and is the only run of sixteen distinct five-bit values with no three consecutive zero bits in the ROM:
+
+| Nibble | Code | Nibble | Code | Nibble | Code | Nibble | Code |
+|--------|------|--------|------|--------|------|--------|------|
+| `0` | `01010` | `4` | `01110` | `8` | `01001` | `C` | `01101` |
+| `1` | `01011` | `5` | `01111` | `9` | `11001` | `D` | `11101` |
+| `2` | `10010` | `6` | `10110` | `A` | `11010` | `E` | `11110` |
+| `3` | `10011` | `7` | `10111` | `B` | `11011` | `F` | `10101` |
+
+By inspection of the sixteen words: none holds three zero bits in a row, none starts with more than one zero and none ends with more than one, so two words side by side never put more than two zeros together, which is what the drive's read clock needs; and no word starts or ends with more than four ones, so the longest run of ones inside data is eight, short of the ten that make a sync. `F` is `10101`, not `11111`, for the second reason.
+
+**Header block.** After each header sync, 10 GCR bytes decode to 8:
+
+| Offset | Size | Field | Decoded, track 17 sector 0 |
+|--------|------|-------|----------------------------|
+| 0 | 1 | Header block ID | `$08` |
+| 1 | 1 | Checksum, the XOR of bytes 2 to 5 | `$11` |
+| 2 | 1 | Sector | `$00` |
+| 3 | 1 | Track | `$11` (17) |
+| 4 | 1 | Disk ID, second character | `$A0` |
+| 5 | 1 | Disk ID, first character | `$A0` |
+| 6–7 | 2 | Padding | `$0F $0F` |
+
+The 10 GCR bytes were `52 56 B5 29 6B D2 B4 A5 55 55`. All 21 headers on track 17 carried sectors 0 to 20 in order, each with a checksum equal to the XOR of its sector, track and two ID bytes. The disk ID is worth a look: c1541 3.10 wrote `$A0 $A0` into every sector header, while the BAM at track 18 sector 0 (bytes `$A2`–`$A3`) holds `30 31`, the `01` given on the command line, and the directory listing shows `01`. The disk loaded all the same under true drive emulation, as above; the ROM is documented as taking the ID from a sector header when it initialises a disk rather than from the BAM, which would explain that, but the mechanism is not measured here. A tool that expects the header ID to match the directory line will not find that in a c1541-formatted G64. Because both ID bytes were `$A0`, which of the two characters comes first on the track was not measured here; the order in the table is the ROM's as documented, not confirmed by this image. What the ROM's own formatter writes into the header on a real disk is not measured here either.
+
+**Data block.** After each data sync, 325 GCR bytes decode to 260:
+
+| Offset | Size | Field | Decoded, track 17 sector 0 |
+|--------|------|-------|----------------------------|
+| 0 | 1 | Data block ID | `$07` |
+| 1–256 | 256 | Sector data | `11 0A` (link: track 17, sector 10), then `01 08 00 01 02` ... `FB` |
+| 257 | 1 | Checksum, the XOR of the 256 data bytes | `$12` |
+| 258–259 | 2 | Padding | `$00 $00` |
+
+The 256 data bytes were the file's first sector as DOS lays it out: the two-byte link to the next sector, then 254 file bytes (the load address `01 08`, then `$00` to `$FB`), and the XOR of those 256 bytes is `$12`, as stored.
+
+**Sync and gaps.** As c1541 3.10 wrote this image, byte aligned: 5 × `$FF` (40 one bits), the 10 header bytes, 9 × `$55`, 5 × `$FF`, the 325 data bytes, 8 × `$55`, then the next sector's sync. That is 362 bytes a sector, 21 × 362 = 7,602, and the rest of the 7,692-byte track is `$55` (98 bytes in a row after the last data block, the 8-byte gap included). A scan of the bit stream for runs of ten or more one bits finds 42 on the track, one before each header and one before each data block; the drive's detector fires on ten, so a 40-bit sync is four times what it needs and `disk_protection_tricks` in `../techniques/loaders-packers.md` is about what a loader does with that slack and with the fields above. The gaps a real 1541's formatter writes depend on the track's spare space and are not measured here. The bit clock per zone is why `gcr_timing_assumes_stock_drive` in `../pitfalls/loader.md` exists: a drive that is not stepping its clock through those four rates reads the same bits at the wrong cell width.
+
+**Decoder.** The script that produced the figures above. It takes the image, a track, a sector, and the file whose first 254 bytes sit in that sector; the table it prints is learned from the image, never assumed.
+
+```text
+#!/usr/bin/env python3
+# Decode one track of a G64 and derive the 4-to-5 GCR table from known bytes.
+# usage: gcr_g64.py disk.g64 TRACK SECTOR [file whose first 254 bytes sit in SECTOR]
+import struct, sys
+
+img = open(sys.argv[1], "rb").read()
+trk, sec = int(sys.argv[2]), int(sys.argv[3])
+n = img[9]
+offs = [struct.unpack_from("<I", img, 12 + 4 * i)[0] for i in range(n)]
+zone = [struct.unpack_from("<I", img, 12 + 4 * n + 4 * i)[0] for i in range(n)]
+print(img[:8], "version", img[8], "entries", n, "max", struct.unpack_from("<H", img, 10)[0])
+for i in range(0, n, 2):
+    if offs[i]:
+        print("track", 1 + i // 2, "len", struct.unpack_from("<H", img, offs[i])[0], "zone", zone[i])
+
+o = offs[(trk - 1) * 2]
+tb = img[o + 2:o + 2 + struct.unpack_from("<H", img, o)[0]]
+bits = "".join(f"{b:08b}" for b in tb)
+
+syncs, i = [], 0                      # runs of ten or more 1 bits
+while i < len(bits):
+    j = i
+    while j < len(bits) and bits[j] == "1":
+        j += 1
+    if j - i >= 10:
+        syncs.append((i, j))
+    i = j + 1
+print("syncs", len(syncs))
+
+def codes(start, nbytes):             # 5-bit groups for nbytes decoded bytes
+    return [int(bits[start + 5 * k:start + 5 * k + 5], 2) for k in range(2 * nbytes)]
+
+table = {}
+def learn(cs, known):                 # known: list of byte values or None
+    for k, b in enumerate(known):
+        if b is not None:
+            for c, nib in ((cs[2 * k], b >> 4), (cs[2 * k + 1], b & 15)):
+                assert table.setdefault(c, nib) == nib, "table conflict"
+
+blocks = [(e, (syncs[k + 1][0] if k + 1 < len(syncs) else len(bits)) - e)
+          for k, (s, e) in enumerate(syncs)]
+hdrs = [b for b in blocks if b[1] < 2000]
+for start, _ in hdrs:                 # ID, checksum, sector, track, ID2, ID1, $0F, $0F
+    learn(codes(start, 8), [0x08, None, None, trk, None, None, 0x0F, 0x0F])
+for start, _ in blocks:
+    if _ >= 2000:
+        learn(codes(start, 1), [0x07])
+
+def decode(cs):
+    return bytes((table[cs[k]] << 4) | table[cs[k + 1]] for k in range(0, len(cs), 2))
+
+want = None
+for k, (s, e) in enumerate(syncs):
+    cs = codes(e, 8)                  # sector byte is codes 4 and 5
+    if (e, blocks[k][1]) in hdrs and (table.get(cs[4]), table.get(cs[5])) == (sec >> 4, sec & 15):
+        want = k
+if len(sys.argv) > 4:                 # learn the rest from the known file
+    dstart = syncs[want + 1][1]
+    learn(codes(dstart, 260), [None, None, None] + list(open(sys.argv[4], "rb").read()[:254]) + [None, 0, 0])
+print("table:", " ".join(f"{nib:X}={c:05b}" for c, nib in sorted(table.items(), key=lambda t: t[1])))
+
+for start, _ in hdrs:
+    h = decode(codes(start, 8))
+    print("header", h.hex(" "), "checksum", "ok" if h[1] == h[2] ^ h[3] ^ h[4] ^ h[5] else "BAD")
+d = decode(codes(syncs[want + 1][1], 260))
+x = 0
+for b in d[1:257]:
+    x ^= b
+print("data", d.hex(" "), "\nchecksum", hex(d[257]), "computed", hex(x))
+```
+
+Run as `python3 gcr_g64.py disk.g64 17 0 known.prg` it printed the table above, 21 headers each `checksum ok`, and the data block with `checksum 0x12 computed 0x12`. The ROM addresses were found by searching the ROM image for the byte runs quoted, with the file offset plus `$C000` as the address.
 
 **Typical use:** preserving copy-protected originals, testing fastloader sync timing, demoscene releases that rely on non-standard sector ordering or gap manipulation.
 
@@ -397,8 +590,8 @@ The SID format is a standard container for C64 music, combining a short metadata
 | Offset | Size | Field |
 |--------|------|-------|
 | $00–$03 | 4 | Magic: `"PSID"` or `"RSID"` |
-| $04–$05 | 2 | Version: `$0001` (v1) or `$0002` (v2) — big-endian |
-| $06–$07 | 2 | Data offset: `$0076` (v1) or `$007C` (v2) — big-endian |
+| $04–$05 | 2 | Version: `$0001` (v1), `$0002` (v2), `$0003` (v3) or `$0004` (v4) — big-endian; RSID must be 2, 3 or 4 |
+| $06–$07 | 2 | Data offset: `$0076` (v1) or `$007C` (v2, v3 and v4) — big-endian |
 | $08–$09 | 2 | Load address (0 = embedded in first 2 bytes of data, little-endian) |
 | $0A–$0B | 2 | Init address (0 = load address; called with song number in A) |
 | $0C–$0D | 2 | Play address (0 = init installs IRQ handler; must be 0 for RSID) |
@@ -409,18 +602,94 @@ The SID format is a standard container for C64 music, combining a short metadata
 | $36–$55 | 32 | Author name (null-terminated ASCII) |
 | $56–$75 | 32 | Released/copyright (null-terminated ASCII) |
 
-**Version 2 extensions (offsets $76–$7B):**
+**Version 2, 3 and 4 extensions (offsets $76–$7B):**
 
 | Offset | Size | Field |
 |--------|------|-------|
-| $76–$77 | 2 | Flags: bit 0=MUS data, bit 1=PlaySID/BASIC, bits 2-3=video standard (00=unknown,01=PAL,10=NTSC,11=both), bits 4-5=SID model (00=unknown,01=6581,10=8580,11=both) |
+| $76–$77 | 2 | Flags, big-endian: bit 0=MUS data, bit 1=PlaySID-specific (PSID) or C64 BASIC (RSID), bits 2-3=video standard (00=unknown, 01=PAL, 10=NTSC, 11=both), bits 4-5=first SID model (00=unknown, 01=6581, 10=8580, 11=both), bits 6-7=second SID model (v3 and later; same codes, 00 meaning "same as the first SID"), bits 8-9=third SID model (v4; same codes, 00 meaning "same as the first SID"), bits 10-15 reserved |
 | $78 | 1 | Start page (relocation page; 0=clean, $FF=no free pages) |
 | $79 | 1 | Page length (number of free pages for relocation) |
-| $7A–$7B | 2 | Reserved (zero) |
+| $7A | 1 | Second SID address (v3 and later): the middle byte of `$Dxx0`, so the chip sits at `$D000 + byte × 16`. Valid values `$42`–`$7F` and `$E0`–`$FE`, even only, which is `$D420`–`$D7E0` and `$DE00`–`$DFE0`. Zero or any invalid value means no second SID. Must be 0 in v2 |
+| $7B | 1 | Third SID address (v4): the same encoding and ranges as `$7A`, and it must differ from `$7A`. Zero means no third SID. Must be 0 in v2 and v3 |
 
-**RSID** files require the C64 BASIC ROM and run in native-interrupt mode. The play address must be zero (the init routine installs a CIA or raster IRQ). Load address, init address, and any ROM-mapped addresses must be ≥ `$07E8`.
+**Correction (2026-09-23).** This table used to stop at version 2 and call `$7A`–`$7B` "Reserved (zero)", and the version row listed only `$0001` and `$0002`. Versions 3 and 4 put the second and third SID addresses in those two bytes and the two extra model fields in the flags word, so a reader written from the old table would play every two-SID and three-SID tune on one chip. The rows above follow the HVSC document `SID_file_format.txt` (in the collection's `DOCUMENTS` directory), and were checked two ways: against HVSC Release 84, and against VICE 3.10's `vsid`. Both are described under "Measured here" below.
 
-The SID collection at HVSC (High Voltage SID Collection) contains over 50,000 SID files and is the de facto reference corpus for this format.
+**Which fields each version has:**
+
+| Field | v1 | v2 | v3 | v4 |
+|-------|----|----|----|----|
+| Magic through the three strings (`$00`–`$75`) | yes | yes | yes | yes |
+| Flags bits 0-5, start page, page length (`$76`–`$79`) | absent | yes | yes | yes |
+| Second SID address (`$7A`) and flags bits 6-7 | absent | must be 0 | yes | yes |
+| Third SID address (`$7B`) and flags bits 8-9 | absent | must be 0 | must be 0 | yes |
+| Data offset | `$0076` | `$007C` | `$007C` | `$007C` |
+
+**Version history.** Version 1 is Michael Schwendt's original header for SIDPLAY, 118 bytes ending at `$75`. Version 2 added the six bytes at `$76`; the "v2NG" extension by Simon White and Dag Lem gave most of them their meaning (flag bits 1 to 5, start page, page length) and defined RSID, and it kept `$0002` as the version number, so v2 and v2NG cannot be told apart from the header. Wilfred Bos added the second SID address and its model bits as version 3, and the third SID address and its model bits as version 4. The header length has not changed since version 2: the data starts at `$7C` in every file the collection holds. The HVSC document names these authors and gives no dates, so none are given here.
+
+**PSID and RSID.** The magic says what the tune may assume. A PSID tune is driven by the player: the player calls init with the song number in A, then calls play on every VBI (speed bit 0) or on CIA 1 timer A (speed bit 1), and before each call it writes `$01` from the routine's address (`$37` below `$A000`, `$36` below `$D000`, `$35` at `$E000` and above, `$34` inside the `$D000` page). So a PSID tune should not depend on which ROMs are mapped; with a non-zero play address the player does the timing, and with play address 0 its init routine installs the interrupt handler itself, as the table above says. An RSID tune gets the power-on machine and nothing more: `$01` = `$37`, CIA 1 timer A running at 60 Hz with its interrupt enabled, the VIC raster interrupt set to line `$137` but not enabled, and the tune must set up its own interrupt source and handler. That is why RSID pins header fields: the version must be 2, 3 or 4; load address, play address and speed must all be 0; the embedded load address must be at or above `$07E8`; and init must not sit in a ROM or I/O window (`$A000`–`$BFFF`, `$D000`–`$FFFF`). Flag bit 1 is "PlaySID-specific" in PSID and "C64 BASIC" in RSID; with it set, the player puts the song number in `$030C` and runs the tune as a BASIC program, and the init address must then be 0. A player that finds an RSID field outside these rules must reject the file. An earlier version of this paragraph said RSID "requires the C64 BASIC ROM"; both formats have the ROMs present, and the difference is what the tune may rely on. The same contrast, from the tune's side, is in [music-sid.md](../techniques/music-sid.md).
+
+The SID collection at HVSC (High Voltage SID Collection) is the reference corpus for this format. HVSC Release 84 holds 60,572 files: 56,349 PSID v2, 302 PSID v3, 25 PSID v4, 3,885 RSID v2 and 11 RSID v3, and no version-1 file.
+
+**Measured here (2026-09-23).** The script below wrote a PSID v2, v3 and v4 header by hand from the tables above, over a body of two `RTS` routines, and read each one back; every field came back as written. A v3 with `$42` at `$7A` decoded to `$D420`, a v4 with `$42` and `$44` to `$D420` and `$D440`, and a v4 with `$E0` and `$F0` to `$DE00` and `$DF00`. The same reader decoded a two-SID file from the collection to `$DE00` with second-model bits 10 (8580). Across the 338 version-3 and version-4 files in the collection every `$7A` and `$7B` value is even and inside the valid ranges, no version-3 file has a non-zero `$7B`, and no version-4 file has `$7B` equal to `$7A`. VICE 3.10's `vsid` (the windowless build, run with the command below and a monitor script that reads its resources after the load) accepted all three hand-made files, logged `PSID version number: 2`, `3` and `4`, `2nd SID at $d420` and `3rd SID at $d440`, and set `SidStereo` to 1 for the v3 file and 2 for the v4 file with `Sid2AddressStart` 54304 (`$D420`) and `Sid3AddressStart` 54336 (`$D440`); the `$E0`/`$F0` file gave 56832 and 57088 (`$DE00`, `$DF00`). Four negatives behaved as the table says: a v2 header with `$42` at `$7A` left `SidStereo` at 0, and a v3 header with `$41` (`$D410`, odd), `$80` (`$D800`) or `$D8` (`$DD80`) at `$7A` logged the address but left `SidStereo` at 0, so an invalid value means no second SID. One divergence: a v3 header with `$44` at `$7B` set `SidStereo` to 2 and `Sid3AddressStart` to `$D440`, so VICE 3.10 reads the third SID byte from any version-3 file where the document reserves it for version 4; write 0 there in a v3 file. VICE's `psid.c` never reads bits 6-9; a comment there notes where they sit, and every chip gets the first SID's model. That is from its source, not measured here by ear.
+
+```text
+vsid -default -directory <VICE data dir> -console -warp +sound -limitcycles 1000000 -moncommands mon.txt tune.sid
+# mon.txt
+resourceget "SidStereo"
+resourceget "Sid2AddressStart"
+resourceget "Sid3AddressStart"
+x
+```
+
+```text
+# psidhdr.py: write a PSID v2/v3/v4 header by hand, then read it back.
+import struct
+
+def sid_byte(addr):                       # $D420 -> $42, 0 -> 0
+    return 0 if addr == 0 else (addr >> 4) & 0xFF
+
+def sid_addr(b):                          # $42 -> $D420, 0 -> 0
+    return 0 if b == 0 else 0xD000 | (b << 4)
+
+def sid_ok(addr):
+    return addr != 0 and (addr & 0x10) == 0 and (0xD420 <= addr < 0xD800 or addr >= 0xDE00)
+
+def write(version, sid2=0, sid3=0, model2=0, model3=0):
+    flags = (1 << 2) | (1 << 4)           # PAL, 6581
+    if version >= 3: flags |= (model2 & 3) << 6
+    if version >= 4: flags |= (model3 & 3) << 8
+    h = bytearray(b"PSID")
+    h += struct.pack(">HH", version, 0x76 if version == 1 else 0x7C)
+    h += struct.pack(">HHH", 0, 0x1000, 0x1003)      # load (embedded), init, play
+    h += struct.pack(">HHI", 1, 1, 0)                 # songs, start song, speed (VBI)
+    for s in (b"round trip", b"c64-kb", b"2026"):
+        h += s.ljust(32, b"\0")
+    if version >= 2:
+        h += struct.pack(">HBB", flags, 0, 0)         # flags, start page, page length
+        h += bytes([sid_byte(sid2) if version >= 3 else 0,
+                    sid_byte(sid3) if version >= 4 else 0])
+    return bytes(h) + b"\x00\x10" + b"\x60\xea\xea\x60"   # $1000: RTS  $1003: RTS
+
+def read(d):
+    version = struct.unpack(">H", d[4:6])[0]
+    r = {"version": version, "data_offset": struct.unpack(">H", d[6:8])[0]}
+    if version >= 2:
+        flags = struct.unpack(">H", d[0x76:0x78])[0]
+        r["model1"] = (flags >> 4) & 3
+    if version >= 3:
+        r["model2"], r["sid2"] = (flags >> 6) & 3, sid_addr(d[0x7A])
+        r["sid2_ok"] = sid_ok(r["sid2"])
+    if version >= 4:
+        r["model3"], r["sid3"] = (flags >> 8) & 3, sid_addr(d[0x7B])
+        r["sid3_ok"] = sid_ok(r["sid3"])
+    return r
+
+for v, s2, s3 in ((2, 0, 0), (3, 0xD420, 0), (4, 0xD420, 0xD440), (4, 0xDE00, 0xDF00)):
+    d = write(v, s2, s3, model2=2, model3=1)
+    back = read(d)
+    assert back["version"] == v and back.get("sid2", 0) == s2 and back.get("sid3", 0) == s3, back
+    open(f"v{v}-{s2:04x}.sid", "wb").write(d)
+```
 
 ---
 
@@ -483,6 +752,165 @@ Decoded from `examples/consultant.sng` (3,060 bytes): bytes 0–7 are `47 54 53 
 
 ---
 
+## Graphics Assets
+
+Project files from the two editors most C64 artists hand over: CharPad for character sets, tiles and maps, SpritePad for sprites. Both are the editor's own save format, not a raw export, so a header and per-section framing sit in front of the bytes a program wants. Oscar64's `#embed` reads both directly (`../toolchains/oscar64-reference.md`); every other toolchain in this KB wants the editor's raw binary export, or a converter. `../art/asset-pipelines.md` covers the pipeline side.
+
+Every figure below that is not marked otherwise was decoded in Python from a file on disk and checked against that file's length. The sample set: five CharPad version 8 files from the Corescape source tree (`background.ctm` 1,056 bytes, `introfont.ctm` 2,602, `statusfont.ctm` 2,602, `scorefont.ctm` 2,170, `tiles.ctm` 12,455), one CharPad version 5 file from the Death Weapon source tree (`Background.ctm`, 7,372 bytes), two SpritePad version 5 files (Oscar64's `samples/resources/mouse.spd`, 1,044 bytes; Corescape's `sprites.spd`, 8,284 bytes) and one SpritePad file with no signature at all (Death Weapon's `Sprites.spd`, 6,147 bytes). No version 9 file was found on this machine; the version 9 layout is read from Oscar64's own reader (`oscar64/Preprocessor.cpp`, release 1.32.271) and is marked as such.
+
+### .CTM — CharPad character set, tiles and map
+
+**Consumed by:** oscar64
+
+Oscar64 reads it through `#embed` with the specifiers `ctm_chars`, `ctm_attr1`, `ctm_attr2`, `ctm_tiles8`, `ctm_tiles8sw`, `ctm_tiles16`, `ctm_map8` and `ctm_map16`; what each one yields is under "What Oscar64 emits" below. The file begins with the three ASCII bytes `CTM` and a version byte. Version 5 is the CharPad 2.x save; versions 8 and 9 are the Pro edition's, and they are a different shape: a short fixed header, then a run of sections, each one opened by a two-byte marker, in a fixed order, some of them present only when a header flag or the colouring method says so. A reader that assumes version 5's fixed 20-byte header on a version 8 file lands 2 bytes inside the first character (the character section starts at `$12`: 14 header bytes, a 2-byte marker and a 2-byte count), and 3 bytes short of it on a version 9 file.
+
+**Fixed header:**
+
+| Offset (v5) | Offset (v8) | Offset (v9) | Size | Field |
+|-------------|-------------|-------------|------|-------|
+| $00–$02 | $00–$02 | $00–$02 | 3 | Signature `CTM` |
+| $03 | $03 | $03 | 1 | Version: `$05`, `$08` or `$09` |
+| $04 | – | – | 1 | Background colour (v5 sample: `$00`) |
+| $05 | – | – | 1 | Multicolour 1 (v5 sample: `$0B`) |
+| $06 | – | – | 1 | Multicolour 2 (v5 sample: `$0C`) |
+| $07 | – | – | 1 | Character colour (v5 sample: `$0C`) |
+| – | $04 | $04 | 1 | Display mode: `0` hires text and `1` multicolour text in the samples; Oscar64 sizes colour cells at 2 bytes for mode `3` and 3 bytes for mode `4`, which fits hires and multicolour bitmap |
+| $08 | $05 | $05 | 1 | Colouring method: `0` global, `1` per tile, `2` per character |
+| $09 | $06 | $06 | 1 | Flags: bit 0 set means the file carries tiles (v5 sample: `$05`; v8 samples `$00` and `$01`) |
+| – | – | $07–$08 | 2 | Grid width, little-endian (v9 only, not measured here) |
+| – | – | $09–$0A | 2 | Grid height, little-endian (v9 only, not measured here) |
+| – | – | $0B | 1 | Grid configuration (v9 only, not measured here) |
+| – | $07–$0D | $0C–$12 | 7 | Seven colour bytes; Oscar64 skips them, and which byte is which is not measured here (the samples hold `0E 00 0F 0C 09 08 07`, `00 00 01 0C 07 08 07`, `09 00 07 0C 09 08 07`) |
+| $0A–$0B | – | – | 2 | Character count minus one (v5 sample: `$00FF`, 256 characters) |
+| $0C–$0D | – | – | 2 | Tile count minus one (v5 sample: `$007B`, 124 tiles) |
+| $0E | – | – | 1 | Tile width in cells (v5 sample: 4) |
+| $0F | – | – | 1 | Tile height in cells (v5 sample: 4) |
+| $10–$11 | – | – | 2 | Map width in tiles, little-endian (v5 sample: 10) |
+| $12–$13 | – | – | 2 | Map height in tiles, little-endian (v5 sample: 54) |
+| header ends | $14 | $0E | $13 | | |
+
+Version 5's four colour names at `$04`–`$07` are the CharPad 2 ordering as remembered, not measured here; the counts, the tile size and the map size at `$0A`–`$13` are measured, because the section sizes they imply walk the sample to its last byte (see below). Version 9's header is version 8's with five grid bytes inserted between the flags and the colours; Oscar64 reads it that way and treats the rest of the file identically. A sibling signature `CTT` with version 9 is a Pro tile set whose header carries six colour bytes rather than seven; Oscar64 accepts it, no sample was found, not measured here.
+
+**Version 5 sections** follow the header with no framing, in this order, and the walk over the sample lands exactly on byte 7,372:
+
+| Section | Present when | Size | Sample |
+|---------|--------------|------|--------|
+| Characters | always | 8 × characters | 2,048 at `$14` |
+| Character attributes | always | 1 × characters (colour in the low nybble; the high nybble is 0 throughout the sample) | 256 at `$814` |
+| Tiles | flags bit 0 | 2 × tiles × width × height, little-endian character indices | 3,968 at `$914`, largest index 248 |
+| Tile colours | flags bit 0 and colouring method `1` | 1 × tiles | absent (method is `2`) |
+| Map | always | 2 × width × height, little-endian tile indices | 1,080 at `$1894`, largest index 123 |
+
+**Version 8 and 9 sections.** Each section opens with a two-byte marker. In every sample the marker bytes run `DA B0`, `DA B1`, `DA B2`, … in file order (read as little-endian words, `$B0DA`, `$B1DA`, `$B2DA`), so the second byte numbers the section's position in this particular file, not its kind: `background.ctm` has tiles under `DA B2` and its map under `DA B5`, while `introfont.ctm`, which has no tiles, has its map under `DA B2`. Oscar64 reads each marker and discards it. The order and the conditions, as Oscar64 walks them and as the five samples confirm:
+
+| Order | Section | Present when | Section header | Data |
+|-------|---------|--------------|----------------|------|
+| 1 | Characters | always | marker, count minus one (2 bytes) | 8 × count |
+| 2 | Character materials | always | marker | 1 × count |
+| 3 | Character colours | colouring method `2` | marker | 1 × count; 2 × count in display mode `3`; 3 × count in display mode `4` |
+| 4 | Tiles | flags bit 0 | marker, count minus one (2), width (1), height (1) | 2 × count × width × height, little-endian character indices |
+| 5 | Tile colours | flags bit 0 and colouring method `1` | marker | 1 × tiles; 2 × or 3 × in display modes `3` and `4` |
+| 6 | Tile tags | flags bit 0 | marker | 1 × tiles |
+| 7 | Tile names | flags bit 0 | marker | one NUL-terminated string per tile |
+| 8 | Map | always | marker, width (2), height (2) | 2 × width × height, little-endian indices (tiles when the file has them, characters otherwise) |
+
+Walks over the five samples, each ending on the file's last byte:
+
+- `background.ctm`: display `1`, method `0`, flags `$01`; 40 characters (320 bytes at `$12`), 40 materials, 10 tiles of 2×2 (80 bytes), 10 tags, 10 names in 90 bytes, map 20×12 (480 bytes at `$240`); 1,056.
+- `tiles.ctm`: display `1`, method `0`, flags `$01`; 171 characters, 64 tiles of 4×4 (2,048 bytes), 64 names in 576 bytes, map 16×256 (8,192 bytes); 12,455.
+- `introfont.ctm` and `statusfont.ctm` (identical): display `0`, method `0`, flags `$00`; 64 characters, no tiles, map 40×25 (2,000 bytes at `$25A`); 2,602.
+- `scorefont.ctm`: display `1`, method `0`, flags `$00`; 16 characters, map 40×25; 2,170.
+
+No sample has colouring method `1` or `2`, or display mode `3` or `4`, so rows 3 and 5 and the wider colour cells are Oscar64's reading and not measured here.
+
+**Decoder.** The walker that produced the figures above, for a version 8 or 9 `.ctm` or a version 5 `.spd`. It prints each section's offset, marker and size and must end on the file's last byte; a mismatch means a section it does not know about.
+
+```text
+#!/usr/bin/env python3
+# Walk a CharPad v8/v9 .ctm or a SpritePad v5 .spd and print each section's
+# offset and size; the walk must end on the file's last byte.
+# usage: ctm_walk.py FILE
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+u16 = lambda o: struct.unpack_from("<H", b, o)[0]
+sig, ver = b[:3], b[3]
+if sig == b"CTM" and ver in (8, 9):
+    disp, meth, flags = b[4], b[5], b[6]
+    p = 14 if ver == 8 else 19
+    per = {3: 2, 4: 3}.get(disp, 1)          # colour bytes per cell
+    print(f"CTM v{ver} display={disp} method={meth} flags=${flags:02X}")
+    def section(name, size, hdr=0):
+        global p
+        print(f"  ${p:04X} marker ${u16(p):04X} {name}: {size} bytes")
+        p += 2 + hdr + size
+    n = u16(p + 2) + 1
+    section("chars", 8 * n, 2)
+    section("materials", n)
+    if meth == 2: section("char colours", per * n)
+    t = 0
+    if flags & 1:
+        t, w, h = u16(p + 2) + 1, b[p + 4], b[p + 5]
+        section(f"tiles {t} of {w}x{h}", 2 * t * w * h, 4)
+        if meth == 1: section("tile colours", per * t)
+        section("tile tags", t)
+        q = p + 2
+        for _ in range(t):
+            q = b.index(0, q) + 1
+        section("tile names", q - p - 2)
+    mw, mh = u16(p + 2), u16(p + 4)
+    section(f"map {mw}x{mh}", 2 * mw * mh, 4)
+elif sig == b"SPD" and ver == 5:
+    ns, nt, w, h = u16(5), u16(7), b[11], b[12]
+    print(f"SPD v5 sprites={ns} tiles={nt} colours={list(b[13:16])}")
+    p = 20 + 64 * ns + 2 * nt * w * h
+    print(f"  sprites at $14, tiles at ${20 + 64 * ns:04X}, tables after ${p:04X}")
+else:
+    sys.exit(f"not a CTM v8/v9 or SPD v5 file: {sig!r} version {ver}")
+print(f"  walk ends at {p}, file is {len(b)}: {'MATCH' if p == len(b) else 'trailing ' + str(len(b) - p)}")
+```
+
+On `background.ctm` it prints markers `$B0DA` to `$B5DA` at `$000E`, `$0152`, `$017C`, `$01D2`, `$01DE` and `$023A`, and `walk ends at 1056, file is 1056: MATCH`; on `sprites.spd`, `trailing 72`.
+
+**What Oscar64 emits.** `ctm_chars` is the character section, 8 bytes a character. `ctm_attr1` is one byte a character: the material in the high nybble, and in colouring method `2` the character's colour in the low nybble; in colouring method `1` it is instead one byte a tile, the tile colour, with the materials discarded (read from Oscar64's reader, not measured here: no sample uses method `1`); `ctm_attr2` in display mode `4` packs the second and third colour bytes. `ctm_tiles8` and `ctm_map8` take the low byte of each 16-bit cell; `ctm_tiles16` and `ctm_map16` keep the word (declare the array `unsigned` and add the `word` specifier); `ctm_tiles8sw` swaps the array so the tile index is innermost. Measured on the windowless x64sc build of VICE 3.10 with Oscar64 1.32.271 embedding `background.ctm` and `mouse.spd`, the program printed, and Python read the same bytes from the same offsets: `CHARS 320: 00 00 00 FF 00 00 55 00`, `ATTR1 40: 00 20 10 30 40 60 50 70`, `TILES8 40: 00 01 02 03 04 05 06 07`, `TILES16 80: 0000 0001 0002 0003`, `MAP8 240: 06 06 06 06 06 06 06 06`, `SPRITES 1024: 00 00 00 F0 00 00 FC 00`. The exit screenshot is `../figures/ctm-spd-embed-probe.png`, identical bytes on two runs. No recipe page pins it: the verifier compiles a listing alone in a fresh directory, and an `#embed` needs the asset beside the source.
+
+Oscar64's documentation names version 8; its reader also takes version 9, and it checks neither the signature nor any other version. Embedding the version 5 sample with `ctm_chars` compiled without a word of complaint and gave an array of 7,364 bytes: the reader took bytes `$04`–`$05` (`$0B00`) as the first marker, `$06`–`$07` plus one (3,085) as the character count, asked for 24,680 bytes and was handed the rest of the file, header, attributes, tiles and map together. Check the version byte before you embed.
+
+---
+
+### .SPD — SpritePad sprite set
+
+**Consumed by:** oscar64
+
+Oscar64 reads it through `#embed` with the specifiers `spd_sprites` and `spd_tiles`. The file begins with the three ASCII bytes `SPD` and a version byte, then a header whose length depends on the version, then the sprites as 64-byte blocks: 63 bytes of pixel data and one attribute byte. Oscar64's reader accepts versions 1, 3 and 5 and refuses a file without the signature.
+
+**Header:**
+
+| Offset (v1) | Offset (v5) | Size | Field |
+|-------------|-------------|------|-------|
+| $00–$02 | $00–$02 | 3 | Signature `SPD` |
+| $03 | $03 | 1 | Version |
+| – | $04 | 1 | Flags (samples: `$00`, `$02`; meaning not measured here) |
+| $04 | – | 1 | Sprite count minus one (v1, not measured here) |
+| $05 | – | 1 | Animation count minus one (v1, not measured here) |
+| – | $05–$06 | 2 | Sprite count, little-endian, not minus one (samples: 16, 128) |
+| – | $07–$08 | 2 | Tile count, little-endian (samples: 0, 0) |
+| – | $09 | 1 | Sprite animation count (samples: 0, 11) |
+| – | $0A | 1 | Tile animation count |
+| – | $0B | 1 | Tile width in sprites |
+| – | $0C | 1 | Tile height in sprites |
+| $06–$08 | $0D–$0F | 3 | Transparent (background) colour, multicolour 1, multicolour 2 (v5 samples: `09 00 01`, `0E 00 01`; v1: Oscar64's reader, not measured here) |
+| – | $10–$11 | 2 | Sprite overlay distance, signed little-endian (samples: 1) |
+| – | $12–$13 | 2 | Tile overlay distance, signed little-endian (samples: 1) |
+| header ends | $09 | $14 | | |
+
+Version 3 is version 5 without the two overlay distances, a 16-byte header, from Oscar64's reader and not measured here. After the header come `64 × sprites` bytes, then `2 × tiles × width × height` bytes of little-endian sprite indices, then animation tables that this page does not decode: `mouse.spd` ends exactly after its 16 sprites (`$14` + 1,024 = 1,044), and `sprites.spd` has 72 bytes after its 128 sprites, which its 11 sprite animations account for in some layout not measured here.
+
+The attribute byte at offset 63 of each block carries the sprite colour in bits 0–3, an overlay flag in bit 4 and the multicolour flag in bit 7 (Oscar64's reader comment; not measured here beyond the values seen: `$85` for 14 of the 16 mouse sprites, `$85`, `$87`, `$88` and `$8B` across the 128 game sprites, so bit 7 set and colours 5, 7, 8 and 11).
+
+**A file with no signature.** The third sample starts `00 0B 01` and is 6,147 bytes: three bytes then 96 × 64. That is consistent with the older SpritePad's headerless save (three colour bytes, then the blocks), and the three values `00 0B 01` read as plausible colours; the producer is not established here, since nothing in the file names it. Such a file is distinguishable from the signed form only by the missing `SPD`. Oscar64 refuses it with "SPD file format not recognized"; a converter that keys on length can take it as `(size − 3) / 64` sprites.
+
+---
+
 ## Memory Snapshots
 
 ### .VSF — VICE snapshot
@@ -490,11 +918,187 @@ Decoded from `examples/consultant.sng` (3,060 bytes): bytes 0–7 are `47 54 53 
 **Produced by:** vice
 **Consumed by:** vice
 
-The VSF (VICE Snapshot File) format saves and restores the complete state of a running VICE emulation session. It captures CPU registers, all RAM banks, chip state (VIC-II, SID, CIA1, CIA2), and peripheral state (disk drive contents, tape position).
+A snapshot is VICE's own dump of the whole emulated machine: the 64 KiB of RAM, the CPU registers, and the state of every emulated chip, drive and port, one module each. VICE reads it back with `undump` or `-autostart` (see `../runtime/vice-reference.md`, Snapshots). ROM images are not stored; the file assumes the ROMs the emulator has loaded. The module layouts are per VICE version, so every offset below is what one file written by one build contained; a different version has to be decoded again with the script at the end of this section.
 
-A VSF file begins with a global file header containing the magic string `"VICE Snapshot File\032\n"`, a version number (major/minor bytes), and the machine type identifier. Following the global header are module snapshots — one per emulated chip or subsystem. Each module has a 15-byte fixed header: a 10-character module name (null-padded), 1-byte major version, 1-byte minor version, and a 4-byte little-endian module data length. Module data follows immediately.
+**Correction (2026-09-23).** This section used to describe a 15-byte module header with a 10-character name, and to list modules called `MEM`, `VICII` and `IEC`. None of that matched a file written by x64sc 3.10: the module header is 22 bytes with a 16-byte name, the memory module is `C64MEM`, the video module is `VIC-II`, and no `IEC` module was present. The tables below replace it, decoded from a file written and read for this page.
 
-Modules typically present in a C64 snapshot: `MAINCPU` (6510 registers and flags), `MEM` (64 KiB RAM + I/O shadow), `VICII` (VIC-II registers and internal state), `SID` (SID register state), `CIA1`, `CIA2`, `IEC` (serial bus state), `DRIVE8` (1541 drive state including its own RAM and ROM image reference).
+**Measured on:** the windowless x64sc 3.10 (`-default`, PAL), a 193,261-byte file written from the remote text monitor after a program had put known bytes in RAM and colour RAM. An NTSC run (`-model ntsc`, 179,053 bytes) gave the same header, the same module names and versions in the same order, and the same offsets inside `C64MEM` and `VIC-II`; only the `VIC-II` module's length differed, which moves every module after it.
+
+**File header (58 bytes):**
+
+| Offset | Size | Field | Value in this file |
+|--------|------|-------|--------------------|
+| $0000 | 19 | Magic string `VICE Snapshot File` followed by `$1A` | as named |
+| $0013 | 1 | Snapshot format major version | 2 |
+| $0014 | 1 | Snapshot format minor version | 0 |
+| $0015 | 16 | Machine name, zero-padded | `C64SC` |
+| $0025 | 13 | Version tag `VICE Version` followed by `$1A` | as named |
+| $0032 | 4 | VICE version, one byte per component | 3, 10, 0, 0 |
+| $0036 | 4 | Revision, little-endian | 0 |
+
+**Module header (22 bytes, one per module):**
+
+| Offset | Size | Field |
+|--------|------|-------|
+| +0 | 16 | Module name, zero-padded |
+| +16 | 1 | Module major version |
+| +17 | 1 | Module minor version |
+| +18 | 4 | Module length, little-endian, counting this 22-byte header |
+
+The length counts the header: adding each module's length to its own offset lands on the next module's name, and the last module ends at byte 193,261, the file's length.
+
+**Modules in this file, in order (PAL run):**
+
+| File offset | Name | Version | Length |
+|-------------|------|---------|--------|
+| 58 | `MAINCPU` | 1.4 | 125 |
+| 183 | `C64MEM` | 0.1 | 65,577 |
+| 65,760 | `C64CART` | 0.1 | 23 |
+| 65,783 | `CIA1` | 2.5 | 99 |
+| 65,882 | `CIA2` | 2.5 | 99 |
+| 65,981 | `SID` | 1.5 | 58 |
+| 66,039 | `SIDEXTENDED` | 1.4 | 155 |
+| 66,194 | `DRIVE8` | 2.0 | 167 |
+| 66,361 | `DRIVE9` | 2.0 | 167 |
+| 66,528 | `DRIVE10` | 2.0 | 167 |
+| 66,695 | `DRIVE11` | 2.0 | 167 |
+| 66,862 | `DRIVECPU0` | 1.3 | 2,174 |
+| 69,036 | `1541VIA1D0` | 2.2 | 50 |
+| 69,086 | `VIA2D0` | 2.2 | 50 |
+| 69,136 | `FSDRIVE` | 0.0 | 280 |
+| 69,416 | `VIC-II` | 1.3 | 123,437 (NTSC: 109,229) |
+| 192,853 | `GLUE` | 1.0 | 25 |
+| 192,878 | `C64MEMHACKS` | 0.0 | 23 |
+| 192,901 | `TAPEPORT` | 1.0 | 24 |
+| 192,925 | `DATASETTE` | 1.5 | 100 |
+| 193,025 | `KEYBOARD` | 1.1 | 118 |
+| 193,143 | `JOYPORT0` | 0.0 | 23 |
+| 193,166 | `JOYSTICK0` | 1.2 | 24 |
+| 193,190 | `JOYPORT1` | 0.0 | 23 |
+| 193,213 | `JOYSTICK1` | 1.2 | 24 |
+| 193,237 | `USERPORT` | 1.0 | 24 |
+
+No drive was attached in these runs, so the `DRIVE8` to `DRIVE11` modules are the 167-byte form and there is one `DRIVECPU0`; what a run with a true-drive 1541 attached adds was not measured here.
+
+**`C64MEM` body (65,555 bytes after the header):**
+
+| Body offset | Size | Field | Confirmed by |
+|-------------|------|-------|--------------|
+| +0 | 1 | Processor port data register (`$01`) | `$37`, the monitor's `01` column at the stop |
+| +1 | 1 | Processor port direction register (`$00`) | `$2F`, the monitor's `00` column |
+| +2 | 2 | Two bytes, both `$00` here | not decoded |
+| +4 | 65,536 | RAM, `$0000` to `$FFFF` in address order | the 256 bytes `i XOR $A5` the program wrote at `$C000` sit at body offset 49,156, which is 4 + `$C000`; the BASIC stub is at 4 + `$0801` |
+| +65,540 | 15 | Trailing bytes | not decoded |
+
+RAM address `A` is therefore file byte 209 + `A` in this file (183 + 22 + 4). RAM bytes `$0000` and `$0001` read `$00 $00`: the port lives in the four bytes ahead of RAM, and reading it out of the RAM image gives the wrong answer.
+
+**`VIC-II` body (123,415 bytes PAL, 109,207 NTSC):**
+
+| Body offset | Size | Field | Confirmed by |
+|-------------|------|-------|--------------|
+| +0 | 1 | One byte: `$01` on the PAL run, `$03` on the NTSC run | meaning not established |
+| +1 | 64 | Register block, `$D000` to `$D03F`, holding the values last written | `$D020` at +33 read `$00` after the program wrote 0 to the border (power-on value `$0E`); `$D021` at +34 read `$06`; `$D018` at +25 read `$14` and `$D016` at +23 read `$08`, the written values, where a CPU read returns `$15` and `$C8` |
+| +65 | 696 | Internal state | not decoded |
+| +761 | 1,024 | Colour RAM, `$D800` to `$DBFF`, one byte per cell, low nybble | the 256 bytes `i AND $0F` the program wrote at `$D800` sit at +761; the cells from `$D900` to `$DBE7` read `$0E`, the KERNAL's text colour after the clear; the 24 cells past the screen's 1,000, `$DBE8` to `$DBFF`, are not touched by the clear and hold other values |
+| +1,785 | rest | Internal state; 14,208 bytes longer on PAL than on NTSC | not decoded |
+
+**`MAINCPU` body (103 bytes):**
+
+| Body offset | Size | Field | Confirmed by |
+|-------------|------|-------|--------------|
+| +0 | 8 | CPU clock, little-endian | 3,022,363, the monitor's `STOPWATCH` at the stop |
+| +8 | 1 | A | `$00` |
+| +9 | 1 | X | `$00` |
+| +10 | 1 | Y | `$00` |
+| +11 | 1 | SP | `$F6`, the monitor's `SP` |
+| +12 | 2 | PC, little-endian | `$0835`, the address the break was set on |
+| +14 | 1 | Status register | `$22`, the monitor's `..-...Z.` |
+| +15 | 88 | Rest of the module | not decoded |
+
+**How the file was made.** This program clears the screen, prints a title, fills `$C000` to `$C0FF` with `i XOR $A5`, fills the first 256 colour cells with `i AND $0F`, sets the border to black and parks in a loop at `done` (`$0835`):
+
+```kickass
+* = $0801
+.byte $0b, $08, $0a, $00, $9e, $32, $30, $36, $31, $00, $00, $00   // 10 SYS2061
+
+* = $080d
+start:
+    lda #$93            // clear screen
+    jsr $ffd2
+    ldx #$00
+print:
+    lda msg,x
+    beq fill
+    jsr $ffd2
+    inx
+    bne print
+fill:
+    ldx #$00
+loop:
+    txa
+    eor #$a5
+    sta $c000,x
+    txa
+    and #$0f
+    sta $d800,x
+    inx
+    bne loop
+    lda #$00
+    sta $d020
+done:
+    jmp done
+
+msg:
+    .text "VSF PATTERN SET"
+    .byte $00
+```
+
+A `-moncommands` file runs before the program does, so it cannot dump at once. It can arm a checkpoint whose attached command dumps when the program reaches a known store (`trace store d020` then `command 1 "dump \"file.vsf\""`; one process, and the last dump wins, so the KERNAL's own border write dumps first and the program's `STA $D020` overwrites it), or a remote-monitor client can stop the machine and dump. The second route is the one used below. `-initbreak 2101` is `$0835` in decimal. A Python socket polled the port from the moment x64sc was launched (it connected at 0.03 s and the stop arrived at 0.17 s), then sent the commands shown:
+
+```text
+timeout 180 x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
+  -limitcycles 8000000 -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6577 \
+  -initbreak 2101 -exitscreenshot vsf-pattern.png -autostart vsf-pattern.prg
+```
+
+```text
+#1 (Stop on  exec 0835)  238/$0ee,   1/$01
+.C:0835  4C 35 08    JMP $0835      - A:00 X:00 Y:00 SP:f6 ..-...Z.    3022363
+(C:$0835) r
+  ADDR A  X  Y  SP 00 01 NV-BDIZC LIN CYC  STOPWATCH
+.;0835 00 00 00 f6 2f 37 00100010 238 001    3022363
+(C:$0835) m c000 c00f
+>C:c000  a5 a4 a7 a6  a1 a0 a3 a2  ad ac af ae  a9 a8 ab aa   ..... ..........
+(C:$c010) m d800 d80f
+>C:d800  00 01 02 03  04 05 06 07  08 09 0a 0b  0c 0d 0e 0f   @abcdefghijklmno
+(C:$d810) dump "vsf-pattern.vsf"
+(C:$d810) del 1
+(C:$d810) x
+```
+
+`dump` prints nothing on success; the file appeared at once. Deleting the checkpoint before `x` matters: a break on a `JMP` to itself fires again on every iteration. The decoder that produced the tables above, run on the host against that file:
+
+```text
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+print(d[0:19], d[19], d[20], d[21:37].rstrip(b"\0"), d[37:50], list(d[50:54]), struct.unpack_from("<I", d, 54)[0])
+pos, mods = 58, {}
+while pos < len(d):
+    name = d[pos:pos + 16].rstrip(b"\0").decode()
+    size = struct.unpack_from("<I", d, pos + 18)[0]
+    print(f"{pos:7d} {name:<12} {d[pos + 16]}.{d[pos + 17]:<2} {size:7d}")
+    mods[name] = d[pos + 22:pos + size]
+    pos += size
+mem, vic = mods["C64MEM"], mods["VIC-II"]
+ram = mem.find(bytes(i ^ 0xA5 for i in range(256))) - 0xC000
+print("port bytes", mem[:ram].hex(" "), "| RAM at body+%d, trailing %d" % (ram, len(mem) - ram - 65536))
+col = vic.find(bytes(i & 0x0F for i in range(256)))
+print("colour RAM at body+%d; $D020 at body+%d = %02x" % (col, 1 + 0x20, vic[1 + 0x20]))
+```
+
+Its last two lines for the PAL file were `port bytes 37 2f 00 00 | RAM at body+4, trailing 15` and `colour RAM at body+761; $D020 at body+33 = 00`.
+
+**What a snapshot is good for in a headless pipeline.** Two things. First, a state to diff: after a run, the RAM image at file byte 209 is the whole address space in order, so a test can compare the bytes a program owns against an expected image, or two runs against each other, without printing anything to the screen. Do not expect two snapshots of the same program to be byte-identical: the PAL run above, repeated, gave a file that differed in 946 bytes, 943 of them single bytes scattered through RAM at addresses the program never wrote (the emulated power-on contents) and 3 in the CIA modules, while the CPU clock was the same 3,022,363 in both. Diff the regions the program wrote, the register block and colour RAM, not the whole file. Second, a save point: a long run can be stopped once at a known address, dumped, and every later test can start from that file with `undump "file.vsf"` in a `-moncommands` file, or by passing it to `-autostart`, which skips the boot and the load each time. The VICE reference's Snapshots section has the restore side.
 
 VSF is strictly a VICE internal format. It is not suitable for interchange between emulators and has no use in the toolchain build pipeline.
 
@@ -605,3 +1209,4 @@ P00 is a legacy format predating modern emulators' ability to handle PETASCII tr
 - `iec-disk-reference.md` — IEC bus protocol and 1541 drive internals
 - `../runtime/vice-reference.md` — VICE emulator usage and debugging
 - `../hardware/c64-memory-map.md` — C64 memory map (tape buffer at `$033C`, disk buffer at `$0200`)
+- `../art/asset-pipelines.md` — getting CharPad and SpritePad output into a build

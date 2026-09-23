@@ -209,7 +209,7 @@ already documents, and they have nothing to do with `$0330`:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks, iffl_single_file
+**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks, iffl_single_file, drive_code_upload_and_job_queue
 
 ### Symptom
 
@@ -757,7 +757,7 @@ is unchanged from earlier versions of this page.
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** disk_protection_tricks
+**Triggered by techniques:** disk_protection_tricks, drive_code_upload_and_job_queue
 
 ### Symptom
 
@@ -860,6 +860,7 @@ Run: `x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -l
 **Region:** both
 **Triggered by registers:** DC04, DC05, DC06, DC07, DC0D
 **Triggered by kernal:** LOAD, SAVE
+**Triggered by techniques:** tape_turbo_loader
 
 ### Symptom
 
@@ -1010,3 +1011,181 @@ Not measured here: a genuine Exomizer 2 decruncher against a 3.x stream. The shi
 - Technique `crunched_data_in_basic_stub`: where a hand-rolled or borrowed depacker meets a cruncher's output
 - Pitfall `krill_cc65_2_18_miscompile`: the other loader-side failure that comes from mismatched tool versions
 - `exo31info.txt` and `exodecrs/README_exo3.txt` in the Exomizer source tree: the bit definitions and the -P0 note, read for facts only
+
+---
+
+## atn_assert_drives_data_low_via_atna — Asserting ATN pulls the drive's DATA line low through the 1541's ATNA gate, whatever the drive program writes
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DD00
+**Triggered by techniques:** drive_code_upload_and_job_queue, krill_loader_integration, sparkle_irq_loader
+
+### Symptom
+
+A drive program is uploaded with `M-W`, started with `M-E`, and takes over
+the bus with a protocol of its own. The host side uses ATN as a strobe or
+as a clock and reads the drive's reply on DATA IN. The bits sampled under
+ATN never change; whole bytes come back fixed when the drive's data is
+constant, and garbled when it is not. Looked at one bit at a time, DATA IN
+is 0 for as long as ATN is held, whatever the drive program puts in its
+DATA OUT bit, and follows DATA OUT only while ATN is released; or, if the
+drive program set its ATNA bit, the other way round (the control rows in
+the table below show the released-phase reading following DATA OUT). The
+drive code is correct in isolation and the host code
+is correct in isolation. The case that prompted this entry was a loader
+that strobed bit pairs with ATN and read a fixed `$22` for every byte
+(reported; not measured here).
+
+### Mechanism
+
+The 1541 does not connect its DATA OUT bit straight to the bus. The DATA
+line's driver is fed by DATA OUT or-ed with a second term, ATN IN
+exclusive-or ATNA, where ATNA is bit 4 of `$1800`, the "attention
+acknowledge" output of the serial VIA. Whenever the level of the ATN line
+differs from the ATNA bit, that term is 1 and the hardware pulls DATA low.
+This is how a 1541 answers ATN before any code has run: ATN falls, ATNA is
+still 0, DATA drops at once. The DOS's ATN service then sets ATNA to 1,
+which takes the hardware pull off and hands DATA back to the DATA OUT bit,
+and the idle loop clears ATNA again once ATN is released (see the ROM's
+`$EBE7` entry in `../formats/iec-disk-reference.md`, "1541 Drive ROM"). The
+gate itself is on the 1541 schematic (rung 4 here); its effect is measured
+below.
+
+A resident drive program that leaves ATNA at 0 therefore gets the same
+hardware answer every time the host asserts ATN: DATA goes low, and
+nothing the program writes to DATA OUT can lift it, because the term is
+or-ed in. Set ATNA to 1 and the mirror image happens: DATA is held low the
+whole time ATN is released, and freed only while ATN is asserted. Either
+way a host that strobes ATN and reads DATA sees ATN, not data.
+
+Measured in VICE x64sc 3.10, headless build, PAL and NTSC, with true drive
+emulation of a 1541 and a `TEST,01` image attached: a drive program of
+12 or 14 bytes (34 for the last row, and that one also went up in a
+single `M-W`) uploaded to `$0500` and started with `M-E` did
+`SEI`, cleared DATA OUT, CLK OUT and ATNA in `$1800`, set the bits the row
+names, and looped for ever. The host then released its own ATN, CLK OUT and
+DATA OUT (`$DD00` bits 3 to 5 clear), waited about 25,000 cycles, read
+`$DD00` eight times some 2,600 cycles apart, asserted ATN (bit 3 set) and
+did the same, then released it and did the same again. All eight reads in
+every phase of every run were the one byte the table gives. The drive's
+`$1800` is the monitor's read (`m 8:1800`) at the start of each phase.
+On the host, `$DD00` bit 7 is DATA IN and 1 means the line is released;
+on the drive, `$1800` bit 0 is DATA IN and 1 means the line is low, bit 7
+is ATN IN and 1 means ATN is asserted. The two control rows fix the sense:
+with DATA OUT held low by the drive program, the host read bit 7 clear
+in every phase.
+
+| Drive program holds | `$DD00`, ATN released | `$DD00`, ATN asserted | `$DD00`, released again | drive `$1800`, same three phases |
+|---|---|---|---|---|
+| ATNA 0, DATA OUT 0 | `$C7` (DATA released) | `$4F` (DATA low) | `$C7` | `00`, `81`, `00` |
+| ATNA 1, DATA OUT 0 | `$47` (DATA low) | `$CF` (DATA released) | `$47` | `11`, `90`, `11` |
+| ATNA 0, DATA OUT 1 (control) | `$47` | `$4F` | `$47` | `03`, `83`, `03` |
+| ATNA 1, DATA OUT 1 (control) | `$47` | `$4F` | `$47` | `13`, `93`, `13` |
+| interrupts left enabled, ATNA 0, DATA OUT 0 | `$C7` | `$4F` | `$C7` | `00`, `81`, `00` |
+| ATNA copied from ATN IN on every pass (the fix) | `$C7` | `$CF` | `$C7` | `00`, `90`, `00` |
+
+PAL and NTSC gave the same bytes in the two rows run on both (the first
+two); the other rows are PAL. In the first row the drive never touched
+DATA OUT (its `$1800` bit 1 read 0 throughout) and DATA still went low
+with ATN; in the second it went low without ATN. Leaving the drive's
+interrupts enabled changes nothing: the ATN edge raised the drive's IRQ,
+which set the DOS's attention flag at `$7C` from `00` to `01` (measured,
+monitor read at each phase; it stayed `01` after ATN was released), but
+the routine that would act on it, set ATNA and take the bus runs from the
+DOS idle loop (ROM listing, rung 4), and a resident program never returns
+there. So the DOS does not "take over" a bus a resident program holds; it
+only notes that it was asked to.
+
+### Fix
+
+Either keep ATN out of the data phase, or make the drive program track it.
+
+1. Do not use ATN as a data-phase signal. Run the custom protocol on CLK
+   and DATA with ATN released on the host side, as the KERNAL itself does
+   between the command bytes. Reserve ATN for what the DOS expects it to
+   mean: get the drive's attention. This is the simple case and the one
+   the job-queue recipe leaves the bus in.
+2. If ATN is the strobe, the drive program must copy ATN IN into ATNA
+   every time it changes, before it drives or reads DATA. With ATNA equal
+   to the ATN level the exclusive-or term is 0 and DATA belongs to DATA
+   OUT again. The last table row is that fix running: DATA read released
+   in all three phases. Loaders that clock bit pairs with ATN do this
+   inside their drive-side receive loop; a program that copies their host
+   half and writes its own drive half without the ATNA update meets this
+   pitfall on the first byte.
+
+Both halves matter on the host too: the C64's `$DD00` has no such gate,
+so the host cannot see the problem from its own port; it just reads what
+the drive's hardware put on the line.
+
+### Worked example
+
+Host side, the read that shows the fault. With a drive program that has
+cleared ATNA and released DATA, the first sample is `$C7` and the second
+`$4F`: DATA followed ATN. With ATNA set they are `$47` and `$CF`.
+
+```kick
+// Sample DATA IN with ATN released, then with ATN asserted.
+// $DD00 bit 7 is DATA IN (1 = released); bit 3 is ATN OUT (1 = pull low).
+        lda $dd00
+        and #$07            // keep VIC bank and TXD; ATN, CLK OUT, DATA OUT released
+        sta $dd00
+        jsr settle          // a few thousand cycles
+        lda $dd00
+        sta samples         // measured: $C7 with ATNA clear, $47 with ATNA set
+        lda $dd00
+        and #$07
+        ora #$08            // assert ATN
+        sta $dd00
+        jsr settle
+        lda $dd00
+        sta samples+1       // measured: $4F with ATNA clear, $CF with ATNA set
+```
+
+The drive program that produced those bytes, assembled for `$0500` and
+started with `M-E` (the second `ora` selects the row):
+
+```text
+        sei
+        lda $1800
+        and #$e5            ; DATA OUT (bit 1), CLK OUT (bit 3), ATNA (bit 4) all clear
+        ora #$00            ; $10 for the ATNA-set row; $02 to hold DATA OUT low as a control
+        sta $1800
+loop    jmp loop
+```
+
+The fix, in the same loop: move ATN IN down to the ATNA position and write
+it back each pass, so the two never differ for longer than the loop takes.
+
+```text
+loop    lda $1800
+        lsr
+        lsr
+        lsr
+        and #$10            ; ATN IN (bit 7) in the ATNA position (bit 4)
+        sta $05f0
+        lda $1800
+        and #$ef
+        ora $05f0
+        sta $1800
+        jmp loop
+```
+
+That loop is 22 bytes on top of the 12-byte program, and the whole 34
+bytes went to the drive in one `M-W` (the technique's 32-byte figure is
+what loaders send, not a limit the emulated DOS enforced here; 35 or more
+was not tried).
+
+Not measured here: the same on a 1571 or 1581 (different ports and
+addresses), an SD2IEC (no code upload at all), and how long the hardware pull lasts after ATN
+changes when a real drive's loop is slower than the host's strobe.
+
+### Cross-references
+
+- Technique `drive_code_upload_and_job_queue`: how the program gets onto the drive and what `M-E` does with it
+- Techniques `krill_loader_integration` and `sparkle_irq_loader`: protocols that clock bit pairs with ATN, and so must keep ATNA in step
+- Recipe `../recipes/kickassembler/drive-job-queue.md`: the upload, readback and execute code the measurement reused
+- `../formats/iec-disk-reference.md`, "Pin Map and Electrical Characteristics": the sense of the host's bits, which the control rows here agree with; "1541 VIA registers, measured": `$1800` bit by bit. Its ATN IN row reads `1` in every state, and until this entry it said ATN was released in all of them; here bit 7 read `0` with ATN released and `1` with it asserted in every run, both models, so the row now says `1` is the asserted level. Those rows were `M-R` reads, and the DOS runs a command while the UNLISTEN that ends it is still under ATN (ROM flow, rung 4, an inference not measured here), which is why the table saw `1`
+- Register `$DD00` (CIA2), `../hardware/cia-reference.md`: bits 3 to 5 out, 6 and 7 in
+- Pitfall `fastloader_dd00_write_corrupts_resident`: the other way a `$DD00` bit ends up meaning something the loader did not intend

@@ -383,6 +383,10 @@ via `-moncommands`.
 VICE can save and restore complete machine state using the `.vsf` (VICE Snapshot File)
 format. A snapshot captures RAM, ROM shadow, CPU registers, CIA state, VIC-II state,
 SID state, and optional drive state. ROM images are not embedded in the snapshot.
+The file's layout, decoded from a snapshot the windowless x64sc 3.10 wrote (header,
+module list, and where the 64 KiB RAM, the processor port and colour RAM sit inside
+`C64MEM` and `VIC-II`), is the `.VSF` section of
+[../formats/c64-file-formats.md](../formats/c64-file-formats.md).
 
 Save from the text monitor:
 

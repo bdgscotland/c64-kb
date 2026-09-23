@@ -144,7 +144,7 @@ The main technical constraint is memory. A large text adventure needs story text
 
 The SID is typically used only for simple sound effects (a beep on input, a chord on success or death) or not at all. The VIC-II runs in its default 40-column character mode with no custom charset. IRQs, if used, exist only to blink the cursor or implement a real-time clock for timed puzzles. This genre places the lightest possible load on C64-specific hardware and the heaviest load on software architecture and data compression.
 
-**Technique fingerprint:** `ram_under_kernal`, `cpu_io_port_bank`, `exomizer_basics`, `sid_voice_setup`
+**Technique fingerprint:** `ram_under_kernal`, `cpu_io_port_bank`, `exomizer_basics`, `sid_voice_setup`, `two_word_parser`
 
 **Common pitfalls:** `kernal_clobbers_a_x_y`, `kernal_io_mapping_dependency`, `kernal_assumes_sei_cleared`, `ram_under_rom_traps`
 
@@ -224,7 +224,7 @@ The play field scrolls horizontally as the player advances. Unlike the scrolling
 
 Enemy AI in beat-em-ups is necessarily more complex than in platformers or puzzle games. Each opponent has a state machine with states including patrol, approach, attack, stunned, knocked-down, and getting-up, with timing on stun and recovery governed by frame counters. Multiple enemies must not collide with each other, which requires inter-enemy distance checks every frame. The entire AI pass, the scroll update, the sprite multiplex repositioning, and the SID play call must complete within one PAL frame (approximately 16,000 non-IRQ cycles), leaving the raster IRQ chain to handle the precise timing of VIC register writes.
 
-**Technique fingerprint:** `soft_scroll_h`, `sprite_multiplex_24`, `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`, `self_modifying_code`, `zero_page_burst`
+**Technique fingerprint:** `soft_scroll_h`, `sprite_multiplex_24`, `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`, `self_modifying_code`, `zero_page_burst`, `lane_depth_engine`
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `sprite_x_high_bit_wrong_register`, `sprite_priority_collision_silent`
 

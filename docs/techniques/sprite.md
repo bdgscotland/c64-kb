@@ -596,6 +596,10 @@ boundaries track visual content rather than bounding boxes.
 - `recipes/oscar64/simple-shmup.md` (reads $D01E/$D01F each frame). An earlier
   version of this list pointed at `recipes/oscar64/sprite-multiplex-8.md`,
   which never reads the collision registers.
+- `recipes/kickassembler/sprite-priority-classes.md` clears both registers, lets
+  two frames of a still picture latch, reads each once and compares with an
+  expectation; it measures that $D01F follows the playfield's bit pattern (pair
+  01 in multicolour text latches nothing) and ignores $D01B.
 
 ---
 
@@ -742,7 +746,8 @@ priority:
 
 - Bit n = 0 (default): sprite n renders in front of all foreground pixels.
 - Bit n = 1: sprite n renders *behind* foreground pixels but still in front of
-  background color 0.
+  background pixels. Which pixels are which is a matter of bit pattern, not
+  colour; see "Pixel classes" below.
 
 To make sprite 4 appear behind solid tiles: OR bit 4 into $D01B (`$D01B |= %00010000`).
 To restore it to the front: AND the complement (`$D01B &= ~%00010000`).
@@ -764,6 +769,38 @@ sprite layer into the background layer, letting foreground pixels obscure them.
 One important constraint: sprite-vs-sprite priority is **not** affected by
 $D01B. Sprite 0 is always in front of sprite 1 regardless of their $D01B bits.
 $D01B only modulates each sprite's relationship with the *background plane*.
+
+**Pixel classes, measured.** The `kickassembler/sprite-priority-classes`
+recipe put multicolour sprites whose columns are bit pairs 01, 10 and 11 over
+cells whose rows are every playfield pattern, in standard and in multicolour
+text, with the bit set and clear, and counted every pixel of the result in
+VICE x64sc on PAL and NTSC. Three rules came out, and one correction:
+
+- The sprite's own pixel class never matters. Pairs 01, 10 and 11 of a
+  multicolour sprite are treated alike; the only distinction on the sprite
+  side is drawn (any non-zero pair, or a 1 bit in hires) against transparent.
+  There is no mode in which only one of the sprite's colours goes behind the
+  playfield.
+- The playfield's class decides. With the bit set, a 1 bit in standard text
+  and pairs 10 and 11 in multicolour text cover the sprite; a 0 bit and pairs
+  00 and 01 show it. Pair 01 is background whatever colour `$D022` holds: a
+  sprite with its bit set is entirely visible over a cell of solid pair 01.
+  Multicolour bitmap follows the same pair rule (Bauer's VIC-II article,
+  section 3.8.2; not measured here).
+- `$D01F` uses the same classes and ignores `$D01B`: the two sprites that
+  sat only on pair 01 latched nothing, the six on 1 bits or pairs 10 and 11
+  each latched their bit, set or clear.
+- The order of decisions is sprite first, playfield second, and this is
+  where the "inverts that sprite's position in the priority stack" picture
+  two paragraphs up breaks down. Where sprite 4 (bit set) overlapped sprite 5
+  (bit clear) over foreground, the playfield showed and *neither* sprite was
+  drawn, although sprite 5 was drawn over the same foreground twelve pixels
+  away. The VIC chooses the lowest-numbered sprite with a drawn pixel, then
+  applies that sprite's bit; a lower-numbered sprite behind the playfield
+  punches a hole through every higher-numbered sprite it overlaps wherever
+  the playfield is foreground. `$D01E` latched both sprites all the same. An
+  earlier version of this section, read as a stack of layers, would have
+  drawn sprite 5 in front there.
 
 A second constraint: the border is the front-most layer of the VIC-II's output
 and is drawn over every sprite regardless of $D01B. A sprite that moves under
@@ -794,6 +831,7 @@ foreground pixels even when rendered behind them.
 
 ### Recipes
 
+- `recipes/kickassembler/sprite-priority-classes.md` puts eight still sprites over cells of every pixel pattern in both text modes, with `$D01B` set and clear and two sprites of mixed priority overlapping, and tabulates what shows per sprite class and playfield class from the exit screenshot; `$D01E` and `$D01F` are read once and checked against a compiled-in expectation.
 - `recipes/oscar64/mixed-fighters.md` sets `$D01B` per frame to put a sprite actor in front of or behind a character actor, and measures that bit pair 01 in multicolour text is background. Oscar64's `spr_set()` has no priority argument (its signature
   is `spr_set(sp, show, xpos, ypos, image, color, multi, xexpand, yexpand)`);
   write `vic.spr_priority` ($D01B) directly. An earlier version of this list
@@ -1055,6 +1093,190 @@ move.
 - `recipes/kickassembler/sine-table-runtime.md` (builds the sine table on
   the machine instead of with the assembler, then drives eight sprites
   from it; the way to get the table without `.fill`)
+
+---
+
+## dypp_sprite_sine_scroller — DYPP: a text scroller of eight sprites, each column on its own sine
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D012, D015, D017, D01B, D01C, D01D
+**Uses kernal:** (none)
+**Requires:** sprite_sine_chain
+**Cost:** cycles_per_frame=1869, cycles_per_frame_typical=1147, irq_slots=0
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-dypp-sprite-scroller (in the vertical blank; worst frame is the constructed sum of the slowest position update, 1,154, and one character re-render, 715; typical is the update alone in 218 of 300 frames)
+**Claims:** sprite_0-7 (owns)
+**Claims basis:** derived-listing
+
+### Why
+
+A scroller whose columns each ride their own wave, with no character
+buffer, no custom charset and no `$D016` fine scroll. DYPP, Different Y
+Pixel Position, does with the sprite hardware what `dycp_scroller`
+(`docs/techniques/scroll.md`) does with a charset: DYCP copies each glyph
+into a strip of character slots at the pixel row the wave gives and
+scrolls sideways through `$D016` and a ring buffer, several thousand
+cycles a frame for a 39-column band. Here a column's height is its
+sprite's Y register and its scroll is its X register, so the whole per-
+frame cost is one loop of register writes in the blank.
+
+The price is fixed by the hardware: eight sprites, so eight columns at
+most, and a 24-pixel-wide sprite image, so the columns sit 48 pixels
+apart and the glyphs are doubled 16 by 16 capitals rather than a
+40-column line of 8 by 8 text. DYCP has the columns and the small font;
+DYPP has the free vertical motion and the near-zero frame cost.
+
+It is `sprite_sine_chain` with a payload. The chain phases eight
+identical images along one sine; this puts a different character in each
+sprite, moves them in a straight line horizontally with the sine on Y
+alone, re-renders a sprite's image from the message each time it leaves
+the left edge, and disables a sprite while it is in the 40-pixel gap
+between X 343 and the wrap at 384. The chain's `$D010` mask, its blank-
+line update and its measured position rules carry over unchanged.
+
+### How
+
+**The render.** At start all eight 64-byte slots (`$2000 + 64k`,
+pointers `$80 + k`) are zeroed, so the sprites are blank until their
+first hand-off. A hand-off reads the eight bytes of the character's ROM
+glyph at `$D000 + code * 8` with `$01` set to `$33` (interrupts off, so
+nothing else runs while I/O is hidden), puts `$01` back to `$37`, then
+expands each glyph byte through three assembler-built tables into the
+three bytes of a sprite row and stores that row twice. Glyph row `gy`
+lands on sprite rows `2 + 2gy` and `3 + 2gy`, glyph column `gx` on sprite
+columns `4 + 2gx` and `5 + 2gx`: the 8 by 8 glyph becomes a 16 by 16
+block in rows 2 to 17 and columns 4 to 19. The recipe's `dbl(b)`
+function doubles every bit of `b` into 16 bits; byte 0 of the row is its
+top nibble, byte 1 its middle eight bits, byte 2 its bottom nibble in the
+high half. The render writes the 48 bytes of rows 2 to 17; the 15 margin
+bytes stay zero from the clear. Measured: 715 cycles, the same on every
+hand-off.
+
+**The positions.** One 9-bit `p`, 0 to 383, steps down by 2 a frame.
+Sprite `k` is at `X = (p + 48k) mod 384`, kept as a 16-bit running sum:
+add 48 per column with the carry, subtract 384 once when the sum reaches
+it. The low byte goes to `$D000 + 2k`. The high byte decides three cases:
+0, on screen with the `$D010` bit clear; 1 with a low byte under 88
+(X 256 to 343), on screen with the bit set; 1 with a low byte of 88 or
+more (X 344 to 383), disabled in `$D015` this frame, bit clear. The mask
+and the enable byte are built in two locals and written once each after
+the sixteen position registers, so low byte, MSB and enable change in the
+same update. With 48-pixel spacing and 384 for a lap, exactly one sprite
+is in the 40-pixel gap at any time, so at most seven are ever on screen.
+
+**The two sines.** Only one is a sine: Y is `130 + siny[(p + 32k) &
+255]`, `siny = round(40 sin)` as a signed byte, so each column bobs 40
+lines either side of 130 and neighbours are an eighth of a period apart.
+X is a straight line, `p` itself, which is what makes it a scroller;
+a sine on X as well is a variation below. The amplitude is well under
+128, so no entry of `siny` reaches 256 and wraps to zero
+(`sine_table_peak_wraps_to_zero`, `docs/pitfalls/maths.md`).
+
+**The wrap and the hand-off.** `X` is always even (`p` starts even and
+every step and spacing is even), so a column passes X 4 exactly once a
+lap. At X 4 the glyph's columns 4 to 19 sit at X 8 to 23, all under the
+left border, so the character can change with nothing visible. (A
+looser rule of "hand off anywhere below X 24" is realised as this single
+even X: at X 6 to 22 the glyph's right-hand columns are still inside the
+display and a re-render there would show.) The
+update loop notes which sprite is at X 4; after the registers are written
+that sprite is rendered from the next character of the message, whose
+index wraps at a terminator byte. The sprite then steps to X 2, X 0,
+wraps to 382, spends twenty frames disabled in the gap (X 382 down to
+344) and re-enters at X 342 carrying the new character, twenty-three
+frames after the hand-off. Starting `p` at 6 makes sprite 0's
+first hand-off frame 1, and the message then streams in one character
+every 24 frames.
+
+**Update in the blank.** As for the chain: poll `$D012` for 255, do the
+update and any hand-off there, and leave line 255 before polling again.
+The whole worst frame, update plus render, is about 30 lines on PAL and
+sits below the display on both models.
+
+### Why it works
+
+Everything the chain measured holds: a sprite's first row is the line
+after its Y register, its first column is its 9-bit X, and the side
+borders hide it below X 24 and above X 343 (`sprite_sine_chain`, Why it
+works). The hand-off leans on the left border: a 16-pixel glyph placed
+at sprite columns 4 to 19 is entirely under it once X is 4 or less, so a
+re-render there is invisible, and the sprite is disabled through the
+right-hand gap, so the new character first appears at the right edge.
+Because `$D015`, `$D010` and all sixteen position registers are written
+below the display, no frame ever shows a sprite half-moved or a mask
+that disagrees with its low byte.
+
+Measured in VICE x64sc from the recipe's pinned frame (`p = 174`): the
+six glyphs on screen have their first lit column at `X + 14` (`X + 16`
+for `I`, whose ROM glyph starts one column later) and their top lit row
+at `Y - 13` on PAL, `Y - 25` on NTSC; `$D010` reads `$0C` for the two
+sprites at X 270 and 318, and `$D015` reads `$EF` with sprite 4 at X 366
+off. The control build with the `$D010` write removed draws those two
+glyphs at X 14 and X 62, 256 pixels to the left, which is the failure
+`sprite_x_high_bit_wrong_register` describes.
+
+### Cycle budget
+
+Measured with CIA 1 timer A in the recipe, both models giving identical
+logs, raw figures including a 5-cycle empty bracket:
+
+- position update of eight sprites, X, Y, `$D010` and `$D015`: 1,147
+  cycles in 218 of 300 frames; minimum 1,091, maximum 1,154. The spread
+  is the per-column branches (the 384 subtraction, the MSB, the off
+  case, the X 4 test).
+- one character re-render: 715 cycles, all thirteen hand-offs alike.
+
+So a frame with a hand-off costs at most 1,869 cycles, about 30 PAL
+raster lines, all in the vertical blank, and 218 of 300 frames cost
+1,147. Sprite DMA is the usual 2 cycles per sprite plus 3 per group on
+the lines where the sprites sit, unchanged by the effect; with the eight
+spread across 80 lines of Y and 344 of X, fewer than eight ever share a
+line.
+
+### Variations
+
+**More columns by multiplexing.** `sprite_multiplex_8` re-arms sprites
+between raster bands; with the columns' Y range split into bands, a
+second row of eight can share the sprites, at the cost of the
+`midframe_raster_irqs` and `changes_sprite_set` demands the chain and
+this entry avoid. Not built here.
+
+**Expanded sprites for a bigger font.** Set the sprite's bit in `$D01D`
+and `$D017` (`sprite_expand`) for a 32 by 32 glyph; the spacing must
+grow to 96 and the lap to 768, so the 9-bit position no longer wraps in
+a byte pair without a third case. Not built here.
+
+**A second sine on X.** Add `sinx[(p + PHASE k) & 255]` to the column's
+X before the 384 wrap, small enough that columns cannot overtake each
+other (under 24 with 48-pixel spacing): the line of text sways as it
+scrolls. The hand-off test then has to be a range rather than `X == 4`.
+Not measured here.
+
+### Pitfalls
+
+- `sprite_x_high_bit_wrong_register` (`docs/pitfalls/sprite.md`): every
+  column crosses X 255 once a lap; the control build shows the 256-pixel
+  jump.
+- `sprite_x_range_hidden_and_seam` (`docs/pitfalls/sprite.md`): the
+  columns are deliberately parked under both borders and in the X 344 to
+  383 gap; the entry relies on the hidden range rather than being
+  surprised by it.
+
+### Sources
+
+- `recipes/kickassembler/dypp-sprite-scroller.md`: the measurements
+  above, the pinned frame tables for PAL and NTSC, the mid-motion shot
+  and the `$D010` control.
+- `sprite_sine_chain` above and `dycp_scroller` in
+  `docs/techniques/scroll.md` for the two techniques this one is set
+  against.
+
+### Recipes
+
+- `recipes/kickassembler/dypp-sprite-scroller.md` (eight yellow doubled
+  capitals, 48 apart, each on its own Y sine; hand-off at X 4; frozen at
+  frame 300; CIA-timed update and render; `$D010` control build)
 
 ---
 

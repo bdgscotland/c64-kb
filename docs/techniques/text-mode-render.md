@@ -587,3 +587,131 @@ not measured here.
 ### Recipes
 
 - `recipes/oscar64/destructible-terrain.md` — a 40 by 16 cell multicolour level; 24 creatures dig, build and block; terrain glyph bytes and creature states checked against a Python model after 360 ticks; worst frames timed on both models
+
+---
+
+## isometric_tile_engine — Diamond-grid projection, draw order and sprite depth for isometric rooms
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D018, D01B, D015, D000, D001, D010, DC04, DC05, DC0E
+**Uses kernal:** (none)
+**Cost:** cycles_per_frame=42034
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-isometric-room (the frame that redraws the whole 8 by 8 room, which is the worst frame; a frame that only moves the player is far cheaper, and one block draw is 527 cycles, see Cycle budget)
+**Requires:** tile_map_render
+
+### Why
+
+A top-down puzzle or action game that wants depth cues without a bitmap mode
+uses an isometric projection: tiles are drawn as 2:1 diamonds, blocks as cubes,
+and the painter's diagonal sort hides the z-buffer. The VIC-II hardware sprite
+depth register (`$D01B`) gives the player figure a single behind-or-in-front
+state relative to the entire playfield, which is enough for most rooms.
+
+### How
+
+**Layout.** One VIC bank holds the screen at `$0400`, a 2 KB custom charset at
+`$3000`, and the sprite data. `$D018 = $1C` selects them. The map is a flat
+byte array: 0 = floor, 1 = block (one tile tall), 2 = tall block (two tiles).
+
+**Tiles.** Three shapes, all 4 character columns wide:
+
+- Floor diamond: 2 rows tall. Eight chars (top-face row 0, top-face row 1).
+- Block: 4 rows tall. Top face (2 rows, same chars as floor) above two rows of
+  solid side-face chars.
+- Tall block: 6 rows tall. Top face (2 rows) above four rows of side-face chars.
+
+The custom charset holds 13 glyphs: one blank, four for the top-face top row,
+four for the top-face bottom row, and four for the side face. Colour RAM sets
+the foreground colour of each tile type.
+
+**Projection.** For map cell (x, y):
+
+```
+char_col = ORIG_COL + 2 * (x - y)
+char_row = ORIG_ROW + (x + y)
+```
+
+With `ORIG_COL = 18` and `ORIG_ROW = 4` an 8-by-8 map lands in screen columns
+4 to 35 and rows 4 to 19, fitting the 40-by-25 display without overflow
+(arithmetic from the extreme cells (0,7) and (7,0)).
+
+**Painter's order.** Iterate diagonal `s = x + y` from 0 to 14. For each
+diagonal, iterate x from `max(0, s-7)` to `min(7, s)` with `y = s - x`. Draw
+that cell last-wins: a cell at a higher diagonal (closer to the viewer) is
+drawn after any cell at a lower diagonal whose character region overlaps it.
+Clear the screen rows to space before drawing so removed tiles do not leave
+stale characters.
+
+**Sprite depth scan.** After each player move, scan all 64 cells. For each cell
+with `bx + by > px + py` (in front of the player), check whether its character
+box overlaps the sprite's character box:
+
+- Sprite box: cols `[player_col+2, player_col+4]`, rows `[player_row-1, player_row+1]`.
+  Formula: `sprite_x = 24 + 8*(player_col + 2)`, `sprite_y = 45 + 8*player_row`.
+- Block box: cols `[block_col, block_col+3]`, rows `[block_row-2, block_row+1]`.
+- Tall block box: cols `[block_col, block_col+3]`, rows `[block_row-4, block_row+1]`.
+
+If any in-front cell is a block and its box overlaps the sprite box, set
+`$D01B` bit 0 (sprite behind the playfield); otherwise clear bit 0.
+
+**Timing.** Wrap a draw with CIA 1 timer A in one-shot mode from `$FFFF`
+(`$DC0E = $19`). Stop with `$08`. Elapsed = `$FFFF` minus the timer value,
+computed as `$FF - low_byte` and `$FF - high_byte`.
+
+### Why it works
+
+The VIC-II reads character codes from screen RAM and fetches glyph bytes from
+the charset on every raster line it draws. Writing a code to a screen cell
+instantly changes what that cell shows on the next raster fetch. Painter's
+order means the last write wins without a z-buffer. `$D01B` bit 0 swaps sprite
+priority for sprite 0 between two modes without any extra CPU cycle cost per
+frame: one OR or AND to one register.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 (PAL, CIA 1 timer A, one-shot from `$FFFF`):
+
+- Full 8-by-8 room redraw (64 cells, mix of floors and blocks): 42,034 cycles --
+  about 2.1 PAL frames (19,656 cycles each). A full-screen 40-by-25 hires
+  redraw (1,000 cells) is comparably large; see the cycle budget under
+  `text_mode_overlay_render`.
+- One block draw (four rows of four chars, 16 screen writes + 16 colour writes
+  via four `setup_row` calls): 527 cycles, under 3 % of a PAL frame.
+
+The 42,034-cycle redraw budget is for a room redrawn on state changes only
+(start and after the final player move). A per-frame redraw would need either
+a smaller map or a dirty-cell approach -- see `full_field_redraw_exceeds_vblank`.
+
+### Variations
+
+**Depth bit limitation.** `$D01B` has one bit per sprite. Setting it places the
+sprite behind every playfield character, not just the block in front of it. A
+player standing between a nearer block and a farther block will appear behind
+the farther block too, which is incorrect. The fix is either a software sprite
+(redraw the figure into the charset each move, eliminating `$D01B` entirely) or
+a per-raster split that sets `$D01B` only for the rows the front block occupies.
+
+**Scrolling camera.** Replace the fixed origin with a scrollable viewport and
+double-buffer the screen with `$D018` to avoid mid-draw tearing. The `tile_map_render`
+technique documents the double-buffer flip; the painter loop becomes a partial
+redraw of the visible window.
+
+**More tile shapes.** The three shapes here share the same 13 glyphs. An
+animated water tile needs one more code per animation phase; a sloped ramp
+tile needs its own top-face glyph set. Each distinct shape adds at most eight
+bytes to the charset.
+
+### Pitfalls
+
+- `dirty_cell_skip_leaves_overlay_trail` -- the room clear-and-redraw avoids
+  this, but a dirty-cell optimisation would reintroduce it.
+- `full_field_redraw_exceeds_vblank` -- a 64-cell isometric room costs 42,034
+  cycles per redraw, well over the ~6,700-cycle PAL blank window. Redraw on
+  state changes only.
+
+### Sources
+
+- `recipes/kickassembler/isometric-room.md` -- 8-by-8 room, scripted player,
+  two timed redraws, verdict byte, depth scan; measured in VICE x64sc 3.10

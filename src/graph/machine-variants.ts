@@ -137,6 +137,8 @@ const RunEntry = z.object({
   flags: z.array(z.string()).optional(),
   shots: z.record(z.string(), z.string()).optional(),
   cartridge: z.object({ runs: z.number().int().positive().optional() }).loose().optional(),
+  /** verify:recipes does not run this page (it says why); no edge. */
+  skip: z.string().optional(),
 });
 const Manifest = z.record(z.string(), z.union([z.string(), RunEntry.loose()]));
 
@@ -184,8 +186,9 @@ function pageEdges(
  * The VERIFIED_ON edges for every recipe page, as verify:recipes runs them:
  * the runs.json entry when there is one, else PAL at 8,000,000 cycles. An
  * edge is emitted only when its committed screenshot exists, because that
- * picture is what the run is compared with. A model word with no variant
- * is reported in `unknownModels`.
+ * picture is what the run is compared with. A page whose entry has `skip`
+ * is not run by verify:recipes and gets no edge. A model word with no
+ * variant is reported in `unknownModels`.
  */
 export function verifiedOnEdges(opts: {
   manifestJson: string;
@@ -197,6 +200,7 @@ export function verifiedOnEdges(opts: {
   const out = { edges: [] as VerifiedOn[], unknownModels: [] as string[], missingShots: [] as string[] };
   for (const page of opts.pages) {
     const raw = manifest[page];
+    if (typeof raw === "object" && raw.skip) continue;
     pageEdges(page, typeof raw === "object" ? raw : undefined, opts.shotExists, out);
   }
   return out;

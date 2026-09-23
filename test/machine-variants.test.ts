@@ -15,16 +15,18 @@ describe("verifiedOnEdges", () => {
     },
     "kickassembler/b": { models: ["pal", "oldntsc", "secam"], flags: ["-ciamodel", "0"] },
     "oscar64/gone": { models: ["pal"] },
+    "kickassembler/tape": { skip: "needs a TAP" },
   });
   const have = new Set([
     "oscar64/screenshots/a.png",
     "oscar64/screenshots/a-n.png",
     "kickassembler/screenshots/b.png",
     "oscar64/screenshots/c.png",
+    "kickassembler/screenshots/tape.png",
   ]);
   const { edges, unknownModels, missingShots } = verifiedOnEdges({
     manifestJson: manifest,
-    pages: ["oscar64/a", "kickassembler/b", "oscar64/c", "oscar64/d"],
+    pages: ["oscar64/a", "kickassembler/b", "oscar64/c", "oscar64/d", "kickassembler/tape"],
     shotExists: (tc, shot) => have.has(`${tc}/${shot}`),
   });
 
@@ -67,6 +69,10 @@ describe("verifiedOnEdges", () => {
       "kickassembler/b: screenshots/b-oldntsc.png",
       "oscar64/d: screenshots/d.png",
     ]);
+  });
+
+  it("gives a page verify:recipes skips no edge, even with a picture", () => {
+    expect(edges.filter((e) => e.source_doc === "recipes/kickassembler/tape.md")).toEqual([]);
   });
 
   it("joins flags and reports a model word with no variant", () => {

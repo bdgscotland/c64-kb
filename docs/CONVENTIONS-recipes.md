@@ -90,6 +90,13 @@ A recipe page is not done when it reads well. Before it lands:
    through a result byte and the border colour, with a harness that turns
    it into a shell exit code, is the section "Verifying a run without a
    human" on the same page and the two `headless-verify` recipes.
+   A recipe the verifier cannot run because it needs an input the harness
+   has no key for (a TAP on the datasette, a prepared disk image, a key
+   press) is listed in `runs.json` with a `"skip"` key whose value says why;
+   the verifier reports it as skipped rather than failed, the listing gate
+   still builds its Source listing, the page keeps its own pictures under
+   `figures/` with the exact command that made them, and its "Expected
+   output" says it is not pinned.
 3. Any timing constant that was found by trying values (a sync padding, a
    line padding) is labelled as measured in VICE, with what the picture
    looks like when it is off by one. VICE is the instrument; the pages do

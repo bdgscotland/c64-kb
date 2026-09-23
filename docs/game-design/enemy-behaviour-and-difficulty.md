@@ -82,7 +82,7 @@ Related: `./game-design-patterns.md` (slot table, state byte, object pool), `../
 
 **Kind:** behaviour
 **Applies to:** top_down_adventure, action_puzzle, single_screen_platformer, puzzle
-**Realised by:** tile_grid_collision, lfsr_random, jump_table_dispatch, oscar64/tile-grid-collision, oscar64/lfsr-random
+**Realised by:** tile_grid_collision, lfsr_random, jump_table_dispatch, oscar64/tile-grid-collision, oscar64/lfsr-random, bfs_distance_map, oscar64/bfs-distance-map
 **Sources:** Jamey Pittman, The Pac-Man Dossier (Game Developer, 2009); Andrew Braybrook, Birth of a Paradroid, Zzap!64 (1985); Chris Crawford, The Art of Computer Game Design (1984)
 
 **Checks:**

@@ -877,3 +877,219 @@ mid-game budgets one frame with the open in it.
 ### Recipes
 
 - `recipes/oscar64/text-window-menu.md` — a pause window over a tile background, opened and closed with a byte-for-byte compare of the whole screen, a five-item table-driven menu driven by a joystick script (down, down, fire) and once by the cursor keys through the KERNAL queue, open, each step and close timed on CIA 2, verdict at `$02FF`, PAL and NTSC
+
+## two_word_parser — Two-word parser and action table: stem dictionaries, a split at the first space, rows searched in order
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** GETIN
+**Requires:** text_input_line, petscii_screen_code_conversion
+**Cost:** cycles_per_frame=2036
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-two-word-parser (one command's parse, worst of ten, PAL, display on)
+
+### Why
+
+A text adventure's parser is a table lookup, not language understanding.
+The player types a verb and a noun; the game needs two small numbers
+from them and a rule that says what those numbers do in this room. On a
+64 KB machine with the story text competing for every byte, the period
+answer was a dictionary of short stems, a split at the first space and a
+table of rows tried in order. It fits in a few hundred bytes, it is data
+rather than code, and a new puzzle is a new row, not a new branch.
+`adventure_database_engine` above is the full form with conditions,
+occurrences and packed messages; this technique is the parser and the
+table on their own, for a game that wants them without the rest.
+
+### How
+
+**The dictionaries.** A verb table and a noun table, each a list of
+stems and ids, 3 bytes a row in the recipe (a pointer and an id). A stem
+holds at most `WL` letters; four is the common period choice, so `INVE`
+stands for `INVENTORY` and the player may type either. Synonyms are two
+rows with one id: `GET` and `TAKE` both give the id the action table
+knows, and nothing downstream can tell them apart.
+
+**The match.** Compare the typed word with the stem for up to `WL`
+letters. A stem of exactly `WL` letters matches any word that begins
+with it. A shorter stem (`GO`, `UP`, `KEY`) must end where the typed
+word ends or where a space begins, or `GOLD` parses as `GO`. Truncation
+has collisions by design: with `WL` of 4, `LAMP` and `LAMPSHADE` are one
+noun, and two real words that share four letters (`NORTH` and
+`NORTHERN`, `DROP` and `DROPS`) cannot both be in the vocabulary. Choose
+stems so that no two differ only after the cut.
+
+**The split.** Read the line from the KERNAL queue as PETSCII
+(`text_input_line`), keep it in that form because ASCII capitals have
+the same values, and split at the first space. The first half is looked
+up in the verb table, the rest (after any run of spaces) in the noun
+table. A verb alone is allowed: the noun id is 0.
+
+**The action table.** Rows of verb, noun, room and handler, 5 bytes each
+in the recipe. Noun 0 and room 0 mean "any". The scan starts at the top
+and the first row whose three fields match runs; order is the rule
+language. A row for `OPEN DOOR` in the cellar above a row for `OPEN
+DOOR` anywhere is an if-else with no code: the specific case wins where
+it applies and the general one answers everywhere else. Rows for `TAKE`
+name each portable object, so a verb-noun pair with no row is refused
+without any handler having to check.
+
+**The room database.** A description pointer and four exit bytes (north,
+south, up, down), 6 bytes a room, room 0 unused so that 0 can mean "no
+exit". Objects are a noun id and a name pointer, 3 bytes, plus 1 byte of
+state each: a room number or 255 for carried. `LOOK` prints the room and
+every object whose location is the room; `INVENTORY` prints every
+object at 255; `GO` reads the exit for the noun and refuses on 0.
+
+**The responses.** Three fixed strings cover every failure the parser
+itself can see, and they are decided before any handler runs: no verb
+id, "I don't know that word"; a verb but no noun id, "I don't see that
+here"; both ids but no row, "You can't do that". Handlers add their own
+refusals for state ("It is locked", "You don't have it").
+
+### Why it works
+
+Every step is a linear scan of a short table with an early exit, so the
+cost is the position of the hit and nothing else. The recipe's ten
+commands cost 569 to 2,036 cycles each with the display on (measured in
+VICE x64sc, identical on PAL and NTSC): the cheapest is a verb-only
+command matched on the third action row, the dearest is a late verb, a
+late noun and the last action row. A miss is not the worst case, because
+a stem that fails on its first letter costs less than one that matches
+through four. Ten commands together were 13,629 cycles, which at one
+command per frame is a tenth of a PAL frame and nothing a text game
+needs to budget for; the print that follows (`text_input_line`'s echo
+and the response strings) costs more than the parse.
+
+The parser touches the PETSCII and screen-code boundary twice: the line
+is kept as PETSCII for the compare, and every string is converted on the
+way to screen RAM (`petscii_screen_code_conversion`). The recipe's tables
+came to 145 bytes before the strings, for 14 words, 3 rooms, 2 objects
+and 12 rows; the strings are the game's real size, which is why the
+period packed them (`adventure_database_engine`, "The text").
+
+### Variations
+
+- **Adjectives and a third word.** Split again after the noun and look
+  the third word up in an adjective table; an object then matches on noun
+  id and adjective id, so `TAKE RED KEY` and `TAKE BLUE KEY` name
+  different rows. The action row gains one byte. Not measured here.
+- **Synonyms by shared id.** The cheapest variation and already in the
+  recipe: two dictionary rows, one id. It costs 3 bytes a synonym and no
+  code.
+- **A verb-first default handler.** Give each verb a default handler for
+  when the table scan misses, so `TAKE <anything not here>` prints a
+  verb-specific refusal instead of the general "You can't do that". The
+  table then needs only the exceptions.
+- **Direction words as verbs.** Put `NORT`, `N`, `SOUT` and `S` in the
+  verb table with an id the `GO` handler understands, so `N` alone moves
+  the player. The recipe requires `GO NORTH`.
+- **Saving the state.** The whole game state is the room byte, one
+  location byte per object and a few flags. `world_state_bits`
+  (`logic.md`) packs such bytes per level for a write-back;
+  `password_encoding` turns the same bytes into a typed password.
+
+### Cycle budget
+
+The Cost line is the worst measured parse, 2,036 cycles for `GO DOWN`
+in the recipe: the fifth verb stem, the sixth noun stem and the twelfth
+of twelve action rows. A game with a vocabulary of 60 verbs and 120
+nouns and 200 action rows scales each scan by its length. The
+differences between the recipe's measured commands put a rejected stem
+or a rejected row at roughly 60 to 100 cycles (a stem that fails on its
+first letter is cheaper than one that fails on its fourth; `GO SOUTH` to
+`GO DOWN` is two more stems and two more rows for 306 cycles), so a miss
+on every stem and every row at that size would be on the order of
+25,000 cycles, more than a PAL frame (arithmetic, not measured at that
+size). Hashing the stem to a first letter index, or sorting the action
+table by verb and keeping a start index per verb, brings it back to a
+few hundred; neither is in a recipe yet.
+
+### Recipes
+
+- `recipes/oscar64/two-word-parser.md` — three rooms, two objects, two four-letter dictionaries with one synonym, a twelve-row action table with a room-specific row above its any-room fallback, ten commands typed through the KERNAL queue including an unknown verb, an unknown noun and a pair with no row, each parse timed on CIA 2, verdict at `$02FF`, PAL and NTSC
+
+## basic_extension_wedge — New BASIC commands through the execute-statement vector, with a fall-through to the ROM
+
+**Complexity:** medium
+**Cost:** cycles_per_frame=10
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-basic-wedge (one statement dispatch on the fall-through path; 20,478 cycles over 2,006 dispatches)
+
+**Why.** A front end, a level editor or a test rig written in BASIC
+wants to call machine code from many places, and `SYS` with an address
+and `POKE`s for its arguments everywhere is slow to write and easy to
+get wrong. A wedge adds commands the interpreter runs like its own:
+`&B 2` sets the border, `&C` prints a counter, and the rest of the
+program stays BASIC. The same hook is how the commercial extensions of
+the time added their keywords.
+
+**How.** BASIC reaches its statement executor through the vector at
+$0308 (IGONE), once per statement. Its default, $A7E4, is `JSR $0073`
+(CHRGET: advance TXTPTR and fetch), `JSR $A7ED` (run the statement whose
+first byte is in A) and `JMP $A7AE` (back to the statement loop). The
+wedge points $0308 at code that does those three things with one
+compare between the first two: if the fetched byte is the prefix, read
+the letter after it and dispatch to a handler; otherwise `JSR $A7ED`
+with A and TXTPTR untouched, so the ROM never sees a difference. A
+handler ends by leaving TXTPTR on the colon or the line's end byte and
+jumping to $A7AE, the same contract every ROM statement keeps, and it
+may use the ROM's own helpers: the byte evaluator at $B79E for an
+argument, $BDCD to print a number. A statement after a colon arrives
+through the vector like any other. A statement after `THEN` does not:
+the `IF` handler calls `JSR $0079` and `JMP $A7ED` directly, so the
+prefix reaches the executor as an implied LET, fails the variable-name
+check and raises SYNTAX ERROR through the error vector at $0300. The
+wedge hooks that vector too. On error number $0B with TXTPTR still on
+the prefix and a known letter behind it, it resets the stack to the
+value it saved on its last pass through $0308 (the level the statement
+loop had when it dispatched the `IF`, so `FOR` and `GOSUB` frames below
+it are kept) and runs the handler; any other error, including the prefix
+with a letter it does not know, goes to the saved vector and the ROM
+prints its message with the line number. The resident code lives above
+BASIC's memory at $C000, out of the way of the program that is typed in
+after it; the older place is the cassette buffer at $033C, which a tape
+load reuses.
+
+**Why it works.** The vector is entered with TXTPTR one byte before the
+statement, and CHRGET both advances and fetches, so the wedge sees the
+statement's first byte before the ROM does and at no extra fetch. The
+error path works because nothing between `IF`'s `JMP $A7ED` and the
+error moves TXTPTR: LET calls the name check with CHRGOT (fetch without
+advancing), so the prefix is still the current byte when the error
+handler looks, and the only stack growth since the vector was last
+passed is the return address into LET, which the saved stack pointer
+discards.
+
+**Variations.** The CHRGET style patches the routine itself: the three
+bytes at $0073 (`INC $7A`) become a `JMP` to code that increments TXTPTR,
+tests the fetched byte and jumps back into the ROM's copy at $0079 or
+returns. It catches every byte BASIC reads, in program and expression
+text alike, so a prefix can be recognised inside an expression; the
+price is per byte, not per statement, and by the instruction table it
+is around 14 cycles on every fetch (the `JMP` out, a load and compare
+of the high byte or the byte, a branch, the `JMP` back: arithmetic, not
+measured here), against 10 per statement for the vector. A keyword table
+needs three vectors: CRUNCH at $0304 to turn the new words into tokens
+above $CB when a line is entered, LIST at $0306 to print them back, and
+$0308 to execute them; the wedge then compares tokens instead of a
+prefix and the program lists as it was typed. That form is described
+here and not built. Uninstalling restores both vectors from the copies
+taken at install; a reset restores the defaults on its own.
+
+**Cycle budget.** Measured on the recipe with CIA 2's timers around a
+`FOR I=1 TO 1000: A=I: NEXT` loop, wedge off and then on: 2,474,332
+against 2,494,810 cycles on PAL, a difference of 20,478 over the 2,006
+statements dispatched between the two latches, 10.2 cycles a statement;
+NTSC gave 20,864, 10.4. The arithmetic for the fall-through path is 10:
+`TSX` 2, `STX` 4, `CMP #` 2, `BEQ` not taken 2 (the stack save is what
+the `THEN` path costs every statement; a wedge that gives up `THEN` is 4).
+The 418 and 804 cycles over the arithmetic are not explained; the two
+loops meet the jiffy interrupt at different phases, and that was not
+measured here. The resident part is 267 bytes including the timer latch
+(derived from the listing). Nothing in the KERNAL is called.
+
+### Recipes
+
+- `recipes/kickassembler/basic-wedge.md` — `&B` and `&C` behind the $0308 vector with the $0300 hook for `THEN`, a test program typed through the KERNAL queue that exercises a plain statement, the command alone, after a colon, after `THEN`, an unknown letter (the ROM's error) and a timed 1,000-iteration loop with the wedge off and on, verdict at `$02FF`, PAL and NTSC

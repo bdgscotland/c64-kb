@@ -967,9 +967,12 @@ the file is where the cost lives: a write past the end allocates the
 data blocks up to and including the new record, plus a side sector for
 every 120 data blocks, and every new record starts with `$FF`. The
 side sectors are why a REL costs one block more than the data on
-creation and why creating a large file takes long; the figure of one
-side sector per 120 data blocks is the format's rule, not measured
-here.
+creation and why creating a large file takes long. The figure of one
+side sector per 120 data blocks was the format's stated rule when this
+was first written; it has since been read off a disk image, a
+one-byte write to record 125 of a 254-byte-record file allocating 125
+data blocks and two side sectors of 120 and 5 entries
+(`../formats/c64-file-formats.md`, "REL file", rung 1).
 
 `c1541 -write` can create a REL entry but cannot lay out records. The
 record length goes on the end of the name as one byte, so `c1541
@@ -1029,6 +1032,7 @@ memory and load each byte fresh.
 ### Recipes
 
 - `recipes/oscar64/relative-file-records.md` (create, write 1, 3 and 5, read back with a checksum, the `50` on record 9 and the write that clears it; `51` in a side run)
+- `recipes/oscar64/rel-side-sectors.md` (100-byte records across four blocks, then the directory entry and the side sector read back through `U1`; the bytes are decoded in `../formats/c64-file-formats.md`, "REL file")
 
 ---
 
@@ -1159,3 +1163,265 @@ here. VICE emulates it with `-gmod2eepromimage <file>` and
 ### Recipes
 
 - `recipes/kickassembler/easyflash-save.md` (a self-built EasyFlash CRT that appends a high-score record to bank 8 each boot; persistence shown across two VICE runs with `-easyflashcrtwrite`; erase and program timed)
+
+---
+
+## drive_code_upload_and_job_queue — Upload code to the 1541 with M-W, start it with M-E, read sectors through its job queue
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, CLRCHN, CLOSE
+**Requires:** error_channel_check
+**Cost:** bytes_code=865, bytes_data=341
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-drive-job-queue (whole PRG less the BASIC stub: 837 bytes of host code and the 28-byte drive routine; the 40-byte ramp, the strings and the 128-byte read buffer are data)
+
+### Why
+
+The DOS reads what its file system describes. A loader that wants a
+sector by track and sector number, a protection check that wants to
+look at a sector the directory does not point to, or a fast loader that
+wants the drive's CPU running its own transfer loop, all need code on
+the drive side. The 1541 has a 6502 of its own, 2 KiB of RAM, and a
+command channel that will write that RAM, read it back and jump into
+it. The drive's disk controller then does the reading: uploaded code
+never has to touch the head or decode GCR to fetch a sector, it asks
+through the job queue.
+
+### How
+
+1. Open channel 15 bare (SETLFS 15, 8, 15; SETNAM length 0; OPEN), as
+   error_channel_check does. It stays open for the whole exchange.
+2. Upload. Each `M-W` is a command on channel 15: CHKOUT 15, then the
+   bytes `M`, `-`, `W`, address low, address high, count, and `count`
+   data bytes, then CLRCHN. The UNLISTEN runs it. Send at most 32 data
+   bytes per command (the DOS parses the command from a fixed buffer
+   and 32 is the figure loaders use; the recipe sends 32, 32 and 4; a
+   34-byte `M-W` also uploaded and ran in VICE, measured under
+   `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`, and 35 or
+   more was not tried). Advance the address by the count each time.
+3. Verify with `M-R`: the six bytes `M`, `-`, `R`, low, high, count,
+   then CHKIN 15 and `count` CHRIN calls, then CLRCHN. Compare with the
+   source. The recipe reads 68 bytes in one command; larger counts were
+   not measured here. The DOS takes the count from the sixth byte of
+   the command.
+4. Start with `M-E`: the five bytes `M`, `-`, `E`, low, high. The drive
+   executes a JSR to that address from its command parser, with
+   interrupts enabled, and returns to its idle loop on the routine's
+   RTS. The host's next command is not accepted until then, so a host
+   that sends `M-E` and then `M-R` simply waits.
+5. Inside the routine, to read a sector: put the track in `$08` and the
+   sector in `$09`, write `$80` to `$01`, and loop while `$01` has bit 7
+   set. The controller, which runs from the drive's timer interrupt,
+   replaces the job code with a result: `$01` is success and the data
+   is in buffer 1 at `$0400`. Slot `$00` uses buffer 0 at `$0300` with
+   its header at `$06`/`$07`; slot 2 buffer 2 at `$0500` with `$0A`/`$0B`;
+   slot 3 buffer 3 at `$0600` with `$0C`/`$0D`; slot 4 buffer 4 at
+   `$0700` with `$0E`/`$0F`; slot 5 has no RAM behind it. Job codes:
+   `$80` read, `$90` write, `$A0` verify, `$B0` seek, `$C0` bump,
+   `$D0` jump, `$E0` execute. The codes as run here were `$80` and
+   `$B0`; the rest are from the ROM disassembly's list and were not run
+   (see `../formats/iec-disk-reference.md`, "1541 job queue and
+   buffers").
+6. Before the first read, teach the controller the disk ID. It checks
+   every header's two ID bytes against its master copy at `$12`/`$13`,
+   and after power-on nothing has set those, so the first read job
+   fails with `$0B` (measured). A seek job, `$B0` with the track in
+   `$08`, reads any header and copies its ID there (measured: `$01`,
+   and `$12`/`$13` then read `30 31` for a `TEST,01` disk). The DOS's
+   own `I0` does the same seek.
+7. Fetch the result and the data with `M-R` from the host: `M-R $0001`
+   for the job byte, `M-R $0400` in chunks for the sector.
+
+### Why it works
+
+The drive's 6502 spends its time in two roles. From its idle loop it
+parses commands and runs the file system; from its timer interrupt,
+every ten milliseconds by the ROM disassembly's account (rung 4), it
+becomes the disk controller, scans `$00` to `$05` for a byte with bit 7
+set, and does that job with the head. `M-W` and `M-R` are ordinary
+commands that read and write the drive's address space; `M-E` is a
+command whose action is a subroutine call. Code started that way runs
+in the file-system role, so it can post jobs for the controller role
+exactly as the DOS does, and the result comes back in the same byte.
+The status line is not involved: after the track-40 job failed with
+`$03` the error channel still read `00, OK,00,00` (measured), because
+only the DOS writes that line and the DOS did not run the job.
+
+Buffer choice: the DOS lends buffers 0 to 3 to data channels and keeps
+the BAM in buffer 4 at `$0700` (the ROM disassembly's note, rung 4; the
+"70, NO CHANNEL" on a fifth `#` open is the four in use). With no files
+open, `$0300` to `$06FF` is free. The recipe puts its code in buffer 3
+and reads into buffer 1; the code survived the four jobs and a seek.
+
+### Variations
+
+- **A resident drive program.** Upload once, `M-E` once, and never
+  return: the routine takes over the bus with its own protocol over
+  CLK and DATA, the host side drives it with a matching routine, and
+  the KERNAL is out of the loop until the drive is reset. That is a
+  fast loader, and the pitfalls are its own: `../pitfalls/loader.md`,
+  `gcr_timing_assumes_stock_drive` (an SD2IEC has no CPU to run the
+  upload, and a 1571 or 1581 has a different ROM and different
+  addresses), `fastloader_resident_in_kernal_workspace` and
+  `fastloader_dd00_write_corrupts_resident` for the host half. Not
+  measured here.
+- **The 1571 and 1581.** Both accept `M-W`, `M-R` and `M-E` (rung 4), but
+  their job queues, buffer addresses and controller codes are their own
+  ROMs' and were not measured here; detect the drive first
+  (`../formats/iec-disk-reference.md`, "Identifying the drive over the
+  command channel").
+- **Writing.** Fill the buffer, post `$90`. Not run here, and it would
+  change the disk, so it does not belong in the recipe's pinned run.
+- **Another buffer.** Point the read at buffer 2 (`$0500`) by posting the
+  job in slot `$02` with the track and sector at `$0A`/`$0B`: the same
+  code, one slot along. Not run here.
+
+### Cycle budget
+
+Bus time, PAL, VICE 3.10 (rung 1): 132,742 host cycles for the three
+`M-W` commands carrying 68 bytes, and 163,545 for the single `M-R` that
+read them back, about 135 ms and 166 ms. On the drive side, in drive
+cycles at 1 MHz: the seek 125,859, the successful read 224,071, the
+failed read before the seek 902,630 and the track-40 failure 766,533;
+the failures are the controller's retries and bumps. A loader that
+uploads a few hundred bytes therefore spends a noticeable fraction of a
+second on the upload alone, which is why resident loaders upload once.
+
+### Recipes
+
+- `recipes/kickassembler/drive-job-queue.md` (upload, readback, execute, a failed read, a seek, the BAM read and compared, a provoked `$03`, and what the error channel says afterwards; drive-side monitor trace of each job)
+
+---
+
+## tape_turbo_loader — Read a one-pulse-per-bit tape block by timing FLAG edges against a threshold
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** DC06, DC07, DC0D, DC0F
+**Uses kernal:** (none)
+**Cost:** bytes_code=1060, bytes_data=110, zp_bytes=24
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-tape-turbo-loader (whole PRG less the BASIC stub; the code figure includes the report and the 32-bit division, the data is the strings and counters)
+
+### Why
+
+The KERNAL's tape format spends twenty pulses on a byte, draws them from
+three lengths, and writes every block twice; measured from a SAVE in
+VICE (`../formats/c64-file-formats.md`, "KERNAL bit encoding") a byte
+costs 9,448 cycles, about 104 bytes a second for one copy and half that
+for the pair the KERNAL actually writes. A turbo loader replaces the
+stream, not the reading of it: one pulse per bit, two lengths, eight
+pulses to a byte, one copy. The recipe below moves 321 bytes a second on
+PAL and 334 on NTSC (measured, VICE 3.10), three times the KERNAL's one
+copy and six times its pair, with generous pulses; the trade is that the
+loader now depends on the tape running at the speed the file was
+mastered for, and on a threshold that sits between the two lengths.
+
+### How
+
+1. Master the tape with one pulse per bit. The recipe's script writes a
+   TAP file: a lead-in of 1 bits, a sync byte `$5A`, a two-byte length,
+   the data and an XOR checksum, most significant bit first, a 0 as a
+   256-cycle pulse and a 1 as a 512-cycle pulse. TAP entries are cycles
+   divided by eight, so the two lengths are `$20` and `$40`.
+2. Take the machine over: `SEI`, `$7F` to `$DC0D` to mask CIA 1's
+   interrupt sources, and one read of `$DC0D` to clear what was pending.
+   Reading the register clears every bit in it, so any interrupt handler
+   that reads it (the KERNAL's does) would steal the FLAG edges the
+   loader needs. This is also why the KERNAL's tape routines are not
+   called: they own the same register and the same timers and expect
+   their own stream.
+3. Start CIA 1 Timer B free-running: `$FF` to `$DC06` and `$DC07`, `$11`
+   to `$DC0F` (force load, start, count the system clock, continuous).
+   It is never restarted; each edge's reading is subtracted from the
+   previous one.
+4. Wait for PLAY (bit 4 of `$01` low), then drive bit 5 of `$01` low for
+   the motor. The KERNAL's interrupt normally does this from its own
+   sense logic; with interrupts off the loader must. Blank the screen
+   (bit 4 of `$D011`) so no badline stretches a poll.
+5. Per pulse: spin on bit 4 of `$DC0D`; read Timer B high, low, high
+   again, and take both again if the high byte moved (the low byte can
+   wrap in the seven cycles between the reads, and a version that only
+   re-read on a low byte of `$FF` mismeasured one pulse in about sixty
+   by 256 cycles); length is previous less current; the bit is length
+   at or above the threshold, 384 here.
+6. Sync: count consecutive 1 bits; after sixty-four, the first 0 is bit
+   7 of the sync byte. Rotate seven more bits in and compare with `$5A`;
+   on a mismatch start the count again. Because the tape has run since
+   the KERNAL first saw PLAY, the loader joins the lead-in wherever it
+   happens to be, and this is what makes that harmless.
+7. Read the length, the block and the checksum, eight bits to a byte,
+   most significant first. Verify, motor off, screen on, `$81` to
+   `$DC0D` to give the KERNAL its Timer A interrupt back, `CLI`.
+
+### Why it works
+
+The cassette read line is wired to CIA 1's FLAG input, and the CIA
+records each falling edge as bit 4 of its interrupt control register
+whether or not that source is enabled; VICE raises one such edge per
+TAP entry. The information is entirely in the time between edges, and a
+free-running 16-bit timer at the system clock measures it to the cycle
+with no restart cost and no drift, provided the two-byte read is made
+consistent. The threshold turns a continuous measurement into a bit,
+and its margin is what absorbs everything that moves the edges: tape
+speed, the loader's own polling granularity (nine cycles a turn here,
+and the measured pulses were within 8 cycles of nominal) and the time
+the loader spends between one poll and the next. The lead-in of one
+value followed by a sync byte whose first bit is the other value gives
+byte alignment from a cold start with no marker pulse of a third
+length, which is the KERNAL's answer to the same problem.
+
+### Variations
+
+- **An adaptive threshold.** Measure the lead-in's pulses, which are all
+  the long value, and set the threshold at three quarters of their
+  average (or, with a lead-in that alternates the two values, halfway
+  between the two averages). The loader then follows a tape recorded on
+  a fast or slow deck, or played on one, instead of failing at a fixed
+  figure. Not measured here: the recipe's threshold is a constant. What
+  was measured is the margin it needs: with VICE's default tape speed
+  error and wobble on, the pulse spread grew from 16 cycles to 52 on
+  each value and the block still verified, at least 101 cycles of margin
+  on either side.
+- **Shorter pulses.** The recipe's per-bit path is about 175 cycles,
+  most of it the minimum and maximum bookkeeping for the report, and a
+  208-cycle 0 pulse failed on it (one bit read long after a 170-cycle
+  setup between two bytes). A loader with nothing in the path but the
+  poll, the timer read, the compare and the rotate can run pulses well
+  under 200 cycles; the floor for a given loop is its longest path
+  between two polls, not its average. Not measured here.
+- **The FLAG interrupt instead of a poll.** Enable bit 4 in `$DC0D`
+  (`$90`) and take the IRQ or, on CIA 2, the NMI; the handler reads the
+  timer and stores a bit while the main code decrunches or draws. The
+  interrupt latency and its variation then eat into the margin in the
+  poll's place. Not built here.
+- **A counted loop instead of a timer.** Increment a register while
+  waiting for the edge and compare the count with a constant; that is
+  the classic form and costs no CIA. Its unit is the loop's length, so
+  a badline or an interrupt adds whole units, and the constant is
+  specific to the loop. Not built here.
+- **The mastering side.** A turbo needs its tape written the same way.
+  No host tool for that ships in this knowledge base; the recipe's
+  Python script is the whole of it, and a real cassette would need the
+  TAP played out through a deck or written by a program on the C64 that
+  drives the write line through bit 3 of `$01` with a timer, as the
+  KERNAL's SAVE does. Not built here.
+
+### Cycle budget
+
+Measured, VICE 3.10, `-warp`, screen blanked, tape speed error and
+wobble off (rung 1): 1,540,498 cycles on PAL and 1,540,502 on NTSC from
+the end of the sync byte to the end of the checksum, 503 bytes, which is 3,062
+cycles a byte and 383 cycles a bit for this block's mix of ones and
+zeros (256 for a 0, 512 for a 1). The same cycles are 321 bytes a
+second at the PAL clock and 334 at NTSC: the TAP stores cycles, so a
+tape mastered for one region reads at the other's speed and the same
+thresholds hold. The KERNAL figure it is set against is arithmetic from
+the measured pulse modes on the formats page: 9,448 cycles a byte for
+one copy.
+
+### Recipes
+
+- `recipes/kickassembler/tape-turbo-loader.md` (the TAP-writing script, the loader, the checksum verdict, bytes per second and pulse ranges on both models, and the run with VICE's tape wobble left on)

@@ -1214,5 +1214,225 @@
       "pal": "screenshots/eight-way-scroll.png",
       "ntsc": "screenshots/eight-way-scroll-ntsc.png"
     }
+  },
+  "kickassembler/crt-banked": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/crt-banked.png",
+      "ntsc": "screenshots/crt-banked-ntsc.png"
+    },
+    "cartridge": {
+      "file": "crt-banked.crt",
+      "write": false,
+      "runs": 1
+    }
+  },
+  "oscar64/rel-side-sectors": {
+    "cycles": 60000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/rel-side-sectors.png",
+      "ntsc": "screenshots/rel-side-sectors-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "oscar64/bfs-distance-map": {
+    "cycles": 6500000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/bfs-distance-map.png",
+      "ntsc": "screenshots/bfs-distance-map-ntsc.png"
+    }
+  },
+  "oscar64/two-word-parser": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "look\\x0dtake lamp\\x0dgo north\\x0dinventory\\x0ddance\\x0dtake sword\\x0dtake door\\x0dgo south\\x0dgo down\\x0dopen door\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/two-word-parser.png",
+      "ntsc": "screenshots/two-word-parser-ntsc.png"
+    }
+  },
+  "kickassembler/basic-wedge": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "new\\x0d10 print chr$(147);\"wedge test\"\\x0d20 &c\\x0d30 &b 2:&c\\x0d40 if (peek(53280)and15)=2 then &c:print \"then ok\"\\x0d50 sys 49155:gosub 200:t0=t:for i=1 to 1000:a=i:next:gosub 200:t1=t0-t\\x0d60 sys 49152:gosub 200:t0=t:for i=1 to 1000:a=i:next:gosub 200:t2=t0-t\\x0d70 print \"loop off\";t1:print \"loop on\";t2:print \"diff\";t2-t1\\x0d80 if (peek(53280)and15)=2 and t2>t1 then &c\\x0d85 print \"verdict\";peek(767)\\x0d90 &b 13:&z\\x0d100 print \"not reached\"\\x0d200 sys 49158:t=peek(752)+256*peek(753)+65536*peek(754):return\\x0drun\\x0dwait 198,1\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/basic-wedge.png",
+      "ntsc": "screenshots/basic-wedge-ntsc.png"
+    }
+  },
+  "oscar64/beat-em-up-lanes": {
+    "cycles": 11200000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/beat-em-up-lanes.png",
+      "ntsc": "screenshots/beat-em-up-lanes-ntsc.png"
+    }
+  },
+  "kickassembler/sprite-priority-classes": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-priority-classes.png",
+      "ntsc": "screenshots/sprite-priority-classes-ntsc.png"
+    }
+  },
+  "kickassembler/unit-test-driver": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/unit-test-driver.png",
+      "ntsc": "screenshots/unit-test-driver-ntsc.png"
+    }
+  },
+  "cc65/cartridge-8k": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/cartridge-8k.png",
+      "ntsc": "screenshots/cartridge-8k-ntsc.png"
+    },
+    "cartridge": {
+      "file": "cartridge-8k.crt",
+      "write": false,
+      "runs": 1
+    }
+  },
+  "kickassembler/drive-job-queue": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/drive-job-queue.png",
+      "ntsc": "screenshots/drive-job-queue-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/drive-via-probe": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/drive-via-probe.png",
+      "ntsc": "screenshots/drive-via-probe-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/tape-turbo-loader": {
+    "skip": "needs a TAP on -1, a PLAY press through -moncommands and +dsresetwithcpu, which the verifier has no keys for; the page's pictures are under docs/figures and its Build section gives the exact command"
+  },
+  "kickassembler/mci-interlace": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/mci-interlace.png",
+      "ntsc": "screenshots/mci-interlace-ntsc.png"
+    }
+  },
+  "kickassembler/dot-flag": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/dot-flag.png",
+      "ntsc": "screenshots/dot-flag-ntsc.png"
+    }
+  },
+  "kickassembler/fire-effect": {
+    "cycles": 6565800,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fire-effect.png",
+      "ntsc": "screenshots/fire-effect-ntsc.png"
+    }
+  },
+  "kickassembler/dypp-sprite-scroller": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/dypp-sprite-scroller.png",
+      "ntsc": "screenshots/dypp-sprite-scroller-ntsc.png"
+    }
+  },
+  "kickassembler/isometric-room": {
+    "cycles": 5000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/isometric-room.png",
+      "ntsc": "screenshots/isometric-room-ntsc.png"
+    }
   }
 }

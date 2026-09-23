@@ -2328,3 +2328,225 @@ behind a level-start screen if five frames of black matter.
 ### Recipes
 
 - `recipes/oscar64/seeded-level-fill.md` — three-row table (seed, three thresholds, five objects), 40 by 22 field generated twice and compared, checksums of two seeds, CIA-timed generation, verdict byte and border, levels drawn in turn on both models
+
+---
+
+## bfs_distance_map — One breadth-first flood from the player, sliced across frames, and every chaser steps downhill
+
+**Complexity:** medium
+**Region:** both
+**Requires:** tile_grid_collision, object_pool
+**Cost:** cycles_per_frame=8710
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-bfs-distance-map (one 32-cell flood slice, SHOW_DIST 0 build; 10,655 with the digit display the pinned picture shows)
+
+### Why
+
+A maze game with several chasers cannot afford a search per chaser.
+`nav_area_pathfinding` cuts a platform level to a dozen areas and
+answers from a table, but a tile maze has hundreds of open cells and no
+useful areas. `ghost_target_tile_ai` avoids search altogether by steering
+toward a target tile, which is right for a maze with no dead ends and
+ghosts that may not reverse; in a maze with dead ends it walks into
+them. A distance map is the third choice: one flood from the player
+gives every cell its distance, and a chaser anywhere finds its next step
+by reading four neighbours. The flood's cost is paid once per player
+move, not once per chaser, and it is easy to slice across frames.
+
+### How
+
+1. **The map.** One byte per cell, 255 for a wall or a cell not yet
+   reached. Keep two: the live map the chasers read and the work map
+   the flood writes. Keep a separate wall byte per cell (or the tile
+   map itself) so the flood can test a wall without reading the map it
+   is filling.
+2. **The queue.** A ring of 256 x bytes and 256 y bytes with byte head
+   and tail indices; they wrap by themselves. The frontier of a
+   breadth-first flood on a screen-sized grid is one or two rings of
+   cells, far below 256, so no overflow test is needed. Seed it with
+   the player's cell at distance 0.
+3. **The slice.** Each frame, pop up to N cells. For each, look at its
+   four neighbours: if the neighbour is not a wall and reads 255, write
+   the cell's distance plus one and push it. Breadth-first order means
+   the first write to a cell is its final distance. When the queue is
+   empty, swap the two map pointers. The recipe clears the work map as
+   the first two frames of each flood, 440 bytes each, so the clear
+   never shares a frame with a full slice.
+4. **The trigger.** Remember the cell the current flood started from.
+   When no flood is running and the player is on a different cell,
+   start one. A flood in progress runs to the end; the player's newer
+   position is picked up by the next one. The live map is at most one
+   flood old.
+5. **The step.** A chaser reads its own cell and its four neighbours
+   from the live map and moves to the lowest value that is strictly
+   lower than its own; if none is, it stays. Test the neighbours in a
+   fixed order and take the first minimum, so a tie is settled the same
+   way on every run. Walls are 255 and can never be lower, so no wall
+   test is needed for the step.
+
+### Why it works
+
+Breadth-first order visits cells by non-decreasing distance, so each
+open cell is written once and popped once: a maze of 404 open cells is
+404 pops, whatever the number of chasers. Stepping to a strictly lower
+neighbour follows a shortest path, because every cell at distance d has
+a neighbour at d minus 1 by construction, and it cannot loop because
+the value falls at every step. Two maps make the slicing safe: the
+chasers never see a half-flooded map, and the swap is one pointer
+exchange. A chaser on a slightly stale map moves toward where the
+player was a few cells ago and corrects when the next map lands.
+
+### Variations
+
+- **Flee by stepping uphill.** The same map, read the other way: a
+  frightened enemy moves to the highest neighbour below 255. Seeding
+  the queue with several cells at distance 0 (the player and its
+  bullets, or every chaser to make a map the player's helper avoids)
+  gives a distance to the nearest of them in one flood.
+- **A cost map.** Give each tile a step cost (mud two, floor one) and
+  the plain queue no longer gives shortest routes; a small bucket
+  queue, one list per distance value, keeps the pops in order at the
+  price of memory. For costs of one and two, two queues suffice.
+- **A window round the player.** Flood only a region of r cells round
+  the player and stop when the queue empties or the ring is full;
+  chasers outside it fall back to walking toward the player's
+  coordinates (`ghost_target_tile_ai`'s rule) until they enter the
+  window. Cuts the flood to about (2r)² cells.
+- **Larger slice, fewer frames.** The recipe's 32 cells per frame is
+  about 44% of a PAL frame in Oscar64 and takes fifteen frames per
+  flood; an assembler inner loop or a smaller slice moves that trade
+  either way. A chaser that moves one cell every four frames does not
+  see a map that is fifteen frames old.
+- **Chasers as the flood source.** Seeding from the chasers and having
+  the player's marker read the map gives the player a "danger" value
+  per cell for an escort or an autopilot.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timers, interrupts masked, Oscar64
+`-O2` (rung 1). One slice of 32 cells, expanding four neighbours each
+and no drawing, is 8,710 cycles on PAL and 9,010 on NTSC, about 272
+cycles per cell in C; with each cell's digit and colour drawn as it is
+popped, 10,655 and 10,915. The NTSC figures are higher because the
+slice runs on past the vertical blank into the badlines, and the CIA
+counts the stolen cycles (arithmetic, rung 3). A full flood of 404
+cells is 115,912 cycles on PAL as the sum of its slices, over fifteen
+frames: two clearing the 880-byte work map at 440 bytes each, thirteen
+expanding. Four chasers stepping once is 1,220 cycles for all four
+including the timer, so the per-chaser cost is about 300 cycles every
+step and nothing between steps. The recipe's whole iteration, actors
+lifted and redrawn, one slice, the player and four chasers, peaks at
+11,246 cycles on PAL without the digits and 13,196 with them; when the
+880-byte clear shared a frame with a slice it peaked at 19,226, over an
+NTSC frame, which is why the clear is sliced too.
+
+### Recipes
+
+- `recipes/oscar64/bfs-distance-map.md` — 40 by 22 maze, scripted player route, ring-queue flood at 32 cells per frame into a second map, four chasers stepping downhill every fourth frame, distance digits in colour bands on demand, map compared byte for byte with a Python flood and its checksum, arrival bound and wall check as the verdict, slice and flood cycles on screen, PAL and NTSC
+
+## lane_depth_engine — Beat-em-up depth: plane Y as depth, a persistent Y-sort that sets sprite priority and hit order, and hits gated by a Y window and an active-frame table
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D000, D001, D010, D027
+**Requires:** object_pool
+**Cost:** cycles_per_frame=1413
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-beat-em-up-lanes (four actors: sort, priority draw and hit test in one step, screen on)
+
+### Why
+
+A beat-em-up puts its actors on a ground plane seen from the side and
+a little above. Walking down the screen brings an actor nearer the
+viewer, so its Y is both a screen position and a depth. Two things
+follow that a flat game never meets. A nearer actor must be drawn over
+a farther one, whatever order the actors were spawned in, or a fighter
+behind another walks through him. And a punch that looks right on
+screen must not connect with an actor who is standing a lane away: the
+two sprites overlap in X and nearly in Y, and only the plane Y says
+they are not on the same ground. `per_frame_hitbox` answers which pair
+touched; it does not answer whether the pair shares a lane, and a box
+test alone lands hits across lanes all game long.
+
+### How
+
+1. **The plane.** Each actor keeps a plane Y, the line its feet stand
+   on, in the actor arrays (`object_pool`). The sprite is placed at
+   plane Y less its height. The plane is a band of tile rows; lanes are
+   bands of the plane, drawn in different colours so a player can read
+   depth, and lane = (plane Y - plane top) / lane height is a HUD and
+   AI value, not what the hit test uses.
+2. **The sort.** An index array holds the actors far to near and is
+   never reset. Each frame an insertion sort repairs it: an actor that
+   has not passed a neighbour costs one compare, one that has passed k
+   neighbours is shifted k places. This is the persistent sort
+   `sprite_multiplex_game` uses; here it runs over a handful of actors.
+3. **The priority assignment.** Walk the sorted list from the near
+   end and write actor k into hardware sprite k: position, the `$D010`
+   bit, the pointer and the colour all move with the actor. The VIC-II
+   draws a lower-numbered sprite over a higher one, so the nearest
+   actor is sprite 0 and overlaps every other. With a multiplexer the
+   same sorted list is the slot order it builds from, and the depth
+   order and the raster order agree because both are Y.
+4. **The hit window.** For each attacker on an active frame, in sorted
+   order, test each other actor: the absolute difference of the two
+   plane Ys must be within a small window (six lines in the recipe),
+   then the target's X offset, with its sign chosen by the attacker's
+   facing, must be inside the reach. The Y compare goes first because
+   it fails for most pairs and costs one byte compare.
+5. **The active-frame table.** An attack is a short animation; a table
+   indexed by its frame says which image to show and a parallel table
+   says whether that frame can land. The frame gate is then an indexed
+   load, and a flag per attacker stops one attack scoring twice across
+   its active frames.
+
+### Why it works
+
+Between sprites the VIC-II has one priority, the sprite number, and it
+cannot be changed per pixel or per line except by which actor is in
+which sprite. Reassigning sprites from a sorted list turns that fixed
+rule into a depth order at the cost of one table walk, and because the
+sort is persistent and actors move a line or two a frame, the walk is
+almost always the best case. The hit window uses the same plane Y the
+sort used, so what the picture shows in front is also what the rules
+treat as near; a game that sorts on one value and tests hits on another
+has fights that look wrong at the edges. Keying the active frames to
+the animation frame ties the moment a punch can land to the frames on
+which the punch image is on screen, so the player sees the hit when it
+happens.
+
+### Variations
+
+- **Shadow sprites.** A flat shadow sprite at the actor's plane Y under
+  each fighter makes depth readable when an actor jumps; the shadow
+  stays on the ground and the body leaves it.
+- **A jump.** Keep the plane Y as the ground value and add a height;
+  the sprite is drawn at plane Y less height, the sort and the hit
+  window still use the plane Y, and a stored ground Y means landing
+  restores the lane without a search.
+- **More actors.** Past eight sprites the priority assignment becomes
+  the slot order of `sprite_multiplex_game`, whose persistent sort is
+  this one; the hit order still follows the same list.
+- **Boxes per frame.** Replace the fixed reach with `per_frame_hitbox`
+  boxes emitted at draw time, keeping the plane Y window as the first
+  gate before the box compare.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked,
+Oscar64 `-O2`, on the recipe (rung 1). The insertion sort over four
+actors costs 262 cycles from a reversed order and 157 already sorted,
+screen blanked; over the run with the screen on it peaks at 269 on PAL
+and 279 on NTSC, badline stalls landing inside it, and bottoms at 174.
+The whole engine step, sort, priority draw of four sprites and the hit
+test, peaks at 1,413 cycles with the screen on and an attack active,
+and is 784 on a frame with no active attack, the sort and the draw
+with no pair tests. An earlier version of this section gave that floor
+as 84; the recipe's HUD had cut the figure to two digits. The Cost line
+carries the peak. A game with more actors pays the pair loop
+per attacker on active frames only; the sort grows by one compare per
+actor on a quiet frame.
+
+### Recipes
+
+- `recipes/oscar64/beat-em-up-lanes.md` — four-lane tile plane, a player and three enemies on scripts, persistent insertion sort into sprite 0 to 3 by depth, six-line hit window and reach by facing, a six-frame attack with two active frames from a table, hit log re-checked against the window, counts and sort order as the verdict, sort and engine cycles on screen, PAL and NTSC

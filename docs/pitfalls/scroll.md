@@ -121,7 +121,7 @@ for (;;) {
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D016
-**Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h, parallax_dual_layer, raster_split_modes, multicolor_bitmap, mcm_text, big_font_2x2, dycp_scroller, eight_way_scroll_double_buffer
+**Triggered by techniques:** soft_scroll_h, infinite_scroll_h, char_scroll_buffer_h, parallax_dual_layer, raster_split_modes, multicolor_bitmap, mcm_text, big_font_2x2, dycp_scroller, eight_way_scroll_double_buffer, mode7_lookalike, mci_interlace_bitmap
 
 ### Symptom
 

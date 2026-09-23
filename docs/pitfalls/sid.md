@@ -31,7 +31,7 @@ attention when writing cross-compatible SID music.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D400, D404, D40B, D412, D418
-**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip, sfx_in_player
+**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip, sfx_in_player, digi_4bit, sidasid_emulation_notes
 
 ### Symptom
 
@@ -162,7 +162,7 @@ convention" places a shadow there.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D415, D416, D417, D418
-**Triggered by techniques:** sid_filter_routing, sid_8580_vs_6581_differences
+**Triggered by techniques:** sid_filter_routing, sid_8580_vs_6581_differences, sidasid_emulation_notes
 
 ### Symptom
 

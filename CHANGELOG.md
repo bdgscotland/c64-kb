@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 746, schema 29, tools 2.1.0, package 0.14.0.
+Data 757, schema 29, tools 2.1.0, package 0.14.0.
 
 **Issue #22, steps 4 and 5: game designs and machine variants (data
 746, schema 29, tools 2.1.0, package 0.14.0).** Two shape changes land
@@ -62,7 +62,303 @@ and the #22 design said. `x64sc -default -dumpconfig` is identical to
 and the old one under `-model c64`. Every runs.json `pal` run, and the PAL
 palette column in `vice-reference.md`, is therefore the 8565 machine.
 
-Before the entry above: data 745, schema 27, tools 2.0.0, package 0.13.0.
+**Candidate list, Tier B batch 14: four demo effects, each a technique
+entry and a pinned KickAssembler recipe (data 756).** Multicolour
+interlace: two multicolour bitmaps in two VIC banks alternated at the
+frame with a one-hires-pixel shift on the odd frame, the diagonal one
+pixel further right in the second field at every row measured, a PIL
+average of the two fields showing four distinct columns per pixel pair
+where one field shows two, and a frame loop of 34 or 32 cycles (the
+brief's single-bank layout did not fit, 18,000 bytes into 16,384, and the
+page says so). Dot flag: a 16 by 8 grid on two sines plotted and erased
+through the hires plot, 119 cycles a dot, 15,233 a frame blanked and up
+to 16,098 with the display on, exactly 128 lit pixels in the pinned
+picture and 3,570 without the erase pass. Fire: a colour-RAM heat map
+over a solid glyph with a luminance-ordered palette, 53,479 cycles for
+the whole screen and 27,301 for the larger half, so the screen refreshes
+every four frames; the pinned picture's colour census is on the page.
+DYPP: a text scroller of eight sprites, each column on its own sine,
+1,147 cycles a frame for the position update and 715 for a character
+re-render, the two sprites past X 255 drawn at 14 and 62 instead of 270
+and 318 when the high-bit write is left out. Eight pins, byte-identical
+on two runs per model, each reproduced by a reviewer from the page's own
+listing; the three new anchors went on the pitfalls whose mechanism the
+code meets.
+
+**The isometric tile engine, built from a fixed specification (data
+756).** Two earlier attempts stalled on the open design; this one was
+handed the map, the projection, the draw order and the depth rule and
+built exactly that: an 8 by 8 room of 2:1 diamond tiles four characters
+wide, blocks one and two tiles tall drawn back to front so nearer cells
+overdraw, a hardware-sprite player whose one priority bit is set when a
+block in front of it overlaps its character box, and a scripted walk.
+Measured: a full room redraw of 42,034 cycles, one block of 527, the
+depth bit set at three of the six positions (the specification predicted
+one; the recipe says why the character box catches two more), and a
+negative control with the painter's order reversed that fails the
+verdict. Pinned on both models. The entry says what one priority bit
+cannot do.
+
+**Four more measured pitfalls, and a logic pitfall page (data 755).** A
+one-byte breadth-first distance map that uses 255 for "unreached" wraps
+on a path longer than 254 cells: on a serpentine corridor the live map
+read 1, 0, 1, 2 across true distances 255 to 258, a chaser at 254 walked
+two cells away from the player and every far chaser gathered on a false
+zero; saturating at 254 and a two-byte map are both measured as fixes,
+and the recipe's own maze, whose longest path is 76, cannot show it.
+Asserting ATN from the C64 pulls the drive's DATA line low through the
+1541's ATNA gate whatever a resident drive program writes: DATA IN read
+released with ATN released and low with it asserted under ATNA clear,
+the mirror image under ATNA set, controls with DATA OUT held low, the
+drive's own port read at each phase, a drive that leaves interrupts
+enabled behaving the same, and the fix, a drive loop that copies ATN IN
+into ATNA every pass, leaving DATA free in all three phases. Sprite
+registers persist across a game-state change: a play state that enables
+only its own sprite inherited the title's pointer, expansion, multicolour
+and a latched collision on both models, a game-over screen kept the
+player across its banner, and a per-state VIC baseline routine clears all
+of it. A CharPad `.ctm` embedded whole puts its header on glyph 0 and
+shifts every glyph by 18 bytes on a version 8 file, identically under
+Oscar64 and KickAssembler; the offset-and-length forms of both embeds and
+the raw export are the fixes. Follow-ups from those measurements: the IEC
+page's VIA table now says that ATN IN reads 1 when ATN is asserted, and
+that its snapshot rows were taken under ATN; the drive-upload technique
+records a 34-byte `M-W` as measured; the pitfall conventions list the
+maths and logic categories; the text-mode render page's intro no longer
+numbers its entries.
+
+**The deferred raster anchors (data 754).** `badline_cycle_loss` gains
+sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike and
+vsp_glitch, and `raster_irq_first_line_jitter` gains mode7_lookalike and
+vsp_glitch, each on the sentence of the technique that meets the
+mechanism (a colour split placed by write cycle inside the badline's
+stolen span; a filler that budgets forty cycles a badline row; a
+per-line register chain with no stabilisation in its budget; a trick
+whose write cycle is the effect). The techniques still without a pitfall
+are the two loader notes and three logic entries the triage judged to
+need none. The two-bit fast loader candidate was attempted and not
+landed: its transfer never ran, so its pages were not merged and the
+attempt is kept as a private experiment record.
+
+**Every technique a pitfall can reach now has one, bar seven (data
+753).** A read-only triage of the techniques no pitfall named sorted each
+into an existing pitfall its text meets, a new measured pitfall, or none
+with the reason. Eighteen anchors were added to existing entries on seven
+pitfall pages, each checked against the technique sentence that meets the
+mechanism, and `ram_under_rom_traps` gained cartridge ROM at `$8000` to
+`$BFFF` as a fourth ROM-mapped range. Five new pitfall entries, each
+measured first: a bank or mode write executed from the cartridge window
+it switches hands the very next opcode fetch to the new bank (traced at
+the cycle; the fix runs the switch from RAM or makes the switch site
+identical in every bank); setting ECM while MCM is still on selects an
+invalid mode that draws the whole window black while sprite collisions
+and priority still work against the invisible field, on both models,
+with ECM plus BMM tabled beside it; a new maths pitfall page with a sine
+table of amplitude 128 that peaks at 256 and wraps seven entries to zero
+under both toolchains, and a shift-and-subtract divide whose missing
+carry guard is a 16/8 fault only, wrong for divisors of `$81` and above
+(24,400 misses over the recipe's sweep) while the 8/8 and 16/16 loops
+pass with the guard deleted; and Oscar64's assembler optimiser at `-O2`
+rewriting a non-volatile inline block and duplicating it, so a store into
+an operand byte lands in a copy that never runs (the executed and the
+dead listings quoted; `volatile`, `#pragma optimize(noasm)` and a
+data-patch form each measured as fixes). The divide measurement
+corrected the technique page and the divide-check recipe, which had said
+the guardless loop fails for divisors of `$80` or `$8000` and above; the
+multiply technique's account of what the mis-optimised routine computes
+was corrected from the executed listing. The seven techniques still
+without an anchor are two loader notes and three logic entries the triage
+judged to need none, and two whose anchors wait on the raster pitfall
+page another agent is writing.
+
+**Four pitfalls met while landing the night's recipes, each measured
+before it was written (data 752).** A VIC colour register reads back as
+the colour plus 240, so `IF PEEK(53280)=2` after `POKE 53280,2` is
+silently false: every register from `$D020` to `$D02E` measured 0 to 15
+on both models, with the other unused VIC bits (`$D016`, `$D018`,
+`$D019`, `$D01A`) tabled beside them and the audited hardware page
+agreeing on each. A self-extracting decruncher that runs from the zero
+page leaves the KERNAL's variables full of its own code: Dali `--small`
+and bitfire's stub both silenced a payload that prints through CHROUT,
+and the zero-page diff at entry names the bytes, `$9A` set to the RS-232
+device under one and to a serial device under the other, the editor's
+line pointer at `$4CBA` under the second; Dali's standard stub and
+pucrunch save what they clobber, and a prologue that banks the KERNAL in
+and calls IOINIT and CINT prints under both. A colour RAM index of 1,024
+or more writes CIA1's registers, with the sixteen bytes before and after
+a fill to 1,040 (timer A stopped, the jiffy clock frozen, the port A
+direction register left at the fill value) and the row-by-row fill that
+leaves them untouched; the 24 spare bytes past cell 999 measured as
+nibble RAM. One read of `$DC0D` or `$DD0D` clears every pending flag: a
+FLAG poll took a timer underflow on its way past and the timer's own
+check read `$00`, the copy-into-RAM pattern kept it, and a main-program
+read racing CIA2's NMI lost the interrupt itself at one phase on NTSC
+and on the old CIA model.
+
+**Candidate list, Tier B batch 9, two of four (data 751).** A tape
+mastering workflow page: a host writer that turns a PRG into a
+KERNAL-format TAP (the three pulse lengths, the pair rule, the countdowns,
+the two copies and the checksum the formats page measured), which a plain
+LOAD then RUN accepts on both models; a decode-back checker that also
+reads the TAP the KERNAL itself recorded; the turbo route, the turbo
+loader mastered in KERNAL format as the stub with the turbo block
+appended, loading from one image; timings by bisecting the cycle limit
+(a 202-byte payload runs 33 seconds after LOAD on PAL, of which the FOUND
+pause is a third; the KERNAL format costs 18,890 cycles a payload byte,
+the turbo block 7.6 times less for the same 500 bytes); and the finding
+that the jiffy clock is not a tape load timer, since both models printed
+770 jiffies for a load of over thirty seconds. The PSID header
+corrected: the bytes at `$7A` and `$7B` are the second and third SID
+addresses in versions 3 and 4, the flags bits 6 to 9 their models, the
+RSID rules in one paragraph; headers written by hand round-trip, VICE's
+windowless vsid accepts versions 2, 3 and 4 and logs the chip addresses,
+rejects odd or out-of-range addresses as no second SID, reads `$7B` from
+a version-3 file where the document reserves it, and gives every chip the
+first SID's model; a census of the HVSC corpus gave the version counts
+and the address ranges seen. The isometric tile engine and the pseudo-3D
+road did not land: both writers stalled six times on the design, and they
+wait for a fixed specification like the scroller's.
+
+**Candidate list, Tier B batch 8 (data 750).** The 1541's VIA registers
+and memory map measured through the command channel and a probe recipe:
+the density bits follow the requested track's zone even when the head
+did not step, the stepper bits move one half-step per write from the
+DOS's routine every 14,848 drive cycles, the motor bit and the
+write-protect sense read as the states say (the latter checked with a
+read-only attach), the LED bit was set only during an auto-initialise,
+byte-ready reaches the CPU only with the port-control register's CA2
+line high, and the first job after power-up does not step. A tape turbo
+loader with a TAP written on the host: one pulse per bit at 256 and 512
+cycles, 321 bytes a second on PAL and 334 on NTSC against the KERNAL's
+own rate, the pulse spread under VICE's default wobble, a 208-cycle bit
+that failed and why, and a timer-read race that mismeasured one pulse in
+sixty until the read was done high, low, high; the recipe cannot be
+pinned by the verifier, which now honours a `"skip"` key in `runs.json`
+with the reason, reports the page as skipped rather than failed, and
+the conventions say so. The CharPad CTM v8 and SpritePad SPD v5 headers
+decoded from the sample files Oscar64 ships and checked against what
+its embed forms produce (v9 read from Oscar64's structures only, not
+measured here); Oscar64's reader checks neither signature nor version,
+so an old v5 file embeds silently and wrongly. The two-bit fast-loader
+transfer did not land: its writer stalled six times on the protocol
+design and runs again alone from a fixed specification.
+
+**Candidate list, Tier B batch 7 (data 749).** A cc65 cartridge recipe
+built through the verifier's cartridge path: the linker configuration
+writes the .CRT container itself from a header segment and the result
+is byte-identical to cartconv's, DATA is copied from ROM to RAM at
+start (55 bytes, checksums equal), the runtime from CINT to main costs
+2,281 cycles, and the negative control with DATA left in ROM boots,
+prints nothing and hits a BRK 1,049 cycles into the first print; a
+Cartridge builds section on the cc65 page. The IEC bit timing measured
+from the KERNAL's own port accesses under the monitor: the device-present
+look 1,103 cycles after ATN, a send bit cell of 94 to 96 cycles stretched
+to 136 to 139 by a badline, the listener's EOI acknowledge 539 cycles
+after DATA is released, and the drive's replies as VICE's 1541 gives
+them; the receive-side timer count is `$01FF` not `$0100` because the
+KERNAL writes only timer B's high byte, and the page's older "about
+1,024 cycles" is flagged. `drive_code_upload_and_job_queue` on the
+file-io page with a recipe: 68 bytes uploaded in three M-W commands and
+read back, executed by M-E, a seek job then a read job of track 18
+sector 0 through the queue returning the BAM, a read before any seek
+failing with result `$0B` and a read of track 40 with `$03`, drive-side
+durations by the drive's own clock; a job queue and buffers table on the
+IEC page. A Spindle toolchain page (3.1 built from source with xa65):
+two parts packaged with mkpef and linked with pefchain, the join between
+parts measured at 55 cycles and accounted for instruction by instruction,
+part timings on both models, the D64 layout, and pefchain's page-clash
+warning; the pictures live under docs/figures because the verifier cannot
+boot a prepared disk. Left open: the device-not-present timeout as a
+firing timeout (no run without a responding device could be made under
+VICE); the write, verify, bump and execute job codes; where Spindle's
+drive code lives on the disk.
+
+**Candidate list, Tier B batch 6 (data 748).** `basic_extension_wedge`
+on the text page with a KickAssembler recipe: an IGONE wedge that adds
+prefixed commands and falls through to the ROM, exercised after a colon,
+inside IF THEN and on an unknown letter (the ROM's error still appears),
+costing 10.2 cycles a statement on PAL and 10.4 on NTSC against 10 by
+the instruction table; the ROM's own paths through `$0308` and `$0300`
+read from the BASIC image at the addresses the page quotes.
+`lane_depth_engine` on the logic page with an Oscar64 recipe for the
+beat-em-up archetype: Y as depth, an insertion sort over the actors
+setting both draw order and hit order (157 to 269 cycles a frame), a hit
+window in Y and X keyed to the attack's active frames; the whole step
+1,413 cycles at its worst; the technique added to the archetype's
+fingerprint. Sprite priority measured per pixel class in a recipe: a
+multicolour sprite's own bit pair makes no difference to the priority
+bit, the playfield's pattern decides (hires 1 bits and multicolour pairs
+10 and 11 are foreground; 0 bits and pairs 00 and 01 background whatever
+colour they draw in), `$D01F` follows the same classes and ignores the
+priority bit, and sprite order is decided before the playfield; the
+mob_priority entry extended in place, and the VIC-II reference's layer
+diagram, which the measurement contradicts, is reported on the
+hardware-verification issue rather than edited. A unit-testing toolchain
+page with sim6502 as its tool node and a KickAssembler test-driver
+recipe: fourteen cases through a case table with the verdict in `$02FF`,
+the same driver run in sim6502 in 0.12 s of host time against 0.4 s in
+VICE, 64spec assembling unchanged with KickAssembler 5.25, and sim65's
+exit-code channel measured. Left open: the 418-cycle residue between the
+wedge's measured and arithmetic cost; sprite priority with both
+overlapping sprites set; multicolour bitmap and ECM pixel classes.
+
+**Candidate list, Tier B batch 5 (data 747).** The GCR encoding on the
+formats page, measured: the sixteen code words derived from a G64 image
+c1541 wrote and confirmed byte for byte against the 1541 ROM's encode
+table at `$F77F` (the F code is `10101`; the writer's own memory said
+otherwise and the ROM corrected it), the header and data block layouts
+decoded with their checksums, the sync and gap as written, the four zone
+track lengths and their bit cells as arithmetic, the zone tables at
+`$FED1` and `$FED7`; the "4 bytes to 5" sentence corrected with a
+clause; c1541 3.10 writes `$A0 $A0` as the header ID while the BAM holds
+the command-line ID, and the drive ROM loads the disk anyway. A cc1541
+toolchain page (4.2 built from source): how the directory-art tricks are
+stored in the entry bytes (a DEL entry is type `$80`, an art line has no
+blocks, a name's first `$A0` closes the quote in the listing), what a
+LIST shows of them, decoded against the character ROM, and interleave and
+placement options measured on the sector chain. `two_word_parser` on the
+text page with an Oscar64 recipe for the text-adventure archetype (ten
+scripted commands through the KERNAL buffer, parse cost 569 to 2,036
+cycles a command, the end state checked), and the technique added to the
+archetype's fingerprint. The .VSF section rewritten from a snapshot the
+emulator wrote: the previous text claimed a 15-byte module header and
+module names the file does not contain; measured, the header is 22 bytes,
+twenty-six modules in a stated order, the 64 KiB RAM at byte 209 in
+address order, colour RAM at offset 761 of the VIC-II module, and two
+runs of the same program differ in 946 bytes of RAM the program never
+wrote. Left open: which ID character c1541 should have written; the
+meaning of the snapshot's unlabelled bytes; LOAD of a DEL entry.
+
+**Candidate list, Tier B batch 4 (data 746).** A cartconv toolchain page
+with the .CRT header and chip packets decoded from files cartconv wrote,
+and what each type does when booted in VICE: the generic 8K type ignores a
+bank-register write, Magic Desk switches an 8K bank at `$8000` through
+`$DE00`, Ocean switches the same bank mirrored at `$A000`, and cartconv's
+EasyFlash made from a Magic Desk layout checks clean and does not boot;
+byte `$1A` of the header is the hardware revision, not reserved; a
+two-bank Magic Desk recipe pinned through the verifier's cartridge path;
+KickAssembler has no cartridge directive and Oscar64's three cartridge
+targets are decoded. REL files: the directory entry, the side-sector block
+and the data chain decoded from a disk image the recipe wrote (a one-byte
+write to record 125 of a 254-byte-record file allocates 125 data blocks and
+two side sectors), the P command's byte order, the record padding, and the
+DOS replies for a record that does not fit; the file-io technique's side-
+sector rule corrected. `zx0_lzsa_decrunchers` on the memory-banking page
+beside pucrunch: ZX0 v2.2, bitfire's ZX0 packer, Dali 0.3.5, ZX02 and
+LZSA 1.4.1 built from source; on the two pucrunch inputs Dali's
+self-extractor is 1,041 bytes and 114,369 cycles against Exomizer's 1,103
+and 189,276, and bitfire's 1,035 and 99,422; Dali's small mode and
+bitfire's stub overwrite the KERNAL's zero page and the subject does not
+run or prints nothing, measured; the candidate list credited Dali to the
+wrong author (it is Bitbreaker's). `bfs_distance_map` on the logic page
+with a recipe: one flood serves four chasers, 404 open cells in 115,912
+cycles over fifteen frames at 32 cells a frame, the map equal to a host
+BFS byte for byte, every chaser reaching the player in 145 frames; an
+Oscar64 -O2 fault met on the way (the first inlined call of a
+pointer-walking copy loop) is reported on the gotcha issue. Left open:
+raw-mode decrunch times for the ZX0 family; record lengths 0 and 255; the
+EasyFlash registers on the tool page are the memory-banking page's, not
+measured here.
 
 **Tier A, the eight-way scroller (data 745).** `eight_way_scroll_double_buffer`
 on the scroll page with a KickAssembler recipe, after three attempts and

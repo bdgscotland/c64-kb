@@ -323,6 +323,141 @@ programs — write a custom `.cfg` file and pass it with `--config`. The
 linker config language is well-documented in the cc65 `ld65` manual and
 the existing `cfg/c64.cfg` is a readable starting template.
 
+## Cartridge builds
+
+A generic 8 KB cartridge is a linker configuration, a start-up routine
+and a container. The [cartridge-8k](../recipes/cc65/cartridge-8k.md)
+recipe is the worked example; every figure below was measured on it with
+cc65 2.19 (`cl65` reports V2.18) and VICE x64sc 3.10.
+
+**The configuration.** Line by line, what each area and segment does:
+
+```cfg
+SYMBOLS {
+    __STACKSIZE__: type = weak,   value = $0800;
+    __STARTUP__:   type = export, value = 1;
+}
+MEMORY {
+    ZP:     file = "",         start = $0002, size = $001A, define = yes;
+    CRTHDR: file = "game.crt", start = $0000, size = $0050, fill = yes;
+    ROML:   file = "game.crt", start = $8000, size = $2000, fill = yes, fillval = $FF, define = yes;
+    RAM:    file = "",         start = $0800, size = $D000 - __STACKSIZE__ - $0800, define = yes;
+}
+SEGMENTS {
+    ZEROPAGE: load = ZP,     type = zp;
+    CRTHDR:   load = CRTHDR, type = ro;
+    CBM80:    load = ROML,   type = ro;
+    STARTUP:  load = ROML,   type = ro;
+    ONCE:     load = ROML,   type = ro,  optional = yes;
+    CODE:     load = ROML,   type = ro;
+    RODATA:   load = ROML,   type = ro;
+    DATA:     load = ROML,   run = RAM, type = rw, define = yes;
+    BSS:      load = RAM,    type = bss, define = yes;
+}
+FEATURES {
+    CONDES: type = constructor, label = __CONSTRUCTOR_TABLE__, count = __CONSTRUCTOR_COUNT__, segment = ONCE;
+    CONDES: type = destructor,  label = __DESTRUCTOR_TABLE__,  count = __DESTRUCTOR_COUNT__,  segment = RODATA;
+    CONDES: type = interruptor, label = __INTERRUPTOR_TABLE__, count = __INTERRUPTOR_COUNT__, segment = RODATA, import = __CALLIRQ__;
+}
+```
+
+This is the recipe's file with its comments and two empty optional
+segments (`LOWCODE`, `INIT`) removed; the recipe page holds the complete
+file, and this block links as it stands (run here: the same `.crt`,
+byte for byte).
+
+- `__STACKSIZE__` is the C stack, which the start-up code puts at the top
+  of `RAM`, so `RAM` ends `$0800` below `$D000`.
+- `__STARTUP__` exported here satisfies the `.forceimport __STARTUP__`
+  the compiler emits for `main`, so the library's `crt0` stays out.
+  Without the export the link fails with `Unresolved external
+  '__MAIN_SIZE__' referenced in: c64/crt0.s(96)` and the same for
+  `__MAIN_START__` (run here): that `crt0` sizes its stack from a `MAIN`
+  area a cartridge configuration does not have.
+- `ZP` is the runtime's 26 zero-page bytes, unchanged from `c64.cfg`.
+- `CRTHDR` is the 80 bytes of `.CRT` header and `CHIP` packet, at file
+  offset 0; `fill = yes` keeps it 80 bytes if the segment is short.
+- `ROML` is the 8 KB the cartridge maps at `$8000`, padded with `$FF`
+  to the size the packet declares.
+- `RAM` is where writable data runs; it is written to no file.
+- `CBM80` comes first in `ROML` so its nine bytes land at `$8000`.
+- `STARTUP` is the cold-start routine; `ONCE` holds library constructor
+  code (12 bytes for conio); `CODE` and `RODATA` are read-only and stay
+  in ROM.
+- `DATA` has `load = ROML` and `run = RAM`: the image is in ROM, every
+  address the code uses is in RAM, and `define = yes` gives `copydata`
+  the three symbols it needs.
+- `BSS` is RAM only, zeroed at start.
+- `FEATURES` is `c64.cfg`'s own block and must stay: the runtime's
+  `condes.s` imports the constructor and destructor table symbols
+  whether or not anything uses them. With the block left out, `ld65`
+  stops with `Unresolved external '__CONSTRUCTOR_COUNT__' referenced
+  in: runtime/condes.s(30)`, the same for `__CONSTRUCTOR_TABLE__`,
+  `__DESTRUCTOR_COUNT__` and `__DESTRUCTOR_TABLE__`, then `4 unresolved
+  external(s) found`, and writes no `.crt` (run here). The constructor
+  table goes in `ONCE`, the other two in `RODATA`, all in ROM, which is
+  where a table of addresses belongs.
+
+Both areas that reach a file name it outright, so `ld65` writes the
+finished container and the `.prg` named by `-o` never appears. This is
+the route the repository's recipe verifier needs, since it boots what
+the build leaves behind; `c64.cfg`'s `LOADADDR` and `EXEHDR` segments,
+and the `__LOADADDR__`/`__EXEHDR__` imports that pull them in, are gone
+with the stub. With `__EXEHDR__: type = import;` left in, `ld65` stops
+with `Missing memory area assignment for segment 'EXEHDR'`, after a
+warning that it cannot evaluate an assertion in `cbm/exehdr.s`, and it
+still left a `.crt` behind (run here), so read the messages and not the
+directory.
+
+**The signature.** The KERNAL's reset code compares the five bytes at
+`$8004` with `$C3 $C2 $CD $38 $30` before it initialises anything, and on
+a match jumps through the vector at `$8000`; the `RESTORE` key's NMI
+makes the same test and takes `$8002`. In C, a `const` struct of two
+function pointers and five bytes in the `CBM80` segment is nine bytes
+with no padding.
+
+**The start-up code.** cc65 2.19 has no file-scope `asm` (`__asm__ is
+not allowed here`) and its inline `asm` refuses `.segment`, `.byte` and
+`.res`, so the routine is a C function of inline instructions in the
+`STARTUP` segment, no arguments and no locals, which gives it no
+prologue. It sets the hardware stack, calls `IOINIT`, `RAMTAS`, `RESTOR`
+and `CINT` in that order, then `zerobss`, `copydata`, sets `sp` to the
+top of `RAM`, and calls `initlib` and `callmain`. The library names
+resolve because the compiler switches `.autoimport` on in every file it
+emits. Measured: the KERNAL takes the vector 109 cycles after power-on;
+`main` is entered 1,650,044 cycles later on PAL and 1,643,133 on NTSC.
+The split, from `trace exec` on each call (run here, PAL): `IOINIT` and
+the stack set 147, `RAMTAS` 1,593,289, `RESTOR` 889, `CINT` 53,221,
+`CLI` to `main` 2,498, of which the on-screen CIA timer covers 2,281.
+`RAMTAS`, the KERNAL's test of every RAM byte below the cartridge, is
+96.5 % of it; `CINT` is the one stage that differs on NTSC (46,310).
+`IOINIT` writes all four CIA control registers 34 to 46 cycles after the
+first cartridge instruction (stopwatch 143 to 155, `trace store` on
+`$DC0E`, `$DC0F`, `$DD0E`, `$DD0F`), which is why a CIA timer cannot span
+the KERNAL part and the monitor's stopwatch has to.
+
+**Load versus run.** The `DATA` copy exists because a cartridge cannot
+take a write. With `load = ROML` alone the same program booted, entered
+`main`, and hit a `BRK` 1,049 cycles into its first `cprintf`; nothing
+was printed and the KERNAL's `BRK` path at `$FE66` ran fifty-five times
+before the cycle limit. The runtime keeps writable state in `DATA` too,
+and it was reading its image back from ROM. The globals did not read as
+zero; they read as their initialisers, and writes to them were lost.
+
+**The wrap.** The recipe's header is written by the linker, and the same
+8 KB image fed to `cartconv -t normal -i rom.bin -o game.crt -n "NAME"`
+gave a byte-identical file. Either route ends in `cartconv -c` (exit 0)
+and `cartconv -f`, which prints the hardware id, the `EXROM`/`GAME`
+levels and one `CHIP` at `$8000`
+([cartconv-reference](cartconv-reference.md)).
+
+**Pitfalls met.** Character literals are translated to PETSCII by
+`-t c64`, so `'C'` in the header initialiser became `$C3`; VICE answered
+`no CRT header found` and `cartconv -f` printed nothing and exited 0.
+Write the signature and name as numeric bytes. And a `DATA` segment
+without `run` links clean, boots, and fails inside the library, not in
+your own code.
+
 ## Idioms — cc65 vs Oscar64
 
 cc65 and Oscar64 differ in ways that matter at the codegen level. The agent
@@ -430,8 +565,12 @@ for VICE/vice-mcp" and "Debugging with VICE") and
 
 **Static initializers in ROM sections.** The cc65 `DATA` segment holds
 initialized writable data. If a custom linker config accidentally places `DATA`
-in a ROM region, initialized globals silently read back as zeros at runtime.
-Always verify the segment map with `--mapfile` output.
+in a ROM region, the program links clean and misbehaves at run time.
+Always verify the segment map with `--mapfile` output. An earlier version of
+this entry said the globals read back as zeros; measured on the
+[cartridge-8k](../recipes/cc65/cartridge-8k.md) recipe with `DATA` in ROM,
+they read back their initialisers, writes to them were lost, and the run
+ended in a `BRK` inside `cprintf` ("Cartridge builds" above).
 
 **Stack overflow with deep call trees.** cc65's software stack is 2 KB by
 default on the C64 (`__STACKSIZE__ = $0800` in `c64.cfg`); it starts at

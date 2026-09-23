@@ -6,11 +6,15 @@ category: cpu
 
 # CPU Pitfalls
 
-Three pitfalls in this document. Each concerns 6510 behavior that is locally
-correct but globally surprising: a branch cycle count that changes with binary
-placement, illegal opcodes that disappear on CMOS silicon, and an indirect-jump
-address fetch that wraps at page boundaries. All three have caused cycle-tight
-and portable C64 code to fail in production.
+Pitfalls in the 6510's own behaviour, and in what a toolchain does to code
+that leans on it: behaviour that is locally correct but globally surprising,
+such as a branch cycle count that changes with binary placement, illegal
+opcodes that disappear on CMOS silicon, an indirect-jump address fetch that
+wraps at page boundaries, a signed compare that turns over, an LFSR that
+never leaves zero, and an assembler optimiser that separates a patch from
+the instruction it patches. Each has caused cycle-tight and portable C64
+code to fail in production. (An earlier version of this paragraph counted
+three.)
 
 ---
 
@@ -18,7 +22,8 @@ and portable C64 code to fail in production.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram, isqrt_16bit, atan2_8bit, bresenham_line
+**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram, isqrt_16bit, atan2_8bit, bresenham_line, zero_page_burst
+**Mitigated by techniques:** bit_test_trick
 
 ### Symptom
 
@@ -163,7 +168,7 @@ jitter_loop_fixed:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** illegal_opcode_tricks
+**Triggered by techniques:** illegal_opcode_tricks, bit_test_trick
 
 ### Symptom
 
@@ -330,7 +335,7 @@ while `.errorif` aborts with exit 1 and no output file.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** jump_table_dispatch
+**Triggered by techniques:** jump_table_dispatch, basic_extension_wedge
 **Mitigated by techniques:** jump_table_dispatch
 
 ### Symptom
@@ -515,7 +520,7 @@ jmp_abs:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill
+**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill, starfield, procedural_seed_universe, fire_effect
 **Mitigated by techniques:** lfsr_random
 
 ### Symptom
@@ -581,7 +586,7 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape
 **Mitigated by techniques:** compare_16bit_and_signed
 
 ### Symptom
@@ -649,3 +654,221 @@ the `BVC` is taken, 14 when it falls through into the `EOR`), against
   velocities in the high byte, the place this bites first
 - Recipe `docs/recipes/kickassembler/compare-16bit-signed.md` — the
   sweep that counts the 16,384 misses
+
+---
+
+## asm_optimiser_moves_self_modified_instruction — Oscar64's assembler optimiser at -O2 rewrites a non-volatile __asm block, so a store into an instruction's operand byte lands in a copy that never runs
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** table_multiply_8x8
+
+### Symptom
+
+A routine written as an `__asm` block that patches its own operand
+bytes (`sta m1 + 1` into a following `lda table,y`) gives the right
+answer at `-O0` and the wrong answer at `-O2`, with no warning from the
+compiler. The `.asm` listing looks correct at the point a reader opens
+it first, because the instruction sequence as written is still in the
+file; it is just not the sequence that runs.
+
+Measured on the quarter-square multiply harness from
+`techniques/maths.md` (`fpcheck.c`, Oscar64 `-tm=c64 -O2`, VICE x64sc
+3.10, PAL, screen decoded with the character ROM). The only change
+between the two builds is the word `volatile` on the multiply's block:
+
+```
+__asm volatile   mul cs 0f09 exp 0f09 miss 00000   pass
+__asm            mul cs c524 exp 0f09 miss 00000   fail
+```
+
+The miss counter is the trap inside the trap. It reads `00000` in the
+failing build because every one of the 65,536 products is wrong and a
+16-bit counter of 65,536 misses wraps to zero. The checksum is the only
+tell. Recomputing the checksum in Python from the instruction sequence
+that actually executes (below) gives `C524` and 65,536 misses, so the
+number on screen is fully accounted for by the mechanism.
+
+### Mechanism
+
+At `-O2` and above Oscar64 runs an assembler optimiser over inline
+assembly that is not marked `volatile`. It is free to change addressing
+modes and instruction order, and it may emit more than one copy of a
+block. It does not know that a store whose target is `label + 1` is
+writing an operand byte, so it resolves that store against wherever the
+label ended up and optimises the instruction the label points at as if
+its operand were the constant the source shows.
+
+In the measured build the executed copy at `$0C00` had `ldy / lda ,y`
+rewritten as `ldx / lda ,x` and `sec` moved down one instruction. The
+four patch stores in that copy resolve to `$0C3E`, `$0C47`, `$0C41`
+and `$0C4A`. Those addresses are inside a second, byte-for-byte
+original copy of the block that the assembler placed after the `RTS` at
+`$0C27`; nothing jumps to it. The running instructions keep the operands
+they were assembled with, `sqr_lo + 0` and `nsq_lo + 0`, which is the
+routine with `a = 0` patched into the `sqr` reads and `255 - a = 0`
+into the `nsq` reads. Every product is therefore `q(b) - q(|b - 255|)`
+instead of `q(a + b) - q(|a - b|)`; for `0 * 0` that is
+`0 - 16256 = $C080`, the figure the technique page recorded.
+
+Executed copy, from the `.asm` listing of the non-volatile build:
+
+```
+0c00  LDA $0bff       ; mul_a
+0c03  STA $0c3e       ; m1 + 1, but in the dead copy below
+0c06  STA $0c47       ; m2 + 1
+0c09  EOR #$ff
+0c0b  STA $0c41       ; m3 + 1
+0c0e  STA $0c4a       ; m4 + 1
+0c11  LDX $0e9d       ; mul_b, now X
+0c14  LDA $0f00,x     ; sqr_lo + 0: operand never patched
+0c17  SEC
+0c18  SBC $1300,x     ; nsq_lo + 0
+0c1b  STA $0e9e       ; mul_r
+0c1e  LDA $1100,x
+0c21  SBC $1500,x
+0c24  STA $0e9f
+0c27  RTS
+```
+
+Dead copy, immediately after it (no reference to `$0C28` anywhere in
+the listing):
+
+```
+0c28  LDA $0bff
+0c2b  STA $0c3e
+0c2e  STA $0c47
+0c31  EOR #$ff
+0c33  STA $0c41
+0c36  STA $0c4a
+0c39  LDY $0e9d
+0c3c  SEC
+0c3d  LDA $0f00,y     ; $0c3e is the low operand byte: this is m1 + 1
+0c40  SBC $1300,y     ; $0c41 is m3 + 1
+0c43  STA $0e9e
+0c46  LDA $1100,y     ; $0c47 is m2 + 1
+0c49  SBC $1500,y     ; $0c4a is m4 + 1
+0c4c  STA $0e9f
+0c4f  RTS
+```
+
+With `volatile` the block is emitted once, as written, and the four
+stores resolve to `$0C16`, `$0C1F`, `$0C19` and `$0C22`, which are the
+operand bytes of the four indexed reads at `$0C15`, `$0C1E`, `$0C18`
+and `$0C21` in the same copy. The `-O2` volatile build and the `-O0`
+non-volatile build both pass; `-O0` is a control, not a fix, because
+the optimiser is simply not run at that level.
+
+### Fix
+
+Any one of these keeps the patch and the patched instruction in the
+same copy of the code. All three were built and run here.
+
+1. Write the block `__asm volatile { ... }`. Measured: pass, 52 cycles
+   per call, the figure on the technique page.
+2. Wrap the function in `#pragma optimize(push)` / `#pragma
+   optimize(noasm)` / `#pragma optimize(pop)` and leave the block
+   plain. Measured: pass, and the listing is the same instruction
+   sequence as the volatile build.
+3. Do not patch code at all. Put the operand in a zero-page pointer and
+   index through it with `lda (zp),y`; the store is to a variable, which
+   the optimiser treats as data. Measured: pass, 66 cycles per call
+   against 52 (arithmetic from the same harness: 11,504 less the 4,904
+   empty-loop baseline, over 100 calls). The cost is the four `lda # /
+   sta zp` pairs that load the table page bytes, plus the slower
+   addressing mode.
+
+Moving the routine to a separate assembler source file is not an option
+in Oscar64: the compiler has no object linker and no external symbol
+resolution (`toolchains/oscar64-reference.md`, "Calling KickAssembler
+code from Oscar64"), so a hand-assembled routine has to be embedded as
+bytes at a fixed address and called by `jsr`. That does put it beyond
+the optimiser's reach, but it was not measured here.
+
+### Worked example
+
+The C shape that fails, with the two results. Nothing about the
+pattern is specific to the multiply: any store to `label + 1` or
+`label + 2` where `label` is an instruction inside the same block is
+exposed.
+
+```text
+__noinline void qmul(void)
+{
+    __asm                    // BAD at -O2: mul cs c524, miss 00000 (wrapped)
+    {
+        lda mul_a
+        sta m1 + 1           // patches an operand byte of m1 ...
+        sta m2 + 1
+        eor #$ff
+        sta m3 + 1
+        sta m4 + 1
+        ldy mul_b
+        sec
+    m1: lda sqr_lo, y        // ... but the m1 that runs is a rewritten copy
+    m3: sbc nsq_lo, y
+        sta mul_r
+    m2: lda sqr_hi, y
+    m4: sbc nsq_hi, y
+        sta mul_r + 1
+    }
+}
+
+__noinline void qmul(void)
+{
+    __asm volatile           // FIXED: mul cs 0f09, miss 00000, 52 cycles
+    {
+        ... same body ...
+    }
+}
+```
+
+The data-patch form (fix 3), which is safe in a plain block because it
+never writes into code. Shown in KickAssembler syntax; the Oscar64
+version is the same instructions with `__zeropage char *` pointers in
+place of the two `.label` lines:
+
+```asm
+        .label zp_sqr = $f7    // two zero-page pointers
+        .label zp_nsq = $f9
+        lda mul_a
+        sta zp_sqr             // low byte = a
+        eor #$ff
+        sta zp_nsq             // low byte = 255 - a
+        ldy mul_b
+        sec
+        lda #>sqr_lo
+        sta zp_sqr + 1         // a store to a variable, not to an instruction
+        lda #>nsq_lo
+        sta zp_nsq + 1
+        lda (zp_sqr),y
+        sbc (zp_nsq),y
+        sta mul_r
+        lda #>sqr_hi
+        sta zp_sqr + 1
+        lda #>nsq_hi
+        sta zp_nsq + 1
+        lda (zp_sqr),y
+        sbc (zp_nsq),y
+        sta mul_r + 1
+```
+
+A grep of the Oscar64 recipes for stores to `label + 1` inside
+non-volatile `__asm` blocks found only stores into C variables
+(`load-asset-runtime.md` writes `ld_end + 1`, a `static unsigned`), so
+no shipped recipe carries the failing shape; the technique page is the
+one place it was written and caught.
+
+### Cross-references
+
+- Technique `table_multiply_8x8` in `docs/techniques/maths.md`: the
+  routine, its 52-cycle figure, and "The measuring program" whose
+  checksum caught this
+- `docs/toolchains/oscar64-reference.md`: the assembler optimiser
+  paragraph (`__asm volatile`, `#pragma optimize(noasm)`) and the
+  section on calling KickAssembler code, which is why a separate `.s`
+  file is not a remedy here
+- Pitfall `getchx_petscii_remaps_return` in
+  `docs/pitfalls/kernal-and-io.md`: the other Oscar64-specific pitfall,
+  for the same "the source is right, the toolchain did something else"
+  reading habit
