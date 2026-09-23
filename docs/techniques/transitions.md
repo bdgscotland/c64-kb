@@ -283,3 +283,123 @@ not the cycle count, so it holds on both.
 - `recipes/kickassembler/screen-wipe.md`
 
 ---
+
+## screen_dissolve_lfsr — Cross-fade two text screens cell by cell in LFSR order
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D012
+**Requires:** lfsr_random
+**Cost:** cycles_per_frame=3203, cycles_per_frame_typical=3032, bytes_code=483
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-screen-dissolve (one frame of 20 cells with its LFSR pulls, the worst and the median of the 50 frames; bytes are the code block less its two captions)
+
+### Why
+
+The fade changes colours, the cycling moves them and the wipe takes them
+away along an edge. None of them can put a second picture in place of
+the first: a fade to black and back is the nearest, and it costs a
+luminance table and a black frame in the middle. A dissolve replaces the
+screen one cell at a time in an order that looks random, so the new
+picture comes up through the old everywhere at once and the eye reads it
+as a cross-fade, with no palette work and no black in between. It needs
+the target screen in RAM, which the wipe does not, and a source of cell
+indices that visits every cell once, which is what a maximal LFSR is.
+
+### How
+
+1. Build the target screen in RAM, screen bytes and colour bytes, 1,000
+   of each. The visible screen holds the source.
+2. Take a 10-bit Galois LFSR with taps `$240`, the polynomial
+   x^10 + x^7 + 1, in the right-shifting form of `lfsr_random`: shift the
+   state right, and if the bit that fell out was 1 XOR the taps in. Seed
+   it with any non-zero value; the recipe uses 1.
+3. Each frame, in the lower border, pull N indices. A state of 1000 to
+   1023 is not a cell: pull again. For each cell copy the target's screen
+   byte and colour byte to the visible screen.
+4. When the state comes back to the seed every value from 1 to 1023 has
+   been produced once, so 999 cells are done. Copy cell 0 by hand; the
+   register never produces it. Then stop, and the picture is static.
+
+At N = 20 the whole screen takes 50 frames, 1.0 s on PAL and 0.83 s on
+NTSC (arithmetic from 19,656 and 17,095 cycles a frame), measured in the
+recipe as the last cell landing on frame 50 on both models, with cell 0
+as the twentieth slot of that frame.
+
+### Why it works
+
+A maximal-length LFSR is a permutation of its 2^n - 1 non-zero states,
+so it produces each cell index exactly once and never repeats one before
+the whole set is out; a random number generator with a repeat would copy
+some cells twice and leave others until the end. The recipe checks the
+permutation two ways: 1,023 steps in Python give 1,023 distinct values
+from 1 to 1,023, and the run comes back to its seed on the 1,023rd pull
+with 999 cells copied.
+
+Ten bits and not sixteen because 2^10 is the first power of two above
+1,000. Every state above 999 is a wasted pull; ten bits wastes 24 in
+1,023, sixteen would waste 64,535 in 65,535 and spend sixty-four pulls
+for every cell. The 24 wasted pulls fall where the sequence puts them,
+and the frame that meets most of them is the worst frame: 3,203 cycles
+against a median of 3,032 in the recipe, so the spread is small and the
+per-frame budget can be taken as N times the per-cell cost plus a little.
+
+The zero cell is the one an LFSR cannot give, for the reason in
+`lfsr_zero_state_lockup` (`pitfalls/cpu.md`): from zero the register
+stays at zero. That is also why the seed must be non-zero. The skip of
+1000 to 1023 keeps the index below the 24 bytes past the last cell that
+`colour_ram_index_past_last_cell_hits_cia1`
+(`pitfalls/text-mode-render.md`) is about: on the screen side those are
+unused bytes and the sprite pointers, on the colour side they are the end
+of the page, and one more past them is CIA1.
+
+### Variations
+
+**Colour RAM only.** Copy the colour byte alone and leave the screen
+bytes, so a picture dissolves from one palette to another; half the
+stores a cell, and no target screen RAM is needed, only 1,000 colour
+bytes. Not built here.
+
+**2 by 2 blocks.** Run a 250-state permutation over block indices (an
+8-bit LFSR wastes 5 in 255) and copy four cells a pull. Fewer, larger
+steps: the same 50 frames at N = 5 blocks, or a faster dissolve at the
+same cost. The block's four cells are at `i`, `i + 1`, `i + 40` and
+`i + 41` from the block's top-left cell. Not built here.
+
+**Bitmap by byte.** The same permutation over 8,000 bitmap bytes with a
+13-bit LFSR (8,191 states, 191 wasted), copying a byte a pull; the
+colour cells follow with a second 10-bit pass or by copying each cell's
+colour with its first byte. Eight times the cells of a text dissolve at
+the same N is eight times the frames, so N has to rise with it. Not
+built or timed here.
+
+### Cycle budget
+
+Not raster critical. The recipe's frame of 20 cells with its LFSR pulls
+costs 3,203 cycles at worst and 3,032 at the median, by CIA1 timer A,
+identical on PAL and NTSC because the work starts on line 251 in the
+lower border where there is no badline and nothing in it depends on the
+model. That is about 150 cycles a cell for the recipe's shape (a
+subroutine call, four pointer high bytes and two indirect copies a
+cell), and the frame is over about 50 lines after line 251: line 302 on
+PAL, and on NTSC, whose frame wraps at 263, about line 37 of the next
+frame, both in the border. The blank the copies have to fit is not the
+same on the two models: about 7,000 cycles on PAL and about 4,100 on
+NTSC between line 251 and line 51 of the next frame (arithmetic:
+(312 - 251 + 51) x 63 and (263 - 251 + 51) x 65). The cost scales with
+N at about 150 cycles a cell, so 40 cells a frame, about 6,000 cycles
+and a 25-frame dissolve, fits the PAL blank only; on NTSC the copies
+stay in the blank up to roughly N = 27 (4,095 / 150; arithmetic, not
+measured here). Past that N the copies run into the display and a cell
+can be caught between its screen byte and its colour byte, which is the
+tearing `full_field_redraw_exceeds_vblank` describes; at N = 20 it is
+not near on either model.
+The sequential control in the recipe, the same copies in index order,
+costs 2,226 at worst, so the LFSR and its skip are about a third of the
+frame.
+
+### Recipes
+
+- `recipes/kickassembler/screen-dissolve.md`
+
+---

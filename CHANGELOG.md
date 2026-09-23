@@ -5,11 +5,11 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 757, schema 29, tools 2.1.0, package 0.14.0.
+Data 758, schema 29, tools 2.1.0, package 0.14.0.
 
 **Issue #22, steps 4 to 6: game designs, machine variants and the
-claims watch; #36 decided (data 757, schema 29, tools 2.1.0, package
-0.14.0).** One bump over main's data 756, schema 27, tools 2.0.0, package
+claims watch; #36 decided (data 758, schema 29, tools 2.1.0, package
+0.14.0).** One bump over main's data 757, schema 27, tools 2.0.0, package
 0.13.0. Two shape changes land together, so the schema moves two: 28 is
 GameDesign, 29 is MachineVariant. Step 6 changes seed values, not shape.
 Tools 2.1.0 is a minor: every change to the surface is additive (a new
@@ -92,6 +92,30 @@ The maintainer's decision: keep the default, say c64c. No screenshot is
 re-baselined; every page that called the VICE PAL run a 6569 now names the
 C64C with a clause saying what it said; `-model c64` is the check for the
 older machine.
+
+**Candidate list, Tier B batch 15: four more items from fixed designs,
+each a technique entry and a pinned KickAssembler recipe (data 757).**
+A sprite text scroller in the opened lower border: eight glyph sprites
+at Y 254 under a border opened by the top-and-bottom recipe's method,
+829 cycles a typical frame and 1,586 on a hand-off frame, every sprite
+row inside the PAL frame and the control build with the border left
+closed showing no sprite pixel below line 251. A twister: a 64-pixel
+column whose four faces come from one sine, its 64 phase images built at
+assembly time so the frame loop is a 128-line copy of 13,001 cycles
+blanked, the pinned edges matching the edge table at three rows and a
+straight control with one row pattern on every line. The `$D017` sprite
+stretcher, which this KB had marked unverified, reproduced in VICE: a
+setting write on any cycle from 48 to 55 (cleared four cycles earlier)
+makes a 21-row sprite 91 lines tall over 81 toggled lines, each row held
+for eight lines, while cycle 56 gives 24 lines and cycles 57 to 62 give
+44, 50, 47 and 94; the fifteen-build sweep is on the page, the pinned
+build is cycle 52, and the control with the stores aimed at RAM is the
+plain 21 lines. An LFSR-ordered screen dissolve to finish the transitions
+family: a maximal 10-bit register visiting each of 1,000 cells once, 20
+cells a frame, 3,203 cycles on the worst frame, half the cells landed at
+frame 25 and the last on frame 50, beside a sequential control that is a
+wipe. Eight pins byte-identical on two runs per model, each reproduced
+by a reviewer from the page listing.
 
 **Candidate list, Tier B batch 14: four demo effects, each a technique
 entry and a pinned KickAssembler recipe (data 756).** Multicolour
