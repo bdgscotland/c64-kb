@@ -161,6 +161,8 @@ Phase 4+.
 **Complexity:** low
 **Region:** both
 **Uses registers:** DD00
+**Claims:** cia2_vic_bank (owns)
+**Claims basis:** estimated
 
 ### Why
 
@@ -749,6 +751,8 @@ phase focused on distribution formats.
 
 **Complexity:** medium
 **Region:** both
+**Claims:** irq_vector_fffe (owns), nmi_vector_fffa (owns)
+**Claims basis:** estimated
 
 ### Why
 
