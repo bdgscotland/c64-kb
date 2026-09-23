@@ -515,7 +515,7 @@ jmp_abs:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables
+**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai
 **Mitigated by techniques:** lfsr_random
 
 ### Symptom

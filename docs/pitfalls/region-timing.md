@@ -20,7 +20,7 @@ branch on it.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** sid_play_routine_pattern, sid_voice_setup, frame_sync_loop, sfx_engine_beside_music, colour_fade, colour_cycling, screen_wipe, logic_rate_decoupling, difficulty_ramp_tables
+**Triggered by techniques:** sid_play_routine_pattern, sid_voice_setup, frame_sync_loop, sfx_engine_beside_music, colour_fade, colour_cycling, screen_wipe, logic_rate_decoupling, difficulty_ramp_tables, falling_block_rules, ghost_target_tile_ai, cave_scan_engine
 **Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom

@@ -5,7 +5,17 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 738, schema 25, tools 1.30.0.
+Data 739, schema 25, tools 1.30.0.
+
+**Issue #21, GR-01 to GR-04.** Four small complete games, each a
+technique plus a self-playing recipe checked against a Python model of
+the same rules: `falling_block_rules` (NES tables per region, scoring at
+the level after the clear), `ghost_target_tile_ai` (the Pac-Man Dossier's
+target tiles), `cave_scan_engine` (the scanned flag that stops the double
+move) and `dig_and_refill` (Lode Runner's holes and guards; four guards
+overrun a frame). A third Oscar64 1.32.271 miscompile, reproduced: at -O2
+a loop-invariant `array + signed char` is zero-extended (#30).
+
 
 **Issue #22, steps 0 and 1: hardware claims (schema 25, tools 1.30.0, package 0.10.0).**
 `HardwareUnit` nodes (SID voices, sprites, CIA timers, TOD and ports, the
