@@ -5,11 +5,19 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 742, schema 27, tools 1.32.0, package 0.12.0.
+Data 743, schema 27, tools 2.0.0, package 0.13.0.
 
-**Issue #22, step 3: the honest budget (schema 27, tools 1.32.0, package
-0.12.0).** New tool `c64_plan_budget` (CLI `plan-budget`) adds a list of
-techniques up against a frame, each in a phase (`name`, `name:transition`,
+**Issue #22, step 3: the honest budget (schema 27, tools 2.0.0, package
+0.13.0).** Tools 2.0.0 is a major bump because the briefing's output
+changes in a way a client can break on: `cycles_verdict` gains
+`undetermined`, and it no longer says `under` when a figure is missing.
+VERSION's rule makes a breaking output change a major. The package is
+still 0.x, where a minor is the breaking step, so it goes to 0.13.0 as
+every tools minor before it moved the package minor; 1.0.0 is a
+maintainer's call, not a side effect.
+
+New tool `c64_plan_budget` (CLI `plan-budget`) adds a list of techniques
+up against a frame, each in a phase (`name`, `name:transition`,
 `name:init`), on PAL, NTSC or both. The rules are in `src/domain/budget.ts`
 and came from design 2.1, where summing Cost lines erred from −96 % to
 about 10× over on built recipes:
@@ -18,31 +26,53 @@ about 10× over on built recipes:
   listed as unknown, with the recipe to measure it on, and the verdict is
   `undetermined`.
 - A figure above one frame (19,656 PAL, 17,095 NTSC) is a multi-frame
-  operation and is not summed.
+  operation and is not summed. It holds nothing in the frame, so a member
+  it includes is budgeted as itself.
 - A new Cost key, `cycles_per_frame_typical`, gives a range: the low end
-  sums typical frames, the high end worst frames. `over` needs a low end
-  that is a floor, so a worst frame with no typical beside it leaves the
-  verdict open (listed in `worst_only`). This departs from the design,
-  which said `over` whenever low plus losses passed the frame; on NTSC
-  that called `sprite_multiplex_game`'s built 16,600-cycle reversal
-  frame over, while the recipe runs on NTSC with every actor drawn.
+  sums typical frames, the high end worst frames. The low end is not a
+  floor. The key may hold a common frame or a real run's worst frame
+  (`ghost_target_tile_ai`'s 4,171 and `game_tree_search`'s 5,325 are the
+  second kind), and two members' such frames need not coincide. So `over`
+  is judged on the floor alone: band and per-line charges, which run
+  every frame, plus the badline loss no summed figure can already hold.
+  This departs from the design, which said `over` whenever low plus
+  losses passed the frame; on NTSC that called `sprite_multiplex_game`'s
+  built 16,600-cycle reversal frame over, while the recipe runs on NTSC
+  with every actor drawn.
 - New `**Cost includes:**` line: a member whose work is inside another's
-  figure is counted once. A technique with `cycles_per_line=63` and a
-  line band is charged band lines × line length, and its REQUIRES closure
-  is not added again.
+  figure is counted once. Includes are followed through the graph, and of
+  two pages that include each other the first listed is kept. A technique
+  with `cycles_per_line=63` and a line band is charged band lines × line
+  length, and its REQUIRES closure is not added again.
 - New `**Cost measured on:**` line names the recipe and its conditions.
-  With the screen on, 25 badlines × 43 = 1,075 cycles are charged unless
-  every summed figure says it was measured with the screen on. Bytes
-  flagged `whole PRG` are not summed.
+  With the screen on, the badlines (lines 51-243, every eighth, 43 cycles
+  each) outside any band charge are charged unless every summed figure is
+  a band charge or says it was measured with the screen on. A stall takes
+  its cycles wherever the code runs, so the charge is exact when no
+  summed figure already holds stalls, and too high by what a screen-on
+  figure holds. Bytes flagged `whole PRG` are not summed, and a member
+  inside another's figure that states bytes is not summed either.
+- A name listed twice in one phase is counted once and the repeat is
+  listed in `refused`. A region other than pal, ntsc or both is refused.
+  PAL-locked and NTSC-locked members in one set are named.
+
+Review corrections before release, each found by running the tool on the
+shipped pages: the badline charge was 1,075 even when `fli_image`'s band
+45-251 already held all 25 badlines, and was called "a ceiling: code that
+runs in the border meets no badline", which is wrong (a stall takes its
+cycles wherever the code runs). With `ghost_target_tile_ai`,
+`wave_director` and `sprite_animation_table` beside it, that made a low
+end of 18,739 into 19,814 and called the set over. `soft_scroll_h`, left
+out as multi-frame, still hid `char_scroll_buffer_h`'s missing figure.
 
 The briefing budget now calls the same planner, every proposed technique
-in one play frame. Its `cycles_verdict` gains `undetermined` (a strict
-client may reject the new value), and it gains `cycles_low`,
-`fixed_loss_cycles`, `excluded`, `unknown` and `to_measure`.
-`c64_timing_budget` is unchanged. It answers a different question, the
-cycles left on one raster line, and its README row no longer claims
-per-frame math. Ingest now warns about, and counts, a measured-on recipe
-that is no Recipe and an included name that is no Technique.
+in one play frame. Its `cycles_verdict` gains `undetermined` and it gains
+`cycles_low`, `fixed_loss_cycles`, `excluded`, `unknown` and
+`to_measure`. `c64_timing_budget` is unchanged. It answers a different
+question, the cycles left on one raster line, and its README row no
+longer claims per-frame math. Ingest now warns about, and counts, a
+measured-on recipe that is no Recipe and an included name that is no
+Technique.
 
 Content: 68 Cost lines gained a measured-on line, five of them on the #21
 pages merged from main. Five pages do not say where their figure came
@@ -55,14 +85,17 @@ the 9,316 bound). Three gained an includes line: `wave_director`
 includes `object_pool`, `soft_scroll_h` includes `char_scroll_buffer_h`,
 and `fli_image` includes its stable double-IRQ entry.
 
-Three corrections:
+Four corrections:
 
 - `fli_image` charged 200 lines (12,600). Its band, 45-251, is 207 lines,
   so the figure is 13,041.
+- `fli_image` said `bytes_code=3277` and `bytes_data=16384`: 3.2 KB and
+  16 KB times 1,024. KickAssembler's `-showmem` for the recipe gives
+  3,488 and 16,001, and the basis is now `arithmetic`, not `estimated`.
 - `decimal_print` said `bytes_code=0`, a figure the page never measured,
   and a budget summed it as zero bytes. The key is gone.
 - `platformer-scaffold` plays a three-voice stub tune every frame but did
-  not list `sid_play_routine_pattern`; it does now.
+  not list `sid_play_routine_pattern`; it does now, and the page says so.
 
 Validation on PAL. "Old sum" is the previous briefing arithmetic over the same pages: every `cycles_per_frame` added, with a missing figure counted as zero.
 
@@ -70,7 +103,7 @@ Validation on PAL. "Old sum" is the previous briefing arithmetic over the same p
 |---|---|---|---|
 | platformer-scaffold | 4,953, "under" | [4,731, 4,939] + 1,075, undetermined, 5 unknowns | 4,966 one frame; peak 8,693 |
 | simple-shmup | 5,628, "under" | 5,628 + 1,075, undetermined, `soft_scroll_v` unknown | not measured whole |
-| cracktro-template | 75,358, "over" | 1,317 + 1,075, undetermined, `soft_scroll_h` multi-frame | fits (about 7,000 in the blank) |
+| cracktro-template | 75,358, "over" | 1,317 + 1,075, undetermined, `soft_scroll_h` multi-frame, `char_scroll_buffer_h` unknown | fits (about 7,000 in the blank) |
 | fli-image | 12,884, "under" | 13,041, fits | 13,041 by arithmetic |
 | scroll-panel-split | 413, "under" | 413, undetermined, 2 unknowns | carry frame 11,613 by arithmetic |
 | sprite-multiplex-game | 16,600, "under" | 16,600 + 1,075, fits (NTSC undetermined) | parts measured in play: about 7,100-8,000 |
