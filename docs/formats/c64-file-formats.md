@@ -590,8 +590,8 @@ The SID format is a standard container for C64 music, combining a short metadata
 | Offset | Size | Field |
 |--------|------|-------|
 | $00–$03 | 4 | Magic: `"PSID"` or `"RSID"` |
-| $04–$05 | 2 | Version: `$0001` (v1) or `$0002` (v2) — big-endian |
-| $06–$07 | 2 | Data offset: `$0076` (v1) or `$007C` (v2) — big-endian |
+| $04–$05 | 2 | Version: `$0001` (v1), `$0002` (v2), `$0003` (v3) or `$0004` (v4) — big-endian; RSID must be 2, 3 or 4 |
+| $06–$07 | 2 | Data offset: `$0076` (v1) or `$007C` (v2, v3 and v4) — big-endian |
 | $08–$09 | 2 | Load address (0 = embedded in first 2 bytes of data, little-endian) |
 | $0A–$0B | 2 | Init address (0 = load address; called with song number in A) |
 | $0C–$0D | 2 | Play address (0 = init installs IRQ handler; must be 0 for RSID) |
@@ -602,18 +602,94 @@ The SID format is a standard container for C64 music, combining a short metadata
 | $36–$55 | 32 | Author name (null-terminated ASCII) |
 | $56–$75 | 32 | Released/copyright (null-terminated ASCII) |
 
-**Version 2 extensions (offsets $76–$7B):**
+**Version 2, 3 and 4 extensions (offsets $76–$7B):**
 
 | Offset | Size | Field |
 |--------|------|-------|
-| $76–$77 | 2 | Flags: bit 0=MUS data, bit 1=PlaySID/BASIC, bits 2-3=video standard (00=unknown,01=PAL,10=NTSC,11=both), bits 4-5=SID model (00=unknown,01=6581,10=8580,11=both) |
+| $76–$77 | 2 | Flags, big-endian: bit 0=MUS data, bit 1=PlaySID-specific (PSID) or C64 BASIC (RSID), bits 2-3=video standard (00=unknown, 01=PAL, 10=NTSC, 11=both), bits 4-5=first SID model (00=unknown, 01=6581, 10=8580, 11=both), bits 6-7=second SID model (v3 and later; same codes, 00 meaning "same as the first SID"), bits 8-9=third SID model (v4; same codes, 00 meaning "same as the first SID"), bits 10-15 reserved |
 | $78 | 1 | Start page (relocation page; 0=clean, $FF=no free pages) |
 | $79 | 1 | Page length (number of free pages for relocation) |
-| $7A–$7B | 2 | Reserved (zero) |
+| $7A | 1 | Second SID address (v3 and later): the middle byte of `$Dxx0`, so the chip sits at `$D000 + byte × 16`. Valid values `$42`–`$7F` and `$E0`–`$FE`, even only, which is `$D420`–`$D7E0` and `$DE00`–`$DFE0`. Zero or any invalid value means no second SID. Must be 0 in v2 |
+| $7B | 1 | Third SID address (v4): the same encoding and ranges as `$7A`, and it must differ from `$7A`. Zero means no third SID. Must be 0 in v2 and v3 |
 
-**RSID** files require the C64 BASIC ROM and run in native-interrupt mode. The play address must be zero (the init routine installs a CIA or raster IRQ). Load address, init address, and any ROM-mapped addresses must be ≥ `$07E8`.
+**Correction (2026-09-23).** This table used to stop at version 2 and call `$7A`–`$7B` "Reserved (zero)", and the version row listed only `$0001` and `$0002`. Versions 3 and 4 put the second and third SID addresses in those two bytes and the two extra model fields in the flags word, so a reader written from the old table would play every two-SID and three-SID tune on one chip. The rows above follow the HVSC document `SID_file_format.txt` (in the collection's `DOCUMENTS` directory), and were checked two ways: against HVSC Release 84, and against VICE 3.10's `vsid`. Both are described under "Measured here" below.
 
-The SID collection at HVSC (High Voltage SID Collection) contains over 50,000 SID files and is the de facto reference corpus for this format.
+**Which fields each version has:**
+
+| Field | v1 | v2 | v3 | v4 |
+|-------|----|----|----|----|
+| Magic through the three strings (`$00`–`$75`) | yes | yes | yes | yes |
+| Flags bits 0-5, start page, page length (`$76`–`$79`) | absent | yes | yes | yes |
+| Second SID address (`$7A`) and flags bits 6-7 | absent | must be 0 | yes | yes |
+| Third SID address (`$7B`) and flags bits 8-9 | absent | must be 0 | must be 0 | yes |
+| Data offset | `$0076` | `$007C` | `$007C` | `$007C` |
+
+**Version history.** Version 1 is Michael Schwendt's original header for SIDPLAY, 118 bytes ending at `$75`. Version 2 added the six bytes at `$76`; the "v2NG" extension by Simon White and Dag Lem gave most of them their meaning (flag bits 1 to 5, start page, page length) and defined RSID, and it kept `$0002` as the version number, so v2 and v2NG cannot be told apart from the header. Wilfred Bos added the second SID address and its model bits as version 3, and the third SID address and its model bits as version 4. The header length has not changed since version 2: the data starts at `$7C` in every file the collection holds. The HVSC document names these authors and gives no dates, so none are given here.
+
+**PSID and RSID.** The magic says what the tune may assume. A PSID tune is driven by the player: the player calls init with the song number in A, then calls play on every VBI (speed bit 0) or on CIA 1 timer A (speed bit 1), and before each call it writes `$01` from the routine's address (`$37` below `$A000`, `$36` below `$D000`, `$35` at `$E000` and above, `$34` inside the `$D000` page). So a PSID tune should not depend on which ROMs are mapped; with a non-zero play address the player does the timing, and with play address 0 its init routine installs the interrupt handler itself, as the table above says. An RSID tune gets the power-on machine and nothing more: `$01` = `$37`, CIA 1 timer A running at 60 Hz with its interrupt enabled, the VIC raster interrupt set to line `$137` but not enabled, and the tune must set up its own interrupt source and handler. That is why RSID pins header fields: the version must be 2, 3 or 4; load address, play address and speed must all be 0; the embedded load address must be at or above `$07E8`; and init must not sit in a ROM or I/O window (`$A000`–`$BFFF`, `$D000`–`$FFFF`). Flag bit 1 is "PlaySID-specific" in PSID and "C64 BASIC" in RSID; with it set, the player puts the song number in `$030C` and runs the tune as a BASIC program, and the init address must then be 0. A player that finds an RSID field outside these rules must reject the file. An earlier version of this paragraph said RSID "requires the C64 BASIC ROM"; both formats have the ROMs present, and the difference is what the tune may rely on. The same contrast, from the tune's side, is in [music-sid.md](../techniques/music-sid.md).
+
+The SID collection at HVSC (High Voltage SID Collection) is the reference corpus for this format. HVSC Release 84 holds 60,572 files: 56,349 PSID v2, 302 PSID v3, 25 PSID v4, 3,885 RSID v2 and 11 RSID v3, and no version-1 file.
+
+**Measured here (2026-09-23).** The script below wrote a PSID v2, v3 and v4 header by hand from the tables above, over a body of two `RTS` routines, and read each one back; every field came back as written. A v3 with `$42` at `$7A` decoded to `$D420`, a v4 with `$42` and `$44` to `$D420` and `$D440`, and a v4 with `$E0` and `$F0` to `$DE00` and `$DF00`. The same reader decoded a two-SID file from the collection to `$DE00` with second-model bits 10 (8580). Across the 338 version-3 and version-4 files in the collection every `$7A` and `$7B` value is even and inside the valid ranges, no version-3 file has a non-zero `$7B`, and no version-4 file has `$7B` equal to `$7A`. VICE 3.10's `vsid` (the windowless build, run with the command below and a monitor script that reads its resources after the load) accepted all three hand-made files, logged `PSID version number: 2`, `3` and `4`, `2nd SID at $d420` and `3rd SID at $d440`, and set `SidStereo` to 1 for the v3 file and 2 for the v4 file with `Sid2AddressStart` 54304 (`$D420`) and `Sid3AddressStart` 54336 (`$D440`); the `$E0`/`$F0` file gave 56832 and 57088 (`$DE00`, `$DF00`). Four negatives behaved as the table says: a v2 header with `$42` at `$7A` left `SidStereo` at 0, and a v3 header with `$41` (`$D410`, odd), `$80` (`$D800`) or `$D8` (`$DD80`) at `$7A` logged the address but left `SidStereo` at 0, so an invalid value means no second SID. One divergence: a v3 header with `$44` at `$7B` set `SidStereo` to 2 and `Sid3AddressStart` to `$D440`, so VICE 3.10 reads the third SID byte from any version-3 file where the document reserves it for version 4; write 0 there in a v3 file. VICE's `psid.c` never reads bits 6-9; a comment there notes where they sit, and every chip gets the first SID's model. That is from its source, not measured here by ear.
+
+```text
+vsid -default -directory <VICE data dir> -console -warp +sound -limitcycles 1000000 -moncommands mon.txt tune.sid
+# mon.txt
+resourceget "SidStereo"
+resourceget "Sid2AddressStart"
+resourceget "Sid3AddressStart"
+x
+```
+
+```text
+# psidhdr.py: write a PSID v2/v3/v4 header by hand, then read it back.
+import struct
+
+def sid_byte(addr):                       # $D420 -> $42, 0 -> 0
+    return 0 if addr == 0 else (addr >> 4) & 0xFF
+
+def sid_addr(b):                          # $42 -> $D420, 0 -> 0
+    return 0 if b == 0 else 0xD000 | (b << 4)
+
+def sid_ok(addr):
+    return addr != 0 and (addr & 0x10) == 0 and (0xD420 <= addr < 0xD800 or addr >= 0xDE00)
+
+def write(version, sid2=0, sid3=0, model2=0, model3=0):
+    flags = (1 << 2) | (1 << 4)           # PAL, 6581
+    if version >= 3: flags |= (model2 & 3) << 6
+    if version >= 4: flags |= (model3 & 3) << 8
+    h = bytearray(b"PSID")
+    h += struct.pack(">HH", version, 0x76 if version == 1 else 0x7C)
+    h += struct.pack(">HHH", 0, 0x1000, 0x1003)      # load (embedded), init, play
+    h += struct.pack(">HHI", 1, 1, 0)                 # songs, start song, speed (VBI)
+    for s in (b"round trip", b"c64-kb", b"2026"):
+        h += s.ljust(32, b"\0")
+    if version >= 2:
+        h += struct.pack(">HBB", flags, 0, 0)         # flags, start page, page length
+        h += bytes([sid_byte(sid2) if version >= 3 else 0,
+                    sid_byte(sid3) if version >= 4 else 0])
+    return bytes(h) + b"\x00\x10" + b"\x60\xea\xea\x60"   # $1000: RTS  $1003: RTS
+
+def read(d):
+    version = struct.unpack(">H", d[4:6])[0]
+    r = {"version": version, "data_offset": struct.unpack(">H", d[6:8])[0]}
+    if version >= 2:
+        flags = struct.unpack(">H", d[0x76:0x78])[0]
+        r["model1"] = (flags >> 4) & 3
+    if version >= 3:
+        r["model2"], r["sid2"] = (flags >> 6) & 3, sid_addr(d[0x7A])
+        r["sid2_ok"] = sid_ok(r["sid2"])
+    if version >= 4:
+        r["model3"], r["sid3"] = (flags >> 8) & 3, sid_addr(d[0x7B])
+        r["sid3_ok"] = sid_ok(r["sid3"])
+    return r
+
+for v, s2, s3 in ((2, 0, 0), (3, 0xD420, 0), (4, 0xD420, 0xD440), (4, 0xDE00, 0xDF00)):
+    d = write(v, s2, s3, model2=2, model3=1)
+    back = read(d)
+    assert back["version"] == v and back.get("sid2", 0) == s2 and back.get("sid3", 0) == s3, back
+    open(f"v{v}-{s2:04x}.sid", "wb").write(d)
+```
 
 ---
 

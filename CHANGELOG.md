@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 750, schema 27, tools 2.0.0, package 0.13.0.
+Data 751, schema 27, tools 2.0.0, package 0.13.0.
+
+**Candidate list, Tier B batch 9, two of four (data 751).** A tape
+mastering workflow page: a host writer that turns a PRG into a
+KERNAL-format TAP (the three pulse lengths, the pair rule, the countdowns,
+the two copies and the checksum the formats page measured), which a plain
+LOAD then RUN accepts on both models; a decode-back checker that also
+reads the TAP the KERNAL itself recorded; the turbo route, the turbo
+loader mastered in KERNAL format as the stub with the turbo block
+appended, loading from one image; timings by bisecting the cycle limit
+(a 202-byte payload runs 33 seconds after LOAD on PAL, of which the FOUND
+pause is a third; the KERNAL format costs 18,890 cycles a payload byte,
+the turbo block 7.6 times less for the same 500 bytes); and the finding
+that the jiffy clock is not a tape load timer, since both models printed
+770 jiffies for a load of over thirty seconds. The PSID header
+corrected: the bytes at `$7A` and `$7B` are the second and third SID
+addresses in versions 3 and 4, the flags bits 6 to 9 their models, the
+RSID rules in one paragraph; headers written by hand round-trip, VICE's
+windowless vsid accepts versions 2, 3 and 4 and logs the chip addresses,
+rejects odd or out-of-range addresses as no second SID, reads `$7B` from
+a version-3 file where the document reserves it, and gives every chip the
+first SID's model; a census of the HVSC corpus gave the version counts
+and the address ranges seen. The isometric tile engine and the pseudo-3D
+road did not land: both writers stalled six times on the design, and they
+wait for a fixed specification like the scroller's.
 
 **Candidate list, Tier B batch 8 (data 750).** The 1541's VIA registers
 and memory map measured through the command channel and a probe recipe:
