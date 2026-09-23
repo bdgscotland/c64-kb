@@ -11,8 +11,10 @@ NAME     := hello
 C_MAIN   := src/main.c
 KICK_SRC := src/sprite.asm
 
-# Pinned in the vertical blank after the meter's 200 recorded frames, so
-# the picture is the same wherever in the frame the limit lands.
+# Pinned after the meter's 200 recorded frames. From then on nothing on the
+# screen changes, so the pin can land anywhere in the frame: 7,600,000 and
+# 8,000,000 cycles gave byte-identical PAL pictures, 8,000,000 and
+# 12,000,000 identical NTSC ones (VICE x64sc 3.10, windowless build).
 SHOT_CYCLES_PAL  := 8000000
 SHOT_CYCLES_NTSC := 8000000
 
