@@ -5,7 +5,30 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 759, schema 29, tools 2.1.0, package 0.14.0.
+Data 760, schema 29, tools 2.1.0, package 0.14.0.
+
+**Issue #39, part H: a real template harness (data 760).** The two
+starters in `templates/` were stubs. The game starter's KickAssembler
+step was skipped even with a working assembler, and when it did run it
+fed a `.prg` to Oscar64 as source. Neither starter had a headless run, a
+check, an NTSC run or a measured frame.
+
+`templates/_harness/` now gives every starter these targets:
+- `make`, which links KickAssembler code into Oscar64 through a
+  generated header;
+- `make shot check`, headless on PAL and NTSC with the autopilot,
+  grading the pictures against `expect.json`;
+- `make selftest`, which proves the check fails on a faulted build;
+- `make disk` and `make claims`;
+- a frame meter on CIA2 timer A, printing the worst frame and the
+  median frame on screen;
+- a plan gate: no build and no write under `src/` until `PLAN.md` holds
+  the real `check-compatibility` and `plan-budget` output.
+
+There are two minimal starters, `hello` (C plus asm) and `hello-kick`.
+`npm run new-project` makes a working project outside the repo, and
+`npm run verify:templates` runs every starter. The loop is explained in
+`docs/workflow/agent-harness.md`. The per-archetype starters follow.
 
 **Issue #38: vehicle control, car contact and lane-pursuit AI (data
 759).** There are three new techniques in `techniques/logic.md`:
