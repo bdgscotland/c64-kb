@@ -34,6 +34,8 @@ export interface TechniqueMeta {
   requires?: string[];
   cost?: TechniqueCost;
   costBasis?: string;
+  costMeasuredOn?: string;
+  costIncludes?: string[];
   rasterBand?: string;
   claims?: Claim[];
   claimsRefused?: boolean;
@@ -46,19 +48,76 @@ interface Section {
   sourcePath: string;
 }
 
+// `<toolchain>-<recipe>` with an optional trailing `(conditions)`.
+const MEASURED_ON = /^`?([a-z0-9]+-[a-z0-9][a-z0-9-]*)`?(?:\s+\(([^()]+)\))?\s*$/;
+
+interface SettledCost {
+  cost: TechniqueCost;
+  cost_basis: CostBasis;
+  cost_recipe?: string;
+  cost_conditions?: string;
+  cost_includes?: string[];
+}
+
+/** A typical figure is only meaningful beside the worst one, and never above it. */
+function checkedTypical(cost: TechniqueCost, where: string): TechniqueCost {
+  const typical = cost.cycles_per_frame_typical;
+  if (typical === undefined) return cost;
+  const worst = cost.cycles_per_frame;
+  if (worst !== undefined && typical <= worst) return cost;
+  warn(
+    worst === undefined
+      ? `${where} has cycles_per_frame_typical without cycles_per_frame — typical figure skipped (see CONVENTIONS-techniques.md)`
+      : `${where} has cycles_per_frame_typical=${typical} above cycles_per_frame=${worst} — typical figure skipped`,
+  );
+  const rest = { ...cost };
+  delete rest.cycles_per_frame_typical;
+  return rest;
+}
+
+/** The recipe and conditions of a **Cost measured on:** line, or {} (with a warning) when refused. */
+function measuredOn(
+  value: string | undefined,
+  where: string,
+): Pick<SettledCost, "cost_recipe" | "cost_conditions"> {
+  if (value === undefined) return {};
+  const m = MEASURED_ON.exec(value);
+  const recipe = m?.at(1);
+  if (!recipe) {
+    warn(
+      `${where} has **Cost measured on:** ${JSON.stringify(value)}, which is not a recipe name (toolchain-recipe) with optional (conditions) — not ingested (see CONVENTIONS-techniques.md)`,
+    );
+    return {};
+  }
+  const conditions = m?.at(2)?.trim();
+  return { cost_recipe: recipe, ...(conditions ? { cost_conditions: conditions } : {}) };
+}
+
+/** Technique names from a **Cost includes:** line; a malformed name or the technique itself is refused. */
+function includedTechniques(names: string[] | undefined, head: TechniqueHead, where: string): string[] {
+  const out: string[] = [];
+  for (const n of names ?? []) {
+    if (!TECHNIQUE_NAME.test(n)) {
+      warn(`${where} has **Cost includes:** "${n}", which is not a snake_case technique name — not ingested`);
+    } else if (n === head.name) {
+      warn(`${where} lists itself under **Cost includes:** — not ingested`);
+    } else if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
 /**
  * Cost rides the technique entity itself, not an edge, so it is settled
- * before the push. A Cost line without an honest basis is dropped whole.
+ * before the push. A Cost line without an honest basis is dropped whole,
+ * and its measured-on and includes lines with it.
  */
-function settledCost({
-  head,
-  meta,
-  sourcePath,
-}: Section): { cost: TechniqueCost; cost_basis: CostBasis } | null {
+function settledCost({ head, meta, sourcePath }: Section): SettledCost | null {
   const where = `${sourcePath}: technique ${head.name}`;
   if (meta.cost === undefined) {
     if (meta.costBasis !== undefined)
       warn(`${where} has a **Cost basis:** line but no **Cost:** line — ignored`);
+    if (meta.costMeasuredOn !== undefined || meta.costIncludes !== undefined)
+      warn(`${where} has a **Cost measured on:** or **Cost includes:** line but no **Cost:** line — ignored`);
     return null;
   }
   const basis = meta.costBasis;
@@ -74,11 +133,18 @@ function settledCost({
     );
     return null;
   }
-  if (Object.keys(meta.cost).length === 0) {
+  const cost = checkedTypical(meta.cost, where);
+  if (Object.keys(cost).length === 0) {
     warn(`${where} has a **Cost:** line with no usable pair — Cost not ingested`);
     return null;
   }
-  return { cost: meta.cost, cost_basis: basis };
+  const includes = includedTechniques(meta.costIncludes, head, where);
+  return {
+    cost,
+    cost_basis: basis,
+    ...measuredOn(meta.costMeasuredOn, where),
+    ...(includes.length > 0 ? { cost_includes: includes } : {}),
+  };
 }
 
 /**

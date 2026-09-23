@@ -8,6 +8,8 @@
 export const COST_VOCABULARY: Record<string, string> = {
   cycles_per_line: "CPU cycles the technique takes on each raster line it is active on",
   cycles_per_frame: "CPU cycles the technique takes per frame (PAL 19,656 unless the page says otherwise)",
+  cycles_per_frame_typical:
+    "CPU cycles on a typical frame, measured, when cycles_per_frame is a worst frame (schema 27); never above cycles_per_frame",
   lines_active: "raster lines per frame on which the technique runs code",
   bytes_code: "bytes of code in the built recipe's segments",
   bytes_data: "bytes of tables, buffers and other data in the built recipe's segments",

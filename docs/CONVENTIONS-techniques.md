@@ -172,9 +172,10 @@ number without an honest basis is worse than no number.
 | Key | Meaning |
 |---|---|
 | `cycles_per_line` | CPU cycles the technique takes on each raster line it is active on. A technique that needs every cycle of the line (FLI, side border) states 63, the whole PAL line. |
+| `cycles_per_frame_typical` | a measured typical frame beside a `cycles_per_frame` that is a worst frame (schema 27): the frame play spends most of its time on, or the worst frame of a real run when `cycles_per_frame` is a built worst case. Only a figure the page states as measured; never above `cycles_per_frame`, and never without it (either is refused with a warning). A budget sums these for its low end. |
 | `cycles_per_frame` | CPU cycles the technique takes per frame, a PAL frame of 19,656 cycles unless the technique's own page states otherwise. It is the worst frame, not an average: a soft scroller whose column carry runs once in eight frames states the carry frame, because that is the frame a plan has to fit. For a routine that is called on demand (a multiply, a random step), the cost of one call, on the assumption of one call per frame; the page's per-call figure is the number to state. A routine the page places outside the frame loop (a level-start map expand, a one-off table build) states no `cycles_per_frame` at all; its cost stays in the prose, and the line carries only what runs per frame. The figure is the technique's own work, never a demonstration's stand-in payload. |
 | `lines_active` | raster lines per frame on which the technique runs code (the region of a side-border loop, the two lines of a double IRQ). |
-| `bytes_code` | bytes of code in the built recipe's segments, as `-showmem` or the Oscar64 map reports them. When the page states only a PRG size, that size less the two-byte load address. |
+| `bytes_code` | bytes of code in the built recipe's segments, as `-showmem` or the Oscar64 map reports them. When the page states only a PRG size, that size less the two-byte load address, and the measured-on line says `whole PRG` so a budget does not sum a runtime once per technique. |
 | `bytes_data` | bytes of tables, buffers and other data in the built recipe's segments (a sine table, an image, a fade table). |
 | `zp_bytes` | zero-page bytes the technique claims. |
 | `irq_slots` | the raster or timer interrupts the technique needs per frame (a stable raster IRQ is one, a double IRQ two, a ten-bar raster-bar ring ten). |
@@ -193,7 +194,43 @@ count says `estimated`. Never write `measured-vice` for a number you did
 not measure or that the page does not state as measured. The values ride
 the Technique node as `cost_<key>` and `cost_basis`; `c64_technique_lookup`
 returns them as `cost` and the briefing tools add them up over a proposed
-set, naming the techniques with no line so the sum reads as a floor.
+set, naming the techniques with no line.
+
+Two optional lines follow the basis (schema 27). They exist because a
+figure belongs to the implementation it was measured on, and because one
+figure can already hold another technique's work.
+
+```
+**Cost:** cycles_per_frame=3188, cycles_per_frame_typical=1170
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-wave-director (worst frame, screen blanked)
+**Cost includes:** object_pool
+```
+
+- `**Cost measured on:**` names the recipe the figures were measured on
+  or counted from, as its canonical name (`<toolchain>-<recipe>`), with
+  an optional parenthetical of conditions. Write the conditions a plan
+  needs: `screen on` when the figure was measured with the display on,
+  so its badline stalls are inside it; `screen blanked` or `in the
+  vertical blank` when they are not (a budget with the screen on charges
+  25 badlines × 43 cycles for any summed figure that does not say
+  `screen on`); `whole PRG` (the byte figures are the whole program), and what was
+  timed (`one call`, `per press`, `constructed upper bound`). No line
+  when the page does not say where its figure came from. It lands as
+  `cost_recipe` and `cost_conditions`; ingest warns about a name that is
+  no Recipe.
+- `**Cost includes:**` names techniques whose per-frame work is inside
+  this figure, comma-separated. Authored, never inferred: write it only
+  when the page says the figure covers that technique's work in the
+  recipe. A plan that lists both counts the included one once. It lands
+  as `cost_includes`; ingest warns about a name that is no Technique.
+
+Both are dropped with the Cost line when that is refused, and a line
+without a Cost line is ignored with a warning. `c64_plan_budget` uses all
+of them: a member with no cycles figure is unknown, never zero; a figure
+above one frame is a multi-frame operation and is not summed; a technique
+with `cycles_per_line=63` and a line band is charged band lines × line
+length, and its REQUIRES closure is not added again.
 
 An optional `**Claims:**` line names the pieces of hardware the technique
 holds while it runs, and how. It must be paired with a `**Claims basis:**`

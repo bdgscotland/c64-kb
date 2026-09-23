@@ -31,6 +31,13 @@ const RASTER_BAND_LINE = /^\*\*Raster band:\*\*\s+(.+)$/;
 const COST_LINE = /^\*\*Cost:\*\*\s+(.+)$/;
 const COST_BASIS_LINE = /^\*\*Cost basis:\*\*\s+(.+)$/;
 const COST_PAIR = /^([a-z_]+)\s*=\s*(-?\d+)$/;
+// **Cost measured on:** names the recipe the Cost figures were measured on
+// or counted from, with an optional parenthetical of conditions ("screen
+// blanked", "whole PRG"); **Cost includes:** names the techniques whose work
+// is already inside this technique's figure (schema 27). Both belong to the
+// Cost line and are dropped with it.
+const COST_MEASURED_ON_LINE = /^\*\*Cost measured on:\*\*\s+(.+)$/;
+const COST_INCLUDES_LINE = /^\*\*Cost includes:\*\*\s+(.+)$/;
 // **Claims:** names the hardware units the technique holds while it runs,
 // and how; **Claims basis:** says how that was established (schema 25,
 // src/graph/claims.ts). No line means unknown, which is not `none`.
@@ -135,6 +142,8 @@ const LINE_RULES: readonly { re: RegExp; apply: (value: string, c: Current) => v
   { re: REQUIRES_LINE, apply: (v, c) => (c.meta.requires = nameList(v, true)) },
   { re: RASTER_BAND_LINE, apply: applyRasterBand },
   { re: COST_BASIS_LINE, apply: (v, c) => (c.meta.costBasis = v.trim().replace(/`/g, "")) },
+  { re: COST_MEASURED_ON_LINE, apply: (v, c) => (c.meta.costMeasuredOn = v.trim()) },
+  { re: COST_INCLUDES_LINE, apply: (v, c) => (c.meta.costIncludes = nameList(v, true)) },
   { re: CLAIMS_BASIS_LINE, apply: (v, c) => (c.meta.claimsBasis = v.trim().replace(/`/g, "")) },
   { re: CLAIMS_LINE, apply: applyClaims },
   {

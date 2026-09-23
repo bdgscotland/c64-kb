@@ -33,6 +33,7 @@ type MemoryRegionArgs =
 const COST_KEYS = [
   "cycles_per_line",
   "cycles_per_frame",
+  "cycles_per_frame_typical",
   "lines_active",
   "bytes_code",
   "bytes_data",
@@ -53,6 +54,12 @@ export interface TechniqueNode {
   // outlive its page.
   cost?: Partial<Record<string, number>> | undefined;
   cost_basis?: string | undefined;
+  // **Cost measured on:** and **Cost includes:** (schema 27): the recipe the
+  // figures came from, its conditions, and the techniques whose work is
+  // inside the figure. Cleared with the Cost line.
+  cost_recipe?: string | undefined;
+  cost_conditions?: string | undefined;
+  cost_includes?: string[] | undefined;
   // **Raster band:** (schema 24), canonical form from parseRasterBand:
   // "45-250", "0-50,251-311" or "movable". Cleared when the page drops it.
   raster_band?: string | undefined;
@@ -62,23 +69,43 @@ export interface TechniqueNode {
   claims_basis?: string | undefined;
 }
 
+type NodeProps = Record<string, string | number | string[]>;
+
+/** Set `key` to `value` when it is present, or mark it to clear. */
+function setOrClear(
+  props: NodeProps,
+  clear: string[],
+  key: string,
+  value: string | number | string[] | undefined,
+): void {
+  const empty = value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
+  if (empty) clear.push(key);
+  else props[key] = value;
+}
+
+/** The Cost line's properties (schema 22, provenance schema 27); all of them clear when the line is gone. */
+function costProps(t: TechniqueNode, props: NodeProps, clear: string[]): void {
+  for (const k of COST_KEYS) {
+    const v = t.cost?.[k];
+    setOrClear(props, clear, `cost_${k}`, typeof v === "number" && Number.isInteger(v) ? v : undefined);
+  }
+  const costed = Boolean(t.cost && t.cost_basis);
+  setOrClear(props, clear, "cost_basis", costed ? t.cost_basis : undefined);
+  setOrClear(props, clear, "cost_recipe", costed ? t.cost_recipe : undefined);
+  setOrClear(props, clear, "cost_conditions", costed ? t.cost_conditions : undefined);
+  setOrClear(props, clear, "cost_includes", costed ? t.cost_includes : undefined);
+}
+
 /** The technique's stored properties, and the ones to clear because the page no longer sets them. */
-function techniqueProps(t: TechniqueNode): { props: Record<string, string | number>; clear: string[] } {
-  const props: Record<string, string | number> = {
+function techniqueProps(t: TechniqueNode): { props: NodeProps; clear: string[] } {
+  const props: NodeProps = {
     title: t.title,
     category: t.category,
     complexity: t.complexity ?? "",
   };
   const clear: string[] = [];
-  for (const k of COST_KEYS) {
-    const v = t.cost?.[k];
-    if (typeof v === "number" && Number.isInteger(v)) props[`cost_${k}`] = v;
-    else clear.push(`cost_${k}`);
-  }
-  if (t.cost && t.cost_basis) props.cost_basis = t.cost_basis;
-  else clear.push("cost_basis");
-  if (t.raster_band) props.raster_band = t.raster_band;
-  else clear.push("raster_band");
+  costProps(t, props, clear);
+  setOrClear(props, clear, "raster_band", t.raster_band);
   if (t.claims_stated && t.claims_basis) {
     props.claims_stated = t.claims_stated;
     props.claims_basis = t.claims_basis;

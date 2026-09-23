@@ -76,6 +76,10 @@ export type GraphEntity =
       chip?: string;
       cost?: TechniqueCost;
       cost_basis?: CostBasis;
+      // **Cost measured on:** / **Cost includes:** (schema 27).
+      cost_recipe?: string;
+      cost_conditions?: string;
+      cost_includes?: string[];
       raster_band?: string;
       // Resource claims (schema 25): whether the page states them; absent is unknown.
       claims_stated?: "stated" | "none";

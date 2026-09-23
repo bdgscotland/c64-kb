@@ -144,6 +144,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
       "bytes_code",
       "bytes_data",
       "cycles_per_frame",
+      "cycles_per_frame_typical",
       "cycles_per_line",
       "irq_slots",
       "lines_active",
@@ -169,6 +170,102 @@ describe("extractGraphEntities - technique Cost lines", () => {
         .filter((m) => m.toLowerCase().includes("cost"));
       expect(costWarnings).toEqual([]);
       expect(costed).toBeGreaterThanOrEqual(19);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // Schema 27: the typical key and the measured-on and includes lines.
+  it("reads cycles_per_frame_typical, the measured-on recipe with conditions, and the includes list", () => {
+    const t = techOf(
+      extractGraphEntities(
+        doc(
+          "**Cost:** cycles_per_frame=3188, cycles_per_frame_typical=1170\n**Cost basis:** measured-vice\n**Cost measured on:** oscar64-wave-director (worst frame, screen blanked)\n**Cost includes:** `object_pool`, lfsr_random",
+        ),
+        "techniques/logic.md",
+      ),
+    );
+    expect(t.cost).toEqual({ cycles_per_frame: 3188, cycles_per_frame_typical: 1170 });
+    expect(t.cost_recipe).toBe("oscar64-wave-director");
+    expect(t.cost_conditions).toBe("worst frame, screen blanked");
+    expect(t.cost_includes).toEqual(["object_pool", "lfsr_random"]);
+  });
+
+  it("reads a measured-on line with no conditions and an explicit (none) includes line", () => {
+    const t = techOf(
+      extractGraphEntities(
+        doc(
+          "**Cost:** cycles_per_frame=124\n**Cost basis:** arithmetic\n**Cost measured on:** `kickassembler-stable-raster-irq`\n**Cost includes:** (none)",
+        ),
+        "techniques/raster.md",
+      ),
+    );
+    expect(t.cost_recipe).toBe("kickassembler-stable-raster-irq");
+    expect(t.cost_conditions).toBeUndefined();
+    expect(t.cost_includes).toBeUndefined();
+  });
+
+  it("skips a typical figure above the worst, or without one, and keeps the rest", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const above = techOf(
+        extractGraphEntities(
+          doc("**Cost:** cycles_per_frame=100, cycles_per_frame_typical=200\n**Cost basis:** measured-vice"),
+          "techniques/raster.md",
+        ),
+      );
+      expect(above.cost).toEqual({ cycles_per_frame: 100 });
+      const alone = techOf(
+        extractGraphEntities(
+          doc("**Cost:** cycles_per_frame_typical=50, irq_slots=1\n**Cost basis:** measured-vice"),
+          "techniques/raster.md",
+        ),
+      );
+      expect(alone.cost).toEqual({ irq_slots: 1 });
+      const msgs = warn.mock.calls.map((c) => String(c[0]));
+      expect(msgs.some((m) => m.includes("above cycles_per_frame=100"))).toBe(true);
+      expect(msgs.some((m) => m.includes("cycles_per_frame_typical without cycles_per_frame"))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("refuses a measured-on value that is not a recipe name, and an includes name that is itself or not snake_case", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const t = techOf(
+        extractGraphEntities(
+          doc(
+            "**Cost:** cycles_per_frame=124\n**Cost basis:** arithmetic\n**Cost measured on:** the stable raster recipe\n**Cost includes:** stable_raster_irq, Double-IRQ, double_irq",
+          ),
+          "techniques/raster.md",
+        ),
+      );
+      expect(t.cost_recipe).toBeUndefined();
+      expect(t.cost_includes).toEqual(["double_irq"]);
+      const msgs = warn.mock.calls.map((c) => String(c[0]));
+      expect(msgs.some((m) => m.includes("is not a recipe name"))).toBe(true);
+      expect(msgs.some((m) => m.includes("lists itself under **Cost includes:**"))).toBe(true);
+      expect(msgs.some((m) => m.includes('"Double-IRQ", which is not a snake_case'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("ignores measured-on and includes lines when there is no Cost line, with a warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const t = techOf(
+        extractGraphEntities(
+          doc("**Cost measured on:** kickassembler-fld\n**Cost includes:** double_irq"),
+          "techniques/raster.md",
+        ),
+      );
+      expect(t.cost_recipe).toBeUndefined();
+      expect(t.cost_includes).toBeUndefined();
+      expect(warn.mock.calls.some((c) => String(c[0]).includes("but no **Cost:** line — ignored"))).toBe(
+        true,
+      );
     } finally {
       warn.mockRestore();
     }
