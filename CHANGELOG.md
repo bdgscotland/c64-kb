@@ -5,7 +5,14 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 766, schema 31, tools 2.3.0, package 0.16.0.
+Data 767, schema 31, tools 2.3.0, package 0.16.0.
+
+**`verify:templates --selftest` runs each starter's own proof targets
+(#42).** Several #39 fixes are proved only by a starter's own target: the
+adventure's save validation by `disktest`, the platformer's scroll timing
+by `tearcheck`, the demo's stable entry by `probe`. A starter lists them in
+`VERIFY_TARGETS`; `--selftest` runs each after `make selftest`. Seven
+starters with their targets: 7 of 7.
 
 **Issue #39: `platformer` hardened after the other session's
 comparison.**
