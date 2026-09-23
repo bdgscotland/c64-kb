@@ -17,9 +17,14 @@ A side-scrolling platformer that plays: `README.md` has the file map, how a
 frame runs, the measured frame and the three most likely next steps. Rules
 this program depends on:
 
-- No page is written while it is on display. The scroll prepares a third
-  page five rows a frame (`src/view.c`); only a flip shows it. Keep the
-  camera at 2 pixels a frame or less, or the slices fall behind.
+- The scroll never shifts or redraws the page on display: it prepares a
+  third page five rows a frame (`src/view.c`), and only a flip shows it. A
+  taken coin's cells and the sprite pointers are the only writes to the
+  page on display (and a level restart redraws all three pages at a cut).
+  Keep the camera at 2 pixels a frame or less, or the slices fall behind.
+- Build with the Oscar64 named in c64-kb's CLAUDE.md (the local build).
+  Upstream 9a902f6 miscompiles `surface_walk` and the run fails (README,
+  "Which Oscar64").
 - `$D016` and `$D018` belong to the two IRQs in `src/engine.asm`. C
   publishes the next picture's pair once a frame (`view_publish`).
 - `make tearcheck` after any change to the scroll, the camera, the level or

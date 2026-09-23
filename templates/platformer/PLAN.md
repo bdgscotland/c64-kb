@@ -355,3 +355,6 @@ playfield against a model render of the level.
 - NTSC runs the same per-frame steps at 60 Hz: the game is 6/5 as fast and
   the tune 6/5 as quick. Not corrected.
 - No disk persistence: the high score lives until power-off.
+- Oscar64: the local build. Upstream 9a902f6 miscompiles surface_walk
+  (README.md, "Which Oscar64"). One loop clearing four pages miscompiles on
+  both (issue #30 fault 7); view_init uses one memset per page.

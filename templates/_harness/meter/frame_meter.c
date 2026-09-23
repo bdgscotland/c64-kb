@@ -57,20 +57,40 @@ void meter_add(unsigned raw)
     acc += raw - meter_zero;
 }
 
-// Insertion sort of the recorded frames, once, when recording stops.
-static void sort_samples(void)
+// The median of the recorded frames by selection (Wirth's FIND, a
+// quicksort that follows only the half holding the middle): a few hundred
+// compares for 255 frames. The insertion sort it replaces took n * n / 4 and
+// held a platformer's main loop for about 94 frames (1.85M cycles) at the
+// moment recording stopped. Same value: the element a full sort would put
+// in the middle.
+static unsigned select_median(void)
 {
-    for (char i = 1; i < hold_at; i++)
+    int lo = 0, hi = hold_at - 1, k = hold_at >> 1;
+    while (lo < hi)
     {
-        unsigned key = sample[i];
-        char j = i;
-        while (j > 0 && sample[j - 1] > key)
+        unsigned x = sample[k];
+        int i = lo, j = hi;
+        do
         {
-            sample[j] = sample[j - 1];
-            j--;
-        }
-        sample[j] = key;
+            while (sample[i] < x)
+                i++;
+            while (x < sample[j])
+                j--;
+            if (i <= j)
+            {
+                unsigned t = sample[i];
+                sample[i] = sample[j];
+                sample[j] = t;
+                i++;
+                j--;
+            }
+        } while (i <= j);
+        if (j < k)
+            lo = i;
+        if (k < i)
+            hi = j;
     }
+    return sample[k];
 }
 
 void meter_frame(void)
@@ -84,10 +104,7 @@ void meter_frame(void)
         meter_worst = t;
     sample[meter_frames++] = t;
     if (meter_frames == hold_at)
-    {
-        sort_samples();
-        meter_typical = sample[hold_at >> 1];
-    }
+        meter_typical = select_median();
 }
 
 void meter_stop(unsigned raw)

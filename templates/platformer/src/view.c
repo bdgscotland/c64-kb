@@ -17,6 +17,7 @@
 // carries a whole 20-row shift.
 #include "game.h"
 #include "asm.h"
+#include <string.h>
 
 #define CAM_LEFT   100              // the player's screen x the camera keeps between
 #define CAM_RIGHT  140
@@ -61,13 +62,15 @@ void view_init(void)
     vic.spr_expand_y = 0;
     vic.spr_priority = 0;                   // sprites in front of the playfield
 
-    for (unsigned i = 0; i < 1024; i++)
-    {
-        PAGE0[i] = CH_SKY;
-        PAGE1[i] = CH_SKY;
-        PAGE2[i] = CH_SKY;
-        HUDPAGE[i] = CH_SKY;
-    }
+    // One memset per page. The obvious single loop storing to all four
+    // miscompiles at -O1 to -O3 (Oscar64 local build and upstream 9a902f6,
+    // issue #30 fault 7): the pointer high byte of the first page is set
+    // once per 256-byte block and reused for the others, so PAGE1 got one
+    // byte in 256 and row 20 showed garbage whenever page 1 was on screen.
+    memset(PAGE0, CH_SKY, 1024);
+    memset(PAGE1, CH_SKY, 1024);
+    memset(PAGE2, CH_SKY, 1024);
+    memset(HUDPAGE, CH_SKY, 1024);
     for (unsigned i = 0; i < PF_ROWS * 40; i++)
         COLOUR[i] = 0x08 | COL_GRASS;       // multicolour; 11 draws grass
     for (unsigned i = PF_ROWS * 40; i < 1000; i++)
@@ -270,7 +273,7 @@ static void put_sprite(char n, int x, int line, char shape, char colour, bool on
 {
     int sx = x - (int)camx + 31;            // world pixel camx sits at VIC X 31
     char bit = 1 << n;
-    if (on && sx > 8 && sx < 335 && line > 20 && line < 250)
+    if (on && sx > 8 && sx < 335 && line > 20 && line < 190)   // bottom row above line 211: never over the HUD
     {
         sh_en |= bit;
         sh_x[n] = sx & 0xff;

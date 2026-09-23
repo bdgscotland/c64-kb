@@ -58,13 +58,18 @@ static void debug_print(void)
 }
 
 // Every ready page against the level at its column: the scroll's own check.
+// Row 20, the blank row above the HUD, must be sky on every page (it is
+// shown from whichever page is on display).
 static bool pages_match(void)
 {
     for (char p = 0; p < NPAGES; p++)
     {
+        const char *q = p == 0 ? PAGE0 : p == 1 ? PAGE1 : PAGE2;
+        for (char c = 0; c < 40; c++)
+            if (q[PF_ROWS * 40 + c] != CH_SKY)
+                return false;
         if (page_rows[p] < PF_ROWS || page_col[p] < 0 || page_col[p] > LEVEL_CW - 40)
             continue;
-        const char *q = p == 0 ? PAGE0 : p == 1 ? PAGE1 : PAGE2;
         for (char r = 0; r < PF_ROWS; r++)
             for (char c = 0; c < 40; c++)
                 if (q[r * 40 + c] != cell_char(page_col[p] + c, r))

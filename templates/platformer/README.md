@@ -13,7 +13,8 @@ Start a game from it in c64-kb:
 
 ## Playing
 
-`make run` opens VICE with the joystick in port 2. Left and right run,
+`make run` opens VICE; give it a joystick device for port 2 ("Driving it
+headless" below says how). Left and right run,
 fire jumps, down + fire drops through a ledge. Land on an enemy from
 above to squash it (100); a coin is 10; the flag at the far end is 1,000
 and starts the level again.
@@ -47,7 +48,9 @@ own screen page; at line 251 the playfield gets the published pair back.
 A frame whose work runs long therefore shows the last picture again,
 never a half-set one.
 
-The scroll never writes the page on display. XSCROLL moves the picture a
+The scroll never shifts or redraws the page on display; a taken coin's
+cells and the sprite pointers are the only writes to it, and a level
+restart redraws all three pages at a cut. XSCROLL moves the picture a
 pixel; a column crossing is only a `$D018` flip, because three pages are
 kept: the one on display, the one the camera just left, and one prepared
 for the next column in the direction of travel, five rows a frame, by a
@@ -84,6 +87,12 @@ Per subsystem, built with `-dPROF=n` (worst / typical, PAL; NTSC within
 | 4 | sprites to the VIC, tune, effects | 925 | 706 |
 | 5 | HUD, sprite shadows, publish | 3,488 | 973 |
 
+The meter covers play frames 1-255 of about 835. The review metered two
+later windows, from frame 275 and from frame 560: worst 12,375 and 11,662
+PAL (12,738 and 12,134 NTSC), so 12,553 / 12,982 is the worst of the run,
+but the typical frame there is about 1,000 cycles higher (8,130 and 8,049
+PAL, 8,492 and 8,308 NTSC).
+
 The worst frames of the parts do not fall together: the whole frame's
 worst is 12,553, not their sum. Every figure is wall time, so badline and
 sprite DMA are in it, and so is the split IRQ when it lands inside the
@@ -98,8 +107,9 @@ issue #18) and six techniques unknown. The measured worst is 356 cycles
 (PAL) and 785 (NTSC) above that range's top. The parts disagree more than
 the total: the budget charges per-frame-hitbox 3,693 and decimal-print
 1,361 from their recipes, where this game tests six box pairs and adds
-score digits without division, but has no figure at all for the player
-physics, which is the costliest single part here. The measured typical
+score digits without division. For the player physics it charges only
+slope_collision's 455, with no figure for fixed_point_8_8 or
+jump_arc_table; measured, the player is 4,265 worst. The measured typical
 frame, 7,039, is far under the budget's low end, because most frames have
 no column slice and no HUD change.
 
@@ -125,9 +135,15 @@ How the tear check works: VICE's exit screenshot is taken mid-frame, so a
 shot can hold two frames, split at the beam. `tools/tearcheck.py` finds,
 line by line, the camera positions at which the level render matches the
 shot, and allows one seam between parts at most 2 pixels (one frame of
-camera) apart. It also reads the camera the program printed on HUD row 23
-("CAM 0576") for the picture on display and wants the playfield there: a
-page flipped without its XSCROLL is 8 pixels off. The TEAR_DEMO build
+camera) apart, and only if the lower part, the older frame, is exactly
+the camera the program printed on HUD row 23 ("CAM 0576") for that frame.
+The same number must match the playfield in every shot: a page flipped
+without its XSCROLL is 8 pixels off. A mid-picture XSCROLL write also
+splits a shot into parts 1-2 pixels apart; the review's mutation (XSCROLL
+written again at line 150) passed four shots as two frames until the
+lower-part rule was added, and is now caught. Rows that are all sky match
+every camera, so a tear inside them cannot be seen, by this check or by
+eye. The TEAR_DEMO build
 shifts the page on display in place, the old way; the check catches it
 (off by 8, or torn), so the check can see a tear.
 
@@ -137,14 +153,17 @@ shifts the page on display in place, the old way; the check catches it
    keep the metatile keys. For more than fits in memory, compress it with
    c64-kb `level-rle-decoder` (`docs/recipes/oscar64/level-rle-decoder.md`)
    or load levels from disk (`kernal_file_read_seq`,
-   `docs/techniques/file-io.md`). Then re-time `src/autopilot.h` with
+   `docs/techniques/file-io.md`). `tools/tearcheck.py` renders the
+   `LEVEL` text block, so a compressed level needs it changed too. Then re-time `src/autopilot.h` with
    `-dDEBUG_AT=n` builds: the script is a timeline, so a changed level
    changes the run.
 2. **More enemies on screen than six.** One sprite per live slot is the
    limit here. A multiplexer lifts it: `sprite_multiplex_8`
    (`docs/recipes/oscar64/sprite-multiplex-8.md`) or the game multiplexer
    `sprite_multiplex_game` (`docs/recipes/kickassembler/sprite-multiplex-game.md`).
-   Raise `NSLOT`; the activation window already hands out slots.
+   The activation window already hands out slots; raising `NSLOT` is the
+   easy part. The multiplexer's IRQs must join `engine.asm`'s `$FFFE`
+   chain around lines 212 and 251, and it replaces `view_apply`.
 3. **Parallax or a vertical component.** `charset_parallax`
    (`docs/recipes/oscar64/charset-parallax.md`) moves reserved glyphs for
    a background layer at no screen cost. Vertical scrolling needs
@@ -156,6 +175,38 @@ Smaller steps: a high-score table on disk (`high-score-persist`,
 attaches the image during `make shot`), a variable jump height (cut
 `pjump` to `JUMP_APEX` when fire is released while rising), more tiles
 (add a key, four glyphs and their art).
+
+## Driving it headless
+
+`make joy` builds the normal game with its port byte read from `$02FE`
+instead of `$DC00`; `tools/drive.py` (from the action-puzzle starter) plays
+it over VICE's binary monitor and reads the HUD page. Measured: title,
+fire, LIVES 3, holding right loses all three lives, GAME OVER, the title
+with HI 000030, fire, a new game at LIVES 3.
+
+```bash
+make joy
+python3 tools/drive.py build/platformer-joy.prg "until:PRESS FIRE" tap:fire \
+    "until:LIVES 3" hold:right "until:GAME OVER" "until:PRESS FIRE" print
+```
+
+`make run` starts the windowed VICE with no joystick device chosen: pick
+one for port 2 in its settings, or pass one, e.g.
+`make run X64SC_WINDOWED="x64sc -joydev2 1"` (1 is the numeric keypad,
+from `x64sc -help`; not tried here).
+
+## Which Oscar64
+
+The build named in c64-kb's CLAUDE.md (1.32.271 plus the local fix
+c1270bc). Built with upstream 9a902f6, the autopilot run fails its own
+check: the player stops a few pixels up the first 45-degree slope
+(x 116-117, a DEBUG_AT trace), and the run ends with LIVES 0 (the review). The cause is in `surface_walk` (`src/player.c`):
+upstream -O2 compiles `heights[((a & A_SLOPE) >> 1) | (x & 7)]` as
+`ORA heights,x` with X as `cell_attr` left it (its `tile_attr` index), and
+never computes the index; the local build computes it. Found by building a
+probe of `ground_step` with both compilers and reading the `.asm`. A
+12-line reduction did not reproduce it, so it is not yet filed; it is not
+one of #30's faults 1-7.
 
 ## Left out on purpose
 
@@ -170,11 +221,11 @@ attaches the image during `make shot`), a variable jump height (cut
 
 ## Not established
 
-- Joystick play by a person: every run here was the autopilot. The
-  release build's title screen was shot, and so was the disk image booting
-  to it, but no fire press was sent to it.
+- A real `$DC00` joystick: the normal game was played through `make joy`
+  (a RAM port byte), not through the CIA.
 - Real hardware: everything was measured in VICE x64sc 3.10.
 - The tune was never listened to; its note table is arithmetic.
 - The tear check samples 32 moments of one run; it does not prove every
-  frame. The three-page rule (no page written while shown) is the design
-  reason; the self-check compares every ready page with the level.
+  frame. The three-page rule (the scroll never writes the page shown) is
+  the design reason; the self-check compares every ready page with the
+  level, and row 20 of every page with the sky.

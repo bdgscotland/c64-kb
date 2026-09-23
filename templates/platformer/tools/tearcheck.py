@@ -12,7 +12,8 @@ which camera positions give exactly these pixels, row by row.
 A whole picture is one camera for all 160 lines. VICE's exit screenshot is
 taken mid-frame, so a picture may also be two frames: lines above the beam
 from the frame being drawn, lines below from the one before. The two parts
-then differ by one frame of camera movement, at most CAM_SPEED (2) pixels.
+then differ by one frame of camera movement, at most CAM_SPEED (2) pixels,
+and the lower part must be exactly the camera the HUD shows (below).
 A torn picture has a part a whole column (8 pixels) off, or more than one
 seam. Sprite colours (white, light red, cyan) are masked; a coin cell may
 show the coin or the sky (it may have been taken).
@@ -170,6 +171,12 @@ def judge(segs, cam):
             return f"TORN at line {51 + segs[1][0]}: parts {d} pixels apart", None
         what = f"two frames, seam at line {51 + segs[1][0]}, cameras {min(a)} / {min(b)}"
     low = segs[-1][2]
+    # In a real two-frame shot the lower part is the older frame, the one the
+    # HUD row (drawn after the playfield) belongs to: exactly its camera. A
+    # mid-picture XSCROLL write also makes two parts 1-2 pixels apart, but
+    # then the lower part is not the HUD camera (review mutation, line 150).
+    if len(segs) == 2 and cam is not None and cam not in low:
+        return f"SEAM NOT A FRAME BOUNDARY: lower part {sorted(low)[:3]} is not the HUD camera {cam}", None
     if cam is None:
         return what + "; HUD camera unreadable (the beam was on it)", low
     off = min(abs(c - cam) for c in low)

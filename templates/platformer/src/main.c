@@ -74,6 +74,14 @@ static char port_read(void)
     }
     return out;
 }
+#elif defined(JOY_SOURCE)
+// Headless driving of the normal game (make joy, tools/drive.py): the port
+// byte comes from RAM at JOY_SOURCE, which a VICE monitor writes. The
+// windowless VICE's joyport commands do not reach $DC00.
+static char port_read(void)
+{
+    return *(volatile char *)JOY_SOURCE;
+}
 #else
 static char port_read(void)
 {
@@ -216,6 +224,9 @@ int main(void)
 {
     __asm { sei }                   // the split IRQ is the only interrupt
     cia1.pra = 0xff;                // no keyboard column selected: $DC00 reads port 2
+#if !AUTOPILOT && defined(JOY_SOURCE)
+    *(volatile char *)JOY_SOURCE = 0xff;    // nothing pressed until the monitor says so
+#endif
     art_build();                    // leaves $01 = $35: BASIC and KERNAL out
     __asm { jsr ASM_MUSIC_INIT }
     view_init();                    // bank 3, colours, the split IRQ; CLI

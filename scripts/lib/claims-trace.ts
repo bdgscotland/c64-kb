@@ -106,9 +106,21 @@ export function portRmwValue(hit: Hit, read: number | null): number | null {
   }
 }
 
-/** A push (JSR, PHA, PHP, an interrupt) lands at $0100 + SP + 1..3, SP read after the instruction. */
+/** Bytes an instruction itself pushes: JSR two, PHA and PHP one. */
+const OWN_PUSHES: Record<string, number> = { JSR: 2, PHA: 1, PHP: 1 };
+
+/**
+ * A push (JSR, PHA, PHP, an interrupt) lands at $0100 + SP + 1..3, SP read
+ * after the instruction. When an interrupt is taken straight after a JSR,
+ * PHA or PHP, VICE logs the instruction's own pushes with the SP after the
+ * interrupt's three as well (measured: a JSR at line 212 before the raster
+ * IRQ logged $01EE-$01EA, all with SP:E9), so they sit up to three bytes
+ * higher. An earlier version accepted SP + 1..3 only and counted those two
+ * JSR bytes as program stores to page 1.
+ */
 export function isPush(hit: Hit): boolean {
-  return hit.addr >> 8 === 1 && (((hit.addr & 0xff) - hit.sp - 1) & 0xff) < 3;
+  const reach = 3 + (OWN_PUSHES[hit.mnemonic] ?? 0);
+  return hit.addr >> 8 === 1 && (((hit.addr & 0xff) - hit.sp - 1) & 0xff) < reach;
 }
 
 /** What one store was, once sorted. */
