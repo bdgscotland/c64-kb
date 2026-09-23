@@ -143,7 +143,11 @@ export async function buildOrder(opts: {
   // does not change.
   const scaffoldPages: ScaffoldPages = new Map();
   const steps: Omit<Step, "step">[] = [];
-  if (opts.isGame) steps.push(await scaffoldStep(opts.resolved, opts.archetype, scaffoldPages));
+  // A game brief that named no archetype and was routed to none has no
+  // scaffold to offer, so it gets no scaffold step.
+  if (opts.isGame && opts.resolved !== undefined) {
+    steps.push(await scaffoldStep(opts.resolved, opts.archetype, scaffoldPages));
+  }
   steps.push(...techniqueSteps(opts.techs));
   const harness = await harnessStep();
   if (harness) steps.push(harness);

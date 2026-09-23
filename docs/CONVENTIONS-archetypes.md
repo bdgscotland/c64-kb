@@ -80,6 +80,28 @@ before the graph read them; the format did not change.
   fingerprint is what `c64_game_briefing` forces into a plan for that
   archetype, so a name here is a claim that every such game needs it.
 
+One more line routes a brief that names no archetype (schema 30):
+
+```
+**Brief words:** vertical shooter, vertically scrolling, road shooter, road, car, spy hunter
+```
+
+- Comma-separated words or phrases, backticks optional. The extractor
+  lowers the case, drops apostrophes and reads any other run of
+  non-letters and non-digits as one space, so "Beat-'em-up" is stored as
+  `beat em up`. It becomes the `brief_words` property of the node, not an
+  edge; an entry with no line stores an empty list.
+- Only kind `game` is routed. `c64_game_briefing` with no `archetype`
+  normalises the brief the same way and counts, per archetype, the
+  distinct words it contains, a plural "s" or "es" allowed. The archetype
+  with the most wins; a tie or no match routes nowhere.
+- Choose words that name the genre, not a technique. A word on two
+  entries cancels itself out ("puzzle" is on `puzzle` and `action_puzzle`,
+  so "Boulder Dash puzzle" still routes by "boulder dash"). A word that
+  every brief carries ("game", "screen", "columns") routes everything.
+- The line is how a genre reaches its archetype. It is data here, so no
+  genre word or game title is spelled in the briefing code.
+
 The other lines on the page (`**Reference titles:**`, `**Modern
 examples:**`) are prose for the reader and are not read by the extractor.
 
@@ -92,6 +114,11 @@ exempt from the three-per-category cap; its `RISKS` targets are added to
 the pitfalls when no proposed technique already surfaced them; its title
 is appended to the search text. The output repeats what the graph held
 in an `archetype` field.
+
+With no `archetype`, `c64_game_briefing` routes the brief by the brief
+words above and does the same with the winner; the output's
+`archetype.inferred_from` lists the words that chose it, and the text
+says so. A named `archetype` always wins over the words.
 
 A name the graph does not have returns `archetype_not_found` with the
 known names and builds the rest of the plan from the description alone.
@@ -106,8 +133,9 @@ After the H2 and the `**Archetype:**` line, free-form prose covering:
 1. **What it is** — the defining mechanic and the scene tradition
 2. **Where the budget goes** — the technical constraint that shapes it
 3. **How the pieces fit** — sprites, scroll, SID, loading, in plain terms
-4. The `**Technique fingerprint:**` and `**Common pitfalls:**` lines
+4. The `**Technique fingerprint:**`, `**Common pitfalls:**` and
+   `**Brief words:**` lines
 5. `**Reference titles:**` and `**Modern examples:**`
 
 H3 inside an archetype is fine; the extractor reads only the H2 and the
-three bold lines.
+four bold lines.

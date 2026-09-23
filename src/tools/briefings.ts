@@ -40,7 +40,9 @@ export async function demoBriefing(description: string, archetype?: string): Pro
 }
 
 export async function gameBriefing(description: string, archetype?: string): Promise<BriefingResult> {
-  // gameBriefing without an archetype has always framed itself as a demo
-  // plan (no scaffold step); that is kept so its callers see no change.
-  return buildBriefing(description, archetype, archetype !== undefined);
+  // Always a game plan. Until 2026-09-23 a call without an archetype was
+  // framed as a demo plan ("# C64 Demo Briefing", "demo plan for"); it now
+  // routes the brief to an archetype by the page's brief words, and when
+  // none wins it is a game plan with no scaffold step.
+  return buildBriefing(description, archetype, true);
 }

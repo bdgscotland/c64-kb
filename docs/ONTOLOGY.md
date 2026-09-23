@@ -269,6 +269,7 @@ pitfalls, which is why it is a node and not a keyword table in the tool.
 | title | string | The H2 text (e.g. "Vertical Shmup") |
 | kind | string | "game" or "demo", from file frontmatter; defaults to game |
 | source_doc | string | Path of the page that defines it |
+| brief_words | string[] | From the `**Brief words:**` line, normalised (lower case, punctuation as one space); empty when the entry has none. `c64_game_briefing` with no `archetype` routes the brief to the game archetype whose words it contains most (schema 30) |
 
 Source: `game-design/c64-game-archetypes.md` and, for kind `demo`,
 `demo-design/intro-cracktro-patterns.md` (one Archetype per H2 that
@@ -551,7 +552,7 @@ the listing's own load addresses (`* = $0900`, `#pragma region(...)`,
 Direction: `Archetype → Technique`
 
 Meaning: "a game of this shape is built on this technique" —
-`vertical_shmup` FEATURES `sprite_multiplex_24`, `text_adventure` FEATURES
+`vertical_shmup` FEATURES `sprite_multiplex_game`, `text_adventure` FEATURES
 `ram_under_kernal`. Authored with the `**Technique fingerprint:**` line
 (`CONVENTIONS-archetypes.md`); both ends MATCHed, a name that matches no
 Technique is warned about and counted in the ingest summary as

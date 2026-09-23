@@ -76,6 +76,158 @@ For a 32-point cloud at ~75 cycles per point: approximately 2400 cycles per fram
 
 ---
 
+## vector_balls_sprites — Eight sprite balls on a tilted ring, depth-sorted onto the VIC's fixed sprite priority
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D012, D015, D017, D01B, D01C, D01D, D027, D028, D029, D02A, D02B, D02C, D02D, D02E
+**Uses kernal:** (none)
+**Requires:** dot_3d_rotator, fixed_point_8_8
+**Cost:** cycles_per_frame=1389, cycles_per_frame_typical=1318, sprites_per_line=5
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-vector-balls (worst is frame 1, the six swaps that settle the start order; typical is frame 300 with no swap; sprites per line is the most balls sharing a raster line over the 300 frames, counted from the tables)
+
+### Why
+
+Vector balls are the sprite-plot form of `dot_3d_rotator` with the one
+thing a dot cloud never has to face: the points have area, so they
+overlap, and an overlap drawn in the wrong order breaks the depth the
+motion was selling. A bitmap renderer would sort and mask. Sprites do
+not need the mask, because the VIC already decides every overlap
+between two sprites by their numbers; what the CPU has to supply is the
+sort, and then the right numbering. Eight balls cost eight lookups, one
+bubble pass and thirty-two register writes a frame, all of it in the
+vertical blank, which leaves the display period free for whatever else
+the part is doing.
+
+### How
+
+Three tables, built by the assembler and indexed by a byte angle `a`
+in 0 to 255:
+
+- `px[a] = 172 + 40 sin(a) * 256 / (40 cos(a) + 200)`, the screen x of
+  a point on a ring of radius 40 in the XZ plane seen from 200 units in
+  front of its centre, and `py[a]` the same with amplitude 12 and centre
+  130, which lifts and drops the ring so it reads as tilted. Both are
+  bytes: px runs 120 to 224, so with a 24-pixel image no sprite reaches
+  X 255 and `$D010` is never touched.
+- `zd[a] = 128 + 40 cos(a)`, the depth byte, 88 to 168. The eye is on
+  the negative z side, so a larger zd is farther away.
+
+Ball k at frame t is at `a = (t + 32k) & 255`: eight balls a 32nd of a
+turn apart, the ring turning one 256th of a turn a frame. Each frame,
+after the beam has left the display:
+
+1. Lookup: for each k, read px, py and zd into three eight-byte arrays
+   indexed by ball.
+2. Sort: one bubble pass over `order`, the ball index per depth rank
+   kept from the previous frame, swapping adjacent entries whose zd are
+   the wrong way round, farthest first. One pass is enough because two
+   balls only change depth order by crossing, an adjacent swap, and the
+   ring moves one step a frame; the recipe checks the order after every
+   pass and counts the frames it left unsorted (six of 300, all of them
+   the reversed start order settling, then none).
+3. Assign: rank i goes to hardware sprite 7 - i. For each rank write
+   the ball's X and Y into that sprite's position pair, its pointer from
+   its depth (the 24 by 21 image for zd below 128, a 16 by 14 image
+   centred in the sprite for 128 and above, two sprite blocks at $2000
+   and $2040, pointers $80 and $81) and its colour from two thresholds
+   on zd: white below 120, light grey from 120 to 135, grey from 136 up.
+
+The eight sprites stay enabled, unexpanded and in front of the
+background throughout; nothing in `$D015`, `$D017`, `$D01B` or `$D01D`
+changes after setup.
+
+### Why it works
+
+Sprite-to-sprite priority on the VIC is fixed: sprite 0 is drawn over
+sprite 1, 1 over 2, down to 7, and no register alters it
+(`hardware/vic-ii-reference.md`, "Priority"). So the priorities cannot be
+moved between the balls, but the balls can be moved between the
+priorities: a sprite is only a position, a pointer and a colour, and
+rewriting those three for all eight every frame gives each hardware
+sprite whichever ball is at its depth rank. Because the hardware then
+resolves every overlapping pixel by number, and the numbers are the
+depth order, the nearer ball wins every overlap without the program
+ever looking at a pixel. The recipe's control build leaves the sort out
+and keeps sprite k on ball k; on the pinned frame it draws a ball of
+depth 147 over balls of depth 116 and 93, and the sorted build draws
+them the other way.
+
+The projection is a division by depth, but the depth of a point on the
+ring is a function of its angle alone, so the whole projection is a
+function of the angle and the assembler evaluates it once. That is the
+same move `fixed_point_8_8` makes for a position: keep the precision in
+a table, spend bytes rather than cycles.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer A in the `vector-balls`
+recipe, the same on PAL and NTSC:
+
+- Lookup, sort pass and the thirty-two register writes, no swap: 1,318
+  cycles (frame 300). With the six swaps of the first frame: 1,389, the
+  worst frame of the run.
+- The control with the sort left out: 1,129, so the swap-free pass is
+  189 cycles and each swap about 12 (arithmetic from the measured
+  frames).
+- About 21 raster lines in all, from line 255; the blank has room for
+  it several times over on either model.
+
+The timer starts before the lookup and stops after the last colour
+write, so about eight cycles of its own instructions are inside the
+figure and not removed.
+
+### Variations
+
+**More balls.** Eight is the hardware count. `sprite_multiplex_8`
+(`techniques/sprite.md`) reuses sprites down the frame, but a
+multiplexer sorts by Y to schedule its slots and this effect sorts by
+depth to number them, and the two orders disagree wherever a far ball
+is lower on the screen than a near one; a design that wants both has to
+give priority to the raster order and accept, or hide with the layout,
+the depth errors it causes. Not built here.
+
+**A second ring.** Two rings share the tables if they share radius and
+tilt; give the second its own angle offset and a different centre, or
+the same centre and the angle stepped the other way. With sixteen balls
+that is the multiplexing problem above; with four and four it is this
+technique with a second lookup loop.
+
+**Ball size from depth.** A third image between the two, or several,
+picked by more thresholds on zd, makes the approach to the eye read as
+growth rather than a jump. A sprite pointer costs the same to write
+whatever it points at.
+
+### Pitfalls
+
+None of this page's pitfall entries is met by the recipe as built: no
+X reaches 255, so `sprite_x_high_bit_wrong_register` does not arise
+(the listing's `.errorif` refuses a table that would), and eight balls
+on eight sprites cannot overrun a line. A ball whose sprite Y is left
+at the reset value of 0 is matched by the VIC at raster line 256 as
+well as at line 0, and takes DMA there; the recipe's first timing
+figure was wrong by 451 cycles for that reason and the setup now parks
+every Y inside the display.
+
+### Recipes
+
+- `recipes/kickassembler/vector-balls.md`: the three tables, the pass,
+  the assignment, two overlapping pairs read off the pinned picture with
+  their depths, the control with the sort left out, and the unsorted
+  frame count.
+
+### Sources
+
+- `hardware/vic-ii-reference.md`, "Priority": the fixed sprite-to-sprite
+  order the assignment relies on.
+- `techniques/maths.md`, `fixed_point_8_8`: precision kept in a table
+  rather than computed.
+- `techniques/sprite.md`, `sprite_multiplex_8`: the route to more than
+  eight balls and why its order is not this one.
+
+---
+
 ## solid_vector_3d — Solid-shaded polygon rendering
 
 **Complexity:** scene-tier
@@ -189,6 +341,64 @@ The character-mode approach dominates for bulk object counts. The bitmap approac
 ### Recipes
 
 - No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; its logo is a static screen image copied to $0400, not character-mode BOBs.)
+
+---
+
+## shadebobs — Additive bobs on a shade buffer shown through colour RAM
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D020, D021, DC04, DC05, DC0D, DC0E
+**Requires:** bobs_effect
+**Cost:** cycles_per_frame=27104, cycles_per_frame_typical=590, bytes_code=1106, bytes_data=1647, zp_bytes=4
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-shadebobs (the worst frame is the blob add, 590, plus the first decay pass over all 1,000 cells, 26,514, PAL, screen on; three frames in four are the add alone; bytes_data is the 1,000-byte shade buffer plus the 647 bytes of palette, mask, sine and row tables and variables in the built segment; zp_bytes the two row pointers)
+
+### Why
+
+A bob that overwrites leaves nothing behind, and erasing it is half its cost (`bobs_effect`). A shade bob adds instead: every cell it passes over gains a step of brightness, the steps accumulate where the path lingers or crosses itself, and a slow decay lets the trail fade. There is no erase, because there is nothing to restore; the picture is the history of where the bob has been. In character mode with colour RAM as the shade buffer's display, the whole thing is one 4-bit store per covered cell per frame, no character data and no bitmap: colour RAM is the only per-cell store that changes a cell's look without touching glyph data, so over a screen of one solid glyph the nibble is the picture, as in `fire_effect`.
+
+### How
+
+1. Fill screen RAM with screen code 160, the reverse space, and set `$D021` and `$D020` to black. Every pixel of every cell is set, so a cell shows its colour-RAM nibble and nothing else.
+2. Keep a shade buffer of 40 by 25 bytes in RAM, values 0 to 15, all zero at the start.
+3. Give the bob a shape as a mask of 0 and 1 bytes, four columns by three rows, and a position from two sine tables: the recipe uses `cx = 18 + round(16 sin t)`, `cy = 11 + round(9 sin 2t)`, one step of `t` per frame, so the path is a figure of eight that stays inside the screen without clipping. Amplitudes of 16 and 9 cannot carry out of a byte at the peak; a table of amplitude 128 can (`sine_table_peak_wraps_to_zero`, `../pitfalls/maths.md`).
+4. Each frame, for every set mask entry, `shade = min(shade + 1, 15)` and `colour = palette[shade]`, written through two zero-page pointers set to the row's start plus `cx`, one into the buffer and one into colour RAM. The add saturates rather than wraps: a wrap would take the brightest cell back to `palette[0]`, black, and put a hole at the hottest point of the trail.
+5. Every fourth frame, run a decay pass: every non-zero shade loses one, and every one of the 1,000 colour cells is rewritten from the buffer, row by row with the column in X so no index passes 39.
+6. The palette is sixteen bytes mapping shade to a VIC colour in rising luminance order, `colour_fade`'s PAL ranking: 0, 6, 9, 2, 11, 8, 4, 14, 12, 5, 10, 3, 15, 13, 7, 1, black to white.
+
+### Why it works
+
+The shade buffer is a count of visits per cell with a ceiling, and the palette turns the count into brightness; because the palette is monotone in luminance, more visits reads as brighter, and the crossing of the path, visited twice, is the brightest point on the screen. Decay subtracts the same amount from every cell at once, so the ordering of brightnesses along the trail is kept while the whole trail dims, which is what makes it read as fading light rather than as a picture being erased. The saturating ceiling is what lets the decay be a plain subtract: nothing can be above 15, so nothing needs a clamp on the way down but zero. Colour RAM is the right display for it because a shade cell and its colour cell are the same shape, one byte per cell, and the map from one to the other is a sixteen-byte lookup.
+
+### Cycle budget
+
+Measured on the recipe with CIA1 timer A in VICE x64sc, screen on (badline stealing included):
+
+- Blob add, eight set entries of a twelve-entry mask: 590 cycles PAL and NTSC. With all twelve set, 730; with none, 310 (PAL); so a set entry costs 35 cycles and a clear one 12, with about 166 cycles of row set-up around them (arithmetic from the three measurements). About nine raster lines: the add fits the vertical blank many times over.
+- Decay pass, all 1,000 cells, first pass with 12 cells non-zero: 26,514 PAL, 27,028 NTSC. Per cell the zero path is 25 cycles and the non-zero path 33 by the instruction table, so a pass is at least 25,000 before badlines and cannot fit a PAL frame of 19,656 or an NTSC frame of 17,095, let alone the blank.
+
+The decay pass runs once in four frames, so the average frame is under a frame (590 times 3 plus 27,104, over four, is 7,219 PAL, arithmetic) but the frame it runs on is not: with the loop synced to a line-256 crossing, a decay frame overruns into the next field and the loop picks up on the crossing after that, so that iteration takes two raster frames and the colour-RAM rewrite tears across the next field's display. In the recipe 75 of 300 iterations are decay iterations and the run is 376 PAL frames long (arithmetic from the measured done cycle). A plan that cannot take a hitch every fourth frame splits the decay across frames instead (see Variations).
+
+### Variations
+
+**A second bob.** Another position from two more sine reads, the same add routine: 590 more cycles a frame for the same mask, and where the two paths cross the shades stack. Two bobs on phases 128 apart draw the same figure of eight from opposite ends and meet in the middle.
+
+**A bitmap shade bob by pixel.** Keep the buffer per pixel of a low-resolution grid and add the bob's pixel mask, then convert to the display each frame; the cell form above is the cheap version, and the pixel form pays a masked read-modify-write per pixel like a bitmap `bobs_effect` bob, plus the conversion. Not built here.
+
+**Decay on alternate halves.** Run the decay over rows 0 to 12 on one frame and rows 13 to 24 on the next, each about half of 26,514, so no frame overruns by more than the half; or spread it across the four frames in quarters of 250 cells, about 6,600 each (arithmetic), and the add plus a quarter fits inside a PAL frame with the blank to spare. The trail then fades in bands a frame apart, which the eye does not see at a step every four frames.
+
+### Pitfalls
+
+`full_field_redraw_exceeds_vblank` (`../pitfalls/text-mode-render.md`): the decay pass is a full rewrite of colour RAM through an index and it does not fit a frame; running it every fourth frame keeps the average down, splitting it is the fit. `colour_ram_index_past_last_cell_hits_cia1` (same page): the decay stores by row with X at most 39, and the add's pointer is at most row 22, column 34 plus Y at most 3, so no store can reach 1,024 and CIA1; the recipe has CIA1's timer in use for the measurement, so a stray store there would show in the figures. `sine_table_peak_wraps_to_zero` (`../pitfalls/maths.md`): the position tables are amplitude 16 and 9, so the wrap cannot happen; a bob whose swing is scaled up to 128 needs one of that pitfall's two scalings.
+
+### Recipes
+
+- `recipes/kickassembler/shadebobs.md`: the design above, one bob, decay every fourth frame, 300 iterations then a halt, pinned at cycle 11,000,000 on both models with a per-colour cell census, a no-decay control, and the buffer checked against colour RAM and against a model of the design (0 differences).
+
+### Sources
+
+- The measurements on this entry are from the recipe named above, VICE x64sc 3.10, CIA1 timer A; the luminance order is `colour_fade`'s.
 
 ---
 
@@ -816,6 +1026,139 @@ All cycle counts above are approximate and will vary with handler implementation
 ### Recipes
 
 - `recipes/kickassembler/pseudo-3d-road.md` — coarse layer only (fine layer timing not resolved in that build; see "What it does not establish").
+
+---
+
+## pseudo_3d_road_raster — Per-line horizontal shift with segment tables for a curving road
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, D019, D01A, D021, D022, D023, DC04, DC05, DC0E
+**Requires:** stable_raster_irq, irq_chain_table
+**Cost:** cycles_per_frame=12855
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-pseudo-3d-road (the coarse redraw, 6,332 cycles, plus the fine chain, 6,523, on PAL, summed; the per-frame table computation of about 5,000 cycles is an estimate and is not in the figure, see Cycle budget)
+
+### Why
+
+A pseudo-3D road effect places a road on the lower half of the display and
+makes it appear to recede toward a horizon and curve left or right. The visual
+impression of depth comes from two sources. First, the road narrows as it
+approaches the horizon: each character row is drawn narrower than the one
+below it, following a Z table of half-widths derived from the formula
+`hw[i] = max(4, round(152 - 1.5 * i))` for i = 0 (nearest) to 99 (farthest).
+Second, a per-line horizontal shift aligns the road's left edge to the pixel,
+not the character: because the left edge rarely falls on an 8-pixel character
+boundary, the remaining 0–7 pixels of misalignment are corrected by writing
+$D016 XSCROLL on every raster line of the road area.
+
+The curvature is produced by a running delta: each step, the road centre cx
+advances by dx, and dx itself advances by the current segment's fixed-point
+curve value. Four segments of 25 lines each (straight, right bend, straight,
+left bend) give one full S-curve over the 100 road lines; as scroll_z advances
+one unit per frame and wraps at 100, the curve pattern scrolls toward the
+viewer continuously.
+
+### How
+
+**Coarse layer.** Once per frame in the vertical blank, thirteen character rows
+(the road area, character rows 6–18) are redrawn. For each row r (r = 0 =
+nearest = row 18, r = 12 = farthest = row 6), the routine samples the cx and
+hw values at the row's middle raster line (i_mid = min(8r + 4, 99)), computes
+`left_char = (cx[i_mid] - hw[i_mid]) >> 3` and `right_char = (cx[i_mid] +
+hw[i_mid]) >> 3`, and writes the 40 character columns: left kerb at
+left_char, road codes from left_char+1 to right_char-1, right kerb at
+right_char, and a centre dash at the midpoint of alternating rows. A
+five-character custom multicolour charset covers the five codes (grass,
+road, left kerb, right kerb, dash); $D021, $D022 and $D023 set the three
+colour values used by %00, %01 and %10 pixel pairs respectively.
+
+**Fine layer.** A stable raster IRQ using the double-IRQ method fires at line 99
+(the horizon). The handler runs an unrolled loop of exactly one raster line per
+iteration: 63 CPU cycles on PAL (65 on NTSC). PAL and NTSC use separate
+unrolled loops, selected at boot by a model-detect routine. Each iteration
+loads a precomputed D016 value from a 100-entry table and stores it to $D016 at
+cycle 11 of the target raster line (before the approximately cycle-14 VIC
+deadline). The table entry for road line offset j is
+`D016_BASE | ((cx[99-j] - hw[99-j]) & 7)`, where D016_BASE carries the MCM and
+CSEL bits. The write shifts the entire character row left or right by 0-7
+pixels, so the kerb character boundary appears at the correct pixel even though
+the character grid is always 8-pixel aligned.
+
+**Badline handling.** Twelve badlines fall in the road area (lines 107, 115,
+123, 131, 139, 147, 155, 163, 171, 179, 187, 195 with YSCROLL=3). On a badline
+the CPU is stalled from cycle 15 to 54 (40 cycles). The unrolled badline body
+uses Delay(15) (PAL) or Delay(17) (NTSC), giving 23 or 25 CPU cycles; the
+40-cycle steal fills the remainder to 63 or 65 elapsed cycles. The STA $D016
+write lands at cycle 11, before the steal begins at cycle 15, so the badline row
+and the row after it each receive their own XSCROLL value (measured: xscroll_d16
+entries for j=7 and j=8 differ in the monitor dump; the adjacent rows show
+distinct kerb pixel positions in the screenshot).
+
+**cx computation.** The forward pass runs from i = 0 (nearest) to i = 99
+(farthest). cx begins at 160.0 in 8.8 fixed point. At each step: cx += dx,
+then dx += curve[segment], where segment = (i + scroll_z) / 25 & 3 and the
+four curve values are 0, +51, 0, -51 in 8.8 (±0.20 pixels per line per line).
+The integer part of cx is stored in cx_hi_buf[i]. The backward pass fills
+xscroll_d16[j] from cx_hi_buf[99-j] for j = 0..99.
+
+**IRQ exit.** The handlers exit via `pla/tay/pla/tax/pla/rti`, which pops the
+A, X and Y saved by the KERNAL dispatcher at $FF48 and then RTIs through the
+CPU interrupt frame. The road_irq2 handler discards its own stack frame first
+(using the saved stack pointer from road_irq1) and returns through road_irq1's
+frame. Exiting with a bare RTI without first popping the KERNAL's three saves
+would leave three bytes on the stack per IRQ call, overflowing page 1 after
+approximately 85 frames.
+
+### Why it works
+
+The VIC-II applies XSCROLL (bits 2–0 of $D016) continuously: a write that
+lands before the first character's pixels leave the sequencer shifts the entire
+remaining line. The deadline is approximately cycle 16 of the raster line (from
+the VIC's horizontal timing; see `mode7_lookalike` for the measured boundary).
+By using a stable raster IRQ entry (`stable_raster_irq`, double-IRQ or
+$D012-polling with a fixed-cycle preamble), the tight loop starts at a known
+cycle relative to the horizon line, and each subsequent iteration stays
+synchronised because it is exactly one raster line long. Any jitter in the
+initial synchronisation displaces all 100 writes by the same constant offset; a
+wrong initial offset means all writes land slightly late, which is measurable
+(the kerb shows at the wrong pixel) and correctable by adjusting the preamble
+delay.
+
+The limit of this technique: one XSCROLL value per line shifts every column of
+that line. The near side and far side of the road both shift together within a
+given character row. This is visible at the character row boundaries (the kerb
+steps in 8-pixel jumps between rows) but invisible within each of the 8 raster
+lines of a row (the kerb slides smoothly). For wider character rows the step
+artifact is more pronounced.
+
+### Cycle budget
+
+Per-frame (measured in VICE x64sc 3.10, `recipes/kickassembler/pseudo-3d-road.md`):
+
+- Coarse redraw (CIA-timed): 6,332 cycles PAL; 6,162 cycles NTSC. The redraw covers 13 rows; without per-row grass clearing, it writes only the road, kerb and dash characters.
+- Fine chain (CIA from road_irq1 start to fine_done stop): 6,523 cycles PAL; 6,729 cycles NTSC. The loop itself is 100 x 63 = 6,300 cycles PAL (100 x 65 = 6,500 NTSC); the surplus is the irq1 code, NOP slide, irq2 KERNAL entry, sync code and CIA stop.
+- Total handler: table computation (approximately 5,000 cycles) + coarse (6,332) + fine chain (6,523) ≈ 18,000 cycles per frame on PAL (arithmetic).
+
+Badline body: 23 CPU cycles PAL (25 NTSC), with the 40-cycle steal filling the remainder to one full raster line. The STA write at cycle 11 lands before the steal begins at cycle 15, so each badline row and its successor each receive their own XSCROLL value.
+
+### Variations
+
+**Write in the right border of the previous line.** Writing xscroll_d16[j] at cycle 58–63 of raster line 99 + j rather than at cycle 1–8 of line 100 + j is valid (the VIC carries the new value into the next line) and is immune to badline stalls (the steal happens at cycles 15–54, after the write). The loop structure is identical; only the initial synchronisation point changes.
+
+**Wider segment table.** The four-segment table (straight, right, straight, left) can be replaced with any pattern. Eight or sixteen entries give richer curvature sequences. The per-frame computation cost scales with the number of distinct curve values, not the number of segments.
+
+**Sprite horizon.** Adding a single expanded sprite or a colour-split at line 99 gives a solid coloured horizon line separating sky from road without additional raster handlers.
+
+### Pitfalls
+
+- `d016_unmasked_rmw_clobbers_csel_mcm` — the precomputed table stores D016_BASE (MCM + CSEL bits) OR'd into each entry. Omitting this and writing the raw XSCROLL value clears MCM (bit 4) and drops the display to 38-column mode on every road line.
+- `badline_cycle_loss` — a loop body not sized for badlines spans the steal window; post-badline writes arrive late. The shipped listing uses separate badline and normal bodies to absorb the 40-cycle steal without displacing subsequent writes.
+- `raster_irq_first_line_jitter` — without a stable raster entry, the first loop iteration starts 0–9 cycles late, displacing all 100 writes by the same offset and pushing them past cycle 16.
+
+### Sources
+
+- Measured in VICE x64sc 3.10 (`recipes/kickassembler/pseudo-3d-road.md`).
 
 ---
 
