@@ -97,12 +97,30 @@ const REGIONS: ReadonlyArray<{
   { name: "NTSC", refresh_hz: 60, lines_per_frame: 263, cycles_per_line: 65 },
 ];
 
+/**
+ * ensureSchema is re-run on every connect, so "already there" is expected.
+ * Messages measured against FalkorDB graph module 4.18.7: "Attribute 'x' is
+ * already indexed", "Constraint already exists". Anything else is rethrown;
+ * the bare catch here used to hide every error, not just these.
+ */
+function ignoreIfExists(err: unknown): void {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/already indexed|already exists/i.test(msg)) return;
+  throw err;
+}
+
 export class FalkorService {
   private db: FalkorDB | null = null;
   private graphName = GRAPH_NAME;
 
   async connect(host: string = config.falkor.host, port: number = config.falkor.port): Promise<void> {
     this.db = await FalkorDB.connect({ socket: { host, port } });
+    // The client re-emits socket errors as 'error' events. With no listener
+    // Node throws them, so a FalkorDB restart would kill a long-lived MCP
+    // server; the client reconnects on its own once the socket returns.
+    this.db.on("error", (err: unknown) => {
+      console.error("[falkor] connection error:", err instanceof Error ? err.message : err);
+    });
   }
 
   async close(): Promise<void> {
@@ -123,8 +141,8 @@ export class FalkorService {
     for (const [label, prop] of NODE_INDEXES) {
       try {
         await g.createNodeRangeIndex(label, prop);
-      } catch {
-        // Index may already exist
+      } catch (err) {
+        ignoreIfExists(err);
       }
     }
 
@@ -138,8 +156,8 @@ export class FalkorService {
       if (!indexedPairs.has(`${label}.${prop}`)) {
         try {
           await g.createNodeRangeIndex(label, prop);
-        } catch {
-          // Index may already exist
+        } catch (err) {
+          ignoreIfExists(err);
         }
       }
     }
@@ -147,16 +165,16 @@ export class FalkorService {
     for (const [label, prop] of UNIQUE_CONSTRAINTS) {
       try {
         await g.constraintCreate(ConstraintType.UNIQUE, EntityType.NODE, label, prop);
-      } catch {
-        // Constraint may already exist or be PENDING
+      } catch (err) {
+        ignoreIfExists(err);
       }
     }
 
     for (const [label, prop] of FULLTEXT_INDEXES) {
       try {
         await g.createNodeFulltextIndex(label, prop);
-      } catch {
-        // Index may already exist
+      } catch (err) {
+        ignoreIfExists(err);
       }
     }
 
@@ -214,8 +232,9 @@ export class FalkorService {
     const g = this.graph();
     try {
       await g.delete();
-    } catch {
-      // Graph may not exist yet — that's fine.
+    } catch (err) {
+      // A graph that was never created: "Invalid graph operation on empty key".
+      if (!(err instanceof Error && err.message.includes("empty key"))) throw err;
     }
   }
 

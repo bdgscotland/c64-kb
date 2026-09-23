@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 730, schema 24, tools 1.28.0.
+Data 730, schema 24, tools 1.28.1.
+
+**Runtime fixes, phase B (tools 1.28.1, package 0.8.1).** Nothing
+listened for the FalkorDB client's `error` event, so a FalkorDB restart
+would throw and end the MCP server; it now logs to stderr and the
+client reconnects. Two tool calls on a cold server each opened a
+connection; the connection promise is now shared. The server ignored
+stdin closing, the MCP spec's shutdown signal; it now closes its
+connections and exits (6 ms after stdin closed, measured by the new
+`test/mcp-stdio.test.ts`, which also asserts stdout carries only
+JSON-RPC). It reported version 0.1.0; it reports the package version.
+`c64_ingest_doc` indexed new content without writing it when the file
+existed, and kept a page's old chunks, so removed sections stayed
+searchable; it now writes the file and replaces the chunks.
+`c64_run_game` and the memorization check returned failures without
+`isError`; the memorization tool is registered only where `analyzer/`
+exists, which is not this repository. `c64_run_game` killed every
+`x64sc` on the machine; it kills only the one on its monitor port.
+`ensureSchema` swallowed every error, not only "already indexed" and
+"Constraint already exists" (messages measured on FalkorDB 4.18.7).
+Gap logging ran select-then-insert without a transaction across two
+processes. CLI commands ended in `process.exit()`, which can truncate
+piped `--json`; they now close their connections and set the exit code.
+A malformed environment variable stops start-up with its name instead of
+becoming `NaN`.
 
 **Issue #21, ES-11 to ES-14.** `nav_area_pathfinding` (a next-hop table
 over platform areas; 0 of 160 hops differ from a Python model),

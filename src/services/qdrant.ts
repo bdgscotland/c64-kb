@@ -178,7 +178,10 @@ export class QdrantService {
   }
 
   async deleteBySource(source: string): Promise<void> {
+    // wait: the client defaults to not waiting, so an upsert or a search right
+    // after could still see the old points.
     await this.client.delete(COLLECTION, {
+      wait: true,
       filter: {
         must: [{ key: "source", match: { value: source } }],
       },

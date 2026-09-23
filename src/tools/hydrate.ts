@@ -56,10 +56,11 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
     return `Rejected: docPath must be inside the docs directory (${DOCS_DIR}).`;
   }
 
-  // Write to disk if not already there
-  if (!fs.existsSync(resolvedDocPath)) {
-    fs.writeFileSync(resolvedDocPath, content);
-  }
+  // Write the content being indexed. This used to write only when the file
+  // was absent, so an update indexed text the file on disk did not hold and
+  // the next clean ingest silently reverted it.
+  fs.mkdirSync(path.dirname(resolvedDocPath), { recursive: true });
+  fs.writeFileSync(resolvedDocPath, content);
 
   // Chunk + embed + upsert
   const source = resolvedDocPath.replace(DOCS_DIR + path.sep, ""); // relative path under docs/
@@ -92,6 +93,9 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
     })
     .filter((p): p is NonNullable<typeof p> => p !== null);
 
+  // Drop the page's old chunks first, as src/ingest.ts does. Without this a
+  // section renamed or removed by the update stayed retrievable.
+  await q.deleteBySource(source);
   if (points.length > 0) {
     await q.upsertChunks(points);
   }

@@ -7,6 +7,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -25,7 +26,15 @@ const InputSchema = z.object({
     .describe("List of reference tune event lists. Pass [] to get a neutral (no-reference) verdict."),
 });
 
+const PYTHON = path.join(ANALYZER_DIR, ".venv/bin/python");
+
+/**
+ * Registers the tool only where the Python analyzer is installed. The public
+ * repository has no analyzer/, and the tool used to be listed there anyway
+ * and fail on every call.
+ */
 export function registerMemorizationTool(server: McpServer): void {
+  if (!existsSync(PYTHON)) return;
   server.registerTool(
     "c64_memorization_check",
     {
@@ -65,7 +74,7 @@ Limitations: copies[] is always [] in Phase A — identifying WHICH reference ma
 
       const result = await new Promise<string>((resolve, reject) => {
         const proc = spawn(
-          path.join(ANALYZER_DIR, ".venv/bin/python"),
+          PYTHON,
           ["-m", "src.memorization.service", "--stdio"],
           { cwd: ANALYZER_DIR, stdio: ["pipe", "pipe", "inherit"] },
         );
@@ -83,8 +92,17 @@ Limitations: copies[] is always [] in Phase A — identifying WHICH reference ma
         proc.stdin.end();
       });
 
+      // The service answers {kind: "error", ...} on its own failures; an MCP
+      // client only sees a failure when isError is set.
+      let isError = false;
+      try {
+        isError = (JSON.parse(result) as { kind?: unknown }).kind === "error";
+      } catch {
+        isError = true;
+      }
       return {
         content: [{ type: "text" as const, text: result }],
+        isError,
       };
     },
   );

@@ -1,44 +1,12 @@
 /**
- * c64-kb MCP server — thin wrapper over tool functions.
+ * c64-kb MCP server: a thin wrapper over the tool functions in src/tools/.
  *
- * Current surface (Phase 7a P7 complete):
- *   Tools (22):
- *     - c64_health
- *     - c64_search
- *     - c64_ingest_doc
- *     - c64_lookup_register
- *     - c64_lookup_kernal
- *     - c64_memory_map
- *     - c64_lookup_opcode
- *     - c64_pal_ntsc_diff
- *     - c64_toolchain_hint        (Phase 2, Oscar64-bias enforcer)
- *     - c64_recipe_lookup         (Phase 2)
- *     - c64_recipes_for           (Phase 2)
- *     - c64_technique_lookup      (Phase 3)
- *     - c64_techniques_for        (Phase 3)
- *     - c64_check_compatibility   (Phase 3, graph-traversal conflict detection)
- *     - c64_timing_budget         (Phase 3, PAL/NTSC cycle math)
- *     - c64_pitfalls_for          (Phase 5, TRIGGERED_BY + MITIGATED_BY traversal)
- *     - c64_failure_diagnose      (Phase 5, CrashPattern keyword scoring)
- *     - c64_demo_briefing         (Phase 5, anchor tool — one-shot demo plan)
- *     - c64_game_briefing         (Phase 5, anchor tool — one-shot game plan)
- *     - c64_coverage              (Phase 7a, KB coverage snapshot)
- *     - c64_suggest_links         (Phase 7a, heuristic missing-edge detector)
- *     - c64_report_gap            (Phase 7a, agent-facing gap recorder)
- *   Resources (11 static + 1 template):
- *     - Static: c64://memory-map, c64://kernal-jumptable, c64://opcodes,
- *       c64://illegal-opcodes, c64://pal-ntsc, c64://vic-ii, c64://sid,
- *       c64://cia, c64://6510-cpu, c64://registers, c64://ontology
- *     - Template: c64://register/{name}
- *   Prompts (2):
- *     - c64_demo_brief  (deprecated: prefer c64_demo_briefing tool)
- *     - c64_game_brief  (deprecated: prefer c64_game_briefing tool)
- *
- * Convention: structured tools return `structuredContent` matching a Zod
- * `outputSchema`, alongside a `content[0].text` markdown blob for
- * backward compat. Closed-set string args use `z.enum()`. Tool
- * descriptions follow the 6-component template: purpose, guidelines,
- * limitations, param notes, expected length, example.
+ * Structured tools return `structuredContent` matching a Zod
+ * `outputSchema`, alongside a `content[0].text` markdown blob. Closed-set
+ * string args use `z.enum()`. Tool descriptions follow the 6-component
+ * template: purpose, guidelines, limitations, param notes, expected length,
+ * example. `c64_health` lists the live surface; the list is not repeated
+ * here because it went stale.
  */
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -67,6 +35,8 @@ import { health, formatHealth } from "./tools/intelligence.ts";
 import { coverage, suggestLinks, reportGap } from "./tools/selfimprovement.ts";
 import { runGame, RunGameInputSchema, RunGameOutputSchema } from "./tools/run-game.ts";
 import { registerMemorizationTool } from "./tools/memorization-mcp.ts";
+import { getVersions } from "./services/versions.ts";
+import { closeAll } from "./context.ts";
 import {
   RegisterLookupSchema,
   KernalLookupSchema,
@@ -102,10 +72,14 @@ import {
 } from "./tools/prompts.ts";
 
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({
-    name: "c64-kb",
-    version: "0.1.0",
-  });
+  // The version said "0.1.0" through package 0.8.0.
+  const server = new McpServer(
+    { name: "c64-kb", version: getVersions().package },
+    {
+      instructions:
+        "Commodore 64 knowledge base. Call c64_health first to see what the stores hold; c64_demo_briefing and c64_game_briefing plan a whole program in one call.",
+    }
+  );
 
   // ---------------------------------------------------------------------------
   // Tools
@@ -178,19 +152,19 @@ Example: {"query": "stable raster IRQ", "limit": 3} returns the top-3 chunks acr
     "c64_ingest_doc",
     {
       description:
-        `Add or update a single knowledge-base document. Writes the file to disk under docs/ (if absent) and upserts chunked content into Qdrant (dense embeddings + sparse BM25 vector).
+        `Add or update a single knowledge-base document. Writes the content to the file under docs/ (creating or replacing it), removes the page's old chunks, and upserts the new chunked content into Qdrant (dense embeddings + sparse BM25 vector) and its entities into the graph.
 
-Guidelines: Use to land new reference material from authoritative sources (codebase 64 manual, VIC-II articles, etc.). Re-running for an existing path is safe — chunk IDs are deterministic on (source, section, index) so duplicates are updated in place, not appended.
+Guidelines: Use to land new reference material from authoritative sources (codebase 64 manual, VIC-II articles, etc.). Re-running for an existing path replaces that page's chunks. Graph edges are merged, never removed: if the update drops a metadata line, run a clean re-ingest to remove the edge it asserted.
 
 Limitations: Cannot refit the BM25 vocabulary on the fly (that would invalidate every existing sparse vector). New tokens introduced by this doc contribute only to the dense vector. Run a full clean re-ingest to incorporate new vocabulary into BM25.
 
-Param notes: 'path' must be an absolute filesystem path. 'content' is the full markdown body (frontmatter optional).
+Param notes: 'path' is absolute or relative to docs/, and must resolve inside docs/. 'content' is the full markdown body (frontmatter optional).
 
 Expected length: Single-line summary, e.g. "Ingested 14 chunks from hardware/foo.md."
 
 Example: {"path": "/abs/path/docs/hardware/sid-tricks.md", "content": "# SID tricks\\n..."}`,
       inputSchema: {
-        path: z.string().describe("Absolute path to write the markdown file"),
+        path: z.string().describe("Path of the markdown file, absolute or relative to docs/; must resolve inside docs/"),
         content: z.string().describe("Full markdown content (body, optionally with frontmatter)"),
       },
     },
@@ -973,6 +947,9 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
       return {
         content: [{ type: "text" as const, text: summary }],
         structuredContent: r,
+        // A caught VICE failure comes back as exit_reason "error"; without
+        // isError an MCP client read it as success.
+        isError: r.exit_reason === "error",
       };
     }
   );
@@ -984,40 +961,11 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
   registerMemorizationTool(server);
 
   // ---------------------------------------------------------------------------
-  // HVSC Phase 0 tools (c64_hvsc graph — SID analyzer)
-  // ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // ---------------------------------------------------------------------------
   // Resources
   // ---------------------------------------------------------------------------
 
   for (const r of STATIC_RESOURCES) {
-    server.resource(
+    server.registerResource(
       r.name,
       r.uri,
       { description: r.description, mimeType: "text/markdown" },
@@ -1029,7 +977,7 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
   }
 
   // Template resource for per-register structured lookup.
-  server.resource(
+  server.registerResource(
     "register",
     new ResourceTemplate("c64://register/{name}", { list: undefined }),
     {
@@ -1047,20 +995,46 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
   // Prompts
   // ---------------------------------------------------------------------------
 
-  server.prompt(
+  server.registerPrompt(
     "c64_demo_brief",
-    "Design a C64 demo from a natural-language brief. Templated body guides the agent through technique identification, register/KERNAL lookup, pitfall surfacing, build order, and toolchain split (Oscar64 vs KickAssembler).",
-    demoBriefArgs,
+    {
+      description:
+        "Design a C64 demo from a natural-language brief. Templated body guides the agent through technique identification, register/KERNAL lookup, pitfall surfacing, build order, and toolchain split (Oscar64 vs KickAssembler). Prefer the c64_demo_briefing tool, which runs the lookups itself.",
+      argsSchema: demoBriefArgs,
+    },
     demoBriefPrompt
   );
 
-  server.prompt(
+  server.registerPrompt(
     "c64_game_brief",
-    "Design a C64 game from a natural-language brief. Templated body guides the agent through archetype matching, architecture sketch, technique selection, SID approach, KERNAL usage, and toolchain split.",
-    gameBriefArgs,
+    {
+      description:
+        "Design a C64 game from a natural-language brief. Templated body guides the agent through archetype matching, architecture sketch, technique selection, SID approach, KERNAL usage, and toolchain split. Prefer the c64_game_briefing tool, which runs the lookups itself.",
+      argsSchema: gameBriefArgs,
+    },
     gameBriefPrompt
   );
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // A stdio client shuts the server down by closing stdin (MCP spec,
+  // transports/stdio); the SDK's transport does not listen for that, and the
+  // open FalkorDB socket kept the process alive. Close everything and exit.
+  let closing = false;
+  const shutdown = (code: number) => {
+    if (closing) return;
+    closing = true;
+    const force = setTimeout(() => process.exit(code), 3000);
+    force.unref();
+    void server
+      .close()
+      .catch(() => undefined)
+      .then(() => closeAll())
+      .finally(() => process.exit(code));
+  };
+  process.stdin.on("end", () => shutdown(0));
+  process.stdin.on("close", () => shutdown(0));
+  process.on("SIGINT", () => shutdown(0));
+  process.on("SIGTERM", () => shutdown(0));
 }

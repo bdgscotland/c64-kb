@@ -14,6 +14,7 @@ import { spawn, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { z } from "zod";
 import { resolveX64sc } from "../services/vice-bin.ts";
+import { getVersions } from "../services/versions.ts";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -175,8 +176,12 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
 
   const sym = resolveSymbol(opts.dbj_path, stateSymbol);
 
-  // 1. Kill any existing x64sc on port 6502 to ensure a clean session.
-  try { execSync("pkill -f x64sc 2>/dev/null", { stdio: "ignore" }); } catch { /* nothing to kill */ }
+  // 1. Kill the x64sc a previous run left on monitor port 6502, and only
+  //    that one: a bare `pkill -f x64sc` also killed a parallel
+  //    verify:recipes run and any VICE the user had open.
+  try {
+    execSync(`pkill -f "x64sc.*-binarymonitoraddress ip4://127.0.0.1:6502" 2>/dev/null`, { stdio: "ignore" });
+  } catch { /* nothing to kill */ }
   await sleep(500);
 
   // 2. Spawn fresh x64sc with -autostart: the repo's windowless build when
@@ -196,13 +201,16 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
 
   // 3. Spawn vice-mcp and connect.
   const transport = new StdioClientTransport({ command: "node", args: [DEFAULT_VICE_MCP_PATH] });
-  const client = new Client({ name: "c64-run-game", version: "0.1.0" }, { capabilities: {} });
+  const client = new Client({ name: "c64-run-game", version: getVersions().package }, { capabilities: {} });
   await client.connect(transport);
 
   const tool: ViceTool = async (name, args = {}) => {
     const r = await client.callTool({ name, arguments: args });
     const content = (r as { content?: Array<{ type: string; text: string }> }).content;
     if (!content || !content[0]) throw new Error(`tool ${name}: no content`);
+    // An error reply is text, so without this check it surfaced as the
+    // misleading "returned non-JSON".
+    if (r.isError) throw new Error(`tool ${name} failed: ${content[0].text}`);
     try { return JSON.parse(content[0].text); }
     catch { throw new Error(`tool ${name} returned non-JSON: ${content[0].text}`); }
   };

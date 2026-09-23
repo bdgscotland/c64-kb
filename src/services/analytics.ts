@@ -117,6 +117,12 @@ export class AnalyticsService {
    * Log a query and track gaps.
    */
   logQuery(opts: QueryLogOpts): void {
+    // One IMMEDIATE transaction: the CLI and the MCP server share this file,
+    // and a bare SELECT-then-INSERT let two processes both insert the gap.
+    this.db.transaction(() => this.logQueryUnlocked(opts)).immediate();
+  }
+
+  private logQueryUnlocked(opts: QueryLogOpts): void {
     const {
       tool,
       query,
@@ -235,6 +241,15 @@ export class AnalyticsService {
    * Returns the gap row's id and updated hit_count + whether it was new.
    */
   reportGap(query: string, tool: string, notes?: string): {
+    gap_id: number;
+    hit_count: number;
+    status: "new" | "incremented";
+  } {
+    // Same race as logQuery: select-then-write in one IMMEDIATE transaction.
+    return this.db.transaction(() => this.reportGapUnlocked(query, tool, notes)).immediate();
+  }
+
+  private reportGapUnlocked(query: string, tool: string, notes?: string): {
     gap_id: number;
     hit_count: number;
     status: "new" | "incremented";
