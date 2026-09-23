@@ -596,6 +596,10 @@ boundaries track visual content rather than bounding boxes.
 - `recipes/oscar64/simple-shmup.md` (reads $D01E/$D01F each frame). An earlier
   version of this list pointed at `recipes/oscar64/sprite-multiplex-8.md`,
   which never reads the collision registers.
+- `recipes/kickassembler/sprite-priority-classes.md` clears both registers, lets
+  two frames of a still picture latch, reads each once and compares with an
+  expectation; it measures that $D01F follows the playfield's bit pattern (pair
+  01 in multicolour text latches nothing) and ignores $D01B.
 
 ---
 
@@ -742,7 +746,8 @@ priority:
 
 - Bit n = 0 (default): sprite n renders in front of all foreground pixels.
 - Bit n = 1: sprite n renders *behind* foreground pixels but still in front of
-  background color 0.
+  background pixels. Which pixels are which is a matter of bit pattern, not
+  colour; see "Pixel classes" below.
 
 To make sprite 4 appear behind solid tiles: OR bit 4 into $D01B (`$D01B |= %00010000`).
 To restore it to the front: AND the complement (`$D01B &= ~%00010000`).
@@ -764,6 +769,38 @@ sprite layer into the background layer, letting foreground pixels obscure them.
 One important constraint: sprite-vs-sprite priority is **not** affected by
 $D01B. Sprite 0 is always in front of sprite 1 regardless of their $D01B bits.
 $D01B only modulates each sprite's relationship with the *background plane*.
+
+**Pixel classes, measured.** The `kickassembler/sprite-priority-classes`
+recipe put multicolour sprites whose columns are bit pairs 01, 10 and 11 over
+cells whose rows are every playfield pattern, in standard and in multicolour
+text, with the bit set and clear, and counted every pixel of the result in
+VICE x64sc on PAL and NTSC. Three rules came out, and one correction:
+
+- The sprite's own pixel class never matters. Pairs 01, 10 and 11 of a
+  multicolour sprite are treated alike; the only distinction on the sprite
+  side is drawn (any non-zero pair, or a 1 bit in hires) against transparent.
+  There is no mode in which only one of the sprite's colours goes behind the
+  playfield.
+- The playfield's class decides. With the bit set, a 1 bit in standard text
+  and pairs 10 and 11 in multicolour text cover the sprite; a 0 bit and pairs
+  00 and 01 show it. Pair 01 is background whatever colour `$D022` holds: a
+  sprite with its bit set is entirely visible over a cell of solid pair 01.
+  Multicolour bitmap follows the same pair rule (Bauer's VIC-II article,
+  section 3.8.2; not measured here).
+- `$D01F` uses the same classes and ignores `$D01B`: the two sprites that
+  sat only on pair 01 latched nothing, the six on 1 bits or pairs 10 and 11
+  each latched their bit, set or clear.
+- The order of decisions is sprite first, playfield second, and this is
+  where the "inverts that sprite's position in the priority stack" picture
+  two paragraphs up breaks down. Where sprite 4 (bit set) overlapped sprite 5
+  (bit clear) over foreground, the playfield showed and *neither* sprite was
+  drawn, although sprite 5 was drawn over the same foreground twelve pixels
+  away. The VIC chooses the lowest-numbered sprite with a drawn pixel, then
+  applies that sprite's bit; a lower-numbered sprite behind the playfield
+  punches a hole through every higher-numbered sprite it overlaps wherever
+  the playfield is foreground. `$D01E` latched both sprites all the same. An
+  earlier version of this section, read as a stack of layers, would have
+  drawn sprite 5 in front there.
 
 A second constraint: the border is the front-most layer of the VIC-II's output
 and is drawn over every sprite regardless of $D01B. A sprite that moves under
@@ -794,6 +831,7 @@ foreground pixels even when rendered behind them.
 
 ### Recipes
 
+- `recipes/kickassembler/sprite-priority-classes.md` puts eight still sprites over cells of every pixel pattern in both text modes, with `$D01B` set and clear and two sprites of mixed priority overlapping, and tabulates what shows per sprite class and playfield class from the exit screenshot; `$D01E` and `$D01F` are read once and checked against a compiled-in expectation.
 - `recipes/oscar64/mixed-fighters.md` sets `$D01B` per frame to put a sprite actor in front of or behind a character actor, and measures that bit pair 01 in multicolour text is background. Oscar64's `spr_set()` has no priority argument (its signature
   is `spr_set(sp, show, xpos, ypos, image, color, multi, xexpand, yexpand)`);
   write `vic.spr_priority` ($D01B) directly. An earlier version of this list

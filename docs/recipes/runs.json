@@ -1273,5 +1273,56 @@
       "pal": "screenshots/two-word-parser.png",
       "ntsc": "screenshots/two-word-parser-ntsc.png"
     }
+  },
+  "kickassembler/basic-wedge": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "new\\x0d10 print chr$(147);\"wedge test\"\\x0d20 &c\\x0d30 &b 2:&c\\x0d40 if (peek(53280)and15)=2 then &c:print \"then ok\"\\x0d50 sys 49155:gosub 200:t0=t:for i=1 to 1000:a=i:next:gosub 200:t1=t0-t\\x0d60 sys 49152:gosub 200:t0=t:for i=1 to 1000:a=i:next:gosub 200:t2=t0-t\\x0d70 print \"loop off\";t1:print \"loop on\";t2:print \"diff\";t2-t1\\x0d80 if (peek(53280)and15)=2 and t2>t1 then &c\\x0d85 print \"verdict\";peek(767)\\x0d90 &b 13:&z\\x0d100 print \"not reached\"\\x0d200 sys 49158:t=peek(752)+256*peek(753)+65536*peek(754):return\\x0drun\\x0dwait 198,1\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/basic-wedge.png",
+      "ntsc": "screenshots/basic-wedge-ntsc.png"
+    }
+  },
+  "oscar64/beat-em-up-lanes": {
+    "cycles": 11200000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/beat-em-up-lanes.png",
+      "ntsc": "screenshots/beat-em-up-lanes-ntsc.png"
+    }
+  },
+  "kickassembler/sprite-priority-classes": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-priority-classes.png",
+      "ntsc": "screenshots/sprite-priority-classes-ntsc.png"
+    }
+  },
+  "kickassembler/unit-test-driver": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/unit-test-driver.png",
+      "ntsc": "screenshots/unit-test-driver-ntsc.png"
+    }
   }
 }

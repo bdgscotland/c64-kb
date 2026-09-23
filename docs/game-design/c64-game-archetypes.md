@@ -224,7 +224,7 @@ The play field scrolls horizontally as the player advances. Unlike the scrolling
 
 Enemy AI in beat-em-ups is necessarily more complex than in platformers or puzzle games. Each opponent has a state machine with states including patrol, approach, attack, stunned, knocked-down, and getting-up, with timing on stun and recovery governed by frame counters. Multiple enemies must not collide with each other, which requires inter-enemy distance checks every frame. The entire AI pass, the scroll update, the sprite multiplex repositioning, and the SID play call must complete within one PAL frame (approximately 16,000 non-IRQ cycles), leaving the raster IRQ chain to handle the precise timing of VIC register writes.
 
-**Technique fingerprint:** `soft_scroll_h`, `sprite_multiplex_24`, `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`, `self_modifying_code`, `zero_page_burst`
+**Technique fingerprint:** `soft_scroll_h`, `sprite_multiplex_24`, `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`, `self_modifying_code`, `zero_page_burst`, `lane_depth_engine`
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `sprite_x_high_bit_wrong_register`, `sprite_priority_collision_silent`
 

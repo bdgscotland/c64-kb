@@ -5,7 +5,36 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 747, schema 27, tools 2.0.0, package 0.13.0.
+Data 748, schema 27, tools 2.0.0, package 0.13.0.
+
+**Candidate list, Tier B batch 6 (data 748).** `basic_extension_wedge`
+on the text page with a KickAssembler recipe: an IGONE wedge that adds
+prefixed commands and falls through to the ROM, exercised after a colon,
+inside IF THEN and on an unknown letter (the ROM's error still appears),
+costing 10.2 cycles a statement on PAL and 10.4 on NTSC against 10 by
+the instruction table; the ROM's own paths through `$0308` and `$0300`
+read from the BASIC image at the addresses the page quotes.
+`lane_depth_engine` on the logic page with an Oscar64 recipe for the
+beat-em-up archetype: Y as depth, an insertion sort over the actors
+setting both draw order and hit order (157 to 269 cycles a frame), a hit
+window in Y and X keyed to the attack's active frames; the whole step
+1,413 cycles at its worst; the technique added to the archetype's
+fingerprint. Sprite priority measured per pixel class in a recipe: a
+multicolour sprite's own bit pair makes no difference to the priority
+bit, the playfield's pattern decides (hires 1 bits and multicolour pairs
+10 and 11 are foreground; 0 bits and pairs 00 and 01 background whatever
+colour they draw in), `$D01F` follows the same classes and ignores the
+priority bit, and sprite order is decided before the playfield; the
+mob_priority entry extended in place, and the VIC-II reference's layer
+diagram, which the measurement contradicts, is reported on the
+hardware-verification issue rather than edited. A unit-testing toolchain
+page with sim6502 as its tool node and a KickAssembler test-driver
+recipe: fourteen cases through a case table with the verdict in `$02FF`,
+the same driver run in sim6502 in 0.12 s of host time against 0.4 s in
+VICE, 64spec assembling unchanged with KickAssembler 5.25, and sim65's
+exit-code channel measured. Left open: the 418-cycle residue between the
+wedge's measured and arithmetic cost; sprite priority with both
+overlapping sprites set; multicolour bitmap and ECM pixel classes.
 
 **Candidate list, Tier B batch 5 (data 747).** The GCR encoding on the
 formats page, measured: the sixteen code words derived from a G64 image

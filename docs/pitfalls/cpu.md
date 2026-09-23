@@ -330,7 +330,7 @@ while `.errorif` aborts with exit 1 and no output file.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** jump_table_dispatch
+**Triggered by techniques:** jump_table_dispatch, basic_extension_wedge
 **Mitigated by techniques:** jump_table_dispatch
 
 ### Symptom

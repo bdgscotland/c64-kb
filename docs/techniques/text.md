@@ -1009,3 +1009,87 @@ few hundred; neither is in a recipe yet.
 ### Recipes
 
 - `recipes/oscar64/two-word-parser.md` — three rooms, two objects, two four-letter dictionaries with one synonym, a twelve-row action table with a room-specific row above its any-room fallback, ten commands typed through the KERNAL queue including an unknown verb, an unknown noun and a pair with no row, each parse timed on CIA 2, verdict at `$02FF`, PAL and NTSC
+
+## basic_extension_wedge — New BASIC commands through the execute-statement vector, with a fall-through to the ROM
+
+**Complexity:** medium
+**Cost:** cycles_per_frame=10
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-basic-wedge (one statement dispatch on the fall-through path; 20,478 cycles over 2,006 dispatches)
+
+**Why.** A front end, a level editor or a test rig written in BASIC
+wants to call machine code from many places, and `SYS` with an address
+and `POKE`s for its arguments everywhere is slow to write and easy to
+get wrong. A wedge adds commands the interpreter runs like its own:
+`&B 2` sets the border, `&C` prints a counter, and the rest of the
+program stays BASIC. The same hook is how the commercial extensions of
+the time added their keywords.
+
+**How.** BASIC reaches its statement executor through the vector at
+$0308 (IGONE), once per statement. Its default, $A7E4, is `JSR $0073`
+(CHRGET: advance TXTPTR and fetch), `JSR $A7ED` (run the statement whose
+first byte is in A) and `JMP $A7AE` (back to the statement loop). The
+wedge points $0308 at code that does those three things with one
+compare between the first two: if the fetched byte is the prefix, read
+the letter after it and dispatch to a handler; otherwise `JSR $A7ED`
+with A and TXTPTR untouched, so the ROM never sees a difference. A
+handler ends by leaving TXTPTR on the colon or the line's end byte and
+jumping to $A7AE, the same contract every ROM statement keeps, and it
+may use the ROM's own helpers: the byte evaluator at $B79E for an
+argument, $BDCD to print a number. A statement after a colon arrives
+through the vector like any other. A statement after `THEN` does not:
+the `IF` handler calls `JSR $0079` and `JMP $A7ED` directly, so the
+prefix reaches the executor as an implied LET, fails the variable-name
+check and raises SYNTAX ERROR through the error vector at $0300. The
+wedge hooks that vector too. On error number $0B with TXTPTR still on
+the prefix and a known letter behind it, it resets the stack to the
+value it saved on its last pass through $0308 (the level the statement
+loop had when it dispatched the `IF`, so `FOR` and `GOSUB` frames below
+it are kept) and runs the handler; any other error, including the prefix
+with a letter it does not know, goes to the saved vector and the ROM
+prints its message with the line number. The resident code lives above
+BASIC's memory at $C000, out of the way of the program that is typed in
+after it; the older place is the cassette buffer at $033C, which a tape
+load reuses.
+
+**Why it works.** The vector is entered with TXTPTR one byte before the
+statement, and CHRGET both advances and fetches, so the wedge sees the
+statement's first byte before the ROM does and at no extra fetch. The
+error path works because nothing between `IF`'s `JMP $A7ED` and the
+error moves TXTPTR: LET calls the name check with CHRGOT (fetch without
+advancing), so the prefix is still the current byte when the error
+handler looks, and the only stack growth since the vector was last
+passed is the return address into LET, which the saved stack pointer
+discards.
+
+**Variations.** The CHRGET style patches the routine itself: the three
+bytes at $0073 (`INC $7A`) become a `JMP` to code that increments TXTPTR,
+tests the fetched byte and jumps back into the ROM's copy at $0079 or
+returns. It catches every byte BASIC reads, in program and expression
+text alike, so a prefix can be recognised inside an expression; the
+price is per byte, not per statement, and by the instruction table it
+is around 14 cycles on every fetch (the `JMP` out, a load and compare
+of the high byte or the byte, a branch, the `JMP` back: arithmetic, not
+measured here), against 10 per statement for the vector. A keyword table
+needs three vectors: CRUNCH at $0304 to turn the new words into tokens
+above $CB when a line is entered, LIST at $0306 to print them back, and
+$0308 to execute them; the wedge then compares tokens instead of a
+prefix and the program lists as it was typed. That form is described
+here and not built. Uninstalling restores both vectors from the copies
+taken at install; a reset restores the defaults on its own.
+
+**Cycle budget.** Measured on the recipe with CIA 2's timers around a
+`FOR I=1 TO 1000: A=I: NEXT` loop, wedge off and then on: 2,474,332
+against 2,494,810 cycles on PAL, a difference of 20,478 over the 2,006
+statements dispatched between the two latches, 10.2 cycles a statement;
+NTSC gave 20,864, 10.4. The arithmetic for the fall-through path is 10:
+`TSX` 2, `STX` 4, `CMP #` 2, `BEQ` not taken 2 (the stack save is what
+the `THEN` path costs every statement; a wedge that gives up `THEN` is 4).
+The 418 and 804 cycles over the arithmetic are not explained; the two
+loops meet the jiffy interrupt at different phases, and that was not
+measured here. The resident part is 267 bytes including the timer latch
+(derived from the listing). Nothing in the KERNAL is called.
+
+### Recipes
+
+- `recipes/kickassembler/basic-wedge.md` — `&B` and `&C` behind the $0308 vector with the $0300 hook for `THEN`, a test program typed through the KERNAL queue that exercises a plain statement, the command alone, after a colon, after `THEN`, an unknown letter (the ROM's error) and a timed 1,000-iteration loop with the wedge off and on, verdict at `$02FF`, PAL and NTSC
