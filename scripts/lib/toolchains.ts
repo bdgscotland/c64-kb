@@ -30,14 +30,11 @@ function existing(path: string | undefined): string | null {
 }
 
 const HOME = homedir();
-export const DEFAULT_KICKASS_JAR = join(HOME, "Developer/c64/kickassembler/KickAss.jar");
-export const DEFAULT_OSCAR64 = join(HOME, "Developer/c64/oscar64/bin/oscar64");
+const DEFAULT_KICKASS_JAR = join(HOME, "Developer/c64/kickassembler/KickAss.jar");
+const DEFAULT_OSCAR64 = join(HOME, "Developer/c64/oscar64/bin/oscar64");
 
 /** The c1541 that `npm run vice:headless` installs beside its x64sc. */
-export const HEADLESS_C1541 = join(
-  new URL("../..", import.meta.url).pathname,
-  ".tools/vice-headless/bin/c1541",
-);
+const HEADLESS_C1541 = join(new URL("../..", import.meta.url).pathname, ".tools/vice-headless/bin/c1541");
 
 /**
  * c1541, which verify-recipes needs for the disk-backed recipes: C1541,

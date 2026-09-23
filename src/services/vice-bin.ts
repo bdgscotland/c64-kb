@@ -20,7 +20,7 @@ import { execSync } from "node:child_process";
 const here = path.dirname(fileURLToPath(import.meta.url));
 // src/services or dist/services: the repo root is two levels up either way.
 const repoRoot = path.resolve(here, "..", "..");
-export const HEADLESS_X64SC = path.join(repoRoot, ".tools", "vice-headless", "bin", "x64sc");
+const HEADLESS_X64SC = path.join(repoRoot, ".tools", "vice-headless", "bin", "x64sc");
 
 export type X64scChoice = { path: string; kind: "env" | "headless" | "path"; windowed: boolean };
 

@@ -28,7 +28,7 @@ import { detectLanguage } from "./lint/text.ts";
 import type { LintCertainty, LintFinding, LintLanguage, LintOptions, LintResult } from "./lint/types.ts";
 
 export { detectLanguage };
-export type { LintFinding, LintLanguage, LintOptions, LintResult };
+export type { LintFinding, LintOptions, LintResult };
 
 export function lintSource(source: string, opts: LintOptions = { language: "auto" }): LintFinding[] {
   const language: LintLanguage = opts.language === "auto" ? detectLanguage(source) : opts.language;

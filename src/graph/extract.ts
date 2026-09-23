@@ -16,22 +16,9 @@ import { parseTechniqueDoc } from "./extract/technique.ts";
 import { parseFormatDoc, parseToolchainDoc } from "./extract/toolchain.ts";
 import type { DocParser, GraphEntity } from "./extract/types.ts";
 
-export type { GraphEntity, TargetKind } from "./extract/types.ts";
-export {
-  COST_BASIS_WORDS,
-  COST_VOCABULARY,
-  DEMAND_VOCABULARY,
-  TECHNIQUE_CATEGORIES,
-  type CostBasis,
-  type CostKey,
-  type TechniqueCost,
-} from "./extract/vocabulary.ts";
-export {
-  RASTER_LINE_MAX,
-  parseRasterBand,
-  rasterBandsOverlap,
-  type RasterBand,
-} from "./extract/raster-band.ts";
+export type { GraphEntity } from "./extract/types.ts";
+export { COST_BASIS_WORDS, COST_VOCABULARY, DEMAND_VOCABULARY } from "./extract/vocabulary.ts";
+export { parseRasterBand, rasterBandsOverlap } from "./extract/raster-band.ts";
 
 /**
  * Marker -> parser, in the order the markers are tested. A page carrying

@@ -44,7 +44,7 @@ export const READ_ONLY: ToolAnnotations = {
 };
 
 /** The shared result wrapper. Key order matches what the inline handlers returned. */
-export function toCallToolResult(reply: ToolReply): CallToolResult {
+function toCallToolResult(reply: ToolReply): CallToolResult {
   return {
     content: [{ type: "text", text: reply.text }],
     ...(reply.structured === undefined ? {} : { structuredContent: reply.structured }),

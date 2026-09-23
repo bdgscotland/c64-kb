@@ -9,7 +9,7 @@ import { fetchCompatibilityFacts } from "./fetch.ts";
 import { renderCompatibility } from "./render.ts";
 import { evaluateCompatibility } from "./rules.ts";
 
-export { evaluateCompatibility, type CompatibilityEvaluation } from "./rules.ts";
+export { evaluateCompatibility } from "./rules.ts";
 export type { CompatibilityFacts, TechniqueFacts } from "./facts.ts";
 
 export async function checkCompatibility(techniques: string[]): Promise<CompatibilityCheckResult> {

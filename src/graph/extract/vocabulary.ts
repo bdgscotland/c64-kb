@@ -17,7 +17,7 @@ export const COST_VOCABULARY: Record<string, string> = {
 };
 // Keys whose value has a hardware ceiling; a figure above it is refused.
 export const COST_MAXIMUM: Partial<Record<string, number>> = { sprites_per_line: 8 };
-export type CostKey = keyof typeof COST_VOCABULARY;
+type CostKey = keyof typeof COST_VOCABULARY;
 export type TechniqueCost = Partial<Record<CostKey, number>>;
 
 export const COST_BASIS_WORDS = ["measured-vice", "derived-listing", "arithmetic", "estimated"] as const;

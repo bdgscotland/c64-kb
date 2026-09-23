@@ -12,7 +12,7 @@ import { getFalkor } from "../../context.ts";
 import type { BriefingOutput, TechniqueLookupOutput } from "../../schemas/tool-outputs.ts";
 import { DemandsRow, parseRows, presentNames } from "./rows.ts";
 
-export const PRIMARY_TOOLCHAIN = "oscar64";
+const PRIMARY_TOOLCHAIN = "oscar64";
 
 const CYCLE_TIGHT_DEMANDS = new Set([
   "cpu_every_line",

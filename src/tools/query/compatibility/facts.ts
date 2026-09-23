@@ -22,7 +22,7 @@ export interface TechniqueFacts {
   rasterRegisters: number;
 }
 
-export interface RecipeUse {
+interface RecipeUse {
   name: string;
   kind: string;
   recipe: string;
@@ -52,7 +52,7 @@ export function inputPairs<T>(items: readonly T[]): { i: number; j: number; a: T
   return items.flatMap((a, i) => items.slice(i + 1).map((b, k) => ({ i, j: i + 1 + k, a, b })));
 }
 
-export const UNKNOWN_TECHNIQUE: TechniqueFacts = {
+const UNKNOWN_TECHNIQUE: TechniqueFacts = {
   found: false,
   demands: new Set(),
   registers: 0,

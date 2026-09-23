@@ -11,7 +11,7 @@ import { isAvailable as ollamaAvailable } from "../services/embeddings.ts";
 import { getVersions, type Versions } from "../services/versions.ts";
 import { config } from "../config.ts";
 
-export interface HealthCheck {
+interface HealthCheck {
   service: string;
   status: "OK" | "FAIL" | "DEGRADED";
   detail: string;

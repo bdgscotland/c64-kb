@@ -35,7 +35,8 @@
     "lint": "eslint --max-warnings=0 .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "knip": "knip"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -53,6 +54,8 @@
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-sonarjs": "^4.2.1",
+    "knip": "^6.37.0",
+    "lefthook": "^2.1.14",
     "prettier": "^3.9.8",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.1",
@@ -81,6 +84,7 @@
   },
   "allowScripts": {
     "better-sqlite3": true,
-    "fsevents": false
+    "fsevents": false,
+    "lefthook": false
   }
 }

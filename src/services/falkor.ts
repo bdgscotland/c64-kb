@@ -11,10 +11,6 @@ import { firstCount } from "./falkor/params.ts";
 import { FalkorLinks } from "./falkor/links.ts";
 import { CHIPS, CLEANABLE_LABELS, REGIONS, createIndexes } from "./falkor/schema.ts";
 
-export type { CauseKind, ChipMemberLabel } from "./falkor/links.ts";
-export type { RegisterNode, MemoryRegionNode, TechniqueNode } from "./falkor/nodes.ts";
-export type { NodeLabel } from "./falkor/schema.ts";
-
 export class FalkorService extends FalkorLinks {
   /** Indexes, constraints and the Chip and Region seed nodes. Safe to re-run. */
   async ensureSchema(): Promise<void> {

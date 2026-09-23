@@ -21,7 +21,7 @@ import type { z } from "zod";
  * briefings silently fall back to keyword scoring alone. A technique-name
  * field on the chunk payload would remove this parse.
  */
-export function extractTechniqueNameFromSection(section: string): string | null {
+function extractTechniqueNameFromSection(section: string): string | null {
   // Take the last " > " segment (the H2 part)
   const leaf = (section.split(" > ").at(-1) ?? "").trim();
   // The leaf should be: "snake_name — Title" or "snake_name — Title ..."

@@ -23,7 +23,7 @@ export type LintOptions = {
 };
 
 /** The structured reply is exactly the c64_lint_source output schema. */
-export type LintOutput = LintSourceOutput;
+type LintOutput = LintSourceOutput;
 
 export type LintResult = { structured: LintOutput; text: string };
 

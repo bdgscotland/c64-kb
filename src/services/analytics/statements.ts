@@ -57,7 +57,7 @@ export interface GapRow {
   notes: string | null;
 }
 
-export interface WeekRow {
+interface WeekRow {
   week: string;
   queries: number;
   gaps: number;

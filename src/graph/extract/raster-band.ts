@@ -9,7 +9,7 @@
 // Highest raster line number on either machine: PAL has 312 lines (0-311),
 // NTSC 263 (0-262). A band is stated in raster line numbers, the same
 // numbers on both machines; a line past 262 simply does not occur on NTSC.
-export const RASTER_LINE_MAX = 311;
+const RASTER_LINE_MAX = 311;
 
 export type RasterBand =
   | { kind: "lines"; ranges: [number, number][]; canonical: string }

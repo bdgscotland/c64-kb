@@ -13,7 +13,7 @@ type Via = NonNullable<Pitfall["via"]>[number];
 type Severity = Pitfall["severity"];
 type Region = Pitfall["region"];
 
-export const SEVERITY_ORDER = ["critical", "high", "medium", "low"] as const;
+const SEVERITY_ORDER = ["critical", "high", "medium", "low"] as const;
 const SeveritySchema = z.enum(SEVERITY_ORDER);
 const RegionSchema = z.enum(["pal", "ntsc", "both"]);
 const KindSchema = z.enum(["Register", "KernalRoutine", "Technique"]);

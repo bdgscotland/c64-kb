@@ -383,6 +383,8 @@ page says so.
 | `npm run vice:headless` | Build a windowless VICE 3.10 (`--enable-headlessui`) into `.tools/`; the verifier and the run tool use it automatically, so headless runs stop opening windows; its pictures are byte-identical to the GTK build's |
 | `npm run verify:recipes` | Build every recipe, run it headless in VICE at the cycles pinned in `docs/recipes/runs.json`, and compare the PNG pixel for pixel with the committed screenshot. `--file` scopes to one page, `--update` adopts a new baseline after a deliberate change, `--allow-missing` tolerates a recipe with no picture yet |
 | `npm run typecheck` | Type-check src, scripts and test without emitting |
+| `npm run lint` / `npm run format:check` | ESLint (typescript-eslint strict plus a complexity budget) and Prettier; `CONTRIBUTING.md` has the limits |
+| `npm run knip` | Report unused files, exports and dependencies |
 | `npm run services` / `npm run services:stop` | Start / stop Qdrant and FalkorDB |
 
 ### Prerequisites

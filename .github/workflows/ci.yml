@@ -1,0 +1,129 @@
+# The same gates CLAUDE.md lists, run on every push and pull request. Each
+# step calls an npm script, so the Claude Code hooks, the git hooks
+# (lefthook.yml) and CI cannot drift apart.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck, lint, format, unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run knip
+      - run: npm run test:unit
+      - run: npm run build
+      - name: package carries dist/
+        run: npm pack --dry-run 2>&1 | grep -q "dist/cli.js"
+
+  integration:
+    name: integration tests (Qdrant, FalkorDB, Ollama)
+    runs-on: ubuntu-24.04
+    services:
+      # Same digests as docker-compose.yml.
+      qdrant:
+        image: qdrant/qdrant:v1.18.0@sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9
+        ports: ["7333:6333"]
+        options: >-
+          --health-cmd "bash -c ':> /dev/tcp/127.0.0.1/6333'"
+          --health-interval 5s --health-retries 20
+      falkordb:
+        image: falkordb/falkordb@sha256:e93fcd753fe612fb0a222166a0620a1ae31b826a12f223c3b6d06038d9d7a364
+        ports: ["7379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-retries 20
+      ollama:
+        image: ollama/ollama:0.34.3@sha256:7ab595e4ead391f6818c7215297781282babe0701f6d9a9f8862ac591360a58b
+        ports: ["11434:11434"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: pull the embedding model
+        run: curl -sf http://localhost:11434/api/pull -d '{"model":"mxbai-embed-large"}' | tail -1
+      - run: npm run test:integration
+
+  listings:
+    name: every listing builds (KickAssembler, cc65)
+    runs-on: ubuntu-24.04
+    env:
+      KICKASS_JAR: ${{ github.workspace }}/.tools/kickass/KickAss.jar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci
+      - name: KickAssembler 5.25
+        run: |
+          mkdir -p .tools/kickass && cd .tools/kickass
+          curl -sfL -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip
+          echo "9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6  KickAssembler.zip" | sha256sum -c -
+          unzip -q KickAssembler.zip KickAss.jar
+      - run: sudo apt-get install -y -qq cc65
+      # Oscar64 is skipped (--allow-missing) until issue #25 pins a released
+      # compiler that reproduces the recipes; today only a locally patched
+      # build does.
+      - run: npm run check:listings -- --allow-missing
+
+  recipes:
+    name: every recipe runs in VICE and matches its screenshot
+    runs-on: ubuntu-24.04
+    env:
+      KICKASS_JAR: ${{ github.workspace }}/.tools/kickass/KickAss.jar
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci
+      - run: >-
+          sudo apt-get install -y -qq cc65 build-essential xa65 dos2unix libpng-dev
+          pkg-config flex bison python3-pil
+      - name: KickAssembler 5.25
+        run: |
+          mkdir -p .tools/kickass && cd .tools/kickass
+          curl -sfL -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip
+          echo "9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6  KickAssembler.zip" | sha256sum -c -
+          unzip -q KickAssembler.zip KickAss.jar
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/vice-headless
+          key: vice-headless-${{ runner.os }}-${{ hashFiles('scripts/build-vice-headless.sh') }}
+      # A Linux build of this script matched every pinned PNG it could run
+      # (54 of 54, 2026-09-23); Oscar64 recipes are skipped until #25.
+      - run: "[ -x .tools/vice-headless/bin/x64sc ] || npm run vice:headless"
+      - run: npm run verify:recipes -- --allow-missing

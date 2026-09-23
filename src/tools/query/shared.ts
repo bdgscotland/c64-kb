@@ -39,7 +39,7 @@ function getBM25(): BM25Encoder | null {
   return bm25Cache;
 }
 
-export function encodeSparse(text: string): SparseVector {
+function encodeSparse(text: string): SparseVector {
   const enc = getBM25();
   return enc ? enc.encode(text) : { indices: [], values: [] };
 }
@@ -83,7 +83,7 @@ export async function searchChunks(opts: {
  * the stored text so the Qdrant text index catches heading tokens;
  * the display layer strips it back out.
  */
-export function stripSectionPrefix(section: string, text: string): string {
+function stripSectionPrefix(section: string, text: string): string {
   const prefix = `${section}\n\n`;
   return text.startsWith(prefix) ? text.slice(prefix.length) : text;
 }
@@ -114,7 +114,7 @@ export function parseRows<S extends z.ZodType>(schema: S, result: { data: unknow
 }
 
 /** Rows that carry one `name` column. */
-export const NameRow = z.object({ name: z.string().nullable() });
+const NameRow = z.object({ name: z.string().nullable() });
 
 export function names(result: { data: unknown[] }): string[] {
   return parseRows(NameRow, result)

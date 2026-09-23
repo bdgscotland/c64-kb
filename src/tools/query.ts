@@ -17,19 +17,3 @@ export { techniqueLookup, techniquesFor } from "./query/techniques.ts";
 export { checkCompatibility } from "./query/compatibility/index.ts";
 export { timingBudget } from "./query/timing.ts";
 export { spriteDmaCycles } from "../domain/timing.ts";
-export type {
-  SearchResult,
-  RegisterLookupResult,
-  KernalLookupResult,
-  MemoryMapResult,
-  OpcodeLookupResult,
-  PalNtscDiffResult,
-  PalNtscRegion,
-  TechniqueLookupResult,
-  TechniquesForResult,
-  CompatibilityCheckResult,
-  TimingBudgetResult,
-  ToolchainHintResult,
-  RecipeLookupResult,
-  RecipesForResult,
-} from "./query/types.ts";

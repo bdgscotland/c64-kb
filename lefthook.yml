@@ -1,0 +1,24 @@
+# Git hooks. Each command is the npm script CI and the Claude Code hooks run.
+# Install once per clone: npx lefthook install
+pre-commit:
+  parallel: true
+  commands:
+    typecheck:
+      glob: "*.{ts,json}"
+      run: npm run -s typecheck
+    lint:
+      glob: "*.ts"
+      run: npx eslint --max-warnings=0 {staged_files}
+    format:
+      glob: "*.{ts,js,json,yml}"
+      run: npx prettier --check {staged_files}
+    listings:
+      glob: "docs/**/*.md"
+      run: for f in {staged_files}; do node scripts/check-listings.ts --allow-missing --file "$f" || exit 1; done
+    unit:
+      glob: "*.ts"
+      run: npm run -s test:unit
+pre-push:
+  commands:
+    tests:
+      run: npm test

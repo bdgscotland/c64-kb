@@ -26,14 +26,7 @@
  */
 
 export { whyProposed } from "./briefings/why-proposed.ts";
-export { normaliseArchetypeName } from "./briefings/archetype.ts";
-export {
-  FRAME_CYCLES,
-  RAM_BUDGET_BYTES,
-  computeBudget,
-  renderBudgetText,
-  type BudgetInput,
-} from "./briefings/budget.ts";
+export { FRAME_CYCLES, RAM_BUDGET_BYTES, computeBudget, renderBudgetText } from "./briefings/budget.ts";
 import { buildBriefing, type BriefingResult } from "./briefings/build.ts";
 export type { BriefingResult };
 

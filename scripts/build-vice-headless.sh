@@ -9,7 +9,10 @@
 #
 # Needs: a C toolchain, autotools' runtime deps the tarball's configure asks
 # for, libpng, and on macOS `brew install dos2unix xa` (configure refuses
-# without both). Takes about a minute on a recent machine.
+# without both). On Debian/Ubuntu: build-essential xa65 dos2unix libpng-dev
+# pkg-config flex bison (configure stops without flex). A Linux build matched
+# all 54 pinned PNGs it could run, 2026-09-23. Takes about a minute on a
+# recent machine.
 #
 # Usage: npm run vice:headless      (or: sh scripts/build-vice-headless.sh)
 set -eu
@@ -67,5 +70,7 @@ done
 exec "\$BIN" "\$@"
 EOF
 chmod +x "$TOOLS/bin/x64sc" "$TOOLS/x64sc-headless"
+# c1541 makes the blank disks the disk-backed recipes attach (runs.json "disk").
+cp src/c1541 "$TOOLS/bin/c1541" && chmod +x "$TOOLS/bin/c1541"
 echo "windowless x64sc ready: $TOOLS/bin/x64sc"
 echo "smoke: $("$TOOLS/bin/x64sc" -help 2>&1 | head -1)"

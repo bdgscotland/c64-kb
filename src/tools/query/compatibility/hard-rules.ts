@@ -9,10 +9,10 @@ import { parseRasterBand, rasterBandsOverlap } from "../../../graph/extract.ts";
 import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts";
 import type { TechniqueFacts } from "./facts.ts";
 
-export type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
+type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
 export type BandSeparated = CompatibilityCheckOutput["band_separated"][number];
 
-export interface HardHit {
+interface HardHit {
   kind: ConflictKind;
   shared: string[];
   rationale: string;

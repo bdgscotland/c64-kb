@@ -12,7 +12,7 @@ import type { EdgeEnd } from "./base.ts";
 export type CauseKind = "Register" | "KernalRoutine" | "Technique";
 /** Labels linkBelongsTo accepts: the ones with a `name` key that can belong to a Chip. */
 const CHIP_MEMBER_LABELS = ["Register", "KernalRoutine", "Technique", "Tool"] as const;
-export type ChipMemberLabel = (typeof CHIP_MEMBER_LABELS)[number];
+type ChipMemberLabel = (typeof CHIP_MEMBER_LABELS)[number];
 
 function isChipMemberLabel(s: string): s is ChipMemberLabel {
   return (CHIP_MEMBER_LABELS as readonly string[]).includes(s);

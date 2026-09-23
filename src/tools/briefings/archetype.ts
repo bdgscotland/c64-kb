@@ -15,7 +15,7 @@ export type ArchetypeResolution =
 type KnownArchetype = { name: string; title: string | null | undefined; kind: string | null | undefined };
 
 /** "Vertical Shmup" / "vertical-shmup" / "Vertical_Shmup" all read as vertical_shmup. */
-export function normaliseArchetypeName(raw: string): string {
+function normaliseArchetypeName(raw: string): string {
   return raw
     .trim()
     .toLowerCase()
