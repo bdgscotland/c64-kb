@@ -481,6 +481,65 @@ A half is still 1.3 PAL frames, so with the update synced to a line-256 crossing
 
 ---
 
+## twister — A turning square column drawn as a band of per-line edge positions from a phase table
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, D020, D021, DC04, DC05, DC0E
+**Requires:** standard_bitmap, table_generation
+**Cost:** cycles_per_frame=13561, bytes_code=9383, bytes_data=512
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-twister (worst display-on frame, PAL, 128 lines of 8 bytes copied through a pointer; the blanked frame is 13,001 and the worst NTSC frame 13,819; bytes_code is the code segment reported by -showmem, almost all of it the unrolled copy; bytes_data is the 512-byte phase table)
+
+### Why
+
+A twister is a column that turns about its vertical axis while its cross-section is twisted along its height, so the faces wind down it and appear to climb as it turns. It reads as a solid 3D object, and it costs no 3D arithmetic at run time: every line of the band is a picture of the column's cross-section at one angle, there are only as many such pictures as there are angles, and they can all be drawn before the program starts. The frame loop is then a copy of one small image per line, with the image chosen by the line's angle.
+
+### How
+
+1. A standard bitmap at `$2000`, screen RAM at `$0400` with one colour pair in every cell, `$D011 = $3B`, `$D018 = $18`. The band is 64 pixels wide and 128 lines tall, byte columns 16 to 23 of bitmap rows 36 to 163, centred on x = 160.
+2. **Edges from one sine.** A square column seen side on has four vertical edges; at rotation angle a (0 to 255 for a turn) edge i is at `x_i = 160 + 32 sin((a + 64 i) & 255)`, the four edges being one sine a quarter turn apart. Face i spans `x_i` to `x_(i+1)`, and it is in front when `x_i < x_(i+1)`; at most two faces pass that test at once, which is the hidden-face rule for free.
+3. **Faces from pattern masks.** Each face has a fixed byte pattern: solid `$FF`, fifty percent `$AA`, twenty-five percent `$88`, empty `$00`. A pixel of the band is lit if some front face covers it and that face's pattern has the pixel's bit set. Four shades on a one-ink bitmap is what tells the faces apart.
+4. **A phase table, so the frame loop is a copy.** At assembly time, for each of 64 angles a = 0, 4, .., 252, evaluate steps 2 and 3 for the 64 pixels of the band and pack them into 8 bytes: 64 images, 512 bytes, page aligned. The recipe does it with nested `.for` loops that fill a KickAssembler `List` and one `.fill 512, phases.get(i)`.
+5. Per frame, line L of the band takes phase `(t + L) & 63`, a straight helix of one turn over 64 lines, and its 8 bytes are copied into the line's bitmap bytes: `ldy #k`, `lda (src),y`, `sta row + 8 k` eight times, then the pointer stepped by 8 with a page toggle on the carry, unrolled over the 128 lines. t advances by 1 a frame. The copy starts at raster line 250.
+
+### Why it works
+
+The column's appearance at any height depends only on the angle at that height, and the angle takes 64 values, so 64 images are the whole effect; the twist is nothing but the choice of which image each line gets, and moving the whole choice by one image a frame is the rotation. The per-line work is therefore the smallest thing a bitmap line can cost, eight loads and eight stores, and the sine, the face test and the patterns are paid once by the assembler. The straight helix comes from the phase being linear in the line; the fixed patterns come from evaluating them per pixel at build time rather than per row at run time, which is why the fifty percent face is `$AA` on every row and not a checkerboard, so that one image can serve any line.
+
+### Cycle budget
+
+Measured on the recipe with CIA1 timer A in VICE x64sc 3.10:
+
+- The 128-line copy, display blanked: 13,001 cycles, both models; 101.6 a line (arithmetic).
+- Display on, frames 1 to 299: 13,557 to 13,561 PAL, 13,813 to 13,819 NTSC. Both fit a frame, with about 6,100 cycles to spare on PAL and 3,300 on NTSC (arithmetic against 19,656 and 17,095).
+- The control with no per-line phase step (`STRAIGHT`), blanked: 11,305; the pointer advance is the 1,696 between them, 13.25 a line.
+- Per line from the instruction table: 8 by (2 + 5 + 4) = 88 for the copy, 13 for the advance, 20 on a page crossing; 128 lines of 101 plus the setup is 12,960 before the crossings, against the measured 13,001.
+
+The copy exceeds the vertical blank (about 6,700 cycles on PAL after line 250) and runs on into the display, but it stays ahead of the beam: when the beam reaches the band's first line about 92 of the 128 lines are written, and at 63 cycles a line against 102 the beam would need 242 lines to catch up (arithmetic from the measured cost). A phase table laid out by plane, eight 64-byte tables indexed by the phase in X with `lda plane_k,x`, would bring a line to about 70 cycles (arithmetic, not built).
+
+### Variations
+
+**A bending helix.** Replace `t + L` with `t + L + sin2[(t + L) & 255]` or a slower sine of L alone, so the pitch of the twist varies down the column and the column seems to bend. It costs one more table read per line if the phase is worked per line at run time, or nothing if a 128-entry per-frame phase list is built in the blank first.
+
+**Colour per face through screen RAM.** Screen RAM gives one colour pair per 8 by 8 cell, so a face can only be coloured where a whole cell is inside it; an edge that falls inside a cell splits that cell between two faces that must share one ink. With four faces and 8-pixel cells the only clean form is a colour per cell column that changes as the edge passes the cell boundary, which is a second per-frame write of 8 cells per cell row and still shows a one-cell step at each edge. Multicolour bitmap mode gives two more inks at half the horizontal resolution and the same cell limit.
+
+**Two columns.** A second band with its own t, or the same t with an offset, is a second copy at the same per-line cost; two 64-pixel bands are 26,000 cycles a frame at this listing's cost (arithmetic), more than a PAL frame, so two columns want the plane layout or alternate-frame updates.
+
+### Pitfalls
+
+`full_field_redraw_exceeds_vblank` (`../pitfalls/text-mode-render.md`): the copy is 13,001 cycles against a blank of about 6,700, so it does run in the display; it does not tear only because it starts at line 250 and stays ahead of the beam for a band that begins at row 36, and a taller band or a slower copy would be caught (the recipe gives the arithmetic). `sine_table_peak_wraps_to_zero` (`../pitfalls/maths.md`) is about an unsigned table of amplitude 128 about 128; here the amplitude is 32 about 160, the values run 128 to 192, and the edges are compared in script and never stored as bytes, so it does not arise.
+
+### Recipes
+
+- `recipes/kickassembler/twister.md`: the design above, pinned at cycle 12,000,000 on both models, with the edges of three rows measured against the table, the timer figures, and a `STRAIGHT` control whose 128 lines are one row pattern.
+
+### Sources
+
+- The measurements on this entry are from the recipe named above, VICE x64sc 3.10, CIA1 timer A and the exit screenshot measured with PIL.
+
+---
+
 ## tunnel — Tunnel effect
 
 **Complexity:** high
@@ -753,6 +812,10 @@ Per-scanline IRQ chain (one IRQ per raster line, 200 active lines):
 - $D018 does not need writing on every line. With only two bitmap bases available (bit 3), the register only needs writing on the lines where the source actually changes, which a per-row layout limits to at most 25 per frame — and if $D018 is being used only as the double-buffer flip, it is one write per frame. Writing $D018 in 25 rather than 200 of the per-line IRQs saves approximately 5 × 175 = 875 cycles. Worth doing. (An earlier version of this line justified the saving by saying $D018 "takes effect at character row boundaries (every 8 lines)"; that timing holds for the video-matrix bits 7-4, not for the bitmap-base bit, which takes effect on the line it is written.)
 
 All cycle counts above are approximate and will vary with handler implementation, table layout, and whether badlines are handled separately.
+
+### Recipes
+
+- `recipes/kickassembler/pseudo-3d-road.md` — coarse layer only (fine layer timing not resolved in that build; see "What it does not establish").
 
 ---
 

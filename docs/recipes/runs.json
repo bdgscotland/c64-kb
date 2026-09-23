@@ -1434,5 +1434,53 @@
       "pal": "screenshots/isometric-room.png",
       "ntsc": "screenshots/isometric-room-ntsc.png"
     }
+  },
+  "kickassembler/sprite-border-scroller": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-border-scroller.png",
+      "ntsc": "screenshots/sprite-border-scroller-ntsc.png"
+    }
+  },
+  "kickassembler/twister": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/twister.png",
+      "ntsc": "screenshots/twister-ntsc.png"
+    }
+  },
+  "kickassembler/sprite-stretcher": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-stretcher.png",
+      "ntsc": "screenshots/sprite-stretcher-ntsc.png"
+    }
+  },
+  "kickassembler/screen-dissolve": {
+    "cycles": 5000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/screen-dissolve.png",
+      "ntsc": "screenshots/screen-dissolve-ntsc.png"
+    }
   }
 }
