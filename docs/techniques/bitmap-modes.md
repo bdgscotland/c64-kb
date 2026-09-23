@@ -231,8 +231,8 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** stable_raster_irq, multicolor_bitmap, vic_bank_select
 **Raster band:** 45-251 (the fli-image recipe's first IRQ is on line 45; its last FLI line is 250 and the handler exits near cycle 50 of line 251)
-**Cost:** cycles_per_line=63, lines_active=207, cycles_per_frame=13041, bytes_code=3277, bytes_data=16384, irq_slots=1
-**Cost basis:** estimated
+**Cost:** cycles_per_line=63, lines_active=207, cycles_per_frame=13041, bytes_code=3488, bytes_data=16001, irq_slots=1
+**Cost basis:** arithmetic
 **Cost measured on:** kickassembler-fli-image
 **Cost includes:** stable_raster_irq, double_irq
 **Claims:** vic_raster_irq (owns), cia2_vic_bank (owns)
@@ -329,6 +329,14 @@ lines, not the band the handler holds from its first IRQ to its exit.
 The stable entry (`stable_raster_irq` by a double IRQ, step 3 above)
 runs inside the band, so the Cost includes line names both and a budget
 does not add them again.
+
+The byte figures are KickAssembler 5.25's `-showmem` for the recipe
+listing: code $0900-$169F is 3,488 bytes, and data is the one-byte
+`saved_sp`, eight 1,000-byte screen pages and the 8,000-byte bitmap,
+16,001 bytes. An earlier Cost line said `bytes_code=3277` and
+`bytes_data=16384`, which are 3.2 KB and 16 KB multiplied by 1,024, not
+the segments, and its basis said `estimated`; every figure on the line is
+now arithmetic or read off the listing, so the basis is `arithmetic`.
 
 Code size: 16 bytes per line unrolled, 3.2 KB for 200 lines. The old
 figure of "25-30 cycles per line" for an IRQ-per-line handler described

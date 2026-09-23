@@ -29,6 +29,10 @@ a high score written to disk at game over and read back at the next
 start. A result byte at `$02FF` and the border colour report the verdict
 so a headless run needs no human.
 
+The `techniques` list did not name `sid_play_routine_pattern` until #22
+step 3, although `tune_play` plays a three-voice stub every frame (row 8
+below); a budget built from the list left the tune out.
+
 It is the game the graph arm of the KB build test wrote from this
 knowledge base, made self-contained and given a fixed layout. Every part
 below names the recipe it was lifted from; an agent that has read those
