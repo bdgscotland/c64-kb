@@ -35,20 +35,20 @@ Body.
       doc("cycles_per_frame=100, sprites_per_line=8"),
       "techniques/sprite.md",
     ).find((e) => e.type === "technique");
-    expect(t && t.type === "technique" ? t.cost : null).toEqual({
+    expect(t?.cost ?? null).toEqual({
       cycles_per_frame: 100,
       sprites_per_line: 8,
     });
   });
 
   it("refuses more than eight", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const t = extractGraphEntities(
         doc("cycles_per_frame=100, sprites_per_line=9"),
         "techniques/sprite.md",
       ).find((e) => e.type === "technique");
-      expect(t && t.type === "technique" ? t.cost : null).toEqual({ cycles_per_frame: 100 });
+      expect(t?.cost ?? null).toEqual({ cycles_per_frame: 100 });
       expect(warn.mock.calls.some((c) => String(c[0]).includes("hardware maximum"))).toBe(true);
     } finally {
       warn.mockRestore();

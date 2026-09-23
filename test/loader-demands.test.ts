@@ -3,12 +3,19 @@ import { FalkorService } from "../src/services/falkor.ts";
 import { checkCompatibility } from "../src/tools/query.ts";
 import { extractGraphEntities, DEMAND_VOCABULARY } from "../src/graph/extract.ts";
 
+// The vocabulary's text for a demand word; throws on a word it does not hold.
+function demandText(r: string): string {
+  const text = new Map(Object.entries(DEMAND_VOCABULARY)).get(r);
+  if (text === undefined) throw new Error(`not a demand word: ${r}`);
+  return text;
+}
+
 // serial_bus_exclusive (schema 24): a resident drive-code loader owns the
 // drive's serial bus, so KERNAL disk I/O stalls until it is uninstalled
 // (docs/techniques/loaders-packers.md, krill_loader_integration, How step 5).
 describe("serial_bus_exclusive", () => {
   it("is in the vocabulary, and the words no page can state are not", () => {
-    expect(DEMAND_VOCABULARY.serial_bus_exclusive).toMatch(/serial bus/);
+    expect(demandText("serial_bus_exclusive")).toMatch(/serial bus/);
     for (const w of [
       "dd00_plain_stores",
       "io_visible_in_irq",
@@ -22,12 +29,12 @@ describe("serial_bus_exclusive", () => {
   it("the Krill page asserts it and ingests without an unknown-demand warning", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const file = path.resolve(__dirname, "../docs/techniques/loaders-packers.md");
       const ents = extractGraphEntities(fs.readFileSync(file, "utf8"), "techniques/loaders-packers.md");
       const d = ents.filter((e) => e.type === "technique_demands");
-      expect(d.map((e) => (e.type === "technique_demands" ? `${e.technique}:${e.resource}` : ""))).toEqual([
+      expect(d.map((e) => `${e.technique}:${e.resource}`)).toEqual([
         "krill_loader_integration:serial_bus_exclusive",
       ]);
       expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("demands unknown"))).toEqual(
@@ -56,7 +63,7 @@ describe("serial_bus_exclusive", () => {
       await f.linkTechniqueDemands(
         "krill_loader_integration",
         "serial_bus_exclusive",
-        DEMAND_VOCABULARY.serial_bus_exclusive,
+        demandText("serial_bus_exclusive"),
       );
       for (const [name, addr] of [
         ["OPEN", "$FFC0"],

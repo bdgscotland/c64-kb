@@ -24,14 +24,14 @@ describe("version_verified on Tool", () => {
       page('version_verified: "5.25"\n'),
       "toolchains/kickassembler-reference.md",
     ).find((e) => e.type === "tool");
-    expect(t && t.type === "tool" ? t.version_verified : null).toBe("5.25");
+    expect(t?.version_verified ?? null).toBe("5.25");
   });
 
   it("is absent when the page states none", () => {
     const t = extractGraphEntities(page(""), "toolchains/kickassembler-reference.md").find(
       (e) => e.type === "tool",
     );
-    expect(t && t.type === "tool" ? t.version_verified : "missing").toBeUndefined();
+    expect(t ? t.version_verified : "missing").toBeUndefined();
   });
 
   it("the four gate toolchains' pages state one", async () => {
@@ -46,7 +46,7 @@ describe("version_verified on Tool", () => {
     ]) {
       const text = fs.readFileSync(path.resolve(__dirname, "../docs", rel), "utf8");
       const t = extractGraphEntities(text, rel).find((e) => e.type === "tool");
-      if (t && t.type === "tool") got[t.name] = t.version_verified;
+      if (t) got[t.name] = t.version_verified;
     }
     expect(got).toEqual({ kickassembler: "5.25", oscar64: "1.32.271", cc65: "2.18", vice: "3.10" });
   });
