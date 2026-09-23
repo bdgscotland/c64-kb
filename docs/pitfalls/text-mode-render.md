@@ -10,7 +10,10 @@ Bugs that show up when implementing a moving-piece overlay on a
 text-mode playfield (Tetris-likes, Sokoban-likes, Boulder Dash, etc.).
 Two of them come from over-thinking the rendering layer; the third comes
 from under-budgeting it; the fourth is an encoding mistake rather than a
-rendering one, PETSCII bytes stored where the VIC expects screen codes.
+rendering one, PETSCII bytes stored where the VIC expects screen codes;
+the fifth is an addressing mistake, a colour RAM index that runs past
+the last cell and into the CIA; the sixth is a read-back mistake, a VIC
+colour register compared against the value that was written to it.
 An earlier version of this page opened by saying
 a C64 text-mode field redraw is "cheap enough that the simplest 'rewrite
 everything every frame, overlay last' loop just works". It does not: the
@@ -502,3 +505,337 @@ whose screenshot shows both rows.
 - Register: `$D018` bit 1 (`hardware/vic-ii-reference.md`) selects the
   set; it never changes the code
 - Recipe: `recipes/oscar64/petscii-screen-codes.md`
+
+---
+
+## colour_ram_index_past_last_cell_hits_cia1 — A colour RAM index of 1,024 or more writes CIA1's registers, not colour RAM
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DC00, DC02, DC04, DC0D, DC0E
+**Triggered by techniques:** tile_map_render, colour_cycling, colour_fade, screen_wipe, text_window_and_menu, text_mode_overlay_render, flip_screen_rooms, plasma, koala_format, char_scroll_buffer_h, difficulty_ramp_tables
+
+### Symptom
+
+A colour fill or colour copy runs, the screen looks right, and
+something unrelated stops. Which thing depends on how far the index
+went and what value it carried. The jiffy clock freezes, the cursor
+stops flashing and the keyboard goes dead; or the keyboard alone goes
+dead while the joystick still reads; or a CIA-timed measurement returns
+nonsense while the frame count stays plausible (that last is how the
+`recipes/oscar64/difficulty-tables.md` build met it: coins drawn on text
+rows up to 28 put the colour writes at `$D800 + 1120` and beyond). No
+cell on the screen is wrong, because every cell was written before the
+index left the chip.
+
+### Mechanism
+
+The screen is 40 by 25, which is 1,000 cells, and colour RAM holds
+them at `$D800` to `$DBE7`. The page it sits in, `$D800` to `$DBFF`, is
+1,024 bytes long (arithmetic), so a fill whose 16-bit index is compared
+against a page boundary, or a copy that moves four pages of 256 because
+1,000 does not divide, writes 24 bytes past the last cell into the
+spare colour RAM at `$DBE8` to `$DBFF`, which is harmless, and then
+byte 1,024 lands at `$DC00`: CIA1. The next sixteen indices walk the
+chip's sixteen registers in order, port A, port B, the two data
+direction registers, timer A, timer B, the four time-of-day registers,
+the serial register, the interrupt control register and the two control
+registers. The registers repeat every 16 bytes to `$DCFF` (index 1,279),
+so a longer overrun writes each of them again on every pass, and index
+1,280 reaches CIA2.
+
+What a single pass does was measured in VICE x64sc 3.10 (PAL) with a
+fill of `$0E`, light blue, whose 16-bit index ran to 1,040. CIA1 before,
+`$DC00` to `$DC0F`:
+
+```text
+7f ff ff 00  93 24 ff ff  00 00 00 01  00 00 01 08
+```
+
+After the fill:
+
+```text
+ff 7f 0e 0e  4e 21 0e 0e  0e 0e 0e 01  0e 00 0e 0e
+```
+
+Every register that reads back its written value now reads `$0E`.
+Timer A read `$214E` on two samples about 600 cycles apart, where before
+the fill the same two samples read `$2448` then `$2243`: the `$0E`
+written to `$DC0E` has bit 0 clear, so timer A is stopped, and the `$0E`
+written to `$DC0D` cleared the interrupt masks for timers B, the alarm
+and the serial port. The KERNAL's jiffy clock at `$A2` advanced from
+`$38` to `$4D` over a delay loop run before the fill and stayed at `$50`
+over the same loop run after it. With no jiffy interrupt there is no
+SCNKEY, so no key is read. `$DC02`, port A's data direction register,
+reads `$0E`: only bits 1 to 3 drive, and a keyboard scan that then
+selects every column by writing `$00` to `$DC00` reads `$F1` back from
+the port, not `$00`. Bits 6 and 7 of `$DC01` now carry the timer outputs
+(`$7F` after this run, `$3F` after an identical one), because the `$0E`
+in both control registers set the port-B-on bit. The same fill with the
+index stopped at 1,000 left all sixteen bytes as they were, timer A
+counting (`$27C7` then `$256C`), and the column select reading `$00` from
+`$DC00` and `$FF` from `$DC01`.
+
+The most common fill value is `$00`, black, and it does its damage at
+index 1,026: `$00` into `$DC02` turns every port A line into an input,
+which is the state `cia1_ddr_cleared_kills_keyboard` in
+`pitfalls/input.md` describes. Measured with a `$00` fill whose index
+ran to 1,027: `$DC02` read `$00` after it, the timers were still running
+(`$228A` then `$205A`), and the column select read `$FF` from `$DC00`
+whatever was written to it, so the scanner's column drive is gone and the
+keyboard is dead while the joystick, which grounds its lines, still
+reads. A fill that runs to 1,136 rewrites the sixteen registers seven
+times over; after it timer A read `$0E0E` on both samples, stopped and
+reloaded from the latch the fill wrote (measured, same build).
+
+The 24 spare bytes are real nibble RAM. After the `$0E` fill they read
+`$0E` from `$DBE8` to `$DBFF`; after the `$00` fill they read `$00` in
+21 places and `$F0` in three, the low nibble the value written and the
+high nibble whatever the VIC last fetched, which changes from read to
+read. With the index stopped at 1,000 they held what the machine came up
+with (`02 0f f8 07 00 0f 04 0f 04 0f 05 0f 03 0e 00 0b`; a second boot
+gave the same sixteen low nibbles under different high ones), because
+the KERNAL's screen clear stops at 1,000 as well. Mask reads of this region
+with `AND #$0F`; `hardware/c64-registers-reference.md` says the same.
+
+### Fix
+
+Bound the index at 1,000, not at a page boundary. A fill by rows, 25
+rows of 40 with an 8-bit loop inside a row, cannot pass the last cell.
+A fill that must be a single 16-bit loop compares the low byte against
+`<1000` and the high byte against `>1000`, or counts four pages and
+stops the last one at `$E8`. In a compiler, put the size in the type
+(`char colour[25][40]`) or assert it (`static_assert(sizeof(map) ==
+1000)` in Oscar64), and clamp any row index before it multiplies by 40:
+row 25 is already the spare bytes, row 25 cell 24 onward is the CIA. If
+a fill is allowed to run over on purpose, to 1,024 for a fast unrolled
+copy, it must stop at 1,024 exactly, and the 24 bytes it writes past the
+screen must not be counted on to hold a full byte.
+
+### Worked example
+
+Bad: a "fill four pages" loop, the shape a screen clear takes when the
+programmer rounds 1,000 up. It writes `$DC00` to `$DC17` on its last
+page.
+
+```asm
+// BAD: 4 x 256 = 1,024, and cell 1,000 onward is not colour RAM.
+fill_colour_bad:
+        lda #$0e
+        ldx #$00
+!:      sta $d800,x
+        sta $d900,x
+        sta $da00,x
+        sta $db00,x          // stops at $dbff: the 24 spare nibbles, no harm
+        inx
+        bne !-
+        rts
+```
+
+That form stops at `$DBFF` and is harmless. The one that reaches the
+CIA is its 16-bit cousin, a pointer walked until the high byte turns
+over, which is what the difficulty-tables build and the measured fill
+above both did:
+
+```asm
+// BAD: meant to stop when the high byte reaches $dc; the compare is
+// one page late, so all of $dc00-$dcff is written, CIA1 sixteen times.
+fill_colour_bad16:
+        lda #<$d800
+        sta $fd
+        lda #>$d800
+        sta $fe
+        ldy #$00
+        lda #$0e
+!:      sta ($fd),y
+        iny
+        bne !-
+        inc $fe
+        lda $fe
+        cmp #$dd              // should be #$dc
+        bne !-
+        rts
+```
+
+Good: 25 rows of 40, and no index that can leave the chip. Run under
+the same harness, this routine left all sixteen CIA1 bytes as the boot
+had them (timer A still counting), wrote `$0E` to cell 0 and to cell
+999 at `$DBE7`, and left `$DBE8` onward as it found it (measured, VICE
+x64sc 3.10).
+
+```asm
+// GOOD: rows of 40, an 8-bit index inside each row.
+fill_colour_good:
+        lda #<$d800
+        sta $fd
+        lda #>$d800
+        sta $fe
+        ldx #25
+        lda #$0e
+!row:   ldy #39
+!:      sta ($fd),y
+        dey
+        bpl !-
+        pha
+        clc
+        lda $fd
+        adc #40
+        sta $fd
+        bcc !+
+        inc $fe
+!:      pla
+        dex
+        bne !row-
+        rts
+```
+
+### Cross-references
+
+- **Sibling pitfall:** `cia1_ddr_cleared_kills_keyboard` in
+  `pitfalls/input.md` is the state a `$00` fill leaves at index 1,026,
+  reached there by a deliberate write; this entry is the same state
+  reached by an index.
+- **Hardware:** `hardware/c64-registers-reference.md`, the Color RAM
+  section, for `$DBE8` to `$DBFF` (nibble RAM, high nibble undefined) and
+  the I/O map that puts CIA1 at `$DC00`; `hardware/cia-reference.md` for
+  what each of the sixteen registers does with the byte it is given.
+- **Recipe:** `recipes/oscar64/difficulty-tables.md`, "A bug this page
+  had": the overrun met in the wild, at `$D800 + 1120`.
+- **Not measured here:** NTSC (the mechanism is address arithmetic and
+  has no region term); a real key press after the overrun (the harness
+  cannot press one; the keyboard consequence is read from the port bytes
+  and from `cia1_ddr_cleared_kills_keyboard`); the CIA2 case at index
+  1,280.
+
+---
+
+## vic_colour_register_upper_nibble_reads_set — A VIC colour register reads back as the colour plus 240, so a compare against the value written never matches
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D020, D021, D022, D023, D024, D025, D026, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, D016, D018, D019, D01A
+**Triggered by techniques:** basic_extension_wedge
+
+### Symptom
+
+An `IF PEEK(53280)=2` that is silently false after `POKE 53280,2`. A
+`cmp #2` after `lda $d020` whose branch is never taken. A colour saved
+with `lda $d021` and used as a table index that reads 240 bytes past the
+end of a sixteen-entry table. A "restore the border" routine that works,
+because a write only takes the low four bits, while the compare in the
+same program does not. Nothing crashes and nothing is drawn wrong; the
+program just takes the other branch, and the bug looks like logic.
+
+This bit the BASIC wedge recipe on its first run: `&B 2` set the border
+red, `IF PEEK(53280)=2 THEN` skipped its line without a word, and the
+verdict byte was never written.
+
+### Mechanism
+
+The VIC-II has four bits of storage behind each colour register
+($D020 to $D02E). A write keeps the low nibble and drops the rest. A
+read drives the low four bits from that storage and leaves the upper
+four data lines undriven, and on this chip an undriven line reads as 1.
+So every colour register reads back as the colour plus $F0 (240). VICE
+models that as ones as well; measured below on both models, and the
+audited `hardware/vic-ii-reference.md` says the same ("Only the low 4
+bits matter; the upper 4 bits read as 1" under $D020, "Bits 7-4 read 1"
+under $D021).
+
+The same thing happens to every other unused VIC bit. Measured in the
+same run: $D016 written $00 reads $C0 (bits 7-6), $D018 written $14
+reads $15 (bit 0), $D019 reads with bits 6-4 set, and $D01A written $00
+reads $F0 (bits 7-4). The hardware page marks each of those bits "read 1"
+and agrees with the measurement. $D011 has no unused bit and read back
+exactly what was written ($1B). $D01E and $D01F are eight full bits of
+collision latch: both read $00 with no sprites on, and no bit reads set
+there, so this pitfall does not touch them (their own trap is that the
+read clears them, `sprite_priority_collision_silent` in
+`pitfalls/sprite.md`). $D02F to $D03F have no register at all and read
+$FF. Whether the upper nibble reads as 1 on every real VIC revision is
+not measured here; VICE, both models, is what the table below shows.
+
+### Fix
+
+Mask before you compare: `and #$0f` after the read, or `(PEEK(53280)
+AND 15)` in BASIC. If a colour is going to index a table, mask it first.
+Better, keep your own copy of each colour in RAM and never read the
+register back; the register is write-only in effect, and a shadow byte
+also survives a raster routine that changes the border mid-frame. A read
+of a VIC colour register that is stored, compared or indexed without a
+mask is wrong; a read that is written straight back to a colour register
+is harmless, because the write drops the nibble again.
+
+### Worked example
+
+The fragment builds as written. The first compare is the bug; the
+second is the fix.
+
+```asm
+// Bad: after a write of 2, $D020 reads $F2. Z is never set here.
+        lda #2
+        sta $d020
+        lda $d020
+        cmp #2
+        beq bad_match          // never taken
+        jmp keep_going
+bad_match:
+        inc $0400              // would show a glyph; it never does
+keep_going:
+
+// Good: mask the read, then compare the low nibble.
+        lda $d020
+        and #$0f
+        cmp #2
+        beq good_match         // taken
+        jmp done
+good_match:
+        inc $0401              // the glyph appears
+done:
+        rts
+
+// Better: a shadow byte, written once with the colour, is always exact.
+border_shadow:
+        .byte 2
+```
+
+The read-back measured in VICE 3.10 x64sc, `-model ntsc` and default
+PAL, with the program above's write-and-read loop over every value.
+Each register was written 0 to 15 and read straight back; the two
+models gave identical bytes:
+
+```text
+register   written 0..15 reads back as
+$D020-$D02E  240 241 242 243 244 245 246 247 248 249 250 251 252 253 254 255
+                (all fifteen registers, PAL and NTSC; written value + 240)
+$D020 <- 2, read, AND #$0F           -> 2
+$D016 <- $08 / $C8 / $00, read       -> $C8 / $C8 / $C0   (bits 7-6 read 1)
+$D018 <- $15 / $14, read             -> $15 / $15         (bit 0 reads 1)
+$D019 read                           -> $71 PAL, $70 NTSC (bits 6-4 read 1;
+                                        bit 0 is the raster latch, not an unused bit)
+$D01A <- $00 / $0F / $01, read       -> $F0 / $FF / $F1   (bits 7-4 read 1)
+$D011 <- $1B, read                   -> $1B               (no unused bit)
+$D01E, $D01F read, sprites off       -> $00, $00          (no unused bit)
+$D02F, $D03F read                    -> $FF, $FF          (no register)
+
+BASIC, typed into the KERNAL buffer, PAL and NTSC:
+POKE53280,2:PRINTPEEK(53280);PEEK(53280)AND15   ->  242  2
+IF PEEK(53280)=2 THEN PRINT "EQ2"                ->  (nothing printed)
+IF PEEK(53280)=242 THEN PRINT "EQ242"            ->  EQ242
+POKE53281,3:PRINTPEEK(53281);PEEK(53281)AND15   ->  243  3
+```
+
+### Cross-references
+
+- Technique: `basic_extension_wedge` (`techniques/text.md`), whose
+  recipe met this and masks with `AND 15`
+- Recipe: `recipes/kickassembler/basic-wedge.md`, the run that found it
+- Registers: `$D020` to `$D02E`, `$D016`, `$D018`, `$D019`, `$D01A`
+  (`hardware/vic-ii-reference.md`; each entry marks the bits that read 1)
+- Pitfall: `d016_unmasked_rmw_clobbers_csel_mcm` (`pitfalls/scroll.md`),
+  the read-modify-write face of the same two bits on `$D016`
+- Pitfall: `sprite_priority_collision_silent` (`pitfalls/sprite.md`),
+  the read trap on `$D01E`/`$D01F`, which is clearing, not garbage
+- Pitfall: `sid_write_only_registers` (`pitfalls/sid.md`), the
+  neighbouring chip, where the whole byte is garbage rather than one
+  nibble

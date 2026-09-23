@@ -668,3 +668,222 @@ developed.
 - Register `DC0D`: CIA1 interrupt control; the acknowledge the KERNAL handler cannot make.
 - Register `D019`: VIC interrupt flags; the acknowledge a raster handler cannot make.
 - Recipe `recipes/kickassembler/charset-copy-rom-to-ram.md`.
+
+---
+
+## decruncher_overwrites_kernal_zero_page — A self-extractor that runs from the zero page leaves the KERNAL's variables full of decruncher code
+
+**Severity:** high
+**Region:** both
+**Triggered by kernal:** CHROUT
+**Triggered by techniques:** zx0_lzsa_decrunchers, pucrunch_decruncher, doynax_decruncher
+**Mitigated by techniques:** cpu_io_port_bank
+
+### Symptom
+
+A program that runs from its own PRG stops working the moment it is
+wrapped in a self-extracting cruncher. Nothing is reported. The two shapes
+measured here, on a payload that prints one line through `CHROUT` and
+then sets a byte:
+
+- Under Dali 0.3.5 `--sfx --small`, the payload is entered and never
+  comes back from its first `JSR $FFD2`. No text, no later store, the
+  border colour it sets afterwards never appears.
+- Under bitfire's `zx0 --sfx`, every `CHROUT` call returns, the later
+  store happens and the border changes, but the line is not on the
+  screen. The eleven screen codes were found at `$4CC7`, an address in
+  otherwise unused RAM well above the payload (which ends at `$1433`):
+  it is nothing more than the two decruncher bytes left in the editor's
+  line pointer `$D1/$D2` (`$4CBA`) plus its column `$D3` (`$0D`).
+
+The same payload crunched with Dali's standard `--sfx` and with pucrunch
+`-c64` printed its line where the uncrunched build did.
+
+### Mechanism
+
+The zero page is the cheapest place to put a decruncher: zero-page
+addressing saves a byte and a cycle on every operand, `(zp),Y` is the
+only indirect mode the 6502 has, and the page is free of anything the
+decruncher itself needs. Dali's and bitfire's self-extractors both copy
+their decruncher into it from the top of the copy down to `$01`, and the
+byte that lands at `$01` banks every ROM out so the whole 64 KB can be a
+decrunch target: `$34` under Dali `--small`, `$38` under bitfire, both
+with bits 0 to 2 clear (measured with a store trace on `$0001`; neither
+stub writes the port again during the decrunch). The stream is moved to the top of
+memory under the KERNAL and decrunched forwards from the payload's load
+address. The page they overwrite is where the KERNAL and BASIC keep
+their state.
+
+Measured in the windowless x64sc build of VICE 3.10, PAL, 2026-09-23. A
+tracepoint at the payload's entry (`SYS 2061`, `$080D`) dumped `$0000`
+to `$00FF`, and each dump was compared with the same dump from the
+uncrunched payload. The stopwatch at entry was 2,970,597 cycles for the
+plain build and 3,032,679 to 3,180,431 for the four crunched builds, so
+each decrunch cost under a quarter of a second of emulated time.
+
+| Build | Zero-page bytes changed at entry | `$01` | `$9A` | Printed |
+|---|---|---|---|---|
+| uncrunched | 0 | `$37` | `$03` | yes |
+| Dali `--sfx` | 20 | `$37` | `$03` | yes |
+| pucrunch `-c64` | 16 | `$37` | `$03` | yes |
+| Dali `--sfx --small` | 178 (`$01` to `$B7`) | `$34` | `$02` | no |
+| bitfire `zx0 --sfx` | 201 (`$02` to `$D4`) | `$37` | `$A6` | no |
+
+The two failures have different fatal bytes, and neither is the one a
+first guess would name:
+
+- **Dali `--small`** leaves `$01` at `$34`. `JSR $FFD2` then executes
+  the last bytes of the crunched stream, which the stub parked under
+  the KERNAL. Putting `$37` back is not enough on its own: measured,
+  the payload still hung. The byte that hangs it is `$9A`, the default
+  output device (DFLTO), which the decruncher code left at `$02`.
+  `CHROUT` reads `$9A` before it does anything else, and `2` is the
+  RS-232 device. Traced: `CHROUT` hands the byte to the RS-232 output
+  routine, which stores it through the unopened output buffer pointer
+  at `$F9/$FA` (zero on a clean boot, so the byte lands in `$0000`),
+  starts CIA2's timer and enables its NMI; the NMI handler at `$FE47`
+  then re-enters about every 75 cycles, the stack pointer falls six
+  bytes per entry, and the payload never runs again. It is not a wait
+  loop: the routine's buffer check at `$F017` ran once. Restoring `$01` and `$9A` (with `$99` for
+  good measure) and nothing else made the payload print on the
+  original screen, at the row `RUN` left the cursor on.
+- **bitfire** hands over with the KERNAL mapped: the last thing its
+  zero-page decruncher does before the jump is `DEC $01`, thirteen
+  cycles before entry, which turns its `$38` into `$37` (measured at
+  the store, not read from its source; Dali `--small` leaves `$34`
+  there). It leaves `$9A` at `$A6`, so
+  `CHROUT` treats the output as a serial-bus device and returns after
+  the bus times out. That is why its calls come back. With `$9A` put
+  back to `3`, the calls reach the screen editor, and the text still
+  does not appear: the editor's line pointer `$D1/$D2` (PNT) reads
+  `$4CBA` and its column `$D3` reads `$0D`, so the characters go to
+  `$4CC7`. `$C7`, the reverse-video flag, reads `$85`, so once the
+  pointer is right the line comes out in reverse video. Three of the
+  KERNAL's variables are wrong in three different ways, and the list
+  stops there only because the payload calls nothing else.
+
+The two stubs that pass are not clean either, and the difference is
+what they touch. Dali's standard stub pushes the zero page onto the
+stack before the copy and pops it back before the jump; it entered the
+payload with the stack pointer at `$FF`, ten bytes of its own exit code
+still at `$E3` to `$EC` (in the screen line link table), and BASIC's
+pointers at `$2D` to `$32`, `$39/$3A` and `$AE/$AF` rewritten, none of
+which the print path reads. Pucrunch's decruncher sits at `$F7` to `$FF`
+and leaves those nine bytes changed, plus the same BASIC pointers; the
+KERNAL's own variables are below `$F7` and the RS-232 pointers at `$F7`
+to `$FA` are idle. Pucrunch is on the Triggered-by line for those nine
+unsaved bytes all the same: `$F7` to `$FA` are the RS-232 buffer
+pointers, `$FB` to `$FE` the free zero page a payload may already be
+using, `$FF` BASIC's float-to-ASCII workspace, and `$2D/$2E` BASIC's
+end-of-program pointer, so a payload that expects any of them to hold
+what they held before the stub ran meets the same mechanism on a
+narrower front; this payload did not. The Doynax self-extractor copies its depacker to
+`$00C2` and up (its technique entry says so); whether it saves what it
+covers was not measured here.
+
+### Fix
+
+One of three, in order of cost:
+
+1. **Choose a stub that saves.** Dali's standard `--sfx` and pucrunch's
+   default decruncher both let a KERNAL-calling payload run unchanged
+   here. The `--small` flag bought 59 bytes of file on this payload and cost
+   the machine state; take it only for a payload that owns the machine.
+2. **Re-initialise in the payload's prologue.** Before the first KERNAL
+   call: write `$37` to `$01` (`cpu_io_port_bank`), then `JSR $FF84`
+   (IOINIT) and `JSR $FF81` (CINT). CINT resets the screen editor's
+   pointers, sets `$9A` back to the screen and `$99` to the keyboard,
+   and clears the screen; it does not clear `$C7`, so store zero there
+   as well. Measured: the payload printed its line at row 0 under both
+   failing stubs. A payload that must keep the screen contents restores
+   the specific bytes instead: for Dali `--small` that was `$01` and
+   `$9A`; for bitfire it was `$9A`, `$C7`, `$D3` and `$D1/$D2`.
+   Measured: a build that stored `3` to `$9A`, `0` to `$C7` and `$D3`
+   and `$0518` to `$D1/$D2`, and nothing else, printed its line on row
+   7 in normal video under bitfire. `$99` was left as the decruncher
+   left it and `$D4`, the quote-mode flag, stayed at `$08`; plain
+   letters were unaffected, though a payload that prints colour or
+   cursor codes would see them as reversed glyphs under that flag (the
+   editor's quote-mode rule, not measured here). The line pointer is
+   `$0400` plus 40 times the row, and CINT rebuilds it if the screen
+   contents do not matter.
+3. **Keep the payload's own zero-page use above the stub's span.** The
+   stub's copy runs down to `$01`, so nothing of the payload's survives
+   below `$B8` (Dali `--small`) or `$D5` (bitfire); values the payload
+   needs at start must be in its body, not in the zero page it was
+   crunched with.
+
+A program that sets up its own interrupts, screen and I/O and never
+returns to BASIC needs none of this, which is why the `--small` stub
+exists.
+
+### Worked example
+
+The good prologue was measured with and without the `$C7` store: with
+it the line reads normally under both stubs; without it, under bitfire,
+row 0 is eleven reverse-video glyphs.
+
+```kick
+// BAD: the payload's first act is a KERNAL call. Under a stub that
+// decrunches from the zero page, $01 may be $34 and $9A is whatever
+// opcode the decruncher left there. Measured: hangs (Dali --small)
+// or prints to $4CC7 (bitfire).
+entry_bad:
+    ldx #$00
+bad_loop:
+    lda msg, x
+    beq bad_done
+    jsr $ffd2
+    inx
+    bne bad_loop
+bad_done:
+    rts
+
+// GOOD: bank the KERNAL in, re-initialise I/O and the screen editor,
+// clear the one flag CINT leaves alone. Measured: prints under both.
+entry_good:
+    lda #$37
+    sta $01             // KERNAL, BASIC and I/O back in the map
+    jsr $ff84           // IOINIT: CIAs, timers, $01 direction bits
+    jsr $ff81           // CINT: editor pointers, $99/$9A, clears screen
+    lda #$00
+    sta $c7             // reverse-video flag is not CINT's to clear
+    ldx #$00
+good_loop:
+    lda msg, x
+    beq good_done
+    jsr $ffd2
+    inx
+    bne good_loop
+good_done:
+    rts
+
+msg:
+    .text "DECRUNCH OK"
+    .byte $0d, $00
+```
+
+The diff that names the bytes, from the bitfire run (address, value in
+the uncrunched build, value at entry after decrunch; the lines the print
+path reads, out of 201 that changed):
+
+```text
+01: 37 > 37   port: $38 during the decrunch, DEC $01 before the jump; $34 under Dali --small
+99: 00 > 00   DFLTN   untouched
+9a: 03 > a6   DFLTO   output device is now "serial device $A6"
+c7: 00 > 85   RVS     reverse video on
+d1: 18 > ba   PNT lo  screen line pointer was $0518 (row 7), now $4CBA
+d2: 05 > 4c   PNT hi
+d3: 00 > 0d   column 13
+d4: 00 > 08   quote-mode flag set
+```
+
+### Cross-references
+
+- Technique `zx0_lzsa_decrunchers`: the stubs' layout, the copy loop's span (`$EC` and `$D4` down to `$01`) and the measured footprints.
+- Technique `pucrunch_decruncher`: a decruncher that sits at `$F7` and up and leaves the KERNAL's variables alone.
+- Technique `doynax_decruncher` (loaders-packers.md): a depacker at `$00C2` and up; its saving behaviour is not measured here.
+- Technique `cpu_io_port_bank`: the `$01` values; `$34` is the all-RAM map the stubs decrunch under.
+- Technique `memory_layout_plan`: where the payload's own zero-page claims should be written down, so the stub's span is checked against them.
+- Pitfall `ram_under_rom_traps`: the other consequence of a `$01` left at `$34`, reads that return RAM where ROM was expected.
+- Hardware `c64-memory-map.md`: `$0099`/`$009A` (DFLTN/DFLTO), `$00C7`, `$00D1`-`$00D4`.

@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 751, schema 27, tools 2.0.0, package 0.13.0.
+Data 752, schema 27, tools 2.0.0, package 0.13.0.
+
+**Four pitfalls met while landing the night's recipes, each measured
+before it was written (data 752).** A VIC colour register reads back as
+the colour plus 240, so `IF PEEK(53280)=2` after `POKE 53280,2` is
+silently false: every register from `$D020` to `$D02E` measured 0 to 15
+on both models, with the other unused VIC bits (`$D016`, `$D018`,
+`$D019`, `$D01A`) tabled beside them and the audited hardware page
+agreeing on each. A self-extracting decruncher that runs from the zero
+page leaves the KERNAL's variables full of its own code: Dali `--small`
+and bitfire's stub both silenced a payload that prints through CHROUT,
+and the zero-page diff at entry names the bytes, `$9A` set to the RS-232
+device under one and to a serial device under the other, the editor's
+line pointer at `$4CBA` under the second; Dali's standard stub and
+pucrunch save what they clobber, and a prologue that banks the KERNAL in
+and calls IOINIT and CINT prints under both. A colour RAM index of 1,024
+or more writes CIA1's registers, with the sixteen bytes before and after
+a fill to 1,040 (timer A stopped, the jiffy clock frozen, the port A
+direction register left at the fill value) and the row-by-row fill that
+leaves them untouched; the 24 spare bytes past cell 999 measured as
+nibble RAM. One read of `$DC0D` or `$DD0D` clears every pending flag: a
+FLAG poll took a timer underflow on its way past and the timer's own
+check read `$00`, the copy-into-RAM pattern kept it, and a main-program
+read racing CIA2's NMI lost the interrupt itself at one phase on NTSC
+and on the old CIA model.
 
 **Candidate list, Tier B batch 9, two of four (data 751).** A tape
 mastering workflow page: a host writer that turns a PRG into a
