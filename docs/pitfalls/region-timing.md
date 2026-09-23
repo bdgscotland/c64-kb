@@ -20,7 +20,7 @@ branch on it.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** sid_play_routine_pattern, sid_voice_setup, frame_sync_loop, sfx_engine_beside_music, colour_fade, colour_cycling, screen_wipe, logic_rate_decoupling
+**Triggered by techniques:** sid_play_routine_pattern, sid_voice_setup, frame_sync_loop, sfx_engine_beside_music, colour_fade, colour_cycling, screen_wipe, logic_rate_decoupling, difficulty_ramp_tables
 **Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom
@@ -194,7 +194,7 @@ just reached 6 (then reset it and return without calling play).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DC04, DC05, DC06, DC07
-**Triggered by techniques:** frame_sync_loop, pwm_digi
+**Triggered by techniques:** frame_sync_loop, pwm_digi, difficulty_ramp_tables
 **Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom

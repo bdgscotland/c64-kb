@@ -5,7 +5,33 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 734, schema 24, tools 1.29.0.
+Data 735, schema 24, tools 1.29.0.
+
+**Design layer, slice 4 (data 735).** Four Oscar64 recipes that realise
+the pattern pages, each with a technique entry, a pinned verdict on both
+models and its name on the pattern's Realised-by line.
+`attract_mode_input_replay` (`oscar64/attract-replay`): the demo is the
+game fed from a recorded input stream through the same input byte, with
+the random generator reseeded; the reseeded build ends its 285-frame
+replay at the recorded position and the unseeded build 210 pixels away,
+both agreeing with a host model; the replay step costs 68 cycles a frame.
+`difficulty_ramp_tables` (`oscar64/difficulty-tables`): a six-row level
+table read at level start with a region scaler from the detection
+routine; compensated, level 3 arrives at 22,500 ms on PAL and 22,586 ms
+on NTSC; uncompensated, at the same frame count on both and 18,839 ms on
+NTSC, the 50:60 ratio. `two_player_state_swap` (`oscar64/two-player`):
+alternating play swaps an 8-byte block per player on death (206 cycles),
+simultaneous play reads both ports each frame; with `$DC00` set to `$FF`
+before the port-1 read, none of 40 reads was column-selected, without it
+all 40 were; the phantom press itself is not measured because VICE's
+keyboard feed writes the KERNAL buffer, not the matrix.
+`flip_screen_rooms` (`oscar64/flip-screen-rooms`): room records with edge
+exits and RLE tiles, five rooms, a scripted walk through all of them;
+the worst full-room redraw is 42,141 cycles, about two PAL frames, so the
+screen is blanked for two frames on PAL and three on NTSC rather than
+drawn in one vertical blank, and the pattern page's sentence saying
+otherwise is corrected. A defect met on the way and worth a pitfall: a
+colour-RAM index past 1,000 lands in the CIA1 register mirror at `$DC00`.
 
 **Candidate list, Tier A batch 5 (data 734).** Four corrections and one
 new technique, each measured with a tool built or driven here. The

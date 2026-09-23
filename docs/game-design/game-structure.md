@@ -21,7 +21,7 @@ is its source's number. Nothing on this page was measured in VICE.
 
 **Kind:** structure
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
-**Realised by:** jump_table_dispatch, irq_chain_table, frame_sync_loop, joystick_edge_detect, sid_play_routine_pattern, sfx_engine_beside_music, oscar64/platformer-scaffold, oscar64/simple-shmup, kickassembler/irq-chain
+**Realised by:** jump_table_dispatch, irq_chain_table, frame_sync_loop, joystick_edge_detect, sid_play_routine_pattern, sfx_engine_beside_music, oscar64/platformer-scaffold, oscar64/simple-shmup, kickassembler/irq-chain, two_player_state_swap, oscar64/two-player
 **Sources:** Codebase64 guide to programming games (unattributed, wiki); Andrew Braybrook, Morpheus diary in Zzap!64, 1987; John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993
 
 **Checks:**
@@ -208,7 +208,7 @@ Related: `game-design-patterns.md`, `../techniques/logic.md`,
 
 **Kind:** composition
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, action_puzzle, beat_em_up
-**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder
+**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder, flip_screen_rooms, oscar64/flip-screen-rooms
 **Sources:** John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**
@@ -259,8 +259,13 @@ blank screen and no half-drawn frame shows.
 
 ### Variations
 
-A flip-screen adventure runs the short form on every room change, inside
-one vertical blank. Morpheus puts a docking sequence where Get Ready goes.
+A flip-screen adventure runs the short form on every room change. It does
+not fit in one vertical blank: the flip-screen-rooms recipe measured a
+full redraw of a 40 by 22 RLE room at 40,204 to 42,141 cycles, about two
+PAL frames, so it blanks the display for two frames on PAL and three on
+NTSC and redraws behind the blank (this sentence said "inside one vertical
+blank" until that measurement). Morpheus puts a docking sequence where Get
+Ready goes.
 
 Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 `../techniques/memory-banking.md`.
@@ -271,7 +276,7 @@ Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 
 **Kind:** production
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
-**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling
+**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling, attract_mode_input_replay, oscar64/attract-replay
 **Sources:** Codebase64 guide to programming games (unattributed, wiki); Lasse Öörni, Rant 18, Interaction patterns in Covert Bitops games; Tony Temple, Anatomy of Arcade High Score Tables, The Arcade Blogger, 2021; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**

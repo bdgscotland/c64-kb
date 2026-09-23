@@ -214,7 +214,7 @@ Related: `../techniques/logic.md` (`wave_director`, `object_pool`), `../recipes/
 
 **Kind:** behaviour
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
-**Realised by:** logic_rate_decoupling, pal_ntsc_detection, lfsr_random, wave_director, kickassembler/logic-rate-decoupling, oscar64/pal-ntsc-detect
+**Realised by:** logic_rate_decoupling, pal_ntsc_detection, lfsr_random, wave_director, kickassembler/logic-rate-decoupling, oscar64/pal-ntsc-detect, difficulty_ramp_tables, oscar64/difficulty-tables
 **Sources:** Jamey Pittman, The Pac-Man Dossier (2009); Jeff Minter, interviewed by John Blackford in COMPUTE!'s Gazette (August 1983); John and Steve Rowlands, Let's Make a Monster parts 6 and 8, Commodore Format (1993); Andrew Braybrook, Birth of a Paradroid, Zzap!64 (1985); Shmups Wiki, Gradius library page (undated); Chris Crawford, The Art of Computer Game Design (1984)
 
 **Checks:**

@@ -135,6 +135,128 @@ the figure.
 - `recipes/oscar64/tile-grid-collision.md`
 - `recipes/oscar64/platformer-scaffold.md` — the corner probes, landing snap and head bump inside a whole single-file platformer, with ladders; the page to copy when starting a game
 
+## flip_screen_rooms — A world of room records, redrawn whole at every edge
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D015, DC04, DC05, DC06, DC07, DC0E, DC0F
+**Requires:** tile_map_render, tile_grid_collision, object_pool
+
+### Why
+
+A flip-screen world costs no scroll code: no soft-scroll register, no
+buffer rotation, no column decode at the seam, and no wide map in RAM.
+Each room is one hand-made screen, so the designer places every wall and
+object by eye, and the player reads the whole room at once. The whole
+world is a table of records that fits in memory beside the code, which
+is the single-load model of the period: one tape or disk load, then the
+game and every room it has. The price is the transition, a full redraw of
+the screen from the next room's record, which is longer than one frame
+and has to be hidden.
+
+### How
+
+1. **The record.** A header, then the tile stream, then the objects. The
+   header holds four exits in a fixed order (up, down, left, right), each
+   a target room and an entry cell, with a sentinel for no exit, plus
+   whatever the room needs to draw itself (a wall colour, a character set
+   number, a tune). The tile stream is the run-length format of
+   `tile_map_render`, one stream per row. The decoder returns the byte
+   after the stream, so the object list follows it with no offset field.
+2. **The edge.** Every frame, the move is computed first and tested
+   against the room's last cell. A move that would leave the room looks
+   up the exit for that direction: none means the edge is a wall; a
+   target means a transition. The test is on the attempted move, not on
+   the cell the player stands in.
+3. **The entry cell.** The record names the cell the player appears in,
+   which is the gap on the far side of the next room. Because the edge
+   fires only on a move that pushes out of the room, standing on the
+   entry cell does not fire it, and the way back is to push at the edge
+   again. A rule keyed on position would bounce the player between the
+   two rooms for ever.
+4. **The redraw.** Hide the sprites (`$D015` = 0), clear DEN in `$D011`,
+   decode the next room's stream straight to the tile map, the screen and
+   colour RAM in one pass, load its objects into the pool, place the
+   player on the entry cell, set DEN. Set it as soon as the redraw
+   returns and before any other work, such as a HUD update: the blank
+   lasts from DEN clear to DEN set, not for the redraw alone. The recipe
+   does this at raster 251, so the first writes fall in the lower border
+   and the next line `$30` sample finds DEN clear.
+5. **Objects.** Clear the pool, then load the room's list into it,
+   skipping any object the world's taken-bits say is gone. Write the
+   bit when the player takes an object, so a second visit does not put
+   it back.
+
+### Why it works
+
+The frame that a redraw spans is the only hazard. DEN is sampled once
+per frame on line `$30`; a frame that samples it clear shows the border
+colour on every line and makes no badlines. A redraw that starts in the
+lower border with DEN clear therefore writes into a screen nobody is
+reading: the writes before the next `$30` sample land in the border, and
+the frames after it are blank until DEN is set again. No frame is torn,
+because no visible line is drawn while screen RAM is half-written. The
+cost is a short blank, two frames on PAL and three on NTSC for the
+recipe's redraw (arithmetic from the measured cycles, on the interval
+from DEN clear to DEN set). A game that would rather not
+blank can accept the torn frames instead, or draw the new room behind a
+`screen_wipe` from `transitions.md`, which turns the redraw's frames into
+the effect.
+
+The edge rule on the attempted move is what makes the entry cell safe.
+The player is placed on a cell, not past it, and the collision code sees
+the room's own tiles there, so a wall under the entry cell is the
+designer's error and not the engine's.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 (`recipes/oscar64/flip-screen-rooms.md`,
+CIA1 timers A and B cascaded, interrupts masked, display blanked so no
+badline stalls are counted): the redraw of a 40 x 22 room, decode and
+draw in one pass with an object load, costs 40,204 to 42,141 cycles over
+the seven transitions of the recipe's walk, for rooms of 149 to 188
+stream bytes. That is 46 to 48 cycles per cell, 2.1 PAL frames or 2.5
+NTSC frames, and about six times the 6,700-cycle race-free window
+`full_field_redraw_exceeds_vblank` gives, which is why the screen is
+blanked. The decoder is 224 bytes of Oscar64 `-O2` code from the `.map`
+file. The first version decoded into the map and then copied 880 cells in
+a second loop with a 16-bit index, and cost 99,262 cycles, five frames; a
+per-row pointer with a `char` index halved it. `level-rle-decoder.md`
+measured the decode alone at 19,158 cycles by hand against 33,562 in C
+for a room of 213 bytes, so a hand-written one-pass decoder should reach
+about half the figure here (not measured here). The per-frame work
+outside a transition, the edge test, two corner probes and the object
+check, was not timed separately.
+
+### Variations
+
+- **Doors instead of edges.** A door tile carries the same three bytes
+  as an exit, target room and entry cell, and fires when the player's
+  cell is the door's cell. The rooms no longer have to share an edge, so
+  the world can be a graph rather than a grid.
+- **Bigger worlds.** A room of 22 rows costs about 200 bytes packed at
+  the recipe's ratios; a world of a hundred rooms is 20 KB and still a
+  single load. Past that, keep the records on disk and load the four
+  neighbours of the current room while the player is in it.
+- **Rooms with actors.** Load the room's actor list into the pool the
+  same way as the objects and let `actor_activation_window` decide which
+  of them run; a flip-screen room is the window, and the room change is
+  the moment every slot is freed and refilled.
+- **A wipe over the redraw.** Run a `screen_wipe` to black before the
+  redraw and back after it, or a `colour_fade`; the redraw then sits
+  inside frames the player expects to be dark.
+- **The one-frame form.** Rooms of fewer, larger metatiles, or a room
+  drawn from a second screen buffer that was decoded while the player
+  was still in the last room, bring the visible change inside one
+  vertical blank, which is the short form `game-structure.md` describes
+  (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/flip-screen-rooms.md` — five rooms in a 2 x 2 block
+  with a dead end, an autopilot walk through all of them and back, the
+  redraw timed and the blank policy stated
+
 ## object_pool — Fixed-slot object pool for enemies, bullets and effects
 
 **Complexity:** low
@@ -985,3 +1107,205 @@ at most 16,061 each, and the next-hop pass 105,602.
 - https://codetapper.com/c64/diary-of-a-game/paradroid/birth-of-a-paradroid-part-3/
   (Andrew Braybrook's Paradroid diary; patrol junctions; not measured
   here).
+
+---
+
+## two_player_state_swap — Two players from one game loop: a per-player state block swapped on death, or both ports read every frame
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00, DC01
+**Requires:** joystick_edge_detect, keyboard_matrix_scan
+**Cost:** cycles_per_frame=65, bytes_data=24
+**Cost basis:** measured-vice
+
+### Why
+
+A second player is cheap on the C64 and expensive to add late. The
+machine has two control ports, and the arcade convention of the time
+gave a game two shapes: players take turns, each continuing their own
+game when the other dies, or both play at once on one screen. Both
+shapes break the same way when they are bolted on: alternating play
+that keeps one set of score, lives and level variables hands player 2
+player 1's game; simultaneous play that reads port 1 the way it reads
+port 2 picks up the keyboard. The pattern that avoids both is one
+per-player block and one careful port read.
+
+### How
+
+**The block.** Put everything that belongs to a player in one struct
+and hold two of them in an array. The recipe's block is eight bytes:
+
+```
+offset  size  field
+0       2     score
+2       1     lives
+3       1     level
+4       1     cx     cell column
+5       1     cy     cell row
+6       2     rng    16-bit xorshift seed, stepped only on that player's frames
+```
+
+The map file of the recipe's build gives the array a size of `0010`,
+sixteen bytes, and the copy in play a size of `0008`, eight more, so
+the data cost of two players over one is sixteen bytes.
+The seed is in the block on purpose. A game that shares one random
+generator between alternating players gives player 2 a sequence that
+depends on how long player 1 survived, and two players who die at the
+same point in a level see different enemies. With the seed swapped in
+and out, each player's game is a function of their own input alone.
+
+**The swap.** The game loop works on a copy in play, `g`. On death:
+take the life and reset the position in `g`; store `g` into
+`players[cur]`; flip `cur` if the other player still has lives; load
+`g` from `players[cur]`. That is two eight-byte copies, a compare and a
+branch, and the loop writes `g` back to `players[cur]` every frame so
+the array is always current. Measured with CIA2 timer A in the lower
+border, KERNAL IRQ held off, net of an empty span: 206 cycles per swap
+in the Oscar64 build, the same on PAL and NTSC. The entry routine of
+the next state (`game-design/game-structure.md`, game_state_machine)
+redraws the HUD from both blocks and marks whose turn it is, so the
+display is derived from the array and never carries state of its own.
+
+**Simultaneous play and the port-1 hazard.** With both blocks live,
+each frame steps `players[0]` from port 2 and `players[1]` from port 1.
+Port 2 is `$DC00` bits 0 to 4. Port 1 is `$DC01` bits 0 to 4, and
+`$DC01` is also the keyboard's row input: a key pulls its row low while
+its column is driven low on `$DC00`. With the KERNAL IRQ live, SCNKEY
+runs every jiffy and leaves `$DC00` at `$7F`, column 7 selected, so
+between scans a held 1, left-arrow, CTRL, 2 or SPACE reads on port 1 as
+up, down, left, right or fire (`pitfalls/input.md`,
+joystick2_scan_phantom_press, Fix C). The mitigation is ordering under
+a held-off interrupt: `php`, `sei`, write `$FF` to `$DC00`, read `$DC00`
+for port 2 and `$DC01` for port 1, `plp`, every frame. No column is
+selected during the reads. The store alone is not enough: the jiffy IRQ
+comes from CIA1 timer A every 16,422 cycles on PAL and 17,046 on NTSC
+(`hardware/cia-reference.md`), the game loop is locked to the raster,
+so the interrupt drifts through the loop and can be taken between the
+store and the read, and then the scan puts `$7F` back before the read.
+The recipe measured it: the bare store-then-read shape, 50,000 times in
+a tight loop with the IRQ live, found `$7F` on the read after the store
+9 times; the held-off shape, 0 times. The compiled window was 19
+cycles, which is about one frame in 860 on PAL, a few times a minute in
+a real game. Holding the interrupt off for the 22 cycles of the pair
+delays the scan and loses none of it, and `plp` rather than `cli` keeps
+the interrupt off for a caller that already had it off. Leave the
+direction registers as IOINIT set them; clearing `$DC02` to read a
+joystick kills the keyboard (`pitfalls/input.md`,
+cia1_ddr_cleared_kills_keyboard). The recipe counts reads taken with a
+column selected: 0 of 40 with the held-off store, 40 of 40 without, on
+both models. It cannot count the phantom itself, because a headless
+VICE run holds no key; that half rests on the wiring in
+`hardware/cia-reference.md` and was not measured here.
+
+### Why it works
+
+The swap is correct because the block is complete: nothing a player
+would notice is kept outside it, so loading a block restores a game
+exactly, including the next random number. The port read is correct
+because it removes both halves of the port-1 hazard: the state the scan
+leaves, column 7 selected, which the `$FF` store clears, and the one
+timing case, the scan running between the store and the read, which
+the held-off interrupt makes impossible. A main-loop read never lands
+inside the scan (`pitfalls/input.md`, measured there), and with the
+scan unable to run between the store and the read, a read that first
+deselects every column sees only the stick.
+
+### Variations
+
+- Alternating play with a shared level: keep the level's world state in
+  a third block and reload it from the level data on each turn, or both
+  players play the same half-cleared screen.
+- A two-player game with the KERNAL IRQ replaced (`keyboard_matrix_scan`)
+  needs no `$FF` store, since nothing else writes `$DC00`; the matrix
+  scan and the port-1 read must then be ordered by the game itself, and
+  a port-1 stick still reads as keys during the scan.
+- Three or four players through a port adapter are out of scope here;
+  the block array extends, the port reads do not.
+
+### Recipes
+
+- `recipes/oscar64/two-player.md` — two sprites, one listing, `MODE`
+  selects alternating or simultaneous from a byte at start; the
+  alternating blocks checked against a host model after two scripted
+  deaths; the simultaneous cells checked, the column-selected count 0
+  with the `$FF` store and 40 without; swap and read cycles on screen;
+  PAL and NTSC
+
+## difficulty_ramp_tables — Level tables read from data, held at the last row, scaled by region
+
+**Complexity:** low
+**Region:** both
+**Requires:** pal_ntsc_detection, object_pool, lfsr_random
+**Cost:** cycles_per_frame=415
+**Cost basis:** measured-vice
+
+**Why.** A ramp built from constants cannot be tuned without a rebuild
+and cannot be tested by anyone but the programmer. It also cannot be
+scaled: a spawn interval of 60 written as a literal means 1.2 seconds
+on a PAL machine and 1.0 on an NTSC one, and every level of the game
+arrives a fifth early on the second. Put the knobs in a table with one
+row per level and every one of them becomes a byte a designer can
+change, a row a test can read, and a value a region scaler can pass
+through once at level start.
+
+**How.** One row per level, one column per knob: enemy speed in 8.8
+pixels per frame, spawn interval in frames, most enemies alive at once,
+the end condition (a coin quota, a kill count, a distance) and a flag
+byte that switches hazards on. Write every column for one region, PAL,
+and say so in the comment above the table. At level start, clamp the
+level index to the last row, copy the row into working variables, and
+pass the frame and speed columns through a scaler: on NTSC multiply
+frames by 6/5 and speeds by 5/6, rounding to nearest, so the interval
+lasts as long and the enemy covers the same distance in the same real
+time. The spawner and movers read only the working variables; the frame
+loop never reads the table. Advance the level on
+the row's end condition, not on a timer, so a slower player gets a
+longer level and not a harder one. The recipe reaches level 3 at 1128
+frames on PAL and 1352 on NTSC, 22,497 and 22,577 milliseconds by the
+CIA, against 18,847 milliseconds when the same table runs unscaled on
+NTSC.
+
+**Why it works.** The table is the whole ramp, so a level's difficulty
+is one row of bytes and the game's curve is the table read down a
+column. Clamping the index makes every level past the table a copy of
+the last row rather than a read of whatever follows it in memory, which
+is the pattern page's first check. The scaler is exact for the
+interval column when the row's frames divide by five, and within one
+frame otherwise; for speed the 8.8 fraction keeps the rounding under
+one part in two hundred. Doing the scaling once per level start keeps
+the per-frame path to a compare and a countdown.
+
+**Variations.** A rank counter beside the table, as the pattern page
+describes from the Gradius account: a few additive counters the player
+never sees (frames survived, stages cleared, power-ups held), summed,
+shifted down and capped at a small number, then used as a second index
+that picks a harder row or adds to a column. It rises with success, and
+the cap is the whole point. Rubber banding by outcome rather than by
+time: scale the damage a hit does, or the drop rate of health, by how
+far the player is ahead of or behind the row's expectation, and never
+below a floor. Two whole tables, one per region, selected once by
+`pal_ntsc_detection`, when the rounding of a scaler is not acceptable
+for some column. The last-row hold can also be a loop: index modulo the
+row count, with a separate counter that adds to speed on each pass.
+
+**Cycle budget.** Measured on the recipe with CIA1 timer A over one
+hundred calls, screen on, so badline stalls are inside the figures and
+they wander by a cycle or two between runs. The Cost line carries the
+spawner's worst frame, the one on which the interval has run out and
+it counts the eight-slot pool, rolls the LFSR once or twice, allocates
+a slot and fills it: 409 cycles on PAL and 412 on NTSC in the
+compensated build, 410 and 415 with the scaler compiled out, and the
+line states the largest of the four. The spawn itself is `object_pool`
+work, but the technique's spawner is what runs it, so that is the frame
+a plan has to fit. The ordinary frame, when the interval is counting
+down and nothing spawns, costs 51 cycles on PAL and 53 on NTSC. A
+level start, the clamp, the row copy and both scalers, costs 181
+cycles on PAL and 267 on NTSC in the compensated build, where the NTSC
+path runs the multiply and divide, and 113 or 118 with the scaler
+compiled out. A level start happens a handful of times in a game and
+is not a per-frame figure.
+
+### Recipes
+
+- `recipes/oscar64/difficulty-tables.md` — six-row table, eight-slot pool, coin quota per level, spikes from level 3, one define for the region scaler, frame and CIA time at level 3 printed on both models

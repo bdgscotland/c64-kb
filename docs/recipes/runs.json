@@ -844,5 +844,53 @@
       "pal": "screenshots/pwm-digi.png",
       "ntsc": "screenshots/pwm-digi-ntsc.png"
     }
+  },
+  "oscar64/attract-replay": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/attract-replay.png",
+      "ntsc": "screenshots/attract-replay-ntsc.png"
+    }
+  },
+  "oscar64/difficulty-tables": {
+    "cycles": 40000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/difficulty-tables.png",
+      "ntsc": "screenshots/difficulty-tables-ntsc.png"
+    }
+  },
+  "oscar64/two-player": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/two-player.png",
+      "ntsc": "screenshots/two-player-ntsc.png"
+    }
+  },
+  "oscar64/flip-screen-rooms": {
+    "cycles": 34000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/flip-screen-rooms.png",
+      "ntsc": "screenshots/flip-screen-rooms-ntsc.png"
+    }
   }
 }
