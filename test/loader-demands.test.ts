@@ -59,6 +59,7 @@ describe("serial_bus_exclusive", () => {
         ["kernal_file_read_seq", "io"],
         ["prints_text", "render"],
         ["vic_bank_select", "banking"],
+        ["raw_iec_sender", "io"],
       ] as const) {
         await f.addTechnique({ name, title: name, category, complexity: "medium" });
       }
@@ -73,12 +74,14 @@ describe("serial_bus_exclusive", () => {
         ["CHRIN", "$FFCF"],
         ["CHROUT", "$FFD2"],
         ["CLOSE", "$FFC3"],
+        ["IECOUT", "$FFA8"],
       ] as const) {
         await f.addKernalRoutine(name, addr, name);
       }
       for (const k of ["OPEN", "CHKIN", "CHRIN", "CLOSE"])
         await f.linkTechniqueUsesKernal("kernal_file_read_seq", k);
       await f.linkTechniqueUsesKernal("prints_text", "CHROUT");
+      await f.linkTechniqueUsesKernal("raw_iec_sender", "IECOUT");
       await f.addRegister("CI2PRA", "$DD00", "CIA2", "RW", ["DD00"]);
       await f.linkTechniqueUsesRegister("krill_loader_integration", "DD00");
       await f.linkTechniqueUsesRegister("vic_bank_select", "DD00");
@@ -91,6 +94,13 @@ describe("serial_bus_exclusive", () => {
       const c = r.conflicts.find((x) => x.kind === "serial_bus_busy");
       expect(c?.shared).toEqual(["CHKIN", "CLOSE", "OPEN"]); // CHRIN is not a bus call on its own
       expect(c?.resolution).toMatch(/uninstall/i);
+    });
+
+    it("names the serial routines as the kernal page does: IECOUT, not CIOUT", async () => {
+      // The rule listed CIOUT and ACPTR, names no KernalRoutine node carries,
+      // so a technique calling IECOUT was never caught.
+      const r = (await checkCompatibility(["krill_loader_integration", "raw_iec_sender"])).structured;
+      expect(r.conflicts.find((x) => x.kind === "serial_bus_busy")?.shared).toEqual(["IECOUT"]);
     });
 
     it("screen output through CHROUT is not a serial-bus conflict", async () => {

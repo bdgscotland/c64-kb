@@ -22,7 +22,7 @@ For the IEC bus hardware details underlying all fast-loader operation, see `../f
 **Complexity:** high
 **Region:** both
 **Uses registers:** DD00
-**Uses kernal:** LOAD, CHKIN, CHKOUT
+**Uses kernal:** CLALL, SETNAM, SETLFS, OPEN, CLOSE, CHKIN, CHKOUT, CHRIN, CHROUT, CLRCHN, READST, LISTEN, SECOND, IECOUT, UNLSN, TKSA
 **Demands:** serial_bus_exclusive
 **Claims:** serial_bus (owns), zero_page $E0-$EF (owns, relocatable), cia2_vic_bank (shares)
 **Claims basis:** estimated
@@ -42,6 +42,8 @@ The installation sequence is:
 3. Send `M-E $0500` (or whatever address the drive code was loaded to) via the command channel. The 1541 begins executing the receiver loop.
 4. The C64-side stub (a few hundred bytes, typically placed at a known spare area like `$0200` or tacked above the BASIC program area) initializes its state and signals the drive that the handshake is ready; it does not touch `$0330`/`$0331` (an earlier version of this step said it installed itself there).
 5. Loads are made by calling the resident directly — `loadraw` for a raw file, `loadcompd` for a crunched one, filename pointer in X/Y (see the v194 reference below). `JSR $FFD5` is not accelerated, and while the drive is in loader mode every KERNAL serial call (`$FFD5`, `krnio`, `CHKIN`/`CHKOUT` on device 8) stalls until `uninstall` returns the drive to DOS. An earlier version of this step said all subsequent `JSR $FFD5` calls took the fast protocol and that `CHKIN`/`CHKOUT` kept working.
+
+KERNAL calls, from the v194 source (`src/install.s` and `src/resident.s`, grepped here). `install` calls them at install time: CLALL, SETNAM, SETLFS, OPEN, CHKOUT, READST, CHKIN, CHRIN, CLRCHN and CLOSE to find the first drive present and read its error channel; LISTEN, SECOND, IECOUT (the source's `CIOUT`) and UNLSN to send drive commands, the `M-W` and `M-E` blocks among them; CHROUT to print an error or a warning. The resident calls the KERNAL only when built with `LOAD_VIA_KERNAL_FALLBACK`, and then only after the drive code failed to install: SETLFS, SETNAM, OPEN, CHKIN, CHRIN, CLRCHN, CLOSE and CLALL, plus SECOND and TKSA under `KERNAL_FALLBACK_OPEN_SEI_WORKAROUNDS` (CHKOUT and CHROUT there are C128-only). `loadraw` and `loadcompd` call none. No file calls LOAD (`$FFD5`); an earlier version of the `**Uses kernal:**` line above said LOAD, CHKIN, CHKOUT.
 
 Because the patched vector intercepts the KERNAL jump table's LOAD entry rather than replacing the ROM, the KERNAL's file-open state management (logical file numbers, SETLFS/SETNAM bookkeeping) is preserved. (An earlier version of this page described a `KRILL_OPEN_CHANNEL` build option for servicing `OPEN`/`CHKIN` channels; no such option exists in v194, which exposes only `loadraw`/`loadcompd` and does not service KERNAL logical-file channels — see the v194 note below.)
 
