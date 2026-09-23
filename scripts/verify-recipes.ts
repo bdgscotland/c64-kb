@@ -68,7 +68,10 @@ const tools = {
   java: which("java"),
   oscar64: process.env.OSCAR64 && existsSync(process.env.OSCAR64) ? process.env.OSCAR64 : which("oscar64"),
   cl65: which("cl65"),
-  x64sc: which("x64sc"),
+  // X64SC_BIN names a windowless build (VICE built with --enable-headlessui,
+  // see docs/runtime/vice-reference.md); it takes the same command line and
+  // its exit screenshots are byte-identical, so nothing else changes here.
+  x64sc: process.env.X64SC_BIN ?? which("x64sc"),
   c1541: which("c1541"),
   python3: which("python3"),
 };
@@ -164,10 +167,7 @@ function runVice(prg: string, png: string, cycles: number, model: string, extra:
     // digit. Pin the drive to a constant speed so the run is repeatable.
     diskArgs.push("-8", d64, "-drive8wobbleamplitude", "0", "-drive8wobblefrequency", "0");
   }
-  // -minimized keeps the window from taking focus on a desktop while a batch
-  // runs; the exit screenshot is taken from the emulated frame and is
-  // byte-identical with or without it (measured 2026-09-22).
-  const args = ["-default", "-minimized", "-warp", "+sound", "+autostart-delay-random", "-autostartprgmode", "1",
+  const args = ["-default", "-warp", "+sound", "+autostart-delay-random", "-autostartprgmode", "1",
     "-limitcycles", String(cycles), ...(MODEL_FLAG[model] ?? []), ...extra, ...diskArgs, "-exitscreenshot", png, "-autostart", prg];
   const r = spawnSync(tools.x64sc!, args, { encoding: "utf8", timeout: 300_000 });
   if (!existsSync(png)) return `x64sc produced no screenshot (exit ${r.status}${r.signal ? ` ${r.signal}` : ""}): ${(r.stderr || r.stdout).split("\n").slice(-3).join(" | ")}`;

@@ -5,7 +5,29 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 725, schema 23, tools 1.27.0.
+Data 726, schema 23, tools 1.27.0.
+
+**Candidate list, Tier A, batch 2.** `charset_copy_rom_to_ram` on the
+banking page, with the KickAssembler recipe `charset-copy-rom-to-ram`: the
+2 KB copy under the I/O window costs 19,733 cycles with the display off
+and about a thousand more with it on, the copy is checked against the
+ROM image's checksum, and the same program makes the copy once with
+interrupts enabled and shows what happens: the KERNAL interrupt fires
+into the mapped ROM and the loop never finishes, caught by a timer NMI
+watchdog. That is the new pitfall `irq_during_charen_window`.
+`nmi_handler_and_restore_key` on the CPU page, with the recipe
+`nmi-timer-tick`: the vectors, the RTI stub that disarms RESTORE, the
+`$DD0D` acknowledge and the lock without it, measured with a CIA2 timer
+standing in for the key the rig cannot press; a new pitfall
+`kernal_nmi_handler_runs_stop_check`. `software_sprite_preshifted` on the
+sprite page, with the recipe `software-sprite-preshifted`: a 24x21 masked
+object pre-shifted for eight positions in a character back buffer, 1,428
+cycles a blit at every shift, against the multiplexer for when each wins.
+A new pitfall `sprite_x_range_hidden_and_seam` with the visible window
+measured column by column on both models (X 24 to 343 visible, 23 and
+344 not) and the PAL seam pinned between $1F7 and $200. The autopilot
+pattern from the same tier is covered by the headless-verify recipe's
+autopilot section.
 
 **Candidate list, Tier A, batch 1: four things every agent reaches for
 and the KB did not have.** `petscii_screen_code_conversion` (text page):
@@ -62,10 +84,15 @@ itself headless and shows the game running from it, with the block
 arithmetic and a Makefile target; two screenshots of that boot ride with
 the scaffold recipe. The verifier still only formats a disk; a `files` key
 to place a built PRG on it is proposed on the page and not built.
-Every headless VICE command the verifier and the pages quote now carries
-`-minimized`, so a batch of runs stops taking the desktop's focus; the exit
-screenshot comes from the emulated frame and is byte-identical either way,
-checked against a pinned picture.
+For a few hours the verifier and the pages carried `-minimized` on every
+headless VICE command to stop a batch of runs taking the desktop's focus;
+it was withdrawn the same night because a window that opens and then
+minimises is worse than one that opens, and the pictures were byte-identical
+either way. The fix landed the same night: VICE 3.10 built with
+`--enable-headlessui` has no window at all and its exit screenshots are
+byte-identical to the pins (four recipes, both models, and the disk-backed
+ones); `scripts/verify-recipes.ts` honours `X64SC_BIN` to use it, and the
+VICE page says how to build one and the one flag-order trap.
 
 **Pitfalls reached through a technique's registers, and a graph report.**
 A technique also meets every pitfall that a register or KERNAL routine it

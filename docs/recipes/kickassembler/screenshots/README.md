@@ -10,7 +10,7 @@ picture here. The default pinned run is the one below; a recipe that
 needs a different cycle count or a disk says so in its `runs.json` entry:
 
 ```bash
-x64sc -default -minimized -warp +sound +autostart-delay-random -autostartprgmode 1 \
+x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
       -limitcycles 8000000 -exitscreenshot out.png -autostart recipe.prg
 ```
 

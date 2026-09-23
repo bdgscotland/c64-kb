@@ -591,3 +591,154 @@ counts, rung 3, not run.
   says a write. Row I above measured that difference in VICE and the
   datasheet is what the emulator does; do not "correct" this page
   toward the wiki on that point.
+
+---
+
+## kernal_nmi_handler_runs_stop_check — The KERNAL NMI handler warm-starts BASIC on RUN/STOP+RESTORE, and a handler that skips the $DD0D read locks every NMI out
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DD0D
+**Triggered by techniques:** nmi_handler_and_restore_key
+**Mitigated by techniques:** nmi_handler_and_restore_key
+
+### Symptom
+
+Two failures with opposite causes.
+
+1. **The game is gone.** The player presses RUN/STOP+RESTORE, by
+   accident or on purpose, and the screen clears to `READY.` with the
+   program's code still in memory. The program never touched `$0318`.
+   Its interrupt vector, its `$01` setting and its VIC mode were all put
+   back to the KERNAL's defaults on the way.
+2. **The tick stopped.** A program with its own NMI handler, driven by a
+   CIA2 timer, plays or counts exactly once and then never again. The
+   timer is still running; `$DD0D` reads `$81` if anything reads it at
+   all. RESTORE does nothing either. The handler ends in `RTI` without
+   having read `$DD0D`.
+
+### Mechanism
+
+This entry sits in the CIA pitfalls because both halves turn on one
+register access, the read of `$DD0D`, and on what CIA2's interrupt
+output does around it. The KERNAL's dispatch through the vector and the
+per-board wiring of the key are in `pitfalls/kernal-and-io.md`,
+`restore_nmi_not_maskable`; this entry is the short form for a program
+that is installing a handler. The technique is on both lines above
+because the pitfall arises inside a naive version of it (no vector
+taken, or a handler with no `$DD0D` read) and the correct version cures
+it.
+
+**The STOP check.** The KERNAL's handler at `$FE47` (the default
+`$0318` target) reads `$DD0D` and branches on bit 7. Set means a CIA2
+source: it runs the RS-232 code. Clear means the NMI came from
+somewhere else, and the only somewhere else is the RESTORE key. It then
+samples the keyboard row that holds RUN/STOP through `$F6BC` and tests
+it through `$FFE1`; if the key is down it falls into `$FE66`: RESTOR,
+IOINIT, CINT and `JMP ($A002)`, the BASIC warm start. There is no flag a
+program can set to opt out; the decision is made from the CIA2 flag
+being absent, which is exactly the state a RESTORE press produces. This
+is from the ROM bytes of `kernal-901227-03.bin`, read for
+`restore_nmi_not_maskable`; the warm-start branch itself needs RUN/STOP
+held and was not run headless.
+
+**The lock.** CIA2 drives the 6510's `/NMI` pin, and holds it low while
+any enabled flag in its interrupt control register is set. A read of
+`$DD0D` clears every flag and lets the pin rise. The 6510 takes an NMI
+on the falling edge of the pin and not on its level, so a handler that
+returns without the read leaves `/NMI` low, and no later event on the
+pin, timer or key, can make an edge. Measured in VICE x64sc 3.10 on PAL
+and NTSC: CIA2 Timer A ticking every 10,000 cycles for 1,005,000 cycles
+entered a handler that reads `$DD0D` 100 times and a handler that does
+not exactly once; a single `LDA $DD0D` from the main loop then bought
+exactly one more entry before the second handler locked the line again
+(`recipes/kickassembler/nmi-timer-tick.md`).
+
+### Fix
+
+For the first symptom, install a handler at `$0318` before the game
+starts. One `RTI` is a complete handler; `$FE43` runs only `SEI` before
+the vector and pushes nothing. Reinstall it after anything that calls
+RESTOR (`$FF8A`) or VECTOR (`$FF8D`) with an old table, since both put
+`$FE47` back.
+
+For the second, read `$DD0D` in every handler that services a CIA2
+source. `BIT $DD0D` costs 4 cycles and touches no register. Do the read
+only when the handler is meant to consume the event: a RESTORE-only
+stub that also reads `$DD0D` discards a timer or RS-232 flag that
+arrived in the same instant.
+
+A program that wants both, a live CIA2 tick and a dead RESTORE key,
+takes the vector, acknowledges in the handler, and either ignores the
+extra entry a press produces or tests bit 7 of `$DD0D` before acting.
+
+### Worked example
+
+The handler that locks. It counts one tick and then nothing, and the
+key is dead with it:
+
+```asm
+// LOCKS AFTER ONE TICK: no read of $DD0D, so /NMI never rises again.
+nmi_bad:
+        inc tick_count
+        rti
+
+tick_count:
+        .byte $00
+```
+
+The same handler with the acknowledge. Every tick is taken, and a
+RESTORE press is one extra entry the counter also sees:
+
+```asm
+// Correct: the read clears the CIA2 flag and re-arms the edge.
+nmi_good:
+        inc tick_count
+        bit $dd0d
+        rti
+
+tick_count:
+        .byte $00
+```
+
+For a program with no CIA2 use, the stub that disarms the key; it costs
+20 cycles per press and nothing between presses (measured in VICE x64sc
+3.10, `recipes/kickassembler/nmi-timer-tick.md`):
+
+```asm
+install_stub:
+        sei
+        lda #<nmi_stub
+        sta $0318
+        lda #>nmi_stub
+        sta $0319
+        cli
+        rts
+
+nmi_stub:
+        rti
+```
+
+### Cross-references
+
+- Technique `nmi_handler_and_restore_key` (`techniques/cpu-cycle-tricks.md`),
+  the entry this pitfall guards and the one that fixes it: the vector,
+  the acknowledge and the tick, with the measurements.
+- Pitfall `restore_nmi_not_maskable` (`pitfalls/kernal-and-io.md`), the
+  long form: the wiring of the key, the KERNAL path byte by byte, the
+  189-cycle cost of a press with the KERNAL handler in place, and RESTOR
+  and VECTOR undoing the vector.
+- `hardware/cia-reference.md`, `$DD0D` and "NMI vector (CIA2 +
+  RESTORE)".
+- `hardware/c64-memory-map.md`, `$0318-$0319` and `$FE43-$FF42`.
+- Recipe `recipes/kickassembler/nmi-timer-tick.md`.
+
+### Sources
+
+- Commodore 64 KERNAL ROM 901227-03 (`kernal-901227-03.bin` as shipped
+  with VICE), as read for `restore_nmi_not_maskable`; not re-read for
+  this entry.
+- VICE x64sc 3.10, the pinned runs of `nmi-timer-tick.prg` on PAL and
+  NTSC, screen cells decoded against `chargen-901225-01.bin`.
+- C64-Wiki, "RESTORE (Key)", https://www.c64-wiki.com/wiki/RESTORE_(Key),
+  consulted for the name of the key's connection to the CPU only.

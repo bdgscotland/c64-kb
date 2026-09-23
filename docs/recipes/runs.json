@@ -522,6 +522,42 @@
       "ntsc": "screenshots/sine-table-runtime-ntsc.png"
     }
   },
+  "kickassembler/charset-copy-rom-to-ram": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/charset-copy-rom-to-ram.png",
+      "ntsc": "screenshots/charset-copy-rom-to-ram-ntsc.png"
+    }
+  },
+  "kickassembler/nmi-timer-tick": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/nmi-timer-tick.png",
+      "ntsc": "screenshots/nmi-timer-tick-ntsc.png"
+    }
+  },
+  "kickassembler/software-sprite-preshifted": {
+    "cycles": 4160000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/software-sprite-preshifted.png",
+      "ntsc": "screenshots/software-sprite-preshifted-ntsc.png"
+    }
+  },
   "kickassembler/sprite-multiplex-game": {
     "cycles": 9100000,
     "models": [
@@ -532,6 +568,18 @@
     "shots": {
       "pal": "screenshots/sprite-multiplex-game.png",
       "ntsc": "screenshots/sprite-multiplex-game-ntsc.png"
+    }
+  },
+  "kickassembler/scroll-panel-split": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/scroll-panel-split.png",
+      "ntsc": "screenshots/scroll-panel-split-ntsc.png"
     }
   },
   "kickassembler/logic-rate-decoupling": {
@@ -570,6 +618,18 @@
       "ntsc": "screenshots/per-frame-hitbox-ntsc.png"
     }
   },
+  "oscar64/wave-director": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/wave-director.png",
+      "ntsc": "screenshots/wave-director-ntsc.png"
+    }
+  },
   "oscar64/char-bullets": {
     "cycles": 8000000,
     "models": [
@@ -592,30 +652,6 @@
     "shots": {
       "pal": "screenshots/sprite-cache-flip.png",
       "ntsc": "screenshots/sprite-cache-flip-ntsc.png"
-    }
-  },
-  "kickassembler/scroll-panel-split": {
-    "cycles": 8000000,
-    "models": [
-      "pal",
-      "ntsc"
-    ],
-    "flags": [],
-    "shots": {
-      "pal": "screenshots/scroll-panel-split.png",
-      "ntsc": "screenshots/scroll-panel-split-ntsc.png"
-    }
-  },
-  "oscar64/wave-director": {
-    "cycles": 20000000,
-    "models": [
-      "pal",
-      "ntsc"
-    ],
-    "flags": [],
-    "shots": {
-      "pal": "screenshots/wave-director.png",
-      "ntsc": "screenshots/wave-director-ntsc.png"
     }
   },
   "oscar64/sprite-animation-table": {

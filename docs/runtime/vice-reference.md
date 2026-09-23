@@ -650,7 +650,7 @@ selected by the picture's height.
 # usage: verdict_shot.sh prog.prg [pal|ntsc]   exit 0 = PASS, 1 = FAIL, 2 = no verdict
 prg=$1; model=${2:-pal}; shot=$(mktemp -t verdict).png
 flags=""; [ "$model" = ntsc ] && flags="-model ntsc"
-GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -minimized -warp +sound \
+GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -warp +sound \
   +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 $flags \
   -exitscreenshot "$shot" -autostart "$prg" >/dev/null 2>&1
 python3 - "$shot" <<'PY'
@@ -744,18 +744,32 @@ the `00` that was there before it. A harness takes the last `>C:02ff`
 line:
 
 ```bash
-x64sc -default -minimized -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 \
+x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 \
   -moncommands verdict.mon -autostart prog.prg >/dev/null 2>&1
 code=$(grep '^>C:02ff' /tmp/verdict.log | tail -1 | awk '{print $2}')
 case "$code" in 01) exit 0;; 02) exit 1;; *) exit 2;; esac
 ```
 
-`-minimized` starts the emulator with its window minimised so a batch of
-headless runs does not take the desktop's focus every time; the exit
-screenshot comes from the emulated frame, not the window, and the PNG is
-byte-identical with or without the flag (checked on the hello-world
-recipe against its pinned picture, 2026-09-22). Every command on this
-page and in the recipes' Build sections may take it.
+### A windowless build for batch runs
+
+The GTK build opens a window on every launch and takes the desktop's focus,
+which a verifier run of sixty recipes turns into a constant interruption;
+`-minimized` does not help, the window still activates before it shrinks.
+VICE 3.10 ships a third front end besides GTK and SDL: configure the
+source with `--enable-headlessui` and the resulting `x64sc` has no window,
+no Dock tile and never registers with the window server, while the exit
+screenshot still works because it is taken from the emulated frame in the
+machine core. Measured 2026-09-22 on macOS: the headless build's exit
+screenshots for four pinned recipes, PAL and NTSC, were byte-identical to
+the pins, and the process never appeared in LaunchServices while a GTK
+instance next to it was listed as the frontmost application. Two things to
+know: a build that is not installed needs `-directory <vice data dir>` and
+it must come after `-default`, because `-default` resets the search path;
+and the exit status on the cycle limit is 1 by design in both builds. The
+build takes under a minute (`brew install dos2unix xa` first; a plain
+top-level `make` succeeds where `make x64sc` races). Point the verifier at
+it with `X64SC_BIN=/path/to/headless/x64sc npm run verify:recipes`; every
+command on this page runs unchanged under it.
 
 The red Oscar64 build logged `00` then `02` with this file. Do not use
 `watch` or `break` here: a stopping checkpoint enters the monitor with
@@ -911,7 +925,7 @@ empty. The route that works headless is the remote
 text monitor, a TCP port that speaks the same commands:
 
 ```bash
-GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -minimized -warp +sound \
+GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -warp +sound \
   +autostart-delay-random -autostartprgmode 1 -limitcycles 6000000 \
   -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6510 \
   -moncommands session.mon -autostart stable-raster-irq.prg
