@@ -5,7 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 753, schema 27, tools 2.0.0, package 0.13.0.
+Data 754, schema 27, tools 2.0.0, package 0.13.0.
+
+**The deferred raster anchors (data 754).** `badline_cycle_loss` gains
+sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike and
+vsp_glitch, and `raster_irq_first_line_jitter` gains mode7_lookalike and
+vsp_glitch, each on the sentence of the technique that meets the
+mechanism (a colour split placed by write cycle inside the badline's
+stolen span; a filler that budgets forty cycles a badline row; a
+per-line register chain with no stabilisation in its budget; a trick
+whose write cycle is the effect). The techniques still without a pitfall
+are the two loader notes and three logic entries the triage judged to
+need none. The two-bit fast loader candidate was attempted and not
+landed: its transfer never ran, so its pages were not merged and the
+attempt is kept as a private experiment record.
 
 **Every technique a pitfall can reach now has one, bar seven (data
 753).** A read-only triage of the techniques no pitfall named sorted each
