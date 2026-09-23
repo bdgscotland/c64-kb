@@ -75,6 +75,7 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 
 ```bash
 npm run check:listings     # every listing builds; fails on a missing toolchain unless --allow-missing
+npm run verify:templates   # every starter in templates/, made as a fresh project: build, shot + check on PAL and NTSC, disk; --selftest adds the FORCE_FAULT build and each starter's VERIFY_TARGETS
 npm run verify:recipes     # every recipe runs headless in VICE at its pinned cycles (docs/recipes/runs.json) and matches its committed PNG pixel-for-pixel; --update re-baselines after a deliberate change, --allow-missing tolerates a recipe with no PNG yet
 npm run typecheck          # src, scripts and test, strict incl. noUncheckedIndexedAccess; before 2026-09-22 this was `tsc --noEmit` over src/ alone
 npm run lint               # ESLint strict + complexity budget (cyclomatic/cognitive 15, 80 lines/function); split code, never raise a limit

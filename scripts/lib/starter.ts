@@ -83,6 +83,12 @@ export function runMake(dir: string, targets: string[]): { ok: boolean; out: str
   return { ok: r.status === 0, out };
 }
 
+/** The proof targets a starter declares in VERIFY_TARGETS (`make verify-targets`), in order. */
+export function verifyTargets(dir: string): string[] {
+  const r = runMake(dir, ["-s", "verify-targets"]);
+  return r.ok ? (r.out.at(-1) ?? "").split(/\s+/).filter((t) => t !== "") : [];
+}
+
 /** The lines of a make run worth showing: shots, failures, the meter, summaries. */
 export function reportLines(out: string[]): string[] {
   return out.filter(

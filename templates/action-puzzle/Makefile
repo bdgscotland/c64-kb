@@ -38,6 +38,9 @@ CLAIMS_ARGS := --cycles 24000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
+# Proof targets `npm run verify:templates -- --selftest` runs after selftest.
+VERIFY_TARGETS := disktest modelcheck selftest-scan
+
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
 include $(HARNESS)/harness.mk

@@ -65,7 +65,13 @@ is a stamp file named by its cycle count.
 `npm run verify:templates` makes a project from each starter with an
 `expect.json`, as new-project does, in a temporary directory, and runs
 `make`, `make shot check` and `make disk` there (`--selftest` adds
-`make selftest`, `--only <name>` picks one).
+`make selftest` and every target the starter lists in `VERIFY_TARGETS`,
+`--only <name>` picks one). A starter's own proof targets (action-puzzle's
+`disktest`, `modelcheck` and `selftest-scan`, adventure's `disktest`,
+platformer's `tearcheck`, shmup-vertical's `stage`, demo's `probe`) prove
+fixes that `make check` cannot see: the adventure's three save-validation
+checks, for instance, fail only in `disktest`. Measured 2026-09-23: seven
+starters with `--selftest` and their targets, 7 of 7, about 3.5 minutes.
 
 ## A starter's files
 
