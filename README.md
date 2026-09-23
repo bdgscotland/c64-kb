@@ -61,6 +61,18 @@ run that differs by one pixel fails the gate.
 <td align="center"><a href="docs/recipes/oscar64/simple-shmup.md"><img src="docs/recipes/oscar64/screenshots/simple-shmup.png" width="220" alt="Vertical shmup with starfield and enemies"></a><br><sub>Simple shmup</sub></td>
 <td align="center"><a href="docs/recipes/kickassembler/colour-fade.md"><img src="docs/recipes/kickassembler/screenshots/colour-fade.png" width="220" alt="Luminance fade caught mid-way"></a><br><sub>Luminance fade, step 9</sub></td>
 </tr>
+<tr>
+<td align="center"><a href="docs/recipes/kickassembler/isometric-room.md"><img src="docs/recipes/kickassembler/screenshots/isometric-room.png" width="220" alt="Isometric room of diamond tiles and blocks with a sprite player"></a><br><sub>Isometric room</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/fire-effect.md"><img src="docs/recipes/kickassembler/screenshots/fire-effect.png" width="220" alt="Colour-RAM fire with a luminance-ordered palette"></a><br><sub>Colour-RAM fire</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/dot-flag.md"><img src="docs/recipes/kickassembler/screenshots/dot-flag.png" width="220" alt="A grid of dots on two sines"></a><br><sub>Dot flag</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/dypp-sprite-scroller.md"><img src="docs/recipes/kickassembler/screenshots/dypp-sprite-scroller.png" width="220" alt="Sprite scroller with each letter on its own sine"></a><br><sub>DYPP sprite scroller</sub></td>
+</tr>
+<tr>
+<td align="center"><a href="docs/recipes/kickassembler/mci-interlace.md"><img src="docs/recipes/kickassembler/screenshots/mci-interlace.png" width="220" alt="Multicolour interlace test card, one field"></a><br><sub>Multicolour interlace, one field</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/wireframe-ships.md"><img src="docs/recipes/kickassembler/screenshots/wireframe-ships.png" width="220" alt="Rotated wireframe ships with per-line cycle counts"></a><br><sub>Wireframe ships</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/big-font-scroller.md"><img src="docs/recipes/kickassembler/screenshots/big-font-scroller.png" width="220" alt="2x2 big font scroller with its cycle figures"></a><br><sub>2x2 big font</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sprite-priority-classes.md"><img src="docs/recipes/kickassembler/screenshots/sprite-priority-classes.png" width="220" alt="Sprite priority classes against a character playfield"></a><br><sub>Sprite priority classes</sub></td>
+</tr>
 </table>
 
 ---
