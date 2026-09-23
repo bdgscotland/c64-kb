@@ -85,6 +85,32 @@ run that differs by one pixel fails the gate.
 <td align="center"><a href="docs/recipes/oscar64/beat-em-up-lanes.md"><img src="docs/recipes/oscar64/screenshots/beat-em-up-lanes.png" width="220" alt="Beat-em-up lanes with fighters sorted by depth"></a><br><sub>Beat-em-up lanes</sub></td>
 <td align="center"><a href="docs/recipes/oscar64/bitmap-koala-viewer.md"><img src="docs/recipes/oscar64/screenshots/bitmap-koala-viewer.png" width="220" alt="Koala bitmap viewer showing a generated test picture"></a><br><sub>Koala viewer</sub></td>
 </tr>
+<tr>
+<td align="center"><a href="docs/recipes/oscar64/vehicle-control.md"><img src="docs/recipes/oscar64/screenshots/vehicle-control.png" width="220" alt="Car on a scrolling road with verges and water"></a><br><sub>Vehicle control</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/car-contact.md"><img src="docs/recipes/oscar64/screenshots/car-contact.png" width="220" alt="Cars pushing each other off the road"></a><br><sub>Car contact and push</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/twister.md"><img src="docs/recipes/kickassembler/screenshots/twister.png" width="220" alt="Twister bar of sprites"></a><br><sub>Twister</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/tech-tech.md"><img src="docs/recipes/kickassembler/screenshots/tech-tech.png" width="220" alt="Tech-tech logo waving line by line"></a><br><sub>Tech-tech</sub></td>
+</tr>
+<tr>
+<td align="center"><a href="docs/recipes/oscar64/destructible-terrain.md"><img src="docs/recipes/oscar64/screenshots/destructible-terrain.png" width="220" alt="Terrain dug and built by walking creatures"></a><br><sub>Destructible terrain</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/adventure-engine.md"><img src="docs/recipes/oscar64/screenshots/adventure-engine.png" width="220" alt="Text adventure played to its ending"></a><br><sub>Adventure engine</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/falling-blocks.md"><img src="docs/recipes/oscar64/screenshots/falling-blocks.png" width="220" alt="Falling-blocks board with score and timings"></a><br><sub>Falling blocks</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sprite-border-scroller.md"><img src="docs/recipes/kickassembler/screenshots/sprite-border-scroller.png" width="220" alt="Sprite scroller in the lower border"></a><br><sub>Scroller in the border</sub></td>
+</tr>
+</table>
+
+## What the starters play
+
+Each starter in `templates/` is a small game that plays. `npm run new-project -- <starter> <dir>`
+makes a working project from one; `make run` opens it in VICE. Each picture is the PAL
+screenshot its own `make shot check` grades, with the verdict and the frame meter on screen.
+
+<table>
+<tr>
+<td align="center"><a href="templates/shmup-vertical/README.md"><img src="docs/figures/starters/shmup-vertical.png" width="220" alt="Vertical shooter over a fixed score panel, enemies in a wave"></a><br><sub>Vertical shooter</sub></td>
+<td align="center"><a href="templates/platformer/README.md"><img src="docs/figures/starters/platformer.png" width="220" alt="Side-scrolling platformer with a walker, a hill and a HUD"></a><br><sub>Scrolling platformer</sub></td>
+<td align="center"><a href="templates/action-puzzle/README.md"><img src="docs/figures/starters/action-puzzle.png" width="220" alt="Boulder Dash style cave with the high-score table"></a><br><sub>Boulder Dash-style cave</sub></td>
+</tr>
 </table>
 
 ---
