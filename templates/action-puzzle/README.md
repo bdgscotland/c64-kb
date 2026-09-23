@@ -59,7 +59,7 @@ cells (measured in comparison), almost three PAL frames.
 
 **How many objects a slice can move.** Each moving or landing object costs
 about 440 cycles on top of the slice's usual work: 16 boulders falling in
-one slice made a 13,619-cycle PAL frame and a 13,832-cycle NTSC one, against
+one slice made a 13,643-cycle PAL frame and a 13,861-cycle NTSC one, against
 a typical frame of about 6,500 to 6,800 (the meter; arithmetic for the per-object
 figure). So about 20 moving objects a slice fit an NTSC frame, and about 25
 fit a PAL one. A cave that moves more in one slice drops frames. The
@@ -178,8 +178,8 @@ VICE x64sc 3.10:
 
 | Model | Worst | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 13,619 | 6,529 | 19,656 |
-| NTSC | 13,832 | 6,786 | 17,095 |
+| PAL | 13,643 | 6,518 | 19,656 |
+| NTSC | 13,861 | 6,776 | 17,095 |
 
 The worst frame is play frame 7, the slice where the 16 boulders fall and
 overflow the dirty list (a debug build that kept the worst frame's index
@@ -189,7 +189,8 @@ the verdict.
 
 The same checks pass with the released Oscar64 v1.32.273 (make shot check,
 modelcheck, selftest, selftest-scan and disktest on PAL, run 2026-09-23).
-Its meter reads 13,383 / 6,401 cycles on PAL and 13,639 / 6,615 on NTSC.
+Its meter reads 13,412 / 6,392 cycles on PAL and 13,669 / 6,607 on NTSC
+(measured on 3048ac1 by the other #39 session's comparator).
 
 Against `plan-budget` (the PLAN.md output): it summed the recipe's whole
 scan, 18,559 cycles, into every PAL play frame (range 19,599 to 19,807 plus

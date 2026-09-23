@@ -57,7 +57,7 @@ extern char cave_events;
 extern char cave_seen;          // times the scan ran the player's rules; main.c resets it each cave frame
 
 // Cells a slice changed, for the renderer. A move marks two cells, an
-// explosion nine, so a slice holds up to 32 moves before the list overflows;
+// explosion nine, so a slice holds up to 8 moves before the list overflows;
 // then render.c queues the slice's rows and redraws them two a frame.
 #define DIRTY_MAX 16
 extern unsigned cave_dirty[DIRTY_MAX];
