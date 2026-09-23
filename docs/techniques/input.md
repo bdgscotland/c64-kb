@@ -7,9 +7,9 @@ chip: CIA
 
 # Input Techniques
 
-Reading the joystick ports and the keyboard matrix directly from CIA1,
-without the KERNAL's once-per-jiffy scanner. All three techniques share
-one fact: CIA1 port A (`$DC00`) is control port 2 and the keyboard's
+Reading the joystick ports, the paddles and the keyboard matrix directly
+from CIA1 and the SID, without the KERNAL's once-per-jiffy scanner. The
+techniques share one fact: CIA1 port A (`$DC00`) is control port 2 and the keyboard's
 column drive, CIA1 port B (`$DC01`) is control port 1 and the keyboard's
 row sense, and every switch on either port reads as a 0 bit when closed.
 The wiring is in `hardware/cia-reference.md`; the ways it bites are in
@@ -312,3 +312,141 @@ scan can be skipped that frame.
 ### Recipes
 
 - `recipes/oscar64/joystick-input.md`
+
+---
+
+## paddle_read — Read the paddles through the SID's POTX/POTY with the CIA1 port select
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D419, D41A, DC00, DC01, DC02
+**Cost:** cycles_per_frame=1152, zp_bytes=0, irq_slots=0
+**Cost basis:** arithmetic
+
+### Why
+
+A paddle is a potentiometer, and the C64 reads it through the SID, not
+the CIA. `$D419` (POTX) and `$D41A` (POTY) hold an 8-bit conversion of
+the voltage on the two pot pins of one control port. Which port is a
+choice the program makes through CIA1 port A: bit 6 of `$DC00` set
+selects control port 1, bit 7 set selects port 2. Both ports carry two
+pots, so a four-paddle game reads all four values through the same two
+registers by switching the select and reading twice. The registers are
+read-only; there is nothing to set up on the SID side.
+
+### How
+
+The direction register `$DC02` must be `$FF`, which is how IOINIT
+leaves it; the select bits are outputs. Then, per port:
+
+```text
+$DC00 = $40          ; bit 6: control port 1 (or $80, bit 7: port 2)
+wait                 ; a conversion has to start and finish after the switch
+x1 = $D419           ; paddle 1 (port 1 pin 9)
+y1 = $D41A           ; paddle 2 (port 1 pin 5)
+$DC00 = $80
+wait
+x2 = $D419
+y2 = $D41A
+```
+
+The wait is the whole difficulty. The SID converts on its own clock, one
+conversion every 512 cycles, and the switch does not restart it. A read
+taken before a conversion that began after the switch has completed
+returns the old port's value or a byte from the middle of a conversion.
+Measured in VICE x64sc 3.10 with a 1351 as the pot source, sampling
+`$D419` every 8 cycles after the select write at eight phases 65 cycles
+apart: at six phases the settled value was present within 480 cycles
+(from cycle 476 at phase 0, on PAL and NTSC), at two phases it needed
+more than 512 and was present within 544; nothing settled between 481
+and 512. So in VICE 512 is the conversion period, not a safe delay from
+the write. Wait at least 576 cycles, which is the measured worst case of
+544 plus 32 of margin; that figure is measured in VICE, and the hardware
+worst case after a mid-conversion switch is not measured here. Or use
+the schedule most games use, select on one frame and read on the next:
+a frame is 19,656 cycles on PAL and 17,095 on NTSC (arithmetic: 312
+lines of 63 and 263 lines of 65), and both ports fit in two frames.
+
+Reading both ports means alternating the select and paying the wait
+each time. The cost line is two waits of 576 cycles, the recommended
+wait, for a two-port read done in one frame; the reads and writes
+themselves are under 30 cycles. A program that selects at the end of
+its frame and reads at the start of the next spends none of that
+waiting.
+
+The paddle buttons are not on the SID. They are read on the port's
+LEFT and RIGHT switch lines (bits 2 and 3 of the joystick byte: `$DC00`
+for port 2, `$DC01` for port 1, low when pressed). That the paddle
+buttons ride those two lines is not measured here, since a headless
+VICE run cannot press one, and is not stated on
+`hardware/cia-reference.md`, which places the paddle switches somewhere
+in PA0-PA4. The recipe shows both bytes.
+
+### Why it works
+
+The two select bits drive the SID's analogue multiplexer directly from
+the CIA pins; the SID sees one port's pots at a time and converts what
+it sees. The usual account of the SID's converter, not measured here,
+is that each conversion discharges a capacitor and then counts cycles
+until the pot charges it again, which would make the result a cycle
+count in 0 to 255 and the period 512 cycles, half to discharge and half
+to count. The two-bucket settle pattern measured above is VICE's model
+of that converter, and this page does not claim it for the chip. What
+the measurement does show is that the register holds the last finished
+conversion, whichever port that was for, until the next one completes.
+Selecting neither port reads
+`$FF`, as does an empty port, since the pin floats high (measured in
+VICE; the same reading a paddle at one end of its travel gives, so a
+game cannot tell an empty port from a paddle at full scale).
+
+The keyboard scan interferes because it owns the same bits. SCNKEY, in
+the jiffy IRQ, writes `$DC00` to drive the columns and leaves `$7F`
+there when it is done: bit 6 set, bit 7 clear, control port 1
+selected. A program that selected port 2 and is waiting for the
+conversion has, after the interrupt, port 1 selected and does not know
+it. Measured in VICE: 2,000 passes of select port 2, wait 530 cycles,
+read, with the KERNAL IRQ live, returned something other than port 2's
+value 53 to 59 times per run, about one per jiffy interrupt, and the
+wrong values were port 1's or a mid-conversion byte. The same 2,000
+passes under `SEI` were wrong 0 times. Three ways to time the read
+against the scan: bracket select, wait and read with `SEI`/`CLI`; own
+the IRQ, so no scan runs; or select and read at fixed raster lines and
+keep the KERNAL scan's line, which is wherever the jiffy IRQ lands, out
+of the window. Re-selecting immediately before the read, as
+`hardware/sid-reference.md` suggests, is not enough on its own: the
+conversion still needs its 512 cycles after that write.
+
+The DDR matters for the same reason it matters for the keyboard:
+`cia1_ddr_cleared_kills_keyboard` in `pitfalls/input.md`. With `$DC02`
+cleared, the select bits are inputs, the write reaches no pin, and
+both select bits read high: both ports selected, a case the SID page
+does not define and this page does not measure (the recipe's `$C0` row
+shows only what VICE does with it).
+
+### Variations
+
+**One port, no switching.** A single-port paddle game writes the select
+once and never touches `$DC00` again, and then only the KERNAL scan can
+disturb it. With the KERNAL IRQ off it can read `$D419` whenever it
+likes.
+
+**Interleaved frames.** Select port 1 on even frames and read it on odd
+frames, port 2 the other way. Every paddle updates at half the frame
+rate, which is enough for a bat, and no frame carries a wait.
+
+**Position sweeps.** Not measured here: the host mouse that drives
+VICE's paddles cannot be moved headlessly, so the value's range and
+linearity against the knob are from `hardware/sid-reference.md`, which
+gives the usable span as about `$00` to `$DF`.
+
+### Cycle budget
+
+The reads and writes are 4 cycles each. The whole cost is the wait
+between a select and its first trustworthy read: 544 cycles at the
+worst phase in the runs here, 576 with 32 of margin, which is just over
+nine PAL raster lines. The Cost line states 1,152, two waits of 576, as
+the worst frame of a two-port read done inside one frame.
+
+### Recipes
+
+- `recipes/kickassembler/paddle-read.md`

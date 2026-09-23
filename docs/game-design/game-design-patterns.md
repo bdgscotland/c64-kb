@@ -235,9 +235,17 @@ as the player approaches a boundary.
 A 128-room dungeon at 40×25 tiles per room is 128 KB uncompressed — well
 above the 64 KB address space. Compression is mandatory.
 
-**RLE:** Consecutive identical tile runs are stored as (count, tile). A
-typical C64 dungeon room compresses 3:1 to 5:1. Decoder is 20–30 bytes
-of 6510 code and runs in a few hundred cycles for a single screen.
+**RLE:** Consecutive identical tile runs are stored as (count, tile). The
+ratio depends on the room: three 40×22 rooms measured in
+`recipes/oscar64/level-rle-decoder.md` pack 4.13:1 (a platform room),
+1.40:1 (a maze, the worst of the three) and 10.73:1 (a nearly empty
+room). The decoder in that recipe is 80 bytes of 6510 code by hand, or
+149 bytes compiled from C at `-O2`, and decodes one 880-byte room in
+16,470 to 27,673 cycles by hand or 28,193 to 50,447 cycles from C
+(measured in VICE x64sc 3.10). An earlier version of this paragraph said
+3:1 to 5:1, a 20 to 30 byte decoder and a few hundred cycles per screen;
+none of the three had been measured, and neither the size nor the
+cycle figure matches what was measured for this format.
 
 **Dictionary / token substitution:** Repeated 2×2 or 4×4 tile blocks are
 assigned token IDs. The map stores tokens; the decoder expands them into

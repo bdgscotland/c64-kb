@@ -25,7 +25,7 @@ handler — and the static crosstalk between held keys and port 1.
 **Region:** both
 **Triggered by registers:** DC00
 **Triggered by kernal:** SCNKEY
-**Triggered by techniques:** joystick_edge_detect, joystick_autorepeat, keyboard_matrix_scan
+**Triggered by techniques:** joystick_edge_detect, joystick_autorepeat, keyboard_matrix_scan, paddle_read
 
 ### Symptom
 
@@ -223,7 +223,7 @@ bool fire = key == ' ';
 **Region:** both
 **Triggered by registers:** DC02, DC00
 **Triggered by kernal:** SCNKEY
-**Triggered by techniques:** joystick_edge_detect, joystick_autorepeat, keyboard_matrix_scan
+**Triggered by techniques:** joystick_edge_detect, joystick_autorepeat, keyboard_matrix_scan, paddle_read
 
 ### Symptom
 

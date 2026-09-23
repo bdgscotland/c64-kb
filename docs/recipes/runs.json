@@ -678,28 +678,33 @@
       "ntsc": "screenshots/slope-collision-ntsc.png"
     }
   },
-  "oscar64/password-state": {
-    "cycles": 80000000,
+  "oscar64/level-rle-decoder": {
+    "cycles": 6000000,
     "models": [
       "pal",
       "ntsc"
     ],
     "flags": [],
     "shots": {
-      "pal": "screenshots/password-state.png",
-      "ntsc": "screenshots/password-state-ntsc.png"
+      "pal": "screenshots/level-rle-decoder.png",
+      "ntsc": "screenshots/level-rle-decoder-ntsc.png"
     }
   },
-  "oscar64/multi-sprite-object": {
-    "cycles": 12000000,
+  "kickassembler/paddle-read": {
+    "cycles": 8000000,
     "models": [
       "pal",
       "ntsc"
     ],
-    "flags": [],
+    "flags": [
+      "-controlport1device",
+      "3",
+      "-controlport2device",
+      "2"
+    ],
     "shots": {
-      "pal": "screenshots/multi-sprite-object.png",
-      "ntsc": "screenshots/multi-sprite-object-ntsc.png"
+      "pal": "screenshots/paddle-read.png",
+      "ntsc": "screenshots/paddle-read-ntsc.png"
     }
   },
   "oscar64/nav-area-pathfinding": {
@@ -714,6 +719,18 @@
       "ntsc": "screenshots/nav-area-pathfinding-ntsc.png"
     }
   },
+  "oscar64/multi-sprite-object": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/multi-sprite-object.png",
+      "ntsc": "screenshots/multi-sprite-object-ntsc.png"
+    }
+  },
   "oscar64/charset-parallax": {
     "cycles": 10000000,
     "models": [
@@ -724,6 +741,18 @@
     "shots": {
       "pal": "screenshots/charset-parallax.png",
       "ntsc": "screenshots/charset-parallax-ntsc.png"
+    }
+  },
+  "oscar64/password-state": {
+    "cycles": 80000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/password-state.png",
+      "ntsc": "screenshots/password-state-ntsc.png"
     }
   }
 }

@@ -5,7 +5,38 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 728, schema 24, tools 1.28.0.
+Data 730, schema 24, tools 1.28.0.
+
+**Issue #21, ES-11 to ES-14.** `nav_area_pathfinding` (a next-hop table
+over platform areas; 0 of 160 hops differ from a Python model),
+`multi_sprite_object` (a boss from six sprites across the X 255 seam,
+registers checked every frame), `charset_parallax` (background glyphs
+rolled at half the foreground's speed; 0 of 55,936 pixels differ from a
+model), `world_state_bits` and `password_encoding` (every single-letter
+typo and every neighbour swap caught for all 2^20 states). A new Oscar64
+gotcha, measured: at -O1 to -O3, `c == 255 ? 255 : a[c]` with `a`
+shorter than 256 loses its guard and reads `a[255]`.
+
+
+**Candidate list, Tier A, batch 3.** The start-up hang a blind build hit is
+now a pitfall with a measured table behind it,
+`first_open_after_reset_hangs_on_pal`: on PAL a program whose first OPEN
+follows the autostart by ten frames hung three times out of three while
+zero, five, twenty and fifty frames ran, so the wait is not the cure it
+looked like; NTSC never hung; loading the program through the drive
+instead of injecting it ran to game over; the monitor at the hang shows
+the C64 waiting for CLK with the drive a few dozen cycles from TALK, and
+why it never arrives unperturbed is still open. `level-rle-decoder` (Oscar64)
+compresses three real-shaped rooms, decodes them on the machine against a
+host checksum and shows ratio, cycles and decoder bytes per room; the
+patterns page's unmeasured ratio and decoder-size sentences now carry the
+measured figures. `paddle_read` on the input page with the KickAssembler
+recipe `paddle-read`: the port-select dance, the settle measured on both
+models (within 480 cycles at six of eight phases, 544 at two) and the
+keyboard scan's interference counted; positions and buttons are not
+measured because a headless host cannot move a paddle. The eight-way
+scroller planned for this batch did not land: its writer stalled and will
+run again on its own.
 
 **Issue #21, engine subsystems ES-01 to ES-10.** Ten techniques from an
 online sweep of how shipped games were built, each with a recipe pinned on

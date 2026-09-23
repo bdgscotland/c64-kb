@@ -1444,3 +1444,171 @@ vic.intr_ctrl = 1; vic.intr_enable = 1;
   rung 1.
 - Oscar64 `include/c64/rasterirq.c`, `rirq_start` and `rirq_stop`,
   rung 1.
+
+---
+
+## first_open_after_reset_hangs_on_pal — The first file read after reset can hang for ever in the TALK turnaround on PAL under VICE autostart, and a frame wait only moves the phase
+
+**Severity:** high
+**Region:** PAL
+**Triggered by kernal:** OPEN, CHKIN
+**Triggered by techniques:** kernal_file_read_seq, kernal_file_write_seq, error_channel_check, kernal_load_to_address
+
+### Symptom
+
+A program whose first act after its own set-up is to open a file on
+drive 8 and read it never returns from the read. The screen keeps
+whatever was drawn before the call; the drive line the program prints
+on return never appears; a frame counter kept by the main loop stays at
+zero. The KERNAL status byte `$90` is `$00`, so nothing is reported, and
+the CPU sits with the I flag set. Left for 30,000,000 cycles it is still
+there. The same binary on `-model ntsc` runs. A build that waits a
+different number of frames before the call runs, and so does the same
+build when the drive loaded it.
+
+The hang is deterministic for a given binary, model and autostart delay:
+the build that hung did so in three runs out of three.
+
+### Mechanism
+
+What is measured (VICE x64sc 3.10 remote monitor, `break edd6`, first
+stop, the platformer scaffold built with `-dDISK_WAIT_FRAMES=10`, PAL):
+
+- The C64 is at `$EDD6` at cycle 4,885,925: the loop after TKSA that
+  waits for the drive to pull CLK low and become the talker. It has no
+  timeout and runs inside the `SEI` bracket that
+  `kernal_assumes_sei_cleared` above describes. `$90` is `$00`, `$BA` is
+  8, `$DD00` reads `$67`: ATN released, CLK released, DATA held low by
+  the C64 as listener.
+- The drive CPU is at `$E8E5`, and 27 C64 cycles later at `$E8F4`, drive
+  stopwatch 4,959,055 (the 1541 clock is 1.000 MHz to the PAL C64's
+  0.985 MHz, which accounts for the whole difference). `$7A` is 1
+  (talker active), `$79` is 0, `$7C` is 0 (no ATN pending), `$84` and
+  `$85` are `$62` (TALK, secondary address 2), `$1800` reads `$03` then
+  `$01`, the job queue `$00` to `$05` reads `00 00 01 0F 01 00` with
+  every job on track 18, `$22` is 18.
+- In the drive ROM (`dos1541-325302-01+901229-05.bin`, rung 1) `$E902`
+  to `$E907` is the wait for ATN release; `$E8D7` to `$E8E0` clears the
+  ATN acknowledge bit; `$E8E3` tests the listener flag and `$E8ED` the
+  talker flag; a talker goes through `$E99C` and `$E9AE` to `$E909`,
+  which is TALK, the routine that pulls CLK. So at the stop the drive
+  had already seen ATN go, knew it was the talker, and was a few dozen
+  cycles from pulling CLK.
+
+Unperturbed, the C64 never sees CLK go low in 30,000,000 cycles. Reading
+the drive's registers from the monitor at that stop lets the run through
+(two runs each way on `recipes/oscar64/high-score-persist.md`; this
+session's monitor run was cut after two stops, so its own outcome is not
+known). What is inferred from that: the drive state the monitor shows is
+not the state the drive holds in the unperturbed run. The monitor's read
+advances the drive in a different step from the emulator's own
+scheduling, and in that step the drive sees the release. The outcome
+turns on where the two CPUs stand relative to each other when the TALK
+byte goes out under ATN, which is why zero and five frames of wait ran,
+ten hung, twenty and fifty ran, a six-second autostart delay ran, and
+loading the program through the drive ran. A frame wait is a phase
+shift, not a settle time: the drive had been in its idle loop for about
+two seconds by the time of the OPEN in the earlier session's trace, and
+`-iecreset 1`, which resets the drive with the computer, changed
+nothing. Whether a real 1541 can be caught the same way, and which side
+of the emulator's bus model is at fault, are not measured here. The job
+return code `0F` in slot 3 of the queue was not chased.
+
+### Fix
+
+No wait is safe by construction: the smallest wait that ran here was
+zero frames and the one that hung was ten. What held across every run:
+
+- Run the binary you ship on PAL under autostart with a fresh disk, once.
+  The hang is deterministic for that binary, so one run answers.
+- If it hangs, move the phase: a different frame count before the first
+  file call, or the call later in start-up. Every wait other than ten
+  ran here, and so did the ten-frame build with `-autostart-delay 6` and
+  when the drive loaded it. Test again after any change to the code that
+  runs before the call; a change of code size has moved it before.
+- Check `$90` (READST) and the error channel after the read rather than
+  assuming the read returns. Nothing the program does once it is inside
+  `$EDD6` gets it out: the loop has no timeout and the I flag is set, so
+  a raster or CIA IRQ watchdog cannot fire. An NMI could, but no such
+  watchdog was built or measured here.
+
+The recipe's `DISK_WAIT_FRAMES 50` default ran in every run tried on two
+pages, and remains a phase that happens to work for that binary, not a
+settle time.
+
+### Worked example
+
+The platformer scaffold's listing
+(`recipes/oscar64/platformer-scaffold.md`), built with
+`oscar64 -tm=c64 -O2 -dDISK_WAIT_FRAMES=N`, run in x64sc 3.10 `-default
+-warp +sound +autostart-delay-random -autostartprgmode 1` with a fresh
+`TEST,01` D64 on a true-drive 1541, wobble off, 10,000,000 cycles unless
+stated, one run per cell unless stated. "Ran" means the top row shows a
+frame count `F` and the bottom row `DRIVE: 62, FILE NOT FOUND,00,00`;
+"hung" means `F 00000` and no drive line. Cells decoded against
+`chargen-901225-01.bin`.
+
+| Wait before the first OPEN | PAL, PRG injected | NTSC, PRG injected |
+|---|---|---|
+| 0 frames (6,457-byte PRG) | ran, F 264 | ran, F 293 |
+| 5 frames | ran, F 259 | ran, F 287 |
+| 10 frames | hung, three runs, one of them at 30,000,000 cycles | ran, F 283 |
+| 20 frames | ran, F 244 | ran, F 273 |
+| 50 frames | ran, F 215 | ran, F 243 |
+
+The 10-frame PAL build, one thing changed at a time, one run each:
+
+| Change | Outcome |
+|---|---|
+| `-iecreset 1` | hung |
+| `-autostart-delay 6` (12,000,000 cycles) | ran, F 206 |
+| PRG written to the disk and the D64 autostarted, so the drive loaded it (40,000,000 cycles) | ran, F 800, drive line `01, FILES SCRATCHED` |
+
+Region PAL rests on the five NTSC runs above and the one on the recipe
+page; no NTSC run has hung, and nothing here says none can.
+
+```text
+// BAD: the read is the first thing on the bus and its return is assumed
+krnio_setnam("HISCORE,S,R");
+krnio_open(2, 8, 2);
+n = krnio_read(2, buf, 16);      // CHKIN -> TALK, TKSA, then $EDD6 for ever
+// measured: F 00000 and no drive line at 30,000,000 cycles, PAL, ten-frame build
+
+// BETTER: a phase that ran for this binary, tested on PAL once, and the
+// status checked after the read
+for (char i = 0; i < DISK_WAIT_FRAMES; i++) vic_waitFrame();
+krnio_setnam("HISCORE,S,R");
+if (krnio_open(2, 8, 2)) {
+    n = krnio_read(2, buf, 16);
+    st = krnio_status();         // $90: $40 EOF is the good case, $02 timeout
+}
+krnio_close(2);
+// measured: ran at 0, 5, 20 and 50 frames; the wait does not make the read safe
+```
+
+### Cross-references
+
+- `recipes/oscar64/high-score-persist.md`, "A start-up hang seen in
+  VICE, located but not explained": the first trace of the same spin,
+  with the byte timings of the OPEN and the directory search.
+- `recipes/oscar64/platformer-scaffold.md`, `DISK_WAIT_FRAMES`: the
+  workaround as shipped, and the listing the runs above were built from.
+- `formats/iec-disk-reference.md`, "Drive-Not-Ready and Timeout Errors":
+  the KERNAL's one timeout and the waits that have none.
+- Pitfall `kernal_assumes_sei_cleared` above: the `SEI` bracket the spin
+  sits in.
+- Pitfall `raster_irq_during_serial_io` above: the same loops, seen from
+  the raster IRQ's side.
+- Technique `error_channel_check` (`techniques/file-io.md`): the status
+  read the fix asks for after every file call.
+
+### Sources
+
+- Commodore 1541 DOS ROM 325302-01 + 901229-05 (`dos1541-325302-01+901229-05.bin`
+  as shipped with VICE), `$E8D7`-`$E90B`, disassembled for this entry,
+  rung 1.
+- Commodore 64 KERNAL ROM 901227-03, `$EDC7`-`$EDDC`, as disassembled for
+  `raster_irq_during_serial_io` above, rung 1.
+- VICE x64sc 3.10, twenty runs of the platformer scaffold at five wait
+  counts on PAL and NTSC and five variants of the ten-frame PAL build,
+  and one remote-monitor session with `break edd6`, 2026-09-22, rung 1.
