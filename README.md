@@ -62,6 +62,18 @@ run that differs by one pixel fails the gate.
 <td align="center"><a href="docs/recipes/kickassembler/colour-fade.md"><img src="docs/recipes/kickassembler/screenshots/colour-fade.png" width="220" alt="Luminance fade caught mid-way"></a><br><sub>Luminance fade, step 9</sub></td>
 </tr>
 <tr>
+<td align="center"><a href="docs/recipes/kickassembler/wireframe-ships.md"><img src="docs/recipes/kickassembler/screenshots/wireframe-ships.png" width="220" alt="Three rotating wireframe objects, clipped at the edge, and a galaxy readout"></a><br><sub>Wireframe ships and Elite's galaxy</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/ghost-targeting.md"><img src="docs/recipes/oscar64/screenshots/ghost-targeting.png" width="220" alt="Maze with four ghosts steered by target tiles"></a><br><sub>Maze-chase ghost targeting</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/cave-scan.md"><img src="docs/recipes/oscar64/screenshots/cave-scan.png" width="220" alt="Boulder Dash style cave after the scan"></a><br><sub>Cave scan: falling and rolling</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/platformer-scaffold.md"><img src="docs/recipes/oscar64/screenshots/platformer-scaffold.png" width="220" alt="Single-screen platformer with ladders and a HUD"></a><br><sub>Platformer scaffold</sub></td>
+</tr>
+<tr>
+<td align="center"><a href="docs/recipes/kickassembler/scroll-panel-split.md"><img src="docs/recipes/kickassembler/screenshots/scroll-panel-split.png" width="220" alt="Vertically scrolling playfield above a fixed score panel"></a><br><sub>Scroll with a fixed panel</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sprite-multiplex-game.md"><img src="docs/recipes/kickassembler/screenshots/sprite-multiplex-game.png" width="220" alt="24 actors from eight sprites, with sort and IRQ timings"></a><br><sub>Game multiplexer, 24 actors</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/big-font-scroller.md"><img src="docs/recipes/kickassembler/screenshots/big-font-scroller.png" width="220" alt="2x2 big font with measured cycle counts"></a><br><sub>2x2 big font</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/dycp-scroller.md"><img src="docs/recipes/kickassembler/screenshots/dycp-scroller.png" width="220" alt="DYCP scroller: each character at its own height"></a><br><sub>DYCP scroller</sub></td>
+</tr>
+<tr>
 <td align="center"><a href="docs/recipes/kickassembler/isometric-room.md"><img src="docs/recipes/kickassembler/screenshots/isometric-room.png" width="220" alt="Isometric room of diamond tiles and blocks with a sprite player"></a><br><sub>Isometric room</sub></td>
 <td align="center"><a href="docs/recipes/kickassembler/fire-effect.md"><img src="docs/recipes/kickassembler/screenshots/fire-effect.png" width="220" alt="Colour-RAM fire with a luminance-ordered palette"></a><br><sub>Colour-RAM fire</sub></td>
 <td align="center"><a href="docs/recipes/kickassembler/dot-flag.md"><img src="docs/recipes/kickassembler/screenshots/dot-flag.png" width="220" alt="A grid of dots on two sines"></a><br><sub>Dot flag</sub></td>
@@ -69,9 +81,9 @@ run that differs by one pixel fails the gate.
 </tr>
 <tr>
 <td align="center"><a href="docs/recipes/kickassembler/mci-interlace.md"><img src="docs/recipes/kickassembler/screenshots/mci-interlace.png" width="220" alt="Multicolour interlace test card, one field"></a><br><sub>Multicolour interlace, one field</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/wireframe-ships.md"><img src="docs/recipes/kickassembler/screenshots/wireframe-ships.png" width="220" alt="Rotated wireframe ships with per-line cycle counts"></a><br><sub>Wireframe ships</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/big-font-scroller.md"><img src="docs/recipes/kickassembler/screenshots/big-font-scroller.png" width="220" alt="2x2 big font scroller with its cycle figures"></a><br><sub>2x2 big font</sub></td>
 <td align="center"><a href="docs/recipes/kickassembler/sprite-priority-classes.md"><img src="docs/recipes/kickassembler/screenshots/sprite-priority-classes.png" width="220" alt="Sprite priority classes against a character playfield"></a><br><sub>Sprite priority classes</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/beat-em-up-lanes.md"><img src="docs/recipes/oscar64/screenshots/beat-em-up-lanes.png" width="220" alt="Beat-em-up lanes with fighters sorted by depth"></a><br><sub>Beat-em-up lanes</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/bitmap-koala-viewer.md"><img src="docs/recipes/oscar64/screenshots/bitmap-koala-viewer.png" width="220" alt="Koala bitmap viewer showing a generated test picture"></a><br><sub>Koala viewer</sub></td>
 </tr>
 </table>
 
