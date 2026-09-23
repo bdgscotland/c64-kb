@@ -256,6 +256,29 @@ export class FalkorNodes extends FalkorBase {
     await this.setNode("Archetype", { name: a.name }, props);
   }
 
+  /**
+   * GameDesign (schema 28): a whole game from docs/game-design/designs
+   * (docs/CONVENTIONS-game-designs.md). `measured` is the page's Measured
+   * frame lines as JSON; a page that drops its region or its measurements
+   * clears them.
+   */
+  async addGameDesign(g: {
+    name: string;
+    title: string;
+    region?: string | undefined;
+    measured: readonly object[];
+    source_doc: string;
+  }): Promise<void> {
+    const props = {
+      title: g.title,
+      source_doc: g.source_doc,
+      ...(g.region ? { region: g.region } : {}),
+      ...(g.measured.length > 0 ? { measured: JSON.stringify(g.measured) } : {}),
+    };
+    const clear = [...(g.region ? [] : ["region"]), ...(g.measured.length > 0 ? [] : ["measured"])];
+    await this.upsertNode({ label: "GameDesign", name: g.name, props, clear });
+  }
+
   async addCrashPattern(c: {
     symptom: string;
     description: string;

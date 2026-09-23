@@ -60,7 +60,10 @@ and from the picture. `colour-fade.png` / `-ntsc.png` at 3,725,000 cycles:
 the luminance fade caught mid-way, with the step number on screen; the
 page quotes the luma at the start, the middle and the end.
 
-The pictures are evidence about VICE, not about a 6569 on a bench. Where a
+The pictures are evidence about VICE, not about a chip on a bench. The PAL
+pictures are VICE's default C64C model (VIC-II 8565, SID 8580, CIA 8521),
+not a 6569; `-model c64` is the 6569 machine. An earlier version of this
+paragraph named only the 6569. Where a
 recipe's timing constant was found by measurement (`SYNC_PAD`, `LINE_PAD`,
 `ENTRY_PAD`), the recipe text says so and says what the picture looks like
 when the constant is off by one.

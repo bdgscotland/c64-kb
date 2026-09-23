@@ -9,6 +9,7 @@
 
 import { parseArchetypeDoc } from "./extract/archetype.ts";
 import { parseFailureDoc } from "./extract/failure.ts";
+import { parseGameDesignDoc } from "./extract/game-design.ts";
 import { parseHardwareDoc } from "./extract/hardware.ts";
 import { parsePitfallDoc } from "./extract/pitfall.ts";
 import { parseRecipeDoc } from "./extract/recipe.ts";
@@ -33,6 +34,7 @@ const PARSERS: readonly (readonly [marker: string, parse: DocParser])[] = [
   ["<!-- doc-type: pitfall-reference -->", parsePitfallDoc],
   ["<!-- doc-type: archetype-reference -->", parseArchetypeDoc],
   ["<!-- doc-type: failure-reference -->", parseFailureDoc],
+  ["<!-- doc-type: game-design -->", parseGameDesignDoc],
 ];
 
 export function extractGraphEntities(content: string, sourcePath: string): GraphEntity[] {

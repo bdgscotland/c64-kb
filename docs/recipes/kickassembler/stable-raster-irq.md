@@ -23,8 +23,10 @@ one fixed cycle, and the ten edges line up in one column. A `STABLE = 0`
 build of the same source draws the bars from a plain raster IRQ and shows
 what the jitter looks like.
 
-The sync padding was measured in VICE x64sc (3.9, PAL, 6569), not on
-hardware, and re-run in 3.10 on 2026-09-22 with a pixel-identical result;
+The sync padding was measured in VICE x64sc (3.9, PAL, default model), not
+on hardware, and re-run in 3.10 on 2026-09-22 with a pixel-identical result;
+3.10's default model is the C64C (8565, 8580, 8521), and 3.9's was not
+checked (an earlier version said the run was a 6569);
 the numbers below say so where it matters.
 
 ## Source

@@ -520,7 +520,7 @@ jmp_abs:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill, starfield, procedural_seed_universe, fire_effect
+**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill, starfield, procedural_seed_universe, fire_effect, screen_dissolve_lfsr
 **Mitigated by techniques:** lfsr_random
 
 ### Symptom

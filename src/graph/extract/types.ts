@@ -2,6 +2,7 @@
 
 import type { ClaimMode, ClaimsBasis } from "../claims.ts";
 import type { ClobberBound } from "../kernal-clobbers.ts";
+import type { GameDesignPhase, MeasuredFrame } from "./game-design.ts";
 import type { CostBasis, TechniqueCost } from "./vocabulary.ts";
 
 export type TargetKind = "Register" | "KernalRoutine" | "Technique";
@@ -113,7 +114,19 @@ export type GraphEntity =
   | { type: "caused_by"; symptom: string; target: string; targetKind: TargetKind }
   | { type: "archetype"; name: string; title: string; kind: "game" | "demo"; source_doc: string }
   | { type: "archetype_features"; archetype: string; technique: string }
-  | { type: "archetype_risks"; archetype: string; pitfall: string };
+  | { type: "archetype_risks"; archetype: string; pitfall: string }
+  // Game designs (schema 28): docs/CONVENTIONS-game-designs.md.
+  | {
+      type: "game_design";
+      name: string;
+      title: string;
+      region?: "PAL" | "NTSC" | "both";
+      measured: MeasuredFrame[];
+      source_doc: string;
+    }
+  | { type: "composes"; design: string; technique: string; phase: GameDesignPhase }
+  | { type: "instance_of"; design: string; archetype: string }
+  | { type: "realised_by"; design: string; recipe: string };
 
 /** One doc-type parser: the whole page in, its entities out. */
 export type DocParser = (content: string, sourcePath: string) => GraphEntity[];

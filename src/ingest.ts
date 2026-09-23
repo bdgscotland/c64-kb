@@ -28,6 +28,7 @@ import { chunkText } from "./ingest/points.ts";
 import { applyPendingEdges, ingestFile } from "./ingest/passes.ts";
 import { findStubTechniques, linkRegions, reportSummary } from "./ingest/report.ts";
 import { EdgeTally, type NodeTally } from "./ingest/tally.ts";
+import { linkVerifiedOn } from "./ingest/verified-on.ts";
 import { chunkMarkdown } from "./services/chunker.ts";
 import { isAvailable as ollamaAvailable } from "./services/embeddings.ts";
 import { FalkorService } from "./services/falkor.ts";
@@ -112,7 +113,14 @@ async function main(): Promise<void> {
   console.log(`  bm25: ${fitted ? "fitted" : "loaded"} vocab → ${VOCAB_FILE}`);
 
   // --- Pass 1: vectors + node entities; edges are collected for pass 2 ---
-  const nodes: NodeTally = { chunks: 0, skipped: 0, pitfalls: 0, crashPatterns: 0, archetypes: 0 };
+  const nodes: NodeTally = {
+    chunks: 0,
+    skipped: 0,
+    pitfalls: 0,
+    crashPatterns: 0,
+    archetypes: 0,
+    gameDesigns: 0,
+  };
   const pending: EdgeEntity[] = [];
   const print = (line: string): void => {
     console.log(line);
@@ -126,6 +134,7 @@ async function main(): Promise<void> {
 
   // --- Report ---
   await linkRegions(falkor, print);
+  await linkVerifiedOn(falkor, DOCS_DIR, print);
   const stubTechniques = await findStubTechniques(falkor);
   await reportSummary({ qdrant, falkor, nodes, edges, stubTechniques, print });
 

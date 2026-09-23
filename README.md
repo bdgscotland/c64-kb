@@ -73,6 +73,18 @@ run that differs by one pixel fails the gate.
 <td align="center"><a href="docs/recipes/kickassembler/big-font-scroller.md"><img src="docs/recipes/kickassembler/screenshots/big-font-scroller.png" width="220" alt="2x2 big font with measured cycle counts"></a><br><sub>2x2 big font</sub></td>
 <td align="center"><a href="docs/recipes/kickassembler/dycp-scroller.md"><img src="docs/recipes/kickassembler/screenshots/dycp-scroller.png" width="220" alt="DYCP scroller: each character at its own height"></a><br><sub>DYCP scroller</sub></td>
 </tr>
+<tr>
+<td align="center"><a href="docs/recipes/kickassembler/isometric-room.md"><img src="docs/recipes/kickassembler/screenshots/isometric-room.png" width="220" alt="Isometric room of diamond tiles and blocks with a sprite player"></a><br><sub>Isometric room</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/fire-effect.md"><img src="docs/recipes/kickassembler/screenshots/fire-effect.png" width="220" alt="Colour-RAM fire with a luminance-ordered palette"></a><br><sub>Colour-RAM fire</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/dot-flag.md"><img src="docs/recipes/kickassembler/screenshots/dot-flag.png" width="220" alt="A grid of dots on two sines"></a><br><sub>Dot flag</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/dypp-sprite-scroller.md"><img src="docs/recipes/kickassembler/screenshots/dypp-sprite-scroller.png" width="220" alt="Sprite scroller with each letter on its own sine"></a><br><sub>DYPP sprite scroller</sub></td>
+</tr>
+<tr>
+<td align="center"><a href="docs/recipes/kickassembler/mci-interlace.md"><img src="docs/recipes/kickassembler/screenshots/mci-interlace.png" width="220" alt="Multicolour interlace test card, one field"></a><br><sub>Multicolour interlace, one field</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sprite-priority-classes.md"><img src="docs/recipes/kickassembler/screenshots/sprite-priority-classes.png" width="220" alt="Sprite priority classes against a character playfield"></a><br><sub>Sprite priority classes</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/beat-em-up-lanes.md"><img src="docs/recipes/oscar64/screenshots/beat-em-up-lanes.png" width="220" alt="Beat-em-up lanes with fighters sorted by depth"></a><br><sub>Beat-em-up lanes</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/bitmap-koala-viewer.md"><img src="docs/recipes/oscar64/screenshots/bitmap-koala-viewer.png" width="220" alt="Koala bitmap viewer showing a generated test picture"></a><br><sub>Koala viewer</sub></td>
+</tr>
 </table>
 
 ---
@@ -188,7 +200,7 @@ carries a placeholder entry for vice-mcp.
 |------|---------|
 | `c64_check_compatibility` | Conflict detection across a list of techniques: hard conflicts from authored resource demands (CPU every line, constant sprite set, KERNAL banked out) and region mismatch; soft ones from shared registers / KERNAL routines; runs the hard rules through each technique's REQUIRES closure (`prerequisite_conflict`) and names the prerequisites the set leans on without naming; reports what the graph does not know about each technique |
 | `c64_timing_budget` | Per-scanline cycle math for one technique on PAL or NTSC: badline, IRQ entry and sprite DMA losses |
-| `c64_plan_budget` | A list of techniques, each in a phase (play, transition, init), added up against a PAL or NTSC frame: a cycle range from measured typical and worst frames, figures left out and why (multi-frame, included in another figure, inside a raster band), the members with no figure and the recipe to measure each on, and a fits / over / undetermined verdict |
+| `c64_plan_budget` | A list of techniques, each in a phase (play, transition, init), added up against a PAL or NTSC frame: a cycle range from measured typical and worst frames, figures left out and why (multi-frame, included in another figure, inside a raster band), the members with no figure and the recipe to measure each on, and a fits / over / undetermined verdict. Given a game design name instead, it budgets that game's phases and sets its measured frame beside the prediction |
 
 ### Pitfalls and failure analysis
 
@@ -358,9 +370,10 @@ vice-mcp inspects runtime behaviour; sim6502 runs unit tests on hot paths.
 
 The reference itself was checked the same way: headless `x64sc` with
 `-exitscreenshot`, and the pictures measured rather than eyeballed. Timing
-constants in the recipes are VICE 3.10 measurements (PAL 6569, and NTSC
-6567R8 where a page says so), not bench measurements on a 6569, and each
-page says so.
+constants in the recipes are VICE 3.10 measurements (PAL on VICE's default
+C64C model: VIC-II 8565, SID 8580, CIA 8521; NTSC 6567R8 where a page says
+so), not bench measurements, and each page says so. An earlier version of
+this paragraph said the PAL runs were a 6569; `-model c64` is that machine.
 
 ---
 

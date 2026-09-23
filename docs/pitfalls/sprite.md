@@ -196,7 +196,7 @@ IRQ scheme the practical same-slot spacing is 21 plus the slack, and a
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D017
-**Triggered by techniques:** stable_raster_irq, sprite_expand, sprite_y_stretch_glitch
+**Triggered by techniques:** stable_raster_irq, sprite_expand, sprite_y_stretch_glitch, sprite_stretcher_d017
 
 ### Symptom
 
@@ -214,7 +214,9 @@ artifact exists: a clear at 62 of 64 cycle positions gave a clean switch
 with no repeated or skipped row, and the remaining 2 positions gave the
 crunch (a +21-line change, rows re-fetched out of order). A sentence here
 about a subtler "half-pixel shift" on the 8565 was removed as unverifiable
-on this machine (VICE was run as a 6569 only).
+on this machine: every run was on one model, VICE's default C64C (VIC-II
+8565), and none was compared with a 6569. An earlier version of this
+sentence said VICE was run as a 6569 only.
 
 ### Mechanism
 
@@ -340,7 +342,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
-**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield, dypp_sprite_sine_scroller
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield, dypp_sprite_sine_scroller, sprite_border_scroller
 
 ### Symptom
 
@@ -587,7 +589,7 @@ the cached variable is immediately populated.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D000, D010
-**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms, lane_depth_engine, starfield, dypp_sprite_sine_scroller
+**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open, multi_sprite_object, flip_screen_rooms, lane_depth_engine, starfield, dypp_sprite_sine_scroller, sprite_border_scroller
 
 ### Symptom
 

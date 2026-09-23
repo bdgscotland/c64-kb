@@ -9,8 +9,53 @@ import { z } from "zod";
 import { getFalkor, getAnalytics } from "../../context.ts";
 import { config } from "../../config.ts";
 import type { RecipeLookupOutput, RecipesForOutput } from "../../schemas/tool-outputs.ts";
+import { effectiveChips } from "../../graph/machine-variants.ts";
 import { describeFilter, names, parseRows, searchChunks, suggestNames, toDocChunk } from "./shared.ts";
 import type { RecipeLookupResult, RecipesForResult } from "./types.ts";
+
+const VerifiedOnRow = z.object({
+  variant: z.string(),
+  vic: z.string(),
+  sid: z.string(),
+  cia: z.string(),
+  region: z.string(),
+  model: z.string(),
+  cycles: z.number().int(),
+  shot: z.string(),
+  flags: z.string(),
+  pinned: z.boolean(),
+});
+type VerifiedOnRow = z.infer<typeof VerifiedOnRow> & { overrides: string[] };
+
+/**
+ * The runs of one recipe, each with the chips it actually had: a chip flag
+ * in runs.json (cia-revision-detect's `-ciamodel 0`) replaces the variant's
+ * chip, and `overrides` says which.
+ */
+async function verifiedOnOf(name: string): Promise<VerifiedOnRow[]> {
+  const f = await getFalkor();
+  const rows = parseRows(
+    VerifiedOnRow,
+    await f.roQuery(
+      `MATCH (:Recipe {name: $name})-[e:VERIFIED_ON]->(v:MachineVariant)
+       RETURN v.name AS variant, v.vic AS vic, v.sid AS sid, v.cia AS cia, v.region AS region,
+              e.model AS model, e.cycles AS cycles, e.shot AS shot, e.flags AS flags, e.pinned AS pinned
+       ORDER BY variant`,
+      { name },
+    ),
+  );
+  return rows.map((r) => ({ ...r, ...effectiveChips(r, r.flags) }));
+}
+
+function verifiedOnText(rows: VerifiedOnRow[]): string {
+  if (rows.length === 0)
+    return `**Verified on:** no VICE run is compared with a committed screenshot for this recipe\n`;
+  const parts = rows.map(
+    (v) =>
+      `${v.variant} (${v.vic}, ${v.sid}, ${v.cia}; runs.json "${v.model}"${v.flags ? ` ${v.flags}` : ""}${v.overrides.length ? `; the flags replace the variant's chips: ${v.overrides.join(", ")}` : ""}) at ${v.cycles.toLocaleString("en-GB")} cycles${v.pinned ? "" : ", no pinned run: verify:recipes defaults"}`,
+  );
+  return `**Verified on:** ${parts.join("; ")}. verify:recipes compares each run's exit screenshot with ${rows.map((v) => v.shot).join(", ")} pixel for pixel\n`;
+}
 
 const RecipeRow = z.object({
   toolchain: z.string(),
@@ -80,6 +125,7 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
   // file shipped the recipe, the one that trusted this answer built from
   // prose (2026-09-22).
   const source_code = readRecipeListing(source_doc);
+  const verified_on = await verifiedOnOf(name);
 
   const structured: RecipeLookupOutput = {
     name,
@@ -90,13 +136,15 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     ...(toolchain_version_verified ? { toolchain_version_verified } : {}),
     documentation,
     ...(source_code ? { source_code } : {}),
+    verified_on,
   };
 
   let out = `# Recipe: ${name}\n\n`;
   out += `**Toolchain:** ${toolchain}${toolchain_version_verified ? ` (the repo's gates build it with ${toolchain_version_verified})` : ""}\n`;
   out += `**Output:** ${output_format}\n`;
   out += `**Region:** ${region}\n`;
-  out += `**Source:** \`${source_doc}\`\n\n`;
+  out += `**Source:** \`${source_doc}\`\n`;
+  out += `${verifiedOnText(verified_on)}\n`;
   for (const d of documentation) {
     out += `## ${d.section}\n${d.text}\n\n---\n\n`;
   }
@@ -148,6 +196,8 @@ export interface RecipesFilter {
   region?: string | undefined;
   technique?: string | undefined;
   file_format?: string | undefined;
+  /** A MachineVariant name (ntsc, oldntsc, c64c) or a region word (PAL, NTSC, PAL-N). */
+  verified_on?: string | undefined;
 }
 
 function recipesForCypher(filter: RecipesFilter): { cypher: string; params: Record<string, string> } {
@@ -170,8 +220,13 @@ function recipesForCypher(filter: RecipesFilter): { cypher: string; params: Reco
     cypher += ` , (r)-[:PRODUCES]->(f:FileFormat {name: $file_format})`;
     params.file_format = filter.file_format;
   }
+  if (filter.verified_on) {
+    cypher += ` MATCH (r)-[:VERIFIED_ON]->(vv:MachineVariant)`;
+    where.push("(vv.name = $verified_on OR toUpper(vv.region) = toUpper($verified_on))");
+    params.verified_on = filter.verified_on;
+  }
   if (where.length > 0) cypher += ` WHERE ${where.join(" AND ")}`;
-  cypher += ` RETURN r.name AS name, r.toolchain AS toolchain, r.output_format AS output_format, r.region AS region, r.source_doc AS source_doc ORDER BY r.name`;
+  cypher += ` WITH DISTINCT r RETURN r.name AS name, r.toolchain AS toolchain, r.output_format AS output_format, r.region AS region, r.source_doc AS source_doc ORDER BY r.name`;
   return { cypher, params };
 }
 
