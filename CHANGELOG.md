@@ -5,7 +5,36 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 726, schema 23, tools 1.27.0.
+Data 727, schema 24, tools 1.28.0.
+
+**Issue #21, engine subsystems ES-01 to ES-10.** Ten techniques from an
+online sweep of how shipped games were built, each with a recipe pinned on
+PAL and NTSC: `sprite_multiplex_game` (an assembly multiplexer with the
+sort kept between frames and a late-IRQ guard; 611 cycles for 24 sorted
+actors), `scroll_panel_split` with the pitfall
+`scroll_phase_breaks_panel_split` (a naive split breaks at one YSCROLL
+phase, the split line mod 8, measured at all eight), `logic_rate_decoupling`,
+`actor_activation_window`, `wave_director`, `per_frame_hitbox`,
+`char_bullets`, `sprite_cache_flip`, `sprite_animation_table` and
+`slope_collision`. Each Cost line is the measured worst frame of the
+technique's own work. Facts from Cadaver's articles and c64gameframework
+(MIT), codebase64 and Corescape (GPL); the code is original.
+
+**Ontology from #21 (schema 24, tools 1.28.0).** A `**Raster band:**` line
+on techniques: `c64_check_compatibility` no longer reports two
+every-line techniques as a conflict when their stated bands are disjoint,
+and lists such pairs in `band_separated`; FLI, AFLI and IFLI state
+45-251, the side border `movable`. `c64_timing_budget` subtracts sprite
+DMA (3 + 2 per sprite, the minimum for sprites numbered without gaps;
+input `sprites_per_line`); it did not before. The Demands word
+`serial_bus_exclusive` on the Krill loader, with a hard conflict
+`serial_bus_busy` against techniques that call KERNAL serial routines.
+Tool nodes carry `version_verified` from the toolchain pages. Corrections:
+`multi_load_sequencing` said `Uses kernal: LOAD`, but it loads through
+Krill; the ontology's Tool table listed a `category` the code never
+wrote. `dd00_plain_stores` was not added: it is Bitfire's rule and false
+for Krill.
+
 
 **Candidate list, Tier A, batch 2.** `charset_copy_rom_to_ram` on the
 banking page, with the KickAssembler recipe `charset-copy-rom-to-ram`: the
