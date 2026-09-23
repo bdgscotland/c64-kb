@@ -1483,6 +1483,42 @@
       "ntsc": "screenshots/screen-dissolve-ntsc.png"
     }
   },
+  "oscar64/vehicle-control": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/vehicle-control.png",
+      "ntsc": "screenshots/vehicle-control-ntsc.png"
+    }
+  },
+  "oscar64/car-contact": {
+    "cycles": 11880000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/car-contact.png",
+      "ntsc": "screenshots/car-contact-ntsc.png"
+    }
+  },
+  "oscar64/lane-pursuit": {
+    "cycles": 45000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/lane-pursuit.png",
+      "ntsc": "screenshots/lane-pursuit-ntsc.png"
+    }
+  },
   "kickassembler/pseudo-3d-road": {
     "cycles": 20000000,
     "models": [

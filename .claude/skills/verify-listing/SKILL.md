@@ -78,8 +78,12 @@ the work.
 
 - Copy `out.png` to `docs/recipes/<toolchain>/screenshots/<recipe>.png` and
   point to it from "Expected output".
-- State the instrument in the page: "Verified in VICE x64sc 3.9 (PAL,
-  6569)". Do not write "verified on hardware"; nothing here was.
+- State the instrument in the page: "Verified in VICE x64sc 3.10 (PAL
+  c64c: 8565/8580/8521)", adding `ntsc` (6567R8) when that model ran. With no
+  `-model`, `x64sc -default` is the C64C; an earlier version of this line
+  said "3.9 (PAL, 6569)". Add `-model c64` (6569, 6581, 6526) when the
+  listing depends on the older chips: CIA timer interrupts, the SID filter
+  or `$D418` digis. Do not write "verified on hardware"; nothing here was.
 - If the run contradicted the page, the page changes, and it says what was
   wrong.
 - Run `npm run check:listings` before committing; the hook already ran it

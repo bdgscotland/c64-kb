@@ -199,19 +199,29 @@ program
   .addOption(new Option("--region <region>", "Filter by region (pal/ntsc/both)").choices(REGIONS))
   .option("--technique <technique>", "Filter by Technique title")
   .option("--file-format <fmt>", "Filter by FileFormat")
-  .description("List recipes filtered by toolchain/region/technique/format")
-  .action(async (opts: { toolchain?: string; region?: string; technique?: string; fileFormat?: string }) => {
-    const { recipesFor } = await import("./tools/query.ts");
-    const result = await recipesFor(
-      definedOnly({
-        toolchain: opts.toolchain,
-        region: opts.region,
-        technique: opts.technique,
-        file_format: opts.fileFormat,
-      }),
-    );
-    emit(result);
-  });
+  .option("--verified-on <variant>", "MachineVariant name or region word: recipes run in VICE on it")
+  .description("List recipes filtered by toolchain/region/technique/format/verified-on")
+  .action(
+    async (opts: {
+      toolchain?: string;
+      region?: string;
+      technique?: string;
+      fileFormat?: string;
+      verifiedOn?: string;
+    }) => {
+      const { recipesFor } = await import("./tools/query.ts");
+      const result = await recipesFor(
+        definedOnly({
+          toolchain: opts.toolchain,
+          region: opts.region,
+          technique: opts.technique,
+          file_format: opts.fileFormat,
+          verified_on: opts.verifiedOn,
+        }),
+      );
+      emit(result);
+    },
+  );
 
 program
   .command("technique-lookup <name>")
@@ -284,10 +294,11 @@ program
   });
 
 program
-  .command("plan-budget <techniques...>")
+  .command("plan-budget [techniques...]")
   .description(
-    'Budget a set of techniques per phase ("name" or "name:play|transition|init"): cycle range, left-out figures, unknowns, verdict',
+    'Budget a set of techniques per phase ("name" or "name:play|transition|init"), or a GameDesign with --design: cycle range, left-out figures, unknowns, verdict, measured frame beside the prediction',
   )
+  .option("--design <name>", "a GameDesign name; its composed techniques are budgeted by phase")
   .addOption(
     new Option(
       "--region <region>",
@@ -302,12 +313,19 @@ program
   .action(
     async (
       techniques: string[],
-      opts: { region?: string; screen?: "on" | "off"; sprites?: number; spriteLines?: number },
+      opts: {
+        design?: string;
+        region?: string;
+        screen?: "on" | "off";
+        sprites?: number;
+        spriteLines?: number;
+      },
     ) => {
       const { planBudgetTool, budgetRegion } = await import("./tools/query.ts");
       const region = budgetRegion(opts.region);
       const result = await planBudgetTool({
         techniques,
+        ...(opts.design !== undefined ? { design: opts.design } : {}),
         ...(region !== undefined ? { region } : {}),
         ...(opts.screen !== undefined ? { screen: opts.screen } : {}),
         ...(opts.sprites !== undefined ? { sprites_per_line: opts.sprites } : {}),

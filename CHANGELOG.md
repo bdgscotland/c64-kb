@@ -5,10 +5,10 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 758, schema 27, tools 2.0.0, package 0.13.0.
+Data 761, schema 29, tools 2.1.0, package 0.14.0.
 
 **The pseudo-3D road, with its per-line shift measured to work (data
-758).** A coarse layer of thirteen multicolour character rows redrawn in
+761).** A coarse layer of thirteen multicolour character rows redrawn in
 the vertical blank from a Z table and an 8.8 fixed-point centre
 accumulator, and a fine layer that writes one `$D016` value per road
 raster line from a cycle-locked loop entered by the double-IRQ stable
@@ -24,6 +24,135 @@ eight of the road now carry their own scroll values. Pinned on both
 models. The page says what one scroll value per line cannot do, that the
 grass is not cleared per frame, and that the geometry is this recipe's,
 not a game's.
+
+**Issue #39, part H: a real template harness (data 760).** The two
+starters in `templates/` were stubs. The game starter's KickAssembler
+step was skipped even with a working assembler, and when it did run it
+fed a `.prg` to Oscar64 as source. Neither starter had a headless run, a
+check, an NTSC run or a measured frame.
+
+`templates/_harness/` now gives every starter these targets:
+- `make`, which links KickAssembler code into Oscar64 through a
+  generated header;
+- `make shot check`, headless on PAL and NTSC with the autopilot,
+  grading the pictures against `expect.json`;
+- `make selftest`, which proves the check fails on a faulted build;
+- `make disk` and `make claims`;
+- a frame meter on CIA2 timer A, printing the worst frame and the
+  median frame on screen;
+- a plan gate: no build and no write under `src/` until `PLAN.md` holds
+  the real `check-compatibility` and `plan-budget` output.
+
+There are two minimal starters, `hello` (C plus asm) and `hello-kick`.
+`npm run new-project` makes a working project outside the repo, and
+`npm run verify:templates` runs every starter. The loop is explained in
+`docs/workflow/agent-harness.md`. The per-archetype starters follow.
+
+**Issue #38: vehicle control, car contact and lane-pursuit AI (data
+759).** There are three new techniques in `techniques/logic.md`:
+`vehicle_control`, `car_contact_response` and `lane_pursuit_ai`. Each has
+an Oscar64 recipe (`vehicle-control`, `car-contact`, `lane-pursuit`)
+that matches a Python model frame by frame and is pinned on PAL and
+NTSC.
+
+Review changed code on each:
+- `vehicle_control`: holding the throttle on the verge barely slowed
+  the car, so acceleration now stops at the surface limit.
+- `car_contact_response`: a truck scene now exercises the cooling rule
+  and the truck's share of the push.
+- `lane_pursuit_ai`: two fork rules were measured and dropped. When
+  the road splits, pursuers take the other channel in 375 of 452
+  car-frames, and the page says why.
+
+Oscar64 fault 6 is in CLAUDE.md and `toolchains/oscar64-reference.md`,
+with its repro on #30. `soft_scroll_v` lists the vehicle-control
+recipe.
+
+**Issue #22, steps 4 to 6: game designs, machine variants and the
+claims watch; #36 decided (data 758, schema 29, tools 2.1.0, package
+0.14.0).** One bump over main's data 757, schema 27, tools 2.0.0, package
+0.13.0. Two shape changes land together, so the schema moves two: 28 is
+GameDesign, 29 is MachineVariant. Step 6 changes seed values, not shape.
+Tools 2.1.0 is a minor: every change to the surface is additive (a new
+optional input, new output fields, and `position`, a field new in this
+release, with a value no shipped consumer has seen). The package moves
+with the tools minor.
+
+GameDesign (schema 28). A new doc type, `docs/game-design/designs/*.md`
+(`CONVENTIONS-game-designs.md`), makes a whole game a node: the archetype
+it is an instance of (`INSTANCE_OF`), the recipe that builds it
+(`REALISED_BY`), the techniques it runs in each phase (`COMPOSES`, with a
+`phase` of play, init or transition) and what its frame measured
+(`**Measured frame:**`, stored as `measured`). Three pages, one per
+scaffold; the phases were read from each listing's `main()`, not its
+frontmatter. `c64_plan_budget` takes `design` (CLI `--design`): the
+design's members are budgeted by phase, and each measured frame is set
+beside the prediction for its phase and region, with where it falls and
+which members had no figure. `techniques` is now optional. `c64_game_briefing`
+lists the resolved archetype's designs in `designs[]`.
+
+What the validation showed, play phase, scratch graph:
+
+| Design | Predicted (low-high + badlines) | Measured worst, PAL / NTSC | Members with no figure |
+|---|---|---|---|
+| `platformer_scaffold_oscar64` | 4,477-4,685 + 1,075 | 8,693 / 10,287, above by 2,933 / 4,527 | 5 |
+| `falling_blocks_oscar64` | 5,902 + 1,075 | 6,276 / 6,491, within_incomplete | 4 |
+| `simple_shmup_oscar64` | 5,628 + 1,075 | not timed | 1 |
+
+Re-run on a scratch graph of the merged tree; the figures held. The
+platformer's typical PAL frame (4,966, one frame's reading) lies within
+its range. The falling-block agreement is partial: its one large
+figure, `falling_block_rules`' 5,888, is a constructed upper bound, and
+the render has no Cost line.
+
+Corrections found on the way: the `falling-blocks` frontmatter named four
+of the seven techniques its listing runs; the #22 design put
+`tile_map_render` in the platformer's play phase, where it runs once at
+init; the platformer's timer is CIA1 timer B, not CIA2.
+
+MachineVariant (schema 29). Seven seeds, one per VICE `-model` word the
+harness needs or the pages name (`c64`, `c64c`, `c64old`, `ntsc`,
+`newntsc`, `oldntsc`, `drean`), with their chips, line length and lines.
+`VERIFIED_ON` (Recipe to MachineVariant) is rebuilt after every ingest
+from `docs/recipes/runs.json`, as `verify:recipes` runs each page, and
+only where the committed screenshot exists: 242 edges on a scratch graph
+of this merged tree (data 757), 0 problems; 131 recipes run on the c64c. `c64_recipe_lookup`
+returns `verified_on[]`; `c64_recipes_for` takes `verified_on` (a variant
+or PAL / NTSC). The R56A and the Drean are variants, not Regions, which
+answers #8's question.
+
+Review fixes, steps 4 and 5. `verified_on[]` applies a run's chip flags:
+`cia-revision-detect` runs the c64c with `-ciamodel 0`, so its CIA is the
+6526, and `overrides[]` says so (it listed the c64c's 8521).
+`c64_plan_budget` gives `within_incomplete` when the measured worst lies
+inside the range while members have no figure; it said `within`. A typical
+frame's excess is a share of the typical, not of the worst. `simple-shmup`
+is an instance of `vertical_shmup` only (the listing scrolls vertically).
+A runs.json page with `skip` (main's tape-turbo-loader) gets no
+`VERIFIED_ON` edge; it was reported as a missing screenshot.
+
+Claims watch (step 6). `scripts/claims-watch.ts` runs a PRG in the
+windowless x64sc with a store trace and judges every store against the
+claims its techniques declare, their REQUIRES closure, a harness list and
+the KERNAL routines it names. Exit 1 on a store outside them. Validated on
+four recipes: each fails on its page's declarations alone and passes once
+its RAM, harness timers and missing units are declared; a multiplexer
+with `sta $d40b` and `sta $fb` added fails on exactly those two stores.
+The CIA timer and TOD units now own their bit of the interrupt control
+register ($DC0D/$DD0D bits 0, 1, 2). `vice-reference.md` says how to run
+it.
+
+#36: VICE's default machine is the `c64c` configuration (VIC-II 8565, SID
+8580, CIA 8521), not the 6569 that `vice-reference.md`, `pal-ntsc-detect.md`,
+CLAUDE.md, the README and twenty page statements said. `x64sc -default
+-dumpconfig` is identical to `-model c64c`. Re-run for this entry:
+`cia-revision-detect` with no `-ciamodel` reads the new CIA on the default,
+`c64c` and `newntsc`, the old one on `c64` and `ntsc`; `palette-cells`
+under `-model c64` differs from the default in eleven of sixteen entries.
+The maintainer's decision: keep the default, say c64c. No screenshot is
+re-baselined; every page that called the VICE PAL run a 6569 now names the
+C64C with a clause saying what it said; `-model c64` is the check for the
+older machine.
 
 **Candidate list, Tier B batch 15: four more items from fixed designs,
 each a technique entry and a pinned KickAssembler recipe (data 757).**

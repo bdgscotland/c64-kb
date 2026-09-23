@@ -145,9 +145,17 @@ The border is the verdict:
 
 | VICE model | Chip | Border | Digits on row 0 |
 |---|---|---|---|
-| default | 6569 PAL | green (5) | `37` |
+| default (the `c64c` configuration) | 8565 PAL | green (5) | `37` |
 | `-model ntsc` | 6567R8 | red (2) | `06` |
 | `-model oldntsc` | 6567R56A | yellow (7) | `05` |
+
+An earlier version of this table said the default model was a 6569: VICE's
+default is the `c64c` configuration, VIC-II 8565 (`x64sc -default
+-dumpconfig` gives VICIIModel=1, the same as `-model c64c`). The listing
+was also run on `-model c64` (6569), `c64old` (6569R1) and `drean` (6572):
+`37` on all three, border pixel (2, 100) = (94, 214, 56), that model's
+green; on `newntsc` (8562), `06` and (174, 71, 93), red (VICE x64sc 3.10,
+2026-09-23, digits matched against the char ROM).
 
 The digits are the low byte of the last raster line of the frame, and they
 agree with the settled line counts — 312 lines end at 311 = `$137`, 263 at

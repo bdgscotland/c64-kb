@@ -89,8 +89,10 @@ pixel at (2, 100) is a safe place to read the border colour.
 
 The pixel geometry, the palette RGB triples per model and a decode snippet
 are in `docs/runtime/vice-reference.md`, section "Reading the exit
-screenshot". The pictures are evidence about VICE, not about a 6569 on a
-bench. Where a recipe quotes a number from a picture, the recipe text says
+screenshot". The pictures are evidence about VICE, not about a chip on a
+bench. The PAL pictures are VICE's default C64C model (VIC-II 8565, SID
+8580, CIA 8521), not a 6569; `-model c64` is the 6569 machine. An earlier
+version of this paragraph named only the 6569. Where a recipe quotes a number from a picture, the recipe text says
 how it was measured.
 
 A windowless build of the same VICE (`npm run vice:headless`) gives the

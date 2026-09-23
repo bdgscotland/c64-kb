@@ -117,7 +117,8 @@ Verified with Oscar64 (build 2026-05-19) and VICE 3.10 x64sc, measured
 2026-09-22 on both models: the left and right border columns are white on
 raster lines 101-200 inclusive and light blue on 100 and 201, and the
 transition rows are one colour from the first border pixel to the last (PAL
-6569 and NTSC 6567R8 both). No baseline PNG was committed for this recipe
+C64C, VIC-II 8565, and NTSC 6567R8 both; an earlier version said PAL 6569,
+but `x64sc -default` is the C64C). No baseline PNG was committed for this recipe
 before this audit. The earlier version
 of this recipe had only the first slot and described a split at line 101;
 what it produced was an all-white border, because nothing ever wrote light

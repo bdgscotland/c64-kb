@@ -1507,7 +1507,7 @@ ROM bytes only when the BASIC ROM is banked in.
   [Cartridge modes](#cartridge-modes-exrom--game). (This note used to
   point at 'modes 8 and 16': mode 8 is an 8 KB cart with all three port
   bits low and is all RAM, and mode 16 is Ultimax with ROMH at $E000 -
-  measured in VICE x64sc, not on a 6569 bench.)
+  measured in VICE x64sc, default C64C model, not on a bench.)
 
 ### $A000-$A00B — BASIC cold-start vectors
 

@@ -586,7 +586,7 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai
 **Mitigated by techniques:** compare_16bit_and_signed
 
 ### Symptom

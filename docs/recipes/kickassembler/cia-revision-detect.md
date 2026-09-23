@@ -298,8 +298,13 @@ x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
 Add `-model ntsc` for the second picture. `-ciamodel 0` selects VICE's
 old 6526 for both CIAs (`1` is the new 8521; the names and values are
 from `x64sc -help`, VICE 3.10). The pin uses the old part because it is
-not the default: a run with no `-ciamodel` flag reads as the new part,
-so a picture of the default would not show the flag doing anything.
+not the PAL default: a run with no `-ciamodel` flag reads as the new
+part on the PAL default (VICE's C64C) and on `-model c64c`, so a picture
+of it would not show the flag doing anything. The default depends on the
+model: with no flag, `-model c64` and `-model ntsc` read `12 11`, the old
+part, and `-model newntsc` reads `10 11`, the new one (measured in VICE
+x64sc 3.10). An earlier version of this paragraph
+said a run with no flag reads as the new part, without naming the model.
 
 ## Expected output
 

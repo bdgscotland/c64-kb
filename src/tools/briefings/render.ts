@@ -67,6 +67,18 @@ function renderArchetype(b: BriefingOutput): string {
     out += `Fingerprint: ${b.archetype.features.join(", ") || "(none)"}\n`;
     out += `Common pitfalls: ${b.archetype.risks.join(", ") || "(none)"}\n\n`;
   }
+  for (const d of b.designs ?? []) {
+    const measured = d.measured
+      .map(
+        (m) => `${m.phase} ${m.region} worst ${m.worst}${m.typical !== null ? `, typical ${m.typical}` : ""}`,
+      )
+      .join("; ");
+    out +=
+      `**Game design:** ${d.name} (${d.title}), realised by ${d.realised_by.join(", ") || "(no recipe)"}; ` +
+      `${measured ? `measured ${measured} cycles` : "no measured frame"}. ` +
+      `Budget it with c64_plan_budget {"design": "${d.name}"}.\n`;
+  }
+  if ((b.designs ?? []).length > 0) out += "\n";
   return out;
 }
 
