@@ -21,7 +21,7 @@ is its source's number. Nothing on this page was measured in VICE.
 
 **Kind:** structure
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
-**Realised by:** jump_table_dispatch, irq_chain_table, frame_sync_loop, joystick_edge_detect, sid_play_routine_pattern, sfx_engine_beside_music, oscar64/platformer-scaffold, oscar64/simple-shmup, kickassembler/irq-chain, two_player_state_swap, oscar64/two-player
+**Realised by:** jump_table_dispatch, irq_chain_table, frame_sync_loop, joystick_edge_detect, sid_play_routine_pattern, sfx_engine_beside_music, oscar64/platformer-scaffold, oscar64/simple-shmup, kickassembler/irq-chain, two_player_state_swap, oscar64/two-player, text_window_and_menu, oscar64/text-window-menu
 **Sources:** Codebase64 guide to programming games (unattributed, wiki); Andrew Braybrook, Morpheus diary in Zzap!64, 1987; John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993
 
 **Checks:**

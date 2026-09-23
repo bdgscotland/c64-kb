@@ -5,11 +5,11 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 745, schema 29, tools 2.1.0, package 0.14.0.
+Data 746, schema 29, tools 2.1.0, package 0.14.0.
 
-**Issue #22, steps 4 and 5: game designs and machine variants (schema 29,
-tools 2.1.0, package 0.14.0).** Two shape changes land together, so the
-schema moves two: 28 is GameDesign, 29 is MachineVariant. Tools 2.1.0 is a
+**Issue #22, steps 4 and 5: game designs and machine variants (data
+746, schema 29, tools 2.1.0, package 0.14.0).** Two shape changes land
+together, so the schema moves two: 28 is GameDesign, 29 is MachineVariant. Tools 2.1.0 is a
 minor: every change to the surface is additive (a new optional input, new
 output fields). The package moves with the tools minor.
 
@@ -49,7 +49,8 @@ harness needs or the pages name (`c64`, `c64c`, `c64old`, `ntsc`,
 `newntsc`, `oldntsc`, `drean`), with their chips, line length and lines.
 `VERIFIED_ON` (Recipe to MachineVariant) is rebuilt after every ingest
 from `docs/recipes/runs.json`, as `verify:recipes` runs each page, and
-only where the committed screenshot exists: 204 edges. `c64_recipe_lookup`
+only where the committed screenshot exists: 204 edges on the scratch graph,
+before main's data 745 was merged. `c64_recipe_lookup`
 returns `verified_on[]`; `c64_recipes_for` takes `verified_on` (a variant
 or PAL / NTSC). The R56A and the Drean are variants, not Regions, which
 answers #8's question.
@@ -61,7 +62,56 @@ and the #22 design said. `x64sc -default -dumpconfig` is identical to
 and the old one under `-model c64`. Every runs.json `pal` run, and the PAL
 palette column in `vice-reference.md`, is therefore the 8565 machine.
 
-Data 744, schema 27, tools 2.0.0, package 0.13.0 (before the entry above).
+Before the entry above: data 745, schema 27, tools 2.0.0, package 0.13.0.
+
+**Tier A, the eight-way scroller (data 745).** `eight_way_scroll_double_buffer`
+on the scroll page with a KickAssembler recipe, after three attempts and
+three reviews. A 64 by 48 tile world through a 40 by 25 window along an
+eight-leg camera path, two screen matrices flipped by `$D018` in the
+blank, the redraw spread over fields in bands of at most seven rows, and
+colour RAM, which cannot be paged, rewritten in four calls after the flip.
+The first design redrew seventeen rows a field from raster 152 and
+overran the field about one apply in four, which stalled the camera and
+showed a whole field of stale colours; its verdict could not see it
+because its checks compared raster numbers inside a field. The shipped
+version caps every band, runs the camera at one pixel every two fields so
+a crossing gap of six fields covers the five-field redraw, and its verdict
+counts late applies, skipped preps and a first colour band finishing after
+row 6's badline, all zero over a full loop on both models. Worst field
+13,111 cycles on PAL and 13,152 on NTSC. Stated plainly on the page and in
+the technique entry: after each tile crossing the rows not yet rewritten
+show the previous position's colours for three displayed fields, about
+one field in four over the path; the pin sits in the clean window. The
+one-pixel-a-frame form is not shipped: on diagonals its crossing gap is
+three fields against the five the redraw needs.
+
+**Candidate list, Tier B batch 3 (data 745).** `light_pen_read` on
+the input page with a KickAssembler recipe: the latch, the one trigger a
+frame, the interrupt at 94 cycles through the KERNAL vector and the
+two-pixel conversion checked on synthetic latch values; VICE 3.10's light
+pen never triggers headlessly (no host mouse), and the fire-line route
+through joystick autofire breaks the autostart before the program runs, so
+the resting registers are measured and the moving pen is not, and the page
+says so. A petcat toolchain page: tokenise and de-tokenise measured
+against a hand count of tokens (a four-line stub is 64 bytes), the control
+macros mapped to their PETSCII bytes, the round trip identical apart from
+line-number padding, an unknown keyword accepted silently and failing on
+the machine, upper-case keywords stored as text rather than tokens, and
+the `-w2` against `-w3` difference on one keyword. `pucrunch_decruncher`
+on the memory-banking page: pucrunch 1.14 built from source, its four
+modes and Exomizer 3.1.3b0 measured on the same two inputs for size and
+decrunch time (on a 4,519-byte mixed program pucrunch's default is 1,084
+bytes and 349,505 cycles against Exomizer's 1,103 bytes and 189,276
+cycles), the decruncher's footprint at `$F7` and `$0200`, and the
+candidate list's claim that pucrunch decrunches faster not borne out on
+either input. `text_window_and_menu` on the text page with an Oscar64
+recipe: save-under of screen and colour RAM, a PETSCII frame matched glyph
+by glyph against the character ROM, a five-item menu moved by joystick and
+by the cursor keys through the KERNAL buffer, the restore exact byte for
+byte; open 14,923 cycles and close 5,759 on PAL. Left open: what VICE
+latches when its pen does trigger; the raw pucrunch decruncher was not
+assembled; the anchor for the window technique on the text-mode-render
+pitfall page waits for the eight-way scroll to release that page.
 
 **Issue #22, step 3: the honest budget (schema 27, tools 2.0.0, package
 0.13.0).** Tools 2.0.0 is a major bump because the briefing's output

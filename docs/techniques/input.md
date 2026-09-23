@@ -948,3 +948,125 @@ the display, where no badline can stretch it.
 ### Recipes
 
 - `recipes/kickassembler/own-keyscan.md`
+
+## light_pen_read — Read the light pen's latched beam position from LPX/LPY once per frame
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D013, D014, D019, D01A, DC01
+**Cost:** cycles_per_frame=94, zp_bytes=0, irq_slots=1
+**Cost basis:** measured-vice
+
+### Why
+
+A light pen points at the screen and the machine has to say which cell
+or pixel it is over. The pen has no position of its own: it fires a
+pulse when the beam passes under it, and the VIC turns that pulse into a
+coordinate by copying its own counters into `$D013` and `$D014`. A
+program that reads those two registers at the right time, once a frame,
+knows where the pen is; a program that reads them at the wrong time or
+skips the correction reads a point a few cells to the right of the pen,
+or the same stale point every frame.
+
+### How
+
+Enable the pen interrupt, bit 3 of `$D01A`, with the pen in control
+port 1. When the pen's pulse pulls the LP pin low the VIC latches the
+beam's X coordinate divided by two into `$D013` (LPX) and the low eight
+bits of the raster line into `$D014` (LPY), and sets bit 3 of `$D019`.
+The handler acknowledges by writing bit 3 back to `$D019`, copies the
+two registers into program variables and counts the interrupt. The
+main loop converts, once per frame:
+
+```text
+x  = (LPX - PEN_DELAY) * 2      ; VIC X coordinate of the beam
+col = (x - 24) / 8              ; text area starts at X = 24
+row = (LPY - 51) / 8            ; text area starts at line 51
+```
+
+and treats anything outside 0 to 39 or 0 to 24 as "not on the text
+area". Whether the pen is pressed to the screen, on pens that have a tip
+switch, comes from the port's switch lines on `$DC01`: bit 4 is the
+FIRE line, which is the pen's own trigger line. A program that only wants
+to know whether the pen triggered this frame can poll bit 3 of `$D019`
+instead of taking the interrupt, and must still write it back to clear
+it.
+
+`PEN_DELAY` is the pen's own latency in LPX units. A pen reports the
+beam a little after the beam lit the phosphor under it, and the latch
+takes the counter at the moment of the pulse, so LPX reads a constant
+too large; the constant depends on the pen and the display, so the
+program calibrates it once by asking for a touch on a known cell and
+keeping the difference. This is the standard treatment (rung 5, not
+measured here: no pen was available). Both figures and the reading
+pattern are measured in `recipes/kickassembler/light-pen-read.md`.
+
+### Why it works
+
+The latch fires once per frame: the first LP edge after the vertical
+blank copies the counters, later edges in the same frame are ignored,
+and the latch is reset at the start of the next frame
+(`hardware/vic-ii-reference.md`, "Light pen latch"). One read per frame
+therefore sees every position the pen reported, and reading twice in a
+frame sees the same value twice. The X counter is halved to fit eight
+bits, which is why LPX is in two-pixel units and a pen cannot resolve a
+single pixel horizontally; LPY is a raster line, so vertical resolution
+is one line and the text row needs only the divide by eight.
+
+The LP pin is CIA1 PB4, control port 1's FIRE line. That is why the pen
+lives in port 1 and why a joystick fire press in port 1 latches a
+position too: with no pen attached `$D013` and `$D014` hold whatever the
+last fire press latched. It is also why the port-1 keyboard hazard
+applies. The KERNAL's SCNKEY drives the keyboard columns from `$DC00`
+in the jiffy IRQ, and a held key in a driven column pulls its row line
+low on `$DC01`; the pen's line is row 4 (`joystick2_scan_phantom_press`
+in `pitfalls/input.md`, Fix C, covers the port-1 form). A held SPACE or
+another row-4 key can therefore read as the pen's switch, and the scan
+itself cannot pull the LP pin, which is an input to the VIC, so it
+cannot fake a latch; the recipe turns the CIA1 interrupt off anyway.
+
+Measured in VICE x64sc 3.10 with the recipe's pen (`-controlport1device
+11`), PAL and NTSC: over 300 frames the pen interrupt fired zero times,
+`$D013` and `$D014` read `$00` on every frame, bit 3 of `$D019` was
+clear at the end and `$DC01` read `$FF`. VICE's pen follows the host
+mouse and a headless run has none to move, so the emulated pen never
+triggers; what a triggering pen latches, and the frame-to-frame spread
+of the latch, is not measured here. The recipe's synthetic table checks
+the conversion on both corners of the text area, one step outside each,
+and the all-zero resting value, which converts to "outside".
+
+### Variations
+
+**A menu by pen.** Draw the choices as text cells, convert the latch to
+a row each frame, highlight that row, and take the tip switch on `$DC01`
+bit 4, or a second's dwell counted in frames, as the selection. The
+conversion is the recipe's `lpy_to_row`; the pen's vertical reading is
+the steadier axis, so a menu of rows needs no calibration in X.
+
+**Polled instead of interrupt-driven.** Read bit 3 of `$D019` once a
+frame from the main loop, and read the two registers when it is set;
+write the bit back to clear it. The cost falls to a handful of cycles
+and no interrupt slot, at the price of reading the latch up to a frame
+late, which a menu does not notice.
+
+**Averaging.** A real pen's LPX can differ by a unit or two from one
+frame to the next (rung 5, not measured here). Averaging the last four
+frames' values before the conversion steadies a cursor.
+
+### Cycle budget
+
+The interrupt, from the 6510 taking it to the `rti`, costs 94 cycles on
+both models: 7 for the interrupt sequence, 29 for the KERNAL's
+dispatcher from `$FF48` to the `$0314` vector, 36 for the handler's nine
+instructions and 22 for the exit through `$EA81` (measured in VICE x64sc
+3.10 by CIA2 timer A difference around a fixed loop with and without the
+interrupt, the same handler entered from a raster interrupt because the
+pen line cannot be pulled low by software; the four terms are
+arithmetic that agrees with it). The Cost line states the 94, one
+interrupt a frame. The conversion in the main loop is about 26 cycles for the
+column and 20 for the row by the instruction table (arithmetic), and is
+not on the line.
+
+### Recipes
+
+- `recipes/kickassembler/light-pen-read.md`
