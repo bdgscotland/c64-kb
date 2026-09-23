@@ -45,12 +45,13 @@ is filled.
 | Command | What it does |
 |---|---|
 | `make` | Builds `build/<name>.prg` once `PLAN.md` passes (see "The plan gate") |
-| `make run` | The windowed x64sc with the normal build, for a human |
+| `make run` | The windowed x64sc with the normal build, for a human; joystick port 2 on the numeric keypad (8 2 4 6, fire 0) |
 | `make shot` | Builds the AUTOPILOT variant and writes `shots/pal.png` and `shots/ntsc.png` at the pinned cycle counts |
 | `make check` | `check.py expect.json shots/pal.png shots/ntsc.png`; exit 1 names each failed check |
 | `make selftest` | Builds with FORCE_FAULT and shoots it; passes only when `check.py` exits 1 with FAIL lines |
 | `make disk` | `build/<name>.d64` with the PRG and `DISK_FILES`, then lists it |
 | `make claims` | c64-kb's `scripts/claims-watch.ts` over the AUTOPILOT PRG, when the checkout has it |
+| `make released` | With `OSCAR64_RELEASED=<path>`: the autopilot build from that compiler, shot on PAL and NTSC and graded with the same `expect.json`. On v1.32.273, platformer graded 7 of 23 (a miscompile, #30) and action-puzzle 41 of 41 |
 | `make zp` | The zero-page addresses the compiled C touches, read from Oscar64's listing; with `ZP_CLAIM='$02-$55'` a gate |
 | `make clean` | Removes `build/` and `shots/` |
 
@@ -128,8 +129,8 @@ and red on fail.
 
 Oscar64 has no object linker, and a `.prg` given on its command line is
 ignored ([oscar64-reference](../toolchains/oscar64-reference.md), "Calling
-KickAssembler code from Oscar64"). The old `c64-game-starter` fed one in
-that way. The harness uses the placed-blob method that page describes, and
+KickAssembler code from Oscar64"). The old `c64-game-starter`, since removed, fed
+one in that way. The harness uses the placed-blob method that page describes, and
 automates the addresses:
 
 1. KickAssembler assembles `KICK_SRC` with `-binfile -symbolfile`:

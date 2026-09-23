@@ -1,0 +1,25 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line and the model's text fold (tools/gen.py)", "type": "text", "row": 24, "col": 0, "text": "RESULT 01 PASS FAB8" },
+    { "name": "status bar: the tower, 100 points, 37 turns", "type": "text", "row": 7, "col": 0, "text": " TOWER              SCORE 100  TURNS  37" },
+    { "name": "window: the last command, typed through the keyboard queue", "type": "text", "row": 13, "col": 0, "text": ">LOOK AT TELESCOPE" },
+    { "name": "window: the reply, word-wrapped at 40", "type": "text", "row": 14, "col": 0, "text": "THROUGH THE GLASS THE COMET BLAZES, ITS " },
+    { "name": "window: the scored ending", "type": "text", "row": 18, "col": 0, "text": "YOU HAVE SCORED 100 OUT OF 100 IN 37    " },
+    { "name": "window: the rank", "type": "text", "row": 20, "col": 0, "text": "RANK: STARGAZER." },
+    { "name": "window: the bottom line", "type": "text", "row": 21, "col": 0, "text": "PRESS RETURN TO PLAY AGAIN.             " },
+    { "name": "window: the command before, three lines up the scroll", "type": "text", "row": 11, "col": 0, "text": ">PUT LENS IN TELESCOPE" },
+    { "name": "echo line in reverse video: the space in LOOK AT is solid white", "type": "pixel", "row": 13, "col": 5, "colour": 1 },
+    { "name": "reply line in normal video: the space after THE is black", "type": "pixel", "row": 12, "col": 3, "colour": 0 },
+    { "name": "the rule under the window", "type": "text", "row": 22, "col": 0, "text": "----------------------------------------" },
+    { "name": "picture: tower stone, multicolour %01 ($D022 grey)", "type": "pixel", "row": 0, "col": 0, "colour": 12 },
+    { "name": "picture: tower floor, multicolour %10 ($D023 brown)", "type": "pixel", "row": 6, "col": 10, "colour": 9 },
+    { "name": "picture: the sky through the slit", "type": "pixel", "row": 2, "col": 16, "colour": 0 },
+    { "name": "picture: a star, multicolour %11 (colour RAM white)", "type": "pixel", "vic_x": 156, "line": 60, "colour": 1 },
+    { "name": "picture: the telescope tube at cell (2, 21)", "type": "pixel", "vic_x": 192, "line": 70, "colour": 1 },
+    { "name": "the disk clock's labels (the counts differ by model and run)", "type": "text", "row": 23, "col": 0, "text": "SAVE" },
+    { "name": "the disk clock: LOAD", "type": "text", "row": 23, "col": 14, "text": "LOAD" },
+    { "name": "picture, status bar and window the same on both models", "type": "same", "cells": [0, 0, 22, 39] },
+    { "name": "frame meter, the script's 251 play frames", "type": "meter", "row": 24, "col": 20, "frames": 251 }
+  ]
+}
