@@ -15,24 +15,19 @@ afterAll(async () => {
 describe("FalkorService schema seed", () => {
   it("seeds exactly 5 Chip nodes with expected names", async () => {
     const rows = await svc.roQuery(`MATCH (c:Chip) RETURN c.name AS name ORDER BY c.name`);
-    const names = (rows.data ?? []).map((r: any) => r.name).sort();
-    expect(names).toEqual(["6510", "CIA1", "CIA2", "SID", "VIC-II"]);
+    expect(rows.data).toEqual(["6510", "CIA1", "CIA2", "SID", "VIC-II"].map((name) => ({ name })));
   });
 
   it("seeds exactly 2 Region nodes (PAL and NTSC)", async () => {
     const rows = await svc.roQuery(`MATCH (r:Region) RETURN r.name AS name ORDER BY r.name`);
-    const names = (rows.data ?? []).map((r: any) => r.name).sort();
-    expect(names).toEqual(["NTSC", "PAL"]);
+    expect(rows.data).toEqual([{ name: "NTSC" }, { name: "PAL" }]);
   });
 
   it("Region nodes carry refresh_hz and cycles_per_line", async () => {
     const rows = await svc.roQuery(
       `MATCH (r:Region {name: 'PAL'}) RETURN r.refresh_hz AS refresh, r.cycles_per_line AS cycles, r.lines_per_frame AS lines`,
     );
-    const pal = rows.data?.[0] as any;
-    expect(pal.refresh).toBe(50);
-    expect(pal.cycles).toBe(63);
-    expect(pal.lines).toBe(312);
+    expect(rows.data[0]).toEqual({ refresh: 50, cycles: 63, lines: 312 });
   });
 
   it("getStats returns at least the seeded nodes", async () => {
@@ -50,8 +45,7 @@ describe("FalkorService mutations", () => {
       `MATCH (r:Register {name: 'D011'})-[:BELONGS_TO]->(c:Chip)
        RETURN r.address AS addr, r.rw AS rw, c.name AS chip`,
     );
-    const row = rows.data?.[0] as { addr: string; rw: string; chip: string };
-    expect(row).toMatchObject({ addr: "$D011", rw: "RW", chip: "VIC-II" });
+    expect(rows.data[0]).toMatchObject({ addr: "$D011", rw: "RW", chip: "VIC-II" });
   });
 
   it("addRegister with aliases stores them and is queryable by alias", async () => {
@@ -62,11 +56,7 @@ describe("FalkorService mutations", () => {
        RETURN r.name AS name, r.address AS addr, r.aliases AS aliases
        ORDER BY r.name`,
     );
-    const matches = (rows.data ?? []) as { name: string; addr: string; aliases: string[] }[];
-    const scroly = matches.find((m) => m.name === "SCROLY");
-    expect(scroly).toBeDefined();
-    expect(scroly!.addr).toBe("$D011");
-    expect(scroly!.aliases).toEqual(["D011"]);
+    expect(rows.data).toContainEqual({ name: "SCROLY", addr: "$D011", aliases: ["D011"] });
   });
 
   it("addKernalRoutine creates a KernalRoutine node with description", async () => {
@@ -74,7 +64,7 @@ describe("FalkorService mutations", () => {
     const rows = await svc.roQuery(
       `MATCH (k:KernalRoutine {name: 'CHROUT'}) RETURN k.address AS addr, k.description AS desc`,
     );
-    expect(rows.data?.[0]).toMatchObject({ addr: "$FFD2", desc: "Output a character" });
+    expect(rows.data[0]).toMatchObject({ addr: "$FFD2", desc: "Output a character" });
   });
 
   it("linkPairsWith creates a PAIRS_WITH edge between two routines", async () => {
@@ -84,7 +74,7 @@ describe("FalkorService mutations", () => {
       `MATCH (a:KernalRoutine {name: 'CHROUT'})-[:PAIRS_WITH]->(b:KernalRoutine {name: 'CHRIN'})
        RETURN b.name AS partner`,
     );
-    expect(rows.data?.[0]).toMatchObject({ partner: "CHRIN" });
+    expect(rows.data[0]).toMatchObject({ partner: "CHRIN" });
   });
 
   it("addMemoryRegion creates a MemoryRegion node", async () => {
@@ -93,6 +83,6 @@ describe("FalkorService mutations", () => {
       `MATCH (m:MemoryRegion {name: 'Default Screen RAM'})
        RETURN m.start AS start, m.end AS end, m.bank_switchable AS bank`,
     );
-    expect(rows.data?.[0]).toMatchObject({ start: "$0400", end: "$07FF", bank: false });
+    expect(rows.data[0]).toMatchObject({ start: "$0400", end: "$07FF", bank: false });
   });
 });

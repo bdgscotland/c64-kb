@@ -28,11 +28,7 @@ describe("FalkorService - Technique cost properties", () => {
       `MATCH (t:Technique {name: 'sid_play_routine_pattern'})
        RETURN t.cost_cycles_per_frame AS cpf, t.cost_irq_slots AS slots, t.cost_bytes_code AS bc, t.cost_basis AS basis`,
     );
-    const row = r.data?.[0] as { cpf: number; slots: number; bc: number | null; basis: string };
-    expect(row.cpf).toBe(332);
-    expect(row.slots).toBe(1);
-    expect(row.bc).toBeNull();
-    expect(row.basis).toBe("measured-vice");
+    expect(r.data[0]).toEqual({ cpf: 332, slots: 1, bc: null, basis: "measured-vice" });
   });
 
   it("a technique without a Cost line has no cost properties, so IS NOT NULL finds the costed ones", async () => {
@@ -40,7 +36,7 @@ describe("FalkorService - Technique cost properties", () => {
     const r = await f.roQuery(
       `MATCH (t:Technique) WHERE t.cost_cycles_per_frame IS NOT NULL RETURN collect(t.name) AS names`,
     );
-    expect((r.data?.[0] as { names: string[] }).names).toEqual(["sid_play_routine_pattern"]);
+    expect(r.data[0]).toEqual({ names: ["sid_play_routine_pattern"] });
   });
 
   it("re-ingesting without the line clears the properties", async () => {
@@ -54,9 +50,6 @@ describe("FalkorService - Technique cost properties", () => {
       `MATCH (t:Technique {name: 'sid_play_routine_pattern'})
        RETURN t.cost_cycles_per_frame AS cpf, t.cost_basis AS basis, t.title AS title`,
     );
-    const row = r.data?.[0] as { cpf: number | null; basis: string | null; title: string };
-    expect(row.cpf).toBeNull();
-    expect(row.basis).toBeNull();
-    expect(row.title).toBe("The init+play subroutine convention");
+    expect(r.data[0]).toEqual({ cpf: null, basis: null, title: "The init+play subroutine convention" });
   });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { z } from "zod";
 import { FalkorService } from "../src/services/falkor.ts";
 
 describe("FalkorService - Technique + REQUIRES_REGION", () => {
@@ -27,7 +28,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
       complexity: "medium",
     });
     const r = await f.roQuery(`MATCH (t:Technique {name: 'stable_raster_irq'}) RETURN count(t) AS n`);
-    expect((r.data?.[0] as { n: number }).n).toBe(1);
+    expect(r.data[0]).toHaveProperty("n", 1);
   });
 
   it("linkTechniqueUsesRegister creates USES edge", async () => {
@@ -36,7 +37,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
     const r = await f.roQuery(
       `MATCH (t:Technique {name: 'stable_raster_irq'})-[:USES]->(reg:Register {name: 'D011'}) RETURN count(*) AS n`,
     );
-    expect((r.data?.[0] as { n: number }).n).toBe(1);
+    expect(r.data[0]).toHaveProperty("n", 1);
   });
 
   it("linkTechniqueRequiresRegion creates REQUIRES_REGION edge", async () => {
@@ -44,7 +45,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
     const r = await f.roQuery(
       `MATCH (t:Technique {name: 'stable_raster_irq'})-[:REQUIRES_REGION]->(reg:Region {name: 'PAL'}) RETURN count(*) AS n`,
     );
-    expect((r.data?.[0] as { n: number }).n).toBe(1);
+    expect(r.data[0]).toHaveProperty("n", 1);
   });
 
   it("linkTechniqueBelongsTo creates BELONGS_TO edge", async () => {
@@ -52,7 +53,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
     const r = await f.roQuery(
       `MATCH (t:Technique {name: 'stable_raster_irq'})-[:BELONGS_TO]->(c:Chip {name: 'VIC-II'}) RETURN count(*) AS n`,
     );
-    expect((r.data?.[0] as { n: number }).n).toBe(1);
+    expect(r.data[0]).toHaveProperty("n", 1);
   });
 
   it("linkTechniqueUsesKernal creates USES edge", async () => {
@@ -61,7 +62,7 @@ describe("FalkorService - Technique + REQUIRES_REGION", () => {
     const r = await f.roQuery(
       `MATCH (t:Technique {name: 'stable_raster_irq'})-[:USES]->(k:KernalRoutine {name: 'CINT'}) RETURN count(*) AS n`,
     );
-    expect((r.data?.[0] as { n: number }).n).toBe(1);
+    expect(r.data[0]).toHaveProperty("n", 1);
   });
 });
 
@@ -78,7 +79,7 @@ describe("FalkorService - Technique REQUIRES", () => {
       await f.addTechnique({ name, title: name, category: "raster", complexity: "high" });
     }
     console.warn = (msg: string) => {
-      warnings.push(String(msg));
+      warnings.push(msg);
     };
   });
   afterAll(async () => {
@@ -90,8 +91,9 @@ describe("FalkorService - Technique REQUIRES", () => {
     const r = await f.roQuery(
       `MATCH (a:Technique {name: $a})-[:REQUIRES]->(b:Technique {name: $b}) RETURN count(*) AS n`,
       { a, b },
+      z.object({ n: z.number() }),
     );
-    return Number((r.data?.[0] as { n: number }).n);
+    return r.data[0]?.n ?? 0;
   };
 
   it("creates a REQUIRES edge between two existing techniques and is idempotent", async () => {
@@ -103,7 +105,7 @@ describe("FalkorService - Technique REQUIRES", () => {
   it("MATCHes both ends: a missing target drops the edge and creates no stub", async () => {
     expect(await f.linkTechniqueRequires("text_zoom", "no_such_technique")).toBe(false);
     const stub = await f.roQuery(`MATCH (t:Technique {name: 'no_such_technique'}) RETURN count(t) AS n`);
-    expect(Number((stub.data?.[0] as { n: number }).n)).toBe(0);
+    expect(stub.data[0]).toHaveProperty("n", 0);
     expect(warnings.some((w) => w.includes("text_zoom -> no_such_technique") && w.includes("dropped"))).toBe(
       true,
     );
