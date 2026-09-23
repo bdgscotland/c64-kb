@@ -10,11 +10,29 @@
  * another program (stdout to a pipe is asynchronous).
  */
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import { health, formatHealth } from "./tools/intelligence.ts";
 import { getVersions } from "./services/versions.ts";
 import { startMcpServer } from "./server.ts";
 import { closeAll } from "./context.ts";
+import { definedOnly } from "./server/defined-only.ts";
+
+const TOOLCHAINS = ["oscar64", "kickassembler", "cc65"] as const;
+const REGIONS = ["pal", "ntsc", "both"] as const;
+
+/** Commander argParser for an integer option; parseInt semantics, as the option was read before. */
+function intArg(value: string): number {
+  const n = parseInt(value, 10);
+  if (Number.isNaN(n)) throw new InvalidArgumentError("Not a number.");
+  return n;
+}
+
+/** Commander argParser for a numeric option; Number() semantics, as the option was read before. */
+function numberArg(value: string): number {
+  const n = Number(value);
+  if (Number.isNaN(n)) throw new InvalidArgumentError("Not a number.");
+  return n;
+}
 
 const program = new Command();
 
@@ -77,11 +95,11 @@ program
   .command("search")
   .description("Semantic search across the knowledge base")
   .argument("<query>", "Natural language query")
-  .option("--limit <n>", "Max results", "5")
+  .addOption(new Option("--limit <n>", "Max results").default(5).argParser(intArg))
   .option("--source <pattern>", "Filter by source file")
-  .action(async (query: string, opts: { limit: string; source?: string }) => {
+  .action(async (query: string, opts: { limit: number; source?: string }) => {
     const { search } = await import("./tools/query.ts");
-    const result = await search(query, parseInt(opts.limit, 10), opts.source);
+    const result = await search(query, opts.limit, opts.source);
     emit(result);
   });
 
@@ -136,19 +154,24 @@ program
 program
   .command("pal-ntsc-diff <topic>")
   .description("Compare PAL vs NTSC for a topic")
-  .option("--region <region>", "Limit to a single region: pal, ntsc, or both", "both")
-  .action(async (topic: string, opts: { region: string }) => {
+  .addOption(
+    new Option("--region <region>", "Limit to a single region: pal, ntsc, or both")
+      .choices(REGIONS)
+      .default("both"),
+  )
+  .action(async (topic: string, opts: { region: (typeof REGIONS)[number] }) => {
     const { palNtscDiff } = await import("./tools/query.ts");
-    const region = (["pal", "ntsc", "both"] as const).includes(opts.region as "pal" | "ntsc" | "both")
-      ? (opts.region as "pal" | "ntsc" | "both")
-      : "both";
-    const result = await palNtscDiff(topic, region);
+    const result = await palNtscDiff(topic, opts.region);
     emit(result);
   });
 
 program
   .command("toolchain-hint <intent>")
-  .option("--toolchain <toolchain>", "oscar64 | kickassembler | cc65 (default: oscar64)")
+  .addOption(
+    new Option("--toolchain <toolchain>", "oscar64 | kickassembler | cc65 (default: oscar64)").choices(
+      TOOLCHAINS,
+    ),
+  )
   .description("Get an idiomatic snippet for a toolchain + intent")
   .action(async (intent: string, opts: { toolchain?: string }) => {
     const { toolchainHint } = await import("./tools/query.ts");
@@ -167,19 +190,21 @@ program
 
 program
   .command("recipes-for")
-  .option("--toolchain <toolchain>", "Filter by toolchain")
-  .option("--region <region>", "Filter by region (pal/ntsc/both)")
+  .addOption(new Option("--toolchain <toolchain>", "Filter by toolchain").choices(TOOLCHAINS))
+  .addOption(new Option("--region <region>", "Filter by region (pal/ntsc/both)").choices(REGIONS))
   .option("--technique <technique>", "Filter by Technique title")
   .option("--file-format <fmt>", "Filter by FileFormat")
   .description("List recipes filtered by toolchain/region/technique/format")
   .action(async (opts: { toolchain?: string; region?: string; technique?: string; fileFormat?: string }) => {
     const { recipesFor } = await import("./tools/query.ts");
-    const result = await recipesFor({
-      toolchain: opts.toolchain,
-      region: opts.region,
-      technique: opts.technique,
-      file_format: opts.fileFormat,
-    });
+    const result = await recipesFor(
+      definedOnly({
+        toolchain: opts.toolchain,
+        region: opts.region,
+        technique: opts.technique,
+        file_format: opts.fileFormat,
+      }),
+    );
     emit(result);
   });
 
@@ -219,15 +244,7 @@ program
       claims?: string;
     }) => {
       const { techniquesFor } = await import("./tools/query.ts");
-      const result = await techniquesFor({
-        category: opts.category,
-        chip: opts.chip,
-        region: opts.region,
-        register: opts.register,
-        recipe: opts.recipe,
-        requires: opts.requires,
-        claims: opts.claims,
-      });
+      const result = await techniquesFor(definedOnly(opts));
       emit(result);
     },
   );
@@ -245,16 +262,18 @@ program
   .command("timing-budget <technique>")
   .description("Compute per-scanline cycle budget for a technique")
   .option("--region <region>", "PAL or NTSC (case-insensitive, default: pal)", "pal")
-  .option(
-    "--sprites <n>",
-    "sprites displayed on the line, 0-8 (default: the technique's Cost sprites_per_line)",
+  .addOption(
+    new Option(
+      "--sprites <n>",
+      "sprites displayed on the line, 0-8 (default: the technique's Cost sprites_per_line)",
+    ).argParser(numberArg),
   )
-  .action(async (technique: string, opts: { region: string; sprites?: string }) => {
+  .action(async (technique: string, opts: { region: string; sprites?: number }) => {
     const { timingBudget } = await import("./tools/query.ts");
     const result = await timingBudget({
       technique,
       region: opts.region,
-      ...(opts.sprites !== undefined ? { sprites_per_line: Number(opts.sprites) } : {}),
+      ...(opts.sprites !== undefined ? { sprites_per_line: opts.sprites } : {}),
     });
     emit(result);
   });
@@ -264,13 +283,15 @@ program
   .description(
     "Run the pitfall rules over a C or assembly source file (language from the extension, or --language)",
   )
-  .option("--language <lang>", "c, asm or auto", "auto")
+  .addOption(
+    new Option("--language <lang>", "c, asm or auto").choices(["c", "asm", "auto"] as const).default("auto"),
+  )
   .option("--toolchain <name>", "Toolchain name recorded in the output")
-  .action(async (file: string, opts: { language: string; toolchain?: string }) => {
+  .action(async (file: string, opts: { language: "c" | "asm" | "auto"; toolchain?: string }) => {
     const { lintSourceResult } = await import("./tools/lint.ts");
     const fs = await import("fs");
     const source = fs.readFileSync(file, "utf-8");
-    let language = opts.language as "c" | "asm" | "auto";
+    let language = opts.language;
     if (language === "auto") {
       if (/\.(c|h)$/i.test(file)) language = "c";
       else if (/\.(asm|s|a|inc)$/i.test(file)) language = "asm";

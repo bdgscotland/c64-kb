@@ -7,11 +7,14 @@
  *
  * Reads the live graph (FALKOR_GRAPH, default c64). Report only; exit 0.
  */
+import { z } from "zod";
 import { getFalkor } from "../src/context.ts";
 
-type Row = Record<string, unknown>;
+// Graph rows: validated, not cast. Each is an object of named columns.
+const RowsSchema = z.array(z.record(z.string(), z.unknown()));
+type Row = z.infer<typeof RowsSchema>[number];
 const f = await getFalkor();
-const q = async (cypher: string): Promise<Row[]> => ((await f.roQuery(cypher)).data ?? []) as Row[];
+const q = async (cypher: string): Promise<Row[]> => RowsSchema.parse((await f.roQuery(cypher)).data);
 const n = (v: unknown) => Number(v ?? 0);
 
 const labels = await q(`MATCH (x) RETURN labels(x)[0] AS label, count(*) AS c ORDER BY c DESC`);
@@ -52,9 +55,10 @@ const nodes = await q(`MATCH (x) RETURN id(x) AS id`);
 const parent = new Map<number, number>();
 const find = (x: number): number => {
   let r = x;
-  while (parent.get(r) !== r) r = parent.get(r)!;
+  // Every node id is in `parent` before find() is called, so get() is never undefined here.
+  while (parent.get(r) !== r) r = parent.get(r) ?? r;
   while (parent.get(x) !== r) {
-    const nx = parent.get(x)!;
+    const nx = parent.get(x) ?? r;
     parent.set(x, r);
     x = nx;
   }
@@ -83,7 +87,7 @@ const report = {
     median,
     max: degs[degs.length - 1] ?? 0,
     count: degs.length,
-    lowest: techDeg.slice(0, 8).map((r) => `${r.name}:${n(r.deg)}`),
+    lowest: techDeg.slice(0, 8).map((r) => `${String(r.name)}:${n(r.deg)}`),
   },
   components: {
     count: sizes.length,
@@ -91,7 +95,7 @@ const report = {
     largest_share: nodes.length ? +((100 * (sizes[0] ?? 0)) / nodes.length).toFixed(1) : 0,
     singletons: sizes.filter((s) => s === 1).length,
   },
-  isolated_nodes: isolated.map((r) => `${r.label}:${r.name}`),
+  isolated_nodes: isolated.map((r) => `${String(r.label)}:${String(r.name)}`),
   techniques_without_recipe: techNoRecipe.map((r) => String(r.name)),
   techniques_without_direct_pitfall: techNoPitDirect.map((r) => String(r.name)),
   techniques_without_any_pitfall_even_via_registers: techNoPitAny.map((r) => String(r.name)),

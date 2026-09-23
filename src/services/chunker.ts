@@ -9,76 +9,69 @@ export interface DocChunk {
 }
 
 const MAX_CHUNK_SIZE = 1500;
+const FENCE = "```";
+
+interface Headings {
+  h1: string;
+  h2: string;
+  /** The heading path chunks under this point are filed under. */
+  path: string;
+}
+
+/** The heading state after `line`, or null when `line` is not an H1-H3. */
+function nextHeadings(line: string, h: Headings): Headings | null {
+  if (line.startsWith("# ")) {
+    const h1 = line.replace(/^#\s+/, "").trim();
+    return { h1, h2: "", path: h1 };
+  }
+  if (line.startsWith("## ")) {
+    const h2 = line.replace(/^##\s+/, "").trim();
+    return { h1: h.h1, h2, path: h.h1 ? `${h.h1} > ${h2}` : h2 };
+  }
+  if (line.startsWith("### ")) {
+    const h3 = line.replace(/^###\s+/, "").trim();
+    let path = h3;
+    if (h.h2) path = `${h.h1} > ${h.h2} > ${h3}`;
+    else if (h.h1) path = `${h.h1} > ${h3}`;
+    return { ...h, path };
+  }
+  return null;
+}
+
+/** One section's text as chunks: split on paragraphs when too long, unless it holds a code fence. */
+function sectionChunks(section: string, lines: string[]): DocChunk[] {
+  const text = lines.join("\n").trim();
+  if (text.length === 0) return [];
+  // Code blocks stay intact even when they exceed MAX_CHUNK_SIZE.
+  if (text.length <= MAX_CHUNK_SIZE || text.includes(FENCE)) return [{ section, text }];
+  return splitOnParagraphs(text, MAX_CHUNK_SIZE).map((sub) => ({ section, text: sub }));
+}
 
 export function chunkMarkdown(content: string, source: string): DocChunk[] {
-  const lines = content.split("\n");
+  // Keep all chunks as-is. An earlier <80-char merge silently dropped
+  // section headings for tiny chunks (e.g. per-opcode H3s in 6510-cpu-
+  // reference.md), which broke retrieval. Tiny chunks are fine: their
+  // heading is the searchable identifier.
   const chunks: DocChunk[] = [];
-
-  let h1 = "";
-  let h2 = "";
-  let currentHeading = source;
+  let headings: Headings = { h1: "", h2: "", path: source };
   let currentText: string[] = [];
   let inCodeFence = false;
 
-  function flush() {
-    const text = currentText.join("\n").trim();
-    if (text.length > 0) {
-      if (text.length > MAX_CHUNK_SIZE && !containsCodeFence(text)) {
-        // Only split on paragraphs if the chunk doesn't contain a code fence.
-        // Code blocks should stay intact even if they exceed MAX_CHUNK_SIZE.
-        for (const sub of splitOnParagraphs(text, MAX_CHUNK_SIZE)) {
-          chunks.push({ section: currentHeading, text: sub });
-        }
-      } else {
-        chunks.push({ section: currentHeading, text });
-      }
+  for (const line of content.split("\n")) {
+    // Track code fence state; a heading inside a fenced block is code, not a split point.
+    const isFence = line.startsWith(FENCE);
+    if (isFence) inCodeFence = !inCodeFence;
+    const next = isFence || inCodeFence ? null : nextHeadings(line, headings);
+    if (next === null) {
+      currentText.push(line);
+      continue;
     }
+    chunks.push(...sectionChunks(headings.path, currentText));
     currentText = [];
+    headings = next;
   }
-
-  for (const line of lines) {
-    // Track code fence state — never split inside a fenced code block
-    if (line.startsWith("```")) {
-      inCodeFence = !inCodeFence;
-      currentText.push(line);
-      continue;
-    }
-
-    if (inCodeFence) {
-      // Inside a code fence — accumulate without checking for headings
-      currentText.push(line);
-      continue;
-    }
-
-    if (line.startsWith("# ") && !line.startsWith("## ")) {
-      flush();
-      h1 = line.replace(/^#\s+/, "").trim();
-      h2 = "";
-      currentHeading = h1;
-    } else if (line.startsWith("## ")) {
-      flush();
-      h2 = line.replace(/^##\s+/, "").trim();
-      currentHeading = h1 ? `${h1} > ${h2}` : h2;
-    } else if (line.startsWith("### ")) {
-      flush();
-      const h3 = line.replace(/^###\s+/, "").trim();
-      currentHeading = h2 ? `${h1} > ${h2} > ${h3}` : h1 ? `${h1} > ${h3}` : h3;
-    } else {
-      currentText.push(line);
-    }
-  }
-  flush();
-
-  // Keep all chunks as-is. The earlier <80-char merge silently dropped
-  // section headings for tiny chunks (e.g. per-opcode H3s in 6510-cpu-
-  // reference.md), which broke retrieval. Tiny chunks are fine — their
-  // heading is the searchable identifier.
-  const merged: DocChunk[] = chunks;
-  return merged;
-}
-
-function containsCodeFence(text: string): boolean {
-  return text.includes("```");
+  chunks.push(...sectionChunks(headings.path, currentText));
+  return chunks;
 }
 
 function splitOnParagraphs(text: string, maxSize: number): string[] {

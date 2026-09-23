@@ -52,7 +52,7 @@ describe("recipesFor", () => {
   it("lists recipes by toolchain", async () => {
     const r = await recipesFor({ toolchain: "oscar64" });
     expect(r.structured.recipes.length).toBeGreaterThan(0);
-    expect(r.structured.recipes[0].toolchain).toBe("oscar64");
+    expect(r.structured.recipes.at(0)?.toolchain).toBe("oscar64");
   });
 
   it("lists recipes by region", async () => {

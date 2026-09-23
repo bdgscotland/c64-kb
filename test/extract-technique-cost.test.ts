@@ -26,7 +26,7 @@ Body text.
 
 function techOf(ents: ReturnType<typeof extractGraphEntities>) {
   const t = ents.find((e) => e.type === "technique");
-  if (!t || t.type !== "technique") throw new Error("no technique entity");
+  if (!t) throw new Error("no technique entity");
   return t;
 }
 
@@ -62,7 +62,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
   });
 
   it("warns about and skips an unknown key, keeping the rest of the line", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const t = techOf(
         extractGraphEntities(
@@ -83,7 +83,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
   });
 
   it("warns about and skips a non-integer or negative value", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const t = techOf(
         extractGraphEntities(
@@ -102,7 +102,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
   });
 
   it("drops the whole Cost line for a basis word outside the set", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const t = techOf(
         extractGraphEntities(
@@ -119,7 +119,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
   });
 
   it("drops the Cost line when there is no basis line at all", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const t = techOf(extractGraphEntities(doc("**Cost:** cycles_per_frame=124"), "techniques/raster.md"));
       expect(t.cost).toBeUndefined();
@@ -135,7 +135,8 @@ describe("extractGraphEntities - technique Cost lines", () => {
       "\n## raster_bars — Raster color bars\n\n**Complexity:** low\n\nBody.\n";
     const ents = extractGraphEntities(two, "techniques/raster.md");
     const bars = ents.find((e) => e.type === "technique" && e.name === "raster_bars");
-    expect(bars && bars.type === "technique" ? bars.cost : "missing").toBeUndefined();
+    expect(bars && "cost" in bars ? bars.cost : undefined).toBeUndefined();
+    expect(bars).toBeDefined();
   });
 
   it("exposes the vocabulary and basis words the conventions document", () => {
@@ -156,7 +157,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const dir = path.resolve(__dirname, "../docs/techniques");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       let costed = 0;
       for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".md"))) {

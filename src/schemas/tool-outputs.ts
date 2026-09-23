@@ -139,7 +139,7 @@ const TechniqueRefSchema = z.object({ name: z.string(), title: z.string() });
 // derived-listing (read off a built listing or map), arithmetic (worked
 // from settled constants), estimated (a judgement, not a measurement).
 export const CostBasisSchema = z.enum(["measured-vice", "derived-listing", "arithmetic", "estimated"]);
-export const TechniqueCostSchema = z.object({
+const TechniqueCostSchema = z.object({
   cycles_per_line: z.number().int().optional(),
   cycles_per_frame: z.number().int().optional(),
   lines_active: z.number().int().optional(),
@@ -154,13 +154,13 @@ export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
 
 // A CLAIMS edge (schema 25): the HardwareUnit, the mode, and for zero_page
 // the canonical byte ranges ("02-0D,24-2F") and whether they relocate.
-export const ClaimSchema = z.object({
+const ClaimSchema = z.object({
   unit: z.string(),
   mode: z.enum(["owns", "shares", "reads", "init"]),
   ranges: z.string().optional(),
   relocatable: z.boolean().optional(),
 });
-export const ClaimsStatedSchema = z.enum(["stated", "none", "unknown"]);
+const ClaimsStatedSchema = z.enum(["stated", "none", "unknown"]);
 
 export const TechniqueLookupSchema = z.object({
   name: z.string(),
@@ -228,7 +228,7 @@ const CONFLICT_KINDS = [
   "init_order", // one uses a unit once at start-up that the other then owns (info)
 ] as const;
 
-export const CompatibilityConflictSchema = z.object({
+const CompatibilityConflictSchema = z.object({
   a: z.string(),
   b: z.string(),
   kind: z.enum(CONFLICT_KINDS),
@@ -249,7 +249,7 @@ export const CompatibilityConflictSchema = z.object({
   underlying_kind: z.enum(CONFLICT_KINDS).optional(),
 });
 
-export const SharedInfrastructureSchema = z.object({
+const SharedInfrastructureSchema = z.object({
   name: z.string(),
   kind: z.enum(["Register", "KernalRoutine", "discipline", "missing_prerequisite"]),
   via_recipes: z.array(z.string()),
@@ -262,7 +262,7 @@ export const SharedInfrastructureSchema = z.object({
 // A technique with no registers, no KERNAL routines and no demands cannot
 // conflict with anything by construction; `known: false` says the verdict
 // is silent about it, not that it is safe.
-export const CompatibilityCoverageSchema = z.object({
+const CompatibilityCoverageSchema = z.object({
   technique: z.string(),
   found: z.boolean(),
   registers: z.number(),
@@ -279,7 +279,7 @@ export const CompatibilityCoverageSchema = z.object({
   implied_by: z.array(z.string()).optional(),
 });
 
-export const BandSeparatedSchema = z.object({
+const BandSeparatedSchema = z.object({
   a: z.string(),
   b: z.string(),
   a_band: z.string(),
@@ -384,7 +384,7 @@ export type FailureDiagnoseOutput = z.infer<typeof FailureDiagnoseSchema>;
 // c64_lint_source: the pitfall pages compiled into source rules
 // (src/tools/lint.ts). One finding per site; certainty says how far the
 // text pattern is from the pitfall itself.
-export const LintFindingSchema = z.object({
+const LintFindingSchema = z.object({
   rule: z.string(),
   pitfall: z.string(),
   line: z.number().int().min(1),

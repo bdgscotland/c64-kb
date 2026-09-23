@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
 import { checkCompatibility, techniqueLookup, techniquesFor } from "../src/tools/query.ts";
-import { HARDWARE_UNITS, parseClaims } from "../src/graph/extract.ts";
+import { HARDWARE_UNITS, parseClaims } from "../src/graph/claims.ts";
 
 // HardwareUnit seeds, CLAIMS edges and the unit rules in checkCompatibility
 // (schema 25). The graph name comes from vitest.config.ts (c64_test).

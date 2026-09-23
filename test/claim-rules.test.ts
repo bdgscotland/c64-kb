@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { unitRules, absorbInto, compressUnits, type ClaimSide } from "../src/tools/claim-rules.ts";
+import {
+  unitRules,
+  absorbInto,
+  compressUnits,
+  type ClaimSide,
+} from "../src/tools/query/compatibility/unit-rules.ts";
 
 // The pure unit rules (src/tools/claim-rules.ts); no graph needed.
 const side = (name: string, ...claims: ClaimSide["claims"]): ClaimSide => ({ name, claims });
@@ -12,7 +17,7 @@ describe("unitRules", () => {
   it("keeps unit_shared when the sharer requires the owner", () => {
     const hits = unitRules(sfx, player, { aRequiresB: true, bRequiresA: false });
     expect(hits.map((h) => [h.kind, h.severity])).toEqual([["unit_shared", "soft"]]);
-    expect(hits[0].resolution).toMatch(/^sfx must follow player's protocol/);
+    expect(hits[0]?.resolution).toMatch(/^sfx must follow player's protocol/);
   });
 
   it("drops unit_shared when the owner requires the sharer", () => {
@@ -37,7 +42,7 @@ describe("unitRules", () => {
   it("groups units per rule and compresses numbered runs", () => {
     const a = side("a", ...[0, 1, 2, 3].map((n) => ({ unit: `sprite_${n}`, mode: "owns" as const })));
     const b = side("b", ...[0, 1, 2, 3].map((n) => ({ unit: `sprite_${n}`, mode: "owns" as const })));
-    expect(unitRules(a, b, none)[0].shared).toEqual(["sprite_0-3"]);
+    expect(unitRules(a, b, none)[0]?.shared).toEqual(["sprite_0-3"]);
     expect(compressUnits(["sprite_2", "sprite_0", "sprite_1", "sid_voice_3"])).toEqual([
       "sid_voice_3",
       "sprite_0-2",

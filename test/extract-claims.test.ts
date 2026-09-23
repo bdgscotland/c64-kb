@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
+import { extractGraphEntities } from "../src/graph/extract.ts";
 import {
-  extractGraphEntities,
   parseClaims,
   HARDWARE_UNITS,
   formatZeroPageRanges,
   parseZeroPageRanges,
-} from "../src/graph/extract.ts";
+} from "../src/graph/claims.ts";
 
 // The **Claims:** and **Claims basis:** lines (docs/CONVENTIONS-techniques.md,
 // schema 25). Whether a page states claims rides the technique entity

@@ -3,7 +3,9 @@
 // re-exports all of it; the extractor reads the line, the ingest seeds the
 // units, check_compatibility sets two claims on one unit against each other.
 
-export type HardwareUnitKind =
+import { group } from "./extract/common.ts";
+
+type HardwareUnitKind =
   | "sid_voice"
   | "sid_shared"
   | "sprite"
@@ -70,6 +72,8 @@ export const CLAIM_MODES = ["owns", "shares", "reads", "init"] as const;
 export type ClaimMode = (typeof CLAIM_MODES)[number];
 export const CLAIMS_BASIS_WORDS = ["measured-vice", "derived-listing", "estimated"] as const;
 export type ClaimsBasis = (typeof CLAIMS_BASIS_WORDS)[number];
+export const isClaimsBasis = (w: string): w is ClaimsBasis =>
+  (CLAIMS_BASIS_WORDS as readonly string[]).includes(w);
 
 export type Claim = { unit: string; mode: ClaimMode; ranges?: string; relocatable?: boolean };
 
@@ -79,7 +83,7 @@ export function parseZeroPageRanges(raw: string): [number, number][] | { error: 
   for (const part of raw.split("+").map((s) => s.trim())) {
     const m = /^\$([0-9A-Fa-f]{2})(?:\s*-\s*\$([0-9A-Fa-f]{2}))?$/.exec(part);
     if (!m) return { error: `"${part}" is not a zero-page byte $XX or range $XX-$YY` };
-    const first = parseInt(m[1], 16);
+    const first = parseInt(group(m, 1), 16);
     const last = m[2] ? parseInt(m[2], 16) : first;
     if (first > last) return { error: `range ${part} runs backwards` };
     if (first < 0x02) return { error: `${part} includes $00-$01, the 6510 port, which is not zero-page RAM` };
@@ -106,7 +110,7 @@ export function zeroPageRangesFromCanonical(canonical: string): [number, number]
   for (const part of canonical.split(",").filter((s) => s !== "")) {
     const m = /^([0-9A-F]{2})(?:-([0-9A-F]{2}))?$/i.exec(part);
     if (!m) return [];
-    out.push([parseInt(m[1], 16), parseInt(m[2] || m[1], 16)]);
+    out.push([parseInt(group(m, 1), 16), parseInt(m[2] ?? group(m, 1), 16)]);
   }
   return out;
 }
@@ -163,7 +167,7 @@ function expandUnits(unitWord: string): string[] | { error: string } {
     const last = Number(range[3]);
     if (first > last) return { error: `unit range "${unitWord}" runs backwards` };
     units = [];
-    for (let n = first; n <= last; n++) units.push(`${range[1]}${n}`);
+    for (let n = first; n <= last; n++) units.push(`${group(range, 1)}${n}`);
   }
   const bad = units.find((u) => !HARDWARE_UNIT_NAMES.has(u));
   if (bad) return { error: `"${bad}" is not a hardware unit (see docs/ONTOLOGY.md, HardwareUnit)` };
@@ -221,7 +225,7 @@ function itemClaims(raw: string, item: ClaimItem, seen: Set<string>): Claim[] | 
 export function parseClaims(raw: string): Claim[] | { error: string } {
   const items = splitTopLevel(raw.replace(/`/g, "").trim());
   if (items.length === 0) return { error: "empty Claims line" };
-  if (items.length === 1 && items[0].toLowerCase() === "none") return [];
+  if (items.length === 1 && items[0]?.toLowerCase() === "none") return [];
   const claims: Claim[] = [];
   const seen = new Set<string>();
   for (const raw of items) {

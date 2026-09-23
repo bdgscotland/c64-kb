@@ -11,7 +11,7 @@ import { isAvailable as ollamaAvailable } from "../services/embeddings.ts";
 import { getVersions, type Versions } from "../services/versions.ts";
 import { config } from "../config.ts";
 
-export interface HealthCheck {
+interface HealthCheck {
   service: string;
   status: "OK" | "FAIL" | "DEGRADED";
   detail: string;
@@ -23,24 +23,45 @@ export interface HealthResult {
   versions: Versions;
 }
 
+/**
+ * A refused connection arrives as an AggregateError with an empty message
+ * (measured: FALKOR_PORT=7999 gave a FAIL row with a blank detail), so dig
+ * out the first inner error, then fall back to its code or name.
+ */
+function errorDetail(err: unknown): string {
+  if (err instanceof AggregateError && err.errors.length > 0) return errorDetail(err.errors[0]);
+  if (!(err instanceof Error)) return String(err);
+  if (err.message) return err.message;
+  return "code" in err ? String(err.code) : err.name;
+}
+
+/** OK with the probe's detail, or FAIL with the error it threw. */
+async function probe(service: string, detail: () => Promise<string> | string): Promise<HealthCheck> {
+  try {
+    return { service, status: "OK", detail: await detail() };
+  } catch (err) {
+    return { service, status: "FAIL", detail: errorDetail(err) };
+  }
+}
+
 export async function health(): Promise<HealthResult> {
   const checks: HealthCheck[] = [];
 
-  try {
-    const q = await getQdrant();
-    const stats = await q.getStats();
-    checks.push({ service: "Qdrant", status: "OK", detail: `${stats.total_points} vectors` });
-  } catch (err) {
-    checks.push({ service: "Qdrant", status: "FAIL", detail: (err as Error).message ?? String(err) });
-  }
+  checks.push(
+    await probe("Qdrant", async () => {
+      const stats = await (await getQdrant()).getStats();
+      return `${stats.total_points} vectors`;
+    }),
+  );
 
-  try {
-    const f = await getFalkor();
-    const stats = await f.getStats();
-    checks.push({ service: "FalkorDB", status: "OK", detail: `${stats.nodes} nodes, ${stats.edges} edges` });
-  } catch (err) {
-    checks.push({ service: "FalkorDB", status: "FAIL", detail: (err as Error).message ?? String(err) });
-  }
+  // getStats throws when the graph cannot be queried; it used to return
+  // zeros, and this check then printed "OK, 0 nodes" for a dead graph.
+  checks.push(
+    await probe("FalkorDB", async () => {
+      const stats = await (await getFalkor()).getStats();
+      return `${stats.nodes} nodes, ${stats.edges} edges`;
+    }),
+  );
 
   const hasOllama = await ollamaAvailable();
   checks.push({
@@ -49,13 +70,9 @@ export async function health(): Promise<HealthResult> {
     detail: hasOllama ? `${config.ollama.model} available` : "Not available — keyword-only mode",
   });
 
-  try {
-    const a = getAnalytics();
-    const stats = a.getQueryStats();
-    checks.push({ service: "Analytics", status: "OK", detail: `${stats.total_queries} queries logged` });
-  } catch (err) {
-    checks.push({ service: "Analytics", status: "FAIL", detail: (err as Error).message ?? String(err) });
-  }
+  checks.push(
+    await probe("Analytics", () => `${getAnalytics().getQueryStats().total_queries} queries logged`),
+  );
 
   const healthy = checks.every((c) => c.status === "OK" || c.status === "DEGRADED");
   return { healthy, checks, versions: getVersions() };

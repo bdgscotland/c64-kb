@@ -21,11 +21,11 @@ import {
   formatZeroPageRanges,
   type Claim,
   type ClaimMode,
-} from "../graph/claims.ts";
+} from "../../../graph/claims.ts";
 
-export type UnitRuleKind =
+type UnitRuleKind =
   "unit_contention" | "zero_page_overlap" | "unit_shared" | "unit_read_while_driven" | "init_order";
-export type Severity = "hard" | "soft" | "info";
+type Severity = "hard" | "soft" | "info";
 
 export interface UnitHit {
   kind: UnitRuleKind;
@@ -37,7 +37,7 @@ export interface UnitHit {
 
 export interface ClaimSide {
   name: string;
-  claims: Claim[];
+  claims: readonly Claim[];
 }
 
 /** Which of the pair, if either, names the other on its REQUIRES chain. */
@@ -62,7 +62,7 @@ interface Entry {
 type Match = Omit<Entry, "units" | "relocatable"> & { unit: string; relocatable?: string[] };
 
 /** Bytes two canonical zero-page range strings ("02-0D,24-2F") share. */
-export function zeroPageOverlap(a: string, b: string): [number, number][] {
+function zeroPageOverlap(a: string, b: string): [number, number][] {
   const rb = zeroPageRangesFromCanonical(b);
   const out: [number, number][] = [];
   for (const [a0, a1] of zeroPageRangesFromCanonical(a)) {
@@ -80,14 +80,16 @@ export function compressUnits(units: string[]): string[] {
   const out: string[] = [];
   const sorted = [...new Set(units)].sort((x, y) => x.localeCompare(y, "en", { numeric: true }));
   for (let i = 0; i < sorted.length; i++) {
-    const m = /^(.*_)(\d+)$/.exec(sorted[i]);
+    const name = sorted[i] ?? "";
+    const m = /^(.*_)(\d+)$/.exec(name);
     if (!m) {
-      out.push(sorted[i]);
+      out.push(name);
       continue;
     }
+    const [, stem = "", num = "0"] = m;
     let j = i;
-    while (j + 1 < sorted.length && sorted[j + 1] === `${m[1]}${Number(m[2]) + (j + 1 - i)}`) j++;
-    out.push(j > i ? `${sorted[i]}-${Number(m[2]) + (j - i)}` : sorted[i]);
+    while (j + 1 < sorted.length && sorted[j + 1] === `${stem}${Number(num) + (j + 1 - i)}`) j++;
+    out.push(j > i ? `${name}-${Number(num) + (j - i)}` : name);
     i = j;
   }
   return out;

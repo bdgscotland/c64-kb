@@ -12,7 +12,7 @@ describe("FalkorService — Pitfall + CrashPattern", () => {
   });
 
   afterAll(async () => {
-    await f?.close();
+    await f.close();
   });
 
   it("addPitfall creates node with all properties", async () => {
@@ -28,8 +28,8 @@ describe("FalkorService — Pitfall + CrashPattern", () => {
       `MATCH (p:Pitfall {name: "badline_cycle_loss"}) RETURN p.title, p.severity, p.region, p.category`,
     );
     expect(r.data).toHaveLength(1);
-    expect((r.data[0] as any)["p.title"]).toBe("Badline DMA steals 40-43 cycles");
-    expect((r.data[0] as any)["p.severity"]).toBe("critical");
+    expect(r.data[0]).toHaveProperty(["p.title"], "Badline DMA steals 40-43 cycles");
+    expect(r.data[0]).toHaveProperty(["p.severity"], "critical");
   });
 
   it("addPitfall MERGEs idempotently on name", async () => {
@@ -58,8 +58,8 @@ describe("FalkorService — Pitfall + CrashPattern", () => {
 
     const r = await f.roQuery(`MATCH (p:Pitfall)-[:TRIGGERED_BY]->(reg:Register) RETURN p.name, reg.name`);
     expect(r.data).toHaveLength(1);
-    expect((r.data[0] as any)["p.name"]).toBe("badline_cycle_loss2");
-    expect((r.data[0] as any)["reg.name"]).toBe("D011");
+    expect(r.data[0]).toHaveProperty(["p.name"], "badline_cycle_loss2");
+    expect(r.data[0]).toHaveProperty(["reg.name"], "D011");
   });
 
   it("linkTriggeredBy logs and skips when target absent", async () => {
@@ -92,7 +92,7 @@ describe("FalkorService — Pitfall + CrashPattern", () => {
       `MATCH (p:Pitfall {name: "raster_irq_first_line_jitter"})-[:MITIGATED_BY]->(t:Technique) RETURN t.name`,
     );
     expect(r.data).toHaveLength(1);
-    expect((r.data[0] as any)["t.name"]).toBe("double_irq");
+    expect(r.data[0]).toHaveProperty(["t.name"], "double_irq");
   });
 
   it("linkMitigatedBy MATCHes both ends: a missing technique drops the edge and creates no stub", async () => {
@@ -114,8 +114,10 @@ describe("FalkorService — Pitfall + CrashPattern", () => {
     });
 
     const r = await f.roQuery(`MATCH (c:CrashPattern {symptom: "black_screen"}) RETURN c.likely_causes`);
-    const stored = (r.data[0] as any)["c.likely_causes"];
-    expect(JSON.parse(stored)).toEqual(["vic_bank_misconfigured", "screen_pointer_outside_bank"]);
+    expect(r.data[0]).toHaveProperty(
+      ["c.likely_causes"],
+      JSON.stringify(["vic_bank_misconfigured", "screen_pointer_outside_bank"]),
+    );
   });
 
   it("linkCausedBy creates CAUSED_BY edge to existing Technique", async () => {
@@ -131,7 +133,7 @@ describe("FalkorService — Pitfall + CrashPattern", () => {
       `MATCH (c:CrashPattern {symptom: "black_screen"})-[:CAUSED_BY]->(t:Technique) RETURN t.name`,
     );
     expect(r.data).toHaveLength(1);
-    expect((r.data[0] as any)["t.name"]).toBe("vic_bank_switch");
+    expect(r.data[0]).toHaveProperty(["t.name"], "vic_bank_switch");
   });
 
   it("linkCausedBy logs and skips when target absent", async () => {
