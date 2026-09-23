@@ -84,3 +84,5 @@ After the H2 + metadata lines, free-form prose covering:
 3. **Fix** — concrete code/timing change
 4. **Worked example** — short asm or C snippet showing both the bad pattern and the fix
 5. **Cross-references** — related techniques, registers, recipes
+
+A pitfall whose bad pattern can be recognised in source text may also have a lint rule, named after the pitfall and pointing at its page; the rules live in `src/tools/lint.ts` and are served as `c64_lint_source` (CLI `lint <file>`). Nothing on the page declares the rule, and a pitfall without one is the common case.

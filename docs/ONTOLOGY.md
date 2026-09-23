@@ -222,7 +222,7 @@ carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
 schema 21 the briefing tool held four archetype keywords and two forced
 techniques in code and the page's fingerprints were read by nobody.
 
-## Edge Types (19)
+## Edge Types (20)
 
 ### BELONGS_TO
 
@@ -409,6 +409,21 @@ dropped`. Read by `c64_game_briefing`, which adds each target to the
 plan's pitfalls when no proposed technique already surfaced it. It is a
 statement about the genre, not a trigger: TRIGGERED_BY still says which
 technique's code the pitfall arises in.
+
+### SCAFFOLDS
+
+Direction: `Recipe → Archetype`
+
+Meaning: "this recipe is a complete starting point for a game of this
+shape; copy it and change it, do not start from a blank file" —
+`oscar64-simple-shmup` SCAFFOLDS `vertical_shmup`. Authored with the
+`scaffolds:` key in the recipe's frontmatter (`CONVENTIONS-recipes.md`),
+an array of Archetype names. Both ends MATCHed, never MERGEd: a name that
+matches no Archetype is warned about and counted in the ingest summary as
+`scaffolds … dropped`. Read by `c64_game_briefing`, whose first build
+step for a resolved archetype lists the recipes that SCAFFOLD it and
+names their pages (schema 23; before it the tool matched the string
+"shmup" against the archetype name and offered one recipe by name).
 
 ---
 

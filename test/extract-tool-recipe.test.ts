@@ -111,7 +111,40 @@ Prints HELLO via CHROUT.
       expect(r.output_format).toBe("PRG");
       expect(r.region).toBe("both");
       expect(r.uses_kernal).toEqual(["CHROUT"]);
+      // No scaffolds: key in this frontmatter; absent reads as empty.
+      expect(r.scaffolds).toEqual([]);
     }
+    expect(ents.filter((e) => e.type === "scaffolds")).toHaveLength(0);
+  });
+
+  it("reads scaffolds: from recipe frontmatter and emits one SCAFFOLDS edge per archetype", () => {
+    const doc = `---
+recipe: simple-shmup
+toolchain: oscar64
+output_format: PRG
+region: both
+techniques: [sprite_multiplex_8]
+file_formats: [PRG]
+uses_registers: []
+uses_kernal: []
+scaffolds: [vertical_shmup, horizontal_shmup]
+---
+
+<!-- doc-type: recipe -->
+
+# Simple Shmup
+`;
+    const ents = extractGraphEntities(doc, "recipes/oscar64/simple-shmup.md");
+    const r = ents.find((e) => e.type === "recipe");
+    expect(r).toBeDefined();
+    if (r && r.type === "recipe") {
+      expect(r.scaffolds).toEqual(["vertical_shmup", "horizontal_shmup"]);
+    }
+    const edges = ents.filter((e) => e.type === "scaffolds");
+    expect(edges).toEqual([
+      { type: "scaffolds", recipe: "oscar64-simple-shmup", archetype: "vertical_shmup" },
+      { type: "scaffolds", recipe: "oscar64-simple-shmup", archetype: "horizontal_shmup" },
+    ]);
   });
 
   it("skips files without the doc-type marker", () => {

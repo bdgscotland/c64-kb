@@ -7,6 +7,7 @@ techniques: [sprite_multiplex_8, soft_scroll_h, sprite_collision_detect, sid_pla
 file_formats: [PRG]
 uses_registers: [D015, D000, D001, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, D01E, D01F, D011, D016, D012, D019, D01A, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418]
 uses_kernal: []
+scaffolds: [vertical_shmup, horizontal_shmup]
 ---
 
 <!-- doc-type: recipe -->

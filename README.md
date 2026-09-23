@@ -183,6 +183,23 @@ carries a placeholder entry for vice-mcp.
 |------|---------|
 | `c64_pitfalls_for` | Pitfalls triggered by a register, KERNAL routine, or technique name, and the pitfalls a technique mitigates (`triggered_by[]` and `mitigated_by[]` apart) |
 | `c64_failure_diagnose` | Match a symptom description against CrashPattern nodes (relevance ranked) |
+| `c64_lint_source` | Run the pitfall rules over your own C or assembly source; one finding per site, each named after the pitfall it compiles and pointing at its page |
+
+**Linting your source against the pitfalls.** `c64_lint_source` (CLI:
+`npx c64-kb lint game.c`, `--json` for the structured form) is the
+pitfall pages compiled into text rules: a read or read-modify-write of a
+SID register, `$DC02` cleared and never restored, an empty-name OPEN of
+channel 15 followed by a read, a `$D012` busy-wait in a file that never
+installs an interrupt, a zero LFSR seed, an interrupt handler that
+reaches `ADC` or `SBC` before any `CLD` (assembly only), an unmasked
+store to `$D016`, and `JMP ($xxFF)`. Each finding
+carries a certainty: `definite` means the pattern is the pitfall by
+construction, `likely` means something outside the file could excuse it,
+`heuristic` means read the page and decide. It lints one file at a time,
+does not resolve symbols, and covers only the pitfalls that have a text
+pattern, so silence is not a pass; `c64_pitfalls_for` lists the rest.
+The rules live in `src/tools/lint.ts` and the CLI exits 1 on a definite
+finding.
 
 ### Synthesis and briefings
 

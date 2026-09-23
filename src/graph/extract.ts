@@ -20,7 +20,8 @@ export type GraphEntity =
   | { type: "produces"; tool: string; format: string }
   | { type: "consumes"; tool: string; format: string }
   | { type: "targets"; tool: string; chip: string }
-  | { type: "recipe"; name: string; toolchain: string; output_format: string; region: string; techniques: string[]; file_formats: string[]; uses_registers: string[]; uses_kernal: string[]; source_doc: string }
+  | { type: "recipe"; name: string; toolchain: string; output_format: string; region: string; techniques: string[]; file_formats: string[]; uses_registers: string[]; uses_kernal: string[]; scaffolds: string[]; source_doc: string }
+  | { type: "scaffolds"; recipe: string; archetype: string }
   | { type: "recipe_occupies"; recipe: string; start: number; end: number }
   | { type: "technique_demands"; technique: string; resource: string; description: string }
   | { type: "implements"; recipe: string; technique: string }
@@ -396,6 +397,9 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
       const file_formats = parseArray(fm.file_formats);
       const uses_registers = parseArray(fm.uses_registers);
       const uses_kernal = parseArray(fm.uses_kernal);
+      // scaffolds: Archetype names this recipe is a starting point for
+      // (docs/CONVENTIONS-recipes.md). Optional; absent reads as empty.
+      const scaffolds = parseArray(fm.scaffolds);
       entities.push({
         type: "recipe",
         name,
@@ -406,10 +410,14 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
         file_formats,
         uses_registers,
         uses_kernal,
+        scaffolds,
         source_doc: sourcePath,
       });
       for (const tech of techniques) {
         entities.push({ type: "implements", recipe: name, technique: tech });
+      }
+      for (const arch of scaffolds) {
+        entities.push({ type: "scaffolds", recipe: name, archetype: arch });
       }
       for (const fmt of file_formats) {
         entities.push({ type: "produces_format", recipe: name, format: fmt });

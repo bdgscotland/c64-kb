@@ -24,11 +24,21 @@ techniques: []                  # array of Technique names this recipe implement
 file_formats: [PRG]             # FileFormat nodes this recipe produces
 uses_registers: []              # array of Register canonical names referenced
 uses_kernal: [CHROUT]           # array of KernalRoutine names called
+scaffolds: []                   # optional: Archetype names this recipe is a starting point for
 ---
 ```
 
 `recipe`, `toolchain`, `output_format`, and `region` are required. The rest may be
 empty arrays but the keys must be present.
+
+`scaffolds` is the exception: it is optional, and absent reads as empty.
+Set it only on a recipe that is a whole playable game an agent should copy
+and change rather than start from nothing, such as `simple-shmup`. Each
+entry must be the `name` of an Archetype on an archetype page
+(`CONVENTIONS-archetypes.md`); the ingest links `Recipe -[:SCAFFOLDS]->
+Archetype`, drops a name that matches no Archetype with a warning, and
+`c64_game_briefing` offers the recipe as the first build step for that
+archetype.
 
 ## Section structure
 

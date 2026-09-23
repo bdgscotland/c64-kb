@@ -60,6 +60,7 @@ import {
   timingBudget,
 } from "./tools/query.js";
 import { pitfallsFor, failureDiagnose } from "./tools/pitfalls.js";
+import { lintSourceResult } from "./tools/lint.js";
 import { demoBriefing, gameBriefing } from "./tools/briefings.js";
 import { ingestDoc } from "./tools/hydrate.js";
 import { health, formatHealth } from "./tools/intelligence.js";
@@ -82,6 +83,7 @@ import {
   TimingBudgetSchema,
   PitfallsForSchema,
   FailureDiagnoseSchema,
+  LintSourceSchema,
   BriefingSchema,
   CoverageSchema,
   SuggestLinksSchema,
@@ -680,6 +682,37 @@ Limitations: Returns only pitfalls indexed in Phase 5 (28 nodes across 8 categor
   );
 
   server.registerTool(
+    "c64_lint_source",
+    {
+      description:
+        `Run the knowledge base's pitfall rules over a piece of your own C (Oscar64) or 6502 assembly source. Each rule is compiled from one pitfall or recipe page and points back at it: sid_write_only_registers (a read or read-modify-write of $D400-$D418), cia1_ddr_cleared_kills_keyboard (a store of 0 to $DC02 with no later $FF), empty_name_open_15_hangs_on_read (an empty-name OPEN of channel 15 followed by a read; from the high-score recipe's warning, and the two pages that speak to it disagree, so the finding is heuristic and says so), raster_poll_with_kernal_irq_live (a $D012 busy-wait in a file that never installs an interrupt), lfsr_zero_state_lockup (a zero seed the file shifts or XORs), decimal_mode_in_irq_handler (assembly only: an installed handler that reaches ADC or SBC before any CLD), d016_unmasked_rmw_clobbers_csel_mcm (a $D016 store not derived from a masked read) and jmp_indirect_page_boundary_bug (JMP ($xxFF)).
+
+Purpose: a self-check an agent runs on the code it just wrote, before building it. No graph or vector store is needed; the rules are text patterns.
+
+Inputs: 'source' is the file text. 'language' is "c", "asm" or "auto" (default; detected from preprocessor lines and statement shape). 'toolchain' is optional and only recorded in the output.
+
+Output: {language, toolchain?, findings[{rule, pitfall, line, excerpt, message, page, certainty}], summary}. 'certainty' is "definite" (the pattern is the pitfall by construction), "likely" (it is the pitfall unless something outside the file excuses it, such as an earlier named OPEN) or "heuristic" (the pattern often accompanies the pitfall; read the page and decide). 'page' is the repo path of the pitfall or recipe the rule was compiled from, with the pitfall's H2 as the anchor when the source is a pitfall page; 'pitfall' is the pitfall node the rule stands for, or for empty_name_open_15_hangs_on_read the name of the recipe warning it compiles, which is not a pitfall node. 'summary' is one line. Read the message: each uses the page's own words for the mechanism and the fix.
+
+Limitations: one file at a time, so an interrupt installed in another file makes the raster-poll rule fire as a heuristic; a shadow variable the lint cannot recognise makes the $D016 rule fire as a heuristic. Symbolic operands (JMP (vector)) are not resolved. Silence is not a pass: the rules cover the pitfalls listed above and no others.
+
+See also: c64_pitfalls_for for every pitfall a register, routine or technique triggers, most of which have no text pattern to lint.`,
+      inputSchema: {
+        source: z.string().describe("The source text to lint (one file)"),
+        language: z.enum(["c", "asm", "auto"]).default("auto").describe("c (Oscar64/cc65 C), asm (6502 assembly), or auto"),
+        toolchain: z.string().optional().describe("Toolchain name, recorded in the output (e.g. oscar64, kickassembler)"),
+      },
+      outputSchema: LintSourceSchema.shape,
+    },
+    async ({ source, language, toolchain }) => {
+      const result = lintSourceResult(source, { language: language ?? "auto", toolchain });
+      return {
+        content: [{ type: "text" as const, text: result.text }],
+        structuredContent: result.structured,
+      };
+    }
+  );
+
+  server.registerTool(
     "c64_failure_diagnose",
     {
       description:
@@ -763,7 +796,7 @@ Inputs: 'description' is a free-form game brief (e.g. "vertical scrolling shoot-
 
 What the archetype does: its FEATURES edges (the page's technique fingerprint) are forced into proposed_techniques regardless of the keyword scorer and exempt from the per-category cap; its RISKS edges (the page's common pitfalls) are added to pitfalls[]; its title is appended to the search text. The page is the source of truth, not a table in this tool.
 
-Output: the briefing schema, including 'budget' (the plan added up from each technique's **Cost:** line: cycles_per_frame against the region's frame, bytes against a stated 38,911-byte RAM budget, 'without_cost' naming the techniques with no line so the sums read as floors, and 'weakest_basis'); 'archetype' {name, title, kind, features[], risks[]} repeating what the graph holds, or 'archetype_not_found' {requested, known[]} when the name matches no Archetype node, as for c64_demo_briefing, plus the game scaffold step. In the not-found case the plan is still built from the description alone; nothing is guessed. The build order's step 1 is a game scaffold; the only seed recipe the corpus has is oscar64-simple-shmup, offered for the two shmup archetypes.
+Output: the briefing schema, including 'budget' (the plan added up from each technique's **Cost:** line: cycles_per_frame against the region's frame, bytes against a stated 38,911-byte RAM budget, 'without_cost' naming the techniques with no line so the sums read as floors, and 'weakest_basis'); 'archetype' {name, title, kind, features[], risks[]} repeating what the graph holds, or 'archetype_not_found' {requested, known[]} when the name matches no Archetype node, as for c64_demo_briefing, plus the game scaffold step. In the not-found case the plan is still built from the description alone; nothing is guessed. The build order's step 1 lists the recipes that SCAFFOLD the resolved archetype (Recipe -[:SCAFFOLDS]-> Archetype, authored by the recipe's scaffolds: key); the text names each recipe's page to copy. A graph with no Archetype nodes still offers oscar64-simple-shmup for a shmup key.
 
 When to use: Start every new C64 game design session with this tool. Read 'archetype_not_found.known' if the name you tried was not accepted.
 

@@ -5,7 +5,76 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 722, schema 22, tools 1.25.2.
+Data 723, schema 23, tools 1.26.0.
+
+**Pitfalls reached through a technique's registers, and a graph report.**
+A technique also meets every pitfall that a register or KERNAL routine it
+declares triggers. Both ends of that join are exact declarations on the
+pages, so the edge is derived rather than guessed, which is the one kind
+of graph edge the literature on retrieval finds worth having. The
+pitfalls tool now adds those pitfalls after the direct ones and names the
+register that carried each; `ecm_mode` went from no answer to four
+pitfalls, and thirteen techniques with no direct anchor now reach one.
+`npm run graph:report` prints the graph's shape: node and edge counts,
+technique degree, connected components and the largest one's share,
+isolated nodes, techniques without a recipe or without any pitfall by any
+route, and per-archetype feature, risk and scaffold counts. Its first
+reading, in the commit that added it, said the largest component held two
+thirds of the nodes and the rest were isolated memory regions, and that
+fourteen techniques had no pitfall by any route. Those are the numbers to
+watch before expecting the graph to pull ahead of the text.
+
+**Source lints compiled from the pitfalls (tools 1.26.0).** A new MCP
+tool, `c64_lint_source`, and CLI subcommand, `lint <file>`, run the
+knowledge base's rules over an agent's own C or assembly source with no
+graph or vector store involved. Eight rules, each named after the
+pitfall it compiles and pointing at its page: `sid_write_only_registers`,
+`cia1_ddr_cleared_kills_keyboard`, `empty_name_open_15_hangs_on_read`
+(from the high-score recipe's warning), `raster_poll_with_kernal_irq_live`
+(anchored on `raster_irq_first_line_jitter` and the frame-sync recipe),
+`lfsr_zero_state_lockup`, `decimal_mode_in_irq_handler`,
+`d016_unmasked_rmw_clobbers_csel_mcm` and `jmp_indirect_page_boundary_bug`.
+Every finding carries a certainty (`definite`, `likely`, `heuristic`) and
+the message uses the page's own words for the mechanism and the fix. The
+test runs the linter over the two platformer builds from the 2026-09-22
+three-arm test, copied into `test/fixtures/`: on the build made without
+the knowledge base it reports the SID read-modify-write, the DDR clear,
+the empty-name OPEN and the raster poll at their lines; on the build made
+with it, no definite finding. The first draft flagged
+`#include <c64/sid.h>` as a SID read; preprocessor lines are now skipped.
+Review of the first draft against every listing in `docs/` changed four
+rules. The decimal-mode rule had the pitfall backwards (it flagged a SED
+that reaches RTI, where the page's fault is a handler that reaches ADC
+or SBC before any CLD); it now follows an installed handler from its
+label and has no C form, since in C the arithmetic is the compiler's.
+Read that way it fires on the KB's own `stable-raster-irq`,
+`cracktro-template`, `dycp-scroller` and `sine-scroller` handlers, none
+of which CLD; none of those programs executes SED either, so those are
+heuristic, and the pitfall page and the recipes are left to be
+reconciled. The `$D016` rule read the first `lda #` in its window
+rather than the one that feeds the store, which flagged
+`sideborder-open` and missed a bad store; it walks back to the load
+now. The empty-name OPEN rule is `heuristic`, not `likely`: the
+high-score recipe measured a bare OPEN of channel 15 returning success
+with no drive, while `techniques/file-io.md` opens the channel bare and
+expects the carry set, and the message names both rather than pick one.
+Language detection strips comments and tests for assembler signatures
+first, so a KickAssembler `.for` block no longer reads as C. The package
+version follows at release.
+
+**Schema 23: the scaffold is an edge.** A recipe page may now carry
+`scaffolds: [vertical_shmup, horizontal_shmup]` in its frontmatter, an
+array of Archetype names; the ingest links `Recipe -[:SCAFFOLDS]->
+Archetype` in pass 2 with both ends matched, drops a name that matches
+no Archetype with a warning, and reports `scaffolds … dropped` on the
+summary line beside the other relations. `c64_game_briefing` reads that
+edge for its first build step in place of matching the string "shmup"
+against the archetype name and offering `oscar64-simple-shmup` by name;
+the step's text now also names the recipe's page so an agent knows which
+file to copy. The fallback tables, used only by a graph with no
+Archetype nodes, still offer the shmup scaffold by name. The shmup
+recipe carries the key for both shmup archetypes. `ONTOLOGY.md` and
+`CONVENTIONS-recipes.md` document the edge and the key.
 
 **Batch 9b: text and demo effects the gap map still owed.** Four new
 techniques, each with a pinned, measured recipe. `big_font_2x2` on the

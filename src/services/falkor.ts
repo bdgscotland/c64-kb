@@ -484,6 +484,30 @@ export class FalkorService {
     );
   }
 
+  /**
+   * SCAFFOLDS: the recipe's frontmatter names this archetype as one it is a
+   * starting point for. Both ends MATCHed, never MERGEd, so an archetype
+   * name the graph does not have drops the edge with a warning instead of
+   * creating a stub. Returns whether the edge landed.
+   */
+  async linkRecipeScaffolds(recipeName: string, archetypeName: string): Promise<boolean> {
+    const g = this.graph();
+    const result = await g.query(
+      `MATCH (r:Recipe {name: $recipeName})
+       MATCH (a:Archetype {name: $archetypeName})
+       MERGE (r)-[:SCAFFOLDS]->(a)
+       RETURN 1`,
+      { params: { recipeName, archetypeName } } as Parameters<typeof g.query>[1]
+    );
+    const landed = (result.data?.length ?? 0) > 0;
+    if (!landed) {
+      console.warn(
+        `[falkor] linkRecipeScaffolds: ${recipeName} -> ${archetypeName} (Archetype) — recipe or archetype not found, edge dropped`
+      );
+    }
+    return landed;
+  }
+
   async linkRecipeProducesFormat(recipeName: string, formatName: string): Promise<void> {
     const g = this.graph();
     await g.query(

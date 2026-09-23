@@ -301,6 +301,28 @@ export const FailureDiagnoseSchema = z.object({
 export type PitfallsForOutput = z.infer<typeof PitfallsForSchema>;
 export type FailureDiagnoseOutput = z.infer<typeof FailureDiagnoseSchema>;
 
+// c64_lint_source: the pitfall pages compiled into source rules
+// (src/tools/lint.ts). One finding per site; certainty says how far the
+// text pattern is from the pitfall itself.
+export const LintFindingSchema = z.object({
+  rule: z.string(),
+  pitfall: z.string(),
+  line: z.number().int().min(1),
+  excerpt: z.string(),
+  message: z.string(),
+  page: z.string(),
+  certainty: z.enum(["definite", "likely", "heuristic"]),
+});
+
+export const LintSourceSchema = z.object({
+  language: z.enum(["c", "asm"]),
+  toolchain: z.string().optional(),
+  findings: z.array(LintFindingSchema),
+  summary: z.string(),
+});
+
+export type LintSourceOutput = z.infer<typeof LintSourceSchema>;
+
 export const BriefingSchema = z.object({
   brief: z.string(),
   proposed_techniques: z.array(z.object({

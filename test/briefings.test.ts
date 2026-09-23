@@ -473,9 +473,40 @@ describe("gameBriefing reads the archetype from the graph", () => {
 
     await f.addRecipe({ name: "oscar64-simple-shmup", toolchain: "oscar64", output_format: "PRG", region: "both", source_doc: "recipes/oscar64/simple-shmup.md" });
     await f.linkRecipeImplements("oscar64-simple-shmup", "sprite_multiplex_8");
+    // The scaffold is an edge, not a name match: vertical_shmup has one,
+    // puzzle and action_puzzle have none.
+    expect(await f.linkRecipeScaffolds("oscar64-simple-shmup", "vertical_shmup")).toBe(true);
+    // A scaffolds: entry naming an archetype the graph lacks is dropped, not stubbed.
+    expect(await f.linkRecipeScaffolds("oscar64-simple-shmup", "no_such_archetype")).toBe(false);
   });
 
   afterAll(async () => f?.close());
+
+  it("offers the recipe that SCAFFOLDS the archetype, and names its page in the text", async () => {
+    const r = await gameBriefing("a shooter", "vertical_shmup");
+    const step = r.structured.build_order[0];
+    expect(step.label).toBe("Game scaffold (vertical_shmup archetype)");
+    expect(step.recipes).toEqual(["oscar64-simple-shmup"]);
+    // Once, on the scaffold step only: the same recipe implements
+    // sprite_multiplex_8 and so recurs in a later step, which must not
+    // repeat the page line.
+    const pageLine = "copy the scaffold from docs/recipes/oscar64/simple-shmup.md (recipe oscar64-simple-shmup)";
+    expect(r.text.split(pageLine).length - 1).toBe(1);
+    expect(r.structured.build_order.slice(1).some(s => s.recipes.includes("oscar64-simple-shmup"))).toBe(true);
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("gives an archetype with no SCAFFOLDS edge an empty scaffold step", async () => {
+    const r = await gameBriefing("a falling-block game", "puzzle");
+    const step = r.structured.build_order[0];
+    expect(step.label).toBe("Game scaffold (puzzle archetype)");
+    expect(step.recipes).toEqual([]);
+    expect(r.text).not.toContain("copy the scaffold from");
+    // No stub Archetype was created by the dropped edge above.
+    expect(r.structured.archetype_not_found).toBeUndefined();
+    const known = await f.roQuery(`MATCH (a:Archetype {name: "no_such_archetype"}) RETURN a.name AS name`);
+    expect(known.data ?? []).toHaveLength(0);
+  });
 
   it("forces every FEATURES target into the proposal, past the per-category cap", async () => {
     const r = await gameBriefing("a shooter", "vertical_shmup");

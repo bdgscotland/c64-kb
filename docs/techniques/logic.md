@@ -133,6 +133,7 @@ the figure.
 ### Recipes
 
 - `recipes/oscar64/tile-grid-collision.md`
+- `recipes/oscar64/platformer-scaffold.md` — the corner probes, landing snap and head bump inside a whole single-file platformer, with ladders; the page to copy when starting a game
 
 ## object_pool — Fixed-slot object pool for enemies, bullets and effects
 
@@ -177,3 +178,4 @@ the update pass with all eight slots live, which is the per-frame figure.
 ### Recipes
 
 - `recipes/oscar64/object-pool.md` — eight slots, scan allocator, wave table, scripted spawns and despawns checked against a Python checksum, with the cycle harness on screen
+- `recipes/oscar64/platformer-scaffold.md` — six enemy slots in parallel arrays fed by a wave table and an LFSR, despawn off screen, inside a whole single-file platformer

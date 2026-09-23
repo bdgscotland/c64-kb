@@ -246,6 +246,25 @@ program
   });
 
 program
+  .command("lint <file>")
+  .description("Run the pitfall rules over a C or assembly source file (language from the extension, or --language)")
+  .option("--language <lang>", "c, asm or auto", "auto")
+  .option("--toolchain <name>", "Toolchain name recorded in the output")
+  .action(async (file: string, opts: { language: string; toolchain?: string }) => {
+    const { lintSourceResult } = await import("./tools/lint.js");
+    const fs = await import("fs");
+    const source = fs.readFileSync(file, "utf-8");
+    let language = opts.language as "c" | "asm" | "auto";
+    if (language === "auto") {
+      if (/\.(c|h)$/i.test(file)) language = "c";
+      else if (/\.(asm|s|a|inc)$/i.test(file)) language = "asm";
+    }
+    const result = lintSourceResult(source, { language, toolchain: opts.toolchain }, file);
+    emit(result);
+    process.exit(result.structured.findings.some((f) => f.certainty === "definite") ? 1 : 0);
+  });
+
+program
   .command("pitfalls-for <topic>")
   .description("Look up pitfalls triggered by a register, KERNAL routine, or technique (for a technique, also the pitfalls it is the fix for)")
   .action(async (topic: string) => {

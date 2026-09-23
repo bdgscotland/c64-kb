@@ -741,19 +741,39 @@ async function buildBriefing(
   let stepNum = 1;
 
   // Add a game scaffold step for game briefs
+  // Recipe name -> source page, for the scaffold recipes only; the text
+  // renderer prints the page so the agent knows which file to copy. It
+  // rides outside the structured output, whose shape does not change.
+  const scaffoldPages = new Map<string, string>();
   if (isGame) {
-    // The one seed recipe the corpus has is the shmup scaffold; it is offered
-    // when the archetype (graph name or fallback key) is a shmup and the
-    // recipe node exists. No other archetype has a scaffold recipe yet.
-    // In the not-found case the label says "generic": the graph did not
-    // recognise the name, so the scaffold must not be labelled with it.
+    // With the archetype resolved in the graph, the scaffold recipes are the
+    // ones whose frontmatter says scaffolds: [<archetype>] (a Recipe
+    // SCAFFOLDS Archetype edge, docs/ONTOLOGY.md). The fallback tables know
+    // no edges, so a fallback shmup key still offers the seed shmup recipe
+    // by name when its node exists. In the not-found case the label says
+    // "generic": the graph did not recognise the name, so the scaffold must
+    // not be labelled with it, and nothing is offered.
     const archetypeKey = resolved?.mode === "graph"
       ? resolved.archetype.name
       : resolved?.mode === "not_found" ? "" : (archetype ?? "").toLowerCase();
     let scaffoldRecipes: string[] = [];
-    if (/shmup/.test(archetypeKey)) {
-      const rr = await fk.roQuery(`MATCH (r:Recipe {name: "oscar64-simple-shmup"}) RETURN r.name AS name`);
-      if ((rr.data?.length ?? 0) > 0) scaffoldRecipes = ["oscar64-simple-shmup"];
+    if (resolved?.mode === "graph") {
+      const rr = await fk.roQuery(
+        `MATCH (r:Recipe)-[:SCAFFOLDS]->(a:Archetype {name: $name}) RETURN r.name AS name, r.source_doc AS source_doc ORDER BY name`,
+        { name: resolved.archetype.name }
+      );
+      for (const row of (rr.data ?? []) as Array<{ name: string; source_doc?: string }>) {
+        if (!row.name) continue;
+        scaffoldRecipes.push(row.name);
+        if (row.source_doc) scaffoldPages.set(row.name, row.source_doc);
+      }
+    } else if (resolved?.mode === "fallback" && /shmup/.test(archetypeKey)) {
+      const rr = await fk.roQuery(`MATCH (r:Recipe {name: "oscar64-simple-shmup"}) RETURN r.name AS name, r.source_doc AS source_doc`);
+      const row = (rr.data ?? [])[0] as { name?: string; source_doc?: string } | undefined;
+      if (row?.name) {
+        scaffoldRecipes = [row.name];
+        if (row.source_doc) scaffoldPages.set(row.name, row.source_doc);
+      }
     }
     build_order.push({
       step: stepNum++,
@@ -830,7 +850,7 @@ async function buildBriefing(
   // -------------------------------------------------------------------------
   // Step 9: Render human-readable text
   // -------------------------------------------------------------------------
-  const text = renderBriefingText(structured, isGame);
+  const text = renderBriefingText(structured, isGame, scaffoldPages);
 
   const a = getAnalytics();
   a.logQuery({
@@ -842,7 +862,7 @@ async function buildBriefing(
   return { structured, text };
 }
 
-function renderBriefingText(b: BriefingOutput, isGame: boolean): string {
+function renderBriefingText(b: BriefingOutput, isGame: boolean, scaffoldPages: Map<string, string> = new Map()): string {
   let out = `# C64 ${isGame ? "Game" : "Demo"} Briefing\n\n`;
   out += `**Brief:** ${b.brief}\n\n`;
   if (b.archetype_not_found) {
@@ -909,6 +929,14 @@ function renderBriefingText(b: BriefingOutput, isGame: boolean): string {
       out += ` → recipes: ${step.recipes.join(", ")}`;
     }
     out += `\n`;
+    // The scaffold step names the page to copy, not just the recipe. Only
+    // that step: a scaffold recipe also implements techniques, so its name
+    // recurs in later steps, where the page line would be noise.
+    if (!step.label.startsWith("Game scaffold")) continue;
+    for (const name of step.recipes) {
+      const page = scaffoldPages.get(name);
+      if (page) out += `   copy the scaffold from docs/${page.replace(/^docs\//, "")} (recipe ${name})\n`;
+    }
   }
 
   out += renderBudgetText(b.budget);

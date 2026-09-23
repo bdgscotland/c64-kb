@@ -218,6 +218,9 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
       case "archetype_risks":
         await f.linkArchetypeRisks(entity.archetype, entity.pitfall);
         break;
+      case "scaffolds":
+        await f.linkRecipeScaffolds(entity.recipe, entity.archetype);
+        break;
       default: {
         // Every entity type the extractor emits has a case above; a new one
         // is a tsc error here, not a silent skip. technique_demands was

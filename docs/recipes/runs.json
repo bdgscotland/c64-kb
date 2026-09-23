@@ -404,5 +404,20 @@
       "pal": "screenshots/dycp-scroller.png",
       "ntsc": "screenshots/dycp-scroller-ntsc.png"
     }
+  },
+  "oscar64/platformer-scaffold": {
+    "cycles": 18000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/platformer-scaffold.png",
+      "ntsc": "screenshots/platformer-scaffold-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
   }
 }
