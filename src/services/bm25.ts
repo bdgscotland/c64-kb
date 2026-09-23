@@ -9,8 +9,14 @@
  * Math: standard BM25 (Robertson et al.), k1=1.2, b=0.75. IDF is
  * computed from corpus document frequency.
  *
- * Persistence: toJSON / fromJSON for vocab + DF + avgDocLen.
+ * Persistence: toJSON / fromJSON for vocab + DF + avgDocLen, and
+ * loadBM25Vocab for the vocab file every reader shares.
  */
+
+import fs from "node:fs";
+import path from "node:path";
+import { z } from "zod";
+import { config } from "../config.ts";
 
 export interface SparseVector {
   indices: number[];
@@ -135,4 +141,33 @@ export class BM25Encoder {
     enc.b = data.b;
     return enc;
   }
+}
+
+/** The vocab file batch ingest fits and every query encodes against. */
+export const BM25_VOCAB_FILE = path.resolve(config.analytics.dbPath, "../bm25-vocab.json");
+
+const VocabJson = z.object({
+  vocab: z.array(z.tuple([z.string(), z.number()])),
+  df: z.array(z.tuple([z.number(), z.number()])),
+  avgDocLen: z.number(),
+  numDocs: z.number(),
+  k1: z.number(),
+  b: z.number(),
+});
+
+/**
+ * Load the persisted BM25 encoder. Returns null when the file does not
+ * exist, and null with a reason on stderr when it cannot be read or does
+ * not hold a vocab; callers fall back to empty sparse vectors or a refit.
+ */
+export function loadBM25Vocab(file: string = BM25_VOCAB_FILE): BM25Encoder | null {
+  if (!fs.existsSync(file)) return null;
+  try {
+    const parsed = VocabJson.safeParse(JSON.parse(fs.readFileSync(file, "utf-8")));
+    if (parsed.success) return BM25Encoder.fromJSON(parsed.data);
+    console.error(`[bm25] ${file} is not a BM25 vocab: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+  } catch (err) {
+    console.error(`[bm25] cannot read ${file}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return null;
 }
