@@ -590,3 +590,99 @@ select to read paddles on the other port pays `paddle_read`'s settle.
 ### Recipes
 
 - `recipes/kickassembler/mouse-1351-read.md`
+
+## attract_mode_input_replay — The title screen plays the game from a recorded input stream
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00, D012
+**Requires:** joystick_edge_detect, lfsr_random, frame_sync_loop
+**Cost:** cycles_per_frame=68
+**Cost basis:** measured-vice
+
+### Why
+
+A title screen that idles is a still frame. The arcade answer is the
+attract mode: after a while the game plays itself, and anyone watching
+sees what the game is. The cheap way to get one is not a second code
+path that moves the player about; it is the game itself, with its input
+coming from somewhere other than the joystick port. The player code
+reads one input byte. During play the port fills it. During the demo a
+recording fills it. Nothing else changes, so the demo does exactly what
+the game does, and a change to the game's rules is a change to the demo
+for free.
+
+### How
+
+Route every input read through one byte. `joystick_edge_detect` already
+keeps last frame's port byte; put this frame's byte beside it and have
+the game read the pair, never `$DC00` directly. The main loop is the
+only place that writes it: from the port on the title and in play, from
+the recording during the demo.
+
+Store the recording as run-length pairs: the port byte exactly as
+`$DC00` gives it, active low, and the number of frames it was held. A
+joystick changes a few times a second, so a 285-frame demo is eight
+pairs. A count of zero ends the stream. Beside the stream keep the seed
+the random generator had when the recording was made, and the state the
+recording ends in, here the player's X and Y on its last frame, so the
+program can check its own replay.
+
+Count idle frames on the title: a byte that goes up once a frame while
+the port reads nothing and back to zero on any bit. When it reaches the
+attract delay, start the demo: reset the playfield the way a new game
+would, set the LFSR to the recorded seed, and point the stream at its
+first pair. Each demo frame, if the current pair has frames left, hold
+its byte; otherwise load the next pair; when the next pair's count is
+zero the demo is over and the title comes back.
+
+Keep reading the port during the demo. Any bit low is a real press: end
+the demo that frame, before the stream is consulted, and let the title
+take over. The player then starts a game from the title as usual.
+
+### Why it works
+
+The replay is exact because the game is deterministic from its seed.
+Its state on any frame is a function of the state before it and the
+input byte, and the only source of variation is the random generator.
+Reseed the generator, feed the same bytes in the same frames, and every
+intermediate state is the one the recording saw, so the last frame lands
+where the table says. The recipe shows the other side: built with the
+reseed left out, the same 285 bytes end 210 pixels from the recorded
+position, because the title screen had moved the generator on. The
+frame is the unit that makes "the same frames" true on both regions: a
+`frame_sync_loop` runs one step per frame, so a count of 50 is 50 steps
+on PAL and on NTSC, in less wall time on NTSC and with the same result.
+
+The seed must not be zero. An LFSR at zero stays at zero, so the reseed
+maps zero to one; a recording tool should never store zero, and the
+guard costs one compare.
+
+### Variations
+
+Öörni's control override, named on `game-design/game-structure.md`, is
+the same seam used the other way: enemies and cutscene actors read a
+virtual joystick byte that the AI or the script writes, and a
+conversation freezes the player by writing zero. A recorded human run is
+the natural source for the stream: log the byte and the frame count
+through the same variable during a real game and dump the pairs. The
+verdict constants are then whatever the recording ended on, which is how
+a shipped game can check its own attract mode after a rules change. A
+longer attract can chain several recordings, or a recorded run and a
+scripted one, through the same byte.
+
+### Cycle budget
+
+The replay step, the code that decides whether to hold the current pair
+or load the next one and writes the input byte, was timed with CIA1
+timer B, interrupts held off for the timed window, over a 285-frame
+demo. The longest step was 68 cycles on PAL and NTSC and in all three
+builds, and that figure includes the timer's own start and stop stores.
+The Cost line states it; the game step it feeds is the game's own cost,
+not the technique's. The idle counter on the title is one increment and
+one compare a frame. Measured in VICE x64sc 3.10 on the recipe's
+listing.
+
+### Recipes
+
+- `recipes/oscar64/attract-replay.md`

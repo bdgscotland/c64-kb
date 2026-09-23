@@ -334,7 +334,49 @@ Each byte represents a pulse: the duration is `(byte_value × 8) / 985,248` seco
 
 **Version `$01`:** A data byte of `$00` is followed by 3 additional bytes giving the true pulse duration as a 24-bit little-endian cycle count. This extension handles long pauses and turbo-loader timing precisely.
 
-Standard KERNAL tape encoding uses two pulse lengths: short (~370 µs, PAL) for a 0 bit, long (~530 µs) for a 1 bit. Turbo loaders (e.g., FINISH, Novaload, Freeload) use completely different encoding schemes, all of which TAP preserves faithfully.
+Standard KERNAL tape encoding uses three pulse lengths, and a data bit is a pair of pulses, not one pulse. **Correction (2026-09-23).** This paragraph used to say the KERNAL used "two pulse lengths: short (~370 µs, PAL) for a 0 bit, long (~530 µs) for a 1 bit". A decoder written from that sentence reads garbage from every KERNAL tape: the two figures it gave are roughly the short and medium pulses, the long pulse was missing, and no single pulse carries a bit. The subsection below replaces it, from a SAVE recorded in VICE. Turbo loaders (e.g., FINISH, Novaload, Freeload) use completely different encoding schemes, all of which TAP preserves faithfully.
+
+#### KERNAL bit encoding
+
+Every figure in this subsection was measured on the windowless x64sc build of VICE 3.10 (PAL, `-warp`): a writable TAP was attached with `-1`, the monitor command `tapectrl 4` pressed RECORD, and `-keybuf` typed `10 rem abc` and `save"t",1`. The TAP came back at version 1 with 41,802 data bytes, byte-identical on a second run, and a Python reader decoded all 448 bytes of it with no parity failure. VICE records a falling edge at each `1` to `0` change of the write line, so one TAP entry is one complete KERNAL pulse, low half and high half together.
+
+**Pulse lengths.** The pulse bytes fall into three clusters and nothing lies between them:
+
+| Pulse | TAP bytes seen | Most common | Cycles (PAL) | Duration | Role |
+|-------|---------------|-------------|--------------|----------|------|
+| Short (S) | `$2C`–`$31` | `$2F` (20,191 of 36,862) | 352–392, mode 376 | about 382 µs | leader, sync, first half of a 0 bit, second half of a 1 bit |
+| Medium (M) | `$40`–`$44` | `$43` (2,172 of 4,480) | 512–544, mode 536 | about 544 µs | second half of a 0 bit, first half of a 1 bit, second half of the byte marker |
+| Long (L) | `$56`–`$59` | `$58` (279 of 452) | 688–712, mode 704 | about 715 µs | first half of the byte marker and of the end-of-block marker |
+
+The spread inside each cluster is the KERNAL's own jitter, not a TAP artefact: the write interrupt reprograms CIA 1 Timer B from software, so an interrupt that is served a few cycles late lengthens the pulse by a few cycles. A reader should classify by threshold (below `$3A` short, `$3A`–`$4B` medium, above `$4B` long worked here), never by exact value.
+
+**Bit and byte layout.** Each unit of the stream is a pulse pair:
+
+| Pair | Meaning |
+|------|---------|
+| S then M | data bit 0 |
+| M then S | data bit 1 |
+| L then M | byte marker: a data byte follows |
+| L then S | end-of-block marker: no more bytes in this copy |
+
+A byte is 20 pulses: the marker pair, eight data-bit pairs least significant bit first, and a parity pair. Parity is odd: the parity bit is chosen so that the nine bits together hold an odd number of ones. The first byte of the header block, `$89`, was recorded as the pulse bytes `57 41 43 2E 2F 42 2E 43 42 2F 2F 42 2F 42 30 43 42 2E 2F 41`, which read as `LM MS SM SM MS SM SM SM MS SM`: marker, bits `1 0 0 1 0 0 0 1` (`$89` with bit 0 first), parity 0 because the data already holds three ones.
+
+**Block structure.** A block is written twice in a row, and each copy is preceded by a nine-byte countdown that tells the reader which copy it is:
+
+| Element | Pulses or bytes | Measured |
+|---------|-----------------|----------|
+| Leader before the header block | short pulses | 27,137 shorts, about 10.4 s |
+| Countdown, first copy | 9 bytes | `$89 $88 $87 $86 $85 $84 $83 $82 $81` |
+| Block data | n bytes | header: 192 bytes; program: 12 bytes (`$0801`–`$080C`) |
+| Checksum | 1 byte | XOR of the data bytes: `$59` for the header, `$E6` for the program |
+| End-of-block marker | L then S | present after every copy |
+| Gap between the two copies | short pulses | 79 shorts |
+| Countdown, second copy | 9 bytes | `$09 $08 $07 $06 $05 $04 $03 $02 $01` |
+| Trailer after the second copy | short pulses | 78 shorts |
+| Silence between header and program | one 24-bit TAP entry | 327,689 cycles, about 0.33 s |
+| Leader before the program block | short pulses | 5,376 shorts, about 2.0 s |
+
+The header block's 192 bytes were: type `$01` (relocatable BASIC program), start address `$0801` and end address `$080D` little-endian, the filename `T` and 186 bytes of `$20` padding. The program block held the twelve bytes of `10 REM ABC` exactly as they sit in memory, with the end address exclusive. One further entry sits at the very start of the file, 472,967 cycles long: the time from pressing RECORD at boot to the first pulse, an artefact of the run and not of the format. Which of the two copies the KERNAL reads on LOAD, and how a read error in one is repaired from the other, were not measured here.
 
 **Typical use:** archival of original cassette software; testing turbo loader implementations; copy-protection analysis.
 
@@ -379,6 +421,65 @@ The SID format is a standard container for C64 music, combining a short metadata
 **RSID** files require the C64 BASIC ROM and run in native-interrupt mode. The play address must be zero (the init routine installs a CIA or raster IRQ). Load address, init address, and any ROM-mapped addresses must be ≥ `$07E8`.
 
 The SID collection at HVSC (High Voltage SID Collection) contains over 50,000 SID files and is the de facto reference corpus for this format.
+
+---
+
+### .SNG — GoatTracker 2 song
+
+The editor's own save format: the song as the composer edits it, before the packer/relocator strips and packs it. Nothing in this knowledge base's Tool node set produces or consumes it; GoatTracker 2 writes it with F11 and reads it back, and the relocator (F9 in the editor, or the standalone `gt2reloc`) turns it into a `.prg`, `.bin` or `.sid` (`../art/asset-pipelines.md`, "Music: GoatTracker"). It sits here beside `.SID` because that is the format it is exported to. Every count below comes from the save routine in GoatTracker 2.77's `gsong.c` and the constants in `gcommon.h`; the layout was then checked by parsing the fourteen `.sng` files in the distribution's `examples/` directory with a script written from this table, and each one was consumed to exactly its file length. GoatTracker 2 writes `GTS5` and loads `GTS2` to `GTS5`; only `GTS5` is described here.
+
+All multi-byte fields are byte sequences, not integers: there is no endianness in the file. Every count is one byte, so no list has more than 255 entries.
+
+**Header (101 bytes):**
+
+| Offset | Size | Field |
+|--------|------|-------|
+| $00–$03 | 4 | Identifier `"GTS5"` |
+| $04–$23 | 32 | Song name, zero-padded |
+| $24–$43 | 32 | Author name, zero-padded |
+| $44–$63 | 32 | Copyright string, zero-padded |
+| $64 | 1 | Number of subtunes `s` (1–32) |
+
+**Order lists:** one record per channel, channels 1, 2, 3 of subtune 0, then channels 1, 2, 3 of subtune 1, and so on for `s` subtunes.
+
+| Offset | Size | Field |
+|--------|------|-------|
+| +0 | 1 | Length `n`: the number of order-list bytes up to and including the `$FF` end mark |
+| +1 | n+1 | Order list: `$00–$CF` pattern number, `$D0–$DF` repeat, `$E0–$EF` transpose down, `$F0–$FE` transpose up, `$FF` end mark; the byte after the end mark is the restart position |
+
+**Instruments:** a count byte, then one 25-byte record per instrument from instrument 1 up to the highest one that has a non-zero parameter or is named in a pattern. Instrument 0, the empty instrument, is never stored.
+
+| Offset | Size | Field |
+|--------|------|-------|
+| +0 | 1 | Attack/decay |
+| +1 | 1 | Sustain/release |
+| +2 | 1 | Wave table pointer (row + 1; 0 = none) |
+| +3 | 1 | Pulse table pointer |
+| +4 | 1 | Filter table pointer |
+| +5 | 1 | Speed table pointer (vibrato parameter) |
+| +6 | 1 | Vibrato delay |
+| +7 | 1 | Gate-off timer |
+| +8 | 1 | Hard-restart / first-frame waveform |
+| +9 | 16 | Instrument name, zero-padded |
+
+**Tables:** four records in this order: wave, pulse, filter, speed. A table's stored length is the index of its last non-zero row plus one, so an empty table is a single zero byte.
+
+| Offset | Size | Field |
+|--------|------|-------|
+| +0 | 1 | Row count `r` (0–255) |
+| +1 | r | Left column, rows 0 to r-1 |
+| +1+r | r | Right column, rows 0 to r-1 |
+
+**Patterns:** a count byte `p` (patterns 0 to p-1, where p-1 is the highest pattern that has content or is named in an order list), then one record per pattern.
+
+| Offset | Size | Field |
+|--------|------|-------|
+| +0 | 1 | Row count `m`, including the end row (up to 129) |
+| +1 | m×4 | Rows of four bytes: note, instrument (`$00–$3F`), command (`$00–$0F`), command data |
+
+Note byte values: `$60–$BC` are the notes C-0 to G#7, `$BD` rest, `$BE` key off, `$BF` key on, `$FF` the end row. A 64-row pattern is therefore stored as 65 rows, 260 bytes. The commands are `1` portamento up, `2` portamento down, `3` tone portamento, `4` vibrato, `5` set AD, `6` set SR, `7` set waveform, `8`, `9`, `A` set wave, pulse or filter table pointer, `B` set filter control, `C` set filter cutoff, `D` master volume, `E` funktempo and `F` set tempo, all read from `gcommon.h`.
+
+Decoded from `examples/consultant.sng` (3,060 bytes): bytes 0–7 are `47 54 53 35 54 68 65 20` (`GTS5` then `The `); name `The Consultant`, author `Cadaver`, copyright `2002 Covert Bitops`; one subtune whose three order lists are 78, 17 and 17 bytes long; eight instruments, the first named `BD+Bass` with AD `$09`, SR `$BB`; table lengths 31, 15, 6 and 4 rows; eleven patterns, the longest 73 rows including the end row. Packed by the relocator with defaults, this song becomes 1,786 bytes at `$1000`.
 
 ---
 
