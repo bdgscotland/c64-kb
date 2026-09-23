@@ -5,7 +5,63 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 744, schema 27, tools 2.0.0, package 0.13.0.
+Data 745, schema 29, tools 2.1.0, package 0.14.0.
+
+**Issue #22, steps 4 and 5: game designs and machine variants (schema 29,
+tools 2.1.0, package 0.14.0).** Two shape changes land together, so the
+schema moves two: 28 is GameDesign, 29 is MachineVariant. Tools 2.1.0 is a
+minor: every change to the surface is additive (a new optional input, new
+output fields). The package moves with the tools minor.
+
+GameDesign (schema 28). A new doc type, `docs/game-design/designs/*.md`
+(`CONVENTIONS-game-designs.md`), makes a whole game a node: the archetype
+it is an instance of (`INSTANCE_OF`), the recipe that builds it
+(`REALISED_BY`), the techniques it runs in each phase (`COMPOSES`, with a
+`phase` of play, init or transition) and what its frame measured
+(`**Measured frame:**`, stored as `measured`). Three pages, one per
+scaffold; the phases were read from each listing's `main()`, not its
+frontmatter. `c64_plan_budget` takes `design` (CLI `--design`): the
+design's members are budgeted by phase, and each measured frame is set
+beside the prediction for its phase and region, with where it falls and
+which members had no figure. `techniques` is now optional. `c64_game_briefing`
+lists the resolved archetype's designs in `designs[]`.
+
+What the validation showed, play phase, scratch graph:
+
+| Design | Predicted (low-high + badlines) | Measured worst, PAL / NTSC | Members with no figure |
+|---|---|---|---|
+| `platformer_scaffold_oscar64` | 4,477-4,685 + 1,075 | 8,693 / 10,287, above by 2,933 / 4,527 | 5 |
+| `falling_blocks_oscar64` | 5,902 + 1,075 | 6,276 / 6,491, within | 4 |
+| `simple_shmup_oscar64` | 5,628 + 1,075 | not timed | 1 |
+
+The platformer's typical PAL frame (4,966, one frame's reading) lies
+within its range. The falling-block agreement is partial: its one large
+figure, `falling_block_rules`' 5,888, is a constructed upper bound, and
+the render has no Cost line.
+
+Corrections found on the way: the `falling-blocks` frontmatter named four
+of the seven techniques its listing runs; the #22 design put
+`tile_map_render` in the platformer's play phase, where it runs once at
+init; the platformer's timer is CIA1 timer B, not CIA2.
+
+MachineVariant (schema 29). Seven seeds, one per VICE `-model` word the
+harness needs or the pages name (`c64`, `c64c`, `c64old`, `ntsc`,
+`newntsc`, `oldntsc`, `drean`), with their chips, line length and lines.
+`VERIFIED_ON` (Recipe to MachineVariant) is rebuilt after every ingest
+from `docs/recipes/runs.json`, as `verify:recipes` runs each page, and
+only where the committed screenshot exists: 204 edges. `c64_recipe_lookup`
+returns `verified_on[]`; `c64_recipes_for` takes `verified_on` (a variant
+or PAL / NTSC). The R56A and the Drean are variants, not Regions, which
+answers #8's question.
+
+VICE's default machine is the `c64c` configuration (VIC-II 8565, SID
+8580, CIA 8521), not the 6569 that `vice-reference.md`, `pal-ntsc-detect.md`
+and the #22 design said. `x64sc -default -dumpconfig` is identical to
+`-model c64c`; the `cia-revision-detect` listing reads the new CIA there
+and the old one under `-model c64`. Every runs.json `pal` run, and the PAL
+palette column in `vice-reference.md`, is therefore the 8565 machine.
+
+Data 744, schema 27, tools 2.0.0, package 0.13.0 (before the entry above).
 
 **Issue #22, step 3: the honest budget (schema 27, tools 2.0.0, package
 0.13.0).** Tools 2.0.0 is a major bump because the briefing's output
