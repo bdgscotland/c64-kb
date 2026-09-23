@@ -5,7 +5,15 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 740, schema 26, tools 1.31.0, package 0.11.0.
+Data 741, schema 26, tools 1.31.0, package 0.11.0.
+
+**Issue #21, GR-05/10, GR-06, GR-07, GR-11.** Engines for games at the
+scale of Elite and Lemmings, each self-checked against a Python model:
+`wireframe_pipeline` and `procedural_seed_universe` (pixel-exact
+wireframes; Elite's galaxy names reproduced), `adventure_database_engine`,
+`game_tree_search` (with a time-sliced form that misses no frame), and
+`destructible_char_terrain` with `creature_state_machine`. Two more
+Oscar64 faults recorded with their upstream status (#30).
 
 **Issue #22, step 2: the zero page each KERNAL routine writes (schema 26,
 tools 1.31.0, package 0.11.0).** A `CLOBBERS_ZP` edge from each
