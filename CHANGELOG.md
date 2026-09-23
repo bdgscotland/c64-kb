@@ -5,7 +5,33 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 732, schema 24, tools 1.28.1.
+Data 733, schema 24, tools 1.28.1.
+
+**Design layer, slice 1 (data 733).** Four pages above the mechanics
+layer, written as original prose from public sources by people who
+shipped, facts and names only: `game-design/game-structure.md` (the
+state machine, level end conditions, level transitions, the front end
+and attract mode), `game-design/enemy-behaviour-and-difficulty.md`
+(interaction patterns, personality by target, attack pattern tables, the
+difficulty ramp, a playtest protocol), `game-design/production-planning.md`
+(build order, memory budget first, scope and region, tooling and editors,
+where the surviving documents are) and `demo-design/demo-composition.md`
+(the part lifecycle, transition conditions, pacing and length, music
+continuity across parts, the composition workflow). Each pattern is an
+H2 in the technique style with `Kind`, `Applies to` (archetypes that
+exist), `Realised by` (techniques and recipes that exist), `Sources` and
+a `Checks` list of statements a headless harness can test on a build.
+The extractor reads these pages as prose only; the metadata lines are
+laid out so a later extractor can read them without a rewrite (issue 24
+has the plan for Pattern nodes and a Structure section in the briefing).
+The pages exist because every game generated from the base on
+2026-09-22 shared three faults they describe: levels ending on a frame
+counter, sprites and score digits left on the title after game over, no
+working restart. Nothing on them was measured in VICE; every figure is
+its source's or arithmetic, and each page says what its sources did not
+say. Not found in the sweep and therefore not on the pages: attract-mode
+construction from an original developer, music direction from a
+composer, first-person design retrospectives of the major demos.
 
 **Issue #21, ES-15 to ES-18.** `iffl_single_file` (the KERNAL skip
 fallback, measured; drive-side scan described, not built),
