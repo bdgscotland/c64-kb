@@ -44,12 +44,14 @@ cycles left on one raster line, and its README row no longer claims
 per-frame math. Ingest now warns about, and counts, a measured-on recipe
 that is no Recipe and an included name that is no Technique.
 
-Content: 63 Cost lines gained a measured-on line; five pages do not say
-where their figure came from, so they got none. Seven gained a measured
+Content: 68 Cost lines gained a measured-on line, five of them on the #21
+pages merged from main. Five pages do not say where their figure came
+from, so they got none. Eight gained a measured
 typical frame, each one the page already stated: `wave_director`,
 `dig_and_refill`, `difficulty_ramp_tables`, `ghost_target_tile_ai`,
-`sprite_animation_table`, `sfx_engine_beside_music` and
-`sprite_cache_flip`. Three gained an includes line: `wave_director`
+`sprite_animation_table`, `sfx_engine_beside_music`, `sprite_cache_flip`
+and `game_tree_search` (its worst measured four-node slice, 5,325, beside
+the 9,316 bound). Three gained an includes line: `wave_director`
 includes `object_pool`, `soft_scroll_h` includes `char_scroll_buffer_h`,
 and `fli_image` includes its stable double-IRQ entry.
 

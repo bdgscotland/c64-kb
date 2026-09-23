@@ -571,6 +571,7 @@ rows (about 12.5 a byte) or 16 a byte for one row.
 **Requires:** text_input_line
 **Cost:** cycles_per_frame=14908
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-adventure-engine (one command's parse and turn, PAL, display on)
 
 ### Why
 

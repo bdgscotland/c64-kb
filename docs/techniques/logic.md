@@ -1927,8 +1927,9 @@ from the cave; nothing explodes.
 
 **Complexity:** high
 **Region:** both
-**Cost:** cycles_per_frame=9316, bytes_code=704, bytes_data=199
+**Cost:** cycles_per_frame=9316, cycles_per_frame_typical=5325, bytes_code=704, bytes_data=199
 **Cost basis:** derived-listing
+**Cost measured on:** oscar64-game-tree-search (sliced, four nodes a frame, a bound from four worst calls, NTSC, display on)
 
 **Why.** A board game needs an opponent that looks ahead. The standard
 method is to generate every legal move, play each on a copy of the
@@ -2064,8 +2065,8 @@ into a frame budget. The Cost line's `cycles_per_frame` is the sliced
 form at four nodes a frame: four times the worst single call, 4 x 2,329
 = 9,316 cycles (the NTSC figure, the larger), half a PAL frame. It is a
 bound; the worst four-node slice measured was 5,024 cycles on PAL and
-5,325 on NTSC, and a typical slice is about 4 x 900 (arithmetic from
-the average). A chess node, with a
+5,325 on NTSC, which the Cost line carries as its typical figure, and a
+typical slice is about 4 x 900 (arithmetic from the average). A chess node, with a
 longer move generator and evaluation, costs more; not measured here. The
 bytes are the search, make, unmake, win test and leaf routines (704) and
 the board, weights, move order, per-ply tables at depth 5 and the saved
@@ -2098,6 +2099,7 @@ ply and side (199), from the Oscar64 map.
 **Requires:** destructible_char_terrain, char_bullets
 **Cost:** cycles_per_frame=14465
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-destructible-terrain (worst frame, 24 creatures, no terrain edits or draw, NTSC)
 
 ### Why
 

@@ -474,6 +474,7 @@ not part of the technique.
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=1450
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-destructible-terrain (one dig step, three pixel edits)
 
 ### Why
 

@@ -1253,6 +1253,7 @@ routines in one page with an `.assert`.
 **Uses registers:** (none)
 **Cost:** cycles_per_frame=733
 **Cost basis:** measured-vice
+**Cost measured on:** kickassembler-wireframe-ships (one system per call, display on)
 **Claims:** none
 **Claims basis:** derived-listing
 
