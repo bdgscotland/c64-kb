@@ -21,6 +21,15 @@
  * from the same empty disk each time, takes the same number of cycles, and
  * nothing in the repo is modified by the run.
  *
+ * With "cartridge": {"file": "x.crt", "write": true, "runs": 2}, the build
+ * must leave x.crt in the work directory (a KickAssembler listing writes it
+ * with outBin beside its source). Each model gets a fresh copy, attached
+ * with -cartcrt instead of -autostart; "write" adds -easyflashcrtwrite so
+ * VICE writes the flash back into the copy, and "runs" boots the same copy
+ * that many times in sequence. Run 1's shot is keyed by the model ("pal"),
+ * run N's by "<model>-run<N>" ("pal-run2"); the default path for run N is
+ * screenshots/<stem>[-<model>]-run<N>.png.
+ *
  * Usage:
  *   node scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
  *   node scripts/verify-recipes.ts --file docs/recipes/kickassembler/raster-bars.md
@@ -40,6 +49,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -69,6 +79,7 @@ type Run = {
   flags: string[];
   shots: Record<string, string>;
   disk?: { name: string };
+  cartridge?: { file: string; write?: boolean; runs?: number };
 };
 type Manifest = Record<string, Partial<Run>>;
 
@@ -124,6 +135,11 @@ function walk(dir: string): string[] {
   return out;
 }
 
+/** runs.json "shots" key for boot N of a model: "pal", then "pal-run2", "pal-run3". */
+function shotKey(model: string, n: number): string {
+  return n === 1 ? model : `${model}-run${n}`;
+}
+
 const work = keepDir
   ? (mkdirSync(keepDir, { recursive: true }), keepDir)
   : mkdtempSync(join(tmpdir(), "c64kb-verify-"));
@@ -142,15 +158,30 @@ for (const toolchain of ["kickassembler", "oscar64", "cc65"]) {
     const stem = basename(md, ".md");
     const m = manifest[`${toolchain}/${stem}`] ?? {};
     const models = m.models ?? ["pal"];
+    const runs = m.cartridge?.runs ?? 1;
     const shots =
       m.shots ??
-      Object.fromEntries(models.map((mo) => [mo, `screenshots/${stem}${mo === "pal" ? "" : `-${mo}`}.png`]));
+      Object.fromEntries(
+        models.flatMap((mo) =>
+          Array.from({ length: runs }, (_, i) => [
+            shotKey(mo, i + 1),
+            `screenshots/${stem}${mo === "pal" ? "" : `-${mo}`}${i ? `-run${i + 1}` : ""}.png`,
+          ]),
+        ),
+      );
     jobs.push({
       rel,
       toolchain,
       stem,
       md,
-      run: { cycles: m.cycles ?? 8000000, models, flags: m.flags ?? [], shots, disk: m.disk },
+      run: {
+        cycles: m.cycles ?? 8000000,
+        models,
+        flags: m.flags ?? [],
+        shots,
+        disk: m.disk,
+        cartridge: m.cartridge,
+      },
     });
   }
 }
@@ -218,7 +249,7 @@ function build(job: Job): { prg: string | null; log: string } {
 }
 
 function runVice(
-  prg: string,
+  attach: string[],
   png: string,
   cycles: number,
   model: string,
@@ -252,8 +283,7 @@ function runVice(
     ...diskArgs,
     "-exitscreenshot",
     png,
-    "-autostart",
-    prg,
+    ...attach,
   ];
   const r = spawnSync(tools.x64sc!, args, { encoding: "utf8", timeout: 300_000 });
   if (!existsSync(png))
@@ -295,64 +325,86 @@ function say(ok: boolean, label: string, detail = "") {
   console.log(results[results.length - 1]);
 }
 
+/** Compare one fresh screenshot with its baseline, writing it under --update. */
+function judge(job: Job, label: string, fresh: string, baseline: string) {
+  if (!existsSync(baseline)) {
+    if (update) {
+      mkdirSync(dirname(baseline), { recursive: true });
+      copyFileSync(fresh, baseline);
+      updated++;
+      say(true, label, `baseline written: ${relative(ROOT, baseline)} (look at it)`);
+    } else {
+      missing++;
+      if (!allowMissing) failures++;
+      say(
+        allowMissing,
+        label,
+        `no baseline at ${relative(ROOT, baseline)}; run with --update after looking at ${fresh}`,
+      );
+    }
+    return;
+  }
+  const c = compare(fresh, baseline);
+  if (c.ok) {
+    passes++;
+    say(true, label, `identical to ${relative(ROOT, baseline)} at ${job.run.cycles} cycles`);
+  } else if (update) {
+    copyFileSync(fresh, baseline);
+    updated++;
+    say(true, label, `baseline REPLACED (${c.detail}); the page must say why`);
+  } else {
+    failures++;
+    say(
+      false,
+      label,
+      `${c.detail} vs ${relative(ROOT, baseline)} at ${job.run.cycles} cycles; if the listing changed on purpose, look at ${fresh} and run --update`,
+    );
+  }
+}
+
 const runOne = (job: Job) => {
+  const cart = job.run.cartridge;
+  const crt = cart ? join(work, cart.file) : null;
+  // A stale cartridge from an earlier --keep run must not stand in for this build's.
+  if (crt) rmSync(crt, { force: true });
   const { prg, log } = build(job);
   if (!prg) {
     failures++;
     say(false, `${job.rel} (build)`, log);
     return;
   }
+  if (crt && !existsSync(crt)) {
+    failures++;
+    say(false, `${job.rel} (build)`, `runs.json names cartridge ${crt} but the build did not write it`);
+    return;
+  }
   for (const model of job.run.models) {
-    const shotRel = job.run.shots[model];
-    if (!shotRel) {
-      failures++;
-      say(false, `${job.rel} [${model}]`, "no shot path in runs.json for this model");
-      continue;
+    // A cartridge run boots a fresh copy of the built .crt; with "write" VICE
+    // saves the flash back into the copy, so run N sees what run N-1 wrote.
+    let attach = ["-autostart", prg];
+    if (crt) {
+      const copy = join(work, `${job.toolchain}-${job.stem}-${model}.crt`);
+      copyFileSync(crt, copy);
+      attach = [...(cart?.write ? ["-easyflashcrtwrite"] : []), "-cartcrt", copy];
     }
-    const baseline = join(dirname(job.md), shotRel);
-    const fresh = join(work, `${job.toolchain}-${job.stem}-${model}.png`);
-    const err = runVice(prg, fresh, job.run.cycles, model, job.run.flags, job.run.disk);
-    if (err) {
-      failures++;
-      say(false, `${job.rel} [${model}]`, err);
-      continue;
-    }
-    if (!existsSync(baseline)) {
-      if (update) {
-        mkdirSync(dirname(baseline), { recursive: true });
-        copyFileSync(fresh, baseline);
-        updated++;
-        say(true, `${job.rel} [${model}]`, `baseline written: ${relative(ROOT, baseline)} (look at it)`);
-      } else {
-        missing++;
-        if (!allowMissing) failures++;
-        say(
-          allowMissing,
-          `${job.rel} [${model}]`,
-          `no baseline at ${relative(ROOT, baseline)}; run with --update after looking at ${fresh}`,
-        );
+    const runs = cart?.runs ?? 1;
+    for (let n = 1; n <= runs; n++) {
+      const key = shotKey(model, n);
+      const label = `${job.rel} [${key}]`;
+      const shotRel = job.run.shots[key];
+      if (!shotRel) {
+        failures++;
+        say(false, label, `no shot path in runs.json for "${key}"`);
+        break;
       }
-      continue;
-    }
-    const c = compare(fresh, baseline);
-    if (c.ok) {
-      passes++;
-      say(
-        true,
-        `${job.rel} [${model}]`,
-        `identical to ${relative(ROOT, baseline)} at ${job.run.cycles} cycles`,
-      );
-    } else if (update) {
-      copyFileSync(fresh, baseline);
-      updated++;
-      say(true, `${job.rel} [${model}]`, `baseline REPLACED (${c.detail}); the page must say why`);
-    } else {
-      failures++;
-      say(
-        false,
-        `${job.rel} [${model}]`,
-        `${c.detail} vs ${relative(ROOT, baseline)} at ${job.run.cycles} cycles${job.run.models.length > 1 ? ` (${model})` : ""}; if the listing changed on purpose, look at ${fresh} and run --update`,
-      );
+      const fresh = join(work, `${job.toolchain}-${job.stem}-${key}.png`);
+      const err = runVice(attach, fresh, job.run.cycles, model, job.run.flags, job.run.disk);
+      if (err) {
+        failures++;
+        say(false, label, err);
+        break;
+      }
+      judge(job, label, fresh, join(dirname(job.md), shotRel));
     }
   }
 };

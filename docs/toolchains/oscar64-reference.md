@@ -760,7 +760,7 @@ Any arguments must be passed through zero-page locations or globals the assembly
 
 **Prefer `unsigned` and 8-bit types.** Signed arithmetic (signed shifts, signed compares, signed multiply) generates more code than unsigned equivalents. The compiler narrows 16-bit operations to 8-bit when it can prove the range fits, but it cannot do so through global variables or pointer-accessed values without help. Add `__assume(x < 256)` where you know the range, and declare loop counters as `char` or `byte` rather than `int`.
 
-The next five were found by compiling and running this knowledge base's own recipes with Oscar64 (build 2026-05-19, commit c1270bc) and VICE; see `scripts/check-listings.ts`.
+The next six were found by compiling and running this knowledge base's own recipes with Oscar64 (build 2026-05-19, commit c1270bc) and VICE; see `scripts/check-listings.ts`.
 
 **A call through a `const` function pointer initialised with a literal address crashes the compiler.** `static void (* const f)(void) = (void (*)(void))0x1003; f();` is a segmentation fault at every `-O` level, with no diagnostic. Casting the pointer without calling it is fine, so `rirq_call(&slot, 0, (void *)0x1003)` works; for a direct call use `__asm { jsr $1003 }`.
 
@@ -769,6 +769,8 @@ The next five were found by compiling and running this knowledge base's own reci
 **`NUM_IRQS` and the other library table sizes are per translation unit.** `rasterirq.c` is compiled as its own unit through the header's `#pragma compile`, so a `#define NUM_IRQS 17` in your main file changes what your file believes and not what the library allocates; slot 16 then overwrites something else, silently. Pass `-dNUM_IRQS=17` on the command line so every unit agrees, or stay within the default 16. `rirq_set` has no bounds check.
 
 **A guarded index into an array shorter than 256 loses its guard.** Oscar64 1.32.271 at `-O1`, `-O2` and `-O3` compiles `char h = l == NONE ? NONE : lt[l];` (with `NONE` 255 and `char lt[64]`) to an unguarded `lda nextl,y / tax / cmp lt,x`: it infers `l < 64` from the size of `lt` and applies that to an access that only runs when `l != NONE`, so `l == 255` reads `lt[255]`, past the array. Measured in VICE x64sc: a 25-line test turns the border red at `-O1` to `-O3` and green at `-O0` and `-Os`, and green at `-O2` when `lt` has 256 entries. The same happens in the `nav-area-pathfinding` recipe's table check. Write the guard as a statement (`char h = NONE; if (l != NONE) h = lt[l];`), which compiles correctly. There is no diagnostic.
+
+**A function-like macro with an empty parameter list is refused.** `#define A() (x = 1)` followed by `A();` fails with `error 3006: ';' expected` on the line after the call, whatever the body (`(x = 1)`, `x = 1` or `do { x = 1; } while (0)`); `#define A(v) (x = (v))` with `A(1);` builds. Measured with Oscar64 1.32.271 at `-O2`. Give such a macro one parameter, or use a function.
 
 **GCC attribute syntax is not accepted.** `__attribute__((unused))` is a parse error; use `(void)x;` for a deliberately unused read. Oscar64's own qualifiers are keywords (`__interrupt`, `__zeropage`, `__striped`, `__export`, ...).
 

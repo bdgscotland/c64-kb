@@ -739,8 +739,10 @@ instruction boundaries against a mid-instruction switch, which cannot happen.)
 
 ### Recipes
 
-No Phase 3 recipes cover EasyFlash. Cartridge-targeting recipes land in a later
-phase focused on distribution formats.
+- `recipes/kickassembler/easyflash-save.md` builds an EasyFlash `.crt` from one
+  listing and saves to flash through the Am29F040 commands (technique
+  `cartridge_save` on the file I/O page). An earlier version of this section
+  said no recipe covered EasyFlash.
 
 ---
 
@@ -1126,3 +1128,120 @@ the opcode sizes).
 - GoatTracker 2 readme, section 5.1 "Playroutine options", option
   "Use zeropage ghostregs":
   https://sourceforge.net/projects/goattracker2/
+
+## reu_dma — REU DMA transfers, fixed-address fills and the $FF00 trigger
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** DF00, DF01, DF02, DF03, DF04, DF05, DF06, DF07, DF08, DF09, DF0A
+
+### Why
+
+A 17xx RAM Expansion Unit (1700 128 KB, 1764 256 KB, 1750 512 KB, per
+codebase64) and its modern equivalents add banks of RAM the CPU cannot
+address, and a DMA controller that moves bytes between them and C64
+memory at one byte per cycle. A game uses it as a store for level data
+and graphics that would otherwise be loaded from disk, as a copier that
+beats any CPU loop (an unrolled `LDA abs` / `STA abs` is 8 cycles a
+byte, `speedcode_generation`), and as a filler: with one address held
+still, it fills a block from one byte or streams a block into one
+register. It is an optional extra. A program that uses it must detect
+it and must still run without it.
+
+### How
+
+The registers sit at `$DF00-$DF0A`, in the cartridge I/O-2 page. Bit
+meanings are from codebase64 `base:reu_programming`. The ones marked
+"measured" were exercised by the recipe in VICE x64sc 3.10; the rest are
+from that source only.
+
+| Register | Meaning |
+|---|---|
+| `$DF00` status, read | bit 7 interrupt pending; bit 6 end of block (measured); bit 5 verify fault (measured); bit 4 size, set for 256 KB chips, so on a 1764 or 1750 (measured set with `-reusize 512`); bits 3-0 version (measured 0). Reading clears the fault bit (codebase64; not measured here). |
+| `$DF01` command | bit 7 execute; bit 5 autoload, which restores the address and length registers after the transfer; bit 4 set = start now, clear = wait for a write to `$FF00` (both measured); bits 1-0 type: `00` stash C64 to REU, `01` fetch REU to C64, `10` swap, `11` verify (all measured). Bits 6, 3, 2 reserved. |
+| `$DF02/$DF03` | C64 address, low/high (measured) |
+| `$DF04/$DF05/$DF06` | REU address low/high and bank; bank bits 2-0 for 512 KB (measured: bits 7-3 read back as 1 in VICE with 512 KB) |
+| `$DF07/$DF08` | length, low/high; 0 = 65,536 (measured) |
+| `$DF09` interrupt mask | bit 7 enable, bit 6 on end of block, bit 5 on verify error; bits 4-0 unused |
+| `$DF0A` address control | bit 7 holds the C64 address still, bit 6 the REU address (both measured); bits 5-0 unused |
+
+1. Detect. Write a pattern to `$DF02-$DF08` and read it back. Compare
+   `$DF06` on bits 2-0 only. With no REU the reads are open bus (the
+   byte the VIC-II last fetched, `hardware/c64-registers-reference.md`)
+   and the pattern does not come back: the recipe read all `$00` on PAL
+   and `$00` with one `$FF` on NTSC. Another cartridge that decodes
+   `$DF00` can pass this test (codebase64); knowing the cartridge is the
+   caller's job.
+2. Load the C64 address, REU address and bank, length and `$DF0A`.
+   Without autoload the registers are left past the end, so load all of
+   them before each transfer.
+3. Write the command to `$DF01`: `$90` stash, `$91` fetch, `$92` swap,
+   `$93` verify. The CPU is halted until the last byte has moved.
+4. For a verify, read `$DF00` first to clear it, then test bit 5 after.
+   On a mismatch the verify stops, bit 6 stays clear, and `$DF02/$DF03`
+   point one past the differing byte (measured).
+
+To reach the RAM under I/O, arm the transfer with bit 4 clear (`$81` for
+a fetch) while I/O is visible, set `$01` = `$34`, and write to `$FF00`.
+The write starts the DMA, which sees the memory configuration that is
+in force, so it reaches the RAM at `$D000-$DFFF`. `LDA $FF00` / `STA
+$FF00` keeps the byte already in the RAM under the KERNAL. Keep
+interrupts masked while `$01` is `$34`, or give the handlers the
+`irq_owns_processor_port` wrapper.
+
+### Why it works
+
+The REU is a bus master. It pulls the CPU off the bus and drives the
+address and data lines itself, one access per cycle, so a stash, fetch
+or verify moves one byte per cycle and a swap, which reads and writes
+each C64 byte, one byte per two. The VIC-II keeps priority. On a badline
+and on a sprite's fetch cycles it takes the bus from the REU as it
+takes it from the CPU, so the transfer waits (pitfalls
+`badline_cycle_loss`, `vic_bus_takeover_on_dma`). The `$FF00` trigger
+exists because the store to `$DF01` needs I/O visible, while the
+transfer may need it hidden.
+
+### Variations
+
+- **Fill.** Stash one byte once. Then fetch with `$DF0A` = `$40` (REU
+  address held): every C64 byte in the block gets that value. The recipe
+  fills 1,000 bytes of colour RAM this way in 1,000 cycles.
+- **Stream to a register.** Fetch with `$DF0A` = `$80` (C64 address
+  held) to write every REU byte to one address, such as `$D418` for a
+  digi. The DMA runs flat out, one byte per cycle, so the samples do not
+  come out at a controlled rate unless the transfer is split into short
+  lengths and timed; this is not measured here. The recipe uses the
+  same bit the other way round, stashing 65,536 reads of one byte.
+- **Level store.** Fetch a level's map, charset and sprites at level
+  start: 16 KB is about 16,400 cycles blanked, under one PAL frame of
+  19,656 (arithmetic from the measured one cycle per byte).
+- **Double buffer.** Fetch the next screen's 1,000 bytes in 1,008
+  cycles; with the screen on, allow for the badlines it crosses.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with the recipe, PAL and NTSC. The store to
+`$DF01` is part of the count; after it a stash, fetch, fill or verify of
+n bytes takes n cycles and a swap 2n, with the screen blanked. A 1-byte
+stash came to 9 cycles including the 8-cycle `LDA abs` / `STA abs`.
+With the text screen on, a 65,536-byte stash took 69,414 cycles on PAL
+(1.05 per byte) and 69,844 on NTSC (1.06). With eight sprites on 21
+lines as well, it took 71,134 on PAL and 71,439 on NTSC. The cost of a
+transfer depends on its length and where in the frame it runs, so this
+page carries no Cost line: budget one cycle per byte blanked, and about 6 %
+(PAL) and 7 % (NTSC) more with the screen on across whole frames. A transfer that must
+fit a raster window should be timed in that window.
+
+### Recipes
+
+- `recipes/kickassembler/reu-dma.md` — detects the REU; stashes, fetches
+  into screen RAM, fills colour RAM from one byte, swaps, verifies (and
+  reads the fault bit on a changed byte), fetches under I/O with the
+  `$FF00` trigger, and times each transfer blanked, with the screen on
+  and with eight sprites on.
+
+### Sources
+
+- codebase64, "REU programming" (Richard Hable, Marko Mäkelä), register
+  bits, transfer speed, `$FF00` use, detection and model sizes:
+  https://codebase64.net/doku.php?id=base:reu_programming

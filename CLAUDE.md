@@ -131,7 +131,8 @@ in `src/tools/query.ts`; check which before editing either.
   `#pragma compile("file.c")` from its header; an undefined `extern`
   variable links silently; an immediate-mode `sta` in `__asm` emits opcode
   $FF with no diagnostic; at -O1 to -O3 `c == 255 ? 255 : a[c]` with `a`
-  shorter than 256 loses its guard and reads `a[255]` (write it as an `if`). The verbatim messages are in each toolchain
+  shorter than 256 loses its guard and reads `a[255]` (write it as an `if`);
+  `#define A()` with an empty parameter list is refused (error 3006). The verbatim messages are in each toolchain
   page's "Reading the errors".
 - VICE headless: without `GSETTINGS_SCHEMA_DIR` the GTK build aborts;
   without `-autostartprgmode 1` large PRGs are still loading at exit; an

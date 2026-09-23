@@ -1,5 +1,5 @@
 {
-  "_comment": "Pinned VICE runs for scripts/verify-recipes.ts. Key = <toolchain>/<page stem>. Defaults when absent: 8000000 cycles, PAL, screenshots/<stem>.png, no extra flags, no disk. Every run adds +autostart-delay-random so the frame captured is the same every time. Optional per key: \"flags\" (extra x64sc arguments), \"disk\": {\"name\": \"NAME,ID\"} (a fresh D64 formatted with c1541 before each run and attached as drive 8).",
+  "_comment": "Pinned VICE runs for scripts/verify-recipes.ts. Key = <toolchain>/<page stem>. Defaults when absent: 8000000 cycles, PAL, screenshots/<stem>.png, no extra flags, no disk. Every run adds +autostart-delay-random so the frame captured is the same every time. Optional per key: \"flags\" (extra x64sc arguments), \"disk\": {\"name\": \"NAME,ID\"} (a fresh D64 formatted with c1541 before each run and attached as drive 8), \"cartridge\": {\"file\": \"x.crt\", \"write\": true, \"runs\": 2} (the build leaves x.crt in its work directory; each model boots a fresh copy with -cartcrt instead of -autostart, \"write\" adds -easyflashcrtwrite, \"runs\" boots the same copy that many times; run N's shot key is \"<model>-run<N>\", default path screenshots/<stem>[-<model>]-run<N>.png).",
   "oscar64/pal-ntsc-detect": {
     "cycles": 8000000,
     "models": [
@@ -831,6 +831,71 @@
     "shots": {
       "pal": "screenshots/irq-owns-port.png",
       "ntsc": "screenshots/irq-owns-port-ntsc.png"
+    }
+  },
+  "kickassembler/four-player-read": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-userportdevice",
+      "3",
+      "-extrajoystick1autofire",
+      "-extrajoystick1autofiremode",
+      "1",
+      "-extrajoystick1autofirespeed",
+      "5",
+      "-extrajoystick2autofire",
+      "-extrajoystick2autofiremode",
+      "1",
+      "-extrajoystick2autofirespeed",
+      "7"
+    ],
+    "shots": {
+      "pal": "screenshots/four-player-read.png",
+      "ntsc": "screenshots/four-player-read-ntsc.png"
+    }
+  },
+  "oscar64/raster-profile-bars": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/raster-profile-bars.png",
+      "ntsc": "screenshots/raster-profile-bars-ntsc.png"
+    }
+  },
+  "kickassembler/reu-dma": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-reu",
+      "-reusize",
+      "512"
+    ],
+    "shots": {
+      "pal": "screenshots/reu-dma.png",
+      "ntsc": "screenshots/reu-dma-ntsc.png"
+    }
+  },
+  "kickassembler/easyflash-save": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "cartridge": {
+      "file": "easyflash-save.crt",
+      "write": true,
+      "runs": 2
     }
   }
 }

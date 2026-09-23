@@ -76,8 +76,16 @@ A recipe page is not done when it reads well. Before it lands:
    The cycle count, models, extra flags and any fresh disk are pinned per
    recipe in `recipes/runs.json`, and `npm run verify:recipes` re-runs
    every recipe from that manifest and fails on a pixel that differs from
-   the committed PNG. The pixel geometry, the palette RGB values per model
-   and a decode snippet are in `runtime/vice-reference.md`, section
+   the committed PNG. A recipe whose listing builds a cartridge instead of
+   a PRG is pinned with a `"cartridge"` key: `{"file": "x.crt", "write":
+   true, "runs": 2}`. The verifier takes `x.crt` from the build's work
+   directory (a KickAssembler listing writes it with `outBin`), boots a
+   fresh copy of it per model with `-cartcrt` in place of `-autostart`,
+   adds `-easyflashcrtwrite` when `write` is true so VICE saves the flash
+   back into the copy, and boots that copy `runs` times in sequence. Run 1
+   is shot key `pal`; run N is `pal-runN`, default path
+   `screenshots/<recipe>[-<model>]-runN.png`. The pixel geometry, the
+   palette RGB values per model and a decode snippet are in `runtime/vice-reference.md`, section
    "Reading the exit screenshot"; a program that reports its own verdict
    through a result byte and the border colour, with a harness that turns
    it into a shell exit code, is the section "Verifying a run without a
