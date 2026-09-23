@@ -25,15 +25,30 @@ Every figure on this page was measured on 2026-09-23 with VICE x64sc 3.10
 (the windowless build), KickAssembler 5.25, Oscar64 as named in `CLAUDE.md`,
 c1541 from VICE 3.10 and GNU Make 3.81, unless it says otherwise.
 
+## Starting a project
+
+```bash
+npm run new-project -- hello ~/c64/mygame        # or hello-kick; --list names the starters
+```
+
+`scripts/new-project.ts` copies the starter whole, dotfiles included,
+vendors `templates/_harness` into `<dir>/harness`, writes `.mcp.json` with
+this checkout's absolute `dist/cli.js`, and writes `local.mk` (read by the
+harness first) with `C64KB` set to this checkout and the tool paths this
+machine has. It proves the copy with `make shot check`, then renames the
+starter's `PLAN.md` to `PLAN-<starter>-example.md` and puts a blank one in
+its place, so the new program is held by the plan gate until its own plan
+is filled.
+
 ## The loop
 
 | Command | What it does |
 |---|---|
-| `make` | Checks `PLAN.md` (see "The plan gate"), then builds `build/<name>.prg` |
+| `make` | Builds `build/<name>.prg` once `PLAN.md` passes (see "The plan gate") |
 | `make run` | The windowed x64sc with the normal build, for a human |
 | `make shot` | Builds the AUTOPILOT variant and writes `shots/pal.png` and `shots/ntsc.png` at the pinned cycle counts |
 | `make check` | `check.py expect.json shots/pal.png shots/ntsc.png`; exit 1 names each failed check |
-| `make selftest` | Builds with FORCE_FAULT, shoots it, and passes only if `check.py` fails |
+| `make selftest` | Builds with FORCE_FAULT and shoots it; passes only when `check.py` exits 1 with FAIL lines |
 | `make disk` | `build/<name>.d64` with the PRG and `DISK_FILES`, then lists it |
 | `make claims` | c64-kb's `scripts/claims-watch.ts` over the AUTOPILOT PRG, when the checkout has it |
 | `make clean` | Removes `build/` and `shots/` |
@@ -41,33 +56,30 @@ c1541 from VICE 3.10 and GNU Make 3.81, unless it says otherwise.
 The headless runs use `-default -warp +sound +autostart-delay-random
 -autostartprgmode 1 -limitcycles N`, add `-model ntsc` for NTSC, and are
 wrapped in `timeout 180`. The windowless x64sc at
-`~/Developer/c64/vice-headless/bin/x64sc` is used when it exists. `+sound`
-selects the dummy sound driver, which breaks reads of `$D41B` and `$D41C`
-(issue #2; not measured here): a program that seeds a random generator
-from SID voice 3 needs another seed under the harness.
+`~/Developer/c64/vice-headless/bin/x64sc` is used when it exists. A shot is
+re-taken when the PRG, the starter's Makefile or the pin changes: the pin
+is a stamp file named by its cycle count.
 
-`npm run verify:templates` copies each starter with an `expect.json` to a
-temporary directory, vendors `templates/_harness` into its `./harness`, and
-runs `make shot check` there (`--selftest` adds `make selftest`, `--only
-<name>` picks one). The copy is the real use: a starter must work outside
-this repository.
+`npm run verify:templates` makes a project from each starter with an
+`expect.json`, as new-project does, in a temporary directory, and runs
+`make`, `make shot check` and `make disk` there (`--selftest` adds
+`make selftest`, `--only <name>` picks one).
 
 ## A starter's files
 
 | File | Holds |
 |---|---|
-| `Makefile` | `NAME`, `C_MAIN` and/or `KICK_SRC`, `SHOT_CYCLES_PAL`, `SHOT_CYCLES_NTSC`, `CLAIMS_ARGS`, optional `DISK_FILES`, then `include $(HARNESS)/harness.mk` |
-| `src/` | The program. `AUTOPILOT` selects scripted input; `FORCE_FAULT` must make the program's own verdict fail |
+| `Makefile` | `NAME`, `C_MAIN` and/or `KICK_SRC`, `SHOT_CYCLES_PAL`, `SHOT_CYCLES_NTSC`, `CLAIMS_ARGS`, optional `DISK_FILES`, then `include $(HARNESS)/harness.mk`, with a clear error when the harness is missing |
+| `src/` | The program. `AUTOPILOT` selects scripted input; `FORCE_FAULT` must make the program's own verdict fail and move something a screenshot check sees |
 | `expect.json` | The checks `check.py` runs on both shots |
 | `PLAN.md` | The plan, with the pasted output of `check-compatibility` and `plan-budget` |
 | `CLAUDE.md` | `_harness/CLAUDE.md.template` plus a section on this starter |
 | `.claude/settings.json` | `_harness/claude/settings.json`: the plan gate as a PreToolUse hook |
 
-`HARNESS` defaults to `./harness` when a copy vendors it and to
-`../_harness` inside this repository. The tools come from `OSCAR64`,
-`KICKASS_JAR`, `X64SC`, `X64SC_WINDOWED`, `C1541` and `C64KB` in the
-environment, else from PATH and this machine's default locations;
-`make tools` prints what was found.
+`HARNESS` is `./harness` in a project and `../_harness` inside this
+repository. The tools come from `local.mk`, then `OSCAR64`, `KICKASS_JAR`,
+`X64SC`, `X64SC_WINDOWED`, `C1541` and `C64KB` in the environment, then
+PATH and this machine's default locations; `make tools` prints them.
 
 ## Reading the screenshots
 
@@ -77,9 +89,7 @@ screenshot": PAL 384 x 272 with screenshot row = raster line - 16; NTSC
 384 x 247 with row = line - 28, NTSC lines 0 to 11 landing on rows 235 to
 246; x = VIC-II X coordinate + 8; text cell (r, c) at x = 32 + 8c,
 y = 35 + 8r on PAL and 23 + 8r on NTSC; sixteen exact RGB triples per
-model. Text is decoded against `chargen-901225-01.bin` (`C64_CHARGEN`
-overrides the path); a cell's ink is every pixel that is not the cell's
-majority colour, so the reader needs no background colour.
+model.
 
 One geometry fact was measured here: a sprite whose Y register holds y is
 drawn from raster line y + 1. hello's sprite at X 188, Y 116 covered
@@ -87,13 +97,27 @@ screenshot x 196 to 219 and rows 101 to 121 on PAL, 89 to 109 on NTSC,
 504 pixels each: lines 117 to 137 on both. A check written for line y
 fails; the first draft of hello's `expect.json` did.
 
+`check.py` validates `expect.json` before it grades: at least one check and
+one `verdict` check, the keys each type needs, colours 0 to 15, and every
+point and area inside the picture on each model the check names. A fault
+is exit 2 with the check's name, never a pass and never a traceback.
+
 | Check type | Passes when |
 |---|---|
 | `verdict` | The border sample point is colour 5. Colour 2 is the program's own FAIL; anything else means it never reached its verdict |
 | `pixel` | The point has the colour index. The point is `x`/`y`, `vic_x`/`line`, or `row`/`col` (a cell's centre) |
+| `rect` | Every pixel of an area (`vic_x`, `line`, `width`, `height`) has the colour: a raster bar, or a span with height 1 |
+| `sprite` | The pixels of the colour inside `search` (default the expected box grown by 16) have exactly the expected bounding box |
 | `text` | The cells from `row`, `col` read `text` |
-| `same` | Every pixel of the `cells` rectangle has the same colour index on PAL and NTSC |
-| `meter` | The meter's readout is there; optional `frames` must match, `worst` must fit `max_worst` (default one frame: 19,656 cycles PAL, 17,095 NTSC) |
+| `same` | Every pixel of the `cells` rectangle, or of an `area`, has the same colour index on PAL and NTSC |
+| `meter` | The meter's readout is there; optional `frames` must match; worst fits `max_worst` (default one frame: 19,656 cycles PAL, 17,095 NTSC); typical is at least 1 (recording has finished) |
+
+Text is decoded against the power-on ROM set (`chargen-901225-01.bin`;
+`C64_CHARGEN` overrides the path), or `"charset": "rom-lower"`, or a
+2,048-byte glyph file named by the check, with or without a two-byte load
+address. A cell's ink is every pixel that is not its majority colour, so no
+background colour is needed; multicolour cells do not decode. The meter's
+cells need glyphs for 0 to 9, F, W and T in the set on screen.
 
 The verdict follows the result-byte contract in vice-reference, "Verifying
 a run without a human": `$02FF` = `$01` and a green border on pass, `$02`
@@ -107,12 +131,17 @@ KickAssembler code from Oscar64"). The old `c64-game-starter` fed one in
 that way. The harness uses the placed-blob method that page describes, and
 automates the addresses:
 
-1. KickAssembler assembles `KICK_SRC` with `-binfile -vicesymbols`:
+1. KickAssembler assembles `KICK_SRC` with `-binfile -symbolfile`:
    `build/asm.bin` is the raw bytes from the lowest address, no load
-   address; `build/<src>.vs` lists every label.
+   address; `build/<src>.sym` holds every label with its scope.
 2. `gen-asm-header.py` writes `build/asm.h`: `ASM_ORG` from KickAssembler's
-   memory map, `ASM_END` = `ASM_ORG` + the blob's size, and `ASM_<LABEL>`
-   for every top-level label.
+   memory map, `ASM_END` = `ASM_ORG` + the blob's size, `ASM_<LABEL>` for a
+   top-level label and `ASM_<SCOPE>_<LABEL>` inside a scope or namespace. It
+   refuses, naming both, two labels that give one name (`put_sprite` and
+   `Put_Sprite`), and a label that would redefine `ASM_ORG`, `ASM_END`,
+   `ASM_SIZE` or `ASM_H`. The `.sym` file is read, not the `-vicesymbols`
+   file, because the latter flattens scopes into `loop__0`, `loop__1`,
+   names that change with source order.
 3. The C side places the blob and calls it. Oscar64 expands the macros
    inside `#pragma region` and inside `__asm`, and finds `#embed "asm.bin"`
    through `-i=build`.
@@ -147,9 +176,12 @@ The header the harness wrote from it, and the C that uses it (from
 #define ASM_ORG 0x0900
 #define ASM_END 0x091f
 #define ASM_SIZE 31
-#define ASM_SPR_Y 0x091e
-#define ASM_SPR_X 0x091c
+#if ASM_ORG < 0x0880
+#error "the KickAssembler blob starts below $0880, over the Oscar64 startup code: raise its * = address"
+#endif
 #define ASM_PUT_SPRITE 0x0900
+#define ASM_SPR_X 0x091c
+#define ASM_SPR_Y 0x091e
 
 #pragma section( asmcode, 0 )
 #pragma region( asmreg, ASM_ORG, 0x1000, , , { asmcode } )
@@ -171,13 +203,16 @@ Evidence, rung 1:
   `0900 - 091f : asm_blob, DATA:asmcode`; `main` starts at `$1000`.
 - `build/hello.asm`: `1118 : 20 00 09 JSR $0900 ; (asm_blob[0] + 0)`.
 - The AUTOPILOT build moves the sprite through the scripted path, reads
-  `$D000`, `$D001` and `$D010` back at frame 180, and grades them; the
+  `$D000`, `$D001` and `$D010` back at frame 150, and grades them; the
   screenshots show the green border and the sprite at X 188, lines 117 to
   137, on PAL and NTSC. Only the KickAssembler routine writes those
   registers, so the call and its arguments arrived.
 
-Rules the mechanism brings. Moving `main` to `$1000` leaves room below it
-for the blob (hello's starts at `$0900`); one that grows past `$1000` fails the link with
+Rules the mechanism brings. The blob lives between `$0880` and `$1000`.
+Below `$0880` it would overlap Oscar64's startup code, which the linker
+allows in silence (a blob at `$0810` linked, and the program never
+started); `asm.h`'s `#error` stops that build with "error 3032: the
+KickAssembler blob starts below $0880". Past `$1000` the link fails with
 "Could not place object". Arguments go through bytes the blob owns, not
 Oscar64's zero page: the compiler's registers run from `$02` to `$52`
 (`BC_REG_WORK_Y` to below `BC_REG_TMP_SAVED` in its `MachineTypes.cpp`).
@@ -187,10 +222,12 @@ The routine may change A, X and Y. A pure KickAssembler starter leaves
 ## The frame meter
 
 `meter/frame_meter.h` (Oscar64) and `meter/frame_meter.asm` (KickAssembler
-macros) implement one contract. The program brackets one frame's work with
+macros) implement one contract. The program brackets its frame's work with
 `METER_START` / `METER_STOP` (`FrameMeterStart()` / `FrameMeterStop()`),
-then prints. The readout is `F<frames> W<worst> T<typical>`, five digits
-each, 20 cells from row 24, column 20, in the power-on character set.
+then prints. Work split between a main loop and IRQ handlers is summed:
+`METER_START` ... `METER_PAUSE` as often as needed, `METER_STOP` once a
+frame. Brackets must not nest. The readout is `F<frames> W<worst>
+T<typical>`, five digits each, 20 cells from row 24, column 20.
 
 - **Timer.** CIA2 timer A, counting phi2 cycles, force-loaded with `$FFFF`
   at start and stopped before its two bytes are read, as in
@@ -200,42 +237,75 @@ each, 20 cells from row 24, column 20, in the power-on character set.
   RS-232 bit timer: no device 2 while the meter runs. Init masks timer A's
   NMI only (`$DD0D` = `$01`).
 - **What it counts.** Wall time between the two stores: badline and sprite
-  DMA steals and any interrupt that lands inside the bracket are in the
-  figure. The empty bracket's own count is measured once at init and
-  subtracted. More than 65,535 cycles reads 65,535 (the underflow flag in
-  `$DD0D`).
-- **Worst** is the largest bracket recorded. **Typical** is the mean of the
-  last 16 recorded frames, and 0 until 16 have been recorded. Recording
-  stops after `hold` frames (0 = never), so a pinned screenshot taken later
-  shows fixed figures and `check.py` can require the count.
+  DMA steals and any interrupt that lands inside a bracket are in the
+  figure. The empty bracket's own count is subtracted: the least of four
+  tries at raster line 0, with interrupts off, where no DMA falls. More
+  than 65,535 cycles reads 65,535 (the underflow flag in `$DD0D`).
+- **Recording.** The meter records the first `hold` frames (1 to 255) and
+  then stops, so a pinned screenshot shows fixed figures and `check.py` can
+  require the count. Make `hold` the autopilot script's play frames, so no
+  title or idle frame counts.
+- **Worst** is the largest recorded frame. **Typical** is the median of the
+  recorded frames, computed when recording stops (0 until then): a cost
+  some play frame took, with at least half the frames at or under it. That
+  is the `cycles_per_frame_typical` of
+  [CONVENTIONS-techniques](../CONVENTIONS-techniques.md), the frame play
+  spends most of its time on, when the recorded frames are play. An
+  earlier version used the mean of the last 16 frames: hello's figure was
+  then the mean of idle frames after its script, and an alternating load
+  read a cost no frame took.
 - **Build switch.** `FRAME_METER` defaults to `AUTOPILOT`. Without it every
   macro is empty and the release carries none of the meter.
+- **Interrupts.** The KERNAL serial routines end in `CLI`: the ROM bytes at
+  `$EDAB`, `$EDB5`, `$EDDB` and `$EE82` are `58 60` or `58 18` (read from
+  `kernal-901227-03.bin`). A program that runs with the KERNAL IRQ off must
+  `SEI` again after any disk call, or that IRQ lands inside its brackets.
 
-Calibration, rung 1: a 1,001-cycle loop (`ldx #200`, `dex`, `bne`: 2 +
-199 x 5 + 4, arithmetic) bracketed in the lower border read `W01001
-T01001` from the C meter. Frames alternating between 1,017 and 517 cycles
-(the same loop with 200 or 100, plus 18 cycles of table lookup) read
-`W01017 T00767` from both the C meter and the KickAssembler meter, on PAL
-and on NTSC; 767 is the mean of the two.
+Calibration, rung 1, C and KickAssembler, PAL and NTSC:
 
-hello's figures: worst 1,510, typical 146 cycles; hello-kick's: worst 453,
-typical 136. Each is the same on PAL and NTSC because both bracket from
-raster line 250, in the lower border, where no badline and no sprite DMA
-falls. The worst frame is frame 180, which also grades the result and
-prints it.
+| Bracketed code | Cycles by arithmetic | Read |
+|---|---|---|
+| `ldx #200` / `dex` / `bne` | 2 + 199 x 5 + 4 = 1,001 | `W01001 T01001` |
+| A 12-cycle table lookup (`lda abs`, `and #3`, `tay`, `ldx abs,y`) replacing `ldx #`, then `inc abs`: 1,017 for 200, 517 for 100, one frame in four at 200 | 1,001 - 2 + 12 + 6 = 1,017; 501 - 2 + 12 + 6 = 517 | `W01017 T00517` over 48 frames |
+| Two brackets a frame, 1,001 and 501, untimed work between | 1,502 | `W01502 T01502` |
+
+The C meter's `meter_init` started at raster lines `$33`, `$37`, `$60`,
+`$91` and `$F8` (badlines among them) read the same `W01017 T00517` each
+time. The review of this harness found that the earlier single calibration
+could land on DMA and read 5 cycles low; that is what the line-0 minimum
+fixes. The same review saw W move between 1,510 and 1,538 cycles, in steps
+of 14, with code layout alone, which it put down to branches crossing pages
+(not re-measured here): compare two builds' W knowing that.
+
+hello's figures: worst 194, typical 172 cycles; hello-kick's: worst 178,
+typical 154; each over the script's 144 play frames and the same on PAL and
+NTSC. Both bracket from raster line 250, below the last badline (`$F7`),
+and the sprite is on lines 117 to 137, so no DMA falls in the bracket. The
+grading at frame 150 runs after `METER_STOP` and is in neither figure.
 
 ## The plan gate
 
-The old starters had a `.kb-briefing-done` marker that `touch` satisfied
-without reading anything. The harness checks the plan itself:
-`hooks/plan-gate.sh` passes when `PLAN.md` exists, has no `FILL:` line
-left, and holds a line starting `# Compatibility:` and one starting
-`# Budget plan:`, the first lines `check-compatibility` and `plan-budget`
-print. As a PreToolUse hook it blocks (exit 2) an Edit, MultiEdit, Write or
-NotebookEdit under `src/` until then; as `make plan-gate` it stops the
-build. `make PLAN_GATE=off` is the deliberate override. Measured: a
-project with no `PLAN.md` was blocked with exit 2, hello was allowed with
-exit 0, and `make` without `PLAN.md` stopped with "the plan is not filled".
+`hooks/plan-gate.py` passes `PLAN.md` when it has no `FILL:` line left,
+holds check-compatibility's output (a `# Compatibility: a + b` line and its
+`**Verdict:**` line) and plan-budget's (`# Budget plan:`, `Techniques:`, a
+`## play (` section with its `Range` line) for the same techniques, and
+lists each of them as a row of its Techniques table. With `C64KB`
+reachable, `make` also re-runs check-compatibility on the pasted names and
+wants the same Verdict line; the result is cached on `PLAN.md`'s hash.
+
+Every PRG depends on the gate, so `make`, `shot`, `check`, `selftest`,
+`disk`, `claims` and `run` all stop while it fails. As a PreToolUse hook it
+blocks (exit 2) an Edit, MultiEdit, Write or NotebookEdit under `src/`,
+after resolving the path with realpath. `make PLAN_GATE=off` is the
+deliberate override. It replaces the old starters' `.kb-briefing-done`
+marker, which `touch` satisfied.
+
+Measured: two hand-typed heading lines fail it; a pasted Verdict changed
+from WARNINGS to COMPATIBLE fails the re-run; a Write to `lib/../src/x.c`
+and one under a `CLAUDE_PROJECT_DIR` with a trailing slash are blocked;
+hello's plan passes. It cannot catch outputs edited by hand into the right
+shape with the right verdict, or a write to `src/` made through a shell
+command, which the hook never sees.
 
 ## make claims
 
@@ -253,67 +323,75 @@ violation groups`.
 
 ## End-to-end transcript
 
-`templates/hello` copied to a directory outside the repository with the
-harness vendored into `./harness`, then each target run in turn. The last
-lines of each:
+A project made from hello outside the repository, then each target in
+turn. The last lines of each:
 
 ```text
-$ make
-oscar64 -tm=c64 -O2 -i=<copy>/build -i=<copy>/harness/meter -o=build/hello.prg src/main.c
-$ make shot check
-PASS PAL+NTSC display the same on both models: cells 0,0 to 23,39 identical on PAL and NTSC
-PASS PAL      frame meter: frames 200, worst 1510, typical 146 cycles (CIA2 timer A; limit 19656)
-PASS NTSC     frame meter: frames 200, worst 1510, typical 146 cycles (CIA2 timer A; limit 17095)
-check: 19 of 19 passed
+$ npm run new-project -- hello <scratch>/mygame
+  PASS PAL      frame meter, the script's 144 play frames: frames 144, worst 194, typical 172 cycles (CIA2 timer A; limit 19656)
+  PASS NTSC     frame meter, the script's 144 play frames: frames 144, worst 194, typical 172 cycles (CIA2 timer A; limit 17095)
+  check: 15 of 15 passed
+new-project: ready. The starter's plan is now PLAN-hello-example.md; PLAN.md is blank.
+$ make shot check                                 # the blank plan
+plan-gate: the plan does not pass, so nothing is built.
+  11 FILL: placeholder(s) left
+$ cp PLAN-hello-example.md PLAN.md; make
+oscar64 -tm=c64 -O2 -i=<project>/build -i=<project>/harness/meter -o=build/hello.prg src/main.c
 $ make selftest
 selftest: PASS, check.py rejected the FORCE_FAULT build
 $ make disk
-0 "HELLO           " 01 2a
+0 "hello           " 01 2a
 10   "hello"            prg
 654 blocks free.
-$ make claims
-claims: not available. <copy>/../../scripts/claims-watch.ts does not exist (it lands in c64-kb with issue #22 step 6).
+$ make claims                                     # C64KB = this branch
+claims: not available. <c64-kb>/scripts/claims-watch.ts does not exist (it lands in c64-kb with issue #22 step 6).
 claims: set C64KB=/path/to/c64-kb to a checkout that has it. Nothing was checked.
 $ make claims C64KB=<a checkout of onto22-watch>
 PASS: 0 stores in 0 violation groups
-$ mv PLAN.md PLAN.bak; make
-plan-gate: the plan is not filled, so nothing is built.
-  PLAN.md does not exist: copy it from the harness's PLAN.md.template
 $ npm run verify:templates -- --selftest          # from this repository
 verify-templates: 2 of 2 starters passed
 ```
 
-The disk image boots: `x64sc -autostart build/hello.d64` for 25,000,000
-cycles on PAL showed `HELLO HARNESS` on row 1 and the black border. The
-shots are stable: hello's PAL picture at 7,600,000 and 8,000,000 cycles,
-and its NTSC picture at 8,000,000 and 12,000,000, were identical pixel for
-pixel, because nothing on screen changes after the meter's hold.
+The FORCE_FAULT build fails four checks on both models, not only its own verdict: the
+border and verdict text, and the sprite's box and solidity, because it ends
+at X 189. The disk image boots: `x64sc -autostart build/hello.d64` for
+25,000,000 cycles on PAL showed `HELLO HARNESS` on row 1. The shots are
+stable: hello's and hello-kick's PAL pictures at 7,000,000 and 8,000,000
+cycles, and their NTSC pictures at 8,000,000 and 12,000,000, were identical
+pixel for pixel, because nothing on screen changes after the grade.
 
 ## Writing a starter
 
-1. Copy `templates/hello` (C with a KickAssembler part) or
-   `templates/hello-kick` (KickAssembler alone) to `templates/<name>`.
+1. Make a project from `hello` (C with a KickAssembler part) or
+   `hello-kick` (KickAssembler alone) under `templates/<name>`, or copy one.
 2. Fill `PLAN.md` from `game-briefing`, `check-compatibility` and
    `plan-budget` before any code.
-3. Give the program an AUTOPILOT script that plays, a verdict at a fixed
-   frame that reads real state back, and a FORCE_FAULT that turns it red.
-4. Keep row 24, columns 20 to 39 free in AUTOPILOT builds, or move the
-   meter and say so in `expect.json`. Call the meter around the whole
-   frame's work, including any IRQ work you want counted.
-5. Write `expect.json`: the verdict, the text, the pixels that prove the
-   feature, a `same` rectangle, the meter with its `frames`.
-6. Pin `SHOT_CYCLES_*` after the hold and after the verdict, where the
-   screen no longer changes; prove it with two pins.
+3. Give the program an AUTOPILOT script that plays from its first frame, a
+   verdict after the script that reads real state back, outside the
+   meter's bracket, and a FORCE_FAULT that turns it red and moves something
+   a check can see.
+4. Keep row 24, columns 20 to 39 free in AUTOPILOT builds. Set the meter's
+   `hold` to the script's play frames. Bracket the whole frame's work,
+   summing IRQ work with `METER_PAUSE`.
+5. Write `expect.json`: the verdict, the text, a `sprite` or `rect` or
+   `pixel` check for each feature, a `same` area, the meter with `frames`.
+6. Pin `SHOT_CYCLES_*` after the verdict, where the screen no longer
+   changes; prove it with two pins.
 7. `make shot check selftest disk`, then `npm run verify:templates --
    --only <name> --selftest`.
 
 ## Not measured here
 
 - The settings.json hook wrapper string was not executed by Claude Code in
-  this session; `plan-gate.sh` itself was run in hook mode with a sample
-  tool call.
-- A starter that uses `SHOT_DISK=1`, `DISK_FILES` or a raster IRQ inside
-  the meter's bracket. hello and hello-kick use none of them.
+  this session; `plan-gate.py` itself was run in hook mode with sample tool
+  calls.
+- A starter that uses `SHOT_DISK=1`, `DISK_FILES` or IRQ work inside the
+  meter's brackets. hello and hello-kick use none of them; the review ran
+  `SHOT_DISK=1` on hello and it passed.
+- Reads of `$D41B` and `$D41C` under `+sound`. An earlier version of this
+  page repeated issue #2's claim that the dummy sound driver breaks them;
+  the review read 16 different values from a noise voice under the pinned
+  command, so the claim is withdrawn, not replaced.
 - Any VICE other than 3.10, or a palette other than `-default`; `check.py`
   matches exact triples and would fail closed.
 - The released Oscar64 (issue #25): the starters were built with the
