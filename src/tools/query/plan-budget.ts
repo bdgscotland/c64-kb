@@ -8,6 +8,7 @@ import { z } from "zod";
 import { getFalkor, getAnalytics } from "../../context.ts";
 import {
   BUDGET_PHASES,
+  followIncludes,
   planBudget,
   type BudgetMember,
   type BudgetOptions,
@@ -62,6 +63,12 @@ const MEMBERS_QUERY = `MATCH (t:Technique) WHERE t.name IN $names
          t.cost_basis AS basis, t.cost_recipe AS measured_on, t.cost_conditions AS conditions,
          t.cost_includes AS includes, closure, collect(DISTINCT r.name) AS recipes`;
 
+// Every Cost includes line in the graph, so an include is followed through
+// a technique that is not in the set (a includes b, b includes c: a holds c).
+const INCLUDES_QUERY = `MATCH (t:Technique) WHERE t.cost_includes IS NOT NULL
+  RETURN t.name AS name, t.cost_includes AS includes`;
+const IncludesRow = z.object({ name: z.string(), includes: StringList });
+
 /** "name" or "name:phase"; a phase outside play, transition, init is refused. */
 export function parseMemberSpec(spec: string): { name: string; phase: BudgetPhase } | { error: string } {
   const [rawName = "", rawPhase, ...rest] = spec.trim().split(":");
@@ -109,14 +116,19 @@ export async function fetchBudgetMembers(
   const f = await getFalkor();
   const names = [...new Set(specs.map((s) => s.name))];
   const rows = parseRows(MemberRow, await f.roQuery(MEMBERS_QUERY, { names }));
-  const byName = new Map(rows.map((r) => [r.name, r]));
+  const direct = new Map(
+    parseRows(IncludesRow, await f.roQuery(INCLUDES_QUERY, {})).map((r) => [r.name, r.includes]),
+  );
+  const byName = new Map(
+    rows.map((r) => [r.name, { ...r, includes: followIncludes(r.name, (n) => direct.get(n) ?? []) }]),
+  );
   return specs.map((s) => memberOf(s.name, s.phase, byName.get(s.name)));
 }
 
 function rangeText(p: PhaseBudget): string {
   const fixed = p.fixed_losses.badlines + p.fixed_losses.sprite_dma;
   const range = p.low === p.high ? `${p.high}` : `${p.low}-${p.high}`;
-  return fixed > 0 ? `${range} + ${fixed} fixed` : range;
+  return `${fixed > 0 ? `${range} + ${fixed} fixed` : range} cycles; floor ${p.floor}`;
 }
 
 function contributorLine(c: PhaseBudget["contributors"][number]): string {
@@ -141,7 +153,7 @@ function excludedLine(e: PhaseBudget["excluded"][number]): string {
 
 function renderPhase(p: PhaseBudget): string {
   let out = `\n## ${p.phase} (${p.region}, ${p.frame} cycles a frame): ${p.verdict}\n\n`;
-  out += `Range ${rangeText(p)} cycles; weakest basis ${p.weakest_basis ?? "(nothing summed)"}; IRQ slots ${p.irq_slots}.\n`;
+  out += `Range ${rangeText(p)}; weakest basis ${p.weakest_basis ?? "(nothing summed)"}; IRQ slots ${p.irq_slots}.\n`;
   if (p.contributors.length > 0) out += `\nSummed:\n${p.contributors.map(contributorLine).join("")}`;
   if (p.excluded.length > 0) out += `\nLeft out:\n${p.excluded.map(excludedLine).join("")}`;
   if (p.to_measure.length > 0) {
@@ -155,10 +167,14 @@ function renderPhase(p: PhaseBudget): string {
 }
 
 function bytesLine(bytes: PlanBudgetOutput["bytes"]): string {
-  if (bytes.contributors.length === 0) return "No member states a byte figure that can be summed.";
+  const inside =
+    bytes.inside.length > 0
+      ? ` Not added, inside another member's code: ${bytes.inside.map((i) => `${i.name} (${i.by})`).join(", ")}.`
+      : "";
+  if (bytes.contributors.length === 0) return `No member states a byte figure that can be summed.${inside}`;
   const floor =
     bytes.without_bytes.length > 0 ? `; a floor, since ${bytes.without_bytes.join(", ")} state no bytes` : "";
-  return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => c.name).join(", ")}${floor}.`;
+  return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => c.name).join(", ")}${floor}.${inside}`;
 }
 
 function renderPlan(b: PlanBudgetOutput): string {
@@ -173,11 +189,41 @@ function renderPlan(b: PlanBudgetOutput): string {
   return out;
 }
 
-/** 'pal', 'NTSC', 'both' to the planner's words; anything else is left to the planner's default. */
+/** The region words the tool accepts, any case. */
+export const BUDGET_REGION = /^\s*(pal|ntsc|both)\s*$/i;
+
+/** 'pal', 'NTSC', 'both' to the planner's words; none is the planner's default; anything else is refused. */
 export function budgetRegion(region: string | undefined): "PAL" | "NTSC" | "both" | undefined {
-  const r = region?.trim().toUpperCase();
+  if (region === undefined) return undefined;
+  const r = region.trim().toUpperCase();
   if (r === "PAL" || r === "NTSC") return r;
-  return r === "BOTH" ? "both" : undefined;
+  if (r === "BOTH") return "both";
+  throw new Error(`region "${region}" is not pal, ntsc or both`);
+}
+
+/** Parse every spec; a malformed one, or a name already listed in the same phase, is refused with the reason. */
+export function parseMemberSpecs(inputs: string[]): {
+  specs: { name: string; phase: BudgetPhase }[];
+  refused: PlanBudgetOutput["refused"];
+} {
+  const refused: PlanBudgetOutput["refused"] = [];
+  const specs: { name: string; phase: BudgetPhase }[] = [];
+  const listed = new Set<string>();
+  for (const t of inputs) {
+    const parsed = parseMemberSpec(t);
+    if ("error" in parsed) {
+      refused.push({ input: t, why: parsed.error });
+      continue;
+    }
+    const key = `${parsed.name}:${parsed.phase}`;
+    if (listed.has(key)) {
+      refused.push({ input: t, why: `${parsed.name} is already listed in ${parsed.phase}; counted once` });
+      continue;
+    }
+    listed.add(key);
+    specs.push(parsed);
+  }
+  return { specs, refused };
 }
 
 export interface PlanBudgetRequest extends BudgetOptions {
@@ -185,13 +231,7 @@ export interface PlanBudgetRequest extends BudgetOptions {
 }
 
 export async function planBudgetTool(req: PlanBudgetRequest): Promise<PlanBudgetResult> {
-  const refused: PlanBudgetOutput["refused"] = [];
-  const specs: { name: string; phase: BudgetPhase }[] = [];
-  for (const t of req.techniques) {
-    const parsed = parseMemberSpec(t);
-    if ("error" in parsed) refused.push({ input: t, why: parsed.error });
-    else specs.push(parsed);
-  }
+  const { specs, refused } = parseMemberSpecs(req.techniques);
   const members = await fetchBudgetMembers(specs);
   const plan = planBudget(members, req);
   const structured: PlanBudgetOutput = {

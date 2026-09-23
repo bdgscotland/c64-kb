@@ -12,20 +12,36 @@
  * - A worst frame is a ceiling. Where a page states a measured typical
  *   frame, the result is a range: low sums typical figures (worst where
  *   there is none), high sums worst figures.
+ * - The low end is not a floor. A typical figure may be a common frame or
+ *   a real run's worst frame (CONVENTIONS-techniques.md allows both), and
+ *   such frames of different members need not fall together. `over` is
+ *   judged on the floor alone: band and per-line charges, which run every
+ *   frame, plus the badline loss no summed figure can already hold.
  * - Work counted in one figure is not counted again: `**Cost includes:**`
- *   drops the included members, and a technique that holds the CPU on every
- *   line of a stated raster band is charged band lines × line length, with
- *   its REQUIRES closure inside that band not added.
+ *   (transitive, and never from a member left out as multi-frame) drops the
+ *   included members, and a technique that holds the CPU on every line of a
+ *   stated raster band is charged band lines × line length, with its
+ *   REQUIRES closure inside that band not added.
  * - Phases (play, transition, init) are budgeted alone.
  * - With the screen on, unless every summed figure says it was measured
- *   with the screen on, the frame's badline stalls and any stated sprite
- *   DMA are charged as fixed losses (a ceiling).
+ *   with the screen on, the badlines outside any band charge and any stated
+ *   sprite DMA are charged as fixed losses. A stall takes its cycles
+ *   wherever the code runs, so the charge is exact when no summed figure
+ *   already holds stalls and too high by what a screen-on figure holds.
  * - Bytes flagged as a whole program (`(whole PRG)` in the measured-on
  *   conditions) are not summed; they count the runtime once per technique.
  */
 
 import { parseRasterBand } from "../graph/extract/raster-band.ts";
-import { BADLINE_CYCLES_LOST, REGION_TIMING, spriteDmaCycles, type VideoRegion } from "./timing.ts";
+import {
+  BADLINE_CYCLES_LOST,
+  BADLINE_ROWS,
+  BADLINES_PER_FRAME,
+  REGION_TIMING,
+  spriteDmaCycles,
+  type VideoRegion,
+} from "./timing.ts";
+import { assumptionsFor, lockedTo, measuredScreenOn, phaseNotes } from "./budget-notes.ts";
 
 export const BUDGET_PHASES = ["play", "transition", "init"] as const;
 export type BudgetPhase = (typeof BUDGET_PHASES)[number];
@@ -40,10 +56,6 @@ const BASIS_STRENGTH: readonly BudgetBasis[] = [
   "estimated",
 ];
 
-// Badlines in a frame with the display on: one every eighth line of the 200
-// display lines, 25, each taking 43 cycles from code that is not writing
-// (40 from code that is). Arithmetic from the constants in timing.ts.
-const BADLINES_PER_FRAME = 25;
 // Display lines a sprite set is assumed to cover when the caller states
 // sprites per line but not the lines: the whole 200-line display, a ceiling.
 const DEFAULT_SPRITE_LINES = 200;
@@ -84,10 +96,12 @@ export interface BudgetOptions {
   sprite_lines?: number | undefined;
 }
 
-interface BudgetContributor {
+export interface BudgetContributor {
   name: string;
   low: number;
   high: number;
+  /** True when the figure is work done every frame (a band or per-line charge): part of the floor. */
+  every_frame: boolean;
   basis: BudgetBasis;
   /** How the figure was charged: the Cost line's cycles_per_frame, per-line × lines, or a raster band. */
   charge: "cycles_per_frame" | "per_line" | "band";
@@ -121,21 +135,36 @@ export interface PhaseBudget {
   unknown: string[];
   not_found: string[];
   to_measure: BudgetToMeasure[];
-  fixed_losses: { badlines: number; sprite_dma: number; charged_for: string[] };
+  fixed_losses: FixedLosses;
   /** Summed members whose low end is a worst frame: no typical figure is measured. */
   worst_only: string[];
   low: number;
   high: number;
+  /** Every-frame charges plus fixed_losses.floor: the only sum `over` is judged on. */
+  floor: number;
   verdict: BudgetVerdict;
   weakest_basis: BudgetBasis | null;
   irq_slots: number;
   notes: string[];
 }
 
+interface FixedLosses {
+  /** Badlines outside every band charge × 43: the charge beside the high end. */
+  badlines: number;
+  sprite_dma: number;
+  charged_for: string[];
+  /** Badlines inside a band contributor's lines: in its charge, not charged again. */
+  badlines_in_bands: number;
+  /** The part of the charge no summed figure can already hold: what `over` counts. */
+  floor: number;
+}
+
 interface BytesBudget {
   sum: number;
   contributors: { name: string; bytes: number; basis: BudgetBasis }[];
   excluded: { name: string; bytes: number; reason: "whole_program" }[];
+  /** Members whose work, and so code, is inside another member's figure that states bytes. */
+  inside: { name: string; by: string }[];
   without_bytes: string[];
 }
 
@@ -149,8 +178,6 @@ export interface PlanBudget {
   assumptions: string[];
 }
 
-const BLANKED = /\bblank/i;
-const SCREEN_ON = /\b(?:screen|display) on\b/i;
 const WHOLE_PROGRAM = /\bwhole\s+(?:prg|program)\b/i;
 
 function weakestOf(bases: BudgetBasis[]): BudgetBasis | null {
@@ -161,14 +188,18 @@ function weakestOf(bases: BudgetBasis[]): BudgetBasis | null {
   return weakest;
 }
 
-/** Raster lines of a band that occur on this machine (NTSC has 263). */
-function bandLines(band: string, region: VideoRegion): number | null {
+/** The line ranges of a band that occur on this machine (NTSC has 263 lines), or null for none. */
+function bandRanges(band: string, region: VideoRegion): [number, number][] | null {
   const parsed = parseRasterBand(band);
   if ("error" in parsed || parsed.kind !== "lines") return null;
   const last = REGION_TIMING[region].lines_per_frame - 1;
-  let n = 0;
-  for (const [a, b] of parsed.ranges) if (a <= last) n += Math.min(b, last) - a + 1;
-  return n;
+  return parsed.ranges.filter(([a]) => a <= last).map(([a, b]): [number, number] => [a, Math.min(b, last)]);
+}
+
+/** Raster lines of a band that occur on this machine. */
+function bandLines(band: string, region: VideoRegion): number | null {
+  const ranges = bandRanges(band, region);
+  return ranges === null ? null : ranges.reduce((n, [a, b]) => n + b - a + 1, 0);
 }
 
 /** A technique that takes a whole raster line on every line it is active: cycles_per_line at or above PAL's 63. */
@@ -177,15 +208,14 @@ function holdsWholeLines(cost: BudgetCost | undefined): boolean {
 }
 
 /**
- * A figure measured wall-clock with the screen on already holds its badline
- * and sprite stalls. Only a measured figure whose conditions say the screen
- * was on counts: one that says nothing is charged, since a ceiling is
- * honest and a guess is not. A band charge is whole lines, stalls and all.
+ * A figure measured wall-clock with the screen on already holds the
+ * badline and sprite stalls that fell inside it. Only a measured figure
+ * whose conditions say the screen was on counts: one that says nothing is
+ * charged. A band charge is whole lines, stalls and all.
  */
 function includesDisplayStalls(c: BudgetContributor): boolean {
   if (c.charge === "band") return true;
-  const cond = c.conditions ?? "";
-  return c.basis === "measured-vice" && SCREEN_ON.test(cond) && !BLANKED.test(cond);
+  return measuredScreenOn(c);
 }
 
 type Charge = { low: number; high: number; charge: BudgetContributor["charge"] } | null;
@@ -238,35 +268,69 @@ function chargesBand(m: BudgetMember, region: VideoRegion): boolean {
   return holdsWholeLines(m.cost) && m.raster_band !== undefined && bandLines(m.raster_band, region) !== null;
 }
 
-/** Members whose work another member's figure already holds: Cost includes, then raster bands. */
-function absorbed(members: BudgetMember[], region: VideoRegion): Map<string, BudgetExcluded> {
-  const names = new Set(members.map((m) => m.name));
-  const out = new Map<string, BudgetExcluded>();
-  for (const m of members)
-    for (const inc of m.cost?.includes ?? [])
-      absorb(out, names, { name: inc, reason: "included_by", by: m.name });
-  for (const m of members.filter((x) => chargesBand(x, region)))
-    for (const p of m.requires_closure ?? [])
-      absorb(out, names, { name: p, reason: "inside_band_of", by: m.name });
+/** Everything `start` includes, followed through `includesOf`; a cycle stops where it closes. */
+export function followIncludes(start: string, includesOf: (name: string) => readonly string[]): string[] {
+  const seen = new Set<string>([start]);
+  const out: string[] = [];
+  const queue = [...includesOf(start)];
+  for (let name = queue.shift(); name !== undefined; name = queue.shift()) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+    queue.push(...includesOf(name));
+  }
   return out;
 }
 
 /**
- * `over` needs a low end that is a floor: a worst-frame figure with no
- * typical beside it may be a frame that play never reaches, so while one is
- * in the low end, a low end past the frame leaves the verdict open.
+ * Members whose work another member's figure already holds: Cost includes,
+ * then raster bands. A member left out as multi-frame holds nothing in this
+ * frame, and a member already absorbed absorbs nothing, so two pages that
+ * include each other keep the first one listed.
+ */
+function absorbed(members: BudgetMember[], region: VideoRegion): Map<string, BudgetExcluded> {
+  const names = new Set(members.map((m) => m.name));
+  const byName = new Map(members.map((m) => [m.name, m]));
+  const frame = REGION_TIMING[region].cycles_per_frame;
+  const multi = new Set(members.filter((m) => (chargeOf(m, region)?.high ?? 0) > frame).map((m) => m.name));
+  const out = new Map<string, BudgetExcluded>();
+  const holds = (m: BudgetMember): boolean => !multi.has(m.name) && !out.has(m.name);
+  for (const m of members) {
+    if (!holds(m)) continue;
+    for (const inc of followIncludes(m.name, (n) => byName.get(n)?.cost?.includes ?? []))
+      absorb(out, names, { name: inc, reason: "included_by", by: m.name });
+  }
+  for (const m of members.filter((x) => chargesBand(x, region))) {
+    if (!holds(m)) continue;
+    for (const p of m.requires_closure ?? [])
+      absorb(out, names, { name: p, reason: "inside_band_of", by: m.name });
+  }
+  return out;
+}
+
+/**
+ * `over` is judged on the floor alone: work that runs every frame plus the
+ * losses no figure can already hold. The low end is not a floor (see the
+ * header), so a low end past the frame with the floor inside it is open.
  */
 function verdictOf(p: {
-  low: number;
+  floor: number;
   high: number;
   fixed: number;
   frame: number;
   open: boolean;
-  worstOnly: boolean;
 }): BudgetVerdict {
-  if (p.low + p.fixed > p.frame) return p.worstOnly ? "undetermined" : "over";
+  if (p.floor > p.frame) return "over";
   if (!p.open && p.high + p.fixed <= p.frame) return "fits";
   return "undetermined";
+}
+
+export interface SpriteLoad {
+  per_line: number;
+  lines: number;
+  dma_per_frame: number;
+  /** False when the caller gave no sprite_lines and the 200-line ceiling stands in. */
+  lines_stated: boolean;
 }
 
 interface PhaseInputs {
@@ -274,61 +338,62 @@ interface PhaseInputs {
   region: VideoRegion;
   members: BudgetMember[];
   screen: "on" | "off";
-  spriteDma: number;
+  sprites: SpriteLoad | null;
+}
+
+const NO_LOSSES: FixedLosses = {
+  badlines: 0,
+  sprite_dma: 0,
+  charged_for: [],
+  badlines_in_bands: 0,
+  floor: 0,
+};
+
+/** Lines a set of whole-line per-line charges holds; their lines may carry badlines and sprite DMA. */
+function wholePerLineLines(contributors: BudgetContributor[], byName: Map<string, BudgetMember>): number {
+  let n = 0;
+  for (const c of contributors) {
+    const cost = byName.get(c.name)?.cost;
+    if (c.charge === "per_line" && holdsWholeLines(cost)) n += cost?.lines_active ?? 0;
+  }
+  return n;
 }
 
 function fixedLossesFor(
   contributors: BudgetContributor[],
-  screen: "on" | "off",
-  spriteDma: number,
-): PhaseBudget["fixed_losses"] {
-  const needing = contributors.filter((c) => !includesDisplayStalls(c)).map((c) => c.name);
-  if (screen === "off" || needing.length === 0) return { badlines: 0, sprite_dma: 0, charged_for: [] };
-  return { badlines: BADLINES_PER_FRAME * BADLINE_CYCLES_LOST, sprite_dma: spriteDma, charged_for: needing };
-}
-
-const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many);
-
-function lossNote(p: PhaseBudget, screen: "on" | "off"): string[] {
-  const { badlines, sprite_dma, charged_for } = p.fixed_losses;
-  if (badlines + sprite_dma > 0) {
-    const dma = sprite_dma > 0 ? `, sprite DMA ${sprite_dma}` : "";
-    return [
-      `Fixed losses ${badlines + sprite_dma} cycles (badlines ${BADLINES_PER_FRAME} × ${BADLINE_CYCLES_LOST} = ${badlines}${dma}; arithmetic) charged because ${charged_for.join(", ")} ${plural(charged_for.length, "is", "are")} not stated as measured with the screen on. It is a ceiling: code that runs in the border meets no badline.`,
-    ];
+  inp: PhaseInputs,
+  byName: Map<string, BudgetMember>,
+): FixedLosses {
+  const bands: [number, number][] = [];
+  let bandLineCount = 0;
+  for (const c of contributors.filter((x) => x.charge === "band")) {
+    const ranges = bandRanges(byName.get(c.name)?.raster_band ?? "", inp.region) ?? [];
+    bands.push(...ranges);
+    bandLineCount += ranges.reduce((n, [a, b]) => n + b - a + 1, 0);
   }
-  if (screen === "on" && p.contributors.length > 0)
-    return [
-      "No fixed losses charged: every figure was measured with the screen on, so its badline and sprite stalls are inside it.",
-    ];
-  return [];
-}
-
-function phaseNotes(p: PhaseBudget, screen: "on" | "off"): string[] {
-  const notes = lossNote(p, screen);
-  const fixed = p.fixed_losses.badlines + p.fixed_losses.sprite_dma;
-  if (p.low + fixed > p.frame && p.worst_only.length > 0)
-    notes.push(
-      `The low end, ${p.low} + ${fixed}, passes the ${p.frame}-cycle frame, but it holds worst frames with no measured typical frame (${p.worst_only.join(", ")}): those worst frames together overrun, and a measured typical frame would settle whether play does.`,
-    );
-  if (p.unknown.length > 0)
-    notes.push(
-      `Unknown is not zero: ${p.unknown.join(", ")} ${plural(p.unknown.length, "has", "have")} no cycles figure, so the verdict cannot be fits.`,
-    );
-  const multi = p.excluded.filter((e) => e.reason === "multi_frame");
-  if (multi.length > 0)
-    notes.push(
-      `Multi-frame: ${multi.map((e) => `${e.name} (${e.cycles})`).join(", ")} ${plural(multi.length, "is", "are")} above one ${p.region} frame of ${p.frame} and not summed; spread the work over frames or budget it as its own phase.`,
-    );
-  if (p.phase !== "play")
-    notes.push(
-      `The ${p.phase} phase is judged against one frame too; a ${p.phase} that takes several frames drops frames, which may be acceptable there.`,
-    );
-  if (p.region === "NTSC")
-    notes.push(
-      "Cycles per frame are the pages' figures, most measured on PAL; the same code takes about the same cycles on NTSC, against a 17,095-cycle frame.",
-    );
-  return notes;
+  const inBands = BADLINE_ROWS.filter((l) => bands.some(([a, b]) => l >= a && l <= b)).length;
+  const needing = contributors.filter((c) => !includesDisplayStalls(c)).map((c) => c.name);
+  if (inp.screen === "off") return NO_LOSSES;
+  if (needing.length === 0) return { ...NO_LOSSES, badlines_in_bands: inBands };
+  const outside = BADLINES_PER_FRAME - inBands;
+  const sprites = inp.sprites;
+  // The floor: nothing when a summed figure measured with the screen on may
+  // already hold the stalls; else the badlines no whole-line charge can
+  // hold, and sprite DMA only on stated lines outside those charges.
+  const wholeLines = wholePerLineLines(contributors, byName);
+  const heldSomewhere = contributors.some(measuredScreenOn);
+  const floorBadlines = heldSomewhere ? 0 : Math.max(0, outside - wholeLines) * BADLINE_CYCLES_LOST;
+  const floorSprites =
+    heldSomewhere || !sprites?.lines_stated
+      ? 0
+      : spriteDmaCycles(sprites.per_line) * Math.max(0, sprites.lines - bandLineCount - wholeLines);
+  return {
+    badlines: outside * BADLINE_CYCLES_LOST,
+    sprite_dma: sprites?.dma_per_frame ?? 0,
+    charged_for: needing,
+    badlines_in_bands: inBands,
+    floor: floorBadlines + floorSprites,
+  };
 }
 
 interface Sorted {
@@ -361,19 +426,17 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
   into.contributors.push({
     name: m.name,
     ...charge,
+    every_frame: charge.charge !== "cycles_per_frame",
     basis: m.cost?.basis ?? "estimated",
     measured_on,
     conditions: m.cost?.conditions ?? null,
   });
 }
 
-function hasTypical(members: BudgetMember[], name: string): boolean {
-  return members.some((m) => m.name === name && m.cost?.cycles_per_frame_typical !== undefined);
-}
-
 function budgetPhase(inp: PhaseInputs): PhaseBudget {
-  const { phase, region, members, screen, spriteDma } = inp;
+  const { phase, region, members, screen } = inp;
   const frame = REGION_TIMING[region].cycles_per_frame;
+  const byName = new Map(members.map((m) => [m.name, m]));
   const skip = absorbed(members, region);
   const sorted: Sorted = {
     contributors: [],
@@ -386,11 +449,15 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
   for (const m of members) if (!skip.has(m.name)) sortMember(m, region, sorted);
   const { contributors, excluded, unknown, not_found, to_measure, irq_slots } = sorted;
   const worst_only = contributors
-    .filter((c) => c.charge === "cycles_per_frame" && c.low === c.high && !hasTypical(members, c.name))
+    .filter(
+      (c) =>
+        c.charge === "cycles_per_frame" && byName.get(c.name)?.cost?.cycles_per_frame_typical === undefined,
+    )
     .map((c) => c.name);
   const low = contributors.reduce((s, c) => s + c.low, 0);
   const high = contributors.reduce((s, c) => s + c.high, 0);
-  const fixed_losses = fixedLossesFor(contributors, screen, spriteDma);
+  const fixed_losses = fixedLossesFor(contributors, inp, byName);
+  const floor = contributors.filter((c) => c.every_frame).reduce((s, c) => s + c.low, 0) + fixed_losses.floor;
   const open = unknown.length > 0 || not_found.length > 0 || excluded.some((e) => e.reason === "multi_frame");
   const result: PhaseBudget = {
     phase,
@@ -405,15 +472,9 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
     fixed_losses,
     low,
     high,
+    floor,
     worst_only,
-    verdict: verdictOf({
-      low,
-      high,
-      fixed: fixed_losses.badlines + fixed_losses.sprite_dma,
-      frame,
-      open,
-      worstOnly: worst_only.length > 0,
-    }),
+    verdict: verdictOf({ floor, high, fixed: fixed_losses.badlines + fixed_losses.sprite_dma, frame, open }),
     weakest_basis: weakestOf(contributors.map((c) => c.basis)),
     irq_slots,
     notes: [],
@@ -422,14 +483,49 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
   return result;
 }
 
-function bytesOf(members: BudgetMember[]): BytesBudget {
-  const out: BytesBudget = { sum: 0, contributors: [], excluded: [], without_bytes: [] };
+/** Members absorbed in every phase they are budgeted in, with the member that holds them. */
+function heldEverywhere(phases: PhaseBudget[]): Map<string, string> {
+  const held = new Map<string, string>();
+  const free = new Set<string>();
+  for (const p of phases) {
+    const inside = new Map(
+      p.excluded.filter((e) => e.reason !== "multi_frame" && e.by).map((e) => [e.name, e.by ?? ""]),
+    );
+    for (const name of p.members) {
+      const by = inside.get(name);
+      if (by === undefined) free.add(name);
+      else if (!held.has(name)) held.set(name, by);
+    }
+  }
+  for (const name of free) held.delete(name);
+  return held;
+}
+
+function hasBytes(c: BudgetCost | undefined): c is BudgetCost {
+  return c?.bytes_code !== undefined || c?.bytes_data !== undefined;
+}
+
+/**
+ * Bytes over the members, once each. A member whose work is inside another
+ * member's figure is inside its code too when that member states bytes
+ * measured on its recipe; it is listed, not summed, and does not make the
+ * sum a floor.
+ */
+function bytesOf(members: BudgetMember[], held: Map<string, string>): BytesBudget {
+  const out: BytesBudget = { sum: 0, contributors: [], excluded: [], inside: [], without_bytes: [] };
+  const byName = new Map(members.map((m) => [m.name, m]));
   const seen = new Set<string>();
   for (const m of members) {
     if (seen.has(m.name) || !m.found) continue;
     seen.add(m.name);
+    const by = held.get(m.name);
+    const holder = by === undefined ? undefined : byName.get(by)?.cost;
+    if (by !== undefined && hasBytes(holder) && !WHOLE_PROGRAM.test(holder.conditions ?? "")) {
+      out.inside.push({ name: m.name, by });
+      continue;
+    }
     const c = m.cost;
-    if (c?.bytes_code === undefined && c?.bytes_data === undefined) {
+    if (!hasBytes(c)) {
       out.without_bytes.push(m.name);
       continue;
     }
@@ -447,10 +543,9 @@ function bytesOf(members: BudgetMember[]): BytesBudget {
 function regionsFor(members: BudgetMember[], asked: BudgetOptions["region"]): VideoRegion[] {
   if (asked === "both") return ["PAL", "NTSC"];
   if (asked) return [asked];
-  const locked = members
-    .map((m) => (m.requires_region ?? "").toUpperCase())
-    .filter((r) => r === "PAL" || r === "NTSC");
-  return [locked.length > 0 && locked.every((r) => r === "NTSC") ? "NTSC" : "PAL"];
+  const pal = lockedTo(members, "PAL");
+  const ntsc = lockedTo(members, "NTSC");
+  return [ntsc.length > 0 && pal.length === 0 ? "NTSC" : "PAL"];
 }
 
 function overall(phases: PhaseBudget[]): BudgetVerdict {
@@ -459,57 +554,42 @@ function overall(phases: PhaseBudget[]): BudgetVerdict {
   return "fits";
 }
 
-function assumptionsFor(
-  opts: BudgetOptions,
-  regions: VideoRegion[],
-  sprites: PlanBudget["sprites"],
-): string[] {
-  const out = [
-    `Region ${regions.join(" and ")}${opts.region ? "" : " (no region asked; NTSC only when every region-locked member is NTSC-locked)"}: ${regions.map((r) => `${r} ${REGION_TIMING[r].cycles_per_frame}`).join(", ")} cycles a frame.`,
-    `Screen ${opts.screen ?? "on"}${(opts.screen ?? "on") === "on" ? `: unless every summed figure says it was measured with the screen on, ${BADLINES_PER_FRAME} badlines × ${BADLINE_CYCLES_LOST} cycles are charged` : ": no badline or sprite DMA losses; figures measured with the screen on overstate the work"}.`,
-    "Each figure is the technique's own Cost line, measured on the recipe it names: another implementation can cost more or less.",
-    "Claims, zero page and memory are not judged here; c64_check_compatibility judges claims and zero page.",
-  ];
-  if (sprites) {
-    out.push(
-      `Sprites: ${sprites.per_line} a line on ${sprites.lines} lines, (3 + 2 × ${sprites.per_line}) × ${sprites.lines} = ${sprites.dma_per_frame} cycles of DMA a frame (3 + 2n measured in VICE x64sc for sprites numbered without gaps).`,
-    );
-  }
-  return out;
+function spriteLoad(opts: BudgetOptions): SpriteLoad | null {
+  const perLine =
+    opts.sprites_per_line !== undefined ? Math.max(0, Math.min(8, Math.trunc(opts.sprites_per_line))) : 0;
+  if (perLine === 0) return null;
+  const stated = opts.sprite_lines !== undefined;
+  const lines = stated ? Math.max(0, Math.trunc(opts.sprite_lines ?? 0)) : DEFAULT_SPRITE_LINES;
+  return { per_line: perLine, lines, dma_per_frame: spriteDmaCycles(perLine) * lines, lines_stated: stated };
 }
 
 /**
  * Budget a set of techniques, each in a phase, on one region or both. The
  * verdict per phase: `fits` when nothing is unknown, missing or multi-frame
- * and high + fixed losses fit the frame; `over` when low + fixed losses do
- * not and the low end is a floor; otherwise `undetermined`. The overall verdict is the worst phase's.
+ * and high + fixed losses fit the frame; `over` when the floor (every-frame
+ * charges plus the loss no figure can hold) does not; otherwise
+ * `undetermined`. The overall verdict is the worst phase's.
  */
 export function planBudget(members: BudgetMember[], opts: BudgetOptions = {}): PlanBudget {
   const screen = opts.screen ?? "on";
   const regions = regionsFor(members, opts.region);
-  const perLine =
-    opts.sprites_per_line !== undefined ? Math.max(0, Math.min(8, Math.trunc(opts.sprites_per_line))) : 0;
-  const lines =
-    opts.sprite_lines !== undefined ? Math.max(0, Math.trunc(opts.sprite_lines)) : DEFAULT_SPRITE_LINES;
-  const sprites =
-    perLine > 0 ? { per_line: perLine, lines, dma_per_frame: spriteDmaCycles(perLine) * lines } : null;
+  const sprites = spriteLoad(opts);
   const phases: PhaseBudget[] = [];
   for (const phase of BUDGET_PHASES) {
     const inPhase = members.filter((m) => m.phase === phase);
     if (inPhase.length === 0) continue;
-    for (const region of regions) {
-      phases.push(
-        budgetPhase({ phase, region, members: inPhase, screen, spriteDma: sprites?.dma_per_frame ?? 0 }),
-      );
-    }
+    for (const region of regions)
+      phases.push(budgetPhase({ phase, region, members: inPhase, screen, sprites }));
   }
   return {
     region: opts.region ?? regions[0] ?? "PAL",
     screen,
-    sprites,
+    sprites: sprites
+      ? { per_line: sprites.per_line, lines: sprites.lines, dma_per_frame: sprites.dma_per_frame }
+      : null,
     phases,
-    bytes: bytesOf(members),
+    bytes: bytesOf(members, heldEverywhere(phases)),
     verdict: overall(phases),
-    assumptions: assumptionsFor(opts, regions, sprites),
+    assumptions: assumptionsFor(opts, members, regions, sprites),
   };
 }

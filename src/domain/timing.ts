@@ -27,6 +27,12 @@ export function videoRegion(name: string): VideoRegion {
 // figure to plan on (20 of 63 left on PAL, 22 of 65 on NTSC).
 export const BADLINE_CYCLES_LOST = 43;
 
+// Badlines in a frame with the display on and the default YSCROLL of 3:
+// lines 51, 59, ..., 243, one every eighth line, 25 in all
+// (docs/hardware/vic-ii-reference.md, "Badlines").
+export const BADLINE_ROWS: readonly number[] = Array.from({ length: 25 }, (_, i) => 51 + 8 * i);
+export const BADLINES_PER_FRAME = BADLINE_ROWS.length;
+
 // Through the KERNAL vector: 7 cycles of interrupt sequence + 29 for the
 // dispatcher at $FF48 before the handler's first instruction. A handler on
 // $FFFE with the KERNAL out pays 7 plus its own register saves.

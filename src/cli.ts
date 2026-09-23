@@ -34,6 +34,11 @@ function numberArg(value: string): number {
   return n;
 }
 
+function regionArg(value: string): string {
+  if (!/^\s*(pal|ntsc|both)\s*$/i.test(value)) throw new InvalidArgumentError("Use pal, ntsc or both.");
+  return value;
+}
+
 const program = new Command();
 
 // Every lookup command prints its markdown, or, under the global --json
@@ -283,7 +288,12 @@ program
   .description(
     'Budget a set of techniques per phase ("name" or "name:play|transition|init"): cycle range, left-out figures, unknowns, verdict',
   )
-  .option("--region <region>", "pal, ntsc or both (default: PAL unless every region-locked member is NTSC)")
+  .addOption(
+    new Option(
+      "--region <region>",
+      "pal, ntsc or both (default: PAL unless every region-locked member is NTSC)",
+    ).argParser(regionArg),
+  )
   .addOption(new Option("--screen <state>", "display on or off").choices(["on", "off"] as const))
   .addOption(new Option("--sprites <n>", "sprites displayed on each sprite line, 0-8").argParser(numberArg))
   .addOption(

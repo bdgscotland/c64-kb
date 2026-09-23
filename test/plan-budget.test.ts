@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { planBudget, type BudgetMember, type PhaseBudget } from "../src/domain/budget.ts";
+import { followIncludes, planBudget, type BudgetMember, type PhaseBudget } from "../src/domain/budget.ts";
 import { extractGraphEntities } from "../src/graph/extract.ts";
-import { parseMemberSpec } from "../src/tools/query/plan-budget.ts";
+import { budgetRegion, parseMemberSpec, parseMemberSpecs } from "../src/tools/query/plan-budget.ts";
 import { PlanBudgetSchema } from "../src/schemas/tool-outputs.ts";
 
 // The honest budget (#22 step 3, schema 27): each rule of planBudget on a
@@ -161,7 +161,13 @@ describe("planBudget rules", () => {
         m("a", { cycles_per_frame: 3188, basis: "measured-vice", conditions: "worst frame, screen blanked" }),
       ]),
     );
-    expect(blanked.fixed_losses).toEqual({ badlines: 1075, sprite_dma: 0, charged_for: ["a"] });
+    expect(blanked.fixed_losses).toEqual({
+      badlines: 1075,
+      sprite_dma: 0,
+      charged_for: ["a"],
+      badlines_in_bands: 0,
+      floor: 1075,
+    });
     const vblank = play(
       planBudget([
         m("a", { cycles_per_frame: 455, basis: "measured-vice", conditions: "in the vertical blank" }),
@@ -175,7 +181,13 @@ describe("planBudget rules", () => {
         m("a", { cycles_per_frame: 415, basis: "measured-vice", conditions: "spawn frame, screen on" }),
       ]),
     );
-    expect(on.fixed_losses).toEqual({ badlines: 0, sprite_dma: 0, charged_for: [] });
+    expect(on.fixed_losses).toEqual({
+      badlines: 0,
+      sprite_dma: 0,
+      charged_for: [],
+      badlines_in_bands: 0,
+      floor: 0,
+    });
     const silent = play(
       planBudget([m("a", { cycles_per_frame: 20, basis: "measured-vice", conditions: "one call" })]),
     );
@@ -194,16 +206,19 @@ describe("planBudget rules", () => {
     expect(planBudget([], { sprites_per_line: 2 }).sprites?.lines).toBe(200);
   });
 
-  it("says over when even the low end and fixed losses pass the frame, fits when the high end fits", () => {
-    const over = play(
+  it("says over only when the floor passes the frame, fits when the high end fits", () => {
+    // Two typical frames past the frame are not over: a typical figure may be
+    // a real run's worst frame, and two members' such frames need not coincide.
+    const typicals = play(
       planBudget([
         m("a", { cycles_per_frame: 12000, cycles_per_frame_typical: 11000, basis: "measured-vice" }),
         m("b", { cycles_per_frame: 9500, cycles_per_frame_typical: 9000, basis: "measured-vice" }),
         m("c"),
       ]),
     );
-    expect(over.verdict).toBe("over");
-    // A low end made of worst frames alone is not a floor: undetermined, with the reason.
+    expect(typicals.floor).toBe(1075);
+    expect(typicals.verdict).toBe("undetermined");
+    expect(typicals.notes.some((n) => n.includes("it is not a floor: the figures of a, b"))).toBe(true);
     const worst = play(
       planBudget([
         m("a", { cycles_per_frame: 12000, cycles_per_frame_typical: 11000, basis: "measured-vice" }),
@@ -212,29 +227,96 @@ describe("planBudget rules", () => {
     );
     expect(worst.worst_only).toEqual(["b"]);
     expect(worst.verdict).toBe("undetermined");
-    expect(worst.notes.some((n) => n.includes("holds worst frames with no measured typical frame (b)"))).toBe(
-      true,
-    );
-    const between = play(
-      planBudget([
-        m("a", { cycles_per_frame: 12000, cycles_per_frame_typical: 5000, basis: "measured-vice" }),
-        m("b", { cycles_per_frame: 9000, basis: "measured-vice" }),
-      ]),
-    );
-    expect(between.verdict).toBe("undetermined");
+    expect(
+      worst.notes.some((n) => n.includes("b has no typical frame, so its low end is a worst frame")),
+    ).toBe(true);
     const fits = play(planBudget([m("a", { cycles_per_frame: 18500, basis: "arithmetic" })]));
     // 18,500 + 1,075 badlines = 19,575 of 19,656.
     expect(fits.verdict).toBe("fits");
     const tight = play(planBudget([m("a", { cycles_per_frame: 18600, basis: "arithmetic" })]));
     expect(tight.verdict).toBe("undetermined");
+    // Every-frame work past the frame is over, a worst-only member beside it
+    // or not (review finding 2): band 13,041 + 110 whole lines 6,930.
     const band = play(
       planBudget([
         m("fli", { cycles_per_line: 63, lines_active: 207, basis: "estimated" }, { raster_band: "45-251" }),
-        m("b", { cycles_per_frame: 7000, cycles_per_frame_typical: 6000, basis: "measured-vice" }),
+        m("fld", { cycles_per_line: 63, lines_active: 110, basis: "arithmetic" }),
+        m("b", { cycles_per_frame: 500, basis: "measured-vice" }),
       ]),
     );
-    // 13,041 + 6,000 + 1,075 badlines for b's figure > 19,656: a floor, so over.
+    expect(band.floor).toBe(13041 + 6930);
     expect(band.verdict).toBe("over");
+    expect(band.notes.some((n) => n.includes("not a floor"))).toBe(false);
+    // The exact badline loss is part of the floor when no figure can hold it:
+    // a per-line charge that is not whole lines holds no stall.
+    const perLine = play(
+      planBudget([
+        m("x", { cycles_per_line: 30, lines_active: 600, basis: "arithmetic" }),
+        m("b", { cycles_per_frame: 1000, basis: "measured-vice" }),
+      ]),
+    );
+    // 18,000 + 25 × 43 = 19,075: fits the frame, so the worst-only b tips it.
+    expect(perLine.floor).toBe(18000 + 1075);
+    expect(perLine.verdict).toBe("undetermined");
+    const perLineOver = play(
+      planBudget([m("x", { cycles_per_line: 30, lines_active: 620, basis: "arithmetic" }), m("b")]),
+    );
+    // 18,600 + 1,075 = 19,675 > 19,656, with b unknown: still over.
+    expect(perLineOver.verdict).toBe("over");
+  });
+
+  it("charges only the badlines outside a band, and counts none in the floor that a screen-on figure may hold", () => {
+    const band = play(
+      planBudget([
+        m("fli", { cycles_per_line: 63, lines_active: 207, basis: "arithmetic" }, { raster_band: "45-251" }),
+        m("b", { cycles_per_frame: 1000, basis: "measured-vice", conditions: "screen blanked" }),
+      ]),
+    );
+    expect(band.fixed_losses).toMatchObject({
+      badlines: 0,
+      badlines_in_bands: 25,
+      floor: 0,
+      charged_for: ["b"],
+    });
+    expect(band.notes[0]).toContain("all 25 badlines fall inside fli's band");
+    const part = play(
+      planBudget([
+        m("top", { cycles_per_line: 63, lines_active: 50, basis: "arithmetic" }, { raster_band: "40-89" }),
+        m("b", { cycles_per_frame: 1000, basis: "measured-vice" }),
+      ]),
+    );
+    // Lines 51, 59, 67, 75, 83 are inside 40-89: 20 badlines left.
+    expect(part.fixed_losses).toMatchObject({ badlines: 20 * 43, badlines_in_bands: 5, floor: 20 * 43 });
+    expect(part.notes[0]).toContain("the charge is exact");
+    const mixed = play(
+      planBudget([
+        m("a", { cycles_per_frame: 400, basis: "measured-vice", conditions: "screen on" }),
+        m("b", { cycles_per_frame: 1000, basis: "arithmetic" }),
+      ]),
+    );
+    expect(mixed.fixed_losses).toMatchObject({ badlines: 1075, floor: 0 });
+    expect(mixed.notes[0]).toContain("a was measured with the screen on");
+    expect(mixed.notes[0]).not.toContain("border");
+    const onlyBand = play(
+      planBudget([
+        m("fli", { cycles_per_line: 63, lines_active: 207, basis: "arithmetic" }, { raster_band: "45-251" }),
+      ]),
+    );
+    expect(onlyBand.notes[0]).toBe(
+      "No fixed losses charged: every summed figure is a band charge, whole raster lines with their stalls included.",
+    );
+    const sprites = play(
+      planBudget([m("b", { cycles_per_frame: 100, basis: "arithmetic" })], { sprites_per_line: 8 }),
+    );
+    // Unstated sprite lines: 200 lines charged as a ceiling, none in the floor.
+    expect(sprites.fixed_losses).toMatchObject({ sprite_dma: 19 * 200, floor: 1075 });
+    const stated = play(
+      planBudget([m("b", { cycles_per_frame: 100, basis: "arithmetic" })], {
+        sprites_per_line: 8,
+        sprite_lines: 21,
+      }),
+    );
+    expect(stated.fixed_losses.floor).toBe(1075 + 19 * 21);
   });
 
   it("budgets phases alone and gives the overall verdict of the worst phase", () => {
@@ -293,8 +375,73 @@ describe("planBudget rules", () => {
       sum: 477,
       contributors: [{ name: "sine_table_generation", bytes: 477, basis: "derived-listing" }],
       excluded: [{ name: "lfsr_random", bytes: 1947, reason: "whole_program" }],
+      inside: [],
       without_bytes: ["plain"],
     });
+  });
+
+  it("lets a member left out as multi-frame hold nothing: what it includes is budgeted as itself", () => {
+    const p = play(
+      planBudget([
+        m("big", { cycles_per_frame: 74041, basis: "measured-vice", includes: ["small"] }),
+        m("small", undefined, { recipes: ["oscar64-small"] }),
+      ]),
+    );
+    expect(p.excluded).toEqual([{ name: "big", reason: "multi_frame", cycles: 74041, measured_on: null }]);
+    expect(p.unknown).toEqual(["small"]);
+    expect(p.to_measure[0]?.recipe).toBe("oscar64-small");
+  });
+
+  it("follows includes through techniques outside the set, and keeps the first of two that include each other", () => {
+    const pages: Record<string, string[]> = { a: ["b"], b: ["c"], c: ["a"] };
+    expect(followIncludes("a", (n) => pages[n] ?? [])).toEqual(["b", "c"]);
+    // a includes b, b (not in the set) includes c: a holds c.
+    const through = play(
+      planBudget([
+        m("a", { cycles_per_frame: 900, basis: "measured-vice", includes: ["b", "c"] }),
+        m("c", { cycles_per_frame: 300, basis: "measured-vice" }),
+      ]),
+    );
+    expect(through.excluded).toEqual([{ name: "c", reason: "included_by", by: "a" }]);
+    const mutual = play(
+      planBudget([
+        m("x", { cycles_per_frame: 900, basis: "measured-vice", includes: ["y"] }),
+        m("y", { cycles_per_frame: 300, basis: "measured-vice", includes: ["x"] }),
+      ]),
+    );
+    expect(mutual.contributors.map((c) => c.name)).toEqual(["x"]);
+    expect(mutual.excluded).toEqual([{ name: "y", reason: "included_by", by: "x" }]);
+  });
+
+  it("does not let a member inside another's figure make the byte sum a floor", () => {
+    const b = planBudget([
+      m(
+        "fli_image",
+        { cycles_per_line: 63, lines_active: 207, bytes_code: 3488, bytes_data: 16001, basis: "arithmetic" },
+        { raster_band: "45-251", requires_closure: ["stable_raster_irq"] },
+      ),
+      m("stable_raster_irq", { cycles_per_frame: 124, basis: "arithmetic" }),
+      m("wave_director", { cycles_per_frame: 3188, basis: "measured-vice", includes: ["object_pool"] }),
+      m("object_pool", { cycles_per_frame: 380, bytes_code: 500, basis: "measured-vice" }),
+    ]);
+    expect(b.bytes.inside).toEqual([{ name: "stable_raster_irq", by: "fli_image" }]);
+    // wave_director states no bytes, so object_pool's are summed and wave_director makes it a floor.
+    expect(b.bytes.sum).toBe(3488 + 16001 + 500);
+    expect(b.bytes.without_bytes).toEqual(["wave_director"]);
+  });
+
+  it("says when PAL-locked and NTSC-locked members are mixed, and writes 'an init'", () => {
+    const b = planBudget([
+      m("a", { cycles_per_frame: 10, basis: "arithmetic" }, { requires_region: "pal" }),
+      m("b", { cycles_per_frame: 10, basis: "arithmetic" }, { requires_region: "ntsc" }),
+      { ...m("c", { cycles_per_frame: 10, basis: "arithmetic" }), phase: "init" },
+    ]);
+    expect(
+      b.assumptions.some((a) => a.startsWith("Mixed regions: a is PAL-locked and b is NTSC-locked")),
+    ).toBe(true);
+    expect(
+      b.phases.find((p) => p.phase === "init")?.notes.some((n) => n.includes("an init that takes")),
+    ).toBe(true);
   });
 });
 
@@ -311,6 +458,26 @@ describe("parseMemberSpec", () => {
     });
     expect(parseMemberSpec("a:b:c")).toHaveProperty("error");
     expect(parseMemberSpec(":play")).toHaveProperty("error");
+  });
+
+  it("counts a name listed twice in one phase once, and says so", () => {
+    expect(parseMemberSpecs(["object_pool", "a:b:c", "object_pool:play", "object_pool:init"])).toEqual({
+      specs: [
+        { name: "object_pool", phase: "play" },
+        { name: "object_pool", phase: "init" },
+      ],
+      refused: [
+        { input: "a:b:c", why: '"a:b:c" is not "name" or "name:phase"' },
+        { input: "object_pool:play", why: "object_pool is already listed in play; counted once" },
+      ],
+    });
+  });
+
+  it("refuses a region that is not pal, ntsc or both", () => {
+    expect(budgetRegion(" Ntsc ")).toBe("NTSC");
+    expect(budgetRegion("BOTH")).toBe("both");
+    expect(budgetRegion(undefined)).toBeUndefined();
+    expect(() => budgetRegion("secam")).toThrow('region "secam" is not pal, ntsc or both');
   });
 });
 
@@ -353,6 +520,11 @@ function closureOf(name: string): string[] {
   return [...seen];
 }
 
+function includesOnPages(name: string): string[] {
+  const t = ENTITIES.find((e) => e.type === "technique" && e.name === name);
+  return t?.type === "technique" ? (t.cost_includes ?? []) : [];
+}
+
 function memberFromDocs(spec: string): BudgetMember {
   const parsed = parseMemberSpec(spec);
   if ("error" in parsed) throw new Error(parsed.error);
@@ -376,7 +548,7 @@ function memberFromDocs(spec: string): BudgetMember {
             basis: t.cost_basis,
             measured_on: t.cost_recipe,
             conditions: t.cost_conditions,
-            includes: t.cost_includes,
+            includes: followIncludes(parsed.name, includesOnPages),
           },
         }
       : {}),
@@ -432,15 +604,15 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.verdict).toBe("undetermined");
   });
 
-  it("cracktro-template: soft_scroll_h is multi-frame and holds the char buffer's work; undetermined", () => {
+  it("cracktro-template: soft_scroll_h is multi-frame, so the char buffer it includes is unknown; undetermined", () => {
     // Measured: all non-split work in about 7,000 cycles of blank, screenshot stable (cracktro-template.md).
+    // soft_scroll_h's 74,041 is left out of this frame, so it holds nothing
+    // here: char_scroll_buffer_h is a member with no figure (review finding 4).
     const pal = play(plan(recipeTechniques("kickassembler-cracktro-template")));
-    expect(pal.excluded.map((e) => [e.name, e.reason])).toEqual([
-      ["char_scroll_buffer_h", "included_by"],
-      ["soft_scroll_h", "multi_frame"],
-    ]);
+    expect(pal.excluded.map((e) => [e.name, e.reason])).toEqual([["soft_scroll_h", "multi_frame"]]);
     expect(pal.high).toBe(990 + 327);
-    expect(pal.unknown).toEqual([]);
+    expect(pal.unknown).toEqual(["char_scroll_buffer_h"]);
+    expect(pal.to_measure.find((t) => t.technique === "char_scroll_buffer_h")?.recipe).not.toBeNull();
     expect(pal.verdict).toBe("undetermined");
   });
 
@@ -497,6 +669,31 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.high).toBe(5888 + 14);
     expect(pal.verdict).toBe("undetermined");
     expect(play(b, "NTSC").verdict).toBe("undetermined");
+  });
+
+  it("fli_image beside screen-blanked figures is not over: its band holds every badline (review finding 1)", () => {
+    // 13,041 + 4,171 + 1,170 + 357 = 18,739 is under 19,656; the old charge of
+    // 1,075 for badlines already inside fli_image's band 45-251 made it 19,814, over.
+    const pal = play(plan(["fli_image", "ghost_target_tile_ai", "wave_director", "sprite_animation_table"]));
+    expect(pal.fixed_losses).toMatchObject({ badlines: 0, badlines_in_bands: 25, floor: 0 });
+    expect([pal.low, pal.high, pal.floor]).toEqual([18739, 24203, 13041]);
+    expect(pal.verdict).toBe("undetermined");
+  });
+
+  it("fli_image, ghost targeting, game-tree search and a decimal print: undetermined, not over (review findings 2 and 3)", () => {
+    // Low 13,041 + 4,171 + 5,325 + 1,361 = 23,898 passes the frame, but 4,171
+    // is a run's worst frame (WST) and 5,325 the worst measured slice: no
+    // floor. The floor is fli_image's band alone, 13,041.
+    const pal = play(plan(["fli_image", "ghost_target_tile_ai", "game_tree_search", "decimal_print"]));
+    expect(pal.low).toBe(23898);
+    expect(pal.floor).toBe(13041);
+    expect(pal.worst_only).toEqual(["decimal_print"]);
+    expect(pal.verdict).toBe("undetermined");
+    expect(
+      pal.notes.some((n) =>
+        n.includes("it is not a floor: the figures of ghost_target_tile_ai, game_tree_search, decimal_print"),
+      ),
+    ).toBe(true);
   });
 
   it("every composition's output parses with the tool's schema", () => {

@@ -457,7 +457,7 @@ export const BriefingSchema = z.object({
     }),
   ),
   // The plan added up (schema 22, tools 1.25.0; the rules of c64_plan_budget
-  // since schema 27, tools 1.32.0, all members in one play frame).
+  // since schema 27, tools 2.0.0, all members in one play frame).
   // cycles_per_frame_sum is the high end: worst-frame figures summed, with
   // multi-frame figures and work another figure includes left out (listed
   // in excluded). cycles_low sums measured typical frames where a page

@@ -114,13 +114,14 @@ describe("computeBudget", () => {
       {
         name: "a",
         requires_region: "ntsc",
-        cost: { cycles_per_frame: 16500, cycles_per_frame_typical: 16400, basis: "measured-vice" },
+        cost: { cycles_per_line: 63, lines_active: 260, basis: "arithmetic" },
       },
-      { name: "b", cost: { cycles_per_frame: 1, cycles_per_frame_typical: 1, basis: "arithmetic" } },
+      { name: "b", cost: { cycles_per_line: 10, lines_active: 30, basis: "arithmetic" } },
     ]);
     expect(b.region).toBe("NTSC");
     expect(b.frame_cycles).toBe(FRAME_CYCLES.NTSC);
-    // Typical 16,401 + 1,075 badlines is past 17,095.
+    // Every-frame work, 260 whole NTSC lines (16,900) + 300, is past 17,095:
+    // over on the floor. (Typical frames alone never give over: they are no floor.)
     expect(b.cycles_verdict).toBe("over");
     const pal = computeBudget([
       { name: "a", requires_region: "pal", cost: { cycles_per_frame: 17100, basis: "arithmetic" } },

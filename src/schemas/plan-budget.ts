@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { CostBasisSchema } from "./cost-basis.ts";
 
-// c64_plan_budget (schema 27, tools 1.32.0): an ad-hoc set of techniques,
+// c64_plan_budget (schema 27, tools 2.0.0): an ad-hoc set of techniques,
 // each in a phase, budgeted per phase and region by planBudget
 // (src/domain/budget.ts). A missing figure is never zero: it is listed in
 // unknown and to_measure, and the verdict is "undetermined".
@@ -21,6 +21,7 @@ const PlanPhaseSchema = z.object({
       name: z.string(),
       low: z.number().int(),
       high: z.number().int(),
+      every_frame: z.boolean(),
       basis: CostBasisSchema,
       charge: z.enum(["cycles_per_frame", "per_line", "band"]),
       measured_on: z.string().nullable(),
@@ -43,10 +44,13 @@ const PlanPhaseSchema = z.object({
     badlines: z.number().int(),
     sprite_dma: z.number().int(),
     charged_for: z.array(z.string()),
+    badlines_in_bands: z.number().int(),
+    floor: z.number().int(),
   }),
   worst_only: z.array(z.string()),
   low: z.number().int(),
   high: z.number().int(),
+  floor: z.number().int(),
   verdict: BudgetVerdictSchema,
   weakest_basis: CostBasisSchema.nullable(),
   irq_slots: z.number().int(),
@@ -67,6 +71,7 @@ export const PlanBudgetSchema = z.object({
     excluded: z.array(
       z.object({ name: z.string(), bytes: z.number().int(), reason: z.enum(["whole_program"]) }),
     ),
+    inside: z.array(z.object({ name: z.string(), by: z.string() })),
     without_bytes: z.array(z.string()),
   }),
   verdict: BudgetVerdictSchema,

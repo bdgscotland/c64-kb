@@ -2,7 +2,7 @@
  * The plan added up (schema 22, tools 1.25.0): the proposed set's cycles
  * and bytes against a frame and a RAM budget, and the text that shows it.
  *
- * Since schema 27 (tools 1.32.0) the arithmetic is planBudget
+ * Since schema 27 (tools 2.0.0) the arithmetic is planBudget
  * (src/domain/budget.ts), the same rules c64_plan_budget applies, with every
  * proposed technique in one play frame. Before, this summed every
  * cycles_per_frame: a 74,041-cycle full-screen shift counted as a per-frame
@@ -106,10 +106,11 @@ export function computeBudget(techs: BudgetInput[], regionHint?: Region): Budget
     unknown: [],
     not_found: [],
     to_measure: [],
-    fixed_losses: { badlines: 0, sprite_dma: 0, charged_for: [] },
+    fixed_losses: { badlines: 0, sprite_dma: 0, charged_for: [], badlines_in_bands: 0, floor: 0 },
     worst_only: [],
     low: 0,
     high: 0,
+    floor: 0,
     verdict: "undetermined",
     weakest_basis: null,
     irq_slots: 0,
