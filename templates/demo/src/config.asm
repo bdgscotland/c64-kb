@@ -11,8 +11,9 @@
 // ---- timeline -------------------------------------------------------------
 .const TITLE_FRAMES = 60               // the title card's play frames
 .const WIPE_COLS    = 2                // columns the wipe clears each frame
-.const FREEZE_UPDATES = 159            // AUTOPILOT: the main part's updates before
-                                       // it freezes; 159 = 8 x 19 + 7 leaves XSCROLL 0
+.const FREEZE_UPDATES = 156            // AUTOPILOT: the main part's updates before
+                                       // it freezes; 156 = 8 x 19 + 4 leaves XSCROLL 3,
+                                       // so a missing $D016 write shows in the picture
 .const HOLD         = 232              // frames the meter records (all before the freeze)
 
 // ---- raster layout: the same line numbers on PAL and NTSC ------------------
@@ -37,6 +38,10 @@
 .const CHAIN_SY     = 3                // and Y
 .const CHAIN_COL_A  = 13               // even sprites: light green
 .const CHAIN_COL_B  = 3                // odd sprites: cyan
+// Each bar chunk is a fixed 63 or 65 cycles: sprite DMA on any line from the
+// stable slot to the last bar delays that chunk and every later one until a
+// badline resyncs them, and tears the bars. Keep the chain clear of 148-211.
+.errorif (CHAIN_Y0 + CHAIN_AY + 21 >= BARS_SLOT_LINE && CHAIN_Y0 - CHAIN_AY + 1 <= BARS_TOP + BARS_LINES), "the sprite chain reaches the stable slot or the bar lines"
 
 // ---- bars -------------------------------------------------------------------
 .const BARS_CENTRE  = 22               // top of a bar at rest: (56 - 12) / 2
@@ -61,9 +66,10 @@
 // ---- the running order (parts.asm holds the table) --------------------------
 .const PART_COUNT   = 2
 .const LOOP_PART    = 1                // after the last part: play this one again
+.const MAIN_PART    = 1                // the part the AUTOPILOT build freezes and grades
 
 #if FORCE_FAULT
-.const CHAIN_FAULT  = 4                // the chain starts four sine steps ahead
+.const CHAIN_FAULT  = 16               // the chain starts sixteen sine steps ahead
 #else
 .const CHAIN_FAULT  = 0
 #endif

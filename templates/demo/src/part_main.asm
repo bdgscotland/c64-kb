@@ -28,6 +28,14 @@ main_init:
         sta $d027,x
         dex
         bpl !-
+        lda #$20                       // a blank screen first: the part before may
+        ldx #0                         // have ended on a hard cut, not a wipe
+!:      sta SCREEN,x                   // (colour RAM is left: the meter tints its cells)
+        sta SCREEN+$100,x
+        sta SCREEN+$200,x
+        sta SCREEN+$2e8,x
+        inx
+        bne !-
         ldx #5 * 40 - 1                // the logo and the subtitle, rows 0-5
 !:      lda logo_cells,x
         sta SCREEN,x
@@ -222,7 +230,9 @@ scroll_slot:
 // with YSCROLL 3) takes the bus from the CPU for 43 cycles, so its chunk
 // has only NOPs after the stores: all read cycles, which the VIC holds, and
 // the stall is the rest of the line (pitfall badline_cycle_loss). No sprite
-// may sit on these lines: sprite DMA falls in the same blank.
+// may be on lines 148-211: each chunk is a fixed length, so sprite DMA on
+// one line delays that chunk and every later one until a badline resyncs
+// them (config.asm refuses a sprite chain that reaches these lines).
 //   cycles  line length, 63 (6569) or 65 (6567R8)
 //   lead    cycles from the kernel's first instruction to the first chunk
 .macro BarKernel(cycles, lead) {
@@ -265,6 +275,5 @@ ph_b:          .byte 0
 msb:           .byte 0
 xscroll:       .byte 7
 updates:       .word 0
-frozen:        .byte 0
 border_colour: .byte 0
 bar_colours:   .fill BARS_LINES, 0

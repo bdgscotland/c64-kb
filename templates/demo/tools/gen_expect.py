@@ -6,7 +6,8 @@ usage: python3 tools/gen_expect.py > expect.json      (or: make expect)
 The numbers (lines, amplitudes, speeds, the freeze) are read from the plain
 `.const NAME = number` lines of src/config.asm; the picture is computed here
 again, in Python, not taken from the assembler: where the eight sprites
-sit, which colour every bar line has, what row 22 of the scroller reads.
+sit, which colour every bar line has, where row 22's ink falls at the
+frozen XSCROLL (from the character ROM).
 KickAssembler's round() is Java's Math.round, floor(x + 0.5), and so is
 rnd() below.
 """
@@ -27,6 +28,21 @@ with open(os.path.join(HERE, "src", "tables.asm")) as f:
     TABLES = f.read()
 MESSAGE = "".join(re.findall(r'\.text "([^"]*)"', TABLES[TABLES.index("message:"):]))
 SUBTITLE = re.search(r'subtitle:\s*\.text "([^"]*)"', TABLES).group(1)
+# scroll_colours: ".byte a, b, c / .fill n, v / .byte ..." read in order.
+SCROLL_COLOURS = []
+for kind, args in re.findall(r"\.(byte|fill) ([\d, ]+)", TABLES[TABLES.index("scroll_colours:"):TABLES.index(".encoding")]):
+    vals = [int(v) for v in args.split(",")]
+    SCROLL_COLOURS += vals if kind == "byte" else [vals[1]] * vals[0]
+
+# The power-on character set, for where the scroller's ink falls (the same
+# ROM check.py decodes text with).
+CHARGEN_PATHS = [
+    os.environ.get("C64_CHARGEN", ""),
+    "/opt/homebrew/opt/vice/share/vice/C64/chargen-901225-01.bin",
+    "/usr/local/share/vice/C64/chargen-901225-01.bin",
+    "/usr/share/vice/C64/chargen-901225-01.bin",
+    "/usr/lib/vice/C64/chargen-901225-01.bin",
+]
 
 BORDER_PASS = 5
 BLACK = 0
@@ -57,6 +73,46 @@ def bar_lines(k):
         top = C["BARS_CENTRE"] + sin256(C["BARS_AMP"], pb + b * C["BAR_STEP"])
         lines[top:top + C["BAR_H"]] = ramp
     return lines
+
+
+def screen_code(ch):
+    """KickAssembler's screencode_upper for the characters the message uses."""
+    return ord(ch) - 64 if "A" <= ch <= "Z" else ord(ch)
+
+
+def scroller_checks(k, rom):
+    """Row 22 at the freeze: 38 columns, XSCROLL 7 - (k mod 8), after k // 8 shifts.
+    For each visible cell, the leftmost ink pixel of its first inked glyph row
+    and the pixel just left of it. A missing or wrong $D016 write moves them."""
+    shifts, xs = k // 8, 7 - k % 8
+    row = MESSAGE[shifts:shifts + 40]
+    line0 = 51 + 8 * C["SCROLL_ROW"]
+
+    def colour_at(vic_x, r):
+        cell, bit = divmod(vic_x - 24 - xs, 8)
+        if not 0 <= cell < 40:
+            return BLACK
+        glyph = rom[screen_code(row[cell]) * 8 + r]
+        return SCROLL_COLOURS[cell] if glyph & (0x80 >> bit) else BLACK
+
+    out = []
+    for c in range(1, 38):
+        code = screen_code(row[c])
+        glyph = rom[code * 8: code * 8 + 8]
+        r = next((r for r in range(8) if glyph[r]), None)
+        if r is None:
+            continue
+        bit = next(b for b in range(8) if glyph[r] & (0x80 >> b))
+        x = 24 + 8 * c + xs + bit
+        for vx, what in ((x, "ink"), (x - 1, "left of it")):
+            out.append({"name": f"scroller cell {c} '{row[c]}', XSCROLL {xs}: {what} at X {vx}, line {line0 + r}",
+                        "type": "pixel", "vic_x": vx, "line": line0 + r, "colour": colour_at(vx, r)})
+    # 38 columns: the border covers X 24-30 and 335-343 on the scroller's lines only.
+    out.append({"name": "scroller in 38 columns: left border X 24-30", "type": "rect", "colour": BORDER_PASS,
+                "vic_x": 24, "line": line0, "width": 7, "height": 8})
+    out.append({"name": "scroller in 38 columns: right border X 335-343", "type": "rect", "colour": BORDER_PASS,
+                "vic_x": 335, "line": line0, "width": 9, "height": 8})
+    return out
 
 
 def main():
@@ -99,10 +155,8 @@ def main():
         checks.append({"name": f"line {line}, {what} the bars: background", "type": "rect", "colour": BLACK,
                        "vic_x": 24, "line": line, "width": 320, "height": 1})
 
-    shifts = k // 8
-    shown = MESSAGE[shifts + 1: shifts + 38]   # column 38 loses its last pixel to the 38-column border
-    checks.append({"name": f"scroller row {C['SCROLL_ROW']} after {shifts} shifts, XSCROLL 0 (columns 1-37)",
-                   "type": "text", "row": C["SCROLL_ROW"], "col": 1, "text": shown})
+    rom = next(open(p, "rb").read() for p in CHARGEN_PATHS if p and os.path.exists(p))
+    checks += scroller_checks(k, rom)
     checks.append({"name": "rows 0 to 23 the same on PAL and NTSC", "type": "same", "cells": [0, 0, 23, 39]})
     checks.append({"name": f"frame meter, {C['HOLD']} frames: title, wipe and main part", "type": "meter",
                    "row": 24, "col": 20, "frames": C["HOLD"]})

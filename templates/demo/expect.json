@@ -61,309 +61,291 @@
       "colour": 0
     },
     {
-      "name": "sprite 0 at X 64, Y 103 (lines 104-124), from the sine formula",
+      "name": "sprite 0 at X 64, Y 101 (lines 102-122), from the sine formula",
       "type": "sprite",
       "colour": 13,
       "vic_x": 64,
-      "line": 104,
+      "line": 102,
       "width": 24,
       "height": 21,
       "search": {
         "vic_x": 48,
-        "line": 96,
+        "line": 94,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "sprite 1 at X 99, Y 109 (lines 110-130), from the sine formula",
+      "name": "sprite 1 at X 100, Y 106 (lines 107-127), from the sine formula",
       "type": "sprite",
       "colour": 3,
-      "vic_x": 99,
-      "line": 110,
+      "vic_x": 100,
+      "line": 107,
       "width": 24,
       "height": 21,
       "search": {
-        "vic_x": 83,
-        "line": 102,
+        "vic_x": 84,
+        "line": 99,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "sprite 2 at X 132, Y 116 (lines 117-137), from the sine formula",
+      "name": "sprite 2 at X 133, Y 113 (lines 114-134), from the sine formula",
       "type": "sprite",
       "colour": 13,
-      "vic_x": 132,
-      "line": 117,
+      "vic_x": 133,
+      "line": 114,
       "width": 24,
       "height": 21,
       "search": {
-        "vic_x": 116,
-        "line": 109,
+        "vic_x": 117,
+        "line": 106,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "sprite 3 at X 163, Y 121 (lines 122-142), from the sine formula",
+      "name": "sprite 3 at X 165, Y 120 (lines 121-141), from the sine formula",
       "type": "sprite",
       "colour": 3,
-      "vic_x": 163,
-      "line": 122,
+      "vic_x": 165,
+      "line": 121,
       "width": 24,
       "height": 21,
       "search": {
-        "vic_x": 147,
-        "line": 114,
+        "vic_x": 149,
+        "line": 113,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "sprite 4 at X 193, Y 124 (lines 125-145), from the sine formula",
+      "name": "sprite 4 at X 195, Y 123 (lines 124-144), from the sine formula",
       "type": "sprite",
       "colour": 13,
-      "vic_x": 193,
-      "line": 125,
+      "vic_x": 195,
+      "line": 124,
       "width": 24,
       "height": 21,
       "search": {
-        "vic_x": 177,
-        "line": 117,
+        "vic_x": 179,
+        "line": 116,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "sprite 5 at X 223, Y 122 (lines 123-143), from the sine formula",
+      "name": "sprite 5 at X 225, Y 123 (lines 124-144), from the sine formula",
       "type": "sprite",
       "colour": 3,
-      "vic_x": 223,
-      "line": 123,
+      "vic_x": 225,
+      "line": 124,
       "width": 24,
       "height": 21,
       "search": {
-        "vic_x": 207,
-        "line": 115,
+        "vic_x": 209,
+        "line": 116,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "sprite 6 at X 253, Y 117 (lines 118-138), from the sine formula",
+      "name": "sprite 6 at X 255, Y 120 (lines 121-141), from the sine formula",
       "type": "sprite",
       "colour": 13,
-      "vic_x": 253,
-      "line": 118,
+      "vic_x": 255,
+      "line": 121,
       "width": 24,
       "height": 21,
       "search": {
-        "vic_x": 237,
-        "line": 110,
+        "vic_x": 239,
+        "line": 113,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "sprite 7 at X 286, Y 111 (lines 112-132), from the sine formula",
+      "name": "sprite 7 at X 287, Y 113 (lines 114-134), from the sine formula",
       "type": "sprite",
       "colour": 3,
-      "vic_x": 286,
-      "line": 112,
+      "vic_x": 287,
+      "line": 114,
       "width": 24,
       "height": 21,
       "search": {
-        "vic_x": 270,
-        "line": 104,
+        "vic_x": 271,
+        "line": 106,
         "width": 56,
         "height": 37
       }
     },
     {
-      "name": "bar lines 155-155: colour 0 across the whole line",
+      "name": "bar lines 155-156: colour 0 across the whole line",
       "type": "rect",
       "colour": 0,
       "vic_x": -8,
       "line": 155,
       "width": 384,
-      "height": 1
+      "height": 2
     },
     {
-      "name": "bar lines 156-156: colour 11 across the whole line",
+      "name": "bar lines 157-157: colour 11 across the whole line",
       "type": "rect",
       "colour": 11,
-      "vic_x": -8,
-      "line": 156,
-      "width": 384,
-      "height": 1
-    },
-    {
-      "name": "bar lines 157-158: colour 12 across the whole line",
-      "type": "rect",
-      "colour": 12,
       "vic_x": -8,
       "line": 157,
       "width": 384,
-      "height": 2
+      "height": 1
     },
     {
-      "name": "bar lines 159-160: colour 15 across the whole line",
-      "type": "rect",
-      "colour": 15,
-      "vic_x": -8,
-      "line": 159,
-      "width": 384,
-      "height": 2
-    },
-    {
-      "name": "bar lines 161-162: colour 1 across the whole line",
-      "type": "rect",
-      "colour": 1,
-      "vic_x": -8,
-      "line": 161,
-      "width": 384,
-      "height": 2
-    },
-    {
-      "name": "bar lines 163-164: colour 15 across the whole line",
-      "type": "rect",
-      "colour": 15,
-      "vic_x": -8,
-      "line": 163,
-      "width": 384,
-      "height": 2
-    },
-    {
-      "name": "bar lines 165-166: colour 12 across the whole line",
+      "name": "bar lines 158-159: colour 12 across the whole line",
       "type": "rect",
       "colour": 12,
       "vic_x": -8,
-      "line": 165,
+      "line": 158,
       "width": 384,
       "height": 2
     },
     {
-      "name": "bar lines 167-167: colour 11 across the whole line",
+      "name": "bar lines 160-161: colour 15 across the whole line",
       "type": "rect",
-      "colour": 11,
+      "colour": 15,
       "vic_x": -8,
-      "line": 167,
-      "width": 384,
-      "height": 1
-    },
-    {
-      "name": "bar lines 168-169: colour 0 across the whole line",
-      "type": "rect",
-      "colour": 0,
-      "vic_x": -8,
-      "line": 168,
+      "line": 160,
       "width": 384,
       "height": 2
     },
     {
-      "name": "bar lines 170-170: colour 11 across the whole line",
-      "type": "rect",
-      "colour": 11,
-      "vic_x": -8,
-      "line": 170,
-      "width": 384,
-      "height": 1
-    },
-    {
-      "name": "bar lines 171-172: colour 5 across the whole line",
-      "type": "rect",
-      "colour": 5,
-      "vic_x": -8,
-      "line": 171,
-      "width": 384,
-      "height": 2
-    },
-    {
-      "name": "bar lines 173-174: colour 13 across the whole line",
-      "type": "rect",
-      "colour": 13,
-      "vic_x": -8,
-      "line": 173,
-      "width": 384,
-      "height": 2
-    },
-    {
-      "name": "bar lines 175-176: colour 1 across the whole line",
+      "name": "bar lines 162-163: colour 1 across the whole line",
       "type": "rect",
       "colour": 1,
       "vic_x": -8,
-      "line": 175,
+      "line": 162,
       "width": 384,
       "height": 2
     },
     {
-      "name": "bar lines 177-178: colour 13 across the whole line",
+      "name": "bar lines 164-165: colour 15 across the whole line",
       "type": "rect",
-      "colour": 13,
+      "colour": 15,
       "vic_x": -8,
-      "line": 177,
+      "line": 164,
       "width": 384,
       "height": 2
     },
     {
-      "name": "bar lines 179-180: colour 5 across the whole line",
+      "name": "bar lines 166-167: colour 12 across the whole line",
       "type": "rect",
-      "colour": 5,
+      "colour": 12,
       "vic_x": -8,
-      "line": 179,
+      "line": 166,
       "width": 384,
       "height": 2
     },
     {
-      "name": "bar lines 181-181: colour 11 across the whole line",
+      "name": "bar lines 168-168: colour 11 across the whole line",
       "type": "rect",
       "colour": 11,
       "vic_x": -8,
-      "line": 181,
+      "line": 168,
       "width": 384,
       "height": 1
     },
     {
-      "name": "bar lines 182-189: colour 0 across the whole line",
+      "name": "bar lines 169-172: colour 0 across the whole line",
       "type": "rect",
       "colour": 0,
       "vic_x": -8,
+      "line": 169,
+      "width": 384,
+      "height": 4
+    },
+    {
+      "name": "bar lines 173-173: colour 11 across the whole line",
+      "type": "rect",
+      "colour": 11,
+      "vic_x": -8,
+      "line": 173,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 174-175: colour 5 across the whole line",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": -8,
+      "line": 174,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 176-177: colour 13 across the whole line",
+      "type": "rect",
+      "colour": 13,
+      "vic_x": -8,
+      "line": 176,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 178-179: colour 1 across the whole line",
+      "type": "rect",
+      "colour": 1,
+      "vic_x": -8,
+      "line": 178,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 180-181: colour 13 across the whole line",
+      "type": "rect",
+      "colour": 13,
+      "vic_x": -8,
+      "line": 180,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 182-183: colour 5 across the whole line",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": -8,
       "line": 182,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 184-184: colour 11 across the whole line",
+      "type": "rect",
+      "colour": 11,
+      "vic_x": -8,
+      "line": 184,
+      "width": 384,
+      "height": 1
+    },
+    {
+      "name": "bar lines 185-192: colour 0 across the whole line",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": -8,
+      "line": 185,
       "width": 384,
       "height": 8
     },
     {
-      "name": "bar lines 190-191: colour 6 across the whole line",
+      "name": "bar lines 193-194: colour 6 across the whole line",
       "type": "rect",
       "colour": 6,
       "vic_x": -8,
-      "line": 190,
+      "line": 193,
       "width": 384,
       "height": 2
     },
     {
-      "name": "bar lines 192-193: colour 14 across the whole line",
+      "name": "bar lines 195-196: colour 14 across the whole line",
       "type": "rect",
       "colour": 14,
-      "vic_x": -8,
-      "line": 192,
-      "width": 384,
-      "height": 2
-    },
-    {
-      "name": "bar lines 194-194: colour 3 across the whole line",
-      "type": "rect",
-      "colour": 3,
-      "vic_x": -8,
-      "line": 194,
-      "width": 384,
-      "height": 1
-    },
-    {
-      "name": "bar lines 195-196: colour 1 across the whole line",
-      "type": "rect",
-      "colour": 1,
       "vic_x": -8,
       "line": 195,
       "width": 384,
@@ -379,49 +361,49 @@
       "height": 1
     },
     {
-      "name": "bar lines 198-199: colour 14 across the whole line",
+      "name": "bar lines 198-199: colour 1 across the whole line",
       "type": "rect",
-      "colour": 14,
+      "colour": 1,
       "vic_x": -8,
       "line": 198,
       "width": 384,
       "height": 2
     },
     {
-      "name": "bar lines 200-201: colour 6 across the whole line",
+      "name": "bar lines 200-200: colour 3 across the whole line",
       "type": "rect",
-      "colour": 6,
+      "colour": 3,
       "vic_x": -8,
       "line": 200,
       "width": 384,
-      "height": 2
-    },
-    {
-      "name": "bar lines 202-202: colour 10 across the whole line",
-      "type": "rect",
-      "colour": 10,
-      "vic_x": -8,
-      "line": 202,
-      "width": 384,
       "height": 1
     },
     {
-      "name": "bar lines 203-203: colour 15 across the whole line",
+      "name": "bar lines 201-202: colour 14 across the whole line",
       "type": "rect",
-      "colour": 15,
+      "colour": 14,
+      "vic_x": -8,
+      "line": 201,
+      "width": 384,
+      "height": 2
+    },
+    {
+      "name": "bar lines 203-204: colour 6 across the whole line",
+      "type": "rect",
+      "colour": 6,
       "vic_x": -8,
       "line": 203,
       "width": 384,
-      "height": 1
+      "height": 2
     },
     {
-      "name": "bar lines 204-205: colour 1 across the whole line",
+      "name": "bar lines 205-205: colour 1 across the whole line",
       "type": "rect",
       "colour": 1,
       "vic_x": -8,
-      "line": 204,
+      "line": 205,
       "width": 384,
-      "height": 2
+      "height": 1
     },
     {
       "name": "bar lines 206-206: colour 15 across the whole line",
@@ -505,11 +487,442 @@
       "height": 1
     },
     {
-      "name": "scroller row 22 after 19 shifts, XSCROLL 0 (columns 1-37)",
-      "type": "text",
-      "row": 22,
-      "col": 1,
-      "text": "B DEMO STARTER. A PART TABLE, A TABLE"
+      "name": "scroller cell 1 'B', XSCROLL 3: ink at X 36, line 227",
+      "type": "pixel",
+      "vic_x": 36,
+      "line": 227,
+      "colour": 12
+    },
+    {
+      "name": "scroller cell 1 'B', XSCROLL 3: left of it at X 35, line 227",
+      "type": "pixel",
+      "vic_x": 35,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 3 'D', XSCROLL 3: ink at X 52, line 227",
+      "type": "pixel",
+      "vic_x": 52,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 3 'D', XSCROLL 3: left of it at X 51, line 227",
+      "type": "pixel",
+      "vic_x": 51,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 4 'E', XSCROLL 3: ink at X 60, line 227",
+      "type": "pixel",
+      "vic_x": 60,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 4 'E', XSCROLL 3: left of it at X 59, line 227",
+      "type": "pixel",
+      "vic_x": 59,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 5 'M', XSCROLL 3: ink at X 68, line 227",
+      "type": "pixel",
+      "vic_x": 68,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 5 'M', XSCROLL 3: left of it at X 67, line 227",
+      "type": "pixel",
+      "vic_x": 67,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 6 'O', XSCROLL 3: ink at X 77, line 227",
+      "type": "pixel",
+      "vic_x": 77,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 6 'O', XSCROLL 3: left of it at X 76, line 227",
+      "type": "pixel",
+      "vic_x": 76,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 8 'S', XSCROLL 3: ink at X 93, line 227",
+      "type": "pixel",
+      "vic_x": 93,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 8 'S', XSCROLL 3: left of it at X 92, line 227",
+      "type": "pixel",
+      "vic_x": 92,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 9 'T', XSCROLL 3: ink at X 100, line 227",
+      "type": "pixel",
+      "vic_x": 100,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 9 'T', XSCROLL 3: left of it at X 99, line 227",
+      "type": "pixel",
+      "vic_x": 99,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 10 'A', XSCROLL 3: ink at X 110, line 227",
+      "type": "pixel",
+      "vic_x": 110,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 10 'A', XSCROLL 3: left of it at X 109, line 227",
+      "type": "pixel",
+      "vic_x": 109,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 11 'R', XSCROLL 3: ink at X 116, line 227",
+      "type": "pixel",
+      "vic_x": 116,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 11 'R', XSCROLL 3: left of it at X 115, line 227",
+      "type": "pixel",
+      "vic_x": 115,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 12 'T', XSCROLL 3: ink at X 124, line 227",
+      "type": "pixel",
+      "vic_x": 124,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 12 'T', XSCROLL 3: left of it at X 123, line 227",
+      "type": "pixel",
+      "vic_x": 123,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 13 'E', XSCROLL 3: ink at X 132, line 227",
+      "type": "pixel",
+      "vic_x": 132,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 13 'E', XSCROLL 3: left of it at X 131, line 227",
+      "type": "pixel",
+      "vic_x": 131,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 14 'R', XSCROLL 3: ink at X 140, line 227",
+      "type": "pixel",
+      "vic_x": 140,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 14 'R', XSCROLL 3: left of it at X 139, line 227",
+      "type": "pixel",
+      "vic_x": 139,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 15 '.', XSCROLL 3: ink at X 150, line 232",
+      "type": "pixel",
+      "vic_x": 150,
+      "line": 232,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 15 '.', XSCROLL 3: left of it at X 149, line 232",
+      "type": "pixel",
+      "vic_x": 149,
+      "line": 232,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 17 'A', XSCROLL 3: ink at X 166, line 227",
+      "type": "pixel",
+      "vic_x": 166,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 17 'A', XSCROLL 3: left of it at X 165, line 227",
+      "type": "pixel",
+      "vic_x": 165,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 19 'P', XSCROLL 3: ink at X 180, line 227",
+      "type": "pixel",
+      "vic_x": 180,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 19 'P', XSCROLL 3: left of it at X 179, line 227",
+      "type": "pixel",
+      "vic_x": 179,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 20 'A', XSCROLL 3: ink at X 190, line 227",
+      "type": "pixel",
+      "vic_x": 190,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 20 'A', XSCROLL 3: left of it at X 189, line 227",
+      "type": "pixel",
+      "vic_x": 189,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 21 'R', XSCROLL 3: ink at X 196, line 227",
+      "type": "pixel",
+      "vic_x": 196,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 21 'R', XSCROLL 3: left of it at X 195, line 227",
+      "type": "pixel",
+      "vic_x": 195,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 22 'T', XSCROLL 3: ink at X 204, line 227",
+      "type": "pixel",
+      "vic_x": 204,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 22 'T', XSCROLL 3: left of it at X 203, line 227",
+      "type": "pixel",
+      "vic_x": 203,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 24 'T', XSCROLL 3: ink at X 220, line 227",
+      "type": "pixel",
+      "vic_x": 220,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 24 'T', XSCROLL 3: left of it at X 219, line 227",
+      "type": "pixel",
+      "vic_x": 219,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 25 'A', XSCROLL 3: ink at X 230, line 227",
+      "type": "pixel",
+      "vic_x": 230,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 25 'A', XSCROLL 3: left of it at X 229, line 227",
+      "type": "pixel",
+      "vic_x": 229,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 26 'B', XSCROLL 3: ink at X 236, line 227",
+      "type": "pixel",
+      "vic_x": 236,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 26 'B', XSCROLL 3: left of it at X 235, line 227",
+      "type": "pixel",
+      "vic_x": 235,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 27 'L', XSCROLL 3: ink at X 244, line 227",
+      "type": "pixel",
+      "vic_x": 244,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 27 'L', XSCROLL 3: left of it at X 243, line 227",
+      "type": "pixel",
+      "vic_x": 243,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 28 'E', XSCROLL 3: ink at X 252, line 227",
+      "type": "pixel",
+      "vic_x": 252,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 28 'E', XSCROLL 3: left of it at X 251, line 227",
+      "type": "pixel",
+      "vic_x": 251,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 29 ',', XSCROLL 3: ink at X 262, line 232",
+      "type": "pixel",
+      "vic_x": 262,
+      "line": 232,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 29 ',', XSCROLL 3: left of it at X 261, line 232",
+      "type": "pixel",
+      "vic_x": 261,
+      "line": 232,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 31 'A', XSCROLL 3: ink at X 278, line 227",
+      "type": "pixel",
+      "vic_x": 278,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 31 'A', XSCROLL 3: left of it at X 277, line 227",
+      "type": "pixel",
+      "vic_x": 277,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 33 'T', XSCROLL 3: ink at X 292, line 227",
+      "type": "pixel",
+      "vic_x": 292,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 33 'T', XSCROLL 3: left of it at X 291, line 227",
+      "type": "pixel",
+      "vic_x": 291,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 34 'A', XSCROLL 3: ink at X 302, line 227",
+      "type": "pixel",
+      "vic_x": 302,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 34 'A', XSCROLL 3: left of it at X 301, line 227",
+      "type": "pixel",
+      "vic_x": 301,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 35 'B', XSCROLL 3: ink at X 308, line 227",
+      "type": "pixel",
+      "vic_x": 308,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 35 'B', XSCROLL 3: left of it at X 307, line 227",
+      "type": "pixel",
+      "vic_x": 307,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 36 'L', XSCROLL 3: ink at X 316, line 227",
+      "type": "pixel",
+      "vic_x": 316,
+      "line": 227,
+      "colour": 1
+    },
+    {
+      "name": "scroller cell 36 'L', XSCROLL 3: left of it at X 315, line 227",
+      "type": "pixel",
+      "vic_x": 315,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller cell 37 'E', XSCROLL 3: ink at X 324, line 227",
+      "type": "pixel",
+      "vic_x": 324,
+      "line": 227,
+      "colour": 15
+    },
+    {
+      "name": "scroller cell 37 'E', XSCROLL 3: left of it at X 323, line 227",
+      "type": "pixel",
+      "vic_x": 323,
+      "line": 227,
+      "colour": 0
+    },
+    {
+      "name": "scroller in 38 columns: left border X 24-30",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": 24,
+      "line": 227,
+      "width": 7,
+      "height": 8
+    },
+    {
+      "name": "scroller in 38 columns: right border X 335-343",
+      "type": "rect",
+      "colour": 5,
+      "vic_x": 335,
+      "line": 227,
+      "width": 9,
+      "height": 8
     },
     {
       "name": "rows 0 to 23 the same on PAL and NTSC",

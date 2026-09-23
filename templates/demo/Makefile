@@ -1,7 +1,7 @@
 # demo: the demo starter. KickAssembler alone; every target comes from the
 # harness (make, run, shot, check, selftest, disk, claims, clean), plus:
-#   make probe   the PROBE build's PAL and NTSC shots, for re-measuring the
-#                stable entry after a change before the bar kernel
+#   make probe   eight PAL and eight NTSC shots of the PROBE build: proves the
+#                stable entry after any change before or in the bar kernel
 #   make expect  rewrite expect.json from src/config.asm (tools/gen_expect.py)
 NAME     := demo
 KICK_SRC := src/main.asm
@@ -32,10 +32,18 @@ $(PRG_PROBE): $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
 	$(KICK_BUILD) -define $(AUTOPILOT_DEFINE) -define PROBE -o $(CURDIR)/$@ > build/kick-probe.log || { cat build/kick-probe.log; exit 1; }
 
 .PHONY: probe expect
+# Eight shots a model, at cycle counts that are no whole number of frames
+# apart, of a build whose main loop jitters the IRQ entry (see main.asm).
+PROBE_CYCLES := 12000000 12345677 12777773 13311111 13900001 14444449 15012347 15600011
 probe: $(PRG_PROBE)
-	$(call vice_shot,$(PRG_PROBE),$(SHOT_CYCLES_PAL),,shots/probe-pal.png)
-	$(call vice_shot,$(PRG_PROBE),$(SHOT_CYCLES_NTSC),-model ntsc,shots/probe-ntsc.png)
-	$(PYTHON) tools/probe.py shots/probe-pal.png shots/probe-ntsc.png
+	@mkdir -p shots
+	@rm -f shots/probe-*.png
+	@for c in $(PROBE_CYCLES); do \
+	  $(TIMEOUT) $(VICE_TIMEOUT) $(X64SC) $(VICE_FLAGS) -limitcycles $$c -exitscreenshot shots/probe-pal-$$c.png -autostart $(PRG_PROBE) > /dev/null 2>&1 & \
+	  $(TIMEOUT) $(VICE_TIMEOUT) $(X64SC) $(VICE_FLAGS) -limitcycles $$c -model ntsc -exitscreenshot shots/probe-ntsc-$$c.png -autostart $(PRG_PROBE) > /dev/null 2>&1 & \
+	  wait; \
+	done
+	$(PYTHON) tools/probe.py shots/probe-pal-*.png shots/probe-ntsc-*.png
 
 expect:
 	$(PYTHON) tools/gen_expect.py > expect.json

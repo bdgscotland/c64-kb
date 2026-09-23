@@ -9,7 +9,7 @@
 //   update    frame slot (IRQ), once a frame while the part plays and while
 //             its out-transition runs.
 //   out       frame slot, once a frame after its frames run out, until it
-//             returns carry set. wipe_columns, or no_op for a hard cut.
+//             returns carry set. wipe_columns, or hard_cut for a cut.
 //   teardown  main loop, once, before the next part's init: put back what
 //             the next part must not inherit (sprites, $D016, $D018 ...).
 //   frames    how long it plays; 0 plays forever.
@@ -34,11 +34,10 @@ slots:
 chain_title:
         Slot(FRAME_LINE, frame_slot, true)
 chain_main:
-        Slot(BARS_SLOT_LINE, bars_slot, false)
+        StableSlot(BARS_SLOT_LINE, bars_slot, false)
         Slot(SCROLL_LINE, scroll_slot, false)
         Slot(FRAME_LINE, frame_slot, true)
 chain_idle:                            // between parts: the music and nothing else
         Slot(FRAME_LINE, frame_slot, true)
 slots_end:
 .errorif (slots_end - slots > 255), "the slot table is longer than 255 bytes"
-.errorif (BARS_SLOT_LINE + STABLE_LINES > 255), "a stable slot must fire below line 256"

@@ -10,7 +10,7 @@
 //
 // -define AUTOPILOT: the frame meter runs (row 24, columns 20-39) and the
 // main part freezes after FREEZE_UPDATES updates for the verdict.
-// -define FORCE_FAULT: the sprite chain starts four sine steps ahead; the
+// -define FORCE_FAULT: the sprite chain starts sixteen sine steps ahead; the
 // verdict and the screenshot checks must both fail.
 // -define PROBE: the bar kernel's stores move 20 cycles right, into the
 // visible line, to measure where they land (README, "The stable entry and the bars").
@@ -69,8 +69,32 @@ start:
 // frame: record the meter, start the next part when the sequencer asks, and
 // give the loader its turn.
 main_loop:
+#if PROBE
+        // PROBE only: the IRQs must land in every phase of the instruction
+        // they interrupt, or a wrong SYNC_PAD looks right. A frozen frame
+        // repeats exactly, so each pass waits 5 x n cycles (n = 1 to 19, one
+        // more each frame) and then spins in a 19-cycle loop with a 6-cycle
+        // instruction in it; 19 is prime and divides neither frame length.
+        inc probe_n
+        lda probe_n
+        cmp #20
+        bcc !+
+        lda #1
+        sta probe_n
+!:      tax
+!:      dex
+        bne !-
+!:      lda frame_flag                 // 4
+        bne !+                         // 2
+        inc probe_spin                 // 6
+        nop                            // 2
+        nop                            // 2
+        jmp !-                         // 3
+!:
+#else
         lda frame_flag
         beq main_loop
+#endif
         lda #0
         sta frame_flag
         FrameMeterEnd()                // the frame's IRQ work, summed, is one sample
@@ -94,6 +118,9 @@ main_loop:
 // masked for whole bytes, which moves the bars, and end in CLI.
 loader_hook:
         rts
+
+probe_spin: .byte 0
+probe_n:    .byte 0
 
 #import "framework.asm"
 #import "parts.asm"

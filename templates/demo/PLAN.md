@@ -349,9 +349,11 @@ What is unknown and how the meter settles it:
 - Screen `$0400`, the power-on character set. Row 24 columns 0 to 18: the
   verdict line; columns 20 to 39: the meter (AUTOPILOT builds).
 - Raster layout of the main part (PAL and NTSC use the same lines): logo
-  rows 1 to 6, sprites on lines 101 to 145, bars on lines 153 to 208 (rows
-  12 to 19 are blank cells), scroller on row 22 (lines 227 to 234), meter and
-  verdict on row 24.
+  rows 0 to 4 and subtitle row 5 (lines 51 to 98), sprites on lines 101 to
+  145, the stable slot at 148, bars on lines 155 to 210 (rows 13 to 19 are
+  blank cells), scroller on row 22 (lines 227 to 234), meter and verdict on
+  row 24. (An earlier version of this plan said logo rows 1 to 6 and bars
+  153 to 208: the layout before the kernel's lead was measured.)
 - Zero page: none of the program's own. `$02FF`: the verdict byte. CIA2
   timer A: the meter.
 
@@ -359,7 +361,7 @@ What is unknown and how the meter settles it:
 
 A demo has no input, so the AUTOPILOT script is the timeline itself: title
 card 60 frames, wipe 20 frames, then the main part. At the main part's
-159th update the AUTOPILOT build freezes every animation (the chain keeps
+156th update (XSCROLL 3) the AUTOPILOT build freezes every animation (the chain keeps
 drawing the same frame) and the main loop grades: part 1 running, the wipe
 finished and the title's teardown run, the eight sprites' registers against
 positions the assembler computed from the sine formula, the scroller's
@@ -367,12 +369,12 @@ XSCROLL, message index and the 38 cells of row 22 against the message, the
 bar colour table against the table the assembler computed, and the music's
 call count against the frame count (every frame on PAL, five in six on
 NTSC). `$02FF` = `$01` and a green border on pass, `$02` and red on fail.
-FORCE_FAULT starts the sprite chain four sine steps ahead: the verdict and
+FORCE_FAULT starts the sprite chain sixteen sine steps ahead: the verdict and
 the sprite checks fail together.
 
 `expect.json` is written by `tools/gen_expect.py` from the same constants,
-computed again in Python: the verdict, the logo and subtitle, the scroller
-text, every bar line as a full-width one-line rect (pixel-exact left border
+computed again in Python: the verdict, the logo and subtitle, the
+scroller's ink pixels at XSCROLL 3 and its 38-column border, every bar line as a full-width one-line rect (pixel-exact left border
 to right border), the lines above and below the bars, eight sprite boxes,
 the title card's cells now blank, rows 0 to 23 the same on PAL and NTSC,
 and the meter with its frame count.
@@ -385,12 +387,14 @@ and the meter with its frame count.
 - Part init runs in the main loop (Spindle calls this `prepare`), with the
   frame slot alone playing the music, so a heavy init never stops the tune.
 - The meter's `hold` (232) covers the title, the wipe and the main part up
-  to the freeze; 151 of the 232 are main-part frames, so the median is one.
+  to the freeze; 150 of the 232 are main-part frames, so the median is one.
 
 ## Measured
 
-`make shot check`, VICE x64sc 3.10, 232 recorded frames: PAL worst 7,171,
-typical 6,473; NTSC worst 7,351, typical 6,612. README.md, "The measured
+`make shot check`, VICE x64sc 3.10, 232 recorded frames: PAL worst 7,225,
+typical 6,478; NTSC worst 7,360, typical 6,615. (The first build read 7,171
+/ 6,473 and 7,351 / 6,612; the review's fixes moved code and made part 1's
+init clear the screen.) README.md, "The measured
 frame", has the per-phase samples and the comparison with plan-budget.
 - Open: the sync padding and the kernel's lead are measured in VICE x64sc
   3.10 only, on the 6569 and 6567R8 models. Not on hardware.

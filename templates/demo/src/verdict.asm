@@ -32,8 +32,8 @@
 }
 
 verdict:
-        lda part                       // the transition happened: part 1 plays,
-        cmp #1                         // the wipe cleared all 40 columns, the
+        lda part                       // the transition happened: the main part plays,
+        cmp #MAIN_PART                        // the wipe cleared all 40 columns, the
         FailNe()                     // title's teardown ran
         lda seq_state
         cmp #PLAY

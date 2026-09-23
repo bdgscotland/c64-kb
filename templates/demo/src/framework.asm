@@ -51,6 +51,12 @@
     .errorif (line > 311), "Slot: line past PAL's last line"
     .byte <line, (line >> 8) << 7, <handler, >handler, last ? $80 : $00
 }
+// A row whose handler calls stabilise: its second IRQ fires STABLE_LINES
+// later, and stabilise arms that line with RST8 clear.
+.macro StableSlot(line, handler, last) {
+    .errorif (line + STABLE_LINES > 255), "StableSlot: stabilise's second IRQ must fire below line 256"
+    Slot(line, handler, last)
+}
 
 // ---- the dispatcher, behind $0314 ------------------------------------------
 // Acknowledge, arm the next row, call this row's handler, advance. The next
@@ -189,6 +195,8 @@ sequencer:
         beq !out+
         rts                            // SWITCH: the main loop owns it
 !play:  jsr call_update
+        lda frozen                     // AUTOPILOT's graded frame: time stands still
+        bne !done+
         lda part_timer                 // 0 from the start: the part runs forever
         ora part_timer+1
         beq !done+
@@ -205,6 +213,8 @@ sequencer:
         sta seq_state
 !done:  rts
 !out:   jsr call_update
+        lda frozen
+        bne !done-
         jsr call_out
         bcc !done-
         lda #chain_idle - slots
@@ -291,8 +301,12 @@ wipe_columns:
         clc
 !:      rts
 
-// A part that needs no transition, update or teardown names this.
-no_op:  clc
+// An update or teardown with nothing to do names no_op. An `out` step
+// that returns at once names hard_cut: carry set ends the part this frame.
+// (An out step that always returns carry clear never ends its part.)
+no_op:  rts
+hard_cut:
+        sec
         rts
 
 // ---- the framework's state ---------------------------------------------------
@@ -306,6 +320,7 @@ part:        .byte 0
 part_timer:  .word 0
 tr_step:     .byte 0                   // the transition's own counter
 frame_flag:  .byte 0
+frozen:      .byte 0                   // AUTOPILOT: set once the graded frame is reached
 frames:      .word 0                   // frame slots since the start
 ntsc_div:    .byte 0
 music_calls: .word 0

@@ -26,10 +26,17 @@ What bites in this program:
 - The bar kernel is cycle-counted from `stabilise`. Anything that changes
   the code between the second IRQ and the kernel, the chunk bodies, or
   the dispatcher's path to a stable slot can move the stores: run
-  `make probe` after such a change (it must print one column and exit 0),
-  then `make shot check`.
-- No sprite on a bar line (lines 155 to 210): sprite DMA uses the same
-  horizontal blank as the stores.
+  `make probe` after such a change, then `make shot check`. The probe
+  takes eight shots per model of a build whose main loop varies the IRQ
+  entry phase each frame, and exits 0 only on one column in all of them.
+  `make shot check` alone cannot see a wrong SYNC_PAD: the stores stay in
+  the blank.
+- No sprite on lines 148 to 211: each kernel chunk has a fixed length, so
+  sprite DMA delays every later chunk until a badline resyncs them.
+  `config.asm` refuses a chain that reaches those lines.
+- Adding a part: follow README, "Extending it", step 1, to the letter
+  (the `#import`, the table column, `PART_COUNT`, non-zero `frames` on
+  the part before it).
 - `src/config.asm` holds the numbers `tools/gen_expect.py` reads. After
   changing one, `make expect shot check`.
 - Handlers run inside the dispatcher's meter bracket: keep grading and
