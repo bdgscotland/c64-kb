@@ -124,7 +124,7 @@ static void level_start(void)
     player_reset(start_x, start_y);
     pinvuln = 0;
     hud_clear();
-    hud_dirty = true;
+    hud_labels();
     state = ST_PLAY;
 }
 

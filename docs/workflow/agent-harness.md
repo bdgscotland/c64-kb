@@ -65,7 +65,13 @@ is a stamp file named by its cycle count.
 `npm run verify:templates` makes a project from each starter with an
 `expect.json`, as new-project does, in a temporary directory, and runs
 `make`, `make shot check` and `make disk` there (`--selftest` adds
-`make selftest`, `--only <name>` picks one).
+`make selftest` and every target the starter lists in `VERIFY_TARGETS`,
+`--only <name>` picks one). A starter's own proof targets (action-puzzle's
+`disktest`, `modelcheck` and `selftest-scan`, adventure's `disktest`,
+platformer's `tearcheck`, shmup-vertical's `stage`, demo's `probe`) prove
+fixes that `make check` cannot see: the adventure's three save-validation
+checks, for instance, fail only in `disktest`. Measured 2026-09-23: seven
+starters with `--selftest` and their targets, 7 of 7, about 3.5 minutes.
 
 ## A starter's files
 
@@ -301,6 +307,18 @@ T<typical>`, five digits each, 20 cells from row 24, column 20.
   earlier version used the mean of the last 16 frames: hello's figure was
   then the mean of idle frames after its script, and an alternating load
   read a cost no frame took.
+- **Lost frames are not the meter's job, and are easy to count wrong.**
+  The meter reports cost, not lateness: a starter that must not drop a
+  frame counts drops itself. Count after the work: when the frame's work
+  ends, test whether the next frame's IRQ has already fired (its flag or
+  counter), and count that as a lost frame. A check at wake-up for a
+  counter that moved by more than one misses every single overrun: work
+  that ends just after the next IRQ still sees it move by exactly one.
+  Measured on shmup-vertical 7974a7a: one frame made ~2,400 cycles late
+  left the program's `wait_frame` counter at `OVERRUNS 00`, and a detector
+  that tests the frame flag when the work ends found NTSC joystick play
+  losing a frame in 6 of 15 runs. The demo's frame slot, which must end
+  before a split line, reads the raster when its work ends instead.
 - **Build switch.** `FRAME_METER` defaults to `AUTOPILOT`. Without it every
   macro is empty and the release carries none of the meter.
 - **Interrupts.** The KERNAL serial routines end in `CLI`: the ROM bytes at

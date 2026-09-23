@@ -28,12 +28,13 @@ typedef struct {
 extern HiTable hi;
 extern char hi_state, hi_code;
 extern bool hi_saving;
+extern bool hi_verified;                // the last save read back byte for byte
 
 void hi_defaults(void);
 char hi_rank(unsigned long score);      // row a score goes in (a tie goes below), HI_ROWS if none
 void hi_insert(char rank, const char *name, unsigned long score);
 void hi_load(void);                     // KERNAL calls: the caller mutes, and SEIs after
-bool hi_save(void);                     // scratch, write, read the reply; true on 00
+bool hi_save(void);                     // scratch, write, read the reply, read the file back; true when it matches
 
 #pragma compile("hiscore.c")
 

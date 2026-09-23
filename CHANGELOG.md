@@ -5,7 +5,61 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 766, schema 31, tools 2.3.0, package 0.16.0.
+Data 768, schema 31, tools 2.3.0, package 0.16.0.
+
+**agent-harness: counting lost frames.** The meter reports cost, not
+lateness, and the page did not say how to count a dropped frame. A check
+at wake-up for a frame counter that moved by more than one misses every
+single overrun (shmup-vertical 7974a7a: a frame made ~2,400 cycles late
+left `OVERRUNS 00`); the page now says to test the next frame's flag when
+the work ends.
+
+**Issue #39: `shmup-vertical` gets enemy fire and a per-frame bullet
+check.**
+- Darts, weaves and swoops fire dots that drift towards the ship, from
+  a 6-dot pool in a fire window at Y 72-140. The dots' step, the
+  bullet draw list, the enemy boxes and the path step moved to
+  KickAssembler: the staged worst had reached 17,882 NTSC cycles, over
+  the frame.
+- Staged worst now 15,991 PAL / 16,136 NTSC, with no frame lost; graded
+  run 12,912 / 13,015.
+- Each bullet cell is read back against the map after every erase.
+- `make joytest` plays to game over, reboots on the same disk and
+  requires the saved high score.
+- It passes on the released Oscar64 v1.32.273.
+
+**`verify:templates --selftest` runs each starter's own proof targets
+(#42).** Several #39 fixes are proved only by a starter's own target: the
+adventure's save validation by `disktest`, the platformer's scroll timing
+by `tearcheck`, the demo's stable entry by `probe`. A starter lists them in
+`VERIFY_TARGETS`; `--selftest` runs each after `make selftest`. Seven
+starters with their targets: 7 of 7.
+
+**Issue #39: `platformer` hardened after the other session's
+comparison.**
+- It builds and passes on the released Oscar64 v1.32.273, with
+  `surface_at` kept out of line (#30) and the score printed through
+  `put_digits`. v1.32.273 dropped digits from a loop; that fault is not
+  reduced yet.
+- The live-enemy limit is 5: six live enemies overran the NTSC frame
+  (17,618 cycles staged). `make stage` fills every slot.
+- `check_frame` checks four invariants every frame, each with its own
+  fault bit. The slope bit caught a mutation that the tear check missed.
+- Hitboxes come per animation frame, with a group and a mask; the stomp
+  is a feet box on the falling frame.
+- `tools/drive.py` runs at real speed and on a free port.
+
+**Issue #39: `action-puzzle` hardened after the other session's
+comparison.**
+- The redraw is bounded. An overflowing dirty list used to redraw 280
+  cells in one frame (55,305 cycles); rows are now queued, two a frame.
+- The right roll, the restart path over three lives, the high-score
+  read-back and the once-per-scan check are all gated. Each is proved
+  by a mutation.
+- Dropped frames are counted from the `$D019` raster latch.
+- It builds and passes on the released Oscar64 v1.32.273.
+- Staged worst frame (16 boulders falling in one slice): 13,619 PAL /
+  13,832 NTSC cycles.
 
 **Issue #39: the `demo` starter lands, and the two stub skeletons are
 removed.** `templates/demo` is pure KickAssembler:

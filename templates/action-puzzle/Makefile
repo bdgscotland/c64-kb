@@ -15,13 +15,16 @@
 NAME   := action-puzzle
 C_MAIN := src/main.c
 
-# Pinned after the verdict. Most of the time before it is the start-up read
-# with no disk in the drive (drive reply 74). Measured with VICE x64sc 3.10:
-# the PAL picture still changes at 12,000,000 cycles (10,000,000 shows cave
-# 2's GET READY); at 13,000,000, 16,000,000, 20,000,000 and 24,000,000 it is
-# byte-identical, and so is NTSC at 16,000,000 and 24,000,000.
-SHOT_CYCLES_PAL  := 16000000
-SHOT_CYCLES_NTSC := 16000000
+# Pinned after the verdict, which follows the save and its read-back on the
+# shot's fresh disk. Measured with VICE x64sc 3.10: at 18,000,000 cycles the
+# save is still running on both models; at 20,000,000, 24,000,000 and
+# 30,000,000 the picture is byte-identical, PAL and NTSC.
+SHOT_CYCLES_PAL  := 24000000
+SHOT_CYCLES_NTSC := 24000000
+
+# Every headless shot attaches its own fresh copy of the release D64 (the
+# harness makes it), so the autopilot saves its table and reads it back.
+SHOT_DISK := 1
 
 # What the program may write, for make claims (claims-watch's grammar).
 # zero_page $02-$52 is Oscar64's register block, as in hello; $53-$55 is the
@@ -29,10 +32,15 @@ SHOT_CYCLES_NTSC := 16000000
 # program's larger functions use (claims-watch found 902 stores there on
 # the first run). --kernal names the routines hiscore.c calls through
 # kernalio.h and the KERNAL IRQ, which runs during those calls only.
-CLAIMS_ARGS := --cycles 16000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ --claim 'sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, cia1_port_a, cia1_timer_b, zero_page $$02-$$55' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$2000-$$27FF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
+# vic_raster_irq: wait_frame sets the compare line and acknowledges the
+# $D019 latch to count dropped frames; the interrupt itself stays disabled.
+CLAIMS_ARGS := --cycles 24000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ --claim 'sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, cia1_port_a, cia1_timer_b, vic_raster_irq, zero_page $$02-$$55' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$2000-$$27FF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
+# Proof targets `npm run verify:templates -- --selftest` runs after selftest.
+VERIFY_TARGETS := disktest modelcheck selftest-scan
+
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
 include $(HARNESS)/harness.mk
@@ -90,6 +98,27 @@ joy: build/$(NAME)-joy.prg
 build/$(NAME)-joy.prg: $(C_DEPS) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
+
+# The scanned bit's self-test: the autopilot built with SCAN_FLAG=0 (the
+# cave-scan recipe's double-move bug) must fail check.py and name E in its
+# verdict, the test that the scan meets the living player once a cave frame.
+PRG_NOSCAN := build/$(NAME)-noscan.prg
+$(PRG_NOSCAN): $(C_DEPS) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dSCAN_FLAG=0 -o=$@ $(C_MAIN)
+shots/noscan-pal.png: $(PRG_NOSCAN) $(PIN_PAL) $(SHOT_DEPS)
+	$(call vice_shot,$(PRG_NOSCAN),$(SHOT_CYCLES_PAL),,$@)
+shots/noscan-ntsc.png: $(PRG_NOSCAN) $(PIN_NTSC) $(SHOT_DEPS)
+	$(call vice_shot,$(PRG_NOSCAN),$(SHOT_CYCLES_NTSC),-model ntsc,$@)
+.PHONY: selftest-scan
+selftest-scan:
+	@rm -f shots/noscan-pal.png shots/noscan-ntsc.png
+	@$(MAKE) --no-print-directory shots/noscan-pal.png shots/noscan-ntsc.png
+	@$(PYTHON) $(HARNESS_DIR)/check.py expect.json shots/noscan-pal.png shots/noscan-ntsc.png > shots/noscan-check.txt 2>&1; st=$$?; \
+	if [ $$st -ne 1 ]; then cat shots/noscan-check.txt; echo "selftest-scan: FAIL, check.py exit $$st on the SCAN_FLAG=0 build"; exit 1; fi
+	@$(PYTHON) tools/verdict_codes.py $(HARNESS_DIR) shots/noscan-pal.png pal E
+	@$(PYTHON) tools/verdict_codes.py $(HARNESS_DIR) shots/noscan-ntsc.png ntsc E
+	@echo "selftest-scan: PASS, the SCAN_FLAG=0 build failed, E among its letters"
 
 # Every visible cave cell of both autopilot shots against tools/gen.py's model.
 modelcheck: $(SHOTS)

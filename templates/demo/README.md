@@ -84,11 +84,16 @@ Evidence, VICE x64sc 3.10:
   frame, so the IRQs land in every phase of the instruction they
   interrupt. It takes eight shots per model (12.0M to 15.6M cycles) and
   passes only when every changing bar line in every shot has its store in
-  one column: x = 97 on both models. Without the probe the `$D020` store
+  one column, and that column is `PROBE_COLUMN` in `config.asm`: x = 97
+  on both models. Without the probe the `$D020` store
   sits 95 pixels before the line's first visible pixel, and 26 (PAL) or
   42 (NTSC) pixels after the line above leaves the picture.
 - A wrong padding fails it. SYNC_PAD_PAL 0, 3 or 4 and SYNC_PAD_NTSC 4,
-  5, 7 or 8 each gave two columns 8 pixels apart and exit 2. Before the
+  7 or 8 each gave two columns 8 pixels apart and exit 2. SYNC_PAD_NTSC 5
+  can put every store in one column, x = 89, in all eight shots (a later
+  re-check found it; an earlier version of this line said it always
+  split), so the probe also requires x = `PROBE_COLUMN`; with pad 5 it
+  now exits 2. Before the
   varying wait was added, pads 0 and 3 passed a single shot: the idle loop
   (7 cycles) divides the PAL frame (19,656 = 7 x 2,808), so every frame
   was entered in the same phase. `make shot check` cannot see a wrong pad:
@@ -115,7 +120,7 @@ median is a main-part frame. `make shot check`, VICE x64sc 3.10:
 | Model | Worst | Typical (median) | Frame |
 |---|---|---|---|
 | PAL | 7,332 | 6,586 | 19,656 |
-| NTSC | 7,480 | 6,734 | 17,095 |
+| NTSC | 7,476 | 6,735 | 17,095 |
 
 The recorded samples, read with the monitor before the meter sorts them:
 
@@ -129,7 +134,11 @@ The recorded samples, read with the monitor before the meter sorts them:
 
 (The dispatcher's lateness counters, below, cost about 30 cycles an IRQ;
 the build before them read 7,225 / 6,478 on PAL and 7,360 / 6,615 on
-NTSC.)
+NTSC. These samples are from the build before the verdict ran
+`hard_cut`; that change moved code outside the brackets, and the NTSC
+worst then read 7,476 instead of 7,480, the median 6,735 instead of
+6,734. The harness page notes that code layout alone moves W by a few
+cycles.)
 
 The worst main-part frames are the ones where the scroller moves its row.
 The bar slot is about 3,970 cycles of a main-part frame on PAL and 4,095
@@ -242,6 +251,13 @@ them, `make expect shot check`.
      frame slot last; `StableSlot` for a row whose handler calls
      `stabilise`). Add its column to every row of the part table: init,
      update, out (`wipe_columns` or `hard_cut`), teardown, frames, chain.
+   - The verdict grades the title-to-main transition as shipped: it wants
+     the wipe finished (`tr_step` 40 in `verdict.asm`) and the title's
+     teardown run. Changing a part's `out` step, or putting a part between
+     the title and `MAIN_PART`, means updating those checks in
+     `verdict.asm` and re-running `make expect`. `hard_cut` itself is
+     run by the verdict (no shipped part names it), so it cannot break
+     unseen.
    - In `src/config.asm`, raise `PART_COUNT`. `LOOP_PART` is where the
      demo goes after the last part.
    - A part after the main one is reached only if the main part ends:
@@ -267,7 +283,10 @@ them, `make expect shot check`.
    part contract matches this one: prepare, setup, fadeout, cleanup).
 3. **Change the effect or the music.** A new raster effect is a new slot;
    if it needs a stable start, call `stabilise` first, name its row
-   `StableSlot`, and re-run `make probe`. For a fade instead of the wipe, write an `out` step that walks
+   `StableSlot`, and re-run `make probe`; if the stores move on purpose,
+   set `PROBE_COLUMN` to the new column once the probe shows one column
+   on both models and the blank margins it prints are positive. For a
+   fade instead of the wipe, write an `out` step that walks
    c64-kb `docs/recipes/kickassembler/colour-fade.md`'s table.
    A tracker tune replaces `music.asm` at `$1000` / `$1003`
    (c64-kb `docs/recipes/oscar64/sid-music-player.md`).

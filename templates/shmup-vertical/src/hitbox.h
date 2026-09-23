@@ -13,11 +13,13 @@
 void box_off(char slot);
 void box_ship(char hx, char sy);        // where the ship is drawn
 void box_bullet(char i, char hx, char line);
-void collide(void);                     // enemies from the actor table against these
+void collide(void);                     // enemy bullets against the ship, then enemies
+                                        // from the actor table against these
 
 // What collide() reports; main.c decides what a hit does.
 void on_enemy_shot(char e, char bullet);
-void on_player_hit(char e);
+void on_player_hit(char e);            // enemy e rammed the ship
+void on_ship_shot(char j);             // enemy bullet j hit the ship
 
 #pragma compile("hitbox.c")
 

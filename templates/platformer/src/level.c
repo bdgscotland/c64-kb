@@ -22,6 +22,14 @@ static const char level_text[LEVEL_TH][LEVEL_TW + 1] = {
 };
 // LEVEL-END
 
+#if STAGE_CROWD
+// make stage: row 7 with ten enemies in the first view, so every live slot
+// is full from the first frame. It measures the worst frame; it is not a
+// level to play (the comparator's staging, 2026-09-23).
+static const char stage_row7[LEVEL_TW + 1] =
+    ".Phwhwh/=\\hwhwhww......ab=cd........h........BB...w../###=\\..w..........h...abcd....w.B...........h..../=\\..w.......oo.w....F...";
+#endif
+
 // Metatiles: key, then the glyphs top-left, top-right, bottom-left,
 // bottom-right. A tile sits on character rows 2ty and 2ty + 1.
 // TILES-BEGIN
@@ -101,6 +109,10 @@ void level_reset(void)
         for (char tx = 0; tx < LEVEL_TW; tx++)
         {
             char k = level_text[ty][tx], t = T_AIR;
+#if STAGE_CROWD
+            if (ty == 7)
+                k = stage_row7[tx];
+#endif
             for (char i = 0; i < sizeof(tile_key) - 1; i++)
                 if (tile_key[i] == k)
                     t = i;
@@ -139,7 +151,10 @@ char cell_attr(unsigned col, char row)
 }
 
 // The ground row at world column x inside the cell on `row` whose attribute is a.
-char surface_at(unsigned x, char row, char a)
+// __noinline: inlined into surface_walk, Oscar64 v1.32.273 and upstream
+// 9a902f6 emit `ORA heights,x` with X as cell_attr left it and never compute
+// the index (issue #30); the local build is right either way.
+__noinline char surface_at(unsigned x, char row, char a)
 {
     return (row << 3) + heights[((a & A_SLOPE) >> 1) | (x & 7)];
 }

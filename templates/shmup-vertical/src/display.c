@@ -91,6 +91,17 @@ static void make_charset(void)
     }
     memcpy(CHARSET + G_LIFE * 8, life_glyph, 8);
     memcpy(CHARSET + G_RULE * 8, rule_glyph, 8);
+    // Shots over open water need no merge (glyph.asm): a dot in each pixel
+    // pair on each even row pair, a bolt in each pair on rows 2-5, in %11.
+    for (char p = 0; p < 4; p++) {
+        char m = 0xc0 >> (2 * p);
+        for (char r = 0; r < 4; r++) {
+            char *d = CHARSET + (G_DOTS + 4 * p + r) * 8;
+            d[2 * r] = d[2 * r + 1] = m;
+        }
+        char *b = CHARSET + (G_BOLTS + p) * 8;
+        b[2] = b[3] = b[4] = b[5] = m;
+    }
 }
 
 static void make_sprites(void)

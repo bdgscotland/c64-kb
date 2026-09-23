@@ -102,31 +102,67 @@ void draw_cell(unsigned i)
     COLOUR[CW * CAVE_ROW0 + i] = tint[t];
 }
 
+// Rows waiting for a redraw after a dirty-list overflow.
+static bool pending[CH];
+char render_npending;
+
+// One cave row, with three row pointers and an 8-bit index.
+void draw_row(char y)
+{
+    const char *src = cave + CW * y;
+    char *scr = SCREEN + CW * (CAVE_ROW0 + y);
+    char *col = COLOUR + CW * (CAVE_ROW0 + y);
+    for (char x = 0; x < CW; x++)
+    {
+        char t = src[x] & 0x1f;
+        scr[x] = GLYPH_BASE + t;
+        col[x] = tint[t];
+    }
+}
+
 void draw_cave(void)
 {
-    for (unsigned i = 0; i < CW * CH; i++)
-        draw_cell(i);
+    for (char y = 0; y < CH; y++)
+        draw_row(y);
+    render_npending = 0;
+    for (char y = 0; y < CH; y++)
+        pending[y] = false;
 }
 
-void draw_rows(char y0, char y1)
-{
-    if (y0 > CH - 1)
-        y0 = 0;                                 // y0 - 1 wrapped below 0
-    if (y1 > CH - 1)
-        y1 = CH - 1;
-    for (unsigned i = CW * y0; i < CW * (y1 + 1); i++)
-        draw_cell(i);
-}
-
-// A slice's changes: the dirty list, or on overflow every row the slice's
-// moves and explosions can reach (one above to one below).
+// A slice's changes: the dirty list. On overflow the list is incomplete, so
+// every row the slice's moves and explosions can reach (one above to one
+// below) is queued instead, and draw_pending redraws them two a frame. That
+// bounds the frame: redrawing all seven rows at once in the first version
+// cost 55,305 cycles, almost three PAL frames (measured in review).
 void draw_dirty(char y0, char y1)
 {
     if (cave_overflow)
-        draw_rows(y0 - 1, y1);
+    {
+        if (y1 > CH - 1)
+            y1 = CH - 1;
+        for (char y = y0 - 1; y <= y1; y++)
+            if (!pending[y])
+            {
+                pending[y] = true;
+                render_npending++;
+            }
+    }
     else
         for (char n = 0; n < cave_ndirty; n++)
             draw_cell(cave_dirty[n]);
+}
+
+void draw_pending(void)
+{
+    char budget = ROWS_PER_FRAME;
+    for (char y = 0; y < CH && budget && render_npending; y++)
+        if (pending[y])
+        {
+            draw_row(y);
+            pending[y] = false;
+            render_npending--;
+            budget--;
+        }
 }
 
 static void set_glyph(char code, const char *src)

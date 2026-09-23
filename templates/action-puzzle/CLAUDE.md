@@ -26,7 +26,10 @@ Rules this starter adds:
 - The rules live twice: `src/cave.c` and the model in `tools/gen.py`. Change
   both, run `make gen`, then `make shot check modelcheck`. The autopilot
   verdict compares the game with the model; a rule changed on one side only
-  turns it red.
+  turns it red. A red verdict prints one letter per failed test on row 23
+  (README, "Checks"). After a change to the scan, also `make selftest-scan`.
+- A slice fits about 20 moving objects on NTSC; the verdict counts dropped
+  frames (letter D), so a cave past that fails its own check.
 - Caves and the autopilot script are edited in `tools/gen.py`, never in the
   generated `src/gen_*.h`.
 - Disk calls happen on a static screen, with the sound muted, followed by

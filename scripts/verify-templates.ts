@@ -14,14 +14,15 @@
  * Usage:
  *   node scripts/verify-templates.ts                  # every starter; exit 1 on any failure
  *   node scripts/verify-templates.ts --only hello     # one starter
- *   node scripts/verify-templates.ts --selftest       # also `make selftest`: the FORCE_FAULT build must fail
+ *   node scripts/verify-templates.ts --selftest       # also `make selftest` (the FORCE_FAULT build must fail)
+ *                                                     # and every target the starter lists in VERIFY_TARGETS
  *   node scripts/verify-templates.ts --keep DIR       # build in DIR and keep it (shots, PRGs, logs)
  */
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { makeProject, reportLines, runMake, starterNames } from "./lib/starter.ts";
+import { makeProject, reportLines, runMake, starterNames, verifyTargets } from "./lib/starter.ts";
 
 const argv = process.argv.slice(2);
 
@@ -47,7 +48,10 @@ function verify(name: string, base: string): Result {
   rmSync(dir, { recursive: true, force: true });
   const banner = makeProject(name, dir);
   const lines = [banner];
-  const steps = [["all"], ["shot", "check"], ["disk"], ...(selftest ? [["selftest"]] : [])];
+  // A starter's own proof targets (disktest, tearcheck, probe...) prove fixes
+  // that make check cannot see; --selftest runs them too.
+  const own = selftest ? verifyTargets(dir).map((t) => [t]) : [];
+  const steps = [["all"], ["shot", "check"], ["disk"], ...(selftest ? [["selftest"], ...own] : [])];
   for (const targets of steps) {
     const r = runMake(dir, targets);
     lines.push(

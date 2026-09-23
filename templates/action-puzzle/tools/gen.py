@@ -32,7 +32,7 @@ LEGEND = {'.': DIRT, ' ': SPACE, '#': BRICK, 'S': STEEL, 'o': BOULDER, '*': GEM,
 
 GEM_POINTS = 10
 TICK_CAVE_FRAMES = 12      # cave frames per unit of the time counter
-DEATH_FRAMES = 8           # cave frames between a death and the next life
+DEATH_FRAMES = 6           # cave frames between a death and the next life
 SLICE_FRAMES = 4           # display frames per cave frame (the scan's four slices)
 
 # Each cave: name (at most 16 characters), gems needed, time, 20 interior
@@ -44,17 +44,17 @@ CAVES = [
         ".P...*..*..*...*..o  ...........oo...",
         "...................*.....o...........",
         "...................*....oo...........",
-        "....................XS...............",
-        "..........................#####......",
+        "....................XS........o .....",   # the boulder on the brick end rolls right
+        "..........................##### .....",
         ".....o...............................",
         "..............####.......####........",
         "....*.........#  #.......#  #...*....",
         "..............# f#.......#m #........",
         "..............#  #.......#  #........",
         "..............####.......####........",
-        "",
-        "....o.............o........o.........",
-        "....*....o...*....*.....o..*.....*...",
+        "." * 11 + "o" * 16 + "." * 11,           # boulder rain: 16 fall and land in one
+        "." + " " * 36 + ".",                      # slice and overflow the dirty list, so
+        "",                                        # the gated run meets render.c's row queue
         "",
         "..............*..........#####.......",
         "......o..............................",
@@ -86,12 +86,17 @@ CAVES = [
 ]
 
 # The autopilot's moves, one per cave frame: L U R D, '-' stands still.
-# Past the end of a cave's string the player stands still.
+# One string per cave start (a new cave, or the same cave after a lost
+# life), keyed by the game's count of starts; past the end of a string the
+# player stands still.
 SCRIPT = [
-    "RRRRRRRRRRRRRRRRRRDDDR",
-    "RRUD",
+    "RRRRRRRRRRRRRRRRRRDDDR",   # cave 1: gems, two pushes, the exit
+    "RRUD",                     # cave 2: out from under a boulder; it falls on him
+    "RRRRRRRRD",                # cave 2 again: under another boulder, the same end
+    "RRUD",                     # cave 2, last life: game over
 ]
-LIVES_AUTOPILOT = 1
+LIVES_AUTOPILOT = 3
+DEFAULT_SCORES = [400, 300, 200, 100, 50]    # hiscore.c's default table
 NAME_AUTOPILOT = "ABE"
 
 
@@ -168,6 +173,7 @@ class Cave:
         self.exit_at = self.c.index(EXIT_SHUT)
         self.tick = 0
         self.move = -1
+        self.seen = 0
 
     def put(self, d, v, s):
         if d > s:
@@ -225,6 +231,7 @@ class Cave:
             elif not (self.round_(bt) and self.roll(i, v)):
                 c[i] = v - 1
         elif v == PLAYER:
+            self.seen += 1
             if 0 <= self.move < 4:
                 t = i + STEP[self.move]
                 tv = c[t]
@@ -289,18 +296,28 @@ class Cave:
 
 
 def play():
-    """The autopilot game, as the program plays it. Returns what it must show."""
+    """The autopilot game, as the program plays it. Returns what it must show.
+
+    The script is keyed by the game's own counter of cave starts: SCRIPT[n]
+    plays the n-th start (a new cave or a restart after a lost life). The
+    fold is chained over every cave the game leaves, so a rule that fires in
+    any cave, not only the last, moves the verdict."""
     score, gems, frames, lives = 0, 0, 0, LIVES_AUTOPILOT
-    ci = 0
+    ci, starts, chk = 0, 0, 0
     while True:
         name, need, time, _ = CAVES[ci]
         cv = Cave(build(CAVES[ci]), need, time)
-        script, f, dead_frames = SCRIPT[ci] if ci < len(SCRIPT) else "", 0, 0
+        script = SCRIPT[starts] if starts < len(SCRIPT) else ""
+        starts += 1
+        f, dead_frames = 0, 0
         while True:
             m = script[f] if f < len(script) else '-'
             cv.move = "LURD".find(m)
+            cv.seen = 0
             cv.scan()
             cv.end_of_frame()
+            # the scan meets the living player exactly once a cave frame
+            assert cv.seen <= 1 if cv.dead else cv.seen == 1, (starts, f, cv.seen)
             f += 1
             frames += SLICE_FRAMES
             if cv.exited:
@@ -313,14 +330,16 @@ def play():
                 sys.exit("autopilot: the script never ends a cave")
         score += cv.points
         gems += cv.got
+        chk = fold(cv.c, chk)
         if cv.exited:
             score += cv.time
             ci = (ci + 1) % len(CAVES)
             continue
         lives -= 1
         if lives == 0:
-            return dict(fold=fold(cv.c), score=score, gems=gems, cave=ci, frames=frames,
-                        cells=[v & 0x7f for v in cv.c])
+            rank = next((r for r, v in enumerate(DEFAULT_SCORES) if v < score), len(DEFAULT_SCORES))
+            return dict(fold=chk, score=score, gems=gems, cave=ci, frames=frames, starts=starts,
+                        rank=rank, cells=[v & 0x7f for v in cv.c])
 
 
 def c_array(name, data):
@@ -367,7 +386,9 @@ def write_autopilot(path, result):
         out.append(f'static const char script{k}[] = "{s}";')
     out.append(f"static const char * const script_for[{len(SCRIPT)}] = {{ " +
                ", ".join(f"script{k}" for k in range(len(SCRIPT))) + " };")
-    out.append(f"#define SCRIPT_CAVES {len(SCRIPT)}")
+    out.append(f"static const char script_len[{len(SCRIPT)}] = {{ " +
+               ", ".join(str(len(x)) for x in SCRIPT) + " };")
+    out.append(f"#define SCRIPT_STARTS {len(SCRIPT)}")
     out.append(f"#define LIVES_AUTOPILOT {LIVES_AUTOPILOT}")
     out.append(f'#define NAME_AUTOPILOT "{NAME_AUTOPILOT}"')
     out.append("// What the rules model says the program must hold at game over.")
@@ -376,6 +397,8 @@ def write_autopilot(path, result):
     out.append(f"#define EXPECT_GEMS {result['gems']}")
     out.append(f"#define EXPECT_CAVE {result['cave']}")
     out.append(f"#define EXPECT_PLAY_FRAMES {result['frames']}")
+    out.append(f"#define EXPECT_STARTS {result['starts']}")
+    out.append(f"#define EXPECT_RANK {result['rank']}")
     open(path, "w").write("\n".join(out) + "\n")
 
 
@@ -425,6 +448,7 @@ if __name__ == "__main__":
     write_autopilot(os.path.join(src, "gen_autopilot.h"), r)
     write_notes(os.path.join(src, "gen_notes.h"))
     print(f"gen: {len(CAVES)} caves, {total} bytes packed; autopilot: score {r['score']}, gems {r['gems']}, "
-          f"died in cave {r['cave'] + 1}, {r['frames']} play frames, fold 0x{r['fold']:04x}")
+          f"game over in cave {r['cave'] + 1} after {r['starts']} starts, {r['frames']} play frames, "
+          f"chained fold 0x{r['fold']:04x}, table row {r['rank'] + 1}")
     if r["frames"] > 255:
         print("gen: more than 255 play frames: the meter records the first 255 only")

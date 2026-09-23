@@ -80,7 +80,6 @@ static void draw_rows3(char front, char row, char r)
         m -= LEVEL_ROWS;
     K_WORD(ASM_ROW_SRC) = (unsigned)map_row[m];
     K_WORD(ASM_ROW_DST) = (unsigned)scr_row[front][r];
-    K_BYTE(ASM_ROW_N) = 120;
     __asm { jsr ASM_COPY_ROWS }
 }
 
@@ -140,6 +139,21 @@ void level_advance(void)
         next_row = cur_row;
     }
     apply_next();
+}
+
+// The map's code for screen row r, column c at the position now showing.
+char level_code(char r, char c)
+{
+    char m = cur_row + 20 - r;
+    if (m >= LEVEL_ROWS)
+        m -= LEVEL_ROWS;
+    return map_row[m][c];
+}
+
+// Screen row r of the screen now showing.
+char *level_row(char r)
+{
+    return scr_row[cur_front][r];
 }
 
 char *level_screen(void)

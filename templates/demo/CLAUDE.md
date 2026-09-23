@@ -28,7 +28,8 @@ What bites in this program:
   the dispatcher's path to a stable slot can move the stores: run
   `make probe` after such a change, then `make shot check`. The probe
   takes eight shots per model of a build whose main loop varies the IRQ
-  entry phase each frame, and exits 0 only on one column in all of them.
+  entry phase each frame, and exits 0 only on one column in all of them,
+  at `PROBE_COLUMN` (config.asm) on both models.
   `make shot check` alone cannot see a wrong SYNC_PAD: the stores stay in
   the blank.
 - No sprite on lines 148 to 211: each kernel chunk has a fixed length, so

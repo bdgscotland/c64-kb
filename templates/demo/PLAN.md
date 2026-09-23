@@ -392,7 +392,7 @@ and the meter with its frame count.
 ## Measured
 
 `make shot check`, VICE x64sc 3.10, 232 recorded frames: PAL worst 7,332,
-typical 6,586; NTSC worst 7,480, typical 6,734. (The first build read 7,171
+typical 6,586; NTSC worst 7,476, typical 6,735. (The first build read 7,171
 / 6,473 and 7,351 / 6,612; the review's fixes moved code and made part 1's
 init clear the screen, and the dispatcher's lateness counters add about 30
 cycles an IRQ.) README.md, "The measured

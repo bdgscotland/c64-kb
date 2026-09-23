@@ -9,7 +9,7 @@
 
 enum { E_FREE, E_FLYING, E_BOOM };
 
-extern char e_state[NE];
+#define e_state ((char *)ASM_EN_STATE)  // E_*; step.asm reads it
 
 // An enemy's position, sprite and colour live in the multiplexer's actor
 // table, as actor e + 1: the kernel sorts them where waves.c writes them,
@@ -26,6 +26,7 @@ void waves_update(char row);           // map row now showing: director, spawner
 void enemy_explode(char e);            // shot or rammed: explode, then free
 char enemy_points(char e);             // score, in tens of points
 unsigned waves_due(unsigned pos);      // wave records whose position pos has reached
+void on_enemy_fire(char e);            // a path said FIRE; main.c decides what that does
 
 #pragma compile("waves.c")
 

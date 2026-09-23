@@ -14,8 +14,9 @@ blank `PLAN.md`.
 ## This starter: shmup-vertical
 
 A vertically scrolling shoot-em-up: a river scrolls down over a fixed
-score panel, the ship fires character bullets, waves of enemies keyed to
-the scroll go through a sprite multiplexer, effects play inside the tune,
+score panel, the ship and the enemies fire character bullets, waves of
+enemies keyed to the scroll go through a sprite multiplexer, effects play
+inside the tune,
 and the high score is saved to drive 8. `README.md` has the file map and
 the first three things to extend. Start a program from it with
 `npm run new-project -- shmup-vertical <dir>` in c64-kb. `PLAN.md` here is
@@ -31,18 +32,25 @@ What will bite you here:
   16 PAL shots broken with eight sprites on it; lines 209-213 were clean).
   `make check` runs `make phases`, which compares the panel at all eight
   YSCROLL phases; keep it passing after touching the split.
-- `make stage` meters the heaviest frame the game makes; re-run it after
-  adding work to a frame. The verdict fails if a play frame overran.
+- `make stage` meters the heaviest frame the game makes (16,123 of 17,095
+  cycles on NTSC); re-run it after adding work to a frame. It fails if a
+  play frame overran or the worst passes the frame. Work that runs for
+  every enemy or bullet every frame lives in `glyph.asm`, `hit.asm` and
+  `step.asm` for that reason.
+- Enemy dots are drawn before the beam reaches them only because enemies
+  fire from sprite Y 72-140 (`bullets.c`); `-dDRAWEND=1` measures the
+  margin. Keep new shots inside a window like it.
 - The two playfield screens are drawn from the map; write game text to
   `level_screen()` and give its cells colour RAM below 8 (hires).
 - Oscar64's zero page reached `$56` here; the kernel uses none. Pass values
   to the blob through its own bytes (`ASM_<LABEL>` in `build/asm.h`).
 - Disk calls go through `src/hiscore.c`, which stops the chain and turns
-  sprites off around them. A shot pin inside a disk write leaves a splat
-  file on `build/shmup-vertical.d64`: `make clean`.
+  sprites off around them (sprite DMA on badlines hangs the KERNAL's serial
+  transfers). `make joytest` proves the save and the reboot.
 - `-dPROFILE=1` times each step of `play_frame` into `$0340` (CIA1 timer B,
   IRQs held off per step); `-dLOOP_TEST=1` plays to GAME OVER and back to
-  the title; `make joy` with `tools/drive.py` drives the normal game.
+  the title; `-dEVENTLOG=1` logs each kill and hit with its frame; `make
+  joy` with `tools/drive.py` drives the normal game.
 
 ## Before any code
 

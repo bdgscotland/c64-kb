@@ -18,6 +18,8 @@
 #   DISK_FILES       extra host files make disk writes beside the PRG
 #   SHOT_DISK        1: each headless run attaches a fresh copy of build/$(NAME).d64 as drive 8 (default 0)
 #   CLAIMS_ARGS      arguments to c64-kb's scripts/claims-watch.ts after the PRG
+#   VERIFY_TARGETS   this starter's own proof targets (disktest, tearcheck, probe, ...);
+#                    `npm run verify:templates -- --selftest` runs each after selftest
 #
 # Tools, each from the environment first:
 #   OSCAR64, KICKASS_JAR, JAVA, X64SC (headless runs), X64SC_WINDOWED (make run),
@@ -42,6 +44,7 @@ DISK_NAME        ?= $(NAME)
 DISK_ID          ?= 01
 SHOT_DISK        ?= 0
 CLAIMS_ARGS      ?=
+VERIFY_TARGETS   ?=
 PLAN_GATE        ?= on
 
 # ---- tools --------------------------------------------------------------------
@@ -89,7 +92,7 @@ shot_disk = @cp $(D64) $(1:.png=.d64)
 shot_disk_flags = -8 $(1:.png=.d64) -drive8wobbleamplitude 0 -drive8wobblefrequency 0
 endif
 
-.PHONY: all build run run-auto shot check selftest disk claims zp released clean plan-gate tools
+.PHONY: all build run run-auto shot check selftest disk claims zp released clean plan-gate tools verify-targets
 .DELETE_ON_ERROR:
 
 all: plan-gate build
@@ -257,6 +260,10 @@ ifneq ($(strip $(C_MAIN)),)
 else
 	@echo "zp: $(NAME) has no C part; a KickAssembler program's zero page is what its source says."
 endif
+
+# The starter's own proof targets, one line, for verify-templates to read.
+verify-targets:
+	@echo $(VERIFY_TARGETS)
 
 tools:
 	@echo "OSCAR64=$(OSCAR64)"; echo "KICKASS_JAR=$(KICKASS_JAR)"; echo "X64SC=$(X64SC)"

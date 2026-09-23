@@ -9,6 +9,7 @@
 #   make selftest   prove check fails on the FORCE_FAULT=1 build
 #   make stage      the heaviest frame the game makes (-dSTAGE=1): the meter's readout, PAL and NTSC
 #   make joy        the normal game reading its port byte from $02FE, for tools/drive.py
+#   make joytest    the joy build played to GAME OVER and rebooted: the saved HI must show
 #   make disk       build/shmup-vertical.d64
 #   make claims     c64-kb's claims-watch over the autopilot build, when available
 #   make clean
@@ -25,8 +26,9 @@ SHOT_CYCLES_PAL  := 30000000
 SHOT_CYCLES_NTSC := 30000000
 
 # Drive 8 is attached during make shot: the autopilot writes and reads
-# HISCORE on build/shmup-vertical.d64. A pin that lands inside a write leaves
-# a splat file there; the program scratches and rewrites one (drive reply 60).
+# HISCORE on a fresh copy of build/shmup-vertical.d64 each run (the harness).
+# A save cut off leaves a splat file; the program scratches and rewrites one
+# (drive reply 60).
 SHOT_DISK := 1
 
 # What the program may write, for make claims, found by claims-watch on the
@@ -45,6 +47,9 @@ CLAIMS_ARGS = --cycles 30000000 --disk $(abspath $(D64)) \
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
+# Proof targets `npm run verify:templates -- --selftest` runs after selftest.
+VERIFY_TARGETS := stage joytest
+
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
 include $(HARNESS)/harness.mk
@@ -70,19 +75,24 @@ phases: $(PRG_PHASES) $(D64)
 check: phases
 
 # ---- stage: the heaviest frame ------------------------------------------------------
-# -dSTAGE=1 plays a script that puts 12 enemies, bolts and a kill in the same
-# frames and meters play frames 150-399. Its verdict is not graded; the
-# meter's readout is printed. Re-run it after adding work to a frame.
+# -dSTAGE=1 plays a script that puts 12 enemies, bolts, enemy dots and a kill
+# in the same frames and meters play frames 150-399. Its verdict grades no
+# overrun and every bullet cell restored; stage-expect.json adds the meter's
+# worst inside a frame on both models. STAGE_DEFS='-dSD=24 -dSX=16' moves
+# the script (the worst of a 4 x 4 sweep; see PLAN.md). Re-run it after
+# adding work to a frame.
+STAGE_DEFS ?= -dSD=24 -dSX=16
 PRG_STAGE := build/$(NAME)-stage.prg
-$(PRG_STAGE): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+$(PRG_STAGE): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) $(STARTER_MAKEFILE) | plan-gate
 	@mkdir -p build
-	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dSTAGE=1 -o=$@ $(C_MAIN)
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dSTAGE=1 $(STAGE_DEFS) -o=$@ $(C_MAIN)
 
 .PHONY: stage
 stage: $(PRG_STAGE) $(D64)
 	$(call vice_shot,$(PRG_STAGE),40000000,,shots/stage-pal.png)
 	$(call vice_shot,$(PRG_STAGE),40000000,-model ntsc,shots/stage-ntsc.png)
 	$(PYTHON) tools/meter.py $(HARNESS_DIR) shots/stage-pal.png pal shots/stage-ntsc.png ntsc
+	$(PYTHON) $(HARNESS_DIR)/check.py stage-expect.json shots/stage-pal.png shots/stage-ntsc.png
 
 # ---- joy: the normal game driven headless ------------------------------------------
 # The port byte comes from $02FE instead of $DC00, so a VICE monitor can
@@ -94,3 +104,9 @@ $(PRG_JOY): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 
 .PHONY: joy
 joy: $(PRG_JOY)
+
+# joytest: the joy build played to GAME OVER, its save, and a reboot on the
+# same fresh disk showing that score as HI (tools/joytest.py).
+.PHONY: joytest
+joytest: $(PRG_JOY) $(D64)
+	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_JOY) $(D64)

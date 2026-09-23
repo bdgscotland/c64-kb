@@ -56,7 +56,7 @@ What it proposed and what this plan did with it:
 | sprite_multiplex_game | the ship and up to twelve enemies on eight sprites | kickassembler-sprite-multiplex-game | sprite_dma_overflow, decimal_mode_in_irq_handler, sprite_x_high_bit_wrong_register, sprite_x_range_hidden_and_seam, vic_bus_takeover_on_dma, sprite_registers_persist_across_state_change |
 | wave_director | waves start at map rows, not frame counts; path bytecode | oscar64-wave-director | sprite_x_high_bit_wrong_register |
 | object_pool | twelve enemy slots | oscar64-object-pool (inside wave-director) | sprite_x_range_hidden_and_seam |
-| char_bullets | the ship's bullets as characters, merged into reserved glyphs | oscar64-char-bullets | charset_blit_overruns_grown_code, full_field_redraw_exceeds_vblank, petscii_written_to_screen_ram |
+| char_bullets | the ship's bolts and the enemies' dots as characters, merged into reserved glyphs (or a ready-made glyph over open water) | oscar64-char-bullets | charset_blit_overruns_grown_code, full_field_redraw_exceeds_vblank, petscii_written_to_screen_ram |
 | per_frame_hitbox | a box per sprite frame; only pairs that can hurt each other | oscar64-per-frame-hitbox | sprite_dma_overflow, sprite_x_high_bit_wrong_register |
 | sfx_in_player | effects take voice 3 inside the player and hand it back | kickassembler-sfx-in-player | sid_adsr_bug_8580, sid_write_only_registers, sid_voice3_disable_silent_bit |
 | sid_play_routine_pattern | init + play, once a frame from the raster IRQ | oscar64-sid-music-player | pal_ntsc_tempo_mismatch, sid_filter_chip_variation |
@@ -298,8 +298,8 @@ No member states a byte figure that can be summed.
 ```
 
 Measured by the meter (`make shot check`, VICE x64sc 3.10, the script's
-240 play frames): worst 12,472 cycles and typical (the median) 7,103 on
-PAL; worst 12,721 and typical 7,293 on NTSC. The bracket is the C main
+240 play frames): worst 12,912 cycles and typical (the median) 9,529 on
+PAL; worst 13,015 and typical 9,659 on NTSC. The bracket is the C main
 loop's whole frame (CIA2 timer A) plus every IRQ outside it (CIA2 timer B,
 summed by kernel.asm); badlines and sprite DMA inside either are in the
 figures. The split IRQ starts timer B only after its panel writes, so C
@@ -307,55 +307,74 @@ adds its first 289 cycles on PAL, 296 on NTSC (the largest of 245-289 and
 246-296 measured under the VICE monitor from the IRQ sequence to the start
 write). Not in the figures: about 45 cycles per other IRQ taken outside the
 main loop's bracket (the entry before timer B starts and the exit after it
-stops; arithmetic from kernel.asm), one to four a frame; and, in AUTOPILOT
-builds only, `meter_print` and the loop head, which run outside the bracket
-every frame and cost up to 3,404 cycles on PAL and 3,301 on NTSC (measured
-in the review of this starter). Release builds have no `meter_print`.
+stops; arithmetic from kernel.asm), one to four a frame. The meter's
+readout is printed only after the freeze: printed every frame it cost up
+to 3,404 cycles outside the bracket (measured in the review) and made the
+autopilot build drop frames the game does not.
+
+Enemy fire (ported from the other #39 version's design, in this code's
+structure) raised the typical frame by about 2,400 cycles and the staged
+worst past the NTSC frame at first (17,882). Four changes brought it back,
+each measured with `make stage`: the bullet draw list in `glyph.asm`, the
+enemies' dots stepped there too, `hit.asm` for the enemy boxes, `step.asm`
+for the path step, ready-made glyphs for shots over open water (no merge),
+and a three-row copy of 32 cycles a column (the other version's copy3).
 
 Against the plan: the tool's range, 26,691-28,709 plus 1,894 fixed, is
-more than twice the worst frame measured. Where they differ:
+well above the worst frame measured. Where they differ:
 
 - sprite_multiplex_game, 16,600 (arithmetic): its recipe's worst case, 24
   actors with the sort order reversed. Here 16 actors, and the persistent
-  sort sees a few swaps a frame: sort and build measured 2,600-3,000
-  together (a PROFILE build, IRQs off).
-- char_bullets, 3,995: eight bullets. Here four, erase and draw 1,150-1,450.
-- per_frame_hitbox, 3,693: 28 pairs of every kind. Here at most 12 x 5
-  pairs, skipped outside the band the ship and bullets cover: 2,650-3,300.
-- wave_director, 1,170-3,188: here 1,700-2,050 for twelve slots.
-- Not in the tool at all: drawing three rows of the hidden screen
-  (2,300-2,400) and the actor hand-off to the multiplexer (about 400).
+  sort sees a few swaps a frame: sort and build 2,600-3,700 with DMA
+  (PROFILE builds, IRQs off).
+- char_bullets, 3,995: eight bullets. Here up to 3 bolts and 6 dots: the
+  erase, the restore check and the draw, 2,300-3,850 on the staged frame.
+- per_frame_hitbox, 3,693: 28 pairs of every kind. Here 12 enemies x 5
+  boxes in `hit.asm` plus 6 dots against the ship: about 2,800 staged.
+- wave_director, 1,170-3,188: here about 2,200 staged, twelve slots.
+- Not in the tool at all: drawing three rows of the hidden screen (about
+  1,700-1,900) and the actor hand-off to the multiplexer.
 - soft_scroll_v, screen_double_buffer_d018, joystick_edge_detect have no
   Cost line; the meter covers them.
 
 The graded script's worst frame is not the game's worst case. `make stage`
 (-dSTAGE=1) plays a script that brings 12 enemies onto the screen at once
-(the parade and the row-32 swoop) and fires up a parade column, so bolts
-and a kill share those frames, and meters play frames 150-399. Its worst
-frames: 14,073 cycles on PAL and 14,740 on NTSC, typical 9,601 and 10,236.
-The review of this starter swept that script's timing (48 runs) and found
-14,575 on PAL and 15,066 on NTSC at most (12 enemies flying, YSCROLL 0);
-with a kill in the frame, 14,299 and 14,605. Two things the first version
-of this plan got wrong: four bolts never fly at once (one shot per 7
-frames, and a bolt lives at most 16: three, arithmetic, and no staged
-trace showed more), and the carry frame (YSCROLL 7) is the cheapest
-phase, because `level_render` does nothing on it (one PAL run's phase
-maxima: 14,962 at phase 0, 13,648-14,264 at 1-6, 11,505 at 7). Its bound
-from separate step maxima, about 15,600, is withdrawn: on the staged case
-the same method gives about 16,500 on NTSC.
+(the parade and the row-32 swoop), waits, and fires up a parade column, so
+bolts, dots and a kill share those frames, and meters play frames 150-399.
+Swept over 16 timings (-dSD=0,8,16,24 x -dSX=8,16,24,32), its worst frame
+was 15,991 cycles on PAL and 16,136 on NTSC (SD 24, SX 16, which `make
+stage` now runs: 15,982 and 16,123, typical 11,376 and 11,676), and no run
+lost a frame. Its verdict fails on an overrun or an unrestored bullet cell,
+and stage-expect.json on a worst over the frame. Before enemy fire the
+review's sweep found 14,575 and 15,066. Two things the first version of
+this plan got wrong: four bolts never fly at once (one shot per 7 frames,
+a bolt lives at most 16: three, arithmetic), and the carry frame (YSCROLL
+7) is the cheapest phase, because `level_render` does nothing on it.
+
+The bullet draw must end before the beam reaches each cell it changes.
+`-dDRAWEND=1` records the smallest number of lines between the raster
+after a write and the first line of that cell: 17 for a dot on NTSC in the
+graded run, 28 for both kinds on NTSC in the staged run; on PAL the bolts
+were all drawn before line 0 and the dots had 47 or more. Frames that start
+late for the harness (the first, the one after a meter_init, the ones where
+the median is found) are left out; the enemy fire window, sprite Y 72-140,
+is what keeps the dots below the draw.
 
 ## Memory and screen
 
 - `$0801-$087F` Oscar64 startup; `$0880-$1FFF` the KickAssembler blob
-  (`src/kernel.asm` with `mux.asm` and `sound.asm`: 2,850 bytes, to
-  `$13A1`); `$2000-$7FFF` C code, data and stack (code and data end at
-  `$3EB8` in the release build).
+  (`src/kernel.asm` with `mux.asm`, `sound.asm`, `glyph.asm`, `hit.asm`
+  and `step.asm`: 3,972 bytes, to `$1803`); `$2000-$7FFF` C code, data and
+  stack (code and data end at `$3E51` in the release build).
 - VIC bank 2 (`$DD00` bits 0-1 = 01): playfield screens at `$8000` and
   `$8400`, the panel screen at `$8800`, sprite shapes from `$A000` (block
   128), characters at `$B800`. The VIC sees the character ROM at
   `$9000-$9FFF`, so the level map (98 rows of 40 codes) lives there.
 - `$8C00` row 13: the meter's scratch readout in AUTOPILOT builds, copied
   onto the playfield after the verdict.
+- Characters: `$C0-$CF` a dot, `$D0-$D3` a bolt, over open water (no
+  merge); `$F2-$F7` the dots' and `$F8-$FB` the bolts' reserved glyphs;
+  `$FF` blank (the idle byte).
 - Colour RAM: every playfield cell `$0F` (multicolour, yellow), panel rows
   white; text on the playfield sets its cells below 8 (hires).
 - Zero page: Oscar64's `$02-$56` (measured by claims-watch); the kernel
@@ -365,40 +384,59 @@ the same method gives about 16,500 on NTSC.
 ## Autopilot and checks
 
 Script (frames, port byte): 2 idle, 2 fire (the title starts the game);
-24 left + fire, 10 fire, 24 right, 30 still (a dart rams the ship: one
-life lost); 16 left, 32 right, 16 left, all firing (the weave of saucers);
-20 still; 40 fire through the gap between two parade columns; 24 left, 3
-down. 240 play frames (the second fire frame on the title is play frame
-0), then still. The meter records the first 240.
+24 left + fire, 10 fire, 30 right, 24 still (the first dart's dot hits the
+ship: one life lost); 16 left, 32 right, 16 left, all firing (the weave of
+saucers); 20 still; 40 fire through the gap between two parade columns;
+24 left, 3 down. 240 play frames (the second fire frame on the title is
+play frame 0), then still. The meter records the first 240.
 
 The game freezes on the first frame after that with YSCROLL 3 (play frame
 243, 30 rows scrolled), then saves the high score to drive 8, loads it
-back, and grades 15 facts (main.c `first_fail`): the showing screen
-equals the map (every bullet cell restored), one loss and two lives left,
-score = the points of what was shot, score 450 and 5 kills (by play
-frame: a dart shot at 37, the ram at 71 in a still segment, saucers shot
-at 94, 113, 121 and 128; a Python model in the review matched the VICE
-kill log frame for frame), every wave the scroll reached has started, the frame
+back, and grades 18 facts (main.c `first_fail`): the showing screen equals
+the map; one loss and two lives left; score = the points of what was shot;
+score 450 and 5 kills; every wave the scroll reached has started; the frame
 IRQ applied YSCROLL 3 and the right screen (read from `$D011` and
-`$D018`), the multiplexer shows 11 sprites, the ten parade bugs are where
-their paths end, the ship is where the script leaves it (X 120, Y 176, by
-arithmetic), effects ran, the HISCORE round trip returned 45, and no play
-frame ran into the next (the frame IRQ count moved by one each time). A
-red run prints the number of the first failed fact. `make check` first
-runs `make phases`: the game frozen on each of the eight YSCROLL phases,
-PAL and NTSC, with panel lines 215-250 compared to the graded phase-3
-shot. With the phase-5 delay entry changed from 5 to 7 (the review's
-mutation) the graded shot still passes 57 of 57, and `make phases`
-fails YSCROLL 5 on both models (882 and 886 pixels differ).
+`$D018`); the multiplexer shows 11 sprites; the ten parade bugs are where
+their paths end; the ship is where the script leaves it (X 120, Y 176, by
+arithmetic); effects ran; the HISCORE round trip returned 45; no play frame
+ran into the next; every bullet cell the last draw changed held the map's
+code again after every erase (`bullets_restored`, each frame); 10 dots
+fired (5 darts at Y 72, 5 saucers at Y 88, from the paths); and the loss
+was a dot, not a ram. By play frame, from the `-dEVENTLOG=1` build, the
+same on PAL and NTSC: a dart shot at 37, the dot at 71, saucers shot at 94,
+113, 121 and 128. Before enemy fire the review's Python model matched the
+same kills frame for frame, with a ram at 71.
 
-`expect.json` checks the border and the three text rows, the meter (240
-frames, worst within a frame), the ship's and all ten bugs' bounding boxes
-(so the multiplexer shows eleven sprites), four pixels that place the
-river's banks at 30 rows scrolled, the split (line 214 playfield, line 216
-panel grey), the panel's rule, background and two lives, and the panel and
-playfield identical on PAL and NTSC. FORCE_FAULT starts the ship 16 pixels
-right: it shoots 4 instead of 5, is never rammed, ends at X 136, and
-check.py fails the verdict, the text and the ship's box.
+Mutations, each run through its target (the review's are in its report):
+
+| Mutation | Target | Result |
+|---|---|---|
+| The split's phase-5 delay 5 to 7 | `make check` | phases fail YSCROLL 5, PAL and NTSC; the graded shot alone passed |
+| The erase skips the first cell (`if (p && i)` before, now `beq` after `dey` in cb_erase) | `make check` | verdict red (fact 16) |
+| Enemies never fire (`on_enemy_fire` removed) | `make check` | verdict red, LIVES 3, the ship's end moves |
+| Dots never hurt the ship (`on_ship_shot` removed) | `make check` | verdict red, LIVES 3 |
+| The stage meter's hold back to PLAY_FRAMES | `make stage` | "Integer constant truncated", frames 144 not 250 |
+| The stage leaves sprites over the readout | `make stage` | the meter check cannot read row 13 |
+| The save writes no record | `make joytest` | the reboot never shows HI 000600 |
+| No `hold_screen()` before the start-up read | a release shot at 6,000,000 cycles | the title text is gone (it was there) |
+
+`make check` first runs `make phases`: the game frozen on each of the eight
+YSCROLL phases, PAL and NTSC, with panel lines 215-250 compared to the
+graded phase-3 shot.
+
+`expect.json` checks the border and four text rows, the meter (240 frames,
+worst within a frame), the ship's and all ten bugs' bounding boxes (so the
+multiplexer shows eleven sprites), four pixels that place the river's banks
+at 30 rows scrolled, the split (line 214 playfield, line 216 panel grey),
+the panel's rule, background and two lives, and the panel and playfield
+identical on PAL and NTSC. FORCE_FAULT starts the ship 16 pixels right: it
+shoots 4 instead of 5 (400 points), is rammed instead of shot, ends at X
+136, and check.py fails the verdict, the text and the ship's box.
+
+`make joytest` plays the normal game (the `$02FE` joy build) headless: a
+fresh disk's title shows HI 000000, a game held on fire runs to GAME OVER
+and saves, and a reboot on the same disk shows that score as HI. Its score
+varies from run to run (the drive steps in wall-clock time).
 
 ## Decisions and open questions
 
@@ -439,6 +477,13 @@ check.py fails the verdict, the text and the ship's box.
 - The meter cannot be read in the panel: check.py reads text on the
   YSCROLL 3 grid, and the panel is on YSCROLL 7 (a harness finding). The
   readout goes to the playfield after the freeze.
+- Enemy fire is `P_FIRE` in the path bytecode, from the other #39
+  version's design: a 6-dot pool, dots drifting towards where the ship was,
+  and a fire window of sprite Y 72-140, so a dot's first cell starts on
+  line 77 or lower and the draw is done before the beam gets there
+  (measured margins above). The work that runs for every enemy or bullet
+  every frame moved into KickAssembler (`glyph.asm`, `hit.asm`, `step.asm`)
+  to keep the staged frame inside NTSC; C keeps the rules.
 - Disk I/O stops the raster chain ($D01A = 0) and turns sprites off. With
   sprites on, the KERNAL's serial transfers hung (NTSC 3 of 3 runs, PAL 1
   of 3); the review isolated the cause with a minimal program: sprite DMA
