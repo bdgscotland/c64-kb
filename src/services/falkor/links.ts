@@ -289,6 +289,33 @@ export class FalkorLinks extends FalkorNodes {
     return false;
   }
 
+  /**
+   * CLOBBERS_ZP (schema 26): the zero-page bytes a KERNAL routine may write
+   * (bound may, the ROM walk) or did write in a VICE trace (bound must, one
+   * edge per traced call, keyed by its basis). Both ends must exist: the
+   * routine came from pass 1, zero_page is a seed.
+   */
+  async linkKernalClobbersZp(c: {
+    routine: string;
+    ranges: string;
+    bound: string;
+    basis: string;
+  }): Promise<boolean> {
+    const rows = await this.write(
+      `MATCH (k:KernalRoutine {name: $routine})
+       MATCH (z:HardwareUnit {name: 'zero_page'})
+       MERGE (k)-[e:CLOBBERS_ZP {bound: $bound, basis: $basis}]->(z)
+       SET e.ranges = $ranges
+       RETURN 1`,
+      c,
+    );
+    if (rows.length > 0) return true;
+    console.warn(
+      `[falkor] linkKernalClobbersZp: ${c.routine} — KernalRoutine or zero_page unit not found, edge dropped`,
+    );
+    return false;
+  }
+
   async linkTriggeredBy(pitfallName: string, targetName: string, targetKind: CauseKind): Promise<boolean> {
     return this.mergeOrWarn({
       from: { label: "Pitfall", name: pitfallName },

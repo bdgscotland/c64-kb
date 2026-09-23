@@ -52,6 +52,7 @@ const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
   ["archetype_risks", "RISKS", "archetype_risks"],
   ["scaffolds", "SCAFFOLDS", "scaffolds"],
   ["claims", "CLAIMS", "claims"],
+  ["clobbers_zp", "CLOBBERS_ZP", "kernal_clobbers_zp"],
 ];
 
 interface EdgeCount {
@@ -111,7 +112,7 @@ export async function reportSummary(opts: {
   const droppedRefs = edges.totalDropped();
   if (droppedRefs > 0) {
     console.warn(
-      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds/claims references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
+      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds/claims/clobbers-zp references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
     );
   }
   log(

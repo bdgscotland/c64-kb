@@ -121,6 +121,7 @@ const LINKERS: { [K in keyof EdgeByType]: Linker<EdgeByType[K]> } = {
   archetype_features: (f, e) => f.linkArchetypeFeatures(e.archetype, e.technique),
   archetype_risks: (f, e) => f.linkArchetypeRisks(e.archetype, e.pitfall),
   claims: (f, e) => f.linkClaims(e),
+  kernal_clobbers_zp: (f, e) => f.linkKernalClobbersZp(e),
 };
 
 /** Create one edge. Resolves false when the link reports the edge did not land. */

@@ -33,7 +33,9 @@ export interface HardRuleResult {
 // KERNAL routines that talk on the serial bus (serial_bus_exclusive rule).
 // The routines are the KERNAL's serial-bus entries and the file calls built
 // on them; CHRIN/CHROUT/GETIN are left out because they touch the bus only
-// through a redirected channel, which CHKIN/CHKOUT already name.
+// through a redirected channel, which CHKIN/CHKOUT already name. Names are
+// the KernalRoutine nodes' (the kernal page's H3s): IECIN and IECOUT, not
+// ACPTR and CIOUT, which no USES edge can carry.
 const SERIAL_KERNAL: ReadonlySet<string> = new Set([
   "LOAD",
   "SAVE",
@@ -46,8 +48,8 @@ const SERIAL_KERNAL: ReadonlySet<string> = new Set([
   "LISTEN",
   "TKSA",
   "SECOND",
-  "ACPTR",
-  "CIOUT",
+  "IECIN",
+  "IECOUT",
   "UNTLK",
   "UNLSN",
 ]);

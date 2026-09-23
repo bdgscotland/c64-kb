@@ -184,6 +184,27 @@ async function fetchRecipeUses(f: FalkorService, techniques: readonly string[]) 
   return rows.flatMap((r) => (r.name && r.kind ? [{ name: r.name, kind: r.kind, recipe: r.recipe }] : []));
 }
 
+const ClobberRow = z.object({ routine: z.string(), ranges: z.string().nullable() });
+
+/** The may set of every KERNAL routine the checked techniques USE (schema 26). */
+async function fetchKernalClobbers(
+  f: FalkorService,
+  facts: ReadonlyMap<string, TechniqueFacts>,
+): Promise<Map<string, string>> {
+  const routines = [...new Set([...facts.values()].flatMap((F) => F.kernal))];
+  if (routines.length === 0) return new Map();
+  const rows = parseRows(
+    ClobberRow,
+    await f.roQuery(
+      `MATCH (k:KernalRoutine)-[e:CLOBBERS_ZP {bound: 'may'}]->(:HardwareUnit {name: 'zero_page'})
+       WHERE k.name IN $routines
+       RETURN k.name AS routine, e.ranges AS ranges`,
+      { routines },
+    ),
+  );
+  return new Map(rows.map((r) => [r.routine, r.ranges ?? ""]));
+}
+
 export async function fetchCompatibilityFacts(techniques: readonly string[]): Promise<CompatibilityFacts> {
   const f = await getFalkor();
   const requires = await fetchRequires(f, techniques);
@@ -194,5 +215,6 @@ export async function fetchCompatibilityFacts(techniques: readonly string[]): Pr
     fetchRecipeUses(f, techniques),
   ]);
   await fetchClaims(f, facts);
-  return { techniques, requires, facts, sharedRegisters, sharedKernal, recipeUses };
+  const kernalClobbers = await fetchKernalClobbers(f, facts);
+  return { techniques, requires, facts, sharedRegisters, sharedKernal, recipeUses, kernalClobbers };
 }

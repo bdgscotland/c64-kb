@@ -6,7 +6,9 @@
  * Separators accept `—` (U+2014) or ` -- `.
  */
 
-import { group, matchField, parseFrontmatter, splitH3Sections, type Section } from "./common.ts";
+import { formatZeroPageRanges } from "../claims.ts";
+import { CLOBBERS_LINE, parseClobbers } from "../kernal-clobbers.ts";
+import { group, matchField, parseFrontmatter, splitH3Sections, warn, type Section } from "./common.ts";
 import type { GraphEntity } from "./types.ts";
 
 const REG_H3 = /^###\s+(\$[0-9A-F]{4})\s+(?:—|--)\s+([A-Z][A-Z0-9_]*)\s+(?:—|--)\s+(.+?)\s+\((R|W|RW)\)\s*$/;
@@ -60,6 +62,30 @@ function memoryEntity(m: RegExpExecArray, body: string): GraphEntity {
   };
 }
 
+/**
+ * One CLOBBERS_ZP entity per `**Clobbers zero page:**` line (schema 26): the
+ * may line the ROM walk writes and any must line a VICE trace wrote. A line
+ * that does not parse is warned about and dropped, never guessed at.
+ */
+function clobberEntities(routine: string, body: string): GraphEntity[] {
+  const out: GraphEntity[] = [];
+  for (const m of body.matchAll(CLOBBERS_LINE)) {
+    const c = parseClobbers(group(m, 1));
+    if ("error" in c) {
+      warn(`${routine}: **Clobbers zero page:** refused: ${c.error}`);
+      continue;
+    }
+    out.push({
+      type: "kernal_clobbers_zp",
+      routine,
+      ranges: formatZeroPageRanges(c.ranges),
+      bound: c.bound,
+      basis: c.basis,
+    });
+  }
+  return out;
+}
+
 function kernalEntities(m: RegExpExecArray, body: string): GraphEntity[] {
   const name = group(m, 2);
   const entities: GraphEntity[] = [
@@ -71,6 +97,7 @@ function kernalEntities(m: RegExpExecArray, body: string): GraphEntity[] {
       ...optionalFields(body, { input: FIELD_INPUT, output: FIELD_OUTPUT, affects: FIELD_AFFECTS }),
     },
   ];
+  entities.push(...clobberEntities(name, body));
   const pairsField = matchField(body, FIELD_PAIRS_WITH);
   if (pairsField) {
     const pairs = pairsField

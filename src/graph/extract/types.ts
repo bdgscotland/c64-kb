@@ -1,6 +1,7 @@
 /** The entities the extractor emits. Node types and edge types share one union; see src/graph/apply.ts. */
 
 import type { ClaimMode, ClaimsBasis } from "../claims.ts";
+import type { ClobberBound } from "../kernal-clobbers.ts";
 import type { CostBasis, TechniqueCost } from "./vocabulary.ts";
 
 export type TargetKind = "Register" | "KernalRoutine" | "Technique";
@@ -17,6 +18,15 @@ export type GraphEntity =
       affects?: string;
     }
   | { type: "pairs_with"; a: string; b: string }
+  | {
+      // **Clobbers zero page:** under a KERNAL routine H3 (schema 26):
+      // ranges canonical "B8-BA,C3" ("" for none), $00-$FF.
+      type: "kernal_clobbers_zp";
+      routine: string;
+      ranges: string;
+      bound: ClobberBound;
+      basis: string;
+    }
   | {
       type: "memory_region";
       name: string;

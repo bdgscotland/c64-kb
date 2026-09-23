@@ -91,6 +91,25 @@ Following each routine H3, optional structured fields:
 The `**Pairs with:**` marker is what `PAIRS_WITH` graph edges are extracted from.
 Multiple pair names are comma-separated.
 
+After `**Affects:**`, one or more `**Clobbers zero page:**` lines (schema
+26) state the zero-page bytes the routine writes. Each becomes a
+`CLOBBERS_ZP` edge to the `zero_page` HardwareUnit:
+
+```
+**Clobbers zero page:** $B8-$BA (may; ROM walk from $FFBA, power-on vectors)
+**Clobbers zero page:** $B8-$BA (must; VICE x64sc store trace, SETLFS 2,8,2)
+```
+
+- The value is `<bytes> (<bound>; <basis>)`. Bytes are `$XX` or
+  `$XX-$YY`, comma-separated, anywhere in `$00-$FF`, or `none`.
+- `may` lines are not hand-written. `node scripts/kernal-zp-walk.ts
+  --write` sets one per routine from a static walk of the 901227-03 ROM;
+  `npm test` runs its `--check` and fails on any difference.
+- `must` lines come from `node scripts/kernal-zp-trace.ts --write`, which
+  runs `scripts/kernal-zp-trace.asm` in VICE with a store trace. The basis
+  names the traced call. Every must byte has to lie inside the may set.
+- A line that does not parse is warned about at ingest and dropped.
+
 ## Memory region definitions
 
 Every memory region gets an H3 in this exact format:
