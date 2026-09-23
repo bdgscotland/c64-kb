@@ -40,9 +40,9 @@ show precomputed C64 artwork as a background layer. It implements the
 // Koala file format (10003 bytes with 2-byte load address):
 //   $0000-$0001  load address (little-endian, typically $6000; we ignore it)
 //   $0002-$1F41  bitmap data (8000 bytes)
-//   $1F42-$232B  screen RAM  (1000 bytes)
-//   $232C-$2713  Color RAM   (1000 bytes)
-//   $2714        background color byte
+//   $1F42-$2329  screen RAM  (1000 bytes)
+//   $232A-$2711  Color RAM   (1000 bytes)
+//   $2712        background color byte
 //
 // Replace "image.kla" with any Koala file to display different artwork.
 //
@@ -77,7 +77,9 @@ show precomputed C64 artwork as a background layer. It implements the
 // black screen and demonstrated nothing.)
 #define USE_TEST_IMAGE 1
 #if !USE_TEST_IMAGE
-static const char koala_file[] = { #embed "image.kla" };
+static const char koala_file[] = {
+#embed "image.kla"
+};
 #endif
 
 // Offset constants for the Koala layout (skipping the 2-byte load address)
@@ -220,8 +222,17 @@ To embed a real Koala file, set `USE_TEST_IMAGE` to 0 and point the `#embed`
 at your file:
 
 ```c
-static const char koala_file[] = { #embed "yourimage.kla" };
+static const char koala_file[] = {
+#embed "yourimage.kla"
+};
 ```
+
+`#embed` must stand on its own line: the one-line form
+`{ #embed "yourimage.kla" }` fails to compile (Oscar64 1.32.271: `error 3006:
+Term starts with invalid token ''}''` in most runs here, `error 3037:
+Semicolon expected` in one; an earlier version of this page gave
+the one-line form, and its offset comment put screen RAM, Color RAM and the
+background byte two bytes late).
 
 and rebuild. No other changes are needed provided the file is a standard 10003-byte
 Koala `.kla` with a 2-byte load address prefix. Check the `.map` after any layout

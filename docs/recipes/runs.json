@@ -1104,5 +1104,17 @@
       "pal": "screenshots/destructible-terrain.png",
       "ntsc": "screenshots/destructible-terrain-ntsc.png"
     }
+  },
+  "oscar64/mixed-fighters": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/mixed-fighters.png",
+      "ntsc": "screenshots/mixed-fighters-ntsc.png"
+    }
   }
 }

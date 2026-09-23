@@ -562,8 +562,10 @@ and inspect for any nonzero value.
 
 Sprite-versus-foreground collision flags, latched. Bit n is set when any
 non-transparent pixel of sprite n overlapped a foreground pixel of the
-display (a pixel that is not "background color 0" by the rules of the
-current display mode). Read-to-clear. Border and overscan pixels do not
+display: a 1 bit with MCM clear, or bit pair 10 or 11 with MCM set (pair 01
+counts as background even though it is drawn in `$D022` or a screen RAM
+colour; Bauer's VIC-II article, section 3.8.2; see "Priority" below).
+Read-to-clear. Border and overscan pixels do not
 count as foreground.
 
 ### $D020 — EXTCOL — Border color (RW)
@@ -939,9 +941,22 @@ The border is the front-most layer: it hides sprites unless it is opened
 (measured in VICE x64sc; an earlier version of this page drew it at the
 back).
 
-In all modes, "background" is defined as the pixels rendered using
-$D021 / BGCOL0 (and BGCOL1/2/3 in MCM bitmap or ECM modes); "foreground"
-is everything else.
+"Background" for sprite priority and for `$D01F` is decided by the pixel's
+bit pattern, not its colour register. With MCM clear (standard text, ECM,
+standard bitmap), a 0 bit is background and a 1 bit is foreground. With MCM
+set (multicolour text cells and multicolour bitmap), bit pairs 00 and 01 are
+background and 10 and 11 are foreground, whatever colour 01 draws in
+(`$D022` in multicolour text, the screen RAM high nibble in multicolour
+bitmap). A sprite with its `$D01B` bit clear is drawn over all of these; with
+the bit set, 00 and 01 pixels show the sprite through. Measured in VICE
+x64sc in multicolour text by the `oscar64/mixed-fighters` recipe (pair 01
+showed the sprite, pairs 10 and 11 covered it); Bauer's VIC-II article,
+section 3.8.2, gives the same table
+(http://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt). An earlier version of
+this paragraph defined background as the pixels drawn in `$D021` (and
+BGCOL1-3 in multicolour bitmap or ECM), which counted `$D022` pixels in
+multicolour text as foreground and named the wrong source for bitmap
+colour 01.
 
 ### Collisions
 

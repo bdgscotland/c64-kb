@@ -11,7 +11,7 @@ lines for the extractor to process the file.
 ```yaml
 ---
 tool: oscar64                  # canonical tool name (lowercase, hyphen-separated)
-tool_kind: c-compiler          # c-compiler | c-library | assembler | linker | emulator | debug-bridge | unit-test | reference-catalog
+tool_kind: c-compiler          # c-compiler | c-library | assembler | linker | emulator | debug-bridge | unit-test | reference-catalog | asset-converter
 maintainer: drmortalwombat     # GitHub login or org
 license: MIT                   # SPDX identifier
 home_url: https://github.com/drmortalwombat/oscar64
