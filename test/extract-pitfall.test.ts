@@ -67,7 +67,7 @@ describe("extractGraphEntities — pitfall-reference doc", () => {
     const warnings: string[] = [];
     const orig = console.warn;
     console.warn = (msg: string) => {
-      warnings.push(String(msg));
+      warnings.push(msg);
     };
     let entities;
     try {
@@ -84,9 +84,7 @@ describe("extractGraphEntities — pitfall-reference doc", () => {
       warnings.some((w) => w.includes("Not A Name") && w.includes("not a snake_case technique name")),
     ).toBe(true);
     // A pitfall without the line emits nothing.
-    expect(mitigated.some((m) => m.type === "mitigated_by" && m.pitfall === "badline_cycle_loss")).toBe(
-      false,
-    );
+    expect(mitigated.some((m) => m.pitfall === "badline_cycle_loss")).toBe(false);
   });
 });
 

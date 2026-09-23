@@ -42,7 +42,7 @@ describe("extractGraphEntities — archetype-reference doc", () => {
   const SRC = "docs/game-design/c64-game-archetypes.md";
 
   it("emits one Archetype node per H2 that carries an **Archetype:** line", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);
     warn.mockRestore();
     const nodes = entities.filter((e) => e.type === "archetype");
@@ -58,7 +58,7 @@ describe("extractGraphEntities — archetype-reference doc", () => {
   });
 
   it("emits FEATURES sources from the fingerprint line, deduped, keeping an unknown snake_case name for link time", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);
     const features = entities
       .filter((e): e is Extract<typeof e, { type: "archetype_features" }> => e.type === "archetype_features")
@@ -100,7 +100,7 @@ Plain prose, no node.
 
 **Technique fingerprint:** \`sine_scroller\`
 `;
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const entities = extractGraphEntities(doc, "demo-design/x.md");
     const msgs = warn.mock.calls.map((c) => String(c[0]));
     warn.mockRestore();
@@ -111,7 +111,7 @@ Plain prose, no node.
   });
 
   it("emits RISKS sources from the common-pitfalls line, deduped", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);
     warn.mockRestore();
     const risks = entities
@@ -125,7 +125,7 @@ Plain prose, no node.
   });
 
   it("warns about and skips an H2 with no **Archetype:** line", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const entities = extractGraphEntities(ARCHETYPE_DOC, SRC);
     expect(warn.mock.calls.some((c) => String(c[0]).includes("A Section With No Name Line"))).toBe(true);
     warn.mockRestore();
@@ -134,7 +134,7 @@ Plain prose, no node.
 
   it("defaults kind to game and refuses an unknown kind", () => {
     const noFm = ARCHETYPE_DOC.replace("---\nkind: game\n---\n\n", "");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const nodes = extractGraphEntities(noFm, SRC).filter((e) => e.type === "archetype");
     expect(nodes).toHaveLength(2);
     expect(nodes[0]).toMatchObject({ kind: "game" });
