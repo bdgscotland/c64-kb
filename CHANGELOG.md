@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 734, schema 24, tools 1.28.1.
+Data 734, schema 24, tools 1.29.0.
 
 **Issue #21, ES-19 to ES-22.** `reu_dma` (one cycle a byte blanked;
 badlines and sprites slow it with the screen on), `four_player_read`
@@ -18,6 +18,29 @@ cartridge recipes: a `cartridge` key in runs.json boots the `.crt` the
 listing writes, once or several times on the same copy. A new Oscar64
 gotcha: `#define A()` with an empty parameter list is refused.
 
+**Code quality, phases C–F (tools 1.29.0, package 0.9.0).** Every MCP
+tool now has a `title` and `annotations` (read-only, destructive,
+idempotent), per the MCP spec; names, descriptions and schemas are
+unchanged. Search returned a different top five on repeated identical
+queries: Qdrant orders RRF-tied points arbitrarily. Ties now break by
+point id. The code was restructured without changing output: 20 CLI
+commands, text and JSON, are identical to the previous tree; a clean
+ingest into a throwaway graph gives the same 717 nodes, 2903 edges and
+3555 points. `extractGraphEntities` (cognitive complexity 291),
+`checkCompatibility` (150), `buildBriefing` (97) and ingest's `main`
+(81) are now tables of small functions, each under 15. The compatibility
+rules are a pure function with their own tests, and its per-technique
+queries are batched. ESLint (typescript-eslint strict, a complexity
+budget), Prettier and knip are gates: 848 lint findings to 0. The
+type check adds `noUncheckedIndexedAccess` and
+`exactOptionalPropertyTypes`. `health` reported an unreachable graph as
+healthy with zero nodes; it now fails. The CLI rejects out-of-set
+values for `--region`, `--toolchain`, `--language`; `pal-ntsc-diff`
+fell back to "both" silently. `verify:recipes --jobs` ran jobs one at a
+time; it now runs them in parallel. CI runs the gates (the VICE
+screenshots included: a Linux build of the headless VICE matched every
+pinned PNG it could run). Oscar64 recipes pass only with a locally
+patched compiler; that is #25.
 
 **Design layer, slice 1 (data 733).** Four pages above the mechanics
 layer, written as original prose from public sources by people who

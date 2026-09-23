@@ -31,7 +31,7 @@ describe("FalkorService — Archetype, FEATURES, RISKS", () => {
   });
 
   afterAll(async () => {
-    await f?.close();
+    await f.close();
   });
 
   it("addArchetype creates the node with all properties and MERGEs on name", async () => {
@@ -72,24 +72,24 @@ describe("FalkorService — Archetype, FEATURES, RISKS", () => {
   });
 
   it("linkArchetypeFeatures drops a name that matches no Technique, warns, and creates no stub", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(await f.linkArchetypeFeatures("vertical_shmup", "no_such_technique")).toBe(false);
     expect(warn.mock.calls.some((c) => String(c[0]).includes("no_such_technique"))).toBe(true);
     warn.mockRestore();
     const stub = await f.roQuery(`MATCH (t:Technique {name: "no_such_technique"}) RETURN count(t) AS n`);
-    expect((stub.data[0] as { n: number }).n).toBe(0);
+    expect(stub.data[0]).toHaveProperty("n", 0);
   });
 
   it("linkArchetypeRisks lands a RISKS edge to an existing Pitfall and drops a missing one", async () => {
     expect(await f.linkArchetypeRisks("vertical_shmup", "sprite_dma_overflow")).toBe(true);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(await f.linkArchetypeRisks("vertical_shmup", "no_such_pitfall")).toBe(false);
     expect(await f.linkArchetypeRisks("no_such_archetype", "sprite_dma_overflow")).toBe(false);
     warn.mockRestore();
     const r = await f.roQuery(`MATCH (a:Archetype)-[:RISKS]->(p:Pitfall) RETURN a.name AS a, p.name AS p`);
     expect(r.data).toEqual([{ a: "vertical_shmup", p: "sprite_dma_overflow" }]);
     const stub = await f.roQuery(`MATCH (p:Pitfall {name: "no_such_pitfall"}) RETURN count(p) AS n`);
-    expect((stub.data[0] as { n: number }).n).toBe(0);
+    expect(stub.data[0]).toHaveProperty("n", 0);
   });
 
   it("clean() removes Archetype nodes", async () => {

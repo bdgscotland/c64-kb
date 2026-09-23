@@ -70,7 +70,7 @@ export function gameBriefPrompt({
   genre,
 }: {
   description: string;
-  genre?: string;
+  genre?: string | undefined;
 }): PromptResult {
   return {
     description: `Design a C64 game from a brief: "${description}" (NOTE: prefer the c64_game_briefing TOOL for a structured one-call response)`,

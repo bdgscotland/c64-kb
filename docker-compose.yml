@@ -10,13 +10,17 @@ services:
     environment:
       QDRANT__SERVICE__GRPC_PORT: 6334
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo -e \"GET /readyz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" > /dev/tcp/localhost/6333'"]
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c 'echo -e \"GET /readyz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" > /dev/tcp/localhost/6333'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
 
   falkordb:
-    image: falkordb/falkordb@sha256:e93fcd753fe612fb0a222166a0620a1ae31b826a12f223c3b6d06038d9d7a364  # graph module 4.18.7 (INFO modules ver=41807); pinned 2026-09-22, was :latest
+    image: falkordb/falkordb@sha256:e93fcd753fe612fb0a222166a0620a1ae31b826a12f223c3b6d06038d9d7a364 # graph module 4.18.7 (INFO modules ver=41807); pinned 2026-09-22, was :latest
     restart: unless-stopped
     ports:
       - "7379:6379"

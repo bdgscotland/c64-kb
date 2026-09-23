@@ -32,8 +32,19 @@ import fs from "fs";
 import path from "path";
 import { config } from "../config.ts";
 import { getFalkor } from "../context.ts";
+import { z } from "zod";
 
 const DOCS_DIR = config.docs.dir;
+
+// A graph row: validated, not cast. Any property may be missing on a node
+// ingested by an older schema; the JSON below passes each one through.
+const RegisterRowSchema = z.object({
+  name: z.unknown(),
+  addr: z.unknown(),
+  rw: z.unknown(),
+  aliases: z.unknown(),
+  chip: z.unknown(),
+});
 
 export interface ResourceContent {
   uri: string;
@@ -51,8 +62,9 @@ export async function readRegisterResource(uri: string, name: string): Promise<R
   let decodedName = name;
   try {
     decodedName = decodeURIComponent(name);
-  } catch {
-    // malformed percent-sequence — use raw value
+  } catch (e) {
+    // A malformed percent-sequence throws URIError: use the raw value.
+    if (!(e instanceof URIError)) throw e;
   }
   const f = await getFalkor();
   const cleaned = decodedName.trim().toUpperCase().replace(/^\$/, "");
@@ -68,9 +80,9 @@ export async function readRegisterResource(uri: string, name: string): Promise<R
      LIMIT 1`,
     { name: cleaned, addr: `$${cleaned}` },
   );
-  const row = result.data?.[0] as
-    { name: string; addr: string; rw: string; aliases: string[]; chip: string | null } | undefined;
-  if (!row) return null;
+  const parsed = RegisterRowSchema.safeParse(result.data.at(0));
+  if (!parsed.success) return null;
+  const row = parsed.data;
   return {
     uri,
     mimeType: "application/json",

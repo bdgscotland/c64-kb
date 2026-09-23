@@ -104,13 +104,13 @@ describe("pitfallsFor", () => {
     await f.linkMitigatedBy("raster_irq_first_line_jitter", "stable_raster_irq");
   });
 
-  afterAll(async () => f?.close());
+  afterAll(async () => f.close());
 
   it("answers from the graph for a technique that is only a remedy (MITIGATED_BY)", async () => {
     const r = await pitfallsFor("double_irq");
     expect(r.structured.topic_kind).toBe("Technique");
     expect(r.structured.pitfalls.map((p) => p.name)).toEqual(["raster_irq_first_line_jitter"]);
-    const p = r.structured.pitfalls[0];
+    const p = r.structured.pitfalls[0]!;
     expect(p.mitigated_by.map((m) => m.name).sort()).toEqual(["double_irq", "stable_raster_irq"]);
     expect(p.triggered_by.map((t) => t.name)).not.toContain("double_irq");
     expect(r.text).toMatch(/\*\*Mitigated by:\*\* double_irq, stable_raster_irq/);
@@ -120,7 +120,7 @@ describe("pitfallsFor", () => {
     const r = await pitfallsFor("stable_raster_irq");
     const jitter = r.structured.pitfalls.filter((p) => p.name === "raster_irq_first_line_jitter");
     expect(jitter).toHaveLength(1);
-    expect(jitter[0].mitigated_by.map((m) => m.name)).toContain("stable_raster_irq");
+    expect(jitter[0]!.mitigated_by.map((m) => m.name)).toContain("stable_raster_irq");
     // A pitfall with no remedy edge carries an empty list, not a missing field.
     const badline = r.structured.pitfalls.find((p) => p.name === "badline_cycle_loss");
     expect(badline?.mitigated_by).toEqual([]);

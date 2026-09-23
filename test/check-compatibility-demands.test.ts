@@ -1,7 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
 import { checkCompatibility } from "../src/tools/query.ts";
+import {
+  evaluateCompatibility,
+  type CompatibilityFacts,
+  type TechniqueFacts,
+} from "../src/tools/query/compatibility/index.ts";
 import { extractGraphEntities, DEMAND_VOCABULARY } from "../src/graph/extract.ts";
+
+// The vocabulary's text for a demand word; throws on a word it does not hold.
+function demandText(r: string): string {
+  const text = new Map(Object.entries(DEMAND_VOCABULARY)).get(r);
+  if (text === undefined) throw new Error(`not a demand word: ${r}`);
+  return text;
+}
 
 // Hard conflicts derived from DEMANDS edges, and the data-coverage report.
 // The graph name comes from vitest.config.ts (c64_test), never the live one.
@@ -25,7 +37,7 @@ describe("checkCompatibility with resource demands", () => {
     ] as const) {
       await f.addTechnique({ name, title: name, category, complexity: "high" });
     }
-    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, DEMAND_VOCABULARY[r]);
+    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, demandText(r));
     await d("fli_image", "cpu_every_line");
     await d("fli_image", "constant_sprite_set");
     await d("sideborder_open", "cpu_every_line");
@@ -59,14 +71,14 @@ describe("checkCompatibility with resource demands", () => {
   it("side border against raster bars: interrupts inside the region", async () => {
     const r = (await checkCompatibility(["raster_bars", "sideborder_open"])).structured;
     expect(r.verdict).toBe("incompatible");
-    expect(r.conflicts[0].kind).toBe("cpu_vs_irq");
-    expect(r.conflicts[0].resolution).toMatch(/outside/);
+    expect(r.conflicts.at(0)?.kind).toBe("cpu_vs_irq");
+    expect(r.conflicts.at(0)?.resolution).toMatch(/outside/);
   });
 
   it("digi playback against FLI", async () => {
     const r = (await checkCompatibility(["digi_4bit", "fli_image"])).structured;
     expect(r.verdict).toBe("incompatible");
-    expect(r.conflicts[0].shared).toContain("continuous_interrupts");
+    expect(r.conflicts.at(0)?.shared).toContain("continuous_interrupts");
   });
 
   it("KERNAL banked out against a technique that calls the KERNAL", async () => {
@@ -94,7 +106,7 @@ describe("checkCompatibility with resource demands", () => {
 
   it("names a technique that does not exist", async () => {
     const r = await checkCompatibility(["no_such_thing", "fli_image"]);
-    expect(r.structured.data_coverage[0].found).toBe(false);
+    expect(r.structured.data_coverage.at(0)?.found).toBe(false);
     expect(r.text).toMatch(/no such technique/);
   });
 
@@ -130,7 +142,7 @@ describe("checkCompatibility with REQUIRES closure", () => {
     ] as const) {
       await f.addTechnique({ name, title: name, category, complexity: "high" });
     }
-    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, DEMAND_VOCABULARY[r]);
+    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, demandText(r));
     await d("stable_raster_irq", "midframe_raster_irqs");
     await d("fli_image", "cpu_every_line");
     await d("fli_image", "constant_sprite_set");
@@ -245,7 +257,7 @@ describe("checkCompatibility: an implied technique against its own prerequisite"
     ] as const) {
       await f.addTechnique({ name, title: name, category, complexity: "high" });
     }
-    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, DEMAND_VOCABULARY[r]);
+    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, demandText(r));
     await d("stable_raster_irq", "midframe_raster_irqs");
     await d("fli_image", "cpu_every_line");
     await d("fli_image", "constant_sprite_set");
@@ -268,12 +280,12 @@ describe("checkCompatibility: an implied technique against its own prerequisite"
       // The named pair is still the named pair's business.
       const named = r.conflicts.filter((c) => c.kind === "cpu_vs_irq");
       expect(named).toHaveLength(1);
-      expect([named[0].a, named[0].b].sort()).toEqual(["ifli_image", "stable_raster_irq"]);
+      expect([named.at(0)?.a, named.at(0)?.b].sort()).toEqual(["ifli_image", "stable_raster_irq"]);
       expect(r.verdict).toBe("incompatible");
       // The implied technique is still reported as leaned on.
       const mp = r.shared_infrastructure.filter((s) => s.kind === "missing_prerequisite");
       expect(mp.map((s) => s.name)).toEqual(["fli_image"]);
-      expect(mp[0].required_by).toEqual(["ifli_image"]);
+      expect(mp.at(0)?.required_by).toEqual(["ifli_image"]);
     }
   });
 
@@ -284,8 +296,8 @@ describe("checkCompatibility: an implied technique against its own prerequisite"
     const pc = r.conflicts.filter((c) => c.kind === "prerequisite_conflict");
     expect(pc.length).toBeGreaterThan(0);
     expect(pc.every((c) => c.via?.join() === "fli_image")).toBe(true);
-    expect(pc[0].rationale).toMatch(/ifli_image requires fli_image/);
-    expect(pc[0].shared).toEqual(["cpu_every_line", "midframe_raster_irqs"]);
+    expect(pc.at(0)?.rationale).toMatch(/ifli_image requires fli_image/);
+    expect(pc.at(0)?.shared).toEqual(["cpu_every_line", "midframe_raster_irqs"]);
   });
 });
 
@@ -352,5 +364,89 @@ data: .byte 0
     const ents = extractGraphEntities(doc, "recipes/kickassembler/t.md");
     const occ = ents.filter((e) => e.type === "recipe_occupies") as { start: number; end: number }[];
     expect(occ.map((o) => o.start)).toEqual([0x0900, 0x2000]);
+  });
+});
+
+// The rules are a pure function of the fetched facts: these need no service.
+describe("evaluateCompatibility (pure rules)", () => {
+  const tech = (over: Partial<TechniqueFacts> = {}): TechniqueFacts => ({
+    found: true,
+    demands: new Set(),
+    registers: 0,
+    kernal: [],
+    band: null,
+    region: null,
+    category: null,
+    rasterRegisters: 0,
+    ...over,
+  });
+  const facts = (
+    techniques: string[],
+    all: Record<string, TechniqueFacts>,
+    requires: Record<string, string[]> = {},
+  ): CompatibilityFacts => ({
+    techniques,
+    requires: new Map(Object.entries(requires)),
+    facts: new Map(Object.entries(all)),
+    sharedRegisters: new Map(),
+    sharedKernal: new Map(),
+    recipeUses: [],
+  });
+
+  it("two cpu_every_line techniques on overlapping bands are cpu_exclusive", () => {
+    const r = evaluateCompatibility(
+      facts(["a", "b"], {
+        a: tech({ demands: new Set(["cpu_every_line"]), band: "50-100" }),
+        b: tech({ demands: new Set(["cpu_every_line"]), band: "90-120" }),
+      }),
+    );
+    expect(r.verdict).toBe("incompatible");
+    expect(r.conflicts.map((c) => c.kind)).toEqual(["cpu_exclusive"]);
+    expect(r.conflicts.at(0)?.rationale).toMatch(/The bands overlap/);
+  });
+
+  it("disjoint bands clear the line rules and report the pair once", () => {
+    const r = evaluateCompatibility(
+      facts(["a", "b"], {
+        a: tech({ demands: new Set(["cpu_every_line"]), band: "50-100" }),
+        b: tech({ demands: new Set(["cpu_every_line", "changes_sprite_set"]), band: "200-250" }),
+      }),
+    );
+    expect(r.verdict).toBe("compatible");
+    expect(r.band_separated).toEqual([
+      { a: "a", b: "b", a_band: "50-100", b_band: "200-250", rules: ["cpu_exclusive", "cpu_vs_irq"] },
+    ]);
+  });
+
+  it("a prerequisite's demand fires against the other input, with the chain", () => {
+    const r = evaluateCompatibility(
+      facts(
+        ["zoom", "bars"],
+        {
+          zoom: tech(),
+          irq: tech({ demands: new Set(["cpu_every_line"]) }),
+          bars: tech({ demands: new Set(["midframe_raster_irqs"]) }),
+        },
+        { zoom: ["irq"], irq: [], bars: [] },
+      ),
+    );
+    expect(r.closureOnly).toEqual(["irq"]);
+    expect(r.conflicts.map((c) => [c.kind, c.via])).toEqual([["prerequisite_conflict", ["irq"]]]);
+    expect(r.conflicts.at(0)?.rationale).toMatch(/^zoom requires irq\. /);
+    expect(r.shared_infrastructure.at(0)).toEqual({
+      name: "irq",
+      kind: "missing_prerequisite",
+      via_recipes: [],
+      required_by: ["zoom"],
+    });
+  });
+
+  it("an unknown technique is reported, not cleared", () => {
+    const r = evaluateCompatibility(facts(["ghost", "b"], { b: tech() }));
+    expect(r.verdict).toBe("compatible");
+    expect(r.data_coverage.map((d) => [d.technique, d.found, d.known])).toEqual([
+      ["ghost", false, false],
+      ["b", true, false],
+    ]);
   });
 });

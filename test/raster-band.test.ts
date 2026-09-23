@@ -8,6 +8,13 @@ import {
   DEMAND_VOCABULARY,
 } from "../src/graph/extract.ts";
 
+// The vocabulary's text for a demand word; throws on a word it does not hold.
+function demandText(r: string): string {
+  const text = new Map(Object.entries(DEMAND_VOCABULARY)).get(r);
+  if (text === undefined) throw new Error(`not a demand word: ${r}`);
+  return text;
+}
+
 // **Raster band:** (docs/CONVENTIONS-techniques.md, schema 24): the raster
 // lines a technique holds the CPU on. check_compatibility's line-sharing
 // rules fire only when the bands overlap or one of them is not known.
@@ -76,16 +83,16 @@ describe("extractGraphEntities - Raster band line", () => {
     const t = extractGraphEntities(doc("**Raster band:** 101-142 (recipe)"), "techniques/raster.md").find(
       (e) => e.type === "technique",
     );
-    expect(t && t.type === "technique" ? t.raster_band : null).toBe("101-142");
+    expect(t?.raster_band ?? null).toBe("101-142");
   });
 
   it("warns about and drops a band it cannot read", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const t = extractGraphEntities(doc("**Raster band:** the lower half"), "techniques/raster.md").find(
         (e) => e.type === "technique",
       );
-      expect(t && t.type === "technique" ? t.raster_band : "missing").toBeUndefined();
+      expect(t ? t.raster_band : "missing").toBeUndefined();
       expect(warn.mock.calls.some((c) => String(c[0]).includes("Raster band"))).toBe(true);
     } finally {
       warn.mockRestore();
@@ -96,7 +103,7 @@ describe("extractGraphEntities - Raster band line", () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const dir = path.resolve(__dirname, "../docs/techniques");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const banded: string[] = [];
       for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".md"))) {
@@ -136,7 +143,7 @@ describe("checkCompatibility with raster bands", () => {
         ...(band ? { raster_band: band } : {}),
       });
     }
-    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, DEMAND_VOCABULARY[r]);
+    const d = (t: string, r: string) => f.linkTechniqueDemands(t, r, demandText(r));
     for (const t of ["fli_band", "border_band", "overlap_band", "no_band", "movable_band"]) {
       await d(t, "cpu_every_line");
       await d(t, "constant_sprite_set");
@@ -175,13 +182,13 @@ describe("checkCompatibility with raster bands", () => {
   it("a movable band is not a known band", async () => {
     const r = (await checkCompatibility(["movable_band", "border_band"])).structured;
     expect(r.verdict).toBe("incompatible");
-    expect(r.conflicts[0].rationale).toMatch(/movable/);
+    expect(r.conflicts.at(0)?.rationale).toMatch(/movable/);
   });
 
   it("clears cpu_vs_irq and sprite_set against a multiplexer on other lines", async () => {
     const r = (await checkCompatibility(["fli_band", "plex_band"])).structured;
     expect(r.verdict).toBe("compatible");
-    expect(r.band_separated[0].rules.sort()).toEqual(["cpu_vs_irq", "sprite_set"]);
+    expect(r.band_separated.at(0)?.rules.sort()).toEqual(["cpu_vs_irq", "sprite_set"]);
     const o = (await checkCompatibility(["overlap_band", "plex_band"])).structured;
     expect(o.verdict).toBe("compatible"); // 101-142 against 0-40
     const n = (await checkCompatibility(["no_band", "plex_band"])).structured;

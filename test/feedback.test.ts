@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { appendFeedback, loadFeedback, type FeedbackRecord } from "../src/tools/feedback.ts";
-import { mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -34,8 +34,7 @@ describe("feedback store", () => {
     appendFeedback(rec({ id: "b", verdict: "best-yet", composer: "Reyn Ouwehand" }), db);
     const rows = loadFeedback(db);
     expect(rows.map((r) => r.id)).toEqual(["a", "b"]);
-    expect(rows[1].verdict).toBe("best-yet");
-    expect(rows[1].composer).toBe("Reyn Ouwehand");
+    expect(rows[1]).toMatchObject({ verdict: "best-yet", composer: "Reyn Ouwehand" });
   });
 
   it("round-trips metrics + notes", () => {
@@ -43,15 +42,13 @@ describe("feedback store", () => {
       rec({ id: "m", metrics: { consonance_pct: 96.8, in_style_pct: 40.4 }, notes: "octave bass" }),
       db,
     );
-    const r = loadFeedback(db)[0];
-    expect(r.metrics?.consonance_pct).toBe(96.8);
-    expect(r.notes).toBe("octave bass");
+    expect(loadFeedback(db)[0]).toMatchObject({ metrics: { consonance_pct: 96.8 }, notes: "octave bass" });
   });
 
   it("skips blank/corrupt lines without throwing", () => {
     appendFeedback(rec({ id: "ok" }), db);
     // simulate a partial write
-    require("node:fs").appendFileSync(db, "\n{ not json\n");
+    appendFileSync(db, "\n{ not json\n");
     const rows = loadFeedback(db);
     expect(rows.map((r) => r.id)).toEqual(["ok"]);
   });

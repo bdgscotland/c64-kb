@@ -65,7 +65,7 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 | Instrument | Command |
 |---|---|
 | KickAssembler 5.25 | `java -jar $KICKASS_JAR file.asm -o out.prg` (set `KICKASS_JAR`; default location `~/Developer/c64/kickassembler/KickAss.jar`) |
-| Oscar64 | `$OSCAR64 -tm=c64 -O2 -o=out.prg file.c` (`OSCAR64` env or `oscar64` on PATH; headers in `<oscar64>/include/`) |
+| Oscar64 | `$OSCAR64 -tm=c64 -O2 -o=out.prg file.c` (`OSCAR64` env, `oscar64` on PATH, or the default build `~/Developer/c64/oscar64/bin/oscar64`; headers in `<oscar64>/include/`). That build reports 1.32.271 but is upstream 709bd70 plus one unpublished local fix (c1270bc, an OptimizeInnerLoop bounds crash). Every Oscar64 recipe was verified with it; upstream 709bd70 fails 46 of them and v1.32.273 fails 57 (issue #25) |
 | cc65 | `cl65 -t c64 -O -o out.prg file.c` |
 | VICE 3.10 headless (PAL 6569) | `GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot out.png -autostart out.prg` (`-model ntsc` for 6567R8). ~10–20 s per run; wrap in `timeout`. |
 | Screenshot geometry | PAL 384×272 PNG, screenshot row = raster line − 16 (rows 0–271 are lines 16–287); NTSC (`-model ntsc`) 384×247, row = line − 28, and rows 235–246 are lines 0–11 of the next frame. x = 8 is VIC X coordinate 0; left border x 0–31, right border 352–383. Measure with PIL, never by eye. An earlier version of this row said − 14; 16 and 28 were each derived from three boundaries in `docs/recipes/kickassembler/topbottom-border-open.md`. The full geometry for both models, the sixteen palette RGB triples VICE emits for each, and a decode snippet are in `docs/runtime/vice-reference.md`, section "Reading the exit screenshot", measured by `docs/recipes/kickassembler/palette-cells.md`. |
@@ -76,14 +76,17 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 ```bash
 npm run check:listings     # every listing builds; fails on a missing toolchain unless --allow-missing
 npm run verify:recipes     # every recipe runs headless in VICE at its pinned cycles (docs/recipes/runs.json) and matches its committed PNG pixel-for-pixel; --update re-baselines after a deliberate change, --allow-missing tolerates a recipe with no PNG yet
-npm run typecheck          # src, scripts and test; before 2026-09-22 this was `tsc --noEmit` over src/ alone
-npm test                   # vitest against c64_test / c64_docs_test — never the live stores
+npm run typecheck          # src, scripts and test, strict incl. noUncheckedIndexedAccess; before 2026-09-22 this was `tsc --noEmit` over src/ alone
+npm run lint               # ESLint strict + complexity budget (cyclomatic/cognitive 15, 80 lines/function); split code, never raise a limit
+npm run format:check       # Prettier on TypeScript/JSON/YAML; markdown is never reformatted
+npm run knip               # unused files, exports, dependencies
+npm test                   # vitest against c64_test / c64_docs_test — never the live stores; C64_TEST_STORE=<name> when another run may be going
 npm run vice:headless      # once: a windowless VICE into .tools/; every emulator launch here prefers it (src/services/vice-bin.ts)
 npm run ingest:clean       # if any doc changed: rebuild graph + vectors; read the summary line
 npm run health             # live counts; README carries none, so nothing to update there
 ```
 
-The pre-commit gate is you. There is no CI yet.
+`.github/workflows/ci.yml` runs all of these except the ingest; Oscar64 recipes are skipped there until #25. `npx lefthook install` once per clone adds git hooks that run the fast ones on what you stage. In a Claude Code session the hooks format, lint and type-check each edited `.ts` file, and a Stop hook builds `dist/` and runs the unit tests once per turn.
 
 ## Map
 
@@ -92,10 +95,23 @@ The pre-commit gate is you. There is no CI yet.
 - `docs/recipes/<toolchain>/` — one page per recipe, listing + build +
   expected output + why; `kickassembler/screenshots/` holds the VICE
   pictures that verified them.
-- `src/graph/extract.ts` — markdown → graph entities. `src/ingest.ts` —
-  two-pass ingest. `src/tools/*.ts` — tool functions shared by CLI and
-  MCP. `src/server.ts` — MCP registration and tool descriptions.
-- `scripts/check-listings.ts` — the build gate. `--file <path>` checks one file.
+- `src/graph/extract.ts` — markdown → graph entities: a marker → parser
+  table; one parser per doc type in `src/graph/extract/`.
+  `src/graph/apply.ts` writes entities to FalkorDB for both ingest paths.
+- `src/ingest.ts` + `src/ingest/` — two-pass batch ingest.
+  `src/tools/hydrate.ts` — the single-page path (`c64_ingest_doc`).
+- `src/tools/*.ts` — tool functions shared by CLI and MCP; the big ones are
+  directories (`query/`, `briefings/`, `pitfalls/`, `lint/`) behind an
+  entry file that re-exports. The compatibility rules are a pure function
+  in `src/tools/query/compatibility/`; PAL/NTSC timing constants are in
+  `src/domain/timing.ts`.
+- `src/server.ts` + `src/server/tools-*.ts` — MCP tool definitions
+  (description, schemas, title, annotations) registered by one loop.
+- `src/services/` — FalkorDB, Qdrant, SQLite analytics, Ollama clients.
+  Rows from a store are checked with zod where they are read.
+- `scripts/check-listings.ts` — the build gate. `--file <path>` checks one
+  file. Toolchains are found by env var, then PATH, then the default paths
+  in `scripts/lib/toolchains.ts`.
 - `test/` — vitest; `vitest.config.ts` isolates the stores.
 - `docs/ONTOLOGY.md` — every node label and edge type, what each means,
   and which page line produces it.

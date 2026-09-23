@@ -1,0 +1,249 @@
+/** Toolchain, recipe and technique tools. */
+
+import { z } from "zod";
+import {
+  toolchainHint,
+  recipeLookup,
+  recipesFor,
+  techniqueLookup,
+  techniquesFor,
+  checkCompatibility,
+  timingBudget,
+} from "../tools/query.ts";
+import {
+  ToolchainHintSchema,
+  RecipeLookupSchema,
+  RecipesForSchema,
+  TechniqueLookupSchema,
+  TechniquesForSchema,
+  CompatibilityCheckSchema,
+  TimingBudgetSchema,
+} from "../schemas/tool-outputs.ts";
+import { defineTool, READ_ONLY } from "./define-tool.ts";
+import { definedOnly } from "./defined-only.ts";
+
+export const toolchainHintTool = defineTool({
+  name: "c64_toolchain_hint",
+  title: "Toolchain-idiomatic snippet",
+  description: `Surface an idiomatic code snippet for a (toolchain, intent) pair. Defaults to Oscar64 when no toolchain is specified — c64-kb's primary-toolchain bias enforcer.
+
+Purpose: Returns a ranked set of documentation chunks most relevant to the intent, scoped to the requested toolchain. The structured output carries the snippet text plus the bias-rationale string so the consuming agent can surface it to the user.
+
+Inputs: 'toolchain' is optional (oscar64 | kickassembler | cc65). Omitting it triggers the Oscar64 default and annotates the rationale. 'intent' is a free-form description of what you want to do (e.g. "raster irq", "sprite multiplex", "disk load").
+
+Output: {toolchain, intent, snippet, rationale, sources[]}. 'snippet' is the text of the top-matching chunk. 'rationale' explains the toolchain choice. 'sources' carries up to 3 ranked chunks.
+
+When to use: When you need toolchain-idiomatic code patterns rather than hardware-register semantics. For register/opcode/kernal questions use the dedicated lookup tools.
+
+Examples: {"intent": "raster irq"} → Oscar64 rasterirq.h snippet. {"toolchain": "kickassembler", "intent": "raster irq"} → KickAssembler raster setup.
+
+See also: c64_recipe_lookup for complete buildable examples. c64_search for broad topic queries.
+
+Limitations: Snippet quality depends on corpus coverage. If a pattern doc is missing, the rationale will note a coverage gap. Does not execute or validate code.`,
+  inputSchema: {
+    toolchain: z
+      .enum(["oscar64", "kickassembler", "cc65"])
+      .optional()
+      .describe("Target toolchain (default: oscar64)"),
+    intent: z.string().describe("What you want to do (e.g. 'raster irq', 'sprite multiplex', 'disk load')"),
+  },
+  outputSchema: ToolchainHintSchema.shape,
+  annotations: READ_ONLY,
+  run: ({ toolchain, intent }) => toolchainHint(toolchain, intent),
+});
+
+export const recipeLookupTool = defineTool({
+  name: "c64_recipe_lookup",
+  title: "Look up a buildable recipe",
+  description: `Look up a complete, buildable C64 recipe by canonical name (e.g. 'oscar64-hello-world'). Returns structured metadata plus the recipe doc body (synopsis, source, build command, expected output, rationale).
+
+Purpose: Gives the agent a ready-to-use, verified example with build instructions rather than requiring it to synthesize code from raw documentation chunks.
+
+Inputs: 'name' is the canonical recipe identifier — toolchain prefix + hyphen + recipe slug (e.g. 'oscar64-hello-world', 'kickassembler-hello-world', 'cc65-hello-world-conio'). Case-sensitive.
+
+Output: {name, toolchain, output_format, region, source_doc, toolchain_version_verified?, documentation[]}. toolchain_version_verified is the toolchain version this repo's gates built the recipe with (e.g. '5.25' for KickAssembler); a different version may or may not build it. On not-found, 'name' is empty and 'text' lists near-match suggestions.
+
+When to use: When you know the specific recipe name or have already identified the toolchain + intent from c64_toolchain_hint and want a complete worked example.
+
+Examples: {"name": "oscar64-hello-world"} returns the Oscar64 hello-world recipe metadata + doc. {"name": "oscar64-hello"} returns not-found with 'oscar64-hello-world' as a suggestion.
+
+See also: c64_recipes_for to enumerate available recipes. c64_toolchain_hint for pattern snippets.
+
+Limitations: Only recipes explicitly ingested into the KB are available. Partial name matches trigger suggestions but do not auto-resolve.`,
+  inputSchema: {
+    name: z
+      .string()
+      .describe("Canonical recipe name (e.g. 'oscar64-hello-world', 'kickassembler-hello-world')"),
+  },
+  outputSchema: RecipeLookupSchema.shape,
+  annotations: READ_ONLY,
+  run: ({ name }) => recipeLookup(name),
+});
+
+export const recipesForTool = defineTool({
+  name: "c64_recipes_for",
+  title: "List recipes by filter",
+  description: `List all recipes matching an optional set of filters: toolchain, region, technique, or file format. Returns a structured table of matching Recipe nodes from FalkorDB.
+
+Purpose: Lets the agent discover what buildable examples are available before committing to a specific recipe. All filters are optional — omitting all returns the full recipe catalog.
+
+Inputs: All optional. 'toolchain' is one of oscar64 | kickassembler | cc65. 'region' is pal | ntsc | both (note: recipes with region='both' appear for any region filter). 'technique' is an exact Technique.title match (Phase 2: no techniques yet — omit for now). 'file_format' is an exact FileFormat.name match (e.g. 'PRG').
+
+Output: {filter, recipes[{name, toolchain, output_format, region, source_doc}]}. Empty recipes array means no matches — try a broader filter.
+
+When to use: Before calling c64_recipe_lookup, use this to discover what names exist. Also useful to audit coverage gaps.
+
+Examples: {"toolchain": "oscar64"} → table of all Oscar64 recipes. {} → full catalog. {"region": "pal"} → PAL-compatible recipes.
+
+See also: c64_recipe_lookup to fetch a specific recipe's full content. c64_toolchain_hint for pattern snippets without a complete recipe.
+
+Limitations: Returns graph metadata only — use c64_recipe_lookup to get the actual source code. technique filter is a no-op in Phase 2 (no Technique nodes yet).`,
+  inputSchema: {
+    toolchain: z.enum(["oscar64", "kickassembler", "cc65"]).optional().describe("Filter by toolchain"),
+    region: z
+      .enum(["pal", "ntsc", "both"])
+      .optional()
+      .describe("Filter by region (recipes with region='both' match any value)"),
+    technique: z.string().optional().describe("Filter by Technique title (exact match)"),
+    file_format: z.string().optional().describe("Filter by FileFormat name (e.g. 'PRG')"),
+  },
+  outputSchema: RecipesForSchema.shape,
+  annotations: READ_ONLY,
+  run: (args) => recipesFor(definedOnly(args)),
+});
+
+export const techniqueLookupTool = defineTool({
+  name: "c64_technique_lookup",
+  title: "Look up a technique",
+  description: `Look up a Commodore 64 programming technique by canonical snake_case name (e.g. 'stable_raster_irq'). Returns technique metadata, chip, region requirements, all USES edges to Registers and KERNAL routines, the techniques it REQUIRES (must be set up before, or run underneath, it) and those that require it, the pitfalls it is the Fix for (MITIGATED_BY), the list of recipes that implement it, and the top documentation chunks.
+
+Guidelines: Use when you know a specific technique name and want its full profile — registers it touches, KERNAL calls it makes, what it presupposes (text_zoom requires stable_raster_irq on every scanline of its zone), and buildable recipe examples. For discovery ("what raster techniques exist?", "what builds on stable_raster_irq?"), use c64_techniques_for instead.
+
+Limitations: Returns structured data from FalkorDB; documentation chunks from Qdrant. Technique must be indexed (ingested from docs/techniques/). Partial or hyphenated names trigger a suggestion list.
+
+Param notes: 'name' is the exact snake_case Technique.name (e.g. 'stable_raster_irq', 'sprite_multiplex_8'). Case-sensitive.
+
+Expected length: 1 technique header + register/kernal/recipe lists + up to 3 doc chunks (~200-600 words total).
+
+Example: {"name": "stable_raster_irq"} returns the stable raster IRQ technique with its register list (D011, D012, D019), recipes, and documentation.
+
+Returns structured: {name, title, category, complexity, chip?, requires_region?, uses_registers[], uses_kernal[], recipes[], requires[{name,title}], required_by[{name,title}], mitigates[{name,title,severity}], documentation[], cost?}. requires/required_by are direct REQUIRES edges authored from **Requires:** lines (CONVENTIONS-techniques.md); a variant of a technique (double_irq of stable_raster_irq) is not a prerequisite and does not appear here. 'cost' is present only when the page carries a **Cost:** line: {cycles_per_line?, cycles_per_frame?, lines_active?, bytes_code?, bytes_data?, zp_bytes?, irq_slots?, basis}, integers, with only the keys the page stated; 'basis' is one of measured-vice, derived-listing, arithmetic, estimated and says how the figures were obtained (measured-vice means run in VICE; estimated means a judgement). Cycles are per PAL frame of 19,656 unless the page says otherwise; bytes are the built recipe's segments.`,
+  inputSchema: {
+    name: z
+      .string()
+      .describe("Canonical snake_case technique name (e.g. 'stable_raster_irq', 'sprite_multiplex_8')"),
+  },
+  outputSchema: TechniqueLookupSchema.shape,
+  annotations: READ_ONLY,
+  run: ({ name }) => techniqueLookup(name),
+});
+
+export const techniquesForTool = defineTool({
+  name: "c64_techniques_for",
+  title: "List techniques by filter",
+  description: `List C64 techniques matching an optional set of filters: category, chip, region, register, recipe, or requires. All filters are optional — omitting all returns the full technique catalog.
+
+Purpose: Lets the agent discover what techniques are documented before committing to a specific one. Use before c64_technique_lookup to find the right technique name.
+
+Inputs: All optional. 'category' is one of raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader. 'chip' is a chip name (e.g. 'VIC-II', 'SID'). 'region' is PAL or NTSC (techniques locked to that region by a REQUIRES_REGION edge). 'register' is a register name (e.g. 'D011') to find techniques that USE it. 'recipe' is a recipe canonical name to find what techniques it implements. 'requires' is a technique name to find what builds on it — techniques whose REQUIRES chain reaches it directly or through other techniques.
+
+Output: {filter, techniques[{name, title, category, complexity}]}. Empty array means no matches.
+
+Examples: {"category": "raster"} → all raster techniques. {"chip": "VIC-II"} → ~30+ rows. {"register": "D011"} → techniques that use SCROLY. {"requires": "stable_raster_irq"} → every technique that presupposes a stable raster IRQ.
+
+See also: c64_technique_lookup for full profile of a specific technique.
+
+Limitations: region filter matches only techniques with an explicit REQUIRES_REGION edge (PAL/NTSC-locked). Most techniques work on both regions and won't appear in a region filter. The requires filter follows REQUIRES edges only and does not unify variants: double_irq is a variant of stable_raster_irq with no edge between them, so {"requires": "stable_raster_irq"} does not list sideborder_open (which requires double_irq) — ask for double_irq as well. Chains longer than twelve edges are not followed.`,
+  inputSchema: {
+    category: z
+      .string()
+      .optional()
+      .describe(
+        "Technique category (raster | sprite | scroll | bitmap | effect | music | cpu | banking | loader)",
+      ),
+    chip: z.string().optional().describe("Chip name (e.g. 'VIC-II', 'SID', '6510')"),
+    region: z
+      .string()
+      .optional()
+      .describe("Region requirement filter: PAL or NTSC (matches REQUIRES_REGION edge)"),
+    register: z
+      .string()
+      .optional()
+      .describe("Register name (e.g. 'D011') — returns techniques that USE this register"),
+    recipe: z
+      .string()
+      .optional()
+      .describe("Recipe canonical name — returns techniques that this recipe implements"),
+    requires: z
+      .string()
+      .optional()
+      .describe("Technique name — returns techniques whose REQUIRES chain reaches it (what builds on it)"),
+  },
+  outputSchema: TechniquesForSchema.shape,
+  annotations: READ_ONLY,
+  run: (args) => techniquesFor(definedOnly(args)),
+});
+
+export const checkCompatibilityTool = defineTool({
+  name: "c64_check_compatibility",
+  title: "Check technique compatibility",
+  description: `Check whether two or more C64 techniques can be combined. Hard conflicts come from authored resource demands on the techniques (DEMANDS edges): two techniques that each need every CPU cycle on their lines, a cycle-exact technique against one that takes interrupts mid-frame, a constant-sprite-set technique against a multiplexer, a KERNAL-out technique against KERNAL calls, and PAL-vs-NTSC requirements. Soft conflicts come from shared registers and shared KERNAL routines. The check also takes each technique's REQUIRES closure — the techniques it must have set up underneath it — and runs the hard rules between one technique's prerequisites and the other technique, reporting a hit as prerequisite_conflict; a technique is never reported against a prerequisite it declared itself, and no technique's own demand set is changed by this.
+
+Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). Order doesn't matter — all pairwise combinations are checked.
+
+Output: {techniques[], conflicts[], band_separated[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b and the implied ones in 'via'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
+
+Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, serial_bus_busy (a resident fast loader against KERNAL disk I/O), region_mismatch, prerequisite_conflict (hard); shared_register, shared_kernal (soft).
+
+Examples: {"techniques": ["fli_image", "sprite_multiplex_24"]} → incompatible (cpu_vs_irq and sprite_set; resolution: multiplex outside the FLI region). {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019). {"techniques": ["fli_image", "digi_4bit"]} → incompatible (cpu_vs_irq: continuous interrupts inside the FLI region).
+
+Raster bands: a technique page may state the raster lines it holds the CPU on (**Raster band:**, e.g. fli_image 45-250). When both techniques state line bands and they share no line, the line-sharing rules (cpu_exclusive, cpu_vs_irq through mid-frame IRQs or sprite-set changes, sprite_set) do not fire; the pair is listed in band_separated[] {a, b, a_band, b_band, rules[]} instead. A missing band, or one the program chooses ('movable'), keeps the conflict, and its rationale names the unknown side. data_coverage carries each technique's raster_band.
+
+Limitations: demands and prerequisites are authored per technique in docs/techniques (see CONVENTIONS-techniques.md); a technique without them only participates in the soft checks. Named techniques are checked as named even when one requires the other. Where bands are not stated, 'incompatible' means 'not on the same raster lines', and the resolution says so.`,
+  inputSchema: {
+    techniques: z
+      .array(z.string())
+      .min(2)
+      .describe("Array of 2+ canonical technique names to check (e.g. ['stable_raster_irq', 'raster_bars'])"),
+  },
+  outputSchema: CompatibilityCheckSchema.shape,
+  annotations: READ_ONLY,
+  run: ({ techniques }) => checkCompatibility(techniques),
+});
+
+export const timingBudgetTool = defineTool({
+  name: "c64_timing_budget",
+  title: "Per-scanline cycle budget",
+  description: `Compute the per-scanline cycle budget for a C64 technique on a given region (PAL or NTSC). Returns the canonical cycle constants plus IRQ overhead and net user-available cycles.
+
+Purpose: Gives the agent the authoritative cycle math for raster-critical technique implementations. Use before writing or evaluating cycle-tight C64 raster code.
+
+Inputs: 'technique' is the canonical technique name (e.g. 'stable_raster_irq'). 'region' is 'pal' or 'ntsc' (case-insensitive). 'sprites_per_line' (optional, 0-8) is the number of sprites displayed on the line; without it the technique's own Cost sprites_per_line is used, and without that sprite DMA is not counted and a note says so.
+
+Output: {technique, region, cycles_per_line, cycles_per_frame, badline_cycles_lost, irq_overhead_cycles, sprites_per_line, sprites_source ('input' | 'technique' | 'none'), sprite_dma_cycles, user_cycles_per_line_normal, user_cycles_per_line_badline, notes[]}.
+
+Constants: PAL: 63 cycles/line × 312 lines = 19656 cycles/frame. NTSC: 65 cycles/line × 263 lines = 17095 cycles/frame. Badline: 43 cycles to plan on (the VIC holds the bus for cycles 15-54 and BA drops on cycle 12; only writes fit in 12-14). Default IRQ overhead: 36 cycles (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314). Sprite DMA: 3 + 2 per sprite for sprites numbered without gaps (5 for one, 19 for eight, measured in VICE x64sc); each gap adds up to 3.
+
+Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_line=63, user_cycles_per_line_normal=27, user_cycles_per_line_badline=0 (a handler entered on a badline through the KERNAL vector has nothing left on that line). {"technique": "stable_raster_irq", "region": "pal", "sprites_per_line": 8} → sprite_dma_cycles=19, user_cycles_per_line_normal=8.
+
+Limitations: irq_overhead is the default 36 cycles for every technique (an earlier version of this line said it was read from a Technique irq_overhead property; nothing writes one, and the read was removed in tools 1.25.0); a handler on $FFFE with the KERNAL banked out pays 7 plus its own register saves. An earlier version of this description said 23 badline cycles and 14 overhead, which was not what the tool computed. An earlier version did not subtract sprite DMA at all.`,
+  inputSchema: {
+    technique: z.string().describe("Canonical technique name (e.g. 'stable_raster_irq')"),
+    region: z
+      .string()
+      .optional()
+      .default("pal")
+      .describe("Region: 'pal' or 'ntsc' (case-insensitive, default: 'pal')"),
+    sprites_per_line: z
+      .number()
+      .int()
+      .min(0)
+      .max(8)
+      .optional()
+      .describe("Sprites displayed on the line (0-8). Overrides the technique's Cost sprites_per_line."),
+  },
+  outputSchema: TimingBudgetSchema.shape,
+  annotations: READ_ONLY,
+  run: ({ technique, region, sprites_per_line }) =>
+    timingBudget({ technique, region, ...definedOnly({ sprites_per_line }) }),
+});

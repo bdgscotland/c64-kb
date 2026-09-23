@@ -6,63 +6,95 @@
  * reportGap(): agent-facing gap recording (Phase 7a Task 5).
  */
 
+import { z } from "zod";
 import { getFalkor, getQdrant, getAnalytics } from "../context.ts";
+import type { FalkorService } from "../services/falkor.ts";
+import type { ChunkPayload, QdrantService } from "../services/qdrant.ts";
 import type { CoverageOutput, SuggestLinksOutput, ReportGapOutput } from "../schemas/tool-outputs.ts";
+
+// ---------------------------------------------------------------------------
+// coverage
+// ---------------------------------------------------------------------------
+
+const CategoryCount = z.object({ category: z.string(), count: z.number() });
+const ToolchainCount = z.object({ toolchain: z.string(), count: z.number() });
+// An aggregate over no rows can come back null; the old reads defaulted it to 0.
+const KernalTotals = z.object({ total: z.number().nullish(), withPairs: z.number().nullish() });
+const Count = z.object({ c: z.number().nullish() });
+
+/** The first row of a one-row aggregate, validated; undefined when there is none. */
+async function one<S extends z.ZodType>(
+  f: FalkorService,
+  cypher: string,
+  schema: S,
+): Promise<z.output<S> | undefined> {
+  return (await f.roQuery(cypher, undefined, schema)).data[0];
+}
+
+/** Qdrant's point count. A failure leaves the snapshot's other figures standing, reported as 0. */
+async function qdrantPoints(qd: QdrantService): Promise<number> {
+  try {
+    return (await qd.getStats()).total_points;
+  } catch (err) {
+    console.error(`[coverage] Qdrant stats unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
+}
+
+async function graphDimensions(f: FalkorService): Promise<CoverageOutput["dimensions"]> {
+  const techniques = await f.roQuery(
+    `MATCH (t:Technique) RETURN t.category AS category, count(*) AS count ORDER BY count DESC`,
+    undefined,
+    CategoryCount,
+  );
+  const pitfalls = await f.roQuery(
+    `MATCH (p:Pitfall) RETURN p.category AS category, count(*) AS count ORDER BY count DESC`,
+    undefined,
+    CategoryCount,
+  );
+  const recipes = await f.roQuery(
+    `MATCH (r:Recipe) RETURN r.toolchain AS toolchain, count(*) AS count ORDER BY count DESC`,
+    undefined,
+    ToolchainCount,
+  );
+  const kernal = await one(
+    f,
+    `MATCH (k:KernalRoutine)
+     OPTIONAL MATCH (k)-[:PAIRS_WITH]->(:KernalRoutine)
+     WITH k, count(*) AS pairs
+     RETURN count(k) AS total,
+            sum(CASE WHEN pairs > 0 THEN 1 ELSE 0 END) AS withPairs`,
+    KernalTotals,
+  );
+  return {
+    technique_categories: techniques.data,
+    pitfall_categories: pitfalls.data,
+    recipe_toolchains: recipes.data,
+    kernal_coverage: {
+      total_routines: kernal?.total ?? 0,
+      with_doc_chunks: kernal?.total ?? 0,
+      with_pairs_with_edge: kernal?.withPairs ?? 0,
+    },
+  };
+}
 
 export async function coverage(): Promise<{ structured: CoverageOutput; text: string }> {
   const f = await getFalkor();
   const qd = await getQdrant();
   const an = getAnalytics();
 
-  // FalkorDB dimensions
-  const techCatRes = await f.roQuery(
-    `MATCH (t:Technique) RETURN t.category AS category, count(*) AS count ORDER BY count DESC`,
-  );
-  const pitCatRes = await f.roQuery(
-    `MATCH (p:Pitfall) RETURN p.category AS category, count(*) AS count ORDER BY count DESC`,
-  );
-  const recToolRes = await f.roQuery(
-    `MATCH (r:Recipe) RETURN r.toolchain AS toolchain, count(*) AS count ORDER BY count DESC`,
-  );
-  const kernalRes = await f.roQuery(
-    `MATCH (k:KernalRoutine)
-     OPTIONAL MATCH (k)-[:PAIRS_WITH]->(:KernalRoutine)
-     WITH k, count(*) AS pairs
-     RETURN count(k) AS total,
-            sum(CASE WHEN pairs > 0 THEN 1 ELSE 0 END) AS withPairs`,
-  );
-  const nodesRes = await f.roQuery(`MATCH (n) RETURN count(n) AS c`);
-  const edgesRes = await f.roQuery(`MATCH ()-[r]->() RETURN count(r) AS c`);
-
-  // Qdrant total via getStats()
-  let qdrantChunks = 0;
-  try {
-    const stats = await qd.getStats();
-    qdrantChunks = stats.total_points;
-  } catch {
-    qdrantChunks = 0;
-  }
-
-  // Analytics gaps
-  const gaps = an.getRecentGaps(10);
+  const dimensions = await graphDimensions(f);
+  const nodes = await one(f, `MATCH (n) RETURN count(n) AS c`, Count);
+  const edges = await one(f, `MATCH ()-[r]->() RETURN count(r) AS c`, Count);
 
   const structured: CoverageOutput = {
-    dimensions: {
-      technique_categories: (techCatRes.data ?? []) as { category: string; count: number }[],
-      pitfall_categories: (pitCatRes.data ?? []) as { category: string; count: number }[],
-      recipe_toolchains: (recToolRes.data ?? []) as { toolchain: string; count: number }[],
-      kernal_coverage: {
-        total_routines: (kernalRes.data?.[0] as any)?.total ?? 0,
-        with_doc_chunks: (kernalRes.data?.[0] as any)?.total ?? 0,
-        with_pairs_with_edge: (kernalRes.data?.[0] as any)?.withPairs ?? 0,
-      },
-    },
+    dimensions,
     totals: {
-      qdrant_chunks: qdrantChunks,
-      falkor_nodes: (nodesRes.data?.[0] as any)?.c ?? 0,
-      falkor_edges: (edgesRes.data?.[0] as any)?.c ?? 0,
+      qdrant_chunks: await qdrantPoints(qd),
+      falkor_nodes: nodes?.c ?? 0,
+      falkor_edges: edges?.c ?? 0,
     },
-    recent_gaps: gaps.map((g) => ({
+    recent_gaps: an.getRecentGaps(10).map((g) => ({
       query: g.query,
       tool: g.tool,
       hit_count: g.hit_count,
@@ -115,53 +147,119 @@ function formatCoverageText(c: CoverageOutput): string {
 // ---------------------------------------------------------------------------
 
 export interface SuggestLinksOptions {
-  kind?: "technique-register" | "recipe-technique" | "pitfall-technique" | "all";
-  limit?: number;
+  kind?: "technique-register" | "recipe-technique" | "pitfall-technique" | "all" | undefined;
+  limit?: number | undefined;
 }
 
-export async function suggestLinks(
-  opts: SuggestLinksOptions = {},
-): Promise<{ structured: SuggestLinksOutput; text: string }> {
-  const kind = opts.kind ?? "all";
-  const limit = opts.limit ?? 20;
-  const f = await getFalkor();
-  const qd = await getQdrant();
+type Suggestion = SuggestLinksOutput["suggestions"][number];
+type Confidence = Suggestion["confidence"];
 
-  const suggestions: SuggestLinksOutput["suggestions"] = [];
+/** A node a chunk may mention. `key` identifies it for exclusion and dedup; `forms` are the strings to look for. */
+interface Target {
+  name: string;
+  key: string;
+  forms: readonly string[];
+}
 
-  if (kind === "all" || kind === "technique-register") {
-    await collectTechniqueRegisterSuggestions(f, qd, suggestions, limit);
-  }
-  if ((kind === "all" || kind === "recipe-technique") && suggestions.length < limit) {
-    await collectRecipeTechniqueSuggestions(f, qd, suggestions, limit);
-  }
-  if ((kind === "all" || kind === "pitfall-technique") && suggestions.length < limit) {
-    await collectPitfallTechniqueSuggestions(f, qd, suggestions, limit);
-  }
-
-  const structured: SuggestLinksOutput = {
-    suggestions: suggestions.slice(0, limit),
-    generated_at: new Date().toISOString(),
-  };
-
-  const text = formatSuggestLinksText(structured);
-  const an = getAnalytics();
-  an.logQuery({
-    tool: "c64_suggest_links",
-    query: `kind=${kind} limit=${limit}`,
-    resultCount: structured.suggestions.length,
-  });
-  return { structured, text };
+/** What one chunk of an entity's doc implies: the edge kind, the targets already linked, the confidence. */
+interface ChunkContext {
+  kind: Suggestion["kind"];
+  exclude: ReadonlySet<string>;
+  confidence: Confidence;
+  /** Appended to the dedup key, so one pair can surface once per edge kind. */
+  tag: string;
 }
 
 /**
- * Derive a source doc path for a Technique from its category.
- * e.g. category "raster" → "techniques/raster.md"
- * Falls back to a per-name mapping for split-file categories.
+ * One heuristic: for each entity, read its doc chunks and suggest an edge to
+ * the first target a chunk names that the graph does not already link.
  */
-function techSourceDoc(category: string): string {
-  // All technique category files are named after their category.
-  return `techniques/${category}.md`;
+interface LinkHeuristic<E extends { name: string }> {
+  fromKind: string;
+  toKind: string;
+  entities: readonly E[];
+  targets: readonly Target[];
+  chunks: (e: E) => Promise<ChunkPayload[]>;
+  context: (e: E, section: string) => ChunkContext;
+}
+
+/** The first new edge this chunk evidences, if any (one suggestion per chunk). */
+function suggestFromChunk<E extends { name: string }>(
+  h: LinkHeuristic<E>,
+  e: E,
+  ch: ChunkPayload,
+  seen: Set<string>,
+): Suggestion | null {
+  const ctx = h.context(e, ch.section.toLowerCase());
+  for (const t of h.targets) {
+    if (ctx.exclude.has(t.key)) continue;
+    const dedupKey = `${e.name}::${t.key}${ctx.tag}`;
+    if (seen.has(dedupKey)) continue;
+    if (!t.forms.some((form) => ch.text.includes(form))) continue;
+    seen.add(dedupKey);
+    return {
+      kind: ctx.kind,
+      from: { kind: h.fromKind, name: e.name },
+      to: { kind: h.toKind, name: t.name },
+      evidence: ch.text.slice(0, 150).trim(),
+      confidence: ctx.confidence,
+    };
+  }
+  return null;
+}
+
+async function runHeuristic<E extends { name: string }>(
+  h: LinkHeuristic<E>,
+  out: Suggestion[],
+  limit: number,
+): Promise<void> {
+  // Each unique missing edge surfaces once however many chunks evidence it.
+  const seen = new Set<string>();
+  for (const e of h.entities) {
+    if (out.length >= limit) return;
+    for (const ch of await h.chunks(e)) {
+      if (out.length >= limit) return;
+      const s = suggestFromChunk(h, e, ch, seen);
+      if (s) out.push(s);
+    }
+  }
+}
+
+/** "high" when the section names one of `high`, "medium" when it names `medium`, else "low". */
+function sectionConfidence(section: string, high: readonly string[], medium: string): Confidence {
+  if (high.some((w) => section.includes(w))) return "high";
+  return section.includes(medium) ? "medium" : "low";
+}
+
+/**
+ * Up to `n` chunks of one source doc. With `nameHint`, chunks whose section
+ * names the entity come first; without a match, the file's first chunks.
+ * A failed scroll is reported on stderr and gives no chunks.
+ */
+async function docChunks(
+  qd: QdrantService,
+  source: string,
+  opts: { n: number; nameHint?: string },
+): Promise<ChunkPayload[]> {
+  let all: ChunkPayload[];
+  try {
+    // scrollBySource does exact keyword-index match — fast and correct
+    all = await qd.scrollBySource(source, opts.nameHint ? 50 : opts.n);
+  } catch (err) {
+    console.error(
+      `[suggest-links] cannot read chunks of ${source}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return [];
+  }
+  if (!opts.nameHint) return all;
+  const nameKey = opts.nameHint.toLowerCase().replace(/_/g, "");
+  const matched = all.filter((ch) =>
+    ch.section
+      .toLowerCase()
+      .replace(/[\s_-]/g, "")
+      .includes(nameKey),
+  );
+  return (matched.length > 0 ? matched : all).slice(0, opts.n);
 }
 
 /**
@@ -178,256 +276,197 @@ function pitfallSourceDoc(category: string): string {
   return `pitfalls/${file}`;
 }
 
-async function collectTechniqueRegisterSuggestions(
-  f: any,
-  qd: any,
-  suggestions: SuggestLinksOutput["suggestions"],
-  limit: number,
-): Promise<void> {
-  // Gather Register canonical names + their aliases so the heuristic
-  // treats D011 and SCROLY as the same register (P5-15 dedup workaround).
-  const regRes = await f.roQuery(`MATCH (r:Register) RETURN DISTINCT r.name AS name, r.aliases AS aliases`);
-  const regRows = regRes.data as { name: string; aliases: string[] | null }[];
-  if (regRows.length === 0) return;
+const RegisterRow = z.object({ name: z.string(), aliases: z.array(z.string()).nullable() });
+const TechniqueUsesRow = z.object({
+  name: z.string(),
+  category: z.string(),
+  uses: z.array(z.string().nullable()),
+});
+const NameRow = z.object({ name: z.string() });
+const RecipeRow = z.object({
+  name: z.string(),
+  source_doc: z.string().nullable(),
+  implements: z.array(z.string()),
+});
+const PitfallRow = z.object({
+  name: z.string(),
+  category: z.string(),
+  triggered_by: z.array(z.string()),
+  mitigated_by: z.array(z.string()),
+});
 
-  // Build an equivalence map: every alias maps to the same canonical key (the
-  // sorted-and-joined set of all forms). This way, `D011` and `SCROLY` collapse
-  // to the same key, and a technique with a USES edge to either form counts
-  // as already-edged for both.
-  const aliasGroupKey = new Map<string, string>();
-  for (const row of regRows) {
-    const forms = [row.name, ...(row.aliases ?? [])];
+async function techniqueTargets(f: FalkorService): Promise<Target[]> {
+  const rows = await f.roQuery(`MATCH (t:Technique) RETURN DISTINCT t.name AS name`, undefined, NameRow);
+  return rows.data.map(({ name }) => ({ name, key: name, forms: [name] }));
+}
+
+/**
+ * TECHNIQUE USES REGISTER. Registers are grouped with their aliases, so D011
+ * and SCROLY are one target and a USES edge to either covers both (P5-15
+ * dedup workaround).
+ */
+async function techniqueRegisterHeuristic(
+  f: FalkorService,
+  qd: QdrantService,
+): Promise<LinkHeuristic<{ name: string; category: string; usesGroups: Set<string> }>> {
+  const regs = await f.roQuery(
+    `MATCH (r:Register) RETURN DISTINCT r.name AS name, r.aliases AS aliases`,
+    undefined,
+    RegisterRow,
+  );
+  // Every form maps to one key: the sorted, joined set of all the register's forms.
+  const groupOf = new Map<string, string>();
+  const targets = regs.data.map((r) => {
+    const forms = [r.name, ...(r.aliases ?? [])];
     const key = [...forms].sort().join("|");
-    for (const f of forms) aliasGroupKey.set(f, key);
-  }
+    for (const form of forms) groupOf.set(form, key);
+    return { name: r.name, key, forms };
+  });
+  // Re-key after all groups are known: a later row can claim an earlier row's form.
+  for (const t of targets) t.key = groupOf.get(t.name) ?? t.name;
 
-  const techRes = await f.roQuery(
+  const techs = await f.roQuery(
     `MATCH (t:Technique)
      OPTIONAL MATCH (t)-[:USES]->(reg:Register)
      RETURN t.name AS name, t.title AS title, t.category AS category, collect(reg.name) AS uses`,
+    undefined,
+    TechniqueUsesRow,
   );
-  const techs = techRes.data as { name: string; title: string; category: string; uses: string[] }[];
-
-  // Dedup key = `${tech.name}::${registerGroupKey}` so each unique missing-edge
-  // surfaces once regardless of how many chunks evidence it.
-  const seen = new Set<string>();
-
-  for (const tech of techs) {
-    if (suggestions.length >= limit) return;
-    // Treat existing USES edges as covering the entire alias group.
-    const usesGroups = new Set(
-      tech.uses.filter((u): u is string => Boolean(u)).map((u) => aliasGroupKey.get(u) ?? u),
-    );
-
-    const chunks = await fetchTechniqueChunks(qd, tech.name, tech.category);
-    for (const ch of chunks) {
-      if (suggestions.length >= limit) return;
-      const text = (ch.text as string | undefined) ?? "";
-      for (const row of regRows) {
-        const groupKey = aliasGroupKey.get(row.name) ?? row.name;
-        if (usesGroups.has(groupKey)) continue;
-        const dedupKey = `${tech.name}::${groupKey}`;
-        if (seen.has(dedupKey)) continue;
-        // Look for any form (canonical or alias) in the chunk text.
-        const forms = [row.name, ...(row.aliases ?? [])];
-        const matched = forms.find((f) => text.includes(f));
-        if (matched) {
-          const section = ((ch.section as string | undefined) ?? "").toLowerCase();
-          const confidence: "high" | "medium" | "low" =
-            section.includes("uses") || section.includes("registers")
-              ? "high"
-              : section.includes("technique")
-                ? "medium"
-                : "low";
-          suggestions.push({
-            kind: "technique_uses_register",
-            from: { kind: "Technique", name: tech.name },
-            to: { kind: "Register", name: row.name },
-            evidence: text.slice(0, 150).trim(),
-            confidence,
-          });
-          seen.add(dedupKey);
-          break; // one suggestion per chunk
-        }
-      }
-    }
-  }
+  const entities = techs.data.map((t) => ({
+    name: t.name,
+    category: t.category,
+    usesGroups: new Set(t.uses.filter((u): u is string => Boolean(u)).map((u) => groupOf.get(u) ?? u)),
+  }));
+  return {
+    fromKind: "Technique",
+    toKind: "Register",
+    entities: targets.length === 0 ? [] : entities,
+    targets,
+    chunks: (t) => docChunks(qd, `techniques/${t.category}.md`, { n: 5, nameHint: t.name }),
+    context: (t, section) => ({
+      kind: "technique_uses_register",
+      exclude: t.usesGroups,
+      confidence: sectionConfidence(section, ["uses", "registers"], "technique"),
+      tag: "",
+    }),
+  };
 }
 
-async function collectRecipeTechniqueSuggestions(
-  f: any,
-  qd: any,
-  suggestions: SuggestLinksOutput["suggestions"],
-  limit: number,
-): Promise<void> {
-  const allTechRes = await f.roQuery(`MATCH (t:Technique) RETURN DISTINCT t.name AS name`);
-  const allTechNames = (allTechRes.data as { name: string }[]).map((t) => t.name);
-  if (allTechNames.length === 0) return;
-
-  const recipesRes = await f.roQuery(
+/** RECIPE IMPLEMENTS TECHNIQUE: a technique name in the recipe's own page. */
+async function recipeTechniqueHeuristic(
+  f: FalkorService,
+  qd: QdrantService,
+): Promise<LinkHeuristic<{ name: string; sourceDoc: string; implemented: Set<string> }>> {
+  const targets = await techniqueTargets(f);
+  const recipes = await f.roQuery(
     `MATCH (r:Recipe)
      OPTIONAL MATCH (r)-[:IMPLEMENTS]->(t:Technique)
      RETURN r.name AS name, r.source_doc AS source_doc, collect(t.name) AS implements`,
+    undefined,
+    RecipeRow,
   );
-  const recipes = recipesRes.data as { name: string; source_doc: string; implements: string[] }[];
-  const seen = new Set<string>();
-
-  for (const recipe of recipes) {
-    if (suggestions.length >= limit) return;
-    const chunks = await fetchRecipeChunks(qd, recipe.source_doc ?? "");
-    for (const ch of chunks) {
-      if (suggestions.length >= limit) return;
-      const text = (ch.text as string | undefined) ?? "";
-      for (const techName of allTechNames) {
-        if (recipe.implements.includes(techName)) continue;
-        const dedupKey = `${recipe.name}::${techName}`;
-        if (seen.has(dedupKey)) continue;
-        if (text.includes(techName)) {
-          const section = ((ch.section as string | undefined) ?? "").toLowerCase();
-          const confidence: "high" | "medium" | "low" =
-            section.includes("implements") || section.includes("techniques")
-              ? "high"
-              : section.includes("recipe")
-                ? "medium"
-                : "low";
-          suggestions.push({
-            kind: "recipe_implements_technique",
-            from: { kind: "Recipe", name: recipe.name },
-            to: { kind: "Technique", name: techName },
-            evidence: text.slice(0, 150).trim(),
-            confidence,
-          });
-          seen.add(dedupKey);
-          break;
-        }
-      }
-    }
-  }
+  return {
+    fromKind: "Recipe",
+    toKind: "Technique",
+    entities:
+      targets.length === 0
+        ? []
+        : recipes.data.map((r) => ({
+            name: r.name,
+            sourceDoc: r.source_doc ?? "",
+            implemented: new Set(r.implements),
+          })),
+    targets,
+    chunks: (r) => (r.sourceDoc ? docChunks(qd, r.sourceDoc, { n: 5 }) : Promise.resolve([])),
+    context: (r, section) => ({
+      kind: "recipe_implements_technique",
+      exclude: r.implemented,
+      confidence: sectionConfidence(section, ["implements", "techniques"], "recipe"),
+      tag: "",
+    }),
+  };
 }
 
-async function collectPitfallTechniqueSuggestions(
-  f: any,
-  qd: any,
-  suggestions: SuggestLinksOutput["suggestions"],
-  limit: number,
-): Promise<void> {
-  const allTechRes = await f.roQuery(`MATCH (t:Technique) RETURN DISTINCT t.name AS name`);
-  const allTechNames = (allTechRes.data as { name: string }[]).map((t) => t.name);
-  if (allTechNames.length === 0) return;
-
-  const pitfallsRes = await f.roQuery(
+/**
+ * PITFALL TRIGGERED_BY / MITIGATED_BY TECHNIQUE. The chunker's heading path
+ * ends in the H3 ("... > name — title > Fix"). A technique named in the Fix
+ * is evidence for MITIGATED_BY, not for TRIGGERED_BY: the two relations were
+ * conflated here until schema 19.
+ */
+async function pitfallTechniqueHeuristic(
+  f: FalkorService,
+  qd: QdrantService,
+): Promise<
+  LinkHeuristic<{ name: string; category: string; triggeredBy: Set<string>; mitigatedBy: Set<string> }>
+> {
+  const targets = await techniqueTargets(f);
+  const pitfalls = await f.roQuery(
     `MATCH (p:Pitfall)
      OPTIONAL MATCH (p)-[:TRIGGERED_BY]->(t:Technique)
      WITH p, collect(DISTINCT t.name) AS triggered_by
      OPTIONAL MATCH (p)-[:MITIGATED_BY]->(m:Technique)
      RETURN p.name AS name, p.category AS category, triggered_by, collect(DISTINCT m.name) AS mitigated_by`,
+    undefined,
+    PitfallRow,
   );
-  const pitfalls = pitfallsRes.data as {
-    name: string;
-    category: string;
-    triggered_by: string[];
-    mitigated_by: string[];
-  }[];
-  const seen = new Set<string>();
-
-  for (const pitfall of pitfalls) {
-    if (suggestions.length >= limit) return;
-    const chunks = await fetchPitfallChunks(qd, pitfall.name, pitfall.category);
-    for (const ch of chunks) {
-      if (suggestions.length >= limit) return;
-      const text = (ch.text as string | undefined) ?? "";
-      const section = ((ch.section as string | undefined) ?? "").toLowerCase();
-      // The chunker's heading path ends in the H3 ("... > name — title > Fix").
-      // A technique named in the Fix is evidence for MITIGATED_BY, not for
-      // TRIGGERED_BY: the two relations were conflated here until schema 19.
-      const h3 = (section.split(">").pop() ?? "").trim();
-      const isFix = h3.startsWith("fix");
+  return {
+    fromKind: "Pitfall",
+    toKind: "Technique",
+    entities:
+      targets.length === 0
+        ? []
+        : pitfalls.data.map((p) => ({
+            name: p.name,
+            category: p.category,
+            triggeredBy: new Set(p.triggered_by),
+            mitigatedBy: new Set(p.mitigated_by),
+          })),
+    targets,
+    chunks: (p) => docChunks(qd, pitfallSourceDoc(p.category), { n: 5, nameHint: p.name }),
+    context: (p, section) => {
+      const isFix = (section.split(">").pop() ?? "").trim().startsWith("fix");
       const kind = isFix ? "pitfall_mitigated_by_technique" : "pitfall_triggered_by_technique";
-      const existing = isFix ? (pitfall.mitigated_by ?? []) : (pitfall.triggered_by ?? []);
-      for (const techName of allTechNames) {
-        if (existing.includes(techName)) continue;
-        const dedupKey = `${pitfall.name}::${techName}::${kind}`;
-        if (seen.has(dedupKey)) continue;
-        if (text.includes(techName)) {
-          const confidence: "high" | "medium" | "low" = isFix
-            ? "medium"
-            : section.includes("triggered") || section.includes("techniques")
-              ? "high"
-              : section.includes("pitfall")
-                ? "medium"
-                : "low";
-          suggestions.push({
-            kind,
-            from: { kind: "Pitfall", name: pitfall.name },
-            to: { kind: "Technique", name: techName },
-            evidence: text.slice(0, 150).trim(),
-            confidence,
-          });
-          seen.add(dedupKey);
-          break;
-        }
-      }
-    }
-  }
+      return {
+        kind,
+        exclude: isFix ? p.mitigatedBy : p.triggeredBy,
+        confidence: isFix ? "medium" : sectionConfidence(section, ["triggered", "techniques"], "pitfall"),
+        tag: `::${kind}`,
+      };
+    },
+  };
 }
 
-/**
- * Fetch up to 5 Qdrant chunks for a technique.
- *
- * Strategy: use exact source-match scroll on `techniques/${category}.md`,
- * then client-side filter to chunks whose section mentions the tech name.
- * Falls back to all chunks from that source if none match by section.
- */
-async function fetchTechniqueChunks(qd: any, techName: string, category: string): Promise<any[]> {
-  try {
-    const source = techSourceDoc(category);
-    // scrollBySource does exact keyword-index match — fast and correct
-    const all: any[] = await qd.scrollBySource(source, 50);
-    // Prefer chunks whose section header contains the technique name
-    const nameKey = techName.toLowerCase().replace(/_/g, "");
-    const matched = all.filter((ch: any) => {
-      const sec = ((ch.section as string | undefined) ?? "").toLowerCase().replace(/[\s_-]/g, "");
-      return sec.includes(nameKey);
-    });
-    // Return up to 5; fall back to first chunks from the file if nothing specific
-    return matched.length > 0 ? matched.slice(0, 5) : all.slice(0, 5);
-  } catch {
-    return [];
-  }
-}
+export async function suggestLinks(
+  opts: SuggestLinksOptions = {},
+): Promise<{ structured: SuggestLinksOutput; text: string }> {
+  const kind = opts.kind ?? "all";
+  const limit = opts.limit ?? 20;
+  const f = await getFalkor();
+  const qd = await getQdrant();
 
-/**
- * Fetch up to 5 Qdrant chunks for a recipe using its source_doc path.
- */
-async function fetchRecipeChunks(qd: any, sourceDoc: string): Promise<any[]> {
-  if (!sourceDoc) return [];
-  try {
-    return await qd.scrollBySource(sourceDoc, 5);
-  } catch {
-    return [];
+  const suggestions: Suggestion[] = [];
+  if (kind === "all" || kind === "technique-register") {
+    await runHeuristic(await techniqueRegisterHeuristic(f, qd), suggestions, limit);
   }
-}
+  if ((kind === "all" || kind === "recipe-technique") && suggestions.length < limit) {
+    await runHeuristic(await recipeTechniqueHeuristic(f, qd), suggestions, limit);
+  }
+  if ((kind === "all" || kind === "pitfall-technique") && suggestions.length < limit) {
+    await runHeuristic(await pitfallTechniqueHeuristic(f, qd), suggestions, limit);
+  }
 
-/**
- * Fetch up to 5 Qdrant chunks for a pitfall.
- *
- * Strategy: exact source-match on `pitfalls/${category-mapped-file}.md`,
- * then client-side filter to chunks mentioning the pitfall name.
- */
-async function fetchPitfallChunks(qd: any, pitfallName: string, category: string): Promise<any[]> {
-  try {
-    const source = pitfallSourceDoc(category);
-    const all: any[] = await qd.scrollBySource(source, 50);
-    // Filter to chunks whose section matches the pitfall name
-    const nameKey = pitfallName.toLowerCase().replace(/_/g, "");
-    const matched = all.filter((ch: any) => {
-      const sec = ((ch.section as string | undefined) ?? "").toLowerCase().replace(/[\s_-]/g, "");
-      return sec.includes(nameKey);
-    });
-    return matched.length > 0 ? matched.slice(0, 5) : all.slice(0, 5);
-  } catch {
-    return [];
-  }
+  const structured: SuggestLinksOutput = {
+    suggestions: suggestions.slice(0, limit),
+    generated_at: new Date().toISOString(),
+  };
+
+  const text = formatSuggestLinksText(structured);
+  getAnalytics().logQuery({
+    tool: "c64_suggest_links",
+    query: `kind=${kind} limit=${limit}`,
+    resultCount: structured.suggestions.length,
+  });
+  return { structured, text };
 }
 
 function formatSuggestLinksText(s: SuggestLinksOutput): string {
@@ -450,15 +489,12 @@ function formatSuggestLinksText(s: SuggestLinksOutput): string {
 
 export interface ReportGapOptions {
   query: string;
-  tool_called?: string;
-  notes?: string;
+  tool_called?: string | undefined;
+  notes?: string | undefined;
 }
 
-export async function reportGap(
-  opts: ReportGapOptions,
-): Promise<{ structured: ReportGapOutput; text: string }> {
-  const an = getAnalytics();
-  const result = an.reportGap(opts.query, opts.tool_called ?? "unknown", opts.notes);
+export function reportGap(opts: ReportGapOptions): Promise<{ structured: ReportGapOutput; text: string }> {
+  const result = getAnalytics().reportGap(opts.query, opts.tool_called ?? "unknown", opts.notes);
 
   const structured: ReportGapOutput = {
     gap_id: result.gap_id,
@@ -470,5 +506,5 @@ export async function reportGap(
         : `Existing gap ${result.gap_id} incremented to hit_count=${result.hit_count}.`,
   };
 
-  return { structured, text: structured.message };
+  return Promise.resolve({ structured, text: structured.message });
 }

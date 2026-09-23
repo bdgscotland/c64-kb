@@ -33,7 +33,9 @@ echo "$NOW_HASH" > "$STATE_DIR/last-docs-hash"
 
 have() { command -v "$1" >/dev/null 2>&1 && echo "yes" || echo "no"; }
 KA="${KICKASS_JAR:-}"; [ -z "$KA" ] && [ -f "$HOME/Developer/c64/kickassembler/KickAss.jar" ] && KA="$HOME/Developer/c64/kickassembler/KickAss.jar (default path; export KICKASS_JAR to use it)"
-TOOLS="KickAssembler: ${KA:-not found (set KICKASS_JAR)}; java: $(have java); oscar64: $(have oscar64)${OSCAR64:+ (OSCAR64=$OSCAR64)}; cl65: $(have cl65); x64sc: $(have x64sc)"
+O64="${OSCAR64:-}"; [ -z "$O64" ] && command -v oscar64 >/dev/null 2>&1 && O64=$(command -v oscar64)
+[ -z "$O64" ] && [ -x "$HOME/Developer/c64/oscar64/bin/oscar64" ] && O64="$HOME/Developer/c64/oscar64/bin/oscar64 (default path)"
+TOOLS="KickAssembler: ${KA:-not found (set KICKASS_JAR)}; java: $(have java); oscar64: ${O64:-not found (set OSCAR64)}; cl65: $(have cl65); x64sc: $(have x64sc)"
 
 CTX=$(cat <<EOF
 ## c64-kb session start

@@ -1,0 +1,124 @@
+/**
+ * The end of a batch ingest: the address-derived IN_REGION edges, the stub
+ * Technique scan, and the summary line plus the matching DONE log record.
+ */
+
+import { z } from "zod";
+import type { FalkorService } from "../services/falkor.ts";
+import type { QdrantService } from "../services/qdrant.ts";
+import { log } from "./files.ts";
+import type { EdgeTally, NodeTally, TrackedEdge } from "./tally.ts";
+
+/**
+ * Address-derived edges: every Register and KERNAL routine into the
+ * memory-map region that contains it. Needs all nodes to exist first.
+ */
+export async function linkRegions(falkor: FalkorService, print: (line: string) => void): Promise<void> {
+  const inRegion = await falkor.linkAddressesToRegions();
+  print(
+    `IN_REGION: ${inRegion.registers} registers, ${inRegion.kernal} KERNAL routines placed in memory regions`,
+  );
+}
+
+/**
+ * Technique nodes created by linkRecipeImplements MERGE stubs have no title
+ * or category: they indicate a typo in a recipe's techniques: array.
+ */
+export async function findStubTechniques(falkor: FalkorService): Promise<string[]> {
+  const stubResult = await falkor.roQuery(
+    `MATCH (t:Technique)
+     WHERE t.title IS NULL OR t.title = ""
+     RETURN t.name AS name
+     ORDER BY name`,
+  );
+  const stubs = z
+    .array(z.object({ name: z.string() }))
+    .parse(stubResult.data)
+    .map((r) => r.name);
+  if (stubs.length > 0) {
+    console.warn(`[ingest] stub Technique nodes (typo in recipe.techniques array?): ${stubs.join(", ")}`);
+    log(`STUB_TECHNIQUES ${stubs.join(", ")}`);
+  }
+  return stubs;
+}
+
+/** Report label, edge label in the graph, and tally kind, in report order. */
+const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
+  ["triggered_by", "TRIGGERED_BY", "triggered_by"],
+  ["caused_by", "CAUSED_BY", "caused_by"],
+  ["requires", "REQUIRES", "technique_requires"],
+  ["mitigated_by", "MITIGATED_BY", "mitigated_by"],
+  ["archetype_features", "FEATURES", "archetype_features"],
+  ["archetype_risks", "RISKS", "archetype_risks"],
+  ["scaffolds", "SCAFFOLDS", "scaffolds"],
+];
+
+interface EdgeCount {
+  label: string;
+  landed: number;
+  distinct: number;
+  dropped: number;
+}
+
+/**
+ * Count what actually landed: an edge whose target name matches no node is
+ * dropped by the MERGE, and the request counters cannot see that.
+ */
+async function countEdges(falkor: FalkorService, rel: string): Promise<number> {
+  const r = await falkor.roQuery(`MATCH ()-[e:${rel}]->() RETURN count(e) AS n`);
+  const row = z.object({ n: z.number() }).safeParse(r.data[0]);
+  return row.success ? row.data.n : 0;
+}
+
+export async function reportSummary(opts: {
+  qdrant: QdrantService;
+  falkor: FalkorService;
+  nodes: NodeTally;
+  edges: EdgeTally;
+  stubTechniques: string[];
+  print: (line: string) => void;
+}): Promise<void> {
+  const { qdrant, falkor, nodes, edges, stubTechniques, print } = opts;
+  const qStats = await qdrant.getStats();
+  const gStats = await falkor.getStats();
+  const counts: EdgeCount[] = [];
+  for (const [label, rel, kind] of EDGE_LINES) {
+    counts.push({
+      label,
+      landed: await countEdges(falkor, rel),
+      distinct: edges.distinct(kind),
+      dropped: edges.dropped(kind),
+    });
+  }
+  const sentence = (c: EdgeCount): string =>
+    `${c.label}: ${c.landed} edges in graph, ${c.distinct} distinct references, ${c.dropped} dropped.`;
+  const record = (c: EdgeCount): string => `${c.label}=${c.landed}/${c.distinct}/dropped=${c.dropped}`;
+  // The first four follow the pitfall and crash-pattern counts, the rest the archetype count.
+  const pitfallEdges = counts.slice(0, 4);
+  const archetypeEdges = counts.slice(4);
+
+  print(`\nQdrant: ${qStats.total_points} vectors`);
+  print(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
+  print(
+    [
+      `Ingested ${nodes.chunks} new chunks. Skipped ${nodes.skipped} unchanged files. stub Techniques: ${stubTechniques.length}. pairs_with skipped: ${edges.pairsWithSkipped} (missing KERNAL targets). Pitfalls: ${nodes.pitfalls}. CrashPatterns: ${nodes.crashPatterns}.`,
+      ...pitfallEdges.map(sentence),
+      `Archetypes: ${nodes.archetypes}.`,
+      ...archetypeEdges.map(sentence),
+    ].join(" "),
+  );
+  const droppedRefs = edges.totalDropped();
+  if (droppedRefs > 0) {
+    console.warn(
+      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
+    );
+  }
+  log(
+    [
+      `DONE chunks=${nodes.chunks} skipped=${nodes.skipped} stub_techniques=${stubTechniques.length} pairs_with_skipped=${edges.pairsWithSkipped} pitfalls=${nodes.pitfalls} crash_patterns=${nodes.crashPatterns}`,
+      ...pitfallEdges.map(record),
+      `archetypes=${nodes.archetypes}`,
+      ...archetypeEdges.map(record),
+    ].join(" "),
+  );
+}

@@ -4,27 +4,35 @@
  * Append-only JSONL — inspectable, crash-safe, no schema migration. */
 import { appendFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { z } from "zod";
 
 export const DEFAULT_FEEDBACK_DB = "./data/generation-feedback.jsonl";
 
-export interface FeedbackRecord {
-  id: string;
-  ts: string; // ISO timestamp
-  composer: string;
+const MethodSchema = z.enum(["ai", "deterministic", "deterministic-salient", "ablation"]);
+
+// A line of the JSONL file is JSON from disk: validated, not cast.
+const FeedbackRecordSchema = z.object({
+  id: z.string(),
+  ts: z.string(), // ISO timestamp
+  composer: z.string(),
   /** how it was generated */
-  method: "ai" | "deterministic" | "deterministic-salient" | "ablation";
-  ablation?: string; // for method "ablation": scramble_palette | no_timbre | generic_phrases
-  seed?: number;
-  title: string;
-  metrics?: {
-    consonance_pct?: number;
-    in_style_pct?: number;
-    drum_density?: number;
-    stutter_score?: number;
-  };
-  verdict?: string; // human label: e.g. "best-yet", "decent", "not good", "not really X"
-  notes?: string;
-}
+  method: MethodSchema,
+  ablation: z.string().optional(), // for method "ablation": scramble_palette | no_timbre | generic_phrases
+  seed: z.number().optional(),
+  title: z.string(),
+  metrics: z
+    .object({
+      consonance_pct: z.number().optional(),
+      in_style_pct: z.number().optional(),
+      drum_density: z.number().optional(),
+      stutter_score: z.number().optional(),
+    })
+    .optional(),
+  verdict: z.string().optional(), // human label: e.g. "best-yet", "decent", "not good", "not really X"
+  notes: z.string().optional(),
+});
+
+export type FeedbackRecord = z.infer<typeof FeedbackRecordSchema>;
 
 /** Append one feedback record as a JSON line (creates the dir/file if needed). */
 export function appendFeedback(rec: FeedbackRecord, dbPath: string = DEFAULT_FEEDBACK_DB): void {
@@ -32,18 +40,22 @@ export function appendFeedback(rec: FeedbackRecord, dbPath: string = DEFAULT_FEE
   appendFileSync(dbPath, JSON.stringify(rec) + "\n");
 }
 
-/** Load all feedback records. Missing file → []. Blank/corrupt lines are skipped. */
+/** Load all feedback records. Missing file → []. Blank, corrupt or malformed lines are skipped. */
 export function loadFeedback(dbPath: string = DEFAULT_FEEDBACK_DB): FeedbackRecord[] {
   if (!existsSync(dbPath)) return [];
   const out: FeedbackRecord[] = [];
   for (const line of readFileSync(dbPath, "utf8").split("\n")) {
     const s = line.trim();
     if (!s) continue;
+    let parsed: unknown;
     try {
-      out.push(JSON.parse(s) as FeedbackRecord);
-    } catch {
-      /* skip partial/corrupt line */
+      parsed = JSON.parse(s);
+    } catch (e) {
+      if (e instanceof SyntaxError) continue; // a partial or corrupt line
+      throw e;
     }
+    const rec = FeedbackRecordSchema.safeParse(parsed);
+    if (rec.success) out.push(rec.data);
   }
   return out;
 }
@@ -55,7 +67,8 @@ async function main(): Promise<void> {
   const argv = process.argv;
   const get = (n: string): string | undefined => {
     const i = argv.indexOf(`--${n}`);
-    return i >= 0 && argv[i + 1] ? argv[i + 1] : undefined;
+    const v = i >= 0 ? argv.at(i + 1) : undefined;
+    return v === "" ? undefined : v;
   };
   if (argv.includes("--list")) {
     const rows = loadFeedback();
@@ -70,7 +83,7 @@ async function main(): Promise<void> {
     id: get("id") ?? randomUUID().slice(0, 8),
     ts: new Date().toISOString(),
     composer: get("composer") ?? "",
-    method: (get("method") ?? "ai") as FeedbackRecord["method"],
+    method: MethodSchema.parse(get("method") ?? "ai"),
     title: get("title") ?? "",
     verdict: get("verdict"),
     notes: get("notes"),
@@ -82,7 +95,7 @@ async function main(): Promise<void> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((e) => {
+  main().catch((e: unknown) => {
     console.error(e);
     process.exit(1);
   });
