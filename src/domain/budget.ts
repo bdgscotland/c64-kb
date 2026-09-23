@@ -45,7 +45,7 @@ import { assumptionsFor, lockedTo, measuredScreenOn, phaseNotes } from "./budget
 
 export const BUDGET_PHASES = ["play", "transition", "init"] as const;
 export type BudgetPhase = (typeof BUDGET_PHASES)[number];
-type BudgetBasis = "measured-vice" | "derived-listing" | "arithmetic" | "estimated";
+export type BudgetBasis = "measured-vice" | "derived-listing" | "arithmetic" | "estimated";
 type BudgetVerdict = "fits" | "over" | "undetermined";
 
 // Strongest first; the weakest basis in a sum is named beside it.

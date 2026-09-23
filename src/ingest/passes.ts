@@ -45,6 +45,7 @@ function countNode(nodes: NodeTally, e: NodeEntity): void {
   if (e.type === "pitfall") nodes.pitfalls++;
   else if (e.type === "crash_pattern") nodes.crashPatterns++;
   else if (e.type === "archetype") nodes.archetypes++;
+  else if (e.type === "game_design") nodes.gameDesigns++;
 }
 
 /** Create a file's nodes and queue its edges. Returns the number of nodes created. */

@@ -12,6 +12,7 @@ export interface NodeTally {
   pitfalls: number;
   crashPatterns: number;
   archetypes: number;
+  gameDesigns: number;
 }
 
 export type TrackedEdge =
@@ -23,7 +24,10 @@ export type TrackedEdge =
   | "archetype_risks"
   | "scaffolds"
   | "claims"
-  | "kernal_clobbers_zp";
+  | "kernal_clobbers_zp"
+  | "composes"
+  | "instance_of"
+  | "realised_by";
 
 /**
  * A key per distinct (source, target, kind) reference, so a doc naming the
@@ -50,6 +54,12 @@ function referenceKey(e: EdgeEntity): [TrackedEdge, string] | null {
       return [e.type, `${e.owner}|${e.unit}`];
     case "kernal_clobbers_zp":
       return [e.type, `${e.routine}|${e.bound}|${e.basis}`];
+    case "composes":
+      return [e.type, `${e.design}|${e.technique}|${e.phase}`];
+    case "instance_of":
+      return [e.type, `${e.design}|${e.archetype}`];
+    case "realised_by":
+      return [e.type, `${e.design}|${e.recipe}`];
     default:
       return null;
   }

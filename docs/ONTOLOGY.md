@@ -19,7 +19,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (14)
+## Node Types (15)
 
 ### KernalRoutine
 
@@ -274,7 +274,27 @@ carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
 schema 21 the briefing tool held four archetype keywords and two forced
 techniques in code and the page's fingerprints were read by nobody.
 
-## Edge Types (22)
+### GameDesign
+
+A whole game: the techniques it runs in each phase, the archetype it is
+an instance of, the recipe that builds it, and what its frame measured
+when the built game was timed (schema 28). A node because
+`c64_plan_budget` traverses it: a design name expands to its COMPOSES
+edges, each in its phase, and the measured frame is set beside the
+prediction.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | snake_case, from the `**Game design:**` line (e.g. "platformer_scaffold_oscar64") |
+| title | string | The H2 text |
+| region | string, optional | "PAL", "NTSC" or "both", from `**Region:**`; the budget's default region when the caller gives none |
+| measured | string, optional | JSON list of `{phase, region, worst, typical?, basis, source}` from the `**Measured frame:**` lines: what the built game's frame took, in cycles, on the realising recipe. Absent when the game was not timed; a re-ingest that drops the lines clears it |
+| source_doc | string | Path of the page |
+
+Source: `game-design/designs/*.md`, one GameDesign per H2 that carries a
+`**Game design:**` line (`CONVENTIONS-game-designs.md`).
+
+## Edge Types (25)
 
 ### BELONGS_TO
 
@@ -545,12 +565,42 @@ step for a resolved archetype lists the recipes that SCAFFOLD it and
 names their pages (schema 23; before it the tool matched the string
 "shmup" against the archetype name and offered one recipe by name).
 
+### COMPOSES
+
+Direction: `GameDesign → Technique`, property `phase` ("play",
+"transition" or "init")
+
+Meaning: "this game runs this technique in this phase." Authored with
+the `**Composes:**` line (`CONVENTIONS-game-designs.md`); `name (init)`
+or `name (transition)` sets the phase, play when none is given. One edge
+per phase, so a technique used at start-up and again at game over has
+two. Both ends MATCHed; a miss is warned about and counted as `composes …
+dropped`. Read by `c64_plan_budget`, which budgets each phase alone
+(schema 28).
+
+### INSTANCE_OF
+
+Direction: `GameDesign → Archetype`
+
+Meaning: "this game is one of this shape." From `**Instance of:**`; MATCH
+both, misses counted as `instance_of … dropped`. Read by
+`c64_game_briefing`, which lists the designs of the archetype it
+resolved (schema 28).
+
+### REALISED_BY
+
+Direction: `GameDesign → Recipe`
+
+Meaning: "this recipe builds the design; its measured frame came from
+this listing." From `**Realised by:**`; MATCH both, misses counted as
+`realised_by … dropped` (schema 28).
+
 ---
 
 ## Schema state
 
 `ensureSchema()` creates a range index and a unique constraint on the
-primary key of every node label (14) and seeds:
+primary key of every node label (15) and seeds:
 - 5 `Chip` nodes (VIC-II, SID, CIA1, CIA2, 6510)
 - 2 `Region` nodes (PAL, NTSC)
 - the `HardwareUnit` nodes listed under HardwareUnit, each BELONGS_TO its chip

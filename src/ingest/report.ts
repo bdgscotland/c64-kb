@@ -99,6 +99,9 @@ const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
   ["scaffolds", "SCAFFOLDS", "scaffolds"],
   ["claims", "CLAIMS", "claims"],
   ["clobbers_zp", "CLOBBERS_ZP", "kernal_clobbers_zp"],
+  ["composes", "COMPOSES", "composes"],
+  ["instance_of", "INSTANCE_OF", "instance_of"],
+  ["realised_by", "REALISED_BY", "realised_by"],
 ];
 
 interface EdgeCount {
@@ -142,9 +145,11 @@ export async function reportSummary(opts: {
   const sentence = (c: EdgeCount): string =>
     `${c.label}: ${c.landed} edges in graph, ${c.distinct} distinct references, ${c.dropped} dropped.`;
   const record = (c: EdgeCount): string => `${c.label}=${c.landed}/${c.distinct}/dropped=${c.dropped}`;
-  // The first four follow the pitfall and crash-pattern counts, the rest the archetype count.
+  // The first four follow the pitfall and crash-pattern counts, the next
+  // five the archetype count, the last three the game-design count.
   const pitfallEdges = counts.slice(0, 4);
-  const archetypeEdges = counts.slice(4);
+  const archetypeEdges = counts.slice(4, 9);
+  const designEdges = counts.slice(9);
 
   print(`\nQdrant: ${qStats.total_points} vectors`);
   print(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
@@ -154,13 +159,15 @@ export async function reportSummary(opts: {
       ...pitfallEdges.map(sentence),
       `Archetypes: ${nodes.archetypes}.`,
       ...archetypeEdges.map(sentence),
+      `GameDesigns: ${nodes.gameDesigns}.`,
+      ...designEdges.map(sentence),
       `Cost references unresolved: ${costMisses.length}.`,
     ].join(" "),
   );
   const droppedRefs = edges.totalDropped();
   if (droppedRefs > 0) {
     console.warn(
-      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds/claims/clobbers-zp references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
+      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds/claims/clobbers-zp/game-design references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
     );
   }
   log(
@@ -169,6 +176,8 @@ export async function reportSummary(opts: {
       ...pitfallEdges.map(record),
       `archetypes=${nodes.archetypes}`,
       ...archetypeEdges.map(record),
+      `game_designs=${nodes.gameDesigns}`,
+      ...designEdges.map(record),
       `cost_reference_misses=${costMisses.length}`,
     ].join(" "),
   );

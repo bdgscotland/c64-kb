@@ -112,7 +112,14 @@ async function main(): Promise<void> {
   console.log(`  bm25: ${fitted ? "fitted" : "loaded"} vocab → ${VOCAB_FILE}`);
 
   // --- Pass 1: vectors + node entities; edges are collected for pass 2 ---
-  const nodes: NodeTally = { chunks: 0, skipped: 0, pitfalls: 0, crashPatterns: 0, archetypes: 0 };
+  const nodes: NodeTally = {
+    chunks: 0,
+    skipped: 0,
+    pitfalls: 0,
+    crashPatterns: 0,
+    archetypes: 0,
+    gameDesigns: 0,
+  };
   const pending: EdgeEntity[] = [];
   const print = (line: string): void => {
     console.log(line);

@@ -21,6 +21,7 @@ const NODE_TYPES = [
   "pitfall",
   "crash_pattern",
   "archetype",
+  "game_design",
 ] as const;
 
 export type NodeEntity = Extract<GraphEntity, { type: (typeof NODE_TYPES)[number] }>;
@@ -73,6 +74,8 @@ export async function applyNode(f: FalkorService, e: NodeEntity): Promise<void> 
       return f.addCrashPattern(e);
     case "archetype":
       return f.addArchetype(e);
+    case "game_design":
+      return f.addGameDesign(e);
     default: {
       // A node type added to NODE_TYPES without a case here is a tsc error.
       const unhandled: never = e;
@@ -122,6 +125,9 @@ const LINKERS: { [K in keyof EdgeByType]: Linker<EdgeByType[K]> } = {
   archetype_risks: (f, e) => f.linkArchetypeRisks(e.archetype, e.pitfall),
   claims: (f, e) => f.linkClaims(e),
   kernal_clobbers_zp: (f, e) => f.linkKernalClobbersZp(e),
+  composes: (f, e) => f.linkComposes(e.design, e.technique, e.phase),
+  instance_of: (f, e) => f.linkInstanceOf(e.design, e.archetype),
+  realised_by: (f, e) => f.linkRealisedBy(e.design, e.recipe),
 };
 
 /** Create one edge. Resolves false when the link reports the edge did not land. */

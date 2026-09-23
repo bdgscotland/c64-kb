@@ -367,6 +367,46 @@ export class FalkorLinks extends FalkorNodes {
     });
   }
 
+  /**
+   * COMPOSES (schema 28): the design runs this technique in this phase.
+   * Keyed by phase, so one technique may be composed in two phases. Both
+   * ends MATCHed, never MERGEd.
+   */
+  async linkComposes(design: string, technique: string, phase: string): Promise<boolean> {
+    const rows = await this.write(
+      `MATCH (g:GameDesign {name: $design})
+       MATCH (t:Technique {name: $technique})
+       MERGE (g)-[:COMPOSES {phase: $phase}]->(t)
+       RETURN 1`,
+      { design, technique, phase },
+    );
+    if (rows.length > 0) return true;
+    console.warn(
+      `[falkor] linkComposes: ${design} -> ${technique} (Technique) — game design or technique not found, edge dropped`,
+    );
+    return false;
+  }
+
+  /** INSTANCE_OF (schema 28): the design is a game of this archetype. MATCH both. */
+  async linkInstanceOf(design: string, archetype: string): Promise<boolean> {
+    return this.mergeOrWarn({
+      from: { label: "GameDesign", name: design },
+      rel: "INSTANCE_OF",
+      to: { label: "Archetype", name: archetype },
+      warn: `linkInstanceOf: ${design} -> ${archetype} (Archetype) — game design or archetype not found`,
+    });
+  }
+
+  /** REALISED_BY (schema 28): this recipe builds the design. MATCH both. */
+  async linkRealisedBy(design: string, recipe: string): Promise<boolean> {
+    return this.mergeOrWarn({
+      from: { label: "GameDesign", name: design },
+      rel: "REALISED_BY",
+      to: { label: "Recipe", name: recipe },
+      warn: `linkRealisedBy: ${design} -> ${recipe} (Recipe) — game design or recipe not found`,
+    });
+  }
+
   async linkCausedBy(symptom: string, targetName: string, targetKind: CauseKind): Promise<boolean> {
     return this.mergeOrWarn({
       from: { label: "CrashPattern", symptom },
