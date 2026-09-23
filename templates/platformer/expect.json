@@ -1,0 +1,32 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 21, "col": 0, "text": "RESULT 01 PASS" },
+    { "name": "HUD: score, coins, lives (40 columns, XSCROLL 0 after the split)", "type": "text", "row": 22, "col": 0, "text": "SCORE 000150  COINS 05  LIVES 2" },
+    { "name": "HUD: high score", "type": "text", "row": 23, "col": 0, "text": "HI 000000" },
+    {
+      "name": "player at the wall: x 716, feet on line 179 (sprite X 163, Y 157; stand art columns 3-13)",
+      "type": "sprite",
+      "colour": 1,
+      "vic_x": 166,
+      "line": 158,
+      "width": 11,
+      "height": 21
+    },
+    {
+      "name": "hopper where the scripted run leaves it (pinned from the run; the program checks its own sprite registers)",
+      "type": "sprite",
+      "colour": 3,
+      "vic_x": 32,
+      "line": 167,
+      "width": 14,
+      "height": 12
+    },
+    { "name": "scrolled playfield: brick tile 46 top row at camera 576 (VIC X 191, line 147)", "type": "rect", "colour": 7, "vic_x": 191, "line": 147, "width": 16, "height": 1 },
+    { "name": "scrolled playfield: grass on tiles 43-44 (VIC X 143-174, lines 179-180)", "type": "rect", "colour": 5, "vic_x": 143, "line": 179, "width": 32, "height": 2 },
+    { "name": "scrolled playfield: the pit at tiles 41-42 is sky (VIC X 111-142)", "type": "rect", "colour": 6, "vic_x": 111, "line": 179, "width": 32, "height": 16 },
+    { "name": "row 20, between playfield and HUD, is blank", "type": "rect", "colour": 6, "vic_x": 31, "line": 211, "width": 304, "height": 8 },
+    { "name": "display the same on both models", "type": "same", "cells": [0, 0, 23, 39] },
+    { "name": "frame meter, the first 255 play frames", "type": "meter", "row": 24, "col": 20, "frames": 255 }
+  ]
+}
