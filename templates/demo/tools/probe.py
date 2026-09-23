@@ -12,7 +12,8 @@ stable and every badline chunk has the right length. Taking the 20 cycles
 (160 pixels) back off says how far the real stores sit from the visible
 edges: the $D020 store is 4 cycles (32 pixels) before the $D021 store.
 
-Exit 0 when each model shows one column over all its shots and the stores
+Exit 0 when each model shows one column, PROBE_COLUMN from config.asm,
+over all its shots, and the stores
 of every chunk fall in the horizontal blank without the probe; 1 otherwise.
 Geometry from c64-kb docs/runtime/vice-reference.md: row = line - 16 (PAL),
 line - 28 (NTSC); a PAL line is 504 pixels (63 cycles), an NTSC one 520.
@@ -68,6 +69,11 @@ def main():
             continue
         if len(body) != 1 or None in body:
             print(f"{model}: FAIL, the stores do not line up")
+            ok = False
+            continue
+        if body != {CONST["PROBE_COLUMN"]}:
+            print(f"{model}: FAIL, the stores line up at x {next(iter(body))}, not PROBE_COLUMN "
+                  f"{CONST['PROBE_COLUMN']} (config.asm): the entry moved")
             ok = False
             continue
         x2 = next(iter(body)) - SHIFT_PX     # the real $D021 store, relative to x = 0
