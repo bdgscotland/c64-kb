@@ -703,8 +703,10 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
 
   const recipeRows = await f.roQuery(
     `MATCH (r:Recipe {name: $name})
+     OPTIONAL MATCH (r)-[:REQUIRES_TOOL]->(tool:Tool)
      RETURN r.toolchain AS toolchain, r.output_format AS output_format,
-            r.region AS region, r.source_doc AS source_doc`,
+            r.region AS region, r.source_doc AS source_doc,
+            tool.version_verified AS toolchain_version_verified`,
     { name }
   );
 
@@ -739,8 +741,9 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     return { structured: empty, text };
   }
 
-  const row = recipeRows.data?.[0] as { toolchain: string; output_format: string; region: string; source_doc: string };
+  const row = recipeRows.data?.[0] as { toolchain: string; output_format: string; region: string; source_doc: string; toolchain_version_verified: string | null };
   const { toolchain, output_format, region, source_doc } = row;
+  const toolchain_version_verified = row.toolchain_version_verified ?? undefined;
 
   // Pull doc context
   const vec = await embed(name);
@@ -773,12 +776,13 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     output_format,
     region,
     source_doc,
+    ...(toolchain_version_verified ? { toolchain_version_verified } : {}),
     documentation,
     ...(source_code ? { source_code } : {}),
   };
 
   let out = `# Recipe: ${name}\n\n`;
-  out += `**Toolchain:** ${toolchain}\n`;
+  out += `**Toolchain:** ${toolchain}${toolchain_version_verified ? ` (the repo's gates build it with ${toolchain_version_verified})` : ""}\n`;
   out += `**Output:** ${output_format}\n`;
   out += `**Region:** ${region}\n`;
   out += `**Source:** \`${source_doc}\`\n\n`;

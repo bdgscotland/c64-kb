@@ -4,6 +4,7 @@ tool_kind: c-compiler
 maintainer: drmortalwombat
 license: GPL-3.0
 home_url: https://github.com/drmortalwombat/oscar64
+version_verified: "1.32.271"
 ---
 
 <!-- doc-type: toolchain-reference -->

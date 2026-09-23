@@ -4,6 +4,7 @@ tool_kind: c-compiler
 maintainer: cc65-team
 license: Zlib
 home_url: https://cc65.github.io/
+version_verified: "2.18"
 ---
 
 <!-- doc-type: toolchain-reference -->

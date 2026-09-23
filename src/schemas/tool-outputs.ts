@@ -108,6 +108,9 @@ export const RecipeLookupSchema = z.object({
   output_format: z.string(),
   region: z.string(),
   source_doc: z.string(),
+  // The toolchain version the repo's gates built this recipe with, from the
+  // Tool node's version_verified (schema 24); absent when the page states none.
+  toolchain_version_verified: z.string().optional(),
   documentation: z.array(DocChunkSchema),
   // The page's Source listing, the fence the listing gate builds; absent
   // only when the page is not on disk beside the server.

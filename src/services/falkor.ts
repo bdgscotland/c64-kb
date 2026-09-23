@@ -392,18 +392,23 @@ export class FalkorService {
     maintainer?: string;
     license?: string;
     home_url: string;
+    // Schema 24: the version the repo's gates ran with; cleared when the
+    // page drops its version_verified key.
+    version_verified?: string;
   }): Promise<void> {
     const g = this.graph();
-    const props = {
+    const props: Record<string, string> = {
       kind: t.kind,
       maintainer: t.maintainer ?? "",
       license: t.license ?? "",
       home_url: t.home_url,
     };
+    if (t.version_verified) props.version_verified = t.version_verified;
     await g.query(
       `MERGE (t:Tool {name: $name})
        ON CREATE SET t += $props, t.created_at = timestamp()
-       ON MATCH SET t += $props, t.updated_at = timestamp()`,
+       ON MATCH SET t += $props, t.updated_at = timestamp()
+       ${t.version_verified ? "" : "SET t.version_verified = NULL"}`,
       { params: { name: t.name, props } } as Parameters<typeof g.query>[1]
     );
   }

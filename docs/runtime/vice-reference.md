@@ -4,6 +4,7 @@ tool_kind: emulator
 maintainer: VICE Team
 license: GPL-2.0
 home_url: https://vice-emu.sourceforge.io/
+version_verified: "3.10"
 ---
 <!-- doc-type: toolchain-reference -->
 

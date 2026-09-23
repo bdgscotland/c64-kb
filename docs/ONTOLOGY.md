@@ -159,7 +159,15 @@ editor, debugger, packer).
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Tool name (e.g. "oscar64", "kickassembler") |
-| category | string | One of: assembler, compiler, emulator, art, music, debug, test, packer |
+| kind | string | The page's `tool_kind`: c-compiler, c-library, assembler, linker, emulator, debug-bridge, unit-test, reference-catalog |
+| maintainer | string | Maintainer, or "" |
+| license | string | Licence, or "" |
+| home_url | string | Project home page |
+| version_verified | string, optional | The version this repo's gates ran with, as the tool reports it (schema 24), e.g. "5.25" for KickAssembler. Absent when the page states none. `c64_recipe_lookup` returns it as `toolchain_version_verified`. |
+
+An earlier version of this table listed a single `category` property with
+art, music, debug, test and packer values; the extractor has always
+written `kind` from `tool_kind`, with the values above.
 
 Source: toolchain reference docs (Phase 2).
 

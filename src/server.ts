@@ -416,7 +416,7 @@ Purpose: Gives the agent a ready-to-use, verified example with build instruction
 
 Inputs: 'name' is the canonical recipe identifier — toolchain prefix + hyphen + recipe slug (e.g. 'oscar64-hello-world', 'kickassembler-hello-world', 'cc65-hello-world-conio'). Case-sensitive.
 
-Output: {name, toolchain, output_format, region, source_doc, documentation[]}. On not-found, 'name' is empty and 'text' lists near-match suggestions.
+Output: {name, toolchain, output_format, region, source_doc, toolchain_version_verified?, documentation[]}. toolchain_version_verified is the toolchain version this repo's gates built the recipe with (e.g. '5.25' for KickAssembler); a different version may or may not build it. On not-found, 'name' is empty and 'text' lists near-match suggestions.
 
 When to use: When you know the specific recipe name or have already identified the toolchain + intent from c64_toolchain_hint and want a complete worked example.
 

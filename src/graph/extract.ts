@@ -15,7 +15,7 @@ export type GraphEntity =
   | { type: "pairs_with"; a: string; b: string }
   | { type: "memory_region"; name: string; start: string; end: string; default_use?: string; bank_switchable?: boolean }
   | { type: "belongs_to"; entityName: string; entityType: "Register"; chip: string }
-  | { type: "tool"; name: string; kind: string; maintainer?: string; license?: string; home_url: string }
+  | { type: "tool"; name: string; kind: string; maintainer?: string; license?: string; home_url: string; version_verified?: string }
   | { type: "file_format"; name: string; description: string }
   | { type: "produces"; tool: string; format: string }
   | { type: "consumes"; tool: string; format: string }
@@ -362,6 +362,8 @@ export function extractGraphEntities(content: string, sourcePath: string): Graph
         maintainer: fm.maintainer,
         license: fm.license,
         home_url: fm.home_url,
+        // The version the repo's gates ran with (CONVENTIONS-toolchain-reference.md).
+        ...(fm.version_verified ? { version_verified: fm.version_verified.replace(/^["']|["']$/g, "") } : {}),
       });
     }
 
