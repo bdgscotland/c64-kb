@@ -151,7 +151,7 @@ static void set_state(char s)
 // ---- title ---------------------------------------------------------------------------
 static void title_draw(void)
 {
-    picture_draw(room_pic[NROOM - 1]);
+    picture_draw(TITLE_PIC);
     clear_rows(PIC_ROWS, 24);
     put_text(9, 15, "STARWATCH", 7);
     put_text(11, 5, "A TEXT ADVENTURE IN TWELVE ROOMS", 3);
@@ -218,16 +218,50 @@ static void input_frame(void)
     input_cursor(frame);
 }
 
+// The disk clock: CIA2 timer A counts phi2 cycles and timer B counts timer
+// A's underflows, a 32-bit count (as oscar64/save-load-seq-file). Timer A is
+// the frame meter's, so the stop puts back what meter_init left: timer A
+// stopped with $FFFF in its latch, and no underflow flag in $DD0D, which the
+// meter would read as a frame of 65,535 cycles.
+static unsigned long save_cycles, load_cycles;
+
+static void disk_clock_start(void)
+{
+    cia2.cra = 0x00;
+    cia2.crb = 0x00;
+    cia2.ta = 0xffff;
+    cia2.tb = 0xffff;
+    cia2.crb = 0x51;                    // force load, start, count timer A underflows
+    cia2.cra = 0x11;                    // force load, start, count phi2
+}
+
+static unsigned long disk_clock_stop(void)
+{
+    cia2.cra = 0x00;
+    cia2.crb = 0x00;
+    unsigned long c = ((unsigned long)(0xffff - cia2.tb) << 16) | (0xffff - cia2.ta);
+    cia2.ta = 0xffff;                   // the meter's latch
+    char flags = cia2.icr;              // reading $DD0D clears the underflow flag
+    (void)flags;
+    return c;
+}
+
 // SAVE or LOAD, on a frame that is not a play frame.
 static void disk_frame(void)
 {
     sound_mute(true);
     out_reset();
+    disk_clock_start();
     if (disk_req == DISK_SAVE)
         game_save();
     else
         game_load();
     __asm { sei }                       // the KERNAL's serial routines end in CLI
+    unsigned long c = disk_clock_stop();
+    if (disk_req == DISK_SAVE)
+        save_cycles = c;
+    else
+        load_cycles = c;
 #if AUTOPILOT
     if (disk_req == DISK_SAVE)
         save_code = disk_code;
@@ -240,6 +274,16 @@ static void disk_frame(void)
 }
 
 #if AUTOPILOT
+static void put_long(char row, char col, unsigned long v)   // eight digits
+{
+    char *d = SCREEN + 40 * row + col + 8;
+    for (char i = 0; i < 8; i++)
+    {
+        *--d = 0x30 + (char)(v % 10);
+        v /= 10;
+    }
+}
+
 // The verdict: real state read back against the model, outside the meter.
 static void verdict(void)
 {
@@ -253,6 +297,17 @@ static void verdict(void)
               text_fold == EXPECT_TEXTFOLD && lines == EXPECT_LINES &&
               play_frames == EXPECT_FRAMES && save_code == EXPECT_SAVE_CODE &&
               load_code == EXPECT_LOAD_CODE;
+    // The disk clock is plausible: every SAVE or LOAD the script made took
+    // between 0.1 and 30 million cycles (the README has the measured figures).
+    if (EXPECT_SAVE_CODE == 0 && (save_cycles < 100000 || save_cycles > 30000000))
+        ok = false;
+    if (EXPECT_LOAD_CODE == 0 && (load_cycles < 100000 || load_cycles > 30000000))
+        ok = false;
+    put_text(23, 0, "SAVE", 1);
+    put_long(23, 5, save_cycles);
+    put_text(23, 14, "LOAD", 1);
+    put_long(23, 19, load_cycles);
+    put_text(23, 28, "CYCLES", 1);
     RESULT = ok ? 0x01 : 0x02;
     vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
     put_text(24, 0, ok ? "RESULT 01 PASS " : "RESULT 02 FAIL ", 1);

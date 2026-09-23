@@ -164,7 +164,7 @@ static void score_line(void)
     out_num(MAXSCORE);
     out_msg(M_IN);
     out_num(turns);
-    say(M_TURNS);
+    say(turns == 1 ? M_TURN : M_TURNS);
 }
 
 static void finish(char how)                    // M_WON or M_QUITS
@@ -344,6 +344,12 @@ static void do_open_close(char v, char n)
 
 static void builtin(char v, char n)
 {
+    if (!n && (v == V_GET || v == V_DROP || v == V_OPEN || v == V_CLOSE || v == V_UNLOCK ||
+               v == V_LIGHT || v == V_WIND || v == V_PUT))
+    {
+        say(M_WHAT);                            // a verb that needs an object, alone
+        return;
+    }
     switch (v)
     {
     case V_GO:    do_go(n); break;
@@ -379,7 +385,7 @@ static void builtin(char v, char n)
 
 // ---- the parser ------------------------------------------------------------------------
 static const char *line_at;
-static char word_at[2], word_len[2], words;     // the first two words that are not noise
+static char word_at[3], word_len[3], words;     // the first three words that are not noise
 
 static char to_screen(char c)                   // PETSCII letter to screen code
 {
@@ -420,7 +426,7 @@ static void split(char len)
             i++;
         if (lookup(noise_words, nullptr, noise_first, s, i - s))
             continue;
-        if (words < 2)
+        if (words < 3)
         {
             word_at[words] = s;
             word_len[words] = i - s;
@@ -449,7 +455,13 @@ static bool parse(char len)
         return false;
     }
     pv = lookup(verb_words, verb_ids, verb_first, word_at[0], word_len[0]);
+    char k = 1;
     pn = words > 1 ? lookup(noun_words, noun_ids, noun_first, word_at[1], word_len[1]) : 0;
+    if (pv && pv != V_GO && pn >= 1 && pn <= 6 && words > 2)
+    {
+        k = 2;                                  // PICK UP LAMP: the UP is not a direction
+        pn = lookup(noun_words, noun_ids, noun_first, word_at[2], word_len[2]);
+    }
     if (!pv)
     {
         char d = lookup(noun_words, noun_ids, noun_first, word_at[0], word_len[0]);
@@ -459,12 +471,15 @@ static bool parse(char len)
             pn = d;
             return true;
         }
-        unknown(0);
+        if (d && words == 1)
+            say(M_WITHIT);                      // LAMP alone
+        else
+            unknown(0);
         return false;
     }
-    if (words > 1 && !pn)
+    if (words > k && !pn)
     {
-        unknown(1);
+        unknown(k);
         return false;
     }
     return true;
@@ -496,7 +511,8 @@ void game_command(const char *line, char len)
         disk_req = pv == V_SAVE ? DISK_SAVE : DISK_LOAD;   // main.c runs it off the meter
         return;
     }
-    turns++;
+    if (turns < MAXTURNS)                       // the status bar has three digits
+        turns++;
     if (!scan(pv, pn))
         builtin(pv, pn);
     if (!over)

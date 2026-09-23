@@ -4,8 +4,7 @@
 #include <c64/kernalio.h>
 
 #define DRIVE   8
-#define VERSION 1
-#define RECLEN  (10 + 2 * (NITEM - 1))
+#define RECLEN  (11 + 2 * (NITEM - 1))
 
 char disk_code;
 static char rec[RECLEN + 8];                    // read buffer: bigger than the record
@@ -34,6 +33,30 @@ static void drive_reply(const char *cmd)
     krnio_close(15);
 }
 
+// A failure in the drive's own words: "DISK ERROR: 74,DRIVE NOT READY." (its
+// reply up to the track and sector), or no drive at all. The first version
+// printed "THE DISK DID NOT ANSWER (74)" when the drive had answered.
+static void error_line(void)
+{
+    if (disk_code == 99)
+    {
+        out_msg(M_NODRIVE);
+        out_nl();
+        return;
+    }
+    out_msg(M_DISKFAIL);
+    char commas = 0;
+    for (char i = 0; reply[i] && reply[i] != 13 && i < 30; i++)
+    {
+        char c = reply[i];
+        if (c == ',' && ++commas == 2)
+            break;
+        out_chr((c >= 0x41 && c <= 0x5a) ? c - 0x40 : c);   // PETSCII to screen code
+    }
+    out_msg(M_DOT);
+    out_nl();
+}
+
 static void reply_line(char m)                  // "GAME SAVED (00)."
 {
     out_msg(m);
@@ -49,7 +72,8 @@ void game_save(void)
     char n = 0;
     rec[n++] = 'S';
     rec[n++] = 'W';
-    rec[n++] = VERSION;
+    rec[n++] = WORLD_VERSION & 0xff;            // gen.py: a hash of rooms, items and flags
+    rec[n++] = WORLD_VERSION >> 8;
     rec[n++] = room;
     rec[n++] = score;
     rec[n++] = turns & 0xff;
@@ -71,7 +95,24 @@ void game_save(void)
         krnio_close(2);
         drive_reply("");
     }
-    reply_line(disk_code == 0 ? M_SAVED : M_DISKFAIL);
+    if (disk_code == 0)
+        reply_line(M_SAVED);
+    else
+        error_line();
+}
+
+// Every room and place in the record names one this world has.
+static bool places_ok(void)
+{
+    if (rec[4] == 0 || rec[4] >= NROOM)
+        return false;
+    for (char i = 0; i < NITEM - 1; i++)
+    {
+        char l = rec[10 + i];
+        if (l != CARRIED && ((l & 0x80) ? (l & 0x7f) >= NITEM : l >= NROOM))
+            return false;
+    }
+    return true;
 }
 
 void game_load(void)
@@ -82,7 +123,7 @@ void game_load(void)
     {
         krnio_close(2);                         // nothing answered: leave the bus alone
         disk_code = 99;
-        reply_line(M_DISKFAIL);
+        error_line();
         return;
     }
     int n = ok ? krnio_read(2, rec, sizeof(rec)) : 0;
@@ -91,13 +132,17 @@ void game_load(void)
     if (disk_code == 62)
         reply_line(M_NOSAVE);
     else if (disk_code != 0)
-        reply_line(M_DISKFAIL);
-    else if (n != RECLEN || rec[0] != 'S' || rec[1] != 'W' || rec[2] != VERSION ||
+        error_line();
+    else if (n != RECLEN || rec[0] != 'S' || rec[1] != 'W' ||
              rec[RECLEN - 1] != fold8(rec, RECLEN - 1))
+        reply_line(M_BADSAVE);
+    else if (rec[2] != (WORLD_VERSION & 0xff) || rec[3] != (WORLD_VERSION >> 8))
+        reply_line(M_OLDSAVE);                  // made by a build with another world
+    else if (!places_ok())
         reply_line(M_BADSAVE);
     else
     {
-        char k = 3;
+        char k = 4;
         room = rec[k++];
         score = rec[k++];
         turns = rec[k] | (rec[k + 1] << 8);

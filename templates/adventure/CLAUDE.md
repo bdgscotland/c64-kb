@@ -30,7 +30,9 @@ Rules this starter adds:
   game with the model (state, a fold of every printed line, the frame
   count); a change on one side only turns it red.
 - A frame does one bounded job: the picture, one window line, or the typed
-  keys and a turn. Keep it that way; the meter's worst is the check.
+  keys and a turn. Keep it that way; the meter's worst is the check. The
+  script must show every picture (gen.py refuses it otherwise) and stay
+  within the meter's 255 frames (gen.py warns).
 - After changing the script or the text, `expect.json`'s texts, the fold
   on row 24 and the meter's `frames` change: `make gen` prints the new
   frame count and fold.

@@ -182,6 +182,8 @@ MESSAGES = {
     "OUTOF": " OUT OF ",
     "IN": " IN ",
     "TURNS": " TURNS.",
+    "TURN": " TURN.",
+    "WITHIT": "WHAT DO YOU WANT TO DO WITH IT?",
     "WON": "YOU HAVE SEEN THE COMET. THE NIGHT IS YOURS!",
     "QUITS": "YOU LEAVE THE HOUSE TO ITS DREAMS.",
     "RANK0": "RANK: STARGAZER.",
@@ -192,7 +194,9 @@ MESSAGES = {
     "LOADED": "GAME LOADED ",
     "NOSAVE": "NO SAVED GAME ",
     "BADSAVE": "THE SAVED GAME IS DAMAGED ",
-    "DISKFAIL": "THE DISK DID NOT ANSWER ",
+    "DISKFAIL": "DISK ERROR: ",
+    "NODRIVE": "NO DRIVE ANSWERS AS DEVICE 8.",
+    "OLDSAVE": "THE SAVE IS FROM ANOTHER VERSION ",
     "INTRO": "STARWATCH. TONIGHT THE COMET PASSES, AND THE OLD ASTRONOMER'S TOWER "
              "HAS THE ONLY TELESCOPE FOR MILES.",
 }
@@ -335,6 +339,7 @@ PICTURES = {"lane": pic_lane, "garden": pic_garden, "shed": pic_shed, "pond": pi
             "library": pic_library, "cellar": pic_cellar, "landing": pic_landing,
             "study": pic_study, "tower": pic_tower, "dark": pic_dark}
 DARK_PICTURE = "dark"
+TITLE_PICTURE = "tower"
 
 # ---- the autopilot ------------------------------------------------------------------------
 # Typed through the KERNAL keyboard queue, up to ten bytes a frame. The shot
@@ -342,10 +347,10 @@ DARK_PICTURE = "dark"
 # splits it at the SAVE: part one ends with the SAVE; part two starts at the
 # LOAD after a cold reset (DISK_SPLIT).
 SCRIPT = [
-    "XYZZY", "N", "E", "OPEN CHEST", "TAKE LANTERN", "GET NET", "W", "W",
-    "EXAMINE POND", "GET KEY", "DROP NET", "E", "N", "N", "UNLOCK DOOR", "N",
+    "XYZZY", "N", "E", "OPEN CHEST", "PICK UP LANTERN", "GET NET", "W", "W",
+    "POND", "GET KEY", "DROP NET", "E", "N", "N", "UNLOCK DOOR", "N",
     "SAVE", "E", "OPEN DRAWER", "GET MATCHES", "DROP LAMP", "LOAD",
-    "E", "OPEN DRAWER", "GET MATCHES", "W", "D", "LIGHT LAMP", "OPEN CRATE", "GET LENS", "U",
+    "W", "E", "E", "OPEN DRAWER", "GET MATCHES", "W", "D", "LIGHT LAMP", "OPEN CRATE", "GET LENS", "U",
     "U", "U", "N", "OPEN DESK", "GET WINDER", "S", "D", "WIND CLOCK", "U", "U",
     "PUT LENS IN TELESCOPE", "LOOK AT TELESCOPE",
 ]

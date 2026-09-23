@@ -16,6 +16,7 @@ import math
 import os
 import re
 import sys
+import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import world as W  # noqa: E402
@@ -59,7 +60,7 @@ def msg(text):
 
 
 ENGINE_MSG = {k: msg(v) for k, v in W.MESSAGES.items()}
-for k, v in [("COMMA", ", "), ("DOT", "."), ("COLON", ": "), ("OPENP", " ("),
+for k, v in [("COMMA", ", "), ("DOT", "."), ("COLON", ": "),
              ("CLOSEP", ")."), ("SCORELBL", "SCORE"), ("TURNSLBL", "TURNS")]:
     ENGINE_MSG[k] = msg(v)
 for d in W.DIRECTIONS:
@@ -117,7 +118,22 @@ def cmd_arg(op, arg):
 
 
 ACTS = compile_actions()
+MAXTURNS = 999                  # the status bar's three digits
+NEEDS_NOUN = {VERB_ID[k] for k in ("GET", "DROP", "OPEN", "CLOSE", "UNLOCK", "LIGHT", "WIND", "PUT")}
+
+# The limits the C code assumes.
 assert len(MSGS) < TOK_NL, f"{len(MSGS)} messages: ids must stay below $F0"
+assert len(W.FLAGS) <= 16, "flags are one 16-bit word"
+assert len(W.ITEMS) < 127 and len(W.ROOMS) < 127, "bit 7 of a place marks a container"
+assert len(ACTS) <= 255, "the action index is a char"
+assert sum(int(c.split()[1]) for a in W.ACTIONS for c in a[3] if c.startswith("SCORE")) <= 255 \
+    and W.MAXSCORE <= 255, "the score is a char"
+for _t in MSGS:
+    assert all(len(w) <= 40 for w in _t.split(" ")), f"a word over 40 letters: {_t}"
+
+# The save record's version: a hash of what gives rooms, items and flags their
+# numbers. Any change to them makes an old save refused, not misread.
+WORLD_VERSION = zlib.crc32(repr((list(W.ROOMS), list(W.ITEMS), W.FLAGS)).encode()) & 0xFFFF
 
 # ---- text packing -------------------------------------------------------------------------
 
@@ -340,7 +356,7 @@ class Game:
         self.num(W.MAXSCORE)
         self.m("IN")
         self.num(self.turns)
-        self.m("TURNS")
+        self.m("TURN" if self.turns == 1 else "TURNS")
         self.nl()
 
     def finish(self, how):
@@ -420,6 +436,10 @@ class Game:
 
     def builtin(self, v, n):
         V = {k: VERB_ID[k] for k in W.VERBS}
+        if not n and v in NEEDS_NOUN:
+            self.m("WHAT")
+            self.nl()
+            return
         if v == V["GO"]:
             if not 1 <= n <= 6:
                 self.m("WHICHWAY")
@@ -525,16 +545,24 @@ class Game:
             self.m("PARDON")
             self.nl()
             return None
+        noun = lambda w: next((i for s, i in NOUN_TAB if s == stem(w)), 0)
         v = next((i for s, i in VERB_TAB if s == stem(words[0])), 0)
-        n = next((i for s, i in NOUN_TAB if s == stem(words[1])), 0) if len(words) > 1 else 0
+        k = 1
+        n = noun(words[1]) if len(words) > 1 else 0
+        if v and v != VERB_ID["GO"] and 1 <= n <= 6 and len(words) > 2:
+            k, n = 2, noun(words[2])            # PICK UP LAMP: the UP is not a direction
         if not v:
-            d = next((i for s, i in NOUN_TAB if s == stem(words[0])), 0)
+            d = noun(words[0])
             if 1 <= d <= 6 and len(words) == 1:
                 return VERB_ID["GO"], d
+            if d and len(words) == 1:
+                self.m("WITHIT")                # LAMP alone
+                self.nl()
+                return None
             self.unknown(words[0])
             return None
-        if len(words) > 1 and not n:
-            self.unknown(words[1])
+        if len(words) > k and not n:
+            self.unknown(words[k])
             return None
         return v, n
 
@@ -555,7 +583,8 @@ class Game:
         if v in (VERB_ID["SAVE"], VERB_ID["LOAD"]):
             self.disk = "SAVE" if v == VERB_ID["SAVE"] else "LOAD"
             return
-        self.turns += 1
+        if self.turns < MAXTURNS:           # the status bar has three digits
+            self.turns += 1
         if not self.scan(v, n):
             self.builtin(v, n)
         if not self.over:
@@ -565,17 +594,18 @@ class Game:
 
     # -- the save record (src/save.c)
     def record(self):
-        b = [ord("S"), ord("W"), 1, self.room, self.score, self.turns & 0xFF, self.turns >> 8,
-             self.flags & 0xFF, self.flags >> 8] + self.loc[1:] + self.opened[1:]
+        b = [ord("S"), ord("W"), WORLD_VERSION & 0xFF, WORLD_VERSION >> 8, self.room, self.score,
+             self.turns & 0xFF, self.turns >> 8, self.flags & 0xFF, self.flags >> 8] + \
+            self.loc[1:] + self.opened[1:]
         return bytes(b + [fold8(b)])
 
     def restore(self, rec):
         n = NITEM - 1
-        self.room, self.score = rec[3], rec[4]
-        self.turns = rec[5] | rec[6] << 8
-        self.flags = rec[7] | rec[8] << 8
-        self.loc = [0] + list(rec[9:9 + n])
-        self.opened = [0] + list(rec[9 + n:9 + 2 * n])
+        self.room, self.score = rec[4], rec[5]
+        self.turns = rec[6] | rec[7] << 8
+        self.flags = rec[8] | rec[9] << 8
+        self.loc = [0] + list(rec[10:10 + n])
+        self.opened = [0] + list(rec[10 + n:10 + 2 * n])
 
     def disk_reply(self, key, code):
         self.m(key)
@@ -689,6 +719,7 @@ def play(script, disk_saved=None, stop_after=None):
     g.nl()
     g.look()
     frames, lines, shown = 1, [], g.picture()          # the first frame draws the picture
+    g.seen = {shown}
     pr = Printer(g.out)
     style = STYLE_TEXT
     codes, saved = {}, disk_saved
@@ -709,8 +740,10 @@ def play(script, disk_saved=None, stop_after=None):
         g.out = []
         frames += math.ceil((len(cmd) + 1) / KEYS_PER_FRAME)
         g.command(cmd)
+        assert len(g.out) < 250, f"{cmd}: {len(g.out)} output bytes; engine.c keeps 250"
         if g.picture() != shown:
             shown = g.picture()
+            g.seen.add(shown)
             frames += 1
         pr = Printer(g.out)
         drain()
@@ -800,13 +833,23 @@ def build_pictures():
                 tile_id[c] = len(tiles)
                 tiles.append(c)
             ids.append(tile_id[c])
-        s, i = bytearray(), 0
-        while i < len(ids):
-            j = i
-            while j < len(ids) and ids[j] == ids[i] and j - i < 255:
-                j += 1
-            s += bytes([j - i, ids[i]])
-            i = j
+        s = bytearray()
+        for row in range(7):                    # nothing crosses the end of a row
+            i, end, lit = 40 * row, 40 * row + 40, []
+            while i < end:
+                j = i
+                while j < end and ids[j] == ids[i]:
+                    j += 1
+                if j - i >= 3:                  # a run: its length, then the tile
+                    if lit:
+                        s += bytes([0x80 | len(lit)] + lit)
+                        lit = []
+                    s += bytes([j - i, ids[i]])
+                else:                           # short: into a literal, $80 + count, tiles
+                    lit += ids[i:j]
+                i = j
+            if lit:
+                s += bytes([0x80 | len(lit)] + lit)
         streams.append(s)
     assert len(tiles) <= 255
     return tiles, streams, raw
@@ -846,6 +889,10 @@ def write_world(tiles, streams):
     o.append(f"#define START_ROOM {ROOM_ID[W.START]}")
     o.append(f"#define LIGHT_ITEM {LIGHT}")
     o.append(f"#define DARK_PIC {PIC_ID[W.DARK_PICTURE]}")
+    o.append(f"#define TITLE_PIC {PIC_ID[W.TITLE_PICTURE]}")
+    o.append(f"#define NPIC {len(PIC_KEYS)}")
+    o.append(f"#define MAXTURNS {MAXTURNS}")
+    o.append(f"#define WORLD_VERSION 0x{WORLD_VERSION:04x}      // a hash of rooms, items, flags")
     o.append(f"#define NTILE {len(tiles)}")
     o.append(f"#define NGLYPH {len(GLYPH_KEYS)}")
     for k, v in VERB_ID.items():
@@ -890,7 +937,7 @@ def write_world(tiles, streams):
     o.append(carr("char", "noise_first", first_letter([(s, 1) for s in NOISE_TAB]), 27, "%d"))
     o.append("// Actions: verb, noun (0 any), four (condition, arg), four (command, arg).")
     o.append(carr("char", "act", [x for r in ACTS for x in r], 18, "%d"))
-    o.append("// Pictures: glyph bytes for codes 64 up, tiles (character, colour RAM), RLE.")
+    o.append("// Pictures: glyph bytes for codes 64 up, tiles (character, colour RAM), runs and literals.")
     o.append(carr("char", "glyph_bytes", [b for k in GLYPH_KEYS for b in glyph_bytes(W.GLYPHS[k])], 8))
     o.append(carr("char", "tile_char", [64 + GLYPH_KEYS.index(g) for g, _ in tiles]))
     o.append(carr("char", "tile_colour", [8 | c for _, c in tiles]))
@@ -942,6 +989,10 @@ def main():
     split = W.SCRIPT.index("SAVE")
     load_at = W.SCRIPT.index("LOAD")
     full = play(W.SCRIPT)
+    # Every picture must be drawn under the meter: the library's, never drawn
+    # by the first script, was over the frame (found in review).
+    missing = sorted(k for k in PIC_KEYS if PIC_ID[k] not in full[0].seen)
+    assert not missing, f"the script never shows the pictures {missing}: visit them"
     part1 = play(W.SCRIPT[:split + 1], stop_after="SAVE")
     part2 = play(W.SCRIPT[load_at:], disk_saved=part1[4])
     variants = [
@@ -950,6 +1001,11 @@ def main():
         ("1", W.SCRIPT) + full[:4],
     ]
     write_script(variants)
+    for v in variants:
+        if v[4] > 255:
+            print(f"gen: WARNING: {v[0]}: {v[4]} play frames. The meter records the first 255, "
+                  f"so the rest are not metered and check's frame count will not match. "
+                  f"Shorten the script (README, Extending it).", file=sys.stderr)
     os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
     open(os.path.join(ROOT, "build", "save-expected.bin"), "wb").write(part1[4])
 
@@ -961,7 +1017,7 @@ def main():
           f"(stream {len(STREAM)}, {len(PAIRS)} pair codes {2 * len(PAIRS)}, "
           f"pointers {2 * (len(MSGS) - 1)}): "
           f"{100 * (plain - packed) / plain:.1f} % smaller; 5-bit packing would be {five}")
-    print(f"gen: pictures {len(PIC_KEYS)} x 280 cells, {pic_raw} bytes raw, {pic_packed} RLE, "
+    print(f"gen: pictures {len(PIC_KEYS)} x 280 cells, {pic_raw} bytes raw, {pic_packed} packed, "
           f"{len(tiles)} tiles over {len(GLYPH_KEYS)} glyphs")
     for v in variants:
         g = v[2]

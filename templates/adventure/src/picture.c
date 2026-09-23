@@ -35,25 +35,49 @@ void video_init(void)
     vic.ctrl2 = 0x18;                           // MCM on, 40 columns, XSCROLL 0: a whole value
 }
 
-// A picture is (run, tile) byte pairs over 7 x 40 cells, row by row; a tile
-// is a character code and its colour RAM value (8 + a colour: multicolour).
+// A picture is coded row by row, and nothing crosses the end of a row, so
+// the column and the offset in the row's bytes are single bytes. A byte n
+// below $80 is a run: n cells of the tile that follows. $80 + n is a literal:
+// n tiles follow, one a cell. A tile is a character code and its colour RAM
+// value (8 + a colour: multicolour). The first version coded runs only,
+// across rows, with a 16-bit count: the library, whose book rows are runs of
+// one cell, took 20,240 cycles, over the frame on PAL and NTSC (found in
+// review; the autopilot never entered the library, see the picture pass in
+// main.c).
 void picture_draw(char p)
 {
     const char *s = pic_bytes + pic_at[p];
     char *d = SCREEN;
     char *t = COLOUR;
-    unsigned left = 40 * PIC_ROWS;
-    while (left)
+    for (char r = 0; r < PIC_ROWS; r++)
     {
-        char n = s[0], ch = tile_char[s[1]], co = tile_colour[s[1]];
-        s += 2;
-        left -= n;
-        for (char k = 0; k < n; k++)
+        char x = 0, i = 0;
+        do
         {
-            d[k] = ch;
-            t[k] = co;
-        }
-        d += n;
-        t += n;
+            char c = s[i++];
+            if (c & 0x80)
+            {
+                char e = x + (c & 0x7f);
+                do
+                {
+                    char tile = s[i++];
+                    d[x] = tile_char[tile];
+                    t[x] = tile_colour[tile];
+                } while (++x != e);
+            }
+            else
+            {
+                char tile = s[i++], e = x + c;
+                char ch = tile_char[tile], co = tile_colour[tile];
+                do
+                {
+                    d[x] = ch;
+                    t[x] = co;
+                } while (++x != e);
+            }
+        } while (x < 40);
+        s += i;
+        d += 40;
+        t += 40;
     }
 }

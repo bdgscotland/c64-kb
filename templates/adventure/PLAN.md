@@ -380,10 +380,15 @@ transition phase), as the harness allows.
 - Settled: the colour scroll went. With it the worst frame was 22,000
   cycles on PAL and 22,087 on NTSC (meter); the typed command now shows in
   reverse video and the window's colour RAM stays fixed.
-- Measured (`make shot check`, 240 play frames): worst 15,262 and typical
-  8,375 cycles on PAL; 15,476 and 8,634 on NTSC. The worst is a window line
-  (scroll plus decode). README.md, "The measured frame", compares it with
-  the budget above.
+- Measured (`make shot check`, 251 play frames, after the review's fixes):
+  worst 15,272 and typical 8,543 cycles on PAL; 15,488 and 8,842 on NTSC.
+  The worst is a window line (scroll plus decode). README.md, "The measured
+  frame", compares it with the budget above.
+- Corrected in review: the first worst figure (15,262 / 15,476) left out
+  the library picture, which the script never drew: 20,240 cycles, over the
+  frame on both models. Pictures are now coded as runs and literals row by
+  row (the dearest, the garden, 12,483 PAL / 12,739 NTSC), and gen.py
+  refuses a script that does not show every picture.
 - Settled: byte-pair packing of the text, 40.2 % smaller than C strings
   with pointers; a word dictionary saved 18 % (tools/gen.py, arithmetic).
 - Settled: the title and the ending act on a new fire press. Found with
