@@ -923,6 +923,123 @@ Per-character-row IRQ (one IRQ per 8 scanlines, 25 rows):
 
 ---
 
+## tech_tech_wobbler — Tech-tech: a per-line horizontal sine wider than seven pixels through eight pre-shifted video matrices
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, D019, D01A, DC04, DC05, DC06, DC07, DC0E, DC0F
+**Demands:** midframe_raster_irqs, cpu_every_line
+**Requires:** stable_raster_irq, text_zoom
+**Raster band:** movable
+**Cost:** cycles_per_frame=5446, cycles_per_line=63, lines_active=54, irq_slots=3, bytes_code=2338, bytes_data=8384, zp_bytes=97
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-tech-tech (the band interrupt, 3,405 cycles from irq1's entry on line 109 to the register restore after line 162, plus the table build of 2,041 in the vertical blank, PAL, screen on, the band's own forced badline stalls inside the figure; the NTSC band is 3,508; bytes_code is the code segment reported by -showmem, almost all of it the two unrolled bands; bytes_data the 384 bytes of tables and the eight 1,000-byte matrices; zp_bytes the two 48-byte register tables and the phase)
+
+### Why
+
+`text_zoom` moves a text row by at most seven pixels, because XSCROLL is
+three bits and the character codes a row shows are fixed for its eight
+lines. A tech-tech is the wide form: the logo swings by a whole character
+cell or more per line, so a word can be pushed from one side of the
+screen to the other on a sine while it is still text. It is a scene
+staple for logos above a scroller, and its mechanism is FLI's, so it is
+also the shortest route to understanding what FLI does to the VIC.
+
+### How
+
+1. Draw the logo into eight 1 KB video matrices in one VIC bank, matrix k
+   holding it k cells further right than matrix 0, from cell 3. Colour
+   RAM is shared by all eight, so the logo is one colour per column.
+2. Keep a 256-entry sine of 32 + round(31 sin), 1 to 63. For each line l
+   of the band, s = sine[(t + 3 l) & 255]; the `$D018` byte is matrix
+   s >> 3 and the `$D016` byte is the base value with s & 7 in its low
+   bits. Build both tables per frame in the vertical blank, into zero
+   page, so the per-line loads take three cycles.
+3. From a stable raster IRQ a few lines above the band, delay to cycle 55
+   of the band's first line, which is a natural badline. Then one
+   unrolled block per line: `Delay(3)`, `LDA zp / STA $D018`,
+   `LDA zp / STA $D016`, `LDA # / STA $D011` with YSCROLL = line & 7, 23
+   cycles, the `$D011` write last. The VIC takes the bus until cycle 54 and
+   the next block begins on cycle 55 of that line without counting.
+4. After the last block restore YSCROLL, `$D018` and `$D016` in the right
+   border, so the next line is a natural badline from an empty matrix.
+5. Advance t once a frame.
+
+### Why it works
+
+`hardware/vic-ii-reference.md` states the constraint: "The chip fetches
+one character pointer (c-access) per cell during the badline of each text
+row, caches it in an internal 40x12-bit row buffer, and then performs
+eight g-accesses per cell over the next eight raster lines"; the
+condition is "($30 <= raster <= $F7) AND (raster & 7 == YSCROLL) AND DEN
+was set on $30". Setting YSCROLL to line & 7 on every line makes every
+line a badline, and each fetch reads the matrix `$D018` names at that
+moment, so each line draws its row of cells from a differently shifted
+copy. The rows still advance because the write lands after cycle 14: the
+`fli-image` recipe gives the two-sided constraint, an RC reset if the
+condition holds in cycle 14, and one lost cell per cycle of lateness
+after that, three at best. The `tech-tech` recipe measured both sides on
+the same listing: one cycle early, the band shows only pixel row 0 of
+each cell and the whole logo is drawn again below it; one, two and three
+cycles late lose four, five and six cells, of which the leading ones show
+the last complete fetch rather than the FLI bug's code 255. In that
+recipe the logo's left edge measured 24 + s display pixels on all 48
+lines of both models, against the table, and the seven-pixel control
+with `$D018` fixed measured an amplitude of seven.
+
+The three cells at the left of every forced line are the price. They
+show screen code 255 in a colour that is not the cell's colour RAM; in
+VICE 3.10 it followed the opcode byte the CPU fetches after the `$D011`
+write on 47 of the 48 lines measured, and nothing is established about a
+real chip.
+
+### Cycle budget
+
+Per band line: 63 cycles elapse on PAL, 65 on NTSC; the VIC holds the bus
+for 40 of them and the block spends the other 23 (25) on its three loads,
+three stores and padding. There is no CPU time on a band line for
+anything else, which is what `cpu_every_line` means here; a sprite over
+the band would move the stall and break the placement, as it does in
+FLI. Per frame, measured on the recipe: 3,405 cycles for the 54-line
+band interrupt on PAL (3,508 NTSC), including the double IRQ's entry and
+the natural first line, and 2,041 for the two 48-entry tables. The rest
+of the frame is free. Taller bands cost 63 cycles a line and 2 zero-page
+bytes a line, and nothing else until the tables leave zero page and the
+loads take a cycle more each.
+
+### Variations
+
+**A bitmap tech-tech.** The same forced badlines with `$D018` bit 3
+selecting between two bitmaps do not give eight shifts, because the
+bitmap base has two positions per bank; a bitmap logo needs the eight
+copies as eight matrices of colour pairs over one bitmap, or the shift
+done in the bitmap data. `mode7_lookalike` above sets out which half of
+`$D018` is deferred and which is immediate.
+
+**A colour wash per line.** The block has no spare cycles, but the
+restore after the band and the entry before it do, and `$D021` written
+in the vertical blank changes the whole band's paper. A per-line wash
+inside the band needs a fourth store in the block, 4 cycles, which is
+only there on NTSC at the shipped padding.
+
+### Pitfalls
+
+- `badline_cycle_loss` (`../pitfalls/raster-and-badline.md`): the technique creates a badline on every line it runs on and lives inside the 23 cycles the stall leaves; any code the block gains past that pushes the write late and costs a cell per cycle, as the recipe's sweep shows.
+- `raster_irq_first_line_jitter` (same page): the block chain is timed from one known cycle; an entry that jitters puts the first block's write early or late, an RC reset or a lost cell, on the first forced line and every line after it, since the stall preserves the offset.
+- `d016_unmasked_rmw_clobbers_csel_mcm` (`../pitfalls/scroll.md`): the `$D016` table stores the base value with the shift OR'd in; a raw s & 7 clears CSEL and drops the band to 38 columns.
+
+### Recipes
+
+- `recipes/kickassembler/tech-tech.md`: the design above on the word WOBBLE, rows 8 to 13, pinned at 12,000,000 cycles on both models with the placement sweep, the seven-pixel control and the timer figures.
+
+### Sources
+
+- `hardware/vic-ii-reference.md`, "Badlines" and "c-access, g-access, p-access, s-access": the condition, the row buffer and the fetch cycles.
+- `recipes/kickassembler/fli-image.md`: the block structure and the two-sided placement constraint this technique reuses.
+- `text_zoom` above: the seven-pixel form and the XSCROLL timing.
+
+---
+
 ## voxel_landscape — Voxel-space landscape rendering
 
 **Complexity:** scene-tier

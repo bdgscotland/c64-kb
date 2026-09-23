@@ -1578,5 +1578,29 @@
       "pal": "screenshots/shadebobs.png",
       "ntsc": "screenshots/shadebobs-ntsc.png"
     }
+  },
+  "kickassembler/tech-tech": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/tech-tech.png",
+      "ntsc": "screenshots/tech-tech-ntsc.png"
+    }
+  },
+  "kickassembler/dysp": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/dysp.png",
+      "ntsc": "screenshots/dysp-ntsc.png"
+    }
   }
 }

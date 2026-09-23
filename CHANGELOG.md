@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 763, schema 30, tools 2.2.0, package 0.15.0.
+Data 764, schema 30, tools 2.2.0, package 0.15.0.
+
+**Candidate list, batch 17, two of four: the tech-tech wobbler and DYSP,
+from fixed designs with measured write-cycle sweeps (data 764).** The
+tech-tech wobbler: a badline forced on every line of a six-row logo band
+after the cycle-14 RC check, so the VIC refetches the video matrix each
+line from whichever of eight pre-shifted screens `$D018` names, plus
+XSCROLL for the remainder; the logo's left edge moves 62 pixels across
+the band exactly as the sine table says, on both models; the sweep over
+five write placements shows the one-early case resetting RC on every
+line and the late cases losing one cell per cycle; the FLI-bug strip's
+three cells and their colour are tabled; the XSCROLL-only control swings
+seven pixels; 3,405 cycles a frame for the band. DYSP: four sprites at
+different heights inside the opened right side border, each on its own
+sine, with the border-opening write timed per line from a table indexed
+by the SET of sprites active on that line; the border stays open on all
+150 band lines and every write lands on the same cycle whatever the set.
+A table indexed by the COUNT of active sprites cannot do it, measured:
+two cycles a sprite closes the border from the first line with a
+non-zero sprite alone, three and four cycles close it earlier, and the
+plain side-border timing closes all 150 lines. Pins byte-identical on two
+runs per model, both reproduced by reviewers who also confirmed the
+effect in their own pictures. Linecrunch and Kefrens bars, the other two
+of the batch, stalled six times each on the workflow's watchdog and are
+being rebuilt as standalone runs.
 
 **Issue #39: the `action-puzzle` starter, CAVE RUN.** It is a Boulder
 Dash-style game in Oscar64:
