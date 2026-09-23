@@ -27,6 +27,7 @@ export const ArchetypeRow = z.object({
   name: nullableString,
   title: nullableString,
   kind: nullableString,
+  starter: nullableString,
 });
 
 export const BriefWordsRow = ArchetypeRow.extend({ brief_words: z.array(z.string()).nullish() });

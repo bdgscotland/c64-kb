@@ -10,7 +10,7 @@ and to the terminal through the same functions as a CLI.
 ```
 +---------------------+     +----------------------+
 |  a C64 project      |     |  templates/          |
-|  .mcp.json          |     |  c64-*-starter       |
+|  .mcp.json          |     |  starters, harness   |
 +----------+----------+     +-----------+----------+
            |        MCP (stdio)         |
            +-------------+--------------+

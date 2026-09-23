@@ -120,6 +120,7 @@ export type GraphEntity =
       source_doc: string;
       /** The **Brief words:** line, normalised; empty when the entry has none. */
       brief_words: string[];
+      starter?: string;
     }
   | { type: "archetype_features"; archetype: string; technique: string }
   | { type: "archetype_risks"; archetype: string; pitfall: string }

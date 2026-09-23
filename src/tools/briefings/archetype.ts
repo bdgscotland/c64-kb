@@ -7,7 +7,7 @@ import { getFalkor } from "../../context.ts";
 import { normaliseBriefText } from "../../graph/extract/archetype.ts";
 import { ArchetypeRow, BriefWordsRow, NameRow, parseRows } from "./rows.ts";
 
-type Archetype = { name: string; title: string; kind: string };
+type Archetype = { name: string; title: string; kind: string; starter?: string };
 export type ArchetypeResolution =
   | {
       mode: "graph";
@@ -21,7 +21,12 @@ export type ArchetypeResolution =
   | { mode: "not_found"; requested: string; known: string[]; candidates?: string[] }
   | { mode: "fallback" };
 
-type KnownArchetype = { name: string; title: string | null | undefined; kind: string | null | undefined };
+type KnownArchetype = {
+  name: string;
+  title: string | null | undefined;
+  kind: string | null | undefined;
+  starter?: string | null | undefined;
+};
 
 /** "Vertical Shmup" / "vertical-shmup" / "Vertical_Shmup" all read as vertical_shmup. */
 function normaliseArchetypeName(raw: string): string {
@@ -34,10 +39,10 @@ function normaliseArchetypeName(raw: string): string {
 async function knownArchetypes(): Promise<KnownArchetype[]> {
   const fk = await getFalkor();
   const all = await fk.roQuery(
-    `MATCH (a:Archetype) RETURN a.name AS name, a.title AS title, a.kind AS kind ORDER BY name`,
+    `MATCH (a:Archetype) RETURN a.name AS name, a.title AS title, a.kind AS kind, a.starter AS starter ORDER BY name`,
   );
   return parseRows(ArchetypeRow, all.data).flatMap((r) =>
-    r.name ? [{ name: r.name, title: r.title, kind: r.kind }] : [],
+    r.name ? [{ name: r.name, title: r.title, kind: r.kind, starter: r.starter }] : [],
   );
 }
 
@@ -109,7 +114,12 @@ async function graphResolution(hit: KnownArchetype) {
   );
   return {
     mode: "graph" as const,
-    archetype: { name: hit.name, title: hit.title ?? hit.name, kind: hit.kind ?? "game" },
+    archetype: {
+      name: hit.name,
+      title: hit.title ?? hit.name,
+      kind: hit.kind ?? "game",
+      ...(hit.starter ? { starter: hit.starter } : {}),
+    },
     features,
     risks,
   };

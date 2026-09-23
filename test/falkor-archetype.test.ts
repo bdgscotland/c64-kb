@@ -57,6 +57,23 @@ describe("FalkorService — Archetype, FEATURES, RISKS", () => {
     expect(row.src).toBe("docs/game-design/c64-game-archetypes.md");
   });
 
+  it("addArchetype stores the starter, and a later write without one clears it", async () => {
+    const base = {
+      name: "beat_em_up",
+      title: "Beat-em-up",
+      kind: "game" as const,
+      source_doc: "docs/game-design/c64-game-archetypes.md",
+    };
+    const starter = async () => {
+      const r = await f.roQuery(`MATCH (a:Archetype {name: "beat_em_up"}) RETURN a.starter AS s`);
+      return (r.data[0] as { s: string | null }).s;
+    };
+    await f.addArchetype({ ...base, starter: "beat-em-up" });
+    expect(await starter()).toBe("beat-em-up");
+    await f.addArchetype(base);
+    expect(await starter()).toBeNull();
+  });
+
   it("linkArchetypeFeatures lands a FEATURES edge to an existing Technique and reports it", async () => {
     expect(await f.linkArchetypeFeatures("vertical_shmup", "soft_scroll_v")).toBe(true);
     expect(await f.linkArchetypeFeatures("vertical_shmup", "sprite_multiplex_24")).toBe(true);

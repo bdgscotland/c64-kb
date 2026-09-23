@@ -102,6 +102,23 @@ One more line routes a brief that names no archetype (schema 30):
 - The line is how a genre reaches its archetype. It is data here, so no
   genre word or game title is spelled in the briefing code.
 
+One more optional line names the playable starter for the archetype
+(schema 31):
+
+```
+**Starter:** `shmup-vertical`
+```
+
+- The word is a directory in `templates/` (lower case, digits, hyphens).
+  It becomes the Archetype's `starter` property, and `c64_game_briefing`
+  or `c64_demo_briefing` returns it in `archetype.starter` and tells the
+  agent to run `npm run new-project -- <starter> <dir>` in this checkout.
+- The extractor does not read the tree. `test/extract-archetype-starters.test.ts`
+  fails when a starter named on a real page has no `Makefile` and
+  `expect.json` in `templates/`.
+- Name a starter only where it is a game or effect of that archetype.
+  An archetype with no fitting starter carries no line.
+
 The other lines on the page (`**Reference titles:**`, `**Modern
 examples:**`) are prose for the reader and are not read by the extractor.
 
@@ -138,4 +155,4 @@ After the H2 and the `**Archetype:**` line, free-form prose covering:
 5. `**Reference titles:**` and `**Modern examples:**`
 
 H3 inside an archetype is fine; the extractor reads only the H2 and the
-four bold lines.
+five bold lines (`**Brief words:**` and `**Starter:**` are optional).
