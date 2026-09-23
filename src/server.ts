@@ -416,7 +416,7 @@ Purpose: Gives the agent a ready-to-use, verified example with build instruction
 
 Inputs: 'name' is the canonical recipe identifier — toolchain prefix + hyphen + recipe slug (e.g. 'oscar64-hello-world', 'kickassembler-hello-world', 'cc65-hello-world-conio'). Case-sensitive.
 
-Output: {name, toolchain, output_format, region, source_doc, documentation[]}. On not-found, 'name' is empty and 'text' lists near-match suggestions.
+Output: {name, toolchain, output_format, region, source_doc, toolchain_version_verified?, documentation[]}. toolchain_version_verified is the toolchain version this repo's gates built the recipe with (e.g. '5.25' for KickAssembler); a different version may or may not build it. On not-found, 'name' is empty and 'text' lists near-match suggestions.
 
 When to use: When you know the specific recipe name or have already identified the toolchain + intent from c64_toolchain_hint and want a complete worked example.
 
@@ -584,13 +584,15 @@ Limitations: region filter matches only techniques with an explicit REQUIRES_REG
 
 Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). Order doesn't matter — all pairwise combinations are checked.
 
-Output: {techniques[], conflicts[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b and the implied ones in 'via'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
+Output: {techniques[], conflicts[], band_separated[], shared_infrastructure[], data_coverage[], verdict}. verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b and the implied ones in 'via'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
 
-Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, region_mismatch, prerequisite_conflict (hard); shared_register, shared_kernal (soft).
+Conflict kinds: cpu_exclusive, cpu_vs_irq, sprite_set, kernal_banked_out, serial_bus_busy (a resident fast loader against KERNAL disk I/O), region_mismatch, prerequisite_conflict (hard); shared_register, shared_kernal (soft).
 
 Examples: {"techniques": ["fli_image", "sprite_multiplex_24"]} → incompatible (cpu_vs_irq and sprite_set; resolution: multiplex outside the FLI region). {"techniques": ["stable_raster_irq", "raster_bars"]} → warnings (both touch $D012/$D019). {"techniques": ["fli_image", "digi_4bit"]} → incompatible (cpu_vs_irq: continuous interrupts inside the FLI region).
 
-Limitations: demands and prerequisites are authored per technique in docs/techniques (see CONVENTIONS-techniques.md); a technique without them only participates in the soft checks. Named techniques are checked as named even when one requires the other. Regions are not modelled, so 'incompatible' means 'not on the same raster lines', and the resolution says so.`,
+Raster bands: a technique page may state the raster lines it holds the CPU on (**Raster band:**, e.g. fli_image 45-250). When both techniques state line bands and they share no line, the line-sharing rules (cpu_exclusive, cpu_vs_irq through mid-frame IRQs or sprite-set changes, sprite_set) do not fire; the pair is listed in band_separated[] {a, b, a_band, b_band, rules[]} instead. A missing band, or one the program chooses ('movable'), keeps the conflict, and its rationale names the unknown side. data_coverage carries each technique's raster_band.
+
+Limitations: demands and prerequisites are authored per technique in docs/techniques (see CONVENTIONS-techniques.md); a technique without them only participates in the soft checks. Named techniques are checked as named even when one requires the other. Where bands are not stated, 'incompatible' means 'not on the same raster lines', and the resolution says so.`,
       inputSchema: {
         techniques: z
           .array(z.string())
@@ -616,15 +618,15 @@ Limitations: demands and prerequisites are authored per technique in docs/techni
 
 Purpose: Gives the agent the authoritative cycle math for raster-critical technique implementations. Use before writing or evaluating cycle-tight C64 raster code.
 
-Inputs: 'technique' is the canonical technique name (e.g. 'stable_raster_irq'). 'region' is 'pal' or 'ntsc' (case-insensitive).
+Inputs: 'technique' is the canonical technique name (e.g. 'stable_raster_irq'). 'region' is 'pal' or 'ntsc' (case-insensitive). 'sprites_per_line' (optional, 0-8) is the number of sprites displayed on the line; without it the technique's own Cost sprites_per_line is used, and without that sprite DMA is not counted and a note says so.
 
-Output: {technique, region, cycles_per_line, cycles_per_frame, badline_cycles_lost, irq_overhead_cycles, user_cycles_per_line_normal, user_cycles_per_line_badline, notes[]}.
+Output: {technique, region, cycles_per_line, cycles_per_frame, badline_cycles_lost, irq_overhead_cycles, sprites_per_line, sprites_source ('input' | 'technique' | 'none'), sprite_dma_cycles, user_cycles_per_line_normal, user_cycles_per_line_badline, notes[]}.
 
-Constants: PAL: 63 cycles/line × 312 lines = 19656 cycles/frame. NTSC: 65 cycles/line × 263 lines = 17095 cycles/frame. Badline: 43 cycles to plan on (the VIC holds the bus for cycles 15-54 and BA drops on cycle 12; only writes fit in 12-14). Default IRQ overhead: 36 cycles (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314).
+Constants: PAL: 63 cycles/line × 312 lines = 19656 cycles/frame. NTSC: 65 cycles/line × 263 lines = 17095 cycles/frame. Badline: 43 cycles to plan on (the VIC holds the bus for cycles 15-54 and BA drops on cycle 12; only writes fit in 12-14). Default IRQ overhead: 36 cycles (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314). Sprite DMA: 3 + 2 per sprite for sprites numbered without gaps (5 for one, 19 for eight, measured in VICE x64sc); each gap adds up to 3.
 
-Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_line=63, user_cycles_per_line_normal=27, user_cycles_per_line_badline=0 (a handler entered on a badline through the KERNAL vector has nothing left on that line).
+Examples: {"technique": "stable_raster_irq", "region": "pal"} → cycles_per_line=63, user_cycles_per_line_normal=27, user_cycles_per_line_badline=0 (a handler entered on a badline through the KERNAL vector has nothing left on that line). {"technique": "stable_raster_irq", "region": "pal", "sprites_per_line": 8} → sprite_dma_cycles=19, user_cycles_per_line_normal=8.
 
-Limitations: irq_overhead is taken from the Technique node's irq_overhead property (if set) or the default 36 cycles; a handler on $FFFE with the KERNAL banked out pays 7 plus its own register saves. An earlier version of this description said 23 badline cycles and 14 overhead, which was not what the tool computed.`,
+Limitations: irq_overhead is the default 36 cycles for every technique (an earlier version of this line said it was read from a Technique irq_overhead property; nothing writes one, and the read was removed in tools 1.25.0); a handler on $FFFE with the KERNAL banked out pays 7 plus its own register saves. An earlier version of this description said 23 badline cycles and 14 overhead, which was not what the tool computed. An earlier version did not subtract sprite DMA at all.`,
       inputSchema: {
         technique: z
           .string()
@@ -634,11 +636,18 @@ Limitations: irq_overhead is taken from the Technique node's irq_overhead proper
           .optional()
           .default("pal")
           .describe("Region: 'pal' or 'ntsc' (case-insensitive, default: 'pal')"),
+        sprites_per_line: z
+          .number()
+          .int()
+          .min(0)
+          .max(8)
+          .optional()
+          .describe("Sprites displayed on the line (0-8). Overrides the technique's Cost sprites_per_line."),
       },
       outputSchema: TimingBudgetSchema.shape,
     },
-    async ({ technique, region }) => {
-      const result = await timingBudget({ technique, region: region ?? "pal" });
+    async ({ technique, region, sprites_per_line }) => {
+      const result = await timingBudget({ technique, region: region ?? "pal", sprites_per_line });
       return {
         content: [{ type: "text" as const, text: result.text }],
         structuredContent: result.structured,

@@ -23,6 +23,7 @@ import { getQdrant, getFalkor, getAnalytics } from "../context.js";
 import { embed } from "../services/embeddings.js";
 import { BM25Encoder, type SparseVector } from "../services/bm25.js";
 import { config } from "../config.js";
+import { parseRasterBand, rasterBandsOverlap } from "../graph/extract.js";
 import fs from "fs";
 import path from "path";
 import type {
@@ -702,8 +703,10 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
 
   const recipeRows = await f.roQuery(
     `MATCH (r:Recipe {name: $name})
+     OPTIONAL MATCH (r)-[:REQUIRES_TOOL]->(tool:Tool)
      RETURN r.toolchain AS toolchain, r.output_format AS output_format,
-            r.region AS region, r.source_doc AS source_doc`,
+            r.region AS region, r.source_doc AS source_doc,
+            tool.version_verified AS toolchain_version_verified`,
     { name }
   );
 
@@ -738,8 +741,9 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     return { structured: empty, text };
   }
 
-  const row = recipeRows.data?.[0] as { toolchain: string; output_format: string; region: string; source_doc: string };
+  const row = recipeRows.data?.[0] as { toolchain: string; output_format: string; region: string; source_doc: string; toolchain_version_verified: string | null };
   const { toolchain, output_format, region, source_doc } = row;
+  const toolchain_version_verified = row.toolchain_version_verified ?? undefined;
 
   // Pull doc context
   const vec = await embed(name);
@@ -772,12 +776,13 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     output_format,
     region,
     source_doc,
+    ...(toolchain_version_verified ? { toolchain_version_verified } : {}),
     documentation,
     ...(source_code ? { source_code } : {}),
   };
 
   let out = `# Recipe: ${name}\n\n`;
-  out += `**Toolchain:** ${toolchain}\n`;
+  out += `**Toolchain:** ${toolchain}${toolchain_version_verified ? ` (the repo's gates build it with ${toolchain_version_verified})` : ""}\n`;
   out += `**Output:** ${output_format}\n`;
   out += `**Region:** ${region}\n`;
   out += `**Source:** \`${source_doc}\`\n\n`;
@@ -892,7 +897,8 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
             t.cost_cycles_per_line AS cost_cycles_per_line, t.cost_cycles_per_frame AS cost_cycles_per_frame,
             t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
             t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
-            t.cost_irq_slots AS cost_irq_slots, t.cost_basis AS cost_basis
+            t.cost_irq_slots AS cost_irq_slots, t.cost_sprites_per_line AS cost_sprites_per_line, t.cost_basis AS cost_basis,
+            t.raster_band AS raster_band
      LIMIT 1`,
     { name }
   );
@@ -948,7 +954,9 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     cost_bytes_data: number | null;
     cost_zp_bytes: number | null;
     cost_irq_slots: number | null;
+    cost_sprites_per_line: number | null;
     cost_basis: string | null;
+    raster_band: string | null;
   };
 
   // Cost model (schema 22): only the keys the page's **Cost:** line carried
@@ -962,6 +970,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
         ...(typeof row.cost_bytes_data === "number" ? { bytes_data: row.cost_bytes_data } : {}),
         ...(typeof row.cost_zp_bytes === "number" ? { zp_bytes: row.cost_zp_bytes } : {}),
         ...(typeof row.cost_irq_slots === "number" ? { irq_slots: row.cost_irq_slots } : {}),
+        ...(typeof row.cost_sprites_per_line === "number" ? { sprites_per_line: row.cost_sprites_per_line } : {}),
         basis: row.cost_basis as TechniqueCostOutput["basis"],
       }
     : undefined;
@@ -1052,6 +1061,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
     complexity: row.complexity ?? "",
     chip: row.chip ?? undefined,
     requires_region: row.requires_region ?? undefined,
+    ...(row.raster_band ? { raster_band: row.raster_band } : {}),
     uses_registers,
     uses_kernal,
     recipes,
@@ -1067,6 +1077,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   out += `**Complexity:** ${row.complexity || "(not set)"}\n`;
   if (row.chip) out += `**Chip:** ${row.chip}\n`;
   if (row.requires_region) out += `**Requires region:** ${row.requires_region}\n`;
+  if (row.raster_band) out += `**Raster band:** ${row.raster_band}\n`;
   if (cost) {
     const { basis, ...figures } = cost;
     out += `**Cost:** ${Object.entries(figures).map(([k, v]) => `${k}=${v}`).join(", ")}\n`;
@@ -1258,7 +1269,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // counts. Drives the hard-conflict rules below and the data_coverage
   // report, so a technique the graph knows nothing about is named as such
   // instead of passing as compatible.
-  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[] };
+  type Facts = { found: boolean; demands: Set<string>; registers: number; kernal: string[]; band: string | null };
   const facts = new Map<string, Facts>();
   for (const tname of allNames) {
     const rr = await f.roQuery(
@@ -1268,15 +1279,16 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
        OPTIONAL MATCH (t)-[:USES]->(reg:Register)
        WITH t, demands, count(DISTINCT reg) AS registers
        OPTIONAL MATCH (t)-[:USES]->(k:KernalRoutine)
-       RETURN demands, registers, collect(DISTINCT k.name) AS kernal`,
+       RETURN demands, registers, collect(DISTINCT k.name) AS kernal, t.raster_band AS band`,
       { name: tname }
     );
-    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[] } | undefined;
+    const row = rr.data?.[0] as { demands: string[]; registers: number; kernal: string[]; band: string | null } | undefined;
     facts.set(tname, {
       found: row !== undefined,
       demands: new Set((row?.demands ?? []).filter(Boolean)),
       registers: Number(row?.registers ?? 0),
       kernal: (row?.kernal ?? []).filter(Boolean),
+      band: row?.band ?? null,
     });
   }
 
@@ -1285,12 +1297,58 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   // pushed so the same rules serve the input pairs and the REQUIRES closure.
   type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
   type HardHit = { kind: ConflictKind; shared: string[]; rationale: string; resolution: string };
+  // Raster bands (**Raster band:**, schema 24). The rules about sharing
+  // raster lines (cpu_exclusive; cpu_vs_irq through mid-frame IRQs or
+  // sprite-set changes; sprite_set) do not fire when both techniques state
+  // line bands and the bands share no line: the pair is reported under
+  // band_separated instead. A band that is absent or "movable" keeps the
+  // conflict, and the rationale says which side is unknown.
+  // continuous_interrupts and kernal_banked_out are not about lines and
+  // ignore bands.
+  const bandText = (n: string): string => {
+    const b = facts.get(n)?.band;
+    if (!b) return `${n} states no raster band`;
+    if (b === "movable") return `${n}'s lines are chosen by the program (movable)`;
+    return `${n} holds lines ${b}`;
+  };
+  const bandsDisjoint = (a_name: string, b_name: string): boolean => {
+    const a = facts.get(a_name)?.band;
+    const b = facts.get(b_name)?.band;
+    if (!a || !b) return false;
+    const pa = parseRasterBand(a);
+    const pb = parseRasterBand(b);
+    if ("error" in pa || "error" in pb || pa.kind !== "lines" || pb.kind !== "lines") return false;
+    return !rasterBandsOverlap(pa.ranges, pb.ranges);
+  };
+  const bandNote = (a_name: string, b_name: string): string => {
+    const pa = parseRasterBand(facts.get(a_name)?.band ?? "");
+    const pb = parseRasterBand(facts.get(b_name)?.band ?? "");
+    const bothLines = !("error" in pa) && pa.kind === "lines" && !("error" in pb) && pb.kind === "lines";
+    return ` Raster bands: ${bandText(a_name)}; ${bandText(b_name)}.` +
+      (bothLines ? " The bands overlap." : " Only two stated, disjoint line bands clear this rule.");
+  };
+  const bandSeparated: CompatibilityCheckOutput["band_separated"] = [];
+  const noteSeparated = (a_name: string, b_name: string, rule: string) => {
+    const hit = bandSeparated.find((s) => (s.a === a_name && s.b === b_name) || (s.a === b_name && s.b === a_name));
+    if (hit) {
+      if (!hit.rules.includes(rule)) hit.rules.push(rule);
+      return;
+    }
+    bandSeparated.push({ a: a_name, b: b_name, a_band: facts.get(a_name)!.band!, b_band: facts.get(b_name)!.band!, rules: [rule] });
+  };
   const hardRules = (a_name: string, b_name: string): HardHit[] => {
     const hits: HardHit[] = [];
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
     const hard = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) =>
       hits.push({ kind, shared, rationale, resolution });
+    const disjoint = bandsDisjoint(a_name, b_name);
+    // A rule about sharing raster lines: noted, not fired, on disjoint
+    // bands; otherwise fired with the band facts added to its rationale.
+    const lineRule = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) => {
+      if (disjoint) noteSeparated(a_name, b_name, kind);
+      else hard(kind, shared, rationale + bandNote(a_name, b_name), resolution);
+    };
 
     // Region mismatch
     const aRegion = regionMap.get(a_name);
@@ -1303,7 +1361,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
     // Both need every CPU cycle on their lines.
     if (A.demands.has("cpu_every_line") && B.demands.has("cpu_every_line")) {
-      hard("cpu_exclusive", ["cpu_every_line"],
+      lineRule("cpu_exclusive", ["cpu_every_line"],
         `Both need every CPU cycle on every raster line they cover; they cannot share a raster line.`,
         `Give each its own band of lines and switch between them in the border.`);
     }
@@ -1312,7 +1370,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
       if (!X.demands.has("cpu_every_line")) continue;
       if (Y.demands.has("midframe_raster_irqs")) {
-        hard("cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
+        lineRule("cpu_vs_irq", ["cpu_every_line", "midframe_raster_irqs"],
           `${xn} needs every CPU cycle on its lines; a raster interrupt from ${yn} inside that region breaks its cycle count.`,
           `Keep ${yn}'s interrupts on lines outside ${xn}'s region (the borders, or a separate band).`);
       }
@@ -1322,7 +1380,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
           `Pause ${yn} while ${xn}'s region is being drawn, or do not combine them.`);
       }
       if (Y.demands.has("changes_sprite_set") && !X.demands.has("constant_sprite_set")) {
-        hard("cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
+        lineRule("cpu_vs_irq", ["cpu_every_line", "changes_sprite_set"],
           `${yn} rewrites sprite registers from interrupts during the frame; inside ${xn}'s region that breaks its cycle count.`,
           `Multiplex only outside ${xn}'s region.`);
       }
@@ -1331,9 +1389,24 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     // One needs the same sprites active on every line; the other changes them.
     for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
       if (X.demands.has("constant_sprite_set") && Y.demands.has("changes_sprite_set")) {
-        hard("sprite_set", ["constant_sprite_set", "changes_sprite_set"],
+        lineRule("sprite_set", ["constant_sprite_set", "changes_sprite_set"],
           `${xn}'s per-line timing depends on the same sprites being active on every line of its region; ${yn} changes the active set during the frame.`,
           `Multiplex only outside ${xn}'s region, or keep the sprite set fixed while ${xn}'s lines are drawn.`);
+      }
+    }
+
+    // One owns the drive's serial bus while resident; the other does KERNAL
+    // disk I/O. The routines are the KERNAL's serial-bus entries and the
+    // file calls built on them; CHRIN/CHROUT/GETIN are left out because they
+    // touch the bus only through a redirected channel, which CHKIN/CHKOUT
+    // already name.
+    for (const [X, Y, xn, yn] of [[A, B, a_name, b_name], [B, A, b_name, a_name]] as const) {
+      if (!X.demands.has("serial_bus_exclusive")) continue;
+      const serial = Y.kernal.filter((k) => SERIAL_KERNAL.has(k));
+      if (serial.length > 0) {
+        hard("serial_bus_busy", serial.sort(),
+          `${xn} owns the drive's serial bus while it is resident; ${yn} calls KERNAL serial I/O (${serial.join(", ")}), which stalls on that drive until the loader is uninstalled.`,
+          `Do the KERNAL I/O before installing ${xn} or after uninstalling it (Krill: UNINSTALL_API), or use the loader's own entries (Krill: save, fileexists) instead.`);
       }
     }
 
@@ -1485,6 +1558,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       registers: F.registers,
       kernal_routines: F.kernal.length,
       demands: [...F.demands].sort(),
+      ...(F.band ? { raster_band: F.band } : {}),
       known: F.found && (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0),
     };
   };
@@ -1576,7 +1650,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
 
   a.logQuery({ tool: "c64_check_compatibility", query: techniques.join("+"), resultCount: conflicts.length });
 
-  const structured: CompatibilityCheckOutput = { techniques, conflicts, shared_infrastructure, data_coverage, verdict };
+  const structured: CompatibilityCheckOutput = { techniques, conflicts, band_separated: bandSeparated, shared_infrastructure, data_coverage, verdict };
 
   // "Not covered" is about the named techniques; implied ones are listed
   // separately so the silence-vs-clearance sentence keeps its denominator.
@@ -1601,6 +1675,12 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       out += `${c.rationale}\n`;
       if (c.resolution) out += `**Resolution:** ${c.resolution}\n`;
       out += `\n`;
+    }
+  }
+  if (bandSeparated.length > 0) {
+    out += `\n## Separated by raster band (info)\n`;
+    for (const s of bandSeparated) {
+      out += `- **${s.a}** (lines ${s.a_band}) and **${s.b}** (lines ${s.b_band}) share no raster line, so ${s.rules.join(", ")} does not apply. Keep each on its own lines: the check trusts the bands the pages state.\n`;
     }
   }
   if (unknown.length > 0 || unknownImplied.length > 0) {
@@ -1629,6 +1709,12 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   return { structured, text: out };
 }
 
+// KERNAL routines that talk on the serial bus (serial_bus_exclusive rule).
+const SERIAL_KERNAL: ReadonlySet<string> = new Set([
+  "LOAD", "SAVE", "OPEN", "CLOSE", "CHKIN", "CHKOUT", "CLRCHN",
+  "TALK", "LISTEN", "TKSA", "SECOND", "ACPTR", "CIOUT", "UNTLK", "UNLSN",
+]);
+
 const REGION_CONSTANTS = {
   PAL: { cycles_per_line: 63, lines_per_frame: 312 },
   NTSC: { cycles_per_line: 65, lines_per_frame: 263 },
@@ -1642,12 +1728,46 @@ const BADLINE_CYCLES_LOST = 43;
 // dispatcher at $FF48 before the handler's first instruction. A handler on
 // $FFFE with the KERNAL out pays 7 plus its own register saves.
 const DEFAULT_IRQ_OVERHEAD = 36;
+// Sprite DMA on a line where n sprites are displayed: BA drops three cycles
+// before the first sprite's slot (usable only by write cycles), then two
+// bus cycles per sprite; the p-access costs the CPU nothing. Measured in
+// VICE x64sc (docs/hardware/vic-ii-reference.md, "Sprite DMA"): 5 for one
+// sprite, 19 for eight, and the CPU resumes where 3 + 2n predicts for
+// sprites 0..k with k = 0, 2, 3, 6, 7. Sprites numbered with a gap pay the
+// three lead-in cycles again per group: sprites 0 and 7 measured 10, not 7.
+const SPRITE_BA_LEAD_IN = 3;
+const SPRITE_CYCLES_EACH = 2;
+export function spriteDmaCycles(sprites: number): number {
+  return sprites > 0 ? SPRITE_BA_LEAD_IN + SPRITE_CYCLES_EACH * sprites : 0;
+}
 
 export async function timingBudget(opts: {
   technique: string;
   region: string;
+  sprites_per_line?: number;
 }): Promise<TimingBudgetResult> {
   const a = getAnalytics();
+
+  // Sprites on the line: the caller's figure wins; otherwise the technique's
+  // own **Cost:** sprites_per_line; otherwise none, and the notes say so.
+  let sprites = 0;
+  let sprites_source: TimingBudgetOutput["sprites_source"] = "none";
+  if (opts.sprites_per_line !== undefined && Number.isFinite(opts.sprites_per_line)) {
+    sprites = Math.max(0, Math.min(8, Math.trunc(opts.sprites_per_line)));
+    sprites_source = "input";
+  } else {
+    const f = await getFalkor();
+    const rr = await f.roQuery(
+      `MATCH (t:Technique {name: $name}) RETURN t.cost_sprites_per_line AS n`,
+      { name: opts.technique }
+    );
+    const n = (rr.data?.[0] as { n: number | null } | undefined)?.n;
+    if (typeof n === "number") {
+      sprites = n;
+      sprites_source = "technique";
+    }
+  }
+  const sprite_dma_cycles = spriteDmaCycles(sprites);
 
   const regionKey = opts.region.toUpperCase() as "PAL" | "NTSC";
   const rc = REGION_CONSTANTS[regionKey] ?? REGION_CONSTANTS.PAL;
@@ -1662,19 +1782,27 @@ export async function timingBudget(opts: {
 
   const cycles_per_line = rc.cycles_per_line;
   const cycles_per_frame = cycles_per_line * rc.lines_per_frame;
-  const user_cycles_per_line_normal = cycles_per_line - irq_overhead;
+  const user_cycles_per_line_normal = Math.max(0, cycles_per_line - irq_overhead - sprite_dma_cycles);
   // A handler entered on a badline through the KERNAL vector has nothing
   // left on that line (63 - 43 - 36 < 0); report 0, and the note below says
   // to put splits on non-badlines.
-  const user_cycles_per_line_badline = Math.max(0, cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST);
+  const user_cycles_per_line_badline = Math.max(0, cycles_per_line - irq_overhead - BADLINE_CYCLES_LOST - sprite_dma_cycles);
 
   const notes: string[] = [
     `${regionKey}: ${cycles_per_line} cycles/line × ${rc.lines_per_frame} lines = ${cycles_per_frame} cycles/frame.`,
     `Badline: the VIC takes the bus on cycles 15-54 and drops BA on cycle 12, so ${BADLINE_CYCLES_LOST} cycles are lost to code that is not writing on 12-14 (40 to code that is). No read cycle is possible between 12 and 54.`,
     `IRQ overhead: ${irq_overhead} cycles before the handler's first instruction (7 interrupt sequence + 29 KERNAL dispatcher at $FF48 via $0314; 7 via $FFFE with the KERNAL out), plus 0-6 cycles of jitter unless a double IRQ is used.`,
-    `User cycles/line normal: ${cycles_per_line} - ${irq_overhead} = ${user_cycles_per_line_normal}.`,
-    `User cycles/line badline: ${cycles_per_line} - ${irq_overhead} - ${BADLINE_CYCLES_LOST} = ${user_cycles_per_line_badline}.`,
+    sprites > 0
+      ? `Sprite DMA: ${sprites} sprite(s) on the line (${sprites_source === "input" ? "from the request" : `from ${opts.technique}'s Cost line`}) take ${SPRITE_BA_LEAD_IN} + ${SPRITE_CYCLES_EACH} × ${sprites} = ${sprite_dma_cycles} cycles, measured in VICE x64sc for sprites numbered without gaps (5 for one, 19 for eight). This is the minimum for that many sprites: each gap in the numbering adds up to ${SPRITE_BA_LEAD_IN} more (sprites 0 and 7 measured 10). The BA lead-in cycles are usable by writes only.`
+      : sprites_source === "none"
+        ? `Sprite DMA: not counted. ${opts.technique} states no sprites_per_line; pass sprites_per_line to count it (3 + 2 per sprite, 19 for eight, measured in VICE x64sc).`
+        : `Sprite DMA: none (0 sprites on the line).`,
+    `User cycles/line normal: ${cycles_per_line} - ${irq_overhead}${sprite_dma_cycles > 0 ? ` - ${sprite_dma_cycles}` : ""} = ${user_cycles_per_line_normal}.`,
+    `User cycles/line badline: ${cycles_per_line} - ${irq_overhead} - ${BADLINE_CYCLES_LOST}${sprite_dma_cycles > 0 ? ` - ${sprite_dma_cycles}` : ""} = ${user_cycles_per_line_badline}.`,
   ];
+  if (sprites > 0) {
+    notes.push(`Without the IRQ entry, a line with ${sprites} sprite(s) leaves ${Math.max(0, cycles_per_line - sprite_dma_cycles)} cycles, a badline ${Math.max(0, cycles_per_line - BADLINE_CYCLES_LOST - sprite_dma_cycles)} (arithmetic; for eight sprites on a PAL badline cpu-cycle-tricks.md measures 4 including the 3 write-only cycles, which is the 1 this gives plus those 3).`);
+  }
   if (user_cycles_per_line_badline <= 0) {
     notes.push(`WARNING: badline leaves no user cycles — tight handler required.`);
   }
@@ -1688,6 +1816,9 @@ export async function timingBudget(opts: {
     cycles_per_frame,
     badline_cycles_lost: BADLINE_CYCLES_LOST,
     irq_overhead_cycles: irq_overhead,
+    sprites_per_line: sprites,
+    sprites_source,
+    sprite_dma_cycles,
     user_cycles_per_line_normal,
     user_cycles_per_line_badline,
     notes,
@@ -1700,6 +1831,8 @@ export async function timingBudget(opts: {
   out += `| Cycles/frame | ${cycles_per_frame} |\n`;
   out += `| Badline cycles lost | ${BADLINE_CYCLES_LOST} |\n`;
   out += `| IRQ overhead | ${irq_overhead} |\n`;
+  out += `| Sprites on the line | ${sprites}${sprites_source === "none" ? " (not stated)" : ` (${sprites_source})`} |\n`;
+  out += `| Sprite DMA cycles | ${sprite_dma_cycles} |\n`;
   out += `| User cycles/line (normal) | ${user_cycles_per_line_normal} |\n`;
   out += `| User cycles/line (badline) | ${user_cycles_per_line_badline} |\n`;
   out += `\n## Notes\n\n`;

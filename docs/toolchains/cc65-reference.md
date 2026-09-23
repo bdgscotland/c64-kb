@@ -4,6 +4,8 @@ tool_kind: c-compiler
 maintainer: cc65-team
 license: Zlib
 home_url: https://cc65.github.io/
+version_verified: "2.18"
+# cl65 --version reports 2.18 while the Homebrew package is labelled 2.19; the Krill page says tagged 2.18 miscompiles Krill, so do not install tagged 2.18 on the strength of this line.
 ---
 
 <!-- doc-type: toolchain-reference -->

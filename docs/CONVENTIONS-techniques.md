@@ -82,6 +82,17 @@ demand the technique's own text supports.
 | `changes_sprite_set` | changes which hardware sprites are active during the frame (multiplexers) |
 | `continuous_interrupts` | takes timer or NMI interrupts every few raster lines, all frame (digi playback) |
 | `kernal_rom_out` | runs with the KERNAL ROM banked out |
+| `serial_bus_exclusive` | owns the drive and its serial bus while resident: KERNAL disk I/O to that drive stalls until it is uninstalled (a drive-code fast loader such as Krill's). `c64_check_compatibility` reports `serial_bus_busy` against a technique that uses LOAD, SAVE, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN or the low-level serial calls. |
+
+Four loader words were considered and left out, because no page in this
+repo can state them truthfully yet. `dd00_plain_stores` is Bitfire's rule
+(plain stores of `$00`-`$03`, no read-modify-write); the KB has no Bitfire
+page, and Krill's rule is close to the reverse: a whole-byte store breaks
+it, and a read-modify-write of bits 0-1 while it is idle is tolerated
+(`pitfalls/loader.md`, `fastloader_dd00_write_corrupts_resident`).
+`io_visible_in_irq`, `loads_in_background` and `no_concurrent_loading` are
+Bitfire and Spindle rules; the only background-loader page, Sparkle's, is
+being rewritten under issue #20.
 
 An optional `**Requires:**` line names the techniques this one presupposes:
 the named technique is set up before, or runs underneath, this one. The
@@ -108,6 +119,41 @@ rules between one technique's prerequisites and the other technique and
 reports a hit as `prerequisite_conflict`, without changing anyone's
 `**Demands:**`.
 
+An optional `**Raster band:**` line names the raster lines on which the
+technique holds the CPU. It rides the Technique node as `raster_band`. For a technique
+that works by raster IRQs, the band is every line on which its IRQs run,
+from the first IRQ line to the line on which the last handler exits.
+
+```
+**Raster band:** 45-251 (the fli-image recipe's first IRQ is on line 45; its handler exits on line 251)
+```
+
+The value is one of:
+
+- comma-separated raster line numbers and inclusive ranges, `N` or `N-M`,
+  0 to 311. The numbers are `$D012` values with bit 8 from `$D011`, the
+  same numbers on PAL and NTSC; lines past 262 do not occur on NTSC. A band
+  that wraps through line 0 is written as two ranges: `251-311, 0-44`.
+- `movable`: the program chooses the lines (a side-border loop goes where
+  the sprites are). It is not a known band.
+
+A trailing parenthetical says where the numbers came from (the recipe's
+IRQ line constants, a measured screenshot) and is not part of the value.
+Anything else is refused at extract with a warning, and the technique then
+conflicts as if it had no line.
+
+`c64_check_compatibility` uses the band for the rules about sharing raster
+lines: `cpu_exclusive`, `cpu_vs_irq` through `midframe_raster_irqs` or
+`changes_sprite_set`, and `sprite_set`. When both techniques state line
+ranges and no line is in both, those rules do not fire and the pair is
+listed under `band_separated`. When they overlap, or either side has no
+line or says `movable`, the conflict stands and its rationale says which.
+`continuous_interrupts` and `kernal_banked_out` are not about lines and
+ignore bands. The band covers every line the technique owns, including a
+stable-raster entry above its visible region, since an interrupt there
+breaks it as surely as one inside. Take it from the page's own text or its
+recipe's constants; where neither says, write no line.
+
 An optional `**Cost:**` line states what the technique costs, as
 comma-separated `key=value` pairs, every value a non-negative integer and
 every key from the vocabulary below. It must be paired with a
@@ -131,6 +177,7 @@ number without an honest basis is worse than no number.
 | `bytes_data` | bytes of tables, buffers and other data in the built recipe's segments (a sine table, an image, a fade table). |
 | `zp_bytes` | zero-page bytes the technique claims. |
 | `irq_slots` | the raster or timer interrupts the technique needs per frame (a stable raster IRQ is one, a double IRQ two, a ten-bar raster-bar ring ten). |
+| `sprites_per_line` | the most hardware sprites displayed on one raster line of the technique's lines, 0 to 8; a value above 8 is refused. `c64_timing_budget` subtracts their DMA from the line: 3 + 2 per sprite for sprites numbered without gaps, 19 for eight (measured in VICE x64sc, `hardware/vic-ii-reference.md`, "Sprite DMA"). State it where the page or its recipe puts sprites on the technique's lines. |
 
 | Basis | Meaning |
 |---|---|

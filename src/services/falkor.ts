@@ -392,18 +392,23 @@ export class FalkorService {
     maintainer?: string;
     license?: string;
     home_url: string;
+    // Schema 24: the version the repo's gates ran with; cleared when the
+    // page drops its version_verified key.
+    version_verified?: string;
   }): Promise<void> {
     const g = this.graph();
-    const props = {
+    const props: Record<string, string> = {
       kind: t.kind,
       maintainer: t.maintainer ?? "",
       license: t.license ?? "",
       home_url: t.home_url,
     };
+    if (t.version_verified) props.version_verified = t.version_verified;
     await g.query(
       `MERGE (t:Tool {name: $name})
        ON CREATE SET t += $props, t.created_at = timestamp()
-       ON MATCH SET t += $props, t.updated_at = timestamp()`,
+       ON MATCH SET t += $props, t.updated_at = timestamp()
+       ${t.version_verified ? "" : "SET t.version_verified = NULL"}`,
       { params: { name: t.name, props } } as Parameters<typeof g.query>[1]
     );
   }
@@ -567,6 +572,9 @@ export class FalkorService {
     // outlive its page.
     cost?: Partial<Record<string, number>>;
     cost_basis?: string;
+    // **Raster band:** (schema 24), canonical form from parseRasterBand:
+    // "45-250", "0-50,251-311" or "movable". Cleared when the page drops it.
+    raster_band?: string;
   }): Promise<void> {
     const g = this.graph();
     const props: Record<string, string | number> = {
@@ -574,7 +582,7 @@ export class FalkorService {
       category: t.category,
       complexity: t.complexity ?? "",
     };
-    const costKeys = ["cycles_per_line", "cycles_per_frame", "lines_active", "bytes_code", "bytes_data", "zp_bytes", "irq_slots"];
+    const costKeys = ["cycles_per_line", "cycles_per_frame", "lines_active", "bytes_code", "bytes_data", "zp_bytes", "irq_slots", "sprites_per_line"];
     const cleared: string[] = [];
     for (const k of costKeys) {
       const v = t.cost?.[k];
@@ -583,6 +591,8 @@ export class FalkorService {
     }
     if (t.cost && t.cost_basis) props.cost_basis = t.cost_basis;
     else cleared.push("t.cost_basis");
+    if (t.raster_band) props.raster_band = t.raster_band;
+    else cleared.push("t.raster_band");
     await g.query(
       `MERGE (t:Technique {name: $name})
        ON CREATE SET t += $props, t.created_at = timestamp()

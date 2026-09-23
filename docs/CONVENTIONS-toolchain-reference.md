@@ -21,6 +21,16 @@ home_url: https://github.com/drmortalwombat/oscar64
 `tool`, `tool_kind`, and `home_url` are required. `maintainer` and `license` are
 optional but strongly preferred.
 
+An optional `version_verified: "5.25"` key names the version of the tool
+that this repo's gates (`check:listings`, `verify:recipes`) ran with, as
+the tool itself reports it: the KickAssembler banner, `oscar64`'s
+"Starting oscar64 …" line, `cl65 --version`. Quote it so YAML keeps it a
+string. It becomes `Tool.version_verified`, and `c64_recipe_lookup`
+names it beside the recipe's toolchain. It is a statement about this
+machine, not a minimum: an older or newer release may or may not build
+the same listing. Change it when the gates move to a new version, in the
+same commit.
+
 ## Tool entry
 
 Every doc that introduces a Tool has exactly one H2 named `## Tool` (case-sensitive)

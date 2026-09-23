@@ -116,7 +116,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
 
   it("exposes the vocabulary and basis words the conventions document", () => {
     expect(Object.keys(COST_VOCABULARY).sort()).toEqual([
-      "bytes_code", "bytes_data", "cycles_per_frame", "cycles_per_line", "irq_slots", "lines_active", "zp_bytes",
+      "bytes_code", "bytes_data", "cycles_per_frame", "cycles_per_line", "irq_slots", "lines_active", "sprites_per_line", "zp_bytes",
     ]);
     expect([...COST_BASIS_WORDS]).toEqual(["measured-vice", "derived-listing", "arithmetic", "estimated"]);
   });

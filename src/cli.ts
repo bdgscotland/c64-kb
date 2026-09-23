@@ -238,9 +238,14 @@ program
   .command("timing-budget <technique>")
   .description("Compute per-scanline cycle budget for a technique")
   .option("--region <region>", "PAL or NTSC (case-insensitive, default: pal)", "pal")
-  .action(async (technique: string, opts: { region: string }) => {
+  .option("--sprites <n>", "sprites displayed on the line, 0-8 (default: the technique's Cost sprites_per_line)")
+  .action(async (technique: string, opts: { region: string; sprites?: string }) => {
     const { timingBudget } = await import("./tools/query.js");
-    const result = await timingBudget({ technique, region: opts.region });
+    const result = await timingBudget({
+      technique,
+      region: opts.region,
+      ...(opts.sprites !== undefined ? { sprites_per_line: Number(opts.sprites) } : {}),
+    });
     emit(result);
     process.exit(0);
   });

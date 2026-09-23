@@ -108,6 +108,9 @@ export const RecipeLookupSchema = z.object({
   output_format: z.string(),
   region: z.string(),
   source_doc: z.string(),
+  // The toolchain version the repo's gates built this recipe with, from the
+  // Tool node's version_verified (schema 24); absent when the page states none.
+  toolchain_version_verified: z.string().optional(),
   documentation: z.array(DocChunkSchema),
   // The page's Source listing, the fence the listing gate builds; absent
   // only when the page is not on disk beside the server.
@@ -144,6 +147,7 @@ export const TechniqueCostSchema = z.object({
   bytes_data: z.number().int().optional(),
   zp_bytes: z.number().int().optional(),
   irq_slots: z.number().int().optional(),
+  sprites_per_line: z.number().int().optional(),
   basis: CostBasisSchema,
 });
 export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
@@ -155,6 +159,7 @@ export const TechniqueLookupSchema = z.object({
   complexity: z.string(),
   chip: z.string().optional(),
   requires_region: z.string().optional(),
+  raster_band: z.string().optional(),
   uses_registers: z.array(z.object({ name: z.string(), address: z.string() })),
   uses_kernal: z.array(z.object({ name: z.string(), address: z.string() })),
   recipes: z.array(z.object({ name: z.string(), toolchain: z.string() })),
@@ -195,6 +200,7 @@ export const CompatibilityConflictSchema = z.object({
     "cpu_vs_irq",        // one needs every CPU cycle; the other takes interrupts mid-frame
     "sprite_set",        // one needs a constant sprite set; the other changes it mid-frame
     "kernal_banked_out", // one runs with the KERNAL ROM out; the other calls KERNAL routines
+    "serial_bus_busy",   // one owns the drive's serial bus while resident; the other does KERNAL disk I/O
     "prerequisite_conflict", // a hard rule fires between a technique and a REQUIRES prerequisite of another
     "shared_register",   // both touch the same register (soft)
     "shared_kernal",     // both call the same KERNAL routine (soft)
@@ -229,15 +235,28 @@ export const CompatibilityCoverageSchema = z.object({
   registers: z.number(),
   kernal_routines: z.number(),
   demands: z.array(z.string()),
+  // The page's **Raster band:** in canonical form ("45-250", "movable").
+  raster_band: z.string().optional(),
   known: z.boolean(),
   // Present when the technique was not in the input set but entered the
   // check through another technique's REQUIRES closure.
   implied_by: z.array(z.string()).optional(),
 });
 
+export const BandSeparatedSchema = z.object({
+  a: z.string(),
+  b: z.string(),
+  a_band: z.string(),
+  b_band: z.string(),
+  rules: z.array(z.string()), // the conflict kinds the bands cleared
+});
+
 export const CompatibilityCheckSchema = z.object({
   techniques: z.array(z.string()),
   conflicts: z.array(CompatibilityConflictSchema),
+  // Pairs a line-sharing rule would have caught, cleared because both pages
+  // state **Raster band:** line ranges that share no raster line (schema 24).
+  band_separated: z.array(BandSeparatedSchema),
   shared_infrastructure: z.array(SharedInfrastructureSchema),
   data_coverage: z.array(CompatibilityCoverageSchema),
   verdict: z.enum(["compatible", "warnings", "incompatible"]),
@@ -250,6 +269,12 @@ export const TimingBudgetSchema = z.object({
   cycles_per_frame: z.number(),
   badline_cycles_lost: z.number(),
   irq_overhead_cycles: z.number(),
+  // Sprite DMA (schema 24): the sprites assumed on the line, where that
+  // number came from, and the cycles their DMA takes (3 + 2 per sprite for
+  // sprites numbered without gaps, measured in VICE; see vic-ii-reference.md).
+  sprites_per_line: z.number(),
+  sprites_source: z.enum(["input", "technique", "none"]),
+  sprite_dma_cycles: z.number(),
   user_cycles_per_line_normal: z.number(),
   user_cycles_per_line_badline: z.number(),
   notes: z.array(z.string()),

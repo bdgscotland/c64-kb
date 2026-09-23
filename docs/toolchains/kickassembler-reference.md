@@ -4,6 +4,7 @@ tool_kind: assembler
 maintainer: Mads Nielsen (Camelot)
 license: Freeware (royalty-free for non-commercial; commercial use permitted)
 home_url: http://theweb.dk/KickAssembler/
+version_verified: "5.25"
 ---
 
 <!-- doc-type: toolchain-reference -->
