@@ -210,26 +210,28 @@ export const TechniquesForSchema = z.object({
   ),
 });
 
+const CONFLICT_KINDS = [
+  "region_mismatch", // one needs PAL, the other NTSC
+  "cpu_exclusive", // both need every CPU cycle on the lines they cover
+  "cpu_vs_irq", // one needs every CPU cycle; the other takes interrupts mid-frame
+  "sprite_set", // one needs a constant sprite set; the other changes it mid-frame
+  "kernal_banked_out", // one runs with the KERNAL ROM out; the other calls KERNAL routines
+  "serial_bus_busy", // one owns the drive's serial bus while resident; the other does KERNAL disk I/O
+  "prerequisite_conflict", // a rule fires between a technique and a REQUIRES prerequisite of another; underlying_kind names the rule
+  "shared_register", // both touch the same register (soft)
+  "shared_kernal", // both call the same KERNAL routine (soft)
+  // Resource claims (schema 25), from **Claims:** lines:
+  "unit_contention", // both own the same HardwareUnit (hard)
+  "zero_page_overlap", // both own zero-page bytes in common (hard; soft if either side relocates)
+  "unit_shared", // one owns a unit the other shares, or both share it (soft)
+  "unit_read_while_driven", // one owns a unit the other only reads (soft)
+  "init_order", // one uses a unit once at start-up that the other then owns (info)
+] as const;
+
 export const CompatibilityConflictSchema = z.object({
   a: z.string(),
   b: z.string(),
-  kind: z.enum([
-    "region_mismatch", // one needs PAL, the other NTSC
-    "cpu_exclusive", // both need every CPU cycle on the lines they cover
-    "cpu_vs_irq", // one needs every CPU cycle; the other takes interrupts mid-frame
-    "sprite_set", // one needs a constant sprite set; the other changes it mid-frame
-    "kernal_banked_out", // one runs with the KERNAL ROM out; the other calls KERNAL routines
-    "serial_bus_busy", // one owns the drive's serial bus while resident; the other does KERNAL disk I/O
-    "prerequisite_conflict", // a hard rule fires between a technique and a REQUIRES prerequisite of another
-    "shared_register", // both touch the same register (soft)
-    "shared_kernal", // both call the same KERNAL routine (soft)
-    // Resource claims (schema 25), from **Claims:** lines:
-    "unit_contention", // both own the same HardwareUnit (hard)
-    "zero_page_overlap", // both own zero-page bytes in common (hard; soft if either side relocates)
-    "unit_shared", // one owns a unit the other shares, or both share it (soft)
-    "unit_read_while_driven", // one owns a unit the other only reads (soft)
-    "init_order", // one uses a unit once at start-up that the other then owns (info)
-  ]),
+  kind: z.enum(CONFLICT_KINDS),
   // hard: cannot coexist as combined; the resolution says how to separate them.
   // soft: combinable with coordination.
   // info: combinable; the text says what order or protocol keeps it so. It
@@ -241,6 +243,10 @@ export const CompatibilityConflictSchema = z.object({
   // prerequisite_conflict only: the closure members the rule actually fired
   // between, when they differ from a and b (which name the input techniques).
   via: z.array(z.string()).optional(),
+  // prerequisite_conflict only: the rule that fired between them
+  // (unit_contention, cpu_vs_irq, ...), since the closure can carry any rule
+  // at any severity.
+  underlying_kind: z.enum(CONFLICT_KINDS).optional(),
 });
 
 export const SharedInfrastructureSchema = z.object({

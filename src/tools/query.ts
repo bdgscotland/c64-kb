@@ -23,14 +23,8 @@ import { getQdrant, getFalkor, getAnalytics } from "../context.ts";
 import { embed } from "../services/embeddings.ts";
 import { BM25Encoder, type SparseVector } from "../services/bm25.ts";
 import { config } from "../config.ts";
-import {
-  parseRasterBand,
-  rasterBandsOverlap,
-  zeroPageRangesFromCanonical,
-  formatZeroPageRanges,
-  type Claim,
-  type ClaimMode,
-} from "../graph/extract.ts";
+import { parseRasterBand, rasterBandsOverlap, type Claim, type ClaimMode } from "../graph/extract.ts";
+import { unitRules, absorbInto, type ClaimSide, type PairRelation } from "./claim-rules.ts";
 import fs from "fs";
 import path from "path";
 import type {
@@ -986,7 +980,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
      RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
     { name },
   );
-  const claims = (claimRows.data ?? []).map((r) => {
+  const claims = claimRows.data.map((r) => {
     const c = r as { unit: string; mode: ClaimMode; ranges: string | null; relocatable: boolean | null };
     return {
       unit: c.unit,
@@ -1345,7 +1339,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
        RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
       { name: tname },
     );
-    const claims: Claim[] = (claimRows.data ?? []).map((r) => {
+    const claims: Claim[] = claimRows.data.map((r) => {
       const c = r as { unit: string; mode: ClaimMode; ranges: string | null; relocatable: boolean | null };
       return {
         unit: c.unit,
@@ -1426,147 +1420,23 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       rules: [rule],
     });
   };
-  // Unit claims (schema 25). Rules over the CLAIMS edges of one pair. Between
-  // a technique and its own REQUIRES prerequisite the two ownership rules
-  // (unit_contention, zero_page_overlap) do not run: it holds the unit
-  // through the prerequisite by design (text_zoom's raster IRQ is the stable
-  // raster IRQ). The soft and info rules still do: sfx_engine_beside_music
-  // requires the player and must still be told to write after it.
-  const claimRules = (a_name: string, b_name: string): HardHit[] => {
-    const A = facts.get(a_name)!;
-    const B = facts.get(b_name)!;
-    const byKind = new Map<
-      string,
-      {
-        kind: ConflictKind;
-        severity: "hard" | "soft" | "info";
-        units: string[];
-        pairs: Array<[string, string]>;
-        relocatable: string[];
-        bothShare: boolean;
-      }
-    >();
-    const add = (
-      kind: ConflictKind,
-      severity: "hard" | "soft" | "info",
-      unit: string,
-      first: string,
-      second: string,
-      relocatable: string[] = [],
-      bothShare = false,
-    ) => {
-      const key = `${kind}|${severity}|${first}|${second}|${bothShare}`;
-      let e = byKind.get(key);
-      if (!e) byKind.set(key, (e = { kind, severity, units: [], pairs: [], relocatable: [], bothShare }));
-      e.units.push(unit);
-      e.pairs.push([first, second]);
-      for (const r of relocatable) if (!e.relocatable.includes(r)) e.relocatable.push(r);
-    };
-    for (const ca of A.claims) {
-      for (const cb of B.claims) {
-        if (ca.unit !== cb.unit) continue;
-        let unitLabel = ca.unit;
-        if (ca.unit === "zero_page") {
-          const bytes = zeroPageOverlap(ca.ranges ?? "", cb.ranges ?? "");
-          if (bytes.length === 0) continue;
-          unitLabel = `zero_page $${formatZeroPageRanges(bytes).replace(/,/g, ",$").replace(/-/g, "-$")}`;
-          if (ca.mode === "owns" && cb.mode === "owns") {
-            const reloc = [ca.relocatable ? a_name : null, cb.relocatable ? b_name : null].filter(
-              (x): x is string => x !== null,
-            );
-            add("zero_page_overlap", reloc.length > 0 ? "soft" : "hard", unitLabel, a_name, b_name, reloc);
-            continue;
-          }
-        }
-        const m = [ca.mode, cb.mode];
-        const has = (x: ClaimMode, y: ClaimMode) => (m[0] === x && m[1] === y) || (m[0] === y && m[1] === x);
-        // [first, second] orders the pair as the resolution text reads it.
-        const ordered = (firstMode: ClaimMode): [string, string] =>
-          ca.mode === firstMode ? [a_name, b_name] : [b_name, a_name];
-        if (has("owns", "owns")) add("unit_contention", "hard", unitLabel, a_name, b_name);
-        else if (has("owns", "shares")) add("unit_shared", "soft", unitLabel, ...ordered("owns"));
-        else if (has("shares", "shares")) add("unit_shared", "soft", unitLabel, a_name, b_name, [], true);
-        else if (has("owns", "reads")) add("unit_read_while_driven", "soft", unitLabel, ...ordered("owns"));
-        else if (has("init", "owns")) add("init_order", "info", unitLabel, ...ordered("init"));
-        else if (has("init", "shares")) add("init_order", "info", unitLabel, ...ordered("init"));
-      }
-    }
-    const out: HardHit[] = [];
-    for (const e of byKind.values()) {
-      const [first, second] = e.pairs[0];
-      const units = compressUnits(e.units);
-      const list = units.join(", ");
-      switch (e.kind) {
-        case "unit_contention": {
-          const irq = e.units.includes("vic_raster_irq");
-          out.push({
-            kind: e.kind,
-            severity: e.severity,
-            shared: units,
-            rationale: `Both ${first} and ${second} own ${list}: each writes or holds it every frame and expects no one else to.`,
-            resolution: irq
-              ? `There is one raster compare. Run both as handlers in one interrupt chain (irq_chain_table): one technique owns $D012 and the other's handler becomes a chain entry that shares it${e.units.length > 1 ? "; for the other units, give one technique different ones (another sprite range, another voice)" : ""}.`
-              : `Give one of them other units (another sprite range, another SID voice), or rewrite one to share the unit under the other's protocol.`,
-          });
-          break;
-        }
-        case "zero_page_overlap":
-          out.push({
-            kind: e.kind,
-            severity: e.severity,
-            shared: units,
-            rationale: `${first} and ${second} both own ${list}.${e.relocatable.length > 0 ? ` ${e.relocatable.join(" and ")} can be relocated, so this is soft.` : ""}`,
-            resolution:
-              e.relocatable.length > 0
-                ? `Rebuild ${e.relocatable[0]} with its zero-page base moved off these bytes (its page names the build option).`
-                : `Move one side's zero-page variables to bytes the other does not use.`,
-          });
-          break;
-        case "unit_shared":
-          out.push({
-            kind: e.kind,
-            severity: e.severity,
-            shared: units,
-            rationale: e.bothShare
-              ? `${first} and ${second} both write ${list} under an owner's protocol.`
-              : `${first} owns ${list}; ${second} writes it under ${first}'s protocol.`,
-            resolution: e.bothShare
-              ? `Both must follow the owner's protocol, and in an order the owner sets: one after the other in the frame, or as successive entries in one interrupt chain.`
-              : `${second} must follow ${first}'s protocol: write after ${first}'s write in the frame, or run inside ${first}'s interrupt chain.`,
-          });
-          break;
-        case "unit_read_while_driven":
-          out.push({
-            kind: e.kind,
-            severity: e.severity,
-            shared: units,
-            rationale: `${second} reads ${list}, which ${first} drives; what ${second} reads depends on ${first}'s writes.`,
-            resolution: e.units.includes("cia1_port_a")
-              ? `Read where ${first} has left the port in a known state: after a keyboard scan, restore $DC00 before reading the joystick.`
-              : `Read at a point in the frame where ${first} has left the unit in a known state.`,
-          });
-          break;
-        case "init_order":
-          out.push({
-            kind: e.kind,
-            severity: e.severity,
-            shared: units,
-            rationale: `${first} uses ${list} once at start-up; ${second} then uses it every frame.`,
-            resolution: `Run ${first}'s use before ${second} starts.`,
-          });
-          break;
-      }
-    }
-    return out;
+  // Unit claims (schema 25): the rules live in claim-rules.ts. Each side is
+  // a technique's CLAIMS; `rel` says which one requires the other, and the
+  // absorb sides say which input an implied prerequisite is seen from.
+  const sideOf = (n: string): ClaimSide => ({ name: n, claims: facts.get(n)?.claims ?? [] });
+  const unitHits = (
+    a_name: string,
+    b_name: string,
+    rel: PairRelation,
+    absorb: { a?: string; b?: string } = {},
+  ): HardHit[] => {
+    const a = absorb.a ? absorbInto(sideOf(a_name), sideOf(absorb.a)) : sideOf(a_name);
+    const b = absorb.b ? absorbInto(sideOf(b_name), sideOf(absorb.b)) : sideOf(b_name);
+    return unitRules(a, b, rel);
   };
 
-  const hardRules = (a_name: string, b_name: string, opts: { related?: boolean } = {}): HardHit[] => {
+  const hardRules = (a_name: string, b_name: string): HardHit[] => {
     const hits: HardHit[] = [];
-    hits.push(
-      ...claimRules(a_name, b_name).filter(
-        (h) => !opts.related || (h.kind !== "unit_contention" && h.kind !== "zero_page_overlap"),
-      ),
-    );
     const A = facts.get(a_name)!;
     const B = facts.get(b_name)!;
     const hard = (kind: ConflictKind, shared: string[], rationale: string, resolution: string) =>
@@ -1695,9 +1565,12 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
       const b_name = techniques[j];
 
       // A named technique and its own prerequisite hold the same units by
-      // design; the ownership rules do not run between them.
-      const related = closureOf(a_name).includes(b_name) || closureOf(b_name).includes(a_name);
-      for (const h of hardRules(a_name, b_name, { related })) {
+      // design; unitRules is told which one requires the other.
+      const rel = {
+        aRequiresB: closureOf(a_name).includes(b_name),
+        bRequiresA: closureOf(b_name).includes(a_name),
+      };
+      for (const h of [...unitHits(a_name, b_name, rel), ...hardRules(a_name, b_name)]) {
         conflicts.push({
           a: a_name,
           b: b_name,
@@ -1806,11 +1679,16 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
         const chainText = [u !== x ? describeChain(x, u) : null, v !== y ? describeChain(y, v) : null]
           .filter((s): s is string => s !== null)
           .join("; ");
-        for (const h of hardRules(u, v)) {
+        // An implied prerequisite's claims on units its input holds are the
+        // input's business (absorbInto); the input's own pair reports them.
+        const absorb = { ...(u !== x ? { a: x } : {}), ...(v !== y ? { b: y } : {}) };
+        const noRel = { aRequiresB: false, bRequiresA: false };
+        for (const h of [...unitHits(u, v, noRel, absorb), ...hardRules(u, v)]) {
           conflicts.push({
             a: x,
             b: y,
             kind: "prerequisite_conflict",
+            underlying_kind: h.kind,
             severity: h.severity ?? "hard",
             shared: h.shared,
             rationale: `${chainText}. ${h.rationale}`,
@@ -1964,9 +1842,10 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     out += `Unit claims are stated for ${statedCount} of ${inputs.length} techniques`;
     const notRuledOut = [...unknownInputs, ...unknownPrereqs.map((p) => `${p} (prerequisite)`)];
     out +=
-      notRuledOut.length > 0
-        ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.\n\n`
-        : `.\n\n`;
+      notRuledOut.length > 0 ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.` : `.`;
+    // Technique claims only: the vector and zero-page bytes a recipe picks
+    // are the recipe's claims, which the graph does not hold yet.
+    out += ` The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).\n\n`;
   }
   if (conflicts.length === 0) {
     out +=
@@ -1977,6 +1856,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     for (const c of conflicts) {
       out += `## ${c.kind} (${c.severity}): ${c.a} × ${c.b}\n`;
       if (c.via && c.via.length > 0) out += `**Via prerequisite(s):** ${c.via.join(", ")}\n`;
+      if (c.underlying_kind) out += `**Rule:** ${c.underlying_kind}\n`;
       out += `**Shared:** ${c.shared.join(", ")}\n`;
       out += `${c.rationale}\n`;
       if (c.resolution) out += `**Resolution:** ${c.resolution}\n`;
@@ -2013,38 +1893,6 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     }
   }
   return { structured, text: out };
-}
-
-// Bytes two canonical zero-page range strings ("02-0D,24-2F") share.
-function zeroPageOverlap(a: string, b: string): Array<[number, number]> {
-  const rb = zeroPageRangesFromCanonical(b);
-  const out: Array<[number, number]> = [];
-  for (const [a0, a1] of zeroPageRangesFromCanonical(a)) {
-    for (const [b0, b1] of rb) {
-      const lo = Math.max(a0, b0);
-      const hi = Math.min(a1, b1);
-      if (lo <= hi) out.push([lo, hi]);
-    }
-  }
-  return out.sort((x, y) => x[0] - y[0]);
-}
-
-// sprite_0, sprite_1, ... sprite_7 -> sprite_0-7, for the conflict text.
-function compressUnits(units: string[]): string[] {
-  const out: string[] = [];
-  const sorted = [...new Set(units)].sort((x, y) => x.localeCompare(y, "en", { numeric: true }));
-  for (let i = 0; i < sorted.length; i++) {
-    const m = sorted[i].match(/^(.*_)(\d+)$/);
-    if (!m) {
-      out.push(sorted[i]);
-      continue;
-    }
-    let j = i;
-    while (j + 1 < sorted.length && sorted[j + 1] === `${m[1]}${Number(m[2]) + (j + 1 - i)}`) j++;
-    out.push(j > i ? `${sorted[i]}-${Number(m[2]) + (j - i)}` : sorted[i]);
-    i = j;
-  }
-  return out;
 }
 
 // KERNAL routines that talk on the serial bus (serial_bus_exclusive rule).

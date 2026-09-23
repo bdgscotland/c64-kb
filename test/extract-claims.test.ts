@@ -34,7 +34,7 @@ Body text.
 type Ents = ReturnType<typeof extractGraphEntities>;
 function techOf(ents: Ents) {
   const t = ents.find((e) => e.type === "technique");
-  if (!t || t.type !== "technique") throw new Error("no technique entity");
+  if (!t) throw new Error("no technique entity");
   return t;
 }
 function claimsOf(ents: Ents) {
@@ -174,7 +174,7 @@ describe("extractGraphEntities - technique Claims lines", () => {
   });
 
   it("refuses a Claims line without a basis, or with a basis outside the set, and leaves it unknown", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     for (const meta of [
       "**Claims:** sid_voice_2 (shares)",
       "**Claims:** sid_voice_2 (shares)\n**Claims basis:** arithmetic",
@@ -188,7 +188,7 @@ describe("extractGraphEntities - technique Claims lines", () => {
   });
 
   it("refuses the whole line when one item is bad, with a warning naming it", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const ents = extractGraphEntities(
       doc("**Claims:** sid_voice_1, sid_voice_9\n**Claims basis:** derived-listing"),
       "techniques/music-sid.md",

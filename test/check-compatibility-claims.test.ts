@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
 import { checkCompatibility, techniqueLookup, techniquesFor } from "../src/tools/query.ts";
-import { HARDWARE_UNITS, parseClaims, type Claim } from "../src/graph/extract.ts";
+import { HARDWARE_UNITS, parseClaims } from "../src/graph/extract.ts";
 
 // HardwareUnit seeds, CLAIMS edges and the unit rules in checkCompatibility
 // (schema 25). The graph name comes from vitest.config.ts (c64_test).
@@ -10,7 +10,7 @@ describe("resource claims", () => {
   const claim = async (tech: string, line: string) => {
     const parsed = parseClaims(line);
     if ("error" in parsed) throw new Error(parsed.error);
-    for (const c of parsed as Claim[]) {
+    for (const c of parsed) {
       await f.linkClaims({ owner: tech, ownerKind: "Technique", ...c, basis: "derived-listing" });
     }
   };
@@ -44,6 +44,14 @@ describe("resource claims", () => {
     await tech("unknown_claims", "effect");
     await tech("stable_raster_irq", "raster", "stated");
     await tech("uses_stable", "raster", "stated");
+    await tech("raster_entry", "raster", "stated");
+    await tech("raster_entry_2", "raster", "stated");
+    await tech("raster_effect", "raster", "stated");
+    await tech("irq_chain_table", "raster", "stated");
+    await tech("vic_bank_select", "banking", "stated");
+    await tech("tick_lib", "cpu", "stated");
+    await tech("uses_tick", "cpu", "none");
+    await tech("other_timer", "cpu", "stated");
     await claim("sid_play_routine_pattern", "sid_voice_1-3 (owns), sid_filter_volume (owns)");
     await claim("second_player", "sid_voice_1-3 (owns), sid_filter_volume (owns)");
     await claim("sfx_engine_beside_music", "sid_voice_2 (shares)");
@@ -61,6 +69,16 @@ describe("resource claims", () => {
     await claim("stable_raster_irq", "vic_raster_irq (owns)");
     await claim("uses_stable", "vic_raster_irq (owns)");
     await f.linkTechniqueRequires("uses_stable", "stable_raster_irq");
+    // A way into a handler shares the raster IRQ; the effect run from it owns it.
+    await claim("raster_entry", "vic_raster_irq (shares)");
+    await claim("raster_entry_2", "vic_raster_irq (shares)");
+    await claim("raster_effect", "vic_raster_irq (owns)");
+    await f.linkTechniqueRequires("raster_effect", "raster_entry");
+    await claim("irq_chain_table", "vic_raster_irq (owns)");
+    await claim("vic_bank_select", "cia2_vic_bank (owns)");
+    await claim("tick_lib", "cia2_timer_a (owns)");
+    await claim("other_timer", "cia2_timer_a (owns)");
+    await f.linkTechniqueRequires("uses_tick", "tick_lib");
     // As on the real page: the SFX engine requires the player it runs beside.
     await f.linkTechniqueRequires("sfx_engine_beside_music", "sid_play_routine_pattern");
   });
@@ -68,19 +86,19 @@ describe("resource claims", () => {
 
   it("seeds every HardwareUnit, each on its chip", async () => {
     const rows = await f.roQuery(`MATCH (h:HardwareUnit) RETURN h.name AS name, h.kind AS kind`);
-    expect((rows.data ?? []).length).toBe(HARDWARE_UNITS.length);
+    expect(rows.data.length).toBe(HARDWARE_UNITS.length);
     const onChip = await f.roQuery(
       `MATCH (h:HardwareUnit {name: 'sid_voice_2'})-[:BELONGS_TO]->(c:Chip) RETURN c.name AS chip`,
     );
-    expect((onChip.data?.[0] as { chip: string }).chip).toBe("SID");
+    expect((onChip.data[0] as { chip: string }).chip).toBe("SID");
     const noChip = await f.roQuery(
       `MATCH (h:HardwareUnit {name: 'expansion_io1'})-[:BELONGS_TO]->(c:Chip) RETURN c.name AS chip`,
     );
-    expect(noChip.data ?? []).toEqual([]);
+    expect(noChip.data).toEqual([]);
   });
 
   it("linkClaims matches both ends and never creates a unit or a technique", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(
       await f.linkClaims({
         owner: "sfx_engine_beside_music",
@@ -100,9 +118,9 @@ describe("resource claims", () => {
       }),
     ).toBe(false);
     const stray = await f.roQuery(`MATCH (h:HardwareUnit {name: 'sid_voice_9'}) RETURN h`);
-    expect(stray.data ?? []).toEqual([]);
+    expect(stray.data).toEqual([]);
     const ghost = await f.roQuery(`MATCH (t:Technique {name: 'no_such_technique'}) RETURN t`);
-    expect(ghost.data ?? []).toEqual([]);
+    expect(ghost.data).toEqual([]);
     expect(warn).toHaveBeenCalled();
   });
 
@@ -113,7 +131,7 @@ describe("resource claims", () => {
     const rows = await f.roQuery(
       `MATCH (:Technique {name: 'rewritten'})-[c:CLAIMS]->() RETURN count(c) AS n`,
     );
-    expect(Number((rows.data?.[0] as { n: number }).n)).toBe(0);
+    expect((rows.data[0] as { n: number }).n).toBe(0);
   });
 
   it("two players owning the same voices: unit_contention, hard", async () => {
@@ -178,13 +196,53 @@ describe("resource claims", () => {
     expect(r.conflicts.filter((x) => x.kind === "unit_contention")).toEqual([]);
   });
 
-  it("a prerequisite's claim conflicts with another input through the closure", async () => {
-    // uses_stable requires stable_raster_irq; scroll_panel_split owns the raster IRQ too.
-    const r = (await checkCompatibility(["uses_stable", "scroll_panel_split"])).structured;
-    expect(r.conflicts.some((x) => x.kind === "unit_contention")).toBe(true);
-    const p = r.conflicts.find((x) => x.kind === "prerequisite_conflict");
+  it("a prerequisite's claim conflicts with another input through the closure, and says which rule", async () => {
+    // uses_tick requires tick_lib, which owns CIA2 timer A; other_timer owns it too.
+    const res = await checkCompatibility(["uses_tick", "other_timer"]);
+    const p = res.structured.conflicts.find((x) => x.kind === "prerequisite_conflict");
     expect(p?.severity).toBe("hard");
-    expect(p?.via).toEqual(["stable_raster_irq"]);
+    expect(p?.underlying_kind).toBe("unit_contention");
+    expect(p?.via).toEqual(["tick_lib"]);
+    expect(res.text).toMatch(/\*\*Rule:\*\* unit_contention/);
+  });
+
+  it("a prerequisite's use of a unit its input holds is the input's: reported once, directly", async () => {
+    // uses_stable owns the raster IRQ and requires stable_raster_irq, which owns it too.
+    const r = (await checkCompatibility(["uses_stable", "scroll_panel_split"])).structured;
+    expect(r.conflicts.filter((x) => x.kind === "unit_contention").length).toBe(1);
+    expect(r.conflicts.filter((x) => x.kind === "prerequisite_conflict")).toEqual([]);
+  });
+
+  it("an effect and the entry method it requires: no unit rule between them", async () => {
+    const r = (await checkCompatibility(["raster_effect", "raster_entry"])).structured;
+    expect(r.conflicts).toEqual([]);
+    expect(r.verdict).toBe("compatible");
+  });
+
+  it("an entry method beside an unrelated raster effect runs inside that effect's handler", async () => {
+    const r = (await checkCompatibility(["scroll_panel_split", "raster_entry"])).structured;
+    const c = r.conflicts.find((x) => x.kind === "unit_shared");
+    expect(c?.severity).toBe("soft");
+    expect(c?.resolution).toMatch(/Run raster_entry as the entry of scroll_panel_split's handler/);
+    const two = (await checkCompatibility(["raster_entry", "raster_entry_2"])).structured;
+    expect(two.conflicts.find((x) => x.kind === "unit_shared")?.resolution).toMatch(/program's own chain/);
+  });
+
+  it("irq_chain_table is the host of a raster effect, not a rival to hand the IRQ to", async () => {
+    const r = (await checkCompatibility(["scroll_panel_split", "irq_chain_table"])).structured;
+    const c = r.conflicts.find((x) => x.kind === "unit_contention");
+    expect(c?.severity).toBe("hard");
+    expect(c?.resolution).toMatch(/irq_chain_table is the host: rewrite scroll_panel_split's raster handler/);
+  });
+
+  it("a resident loader beside a VIC bank owner: the bank owner must not write $DD00 raw", async () => {
+    const r = (await checkCompatibility(["vic_bank_select", "krill_loader_integration"])).structured;
+    const c = r.conflicts.find((x) => x.kind === "unit_shared");
+    expect(c?.shared).toEqual(["cia2_vic_bank"]);
+    expect(c?.resolution).toMatch(
+      /vic_bank_select must not write \$DD00 while krill_loader_integration is resident/,
+    );
+    expect(c?.resolution).not.toMatch(/krill_loader_integration must follow/);
   });
 
   it("unknown claims are never read as none: coverage and text say so", async () => {
@@ -200,6 +258,7 @@ describe("resource claims", () => {
     );
     const all = await checkCompatibility(["pure_maths", "sfx_engine_beside_music"]);
     expect(all.text).toMatch(/Unit claims are stated for 2 of 2 techniques\./);
+    expect(all.text).toMatch(/interrupt vectors a recipe chooses are not checked yet \(issue #22, step 8\)/);
   });
 
   it("technique lookup returns claims and says unknown when the page states none", async () => {

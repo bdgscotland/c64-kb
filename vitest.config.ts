@@ -8,6 +8,7 @@ const UNIT = [
   "test/bm25.test.ts",
   "test/briefing-budget.test.ts",
   "test/chunker.test.ts",
+  "test/claim-rules.test.ts",
   "test/config.test.ts",
   "test/extract*.test.ts",
   "test/feedback.test.ts",

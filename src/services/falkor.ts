@@ -205,12 +205,12 @@ export class FalkorService {
          ON MATCH SET h += $props, h.updated_at = timestamp()`,
         {
           params: { name: u.name, props: { kind: u.kind, addresses: u.addresses, chip: u.chip ?? "" } },
-        } as Parameters<typeof g.query>[1],
+        },
       );
       if (u.chip) {
         await g.query(
           `MATCH (h:HardwareUnit {name: $name}) MATCH (c:Chip {name: $chip}) MERGE (h)-[:BELONGS_TO]->(c)`,
-          { params: { name: u.name, chip: u.chip } } as Parameters<typeof g.query>[1],
+          { params: { name: u.name, chip: u.chip } },
         );
       }
     }
@@ -662,7 +662,7 @@ export class FalkorService {
     // the page stopped making does not outlive it (pass 2 re-adds the rest).
     await g.query(`MATCH (t:Technique {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`, {
       params: { name: t.name },
-    } as Parameters<typeof g.query>[1]);
+    });
   }
 
   /**
@@ -683,7 +683,7 @@ export class FalkorService {
     const g = this.graph();
     const ends = await g.roQuery(
       `MATCH (t:${c.ownerKind} {name: $owner}) MATCH (h:HardwareUnit {name: $unit}) RETURN 1`,
-      { params: { owner: c.owner, unit: c.unit } } as Parameters<typeof g.roQuery>[1],
+      { params: { owner: c.owner, unit: c.unit } },
     );
     if ((ends.data?.length ?? 0) === 0) {
       console.warn(
@@ -705,7 +705,7 @@ export class FalkorService {
           relocatable: c.relocatable === true,
           basis: c.basis,
         },
-      } as Parameters<typeof g.query>[1],
+      },
     );
     return true;
   }

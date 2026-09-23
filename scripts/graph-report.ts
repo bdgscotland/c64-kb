@@ -98,7 +98,7 @@ const report = {
   pitfalls_without_technique_trigger: pitNoTech.map((r) => String(r.name)),
   claims: {
     techniques: Object.fromEntries(claimsStated.map((r) => [String(r.s), n(r.c)])),
-    units_claimed: unitsClaimed.filter((r) => n(r.c) > 0).map((r) => `${r.name}:${n(r.c)}`),
+    units_claimed: unitsClaimed.filter((r) => n(r.c) > 0).map((r) => `${String(r.name)}:${n(r.c)}`),
     units_unclaimed: unitsClaimed.filter((r) => n(r.c) === 0).map((r) => String(r.name)),
   },
   archetypes: arch.map((r) => ({
