@@ -1160,3 +1160,133 @@ of six cells is 234, and a seventh cell would allow only 33 columns.
 ### Recipes
 
 - `recipes/kickassembler/dycp-scroller.md`
+
+---
+
+## eight_way_scroll_double_buffer — Eight-way tile scroll over two screen matrices
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D012, D016, D018
+**Uses kernal:** (none)
+**Requires:** screen_double_buffer_d018, soft_scroll_h, soft_scroll_v
+**Cost:** cycles_per_frame=13152
+**Cost basis:** measured-vice
+
+### Why
+
+`soft_scroll_h` and `soft_scroll_v` together move the display by up to
+seven pixels in each axis. Past that the character grid has to move, and
+in eight directions that means the whole matrix, not an edge: a diagonal
+step changes every cell's contents, so the column shift that serves
+`char_scroll_buffer_h` has nothing to shift into.
+
+A full 1,000-byte matrix rewrite does not fit the vertical blank on
+either model, and written into the live matrix it tears: the beam crosses
+the rewrite and shows the top of the old world above the bottom of the
+new. Two matrices in the same VIC bank solve it. The redraw goes into the
+one that is not on display, over as many fields as it needs, and the
+`$D018` VM nibble swaps them in the blank when it is finished.
+
+### How
+
+1. **Camera in world pixels.** Tile origin is `camx >> 3` and `camy >> 3`.
+   XSCROLL moves the display right, so a rightward camera needs
+   `7 - (camx & 7)` in `$D016` bits 0 to 2 and `7 - (camy & 7)` in `$D011`
+   bits 0 to 2. Write both registers whole from a shadow rather than
+   read-modify-write, or the store takes CSEL and MCM with it
+   (`d016_unmasked_rmw_clobbers_csel_mcm`).
+2. **Both windows narrow.** RSEL 0 and CSEL 0 hide the partial row and
+   column at each edge, so a 40 x 25 matrix covers the display at every
+   fine scroll value.
+3. **Draw for the origin after next.** The spare matrix cannot be drawn
+   for the origin the camera has now, because the camera moves while it is
+   being drawn. Work out which axis crosses a tile boundary first, from
+   `8 - (cam & 7)` when it is increasing and `(cam & 7) + 1` when it is
+   decreasing, and draw for the origin that crossing will produce. On a
+   diagonal the axes cross on different fields and one spare matrix cannot
+   serve two origins, so only the nearer crossing is targeted.
+4. **Flip on a match, never on a hope.** The flip is taken only if the
+   spare matrix already holds exactly the origin wanted. Count the
+   refusals; a non-zero count is the scroll stuttering.
+5. **Colour RAM in four calls.** Colour RAM is not paged. Both halves are
+   written in `irqColB` at raster 4, at most `BAND_MAX` rows per call.
+   After a flip, the first top-half call uses `BAND_FIRST` rows (fewer
+   than `BAND_MAX`) so it finishes before the first top rows' badlines even
+   when `irqColB` starts late on NTSC. Four calls cover all 25 rows over
+   four fields, producing three displayed fields of stale colour per
+   crossing before all rows are updated.
+6. **Cap every band of the redraw.** Spread the matrix over the fields
+   available, and put a ceiling on every field, not only the ones doing
+   colour work.
+
+### Why it works
+
+The VIC reads the matrix at the address the VM nibble names, on the
+badline of each character row. Changing that nibble between fields
+changes which 1,000 bytes the next field reads, and nothing else: the
+fine scroll, the charset base and the bank are untouched. So a matrix
+drawn over several fields is invisible until the field it first appears
+in, and appears whole.
+
+Sub-tile and whole-tile motion are the same motion split at the eight
+pixel boundary. `camx` is the only state; the fine scroll is its low three
+bits inverted and the origin its high bits, so they can never disagree.
+
+Colour RAM is the part that cannot be double buffered, and it is why the
+technique is a raster problem rather than a blank-interval one. All 25
+rows are written in four calls of `irqColB`, which fires at raster 4 each
+field. The first call is limited to `BAND_FIRST` rows so it finishes
+before row 6's badline, which is what the verdict checks; rows 0 to 4 can
+still show old colour for one field on NTSC when `irqColB` starts late.
+The matrix appears whole on the flip field; the colour
+takes three more displayed fields to catch up, producing a transient
+mismatch of about 60 ms PAL and 50 ms NTSC per crossing.
+
+### Variations
+
+- **AGSP.** Rewriting `$D011` and `$D016` per raster line, and the VM
+  nibble mid-frame, gives a hardware-scrolled playfield without any matrix
+  redraw at all, at the price of a per-line interrupt and a much harder
+  stability problem. It is the standard answer when the whole screen
+  scrolls and nothing else needs the CPU.
+- **A panel that does not scroll.** A world of 25 rows plus a status area
+  wants the split raster to become a mode change rather than a colour
+  deadline; see `scroll_panel_split`.
+- **Colour in one page.** If the world is one colour per screen, or the
+  colour changes only on a flip that also changes the palette, the two
+  halves collapse to nothing and the budget roughly halves.
+- **Smaller worlds.** A world of 40 x 25 tiles or less needs no redraw at
+  all, only the fine scroll and a wrap.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 over runs of 20,946,000 cycles on each model,
+with CIA 1 timer B read on entry to and exit from each of the three
+handlers and the per-field totals compared, so badline stalls are
+included:
+
+| Model | Field | Worst field measured | Headroom |
+|---|---|---|---|
+| PAL | 19,656 | 13,111 | 6,545 |
+| NTSC | 17,095 | 13,152 | 3,943 |
+
+The worst field is the one that writes seven colour rows in `irqColB` and
+seven matrix rows in `irqPrep`. A copy loop of `lda abs,x` / `sta abs,x`
+/ `dex` / `bpl` is 14 cycles a byte in instruction terms and measures
+17.6 to 17.8 with badlines (measured-vice, 25-row draw, 1,000 bytes, CIA
+timer), so a 40-byte row costs around 710 cycles.
+
+`BAND_MAX = 7` keeps every call within the available window: the prep
+handler has 92 rasters from 152 + YSCROLL to 251, and the colour handler
+has from raster 4 to 152 + YSCROLL. The first colour call uses
+`BAND_FIRST = 5` rows instead of `BAND_MAX` to fit within NTSC's late
+start. At half speed (one pixel every two fields), tile crossings are
+sixteen fields apart on straight legs. The requirement is five fields: four
+matrix preps plus four colour calls finish in the same four-field span, and
+a flip is possible from the fifth field. The six-field minimum gap leaves
+one field of slack.
+
+### Recipes
+
+- `recipes/kickassembler/eight-way-scroll.md`

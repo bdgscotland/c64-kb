@@ -762,3 +762,118 @@ interrupts off and the display on, on PAL (NTSC in brackets):
 - https://www.ifarchive.org/indexes/if-archive/scott-adams/ (the IF
   Archive's Scott Adams directory: interpreters and tools). The byte
   format of the original data files was not read.
+
+## text_window_and_menu — A text-mode window with save-under, a PETSCII box and a table-driven menu
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00
+**Uses kernal:** GETIN
+**Requires:** petscii_screen_code_conversion, joystick_edge_detect, text_input_line
+**Cost:** cycles_per_frame=833
+**Cost basis:** measured-vice
+
+### Why
+
+A pause menu, an options screen or an in-game dialogue needs a panel
+that appears over the playfield and disappears without a trace. In text
+mode that is cheap: the playfield is 1,000 screen codes and 1,000 colour
+nibbles, a panel covers a rectangle of them, and the rectangle can be
+copied out, drawn over and copied back. No bitmap, no second screen, no
+redraw of the game state on close. The joystick and the cursor keys
+should both drive it, because a menu that only answers to one of them
+strands a player holding the other.
+
+### How
+
+1. **Size the save-under by the window.** Two buffers of `w * h` bytes,
+   one for screen codes and one for colour nibbles. The open copies each
+   window row out of screen RAM and colour RAM before it writes the row;
+   the close copies them back with the same strides (40 on the screen
+   side, `w` on the buffer side). A window of 20 by 9 cells needs 360
+   bytes; the whole screen would need 2,000.
+2. **Draw the box with the PETSCII line-drawing glyphs, as screen
+   codes.** The rounded corners are PETSCII `$B0` (top left), `$AE` (top
+   right), `$AD` (bottom left) and `$BD` (bottom right); the horizontal
+   bar is `$C0` and the vertical bar `$DD`. Stored in screen RAM they are
+   `$70`, `$6E`, `$6D`, `$7D`, `$40` and `$5D`: the `$A0` to `$BF`
+   corners map down by `$40` and the `$C0` to `$DF` bars map down by
+   `$80` (`petscii_screen_code_conversion` above). Clear the interior to `$20`
+   and set its colour in the same pass as the save.
+3. **Keep the menu in a table.** One row per item: a label as screen
+   codes and a handler function pointer. The draw loop prints the
+   labels; the pick calls `menu[cursor].handler()`. Adding an item is
+   one row and one function, and the same loop serves every menu in the
+   game with a different table.
+4. **Move the highlight in colour RAM.** The selected row's inner cells
+   take the highlight colour, the row it left takes the ink colour. The
+   screen codes do not change, so nothing extra has to be restored.
+   Reverse video (bit 7 of the screen code) works too and costs a
+   second write per cell.
+5. **Fold both input devices into one event byte.** Read the port
+   through `joystick_edge_detect` so that a held direction is one event,
+   then fetch one key with GETIN as `text_input_line` does and translate
+   it into the same bits: PETSCII `$11` is cursor down, `$91` cursor up,
+   and RETURN arrives as `$0D` from the KERNAL or `$0A` through Oscar64's
+   `getchx()`. The move and pick code reads the event byte and never
+   asks which device it came from.
+6. **Close by copying the buffers back.** Then hand control to the
+   handler's result: resume, restart, a nested window.
+
+### Why it works
+
+Screen RAM and colour RAM are plain memory to the CPU, so a rectangle
+of them is a two-dimensional copy with nothing to synchronise; the VIC
+draws whatever is there on its next pass. Colour RAM is four bits wide,
+so the save-under buffer holds whatever the read returns, the VIC uses
+only the low nibble when the byte goes back, and the compare that
+checks a restore masks the upper four bits, which are not stored.
+The KERNAL's keyboard queue keeps working during the menu because the
+jiffy IRQ is left on; only the timed sections in the recipe disable
+it, each for its own length, and they time on CIA 2 so the jiffy clock
+on CIA 1 timer A keeps running.
+
+### Variations
+
+- **A menu bar.** The top screen row holds the titles side by side;
+  left and right move the highlight along the row and down opens a
+  window under the selected title, whose table is that title's
+  drop-down. The bar itself is a window one row high with its own
+  save-under. Not measured here.
+- **A list longer than the window.** Keep a `first` index as well as
+  `cursor`; when the cursor would leave the visible rows, move `first`
+  and redraw the labels from the table. The save-under is unchanged
+  because the window's size is unchanged. Not measured here.
+- **Nested windows.** Push each window's save-under on a stack and pop
+  it on close; windows close in the reverse order they opened, so the
+  cells under a later window are restored before the earlier window
+  restores its own. A stack of two or three fixed-size buffers is
+  enough for a game.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA 2 timer A, interrupts disabled,
+timing started after a wait for raster line 250, for a 20 by 9 window
+of 180 cells (`recipes/oscar64/text-window-menu.md`):
+
+- step, 833 cycles on both models: the worst frame of the menu loop,
+  the port read, one GETIN and the 36 colour writes of a move. It
+  starts at line 250 and ends in the border, so no badline is in it.
+  This is the Cost line, because it is the work the technique does on
+  every frame the window is open. With the real port read instead of
+  the script it is 864.
+- open, PAL 14,916 cycles, NTSC 15,175: the save, the clear, the
+  frame, a title, five labels and the highlight. The last half of it
+  runs in the display area, so about fifteen badline stalls are inside
+  the PAL figure (arithmetic); the CPU work alone is about 14,300, not
+  measured separately.
+- close, PAL 5,759 cycles, NTSC 5,931: 180 cells back to screen and
+  colour RAM, 32 cycles a cell, with no badline inside the PAL figure.
+
+The open and the close each run once per window, outside the frame
+loop, so they stay out of the Cost line; a plan that opens a window
+mid-game budgets one frame with the open in it.
+
+### Recipes
+
+- `recipes/oscar64/text-window-menu.md` — a pause window over a tile background, opened and closed with a byte-for-byte compare of the whole screen, a five-item table-driven menu driven by a joystick script (down, down, fire) and once by the cursor keys through the KERNAL queue, open, each step and close timed on CIA 2, verdict at `$02FF`, PAL and NTSC

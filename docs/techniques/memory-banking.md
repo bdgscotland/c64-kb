@@ -1251,3 +1251,199 @@ fit a raster window should be timed in that window.
 - codebase64, "REU programming" (Richard Hable, Marko Mäkelä), register
   bits, transfer speed, `$FF00` use, detection and model sizes:
   https://codebase64.net/doku.php?id=base:reu_programming
+
+## pucrunch_decruncher — Pucrunch: a small forward decruncher in the zero page, stack and input buffer
+
+**Complexity:** low
+**Region:** both
+**Uses kernal:** (none)
+**Cost:** bytes_code=245, zp_bytes=11
+**Cost basis:** derived-listing
+
+The Cost line is the default C64 decruncher's footprint as pucrunch prints
+it after a crunch (`$2d/$2e`, `$f7-$1b6` and `$200-$234`: 192 plus 53
+bytes of decruncher, and eleven bytes of zero page, nine of them `$F7` to
+`$FF` and two more at `$2D`/`$2E`, which the stub rewrites as BASIC's
+end-of-program pointer before it decrunches). The `-ffast` variant
+reports 268 bytes and the `-fshort` variant 225, and `-fshort` widens the
+low pair to `$2D` to `$30`. Decrunch time is in the cycle budget below; it
+is a one-off cost at start, so it is not on the line.
+
+### Why
+
+Pucrunch is Pasi 'Albert' Ojala's LZ77 plus RLE cruncher, first published
+in 1997. The compressor is a single C file (`pucrunch.c` with its
+generated `pucrunch.h`) that builds with `cc` on any host; the source's
+version string reads 1.14, dated 22 November 2008. The author's page says
+that the compressor has been under the GNU LGPL since December 2005, and
+that the decompression code is under the wxWindows Library Licence, which
+in short lets the binary decruncher travel with the crunched data. That
+makes it one of the few crunchers whose licence a shipped game does not
+have to think about. The decruncher is small, sits in memory the KERNAL
+does not need at start-up, and expands forwards, so a file crunched with
+it can start as low as `$0258` and reach `$FFFF`. Exomizer is smaller on
+output and, on the two inputs measured here, faster to decrunch as well;
+the case for pucrunch is the licence, the C64-side footprint and the
+one-file build, not the ratio.
+
+Everything below marked "measured" was run on 2026-09-23 with pucrunch
+1.14 built here (`cc -O2 -o pucrunch pucrunch.c -lm`, Apple clang 21,
+macOS arm64; the `.h` must sit beside the `.c`) and Exomizer 3.1.3b0
+built the night before, in the windowless x64sc build of VICE 3.10, PAL.
+
+### How
+
+The self-extracting form is the default. Give the machine and the PRG:
+
+```text
+pucrunch -c64 game.prg game-pu.prg           # default decruncher
+pucrunch -c64 -ffast game.prg game-fast.prg  # a longer, faster decruncher
+pucrunch -c64 -fshort game.prg game-tiny.prg # a shorter, slower one
+pucrunch -c64 -fdelta game.prg game-dl.prg   # delta LZ77, helps ramps and tables
+pucrunch -flist                              # every decruncher it can emit
+```
+
+The output is a PRG at `$0801` with a one-line BASIC stub (`SYS 2061` in
+every run here) followed by the decruncher and the crunched stream. Run,
+the stub copies the decruncher into the zero page from `$F7` upward, the
+low part of the stack page and the system input buffer at `$0200`, moves
+the crunched stream up in memory so that its last byte sits a computed
+safety margin past the end of the original file, and expands the original
+from its own load address upwards, back over the memory the stub and the
+stream occupied. When it finishes it jumps to the execution address, which
+it takes from the input file's own SYS line; `x<addr>` overrides it,
+`l<addr>` overrides the load address, `i0` leaves interrupts off at the
+jump and `g<val>` sets the `$01` bank configuration the program starts
+under. `-fbasic` selects the decruncher meant for a BASIC program (not
+run here).
+
+The raw form has no stub. `-c0` writes a stand-alone stream with a short
+header (18 bytes on the test file, load address and execution address
+inside it) for a decruncher you link yourself; `-d` marks the input as
+headerless data with no load address, and `-c64 -d` still emits a C64
+stub for it. The author's page publishes the decruncher source
+(`uncrunch.asm`, DASM-style conditional assembly with switches for the
+machine, the speed variant, delta and the wrap buffer), which is where a
+raw-stream caller starts; the page places the decompression code under
+the wxWindows licence. It is not reproduced here.
+
+Two things the layout imposes. First, the span from `$00F7` to `$0258`
+is the decruncher's during expansion: zero-page variables from `$F7` up,
+the lower part of the stack page and the input buffer are overwritten,
+so a pointer kept in `$FB` to `$FE` across the SYS comes back changed.
+The stub also writes `$2D`/`$2E` (`$2D` to `$30` with `-fshort`) on its
+way in, so state kept there is lost as well.
+The author's page describes the stack use as the part BASIC is not using
+at the time; whether a return to BASIC survives was not measured here.
+Second, the original file's end plus the safety margin must fit below
+`$10000`; when it does not, the compressor switches to a wrap-buffer
+variant on its own, so a file that ends at `$FFFF` still crunches, and it
+says which memory the result uses on every run, in the line beginning
+`uses the memory`. Nothing below `$0258` can be the file's load address,
+and pucrunch refuses such a file with a message saying so.
+
+### Why it works
+
+The stream mixes two codings. Run-length coding replaces a repeated byte
+with a count and one byte; a ranked table of the most common run bytes,
+built by the compressor and shrunk to the values actually used, lets the
+frequent ones cost less. LZ77 replaces a string that already appeared in
+the output with an offset back into it and a length. Anything neither
+covers is a literal, and here is the trick that keeps the decruncher
+small: a literal carries no flag bit of its own. Instead a few of its top
+bits are compared with a running escape code; a literal that happens to
+begin with the escape is written with an extra escape marker, and the
+compressor picks the number of escape bits per file so that this happens
+rarely (four bits on the test file, seven escaped literals). Lengths and
+offsets are Elias gamma codes, short for small values. All three kinds
+are decoded by one loop that writes forwards, which is why the stream can
+be expanded in place from its original address up, with only a small
+margin for the escaped literals.
+
+### Variations
+
+**The raw decruncher in your own loader.** For a level file the game
+loads itself, crunch with `-c0` (or `-d` for data without a load
+address), put the stream where the loader leaves it and call the raw
+decruncher with the stream's address. The `$F7` to `$0258` span is then
+the decruncher's for the duration, as above, so the loader's own zero
+page must lie below `$F7` or be saved first. Not measured here: the raw
+decruncher was not assembled in this run, because the shipped source is
+DASM syntax and its licence forbids putting a copy on this page.
+
+**Faster or smaller.** `-ffast` bought 16 % of decrunch time for 23
+bytes on the mixed test file; `-fshort` saved 24 bytes and cost 20 % more
+time. `-fdelta` halved the crunched size of the mixed file, whose ramp
+and sine table it suits, and gained nothing on the code file.
+
+**Comparison with Exomizer, measured.** Two subjects, both KickAssembler
+PRGs at `$0801` with a SYS stub: a 4,519-byte file of code plus mixed
+filler (a 1 KB zero run, a byte ramp, a sine table, repeated text), and a
+4,231-byte file whose filler is 4 KB of KERNAL ROM copied in as data, so
+that it looks like machine code. Each crunched PRG was run on its own to
+a green border with the marker at `$02FF` set, then again under a small
+loader that copied it to `$0801`, started a 32-bit CIA2 timer cascade and
+jumped to the stub's SYS address; the subject reads the timer as its first
+act. The figure is SYS to entry, decruncher setup included, and two runs
+gave the same figure to the cycle (the loader alone measures 271 cycles
+on the first subject and 228 on the second). One difference between the
+rows: pucrunch's C64 stub runs under SEI from its first instruction, while
+Exomizer's `sfx sys` stub reports interrupts enabled on entry, during and
+on exit, and the loader has interrupts on when it jumps. Exomizer's
+figures therefore include the KERNAL's IRQ service for the frames the
+decrunch takes, and pucrunch's do not. That works against Exomizer, so
+the ordering stands, but the two columns are not like for like.
+
+| Cruncher | Mixed file: bytes | Mixed file: cycles | Code file: bytes | Code file: cycles |
+|---|---|---|---|---|
+| none | 4,519 | 271 | 4,231 | 228 |
+| pucrunch default | 1,084 | 349,505 | 3,918 | 1,008,259 |
+| pucrunch `-ffast` | 1,107 | 292,113 | 3,941 | 969,912 |
+| pucrunch `-fshort` | 1,060 | 418,487 | 3,894 | 1,314,757 |
+| pucrunch `-fdelta` | 598 | 253,598 | 3,919 | 1,024,326 |
+| exomizer `sfx sys` | 1,103 | 189,276 | 3,772 | 590,882 |
+
+Exomizer's stream was smaller on the code file and its decruncher faster
+on both; pucrunch's default was 19 bytes smaller than Exomizer on the
+mixed file. Per output byte that is about 77 cycles for pucrunch's
+default and 42 for Exomizer on the mixed file, 238 and 140 on the code
+file. A claim that pucrunch decrunches faster than Exomizer was not borne
+out by either input here. Exomizer's own figures and its `-P` flag rules
+are in `loaders-packers.md`, `exomizer_basics`.
+
+**What the decruncher leaves behind.** After each sfx run the sixteen
+bytes from `$0808` were printed: they matched the original file, BASIC
+line terminator and padding included, for pucrunch's default and
+`-fshort` decrunchers and for Exomizer. The host-side `pucrunch -u` on an
+sfx file gave a file of the right length that differed from the input at
+1,067 of its 4,519 byte positions, the first at offset 11; 1,063 of them
+are a zero byte that came back as 1, the 1 KB zero run among them. `-u`
+on the `-c0`
+stream gave the input back byte for byte. The C64-side decruncher is the
+one that matters, and it was checked only at the sixteen bytes above. Not
+investigated further.
+
+### Cycle budget
+
+Measured, PAL, SYS to entry: 349,505 cycles (0.35 s) for 4,517 bytes of
+mixed data and 1,008,259 cycles (1.02 s) for 4,229 bytes of code with the
+default decruncher; `-ffast` 292,113 and 969,912. Code that crunches
+badly is slow to decrunch as well as large, because most of its bytes go
+through the literal path. Budget by the output's nature, not its size,
+and measure a real level file before promising a load time.
+
+### Recipes
+
+- No recipe yet. The recipe verifier assembles a page's listing and runs
+  the PRG; it has no step for running a cruncher on the result, so a page
+  whose pin is a crunched program cannot be verified as the gate stands.
+
+### Sources
+
+- Pasi 'Albert' Ojala, "Pucrunch: An Optimizing Hybrid LZ77 RLE Data
+  Compression Program" (the author's page, with `pucrunch.c`,
+  `pucrunch.h` and `uncrunch.asm`), read for the memory layout, the
+  escape scheme, the licence statements and the flag meanings:
+  https://a1bert.kapsi.fi/Dev/pucrunch/
+- `pucrunch.c` version string `pucrunch 1.14 22-Nov-2008`; usage text
+  from `pucrunch -h` run here.

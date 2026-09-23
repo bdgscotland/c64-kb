@@ -1175,5 +1175,44 @@
       "pal": "screenshots/hires-plot-line.png",
       "ntsc": "screenshots/hires-plot-line-ntsc.png"
     }
+  },
+  "kickassembler/light-pen-read": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-controlport1device",
+      "11"
+    ],
+    "shots": {
+      "pal": "screenshots/light-pen-read.png",
+      "ntsc": "screenshots/light-pen-read-ntsc.png"
+    }
+  },
+  "oscar64/text-window-menu": {
+    "cycles": 4250000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/text-window-menu.png",
+      "ntsc": "screenshots/text-window-menu-ntsc.png"
+    }
+  },
+  "kickassembler/eight-way-scroll": {
+    "cycles": 20946000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/eight-way-scroll.png",
+      "ntsc": "screenshots/eight-way-scroll-ntsc.png"
+    }
   }
 }
