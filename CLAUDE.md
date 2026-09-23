@@ -78,7 +78,7 @@ npm run check:listings     # every listing builds; fails on a missing toolchain 
 npm run verify:recipes     # every recipe runs headless in VICE at its pinned cycles (docs/recipes/runs.json) and matches its committed PNG pixel-for-pixel; --update re-baselines after a deliberate change, --allow-missing tolerates a recipe with no PNG yet
 npx tsc --noEmit
 npm test                   # vitest against c64_test / c64_docs_test — never the live stores
-X64SC_BIN=<headless x64sc> npm run verify:recipes   # a VICE built with --enable-headlessui: no window, same pictures (vice-reference.md)
+npm run vice:headless      # once: a windowless VICE into .tools/; every emulator launch here prefers it (src/services/vice-bin.ts)
 npm run ingest:clean       # if any doc changed: rebuild graph + vectors; read the summary line
 npx c64-kb health          # live counts; README carries none, so nothing to update there
 ```

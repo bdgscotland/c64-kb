@@ -13,6 +13,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { spawn, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { z } from "zod";
+import { resolveX64sc } from "../services/vice-bin.js";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -178,9 +179,11 @@ export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
   try { execSync("pkill -f x64sc 2>/dev/null", { stdio: "ignore" }); } catch { /* nothing to kill */ }
   await sleep(500);
 
-  // 2. Spawn fresh x64sc with -autostart.
+  // 2. Spawn fresh x64sc with -autostart: the repo's windowless build when
+  //    it exists, else whatever is on PATH (src/services/vice-bin.ts).
+  const x64scBin = resolveX64sc()?.path ?? "x64sc";
   const x64sc = spawn(
-    "x64sc",
+    x64scBin,
     [
       "-binarymonitor",
       "-binarymonitoraddress", "ip4://127.0.0.1:6502",

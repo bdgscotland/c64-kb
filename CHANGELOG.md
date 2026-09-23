@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 726, schema 23, tools 1.27.0.
+Data 727, schema 23, tools 1.27.0.
 
 **Candidate list, Tier A, batch 2.** `charset_copy_rom_to_ram` on the
 banking page, with the KickAssembler recipe `charset-copy-rom-to-ram`: the
@@ -91,8 +91,10 @@ minimises is worse than one that opens, and the pictures were byte-identical
 either way. The fix landed the same night: VICE 3.10 built with
 `--enable-headlessui` has no window at all and its exit screenshots are
 byte-identical to the pins (four recipes, both models, and the disk-backed
-ones); `scripts/verify-recipes.ts` honours `X64SC_BIN` to use it, and the
-VICE page says how to build one and the one flag-order trap.
+ones); `npm run vice:headless` builds one into `.tools/` from the pinned
+tarball, and every emulator launch in the repository (the verifier, the
+run tool) prefers it when present, with `X64SC_BIN` as an override; the
+VICE page says how it works and the one flag-order trap.
 
 **Pitfalls reached through a technique's registers, and a graph report.**
 A technique also meets every pitfall that a register or KERNAL routine it

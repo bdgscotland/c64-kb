@@ -92,3 +92,6 @@ are in `docs/runtime/vice-reference.md`, section "Reading the exit
 screenshot". The pictures are evidence about VICE, not about a 6569 on a
 bench. Where a recipe quotes a number from a picture, the recipe text says
 how it was measured.
+
+A windowless build of the same VICE (`npm run vice:headless`) gives the
+same pictures byte for byte and is what the verifier uses when present.

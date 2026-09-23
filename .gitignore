@@ -29,3 +29,6 @@ scripts/__pycache__/
 .claude/scheduled_tasks.lock
 
 # SID render artifacts (regenerable from the .sid via render-sid.sh)
+
+# Local tool builds (a windowless VICE from `npm run vice:headless`)
+.tools/

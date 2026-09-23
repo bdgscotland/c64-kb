@@ -64,3 +64,6 @@ The pictures are evidence about VICE, not about a 6569 on a bench. Where a
 recipe's timing constant was found by measurement (`SYNC_PAD`, `LINE_PAD`,
 `ENTRY_PAD`), the recipe text says so and says what the picture looks like
 when the constant is off by one.
+
+A windowless build of the same VICE (`npm run vice:headless`) gives the
+same pictures byte for byte and is what the verifier uses when present.

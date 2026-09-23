@@ -37,6 +37,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 
+import { resolveX64sc, describeX64sc } from "../src/services/vice-bin.js";
 const ROOT = new URL("..", import.meta.url).pathname;
 const RECIPES = join(ROOT, "docs", "recipes");
 const MANIFEST = join(RECIPES, "runs.json");
@@ -63,15 +64,14 @@ function which(cmd: string): string | null {
   const r = spawnSync("sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" });
   return r.status === 0 ? r.stdout.trim() : null;
 }
+const x64scChoice = resolveX64sc();
+console.log(describeX64sc(x64scChoice));
 const tools = {
   kickass: process.env.KICKASS_JAR && existsSync(process.env.KICKASS_JAR) ? process.env.KICKASS_JAR : null,
   java: which("java"),
   oscar64: process.env.OSCAR64 && existsSync(process.env.OSCAR64) ? process.env.OSCAR64 : which("oscar64"),
   cl65: which("cl65"),
-  // X64SC_BIN names a windowless build (VICE built with --enable-headlessui,
-  // see docs/runtime/vice-reference.md); it takes the same command line and
-  // its exit screenshots are byte-identical, so nothing else changes here.
-  x64sc: process.env.X64SC_BIN ?? which("x64sc"),
+  x64sc: x64scChoice?.path ?? null,
   c1541: which("c1541"),
   python3: which("python3"),
 };
