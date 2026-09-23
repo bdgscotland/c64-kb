@@ -162,9 +162,9 @@ selftest:
 	@rm -f $(FAULT_SHOTS)
 	@$(MAKE) --no-print-directory $(FAULT_SHOTS)
 	@if $(PYTHON) $(HARNESS_DIR)/check.py expect.json $(FAULT_SHOTS) > shots/fault-check.txt 2>&1; then \
-	  cat shots/fault-check.txt; echo "selftest: FAIL, check.py passed a $(FAULT_DEFINE)=1 build"; exit 1; \
+	  cat shots/fault-check.txt; echo "selftest: FAIL, check.py passed the $(FAULT_DEFINE) build"; exit 1; \
 	else \
-	  grep '^FAIL' shots/fault-check.txt | head -5; echo "selftest: PASS, check.py rejected the $(FAULT_DEFINE)=1 build"; \
+	  grep '^FAIL' shots/fault-check.txt | head -5; echo "selftest: PASS, check.py rejected the $(FAULT_DEFINE) build"; \
 	fi
 
 # ---- disk: a .d64 with the PRG and DISK_FILES ---------------------------------------
