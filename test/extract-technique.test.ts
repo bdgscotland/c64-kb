@@ -24,7 +24,7 @@ Body text.
     const ents = extractGraphEntities(doc, "techniques/raster.md");
     const tech = ents.find((e) => e.type === "technique");
     expect(tech).toBeDefined();
-    if (tech && tech.type === "technique") {
+    if (tech) {
       expect(tech.name).toBe("stable_raster_irq");
       expect(tech.title).toBe("Stable raster IRQ");
       expect(tech.category).toBe("raster");
@@ -32,7 +32,7 @@ Body text.
     }
     const usesReg = ents.filter((e) => e.type === "technique_uses_register");
     expect(usesReg).toHaveLength(3);
-    expect(usesReg.map((e) => (e.type === "technique_uses_register" ? e.register : "")).sort()).toEqual([
+    expect(usesReg.map((e) => e.register).sort()).toEqual([
       "D011",
       "D012",
       "D019",
@@ -89,7 +89,7 @@ Body.
       const ents = extractGraphEntities(doc, `techniques/${category}.md`);
       const tech = ents.find((e) => e.type === "technique");
       expect(tech, category).toBeDefined();
-      if (tech && tech.type === "technique") expect(tech.category).toBe(category);
+      if (tech) expect(tech.category).toBe(category);
     }
   });
 
@@ -111,7 +111,7 @@ Body.
     const ents = extractGraphEntities(doc, "techniques/raster.md");
     const req = ents.find((e) => e.type === "technique_requires_region");
     expect(req).toBeDefined();
-    if (req && req.type === "technique_requires_region") {
+    if (req) {
       expect(req.technique).toBe("badline_synchronization");
       expect(req.region).toBe("PAL");
     }
@@ -180,7 +180,7 @@ Body.
     const warnings: string[] = [];
     const orig = console.warn;
     console.warn = (msg: string) => {
-      warnings.push(String(msg));
+      warnings.push(msg);
     };
     try {
       const doc = `---
@@ -244,7 +244,7 @@ Color bars via stable raster IRQ.
     const ents = extractGraphEntities(doc, "recipes/oscar64/raster-bars.md");
     const imp = ents.find((e) => e.type === "implements");
     expect(imp).toBeDefined();
-    if (imp && imp.type === "implements") {
+    if (imp) {
       expect(imp.recipe).toBe("oscar64-raster-bars");
       expect(imp.technique).toBe("raster_bars");
     }
