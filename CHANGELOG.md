@@ -5,7 +5,14 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 767, schema 31, tools 2.3.0, package 0.16.0.
+Data 768, schema 31, tools 2.3.0, package 0.16.0.
+
+**agent-harness: counting lost frames.** The meter reports cost, not
+lateness, and the page did not say how to count a dropped frame. A check
+at wake-up for a frame counter that moved by more than one misses every
+single overrun (shmup-vertical 7974a7a: a frame made ~2,400 cycles late
+left `OVERRUNS 00`); the page now says to test the next frame's flag when
+the work ends.
 
 **Issue #39: `shmup-vertical` gets enemy fire and a per-frame bullet
 check.**
