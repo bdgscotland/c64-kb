@@ -2328,3 +2328,118 @@ behind a level-start screen if five frames of black matter.
 ### Recipes
 
 - `recipes/oscar64/seeded-level-fill.md` — three-row table (seed, three thresholds, five objects), 40 by 22 field generated twice and compared, checksums of two seeds, CIA-timed generation, verdict byte and border, levels drawn in turn on both models
+
+---
+
+## bfs_distance_map — One breadth-first flood from the player, sliced across frames, and every chaser steps downhill
+
+**Complexity:** medium
+**Region:** both
+**Requires:** tile_grid_collision, object_pool
+**Cost:** cycles_per_frame=8710
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-bfs-distance-map (one 32-cell flood slice, SHOW_DIST 0 build; 10,655 with the digit display the pinned picture shows)
+
+### Why
+
+A maze game with several chasers cannot afford a search per chaser.
+`nav_area_pathfinding` cuts a platform level to a dozen areas and
+answers from a table, but a tile maze has hundreds of open cells and no
+useful areas. `ghost_target_tile_ai` avoids search altogether by steering
+toward a target tile, which is right for a maze with no dead ends and
+ghosts that may not reverse; in a maze with dead ends it walks into
+them. A distance map is the third choice: one flood from the player
+gives every cell its distance, and a chaser anywhere finds its next step
+by reading four neighbours. The flood's cost is paid once per player
+move, not once per chaser, and it is easy to slice across frames.
+
+### How
+
+1. **The map.** One byte per cell, 255 for a wall or a cell not yet
+   reached. Keep two: the live map the chasers read and the work map
+   the flood writes. Keep a separate wall byte per cell (or the tile
+   map itself) so the flood can test a wall without reading the map it
+   is filling.
+2. **The queue.** A ring of 256 x bytes and 256 y bytes with byte head
+   and tail indices; they wrap by themselves. The frontier of a
+   breadth-first flood on a screen-sized grid is one or two rings of
+   cells, far below 256, so no overflow test is needed. Seed it with
+   the player's cell at distance 0.
+3. **The slice.** Each frame, pop up to N cells. For each, look at its
+   four neighbours: if the neighbour is not a wall and reads 255, write
+   the cell's distance plus one and push it. Breadth-first order means
+   the first write to a cell is its final distance. When the queue is
+   empty, swap the two map pointers. The recipe clears the work map as
+   the first two frames of each flood, 440 bytes each, so the clear
+   never shares a frame with a full slice.
+4. **The trigger.** Remember the cell the current flood started from.
+   When no flood is running and the player is on a different cell,
+   start one. A flood in progress runs to the end; the player's newer
+   position is picked up by the next one. The live map is at most one
+   flood old.
+5. **The step.** A chaser reads its own cell and its four neighbours
+   from the live map and moves to the lowest value that is strictly
+   lower than its own; if none is, it stays. Test the neighbours in a
+   fixed order and take the first minimum, so a tie is settled the same
+   way on every run. Walls are 255 and can never be lower, so no wall
+   test is needed for the step.
+
+### Why it works
+
+Breadth-first order visits cells by non-decreasing distance, so each
+open cell is written once and popped once: a maze of 404 open cells is
+404 pops, whatever the number of chasers. Stepping to a strictly lower
+neighbour follows a shortest path, because every cell at distance d has
+a neighbour at d minus 1 by construction, and it cannot loop because
+the value falls at every step. Two maps make the slicing safe: the
+chasers never see a half-flooded map, and the swap is one pointer
+exchange. A chaser on a slightly stale map moves toward where the
+player was a few cells ago and corrects when the next map lands.
+
+### Variations
+
+- **Flee by stepping uphill.** The same map, read the other way: a
+  frightened enemy moves to the highest neighbour below 255. Seeding
+  the queue with several cells at distance 0 (the player and its
+  bullets, or every chaser to make a map the player's helper avoids)
+  gives a distance to the nearest of them in one flood.
+- **A cost map.** Give each tile a step cost (mud two, floor one) and
+  the plain queue no longer gives shortest routes; a small bucket
+  queue, one list per distance value, keeps the pops in order at the
+  price of memory. For costs of one and two, two queues suffice.
+- **A window round the player.** Flood only a region of r cells round
+  the player and stop when the queue empties or the ring is full;
+  chasers outside it fall back to walking toward the player's
+  coordinates (`ghost_target_tile_ai`'s rule) until they enter the
+  window. Cuts the flood to about (2r)² cells.
+- **Larger slice, fewer frames.** The recipe's 32 cells per frame is
+  about 44% of a PAL frame in Oscar64 and takes fifteen frames per
+  flood; an assembler inner loop or a smaller slice moves that trade
+  either way. A chaser that moves one cell every four frames does not
+  see a map that is fifteen frames old.
+- **Chasers as the flood source.** Seeding from the chasers and having
+  the player's marker read the map gives the player a "danger" value
+  per cell for an escort or an autopilot.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timers, interrupts masked, Oscar64
+`-O2` (rung 1). One slice of 32 cells, expanding four neighbours each
+and no drawing, is 8,710 cycles on PAL and 9,010 on NTSC, about 272
+cycles per cell in C; with each cell's digit and colour drawn as it is
+popped, 10,655 and 10,915. The NTSC figures are higher because the
+slice runs on past the vertical blank into the badlines, and the CIA
+counts the stolen cycles (arithmetic, rung 3). A full flood of 404
+cells is 115,912 cycles on PAL as the sum of its slices, over fifteen
+frames: two clearing the 880-byte work map at 440 bytes each, thirteen
+expanding. Four chasers stepping once is 1,220 cycles for all four
+including the timer, so the per-chaser cost is about 300 cycles every
+step and nothing between steps. The recipe's whole iteration, actors
+lifted and redrawn, one slice, the player and four chasers, peaks at
+11,246 cycles on PAL without the digits and 13,196 with them; when the
+880-byte clear shared a frame with a slice it peaked at 19,226, over an
+NTSC frame, which is why the clear is sliced too.
+
+### Recipes
+
+- `recipes/oscar64/bfs-distance-map.md` — 40 by 22 maze, scripted player route, ring-queue flood at 32 cells per frame into a second map, four chasers stepping downhill every fourth frame, distance digits in colour bands on demand, map compared byte for byte with a Python flood and its checksum, arrival bound and wall check as the verdict, slice and flood cycles on screen, PAL and NTSC

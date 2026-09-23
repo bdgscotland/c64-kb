@@ -25,8 +25,8 @@ Maximum useful size is bounded by available RAM: roughly 38 KiB for a pure progr
 
 ### .CRT — Cartridge image
 
-**Produced by:** oscar64, kickassembler
-**Consumed by:** vice, easyflash, ef3
+**Produced by:** oscar64, kickassembler, cartconv
+**Consumed by:** vice, easyflash, ef3, cartconv
 
 The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or more ROM banks with metadata about the cartridge hardware type. It is the standard interchange format for C64 cartridge software and EasyFlash cart images used in the demoscene.
 
@@ -40,7 +40,8 @@ The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or
 | $0016 | 2 | Hardware type (big-endian; 0 = generic 8K/16K) |
 | $0018 | 1 | EXROM line state (0 = low/active) |
 | $0019 | 1 | GAME line state (0 = low/active) |
-| $001A | 6 | Reserved (zero) |
+| $001A | 1 | Hardware revision (subtype); 0 unless set. Measured with cartconv 3.10: `-s 1` wrote 1 here and set the version to `$0101`, and `cartconv -f` prints it as "Hardware Revision". An earlier version of this table folded it into six reserved bytes |
+| $001B | 5 | Reserved (zero) |
 | $0020 | 32 | Cartridge name (null-padded ASCII) |
 
 **CHIP packets** follow the header, one per ROM bank:
@@ -59,7 +60,7 @@ The EXROM/GAME line combination determines the cartridge's memory mapping mode. 
 
 EasyFlash carts (hardware type `$0020`) contain up to 64 banks of 16K, each represented by two CHIP packets (one for `$8000`, one for `$A000`).
 
-Oscar64 can target cartridge memory by setting the appropriate linker segment addresses. KickAssembler produces CRT images via the `.crt` and `.bank` directives combined with a post-assembly packaging step.
+Oscar64 writes the container itself with `-tf=crt8`, `-tf=crt16` (type 0) or `-tf=crt` (EasyFlash). KickAssembler has no cartridge directive: in 5.25 `.crt` and `.bank` both fail with `Invalid directive` (run 2026-09-23), so a KickAssembler cartridge is either raw banks written with `outBin` and wrapped by cartconv, or a `.CRT` emitted byte by byte from the source as the `crt-banked` and `easyflash-save` recipes do. An earlier version of this paragraph named those two directives; they do not exist. The header and packet fields as decoded from files built by both tools, the type table, and what each type did when booted are in [cartconv-reference](../toolchains/cartconv-reference.md).
 
 ---
 
@@ -152,9 +153,68 @@ Each 4-byte BAM entry: first byte = free sector count, next 3 bytes = 24-bit bit
 | $02 | 1 | File type (`$82`=PRG, `$81`=SEQ, `$83`=USR, `$84`=REL) |
 | $03–$04 | 2 | First sector of file (track, sector) |
 | $05–$14 | 16 | Filename (PETASCII, `$A0`-padded) |
-| $1E–$1F | 2 | File size in sectors (little-endian) |
+| $15–$16 | 2 | REL only: track and sector of the first side sector (measured below; `$00 $00` on other types, not measured here) |
+| $17 | 1 | REL only: record length (the DOS's stated range is 1 to 254; 32, 100 and 254 measured below) |
+| $1E–$1F | 2 | File size in sectors (little-endian); for a REL file the side sectors are counted in |
 
 File data uses a 10-sector interleave chain (each sector's first two bytes are the track/sector link to the next; the remaining 254 bytes are data). The last sector in a chain uses `$00` as the next-track link and stores the index of the last used byte in what would normally be the next-sector byte, so the sector holds that value minus one data bytes (an earlier version said it stored the count of data bytes; a 91-byte last sector written by the 1541 in VICE holds 92).
+
+**REL file (type `$84`):**
+
+A relative file is a data chain like any other plus one or more **side sectors**, blocks that list the track and sector of every data block in order so the drive can turn a record number into a block without walking the chain. Everything in this subsection was read off `.d64` images written by the 1541 ROM under VICE x64sc 3.10 (`-drive8truedrive`, windowless build) by the recipe `../recipes/oscar64/rel-side-sectors.md` and a side run of the same shape with 254-byte records; the recipe also prints the same bytes from the C64 side through `U1`. The images were decoded on the host with this script, which walks the directory, the side-sector chain and the data chain (`SPT` is the sectors-per-track table above):
+
+```text
+img = open('disk.d64', 'rb').read()
+SPT = [21]*17 + [19]*7 + [18]*6 + [17]*5
+def blk(t, s):
+    o = (sum(SPT[:t-1]) + s) * 256
+    return img[o:o+256]
+ent = blk(18, 1)[0:32]                      # first directory entry
+print(hex(ent[2]), ent[3], ent[4], ent[0x15], ent[0x16], ent[0x17],
+      ent[0x1e] | ent[0x1f] << 8)
+t, s = ent[0x15], ent[0x16]
+while t:                                    # side-sector chain
+    b = blk(t, s)
+    print(t, s, 'next', b[0], b[1], 'number', b[2], 'reclen', b[3],
+          'group', [(b[4+2*i], b[5+2*i]) for i in range(6)],
+          'data', [(b[16+2*i], b[17+2*i]) for i in range(120) if b[16+2*i]])
+    t, s = b[0], b[1]
+t, s = ent[3], ent[4]                       # data chain
+while t:
+    b = blk(t, s)
+    print(t, s, 'link', b[0], b[1])
+    t, s = b[0], b[1]
+```
+
+The directory entry of the recipe's file `SS`, created with `SS,L,` and the byte 100, eight records written, then closed:
+
+| Offset | Bytes read | Meaning |
+|--------|-----------|---------|
+| $02 | `$84` | REL, closed. The recipe read the entry through `U1` while the file was still open and the byte was already `$84`. |
+| $03–$04 | `$11 $00` | first data block, 17/0 |
+| $15–$16 | `$11 $0A` | first side sector, 17/10 |
+| $17 | `$64` | record length 100 |
+| $1E–$1F | `$05 $00` | 5 blocks: 4 data blocks and 1 side sector. Read while the file was open it was `$00 $00`; the drive writes the count at close. |
+
+The side sector at 17/10, byte by byte:
+
+| Offset | Size | Bytes read | Field |
+|--------|------|-----------|-------|
+| $00–$01 | 2 | `$00 $17` | Track and sector of the next side sector. Track 0 marks the last one, and the sector byte is then the index of the last used byte in this block: `$17` = 23 is the last byte of the fourth data-block pair (16 + 4 × 2 − 1). |
+| $02 | 1 | `$00` | This side sector's number in the group, 0 to 5. |
+| $03 | 1 | `$64` | Record length, the same value as the directory entry's `$17`. |
+| $04–$0F | 12 | `$11 $0A` then ten `$00` | Track and sector of side sectors 0 to 5 of the group, in order, `$00 $00` for those that do not exist. Every side sector carries the whole list. |
+| $10–$FF | 240 | `$11 $00 $11 $0B $11 $01 $11 $0C` then zeros | Track and sector of data blocks, in file order, up to 120 pairs; `$00` in a track position ends the list. |
+
+So the file's data chain is 17/0, 17/11, 17/1, 17/12, and the chain's own links agree with the list: each block's bytes 0 and 1 name the next, and the last block's link is `$00 $EF`. That `$EF` = 239 is the last used byte of the data chain, and it is not where record 8 ends: 4 blocks hold 1,016 data bytes, ten 100-byte records fit, and the drive fills every allocated block with whole records, so records 9 and 10 exist on the disk though nobody wrote them, and 239 = 2 + 1000 − 762 − 1 is the last byte of record 10 (both records read back from the image as `$FF` followed by 99 `$00`; a `P` to record 10 answered `00` and read one `$FF`, a `P` to record 11 answered `50`). The last 16 data bytes of the block, after record 10, hold `$FF` then fifteen `$00`: the drive marks the start of every record slot it allocates, including the slot record 11 would begin in, even though record 11 does not fit and a `P` to it answers `50` (read from the image: `$FF` sits at block bytes 40, 140 and 240 of 17/12, one per 100-byte slot).
+
+**Record contents and padding.** Every record the drive allocates starts as `$FF` followed by zeros. A record written short is padded with `$00` to the record length: record 3 of the recipe was written as ten bytes and reads back from the image as those ten bytes then ninety `$00`, and a read of it through the drive returns ten bytes with EOF, the padding not sent. A record can straddle two blocks: with 100-byte records, record 3 occupies bytes 200 to 253 of the first block and 0 to 45 of the second, and the program never sees the seam.
+
+**Two side sectors.** The side run created `BIG,L,` with the byte 254, sent one `P` to record 125 (reply `50, RECORD NOT PRESENT`) and wrote one byte to it (reply `00, OK`). That single write allocated 125 data blocks and two side sectors; the entry then read `$84`, side sector 17/10, record length `$FE`, 127 blocks. Side sector 0 at 17/10 held next = 12/9, number 0, and 120 data-block pairs; side sector 1 at 12/9 held next = `$00 $19` (25 = 16 + 5 × 2 − 1), number 1, and 5 pairs; both carried the group list `$11 $09 $0C $09` then zeros, that is 17/10 and 12/9. The 125-block data chain matched the two lists end to end, and the last block's link was `$00 $FF` because a 254-byte record fills a block exactly. After that write a `P` to record 125 answered `00` and a `P` to record 126 answered `50`: with 254-byte records no extra records fall out of the allocation.
+
+**Limits.** The record length byte is 1 to 254; the DOS's stated range, and the recipes use 32, 100 and 254 (the length 0 and 255 cases were not measured here). A group holds six side sectors of 120 data blocks each, 720 blocks (arithmetic from the tables above), which is more than a 35-track disk has free, so on a 1541 the disk is the limit, and the DOS's stated reply for a `P` past it is `52, FILE TOO LARGE` (not provoked here; its ROM site is in `iec-disk-reference.md`, "The 1541 DOS Error Codes"). The record number in the `P` command is two bytes, so 65,535 is the highest a program can name (arithmetic; not measured here). Drives with more capacity extend the scheme with a further block that lists groups; that is not measured here and this table is the 1541's.
+
+**The P command's byte order.** Five bytes on the command channel: `P`, the data channel's secondary address plus 96 (`$62` for channel 2), the record number low byte, the record number high byte, and the byte within the record counted from 1. Measured in the recipe and its second run: `P` to record 5 byte 1 read all 100 bytes of record 5; `P` to record 5 byte 7 read 94 bytes starting at the seventh; a `P` to a record that does not fit in the allocated data blocks answers `50` and a read after it returns one `$0D` with the status still `50`; a write after that `50` extends the file and answers `00`. Which records answer `50` depends on the record length and on what is allocated: a record answers `00` when the whole of it fits in the allocated data blocks and `50` when any of it would lie past them. With 100-byte records and one allocated block (254 data bytes), records 1 and 2 answered `00` and record 3, whose bytes 200 to 299 cross the end, answered `50`; after the write to 3 allocated the second block (508 bytes), 4 and 5 answered `00` and 6 (500 to 599) answered `50`; after the third block (762 bytes), 7 answered `00` and 8 (700 to 799) answered `50`. The same rule gives the seven records of 32 bytes that fit one block in `../techniques/file-io.md` (`kernal_relative_file_io`) and the ten of 100 bytes that fit four.
 
 **Typical use:** release distribution, fastloader authoring (Krill/Loader, Spindle, DreamLoad), scene release packaging via c1541 or CBM FileBrowser.
 

@@ -967,9 +967,12 @@ the file is where the cost lives: a write past the end allocates the
 data blocks up to and including the new record, plus a side sector for
 every 120 data blocks, and every new record starts with `$FF`. The
 side sectors are why a REL costs one block more than the data on
-creation and why creating a large file takes long; the figure of one
-side sector per 120 data blocks is the format's rule, not measured
-here.
+creation and why creating a large file takes long. The figure of one
+side sector per 120 data blocks was the format's stated rule when this
+was first written; it has since been read off a disk image, a
+one-byte write to record 125 of a 254-byte-record file allocating 125
+data blocks and two side sectors of 120 and 5 entries
+(`../formats/c64-file-formats.md`, "REL file", rung 1).
 
 `c1541 -write` can create a REL entry but cannot lay out records. The
 record length goes on the end of the name as one byte, so `c1541
@@ -1029,6 +1032,7 @@ memory and load each byte fresh.
 ### Recipes
 
 - `recipes/oscar64/relative-file-records.md` (create, write 1, 3 and 5, read back with a checksum, the `50` on record 9 and the write that clears it; `51` in a side run)
+- `recipes/oscar64/rel-side-sectors.md` (100-byte records across four blocks, then the directory entry and the side sector read back through `U1`; the bytes are decoded in `../formats/c64-file-formats.md`, "REL file")
 
 ---
 

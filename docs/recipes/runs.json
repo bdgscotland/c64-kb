@@ -1214,5 +1214,49 @@
       "pal": "screenshots/eight-way-scroll.png",
       "ntsc": "screenshots/eight-way-scroll-ntsc.png"
     }
+  },
+  "kickassembler/crt-banked": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/crt-banked.png",
+      "ntsc": "screenshots/crt-banked-ntsc.png"
+    },
+    "cartridge": {
+      "file": "crt-banked.crt",
+      "write": false,
+      "runs": 1
+    }
+  },
+  "oscar64/rel-side-sectors": {
+    "cycles": 60000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/rel-side-sectors.png",
+      "ntsc": "screenshots/rel-side-sectors-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "oscar64/bfs-distance-map": {
+    "cycles": 6500000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/bfs-distance-map.png",
+      "ntsc": "screenshots/bfs-distance-map-ntsc.png"
+    }
   }
 }

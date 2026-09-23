@@ -196,7 +196,7 @@ Reading from the command channel after any operation returns the drive status st
 
 **Sequential files** (PRG, SEQ, USR types) are stored as a linked chain of 256-byte sectors (254 bytes of data per sector; first 2 bytes are next-track/next-sector pointers). Reading is strictly forward.
 
-**Random access files** (REL type) allow seeking to arbitrary records. They use a fixed record length declared at file-open time and maintain side-sectors — dedicated bookkeeping sectors that map logical record numbers to physical track/sector locations. REL files are rarely used in demo/game code but common in productivity applications.
+**Random access files** (REL type) allow seeking to arbitrary records. They use a fixed record length declared at file-open time and maintain side-sectors — dedicated bookkeeping sectors that map logical record numbers to physical track/sector locations. REL files are rarely used in demo/game code but common in productivity applications. The on-disk layout (directory entry bytes, side-sector fields, record padding, the P command's byte order) is decoded from images the 1541 wrote in `c64-file-formats.md`, ".D64", under "REL file".
 
 ### The 1541 DOS Error Codes
 

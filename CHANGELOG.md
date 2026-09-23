@@ -5,7 +5,38 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 745, schema 27, tools 2.0.0, package 0.13.0.
+Data 746, schema 27, tools 2.0.0, package 0.13.0.
+
+**Candidate list, Tier B batch 4 (data 746).** A cartconv toolchain page
+with the .CRT header and chip packets decoded from files cartconv wrote,
+and what each type does when booted in VICE: the generic 8K type ignores a
+bank-register write, Magic Desk switches an 8K bank at `$8000` through
+`$DE00`, Ocean switches the same bank mirrored at `$A000`, and cartconv's
+EasyFlash made from a Magic Desk layout checks clean and does not boot;
+byte `$1A` of the header is the hardware revision, not reserved; a
+two-bank Magic Desk recipe pinned through the verifier's cartridge path;
+KickAssembler has no cartridge directive and Oscar64's three cartridge
+targets are decoded. REL files: the directory entry, the side-sector block
+and the data chain decoded from a disk image the recipe wrote (a one-byte
+write to record 125 of a 254-byte-record file allocates 125 data blocks and
+two side sectors), the P command's byte order, the record padding, and the
+DOS replies for a record that does not fit; the file-io technique's side-
+sector rule corrected. `zx0_lzsa_decrunchers` on the memory-banking page
+beside pucrunch: ZX0 v2.2, bitfire's ZX0 packer, Dali 0.3.5, ZX02 and
+LZSA 1.4.1 built from source; on the two pucrunch inputs Dali's
+self-extractor is 1,041 bytes and 114,369 cycles against Exomizer's 1,103
+and 189,276, and bitfire's 1,035 and 99,422; Dali's small mode and
+bitfire's stub overwrite the KERNAL's zero page and the subject does not
+run or prints nothing, measured; the candidate list credited Dali to the
+wrong author (it is Bitbreaker's). `bfs_distance_map` on the logic page
+with a recipe: one flood serves four chasers, 404 open cells in 115,912
+cycles over fifteen frames at 32 cells a frame, the map equal to a host
+BFS byte for byte, every chaser reaching the player in 145 frames; an
+Oscar64 -O2 fault met on the way (the first inlined call of a
+pointer-walking copy loop) is reported on the gotcha issue. Left open:
+raw-mode decrunch times for the ZX0 family; record lengths 0 and 255; the
+EasyFlash registers on the tool page are the memory-banking page's, not
+measured here.
 
 **Tier A, the eight-way scroller (data 745).** `eight_way_scroll_double_buffer`
 on the scroll page with a KickAssembler recipe, after three attempts and

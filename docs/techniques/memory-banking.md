@@ -1447,3 +1447,240 @@ and measure a real level file before promising a load time.
   https://a1bert.kapsi.fi/Dev/pucrunch/
 - `pucrunch.c` version string `pucrunch 1.14 22-Nov-2008`; usage text
   from `pucrunch -h` run here.
+
+## zx0_lzsa_decrunchers — ZX0, Dali, ZX02 and LZSA: modern crunchers with tiny decrunchers
+
+**Complexity:** low
+**Region:** both
+**Uses kernal:** (none)
+**Requires:** ram_under_kernal
+**Cost:** bytes_code=257, zp_bytes=236
+**Cost basis:** arithmetic
+
+The Cost line is Dali 0.3.5's standard self-extractor: 257 bytes of
+copier and decruncher, worked as the sfx file's size less its two-byte
+load address, its twelve-byte BASIC stub and the 770-byte stream the raw
+mode writes for the same input (269 with the stub, which the pucrunch
+section's 245 also leaves out), and the 236 bytes of zero page from `$01`
+upward that the copier fills (the `LDY #$EC` in the stub's own bytes). Dali saves that zero page
+on the stack and puts it back, so the figure is the space the decruncher
+borrows, not what it destroys. The `--small` self-extractor is 210 bytes
+and takes 183 bytes of zero page without saving them, and bitfire's own
+ZX0 self-extractor is 263 bytes over 212 bytes of zero page, also without
+saving. Decrunch times are in the cycle budget; they are a one-off cost at
+start, so they are not on the line.
+
+### Why
+
+Exomizer and pucrunch trade decruncher size for ratio and speed. A newer
+family of formats takes the other end of the trade: a decruncher of one
+to two hundred bytes, a handful of zero-page bytes, a decrunch loop with
+no tables to build, and a ratio that on the mixed test file below beats
+both of the older tools. Four of them have C64 or generic 6502
+decrunchers with a permissive licence, so a shipped game can carry the
+decruncher without thinking about it:
+
+- **ZX0** by Einar Saukas, an optimal LZ77 cruncher whose repository
+  holds the compressor and Z80 decrunchers, under the BSD 3-clause
+  licence. It has no 6502 decruncher of its own; the README lists two
+  6502 ports, one of them the copy inside bitfire.
+- **Dali** by Tobias Bindhammer (Bitbreaker), a C64 tool that re-encodes
+  ZX0 output into its own bit layout and writes a C64 self-extracting
+  PRG. Its compressor is Emmanuel Marty's Salvador, which produces
+  ZX0-compatible streams. The tarball's assembly sources carry a BSD
+  3-clause header; Salvador's own licence file is zlib with a CC0 match
+  finder. The `dali.c` file has no licence header of its own; a shipped
+  product should take the assembly headers as the statement.
+- **ZX02** by Daniel Serpell (DMSC), a ZX0 variant reworked for the 6502
+  and not stream-compatible with ZX0, under the MIT licence. Its README
+  names four 6502 decrunchers of 108 to 166 bytes, all using eight bytes
+  of zero page.
+- **LZSA1 and LZSA2** by Emmanuel Marty, a byte-aligned format designed
+  for 8-bit decoders, under the zlib licence with a CC0 match finder.
+  The repository carries six generic 6502 decrunchers; the faster v1 and
+  v2 sources state their own sizes (165 and 191 bytes for LZSA1, 241 and
+  256 for LZSA2) and their zero-page use (the last seven bytes of the
+  zero page for v1, the last eleven for v2); the fast sources state
+  neither, and the small v2 source uses one zero-page byte, `$FC`.
+
+The C64 self-extractors measured here were built from bitfire (commit
+`5a3964b`, 2026-09-10) and Dali 0.3.5 (the CSDb tarball). The 6502
+decrunchers for ZX02 and LZSA were read, not assembled; they are written
+for other assemblers, and their decrunch times were not measured here.
+
+Everything below marked "measured" was run on 2026-09-23 in the
+windowless x64sc build of VICE 3.10, PAL, with the same two inputs, the
+same loader and the same method as the pucrunch section above.
+
+### How
+
+Each tool has a raw mode and, for two of them, a C64 self-extracting mode.
+The commands as used here:
+
+```text
+zx0 game.bin game.zx0                       # ZX0 v2.2, raw stream, no load address
+zx02 game.bin game.zx02                     # ZX02, raw stream
+lzsa -f 1 -r game.bin game.lzsa1            # LZSA1 raw block
+lzsa -f 2 -r game.bin game.lzsa2            # LZSA2 raw block
+dali --sfx 0x0810 -o game-dali.prg game.prg # Dali C64 self-extractor, entry $0810
+dali --sfx 0x0810 --small -o game-tiny.prg game.prg
+dali -o game.dali game.prg                  # Dali raw stream for bitfire's decruncher
+zx0 --sfx 0x0810 -o game-bf.prg game.prg    # bitfire's own ZX0 packer, same shape
+```
+
+ZX0, ZX02 and LZSA read a headerless file and write a headerless stream;
+the caller's own decruncher knows where it goes. Dali and bitfire's
+packer read a PRG, keep its load address as the decrunch target, and
+report the original and packed spans on every run. Their `--sfx` takes
+the entry address as a number after the flag; give it, or the flag eats
+the next argument. Dali adds `--01` to set the processor port after
+decrunching, `--cli` to leave with interrupts on (the default is off),
+`--effect` for a border effect while it runs, `--no-inplace`,
+`--binfile`, `--from`/`--to` for a slice, `--prefix-file` for a
+dictionary already in memory, and `--relocate-sfx` for a stub without a
+BASIC line. bitfire's packer shares `--sfx`, `--no-inplace`,
+`--binfile`, `--from`/`--to` and the relocate flags, adds `-f` and `-q`,
+and uses `--use-prefix` in place of the prefix-file options; it has no
+`--01`, `--cli`, `--small` or `--effect`.
+
+The self-extractor's layout, read from the two `sfx.asm` sources and
+checked against the bytes of the output: a one-line BASIC stub (`SYS
+2061` in every run here) followed by a copier, the decruncher and the
+stream. Run, the copier moves the decruncher into the zero page, counting
+down from `$EC` (Dali) or `$D4` (bitfire) to `$01`; the byte that lands
+at `$01` is the processor port's new value, `$34`, which banks the ROMs
+out so the whole 64 KB is writable. It then copies
+the crunched stream to the top of memory, ending at `$FFFF` under the
+KERNAL ROM, and decrunches forwards from the original load address,
+which is why both files here landed with their own BASIC stub back at
+`$0801` byte for byte. Dali's standard decruncher pushes the zero page
+onto the stack before overwriting it and pops it back on exit, with `$37`
+in the port unless `--01` says otherwise. Its `--small` decruncher and
+bitfire's do not save anything: measured here, the subject's KERNAL
+print path did not survive either. Under bitfire's self-extractor the
+subject reached its green border but printed nothing, and its timer
+bytes had to be read from memory with a monitor breakpoint; under Dali's
+`--small` it never reached the border at all, in a stand-alone run and
+under the loader alike. Which zero-page byte kills it was not traced;
+the KERNAL's own variables live in the span both overwrite. Code that
+follows a `--small` or bitfire decrunch must not call the KERNAL until it
+has reset what it needs, or must be a program that owns the machine.
+
+The raw decrunchers ask for less. bitfire's `dzx0` uses five zero-page
+bytes at `$F8` to `$FC` and keeps its source pointer in its own operands;
+its header warns that it reads the unmodified ZX0 stream only, not the
+Dali one, which has its own `dzx0_dali.asm` with six bytes at `$F0`.
+ZX02's four decrunchers take eight bytes from `$80` by default and are
+ROM-able; the README names in-place decrunching with the compressor's
+reported `delta` (at worst 12 bytes per KB) as the safety margin. LZSA's
+small v1 decruncher keeps every pointer in self-modified operands and
+uses no zero page at all as written; small v2 uses `$FC`. None of the
+three formats carries a header that says which variant wrote it, so, as
+with Exomizer's `-P` bits, a stream and its decruncher must come from the
+same tool: ZX02 does not read ZX0, bitfire's decruncher does not read
+Dali, and LZSA1 and LZSA2 are different formats.
+
+### Why it works
+
+All four are LZ77: the output is built from literal bytes and from copies
+of what was already written, named by a distance back and a length. They
+differ in how those are coded. ZX0 keeps three kinds of block, literal
+run, match at the previous offset and match at a new offset, with lengths
+and offsets in interleaved Elias gamma codes, and the compressor picks
+the block sequence that is optimal for the whole file, which is where its
+ratio comes from. ZX02 caps the gamma codes at eight bits, stores offsets
+as positive values minus one and lets a match be one byte long, all so
+that an 8-bit register holds every quantity the decoder handles; that
+costs a little on long runs and gains on code. LZSA gives up the bit
+stream altogether: each token is a byte whose fields hold a literal count
+and a match length, with longer values in following bytes and the offset
+as one or two whole bytes, so the decoder never shifts a bit reservoir.
+LZSA2 adds nibble-sized fields and a repeat-offset match, which is why it
+beats LZSA1 on both inputs below. Dali re-encodes ZX0's blocks into the
+bit order bitfire's decruncher wants; the blocks themselves are ZX0's.
+
+### Variations
+
+**In-place decrunching.** Every tool here supports it. The stream is
+placed so that its end sits a small margin past the end of the output,
+and the decoder writes forwards without ever overtaking the input it has
+not read. ZX0 and ZX02 print the margin as `delta` when they crunch
+(3 bytes on the mixed file, 3 on the code file for ZX0); Dali and bitfire
+assume it unless `--no-inplace` is given. The C64 self-extractors go one
+further and copy the stream to the top of RAM first, so the margin is not
+the caller's problem.
+
+**Streaming from disk.** bitfire is a disk loader whose files are all
+Dali-crunched, and it decrunches as sectors arrive; that path was not
+run here and its figures are bitfire's, not this page's. LZSA's raw block
+form and its stated small-decruncher sizes are the reason the format was
+built for that use on other 8-bit machines.
+
+**Comparison, measured.** The same two subjects and loader as the
+pucrunch section: a 4,519-byte PRG of code plus mixed filler and a
+4,231-byte PRG whose filler is 4 KB of KERNAL ROM bytes. Sizes for the
+raw modes are the stream alone from a headerless input two bytes shorter;
+Dali's raw mode reads the PRG and writes a PRG, so its row is the stream
+after the two-byte load address it keeps (772 and 3,523 as files); sizes
+for the sfx modes are the whole PRG. Cycles are SYS to entry with
+the loader's own 271 or 228 cycles included, two runs each, identical to
+the cycle. The pucrunch and Exomizer rows are quoted from the pucrunch
+section above. One difference between the rows, as there: Dali's
+self-extractor runs under SEI from its first instruction; so does
+bitfire's.
+
+| Cruncher | Mixed file: bytes | Mixed file: cycles | Code file: bytes | Code file: cycles |
+|---|---|---|---|---|
+| none | 4,519 | 271 | 4,231 | 228 |
+| dali `--sfx` | 1,041 | 114,369 | 3,792 | 311,234 |
+| dali `--sfx --small` | 982 | not measured here | 3,733 | not measured here |
+| bitfire zx0 `--sfx` | 1,035 | 99,422 | 3,786 | 295,612 |
+| zx0 v2.2 raw | 771 | not measured here | 3,522 | not measured here |
+| dali raw (stream) | 770 | not measured here | 3,521 | not measured here |
+| zx02 raw | 797 | not measured here | 3,522 | not measured here |
+| lzsa1 raw | 785 | not measured here | 3,852 | not measured here |
+| lzsa2 raw | 781 | not measured here | 3,682 | not measured here |
+| pucrunch default (pucrunch section) | 1,084 | 349,505 | 3,918 | 1,008,259 |
+| exomizer `sfx sys` (pucrunch section) | 1,103 | 189,276 | 3,772 | 590,882 |
+
+Both ZX0 self-extractors are smaller than pucrunch's and Exomizer's on
+the mixed file and decrunch it in a third of pucrunch's time and well
+under Exomizer's; on the code file they are 20 bytes larger than
+Exomizer's sfx and about half its time. Per output byte that is about
+25 cycles for Dali and 22 for bitfire on the mixed file, 74 and 70 on the
+code file. The `--small` variant saved 59 bytes of PRG; its time is not
+on the table because the subject did not run to its entry under it.
+Raw-mode times are not measured here: the ZX02 and LZSA 6502 sources are
+written for other assemblers and were not ported for this run.
+
+### Cycle budget
+
+Measured, PAL, SYS to entry: 114,369 cycles (0.12 s) for 4,517 bytes of
+mixed data and 311,234 cycles (0.32 s) for 4,229 bytes of code with
+Dali's standard self-extractor; bitfire's 99,422 and 295,612. As with the
+older tools, code that crunches badly costs more per byte to decrunch:
+about three times as much per byte on both families, from a base a
+third as high here. Measure a real level file before promising a load
+time.
+
+### Recipes
+
+- No recipe yet. The recipe verifier assembles a page's listing and runs
+  the PRG; it has no step for running a cruncher on the result, so a page
+  whose pin is a crunched program cannot be verified as the gate stands.
+
+### Sources
+
+- Einar Saukas, ZX0 repository (`src/zx0.c` banner `ZX0 v2.2`, README's
+  list of 6502 ports, `LICENSE`): https://github.com/einar-saukas/ZX0
+- Tobias Bindhammer, bitfire repository, `packer/zx0/` (`zx0.c` usage,
+  `sfx.asm`, `6502/dzx0_v2.asm`, `LICENSE`): https://github.com/bboxy/bitfire
+- Tobias Bindhammer, Dali 0.3.5 (`dali035.tar.gz` from CSDb release
+  247483: `dali.c` usage, `sfx.asm`, `dzx0_dali.asm`, `Makefile`,
+  `salvador/README.md` and licence files): https://csdb.dk/release/?id=247483
+- Daniel Serpell, ZX02 repository (README's decruncher list and format
+  notes, `6502/zx02-small.asm` and `zx02-optim.asm` headers, `LICENSE`):
+  https://github.com/dmsc/zx02
+- Emmanuel Marty, LZSA repository (`src/lzsa.c` version string 1.4.1,
+  README's licence section, `asm/6502/` headers): https://github.com/emmanuel-marty/lzsa
+- Usage text from each tool run here without arguments.
