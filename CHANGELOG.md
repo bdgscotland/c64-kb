@@ -7,6 +7,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 764, schema 30, tools 2.2.0, package 0.15.0.
 
+**Issue #39: the `shmup-vertical` starter.** It is a vertical shooter:
+- Oscar64 game logic, with a KickAssembler IRQ chain, panel split,
+  multiplexer, row copy and music player;
+- the playfield scrolls through all eight YSCROLL phases above a fixed
+  panel;
+- waves on paths, character bullets, hitboxes per sprite frame, effects
+  on voice 3, and a disk high score.
+
+Measured in VICE x64sc 3.10:
+- worst 12,472 / typical 7,103 cycles on PAL; 12,721 / 7,293 on NTSC;
+- the staged heaviest frame (`make stage`) is 14,073 PAL / 14,740 NTSC;
+- `make phases` compares the panel at all eight phases.
+
+Its review found that sprites on badlines during KERNAL serial I/O hang
+a save in VICE (#43).
+
 **Candidate list, batch 17, two of four: the tech-tech wobbler and DYSP,
 from fixed designs with measured write-cycle sweeps (data 764).** The
 tech-tech wobbler: a badline forced on every line of a six-row logo band
