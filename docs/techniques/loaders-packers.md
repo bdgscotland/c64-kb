@@ -176,6 +176,8 @@ exomizer raw -o packed.raw unpacked.prg
 
 The raw format carries no entry-point metadata; the calling code is responsible for setting up the depacker and passing the source and destination addresses.
 
+**Which version these commands hold for.** All of them run unchanged on Exomizer 3; measured here with 3.1.3b0, built from the author's zlib-licensed source (Bitbucket commit `ba91318`, 2025-05-01) with `make` in `src/`. `sfx sys` on a 4,287-byte test PRG gave a 724-byte file that ran to a green border in the windowless x64sc. What changed in Exomizer 3.0.0 is the bit stream that `mem`, `raw` and `level` write, and a `-P<bitfield>` flag (0 to 63) that selects it: the three commands default to `-P39` since 3.1.0 (`-P7` in 3.0.x), and `-P0` writes the Exomizer 2 format. `sfx` needs no thought, since its stub is generated to match its payload; a `raw` or `mem` stream is only readable by a decruncher built for the same bits, so a decruncher from Exomizer 2, a tutorial's copy of it, or Exomizer's own two streaming decrunchers need `-P0` on the command line, and the shipped 3.x `exodecrunch` source needs its `#define`s to agree with any `-P+16` or `-P-32`. Measured: the shipped decruncher at its defaults reading a `-P0` stream of the same PRG overran its destination and dropped to `READY.`; with the matching flags it decrunched to the expected checksum. The bit meanings and the run table are in `../pitfalls/loader.md`, `exomizer3_proto_flags_mismatch`. An earlier version of this section gave the commands without saying which version they hold for or that `-P` exists.
+
 **Level mode** (`exomizer level`) targets multi-file scenarios where individual files in a game level must be decompressed independently. Level mode trades some ratio for faster decompression because it avoids back-references that cross file boundaries.
 
 ### Why it works
@@ -186,7 +188,7 @@ Exomizer's standard depacker (`exodecrunch.s`, and the sfx stub built from it) d
 
 ### Variations
 
-**Exomizer 3 vs Exomizer 2.** Version 3 (available from `https://bitbucket.org/magli143/exomizer`) introduced improved compression for small files and the explicit `level` and `raw` modes. Version 2 had a slightly different raw format; if using Krill's built-in Exomizer decompression (`loadcompd`), verify which Exomizer version the loader build expects — the Krill README specifies this per Krill release.
+**Exomizer 3 vs Exomizer 2.** Version 3 (available from `https://bitbucket.org/magli143/exomizer`) introduced improved compression for small files and the explicit `level` and `raw` modes. Version 3.0.0 changed the crunched bit stream itself, for every one of `mem`, `raw` and `level`, and made the shape selectable with `-P`; `-P0` gives the Exomizer 2 stream (an earlier version of this sentence said only that "version 2 had a slightly different raw format"). If using Krill's built-in Exomizer decompression (`loadcompd`), verify which Exomizer version and flags the loader build expects — the Krill README specifies this per Krill release.
 
 **Multiple input files.** Exomizer accepts several input files, but it does not chain them:
 ```

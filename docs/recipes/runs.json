@@ -832,5 +832,17 @@
       "pal": "screenshots/irq-owns-port.png",
       "ntsc": "screenshots/irq-owns-port-ntsc.png"
     }
+  },
+  "kickassembler/pwm-digi": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/pwm-digi.png",
+      "ntsc": "screenshots/pwm-digi-ntsc.png"
+    }
   }
 }

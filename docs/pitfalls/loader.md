@@ -851,3 +851,162 @@ Run: `x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -l
 - `../formats/iec-disk-reference.md`, "The 1541 DOS Error Codes": the ROM's conversion and the full DOS table
 - Technique `disk_protection_tricks`: bad-sector signatures are written as controller codes in a preserved image
 - Pitfall `gcr_timing_assumes_stock_drive`: the other place a loader's model of the drive diverges from the drive
+
+---
+
+## tape_bit_is_a_pulse_pair_not_a_pulse — A KERNAL tape bit is a pair of pulses, and there are three pulse lengths, not two
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DC04, DC05, DC06, DC07, DC0D
+**Triggered by kernal:** LOAD, SAVE
+
+### Symptom
+
+A tape tool, a TAP-to-PRG converter or a loader's own tape reader treats each pulse of a KERNAL-written tape as one bit: short means 0, long means 1. It reads garbage. The leader decodes as thousands of zero bits, the filename comes out as noise, no block ever ends where the header says it should, and a checksum written from the same model never matches. A tool built the other way round, one that writes a bit as one pulse, produces a TAP the KERNAL cannot LOAD: it never finds a byte marker and sits at `SEARCHING` until the tape runs out.
+
+### Mechanism
+
+The KERNAL tape stream has three pulse lengths, and a bit is a pair of them. Measured from a SAVE recorded on the windowless x64sc build of VICE 3.10 (PAL), one TAP entry per full pulse: short pulses centre on `$2F` (376 cycles, about 382 µs), medium on `$43` (536 cycles, about 544 µs) and long on `$58` (704 cycles, about 715 µs), each cluster a few units wide because the write interrupt reprograms the timer from software. Short then medium is a 0, medium then short is a 1, long then medium is the byte marker that opens every byte, and long then short closes a block copy. A byte is twenty pulses: the marker pair, eight data-bit pairs least significant bit first, and a parity pair that makes the count of ones in the nine bits odd. Every block is written twice, each copy opened by a countdown, `$89` down to `$81` before the first and `$09` down to `$01` before the second, and closed by a one-byte XOR checksum of the data and the end-of-block marker.
+
+A single-pulse model cannot see any of that. It has no symbol for the medium pulse, so it lumps it with one neighbour or the other, and it has no byte boundary, so any timing hiccup shifts every later bit. The confusion is understandable: the leader before a block really is a run of single short pulses, so the first ten seconds of a tape look like a one-pulse-per-bit stream of zeros, and the medium and long pulses only appear once data starts.
+
+### Fix
+
+Decode in two stages. First classify every TAP entry into S, M or L by threshold (below `$3A`, `$3A`–`$4B`, above `$4B` worked on the VICE recording; a real cassette needs wider bands). Then walk the symbols in pairs, starting at the first L: `LM` opens a byte, then take nine pairs, `SM` as 0 and `MS` as 1, check that the nine bits hold an odd number of ones, and stop the copy at `LS`. Skip the nine countdown bytes, XOR the rest, and compare with the last byte. Read the second copy the same way when the first copy has a parity or checksum failure. When writing, emit the same pairs, and put a leader of short pulses in front of each copy: the KERNAL wrote 27,137 shorts before the header block and 5,376 before the program block.
+
+### Worked example
+
+The bad pattern, a Python converter that calls each pulse a bit:
+
+```text
+raw = open("save.tap", "rb").read()[20:]
+bits = [0 if b < 0x40 else 1 for b in raw if b]      # one pulse, one bit: wrong
+bytes_out = [sum(bits[i+k] << k for k in range(8)) for i in range(0, len(bits) - 8, 8)]
+# prints thousands of $00 for the leader, then noise; no $89 countdown, no filename
+```
+
+The fix, on the same file. The first twenty pulses after the leader in the recording were `57 41 43 2E 2F 42 2E 43 42 2F 2F 42 2F 42 30 43 42 2E 2F 41`:
+
+```text
+def sym(b):
+    return "S" if b < 0x3A else "M" if b < 0x4C else "L"
+
+def read_byte(s, i):                 # s: symbol string, i: index of an 'L'
+    if s[i:i+2] != "LM":
+        return None                  # 'LS' is the end of this copy
+    bits = []
+    for k in range(9):
+        pair = s[i+2+2*k : i+4+2*k]
+        bits.append({"SM": 0, "MS": 1}[pair])
+    assert sum(bits) % 2 == 1        # odd parity over data + parity bit
+    return sum(bits[k] << k for k in range(8)), i + 20
+
+syms, j = [], 0
+while j < len(raw):
+    if raw[j]:
+        syms.append(sym(raw[j])); j += 1
+    else:
+        syms.append("Z"); j += 4         # a zero byte carries a 24-bit count: skip the whole entry
+s = "".join(syms)
+i = s.index("L")
+val, i = read_byte(s, i)             # LM MS SM SM MS SM SM SM MS SM -> $89, the first countdown byte
+```
+
+Running that over the recording gives `$89 $88 ... $81`, then `$01 $01 $08 $0D $08 $54 $20 ...` for the header (type 1, load `$0801`, end `$080D`, name `T`), and the second copy opens with `$09 $08 ... $01`. The 12-byte program block that follows XORs to `$E6`, the checksum byte the KERNAL wrote after it.
+
+### Cross-references
+
+- `../formats/c64-file-formats.md`, ".TAP", "KERNAL bit encoding": the measured pulse table, byte layout and block structure
+- `../hardware/cia-reference.md`, the Timer B and `$DC0D` notes: tape write runs on Timer B underflow interrupts and tape read measures pulse widths on the same timer
+- `../hardware/c64-memory-map.md`, `$01`: bit 3 is the write line the pulses come out of, bit 4 the button sense, bit 5 the motor
+- Technique `cpu_io_port_bank`: why a banking write to `$01` must preserve bits 3 to 5 while tape code runs
+- Pitfall `gcr_timing_assumes_stock_drive`: the disk-side pitfall of modelling a medium's timing from the wrong assumption
+
+---
+
+## exomizer3_proto_flags_mismatch — Exomizer 3 streams need a decruncher built for the same -P bits; a classic decruncher needs -P0 at crunch time
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** exomizer_basics, crunched_data_in_basic_stub
+
+### Symptom
+
+A file crunched with Exomizer 3's `mem`, `raw` or `level` command is fed to a decruncher that does not match it: a decruncher written for Exomizer 2, a copy of `exodecrunch.s` lifted from an older production or a tutorial, or the shipped decruncher assembled with a different set of `#define` switches than the `-P` flags used at crunch time. What happens depends on which bits disagree. Measured here on the windowless x64sc build of VICE 3.10: a stream crunched with `-P0` and read by the shipped decruncher at its defaults writes its output straight past the start of the destination, overwrites its own crunched input, and lands in the KERNAL's BRK handler; the machine comes back to a cleared screen and `READY.` with no message. A stream that differs in bit 5 only decrunches to completion and leaves wrong bytes behind, with nothing to say so; which bytes are wrong varies from run to run, because the misread references pull from RAM the image never wrote. The `sfx` command is not affected, because the cruncher embeds a decruncher generated for the same flags.
+
+### Mechanism
+
+Exomizer 3.0.0 (2018-05-16) changed the crunched bit stream to make the 6502 decruncher faster, and its changelog says the change is incompatible. Which shape the stream takes is set by `-P<bitfield>`, a value from 0 to 63. `exo31info.txt` gives the bits; in our words:
+
+| Bit | Value | What it changes in the stream |
+|-----|-------|-------------------------------|
+| 0 | 1 | Bit order inside the stream: set reads most significant bit first, clear is the Exomizer 2 order |
+| 1 | 2 | A read of more than 7 bits is split into a short shift plus a whole byte instead of shifting every bit |
+| 2 | 4 | The first literal byte is implicit, with no flag bit in front of it |
+| 3 | 8 | The stream is aligned toward its start without a shift flag bit |
+| 4 | 16 | Sequences of length 3 get an offset table of their own, three tables instead of two; the decrunch table grows from 156 to 204 bytes |
+| 5 | 32 | Lets a match repeat the offset of the match before it when only one literal byte or one literal run separates them (new in 3.1.0, 2020-12-22) |
+
+`raw`, `mem` and `level` defaulted to `-P7` in 3.0 and to `-P39` from 3.1. `-P0` clears every bit and writes the Exomizer 2 format. Since 3.1 the flag also takes relative forms: `-P+16` sets bit 4 and leaves the rest, `-P-32` clears bit 5, and they chain (`-P-32+16`). `sfx` accepts `-P` for bits 2 to 5 and forces bits 0 and 1 on, with a warning; the stub it emits always matches the payload.
+
+The stream carries no byte that says which bits it was written with. The decruncher's assumptions are assembled in. In the shipped 6502 decrunchers (`exodecrs/exodecrunch.s` for ca65, and the `kick`, `acme` and `dasm` copies) two of the bits have a switch: `EXTRA_TABLE_ENTRY_FOR_LENGTH_THREE` must be defined for a stream crunched with `-P+16`, and `DONT_REUSE_OFFSET` for one crunched with `-P-32`. Bits 0 to 3 have no switch: those sources read the 3.x form only, so they cannot read a `-P0` stream at all, and a decruncher that reads the `-P0` form cannot read theirs. The readme in `exodecrs/` says the two streaming decrunchers, `exostreamdecr1.s` and `exostreamdecr2.s`, still read the old layout, so streams for them are crunched with `-P0`. The decruncher source also names `DECRUNCH_FORWARDS` for a stream crunched with `-f`, `LITERAL_SEQUENCES_NOT_USED` for `-c` and `MAX_SEQUENCE_LENGTH_256` for `-M256`; the last two are optional size savings, the first is a hard requirement like the `-P` pair.
+
+Why the `-P0` case crashes rather than stalling: the decruncher first builds its tables from the encoding at the head of the stream, then copies literals and back-references downward from the end address the stream names. Read with the wrong bit order, the lengths and offsets are noise. In the measured run the output pointer crossed below the destination start with a store to `$2FFF` at 3,100,944 cycles and wrote another 9,747 bytes, one per address, down through the embedded crunched stream (`$0A8B` to `$0C23` in that build) and the decruncher's own 156-byte table (`$09EF` to `$0A8A`) to `$09EC`, before the CPU executed a `$00` byte and reached `$FE66`, the KERNAL's BRK entry, at 3,377,428 cycles. The KERNAL's BRK path goes through the BASIC warm-start vector, which clears the screen and prints `READY.`; the border colour the harness had set was reset along with it, which is the tell that distinguishes this from a hang.
+
+### Fix
+
+Crunch with the flags the decruncher was built for, and keep the two from the same Exomizer release:
+
+- A decruncher from Exomizer 2, a hand-copied one from an older source, or `exostreamdecr1.s`/`exostreamdecr2.s`: add `-P0` to the `mem`, `raw` or `level` command line.
+- The shipped 3.x `exodecrunch` source: use the default flags, or if you add `-P+16` also define `EXTRA_TABLE_ENTRY_FOR_LENGTH_THREE`, and if you add `-P-32` also define `DONT_REUSE_OFFSET`. Match `-f` with `DECRUNCH_FORWARDS`.
+- A third-party loader with Exomizer decrunching built in (Krill's `loadcompd`, for example): read its release notes for the Exomizer version and flags it expects and crunch with those.
+- `sfx` output needs nothing; the stub always matches its payload.
+
+When a decrunch misbehaves and the cruncher's version is in doubt, `exomizer -v` prints it, and the stream itself has a crude tell: in our `mem -l auto` files of the same input the third byte was `$01` under the defaults and `$80` under `-P0`. That is an observation from one input, not a documented signature.
+
+### Worked example
+
+The measurements below were made with Exomizer 3.1.3b0, built here from the author's zlib-licensed source (Bitbucket `magli143/exomizer`, commit `ba91318`, 2025-05-01) with `make` in `src/`, and the KickAssembler decruncher `exodecrs/kick/exodecrunch.asm` from the same tree, assembled with KickAssembler 5.25. The subject is a 4,287-byte PRG that sets the border and background green, writes a marker to `$02FF`, and carries about 4 KB of patterned filler so there is something to crunch.
+
+Self-extracting form; this is the tutorial command and it works as written:
+
+```text
+exomizer sfx sys -o green_sfx.prg green.prg      # 4,287 bytes in, 724 bytes out
+```
+
+Run in the windowless x64sc (`-default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 6000000 -exitscreenshot out.png -autostart green_sfx.prg`), the exit screenshot has a green border and reads `GREEN BORDER OK`; a second run gave a byte-identical PNG.
+
+The same file through `mem`, with the defaults and with `-P0`:
+
+```text
+exomizer mem -o mem_def.exo green.prg            # 412 bytes; identical to -P39
+exomizer mem -P0 -o mem_p0.exo green.prg         # 411 bytes
+exomizer mem -P7 -o mem_p7.exo green.prg         # 411 bytes (the 3.0 default)
+exomizer mem -P55 -o mem_p55.exo green.prg       # 419 bytes (-P+16: the third table)
+```
+
+Both `mem_def.exo` and `mem_p0.exo` begin with the load address `$07FE` and end with the decrunched end address `$18BE`; 86 of the 411 bytes between them differ, and the third byte is `$01` in one and `$80` in the other.
+
+The decrunch matrix. A harness at `$0801` embeds one stream (crunched with `mem -l none` and the input relocated to `$3000`), calls `exod_decrunch`, then sums the 4,285 output bytes and compares the sum with the expected `$30F1`: border green and `$02FF = $A5` on a match, border red and `$02FF = $E5` on a mismatch, border yellow if it never returns. Each row is one run at 8,000,000 cycles; the first two were repeated and gave byte-identical screenshots.
+
+| Decruncher build | Stream | Result |
+|------------------|--------|--------|
+| defaults | `-P39` (default) | green; `30F1 30F1` on screen |
+| defaults | `-P0` | cleared screen, `READY.`, light-blue border: BRK at `$FE66` after 3,377,428 cycles |
+| defaults | `-P7` | the same crash |
+| defaults | `-P55` (`-P+16`) | the same crash |
+| `EXTRA_TABLE_ENTRY_FOR_LENGTH_THREE` | `-P55` | green; `30F1 30F1` |
+| `DONT_REUSE_OFFSET` | `-P7` (`-P-32`) | green; `30F1 30F1` |
+| `DONT_REUSE_OFFSET` | `-P39` | red; finished, wrong bytes, no crash. The wrong sum differs from run to run (three default runs gave `3874`, `3752` and `3612`): the misread back-references pull from RAM outside the decrunched image, which VICE fills with a random component by default. With `-raminitrandomchance 0` added, two runs were byte-identical and read `385F 30F1` |
+
+The harness's crunched-byte reader is the shipped `main.asm` pattern, a self-modifying `lda $ffff` walked downward from the label after the embedded data. Nothing else in the harness depends on the flags; every difference in the table comes from the `-P` value and the two `#define` lines.
+
+Not measured here: a genuine Exomizer 2 decruncher against a 3.x stream. The shipped 3.x source has no `-P0` build, and no Exomizer 2 tree was fetched. The `exodecrs/` readme's statement that such a decruncher needs `-P0` is read, not run.
+
+### Cross-references
+
+- Technique `exomizer_basics`: the commands, and the version they hold for
+- Technique `crunched_data_in_basic_stub`: where a hand-rolled or borrowed depacker meets a cruncher's output
+- Pitfall `krill_cc65_2_18_miscompile`: the other loader-side failure that comes from mismatched tool versions
+- `exo31info.txt` and `exodecrs/README_exo3.txt` in the Exomizer source tree: the bit definitions and the -P0 note, read for facts only

@@ -194,7 +194,7 @@ just reached 6 (then reset it and return without calling play).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DC04, DC05, DC06, DC07
-**Triggered by techniques:** frame_sync_loop
+**Triggered by techniques:** frame_sync_loop, pwm_digi
 **Mitigated by techniques:** pal_ntsc_detection
 
 ### Symptom

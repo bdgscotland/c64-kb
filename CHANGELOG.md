@@ -5,7 +5,37 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 733, schema 24, tools 1.29.0.
+Data 734, schema 24, tools 1.29.0.
+
+**Candidate list, Tier A batch 5 (data 734).** Four corrections and one
+new technique, each measured with a tool built or driven here. The
+KERNAL tape encoding: the TAP section said two pulse lengths; a TAP that
+the windowless VICE recorded from a real SAVE shows three (modes 376,
+536 and 704 cycles), a bit as a pulse pair, a byte marker, twenty pulses
+a byte with odd parity, the countdown from `$89` and from `$09`, two
+copies of every block and the XOR checksum, all decoded with no parity
+failure over 448 bytes; new pitfall `tape_bit_is_a_pulse_pair_not_a_pulse`.
+GoatTracker: the asset-pipelines page named a converter, `gt2asm`, that
+the 2.77 distribution does not contain (it ships five executables, and
+the export path is the relocator, `gt2reloc`, measured: 1,786 bytes at
+`$1000` for one example song, byte-identical when imported into
+KickAssembler); the five wrong invocations are corrected and a `.SNG`
+field table joins the formats page, checked by parsing the distribution's
+fourteen example songs. `pwm_digi` on the SID page with a recipe: the
+sample rides the pulse width under a fixed carrier; measured from a WAV
+VICE wrote, the carrier at 3,848.6 Hz and the recovered tone at 240.5 Hz
+against a synthesised 240.54 Hz, 128 cycles a sample kept exactly on
+both models, reSID's 8580 at 0.74 of the 6581's level; the page's
+TEST-bit paragraph now says it was not Harsfalvi's method. Nobody
+listened. Exomizer 3.1.3b0 built from source: the default stream is
+`-P39`, `-P0` differs in 86 bytes, and the shipped decruncher at its
+defaults decrunches `-P39` and crashes on `-P0`, `-P7` and `-P55` (the
+`-P0` case ran its output pointer below the destination and overwrote its
+own data), while a single-bit mismatch completes silently with wrong
+bytes; new pitfall `exomizer3_proto_flags_mismatch`, `exomizer_basics`
+corrected in place. Left open: the PWM loop's true floor between 36 and
+128 cycles a sample; the GoatTracker GTS2 to GTS4 layouts; an Exomizer 2
+decruncher against a 3.x stream.
 
 **Code quality, phases C–F (tools 1.29.0, package 0.9.0).** Every MCP
 tool now has a `title` and `annotations` (read-only, destructive,
