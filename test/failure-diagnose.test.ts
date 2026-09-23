@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { failureDiagnose } from "../src/tools/pitfalls.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { failureDiagnose } from "../src/tools/pitfalls.ts";
 
 describe("failureDiagnose", () => {
   let f: FalkorService;

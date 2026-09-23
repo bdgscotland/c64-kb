@@ -2,12 +2,12 @@
  * graph-report: measure the knowledge graph's shape, because a sparse graph
  * is the published reason a graph adds nothing over the text it points at.
  *
- *   npx tsx scripts/graph-report.ts          # plain text
- *   npx tsx scripts/graph-report.ts --json
+ *   node scripts/graph-report.ts          # plain text
+ *   node scripts/graph-report.ts --json
  *
  * Reads the live graph (FALKOR_GRAPH, default c64). Report only; exit 0.
  */
-import { getFalkor } from "../src/context.js";
+import { getFalkor } from "../src/context.ts";
 
 type Row = Record<string, unknown>;
 const f = await getFalkor();

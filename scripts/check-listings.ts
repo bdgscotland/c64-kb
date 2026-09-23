@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 /**
  * check-listings — build every code listing in the knowledge base with the
  * real toolchain it claims to be for.
@@ -24,7 +24,7 @@
  * This exists because eight recipes shipped without ever having been
  * assembled, and six of them did not.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";

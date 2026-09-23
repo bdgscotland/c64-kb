@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 
 describe("code listings build", () => {
   it("every recipe builds and every KickAssembler fragment assembles", () => {
-    const r = spawnSync("npx", ["tsx", "scripts/check-listings.ts", "--allow-missing"], {
+    const r = spawnSync("node", ["scripts/check-listings.ts", "--allow-missing"], {
       encoding: "utf8",
       timeout: 600_000,
     });

@@ -25,10 +25,10 @@
  * tool call returns the full structured plan.
  */
 
-import { search, techniqueLookup, checkCompatibility } from "./query.js";
-import { pitfallsFor } from "./pitfalls.js";
-import { getFalkor, getAnalytics } from "../context.js";
-import type { BriefingOutput } from "../schemas/tool-outputs.js";
+import { search, techniqueLookup, checkCompatibility } from "./query.ts";
+import { pitfallsFor } from "./pitfalls.ts";
+import { getFalkor, getAnalytics } from "../context.ts";
+import type { BriefingOutput } from "../schemas/tool-outputs.ts";
 
 export type BriefingResult = { structured: BriefingOutput; text: string };
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractGraphEntities } from "../src/graph/extract.js";
+import { extractGraphEntities } from "../src/graph/extract.ts";
 
 const PITFALL_DOC = `---
 category: raster

@@ -187,9 +187,7 @@ const CAUSED_REGS = /^\*\*Caused by registers:\*\*\s+(.+)$/m;
 const CAUSED_KERNAL = /^\*\*Caused by kernal:\*\*\s+(.+)$/m;
 const CAUSED_TECHS = /^\*\*Caused by techniques:\*\*\s+(.+)$/m;
 
-// H3 patterns. Note: em-dash is U+2014, not a regular ASCII hyphen.
-// We accept both `—` (em-dash) and ` -- ` (double-hyphen) as separators for tolerance.
-const SEP = /\s+(?:—|--)\s+/;
+// H3 patterns. Separators accept `—` (U+2014) or ` -- `.
 
 const FORMAT_H3  = /^###\s+(\.[A-Z0-9]+)\s+(?:—|--)\s+(.+)$/;
 const PRODUCED_BY = /^\*\*Produced by:\*\*\s+(.+)$/;

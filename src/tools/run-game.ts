@@ -13,7 +13,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { spawn, execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { z } from "zod";
-import { resolveX64sc } from "../services/vice-bin.js";
+import { resolveX64sc } from "../services/vice-bin.ts";
 
 // ---------------------------------------------------------------------------
 // Defaults

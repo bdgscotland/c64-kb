@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
+import { FalkorService } from "../src/services/falkor.ts";
 
 // The cost model lands as cost_<key> and cost_basis on the Technique node
 // (schema 22), and a re-ingest that drops the line clears them.

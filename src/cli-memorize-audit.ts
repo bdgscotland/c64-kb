@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 /**
  * c64-kb memorize-audit — run a candidate's events through the memorization
  * service and print a verdict table.

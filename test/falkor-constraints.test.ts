@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
+import { FalkorService } from "../src/services/falkor.ts";
 
 let svc: FalkorService;
 

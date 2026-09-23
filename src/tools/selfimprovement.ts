@@ -6,8 +6,8 @@
  * reportGap(): agent-facing gap recording (Phase 7a Task 5).
  */
 
-import { getFalkor, getQdrant, getAnalytics } from "../context.js";
-import type { CoverageOutput, SuggestLinksOutput, ReportGapOutput } from "../schemas/tool-outputs.js";
+import { getFalkor, getQdrant, getAnalytics } from "../context.ts";
+import type { CoverageOutput, SuggestLinksOutput, ReportGapOutput } from "../schemas/tool-outputs.ts";
 
 export async function coverage(): Promise<{ structured: CoverageOutput; text: string }> {
   const f = await getFalkor();

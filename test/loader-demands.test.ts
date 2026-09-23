@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { checkCompatibility } from "../src/tools/query.js";
-import { extractGraphEntities, DEMAND_VOCABULARY } from "../src/graph/extract.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { checkCompatibility } from "../src/tools/query.ts";
+import { extractGraphEntities, DEMAND_VOCABULARY } from "../src/graph/extract.ts";
 
 // serial_bus_exclusive (schema 24): a resident drive-code loader owns the
 // drive's serial bus, so KERNAL disk I/O stalls until it is uninstalled

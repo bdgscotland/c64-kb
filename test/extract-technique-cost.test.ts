@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { extractGraphEntities, COST_VOCABULARY, COST_BASIS_WORDS } from "../src/graph/extract.js";
+import { extractGraphEntities, COST_VOCABULARY, COST_BASIS_WORDS } from "../src/graph/extract.ts";
 
 // The **Cost:** and **Cost basis:** lines (docs/CONVENTIONS-techniques.md,
 // schema 22). The figures ride the technique entity; nothing here is an edge.

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { recipeLookup } from "../src/tools/query.js";
-import { extractGraphEntities } from "../src/graph/extract.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { recipeLookup } from "../src/tools/query.ts";
+import { extractGraphEntities } from "../src/graph/extract.ts";
 
 // Tool.version_verified (schema 24): the version the repo's gates ran with,
 // from the toolchain page's `version_verified:` frontmatter key.

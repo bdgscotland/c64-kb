@@ -9,7 +9,7 @@
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import { config } from "../config.js";
+import { config } from "../config.ts";
 
 export interface QueryLogOpts {
   tool: string;

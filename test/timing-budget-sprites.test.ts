@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { timingBudget, spriteDmaCycles, techniqueLookup } from "../src/tools/query.js";
-import { extractGraphEntities } from "../src/graph/extract.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { timingBudget, spriteDmaCycles, techniqueLookup } from "../src/tools/query.ts";
+import { extractGraphEntities } from "../src/graph/extract.ts";
 
 // Sprite DMA in c64_timing_budget (schema 24). The figures are the measured
 // ones in docs/hardware/vic-ii-reference.md, "Sprite DMA": 5 cycles for one

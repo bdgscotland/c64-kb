@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
-import { FalkorService } from "../src/services/falkor.js";
-import { getQdrant } from "../src/context.js";
-import { ingestDoc } from "../src/tools/hydrate.js";
-import { pitfallsFor } from "../src/tools/pitfalls.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { getQdrant } from "../src/context.ts";
+import { ingestDoc } from "../src/tools/hydrate.ts";
+import { pitfallsFor } from "../src/tools/pitfalls.ts";
 
 describe("pitfallsFor", () => {
   let f: FalkorService;

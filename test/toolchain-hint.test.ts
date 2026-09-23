@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
-import { FalkorService } from "../src/services/falkor.js";
-import { getQdrant } from "../src/context.js";
-import { ingestDoc } from "../src/tools/hydrate.js";
-import { toolchainHint } from "../src/tools/query.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { getQdrant } from "../src/context.ts";
+import { ingestDoc } from "../src/tools/hydrate.ts";
+import { toolchainHint } from "../src/tools/query.ts";
 
 describe("toolchainHint", () => {
   let f: FalkorService;

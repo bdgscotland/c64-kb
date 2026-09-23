@@ -19,11 +19,11 @@
  *   - Phase 5+: pitfalls + briefings (later)
  */
 
-import { getQdrant, getFalkor, getAnalytics } from "../context.js";
-import { embed } from "../services/embeddings.js";
-import { BM25Encoder, type SparseVector } from "../services/bm25.js";
-import { config } from "../config.js";
-import { parseRasterBand, rasterBandsOverlap } from "../graph/extract.js";
+import { getQdrant, getFalkor, getAnalytics } from "../context.ts";
+import { embed } from "../services/embeddings.ts";
+import { BM25Encoder, type SparseVector } from "../services/bm25.ts";
+import { config } from "../config.ts";
+import { parseRasterBand, rasterBandsOverlap } from "../graph/extract.ts";
 import fs from "fs";
 import path from "path";
 import type {
@@ -41,7 +41,7 @@ import type {
   TechniquesForOutput,
   CompatibilityCheckOutput,
   TimingBudgetOutput,
-} from "../schemas/tool-outputs.js";
+} from "../schemas/tool-outputs.ts";
 
 const VOCAB_FILE = path.resolve(config.analytics.dbPath, "../bm25-vocab.json");
 let bm25Cache: BM25Encoder | null | undefined; // undefined = not yet attempted
@@ -142,8 +142,7 @@ export interface PalNtscDiffResult {
 export async function search(
   query: string,
   limit: number = 5,
-  filterSource?: string,
-  sourceProject?: string
+  filterSource?: string
 ): Promise<SearchResult> {
   const q = await getQdrant();
   const a = getAnalytics();
@@ -193,8 +192,7 @@ export async function search(
 }
 
 export async function lookupRegister(
-  nameOrAddr: string,
-  sourceProject?: string
+  nameOrAddr: string
 ): Promise<RegisterLookupResult> {
   const f = await getFalkor();
   const q = await getQdrant();
@@ -229,7 +227,7 @@ export async function lookupRegister(
     const decimal = parseInt(decimalMatch[1], 10);
     if (decimal >= 0xd000 && decimal <= 0xdfff) {
       const asHex = decimal.toString(16).toUpperCase().padStart(4, "0");
-      return lookupRegister(asHex, sourceProject);
+      return lookupRegister(asHex);
     }
   }
 
@@ -345,8 +343,7 @@ export async function lookupRegister(
 }
 
 export async function lookupKernal(
-  nameOrAddr: string,
-  sourceProject?: string
+  nameOrAddr: string
 ): Promise<KernalLookupResult> {
   const f = await getFalkor();
   const q = await getQdrant();
@@ -441,8 +438,7 @@ export async function lookupKernal(
 }
 
 export async function memoryMap(
-  addr: string,
-  sourceProject?: string
+  addr: string
 ): Promise<MemoryMapResult> {
   const f = await getFalkor();
   const a = getAnalytics();
@@ -504,8 +500,7 @@ export async function memoryMap(
 }
 
 export async function lookupOpcode(
-  byteOrMnemonic: string,
-  sourceProject?: string
+  byteOrMnemonic: string
 ): Promise<OpcodeLookupResult> {
   const q = await getQdrant();
   const a = getAnalytics();

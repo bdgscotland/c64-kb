@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { extractGraphEntities } from "../src/graph/extract.js";
+import { extractGraphEntities } from "../src/graph/extract.ts";
 
 // docs/CONVENTIONS-archetypes.md: H2 is the title, **Archetype:** carries the
 // name, the fingerprint and common-pitfalls lines are the edge sources.

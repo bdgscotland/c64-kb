@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { checkCompatibility } from "../src/tools/query.js";
-import { extractGraphEntities, DEMAND_VOCABULARY } from "../src/graph/extract.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { checkCompatibility } from "../src/tools/query.ts";
+import { extractGraphEntities, DEMAND_VOCABULARY } from "../src/graph/extract.ts";
 
 // Hard conflicts derived from DEMANDS edges, and the data-coverage report.
 // The graph name comes from vitest.config.ts (c64_test), never the live one.

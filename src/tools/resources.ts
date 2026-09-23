@@ -30,8 +30,8 @@
 
 import fs from "fs";
 import path from "path";
-import { config } from "../config.js";
-import { getFalkor } from "../context.js";
+import { config } from "../config.ts";
+import { getFalkor } from "../context.ts";
 
 const DOCS_DIR = config.docs.dir;
 

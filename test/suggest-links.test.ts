@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { suggestLinks } from "../src/tools/selfimprovement.js";
-import { FalkorService } from "../src/services/falkor.js";
+import { suggestLinks } from "../src/tools/selfimprovement.ts";
+import { FalkorService } from "../src/services/falkor.ts";
 
 const f = new FalkorService();
 

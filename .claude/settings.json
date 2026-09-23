@@ -3,10 +3,10 @@
   "permissions": {
     "allow": [
       "Bash(npm run check:listings*)",
-      "Bash(npx tsx scripts/check-listings.ts*)",
-      "Bash(npx tsx src/cli.ts *)",
-      "Bash(npx c64-kb health*)",
-      "Bash(npx tsc --noEmit*)",
+      "Bash(node scripts/check-listings.ts*)",
+      "Bash(node src/cli.ts *)",
+      "Bash(npm run health*)",
+      "Bash(npm run typecheck*)",
       "Bash(npm test*)",
       "Bash(npx vitest run*)",
       "Bash(java -jar *KickAss.jar*)",
@@ -16,7 +16,10 @@
       "Bash(timeout * x64sc *)",
       "Bash(git status*)",
       "Bash(git diff*)",
-      "Bash(git log*)"
+      "Bash(git log*)",
+      "Bash(npm run lint*)",
+      "Bash(npm run build*)",
+      "Bash(npm run format*)"
     ]
   },
   "hooks": {
@@ -45,7 +48,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|MultiEdit|Write",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
@@ -56,6 +59,18 @@
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-ts-edit.sh",
             "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.sh",
+            "timeout": 180,
+            "statusMessage": "Build and unit tests"
           }
         ]
       }

@@ -7,7 +7,7 @@
  *           should fall back to keyword search.
  */
 
-import { config } from "../config.js";
+import { config } from "../config.ts";
 
 const OLLAMA_URL = config.ollama.url;
 const MODEL = config.ollama.model;

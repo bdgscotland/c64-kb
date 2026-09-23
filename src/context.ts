@@ -3,9 +3,9 @@
  * Lazy-initializes connections to Qdrant, FalkorDB, and Analytics.
  */
 
-import { QdrantService } from "./services/qdrant.js";
-import { FalkorService } from "./services/falkor.js";
-import { AnalyticsService } from "./services/analytics.js";
+import { QdrantService } from "./services/qdrant.ts";
+import { FalkorService } from "./services/falkor.ts";
+import { AnalyticsService } from "./services/analytics.ts";
 
 let qdrant: QdrantService | null = null;
 let falkor: FalkorService | null = null;

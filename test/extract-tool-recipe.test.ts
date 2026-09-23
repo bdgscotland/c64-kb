@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractGraphEntities } from "../src/graph/extract.js";
+import { extractGraphEntities } from "../src/graph/extract.ts";
 
 describe("extractGraphEntities — toolchain-reference docs", () => {
   it("extracts a Tool entity from frontmatter", () => {

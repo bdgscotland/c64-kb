@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { lintSource, lintSourceResult, detectLanguage } from "../src/tools/lint.js";
+import { lintSource, lintSourceResult, detectLanguage } from "../src/tools/lint.ts";
 
 // Two builds of the same platformer, written on 2026-09-22 by agents
 // working from this knowledge base and from nothing, copied here so the

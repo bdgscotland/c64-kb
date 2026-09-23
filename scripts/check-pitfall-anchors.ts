@@ -8,8 +8,8 @@
  * an agent can rely on. This is a report over the pages, not the graph, so
  * it runs without FalkorDB.
  *
- *   npx tsx scripts/check-pitfall-anchors.ts            # report, exit 0 unless a name is dangling
- *   npx tsx scripts/check-pitfall-anchors.ts --max 40   # also fail if more than 40 techniques lack an anchor
+ *   node scripts/check-pitfall-anchors.ts            # report, exit 0 unless a name is dangling
+ *   node scripts/check-pitfall-anchors.ts --max 40   # also fail if more than 40 techniques lack an anchor
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

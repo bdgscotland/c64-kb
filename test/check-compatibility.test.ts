@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { checkCompatibility, timingBudget } from "../src/tools/query.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { checkCompatibility, timingBudget } from "../src/tools/query.ts";
 
 describe("checkCompatibility", () => {
   let f: FalkorService;

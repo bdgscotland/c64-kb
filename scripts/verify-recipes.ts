@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 /**
  * verify-recipes — build every recipe listing, run it headless in VICE with
  * pinned parameters, and compare the screenshot pixel-for-pixel against the
@@ -22,22 +22,22 @@
  * nothing in the repo is modified by the run.
  *
  * Usage:
- *   npx tsx scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
- *   npx tsx scripts/verify-recipes.ts --file docs/recipes/kickassembler/raster-bars.md
- *   npx tsx scripts/verify-recipes.ts --update        # write fresh PNGs as the new baselines (look at them first)
- *   npx tsx scripts/verify-recipes.ts --allow-missing # a recipe with no baseline is a warning, not a failure
- *   npx tsx scripts/verify-recipes.ts --keep DIR      # keep the fresh PNGs and PRGs under DIR for inspection
+ *   node scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
+ *   node scripts/verify-recipes.ts --file docs/recipes/kickassembler/raster-bars.md
+ *   node scripts/verify-recipes.ts --update        # write fresh PNGs as the new baselines (look at them first)
+ *   node scripts/verify-recipes.ts --allow-missing # a recipe with no baseline is a warning, not a failure
+ *   node scripts/verify-recipes.ts --keep DIR      # keep the fresh PNGs and PRGs under DIR for inspection
  *
  * Toolchains are found as check-listings finds them: KICKASS_JAR + java,
  * OSCAR64 or oscar64 on PATH, cl65 on PATH, x64sc on PATH. VICE needs
  * GSETTINGS_SCHEMA_DIR on macOS/Homebrew; it is set here if unset.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 
-import { resolveX64sc, describeX64sc } from "../src/services/vice-bin.js";
+import { resolveX64sc, describeX64sc } from "../src/services/vice-bin.ts";
 const ROOT = new URL("..", import.meta.url).pathname;
 const RECIPES = join(ROOT, "docs", "recipes");
 const MANIFEST = join(RECIPES, "runs.json");

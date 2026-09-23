@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { demoBriefing, gameBriefing, whyProposed } from "../src/tools/briefings.js";
-import { BriefingSchema } from "../src/schemas/tool-outputs.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { demoBriefing, gameBriefing, whyProposed } from "../src/tools/briefings.ts";
+import { BriefingSchema } from "../src/schemas/tool-outputs.ts";
 
 /**
  * Briefing tests — seed a minimal representative graph so we can test

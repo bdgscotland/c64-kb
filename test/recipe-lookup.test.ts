@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { recipeLookup, recipesFor } from "../src/tools/query.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { recipeLookup, recipesFor } from "../src/tools/query.ts";
 
 describe("recipeLookup", () => {
   let f: FalkorService;

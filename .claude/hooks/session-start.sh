@@ -19,7 +19,7 @@ if [ ! -d node_modules ]; then
 elif [ -f dist/cli.js ]; then
   HEALTH=$(timeout 25 node dist/cli.js health 2>/dev/null | sed -n '1,12p' || true)
 else
-  HEALTH=$(timeout 25 npx tsx src/cli.ts health 2>/dev/null | sed -n '1,12p' || true)
+  HEALTH=$(timeout 25 node src/cli.ts health 2>/dev/null | sed -n '1,12p' || true)
 fi
 [ -z "$HEALTH" ] && HEALTH="(health check did not answer — are Qdrant and FalkorDB up? npm run services)"
 

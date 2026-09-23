@@ -10,7 +10,7 @@
  */
 
 import { FalkorDB, ConstraintType, EntityType } from "falkordb";
-import { config } from "../config.js";
+import { config } from "../config.ts";
 
 const GRAPH_NAME = config.falkor.graphName;
 

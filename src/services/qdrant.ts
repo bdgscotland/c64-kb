@@ -1,5 +1,5 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { config } from "../config.js";
+import { config } from "../config.ts";
 
 const COLLECTION = config.qdrant.collection;
 const VECTOR_SIZE = config.qdrant.vectorSize;

@@ -6,12 +6,12 @@
  * consistent.
  */
 
-import { getQdrant, getFalkor } from "../context.js";
-import { chunkMarkdown } from "../services/chunker.js";
-import { embedBatch, isAvailable as ollamaAvailable } from "../services/embeddings.js";
-import { BM25Encoder } from "../services/bm25.js";
-import { extractGraphEntities } from "../graph/extract.js";
-import { config } from "../config.js";
+import { getQdrant, getFalkor } from "../context.ts";
+import { chunkMarkdown } from "../services/chunker.ts";
+import { embedBatch, isAvailable as ollamaAvailable } from "../services/embeddings.ts";
+import { BM25Encoder } from "../services/bm25.ts";
+import { extractGraphEntities } from "../graph/extract.ts";
+import { config } from "../config.ts";
 import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";

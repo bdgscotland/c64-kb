@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { pitfallsFor, failureDiagnose } from "../src/tools/pitfalls.js";
-import { demoBriefing } from "../src/tools/briefings.js";
+import { pitfallsFor, failureDiagnose } from "../src/tools/pitfalls.ts";
+import { demoBriefing } from "../src/tools/briefings.ts";
 
 describe("analytics wiring for Phase 5+ tools", () => {
   it("c64_pitfalls_for completes without throw", async () => {

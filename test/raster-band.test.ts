@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
-import { checkCompatibility, techniqueLookup } from "../src/tools/query.js";
-import { extractGraphEntities, parseRasterBand, rasterBandsOverlap, DEMAND_VOCABULARY } from "../src/graph/extract.js";
+import { FalkorService } from "../src/services/falkor.ts";
+import { checkCompatibility, techniqueLookup } from "../src/tools/query.ts";
+import { extractGraphEntities, parseRasterBand, rasterBandsOverlap, DEMAND_VOCABULARY } from "../src/graph/extract.ts";
 
 // **Raster band:** (docs/CONVENTIONS-techniques.md, schema 24): the raster
 // lines a technique holds the CPU on. check_compatibility's line-sharing

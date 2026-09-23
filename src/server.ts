@@ -58,15 +58,15 @@ import {
   techniquesFor,
   checkCompatibility,
   timingBudget,
-} from "./tools/query.js";
-import { pitfallsFor, failureDiagnose } from "./tools/pitfalls.js";
-import { lintSourceResult } from "./tools/lint.js";
-import { demoBriefing, gameBriefing } from "./tools/briefings.js";
-import { ingestDoc } from "./tools/hydrate.js";
-import { health, formatHealth } from "./tools/intelligence.js";
-import { coverage, suggestLinks, reportGap } from "./tools/selfimprovement.js";
-import { runGame, RunGameInputSchema, RunGameOutputSchema } from "./tools/run-game.js";
-import { registerMemorizationTool } from "./tools/memorization-mcp.js";
+} from "./tools/query.ts";
+import { pitfallsFor, failureDiagnose } from "./tools/pitfalls.ts";
+import { lintSourceResult } from "./tools/lint.ts";
+import { demoBriefing, gameBriefing } from "./tools/briefings.ts";
+import { ingestDoc } from "./tools/hydrate.ts";
+import { health, formatHealth } from "./tools/intelligence.ts";
+import { coverage, suggestLinks, reportGap } from "./tools/selfimprovement.ts";
+import { runGame, RunGameInputSchema, RunGameOutputSchema } from "./tools/run-game.ts";
+import { registerMemorizationTool } from "./tools/memorization-mcp.ts";
 import {
   RegisterLookupSchema,
   KernalLookupSchema,
@@ -88,18 +88,18 @@ import {
   CoverageSchema,
   SuggestLinksSchema,
   ReportGapSchema,
-} from "./schemas/tool-outputs.js";
+} from "./schemas/tool-outputs.ts";
 import {
   STATIC_RESOURCES,
   readStaticResource,
   readRegisterResource,
-} from "./tools/resources.js";
+} from "./tools/resources.ts";
 import {
   demoBriefPrompt,
   gameBriefPrompt,
   demoBriefArgs,
   gameBriefArgs,
-} from "./tools/prompts.js";
+} from "./tools/prompts.ts";
 
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({

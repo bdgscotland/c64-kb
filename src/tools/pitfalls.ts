@@ -11,14 +11,14 @@
  *   nodes, returns top 5 matches with CAUSED_BY enrichment.
  */
 
-import { getFalkor, getQdrant, getAnalytics } from "../context.js";
-import { embed } from "../services/embeddings.js";
-import { BM25Encoder, type SparseVector } from "../services/bm25.js";
-import type { ChunkPayload } from "../services/qdrant.js";
-import { config } from "../config.js";
+import { getFalkor, getQdrant, getAnalytics } from "../context.ts";
+import { embed } from "../services/embeddings.ts";
+import { BM25Encoder, type SparseVector } from "../services/bm25.ts";
+import type { ChunkPayload } from "../services/qdrant.ts";
+import { config } from "../config.ts";
 import fs from "fs";
 import path from "path";
-import type { PitfallsForOutput, FailureDiagnoseOutput } from "../schemas/tool-outputs.js";
+import type { PitfallsForOutput, FailureDiagnoseOutput } from "../schemas/tool-outputs.ts";
 
 const VOCAB_FILE = path.resolve(config.analytics.dbPath, "../bm25-vocab.json");
 let bm25Cache: BM25Encoder | null | undefined;
@@ -44,7 +44,6 @@ export type FailureDiagnoseResult = { structured: FailureDiagnoseOutput; text: s
 type EntityKind = "Register" | "KernalRoutine" | "Technique";
 
 const SEVERITY_ORDER = ["critical", "high", "medium", "low"] as const;
-type Severity = (typeof SEVERITY_ORDER)[number];
 
 /**
  * Strip the leading "${section}\n\n" prefix from a chunk's stored

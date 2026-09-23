@@ -15,13 +15,13 @@
  *      npm run ingest -- --force  # wipe graph + collection, rehash and re-upsert every file
  */
 
-import { QdrantService } from "./services/qdrant.js";
-import { FalkorService } from "./services/falkor.js";
-import { chunkMarkdown } from "./services/chunker.js";
-import { embedBatch, isAvailable as ollamaAvailable } from "./services/embeddings.js";
-import { extractGraphEntities } from "./graph/extract.js";
-import { BM25Encoder } from "./services/bm25.js";
-import { config } from "./config.js";
+import { QdrantService } from "./services/qdrant.ts";
+import { FalkorService } from "./services/falkor.ts";
+import { chunkMarkdown } from "./services/chunker.ts";
+import { embedBatch, isAvailable as ollamaAvailable } from "./services/embeddings.ts";
+import { extractGraphEntities } from "./graph/extract.ts";
+import { BM25Encoder } from "./services/bm25.ts";
+import { config } from "./config.ts";
 import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";

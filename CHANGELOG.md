@@ -7,6 +7,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 729, schema 24, tools 1.28.0.
 
+**Tooling, phase A (no tool surface change).** `tsc --noEmit` checked
+`src/` only, so `scripts/` and `test/` were never type-checked; three
+errors in `test/config.test.ts` and six unused symbols had gone unseen.
+`tsconfig.json` now checks all three and emits nothing;
+`tsconfig.build.json` builds `dist/` and leaves tests out. Relative
+imports end in `.ts`, so Node 24.12+ runs the sources directly and `tsx`
+is gone (`node src/cli.ts`, `npm run health`, `npm run typecheck`). `npm
+pack` shipped no `dist/` (`.gitignore` excluded it and there was no
+`files` list), so a published `bin` would not have run; `files` and
+`prepack` fix that. Removed four dependencies nothing imported (`yaml`,
+`js-yaml`, `@types/js-yaml`, `@anthropic-ai/vertex-sdk`). Qdrant and
+FalkorDB are pinned by digest instead of `:latest`. Tests split into a
+`unit` project (no services, parallel) and an `integration` project. The
+Claude Code hooks match `Edit|Write` (`MultiEdit` no longer exists), call
+the project's own `tsc` (`npx tsc` without `node_modules` fetched an
+unrelated package), and a new Stop hook builds `dist/` and runs the unit
+tests once per turn instead of rebuilding after every edit.
+
 **Candidate list, Tier A, batch 3.** The start-up hang a blind build hit is
 now a pitfall with a measured table behind it,
 `first_open_after_reset_hangs_on_pal`: on PAL a program whose first OPEN

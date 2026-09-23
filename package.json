@@ -1,7 +1,7 @@
 {
   "name": "c64-kb",
   "version": "0.8.0",
-  "description": "Commodore 64 knowledge base \u2014 CLI + MCP server with Qdrant vectors + FalkorDB graph",
+  "description": "Commodore 64 knowledge base — CLI + MCP server with Qdrant vectors + FalkorDB graph",
   "license": "BSD-3-Clause",
   "type": "module",
   "main": "dist/cli.js",
@@ -9,24 +9,29 @@
     "c64-kb": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "dev:serve": "tsx src/cli.ts serve",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "node src/cli.ts",
+    "dev:serve": "node src/cli.ts serve",
     "services": "docker compose up -d",
     "services:stop": "docker compose down",
     "start": "node dist/cli.js",
-    "ingest": "tsx src/ingest.ts",
-    "ingest:force": "tsx src/ingest.ts --force",
-    "ingest:clean": "tsx src/ingest.ts --clean",
-    "memorize:audit": "tsx src/cli-memorize-audit.ts",
-    "feedback:log": "tsx src/tools/feedback.ts",
-    "check:listings": "tsx scripts/check-listings.ts",
-    "check:pitfall-anchors": "tsx scripts/check-pitfall-anchors.ts",
-    "graph:report": "tsx scripts/graph-report.ts",
+    "ingest": "node src/ingest.ts",
+    "ingest:force": "node src/ingest.ts --force",
+    "ingest:clean": "node src/ingest.ts --clean",
+    "memorize:audit": "node src/cli-memorize-audit.ts",
+    "feedback:log": "node src/tools/feedback.ts",
+    "check:listings": "node scripts/check-listings.ts",
+    "check:pitfall-anchors": "node scripts/check-pitfall-anchors.ts",
+    "graph:report": "node scripts/graph-report.ts",
     "vice:headless": "sh scripts/build-vice-headless.sh",
-    "verify:recipes": "tsx scripts/verify-recipes.ts",
+    "verify:recipes": "node scripts/verify-recipes.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "health": "node src/cli.ts health",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -34,20 +39,38 @@
     "better-sqlite3": "^12.10.0",
     "commander": "^14.0.3",
     "falkordb": "^6.6.2",
-    "yaml": "^2.4.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@anthropic-ai/vertex-sdk": "^0.16.0",
+    "@tsconfig/node24": "^24.0.5",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.8.0",
-    "js-yaml": "^4.1.1",
-    "tsx": "^4.22.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24.12"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "templates",
+    "VERSION",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bdgscotland/c64-kb.git"
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "fsevents": false
   }
 }

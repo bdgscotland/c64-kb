@@ -6,10 +6,10 @@
  * Phase 7 self-improvement loop).
  */
 
-import { getQdrant, getFalkor, getAnalytics } from "../context.js";
-import { isAvailable as ollamaAvailable } from "../services/embeddings.js";
-import { getVersions, type Versions } from "../services/versions.js";
-import { config } from "../config.js";
+import { getQdrant, getFalkor, getAnalytics } from "../context.ts";
+import { isAvailable as ollamaAvailable } from "../services/embeddings.ts";
+import { getVersions, type Versions } from "../services/versions.ts";
+import { config } from "../config.ts";
 
 export interface HealthCheck {
   service: string;

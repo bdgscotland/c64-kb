@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chunkMarkdown } from "../src/services/chunker.js";
+import { chunkMarkdown } from "../src/services/chunker.ts";
 
 describe("chunkMarkdown", () => {
   it("splits a doc into chunks at ## boundaries", () => {

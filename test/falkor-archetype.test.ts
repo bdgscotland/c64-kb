@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { FalkorService } from "../src/services/falkor.js";
+import { FalkorService } from "../src/services/falkor.ts";
 
 describe("FalkorService — Archetype, FEATURES, RISKS", () => {
   let f: FalkorService;

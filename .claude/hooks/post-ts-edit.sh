@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# PostToolUse hook on Edit/MultiEdit/Write: after a src/**/*.ts edit, type-
-# check and rebuild dist/, because the MCP server runs `node dist/cli.js
-# serve` and would otherwise keep serving the old code without a word.
+# PostToolUse hook on Edit/Write of a .ts file: format it, lint it, and
+# type-check the project, then tell the agent what failed so it fixes it in
+# the same turn. Per-file and fast; the build and the unit tests run once
+# per turn in stop-gate.sh.
 #
-# Never blocks; adds context the agent sees.
+# Never blocks (PostToolUse cannot undo an edit); it adds context the agent sees.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -12,40 +13,29 @@ FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty')
 [ -z "$FILE_PATH" ] && exit 0
 
 case "$FILE_PATH" in
-  "$REPO_ROOT"/src/*.ts|"$REPO_ROOT"/scripts/*.ts) ;;
+  "$REPO_ROOT"/src/*.ts|"$REPO_ROOT"/scripts/*.ts|"$REPO_ROOT"/test/*.ts) ;;
   *) exit 0 ;;
 esac
+[ -f "$FILE_PATH" ] || exit 0
 
 cd "$REPO_ROOT"
-REL="${FILE_PATH#$REPO_ROOT/}"
+REL="${FILE_PATH#"$REPO_ROOT"/}"
+BIN="$REPO_ROOT/node_modules/.bin"
+[ -x "$BIN/tsc" ] || exit 0   # no node_modules: nothing to run (npx tsc would fetch an unrelated package)
 
-if ! OUT=$(npx tsc --noEmit 2>&1); then
-  jq -n --arg out "$(printf '%s\n' "$OUT" | head -20)" --arg path "$REL" '{
-    hookSpecificOutput: {
-      hookEventName: "PostToolUse",
-      additionalContext: ("TYPE CHECK FAILED after edit to " + $path + ":\n" + $out)
-    }
-  }'
-  exit 0
+REPORT=""
+[ -x "$BIN/prettier" ] && "$BIN/prettier" --write --log-level=warn "$REL" >/dev/null 2>&1 || true
+if [ -x "$BIN/eslint" ]; then
+  if ! LINT=$("$BIN/eslint" --max-warnings=0 --format=unix "$REL" 2>&1); then
+    REPORT+="LINT FAILED in $REL:"$'\n'"$(printf '%s\n' "$LINT" | head -30)"$'\n'
+  fi
+fi
+if ! TSC=$("$BIN/tsc" -p tsconfig.json 2>&1); then
+  REPORT+="TYPE CHECK FAILED after edit to $REL:"$'\n'"$(printf '%s\n' "$TSC" | head -20)"$'\n'
 fi
 
-case "$REL" in
-  src/*)
-    if BUILD=$(npm run build 2>&1); then
-      jq -n --arg path "$REL" '{
-        hookSpecificOutput: {
-          hookEventName: "PostToolUse",
-          additionalContext: ("tsc clean; dist/ rebuilt after " + $path + ". A running MCP server still has the old code until it is restarted.")
-        }
-      }'
-    else
-      jq -n --arg out "$(printf '%s\n' "$BUILD" | tail -20)" --arg path "$REL" '{
-        hookSpecificOutput: {
-          hookEventName: "PostToolUse",
-          additionalContext: ("BUILD FAILED after edit to " + $path + ":\n" + $out)
-        }
-      }'
-    fi
-    ;;
-esac
+[ -z "$REPORT" ] && exit 0
+jq -n --arg ctx "$REPORT" '{
+  hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: $ctx }
+}'
 exit 0

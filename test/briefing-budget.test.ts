@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { computeBudget, renderBudgetText, FRAME_CYCLES, RAM_BUDGET_BYTES } from "../src/tools/briefings.js";
-import { BriefingSchema } from "../src/schemas/tool-outputs.js";
+import { computeBudget, renderBudgetText, FRAME_CYCLES, RAM_BUDGET_BYTES } from "../src/tools/briefings.ts";
+import { BriefingSchema } from "../src/schemas/tool-outputs.ts";
 
 // The budget block is pure arithmetic over the proposed set, so a fixture
 // drives it directly. The graph path is covered in briefings.test.ts.
