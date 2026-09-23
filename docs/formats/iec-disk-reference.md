@@ -600,9 +600,9 @@ Bit names are the DOS ROM listing's (g3sl.github.io, from *Inside Commodore DOS*
 | `$1800` | 1 | DATA OUT | `0` in every state (output; DDR bit set) |
 | `$1800` | 2 | CLK IN | rest `1` PAL, `0` NTSC; job `0` (all five); host `1` |
 | `$1800` | 3 | CLK OUT | `0` in every state (output) |
-| `$1800` | 4 | ATNA, attention acknowledge | `0` in every state (output) |
+| `$1800` | 4 | ATNA, attention acknowledge | `0` in every state (output). Set by a drive program it reads back as `1` (`11`, `90`, `13`, `93` in the runs behind `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`) |
 | `$1800` | 5, 6 | device number jumpers | `0 0` in every state: device 8. Another number: not measured here (x64sc 3.10 has no option to move drive 8) |
-| `$1800` | 7 | ATN IN | `1` in every state; ATN was released in all of them. ATN asserted: not measured here |
+| `$1800` | 7 | ATN IN | `1` in every state of this run. Measured later with a drive program of its own (`pitfalls/loader.md#atn_assert_drives_data_low_via_atna`): `0` with ATN released, `1` with ATN asserted, PAL and NTSC, so `1` here is the asserted level, and the `M-R` reads behind this table were taken while the host still held ATN for the command (an inference from the DOS command flow, not traced). An earlier version of this row said ATN was released in all of them |
 | `$1800` | all | port B | rest `85` PAL, `81` NTSC; job `81`; host `85`. Bits 0 and 2 are one instant of the bus handshake and their level-to-bit polarity is not established by this run |
 | `$1801` | all | port A, unused | `00` |
 | `$1802` | all | DDRB | `1A`: bits 1, 3, 4 outputs, the rest inputs |

@@ -5,7 +5,35 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 754, schema 27, tools 2.0.0, package 0.13.0.
+Data 755, schema 27, tools 2.0.0, package 0.13.0.
+
+**Four more measured pitfalls, and a logic pitfall page (data 755).** A
+one-byte breadth-first distance map that uses 255 for "unreached" wraps
+on a path longer than 254 cells: on a serpentine corridor the live map
+read 1, 0, 1, 2 across true distances 255 to 258, a chaser at 254 walked
+two cells away from the player and every far chaser gathered on a false
+zero; saturating at 254 and a two-byte map are both measured as fixes,
+and the recipe's own maze, whose longest path is 76, cannot show it.
+Asserting ATN from the C64 pulls the drive's DATA line low through the
+1541's ATNA gate whatever a resident drive program writes: DATA IN read
+released with ATN released and low with it asserted under ATNA clear,
+the mirror image under ATNA set, controls with DATA OUT held low, the
+drive's own port read at each phase, a drive that leaves interrupts
+enabled behaving the same, and the fix, a drive loop that copies ATN IN
+into ATNA every pass, leaving DATA free in all three phases. Sprite
+registers persist across a game-state change: a play state that enables
+only its own sprite inherited the title's pointer, expansion, multicolour
+and a latched collision on both models, a game-over screen kept the
+player across its banner, and a per-state VIC baseline routine clears all
+of it. A CharPad `.ctm` embedded whole puts its header on glyph 0 and
+shifts every glyph by 18 bytes on a version 8 file, identically under
+Oscar64 and KickAssembler; the offset-and-length forms of both embeds and
+the raw export are the fixes. Follow-ups from those measurements: the IEC
+page's VIA table now says that ATN IN reads 1 when ATN is asserted, and
+that its snapshot rows were taken under ATN; the drive-upload technique
+records a 34-byte `M-W` as measured; the pitfall conventions list the
+maths and logic categories; the text-mode render page's intro no longer
+numbers its entries.
 
 **The deferred raster anchors (data 754).** `badline_cycle_loss` gains
 sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike and

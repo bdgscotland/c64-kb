@@ -1197,9 +1197,10 @@ through the job queue.
    bytes `M`, `-`, `W`, address low, address high, count, and `count`
    data bytes, then CLRCHN. The UNLISTEN runs it. Send at most 32 data
    bytes per command (the DOS parses the command from a fixed buffer
-   and 32 is the figure loaders use; the recipe sends 32, 32 and 4 and
-   a larger count was not measured here). Advance the address by the
-   count each time.
+   and 32 is the figure loaders use; the recipe sends 32, 32 and 4; a
+   34-byte `M-W` also uploaded and ran in VICE, measured under
+   `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`, and 35 or
+   more was not tried). Advance the address by the count each time.
 3. Verify with `M-R`: the six bytes `M`, `-`, `R`, low, high, count,
    then CHKIN 15 and `count` CHRIN calls, then CLRCHN. Compare with the
    source. The recipe reads 68 bytes in one command; larger counts were

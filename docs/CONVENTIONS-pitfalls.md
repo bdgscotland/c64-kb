@@ -2,12 +2,15 @@
 
 Pitfall docs live in `docs/pitfalls/<category>.md`. Each doc covers ONE
 category (raster, sprite, sid, region, kernal, banking, cpu, loader,
-input, render, scroll, cia) and contains multiple Pitfall entries as H2
-sections. The extractor parses each H2 as one Pitfall node. The
-category is carried into the node as written; the extractor keeps no
-whitelist, so this list is the set in use, not a constraint it
+input, render, scroll, cia, maths, logic) and contains multiple Pitfall
+entries as H2 sections. The extractor parses each H2 as one Pitfall
+node. The category is carried into the node as written; the extractor
+keeps no whitelist, so this list is the set in use, not a constraint it
 enforces (it read eight names until 2026-09-22 while twelve docs
-existed).
+existed; maths and logic were added on 2026-09-23 when their pages
+were created). A new category is allowed when no existing page's
+intro covers the fault: copy the marker and front matter from the
+newest page and add the name here.
 
 The marker `<!-- doc-type: pitfall-reference -->` MUST appear in the
 first 10 lines for the extractor to process the file.
@@ -16,7 +19,7 @@ first 10 lines for the extractor to process the file.
 
 ```yaml
 ---
-category: raster              # raster | sprite | sid | region | kernal | banking | cpu | loader | input | render | scroll | cia
+category: raster              # raster | sprite | sid | region | kernal | banking | cpu | loader | input | render | scroll | cia | maths | logic
 ---
 ```
 

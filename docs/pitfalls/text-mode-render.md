@@ -6,14 +6,17 @@ category: render
 
 # Text-Mode Render Pitfalls
 
-Bugs that show up when implementing a moving-piece overlay on a
-text-mode playfield (Tetris-likes, Sokoban-likes, Boulder Dash, etc.).
-Two of them come from over-thinking the rendering layer; the third comes
-from under-budgeting it; the fourth is an encoding mistake rather than a
-rendering one, PETSCII bytes stored where the VIC expects screen codes;
-the fifth is an addressing mistake, a colour RAM index that runs past
-the last cell and into the CIA; the sixth is a read-back mistake, a VIC
-colour register compared against the value that was written to it.
+Bugs that show up when drawing a game on the text screen: a
+moving-piece overlay on a character playfield (Tetris-likes,
+Sokoban-likes, Boulder Dash, etc.), and the inputs that playfield
+depends on. Some come from over-thinking the rendering layer and one
+from under-budgeting it; the rest are mistakes in what is fed to the
+VIC rather than in the drawing itself: PETSCII bytes where it expects
+screen codes, a colour RAM index that runs past the last cell and into
+the CIA, a colour register compared against the value written to it, a
+mode bit left set from the previous screen, and a charset file embedded
+with its header still on. (An earlier version of this paragraph
+numbered the entries; the numbering went stale twice in a day.)
 An earlier version of this page opened by saying
 a C64 text-mode field redraw is "cheap enough that the simplest 'rewrite
 everything every frame, overlay last' loop just works". It does not: the
@@ -1000,3 +1003,170 @@ table is about.
   reads after the mode write
 - Pitfall: `vic_colour_register_upper_nibble_reads_set` (this page), why
   the `$D016` check masks before comparing
+
+---
+
+## ctm_embedded_whole_shifts_charset — A CharPad `.ctm` embedded whole puts its header where glyph 0 should be and shifts every glyph
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D018
+**Triggered by techniques:** tile_map_render
+
+### Symptom
+
+The program points `$D018` at a charset the build embedded from the
+artist's CharPad project file, and the screen is wrong everywhere at
+once. If the program cleared the screen to code 0 itself, every cleared
+cell shows the same small pattern, so the whole window is covered in
+it. If it cleared through the KERNAL (`CHR$(147)`, or `$E544`), the
+screen is full of `$20` instead, and that cell draws a mixture of two
+other shifted glyphs, so the window reads as garbage rather than as one
+repeated pattern (arithmetic from the shift below, not measured here).
+The glyphs the program did print are there in outline but not as
+drawn, each one a mixture of the tail of one source glyph and the head
+of the next. Text
+written with the same screen codes against a raw charset export comes
+out right, so the codes and the `$D018` value are not the problem. The
+assembler and the compiler both said nothing.
+
+### Mechanism
+
+A `.ctm` is CharPad's save format, not a charset. The file opens with
+the signature `CTM`, a version byte and a short fixed header, and then
+the data sections; the character section is first, but it is not at
+offset 0. On a version 8 file the header is 14 bytes and the character
+section opens with a 2-byte marker and a 2-byte count, so the first
+glyph row is at offset 18 (`$12`). The other versions put it elsewhere:
+20 (`$14`) on version 5, which has no markers, and 23 (`$17`) on
+version 9, whose header carries five extra grid bytes (both arithmetic
+from the field tables in `formats/c64-file-formats.md`, not measured
+here). After the glyphs come the materials, the optional tiles and the
+map, so the file is also longer than the charset it holds.
+
+Oscar64's `#embed "file"` and KickAssembler's `.import binary "file"`
+both copy the file as written. The header lands on glyph 0, the marker
+and count follow it, and every glyph after that sits 18 bytes late: two
+whole glyphs and two rows. What the VIC draws for code `n` is the last
+two rows of source glyph `n - 3` followed by the first six rows of
+source glyph `n - 2`. Code 0, the code the rig below cleared the screen
+to, draws the eight bytes `43 54 4D 08 00 00 00 0E`, which is `CTM`,
+the version and the first half of the header, and that is the pattern
+that covers the window. A KERNAL clear fills the screen with code 32,
+which under the same shift is the last two rows of source glyph 29 and
+the first six of glyph 30 (arithmetic, not measured here).
+
+Measured on the windowless x64sc build of VICE 3.10, PAL, with a
+synthetic version 8 file built in Python from the layout on the formats
+page (no CharPad file exists on this machine): 64 glyphs, no tiles, a
+40 by 25 map, 2,602 bytes, the same shape and size as the page's
+`introfont.ctm` sample. Glyph 0 was blank, glyph 1 solid, glyph 2 a
+checkerboard, glyph 3 a horizontal bar. The charset went to `$3000`
+and `$D018` to `$1C`. A `-moncommands` trace on the store to `$D018`
+dumped `$3000`:
+
+- Oscar64 `#embed 2048 0 "font.ctm"`, and KickAssembler
+  `.import binary "font.ctm"`, both gave `43 54 4D 08 00 00 00 0E 00
+  0F 0C 09 08 07 DA B0 3F 00 00 00 00 00 00 00 00 00 FF FF FF FF FF
+  FF`: header, marker, count, then glyph 0's zeros running into glyph
+  1's `FF` rows two bytes late. Identical bytes from the two toolchains.
+- Oscar64 `#embed 512 18 "font.ctm"` and KickAssembler
+  `.import binary "font.ctm", 18, 512` both gave `00 00 00 00 00 00 00
+  00 FF FF FF FF FF FF FF FF AA 55 AA 55 AA 55 AA 55 00 00 00 FF FF 00
+  00 00`, the four glyphs as drawn.
+
+The exit screenshots agree. The whole-file runs lit 14,086 pixels of
+the 320 by 200 window with the screen cleared to code 0, and the code 0
+cell itself lit 14 pixels; the eight cells printed with codes 0 to 7
+lit 14, 20, 6, 48, 40, 24, 12 and 22. The skipped runs lit 332 pixels,
+the code 0 cell lit none, and the same eight cells lit 0, 64, 32, 16,
+16, 28, 8 and 8, which is blank, solid, checkerboard, bar, bar, box and
+two diagonals. Oscar64 and KickAssembler gave the same counts as each
+other in both cases.
+
+The bare `#embed "font.ctm"` did not compile into a sized array: with
+`char Charset[2048]` Oscar64's first message was
+`font.ctm(2049, 1) : error 3006: '}' expected`, followed by a run of
+3037 and 3006 errors on the lines after it (the file's bytes past the
+2,048 the array holds), and with `char Charset[]` inside a 2 KB region
+it reported "Could not place object 'Charset'", size 2,602 against
+2,048. The two
+forms that build are the sized slice `#embed 2048 0`, which drops the
+tail, and an unsized array in a region wider than 2 KB, which put the
+same header at `$3000` and ran the data to `$3A2A`, 554 bytes into the
+next charset bank. KickAssembler's whole import did the same: the
+`.prg` for it was 12,843 bytes and the skipped one 10,753.
+
+Within version 8 the character section is always first, so the 18-byte
+skip is a constant for that version on the file built here; it is not
+a constant across versions, and whether any CharPad option puts a
+variable-length section before the characters is not measured here.
+
+### Fix
+
+Skip the container. In Oscar64, `#embed 2048 18 "font.ctm"` takes the
+2 KB of glyphs from a 256-character version 8 file, or use the format-aware
+`#embed ctm_chars "font.ctm"`, which reads the header and the markers
+itself (versions 8 and 9 only; it takes a version 5 file without
+complaint and returns the wrong bytes, see the formats page). In
+KickAssembler, `.import binary "font.ctm", 18, $800`. Better than
+either: have the artist export the raw charset (CharPad's "Characters
+binary" export, per `art/asset-pipelines.md`, not measured here) and
+embed that, so the build does
+not carry the version-dependent offset at all; or strip the container
+in a build step with the walker on the formats page. Check the version
+byte before you settle on an offset.
+
+A cheap guard for the build you have: read byte 0 of the charset bank
+before pointing `$D018` at it, and stop if it is `$43`, the `C` of
+`CTM`. A real glyph 0 can hold `$43` (it is a row of `01000011`), so
+the check is a tripwire during development, not a proof.
+
+### Worked example
+
+The four embed lines with what each put at `$3000` (measured above):
+
+```text
+Oscar64:  #embed 2048 0  "font.ctm"    -> 43 54 4D 08 00 00 00 0E ...  header on glyph 0
+Oscar64:  #embed 512 18  "font.ctm"    -> 00 00 00 00 00 00 00 00 FF FF ...  glyphs
+
+KickAss:  .import binary "font.ctm"          -> 43 54 4D 08 ...  same 32 bytes as above
+KickAss:  .import binary "font.ctm", 18, 512 -> 00 00 00 00 ... glyphs, same as above
+
+The file built here holds 64 glyphs; a 256-glyph file takes 2048 in
+place of 512 (arithmetic, not measured here).
+```
+
+The tripwire, which builds as written:
+
+```asm
+// Tripwire: refuse to switch charsets while the CTM header is on glyph 0.
+.label charset = $3000         // the bank the build embedded into
+
+        lda charset            // byte 0 of glyph 0
+        cmp #$43               // 'C' of "CTM": the container came along
+        beq container
+        lda #$1c               // screen $0400, charset $3000
+        sta $d018
+        rts
+container:
+        inc $d020              // flash the border and stop
+        jmp container
+```
+
+### Cross-references
+
+- Format: `.CTM` in `formats/c64-file-formats.md`, the per-version
+  header tables, the section order and the walker that prints each
+  section's offset
+- Toolchain: `#embed` in `toolchains/oscar64-reference.md`, the
+  `LIMIT OFFSET` slice and the `ctm_chars` specifier;
+  `.import binary` in `toolchains/kickassembler-reference.md`, the
+  offset and length parameters
+- Technique: `tile_map_render` (`techniques/scroll.md`), whose CharPad
+  paragraph names the `ctm_*` specifiers; `table_generation`
+  (`techniques/cpu-cycle-tricks.md`), the slice form on a host-built
+  table
+- Pipeline: `art/asset-pipelines.md`, "Charsets (.ctm from CharPad)",
+  the raw export paths
+- Register: `$D018` (`hardware/vic-ii-reference.md`)
