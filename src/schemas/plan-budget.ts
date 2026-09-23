@@ -74,7 +74,7 @@ const DesignMeasuredSchema = z.object({
       missing: z.array(z.string()),
     })
     .nullable(),
-  position: z.enum(["below_low", "within", "above_high", "not_predicted"]),
+  position: z.enum(["below_low", "within", "within_incomplete", "above_high", "not_predicted"]),
   finding: z.string(),
 });
 const PlanDesignSchema = z.object({

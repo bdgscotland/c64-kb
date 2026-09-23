@@ -32,8 +32,13 @@ export interface MeasuredComparison {
     /** Members the prediction could not count: no figure, or above one frame. */
     missing: string[];
   } | null;
-  /** Where the measured worst falls against [low, high + fixed]. */
-  position: "below_low" | "within" | "above_high" | "not_predicted";
+  /**
+   * Where the measured worst falls against [low, high + fixed].
+   * "within_incomplete" is inside the range while `predicted.missing` is
+   * non-empty: the uncounted members could move the range past it, so it
+   * is not agreement.
+   */
+  position: "below_low" | "within" | "within_incomplete" | "above_high" | "not_predicted";
   finding: string;
 }
 
@@ -42,29 +47,46 @@ function missingOf(p: PhaseBudget): string[] {
   return [...p.unknown, ...p.not_found, ...multi];
 }
 
-function positionOf(worst: number, low: number, top: number): MeasuredComparison["position"] {
+function positionOf(
+  worst: number,
+  low: number,
+  top: number,
+  incomplete: boolean,
+): Exclude<MeasuredComparison["position"], "not_predicted"> {
   if (worst < low) return "below_low";
-  return worst > top ? "above_high" : "within";
+  if (worst > top) return "above_high";
+  return incomplete ? "within_incomplete" : "within";
 }
 
-/** `label` names the figure and its value, e.g. "measured worst 8693 (measured-vice)". */
-function placeText(label: string, value: number, range: { low: number; top: number; worst: number }): string {
-  const { low, top, worst } = range;
-  const where = positionOf(value, low, top);
-  if (where === "within") return `${label} lies within the predicted ${low}-${top}`;
-  if (where === "above_high")
-    return `${label} is above the predicted ${low}-${top} by ${value - top} (${Math.round((100 * (value - top)) / worst)} % of the measured worst)`;
+/**
+ * `label` names the figure and its value, e.g. "measured worst 8693
+ * (measured-vice)"; `of` names it in the percentage ("the measured worst").
+ * An excess is given as a share of the figure placed, so a typical frame's
+ * excess is not divided by the worst frame.
+ */
+function placeText(label: string, of: string, value: number, range: { low: number; top: number }): string {
+  const { low, top } = range;
+  if (value >= low && value <= top) return `${label} lies within the predicted ${low}-${top}`;
+  if (value > top)
+    return `${label} is above the predicted ${low}-${top} by ${value - top} (${Math.round((100 * (value - top)) / value)} % of ${of})`;
   return `${label} is below the predicted ${low}-${top} by ${low - value}`;
 }
 
 function findingText(m: DesignMeasurement, p: PhaseBudget, missing: string[]): string {
   const top = p.high + p.fixed_losses.badlines + p.fixed_losses.sprite_dma;
-  const range = { low: p.low, top, worst: m.worst };
-  let out = placeText(`measured worst ${m.worst} (${m.basis})`, m.worst, range);
-  if (m.typical !== undefined) out += `; ${placeText(`typical ${m.typical}`, m.typical, range)}`;
+  const range = { low: p.low, top };
+  let out = placeText(`measured worst ${m.worst} (${m.basis})`, "the measured worst", m.worst, range);
+  if (m.typical !== undefined)
+    out += `; ${placeText(`typical ${m.typical}`, "the typical", m.typical, range)}`;
   if (missing.length === 0) return out;
   const n = missing.length;
-  return `${out}. ${n} member${n === 1 ? " has" : "s have"} no figure (${missing.join(", ")}), so the prediction is incomplete and any agreement is partial`;
+  const consequence =
+    m.worst > top
+      ? "the uncounted cycles may account for the excess"
+      : m.worst < p.low
+        ? "a missing member can only raise the range, so the measured worst stays below it"
+        : "any agreement is partial";
+  return `${out}. ${n} member${n === 1 ? " has" : "s have"} no figure (${missing.join(", ")}), so the prediction is incomplete: ${consequence}`;
 }
 
 /** Each measurement beside the plan's phase for the same phase and region, if the plan has one. */
@@ -92,7 +114,7 @@ export function compareMeasured(measured: DesignMeasurement[], phases: PhaseBudg
     return {
       ...base,
       predicted: { low: p.low, high: p.high, fixed, verdict: p.verdict, missing },
-      position: positionOf(m.worst, p.low, p.high + fixed),
+      position: positionOf(m.worst, p.low, p.high + fixed, missing.length > 0),
       finding: findingText(m, p, missing),
     };
   });

@@ -50,6 +50,30 @@ describe("compareMeasured", () => {
     expect(c?.finding).toContain("2 members have no figure (b, c), so the prediction is incomplete");
   });
 
+  it("inside the range with members missing is within_incomplete, not within", () => {
+    const plan = planBudget([member("a", 3000), member("b")], { region: "PAL" });
+    const [inside, above, below] = compareMeasured([m(3000), m(4000), m(2000)], plan.phases);
+    expect(inside?.predicted?.missing).toEqual(["b"]);
+    expect(inside?.position).toBe("within_incomplete");
+    expect(inside?.finding).toContain("lies within the predicted 3000-3000");
+    expect(inside?.finding).toContain("prediction is incomplete: any agreement is partial");
+    expect(above?.position).toBe("above_high");
+    expect(above?.finding).toContain("the uncounted cycles may account for the excess");
+    expect(below?.position).toBe("below_low");
+    expect(below?.finding).toContain("stays below it");
+  });
+
+  it("gives a typical frame's excess as a share of the typical, not of the worst", () => {
+    const plan = planBudget([member("a", 3000)], { region: "PAL" });
+    const [c] = compareMeasured([{ ...m(10000), typical: 4000 }], plan.phases);
+    expect(c?.finding).toContain(
+      "measured worst 10000 (measured-vice) is above the predicted 3000-3000 by 7000 (70 % of the measured worst)",
+    );
+    expect(c?.finding).toContain(
+      "typical 4000 is above the predicted 3000-3000 by 1000 (25 % of the typical)",
+    );
+  });
+
   it("a region or phase with no budget is not predicted", () => {
     const plan = planBudget([member("a", 3000)], { region: "PAL" });
     const [c] = compareMeasured([{ ...m(100), region: "NTSC" }], plan.phases);

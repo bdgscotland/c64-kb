@@ -124,6 +124,9 @@ describe("GameDesign in the graph and in c64_plan_budget", () => {
     expect(m.find((x) => x.region === "NTSC")?.position).toBe("not_predicted");
     const pal = m.find((x) => x.region === "PAL");
     expect(pal?.predicted?.missing).toEqual(["text_mode_overlay_render"]);
+    // Above the counted range; the uncounted member may explain it, and the finding says so.
+    expect(pal?.position).toBe("above_high");
+    expect(pal?.finding).toContain("the uncounted cycles may account for the excess");
     expect(pal?.finding).toContain("1 member has no figure (text_mode_overlay_render)");
   });
 
