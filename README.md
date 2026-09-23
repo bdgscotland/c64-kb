@@ -110,6 +110,7 @@ screenshot its own `make shot check` grades, with the verdict and the frame mete
 <td align="center"><a href="templates/shmup-vertical/README.md"><img src="docs/figures/starters/shmup-vertical.png" width="220" alt="Vertical shooter over a fixed score panel, enemies in a wave"></a><br><sub>Vertical shooter</sub></td>
 <td align="center"><a href="templates/platformer/README.md"><img src="docs/figures/starters/platformer.png" width="220" alt="Side-scrolling platformer with a walker, a hill and a HUD"></a><br><sub>Scrolling platformer</sub></td>
 <td align="center"><a href="templates/action-puzzle/README.md"><img src="docs/figures/starters/action-puzzle.png" width="220" alt="Boulder Dash style cave with the high-score table"></a><br><sub>Boulder Dash-style cave</sub></td>
+<td align="center"><a href="templates/adventure/README.md"><img src="docs/figures/starters/adventure.png" width="220" alt="Text adventure at its ending: the telescope, the comet and the score"></a><br><sub>Text adventure</sub></td>
 </tr>
 </table>
 
@@ -184,7 +185,8 @@ It copies the starter and the shared harness (`templates/_harness/`), and
 writes `.mcp.json` with this checkout's absolute `dist/cli.js` path. It then
 runs the starter's headless check to prove the copy works.
 
-The starters are `shmup-vertical`, `platformer` and `action-puzzle`, plus
+The starters are `shmup-vertical`, `platformer`, `action-puzzle` and
+`adventure`, plus
 two minimal ones: `hello` (C calling assembly) and `hello-kick`
 (KickAssembler only). In each new project:
 - `make run` opens it in VICE;
