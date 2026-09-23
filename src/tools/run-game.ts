@@ -138,19 +138,14 @@ export type RunGameOutput = {
 // Implementation
 // ---------------------------------------------------------------------------
 
-interface DbjVariable {
-  name: string;
-  start: number;
-  end: number;
-}
-
-interface DbjFile {
-  variables: DbjVariable[];
-}
+// The .dbj is JSON from disk: validated rather than cast.
+const DbjSchema = z.object({
+  variables: z.array(z.object({ name: z.string(), start: z.number(), end: z.number() })),
+});
 
 /** Resolve a top-level variable's (address, size) from a .dbj file. */
 function resolveSymbol(dbjPath: string, symbol: string): { address: number; size: number } {
-  const dbj = JSON.parse(readFileSync(dbjPath, "utf8")) as DbjFile;
+  const dbj = DbjSchema.parse(JSON.parse(readFileSync(dbjPath, "utf8")));
   const v = dbj.variables.find((x) => x.name === symbol);
   if (!v) {
     throw new Error(
@@ -166,125 +161,174 @@ function resolveSymbol(dbjPath: string, symbol: string): { address: number; size
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 type ViceTool = (name: string, args?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+type ScheduledInput = { after_ms: number; offset_in_state: number; bytes: number[] };
 
-export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
-  const stateSymbol = opts.state_symbol ?? "state";
-  const stateReadLen = opts.state_read_len ?? 16;
-  const inputs = (opts.inputs ?? []).slice().sort((a, b) => a.after_ms - b.after_ms);
-  const pollEveryMs = opts.poll_every_ms ?? 250;
-  const maxDurationMs = opts.max_duration_ms ?? 20000;
-  const autostartWaitMs = opts.autostart_wait_ms ?? 5000;
-  const captureScreen = opts.capture_screen ?? true;
+const ViceReplySchema = z.record(z.string(), z.unknown());
 
-  if (!existsSync(opts.prg_path)) throw new Error(`prg not found: ${opts.prg_path}`);
-  if (!existsSync(opts.dbj_path)) throw new Error(`dbj not found: ${opts.dbj_path}`);
-
-  const sym = resolveSymbol(opts.dbj_path, stateSymbol);
-
-  // 1. Kill the x64sc a previous run left on monitor port 6502, and only
-  //    that one: a bare `pkill -f x64sc` also killed a parallel
-  //    verify:recipes run and any VICE the user had open.
+/**
+ * Kill the x64sc a previous run left on monitor port 6502, and only that
+ * one: a bare `pkill -f x64sc` also killed a parallel verify:recipes run
+ * and any VICE the user had open.
+ */
+function killPreviousVice(): void {
   try {
     execSync(`pkill -f "x64sc.*-binarymonitoraddress ip4://127.0.0.1:6502" 2>/dev/null`, { stdio: "ignore" });
-  } catch {
-    /* nothing to kill */
+  } catch (e) {
+    // pkill exits 1 when no process matched: there was nothing to kill.
+    if (e instanceof Error && "status" in e && e.status === 1) return;
+    console.error("c64_run_game: pkill of the previous x64sc failed:", e);
   }
-  await sleep(500);
+}
 
-  // 2. Spawn fresh x64sc with -autostart: the repo's windowless build when
-  //    it exists, else whatever is on PATH (src/services/vice-bin.ts).
+/** Spawn x64sc with -autostart: the repo's windowless build when it exists, else whatever is on PATH (src/services/vice-bin.ts). */
+function launchVice(prgPath: string): void {
   const x64scBin = resolveX64sc()?.path ?? "x64sc";
   const x64sc = spawn(
     x64scBin,
-    ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6502", "-autostart", opts.prg_path],
+    ["-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6502", "-autostart", prgPath],
     { env: DEFAULT_X64SC_ENV, detached: true, stdio: "ignore" },
   );
   x64sc.unref();
-  await sleep(autostartWaitMs);
+}
 
-  // 3. Spawn vice-mcp and connect.
+/** Call one vice-mcp tool and return its JSON reply as an object. */
+function viceTool(client: Client): ViceTool {
+  return async (name, args = {}) => {
+    const r = await client.callTool({ name, arguments: args });
+    const content = z.array(z.object({ text: z.string() }).loose()).safeParse(r.content);
+    const first = content.success ? content.data.at(0) : undefined;
+    if (!first) throw new Error(`tool ${name}: no content`);
+    // An error reply is text, so without this check it surfaced as the
+    // misleading "returned non-JSON".
+    if (r.isError) throw new Error(`tool ${name} failed: ${first.text}`);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(first.text);
+    } catch {
+      throw new Error(`tool ${name} returned non-JSON: ${first.text}`);
+    }
+    const reply = ViceReplySchema.safeParse(parsed);
+    if (!reply.success) throw new Error(`tool ${name} returned JSON that is not an object: ${first.text}`);
+    return reply.data;
+  };
+}
+
+/** What the harness has seen so far; filled in place so an error mid-run still reports it. */
+interface HarnessState {
+  trace: { at_ms: number; bytes: number[] }[];
+  inputsFired: number;
+  finalScreen: string;
+}
+
+interface HarnessPlan {
+  sym: { address: number; size: number };
+  inputs: ScheduledInput[];
+  stateReadLen: number;
+  pollEveryMs: number;
+  maxDurationMs: number;
+  captureScreen: boolean;
+}
+
+/** Fire every scheduled input whose time has come. Inputs are sorted, so the next one is at index inputsFired. */
+async function fireDueInputs(
+  tool: ViceTool,
+  plan: HarnessPlan,
+  st: HarnessState,
+  elapsed: number,
+): Promise<void> {
+  for (
+    let ev = plan.inputs.at(st.inputsFired);
+    ev && ev.after_ms <= elapsed;
+    ev = plan.inputs.at(st.inputsFired)
+  ) {
+    await tool("writeMemory", { address: plan.sym.address + ev.offset_in_state, bytes: ev.bytes });
+    await tool("continue");
+    st.inputsFired++;
+  }
+}
+
+async function runHarness(
+  tool: ViceTool,
+  plan: HarnessPlan,
+  st: HarnessState,
+  startedAt: number,
+): Promise<void> {
+  await tool("connect");
+  await tool("continue");
+
+  for (let elapsed = Date.now() - startedAt; elapsed < plan.maxDurationMs; elapsed = Date.now() - startedAt) {
+    await fireDueInputs(tool, plan, st, elapsed);
+    const mem = await tool("readMemory", {
+      address: plan.sym.address,
+      length: Math.min(plan.stateReadLen, plan.sym.size),
+    });
+    const bytes = z.array(z.number()).safeParse(mem.bytes);
+    st.trace.push({ at_ms: elapsed, bytes: bytes.success ? bytes.data : [] });
+    // Resume emulator and wait until next poll.
+    await tool("continue");
+    await sleep(plan.pollEveryMs);
+  }
+
+  if (plan.captureScreen) {
+    const r = await tool("renderScreen", {});
+    st.finalScreen = typeof r.render === "string" ? r.render : "";
+  }
+
+  await tool("disconnect").catch((e: unknown) => {
+    console.error("c64_run_game: vice-mcp disconnect failed:", e);
+  });
+}
+
+function planFrom(opts: RunGameInput, sym: { address: number; size: number }): HarnessPlan {
+  return {
+    sym,
+    inputs: (opts.inputs ?? []).slice().sort((a, b) => a.after_ms - b.after_ms),
+    stateReadLen: opts.state_read_len ?? 16,
+    pollEveryMs: opts.poll_every_ms ?? 250,
+    maxDurationMs: opts.max_duration_ms ?? 20000,
+    captureScreen: opts.capture_screen ?? true,
+  };
+}
+
+export async function runGame(opts: RunGameInput): Promise<RunGameOutput> {
+  if (!existsSync(opts.prg_path)) throw new Error(`prg not found: ${opts.prg_path}`);
+  if (!existsSync(opts.dbj_path)) throw new Error(`dbj not found: ${opts.dbj_path}`);
+
+  const sym = resolveSymbol(opts.dbj_path, opts.state_symbol ?? "state");
+  const plan = planFrom(opts, sym);
+
+  killPreviousVice();
+  await sleep(500);
+  launchVice(opts.prg_path);
+  await sleep(opts.autostart_wait_ms ?? 5000);
+
+  // Spawn vice-mcp and connect.
   const transport = new StdioClientTransport({ command: "node", args: [DEFAULT_VICE_MCP_PATH] });
   const client = new Client({ name: "c64-run-game", version: getVersions().package }, { capabilities: {} });
   await client.connect(transport);
 
-  const tool: ViceTool = async (name, args = {}) => {
-    const r = await client.callTool({ name, arguments: args });
-    const content = (r as { content?: { type: string; text: string }[] }).content;
-    if (!content?.[0]) throw new Error(`tool ${name}: no content`);
-    // An error reply is text, so without this check it surfaced as the
-    // misleading "returned non-JSON".
-    if (r.isError) throw new Error(`tool ${name} failed: ${content[0].text}`);
-    try {
-      return JSON.parse(content[0].text);
-    } catch {
-      throw new Error(`tool ${name} returned non-JSON: ${content[0].text}`);
-    }
-  };
-
-  const trace: { at_ms: number; bytes: number[] }[] = [];
-  let inputsFired = 0;
+  const st: HarnessState = { trace: [], inputsFired: 0, finalScreen: "" };
   let errMsg: string | undefined;
-  let exit: "max_duration" | "error" = "max_duration";
-  let finalScreen = "";
-
   const startedAt = Date.now();
   try {
-    await tool("connect");
-    await tool("continue");
-
-    let nextInputIdx = 0;
-    while (true) {
-      const elapsed = Date.now() - startedAt;
-      if (elapsed >= maxDurationMs) break;
-
-      // Fire any inputs whose schedule has come due.
-      while (nextInputIdx < inputs.length && inputs[nextInputIdx].after_ms <= elapsed) {
-        const ev = inputs[nextInputIdx];
-        await tool("writeMemory", { address: sym.address + ev.offset_in_state, bytes: ev.bytes });
-        await tool("continue");
-        inputsFired++;
-        nextInputIdx++;
-      }
-
-      // Read state.
-      const mem = await tool("readMemory", {
-        address: sym.address,
-        length: Math.min(stateReadLen, sym.size),
-      });
-      const bytes = (mem.bytes as number[] | undefined) ?? [];
-      trace.push({ at_ms: elapsed, bytes });
-
-      // Resume emulator and wait until next poll.
-      await tool("continue");
-      await sleep(pollEveryMs);
-    }
-
-    if (captureScreen) {
-      const r = await tool("renderScreen", {});
-      finalScreen = (r.render as string | undefined) ?? "";
-    }
-
-    await tool("disconnect").catch(() => {
-      /* tolerant teardown */
-    });
+    await runHarness(viceTool(client), plan, st, startedAt);
   } catch (e) {
-    exit = "error";
     errMsg = e instanceof Error ? e.message : String(e);
   } finally {
-    await client.close().catch(() => {
-      /* tolerant teardown */
+    await client.close().catch((e: unknown) => {
+      console.error("c64_run_game: closing the vice-mcp client failed:", e);
     });
   }
 
   return {
-    frames_observed: trace.length,
+    frames_observed: st.trace.length,
     duration_ms: Date.now() - startedAt,
     state_address: sym.address,
     state_size: sym.size,
-    inputs_fired: inputsFired,
-    trace,
-    final_screen: finalScreen,
-    exit_reason: exit,
-    error: errMsg,
+    inputs_fired: st.inputsFired,
+    trace: st.trace,
+    final_screen: st.finalScreen,
+    exit_reason: errMsg === undefined ? "max_duration" : "error",
+    ...(errMsg === undefined ? {} : { error: errMsg }),
   };
 }

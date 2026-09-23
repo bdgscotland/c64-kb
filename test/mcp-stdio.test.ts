@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
+import { z } from "zod";
 
 // The server speaks JSON-RPC on stdout, so one stray console.log corrupts the
 // stream. It must also exit when the client closes stdin (MCP spec,
@@ -49,8 +50,10 @@ describe("MCP server over stdio", () => {
 
     expect(code).toBe(0);
     const lines = out.trim().split("\n");
-    for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
-    const init = JSON.parse(lines[0]) as { result: { serverInfo: { version: string } } };
+    for (const line of lines) expect(() => JSON.parse(line) as unknown).not.toThrow();
+    const init = z
+      .object({ result: z.object({ serverInfo: z.object({ version: z.string() }) }) })
+      .parse(JSON.parse(lines.at(0) ?? ""));
     expect(init.result.serverInfo.version).not.toBe("0.1.0");
   });
 });
