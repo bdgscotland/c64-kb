@@ -649,7 +649,7 @@ selected by the picture's height.
 # usage: verdict_shot.sh prog.prg [pal|ntsc]   exit 0 = PASS, 1 = FAIL, 2 = no verdict
 prg=$1; model=${2:-pal}; shot=$(mktemp -t verdict).png
 flags=""; [ "$model" = ntsc ] && flags="-model ntsc"
-GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -minimized -warp +sound \
+GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -warp +sound \
   +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 $flags \
   -exitscreenshot "$shot" -autostart "$prg" >/dev/null 2>&1
 python3 - "$shot" <<'PY'
@@ -743,18 +743,11 @@ the `00` that was there before it. A harness takes the last `>C:02ff`
 line:
 
 ```bash
-x64sc -default -minimized -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 \
+x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 \
   -moncommands verdict.mon -autostart prog.prg >/dev/null 2>&1
 code=$(grep '^>C:02ff' /tmp/verdict.log | tail -1 | awk '{print $2}')
 case "$code" in 01) exit 0;; 02) exit 1;; *) exit 2;; esac
 ```
-
-`-minimized` starts the emulator with its window minimised so a batch of
-headless runs does not take the desktop's focus every time; the exit
-screenshot comes from the emulated frame, not the window, and the PNG is
-byte-identical with or without the flag (checked on the hello-world
-recipe against its pinned picture, 2026-09-22). Every command on this
-page and in the recipes' Build sections may take it.
 
 The red Oscar64 build logged `00` then `02` with this file. Do not use
 `watch` or `break` here: a stopping checkpoint enters the monitor with
@@ -910,7 +903,7 @@ empty. The route that works headless is the remote
 text monitor, a TCP port that speaks the same commands:
 
 ```bash
-GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -minimized -warp +sound \
+GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas timeout 180 x64sc -default -warp +sound \
   +autostart-delay-random -autostartprgmode 1 -limitcycles 6000000 \
   -remotemonitor -remotemonitoraddress ip4://127.0.0.1:6510 \
   -moncommands session.mon -autostart stable-raster-irq.prg

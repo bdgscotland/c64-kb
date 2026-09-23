@@ -18,7 +18,7 @@ and portable C64 code to fail in production.
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image
+**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram
 
 ### Symptom
 

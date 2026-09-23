@@ -334,6 +334,114 @@ techniques and will be demonstrated in Phase 4+ recipe docs.
 
 ---
 
+## charset_copy_rom_to_ram — Copy the character ROM into RAM
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D018
+**Requires:** cpu_io_port_bank
+**Cost:** bytes_code=70, bytes_data=2048
+**Cost basis:** derived-listing
+
+### Why
+
+The built-in font lives in ROM, so it cannot be edited in place, and
+the VIC only sees it in banks 0 and 2 (`char_rom_under_vic`). A program
+that wants the stock glyphs plus a few of its own, or the stock font in
+VIC bank 1 or 3, needs a RAM copy. The copy is cheap and runs once, but
+it is the one moment in most programs when the I/O chips leave the
+address map, and that moment has a failure mode that stops the machine.
+
+### How
+
+1. `SEI`.
+2. Read `$01`, clear bits 0-2, set `$33` (CHAREN low, HIRAM and LORAM
+   high): `$D000-$DFFF` now reads the character ROM. Keep bits 3-5 as
+   found (`cpu_io_port_bank`, "Preserving bits 3-5").
+3. Copy 2 KB (`$D000-$D7FF`, the upper-case set) or 4 KB (both sets)
+   to a RAM address the VIC can reach and that is not the ROM shadow.
+   In bank 0 that means anything but `$1000-$1FFF`.
+4. Read `$01`, clear bits 0-2, set `$37`: I/O is back.
+5. `CLI`.
+6. Point `$D018`'s character-base field at the copy. Only then edit
+   glyphs, or edit them first and switch afterwards; either order works
+   because the VIC is not reading the copy until the switch.
+
+### Why it works
+
+`$01` bit 2 (CHAREN) with HIRAM or LORAM set selects the character ROM
+in the `$D000` window instead of the VIC, SID, CIAs and colour RAM. The
+PLA switches on the next bus cycle. Writes in that window go to the RAM
+underneath, not to the ROM and not to the I/O chips.
+
+The interrupt flag is the whole safety of the technique. The KERNAL's
+IRQ handler acknowledges CIA1 by reading `$DC0D`, scans the keyboard
+through `$DC00`/`$DC01`, and a raster handler acknowledges the VIC by
+writing `$D019`. While the ROM is mapped every one of those addresses
+is a font byte. An acknowledge that never happens leaves the interrupt
+line asserted, so the handler re-enters as soon as it returns, and the
+copy loop never gets another cycle. Measured in VICE x64sc with the
+recipe below: the copy done with interrupts enabled managed 30 of 256
+loop iterations on PAL and 7 on NTSC before the first KERNAL IRQ, and
+never advanced again; the handler ran 26 times in the 61,000 cycles a
+watchdog NMI allowed it, and its keyboard scan queued one phantom key.
+Pitfall `irq_during_charen_window` has the detail. A program that has
+replaced the KERNAL IRQ with its own handler is in the same position if
+that handler touches any I/O register, which every raster handler does.
+
+### Variations
+
+**Copy one set only.** The upper-case/graphics set is `$D000-$D7FF`,
+the lower-case set `$D800-$DFFF`. Most programs want one; eight
+load/store pairs in the loop instead of sixteen.
+
+**Copy with the display blanked.** Every badline the copy spans costs
+about 40 cycles. Clear `$D011` bit 4, wait for a frame past line `$30`
+so the VIC samples DEN off, copy, restore. Or do the copy before the
+display is switched on at all, which is where a loader or a title
+screen usually has it anyway.
+
+**Copy under a raster interrupt.** If a raster IRQ is already running,
+`SEI` alone is not enough for a long copy: the interrupt is only
+deferred, and the frame it was meant to split is torn. Stop the raster
+IRQ (clear `$D01A` bit 0, acknowledge `$D019`), copy, restart it. The
+copy is under 40,000 cycles, two PAL frames, so the interruption is one
+or two frames of the default picture.
+
+**Pointer loop.** In C, `memcpy(dst, (const char *)0xd000, 2048)`
+between the two `$01` writes does the same job; the compiler's loop is
+slower than the unrolled indexed one but the difference is one frame.
+
+### Cycle budget
+
+Measured in VICE x64sc with the CIA2 timers, the 17-cycle timing window
+subtracted, in the recipe below: the 2 KB copy costs 19,733 cycles with
+the display blanked on both models, which is exactly the instruction
+table (eight `LDA abs,X` / `STA abs,X` pairs, `INX`, `BNE`, 256 times,
+plus 22 for the two `$01` switches). With the display on it is 20,784
+on PAL and 21,150 on NTSC, the difference being the badlines the window
+spans. The 4 KB copy with the display on is 39,580 PAL, 40,267 NTSC;
+arithmetic puts it at 38,165 with the display blanked, not measured
+here. Two figures from earlier builds are worth knowing: a copy routine
+that holds `SEI` and `CLI` inside the timed window reads about 470
+cycles high, because the KERNAL IRQ that fell due during the copy runs
+at the `CLI`; and a loop whose `BNE` crosses a page boundary reads 255
+high (pitfall `branch_page_cross_extra_cycle`). The Cost line above is
+the built 2 KB routine's code and the RAM the copy occupies; the copy
+runs once, so it carries no per-frame figure.
+
+### Recipes
+
+- `recipes/kickassembler/charset-copy-rom-to-ram.md`: the copy,
+  checked against a host checksum of the ROM, timed three ways, the
+  VIC pointed at it, and then done once without `SEI` under a watchdog
+  NMI so the hang is measured rather than described.
+- `recipes/kickassembler/big-font-scroller.md` and
+  `recipes/oscar64/load-asset-runtime.md` do the copy inline as a step
+  of something else.
+
+---
+
 ## screen_ram_relocation — Move screen RAM via $D018 hi-nibble
 
 **Complexity:** low

@@ -12,8 +12,9 @@ recoloring — requires tight coordination between CPU writes and the VIC's
 internal state machine. The pitfalls in this document describe the most
 common failures: silent drops when too many sprites share a line, visual
 artifacts when expansion state changes at the wrong moment, coordinate
-teleportation when the 9th X bit is forgotten, and collisions that vanish
-before the CPU can read them. All four have bitten experienced C64 coders.
+teleportation when the 9th X bit is forgotten, collisions that vanish
+before the CPU can read them, and sprites the game counts while the border
+hides them. All of them have bitten experienced C64 coders.
 
 ---
 
@@ -578,3 +579,201 @@ the cached variable is immediately populated.
   single-read-per-frame discipline
 - Technique: `stable_raster_irq` — prerequisite for cycle-exact IRQ-driven
   collision response
+
+---
+
+## sprite_x_range_hidden_and_seam — A sprite at X below 24 or above 343 sits under the border while the game counts it alive, and on PAL X $1F8 to $1FF is never drawn at all
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D000, D010
+**Triggered by techniques:** object_pool, tile_grid_collision, sprite_multiplex_8, sprite_multiplex_24, sideborder_open
+
+### Symptom
+
+Two faces of one fact.
+
+The HUD says three enemies are alive and the player sees two. A shot
+fired at the edge of the screen never lands and never stops. The object
+is there in every table the game keeps, its sprite is enabled, its
+collision bit fires when something walks into it, and nobody can see it,
+because its X is 10, or 350, and the border is drawn over it. A game
+built blind, with the counts checked and the picture not looked at, ships
+this.
+
+The other face needs the side borders open. A sprite sliding left off
+the picture, its X stepping down from $1E0 through $1FF and on to $20F
+(which the chip sees as $00F), blinks out for eight steps and comes back.
+On NTSC it does not blink.
+
+### Mechanism
+
+Sprite X is nine bits, 0 to 511: eight in `$D000 + 2n`, the ninth in
+`$D010`. Nothing in the chip clips that range to the picture. The
+display window is X 24 to 343 with CSEL = 1 (31 to 334 with CSEL = 0),
+and the border is the front-most layer, drawn over any sprite pixel that
+falls outside the window (`mob_priority` in `techniques/sprite.md`). A
+sprite at X 0 to 23 is partly or wholly under the left border; at 321 to
+343 partly and from 344 wholly under the right one. The sprite still
+exists to the VIC-II: its DMA runs every line (the stall in
+`recipes/kickassembler/sideborder-open.md` depends on sprites at X 344
+and 500 fetching on every line) and its position registers read back.
+Only the pixels are missing. Whether `$D01E` still latches a
+sprite-to-sprite hit under the border was not measured here; `$D01F`
+does not, since border pixels are not foreground (`mob_priority`).
+
+The seam is a different thing. A PAL line is 63 cycles of 8 pixels, 504
+positions, so the VIC-II's X counter runs 0 to $1F7 and wraps. The nine
+bits can hold $1F8 to $1FF, but the counter never reaches those values,
+so a sprite placed there never matches and is not drawn on any line.
+Measured in VICE x64sc with the side borders open: X 503 ($1F7) draws
+at picture columns 7 to 30, wrapping from the right end of the line to
+the left in the middle of the sprite; X 504, 507 and 511 draw nothing;
+X 0 draws at columns 8 to 31. Position $1F7 and position 0 are
+neighbours, and the eight values between them are a hole. A 16-bit game
+coordinate that steps through them one a frame loses the sprite for
+eight frames; one that steps by 8 or more may skip the hole on one
+frame and fall into it on another.
+
+An NTSC line is 65 cycles, 520 positions (arithmetic; the cycle count
+is `hardware/vic-ii-reference.md`'s). Measured in VICE x64sc with
+`-model ntsc` and the borders open: every value from 488 to 511 draws,
+X 511 sits at columns 7 to 30 and X 0 at 8 to 31, so $1FF and 0 are
+neighbours and there is no hole in $1E0 to $20F. Where the line's eight
+positions beyond 512 fall is not visible in the picture and was not
+measured here.
+
+The picture VICE writes starts at column 0 = X 496 on PAL and X 504 on
+NTSC, and column 8 = X 0 on both, so a sprite at $1E0 (480) shows its
+last eight columns on PAL (columns 0 to 7) and nothing on NTSC, not
+because it is hidden but because it is left of the picture's edge.
+
+### Fix
+
+Keep the visibility test in the game, not in the chip. An object is on
+screen only while 24 <= X <= 343 (fully so up to 320); with CSEL = 0,
+31 <= X <= 334. Everything else is off screen for scoring, counting and
+collision, whatever `$D015` says. Either despawn it (free the pool slot,
+so the count and the picture agree) or clamp it (a player sprite stops
+at 24 and 320). For X in the 256 to 343 range the test needs the ninth
+bit; see `sprite_x_high_bit_wrong_register` above for getting it into
+`$D010`.
+
+With the side borders open on PAL, never write an X in $1F8 to $1FF.
+Wrap the coordinate at 504, not 512: a sprite leaving to the left at
+$1F7 continues at $1F7 - 504 = -1, that is, at the far right, and a
+table-driven position should be built modulo 504. On NTSC the wrap is
+at 512 within the range measured; a routine that has to run on both
+picks the modulus from the model at start-up.
+
+### Worked example
+
+The bad pattern is a count over pool slots whose state is not zero,
+with no test on X. The fix is a nine-bit range test and a despawn:
+
+```kickassembler
+// objX, objX+1: the 16-bit X the game keeps for one object; objState: 0 = free.
+// The HUD counts every slot whose objState is not 0.
+// Wrong: an object at X 10 or X 400 is alive to that count and under the
+// border to the player. Right: an object counts only while 24 <= X <= 343.
+.label objX     = $02
+.label objState = $04
+.const X_LEFT   = 24
+.const X_RIGHT  = 343
+
+on_screen:                       // returns C = 1 on screen, C = 0 hidden
+    lda objX + 1
+    bne high_page
+    lda objX
+    cmp #X_LEFT                  // 0..23 hidden, 24..255 on screen
+    bcs yes
+    clc
+    rts
+high_page:
+    cmp #1
+    bne no                       // 512 and up does not exist on the chip
+    lda objX
+    cmp #<(X_RIGHT + 1)          // 256..343 on screen, 344..511 hidden
+    bcc yes
+no:
+    clc
+    rts
+yes:
+    sec
+    rts
+
+despawn_if_hidden:
+    jsr on_screen
+    bcs keep
+    lda #0
+    sta objState                 // freed: the HUD no longer counts it
+keep:
+    rts
+```
+
+The measurements behind the numbers above came from one KickAssembler
+program run in VICE x64sc 3.10 (`-default -warp -limitcycles 6000000`,
+PAL and `-model ntsc`), eight solid 24 x 21 sprites in distinct colours
+on a blue background under a black border, X values passed on the
+command line, columns read from the exit screenshot with PIL. Two
+arrangements: borders closed, one sprite per row at eight X values; and
+borders open over a 42-line region by the method of
+`recipes/kickassembler/sideborder-open.md` (all eight sprites Y-expanded
+on the region, a `DEC $D016` whose second write lands on the cycle
+between the two border comparisons, a `YSCROLL` rewrite each line), with
+sprite 0 at the value under test and the other seven parked in the
+window and at X 344. The PAL constants were the recipe's; on NTSC the
+loop opened the border with two more cycles before the first `DEC` and
+one more in the loop, which is a by-product and not a claim about the
+cycle number. Column 8 of the picture is X 0.
+
+Borders closed, both models, identical columns:
+
+| X | Drawn | Picture columns |
+|---|---|---|
+| 0 | no | none |
+| 23 | 23 of 24 columns | 32 to 54 |
+| 24 | all | 32 to 55 |
+| 320 | all | 328 to 351 |
+| 321 | 23 of 24 | 329 to 351 |
+| 343 | 1 of 24 | 351 |
+| 344 | no | none |
+| 511 | no | none |
+
+Borders open, sprite 0 at the seam:
+
+| X | PAL columns | NTSC columns |
+|---|---|---|
+| $1E0 (480) | 0 to 7 | none (left of the picture) |
+| $1E8 (488) | not run | 0 to 7 |
+| $1EF (495) | 0 to 22 | 0 to 14 |
+| $1F0 (496) | 0 to 23 | 0 to 15 |
+| $1F4 (500) | 4 to 27 (the side-border recipe's own picture) | 0 to 19 |
+| $1F7 (503) | 7 to 30 | 0 to 22 |
+| $1F8 (504) | none | 0 to 23 |
+| $1FB (507) | none | 3 to 26 |
+| $1FC (508) | not run | 4 to 27 |
+| $1FF (511) | none | 7 to 30 |
+| $200 (0) | 8 to 31 | 8 to 31 |
+| $208 (8) | 16 to 39 | 16 to 39 |
+| $20F (15) | 23 to 46 | 23 to 46 |
+
+### Cross-references
+
+- Registers: `D000` to `D00E` and `D010`: the nine-bit X the range test
+  reads
+- Register: `D016`: CSEL narrows the window to 31 to 334
+- Pitfall: `sprite_x_high_bit_wrong_register`: the ninth bit the test
+  above depends on
+- Technique: `sideborder_open`: the only way a sprite at X 0 to 23 or
+  344 up is seen, and the only case in which the PAL hole shows
+- Technique: `mob_priority`: the border is drawn over every sprite; a
+  sprite under it latches no `$D01F` hit
+- Technique: `object_pool`: the slot state the HUD counts, and where the
+  despawn belongs
+- Technique: `tile_grid_collision`: its column is `(x - 24) >> 3`, which
+  goes negative for a sprite under the left border
+- Recipe: `recipes/kickassembler/sideborder-open.md`: the region loop
+  the measurement reused, with a sprite at X 500 in its picture
+- Recipe: `recipes/kickassembler/sprite-sine-chain.md`: X 343 showing
+  one column, X 16 starting at column 32

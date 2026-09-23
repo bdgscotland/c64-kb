@@ -521,5 +521,41 @@
       "pal": "screenshots/sine-table-runtime.png",
       "ntsc": "screenshots/sine-table-runtime-ntsc.png"
     }
+  },
+  "kickassembler/charset-copy-rom-to-ram": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/charset-copy-rom-to-ram.png",
+      "ntsc": "screenshots/charset-copy-rom-to-ram-ntsc.png"
+    }
+  },
+  "kickassembler/nmi-timer-tick": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/nmi-timer-tick.png",
+      "ntsc": "screenshots/nmi-timer-tick-ntsc.png"
+    }
+  },
+  "kickassembler/software-sprite-preshifted": {
+    "cycles": 4160000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/software-sprite-preshifted.png",
+      "ntsc": "screenshots/software-sprite-preshifted-ntsc.png"
+    }
   }
 }

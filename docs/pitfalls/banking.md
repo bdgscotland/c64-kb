@@ -22,7 +22,7 @@ hardcoded charset/bitmap blit address.
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank, big_font_2x2
+**Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank, big_font_2x2, charset_copy_rom_to_ram
 
 ### Symptom
 
@@ -558,3 +558,113 @@ simply be relocated to wherever the linker has free space.
   the primary diagnostic for an over-large image; Oscar64 places BSS/heap/stack
   above the code+data image, so a growing image walks toward fixed asset
   addresses with no build-time warning.
+
+---
+
+## irq_during_charen_window — An interrupt taken while the char ROM covers I/O can never acknowledge itself
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DC0D, D019
+**Triggered by techniques:** charset_copy_rom_to_ram, char_rom_under_vic, cpu_io_port_bank
+
+### Symptom
+
+The program stops dead somewhere inside a character ROM copy, or just
+after one. No crash to `READY.`, no garbage, no border flash: the
+screen stays as it was. If the copy was meant to be followed by a
+`$D018` write, the font never changes. A machine in this state does not
+respond to keys, and on a real C64 RUN/STOP-RESTORE may or may not get
+it back, depending on what the NMI handler touches.
+
+### Mechanism
+
+With `$01` = `$33` the `$D000-$DFFF` window is the character ROM. An
+interrupt that arrives in that state runs a handler written for the
+normal map. The KERNAL IRQ handler ends with `LDA $DC0D` to clear CIA1's
+interrupt flag; a raster handler writes `$D019` to clear the VIC's. Both
+now address font bytes. The read does not reach the CIA, the write goes
+to the RAM under the ROM, and the source's flag stays set. `/IRQ`
+stays low, `RTI` restores a clear I flag, the CPU takes the interrupt
+again on the next instruction boundary, and the copy loop between
+those instruction boundaries gets nothing. Everything the handler does
+before the failed acknowledge also happens against the wrong chip: the
+KERNAL keyboard scan writes its column selects into RAM and reads its
+row byte from the ROM, and decodes whatever glyph row that is as keys.
+
+Measured in VICE x64sc 3.10 (`charset-copy-rom-to-ram` recipe, PAL): a
+4 KB copy started with interrupts enabled ran 30 of 256 loop iterations
+before the KERNAL IRQ fell due, then the handler ran 26 times in the
+61,000 cycles a watchdog allowed and the loop counter never moved; one
+byte was in the keyboard buffer afterwards. NTSC: 7 iterations, 27
+handler passes, one key. Both runs reproduce byte for byte. The
+iteration count depends only on where in the timer period the copy
+began (CIA1 timer A is latched with `$4025` on PAL, `$4295` on NTSC,
+from the KERNAL image; about 16,400 and 17,000 cycles), so a copy that
+happens to start just after a tick can get through several thousand
+bytes and still hang.
+
+`charset_under_io_invisible_to_cpu` on this page has the other half of
+this trap and a longer run of the same hang; that pitfall is about
+reading the wrong bytes when `$01` is left at `$37`, this one is about
+what happens when `$01` is set right and interrupts are left on.
+
+### Fix
+
+`SEI` before the `$01` write that maps the ROM; `CLI` after the write
+that restores I/O. Nothing in between may enable interrupts, which
+rules out KERNAL calls (`kernal_assumes_sei_cleared`). If a raster IRQ
+is live and the copy is long, stop it rather than defer it: clear
+`$D01A` bit 0 and acknowledge `$D019` before the switch, restart after.
+A program that has to take an interrupt while the ROM is mapped (rare;
+a sample player, say) needs a handler that restores `$37` as its first
+instruction and puts `$33` back before `RTI`, and that handler must be
+in RAM or KERNAL, never under `$D000`.
+
+The recipe's watchdog is a debugging aid, not a fix: a CIA2 timer NMI
+that restores `$37`, acknowledges both CIAs and unwinds the stack turns
+the silent hang into a reported failure while the copy is being
+developed.
+
+### Worked example
+
+```kick
+// BAD: the ROM is mapped and the KERNAL IRQ is still armed.
+    lda $01
+    and #$f8
+    ora #$03
+    sta $01             // char ROM at $D000
+    ldx #0
+!:  lda $d000, x        // ~30 iterations later on PAL the IRQ fires,
+    sta $3000, x        // LDA $DC0D reads a font byte, and the handler
+    inx                 // re-enters for ever
+    bne !-
+
+// GOOD: no interrupt can run while I/O is out of the map.
+    sei
+    lda $01
+    and #$f8
+    ora #$03
+    sta $01
+    ldx #0
+!:  lda $d000, x
+    sta $3000, x
+    inx
+    bne !-
+    lda $01
+    and #$f8
+    ora #$07
+    sta $01             // I/O back
+    cli                 // the deferred IRQ runs now, and acknowledges
+```
+
+### Cross-references
+
+- Technique `charset_copy_rom_to_ram`: the copy done safely, timed, and done once unsafely under a watchdog.
+- Technique `cpu_io_port_bank`: the `$01` values and the bits to preserve.
+- Technique `char_rom_under_vic`: where the VIC sees the ROM without any copy.
+- Pitfall `charset_under_io_invisible_to_cpu`: the copy made with I/O still mapped.
+- Pitfall `kernal_assumes_sei_cleared` (kernal-and-io.md): why a KERNAL call inside the window would defeat the `SEI`.
+- Register `DC0D`: CIA1 interrupt control; the acknowledge the KERNAL handler cannot make.
+- Register `D019`: VIC interrupt flags; the acknowledge a raster handler cannot make.
+- Recipe `recipes/kickassembler/charset-copy-rom-to-ram.md`.

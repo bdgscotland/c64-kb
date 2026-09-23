@@ -1217,3 +1217,165 @@ address and loop bookkeeping; 1,000 pairs are 4.7 PAL frames.
 ### Recipes
 
 - `recipes/kickassembler/speedcode-generator.md` (generates a 1,000-byte copy from row tables, verifies it and times it against the indexed loop; the three figures above)
+
+---
+
+## nmi_handler_and_restore_key — Installing an NMI handler, and what to do about RESTORE
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DD04, DD05, DD0D, DD0E
+**Cost:** cycles_per_frame=20
+**Cost basis:** measured-vice
+
+### Why
+
+Two things reach the 6510's `/NMI` pin: CIA2's interrupt output and the
+RESTORE key. `SEI` masks neither. A program that does nothing about the
+vector leaves the KERNAL's handler in charge, and that handler treats a
+RESTORE press with RUN/STOP held as a request to warm-start BASIC over
+whatever is running. A program that takes the vector and gets the
+acknowledge wrong either loses every later NMI or, in the other
+direction, throws away a timer event it wanted. This entry is the
+minimal correct handler for each case: RESTORE disarmed, a CIA2 timer
+tick taken on purpose, and the two together.
+
+### How
+
+**The vector.** With the KERNAL ROM mapped in, an NMI goes through
+`$FFFA` to `$FE43`, which is `SEI` and then `JMP ($0318)`. Nothing is
+pushed there, so the RAM vector at `$0318`/`$0319` is the whole
+dispatch from its second instruction on, and a handler installed there
+gets control with A, X and Y untouched. With the KERNAL banked out
+(`$01` bit 1 clear) the CPU reads `$FFFA`/`$FFFB` from RAM and the
+handler's address goes there instead; `memory_layout_plan` in
+`techniques/memory-banking.md` covers the all-RAM layout.
+
+**What the KERNAL's handler does.** The default `$0318` target is
+`$FE47`. It pushes A, X and Y, writes `$7F` to `$DD0D` and reads it
+back. If a CIA2 flag was set it runs the RS-232 code. If none was, it
+takes the NMI to be a RESTORE press: it checks for a cartridge at
+`$8000`, samples the keyboard for RUN/STOP, and if that key is down runs
+RESTOR, IOINIT and CINT and jumps through `$A002`, the BASIC warm start,
+which puts `$0314` back to `$EA31` and the VIC back to text mode at
+`$0400`. RESTORE alone returns through `$FEBC`, having spent 189 cycles
+at an arbitrary point in the frame. The bytes and the cycle count are
+in `pitfalls/kernal-and-io.md`, `restore_nmi_not_maskable`, and
+`hardware/cia-reference.md`, "NMI vector (CIA2 + RESTORE)".
+
+**Disarming RESTORE.** Point `$0318` at an `RTI`. Nothing about the key
+passes through CIA2, so no value written to `$DD0D` can mask it; the
+vector is the only software answer.
+
+```asm
+// Disarm RESTORE: the smallest complete NMI handler.
+install:
+        sei
+        lda #<nmi_stub
+        sta $0318
+        lda #>nmi_stub
+        sta $0319
+        cli
+        rts
+
+nmi_stub:
+        rti
+```
+
+**Acknowledging a CIA2 NMI.** The CIA drops its interrupt output only
+when its interrupt control register is read. A handler for a CIA2 source
+reads `$DD0D` before `RTI`; `BIT $DD0D` does it without disturbing A, and
+`RTI` restores the flags `BIT` changed.
+
+```asm
+// Count a CIA2 timer tick and acknowledge it.
+nmi_tick:
+        inc tick_count
+        bit $dd0d               // clears the flag; /NMI returns high
+        rti
+
+tick_count:
+        .byte $00
+```
+
+**The NMI lock.** A handler that never reads `$DD0D` leaves the flag
+standing, `/NMI` stays low, and because the 6510 takes an NMI on the
+falling edge only, no further NMI is taken from any source, RESTORE
+included, until something reads `$DD0D`. That is a second way to kill
+RESTORE, at the price of every CIA2 interrupt, and it is also the
+commonest way to break an NMI-driven player by accident.
+
+**A timer tick on purpose.** Latch CIA2 Timer A with the period less
+one, set bit 0 of `$DD0D` with bit 7 (`$81`) so the underflow drives
+`/NMI`, and start the timer in continuous mode (`$11` to `$DD0E`). The
+tick then arrives every latch + 1 cycles regardless of the raster, which
+is what a sample player or a music driver that must not depend on a
+raster interrupt needs. A RESTORE press then reaches the same handler
+as one extra, early entry; a handler that must not act on it tests bit 7
+of `$DD0D` first, since a press sets no CIA2 flag.
+
+```asm
+// A tick every 10,000 cycles through nmi_tick above.
+arm_tick:
+        lda #<9999
+        sta $dd04
+        lda #>9999
+        sta $dd05
+        lda #$81                // set: Timer A underflow -> /NMI
+        sta $dd0d
+        lda #$11                // start, force load, continuous
+        sta $dd0e
+        rts
+```
+
+### Why it works
+
+The 6510's NMI input is edge-sensitive: the interrupt sequence starts on
+the high-to-low transition of `/NMI`, and a line that then stays low is
+not sampled again. CIA2 holds its output low while any enabled flag in
+`$DD0D` is set, and a read of `$DD0D` clears all flags at once. So the
+read is both the acknowledge and the re-arm, and its absence is the
+lock. The key is wired to the pin in parallel with the CIA, not through
+it, which is why it cannot be masked in `$DD0D` and why the KERNAL's
+handler recognises it by finding no flag.
+
+Measured in VICE x64sc 3.10, PAL and NTSC alike (the recipe below): with
+a tick every 10,000 cycles and a window of 1,005,000 cycles, the
+acknowledging handler was entered 100 times; the same tick with a
+handler that never read `$DD0D` was entered once; and one `LDA $DD0D`
+from the main loop, with the timer still running, produced exactly one
+more entry.
+
+### Variations
+
+- **Vector and lock together.** A game with no CIA2 use can take both:
+  the `RTI` stub at `$0318` and a one-shot NMI left unacknowledged. The
+  stub alone is enough and costs nothing while the key is up.
+- **Chaining.** `JMP $FE47` at the end of a handler hands the NMI on to
+  the KERNAL, and a CIA2 flag the handler already cleared makes the
+  KERNAL treat it as RESTORE; clear the flag only when you mean to
+  drop the RS-232 path.
+- **Arithmetic in the handler.** The NMI path executes no `CLD`; a
+  handler that uses `ADC` or `SBC` clears D on entry
+  (`decimal_mode_pitfalls`).
+- **KERNAL out.** Put the handler's address at `$FFFA`/`$FFFB` in RAM
+  and skip `$0318`; `$FE43` is not there to run its `SEI`, so the
+  handler is entered with I as the interrupted code left it.
+
+### Cycle budget
+
+The `RTI` stub costs 20 cycles per press: the NMI sequence (7), the
+`SEI` at `$FE43` (2), the `JMP ($0318)` (5) and the `RTI` (6), measured
+in VICE x64sc 3.10 as CIA1 Timer A across a 400-cycle block of `NOP`s
+with the NMI taken minus the same block with it masked, on PAL and
+NTSC. The count-and-acknowledge handler above costs 30 by the same
+measurement: 20 plus `INC abs` (6) and `BIT abs` (4). A tick every
+10,000 cycles is 1.97 entries per PAL frame, 59 cycles a frame for the
+30-cycle handler (arithmetic); a sample player at 8 kHz on PAL is one
+entry every 123 cycles, and its handler's cost is the player's, not
+this entry's. The `Cost` line above is the stub's: one press in the
+worst frame.
+
+### Recipes
+
+- `recipes/kickassembler/nmi-timer-tick.md` (the stub, the acknowledging handler, the lock and the unlock, with the counts and the two costs above; CIA2 Timer A stands in for the key, which a headless run cannot press)

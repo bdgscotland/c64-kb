@@ -894,3 +894,145 @@ move.
 - `recipes/kickassembler/sine-table-runtime.md` (builds the sine table on
   the machine instead of with the assembler, then drives eight sprites
   from it; the way to get the table without `.fill`)
+
+---
+
+## software_sprite_preshifted — Pre-shifted masked software sprites in a character back buffer
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D012
+**Uses kernal:** (none)
+**Requires:** unrolled_loops
+**Cost:** cycles_per_frame=1890, bytes_code=2608, bytes_data=2688
+**Cost basis:** derived-listing
+
+### Why
+
+Eight hardware sprites run out. A multiplexer (`sprite_multiplex_8`)
+stretches them down the screen, but it cannot put a ninth object on the
+same raster lines as eight others, and many small objects on one row is
+exactly what a shooter's bullet cloud or a puzzle game's falling pieces
+need. A software sprite is drawn by the CPU into memory the VIC is
+already displaying: a block of character definitions laid out as a
+canvas, or a bitmap. It costs CPU time instead of a hardware slot, and
+there is no limit per line.
+
+The naive draw shifts each row of the object right by the pixel offset
+before writing it, which is a shift and a carry across three or four
+bytes for every row, every frame. Pre-shifting does that once, off-line:
+the object is stored eight times, once for each pixel offset within a
+byte, together with its mask. A draw is then a straight copy through an
+AND and an OR, and it costs the same at every one of the eight shifts.
+
+### How
+
+1. Lay out the back buffer. In character mode, point `$D018` at a
+   custom font and give a block of consecutive character codes to the
+   canvas: cell `(cx, cy)` is code `base + cy * W + cx`, so pixel row `y`
+   of cell column `cx` is byte `font + (y / 8) * W * 8 + cx * 8 + (y & 7)`.
+   One pixel row of the canvas is one byte per cell, eight bytes apart.
+   Fill the canvas with the background tile and write the codes into the
+   screen once; from then on only the font bytes change.
+2. Build the pre-shift table. For a 24x21 object each shift is 4 bytes
+   wide by 21 rows, 84 bytes of data and 84 of mask (mask bit 1 means
+   leave the background alone). Eight shifts: `8 * 84 * 2 = 1,344` bytes
+   an object (arithmetic; the recipe's assembler reports 2,688 for two).
+   Store it transposed, the eight shifts of one byte position together,
+   so the shift is a Y index and the position is a constant.
+3. Draw: with `X = x & $F8` (the cell column times 8) and `Y = x & 7`
+   (the shift), for each of the 84 byte positions `lda dest,x` /
+   `and mask+p*8,y` / `ora data+p*8,y` / `sta dest,x`, unrolled, 17
+   cycles each. The object's top row `y0` is baked into the unrolled
+   addresses; a second object at another row is a second copy of the
+   routine, about 1 KB each.
+4. Erase before the next draw. With a tiled background the cheapest
+   erase writes the tile's rows back over the 4-cell footprint: one
+   immediate load and four stores a row. A background that is not a
+   repeating tile needs a saved copy of the footprint instead, restored
+   in the same order.
+5. Run the erase and the draws where the VIC is not reading the canvas.
+   The character generator bytes are fetched on every raster line the
+   canvas cells are on, so a draw during those lines tears. Poll `$D012`
+   for a line below the canvas and do the frame's work there; a canvas
+   that fills the screen leaves only the vertical blank, and then two
+   fonts and a `$D018` flip are needed, which is `screen_double_buffer_d018`
+   applied to the font bits instead of the matrix bits.
+
+### Why it works
+
+The VIC reads character definitions from the font on every line, so a
+byte written to the font shows on the next line that draws that row of
+the cell. Cell-aligned characters mean the CPU does not have to know
+where on screen the canvas is; the address arithmetic is all in font
+memory, and X indexing by `x & $F8` moves the whole draw one cell
+without touching any operand. The AND clears the object's silhouette
+out of the background and the OR paints the shape into the hole, so
+any number of objects can be layered in draw order, the later one on
+top, without a sprite-priority register.
+
+The recipe times one masked blit of a 24x21 object at each of the eight
+shifts with CIA2 timer A, display blanked, net of the call: 1,428
+cycles at every shift, on PAL and NTSC alike (measured in VICE x64sc).
+That is `84 * 17`, and the equality is the point: the run-time cost of
+the shift is zero. The tile erase of the same footprint is 462 cycles.
+One object drawn and erased is therefore 1,890 cycles a frame, about
+9.6 % of a PAL frame; two are 3,780. The same blit started at raster
+line 100 with the display on measured 1,557 on PAL and on NTSC: the
+129 extra cycles are the three badlines the 23-line blit crosses,
+which is `badline_cycle_loss` in the display area, and the reason the
+timing figures were taken with DEN off.
+
+### Against the multiplexer
+
+Choose the multiplexer when the objects are few per raster line, need
+free pixel placement in both axes and their own colours, and move over
+a background you cannot cheaply repaint: it costs a raster IRQ and
+register writes, not a redraw. Choose pre-shifted software sprites
+when several objects share raster lines, when they sit on a tiled or
+saved background, or when the sprite hardware is spoken for by the
+player and the bosses. The two combine: hardware sprites for the few
+that need sub-cell placement and priority, software sprites for the
+crowd. A software sprite has one colour per cell it touches, the cell's
+colour RAM entry, and it is erased and redrawn every frame it moves, so
+its cost scales with the count while a sprite in a hardware slot is
+free to move.
+
+### Variations
+
+**Save-under erase.** Copy the 84 bytes under the footprint before the
+draw and write them back to erase. Costs a copy per object per frame
+(not measured here) but works over any background, and is what a
+bitmap-mode version needs.
+
+**Bitmap canvas.** The same tables and the same masked copy, with the
+destination a bitmap: eight bytes per cell row, 320 bytes per cell row
+of the screen. `bobs_effect` on `effects-vector-3d.md` describes both
+the cell-aligned and the bitmap forms at the demo scale; this entry is
+the pixel-placed, cell-mode case with a measured blit.
+
+**Three-byte shift zero.** At shift 0 the fourth byte is all mask and
+no data; a separate 63-byte routine for that shift saves 21 stores.
+Not done in the recipe, which keeps one routine so the eight figures
+are comparable.
+
+### Cycle budget
+
+Per object per frame, measured: 1,428 to draw, 462 to erase, 1,890 in
+all. For the recipe's two objects, 3,780 cycles, which is about 60
+raster lines of the 213 that lie below a canvas ending on line 98, and
+inside the 6,700-cycle race-free blank the pitfall page quotes even if
+the canvas filled the screen. Six such objects would not be: at 11,340
+they would spill into the display, which is where
+`full_field_redraw_exceeds_vblank` starts. The `cycles_per_frame` figure
+on the Cost line is one object, drawn and erased. The byte figures are
+the built recipe's two objects: 2,608 bytes of code, which is 1,009 for
+one unrolled blit routine and 295 for its erase, twice; and 2,688 bytes
+of tables, 1,344 an object (the assembler's own byte counts for the
+recipe; the timing and print harness is not counted).
+
+### Recipes
+
+- `recipes/kickassembler/software-sprite-preshifted.md` (16x4 cell
+  canvas, tiled background, a ring and a diamond crossing it in opposite
+  directions, the blit timed at all eight shifts, checksum verdict)

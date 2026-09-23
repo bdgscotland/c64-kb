@@ -980,6 +980,7 @@ want raw PETSCII throughout.
 **Region:** both
 **Triggered by registers:** DD0D
 **Triggered by kernal:** RESTOR, VECTOR
+**Triggered by techniques:** nmi_handler_and_restore_key
 
 ### Symptom
 
