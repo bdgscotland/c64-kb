@@ -5,7 +5,17 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 765, schema 31, tools 2.3.0, package 0.16.0.
+Data 766, schema 31, tools 2.3.0, package 0.16.0.
+
+**Harness: `make released`, and the keypad joystick on `make run` (#39).**
+The starters are verified with a patched Oscar64 (#25) while a downstream
+agent has a release. `make released OSCAR64_RELEASED=<path>` builds the
+autopilot program with that compiler and grades its PAL and NTSC shots
+with the starter's own `expect.json`. On v1.32.273 it found the platformer
+graded 7 of 23: `surface_at` inlined into `surface_walk` reads the slope
+table with a stale X (listings on #30; `__noinline` passes 23 of 23).
+action-puzzle graded 41 of 41. `make run` now passes `-joydev2 1`, so the
+numeric keypad is joystick 2.
 
 **Issue #39: one harness, and the briefing names the starter.** Two
 sessions built #39 in parallel; the maintainer asked for one harness, the
