@@ -226,6 +226,8 @@ const CONFLICT_KINDS = [
   "unit_shared", // one owns a unit the other shares, or both share it (soft)
   "unit_read_while_driven", // one owns a unit the other only reads (soft)
   "init_order", // one uses a unit once at start-up that the other then owns (info)
+  // Schema 26, from **Clobbers zero page:** lines on the KERNAL page:
+  "kernal_clobbers_zp", // one calls a KERNAL routine that may write zero-page bytes the other claims (soft)
 ] as const;
 
 const CompatibilityConflictSchema = z.object({

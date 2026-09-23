@@ -8,6 +8,7 @@ import { requiresClosure, type RequiresClosure } from "./closure.ts";
 import { factsOf, inputPairs, pairKey, type CompatibilityFacts } from "./facts.ts";
 import { hardRules, type BandSeparated, type HardRuleResult } from "./hard-rules.ts";
 import { absorbInto, unitRules, type ClaimSide, type PairRelation, type UnitHit } from "./unit-rules.ts";
+import { kernalClobberRules, type KernalZpHit } from "./kernal-zp-rule.ts";
 
 type Conflict = CompatibilityCheckOutput["conflicts"][number];
 type Coverage = CompatibilityCheckOutput["data_coverage"][number];
@@ -48,10 +49,19 @@ class RuleRunner {
    * the other; `absorb` names, per side, the input an implied prerequisite
    * is seen from, whose held units it then does not claim again.
    */
-  units(a: string, b: string, rel: PairRelation, absorb: { a?: string; b?: string } = {}): UnitHit[] {
+  units(
+    a: string,
+    b: string,
+    rel: PairRelation,
+    absorb: { a?: string; b?: string } = {},
+  ): (UnitHit | KernalZpHit)[] {
     const sa = absorb.a ? absorbInto(this.side(a), this.side(absorb.a)) : this.side(a);
     const sb = absorb.b ? absorbInto(this.side(b), this.side(absorb.b)) : this.side(b);
-    return unitRules(sa, sb, rel);
+    const kernal = (s: ClaimSide) => ({ ...s, kernal: factsOf(this.all, s.name).kernal });
+    return [
+      ...unitRules(sa, sb, rel),
+      ...kernalClobberRules(kernal(sa), kernal(sb), this.all.kernalClobbers ?? new Map()),
+    ];
   }
 }
 
@@ -180,7 +190,7 @@ function closureConflicts(opts: {
   // An implied prerequisite's claims on units its input holds are the
   // input's (absorbInto); the input's own pair reports them.
   const absorb = { ...(u !== x ? { a: x } : {}), ...(v !== y ? { b: y } : {}) };
-  const hits: (UnitHit | (HardRuleResult["hits"][number] & { severity: "hard" }))[] = [
+  const hits: (UnitHit | KernalZpHit | (HardRuleResult["hits"][number] & { severity: "hard" }))[] = [
     ...opts.rules.units(u, v, NO_RELATION, absorb),
     ...opts.rules.run(u, v).map((h) => ({ ...h, severity: "hard" as const })),
   ];

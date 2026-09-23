@@ -47,6 +47,8 @@ export interface CompatibilityFacts {
   sharedKernal: ReadonlyMap<string, readonly string[]>;
   /** Register and KERNAL nodes USEd by recipes that implement two or more inputs. */
   recipeUses: readonly RecipeUse[];
+  /** CLOBBERS_ZP may sets (schema 26), canonical ranges, for every KERNAL routine a checked technique USES. */
+  kernalClobbers?: ReadonlyMap<string, string>;
 }
 
 export function pairKey(i: number, j: number): string {
