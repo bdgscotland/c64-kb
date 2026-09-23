@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 734, schema 24, tools 1.29.0.
+Data 736, schema 24, tools 1.29.0.
 
 **Issue #21, ES-19 to ES-22.** `reu_dma` (one cycle a byte blanked;
 badlines and sprites slow it with the screen on), `four_player_read`
@@ -17,6 +17,61 @@ each with a recipe pinned on PAL and NTSC. `verify:recipes` now runs
 cartridge recipes: a `cartridge` key in runs.json boots the `.crt` the
 listing writes, once or several times on the same copy. A new Oscar64
 gotcha: `#define A()` with an empty parameter list is refused.
+**Design layer, slice 4 (data 735).** Four Oscar64 recipes that realise
+the pattern pages, each with a technique entry, a pinned verdict on both
+models and its name on the pattern's Realised-by line.
+`attract_mode_input_replay` (`oscar64/attract-replay`): the demo is the
+game fed from a recorded input stream through the same input byte, with
+the random generator reseeded; the reseeded build ends its 285-frame
+replay at the recorded position and the unseeded build 210 pixels away,
+both agreeing with a host model; the replay step costs 68 cycles a frame.
+`difficulty_ramp_tables` (`oscar64/difficulty-tables`): a six-row level
+table read at level start with a region scaler from the detection
+routine; compensated, level 3 arrives at 22,500 ms on PAL and 22,586 ms
+on NTSC; uncompensated, at the same frame count on both and 18,839 ms on
+NTSC, the 50:60 ratio. `two_player_state_swap` (`oscar64/two-player`):
+alternating play swaps an 8-byte block per player on death (206 cycles),
+simultaneous play reads both ports each frame; with `$DC00` set to `$FF`
+before the port-1 read, none of 40 reads was column-selected, without it
+all 40 were; the phantom press itself is not measured because VICE's
+keyboard feed writes the KERNAL buffer, not the matrix.
+`flip_screen_rooms` (`oscar64/flip-screen-rooms`): room records with edge
+exits and RLE tiles, five rooms, a scripted walk through all of them;
+the worst full-room redraw is 42,141 cycles, about two PAL frames, so the
+screen is blanked for two frames on PAL and three on NTSC rather than
+drawn in one vertical blank, and the pattern page's sentence saying
+otherwise is corrected. A defect met on the way and worth a pitfall: a
+colour-RAM index past 1,000 lands in the CIA1 register mirror at `$DC00`.
+
+**Candidate list, Tier A batch 5 (data 734).** Four corrections and one
+new technique, each measured with a tool built or driven here. The
+KERNAL tape encoding: the TAP section said two pulse lengths; a TAP that
+the windowless VICE recorded from a real SAVE shows three (modes 376,
+536 and 704 cycles), a bit as a pulse pair, a byte marker, twenty pulses
+a byte with odd parity, the countdown from `$89` and from `$09`, two
+copies of every block and the XOR checksum, all decoded with no parity
+failure over 448 bytes; new pitfall `tape_bit_is_a_pulse_pair_not_a_pulse`.
+GoatTracker: the asset-pipelines page named a converter, `gt2asm`, that
+the 2.77 distribution does not contain (it ships five executables, and
+the export path is the relocator, `gt2reloc`, measured: 1,786 bytes at
+`$1000` for one example song, byte-identical when imported into
+KickAssembler); the five wrong invocations are corrected and a `.SNG`
+field table joins the formats page, checked by parsing the distribution's
+fourteen example songs. `pwm_digi` on the SID page with a recipe: the
+sample rides the pulse width under a fixed carrier; measured from a WAV
+VICE wrote, the carrier at 3,848.6 Hz and the recovered tone at 240.5 Hz
+against a synthesised 240.54 Hz, 128 cycles a sample kept exactly on
+both models, reSID's 8580 at 0.74 of the 6581's level; the page's
+TEST-bit paragraph now says it was not Harsfalvi's method. Nobody
+listened. Exomizer 3.1.3b0 built from source: the default stream is
+`-P39`, `-P0` differs in 86 bytes, and the shipped decruncher at its
+defaults decrunches `-P39` and crashes on `-P0`, `-P7` and `-P55` (the
+`-P0` case ran its output pointer below the destination and overwrote its
+own data), while a single-bit mismatch completes silently with wrong
+bytes; new pitfall `exomizer3_proto_flags_mismatch`, `exomizer_basics`
+corrected in place. Left open: the PWM loop's true floor between 36 and
+128 cycles a sample; the GoatTracker GTS2 to GTS4 layouts; an Exomizer 2
+decruncher against a 3.x stream.
 
 **Code quality, phases C–F (tools 1.29.0, package 0.9.0).** Every MCP
 tool now has a `title` and `annotations` (read-only, destructive,

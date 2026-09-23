@@ -10,7 +10,8 @@
 # Needs: a C toolchain, autotools' runtime deps the tarball's configure asks
 # for, libpng, and on macOS `brew install dos2unix xa` (configure refuses
 # without both). On Debian/Ubuntu: build-essential xa65 dos2unix libpng-dev
-# pkg-config flex bison (configure stops without flex). A Linux build matched
+# pkg-config flex bison libcurl4-openssl-dev (configure stops without flex
+# or libcurl). A Linux build matched
 # all 54 pinned PNGs it could run, 2026-09-23. Takes about a minute on a
 # recent machine.
 #
