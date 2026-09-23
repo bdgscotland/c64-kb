@@ -5,7 +5,80 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 740, schema 26, tools 1.31.0, package 0.11.0.
+Data 741, schema 27, tools 1.32.0, package 0.12.0.
+
+**Issue #22, step 3: the honest budget (schema 27, tools 1.32.0, package
+0.12.0).** New tool `c64_plan_budget` (CLI `plan-budget`) adds a list of
+techniques up against a frame, each in a phase (`name`, `name:transition`,
+`name:init`), on PAL, NTSC or both. The rules are in `src/domain/budget.ts`
+and came from design 2.1, where summing Cost lines erred from −96 % to
+about 10× over on built recipes:
+
+- A missing figure is never zero. A member with no cycles figure is
+  listed as unknown, with the recipe to measure it on, and the verdict is
+  `undetermined`.
+- A figure above one frame (19,656 PAL, 17,095 NTSC) is a multi-frame
+  operation and is not summed.
+- A new Cost key, `cycles_per_frame_typical`, gives a range: the low end
+  sums typical frames, the high end worst frames. `over` needs a low end
+  that is a floor, so a worst frame with no typical beside it leaves the
+  verdict open (listed in `worst_only`). This departs from the design,
+  which said `over` whenever low plus losses passed the frame; on NTSC
+  that called `sprite_multiplex_game`'s built 16,600-cycle reversal
+  frame over, while the recipe runs on NTSC with every actor drawn.
+- New `**Cost includes:**` line: a member whose work is inside another's
+  figure is counted once. A technique with `cycles_per_line=63` and a
+  line band is charged band lines × line length, and its REQUIRES closure
+  is not added again.
+- New `**Cost measured on:**` line names the recipe and its conditions.
+  With the screen on, 25 badlines × 43 = 1,075 cycles are charged unless
+  every summed figure says it was measured with the screen on. Bytes
+  flagged `whole PRG` are not summed.
+
+The briefing budget now calls the same planner, every proposed technique
+in one play frame. Its `cycles_verdict` gains `undetermined` (a strict
+client may reject the new value), and it gains `cycles_low`,
+`fixed_loss_cycles`, `excluded`, `unknown` and `to_measure`.
+`c64_timing_budget` is unchanged. It answers a different question, the
+cycles left on one raster line, and its README row no longer claims
+per-frame math. Ingest now warns about, and counts, a measured-on recipe
+that is no Recipe and an included name that is no Technique.
+
+Content: 63 Cost lines gained a measured-on line; five pages do not say
+where their figure came from, so they got none. Seven gained a measured
+typical frame, each one the page already stated: `wave_director`,
+`dig_and_refill`, `difficulty_ramp_tables`, `ghost_target_tile_ai`,
+`sprite_animation_table`, `sfx_engine_beside_music` and
+`sprite_cache_flip`. Three gained an includes line: `wave_director`
+includes `object_pool`, `soft_scroll_h` includes `char_scroll_buffer_h`,
+and `fli_image` includes its stable double-IRQ entry.
+
+Three corrections:
+
+- `fli_image` charged 200 lines (12,600). Its band, 45-251, is 207 lines,
+  so the figure is 13,041.
+- `decimal_print` said `bytes_code=0`, a figure the page never measured,
+  and a budget summed it as zero bytes. The key is gone.
+- `platformer-scaffold` plays a three-voice stub tune every frame but did
+  not list `sid_play_routine_pattern`; it does now.
+
+Validation on PAL. "Old sum" is the previous briefing arithmetic over the same pages: every `cycles_per_frame` added, with a missing figure counted as zero.
+
+| Composition | Old sum | New | Measured |
+|---|---|---|---|
+| platformer-scaffold | 4,953, "under" | [4,731, 4,939] + 1,075, undetermined, 5 unknowns | 4,966 one frame; peak 8,693 |
+| simple-shmup | 5,628, "under" | 5,628 + 1,075, undetermined, `soft_scroll_v` unknown | not measured whole |
+| cracktro-template | 75,358, "over" | 1,317 + 1,075, undetermined, `soft_scroll_h` multi-frame | fits (about 7,000 in the blank) |
+| fli-image | 12,884, "under" | 13,041, fits | 13,041 by arithmetic |
+| scroll-panel-split | 413, "under" | 413, undetermined, 2 unknowns | carry frame 11,613 by arithmetic |
+| sprite-multiplex-game | 16,600, "under" | 16,600 + 1,075, fits (NTSC undetermined) | parts measured in play: about 7,100-8,000 |
+| wave-director | 3,568, "under" | [1,170, 3,188] + 1,075, fits | 3,188 worst, screen blanked |
+| falling-blocks | 5,902, "under" | 5,902 + 1,075, undetermined, 2 unknowns | 6,276 dearest frame of the run |
+
+`test/plan-budget.test.ts` rebuilds every row from the shipped pages.
+
+
+Data 740, schema 26, tools 1.31.0, package 0.11.0 (step 2, below).
 
 **Issue #22, step 2: the zero page each KERNAL routine writes (schema 26,
 tools 1.31.0, package 0.11.0).** A `CLOBBERS_ZP` edge from each
