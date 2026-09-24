@@ -120,10 +120,10 @@ BasicUpstart2(start)
 }
 
 // CPU cycles lost after the DEC to the sprite DMA of the sprites in mask.
-// The p-access slots are 58, 60, 62, 1 (PAL) and 60, 62, 64, 1 (NTSC) for
-// sprites 0..3; BA falls three cycles before the first and the CPU resumes
-// two cycles after the last slot. DEC's writes on 55 and 56 (56 and 57 on
-// NTSC) go through while BA is low, so a set holding sprite 0 costs less.
+// The p-access slots are 58, 60, 62, 1 (PAL) and 59, 61, 63, 65 (NTSC
+// 6567R8) for sprites 0..3; BA falls three cycles before the first and the
+// CPU resumes two cycles after the last slot. DEC's writes on 55 and 56 go
+// through while BA is low, so a set holding sprite 0 costs less.
 .function lostcycles(m, ntsc) {
     .if (m == 0) .return 0
     .var f = 0
@@ -642,8 +642,11 @@ cycles from the sync to the first `DEC` and its value, 45, was set from
 the write-cycle trace above. `pal_ntsc_detection`'s method from the road
 recipe sets a flag at boot; `irq1` selects the PAL or the NTSC loop by
 it, the loops differ in the `Delay(2)` of the NTSC one and in their
-stall tables (sprite 0's lead-in on NTSC starts on 57, one cycle after
-the write, so a set with sprite 0 costs 4 + 2l there), and both loops
+stall tables (on the 6567R8 sprite 0's lead-in starts on 56, with the
+write, and the CPU resumes on 61 + 2l, so the `INX` on 57 loses
+4 + 2l for a set with sprite 0; an earlier version said the lead-in
+starts on 57, from slot numbers that `vic-ii-reference.md` has since
+corrected by measurement, and the 4 + 2l was right), and both loops
 keep their slide at the same low byte so one entry table serves either.
 
 The IRQ lines 37 to 39 must be free of sprite DMA, or the sync itself

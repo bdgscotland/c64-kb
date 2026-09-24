@@ -1016,16 +1016,35 @@ exact pattern:
    enable state, on cycles 58, 60, 62, 1, 3, 5, 7, 9 for sprites 0–7 on
    PAL, measured in VICE x64sc on its default C64C model, VIC-II 8565 (an
    earlier version said 6569): with sprites 0..k active the CPU
-   resumes two cycles after sprite k's slot (60, 1, 3, 9, 11 for
-   k = 0, 2, 3, 6, 7). On the 65-cycle 6567R8 the slots are 60, 62, 64,
-   1, 3, 5, 7, 9, Bauer's numbering, measured in VICE x64sc `-model ntsc`
-   against the `$D012` increment: with all eight sprites on, the CPU
-   stall starts two cycles later than on PAL and ends on the same cycle
-   (the CPU resumes on cycle 11 on both). VICE's source table
-   (`src/viciisc/vicii-chip-model.c`) labels the same slots 59, 61, 63,
-   65, 2, 4, 6, 8; its NTSC cycle labels run one lower than Bauer's, the
-   timing is the same. An earlier version of this page listed 58, 60, 62, 64, 1, 3, 5,
-   7, which puts a cycle 64 on a 63-cycle line and sprite 7 two cycles
+   resumes two cycles after sprite k's slot (60, 62, 1, 3, 5, 7, 9, 11
+   for k = 0 to 7). The other two models, measured the same way:
+
+   | Model | Cycles per line | Slots, sprites 0–7 | Reads held from | CPU resumes, sprites 0..7 on |
+   |---|---|---|---|---|
+   | 8565 (PAL, VICE's default) | 63 | 58, 60, 62, 1, 3, 5, 7, 9 | 55 | 11 |
+   | 6567R8 (NTSC, `-model ntsc`) | 65 | 59, 61, 63, 65, 2, 4, 6, 8 | 56 | 10 |
+   | 6567R56A (old NTSC, `-model oldntsc`) | 64 | 59, 61, 63, 1, 3, 5, 7, 9 | 56 | 11 |
+
+   Cycle numbers are this page's: `$D012` changes on cycle 1. Measured
+   in VICE x64sc 3.10 (2026-09-24) with sprites 0..k enabled at Y 100,
+   DEN clear, over a slide of `NOP`s, for every k from 0 to 7 on each
+   model; the resume cycle is the first free read after the stall, and
+   the slot is two before it. A second probe, a slide of `LDA $D012`,
+   located the `$D012` edge and the stall end in the same stopwatch
+   count, with no use of the monitor's CYC column, and gave the same
+   resume cycles for k = 0 and 7 on all three models. The stall is 19
+   cycles on each. VICE's source table
+   (`src/viciisc/vicii-chip-model.c`) labels the 6567R8 slots 59, 61,
+   63, 65, 2, 4, 6, 8, the numbers measured here. An earlier version of
+   this item gave the 6567R8 slots as 60, 62, 64, 1, 3, 5, 7, 9, with the
+   stall starting two cycles later than on PAL and the CPU resuming on
+   11, and said VICE's labels ran one lower than Bauer's; measured, the
+   6567R8 stall starts one cycle later than on PAL and ends one cycle
+   earlier. Whether Bauer's own 6567R8 diagram uses a different cycle 1
+   was not rechecked here. `dysp.md`'s NTSC stall table, tuned in VICE,
+   already charged 4 + 2l for a set holding sprite 0, which matches
+   these slots. An earlier version also listed 58, 60, 62, 64, 1, 3, 5, 7 for
+   PAL, which puts a cycle 64 on a 63-cycle line and sprite 7 two cycles
    early.
 2. Three **s-accesses** (sprite data fetch) per raster line, but only when
    that sprite's render row is active. These follow each sprite's
@@ -1177,7 +1196,7 @@ The chip performs four kinds of memory access:
 |--------|---------------------------------------|----------------------------|
 | c      | Cycles 15–54 of every badline         | Char pointer + color RAM nibble (12-bit) |
 | g      | Cycles 16–55 of every visible line    | 8 bits of pixel data (char gen or bitmap) |
-| p      | Cycles 58, 60, 62, 1, 3, 5, 7, 9 (PAL); 60, 62, 64, 1, 3, 5, 7, 9 (6567R8) | Sprite pointer byte         |
+| p      | Cycles 58, 60, 62, 1, 3, 5, 7, 9 (PAL); 59, 61, 63, 65, 2, 4, 6, 8 (6567R8); 59, 61, 63, 1, 3, 5, 7, 9 (6567R56A); measured, see [Sprite DMA](#sprite-dma), which also records the earlier 6567R8 row | Sprite pointer byte         |
 | s      | After each p, when sprite is active   | 3 bytes of sprite pixel data |
 
 The c-accesses on badline N fetch the row that is g-rendered on lines
@@ -1669,8 +1688,11 @@ or writing when BA went low.
 | 251–299     | Bottom border                             |
 | 300–311     | Vertical blanking (no video output)       |
 
-The blanking spans (300–15) are Bauer's, as in `pal-ntsc-reference.md`.
-VICE x64sc's screenshot shows lines 16–287 only. An earlier version of
+The blanking spans (300–15) are Bauer's, as in `pal-ntsc-reference.md`,
+and not measured: VICE x64sc's default screenshot shows lines 16–287
+only, and its full-frame `-VICIIborders 2` screenshot draws lines 0–15
+and 300–311 in the border colour, so no screenshot shows where the
+chip blanks. An earlier version of
 this table gave 0–50 and 251–311 as border, overlapping the blanking,
 and the line-numbering table above called 0–15 and 300–311 "border
 (with VBI)".

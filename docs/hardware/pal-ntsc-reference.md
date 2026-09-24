@@ -127,7 +127,11 @@ drawn there will be off-screen.
 PAL picture lines are 16-299 (284 lines; vertical blank 300-15). NTSC
 picture lines are 41-262 wrapping to 0-12 (235 lines on the R8, 234 on
 the R56A; vertical blank 13-40). These spans are from Bauer's VIC-II
-article and are not measured here; what is measured (VICE x64sc 3.10)
+article and are not measured here, and VICE cannot settle them: it does
+not black the blanking interval. With `-VICIIborders 2` its PAL
+screenshot is 504 × 312, one row per raster line, and rows 0-15 and
+300-311 are drawn in the border colour like the rest of the border
+(VICE x64sc 3.10, 2026-09-24). What is measured (VICE x64sc 3.10)
 is the frame length: maximum raster line 311 PAL, 262 R8, 261 R56A. An
 earlier revision of this page gave 16-287 (272 lines) for PAL and
 41-300 (260 lines) for NTSC. The PAL figure is VICE's default
