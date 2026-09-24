@@ -575,6 +575,81 @@ The header block's 192 bytes were: type `$01` (relocatable BASIC program), start
 
 ---
 
+### .TCRT — Tapecart image
+
+**Consumed by:** vice
+
+A tapecart is a flash-memory pod on the cassette port: 2 MB of flash, a
+microcontroller that plays a KERNAL-format tape of a small loader, and a
+fast two-bit transfer over the tape port once that loader asks for it.
+A `.tcrt` file holds the pod's whole state: the fastload settings, the
+file name, the loader and the flash.
+The layout is from Ingo Korb's specification, `doc/TCRT Format.md` in
+https://github.com/ikorb/tapecart (version 1, facts only), and VICE
+3.10's reader, `load_tcrt()` in `src/tapeport/tapecart.c`, which agrees
+with it. `kickassembler/tapecart-boot` builds one byte by byte and VICE
+boots it (rung 1); the offsets below are the ones that file uses.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 16 | signature `tapecartImage` + `$0D $0A $1A` (`74 61 70 65 63 61 72 74 49 6D 61 67 65 0D 0A 1A`) |
+| 16 | 2 | version, 1 |
+| 18 | 2 | fastload block: offset in flash |
+| 20 | 2 | fastload block: length in bytes, the two load-address bytes included |
+| 22 | 2 | call address: where the loader jumps after loading |
+| 24 | 16 | file name the C64 prints after `FOUND` |
+| 40 | 1 | flags: bit 0 = the next 171 bytes are a loader; bit 1 = the program supports data block offsets |
+| 41 | 171 | loader code, or 171 zeros when bit 0 is clear |
+| 212 | 4 | length of the flash content that follows, 0 to `$200000` |
+| 216 | n | flash content from address 0; everything past it reads `$FF` |
+
+All fields are little endian. The fastload block is laid out like a PRG
+file: two bytes of load address, then the data. With flag bit 0 clear,
+VICE supplies its copy of the default loader (`tapecart-loader.h`).
+VICE reads the version as the single byte at offset 16 and the rest of
+the header as the specification says; a flash length above 2 MB or a
+wrong signature is refused with a log line.
+
+**What the C64 sees.** In its first mode the tapecart plays an endless
+KERNAL-format tape (VICE's `construct_pulsestream()`): a header block of
+type 3 whose start and end addresses are `$0302` and `$0304`, whose name
+field is the TCRT's file name and whose remaining 171 bytes are the
+loader, then a two-byte data block `$51 $03`. A plain `LOAD` therefore
+reads the loader into the tape buffer at `$0351` and then overwrites the
+BASIC idle vector `$0302` with `$0351`, so the loader starts as soon as
+LOAD returns to BASIC. The loader switches the pod to fastload mode by
+clocking `$CA65` into it on the write line, one bit per motor-on edge,
+and receives a six-byte info block (call address, end address, load
+address) followed by the data. The file name can be anything; the PRG in
+flash decides where the data goes.
+
+Measured with `kickassembler/tapecart-boot` (a 16,641-byte PRG in the
+flash, `LOAD` typed at power-on, VICE x64sc 3.10, traced):
+
+| Stage | PAL cycles | NTSC cycles |
+|---|---|---|
+| header block, `TRD` to `TNIF` | 4,312,537 | 4,311,754 |
+| the KERNAL's pause after `FOUND` | 12,499,955 | 12,975,026 |
+| the `$0302` block, `TRD` to `TNIF` | 850,231 | 850,269 |
+| loader at `$0351` to the program's first instruction | 1,846,677 | 1,850,463 |
+| `LOAD` entered to the program's first instruction | 19,517,885 | 19,995,927 |
+
+The fastload stage moved 16,645 bytes (the six-byte info block and
+16,639 of data) in 1.87 s on PAL and 1.81 s on NTSC, mode switch and the
+pod's 100 ms start delay included: 8,880 and 9,200 bytes a second. The
+specification says "around 9500". The loader started 4,704 cycles after
+the second block's `TNIF`, as LOAD returned to BASIC. The pause after
+`FOUND` is the KERNAL's, the same 12.69 s at either clock as a real
+tape's (`hardware/kernal-routines-reference.md`, `FAH`), and it is
+two-thirds of the boot.
+
+**Typical use:** single-file releases for the tapecart; an emulator's
+persisted tapecart. Not measured here: the command mode, writing flash
+from the C64, a custom loader, data block offsets, and SHIFT+RUN/STOP as
+the way to start the load.
+
+---
+
 ## Music
 
 ### .SID — PSID/RSID music file
