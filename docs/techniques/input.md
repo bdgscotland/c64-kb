@@ -25,6 +25,9 @@ so; the rest is marked as arithmetic or as not measured here.
 **Uses registers:** DC00, DC01
 **Claims:** cia1_port_a (reads), cia1_port_b (reads)
 **Claims basis:** derived-listing
+**Cost:** cycles_per_frame=114
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-joystick-input (one port read and the three-way split, Oscar64 -O2, call included; PAL and NTSC)
 
 ### Why
 
@@ -199,6 +202,9 @@ folds `age' | fire << 8` into the same 16-bit checksum. The 6502 shows
 **Uses registers:** DC00, DC01, DC02, DC03
 **Claims:** cia1_port_a (owns), cia1_port_b (reads)
 **Claims basis:** derived-listing
+**Cost:** cycles_per_frame=288
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-joystick-input (all eight columns, Oscar64 -O2, call included; PAL and NTSC)
 
 ### Why
 

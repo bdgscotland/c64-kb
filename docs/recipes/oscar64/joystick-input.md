@@ -22,7 +22,8 @@ scans the keyboard matrix column by column to show whether SPACE is down.
 Every value is printed as text so a screenshot proves it. Before the live
 loop starts, the edge and repeat routines are run over their whole input
 domains on the 6502 and folded into a 16-bit checksum shown with `PASS`
-or `FAIL`, and the same fold in Python gives the expected values. Use it
+or `FAIL`, and the same fold in Python gives the expected values. The
+matrix scan and the edge step are each timed once with a CIA timer. Use it
 as the input layer of a game that wants press events, held-key repeat and
 chords, none of which `GETIN` provides. The techniques are
 `joystick_edge_detect`, `joystick_autorepeat` and `keyboard_matrix_scan`
@@ -93,7 +94,7 @@ static char repeat_step(char *age, bool pressed)
 // A pressed key in that column pulls its row bit to 0.
 static char kb_rows[8];
 
-static void kb_scan(void)
+static __noinline void kb_scan(void)
 {
     cia1.ddra = 0xff;                        // port A: column drive, output
     cia1.ddrb = 0x00;                        // port B: row read, input
@@ -104,6 +105,36 @@ static void kb_scan(void)
         col = (col << 1) | 1;
     }
     cia1.pra = 0xff;                         // no column selected afterwards
+}
+
+// --- one frame's joystick step -----------------------------------------------
+// Read port 2 and split it against last frame's byte. Not inlined, so the
+// timed call below is the code the loop runs.
+static char prev = 0xff;                     // nothing pressed before frame 0
+static struct JoyEvents ev;
+
+static __noinline char edge_step(void)
+{
+    char cur = cia1.pra;                     // port 2, raw byte
+    joy_edge(prev, cur, &ev);
+    prev = cur;
+    return cur;
+}
+
+// --- timing: CIA2 timer A counts system clocks -------------------------------
+static unsigned cost;
+
+static void time_begin(void)
+{
+    cia2.cra = 0x00;
+    cia2.ta  = 0xffff;
+    cia2.cra = 0x11;                         // force load, start, one clock a tick
+}
+
+static void time_end(void)
+{
+    cia2.cra = 0x00;
+    cost = 0xffff - cia2.ta;
 }
 
 // --- checksums ---------------------------------------------------------------
@@ -207,6 +238,8 @@ int main(void)
     put_text(10, 0, "EDGE CHECK 65536  :");
     put_text(11, 0, "REPEAT CHECK 512  :");
     put_text(13, 0, "FRAMES        :");
+    put_text(15, 0, "SCAN CYCLES   :");
+    put_text(16, 0, "EDGE CYCLES   :");
 
     unsigned e = check_edge();
     put_hex16(10, 20, e);
@@ -215,18 +248,23 @@ int main(void)
     put_hex16(11, 20, r);
     put_text(11, 26, r == EXPECT_REPEAT ? "PASS" : "FAIL");
 
-    char prev = 0xff;                        // nothing pressed before frame 0
+    // Time each routine once in the lower border (line 250 on), where no
+    // badline or sprite fetch stalls the CPU; subtract the empty pair.
+    wait_frame(); time_begin(); time_end();
+    unsigned base = cost;
+    wait_frame(); time_begin(); kb_scan(); time_end();
+    put_dec(15, 16, cost - base);
+    wait_frame(); time_begin(); edge_step(); time_end();
+    put_dec(16, 16, cost - base);
+
     unsigned presses = 0, repeats = 0, frames = 0;
     char fire_held = 0, right_age = 0;
-    struct JoyEvents ev;
 
     for (;;) {
         wait_frame();
         kb_scan();                           // leaves $DC00 = $FF
 
-        char cur = cia1.pra;                 // port 2, raw byte
-        joy_edge(prev, cur, &ev);
-        prev = cur;
+        char cur = edge_step();
 
         char n = ev.newp;
         while (n) { presses += n & 1; n >>= 1; }
@@ -255,7 +293,8 @@ int main(void)
 oscar64 -tm=c64 -O2 -o=joystick-input.prg joystick-input.c
 ```
 
-Oscar64 build 2026-05-19 produces a 1,721-byte PRG.
+The Oscar64 build named in CLAUDE.md produces a 1,936-byte PRG (1,721 bytes
+before the timing rows were added on 2026-09-24).
 
 Pinned VICE run (both models, `docs/recipes/runs.json`):
 
@@ -287,14 +326,17 @@ row  7  MATRIX ROW COL7: FF   SPACE  UP
 row 10  EDGE CHECK 65536  : 1800  PASS
 row 11  REPEAT CHECK 512  : D1CC  PASS
 row 13  FRAMES        : 00349
+row 15  SCAN CYCLES   : 00288
+row 16  EDGE CYCLES   : 00114
 ```
 
 `recipes/oscar64/screenshots/joystick-input.png` (PAL, 384 by 272) and
 `recipes/oscar64/screenshots/joystick-input-ntsc.png` (NTSC, 384 by 247)
 were each produced twice by the pinned command and decoded by matching
 every 8 by 8 cell against `chargen-901225-01.bin`; both runs of each
-model gave the text above, with the frame count 349 on PAL and 387 on
-NTSC (measured in VICE x64sc 3.10, rung 1). The other rows are blank.
+model gave the text above, with the frame count 349 on PAL and 388 on
+NTSC (measured in VICE x64sc 3.10, rung 1; 387 before the timing rows).
+The other rows are blank.
 
 What each line proves:
 
@@ -320,6 +362,17 @@ What each line proves:
 - `REPEAT CHECK 512: D1CC PASS`. All 256 ages by both levels through
   `repeat_step`, same fold with `value = age | fire << 8`. Python gives
   `D1CC`.
+
+- `SCAN CYCLES 288`, `EDGE CYCLES 114`, the same on both models. CIA2
+  timer A counts system clocks around one call of `kb_scan` (all eight
+  columns) and one of `edge_step` (the port read, `joy_edge` and the
+  store of `prev`), less the time of an empty start and stop pair.
+  Both run from line 250 with interrupts off, where no badline or sprite
+  fetch takes a cycle, so each figure is the routine alone. They include
+  the `JSR` and `RTS` of the call; `edge_step`'s 114 is Oscar64's -O2
+  code with `joy_edge` a second call and its three results stored
+  through a pointer, not a hand-written minimum. These are the Cost lines
+  of `keyboard_matrix_scan` and `joystick_edge_detect`.
 
 To put presses through `joy_edge` in a headless run, swap the port read
 for a scripted byte behind a define, the pattern measured in
