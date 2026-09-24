@@ -5,7 +5,19 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 804, schema 33, tools 2.8.1, package 0.21.1.
+Data 805, schema 33, tools 2.8.1, package 0.21.1.
+
+**Every archetype reference title has a source (data 805; #40).** Each
+title on c64-game-archetypes.md now links a C64-Wiki or Wikipedia page
+giving its C64 genre and year, and for shooters its scroll direction.
+Titles a source contradicted moved or went: Hawkeye (scrolling
+platformer, not a shmup), Rainbow Islands and Creatures (scrolling, not
+single-screen), Green Beret and Zak McKracken (not top-down), IK+ and
+Barbarian (fighting sport, not beat-'em-up), and titles with no C64
+release (Oxyd, Columns, Dr. Mario) or none found. Years corrected:
+Lightforce 1987, Katakis 1988, Silicon Dreams 1986, Welltris 1991,
+Buggy Boy 1987. Every modern example except Sports' is now "none
+checked".
 
 **IRQ entry through `$FF48` is cycle 39-45, not 37-43 (data 804; #85).**
 Measured in VICE on PAL and NTSC with an exec tracepoint on the
