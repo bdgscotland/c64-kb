@@ -8,6 +8,7 @@ file_formats: [PRG]
 uses_registers: [D011, D012, D019, D01A, D020, D021, DC0D]
 uses_kernal: []
 claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->

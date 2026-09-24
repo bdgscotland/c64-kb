@@ -7,8 +7,9 @@ techniques: [screen_dissolve_lfsr]
 file_formats: [PRG]
 uses_registers: [D012, D020, D021, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
-claims: [cia1_timer_b (init), cia1_tod (init)]
-harness: [cia1_timer_a]
+claims: [cia1_timer_b (init), cia1_tod (init), zero_page $F3-$FE (owns)]
+harness: [cia1_timer_a, $02FF]
+ram: [colour=$D800-$DBE7]
 ---
 
 <!-- doc-type: recipe -->

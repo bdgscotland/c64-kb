@@ -7,8 +7,8 @@ techniques: [wireframe_pipeline, procedural_seed_universe]
 file_formats: [PRG]
 uses_registers: [D011, D016, D018, D020, D021, DD00, DC04, DC05, DC06, DC07, DC0D, DC0E, DC0F, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F]
 uses_kernal: []
-claims: [cia1_tod (init)]
-harness: [cia1_timer_a, cia1_timer_b]
+claims: [cia1_tod (init), cia2_tod (init), cia2_vic_bank (owns), vic_raster_irq (init), zero_page $02-$19+$1C-$54 (owns)]
+harness: [cia1_timer_a, cia1_timer_b, cia2_timer_a, cia2_timer_b, $02FF]
 ---
 
 <!-- doc-type: recipe -->

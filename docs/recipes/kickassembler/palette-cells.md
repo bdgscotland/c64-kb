@@ -7,6 +7,9 @@ techniques: []
 file_formats: [PRG]
 uses_registers: [D020, D021]
 uses_kernal: []
+claims: [zero_page $02+$FB-$FE (owns)]
+ram: [colour=$D800-$DBFF]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->

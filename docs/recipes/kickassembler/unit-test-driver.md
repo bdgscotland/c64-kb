@@ -7,6 +7,8 @@ techniques: [compare_16bit_and_signed]
 file_formats: [PRG]
 uses_registers: [D020]
 uses_kernal: [CHROUT]
+claims: [zero_page $F9-$FE (owns)]
+harness: [$02FF]
 ---
 
 <!-- doc-type: recipe -->

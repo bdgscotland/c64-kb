@@ -176,7 +176,7 @@ export type Source = "program" | "kernal" | "basic" | "unknown";
  * there are BASIC's, not the KERNAL's. An earlier version called them
  * KERNAL stores outside every may-set (basic-float-calls, #84).
  */
-export const BASIC_IN_KERNAL_END = 0xe4b6;
+const BASIC_IN_KERNAL_END = 0xe4b6;
 
 export function sourceOf(pc: number, port: CpuPort): Source {
   if (port.bits === null && (pc >= 0xe000 || (pc >= 0xa000 && pc <= 0xbfff))) return "unknown";

@@ -7,6 +7,8 @@ techniques: [mcm_text]
 file_formats: [PRG]
 uses_registers: [D016, D018, D020, D021, D022, D023, D025, D026]
 uses_kernal: []
+claims: [vic_char_base (owns)]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

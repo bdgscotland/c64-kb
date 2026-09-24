@@ -7,6 +7,9 @@ techniques: [software_sprite_preshifted]
 file_formats: [PRG]
 uses_registers: [D011, D012, D018, D020, DD04, DD05, DD0E]
 uses_kernal: [CHROUT]
+claims: [vic_raster_irq (init), vic_char_base (owns), zero_page $02-$05+$FB-$FE (owns)]
+harness: [cia2_timer_a, $02FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

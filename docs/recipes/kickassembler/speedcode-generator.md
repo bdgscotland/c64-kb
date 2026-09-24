@@ -7,6 +7,8 @@ techniques: [speedcode_generation]
 file_formats: [PRG]
 uses_registers: [D011, D020, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: [CHROUT]
+claims: [vic_raster_irq (init), zero_page $FB-$FE (owns)]
+harness: [cia2_timer_a, cia2_timer_b, $02FF]
 ---
 
 <!-- doc-type: recipe -->

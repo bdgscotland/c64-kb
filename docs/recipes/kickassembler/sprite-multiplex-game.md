@@ -7,7 +7,9 @@ techniques: [sprite_multiplex_game, ram_under_kernal]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01B, D01C, D01D, D020, D021, D027, DC0D, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F]
 uses_kernal: []
-claims: [cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+claims: [cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), cia2_tod (init), zero_page $02-$39 (owns)]
+harness: [cia2_timer_a, cia2_timer_b]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
