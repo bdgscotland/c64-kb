@@ -50,5 +50,5 @@ a comment saying why that one line is the exception.
 One-time setup before the first tagged release: on npmjs.com, add this
 repository and `.github/workflows/release.yml` as the package's trusted
 publisher. npm cannot link a trusted publisher to a name that does not exist
-yet, so the very first publish is done by hand: `npm publish --access public`
+yet, so the very first publish is done by hand (an account with 2FA; npm refuses the upload without it): `npm publish --access public`
 from a clean checkout of the tagged commit.
