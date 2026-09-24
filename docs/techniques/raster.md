@@ -201,7 +201,7 @@ A third approach, used in demo code, accounts for badlines at assembly time: the
 
 The VIC-II needs character codes to generate text-mode output: which character is in each of the 40 cells of the current row. It fetches these from screen RAM (video matrix), which lives in the VIC bank and is not accessible during the CPU's phi2 cycles; the VIC needs the bus to itself. The chip pulls BA (bus available) low on cycle 12, three cycles before it needs the bus. In those three cycles the CPU may still complete write cycles, but it stops at its first read. From cycle 15 the VIC takes the phi2 bus for 40 cycles of screen RAM fetch (cycles 15-54), then releases it, and the CPU resumes on cycle 55. The CPU loses 40-43 cycles; plan on 43, as in "Why" above. (An earlier version said the chip "raises" BA, and counted only the 40 fetch cycles.)
 
-The timing is locked to the YSCROLL field because the VIC increments its internal row counter on each badline. The row counter increments when `(current_raster_line & 7) == YSCROLL`. The first badline of a frame must occur while DEN is set, or badlines are suppressed for the entire frame. Clearing DEN this way ("blinking DEN") blanks the display and gives the CPU all cycles back.
+The timing is locked to the YSCROLL field because the VIC resets its row counter RC to 0 in cycle 14 of a line on which `(current_raster_line & 7) == YSCROLL` holds, and moves on to the next text row only in cycle 58 of a line with RC = 7 (Bauer §3.7.2; measured in the family table below). An earlier version of this sentence said the row counter increments on each badline. The first badline of a frame must occur while DEN is set, or badlines are suppressed for the entire frame. Clearing DEN this way ("blinking DEN") blanks the display and gives the CPU all cycles back.
 
 NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), but the cycle loss (40-43 cycles) and the available cycles per line (65 on NTSC vs 63 on PAL, so 65 - 43 = 22 left on NTSC) mean the badline penalty as a fraction of a line's budget is slightly lower on NTSC. NTSC has fewer lines per frame, but the badline window ($30–$F7) and the 25 character rows inside it do not depend on the frame length, so an NTSC frame has the same 25 badlines as PAL: 51, 59, …, 243 (measured in VICE x64sc: 2,500 stalls in 100 frames on both the PAL default, a C64C with the 8565, and the 6567R8, and none with DEN clear; an earlier version said the PAL run was a 6569). The shorter NTSC frame loses lines from the vertical blank, not from the display; per frame the CPU has fewer non-bad lines than on PAL (238 against 287), and the 43-cycle stall (an earlier version said 40) is a slightly smaller fraction of each 65-cycle bad line. (An earlier version of this paragraph said 24.) An earlier revision of this entry also carried a PAL-only Region tag; the technique applies to both regions, as the figures above show.
 
@@ -223,6 +223,29 @@ NTSC, non-badline: 65 cycles total.
 NTSC, badline: 22 cycles guaranteed, 25 with three write cycles.
 
 For cycle-tight code running on every line, the badline constraint means the worst case is 20 cycles per line on PAL. Any per-line loop must complete in 20 cycles or less to be badline-safe, or must handle the bad-line case separately. A badline also moves every later instruction on that line by 43 cycles (an earlier version said 40): a write planned for cycle 56 cannot be placed there at all, because no read can happen between cycles 12 and 54 and every store's write follows a read.
+
+### The vertical-tweak family
+
+The effects below all work by writing YSCROLL so that the badline
+condition holds, or does not, at a chosen cycle; each needs this
+technique's rule, and each names it or a member that does on its
+**Requires:** line. What separates them is the cycle of the write. Every
+cycle here is the store's write cycle as a store trace prints it (Bauer's
+numbering, `runtime/vice-reference.md`), measured in VICE x64sc 3.10 on
+PAL c64c and NTSC with the recipe named.
+
+| Technique | The `$D011` write | Where it must land | Measured in |
+|---|---|---|---|
+| `fld_flexible_line_distance` | a YSCROLL matching neither this line nor the next | any cycle | `fld` |
+| `fpp_flexible_pixel_position`, badline form; `char_zoomer_d018`; `kefrens_bars` | YSCROLL = this line & 7 | cycle 11 or earlier (12, 13: first cells lost; 14 on: RC not reset) | `fpp`, `char-zoomer`, `kefrens-bars` |
+| `chunky_4x4_fli_mode`, `ufli_sprite_underlay`, `fli_image` | YSCROLL = this line & 7, mid-row | cycle 14 exactly (13 or earlier resets RC; 15 on moves the three `$FF` cells right) | `chunky-4x4`, `ufli-underlay`, `fli-image` |
+| `vsp_glitch` | YSCROLL = this line & 7 on a line that is not yet bad | cycle 14 + N shifts the row N cells | `vsp`, `agsp` |
+| `line_doubling_and_colour_ram_double_buffer`, `fpp_flexible_pixel_position` restart form | YSCROLL = this line & 7 on a row's last line | cycles 54 to 57 | `line-doubling`, `fpp` |
+| `linecrunch`, `fpp_flexible_pixel_position` RC-held form | YSCROLL = this line & 7 on a line with RC = 7 | cycles 58 to 62 (PAL), 58 to 64 (NTSC) | `linecrunch`, `fpp` |
+| `agsp_free_scroll` | linecrunch, then FLD, then a VSP write | each at its own row above | `agsp` |
+
+`dysp_side_border_sprites` is the family's neighbour: it needs the band
+kept free of badlines (its **Demands:** line), which FLD's write gives.
 
 ### Recipes
 
@@ -407,7 +430,7 @@ display blanked.
 
 **Uses registers:** SCROLY, VMCSB
 **Demands:** midframe_raster_irqs
-**Requires:** stable_raster_irq
+**Requires:** stable_raster_irq, badline_synchronization
 **Claims:** vic_raster_irq (owns), vic_yscroll (owns)
 **Claims basis:** measured-vice
 

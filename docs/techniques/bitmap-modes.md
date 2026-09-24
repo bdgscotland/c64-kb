@@ -526,7 +526,7 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Uses registers:** D011, D018, D016
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
-**Requires:** stable_raster_irq, multicolor_bitmap, vic_bank_select
+**Requires:** stable_raster_irq, multicolor_bitmap, vic_bank_select, badline_synchronization
 **Raster band:** 45-251 (the fli-image recipe's first IRQ is on line 45; its last FLI line is 250 and the handler exits near cycle 50 of line 251)
 **Cost:** cycles_per_line=63, lines_active=207, cycles_per_frame=13041, bytes_code=3488, bytes_data=16001, irq_slots=1
 **Cost basis:** arithmetic
