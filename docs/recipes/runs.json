@@ -551,6 +551,18 @@
       "ntsc": "screenshots/base-routines-ntsc.png"
     }
   },
+  "kickassembler/multiply-16x16": {
+    "cycles": 60000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/multiply-16x16.png",
+      "ntsc": "screenshots/multiply-16x16-ntsc.png"
+    }
+  },
   "kickassembler/one-part-demo": {
     "cycles": 10000000,
     "models": [

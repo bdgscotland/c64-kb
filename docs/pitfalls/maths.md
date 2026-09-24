@@ -185,3 +185,73 @@ divide-check.md with every bcs deleted, screen read from the PNG:
 - Technique `atan2_8bit` (`docs/techniques/maths.md`) and `docs/recipes/kickassembler/sqrt-atan2.md`, whose `ratio_div` omits the guard because its divisor is at most 128.
 - Technique `isqrt_16bit` (`docs/techniques/maths.md`), a restoring loop of the same family whose 16-bit remainder has room to spare.
 - `docs/recipes/oscar64/divide-check.md`, the sweep whose miss counts are quoted here; its `16/8 ALL` row is the one that catches the fault.
+
+---
+
+## multiply_16x16_middle_carry_dropped — A 16 × 16 multiply that adds the two middle products without carrying into the top byte is wrong by 2²⁴ on large operands
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** multiply_16x16
+**Mitigated by techniques:** multiply_16x16
+
+### Symptom
+
+A 32-bit product is right on every test value tried and wrong in its
+top byte on large operands: a scaled coordinate jumps by a whole screen,
+a 16.16 fixed-point step goes negative. `$00FF × $0101`, `$1234 ×
+$0002` and every operand below `$0100` give the right answer.
+
+### Mechanism
+
+The routine builds `a·b` from four byte products. `al·bl` fills bytes 0
+and 1 and `ah·bh` bytes 2 and 3; the two middle products `ah·bl` and
+`al·bh` are each added at byte 1, as two-byte adds over bytes 1 and 2.
+Those adds can carry out of byte 2: the middle products alone sum to up
+to 2 × 255 × 255 = 130,050, more than 16 bits. A routine that stops
+each add at byte 2 loses that carry, and the top byte is short by 1 for
+each one. When either operand's high byte is small the middle products
+are small and no carry happens, so the fault hides from small tests.
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/multiply-16x16.md`:
+over its 65,536 sweep pairs the carry-less copy gets byte 3 wrong on
+36,069, the count a Python model of the byte arithmetic predicts. The
+technique is on both lines because the fault is the obvious short form
+of its add and its `BCC` / `INC` cures it.
+
+### Fix
+
+After each middle add's high byte, `BCC` over an `INC` of byte 3. It
+costs 3 cycles when there is no carry and 8 when there is.
+
+### Worked example
+
+```asm
+// BAD: bytes 1-2 += ah*bl, the carry out of byte 2 dropped
+        clc
+        lda r1
+        adc m0
+        sta r1
+        lda r2
+        adc m1
+        sta r2
+
+// GOOD: the carry reaches byte 3
+        clc
+        lda r1
+        adc m0
+        sta r1
+        lda r2
+        adc m1
+        sta r2
+        bcc !+
+        inc r3
+!:
+```
+
+### Cross-references
+
+- Technique `multiply_16x16` (`docs/techniques/maths.md`), the routine
+  and its timing.
+- Recipe `docs/recipes/kickassembler/multiply-16x16.md`, the sweep that
+  counts the 36,069 wrong products.

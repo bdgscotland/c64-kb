@@ -30,7 +30,7 @@ there and what is not; "missing" means no entry.
 | 1 | 16-bit add and subtract (maths) | covered | `maths.md` `add_sub_16bit`; `recipes/kickassembler/base-routines.md` |
 | 2 | 16-bit and ranged compares (maths) | covered | `maths.md` `compare_16bit_and_signed`; `compare-16bit-signed.md` |
 | 3 | 8 × 8 multiply, 16-bit product (maths) | covered | `maths.md` `table_multiply_8x8` |
-| 4 | 16 × 16 multiply, 32-bit product (maths) | missing | no entry; `effects-vector-3d.md` mentions the need only |
+| 4 | 16 × 16 multiply, 32-bit product (maths) | covered | `maths.md` `multiply_16x16`; `multiply-16x16.md` |
 | 5 | Multiply by a constant (maths) | missing | no entry |
 | 6 | 8- and 16-bit division, divide by ten (maths) | covered | `maths.md` `division_8_16bit`; `oscar64/divide-check.md` |
 | 7 | Square root (maths) | covered | `maths.md` `isqrt_16bit`; `sqrt-atan2.md` |
@@ -68,7 +68,8 @@ there and what is not; "missing" means no entry.
 | 39 | SID model detection (SID) | missing | no entry; issue #24 backlog lists a `$D41B` recipe |
 | 40 | Music player call from an IRQ (SID) | covered | `music-sid.md` `sid_play_routine_pattern`; `music-player.md` |
 
-Totals: 33 covered, 1 partial, 6 missing.
+Totals when recorded: 33 covered, 1 partial, 6 missing. Issue #89 has
+since moved row 4 to covered.
 
 ## Missing and partial
 

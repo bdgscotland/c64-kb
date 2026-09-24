@@ -232,9 +232,124 @@ mismatches.
 
 ### Recipes
 
-- No recipe yet. The tables and the checking harness are the measuring
-  program at the end of this page; `recipes/oscar64/fixed-point-jump.md`
-  does not use a multiply.
+- `recipes/kickassembler/multiply-16x16.md` runs four of these
+  lookups per call inside `multiply_16x16`; the 8 × 8 routine alone is
+  timed only by the measuring program at the end of this page.
+  `recipes/oscar64/fixed-point-jump.md` does not use a multiply.
+
+## multiply_16x16 — 16 × 16 multiply, 32-bit product, from four table multiplies
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Requires:** table_multiply_8x8
+**Cost:** cycles_per_frame=272, bytes_data=2048
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-multiply-16x16 (one call, worst pair: 16 page crossings and both carries; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+Rotation, perspective and physics with 16-bit coordinates need the full
+product of two 16-bit values: a scale factor times a position, a
+velocity times a time step. `effects-vector-3d.md` names the need. The
+8 × 8 table multiply gives one byte product in 52 cycles; four of them
+and three adds give the 32-bit product.
+
+### How
+
+Split each operand into bytes, `a = 256·ah + al` and `b = 256·bh + bl`:
+
+```
+a·b = al·bl + 256·(ah·bl + al·bh) + 65536·ah·bh
+```
+
+`al·bl` is bytes 0 and 1 of the result and `ah·bh` bytes 2 and 3. The
+two middle products are each added at byte 1, and the carry out of
+byte 2 goes into byte 3.
+
+Each byte product is the quarter-square lookup of `table_multiply_8x8`.
+Patch `al` into the reads for `al·bl` and `al·bh`, and `ah` into the
+reads for `ah·bl` and `ah·bh`; then `Y = bl` serves the first product of
+each pair and `Y = bh` the second. That is 16 patched operand bytes,
+done once per call.
+
+```asm
+        ldy b_lo
+        sec
+s1:     lda sqr_lo,y      // al*bl: operand bytes patched with al, al^$ff
+d1:     sbc nsq_lo,y
+        sta r0
+s2:     lda sqr_hi,y
+d2:     sbc nsq_hi,y
+        sta r1
+        ...               // ah*bl into m1:m0; then ldy b_hi for al*bh, ah*bh
+        clc               // bytes 1-3 += ah*bl
+        lda r1
+        adc m0
+        sta r1
+        lda r2
+        adc m1
+        sta r2
+        bcc !+
+        inc r3            // the carry into byte 3 (the pitfall below)
+!:
+```
+
+The whole routine is in `recipes/kickassembler/multiply-16x16.md`.
+
+### Why it works
+
+The identity is exact for every byte pair (`table_multiply_8x8`), so
+each partial product is exact, and the sum of the four placed at their
+byte offsets is `a·b` by the distributive law. The only place a bit can
+be lost is a carry: the two middle products sum to at most
+2 × 255 × 255 = 130,050, more than 16 bits, so the carry out of byte 2
+is real and must reach byte 3. The top byte cannot overflow, because
+`a·b` is at most `$FFFE0001`.
+
+Measured in VICE x64sc 3.10 over 65,536 operand pairs: every product
+matches a Python model's checksum, and a copy without the two `INC`s
+is wrong on 36,069 of them (`pitfalls/maths.md`,
+`multiply_16x16_middle_carry_dropped`).
+
+### Variations
+
+- **Signed operands.** Multiply the magnitudes and negate the 32-bit
+  result when the signs differ; or multiply the raw bytes and subtract
+  `b` from the top word when `a` is negative and `a` from it when `b`
+  is negative (rung 3, not measured here).
+- **16 × 8.** Drop the two products with `bh`: 8 patched bytes and two
+  lookups, a 24-bit product (rung 3).
+- **Only the top 16 bits.** Fixed-point code that keeps the high word
+  still needs every carry into it; skipping `al·bl` makes the top word
+  up to 1 too small (rung 3).
+
+### Cycle budget
+
+Measured with CIA2 timer A, one call, net of `JSR` / `RTS`, screen
+blanked, PAL and NTSC alike (rung 1):
+
+| Operands | Cycles |
+|---|---|
+| `0 × 0`: no page crossed, no carry | 246 |
+| `8A80 × F3FF`: 16 page crossings, two carries | 272 |
+| 65,536 sweep pairs | 246 to 270 |
+
+246 is the instruction-table sum: 76 to patch, 112 for the four
+lookups, 58 for the two middle adds. Each of the sixteen indexed reads
+adds one cycle when it crosses a page and each carry into byte 3 adds
+five, so 272 is the largest there is. With the display on, a badline
+inside the call adds 40 to 43 (`badline_cycle_loss`). The `**Cost:**`
+line carries 272, once a frame, and the four 512-byte tables.
+
+### Recipes
+
+- `recipes/kickassembler/multiply-16x16.md`: five products, a timed
+  65,536-pair sweep against a Python checksum, and the carry-less copy
+  counted.
 
 ## division_8_16bit — Shift-and-subtract division, reciprocals and divide by ten
 
