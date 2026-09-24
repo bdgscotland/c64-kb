@@ -86,12 +86,23 @@ jobs:
           distribution: temurin
           java-version: "21"
       - run: npm ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/kickass/KickAssembler.zip
+          key: kickassembler-5.25-9ef752c12b25f64b
+      # theweb.dk once served a file that failed the checksum (run
+      # 35944152577) while the same URL was fine seconds later: retry.
       - name: KickAssembler 5.25
         run: |
           mkdir -p .tools/kickass && cd .tools/kickass
-          curl -sfL -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip
-          echo "9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6  KickAssembler.zip" | sha256sum -c -
-          unzip -q KickAssembler.zip KickAss.jar
+          sum=9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6
+          for i in 1 2 3 4 5; do
+            echo "$sum  KickAssembler.zip" | sha256sum -c --status - 2>/dev/null && break
+            curl -sfL --retry 3 -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip || true
+            sleep $((i * 5))
+          done
+          echo "$sum  KickAssembler.zip" | sha256sum -c -
+          unzip -q -o KickAssembler.zip KickAss.jar
       - run: sudo apt-get install -y -qq cc65
       # Oscar64 is skipped (--allow-missing) until issue #25 pins a released
       # compiler that reproduces the recipes; today only a locally patched
@@ -117,12 +128,23 @@ jobs:
       - run: >-
           sudo apt-get install -y -qq cc65 build-essential xa65 dos2unix libpng-dev
           pkg-config flex bison libcurl4-openssl-dev python3-pil
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/kickass/KickAssembler.zip
+          key: kickassembler-5.25-9ef752c12b25f64b
+      # theweb.dk once served a file that failed the checksum (run
+      # 35944152577) while the same URL was fine seconds later: retry.
       - name: KickAssembler 5.25
         run: |
           mkdir -p .tools/kickass && cd .tools/kickass
-          curl -sfL -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip
-          echo "9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6  KickAssembler.zip" | sha256sum -c -
-          unzip -q KickAssembler.zip KickAss.jar
+          sum=9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6
+          for i in 1 2 3 4 5; do
+            echo "$sum  KickAssembler.zip" | sha256sum -c --status - 2>/dev/null && break
+            curl -sfL --retry 3 -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip || true
+            sleep $((i * 5))
+          done
+          echo "$sum  KickAssembler.zip" | sha256sum -c -
+          unzip -q -o KickAssembler.zip KickAss.jar
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/vice-headless
