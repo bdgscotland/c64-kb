@@ -11,6 +11,7 @@
 #   make gameover   the AP_GIVE_UP=1 build: three lives go, and the title after
 #                   GAME OVER must be clean; graded by expect-gameover.json
 #   make drive      the normal game played headless (harness/drive.py; README "Driving it headless")
+#   make gallery    shots/gallery.png: the normal game in play, for a README (GALLERY_SCRIPT)
 #   make disk       build/platformer.d64
 #   make claims     c64-kb's claims-watch over the autopilot build
 #   make clean
@@ -80,6 +81,12 @@ tearcheck: $(PRG_AUTO) $(PRG_TEAR)
 # drivetest: the normal build, stick on $DC00: fire on the title starts a game.
 DRIVE_SCREEN := C800:21-24
 DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:LIVES 3" hold:right "until:GAME OVER" print
+
+# make gallery: shots/gallery.png, the normal build in play. The autopilot's
+# opening played by hand: over the coins and the hill, a jump straight up,
+# and the picture 10 frames later, above the walker it is about to stomp.
+GALLERY_SCRIPT := "until:PRESS FIRE" hold:fire wait:1 hold:none wait:4 "until:LIVES 3" \
+  hold:right wait:100 hold:none wait:31 hold:fire wait:1 hold:none wait:10
 
 # ---- stage: the worst frame with every enemy slot full ------------------------------
 # STAGE_CROWD puts ten enemies in the first view (src/level.c), so all five

@@ -6,6 +6,7 @@
 #   make audio   the SID stores of the autopilot run against its frames
 #                (tools/audio.py, through c64-kb's claims-watch); make check
 #                runs it first
+#   make gallery shots/gallery.png: the release build's main part, for a README
 NAME     := demo
 KICK_SRC := src/main.asm
 
@@ -27,6 +28,11 @@ CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite
 
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
 VERIFY_TARGETS := probe
+
+# make gallery: the release build has no input; its timeline plays. 530 frames
+# after the autostart the main part shows logo, sprite chain, the four bars
+# apart and the scroller mid-message.
+GALLERY_SCRIPT := wait:530
 
 # make watch (in make check): the player writes the SID. The autopilot run
 # stored to it in 457 frames on PAL and 434 on NTSC; without the play call
