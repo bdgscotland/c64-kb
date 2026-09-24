@@ -7,6 +7,7 @@ techniques: [sid_play_routine_pattern, sid_voice_setup, sid_filter_routing, sfx_
 file_formats: [PRG]
 uses_registers: [D011, D012, D019, D01A, D020, D021, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418, D41C, DC04, DC05, DC0D, DC0E, DD0D]
 uses_kernal: []
+claims: [irq_vector_fffe (owns), nmi_vector_fffa (owns), cia1_timer_b (init), cia1_tod (init)]
 ---
 
 <!-- doc-type: recipe -->

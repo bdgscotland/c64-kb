@@ -7,6 +7,7 @@ techniques: [tech_tech_wobbler, stable_raster_irq, pal_ntsc_detection]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC04, DC05, DC06, DC07, DC0E, DC0F]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_tod (init)]
 ---
 
 <!-- doc-type: recipe -->

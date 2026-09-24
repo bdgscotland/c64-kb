@@ -7,6 +7,7 @@ techniques: [dycp_scroller, soft_scroll_h, char_scroll_buffer_h]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, DD04, DD05, DD0E]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
 ---
 
 <!-- doc-type: recipe -->

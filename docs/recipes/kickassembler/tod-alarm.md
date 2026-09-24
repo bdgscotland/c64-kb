@@ -7,6 +7,7 @@ techniques: [tod_alarm_interrupt]
 file_formats: [PRG]
 uses_registers: [D011, D012, D020, D021, DC04, DC05, DC08, DC09, DC0A, DC0B, DC0D, DC0E, DC0F]
 uses_kernal: []
+claims: [irq_vector_0314 (owns)]
 ---
 
 <!-- doc-type: recipe -->

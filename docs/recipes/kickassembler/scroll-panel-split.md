@@ -7,6 +7,7 @@ techniques: [scroll_panel_split, soft_scroll_v, char_scroll_buffer_v, ram_under_
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD0D]
 uses_kernal: []
+claims: [cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
 ---
 
 <!-- doc-type: recipe -->
