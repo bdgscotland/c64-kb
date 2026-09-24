@@ -49,6 +49,8 @@ describe.skipIf(!canRun)("c64_re_irq_chain in VICE", () => {
         "    sta $d011",
         "    lda #100",
         "    sta $d012",
+        "    lda #$ff",
+        "    sta $d019",
         "    lda #1",
         "    sta $d01a",
         "    cli",

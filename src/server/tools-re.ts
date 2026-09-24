@@ -15,7 +15,7 @@ export const reIrqChainTool = defineTool({
   title: "Measure a program's interrupt chain in VICE",
   description: `Run a .prg headless in VICE x64sc and report its interrupt chain as observations: every write to the IRQ/NMI vectors ($0314/5, $0318/9, $FFFA/B, $FFFE/F) with the value once both bytes are known; every raster line armed by writes to $D012 and $D011 bit 7; every entry into each handler with its raster line, cycle and frame. A value the trace cannot know (a read-modify-write, a byte never written) is null and listed under unknowns. A $0314 handler's entry line includes the KERNAL dispatch at $FF48.
 
-An entry_line can be neither the armed line nor a KERNAL offset of it: measured on a minimal $FFFE handler armed at line 100 (sta $d011 then sta $d012, sta $d01a, cli, no $d019 ack first), one entry landed on line 40, 18 cycles after the arming write and far too soon to be that line-100 match. $D019's raster flag latches on a compare against whatever $D012 held before the trace's own writes; turning the mask on while that stale flag is still set fires the instant cli runs. Every later entry in that same run was on line 100. Arm this register only after acking $D019, or expect a first entry the armed line does not explain (measured-vice, rung 1).
+A raster flag already pending in $D019 when $D01A is enabled fires at once, so a first entry may sit on a line no arm explains.
 
 Inputs: prg_path (inside this repo or the temp directory), model pal|ntsc, cycles, disk_path.
 Output: handlers [{handler, via, entries, entry_lines, armed_before}], vectors, arms, entries, unknowns, each observation with an id, basis and rung.`,
