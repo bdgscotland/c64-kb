@@ -5,7 +5,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 812, schema 36, tools 2.11.0, package 0.24.0.
+Data 813, schema 36, tools 2.12.0, package 0.25.0.
+
+**Tool repairs from #19 (tools 2.12.0, package 0.25.0, data 813).**
+`check_compatibility` says what a refused name is (a Pitfall, a
+FileFormat, a Recipe, or a technique in other case). The gap log is
+replayed after every ingest (and by `c64-kb gaps-replay`): nothing ever
+called `resolveGap`, and `check_compatibility` logged every clean
+COMPATIBLE verdict as a gap (2,493 of 2,634 open); a replay of a copy
+resolved 2,451. `game-briefing` resolves a free-text genre ("a
+platformer") to its candidate archetypes and plans on what they share
+(new optional `archetype_candidates`). `$00`/`$01` are Register nodes
+(D6510, R6510; the KERNAL's IOINIT bytes at `$FDD5` checked), so
+`lookup-register $01` answers and four banking pitfalls reach it; three
+pages said the KB had no such node. `scripts/check-pitfall-coverage.ts`
+lists registers and KERNAL routines no pitfall names (56 of 109, 23 of
+39). sid_env3_filter_envelope and vector_balls_sprites are anchored;
+runtime_relocation, wcf_packer, dig_and_refill and world_state_bits
+wait on a triage decision.
 
 **Device nodes, and a cartridge table that was wrong in four rows
 (schema 36, tools 2.11.0, package 0.24.0, data 812; #87).** Every row of
