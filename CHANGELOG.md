@@ -5,7 +5,23 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 821, schema 38, tools 2.13.1, package 0.26.1.
+Data 822, schema 39, tools 2.14.0, package 0.27.0.
+
+**Per-item Cost and phased compatibility on a technique list (schema
+39, tools 2.14.0, package 0.27.0, data 822; #94, #95).** New Cost keys
+`cycles_per_item` and `cycles_item_base` (Technique properties
+`cost_cycles_per_item`, `cost_cycles_item_base`): `plan_budget` reads
+`name ×M-N` as items for such a technique, not as whole-figure calls
+(`char_bullets ×12` charged twelve eight-bullet frames). Measured in
+VICE: char_bullets 490 a bullet + 75, per_frame_hitbox 150 a hitting
+pair + 2,992. The game test's list with counts gives PAL 15,091-42,413
++ 2,020, and its measured 16,965 now falls inside. `check_compatibility`
+takes `name:phase` on a plain list, reports `kernal_banked_out` when
+`ram_under_kernal` (KERNAL-out) meets a KERNAL file technique (soft
+across phases), and gains `raster_irq_during_serial_io`,
+`sprites_over_badlines_hang_serial_io` (soft) and `recipe_kernal_out`
+(info); conflicts across phases carry `across`. The game test's T4 is a
+test case.
 
 **Six canon routines, briefing and lint fixes, and an Oscar64 macro
 fault (data 821; #89, #97, #98).** New techniques with KickAssembler
