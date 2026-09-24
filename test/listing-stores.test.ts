@@ -61,17 +61,17 @@ describe("listing scan: which stores it sees", () => {
     );
   });
 
-  it("skips a labelled $FFFF placeholder, and stores that only switch units off", () => {
+  it("skips a labelled $FFFF placeholder and 0 to $D015, but counts a CIA mask write", () => {
     const code = [
       "dst: sta $ffff",
       "  lda #0",
       "  sta $d015",
+      "  lda #$01",
+      "  sta $d015",
       "  lda #$7f",
       "  sta $dc0d",
-      "  lda #$81",
-      "  sta $dc0d",
     ].join("\n");
-    expect(listingStores(page("", code)).map((s) => s.text)).toEqual(["sta $dc0d"]);
+    expect(listingStores(page("", code)).map((s) => s.text)).toEqual(["sta $d015", "sta $dc0d"]);
   });
 
   it("counts a $DC0D store for any CIA1 unit", () => {

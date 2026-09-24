@@ -64,9 +64,10 @@ expansion pages) and warns when neither `claims:`, the unit words of
 `harness:` nor the techniques' Claims lines (with their REQUIRES) cover
 it (`src/graph/listing-stores.ts`). A `reads` claim does not cover a
 store. It cannot see a store through a pointer or a C assignment, and it
-skips `$D011`, `$D016`, `$D018`, `$D019`, zero page, stores that only
-switch units off (0 to `$D015`, a mask-clearing `$DC0D`/`$DD0D` write) and
-self-modified `$FFFF` placeholders. The claims watch is the instrument;
+skips `$D011`, `$D016`, `$D018`, `$D019`, zero page, 0 to `$D015` (every
+sprite off) and self-modified `$FFFF` placeholders. A `$7F` mask write to
+`$DC0D` or `$DD0D` is counted, as the watch counts it: it is `init` on
+each unit it masks. The claims watch is the instrument;
 the scan catches a recipe that has no `claims:` yet.
 
 `harness` is optional and is not a claim. It lists what the listing's

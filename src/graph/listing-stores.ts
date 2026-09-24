@@ -121,16 +121,15 @@ const IMMEDIATE = /^\s*(?:[\w.!]+:\s*)?ld([axy])\s+#\$?([0-9A-Fa-f]+)\b/i;
 const COMMENT_OR_BLANK = /^\s*(?:\/\/.*|;.*)?$/;
 
 /**
- * A store that only switches units off: 0 to $D015 (every sprite off), or
- * a value with bit 7 clear to a CIA's $xC0D/$xD0D (clears interrupt mask
- * bits). Not counted: the claims watch judges such a store by whether it
- * changed a bit, and a static read cannot know the bits before it. Two
- * recipes whose claims the watch passes store 0 to $D015 this way (#22 step 8).
+ * 0 to $D015, every sprite off. Not counted: the claims watch judges a
+ * $D015 store by the bits it changed, and a static read cannot know the
+ * bits before it. Two recipes whose claims the watch passes store it this
+ * way (#22 step 8). A mask write to $DC0D or $DD0D is counted: the watch
+ * counts it as touching each source in bits 0-4, whatever bit 7 says, and
+ * the convention makes it `init` on those units.
  */
 function switchesOff(addr: number, value: number | undefined): boolean {
-  if (value === undefined) return false;
-  if (addr === 0xd015) return value === 0;
-  return (addr === 0xdc0d || addr === 0xdd0d) && value < 0x80;
+  return addr === 0xd015 && value === 0;
 }
 
 /**
