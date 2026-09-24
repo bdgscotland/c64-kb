@@ -641,7 +641,9 @@ or `name (transition)` sets the phase, play when none is given. One edge
 per phase, so a technique used at start-up and again at game over has
 two. Both ends MATCHed; a miss is warned about and counted as `composes …
 dropped`. Read by `c64_plan_budget`, which budgets each phase alone
-(schema 28) and multiplies a member's per-call figure by its count.
+(schema 28) and multiplies a member's per-call figure by its count, and
+by `c64_check_compatibility` with a design, which checks each phase's
+members alone.
 
 ### INSTANCE_OF
 

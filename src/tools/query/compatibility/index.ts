@@ -10,6 +10,7 @@ import { renderCompatibility } from "./render.ts";
 import { evaluateCompatibility } from "./rules.ts";
 
 export { evaluateCompatibility } from "./rules.ts";
+export { checkDesignCompatibility } from "./design.ts";
 export type { CompatibilityFacts, TechniqueFacts } from "./facts.ts";
 
 export async function checkCompatibility(techniques: string[]): Promise<CompatibilityCheckResult> {

@@ -8,6 +8,7 @@ import {
   techniqueLookup,
   techniquesFor,
   checkCompatibility,
+  checkDesignCompatibility,
   timingBudget,
   planBudgetTool as planBudgetRun,
   budgetRegion,
@@ -206,9 +207,9 @@ export const checkCompatibilityTool = defineTool({
   title: "Check technique compatibility",
   description: `Check whether two or more C64 techniques can be combined. Hard conflicts come from authored resource demands on the techniques (DEMANDS edges): two techniques that each need every CPU cycle on their lines, a cycle-exact technique against one that takes interrupts mid-frame, a constant-sprite-set technique against a multiplexer, a KERNAL-out technique against KERNAL calls, and PAL-vs-NTSC requirements. Soft conflicts come from shared registers and shared KERNAL routines. The check also takes each technique's REQUIRES closure — the techniques it must have set up underneath it — and runs the demand and unit rules between one technique's prerequisites and the other technique, reporting a hit as prerequisite_conflict with the rule that fired in underlying_kind and its own severity (hard, soft or info); a technique is never reported against a prerequisite it declared itself (kernal_clobbers_zp excepted, below), and no technique's own demand set is changed by this.
 
-Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). Order doesn't matter — all pairwise combinations are checked.
+Inputs: 'techniques' is an array of 2+ canonical technique names (snake_case). Order doesn't matter — all pairwise combinations are checked. 'design' is a GameDesign name (docs/game-design/designs, e.g. "platformer_scaffold_oscar64"): each of its phases (play, init, transition) is checked alone, because init and transition members do not run beside play members, and a flat list would report conflicts between techniques that never run together. With a design, 'techniques' is optional and each entry may carry a phase ("name:init"; play when none) and joins that phase. State one phase leaves for the next (a unit init configures and play then owns) is not checked.
 
-Output: {techniques[], conflicts[], band_separated[], shared_infrastructure[], data_coverage[], not_found[], verdict}. A name with no Technique node refuses the check: verdict 'unknown_technique', the names in not_found[], no conflicts judged, and a hint when one argument holds several names (an earlier version answered 'compatible' for such names). Otherwise verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b, the implied ones in 'via', and the rule in 'underlying_kind'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
+Output: {techniques[], conflicts[], band_separated[], shared_infrastructure[], data_coverage[], not_found[], verdict}; with a design also design{name, title, source_doc} and phases[{phase, techniques[], verdict}], every conflict, band_separated and shared_infrastructure entry carries its 'phase', and verdict is the worst phase's. A name with no Technique node refuses the check: verdict 'unknown_technique', the names in not_found[], no conflicts judged, and a hint when one argument holds several names (an earlier version answered 'compatible' for such names). Otherwise verdict is 'incompatible' if any hard conflict exists (each carries a 'resolution' saying how to separate the two, usually by raster region), 'warnings' if only soft conflicts exist, 'compatible' otherwise. A prerequisite_conflict names the input techniques in a/b, the implied ones in 'via', and the rule in 'underlying_kind'. shared_infrastructure gains a 'missing_prerequisite' entry (with required_by[]) for every technique the set leans on through REQUIRES without naming it. data_coverage says, per technique, how many registers, KERNAL routines and demands the graph holds for it — implied techniques appear with implied_by[]; a technique with known=false cannot conflict with anything by construction, and the verdict is silent about it rather than a clearance.
 
 cpu_exclusive and cpu_vs_irq through mid-frame IRQs do not fire between a technique and one that runs inside its own code: either is on the other's REQUIRES chain, or the interrupting side is an entry method that shares vic_raster_irq while the every-line side owns it ({"techniques": ["fli_image", "double_irq"]} → warnings; an earlier version called it incompatible, against the fli-image and sideborder-open recipes). A multiplexer that owns the compare still conflicts.
 
@@ -224,12 +225,23 @@ Limitations: demands and prerequisites are authored per technique in docs/techni
   inputSchema: {
     techniques: z
       .array(z.string())
-      .min(2)
-      .describe("Array of 2+ canonical technique names to check (e.g. ['stable_raster_irq', 'raster_bars'])"),
+      .optional()
+      .describe(
+        "Array of 2+ canonical technique names to check (e.g. ['stable_raster_irq', 'raster_bars']); with 'design', optional, each 'name' or 'name:phase'",
+      ),
+    design: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("A GameDesign name, e.g. 'platformer_scaffold_oscar64': each phase checked alone"),
   },
   outputSchema: CompatibilityCheckSchema.shape,
   annotations: READ_ONLY,
-  run: ({ techniques }) => checkCompatibility(techniques),
+  run: ({ techniques, design }) => {
+    if (design) return checkDesignCompatibility(design, techniques ?? []);
+    if (!techniques || techniques.length < 2) throw new Error("give 2+ techniques, or a design");
+    return checkCompatibility(techniques);
+  },
 });
 
 export const timingBudgetTool = defineTool({

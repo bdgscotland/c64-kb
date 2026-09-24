@@ -92,4 +92,8 @@ game's listing.
 
 No claims, zero page or memory lines yet: those are per-technique
 (`CONVENTIONS-techniques.md`) and per-recipe. `c64_check_compatibility`
-takes the technique list.
+takes a design name and checks each phase alone, since init and
+transition members do not run beside play; before #37 it took only a
+technique list, and a flat list of a design reported conflicts between
+techniques that never run together. What one phase leaves configured for
+the next is not checked.
