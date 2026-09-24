@@ -5,7 +5,16 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 805, schema 33, tools 2.8.1, package 0.21.1.
+Data 806, schema 33, tools 2.8.1, package 0.21.1.
+
+**Serial-I/O sprite hang: CIA model has no effect, drive is a 1541-II
+(data 806; part of #43).** Measured in VICE with true drive over 20 save
+rounds: PAL hangs from 3 sprites, NTSC from 4, on every CIA and VIC-II
+model combination, so this is not the #69 old-CIA fault. VICE's default
+drive 8 is a 1541-II; the pitfall and recipe said 1541. The 1541-II ROM
+matches the 1541's in the ranges the pitfall cites. The recipe is now
+pinned with true drive and the drive type explicit. Real hardware stays
+open on #43.
 
 **Every archetype reference title has a source (data 805; #40).** Each
 title on c64-game-archetypes.md now links a C64-Wiki or Wikipedia page
