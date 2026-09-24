@@ -171,6 +171,8 @@ describe("attribution by PC and the 6510 port", () => {
     const port = new CpuPort();
     expect(sourceOf(0xea31, port)).toBe("kernal");
     expect(sourceOf(0xa474, port)).toBe("basic");
+    expect(sourceOf(0xe043, port)).toBe("basic"); // FSQR's helpers, BASIC code in the KERNAL ROM
+    expect(sourceOf(0xe4d3, port)).toBe("kernal");
     expect(sourceOf(0x0810, port)).toBe("program");
     port.store(1, 0x35); // KERNAL and BASIC out, I/O in
     expect(sourceOf(0xea31, port)).toBe("program");

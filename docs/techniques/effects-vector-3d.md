@@ -86,6 +86,13 @@ For a 32-point cloud at ~75 cycles per point: approximately 2400 cycles per fram
 **Cost:** cycles_per_frame=1389, cycles_per_frame_typical=1318, sprites_per_line=5
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-vector-balls (worst is frame 1, the six swaps that settle the start order; typical is frame 300 with no swap; sprites per line is the most balls sharing a raster line over the 300 frames, counted from the tables)
+**Claims:** sprite_0-7 (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+kickassembler-vector-balls: the balls are the eight sprites, 903 stores to
+each over the run, 300 of them per sprite in `assign` and `col`, once a
+frame.
 
 ### Why
 
@@ -1176,6 +1183,12 @@ All cycle counts above are approximate and vary with the handler, the table layo
 **Cost:** cycles_per_frame=17975
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-pseudo-3d-road (PAL, the frame of each pair in which the table computation runs: the CPU is busy from line 0 to cycle 20 of line 285 at the latest, the fine chain included; see Cycle budget)
+**Claims:** vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL): `$D016` on
+every road line, 78,216 stores in kickassembler-pseudo-3d-road and 25,112
+in kickassembler-road-sprite-lines.
 
 ### Why
 

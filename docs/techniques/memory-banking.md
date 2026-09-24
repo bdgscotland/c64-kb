@@ -339,6 +339,12 @@ techniques and will be demonstrated in Phase 4+ recipe docs.
 **Cost:** bytes_code=70, bytes_data=2048
 **Cost basis:** derived-listing
 **Cost measured on:** kickassembler-charset-copy-rom-to-ram (one-off copy)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+kickassembler-charset-copy-rom-to-ram: one `$D018` store points the VIC-II
+at the copy, and the copy is only seen through it.
 
 ### Why
 
@@ -1149,6 +1155,12 @@ the opcode sizes).
 **Complexity:** medium
 **Region:** both
 **Uses registers:** DF00, DF01, DF02, DF03, DF04, DF05, DF06, DF07, DF08, DF09, DF0A
+**Claims:** expansion_io2 (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL, `-reu -reusize
+512`) of kickassembler-reu-dma: 161 stores to the REU registers
+`$DF01-$DF0A`.
 
 ### Why
 

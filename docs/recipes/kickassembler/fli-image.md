@@ -8,6 +8,7 @@ file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD00]
 uses_kernal: []
 claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

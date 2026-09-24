@@ -7,7 +7,9 @@ techniques: []
 file_formats: [PRG]
 uses_registers: [DC04, DC05, DC06, DC07, DC0D, DC0E, DC0F, D011, D012, D020]
 uses_kernal: []
-claims: [irq_vector_fffe (owns), nmi_vector_fffa (owns), cia1_timer_a (owns), cia1_timer_b (owns), cia1_tod (init)]
+claims: [irq_vector_fffe (owns), nmi_vector_fffa (owns), cia1_timer_a (owns), cia1_timer_b (owns), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), vic_raster_irq (init), zero_page $FB-$FE (owns)]
+harness: [$02FE-$02FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

@@ -7,7 +7,10 @@ techniques: [charset_copy_rom_to_ram]
 file_formats: [PRG]
 uses_registers: [D011, D012, D018, D020, DC0D, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F]
 uses_kernal: []
-claims: [irq_vector_0314 (owns), nmi_vector_0318 (owns)]
+claims: [irq_vector_0314 (owns), nmi_vector_0318 (owns), cia2_timer_a (owns), cia2_tod (init), vic_raster_irq (init), zero_page $C6+$FB-$FE (owns)]
+harness: [cia2_timer_b, $02FF]
+ram: [colour=$D800-$DBFF]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->
