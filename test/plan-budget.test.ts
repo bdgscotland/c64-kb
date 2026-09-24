@@ -660,7 +660,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(b.bytes.contributors.find((c) => c.name === "sprite_cache_flip")?.basis).toBe("arithmetic");
   });
 
-  it("platformer-scaffold: undetermined, five unknowns named, known range well under the measured 8,693 peak", () => {
+  it("platformer-scaffold: undetermined, four unknowns named, known range well under the measured 8,693 peak", () => {
     // Measured (platformer-scaffold.md, "What was measured"): CYC 4,966, MAX 8,606-8,693 PAL; 10,287 NTSC.
     const specs = recipeTechniques("oscar64-platformer-scaffold").map((t) =>
       t === "lfsr_random"
@@ -673,13 +673,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     const b = plan(specs, { region: "both" });
     const pal = play(b, "PAL");
     expect(pal.unknown.sort()).toEqual(
-      [
-        "fixed_point_8_8",
-        "frame_sync_loop",
-        "joystick_autorepeat",
-        "joystick_edge_detect",
-        "jump_arc_table",
-      ].sort(),
+      ["fixed_point_8_8", "frame_sync_loop", "joystick_autorepeat", "jump_arc_table"].sort(),
     );
     expect(pal.to_measure.find((t) => t.technique === "frame_sync_loop")?.recipe).toBe(
       "oscar64-frame-sync-loop",
@@ -687,8 +681,9 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // tile_map_render 268 + tile_grid_collision 2,345 + object_pool 380 + decimal_print 1,361
     // + sid_play_routine_pattern 1,198 (kickassembler-music-player's worst call;
     // 327 until data 779, the stub tune; its typical 779, the median call, is the
-    // low end) + sfx_engine_beside_music 50-258.
-    expect([pal.low, pal.high]).toEqual([5183, 5810]);
+    // low end) + sfx_engine_beside_music 50-258 + joystick_edge_detect 114
+    // (measured on oscar64-joystick-input since #54; unknown before).
+    expect([pal.low, pal.high]).toEqual([5297, 5924]);
     expect(pal.fixed_losses.badlines).toBe(1075);
     expect(pal.verdict).toBe("undetermined");
     // #45: kernal_file_write_seq and kernal_file_read_seq gained Cost lines
@@ -785,11 +780,11 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.unknown.sort()).toEqual([
       "frame_sync_loop",
       "joystick_autorepeat",
-      "joystick_edge_detect",
       "pal_ntsc_detection",
       "text_mode_overlay_render",
     ]);
-    expect(pal.high).toBe(5888 + 14);
+    // + 114 for joystick_edge_detect, measured since #54.
+    expect(pal.high).toBe(5888 + 14 + 114);
     expect(pal.verdict).toBe("undetermined");
     expect(play(b, "NTSC").verdict).toBe("undetermined");
   });
