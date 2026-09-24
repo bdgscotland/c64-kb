@@ -61,7 +61,13 @@ describe("session file", () => {
       expect(ok.session.image.sha1).toBe("b2ca47949468c3d1790dfe8b2fc9b54cb9638c3f");
       expect(ok.session.inject[0]).toMatchObject({ at_pc: "$0FB5", after_hits: 1000, set: { a: "$6F" } });
     }
-    expect(loadSession("package.json")).toMatchObject({ ok: false, reason: "session" });
+    const outside = loadSession("package.json");
+    const missing = loadSession("docs/game-design/studies/sessions/none.json");
+    expect(outside).toMatchObject({ ok: false, reason: "session" });
+    if (!outside.ok && !missing.ok)
+      expect(outside.error.replace("package.json", "X")).toBe(
+        missing.error.replace("docs/game-design/studies/sessions/none.json", "X"),
+      );
     expect(loadSession("docs/game-design/studies/sessions/none.json")).toMatchObject({
       ok: false,
       reason: "session",
@@ -132,6 +138,35 @@ describe("MonitorScript: one numbering for every session-driven run", () => {
     m.checkpoint("trace store 0314 0314");
     const h = (checkpoint: number, addr: number) => ({ ...hit("exec", addr, 1), checkpoint });
     expect(m.toolHits([h(1, 0x0fb5), h(2, 0x4134), h(3, 0x0314)]).map((x) => x.checkpoint)).toEqual([2, 3]);
+  });
+  it("never shares a checkpoint whose lines name its number, with the session's or any other", () => {
+    const s = session({ in_play: { check: "exec", pc: "$0FEB", after_clock: 0 } });
+    const m = sessionScript(s);
+    const n = m.checkpoint("trace exec 0feb 0feb", (k) => [`ignore ${k} a`]);
+    expect(n).toBe(3);
+    expect(m.checkpoint("trace exec 0feb 0feb")).toBe(2);
+    const t = m.checkpoint("trace exec 2000 2000", (k) => [`command ${k} "r a = 00"`]);
+    expect(m.checkpoint("trace exec 2000 2000")).not.toBe(t);
+    expect(m.text()).toContain("trace exec 0feb 0feb\nignore 3 a\n");
+    expect(m.text().match(/^trace exec 0feb 0feb$/gm)).toHaveLength(2);
+  });
+  it("refuses a line in a block that names a checkpoint number or creates one in a form it cannot count", () => {
+    for (const bad of [
+      "ignore 1 10",
+      'command 2 "r a = 00"',
+      "delete 1",
+      "disable 3",
+      "until 0813",
+      "tr exec 0815 0815",
+      "bk 1000",
+      "w store 1000",
+      "un 0813",
+    ]) {
+      const m = sessionScript(session());
+      expect(() => {
+        m.add(bad + "\n");
+      }, bad).toThrow(/checkpoint/);
+    }
   });
   it("a script without a session numbers from 1", () => {
     const m = new MonitorScript();
@@ -221,6 +256,10 @@ function fixture(): { manifest: string; sha1: string } {
   return { manifest, sha1 };
 }
 
+/** Every VICE test writes its exit screenshots to a temp directory, never data/re/. */
+const shots = mkdtempSync(join(tmpdir(), "re-session-shots-"));
+const opts = (manifestPath?: string) => ({ ...(manifestPath ? { manifestPath } : {}), shotDir: shots });
+
 const fixtureSession = (sha1: string, inject: unknown[]): Session =>
   SessionSchema.parse({
     image: { sha1, kind: "prg", title: "title-fire" },
@@ -235,7 +274,7 @@ describe.skipIf(!canRun)("c64_re_session in VICE, on a title that waits for fire
   const f = canRun ? fixture() : { manifest: "", sha1: "" };
 
   it("injects A = $6F at the CMP after 1000 polls and reaches the play PC", async () => {
-    const r = await runSession(fixtureSession(f.sha1, [FIRE]), "t", f.manifest);
+    const r = await runSession(fixtureSession(f.sha1, [FIRE]), "t", opts(f.manifest));
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (!r.ok) return;
     const fired = r.result.injections[0]?.fired_at_clock ?? null;
@@ -250,7 +289,7 @@ describe.skipIf(!canRun)("c64_re_session in VICE, on a title that waits for fire
 
   it("lists an injection at an address never run in unknowns, and in_play still decides", async () => {
     const never = { at_pc: "$C000", after_hits: 0, set: { a: "$00" }, why: "never runs" };
-    const r = await runSession(fixtureSession(f.sha1, [FIRE, never]), "t", f.manifest);
+    const r = await runSession(fixtureSession(f.sha1, [FIRE, never]), "t", opts(f.manifest));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.result.injections[1]).toEqual({ at_pc: "$C000", fired_at_clock: null });
@@ -258,7 +297,7 @@ describe.skipIf(!canRun)("c64_re_session in VICE, on a title that waits for fire
   }, 120_000);
 
   it("refuses not-in-play with the clock reached and an exit screenshot when nothing presses fire", async () => {
-    const r = await runSession(fixtureSession(f.sha1, []), "t", f.manifest);
+    const r = await runSession(fixtureSession(f.sha1, []), "t", opts(f.manifest));
     expect(r).toMatchObject({ ok: false, reason: "not-in-play", clock: 4_000_000 });
     if (!r.ok) expect(existsSync(r.screenshot ?? "")).toBe(true);
   }, 120_000);
@@ -266,7 +305,7 @@ describe.skipIf(!canRun)("c64_re_session in VICE, on a title that waits for fire
   it("c64_re_irq_chain with a session: the raster handler in play, never the injection or in_play PC", async () => {
     const r = await reIrqChain(
       { session: fixtureSession(f.sha1, [FIRE]), model: "pal", cycles: 4_000_000 },
-      f.manifest,
+      opts(f.manifest),
     );
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (!r.ok) return;
@@ -278,6 +317,7 @@ describe.skipIf(!canRun)("c64_re_session in VICE, on a title that waits for fire
       r.result.handlers.find((h) => h.handler === 0x0940)?.entry_lines.every((l) => l === 100 || l === 101),
     ).toBe(true);
     expect(r.run.start_clock).toBeGreaterThan(0);
+    expect(r.run.prg).toBe("(inline session)");
   }, 180_000);
 });
 
@@ -289,10 +329,13 @@ describe.skipIf(!canRun)("the fixture's title exit is play only after fire", () 
       in_play: { check: "exec", pc: "$0817", after_clock: 0 },
     });
   it("is not reached without the injection: not-in-play", async () => {
-    expect(await runSession(exit([]), "t", f.manifest)).toMatchObject({ ok: false, reason: "not-in-play" });
+    expect(await runSession(exit([]), "t", opts(f.manifest))).toMatchObject({
+      ok: false,
+      reason: "not-in-play",
+    });
   }, 120_000);
   it("is reached 4 cycles after the injection fires (CMP 2, BNE not taken 2)", async () => {
-    const r = await runSession(exit([FIRE]), "t", f.manifest);
+    const r = await runSession(exit([FIRE]), "t", opts(f.manifest));
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (r.ok) expect(r.result.play_clock - (r.result.injections[0]?.fired_at_clock ?? 0)).toBe(4);
   }, 120_000);
@@ -326,7 +369,7 @@ describe.skipIf(!canRun || c1541 === null)("a D64 session", () => {
       ...fixtureSession(sha1, [FIRE]),
       image: { sha1, kind: "d64", file: "prog", title: "t" },
     });
-    const r = await runSession(s, "t-d64", manifest);
+    const r = await runSession(s, "t-d64", opts(manifest));
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (r.ok) expect(r.result.disk).toBe(true);
   }, 120_000);
@@ -352,6 +395,7 @@ describe("batch run and screenshot names", () => {
     const b = screenshotPath("session-t");
     expect(a).not.toBe(b);
     expect(a).toMatch(/[/\\]data[/\\]re[/\\]session-t-.+\.png$/);
+    expect(screenshotPath("session-t", shots).startsWith(shots)).toBe(true);
   });
 });
 
@@ -366,7 +410,7 @@ describe.skipIf(!canRun)("c64_re_frame_profile with a session", () => {
         start: "pc:$0940",
         stop: "pc:$0945",
       },
-      f.manifest,
+      opts(f.manifest),
     );
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (!r.ok) return;
@@ -386,6 +430,15 @@ describe.skipIf(!canRun)("c64_re_frame_profile with a session", () => {
     expect(both).toMatchObject({ ok: false, reason: "input" });
     const neither = await reIrqChain({ model: "pal", cycles: 100_000 });
     expect(neither).toMatchObject({ ok: false, reason: "input" });
+    const s = fixtureSession("0".repeat(40), []);
+    const cycles = await reIrqChain({ session: s, cycles: 8_000_000 });
+    expect(cycles).toMatchObject({ ok: false, reason: "input" });
+    if (!cycles.ok) expect(cycles.error).toMatch(/cycles 8000000.*limitcycles 4000000/);
+    expect(await reIrqChain({ session: s, model: "ntsc" })).toMatchObject({ ok: false, reason: "input" });
+    expect(await reIrqChain({ session: s, disk_path: "/tmp/x.d64" })).toMatchObject({
+      ok: false,
+      reason: "input",
+    });
   });
 });
 
@@ -399,7 +452,7 @@ const hasCommando =
 
 describe.skipIf(!hasCommando)("the Commando session (the maintainer's image; skips without it)", () => {
   it("fires at $0FB5 and leaves the title through $0FEB, with the D64 as drive 8", async () => {
-    const r = await reSession({ session: "docs/game-design/studies/sessions/commando.json" });
+    const r = await reSession({ session: "docs/game-design/studies/sessions/commando.json" }, opts());
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (!r.ok) return;
     const fired = r.result.injections[0]?.fired_at_clock ?? 0;
@@ -410,7 +463,7 @@ describe.skipIf(!hasCommando)("the Commando session (the maintainer's image; ski
   it("without the injection the title never exits: not-in-play", async () => {
     const l = loadSession("docs/game-design/studies/sessions/commando.json");
     if (!l.ok) throw new Error(l.error);
-    const r = await runSession({ ...l.session, inject: [] }, "commando-noinject");
+    const r = await runSession({ ...l.session, inject: [] }, "commando-noinject", opts());
     expect(r).toMatchObject({ ok: false, reason: "not-in-play", clock: 60_000_000 });
   }, 240_000);
 });

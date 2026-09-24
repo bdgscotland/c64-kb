@@ -29,14 +29,36 @@ export const SESSIONS_DIR = "docs/game-design/studies/sessions";
 
 export type Refusal = { ok: false; reason: string; error: string; clock?: number; screenshot?: string };
 
-/** A session file by repo path (or absolute), only from docs/game-design/studies/sessions/. */
-export function loadSession(p: string): { ok: true; session: Session; name: string } | Refusal {
+/** Options of a session-driven run: the manifest (tests pass their own) and where exit screenshots go. */
+export interface RunOpts {
+  manifestPath?: string;
+  /** Default data/re/ in the repo. */
+  shotDir?: string;
+}
+
+export interface Loaded {
+  ok: true;
+  session: Session;
+  name: string;
+  /** The repo-relative path of the file. */
+  path: string;
+}
+
+/**
+ * A session file by repo path (or absolute), only from
+ * docs/game-design/studies/sessions/. The path is checked to lie in that
+ * directory before the file is looked for, and a path outside it and a
+ * missing file get one message, so the refusal says nothing about files
+ * elsewhere.
+ */
+export function loadSession(p: string): Loaded | Refusal {
   const abs = path.resolve(repoRoot, p);
   const dir = path.join(repoRoot, SESSIONS_DIR);
   const refuse = (error: string): Refusal => ({ ok: false, reason: "session", error });
-  if (!abs.endsWith(".json") || !existsSync(abs)) return refuse(`no session file at ${p}`);
-  if (!existsSync(dir) || !realpathSync(abs).startsWith(realpathSync(dir) + path.sep))
-    return refuse(`a session file must be under ${SESSIONS_DIR}/: ${p}`);
+  const inside = (d: string, f: string) => f.startsWith(d + path.sep);
+  const notThere = () => refuse(`no session file ${p} under ${SESSIONS_DIR}/`);
+  if (!abs.endsWith(".json") || !inside(dir, abs) || !existsSync(abs)) return notThere();
+  if (!inside(realpathSync(dir), realpathSync(abs))) return notThere();
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(abs, "utf8"));
@@ -46,7 +68,12 @@ export function loadSession(p: string): { ok: true; session: Session; name: stri
   const parsed = SessionSchema.safeParse(raw);
   if (!parsed.success)
     return refuse(`${p}: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
-  return { ok: true, session: parsed.data, name: path.basename(abs, ".json") };
+  return {
+    ok: true,
+    session: parsed.data,
+    name: path.basename(abs, ".json"),
+    path: path.relative(repoRoot, abs),
+  };
 }
 
 /**
@@ -54,8 +81,7 @@ export function loadSession(p: string): { ok: true; session: Session; name: stri
  * docs/, each under a name no other run takes (time and a random tag), so
  * two runs of one session never overwrite each other's screen.
  */
-function screenshotPath(name: string): string {
-  const dir = path.join(repoRoot, "data", "re");
+export function screenshotPath(name: string, dir = path.join(repoRoot, "data", "re")): string {
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   return path.join(dir, `${name}-${stamp}-${randomBytes(3).toString("hex")}.png`);
@@ -193,10 +219,10 @@ export async function withImage<T>(
 export async function runSession(
   s: Session,
   name: string,
-  manifestPath?: string,
+  opts: RunOpts = {},
 ): Promise<{ ok: true; result: SessionResult } | Refusal> {
-  return withImage(s, manifestPath, async (staged) => {
-    const shot = screenshotPath(`session-${name}`);
+  return withImage(s, opts.manifestPath, async (staged) => {
+    const shot = screenshotPath(`session-${name}`, opts.shotDir);
     const p = await sessionPass(staged, s, sessionScript(s), shot);
     if (p.play_clock === null) return notInPlay(s, shot);
     const timing = REGION_TIMING[videoRegion(s.machine.model)];
@@ -226,22 +252,34 @@ export const SessionInput = {
 
 export async function reSession(
   args: { session: string },
-  manifestPath?: string,
+  opts: RunOpts = {},
 ): Promise<{ ok: true; result: SessionResult } | Refusal> {
   const l = loadSession(args.session);
   if (!l.ok) return l;
-  return runSession(l.session, l.name, manifestPath);
+  return runSession(l.session, l.name, opts);
 }
 
-/** For the other tools: a session path or an already-parsed session, its name, and the name its exit screenshot takes. */
-export function sessionOf(
-  input: string | Session,
-  tool: string,
-): { ok: true; session: Session; name: string; shot: string } | Refusal {
+export interface SessionRef {
+  session: Session;
+  name: string;
+  /** What run.prg reports: the session file and the image's file, never the deleted temp copy. */
+  label: string;
+  /** The exit screenshot's name stem. */
+  shot: string;
+}
+
+/** For the other tools: a session path or (tests) an already-parsed session. */
+export function sessionOf(input: string | Session, tool: string): ({ ok: true } & SessionRef) | Refusal {
   if (typeof input !== "string")
-    return { ok: true, session: input, name: "(inline)", shot: `${tool}-session` };
+    return { ok: true, session: input, name: "(inline)", label: "(inline session)", shot: `${tool}-session` };
   const l = loadSession(input);
-  return l.ok ? { ...l, shot: `${tool}-${l.name}` } : l;
+  if (!l.ok) return l;
+  const file = l.session.image.file;
+  return {
+    ok: true,
+    session: l.session,
+    name: l.name,
+    label: file === undefined ? l.path : `${l.path}:${file}`,
+    shot: `${tool}-${l.name}`,
+  };
 }
-
-export { screenshotPath };

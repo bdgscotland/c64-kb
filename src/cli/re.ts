@@ -33,11 +33,22 @@ const reArgs = (prg: string, o: ReOpts) => ({
   ...(o.disk ? { disk_path: path.resolve(o.disk) } : {}),
 });
 
-/** A session path in place of the PRG: "session:docs/game-design/studies/sessions/commando.json". */
-const reInput = (prg: string, o: ReOpts) =>
-  prg.startsWith("session:")
-    ? { session: prg.slice("session:".length), model: o.model, cycles: o.cycles }
-    : reArgs(prg, o);
+/**
+ * A session path in place of the PRG: "session:docs/game-design/studies/sessions/commando.json".
+ * Only options typed on the command line go with a session (the defaults
+ * would contradict the file, which the tool refuses); --disk is passed on
+ * so the tool refuses it.
+ */
+function reInput(prg: string, o: ReOpts, cmd: Command) {
+  if (!prg.startsWith("session:")) return reArgs(prg, o);
+  const typed = (k: string) => cmd.getOptionValueSource(k) === "cli";
+  return {
+    session: prg.slice("session:".length),
+    ...(typed("model") ? { model: o.model } : {}),
+    ...(typed("cycles") ? { cycles: o.cycles } : {}),
+    ...(o.disk ? { disk_path: path.resolve(o.disk) } : {}),
+  };
+}
 
 export function registerReCommands(program: Command): void {
   program
@@ -52,8 +63,8 @@ export function registerReCommands(program: Command): void {
     });
 
   reOptions(program.command("re-irq-chain <prg>").description('A .prg, or "session:<file>"')).action(
-    async (prg: string, o: ReOpts) => {
-      const r = await reIrqChain(reInput(prg, o));
+    async (prg: string, o: ReOpts, cmd: Command) => {
+      const r = await reIrqChain(reInput(prg, o, cmd));
       process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
       if (!r.ok) process.exitCode = 1;
     },
@@ -64,8 +75,8 @@ export function registerReCommands(program: Command): void {
       .command("re-frame-profile <prg>")
       .requiredOption("--start <marker>", 'e.g. "store:$DC0F=$11"')
       .requiredOption("--stop <marker>", 'e.g. "store:$DC0F=$00"'),
-  ).action(async (prg: string, o: ReOpts & { start: string; stop: string }) => {
-    const r = await reFrameProfile({ ...reInput(prg, o), start: o.start, stop: o.stop });
+  ).action(async (prg: string, o: ReOpts & { start: string; stop: string }, cmd: Command) => {
+    const r = await reFrameProfile({ ...reInput(prg, o, cmd), start: o.start, stop: o.stop });
     // The MCP reply's structured content carries every sample; the CLI prints the count, not the list.
     process.stdout.write(
       `${JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2)}\n`,

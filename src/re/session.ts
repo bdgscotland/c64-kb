@@ -24,7 +24,17 @@
  * file, not a checkpoint: the file's first `trace` is still checkpoint 1
  * (its "TRACE: 1  C:$0816" echo follows that line). MonitorScript keeps
  * that count so `ignore N` and `command N` name the right checkpoint
- * whatever came before them.
+ * whatever came before them. Two other commands take numbers from the
+ * same sequence and are refused in a tool's block (MonitorScript.add):
+ * `until` takes one (measured: trace, until, trace, tr numbered 1, 2, 3, 4,
+ * and `until` also runs the machine to its address before the file's next
+ * line is read), and the abbreviation `tr` creates a trace checkpoint the
+ * builder would not recognise as one.
+ *
+ * An injection fires on every pass through at_pc after its first
+ * after_hits: `ignore` only skips the first N, and the command runs on each
+ * hit after them. A game that returns to its title and polls there again
+ * gets fire again at once.
  */
 import { z } from "zod";
 import type { Hit } from "./monlog.ts";
@@ -104,6 +114,14 @@ export function inPlayClock(hits: Iterable<Hit>, s: Session): number | null {
 }
 
 const CHECKPOINT = /^(trace|break|watch)\s/;
+/**
+ * Lines a tool's block may not carry: a command that names a checkpoint
+ * number (the tool cannot know it; use checkpoint(line, then)), or one that
+ * creates a checkpoint in a form the count above would miss (`until`, and
+ * the abbreviations tr, bk, br, w, un).
+ */
+const NUMBERED =
+  /^\s*(ignore|command|delete|del|disable|dis|enable|en|condition|cond|until|un|tr|bk|br|w)(\s|$)/i;
 
 /**
  * One monitor command file for a session-driven run, with VICE's
@@ -127,13 +145,19 @@ export class MonitorScript {
   private readonly toolOwned = new Set<number>();
   private next = 1;
 
-  /** Adds a checkpoint line and returns its number; `then` writes lines that name it. */
+  /**
+   * Adds a checkpoint line and returns its number; `then` writes lines that
+   * name it. A checkpoint with `then` is never shared either way: its
+   * `ignore` or `command` would otherwise act on another's hits (the
+   * session's in-play trace hidden by a tool's ignore), and a later plain
+   * line must not land on a checkpoint that ignores or commands.
+   */
   checkpoint(
     line: string,
     then?: (n: number) => string[],
     opts: { session?: boolean; share?: boolean } = {},
   ): number {
-    const share = opts.share ?? true;
+    const share = then === undefined && (opts.share ?? true);
     const known = share ? this.shared.get(line) : undefined;
     const n = known ?? this.next++;
     if (known === undefined) this.lines.push(line);
@@ -143,9 +167,17 @@ export class MonitorScript {
     return n;
   }
 
-  /** Adds a block such as storeCommands() returns: each checkpoint line numbered, any other line kept as is. */
+  /**
+   * Adds a block such as storeCommands() returns: each checkpoint line
+   * numbered, any other line kept as is. Throws on a line that names a
+   * checkpoint number or creates a checkpoint uncounted (NUMBERED).
+   */
   add(block: string): void {
     for (const line of block.split("\n").filter((l) => l.trim())) {
+      if (NUMBERED.test(line))
+        throw new Error(
+          `a block cannot carry "${line}": it names or creates a checkpoint; use checkpoint(line, then)`,
+        );
       if (CHECKPOINT.test(line)) this.checkpoint(line);
       else this.lines.push(line);
     }
@@ -166,7 +198,7 @@ export function sessionScript(s: Session): MonitorScript {
   const m = new MonitorScript();
   for (const i of s.inject) {
     const l = injectionLines(i, 0);
-    m.checkpoint(l.checkpoint, (n) => injectionLines(i, n).then, { session: true, share: false });
+    m.checkpoint(l.checkpoint, (n) => injectionLines(i, n).then, { session: true });
   }
   m.checkpoint(inPlayCommand(s).trim(), undefined, { session: true });
   return m;

@@ -39,6 +39,8 @@ import {
   SESSIONS_DIR,
   withImage,
   type Refusal,
+  type RunOpts,
+  type SessionRef,
   type SessionResult,
   type Staged,
 } from "./re-session.ts";
@@ -81,6 +83,30 @@ const common = {
 export const PrgRunInput = common;
 const sourced = {
   ...common,
+  // No defaults here: with a session the file is the authority, and a value
+  // the caller gave that differs from it is refused, so an omitted value
+  // must stay undefined. For a PRG the defaults are pal and 8,000,000.
+  model: z
+    .enum(["pal", "ntsc"])
+    .optional()
+    .describe(
+      "pal = VICE -default (C64C: 8565, 8580, 8521); ntsc = -model ntsc. Default pal; with a session, omit it or match the file",
+    ),
+  cycles: z
+    .number()
+    .int()
+    .min(100_000)
+    .max(200_000_000)
+    .optional()
+    .describe(
+      "Run length in CPU cycles (-limitcycles). Default 8000000; with a session, omit it or match its limitcycles",
+    ),
+  disk_path: z
+    .string()
+    .optional()
+    .describe(
+      "A .d64 attached as drive 8. The disk is copied; writes are discarded. Not with a session (a D64 image is attached itself)",
+    ),
   prg_path: z
     .string()
     .optional()
@@ -232,12 +258,13 @@ interface SourceArgs {
   prg_path?: string | undefined;
   /** A session path, or (tests) an already-parsed session. */
   session?: string | Session | undefined;
-  model: Model;
-  cycles: number;
+  model?: Model | undefined;
+  cycles?: number | undefined;
   disk_path?: string | undefined;
 }
 
-function prgSource(prg: string, args: SourceArgs): Source {
+function prgSource(prg: string, given: SourceArgs): Source {
+  const args = { ...given, model: given.model ?? "pal", cycles: given.cycles ?? 8_000_000 };
   return {
     trace: (c) => traced(prg, args, c),
     info: (t) => info(prg, args, t),
@@ -246,10 +273,10 @@ function prgSource(prg: string, args: SourceArgs): Source {
   };
 }
 
-function sessionSource(staged: Staged, l: { session: Session; name: string; shot: string }): Source {
+function sessionSource(staged: Staged, l: SessionRef, shotDir: string | undefined): Source {
   const { session: s, name } = l;
   const { prg, image } = staged;
-  const shot = screenshotPath(l.shot);
+  const shot = screenshotPath(l.shot, shotDir);
   const entry = readPrg(readFileSync(prg)).sys ?? null;
   const pending: string[] = [];
   const args = { model: s.machine.model, cycles: s.limitcycles };
@@ -262,7 +289,7 @@ function sessionSource(staged: Staged, l: { session: Session; name: string; shot
       pending.splice(0, pending.length, ...p.unknowns);
       return { hits: p.hits, start: p.play_clock, entry };
     },
-    info: (t) => ({ ...info(prg, args, t), session: name, image }),
+    info: (t) => ({ ...info(l.label, args, t), session: name, image }),
     unknowns: () => [...pending],
     timing: REGION_TIMING[videoRegion(s.machine.model)],
   };
@@ -272,15 +299,33 @@ function sessionSource(staged: Staged, l: { session: Session; name: string; shot
  * Runs `body` against the input's source. Exactly one of prg_path and
  * session; a session resolves its image first and disposes of it after.
  */
+/** A value the caller gave that the session file contradicts; the file is the authority. */
+function conflict(args: SourceArgs, s: Session): string | null {
+  const out: string[] = [];
+  if (args.model !== undefined && args.model !== s.machine.model)
+    out.push(`model ${args.model}, but the session file says ${s.machine.model}`);
+  if (args.cycles !== undefined && args.cycles !== s.limitcycles)
+    out.push(`cycles ${args.cycles}, but the session file says limitcycles ${s.limitcycles}`);
+  if (args.disk_path !== undefined)
+    out.push("disk_path, but a session attaches its own D64 image and takes no other disk");
+  return out.length ? `with a session: ${out.join("; ")}` : null;
+}
+
+/**
+ * Runs `body` against the input's source. Exactly one of prg_path and
+ * session; a session resolves its image first and disposes of it after.
+ * The source is built inside the guard, so a throw while building it (a
+ * PRG that cannot be read) is a refusal too.
+ */
 async function withSource<T>(
   args: SourceArgs,
   tool: string,
-  manifestPath: string | undefined,
+  opts: RunOpts,
   body: (src: Source) => Promise<ReResult<T>>,
 ): Promise<ReResult<T>> {
-  const guarded = async (src: Source) => {
+  const guarded = async (make: () => Source) => {
     try {
-      return await body(src);
+      return await body(make());
     } catch (e) {
       return refusal(e);
     }
@@ -290,15 +335,19 @@ async function withSource<T>(
   if (args.session !== undefined) {
     const l = sessionOf(args.session, tool);
     if (!l.ok) return l;
-    return withImage(l.session, manifestPath, (staged) => guarded(sessionSource(staged, l)));
+    const bad = conflict(args, l.session);
+    if (bad) return { ok: false, error: bad, reason: "input" };
+    return withImage(l.session, opts.manifestPath, (staged) =>
+      guarded(() => sessionSource(staged, l, opts.shotDir)),
+    );
   }
   const prg = allowedPrg(args.prg_path ?? "");
   if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };
-  return guarded(prgSource(prg, args));
+  return guarded(() => prgSource(prg, args));
 }
 
-export async function reIrqChain(args: SourceArgs, manifestPath?: string): Promise<ReResult<IrqChain>> {
-  return withSource(args, "irq-chain", manifestPath, async (src) => {
+export async function reIrqChain(args: SourceArgs, opts: RunOpts = {}): Promise<ReResult<IrqChain>> {
+  return withSource(args, "irq-chain", opts, async (src) => {
     const a = await src.trace(storeCommands());
     const handlers = liveHandlers(a.hits, a.start);
     let b = await src.trace(execCommands(handlers));
@@ -313,13 +362,13 @@ export async function reIrqChain(args: SourceArgs, manifestPath?: string): Promi
 
 export async function reFrameProfile(
   args: SourceArgs & { start: string; stop: string },
-  manifestPath?: string,
+  opts: RunOpts = {},
 ): Promise<ReResult<Profile>> {
   const start = parseMarker(args.start);
   const stop = parseMarker(args.stop);
   if (!start || !stop)
     return { ok: false, error: `bad marker: ${!start ? args.start : args.stop}`, reason: "marker" };
-  return withSource(args, "frame-profile", manifestPath, async (src) => {
+  return withSource(args, "frame-profile", opts, async (src) => {
     const t = await src.trace(regionCommands({ start, stop }));
     const hits = t.hits.filter((h) => h.clock >= t.start);
     const result = analyseRegion(hits, { start, stop }, src.timing, t.start);
