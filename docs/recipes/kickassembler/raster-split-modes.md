@@ -3,7 +3,7 @@ recipe: raster-split-modes
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [raster_split_modes, standard_bitmap, screen_ram_relocation, charset_copy_rom_to_ram, ram_under_kernal]
+techniques: [raster_split_modes, standard_bitmap, screen_ram_relocation, ram_under_kernal]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD0D]
 uses_kernal: []
