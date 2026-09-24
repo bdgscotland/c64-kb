@@ -60,6 +60,19 @@ describe("region samples", () => {
     expect(analyseRegion([], TIMER_B, PAL, 0)).toMatchObject({ worst: null, typical: null, count: 0 });
   });
 
+  it("counts a start overwritten by a second start as unpaired", () => {
+    const p = analyseRegion([st(0x11, 10), st(0x11, 50), st(0, 80), st(0x11, 90)], TIMER_B, PAL, 0);
+    expect(p.samples.map((s) => s.cycles)).toEqual([30]);
+    expect(p.unpaired).toBe(2);
+  });
+
+  it("finds the worst of 200,000 samples without a spread", () => {
+    const hits: Hit[] = [];
+    for (let i = 0; i < 200_000; i++) hits.push(st(0x11, i * 100), st(0, i * 100 + 10 + (i % 7)));
+    const p = analyseRegion(hits, TIMER_B, PAL, 0);
+    expect(p).toMatchObject({ count: 200_000, worst: 16 });
+  });
+
   it("does not match a load hit at the store marker address", () => {
     const load = (a: number, clock: number): Hit => ({ ...base, kind: "load", a, clock });
     const p = analyseRegion([load(0x11, 10), st(0, 20)], TIMER_B, PAL, 0);

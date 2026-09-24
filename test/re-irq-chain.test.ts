@@ -77,6 +77,37 @@ describe("armed lines", () => {
   });
 });
 
+describe("state before the entry clock", () => {
+  it("seeds $D011 from a pre-entry write so a $D012-only program gets an armed line", () => {
+    const r = analyseIrqChain([st(0xd011, 0x9b, 5), st(0xd012, 0x04, 100), ex(0x2000, 200, 260)], PAL, 50);
+    expect(r.arms.map((a) => a.line)).toEqual([260]);
+    expect(r.arms).toHaveLength(1);
+  });
+  it("seeds vector bytes and emits no observation or entry before the entry clock", () => {
+    const r = analyseIrqChain(
+      [st(0x314, 0x31, 1), st(0x315, 0xea, 2), ex(0xea31, 3, 0), st(0x314, 0x00, 100)],
+      PAL,
+      50,
+    );
+    expect(r.vectors.map((v) => v.value)).toEqual([0xea00]);
+    expect(r.entries).toHaveLength(0);
+  });
+  it("names a vector with only one byte ever written as unknown", () => {
+    const r = analyseIrqChain([st(0xfffe, 0x00, 100)], PAL, 50);
+    expect(r.vectors.map((v) => v.value)).toEqual([null]);
+    expect(r.unknowns.join(" ")).toMatch(/irq_fffe.*\$FFFF never written/);
+  });
+  it("names an armed line left unknown because $D011 was never written", () => {
+    const r = analyseIrqChain([st(0xd012, 0x40, 100)], PAL, 50);
+    expect(r.arms.map((a) => a.line)).toEqual([null]);
+    expect(r.unknowns.join(" ")).toMatch(/\$D011 never written/);
+  });
+  it("adds no unknown for a vector whose second byte arrives later", () => {
+    const r = analyseIrqChain([st(0x314, 0x00, 100), st(0x315, 0x20, 110)], PAL, 50);
+    expect(r.unknowns).toEqual([]);
+  });
+});
+
 describe("entries and summary", () => {
   it("numbers frames from the start clock and lists entry lines per handler", () => {
     const hits = [

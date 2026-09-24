@@ -5,7 +5,9 @@
  *   .C:0819  86 FB       STX $FB        - A:FF X:12 Y:00 SP:f6 ..-..I..    3049325
  *
  * Head: checkpoint kind and address, then raster line and cycle within the
- * line (measured in Task 1 step 1). Second line: the instruction with the
+ * line (measured on a KickAssembler PRG in the windowless x64sc 3.10: a
+ * handler armed for line 100 logs entries on lines 100 and 101,
+ * test/re-tools.test.ts). Second line: the instruction with the
  * registers after it and the CPU clock. A store hit does not log the byte
  * written; storedValue recovers it for STA, STX, STY and SAX only.
  * Moved from scripts/lib/claims-trace.ts, which discarded line and cycle.

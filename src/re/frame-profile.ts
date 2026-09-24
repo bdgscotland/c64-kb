@@ -26,6 +26,8 @@ export interface Profile {
   count: number;
   unpaired: number;
   over_frame: number;
+  /** What the run could not know, such as the entry of a PRG with no SYS line. */
+  unknowns: string[];
 }
 
 const hex4 = (n: number) => n.toString(16).padStart(4, "0");
@@ -51,6 +53,17 @@ function median(xs: number[]): number | null {
   return s[Math.floor((s.length - 1) / 2)] ?? null;
 }
 
+/** The largest value, by loop: a spread into Math.max overflows the stack past ~100,000 samples. */
+function largest(xs: number[]): number | null {
+  let m: number | null = null;
+  for (const x of xs) if (m === null || x > m) m = x;
+  return m;
+}
+
+/**
+ * A start while another is open replaces it; the replaced start counts in
+ * `unpaired`, as does a start still open when the run ends.
+ */
 export function analyseRegion(
   hits: Iterable<Hit>,
   region: Region,
@@ -59,9 +72,12 @@ export function analyseRegion(
 ): Profile {
   const samples: Sample[] = [];
   let open: number | null = null;
+  let overwritten = 0;
   for (const h of hits) {
-    if (matches(h, region.start)) open = h.clock;
-    else if (open !== null && matches(h, region.stop)) {
+    if (matches(h, region.start)) {
+      if (open !== null) overwritten++;
+      open = h.clock;
+    } else if (open !== null && matches(h, region.stop)) {
       samples.push({
         id: `s${samples.length}`,
         basis: "measured-vice",
@@ -76,10 +92,11 @@ export function analyseRegion(
   const cycles = samples.map((s) => s.cycles);
   return {
     samples,
-    worst: cycles.length ? Math.max(...cycles) : null,
+    worst: largest(cycles),
     typical: median(cycles),
     count: samples.length,
-    unpaired: open === null ? 0 : 1,
+    unpaired: overwritten + (open === null ? 0 : 1),
     over_frame: cycles.filter((c) => c > frameCycles).length,
+    unknowns: [],
   };
 }
