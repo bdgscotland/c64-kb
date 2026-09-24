@@ -1819,5 +1819,23 @@
       "pal": "screenshots/mcm-ecm-zones.png",
       "ntsc": "screenshots/mcm-ecm-zones-ntsc.png"
     }
+  },
+  "oscar64/sid-detect": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-detect.png",
+      "ntsc": "screenshots/sid-detect-ntsc.png"
+    },
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
   }
 }
