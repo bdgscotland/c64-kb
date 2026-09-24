@@ -47,7 +47,7 @@ Make a project from it in c64-kb with
 | `tools/meter.py` | `make stage`: reads the meter off the staged run's shots |
 | `tools/joytest.py` | `make joytest` (through `harness/drive.py`): games played on PAL and NTSC to GAME OVER, graded on lost frames, and a reboot that must show the saved HI; `make longplay`: long games with a ship that is never lost |
 | `PLAN.md` | The plan, with the c64-kb tool output it was built from |
-| `expect.json`, `stage-expect.json` | What the graded and the staged screenshots must show |
+| `expect.json`, `stage-expect.json`, `expect-gameover.json` | What the graded, the staged and the after-GAME-OVER screenshots must show |
 
 C does the game; KickAssembler does what needs exact cycles, no zero page,
 or runs for every enemy or bullet every frame. The harness assembles
@@ -173,7 +173,12 @@ on YSCROLL 3, saves and reloads the high score and grades 18 facts,
 printing the number of the first that fails. `expect.json` then checks the
 verdict, the text, the meter, the ship and all ten parade sprites, the
 river's banks at 30 rows scrolled, the split and the panel. `make selftest`
-starts the ship 16 pixels to the right and must fail. `make stage`, `make
+starts the ship 16 pixels to the right and must fail. `make gameover` builds
+with `-dAP_GIVE_UP=1`: fire held and no move, so three ships go; fifty frames
+after the title returns the program checks that the multiplexer shows no
+sprite, `$D015` reads 0, the title text is back over GAME OVER's row and the
+lost game's score is HI (8 of 8 on PAL and NTSC; with the ship left on for
+the title, 4 of 8, the program's check 1). `make stage`, `make gameover`, `make
 joytest` and `make longplay` are this starter's proof targets
 (VERIFY_TARGETS), which `npm run verify:templates -- --selftest` runs too. `make claims` checks
 every store the program makes against what the Makefile declares. `make
