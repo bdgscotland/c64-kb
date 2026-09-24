@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 827, schema 39, tools 2.14.0, package 0.27.0.
+Data 828, schema 39, tools 2.14.0, package 0.27.0.
+
+**tech-tech steady on NTSC, LOAD's missing-file pulse, drive timing in
+drive cycles, and every recipe's claims declared (data 828; #100, #101,
+#103, #104).** tech-tech's NTSC band used PAL's sync padding (11): on a
+65-cycle line both `$D012` reads fell in line 111, so the second
+interrupt's one-cycle entry jitter reached line 116's `$D011` write
+while the wave moved. Padding 13 and entry delay 189 put all 47 writes
+on cycle 14 in every NTSC frame (516 frames traced); a new
+`tech-tech@moving` pin fails the old listing. KERNAL LOAD of a missing
+file gets the same 68-drive-cycle CLK pulse as OPEN (from the ROM
+bytes); load-asset-runtime now blanks the screen around each LOAD, and
+the pitfall lists LOAD. The old listing never hung in 1,252 runs, but
+only because its bus turnaround landed on three safe raster lines.
+drive-job-queue timed its jobs with VICE drive-trace stamps, which are
+host catch-up times; timed with the drive CPU's own `sw` clock each job
+is 2-5 % longer (seek 130,809 cycles, was 125,859). vice-reference
+gains "Timing drive code". Seven loader and cartridge recipes gain
+`claims:` lines (tape-turbo-loader from a trace, six derived from the
+listing); the ingest listing scan now warns on none.
 
 **Loaders, storage and I/O measured, and three more toolchains in the
 listing gate (data 827; #19 group L, #102).** New recipes run on PAL
