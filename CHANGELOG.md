@@ -5,7 +5,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 830, schema 39, tools 2.15.0, package 0.28.0.
+Data 831, schema 39, tools 2.15.0, package 0.28.0.
+
+**Double-IRQ sync constants checked frame by frame (data 831; #111).**
+dysp's NTSC padding (12) let the second interrupt enter on cycle 38 in
+44 of 403 frames while the sprites moved, closing the right border on
+lines 51-80; padding 13 settles every frame, and a new `dysp@moving`
+pin fails the old value. vsp keeps its saved stack pointer in zero page,
+so its `LDX` is a cycle shorter and 11 was wrong on both models (the
+`$D011` write landed on cycle 23 in 84 PAL and 96 NTSC frames of a test
+build); now 12 PAL and 14 NTSC, which also explains the two NTSC cycles
+its sweep had left open. fld's padding is stable on PAL only and does
+not need fixing, since nothing after its sync counts cycles; the page
+says so. raster.md: the padding depends on the `LDX` mode and the model
+(11/13 absolute, 12/14 zero page), and a pinned frame where nothing
+moves can hide a wrong value.
 
 **Harness gaps from the game test, and music during disk loads (data
 830; #107, #108).** LOAD receives through ACPTR, so sprites over
