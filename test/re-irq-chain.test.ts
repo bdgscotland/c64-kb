@@ -367,6 +367,18 @@ describe("stores logged at the interrupt's clock", () => {
     expect(r.entries.map((e) => e.handler)).toEqual([0x3000]);
     expect(r.transient).toEqual([{ vector: "irq_fffe", value: 0x2000, writes: 1 }]);
   });
+  it("applies them before the interrupt's pushes too, when the push is logged first (discovery)", () => {
+    const hits = [...banked, irq(100, 0xf3, "STA"), st(0xffff, 0x30, 100), ex(0x3000, 100, 40)];
+    expect(liveHandlers(hits, 0)).toEqual([0x3000]);
+    const r = analyseIrqChain(hits, PAL, 0);
+    expect(r.handlers.map((h) => [h.handler, h.entries])).toEqual([[0x3000, 1]]);
+    expect(r.transient).toEqual([{ vector: "irq_fffe", value: 0x2000, writes: 1 }]);
+  });
+  it("applies a $01 store before the push at the same clock", () => {
+    const hits = [st(0x0001, 0x37, 1), st(0x314, 0x00, 3), st(0x315, 0x20, 4), st(0xfffe, 0x00, 5)];
+    hits.push(st(0xffff, 0x30, 6), irq(100), st(0x0001, 0x35, 100), ex(0x3000, 100, 40));
+    expect(liveHandlers(hits, 0)).toEqual([0x3000]);
+  });
   it("reads a pointer written at that clock as the entry's target", () => {
     const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($4000)" };
     const hits = [...banked, st(0x4000, 0x00, 4), st(0x4001, 0x30, 5), jmp, st(0x4001, 0x31, 100), irq(100)];

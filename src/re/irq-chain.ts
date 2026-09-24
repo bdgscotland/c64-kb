@@ -430,18 +430,27 @@ function unwrittenBytes(s: State): void {
   }
 }
 
+/** A store that changes the state; an interrupt's push is not one (observeClock handles it). */
 function onStore(s: State, h: Hit): void {
   if (s.ptrBytes.has(h.addr)) s.bytes.set(h.addr, storedValue(h));
   const v = vectorOf(h.addr);
-  if (isInterruptPush(h)) onInterrupt(s, h);
-  else if (h.addr <= 0x0001) onPort(s, h);
+  if (h.addr <= 0x0001) onPort(s, h);
   else if (v) onVector(s, h, v);
   else if (h.addr === 0xd011 || h.addr === 0xd012) onArm(s, h);
 }
 
-/** The hits of one observed clock: its stores first, then its execs. */
+/**
+ * The hits of one observed clock: the state-changing stores first, then
+ * the interrupt's pushes (which read the vectors and banking for the
+ * handlers a pass must trace), then the execs. VICE's log order within a
+ * clock is not the order of effect. An earlier version handled a push in
+ * log order, so a vector or $01 store logged after it at that clock was
+ * missed in discovery and the real handler got no checkpoint.
+ */
 function observeClock(s: State, hs: Hit[]): void {
-  for (const h of hs) if (h.kind === "store") onStore(s, h);
+  const pushes = hs.filter(isInterruptPush);
+  for (const h of hs) if (h.kind === "store" && !isInterruptPush(h)) onStore(s, h);
+  for (const h of pushes) onInterrupt(s, h);
   for (const h of hs) if (h.kind === "exec") onExec(s, h);
 }
 
