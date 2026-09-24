@@ -331,7 +331,7 @@ ECM is a text mode; the cycle budget is identical to standard text mode. No addi
 
 ### Recipes
 
-- No recipe yet for ECM zones.
+- `recipes/oscar64/mcm-ecm-zones.md`: ECM rows under a multicolour-text zone on one screen, all four background selectors and all sixteen colour RAM values, every pixel checked against the rule in VICE x64sc on PAL and NTSC.
 
 ---
 
@@ -398,6 +398,9 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 - `recipes/kickassembler/mcm-text.md`: one glyph in eight multicolour
   and eight hires cells on one screen, measured pixel for pixel in VICE
   x64sc on PAL and NTSC, with `$D025`/`$D026` as a control.
+- `recipes/oscar64/mcm-ecm-zones.md`: a multicolour-text zone above an
+  ECM zone, switched by two `rasterirq.h` slots inside blank rows; colour
+  RAM 14 draws light blue in ECM and blue in a multicolour cell.
 
 ---
 

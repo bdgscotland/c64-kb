@@ -1808,5 +1808,16 @@
       "pal": "screenshots/soft-scroll-v.png",
       "ntsc": "screenshots/soft-scroll-v-ntsc.png"
     }
+  },
+  "oscar64/mcm-ecm-zones": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/mcm-ecm-zones.png",
+      "ntsc": "screenshots/mcm-ecm-zones-ntsc.png"
+    }
   }
 }
