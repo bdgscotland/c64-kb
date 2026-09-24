@@ -836,6 +836,88 @@ the three bias voices gives many more levels than the nibble alone
 
 ---
 
+## sid_test_bit_and_osc_reset_tricks — TEST bit: oscillator reset to a known phase, and unlocking stuck noise
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D404, D40B, D412, D41B
+**Requires:** sid_voice_setup
+
+### Why
+
+The TEST bit (bit 3 of a voice's control register) does two jobs a
+player needs. It resets the voice's phase accumulator, so a note started
+with a TEST pulse starts at the same point of its wave every time: drums
+and phase-locked voices depend on it. And it is the only way back from
+the noise lock. A voice that plays noise combined with any other
+waveform, even briefly, leaves its noise generator stuck at zero; the
+noise stays silent until TEST is pulsed.
+
+### How
+
+**Oscillator reset.** Write the control byte with TEST set (`$29` for
+sawtooth + gate on voice 1, `$28` without gate), then write it with TEST
+clear. The accumulator restarts from zero at the second write. Hard
+restart and drum routines do this one frame before the note
+(`sid_8580_vs_6581_differences`, hard restart).
+
+**Noise lock.** Never select noise together with another waveform on a
+voice whose noise you want later. If a sound effect does it (`$C1`, `$91`
+and the like), write a TEST pulse before the next noise
+note: `$89` then `$81` on voice 1. Turning the voice off, clearing the
+gate or waiting does not unlock it.
+
+### Why it works
+
+Measured in VICE x64sc 3.10 (reSID, not silicon) by
+`recipes/kickassembler/sid-test-bit.md`, reading voice 3 through `$D41B`:
+
+- After TEST is set and cleared, sawtooth at `F = $FFFF` reads the same
+  four values at 4, 73, 142 and 211 cycles after the release in eight
+  trials that started at eight different phases: 3, 72, 141, 210 on the
+  6581 model and one less on the 8580 model. Without TEST the eight
+  trials read eight different values.
+- Noise at `F = $2000` gave 31 different values in 32 reads. After 400
+  cycles of noise + pulse and a return to noise alone, 32 of 32 reads were
+  `$00`, and the WAV of the voice was silent (RMS 2 to 3 against about
+  2,500 on the 6581 model and 1,900 on the 8580 model). After 51,000
+  cycles with no waveform, still `$00`. After a TEST pulse, the first
+  read was `$01` and then 30 different values in 32; the WAV level was
+  back to the free-running level. Noise with saw, with triangle, with
+  pulse at widths `$000`, `$800` and `$FFF`, and with all four locked it
+  as well.
+
+reSID's source (`src/resid/wave.h` in VICE 3.10) gives the mechanism: the
+noise register's feedback is `(bit22 OR TEST) XOR bit17`, and while
+noise and another waveform are selected the combined output is ANDed
+back into the register bits that drive the noise output. Bits only fall
+to zero. From all zeros the feedback stays zero, which is the lock. A
+register step taken with TEST set feeds in a 1. Whether real chips behave
+the same is not measured here; the source's own comment says it wants a
+test program on hardware.
+
+### Variations
+
+**Held TEST.** Holding TEST, instead of pulsing it, freezes the noise
+register and lets its bits drift to one: 36,000 to 39,000 cycles on the
+6581 model and 2.83 to 3.78 million on the 8580 model (`hardware/sid-reference.md`,
+TEST). A pulse of a few cycles is enough to unlock it.
+
+**Chip detection.** The one-cycle difference in the reset (3 against 2 at
+the first read) is what the `$D41B` model check reads
+(`sid_8580_vs_6581_differences`).
+
+**TEST digi.** TEST also holds a pulse voice's output high whatever the
+pulse width; `mahoney_d418_8bit_digi` and
+`sid_8580_digi_bias_and_filter_bypass` use that to park voices at a
+constant level.
+
+### Recipes
+
+- `recipes/kickassembler/sid-test-bit.md`
+
+---
+
 ## sidfx_layered_chip — Two-SID setups
 
 **Complexity:** scene-tier

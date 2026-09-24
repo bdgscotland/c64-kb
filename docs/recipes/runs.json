@@ -1816,5 +1816,23 @@
       "pal": "screenshots/sid-volume-bias.png",
       "ntsc": "screenshots/sid-volume-bias-ntsc.png"
     }
+  },
+  "kickassembler/sid-test-bit": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-test-bit.png",
+      "ntsc": "screenshots/sid-test-bit-ntsc.png"
+    }
   }
 }

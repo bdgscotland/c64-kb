@@ -386,9 +386,10 @@ voice 1, voice 3 to voice 2).
 the output is the bit-wise AND of each enabled waveform's 12-bit
 output. Common combinations: TRI+PULSE for warm pad, SAW+PULSE for
 biting lead, TRI+SAW for soft brass. Noise combined with any other
-waveform shifts the noise LFSR's output bits to zero over time (a
-known SID quirk) and is typically used as a one-shot effect with TEST
-to restore the LFSR.
+waveform shifts the noise LFSR's output bits to zero within a few
+hundred cycles (measured in reSID, see Pitfalls; an earlier version
+said "over time") and is typically used as a one-shot effect with
+TEST to restore the LFSR.
 
 ### $D405 — ATDCY1 — Voice 1 attack/decay rate (W)
 
@@ -1142,8 +1143,11 @@ are not touched.
 
 - **Noise combined with other waveforms zeros the LFSR.** With
   NOISE enabled simultaneously with TRI, SAW, or PULSE, the AND-gate
-  combination eventually drives all LFSR bits to zero, silencing
-  the noise. Once stuck, set TEST briefly to re-seed. This SID
+  combination drives all LFSR bits to zero, silencing the noise. It is
+  fast, not eventual as an earlier version said: in VICE reSID, 400
+  cycles of noise + pulse at F = $2000 locked it on both models, and
+  51,000 cycles with no waveform did not unlock it
+  (`recipes/kickassembler/sid-test-bit.md`). Once stuck, set TEST briefly to re-seed. This SID
   behaviour is also why "noise sweeps" usually pulse
   the TEST bit periodically. A brief pulse is enough: a few cycles of
   TEST re-seeds a zeroed LFSR, because the falling edge shifts a 1
