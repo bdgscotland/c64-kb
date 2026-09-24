@@ -7,6 +7,19 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 778, schema 31, tools 2.5.0, package 0.18.0.
 
+**The #68 claims corrected (techniques, recipes, hardware leftovers).**
+About 95 more claims flagged by the prose pass, each settled and
+corrected with a clause. Measured in VICE among them: the
+`pseudo-3d-road` loop's writes land from cycle 56 of line 100 and drift
+3 cycles per badline (the page now says what the listing does; the
+listing fix is a follow-up); a same-line raster IRQ fires once a frame;
+MCM and ECM switches land at different pixel offsets; a bitmap at $0000
+in bank 0 shows the character ROM from $1000; the NTSC bottom-strip
+sprite threshold is Y <= 5; the SID effect in `sid-music-player` was
+recorded (880 Hz every 151 frames). Three headings changed: "Project
+One", the IEC load speed (about 400 bytes/s, measured 406), the NIB
+subtitle.
+
 **A `.sid` worked example in the disassembly reference (#64).**
 `toolchains/disassembly-reference.md` assembles its own PSID file
 (BSD-3-Clause, no HVSC file), reads init $1000 and play $1003 from the
