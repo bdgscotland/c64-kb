@@ -339,12 +339,14 @@ or garbage, and a wrong pointer shows a sprite made of code bytes.
   does the same to `A`-`F`. Write lower-case source text and `%x`
   (measured: the labels and the `A` of `$308A` were graphics until the
   literals were lower-cased).
-- A cc65 recipe that needs `-C` does not build under the repository's
-  gates as they stand: `scripts/check-listings.ts` and
-  `scripts/verify-recipes.ts` run `cl65 -t c64 -O -o out.prg src.c` with
-  no way to add a config, and the stock config stops with
+- A cc65 recipe that needs `-C` must carry its linker config in a
+  `cfg` fence. `scripts/check-listings.ts` and `scripts/verify-recipes.ts`
+  write that fence beside the source and pass it as `-C`; without it the
+  stock config stops with
   `ld65: Error: Missing memory area assignment for segment 'MUSIC'`
-  (measured). That is a harness gap, not a layout fault.
+  (measured). The cc65 memory-layout recipe builds and matches its
+  screenshots under both gates (run here). (An earlier version said the
+  gates had no way to pass a config; that was before the `cfg` fence.)
 - Oscar64 drops an unreferenced placed array; `__export` it.
 - Under any of the three, a charset that is not 2 KB-aligned or a sprite
   that is not 64-byte-aligned cannot be addressed: `$D018` and the sprite

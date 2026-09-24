@@ -153,7 +153,7 @@ jsr($2000, stop_on_address = $2100, fail_on_brk = true)
 jsr([FillMemory], stop_on_address = [CopyMemory], fail_on_brk = false)
 ```
 
-`stop_on_rts` tracks call depth, so an RTS from a nested subroutine does not end the call. `fail_on_brk = true` fails the test if a BRK instruction is encountered.
+With `stop_on_rts`, an RTS from a nested subroutine does not end the call on either backend, by different mechanisms: `sim` counts JSR/RTS depth, `vice` stops only when the routine returns through the return address it was called with (see Pitfalls, "`stop_on_rts` and non-standard returns"). (An earlier version said it tracked call depth, which is true of `sim` only.) `fail_on_brk = true` fails the test if a BRK instruction is encountered.
 
 ### Assertions
 
@@ -307,7 +307,7 @@ dotnet Sim6502TestRunner.dll -s tests.6502 --backend vice --launch-vice   # auto
 dotnet Sim6502TestRunner.dll -s tests.6502 --backend vice --vice-warp false  # real-time speed
 ```
 
-The VICE backend used by sim6502 (`--mcpserver`, port 6510) is separate from the standalone vice-mcp MCP server (port 6502): sim6502 uses HTTP JSON-RPC; vice-mcp uses the binary monitor. The two can coexist.
+The VICE backend used by sim6502 (`-mcpserver`, port 6510; an earlier version spelled it `--mcpserver`) is separate from the standalone vice-mcp MCP server (port 6502): sim6502 uses HTTP JSON-RPC; vice-mcp uses the binary monitor. The two can coexist.
 
 ## Loading a Program
 
@@ -377,7 +377,7 @@ suite("C64 with ROMs") {
 jsr([StableRasterSetup], stop_on_rts = true, fail_on_brk = true)
 
 ; Stable raster IRQ setup must complete in a bounded cycle window
-assert(cycles < 300, "Setup fits in one raster line (63 cycles PAL, budget 300)")
+assert(cycles < 300, "Setup fits in 300 cycles (under five PAL lines of 63)")
 ```
 
 Both `sim` and `vice` backends count cycles, with different accuracy:
@@ -385,7 +385,7 @@ Both `sim` and `vice` backends count cycles, with different accuracy:
 - **`sim`**: counts instruction cycles from the 6502 timing tables; does not model DMA, interrupts, or memory banking delays
 - **`vice`**: cycle-accurate, includes DMA stealing, interrupt overhead, all hardware effects
 
-For stable-raster-IRQ recipes, always verify cycle counts with `--backend vice` before declaring them correct. A routine that passes a `cycles < 63` assertion on `sim` may fail on `vice` once CIA and VIC-II DMA cycles are included.
+For stable-raster-IRQ recipes, always verify cycle counts with `--backend vice` before declaring them correct. A routine that passes a `cycles < 63` assertion on `sim` may fail on `vice` once VIC-II DMA cycles (badlines, sprites) and interrupt overhead are included. The CIAs steal no bus cycles; their timers only cause interrupts. (An earlier version counted CIA DMA cycles.)
 
 ## CI Integration
 
@@ -446,7 +446,7 @@ sim6502 and vice-mcp cover different phases of development:
 5. Fix code → return to step 1
 ```
 
-sim6502's `vice` backend and vice-mcp are different servers, not one integration point. sim6502 posts JSON-RPC 2.0 (`tools/call`, tools such as `vice.registers.get` and `vice.checkpoint.add`) over HTTP to the MCP server compiled into the barryw/vice-mcp VICE fork (`x64sc -mcpserver -mcpserverport 6510`); stock VICE 3.9 has no `-mcpserver` option (checked with `x64sc -help`). vice-mcp speaks the VICE binary-monitor protocol over TCP to any VICE started with `-binarymonitor` (port 6502), which the fork should also accept but which no one has tested here. Run the sim6502 suite against the fork first, then open a vice-mcp session against a `-binarymonitor` instance for interactive debugging; the two do not share a connection, and the sequencing is a workflow choice, not a technical exclusion. An earlier version of this paragraph said both connected to the same VICE binary and could not run at once.
+sim6502's `vice` backend and vice-mcp are different servers, not one integration point. sim6502 posts JSON-RPC 2.0 (`tools/call`, tools such as `vice.registers.get` and `vice.checkpoint.add`) over HTTP to the MCP server compiled into the barryw/vice-mcp VICE fork (`x64sc -mcpserver -mcpserverport 6510`); stock VICE 3.10 has no `-mcpserver` option (`x64sc -help` lists none and `x64sc -mcpserver` stops with `Unknown option '-mcpserver'.`, Homebrew and headless builds; an earlier version said 3.9). vice-mcp speaks the VICE binary-monitor protocol over TCP to any VICE started with `-binarymonitor` (port 6502), which the fork should also accept but which no one has tested here. Run the sim6502 suite against the fork first, then open a vice-mcp session against a `-binarymonitor` instance for interactive debugging; the two do not share a connection, and the sequencing is a workflow choice, not a technical exclusion. An earlier version of this paragraph said both connected to the same VICE binary and could not run at once.
 
 ## Pitfalls
 

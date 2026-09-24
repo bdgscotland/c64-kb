@@ -152,7 +152,7 @@ sid.voices[0].susrel = 0xA0;
 
 ## cia.h — CIA timer and I/O chip access
 
-`cia.h` maps CIA1 at `$DC00` and CIA2 at `$DD00` to `CIA` structs. CIA1 handles the keyboard matrix and joystick port 2; CIA2 handles the serial port, user port, and VIC bank select. Its most used call is `cia_init()`, which stops CIA timers and clears pending interrupts so that raster IRQs can take over.
+`cia.h` maps CIA1 at `$DC00` and CIA2 at `$DD00` to `CIA` structs. CIA1 handles the keyboard matrix and both joystick ports (port 2 on `$DC00`, port 1 on `$DC01`; an earlier version named only port 2); CIA2 handles the serial port, user port, and VIC bank select. Its most used call is `cia_init()`, which stops CIA timers and clears pending interrupts so that raster IRQs can take over.
 
 Public API:
 
@@ -160,15 +160,17 @@ Public API:
 - `cia2` — macro reference to CIA2 struct at `$DD00`
 - `CIA` struct fields — `pra`, `prb` (port data), `ddra`, `ddrb` (direction), `ta`/`tb` (timers), `todt`/`tods`/`todm`/`todh` (TOD clock), `sdr` (serial shift), `icr` (interrupt control), `cra`/`crb` (control)
 - `ciaa_pra_def` — default value for CIA1 port A (used by `cia_init`)
-- `cia_init()` — disables CIA timer interrupts; required before using `rasterirq.h`
+- `cia_init()` — disables CIA timer interrupts; required before the `rasterirq.h` variants that do not route through the kernal (see below); `rirq_init_kernal`/`rirq_init_kernal_noio` run without it. (An earlier version said it was required before any use of `rasterirq.h`.)
 
 ```c
 #include <c64/cia.h>
 #include <c64/memmap.h>
 
-mmap_set(MMAP_NO_ROM);   // disable kernal
-cia_init();              // kill CIA IRQs; raster IRQs take over
+cia_init();              // kill CIA IRQs first; raster IRQs take over
+mmap_set(MMAP_NO_ROM);   // then bank out the kernal
 ```
+
+`cia_init()` goes first, the order `samples/sprites/sprmux32.c`, `missile.c` and `hscrollshmup.c` use. The other way round, a CIA1 timer interrupt between the two calls fetches its vector from the RAM under the KERNAL at `$FFFE`, which the program has not written (VICE x64sc powers up with `$FF $FF` there, read here with the ROM banked out). An earlier version of this example called `mmap_set` first.
 
 ## rasterirq.h — Raster interrupt system
 
@@ -499,7 +501,7 @@ Memory map constants:
 #include <c64/memmap.h>
 
 mmap_trampoline();           // keep IRQs working
-mmap_set(MMAP_NO_ROM);       // extra 28 KB of code+data space
+mmap_set(MMAP_NO_ROM);       // extra 16 KB: $A000-$BFFF and $E000-$FFFF (was "28 KB")
 // Now $A000–$BFFF and $E000–$FFFF are RAM
 ```
 
@@ -521,7 +523,7 @@ mmap_set(old);
 
 ## reu.h — RAM Expansion Unit DMA
 
-`reu.h` covers the 1700/1764/1750 RAM Expansion Unit connected at `$DF00`. The REU adds 128 KB, 256 KB, or 512 KB of battery-backed RAM accessible via DMA. The header maps the REU control registers to a `REU` struct and provides inline helpers for common transfer operations.
+`reu.h` covers the 1700/1764/1750 RAM Expansion Unit connected at `$DF00`. The REU adds 128 KB, 256 KB, or 512 KB of RAM accessible via DMA. (An earlier version called it battery-backed; nothing here supports that, and the contents are not assumed to survive power-off.) The header maps the REU control registers to a `REU` struct and provides inline helpers for common transfer operations.
 
 Oscar64 ships REU support, but the c64-kb scope is stock C64 hardware and REU recipes are out of scope for this KB. The header is listed so agents know it exists.
 

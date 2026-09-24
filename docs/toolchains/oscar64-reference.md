@@ -232,7 +232,7 @@ Placement pragmas control the linker: `#pragma region(name, start, end, flags, b
 Gives the optimizer facts it cannot deduce from the source. Common uses:
 
 - `__assume(false)` in a switch default marks it as unreachable.
-- `__assume(y < 25)` before a screen-index expression lets the compiler use 8-bit arithmetic for the `40 * y` multiply.
+- `__assume(y < 25)` before a screen-index expression shortens the `40 * y` multiply. The product still reaches 960 and stays 16-bit, but `5 * y` fits a byte, so only the last shifts carry into the high byte. Measured with build 2026-05-19, `-O2`: a `__noinline` `Screen[40 * y + x] = ch` body went from 40 bytes to 24. (An earlier version said the multiply became 8-bit arithmetic.)
 - `__assume(p != nullptr)` allows the compiler to omit null checks.
 
 From `samples/games/lander.c`, which uses `__assume(y < 25)` before every screen access to prevent unnecessary 16-bit promotion.
@@ -255,7 +255,7 @@ The `auto` keyword from C++ enables typed pointers into striped arrays: `auto p 
 __zeropage int counter;
 ```
 
-Places a global variable into the zero-page BSS region. On the `c64` target that region is by default only `$F7`–`$FF` (nine bytes; measured in the `.map` of build 2026-05-19, and set in Compiler.cpp's region table), so a handful of `__zeropage` variables exhausts it. `-xz` widens it to `$80`–`$FF` at the cost of no return to BASIC. The upstream manual's phrase "usually 0x80 to 0xff" (which an earlier version of this sentence repeated) describes the `-xz` layout, not the default. Zero-page addressing saves one byte per instruction and is faster on the 6502. The default region sits in the KERNAL's RS-232 pointers (`$F7`–`$FA`) and the four free bytes `$FB`–`$FE`, so it is safe with the ROMs mapped; widening the region into BASIC's (`$03`–`$8F`) or the KERNAL's (`$90`–`$F6`) workspace is what collides. Zero-page globals are zero-cleared by the startup code (crt.c, `ZeroStart`..`ZeroEnd`) like the ordinary BSS, unless built with `-dNOZPCLEAR`; an earlier version of this sentence said they were not initialised. An initializer on a `__zeropage` global is not honoured in memory: the storage is emitted as zero bytes and cleared at startup (the optimiser may constant-fold reads of a never-written initialised variable, which can mask this), so assign non-zero values in code.
+Places a global variable into the zero-page BSS region. On the `c64` target that region is by default only `$F7`–`$FE` (eight bytes; Compiler.cpp's `AddRegion(zeropage, 0x00f7, 0x00ff)` has an exclusive end), so a handful of `__zeropage` variables exhausts it. Measured with build 2026-05-19: eight one-byte `__zeropage` globals link, the eighth at `$FE`; a ninth fails with `error 3034: Could not place object` and `Size 1 Available 0 in section 'zeropage'`. `-xz` widens it to `$80`–`$FE` (127 bytes, measured the same way) at the cost of no return to BASIC. (An earlier version said `$F7`–`$FF`, nine bytes, and `$80`–`$FF`.) The upstream manual's phrase "usually 0x80 to 0xff" (which an earlier version of this sentence repeated) describes the `-xz` layout, not the default. Zero-page addressing saves one byte per instruction and is faster on the 6502. The default region sits in the KERNAL's RS-232 pointers (`$F7`–`$FA`) and the four free bytes `$FB`–`$FE`, so it is safe with the ROMs mapped; widening the region into BASIC's (`$03`–`$8F`) or the KERNAL's (`$90`–`$F6`) workspace is what collides. Zero-page globals are zero-cleared by the startup code (crt.c, `ZeroStart`..`ZeroEnd`) like the ordinary BSS, unless built with `-dNOZPCLEAR`; an earlier version of this sentence said they were not initialised. An initializer on a `__zeropage` global is not honoured in memory: the storage is emitted as zero bytes and cleared at startup (the optimiser may constant-fold reads of a never-written initialised variable, which can mask this), so assign non-zero values in code.
 
 ### `__native` and `__noinline`
 
@@ -377,7 +377,7 @@ krnio_setnam(P"OVL1");
 krnio_load(1, 8, 1);
 ```
 
-The overlay file is stored as a `.prg` entry in the D64 directory. Use `oscar_expand_lzo` from `oscar.h` to decompress inlays at runtime.
+The overlay file is stored as a `.prg` entry in the D64 directory, uncompressed, and `krnio_load` puts it in place. `#pragma overlay( ovl1, 1, lzo )` stores it LZO-compressed instead; `samples/memmap/overlaylzo.c` opens that file and expands it with `krnio_read_lzo`. Inlays are a separate mechanism (upstream manual, "Inlays"): a region compressed by the linker into a `const char Inlay1[]` array inside the program, expanded on demand with `oscar_expand_lzo` from `oscar.h`. (An earlier version of this sentence pointed overlay users at `oscar_expand_lzo` "to decompress inlays", mixing the two.)
 
 ## Multi-file projects
 
@@ -635,7 +635,7 @@ if (joy & 0x01) { /* up */ }
 
 `joy_poll` reads the CIA port, inverts the active-low logic, and deposits signed delta values into `joyx[]`/`joyy[]` and a boolean into `joyb[]`. Signed deltas add directly to a position. The CIA register approach requires knowing which port maps to which player and the active-low polarity.
 
-**Pitfall:** `$DC00` is shared with the keyboard column drive. With the KERNAL IRQ scanning the keyboard 50/60 Hz, `joy_poll(0)` can read all-pressed phantom input if it samples mid-scan. Fix: `sei`/`cli` around the poll, or use keyboard input via `getchx()`/`keyb_poll()`. See `pitfalls/input.md`.
+**Pitfall:** `$DC00` is shared with the keyboard column drive. The KERNAL's scan drives it to `$00` for part of each jiffy IRQ, but the scan runs entirely inside the IRQ, so a main-loop `joy_poll(0)` never sees it; only an NMI handler or an IRQ handler that `cli`s before chaining can read that `$00` as all directions plus fire (measured in VICE x64sc; see `pitfalls/input.md`, `joystick2_scan_phantom_press`). Ghost input in a main-loop poll comes from elsewhere, for example a held key in column 7 on port 1. (An earlier version said a main-loop `joy_poll(0)` could sample mid-scan and advised `sei`/`cli` around it; that bracket changes nothing.)
 
 ### Packed bitfields and structs: first-class in Oscar64
 
@@ -651,7 +651,7 @@ struct VICFlags {
 };
 ```
 
-No mask-and-shift macros are needed. The optimizer recognizes that bit-field stores to volatile hardware registers must not be merged.
+No mask-and-shift macros are needed. Through a `volatile` pointer each bit-field store is its own `LDA`/`AND`/`ORA`/`STA` on the register; without `volatile` the compiler merged three stores into one read-modify-write (measured with build 2026-05-19, `-O2`, three field stores to `$D011`). Fields are allocated from bit 0 upward, so this struct puts `raster_msb` in bit 0 and `scroll_y` in bits 4–6. That is not `$D011`'s layout (YSCROLL bits 0–2, RSEL 3, DEN 4, BMM 5, ECM 6, raster bit 8 in bit 7); declare fields in bit order from 0 to match a register.
 
 ### printf is real
 
@@ -693,10 +693,12 @@ const char charset_lzo[] = {
 #embed lzo "../gfx/charset.bin"
 };
 // at startup:
-oscar_expand_lzo((char *)0xD000, charset_lzo);
+oscar_expand_lzo((char *)0x3800, charset_lzo);
 ```
 
-The cc65 idiom of `#incbin` in an assembler stub does the same but requires a separate `.s` file and a `SEGMENTS` declaration in the config file. Oscar64's `#embed` works directly in C.
+The destination must be RAM that reads back what was written: `oscar_expand_lzo` copies back-references out of the destination (`cp = dp - sp[1]` in `include/oscar.c`). `$D000`, which an earlier version of this example used, is the I/O area while I/O is mapped, so the writes land in VIC and SID registers; with `$01` set so that `$D000` reads the character ROM, the back-references read ROM. For a destination that does not read back, `oscar.h` provides `oscar_expand_lzo_buf`, which keeps its window in a 256-byte stack buffer.
+
+The cc65 idiom is `.incbin` in a separate ca65 `.s` file; placing the data in a stock segment such as `RODATA` needs no config change, a segment of its own needs a `SEGMENTS` entry. (An earlier version spelled it `#incbin`, which ca65 rejects with `Error: Unexpected trailing garbage characters`, and said a config entry was always needed; both measured with ca65 2.19.) Oscar64's `#embed` works directly in C.
 
 ## Asm interop with KickAssembler
 
@@ -751,7 +753,7 @@ Any arguments must be passed through zero-page locations or globals the assembly
 
 **`__zeropage` lifetime.** `__zeropage` variables go to the linker's `zeropage` region, which on the `c64` target defaults to `$F7`–`$FE` (Compiler.cpp: `AddRegion(zeropage, 0x00f7, 0x00ff)`; read your `.map`). That is the KERNAL's RS-232 buffer pointers (`$F7`–`$FA`, only live if device 2 is opened) plus the four free bytes `$FB`–`$FE`, so with the ROMs mapped and no RS-232 in use they are safe by default. Crashes come from widening the region: `-xz` moves it to `$80`–`$FE` (upstream: "no return to basic"), and `#pragma region(zeropage, ...)` into `$03`–`$8F` (BASIC's workspace) or `$90`–`$F6` (KERNAL's). They ARE zero-filled at startup by crt.c on every entry through the startup code, including a second `RUN` after `STOP`/`RESTORE`, unless you build with `-dNOZPCLEAR` (`-dNOBSSCLEAR` covers the main BSS; the spellings `NOBSSCLR`/`NOZPCLR` are not recognised and silently do nothing). "Not initialized" means only that an initializer such as `__zeropage char z = 0x55;` is silently ignored; the byte still starts at 0. An earlier version of this pitfall said the default region was `$02`–`$61`, that the variables were never cleared and that the flag was `NOBSSCLR`; all three were wrong.
 
-**Banked-RAM context.** When accessing data in an EasyFlash bank, the `eflash.bank` write must not be reordered relative to subsequent reads from that bank. The `__memmap` qualifier on the bank register (already present in the `EasyFlash` struct definition) provides the necessary memory fence. Do not cast the bank register to plain `volatile byte *`; that loses the fence.
+**Banked-RAM context.** When accessing data in an EasyFlash bank, the `eflash.bank` write must not be reordered relative to subsequent reads from that bank. The `__memmap` qualifier on the bank register (already present in the `EasyFlash` struct definition, `include/c64/easyflash.h`: `volatile __memmap byte bank;`) provides the necessary memory fence: the upstream manual ("Memory consistency") says no memory access is reordered around a `__memmap` access, while `volatile` orders only against other volatile accesses. Do not cast the bank register to plain `volatile byte *`; that loses the fence. (Read from the header and the manual; the reordering itself was not provoked here.)
 
 **Register stomping in `__interrupt`.** An `__interrupt`/`__hwinterrupt` function saves and restores the zero-page registers used by itself *and* by every function it reaches through direct calls: the compiler walks the static call graph, adding each callee's zero-page set and a fixed ACCU/WORK set for each runtime routine (measured: a handler calling a plain function that multiplies saves that function's WORK `$03`–`$06` and ACCU `$1B`–`$1E`). An earlier version of this pitfall said callees were unprotected; they are not. Calls it cannot follow are rejected, not left unprotected: a call through a function pointer fails with error 3035 `No recursive functions in interrupt`, and `printf` or anything else needing a stack frame fails with error 3035 `Function to complex for interrupt`. The hole that does exist is the runtime scratch byte `__tmpy` at `$02`: runtime routines such as `mul16by8` use it, it is not in the saved set, and a handler that multiplies (directly or via a callee) corrupts a multiply the main code was in the middle of (measured 1,706 wrong products in 30,000 with a multiplying IRQ handler, 0 with a control handler whose multiply skips `$02`). Avoid multiplication, division and other runtime-routine arithmetic inside interrupt handlers, or save `$02` yourself around the call.
 

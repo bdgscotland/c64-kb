@@ -485,8 +485,10 @@ register struct like `VIC_CR1` with bitfields is idiomatic Oscar64; in cc65
 the same code requires explicit masks and shifts or falls back to `POKE`.
 
 **Struct-by-value.** Passing structs by value in cc65 is expensive: the
-compiler copies them through the software stack. Oscar64 handles small structs in
-registers. Where the code often passes hardware-register shadow structs or sprite
+compiler copies them through the software stack. Oscar64 passes a small
+struct in its zero-page parameter slots: a two-byte struct argument went in
+`P0`/`P1` and the callee read it there (measured, build 2026-05-19, `-O2`).
+(An earlier version said "in registers", which read as A/X/Y.) Where the code often passes hardware-register shadow structs or sprite
 coordinate pairs, Oscar64's ABI is faster.
 
 **Static locals via `-Cl`.** cc65's `-Cl` flag converts local variables to
@@ -584,7 +586,9 @@ algorithms. `-Cl` moves locals off the stack, which reduces per-frame usage,
 but does not protect against deep recursion itself.
 
 **`printf` code size.** `printf` from `stdio.h` pulls in the full format-string
-parser, adding roughly 2–3 KB to the binary. For output in a C64 program,
+parser. Measured with cc65 2.19 (`cl65 -t c64 -O`): a one-line
+`printf("%d\n", 42)` program is 2,658 bytes, the same with `cputs` 466,
+with `puts` 821, so `printf` costs about 2.2 KB. For output in a C64 program,
 `cputs()` from `conio.h` or a direct KERNAL `CHROUT` call (via `cbm.h`) is
 much smaller. Keep `printf` to debugging builds.
 

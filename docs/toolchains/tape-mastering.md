@@ -249,11 +249,13 @@ exit screenshot showed the stage, found by nine or ten runs per row:
 | Screen blanks again (`FOUND` pause over) | 28,650,000 to 28,690,000 | 1,458 |
 | Program running, border green | 35,000,000 to 35,040,000 | 1,782 |
 
-From `LOAD` to the program's first instruction is 32.8 million cycles,
-1,671 PAL frames, 33.3 s. The tape itself holds 20.5 million cycles of
+From `LOAD` to the program's first instruction is 32.80 to 32.88
+million cycles, 1,669 to 1,673 PAL frames, 33.3 s. (An earlier version
+gave a single 1,671 frames, the midpoint of that bracket.) The tape itself holds 20.5 million cycles of
 pulses; the other 12.5 million, 12.7 s, is the KERNAL's pause at
 `FOUND`, during which the motor is stopped. The rule that ends that
-pause was not measured here; a real user shortens it with a key. On
+pause was not measured here; that a key press shortens it is common
+knowledge, not tested in this run. On
 NTSC the same image reached the green border between 35,470,000 and
 35,510,000 cycles, 2,076 NTSC frames of 17,095 cycles, 34.7 s: the TAP
 stores cycles, so the tape costs the same count on either model and the
@@ -317,11 +319,13 @@ the stub's 39.0 million cycles of KERNAL-format tape, the boot, the
 
 **Time saved for the same payload size.** The turbo block carries 500
 bytes in 1,540,487 cycles, measured by the loader's own CIA 2 stopwatch,
-1.56 s, about 3,060 cycles per byte. The same 500 bytes as a KERNAL data
+1.56 s, about 3,081 cycles per byte (an earlier version said 3,060;
+1,540,487 / 500 = 3,081). The same 500 bytes as a KERNAL data
 block are 11.72 million cycles by the writer's arithmetic (two copies of
 510 bytes at 9,448, the 5,376-short leader, the gaps and markers), and
 the per-byte cost above confirms the arithmetic to within three cycles a
-byte. The block loads 7.6 times faster and saves 10.2 s per 500 bytes;
+byte. The block loads 7.6 times faster and saves 10.3 s per 500 bytes
+(10.18 million cycles at 985,248 Hz; an earlier version said 10.2 s);
 with a 1,000-pulse lead-in in front of it the whole turbo section is
 2.05 million cycles against 11.72 million, 5.7 times faster. Against
 that, the stub costs what any KERNAL-format program costs: this one,
