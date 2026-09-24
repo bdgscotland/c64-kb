@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -94,6 +94,7 @@ describe.skipIf(!canRun)("RE tools reproduce committed measurements", () => {
   it("platformer-scaffold: worst in-frame sample within 2% of 8,693 (timer B)", async () => {
     const disk = join(keep, "cal.d64");
     expect(spawnSync(c1541 ?? "c1541", ["-format", "TEST,01", "d64", disk]).status).toBe(0);
+    const before = readFileSync(disk);
     const r = await reFrameProfile({
       prg_path: prg("platformer-scaffold"),
       model: "pal",
@@ -103,6 +104,8 @@ describe.skipIf(!canRun)("RE tools reproduce committed measurements", () => {
       stop: "store:$DC0F=$00",
     });
     expect(r.ok).toBe(true);
+    // The game saves to drive 8; the tool attached a copy, so the disk passed in is unchanged.
+    expect(readFileSync(disk).equals(before)).toBe(true);
     if (!r.ok) return;
     // The recipe discards frames in which the KERNAL used timer B for disk I/O (io_frame).
     const inFrame = r.result.samples.filter((s) => s.cycles <= PAL_FRAME).map((s) => s.cycles);

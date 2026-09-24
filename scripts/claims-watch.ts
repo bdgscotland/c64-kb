@@ -17,7 +17,7 @@
  *                     may write to zero page
  *   --screen addr     screen RAM, so a store to screen+$3F8+n counts as sprite_n (its pointer)
  * Run:
- *   --cycles n (8000000), --model pal|ntsc, --disk d64 (drive 8), --start addr (else the SYS
+ *   --cycles n (8000000), --model pal|ntsc, --disk d64 (drive 8, a copy), --start addr (else the SYS
  *   address of a BASIC stub, else the first store from outside ROM), --all-ram (also trace
  *   $0400-$CFFF and $E000-$FFF9; default traces $0000-$03FF, $D000-$DFFF, $FFFA-$FFFF),
  *   --labels file (.sym or VICE labels; default: beside the PRG), --log file (read a saved
@@ -165,10 +165,10 @@ function monCommands(start: number | undefined): string {
 }
 
 /** Run the PRG in VICE (src/services/vice-batch.ts) and return the result positioned at the trace log. */
-function runVice(prgPath: string, start: number | undefined): BatchResult {
+async function runVice(prgPath: string, start: number | undefined): Promise<BatchResult> {
   const model: Model = opt.model === "ntsc" ? "ntsc" : "pal";
   try {
-    return runBatch({
+    return await runBatch({
       prg: prgPath,
       monCommands: monCommands(start),
       cycles: Number(opt.cycles),
@@ -211,7 +211,7 @@ async function traceInto(watch: ClaimsWatch, prgPath: string, start: number | un
   if (opt.log) {
     log = opt.log;
   } else {
-    result = runVice(prgPath, start);
+    result = await runVice(prgPath, start);
     log = result.log;
   }
   try {
