@@ -4,17 +4,19 @@
  * 2026-09-23-reverse-engineering-design.md). Read-only: each call has its
  * own work directory and x64sc process and holds no port.
  *
- * Paths: in this step only PRGs inside the repository or the OS temp
- * directory are accepted (this repo's recipes and templates, and test
- * builds). Third-party images come in by sha1 through a local manifest in
- * the next step.
+ * Inputs: a PRG inside the repository or the OS temp directory (this
+ * repo's recipes and templates, and test builds), or a session file
+ * (src/tools/re-session.ts): a third-party image by sha1 through the local
+ * manifest, replayed to play by register injection. With a session the
+ * analysis starts at the in-play clock, never on the title, and the model
+ * and run length come from the session file.
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { REGION_TIMING, videoRegion } from "../domain/timing.ts";
+import { REGION_TIMING, videoRegion, type RegionTiming } from "../domain/timing.ts";
 import { analyseRegion, regionCommands, type Marker, type Profile } from "../re/frame-profile.ts";
 import {
   analyseIrqChain,
@@ -28,6 +30,17 @@ import { readHits, type Hit } from "../re/monlog.ts";
 import { readPrg } from "../re/prg.ts";
 import { runBatch, ViceBatchError, type Model } from "../services/vice-batch.ts";
 import { resolveX64sc } from "../services/vice-bin.ts";
+import { sessionScript, type Session } from "../re/session.ts";
+import {
+  notInPlay,
+  screenshotPath,
+  sessionOf,
+  sessionPass,
+  SESSIONS_DIR,
+  withImage,
+  type Refusal,
+  type SessionResult,
+} from "./re-session.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -39,9 +52,11 @@ interface RunInfo {
   entry: number | null;
   start_clock: number;
   vice: string;
+  /** The session file's name, for a session-driven run. */
+  session?: string;
+  image?: SessionResult["image"];
 }
-export type ReResult<T> =
-  { ok: true; run: RunInfo; result: T } | { ok: false; error: string; reason: string };
+export type ReResult<T> = { ok: true; run: RunInfo; result: T } | Refusal;
 
 const common = {
   prg_path: z.string().describe("Absolute path to a .prg inside this repository or the OS temp directory"),
@@ -61,9 +76,24 @@ const common = {
     .optional()
     .describe("A .d64 attached as drive 8. The disk is copied; writes are discarded"),
 };
-export const IrqChainInput = common;
-export const FrameProfileInput = {
+/** The PRG-only inputs (c64_claims_watch). */
+export const PrgRunInput = common;
+const sourced = {
   ...common,
+  prg_path: z
+    .string()
+    .optional()
+    .describe("Absolute path to a .prg inside this repository or the OS temp directory; or give session"),
+  session: z
+    .string()
+    .optional()
+    .describe(
+      `A session file (a repo path under ${SESSIONS_DIR}/): the image by sha1, replayed to play; the analysis starts at its in-play clock and takes model and cycles from the file. Exactly one of prg_path and session`,
+    ),
+};
+export const IrqChainInput = sourced;
+export const FrameProfileInput = {
+  ...sourced,
   start: z
     .string()
     .describe('Start marker: "store:$DC0F=$11" (a store of that value) or "pc:$2000" (an executed PC)'),
@@ -91,6 +121,16 @@ async function collect(log: string): Promise<Hit[]> {
 }
 
 class NoEntry extends Error {}
+
+/** A session replay that did not reach play: its refusal, carried out of the passes. */
+class NotInPlay extends Error {
+  refusal: Refusal;
+
+  constructor(refusal: Refusal) {
+    super(refusal.error);
+    this.refusal = refusal;
+  }
+}
 
 /** The PRG's BASIC SYS target and the exec checkpoint that finds its first run. */
 function entryCommand(prg: string, commands: string): { cmd: string; entry: number | null; own: boolean } {
@@ -165,58 +205,127 @@ function info(
   };
 }
 
-function refusal(e: unknown): { ok: false; error: string; reason: string } {
+function refusal(e: unknown): Refusal {
   if (e instanceof ViceBatchError) return { ok: false, error: e.message, reason: e.reason };
   if (e instanceof NoEntry) return { ok: false, error: e.message, reason: "no-entry" };
+  if (e instanceof NotInPlay) return e.refusal;
   throw e;
 }
 
-export async function reIrqChain(args: {
-  prg_path: string;
-  model: Model;
-  cycles: number;
-  disk_path?: string | undefined;
-}): Promise<ReResult<IrqChain>> {
-  const prg = allowedPrg(args.prg_path);
-  if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };
-  const timing = REGION_TIMING[videoRegion(args.model)];
-  try {
-    const a = await traced(prg, args, storeCommands());
-    const handlers = liveHandlers(a.hits, a.start);
-    let b = await traced(prg, args, execCommands(handlers));
-    // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
-    const pointers = indirectPointers(b.hits);
-    if (pointers.length) b = await traced(prg, args, execCommands(handlers, pointers));
-    const result = analyseIrqChain(b.hits, timing, b.start);
-    if (b.entry === null) result.unknowns.push(NO_SYS);
-    return { ok: true, run: info(prg, args, b), result };
-  } catch (e) {
-    return refusal(e);
-  }
+interface Traced {
+  hits: Hit[];
+  start: number;
+  entry: number | null;
 }
 
-export async function reFrameProfile(args: {
-  prg_path: string;
+/** Where a tool's passes run: a PRG from its entry, or a session from its in-play clock. */
+interface Source {
+  trace(commands: string): Promise<Traced>;
+  info(t: Traced): RunInfo;
+  /** What the run itself could not settle (an injection that never fired, no SYS line). */
+  unknowns(t: Traced): string[];
+  timing: RegionTiming;
+}
+
+interface SourceArgs {
+  prg_path?: string | undefined;
+  /** A session path, or (tests) an already-parsed session. */
+  session?: string | Session | undefined;
   model: Model;
   cycles: number;
   disk_path?: string | undefined;
-  start: string;
-  stop: string;
-}): Promise<ReResult<Profile>> {
-  const prg = allowedPrg(args.prg_path);
+}
+
+function prgSource(prg: string, args: SourceArgs): Source {
+  return {
+    trace: (c) => traced(prg, args, c),
+    info: (t) => info(prg, args, t),
+    unknowns: (t) => (t.entry === null ? [NO_SYS] : []),
+    timing: REGION_TIMING[videoRegion(args.model)],
+  };
+}
+
+function sessionSource(
+  prg: string,
+  l: { session: Session; name: string; shot: string },
+  image: SessionResult["image"],
+): Source {
+  const { session: s, name } = l;
+  const shot = screenshotPath(l.shot);
+  const entry = readPrg(readFileSync(prg)).sys ?? null;
+  const pending: string[] = [];
+  const args = { model: s.machine.model, cycles: s.limitcycles };
+  return {
+    trace: async (c) => {
+      const m = sessionScript(s);
+      m.add(c);
+      const p = await sessionPass(prg, s, m, shot);
+      if (p.play_clock === null) throw new NotInPlay(notInPlay(s, shot));
+      pending.splice(0, pending.length, ...p.unknowns);
+      return { hits: p.hits, start: p.play_clock, entry };
+    },
+    info: (t) => ({ ...info(prg, args, t), session: name, image }),
+    unknowns: () => [...pending],
+    timing: REGION_TIMING[videoRegion(s.machine.model)],
+  };
+}
+
+/**
+ * Runs `body` against the input's source. Exactly one of prg_path and
+ * session; a session resolves its image first and disposes of it after.
+ */
+async function withSource<T>(
+  args: SourceArgs,
+  tool: string,
+  manifestPath: string | undefined,
+  body: (src: Source) => Promise<ReResult<T>>,
+): Promise<ReResult<T>> {
+  const guarded = async (src: Source) => {
+    try {
+      return await body(src);
+    } catch (e) {
+      return refusal(e);
+    }
+  };
+  if ((args.prg_path === undefined) === (args.session === undefined))
+    return { ok: false, error: "give exactly one of prg_path and session", reason: "input" };
+  if (args.session !== undefined) {
+    const l = sessionOf(args.session, tool);
+    if (!l.ok) return l;
+    return withImage(l.session, manifestPath, (prg, image) => guarded(sessionSource(prg, l, image)));
+  }
+  const prg = allowedPrg(args.prg_path ?? "");
   if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };
+  return guarded(prgSource(prg, args));
+}
+
+export async function reIrqChain(args: SourceArgs, manifestPath?: string): Promise<ReResult<IrqChain>> {
+  return withSource(args, "irq-chain", manifestPath, async (src) => {
+    const a = await src.trace(storeCommands());
+    const handlers = liveHandlers(a.hits, a.start);
+    let b = await src.trace(execCommands(handlers));
+    // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
+    const pointers = indirectPointers(b.hits);
+    if (pointers.length) b = await src.trace(execCommands(handlers, pointers));
+    const result = analyseIrqChain(b.hits, src.timing, b.start);
+    result.unknowns.push(...src.unknowns(b));
+    return { ok: true, run: src.info(b), result };
+  });
+}
+
+export async function reFrameProfile(
+  args: SourceArgs & { start: string; stop: string },
+  manifestPath?: string,
+): Promise<ReResult<Profile>> {
   const start = parseMarker(args.start);
   const stop = parseMarker(args.stop);
   if (!start || !stop)
     return { ok: false, error: `bad marker: ${!start ? args.start : args.stop}`, reason: "marker" };
-  const timing = REGION_TIMING[videoRegion(args.model)];
-  try {
-    const t = await traced(prg, args, regionCommands({ start, stop }));
+  return withSource(args, "frame-profile", manifestPath, async (src) => {
+    const t = await src.trace(regionCommands({ start, stop }));
     const hits = t.hits.filter((h) => h.clock >= t.start);
-    const result = analyseRegion(hits, { start, stop }, timing, t.start);
-    if (t.entry === null) result.unknowns.push(NO_SYS);
-    return { ok: true, run: info(prg, args, t), result };
-  } catch (e) {
-    return refusal(e);
-  }
+    const result = analyseRegion(hits, { start, stop }, src.timing, t.start);
+    result.unknowns.push(...src.unknowns(t));
+    return { ok: true, run: src.info(t), result };
+  });
 }

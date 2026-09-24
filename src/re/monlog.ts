@@ -32,10 +32,12 @@ export interface Hit {
   line: number;
   /** Cycle within that line. */
   cycle: number;
+  /** The checkpoint that logged the hit (`#N` in the head); lets a run drop hits of checkpoints it did not ask for. */
+  checkpoint?: number;
 }
 
 const HEAD =
-  /^#\d+ \(Trace\s+(store|exec|load)\s+([0-9a-f]{4})\)(?:\s+(\d+)\/\$[0-9a-f]+,\s+(\d+)\/\$[0-9a-f]+)?/;
+  /^#(\d+) \(Trace\s+(store|exec|load)\s+([0-9a-f]{4})\)(?:\s+(\d+)\/\$[0-9a-f]+,\s+(\d+)\/\$[0-9a-f]+)?/;
 const INSN =
   /^\.C:([0-9a-f]{4})\s+(?:[0-9A-F]{2} )+\s*([A-Z]{3})\s*(.*?)\s*- A:([0-9A-F]{2}) X:([0-9A-F]{2}) Y:([0-9A-F]{2}) SP:([0-9a-f]{2})\s+(\S+)\s+(\d+)/;
 
@@ -46,10 +48,11 @@ export function parseHit(head: string, insn: string): Hit | null {
   if (!h || !i) return null;
   const n = (k: number, radix = 16) => parseInt(i[k] ?? "", radix);
   return {
-    kind: h[1] as Hit["kind"],
-    addr: parseInt(h[2] ?? "", 16),
-    line: h[3] !== undefined ? parseInt(h[3], 10) : -1,
-    cycle: h[4] !== undefined ? parseInt(h[4], 10) : -1,
+    checkpoint: parseInt(h[1] ?? "", 10),
+    kind: h[2] as Hit["kind"],
+    addr: parseInt(h[3] ?? "", 16),
+    line: h[4] !== undefined ? parseInt(h[4], 10) : -1,
+    cycle: h[5] !== undefined ? parseInt(h[5], 10) : -1,
     pc: n(1),
     mnemonic: i[2] ?? "",
     operand: i[3] ?? "",

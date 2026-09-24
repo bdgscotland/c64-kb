@@ -7,6 +7,8 @@ import {
   frameProfileReply,
   IrqChainOutput,
   irqChainReply,
+  SessionOutput,
+  sessionReply,
 } from "../src/server/tools-re.ts";
 import {
   RegisterLookupSchema,
@@ -41,7 +43,8 @@ import {
 // c64_run_game kills the x64sc on monitor port 6502 and starts one;
 // c64_ingest_doc writes a file under docs/ (and c64_memorization_check is
 // listed only where the Python analyzer is installed). c64_re_irq_chain and
-// c64_re_frame_profile run VICE for seconds; their runs are covered by
+// c64_re_frame_profile run VICE for seconds (c64_re_session too: its runs
+// are in test/re-session.test.ts); their runs are covered by
 // test/re-tools.test.ts and test/re-calibration.test.ts, and their reply
 // builders by the stub results at the end of this file. c64_claims_watch
 // runs VICE too: test/claims-watch-tool.test.ts covers its run and reply.
@@ -51,6 +54,7 @@ const SKIP = new Set([
   "c64_memorization_check",
   "c64_re_irq_chain",
   "c64_re_frame_profile",
+  "c64_re_session",
   "c64_claims_watch",
 ]);
 
@@ -160,7 +164,7 @@ describe("RE tool replies carry the whole result", () => {
   const o = { basis: "measured-vice" as const, rung: 1 as const };
 
   it("declares an outputSchema for both", () => {
-    for (const name of ["c64_re_irq_chain", "c64_re_frame_profile"])
+    for (const name of ["c64_re_irq_chain", "c64_re_frame_profile", "c64_re_session"])
       expect(tools.find((t) => t.name === name)?.outputSchema, name).toBeDefined();
   });
 
@@ -218,6 +222,59 @@ describe("RE tool replies carry the whole result", () => {
     const parsed = z.object(FrameProfileOutput).safeParse(r.structured);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
     expect(parsed.data?.samples.map((s) => s.frame)).toEqual([0, 1, 2]);
+  });
+
+  it("c64_re_session: the in-play clock and each injection's firing are in the structured content", () => {
+    const result = {
+      session: "commando",
+      image: {
+        sha1: "b2ca47949468c3d1790dfe8b2fc9b54cb9638c3f",
+        kind: "d64" as const,
+        file: "commando",
+        fileSha1: "0c19",
+      },
+      model: "pal" as const,
+      cycles: 60_000_000,
+      play_clock: 36_000_100,
+      play_frame: 1831,
+      injections: [
+        { at_pc: "$0FB5", fired_at_clock: 35_000_000 },
+        { at_pc: "$C000", fired_at_clock: null },
+      ],
+      screenshot: "/repo/data/re/session-commando.png",
+      unknowns: ["injection at $C000 never fired"],
+    };
+    const r = sessionReply({ ok: true, result });
+    expect(r.text).toMatch(/in play at clock 36000100, frame 1831/);
+    expect(r.text).toMatch(/\$0FB5 fired at clock 35000000; \$C000 never fired/);
+    const parsed = z.object(SessionOutput).safeParse(r.structured);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(r.structured).toEqual(result);
+    const irq = irqChainReply({
+      ok: true,
+      run: { ...run, session: "commando", image: result.image },
+      result: {
+        interrupts: 0,
+        vectors: [],
+        arms: [],
+        entries: [],
+        handlers: [],
+        transient: [],
+        unknowns: [],
+      },
+    });
+    expect(z.object(IrqChainOutput).safeParse(irq.structured).success).toBe(true);
+  });
+
+  it("c64_re_session: not-in-play is refused as text and isError", () => {
+    const r = sessionReply({
+      ok: false,
+      reason: "not-in-play",
+      error: "in_play not reached",
+      clock: 60_000_000,
+      screenshot: "/repo/data/re/session-commando.png",
+    });
+    expect(r).toEqual({ text: "refused (not-in-play): in_play not reached", isError: true });
   });
 
   it("a refusal is text and isError, with no structured content", () => {

@@ -4,6 +4,13 @@ import type { Profile } from "../re/frame-profile.ts";
 import type { IrqChain } from "../re/irq-chain.ts";
 import { DISPATCH_WINDOW } from "../re/interrupts.ts";
 import { FrameProfileInput, IrqChainInput, reFrameProfile, reIrqChain, type ReResult } from "../tools/re.ts";
+import {
+  reSession,
+  SessionInput,
+  SESSIONS_DIR,
+  type Refusal,
+  type SessionResult,
+} from "../tools/re-session.ts";
 import { defineTool, READ_ONLY, type ToolReply } from "./define-tool.ts";
 
 const hex = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
@@ -11,14 +18,24 @@ const hex = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
 const int = z.number().int();
 const obs = { id: z.string(), basis: z.literal("measured-vice"), rung: z.literal(1) };
 const vectorName = z.enum(["irq_0314", "nmi_0318", "nmi_fffa", "irq_fffe"]);
+const image = z.object({
+  sha1: z.string(),
+  kind: z.enum(["prg", "d64"]),
+  file: z.string().optional(),
+  fileSha1: z.string().describe("sha1 of the PRG that ran (the file read from a D64)"),
+});
 const run = z
   .object({
     prg: z.string(),
     model: z.enum(["pal", "ntsc"]),
     cycles: int,
     entry: int.nullable().describe("The BASIC SYS target; null when the PRG has none"),
-    start_clock: int.describe("CPU clock of the entry's first exec; 0 when the PRG has no SYS target"),
+    start_clock: int.describe(
+      "CPU clock of the entry's first exec; 0 when the PRG has no SYS target; with a session, its in-play clock",
+    ),
     vice: z.string(),
+    session: z.string().optional().describe("The session file's name, for a session-driven run"),
+    image: image.optional(),
   })
   .describe("How the run was made");
 
@@ -79,9 +96,43 @@ export const FrameProfileOutput = {
   unknowns: z.array(z.string()),
 };
 
+export const SessionOutput = {
+  session: z.string(),
+  image,
+  model: z.enum(["pal", "ntsc"]),
+  cycles: int,
+  play_clock: int.describe("CPU clock of the first exec of in_play.pc at or after in_play.after_clock"),
+  play_frame: int.describe("Frames since power-on at play_clock, counted from raster line 0"),
+  injections: z.array(z.object({ at_pc: z.string(), fired_at_clock: int.nullable() })),
+  screenshot: z.string().describe("The exit screenshot, under data/re/ (gitignored)"),
+  unknowns: z.array(z.string()),
+};
+
+const refusedText = (r: Refusal): ToolReply => ({
+  text: `refused (${r.reason}): ${r.error}`,
+  isError: true,
+});
+
+export function sessionReply(r: { ok: true; result: SessionResult } | Refusal): ToolReply {
+  if (!r.ok) return refusedText(r);
+  const s = r.result;
+  const fired = s.injections
+    .map(
+      (i) => `${i.at_pc} ${i.fired_at_clock === null ? "never fired" : `fired at clock ${i.fired_at_clock}`}`,
+    )
+    .join("; ");
+  return {
+    text:
+      `${s.session}: ${s.image.kind} ${s.image.sha1}${s.image.file ? ` "${s.image.file}"` : ""}, ${s.model.toUpperCase()}, ${s.cycles} cycles (measured-vice, rung 1)\n` +
+      `in play at clock ${s.play_clock}, frame ${s.play_frame}\ninjections: ${fired || "none"}\nscreenshot: ${s.screenshot}` +
+      unknownsText(s.unknowns),
+    structured: { ...s },
+  };
+}
+
 /** Text summary plus the whole result as structured content; a refusal is text and isError. */
 function reply<T extends object>(r: ReResult<T>, text: (t: T) => string): ToolReply {
-  if (!r.ok) return { text: `refused (${r.reason}): ${r.error}`, isError: true };
+  if (!r.ok) return refusedText(r);
   const head = `${r.run.prg}, ${r.run.model.toUpperCase()}, ${r.run.cycles} cycles, entry at clock ${r.run.start_clock} (measured-vice, rung 1)\n`;
   return { text: head + text(r.result), structured: { run: r.run, ...r.result } };
 }
@@ -121,6 +172,8 @@ export function frameProfileReply(r: ReResult<Profile>): ToolReply {
 
 const NEEDS = `Needs the windowless x64sc (\`npm run vice:headless\`); refuses a windowed one. The disk is copied; writes are discarded. Refuses (reason "no-entry") when the PRG has a BASIC SYS target that did not run within the cycles given.`;
 
+const SESSION_INPUT = `Give prg_path or session, not both. A session (a file under ${SESSIONS_DIR}/, see c64_re_session) names a third-party image by sha1 in the local manifest; the run replays it with its register injections, the analysis starts at its in-play clock (hits before it only set the starting state) and model and cycles come from the file. The session's own checkpoints (injections, the in-play trace) never enter the analysis. Refuses "not-in-play" with the exit screenshot when the in-play PC does not run, never measuring the title as play; an injection that never fired is named under unknowns.`;
+
 export const reIrqChainTool = defineTool({
   name: "c64_re_irq_chain",
   title: "Measure a program's interrupt chain in VICE",
@@ -130,8 +183,10 @@ A raster flag already pending in $D019 when $D01A is enabled fires at once, so a
 
 ${NEEDS}
 
-Inputs: prg_path (inside this repo or the temp directory), model pal|ntsc, cycles, disk_path.
-Output (structured): run {prg, model, cycles, entry, start_clock, vice}, interrupts, handlers [{handler, via, entries, entry_lines, armed_before, pointer, dispatch [{target, entries, entry_lines, armed_before}]}], transient [{vector, value, writes}], vectors, arms, entries (with target), unknowns; each observation has an id, basis and rung.`,
+${SESSION_INPUT}
+
+Inputs: prg_path (inside this repo or the temp directory) or session, model pal|ntsc, cycles, disk_path.
+Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, interrupts, handlers [{handler, via, entries, entry_lines, armed_before, pointer, dispatch [{target, entries, entry_lines, armed_before}]}], transient [{vector, value, writes}], vectors, arms, entries (with target), unknowns; each observation has an id, basis and rung.`,
   inputSchema: IrqChainInput,
   outputSchema: IrqChainOutput,
   annotations: READ_ONLY,
@@ -146,11 +201,31 @@ export const reFrameProfileTool = defineTool({
 
 ${NEEDS}
 
-Inputs: prg_path, model, cycles, disk_path, start, stop.
-Output (structured): run {prg, model, cycles, entry, start_clock, vice}, samples [{id, cycles, start_clock, frame}], worst, typical, count, unpaired, over_frame, unknowns.`,
+${SESSION_INPUT}
+
+Inputs: prg_path or session, model, cycles, disk_path, start, stop.
+Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, samples [{id, cycles, start_clock, frame}], worst, typical, count, unpaired, over_frame, unknowns.`,
   inputSchema: FrameProfileInput,
   outputSchema: FrameProfileOutput,
   annotations: READ_ONLY,
   readsGraph: false,
   run: async (args) => frameProfileReply(await reFrameProfile(args)),
+});
+
+export const reSessionTool = defineTool({
+  name: "c64_re_session",
+  title: "Replay a game session to play in VICE",
+  description: `Replay a session file headless in VICE x64sc and report when the game reached play. A session (${SESSIONS_DIR}/<game>.json) names the image by sha1 (a PRG, or a file on a D64) in the local manifest data/games/manifest.json, which is never committed; it lists register injections, each a trace checkpoint on the game's own read instruction that sets A, X or Y after a number of passes (a title that polls $DC00 for fire, CMP #$6F: set A = $6F there; no key or joystick reaches a batch run); an in_play check (the first exec of a PC at or after a clock); and the run length. Hit counts are decimal in the file and hex to the monitor (VICE reads \`ignore 1 1000\` as 4,096 hits).
+
+Returns play_clock (the in-play exec), play_frame (frames since power-on from raster line 0), each injection's first firing clock (null and named under unknowns when its PC never ran with the count reached), and the exit screenshot under data/re/. Refuses "not-in-play" with the clock reached and the exit screenshot when the in-play check fails; "session" for a file outside ${SESSIONS_DIR}/ or one that does not parse; the image refusals (no-manifest, unknown-sha1, image-changed, no-file, not-prg, c1541-failed) before any run.
+
+Needs the windowless x64sc (\`npm run vice:headless\`), and c1541 for a D64.
+
+Inputs: session.
+Output (structured): session, image {sha1, kind, file, fileSha1}, model, cycles, play_clock, play_frame, injections [{at_pc, fired_at_clock}], screenshot, unknowns.`,
+  inputSchema: SessionInput,
+  outputSchema: SessionOutput,
+  annotations: READ_ONLY,
+  readsGraph: false,
+  run: async (args) => sessionReply(await reSession(args)),
 });

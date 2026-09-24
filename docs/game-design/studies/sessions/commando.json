@@ -1,0 +1,9 @@
+{
+  "image": { "sha1": "b2ca47949468c3d1790dfe8b2fc9b54cb9638c3f", "kind": "d64", "file": "commando", "title": "Commando", "release": "c64hq" },
+  "machine": { "model": "pal" },
+  "inject": [
+    { "at_pc": "$0FB5", "after_hits": 1000, "set": { "a": "$6F" }, "why": "title waits for fire: CMP #$6F at $0FB5" }
+  ],
+  "in_play": { "check": "exec", "pc": "$4134", "after_clock": 36000000 },
+  "limitcycles": 60000000
+}

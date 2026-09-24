@@ -15,10 +15,10 @@ import type { Tally } from "../claims/trace.ts";
 import { hex2, hex4, toRanges } from "../claims/units.ts";
 import { runClaimsWatch, WatchSetupError, type WatchInput, type WatchRun } from "../claims/watch.ts";
 import { config } from "../config.ts";
-import { allowedPrg, IrqChainInput } from "./re.ts";
+import { allowedPrg, PrgRunInput } from "./re.ts";
 
 export const ClaimsWatchInput = {
-  ...IrqChainInput,
+  ...PrgRunInput,
   recipe: z
     .string()
     .optional()
