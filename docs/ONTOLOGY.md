@@ -605,6 +605,18 @@ listed as band-separated, when both techniques carry a `raster_band` of
 line ranges and the ranges share no line. Before schema 24 there was no
 band, and any two `cpu_every_line` techniques were reported as a conflict.
 
+A check by phase (#94: a design, or names given as `name:phase`) runs
+`kernal_rom_out` against KERNAL calls in a later phase as a soft
+`kernal_banked_out` with `across`, since the boundary can bank the KERNAL
+back in. The same check reads `midframe_raster_irqs` and
+`changes_sprite_set` (or a `vic_raster_irq` or sprite claim) against the
+KERNAL routines the pitfalls `raster_irq_during_serial_io` and
+`sprites_over_badlines_hang_serial_io` are TRIGGERED_BY, within a phase
+and across phases, and reports `recipe_kernal_out` (info) when every
+recipe that IMPLEMENTS one technique also implements a `kernal_rom_out`
+technique or CLAIMS `irq_vector_fffe`. To state that a design runs with
+the KERNAL out, list `ram_under_kernal`.
+
 ### CLAIMS
 
 Direction: `Technique → HardwareUnit`, `Recipe → HardwareUnit` (schema 34),

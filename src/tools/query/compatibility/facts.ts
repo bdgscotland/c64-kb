@@ -7,6 +7,7 @@
 import type { Claim } from "../../../graph/claims.ts";
 import type { RecipeDevice } from "./device-rules.ts";
 import type { RecipeZeroPage } from "./recipe-rules.ts";
+import type { RecipeKernalOut, SerialPitfall } from "./state-rules.ts";
 
 export interface TechniqueFacts {
   /** False when the graph has no Technique node of this name. */
@@ -55,6 +56,10 @@ export interface CompatibilityFacts {
   recipeZeroPage?: readonly RecipeZeroPage[];
   /** Devices required (REQUIRES_DEVICE, schema 36) by every recipe that IMPLEMENTS an input. */
   recipeDevices?: readonly RecipeDevice[];
+  /** The serial-I/O pitfalls and the KERNAL routines that trigger them (#94). */
+  serialPitfalls?: readonly SerialPitfall[];
+  /** Recipes that build an input and run with the KERNAL out (#94). */
+  recipeKernalOut?: readonly RecipeKernalOut[];
 }
 
 export function pairKey(i: number, j: number): string {

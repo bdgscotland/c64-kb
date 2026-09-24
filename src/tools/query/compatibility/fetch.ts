@@ -11,6 +11,7 @@ import type { FalkorService } from "../../../services/falkor.ts";
 import { CLAIM_MODES, type Claim } from "../../../graph/claims.ts";
 import { parseRows } from "../shared.ts";
 import { inputPairs, pairKey, type CompatibilityFacts, type TechniqueFacts } from "./facts.ts";
+import { RASTER_IRQ_PITFALL, SPRITE_PITFALL } from "./state-rules.ts";
 
 const EdgeRow = z.object({ name: z.string(), target: z.string().nullable() });
 
@@ -230,6 +231,50 @@ async function fetchRecipeDevices(f: FalkorService, techniques: readonly string[
   );
 }
 
+const PitfallRow = z.object({ name: z.string(), routines: z.array(z.string()) });
+
+/** The serial-I/O pitfalls' KERNAL triggers (#94), from their **Triggered by kernal:** lines. */
+async function fetchSerialPitfalls(f: FalkorService) {
+  return parseRows(
+    PitfallRow,
+    await f.roQuery(
+      `MATCH (p:Pitfall)-[:TRIGGERED_BY]->(k:KernalRoutine)
+       WHERE p.name IN $names
+       RETURN p.name AS name, collect(DISTINCT k.name) AS routines ORDER BY name`,
+      { names: [RASTER_IRQ_PITFALL, SPRITE_PITFALL] },
+    ),
+  );
+}
+
+const KernalOutRow = z.object({
+  recipe: z.string(),
+  implements: z.array(z.string()),
+  via: z.array(z.string()),
+});
+
+/**
+ * Every recipe that builds an input (#94), with what makes it run with the
+ * KERNAL out: the techniques it implements that DEMAND kernal_rom_out, and
+ * irq_vector_fffe when it owns that vector. `via` is empty for a recipe
+ * that keeps the KERNAL in.
+ */
+async function fetchRecipeKernalOut(f: FalkorService, techniques: readonly string[]) {
+  if (techniques.length < 2) return [];
+  return parseRows(
+    KernalOutRow,
+    await f.roQuery(
+      `MATCH (r:Recipe)-[:IMPLEMENTS]->(t:Technique)
+       WHERE t.name IN $techs
+       WITH r, collect(DISTINCT t.name) AS implements
+       OPTIONAL MATCH (r)-[:IMPLEMENTS]->(k:Technique)-[:DEMANDS]->(:Resource {name: 'kernal_rom_out'})
+       OPTIONAL MATCH (r)-[:CLAIMS {mode: 'owns'}]->(v:HardwareUnit {name: 'irq_vector_fffe'})
+       WITH r, implements, collect(DISTINCT k.name) + collect(DISTINCT v.name) AS via
+       RETURN r.name AS recipe, implements, via ORDER BY recipe`,
+      { techs: techniques },
+    ),
+  );
+}
+
 const ClobberRow = z.object({ routine: z.string(), ranges: z.string().nullable() });
 
 /** The may set of every KERNAL routine the checked techniques USE (schema 26). */
@@ -264,6 +309,10 @@ export async function fetchCompatibilityFacts(techniques: readonly string[]): Pr
       fetchRecipeDevices(f, techniques),
     ],
   );
+  const [serialPitfalls, recipeKernalOut] = await Promise.all([
+    fetchSerialPitfalls(f),
+    fetchRecipeKernalOut(f, techniques),
+  ]);
   await fetchClaims(f, facts);
   const kernalClobbers = await fetchKernalClobbers(f, facts);
   return {
@@ -276,5 +325,7 @@ export async function fetchCompatibilityFacts(techniques: readonly string[]): Pr
     kernalClobbers,
     recipeZeroPage,
     recipeDevices,
+    serialPitfalls,
+    recipeKernalOut,
   };
 }

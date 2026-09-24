@@ -30,6 +30,10 @@ const CONFLICT_KINDS = [
   "recipe_zero_page_overlap", // a recipe of one and a recipe of the other own zero-page bytes in common (info)
   // Schema 36, from recipes' devices: frontmatter and docs/hardware/devices.md:
   "recipe_device_conflict", // a recipe of one and a recipe of the other need devices that own one unit or share a one-socket port (info)
+  // #94, state one side keeps up against the other's KERNAL disk I/O, in one phase or across phases:
+  "raster_irq_during_serial_io", // one keeps a raster IRQ armed; the other calls KERNAL disk I/O (soft; the pitfall of that name)
+  "sprites_over_badlines_hang_serial_io", // one shows sprites; the other reads the disk through the KERNAL (soft; the pitfall of that name)
+  "recipe_kernal_out", // a recipe that builds one runs with the KERNAL banked out; the other calls the KERNAL (info)
 ] as const;
 
 const DesignPhaseSchema = z.enum(["play", "transition", "init"]);
@@ -55,6 +59,9 @@ export const CompatibilityConflictSchema = z.object({
   underlying_kind: z.enum(CONFLICT_KINDS).optional(),
   // A design check only (#37): the phase whose members were checked together.
   phase: DesignPhaseSchema.optional(),
+  // A phased check only (#94): a finding between members of two different
+  // phases, a's and b's; `phase` is then absent.
+  across: z.object({ a_phase: DesignPhaseSchema, b_phase: DesignPhaseSchema }).optional(),
 });
 
 export const SharedInfrastructureSchema = z.object({

@@ -315,7 +315,7 @@ program
 program
   .command("check-compatibility [techniques...]")
   .description(
-    "Check compatibility of two or more techniques (space-separated names), or of a game design phase by phase",
+    'Check compatibility of two or more techniques (space-separated names; "name:phase" checks the list phase by phase, and across phases for state left running against KERNAL disk I/O), or of a game design phase by phase',
   )
   .option("--design <name>", "a GameDesign name: each phase (play, init, transition) checked alone")
   .action(async (techniques: string[], opts: { design?: string }) => {

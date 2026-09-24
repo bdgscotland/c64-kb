@@ -18,6 +18,7 @@ import {
 import { clobberKey, kernalClobberRules, type KernalSide, type KernalZpHit } from "./kernal-zp-rule.ts";
 import { recipeZeroPageRules } from "./recipe-rules.ts";
 import { recipeDeviceRules } from "./device-rules.ts";
+import { stateRules } from "./state-rules.ts";
 
 type Conflict = CompatibilityCheckOutput["conflicts"][number];
 type Coverage = CompatibilityCheckOutput["data_coverage"][number];
@@ -396,6 +397,9 @@ export function evaluateCompatibility(all: CompatibilityFacts): CompatibilityEva
     ...ownChainConflicts(all, closure, rules),
     ...recipeZeroPageRules(all),
     ...recipeDeviceRules(all),
+    ...inputPairs(all.techniques).flatMap(({ a, b }) =>
+      stateRules({ name: a, facts: factsOf(all, a) }, { name: b, facts: factsOf(all, b) }, all),
+    ),
   ];
   const notFound = all.techniques.filter((t) => !factsOf(all, t).found);
   return {
