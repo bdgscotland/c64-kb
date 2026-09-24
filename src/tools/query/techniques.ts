@@ -23,6 +23,7 @@ import {
 } from "./shared.ts";
 import { CLAIM_MODES } from "../../graph/claims.ts";
 import { compressUnits } from "./compatibility/unit-rules.ts";
+import { rankRecipesFor } from "../../domain/budget.ts";
 import type { TechniqueLookupResult, TechniquesForResult } from "./types.ts";
 
 /** A number property, or null when the node has none (or a non-number). */
@@ -144,6 +145,15 @@ type Neighbourhood = Pick<
   "uses_registers" | "uses_kernal" | "recipes" | "requires" | "required_by" | "mitigates"
 >;
 
+/** Recipes in plan_budget's order (rankRecipesFor), so the card and the budget lead with the same one. */
+function byRank<R extends { name: string }>(technique: string, recipes: R[]): R[] {
+  const order = rankRecipesFor(
+    technique,
+    recipes.map((r) => r.name),
+  );
+  return [...recipes].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+}
+
 /** The technique's edges: USES, IMPLEMENTS (reverse), REQUIRES both ways, MITIGATED_BY (reverse). */
 async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
   const f = await getFalkor();
@@ -170,7 +180,7 @@ async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
   return {
     uses_registers: parseRows(AddressedRow, regs).map(addressed),
     uses_kernal: parseRows(AddressedRow, kernal).map(addressed),
-    recipes: parseRows(RecipeRefRow, recipes),
+    recipes: byRank(name, parseRows(RecipeRefRow, recipes)),
     requires: parseRows(TechniqueRefRow, requires).map(ref),
     required_by: parseRows(TechniqueRefRow, requiredBy).map(ref),
     mitigates: parseRows(PitfallRefRow, mitigates).map((p) => ({

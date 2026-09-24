@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { followIncludes, planBudget, type BudgetMember, type PhaseBudget } from "../src/domain/budget.ts";
+import {
+  followIncludes,
+  planBudget,
+  rankRecipesFor,
+  type BudgetMember,
+  type PhaseBudget,
+} from "../src/domain/budget.ts";
 import { extractGraphEntities } from "../src/graph/extract.ts";
 import { budgetRegion, parseMemberSpec, parseMemberSpecs } from "../src/tools/query/plan-budget.ts";
 import { PlanBudgetSchema } from "../src/schemas/tool-outputs.ts";
@@ -47,6 +53,21 @@ describe("planBudget rules", () => {
     expect(p.low).toBe(100);
     expect(p.verdict).toBe("undetermined");
     expect(b.verdict).toBe("undetermined");
+  });
+
+  it("names the recipe that realises the technique most directly, as the card lists first (#41)", () => {
+    // It named oscar64-attract-replay, the alphabetical first; the card led with joystick-input.
+    const p = play(
+      planBudget([
+        m("joystick_edge_detect", undefined, {
+          recipes: ["oscar64-attract-replay", "oscar64-joystick-input"],
+        }),
+      ]),
+    );
+    expect(p.to_measure.at(0)?.recipe).toBe("oscar64-joystick-input");
+    expect(
+      rankRecipesFor("frame_sync_loop", ["oscar64-a", "oscar64-frame-sync-loop", "oscar64-frame-z"]),
+    ).toEqual(["oscar64-frame-sync-loop", "oscar64-frame-z", "oscar64-a"]);
   });
 
   it("names no recipe when nothing implements the missing technique", () => {

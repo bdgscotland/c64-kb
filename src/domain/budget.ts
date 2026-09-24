@@ -243,10 +243,25 @@ function chargeOf(m: BudgetMember, region: VideoRegion): Charge {
 }
 
 /** The recipe to measure a missing figure on: the one named after the technique first, else the first implementing one. */
+/**
+ * A technique's recipes, the one that realises it most directly first: the
+ * recipe named after it, then the one sharing most words with its name,
+ * then alphabetical. technique_lookup lists them in this order and
+ * plan_budget's "measure it on" takes the first, so the two name the same
+ * recipe. An earlier version took the alphabetical first, and
+ * joystick_edge_detect was to be measured on oscar64-attract-replay while
+ * its card led with oscar64-joystick-input (#41).
+ */
+export function rankRecipesFor(technique: string, recipes: readonly string[]): string[] {
+  const stem = technique.replace(/_/g, "-");
+  const words = new Set(technique.split("_"));
+  const shared = (r: string) => r.split("-").filter((w) => words.has(w)).length;
+  const exact = (r: string) => (r.endsWith(`-${stem}`) ? 1 : 0);
+  return [...recipes].sort((a, b) => exact(b) - exact(a) || shared(b) - shared(a) || a.localeCompare(b));
+}
+
 function recipeToMeasure(m: BudgetMember): string | null {
-  const recipes = m.recipes ?? [];
-  const stem = m.name.replace(/_/g, "-");
-  return recipes.find((r) => r.endsWith(`-${stem}`)) ?? recipes.at(0) ?? null;
+  return rankRecipesFor(m.name, m.recipes ?? []).at(0) ?? null;
 }
 
 function missingWhy(m: BudgetMember): string {
