@@ -739,24 +739,44 @@ Behaviour with no cartridge present:
   (see c64-memory-map.md).
 - Writes are discarded.
 
-Behaviour with a cartridge present is entirely cartridge-defined.
-Common conventions:
+Behaviour with a cartridge present is entirely cartridge-defined. The
+rows below are read from VICE 3.10's cartridge emulation source,
+`src/c64/cart/<file>.c` (the `io_source_t` range of each I/O device and
+its read and store functions). That is how VICE decodes each cartridge,
+the machine every recipe here is verified on; no row was measured on a
+real cartridge. Where the source's comment and its decode differ, the
+decode is given.
 
-| Cartridge family          | $DE00 use                                                    | $DF00 use                                          |
-|---------------------------|--------------------------------------------------------------|----------------------------------------------------|
-| Action Replay / Final Cartridge / Retro Replay | Control register: write controls ROM bank, mode select, freeze release | RAM mirror or alt control                          |
-| EasyFlash                 | Bank select / mode register at $DE00 / $DE02                 | EasyFlash LED + I/O                                 |
-| Magic Desk                | $DE00 bit-mapped bank select (8x8 KB)                        | Unused                                              |
-| KCS Power Cartridge       | $DF00 control                                                | $DF00 control                                       |
-| GeoRAM / NeoRAM           | $DE00 window into a 256-byte RAM page; $DFFE/$DFFF select page | Page register                                      |
-| Reu (1700/1750/1764)      | $DF00-$DF0A: full REC register set (status, command, base, target, length) | (same)                                  |
-| MMC64 / MMC Replay        | $DF10-$DF13: SD card SPI port                                |                                                     |
+| Cartridge (VICE file)                  | $DE00-$DEFF (/IO1)                                                                   | $DF00-$DFFF (/IO2)                                                            |
+|----------------------------------------|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| Action Replay 4.2-6 (`actionreplay.c`) | One write-only control register at $DE00, mirrored through $DEFF: ROM bank, EXROM/GAME, RAM enable, freeze release, cartridge off. VICE warns that a read corrupts it | The last page of the cartridge's 8 KB RAM ($9F00-$9FFF) when RAM is enabled, else cartridge ROM |
+| Retro Replay (`retroreplay.c`)         | Registers at $DE00 and $DE01; the rest of the page is cartridge RAM or ROM          | Cartridge RAM or ROM                                                          |
+| Final Cartridge I/II (`final.c`)       | Any access turns the cartridge ROM off; reads show a ROM mirror                      | Any access turns the cartridge ROM on; reads show a ROM mirror                |
+| Final Cartridge III (`final3.c`)       | A mirror of the last two pages of the selected ROM bank                              | The same mirror, and at $DFFF the one control register (bank, EXROM, GAME, NMI, hide bit) |
+| EasyFlash (`easyflash.c`)              | $DE00 bank register (6 bits), $DE02 mode register (bit 7 LED, bit 2 mode, bits 1-0 EXROM/GAME); VICE decodes $DE00-$DE03, mirrored through $DEFF; write only | 256 bytes of RAM, read and write                                              |
+| Magic Desk (`magicdesk.c`)             | One write-only register at $DE00, mirrored through $DEFF: bits 0-6 bank, bit 7 = 1 turns the cartridge off. Originals have 4, 8 or 16 banks of 8 KB | Not decoded                                                                   |
+| KCS Power Cartridge (`kcs.c`)          | Reads show ROM (the second-last page of the first 8 KB bank); an access sets EXROM from address bit 1 and GAME from R/W | $DF00-$DF7F 128 bytes of RAM; $DF80-$DFFF reads the GAME and EXROM lines      |
+| GeoRAM (`georam.c`)                    | A 256-byte window into the GeoRAM                                                    | $DFFE selects the 256-byte page (0-63) within a 16 KB block, $DFFF the block; decoded at $DF80-$DFFF, so each mirrors through that half page |
+| REU 1700/1764/1750 (`reu.c`)           | Not decoded                                                                          | The REC registers at $DF00-$DF0A (status, command, C64 address, REU address and bank, length, interrupt mask, address control); $DF0B-$DF1F unused; the 32 bytes mirror through $DFFF |
+| MMC64 (`mmc64.c`)                      | VICE also answers the same four registers at $DE10-$DE13                             | SD card SPI and control registers at $DF10-$DF13                              |
+| MMC Replay (`mmcreplay.c`)             | Registers at $DE00 and $DE01; $DE02-$DEFF can be cartridge RAM                       | SD card registers at $DF10-$DF13, mirrored through the rest of the page       |
+
+An earlier version of this table cited no source and had four rows wrong:
+it gave EasyFlash's $DF00 as "LED + I/O" (the LED is bit 7 of $DE02 and
+$DF00-$DFFF is RAM), put the REU's and the MMC64's $DFxx registers in the
+$DE00 column, gave the KCS Power Cartridge as "$DF00 control" in both
+columns, and grouped the Final Cartridge with Action Replay's $DE00
+control register.
 
 Software written to be cartridge-agnostic must avoid touching $DE00-$DFFF
-unless it knows what cartridge is plugged in. A spurious write here can
-freeze the machine (Action Replay freeze trigger), swap RAM banks
-underneath the running program (EasyFlash), or, for fast loaders that
-use a REU detection routine, mis-detect and lose data.
+unless it knows what cartridge is plugged in. By the decodes above, a
+stray write can switch a cartridge's ROM bank or turn it off (Action
+Replay, Magic Desk, EasyFlash), raise an NMI (Final Cartridge III,
+$DFFF bit 6 = 0), or start a REU transfer over memory ($DF01 with bit 7
+set; with bit 4 set too it starts at once, not at the next write to
+$FF00). An earlier version of this paragraph said a write could trigger
+the Action Replay's freeze; in VICE's decode $DE00 bit 6 releases the
+freeze, and the freeze itself comes from the button.
 
 ## Address-to-chip dispatch table
 
@@ -867,8 +887,11 @@ the RS-232 enable byte $02A1.
 
 - **$DE00 / $DF00 cartridge clobbering.** A memory test or RAM
   copy that walks $D000-$DFFF, on a machine with an Action
-  Replay or Final Cartridge plugged in, triggers the cartridge's
-  freeze logic or swaps its RAM banks under the program. The stock
+  Replay or Final Cartridge plugged in, switches the cartridge's
+  banks or turns its ROM off under the program, and on a Final
+  Cartridge III can raise an NMI (the table above; an earlier version
+  said it triggers the freeze logic, which VICE's decode does not
+  support for the Action Replay). The stock
   C64 KERNAL avoids $DE00 / $DF00 entirely. Software that needs to
   detect free RAM should treat $DE00-$DFFF as off-limits unless it
   has positively identified the cartridge (or absence thereof).
