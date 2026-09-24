@@ -69,6 +69,28 @@ Example:
 **Targets:** 6510
 ```
 
+## Library functions: `**Wraps:**`
+
+On a page for a C library (`tool_kind: c-library`), each header section is
+an H2 named for the header (`## kernalio.h — KERNAL file I/O wrappers`) and
+may carry one `**Wraps:**` line: per public function, the KERNAL routines
+it calls and the I/O registers it reads or writes.
+
+```
+**Wraps:** krnio_open: CLOSE, OPEN, SETLFS; vic_waitLine: D011, D012; vic_sprxy: D000-D010
+```
+
+Functions are separated by `;`, targets by `,`. A KERNAL routine is named
+by its jump-table name, a register by its address with or without `$`, and
+`D000-D010` names every register in the range (at most 64). The extractor
+makes a `LibraryFunction` node per function (with its header and tool) and
+a `WRAPS` edge per target (schema 37). Both ends are MATCHed at link time;
+a target that is no KernalRoutine or Register node is dropped with a
+warning and counted. Read the line from the library's source, not its
+documentation, and say on the page how it was read.
+`c64_pitfalls_for` answers a function name with the pitfalls of what it
+wraps.
+
 ## Cross-doc references
 
 Use the bracketed-link form `[oscar64](../toolchains/oscar64-reference.md)` so

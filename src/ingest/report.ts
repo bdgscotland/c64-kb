@@ -118,6 +118,7 @@ const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge, from?
   ["realised_by", "REALISED_BY", "realised_by"],
   ["exemplified_by", "EXEMPLIFIED_BY", "exemplified_by"],
   ["requires_device", "REQUIRES_DEVICE", "requires_device"],
+  ["wraps", "WRAPS", "wraps"],
 ];
 
 interface EdgeCount {
@@ -162,10 +163,12 @@ export async function reportSummary(opts: {
     `${c.label}: ${c.landed} edges in graph, ${c.distinct} distinct references, ${c.dropped} dropped.`;
   const record = (c: EdgeCount): string => `${c.label}=${c.landed}/${c.distinct}/dropped=${c.dropped}`;
   // The first six follow the pitfall and crash-pattern counts, the next
-  // five the archetype count, the last three the game-design count.
+  // five the archetype count, the next five (requires_device with them, as
+  // before) the game-design count, the last the library-function count.
   const pitfallEdges = counts.slice(0, 6);
   const archetypeEdges = counts.slice(6, 11);
-  const designEdges = counts.slice(11);
+  const designEdges = counts.slice(11, 16);
+  const libraryEdges = counts.slice(16);
 
   print(`\nQdrant: ${qStats.total_points} vectors`);
   print(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
@@ -177,13 +180,15 @@ export async function reportSummary(opts: {
       ...archetypeEdges.map(sentence),
       `GameDesigns: ${nodes.gameDesigns}.`,
       ...designEdges.map(sentence),
+      `LibraryFunctions: ${nodes.libraryFunctions}.`,
+      ...libraryEdges.map(sentence),
       `Cost references unresolved: ${costMisses.length}.`,
     ].join(" "),
   );
   const droppedRefs = edges.totalDropped();
   if (droppedRefs > 0) {
     console.warn(
-      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/alternative-to/consumes-formats/mitigated-by/archetype/scaffolds/claims/clobbers-zp/game-design references named no existing node (or would have closed a REQUIRES cycle, or paired a technique with its prerequisite) and were dropped; see the [falkor] lines above.`,
+      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/alternative-to/consumes-formats/mitigated-by/archetype/scaffolds/claims/clobbers-zp/game-design/wraps references named no existing node (or would have closed a REQUIRES cycle, or paired a technique with its prerequisite) and were dropped; see the [falkor] lines above.`,
     );
   }
   log(
@@ -194,6 +199,8 @@ export async function reportSummary(opts: {
       ...archetypeEdges.map(record),
       `game_designs=${nodes.gameDesigns}`,
       ...designEdges.map(record),
+      `library_functions=${nodes.libraryFunctions}`,
+      ...libraryEdges.map(record),
       `cost_reference_misses=${costMisses.length}`,
     ].join(" "),
   );

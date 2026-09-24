@@ -13,6 +13,7 @@ export interface NodeTally {
   crashPatterns: number;
   archetypes: number;
   gameDesigns: number;
+  libraryFunctions: number;
 }
 
 export type TrackedEdge =
@@ -21,6 +22,7 @@ export type TrackedEdge =
   | "technique_requires"
   | "technique_alternative"
   | "technique_consumes"
+  | "wraps"
   | "mitigated_by"
   | "archetype_features"
   | "archetype_risks"
@@ -43,6 +45,7 @@ const REFERENCE_KEYS: { [K in TrackedEdge]: (e: EdgeOf<K>) => string } = {
   technique_requires: (e) => `${e.technique}|${e.requires}`,
   technique_alternative: (e) => `${e.technique}|${e.alternative}`,
   technique_consumes: (e) => `${e.technique}|${e.format}`,
+  wraps: (e) => `${e.fn}|${e.targetKind}|${e.target}`,
   mitigated_by: (e) => `${e.pitfall}|${e.target}`,
   archetype_features: (e) => `${e.archetype}|${e.technique}`,
   archetype_risks: (e) => `${e.archetype}|${e.pitfall}`,

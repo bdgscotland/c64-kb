@@ -21,7 +21,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (19)
+## Node Types (20)
 
 ### KernalRoutine
 
@@ -330,6 +330,25 @@ Source: `docs/hardware/devices.md`, one H2 per device
 pinned run attaches it or VICE attaches it by default; the KoalaPad, the
 Final Cartridge and a second drive have none.
 
+### LibraryFunction
+
+A public function of a C library header, such as Oscar64's `krnio_open`
+(schema 37).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | The C name, case kept (`vic_waitLine`) |
+| header | string | The header that declares it (`kernalio.h`) |
+| tool | string | The page's `tool:` (`oscar64-headers`) |
+| source_doc | string | The page the `**Wraps:**` line is on |
+
+Source: `**Wraps:**` lines on a toolchain page
+(`CONVENTIONS-toolchain-reference.md`), today
+`toolchains/oscar64-headers-reference.md`, read from the Oscar64
+`include/c64` sources. A function with no line is not a node. Names are
+unique across the graph; a second C library with a clashing name would
+need the tool in the key.
+
 ### GameDesign
 
 A whole game: the techniques it runs in each phase, the archetype it is
@@ -387,7 +406,7 @@ say to rerun the ingest. No index, no edges.
 | started_at | string | ISO time the ingest set the marker |
 | flags | string | The ingest's flags, e.g. ` --clean` |
 
-## Edge Types (29)
+## Edge Types (30)
 
 ### BELONGS_TO
 
@@ -462,6 +481,17 @@ these after every REQUIRES edge so that check sees them all. Read by
 `stated_on`) and the briefings, which keep one technique of each pair and
 list the other under `alternatives_left_out`. It is not REQUIRES and not
 "variant of": `double_irq` and `stable_raster_irq` stay unlinked.
+
+### WRAPS
+
+Direction: `LibraryFunction → KernalRoutine/Register` (schema 37)
+
+Meaning: "this C function calls this KERNAL routine, or reads or writes
+this register", as read from the library's source. Both ends MATCHed, a
+Register by name, address or alias; misses warned about and counted
+(`wraps … dropped`). Read by `c64_pitfalls_for`: a function name answers
+with the pitfalls TRIGGERED_BY what it wraps, each with `via` naming the
+routine or register (topic_kind `LibraryFunction`).
 
 ### TRIGGERED_BY
 

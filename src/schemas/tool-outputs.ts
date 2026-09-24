@@ -304,7 +304,7 @@ const TriggeredBySchema = z.object({
 
 export const PitfallsForSchema = z.object({
   topic: z.string(),
-  topic_kind: z.enum(["Register", "KernalRoutine", "Technique", "search"]),
+  topic_kind: z.enum(["Register", "KernalRoutine", "Technique", "LibraryFunction", "search"]),
   pitfalls: z.array(
     z.object({
       name: z.string(),

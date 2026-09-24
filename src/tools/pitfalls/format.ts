@@ -27,10 +27,11 @@ export function formatSearchFallbackText(
   return lines.join("\n");
 }
 
-function formatVia(via: PitfallsForOutput["pitfalls"][number]["via"]): string {
+function formatVia(via: PitfallsForOutput["pitfalls"][number]["via"], kind: EntityKind): string {
   if (!via?.length) return "";
   const names = via.map((v) => `${v.name}${v.address ? " " + v.address : ""} (${v.kind})`).join(", ");
-  return `**Reached through:** ${names}, which this technique uses\n`;
+  const how = kind === "LibraryFunction" ? "which this function wraps" : "which this technique uses";
+  return `**Reached through:** ${names}, ${how}\n`;
 }
 
 export function formatPitfallsText(
@@ -51,7 +52,7 @@ export function formatPitfallsText(
       `**Category:** ${p.category}\n` +
       (triggers ? `**Triggered by:** ${triggers}\n` : "") +
       (remedies ? `**Mitigated by:** ${remedies}\n` : "") +
-      formatVia(p.via)
+      formatVia(p.via, kind)
     );
   });
   return header + rows.join("\n");

@@ -137,6 +137,20 @@ export class FalkorLinks extends FalkorNodes {
     });
   }
 
+  /**
+   * WRAPS (schema 37): a C library function calls this KERNAL routine or
+   * touches this register, as read from the library's source. Both ends
+   * MATCHed; a Register by name, address or alias. Returns whether it landed.
+   */
+  async linkWraps(fn: string, target: string, targetKind: "KernalRoutine" | "Register"): Promise<boolean> {
+    return this.mergeOrWarn({
+      from: { label: "LibraryFunction", name: fn },
+      rel: "WRAPS",
+      to: causeEnd(target, targetKind),
+      warn: `linkWraps: ${fn} -> ${target} (${targetKind}) — function or target not found`,
+    });
+  }
+
   async linkTargets(toolName: string, chipName: string): Promise<void> {
     await this.mergeEdge({
       from: { label: "Tool", name: toolName },

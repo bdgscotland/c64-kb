@@ -38,6 +38,8 @@ const LABELS = [
   { label: "Production", key: "name", unique: true, cleanable: true },
   // Things plugged into the machine, from docs/hardware/devices.md (schema 36).
   { label: "Device", key: "name", unique: true, cleanable: true },
+  // C library functions a toolchain page's **Wraps:** lines name (schema 37).
+  { label: "LibraryFunction", key: "name", unique: true, cleanable: true },
   // Seeds (schema 25) that CLAIMS edges point at; ensureSchema re-MERGEs them.
   { label: "HardwareUnit", key: "name", unique: true, cleanable: false },
   // Seeds (schema 29): the models VICE runs; VERIFIED_ON edges point at them.

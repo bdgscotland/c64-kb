@@ -195,6 +195,20 @@ export class FalkorNodes extends FalkorBase {
     });
   }
 
+  /** A C library function from a toolchain page's **Wraps:** line (schema 37). */
+  async addLibraryFunction(e: {
+    name: string;
+    header: string;
+    tool: string;
+    source_doc: string;
+  }): Promise<void> {
+    await this.upsertNode({
+      label: "LibraryFunction",
+      name: e.name,
+      props: { header: e.header, tool: e.tool, source_doc: e.source_doc },
+    });
+  }
+
   async addFileFormat(name: string, description: string): Promise<void> {
     // Description is SET only on first creation. The ingest walk priority
     // puts docs/formats/c64-file-formats.md first, so the catalog's
