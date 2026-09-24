@@ -4,38 +4,16 @@
  * results, and the small formatters the renderers have in common.
  */
 
-import fs from "fs";
-import path from "path";
 import { z } from "zod";
 import { getQdrant } from "../../context.ts";
 import { embed } from "../../services/embeddings.ts";
-import { BM25Encoder, type SparseVector } from "../../services/bm25.ts";
-import { config } from "../../config.ts";
-
-const VOCAB_FILE = path.resolve(config.analytics.dbPath, "../bm25-vocab.json");
-
-const VocabFileSchema = z.object({
-  vocab: z.array(z.tuple([z.string(), z.number()])),
-  df: z.array(z.tuple([z.number(), z.number()])),
-  avgDocLen: z.number(),
-  numDocs: z.number(),
-  k1: z.number(),
-  b: z.number(),
-});
+import { loadBM25Vocab, type BM25Encoder, type SparseVector } from "../../services/bm25.ts";
 
 let bm25Cache: BM25Encoder | null | undefined; // undefined = not yet attempted
 
+/** The ingest's BM25 vocabulary, through the shared loader (src/services/bm25.ts). */
 function getBM25(): BM25Encoder | null {
-  if (bm25Cache !== undefined) return bm25Cache;
-  bm25Cache = null;
-  if (!fs.existsSync(VOCAB_FILE)) return null;
-  try {
-    const data = VocabFileSchema.parse(JSON.parse(fs.readFileSync(VOCAB_FILE, "utf-8")));
-    bm25Cache = BM25Encoder.fromJSON(data);
-  } catch (err) {
-    // A corrupt vocab file degrades search to dense-only; say so on stderr.
-    console.error(`[query] ${VOCAB_FILE} unreadable, sparse vectors off: ${String(err)}`);
-  }
+  if (bm25Cache === undefined) bm25Cache = loadBM25Vocab();
   return bm25Cache;
 }
 
