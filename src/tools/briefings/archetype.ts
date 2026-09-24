@@ -6,6 +6,7 @@
 import { getFalkor } from "../../context.ts";
 import { normaliseBriefText } from "../../graph/extract/archetype.ts";
 import { ArchetypeRow, BriefWordsRow, NameRow, parseRows } from "./rows.ts";
+import { pickByGenreHeads } from "./route-heads.ts";
 
 type Archetype = { name: string; title: string; kind: string; starter?: string };
 export type ArchetypeResolution =
@@ -19,7 +20,19 @@ export type ArchetypeResolution =
       inferred_from?: string[];
     }
   | { mode: "not_found"; requested: string; known: string[]; candidates?: string[] }
-  | { mode: "fallback" };
+  | { mode: "fallback" }
+  /**
+   * A game brief whose brief words tie, or whose genre noun ("platformer")
+   * fits several archetypes (#19). None is chosen; the FEATURES and RISKS every candidate holds are
+   * planned with, as a named archetype's are.
+   */
+  | {
+      mode: "ambiguous";
+      candidates: string[];
+      from: string[];
+      shared_features: string[];
+      shared_risks: string[];
+    };
 
 type KnownArchetype = {
   name: string;
@@ -134,9 +147,11 @@ function wordsInBrief(brief: string, words: readonly string[]): string[] {
  * Route a game brief that names no archetype. Each game Archetype's
  * **Brief words:** line (docs/CONVENTIONS-archetypes.md) is matched against
  * the brief; the archetype with the most distinct words present wins. A tie
- * or no match routes nowhere and the plan is built from the description, as
- * before. The words are data on the page, so no genre or title is spelled
- * in this code.
+ * is returned as "ambiguous" with the tied archetypes as candidates. With no
+ * phrase present, the brief's genre noun is read (route-heads.ts): "a
+ * platformer" offers both platformers (#19). Until then a tie or no match
+ * routed nowhere and said nothing. The words are data on the page, so no
+ * genre or title is spelled in this code.
  */
 export async function routeArchetypeFromBrief(description: string): Promise<ArchetypeResolution | undefined> {
   const fk = await getFalkor();
@@ -153,9 +168,59 @@ export async function routeArchetypeFromBrief(description: string): Promise<Arch
         ]
       : [],
   );
-  const pick = pickByBriefWords(description, rows);
-  if (!pick) return undefined;
-  return { ...(await graphResolution(pick.row.row)), inferred_from: pick.matched };
+  const top = topByBriefWords(description, rows);
+  const [pick] = top;
+  if (pick && top.length === 1)
+    return { ...(await graphResolution(pick.row.row)), inferred_from: pick.matched };
+  // A tie is offered, not guessed between.
+  if (pick) {
+    const from = [...new Set(top.flatMap((t) => t.matched))].sort();
+    return ambiguousResolution(
+      top.map((t) => t.row.row),
+      from,
+    );
+  }
+  // No phrase matched: the brief's genre noun (route-heads.ts).
+  const heads = pickByGenreHeads(
+    description,
+    rows.map((r) => ({ ...r, name: r.row.name })),
+  );
+  if (!heads) return undefined;
+  if ("row" in heads) return { ...(await graphResolution(heads.row.row)), inferred_from: heads.matched };
+  return ambiguousResolution(
+    heads.candidates.map((c) => c.row),
+    heads.matched,
+  );
+}
+
+/** The FEATURES a plan is built on: the archetype's, or those every candidate shares. */
+function archetypeFeatures(resolved: ArchetypeResolution | undefined): string[] {
+  if (resolved?.mode === "graph") return resolved.features;
+  if (resolved?.mode === "ambiguous") return resolved.shared_features;
+  return [];
+}
+
+/** The RISKS a plan's pitfalls include: the archetype's, or those every candidate shares. */
+export function archetypeRisks(resolved: ArchetypeResolution | undefined): string[] {
+  if (resolved?.mode === "graph") return resolved.risks;
+  if (resolved?.mode === "ambiguous") return resolved.shared_risks;
+  return [];
+}
+
+/** Several archetypes fit: the features and risks all of them hold. */
+async function ambiguousResolution(
+  rows: readonly KnownArchetype[],
+  from: string[],
+): Promise<ArchetypeResolution> {
+  const all = await Promise.all(rows.map((r) => graphResolution(r)));
+  const inAll = (lists: string[][]) => (lists[0] ?? []).filter((x) => lists.every((l) => l.includes(x)));
+  return {
+    mode: "ambiguous",
+    candidates: rows.map((r) => r.name).sort(),
+    from,
+    shared_features: inAll(all.map((a) => a.features)),
+    shared_risks: inAll(all.map((a) => a.risks)),
+  };
 }
 
 /** The archetype whose brief words the brief holds most of; undefined on a tie or no match. Pure. */
@@ -163,15 +228,22 @@ export function pickByBriefWords<R extends { words: readonly string[] }>(
   description: string,
   rows: readonly R[],
 ): { row: R; matched: string[] } | undefined {
+  const top = topByBriefWords(description, rows);
+  return top.length === 1 ? top[0] : undefined;
+}
+
+/** Every archetype tied at the highest count of brief words present; empty when none matched. Pure. */
+export function topByBriefWords<R extends { words: readonly string[] }>(
+  description: string,
+  rows: readonly R[],
+): { row: R; matched: string[] }[] {
   const brief = normaliseBriefText(description);
   const scored = rows.flatMap((row) => {
     const matched = wordsInBrief(brief, row.words);
     return matched.length > 0 ? [{ row, matched }] : [];
   });
-  scored.sort((a, b) => b.matched.length - a.matched.length);
-  const [first, second] = scored;
-  if (!first || second?.matched.length === first.matched.length) return undefined;
-  return first;
+  const best = Math.max(0, ...scored.map((s) => s.matched.length));
+  return scored.filter((s) => s.matched.length === best);
 }
 
 // Built-in tables, used ONLY when the graph has no Archetype nodes. With the
@@ -270,6 +342,8 @@ export function seedsFor(opts: {
   if (resolved?.mode === "graph") {
     searchDescription = `${description} ${resolved.archetype.title}`;
     forced.push(...resolved.features);
+  } else if (resolved?.mode === "ambiguous") {
+    forced.push(...resolved.shared_features);
   } else if (resolved?.mode === "fallback" && archetype && isGame) {
     // The built-in tables are game genres; a demo form has no fallback.
     const key = archetype.toLowerCase();
@@ -278,6 +352,6 @@ export function seedsFor(opts: {
     forced.push(...(FALLBACK_FORCED_TECHNIQUES.get(key) ?? []));
   }
   for (const t of describedTechniques(description, isGame)) if (!forced.includes(t)) forced.push(t);
-  const archetypeForced = new Set(resolved?.mode === "graph" ? resolved.features : []);
+  const archetypeForced = new Set(archetypeFeatures(resolved));
   return { searchDescription, forced, archetypeForced };
 }

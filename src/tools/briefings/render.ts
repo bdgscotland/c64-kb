@@ -16,6 +16,8 @@ function archetypeLabel(
     return ` (${kindWord}: ${resolved.archetype.name}, ${resolved.archetype.title})`;
   if (resolved?.mode === "not_found")
     return ` (${kindWord} "${archetype ?? ""}" is not an archetype the graph knows)`;
+  if (resolved?.mode === "ambiguous")
+    return ` (${kindWord} not chosen: one of ${resolved.candidates.join(", ")})`;
   return archetype ? ` (${kindWord}: ${archetype})` : "";
 }
 
@@ -53,7 +55,8 @@ export function briefSummary(opts: {
   );
 }
 
-export function renderArchetype(b: BriefingOutput): string {
+/** A named archetype the graph lacks, or several the brief fits: the line that says so, or "". */
+function renderUnresolved(b: BriefingOutput): string {
   let out = "";
   const missing = b.archetype_not_found;
   if (missing) {
@@ -62,6 +65,17 @@ export function renderArchetype(b: BriefingOutput): string {
       (missing.candidates?.length ? ` Did you mean one of: ${missing.candidates.join(", ")}?` : "") +
       ` Known archetypes: ${missing.known.join(", ")}\n\n`;
   }
+  const fits = b.archetype_candidates;
+  if (fits) {
+    out +=
+      `**Archetype:** not chosen. The brief's ${fits.from.map((w) => `"${w}"`).join(", ")} fits ${fits.candidates.join(", ")}; pass archetype to choose one. ` +
+      `Planned with what they share: ${fits.shared_features.join(", ") || "(no technique)"}; pitfalls ${fits.shared_risks.join(", ") || "(none)"}.\n\n`;
+  }
+  return out;
+}
+
+export function renderArchetype(b: BriefingOutput): string {
+  let out = renderUnresolved(b);
   if (b.archetype) {
     out += `**Archetype:** ${b.archetype.name} (${b.archetype.title}, ${b.archetype.kind})\n`;
     if (b.archetype.inferred_from) {

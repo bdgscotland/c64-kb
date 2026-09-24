@@ -12,6 +12,7 @@ import {
   type TechniqueLookupOutput,
 } from "../../schemas/tool-outputs.ts";
 import {
+  archetypeRisks,
   describedReason,
   resolveArchetype,
   routeArchetypeFromBrief,
@@ -82,6 +83,9 @@ function reasonFor(t: TechniqueLookupOutput, ctx: ReasonContext) {
   const { description, resolved } = ctx;
   if (resolved?.mode === "graph" && resolved.features.includes(t.name)) {
     return `In the ${resolved.archetype.name} archetype's technique fingerprint`;
+  }
+  if (resolved?.mode === "ambiguous" && resolved.shared_features.includes(t.name)) {
+    return `In the fingerprint of every archetype the brief fits (${resolved.candidates.join(", ")})`;
   }
   return (
     describedReason(t.name, description, ctx.isGame) ?? whyProposed(t.name, t.category, description, t.title)
@@ -160,7 +164,11 @@ async function proposeTechniques(
 
 function archetypeFields(
   resolved: ArchetypeResolution | undefined,
-): Pick<BriefingOutput, "archetype" | "archetype_not_found"> {
+): Pick<BriefingOutput, "archetype" | "archetype_not_found" | "archetype_candidates"> {
+  if (resolved?.mode === "ambiguous") {
+    const { candidates, from, shared_features, shared_risks } = resolved;
+    return { archetype_candidates: { candidates, from, shared_features, shared_risks } };
+  }
   if (resolved?.mode === "graph") {
     return {
       archetype: {
@@ -253,7 +261,7 @@ export async function buildBriefing(
 
   const proposed_techniques = techs.map((t) => proposedOf(t, { description, resolved, isGame }));
   const { verdict, compatibility } = await compatibilityOf(techs);
-  const pitfalls = await collectPitfalls(techNames, resolved?.mode === "graph" ? resolved.risks : []);
+  const pitfalls = await collectPitfalls(techNames, archetypeRisks(resolved));
   const toolchain_split = await toolchainSplit(techs);
   const { build_order, scaffoldPages } = await buildOrder({ techs, isGame, resolved, archetype });
   const budget = computeBudget(await fetchBudgetMembers(techNames.map((name) => ({ name, phase: "play" }))));

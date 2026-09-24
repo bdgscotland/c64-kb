@@ -1251,8 +1251,27 @@ describe("gameBriefing routes a brief that names no archetype", () => {
   it("routes nowhere on a tie and says Game with no scaffold step", async () => {
     const r = await gameBriefing("a car racing game");
     expect(r.structured.archetype).toBeUndefined();
+    // The tie is offered, not guessed between (#19).
+    expect(r.structured.archetype_candidates).toEqual({
+      candidates: ["racing", "vertical_shmup"],
+      from: ["car", "racing"],
+      shared_features: [],
+      shared_risks: [],
+    });
+    expect(r.structured.brief).toContain("(genre not chosen: one of racing, vertical_shmup)");
     expect(r.text.split("\n")[0]).toBe("# C64 Game Briefing");
     expect(r.structured.build_order.some((s) => s.label.startsWith("Game scaffold"))).toBe(false);
+  });
+
+  it("offers both shmups for 'a shooter', which no brief-word phrase matches (#19)", async () => {
+    const r = await gameBriefing("a shooter");
+    expect(r.structured.archetype).toBeUndefined();
+    expect(r.structured.archetype_candidates?.candidates).toEqual(["horizontal_shmup", "vertical_shmup"]);
+    expect(r.structured.archetype_candidates?.from).toEqual(["shooter"]);
+    expect(r.text).toContain(
+      `**Archetype:** not chosen. The brief's "shooter" fits horizontal_shmup, vertical_shmup; pass archetype to choose one.`,
+    );
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 
   it("keeps a named archetype over the brief's words", async () => {

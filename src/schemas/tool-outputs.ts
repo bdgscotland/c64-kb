@@ -484,6 +484,17 @@ export const BriefingSchema = z.object({
       candidates: z.array(z.string()).optional(),
     })
     .optional(),
+  // A game brief that names no archetype and whose genre noun fits
+  // several ("a platformer"): none is chosen, and the plan forces the
+  // FEATURES and includes the RISKS every candidate holds (#19).
+  archetype_candidates: z
+    .object({
+      candidates: z.array(z.string()),
+      from: z.array(z.string()),
+      shared_features: z.array(z.string()),
+      shared_risks: z.array(z.string()),
+    })
+    .optional(),
   // The GameDesigns INSTANCE_OF the resolved archetype (schema 28, tools
   // 2.1.0); c64_plan_budget takes a name as 'design'.
   designs: z.array(BriefingDesignSchema).optional(),
