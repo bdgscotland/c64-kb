@@ -73,8 +73,9 @@ tools 2.3.2).**
 
 **Package 0.17.1.** The first release published by
 `.github/workflows/release.yml` through npm trusted publishing, with
-provenance; 0.17.0 (2026-09-24) was published by hand. Contents are
-unchanged apart from the version. Trusted publisher on npm:
+provenance; 0.17.0 (2026-09-24) was published by hand. Since 0.17.0 it
+carries the plainer README, prose batch 1 of #56 and the corrected tool
+descriptions (tools 2.3.2). Trusted publisher on npm:
 `bdgscotland/c64-kb`, `release.yml`, environment `npm`, which only `v*`
 tags can use and which needs the maintainer's approval.
 
