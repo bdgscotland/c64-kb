@@ -25,8 +25,11 @@ Everything marked "measured" was run on 2026-09-24 with SDK release
 v23.2.0 (published 2026-09-06), whose `mos-c64-clang --version` reports
 `clang version 24.0.0git (https://github.com/llvm-mos/llvm-mos 9e5efd81…)`,
 on macOS arm64, and VICE x64sc 3.10 headless (`-default` PAL and
-`-model ntsc`). No recipe in this knowledge base uses llvm-mos yet, and
-`check:listings` does not build llvm-mos code.
+`-model ntsc`). No recipe in this knowledge base uses llvm-mos yet.
+`check:listings` builds this page's C listing with `mos-c64-clang -Os`
+when it finds the SDK (`LLVM_MOS`, PATH, or `~/Developer/c64/llvm-mos`);
+an earlier version of this page said it built no llvm-mos code, which was
+true before issue #102.
 
 **Targets:** 6510
 
