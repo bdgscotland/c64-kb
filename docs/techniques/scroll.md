@@ -30,6 +30,14 @@ horizontal panning.
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-soft-scroll-h (carry frame: an unrolled 25-row move of screen RAM, colour RAM not moved)
 **Cost includes:** char_scroll_buffer_h
+**Claims:** vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Read off a `scripts/claims-watch.ts` store trace of
+`recipes/oscar64/soft-scroll-h.md`: the program's only unit store is
+`$D016` changing XSCROLL, once a frame. Its zero-page bytes are Oscar64's
+and its screen and colour RAM are the program's memory, so neither is the
+technique's claim.
 
 ### Why
 
@@ -112,15 +120,17 @@ earlier `memmove` of screen and colour RAM, 3.8 PAL frames, which tore.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** (none)
-**Claims:** none
-**Claims basis:** derived-listing
+**Claims:** vic_yscroll (owns)
+**Claims basis:** measured-vice
 
-`none` is read off `recipes/kickassembler/scroll-panel-split.md`: the
-technique writes only `$D011` bits 0-2 (YSCROLL) and keeps bit 7, and no
-seeded HardwareUnit holds YSCROLL. Beside another YSCROLL writer such as
-`fld_flexible_line_distance` the compatibility check reports only the
-soft `shared_register` on `$D011`, never an ownership conflict
-([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
+The technique writes only `$D011` bits 0-2 (YSCROLL) and keeps bit 7
+(store traces of `recipes/kickassembler/scroll-panel-split.md`,
+`recipes/oscar64/simple-shmup.md` and `recipes/oscar64/vehicle-control.md`).
+An earlier line said `none`, because no seeded unit held YSCROLL, and the
+compatibility check then reported only a soft `shared_register` beside
+`fld_flexible_line_distance`. The `vic_yscroll` unit
+([#71](https://github.com/bdgscotland/c64-kb/issues/71)) makes that pair
+an ownership conflict.
 
 ### Why
 
@@ -289,12 +299,14 @@ cycles (`recipes/oscar64/soft-scroll-h.md`).
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** (none)
-**Claims:** none
+**Claims:** vic_yscroll (shares)
 **Claims basis:** derived-listing
 
-`none` is read off `recipes/kickassembler/scroll-panel-split.md`: besides
-YSCROLL (see `soft_scroll_v`) the carry moves screen and colour RAM,
-which are the program's memory, not units. That listing copies with
+Read off `recipes/kickassembler/scroll-panel-split.md`. The carry resets
+YSCROLL in step with `soft_scroll_v`'s phase, so it shares the unit that
+technique owns; an earlier line said `none`, before `vic_yscroll` existed
+([#71](https://github.com/bdgscotland/c64-kb/issues/71)). The carry also
+moves screen and colour RAM, which are the program's memory, not units. That listing copies with
 absolute indexed loads and stores and no zero-page pointer; a pointer
 copy's bytes are the recipe's claim.
 
@@ -388,8 +400,15 @@ frame's active display period.
 **Cost:** irq_slots=2, lines_active=5, cycles_per_frame=413
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-scroll-panel-split (two IRQs, screen on; not the carry frame)
-**Claims:** vic_raster_irq (owns)
+**Claims:** vic_raster_irq (owns), vic_yscroll (shares), vic_matrix_base (shares)
 **Claims basis:** derived-listing
+
+The split writes the panel's YSCROLL 7 and screen matrix mid-frame and
+restores the playfield's below the panel, so it follows the values
+`soft_scroll_v` and the program set: `shares`, not `owns`. A store trace
+of the recipe (`scripts/claims-watch.ts`) saw both fields change; its
+`$D016` store changes only CSEL, not XSCROLL. The two `shares` items were
+added with the units ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 

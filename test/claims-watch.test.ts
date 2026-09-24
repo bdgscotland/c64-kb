@@ -44,7 +44,10 @@ describe("unit map from the HardwareUnit seed", () => {
     );
     expect(unitsAt(0xd006)).toEqual(["sprite_3:ff"]);
     expect(unitsAt(0xd02a)).toEqual(["sprite_3:ff"]);
-    expect(unitsAt(0xd011)).toEqual(["vic_raster_irq:80"]);
+    // #71: the scroll and pointer fields are units of their own.
+    expect(unitsAt(0xd011)).toEqual(["vic_raster_irq:80", "vic_yscroll:7"]);
+    expect(unitsAt(0xd016)).toEqual(["vic_xscroll:7"]);
+    expect(unitsAt(0xd018)).toEqual(["vic_matrix_base:f0", "vic_char_base:e"]);
     expect(unitsAt(0xd012)).toEqual(["vic_raster_irq:ff"]);
     expect(unitsAt(0xd019)).toEqual(["vic_raster_irq:1"]);
     expect(unitsAt(0xdd00)).toEqual(["cia2_vic_bank:3", "serial_bus:f8"]);
@@ -145,6 +148,11 @@ describe("bits touched on a shared register", () => {
     expect(touchedUnits(map, 0xd015, null, 0x01)).toHaveLength(8);
     expect(touchedUnits(map, 0xd011, 0x1b, 0x9b)).toEqual(["vic_raster_irq"]);
     expect(touchedUnits(map, 0xd011, 0x1b, 0x1b)).toEqual([]);
+    // FLD's per-line store changes YSCROLL only; sideborder's DEC $D016 ($C8 -> $C7) changes XSCROLL and CSEL.
+    expect(touchedUnits(map, 0xd011, 0x1c, 0x1b)).toEqual(["vic_yscroll"]);
+    expect(touchedUnits(map, 0xd016, 0xc7, 0xc8)).toEqual(["vic_xscroll"]);
+    expect(touchedUnits(map, 0xd016, 0xc0, 0xc8)).toEqual([]);
+    expect(touchedUnits(map, 0xd018, 0x35, 0x15)).toEqual(["vic_matrix_base"]);
   });
   it("reads $D019 as acknowledge: a 1 bit touches its source", () => {
     expect(touchedUnits(map, 0xd019, 0x01, 0x01)).toEqual(["vic_raster_irq"]);

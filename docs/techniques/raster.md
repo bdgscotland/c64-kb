@@ -382,6 +382,14 @@ Bauer's article and the VICE source, not from a run.
 **Cost:** cycles_per_line=63, lines_active=40, irq_slots=2
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-fld (40 lines, the recipe's largest)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/fld.md`
+saw YSCROLL change on every line of the gap and the raster compare
+re-armed each frame. FLD sets the display's row phase, so beside
+`soft_scroll_v` it is an ownership conflict ([#71](https://github.com/bdgscotland/c64-kb/issues/71)). The recipe's
+`$0314` vector, CIA2 timer and zero-page bytes are its own choices.
 
 ### Why
 
@@ -432,8 +440,16 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 **Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2, sprites_per_line=8
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-sideborder-open (42 lines, eight sprites on the line)
-**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns), vic_xscroll (shares), vic_yscroll (shares)
 **Claims basis:** derived-listing
+
+`DEC $D016` / `INC $D016` clears CSEL only when XSCROLL is 0, and passes
+XSCROLL through 7 on the way. The badline-free region is made by
+rewriting YSCROLL on every line. Both are writes inside the band that
+must follow whatever scroll the rest of the frame uses, so `shares`. A
+store trace of `recipes/kickassembler/sideborder-open.md`
+(`scripts/claims-watch.ts`) saw both fields change on every line of the
+band. The two items were added with the units ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 
@@ -515,8 +531,12 @@ Border-opening IRQ overhead plus a sprite multiplex update on the same line can 
 **Cost:** cycles_per_line=63, lines_active=161, cycles_per_frame=13713, cycles_per_frame_typical=13703, irq_slots=3, sprites_per_line=3
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-dysp (the 161-line band at 63 wall cycles a line, every `DEC $D016` traced on cycle 56, plus the CIA-timed table rebuild: 3,570 worst and 3,560 in 254 of 357 frames; the design's largest sprite set on one line is three)
-**Claims:** sprite_0-3 (owns), vic_raster_irq (owns)
+**Claims:** sprite_0-3 (owns), vic_raster_irq (owns), vic_xscroll (shares), vic_yscroll (shares)
 **Claims basis:** derived-listing
+
+The two `shares` items are `sideborder_open`'s, for the same reasons; a
+store trace of `recipes/kickassembler/dysp.md` saw both fields change on
+every line of the band ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 

@@ -365,8 +365,15 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-fli-image
 **Cost includes:** stable_raster_irq, double_irq
-**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns)
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns), vic_yscroll (owns), vic_matrix_base (owns), vic_char_base (owns)
 **Claims basis:** derived-listing
+
+The handler stores `$D011` and `$D018` on every FLI line: YSCROLL forces
+the badline, the matrix bits pick the line's colour screen, and each
+whole-byte `$D018` store rewrites the bitmap base with it. A store trace
+of `recipes/kickassembler/fli-image.md` (`scripts/claims-watch.ts`) saw
+YSCROLL and the matrix bits change on every line. The three VIC field
+units were added with the units themselves ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 

@@ -224,10 +224,28 @@ function contentionText(e: Entry, list: string): Pick<UnitHit, "rationale" | "re
       resolution = `${CHAIN_HOST} is in the set: rewrite both raster handlers as entries in its table, so the table alone programs $D012.`;
     return { rationale, resolution };
   }
+  if (e.units.some((u) => VIC_FIELDS.has(u))) return { rationale, resolution: vicFieldResolution(e) };
   return {
     rationale,
     resolution: `Give one of them other units (another sprite range, another SID voice), or rewrite one to share the unit under the other's protocol.`,
   };
+}
+
+// The VIC scroll and pointer fields (#71): one of each, so no technique can
+// be given "another" one.
+const VIC_FIELDS: ReadonlySet<string> = new Set([
+  "vic_yscroll",
+  "vic_xscroll",
+  "vic_matrix_base",
+  "vic_char_base",
+]);
+
+function vicFieldResolution(e: Entry): string {
+  const { first, second } = e;
+  const others = e.units.some((u) => !VIC_FIELDS.has(u))
+    ? " For the other units, give one technique different ones."
+    : "";
+  return `The VIC has one of each field. Keep one owner: ${first.name} or ${second.name} sets the field for the frame, and the other writes it only on its own lines, from the owner's value, and restores it after (as scroll_panel_split does below a scrolling playfield). Two techniques that both set it on the same lines cannot run together.${others}`;
 }
 
 function zeroPageText(e: Entry, list: string): Pick<UnitHit, "rationale" | "resolution"> {
