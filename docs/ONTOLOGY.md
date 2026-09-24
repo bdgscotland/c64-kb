@@ -669,7 +669,7 @@ variants of those names. Read by `c64_recipe_lookup` (`verified_on[]`) and
 
 Direction: `GameDesign → Technique`, property `phase` ("play",
 "transition" or "init"), and `calls_low`, `calls_high` when the item
-states a count (`×N` or `×M-N`, #37)
+states a count (`×N` or `×M-N`, #37, schema 35)
 
 Meaning: "this game runs this technique in this phase." Authored with
 the `**Composes:**` line (`CONVENTIONS-game-designs.md`); `name (init)`

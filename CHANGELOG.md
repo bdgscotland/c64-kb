@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 809, schema 34, tools 2.9.0, package 0.22.0.
+Data 810, schema 35, tools 2.10.0, package 0.23.0.
+
+**Game designs count calls, check per phase, and every platformer
+member has a figure (schema 35, tools 2.10.0, package 0.23.0, data 810;
+#37).** A `**Composes:**` item may say `name ×N` or `×M-N`; COMPOSES
+edges carry `calls_low`/`calls_high` and `c64_plan_budget` multiplies
+(the platformer's HUD is `decimal_print ×2-7`; it was counted once).
+`c64_check_compatibility` takes `design` and checks each phase alone.
+Measured in VICE on profile builds: frame_sync_loop 314 (its old line
+was only a byte count), joystick_autorepeat 73, jump_arc_table 66,
+fixed_point_8_8 31, error_channel_check 81,421 (multi-frame),
+soft_scroll_v 46; text_mode_overlay_render 2,005 typical, 18,984 on a
+lock frame. The platformer's measured worst was 34 % over the
+prediction: six enemies' sprite writes and the test driver were in no
+member, the HUD was one call, and the KERNAL's 60 Hz IRQ costs 235 when
+it lands; with those, play predicts 6,888-14,320 and the measured 8,693
+/ 10,287 fall inside. The shmup loop is timed: worst 8,178 PAL / 8,474
+NTSC, and it runs every frame; its star carry is 45 % of the worst loop,
+not "small". joystick_edge_detect keeps #54's 114 (port read included);
+the platformer's 76 is the split alone.
 
 **Recipe claims in the graph, a listing scan, `c64_claims_watch`, and
 Productions (schema 34, tools 2.9.0, package 0.22.0, data 809; #22 step

@@ -99,7 +99,9 @@ What the table shows:
   `MAX`.
 
 With the missing figures and the call count in, `c64_plan_budget`
-predicts 6,850-14,282 cycles plus 1,075 of badlines for play; the measured
+predicts 6,888-14,320 cycles plus 1,075 of badlines for play (6,850-14,282
+while joystick_edge_detect's figure was the 76-cycle split alone; the
+technique's line is 114, port read included); the measured
 worst, 8,693 PAL and 10,287 NTSC, lies inside. The parts not in any
 member (about 3,900 cycles on PAL) are covered by the members that
 measured below their figures and by the range's width, not by a member.
