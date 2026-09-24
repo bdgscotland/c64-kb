@@ -113,7 +113,7 @@ start:
     cli
     jmp *
 
-// Enters on cycle 37-43 of OPEN_LINE; the write lands about ten cycles
+// Enters on cycle 39-45 of OPEN_LINE; the write lands about ten cycles
 // later, well inside the line. RSEL goes to 0 with YSCROLL and DEN kept.
 // Bit 7 is masked off too: on a read it is the raster's ninth bit, and
 // written back set it would move the raster compare above line 255.
@@ -280,9 +280,11 @@ been 0 at line 55 as well. The window is exact at both ends.
 
 ### Where the clearing write may land, measured
 
-The interrupt handler is entered on cycle 37–43 of its line (7 cycles of
-interrupt sequence, 29 of KERNAL dispatcher, 0–6 of finishing the
-interrupted instruction; `stable-raster-irq.md`), and the `LDA/AND/STA`
+The interrupt handler is entered on cycle 39–45 of its line (the interrupt
+sequence starts on cycle 3–9, then 7 cycles of sequence and 29 of KERNAL
+dispatcher; measured in VICE, `techniques/raster.md`, `stable_raster_irq`
+Cycle budget; an earlier version said 37–43, arithmetic, here and in the
+listing comment), and the `LDA/AND/STA`
 puts the new RSEL on the bus about ten cycles later, in the second half of
 the line. With that latency, `OPEN_LINE` was swept in VICE:
 
@@ -302,7 +304,7 @@ the left edge, still saw RSEL=1. 251 fails although the write lands before
 that line's cycle 63: the left-edge check at X=24 (roughly cycle 16, by
 arithmetic from the X=344-on-cycle-56 figure in `sideborder-open.md`, not
 measured here) has already set the flip-flop when the handler is entered
-on cycle 37 or later. So with a plain raster interrupt the window is the
+on cycle 39 or later (37 before the entry was measured). So with a plain raster interrupt the window is the
 three whole lines 248–250, not "anything before the end of 251"; only a
 write placed in the first dozen or so cycles of 251 could stretch it, and
 nothing here needs that.
@@ -403,7 +405,7 @@ NTSC offset of 28 was derived the same way from the same three boundaries
 - VICE 3.10 x64sc, headless, `-model` default (PAL C64C: 8565, 8580, 8521;
   an earlier version said PAL 6569) and `ntsc` (6567R8); KickAssembler 5.25. All row, column and colour figures on this
   page are from those runs, measured with a script, none by eye.
-- This repository: `recipes/kickassembler/stable-raster-irq.md` (handler
-  entry on cycle 37–43), `recipes/kickassembler/raster-bars.md` (the
+- This repository: `recipes/kickassembler/stable-raster-irq.md` and
+  `techniques/raster.md` (handler entry on cycle 39–45), `recipes/kickassembler/raster-bars.md` (the
   `$EA81`/`$EA31` exits), `pitfalls/raster-and-badline.md`
   (`d012_wrap_around`).
