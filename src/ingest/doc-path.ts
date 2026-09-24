@@ -26,9 +26,9 @@ function inside(file: string, docsDir: string): boolean {
 /**
  * Resolve a caller-supplied path to a page inside `docsDir`, or null when
  * no reading of it lands there or it names an existing file outside
- * docs/ from the working directory. Candidates are tried in order (working
- * directory, repo root, docs/); the first that exists wins, else the
- * first that is inside docs/ (a new page).
+ * docs/ from the working directory. An existing page is looked for from
+ * the working directory, the repo root and docs/, in that order; a new
+ * page is placed from the repo root, docs/ or the working directory.
  */
 export function locateDoc(docPath: string, docsDir: string, cwd: string = process.cwd()): DocLocation | null {
   const clean = docPath.replace(/\0/g, "");
@@ -37,10 +37,14 @@ export function locateDoc(docPath: string, docsDir: string, cwd: string = proces
   // A file that exists where the caller stands, outside docs/, is what they meant: refuse it.
   const here = path.resolve(cwd, clean);
   if (!inside(here, root) && fs.existsSync(here)) return null;
-  const candidates = [cwd, path.dirname(root), root]
-    .map((base) => path.resolve(base, clean))
-    .filter((file) => inside(file, root));
-  const file = candidates.find((c) => fs.existsSync(c)) ?? candidates[0];
+  const under = (bases: string[]): string[] =>
+    bases.map((base) => path.resolve(base, clean)).filter((file) => inside(file, root));
+  // An existing page is found where the caller stands first. A new page is
+  // placed from the repo root first, so `docs/x.md` typed inside docs/
+  // does not become docs/docs/x.md.
+  const file =
+    under([cwd, path.dirname(root), root]).find((c) => fs.existsSync(c)) ??
+    under([path.dirname(root), root, cwd])[0];
   if (file === undefined) return null;
   return { file, source: path.relative(root, file).split(path.sep).join("/") };
 }

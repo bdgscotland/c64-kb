@@ -47,6 +47,13 @@ describe("locateDoc", () => {
     });
   });
 
+  it("places a new page spelled from the repo root, typed inside docs/, below docs/ once", () => {
+    expect(locateDoc("docs/hardware/new-page.md", docs, docs)).toEqual({
+      file: path.join(docs, "hardware/new-page.md"),
+      source: "hardware/new-page.md",
+    });
+  });
+
   it("refuses a path outside docs/", () => {
     expect(locateDoc("../../etc/passwd", docs, repo)).toBeNull();
     expect(locateDoc("/etc/passwd", docs, repo)).toBeNull();
