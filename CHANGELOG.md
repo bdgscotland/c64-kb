@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 798, schema 33, tools 2.8.0, package 0.21.0.
+Data 799, schema 33, tools 2.8.0, package 0.21.0.
+
+**Recipe: a raster road with sprites on its lines (data 799; #77).**
+`road-sprite-lines` keeps each road line's `$D016` store on one cycle
+with three sprites moving over the road and its badlines: a 64-byte
+block per line with a branch pad rewritten each frame from a table
+keyed by which of sprites 0-2 fetch on the line and whether it is a
+badline. In VICE monitor traces over 20,000,000 cycles every store
+lands on the same cycle (81,877 PAL, 93,598 NTSC); in 100 screenshots
+every line shows its own XSCROLL. The IRQ chain costs 6,348-6,350
+cycles a frame on PAL and 6,549-6,550 on NTSC (the issue's 6,300 and
+6,500 were arithmetic). Cycle numbering differs between pages; see #82.
 
 **afli_image no longer requires multicolour (data 798; #80).** It
 required `fli_image`, which requires `multicolor_bitmap`, but the
