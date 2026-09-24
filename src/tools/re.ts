@@ -34,6 +34,8 @@ interface RunInfo {
   prg: string;
   model: Model;
   cycles: number;
+  /** The BASIC SYS target, or null when the PRG has none. */
+  entry: number | null;
   start_clock: number;
   vice: string;
 }
@@ -56,7 +58,7 @@ const common = {
   disk_path: z
     .string()
     .optional()
-    .describe("A D64 attached as drive 8 (a copy is not made: pass a scratch disk)"),
+    .describe("A .d64 attached as drive 8. The disk is copied; writes are discarded"),
 };
 export const IrqChainInput = common;
 export const FrameProfileInput = {
@@ -87,20 +89,48 @@ async function collect(log: string): Promise<Hit[]> {
   return out;
 }
 
-/** The program's entry clock: the first exec of its SYS target, else 0. */
-function entryCommand(prg: string): { cmd: string; entry: number | null } {
-  const sys = readPrg(readFileSync(prg)).sys ?? null;
-  const hex = sys === null ? "" : sys.toString(16).padStart(4, "0");
-  return { cmd: sys === null ? "" : `trace exec ${hex} ${hex}\n`, entry: sys };
+class NoEntry extends Error {}
+
+/** The PRG's BASIC SYS target and the exec checkpoint that finds its first run. */
+function entryCommand(prg: string, commands: string): { cmd: string; entry: number | null; own: boolean } {
+  const entry = readPrg(readFileSync(prg)).sys ?? null;
+  if (entry === null) return { cmd: "", entry, own: false };
+  const line = `trace exec ${entry.toString(16).padStart(4, "0")} ${entry.toString(16).padStart(4, "0")}`;
+  // A marker already on the SYS address traces it; a second checkpoint would log each hit twice.
+  const own = !commands.split("\n").includes(line);
+  return { cmd: own ? line + "\n" : "", entry, own };
 }
+
+/**
+ * The entry clock: the first exec of the SYS target, or 0 for a PRG with
+ * none. Null when a SYS target exists and never ran: the caller refuses,
+ * never counting from power-on instead. Every hit is returned, those
+ * before the entry included; the entry checkpoint's own hits are dropped
+ * only when the tool added it (`own`), not when a caller's marker asked for it.
+ */
+export function fromEntry(
+  hits: Hit[],
+  entry: number | null,
+  own: boolean,
+): { start: number; hits: Hit[] } | null {
+  if (entry === null) return { start: 0, hits };
+  const first = hits.find((h) => h.kind === "exec" && h.addr === entry);
+  if (!first) return null;
+  return {
+    start: first.clock,
+    hits: own ? hits.filter((h) => !(h.kind === "exec" && h.addr === entry)) : hits,
+  };
+}
+
+const hexUp = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
 
 async function traced(
   prg: string,
   args: { model: Model; cycles: number; disk_path?: string | undefined },
   commands: string,
-): Promise<{ hits: Hit[]; start: number }> {
-  const { cmd, entry } = entryCommand(prg);
-  const run = runBatch({
+): Promise<{ hits: Hit[]; start: number; entry: number | null }> {
+  const { cmd, entry, own } = entryCommand(prg, commands);
+  const run = await runBatch({
     prg,
     monCommands: commands + cmd,
     cycles: args.cycles,
@@ -108,27 +138,35 @@ async function traced(
     ...(args.disk_path ? { disk: args.disk_path } : {}),
   });
   try {
-    const all = await collect(run.log);
-    const first = entry === null ? undefined : all.find((h) => h.kind === "exec" && h.addr === entry);
-    const start = first?.clock ?? 0;
-    return { hits: all.filter((h) => h.clock >= start && !(h.kind === "exec" && h.addr === entry)), start };
+    const r = fromEntry(await collect(run.log), entry, own);
+    if (!r)
+      throw new NoEntry(`entry ${hexUp(entry ?? 0)} not reached in ${args.cycles} cycles; raise cycles`);
+    return { ...r, entry };
   } finally {
     run.dispose();
   }
 }
 
-function info(prg: string, args: { model: Model; cycles: number }, start: number): RunInfo {
+const NO_SYS = "entry not known: the PRG has no BASIC SYS line, so clocks and frames count from power-on";
+
+function info(
+  prg: string,
+  args: { model: Model; cycles: number },
+  t: { start: number; entry: number | null },
+): RunInfo {
   return {
     prg,
     model: args.model,
     cycles: args.cycles,
-    start_clock: start,
+    entry: t.entry,
+    start_clock: t.start,
     vice: resolveX64sc()?.path ?? "",
   };
 }
 
 function refusal(e: unknown): { ok: false; error: string; reason: string } {
   if (e instanceof ViceBatchError) return { ok: false, error: e.message, reason: e.reason };
+  if (e instanceof NoEntry) return { ok: false, error: e.message, reason: "no-entry" };
   throw e;
 }
 
@@ -145,7 +183,9 @@ export async function reIrqChain(args: {
     const a = await traced(prg, args, storeCommands());
     const handlers = handlersFrom(analyseIrqChain(a.hits, frame, a.start).vectors);
     const b = await traced(prg, args, execCommands(handlers));
-    return { ok: true, run: info(prg, args, b.start), result: analyseIrqChain(b.hits, frame, b.start) };
+    const result = analyseIrqChain(b.hits, frame, b.start);
+    if (b.entry === null) result.unknowns.push(NO_SYS);
+    return { ok: true, run: info(prg, args, b), result };
   } catch (e) {
     return refusal(e);
   }
@@ -168,11 +208,10 @@ export async function reFrameProfile(args: {
   const frame = REGION_TIMING[videoRegion(args.model)].cycles_per_frame;
   try {
     const t = await traced(prg, args, regionCommands({ start, stop }));
-    return {
-      ok: true,
-      run: info(prg, args, t.start),
-      result: analyseRegion(t.hits, { start, stop }, frame, t.start),
-    };
+    const hits = t.hits.filter((h) => h.clock >= t.start);
+    const result = analyseRegion(hits, { start, stop }, frame, t.start);
+    if (t.entry === null) result.unknowns.push(NO_SYS);
+    return { ok: true, run: info(prg, args, t), result };
   } catch (e) {
     return refusal(e);
   }
