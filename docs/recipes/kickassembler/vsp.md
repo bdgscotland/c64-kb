@@ -262,9 +262,13 @@ lands on line 51 at VICE's cycle 24. That log prints VICE's cycle-table
 index, which is Bauer's cycle minus one (`runtime/vice-reference.md`,
 "What the CYC column counts", from the VICE source), so the write is
 cycle 25 in Bauer's numbering, and a shift of 10 is `25 - 15`, what the
-technique page's formula gives. An earlier version left the counting
-base unchecked. The recipe does not otherwise tie
-`VSP_PAD` to an absolute cycle.
+technique page's formula gave. An earlier version left the counting
+base unchecked. A VICE monitor store trace of this listing's write
+(2026-09-24) prints CYC 24 on line 51 on both models, the same number as
+the log, and in the store-trace numbering every other page uses the shift
+is `24 - 14`; `recipes/kickassembler/agsp.md` traced 14 + N for all N from
+0 to 39. The "+1" read into the log above is therefore unconfirmed, and
+`vsp_glitch` now gives N = cycle − 14 by the store's cycle.
 
 ### One frame without the write
 

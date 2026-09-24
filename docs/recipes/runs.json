@@ -2029,5 +2029,17 @@
       "pal": "screenshots/linecrunch.png",
       "ntsc": "screenshots/linecrunch-ntsc.png"
     }
+  },
+  "kickassembler/agsp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/agsp.png",
+      "ntsc": "screenshots/agsp-ntsc.png"
+    }
   }
 }

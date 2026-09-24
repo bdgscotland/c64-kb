@@ -324,7 +324,7 @@ VSP is a $D011 trick; the CSEL toggle described here before belongs to
 `sideborder_open`. On the line that is about to be a badline for a
 character row, arrange for the badline condition to be *false* in cycle 14
 (YSCROLL not equal to `line & 7` at that moment), then at a chosen cycle
-between 15 and 53 write $D011 with YSCROLL = `line & 7`, so the condition
+between 14 and 53 (the store's cycle) write $D011 with YSCROLL = `line & 7`, so the condition
 becomes true late. The VIC starts its c-accesses three cycles after BA drops,
 from whichever column slot the beam has reached, and the columns before it
 are not fetched for this row. Because the video counter VC advances only by
@@ -340,11 +340,18 @@ each cycle of extra delay moves the screen one more character right, from 1
 to 40; the three delays before the first shift spoil only the late row
 itself (one column, two columns, the whole row). The offset does not carry
 into the next frame: a frame without the late write is normal, so the write
-is made every frame. VICE's VSP-bug log puts the recipe's 10-character write
-at its cycle 24 of the line, a 0-based table index (VICE source,
-`runtime/vice-reference.md`), so Bauer's cycle 25, and 10 is 25 − 15 as
-the formula N = cycle − 15 says. An earlier version left the counting
-base unchecked. (An earlier version of this paragraph said the display moved left,
+is made every frame. In the numbering the other pages use, the cycle of
+the store as a VICE store trace prints it (`runtime/vice-reference.md`),
+N = cycle − 14: the recipe's 10-character write traces on cycle 24 on
+both models, and `recipes/kickassembler/agsp.md` traced its late write on
+14 + N for every N from 0 to 39 and saw the picture follow, one cell per
+cycle. VICE's VSP-bug log prints `Cycle: 24` for the same write; an
+earlier version of this paragraph read that as a table index one below
+Bauer's cycle, made it 25 and gave N = cycle − 15, and "How" said
+"between 15 and 53". The log and the store trace print the same number
+for the same store, so either the log's "+1" reading was wrong or the log
+reports the cycle after the store; not settled here. By the store's cycle
+the range is 14 to 53. (An earlier version of this paragraph said the display moved left,
 that the offset persisted into later frames until re-based, and that one
 write per character row was needed; the recipe shows right, one frame, and
 one write per frame.)
@@ -461,7 +468,7 @@ Given a value that is safe for the next line, the write itself may land anywhere
 
 **FPP (flexible pixel position).** Rewrite YSCROLL on every line of a row so the VIC repeats or skips single pixel lines of the character data, which stretches and squashes the picture vertically. Not measured here.
 
-**AGSP (any given screen position).** Combine FLD or linecrunch with VSP (`vsp_glitch`) for a whole-screen scroll of any distance in both axes in one frame. Not measured here.
+**AGSP (any given screen position).** Linecrunch, FLD and VSP (`vsp_glitch`) together place the whole screen at any pixel position in one frame; see `agsp_free_scroll`, measured.
 
 **Border stripes.** With the top and bottom borders open (`topbottom_border_open`) the same idle fetch draws `$3FFF` there too; the byte can be changed per line for a cheap full-height pattern.
 
@@ -543,9 +550,9 @@ starts N rows on and N lines lower. **Mid-screen.** Writes on the last
 line of a row and the lines after it crunch from there; the rows above
 are untouched. **With FLD.** Crunch N rows, then hold the next badline
 off with FLD for the same N lines, and the display starts on line 51
-again, N rows on: a vertical coarse scroll with no gap. Not measured
-here. **AGSP.** With VSP for the horizontal part (`vsp_glitch`). Not
-measured here.
+again, N rows on: a vertical coarse scroll with no gap; measured as part
+of `agsp_free_scroll`. **AGSP.** With VSP for the horizontal part
+(`vsp_glitch`): `agsp_free_scroll`.
 
 ### Cycle budget
 
@@ -566,6 +573,98 @@ padding. The picture after the crunch costs nothing.
   application in the Commodore 64" (1996), §3.7.2, §3.14.4 "Linecrunch",
   §3.14.5: https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
 - Codebase64, "Linecrunch": https://codebase64.c64.org/doku.php?id=base:linecrunch
+
+---
+
+## agsp_free_scroll — AGSP: the whole screen at any pixel position, from linecrunch, FLD and VSP
+
+**Complexity:** scene-tier
+**Region:** both
+
+**Uses registers:** SCROLY, SCROLX, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** linecrunch, fld_flexible_line_distance, vsp_glitch, stable_raster_irq
+**Raster band:** 46-95 (the agsp recipe's IRQ line is 46; its handler acknowledges on line 86 to 95, measured)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns), vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/agsp.md`
+saw `$D011` written on every line from 50 to the late badline and once
+after it, `$D016` once per frame, and the raster compare re-armed each
+frame. The recipe's `$0314` vector and zero-page bytes are its own choices.
+
+### Why
+
+A game that scrolls in eight directions normally copies screen and colour
+RAM every eight pixels of travel. AGSP (any given screen position) moves
+the VIC's view of screen RAM instead: a few register writes at the top of
+each frame put the text screen at any pixel position, and no byte of the
+screen is copied. The codebase64 article of that name gives the method,
+"VSP ... for the horizontal position and a line crunch ... for the
+vertical position".
+
+### How
+
+At the top of the frame, before the first text row:
+
+1. Crunch M rows with `linecrunch`: M lines, one write each.
+2. Hold the next badline off with FLD for MMAX − M + YS lines, so the
+   crunch and the gap together are always MMAX + YS lines and the top of
+   the text does not move with M. YS (0-7) is the fine vertical scroll.
+3. Make that badline late with `vsp_glitch`: YSCROLL not matching at
+   cycle 14, matching from the write on cycle 14 + N (store-trace cycle).
+   The rows below start N cells earlier in screen RAM.
+4. XSCROLL for the last seven pixels.
+
+Draw every line above the text, the late row included, in an invalid
+mode (ECM and BMM set): it is black, and the late row's first cells are
+stale. The text starts MMAX + YS + 8 lines below line 51.
+
+### Why it works
+
+Each part is its own measured technique. `linecrunch`: a YSCROLL write
+on cycles 58-62 (PAL) or 58-64 (NTSC) of a line with RC = 7 uses up a
+row. `fld_flexible_line_distance`: a YSCROLL that never matches keeps
+the VIC idle. `vsp_glitch`: a late badline fetches the row from the cell
+the beam has reached and leaves the video counter short. Put together in
+`recipes/kickassembler/agsp.md` (VICE x64sc 3.10, PAL c64c and NTSC)
+with MMAX = 16: every value of N (0-39), M (0-16), YS (0-7) and XS (0-7)
+swept one at a time gave a picture whose 200 lines 51-250 all match the
+model pixel for pixel, on both models, and the late write traced on cycle
+14 + N every time. The video counter wraps at 1024, so screen RAM is a
+1,024-byte torus in both axes: `$07E8`-`$07FF` (the sprite pointers)
+appear in the picture. A playfield wider or taller than the screen needs
+the rows and columns that scroll into view written as they arrive, which
+the recipe does not do.
+
+### Variations
+
+**Bitmap.** The video counter also addresses bitmap data, so the same
+writes place a bitmap (Bauer §3.14.6); not measured here. **Fewer rows
+of range.** A smaller MMAX shortens the band and the black area above the
+text, at the cost of vertical range. **Split screen.** The same writes
+lower down move a part of the screen and leave a status area above.
+
+### Cycle budget
+
+The band holds the CPU for every line from 50 to the late badline, one
+write per line at a fixed cycle, from a stable raster; in the recipe the
+handler runs from line 46 to line 86-95, up to 50 raster lines a frame.
+Not timed with a CIA.
+
+The late write is the VSP write, with its crash on some machines
+(`vsp_glitch`, "The VSP crash"): AGSP inherits the Safe VSP rules.
+
+### Recipes
+
+- `recipes/kickassembler/agsp.md` — the text screen on two sines, x 0 to
+  319 and y 0 to 135, PAL and NTSC, every line of the picture checked,
+  with the sweeps of N, M, YS and XS.
+
+### Sources
+
+- Codebase64, "Any Given Screen Positioning (AGSP) VSP with a line
+  crunch": https://codebase64.c64.org/doku.php?id=base:agsp_any_given_screen_position
 
 ---
 

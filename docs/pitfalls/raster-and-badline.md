@@ -664,7 +664,7 @@ delay:  dec count
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D011
-**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open, sprites_only_screen_mode, dysp_side_border_sprites
+**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open, sprites_only_screen_mode, dysp_side_border_sprites, agsp_free_scroll
 
 ### Symptom
 
@@ -688,8 +688,10 @@ whatever was there: the power-on RAM pattern, or the tail of a previous
 program's data, tables or code. Every technique that opens lines the VIC
 does not fetch a row for exposes it: the FLD gap (`fld_flexible_line_distance`),
 a side-border region whose YSCROLL is rewritten each line
-(`sideborder_open`), and the top and bottom borders once opened
-(`topbottom_border_open`). Measured in VICE x64sc 3.10: with `$3FFF` set to
+(`sideborder_open`), the top and bottom borders once opened
+(`topbottom_border_open`), and the last lines of an AGSP screen whose row
+would need a badline after line 247 (`agsp_free_scroll`: one to three
+lines when its fine scroll is 5 to 7, measured in its recipe). Measured in VICE x64sc 3.10: with `$3FFF` set to
 `%10101010`, every line of an 18-line FLD gap on PAL and a 22-line gap on
 NTSC is 160 black and 160 background pixels across x 32-351, alternating
 from x = 32.

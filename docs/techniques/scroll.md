@@ -1352,11 +1352,15 @@ mismatch of about 60 ms PAL and 50 ms NTSC per crossing.
 
 ### Variations
 
-- **AGSP.** Rewriting `$D011` and `$D016` per raster line, and the VM
-  nibble mid-frame, gives a hardware-scrolled playfield without any matrix
-  redraw at all, at the price of a per-line interrupt and a much harder
-  stability problem. It is the standard answer when the whole screen
-  scrolls and nothing else needs the CPU.
+- **AGSP.** A few `$D011` writes at the top of the frame (linecrunch,
+  FLD and one late badline) and one `$D016` write place the whole screen
+  at any pixel position with no matrix redraw; see `agsp_free_scroll` in
+  `techniques/raster.md`, measured. The writes hold the CPU only for the
+  band above the text, from a stable raster, and the late badline is a
+  VSP write with its crash risk. An earlier version of this item said
+  AGSP rewrote `$D011` and `$D016` on every raster line and the video
+  matrix nibble mid-frame, with a per-line interrupt; the codebase64 AGSP
+  example and the recipe do neither.
 - **A panel that does not scroll.** A world of 25 rows plus a status area
   wants the split raster to become a mode change rather than a colour
   deadline; see `scroll_panel_split`.
