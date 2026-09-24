@@ -5,7 +5,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 811, schema 35, tools 2.10.0, package 0.23.0.
+Data 812, schema 36, tools 2.11.0, package 0.24.0.
+
+**Device nodes, and a cartridge table that was wrong in four rows
+(schema 36, tools 2.11.0, package 0.24.0, data 812; #87).** Every row of
+the cartridge I/O table in c64-registers-reference.md now comes from
+VICE 3.10's cartridge source (VICE's behaviour, not a real cartridge).
+EasyFlash's `$DF00` is 256 bytes of RAM, not "LED + I/O" (the LED is
+bit 7 of `$DE02`); REU and MMC64 registers were in the `$DE00` column;
+KCS was "$DF00 control" in both columns; Final Cartridge was grouped
+with Action Replay. A `$DE00` write does not trigger the Action Replay
+freeze (bit 6 releases it); the page and the clobbering pitfall said it
+could. New `docs/hardware/devices.md` (11 devices, with Claims and VICE
+attach lines) and `CONVENTIONS-devices.md`; `Device` nodes, recipe
+`devices:` frontmatter as REQUIRES_DEVICE edges (22 recipes), checked by
+verify:recipes against the run's disk, flags and `.crt` type.
+`c64_recipe_lookup` returns devices; `c64_check_compatibility` adds
+`recipe_device_conflict` (reu_dma × cartridge_bank_easyflash clash on
+`expansion_io2`).
 
 **tech-tech masks CIA2 with `$7F` (data 811; #88).** The listing wrote
 to `$DD0D` the byte it had just read from `$DC0D`. A VICE trace on PAL
