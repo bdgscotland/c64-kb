@@ -158,6 +158,12 @@ export function parseMeasuredFrame(line: string): MeasuredFrame[] | { error: str
   return out;
 }
 
+/**
+ * Every line's entries, in page order. Two lines may give the same phase
+ * and region: each line is its own measurement (a build, an instrument, a
+ * run) with its own basis and source. Before #107 the second was skipped
+ * with a warning, while the conventions allowed it.
+ */
 function measuredFrames(body: string, where: string): MeasuredFrame[] {
   const out: MeasuredFrame[] = [];
   for (const m of body.matchAll(MEASURED_LINE)) {
@@ -166,15 +172,7 @@ function measuredFrames(body: string, where: string): MeasuredFrame[] {
       warn(`${where}: **Measured frame:** line refused: ${parsed.error}`);
       continue;
     }
-    for (const f of parsed) {
-      if (out.some((o) => o.phase === f.phase && o.region === f.region)) {
-        warn(
-          `${where}: **Measured frame:** ${f.phase} ${f.region} is given on two lines — second one skipped`,
-        );
-        continue;
-      }
-      out.push(f);
-    }
+    out.push(...parsed);
   }
   return out;
 }
