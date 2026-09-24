@@ -2017,5 +2017,17 @@
       "pal": "screenshots/kefrens-bars.png",
       "ntsc": "screenshots/kefrens-bars-ntsc.png"
     }
+  },
+  "kickassembler/linecrunch": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/linecrunch.png",
+      "ntsc": "screenshots/linecrunch-ntsc.png"
+    }
   }
 }

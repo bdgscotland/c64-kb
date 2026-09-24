@@ -797,3 +797,79 @@ From `recipes/kickassembler/kefrens-bars.md`, the PAL block:
 - Technique: `kefrens_bars` in `techniques/raster.md`.
 - Technique: `badline_synchronization` in `techniques/raster.md`: the 20 and 22 free cycles.
 - Recipe: `recipes/kickassembler/kefrens-bars.md`, "The block-length sweep".
+
+---
+
+## linecrunch_write_outside_window — A linecrunch write outside cycles 58-62 (PAL) repeats a row or crunches nothing
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** linecrunch
+
+### Symptom
+
+A linecrunch that should scroll the screen up N rows shows row 0 N lines
+lower instead, as if it were an FLD; or shows one row twice and skips
+the next; or loses one row whatever N is; or puts a few stray cells at the
+right end of the line above the text. A change of one cycle in the loop
+switches between these and the working effect, and a self-check that
+only times the first badline after the crunch still passes.
+
+### Mechanism
+
+The write must make the badline condition true after the VIC's row-end
+check in cycle 58 of a line with RC = 7, and the condition must be false
+when the next line starts. Measured in VICE x64sc 3.10 with
+`recipes/kickassembler/linecrunch.md` swept one cycle at a time
+(`:ep`, `:en`), store-trace cycles in Bauer's numbering:
+
+| Write cycle | PAL | NTSC |
+|---|---|---|
+| 53 to 57 | No crunch; at 53 to 55 one or two fetched cells at the right of the line above the text | No crunch; at 53 to 56 one to three such cells |
+| 58 to 62 | Crunch | Crunch |
+| 63, 64 | (63 is the last cycle: no crunch) | Crunch on 63 and 64 |
+| The line's last cycle (63 / 65) | No crunch | No crunch |
+| 1, 2 of the next line | One row lost, not N | The same |
+
+In a separate PAL and NTSC test with the writes in the middle of a row,
+a write on 54 to 57 of the row's last line showed that row again and
+skipped the next (Bauer's doubled text lines), and on PAL a matching
+write on cycles 15 to 54 started a late badline, the `vsp_glitch`
+mechanism, and crunched nothing.
+
+The window is five cycles on PAL, so an unstable raster entry with its
+usual jitter lands some frames outside it.
+
+### Fix
+
+Enter from a stable raster and put every write on one cycle in the
+middle of the window: 60 works on both models. Confirm with a store
+trace of `$D011`: every write of the loop on the same cycle, every frame.
+Check the crunch in the picture, not only by timing the badline after
+it: a program's own check that line 51 + N is a badline passes whether or
+not the rows were crunched, because the loop's last write makes that line
+a badline in every case.
+
+### Worked example
+
+From `recipes/kickassembler/linecrunch.md`: a 63-cycle loop (65 on NTSC)
+entered from the double IRQ at a traced delay, one store per line.
+
+```text
+!loop:
+    lda tab, x          // $78 | (line & 7): ECM+BMM blank the crunched line
+    sta $d011           // cycle 60 on both models, by store trace
+    inx
+    cpx n
+    beq !done+
+    Delay(63 - 18)      // 65 - 18 on NTSC
+    jmp !loop-
+```
+
+### Cross-references
+
+- Technique: `linecrunch` in `techniques/raster.md`.
+- Technique: `vsp_glitch` in `techniques/raster.md`: the late badline a write before cycle 55 makes.
+- Recipe: `recipes/kickassembler/linecrunch.md`, "The write-cycle sweep".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.4, §3.14.5.

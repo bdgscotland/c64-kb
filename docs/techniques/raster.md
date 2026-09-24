@@ -457,7 +457,7 @@ Given a value that is safe for the next line, the write itself may land anywhere
 
 ### Variations
 
-**Linecrunch.** Make a badline happen and then, on the same line, rewrite YSCROLL so the row counter advances without the row being displayed; each crunched line skips one character row. The display moves up instead of down. Not measured here.
+**Linecrunch.** The reverse: a YSCROLL write that matches the line after its cycle 58 makes the next line use up a whole character row, so the display moves up instead of down; see `linecrunch`, measured. (An earlier version of this paragraph said to make a badline happen and then rewrite YSCROLL on the same line so the row counter advances; a badline made during the line is a late badline, `vsp_glitch`, not a crunch.)
 
 **FPP (flexible pixel position).** Rewrite YSCROLL on every line of a row so the VIC repeats or skips single pixel lines of the character data, which stretches and squashes the picture vertically. Not measured here.
 
@@ -472,6 +472,100 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 ### Recipes
 
 - `recipes/kickassembler/fld.md` — a bouncing display driven by a sine table, `$3FFF` striped, the first badline read back and checked against 51 + N each frame, PAL and NTSC.
+
+---
+
+## linecrunch — Linecrunch: one character row used up per raster line
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** stable_raster_irq, badline_synchronization
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/linecrunch.md` saw `$D011` written once per
+crunched line and once per frame on line 46, and the raster compare
+re-armed each frame. The recipe's `$0314` vector and zero-page bytes are
+its own choices.
+
+### Why
+
+FLD moves the text display down without moving screen RAM; linecrunch
+moves it up. Each crunched raster line uses up a whole character row, so
+N lines scroll the screen N rows. With the colour and screen data left in
+place, a whole screen, bitmap included, scrolls vertically by rows for a
+few `$D011` writes per frame (Bauer §3.14.4; codebase64 "Linecrunch").
+
+### How
+
+On a line whose row counter RC is 7, write `$D011` with YSCROLL equal to
+that line's low three bits on a cycle between 58 and the line's
+second-to-last cycle: 58 to 62 on PAL, 58 to 64 on NTSC (measured). The
+next line is drawn from the next row with RC still 7, and uses that row
+up. Repeat on every line for N rows. RC is 7 before the first badline of
+a frame, so a run of writes from line 50 crunches from line 51. On the
+last crunched line write a YSCROLL that makes the following line a
+badline: the display resumes there with row N. The crunched lines show
+pixel row 7 of stale character pointers; set ECM and BMM in the same
+writes and they are black.
+
+### Why it works
+
+Bauer (§3.7.2): in cycle 58 of a line with RC = 7 the VIC loads VCBASE
+from VC and goes idle; RC is reset to 0 only by a badline condition in
+cycle 14; VC counts the g-accesses in display state. A condition made
+true after cycle 58 returns the VIC to display state with RC still 7 and
+no c-access. The next line, which no longer matches, is drawn from the
+new VCBASE with RC = 7, VC advances 40, and its cycle 58 moves VCBASE on
+another row. Measured in VICE x64sc 3.10, PAL c64c and NTSC, by
+`recipes/kickassembler/linecrunch.md`: with N writes on cycle 60 the
+first text line is 51 + N and shows row N, pixel row 0, on every frame;
+every line from 51 to the last modelled row matches, 172 on PAL and 144
+on NTSC.
+
+The window is the whole of the design. Swept one cycle at a time in the
+recipe: 58 to 62 crunch on PAL, 58 to 64 on NTSC; the line's last cycle
+(63 or 65) and cycles 53 to 57 do not. A write on 54 to 57 of a row's
+last line repeats the row instead (Bauer's doubled text lines, §3.14.5);
+a matching write on 15 to 54 starts a late badline, the `vsp_glitch`
+mechanism. An earlier plan for this entry (#19, 2026-09-23) made the
+condition true after cycle 14 and false before 58; that is the late
+badline, and it crunched nothing.
+
+### Variations
+
+**Top of screen.** The recipe's form: crunch from line 51, the screen
+starts N rows on and N lines lower. **Mid-screen.** Writes on the last
+line of a row and the lines after it crunch from there; the rows above
+are untouched. **With FLD.** Crunch N rows, then hold the next badline
+off with FLD for the same N lines, and the display starts on line 51
+again, N rows on: a vertical coarse scroll with no gap. Not measured
+here. **AGSP.** With VSP for the horizontal part (`vsp_glitch`). Not
+measured here.
+
+### Cycle budget
+
+One `$D011` write per crunched line, at a fixed cycle, so the CPU is
+held for every crunched line: 63 cycles on PAL, 65 on NTSC, from a
+stable raster. In the recipe the loop is 15 cycles of work and the rest
+padding. The picture after the crunch costs nothing.
+
+### Recipes
+
+- `recipes/kickassembler/linecrunch.md` — 0 to 12 rows crunched from a
+  sine, PAL and NTSC, every line of the picture checked, with the
+  write-cycle sweep.
+
+### Sources
+
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.7.2, §3.14.4 "Linecrunch",
+  §3.14.5: https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+- Codebase64, "Linecrunch": https://codebase64.c64.org/doku.php?id=base:linecrunch
 
 ---
 
