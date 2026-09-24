@@ -322,7 +322,8 @@ irq_top:
 .macro Sync(pad, entry) {
         ldx sp_save
         txs                     // drop this IRQ's frame: irq_top's stays below
-        Delay(pad)
+        ldx #D016_HUD           // kept through the road for line 203's STX $D016
+        Delay(pad - 2)
         lda $d012
         cmp $d012
         beq !+
@@ -341,14 +342,17 @@ sync_ntsc: Sync(SYNC_N, ENTRY_N)
 // ---- after line 203's stores: back to line 251 --------------------------------------------
 // Each road copy ends with line 203's block, a badline: $D018 on cycle 7
 // (the video matrix is read from cycle 15; c64-kb raster_split_modes),
-// $D016 on cycle 56, held by the badline (its STA reads on cycle 12).
+// $D016 on cycle 11, from X, before BA falls on 12. An earlier version
+// loaded A for it: that STA read its operand on 12, waited for the
+// badline and wrote on cycle 56, so line 203 was drawn in the road's
+// multicolour mode and XSCROLL (VICE store trace, issue #86).
 // $D021 lands here, after the VIC's fetch: row 19 is
 // solid characters, so no background shows on its lines.
 hud_rest:
         lda #C_HUD
         sta $d021
-        lda $d012               // read on line 204: cycle 6 on PAL, 4 on NTSC
-                                // (VICE; an earlier comment said 203 on NTSC)
+        lda $d012               // read on line 204: cycle 4 on PAL, 2 on NTSC
+                                // (VICE exec trace; 6 and 4 before #86)
         cmp #HUD_LINE
         bcc !late+
         cmp #HUD_LINE + 2
@@ -461,9 +465,8 @@ ztab:
     }
         lda #D018_HUD           // line 203, cycle 2
         sta $d018               // written on cycle 7, before the c-accesses from 15
-        lda #D016_HUD
-        sta $d016               // reads on 12: held by the badline, written on 56
-        jmp hud_rest
+        stx $d016               // X = D016_HUD since the sync: written on cycle 11
+        jmp hud_rest            // opcode read on 12: held by the badline to 55
 }
 
 .align $100

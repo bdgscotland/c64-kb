@@ -489,8 +489,9 @@ x64sc 3.10, the local Oscar64; README, "The measured frame"):
 - decimal_print's 1,361 is a five-digit number by division; the lap clock
   here counts digit by digit (hud.c) and the lap times are printed once a
   lap.
-- Measured: the step and the IRQs, worst 10,358 / typical 8,816 cycles on
-  PAL, 10,750 / 9,049 on NTSC (255 race frames from race frame 200). The
+- Measured: the step and the IRQs, worst 10,356 / typical 8,814 cycles on
+  PAL, 10,751 / 9,044 on NTSC (255 race frames from race frame 200; before
+  #86 moved line 203's $D016 store, 10,358 / 8,816 and 10,750 / 9,049). The
   builder: a row up to 3,293 cycles on PAL and 3,388 on NTSC, a picture's
   start up to 3,706, its end up to 1,674 (CIA1 timer A with interrupts
   off); a picture every 3.5 frames on PAL, 4.9 on NTSC.

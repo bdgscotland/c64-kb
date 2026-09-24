@@ -59,11 +59,15 @@ of `CMP #$C9` bytes (`C9 C9 ... C5 EA`): entered R bytes from its end it
 takes R + 1 cycles, so a patched branch operand pads the line to exactly 63
 cycles (65 on NTSC). A badline's block stores $D016 only: the VIC holds the
 bus from cycle 12 to 54, and that line shows the colour of the line above.
-Line 203's block sets the panel's $D018 (cycle 7) and $D016. Line 203 is
-a badline and the `STA $D016` reads on cycle 12, so the write waits for
-the stall and lands on cycle 56 (VICE store trace, both models; an
-earlier version said cycle 12). $D021 follows after the VIC's fetch,
-over row 19's solid characters.
+Line 203's block sets the panel's $D018 (cycle 7) and $D016 (cycle 11,
+`STX`: the sync loads X before the road, and no block touches it). Line
+203 is a badline, BA falls on cycle 12, and a store whose operand read
+falls in the stall waits for it. An earlier version loaded A and stored
+it: that `STA $D016` read on cycle 12 and wrote on cycle 56, so line 203
+was drawn with the road's multicolour mode and last XSCROLL, a cyan line
+across the panel's top (VICE store trace, both models; issue #86; before
+#82 this page said cycle 12). $D021 follows after the VIC's fetch, over
+row 19's solid characters.
 
 The main loop runs one game step when the tick moves (input, cars, the
 panel, sound) and in the time between builds the next picture, a piece at
@@ -123,11 +127,12 @@ uses what is left and is measured apart.
 
 | | PAL (19,656 a frame) | NTSC (17,095 a frame) |
 |---|---|---|
-| Worst / typical step + IRQs | 10,358 / 8,816 | 10,750 / 9,049 |
+| Worst / typical step + IRQs | 10,356 / 8,814 | 10,751 / 9,044 |
 | Pictures in the race's 3,515 frames | 1,000: one every 3.5 frames | 712: one every 4.9 frames |
 | Costliest builder piece: a row / a full row / a picture's start / end | 3,293 / 2,892 / 3,706 / 1,674 | 3,388 / 2,866 / - / - |
 
-The race is the 3,515 game steps from GO! to the line (`race_frames` at the
+The step figures moved by a few cycles when line 203's split changed
+(#86: 10,358 / 8,816 and 10,750 / 9,049 before). The race is the 3,515 game steps from GO! to the line (`race_frames` at the
 grade, 3,615, less the 100 steps coasting after it); `pictures` counts only
 those. An earlier version divided by 3,615 and said 3.6 and 5.1. Read from
 the machine after the grade (VICE binary monitor), both models.
