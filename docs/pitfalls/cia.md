@@ -831,9 +831,12 @@ the timer pipeline, rung 3, and the difference between the rows is the
 measurement.
 
 Not measured here: CIA2 and `/NMI` (the source has one path for both
-chips, so the same one-cycle rule is expected, rung 4), the Timer B
-bug VICE also gates on the old model (an ICR read in the cycle before
-a Timer B underflow loses the flag), and any real chip.
+chips, so the same one-cycle rule is expected, rung 4), and any real
+chip. The Timer B bug VICE also gates on the old model (an ICR read in
+the cycle before a Timer B underflow loses the flag) was listed here as
+unmeasured; it is now measured in VICE, one polling phase in 35 on the
+old model and none on the new, in `kernal_eoi_wait_misses_timer_b_on_old_cia`
+(`pitfalls/kernal-and-io.md`), where it hangs the KERNAL's EOI wait.
 
 ### Fix
 
