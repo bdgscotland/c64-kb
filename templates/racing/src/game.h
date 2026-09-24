@@ -25,7 +25,8 @@
 // MUTANT=n (AUTOPILOT builds, make mutants): one deliberate fault each, which
 // a check must catch. 1 the sprites' padding ignored (the road's timing),
 // 2 no curve, 3 no hill, 4 one car size at every distance, 5 the clock
-// counts every other frame, 6 no contact between cars.
+// counts every other frame, 6 no contact between cars, 7 one game step
+// runs past the next line 251 (the lost-frame count).
 #ifndef MUTANT
 #define MUTANT 0
 #endif

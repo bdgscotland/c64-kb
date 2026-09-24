@@ -79,9 +79,9 @@ checks, for instance, fail only in `disktest`. Measured 2026-09-24: eight
 starters with `--selftest` and their targets, 8 of 8, about 10 minutes, most
 of it shmup-vertical's `joytest` and `longplay` (seven starters took about
 3.5 minutes on 2026-09-23, before those two stepped by emulated frames).
-The racing starter, added after that run, took 68 seconds alone
-(`--only racing --selftest`, measured 2026-09-24; `mutants` runs its twelve
-shots four at a time).
+The racing starter, added after that run, took 78 seconds alone
+(`--only racing --selftest`, measured 2026-09-24; `mutants` runs its
+fourteen shots four at a time).
 
 ## A starter's files
 

@@ -63,7 +63,7 @@ The main loop runs one game step when the tick moves (input, cars, the
 panel, sound) and in the time between builds the next picture, a piece at
 a time: its start (the camera, the horizon, the sprites' lines, `rb_begin`),
 one row (twelve of them, bottom up), its end (the sprites' X, `rb_ready`).
-A picture takes 3.6 frames on PAL and 5.1 on NTSC (measured below);
+A picture takes 3.5 frames on PAL and 4.9 on NTSC (measured below);
 the game, the clock and the physics step every frame.
 
 ## The road with sprites on it
@@ -116,20 +116,32 @@ uses what is left and is measured apart.
 
 | | PAL (19,656 a frame) | NTSC (17,095 a frame) |
 |---|---|---|
-| Worst / typical step + IRQs | 10,359 / 8,817 | 10,766 / 9,043 |
-| Pictures in the race's 3,615 frames | 1,000: one every 3.6 frames | 713: one every 5.1 frames |
+| Worst / typical step + IRQs | 10,358 / 8,816 | 10,750 / 9,049 |
+| Pictures in the race's 3,515 frames | 1,000: one every 3.5 frames | 712: one every 4.9 frames |
 | Costliest builder piece: a row / a full row / a picture's start / end | 3,293 / 2,892 / 3,706 / 1,674 | 3,388 / 2,866 / - / - |
+
+The race is the 3,515 game steps from GO! to the line (`race_frames` at the
+grade, 3,615, less the 100 steps coasting after it); `pictures` counts only
+those. An earlier version divided by 3,615 and said 3.6 and 5.1. Read from
+the machine after the grade (VICE binary monitor), both models.
 
 The pieces were timed with CIA1 timer A and interrupts off (`-define
 ROWTIME` for rows; the start and end in a debug build); a row with sprites
 on it, or with kerbs that moved far, is the costly one. The road chain
-itself is 96 lines of its IRQ, about 6,300 cycles on PAL and 6,500 on NTSC.
+itself is 96 lines of its IRQ, about 6,300 cycles on PAL and 6,500 on NTSC
+(arithmetic: lines 103-202 at 63 or 65 cycles, not measured).
 
 Lost frames: none. `late` counts steps that ran past the next line 251 and
-ticks that passed with no step; the chain counts road IRQs that did not
-arrive on line 105 or split the panel off line 203-204 (`road_late`). Both
-are 0 over the whole run on both models and the verdict wants 0. The
-AUTOPILOT build's bookkeeping covered 12 frames on PAL and 16 on NTSC
+ticks that passed with no step; the chain counts road chains that armed
+line 105 too late (the IRQ then comes a frame later and irq_blank's tick is
+skipped, so `late` cannot see it), IRQs that did not arrive on line 105,
+and panel splits off line 203-204 (`road_late`). Both are 0 over the whole
+run on both models and the verdict wants 0. Mutant 7 (one step that waits
+for the next tick) makes `late` 1. A test build that armed line 105 too
+late every 128th frame graded itself PASS before irq_top checked the line
+it armed on; with the check, `road_late` counted 30 on both models and the
+verdict failed. The
+AUTOPILOT build's bookkeeping covered 12 frames on PAL and 18 on NTSC
 (`slow`; the meter's median when its recording ends is 7 of them, the rest
 is the grade and the still, which build whole pictures at once); those are
 not play.
@@ -147,9 +159,9 @@ pairs; here three, inside the cars' step.
 | `make shot check` | 27 checks a model: the verdict, the panel's text and lap times, the still's horizon (line 124 sky, 125 grass: the hill), the kerbs on lines 140-200 and line by line inside rows (the bend and XSCROLL), the three cars' boxes (sizes by distance), the road and the sky identical on PAL and NTSC, the meter | 54 of 54 passed |
 | `make selftest` | FORCE_FAULT records lap 1 a frame long: the verdict fails | check.py rejected the build |
 | `make roadcheck` | Reads the road copy on display, the screen, colour RAM, the characters, the VIC-II and the sprites out of the machine, draws lines 107-202 from them, and matches the shots pixel for pixel | 96 of 96 lines on PAL and NTSC, 30 XSCROLL changes inside rows |
-| `make mutants` | Six faults, each caught: 1 pads that ignore the sprites (roadcheck: 59 of 96 lines wrong on PAL, 52 on NTSC; the kerbs), 2 no curve (the verdict's bend; the kerbs), 3 no hill (the verdict; the horizon), 4 one car size (the verdict; car 2's box), 5 the clock counting every other frame (the verdict; the lap times), 6 no contact (the verdict) | 6 of 6 caught |
+| `make mutants` | Seven faults, each caught: 1 pads that ignore the sprites (roadcheck: 59 of 96 lines wrong on PAL, 52 on NTSC; the kerbs), 2 no curve (the verdict's bend; the kerbs), 3 no hill (the verdict; the horizon), 4 one car size (the verdict; car 2's box), 5 the clock counting every other frame (the verdict; the lap times), 6 no contact (the verdict), 7 one step past the next tick (the verdict's lost-frame bit) | 7 of 7 caught |
 | `make drivetest` | The normal build, the stick on `$DC00` (harness/drive.py): fire on the title starts the lights, fire held after GO! reaches SPEED 480 | drivetest: PASS |
-| `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations |
+| `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations (an earlier version left out vic_xscroll, vic_matrix_base and vic_char_base, units added to claims-watch before this starter landed: 3 violation groups) |
 | `make released OSCAR64_RELEASED=<v1.32.273>` | The same 27 checks a model on a build from the released compiler | 54 of 54 passed |
 
 `npm run verify:templates -- --only racing --selftest` runs `make`, `make
@@ -184,7 +196,10 @@ the code: in `hud_draw`, the local build compiled `frames / (fps / 10)` as
 dividend had been loaded into ACCU; `build/racing-auto.asm`), and the clock
 read 0:00.1 for a whole lap. A four-line program with the same expression
 divided correctly on both compilers, so the fault needs that function's
-surroundings. The frames per tenth are a variable (`fpt`), and the lap
+surroundings. Reproduced in review with the expression put back into
+hud_draw: the local build loads `lap_frames` into ACCU over `fps / 10` and
+then copies ACCU to the divisor; v1.32.273 and upstream 9a902f6 keep the
+quotient in X and divide correctly. The fault is in the local build only. The frames per tenth are a variable (`fpt`), and the lap
 clock counts digit by digit.
 
 ## Left out on purpose

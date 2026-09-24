@@ -8,7 +8,7 @@
 #   make roadcheck    draw every road line from the program's own splits, read
 #                     out of the machine, and match it with the shots pixel
 #                     for pixel (tools/roadcheck.py)
-#   make mutants      six builds with one fault each (MUTANT=1-6, src/game.h):
+#   make mutants      seven builds with one fault each (MUTANT=1-7, src/game.h):
 #                     each must fail a check
 #   make drive        the normal game played headless (harness/drive.py)
 #   make drivetest    DRIVE_STEPS: fire starts the race, fire held reaches top speed
@@ -29,11 +29,13 @@ SHOT_CYCLES_NTSC := 90000000
 # - Oscar64's registers from $02, its temporaries from $43 up (make zp).
 # - engine.asm's builder owns $D0-$D3 and $E0-$FF (the KERNAL is out and
 #   never called).
+# - The road's blocks write $D016 (XSCROLL, the bend) on every road line and
+#   the panel split writes $D018 (matrix and character base) twice a frame.
 # - The IRQ chain is the only interrupt; the KERNAL's runs until main's SEI.
 # - $DC0D (all CIA1 interrupts off) counts against the three CIA1 units.
 # - CIA2 timer A is the harness meter's; timer B times the IRQs for the
 #   meter; the $DD0D stores count against all three CIA2 units.
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F+$$D0-$$D3+$$E0-$$FF' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 100000000
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, vic_raster_irq, vic_xscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F+$$D0-$$D3+$$E0-$$FF' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 100000000
 
 # This starter's own proofs, which npm run verify:templates runs too.
 VERIFY_TARGETS := roadcheck mutants drivetest
@@ -59,8 +61,9 @@ roadcheck: $(SHOTS)
 # ---- mutants: one deliberate fault each, and the check that catches it ----------------
 # 1 the pads ignore the sprites: roadcheck (and the verdict's split line)
 # 2 no curve, 3 no hill, 4 one car size, 5 the clock counts every other
-# frame, 6 no contact: the verdict and the pinned pixels or text.
-MUTANTS := 1 2 3 4 5 6
+# frame, 6 no contact, 7 a step past the next tick (a lost frame): the
+# verdict and the pinned pixels or text.
+MUTANTS := 1 2 3 4 5 6 7
 MUT_SHOTS := $(foreach n,$(MUTANTS),shots/mut$(n)-pal.png shots/mut$(n)-ntsc.png)
 .SECONDARY: $(foreach n,$(MUTANTS),build/$(NAME)-mut$(n).prg)
 build/$(NAME)-mut%.prg: $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate

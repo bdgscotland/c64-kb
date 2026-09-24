@@ -161,7 +161,7 @@ row_w:      .fill 12, 0
 
 // ---- counters the chain keeps -----------------------------------------------------
 tick:       .byte 0             // incremented at line 251: the frame starts
-road_late:  .byte 0             // frames whose HUD split did not land on line 203
+road_late:  .byte 0             // road chains armed late, synced off line 105 or split off 203-204
 irq_meter:  .byte 0             // AUTOPILOT: time the IRQs outside the meter's bracket
 irq_timing: .byte 0
 irq_cyc:    .word 0
@@ -281,7 +281,7 @@ road_hi:    .byte >road_a, >road_b
 d018_road:  .byte D018_A, D018_B
 set3:       .byte 0, 3
 
-// ---- line 104: the double IRQ (c64-kb double_irq, stable_raster_irq) --------------------
+// ---- line 103: the double IRQ (c64-kb double_irq, stable_raster_irq) --------------------
 irq_top:
         pha
         txa
@@ -303,13 +303,17 @@ irq_top:
         sta $ffff
 !arm:   lda #SYNC_LINE
         sta $d012
-        lda #$01
+        lda $d012               // armed on line 105 or later: the IRQ comes a frame
+        cmp #SYNC_LINE          // late, irq_blank and its tick skipped, and no
+        bcc !+                  // other counter sees it
+        inc road_late
+!:      lda #$01
         sta $d019
         tsx
         stx sp_save
         cli
     .for (var i = 0; i < 40; i++) { nop }
-        jmp *                   // never reached: the next IRQ lands in the NOPs
+        jmp *                   // reached only when line 105 was armed late (road_late)
 
 // Line 105: entered from a NOP, so 0 or 1 cycle late. The two $D012 reads
 // straddle the change to line 106 in one case and not the other; BEQ takes

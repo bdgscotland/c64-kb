@@ -489,11 +489,11 @@ x64sc 3.10, the local Oscar64; README, "The measured frame"):
 - decimal_print's 1,361 is a five-digit number by division; the lap clock
   here counts digit by digit (hud.c) and the lap times are printed once a
   lap.
-- Measured: the step and the IRQs, worst 10,359 / typical 8,817 cycles on
-  PAL, 10,766 / 9,043 on NTSC (255 race frames from race frame 200). The
+- Measured: the step and the IRQs, worst 10,358 / typical 8,816 cycles on
+  PAL, 10,750 / 9,049 on NTSC (255 race frames from race frame 200). The
   builder: a row up to 3,293 cycles on PAL and 3,388 on NTSC, a picture's
   start up to 3,706, its end up to 1,674 (CIA1 timer A with interrupts
-  off); a picture every 3.6 frames on PAL, 5.1 on NTSC.
+  off); a picture every 3.5 frames on PAL, 4.9 on NTSC.
 
 ## Memory and screen
 
@@ -529,7 +529,7 @@ x64sc 3.10, the local Oscar64; README, "The measured frame"):
   line by line), the three cars' boxes, the road and the sky identical on
   PAL and NTSC, the meter. tools/roadcheck.py draws every road line from
   the machine's own splits and matches the shots pixel for pixel.
-- Mutants (make mutants): each of six faults fails a check.
+- Mutants (make mutants): each of seven faults fails a check.
 
 ## Decisions and open questions
 
@@ -541,8 +541,8 @@ x64sc 3.10, the local Oscar64; README, "The measured frame"):
   (kickassembler-dysp's method). The sync constants and the badline's 43
   cycles were measured with the PROBE build (README, "The road's timing").
 - The builder runs in the main loop's spare time, a row at a time, and the
-  game steps once a frame when irq_blank's tick moves. A picture takes 3.6
-  frames on PAL and 5.1 on NTSC over the race; the game and the lap clock
+  game steps once a frame when irq_blank's tick moves. A picture takes 3.5
+  frames on PAL and 4.9 on NTSC over the race; the game and the lap clock
   run every frame.
 - Open: the pseudo-3D road with sprites on its lines has no recipe in
   c64-kb; this starter's engine.asm is the first working form. c64-kb

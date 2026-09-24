@@ -214,6 +214,14 @@ void cars_step(char joy)
     place = p;
 
     race_frames++;
+#if MUTANT == 7
+    if (race_frames == 1000)            // one step waits for the next tick: one lost frame
+    {
+        char t = B(ASM_TICK);
+        while (B(ASM_TICK) == t)
+            ;
+    }
+#endif
 #if MUTANT == 5
     lap_frames += race_frames & 1;
 #else

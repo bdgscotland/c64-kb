@@ -76,9 +76,9 @@ void road_init(void)
     sizes_seen = 0;
 }
 
-// The line index (0-95) whose z * 8 is the largest not above d, searching
-// the road lines below the horizon; 0xff when d is nearer than line 202 or
-// beyond the horizon.
+// The line index (0-95) nearest the camera whose z (units of 8) is not
+// below d / 8, searching the road lines below the horizon; 0xff when d is
+// nearer than line 202 or beyond the horizon.
 static char line_of(unsigned d, const char *zt)
 {
     char top = H_MIN + hoff - ROAD_TOP + 1;     // first road line below the horizon
@@ -113,8 +113,8 @@ void road_wait_swap(void)
 
 // A picture is built in the main loop's spare time, a piece at a time
 // (road_work), while the game steps once a frame (main.c). What a picture
-// shows is fixed when it starts. Measured: a picture every 3.6 frames on
-// PAL, 5.1 on NTSC over the race (README, "The measured frame").
+// shows is fixed when it starts. Measured: a picture every 3.5 frames on
+// PAL, 4.9 on NTSC over the race (README, "The measured frame").
 static char phase;                      // 0: no picture under way
 static char p_set, p_en, p_who[3];
 static int  p_px[NCARS];                // cars' offsets across the road, pixels, at the start

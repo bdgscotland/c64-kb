@@ -13,8 +13,9 @@
 //   4    the verge: at least one frame on the grass
 //   5    overtakes: at least one
 //   6    no lost frame: every tick of line 251 had its game step and every
-//        step ended before the next; every road chain took its IRQ on line
-//        105 and split the panel off on line 203-204 (road_late)
+//        step ended before the next; every road chain armed line 105 before
+//        it came, took its IRQ on line 105 and split the panel off on line
+//        203-204 (road_late)
 //   7    the hill: the horizon moved over at least 10 lines
 //   8    the bend: the farthest road row's centre, less where a straight
 //        road would put it, ranged over at least 60 pixels
