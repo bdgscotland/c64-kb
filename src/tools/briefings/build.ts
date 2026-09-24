@@ -25,7 +25,7 @@ import { buildOrder } from "./build-order.ts";
 import { computeBudget } from "./budget.ts";
 import { fetchBudgetMembers } from "../query/plan-budget.ts";
 import { designsOfArchetype } from "../query/game-design.ts";
-import { briefSummary, renderBriefingText } from "./render.ts";
+import { briefSummary, renderArchetype, renderBriefingText } from "./render.ts";
 
 export type BriefingResult = { structured: BriefingOutput; text: string };
 
@@ -105,9 +105,13 @@ async function compatibilityOf(techs: TechniqueLookupOutput[]) {
     } satisfies { verdict: string; compatibility: BriefingOutput["compatibility"] };
   }
   const { structured } = await checkCompatibility(techs.map((t) => t.name));
+  // Every hard conflict the verdict rests on, and every soft one. An earlier
+  // version kept only region_mismatch and the shared-register/KERNAL kinds,
+  // so a vertical_shmup plan read "incompatible" over a body of soft notes
+  // (#41).
   const compatibility: BriefingOutput["compatibility"] = {
-    conflicts: structured.conflicts.filter((c) => c.kind === "region_mismatch"),
-    warnings: structured.conflicts.filter((c) => c.kind === "shared_register" || c.kind === "shared_kernal"),
+    conflicts: structured.conflicts.filter((c) => c.severity === "hard"),
+    warnings: structured.conflicts.filter((c) => c.severity === "soft"),
     shared_infrastructure: structured.shared_infrastructure,
   };
   return { verdict: structured.verdict, compatibility };
@@ -196,12 +200,39 @@ async function resolutionFor(
   return isGame ? routeArchetypeFromBrief(description) : undefined;
 }
 
+/**
+ * A named archetype the graph does not hold: no plan, only the names that
+ * would work. An earlier version went on to plan from the brief's words
+ * alone under the unknown name (#41).
+ */
+function refusal(
+  description: string,
+  resolved: Extract<ArchetypeResolution, { mode: "not_found" }>,
+  isGame: boolean,
+): BriefingResult {
+  const kindWord = isGame ? "genre" : "form";
+  const structured: BriefingOutput = {
+    brief: `Refused: ${kindWord} "${resolved.requested}" is not an archetype the graph knows, so no plan was made for "${description}". Pass one of the known archetypes, or none to route the brief by its words.`,
+    proposed_techniques: [],
+    compatibility: { conflicts: [], warnings: [], shared_infrastructure: [] },
+    pitfalls: [],
+    toolchain_split: { primary: "oscar64", rationale: "No plan.", cycle_tight_handoff: [] },
+    build_order: [],
+    budget: computeBudget([]),
+    ...archetypeFields(resolved),
+  };
+  const text = `# C64 ${isGame ? "Game" : "Demo"} Briefing\n\n**Brief:** ${structured.brief}\n\n${renderArchetype(structured)}`;
+  return { structured, text };
+}
+
 export async function buildBriefing(
   description: string,
   archetype: string | undefined,
   isGame: boolean,
 ): Promise<BriefingResult> {
   const resolved = await resolutionFor(description, archetype, isGame);
+  if (archetype !== undefined && resolved?.mode === "not_found")
+    return refusal(description, resolved, isGame);
   const techs = await proposeTechniques(description, archetype, resolved, isGame);
   const techNames = techs.map((t) => t.name);
 

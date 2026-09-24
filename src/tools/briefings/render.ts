@@ -53,7 +53,7 @@ export function briefSummary(opts: {
   );
 }
 
-function renderArchetype(b: BriefingOutput): string {
+export function renderArchetype(b: BriefingOutput): string {
   let out = "";
   const missing = b.archetype_not_found;
   if (missing) {
@@ -111,7 +111,12 @@ function renderCompatibility(b: BriefingOutput): string {
   let out = `\n## Compatibility\n\n`;
   const allConflicts = [...b.compatibility.conflicts, ...b.compatibility.warnings];
   if (allConflicts.length === 0) out += `No conflicts detected.\n`;
-  for (const c of allConflicts) out += `- **${c.kind}**: ${c.a} × ${c.b} — ${c.rationale}\n`;
+  for (const c of allConflicts) {
+    const kind = c.underlying_kind ? `${c.kind} (${c.underlying_kind})` : c.kind;
+    const pair = c.a === c.b ? `${c.a}, within its own chain` : `${c.a} × ${c.b}`;
+    out += `- **${kind}** (${c.severity}): ${pair} — ${c.rationale}\n`;
+    if (c.severity === "hard" && c.resolution) out += `  Resolution: ${c.resolution}\n`;
+  }
   if (b.compatibility.shared_infrastructure.length > 0) {
     out += `\n**Shared infrastructure:** `;
     out += b.compatibility.shared_infrastructure.map((s) => s.name).join(", ") + "\n";

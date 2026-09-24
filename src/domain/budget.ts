@@ -405,6 +405,16 @@ interface Sorted {
   irq_slots: number;
 }
 
+/**
+ * A figure above this is multi-frame work on every model: the longest frame,
+ * PAL's 19,656. One threshold for both, so a member is summed or left out
+ * the same way on PAL and NTSC; a figure between the two frames is summed
+ * on NTSC and shows as over that frame. An earlier version used each
+ * region's own frame, and cave_scan_engine's 18,559 was summed on PAL and
+ * silently left out on NTSC (#41).
+ */
+const MULTI_FRAME_ABOVE = Math.max(...Object.values(REGION_TIMING).map((t) => t.cycles_per_frame));
+
 /** Put one member where it belongs: summed, left out as multi-frame, unknown, or not found. */
 function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
   if (!m.found) {
@@ -419,7 +429,7 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
     return;
   }
   const measured_on = m.cost?.measured_on ?? null;
-  if (charge.high > REGION_TIMING[region].cycles_per_frame) {
+  if (charge.high > MULTI_FRAME_ABOVE) {
     into.excluded.push({ name: m.name, reason: "multi_frame", cycles: charge.high, measured_on });
     return;
   }

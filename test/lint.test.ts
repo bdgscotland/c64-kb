@@ -200,6 +200,43 @@ describe("d016 rule reads the load that feeds the store", () => {
   });
 });
 
+describe("raster poll rule in assembly (#41)", () => {
+  const poll = (src: string) =>
+    lintSource(src, { language: "asm" }).filter((x) => x.rule === "raster_poll_with_kernal_irq_live");
+
+  it("reports a busy-wait that branches back to its $D012 read", () => {
+    expect(
+      poll("wait:   lda $d012\n        cmp #$f8\n        bne wait\n        rts\n").map((x) => x.line),
+    ).toEqual([1]);
+    expect(poll("!:      lda $d012\n        cmp #$f8\n        bne !-\n").map((x) => x.line)).toEqual([1]);
+    expect(poll("        lda $d012\n        cmp #$f8\n        bne *-5\n").map((x) => x.line)).toEqual([1]);
+  });
+
+  it("is quiet on a forward test in a handler file another file imports (shmup-vertical mux.asm)", () => {
+    // Before #41 this fired: mux.asm has no $FFFE or SEI, since kernel.asm
+    // installs the IRQ and imports it; its $D012 compare is a forward test.
+    const mux = [
+      "z_to_split:",
+      "        jsr arm_split",
+      "        lda #SPLIT_LINE-MARGIN",
+      "        cmp $d012",
+      "        bcs on_time",
+      "        inc mux_late",
+      "        jmp split_body",
+      "on_time:",
+      "        lda #$01",
+      "        sta $d019",
+      "        jmp irq_exit",
+    ].join("\n");
+    expect(poll(mux)).toEqual([]);
+    expect(poll(mux.replace("        sta $d019\n", ""))).toEqual([]);
+  });
+
+  it("is quiet on a busy-wait in handler code (an RTI or a $D019 acknowledge in the file)", () => {
+    expect(poll("wait:   lda $d012\n        bne wait\n        asl $d019\n        rti\n")).toEqual([]);
+  });
+});
+
 describe("lfsr rule wants a name the file shifts or XORs", () => {
   it("does not report a counter that merely contains 'seed'", () => {
     const src = "int main(void){ unsigned reseed_count = 0; return 0; }";

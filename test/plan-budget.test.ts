@@ -71,14 +71,35 @@ describe("planBudget rules", () => {
     expect(p.verdict).toBe("undetermined");
   });
 
-  it("judges the frame per region: 18,559 fits a PAL frame and is multi-frame on NTSC", () => {
+  it("treats a figure the same on both models: 18,559 is summed on PAL and NTSC, over the NTSC frame (#41)", () => {
+    // An earlier version left it out of NTSC as multi-frame and summed it on PAL.
     const b = planBudget([m("cave_scan_engine", { cycles_per_frame: 18559, basis: "measured-vice" })], {
       region: "both",
     });
     expect(play(b, "PAL").excluded).toEqual([]);
     expect(play(b, "PAL").verdict).toBe("fits");
-    expect(play(b, "NTSC").excluded.map((e) => e.reason)).toEqual(["multi_frame"]);
+    const ntsc = play(b, "NTSC");
+    expect(ntsc.excluded).toEqual([]);
+    expect(ntsc.high).toBe(18559);
+    expect(ntsc.verdict).toBe("undetermined");
+    expect(ntsc.notes.some((n) => n.includes("The low end, 18559 + "))).toBe(true);
+    expect(ntsc.notes.some((n) => /is over the 17095-cycle frame by \d+/.test(n))).toBe(true);
     expect(b.verdict).toBe("undetermined");
+  });
+
+  it("the low end past the frame is called over, with the sum (#41)", () => {
+    // #39 read 'The low end, 36919 + 1873, passes the 19656-cycle frame' as fitting.
+    const p = play(
+      planBudget([
+        m("a", { cycles_per_frame: 19000, cycles_per_frame_typical: 18000, basis: "measured-vice" }),
+        m("b", { cycles_per_frame: 4000, cycles_per_frame_typical: 3000, basis: "measured-vice" }),
+      ]),
+    );
+    const note = p.notes.find((n) => n.startsWith("The low end"));
+    expect(note).toMatch(
+      /^The low end, 21000 \+ \d+ = \d+, is over the 19656-cycle frame by \d+, but it is not a floor/,
+    );
+    expect(note).not.toMatch(/passes the/);
   });
 
   it("reports a range: low sums typical figures, high sums worst", () => {

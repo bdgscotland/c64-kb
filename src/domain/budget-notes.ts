@@ -71,14 +71,17 @@ function lossNote(p: PhaseBudget, screen: "on" | "off"): string[] {
   return [];
 }
 
-/** The low end passes the frame and the floor does not: say which members make it so. */
+/** The low end is over the frame and the floor is not: say which members make it so. */
 function notFloorNote(p: PhaseBudget, fixed: number): string {
   const loose = p.contributors.filter((c) => !c.every_frame).map((c) => c.name);
   const worst =
     p.worst_only.length > 0
       ? ` ${p.worst_only.join(", ")} ${plural(p.worst_only.length, "has", "have")} no typical frame, so ${plural(p.worst_only.length, "its", "their")} low end is a worst frame.`
       : "";
-  return `The low end, ${p.low}${fixed > 0 ? ` + ${fixed}` : ""}, passes the ${p.frame}-cycle frame, but it is not a floor: the figures of ${loose.join(", ")} are a common frame or a real run's worst, and those frames need not fall together.${worst} The floor, work every frame plus the loss no figure can hold, is ${p.floor} and fits. A frame measured whole, with every member running, would settle it.`;
+  // "passes the frame" read as "fits it" to the #39 builders (#41); say over, with the sum.
+  const sum = p.low + fixed;
+  const terms = fixed > 0 ? `${p.low} + ${fixed} = ${sum}` : `${sum}`;
+  return `The low end, ${terms}, is over the ${p.frame}-cycle frame by ${sum - p.frame}, but it is not a floor: the figures of ${loose.join(", ")} are a common frame or a real run's worst, and those frames need not fall together.${worst} The floor, work every frame plus the loss no figure can hold, is ${p.floor} and fits. A frame measured whole, with every member running, would settle it.`;
 }
 
 export function phaseNotes(p: PhaseBudget, screen: "on" | "off"): string[] {
@@ -92,7 +95,7 @@ export function phaseNotes(p: PhaseBudget, screen: "on" | "off"): string[] {
   const multi = p.excluded.filter((e) => e.reason === "multi_frame");
   if (multi.length > 0)
     notes.push(
-      `Multi-frame: ${multi.map((e) => `${e.name} (${e.cycles})`).join(", ")} ${plural(multi.length, "is", "are")} above one ${p.region} frame of ${p.frame} and not summed; spread the work over frames or budget it as its own phase.`,
+      `Multi-frame: ${multi.map((e) => `${e.name} (${e.cycles})`).join(", ")} ${plural(multi.length, "is", "are")} above the longest frame (PAL, ${REGION_TIMING.PAL.cycles_per_frame}) and not summed on either model; spread the work over frames or budget it as its own phase.`,
     );
   if (p.phase !== "play")
     notes.push(
