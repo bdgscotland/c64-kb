@@ -27,13 +27,15 @@ What will bite you here:
 
 - `src/kernel.asm` owns the raster IRQ (`$FFFE`, KERNAL banked out). Add a
   split as a new body in its chain; do not install a second handler.
-- No sprite may reach raster line 214 (sprites stop at Y 187, last line
-  208): a sprite there delays the panel split's writes (measured: 16 of
-  16 PAL shots broken with eight sprites on it; lines 209-213 were clean).
+- No sprite may reach raster line 206 (sprites stop at Y 179, last line
+  200): a sprite there delays the panel split's writes (measured: eight
+  sprites on it broke the panel at 8 of 8 phases on PAL and 4 of 8 on
+  NTSC; ending on line 205 was clean). Before #107 the split was 8 lines
+  lower and these were 214, Y 187 and 208.
   `make check` runs `make phases`, which compares the panel at all eight
   YSCROLL phases; keep it passing after touching the split.
 - NTSC has little time to spare. `make stage` meters a staged heavy
-  stretch (worst 15,237 of 17,095 cycles on NTSC), but play reaches
+  stretch (worst 15,241 of 17,095 cycles on NTSC), but play reaches
   heavier frames: `make joytest` and `make longplay` play the game with
   fire held and a sweep and fail on any lost frame (`LOST_FRAMES`, `$02FD`).
   In play's heaviest frames the work ended 7 lines before the frame IRQ

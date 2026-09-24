@@ -6,7 +6,7 @@
 
 Each PRG is the autopilot build frozen on one phase (-dFREEZE_Y=k). Every one
 is shot on PAL and NTSC with a copy of the disk on drive 8, and the display
-window of the panel's lines 215-250 is compared pixel by pixel with the
+window of the panel's lines 207-246, its five rows, is compared pixel by pixel with the
 phase-3 shot, which make check grades. A phase whose split writes land late
 shows playfield characters in the panel's first row and fails here; the
 graded shot, frozen on phase 3 only, cannot see that. Exit 1 on any
@@ -21,6 +21,8 @@ import sys
 from PIL import Image
 
 OFFSET = {"pal": 16, "ntsc": 28}            # screenshot row = raster line - offset
+PANEL_FIRST = 207                           # kernel.asm LAST_PF + 1; 215 before #107
+PANEL_LAST = 246                            # RSEL = 0: the border from line 247; 250 before #107
 
 
 def shoot(x64sc, prg, d64, cycles, model, png):
@@ -40,7 +42,7 @@ def shoot(x64sc, prg, d64, cycles, model, png):
 
 def panel(png, model):
     im = Image.open(png).convert("RGB")
-    return [im.getpixel((x, line - OFFSET[model])) for line in range(215, 251) for x in range(32, 352)]
+    return [im.getpixel((x, line - OFFSET[model])) for line in range(PANEL_FIRST, PANEL_LAST + 1) for x in range(32, 352)]
 
 
 def main():
@@ -63,7 +65,7 @@ def main():
         for k in range(8):
             diff = sum(1 for p, q in zip(shots[k], shots[3]) if p != q)
             print(f"{'PASS' if diff == 0 else 'FAIL'} {model.upper():4s} YSCROLL {k}: "
-                  f"{diff} pixels of panel lines 215-250 differ from YSCROLL 3")
+                  f"{diff} pixels of panel lines {PANEL_FIRST}-{PANEL_LAST} differ from YSCROLL 3")
             bad += diff != 0
     print(f"phases: {16 - bad} of 16 panels match")
     return 1 if bad else 0

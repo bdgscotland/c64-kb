@@ -39,7 +39,7 @@ import drive  # noqa: E402  harness/drive.py
 LOST_FRAMES = 0x02fd                                # main.c
 PLAY_FRAMES = 0x02fb                                # main.c, -dGOD=1 builds
 FIRE, LEFT, RIGHT = 16, 4, 8
-SCREEN = "8000:0-20,8400:0-20,8800:21-23"          # src/game.h PF0, PF1; the panel's rows
+SCREEN = "8000:0-20,8400:0-20,8800:20-22"          # src/game.h PF0, PF1; the panel's text rows (21-23 before #107)
 STEP = 0.1                                          # seconds of emulated time per stick move
 
 
@@ -48,7 +48,7 @@ class Fail(Exception):
 
 
 def panel(vice):
-    rows = vice.rows()[42:]                          # the panel's rows 21-23
+    rows = vice.rows()[42:]                          # the panel's rows 20-22
     m = re.search(r"SCORE (\d{6}) +HI (\d{6})", rows[0])
     return (m.group(1), m.group(2)) if m else (None, None)
 

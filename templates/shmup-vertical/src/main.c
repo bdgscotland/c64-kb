@@ -52,7 +52,7 @@ unsigned play_frames;
 #define P_MIN_HX   12
 #define P_MAX_HX   160
 #define P_MIN_Y    110
-#define P_MAX_Y    180                      // below MAX_SY (187)
+#define P_MAX_Y    178                      // not above MAX_SY (179); 180 before #107
 #define P_SAFE     100                      // frames the ship is safe after a loss
 #define P_COOL     6                        // frames between shots
 
@@ -373,7 +373,7 @@ static void title_enter(void)
     bullets_reset();
     waves_reset();
     level_show(0, 3);
-    memset(COLOUR, PF_CRAM, 21 * 40);           // no text left from a game over
+    memset(COLOUR, PF_CRAM, 20 * 40);           // no text left from a game over; row 20 is the panel
     char *s = level_screen();
     put_text(s, 6, 11, " DELTA  PATROL ");
     put_text(s, 9, 9, " PUSH FIRE TO START ");
@@ -385,7 +385,7 @@ static void title_enter(void)
 
 static void play_enter(void)
 {
-    memset(COLOUR, PF_CRAM, 21 * 40);           // every playfield cell multicolour
+    memset(COLOUR, PF_CRAM, 20 * 40);           // every playfield cell shown multicolour
     score = 0;
     lives = START_LIVES;
     deaths = 0;
@@ -847,7 +847,7 @@ int main(void)
 #if AUTOPILOT
         case ST_FROZEN:
             if (!verdict_code) {
-                hw_d011 = vic.ctrl1;            // the playfield's values until line 212
+                hw_d011 = vic.ctrl1;            // the playfield's values until line 204
                 hw_d018 = vic.memptr;
                 disk_test();
                 verdict();

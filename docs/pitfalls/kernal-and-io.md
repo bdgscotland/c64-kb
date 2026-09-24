@@ -1715,8 +1715,8 @@ explains why).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D015, D011
-**Triggered by kernal:** IECIN, CHRIN, CHKIN, OPEN, CLOSE
-**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, error_channel_check, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
+**Triggered by kernal:** IECIN, CHRIN, CHKIN, OPEN, CLOSE, LOAD
+**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, kernal_load_to_address, error_channel_check, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
 
 Measured in VICE x64sc 3.10 with true drive emulation, not on a real
 C64 and 1541 (rung 1, VICE only). VICE's default drive 8 is a 1541-II
@@ -1841,6 +1841,26 @@ without sprites, and a threshold in the number of sprites. Where each
 sprite's fetch cycles sit relative to the badline, and why the NTSC
 threshold is one sprite higher, were not traced here; the 6567R8's
 65-cycle line would give a longer gap, but that is not measured.
+
+**LOAD hangs the same way (#107).** LOAD's serial path calls ACPTR
+three times, at `$F4D5`, `$F4E0` and `$F501` (rung 1, the ROM bytes). A
+second test program, the save test's sprites and CIA2 NMI watchdog
+around `krnio_load` of a 1,000-byte PRG, ran 5 LOADs with the sprites
+off around each call, then 5 with them left on. One run per cell;
+each cell reads "sprites off / sprites left on":
+
+| Sprites | PAL c64c | NTSC 6567R8 |
+|---|---|---|
+| 0 | 5 of 5 / 5 of 5 | 5 of 5 / 5 of 5 |
+| 3 | 5 of 5 / hung | 5 of 5 / 5 of 5 |
+| 4 | not run | 5 of 5 / hung |
+| 8 | 5 of 5 / hung | 5 of 5 / hung |
+
+The thresholds are the save test's: 3 sprites on PAL, 4 on NTSC. An
+earlier version of the trigger lines named only the byte and channel
+routines, so `c64_check_compatibility` did not raise this pitfall
+beside `kernal_load_to_address`; a game that loads its next level with
+sprites on hits it.
 
 **A different hang in the same runs.** 8 sprites at Y 250 hung on NTSC
 in round 1, in the other wait inside ACPTR: `$EE30` to `$EE3A`, where
