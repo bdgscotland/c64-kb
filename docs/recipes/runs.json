@@ -2149,5 +2149,41 @@
       "pal": "screenshots/nmi-sample-player.png",
       "ntsc": "screenshots/nmi-sample-player-ntsc.png"
     }
+  },
+  "kickassembler/kefrens-bars": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/kefrens-bars.png",
+      "ntsc": "screenshots/kefrens-bars-ntsc.png"
+    }
+  },
+  "kickassembler/linecrunch": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/linecrunch.png",
+      "ntsc": "screenshots/linecrunch-ntsc.png"
+    }
+  },
+  "kickassembler/agsp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/agsp.png",
+      "ntsc": "screenshots/agsp-ntsc.png"
+    }
   }
 }

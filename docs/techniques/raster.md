@@ -429,7 +429,7 @@ VSP is a $D011 trick; the CSEL toggle described here before belongs to
 `sideborder_open`. On the line that is about to be a badline for a
 character row, arrange for the badline condition to be *false* in cycle 14
 (YSCROLL not equal to `line & 7` at that moment), then at a chosen cycle
-between 15 and 53 write $D011 with YSCROLL = `line & 7`, so the condition
+between 14 and 53 (the store's cycle) write $D011 with YSCROLL = `line & 7`, so the condition
 becomes true late. The VIC starts its c-accesses three cycles after BA drops,
 from whichever column slot the beam has reached, and the columns before it
 are not fetched for this row. Because the video counter VC advances only by
@@ -445,11 +445,18 @@ each cycle of extra delay moves the screen one more character right, from 1
 to 40; the three delays before the first shift spoil only the late row
 itself (one column, two columns, the whole row). The offset does not carry
 into the next frame: a frame without the late write is normal, so the write
-is made every frame. VICE's VSP-bug log puts the recipe's 10-character write
-at its cycle 24 of the line, a 0-based table index (VICE source,
-`runtime/vice-reference.md`), so Bauer's cycle 25, and 10 is 25 − 15 as
-the formula N = cycle − 15 says. An earlier version left the counting
-base unchecked. (An earlier version of this paragraph said the display moved left,
+is made every frame. In the numbering the other pages use, the cycle of
+the store as a VICE store trace prints it (`runtime/vice-reference.md`),
+N = cycle − 14: the recipe's 10-character write traces on cycle 24 on
+both models, and `recipes/kickassembler/agsp.md` traced its late write on
+14 + N for every N from 0 to 39 and saw the picture follow, one cell per
+cycle. VICE's VSP-bug log prints `Cycle: 24` for the same write; an
+earlier version of this paragraph read that as a table index one below
+Bauer's cycle, made it 25 and gave N = cycle − 15, and "How" said
+"between 15 and 53". The log and the store trace print the same number
+for the same store, so either the log's "+1" reading was wrong or the log
+reports the cycle after the store; not settled here. By the store's cycle
+the range is 14 to 53. (An earlier version of this paragraph said the display moved left,
 that the offset persisted into later frames until re-based, and that one
 write per character row was needed; the recipe shows right, one frame, and
 one write per frame.)
@@ -562,11 +569,11 @@ Given a value that is safe for the next line, the write itself may land anywhere
 
 ### Variations
 
-**Linecrunch.** Make a badline happen and then, on the same line, rewrite YSCROLL so the row counter advances without the row being displayed; each crunched line skips one character row. The display moves up instead of down. Not measured here.
+**Linecrunch.** The reverse: a YSCROLL write that matches the line after its cycle 58 makes the next line use up a whole character row, so the display moves up instead of down; see `linecrunch`, measured. (An earlier version of this paragraph said to make a badline happen and then rewrite YSCROLL on the same line so the row counter advances; a badline made during the line is a late badline, `vsp_glitch`, not a crunch.)
 
 **FPP (flexible pixel position).** Rewrite YSCROLL on every line of a row so the VIC repeats or skips single pixel lines of the character data, which stretches and squashes the picture vertically. Not measured here.
 
-**AGSP (any given screen position).** Combine FLD or linecrunch with VSP (`vsp_glitch`) for a whole-screen scroll of any distance in both axes in one frame. Not measured here.
+**AGSP (any given screen position).** Linecrunch, FLD and VSP (`vsp_glitch`) together place the whole screen at any pixel position in one frame; see `agsp_free_scroll`, measured.
 
 **Border stripes.** With the top and bottom borders open (`topbottom_border_open`) the same idle fetch draws `$3FFF` there too; the byte can be changed per line for a cheap full-height pattern.
 
@@ -577,6 +584,301 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 ### Recipes
 
 - `recipes/kickassembler/fld.md` — a bouncing display driven by a sine table, `$3FFF` striped, the first badline read back and checked against 51 + N each frame, PAL and NTSC.
+
+---
+
+## linecrunch — Linecrunch: one character row used up per raster line
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** stable_raster_irq, badline_synchronization
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/linecrunch.md` saw `$D011` written once per
+crunched line and once per frame on line 46, and the raster compare
+re-armed each frame. The recipe's `$0314` vector and zero-page bytes are
+its own choices.
+
+### Why
+
+FLD moves the text display down without moving screen RAM; linecrunch
+moves it up. Each crunched raster line uses up a whole character row, so
+N lines scroll the screen N rows. With the colour and screen data left in
+place, a whole screen, bitmap included, scrolls vertically by rows for a
+few `$D011` writes per frame (Bauer §3.14.4; codebase64 "Linecrunch").
+
+### How
+
+On a line whose row counter RC is 7, write `$D011` with YSCROLL equal to
+that line's low three bits on a cycle between 58 and the line's
+second-to-last cycle: 58 to 62 on PAL, 58 to 64 on NTSC (measured). The
+next line is drawn from the next row with RC still 7, and uses that row
+up. Repeat on every line for N rows. RC is 7 before the first badline of
+a frame, so a run of writes from line 50 crunches from line 51. On the
+last crunched line write a YSCROLL that makes the following line a
+badline: the display resumes there with row N. The crunched lines show
+pixel row 7 of stale character pointers; set ECM and BMM in the same
+writes and they are black.
+
+### Why it works
+
+Bauer (§3.7.2): in cycle 58 of a line with RC = 7 the VIC loads VCBASE
+from VC and goes idle; RC is reset to 0 only by a badline condition in
+cycle 14; VC counts the g-accesses in display state. A condition made
+true after cycle 58 returns the VIC to display state with RC still 7 and
+no c-access. The next line, which no longer matches, is drawn from the
+new VCBASE with RC = 7, VC advances 40, and its cycle 58 moves VCBASE on
+another row. Measured in VICE x64sc 3.10, PAL c64c and NTSC, by
+`recipes/kickassembler/linecrunch.md`: with N writes on cycle 60 the
+first text line is 51 + N and shows row N, pixel row 0, on every frame;
+every line from 51 to the last modelled row matches, 172 on PAL and 144
+on NTSC.
+
+The window is the whole of the design. Swept one cycle at a time in the
+recipe: 58 to 62 crunch on PAL, 58 to 64 on NTSC; the line's last cycle
+(63 or 65) and cycles 53 to 57 do not. A write on 54 to 57 of a row's
+last line repeats the row instead (Bauer's doubled text lines, §3.14.5);
+a matching write on 15 to 54 starts a late badline, the `vsp_glitch`
+mechanism. An earlier plan for this entry (#19, 2026-09-23) made the
+condition true after cycle 14 and false before 58; that is the late
+badline, and it crunched nothing.
+
+### Variations
+
+**Top of screen.** The recipe's form: crunch from line 51, the screen
+starts N rows on and N lines lower. **Mid-screen.** Writes on the last
+line of a row and the lines after it crunch from there; the rows above
+are untouched. **With FLD.** Crunch N rows, then hold the next badline
+off with FLD for the same N lines, and the display starts on line 51
+again, N rows on: a vertical coarse scroll with no gap; measured as part
+of `agsp_free_scroll`. **AGSP.** With VSP for the horizontal part
+(`vsp_glitch`): `agsp_free_scroll`.
+
+### Cycle budget
+
+One `$D011` write per crunched line, at a fixed cycle, so the CPU is
+held for every crunched line: 63 cycles on PAL, 65 on NTSC, from a
+stable raster. In the recipe the loop is 15 cycles of work and the rest
+padding. The picture after the crunch costs nothing.
+
+### Recipes
+
+- `recipes/kickassembler/linecrunch.md` — 0 to 12 rows crunched from a
+  sine, PAL and NTSC, every line of the picture checked, with the
+  write-cycle sweep.
+
+### Sources
+
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.7.2, §3.14.4 "Linecrunch",
+  §3.14.5: https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+- Codebase64, "Linecrunch": https://codebase64.c64.org/doku.php?id=base:linecrunch
+
+---
+
+## agsp_free_scroll — AGSP: the whole screen at any pixel position, from linecrunch, FLD and VSP
+
+**Complexity:** scene-tier
+**Region:** both
+
+**Uses registers:** SCROLY, SCROLX, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** linecrunch, fld_flexible_line_distance, vsp_glitch, stable_raster_irq
+**Raster band:** 46-95 (the agsp recipe's IRQ line is 46; its handler acknowledges on line 86 to 95, measured)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns), vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/agsp.md`
+saw `$D011` written on every line from 50 to the late badline and once
+after it, `$D016` once per frame, and the raster compare re-armed each
+frame. The recipe's `$0314` vector and zero-page bytes are its own choices.
+
+### Why
+
+A game that scrolls in eight directions normally copies screen and colour
+RAM every eight pixels of travel. AGSP (any given screen position) moves
+the VIC's view of screen RAM instead: a few register writes at the top of
+each frame put the text screen at any pixel position, and no byte of the
+screen is copied. The codebase64 article of that name gives the method,
+"VSP ... for the horizontal position and a line crunch ... for the
+vertical position".
+
+### How
+
+At the top of the frame, before the first text row:
+
+1. Crunch M rows with `linecrunch`: M lines, one write each.
+2. Hold the next badline off with FLD for MMAX − M + YS lines, so the
+   crunch and the gap together are always MMAX + YS lines and the top of
+   the text does not move with M. YS (0-7) is the fine vertical scroll.
+3. Make that badline late with `vsp_glitch`: YSCROLL not matching at
+   cycle 14, matching from the write on cycle 14 + N (store-trace cycle).
+   The rows below start N cells earlier in screen RAM.
+4. XSCROLL for the last seven pixels.
+
+Draw every line above the text, the late row included, in an invalid
+mode (ECM and BMM set): it is black, and the late row's first cells are
+stale. The text starts MMAX + YS + 8 lines below line 51.
+
+### Why it works
+
+Each part is its own measured technique. `linecrunch`: a YSCROLL write
+on cycles 58-62 (PAL) or 58-64 (NTSC) of a line with RC = 7 uses up a
+row. `fld_flexible_line_distance`: a YSCROLL that never matches keeps
+the VIC idle. `vsp_glitch`: a late badline fetches the row from the cell
+the beam has reached and leaves the video counter short. Put together in
+`recipes/kickassembler/agsp.md` (VICE x64sc 3.10, PAL c64c and NTSC)
+with MMAX = 16: every value of N (0-39), M (0-16), YS (0-7) and XS (0-7)
+swept one at a time gave a picture whose 200 lines 51-250 all match the
+model pixel for pixel, on both models, and the late write traced on cycle
+14 + N every time. The video counter wraps at 1024, so screen RAM is a
+1,024-byte torus in both axes: `$07E8`-`$07FF` (the sprite pointers)
+appear in the picture. A playfield wider or taller than the screen needs
+the rows and columns that scroll into view written as they arrive, which
+the recipe does not do.
+
+### Variations
+
+**Bitmap.** The video counter also addresses bitmap data, so the same
+writes place a bitmap (Bauer §3.14.6); not measured here. **Fewer rows
+of range.** A smaller MMAX shortens the band and the black area above the
+text, at the cost of vertical range. **Split screen.** The same writes
+lower down move a part of the screen and leave a status area above.
+
+### Cycle budget
+
+The band holds the CPU for every line from 50 to the late badline, one
+write per line at a fixed cycle, from a stable raster; in the recipe the
+handler runs from line 46 to line 86-95, up to 50 raster lines a frame.
+Not timed with a CIA.
+
+The late write is the VSP write, with its crash on some machines
+(`vsp_glitch`, "The VSP crash"): AGSP inherits the Safe VSP rules.
+
+### Recipes
+
+- `recipes/kickassembler/agsp.md` — the text screen on two sines, x 0 to
+  319 and y 0 to 135, PAL and NTSC, every line of the picture checked,
+  with the sweeps of N, M, YS and XS.
+
+### Sources
+
+- Codebase64, "Any Given Screen Positioning (AGSP) VSP with a line
+  crunch": https://codebase64.c64.org/doku.php?id=base:agsp_any_given_screen_position
+
+---
+
+## kefrens_bars — Kefrens bars: one pixel line re-shown on every raster line
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** badline_synchronization
+**Raster band:** 44-214 (the kefrens-bars recipe's IRQ line is 44; its handler acknowledges on line 209 to 214, measured)
+**Cost:** cycles_per_line=63, lines_active=129, irq_slots=1
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-kefrens-bars (128 blocks timed by CIA2: 8,062 cycles PAL, 8,318 NTSC)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/kefrens-bars.md` saw `$D011` written on every
+line of the band with YSCROLL = the next line's `& 7`, and the raster
+compare set once. The recipe's `$0314` vector, CIA2 timer and zero-page
+bytes are its own choices.
+
+### Why
+
+A Kefrens bar screen shows one horizontal line of graphics repeated down a
+band, with a bar stamped into that line once per raster line and never
+erased inside the band, so each line shows every bar drawn above it and
+the bars trail downward. The C64 has no register that repeats a line.
+Redrawing the band as a bitmap each frame costs far more than the 20
+cycles a line the effect uses.
+
+### How
+
+Make every line of the band a badline. On line L, after its badline
+stall, write YSCROLL = `(L + 1) & 7` into `$D011`, so line L + 1 is a
+badline from its first cycle. The VIC then resets its row counter to 0 on
+every line and never advances to the next text row: every line of the
+band shows pixel row 0 of the same text row. Fill that row with 40
+different characters, 0 to 39, and pixel row 0 of those characters, the
+bytes at charset + 8c, is a 40-byte line buffer the CPU can write. In the
+20 cycles between two stalls on PAL (22 on NTSC) the CPU writes the next
+YSCROLL and stores one bar byte into the buffer at the line's column,
+taken from a sine table. The next line shows it, and every line after.
+
+One unrolled block per line, exactly as long as the free cycles: `stx
+$d011`, `ldy pos + k`, `sta buffer,y`, `ldx #next`, and 5 cycles of
+padding on PAL, 7 on NTSC. The badline stall holds the CPU at the same
+place every line, so the block needs no stable raster; the entry only has
+to reach the stall of the first band line before its first write. Clear
+the buffer once per frame, before the band.
+
+### Why it works
+
+Bauer's rules (§3.7.2): RC is reset to 0 in cycle 14 when the badline
+condition holds; VCBASE takes the video counter only in cycle 58 of a
+line with RC = 7. With a badline on every line RC is 0 at cycle 14 and 1
+after cycle 58, never 7, so VCBASE stays at the band's first row. The
+c-accesses re-read the same 40 screen codes each line and the g-accesses
+read row 0 of each character, so a store to a buffer byte before that
+column's g-access shows on that line. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, with the buffer filled with one fixed byte
+(`kefrens-bars` built `:proof=1`): all 129 lines from 51 to 179 showed
+that byte in all 40 cells, and the character's rows 1 to 7 appeared only
+on the seven lines after the band.
+
+The block length is the whole design. Measured (the recipe's sweep): a
+block one cycle shorter than the free cycles fits twice into some windows,
+its second write removes the badline from the current line, and the band
+breaks every 20 lines (PAL) or 22 (NTSC). A longer block drifts later
+every line until its write meets the stall: landing on cycle 12 or 13 the
+badline still starts but the first one or two cells get no c-access and
+show black; on cycle 14 RC is no longer reset and the band is lost.
+
+This corrects the plan in #16, which asked for a badline-free region: the
+repeated line needs a badline on every line, and the cycle budget is the
+20 or 22 cycles a badline leaves.
+
+### Variations
+
+**Bitmap line buffer.** In bitmap mode the g-access reads bitmap +
+8·VC + RC, so with RC = 0 the buffer is again every eighth byte. Not
+measured here.
+
+**Pixel-positioned bars.** Two or three pre-shifted bytes per line put a
+bar anywhere to the pixel; with the `$D011` write that exceeds 20 cycles
+on PAL. Not measured here.
+
+**Colour per column.** Colour RAM of the buffer row gives each column its
+own colour for every line of the band; multicolour gives three colours
+per byte. The recipe uses one multicolour bar byte.
+
+### Cycle budget
+
+The band takes the CPU for every line: 43 cycles of badline stall and 20
+of block on PAL (22 of 65 on NTSC). Measured with CIA2 timer A around
+the recipe's 128 blocks: 8,062 cycles on PAL and 8,318 on NTSC, which is
+128 × 63 and 128 × 65 less the 2 cycles of the timer's own start and stop
+stores, identical in every frame of an 8,000,000-cycle run. The Cost
+line counts the 129 badlines the band shows; the recipe's handler also
+spends lines 44 to 50 clearing the buffer and 180 to 214 rebuilding the
+position table.
+
+### Recipes
+
+- `recipes/kickassembler/kefrens-bars.md` — a 129-line band of multicolour
+  bars from two sine tables, PAL and NTSC, every band line checked against
+  the tables, with the `:proof=1` test and the block-length sweep.
 
 ---
 

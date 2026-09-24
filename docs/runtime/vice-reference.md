@@ -1359,7 +1359,11 @@ is why it had to be tied to the chip by measurement. VICE's own VIC-II
 log (for example the `VSP Bug: ... Cycle: 24` line of `-VICIIvspbug`)
 prints `vicii.raster_cycle`, a table index that is Bauer's cycle minus
 one (`VICII_PAL_CYCLE(c) = c - 1`, `src/viciisc/viciitypes.h`; not
-checked against the monitor beyond that).
+checked against the monitor beyond that). Checked once since: the `vsp`
+recipe's write that the log prints as `Cycle: 24` is a store the monitor
+also prints as CYC 24, so for that log the "minus one" does not hold as
+a conversion to the store's cycle; which cycle the log reports was not
+settled.
 
 **Where a store shows in the exit screenshot.** A loop exactly one line
 long locks to the raster, so each of its stores lands on the same cycle
