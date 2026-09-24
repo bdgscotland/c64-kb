@@ -200,6 +200,30 @@ describe("d016 rule reads the load that feeds the store", () => {
   });
 });
 
+// The starters' deliberate whole-value stores (#41): each was reported
+// before the rule knew ORA constants, register-named shadows and constants.
+describe("d016 rule leaves deliberate whole-value stores alone (#41)", () => {
+  const d016 = (src: string, language: "asm" | "c") =>
+    lintSource(src, { language })
+      .filter((x) => x.rule === "d016_unmasked_rmw_clobbers_csel_mcm")
+      .map((x) => x.line);
+
+  it("is quiet on an ORA with a constant, a register-named shadow and a register-named constant", () => {
+    expect(d016("        lda xscroll\n        ora #$c0\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("        lda pf_d016\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("        lda d016_zp + 3\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("        lda #HUD_D016\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016(".const MODE = $d8\n        lda #MODE\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("void f(void) {\n    vic.ctrl2 = D016_PLAY | 7;\n}\n", "c")).toEqual([]);
+  });
+
+  it("still reports a bare variable and a constant defined without CSEL", () => {
+    expect(d016("        lda xscroll\n        sta $d016\n", "asm")).toEqual([2]);
+    expect(d016(".const XS = 5\n        lda #XS\n        sta $d016\n", "asm")).toEqual([3]);
+    expect(d016("void f(void) {\n    vic.ctrl2 = xscroll;\n}\n", "c")).toEqual([2]);
+  });
+});
+
 describe("raster poll rule in assembly (#41)", () => {
   const poll = (src: string) =>
     lintSource(src, { language: "asm" }).filter((x) => x.rule === "raster_poll_with_kernal_irq_live");

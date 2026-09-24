@@ -189,20 +189,48 @@ const D016_LOAD_ENDS = new RegExp(
 );
 const D016_IMMEDIATE = new RegExp(String.raw`^\s*${LABEL}lda\s+#\s*([^\s,]+)\s*$`, "i");
 
+/** A name that says it holds a whole $D016 value: a shadow, or a constant named for the register. */
+const D016_NAMED = /(d016|ctrl2|shadow)/i;
+/** `lda <label>` or `lda <label> + n` from a variable, not an immediate. */
+const D016_LOAD_LABEL = new RegExp(String.raw`^\s*${LABEL}lda\s+([a-z_][^#]*?)\s*$`, "i");
+
+/**
+ * Whether an immediate operand keeps CSEL. A number with bit 3 set does. A
+ * symbol named for the register (#HUD_D016, #PF_D016) is a deliberate
+ * whole-value store; any other symbol is judged by its definition in this
+ * file, and reported when it has none.
+ */
+function immediateKeepsCsel(operand: string, src: string): boolean {
+  const literal = parseNumber(operand);
+  if (literal !== null) return (literal & 0x08) !== 0;
+  if (D016_NAMED.test(operand)) return true;
+  const name = operand.replace(/[^\w]/g, "");
+  if (name === "" || name !== operand) return false;
+  const def = new RegExp(
+    String.raw`^\s*(?:\.const|\.label|\.var|\.equ)?\s*${name}\s*=\s*([$%]?[0-9a-f]+)\b`,
+    "im",
+  ).exec(src);
+  const value = def ? parseNumber(group(def, 1)) : null;
+  return value !== null && (value & 0x08) !== 0;
+}
+
 /**
  * Walk back from a $D016 store to the instruction that loaded A. A read
- * of $D016 or an AND on the way is a masked write; an immediate with bit 3
- * set carries CSEL; anything else is unknown and reported.
+ * of $D016 or an AND on the way is a masked write; an ORA with a constant
+ * composes the whole value on purpose (`ora #$c8`, or `ora #$c0` for 38
+ * columns); a load from a shadow named for the register carries CSEL and
+ * MCM; an immediate is judged by immediateKeepsCsel. Anything else is
+ * unknown and reported. Until #41 the ORA, the shadow and the named
+ * constant were all reported, in five of the starters' deliberate stores.
  */
-function d016StoreKeepsCsel(lines: string[], i: number): boolean {
+function d016StoreKeepsCsel(ctx: LintContext, i: number): boolean {
   for (let j = i - 1; j >= Math.max(0, i - 12); j--) {
-    const l = lineAt(lines, j);
-    if (/\b(lda|ldx|ldy)\s+(\$d016|0xd016|53270)\b/i.test(l) || /\band\s+#/i.test(l)) return true;
+    const l = lineAt(ctx.lines, j);
+    if (/\b(lda|ldx|ldy)\s+(\$d016|0xd016|53270)\b/i.test(l) || /\b(and|ora)\s+#/i.test(l)) return true;
     const imm = D016_IMMEDIATE.exec(l);
-    if (imm) {
-      const literal = parseNumber(group(imm, 1));
-      return literal !== null && (literal & 0x08) !== 0;
-    }
+    if (imm) return immediateKeepsCsel(group(imm, 1), ctx.src);
+    const load = D016_LOAD_LABEL.exec(l);
+    if (load) return D016_NAMED.test(group(load, 1));
     if (D016_LOAD_ENDS.test(l)) return false;
   }
   return false;
@@ -212,12 +240,12 @@ function d016StoreKeepsCsel(lines: string[], i: number): boolean {
 function d016Unmasked(ctx: LintContext): void {
   const store = new RegExp(String.raw`^\s*${LABEL}sta\s+(\$d016|0xd016|53270)\b`, "i");
   ctx.lines.forEach((line, i) => {
-    if (!store.test(line) || d016StoreKeepsCsel(ctx.lines, i)) return;
+    if (!store.test(line) || d016StoreKeepsCsel(ctx, i)) return;
     report(ctx, i, {
       rule: "d016_unmasked_rmw_clobbers_csel_mcm",
       pitfall: "d016_unmasked_rmw_clobbers_csel_mcm",
       message:
-        "STA $D016 with no read of $D016 and no AND mask before it: the naive store zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Use `lda $d016 / and #$f8 / ora xscroll / sta $d016`, or a shadow that carries CSEL and MCM. Heuristic: the value may come from such a shadow.",
+        "STA $D016 with no read of $D016 and no AND mask before it: the naive store zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Use `lda $d016 / and #$f8 / ora xscroll / sta $d016`, or a shadow that carries CSEL and MCM. Heuristic: a load from a shadow not named for the register (d016, ctrl2, shadow) is reported too.",
       page: PAGES.d016,
       certainty: "heuristic",
     });

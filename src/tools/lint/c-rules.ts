@@ -181,9 +181,15 @@ function lfsrZero(ctx: LintContext): void {
   });
 }
 
-/** Whether the right-hand side of a vic.ctrl2 store keeps CSEL: a masked read, or a value with bit 3 set. */
+/**
+ * Whether the right-hand side of a vic.ctrl2 store keeps CSEL: a masked
+ * read, a value with bit 3 set, or a name that says it holds the whole
+ * register (D016_PLAY, ctrl2_shadow). The named form was reported until
+ * #41, in the starters' deliberate `vic.ctrl2 = D016_PLAY | 7`.
+ */
 function keepsCsel(rhs: string): boolean {
   if (/\bvic\s*\.\s*ctrl2\b/.test(rhs) || rhs.includes("&")) return true;
+  if (/(d016|ctrl2|shadow)/i.test(rhs)) return true;
   const lit = parseNumber(rhs);
   if (lit !== null && (lit & 0x08) !== 0) return true;
   return /\b0x[cC]8\b|\b0x[dD]8\b|\b0x18\b|\b0x08\b|\bVIC_CTRL2_CSEL\b|\bVIC_CTRL2_MCM\b/.test(rhs);
@@ -199,7 +205,7 @@ function d016Unmasked(ctx: LintContext): void {
       rule: "d016_unmasked_rmw_clobbers_csel_mcm",
       pitfall: "d016_unmasked_rmw_clobbers_csel_mcm",
       message:
-        "Store to vic.ctrl2 ($D016) of a value not derived from a masked read: the naive `vic.ctrl2 = xscroll` zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Write `vic.ctrl2 = (vic.ctrl2 & 0xF8) | xscroll`, or a shadow that carries CSEL and MCM. Heuristic: the right-hand side may already be such a shadow.",
+        "Store to vic.ctrl2 ($D016) of a value not derived from a masked read: the naive `vic.ctrl2 = xscroll` zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Write `vic.ctrl2 = (vic.ctrl2 & 0xF8) | xscroll`, or a shadow that carries CSEL and MCM. Heuristic: a shadow not named for the register (d016, ctrl2, shadow) is reported too.",
       page: PAGES.d016,
       certainty: "heuristic",
     });
