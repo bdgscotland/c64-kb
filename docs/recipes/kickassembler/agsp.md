@@ -3,7 +3,7 @@ recipe: agsp
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [agsp_free_scroll, linecrunch, fld_flexible_line_distance, vsp_glitch, stable_raster_irq, double_irq, pal_ntsc_detection]
+techniques: [agsp_free_scroll, stable_raster_irq, double_irq, pal_ntsc_detection]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D]
 uses_kernal: []
