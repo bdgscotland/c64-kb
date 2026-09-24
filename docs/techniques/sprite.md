@@ -1853,6 +1853,25 @@ computed, every mirrored frame against the assembler's string-reversed
 frame, and the exit screenshot, where each left-facing sprite is the
 pixel mirror of its right-facing neighbour on PAL and NTSC.
 
+### Variations
+
+**Mirror once at load.** When the frame set fits the VIC bank twice,
+mirror every frame once after loading into a resident second facing and
+skip the cache. A turn is then a change of pointers and part offsets,
+with no fill. `recipes/oscar64/sprite-mirror-at-load.md` does it for a
+multicolour set with the pair-preserving table: building the table took
+15,624 cycles, mirroring one 63-byte block 1,575 and a set of six blocks
+(a three-sprite object, two frames) 9,658, all once at load (VICE x64sc,
+CIA1 timer B, screen blanked, PAL and NTSC; compiled C). Every mirrored
+pair matched its source read backwards and the exit screenshot showed
+the left-facing object as the pixel mirror of the right-facing one with
+the same colours. The price is 64 bytes of bank per frame per facing.
+A three-sprite object turning through the cache instead needs three
+fills of 2,100 to 2,700 cycles in the frame it turns (the misses above).
+The Metal Warrior 4 note under Why is this variation. The platformer
+starter's `templates/platformer/src/art.c` mirrors its player's hires
+frames once at start, pixel by pixel without a table.
+
 ### Cycle budget
 
 Measured in VICE x64sc 3.10 with CIA2 timers, screen blanked, IRQs off,
@@ -1884,6 +1903,10 @@ sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
   start and checked, four frames depacked into an 8-slot cache facing
   both ways, one eviction, figures and PASS on screen, the mirror
   measured from the screenshot on PAL and NTSC).
+- `recipes/oscar64/sprite-mirror-at-load.md` (the mirror-once-at-load
+  variation: a multicolour set of six blocks mirrored with the
+  pair-preserving table, a three-sprite object turning in place, both
+  facings measured pixel by pixel on PAL and NTSC).
 
 ### Sources
 
@@ -2426,7 +2449,15 @@ on top in the lower slot. To face the other way, each part's offset
 becomes `-dx - width` and its image is mirrored (`sprite_cache_flip`).
 c64gameframework stores a mirrored X offset beside the normal one for
 every part, so the flip is a choice of column, not arithmetic
-(`sprite.s`, source read here).
+(`sprite.s`, source read here). With the anchor in the middle of the
+object the parts cover the same span either way and the object turns
+in place. `recipes/oscar64/sprite-mirror-at-load.md` turns a
+three-sprite multicolour object this way, offsets -36, -12 and 12, with
+a left-facing frame set mirrored once at load: every part's registers
+matched a model in each of 128 frames with seven turns, and the exit
+screenshot shows the left-facing object as the exact pixel mirror of the
+right-facing one (PIL, PAL and NTSC). Placing the three parts took 417
+cycles facing right and 460 facing left in compiled C.
 
 ### Why it works
 
@@ -2510,6 +2541,10 @@ counters are not in these figures.
   past the right edge; every part's registers, including its `$D010`
   bit, checked against a model every frame; cycles per update and per
   part; each part's box measured with PIL on PAL and NTSC)
+- `recipes/oscar64/sprite-mirror-at-load.md` (a three-sprite object
+  that turns in place about its anchor, `-dx - width`, with a mirrored
+  frame set; registers checked every frame, the mirror measured on
+  screen)
 
 ### Sources
 
