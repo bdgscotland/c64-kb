@@ -24,6 +24,8 @@ const PlanPhaseSchema = z.object({
       every_frame: z.boolean(),
       basis: CostBasisSchema,
       charge: z.enum(["cycles_per_frame", "per_line", "band"]),
+      // Present when low and high are one call's figure times this many (#37).
+      calls: z.object({ low: z.number().int(), high: z.number().int() }).optional(),
       measured_on: z.string().nullable(),
       conditions: z.string().nullable(),
     }),
@@ -79,13 +81,20 @@ const DesignMeasuredSchema = z.object({
   position: z.enum(["below_low", "within", "within_incomplete", "above_high", "not_predicted"]),
   finding: z.string(),
 });
+// One COMPOSES edge: a technique in a phase, and, where the page states
+// `×N` or `×M-N` (#37, tools 2.x), its calls in the cheapest and worst frame.
+const ComposesSchema = z.object({
+  technique: z.string(),
+  phase: z.enum(["play", "transition", "init"]),
+  calls: z.object({ low: z.number().int(), high: z.number().int() }).optional(),
+});
 const PlanDesignSchema = z.object({
   name: z.string(),
   title: z.string(),
   region: z.enum(["PAL", "NTSC", "both"]).nullable(),
   instance_of: z.array(z.string()),
   realised_by: z.array(z.string()),
-  composes: z.array(z.object({ technique: z.string(), phase: z.enum(["play", "transition", "init"]) })),
+  composes: z.array(ComposesSchema),
   source_doc: z.string(),
   measured: z.array(DesignMeasuredSchema),
 });
@@ -95,7 +104,7 @@ export const BriefingDesignSchema = z.object({
   name: z.string(),
   title: z.string(),
   realised_by: z.array(z.string()),
-  composes: z.array(z.object({ technique: z.string(), phase: z.enum(["play", "transition", "init"]) })),
+  composes: z.array(ComposesSchema),
   measured: z.array(
     DesignMeasuredSchema.pick({
       phase: true,

@@ -13,7 +13,7 @@ the listing's `main()`, not from the recipe's frontmatter.
 **Instance of:** single_screen_platformer
 **Realised by:** oscar64-platformer-scaffold
 **Region:** both
-**Composes:** tile_map_render (init), lfsr_random (init), kernal_file_read_seq (init), error_channel_check (init), frame_sync_loop, joystick_edge_detect, joystick_autorepeat, object_pool, lfsr_random, tile_grid_collision, fixed_point_8_8, jump_arc_table, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print, kernal_file_write_seq (transition), kernal_file_read_seq (transition), error_channel_check (transition)
+**Composes:** tile_map_render (init), lfsr_random (init), kernal_file_read_seq (init), error_channel_check (init), frame_sync_loop, joystick_edge_detect, joystick_autorepeat, object_pool, lfsr_random, tile_grid_collision, fixed_point_8_8, jump_arc_table, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print ×2-7, kernal_file_write_seq (transition), kernal_file_read_seq (transition), error_channel_check (transition), decimal_print (transition)
 **Measured frame:** play pal worst=8693 typical=4966; play ntsc worst=10287 typical=6628 (measured-vice, CIA1 timer B around the whole loop body in VICE x64sc 3.10, recipes/oscar64/platformer-scaffold.md "Expected output")
 
 ### Phases
@@ -23,6 +23,13 @@ the listing's `main()`, not from the recipe's frontmatter.
 | init | `map_decode_and_draw` draws the whole map once; `tile_map_render` does not run again. The LFSR is seeded from SID voice 3 noise. `hs_start` opens `HISCORE`, reads it and reads the error channel. |
 | play | Per frame: wait for the raster IRQ's tick, read the stick (`joy_edge`, `repeat_step`), step the waves and enemies (`object_pool`, rows and directions from `rnd`), move the player against `map[]` (`tile_grid_collision`, 8.8 Y, the jump table), play the tune, let the effect re-poke voice 2, redraw the HUD fields that changed (`put_dec`). |
 | transition | At game over `hs_game_over` scratches `HISCORE`, writes it, reads it back and reads the error channel, with the raster IRQ stopped. |
+
+`hud_draw` calls `put_dec` for the frame counter and the cycle count
+every frame, and for score, lives, high score, `MAX` and `DROP` only in
+a frame where they changed: two calls at least, seven at most, so
+`decimal_print ×2-7`. Until #37 the line had no count and a budget
+charged the HUD one call. `hs_game_over` prints the read-back score
+once, so `decimal_print` is in transition too.
 
 `tile_map_render` is in init. An earlier plan for this page (the
 #22 design) put it in play, which would charge a map redraw to every frame.

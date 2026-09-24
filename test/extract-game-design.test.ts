@@ -115,6 +115,19 @@ describe("game-design extractor", () => {
     ]);
   });
 
+  it("reads a call count, ×N or ×M-N, before the phase, and refuses a bad one (#37)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(parseComposes("decimal_print ×2-7, b ×3 (init), c x4, d*5, e ×9-2, f ×0", "t")).toEqual([
+      { technique: "decimal_print", phase: "play", calls: { low: 2, high: 7 } },
+      { technique: "b", phase: "init", calls: { low: 3, high: 3 } },
+      { technique: "c", phase: "play", calls: { low: 4, high: 4 } },
+      { technique: "d", phase: "play", calls: { low: 5, high: 5 } },
+    ]);
+    const warnings = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warnings).toContain('"e ×9-2"');
+    expect(warnings).toContain('"f ×0"');
+  });
+
   it("the three design pages in docs extract with no warning", async () => {
     const fs = await import("node:fs");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);

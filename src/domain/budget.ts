@@ -42,6 +42,7 @@ import {
   type VideoRegion,
 } from "./timing.ts";
 import { assumptionsFor, lockedTo, measuredScreenOn, phaseNotes } from "./budget-notes.ts";
+import type { CallCount } from "./calls.ts";
 
 export const BUDGET_PHASES = ["play", "transition", "init"] as const;
 export type BudgetPhase = (typeof BUDGET_PHASES)[number];
@@ -90,6 +91,13 @@ export interface BudgetMember {
   /** Recipes that IMPLEMENT the technique: where a missing figure could be measured. */
   recipes?: string[] | undefined;
   cost?: BudgetCost | undefined;
+  /**
+   * Calls per frame (#37): a Cost figure is one call, so a cycles_per_frame
+   * charge is multiplied, low by calls.low and high by calls.high. Absent is
+   * one call. A band or per-line charge is lines, not calls, and is not
+   * multiplied.
+   */
+  calls?: CallCount | undefined;
 }
 
 export interface BudgetOptions {
@@ -108,6 +116,8 @@ export interface BudgetContributor {
   basis: BudgetBasis;
   /** How the figure was charged: the Cost line's cycles_per_frame, per-line × lines, or a raster band. */
   charge: "cycles_per_frame" | "per_line" | "band";
+  /** The calls low and high are multiplied by, when the member states more than one (#37). */
+  calls?: CallCount | undefined;
   measured_on: string | null;
   conditions: string | null;
 }
@@ -436,6 +446,11 @@ interface Sorted {
  */
 const MULTI_FRAME_ABOVE = Math.max(...Object.values(REGION_TIMING).map((t) => t.cycles_per_frame));
 
+/** A call count other than exactly one, or undefined. */
+function multiCalls(calls: CallCount | undefined): CallCount | undefined {
+  return calls && (calls.low !== 1 || calls.high !== 1) ? calls : undefined;
+}
+
 /** Put one member where it belongs: summed, left out as multi-frame, unknown, or not found. */
 function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
   if (!m.found) {
@@ -454,9 +469,12 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
     into.excluded.push({ name: m.name, reason: "multi_frame", cycles: charge.high, measured_on });
     return;
   }
+  // The multi-frame test above is on one call; the sum takes every call.
+  const calls = charge.charge === "cycles_per_frame" ? multiCalls(m.calls) : undefined;
   into.contributors.push({
     name: m.name,
     ...charge,
+    ...(calls ? { low: charge.low * calls.low, high: charge.high * calls.high, calls } : {}),
     every_frame: charge.charge !== "cycles_per_frame",
     basis: m.cost?.basis ?? "estimated",
     measured_on,

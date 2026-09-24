@@ -157,4 +157,27 @@ describe("GameDesign in the graph and in c64_plan_budget", () => {
     );
     expect(r.data[0]).toEqual({ m: null, r: null });
   });
+
+  it("a call count rides the COMPOSES edge and multiplies the member's figure (#37)", async () => {
+    await f.addGameDesign({ name: "calls_test", title: "Calls", measured: [], source_doc: "c.md" });
+    expect(await f.linkComposes("calls_test", "lfsr_random", "play", { low: 2, high: 3 })).toBe(true);
+    const { structured, text } = await planBudgetTool({ design: "calls_test", region: "PAL" });
+    PlanBudgetSchema.parse(structured);
+    expect(structured.design?.composes).toEqual([
+      { technique: "lfsr_random", phase: "play", calls: { low: 2, high: 3 } },
+    ]);
+    expect(structured.techniques).toEqual(["lfsr_random ×2-3"]);
+    expect(structured.phases[0]?.contributors[0]).toMatchObject({
+      low: 28,
+      high: 42,
+      calls: { low: 2, high: 3 },
+    });
+    expect(text).toContain("×2-3 calls");
+    // A re-link without a count removes it.
+    await f.linkComposes("calls_test", "lfsr_random", "play");
+    const r = await f.roQuery(
+      `MATCH (:GameDesign {name: 'calls_test'})-[c:COMPOSES]->() RETURN c.calls_low AS l, c.calls_high AS h`,
+    );
+    expect(r.data).toEqual([{ l: null, h: null }]);
+  });
 });

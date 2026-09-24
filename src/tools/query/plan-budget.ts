@@ -15,6 +15,7 @@ import {
   type BudgetPhase,
   type PhaseBudget,
 } from "../../domain/budget.ts";
+import { callsText, splitCalls, type CallCount } from "../../domain/calls.ts";
 import { compareMeasured } from "../../domain/game-design.ts";
 import { CostBasisSchema, type PlanBudgetOutput } from "../../schemas/tool-outputs.ts";
 import { fetchGameDesign, knownGameDesigns, type GameDesignRecord } from "./game-design.ts";
@@ -72,22 +73,41 @@ const INCLUDES_QUERY = `MATCH (t:Technique) WHERE t.cost_includes IS NOT NULL
   RETURN t.name AS name, t.cost_includes AS includes`;
 const IncludesRow = z.object({ name: z.string(), includes: StringList });
 
-/** "name" or "name:phase"; a phase outside play, transition, init is refused. */
-export function parseMemberSpec(spec: string): { name: string; phase: BudgetPhase } | { error: string } {
-  const [rawName = "", rawPhase, ...rest] = spec.trim().split(":");
-  const name = rawName.trim();
-  if (name === "" || rest.length > 0) return { error: `"${spec}" is not "name" or "name:phase"` };
-  if (rawPhase === undefined) return { name, phase: "play" };
-  const phase = BUDGET_PHASES.find((p) => p === rawPhase.trim().toLowerCase());
-  return phase ? { name, phase } : { error: `phase "${rawPhase}" is not one of ${BUDGET_PHASES.join(", ")}` };
+/** A member of a plan: a technique in a phase, with its calls per frame when more than one. */
+export interface MemberSpec {
+  name: string;
+  phase: BudgetPhase;
+  calls?: CallCount;
 }
 
-function memberOf(name: string, phase: BudgetPhase, row: MemberRow | undefined): BudgetMember {
-  if (!row) return { name, phase, found: false };
+/**
+ * "name", "name:phase", "name ×N" or "name ×M-N:phase" (#37); a phase
+ * outside play, transition, init, or a bad call count, is refused.
+ */
+export function parseMemberSpec(spec: string): MemberSpec | { error: string } {
+  const [rawName = "", rawPhase, ...rest] = spec.trim().split(":");
+  if (rawName.trim() === "" || rest.length > 0) return { error: `"${spec}" is not "name" or "name:phase"` };
+  const split = splitCalls(rawName);
+  if ("error" in split) return split;
+  const { name, calls } = split;
+  if (name === "") return { error: `"${spec}" is not "name" or "name:phase"` };
+  const withCalls = calls ? { calls } : {};
+  if (rawPhase === undefined) return { name, phase: "play", ...withCalls };
+  const phase = BUDGET_PHASES.find((p) => p === rawPhase.trim().toLowerCase());
+  return phase
+    ? { name, phase, ...withCalls }
+    : { error: `phase "${rawPhase}" is not one of ${BUDGET_PHASES.join(", ")}` };
+}
+
+function memberOf(spec: MemberSpec, row: MemberRow | undefined): BudgetMember {
+  const { name, phase } = spec;
+  const calls = spec.calls ? { calls: spec.calls } : {};
+  if (!row) return { name, phase, found: false, ...calls };
   return {
     name,
     phase,
     found: true,
+    ...calls,
     requires_region: row.requires_region,
     raster_band: row.raster_band,
     requires_closure: row.closure,
@@ -114,9 +134,7 @@ function memberOf(name: string, phase: BudgetPhase, row: MemberRow | undefined):
 }
 
 /** Graph rows for the named techniques, as planBudget members in the order asked. */
-export async function fetchBudgetMembers(
-  specs: { name: string; phase: BudgetPhase }[],
-): Promise<BudgetMember[]> {
+export async function fetchBudgetMembers(specs: MemberSpec[]): Promise<BudgetMember[]> {
   const f = await getFalkor();
   const names = [...new Set(specs.map((s) => s.name))];
   const rows = parseRows(MemberRow, await f.roQuery(MEMBERS_QUERY, { names }));
@@ -126,7 +144,7 @@ export async function fetchBudgetMembers(
   const byName = new Map(
     rows.map((r) => [r.name, { ...r, includes: followIncludes(r.name, (n) => direct.get(n) ?? []) }]),
   );
-  return specs.map((s) => memberOf(s.name, s.phase, byName.get(s.name)));
+  return specs.map((s) => memberOf(s, byName.get(s.name)));
 }
 
 function rangeText(p: PhaseBudget): string {
@@ -137,12 +155,13 @@ function rangeText(p: PhaseBudget): string {
 
 function contributorLine(c: PhaseBudget["contributors"][number]): string {
   const figure = c.low === c.high ? `${c.high}` : `${c.low}-${c.high}`;
+  const calls = c.calls ? `, ${callsText(c.calls).trim()} calls` : "";
   const on = c.measured_on
     ? `, on ${c.measured_on}${c.conditions ? ` (${c.conditions})` : ""}`
     : ", recipe not stated";
   const how =
     c.charge === "band" ? ", band lines × line" : c.charge === "per_line" ? ", per line × lines" : "";
-  return `- ${c.name}: ${figure} (${c.basis}${on}${how})\n`;
+  return `- ${c.name}: ${figure} (${c.basis}${on}${how}${calls})\n`;
 }
 
 function excludedLine(e: PhaseBudget["excluded"][number]): string {
@@ -227,11 +246,11 @@ export function budgetRegion(region: string | undefined): "PAL" | "NTSC" | "both
 
 /** Parse every spec; a malformed one, or a name already listed in the same phase, is refused with the reason. */
 export function parseMemberSpecs(inputs: string[]): {
-  specs: { name: string; phase: BudgetPhase }[];
+  specs: MemberSpec[];
   refused: PlanBudgetOutput["refused"];
 } {
   const refused: PlanBudgetOutput["refused"] = [];
-  const specs: { name: string; phase: BudgetPhase }[] = [];
+  const specs: MemberSpec[] = [];
   const listed = new Set<string>();
   for (const t of inputs) {
     const parsed = parseMemberSpec(t);
@@ -256,9 +275,17 @@ export interface PlanBudgetRequest extends BudgetOptions {
   design?: string | undefined;
 }
 
-/** The design's members as "name" / "name:phase" specs, play first. */
+/** The design's members as "name" / "name ×N:phase" specs, play first. */
 function designSpecs(d: GameDesignRecord): string[] {
-  return d.composes.map((c) => (c.phase === "play" ? c.technique : `${c.technique}:${c.phase}`));
+  return d.composes.map((c) =>
+    specText({ name: c.technique, phase: c.phase, ...(c.calls ? { calls: c.calls } : {}) }),
+  );
+}
+
+/** A spec as the tool echoes it: "name", "name ×N", "name:phase". */
+function specText(s: MemberSpec): string {
+  const name = `${s.name}${callsText(s.calls)}`;
+  return s.phase === "play" ? name : `${name}:${s.phase}`;
 }
 
 async function resolveDesign(
@@ -294,7 +321,7 @@ export async function planBudgetTool(req: PlanBudgetRequest): Promise<PlanBudget
         }
       : null,
     ...(notFound ? { design_not_found: notFound } : {}),
-    techniques: specs.map((s) => (s.phase === "play" ? s.name : `${s.name}:${s.phase}`)),
+    techniques: specs.map(specText),
     refused,
     ...plan,
   };

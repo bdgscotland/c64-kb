@@ -6,6 +6,7 @@
  */
 
 import { BUDGET_PHASES, type BudgetPhase } from "../../domain/budget.ts";
+import { splitCalls, type CallCount } from "../../domain/calls.ts";
 import { COST_BASIS_WORDS, isCostBasis, type CostBasis } from "./vocabulary.ts";
 import { group, matchField, splitH2Sections, warn, type Section } from "./common.ts";
 import { TECHNIQUE_NAME } from "./technique-entities.ts";
@@ -33,7 +34,8 @@ const REGION_LINE = /^\*\*Region:\*\*\s+(PAL|NTSC|both)\s*$/im;
 const MEASURED_LINE = /^\*\*Measured frame:\*\*\s+(.+)$/gm;
 // A canonical recipe name: <toolchain>-<recipe>, lower case with hyphens.
 const RECIPE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)+$/;
-const COMPOSES_ITEM = /^([a-z][a-z0-9_]*)(?:\s*\(\s*([a-z]+)\s*\))?$/;
+// An optional phase in parentheses at the end of a Composes item.
+const PHASE_SUFFIX = /^(.*?)\s*\(\s*([a-z]+)\s*\)$/;
 const MEASURED_ENTRY = /^([a-z]+)\s+(pal|ntsc)\s+(.+)$/i;
 const MEASURED_PAIR = /^(worst|typical)=(\d+)$/;
 
@@ -63,21 +65,40 @@ function names(line: string | undefined, re: RegExp, where: string, label: strin
   return out;
 }
 
+/** One Composes item's parts: technique, phase word, call count; or why it is refused. */
+function composesItem(
+  item: string,
+): { technique: string; phase: string; calls?: CallCount } | { error: string } {
+  const p = PHASE_SUFFIX.exec(item);
+  const split = splitCalls(p ? group(p, 1) : item);
+  if ("error" in split) return split;
+  if (!TECHNIQUE_NAME.test(split.name))
+    return { error: `"${item}" is not "technique", "technique ×N" or "technique (phase)"` };
+  const phase = p ? group(p, 2) : "play";
+  return { technique: split.name, phase, ...(split.calls ? { calls: split.calls } : {}) };
+}
+
+export interface ComposesItem {
+  technique: string;
+  phase: GameDesignPhase;
+  /** Calls per frame, when the item states `×N` or `×M-N` (#37); absent is one. */
+  calls?: CallCount;
+}
+
 /**
- * `a, b (init), c (transition)`: each technique in a phase, play when no
- * phase is given. The same technique may be listed once per phase; a bad
- * item is warned about and skipped.
+ * `a, b ×2-7, c (init), d (transition)`: each technique in a phase, play
+ * when no phase is given, with an optional call count. The same technique
+ * may be listed once per phase; a bad item is warned about and skipped.
  */
-export function parseComposes(line: string, where: string): { technique: string; phase: GameDesignPhase }[] {
-  const out: { technique: string; phase: GameDesignPhase }[] = [];
+export function parseComposes(line: string, where: string): ComposesItem[] {
+  const out: ComposesItem[] = [];
   for (const item of items(line)) {
-    const m = COMPOSES_ITEM.exec(item);
-    const technique = m ? group(m, 1) : "";
-    const phase = m ? group(m, 2) || "play" : "";
-    if (!m || !TECHNIQUE_NAME.test(technique)) {
-      warn(`${where}: **Composes:** item "${item}" is not "technique" or "technique (phase)" — skipped`);
+    const parsed = composesItem(item);
+    if ("error" in parsed) {
+      warn(`${where}: **Composes:** item ${parsed.error} — skipped`);
       continue;
     }
+    const { technique, phase } = parsed;
     if (!isPhase(phase)) {
       warn(
         `${where}: **Composes:** phase "${phase}" is not one of ${GAME_DESIGN_PHASES.join(", ")} — skipped`,
@@ -85,7 +106,7 @@ export function parseComposes(line: string, where: string): { technique: string;
       continue;
     }
     if (out.some((c) => c.technique === technique && c.phase === phase)) continue;
-    out.push({ technique, phase });
+    out.push({ technique, phase, ...(parsed.calls ? { calls: parsed.calls } : {}) });
   }
   return out;
 }

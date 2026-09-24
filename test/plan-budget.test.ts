@@ -55,6 +55,34 @@ describe("planBudget rules", () => {
     expect(b.verdict).toBe("undetermined");
   });
 
+  it("multiplies a per-call figure by the calls a frame, low by the fewest and high by the most (#37)", () => {
+    const b = planBudget([
+      m("decimal_print", { cycles_per_frame: 1361, basis: "measured-vice" }, { calls: { low: 2, high: 7 } }),
+      m("a", { cycles_per_frame: 100, cycles_per_frame_typical: 50, basis: "measured-vice" }),
+    ]);
+    const p = play(b);
+    expect(p.contributors[0]).toMatchObject({
+      name: "decimal_print",
+      low: 2722,
+      high: 9527,
+      calls: { low: 2, high: 7 },
+    });
+    expect(p.contributors[1]).not.toHaveProperty("calls");
+    expect(p.low).toBe(2772);
+    expect(p.high).toBe(9627);
+  });
+
+  it("tests one call, not the product, against the multi-frame threshold (#37)", () => {
+    const p = play(
+      planBudget([
+        m("x", { cycles_per_frame: 5000, basis: "measured-vice" }, { calls: { low: 5, high: 5 } }),
+      ]),
+    );
+    expect(p.excluded).toEqual([]);
+    expect(p.high).toBe(25000);
+    expect(p.verdict).toBe("undetermined");
+  });
+
   it("names the recipe that realises the technique most directly, as the card lists first (#41)", () => {
     // It named oscar64-attract-replay, the alphabetical first; the card led with joystick-input.
     const p = play(
@@ -534,6 +562,26 @@ describe("parseMemberSpec", () => {
     });
     expect(parseMemberSpec("a:b:c")).toHaveProperty("error");
     expect(parseMemberSpec(":play")).toHaveProperty("error");
+  });
+
+  it("reads a call count, ×N or ×M-N, before the phase (#37)", () => {
+    expect(parseMemberSpec("decimal_print ×7")).toEqual({
+      name: "decimal_print",
+      phase: "play",
+      calls: { low: 7, high: 7 },
+    });
+    expect(parseMemberSpec("decimal_print*2-7:init")).toEqual({
+      name: "decimal_print",
+      phase: "init",
+      calls: { low: 2, high: 7 },
+    });
+    expect(parseMemberSpec("decimal_print x0-3")).toEqual({
+      name: "decimal_print",
+      phase: "play",
+      calls: { low: 0, high: 3 },
+    });
+    expect(parseMemberSpec("decimal_print ×7-2")).toHaveProperty("error");
+    expect(parseMemberSpec("decimal_print ×0")).toHaveProperty("error");
   });
 
   it("counts a name listed twice in one phase once, and says so", () => {
