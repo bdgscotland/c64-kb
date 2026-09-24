@@ -123,6 +123,10 @@ export type GraphEntity =
   | { type: "technique_requires_region"; technique: string; region: string }
   | { type: "technique_belongs_to"; technique: string; chip: string }
   | { type: "technique_requires"; technique: string; requires: string }
+  | { type: "technique_alternative"; technique: string; alternative: string; tradeoff: string }
+  | { type: "technique_consumes"; technique: string; format: string }
+  | { type: "library_function"; name: string; header: string; tool: string; source_doc: string }
+  | { type: "wraps"; fn: string; target: string; targetKind: "KernalRoutine" | "Register" }
   | { type: "pitfall"; name: string; title: string; severity: string; region: string; category: string }
   | {
       type: "crash_pattern";

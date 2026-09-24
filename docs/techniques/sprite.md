@@ -161,6 +161,7 @@ sine-table motion, a demonstration payload.
 **Cost measured on:** kickassembler-sprite-multiplex-24 (three fixed bands, no sort, the $EA31 exit once, the animation left out; screen on; PAL and NTSC)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
+**Alternative to:** sprite_multiplex_8 (more than 16 sprites; needs tighter IRQ scheduling, a Y-sorted list and $D010 managed across passes)
 
 ### Why
 
@@ -313,6 +314,7 @@ estimates. Before #72 one basis word covered the whole Cost line, so it said `de
 **Cost measured on:** kickassembler-sprite-multiplex-game (worst frame: arithmetic, a reversed sort, CPU cycles only; typical: the largest whole frame of sort, build and IRQs in 2,142 frames of play, timed wall-clock by a probe build, NTSC, screen on)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
+**Alternative to:** sprite_multiplex_24 (sprites anywhere on screen, a sort that stays cheap on game frames and IRQ code the game owns and can budget; the Oscar64 vspr path takes one IRQ per reused sprite and about 20 % of a PAL frame for 24 sprites)
 
 ### Why
 

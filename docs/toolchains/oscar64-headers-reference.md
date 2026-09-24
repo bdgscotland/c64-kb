@@ -14,6 +14,8 @@ home_url: https://github.com/drmortalwombat/oscar64/tree/main/include/c64
 
 The `include/c64/` directory in the Oscar64 source tree contains C headers that give Oscar64 programs access to C64 hardware and operating-system services. Each header declares structs that map directly to the hardware register layout, named constants for all bit flags and enumerations, and helper functions for common sequences. Every header with an implementation file uses a `#pragma compile("filename.c")` directive to pull in its implementation (`types.h` and `easyflash.h` are header-only; an earlier version of this page said every header carries the pragma). Including the header links the library; there is no separate link step. A header does not re-export the `vic.h`/`rasterirq.h` names its own API uses, so a fence that calls `vic_waitLine()` or `rirq_wait()` still needs those headers included (see the fences below).
 
+Each header section with a `**Wraps:**` line lists, per public function, the KERNAL routines it calls and the I/O registers it reads or writes, so a C name leads to the pitfalls of what it touches (`c64_pitfalls_for krnio_open`). The lines were read from the `include/c64/*.c` and `*.h` sources of the Oscar64 build this repo verifies with (1.32.271), not from documentation: a `jsr $FFxx` names the KERNAL entry at that address, a field of the `vic`, `cia1`, `cia2` or `sid` struct names the register at its offset, a literal `$Dxxx` names itself, and a function inherits what the functions and `__asm` blocks it names in the same `.c` file reach. Only the C64 branches of `#if` blocks were read. Not covered: a call into another header's file (the `vspr_*` functions reach `rasterirq.c` as well), `memmap.h`'s processor port at `$01` and `reu.h`'s `$DF00` registers, which are not Register nodes here, and `flossiec.h`, which has no section on this page. `vic_sprxy: D000-D010` means some sprite's X or Y register and `$D010`, depending on the argument.
+
 This is the per-header API reference. For when to use these headers, see [oscar64-reference.md](oscar64-reference.md). When an Oscar64 recipe touches a hardware register, a header usually covers it and is more portable between PAL and NTSC builds than direct POKE/PEEK.
 
 ## types.h — Fundamental C64 type aliases
@@ -35,6 +37,8 @@ word address = 0xD400;   // SID base address
 ```
 
 ## vic.h — VIC-II chip access
+
+**Wraps:** vic_isBottom: D011; vic_setbank: DD00; vic_setmode: D011, D016, D018, DD00; vic_sprgetx: D000, D002, D004, D006, D008, D00A, D00C, D00E, D010; vic_sprxy: D000-D010; vic_waitBelow: D011, D012; vic_waitBottom: D011; vic_waitFrame: D011; vic_waitFrames: D011; vic_waitLine: D011, D012; vic_waitRange: D011, D012; vic_waitTop: D011
 
 `vic.h` provides the `VIC` struct laid over the VIC-II register file at `$D000`. The macro `vic` dereferences a pointer to that address, so `vic.color_border` is a volatile byte write to `$D020`. The header also declares the `VICColors` enum (sixteen named palette entries from `VCOL_BLACK` to `VCOL_LT_GREY`), bit-flag constants for `ctrl1`, `ctrl2`, and `intr_enable`/`intr_ctrl`, and a `VicMode` enum for `vic_setmode`.
 
@@ -152,6 +156,8 @@ sid.voices[0].susrel = 0xA0;
 
 ## cia.h — CIA timer and I/O chip access
 
+**Wraps:** cia_init: DC00, DC02, DC03, DC0D-DC0F, DD00, DD02, DD03, DD0D-DD0F
+
 `cia.h` maps CIA1 at `$DC00` and CIA2 at `$DD00` to `CIA` structs. CIA1 handles the keyboard matrix and both joystick ports (port 2 on `$DC00`, port 1 on `$DC01`; an earlier version named only port 2); CIA2 handles the serial port, user port, and VIC bank select. Its most used call is `cia_init()`, which stops CIA timers and clears pending interrupts so that raster IRQs can take over.
 
 Public API:
@@ -173,6 +179,8 @@ mmap_set(MMAP_NO_ROM);   // then bank out the kernal
 `cia_init()` goes first, the order `samples/sprites/sprmux32.c`, `missile.c` and `hscrollshmup.c` use. The other way round, a CIA1 timer interrupt between the two calls fetches its vector from the RAM under the KERNAL at `$FFFE`, which the program has not written (VICE x64sc powers up with `$FF $FF` there, read here with the ROM banked out). An earlier version of this example called `mmap_set` first.
 
 ## rasterirq.h — Raster interrupt system
+
+**Wraps:** rirq_alloc: D012; rirq_build: D012; rirq_init: D011, D012, D019, D01A, DC0D; rirq_init_crt: D011, D012, D019, D01A; rirq_init_crt_noio: D011, D012, D019, D01A; rirq_init_io: D011, D012, D019, D01A; rirq_init_kernal: D011, D012, D019, D01A, DC0D; rirq_init_kernal_noio: D011, D012, D019, D01A, DC0D; rirq_init_memmap: D011, D012, D019, D01A; rirq_sort: D012; rirq_start: D011, D012, D019
 
 `rasterirq.h` manages up to 16 simultaneous raster interrupt slots (configurable with `-dNUM_IRQS=n`). Each slot fires at a specified raster line and executes up to five memory writes in hand-optimized assembly. The system handles IRQ vector installation and slot sorting so that slots always fire in scanline order even when moved between frames. It does not disable the CIAs: no `rirq_init_*` variant writes `$DC0D`/`$DD0D` (header-read, `rasterirq.c`), so call `cia_init()` first when using `rirq_init_crt`, `rirq_init_crt_noio`, `rirq_init_io` or `rirq_init_memmap` (the variants whose handler does not fall through to the kernal), otherwise the CIA1 timer IRQ keeps entering a handler that never acknowledges it and the splits break up. The two kernal-routed variants (`rirq_init_kernal`, `rirq_init_kernal_noio`, i.e. `rirq_init(true)`) acknowledge `$DC0D` and continue into `$EA31`, so they run without `cia_init()`. It is also not cycle-exact: each slot busy-polls `CMP $D012`, so its writes land at the start of the line below `row`, inside horizontal blanking with a few cycles of jitter. That is enough for a clean full-line colour split, not for FLI, side-border or other cycle-exact effects. An earlier version of this page claimed CIA disabling and stable-raster timing.
 
@@ -230,6 +238,8 @@ This sets up two color splits: a red band from raster 51 to 151, and black above
 
 ## sprites.h — Hardware and multiplexed sprite control
 
+**Wraps:** spr_color: D027-D02E; spr_expand: D017, D01D; spr_move: D000-D010; spr_move16: D000-D010; spr_posx: D000, D002, D004, D006, D008, D00A, D00C, D00E, D010; spr_posy: D001, D003, D005, D007, D009, D00B, D00D, D00F; spr_set: D000-D010, D015, D017, D01C, D01D, D027-D02E; spr_show: D015; vspr_init: D000-D010, D015, D017, D01D, D027-D02E; vspr_update: D000-D010, D027-D02E
+
 `sprites.h` provides two layers of sprite management. The hardware layer (`spr_*`) operates directly on the eight VIC-II hardware sprites. The virtual layer (`vspr_*`) uses `rasterirq.h` slots 0–8 to multiplex 16 virtual sprites onto the eight physical sprites, repositioning them mid-screen as the beam passes.
 
 Public API — hardware sprites:
@@ -274,6 +284,8 @@ rirq_sort();
 
 ## joystick.h — Joystick input
 
+**Wraps:** joy_poll: DC00
+
 `joystick.h` polls the joysticks. One call to `joy_poll(n)` reads `$DC00+n` on CIA1 and populates three global arrays. Port numbering (verified against `include/c64/joystick.c`):
 
 - `joy_poll(0)` reads **`$DC00`** = CIA1 port A = **physical joystick port 2** (the standard "game" port for single-player games).
@@ -300,6 +312,8 @@ Call `joy_poll` once per frame, usually at the start of the game loop, for a fre
 **Note — port 2 and the keyboard column drive share `$DC00`, but a main-loop `joy_poll(0)` cannot see the scan.** SCNKEY is called from inside the KERNAL jiffy IRQ handler (`JSR $EA87` at `$EA7B`) and restores `$7F` before the handler's RTI, so the main loop is never running while the columns are driven (measured in VICE x64sc: 0 of 76,144 main-loop samples caught the `$00` window; `pitfalls/input.md`, joystick2_scan_phantom_press). Only an NMI handler, or an IRQ handler that `cli`s before chaining to `$EA31`, can read the all-pressed phantom value; when polling from such a context, treat `$00` as "scan in progress" and re-read, or take over the IRQ. An earlier version of this page blamed the main loop and advised `sei`/`cli` around the poll, which changes nothing there. Port 1 (`joy_poll(1)`) has no timing hazard either, but a held `1`, LEFT-ARROW, CTRL, `2` or SPACE reads as joystick 1 continuously because the KERNAL leaves column 7 selected.
 
 ## keyboard.h — Keyboard matrix scan
+
+**Wraps:** keyb_poll: DC00-DC03
 
 `keyboard.h` scans the keyboard matrix. The C64 keyboard is an 8x8 matrix read via CIA1 ports A and B; `keyb_poll()` scans the full matrix and records the result. The `KeyScanCode` enum covers all physical keys including shifted variants.
 
@@ -359,6 +373,8 @@ cwin_console_printf(&win, VCOL_YELLOW, "%d", score);
 
 ## mouse.h — 1351 mouse input
 
+**Wraps:** mouse_arm: DC00; mouse_init: D419, D41A, DC00; mouse_poll: D419, D41A, DC00
+
 `mouse.h` reads a Commodore 1351 proportional mouse connected to a joystick port. The 1351 encodes movement in the SID potentiometer registers. `mouse_arm` primes the potentiometer circuit (needs ~4 ms to stabilize before reading) and `mouse_poll` reads the relative displacement.
 
 Public API:
@@ -386,6 +402,8 @@ cursor_y += mouse_dy;
 ```
 
 ## kernalio.h — KERNAL file I/O wrappers
+
+**Wraps:** krnio_chkin: CHKIN; krnio_chkout: CHKOUT; krnio_chrin: CHRIN; krnio_chrout: CHROUT; krnio_close: CLOSE; krnio_clrchn: CLRCHN; krnio_getch: CHKIN, CHRIN, CLRCHN, READST; krnio_gets: CHKIN, CHRIN, CLRCHN, READST; krnio_load: LOAD, SETLFS; krnio_open: CLOSE, OPEN, SETLFS; krnio_putch: CHKOUT, CHROUT, CLRCHN; krnio_puts: CHKOUT, CHROUT, CLRCHN; krnio_read: CHKIN, CHRIN, CLRCHN, READST; krnio_read_lzo: CHKIN, CHRIN, CLRCHN, READST; krnio_save: SAVE, SETLFS; krnio_setnam: SETNAM; krnio_setnam_n: SETNAM; krnio_status: READST; krnio_write: CHKOUT, CHROUT, CLRCHN
 
 `kernalio.h` wraps the C64 KERNAL file I/O routines (SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE) in a C-callable interface. It uses logical file numbers (0–15) as handles and returns `krnioerr` status codes. A measured write, read-back, status-check and provoked-error run is `../recipes/oscar64/save-load-seq-file.md`; the call sequences as techniques are `../techniques/file-io.md`.
 
@@ -422,6 +440,8 @@ krnio_close(2);
 String literals passed to `krnio_setnam` should use the `P` prefix (`P"SCORES"`) to ensure PETSCII encoding, since the KERNAL expects PETSCII filenames.
 
 ## iecbus.h — Low-level IEC serial bus
+
+**Wraps:** iec_atn: DD00; iec_close: DD00; iec_listen: DD00; iec_open: DD00; iec_read: DD00; iec_read_bytes: DD00; iec_talk: DD00; iec_unlisten: DD00; iec_untalk: DD00; iec_write: DD00; iec_write_bytes: DD00
 
 `iecbus.h` gives direct access to the IEC serial bus at a lower level than the KERNAL wrappers in `kernalio.h`. Use it for custom serial protocols or when the KERNAL overhead is too high. `iec_status` holds the last operation result.
 

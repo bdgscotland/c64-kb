@@ -22,6 +22,15 @@ const DEMANDS_LINE = /^\*\*Demands:\*\*\s+(.+)$/;
 // whether it names an existing node is settled at link time, where a miss is
 // warned about and counted.
 const REQUIRES_LINE = /^\*\*Requires:\*\*\s+(.+)$/;
+// **Alternative to:** names techniques that do the same job another way,
+// each with its tradeoff in parentheses: `sprite_multiplex_8 (more sprites,
+// needs a sorted list)`. The parenthesis describes this technique against
+// the named one. Settled in technique-entities.ts.
+const ALTERNATIVE_LINE = /^\*\*Alternative to:\*\*\s+(.+)$/;
+// **Consumes formats:** names FileFormat nodes (SID, CRT, KLA) whose files
+// the technique reads; a leading dot is dropped. Settled in
+// technique-entities.ts.
+const CONSUMES_LINE = /^\*\*Consumes formats:\*\*\s+(.+)$/;
 const RASTER_BAND_LINE = /^\*\*Raster band:\*\*\s+(.+)$/;
 // **Cost:** carries key=value pairs from COST_VOCABULARY and **Cost basis:**
 // one word from COST_BASIS_WORDS. A pair with an unknown key or a
@@ -68,6 +77,27 @@ function nameList(value: string, stripBackticks = false): string[] {
     .split(",")
     .map((s) => (stripBackticks ? s.trim().replace(/`/g, "") : s.trim()))
     .filter((s) => s !== "" && !isEmptySentinel(s));
+}
+
+/**
+ * The items of an **Alternative to:** line, split on the commas that are not
+ * inside a parenthesis, since a tradeoff may hold commas of its own.
+ */
+function alternativeItems(value: string): string[] {
+  if (isEmptySentinel(value)) return [];
+  const items: string[] = [];
+  let depth = 0;
+  let item = "";
+  for (const ch of value) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      items.push(item);
+      item = "";
+    } else item += ch;
+  }
+  items.push(item);
+  return items.map((s) => s.trim()).filter((s) => s !== "");
 }
 
 /** One `key=value` Cost pair, or null (with a warning) when it is refused. */
@@ -144,6 +174,8 @@ const LINE_RULES: readonly { re: RegExp; apply: (value: string, c: Current) => v
   { re: USES_KERNAL, apply: (v, c) => (c.meta.usesKernal = nameList(v)) },
   { re: DEMANDS_LINE, apply: (v, c) => (c.meta.demands = nameList(v)) },
   { re: REQUIRES_LINE, apply: (v, c) => (c.meta.requires = nameList(v, true)) },
+  { re: ALTERNATIVE_LINE, apply: (v, c) => (c.meta.alternatives = alternativeItems(v)) },
+  { re: CONSUMES_LINE, apply: (v, c) => (c.meta.consumes = nameList(v, true)) },
   { re: RASTER_BAND_LINE, apply: applyRasterBand },
   { re: COST_BASIS_LINE, apply: (v, c) => (c.meta.costBasis = v.trim().replace(/`/g, "")) },
   { re: COST_BYTES_BASIS_LINE, apply: (v, c) => (c.meta.costBytesBasis = v.trim().replace(/`/g, "")) },

@@ -6,6 +6,7 @@ import { defineConfig } from "vitest/config";
 // that needs a service is never run where the service is missing.
 const UNIT = [
   "test/bm25.test.ts",
+  "test/briefing-alternatives.test.ts",
   "test/briefing-budget.test.ts",
   "test/briefing-discovery.test.ts",
   "test/briefing-route-heads.test.ts",

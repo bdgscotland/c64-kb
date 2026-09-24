@@ -133,6 +133,46 @@ rules between one technique's prerequisites and the other technique and
 reports a hit as `prerequisite_conflict`, without changing anyone's
 `**Demands:**`.
 
+An optional `**Alternative to:**` line names techniques that do the same
+job another way, each with its tradeoff in parentheses. The parenthesis
+describes this technique against the named one. The extractor makes one
+`ALTERNATIVE_TO` edge per item (schema 37).
+
+```
+**Alternative to:** sprite_multiplex_8 (more than 16 sprites; needs tighter IRQ scheduling, a Y-sorted list and $D010 managed across passes)
+```
+
+Items are separated by commas outside the parentheses. Write the line
+only where the page already compares the two, and take the tradeoff from
+that comparison. State a pair on one page only; the edge is read in both
+directions. A pair joined by `**Requires:**` either way is not an
+alternative (`fli_image` requires `multicolor_bitmap`, so they are not
+paired), and neither are two techniques a page says to use together
+(`bobs_effect` beside hardware sprites). An item with no tradeoff, a name
+that is not snake_case, or the technique itself is refused at extract; a
+name that is no Technique node, a pair already stated on the other page, or
+a pair joined by REQUIRES is dropped at link time with a warning and
+counted. `c64_technique_lookup` returns the edge as `alternatives`; the
+briefings keep one technique of each pair and report the other under the
+kept one's `alternatives_left_out`.
+
+An optional `**Consumes formats:**` line names the file formats whose
+files the technique reads, by their FileFormat node names (the extension,
+upper case, no dot: `SID`, `CRT`, `KLA`). The extractor makes one
+`CONSUMES` edge per item, Technique to FileFormat (schema 37).
+
+```
+**Consumes formats:** SID
+```
+
+Name only a format that has an H3 in a format or toolchain page
+(`formats/c64-file-formats.md`); the edge is MATCHed at both ends, so a
+misspelt or undocumented format is dropped with a warning and counted,
+never created. It answers "I have a .SID: which technique reads it, and
+which recipe realises that": `MATCH (:FileFormat {name: 'SID'})<-[:CONSUMES]-(t:Technique)<-[:IMPLEMENTS]-(r:Recipe)`.
+A technique produces a screen, not a file, so there is no technique-side
+`PRODUCES`; a recipe's `file_formats` says what it builds.
+
 An optional `**Raster band:**` line names the raster lines on which the
 technique holds the CPU. It rides the Technique node as `raster_band`. For a technique
 that works by raster IRQs, the band is every line on which its IRQs run,

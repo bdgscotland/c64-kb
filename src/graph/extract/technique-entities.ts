@@ -33,6 +33,10 @@ export interface TechniqueMeta {
   usesKernal?: string[];
   demands?: string[];
   requires?: string[];
+  /** Raw items of an **Alternative to:** line: `name (tradeoff)`. */
+  alternatives?: string[];
+  /** FileFormat names from a **Consumes formats:** line. */
+  consumes?: string[];
   cost?: TechniqueCost;
   costBasis?: string;
   costBytesBasis?: string;
@@ -240,6 +244,64 @@ function requiresEntities({ head, meta, sourcePath }: Section): GraphEntity[] {
   return out;
 }
 
+// `name (tradeoff)`: the name (checked for snake_case after), then the whole parenthesis.
+const ALTERNATIVE_ITEM = /^`?([^(`]+?)`?\s*\((.+)\)\s*$/;
+
+/**
+ * ALTERNATIVE_TO (schema 37): another technique that does the same job,
+ * with the tradeoff the page states. A name that is not snake_case, the
+ * technique itself, or an item with no tradeoff is refused with a warning;
+ * whether the name is a node, and whether the pair is also a REQUIRES pair,
+ * is settled at link time.
+ */
+function alternativeEntities({ head, meta, sourcePath }: Section): GraphEntity[] {
+  const out: GraphEntity[] = [];
+  const where = `${sourcePath}: technique ${head.name}`;
+  for (const item of meta.alternatives ?? []) {
+    const m = ALTERNATIVE_ITEM.exec(item);
+    const name = m?.at(1);
+    const tradeoff = m?.at(2)?.trim();
+    if (!name || !tradeoff) {
+      warn(
+        `${where} has **Alternative to:** "${item}", which is not \`name (tradeoff)\` — not ingested (see CONVENTIONS-techniques.md)`,
+      );
+    } else if (!TECHNIQUE_NAME.test(name)) {
+      warn(
+        `${where} has **Alternative to:** "${name}", which is not a snake_case technique name — not ingested`,
+      );
+    } else if (name === head.name) {
+      warn(`${where} lists itself under **Alternative to:** — not ingested`);
+    } else if (!out.some((e) => e.type === "technique_alternative" && e.alternative === name)) {
+      out.push({ type: "technique_alternative", technique: head.name, alternative: name, tradeoff });
+    }
+  }
+  return out;
+}
+
+// A FileFormat node name: the extension, upper case, without its dot.
+const FORMAT_NAME = /^\.?([A-Z0-9]+)$/;
+
+/**
+ * CONSUMES from a Technique (schema 37): the file formats whose files the
+ * technique reads. A word that is not an upper-case extension is refused
+ * here; whether it names a FileFormat node is settled at link time, where a
+ * miss is warned about and counted, never MERGEd into a stub.
+ */
+function consumesEntities({ head, meta, sourcePath }: Section): GraphEntity[] {
+  const out: GraphEntity[] = [];
+  for (const word of meta.consumes ?? []) {
+    const format = FORMAT_NAME.exec(word)?.at(1);
+    if (!format) {
+      warn(
+        `${sourcePath}: technique ${head.name} has **Consumes formats:** "${word}", which is not an upper-case format name such as SID — not ingested (see CONVENTIONS-techniques.md)`,
+      );
+    } else if (!out.some((e) => e.type === "technique_consumes" && e.format === format)) {
+      out.push({ type: "technique_consumes", technique: head.name, format });
+    }
+  }
+  return out;
+}
+
 export function techniqueEntities(
   head: TechniqueHead,
   meta: TechniqueMeta,
@@ -268,7 +330,12 @@ export function techniqueEntities(
       out.push({ type: "claims", owner: technique, ownerKind: "Technique", ...c, basis: claims.basis });
   }
   if (head.chip) out.push({ type: "technique_belongs_to", technique, chip: head.chip });
-  out.push(...demandEntities(section), ...requiresEntities(section));
+  out.push(
+    ...demandEntities(section),
+    ...requiresEntities(section),
+    ...alternativeEntities(section),
+    ...consumesEntities(section),
+  );
   if (meta.region && meta.region !== "both") {
     out.push({ type: "technique_requires_region", technique, region: meta.region });
   }

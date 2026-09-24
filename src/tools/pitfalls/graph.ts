@@ -8,7 +8,7 @@ import type { FalkorService } from "../../services/falkor.ts";
 import { registerKey } from "../query/shared.ts";
 import type { PitfallsForOutput } from "../../schemas/tool-outputs.ts";
 
-export type EntityKind = "Register" | "KernalRoutine" | "Technique";
+export type EntityKind = "Register" | "KernalRoutine" | "Technique" | "LibraryFunction";
 type Pitfall = PitfallsForOutput["pitfalls"][number];
 type Via = NonNullable<Pitfall["via"]>[number];
 type Severity = Pitfall["severity"];
@@ -49,11 +49,15 @@ const regionOf = (s: string | null | undefined): Region => {
 export function normalizeKey(kind: EntityKind, topic: string): string {
   if (kind === "Register") return registerKey(topic);
   if (kind === "KernalRoutine") return topic.toUpperCase();
+  // C names keep their case (vic_waitLine); the match is case-insensitive.
+  if (kind === "LibraryFunction") return topic.trim();
   return topic.toLowerCase().replace(/[- ]/g, "_");
 }
 
 /** Pitfalls with a direct TRIGGERED_BY (or, for a technique, MITIGATED_BY) edge to the topic. */
 export async function directPitfalls(f: FalkorService, kind: EntityKind, key: string): Promise<PitfallRow[]> {
+  // No pitfall names a library function; it reaches them only through WRAPS.
+  if (kind === "LibraryFunction") return [];
   const severityCase = `CASE p.severity ${SEVERITY_ORDER.map((s, i) => `WHEN '${s}' THEN ${i}`).join(" ")} ELSE ${SEVERITY_ORDER.length} END`;
   // For Register, also match by address or alias (mirrors lookupRegister logic)
   const matchClause =
@@ -85,9 +89,17 @@ function parseVia(v: string): Via {
   };
 }
 
+// The edge through which a topic reaches registers and KERNAL routines.
+const REACHES = {
+  Technique: "(t:Technique {name: $key})-[:USES]->(x)",
+  LibraryFunction:
+    "(t:LibraryFunction)-[:WRAPS]->(x) WHERE toLower(t.name) = toLower($key) WITH t, x MATCH (x)",
+} as const;
+
 /**
  * A technique also meets every pitfall that a register or KERNAL routine
- * it declares (Uses registers / Uses kernal) triggers. Both sides of that
+ * it declares (Uses registers / Uses kernal) triggers; a C library function
+ * (#19) every pitfall of a routine or register it WRAPS. Both sides of that
  * join are exact declarations on the pages, so the edge is derived, not
  * guessed, and the answer names the register or routine that carried it.
  * Returns the direct rows plus the derived ones, re-sorted by severity.
@@ -96,9 +108,10 @@ export async function withPitfallsViaUses(
   f: FalkorService,
   key: string,
   direct: PitfallRow[],
+  from: keyof typeof REACHES = "Technique",
 ): Promise<{ rows: PitfallRow[]; viaOf: Map<string, Via[]> }> {
   const m = await f.roQuery(
-    `MATCH (t:Technique {name: $key})-[:USES]->(x)<-[:TRIGGERED_BY]-(p:Pitfall)
+    `MATCH ${REACHES[from]}<-[:TRIGGERED_BY]-(p:Pitfall)
      WHERE x:Register OR x:KernalRoutine
      RETURN p.name AS name, p.title AS title, p.severity AS severity,
             p.region AS region, p.category AS category,
@@ -122,7 +135,7 @@ export async function edgeTargets(
   f: FalkorService,
   cypher: string,
   params: Record<string, unknown>,
-): Promise<{ name: string; kind: EntityKind }[]> {
+): Promise<{ name: string; kind: z.infer<typeof KindSchema> }[]> {
   const r = await f.roQuery(cypher, params);
   return z
     .array(EdgeRow)

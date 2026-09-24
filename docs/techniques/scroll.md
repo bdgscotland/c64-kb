@@ -832,6 +832,7 @@ shift on the carry frame, 12,321 cycles on PAL and 12,537 on NTSC, is
 **Region:** both
 **Uses registers:** D011, D016, D018
 **Uses kernal:** (none)
+**Alternative to:** soft_scroll_h (scrolls a pixel-accurate drawn scene, not characters; the whole 8,000-byte bitmap must be shifted or double-buffered)
 
 ### Why
 
@@ -980,6 +981,7 @@ buffer) is the main budget item and is scene-specific.
 **Cost:** cycles_per_frame=268
 **Cost basis:** arithmetic
 **Cost measured on:** oscar64-tile-map-render (one column edge, 11 metatiles)
+**Consumes formats:** CTM
 
 ### Why
 

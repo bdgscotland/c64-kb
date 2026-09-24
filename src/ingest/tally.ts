@@ -13,12 +13,16 @@ export interface NodeTally {
   crashPatterns: number;
   archetypes: number;
   gameDesigns: number;
+  libraryFunctions: number;
 }
 
 export type TrackedEdge =
   | "triggered_by"
   | "caused_by"
   | "technique_requires"
+  | "technique_alternative"
+  | "technique_consumes"
+  | "wraps"
   | "mitigated_by"
   | "archetype_features"
   | "archetype_risks"
@@ -31,44 +35,45 @@ export type TrackedEdge =
   | "exemplified_by"
   | "requires_device";
 
+type EdgeOf<K extends TrackedEdge> = Extract<EdgeEntity, { type: K }>;
+
+// One key function per tracked edge type: a type missing here is a tsc
+// error. The table replaced a switch that had outgrown the complexity budget.
+const REFERENCE_KEYS: { [K in TrackedEdge]: (e: EdgeOf<K>) => string } = {
+  triggered_by: (e) => `${e.pitfall}|${e.targetKind}|${e.target}`,
+  caused_by: (e) => `${e.symptom}|${e.targetKind}|${e.target}`,
+  technique_requires: (e) => `${e.technique}|${e.requires}`,
+  technique_alternative: (e) => `${e.technique}|${e.alternative}`,
+  technique_consumes: (e) => `${e.technique}|${e.format}`,
+  wraps: (e) => `${e.fn}|${e.targetKind}|${e.target}`,
+  mitigated_by: (e) => `${e.pitfall}|${e.target}`,
+  archetype_features: (e) => `${e.archetype}|${e.technique}`,
+  archetype_risks: (e) => `${e.archetype}|${e.pitfall}`,
+  scaffolds: (e) => `${e.recipe}|${e.archetype}`,
+  claims: (e) => `${e.owner}|${e.unit}`,
+  kernal_clobbers_zp: (e) => `${e.routine}|${e.bound}|${e.basis}`,
+  composes: (e) => `${e.design}|${e.technique}|${e.phase}`,
+  instance_of: (e) => `${e.design}|${e.archetype}`,
+  realised_by: (e) => `${e.design}|${e.recipe}`,
+  exemplified_by: (e) => `${e.archetype}|${e.production}`,
+  requires_device: (e) => `${e.recipe}|${e.device}`,
+};
+
+function isTracked(type: string): type is TrackedEdge {
+  return Object.hasOwn(REFERENCE_KEYS, type);
+}
+
 /**
  * A key per distinct (source, target, kind) reference, so a doc naming the
  * same trigger twice is not reported as a dropped edge after MERGE folds
  * them. Null for an edge type that is not tracked.
  */
 function referenceKey(e: EdgeEntity): [TrackedEdge, string] | null {
-  switch (e.type) {
-    case "triggered_by":
-      return [e.type, `${e.pitfall}|${e.targetKind}|${e.target}`];
-    case "caused_by":
-      return [e.type, `${e.symptom}|${e.targetKind}|${e.target}`];
-    case "technique_requires":
-      return [e.type, `${e.technique}|${e.requires}`];
-    case "mitigated_by":
-      return [e.type, `${e.pitfall}|${e.target}`];
-    case "archetype_features":
-      return [e.type, `${e.archetype}|${e.technique}`];
-    case "archetype_risks":
-      return [e.type, `${e.archetype}|${e.pitfall}`];
-    case "scaffolds":
-      return [e.type, `${e.recipe}|${e.archetype}`];
-    case "claims":
-      return [e.type, `${e.owner}|${e.unit}`];
-    case "kernal_clobbers_zp":
-      return [e.type, `${e.routine}|${e.bound}|${e.basis}`];
-    case "composes":
-      return [e.type, `${e.design}|${e.technique}|${e.phase}`];
-    case "instance_of":
-      return [e.type, `${e.design}|${e.archetype}`];
-    case "realised_by":
-      return [e.type, `${e.design}|${e.recipe}`];
-    case "exemplified_by":
-      return [e.type, `${e.archetype}|${e.production}`];
-    case "requires_device":
-      return [e.type, `${e.recipe}|${e.device}`];
-    default:
-      return null;
-  }
+  if (!isTracked(e.type)) return null;
+  // REFERENCE_KEYS[e.type] takes exactly the entity whose type is e.type;
+  // the checker cannot correlate the key with the union member.
+  const key = REFERENCE_KEYS[e.type] as (e: EdgeEntity) => string;
+  return [e.type, key(e)];
 }
 
 export class EdgeTally {

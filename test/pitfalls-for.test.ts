@@ -102,6 +102,15 @@ describe("pitfallsFor", () => {
     });
     await f.linkMitigatedBy("raster_irq_first_line_jitter", "double_irq");
     await f.linkMitigatedBy("raster_irq_first_line_jitter", "stable_raster_irq");
+
+    // An Oscar64 header function that wraps $D011/$D012 (#19).
+    await f.addLibraryFunction({
+      name: "vic_waitLine",
+      header: "vic.h",
+      tool: "oscar64-headers",
+      source_doc: "toolchains/oscar64-headers-reference.md",
+    });
+    await f.linkWraps("vic_waitLine", "D012", "Register");
   });
 
   afterAll(async () => f.close());
@@ -152,6 +161,16 @@ describe("pitfallsFor", () => {
       (x) => x.name === "badline_cycle_loss",
     );
     expect(direct?.via).toBeUndefined();
+  });
+
+  it("answers a C library function with the pitfalls of the register it wraps (#19)", async () => {
+    const r = await pitfallsFor("vic_waitline");
+    expect(r.structured.topic_kind).toBe("LibraryFunction");
+    const names = r.structured.pitfalls.map((p) => p.name);
+    expect(names).toContain("d012_wrap_around");
+    expect(r.structured.pitfalls[0]?.via).toEqual([{ name: "D012", kind: "Register", address: "$D012" }]);
+    expect(r.text).toContain("**Reached through:** D012 $D012 (Register), which this function wraps");
+    expect(await f.linkWraps("vic_waitLine", "FFFF", "Register")).toBe(false);
   });
 
   it("returns pitfalls for a technique topic (stable_raster_irq)", async () => {

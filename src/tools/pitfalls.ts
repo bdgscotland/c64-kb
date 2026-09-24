@@ -37,14 +37,16 @@ export type PitfallsForResult = { structured: PitfallsForOutput; text: string };
 export type FailureDiagnoseResult = { structured: FailureDiagnoseOutput; text: string };
 
 // Tried in this order; the first kind with any pitfall answers.
-const KINDS: EntityKind[] = ["Register", "KernalRoutine", "Technique"];
+const KINDS: EntityKind[] = ["Register", "KernalRoutine", "Technique", "LibraryFunction"];
 
 async function pitfallsForKind(topic: string, kind: EntityKind): Promise<PitfallsForOutput["pitfalls"]> {
   const f = await getFalkor();
   const key = normalizeKey(kind, topic);
   const direct = await directPitfalls(f, kind, key);
   const { rows, viaOf } =
-    kind === "Technique" ? await withPitfallsViaUses(f, key, direct) : { rows: direct, viaOf: undefined };
+    kind === "Technique" || kind === "LibraryFunction"
+      ? await withPitfallsViaUses(f, key, direct, kind)
+      : { rows: direct, viaOf: undefined };
   // Enrich each with its full triggered_by and mitigated_by lists.
   return Promise.all(rows.map((row) => enrichPitfall(f, row, viaOf?.get(row.name))));
 }

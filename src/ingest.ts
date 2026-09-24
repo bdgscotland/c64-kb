@@ -151,6 +151,7 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
     crashPatterns: 0,
     archetypes: 0,
     gameDesigns: 0,
+    libraryFunctions: 0,
   };
   const pending: EdgeEntity[] = [];
   const print = (line: string): void => {

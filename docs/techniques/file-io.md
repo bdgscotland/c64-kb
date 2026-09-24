@@ -800,6 +800,7 @@ a raster IRQ misses most frames during it
 **Uses kernal:** SETLFS, SETNAM, LOAD, SETMSG
 **Claims:** serial_bus (shares), cia1_timer_b (shares)
 **Claims basis:** measured-vice
+**Consumes formats:** PRG
 
 ### Why
 
@@ -1373,6 +1374,7 @@ second on the upload alone, which is why resident loaders upload once.
 **Cost:** bytes_code=1060, bytes_data=110, zp_bytes=24
 **Cost basis:** derived-listing
 **Cost measured on:** kickassembler-tape-turbo-loader (whole PRG less the BASIC stub; the code figure includes the report and the 32-bit division, the data is the strings and counters)
+**Consumes formats:** TAP
 
 ### Why
 
