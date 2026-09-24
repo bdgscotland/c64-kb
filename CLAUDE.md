@@ -195,7 +195,11 @@ in `src/tools/query.ts`; check which before editing either.
   local `volatile` vanish at -O1/-O2 (use a global that something writes);
   at -O2 a `volatile` global that nothing writes is read as its initial
   value (`g | 8` compiles to `LDA #$0D`; local, v1.32.273 and upstream
-  9a902f6 alike); two `const char` tables
+  9a902f6 alike);
+  a comparison on a function's address at `$8000` or above folds wrong
+  (`((unsigned)&main >> 8) >= 0x80` with `main` at `$8080` in a
+  `-tf=crt8` build compiles as false; the same test at `$0880` is right;
+  all three builds); two `const char` tables
   shifted `<< 8` with one index in a loop that also calls a `__noinline`
   function read the second table at the first one's value (-O1 and up);
   four fixed-address arrays cleared in one loop send one array's stores

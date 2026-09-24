@@ -7,6 +7,7 @@ techniques: []
 file_formats: [CRT]
 uses_registers: [D011, D016, D018, D020, D021]
 uses_kernal: []
+devices: [generic_8k_cartridge]
 ---
 
 <!-- doc-type: recipe -->

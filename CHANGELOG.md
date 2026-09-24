@@ -5,7 +5,25 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 814, schema 37, tools 2.13.0, package 0.26.0.
+Data 815, schema 37, tools 2.13.0, package 0.26.0.
+
+**Relocated code in three toolchains, Oscar64 -O levels, an Oscar64
+cartridge and music sync (data 815; #15, #16 DEMO-05).** New technique
+`relocated_code_block` with recipes in KickAssembler, Oscar64 and cc65
+that copy a routine from `$2000` to `$C000` and stop on a monitor
+breakpoint there (Oscar64's `.lbl` gives the storage address; cc65
+needs `fill = yes` or the block lands straight after the code, with no
+warning). The stable-raster-irq handler is instruction-identical at
+-O0/-O1/-O2/-Os; -O3 and -Oz move two variables to zero page (5 and 3
+cycles saved); screenshots byte-identical at every level. New
+`oscar64/cartridge-8k` (`-tf=crt8`): `main` starts 305 cycles after the
+vector (cc65's cartridge 1,650,044), the screen is off until the
+program sets up the VIC, an initialised global stays in ROM.
+`verify:recipes` gains a `build` key and `@variant` runs. New technique
+`music_sync_timeline` and recipe `music-sync` (a beat of 24 frames on
+both models; `$D41C` needs a sound device, and the monitor's `m d41c`
+prints 00). New Oscar64 fault, all three builds: a comparison on a
+function's address at `$8000` or above folds wrong.
 
 **Alternatives, consumed formats and Oscar64 wrappers in the graph
 (schema 37, tools 2.13.0, package 0.26.0, data 814; #17 ONTO-07,
