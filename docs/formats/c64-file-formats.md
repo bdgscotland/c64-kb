@@ -58,7 +58,7 @@ The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or
 
 The EXROM/GAME line combination determines the cartridge's memory mapping mode. Common combinations: EXROM=0/GAME=1 maps 8K at `$8000`; EXROM=0/GAME=0 maps 16K at `$8000`+`$A000`; EXROM=1/GAME=0 maps Ultimax (8K at `$E000`).
 
-EasyFlash carts (hardware type `$0020`) contain up to 64 banks of 16K, each represented by two CHIP packets (one for `$8000`, one for `$A000`).
+EasyFlash carts (hardware type `$0020`) contain up to 64 banks of 16K, each represented by two CHIP packets (one for `$8000`, one for `$A000`). The cartridge boots in Ultimax mode from bank 0 ROMH, so the reset vector is at ROMH offset `$1FFC`. cartconv and the KickAssembler recipes write EXROM 1, GAME 0, chip type 2 and a ROMH load address of `$A000`; Oscar64 writes EXROM 0, GAME 0, chip type 0 and `$E000`; VICE boots both ([cartconv-reference](../toolchains/cartconv-reference.md)). Two places in bank 0 ROMH are conventions EasyProg acts on (its source, `flash.c`): offset `$1800`, 768 bytes, holds the EAPI flash driver when it starts with `65 61 70 69`, and EasyProg then writes its own driver for the fitted chip over `$1800`-`$1AFF`; offset `$1B00` may hold `65 66 2D 6E 41 4D 45 3A` (`EF-Name:`) and a 16-byte PETSCII name for the menu. A save area ships as a packet of `$FF`, because EasyProg erases only the sectors a CRT contains (Programmer's Guide). Decoded from the CRT the `easyflash-eapi` recipe builds, and from the file VICE wrote back after two boots with `-easyflashcrtwrite`: the packets keep their order and size, only the saved bytes change, and VICE rewrites the header's 32-byte name as `EasyFlash`.
 
 Oscar64 writes the container itself with `-tf=crt8`, `-tf=crt16` (type 0) or `-tf=crt` (EasyFlash). KickAssembler has no cartridge directive: in 5.25 `.crt` and `.bank` both fail with `Invalid directive` (run 2026-09-23), so a KickAssembler cartridge is either raw banks written with `outBin` and wrapped by cartconv, or a `.CRT` emitted byte by byte from the source as the `crt-banked` and `easyflash-save` recipes do. An earlier version of this paragraph named those two directives; they do not exist. The header and packet fields as decoded from files built by both tools, the type table, and what each type did when booted are in [cartconv-reference](../toolchains/cartconv-reference.md).
 
@@ -267,7 +267,9 @@ The header, BAM, and first directory entries all reside on track 40:
 
 BAM entries use 6 bytes each: 1 byte free-sector count + 5 bytes (40-bit bitmap).
 
-**Key differences from D64/D71:** sector interleave is 1 for both files and directories (the 1581 buffers a full track in internal RAM, making interleave irrelevant for sequential read performance). Maximum of approximately 296 directory entries at the root. The 1581 DOS supports partitions and subdirectories. A D81 is a dump of all 3,200 sectors (819,200 bytes from `c1541 -format ... d81`, measured here), so whatever the DOS writes to disk for them is in the image; how it records them was not checked here. (An earlier version said they are not represented in the image.)
+**Key differences from D64/D71:** sector interleave is 1 for both files and directories (the 1581 buffers a full track in internal RAM, making interleave irrelevant for sequential read performance). Maximum of approximately 296 directory entries at the root. The 1581 DOS supports partitions and subdirectories. A D81 is a dump of all 3,200 sectors (819,200 bytes from `c1541 -format ... d81`, measured here), so whatever the DOS writes to disk for them is in the image. (An earlier version said they are not represented in the image, and a later one that how the DOS records them was not checked.)
+
+**Partitions, as the image shows them** (measured on the image `recipes/kickassembler/d81-partition.md` leaves, VICE x64sc 3.10 with the 1581 DOS; rung 1): a partition is a root directory entry of type `$85` (CBM) with its start track and sector and its block count, and the root BAM (40/1, 40/2) marks its tracks used. Formatted as a sub-directory, its first track takes track 40's layout: header at sector 0 (`14 03 44 00`, name, ID, `33 44`), BAM for tracks 1–40 at sector 1 and 41–80 at sector 2 (`44 BB`, ID, `C0`), directory from sector 3. The partition's BAM marks every track outside it as full (`00 00 00 00 00 00`). Byte offset of a block = ((track − 1) × 40 + sector) × 256. `c1541 -dir` lists the partition as a `cbm` file and does not enter it.
 
 **Typical use:** large software archives, tools requiring subdirectory support.
 
@@ -570,6 +572,81 @@ A byte is 20 pulses: the marker pair, eight data-bit pairs least significant bit
 The header block's 192 bytes were: type `$01` (relocatable BASIC program), start address `$0801` and end address `$080D` little-endian, the filename `T` and 186 bytes of `$20` padding. The program block held the twelve bytes of `10 REM ABC` exactly as they sit in memory, with the end address exclusive. One further entry sits at the very start of the file, 472,967 cycles long: the time from pressing RECORD at boot to the first pulse, an artefact of the run and not of the format. Which of the two copies the KERNAL reads on LOAD, and how a read error in one is repaired from the other, were not measured here.
 
 **Typical use:** archival of original cassette software; testing turbo loader implementations; copy-protection analysis.
+
+---
+
+### .TCRT — Tapecart image
+
+**Consumed by:** vice
+
+A tapecart is a flash-memory pod on the cassette port: 2 MB of flash, a
+microcontroller that plays a KERNAL-format tape of a small loader, and a
+fast two-bit transfer over the tape port once that loader asks for it.
+A `.tcrt` file holds the pod's whole state: the fastload settings, the
+file name, the loader and the flash.
+The layout is from Ingo Korb's specification, `doc/TCRT Format.md` in
+https://github.com/ikorb/tapecart (version 1, facts only), and VICE
+3.10's reader, `load_tcrt()` in `src/tapeport/tapecart.c`, which agrees
+with it. `kickassembler/tapecart-boot` builds one byte by byte and VICE
+boots it (rung 1); the offsets below are the ones that file uses.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 16 | signature `tapecartImage` + `$0D $0A $1A` (`74 61 70 65 63 61 72 74 49 6D 61 67 65 0D 0A 1A`) |
+| 16 | 2 | version, 1 |
+| 18 | 2 | fastload block: offset in flash |
+| 20 | 2 | fastload block: length in bytes, the two load-address bytes included |
+| 22 | 2 | call address: where the loader jumps after loading |
+| 24 | 16 | file name the C64 prints after `FOUND` |
+| 40 | 1 | flags: bit 0 = the next 171 bytes are a loader; bit 1 = the program supports data block offsets |
+| 41 | 171 | loader code, or 171 zeros when bit 0 is clear |
+| 212 | 4 | length of the flash content that follows, 0 to `$200000` |
+| 216 | n | flash content from address 0; everything past it reads `$FF` |
+
+All fields are little endian. The fastload block is laid out like a PRG
+file: two bytes of load address, then the data. With flag bit 0 clear,
+VICE supplies its copy of the default loader (`tapecart-loader.h`).
+VICE reads the version as the single byte at offset 16 and the rest of
+the header as the specification says; a flash length above 2 MB or a
+wrong signature is refused with a log line.
+
+**What the C64 sees.** In its first mode the tapecart plays an endless
+KERNAL-format tape (VICE's `construct_pulsestream()`): a header block of
+type 3 whose start and end addresses are `$0302` and `$0304`, whose name
+field is the TCRT's file name and whose remaining 171 bytes are the
+loader, then a two-byte data block `$51 $03`. A plain `LOAD` therefore
+reads the loader into the tape buffer at `$0351` and then overwrites the
+BASIC idle vector `$0302` with `$0351`, so the loader starts as soon as
+LOAD returns to BASIC. The loader switches the pod to fastload mode by
+clocking `$CA65` into it on the write line, one bit per motor-on edge,
+and receives a six-byte info block (call address, end address, load
+address) followed by the data. The file name can be anything; the PRG in
+flash decides where the data goes.
+
+Measured with `kickassembler/tapecart-boot` (a 16,641-byte PRG in the
+flash, `LOAD` typed at power-on, VICE x64sc 3.10, traced):
+
+| Stage | PAL cycles | NTSC cycles |
+|---|---|---|
+| header block, `TRD` to `TNIF` | 4,312,537 | 4,311,754 |
+| the KERNAL's pause after `FOUND` | 12,499,955 | 12,975,026 |
+| the `$0302` block, `TRD` to `TNIF` | 850,231 | 850,269 |
+| loader at `$0351` to the program's first instruction | 1,846,677 | 1,850,463 |
+| `LOAD` entered to the program's first instruction | 19,517,885 | 19,995,927 |
+
+The fastload stage moved 16,645 bytes (the six-byte info block and
+16,639 of data) in 1.87 s on PAL and 1.81 s on NTSC, mode switch and the
+pod's 100 ms start delay included: 8,880 and 9,200 bytes a second. The
+specification says "around 9500". The loader started 4,704 cycles after
+the second block's `TNIF`, as LOAD returned to BASIC. The pause after
+`FOUND` is the KERNAL's, the same 12.69 s at either clock as a real
+tape's (`hardware/kernal-routines-reference.md`, `FAH`), and it is
+two-thirds of the boot.
+
+**Typical use:** single-file releases for the tapecart; an emulator's
+persisted tapecart. Not measured here: the command mode, writing flash
+from the C64, a custom loader, data block offsets, and SHIFT+RUN/STOP as
+the way to start the load.
 
 ---
 

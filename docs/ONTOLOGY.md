@@ -25,13 +25,17 @@ Design principles:
 
 ### KernalRoutine
 
-A KERNAL ROM jump-table entry ($FF81-$FFF3). An earlier version of this
-line said $FFC0+; the table starts at $FF81 (CINT).
+A KERNAL ROM jump-table entry ($FF81-$FFF3), or one of the tape routines
+inside the ROM that the page lists under "Tape routines inside the ROM",
+at its 901227-03 address and under Commodore's source label (`FAH`,
+`TRD`, `BSIV`). An earlier version of this line said $FFC0+; the table
+starts at $FF81 (CINT). Before the tape section every node was a
+jump-table entry.
 
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Routine name (e.g. "CHROUT") |
-| address | string | Hex jump-table address (e.g. "$FFD2") |
+| address | string | Hex jump-table address (e.g. "$FFD2"), or ROM address for a tape routine (e.g. "$F72C") |
 | input_regs | string | Calling convention (e.g. "A=byte to print") |
 | output_regs | string | Return values (e.g. "C=error flag") |
 | description | string | One-line summary |
@@ -326,9 +330,9 @@ can two listings' hardware be attached together?"
 |----------|------|-------------|
 | name | string | From the `**Device:**` line (e.g. "disk_1541_ii", "joystick_port_2") |
 | title | string | The H2 text |
-| kind | string | input, storage, memory or cartridge |
+| kind | string | input, output, storage, memory or cartridge (output added with the printer, #19) |
 | port | string | control_1, control_2, user, expansion or serial; every port but serial has one socket |
-| vice_attach | string | How x64sc attaches it: "default", "flags <options>", "disk" or "crt <CRT hardware type>" |
+| vice_attach | string | How x64sc attaches it: "default", "flags <options>", "disk" (drive 8, D64), "disk d81" (drive 8, a 1581), "disk 9" (drive 9, D64) or "crt <CRT hardware type>" |
 | source_doc | string | The page that defines it |
 | claims_stated | string? | "stated" or "none"; absent when the section has no usable Claims line (unknown) |
 | claims_basis | string? | measured-vice or derived-listing |

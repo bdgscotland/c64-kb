@@ -12,7 +12,7 @@ import { CLAIMS_BASIS_WORDS, isClaimsBasis, parseClaims, type Claim, type Claims
 import { group, matchField, splitH2Sections, warn } from "./common.ts";
 import type { GraphEntity } from "./types.ts";
 
-const DEVICE_KINDS = ["input", "storage", "memory", "cartridge"] as const;
+const DEVICE_KINDS = ["input", "output", "storage", "memory", "cartridge"] as const;
 type DeviceKind = (typeof DEVICE_KINDS)[number];
 const DEVICE_PORTS = ["control_1", "control_2", "user", "expansion", "serial"] as const;
 export type DevicePort = (typeof DEVICE_PORTS)[number];
@@ -22,11 +22,16 @@ export const SINGLE_SOCKET_PORTS: readonly DevicePort[] = ["control_1", "control
 /**
  * How VICE attaches the device (the `**VICE attach:**` line):
  * `default` (x64sc attaches it with no option), `flags <x64sc options>`,
- * `disk` (runs.json "disk": a D64 in drive 8) or `crt <hardware type>`
- * (runs.json "cartridge" whose .crt header gives that type).
+ * `disk` (runs.json "disk": a D64 in drive 8), `disk d81` (runs.json
+ * "disk" with "type": "d81": a D81 in a 1581 as drive 8), `disk 9`
+ * (runs.json "disk9": a D64 in a 1541-II as drive 9) or `crt <hardware
+ * type>` (runs.json "cartridge" whose .crt header gives that type).
  */
 export type ViceAttach =
-  { how: "default" } | { how: "flags"; flags: string[] } | { how: "disk" } | { how: "crt"; type: number };
+  | { how: "default" }
+  | { how: "flags"; flags: string[] }
+  | { how: "disk"; unit: 8 | 9; image: "d64" | "d81" }
+  | { how: "crt"; type: number };
 
 export interface Device {
   name: string;
@@ -54,7 +59,8 @@ const DEVICE_MODES = new Set(["owns", "shares"]);
 export function parseViceAttach(raw: string): ViceAttach | null {
   const v = raw.replace(/`/g, "").trim();
   if (v === "default") return { how: "default" };
-  if (v === "disk") return { how: "disk" };
+  const disk = /^disk(?:\s+(9|d81))?$/.exec(v);
+  if (disk) return { how: "disk", unit: disk[1] === "9" ? 9 : 8, image: disk[1] === "d81" ? "d81" : "d64" };
   const crt = /^crt\s+(\d+)$/.exec(v);
   if (crt) return { how: "crt", type: Number(group(crt, 1)) };
   const flags = /^flags\s+(-.+)$/.exec(v);
@@ -101,7 +107,7 @@ function sectionDevice(heading: string, body: string, sourcePath: string): Devic
   const attach = attachRaw === undefined ? null : parseViceAttach(attachRaw);
   if (!isKind(kind) || !isPort(port) || !attach) {
     warn(
-      `${where} needs **Device kind:** (${DEVICE_KINDS.join(", ")}), **Device port:** (${DEVICE_PORTS.join(", ")}) and **VICE attach:** (default, flags <options>, disk or crt <type>) — not ingested`,
+      `${where} needs **Device kind:** (${DEVICE_KINDS.join(", ")}), **Device port:** (${DEVICE_PORTS.join(", ")}) and **VICE attach:** (default, flags <options>, disk, disk d81, disk 9 or crt <type>) — not ingested`,
     );
     return null;
   }
@@ -118,6 +124,7 @@ export function parseDevices(content: string, sourcePath: string): Device[] {
 function attachText(a: ViceAttach): string {
   if (a.how === "flags") return `flags ${a.flags.join(" ")}`;
   if (a.how === "crt") return `crt ${String(a.type)}`;
+  if (a.how === "disk") return a.unit === 9 ? "disk 9" : a.image === "d81" ? "disk d81" : "disk";
   return a.how;
 }
 

@@ -15,8 +15,9 @@ into REQUIRES_DEVICE edges.
 
 Every device here is attached by a pinned run in `docs/recipes/runs.json`
 or is VICE's default, so each has a recipe or a `-dumpconfig` line behind
-it. A device no recipe attaches (the KoalaPad, the Final Cartridge, a
-second drive) has no section.
+it. A device no recipe attaches (the KoalaPad, the Final Cartridge) has
+no section. An earlier version of this sentence also named a second
+drive; `kickassembler/disk-copier` attaches one as drive 9.
 
 How to read the claims: `owns` means the device's lines occupy the unit,
 so a second device that owns it cannot be attached at the same time (one
@@ -130,6 +131,26 @@ joystick 4's (VICE's `src/userport/userport_joystick.c`, "CGA userport
 joy adapter"). `kickassembler/four-player-read` attaches it with
 `-userportdevice 3` and counts presses on both adapter joysticks.
 
+## RS-232 interface on the user port
+
+**Device:** `rs232_userport`
+**Device kind:** output
+**Device port:** user
+**VICE attach:** flags -userportdevice 2
+**Claims:** user_port (owns)
+**Claims basis:** derived-listing
+
+VICE's "Userport RS232/Modem": the level shifter a C64 needs between
+its user port and an RS-232 line. It samples TXD on PA2 and drives RXD
+on PB0 and FLAG2, and reads RTS and DTR from PB1 and PB2
+(`src/rs232drv/rsuser.c` and `rsuser.h`, VICE 3.10; the claim on
+`$DD01` is read from that source). The host end is set apart from the
+attach: `-rsuserdev 0 -rsdev1 <file>` sends what it receives to a file,
+`-rsuserbaud` sets the rate it samples at. `kickassembler/rs232-send`
+attaches it and checks the file; that run only transmits, and receiving
+was not reproduced (the recipe says what was tried), so the kind here
+is `output`.
+
 ## 1541-II as drive 8
 
 **Device:** `disk_1541_ii`
@@ -147,6 +168,65 @@ runs on an emulated 1541-II with its own 6502. The serial bus is shared:
 each device on it answers to its own number. A run that sets
 `-drive8type` to anything but 1542 is refused by verify:recipes, because
 this section would no longer describe it.
+
+## 1581 as drive 8
+
+**Device:** `disk_1581`
+**Device kind:** storage
+**Device port:** serial
+**VICE attach:** disk d81
+**Claims:** serial_bus (shares)
+**Claims basis:** measured-vice
+
+Commodore's 3.5-inch drive, 80 tracks of 40 256-byte sectors, 3,160
+blocks free on a fresh disk. A runs.json `"disk"` with `"type": "d81"`
+formats a fresh D81 with `c1541 -format NAME,ID d81` and attaches it
+with `-8 image -drive8type 1581`; `src/drive/drive.h` defines
+`DRIVE_TYPE_1581` as 1581 (VICE 3.10), and the drive runs VICE's
+`dos1581-318045-02.bin`. `kickassembler/d81-partition` is the recipe
+whose run attaches it. A run that sets `-drive8type` itself with a D81 is
+refused: the verifier sets it. The 1581's DOS answers the same channel-15
+commands as the 1541's plus the `/` partition family
+(`../formats/iec-disk-reference.md`, "1581 partitions and
+sub-directories").
+
+## 1541-II as drive 9
+
+**Device:** `disk_1541_ii_drive_9`
+**Device kind:** storage
+**Device port:** serial
+**VICE attach:** disk 9
+**Claims:** serial_bus (shares)
+**Claims basis:** measured-vice
+
+A second 1541-II on the serial bus, answering to device 9. `x64sc
+-default -dumpconfig` prints `Drive9Type=0`: VICE attaches no second
+drive by default. A runs.json `"disk9"` formats a fresh D64 and attaches
+it with `-9 image -drive9type 1542`, the drive's wobble off as for drive
+8. `kickassembler/disk-copier` is the recipe whose run attaches it. The
+two drives share the bus by device number; `-9` or `-drive9type` in a
+run's flags is refused, so a second drive is always this section.
+## Printer as device 4
+
+**Device:** `printer_device_4`
+**Device kind:** output
+**Device port:** serial
+**VICE attach:** flags -busdevice4 -devicebackend4 1 -pr4drv ascii -pr4output text
+**Claims:** serial_bus (shares)
+**Claims basis:** measured-vice
+
+A printer on the serial bus as device 4, the number Commodore printers
+answer to by default. VICE's file printer stands in for it: `-busdevice4`
+puts device 4 on the bus, `-devicebackend4 1` makes it the file printer,
+and `-pr4drv ascii -pr4output text` write what it receives as ASCII text
+to `print.dump` in the directory x64sc runs in (the default
+`PrinterTextDevice1`; without these options `-dumpconfig` prints
+`BusDevice4=0` and `Printer4=0`, VICE 3.10). The bus is shared under the
+same protocol as a drive. `kickassembler/printer-output` attaches it and
+prints through OPEN, CHKOUT and CHROUT; that page also records what
+happens when either of the first two options is left out. The ASCII
+driver is not a real printer's character set, and no MPS model is
+emulated here.
 
 ## REU 1750 (512 KB)
 

@@ -2409,6 +2409,55 @@ The PLA truth table for cart modes is documented in *The C64 PLA
 Dissected*. Cart modes matter only to code that is a cartridge or
 copy-protection.
 
+### Expansion port signals
+
+The cartridge port is a 44-contact edge connector, 22 on top (1-22) and
+22 underneath (A-Z, no G, I, O or Q). Pin names and notes from the
+*Commodore 64 Programmer's Reference Guide*, pages 366-368 (rung 4:
+cited, not measured).
+
+| Pins | Signal | Direction and use |
+|---|---|---|
+| 1, 22, A, Z | GND | |
+| 2, 3 | +5 V | user port and cartridge together: 450 mA at most |
+| 4 | /IRQ | into the 6510's IRQ line, active low |
+| 5 | R/W | low on a write |
+| 6 | DOT CLOCK | the video dot clock; the guide gives 8.18 MHz, which is the NTSC figure (PAL 7,881,987 Hz, `pal-ntsc-reference.md`); all system timing comes from it |
+| 7 | /I/O1 | low for an access to `$DE00-$DEFF`, unbuffered |
+| 8 | /GAME | cartridge input, with /EXROM selects the memory mode |
+| 9 | /EXROM | cartridge input |
+| 10 | /I/O2 | low for an access to `$DF00-$DFFF` |
+| 11 | /ROML | low for an access to the 8 KB at `$8000` while mapped to the cartridge |
+| 12 | BA | from the VIC-II: low 3 cycles before it takes the bus, until it is done |
+| 13 | /DMA | cartridge input: pulled low, the 6510's address bus, data bus and R/W go high-impedance |
+| 14-21 | D7-D0 | data bus, unbuffered |
+| B | /ROMH | low for an access to the upper 8 KB block while mapped to the cartridge |
+| C | /RESET | out to the cartridge, and in |
+| D | /NMI | into the 6510's NMI line, active low |
+| E | Φ2 | the system clock |
+| F-Y | A15-A0 | address bus, unbuffered |
+
+The guide gives `/ROMH` only as "@ $E000", which is Ultimax mode; in
+16 KB mode the same line selects `$A000-$BFFF` (Cartridge modes above,
+measured in VICE).
+
+**What the recipes here show in VICE 3.10 (rung 1).**
+
+- /EXROM low, /GAME high: an 8 KB cartridge at `$8000-$9FFF`, BASIC
+  still at `$A000` (`kickassembler/crt-banked`, generic and Magic Desk
+  types).
+- /GAME low, /EXROM high: Ultimax. The EasyFlash boots in it and must be
+  in it for a flash write to reach the chip; only `$0000-$0FFF` of RAM
+  is then mapped (`kickassembler/easyflash-save`).
+- /I/O1: a write to `$DE00` switches a Magic Desk bank, and EasyFlash
+  takes its bank and mode registers at `$DE00`/`$DE02`
+  (`crt-banked`, `easyflash-save`). With no REU, `$DF00-$DFFF` (/I/O2)
+  reads open bus; an REU answers there (`kickassembler/reu-dma`).
+- /DMA and BA are what an REU transfer uses to stop the 6510; the
+  transfer's effect is measured in `reu-dma`, not the lines.
+- /IRQ, /NMI (a freezer's button), R/W, DOT CLOCK and Φ2 are not
+  observed by any run here.
+
 ## Zero page details
 
 The 6510's zero-page addressing modes (LDA $XX, LDA $XX,X, LDA

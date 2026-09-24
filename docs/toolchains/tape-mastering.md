@@ -254,8 +254,11 @@ million cycles, 1,669 to 1,673 PAL frames, 33.3 s. (An earlier version
 gave a single 1,671 frames, the midpoint of that bracket.) The tape itself holds 20.5 million cycles of
 pulses; the other 12.5 million, 12.7 s, is the KERNAL's pause at
 `FOUND`, during which the motor is stopped. The rule that ends that
-pause was not measured here; that a key press shortens it is common
-knowledge, not tested in this run. On
+pause is read from the ROM bytes under `FAH` on
+`../hardware/kernal-routines-reference.md`: a jiffy-clock target or a
+key down in the RUN/STOP key's keyboard row. A key press was not tested
+in this run. (An earlier version called the key rule common knowledge.)
+On
 NTSC the same image reached the green border between 35,470,000 and
 35,510,000 cycles, 2,076 NTSC frames of 17,095 cycles, 34.7 s: the TAP
 stores cycles, so the tape costs the same count on either model and the
