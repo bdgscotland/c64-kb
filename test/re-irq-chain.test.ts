@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Hit } from "../src/re/monlog.ts";
+import { REGION_TIMING } from "../src/domain/timing.ts";
 import { analyseIrqChain, execCommands, handlersFrom, storeCommands } from "../src/re/irq-chain.ts";
 
 const base: Hit = {
@@ -33,7 +34,13 @@ const ex = (addr: number, clock: number, line: number): Hit => ({
   line,
   cycle: 20,
 });
-const PAL = 19656;
+const ld = (addr: number, clock: number): Hit => ({
+  ...base,
+  kind: "load",
+  addr,
+  clock,
+});
+const PAL = REGION_TIMING.PAL.cycles_per_frame;
 
 describe("vector writes", () => {
   it("reports a vector once both bytes are known, byte by byte", () => {
@@ -52,6 +59,21 @@ describe("armed lines", () => {
     const r = analyseIrqChain([st(0xd011, 0x1b, 5), st(0xd012, 0, 10, "INC")], PAL, 0);
     expect(r.arms.at(-1)?.line).toBeNull();
     expect(r.unknowns.join(" ")).toMatch(/INC \$D012/);
+  });
+  it("ignores load hits (regression: load of $D012 does not create a false arm)", () => {
+    const r = analyseIrqChain(
+      [st(0xd011, 0x1b, 5), st(0xd012, 40, 10), ld(0xd012, 15), ex(0x2000, 100, 40)],
+      PAL,
+      0,
+    );
+    expect(r.arms.map((a) => a.line)).toEqual([null, 40]);
+    expect(r.entries).toHaveLength(1);
+    expect(r.handlers[0]).toEqual(
+      expect.objectContaining({
+        handler: 0x2000,
+        armed_before: [40],
+      }),
+    );
   });
 });
 
@@ -77,6 +99,28 @@ describe("entries and summary", () => {
       }),
     ]);
     expect(new Set(r.entries.map((e) => e.id)).size).toBe(2);
+  });
+  it("handles missing timing (-1) by storing null and recording unknowns", () => {
+    const missingTimingHit: Hit = {
+      ...base,
+      kind: "exec",
+      addr: 0x2000,
+      pc: 0x2000,
+      clock: 100,
+      line: -1,
+      cycle: -1,
+    };
+    const r = analyseIrqChain([st(0x314, 0x00, 1), st(0x315, 0x20, 2), missingTimingHit], PAL, 0);
+    expect(r.entries).toHaveLength(1);
+    expect(r.entries[0]).toEqual(
+      expect.objectContaining({
+        handler: 0x2000,
+        line: null,
+        cycle: null,
+      }),
+    );
+    expect(r.handlers[0]).toEqual(expect.objectContaining({ entry_lines: [] }));
+    expect(r.unknowns.join(" ")).toMatch(/raster timing not logged for handler entry/);
   });
 });
 

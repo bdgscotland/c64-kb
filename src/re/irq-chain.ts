@@ -26,18 +26,18 @@ export interface VectorWrite extends Obs {
   value: number | null;
   pc: number;
   clock: number;
-  line: number;
+  line: number | null;
 }
 export interface Arm extends Obs {
   line: number | null;
   pc: number;
   clock: number;
-  at_line: number;
+  at_line: number | null;
 }
 export interface Entry extends Obs {
   handler: number;
-  line: number;
-  cycle: number;
+  line: number | null;
+  cycle: number | null;
   clock: number;
   frame: number;
 }
@@ -107,13 +107,15 @@ function onVector(s: State, h: Hit, v: { name: VectorName; hi: boolean }): void 
   const full = lo === undefined || hi === undefined || lo === null || hi === null ? null : (hi << 8) | lo;
   if (value === null)
     s.out.unknowns.push(`${h.mnemonic} $${hex4(h.addr).toUpperCase()} at $${hex4(h.pc)}: byte not logged`);
+  const line = h.line === -1 ? null : h.line;
+  if (line === null) s.out.unknowns.push(`raster timing not logged for ${v.name} write at $${hex4(h.pc)}`);
   s.out.vectors.push({
     ...obs(`v${s.out.vectors.length}`),
     vector: v.name,
     value: full,
     pc: h.pc,
     clock: h.clock,
-    line: h.line,
+    line,
   });
   if (full !== null) s.via.set(full, (s.via.get(full) ?? new Set()).add(v.name));
 }
@@ -126,16 +128,21 @@ function onArm(s: State, h: Hit): void {
     s.out.unknowns.push(`${h.mnemonic} $${hex4(h.addr).toUpperCase()} at $${hex4(h.pc)}: value not logged`);
   const line = s.d011 === null || s.d012 === null ? null : ((s.d011 & 0x80) << 1) | s.d012;
   s.lastArm = line;
-  s.out.arms.push({ ...obs(`a${s.out.arms.length}`), line, pc: h.pc, clock: h.clock, at_line: h.line });
+  const at_line = h.line === -1 ? null : h.line;
+  if (at_line === null) s.out.unknowns.push(`raster timing not logged for arm write at $${hex4(h.pc)}`);
+  s.out.arms.push({ ...obs(`a${s.out.arms.length}`), line, pc: h.pc, clock: h.clock, at_line });
 }
 
 function onEntry(s: State, h: Hit, frameCycles: number, startClock: number): void {
   const frame = Math.floor((h.clock - startClock) / frameCycles);
+  const line = h.line === -1 ? null : h.line;
+  const cycle = h.cycle === -1 ? null : h.cycle;
+  if (line === null) s.out.unknowns.push(`raster timing not logged for handler entry at $${hex4(h.addr)}`);
   s.out.entries.push({
     ...obs(`e${s.out.entries.length}`),
     handler: h.addr,
-    line: h.line,
-    cycle: h.cycle,
+    line,
+    cycle,
     clock: h.clock,
     frame,
   });
@@ -152,7 +159,7 @@ function summarise(s: State): HandlerSummary[] {
       handler,
       via: [...(s.via.get(handler) ?? [])].sort(),
       entries: es.length,
-      entry_lines: sorted(es.map((e) => e.line)),
+      entry_lines: sorted(es.flatMap((e) => (e.line === null ? [] : [e.line]))),
       armed_before: sorted(s.armedBefore.get(handler) ?? []),
     }));
 }
@@ -164,6 +171,7 @@ export function analyseIrqChain(hits: Iterable<Hit>, frameCycles: number, startC
       onEntry(s, h, frameCycles, startClock);
       continue;
     }
+    if (h.kind !== "store") continue;
     const v = vectorOf(h.addr);
     if (v) onVector(s, h, v);
     else if (h.addr === 0xd011 || h.addr === 0xd012) onArm(s, h);
