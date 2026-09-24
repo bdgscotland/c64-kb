@@ -2642,5 +2642,17 @@
       "pal": "screenshots/sid-pwm-pad.png",
       "ntsc": "screenshots/sid-pwm-pad-ntsc.png"
     }
+  },
+  "kickassembler/speedcode-road": {
+    "cycles": 45000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/speedcode-road.png",
+      "ntsc": "screenshots/speedcode-road-ntsc.png"
+    }
   }
 }
