@@ -341,6 +341,16 @@ ECM is a text mode; the cycle budget is identical to standard text mode. No addi
 **Region:** both
 **Uses registers:** D016, D018, D021, D022, D023
 **Uses kernal:** (none)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/mcm-text.md`: one `$D018` store (`$1C`) moves the
+character base to the multicolour charset at `$3000`; the matrix stays at
+`$0400`. The ROM font is drawn for hires, so a multicolour screen needs
+its own glyphs and holds the base. MCM ($D016 bit 4) is a mode bit, not a
+unit yet, so a clash with another mode bit cannot be seen by the unit
+check.
 
 ### Why
 
@@ -384,7 +394,9 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 
 ### Recipes
 
-- No recipe yet for a multicolour character set.
+- `recipes/kickassembler/mcm-text.md`: one glyph in eight multicolour
+  and eight hires cells on one screen, measured pixel for pixel in VICE
+  x64sc on PAL and NTSC, with `$D025`/`$D026` as a control.
 
 ---
 
