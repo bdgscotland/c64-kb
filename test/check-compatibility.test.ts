@@ -138,6 +138,36 @@ describe("checkCompatibility", () => {
     expect(withExtra.structured.conflicts.every((c) => c.phase === "play")).toBe(true);
     await expect(checkDesignCompatibility("no_such_design")).rejects.toThrow(/known: phase_test/);
   });
+
+  it("names the node type of a refused name that is not a technique (#19)", async () => {
+    await f.addPitfall({
+      name: "jitter_pitfall",
+      title: "Jitter",
+      severity: "high",
+      region: "both",
+      category: "raster",
+    });
+    expect(await f.linkTriggeredBy("jitter_pitfall", "raster_bars", "Technique")).toBe(true);
+    expect(await f.linkMitigatedBy("jitter_pitfall", "stable_raster_irq")).toBe(true);
+    await f.addFileFormat("CRT", "Cartridge image");
+    const r = await checkCompatibility([
+      "raster_bars",
+      "jitter_pitfall",
+      "crt",
+      "Raster_Bars",
+      "nothing_here",
+    ]);
+    expect(r.structured.verdict).toBe("unknown_technique");
+    expect(r.structured.not_found).toEqual(["jitter_pitfall", "crt", "Raster_Bars", "nothing_here"]);
+    expect(r.text).toContain(
+      "- `jitter_pitfall` is a Pitfall (`jitter_pitfall`), not a technique. Arises in: raster_bars. Cured by: stable_raster_irq.",
+    );
+    expect(r.text).toContain("- `crt` is a FileFormat (`CRT`), not a technique.");
+    expect(r.text).toContain("- `Raster_Bars` is the technique `raster_bars`; pass it with that spelling.");
+    expect(r.text).not.toContain("`nothing_here` is");
+    // Caller order is kept.
+    expect(r.text.indexOf("`jitter_pitfall` is")).toBeLessThan(r.text.indexOf("`crt` is"));
+  });
 });
 
 describe("timingBudget", () => {

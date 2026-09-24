@@ -6,6 +6,7 @@ import { getAnalytics } from "../../../context.ts";
 import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts";
 import type { CompatibilityCheckResult } from "../types.ts";
 import { fetchCompatibilityFacts } from "./fetch.ts";
+import { identifyNames } from "./identify.ts";
 import { renderCompatibility } from "./render.ts";
 import { evaluateCompatibility } from "./rules.ts";
 
@@ -32,5 +33,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     not_found: evaluation.not_found,
     verdict: evaluation.verdict,
   };
-  return { structured, text: renderCompatibility(structured, closureOnly) };
+  // A refused name may still be a node of another type: say which (#19).
+  const identified = await identifyNames(evaluation.not_found);
+  return { structured, text: renderCompatibility(structured, closureOnly, identified) };
 }
