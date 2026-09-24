@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 784, schema 31, tools 2.6.0, package 0.19.0.
+Data 785, schema 31, tools 2.6.1, package 0.19.1.
+
+**Claims-watch findings (data 785, tools 2.6.1; #35).** The KERNAL's
+serial routines use CIA1 timer B: the ROM stores to $DC07/$DC0F at
+$ED94/$ED99 and $EE22/$EE27, reached by 20 jump-table routines; a
+claims-watch trace counted 314 and 8,438 such stores in two file
+recipes. The four disk techniques now claim `serial_bus` and
+`cia1_timer_b` (shares), so a technique that owns timer B reports a
+conflict with them. Two recipes that bank the KERNAL out now list
+`ram_under_kernal`; it has a Cost of 0 (one $01 store at init), and
+`plan_budget` no longer charges badline cycles for a zero figure. Three
+techniques gained Claims lines; the YSCROLL gap they exposed is #71.
 
 **Sparkle's $DD02 VIC-bank switch, measured with a true drive (data 784; #23).**
 New recipe `kickassembler-sparkle-dd02-bank`: a disk built by SparkleCPP
