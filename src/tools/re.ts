@@ -30,7 +30,7 @@ import { resolveX64sc } from "../services/vice-bin.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-export interface RunInfo {
+interface RunInfo {
   prg: string;
   model: Model;
   cycles: number;

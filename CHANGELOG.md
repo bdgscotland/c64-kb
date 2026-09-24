@@ -11,7 +11,8 @@ Data 770, schema 31, tools 2.3.1, package 0.16.1.
 (`test/re-calibration.test.ts`).** Before any third-party game is
 studied, `reIrqChain` and `reFrameProfile` (`src/tools/re.ts`) had to
 reproduce three figures this repo already committed, at a fixed 2%
-tolerance; none missed.
+tolerance; none missed. Measured in VICE x64sc 3.10 (windowless),
+rung 1 — the tools' own trace, not a reading from the recipe pages.
 - `kickassembler/irq-chain`: armed lines exact, `{40, 130, 260}` against
   the listing's `LINE0`/`LINE1`/`LINE2`. Raw `arms[]` also held `{4, 296}`
   a few cycles apart — the composite of the dispatcher's two separate

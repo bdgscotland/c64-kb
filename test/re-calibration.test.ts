@@ -3,6 +3,7 @@ import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { REGION_TIMING } from "../src/domain/timing.ts";
 import { reFrameProfile, reIrqChain } from "../src/tools/re.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
 import { findC1541, findToolchains } from "../scripts/lib/toolchains.ts";
@@ -18,7 +19,7 @@ const c1541 = findC1541();
 const canRun =
   x64sc !== null && !x64sc.windowed && t.kickass !== null && t.oscar64 !== null && c1541 !== null;
 const TOLERANCE = 0.02;
-const PAL_FRAME = 19656;
+const PAL_FRAME = REGION_TIMING.PAL.cycles_per_frame;
 
 let keep = "";
 const prg = (stem: string) => {

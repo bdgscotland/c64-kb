@@ -14,7 +14,7 @@ export interface Region {
   start: Marker;
   stop: Marker;
 }
-export interface Sample extends Obs {
+interface Sample extends Obs {
   cycles: number;
   start_clock: number;
   frame: number;

@@ -13,8 +13,8 @@
  */
 import { storedValue, type Hit } from "./monlog.ts";
 
-export const VECTORS = { irq_0314: 0x0314, nmi_0318: 0x0318, nmi_fffa: 0xfffa, irq_fffe: 0xfffe } as const;
-export type VectorName = keyof typeof VECTORS;
+const VECTORS = { irq_0314: 0x0314, nmi_0318: 0x0318, nmi_fffa: 0xfffa, irq_fffe: 0xfffe } as const;
+type VectorName = keyof typeof VECTORS;
 
 export interface Obs {
   id: string;
@@ -28,20 +28,20 @@ export interface VectorWrite extends Obs {
   clock: number;
   line: number | null;
 }
-export interface Arm extends Obs {
+interface Arm extends Obs {
   line: number | null;
   pc: number;
   clock: number;
   at_line: number | null;
 }
-export interface Entry extends Obs {
+interface Entry extends Obs {
   handler: number;
   line: number | null;
   cycle: number | null;
   clock: number;
   frame: number;
 }
-export interface HandlerSummary {
+interface HandlerSummary {
   handler: number;
   via: VectorName[];
   entries: number;
