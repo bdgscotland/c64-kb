@@ -119,21 +119,25 @@ specific DMA windows: each sprite has its own two-cycle slot, on PAL
 cycles 58, 60, 62, 1, 3, 5, 7 and 9 for sprites 0–7, so the eight slots
 run from cycle 58 to cycle 10 of the next line (measured in VICE x64sc,
 `hardware/vic-ii-reference.md`, "Sprite DMA"; an earlier version said
-cycles 58–61 for every sprite). If the CPU writes sprite X/Y position or enable-bit registers
-during one of those windows, the VIC may see a torn value: the high
-byte of a new position combined with the low byte of the old, or a
-sprite-enable bit that transitions mid-DMA. The result is a sprite that
-appears one pixel-row too high or low on one frame, or one that
-disappears entirely when the enable bit clears at exactly the wrong
-moment. The pattern looks random because the relative phase between CPU
-and VIC shifts each frame unless the raster IRQ is stabilised.
+cycles 58–61 for every sprite). The CPU cannot write during those
+slots: the VIC holds the bus and the CPU is stopped (same section, and
+`pitfalls/raster-and-badline.md`, `vic_bus_takeover_on_dma`). The torn
+value comes from an update split across instructions while the beam is
+drawing the sprite. Sprite X is nine bits, the low eight in $D000+2n and
+the ninth in $D010 bit n, written by two separate instructions; sprite
+lines drawn between the two writes use the new low byte with the old
+ninth bit, 256 pixels away. A $D015 bit cleared while the sprite is being
+drawn cuts it off for that frame. The pattern looks random because where
+the beam is when the update runs shifts each frame unless the update is
+tied to a raster IRQ. (An earlier version said the CPU wrote during the
+DMA windows and the VIC saw a torn value there.)
 
 **Diagnosis steps:**
 1. Set a vice-mcp raster breakpoint at the first sprite-active line and
    dump $D000-$D017 to verify they match intended values.
 2. Instrument the sprite-update routine to log the value of $D012
-   (raster line) at the moment of each write. Writes occurring in
-   the DMA window of an active sprite are unsafe.
+   (raster line) at the moment of each write. Writes that land while
+   the beam is on the sprite's rows are unsafe.
 3. Enable VICE's raster-beam display and single-step through the
    sprite-update loop to identify which write collides with DMA.
 4. Check whether $D015 is written inside the visible frame with bits
@@ -209,9 +213,13 @@ sprites. Software that stores sprite X as a single byte and writes only
 the low register will leave the MSB stale. When the sprite crosses
 X=255 the displayed position wraps to 0 instead of advancing to 256,
 so the sprite jumps to the left edge and leaves the visible area. For Y, values 255 (and 0–7) place the sprite
-above or on the top border; values above 230 (approximately, depending
-on PAL/NTSC) push it below the visible area. A sprite at Y=255 is never
-drawn.
+above or on the top border. At the bottom, in 25-row mode, measured in VICE
+x64sc on PAL and NTSC alike: Y = 229 is the last fully visible value (raster lines
+230–250); from Y = 230 the lower border clips rows (230 shows 20, 249
+shows 1), and from Y = 250 the sprite is hidden in the lower border.
+A sprite at Y=255 is never drawn. (An earlier version said values above
+230, approximately and depending on PAL/NTSC, push the sprite below the
+visible area.)
 
 **Diagnosis steps:**
 1. In vice-mcp, set a watch on the sprite's X register ($D000 + 2×N)
@@ -235,7 +243,9 @@ Store sprite X as a 16-bit value internally. Derive the low byte as
 to hardware, compute the new $D010 value: clear the bit for this sprite,
 then OR in the MSB. A common idiom is to build the full $D010 byte from
 all eight sprite MSBs each frame in the commit phase. For Y, clamp the
-stored position to 230 on PAL or use the off-screen sentinel $FF only
+stored position to 229 to keep an unexpanded sprite whole (208 if
+Y-expanded; the same on PAL and NTSC), or 249 to keep one row visible;
+an earlier version said clamp to 230 on PAL. Use the off-screen sentinel $FF only
 when intentionally hiding a sprite via the enable bit ($D015) instead.
 
 ---
@@ -304,9 +314,12 @@ keyboard scans all stop without an error. Second: the IRQ vector at $0314–$031
 was overwritten with a corrupt address; the CPU vectors there on the
 next interrupt, executes garbage, and loops or crashes. Third: a
 runaway IRQ handler overflows the 6510's hardware stack (page $01,
-$0100–$01FF). Each IRQ entry pushes 3 bytes (PC + P); a handler that
-never returns or a cascade of nested IRQs fills the stack, wraps to
-$01FF, and corrupts CPU state.
+$0100–$01FF). Each IRQ entry pushes 3 bytes (PC high, PC low, P); the
+KERNAL's $FF48 entry pushes A, X and Y as well, 6 bytes in all. A
+handler that never returns, or a cascade of nested IRQs, walks S down
+through page 1; S is 8 bits, so after $0100 the next push goes to $01FF
+and overwrites the oldest return addresses, and the eventual `RTI` or
+`RTS` jumps to garbage.
 
 **Diagnosis steps:**
 1. Attach vice-mcp, halt execution, and read the CPU P register. If

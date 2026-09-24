@@ -45,7 +45,9 @@ layout.
 ### GoatTracker 2
 
 GoatTracker is the most used modern tracker for C64 music. It runs
-natively on Windows, macOS and Linux, so musicians need no hardware. The
+on a PC, so musicians need no hardware; its SourceForge project page
+(goattracker2, version 2.77) lists Windows and Linux. A macOS build was
+not checked here; an earlier version said it runs natively on macOS. The
 voice model mirrors the SID exactly: three voice channels, independent pattern sequences per channel,
 and a shared instrument table where each instrument defines waveform
 tables, ADSR parameters, pulse width sequences, and arpeggio tables.
@@ -121,13 +123,19 @@ SID Factory II is a modern tracker, open-source and cross-platform
 (Windows, macOS, Linux). Its README credits main programming to Thomas
 Egeskov Petersen, with Jens-Christian Huus, Michel de Bree and Thomas
 Jansson (https://github.com/Chordian/sidfactory2; an earlier version
-credited Linus Akesson). It is built around a driver model: the tracker compiles
-against a driver binary, and different drivers expose different feature
-sets. The default driver supports multi-frame instrument tables, filter
-automation, and an explicit, controllable gate/hard-restart cycle.
+credited Linus Akesson). It is built around a driver model: the music
+plays through a driver binary, and different drivers expose different
+feature sets. The README says the drivers are by Laxity and JCH; its
+changelog names driver 11.05.00 the default and lists what versions
+added (11.02: pulse program index, tempo change and main volume commands;
+11.03: a filter-enable bit in instruments; 11.04: note delay). A built-in
+packer and relocator place the music anywhere in C64 memory.
 
-The player (driver) binary size varies by driver variant; the standard
-driver is small. SID Factory II exports to SID format and to raw binaries.
+Driver sizes and the exact export file formats were not checked here. (An
+earlier version said the default driver supports multi-frame instrument
+tables, filter automation and a controllable gate/hard-restart cycle, that
+the standard driver is small, and that it exports to SID and raw binaries;
+none of this was checked against the driver sources.)
 Its open source suits composers who want to understand or modify the
 player rather than treat it as a black box.
 
