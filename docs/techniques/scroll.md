@@ -26,9 +26,9 @@ horizontal panning.
 **Region:** both
 **Uses registers:** D016
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=74041
+**Cost:** cycles_per_frame=7938
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-soft-scroll-h (carry frame: a 25-row memmove of screen and colour RAM)
+**Cost measured on:** oscar64-soft-scroll-h (carry frame: an unrolled 25-row move of screen RAM, colour RAM not moved)
 **Cost includes:** char_scroll_buffer_h
 
 ### Why
@@ -92,12 +92,13 @@ shadow and new value are immediate, zero-page or absolute (cycle counts
 from `docs/hardware/6510-cpu-reference.md`). This technique has no
 raster-critical timing requirement.
 
-The Cost line's 74,041 cycles is not the register write. It is the carry
-frame of `recipes/oscar64/soft-scroll-h.md`, measured there in VICE: that
-recipe shifts all 25 rows of screen and colour RAM with `memmove`, which
-takes 3.8 PAL frames. The figure belongs to that implementation and
-exceeds a frame; issue #18 tracks rewriting the move to fit the vertical
-blank.
+The Cost line's 7,938 cycles is not the register write. It is the carry
+frame of `recipes/oscar64/soft-scroll-h.md`, measured there in VICE: an
+unrolled `LDA abs` / `STA abs` move of all 25 rows of screen RAM. It is
+more than the PAL blank (6,741 cycles after line 256), so the recipe moves
+the rows top first and finishes each before the beam reaches it (row 24 at
+line 82 on PAL). An earlier Cost line said 74,041 cycles: the recipe's
+earlier `memmove` of screen and colour RAM, 3.8 PAL frames, which tore.
 
 ### Recipes
 
@@ -201,9 +202,10 @@ The display is backed by a 40×25 text screen (1000 bytes) and a parallel
 40×25 color RAM at $D800 (1000 nibbles). To scroll left by one character
 column:
 
-1. Copy columns 1-39 of each row to columns 0-38 (memmove of 39 bytes
-   per row, or equivalently shift the entire 1000-byte screen window left
-   by one byte taking care at the row boundary).
+1. Copy columns 1-39 of each row to columns 0-38, top row first. An
+   unrolled `LDA abs` / `STA abs` per byte costs 8 cycles; a library
+   `memmove` measured about 41 (`recipes/oscar64/soft-scroll-h.md`). An
+   earlier version of this step suggested `memmove`.
 2. Write fresh data into column 39 (the new rightmost column) from an
    off-screen content buffer.
 3. Repeat the same move on color RAM at $D800.
@@ -217,8 +219,11 @@ down to 0.
 
 For scrolling right, mirror the process: copy columns 0-38 to columns
 1-39, write fresh data into column 0, reset XSCROLL to 0 (it has just
-wrapped from 7). This matches the `if (xscroll == 0) { shift; xscroll = 7; }`
-form in `recipes/oscar64/soft-scroll-h.md`.
+wrapped from 7). The leftward form is the one in
+`recipes/oscar64/soft-scroll-h.md`: it writes the new XSCROLL at line 256,
+then moves the rows when XSCROLL has wrapped. An earlier version of this
+sentence quoted an `if (xscroll == 0) { shift; xscroll = 7; }` form that
+wrote `$D016` after the move.
 
 ### Why it works
 
@@ -242,6 +247,10 @@ shift and a memory copy.
   both PAL (~7,056 cycles) and NTSC (~4,095); unrolling reduces the cost,
   it does not make the move fit in the blank. An earlier version of this
   item claimed the unrolled move "can complete inside the vertical blank".
+  It can race the beam instead: started at line 256 and done top row
+  first, 975 bytes take 7,938 cycles and every row is finished before it
+  is displayed (row 24 at line 82 PAL, 127 NTSC; measured in VICE by
+  `recipes/oscar64/soft-scroll-h.md`).
 - **Wide content ring buffer:** Keep the source content in a ring buffer
   wider than 40 columns. Advance the ring pointer each time a column shift
   fires instead of precomputing content on demand.
@@ -256,7 +265,8 @@ the frame budget. The color RAM shift doubles that cost to ~108%. A
 brute-force shift must therefore be overlapped across multiple frames or
 replaced with a DEC-and-pointer approach. An unrolled inner loop using
 indexed addressing and/or a 2-byte-per-iteration pattern roughly halves
-the cycle count.
+the cycle count. Fully unrolled, 975 bytes of screen RAM measured 7,938
+cycles (`recipes/oscar64/soft-scroll-h.md`).
 
 ### Recipes
 
