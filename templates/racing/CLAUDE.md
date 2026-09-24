@@ -35,6 +35,10 @@ this program depends on:
   sprite's Y in 107-182 (its fetches, Y to Y + 20, inside the road). Sprites
   3-7 fetch at a line's start, where the stores are: they stay off, or
   below line 203.
+- X carries the panel's $D016 from the sync to line 203's `STX $D016`
+  (cycle 11, before the badline's BA falls on 12): no road block may
+  change X. Loaded into A there, the store waited for the stall and wrote
+  on cycle 56, and line 203 kept the road's mode and XSCROLL (#86).
 - A badline block stores $D016 only: that line keeps the colour of the
   line above (the grass bands and the horizon follow this rule in the
   builder, and `tools/roadcheck.py` draws it that way).

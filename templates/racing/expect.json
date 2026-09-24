@@ -23,6 +23,7 @@
     { "name": "road: left and right kerbs, line 200 (the player 20 pixels right of the centre line)", "type": "rect", "colour": 1, "vic_x": 28, "line": 200, "width": 2, "height": 1 },
     { "name": "road: right kerb, line 200", "type": "rect", "colour": 1, "vic_x": 300, "line": 200, "width": 2, "height": 1 },
     { "name": "road surface between the kerbs, line 200", "type": "rect", "colour": 11, "vic_x": 30, "line": 200, "width": 140, "height": 1 },
+    { "name": "the panel's first line, 203: hires, the panel's colour across the window (its $D016 lands before the badline, #86)", "type": "rect", "colour": 11, "vic_x": 24, "line": 203, "width": 320, "height": 1 },
     {
       "name": "the player's car, picture 5 (24 x 16), at the screen's centre on line 198",
       "type": "sprite", "colour": 1, "vic_x": 172, "line": 183, "width": 24, "height": 12
