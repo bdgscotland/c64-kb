@@ -63,8 +63,10 @@ You need KickAssembler (Java), VICE 3.10's `x64sc`, `c1541`, Python 3
 and make. The headless runs want a windowless `x64sc` so that no window
 opens and steals focus; the KB builds one with `npm run vice:headless`.
 Tool paths come from the environment or from a `local.mk` beside the
-Makefile (`KICKASS_JAR`, `X64SC`, `X64SC_WINDOWED`, `C1541`); `make tools`
-prints what it found.
+Makefile (`KICKASS_JAR`, `X64SC`, `X64SC_WINDOWED`, `C1541`), and without
+either the harness falls back to its own defaults and then to `x64sc` on
+the path; `make tools` prints what it found, and `verify.sh` runs the
+emulator that `make tools` reports.
 
 ```
 make                              # release build: build/measured.prg

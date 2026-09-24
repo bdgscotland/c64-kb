@@ -4,8 +4,10 @@
 # count inside each part's dwell on PAL and NTSC, and grades each against a
 # demo-specific expect file with frame-independent checks only.
 #
-# Run from the project root.  Requires make, VICE (via local.mk X64SC), and
-# python3 (harness/check.py).
+# Run from the project root.  Requires make, VICE and python3
+# (harness/check.py).  The emulator is whatever `make tools` reports as
+# X64SC: the environment, then local.mk, then the harness's defaults, so a
+# checkout with no local.mk runs on the same x64sc the make targets use.
 #
 # Cycle counts. The windows below are MEASURED (2026-09-23, I-008: one exec
 # trace per moncommands file on seq_wait250, seq_gap and end_screen and a
@@ -39,7 +41,15 @@
 set -e
 
 MAKE="${MAKE:-make}"
-VICE_PAL="${X64SC:-$(grep X64SC local.mk 2>/dev/null | cut -d= -f2 | tr -d ' ')}"
+# Until 2026-09-23 this read X64SC from the environment or local.mk only, so
+# a checkout without local.mk ran an empty command and every per-part shot
+# failed with "-default: command not found" while the make targets, which
+# fall back through harness.mk's defaults, had just passed.
+VICE_PAL="${X64SC:-$($MAKE -s PLAN_GATE=off tools 2>/dev/null | sed -n 's/^X64SC=//p')}"
+if [ -z "${VICE_PAL}" ] || ! command -v "${VICE_PAL}" >/dev/null 2>&1; then
+    echo "verify.sh: no usable x64sc (X64SC='${VICE_PAL}'); set X64SC or local.mk, see 'make tools'" >&2
+    exit 2
+fi
 PYTHON="${PYTHON:-python3}"
 CHECK="harness/check.py"
 
