@@ -114,9 +114,12 @@ have very different semantics; see [Addressing modes](#addressing-modes).
 
 An 8-bit register that always points to the *next free byte* on the stack.
 The stack lives at $0100–$01FF, so the effective stack address is
-$01 || SP. SP decrements on push and increments on pull. Both operations
-happen *before* the value is written / *after* the value is read, which
-gives the "next-free-byte" semantics.
+$01 || SP. A push writes to $0100+SP and then decrements SP; a pull
+increments SP and then reads $0100+SP. That order gives the
+"next-free-byte" semantics. Measured in VICE x64sc: with SP = $FF,
+`LDA #$42 / PHA` leaves $42 at $01FF and SP = $FE, and `PLA` restores
+SP = $FF. (An earlier version said SP moved before the write and after
+the read, the reverse of both.)
 
 Initial value at reset: 6502 hardware does not initialize SP. The C64
 KERNAL reset routine sets SP to $FF, giving an empty stack at $01FF
@@ -985,9 +988,10 @@ If V=0, branch.
 ### BVS — Branch if Overflow Set (V=1)
 
 If V=1, branch. V is set by ADC/SBC and by BIT; CLV explicitly
-clears it. A common trick: use BVS with V cleared as a hand-rolled
-unconditional non-branch placeholder, or use BVS / BVC as control
-flow based on BIT's bit-6 readout.
+clears it. `CLV` then `BVC target` is a relocatable unconditional
+branch (3 bytes, like `JMP`), and BVS / BVC after `BIT` branch on
+bit 6 of the tested byte. (An earlier version suggested BVS with V
+clear as the trick; that BVS never branches.)
 
 ### $70 — BVS rel — Branch if overflow set (V=1)
 
@@ -2058,8 +2062,8 @@ The common idiom:
   the rest of the `zp,X` family.
 - **(zp,X) and (zp),Y are different.** `LDA ($10,X)` adds X
   to the pointer *address* inside zero page; `LDA ($10),Y` adds Y
-  to the dereferenced pointer *value*. Mixing them up is the most
-  common 6510 bug.
+  to the dereferenced pointer *value*. Mixing them up reads through
+  the wrong pointer.
 - **Branches are signed 8-bit relative.** Range is −128 to +127. If
   the assembler reports "branch out of range", insert a `BCC :+ /
   JMP target / :` trampoline.

@@ -262,7 +262,8 @@ racing.
 ### Mechanism
 
 The C64 has no frame buffer. The VIC reads screen RAM line by line
-during the visible portion of the raster (PAL lines ~50-249), and the
+during the display window (lines 51-250 with 25 rows; an earlier version
+said "PAL lines ~50-249"), and the
 CPU can write to screen RAM at any time. After `vic_waitBottom`
 returns at raster 256 there are 107 raster lines (56 of lower border
 and blanking to the wrap at 311, then 51 of upper border) before the
@@ -1076,8 +1077,11 @@ cell itself lit 14 pixels; the eight cells printed with codes 0 to 7
 lit 14, 20, 6, 48, 40, 24, 12 and 22. The skipped runs lit 332 pixels,
 the code 0 cell lit none, and the same eight cells lit 0, 64, 32, 16,
 16, 28, 8 and 8, which is blank, solid, checkerboard, bar, bar, box and
-two diagonals. Oscar64 and KickAssembler gave the same counts as each
-other in both cases.
+two diagonals. Those eight sum to 172, so 160 of the 332 lit outside
+them; in the whole-file runs the 992 code 0 cells and the eight cells
+account for 13,888 + 186 = 14,074 of the 14,086, leaving 12 (arithmetic
+from the counts; what else the rig drew is not recorded here). Oscar64 and
+KickAssembler gave the same counts as each other in both cases.
 
 The bare `#embed "font.ctm"` did not compile into a sized array: with
 `char Charset[2048]` Oscar64's first message was

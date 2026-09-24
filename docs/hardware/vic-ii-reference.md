@@ -17,8 +17,9 @@ coupling between the chip and the 6510 CPU bus.
 
 The VIC-II shares the bus with the 6510. During each PAL raster line the
 chip takes the bus for itself on the first half of every cycle (phi1) to
-fetch pixel data and on roughly five extra cycles for sprite DMA, while
-the CPU runs on the second half (phi2). Once per text row
+fetch pixel data, while the CPU runs on the second half (phi2). Sprite DMA
+takes up to 19 whole cycles more per line (see [Sprite DMA](#sprite-dma);
+an earlier version of this sentence said roughly five). Once per text row
 (25 times every frame, every eighth raster line: 51, 59, ..., 243 with the
 default YSCROLL = 3; measured in VICE x64sc on PAL and NTSC alike) the
 chip needs an entire row of character pointers from screen RAM and steals
@@ -29,9 +30,10 @@ count.) Most cycle-exact C64 code is shaped by the badline. See the
 
 ### Chip variants
 
-The VIC-II shipped in four primary variants. The PAL parts have an extra
-line of vertical resolution and a slower system clock; the NTSC parts run
-faster but have fewer lines. The HMOS-II 8000-series revisions behave like
+The VIC-II shipped in four primary variants. The PAL parts have 312
+lines per frame and a slower system clock; the NTSC parts run faster but
+have 263 (262 on the R56A). An earlier version of this sentence said PAL
+had one extra line; the table shows 49. The HMOS-II 8000-series revisions behave like
 the original NMOS parts in the common cases but differ in DC
 characteristics, color shades, and a few timing edge cases that affect
 cycle-exact code.
@@ -283,8 +285,10 @@ sprite across the X=255 boundary.
 | 1   | M1X8 | Sprite 1 X position MSB              |
 | 0   | M0X8 | Sprite 0 X position MSB              |
 
-To position a sprite at X = 320 (center-ish), write $40 to
-the sprite's low-byte X register and OR the corresponding bit into $D010.
+To position a sprite at X = 320, write $40 to the sprite's low-byte X
+register and OR the corresponding bit into $D010. X = 320 is near the
+right edge of the display window, which spans X 24–343 (an earlier version
+called it "center-ish").
 
 ### $D011 — SCROLY — Screen control register 1 (RW)
 
@@ -400,9 +404,11 @@ include them in masks.
 
 Setting CSEL = 0 narrows the window from X 24–343 to X 31–334, 16 pixels
 in all: 7 extra border pixels on the left and 9 on the right (measured in
-VICE x64sc; an earlier version of this page said 8 on each side). Those
-two strips are where the *border* is drawn but the chip's display
-sequencer never starts; the side-borders-open technique relies on them.
+VICE x64sc; an earlier version of this page said 8 on each side). In
+those two strips the border covers graphics the chip still draws: a
+sprite over the left strip at X 24–30 registers a sprite-background
+collision in $D01F (measured in VICE x64sc). An earlier version said the
+display sequencer never starts there.
 
 ### $D017 — YXPAND — Sprite Y expansion (RW)
 
@@ -452,8 +458,10 @@ set in RAM. See
 
 **Chip:** VIC-II
 
-Latched IRQ source flags. Bits 7 and 4–6 ordinarily read 0/1 depending
-on chip state. To acknowledge an IRQ, write a 1 to the corresponding
+Latched IRQ source flags. Bit 7 reads 1 while an enabled source is
+pending; bits 6–4 always read 1. Measured in VICE x64sc: $70 with nothing
+pending, $F1 with the raster source enabled and latched. An earlier
+version said bits 6–4 depended on chip state. To acknowledge an IRQ, write a 1 to the corresponding
 latch bit (write to clear).
 
 | Bit | Name | Description                                       |
@@ -484,7 +492,8 @@ allows the corresponding latch in $D019 to assert the IRQ output.
 | 0   | ERST | Enable raster IRQ                    |
 
 Reset value is 0 (all disabled), and the KERNAL leaves it there: its VIC
-init table ($ECB9, copied to $D000–$D02E by the loop at $E5A8) writes $00
+init table ($ECB9, copied to $D000–$D02E by the routine at $E5A0, whose
+copy loop starts at $E5A8) writes $00
 to $D01A, and nothing else in the KERNAL writes the register. After boot
 it reads $F0 (measured in VICE x64sc; bits 7–4 read as 1). The system tick
 is CIA1 timer A ($FDDD loads $4025 PAL / $4295 NTSC, $FF6E enables it with
@@ -592,16 +601,20 @@ transparency is implicit. Bits 7–4 read 1.
 
 **Chip:** VIC-II
 
-Used in multicolor text mode as the %01 color, in ECM as one of four
-background colors selected by character code bits 6–7, and in multicolor
-bitmap as the %01 color.
+Used in multicolor text mode as the %01 color and in ECM as one of four
+background colors selected by character code bits 6–7. Multicolor bitmap
+does not use it: its %01 color is the video matrix high nibble (see the
+table under [Multicolor bitmap mode](#multicolor-bitmap-mode-ecm0-bmm1-mcm1)).
+An earlier version said multicolor bitmap took %01 from here.
 
 ### $D023 — BGCOL2 — Background color 2 (RW)
 
 **Chip:** VIC-II
 
-Used in multicolor text mode as the %10 color, and in ECM/multicolor
-bitmap analogously.
+Used in multicolor text mode as the %10 color and in ECM as the
+background for character codes 128–191. Multicolor bitmap does not use it:
+its %10 color is the video matrix low nibble. An earlier version said
+multicolor bitmap used it.
 
 ### $D024 — BGCOL3 — Background color 3 (RW)
 
@@ -695,10 +708,10 @@ $77B3/$77C4). On the C64's VIC-II both addresses are unimplemented.
 
 The VIC-II's display sequencer can run in one of four combinations of two
 mode bits ECM ($D011 bit 6) and BMM ($D011 bit 5), each in either single-
-color or multicolor (MCM = $D016 bit 4). That gives eight combinations,
-but only six are "legal" (well documented and useful). The other two are
-the *illegal* or *invalid* modes, which produce solid color output and
-are useful only as oddities.
+color or multicolor (MCM = $D016 bit 4). That gives eight combinations:
+five valid modes and three *invalid* ones, which output black and are
+useful only as oddities. An earlier version said six and two; the table
+lists five and three.
 
 | BMM | ECM | MCM | Mode name                  |
 |-----|-----|-----|----------------------------|
@@ -843,11 +856,18 @@ DEN either way; measured in VICE x64sc).
 
 The mode bits ECM, BMM, MCM are sampled by the display sequencer every
 cycle. Switching modes mid-line therefore changes pixels mid-row at
-character-cell boundaries. This is the foundation of FLI (Flexible Line
-Interpretation), AGSP, and other extra-color tricks. The
-c-accesses for the *next* line happen during cycles 15–54 of the
-previous badline, so a mode switch on cycle 14 of the current line affects
-pixel rendering immediately.
+character-cell boundaries; raster splits between modes use this.
+
+FLI (Flexible Line Interpretation) is a different mechanism. It writes
+$D011 on every line so that YSCROLL matches the low three bits of the
+raster line, which makes every line a badline: the chip re-runs its 40
+c-accesses and loads a fresh row of video matrix colours for each line,
+from a different video matrix each line via $D018. The write must land with the badline condition true on cycle 15, and the
+first three columns show grey (see `fli_image` in
+[bitmap-modes.md](../techniques/bitmap-modes.md)). An earlier version of
+this paragraph credited FLI to mode-bit switching and said the c-accesses
+for the next line happen on the previous badline; c-accesses happen on the
+badline itself, for lines N to N+7.
 
 ## Sprites
 
@@ -966,12 +986,17 @@ Two collision registers latch at pixel-by-pixel resolution:
 
 Each is read-to-clear. If the corresponding IRQ enable bit in $D01A is
 set, the first collision per latch interval also triggers an IRQ via
-$D019. Border pixels and the screen blanking area do not generate
+$D019. The border does not stop collisions: two sprites overlapping at
+X 0–23 (left border) set their $D01E bits every frame, and a sprite over
+the 7-pixel strip that CSEL = 0 covers on the left sets its $D01F bit.
+Measured in VICE x64sc; an earlier version said border pixels generate no
 collisions.
 
-The *latch interval* spans from the previous read to the current read. If
-the register is not read at all during a frame, a collision that happens
-and then resolves is lost.
+The *latch interval* spans from the previous read to the current read. A
+bit stays set until the register is read, even after the sprites move
+apart: two sprites that overlapped for three frames and were then apart
+for ten still read as collided (measured in VICE x64sc). An earlier
+version said such a collision was lost.
 
 ### Sprite DMA
 
@@ -1025,8 +1050,10 @@ fetched, which is what makes multiplexing work.
 
 ## Raster system
 
-The VIC-II's raster engine ticks once per character pixel column, and
-its interaction with the CPU bus is deterministic. Stable rasters,
+The VIC-II draws eight pixels per system cycle (320 pixels over the 40
+g-access cycles 16–55), and its interaction with the CPU bus is
+deterministic. An earlier version said the raster engine "ticks once per
+character pixel column". Stable rasters,
 hardware scrolling, FLD/FLI/CRT effects, and sprite multiplexing all
 depend on what this section describes.
 
@@ -1049,8 +1076,10 @@ Line numbering on a PAL 6569:
 | 251..299   | Bottom border                                   |
 | 300..311   | Bottom border (with VBI)                        |
 
-NTSC line numbering is similar but with fewer lines below 0 and a
-different total (262 or 263).
+NTSC has 263 lines (262 on the 6567R56A). The display window is on the
+same lines as PAL: 51–250 with RSEL = 1, 55–246 with RSEL = 0 (measured
+in VICE x64sc `-model ntsc`). An earlier version said NTSC had "fewer
+lines below 0", which has no meaning.
 
 ### Raster IRQ
 
@@ -1058,8 +1087,11 @@ Write the desired compare line into $D012 (low 8 bits) and into $D011
 bit 7 (bit 8), enable raster IRQ in $D01A bit 0, and the chip will pull
 its IRQ output low at the start of cycle 1 of that line (cycle 2 for
 line 0). The CPU sees this as a normal 6502/6510 IRQ and vectors via
-($FFFE/$FFFF) or via $0314/$0315 if the KERNAL IRQ handler at $EA31 is
-in place.
+($FFFE/$FFFF). With the KERNAL ROM banked in that vector is $FF48, which
+pushes A, X and Y and jumps through ($0314); $0314 holds $EA31 after
+boot, the KERNAL's full service routine (ROM bytes, 901227-03). An
+earlier version said $EA31 dispatched through $0314; the order is
+$FFFE → $FF48 → ($0314) → $EA31.
 
 The handler **must** acknowledge by writing 1 to bit 0 of $D019, or the
 IRQ re-fires as soon as it executes RTI.
@@ -1076,7 +1108,8 @@ sta $d011
 ```
 
 Do not skip the second step, even for target lines below 256. The KERNAL's
-VIC init (the table at $ECB9, copied to $D000–$D02E by $E5A0 during CINT)
+VIC init (the table at $ECB9, copied to $D000–$D02E by the routine at
+$E5A0, loop at $E5A8, during CINT)
 writes $9B to $D011, so after boot RST8 = 1 and the compare value is $137.
 A program that writes only $D012 gets its interrupt on line target+256 if
 that line exists (PAL lines 256..311, i.e. targets 0..55) and otherwise
@@ -1103,10 +1136,11 @@ badlines occur on lines 51, 59, 67, ..., 243: every 8 lines, once per
 character row.
 
 On a badline the chip pulls BA low at cycle 12 to warn the CPU, then
-takes the bus from cycle 15 through cycle 54. Total stolen cycles: 40,
-plus up to 3 cycles of CPU "tail" before BA actually takes hold (because
-the CPU finishes its current read instruction). Effective CPU budget on a
-badline: 63 - 43 = 20 cycles on PAL.
+takes the bus from cycle 15 through cycle 54. The CPU stops at its first
+read cycle after BA falls; only write cycles continue in cycles 12–14.
+So the CPU loses 43 cycles and keeps 20 of 63 on PAL, or 23 if cycles
+12–14 are all writes. An earlier version said the CPU "finishes its
+current read instruction"; reads are exactly what BA stops.
 
 Badlines are *prevented* for a whole frame by keeping DEN ($D011 bit 4)
 clear for the whole of raster line $30 (48); setting it on any cycle of
@@ -1134,9 +1168,11 @@ The chip performs four kinds of memory access:
 | p      | Cycles 58, 60, 62, 1, 3, 5, 7, 9 (PAL); 60, 62, 64, 1, 3, 5, 7, 9 (6567R8) | Sprite pointer byte         |
 | s      | After each p, when sprite is active   | 3 bytes of sprite pixel data |
 
-The c- and g-accesses are pipelined so that the c-access on badline N
-fetches the row that will be g-rendered on lines N+1..N+8 (or N..N+7 in
-some sources depending on which line is "first"). The internal video
+The c-accesses on badline N fetch the row that is g-rendered on lines
+N..N+7: the badline itself shows the new row's first pixel line.
+Measured in VICE x64sc: with YSCROLL = 0 the last text pixel line is 247
+(last badline 240); with YSCROLL = 7 the first is 55 (first badline 55).
+An earlier version said N+1..N+8, or either. The internal video
 matrix latch holds these 40 12-bit entries until the next badline.
 
 ### Idle vs display state
@@ -1334,8 +1370,8 @@ ignored.
 ### What if the VIC-II reads $D000–$DFFF?
 
 Inside the C64, $D000–$DFFF is the I/O area for the CPU, but the VIC-II
-itself does not see I/O. It sees RAM (the 1K backing RAM behind the
-I/O space, sometimes called the "shadow RAM"). In bank 3, addresses
+itself does not see I/O. It sees the 4K of RAM under the I/O space
+(an earlier version called it 1K). In bank 3, addresses
 $D000–$DFFF from the VIC's side are 4K of RAM that the CPU
 cannot normally reach (unless I/O is banked out via $01). It can hold
 sprite data or character sets that the CPU never touches.
@@ -1395,29 +1431,28 @@ sta $d011
 
 lda #$01            ; enable raster IRQ only
 sta $d01a
-lda #$7f            ; mask all CIA IRQs to avoid jitter
+lda #$7f            ; disable CIA1 IRQ sources (the KERNAL tick)
 sta $dc0d
-sta $dd0d
-lda $dc0d           ; ack any pending CIA IRQ
-lda $dd0d
+sta $dd0d           ; and CIA2 sources, which drive NMI, not IRQ
+lda $dc0d           ; ack pending CIA1 IRQ
+lda $dd0d           ; ack pending CIA2 NMI source
 cli
+rts
 
-irq_handler:
-    pha
-    txa
-    pha
-    tya
-    pha
+irq_handler:        ; entered from $FF48, which already pushed A, X, Y
     lda #$01
     sta $d019       ; ack raster IRQ
     ; ... do work ...
-    pla
-    tay
-    pla
-    tax
-    pla
-    rti
+    jmp $ea81       ; KERNAL exit: pull Y, X, A and RTI
 ```
+
+A handler reached through $0314 must not push the registers again and
+end in RTI: $FF48 has already pushed A, X and Y, so its own RTI pulls
+them as the status and return address and the machine crashes. Measured
+in VICE x64sc: the push/RTI version stopped after its first interrupt;
+the version above ran 256 interrupts. An earlier version of this listing
+did that, called $DD0D an IRQ source, and fell through from `cli` into
+the handler.
 
 ### Double-IRQ stable raster
 
@@ -1473,12 +1508,14 @@ and #$fc
 ora #$02            ; bits 1..0 = %10 -> bank 1
 sta $dd00
 
-; place video matrix at $4400 (VM = %0001), charset at $5000 (CB = %100)
+; place video matrix at $4400 (VM = %0001), charset at $6000 (CB = %100: 4 * $800 = $2000 into the bank)
 lda #(%0001_0000 | %0000_1000 | %0)    ; VM=1, CB=4
 sta $d018           ; final value $18
 ```
 
-The value written is $18.
+The value written is $18. (An earlier version of the comment said the
+charset lands at $5000; CB = %100 puts it at $6000. $5000 needs CB = %010,
+$D018 = $14.)
 
 ### Building a sprite
 
@@ -1547,20 +1584,20 @@ raster IRQ.
 
 ```
 cycle  bus master     access type
-1      VIC            p1 (sprite 3 pointer)
+1      VIC            p3 (sprite 3 pointer)
 2      CPU            phi2
-3      VIC            p2 (sprite 4 pointer)
+3      VIC            p4 (sprite 4 pointer)
 4      CPU
-5      VIC            p3 (sprite 5 pointer)
+5      VIC            p5 (sprite 5 pointer)
 6      CPU
-7      VIC            p4 (sprite 6 pointer)
+7      VIC            p6 (sprite 6 pointer)
 8      CPU
 9      VIC            p7 (sprite 7 pointer); 9-10 s-accesses if active
-11     CPU            ; CPU runs freely if no badline
+11-15  VIC            DRAM refresh (phi1); CPU runs in phi2
 ...
 55     VIC            g-access (last one of line)
 56     CPU
-57     VIC            refresh
+57     VIC            idle access
 58     VIC            p0 (sprite 0 pointer)
 59     CPU
 60     VIC            p1 (sprite 1 pointer)
@@ -1570,7 +1607,11 @@ cycle  bus master     access type
 ```
 
 This picture is simplified; the exact cycle of each access is in the
-appendix of Bauer's article.
+appendix of Bauer's article. The pointer cycles match the measured slots
+under [Sprite DMA](#sprite-dma); the refresh and idle cycles are from
+VICE x64sc's PAL cycle table (`src/viciisc/vicii-chip-model.c`), not
+measured. An earlier version labelled the slots p1, p2, p3, p4, p7 and put
+refresh on cycle 57.
 
 ### PAL badline (40 stolen cycles)
 
@@ -1655,9 +1696,11 @@ Sprites can subtract another 50–100K cycles/s if used heavily.
   rely on badlines firing, and the cause of an idle display is easy to
   miss.
 - **$D011 read overlay**: reading $D011 returns the live raster MSB in
-  bit 7, not the value last written. To preserve other bits when
-  writing raster targets, write the bits wanted; do not
-  read-modify-write naively.
+  bit 7, not the compare bit last written. A read-modify-write that
+  leaves bit 7 alone copies the current raster MSB into the compare
+  value. Mask and set bit 7 explicitly (`and #$7f` / `ora #hi`), as in
+  [Raster IRQ](#raster-irq). An earlier version of this bullet said not to
+  read-modify-write at all, which contradicted that section.
 - **$D019 acknowledgment**: IRQ latch bits in $D019 must be cleared by
   writing 1 (not 0) to the bit. Forgetting causes the IRQ handler to
   immediately re-enter.

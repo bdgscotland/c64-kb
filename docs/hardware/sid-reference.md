@@ -74,8 +74,11 @@ is non-linear, roughly sigmoidal on a log scale, and varies widely
 between individual chips depending on the manufacturing batch. A cutoff value that opens the filter wide on one
 6581 may have almost no effect on another. On the 8580 the curve is
 linear and consistent between chips.
-Music tuned for one chip often sounds wrong on the other; SID players
-typically ship per-chip tuning data.
+Music tuned for one chip often sounds wrong on the other. A player can
+carry one cutoff table per chip and pick one after detection
+(`sid_filter_chip_variation` in pitfalls/sid.md); how many players do
+so is not established here (an earlier version said players typically
+ship per-chip tuning data, without a source).
 
 **ADSR bug.** On both chips, if an AD or SR rate is reduced to a
 smaller value than the envelope's internal rate counter has already
@@ -312,10 +315,11 @@ the only way to trigger and end notes.
 **TEST.** Setting TEST resets the phase accumulator to zero and holds
 it there as long as TEST is set. The noise LFSR stops shifting and
 keeps its contents; held long enough its bits drift to one, not zero.
-Measured in VICE x64sc 3.10 (reSID), the noise output read at $D41B is
-unchanged for about 35,000 cycles on a 6581 and reads $FF by about
-38,000; on an 8580 it is unchanged for about 2.5 million cycles and
-reads $FF by about 3.5 million. It never reads $00. Clearing TEST
+Measured in VICE x64sc 3.10 (reSID, three starting LFSR states each),
+the noise output read at $D41B is unchanged for 35,000 cycles after TEST
+is set on a 6581 and reads $FF by 36,000 to 39,000; on an 8580 it is
+unchanged for 2.52 million cycles and reads $FF by 2.83 to 3.78 million
+(an earlier version said $FF by about 38,000 and 3.5 million). It never reads $00. Clearing TEST
 shifts the register once, feeding the complement of bit 17 into bit 0
 (an all-ones register reads $FE afterwards, an all-zero one $01), and
 normal clocking resumes from that state; there is no fresh seed. An
@@ -602,7 +606,10 @@ be audible. Voice 3 routed to the filter (FILT3=1 in $D417) ignores
 3OFF: the mute acts on the bypass path only.
 
 **Filter mode bits.** LP, BP, HP can be combined: LP+HP is a notch
-filter, LP+BP gives a warmer band-pass, BP+HP is also a notch.
+filter, LP+BP gives a warmer band-pass. BP+HP is not a notch: the sum
+of a high-pass and a band-pass has no zero inside the audio band
+(arithmetic from the two-integrator filter's responses; an earlier
+version called it a notch, against the Filter architecture section).
 Setting all three on simultaneously sums the three responses (rare in
 practice). Setting all three off with $D417 routing bits set produces
 silence for those voices (the filter output is grounded when no mode
@@ -631,9 +638,11 @@ silently ignored.
 or control port 2 pin 9, multiplexed by CIA1 port A, $DC00 bits 6-7:
 %01 = control port 1, %10 = control port 2; an earlier revision said
 CIA2, whose bits 6-7 are the IEC CLK IN / DATA IN lines and have no
-effect on the SID). Values range $00 (full clockwise / pot maxed) to
-$FF (full counter-clockwise / pot at zero), though the usable range is
-typically $00-$DF.
+effect on the SID). The value rises with the pot's resistance: $00 at the low-resistance
+end, $FF at the high end, and an empty port, an open circuit, also reads
+$FF (measured in VICE, `paddle_read` in techniques/input.md). Which knob
+direction is which depends on the paddle's wiring. The usable range is
+typically $00-$DF. (An earlier version called $FF "pot at zero".)
 
 The A/D circuit takes about 512 system cycles (~520 us PAL) to settle
 after the multiplex source changes; reads made sooner return stale or
@@ -645,9 +654,13 @@ lines, which is 126 cycles; measured in VICE x64sc with a 1351 on
 port 1, $D419 reads noise up to 508 cycles after the selector write
 and the settled value from 513 on.
 
-The 1351 mouse uses POTX/POTY in a different way: the mouse generates
-its own changing voltages encoding quadrature position, which the
-software samples at known intervals (typically every other frame).
+The 1351 mouse in proportional mode uses POTX/POTY differently: it
+counts its own movement in a 6-bit counter per axis and times the pot
+line so the converted byte carries that counter in bits 1-6 (bit 0 is
+noise). Software reads it once per frame and takes the difference
+modulo 64 (`mouse_1351_read` in techniques/input.md). An earlier version
+called the value a "quadrature position" sampled every other frame; in
+its joystick mode the 1351 reports movement on the switch lines instead.
 
 ### $D41A — POTY — Paddle Y A/D converter (R)
 
@@ -685,10 +698,11 @@ only for triangle and sawtooth). Triangle and sawtooth read $00: the
 accumulator is reset and held at zero. Pulse reads $FF whatever PW
 holds ($000, $800 and $FFF all give $FF; TEST forces the pulse output
 high). Noise keeps returning the LFSR's current bits, and if TEST is
-held the LFSR drifts to all ones: the 6581 model reads $FF within
-about 77,000 cycles (still unchanged at ~31,000, partly changed at
-~36,000), the 8580 model holds its value past 77,000 cycles and reads
-$FF after roughly 10 million. Combined waveforms in voice 3 produce
+held the LFSR drifts to all ones: the 6581 model holds its value for
+35,000 cycles and reads $FF by 36,000 to 39,000, the 8580 model holds
+it for 2.52 million and reads $FF by 2.83 to 3.78 million (measured,
+three starting states each; see TEST under $D404). An earlier revision
+gave 77,000 and roughly 10 million, which disagreed with the $D404 entry. Combined waveforms in voice 3 produce
 the same AND-of-waveforms shape that audio gets.
 
 ### $D41C — ENV3 — Voice 3 envelope output (R)
@@ -704,8 +718,9 @@ Returns the 8-bit current value of voice 3's envelope generator
 4. Read $D41C every frame as the controller value
 
 The envelope value rises and falls under software control of the
-gate bit. Some games (e.g. Wizball) modulate other voices' pulse
-width by feeding ENV3 into the PWHI register every frame.
+gate bit. Feeding ENV3 into another voice's PWHI every frame modulates
+that voice's pulse width (an earlier version named Wizball as a game
+that does this; no source was found).
 
 ## Programming patterns
 
@@ -1041,8 +1056,9 @@ are not touched.
   cutoff sweep tuned on one 6581 may sound different on
   another. The 8580 cutoff is consistent but uses a different
   (linear vs sigmoidal) curve than the 6581, so 6581-tuned music
-  sounds wrong on 8580 and vice versa. Music players typically ship
-  per-chip-revision tuning.
+  sounds wrong on 8580 and vice versa. A player can carry per-chip
+  cutoff tables (an earlier version said players typically do; no
+  source).
 
 - **Combined waveforms are chip-dependent.** Combining waveform bits
   (e.g. TRI+PULSE) produces a bit-wise AND of the waveform outputs;
@@ -1102,7 +1118,10 @@ are not touched.
   source between control port 1 and 2, wait ~512 cycles before
   reading $D419/$D41A. Faster reads return stale/transitional
   values. The KERNAL keyboard scan (SCNKEY, called from the $EA31
-  jiffy IRQ) rewrites $DC00 every frame and leaves it at $7F, i.e.
+  jiffy IRQ) rewrites $DC00 every jiffy, about 60 times a second on
+  both regions (the KERNAL's CIA1 latch at $FDE2 is $4025 on PAL and
+  $4295 on NTSC: 985,248 / 16,422 and 1,022,727 / 17,046 are both 60.0;
+  an earlier version said every frame), and leaves it at $7F, i.e.
   %01 = control port 1, so select the pair with IRQs masked or
   re-select immediately before each read. See
   [cia-reference.md](cia-reference.md) for the CIA1 paddle multiplex

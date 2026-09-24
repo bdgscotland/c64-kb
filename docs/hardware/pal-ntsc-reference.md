@@ -68,9 +68,13 @@ codebase64 PAL/NTSC compatibility wiki, and the Bauer "VIC-II Article"
 | $D012 wraps at line     | 312 (back to 0)        | 263 (back to 0)        | 262 (back to 0)        |
 | Vertical blank starts   | line 300               | line 13                | line 13                |
 | Top border opens at     | line 51 ($33)          | line 51 ($33)          | line 51 ($33)          |
-| Bottom border opens at  | line 251 ($FB)         | line 251 ($FB)         | line 251 ($FB)         |
+| Bottom border starts at | line 251 ($FB)         | line 251 ($FB)         | line 251 ($FB)         |
 | Side border CSEL write  | cycle 56 (one cycle)   | not measured here      | not measured here      |
 | CIA timer A for frame   | $4CC7 (19,655)         | $42C6 (17,094)         | $417F (16,767)         |
+
+With RSEL = 1 the last display line is 250 and the bottom border starts
+on line 251, on PAL and NTSC alike (measured in VICE x64sc). An earlier
+version of the table said the bottom border "opens" at 251.
 
 Note on $D012 wrap: $D012 is only 8 bits wide. The 9th bit lives in
 $D011 bit 7 (RST8). PAL frames see $D012 take values 0..255 with RST8=0
@@ -105,11 +109,13 @@ the NTSC CPU clock is also 3.8% faster. That means:
   frame, not tempo. See [Music tempo](#music-tempo).
 - A demo effect that consumes N cycles per frame has 2,561 more cycles
   to work with on PAL.
-- A raster split that only just fits on PAL may not fit on NTSC
-  because each scanline is 2 cycles longer (giving more time per line)
-  but each frame contains 49 fewer scanlines (50 on the R56A, whose
-  lines are only 1 cycle longer). The cycle budget is what matters, not
-  the line count.
+- Work that fits in a 63-cycle PAL line also fits in a 65-cycle NTSC
+  line (64 on the R56A); cycle-counted code still loses sync, by 2
+  cycles a line. What shrinks is the frame: 49 fewer lines (50 on the
+  R56A) leave 2,561 fewer cycles (2,888 on the R56A), so per-frame work
+  that just fits on PAL may not fit on NTSC. An earlier version of this
+  bullet said a raster split that fits a PAL line may not fit an NTSC
+  one.
 
 ### Visible region
 
@@ -187,8 +193,6 @@ detect it by timing or by the raster line counter (see
   (brighter greys, slightly different luminance levels). All 8565
   parts are timing-compatible with 6569 from a software perspective.
 
-PAL VIC-II chips were the most-produced variant because Europe was
-Commodore's largest market for the C64.
 
 ### 6567 — NTSC VIC-II family
 
@@ -458,7 +462,10 @@ both 6581 and 8580 ship in both PAL and NTSC machines. C64Cs from
 ## Detection at runtime
 
 There is no register that returns "I am PAL" or "I am NTSC". Code
-must detect the region by observation. Two methods are reliable.
+must detect the region by observation. Three methods follow. The two
+raster methods work at any time; the KERNAL flag (Method 3) holds only if
+nothing has overwritten it since reset. An earlier version said "two
+methods are reliable" above three methods.
 
 ### Method 1: Read $D012 + $D011 bit 7 at frame top
 
@@ -773,10 +780,13 @@ Code intended to run on both regions must parameterize the following:
   17,095/19,656 = 0.870 cycle budget this page previously gave). This
   is a content issue, not a hardware issue, but it surfaces during
   region porting.
-- **Visible Y range vs display window**: Setting $D011 bit 3
-  (24 vs 25 rows) and bits 0-2 (vertical scroll) on NTSC can
-  push the display below the visible area; values that look
-  fine on PAL may clip on NTSC.
+- **Visible Y range vs display window**: RSEL ($D011 bit 3) and
+  YSCROLL (bits 0-2) do not move the display window. On NTSC as on PAL
+  it spans lines 51–250 with RSEL = 1 and 55–246 with RSEL = 0, and
+  YSCROLL = 7 moves text down inside it, clipped at line 250 (measured in
+  VICE x64sc, `-model ntsc` and default). Those lines are inside the
+  NTSC visible area. An earlier version of this bullet said these bits
+  could push the display below the visible area on NTSC.
 
 ## Cross-references
 
@@ -800,9 +810,10 @@ Code intended to run on both regions must parameterize the following:
   https://www.cebix.net/VIC-Article.txt — per-region cycle tables,
   raster geometry, border-open cycle windows.
 - VICE 3.10, `x64sc`, models `default`, `ntsc`, `oldntsc` — the
-  instrument behind every figure marked measured under Method 2
-  (the three wrap bytes, the entry-line runs, the `wait_lo` race,
-  the CIA-timed durations). https://vice-emu.sourceforge.io/
+  instrument behind every figure marked measured (the three wrap
+  bytes, the entry-line runs and the CIA-timed durations under Method
+  1, the `wait_lo` race under Method 2). An earlier version filed them
+  all under Method 2. https://vice-emu.sourceforge.io/
 - KickAssembler 5.25 — assembled the Method 1 and Method 2 listings.
 - VICE's `kernal-901227-03.bin` — the bytes at $FF5B, $E518,
   $ECB9 and $FDDD behind Method 3 and the IOINIT timer values.

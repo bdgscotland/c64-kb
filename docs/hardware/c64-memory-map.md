@@ -62,8 +62,10 @@ visible to the CPU:
 - 8 KB BASIC ROM, mapped at $A000-$BFFF when banked in
 - 4 KB character ROM, mapped at $D000-$DFFF when banked in (charrom mode)
 - 1 KB Color RAM (a separate 4-bit static RAM at $D800-$DBFF)
-- VIC-II registers, mapped at $D000-$D02F (64-byte window, shadow-repeats
-  through $D03F and the whole way to $D3FF as 64-byte mirrors)
+- VIC-II registers, 47 of them at $D000-$D02E, in a 64-byte window
+  $D000-$D03F whose unused $D02F-$D03F read $FF; the window mirrors every
+  64 bytes through $D3FF (a write to $D3E0 changes $D020; measured in VICE
+  x64sc. An earlier version gave the window as $D000-$D02F, which is 48 bytes)
 - SID registers, mapped at $D400-$D41C (29 bytes; shadow-repeats every
   32 bytes through $D7FF)
 - CIA #1 at $DC00-$DC0F (16 bytes; shadow-repeats every 16 bytes through $DCFF)
@@ -406,17 +408,27 @@ true end of the BASIC program in memory.
 **Default use:** Pointer to first byte past arrays; bottom of free memory
 **Bank-switchable:** No
 
-The 256-byte BASIC variable namespace lives between $002B and $0033 as a
-chain of four pointers. The order is invariant: TXTTAB < VARTAB < ARYTAB
-< STREND. STREND <= MEMSIZ (top-of-BASIC) always.
+Four pointers at $002B-$0032 (TXTTAB, VARTAB, ARYTAB, STREND) bound the
+program, the simple variables and the arrays. (An earlier version called
+this a "256-byte BASIC variable namespace between $002B and $0033"; the
+pointers take 8 bytes and the areas they bound lie elsewhere.) The
+order is invariant: TXTTAB < VARTAB < ARYTAB < STREND. STREND <= MEMSIZ
+(top-of-BASIC) always.
 
-### $0033-$0034 — STRBOT (bottom of string descriptor heap)
+### $0033-$0034 — STRBOT (bottom of string storage)
 
-**Default use:** Pointer to bottom of string heap (grows down from MEMSIZ)
+**Default use:** Pointer to bottom of string storage (grows down from MEMSIZ)
 **Bank-switchable:** No
 
-Strings live at the top of BASIC's workspace and grow downward. The
-distance between STREND and STRBOT is the available free memory before
+String characters live at the top of BASIC's workspace and grow downward.
+The descriptors (length and pointer) are not here: a simple string
+variable's descriptor is in its 7-byte entry in the variable table, an
+array element's in the array. After `A$="AB"+"C"` in VICE x64sc, STRBOT
+was $9FFD, $9FFD-$9FFF held `ABC`, and the entry for A$ at VARTAB read
+`41 80 03 FD 9F 00 00`. (This heading used to say "string descriptor
+heap".)
+
+The distance between STREND and STRBOT is the available free memory before
 garbage collection runs.
 
 ### $0035-$0036 — Unused / FRESPC
@@ -1002,8 +1014,13 @@ KERNAL.
 
 **Subdivisions:**
 
-- $0100-$010F shared with tape buffer index in some workflows
-- $01FA-$01FF reserved for KERNAL's deepest pushes during reset
+- $0100-$013D: a tape read that meets bad bytes logs their addresses
+  here, two bytes each, up to 31 entries (KERNAL $FAEF-$FB03, read from
+  901227-03). An earlier version said "$0100-$010F shared with tape
+  buffer index in some workflows", with no source.
+- No range is reserved for the KERNAL: reset leaves nothing on the stack
+  (above). An earlier version reserved $01FA-$01FF for "KERNAL's deepest
+  pushes during reset".
 - Floating-point ASCII conversion (BASIC's FOUT, $BDDD) uses $00FF-$010F
   as a temporary buffer: $0100-$010F from PRINT, $00FF-$010E from STR$
   (measured in VICE; *Mapping the C64* p. 39 gives $0100-$010A, which is
@@ -1069,8 +1086,11 @@ Autostart utilities feed BASIC a "LOAD..." command after reset this way.
 **Default use:** Current PRINT color — value 0-15 (next char printed uses this)
 **Bank-switchable:** No
 
-Loaded by KERNAL CHROUT with the upper-nibble color of any color control
-char processed. Read by all subsequent PRINTs.
+CHROUT sets it when it prints a colour control character, by looking the
+character up in the 16-byte table at $E8DA (the index is the colour).
+Measured in VICE x64sc: CHR$(28) sets 2 (red), CHR$(158) sets 7
+(yellow). Read by all subsequent PRINTs. (An earlier version said the
+colour came from the character's upper nibble; $1C would give 1, $9E 9.)
 
 ### $0287-$0287 — Color under cursor
 
@@ -1206,8 +1226,11 @@ at boot.)
 **Default use:** Pointer to BASIC's error-message routine; default $E38B
 **Bank-switchable:** No
 
-Patch this to intercept all BASIC errors. The KERNAL hand-off into
-"ERROR" passes the error number in X.
+Patch this to intercept all BASIC errors. BASIC's ERROR routine jumps
+through it first thing (`JMP ($0300)` at $A437) with the error number in
+X; the default target $E38B is BASIC code in the KERNAL ROM chip
+(`TXA / BMI / JMP $A43A`). Read from the ROM images. (An earlier version
+called this a KERNAL hand-off; it is BASIC's.)
 
 ### $0302-$0303 — IMAIN (BASIC warm-start vector)
 
@@ -1288,8 +1311,11 @@ raster effects write $0314/$0315 to point at their own raster handler.
 **Default use:** Pointer to BRK handler; default $FE66
 **Bank-switchable:** No
 
-BRK instructions vector through here (which on a 6510 is the same line
-as IRQ; the handler reads the B flag to distinguish).
+The BRK instruction vectors through here. BRK is an instruction, not an
+interrupt line; it shares the $FFFE vector with IRQ, and the KERNAL
+dispatcher at $FF48 tells them apart by the B flag in the stacked status
+(`LDA $0104,X / AND #$10`, read from 901227-03). (An earlier version
+called BRK "the same line as IRQ".)
 
 ### $0318-$0319 — NMINV (NMI vector)
 
@@ -1386,8 +1412,11 @@ ROM's IEC-bus byte-banging routine.
 
 When the cassette is not in use, this 192-byte buffer is free RAM, and a
 common place for small machine-language routines (raster interrupt
-handlers, sprite editors). Programs that load themselves into
-this buffer and then exit can survive a tape LOAD.
+handlers, sprite editors). Any tape LOAD overwrites it: the KERNAL reads
+each 192-byte file header into $033C-$03FB (tape buffer pointer $B2/$B3
+set to $033C at $FD61; header read range set at $F7D7; read from
+901227-03). (An earlier version said code here "can survive a tape
+LOAD".)
 
 ### $03FC-$03FF — Unused / sound workspace
 
@@ -1454,7 +1483,8 @@ last 8 bytes of the 1 KB screen page, screen base + $3F8.)
 - VARTAB-ARYTAB = simple variables
 - ARYTAB-STREND = arrays
 - STREND-STRBOT = free RAM
-- STRBOT-MEMSIZ = string descriptor heap (grows down)
+- STRBOT-MEMSIZ = string characters (grows down; descriptors are in the
+  variable table and arrays. This line used to say "string descriptor heap")
 
 **Notes:**
 - A pure-assembly program with no BASIC stub can use $0801-$9FFF as 38 KB
@@ -1491,9 +1521,13 @@ LORAM ($01 bit 0) to reveal the 8 KB of RAM underneath. The RAM is
 ROM bytes only when the BASIC ROM is banked in.
 
 **Notes:**
-- This is the standard place to put a 256-cell character set (it needs
-  only 2 KB, at $1000 or $3000 inside the VIC bank); the underlying RAM
-  here is also used for sprite data or extra screen pages.
+- The VIC reads the RAM under the BASIC ROM. With the VIC in bank 2
+  ($8000-$BFFF), a 2 KB character set can sit at $A000, $A800, $B000 or
+  $B800 (bank offsets $2000-$3800); sprite data and screens can use the
+  same RAM. Bank offset $1000 is $9000-$9FFF, where the VIC sees the
+  character ROM, not RAM (vic-ii-reference.md). (An earlier version called
+  this "the standard place" for a character set "at $1000 or $3000 inside
+  the VIC bank".)
 - A 16 KB cartridge (EXROM = 0, GAME = 0) maps its ROMH here whenever
   HIRAM = 1, whatever LORAM is (modes 2, 3, 6 and 7); with HIRAM = 0 the
   range is RAM even with the cart present. See
@@ -1626,9 +1660,14 @@ and kernal-901227-03.bin.
 **Default use:** 4 KB of always-RAM, never overlaid by any ROM or I/O
 **Bank-switchable:** No
 
-This 4 KB region is the **largest contiguous chunk of RAM
-guaranteed to be RAM in every bank configuration**. Cartridges can't map
-here; KERNAL doesn't touch it; BASIC doesn't use it.
+With no cartridge this 4 KB region is RAM in every $01 configuration,
+but it is not the largest such block: $0002-$9FFF is too (see
+[Memory ranges that are always RAM](#memory-ranges-that-are-always-ram)).
+An Ultimax cartridge unmaps it: in that mode only $0000-$0FFF is RAM
+(pitfalls/banking.md, recipes/kickassembler/easyflash-save.md). KERNAL
+doesn't touch it; BASIC doesn't use it. (An earlier version called it the
+largest contiguous chunk guaranteed to be RAM and said cartridges can't
+map here.)
 
 $C000 is the usual home for machine-language routines that coexist
 with BASIC. The common pattern is a BASIC loader that POKEs a small ML
@@ -2109,7 +2148,9 @@ The CPU reads $FFFE/$FFFF on every IRQ and BRK. With KERNAL banked in,
 this points at $FF48 which saves registers and then JMPs through
 $0314 (IRQ) or $0316 (BRK).
 
-**Crucial:** If you bank out KERNAL ROM ($01 = $35 or lower) and IRQ
+**Crucial:** If you bank out KERNAL ROM (HIRAM = 0: $01 = $35, $34, $31
+or $30; $33 and $32 keep it in, measured in VICE x64sc; an earlier
+version said "$35 or lower") and IRQ
 fires, the CPU reads $FFFE/$FFFF *from RAM*. Load the RAM bytes at
 $FFFE/$FFFF with the address of your own IRQ handler before banking out,
 or the machine will crash. Same for NMI ($FFFA/$FFFB) and
@@ -2298,8 +2339,8 @@ where ROMH+ROML+CHAREN+I/O replace large parts of the map.
 | 25   | 1   | 1     | 0     | 0      | RAM         | RAM         | CHARROM     | RAM         |
 | 24   | 0   | 0     | 0     | 0      | RAM         | RAM         | RAM         | RAM         |
 
-The seven distinct configurations differ in **which of {RAM, BASIC,
-CHARROM} sits at $A000-$BFFF**, **which of {RAM, KERNAL} sits at
+The seven distinct configurations differ in **which of {RAM, BASIC}
+sits at $A000-$BFFF**, **which of {RAM, KERNAL} sits at
 $E000-$FFFF**, and **which of {RAM, CHARROM, I/O} sits at $D000-$DFFF**.
 
 ### Writes always go to RAM
@@ -2328,9 +2369,12 @@ so writing $35, $36, $37 to $01 takes effect.
 
 **The pitfall:** code that does `LDA #$30 / STA $01` to bank to mode 24
 needs to *first* write $2F to $00; otherwise a prior program may
-have left bit 7 of DDR as an input, in which case the high bit of $01
-won't change. This is rarely a problem on a freshly reset C64 but is a
-known reliability issue when chaining loader stages.
+have left DDR bits 0-2 as inputs. An input bit reads as 1, so the ROMs
+stay in: with DDR = $28, `LDA #$30 / STA $01` left $01 reading $37 and
+$A000/$E000 reading BASIC and KERNAL ROM (measured in VICE x64sc). (An
+earlier version blamed DDR bit 7; $30 and $35 differ only in bits 0
+and 2.) This is rarely a problem on a freshly reset C64 but is a known
+reliability issue when chaining loader stages.
 
 The safest banking sequence:
 
@@ -2353,9 +2397,13 @@ are:
   $A000-$BFFF, with BASIC ROM disabled. ROMH at $A000 requires HIRAM = 1;
   LORAM only gates ROML (measured in VICE x64sc).
 - **Ultimax cart** (EXROM = 1, GAME = 0): ROML at $8000-$9FFF + ROMH at
-  $E000-$FFFF replacing KERNAL, *and* most of the RAM is disabled. Used
-  by the Commodore Ultimax, the only place in the C64 ecosystem this
-  matters.
+  $E000-$FFFF replacing KERNAL, *and* most of the RAM is disabled. Named
+  after the Commodore Ultimax (MAX Machine), whose cartridges run in this
+  mode. It is not the only use: an EasyFlash cartridge boots in it and
+  switches to it to write its flash
+  ([easyflash-save](../recipes/kickassembler/easyflash-save.md)), and
+  freezer cartridges use it too (not measured here). (An earlier version
+  called the Ultimax the only place this matters.)
 
 The PLA truth table for cart modes is documented in *The C64 PLA
 Dissected*. Cart modes matter only to code that is a cartridge or
@@ -2681,9 +2729,14 @@ Replacement IRQ handlers refer to these internal KERNAL addresses:
 ## BASIC ROM map
 
 The BASIC ROM at $A000-$BFFF (8 KB) contains Microsoft BASIC v2.0,
-licensed from Microsoft in 1977. The implementation is virtually
-identical to PET BASIC 4.0 minus the disk commands, plus a few C64
-quirks.
+licensed from Microsoft in 1977. It descends from the PET's BASIC 2.0:
+its 76 keywords are exactly those of the PET BASIC 2.0 ROM (901465-01/02),
+and PET BASIC 4.0 is those 76 plus 15 disk keywords, CONCAT to
+DIRECTORY (keyword tables read from the ROM images VICE ships). (An
+earlier version called it virtually identical to PET BASIC 4.0 minus the
+disk commands. The keyword lists agree with that, but the C64 ROM is
+version 2 and its line is PET 2.0; how much 4.0 changed beyond the disk
+commands was not checked here.)
 
 ### BASIC ROM layout
 
@@ -2774,8 +2827,11 @@ these vectors.
 
 The character generator ROM is a 4 KB ROM that the VIC-II reads to
 fetch the pixel patterns for text characters. The CPU can also read
-it via $D000-$DFFF, but only when CHAREN is 0 (and either LORAM or
-HIRAM is 1 so the I/O area isn't kept visible).
+it via $D000-$DFFF, but only when CHAREN is 0 and LORAM or HIRAM is 1;
+with LORAM = HIRAM = 0 the range is RAM whatever CHAREN is ($01 = $31,
+$32, $33 read the ROM at $D000, $30 read RAM; measured in VICE x64sc). (An
+earlier version gave the reason as keeping the I/O area from staying
+visible; with CHAREN = 0 I/O is never visible.)
 
 ### Two character sets
 

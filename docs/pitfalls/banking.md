@@ -28,9 +28,12 @@ section runs into a hardcoded charset/bitmap blit address.
 Code that tries to copy the built-in C64 character font from $D000-$D7FF reads
 back all zeros or garbage bytes. The first 2 KB of the copy contains corrupted
 data despite a loop that looks correct. The same loop copies fine from any other
-address in the $0000-$CFFF range. On some rigs the bytes are not zero but shift
-by one byte per iteration, suggesting a read from the SID or VIC shadow registers
-instead of font data.
+address in the $0000-$CFFF range. With $01 = $37 the loop is reading I/O: the
+VIC-II registers, repeated every 64 bytes through $D000-$D3FF, and the SID,
+repeated every 32 bytes through $D400-$D7FF (`hardware/vic-ii-reference.md`,
+`hardware/sid-reference.md`). (An earlier version said that on some rigs the
+bytes shift by one per iteration, "suggesting" SID or VIC shadow registers;
+nothing supported that.)
 
 ### Mechanism
 
@@ -43,9 +46,10 @@ The $D000-$DFFF range holds one of three things at any moment:
 3. The underlying 4 KB of DRAM, when both ROM and I/O are banked out.
 
 Which of those three wins is determined by bits 0-2 of the CPU I/O port at $0001.
-Bit 2 = CHAREN: when set (default $37), I/O wins. When clear and at least HIRAM
-or LORAM is set, character ROM wins. When CHAREN=0 and both LORAM=0 and HIRAM=0,
-RAM wins. $01 = $33 (CHAREN=0, HIRAM=1, LORAM=1) is the canonical value for
+When LORAM=0 and HIRAM=0, RAM wins whatever CHAREN holds ($30 and $34, as the
+table below measures). Otherwise bit 2 = CHAREN picks: set (default $37), I/O
+wins; clear, character ROM wins. (An earlier version said CHAREN set always gives
+I/O, which is false for $34.) $01 = $33 (CHAREN=0, HIRAM=1, LORAM=1) is the canonical value for
 reading the char ROM from the CPU.
 
 The C64 resets with $01 = $37. With CHAREN = 1, reading $D000 returns a VIC-II
@@ -704,14 +708,17 @@ The same payload crunched with Dali's standard `--sfx` and with pucrunch
 ### Mechanism
 
 The zero page is the cheapest place to put a decruncher: zero-page
-addressing saves a byte and a cycle on every operand, `(zp),Y` is the
-only indirect mode the 6502 has, and the page is free of anything the
+addressing saves a byte and a cycle on every operand, `(zp),Y` and
+`(zp,X)` take their pointer only from it (an earlier version called
+`(zp),Y` the only indirect mode; `(zp,X)` and `JMP (abs)` are the others), and the page is free of anything the
 decruncher itself needs. Dali's and bitfire's self-extractors both copy
 their decruncher into it from the top of the copy down to `$01`, and the
 byte that lands at `$01` banks every ROM out so the whole 64 KB can be a
 decrunch target: `$34` under Dali `--small`, `$38` under bitfire, both
-with bits 0 to 2 clear (measured with a store trace on `$0001`; neither
-stub writes the port again during the decrunch). The stream is moved to the top of
+with LORAM and HIRAM (bits 0 and 1) clear, which gives RAM at $D000
+whatever bit 2 holds (measured with a store trace on `$0001`; neither
+stub writes the port again during the decrunch). An earlier version said
+bits 0 to 2 were clear in both; `$34` has bit 2 set. The stream is moved to the top of
 memory under the KERNAL and decrunched forwards from the payload's load
 address. The page they overwrite is where the KERNAL and BASIC keep
 their state.

@@ -46,8 +46,9 @@ proportional to the tick rate, which equals the frame rate.
 PAL frame rate is 50.125 Hz (one frame every 19.95 ms). NTSC frame rate is
 59.826 Hz (one frame every 16.71 ms). If the play routine fires once per frame
 unconditionally, the NTSC tick rate is 59.826 / 50.125 = 1.194× the PAL rate,
-a 19.4% tempo increase. Rounded to the nearest whole number, this is the "20%
-too fast" figure that has followed European C64 ports to U.S. machines for
+a 19.4% tempo increase. Rounded up, this is the "20%
+too fast" figure (an earlier version called 20% the nearest whole
+number; that is 19%) that has followed European C64 ports to U.S. machines for
 decades.
 
 Tempo subdivision does not change this: a speed value of N ticks per
@@ -148,8 +149,9 @@ modifying the driver is not an option (e.g., a pre-built binary player).
 
 **A 50 Hz CIA tick is a valid third approach for the music alone.** Set CIA1
 Timer A to one tick per 20 ms of the *local* φ2 clock (latch $4FE5, 20,454
-cycles, on NTSC R8; $4CE5, 19,686, on PAL) and call the play routine from its
-IRQ; CIA-timed and multi-speed tunes already run this way (see music-sid.md,
+cycles, on NTSC R8; $4CF8, 19,705, on PAL; latch = cycles − 1; an
+earlier version gave $4CE5, whose 19,686-cycle period ticks at 50.05 Hz, while
+985,248 / 50 = 19,705) and call the play routine from its IRQ; CIA-timed and multi-speed tunes already run this way (see music-sid.md,
 `sid_play_routine_pattern` Variations). Measured in VICE x64sc 3.10: on the
 NTSC model that latch fired 251 times in 300 frames (300 × 17,095 / 20,454 =
 250.7), a 50.0 Hz tick, so the tempo is correct without frame-skipping. Two
@@ -403,7 +405,8 @@ on PAL; on NTSC it runs into the next frame's visible area. These lines are
 not blanking, as an earlier version called them: on PAL, 248-250 are the last
 three lines of the 25-row display window, 251-299 are visible lower border
 and only 300-311 (12 lines) are in vertical blank; on NTSC all of 248-262 is
-display or border and visible (NTSC vertical blank is 13-40). A $D020/$D021 or
+display or border and visible (NTSC vertical blank is 13-40 per Bauer's VIC-II
+article, cited by pal-ntsc-reference.md and not measured here). A $D020/$D021 or
 sprite write in that range is visible in the border on both regions.
 
 ### Mechanism
@@ -571,7 +574,9 @@ irq_reset_bad:
     jmp $ea81
 
 // GOOD: reset IRQ targets line 255 (safe on both PAL and NTSC).
-// Both regions have raster lines 0-254 inside the active / border area.
+// Line 255 exists on both regions and is lower border on both (display
+// ends at 250). An earlier comment said lines 0-254 are active or border on
+// both; PAL 0-15 and NTSC 13-40 are vertical blank.
 irq_reset_good:
     asl $d019
     lda $d011
@@ -635,7 +640,8 @@ exit through `$EA81` now.
 - Reference: `pal-ntsc-reference.md` — quick-reference table for lines per
   frame and $D012 wrap values; its "Badline range" section gives the lines
   after the last badline (68 PAL, 19 NTSC R8) and its "Visible region"
-  section the vertical blank (300-15 PAL, 13-40 NTSC). It does not give the
+  section the vertical blank (300-15 PAL, 13-40 NTSC; Bauer's figures, not measured;
+VICE's screenshot crop is not the blank). It does not give the
   "post-display blanking" counts an earlier version of this entry cited.
 - Pitfall: `d012_wrap_around` — the complementary pitfall about RST8 and the
   9-bit raster counter; the two pitfalls often co-occur.

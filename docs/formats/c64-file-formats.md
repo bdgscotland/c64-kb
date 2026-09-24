@@ -13,7 +13,7 @@ File formats produced and consumed by the C64 toolchain and runtime: layout, use
 **Produced by:** oscar64, kickassembler, cc65
 **Consumed by:** vice, c1541
 
-The `.PRG` file is the C64 executable container. It consists of a 2-byte little-endian load address followed by raw 6502/6510 machine code. The load address tells the loader (KERNAL or a fastloader) where in the C64's 64 KiB address space to place the data; execution then begins either at the BASIC start vector or at an address specified via a `SYS` call or direct `RUN/STOP + RESTORE` sequence.
+The `.PRG` file is the C64 executable container. It consists of a 2-byte little-endian load address followed by raw 6502/6510 machine code. The load address tells the loader (KERNAL or a fastloader) where in the C64's 64 KiB address space to place the data; loading does not start it. The user types `RUN` (for a file at `$0801` whose BASIC line `SYS`es the code) or `SYS` with the start address. RUN/STOP + RESTORE starts nothing: the KERNAL NMI handler (`$FE43`, bytes read from `kernal-901227-03.bin`) finds STOP held, reinitialises the vectors, I/O and screen (`$FD15`, `$FDA3`, `$E518`) and jumps through `($A002)` to BASIC's warm start. (An earlier version listed RUN/STOP + RESTORE as a way to begin execution.)
 
 Oscar64 produces `.prg` directly via its built-in linker. KickAssembler emits `.prg` as its default output when a load address is specified in the source. cc65 requires a separate `ld65` linker invocation with an appropriate config file to produce a `.prg`.
 
@@ -69,9 +69,9 @@ Oscar64 writes the container itself with `-tf=crt8`, `-tf=crt16` (type 0) or `-t
 **Produced by:** oscar64, kickassembler
 **Consumed by:** vice, c1541
 
-A raw binary file with no header: machine code or data at an implicit address. Used for ROM images, screen data, sprite sheets, or intermediate build artifacts before final linking. VICE can load `.BIN` files with an explicit address override via `-autostart-handle-tde` or the monitor's `l` command. The distinction from `.PRG` is the absence of the 2-byte load-address header.
+A raw binary file with no header: machine code or data at an implicit address. Used for ROM images, screen data, sprite sheets, or intermediate build artifacts before final linking. VICE loads one at a given address with the monitor's `bload "file" 0 <address>` (`bl`); its `l` command with an address skips the file's first two bytes, so it is for `.PRG` files. (An earlier version named `-autostart-handle-tde`, which x64sc 3.10's `-help` describes as "Handle True Drive Emulation on autostart", and `l`.) The distinction from `.PRG` is the absence of the 2-byte load-address header.
 
-KickAssembler emits `.bin` when the `.pc` directive is used without the auto-generated header. Oscar64 can emit raw binary payloads for specific linker segments.
+KickAssembler writes a `.prg` with its load address by default, even for a source that only sets `* = $c000`; `-binfile` writes the same bytes with no header (KickAssembler 5.25, both run here). Oscar64 writes a headerless file with `-tf=bin` (Oscar64 run here: the output begins with code, not a load address). (An earlier version said KickAssembler emits `.bin` whenever `.pc` is used without a header, and that Oscar64 writes raw binaries per linker segment.)
 
 ---
 
@@ -240,7 +240,7 @@ The primary BAM remains at track 18/0 and covers side 0 (tracks 1–35) as in D6
 
 Directory: track 18, same 144-file maximum. Native 1571 mode uses 6-sector interleave (versus 10 for 1541-compatibility mode).
 
-**Typical use:** larger software titles, tools requiring more than 664 KiB of disk storage.
+**Typical use:** larger software titles, tools that need more than a D64's 664 free blocks. A freshly formatted D71 is 349,696 bytes with 1,328 blocks free (c1541 3.10, measured here), 337,312 data bytes at 254 per block. (An earlier version said "more than 664 KiB"; 664 is the 1541's free-block count.)
 
 ---
 
@@ -267,7 +267,7 @@ The header, BAM, and first directory entries all reside on track 40:
 
 BAM entries use 6 bytes each: 1 byte free-sector count + 5 bytes (40-bit bitmap).
 
-**Key differences from D64/D71:** sector interleave is 1 for both files and directories (the 1581 buffers a full track in internal RAM, making interleave irrelevant for sequential read performance). Maximum of approximately 296 directory entries at the root. Supports subdirectories and partitions at the DOS level (not represented in the D81 image format itself).
+**Key differences from D64/D71:** sector interleave is 1 for both files and directories (the 1581 buffers a full track in internal RAM, making interleave irrelevant for sequential read performance). Maximum of approximately 296 directory entries at the root. The 1581 DOS supports partitions and subdirectories. A D81 is a dump of all 3,200 sectors (819,200 bytes from `c1541 -format ... d81`, measured here), so whatever the DOS writes to disk for them is in the image; how it records them was not checked here. (An earlier version said they are not represented in the image.)
 
 **Typical use:** large software archives, tools requiring subdirectory support.
 
@@ -450,15 +450,13 @@ Run as `python3 gcr_g64.py disk.g64 17 0 known.prg` it printed the table above, 
 
 ### .NIB — Nibbler-format disk image (preserves bit-level timing)
 
-**Consumed by:** vice, c1541
+The NIB format is written by the MNIB / nibtools software, which reads a real 1541 connected to a PC (not a separate "Nibbler" hardware device, as an earlier version said; rung 4, not checked against a source here). It captures raw GCR bit streams from a 1541, including bit-level flux timing variation. Where G64 stores cleaned-up GCR byte streams padded to a fixed maximum size, NIB stores the actual byte-level content read directly from the disk surface at a fixed 8,192 bytes per half-track regardless of the track's natural length.
 
-The NIB format (produced by the Nibbler hardware device and associated PC software) captures raw GCR bit streams from a 1541, including bit-level flux timing variation. Where G64 stores cleaned-up GCR byte streams padded to a fixed maximum size, NIB stores the actual byte-level content read directly from the disk surface at a fixed 8,192 bytes per half-track regardless of the track's natural length.
+The file contains 84 entries (42 tracks × 2 half-tracks), each exactly 8,192 bytes, for a fixed file size of 688,128 bytes. This page earlier said there is no file header and track 1 begins at offset 0. nibtools files are reported to begin with a 256-byte header starting `MNIB-1541-RAW`, which would put track data at offset 256; neither layout has been checked against a real `.nib` or the nibtools source here, so read the header before trusting any offset.
 
-The file contains 84 entries (42 tracks × 2 half-tracks), each exactly 8,192 bytes, for a fixed file size of 688,128 bytes. There is no file header; track data begins at offset 0. Track 1 data at offset 0, track 1.5 data at offset 8,192, track 2 at offset 16,384, and so on.
+NIB is used almost exclusively for archival of copy-protected originals where flux timing differences between sectors encode protection information that G64 cannot capture. No assembler toolchain generates it. VICE 3.10 does not read it: `c1541 -attach` on a 688,128-byte file, and on the same data behind a 256-byte `MNIB-1541-RAW` header, fails the G64 import ("Invalid number of tracks" / "Unknown GCR image version") and then misdetects the file as a DHD image, and neither the `c1541` nor the `x64sc` binary contains the string `nib`. Convert to G64 first (nibtools' `nibconv`, not installed here). (An earlier version said VICE reads NIB through a `diskcontents` handler, and this section carried a `Consumed by: vice, c1541` line.)
 
-NIB is used almost exclusively for archival of copy-protected originals where flux timing differences between sectors encode protection information that G64 cannot capture. The format is produced by the physical Nibbler hardware device and the `mnib` software tool; it cannot be generated by standard assembler toolchains. VICE can read NIB images via its `diskcontents` handler.
-
-**Typical use:** archival of physically copy-protected disks; supplied to VICE for testing loaders against original protection timing.
+**Typical use:** archival of physically copy-protected disks; converted to G64 before VICE can test a loader against the original protection.
 
 ---
 
@@ -1111,11 +1109,11 @@ VSF is a VICE internal format. It is not suitable for interchange between emulat
 **Produced by:** oscar64, cc65
 **Consumed by:** vice
 
-A linker map file records the final address assignments for every symbol, segment, and object file resolved during linking. Oscar64 emits `.map` alongside its primary output. cc65's `ld65` linker emits a map file when invoked with `-m`. KickAssembler produces a symbol list via the `--symboldump` flag (see `.VS` below) rather than a traditional map file.
+A linker map file records the final address assignments for every symbol, segment, and object file resolved during linking. Oscar64 emits `.map` alongside its primary output. cc65's `ld65` linker emits a map file when invoked with `-m`. KickAssembler has no map file; `-symbolfile` writes a `.sym` of `.label` lines and `-vicesymbols` a `.vs` (see `.VS` below). KickAssembler 5.25 takes single-dash options: given `-symboldump` or `--symboldump` it prints `Already have an inputfile. Won't use '--symboldump'` and ignores it. (An earlier version named a `--symboldump` flag.)
 
 Map files are consumed by VICE's monitor for symbol-name display during debugging: the monitor's `ll` command (load labels) accepts Oscar64's `.lbl` format; `.map` files require conversion or manual parsing.
 
-Format is tool-specific text: Oscar64 emits one `symbol = $ADDR` line per resolved symbol. cc65 `ld65` emits a structured text report with segment summary, module summary, and symbol table sections.
+Format is tool-specific text: Oscar64's `.map` has `sections`, `regions`, `objects` and `objects by size` blocks with lines such as `0880 - 0887 : main, NATIVE_CODE:code` (Oscar64 run here). (An earlier version said one `symbol = $ADDR` line per symbol; the file has none.) cc65 `ld65` emits a structured text report with segment summary, module summary, and symbol table sections.
 
 ---
 
@@ -1132,7 +1130,7 @@ al HHHH .SYMBOLNAME
 
 where `HHHH` is the 4-digit hex address and `SYMBOLNAME` is the C or assembly label. The leading `al` prefix is the VICE monitor `add_label` command mnemonic.
 
-VICE loads `.lbl` files via `ll <filename>` in its built-in monitor, enabling symbolic display of disassembly, breakpoints by name (`break main`), and watch expressions. This link between Oscar64 and VICE is a main reason Oscar64 is the preferred toolchain in this KB.
+VICE loads `.lbl` files via `ll <filename>` in its built-in monitor, enabling symbolic display of disassembly, breakpoints by name (`break .main`; labels keep their leading dot, and x64sc 3.10's monitor rejects `break main` with "Unexpected token"), and watch expressions. This link between Oscar64 and VICE is a main reason Oscar64 is the preferred toolchain in this KB.
 
 ---
 
@@ -1141,7 +1139,7 @@ VICE loads `.lbl` files via `ll <filename>` in its built-in monitor, enabling sy
 **Produced by:** kickassembler
 **Consumed by:** vice
 
-KickAssembler emits a VICE symbol file (conventionally `.vs` or `-symbols.txt`) when invoked with the `--vicesymbols` flag. Format matches the VICE `al` label format used by `.LBL` files. The file is loaded into VICE the same way (`ll <filename>`) and gives the same symbolic debugging as Oscar64's `.lbl` output.
+KickAssembler emits a VICE symbol file (conventionally `.vs` or `-symbols.txt`) when invoked with the `-vicesymbols` flag (written `--vicesymbols` in an earlier version, which KickAssembler 5.25 ignores with a warning). A label comes out as `al C:c000 .main`; x64sc 3.10's `ll` loads it and Oscar64's `.lbl` alike (both run here). Format matches the VICE `al` label format used by `.LBL` files. The file is loaded into VICE the same way (`ll <filename>`) and gives the same symbolic debugging as Oscar64's `.lbl` output.
 
 ---
 
@@ -1158,12 +1156,12 @@ The listing format is not a formal standard; it is Oscar64-specific human-readab
 
 ### .S — cc65/ca65 assembly source
 
-**Produced by:** oscar64, cc65
+**Produced by:** cc65
 **Consumed by:** cc65
 
 The `.s` extension is the standard assembly source file for ca65 (the assembler component of the cc65 suite). cc65 (the C compiler) emits `.s` files as its intermediate representation before invoking ca65. The ca65 assembler then compiles `.s` to `.o` object files.
 
-Oscar64 can also emit `.s` compatible output in some configurations, but its primary output path does not route through ca65. The `.s` extension is also used generically for 6502 assembly in other contexts (e.g., manual assembly sources targeting ca65 directly).
+Oscar64 does not write `.s` files: with default options it writes `.prg`, `.asm`, `.int`, `.lbl` and `.map`, its option list has no assembly-source output, and its `Compiler.cpp` names no `.s` extension (all checked here). (An earlier version said it could emit `.s` compatible output.) The `.s` extension is also used generically for 6502 assembly in other contexts (e.g., manual assembly sources targeting ca65 directly).
 
 ---
 

@@ -276,7 +276,9 @@ and the code was found by reading the source against the page.
 - **Hardware:** `hardware/cia-reference.md`, the `$DC02` entry: IOINIT's
   store, when it runs again, and that SCNKEY never writes a DDR.
 - **Sibling pitfall:** `joystick2_scan_phantom_press` covers the other
-  direction of the same shared-pin problem, a main-loop read seeing the
-  scanner's column pattern.
+  direction of the same shared-pin problem: an NMI or nested handler that
+  pre-empts SCNKEY reads its column pattern. A main-loop read cannot see
+  it; an earlier version of this line said it could, which that entry's
+  own measurement refutes.
 - **Recipe:** `recipes/oscar64/joystick-input.md` sets both DDRs to the
   IOINIT values before its first read.
