@@ -45,6 +45,7 @@ const MemberRow = z.object({
   bytes_data: OptNumber,
   irq_slots: OptNumber,
   basis: CostBasisSchema.nullable(),
+  bytes_basis: CostBasisSchema.nullable(),
   measured_on: OptString,
   conditions: OptString,
   includes: StringList,
@@ -62,7 +63,7 @@ const MEMBERS_QUERY = `MATCH (t:Technique) WHERE t.name IN $names
          t.cost_cycles_per_frame AS cycles_per_frame, t.cost_cycles_per_frame_typical AS cycles_per_frame_typical,
          t.cost_cycles_per_line AS cycles_per_line, t.cost_lines_active AS lines_active,
          t.cost_bytes_code AS bytes_code, t.cost_bytes_data AS bytes_data, t.cost_irq_slots AS irq_slots,
-         t.cost_basis AS basis, t.cost_recipe AS measured_on, t.cost_conditions AS conditions,
+         t.cost_basis AS basis, t.cost_bytes_basis AS bytes_basis, t.cost_recipe AS measured_on, t.cost_conditions AS conditions,
          t.cost_includes AS includes, closure, collect(DISTINCT r.name) AS recipes`;
 
 // Every Cost includes line in the graph, so an include is followed through
@@ -102,6 +103,7 @@ function memberOf(name: string, phase: BudgetPhase, row: MemberRow | undefined):
             bytes_data: row.bytes_data,
             irq_slots: row.irq_slots,
             basis: row.basis,
+            ...(row.bytes_basis ? { bytes_basis: row.bytes_basis } : {}),
             measured_on: row.measured_on,
             conditions: row.conditions,
             includes: row.includes,
@@ -176,7 +178,8 @@ function bytesLine(bytes: PlanBudgetOutput["bytes"]): string {
   if (bytes.contributors.length === 0) return `No member states a byte figure that can be summed.${inside}`;
   const floor =
     bytes.without_bytes.length > 0 ? `; a floor, since ${bytes.without_bytes.join(", ")} state no bytes` : "";
-  return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => c.name).join(", ")}${floor}.${inside}`;
+  const basis = bytes.weakest_basis ? `; weakest basis ${bytes.weakest_basis}` : "";
+  return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => `${c.name} (${c.basis})`).join(", ")}${basis}${floor}.${inside}`;
 }
 
 function renderDesign(b: PlanBudgetOutput): string {

@@ -54,6 +54,9 @@ export interface TechniqueNode {
   // outlive its page.
   cost?: Partial<Record<string, number>> | undefined;
   cost_basis?: string | undefined;
+  // **Cost bytes basis:** (#72): the byte figures' own basis, absent when
+  // cost_basis covers them. Cleared with the Cost line.
+  cost_bytes_basis?: string | undefined;
   // **Cost measured on:** and **Cost includes:** (schema 27): the recipe the
   // figures came from, its conditions, and the techniques whose work is
   // inside the figure. Cleared with the Cost line.
@@ -91,6 +94,7 @@ function costProps(t: TechniqueNode, props: NodeProps, clear: string[]): void {
   }
   const costed = Boolean(t.cost && t.cost_basis);
   setOrClear(props, clear, "cost_basis", costed ? t.cost_basis : undefined);
+  setOrClear(props, clear, "cost_bytes_basis", costed ? t.cost_bytes_basis : undefined);
   setOrClear(props, clear, "cost_recipe", costed ? t.cost_recipe : undefined);
   setOrClear(props, clear, "cost_conditions", costed ? t.cost_conditions : undefined);
   setOrClear(props, clear, "cost_includes", costed ? t.cost_includes : undefined);

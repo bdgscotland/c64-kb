@@ -68,7 +68,10 @@ export interface BudgetCost {
   bytes_code?: number | undefined;
   bytes_data?: number | undefined;
   irq_slots?: number | undefined;
+  /** The cycle figures' basis, and the byte figures' too when bytes_basis is absent. */
   basis: BudgetBasis;
+  /** **Cost bytes basis:** (#72): the byte figures' own basis. */
+  bytes_basis?: BudgetBasis | undefined;
   measured_on?: string | undefined;
   conditions?: string | undefined;
   includes?: string[] | undefined;
@@ -166,6 +169,8 @@ interface BytesBudget {
   /** Members whose work, and so code, is inside another member's figure that states bytes. */
   inside: { name: string; by: string }[];
   without_bytes: string[];
+  /** The weakest byte basis among the contributors, beside the sum (#72). */
+  weakest_basis: BudgetBasis | null;
 }
 
 export interface PlanBudget {
@@ -529,6 +534,11 @@ function heldEverywhere(phases: PhaseBudget[]): Map<string, string> {
   return held;
 }
 
+/** The byte figures' basis: their own line where the page states one (#72), else the Cost basis. */
+function bytesBasisOf(c: BudgetCost): BudgetBasis {
+  return c.bytes_basis ?? c.basis;
+}
+
 function hasBytes(c: BudgetCost | undefined): c is BudgetCost {
   return c?.bytes_code !== undefined || c?.bytes_data !== undefined;
 }
@@ -540,7 +550,14 @@ function hasBytes(c: BudgetCost | undefined): c is BudgetCost {
  * sum a floor.
  */
 function bytesOf(members: BudgetMember[], held: Map<string, string>): BytesBudget {
-  const out: BytesBudget = { sum: 0, contributors: [], excluded: [], inside: [], without_bytes: [] };
+  const out: BytesBudget = {
+    sum: 0,
+    contributors: [],
+    excluded: [],
+    inside: [],
+    without_bytes: [],
+    weakest_basis: null,
+  };
   const byName = new Map(members.map((m) => [m.name, m]));
   const seen = new Set<string>();
   for (const m of members) {
@@ -563,8 +580,9 @@ function bytesOf(members: BudgetMember[], held: Map<string, string>): BytesBudge
       continue;
     }
     out.sum += bytes;
-    out.contributors.push({ name: m.name, bytes, basis: c.basis });
+    out.contributors.push({ name: m.name, bytes, basis: bytesBasisOf(c) });
   }
+  out.weakest_basis = weakestOf(out.contributors.map((c) => c.basis));
   return out;
 }
 

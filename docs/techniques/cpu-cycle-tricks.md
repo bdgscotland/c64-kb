@@ -1032,7 +1032,8 @@ unfold 5,190.
 **Uses registers:** (none)
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=8000, bytes_code=849, bytes_data=1185
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-speedcode-generator (one 1,000-byte copy, screen blanked; bytes are the whole PRG)
 
 The figures on the Cost line are for the recipe's job, a 1,000-byte copy:
@@ -1042,7 +1043,7 @@ and 1,185 bytes of row tables, source block and text. The 6,001-byte
 block the generator fills is RAM, not load, so it is not on the line; it
 scales with the byte count, as the cycle figure does, and belongs in the
 memory plan. The generation itself runs once and is not on the line
-either; it is 92,485 cycles for that job, measured.
+either; it is 92,485 cycles for that job, measured. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 ### Why
 

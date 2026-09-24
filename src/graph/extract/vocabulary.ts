@@ -21,6 +21,9 @@ export const COST_VOCABULARY: Record<string, string> = {
 export const COST_MAXIMUM: Partial<Record<string, number>> = { sprites_per_line: 8 };
 type CostKey = keyof typeof COST_VOCABULARY;
 export type TechniqueCost = Partial<Record<CostKey, number>>;
+// The byte figures, which a **Cost bytes basis:** line (#72) can give a
+// basis of their own; every other key stays under **Cost basis:**.
+export const BYTE_COST_KEYS = ["bytes_code", "bytes_data", "zp_bytes"] as const;
 
 export const COST_BASIS_WORDS = ["measured-vice", "derived-listing", "arithmetic", "estimated"] as const;
 export type CostBasis = (typeof COST_BASIS_WORDS)[number];

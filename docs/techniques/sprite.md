@@ -151,7 +151,8 @@ sine-table motion, a demonstration payload.
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs, changes_sprite_set
 **Cost:** cycles_per_frame=1667, irq_slots=3, bytes_code=977, sprites_per_line=8
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-sprite-multiplex-24 (three fixed bands, no sort, the $EA31 exit once, the animation left out; screen on; PAL and NTSC)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
@@ -286,7 +287,7 @@ animation of 24 sprites adds 1,538 to 1,555, and is game logic, so the
 line leaves it out. `bytes_code` is the recipe's code segment
 (`$0900-$0CD0`), install and animation included, from KickAssembler's
 memory map. The line said 700 cycles and 900 bytes before, both
-estimates. A sorted `vspr_*` multiplexer costs the 5,000 and more above.
+estimates. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line. A sorted `vspr_*` multiplexer costs the 5,000 and more above.
 
 ### Recipes
 
@@ -985,7 +986,8 @@ cycle budget for the KERNAL-vector figures).
 **Uses registers:** D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D012, D015, D017, D01D
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=644, bytes_data=768
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-sprite-sine-chain (eight sprites, the update loop and the $D010 write, frame-counter print left out; in the lower border; PAL and NTSC)
 **Claims:** sprite_0-7 (owns)
 **Claims basis:** derived-listing
@@ -1119,7 +1121,7 @@ tables and one IRQ slot. The recipe polls `$D012` and takes no
 interrupt, and its tables are three of 256 bytes (`xlo`, `xhi`,
 `ysin`), 768 from the listing. A demo starter that timed this loop with
 CIA2 timer B measured 625 typical and 670 worst (`templates/demo`,
-the #39 starter builds).
+the #39 starter builds). Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 ### Recipes
 
@@ -1678,7 +1680,8 @@ built here; the pinned picture is the eight-line staircase.
 **Uses kernal:** (none)
 **Requires:** table_generation
 **Cost:** cycles_per_frame=2672, cycles_per_frame_typical=20, bytes_data=1024
-**Cost basis:** arithmetic
+**Cost basis:** measured-vice
+**Cost bytes basis:** arithmetic
 **Cost measured on:** kickassembler-sprite-cache-flip (one cache miss, screen blanked)
 
 ### Why
@@ -1802,7 +1805,7 @@ mirror loop so its branch crossed a page raised the 1,597 to 1,617; the
 recipe page-aligns its inner loops so the figures do not move as code
 grows. The Cost line's `bytes_data` is arithmetic from the table and slot
 sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
-`cycles_per_frame` figure is measured. The frame data is extra.
+`cycles_per_frame` figure is measured. Before #72 one basis word covered the whole Cost line, so it said `arithmetic`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `arithmetic` on their own line. The frame data is extra.
 
 ### Recipes
 
@@ -2114,7 +2117,8 @@ when the entry holds (instruction-table arithmetic, not measured here).
 **Uses kernal:** (none)
 **Requires:** unrolled_loops
 **Cost:** cycles_per_frame=1890, bytes_code=1304, bytes_data=1344
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-software-sprite-preshifted (one object drawn and erased, with its own blit, erase and tables; screen blanked)
 
 ### Why
@@ -2239,7 +2243,7 @@ figures: 1,304 bytes of code, 1,009 for its unrolled blit routine and
 295 for its erase, and 1,344 bytes of tables. The built recipe has two
 objects, 2,608 and 2,688 bytes (the assembler's own byte counts; the
 timing and print harness is not counted). An earlier Cost line gave
-the two objects' bytes beside one object's cycles.
+the two objects' bytes beside one object's cycles. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 ### Recipes
 

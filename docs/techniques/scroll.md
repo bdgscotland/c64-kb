@@ -665,7 +665,8 @@ in positional math plus the occasional carry, within the PAL budget.
 **Uses kernal:** (none)
 **Requires:** infinite_scroll_h
 **Cost:** cycles_per_frame=378, bytes_code=26
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** oscar64-charset-parallax (roll frame, every second frame, in the vertical blank)
 
 ### Why
@@ -757,7 +758,7 @@ count is 373 with `JSR` and `RTS`. Measured in VICE x64sc 3.10 on PAL and NTSC a
 because it runs in the vertical blank where no cycles are stolen. It
 runs every second frame at half speed, so the typical frame is 378 or 0.
 The worst frame is a roll frame; the `**Cost:**` line states it, and
-the 26-byte routine from the Oscar64 map. A larger tile scales the roll
+the 26-byte routine from the Oscar64 map. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line. A larger tile scales the roll
 linearly: 20 cycles per pixel row per glyph pair. The recipe's screen
 shift on the carry frame, 12,321 cycles on PAL and 12,537 on NTSC, is
 `infinite_scroll_h`'s cost, not this technique's.
@@ -1109,7 +1110,8 @@ gave only the column edge, 268.
 **Uses kernal:** (none)
 **Requires:** frame_sync_loop
 **Cost:** cycles_per_frame=5343, bytes_code=4117, bytes_data=1090, zp_bytes=2, irq_slots=1
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-dycp-scroller (worst frame, 39 columns, in the vertical blank)
 
 ### Why
@@ -1191,7 +1193,7 @@ crossing of the sine lookup in some columns). The `**Cost:**` line above
 states that worst frame, the code segment (`$0900-$1914`, of which the
 unrolled copy is most) and the table segment (`$2000-$2441`) from
 KickAssembler's memory map; the 2 KB charset the copy writes is cleared
-at run time and is in neither segment.
+at run time and is in neither segment. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 The budget depends on where in the frame the copy runs. A column's strip
 bytes are read by the VIC on every raster line of the band, so the copy

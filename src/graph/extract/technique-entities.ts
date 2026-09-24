@@ -8,6 +8,7 @@ import { CLAIMS_BASIS_WORDS, isClaimsBasis, type Claim, type ClaimsBasis } from 
 import { warn } from "./common.ts";
 import type { GraphEntity } from "./types.ts";
 import {
+  BYTE_COST_KEYS,
   COST_BASIS_WORDS,
   DEMAND_VOCABULARY,
   isCostBasis,
@@ -34,6 +35,7 @@ export interface TechniqueMeta {
   requires?: string[];
   cost?: TechniqueCost;
   costBasis?: string;
+  costBytesBasis?: string;
   costMeasuredOn?: string;
   costIncludes?: string[];
   rasterBand?: string;
@@ -54,6 +56,7 @@ const MEASURED_ON = /^`?([a-z0-9]+-[a-z0-9][a-z0-9-]*)`?(?:\s+\(([^()]+)\))?\s*$
 interface SettledCost {
   cost: TechniqueCost;
   cost_basis: CostBasis;
+  cost_bytes_basis?: CostBasis;
   cost_recipe?: string;
   cost_conditions?: string;
   cost_includes?: string[];
@@ -73,6 +76,31 @@ function checkedTypical(cost: TechniqueCost, where: string): TechniqueCost {
   const rest = { ...cost };
   delete rest.cycles_per_frame_typical;
   return rest;
+}
+
+/**
+ * The byte figures' own basis from a **Cost bytes basis:** line (#72). No
+ * line: the Cost basis covers them, as it always has. A line with no byte
+ * figure beside it is ignored; a word outside the set drops the byte
+ * figures, since a byte count with no honest basis is worse than none.
+ */
+function bytesBasis(
+  cost: TechniqueCost,
+  word: string | undefined,
+  where: string,
+): { cost: TechniqueCost; cost_bytes_basis?: CostBasis } {
+  if (word === undefined) return { cost };
+  const byteKeys = BYTE_COST_KEYS.filter((k) => cost[k] !== undefined);
+  if (byteKeys.length === 0) {
+    warn(`${where} has a **Cost bytes basis:** line but no byte figure on its Cost line — ignored`);
+    return { cost };
+  }
+  if (isCostBasis(word)) return { cost, cost_bytes_basis: word };
+  warn(
+    `${where} has cost bytes basis "${word}", which is not one of ${COST_BASIS_WORDS.join(", ")} — ${byteKeys.join(", ")} not ingested (see CONVENTIONS-techniques.md)`,
+  );
+  const keep = Object.entries(cost).filter(([k]) => !byteKeys.some((b) => b === k));
+  return { cost: Object.fromEntries(keep) };
 }
 
 /** The recipe and conditions of a **Cost measured on:** line, or {} (with a warning) when refused. */
@@ -114,8 +142,8 @@ function includedTechniques(names: string[] | undefined, head: TechniqueHead, wh
 function settledCost({ head, meta, sourcePath }: Section): SettledCost | null {
   const where = `${sourcePath}: technique ${head.name}`;
   if (meta.cost === undefined) {
-    if (meta.costBasis !== undefined)
-      warn(`${where} has a **Cost basis:** line but no **Cost:** line — ignored`);
+    if (meta.costBasis !== undefined || meta.costBytesBasis !== undefined)
+      warn(`${where} has a **Cost basis:** or **Cost bytes basis:** line but no **Cost:** line — ignored`);
     if (meta.costMeasuredOn !== undefined || meta.costIncludes !== undefined)
       warn(`${where} has a **Cost measured on:** or **Cost includes:** line but no **Cost:** line — ignored`);
     return null;
@@ -133,7 +161,7 @@ function settledCost({ head, meta, sourcePath }: Section): SettledCost | null {
     );
     return null;
   }
-  const cost = checkedTypical(meta.cost, where);
+  const { cost, cost_bytes_basis } = bytesBasis(checkedTypical(meta.cost, where), meta.costBytesBasis, where);
   if (Object.keys(cost).length === 0) {
     warn(`${where} has a **Cost:** line with no usable pair — Cost not ingested`);
     return null;
@@ -142,6 +170,7 @@ function settledCost({ head, meta, sourcePath }: Section): SettledCost | null {
   return {
     cost,
     cost_basis: basis,
+    ...(cost_bytes_basis ? { cost_bytes_basis } : {}),
     ...measuredOn(meta.costMeasuredOn, where),
     ...(includes.length > 0 ? { cost_includes: includes } : {}),
   };

@@ -27,6 +27,15 @@ describe("techniqueLookup", () => {
       cost: { cycles_per_frame: 160, lines_active: 2, irq_slots: 2 },
       cost_basis: "arithmetic",
     });
+    await f.addTechnique({
+      name: "raster_bars",
+      title: "Raster bars",
+      category: "raster",
+      complexity: "low",
+      cost: { cycles_per_frame: 1471, bytes_code: 577, bytes_data: 33 },
+      cost_basis: "measured-vice",
+      cost_bytes_basis: "derived-listing",
+    });
     await f.linkTechniqueRequires("text_zoom", "stable_raster_irq");
     await f.addPitfall({
       name: "raster_irq_first_line_jitter",
@@ -52,6 +61,20 @@ describe("techniqueLookup", () => {
     expect(withCost.text).toContain("**Cost basis:** arithmetic");
     const without = await techniqueLookup("text_zoom");
     expect(without.structured.cost).toBeUndefined();
+  });
+
+  it("returns a Cost bytes basis apart from the Cost basis when the page states one (#72)", async () => {
+    const r = await techniqueLookup("raster_bars");
+    expect(r.structured.cost).toEqual({
+      cycles_per_frame: 1471,
+      bytes_code: 577,
+      bytes_data: 33,
+      basis: "measured-vice",
+      bytes_basis: "derived-listing",
+    });
+    expect(r.text).toContain("**Cost basis:** measured-vice\n**Cost bytes basis:** derived-listing\n");
+    const one = await techniqueLookup("double_irq");
+    expect(one.text).not.toContain("Cost bytes basis");
   });
 
   it("returns Technique metadata + USES edges", async () => {

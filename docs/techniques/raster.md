@@ -96,7 +96,8 @@ Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badlin
 **Uses registers:** EXTCOL, BGCOL0, RASTER, VICIRQ
 **Demands:** midframe_raster_irqs
 **Cost:** cycles_per_frame=1471, lines_active=10, irq_slots=10, bytes_code=577, bytes_data=33
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-raster-bars (ten handlers through $0314 with their $D012 spins, the $EA31 exit once, no key held; NTSC, 1,464 on PAL)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
@@ -142,7 +143,7 @@ The VIC-II's color registers have no buffering. Unlike systems with scanline-lat
 
 Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/raster-bars.md`, measured in VICE), leaving about 20 cycles on the line: enough for the two colour stores (8 cycles, two `STA abs` at 4 each) and the $D012/$D019 bookkeeping (10) and little else; with the KERNAL out and $FFFE pointing at the handler about 50 remain. An earlier version said 50-55 usable and did not name the entry path. On a badline, the 40-43-cycle stall removes almost all work budget; designs that change color on badline rows write the color value one line early.
 
-Measured per frame in `recipes/kickassembler/raster-bars.md`, traced in VICE x64sc 3.10 from each interrupt's acceptance to the end of `RTI`: 125 cycles for each of bars 1 to 8, 119 (PAL) or 126 (NTSC) for bar 0, and 345 for bar 9, which rotates the palette and exits through `$EA31`; 1,464 a frame on PAL and 1,471 on NTSC. Each handler is armed a line early and spins on `$D012`, and the spin is inside the figure. The code is 577 bytes and the palette 33, from KickAssembler's memory map (`$0900-$0928`, `$0B00-$0D17`; `$0A00-$0A20`). The Cost line said 990 cycles and 600 bytes before, both estimates.
+Measured per frame in `recipes/kickassembler/raster-bars.md`, traced in VICE x64sc 3.10 from each interrupt's acceptance to the end of `RTI`: 125 cycles for each of bars 1 to 8, 119 (PAL) or 126 (NTSC) for bar 0, and 345 for bar 9, which rotates the palette and exits through `$EA31`; 1,464 a frame on PAL and 1,471 on NTSC. Each handler is armed a line early and spins on `$D012`, and the spin is inside the figure. The code is 577 bytes and the palette 33, from KickAssembler's memory map (`$0900-$0928`, `$0B00-$0D17`; `$0A00-$0A20`). The Cost line said 990 cycles and 600 bytes before, both estimates. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 ### Recipes
 

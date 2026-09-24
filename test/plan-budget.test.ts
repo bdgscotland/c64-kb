@@ -419,7 +419,41 @@ describe("planBudget rules", () => {
       excluded: [{ name: "lfsr_random", bytes: 1947, reason: "whole_program" }],
       inside: [],
       without_bytes: ["plain"],
+      weakest_basis: "derived-listing",
     });
+  });
+
+  it("takes the cycle basis from the Cost basis alone and states the byte basis beside the byte sum (#72)", () => {
+    // Before #72 one basis word covered the line, so raster_bars' VICE-traced
+    // cycles read derived-listing because its bytes came from the memory map.
+    const b = planBudget([
+      m("raster_bars", {
+        cycles_per_frame: 1471,
+        bytes_code: 577,
+        bytes_data: 33,
+        basis: "measured-vice",
+        bytes_basis: "derived-listing",
+      }),
+      m("music", { cycles_per_frame: 1198, bytes_code: 900, basis: "measured-vice" }),
+    ]);
+    const p = play(b);
+    expect(p.weakest_basis).toBe("measured-vice");
+    expect(p.contributors.map((c) => [c.name, c.basis])).toEqual([
+      ["raster_bars", "measured-vice"],
+      ["music", "measured-vice"],
+    ]);
+    expect(b.bytes.contributors).toEqual([
+      { name: "raster_bars", bytes: 610, basis: "derived-listing" },
+      { name: "music", bytes: 900, basis: "measured-vice" },
+    ]);
+    expect(b.bytes.weakest_basis).toBe("derived-listing");
+    expect(PlanBudgetSchema.shape.bytes.parse(b.bytes)).toEqual(b.bytes);
+  });
+
+  it("a line with one basis word keeps meaning what it meant: that word covers cycles and bytes", () => {
+    const b = planBudget([m("a", { cycles_per_frame: 100, bytes_code: 50, basis: "arithmetic" })]);
+    expect(play(b).weakest_basis).toBe("arithmetic");
+    expect(b.bytes.weakest_basis).toBe("arithmetic");
   });
 
   it("lets a member left out as multi-frame hold nothing: what it includes is budgeted as itself", () => {
@@ -588,6 +622,7 @@ function memberFromDocs(spec: string): BudgetMember {
           cost: {
             ...t.cost,
             basis: t.cost_basis,
+            bytes_basis: t.cost_bytes_basis,
             measured_on: t.cost_recipe,
             conditions: t.cost_conditions,
             includes: followIncludes(parsed.name, includesOnPages),
@@ -605,6 +640,26 @@ const plan = (specs: string[], opts: Parameters<typeof planBudget>[1] = {}) =>
   planBudget(specs.map(memberFromDocs), opts);
 
 describe("planBudget on the shipped pages (design 2.1 validation)", () => {
+  it("the pages #72 split: measured cycles read measured-vice, the bytes keep their own rung", () => {
+    const split = [
+      "raster_bars",
+      "sprite_multiplex_24",
+      "sprite_sine_chain",
+      "software_sprite_preshifted",
+      "speedcode_generation",
+      "charset_parallax",
+      "dycp_scroller",
+      "table_multiply_8x8",
+      "lfsr_random",
+      "sprite_cache_flip",
+    ];
+    const b = plan(split);
+    expect(play(b).weakest_basis).toBe("measured-vice");
+    expect(b.bytes.weakest_basis).toBe("arithmetic");
+    expect(b.bytes.contributors.find((c) => c.name === "raster_bars")?.basis).toBe("derived-listing");
+    expect(b.bytes.contributors.find((c) => c.name === "sprite_cache_flip")?.basis).toBe("arithmetic");
+  });
+
   it("platformer-scaffold: undetermined, five unknowns named, known range well under the measured 8,693 peak", () => {
     // Measured (platformer-scaffold.md, "What was measured"): CYC 4,966, MAX 8,606-8,693 PAL; 10,287 NTSC.
     const specs = recipeTechniques("oscar64-platformer-scaffold").map((t) =>

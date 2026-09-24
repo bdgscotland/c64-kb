@@ -29,6 +29,32 @@ describe("computeBudget", () => {
     expect(BudgetSchema.parse(b)).toBeTruthy();
   });
 
+  it("names a contributor's byte basis apart and keeps it out of weakest_basis (#72)", () => {
+    const b = computeBudget([
+      {
+        name: "raster_bars",
+        cost: {
+          cycles_per_frame: 1471,
+          bytes_code: 577,
+          basis: "measured-vice",
+          bytes_basis: "derived-listing",
+        },
+      },
+    ]);
+    expect(b.weakest_basis).toBe("measured-vice");
+    expect(b.contributors).toEqual([
+      {
+        name: "raster_bars",
+        cycles_per_frame: 1471,
+        bytes: 577,
+        basis: "measured-vice",
+        bytes_basis: "derived-listing",
+      },
+    ]);
+    expect(BudgetSchema.parse(b)).toBeTruthy();
+    expect(renderBudgetText(b)).toContain("(measured-vice, bytes derived-listing)");
+  });
+
   it("names the members with no figure as unknown and never calls the set under", () => {
     const b = computeBudget([
       { name: "stable_raster_irq", cost: { cycles_per_frame: 124, basis: "arithmetic" } },

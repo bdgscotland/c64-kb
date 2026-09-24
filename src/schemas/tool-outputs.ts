@@ -160,6 +160,9 @@ const TechniqueCostSchema = z.object({
   // Schema 27: a measured typical frame beside a worst-frame cycles_per_frame.
   cycles_per_frame_typical: z.number().int().optional(),
   basis: CostBasisSchema,
+  // **Cost bytes basis:** (#72): the basis of bytes_code, bytes_data and
+  // zp_bytes when the page states one apart; `basis` then covers the rest.
+  bytes_basis: CostBasisSchema.optional(),
   // **Cost measured on:** the recipe the figures came from, and its
   // conditions ("screen blanked", "whole PRG"); **Cost includes:** the
   // techniques whose work is inside this figure (schema 27).
@@ -493,6 +496,9 @@ export const BriefingSchema = z.object({
         cycles_per_frame_typical: z.number().int().optional(),
         bytes: z.number().int().optional(),
         basis: CostBasisSchema,
+        // The page's **Cost bytes basis:** when it states one apart (#72);
+        // basis then covers the cycles only.
+        bytes_basis: CostBasisSchema.optional(),
         measured_on: z.string().optional(),
       }),
     ),

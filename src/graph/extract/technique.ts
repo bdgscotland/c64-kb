@@ -30,6 +30,10 @@ const RASTER_BAND_LINE = /^\*\*Raster band:\*\*\s+(.+)$/;
 // because a number without an honest basis is worse than no number.
 const COST_LINE = /^\*\*Cost:\*\*\s+(.+)$/;
 const COST_BASIS_LINE = /^\*\*Cost basis:\*\*\s+(.+)$/;
+// **Cost bytes basis:** (#72), optional: the basis of bytes_code,
+// bytes_data and zp_bytes when it differs from the cycles'. Without it the
+// one **Cost basis:** word covers every figure, as before.
+const COST_BYTES_BASIS_LINE = /^\*\*Cost bytes basis:\*\*\s+(.+)$/;
 const COST_PAIR = /^([a-z_]+)\s*=\s*(-?\d+)$/;
 // **Cost measured on:** names the recipe the Cost figures were measured on
 // or counted from, with an optional parenthetical of conditions ("screen
@@ -142,6 +146,7 @@ const LINE_RULES: readonly { re: RegExp; apply: (value: string, c: Current) => v
   { re: REQUIRES_LINE, apply: (v, c) => (c.meta.requires = nameList(v, true)) },
   { re: RASTER_BAND_LINE, apply: applyRasterBand },
   { re: COST_BASIS_LINE, apply: (v, c) => (c.meta.costBasis = v.trim().replace(/`/g, "")) },
+  { re: COST_BYTES_BASIS_LINE, apply: (v, c) => (c.meta.costBytesBasis = v.trim().replace(/`/g, "")) },
   { re: COST_MEASURED_ON_LINE, apply: (v, c) => (c.meta.costMeasuredOn = v.trim()) },
   { re: COST_INCLUDES_LINE, apply: (v, c) => (c.meta.costIncludes = nameList(v, true)) },
   { re: CLAIMS_BASIS_LINE, apply: (v, c) => (c.meta.claimsBasis = v.trim().replace(/`/g, "")) },

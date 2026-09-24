@@ -52,6 +52,8 @@ const PlanPhaseSchema = z.object({
   high: z.number().int(),
   floor: z.number().int(),
   verdict: BudgetVerdictSchema,
+  // The weakest **Cost basis:** among the summed cycle figures; a page's
+  // **Cost bytes basis:** never weakens it (#72).
   weakest_basis: CostBasisSchema.nullable(),
   irq_slots: z.number().int(),
   notes: z.array(z.string()),
@@ -125,6 +127,9 @@ export const PlanBudgetSchema = z.object({
     ),
     inside: z.array(z.object({ name: z.string(), by: z.string() })),
     without_bytes: z.array(z.string()),
+    // The weakest byte basis among contributors (#72): a page's **Cost bytes
+    // basis:** where it states one, else its **Cost basis:**.
+    weakest_basis: CostBasisSchema.nullable(),
   }),
   verdict: BudgetVerdictSchema,
   assumptions: z.array(z.string()),

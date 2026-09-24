@@ -77,6 +77,8 @@ export type GraphEntity =
       chip?: string;
       cost?: TechniqueCost;
       cost_basis?: CostBasis;
+      // **Cost bytes basis:** (#72): the byte figures' basis when it differs.
+      cost_bytes_basis?: CostBasis;
       // **Cost measured on:** / **Cost includes:** (schema 27).
       cost_recipe?: string;
       cost_conditions?: string;

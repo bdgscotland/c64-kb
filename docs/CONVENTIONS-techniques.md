@@ -204,10 +204,32 @@ number with no stated basis is worse than no number.
 One basis word covers the whole line, so it is the weakest that applies to
 any figure on it: a line with a measured cycle count and an estimated byte
 count says `estimated`. Never write `measured-vice` for a number that was
-not measured or that the page does not state as measured. The values ride
-the Technique node as `cost_<key>` and `cost_basis`; `c64_technique_lookup`
-returns them as `cost` and the briefing tools add them up over a proposed
-set, naming the techniques with no line.
+not measured or that the page does not state as measured.
+
+When the byte figures stand on a different rung from the cycles, an
+optional `**Cost bytes basis:**` line gives them their own word. It covers
+`bytes_code`, `bytes_data` and `zp_bytes`; `**Cost basis:**` then covers
+the rest (the cycle figures, `lines_active`, `irq_slots`,
+`sprites_per_line`), and each word is the weakest in its own group.
+
+```
+**Cost:** cycles_per_frame=1471, bytes_code=577, bytes_data=33
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+```
+
+Without the line, `**Cost basis:**` covers every figure, as it always has.
+Before #72 the line did not exist, so ten pages with VICE-measured cycles
+said `derived-listing` or `arithmetic` because of their bytes, and
+`c64_plan_budget` reported their cycle sums as weaker than they were. A
+bytes basis word outside the set drops the byte figures with a warning and
+keeps the rest; a bytes basis line with no byte figure is ignored with a
+warning.
+
+The values ride the Technique node as `cost_<key>`, `cost_basis` and
+`cost_bytes_basis`; `c64_technique_lookup` returns them as `cost` (with
+`bytes_basis` when the page states one) and the briefing tools add them
+up over a proposed set, naming the techniques with no line.
 
 Two optional lines follow the basis (schema 27). A figure belongs to the
 implementation it was measured on, and one figure can already hold another
