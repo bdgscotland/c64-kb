@@ -394,6 +394,16 @@ describe("stores logged at the interrupt's clock", () => {
     const hits = [...banked, st(0x1f4, 0x00, 4), st(0x1f5, 0x30, 5), jmp, irq(100, 0xf3, "STA"), push2];
     expect(analyseIrqChain(hits, PAL, 0).entries.map((e) => e.target)).toEqual([null]);
   });
+  it("keeps an ordinary page-1 store at the interrupt's clock, outside its three push addresses", () => {
+    // The interrupted STA $0181 writes a known byte; the pushes land on $01F6-$01F4 (SP $F3).
+    const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($0180)" };
+    const pushes = [2, 1].map((k): Hit => ({ ...irq(100, 0xf3, "STA"), addr: 0x1f3 + k, a: 0x31 }));
+    const hits = [...banked, st(0x180, 0x00, 4), st(0x181, 0x30, 5), jmp];
+    hits.push(st(0x181, 0x31, 100), irq(100, 0xf3, "STA"), ...pushes);
+    const r = analyseIrqChain(hits, PAL, 0);
+    expect(r.entries.map((e) => e.target)).toEqual([0x3100]);
+    expect(r.unknowns.join(" ")).not.toMatch(/pushed over pointer byte/);
+  });
   it("reads a pointer written at that clock as the entry's target", () => {
     const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($4000)" };
     const hits = [...banked, st(0x4000, 0x00, 4), st(0x4001, 0x30, 5), jmp, st(0x4001, 0x31, 100), irq(100)];
