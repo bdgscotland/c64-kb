@@ -36,6 +36,9 @@ speed (measured with a CIA2 timer inside the program; rung 1).
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CLRCHN, CLOSE
+**Cost:** cycles_per_frame=3989946
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-save-load-seq-file (open, write and close of an 18-byte SEQ file, one call, true drive; NTSC, 3,836,200 on PAL)
 
 ### Why
 
@@ -175,6 +178,19 @@ afterwards was not measured here. Two ways round it:
 - **Text files for other software.** Write `$0D` after each line; the
   drive stores it as an ordinary byte.
 
+### Cycle budget
+
+A write is a transition, not a play frame: 3,836,200 cycles on PAL and
+3,989,946 on NTSC for the open, 18 bytes and close of
+`recipes/oscar64/save-load-seq-file.md`, about 195 PAL frames (CIA2
+timers chained, true drive, rung 1). The Cost line carries the NTSC
+figure so a budget names it; it is above one frame, so a budget reports
+it as multi-frame and never sums it into play. Scratch-then-write costs
+more: `templates/adventure` measures 4,463,001 cycles on PAL and
+4,636,828 on NTSC for a scratch, the write of its save record and the
+reply (VICE, true drive). This page had no Cost line before, so a plan
+that saved a file could not say what the save costs.
+
 ### Recipes
 
 - `recipes/kickassembler/file-io-roundtrip.md`
@@ -189,6 +205,9 @@ afterwards was not measured here. Two ways round it:
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Cost:** cycles_per_frame=530736
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-save-load-seq-file (open, read and close of an 18-byte SEQ file, one call, true drive; NTSC, 511,742 on PAL)
 
 ### Why
 
@@ -299,6 +318,15 @@ interaction with file I/O".
 - **Two channels at once.** A second file on secondary 4 with its own
   logical number can stay open while this one reads; switch with
   CHKIN/CHKOUT and CLRCHN between them.
+
+### Cycle budget
+
+511,742 cycles on PAL and 530,736 on NTSC for the open, 18 bytes and
+close of `recipes/oscar64/save-load-seq-file.md`, about 26 PAL frames
+(CIA2 timers chained, true drive, rung 1); the Cost line carries the
+NTSC figure, a multi-frame transition cost as for the write.
+`templates/adventure` measures 515,221 on PAL and 562,405 on NTSC for
+its record read and the drive's reply.
 
 ### Recipes
 

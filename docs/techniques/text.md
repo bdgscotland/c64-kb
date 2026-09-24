@@ -23,8 +23,9 @@ measured here.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** GETIN
-**Cost:** cycles_per_frame=200
-**Cost basis:** estimated
+**Cost:** cycles_per_frame=361, cycles_per_frame_typical=107
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-text-input (the frame's work after the wait: a key frame at worst, an empty queue typical; KERNAL IRQ outside the figure; PAL)
 
 ### Why
 
@@ -143,8 +144,14 @@ records the same limit).
 
 ### Cycle budget
 
-Not raster-critical. The poll is one GETIN call on an empty queue per
-frame, well inside any frame budget; the cost was not measured here.
+Not raster-critical. Traced in the recipe in VICE x64sc 3.10 (PAL),
+from the end of `vic_waitFrame()` to the loop's branch back, with the
+keys `abc`, DEL and `defghijk` typed through `-keybuf`: 105 to 107
+cycles on a frame with an empty queue, 174 to 361 on a
+frame that takes a key, the rejected keys past the cap included. The
+KERNAL's keyboard IRQ is not in these figures; one frame that it
+interrupted read 326. An earlier Cost line said 200, an estimate made
+before this measurement.
 
 ### Recipes
 
@@ -568,9 +575,9 @@ rows (about 12.5 a byte) or 16 a byte for one row.
 **Region:** both
 **Uses registers:** (none)
 **Requires:** text_input_line
-**Cost:** cycles_per_frame=14908
+**Cost:** cycles_per_frame=15206
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-adventure-engine (one command's parse and turn, PAL, display on)
+**Cost measured on:** oscar64-adventure-engine (one command's parse and turn, NTSC, 14,908 on PAL; display on)
 
 ### Why
 
@@ -717,7 +724,7 @@ is loose; half of it is empty on most entries.
 
 ### Cycle budget
 
-The engine's work for one command fits one PAL frame (14,908). Printing
+The engine's work for one command fits one frame (14,908 on PAL, 15,206 on NTSC). Printing
 its output does not: up to 109,866 cycles, 5.6 frames, almost all of it
 the C scroll at about 17,400 a line. Budget the terminal first; print a
 line per frame or scroll in assembly if anything animates.
@@ -734,8 +741,10 @@ interrupts off and the display on, on PAL (NTSC in brackets):
   with items listed costs 7,800 to 12,000, depending on how much text
   is decoded (debug build).
 - **Parse and turn of one command, the worst:** 14,908 (15,206), the
-  winning command. This is the Cost line: one command's work, within a
-  PAL frame of 19,656 cycles.
+  winning command. The NTSC 15,206 is the Cost line, one command's work,
+  within both a PAL frame of 19,656 cycles and an NTSC frame of 17,095;
+  the line carried the PAL 14,908 before, while other pages state the
+  larger region's figure.
 - **Scanning the whole table with no match:** 1,695 cycles for 17
   entries (1,609), about 100 an entry. A 200-entry table would take
   about 20,000 cycles for a command that matches nothing, a frame on

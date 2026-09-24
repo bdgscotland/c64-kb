@@ -635,7 +635,16 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect([pal.low, pal.high]).toEqual([5602, 5810]);
     expect(pal.fixed_losses.badlines).toBe(1075);
     expect(pal.verdict).toBe("undetermined");
-    expect(b.phases.find((p) => p.phase === "transition")?.unknown.length).toBe(3);
+    // #45: kernal_file_write_seq and kernal_file_read_seq gained Cost lines
+    // (oscar64-save-load-seq-file, 3,989,946 and 530,736 NTSC), so they are
+    // named as multi-frame instead of unknown; error_channel_check is still unknown.
+    const transition = b.phases.find((p) => p.phase === "transition");
+    expect(transition?.unknown).toEqual(["error_channel_check"]);
+    expect(transition?.excluded.map((e) => [e.name, e.reason, e.cycles]).sort()).toEqual([
+      ["kernal_file_read_seq", "multi_frame", 530736],
+      ["kernal_file_write_seq", "multi_frame", 3989946],
+    ]);
+    expect(transition?.verdict).toBe("undetermined");
     expect(b.bytes.excluded.map((e) => e.name).sort()).toEqual(["frame_sync_loop", "lfsr_random"]);
   });
 
@@ -655,7 +664,9 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.excluded).toEqual([
       { name: "char_scroll_buffer_h", reason: "included_by", by: "soft_scroll_h" },
     ]);
-    expect(pal.high).toBe(990 + 1198 + 7938);
+    // raster_bars 1,471 (#32: measured in kickassembler-raster-bars, NTSC; 990 was an estimate)
+    // + sid_play_routine_pattern 1,198 + soft_scroll_h 7,938.
+    expect(pal.high).toBe(1471 + 1198 + 7938);
     expect(pal.unknown).toEqual([]);
     expect(pal.to_measure).toEqual([]);
     expect(pal.verdict).toBe("fits");

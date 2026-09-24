@@ -105,7 +105,7 @@ were removed and are not claimed here.
 **Region:** both
 **Uses registers:** (none)
 **Cost:** cycles_per_frame=52, bytes_data=2048
-**Cost basis:** arithmetic
+**Cost basis:** derived-listing
 
 ### Why
 
@@ -163,6 +163,14 @@ only the two operand loads and the two result stores move, because the
 four patch stores write into the routine's own code and stay absolute.
 The page-aligned tables are what keep the patch to one byte: without
 alignment the high address byte would need a carry as well.
+
+No recipe carries this routine, so the Cost line has no measured-on
+line: its 52 cycles are the measurement above, made by `fpcheck.c` at
+the end of this page (CIA1 timer B, rung 1), and its 2,048 bytes are
+the four 512-byte tables in that program's Oscar64 map (`sqr_lo` at
+`$0F00` to `nsq_hi` ending at `$16FF`). The basis word was
+`arithmetic` before; both figures come from instruments, and
+`derived-listing` is the weaker of the two.
 
 ### The optimiser will move the patched instructions
 
@@ -724,7 +732,7 @@ its result is a screen the character ROM can decode.
 **Region:** both
 **Uses registers:** D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E
 **Cost:** cycles_per_frame=14, bytes_code=1947
-**Cost basis:** arithmetic
+**Cost basis:** derived-listing
 **Cost measured on:** oscar64-lfsr-random (one 8-bit step, screen blanked; bytes are the whole PRG)
 **Claims:** sid_voice_3 (init), sid_voice_3_readback (init), sid_filter_volume (init), cia1_timer_a (reads)
 **Claims basis:** derived-listing
@@ -856,7 +864,10 @@ interrupts the count (rung 1). Empty loop 9,476 cycles; 8-bit step
 (13 without the tap, 14 with, absolute addressing) and 19.4 for the
 16-bit one (15 without, 24 with; half the steps take the tap). In zero
 page the same sequences cost 11 to 12 and 13 to 20 (rung 3, from the
-instruction table, not measured).
+instruction table, not measured). The Cost line's 14 is the dearer 8-bit step,
+the one with the tap (the measured average is 13.5), and its bytes are the recipe's whole PRG less the load
+address, from the build; its basis word was `arithmetic` before, which
+neither figure is.
 
 ### Recipes
 

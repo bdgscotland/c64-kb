@@ -890,6 +890,18 @@ reading, and a late build shows the old half again (MISSED) instead of a
 half-written table. The unsorted actor tables are not doubled; only the
 main loop touches them.
 
+MISSED counts one event: a frame IRQ that found no finished build.
+Work the main loop does after it sets `ready` (game logic, the
+statistics print) is outside that test. A pass whose later work runs
+past the next frame IRQ is late without moving MISSED; MISSED moves
+only when the lateness reaches a build. To count every late pass, read
+`frames` when a pass starts and again when all of its work has ended;
+a difference above 1 is a pass that took more than a frame. The
+vertical shmup starter's first drop counter, written the way MISSED
+is, missed every overrun in its build, and the frame-counter
+comparison caught them (the #39 starter builds, reported by their
+builder; not re-run here).
+
 ### Rejecting the ninth sprite
 
 A sorted entry at accepted position a ≥ 8 goes to slot a mod 8, which last

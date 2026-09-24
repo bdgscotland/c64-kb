@@ -1575,6 +1575,21 @@ The 10-frame PAL build, one thing changed at a time, one run each:
 Region PAL rests on the five NTSC runs above and the one on the recipe
 page; no NTSC run has hung, and nothing here says none can.
 
+More binaries that did not hang, each a different phase, none with a
+frame wait written for this pitfall:
+
+| Binary | PRG | First disk call | PAL | NTSC |
+|---|---|---|---|---|
+| `templates/adventure`, autopilot build | 15,435 bytes | OPEN 2,060,200 cycles after the program's first instruction, after about 105 frames of play (traced, `$F34A`) | ran, every later OPEN and CLOSE reached | ran |
+| `templates/adventure`, `DISKTEST=2` build | 15,161 bytes | LOAD typed first after a cold start | ran (`make disktest`, the starter's README) | ran |
+
+Sizes are from Oscar64 1.32.271 on this machine; the autopilot run was
+traced here in VICE x64sc 3.10 with a true-drive 1541, wobble off and a
+fresh disk, 18,000,000 cycles. The #39 starter builders also saw an
+action-puzzle build and an adventure build open a file with no wait and
+not hang, on both models (their scratch builds, not re-run here). None
+of this makes a phase safe: each run answers for its own binary.
+
 ```text
 // BAD: the read is the first thing on the bus and its return is assumed
 krnio_setnam("HISCORE,S,R");

@@ -965,6 +965,20 @@ Game over, bad:    63 of the banner's 185 white pixels visible, the
 Game over, fixed:  185 white pixels, no sprite pixels, $D01F 00.
 ```
 
+### The same fault at program start
+
+The first state inherits the power-on values, and it costs cycles as
+well as pixels. A build of the #39 demo starter enabled its eight
+sprites with `$D015` before its first `chain_step` had written their
+positions, so they sat at their power-on Y and their DMA fell on lines
+where the frame's work ran: the music's first frame measured 1,350
+cycles against 1,008 once the sprites were placed before the enable
+(VICE x64sc 3.10, PAL, a scratch build of that starter; rung 1, not
+re-run here). `templates/demo` now writes the positions first
+(`place_sprites` before the `$D015` store in `src/part_main.asm`). A
+program that times its first frames should place its sprites before it
+enables them, or the first figures carry DMA that play never has.
+
 ### Cross-references
 
 - Registers: `D015`, `D010`, `D017`, `D01B`, `D01C`, `D01D`: the

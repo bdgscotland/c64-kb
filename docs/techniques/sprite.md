@@ -150,8 +150,9 @@ sine-table motion, a demonstration payload.
 **Uses registers:** D015, D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs, changes_sprite_set
-**Cost:** cycles_per_frame=700, irq_slots=3, bytes_code=900, sprites_per_line=8
-**Cost basis:** estimated
+**Cost:** cycles_per_frame=1667, irq_slots=3, bytes_code=977, sprites_per_line=8
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-sprite-multiplex-24 (three fixed bands, no sort, the $EA31 exit once, the animation left out; screen on; PAL and NTSC)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -275,8 +276,21 @@ per pass, 80–100 cycles to sort, under 250 cycles total (~1.3 %)"; every one o
 those figures was too small by an order of magnitude, and they described a
 three-pass design that `vspr_*` does not implement.
 
+The Cost line is the fixed-band form, which needs no sort: three IRQs,
+each writing eight sprites. Traced in `recipes/kickassembler/sprite-multiplex-24.md`
+in VICE x64sc 3.10, from each interrupt's acceptance to the end of `RTI`:
+501 or 502 cycles for each of bands 1 and 2, and 662 or 663 for band 0
+without its `JSR animate` (the band 0 handler exits through `$EA31`);
+1,665 to 1,667 a frame on PAL and 1,666 to 1,667 on NTSC. The recipe's
+animation of 24 sprites adds 1,538 to 1,555, and is game logic, so the
+line leaves it out. `bytes_code` is the recipe's code segment
+(`$0900-$0CD0`), install and animation included, from KickAssembler's
+memory map. The line said 700 cycles and 900 bytes before, both
+estimates. A sorted `vspr_*` multiplexer costs the 5,000 and more above.
+
 ### Recipes
 
+- `recipes/kickassembler/sprite-multiplex-24.md` (three fixed bands of eight, no sort; the Cost line's figures)
 - `recipes/oscar64/sprite-multiplex-8.md` (scales directly; raise VSPRITES_MAX)
 
 ---
@@ -967,9 +981,9 @@ cycle budget for the KERNAL-vector figures).
 **Region:** both
 **Uses registers:** D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D012, D015, D017, D01D
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=200, bytes_data=512, irq_slots=1
-**Cost basis:** estimated
-**Cost measured on:** kickassembler-sprite-sine-chain (eight sprites; not timed)
+**Cost:** cycles_per_frame=644, bytes_data=768
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-sprite-sine-chain (eight sprites, the update loop and the $D010 write, frame-counter print left out; in the lower border; PAL and NTSC)
 **Claims:** sprite_0-7 (owns)
 **Claims basis:** derived-listing
 
@@ -1087,13 +1101,22 @@ cost elsewhere.
 
 ### Cycle budget
 
-Rung 3, from the instruction costs of the recipe's loop: about 68 cycles
-per sprite, plus 12 for a sprite whose high byte is set, plus the
-`$D010` write and the counter, so roughly 600 cycles or ten raster lines
-per frame for all eight. It runs below the window, where the CPU is
-otherwise idle. Not measured with a timer here. Sprite DMA is unchanged
-by the effect: the eight sprites are on every frame whether or not they
-move.
+Measured in the recipe, traced in VICE x64sc 3.10 from the frame
+counter's increment to the `$D010` store, over 459 PAL and 521 NTSC
+frames: 578 to 644 cycles, 578 plus 11 for each sprite past X 255,
+the same on both models; 608 on average. That is about ten raster lines
+of the lower border, where the CPU is otherwise idle. The frame-counter
+print after it is the recipe's own and is not in the figure. The first
+frame after start, the only one whose sprites had not been placed yet,
+measured 836 on PAL and 820 on NTSC; its cause was not traced. Sprite DMA is unchanged by the
+effect: the eight sprites are on every frame whether or not they move.
+
+The Cost line said 200 cycles, estimated and not timed, 512 bytes of
+tables and one IRQ slot. The recipe polls `$D012` and takes no
+interrupt, and its tables are three of 256 bytes (`xlo`, `xhi`,
+`ysin`), 768 from the listing. A demo starter that timed this loop with
+CIA2 timer B measured 625 typical and 670 worst (`templates/demo`,
+the #39 starter builds).
 
 ### Recipes
 
@@ -2087,9 +2110,9 @@ when the entry holds (instruction-table arithmetic, not measured here).
 **Uses registers:** D018, D012
 **Uses kernal:** (none)
 **Requires:** unrolled_loops
-**Cost:** cycles_per_frame=1890, bytes_code=2608, bytes_data=2688
+**Cost:** cycles_per_frame=1890, bytes_code=1304, bytes_data=1344
 **Cost basis:** derived-listing
-**Cost measured on:** kickassembler-software-sprite-preshifted (one object drawn and erased, screen blanked)
+**Cost measured on:** kickassembler-software-sprite-preshifted (one object drawn and erased, with its own blit, erase and tables; screen blanked)
 
 ### Why
 
@@ -2208,11 +2231,12 @@ inside the 6,700-cycle race-free blank the pitfall page quotes even if
 the canvas filled the screen. Six such objects would not be: at 11,340
 they would spill into the display, which is where
 `full_field_redraw_exceeds_vblank` starts. The `cycles_per_frame` figure
-on the Cost line is one object, drawn and erased. The byte figures are
-the built recipe's two objects: 2,608 bytes of code, which is 1,009 for
-one unrolled blit routine and 295 for its erase, twice; and 2,688 bytes
-of tables, 1,344 an object (the assembler's own byte counts for the
-recipe; the timing and print harness is not counted).
+on the Cost line is one object, drawn and erased, and so are the byte
+figures: 1,304 bytes of code, 1,009 for its unrolled blit routine and
+295 for its erase, and 1,344 bytes of tables. The built recipe has two
+objects, 2,608 and 2,688 bytes (the assembler's own byte counts; the
+timing and print harness is not counted). An earlier Cost line gave
+the two objects' bytes beside one object's cycles.
 
 ### Recipes
 
