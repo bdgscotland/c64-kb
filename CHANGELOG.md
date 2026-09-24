@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 829, schema 39, tools 2.15.0, package 0.28.0.
+Data 830, schema 39, tools 2.15.0, package 0.28.0.
+
+**Harness gaps from the game test, and music during disk loads (data
+830; #107, #108).** LOAD receives through ACPTR, so sprites over
+badlines hang it as they hang a sequential read: measured from 3
+sprites on PAL and 4 on NTSC; the serial-I/O pitfall and the
+compatibility check now name LOAD. The plan gate reads the by-phase
+compatibility output and `name ×N`. Every `**Measured frame:**` line on
+a design is kept (the extractor kept one per phase and region). The
+shmup-vertical panel showed four of its five rows (row 24 under the
+border): the split runs 8 lines higher with RSEL 0, sprites stop at
+line 179, and the starter passes 61/61 checks and its phases, stage,
+game-over, joystick and long-play runs. New recipe `music-during-load`:
+over a 4 KB load a CIA1-timer-driven tune loses 28-35 % of its frames
+(the KERNAL's `$DC0D` polls clear timer A's flag too), a raster-driven
+one 12-18 %, and a CIA2 frame clock with catch-up none; technique
+`music_during_kernal_load`. New recipe `lfsr-seed-cia`: a seed from the
+frame count and CIA1 timer A, no SID. `memory-map 02A7` answered
+nothing because five regions shared the heading "Unused"; they are
+renamed and a test refuses a repeated region name.
 
 **Nine VIC effects measured, and a recipe that read uninitialised RAM
 (data 829; #19 group V, #109).** New KickAssembler recipes pinned on
