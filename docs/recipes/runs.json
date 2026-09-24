@@ -1553,7 +1553,7 @@
     }
   },
   "kickassembler/pseudo-3d-road": {
-    "cycles": 20000000,
+    "cycles": 21100000,
     "models": [
       "pal",
       "ntsc"

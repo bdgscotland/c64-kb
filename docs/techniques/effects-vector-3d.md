@@ -1152,9 +1152,9 @@ All cycle counts above are approximate and vary with the handler, the table layo
 **Region:** both
 **Uses registers:** D011, D012, D016, D018, D019, D01A, D021, D022, D023, DC04, DC05, DC0E
 **Requires:** stable_raster_irq, irq_chain_table
-**Cost:** cycles_per_frame=18343
+**Cost:** cycles_per_frame=17975
 **Cost basis:** measured-vice
-**Cost measured on:** kickassembler-pseudo-3d-road (PAL, the frame of each pair in which the table computation runs: the CPU is busy from line 0 to cycle 10 of line 291, the fine chain included; see Cycle budget)
+**Cost measured on:** kickassembler-pseudo-3d-road (PAL, the frame of each pair in which the table computation runs: the CPU is busy from line 0 to cycle 20 of line 285 at the latest, the fine chain included; see Cycle budget)
 
 ### Why
 
@@ -1172,11 +1172,13 @@ $D016 XSCROLL on every raster line of the road area.
 The curvature is produced by a running delta: each step, the road centre cx
 advances by dx, and dx itself advances by the current segment's fixed-point
 curve value. Four segments of 25 lines each (straight, right bend, straight,
-left bend) are meant to give one S-curve over the 100 road lines; as scroll_z
+left bend) give one S-curve over the 100 road lines; as scroll_z
 advances one unit per road step and wraps at 100, the curve pattern scrolls
-toward the viewer. (In the recipe a step takes two frames, and its cx
-arithmetic saturates, so the road bends right and never left; see the
-recipe's "What it does not establish".)
+toward the viewer. In the recipe a step takes two frames, and its
+screenshots show a left bend (PAL) and a right one (NTSC). cx is unsigned
+and dx signed, so the add must test the carry by dx's sign; an earlier
+version of the recipe treated every carry as overflow, and the road bent
+right and never left.
 
 ### How
 
@@ -1221,9 +1223,15 @@ at every badline.)
 **cx computation.** The forward pass runs from i = 0 (nearest) to i = 99
 (farthest). cx begins at 160.0 in 8.8 fixed point. At each step: cx += dx,
 then dx += curve[segment], where segment = (i + scroll_z) / 25 & 3 and the
-four curve values are 0, +51, 0, -51 in 8.8 (±0.20 pixels per line per line).
-The integer part of cx is stored in cx_hi_buf[i]. The backward pass fills
-xscroll_d16[j] from cx_hi_buf[99-j] for j = 0..99.
+four curve values are 0, +18, 0, -18 in 8.8 (±0.07 pixel per line per
+line). cx is an unsigned byte and dx signed: with dx >= 0 a carry out of
+the high byte means past 255, with dx < 0 a clear carry means below 0, and
+each clamps. Run in Python for all 100 scroll_z values, ±18 keeps cx in
+72..247 and cx - hw at 8 or more; ±20 reaches a clamp and ±24 puts the left
+edge below 0. (An earlier version gave ±51, which with the unsigned add
+pinned cx at 255.) The same pass stores cx_hi_buf[i] and the $D016 value
+for road line offset j = 99 - i. The right kerb column comes from the 9-bit
+sum cx + hw, since that passes 255 on the near rows.
 
 **IRQ exit.** The handlers exit via `pla/tay/pla/tax/pla/rti`, which pops the
 A, X and Y saved by the KERNAL dispatcher at $FF48 and then RTIs through the
@@ -1262,12 +1270,12 @@ artifact is more pronounced.
 
 Measured in VICE x64sc 3.10 (`recipes/kickassembler/pseudo-3d-road.md`, PAL; NTSC in the recipe):
 
-- Fine chain (CIA from road_irq1 start to fine_done stop): 6,560..6,563 cycles, every frame. The loop itself spans exactly 100 lines, 6,300 cycles (6,500 NTSC).
-- Coarse redraw (CIA-timed): 4,872..5,984 cycles over a run, 5,904 at scroll_z = 4; with the table copy, `publish` takes 6,494 cycles (lines 201..304).
-- Table computation: about 12,200 cycles (18,806 elapsed from its first instruction to its RTS, less the fine chain that interrupts it; arithmetic).
-- Together that is more than one frame, so the recipe takes a road step every two frames: in one frame the CPU is busy from line 0 to line 291, in the other for about 13,500 cycles.
+- Fine chain (CIA from road_irq1 start to fine_done stop): 6,559..6,563 cycles, every frame. The loop itself spans exactly 100 lines, 6,300 cycles (6,500 NTSC).
+- Coarse redraw (CIA-timed): 5,257..5,422 cycles over a run, 5,264 at scroll_z = 4, erasing the cells the road left included; with the table copy, `publish` takes 6,879..7,047 cycles (lines 201..310 to 1).
+- Table computation: about 11,200..11,300 cycles (17,747..17,884 elapsed from its first instruction to its RTS, less the fine chain that interrupts it; arithmetic).
+- Together that is more than one frame, so the recipe takes a road step every two frames: in one frame the CPU is busy from line 0 to line 285, in the other for about 13,600 cycles. On NTSC the pair leaves about 2,300 cycles of two frames spare; a slower build fell to one step every three frames (measured, see the recipe).
 
-(An earlier version gave 6,332 and 6,523 cycles and "approximately 5,000" for the tables, summed to about 18,000 per frame; the vertical-blank handler that did all of it in fact overran into the next frame.)
+(An earlier version gave 6,332 and 6,523 cycles and "approximately 5,000" for the tables, summed to about 18,000 per frame; the vertical-blank handler that did all of it in fact overran into the next frame. The figures before the #73 geometry fix were a redraw of 4,872..5,984, publish 6,494 and tables about 12,200.)
 
 Badline body: 20 CPU cycles PAL (22 NTSC), plus the 43-cycle stall, one full raster line. The STA write on cycle 4 lands before the stall begins on cycle 12.
 
