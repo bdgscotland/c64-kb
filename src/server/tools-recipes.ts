@@ -91,7 +91,7 @@ export const recipesForTool = defineTool({
 
 Purpose: Lets the agent discover what buildable examples are available before committing to a specific recipe. All filters are optional — omitting all returns the full recipe catalog.
 
-Inputs: All optional. 'toolchain' is one of oscar64 | kickassembler | cc65. 'region' is pal | ntsc | both (note: recipes with region='both' appear for any region filter). 'verified_on' is a MachineVariant name (c64c, ntsc, oldntsc, ...) or a region word (PAL, NTSC): only recipes verify:recipes runs on that variant, or on any variant of that region. 'technique' is an exact Technique.title match (Phase 2: no techniques yet — omit for now). 'file_format' is an exact FileFormat.name match (e.g. 'PRG').
+Inputs: All optional. 'toolchain' is one of oscar64 | kickassembler | cc65. 'region' is pal | ntsc | both (note: recipes with region='both' appear for any region filter). 'verified_on' is a MachineVariant name (c64c, ntsc, oldntsc, ...) or a region word (PAL, NTSC): only recipes verify:recipes runs on that variant, or on any variant of that region. 'technique' is an exact Technique name (e.g. 'stable_raster_irq'): recipes that IMPLEMENT it. 'file_format' is an exact FileFormat.name match (e.g. 'PRG').
 
 Output: {filter, recipes[{name, toolchain, output_format, region, source_doc}]}. Empty recipes array means no matches — try a broader filter.
 
@@ -101,7 +101,7 @@ Examples: {"toolchain": "oscar64"} → table of all Oscar64 recipes. {} → full
 
 See also: c64_recipe_lookup to fetch a specific recipe's full content. c64_toolchain_hint for pattern snippets without a complete recipe.
 
-Limitations: Returns graph metadata only — use c64_recipe_lookup to get the actual source code. technique filter is a no-op in Phase 2 (no Technique nodes yet).`,
+Limitations: Returns graph metadata only — use c64_recipe_lookup to get the actual source code.`,
   inputSchema: {
     toolchain: z.enum(["oscar64", "kickassembler", "cc65"]).optional().describe("Filter by toolchain"),
     region: z

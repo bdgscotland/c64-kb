@@ -18,6 +18,7 @@ import { startMcpServer } from "./server.ts";
 import { closeAll } from "./context.ts";
 import { definedOnly } from "./server/defined-only.ts";
 import { reFrameProfile, reIrqChain } from "./tools/re.ts";
+import { registerSetupCommands } from "./cli/setup.ts";
 
 const TOOLCHAINS = ["oscar64", "kickassembler", "cc65"] as const;
 const REGIONS = ["pal", "ntsc", "both"] as const;
@@ -62,6 +63,8 @@ program
   .hook("postAction", async (_program, action) => {
     if (action.name() !== "serve") await closeAll();
   });
+
+registerSetupCommands(program);
 
 program
   .command("version")

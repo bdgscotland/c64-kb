@@ -1,6 +1,6 @@
 {
   "name": "c64-kb",
-  "version": "0.16.1",
+  "version": "0.17.1",
   "description": "Commodore 64 knowledge base — CLI + MCP server with Qdrant vectors + FalkorDB graph",
   "license": "BSD-3-Clause",
   "type": "module",
@@ -38,7 +38,8 @@
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "knip": "knip"
+    "knip": "knip",
+    "check:prose": "node scripts/check-prose-edit.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -71,14 +72,14 @@
     "docs",
     "templates",
     "VERSION",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "docker-compose.yml"
   ],
   "exports": {
     "./package.json": "./package.json"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -88,5 +89,18 @@
     "better-sqlite3": true,
     "fsevents": false,
     "lefthook": false
+  },
+  "keywords": [
+    "commodore-64",
+    "c64",
+    "6502",
+    "mcp",
+    "model-context-protocol",
+    "knowledge-base",
+    "retro"
+  ],
+  "homepage": "https://github.com/bdgscotland/c64-kb#readme",
+  "bugs": {
+    "url": "https://github.com/bdgscotland/c64-kb/issues"
   }
 }

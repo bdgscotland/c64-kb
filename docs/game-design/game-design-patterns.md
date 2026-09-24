@@ -2,10 +2,10 @@
 
 # C64 Game Design Patterns
 
-Recurring mechanical patterns that C64 games use, described so that an AI
-agent can match the right pattern to a brief. Each section names the
-tradeoffs in C64 terms — cycle budgets, RAM budgets, and hardware
-constraints — so the choice is mechanical, not aesthetic.
+Recurring mechanical patterns in C64 games, written so an AI agent can
+match a pattern to a brief. Each section states the tradeoffs in C64 terms
+(cycle budgets, RAM budgets, hardware constraints), so the choice is
+mechanical, not aesthetic.
 
 Cross-references: `../techniques/sprite.md` for multiplexer mechanics and
 hardware sprite capabilities; `../techniques/scroll.md` for soft-scroll and
@@ -25,7 +25,7 @@ games use up to four distinct systems, sometimes in combination.
 
 Register $D01E reads back a bitmask of which sprites have overlapped
 another sprite during the last frame. Reading the register clears it. The
-chip sets bits automatically with zero CPU cost.
+chip sets the bits at no CPU cost.
 
 Constraints:
 
@@ -33,9 +33,9 @@ Constraints:
   If two separate collisions involve the same sprite in one frame, the
   register cannot distinguish them.
 - **Position-after-the-fact.** The register reflects the state at read time,
-  not at the frame-render cycle where the pixels overlapped. If you read at
-  the top of the game loop, the collision happened somewhere in the previous
-  frame.
+  not at the frame-render cycle where the pixels overlapped. Read at the
+  top of the game loop, it reports a collision from somewhere in the
+  previous frame.
 - **Multiplexed sprites break it.** When a hardware sprite is reused to
   represent two logical actors via a multiplexer, $D01E reports hardware
   sprite collisions, not logical actor collisions. A read after the first
@@ -60,12 +60,11 @@ Register $D01F records which sprites overlapped a non-zero (non-space)
 foreground character cell during rendering. Same single-bit-per-sprite
 design, same read-clears semantics.
 
-Constraints: identical to $D01E plus one more — the collision fires on
-any foreground pixel, including decorative tiles. If your map has purely
-decorative "solid-looking" character cells that are not walls, you must
-arrange the character set so decorative tiles appear as background-colored
-pixels at the ROM/RAM level (multicolor tricks) or use a separate solid
-map and ignore $D01F entirely.
+Constraints: those of $D01E, plus one: the collision fires on any
+foreground pixel, including decorative tiles. If the map has decorative
+"solid-looking" character cells that are not walls, arrange the character
+set so decorative tiles appear as background-colored pixels at the ROM/RAM
+level (multicolor tricks), or use a separate solid map and ignore $D01F.
 
 Use $D01F for: shmups where the terrain is a single-color foreground
 charset and any contact with it is fatal or obstructing.
@@ -111,11 +110,11 @@ pure 6510 arithmetic. Typical cost is 28–35 cycles per pair.
 ```
 
 At 8 actors, that is 28 pair-checks worst case (n*(n-1)/2). At 35 cycles
-per check, 28 pairs cost ~980 cycles — under 1 % of a PAL frame. At 16
-actors the cost is ~3920 cycles, still well within budget if bounded-box
-is the only collision layer.
+per check, 28 pairs cost ~980 cycles, under 1 % of a PAL frame. At 16
+actors the cost is ~3920 cycles, still within budget if bounding-box is
+the only collision layer.
 
-Use software bounding-box for: platformers where you need sub-tile accuracy
+Use software bounding-box for: platformers that need sub-tile accuracy
 for landing/hitting platforms, and for adventure games where the player
 rectangle must exactly enter a doorway hitbox.
 
@@ -215,7 +214,7 @@ than the visible area. The classic layout for a horizontally scrolling game:
   and color RAM, then update `scroll_col_offset`.
 
 The soft-scroll register ($D016 XSCROLL) handles the 0–7 pixel fine phase.
-When XSCROLL wraps, the column copy fires. This is the canonical
+When XSCROLL wraps, the column copy fires. This is the standard
 soft-scroll pattern described in `../techniques/scroll.md`. Decoding the
 map into that column (metatiles to characters and colour RAM, the RLE
 decoder, the CharPad import path) is `tile_map_render` on the same page,
@@ -232,8 +231,8 @@ as the player approaches a boundary.
 
 ### Compressed maps
 
-A 128-room dungeon at 40×25 tiles per room is 128 KB uncompressed — well
-above the 64 KB address space. Compression is mandatory.
+A 128-room dungeon at 40×25 tiles per room is 128 KB uncompressed, well
+above the 64 KB address space, so compression is mandatory.
 
 **RLE:** Consecutive identical tile runs are stored as (count, tile). The
 ratio depends on the room: three 40×22 rooms measured in
@@ -249,8 +248,8 @@ cycle figure matches what was measured for this format.
 
 **Dictionary / token substitution:** Repeated 2×2 or 4×4 tile blocks are
 assigned token IDs. The map stores tokens; the decoder expands them into
-screen RAM. Achieves 8:1 or better on repeating tilesets (castle brickwork,
-cave walls). Costs more decoder RAM but compresses aggressively.
+screen RAM. It reaches 8:1 or better on repeating tilesets (castle
+brickwork, cave walls), at the cost of more decoder RAM.
 
 For disk-based games, the decompressor runs during the load of each level.
 For cartridge or single-load games, all levels must decompress from a
@@ -260,10 +259,10 @@ banked ROM into the map buffer on demand.
 
 ## Enemy / actor state machines
 
-All moving non-player objects are actors. The C64 enforces an implicit actor
-limit through the sprite system: eight hardware sprites per frame. Multiplexed
-setups handle 16–32 logical sprites; software-rendered actors (character
-graphics) can go higher but at steep cycle cost.
+All moving non-player objects are actors. The sprite system sets the C64's
+actor limit: eight hardware sprites per frame. Multiplexed setups handle
+16–32 logical sprites; software-rendered actors (character graphics) can go
+higher at a high cycle cost.
 
 ---
 
@@ -331,8 +330,8 @@ body. A simple patrol enemy handler (move, wall-check, reverse) runs in
 **Path-based:** Actor follows a pre-baked waypoint list stored in ROM.
 State byte indexes the current waypoint. On each update, move toward
 waypoint[state]; when within 2 pixels, increment state to the next
-waypoint; wrap at the end. Zero decision logic, predictable, suitable for
-fixed patrol routes in platformers and maze games.
+waypoint; wrap at the end. No decision logic and predictable; suits fixed
+patrol routes in platformers and maze games.
 
 ```asm
 ; Simplified path follower
@@ -522,13 +521,13 @@ flag; the pool is what that becomes once counts vary per wave.
 
 ### Single-buffer IRQ-driven scroll
 
-The dominant C64 pattern. The game runs one logical screen buffer. A raster
+The most common C64 pattern. The game runs one logical screen buffer. A raster
 IRQ fires at the bottom of the playfield to swap sprite pointers and perform
 any split-screen HUD work. Scroll column copies happen in the vertical blank
 IRQ. Everything is single-buffered: the CPU writes to screen RAM while the
 VIC-II reads from it, which is safe because writes and reads contend only
 during the 8 raster lines of badlines, producing at most one garbled
-character per badline — the classic "scroll tear" that well-timed VBlank
+character per badline. This is the "scroll tear" that well-timed VBlank
 copies avoid.
 
 The frame structure:
@@ -568,7 +567,7 @@ swap the VIC-II base address ($D018) to flip. The layout, the sprite
 pointer block that moves with the page, and the frame-parity discipline
 are `screen_double_buffer_d018` in `../techniques/memory-banking.md`, with
 the recipe `../recipes/oscar64/double-buffer.md` and a companion that shows
-the corrupted sprite you get without the pointer mirror.
+the corrupted sprite that appears without the pointer mirror.
 
 Memory cost: 1 KB for the second screen RAM (an earlier version of this
 section said 2 KB). Color RAM ($D800–$DBFF) cannot be double-buffered
@@ -650,9 +649,9 @@ window. It is not shadowed by any ROM. Convention in C64 games:
 - `$C300–$CFFF`: Overflow for large actor tables or a secondary map buffer
   when the main buffer at $0800 is insufficient.
 
-This layout is a convention, not a hardware requirement. Its value is that
-the MCP tools in this KB assume it when generating code, so briefings and
-recipes stay consistent.
+This layout is a convention, not a hardware requirement. The MCP tools in
+this KB assume it when generating code, so briefings and recipes stay
+consistent.
 
 ---
 
@@ -668,7 +667,7 @@ game fits in one session. Simplest; zero save-system code.
 protocol) to write the $C100–$C1FF persistent state block to cassette.
 Load it back with `LOAD`. Cassette save of 256 bytes takes ~10 seconds on
 a stock 1530 datasette. Acceptable for turn-based or RPG games where the
-player expects a save ritual.
+player expects to wait for a save.
 
 **Disk write.** Open a sequential or relative file on the 1541 via the
 KERNAL `OPEN`/`PRINT#`/`CLOSE` sequence and write the persistent state
@@ -681,8 +680,8 @@ round-trip are `kernal_file_write_seq`, `kernal_file_read_seq` and
 
 ### Save-file policy: first run, replace, version, missing drive
 
-The file calls are the small part. What a game has to decide around
-them is below; every figure is from
+The file calls are the small part; the decisions around them follow.
+Every figure is from
 `../recipes/oscar64/high-score-persist.md`, measured in VICE x64sc 3.10
 with its 1541 emulation and a disk formatted by c1541, unless marked.
 The bare call sequences are in `../recipes/oscar64/save-load-seq-file.md`
@@ -753,9 +752,8 @@ channel then hangs with no timeout (same page, CHKIN entry), and a
 status read through `krnio_gets` starts with CHKIN; an earlier build of
 the recipe did exactly that and sat with its title line alone on screen
 after 24,000,000 cycles. So the OPEN whose result decides whether the
-drive exists must be one that sends bytes, the save file's own OPEN for
-read is the natural one, and no status read may run before it has
-succeeded.
+drive exists must be one that sends bytes (the save file's own OPEN for
+read serves), and no status read may run before it has succeeded.
 
 **KERNAL banked in.** Every call in the sequence is a KERNAL call and
 the serial code drives CIA2 directly, so the ROM at $E000-$FFFF and
@@ -800,7 +798,7 @@ Raster IRQ at line 216 (after last playfield row):
 ```
 
 Both HUD areas use the same physical screen RAM ($0400–$07E7). The split
-just changes which charset the VIC-II uses to render the character codes in
+changes only which charset the VIC-II uses to render the character codes in
 those rows. Sprites can cross the split freely; only the character rendering
 changes.
 
@@ -849,7 +847,7 @@ write to screen RAM. Extract low nibble with AND #$0F, add offset, write.
     sta $0403
 ```
 
-For custom charsets, replace `#'0'` with the base character index of your
+For custom charsets, replace `#'0'` with the base character index of the
 digit glyphs.
 
 **Full-number convert (BCD to screen RAM):** If points are awarded in
@@ -870,8 +868,8 @@ become digits on the screen. That is two jobs: converting binary to
 decimal digits, and writing those digits into screen RAM.
 
 **Screen codes, no KERNAL.** Digits `0`-`9` are screen codes `$30`-`$39`,
-the same values as their PETSCII codes, so `digit + $30` is right whether
-you think in screen codes or PETSCII. Space is `$20` in both. Letters are
+the same values as their PETSCII codes, so `digit + $30` is right for
+both screen codes and PETSCII. Space is `$20` in both. Letters are
 not the same: `A` is screen code `$01` and PETSCII `$41`, so the hex
 digits `A`-`F` are `$01`-`$06` on screen. Store the byte at
 `$0400 + 40 * row + column` and set colour RAM at `$D800` once at start.
@@ -888,7 +886,7 @@ case), 10000 takes one.
 **Double-dabble.** Shift the value out from the top bit into a BCD
 accumulator, doubling the accumulator each time. Before each doubling,
 any BCD nibble of 5 or more has 3 added so the doubling carries a ten out
-of it. On the 6502 the whole adjust step disappears: in decimal mode
+of it. On the 6502 the adjust step is not needed: in decimal mode
 (`SED`) `adc` of a byte to itself doubles a packed BCD pair correctly.
 Sixteen passes of `asl / rol` on the value and three `adc` on the
 accumulator give five BCD digits in a fixed time, with no tables. C has
@@ -906,8 +904,8 @@ test.
 **Hexadecimal for debugging.** High nibble by four `lsr`, low nibble by
 `and #$0F`, each through a 16-entry screen-code table
 (`$30`-`$39`, `$01`-`$06`). Two cells per byte, 74 cycles from C
-(measured below), and it never lies about the byte the way a decimal
-routine with a bug can.
+(measured below), and it shows the byte as stored, where a decimal
+routine with a bug can mislead.
 
 **Measured cost of each route.** VICE x64sc 3.10, CIA1 timer A
 force-loaded from `$FFFF`, display blanked and the timing started at the
@@ -942,7 +940,7 @@ all 65,536 values (the `PASS` lines in the recipe).
 **Which to use where.**
 
 - Score kept in BCD (the routines above): no conversion at all. Unpack
-  nibbles, add `$30`, write. Cheapest by far.
+  nibbles, add `$30`, write. The cheapest route.
 - 16-bit binary in assembly: double-dabble with `SED` (`dab_u16` below).
   Fixed 875 cycles, no tables, 106 bytes with the unpack (the
   subtract-powers routine below is 90 with its tables; both from the

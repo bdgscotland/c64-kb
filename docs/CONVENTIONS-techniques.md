@@ -1,7 +1,7 @@
 # Technique Reference Conventions
 
 Technique docs live in `docs/techniques/<category>.md`. Each doc covers ONE category
-(raster, sprite, scroll, bitmap, banking, input, etc.) and contains multiple Technique
+(raster, sprite, scroll, bitmap, banking, input, etc.) and holds several Technique
 entries as H2 sections. The extractor parses each H2 as one Technique node.
 The category must be one of the words listed below; a doc with any other
 category is refused at extract with a warning and contributes no techniques,
@@ -20,8 +20,8 @@ chip: VIC-II                  # primary chip; optional
 ---
 ```
 
-`category` is required. `chip` is optional but used to seed BELONGS_TO edges
-from each Technique in the doc.
+`category` is required. `chip` is optional; when present it seeds BELONGS_TO
+edges from each Technique in the doc.
 
 ## Technique entries
 
@@ -105,8 +105,8 @@ extractor makes one `REQUIRES` edge per item, Technique to Technique.
 
 Each word is the snake_case name of an existing Technique H2, same comma
 rules as `**Uses kernal:**`. It is a statement about what must be in place,
-never a "see also": a technique that merely cites another for background
-does not list it, and a *variant* is not a prerequisite — `double_irq` is
+never a "see also". A technique that cites another for background
+does not list it, and a *variant* is not a prerequisite: `double_irq` is
 a variant of `stable_raster_irq` (raster.md), so neither lists the other.
 Only add a line the technique's own text supports ("the technique requires
 a stable raster IRQ set to fire on every scanline" earns one; "IRQ jitter,
@@ -152,7 +152,7 @@ line or says `movable`, the conflict stands and its rationale says which.
 `continuous_interrupts` and `kernal_banked_out` are not about lines and
 ignore bands. The band covers every line the technique owns, including a
 stable-raster entry above its visible region, since an interrupt there
-breaks it as surely as one inside. Take it from the page's own text or its
+breaks it just as one inside does. Take it from the page's own text or its
 recipe's constants; where neither says, write no line.
 
 An optional `**Cost:**` line states what the technique costs, as
@@ -162,7 +162,7 @@ every key from the vocabulary below. It must be paired with a
 were obtained. The extractor warns about and skips a pair with an unknown
 key or a non-integer value; a basis word outside the set, or a Cost line
 with no basis line, drops the whole Cost line with a warning, because a
-number without an honest basis is worse than no number.
+number with no stated basis is worse than no number.
 
 ```
 **Cost:** cycles_per_frame=332, irq_slots=1
@@ -190,15 +190,15 @@ number without an honest basis is worse than no number.
 
 One basis word covers the whole line, so it is the weakest that applies to
 any figure on it: a line with a measured cycle count and an estimated byte
-count says `estimated`. Never write `measured-vice` for a number you did
-not measure or that the page does not state as measured. The values ride
+count says `estimated`. Never write `measured-vice` for a number that was
+not measured or that the page does not state as measured. The values ride
 the Technique node as `cost_<key>` and `cost_basis`; `c64_technique_lookup`
 returns them as `cost` and the briefing tools add them up over a proposed
 set, naming the techniques with no line.
 
-Two optional lines follow the basis (schema 27). They exist because a
-figure belongs to the implementation it was measured on, and because one
-figure can already hold another technique's work.
+Two optional lines follow the basis (schema 27). A figure belongs to the
+implementation it was measured on, and one figure can already hold another
+technique's work.
 
 ```
 **Cost:** cycles_per_frame=3188, cycles_per_frame_typical=1170
@@ -283,7 +283,7 @@ A technique claims what every implementation needs. What one recipe
 chooses (which vector, which zero-page bytes) is the recipe's claim, not
 the technique's. A measurement harness is not a claim: the CIA timers a
 recipe chains to time its routine, and the counters it keeps for the
-screenshot, are left off the line, however visible they are in the
+screenshot, are left off the line even though they appear in the
 listing.
 
 An optional `**Uses kernal:**` line lists KERNAL routines:
@@ -298,12 +298,12 @@ Same comma rules; one `USES` edge per routine.
 
 After the H2 + metadata lines, free-form prose covering:
 
-1. **Why** — the problem this technique solves
-2. **How** — algorithm at conceptual level (asm-language-agnostic)
-3. **Why it works** — chip-level explanation (which register reads/writes drive the effect)
-4. **Variations** — 1-3 common variants
-5. **Cycle budget** — for raster-critical techniques, the per-line cycle accounting in prose; the `**Cost:**` line above carries the summable figures
-6. **Recipes** — bullet list of `recipes/<toolchain>/<name>.md` files that implement this
+1. **Why**: the problem this technique solves
+2. **How**: the algorithm, conceptually (asm-language-agnostic)
+3. **Why it works**: chip-level explanation (which register reads/writes drive the effect)
+4. **Variations**: 1-3 common variants
+5. **Cycle budget**: for raster-critical techniques, the per-line cycle accounting in prose; the `**Cost:**` line above carries the summable figures
+6. **Recipes**: bullet list of `recipes/<toolchain>/<name>.md` files that implement this
 
 H3 inside a Technique is OK for sub-sections; the extractor only consumes H2 + the
 metadata lines and ignores deeper structure.

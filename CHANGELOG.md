@@ -5,7 +5,74 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 770, schema 31, tools 2.3.1, package 0.16.1.
+Data 773, schema 31, tools 2.3.2, package 0.17.1.
+
+**Plain prose, batch 1 of #56 (data 773).** The design, art, music,
+workflow, game-design and root pages lost their machine-written wording:
+reversal openers, importance claims, metaphors, editorial adjectives,
+scaffolding and em-dash asides. `npm run check:prose` passed on all 26
+pages (every code block, table row, heading and metadata line unchanged;
+every number, hex value, code span, link and acronym still there as often
+as before). A clean ingest gives the same 925 nodes and 5,403 edges, every
+node property and edge identical; 46 of 50 top-5 search results for ten
+queries on these pages are unchanged. The pass found about 40 claims that
+look wrong; they were not changed and are listed in #57 and #58.
+
+**Stale pages and tool descriptions found by the README audit (data 772,
+tools 2.3.2).**
+- `docs/ARCHITECTURE.md`: counts removed; the CLI list, node labels,
+  derived edges and analytics location brought up to date; the
+  verification section now covers verify:recipes, claims-watch,
+  verify:templates, CI and releases.
+- Tool descriptions: `c64_search` said the corpus had no cartridge pages
+  (it has cartridges, the REU and the 1541); `c64_recipes_for` called its
+  technique filter a no-op (it matches a Technique name through
+  IMPLEMENTS); `c64_run_game` said it kills any x64sc (only the one on
+  monitor port 6502), assumed x64sc on PATH, and cited a `loop/` directory
+  that does not exist; `c64_report_gap` promised a dashboard nothing
+  tracks.
+- Licence fields: sim6502 is GPL-3.0 on GitHub, not MIT; simen/vice-mcp
+  states no licence, and the page said MIT. The sim6502 page now says its
+  VICE backend's `barryw/vice-mcp` is a VICE fork, not the MCP bridge
+  `c64_run_game` drives.
+- `agent-harness.md` said claims-watch was not on the branch; it is.
+  CLAUDE.md said CI runs every gate but the ingest; it runs neither
+  verify:templates nor anything Oscar64.
+- `docs/figures/fig6-architecture.png` and `fig7-ontology.png` removed:
+  they showed stale counts and nothing linked them.
+
+**Package 0.17.1.** The first release published by
+`.github/workflows/release.yml` through npm trusted publishing, with
+provenance; 0.17.0 (2026-09-24) was published by hand. Contents are
+unchanged apart from the version. Trusted publisher on npm:
+`bdgscotland/c64-kb`, `release.yml`, environment `npm`, which only `v*`
+tags can use and which needs the maintainer's approval.
+
+**Licence pass before npm publishing (data 771).** A measured check of
+`docs/` found no copied prose (runs of 25 or more words shared with 108
+cited sources and the classic references are number tables only) and no
+substantial third-party code. Four fixes. `wireframe-ships` reproduced
+Elite's 32 two-letter name tokens (QQ16), commercial game data; it now
+uses its own table of the same shape, so its systems print GUBUDUIS ...
+NEYA instead of TIBEDIED ... LAVE; seeds, coordinates and every cycle
+count are unchanged, re-verified in VICE on both models (0 pixels from
+the model). Three examples in `kickassembler-reference.md` (the SID
+player, `ClearScreen`, `mov`) followed the KickAssembler manual line for
+line; they are rewritten and now share no 8-word run with it, and the
+new SID player was run in VICE against a test tune (one `play` per PAL
+frame). `oscar64-headers-reference.md` said `license: MIT`; Oscar64 is
+GPL-3.0. The SID ADSR table now names its source.
+
+**npm package (package 0.17.0).** An installed package could not do
+anything useful: batch ingest existed only as an npm script in a clone,
+`docker-compose.yml` was not shipped, and state was written inside the
+package folder. `c64-kb ingest` and `c64-kb services up|down|status` now
+exist, and state goes to `$XDG_DATA_HOME/c64-kb` (or
+`~/.local/share/c64-kb`, or `C64_KB_DATA_DIR`) when the package is under
+`node_modules`; a clone still uses `data/`. CI installs the packed
+tarball into an empty folder and runs services, ingest and a lookup. A
+release workflow publishes on a `v*` tag; the first publish and the
+licence check are open in #52.
 
 **RE tools calibrated against this repo's own measured figures
 (`test/re-calibration.test.ts`).** Before any third-party game is

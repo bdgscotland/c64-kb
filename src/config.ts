@@ -13,11 +13,27 @@
  * and fail later at connect time.
  */
 
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Where the analytics database, BM25 vocabulary, ingest hashes and ingest log
+ * live. A repository checkout keeps them in its own data/ as it always has.
+ * An npm install (the package sits under node_modules) must not: a global
+ * install may not be writable, and an upgrade replaces the folder. It uses
+ * $XDG_DATA_HOME/c64-kb, else ~/.local/share/c64-kb. C64_KB_DATA_DIR
+ * overrides both.
+ */
+function defaultDataDir(): string {
+  const installed = __dirname.split(path.sep).includes("node_modules");
+  if (!installed) return path.resolve(__dirname, "../data");
+  const base = process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share");
+  return path.join(base, "c64-kb");
+}
 
 const Env = z.object({
   QDRANT_URL: z.url().default("http://localhost:7333"),
@@ -29,7 +45,8 @@ const Env = z.object({
   EMBED_MODEL: z.string().min(1).default("mxbai-embed-large"),
   EMBED_CONCURRENCY: z.coerce.number().int().min(1).default(8),
   DOCS_DIR: z.string().min(1).default(path.resolve(__dirname, "../docs")),
-  ANALYTICS_DB: z.string().min(1).default(path.resolve(__dirname, "../data/analytics.db")),
+  C64_KB_DATA_DIR: z.string().min(1).default(defaultDataDir()),
+  ANALYTICS_DB: z.string().min(1).optional(),
 });
 
 const parsed = Env.safeParse(process.env);
@@ -65,8 +82,10 @@ export const config = {
     dir: env.DOCS_DIR,
   },
 
-  // Query analytics
+  // Per-machine state. The BM25 vocab, ingest hashes and log sit beside the
+  // analytics database, so ANALYTICS_DB (the tests set it) moves them too.
+  dataDir: env.C64_KB_DATA_DIR,
   analytics: {
-    dbPath: env.ANALYTICS_DB,
+    dbPath: env.ANALYTICS_DB ?? path.join(env.C64_KB_DATA_DIR, "analytics.db"),
   },
 } as const;

@@ -59,7 +59,7 @@ What a part hands back is what it owned: the interrupt vector, the six VIC
 registers in the first check, the sprite enable bits, the SID registers its
 effects wrote, and any memory it did not declare as inherited. Åkesson lists
 the registers to re-initialise because the previous part may leave unexpected
-values in them; that is the pattern.
+values in them.
 
 **Memory inheritance.** Two adjacent parts may not overlap in RAM unless the
 second declares that it inherits a page range from the first. Åkesson's linker
@@ -315,8 +315,8 @@ an intermediate part that brings in a background picture ahead of the effect
 that uses it. Then polish the switchovers that glitch, with clean-up routines
 that stop interrupts and wait for a chosen raster line. Åkesson's reason for
 leaving transitions until the order is fixed is that once it is, inherit tags
-and transitions can rely on it. Two practices sit alongside the steps and have
-no observable on the binary: write the part order, the total time and the
+and transitions can rely on it. Two practices sit alongside the steps and leave
+no trace in the binary: write the part order, the total time and the
 owner of each join down before the last quarter of the calendar, and show each
 art-heavy part to someone other than its coder before the deadline.
 
@@ -324,12 +324,11 @@ art-heavy part to someone other than its coder before the deadline.
 concept through the arrangement of scenes to the joins, with the graphician
 more often than not: the coder produces effects, the composer a tune to each
 part's budget, and someone holds the order and the joins. The guide also
-advises a schedule buffer of twenty to fifty percent over the honest estimate,
+advises a schedule buffer of twenty to fifty percent over the estimate,
 and starting small.
 
 **Paintovers.** Phoenix's report on NVScene 2014 records Pixtur introducing
-paintovers to get feedback on colour and tone before a release. The method, as
-the name says, is to let others paint over a work-in-progress frame; that
+paintovers to get feedback on colour and tone before a release. The method is to let others paint over a work-in-progress frame; that
 description is this page's, not the report's. On a sixteen-colour machine this
 is cheap and the alternative is finding out at the projector.
 

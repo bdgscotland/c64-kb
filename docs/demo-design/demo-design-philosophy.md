@@ -2,317 +2,281 @@
 
 # Demo Design Philosophy
 
-This document covers the aesthetic, cultural, and structural conventions of the C64 demo scene.
-It is the *why* behind technique choices — the social context that gives those techniques meaning.
-For the technical implementation of individual effects, see `../techniques/effects-vector-3d.md`,
-`../techniques/loaders-packers.md`, and the other files in `../techniques/`. For the cracktro
-subset and intro conventions, see `./intro-cracktro-patterns.md`.
+The aesthetic, cultural and structural conventions of the C64 demo scene, and the social context
+behind technique choices. For the technical implementation of individual effects, see
+`../techniques/effects-vector-3d.md`, `../techniques/loaders-packers.md`, and the other files in
+`../techniques/`. For the cracktro subset and intro conventions, see `./intro-cracktro-patterns.md`.
 
 ---
 
 ## 1. The Demo as Performance
 
-A C64 demo is not a program that happens to run. It is a released artifact — something that exists
-publicly, has been voted on, has been reviewed, and carries its group's name into the permanent
-record. That distinction matters because it shapes every creative and technical decision a demo
-coder makes.
+A C64 demo is a released artifact: it is public, it has been voted on and reviewed, and it
+carries its group's name in the permanent record.
 
-The primary venue for a demo is a party. Demoparties assemble sceners in one place — historically
-in Scandinavia but now distributed globally — project demos on a large screen in front of an
-audience, and run a live vote. The vote result is published immediately. A production that places
-first in a 64K intro compo at a well-regarded party earns a kind of public certificate that "this
-is good by peer consensus." That certificate is permanent: it lives in the CSDb record.
+The primary venue for a demo is a party. Demoparties gather sceners in one place (historically
+in Scandinavia, now worldwide), project the demos on a large screen in front of an audience, and
+run a live vote. The result is published immediately. A first place in a 64K intro compo at a
+well-regarded party is a public record of peer approval, and it stays in the CSDb record.
 
-**CSDb (csdb.dk)** is the modern release archive and community review board for C64 scene
-productions. Every serious release is catalogued there with a release date, party affiliation,
-download links, and user ratings. CSDb ratings aggregate scene opinion over years, so a demo
-released in 2008 still accretes votes in 2024 as new people discover it. This long tail of
-evaluation makes the scene's collective aesthetic judgment unusually robust compared to ephemeral
-web hype.
+**CSDb (csdb.dk)** is the release archive and community review board for C64 scene
+productions. Each release is catalogued there with a release date, party affiliation,
+download links and user ratings. Ratings keep accumulating: a demo released in 2008 still
+gets votes in 2024 as new people find it, so a CSDb rating reflects years of scene opinion
+rather than a launch-week reaction.
 
 **Compo demo vs uploaded release:** A compo demo is submitted to a party competition, shown live,
 and voted on in real time. An uploaded release is self-published to CSDb (or formerly to ftp
-sites) without competitive context. Compo demos carry more prestige because the deadline is hard,
-the audience is expert, and the vote is honest. Uploaded releases still matter — many important
-productions circulate that way — but the community understands the difference. A release that
-"was never in a compo" is not lesser by definition, but it lacks the proof-of-pressure that compo
-placement provides.
+sites) with no competition. Compo demos carry more prestige because the deadline is hard and
+the audience is expert. Many important productions were uploaded releases, and the community
+knows the difference: an uploaded release is not lesser, but it has no compo placement to show
+how it held up against the others.
 
-The phrase "released" in scene culture means more than "exists." It means: polished to the point
-where the group was willing to put their name on it in public, under deadline, in front of peers.
-An internal build that leaks is not released. A demo shown at a party but never uploaded is
-technically released but imperfectly archived. The full release cycle closes when a clean binary
-appears on CSDb with accurate credits.
+In scene usage, "released" means the group put its name on the work in public, under deadline,
+in front of peers. An internal build that leaks is not released. A demo shown at a party but
+never uploaded is released but badly archived. The release cycle ends when a clean binary with
+accurate credits appears on CSDb.
 
 ---
 
 ## 2. Compo Categories and Constraints
 
 Parties divide productions into categories with strict size or content rules. The C64 scene has
-developed its own conventions for each category.
+its own conventions for each.
 
 ### 256-Byte Intro
 
-The entire binary — code and data — must fit in 256 bytes. This is a severe constraint on a
-machine where a single sprite definition occupies 63 bytes. The art form is almost entirely about
-what you can procedurally generate: mathematical patterns, Lissajous curves, sine-wave effects,
-simple rasterized geometry. Assembly is mandatory; no compiler overhead survives at this scale.
+The whole binary, code and data, must fit in 256 bytes. One sprite definition alone occupies
+63 bytes. The work is almost all procedural generation: mathematical patterns, Lissajous curves,
+sine-wave effects, simple rasterized geometry. Assembly is mandatory; no compiler overhead fits.
 
-The technical-versus-art balance tilts almost entirely to technical: the aesthetic is the
-algorithm itself. A 256-byte entry that produces something visually unexpected wins because the
-audience understands how little room existed. Scroller text is usually absent or reduced to a
-single static message printed at cost. Tune is either borrowed from ROM or generated by a minimal
-wavetable that fits in the remaining bytes.
+The balance is almost entirely technical: the algorithm is the aesthetic. A 256-byte entry that
+produces something unexpected wins because the audience knows how little room there was.
+Scroller text is absent or reduced to one static message. The tune is borrowed from ROM or
+generated by a minimal wavetable in the remaining bytes.
 
 ### 1K Intro
 
-At 1024 bytes, 1K intros can contain a short SID tune and one or two distinct visual effects.
-The design challenge is sequencing: the demo needs to feel like it goes somewhere — intro,
-effect, outro — within extreme constraint. Crunching (compression with a decompressor header)
-is standard but the decompressor itself costs bytes, so packing efficiency is critical.
+At 1024 bytes, a 1K intro can hold a short SID tune and one or two visual effects. The design
+problem is sequencing: intro, effect, outro, in very little space. Crunching (compression with a
+decompressor header) is standard, but the decompressor costs bytes, so packing efficiency decides
+what fits.
 
-The aesthetic expectation shifts slightly toward polish. A 1K intro that shows a clean plasma
-effect with a synchronized tune beat is judged differently than one that shows the same plasma
-untimed. The beat synchronization requires reserving bytes for a timing table or computing beat
-from the SID frame counter — small costs that pay outsized aesthetic dividends.
+Polish counts for more here. A 1K intro with a clean plasma synchronized to the tune's beat is judged differently
+from the same plasma untimed. Beat sync needs a few bytes for a timing table, or a beat computed
+from the SID frame counter.
 
 ### 4K Intro
 
-Four kilobytes allows a short but coherent demo. Typical content: a one-minute SID tune, two to
-four effects in sequence, group logo or rasterized scroller, and at least one transition. The
-4K category is highly competitive because it is achievable by a small team — a coder and a
-musician — without the production overhead of a full demo.
+Four kilobytes allows a short, coherent demo: a one-minute SID tune, two to four effects in
+sequence, a group logo or rasterized scroller, and at least one transition. The 4K category is
+competitive because a coder and a musician can finish one without the overhead of a full demo.
 
-Groups like Genesis Project have produced landmark 4K work that demonstrates the category's
-ceiling: procedural geometry, smooth palette cycling, and tight tune synchronization within a
-tiny binary. The 4K format rewards coders who have deeply internalized the hardware: every byte
-saved is a byte available for one more effect frame or one more palette entry.
+Groups like Genesis Project have produced landmark 4K work: procedural geometry, smooth palette
+cycling and tight tune sync in a tiny binary. In the 4K format each byte saved buys one more effect frame or one
+more palette entry.
 
 ### 64K Intro ("Mini-Demo")
 
-At 64 kilobytes, the intro is large enough to contain multiple SID tunes, complex loading
-sequences (if the 64K includes a loader), and richer visual sequences. Some parties call this
-a "mini-demo" to distinguish it from the uncapped full-demo category. The boundary is cultural
-more than technical — a 64K intro might run longer than a conventional demo from 1988.
+At 64 kilobytes, an intro can hold several SID tunes, loading sequences (if the 64K includes a
+loader) and longer visual sequences. Some parties call it a "mini-demo" to separate it from the
+uncapped full-demo category. The boundary is cultural: a 64K intro can run longer than a
+conventional demo from 1988.
 
-The production challenge at 64K is organizational: the team needs a coder, musician, graphician,
-and sometimes a separate "design lead" to make sure the parts hang together aesthetically. Size
-management is still real — 64K is not infinite — but asset quality is the dominant constraint.
-A 64K intro with mediocre SID work will lose to one with an outstanding tune even if the visuals
-are comparable.
+The problem at 64K is organization: a coder, musician, graphician, and sometimes a separate
+"design lead" who keeps the parts consistent. Size still matters (64K is finite), but asset
+quality is the main constraint. A 64K intro with mediocre SID work loses to one with an
+outstanding tune when the visuals are comparable.
 
 ### Demo (Full, No Strict Size Cap)
 
-The full demo category has no mandated size ceiling, though practical limits apply: a disk-based
-C64 demo must fit on one or two sides of a 1541 disk (approximately 165K or 330K usable). Most
-full demos run four to eight minutes, contain three to six distinct parts separated by loaders,
-and feature coordinated work from a coder, musician, and graphician.
+The full demo category has no size ceiling, but a disk-based C64 demo must fit on one or two
+sides of a 1541 disk (approximately 165K or 330K usable). Most full demos run four to eight
+minutes, contain three to six parts separated by loaders, and are the work of a coder, musician
+and graphician.
 
-Full demos are where the scene's most ambitious aesthetic experiments appear. Multi-part
-construction with per-part loaders (see `../techniques/loaders-packers.md`) allows each part to
-own the full 64K address space. A group can write one part in Oscar64 targeting a plasma effect
-and another part in hand-tuned assembly targeting a sprite-multiplexed 3D rotation, with the
-loader transition between them handling decompression and relocation. The full demo format is
-the main competitive prize at major parties.
+The most ambitious work appears here. Multi-part construction with per-part loaders (see
+`../techniques/loaders-packers.md`) lets each part own the full 64K address space. One part can be
+written in Oscar64 for a plasma and another in hand-tuned assembly for a sprite-multiplexed 3D
+rotation, with the loader transition handling decompression and relocation between them. The full
+demo is the main competition at major parties.
 
 ### Wild Compo
 
-Wild compo accepts anything the party organizers will permit: hardware expansions, mixed-media
-productions, demos running from unusual storage, real-time performances with external peripherals.
-C64 entries in wild categories have included productions that modify the hardware in real time,
-demos that display output on oscilloscopes driven by the SID, and entries that use the cassette
-port in unintended ways. Wild compos reward lateral thinking over optimization; the judging
-criterion is audience reaction.
+Wild compo accepts anything the organizers permit: hardware expansions, mixed-media productions,
+demos running from unusual storage, real-time performances with external peripherals. C64 wild
+entries have included productions that modify the hardware in real time, demos shown on
+oscilloscopes driven by the SID, and entries that use the cassette port in unintended ways.
+Judging is by audience reaction, so lateral thinking beats optimization.
 
 ---
 
 ## 3. Scene Tiers
 
-The C64 scene is not a single aesthetic community. It contains at least three recognizable
-sensibilities that have evolved over four decades.
+The C64 scene is not one aesthetic community. It holds at least three distinct aesthetics, developed
+over four decades.
 
 ### Newschool
 
-The newschool aesthetic emerged from the competitive intro categories in the 2000s and 2010s.
-It prioritizes mathematical rigor and visual density: procedural geometry, voxel-style terrain,
-mode 7 perspective, 3D vector objects (see `../techniques/effects-vector-3d.md`), and tunnel
-effects running at maximum frame rate. The visual language often echoes demoscene productions
-on platforms with more CPU headroom — treating the C64 constraint as proof of craft rather than
-as a source of aesthetic vocabulary.
+Newschool came out of the competitive intro categories in the 2000s and 2010s. It favours
+mathematical rigor and visual density: procedural geometry, voxel-style terrain, mode 7
+perspective, 3D vector objects (see `../techniques/effects-vector-3d.md`), and tunnels at full
+frame rate. Its visual language often follows demos on platforms with more CPU headroom, and it
+treats the C64 limits as a test of skill rather than as a source of style.
 
-Newschool productions in the 256-byte and 4K categories frequently achieve things that appear
-impossible on a 1 MHz 6510, which is precisely the point. The audience reaction is calibrated
-to technical astonishment. Tune choices tend toward chip-music styles that complement the
-geometric visuals rather than emulating older SID styles.
+Newschool productions in the 256-byte and 4K categories often do things that look impossible on a
+1 MHz 6510; the audience reacts to the technical surprise. Tunes lean toward chip-music styles that
+suit geometric visuals, not older SID styles.
 
 ### Oldschool
 
-The oldschool aesthetic draws on the visual vocabulary of C64 demos from roughly 1986 to 1992:
-raster bars, hardware sprite multiplexing, FLD-style scrollers, charset animation, and SID
-tunes in the three-voice synth tradition. Oldschool is not nostalgia by default — it is a
-deliberate aesthetic position that treats the platform's native visual grammar as valid art.
+Oldschool uses the visual vocabulary of C64 demos from about 1986 to 1992: raster bars, hardware
+sprite multiplexing, FLD-style scrollers, charset animation, and SID tunes in the three-voice synth
+tradition. It is a chosen position, not nostalgia: it treats the platform's native visual grammar
+as valid art.
 
 The most celebrated modern oldschool productions include **Edge of Disgrace** by Booze Design
-(released 2008, widely regarded as one of the finest C64 full demos) and **Comaland** by Censor
-Design (released 2014, similarly acclaimed). Both productions are extensively documented on CSDb
-and have been analyzed in technical write-ups by their authors. They demonstrate that the
-oldschool format supports creative ambition at the same level as any contemporary platform.
-Groups like Triad, Resource, and Fairlight have maintained continuous oldschool output across
-decades, and their aesthetic consistency is part of what makes their releases identifiable.
+(released 2008, widely regarded as one of the best C64 full demos) and **Comaland** by Censor
+Design (released 2014, also acclaimed). Both are documented on CSDb and analysed in technical
+write-ups by their authors. Groups like Triad, Resource and Fairlight have released oldschool work
+for decades, and their consistent style makes their releases recognisable.
 
 ### Wild
 
-The wild tier is not a competitive category but a mode of production. Wild-tier thinking asks:
-what can the hardware do if we ignore the expected use? Demos that drive external hardware,
-that treat audio output as primary and visual output as secondary, that run from storage media
-the machine was not designed for — these are wild in sensibility regardless of which compo they
-enter. Some groups produce both competitive oldschool demos and wild-tier experiments in the same
-year.
+Wild is a mode of production, not a competitive category. It asks what the hardware does when the
+expected use is ignored. Demos that drive external hardware, that put audio first and visuals
+second, or that run from storage media the machine was not designed for are wild in approach
+whichever compo they enter. Some groups produce competitive oldschool demos and wild experiments
+in the same year.
 
 ---
 
 ## 4. The Released-Demo Lifecycle
 
-Understanding how demos get made illuminates why they look the way they do.
+How demos are made explains much of how they look.
 
-**Concept.** A demo begins as an idea for a sequence or a theme — often loose. "We want a
-tunnel leading into a 3D rotation with a SID tune that builds from ambient to loud." The concept
-rarely survives first contact with hardware constraints unchanged, but having a concept before
-writing code is the mark of a production-mode group rather than a tech-demo group.
+**Concept.** A demo starts as a loose idea for a sequence or theme: "We want a tunnel leading into
+a 3D rotation with a SID tune that builds from ambient to loud." The concept rarely survives the
+hardware limits unchanged, but groups that start from a concept produce finished demos; groups that
+start from code produce tech demos.
 
-**Tune commissioned.** For groups that collaborate across physical locations, the musician
-typically works first. A SID tune has a fixed length and structure — the musician delivers a
-file, usually a .sid or a raw binary, and the coder builds timing tables around it. Commissioning
-the tune before or during early effect prototyping means the visual sequence can be choreographed
-to the music's actual beat grid rather than retrofitted later.
+**Tune commissioned.** When the team works in different places, the musician usually goes first.
+A SID tune has a fixed length and structure: the musician delivers a file, usually a .sid or a raw
+binary, and the coder builds timing tables around it. With the tune in hand before or during early
+effect prototyping, the visuals can follow the music's actual beat grid instead of being fitted to
+it later.
 
-**Effect prototyping.** Individual effects are developed independently, often by separate coders.
-An effect prototype in Oscar64 or KickAssembler runs as a standalone binary — it is not
-integrated into the demo shell yet. This is the longest phase and the one most subject to scope
-creep. A plasma effect that runs at 25 FPS on PAL gets profiled and optimized; if it cannot hit
-the target, the design adapts.
+**Effect prototyping.** Effects are developed separately, often by different coders. A prototype
+in Oscar64 or KickAssembler runs as a standalone binary, outside the demo shell. This is the
+longest phase and the one most prone to scope creep. A plasma that runs at 25 FPS on PAL gets
+profiled and optimized; if it cannot reach the target, the design changes.
 
-**Asset production.** Graphicians produce sprites, charset tiles, Koala-format bitmap screens,
-and logo art in parallel with effect prototyping. C64 graphic formats are extremely constrained
-(see the file formats reference), so graphicians working at production quality understand the
-hardware palette, multicolor restrictions, and sprite overlay techniques. A graphician who does
-not know that FLI (Flexible Line Interpretation) requires cycle-exact timing is a liability in
-a competitive demo.
+**Asset production.** Graphicians produce sprites, charset tiles, Koala-format bitmap screens and
+logo art alongside effect prototyping. C64 graphic formats are tightly limited (see the file
+formats reference), so production graphicians must know the hardware palette, multicolor
+restrictions and sprite overlay techniques. A graphician who does not know that FLI (Flexible Line
+Interpretation) needs cycle-exact timing will deliver art the coder cannot use in a competitive
+demo.
 
-**Integration.** The demo shell is assembled: loader, parts, inter-part transitions, tune player,
-memory banking. This phase often reveals conflicts — two effects that independently work cleanly
-cannot both live in the same part because they need overlapping zero-page addresses or conflict
-on a CIA timer. Integration is where `c64_check_compatibility` queries (in the KB) find their
-real-world equivalent: the coder manually auditing what each part uses and resolving collisions.
+**Integration.** The demo shell is assembled: loader, parts, transitions, tune player, memory
+banking. This phase often exposes conflicts: two effects that each work alone cannot share a part
+because they need the same zero-page addresses or the same CIA timer. `c64_check_compatibility`
+queries (in the KB) automate what the coder does here by hand: audit what each part uses and
+resolve the collisions.
 
-**Final-party-pressure crunch.** Most demos are still not feature-complete two weeks before the
-party. The deadline is fixed and public — the party will happen whether or not the demo is ready.
-This creates a forcing function that compels decisions: cut the fourth part, fix the scroller
-text typo, accept the one scanline flicker in the transition, release. The crunch is not
-dysfunction; it is the design mechanism that prevents infinite scope creep. Productions that miss
-parties and get uploaded later often feel slightly overlong precisely because they lacked the
-forcing function.
+**Final-party-pressure crunch.** Most demos are not feature-complete two weeks before the party.
+The deadline is fixed and public, so decisions get made: cut the fourth part, fix the scroller
+text typo, accept the one-scanline flicker in the transition, release. The crunch limits scope.
+Productions that miss their party and are uploaded later often run too long for lack of that
+limit.
 
-**Why "released" means polished.** The party vote is brutal. Audience members vote on what they
-see projected, in real time, having watched the preceding entries. A demo that crashes does not
-recover gracefully — the audience watches a frozen screen until the organizer resets the machine.
-A demo that runs to completion but has a visually weak ending loses to one that has a strong last
-thirty seconds. This pressure produces a very specific kind of polish: demos are end-to-end
-correct, not just technically impressive in isolation.
+**Why "released" means polished.** Audience members vote on what they see projected, in real time,
+after watching the entries before it. A demo that crashes shows a frozen screen until the
+organizer resets the machine. A demo that runs to the end with a weak ending loses to one with a
+strong last thirty seconds. So demos are correct end to end, not only impressive in isolated
+parts.
 
 ---
 
 ## 5. Aesthetic Tropes
 
-Certain conventions are so embedded in C64 demo culture that their presence or absence is itself
-a statement.
+Some conventions are so established in C64 demo culture that including or omitting one is itself a statement.
 
 **Amazing transitions.** The transition between parts or effects is a primary aesthetic site.
-Palette splits, screen-clearing raster sweeps, charset swap flickers, and DRAM-fade techniques
-all serve the same function: marking the boundary between visual ideas without cutting to black
-abruptly. A well-designed transition makes the demo feel like a continuous performance rather
-than a playlist. Groups that are known for their visual sophistication — Crest, Genesis Project,
-Onslaught — treat transitions as first-class effects requiring their own development time.
+Palette splits, screen-clearing raster sweeps, charset swap flickers and DRAM-fade techniques all
+mark the boundary between visual ideas without an abrupt cut to black. A good transition makes the
+demo play as one performance rather than a playlist. Groups known for visual quality (Crest,
+Genesis Project, Onslaught) give transitions their own development time, like any other effect.
 
-**Tune sync.** An effect that responds visually to the music's beat grid reads as deliberately
-designed rather than accidentally happening at the same time as the music. Tune sync can be
-implemented via hardcoded timing tables derived from the musician's tempo, via CIA timer
-comparisons, or via live SID voice-amplitude sampling. The simplest version — synchronized raster
-bar expansion on the beat — is immediately legible to any scene audience. Complex tune sync, where
-multiple visual parameters modulate independently to different frequency bands, is a marker of
-production-quality ambition.
+**Tune sync.** An effect that moves with the music's beat grid reads as designed, not as a
+coincidence. Tune sync can come from hardcoded timing tables derived from the musician's tempo,
+from CIA timer comparisons, or from live SID voice-amplitude sampling. The simplest form, raster
+bars that expand on the beat, is immediately legible to a scene audience. Complex sync, with
+several visual parameters driven independently by different frequency bands, marks a high-ambition
+production.
 
-**The boast tradition.** Demo culture derives in part from cracking culture, where inserting your
-group's name into a commercial release was the primary form of attribution. The demo form
-inherited the tradition: every demo carries a visible group signature, a scroller with greetings
-to allied groups, and a credits sequence. The greetings scroller is simultaneously social bonding
-(publicly acknowledging relationships within the scene) and territorial marking (your group name
-is on this production, permanently). Groups like F4CG, Hokuto Force, and Resource have
-maintained distinctive greeting styles across decades of releases.
+**The boast tradition.** Demo culture grew partly out of cracking culture, where a group's name in
+a commercial release was the main form of attribution. Demos kept the habit: every demo carries a
+visible group signature, a scroller with greetings to allied groups, and a credits sequence. The
+greetings scroller both acknowledges relationships within the scene in public and stamps the
+group's name on the production for good. Groups like F4CG, Hokuto Force and Resource have kept
+distinctive greeting styles across decades of releases.
 
 **Why scrollers exist.** The hardware scroller emerged from the CIA-timer-driven hardware scroll
-registers as a way to display more text than fit on screen without flicker. A smooth one-pixel-
-per-frame left-scroll of a character row is nearly free on the 6510 if implemented in hardware
-scroll mode (via VIC-II's fine scroll register, with software column shifting once per full
-character width). This made scrollers the natural medium for group messaging: unlimited text,
-smooth motion, zero per-character cost. What began as a technical affordance became a social
-institution. A demo without a scroller in the oldschool tradition reads as deliberately minimalist.
-The scroller's content — the actual text — is the demo group's primary direct communication with
-the viewer, often more personal and candid than any other medium available to the coders at the
-time.
+registers as a way to show more text than fits on screen without flicker. A smooth one-pixel-
+per-frame left scroll of a character row is nearly free on the 6510 in hardware scroll mode (the
+VIC-II fine scroll register, with a software column shift once per full character width). That
+made scrollers the natural medium for group messages: unlimited text, smooth motion, no
+per-character cost. A demo in the oldschool tradition without a scroller reads as deliberately
+minimalist. The scroller text is the group's main direct message to the viewer, often more
+personal and candid than anything else the coders had to publish in at the time.
 
 ---
 
 ## 6. Modern Revival
 
-The C64 demo scene did not end when the Amiga arrived or when the PC became dominant. It
-contracted, reorganized, and continued. From roughly 2005 onward, the scene entered a sustained
-revival driven by several forces: emulator accuracy (VICE reaching cycle-exact fidelity),
-hardware preservation (SD2IEC, Ultimate II+ making physical machines more accessible), and
-the emergence of younger sceners encountering the platform via its cultural legacy rather than
-childhood ownership.
+The C64 demo scene did not end when the Amiga arrived or when the PC took over. It shrank,
+reorganized and continued. From about 2005 it revived, driven by emulator accuracy (VICE reaching
+cycle-exact fidelity), hardware preservation (SD2IEC and Ultimate II+ making real machines easier
+to use), and younger sceners who came to the platform through its cultural legacy rather than
+owning one as children.
 
-**Edge of Disgrace** (Booze Design, 2008) is the most frequently cited landmark of the modern
-revival. It demonstrated that a full oldschool-style C64 demo released in the 2000s could be
-not merely competent but genuinely surprising — technically and aesthetically. Its documentation
-at CSDb includes author notes that make it useful as a reference for production methodology, not
-just a thing to watch.
+**Edge of Disgrace** (Booze Design, 2008) is the most cited landmark of the revival. It showed that
+a full oldschool-style C64 demo released in the 2000s could still surprise, technically and
+aesthetically. Its CSDb entry includes author notes that make it a reference for production
+method, not only something to watch.
 
-**Comaland** (Censor Design, 2014) continued the revival's trajectory, demonstrating that the
-platform's ceiling had not been reached and that groups with deep institutional knowledge could
-continue pushing it. Both productions are well-documented at CSDb and have been discussed in
-technical detail by their authors, making them safe references.
+**Comaland** (Censor Design, 2014) showed that the platform's ceiling had still not been reached and
+that groups with long accumulated knowledge could keep raising it. Both productions are documented
+at CSDb and discussed in technical detail by their authors, which makes them safe references.
 
-The post-2010 scene has also seen growth in the competitive intro categories. The 4K and 256-byte
-categories attract technically focused coders for whom the constraint itself is the creative
-medium. These productions often participate in cross-platform parties where C64 entries compete
-alongside Amiga, PC, and console productions in platform-specific categories. Cross-platform
-party exposure has drawn sceners from other platforms who then specialize in C64, refreshing the
-scene's technical approach.
+After 2010 the competitive intro categories grew. The 4K and 256-byte categories draw coders for
+whom the size limit is the medium. These productions often appear at cross-platform parties where
+C64 entries compete alongside Amiga, PC and console productions in platform-specific categories.
+That exposure has brought sceners from other platforms to specialize in C64, bringing new technical
+approaches.
 
-The question of "firsts" — first C64 demo to achieve X — is a live area of scene discourse.
-The C64 demo scene tracks technical firsts carefully, but attributing any specific first to a
-specific production without checking CSDb risks propagating error. Agents retrieving this chunk
-should use `c64_search` with specific technical terms and cross-reference against CSDb records
-rather than relying on any static claim here.
+Claims of "firsts" (the first C64 demo to achieve X) are argued over in the scene. The C64 demo scene tracks
+technical firsts closely, and crediting a first to a production without checking CSDb risks
+spreading an error. Agents retrieving this chunk should use `c64_search` with specific technical
+terms and check CSDb records rather than rely on any static claim here.
 
 ---
 
 ## 7. Cross-References
 
-- `./intro-cracktro-patterns.md` — The cracktro subset: intro conventions derived from cracking
-  culture, boast formatting, loader integration, and the specific aesthetic of the release-group
-  intro. This document is being written in parallel (Phase 6, Task 7).
+- `./intro-cracktro-patterns.md`: the cracktro subset. Intro conventions from cracking culture,
+  boast formatting, loader integration, and the look of the release-group intro. This document is
+  being written in parallel (Phase 6, Task 7).
 
-- `../techniques/effects-vector-3d.md` — Technical implementation of the effects that appear
-  in newschool and oldschool demos: plasma, tunnel, voxel, mode 7 perspective, 3D vector
-  rotation. The philosophy sections above describe why these effects are used and what audience
-  reaction they are calibrated for; this reference covers how they are implemented.
+- `../techniques/effects-vector-3d.md`: technical implementation of the effects in newschool and
+  oldschool demos: plasma, tunnel, voxel, mode 7 perspective, 3D vector rotation. The sections
+  above cover why these effects are used and which audience reaction they aim for; that reference
+  covers how they are implemented.
 
-- `../techniques/loaders-packers.md` — Multi-part demo workflow, Krill/Exomizer/Sparkle
-  loader integration, and the GCR-level disk tricks that enable fast loading. Full demos depend
-  on this infrastructure; the lifecycle section above describes how loaders fit into the
-  integration phase of production.
+- `../techniques/loaders-packers.md`: multi-part demo workflow, Krill/Exomizer/Sparkle loader
+  integration, and the GCR-level disk tricks behind fast loading. Full demos depend on it; the
+  lifecycle section above shows where loaders enter the integration phase.
 
 - `./demo-composition.md`: the design patterns for a multi-part demo, one level below the
   lifecycle in section 4: what a part hands to the next, the three ways a part ends, dwell and

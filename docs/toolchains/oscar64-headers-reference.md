@@ -2,7 +2,7 @@
 tool: oscar64-headers
 tool_kind: c-library
 maintainer: drmortalwombat
-license: MIT
+license: GPL-3.0
 home_url: https://github.com/drmortalwombat/oscar64/tree/main/include/c64
 ---
 

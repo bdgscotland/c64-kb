@@ -1,0 +1,43 @@
+# Publish to npm when a version tag is pushed. Uses npm trusted publishing
+# (OIDC): no token is stored, and npm adds provenance on its own. Before the
+# first run, a maintainer links this repository and workflow file to the
+# package on npmjs.com (package settings, "Trusted publisher"); the first
+# release of a new name can also be done by hand with `npm publish`.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later (docs.npmjs.com/trusted-publishers).
+      - run: npm install -g npm@^11.5.1
+      - name: the tag matches package.json
+        run: test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./package.json").version')"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      # A version already on npm (the first one is published by hand) is
+      # skipped, so re-running a tag's workflow is safe.
+      - name: publish unless this version is already on npm
+        run: |
+          v=$(node -p 'require("./package.json").version')
+          if npm view "c64-kb@$v" version > /dev/null 2>&1; then
+            echo "c64-kb@$v is already on npm; nothing to publish"
+          else
+            npm publish --access public
+          fi

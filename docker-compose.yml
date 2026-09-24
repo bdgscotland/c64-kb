@@ -6,7 +6,7 @@ services:
       - "7333:6333"
       - "7334:6334"
     volumes:
-      - ./storage/qdrant:/qdrant/storage
+      - ${C64_KB_STORAGE:-./storage}/qdrant:/qdrant/storage
     environment:
       QDRANT__SERVICE__GRPC_PORT: 6334
     healthcheck:
@@ -25,7 +25,7 @@ services:
     ports:
       - "7379:6379"
     volumes:
-      - ./storage/falkordb:/var/lib/falkordb/data
+      - ${C64_KB_STORAGE:-./storage}/falkordb:/var/lib/falkordb/data
     environment:
       REDIS_ARGS: "--appendonly yes"
     healthcheck:

@@ -2,14 +2,13 @@
 
 # Game Structure: the states a shipped C64 game is made of
 
-This page is about how a finished game is put together above the level of
-any one routine: which states it passes through, what each state resets,
-how a level ends, and what a front end holds. These are design patterns,
-not techniques. A technique tells you how to move a sprite; a pattern
-tells you when the sprite must be switched off and who switches it back
-on. Each pattern names the techniques and recipes that realise it and
-lists checks a headless harness could run against a build. It exists
-because three faults keep recurring in generated games: every level ends
+How a finished game is put together above any one routine: which states
+it passes through, what each state resets, how a level ends, and what a
+front end holds. A technique says how to move a sprite; a design pattern
+says when the sprite must be switched off and who switches it back on.
+Each pattern names the techniques and recipes that realise it and lists
+checks a headless harness could run against a build. Three faults keep
+recurring in generated games: every level ends
 on a frame counter, the player sprite and score digits stay on screen
 after game over, and there is no working restart. Each is a missing or
 merged state, not a missing effect. Sources are named in prose; a number
@@ -90,7 +89,7 @@ standard VIC, SID and CIA facts and were not measured here.
 - Counters. Frame counter, timers, quotas and the spawn cursor are set
   by the entry routine of the state that uses them, not at boot.
 
-Braybrook's pause is the pattern in miniature: the interrupt-driven
+Braybrook's pause is a small example: the interrupt-driven
 sprite system was told to reuse its previous positions when no new ones
 arrived.
 
@@ -168,14 +167,14 @@ pressure on that, never as the end itself.
 
 ### The per-level table
 
-The canonical shape is a row per level and a column per tunable, with
+The usual shape is a row per level and a column per tunable, with
 the rows running to the level after which nothing changes. Pittman's
 Pac-Man tables have columns for the bonus symbol, the player's speed
 normal and eating, the ghosts' speed normal, frightened and in the
 tunnel, the frightened duration and flash count, and the scatter and
 chase intervals; the tables' last row is level 21 and up. Liepa's five
 difficulty levels are the same idea with two
-columns. Write your own in that shape and read every value from it:
+columns. Write the game's table in that shape and read every value from it:
 
 ```
 level  speed  duration  quota  enemy_count  spawn_rate  bonus
@@ -312,7 +311,7 @@ path. First, Öörni's control-override pattern: the player actor reads a
 virtual joystick byte rather than the port; he describes a conversation
 freezing the player by feeding zero, and enemy AI in his later games
 feeding enemy actors the same way. Driving attract through that byte
-from a script is this page's use of the seam, not his. Second, replay
+from a script is this page's use of that byte, not his. Second, replay
 recorded input through the same override; this reproduces the run only
 if the game is deterministic from its seed, the property Liepa wanted
 for Boulder Dash. Both end on any real fire press and at the script's

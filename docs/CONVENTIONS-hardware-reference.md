@@ -1,8 +1,8 @@
 # Hardware Reference Conventions
 
-All hardware reference docs in `docs/` follow these structural patterns so
-the entity extractor in `src/graph/extract.ts` can parse them. Deviation
-breaks the graph build.
+Hardware reference docs in `docs/` follow these patterns so
+the entity extractor in `src/graph/extract.ts` can parse them. A doc that
+deviates breaks the graph build.
 
 ## File-level frontmatter (optional)
 
@@ -17,13 +17,9 @@ region: PAL    # for region-specific docs only
 
 Top of file: `# Doc Title` (H1). One H1 per doc.
 
-Followed by an "Overview" section (H2) describing what's covered.
-
-Followed by a "Quick reference" section (H2) with tables.
-
-Followed by detail sections (H2 per topic, H3 per item).
-
-Followed by a "Pitfalls" cross-reference section (H2) at end.
+Then, in order: an "Overview" section (H2) saying what the doc covers; a
+"Quick reference" section (H2) with tables; detail sections (H2 per topic,
+H3 per item); a "Pitfalls" cross-reference section (H2) at the end.
 
 ## Register definitions
 
@@ -176,8 +172,8 @@ Use relative markdown links: `[VIC-II screen mode](vic-ii-reference.md#screen-mo
 
 ## File-end checklist
 
-Every hardware reference doc must end with this comment so the extractor
-can quickly verify it's a hardware-reference doc:
+Every hardware reference doc must end with this comment, which marks it
+as a hardware-reference doc for the extractor:
 
 ```
 <!-- doc-type: hardware-reference -->

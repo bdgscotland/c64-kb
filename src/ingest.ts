@@ -36,12 +36,12 @@ import { QdrantService } from "./services/qdrant.ts";
 
 const DOCS_DIR = config.docs.dir;
 
-interface RunFlags {
+export interface RunFlags {
   forceAll: boolean;
   cleanFirst: boolean;
 }
 
-function parseFlags(argv: string[]): RunFlags {
+export function parseFlags(argv: string[]): RunFlags {
   const forceAll = argv.includes("--force");
   // --force re-ingests every file, and MERGE never removes an edge a doc no
   // longer asserts, so a forced run is also a clean one; otherwise a changed
@@ -88,8 +88,12 @@ function readCorpus(files: string[]): { contents: Map<string, string>; corpus: s
   return { contents, corpus };
 }
 
-async function main(): Promise<void> {
-  const { forceAll, cleanFirst } = parseFlags(process.argv);
+/**
+ * Run a batch ingest; returns the process exit code. Shared by
+ * `node src/ingest.ts` (npm run ingest) and `c64-kb ingest`, the only way
+ * to build the stores from an npm install.
+ */
+export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<number> {
   const flags = `${forceAll ? " --force" : ""}${cleanFirst ? " --clean" : ""}`;
   console.log(`c64-kb ingest${flags}`);
   console.log(`  docs: ${DOCS_DIR}`);
@@ -98,7 +102,7 @@ async function main(): Promise<void> {
   if (!(await ollamaAvailable())) {
     console.warn("  WARNING: Ollama not available. Run: ollama pull mxbai-embed-large");
     console.warn("  Aborting — Phase 1 ingest requires embeddings.");
-    process.exit(1);
+    return 1;
   }
   console.log(`  embeddings: ${config.ollama.model} via Ollama`);
 
@@ -139,14 +143,17 @@ async function main(): Promise<void> {
   await reportSummary({ qdrant, falkor, nodes, edges, stubTechniques, print });
 
   await falkor.close();
-  process.exit(0);
+  return 0;
 }
 
 // Run only when executed (`node src/ingest.ts`), not when imported.
 const entry = process.argv.at(1);
 if (entry !== undefined && import.meta.url === pathToFileURL(path.resolve(entry)).href) {
-  main().catch((err: unknown) => {
-    console.error("Ingest failed:", err);
-    process.exit(1);
-  });
+  runIngest(parseFlags(process.argv)).then(
+    (code) => process.exit(code),
+    (err: unknown) => {
+      console.error("Ingest failed:", err);
+      process.exit(1);
+    },
+  );
 }
