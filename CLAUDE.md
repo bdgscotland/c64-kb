@@ -202,7 +202,10 @@ in `src/tools/query.ts`; check which before editing either.
   a comparison on a function's address at `$8000` or above folds wrong
   (`((unsigned)&main >> 8) >= 0x80` with `main` at `$8080` in a
   `-tf=crt8` build compiles as false; the same test at `$0880` is right;
-  all three builds); two `const char` tables
+  all three builds);
+  a `while (x >= y)` midpoint-circle loop calling an `inline` plot eight
+  times a pass leaves after one pass at -O2 and -O3 (-O1 is right; all
+  three builds; a `__noinline` wrapper around the plot avoids it); two `const char` tables
   shifted `<< 8` with one index in a loop that also calls a `__noinline`
   function read the second table at the first one's value (-O1 and up);
   four fixed-address arrays cleared in one loop send one array's stores

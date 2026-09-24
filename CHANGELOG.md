@@ -5,7 +5,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 824, schema 39, tools 2.14.0, package 0.27.0.
+Data 825, schema 39, tools 2.14.0, package 0.27.0.
+
+**Seven application techniques (data 825; #19 group A).** Oscar64
+recipes, each run on PAL and NTSC, self-checking and CIA-timed, each
+with a new pitfall it measures: trainer and cheat hooks (a NOP patch
+over `DEC` ends the game on the first death), pinball ball physics (a
+12 px/frame ball tunnels an 8 px wall without substeps), a gap-buffer
+text editor (a key at the start: 101 cycles against 85,058 for a flat
+array; an overlapping copy in the wrong direction corrupts 1,239 bytes),
+an ML monitor core (its opcode table agrees with VICE's on all 151 legal
+opcodes and round-trips 3,850 KERNAL instructions; resuming a BRK at the
+stacked PC skips the patched instruction), paint brush and flood fill
+(an 8-connected fill leaks through a diagonal outline: 64,000 pixels
+against 4,917), story-file paging over a 4-page cache (the file's blocks
+sit ten sectors apart, not in order), and a control configuration
+screen (a scan ending on RETURN leaves `$DC00` = `$FE`, read as joystick
+2 up). New Oscar64 fault, all three builds: a midpoint-circle loop with
+an inline plot leaves after one pass at -O2/-O3.
 
 **Paint formats, three more toolchains, and tool references (data 824;
 #19 group F).** Art Studio, Advanced Art Studio, Doodle (plain and
