@@ -274,6 +274,43 @@ describe("lfsr rule wants a name the file shifts or XORs", () => {
   });
 });
 
+describe("lfsr rule reads a multi-byte seed (#97)", () => {
+  // The #22 game test's step.asm: a 16-bit Galois LFSR whose state is 1.
+  const step = (lo: string): string =>
+    [
+      `rng_lo:    .byte ${lo}              // waves.c rng_seed writes both`,
+      "rng_hi:    .byte 0",
+      "rng_step:",
+      "        lsr rng_hi              // one Galois step",
+      "        ror rng_lo",
+      "        bcc !+",
+      "        lda rng_hi",
+      "        eor #$b4",
+      "        sta rng_hi",
+      "!:      rts",
+    ].join("\n");
+
+  it("is quiet on rng_hi .byte 0 beside rng_lo .byte 1", () => {
+    expect(lintSource(step("1"), { language: "asm" })).toEqual([]);
+  });
+
+  it("still reports a state whose every byte is zero", () => {
+    expect(lintSource(step("0"), { language: "asm" }).map((x) => [x.rule, x.line])).toEqual([
+      ["lfsr_zero_state_lockup", 1],
+      ["lfsr_zero_state_lockup", 2],
+    ]);
+  });
+
+  it("is quiet on the same pattern in C", () => {
+    const src =
+      "char rng_lo = 1, rng_hi = 0;\nchar step(void){ char c = rng_lo & 1; rng_lo = (rng_lo >> 1) | (rng_hi << 7); rng_hi >>= 1; if (c) rng_hi ^= 0xb4; return rng_lo; }\n";
+    expect(lintSource(src, { language: "c" })).toEqual([]);
+    expect(
+      lintSource(src.replace("rng_lo = 1", "rng_lo = 0"), { language: "c" }).map((x) => x.rule),
+    ).toContain("lfsr_zero_state_lockup");
+  });
+});
+
 describe("detectLanguage", () => {
   it("reads a KickAssembler .for block with a ';' inside a // comment as asm", () => {
     expect(detectLanguage(".for (var i=0; i<8; i++) {\n lda #0\n}\n;\n")).toBe("asm");

@@ -3,7 +3,7 @@
 import { decimalModeInIrq } from "./asm-decimal.ts";
 import { LABEL } from "./asm-shared.ts";
 import { d015MergedAsm } from "./sprite-enable.ts";
-import { hex4, isZero, parseNumber, stripAsm } from "./text.ts";
+import { byteStem, hex4, isZero, parseNumber, stripAsm } from "./text.ts";
 import {
   OPEN15_MECHANISM,
   PAGES,
@@ -164,15 +164,23 @@ function rasterPoll(ctx: LintContext): void {
   });
 }
 
-/** lfsr_zero_state_lockup: a seed label defined as zero. */
+const SEED_DEF =
+  /^\s*(\w*(?:seed|lfsr|rng)\w*):?\s+(?:\.byte|\.word|!byte|!word|byte|word|dc\.b|dc\.w|db|dw)\s+([^\s,]+)\s*$/i;
+
+/**
+ * lfsr_zero_state_lockup: a seed label defined as zero. A byte of a
+ * multi-byte state (rng_hi beside rng_lo) is zero only when every byte of
+ * that state is: `rng_lo: .byte 1` / `rng_hi: .byte 0` is a 16-bit seed of 1.
+ */
 function lfsrZero(ctx: LintContext): void {
-  ctx.lines.forEach((line, i) => {
-    const def =
-      /^\s*(\w*(?:seed|lfsr|rng)\w*):?\s+(?:\.byte|\.word|!byte|!word|byte|word|dc\.b|dc\.w|db|dw)\s+([^\s,]+)\s*$/i.exec(
-        line,
-      );
+  const defs = ctx.lines.map((line) => SEED_DEF.exec(line));
+  const nonZeroStems = new Set(
+    defs.flatMap((d) => (d !== null && !isZero(group(d, 2)) ? [byteStem(group(d, 1))] : [])),
+  );
+  defs.forEach((def, i) => {
     if (!def || !isZero(group(def, 2))) return;
     const name = group(def, 1);
+    if (nonZeroStems.has(byteStem(name))) return;
     if (!new RegExp(`\\b(lsr|asl|ror|rol|eor)\\s+${name}\\b`, "i").test(ctx.src)) return;
     report(ctx, i, {
       rule: "lfsr_zero_state_lockup",
