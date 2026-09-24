@@ -5,7 +5,15 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 777, schema 31, tools 2.4.0, package 0.17.1.
+Data 778, schema 31, tools 2.4.0, package 0.17.1.
+
+**A `.sid` worked example in the disassembly reference (data 778; #64).**
+`toolchains/disassembly-reference.md` assembles its own PSID file
+(BSD-3-Clause, no HVSC file), reads init $1000 and play $1003 from the
+header, disassembles the body with da65, and runs it in the windowless
+`vsid`: init once with A = $00, play every 19656 cycles (one PAL frame),
+called from the driver vsid places at $1100. `formats/c64-file-formats.md`
+no longer says KickAssembler cannot produce a `.sid`.
 
 **Plain prose and corrected claims across docs/ (data 777; #56, #67).**
 Every page's prose lost its machine-written wording in six batches;

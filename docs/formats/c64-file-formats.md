@@ -581,7 +581,7 @@ The header block's 192 bytes were: type `$01` (relocatable BASIC program), start
 
 The SID format is the container for C64 music, combining a short metadata header with a C64 binary containing the init and play routines. There are two variants: PSID (Portable SID) for files that run under emulated environments, and RSID (Real SID) for files that require an authentic C64 environment (real interrupt timing, BASIC ROM, etc.).
 
-**Note on producers:** SID files are not produced by the assembler toolchains in this knowledge base. The canonical producers are dedicated C64 music trackers: GoatTracker 2 (cross-platform, exports PSID/RSID), SID-Wizard (native C64 tracker), and DefMON. These tools are not currently represented as Tool nodes in this KB. KickAssembler can *consume* SID files via the `LoadSid` directive to embed a SID player's binary into a larger program, but it does not produce `.sid` files.
+**Note on producers:** SID files are not produced by the assembler toolchains in this knowledge base. The canonical producers are dedicated C64 music trackers: GoatTracker 2 (cross-platform, exports PSID/RSID), SID-Wizard (native C64 tracker), and DefMON. These tools are not currently represented as Tool nodes in this KB. KickAssembler can *consume* SID files via the `LoadSid` directive to embed a SID player's binary into a larger program. It has no SID output type, but a `.file [type="bin"]` segment that writes the header bytes itself produces a valid PSID file: [disassembly-reference](../toolchains/disassembly-reference.md), section "A `.sid` file: init and play", assembles one and plays it in VICE's `vsid`. An earlier version of this note said KickAssembler does not produce `.sid` files.
 
 **File header:**
 
