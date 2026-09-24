@@ -95,7 +95,7 @@ The documented usage calls `install`/`loadraw` **directly**, so the `$0330` vect
 
 **VIC-bank / bus-lock protocol (`$DD00` is shared between the VIC bank bits and the IEC bus).** `include/loader.inc` provides `SET_VIC_BANK` (A = VIC bank 0..3) to tell the loader the active bank, and `ENTER_BUS_LOCK` / `LEAVE_BUS_LOCK`. The rules (verified 2026-05-20):
 - The loader does **not** preserve a non-default VIC bank by itself: a raw `loadraw` left `$DD00`'s bank bits changed across the load. Tell it the bank via `SET_VIC_BANK`, or re-assert the bank **between** loads.
-- **Never raw-write `$DD00` while the loader is armed/resident.** Doing so corrupts its bus-lock state and the *next* drive op (load or uninstall) hangs. While the loader is idle you may write `$DD00` (e.g. to set the VIC bank), but a load must be entered through the loader's expectations (`LEAVE_BUS_LOCK` before / `ENTER_BUS_LOCK` after in the macro API). For a turn-based game that loads only at screen transitions, re-asserting the VIC bank as an idle write after each load (display paused) is the simplest safe pattern.
+- **Never raw-write `$DD00` while the loader is armed/resident.** Doing so corrupts its bus-lock state and the *next* drive op (load or uninstall) hangs. While the loader is idle you may write `$DD00` (e.g. to set the VIC bank), but a load must be entered through the loader's expectations (`LEAVE_BUS_LOCK` before / `ENTER_BUS_LOCK` after in the macro API). For a turn-based game that loads only at screen transitions, re-asserting the VIC bank as an idle write after each load (display paused) is the simplest safe pattern. The v194 README ("Setting the VIC bank") is narrower than this bullet: a store of `$00`-`$03` to `$DD00` (bits 2-7 zero, which is what `SET_VIC_BANK` does) is allowed at any time, also from an interrupt while loading; the writes that break the loader are `$DD00` values with bits 2-7 set and writes to `$DD02`, which the loader uses to drive ATN, CLK and DATA. Which kind of write caused the hang observed on 2026-05-20 was not recorded.
 
 **Drive compatibility + fallback.** `ONLY_1541_AND_COMPATIBLE=1` shrinks install code by treating every drive as a 1541. `LOAD_VIA_KERNAL_FALLBACK=1` makes the loader fall back to the KERNAL load path when drive-code installation fails (incompatible drive such as SD2IEC, or true-drive emulation disabled), which mitigates `gcr_timing_assumes_stock_drive` at the cost of speed on those devices. Other tunables: `FILENAME_MAXLENGTH`, `DIRTRACK`/`DIRTRACK81` (shadow directory for dir-art), `FILE_EXISTS_API`, `UNINSTALL_API`, `LOAD_UNDER_D000_DFFF`, `END_ADDRESS_API` (progress displays).
 
@@ -254,7 +254,7 @@ Decompression time: decompressing a 50 KB part takes on the order of seconds on 
 **Uses kernal:** (none)
 **Demands:** serial_bus_exclusive, kernal_rom_out
 
-(An earlier version of this section credited Sparkle to JackAsser and Hollowman, marked it PAL-only, and described a raster IRQ at line 0 that received bytes in the background at 2,500-3,000 B/s while the main program polled a flag, with double-buffered blocks and a pause mode; the Sparkle 3.4 user manual contradicts or does not describe all of it, and the section below is rewritten from that manual. Nothing in it was measured here.)
+(An earlier version of this section credited Sparkle to JackAsser and Hollowman, marked it PAL-only, and described a raster IRQ at line 0 that received bytes in the background at 2,500-3,000 B/s while the main program polled a flag, with double-buffered blocks and a pause mode; the Sparkle 3.4 user manual contradicts or does not describe all of it, and the section below is rewritten from that manual. The `$DD02` bank switch and one load rate were later measured in VICE (recipe `sparkle-dd02-bank`); the rest is from the manual, not measured here.)
 
 ### Why
 
@@ -289,7 +289,7 @@ The C64 talks to the drive through CIA2 `$DD00`, 2 bits at a time plus ATN, at 7
 
 Two rules follow from sharing `$DD00` with the VIC bank bits:
 
-- **VIC bank.** Do not write `$DD00`; the loader may read the change as a drive command and reset the drive. Select the bank with `LDA #$3C+bank : STA $DD02`, bank 0-3 (pp. 20-21; common issue 1, p. 29). Any value may go into `$DD02` between loader calls if `$3C`+bank is back before the next call (the "indirect bus lock", pp. 21-22).
+- **VIC bank.** Do not write `$DD00`; the loader may read the change as a drive command and reset the drive. Select the bank with `LDA #$3C+bank : STA $DD02`, bank 0-3 (pp. 20-21; common issue 1, p. 29). Any value may go into `$DD02` between loader calls if `$3C`+bank is back before the next call (the "indirect bus lock", pp. 21-22). Measured in VICE x64sc 3.10 with true drive emulation, PAL and NTSC (recipe `sparkle-dd02-bank`): a raster interrupt wrote `$3C`+bank to `$DD02` twice a frame, 523 times during eight loads on PAL, and every bundle matched its checksum with the VIC always in the bank last set. The two usual `$DD00` forms failed. With a read-modify-write, the VIC showed bank 3 at 400 of the 523 checks, because the loader writes 0 into bits 0-1. With a plain `LDA #bank : STA $DD00` store, bit 3 went low, which releases ATN; the drive code read that as a C64 reset and reset the drive, and the next load never returned.
 - **Free `$DD00`.** Write `$03` (any value with bits 3-5 clear) to `$DD02` first; then any value may go into `$DD00`. Restore `$DD00` to `$38`, then `$DD02` to `$3C`+bank, in that order (the "direct bus lock", pp. 22-23).
 
 `pitfalls/loader.md` `fastloader_dd00_write_corrupts_resident` compares these rules with Krill's and Bitfire's.
@@ -306,7 +306,11 @@ Interrupt handlers must cope with `$01`: each loader call writes `$35` and may s
 
 ### Cycle budget
 
-Transfer: 72 C64 cycles a byte (p. 3). At 985,248 cycles a second on PAL that is a ceiling of about 13.7 kB/s before sector reads, head steps and depacking (rung 3; the manual gives no bytes-per-second figure). The drive's GCR fetch, decode and verify loop is 124 cycles and tolerates 272-314 rpm (p. 3). Real disks can take up to one extra revolution (10 frames) per bundle, more on a checksum retry, so the manual advises a sync buffer of at least 10 frames and preferably 20 after a load (common issue 9, p. 30). No figure here was measured.
+Transfer: 72 C64 cycles a byte (p. 3). At 985,248 cycles a second on PAL that is a ceiling of about 13.7 kB/s before sector reads, head steps and depacking (rung 3; the manual gives no bytes-per-second figure). The drive's GCR fetch, decode and verify loop is 124 cycles and tolerates 272-314 rpm (p. 3). Real disks can take up to one extra revolution (10 frames) per bundle, more on a checksum retry, so the manual advises a sync buffer of at least 10 frames and preferably 20 after a load (common issue 9, p. 30). Measured in VICE x64sc 3.10 (recipe `sparkle-dd02-bank`; frame counts rung 1, seconds rung 3): eight bundles of 4 KB, packed to 108 blocks, loaded in 261 PAL frames (5.21 s, about 6.3 kB/s) and 312 NTSC frames (also 5.21 s), with a raster interrupt running twice a frame. (An earlier version of this paragraph said no figure here was measured.)
+
+### Recipes
+
+- `recipes/kickassembler/sparkle-dd02-bank.md`: builds a Sparkle disk with SparkleCPP, switches the VIC bank through `$DD02` from a raster interrupt while eight bundles load, and checks each bundle by checksum; two variants write `$DD00` instead. Run in VICE, PAL and NTSC; not pinned in `runs.json`, pictures under `docs/figures/`.
 
 ### Sources
 
