@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 770, schema 31, tools 2.3.1, package 0.16.1.
+Data 770, schema 31, tools 2.3.1, package 0.17.0.
+
+**npm package (package 0.17.0).** An installed package could not do
+anything useful: batch ingest existed only as an npm script in a clone,
+`docker-compose.yml` was not shipped, and state was written inside the
+package folder. `c64-kb ingest` and `c64-kb services up|down|status` now
+exist, and state goes to `$XDG_DATA_HOME/c64-kb` (or
+`~/.local/share/c64-kb`, or `C64_KB_DATA_DIR`) when the package is under
+`node_modules`; a clone still uses `data/`. CI installs the packed
+tarball into an empty folder and runs services, ingest and a lookup. A
+release workflow publishes on a `v*` tag; the first publish and the
+licence check are open in #52.
 
 **A routed game briefing names its starter (tools 2.3.1, package
 0.16.1).** `c64_game_briefing` with no `archetype` routes by the brief's
