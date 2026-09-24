@@ -32,13 +32,15 @@ SHOT_CYCLES_NTSC := 110000000
 #   $54-$5F (view_sprites, vic_compare, vic_expect) and $60 (grade, in the
 #   AUTOPILOT build); the first draft used $54-$56. $61-$6F is headroom for
 #   the next such edit; nothing else lives there.
+# - The IRQ chain writes $D016 (XSCROLL) and $D018 (matrix and character
+#   base) at its splits, and view_init sets both.
 # - The KERNAL's IRQ runs until main's SEI, so IRQ is declared.
 # - $DC0D (all CIA1 interrupts off) counts against the three CIA1 units.
 # - CIA2 timer A is the harness meter's; timer B times the IRQs for the
 #   meter (engine.asm); the $DD0D stores count against all three CIA2
 #   units, so all three are declared as the harness's.
 # - The whole run, title to verdict, is traced (--cycles, the PAL pin).
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, vic_xscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
 
 # This starter's own proofs, which npm run verify:templates runs too.
 VERIFY_TARGETS := flickercheck gameover drivetest

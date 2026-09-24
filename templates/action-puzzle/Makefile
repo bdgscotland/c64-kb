@@ -34,7 +34,8 @@ SHOT_DISK := 1
 # kernalio.h and the KERNAL IRQ, which runs during those calls only.
 # vic_raster_irq: wait_frame sets the compare line and acknowledges the
 # $D019 latch to count dropped frames; the interrupt itself stays disabled.
-CLAIMS_ARGS := --cycles 24000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ --claim 'sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, cia1_port_a, cia1_timer_b, vic_raster_irq, zero_page $$02-$$55' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$2000-$$27FF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
+# vic_char_base: render_init points $D018 at the charset at $2000.
+CLAIMS_ARGS := --cycles 24000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ --claim 'sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, cia1_port_a, cia1_timer_b, vic_raster_irq, vic_char_base, zero_page $$02-$$55' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$2000-$$27FF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.

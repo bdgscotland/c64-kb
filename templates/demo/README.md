@@ -163,8 +163,9 @@ cycles added to `main_update`, and `make check` caught it). The program
 now counts it itself, and the verdict grades it: see "Autopilot and
 checks".
 
-`plan-budget` (PLAN.md) predicted 2,381 + 1,873 fixed cycles. Where it
-differs:
+`plan-budget` (PLAN.md) predicted 2,381 + 1,873 fixed cycles when the demo
+was planned; re-run for #78, with more Cost lines measured, it says
+4,169-4,588 + 1,873. Where the first prediction differs:
 
 (Its low end, 2,381, matches the PAL switch sample of an earlier build by
 coincidence; neither was derived from the other.)

@@ -21,13 +21,17 @@ SHOT_CYCLES_NTSC := 24000000
 
 # What the program may write, for make claims (claims-watch's own grammar).
 # - Oscar64's registers start at $02 (BC_REG_WORK_Y). main's temporaries
-#   reach $53 (T5, BC_REG_TMP_SAVED in its MachineTypes.cpp): this trace
-#   stores there from main+122, one past the $02-$52 that hello declares.
+#   reach $54: T1 is the word at $53-$54 (BC_REG_TMP_SAVED in its
+#   MachineTypes.cpp), and main+250 stores the frame count's high byte in
+#   $54 every frame (build/platformer-auto.asm; make zp lists $43-$54).
+#   An earlier version declared $02-$53 and said main stopped at $53.
+# - The engine writes $D016 (XSCROLL) and $D018 (matrix and character base)
+#   at its splits, and view_init sets both.
 # - The KERNAL's IRQ runs until main's SEI, so IRQ is declared.
 # - $DC0D (all CIA1 interrupts off) counts against the three CIA1 units;
 #   the meter's $DD0D against CIA2's three, declared as the harness's.
 # - The whole run, title to verdict, is traced (--cycles, the PAL pin).
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$53' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 26000000
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, vic_xscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$54' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 26000000
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.

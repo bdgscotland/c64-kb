@@ -28,8 +28,9 @@ SHOT_DISK := 1
 # the KERNAL's key count, which the loop and the autopilot write. keyqueue is
 # the KERNAL keyboard queue; shiftmode $0291 locks SHIFT + C=. --kernal names
 # SCNKEY, which the loop calls every frame, and the file routines save.c calls
-# through kernalio.h.
-CLAIMS_ARGS := --cycles 18000000 --kernal SCNKEY,SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST --claim 'sid_voice_1, sid_voice_2, sid_filter_volume, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, zero_page $$02-$$57+$$C6' --range 'keyqueue=$$0277-$$0280,shiftmode=$$0291,screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$3800-$$3FFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
+# through kernalio.h. vic_char_base: video_init points $D018 at the charset
+# at $3800.
+CLAIMS_ARGS := --cycles 18000000 --kernal SCNKEY,SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST --claim 'sid_voice_1, sid_voice_2, sid_filter_volume, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, vic_char_base, zero_page $$02-$$57+$$C6' --range 'keyqueue=$$0277-$$0280,shiftmode=$$0291,screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$3800-$$3FFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
