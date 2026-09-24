@@ -553,8 +553,11 @@ The VIC-II's sprite renderer maintains two internal shift registers per sprite:
 one for the sprite's own pixels and one tracking whether any other sprite pixel
 was active at the same screen position. When both are nonzero on the same clock,
 the sprite-sprite latch fires. The sprite-background latch fires when a sprite
-pixel is nonzero at the same position as a non-transparent background pixel from
-the display data.
+pixel is nonzero at the same position as a foreground pixel of the display
+data: a 1 bit with MCM clear, bit pair 10 or 11 with MCM set; pair 01 counts
+as background though it is drawn in a colour (`hardware/vic-ii-reference.md`,
+"Priority"; Bauer's VIC-II article, section 3.8.2). An earlier version said
+"a non-transparent background pixel", which would include pair 01.
 
 The chip sets the latch during the *raster scan*, before the CPU sees the
 result, so the hardware has already resolved pixel-exact overlap of

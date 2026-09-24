@@ -506,7 +506,7 @@ The handler is installed at $0314/$0315 with the KERNAL in, which is why it exit
 
 ### Why it works
 
-On each badline the VIC pulls BA low on cycle 12 and takes the bus on cycles 15-54, so the CPU loses 40-43 cycles, 43 for an ordinary instruction stream. (An earlier version said AEC halts the CPU for 40 cycles.) The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. IRQ jitter (see `stable_raster_irq` in `docs/techniques/raster.md`) is absorbed by the polling loop; the 11-cycle pre-steal window (cycles 1-11; stores may also land on 12-14) is wide enough to contain worst-case jitter (an earlier version said 15 cycles).
+On each badline the VIC pulls BA low on cycle 12 and takes the bus on cycles 15-54, so the CPU loses 40-43 cycles, 43 for an ordinary instruction stream. (An earlier version said AEC halts the CPU for 40 cycles.) The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. The polling loop does not absorb IRQ jitter: the one above (`LDA $D012`, `CMP #`, `BNE`, 9 cycles) leaves 0-8 cycles after the line changes, so the write after it can land on any of 9 cycles (instruction-table arithmetic; see `stable_raster_irq` in `docs/techniques/raster.md`). The pre-steal window is cycles 1-11 (stores may also land on 12-14), so a 9-cycle spread fits in it only if it starts on cycle 1, 2 or 3; one fixed cycle needs `double_irq`. (An earlier version said the polling loop absorbs the jitter and that the window is wide enough for worst-case jitter; before that it gave the window as 15 cycles.)
 
 ### Variations
 

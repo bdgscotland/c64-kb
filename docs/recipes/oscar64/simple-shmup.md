@@ -871,7 +871,7 @@ in the vertical blank or during the active display period (for long games), but
 `vspr_update()` must happen before the raster beam reaches the first
 reuse IRQ trigger line.
 
-### Sprite multiplexer: eight slots for nine objects
+### Sprite multiplexer: eight logical sprites in one pass
 
 `vspr_init(Screen)` initializes the `vspr_*` layer and claims raster IRQ slots
 0 to `VSPRITES_MAX-8` for the multiplexer's internal use: with the default
@@ -885,7 +885,8 @@ bullets, four enemies. Eight logical sprites fit in a single hardware pass, so
 slot each frame; only the sync IRQ fires. Anything placed in slots 0-7 is
 therefore cleared on the next `vspr_update()`, which is why the music slot is 9.
 With a second wave of enemies adding up to eight more sprites, the reuse IRQs
-would activate to handle the second group.
+would activate to handle the second group. (An earlier heading said "eight
+slots for nine objects"; the recipe has eight.)
 
 The sprite pointer block at `Screen + $3F8` (address `$07F8`) holds one byte per
 hardware slot telling the VIC which 64-byte block of sprite data that slot
@@ -987,8 +988,10 @@ after `rirq_start()`. The rest of the shmup is unchanged.
 
 This recipe uses separate struct arrays (`struct Bullet bullets[3]`,
 `struct Enemy enemies[4]`) whose fields are accessed by struct dereference.
-Oscar64's optimizer generates efficient code for small structs (up to 8 bytes)
-because it can hold the base pointer in zero-page and access fields directly.
+Compiled here with `-O2`, the loops over these arrays step X by the struct
+size (5 for `Enemy`) and read each field as an indexed absolute load such as
+`LDA enemies+3,X`; no zero-page pointer is used. (An earlier version said
+Oscar64 held the base pointer in zero page.)
 For larger arrays (16+ enemies), the idiomatic Oscar64 pattern is `__striped`:
 
 ```c

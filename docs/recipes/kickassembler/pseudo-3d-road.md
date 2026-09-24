@@ -995,5 +995,6 @@ in Python, the listing's arithmetic gives cx = 255 from i = 60 at
 scroll_z = 0 and from i = 10 at scroll_z = 80; the table dumped at
 scroll_z = 4 matched that arithmetic entry for entry. So the road bends
 right and pins; it never curves left. (An earlier version said it curved
-left and right.) Whether any cx and hw values produce the geometry of a
-real game engine is not established here.
+left and right.) The fix is issue #73
+(https://github.com/bdgscotland/c64-kb/issues/73). Whether any cx and hw
+values produce the geometry of a real game engine is not established here.

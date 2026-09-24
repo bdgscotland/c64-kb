@@ -21,7 +21,7 @@ Drives a precompiled SID tune's init and play subroutines from Oscar64 C using
 from a two-line `__asm` block, play through `rirq_call` with
 `(void *)0x1003`. (An earlier version said "two extern function pointers";
 a call through a const function pointer crashes the compiler, see below.)
-A raster IRQ fires at line 0 every frame and calls the play routine,
+A raster IRQ calls the play routine once a frame, on line 255,
 so the play rate stays at 50/60 Hz whatever the main loop costs. A second
 voice uses the `sid_voice_setup` and `sid_filter_routing` techniques for a
 sound effect beside the tune. This is the Oscar64 pattern for playing SID
@@ -118,12 +118,12 @@ static void tune_init(void)
 }
 
 // ---------------------------------------------------------------------------
-// Raster IRQ: call the play routine once per frame at raster line 0
+// Raster IRQ: call the play routine once per frame (rirq_set row 0 runs on line 255)
 // ---------------------------------------------------------------------------
 // rirq_call installs a JSR to a C function inside an RIRQCode slot.
 // This is the canonical way to call a SID play routine from the raster engine:
-// the call is data-driven (no inline IRQ handler to write), stable-timed,
-// and composes cleanly with other rirq slots.
+// the call is data-driven (no inline IRQ handler to write), and composes
+// with other rirq slots. rasterirq.h polls $D012, so the entry cycle varies.
 RIRQCode play_rirq;
 
 // ---------------------------------------------------------------------------
@@ -237,8 +237,8 @@ int main(void)
     hud_init();
 
     // --- Initialize the raster IRQ system ---
-    // rirq_call installs a JSR to tune_play in slot 0 at raster line 0.
-    // The raster engine calls it every frame at the top of the screen.
+    // rirq_call installs a JSR to tune_play in slot 0, row 0. The engine
+    // arms $D012 at row - 1, which wraps to 255: play runs on line 255.
     rirq_init(true);
     rirq_build(&play_rirq, 1);
     rirq_call(&play_rirq, 0, (void *)TUNE_PLAY);
@@ -325,7 +325,9 @@ shows the `sidtune` section at five bytes instead of zero.
 With the stub tune the only sound is the effect. Measured from VICE's SID
 register dump (`-sounddev dump`, PAL, 12,000,000 cycles): about 90 frames
 after start-up voice 2 is gated on with sawtooth (`$D40B` = `$21`) at
-frequency `$3A89` (A5, 880 Hz on PAL), `$D417` = `$F2` (resonance 15, voice 2
+frequency `$3A89` (A5, 880 Hz on PAL; the same value is 913 Hz on NTSC,
+3.8% sharp, from `sid.h`'s clocks 985,248 and 1,022,727 Hz: arithmetic, and
+`SID_FREQ_NTSC(880)` is the NTSC value), `$D417` = `$F2` (resonance 15, voice 2
 filtered) and `$D418` = `$1F` (low-pass, volume 15); the cutoff falls each
 frame, and 39 frames later the gate drops (`$D40B` = `$20`), `$D417` = 0 and
 `$D418` = `$0F`. The trigger repeats every 151 frames, 3.01 s on PAL and
@@ -378,28 +380,31 @@ was never the problem.
 ### `rirq_call` and the per-frame play cadence
 
 `rirq_call(&play_rirq, 0, addr)` encodes a JSR to `addr` inside an `RIRQCode`
-slot. When the raster beam crosses line 0, the raster engine executes the JSR,
+slot. When the raster IRQ for the slot is taken, the raster engine executes the JSR,
 the play routine runs, and execution returns to the engine's exit path. It calls
 a subroutine from the raster system without a
 custom `__hwinterrupt` handler. The slot fires on the same raster line every
-frame, so play runs once per frame near the top of the screen; the entry
+frame, so play runs once per frame, below the display window; the entry
 cycle varies by a few cycles, because `rasterirq.h` spins on `$D012` and
 is not cycle-exact (`stable-raster-irq.md`, "What stable means here").
 An earlier version called this a "stable-raster guarantee" and a "fixed
 cycle offset". Music tempo is therefore independent of main-loop duration: even if the main loop
 takes 30,000 cycles one frame and 2,000 the next, the play routine fires in
-the same window at the top of each frame.
+the same window of each frame.
 
-`play` is called at line 0. Any fixed line gives one call per frame; line
-0 puts the play routine's raster time in the top border, away from any
-raster work the program does on the visible screen. (An earlier version
-said line 0 was needed because `$D418` "must not change during active
-rendering"; no source was given, and the SID's registers have no link to
-the raster.) Line 0 is in the top border, before the display window, which
-opens at line 51 on PAL and NTSC alike (see `hardware/pal-ntsc-reference`; an
-earlier version of this sentence put the NTSC figure "around line 41", which
-is where NTSC's vertical blank ends and the border becomes visible, not where
-the display window opens).
+`play` is called on line 255. Measured with a VICE monitor tracepoint on
+`$1003`, PAL and NTSC: every call starts on line 255, between cycles 32
+and 38. `rirq_set(0, 0, ...)` asks for row 0, but the engine arms `$D012`
+at row - 1, which wraps to 255, and its check that the row has been reached
+(`$D012` above the row) is already true there, so the "one below" rule of
+`stable-raster-irq.md` does not apply to row 0. (An earlier version said
+play ran at line 0, in the top border.) Any fixed line gives one call per
+frame; line 255 is below the display window, which spans lines 51 to 250
+on PAL and NTSC alike (see `hardware/pal-ntsc-reference`; an earlier
+version put the NTSC start "around line 41", where NTSC's vertical blank
+ends), away from any raster work on the visible screen. (An earlier version said line 0 was
+needed because `$D418` "must not change during active rendering"; no source
+was given, and the SID's registers have no link to the raster.)
 
 ### PAL vs NTSC frame-rate difference
 

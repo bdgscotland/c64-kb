@@ -1098,7 +1098,7 @@ lines below 0", which has no meaning.
 Write the desired compare line into $D012 (low 8 bits) and into $D011
 bit 7 (bit 8), enable raster IRQ in $D01A bit 0, and the chip will pull
 its IRQ output low at the start of cycle 1 of that line (cycle 2 for
-line 0). The CPU sees this as a normal 6502/6510 IRQ and vectors via
+line 0; from Bauer's VIC-II article, not measured here). The CPU sees this as a normal 6502/6510 IRQ and vectors via
 ($FFFE/$FFFF). With the KERNAL ROM banked in that vector is $FF48, which
 pushes A, X and Y and jumps through ($0314); $0314 holds $EA31 after
 boot, the KERNAL's full service routine (ROM bytes, 901227-03). An
@@ -1217,11 +1217,15 @@ The "$3FFF phantom pixels" picture is a whole-frame effect, not a
 mid-frame strip: it appears when DEN is clear on line $30 (no badlines, so
 the frame never leaves idle state) but set again by line 51 (so the
 vertical border opens); the window then shows the byte at $3FFF ($39FF
-with ECM) in colour 0 over $D021 on every line. That follows from Bauer's idle-state description (§3.7.3.9) but was
-not reproduced here: in VICE x64sc, with `$3FFF` = `$F0`, DEN clear on
-line $30 and set on line 49 (default C64C) or 50 (C64C and `-model
-c64`), the whole window was plain `$D021`, although the monitor showed
-the chip idle and fetching `$F0`. The cause was not found.
+with ECM) in colour 0 over $D021 on every line, as Bauer's idle-state
+description (§3.7.3.9) predicts. Measured in VICE x64sc with a loop that
+clears DEN on line 40 and sets it again on line 49 or 50, every frame,
+with `$3FFF` = `$F0`: every cell of lines 51-250 showed 4 black and 4
+`$D021` pixels, with no other pixel in the window, on the default C64C
+and on `-model c64`. Set on line 52 instead, the window stayed in the
+border colour. (An earlier version said this was not reproduced in VICE,
+the window showing plain `$D021`, cause not found; that test's setup is
+not recorded, and the effect reproduces as described.)
 
 ### Light pen latch
 
@@ -1691,7 +1695,11 @@ got 982,800 and 1,025,700 cycles/s, which are not the clocks.
 Subtract 25 badlines × 40–43 stolen cycles × 50.12 frames/s, about
 50,000–54,000 cycles/s, for a text frame; the CPU gets about 931,000–935,000
 cycles/s on PAL.
-Sprites can subtract another 50–100K cycles/s if used heavily.
+Sprites subtract more: eight sprites shown once a frame took 399 cycles a
+frame over their 21 lines (measured in VICE x64sc, `techniques/cpu-cycle-tricks.md`,
+`dma_steal_avoidance`), about 20,000 cycles/s; eight sprites multiplexed
+down all 200 display lines would take 19 cycles a line, about 190,000
+cycles/s (arithmetic). (An earlier version said 50–100K cycles/s.)
 
 ## Pitfalls
 
@@ -1758,9 +1766,11 @@ Sprites can subtract another 50–100K cycles/s if used heavily.
 - **Mid-line mode switches**: a mode write changes pixels on the same
   line, not always at a character-cell boundary: MCM lands 4 pixels into
   a cell in VICE x64sc (see [Mode-switch timing](#mode-switch-timing); an
-  earlier version said every switch lands on a cell boundary); used for
-  FLI, but a stray write during a badline can rewrite the row buffer in
-  unexpected ways.
+  earlier version said every switch lands on a cell boundary). A stray
+  write during a badline can rewrite the row buffer in unexpected ways.
+  (An earlier version said mid-line mode switches are used for FLI; FLI
+  forces a badline on every line with `$D011` YSCROLL writes, see
+  `fli_image`.)
 - **NTSC R56A oddity**: the rare 6567 R56A NTSC chip has 262 lines and
   64 cycles/line instead of the more common R8's 263/65. Code that
   hard-codes "65 cycles per line on NTSC" miscounts on the R56A.

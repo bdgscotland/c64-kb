@@ -121,9 +121,13 @@ oscar64 -tm=c64 -O2 -o=fixed-point-jump.prg fixed-point-jump.c
 ```
 
 Produces `fixed-point-jump.prg` (868 bytes including the BASIC stub).
-The compiler prints `warning 2017: Invalid value range` for the
-`arc_y[n]` read after `n++`; `n` is reset to 0 on the landing frame
-before that read, so the index never reaches 63. Load with
+The compiler prints `warning 2017: Invalid value range` at listing line
+78, column 28: the `apex = y` assignment. Deleting that line, or writing
+`apex = y + 0`, silences it, and `-O0` does not print it (each compiled
+here); which range the optimizer objects to is not established, and the
+pinned runs below behave as the table says. (An earlier version blamed the
+`arc_y[n]` read after `n++`; masking that index as `n & 63` leaves the
+warning in place.) Load with
 `LOAD"FIXED-POINT-JUMP",8,1 : RUN` or via VICE autostart.
 
 ## Expected output
