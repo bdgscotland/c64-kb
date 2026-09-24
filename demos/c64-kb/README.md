@@ -32,11 +32,11 @@ is the part's own selfcheck passing.
 
 | #   | Part    | KB techniques                                                                                  | Recipes                                                                                                                                                                                                                                              | PAL worst | PAL typical | NTSC worst | NTSC typical |
 | --- | ------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------: | ----------: | ---------: | -----------: |
-| 1   | LOGO    | tech_tech_wobbler, plasma, sprite_border_scroller, topbottom_border_open                        | [tech-tech](../../docs/recipes/kickassembler/tech-tech.md), [plasma](../../docs/recipes/kickassembler/plasma.md), [sprite-border-scroller](../../docs/recipes/kickassembler/sprite-border-scroller.md)                                              |    11,195 |      10,453 |     11,770 |       11,019 |
-| 2   | TWIST   | twister, vector_balls_sprites                                                                  | [twister](../../docs/recipes/kickassembler/twister.md), [vector-balls](../../docs/recipes/kickassembler/vector-balls.md)                                                                                                                             |    13,913 |      13,272 |     14,802 |       13,056 |
-| 3   | BORDER  | dysp_side_border_sprites, big_font_2x2, soft_scroll_h, raster_bars, topbottom_border_open      | [dysp](../../docs/recipes/kickassembler/dysp.md), [soft-scroll-h](../../docs/recipes/oscar64/soft-scroll-h.md) (ported from Oscar64)                                                                                                                 |    27,538 |      13,148 |     31,039 |       13,924 |
-| 4   | FIRE    | fire_effect, sprite_sine_chain (on a Lissajous path), colour_cycling (a palette wave), luminance_dissolve | [fire-effect](../../docs/recipes/kickassembler/fire-effect.md), [luminance-dissolve](../../docs/recipes/kickassembler/luminance-dissolve.md)                                                                                                    |    31,747 |      28,865 |     32,261 |       30,048 |
-| 5   | SPRITES | sprites_only_screen_mode, sprite_multiplex_24, vector_balls_sprites, raster_bars               | [sprites-only-screen](../../docs/recipes/kickassembler/sprites-only-screen.md), [sprite-multiplex-24](../../docs/recipes/kickassembler/sprite-multiplex-24.md), [vector-balls](../../docs/recipes/kickassembler/vector-balls.md)                    |     8,206 |       6,738 |      9,146 |        8,886 |
+| 1   | LOGO    | tech_tech_wobbler, plasma, sprite_border_scroller, topbottom_border_open                        | [tech-tech](../../docs/recipes/kickassembler/tech-tech.md), [plasma](../../docs/recipes/kickassembler/plasma.md), [sprite-border-scroller](../../docs/recipes/kickassembler/sprite-border-scroller.md)                                              |    11,195 |      10,453 |     11,770 |       11,018 |
+| 2   | TWIST   | twister, vector_balls_sprites                                                                  | [twister](../../docs/recipes/kickassembler/twister.md), [vector-balls](../../docs/recipes/kickassembler/vector-balls.md)                                                                                                                             |    13,914 |      13,273 |     14,803 |       13,054 |
+| 3   | BORDER  | dysp_side_border_sprites, big_font_2x2, soft_scroll_h, raster_bars, topbottom_border_open      | [dysp](../../docs/recipes/kickassembler/dysp.md), [soft-scroll-h](../../docs/recipes/oscar64/soft-scroll-h.md) (ported from Oscar64)                                                                                                                 |    27,538 |      13,148 |     31,028 |       13,924 |
+| 4   | FIRE    | fire_effect, sprite_sine_chain (on a Lissajous path), colour_cycling (a palette wave), luminance_dissolve | [fire-effect](../../docs/recipes/kickassembler/fire-effect.md), [luminance-dissolve](../../docs/recipes/kickassembler/luminance-dissolve.md)                                                                                                    |    31,926 |      31,540 |     32,810 |       30,117 |
+| 5   | SPRITES | sprites_only_screen_mode, sprite_multiplex_24, vector_balls_sprites, raster_bars               | [sprites-only-screen](../../docs/recipes/kickassembler/sprites-only-screen.md), [sprite-multiplex-24](../../docs/recipes/kickassembler/sprite-multiplex-24.md), [vector-balls](../../docs/recipes/kickassembler/vector-balls.md)                    |     7,933 |       6,442 |      9,149 |        7,147 |
 
 Parts 1, 2, 3 and 5 leave through `colour_fade`
 ([colour-fade](../../docs/recipes/kickassembler/colour-fade.md)), a
@@ -45,8 +45,8 @@ leaves through its own luminance dissolve. Part 3 runs eight DYSP sprites
 across both open side borders on PAL and five on NTSC. Part 5's twenty-four
 balls sit on eight hardware sprites through fixed multiplexer rows twenty
 lines apart. The end screen's `LATE FRAMES` line counts line-255 interrupts
-that arrived while a part's frame work was still running, 474 on PAL and
-1,176 on NTSC, most of them the fire's half passes, which take more than a
+that arrived while a part's frame work was still running, 415 on PAL and
+1,106 on NTSC, most of them the fire's half passes, which take more than a
 frame by design; the sequencer runs the work once more as soon as it
 returns. The screen's last figure row is the KB's own compatibility census
 over the demo's technique list: 16 techniques, 48 hard conflicts among them,
@@ -58,7 +58,7 @@ work for its first 200 frames, separately from the parts' own brackets:
 | Model | Frames | Worst | Typical |
 | ----- | -----: | ----: | ------: |
 | PAL   |    200 | 3,134 |   3,129 |
-| NTSC  |    200 | 6,650 |   6,192 |
+| NTSC  |    200 | 6,648 |   6,525 |
 
 ## The music
 

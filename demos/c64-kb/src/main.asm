@@ -330,11 +330,11 @@ p3_fade_done:
         jsr p3.cleanup
         jsr seq_gap
         jsr p4.prepare
-        // Tune B "Chains" starts with part 4's first frame: its bar 0 is a full
-        // downbeat, and music_pos restarts at 0 for SYNC_POS_4 and SYNC_POS_5.
-        // music_init runs on the main thread with the frame interrupt live
-        // (mu_busy makes music_play return at once meanwhile).
-        // (the switch to tune B, `lda #1 / jsr music_init`, is held back pending the maintainer's ear)
+        // The multi-tune switch is held back pending the maintainer's ear, so
+        // tune A plays on through part 4. It would start tune B "Chains" here
+        // (`lda #1 / jsr music_init` on the main thread with the frame interrupt
+        // live; mu_busy makes music_play return at once meanwhile), with
+        // music_pos restarting at 0 for SYNC_POS_4 and SYNC_POS_5.
         jsr seq_wait250
         sei
         jsr p4.setup
@@ -428,9 +428,9 @@ p5_fade_done:
 end_screen:
         // Text mode, bank 0, $D018=$15, black border and background.
         // Interrupts are masked; music re-enabled via CLI after setup.
-        // Tune C "After" for the end screen (main thread; the frame interrupt
-        // resumes the player on it after the CLI below).
-        // (the switch to tune C, `lda #2 / jsr music_init`, is held back pending the maintainer's ear)
+        // The switch to tune C "After" for the end screen (`lda #2 / jsr
+        // music_init` on the main thread) is held back pending the maintainer's
+        // ear; tune A plays on, resumed by the frame interrupt after the CLI below.
         lda #$0b; sta $d011     // display off while we rewrite screen
         lda #$08; sta $d016
         lda #$15; sta $d018     // screen $0400, VIC ROM uppercase charset
