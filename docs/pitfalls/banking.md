@@ -684,7 +684,7 @@ developed.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** CHROUT
-**Triggered by techniques:** zx0_lzsa_decrunchers, pucrunch_decruncher, doynax_decruncher, zero_page_burst, byteboozer_packer
+**Triggered by techniques:** zx0_lzsa_decrunchers, pucrunch_decruncher, doynax_decruncher, zero_page_burst, byteboozer_packer, tinycrunch_and_tscrunch
 **Mitigated by techniques:** cpu_io_port_bank
 
 ### Symptom
@@ -791,13 +791,23 @@ bytes; this payload did not. The Doynax self-extractor copies its depacker to
 `$00C2` and up (its technique entry says so); whether it saves what it
 covers was not measured here.
 
+TSCrunch's zero-page self-extractor (`tscrunch -x`) fails the same way as
+bitfire's, measured on 2026-09-24 with a second payload that prints one
+line through `CHROUT` (`tinycrunch_and_tscrunch`): 197 zero-page bytes
+changed at entry (`$02` to `$FE`), `$01` back at `$37`, `$9A` at `$B1`
+and `$99` at `$C8`, and the line did not appear. Its stack-page stub
+(`-x2`) changed 12 bytes and printed; TinyCrunch's stub changed 11 and
+printed. In the same run Dali's standard `--sfx` changed 16 and Exomizer's
+`sfx sys` 11, and both printed.
+
 ### Fix
 
 One of three, in order of cost:
 
 1. **Choose a stub that saves.** Dali's standard `--sfx` and pucrunch's
    default decruncher both let a KERNAL-calling payload run unchanged
-   here. The `--small` flag bought 59 bytes of file on this payload and cost
+   here, and so did TSCrunch's `-x2`, TinyCrunch's stub and Exomizer's
+   `sfx sys`. The `--small` flag bought 59 bytes of file on this payload and cost
    the machine state; take it only for a payload that owns the machine.
 2. **Re-initialise in the payload's prologue.** Before the first KERNAL
    call: write `$37` to `$01` (`cpu_io_port_bank`), then `JSR $FF84`
@@ -892,6 +902,7 @@ d4: 00 > 08   quote-mode flag set
 
 - Technique `zx0_lzsa_decrunchers`: the stubs' layout, the copy loop's span (`$EC` and `$D4` down to `$01`) and the measured footprints.
 - Technique `pucrunch_decruncher`: a decruncher that sits at `$F7` and up and leaves the KERNAL's variables alone.
+- Technique `tinycrunch_and_tscrunch`: TSCrunch's `-x` and `-x2` stubs and TinyCrunch's, measured side by side with Dali, bitfire and Exomizer.
 - Technique `doynax_decruncher` (loaders-packers.md): a depacker at `$00C2` and up; its saving behaviour is not measured here.
 - Technique `cpu_io_port_bank`: the `$01` values; `$34` is the all-RAM map the stubs decrunch under.
 - Technique `memory_layout_plan`: where the payload's own zero-page claims should be written down, so the stub's span is checked against them.
