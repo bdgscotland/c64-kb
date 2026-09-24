@@ -62,8 +62,10 @@ checks them against the map (AUTOPILOT builds), and moves and draws the
 bolts and dots before the beam reaches them. It tests hits, moves the ship,
 runs the waves, hands the actors to the multiplexer, draws three rows of
 the hidden screen and sets next frame's scroll. Zone IRQs reuse sprites down
-the screen. The split IRQ on line 212 switches to the panel on line 215 and
-plays the music.
+the screen. The split IRQ on line 204 switches to the panel on line 207 and
+plays the music. The panel's five rows end on line 246, where the border
+closes (`RSEL` = 0). Before #107 the split switched on line 215, and the
+fifth row showed only lines 247-250 above the border.
 
 ## Measured
 
@@ -71,8 +73,8 @@ VICE x64sc 3.10, the harness meter. The graded script's 240 play frames:
 
 | Model | Worst frame | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 11,681 cycles | 8,374 | 19,656 |
-| NTSC | 11,875 cycles | 8,733 | 17,095 |
+| PAL | 11,678 cycles | 8,379 | 19,656 |
+| NTSC | 11,873 cycles | 8,734 | 17,095 |
 
 `make stage` plays a script that puts 12 enemies, bolts, dots and a kill in
 the same frames, and meters play frames 150-399. The worst of a sweep of its
@@ -80,8 +82,12 @@ timing over 16 variants is the variant it runs:
 
 | Model | `make stage` worst | Typical | Frame |
 |---|---|---|---|
-| PAL | 15,064 cycles | 9,280 | 19,656 |
-| NTSC | 15,237 cycles | 9,967 | 17,095 |
+| PAL | 15,066 cycles | 9,289 | 19,656 |
+| NTSC | 15,241 cycles | 9,973 | 17,095 |
+
+Both tables were measured again after #107 moved the panel split up 8
+lines (before it: 11,681 and 11,875 worst, 15,064 and 15,237 staged); the
+sweep of 16 variants was not re-run.
 
 The figures hold the C loop's frame and every IRQ, with badlines and sprite
 DMA. They leave out the loop's head (the wait, the scroll hand-over, the
@@ -158,8 +164,10 @@ ahead of the beam). Re-run `make stage` after changing either.
 
 - Colour per map cell: colour RAM cannot be double-buffered, so every
   playfield cell shares one colour RAM value and the map is 4 colours.
-- Sprites below line 208: a sprite on line 214 breaks the panel split
-  (measured); 209-213 were clean, and MAX_SY keeps 5 lines of margin.
+- Sprites below line 200: a sprite on line 206, the last playfield line,
+  breaks the panel split (measured); 201-205 were clean, and MAX_SY keeps
+  5 lines of margin. Before #107 moved the split up 8 lines these were
+  208, 214 and 209-213.
 - Enemy fire from above sprite Y 72 or below 140; power-ups, a boss, a
   high-score table with names.
 - Keyboard and a second joystick; RESTORE does nothing.

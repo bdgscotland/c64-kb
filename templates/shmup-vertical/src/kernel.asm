@@ -8,17 +8,25 @@
 //   line 252  frame IRQ   playfield $D011/$D018/$D016/$D021, first eight
 //                         sprites, frame_flag = 1 for the C main loop
 //   zones     zone IRQs   reuse the eight sprites further down (mux.asm)
-//   line 212  split IRQ   the panel: $D011, $D018, $D016 from line 214's
+//   line 204  split IRQ   the panel: $D011, $D018, $D016 from line 206's
 //                         right border, $D021 after the panel's badline;
 //                         sprites off; then the music (sound.asm)
 //
 // The split is c64-kb's kickassembler/scroll-panel-split recipe (technique
-// scroll_panel_split): the panel starts on line 215 with YSCROLL 7, and the
+// scroll_panel_split): the panel starts on a line with YSCROLL 7, and the
 // wait before the writes comes from a table indexed by the playfield's
-// YSCROLL, short at YSCROLL 6, where line 214 is a badline. The playfield
-// here is multicolour and 40 columns; the delays are the recipe's. Changed:
-// $D016 is written last, not first (see split_stores), and the split has
-// its own vector entry (see arm_split).
+// YSCROLL, short at YSCROLL 6, where the last playfield line is a badline.
+// The playfield here is multicolour and 40 columns; the delays are the
+// recipe's. Changed: $D016 is written last, not first (see split_stores),
+// the split has its own vector entry (see arm_split), and the split is 8
+// lines above the recipe's (#107). The recipe's panel starts on line 215,
+// so its fifth row starts on line 247 and only lines 247-250 of it show
+// above the border: the panel showed four rows. Here it starts on line 207
+// and shows screen rows 19-23 on lines 207-246. It must start on a line
+// with YSCROLL 7: the forced badline then re-starts the row the playfield
+// is in at every YSCROLL, and moving it a whole row keeps each line's
+// badline status, so the recipe's delays still apply. RSEL = 0 in the
+// panel closes the border on line 247, over the top of row 24.
 //
 // Nothing here uses zero page: Oscar64 owns $02-$52. KERNAL and BASIC are
 // banked out ($01 = $35), so the vectors are $FFFE and $FFFA.
@@ -38,11 +46,11 @@
 .const PTRS_B     = PF_B + $3f8
 .const PF_D016    = $d8       // multicolour, 40 columns, XSCROLL 0
 .const PANEL_D016 = $c8       // hires, 40 columns
-.const PANEL_D011 = $1f       // DEN, RSEL = 1, YSCROLL 7: panel badlines 215, 223, ...
+.const PANEL_D011 = $17       // DEN, RSEL = 0, YSCROLL 7: panel badlines 207, 215, ... 239; border from 247
 .const PANEL_D018 = $2e       // screen $8800, characters $B800
 .const PANEL_BG   = 11        // dark grey
-.const LAST_PF    = 214       // last playfield line at every YSCROLL
-.const SPLIT_LINE = 212       // split IRQ fires here and polls for LAST_PF
+.const LAST_PF    = 206       // last playfield line at every YSCROLL
+.const SPLIT_LINE = 204       // split IRQ fires here and polls for LAST_PF
 .const BOTTOM     = 252       // frame IRQ, below the panel
 
 * = $0880 "kernel"
@@ -197,11 +205,12 @@ no_zones:
 arm:    sta $d012               // next frame's lines: no late check across the wrap
         jmp on_time
 
-// The split has its own vector entry, so the poll starts early in line 212
-// as in the recipe. Through irq_entry it started about 30 cycles later, and
-// at YSCROLL 5 on PAL (line 213 a badline) the panel's writes then landed in
-// line 215 in 4 frames of every 12, following the music's cost: the panel's
-// first row showed playfield characters (measured in VICE, then fixed so).
+// The split has its own vector entry, so the poll starts early in its
+// first line as in the recipe. Through irq_entry it started about 30 cycles
+// later, and at YSCROLL 5 on PAL (line 213 a badline; the split was then 8
+// lines lower) the panel's writes then landed in line 215 in 4 frames of
+// every 12, following the music's cost: the panel's first row showed
+// playfield characters (measured in VICE, then fixed so).
 arm_split:
         lda #<split_irq
         sta $fffe
@@ -211,8 +220,8 @@ arm_split:
         sta $d012
         rts
 
-// ---- split IRQ, line 212 --------------------------------------------------
-// Poll for line 214, wait delay_tbl[YSCROLL] passes, switch to the panel.
+// ---- split IRQ, line 204 --------------------------------------------------
+// Poll for line 206, wait delay_tbl[YSCROLL] passes, switch to the panel.
 split_irq:
         sta save_a              // 12 cycles, like the recipe's three pushes
         stx save_x
@@ -225,34 +234,36 @@ split_body:                     // a late zone jumps here, registers saved
         ldy #PANEL_D016         // a badline stall only the stores remain
         lda #LAST_PF-1
 waitline:
-        cmp $d012               // until $D012 > 213: never waits a whole frame
+        cmp $d012               // until $D012 > 205: never waits a whole frame
         bcs waitline
         lda #PANEL_D011
 delay:  dec count               // absolute: 9 cycles a pass, 8 on the way out
         bpl delay
-// The writes start between cycle 57 of line 214 and cycle 1 of line 215 on
-// PAL (57 to 65 of line 214 on NTSC), the poll's jitter, in Bauer's
-// numbering, measured under the VICE monitor (an earlier comment gave the
-// exec trace's 0-based 58 to 0 and 58 to 64; a 20,000,000-cycle re-run
-// for c64-kb issue #82 also started one on exec CYC 56). In the recipe's order ($D016 first) the $D018
-// write came a cycle from too late at the far end: a run with it at cycle
-// 12 of line 215 showed playfield characters in the panel's first row.
+// The writes start between cycle 57 of the last playfield line and cycle 1
+// of the panel's first on PAL (57 to 65 on NTSC), the poll's jitter, in
+// Bauer's numbering, measured under the VICE monitor with the split on
+// lines 214-215, before #107 moved it up 8 lines (an earlier comment gave
+// the exec trace's 0-based 58 to 0 and 58 to 64; a 20,000,000-cycle re-run
+// for c64-kb issue #82 also started one on exec CYC 56). In the recipe's
+// order ($D016 first) the $D018 write came a cycle from too late at the far
+// end: a run with it at cycle 12 of the panel's first line showed
+// playfield characters in the panel's first row.
 // $D016 last buys four cycles; it only switches multicolour off, and the
 // panel's first pixels are background in both modes.
 split_stores:
-        sta $d011               // before cycle 12 of line 215, the panel's badline
+        sta $d011               // before cycle 12 of line 207, the panel's badline
         stx $d018               // before that badline's first screen fetch
         sty $d016               // last: the panel's first pixels are blank either way
         lda #LAST_PF
 waitpanel:
-        cmp $d012               // until $D012 > 214
+        cmp $d012               // until $D012 > 206
         bcs waitpanel
-        nop                     // reads across cycle 12 of line 215: the panel's
+        nop                     // reads across cycle 12 of line 207: the panel's
         nop                     // badline holds the CPU until cycle 55 at every
         nop                     // phase, which removes the poll jitter
         nop
         lda #PANEL_BG
-        sta $d021               // right border of line 215
+        sta $d021               // right border of line 207
         lda #0
         sta $d015               // no sprite under the panel
         cld

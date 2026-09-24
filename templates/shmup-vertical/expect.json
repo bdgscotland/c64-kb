@@ -25,13 +25,14 @@
     { "name": "... map row 35 in screen row 15 is water in that column", "type": "pixel", "vic_x": 226, "line": 171, "colour": 6 },
     { "name": "... map row 36's left bank edge in column 4 (sand)", "type": "pixel", "vic_x": 60, "line": 163, "colour": 7 },
 
-    { "name": "split: line 214 is still playfield (water in column 25)", "type": "pixel", "vic_x": 224, "line": 214, "colour": 6 },
-    { "name": "split: line 216 is the panel's grey", "type": "pixel", "vic_x": 224, "line": 216, "colour": 11 },
-    { "name": "panel rule, light grey, 40 columns (lines 218-219)", "type": "rect", "colour": 15, "vic_x": 24, "line": 218, "width": 320, "height": 2 },
-    { "name": "panel background, a blank row, 40 columns", "type": "rect", "colour": 11, "vic_x": 24, "line": 231, "width": 320, "height": 8 },
-    { "name": "two lives left: two cyan ships", "type": "rect", "colour": 3, "vic_x": 88, "line": 243, "width": 16, "height": 1 },
-    { "name": "no third life", "type": "rect", "colour": 11, "vic_x": 104, "line": 243, "width": 8, "height": 1 },
-    { "name": "no sprite under the panel: the panel's lines match on both models", "type": "same", "area": { "vic_x": 24, "line": 215, "width": 320, "height": 36 } },
+    { "name": "split: line 206 is still playfield (water in column 25)", "type": "pixel", "vic_x": 224, "line": 206, "colour": 6 },
+    { "name": "split: line 208 is the panel's grey", "type": "pixel", "vic_x": 224, "line": 208, "colour": 11 },
+    { "name": "panel rule, light grey, 40 columns (lines 210-211)", "type": "rect", "colour": 15, "vic_x": 24, "line": 210, "width": 320, "height": 2 },
+    { "name": "panel background, a blank row, 40 columns", "type": "rect", "colour": 11, "vic_x": 24, "line": 223, "width": 320, "height": 8 },
+    { "name": "panel's fifth row, all 8 lines (239-246), 40 columns", "type": "rect", "colour": 11, "vic_x": 24, "line": 239, "width": 320, "height": 8 },
+    { "name": "two lives left: two cyan ships", "type": "rect", "colour": 3, "vic_x": 88, "line": 235, "width": 16, "height": 1 },
+    { "name": "no third life", "type": "rect", "colour": 11, "vic_x": 104, "line": 235, "width": 8, "height": 1 },
+    { "name": "no sprite under the panel: the panel's lines match on both models", "type": "same", "area": { "vic_x": 24, "line": 207, "width": 320, "height": 40 } },
     { "name": "playfield rows 0-12 the same on both models", "type": "same", "cells": [0, 0, 12, 39] },
     { "name": "playfield rows 14-20 the same on both models", "type": "same", "cells": [14, 0, 20, 39] }
   ]
