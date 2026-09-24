@@ -366,3 +366,25 @@ describe("lintSource on a Markdown page", () => {
     expect(lintSourceResult(PAGE).text).toContain("(markdown, fences: c, asm)");
   });
 });
+
+// Issue #28 on the two pages it was seen on. Before the fence mask the
+// whole of music-sid.md was read as C: seven definite findings, two of
+// them `sid.md` in a prose link and none in its code.
+describe("lintSource on the pages of issue #28", () => {
+  const read = (rel: string): string => fs.readFileSync(path.join(here, "../docs", rel), "utf-8");
+
+  it("finds nothing in asset-pipelines.md or music-sid.md, whose C fences only write the SID", () => {
+    expect(lintSource(read("art/asset-pipelines.md"))).toEqual([]);
+    expect(lintSource(read("techniques/music-sid.md"))).toEqual([]);
+  });
+
+  it("reports a read-modify-write put into a C fence of music-sid.md at its page line", () => {
+    const lines = read("techniques/music-sid.md").split("\n");
+    const at = lines.findIndex((l) => l.includes("sid.fmodevol = SID_FMODE_LP | 15;")) + 1;
+    lines.splice(at, 0, "    sid.fmodevol |= 0x10;");
+    const findings = lintSource(lines.join("\n"));
+    expect(findings.map((f) => [f.rule, f.line, f.excerpt])).toEqual([
+      ["sid_write_only_registers", at + 1, "sid.fmodevol |= 0x10;"],
+    ]);
+  });
+});

@@ -385,7 +385,7 @@ program
 program
   .command("lint <file>")
   .description(
-    "Run the pitfall rules over a C or assembly source file (language from the extension, or --language)",
+    "Run the pitfall rules over a C or assembly source file (language from the extension, or --language), or over the C and assembly fences of a Markdown page",
   )
   .addOption(
     new Option("--language <lang>", "c, asm or auto").choices(["c", "asm", "auto"] as const).default("auto"),
