@@ -26,10 +26,18 @@ horizontal panning.
 **Region:** both
 **Uses registers:** D016
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=74041
+**Cost:** cycles_per_frame=7938
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-soft-scroll-h (carry frame: a 25-row memmove of screen and colour RAM)
+**Cost measured on:** oscar64-soft-scroll-h (carry frame: an unrolled 25-row move of screen RAM, colour RAM not moved)
 **Cost includes:** char_scroll_buffer_h
+**Claims:** vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Read off a `scripts/claims-watch.ts` store trace of
+`recipes/oscar64/soft-scroll-h.md`: the program's only unit store is
+`$D016` changing XSCROLL, once a frame. Its zero-page bytes are Oscar64's
+and its screen and colour RAM are the program's memory, so neither is the
+technique's claim.
 
 ### Why
 
@@ -92,12 +100,13 @@ shadow and new value are immediate, zero-page or absolute (cycle counts
 from `docs/hardware/6510-cpu-reference.md`). This technique has no
 raster-critical timing requirement.
 
-The Cost line's 74,041 cycles is not the register write. It is the carry
-frame of `recipes/oscar64/soft-scroll-h.md`, measured there in VICE: that
-recipe shifts all 25 rows of screen and colour RAM with `memmove`, which
-takes 3.8 PAL frames. The figure belongs to that implementation and
-exceeds a frame; issue #18 tracks rewriting the move to fit the vertical
-blank.
+The Cost line's 7,938 cycles is not the register write. It is the carry
+frame of `recipes/oscar64/soft-scroll-h.md`, measured there in VICE: an
+unrolled `LDA abs` / `STA abs` move of all 25 rows of screen RAM. It is
+more than the PAL blank (6,741 cycles after line 256), so the recipe moves
+the rows top first and finishes each before the beam reaches it (row 24 at
+line 82 on PAL). An earlier Cost line said 74,041 cycles: the recipe's
+earlier `memmove` of screen and colour RAM, 3.8 PAL frames, which tore.
 
 ### Recipes
 
@@ -111,6 +120,20 @@ blank.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=46
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-simple-shmup (`stars_update` on a frame without a carry: the YSCROLL step and the `$D011` write, CIA2 timer A, screen on, PAL and NTSC; the carry frame's layer move is not the technique's)
+**Claims:** vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+The technique writes only `$D011` bits 0-2 (YSCROLL) and keeps bit 7
+(store traces of `recipes/kickassembler/scroll-panel-split.md`,
+`recipes/oscar64/simple-shmup.md` and `recipes/oscar64/vehicle-control.md`).
+An earlier line said `none`, because no seeded unit held YSCROLL, and the
+compatibility check then reported only a soft `shared_register` beside
+`fld_flexible_line_distance`. The `vic_yscroll` unit
+([#71](https://github.com/bdgscotland/c64-kb/issues/71)) makes that pair
+an ownership conflict.
 
 ### Why
 
@@ -173,9 +196,19 @@ absolute ones; an earlier version said 10-12). Because changing YSCROLL inside a
 raster can produce glitches, the write should happen during the vertical
 blank or in a stable raster window above line $30.
 
+Measured on `recipes/oscar64/simple-shmup.md` (VICE x64sc 3.10, CIA2
+timer A around `stars_update`, screen on): 46 cycles for the YSCROLL step
+and the `$D011` write from Oscar64, the same on PAL and NTSC. That is the
+Cost line. The carry once in eight frames moves the layer, which is not
+this technique's work: that listing's 16 star cells took 3,525 to 3,802,
+and a whole-screen move is `char_scroll_buffer_v`'s. A plan with a carry
+lists the technique that moves the layer beside this one. The page had
+no figure before #37.
+
 ### Recipes
 
 - `recipes/kickassembler/scroll-panel-split.md` scrolls a playfield vertically through all eight YSCROLL phases above a fixed panel; `recipes/oscar64/soft-scroll-h.md` is the horizontal counterpart.
+- `recipes/oscar64/soft-scroll-v.md` scrolls the whole text screen up one line a frame, measures the unrolled row move against the beam on PAL and NTSC, and builds the trap (`-dLATE_WRITE=1`: YSCROLL written on line 150 draws one row twice).
 
 ---
 
@@ -185,6 +218,17 @@ blank or in a stable raster window above line $30.
 **Region:** both
 **Uses registers:** D016
 **Uses kernal:** (none)
+**Claims:** vic_xscroll (shares)
+**Claims basis:** measured-vice
+
+Store traces of `recipes/oscar64/soft-scroll-h.md`,
+`recipes/kickassembler/sine-scroller.md`, `big-font-scroller.md`,
+`dycp-scroller.md` and `cracktro-template.md`: each writes XSCROLL with one
+`$D016` store a frame, and the carry's reset to 7 is that store's value
+on the wrap frame. The carry follows `soft_scroll_h`'s phase, so it shares
+the unit that technique owns, as `char_scroll_buffer_v` shares
+`vic_yscroll`. Screen and colour RAM are the program's memory. The one
+`$D018` store in the big-font and DYCP recipes is their own charset's.
 
 ### Why
 
@@ -201,9 +245,10 @@ The display is backed by a 40×25 text screen (1000 bytes) and a parallel
 40×25 color RAM at $D800 (1000 nibbles). To scroll left by one character
 column:
 
-1. Copy columns 1-39 of each row to columns 0-38 (memmove of 39 bytes
-   per row, or equivalently shift the entire 1000-byte screen window left
-   by one byte taking care at the row boundary).
+1. Copy columns 1-39 of each row to columns 0-38, top row first. An
+   unrolled `LDA abs` / `STA abs` per byte costs 8 cycles; a library
+   `memmove` measured about 41 (`recipes/oscar64/soft-scroll-h.md`). An
+   earlier version of this step suggested `memmove`.
 2. Write fresh data into column 39 (the new rightmost column) from an
    off-screen content buffer.
 3. Repeat the same move on color RAM at $D800.
@@ -217,8 +262,11 @@ down to 0.
 
 For scrolling right, mirror the process: copy columns 0-38 to columns
 1-39, write fresh data into column 0, reset XSCROLL to 0 (it has just
-wrapped from 7). This matches the `if (xscroll == 0) { shift; xscroll = 7; }`
-form in `recipes/oscar64/soft-scroll-h.md`.
+wrapped from 7). The leftward form is the one in
+`recipes/oscar64/soft-scroll-h.md`: it writes the new XSCROLL at line 256,
+then moves the rows when XSCROLL has wrapped. An earlier version of this
+sentence quoted an `if (xscroll == 0) { shift; xscroll = 7; }` form that
+wrote `$D016` after the move.
 
 ### Why it works
 
@@ -232,13 +280,20 @@ shift and a memory copy.
 ### Variations
 
 - **Double-buffered screen RAM:** Maintain two screen-RAM pages and
-  alternate which one $D018 points to, avoiding tearing on fast machines.
+  alternate which one $D018 points to. The copy goes into the hidden page
+  and the switch is one write, so the raster never overtakes a half-done
+  copy. (An earlier version said this avoids tearing "on fast machines";
+  every stock C64 runs at the same ~1 MHz.)
 - **Unrolled move:** On stock C64 there is no DMA. Unrolling the copy
   into straight LDA abs / STA abs pairs brings it to 8 cycles per byte
   (8,000 cycles for 40×25), which still exceeds the off-screen span on
   both PAL (~7,056 cycles) and NTSC (~4,095); unrolling reduces the cost,
   it does not make the move fit in the blank. An earlier version of this
   item claimed the unrolled move "can complete inside the vertical blank".
+  It can race the beam instead: started at line 256 and done top row
+  first, 975 bytes take 7,938 cycles and every row is finished before it
+  is displayed (row 24 at line 82 PAL, 127 NTSC; measured in VICE by
+  `recipes/oscar64/soft-scroll-h.md`).
 - **Wide content ring buffer:** Keep the source content in a ring buffer
   wider than 40 columns. Advance the ring pointer each time a column shift
   fires instead of precomputing content on demand.
@@ -253,7 +308,8 @@ the frame budget. The color RAM shift doubles that cost to ~108%. A
 brute-force shift must therefore be overlapped across multiple frames or
 replaced with a DEC-and-pointer approach. An unrolled inner loop using
 indexed addressing and/or a 2-byte-per-iteration pattern roughly halves
-the cycle count.
+the cycle count. Fully unrolled, 975 bytes of screen RAM measured 7,938
+cycles (`recipes/oscar64/soft-scroll-h.md`).
 
 ### Recipes
 
@@ -267,6 +323,16 @@ the cycle count.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** (none)
+**Claims:** vic_yscroll (shares)
+**Claims basis:** derived-listing
+
+Read off `recipes/kickassembler/scroll-panel-split.md`. The carry resets
+YSCROLL in step with `soft_scroll_v`'s phase, so it shares the unit that
+technique owns; an earlier line said `none`, before `vic_yscroll` existed
+([#71](https://github.com/bdgscotland/c64-kb/issues/71)). The carry also
+moves screen and colour RAM, which are the program's memory, not units. That listing copies with
+absolute indexed loads and stores and no zero-page pointer; a pointer
+copy's bytes are the recipe's claim.
 
 ### Why
 
@@ -323,7 +389,9 @@ pixel-level motion.
 ### Cycle budget
 
 A 960-byte row shift at ~10 cycles per byte costs ~9,600 cycles (7,680
-fully unrolled). Between the last display line (250, RSEL=1) and the
+fully unrolled). The ~10 is an estimate, not measured: 8 cycles unrolled
+as LDA abs / STA abs, 14 in an LDA abs,X / STA abs,X / INX / BNE loop
+(instruction-table arithmetic). Between the last display line (250, RSEL=1) and the
 first badline of the next frame (48 + YSCROLL) there are no badlines and
 no character/bitmap fetches: with the default YSCROLL=3 that is lines
 251-311 and 0-50, 112 raster lines = 7,056 cycles on PAL; because this
@@ -344,6 +412,7 @@ frame's active display period.
 ### Recipes
 
 - `recipes/kickassembler/scroll-panel-split.md` shifts the rows on the carry frame and scrolls through all eight YSCROLL phases above a fixed panel.
+- `recipes/oscar64/soft-scroll-v.md` moves 24 rows with an unrolled copy, top row first, from line 247: 7,403 cycles on PAL and 7,659 on NTSC, at least 114 and 66 lines ahead of the VIC's row fetches.
 
 ---
 
@@ -358,8 +427,15 @@ frame's active display period.
 **Cost:** irq_slots=2, lines_active=5, cycles_per_frame=413
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-scroll-panel-split (two IRQs, screen on; not the carry frame)
-**Claims:** vic_raster_irq (owns)
+**Claims:** vic_raster_irq (owns), vic_yscroll (shares), vic_matrix_base (shares)
 **Claims basis:** derived-listing
+
+The split writes the panel's YSCROLL 7 and screen matrix mid-frame and
+restores the playfield's below the panel, so it follows the values
+`soft_scroll_v` and the program set: `shares`, not `owns`. A store trace
+of the recipe (`scripts/claims-watch.ts`) saw both fields change; its
+`$D016` store changes only CSEL, not XSCROLL. The two `shares` items were
+added with the units ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 
@@ -519,12 +595,20 @@ continuous motion.
 
 ### Cycle budget
 
-The per-frame cost is dominated by the occasional screen-RAM column shift,
-which fires once every 8 frames at 1 px/frame. Amortized over 8 frames
-on PAL (50 Hz), the average cost per frame is approximately 1,000 / 8 ×
-10 cycles = ~1,250 cycles amortized from screen copy, plus ~10 cycles per
-frame for the XSCROLL write. This fits a game with a
-budget of ~18,000 CPU cycles per frame.
+The cost is dominated by the column shift, which fires once every 8
+frames at 1 px/frame and lands in one frame, not eight. At ~10 cycles per
+byte (an estimate between 8 unrolled and 14 in an indexed loop; not
+measured) the 1,000-byte screen-RAM shift costs ~10,000 cycles, and the colour
+RAM shift in step 3d as much again: ~20,000 cycles against a PAL budget of
+~18,581 per frame (`char_scroll_buffer_h`, Cycle budget). The seven frames
+between carries cost ~10 cycles each for the XSCROLL write. So the carry
+frame does not fit as written. Build the shifted screen in a second page
+over the frames before the carry and flip $D018 on it (`char_scroll_buffer_h`,
+Variations); colour RAM at $D800 has no second page, so its shift stays in
+the carry frame unless the colours are uniform. (An earlier version
+averaged the shift over 8 frames, ~1,250 cycles per frame, and said it
+fits a ~18,000-cycle game budget; the average does not help the frame
+the shift lands in.)
 
 ### Recipes
 
@@ -625,7 +709,8 @@ in positional math plus the occasional carry, within the PAL budget.
 **Uses kernal:** (none)
 **Requires:** infinite_scroll_h
 **Cost:** cycles_per_frame=378, bytes_code=26
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** oscar64-charset-parallax (roll frame, every second frame, in the vertical blank)
 
 ### Why
@@ -717,7 +802,7 @@ count is 373 with `JSR` and `RTS`. Measured in VICE x64sc 3.10 on PAL and NTSC a
 because it runs in the vertical blank where no cycles are stolen. It
 runs every second frame at half speed, so the typical frame is 378 or 0.
 The worst frame is a roll frame; the `**Cost:**` line states it, and
-the 26-byte routine from the Oscar64 map. A larger tile scales the roll
+the 26-byte routine from the Oscar64 map. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line. A larger tile scales the roll
 linearly: 20 cycles per pixel row per glyph pair. The recipe's screen
 shift on the carry frame, 12,321 cycles on PAL and 12,537 on NTSC, is
 `infinite_scroll_h`'s cost, not this technique's.
@@ -749,6 +834,7 @@ shift on the carry frame, 12,321 cycles on PAL and 12,537 on NTSC, is
 **Region:** both
 **Uses registers:** D011, D016, D018
 **Uses kernal:** (none)
+**Alternative to:** soft_scroll_h (scrolls a pixel-accurate drawn scene, not characters; the whole 8,000-byte bitmap must be shifted or double-buffered)
 
 ### Why
 
@@ -795,7 +881,9 @@ of a cell takes line 7 of the cell in the band above), which is why
 bitmap scrollers carry vertically by whole bands and use YSCROLL for the
 intermediate lines.
 
-Cycle cost: an 8000-byte shift at ~10 cycles per byte = ~80,000 cycles.
+Cycle cost: an 8000-byte shift at ~10 cycles per byte = ~80,000 cycles
+(an estimate between 8 cycles unrolled and 14 in an indexed loop; not
+measured).
 PAL provides ~18,500 CPU cycles per frame (after badlines). An 8000-byte
 shift is approximately 4.3 frames of CPU time at full speed. This approach
 does not run at 50 Hz for a full-screen scrolling bitmap without
@@ -842,8 +930,8 @@ identical. The cost difference is in the carry: where character mode
 carries by rotating 1000 bytes of screen RAM, bitmap mode must carry by
 rotating 8000 bytes of raw pixel data. The $D018 page-flip trick avoids
 moving pixel data altogether by pointing the VIC at a different memory
-region, leaving the shifting work to the back-buffer renderer which runs
-across multiple cycles asynchronously.
+region, leaving the shifting work to the back-buffer renderer, which runs
+across several frames. (An earlier version said "across multiple cycles".)
 
 ### Variations
 
@@ -865,7 +953,7 @@ across multiple cycles asynchronously.
 Fine-scroll step (XSCROLL or YSCROLL write only, no carry): ~10 cycles.
 
 Coarse carry, memshift approach (fires once per 8 frames at 1 px/frame):
-8000 bytes × 10 cycles/byte = 80,000 cycles. Spread across 8 frames:
+8000 bytes × 10 cycles/byte = 80,000 cycles (the same ~10 estimate). Spread across 8 frames:
 10,000 cycles/frame average, or ~54% of the PAL per-frame budget.
 The colour carry must move in lockstep with the pixel carry: the
 1000-byte video matrix (each byte holds the cell's foreground and
@@ -895,6 +983,7 @@ buffer) is the main budget item and is scene-specific.
 **Cost:** cycles_per_frame=268
 **Cost basis:** arithmetic
 **Cost measured on:** oscar64-tile-map-render (one column edge, 11 metatiles)
+**Consumes formats:** CTM
 
 ### Why
 
@@ -1039,6 +1128,18 @@ cycles is about 55% of the ~19,656-cycle PAL frame, so it belongs at level
 start, not inside the scroll loop; the scroll loop does one edge decode
 per character step.
 
+A whole-level unpack is a transition cost, and the Cost line cannot
+carry it beside the per-frame column edge: one technique has one
+`cycles_per_frame`. The recipe's 11-row map takes 8,828 + 10,731 =
+19,559 cycles to decode and expand (the table above; arithmetic on
+two measurements). A game-sized cave takes more:
+`templates/action-puzzle` times its decode of cave 2 at 40,041 cycles
+on PAL and 40,519 on NTSC, screen on, CIA1 timer B, about two PAL
+frames, and its PLAN gives 28,193 to 50,447 a room for the C decoder
+of `recipes/oscar64/level-rle-decoder.md`. Budget it in the transition
+phase, on a static or blanked screen. An earlier version of this page
+gave only the column edge, 268.
+
 ### Recipes
 
 - `recipes/oscar64/tile-map-render.md`
@@ -1055,8 +1156,18 @@ per character step.
 **Uses kernal:** (none)
 **Requires:** frame_sync_loop
 **Cost:** cycles_per_frame=5343, bytes_code=4117, bytes_data=1090, zp_bytes=2, irq_slots=1
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-dycp-scroller (worst frame, 39 columns, in the vertical blank)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/dycp-scroller.md`: one `$D018` store (`$1C`) moves
+the character base to the strip charset at `$3000`, which the copy
+rewrites every frame. The matrix stays at `$0400`. The `$D016` stores are
+`soft_scroll_h`'s; the raster interrupt and the CIA2 timer are the
+recipe's frame tick and harness.
 
 ### Why
 
@@ -1137,7 +1248,7 @@ crossing of the sine lookup in some columns). The `**Cost:**` line above
 states that worst frame, the code segment (`$0900-$1914`, of which the
 unrolled copy is most) and the table segment (`$2000-$2441`) from
 KickAssembler's memory map; the 2 KB charset the copy writes is cleared
-at run time and is in neither segment.
+at run time and is in neither segment. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 The budget depends on where in the frame the copy runs. A column's strip
 bytes are read by the VIC on every raster line of the band, so the copy
@@ -1241,11 +1352,15 @@ mismatch of about 60 ms PAL and 50 ms NTSC per crossing.
 
 ### Variations
 
-- **AGSP.** Rewriting `$D011` and `$D016` per raster line, and the VM
-  nibble mid-frame, gives a hardware-scrolled playfield without any matrix
-  redraw at all, at the price of a per-line interrupt and a much harder
-  stability problem. It is the standard answer when the whole screen
-  scrolls and nothing else needs the CPU.
+- **AGSP.** A few `$D011` writes at the top of the frame (linecrunch,
+  FLD and one late badline) and one `$D016` write place the whole screen
+  at any pixel position with no matrix redraw; see `agsp_free_scroll` in
+  `techniques/raster.md`, measured. The writes hold the CPU only for the
+  band above the text, from a stable raster, and the late badline is a
+  VSP write with its crash risk. An earlier version of this item said
+  AGSP rewrote `$D011` and `$D016` on every raster line and the video
+  matrix nibble mid-frame, with a per-line interrupt; the codebase64 AGSP
+  example and the recipe do neither.
 - **A panel that does not scroll.** A world of 25 rows plus a status area
   wants the split raster to become a mode change rather than a colour
   deadline; see `scroll_panel_split`.

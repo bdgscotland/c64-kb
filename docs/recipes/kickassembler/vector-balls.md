@@ -7,6 +7,8 @@ techniques: [vector_balls_sprites]
 file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D012, D015, D017, D01B, D01C, D01D, D020, D021, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, DC04, DC05, DC0E]
 uses_kernal: []
+harness: [cia1_timer_a]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -487,7 +489,9 @@ the routine: from reset every sprite's Y is 0, which the VIC also
 matches at raster line 256, so the reset-state sprites took DMA from the
 timed window on the first frame. The listing now parks every Y at 130
 in the setup. A first repair wrote `sta $d001,x` with X counting 0 to 7,
-which lands on $D001 to $D008 and leaves sprites 5 to 7 at Y 0; that
+which lands on $D001 to $D008: the Y registers of sprites 0 to 3 and
+the X registers of sprites 1 to 4, leaving sprites 4 to 7 at Y 0 (an
+earlier version said sprites 5 to 7); that
 build read 1,608, and the pair table fixed it.
 
 ### Frame count and cycles

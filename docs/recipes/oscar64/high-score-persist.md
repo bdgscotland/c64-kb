@@ -7,6 +7,7 @@ techniques: [kernal_file_write_seq, kernal_file_read_seq, error_channel_check]
 file_formats: [PRG]
 uses_registers: []
 uses_kernal: [SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, READST]
+devices: [disk_1541_ii]
 ---
 
 <!-- doc-type: recipe -->
@@ -97,21 +98,29 @@ static void put_hex2(char v)
 // number at the head of the line. Never called once the device is known
 // to be absent: an empty name sends nothing on the bus, so this OPEN
 // succeeds whether or not a drive exists, and the CHKIN inside
-// krnio_gets would then hang with no timeout.
-static void drive_reply(const char *cmd)
+// krnio_gets would then hang with no timeout. drive_ask leaves channel 15
+// open and says whether it opened; drive_reply closes it.
+static bool drive_ask(const char *cmd)
 {
     reply[0] = 0;
     code = 99;
     krnio_setnam(cmd);
-    if (krnio_open(15, DRIVE, 15)) {
+    bool open = krnio_open(15, DRIVE, 15);
+    if (open) {
         int n = krnio_gets(15, reply, sizeof(reply));
         if (n > 0 && reply[n - 1] == 13)
             reply[n - 1] = 0;
         if (n >= 2)
             code = (reply[0] - '0') * 10 + (reply[1] - '0');
-        krnio_close(15);
     }
     printf("DRIVE: %s\n", reply);
+    return open;
+}
+
+static void drive_reply(const char *cmd)
+{
+    if (drive_ask(cmd))
+        krnio_close(15);
 }
 
 // chk = ((chk ^ b) * 5 + 1) & 0xffff over n bytes
@@ -144,6 +153,12 @@ static bool save_table(void)
 // the file is missing or the device did not answer). This OPEN sends
 // the name down the bus, so it is the one call that can see an absent
 // drive: it then returns false with KRNIO_NODEVICE in the status.
+// The drive's reply is read before the file, and the file only on 00:
+// after a 62 the drive keeps no channel for this read, and a read would
+// TALK to it, which can hang for ever (pitfall
+// first_open_after_reset_hangs_on_pal). Channel 15 stays open until
+// channel 2 is closed: closing 15 closes every file on the drive, and a
+// read after it returned 0 bytes with ST $42 (measured).
 static int load_table(void)
 {
     printf("READ HISCORE,S,R\n");
@@ -159,14 +174,17 @@ static int load_table(void)
         saving = false;
         return 0;
     }
-    int n = 0;
-    if (ok) {
-        n = krnio_read(2, back, sizeof(back));
-        printf(" READ %d ST=", n); put_hex2(krnio_pstatus[2]);
-    }
     putchar('\n');
+    bool cmd = drive_ask("");
+    int n = 0;
+    if (ok && code == 0) {
+        n = krnio_read(2, back, sizeof(back));
+        printf("READ %d ST=", n); put_hex2(krnio_pstatus[2]);
+        putchar('\n');
+    }
     krnio_close(2);
-    drive_reply("");
+    if (cmd)
+        krnio_close(15);
     return n;
 }
 
@@ -292,7 +310,7 @@ its own score file does to that image, is
 ```
 HIGH SCORE PERSIST (KERNALIO.H)
 READ HISCORE,S,R
-OPEN 1 ST=00 READ 0 ST=42
+OPEN 1 ST=00
 DRIVE: 62, FILE NOT FOUND,00,00
 FIRST RUN
 WRITE HISCORE,S,W 21 BYTES
@@ -306,8 +324,9 @@ WRITE HISCORE,S,W 21 BYTES
 OPEN 1 ST=00 WRITE 21 ST=00 CLOSE ST=00
 DRIVE: 00, OK,00,00
 READ HISCORE,S,R
-OPEN 1 ST=00 READ 21 ST=40
+OPEN 1 ST=00
 DRIVE: 00, OK,00,00
+READ 21 ST=40
 BACK V1: ABC 5000 YOU 4000 DEF 2500
 CHK F1F6 PASS
 
@@ -335,9 +354,9 @@ value the wrapper kept for that logical file. `DRIVE:` is the text the
   this run: the error the OPEN raises replaces it before the channel is
   first read. A probe that reads the channel before any other command
   gets the `73` line first (measured in the same VICE build).
-- First run: the OPEN for read succeeds (`OPEN 1 ST=00`), the read
-  returns 0 bytes with ST `$42` (EOF and timeout bits) and the drive
-  says `62, FILE NOT FOUND`. The program takes that as "no save yet",
+- First run: the OPEN for read succeeds (`OPEN 1 ST=00`) and the drive
+  says `62, FILE NOT FOUND`, so the file is not read. The program takes
+  that as "no save yet",
   writes the defaults (21 bytes, ST `00` through open, write and close,
   drive `00, OK`) and shows them.
 - New score: `YOU 4000` is inserted in rank order and `GHI 1000` drops
@@ -354,7 +373,7 @@ value the wrapper kept for that logical file. `DRIVE:` is the text the
   scratch reply after closing and reopening channel 15 gave `00, OK`
   instead of the `01` line; the reply to a command lasts only while the
   channel that sent it is open.
-- Read-back: 21 bytes with ST `$40` (EOF), drive `00, OK`, and the
+- Read-back: drive `00, OK`, then 21 bytes with ST `$40` (EOF), and the
   record decodes to the table that was written. `CHK F1F6` is the fold
   `chk = ((chk ^ byte) * 5 + 1) & 0xFFFF` over those 21 bytes; Python
   gives `0xF1F6` for the same bytes, so the line reads `PASS`.
@@ -362,20 +381,20 @@ value the wrapper kept for that logical file. `DRIVE:` is the text the
 ### The other paths, run once each (not pinned)
 
 **Second run, same disk, file present.** The same command run again on
-the disk the pinned run left behind. The read returns 21 bytes with ST
-`$40` and the drive says `00, OK`; the program prints `LOADED: ABC 5000
+the disk the pinned run left behind. The drive says `00, OK` and the
+read returns 21 bytes with ST `$40`; the program prints `LOADED: ABC 5000
 YOU 4000 DEF 2500`. The new score is entered again, so the table becomes
 `ABC 5000 YOU 4000 YOU 4000` (a tie is placed below the entry already
 there), the scratch answers `01, FILES SCRATCHED,01,00`, the rewrite and
 read-back succeed, and the last line reads `CHK B91C FAIL`. That FAIL
 is expected: `EXPECT_CHK` is the first-run table's value, and Python's
 fold of the second-run table is `0xB91C`, so the disk holds exactly
-what was written. The screen ends at row 15 with `READY.` on row 17.
+what was written. The screen ends at row 17 with `READY.` on row 19.
 
 **No disk attached.** The same command with no `-8` argument. VICE
 `-default` still emulates a 1541 on device 8, so the drive answers: the
-OPEN for read succeeds with ST `00`, the read returns 0 bytes with ST
-`$42`, and the error channel says `74,DRIVE NOT READY,00,00`. The
+OPEN for read succeeds with ST `00`, the error channel says `74,DRIVE
+NOT READY,00,00`, and the file is not read. The
 program prints `SAVING OFF (74)`, shows the defaults, enters the new
 score, prints `NOT SAVED`, and the checksum line reads `CHK F1F6 PASS`
 because it is then folded over the in-memory table, which is the same
@@ -409,8 +428,8 @@ cycles. That is why `drive_reply` is only ever called after a named OPEN
 has succeeded, and why the named OPEN of the save file comes first.
 
 **Old format on the disk.** A 15-byte `HISCORE` with version byte 0 was
-written to a fresh disk with `c1541 -write old.bin hiscore,s`. The read
-returned 15 bytes with ST `$40` and drive `00, OK`; the program printed
+written to a fresh disk with `c1541 -write old.bin hiscore,s`. The drive
+said `00, OK` and the read returned 15 bytes with ST `$40`; the program printed
 `OLD FORMAT 15 BYTES V0: RESET`, scratched (`01, FILES SCRATCHED,01,00`),
 wrote the defaults, then entered the new score, scratched and wrote
 again, and read back `BACK V1: ABC 5000 YOU 4000 DEF 2500` with
@@ -419,9 +438,9 @@ again, and read back `BACK V1: ABC 5000 YOU 4000 DEF 2500` with
 ## Why this works
 
 The policy turns on the first two digits of the drive's reply, not on
-the KERNAL's status byte alone. After a failed OPEN for read the
-KERNAL only knows that the read timed out (ST `$42`); it is the error
-channel that separates `62` (no file: write the defaults) from `74` (no
+the KERNAL's status byte alone. OPEN for read returns success with ST
+`00` whether or not the file is there; it is the error channel that
+separates `62` (no file: write the defaults) from `74` (no
 disk: leave the disk alone) from `00` (a file came back: check it).
 The one case the status byte does settle on its own is an absent drive:
 OPEN of a named file returns false with `KRNIO_NODEVICE` set, and the
@@ -432,6 +451,19 @@ the status or a DOS command such as `S0:HISCORE`, reads one line with
 the caller can branch on them. The reply is read on the same open
 channel in both uses because the reply to a command is gone once
 channel 15 is closed.
+
+`load_table` reads the reply before the file and reads the file only on
+`00`. After a `62` the drive keeps no channel for secondary 2, and a read
+would send it a TALK that it answers with a 68-cycle CLK pulse; a badline
+can hide that pulse from the KERNAL's wait at `$EDD6`, which has no
+timeout (`../../pitfalls/kernal-and-io.md`,
+`first_open_after_reset_hangs_on_pal`). An earlier version of this
+listing read the file first and the reply after, the order that can
+hang. Channel 15 is opened with an empty name after the named OPEN and
+closed after channel 2, because closing the command channel closes every
+file on the drive: a build that closed 15 between the reply and the read
+got `READ 0 ST=42` and `BACK V0` on the read-back of a file that was
+there (VICE x64sc 3.10, PAL, one run).
 
 A 21-byte record with a magic pair, a version byte and three fixed
 six-byte entries lets `load_table` accept or reject a file with three
@@ -721,7 +753,14 @@ divided by 19,656. The frames in the table were recomputed from the
 printed cycle counts, which do not depend on it. The `MODE=0` NTSC build
 detected NTSC and its printed frames agree with the table.
 
-## A start-up hang seen in VICE, located but not explained
+## A start-up hang seen in VICE, explained
+
+The cause is now measured: pitfall `first_open_after_reset_hangs_on_pal`
+(`pitfalls/kernal-and-io.md`). The file was not on the disk, so the drive
+had no channel to talk on; it held CLK low for 68 drive cycles, let go,
+and a badline stalled the C64 through that pulse. The heading of this
+section used to say "located but not explained". The record of the first
+sessions follows as it was found, with what it got wrong marked.
 
 A game built from this recipe, whose first act after its own set-up was
 `krnio_open` of `HISCORE,S,R` on a fresh disk, hung in that OPEN's
@@ -751,22 +790,25 @@ run:
 - The spin is `$EDD6`, the loop after TKSA that waits for the drive to
   pull CLK low and become the talker. It has no timeout. `$DD00` read
   `$67` on every pass: DATA held low by the C64, CLK released by both
-  sides. The drive's port `$1800` read `$01` (DATA OUT set, CLK OUT
-  clear), its secondary-address cell `$84` held `$62`, its ATN-pending
+  sides. The drive's port `$1800` read `$01` (bit 0, DATA IN: the C64
+  holding DATA; the drive driving neither line; an earlier version
+  called bit 0 DATA OUT), its secondary-address cell `$84` held `$62`, its ATN-pending
   flag `$7C` was 0. The drive had taken TALK and TKSA and stayed a
-  listener.
+  listener. (Wrong: these reads came after the pulse. The drive had
+  been the talker for 68 cycles and gone back to idle.)
 - Reading the drive CPU's registers from the monitor at each C64 stop
   made the same run pass: the drive went through `$E8E5`, `$E8F4` and
   `$E909`, the C64 reached ACPTR at `$EE13`, and the program went on
   to its next OPEN. Memory dumps alone did not change the outcome. Two
   runs each way.
 
-What was measured is consistent with a race at the TALK turnaround
-between the C64 releasing ATN and CLK and the drive sampling them. Why
-the drive misses the release, and whether a real drive can, is not
-measured here: the drive's state in the hanging case could only be read
-by an act that changed it. What a program can do is what the
-game did: give the bus a moment before the first OPEN, and check the
-status and the error channel after it rather than assuming the read
-returns. A wait of fifty frames was enough in every run tried; the
-smallest wait that suffices was not measured.
+These sessions called it a race in which the drive missed the release;
+it is the C64 that misses the drive's short pulse, and the monitor's
+reads moved the phase. No wait is safe: the scaffold's PAL build hung at
+16 of the 251 wait counts from 0 to 250 frames, fifty among those that
+ran. What fixes it, measured at every wait from 0 to 60 frames on both
+models, is to read the error channel after the OPEN and read the file
+only on `00`, or to blank the screen for the read. This listing reads the
+file first and the error channel after; on a fresh disk that is the
+case that can hang. It ran in every run here, which says only that its
+phase missed the window.

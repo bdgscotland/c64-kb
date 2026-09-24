@@ -12,17 +12,11 @@ import {
   type TechniqueLookupOutput,
   type TechniquesForOutput,
 } from "../../schemas/tool-outputs.ts";
-import {
-  describeFilter,
-  names,
-  parseRows,
-  searchChunks,
-  suggestNames,
-  toDocChunk,
-  type Chunk,
-} from "./shared.ts";
+import { describeFilter, names, parseRows, suggestNames, toDocChunk, type Chunk } from "./shared.ts";
 import { CLAIM_MODES } from "../../graph/claims.ts";
 import { compressUnits } from "./compatibility/unit-rules.ts";
+import { rankRecipesFor } from "../../domain/budget.ts";
+import { techniqueDocumentation } from "./technique-docs.ts";
 import type { TechniqueLookupResult, TechniquesForResult } from "./types.ts";
 
 /** A number property, or null when the node has none (or a non-number). */
@@ -44,7 +38,10 @@ const TechniqueRow = z.object({
   cost_irq_slots: OptNumber,
   cost_sprites_per_line: OptNumber,
   cost_cycles_per_frame_typical: OptNumber,
+  cost_cycles_per_item: OptNumber,
+  cost_cycles_item_base: OptNumber,
   cost_basis: CostBasisSchema.nullable(),
+  cost_bytes_basis: CostBasisSchema.nullable(),
   cost_recipe: z.string().nullable(),
   cost_conditions: z.string().nullable(),
   cost_includes: z.array(z.string()).nullable(),
@@ -63,7 +60,9 @@ const TECHNIQUE_QUERY = `MATCH (t:Technique {name: $name})
             t.cost_lines_active AS cost_lines_active, t.cost_bytes_code AS cost_bytes_code,
             t.cost_bytes_data AS cost_bytes_data, t.cost_zp_bytes AS cost_zp_bytes,
             t.cost_irq_slots AS cost_irq_slots, t.cost_sprites_per_line AS cost_sprites_per_line, t.cost_basis AS cost_basis,
+            t.cost_bytes_basis AS cost_bytes_basis,
             t.cost_cycles_per_frame_typical AS cost_cycles_per_frame_typical, t.cost_recipe AS cost_recipe,
+            t.cost_cycles_per_item AS cost_cycles_per_item, t.cost_cycles_item_base AS cost_cycles_item_base,
             t.cost_conditions AS cost_conditions, t.cost_includes AS cost_includes,
             t.raster_band AS raster_band, t.claims_stated AS claims_stated, t.claims_basis AS claims_basis
      LIMIT 1`;
@@ -79,6 +78,8 @@ const COST_FIGURES = [
   ["irq_slots", "cost_irq_slots"],
   ["sprites_per_line", "cost_sprites_per_line"],
   ["cycles_per_frame_typical", "cost_cycles_per_frame_typical"],
+  ["cycles_per_item", "cost_cycles_per_item"],
+  ["cycles_item_base", "cost_cycles_item_base"],
 ] as const;
 
 /**
@@ -87,7 +88,7 @@ const COST_FIGURES = [
  */
 function costOf(row: TechniqueRow): TechniqueCostOutput | undefined {
   if (!row.cost_basis) return undefined;
-  const figures: Omit<TechniqueCostOutput, "basis"> = {};
+  const figures: Omit<TechniqueCostOutput, "basis" | "bytes_basis"> = {};
   for (const [key, column] of COST_FIGURES) {
     const v = row[column];
     if (v !== null) figures[key] = v;
@@ -97,6 +98,7 @@ function costOf(row: TechniqueRow): TechniqueCostOutput | undefined {
   return {
     ...figures,
     basis: row.cost_basis,
+    ...(row.cost_bytes_basis ? { bytes_basis: row.cost_bytes_basis } : {}),
     ...(row.cost_recipe ? { measured_on: row.cost_recipe } : {}),
     ...(row.cost_conditions ? { conditions: row.cost_conditions } : {}),
     ...(row.cost_includes && row.cost_includes.length > 0 ? { includes: row.cost_includes } : {}),
@@ -120,6 +122,7 @@ async function techniqueNotFound(name: string): Promise<TechniqueLookupResult> {
     recipes: [],
     requires: [],
     required_by: [],
+    alternatives: [],
     mitigates: [],
     documentation: [],
   };
@@ -133,6 +136,12 @@ async function techniqueNotFound(name: string): Promise<TechniqueLookupResult> {
 const AddressedRow = z.object({ name: z.string(), address: z.string().nullable() });
 const RecipeRefRow = z.object({ name: z.string(), toolchain: z.string() });
 const TechniqueRefRow = z.object({ name: z.string(), title: z.string().nullable() });
+const AlternativeRow = z.object({
+  name: z.string(),
+  title: z.string().nullable(),
+  tradeoff: z.string().nullable(),
+  stated_on: z.string(),
+});
 const PitfallRefRow = z.object({
   name: z.string(),
   title: z.string().nullable(),
@@ -141,14 +150,23 @@ const PitfallRefRow = z.object({
 
 type Neighbourhood = Pick<
   TechniqueLookupOutput,
-  "uses_registers" | "uses_kernal" | "recipes" | "requires" | "required_by" | "mitigates"
+  "uses_registers" | "uses_kernal" | "recipes" | "requires" | "required_by" | "alternatives" | "mitigates"
 >;
 
-/** The technique's edges: USES, IMPLEMENTS (reverse), REQUIRES both ways, MITIGATED_BY (reverse). */
+/** Recipes in plan_budget's order (rankRecipesFor), so the card and the budget lead with the same one. */
+function byRank<R extends { name: string }>(technique: string, recipes: R[]): R[] {
+  const order = rankRecipesFor(
+    technique,
+    recipes.map((r) => r.name),
+  );
+  return [...recipes].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+}
+
+/** The technique's edges: USES, IMPLEMENTS (reverse), REQUIRES both ways, ALTERNATIVE_TO either way, MITIGATED_BY (reverse). */
 async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
   const f = await getFalkor();
   const q = (cypher: string) => f.roQuery(cypher, { name });
-  const [regs, kernal, recipes, requires, requiredBy, mitigates] = await Promise.all([
+  const [regs, kernal, recipes, requires, requiredBy, alternatives, mitigates] = await Promise.all([
     q(`MATCH (t:Technique {name: $name})-[:USES]->(r:Register)
        RETURN r.name AS name, r.address AS address`),
     q(`MATCH (t:Technique {name: $name})-[:USES]->(k:KernalRoutine)
@@ -161,6 +179,11 @@ async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
     // REQUIRES (reverse) → techniques that presuppose this one
     q(`MATCH (t:Technique {name: $name})<-[:REQUIRES]-(d:Technique)
        RETURN d.name AS name, d.title AS title ORDER BY d.name`),
+    // ALTERNATIVE_TO, either direction (schema 37) → techniques that do the
+    // same job another way; the tradeoff describes stated_on against the other
+    q(`MATCH (t:Technique {name: $name})-[e:ALTERNATIVE_TO]-(o:Technique)
+       RETURN o.name AS name, o.title AS title, e.tradeoff AS tradeoff, startNode(e).name AS stated_on
+       ORDER BY o.name`),
     // MITIGATED_BY (reverse) → pitfalls whose Fix is this technique
     q(`MATCH (t:Technique {name: $name})<-[:MITIGATED_BY]-(p:Pitfall)
        RETURN p.name AS name, p.title AS title, p.severity AS severity ORDER BY p.name`),
@@ -170,9 +193,15 @@ async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
   return {
     uses_registers: parseRows(AddressedRow, regs).map(addressed),
     uses_kernal: parseRows(AddressedRow, kernal).map(addressed),
-    recipes: parseRows(RecipeRefRow, recipes),
+    recipes: byRank(name, parseRows(RecipeRefRow, recipes)),
     requires: parseRows(TechniqueRefRow, requires).map(ref),
     required_by: parseRows(TechniqueRefRow, requiredBy).map(ref),
+    alternatives: parseRows(AlternativeRow, alternatives).map((a) => ({
+      name: a.name,
+      title: a.title ?? "",
+      tradeoff: a.tradeoff ?? "",
+      stated_on: a.stated_on,
+    })),
     mitigates: parseRows(PitfallRefRow, mitigates).map((p) => ({
       name: p.name,
       title: p.title ?? "",
@@ -190,15 +219,21 @@ const ClaimRow = z.object({
 
 type ClaimsPart = Pick<TechniqueLookupOutput, "claims" | "claims_stated" | "claims_basis">;
 
-/** CLAIMS → HardwareUnits (schema 25). No Claims line reads as "unknown", never as "none". */
-async function claimsOf(row: TechniqueRow): Promise<ClaimsPart> {
+/**
+ * CLAIMS → HardwareUnits of a Technique (schema 25) or a Recipe (schema 34).
+ * No Claims line (or claims: key) reads as "unknown", never as "none".
+ */
+export async function claimsOf(
+  owner: { label: "Technique" | "Recipe"; name: string },
+  stored: { claims_stated?: string | null | undefined; claims_basis?: string | null | undefined },
+): Promise<ClaimsPart> {
   const f = await getFalkor();
   const rows = parseRows(
     ClaimRow,
     await f.roQuery(
-      `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
+      `MATCH (t:${owner.label} {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
        RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
-      { name: row.name },
+      { name: owner.name },
     ),
   );
   const claims = rows.map((c) => ({
@@ -208,14 +243,18 @@ async function claimsOf(row: TechniqueRow): Promise<ClaimsPart> {
     ...(c.relocatable ? { relocatable: true } : {}),
   }));
   const stated =
-    row.claims_stated === "stated" || row.claims_stated === "none" ? row.claims_stated : "unknown";
-  return { claims, claims_stated: stated, ...(row.claims_basis ? { claims_basis: row.claims_basis } : {}) };
+    stored.claims_stated === "stated" || stored.claims_stated === "none" ? stored.claims_stated : "unknown";
+  return {
+    claims,
+    claims_stated: stated,
+    ...(stored.claims_basis ? { claims_basis: stored.claims_basis } : {}),
+  };
 }
 
 /** The Claims line as the page would write it, runs of units compressed (sprite_0-7). */
-function renderClaims(t: TechniqueLookupOutput): string {
+export function renderClaims(t: ClaimsPart, unknown = "the page states no unit claims"): string {
   if (t.claims_stated === undefined || t.claims_stated === "unknown") {
-    return `**Claims:** unknown (the page states no unit claims; a unit conflict with it cannot be ruled out)\n`;
+    return `**Claims:** unknown (${unknown}; a unit conflict with it cannot be ruled out)\n`;
   }
   if (t.claims_stated === "none") return `**Claims:** none\n**Claims basis:** ${t.claims_basis ?? ""}\n`;
   const byMode = new Map<string, string[]>();
@@ -237,11 +276,10 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
 
   const cost = costOf(row);
   const edges = await neighbourhoodOf(name);
-  const claims = await claimsOf(row);
+  const claims = await claimsOf({ label: "Technique", name: row.name }, row);
 
-  // Documentation chunks from Qdrant
-  const { chunks: ctx } = await searchChunks({ query: `${name} ${row.title ?? ""}`.trim(), limit: 3 });
-  const documentation = ctx.map(toDocChunk);
+  // Documentation chunks from Qdrant, only those about the technique (#41)
+  const documentation = (await techniqueDocumentation(name, row.title ?? "")).map(toDocChunk);
 
   getAnalytics().logQuery({ tool: "c64_technique_lookup", query: name, resultCount: 1 });
 
@@ -269,11 +307,12 @@ function renderTechniqueHeader(t: TechniqueLookupOutput, cost: TechniqueCostOutp
   if (t.requires_region) out += `**Requires region:** ${t.requires_region}\n`;
   if (t.raster_band) out += `**Raster band:** ${t.raster_band}\n`;
   if (cost) {
-    const { basis, measured_on, conditions, includes, ...figures } = cost;
+    const { basis, bytes_basis, measured_on, conditions, includes, ...figures } = cost;
     out += `**Cost:** ${Object.entries(figures)
       .map(([k, v]) => `${k}=${v}`)
       .join(", ")}\n`;
     out += `**Cost basis:** ${basis}\n`;
+    if (bytes_basis) out += `**Cost bytes basis:** ${bytes_basis}\n`;
     if (measured_on) out += `**Cost measured on:** ${measured_on}${conditions ? ` (${conditions})` : ""}\n`;
     if (includes) out += `**Cost includes:** ${includes.join(", ")}\n`;
   }
@@ -306,13 +345,16 @@ function renderTechnique(
     (t.required_by ?? []).map((r) => r.name),
   );
   line(
+    "Alternatives",
+    (t.alternatives ?? []).map((a) => `${a.name} (${a.stated_on}: ${a.tradeoff})`),
+  );
+  line(
     "Mitigates",
     (t.mitigates ?? []).map((m) => `${m.name} (${m.severity})`),
   );
-  if (t.recipes.length > 0) {
-    out += `\n## Recipes\n\n`;
-    for (const r of t.recipes) out += `- \`${r.name}\` (${r.toolchain})\n`;
-  }
+  out += `\n## Recipes\n\n`;
+  if (t.recipes.length === 0) out += `No recipe realises this technique yet.\n`;
+  for (const r of t.recipes) out += `- \`${r.name}\` (${r.toolchain})\n`;
   if (documentation.length > 0) {
     out += `\n## Documentation\n\n`;
     for (const d of documentation) out += `### ${d.source} > ${d.section}\n${d.text}\n\n---\n\n`;
@@ -339,11 +381,29 @@ const TECHNIQUE_FILTER_PATTERNS: readonly [keyof TechniquesFilter, string][] = [
   // are not unified: double_irq has no edge to stable_raster_irq.
   ["requires", ` , (t)-[:REQUIRES*1..12]->(req:Technique {name: $requires})`],
   ["region", ` , (t)-[:REQUIRES_REGION]->(reg:Region {name: $region})`],
-  ["register", ` , (t)-[:USES]->(rg:Register {name: $register})`],
+  // A register by name, alias or address (see registerWhere).
+  ["register", ` , (t)-[:USES]->(rg:Register)`],
   ["recipe", ` , (rec:Recipe {name: $recipe})-[:IMPLEMENTS]->(t)`],
   // "Who claims sid_voice_3": a CLAIMS edge to that HardwareUnit, any mode.
   ["claims", ` , (t)-[:CLAIMS]->(hu:HardwareUnit {name: $claims})`],
 ];
+
+/**
+ * The register filter matches the node's name, an alias or its address, in
+ * any case, with or without "$" or "0x": "D011", "$d011" and "SCROLY" are
+ * one register. An earlier version matched the name alone, and the live
+ * nodes are named SCROLY, not D011, so `--register D011` returned no rows
+ * (#41).
+ */
+function registerWhere(register: string, params: Record<string, string>): string {
+  const bare = register
+    .trim()
+    .replace(/^(\$|0x)/i, "")
+    .toUpperCase();
+  params.register = bare;
+  params.registerAddr = `$${bare}`;
+  return `(toUpper(rg.name) = $register OR toUpper(rg.address) = $registerAddr OR any(a IN coalesce(rg.aliases, []) WHERE toUpper(a) = $register))`;
+}
 
 function techniquesForCypher(filter: TechniquesFilter): { cypher: string; params: Record<string, string> } {
   const params: Record<string, string> = {};
@@ -352,12 +412,15 @@ function techniquesForCypher(filter: TechniquesFilter): { cypher: string; params
     const value = filter[key];
     if (!value) continue;
     cypher += pattern;
-    params[key] = value;
+    if (key !== "register") params[key] = value;
   }
+  const where: string[] = [];
+  if (filter.register) where.push(registerWhere(filter.register, params));
   if (filter.category) {
-    cypher += ` WHERE t.category = $category`;
+    where.push(`t.category = $category`);
     params.category = filter.category;
   }
+  if (where.length > 0) cypher += ` WHERE ${where.join(" AND ")}`;
   cypher += ` RETURN DISTINCT t.name AS name, t.title AS title, t.category AS category, t.complexity AS complexity ORDER BY t.category, t.name`;
   return { cypher, params };
 }

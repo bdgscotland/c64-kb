@@ -17,16 +17,22 @@ SHOT_CYCLES_NTSC := 12000000
 
 # What the program may write, for make claims (claims-watch's own grammar).
 # - The eight sprites, the raster IRQ and its $0314 vector; the tune's three
-#   voices and the volume.
+#   voices and the volume; XSCROLL, which scroll_slot sets for row 22.
 # - The one $7F store to $DC0D (every CIA1 interrupt off) counts against all
 #   three CIA1 units; the meter's $DD0D against CIA2's, declared as harness.
 # - The KERNAL's IRQ runs until start's SEI; every IRQ after it enters
 #   through $FF48, which only pushes.
 # - --all-ram traces the screen and the program's own bytes too.
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_0314, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,spritedata=$$0340-$$037F,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 12000000 --all-ram
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, vic_xscroll, irq_vector_0314, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,spritedata=$$0340-$$037F,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 12000000 --all-ram
 
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
 VERIFY_TARGETS := probe
+
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 457 frames on PAL and 434 on NTSC; without the play call
+# (NO_PLAYER) 2 and 2 (harness/watch.py, VICE x64sc 3.10). make audio
+# (tools/audio.py) checks each voice.
+SID_FRAMES := 200
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))

@@ -32,7 +32,6 @@ Joystick in port 2. Fire starts; up and down pick a letter, fire sets it.
 | `tools/gen.py` | The caves, the autopilot script, a Python model of the rules, the note table. Writes `src/gen_*.h` |
 | `tools/model_check.py` | Every visible cave cell of both shots against the model (`make modelcheck`) |
 | `tools/disk_check.py` | Grades `make disktest` |
-| `tools/drive.py` | Plays the `make joy` build headless over VICE's binary monitor |
 | `expect.json`, `PLAN.md` | The screenshot checks; the plan with the c64-kb tool output it was made from |
 
 Memory: code and data `$0880`-`$1FFF` and `$2800` up; the character set
@@ -146,26 +145,28 @@ and shows the title with rows 4 and 5 `ABE 000158` and `SCORES FROM DISK
 
 ## Driving it headless
 
-`make joy` builds the normal game (three lives, title, no autopilot) with
-`-dJOY_SOURCE=0x02fe`: the port byte comes from `$02FE` instead of `$DC00`.
-`tools/drive.py` plays that build over VICE's binary monitor. It writes the
-byte, lets the machine run, and reads screen RAM as text:
+`harness/drive.py` plays the normal game (three lives, title, no autopilot)
+over VICE's binary monitor, with the stick on the real `$DC00`. It counts
+time in frames, so the same steps give the same run every time, and reads
+screen RAM as text:
 
 ```bash
-make joy
-python3 tools/drive.py build/action-puzzle-joy.prg "until:FIRE TO START" tap:fire \
-    until:LIVES hold:right "until:ENTER YOUR NAME" hold:none tap:up tap:fire tap:fire \
-    tap:fire "until:GAME OVER" print tap:fire "until:FIRE TO START" print
+make drive STEPS='"until:FIRE TO START" tap:fire until:LIVES hold:right \
+    "until:ENTER YOUR NAME" hold:none tap:up tap:fire tap:fire tap:fire \
+    "until:GAME OVER" print tap:fire "until:FIRE TO START" print'
 ```
 
-That run (2026-09-23) held right through three time-outs (cave 1 each
-time), entered BAA, and showed `4. BAA 000120` in the table, `NOT SAVED
-(74)` with no disk attached, and then the title. Two findings
-behind this design:
+That run (2026-09-24, VICE x64sc 3.10) held right through three time-outs
+(cave 1 each time, 14,475 frames), entered BAA, and showed `4. BAA 000120`
+in the table, `NOT SAVED (74)` with no disk attached, and then the title.
+`make drivetest` (a proof target) plays the first cave until a gem is taken.
+Two findings behind this design:
 
-- The windowless VICE's joyport commands do not reach `$DC00`. The binary
-  monitor's joyport set was accepted, but `$DC00` never changed, with or
-  without `-joydev2` (found in review).
+- VICE's joyport command reaches `$DC00` only when control port 2 holds the
+  "Joyport I/O simulation" device (`-controlport2device 37`); the default
+  joystick device ignores it. An earlier version of this page said the
+  windowless build's joyport commands never reach `$DC00`, and the game read
+  its port byte from `$02FE` in a separate `make joy` build; both are gone.
 - Monitor screenshots from the windowless build came back stale while the
   game ran, so `drive.py` reads screen RAM. Entering the text monitor during
   the start-up disk read left that read hung twice here; the binary monitor
@@ -234,7 +235,7 @@ More caves: add them to `CAVES` in `tools/gen.py` and run `make gen`.
   right on both (a PAL and an NTSC table).
 - Anyone listening to the sound: the tune and effects were checked by the
   registers claims-watch saw written, not by ear.
-- A real joystick on `$DC00`: the normal game was driven headless through
-  `$02FE` (above), which differs from the release build in one line of
-  `port_read`.
+- A physical joystick: the release build was driven headless through VICE's
+  simulated port 2 lines on `$DC00` (above), not a stick. An earlier
+  version drove a build that read `$02FE` instead.
 - Real hardware.

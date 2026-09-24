@@ -89,6 +89,13 @@ function gapStatements(db: Db) {
     resolveGap: db.prepare<[string]>(
       "UPDATE gaps SET resolved = 1, resolved_at = datetime('now') WHERE query = ? AND resolved = 0",
     ),
+    resolveToolGap: db.prepare<[string, string]>(
+      "UPDATE gaps SET resolved = 1, resolved_at = datetime('now') WHERE query = ? AND tool = ? AND resolved = 0",
+    ),
+    // Logged gaps only: a reported gap is an agent's statement, not a replayable call.
+    loggedOpenGaps: db.prepare<[], Pick<GapRow, "query" | "tool" | "hit_count">>(
+      "SELECT query, tool, hit_count FROM gaps WHERE resolved = 0 AND COALESCE(user_reported, 0) = 0 ORDER BY tool, query",
+    ),
     gaps: db.prepare<[number], Pick<GapRow, "query" | "tool" | "hit_count" | "first_seen" | "last_seen">>(
       "SELECT query, tool, hit_count, first_seen, last_seen FROM gaps WHERE resolved = 0 ORDER BY hit_count DESC LIMIT ?",
     ),

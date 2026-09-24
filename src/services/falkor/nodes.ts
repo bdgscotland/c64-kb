@@ -34,6 +34,8 @@ const COST_KEYS = [
   "cycles_per_line",
   "cycles_per_frame",
   "cycles_per_frame_typical",
+  "cycles_per_item",
+  "cycles_item_base",
   "lines_active",
   "bytes_code",
   "bytes_data",
@@ -54,6 +56,9 @@ export interface TechniqueNode {
   // outlive its page.
   cost?: Partial<Record<string, number>> | undefined;
   cost_basis?: string | undefined;
+  // **Cost bytes basis:** (#72): the byte figures' own basis, absent when
+  // cost_basis covers them. Cleared with the Cost line.
+  cost_bytes_basis?: string | undefined;
   // **Cost measured on:** and **Cost includes:** (schema 27): the recipe the
   // figures came from, its conditions, and the techniques whose work is
   // inside the figure. Cleared with the Cost line.
@@ -91,6 +96,7 @@ function costProps(t: TechniqueNode, props: NodeProps, clear: string[]): void {
   }
   const costed = Boolean(t.cost && t.cost_basis);
   setOrClear(props, clear, "cost_basis", costed ? t.cost_basis : undefined);
+  setOrClear(props, clear, "cost_bytes_basis", costed ? t.cost_bytes_basis : undefined);
   setOrClear(props, clear, "cost_recipe", costed ? t.cost_recipe : undefined);
   setOrClear(props, clear, "cost_conditions", costed ? t.cost_conditions : undefined);
   setOrClear(props, clear, "cost_includes", costed ? t.cost_includes : undefined);
@@ -191,6 +197,20 @@ export class FalkorNodes extends FalkorBase {
     });
   }
 
+  /** A C library function from a toolchain page's **Wraps:** line (schema 37). */
+  async addLibraryFunction(e: {
+    name: string;
+    header: string;
+    tool: string;
+    source_doc: string;
+  }): Promise<void> {
+    await this.upsertNode({
+      label: "LibraryFunction",
+      name: e.name,
+      props: { header: e.header, tool: e.tool, source_doc: e.source_doc },
+    });
+  }
+
   async addFileFormat(name: string, description: string): Promise<void> {
     // Description is SET only on first creation. The ingest walk priority
     // puts docs/formats/c64-file-formats.md first, so the catalog's
@@ -210,15 +230,63 @@ export class FalkorNodes extends FalkorBase {
     output_format: string;
     region: string;
     source_doc: string;
+    claims_stated?: "stated" | "none" | undefined;
+    claims_basis?: string | undefined;
+    devices_stated?: "stated" | "none" | undefined;
   }): Promise<void> {
     // Named field by field: callers pass whole extracted entities, whose other fields must not land.
-    const props = {
+    const props: NodeProps = {
       toolchain: r.toolchain,
       output_format: r.output_format,
       region: r.region,
       source_doc: r.source_doc,
     };
-    await this.upsertNode({ label: "Recipe", name: r.name, props });
+    const clear: string[] = [];
+    if (r.claims_stated && r.claims_basis) {
+      props.claims_stated = r.claims_stated;
+      props.claims_basis = r.claims_basis;
+    } else clear.push("claims_stated", "claims_basis");
+    if (r.devices_stated) props.devices_stated = r.devices_stated;
+    else clear.push("devices_stated");
+    await this.upsertNode({ label: "Recipe", name: r.name, props, clear });
+    // As for a technique (schema 34): the page owns its CLAIMS and (schema 36)
+    // REQUIRES_DEVICE edges outright; pass 2 re-adds the ones it still states.
+    await this.write(`MATCH (r:Recipe {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`, {
+      name: r.name,
+    });
+    await this.write(`MATCH (r:Recipe {name: $name})-[d:REQUIRES_DEVICE]->(:Device) DELETE d`, {
+      name: r.name,
+    });
+  }
+
+  /**
+   * Device (schema 36, #87): a joystick, drive or cartridge a recipe's run
+   * attaches, from docs/hardware/devices.md. The page owns its CLAIMS edges.
+   */
+  async addDevice(d: {
+    name: string;
+    title: string;
+    kind: string;
+    port: string;
+    vice_attach: string;
+    source_doc: string;
+    claims_stated?: "stated" | "none" | undefined;
+    claims_basis?: string | undefined;
+  }): Promise<void> {
+    const props: NodeProps = {
+      title: d.title,
+      kind: d.kind,
+      port: d.port,
+      vice_attach: d.vice_attach,
+      source_doc: d.source_doc,
+    };
+    const clear: string[] = [];
+    if (d.claims_stated && d.claims_basis) {
+      props.claims_stated = d.claims_stated;
+      props.claims_basis = d.claims_basis;
+    } else clear.push("claims_stated", "claims_basis");
+    await this.upsertNode({ label: "Device", name: d.name, props, clear });
+    await this.write(`MATCH (d:Device {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`, { name: d.name });
   }
 
   async addTechnique(t: TechniqueNode): Promise<void> {
@@ -265,6 +333,26 @@ export class FalkorNodes extends FalkorBase {
       starter: a.starter ?? null,
     };
     await this.setNode("Archetype", { name: a.name }, props);
+  }
+
+  /**
+   * Production (schema 34): a released title an archetype page links as a
+   * reference, with the C64 year the page gives and the page it links.
+   */
+  async addProduction(p: {
+    name: string;
+    kind: string;
+    year?: number | undefined;
+    note?: string | undefined;
+    url: string;
+  }): Promise<void> {
+    const props: NodeProps = { kind: p.kind, url: p.url };
+    const clear: string[] = [];
+    if (p.year !== undefined) props.year = p.year;
+    else clear.push("year");
+    if (p.note) props.note = p.note;
+    else clear.push("note");
+    await this.upsertNode({ label: "Production", name: p.name, props, clear });
   }
 
   /**

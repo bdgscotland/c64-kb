@@ -74,7 +74,7 @@ jobs:
       - run: npm run test:integration
 
   listings:
-    name: every listing builds (KickAssembler, cc65)
+    name: every listing builds (KickAssembler, cc65, ACME, 64tass)
     runs-on: ubuntu-24.04
     env:
       KICKASS_JAR: ${{ github.workspace }}/.tools/kickass/KickAss.jar
@@ -106,10 +106,14 @@ jobs:
           done
           echo "$sum  KickAssembler.zip" | sha256sum -c -
           unzip -q -o KickAssembler.zip KickAss.jar
-      - run: sudo apt-get install -y -qq cc65
+      # Ubuntu 24.04 universe carries acme 0.97~svn20211115 and 64tass
+      # 1.59.3120 (Launchpad, 2026-09-24); the pages were measured with ACME
+      # 0.97 and 64tass 1.60.
+      - run: sudo apt-get install -y -qq cc65 acme 64tass
       # Oscar64 is skipped (--allow-missing) until issue #25 pins a released
       # compiler that reproduces the recipes; today only a locally patched
-      # build does.
+      # build does. llvm-mos is skipped too: Ubuntu does not package it, and
+      # its SDK release (175 MB for macOS) is not fetched for one listing.
       - run: npm run check:listings -- --allow-missing
 
   recipes:
@@ -161,8 +165,12 @@ jobs:
         run: |
           fail=0
           for f in docs/recipes/kickassembler/*.md docs/recipes/cc65/*.md; do
-            out=$(node scripts/verify-recipes.ts --file "$f" --allow-missing 2>&1)
-            printf '%s\n' "$out" | tail -1 | grep -q " 0 failed" || { echo "FAILED: $f"; printf '%s\n' "$out" | grep -E "^FAIL" ; fail=1; }
+            # "|| rc=$?": under bash -e a non-zero verify would end the step
+            # here with no name printed (run 35991987457 exited 1 silently).
+            rc=0; out=$(node scripts/verify-recipes.ts --file "$f" --allow-missing 2>&1) || rc=$?
+            if [ "$rc" -ne 0 ] || ! printf '%s\n' "$out" | tail -1 | grep -q " 0 failed"; then
+              echo "FAILED: $f (exit $rc)"; printf '%s\n' "$out" | tail -15; fail=1
+            fi
           done
           exit $fail
 

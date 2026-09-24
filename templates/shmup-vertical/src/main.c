@@ -197,10 +197,15 @@ static void actors_draw(void)
 // { frames, port byte }, active low as $DC00 reads it. The title takes the
 // first fire; the rest is play. See PLAN.md "Autopilot and checks".
 #define PLAY_FRAMES 240
-#ifdef LOOP_TEST
+#ifndef AP_GIVE_UP
+#define AP_GIVE_UP 0
+#endif
+#if defined(LOOP_TEST) || AP_GIVE_UP
 // Test only (-dLOOP_TEST=1): start, then hold fire without moving, so the
 // game scores, runs to GAME OVER, saves the high score and returns to the
-// title. It never freezes, so there is no verdict.
+// title. It never freezes, so there is no verdict. -dAP_GIVE_UP=1 (make
+// gameover) plays the same script and grades the title it returns to
+// (grade_gameover).
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef }, { 250, 0xef }, { 250, 0xef }, { 250, 0xef },
     { 250, 0xef }, { 250, 0xef }, { 250, 0xef }, { 250, 0xef }, { 250, 0xef }
@@ -253,15 +258,6 @@ static char port_read(void)
         if (++ap_used == script[ap_index][0]) { ap_used = 0; ap_index++; }
     }
     return out;
-}
-#elif defined(JOY_SOURCE)
-// Headless driving of the normal game (make joy, tools/drive.py): the port
-// byte comes from RAM at JOY_SOURCE, which a VICE monitor writes; the
-// windowless VICE's joyport commands do not reach $DC00.
-#define PLAY_FRAMES 1
-static char port_read(void)
-{
-    return *(volatile char *)JOY_SOURCE;
 }
 #else
 #define PLAY_FRAMES 1
@@ -449,8 +445,8 @@ static void over_enter(void)
 // Frames that woke late (after a lost one) are left out. -dWORKEND=2 also
 // reads the line after each step: words 3-10 that frame's lines when it
 // woke and after each of the 7 steps, 11-17 each step's most lines in any
-// frame; the reads cost about 300 cycles a frame. Any build, the joy build
-// too: nothing is held off, so the timing is the game's own.
+// frame; the reads cost about 300 cycles a frame. Any build, the normal
+// one too: nothing is held off, so the timing is the game's own.
 #define WE ((volatile unsigned *)0x0370)
 static unsigned we_step[8];
 static unsigned we_line(void)
@@ -705,6 +701,61 @@ static void verdict(void)
 }
 #endif
 
+#if AUTOPILOT && AP_GIVE_UP
+// make gameover: the picture after game over. Once the title has been back
+// for OVER_WAIT frames after GAME OVER, check that it is the title: the
+// multiplexer shows no sprite and $D015 reads 0, the title text is on rows 6
+// and 9 (row 9 held GAME OVER), all lives went, and the lost game's score
+// is the high score. Pitfall sprite_registers_persist_across_state_change.
+#define OVER_WAIT 50
+static char over_seen, over_wait;
+
+static bool screen_says(char row, char col, const char *t)
+{
+    const char *p = level_screen() + row * 40 + col;
+    for (char i = 0; t[i]; i++)
+        if (p[i] != (t[i] >= 'A' && t[i] <= 'Z' ? t[i] - 'A' + 1 : t[i]))
+            return false;
+    return true;
+}
+
+static char gameover_fail(void)
+{
+    char n = 1;
+    CHECK(K_MUX_SHOWN == 0)                             // 1 the multiplexer shows nothing
+    CHECK(vic.spr_enable == 0)                          // 2 ... and the VIC agrees
+    CHECK(screen_says(6, 11, " DELTA  PATROL "))        // 3 the title text
+    CHECK(screen_says(9, 9, " PUSH FIRE TO START "))    // 4 over GAME OVER's row
+    CHECK(lives == 0 && deaths == START_LIVES)          // 5 every life went
+    CHECK(score > 0 && hiscore == score)                // 6 the lost game's score is HI
+    return 0;
+}
+
+static void grade_gameover(void)
+{
+    char fail = gameover_fail();
+    char ok = fail == 0;
+    verdict_code = ok ? 1 : 2;
+    RESULT = verdict_code;
+    vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
+    char *s = level_screen();
+    put_text(s, 15, 1, ok ? "RESULT 01 PASS   " : "RESULT 02 FAIL 00");
+    if (!ok)
+        put_dec(s + 15 * 40 + 16, fail, 2);
+    text_colour(15, 1, 17, TEXT_CRAM);
+}
+
+static void gameover_frame(void)
+{
+    if (state == ST_OVER)
+        over_seen = 1;
+    else if (over_seen && state == ST_TITLE && !verdict_code && ++over_wait == OVER_WAIT)
+        grade_gameover();
+}
+#else
+#define gameover_frame()
+#endif
+
 // PAL has 312 lines, NTSC 263: the largest line past 255 tells them apart.
 static char is_ntsc(void)
 {
@@ -728,9 +779,6 @@ int main(void)
     ACT_PTR[0] = SPR_BLOCK + F_SHIP;
     ACT_COL[0] = VCOL_LT_BLUE;
     title_enter();
-#if !AUTOPILOT && defined(JOY_SOURCE)
-    *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
-#endif
 #ifdef DRAWEND
     *(volatile int *)0x0364 = 0x7fff;
     *(volatile int *)0x0366 = 0x7fff;
@@ -814,6 +862,7 @@ int main(void)
 #endif
         }
         prev = joy;
+        gameover_frame();
         // The readout is read once, after the freeze. Printing it every play
         // frame cost up to 3,404 cycles outside the bracket (the review) and
         // made the autopilot build drop frames the game itself does not.

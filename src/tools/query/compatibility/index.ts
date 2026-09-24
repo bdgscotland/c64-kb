@@ -6,20 +6,49 @@ import { getAnalytics } from "../../../context.ts";
 import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts";
 import type { CompatibilityCheckResult } from "../types.ts";
 import { fetchCompatibilityFacts } from "./fetch.ts";
+import { identifyNames } from "./identify.ts";
 import { renderCompatibility } from "./render.ts";
 import { evaluateCompatibility } from "./rules.ts";
 
 export { evaluateCompatibility } from "./rules.ts";
+export { checkDesignCompatibility } from "./design.ts";
+import { checkPhasedCompatibility, membersByPhase } from "./design.ts";
+import { parseMemberSpec } from "../plan-budget.ts";
 export type { CompatibilityFacts, TechniqueFacts } from "./facts.ts";
 
-export async function checkCompatibility(techniques: string[]): Promise<CompatibilityCheckResult> {
+/**
+ * A list with any "name:phase" is checked by phase, like a design (#94);
+ * otherwise as one set. A call or item count ("name ×N", plan_budget's
+ * syntax) is read and dropped: it does not change what can coexist.
+ */
+export async function checkCompatibility(specs: string[]): Promise<CompatibilityCheckResult> {
+  if (specs.some((s) => s.includes(":"))) {
+    const by = membersByPhase([], specs);
+    return checkPhasedCompatibility(by, { title: [...new Set([...by.values()].flat())].join(" + ") });
+  }
+  return checkOneSet(specs.map(nameOf));
+}
+
+/** The technique name of a spec with a count; a spec that does not parse is passed on whole. */
+function nameOf(spec: string): string {
+  const parsed = parseMemberSpec(spec);
+  return "error" in parsed ? spec : parsed.name;
+}
+
+async function checkOneSet(techniques: string[]): Promise<CompatibilityCheckResult> {
   const facts = await fetchCompatibilityFacts(techniques);
   const { closureOnly, ...evaluation } = evaluateCompatibility(facts);
 
   getAnalytics().logQuery({
     tool: "c64_check_compatibility",
     query: techniques.join("+"),
-    resultCount: evaluation.conflicts.length,
+    // The inputs the graph could answer about; 0 (a gap) for a refusal or
+    // silence on every input. It was the conflict count, so every clean
+    // COMPATIBLE verdict was logged as a gap (#19).
+    resultCount:
+      evaluation.verdict === "unknown_technique"
+        ? 0
+        : evaluation.data_coverage.filter((d) => d.implied_by === undefined && d.known).length,
   });
 
   const structured: CompatibilityCheckOutput = {
@@ -28,7 +57,10 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     band_separated: evaluation.band_separated,
     shared_infrastructure: evaluation.shared_infrastructure,
     data_coverage: evaluation.data_coverage,
+    not_found: evaluation.not_found,
     verdict: evaluation.verdict,
   };
-  return { structured, text: renderCompatibility(structured, closureOnly) };
+  // A refused name may still be a node of another type: say which (#19).
+  const identified = await identifyNames(evaluation.not_found);
+  return { structured, text: renderCompatibility(structured, closureOnly, identified) };
 }

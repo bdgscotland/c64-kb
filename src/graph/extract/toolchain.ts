@@ -7,11 +7,15 @@
 
 import { group, parseFrontmatter, splitList, type Frontmatter } from "./common.ts";
 import type { GraphEntity } from "./types.ts";
+import { wrapsEntities } from "./wraps.ts";
 
 const FORMAT_H3 = /^###\s+(\.[A-Z0-9]+)\s+(?:—|--)\s+(.+)$/;
 const PRODUCED_BY = /^\*\*Produced by:\*\*\s+(.+)$/;
 const CONSUMED_BY = /^\*\*Consumed by:\*\*\s+(.+)$/;
 const TARGETS = /^\*\*Targets:\*\*\s+(.+)$/;
+// A C header's section (`## kernalio.h — …`) and its **Wraps:** line (#19).
+const HEADER_H2 = /^##\s+([a-z0-9_]+\.h)\s+(?:—|--)\s+/;
+const WRAPS = /^\*\*Wraps:\*\*\s+(.+)$/;
 
 /**
  * Walk lines for FileFormat H3s and the Produced/Consumed lines under them.
@@ -60,10 +64,27 @@ function toolEntity(fm: Frontmatter): GraphEntity | null {
   };
 }
 
-export function parseToolchainDoc(content: string): GraphEntity[] {
+/** LibraryFunction nodes and WRAPS edges from the **Wraps:** line under each header H2. */
+function headerWraps(body: string, tool: string | undefined, sourcePath: string): GraphEntity[] {
+  if (!tool) return [];
+  const out: GraphEntity[] = [];
+  let header: string | null = null;
+  for (const line of body.split("\n")) {
+    if (line.startsWith("## ")) header = HEADER_H2.exec(line)?.at(1) ?? null;
+    const w = WRAPS.exec(line);
+    if (w && header) out.push(...wrapsEntities(group(w, 1), { header, tool, sourcePath }));
+  }
+  return out;
+}
+
+export function parseToolchainDoc(content: string, sourcePath = ""): GraphEntity[] {
   const { fm, rest } = parseFrontmatter(content);
   const tool = toolEntity(fm);
-  return [...(tool ? [tool] : []), ...formatEntities(rest, fm.tool)];
+  return [
+    ...(tool ? [tool] : []),
+    ...formatEntities(rest, fm.tool),
+    ...headerWraps(rest, fm.tool, sourcePath),
+  ];
 }
 
 /** A format-reference page: FileFormat H3s and Produced/Consumed only, no Tool. */

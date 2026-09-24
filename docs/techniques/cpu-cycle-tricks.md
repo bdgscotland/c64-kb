@@ -60,7 +60,7 @@ lda_color:
 
 ### Why it works
 
-The 6510 has no instruction cache or prefetch buffer. A write to any RAM address takes effect before the next instruction fetch from that address. The self-modified byte is visible immediately on the next iteration. CMOS derivatives (65C02, 65816) have prefetch buffers and do not share this property, so self-modification is a reliable NMOS-6510-specific technique.
+The 6510 has no instruction cache or prefetch buffer. A write to any RAM address takes effect before the next instruction fetch from that address. The self-modified byte is visible immediately on the next iteration. (An earlier version said the CMOS 65C02 and 65816 have prefetch buffers that break self-modification; neither has one, and the C64's CPU is the 6510 in any case.)
 
 ### Variations
 
@@ -161,6 +161,195 @@ For body B cycles, N iterations: rolled = `N*(B+5)`, 8x unrolled = `(N/8)*(8*B+5
 
 ---
 
+## memory_fill_copy — Filling and copying memory a page at a time
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+
+### Why
+
+Clearing a screen, a bitmap or a buffer, and copying a level, a charset
+or a sprite block, are the most common loops in a C64 program. There
+are two forms worth knowing, a zero-page pointer walked a page at a time
+and one unrolled `abs,X` store per page, and they differ by a factor of
+two in speed. Every figure below was measured in VICE x64sc 3.10 by
+`recipes/kickassembler/base-routines.md`, with the display blanked so no
+badline took a cycle; each equals its instruction-table sum.
+
+### How
+
+**Pointer fill.** `A` = value, `X` = pages, the pointer at `p1` = first
+page:
+
+```asm
+fill:   ldy #0
+!:      sta (p1),y        // 6, page crossing or not
+        iny
+        bne !-
+        inc p1+1          // next page
+        dex
+        bne !-
+```
+
+11 cycles a byte, 10 more a page: 22,618 cycles for eight pages with
+the pointer set-up.
+
+**Unrolled fill.** One store per page, one `INX / BNE` for all of them:
+
+```asm
+        lda #value
+        ldx #0
+!:
+.for (var p = 0; p < 8; p++) {
+        sta BUF + p*256,x
+}
+        inx
+        bne !-
+```
+
+45 cycles per eight bytes: 11,523 for eight pages, half the pointer
+form. The addresses are assembled in, so it fills one fixed block; a
+screen of 1,000 bytes is four stores at `$0400`, `$0500`, `$0600` and
+`$06E8,X`.
+
+**Copies.** `LDA (p1),Y / STA (p2),Y` with both pointers stepped each
+page is 16 cycles a byte (32,906 for eight pages). `LDA src,X / STA
+dst,X` unrolled per page is 77 per eight bytes (19,713 for eight
+pages).
+
+**Overlapping moves.** When the destination is above the source and
+they overlap, copy from the top down:
+
+```asm
+        ldx #0
+!:      dex               // X = 255 .. 0
+        lda BUF,x
+        sta BUF+1,x
+        cpx #0
+        bne !-
+```
+
+The ascending loop reads bytes it has already overwritten: measured, a
+page holding 0, 1, 2 … moved up one byte ascending becomes all zeros,
+and descending becomes the ramp one place up. When the destination is
+below the source, ascending is the safe order.
+
+### Why it works
+
+A store through `(zp),Y` or to `abs,X` always takes the extra cycle an
+index could cost, so it is 6 and 5 whatever the address. A load takes
+it only when the base plus the index crosses a page: `LDA (zp),Y` is 5
+and `LDA abs,X` is 4 when the base is page-aligned, one more for each
+read that crosses when it is not (rung 3). The loop overhead is
+`INY / BNE`, 5 cycles, and the unrolled form pays it once per eight
+bytes instead of every byte.
+
+### Variations
+
+- **No index at all.** Generated `LDA abs / STA abs` pairs cost 8 a
+  byte and 6 bytes of code a byte (`speedcode_generation`).
+- **REU.** On a machine with an REU, a DMA transfer fills or copies at
+  one byte a cycle (`memory-banking.md`, `reu_dma`).
+
+### Cycle budget
+
+| Routine, 8 pages, set-up included | Cycles | Per byte |
+|---|---|---|
+| fill, `STA (zp),Y` | 22,618 | 11.0 |
+| fill, `STA abs,X` unrolled | 11,523 | 5.6 |
+| copy, `(zp),Y` | 32,906 | 16.1 |
+| copy, `abs,X` unrolled | 19,713 | 9.6 |
+
+With the display on, add the badline stalls: 40 to 43 cycles on each of
+25 lines a frame (`pitfalls/raster-and-badline.md`, `badline_cycle_loss`).
+
+### Recipes
+
+- `recipes/kickassembler/base-routines.md`: both fills and both copies
+  timed and checked byte by byte, and the overlapping move both ways.
+
+---
+
+## delay_loops — Counted delay loops and what they cost
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+
+### Why
+
+Raster effects, drive handshakes and hardware settle times need the CPU
+to wait a known number of cycles. A counted loop is the simplest way, and
+its count is exact only when nothing else takes the bus and the branch
+stays on one page. Every figure below was measured in VICE x64sc 3.10
+by `recipes/kickassembler/base-routines.md`.
+
+### How
+
+```asm
+        ldx #n            // 2
+!:      dex               // 2
+        bne !-            // 3 taken, 2 on the last pass
+```
+
+5n + 1 cycles; `n = 0` runs 256 passes for 1,281. Measured: 6, 501 and
+1,281 for n = 1, 100 and 0.
+
+Nested, `Y` outer and `X` inner:
+
+```asm
+        ldy #m
+!o:     ldx #n
+!i:     dex
+        bne !i-
+        dey
+        bne !o-
+```
+
+m(5n + 6) + 1 cycles: 5,061 for m = 10, n = 100 (measured), up to
+329,217 for m = n = 0 (rung 3).
+
+**Page crossing.** A taken branch to another page costs 4. The same
+`LDX #100 / DEX / BNE` placed with `DEX` at `$2FFF` and `BNE` at `$3000`
+measured 600 cycles, 6n, not 501. Pin the loop's page with `.align` or
+an `.assert` so a later edit cannot move it across
+(`pitfalls/cpu.md`, `branch_page_cross_extra_cycle`).
+
+### Why it works
+
+`DEX` is 2 cycles and a taken `BNE` 3, so each pass but the last is 5;
+the last falls through for 2. A taken branch whose target is on a
+different page from the instruction after it adds one cycle for the high
+byte of the program counter.
+
+### Variations
+
+- **Odd counts.** A `NOP` (2) or `BIT $zp` (3) before the loop adds 2 or
+  3; with 5n + 1 that reaches any count from 8 up (rung 3).
+- **Lines and frames.** Wait on `$D012` or a CIA timer instead. Badlines
+  and sprite DMA take cycles from a loop but not from the raster or the
+  CIA clock, so a loop tuned with the display blanked runs long with it
+  on (`pitfalls/raster-and-badline.md`, `badline_cycle_loss`).
+- **Cycle-exact entry.** A stable raster IRQ removes the entry jitter a
+  delay alone cannot (`raster.md`, `stable_raster_irq`).
+
+### Cycle budget
+
+| Loop | Cycles |
+|---|---|
+| `LDX #n / DEX / BNE` | 5n + 1 |
+| the same, branch across a page | 6n |
+| `Y` outer `m`, `X` inner `n` | m(5n + 6) + 1 |
+
+### Recipes
+
+- `recipes/kickassembler/base-routines.md`: n = 1, 100 and 0, the
+  page-crossing loop and the nested loop, each timed with the CIA2
+  timers.
+
+---
+
 ## illegal_opcode_tricks — Useful undocumented opcodes
 
 **Complexity:** high
@@ -204,11 +393,11 @@ The 6502 decode matrix assigns addressing modes to columns and operations to row
 
 ### Variations
 
-**Undocumented NOPs for cycle padding.** The six 1-byte NOPs ($1A, $3A, $5A, $7A, $DA, $FA) cost 2 cycles / 1 byte, tighter than `BIT zp` (3 cycles / 2 bytes). Used in cycle-exact raster code to add exactly 2 cycles without consuming a branch slot or growing code by 2 bytes.
+**Undocumented 1-byte NOPs.** The six 1-byte NOPs ($1A, $3A, $5A, $7A, $DA, $FA) cost 2 cycles / 1 byte, the same as the official `NOP` ($EA) (`docs/hardware/6502-illegal-opcodes.md`, `docs/hardware/6510-cpu-reference.md`). They gain nothing for cycle padding; use $EA. (An earlier version recommended them for 2-cycle padding as tighter than `BIT zp`, as if $EA were not already 2 cycles / 1 byte.)
 
 ### Cycle budget
 
-Per call site: LAX zp saves 3 cycles vs LDA+LDX; SAX zp saves 2 vs AND+STA; ALR saves 2 vs AND+LSR; DCP zp saves 3 vs DEC+CMP; SLO zp saves 3 vs ASL+ORA (measured in VICE x64sc; an earlier version of this page had SAX saving 5 and DCP/SLO saving 2). In a 20-entry sprite multiplexer, these accumulate to 30-60 cycles per raster line, enough to free an extra badline slot.
+Per call site: LAX zp saves 3 cycles vs LDA+LDX; SAX zp saves 2 vs AND+STA; ALR saves 2 vs AND+LSR; DCP zp saves 3 vs DEC+CMP; SLO zp saves 3 vs ASL+ORA (measured in VICE x64sc; an earlier version of this page had SAX saving 5 and DCP/SLO saving 2). What that adds up to per raster line depends on how many such pairs a routine runs there; it has not been measured here. (An earlier version claimed 30-60 cycles per line in a 20-entry sprite multiplexer, "enough to free an extra badline slot", with no source.)
 
 ### Recipes
 
@@ -297,7 +486,7 @@ For a tight inner loop that accesses the same variable many times, moving that v
 
 ### How
 
-Map the hot variables of inner loops to zero-page addresses. The C64's zero-page layout has pre-allocated areas: $00 (CPU DDR) and $01 (I/O port / banking) are off-limits. $02 and $FB-$FE are the only bytes neither ROM touches after reset. $03-$8F is BASIC workspace (free if the program never returns to BASIC). $90-$FA is KERNAL working storage: the jiffy clock ($A0-$A2), keyboard buffer count ($C6), cursor/blink state ($CC-$CF), screen-line pointer ($D1-$D2), cursor column ($D3) and line-link table ($D9-$F2) are all above $BF and are written by the default IRQ every frame, so this range is unsafe while the KERNAL IRQ or CHROUT is in use, not merely without a full KERNAL replacement. $F7-$FA are the RS-232 buffer pointers, touched only by OPEN/CLOSE of device 2, which is why the demo convention of a 16-bit pointer at $FA-$FB survives in practice. $FF is BASIC's FOUT (number-to-string) scratch. (An earlier version of this page ended the KERNAL range at $BF and listed $FA-$FF as conventional free scratch.) See `docs/hardware/c64-memory-map.md` for the full layout.
+Map the hot variables of inner loops to zero-page addresses. The C64's zero-page layout has pre-allocated areas: $00 (CPU DDR) and $01 (I/O port / banking) are off-limits. $02 and $FB-$FE are the only bytes neither ROM touches after reset. $03-$8F is BASIC workspace (free if the program never returns to BASIC). $90-$FA is KERNAL working storage: the jiffy clock ($A0-$A2), keyboard buffer count ($C6), cursor/blink state ($CC-$CF), screen-line pointer ($D1-$D2), cursor column ($D3) and line-link table ($D9-$F2) are all above $BF. The default IRQ writes $91, $A0-$A2, $C0, $C5, $C6, $CB, $CD-$CF and $F3-$F6 every frame; the screen editor (CHROUT) writes $D1-$D3 and $D9-$F2 (read from the KERNAL ROM by tracing the code from $EA31 and $E716). So this range is unsafe while the KERNAL IRQ or CHROUT is in use, not merely without a full KERNAL replacement. (An earlier version said the default IRQ writes $D1-$D3 and $D9-$F2 every frame; it writes neither.) $F7-$FA are the RS-232 buffer pointers, touched only by OPEN/CLOSE of device 2, which is why the demo convention of a 16-bit pointer at $FA-$FB survives in practice. $FF is BASIC's FOUT (number-to-string) scratch. (An earlier version of this page ended the KERNAL range at $BF and listed $FA-$FF as conventional free scratch.) See `docs/hardware/c64-memory-map.md` for the full layout.
 
 Demos that take over the machine fully (disable BASIC and KERNAL ROMs, install custom IRQ/NMI/RESET handlers) can use $02-$FF minus $00/$01.
 
@@ -476,9 +665,9 @@ The BIT trick saves 2 bytes at the cost of 1 extra cycle on the "path A" executi
 
 ### Why
 
-VIC-II bus-stealing (also called "bad lines") occurs when the VIC needs to fetch character or bitmap data for the current raster line. During these fetches, the VIC asserts AEC (Address Enable Control) low for a fixed number of phi1 half-cycles, placing the address bus under VIC control and preventing the CPU from completing bus cycles. The CPU is halted for 40 cycles on each badline (every 8th displayed line in the character set window).
+VIC-II bus-stealing (also called "bad lines") occurs when the VIC needs to fetch character or bitmap data for the current raster line. During these fetches, the VIC asserts AEC (Address Enable Control) low for a fixed number of phi1 half-cycles, placing the address bus under VIC control and preventing the CPU from completing bus cycles. The CPU loses 40-43 cycles on each badline (every 8th displayed line in the character set window): plan on 43, because BA drops on cycle 12 and the CPU stops at its first read after that (see below). (An earlier version said the CPU is halted for 40.)
 
-The usual response is to work around bad lines: minimize computation, precompute, and accept that badline rows cost 40 cycles of CPU time. Phase-inverted IRQ scheduling goes further: instead of firing IRQs at the start of each line (where they may or may not land on a badline), fire IRQs timed to land in the free portion of the cycle budget where VIC bus activity is light or absent. On non-badlines, the full 63 cycles are available to the CPU; on badlines, 20 cycles are guaranteed (23 if the CPU happens to be in write cycles when BA drops on cycle 12). By scheduling IRQs to avoid the 40-cycle steal window, code can maintain a more predictable per-IRQ cycle budget.
+The usual response is to work around bad lines: minimize computation, precompute, and accept that badline rows cost 43 cycles of CPU time (an earlier version said 40). Phase-inverted IRQ scheduling goes further: instead of firing IRQs at the start of each line (where they may or may not land on a badline), fire IRQs timed to land in the free portion of the cycle budget where VIC bus activity is light or absent. On non-badlines, the full 63 cycles are available to the CPU; on badlines, 20 cycles are guaranteed (23 if the CPU happens to be in write cycles when BA drops on cycle 12). By scheduling IRQs to avoid the steal window (BA low from cycle 12, bus taken on cycles 15-54), code can maintain a more predictable per-IRQ cycle budget.
 
 ### How
 
@@ -506,13 +695,13 @@ The handler is installed at $0314/$0315 with the KERNAL in, which is why it exit
 
 ### Why it works
 
-VIC's AEC signal halts the CPU for 40 cycles during each badline. The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. IRQ jitter (see `stable_raster_irq` in `docs/techniques/raster.md`) is absorbed by the polling loop; the 11-cycle pre-steal window (cycles 1-11; stores may also land on 12-14) is wide enough to contain worst-case jitter (an earlier version said 15 cycles).
+On each badline the VIC pulls BA low on cycle 12 and takes the bus on cycles 15-54, so the CPU loses 40-43 cycles, 43 for an ordinary instruction stream. (An earlier version said AEC halts the CPU for 40 cycles.) The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. The polling loop does not absorb IRQ jitter: the one above (`LDA $D012`, `CMP #`, `BNE`, 9 cycles) leaves 0-8 cycles after the line changes, so the write after it can land on any of 9 cycles (instruction-table arithmetic; see `stable_raster_irq` in `docs/techniques/raster.md`). The pre-steal window is cycles 1-11 (stores may also land on 12-14), so a 9-cycle spread fits in it only if it starts on cycle 1, 2 or 3; one fixed cycle needs `double_irq`. (An earlier version said the polling loop absorbs the jitter and that the window is wide enough for worst-case jitter; before that it gave the window as 15 cycles.)
 
 ### Variations
 
 **Sprite fetch avoidance.** Active sprites steal additional cycles per line: 2 bus cycles of s-accesses per enabled sprite, plus a 3-cycle BA lead-in (write-only for the CPU) paid once per contiguous group of active sprite slots: up to 3 + 8 × 2 = 19 cycles per line with all eight on (measured in VICE x64sc: 105 / 399 / 210 cycles over the 21 DMA lines for one sprite / eight sprites / sprites 0+7, the last forming two BA groups; badline + eight sprites measured 40 + 19 = 59 stolen, 4 left). An earlier version of this page counted 4 cycles per sprite in two 2-cycle windows, which double-counts the single 2-cycle s-access window per sprite. Disable sprites on critical lines or account for their steal in the cycle budget.
 
-**Blanking the display.** DEN ($D011 bit 4) is sampled once per frame, on raster line $30 (48): hold it clear across line $30 and that frame has no badlines at all, so every line gives the CPU 63 cycles (measured in VICE x64sc: a 14-cycle poll loop over lines 100-199 ran 450 iterations with DEN clear across $30 against 412 with DEN set). Clearing DEN later in the frame does not remove the remaining badlines of that frame (the same loop with DEN cleared at line 100 still ran 412), so this is a per-frame choice for loaders and compute phases, not a per-line one; an earlier version of this page implied it worked mid-frame. Keep DEN clear across line 51 too for the border colour over the whole screen; clear on $30 but set again before 51 gives a badline-free frame whose window still opens on idle-state graphics (see `docs/hardware/vic-ii-reference.md`, $D011).
+**Blanking the display.** See `screen_blank_full_cpu`. DEN ($D011 bit 4) is sampled once per frame, on raster line $30 (48): hold it clear across line $30 and that frame has no badlines at all, so every line gives the CPU 63 cycles (measured in VICE x64sc: a 14-cycle poll loop over lines 100-199 ran 450 iterations with DEN clear across $30 against 412 with DEN set). Clearing DEN later in the frame does not remove the remaining badlines of that frame (the same loop with DEN cleared at line 100 still ran 412), so this is a per-frame choice for loaders and compute phases, not a per-line one; an earlier version of this page implied it worked mid-frame. Keep DEN clear across line 51 too for the border colour over the whole screen; clear on $30 but set again before 51 gives a badline-free frame whose window still opens on idle-state graphics (see `docs/hardware/vic-ii-reference.md`, $D011).
 
 ### Cycle budget
 
@@ -532,6 +721,95 @@ A full-screen effect that runs IRQs on every visible line (200 lines) at a badli
 ### Recipes
 
 - No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe has a text logo, not a sprite, and its bars avoid badlines by choosing `BAR_START = 88` from an IRQ ring, not phase-inverted scheduling.)
+
+---
+
+## screen_blank_full_cpu — Blank the screen for a frame with no badlines
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D011, D012
+**Uses kernal:** (none)
+
+### Why
+
+Badlines take 40 to 43 cycles from the CPU on every eighth display line. A
+loader, a depacker or a precalculation phase that shows nothing loses about
+a twentieth of the frame to them for no benefit. Clearing DEN removes them.
+
+### How
+
+DEN is `$D011` bit 4. The VIC samples it once per frame, on raster line
+`$30` (48). If DEN is clear on that line, the frame has no badlines at all
+and every line gives the CPU its full 63 cycles on PAL, 65 on NTSC 6567R8.
+The screen shows border colour from top to bottom.
+
+Measured in VICE x64sc 3.10, PAL (default C64C) and `-model ntsc`, with the
+harness below: a 14-cycle poll loop counted iterations from line 100 to
+line 200 in three frames.
+
+| Frame | PAL iterations | NTSC iterations |
+|---|---|---|
+| DEN clear across line `$30` | 449 | 464 |
+| DEN set | 412 | 427 |
+| DEN set on `$30`, cleared on line 100 | 412 | 426 |
+
+The 37 extra PAL iterations are 518 cycles, within one loop pass of the
+twelve badlines in lines 100 to 199 at 43 cycles each (516; arithmetic
+from the table, YSCROLL 3). The third row is
+the trap: clearing DEN after line `$30` removes no badline of that frame.
+Blanking is a per-frame decision, made before line `$30`.
+
+```kickassembler
+// Frame with DEN clear across line $30; count a 14-cycle loop over lines 100-199.
+// Counts land in X (low) and Y (high). Run with SEI and CIA interrupts off.
+blank_frame:
+!:  lda $d011           // wait for line >= 256, then for the wrap to line 0
+    bpl !-
+!:  lda $d011
+    bmi !-
+!:  lda $d012
+    cmp #$20
+    bne !-
+    lda $d011
+    and #$ef            // DEN off before line $30
+    sta $d011
+!:  lda $d012
+    cmp #100
+    bne !-
+    ldx #0
+    ldy #0
+count:                  // inx 2, bne 3, lda 4, cmp 2, bcc 3 = 14 cycles
+    inx
+    bne !+
+    iny
+!:  lda $d012
+    cmp #200
+    bcc count
+    rts
+```
+
+To show the picture again, set DEN before line `$30` of the next frame.
+Keep DEN clear across line 51 as well if the whole screen must stay border
+colour: clear on `$30` but set again before line 51 gives a badline-free
+frame whose display window still opens, showing idle-state graphics
+(`docs/hardware/vic-ii-reference.md`, `$D011`).
+
+### Variations
+
+**Sprites still steal.** DEN does not stop sprite DMA. An enabled sprite on
+a line still costs its 2 cycles plus the BA lead-in
+(`phase_inverted_irq`, "Sprite fetch avoidance"). Clear `$D015` too for the
+full 63.
+
+**Blank the whole phase.** Clear DEN once and leave it clear until the
+work ends, and every frame is badline-free. The depack timings in
+`docs/techniques/loaders-packers.md` (a 50 KB copy loop, about 820,000
+cycles) were measured this way, with the screen blanked.
+
+### Recipes
+
+- No recipe yet. The measurement above ran from the harness in this entry.
 
 ---
 
@@ -584,13 +862,13 @@ Total DMA steal per frame on a fully-featured PAL display (all borders open, 8 s
 
 | Source | Steal cycles |
 |---|---|
-| Badlines (25 lines * 40 cycles) | 1000 |
+| Badlines (25 lines * 43 cycles: 3 BA lead-in + 40 fetches) | 1075 |
 | Sprite DMA (3 BA lead-in + 8 sprites * 2 cycles = 19 * 200 lines, upper bound) | 3800 |
-| Total steal | ~4800 |
-| Available CPU cycles per frame (63 * 312 = 19656 - 4800) | ~14856 |
-| Available as % of frame | ~76% |
+| Total steal | ~4875 |
+| Available CPU cycles per frame (63 * 312 = 19656 - 4875) | ~14781 |
+| Available as % of frame | ~75% |
 
-The sprite row is an upper bound: sprite DMA occurs only on lines where a sprite is displayed, and the 3-cycle lead-in is per contiguous group of active slots, so a sparse enable pattern can cost slightly more per sprite than the all-eight figure. An earlier version of this table counted 4 cycles per sprite in two 2-cycle windows (32 per line, 6400 per frame, ~62% available), which double-counts the single 2-cycle s-access window per sprite; the 19-per-line figure is measured in VICE x64sc (399 cycles over the 21 DMA lines of eight sprites).
+The sprite row is an upper bound: sprite DMA occurs only on lines where a sprite is displayed, and the 3-cycle lead-in is per contiguous group of active slots, so a sparse enable pattern can cost slightly more per sprite than the all-eight figure. An earlier version of this table counted 4 cycles per sprite in two 2-cycle windows (32 per line, 6400 per frame, ~62% available), which double-counts the single 2-cycle s-access window per sprite, and counted badlines at 40 cycles without the 3-cycle BA lead-in; the 19-per-line figure is measured in VICE x64sc (399 cycles over the 21 DMA lines of eight sprites).
 
 A demo that disables sprites on 100 of the 200 visible lines recovers about 1900 steal cycles (an earlier version said 3200), roughly a 13% improvement in usable CPU time. Combined with display blanking on heavy-compute segments, most C64 demo effects stay within budget by applying avoidance selectively on the lines where tight register writes are needed.
 
@@ -1032,7 +1310,8 @@ unfold 5,190.
 **Uses registers:** (none)
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=8000, bytes_code=849, bytes_data=1185
-**Cost basis:** derived-listing
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-speedcode-generator (one 1,000-byte copy, screen blanked; bytes are the whole PRG)
 
 The figures on the Cost line are for the recipe's job, a 1,000-byte copy:
@@ -1042,7 +1321,7 @@ and 1,185 bytes of row tables, source block and text. The 6,001-byte
 block the generator fills is RAM, not load, so it is not on the line; it
 scales with the byte count, as the cycle figure does, and belongs in the
 memory plan. The generation itself runs once and is not on the line
-either; it is 92,485 cycles for that job, measured.
+either; it is 92,485 cycles for that job, measured. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 ### Why
 
@@ -1251,8 +1530,9 @@ pushed there, so the RAM vector at `$0318`/`$0319` is the whole
 dispatch from its second instruction on, and a handler installed there
 gets control with A, X and Y untouched. With the KERNAL banked out
 (`$01` bit 1 clear) the CPU reads `$FFFA`/`$FFFB` from RAM and the
-handler's address goes there instead; `memory_layout_plan` in
-`techniques/memory-banking.md` covers the all-RAM layout.
+handler's address goes there instead; `ram_under_kernal` in
+`techniques/memory-banking.md` covers the all-RAM layout (an earlier
+version pointed at `memory_layout_plan`, which defers to it).
 
 **What the KERNAL's handler does.** The default `$0318` target is
 `$FE47`. It pushes A, X and Y, writes `$7F` to `$DD0D` and reads it
@@ -1388,6 +1668,8 @@ worst frame.
 **Complexity:** low
 **Region:** both
 **Uses registers:** DC08, DC09, DC0A, DC0B, DC0D, DC0E, DC0F
+**Claims:** cia1_tod (owns), cia1_timer_a (init), cia1_timer_b (init)
+**Claims basis:** measured-vice
 **Cost:** cycles_per_frame=122
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-tod-alarm (on the frame the alarm fires)
@@ -1568,3 +1850,136 @@ this page stated the recipe's 130 as the `Cost` and put the fragment at
 ### Recipes
 
 - `recipes/kickassembler/tod-alarm.md` (clock set, alarm three seconds on, the alarm taken as a CIA1 IRQ under the KERNAL's jiffy, frames counted against the model, the drift with TODIN wrong)
+
+## trainer_and_cheat_hooks — Finding a game's lives byte by value search, and patching the code that changes it
+
+**Complexity:** low
+**Region:** both
+
+### Why
+
+A cheat is a change to one instruction: the one that takes a life, spends
+ammunition or runs down a timer. Nobody hands the patcher a symbol table,
+so the work is finding that instruction in a program already in memory.
+The same method serves a developer: an infinite-lives switch for testing
+a late level, found in the build the tester has rather than in the
+source.
+
+### How
+
+**Find the byte.** Note the value on screen (3 lives), search RAM for
+every address holding it, and keep one candidate bit per address. Lose a
+life and keep only the candidates that now hold 2; lose another and keep
+those holding 1. Each pass discards most of the rest. When the counter's
+value is not shown (an energy bar), search for "changed" and "unchanged"
+between two snapshots instead; that is a byte of snapshot per address,
+not a bit, and is not built here. Leave the search tool's own workspace
+out of the range, or its stack changes under it and the count varies
+from run to run.
+
+**Find the code.** Scan memory for the instructions that write the byte:
+`DEC abs` (`$CE lo hi`), `DEC zp` (`$C6 lo`), and where there are none,
+`STA`/`STX`/`STY` and `SBC` sequences that store to it. A three-byte
+pattern can also occur in data; patch each hit in turn and watch the
+byte to tell them apart.
+
+**Patch it.** Replace the instruction with one of the same length that
+leaves the flags as the next instruction expects. A `DEC` is almost
+always followed by a branch on its result, so three NOPs are wrong
+(`nop_patch_leaves_stale_flags`, `pitfalls/cpu.md`); `LDA` of the same
+address is right when A is dead after it, and `BIT` or `ORA #0` shapes
+suit other cases. Changing the branch itself (`BEQ` to two NOPs, or its
+offset to 0) is the other safe form.
+
+**Apply it.** A trainer is a small program that runs before the game,
+asks which cheats to turn on, writes their patches and then starts the
+game. A game that is packed or loaded in parts overwrites a patch made
+too early, so the trainer takes control after the last part is in place:
+it changes the depacker's final jump to point at itself, or hooks the
+loader's return. That hook depends on the game's loader and is described
+here, not built.
+
+### Why it works
+
+The value search needs no knowledge of the program. In the recipe the
+value 3 sat in 18 of 34,816 bytes; after one death one of them held 2,
+and it held 1 after the next. The `DEC` scan then found one site, and
+the `LDA` patch kept the game running for eight deaths with the counter
+at 3 (measured in VICE x64sc 3.10, both models). The first search pass
+is the costly one: 1,483,115 cycles on PAL and 1,495,095 on NTSC for
+34,816 bytes in Oscar64 C, about 43 cycles a byte with the screen on
+(CIA1 timers A and B chained); the later passes visit only candidates.
+An assembler loop would be several times faster (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/trainer-hooks.md` (value search over `$0800-$8FFF` with a candidate bitmap, `DEC` scan, the NOP and LDA patches played for eight deaths each, the first pass timed with CIA1)
+
+## machine_language_monitor_core — A monitor's dump, table-driven disassembler, mini-assembler and BRK breakpoints
+
+**Complexity:** medium
+**Region:** both
+
+### Why
+
+A monitor is how a program is inspected and patched on the machine
+itself: show memory, show it as code, type an instruction in, stop at an
+address and look at the registers. Cartridge and disk monitors all have
+these four parts. Built into a game or a tool, the same core gives a
+debug screen; built alone, it is a development tool that needs nothing
+but the machine.
+
+### How
+
+**Dump.** Print an address and eight bytes a line as hex; the ASCII or
+screen-code column beside them is optional. Reading `$D000-$DFFF` shows
+I/O, not RAM, unless the bank is switched first, and reading some I/O
+registers changes them (`$DC0D` clears the CIA's interrupt flags), so a
+dump of the I/O area is not harmless.
+
+**Disassembler.** Two 256-entry tables indexed by opcode: the mnemonic
+number and the addressing mode. The mode gives the length (1 to 3) and
+the operand format. Thirteen modes cover the legal set: implied,
+accumulator, immediate, zero page, zero page X and Y, absolute, absolute
+X and Y, indirect, (zp,X), (zp),Y and relative. Print a branch's target,
+not its offset. The 105 opcodes outside the legal set print as data
+(`???` in the recipe); a monitor that names them uses a third table
+(`docs/hardware/6502-illegal-opcodes.md`).
+
+**Mini-assembler.** Read the disassembler's own format back: the
+mnemonic, then the operand's shape and its digit count (two hex digits
+for zero page, four for absolute), then look up the opcode for that
+mnemonic and mode in a reverse table built once from the forward tables.
+A branch mnemonic takes a target address and stores the offset, refused
+outside -128 to +127. Test the pair by round trip: disassemble,
+reassemble, compare bytes.
+
+**Breakpoints.** Save the opcode at the address, write `BRK` (`$00`)
+there and run. With the KERNAL in, a BRK arrives through `$FFFE` at
+`$FF48`, which pushes A, X and Y, sees the B bit in the stacked status
+and jumps through `$0316`; point that vector at the handler. The stack
+then holds, from SP+1: Y, X, A, P, PC low, PC high. The stacked PC is the
+BRK's address plus 2. The handler records the registers, writes the
+saved opcode back, and to continue with the instruction that was
+replaced it must first subtract 2 from the stacked PC
+(`brk_resume_at_stacked_pc_skips_instruction`, `pitfalls/cpu.md`). It
+leaves through `$EA81` (`PLA TAY PLA TAX PLA RTI`). Single-stepping is
+the same trick: a temporary BRK after the current instruction, and at
+both targets of a branch. The default `$0316` is `$FE66`, the KERNAL's
+BRK warm start (ROM table at `$FD30`).
+
+### Why it works
+
+The recipe's tables agree with VICE's monitor on all 151 legal opcodes
+(mnemonic, mode and length) and give no legal name to the other 105; its
+disassembler and assembler round-trip every legal opcode and all 3,850
+instructions of the KERNAL ROM decoded in sequence from `$E000`, with no
+byte wrong (measured in VICE x64sc 3.10, both models). The round trip
+costs 2,451 cycles an instruction on PAL in Oscar64 C, 9.4 million for
+the ROM, most of it the text formatting and parsing. A first version
+that searched the 256-entry table for each assembled line had not
+finished at 30 million.
+
+### Recipes
+
+- `recipes/oscar64/monitor-core.md` (a dump line, the disassembler and assembler round-tripped over all legal opcodes and the KERNAL ROM, a BRK breakpoint through `$0316` resumed at PC - 2 and at PC, the round trip timed with CIA1, PAL and NTSC)

@@ -18,6 +18,9 @@ program is at the end of the page.
 **Complexity:** low
 **Region:** both
 **Uses registers:** (none)
+**Cost:** cycles_per_frame=31
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE=2 build, the 8.8 Y add and the pixel byte of one actor, display off, PAL and NTSC)
 
 ### Why
 
@@ -95,6 +98,19 @@ high-byte pairs under a forced carry of 0 and of 1; they left the
 checksum unchanged, which means they did not run as written, so they
 were removed and are not claimed here.
 
+### Cycle budget
+
+31 cycles for one actor's Y step, `py_fp += vy_fp` and the pixel byte
+`py_fp >> 8`, as Oscar64 compiled it inside the platformer's
+`player_update`. Measured in VICE x64sc 3.10 on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=2` build: CIA1 timer B
+around the two lines, the timer's 18 cycles subtracted, largest of 800
+frames, display off, PAL and NTSC alike. With the display on, one NTSC
+reading was 74: a badline stall landed inside. An X step is the same
+shape. `recipes/oscar64/fixed-point-jump.md` counts its two adds at 25 to
+31 cycles from the instruction table (rung 3). The page had no figure
+before #37.
+
 ### Recipes
 
 - `recipes/oscar64/fixed-point-jump.md`
@@ -105,7 +121,8 @@ were removed and are not claimed here.
 **Region:** both
 **Uses registers:** (none)
 **Cost:** cycles_per_frame=52, bytes_data=2048
-**Cost basis:** arithmetic
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 
 ### Why
 
@@ -164,6 +181,16 @@ four patch stores write into the routine's own code and stay absolute.
 The page-aligned tables are what keep the patch to one byte: without
 alignment the high address byte would need a carry as well.
 
+No recipe carries this routine, so the Cost line has no measured-on
+line: its 52 cycles are the measurement above, made by `fpcheck.c` at
+the end of this page (CIA1 timer B, rung 1), and its 2,048 bytes are
+the four 512-byte tables in that program's Oscar64 map (`sqr_lo` at
+`$0F00` to `nsq_hi` ending at `$16FF`). The basis word was
+`arithmetic` before; both figures come from instruments. Until #72
+one word covered the line and said `derived-listing`, the weaker of
+the two; the cycles now say `measured-vice` and the bytes
+`derived-listing` on their own line.
+
 ### The optimiser will move the patched instructions
 
 In Oscar64 the block above must be written `__asm volatile`. Without
@@ -205,9 +232,241 @@ mismatches.
 
 ### Recipes
 
-- No recipe yet. The tables and the checking harness are the measuring
-  program at the end of this page; `recipes/oscar64/fixed-point-jump.md`
-  does not use a multiply.
+- `recipes/kickassembler/multiply-16x16.md` runs four of these
+  lookups per call inside `multiply_16x16`; the 8 × 8 routine alone is
+  timed only by the measuring program at the end of this page.
+  `recipes/oscar64/fixed-point-jump.md` does not use a multiply.
+
+## multiply_16x16 — 16 × 16 multiply, 32-bit product, from four table multiplies
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Requires:** table_multiply_8x8
+**Cost:** cycles_per_frame=272, bytes_data=2048
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-multiply-16x16 (one call, worst pair: 16 page crossings and both carries; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+Rotation, perspective and physics with 16-bit coordinates need the full
+product of two 16-bit values: a scale factor times a position, a
+velocity times a time step. `effects-vector-3d.md` names the need. The
+8 × 8 table multiply gives one byte product in 52 cycles; four of them
+and three adds give the 32-bit product.
+
+### How
+
+Split each operand into bytes, `a = 256·ah + al` and `b = 256·bh + bl`:
+
+```
+a·b = al·bl + 256·(ah·bl + al·bh) + 65536·ah·bh
+```
+
+`al·bl` is bytes 0 and 1 of the result and `ah·bh` bytes 2 and 3. The
+two middle products are each added at byte 1, and the carry out of
+byte 2 goes into byte 3.
+
+Each byte product is the quarter-square lookup of `table_multiply_8x8`.
+Patch `al` into the reads for `al·bl` and `al·bh`, and `ah` into the
+reads for `ah·bl` and `ah·bh`; then `Y = bl` serves the first product of
+each pair and `Y = bh` the second. That is 16 patched operand bytes,
+done once per call.
+
+```asm
+        ldy b_lo
+        sec
+s1:     lda sqr_lo,y      // al*bl: operand bytes patched with al, al^$ff
+d1:     sbc nsq_lo,y
+        sta r0
+s2:     lda sqr_hi,y
+d2:     sbc nsq_hi,y
+        sta r1
+        ...               // ah*bl into m1:m0; then ldy b_hi for al*bh, ah*bh
+        clc               // bytes 1-3 += ah*bl
+        lda r1
+        adc m0
+        sta r1
+        lda r2
+        adc m1
+        sta r2
+        bcc !+
+        inc r3            // the carry into byte 3 (the pitfall below)
+!:
+```
+
+The whole routine is in `recipes/kickassembler/multiply-16x16.md`.
+
+### Why it works
+
+The identity is exact for every byte pair (`table_multiply_8x8`), so
+each partial product is exact, and the sum of the four placed at their
+byte offsets is `a·b` by the distributive law. The only place a bit can
+be lost is a carry: the two middle products sum to at most
+2 × 255 × 255 = 130,050, more than 16 bits, so the carry out of byte 2
+is real and must reach byte 3. The top byte cannot overflow, because
+`a·b` is at most `$FFFE0001`.
+
+Measured in VICE x64sc 3.10 over 65,536 operand pairs: every product
+matches a Python model's checksum, and a copy without the two `INC`s
+is wrong on 36,069 of them (`pitfalls/maths.md`,
+`multiply_16x16_middle_carry_dropped`).
+
+### Variations
+
+- **Signed operands.** Multiply the magnitudes and negate the 32-bit
+  result when the signs differ; or multiply the raw bytes and subtract
+  `b` from the top word when `a` is negative and `a` from it when `b`
+  is negative (rung 3, not measured here).
+- **16 × 8.** Drop the two products with `bh`: 8 patched bytes and two
+  lookups, a 24-bit product (rung 3).
+- **Only the top 16 bits.** Fixed-point code that keeps the high word
+  still needs every carry into it; skipping `al·bl` makes the top word
+  up to 1 too small (rung 3).
+
+### Cycle budget
+
+Measured with CIA2 timer A, one call, net of `JSR` / `RTS`, screen
+blanked, PAL and NTSC alike (rung 1):
+
+| Operands | Cycles |
+|---|---|
+| `0 × 0`: no page crossed, no carry | 246 |
+| `8A80 × F3FF`: 16 page crossings, two carries | 272 |
+| 65,536 sweep pairs | 246 to 270 |
+
+246 is the instruction-table sum: 76 to patch, 112 for the four
+lookups, 58 for the two middle adds. Each of the sixteen indexed reads
+adds one cycle when it crosses a page and each carry into byte 3 adds
+five, so 272 is the largest there is. With the display on, a badline
+inside the call adds 40 to 43 (`badline_cycle_loss`). The `**Cost:**`
+line carries 272, once a frame, and the four 512-byte tables.
+
+### Recipes
+
+- `recipes/kickassembler/multiply-16x16.md`: five products, a timed
+  65,536-pair sweep against a Python checksum, and the carry-less copy
+  counted.
+
+## multiply_by_constant — Multiply by a constant with a shift-and-add chain
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=68
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-multiply-constant (one call, signed byte × 10, negative input; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+Most multiplies in a game are by a number fixed when the code is
+written: a row times 40 for a screen address, a line times 320 for a
+bitmap address, a score times 10 before a digit is added. A chain of
+shifts and adds does each of these in 36 to 68 cycles with no table,
+where the general 8 × 8 table multiply costs 52 cycles and 2,048 bytes
+(`table_multiply_8x8`).
+
+### How
+
+Write the constant as a sum or difference of powers of two and shift
+the input to each. Keep the high byte in memory and `ROL` it after
+every `ASL` of the low byte; start the `ROL`s only where the result
+stops fitting in a byte.
+
+```asm
+// row * 40 = (4 row + row) * 8; row * 5 fits a byte for row < 52
+        lda #0
+        sta m_hi
+        lda row
+        asl
+        asl               // C clear: row < 64
+        adc row
+        asl
+        rol m_hi
+        asl
+        rol m_hi
+        asl
+        rol m_hi
+        sta m_lo          // 46 cycles
+```
+
+`y × 320` is `y × 256 + y × 64`. The `× 256` is `y` in the high byte,
+and `y × 64` is two right shifts of `y × 256`:
+
+```asm
+        lda #0
+        sta m_lo
+        lda y
+        lsr
+        ror m_lo
+        lsr
+        ror m_lo          // A = y >> 2, m_lo = (y & 3) << 6
+        clc
+        adc y
+        sta m_hi          // 36 cycles, y < 205
+```
+
+A constant just below a power of two is a subtract: `x × 7 = 8x - x`,
+62 cycles on a 16-bit word.
+
+A signed input is widened by its sign before the first shift: the high
+byte starts at `$FF` when bit 7 is set. Left at zero, every negative
+input comes out `256 × k` too large (`pitfalls/maths.md`,
+`constant_multiply_signed_not_extended`).
+
+### Why it works
+
+`ASL` shifts bit 7 into `C` and `ROL` shifts `C` into bit 0, so the
+pair doubles a 16-bit value. Adding shifted copies is the long
+multiplication of the constant's binary digits, done at assembly time
+for the zeros. After a `ROL` of a high byte below `$80`, `C` is clear,
+and an `ADC` that follows needs no `CLC`; after one of `$FF` (a
+negative signed value) it is set, and it does.
+
+Every input of five routines was run in VICE x64sc 3.10 and folded into
+a checksum that matches a Python model: `x × 10` for all 256 unsigned
+and all 256 signed bytes, `row × 40` for rows 0 to 24, `y × 320` for
+lines 0 to 199 and `x × 7` for all 65,536 words
+(`recipes/kickassembler/multiply-constant.md`).
+
+### Variations
+
+- **A table.** `row × 40` for 25 rows is 50 bytes of table and two
+  indexed loads, 8 cycles before the stores (rung 3); the chain wins
+  where memory is short or the input range is wide.
+- **Constants with many one bits.** Use a subtract (`15 = 16 - 1`,
+  `63 = 64 - 1`) or factors (`45 = 5 × 9`, each factor a few shifts
+  and one add).
+- **Fixed-point scale.** A fraction such as `× 0.75` is `x - x / 4`:
+  right shifts instead of left, with the dropped bits the rounding
+  error (rung 3).
+
+### Cycle budget
+
+Measured with CIA2 timer A, one call, net of `JSR` / `RTS`, screen
+blanked, PAL and NTSC alike (rung 1); every figure is its
+instruction-table sum:
+
+| Routine | Cycles |
+|---|---|
+| unsigned byte × 10, 16-bit result | 45, or 50 with the carry |
+| signed byte × 10, 16-bit result | 67, or 68 for a negative input |
+| row × 40, rows 0 to 24 | 46 |
+| y × 320, lines 0 to 199 | 36 |
+| 16-bit word × 7, modulo 65,536 | 62 |
+
+The `**Cost:**` line carries the dearest, the signed `× 10`, once a
+frame.
+
+### Recipes
+
+- `recipes/kickassembler/multiply-constant.md`: the five chains, every
+  input run and timed, and the zero-extended signed form counted.
 
 ## division_8_16bit — Shift-and-subtract division, reciprocals and divide by ten
 
@@ -410,6 +669,9 @@ about 4 per cent of a PAL frame in its slowest form (791 of 19,656).
 **Region:** both
 **Uses registers:** (none)
 **Requires:** fixed_point_8_8
+**Cost:** cycles_per_frame=66
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE=2 build, one actor's velocity step: table read, gravity add past the table, or launch; display off, PAL and NTSC)
 
 ### Why
 
@@ -487,6 +749,17 @@ runs two sprites from floors 64 pixels apart off one table and checks
 the exact landing on the 6510 every jump; the constants were picked in
 Python for the zero sum, and the pair `-3.5` with `+$28` does not give
 one for any terminal velocity from 1.5 to 4.0 in steps of 1/32.
+
+### Cycle budget
+
+66 cycles for one actor's velocity step: the table read while the jump
+lasts, the 8.8 gravity add and fall clamp after it, or the launch. The
+position add that follows is `fixed_point_8_8`'s, 31 more. Measured in
+VICE x64sc 3.10 on `recipes/oscar64/platformer-scaffold.md`'s `PROFILE=2`
+build, CIA1 timer B, the timer's 18 cycles subtracted, largest of 800
+frames, display off, PAL and NTSC alike; with the display on one NTSC
+reading was 109, a badline stall inside. The page had no figure before
+#37.
 
 ### Recipes
 
@@ -724,7 +997,8 @@ its result is a screen the character ROM can decode.
 **Region:** both
 **Uses registers:** D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E
 **Cost:** cycles_per_frame=14, bytes_code=1947
-**Cost basis:** arithmetic
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
 **Cost measured on:** oscar64-lfsr-random (one 8-bit step, screen blanked; bytes are the whole PRG)
 **Claims:** sid_voice_3 (init), sid_voice_3_readback (init), sid_filter_volume (init), cia1_timer_a (reads)
 **Claims basis:** derived-listing
@@ -856,7 +1130,12 @@ interrupts the count (rung 1). Empty loop 9,476 cycles; 8-bit step
 (13 without the tap, 14 with, absolute addressing) and 19.4 for the
 16-bit one (15 without, 24 with; half the steps take the tap). In zero
 page the same sequences cost 11 to 12 and 13 to 20 (rung 3, from the
-instruction table, not measured).
+instruction table, not measured). The Cost line's 14 is the dearer 8-bit step,
+the one with the tap (the measured average is 13.5), and its bytes are the recipe's whole PRG less the load
+address, from the build; its basis word was `arithmetic` before, which
+neither figure is. Until #72 one word covered the line and said
+`derived-listing`, the bytes' rung; the cycles now say `measured-vice`
+and the bytes `derived-listing` on their own line.
 
 ### Recipes
 
@@ -869,6 +1148,230 @@ The checksum fold in those pages is `chk = ((chk ^ value) * 5 + 1) &
 0xFFFF`, folded from state 1 round the whole cycle so the expected
 value does not depend on the live seed; it is not the rotate fold used
 by `fpcheck.c` above.
+
+## random_in_range — Random numbers in a range with an even distribution
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Requires:** lfsr_random
+**Cost:** cycles_per_frame=644, cycles_per_frame_typical=60
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-random-range (one rejection call for n = 6, 16-bit LFSR step included: worst and mean of 4,096 calls; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+A game wants a value in `0..n-1` far more often than a raw byte: a die
+face, one of 100 spawn columns, one of 6 enemy types. `lfsr_random`
+gives bytes. Turning a byte into a range the obvious way, `r mod n`,
+makes some values more likely than others whenever `n` does not divide
+256, and for `n = 100` the favoured ones come up half as often again.
+
+### How
+
+Three ways, all measured over a whole LFSR period in
+`recipes/kickassembler/random-range.md`:
+
+- **`r mod n`**: subtract `n` until the byte goes below it. Biased.
+- **Multiply-high**: the high byte of `r × n`. The same bias, spread
+  over the range instead of piled at the bottom.
+- **Rejection**: keep the low `k` bits, where `2^k` is the smallest
+  power of two not below `n`, and draw again while the result is `n` or
+  more. Even.
+
+```asm
+rnd_rej:                  // A = 0..n-1, every value equally likely
+!:      jsr lfsr          // A = next random byte
+        and mask          // 2^k - 1: 7 for n = 6, 127 for n = 100
+        cmp nval
+        bcs !-            // n or more: draw again
+        rts
+```
+
+For a power of two, `n = 2^k`, the `AND` alone is exact and never
+rejects.
+
+### Why it works
+
+A byte has 256 values; `n` results can each get the same number of
+them only when `n` divides 256. Otherwise `256 mod n` results get one
+byte value more than the rest: for `n = 6`, four faces get 43 and two
+get 42, and for `n = 100`, 56 values get 3 and 44 get 2. That holds for
+any map from one byte to one result, `mod` and multiply-high alike, so
+over the LFSR's 65,535 steps both gave the same fewest and most hits:
+10,752 and 11,008 for `n = 6`, 512 and 768 for `n = 100` (rung 1,
+matching a Python model; `pitfalls/maths.md`,
+`random_range_modulo_bias`). A wider source reduces the bias without
+removing it.
+
+Masking to `k` bits gives `2^k` equally likely values; discarding the
+top `2^k - n` of them leaves `n` equally likely ones. Over the same
+period the counts were 8,191 to 8,192 for `n = 6` and 511 to 512 for
+`n = 100`: the one missing hit is the LFSR state 0, which never
+occurs.
+
+### Variations
+
+- **Precomputed limit.** `n` and `mask` in the code as immediates saves
+  4 cycles a try (rung 3).
+- **A 16-bit range.** The same rejection on a 16-bit draw, masked to
+  the bits of `n - 1`; each try costs a 16-bit compare.
+- **Several steps per byte.** One LFSR step shifts the state one bit,
+  so consecutive bytes share seven bits and rejections come in runs:
+  the measured worst was 15 in a row. Stepping eight times per byte
+  removes the shared bits at eight times the step cost (rung 3).
+- **Uneven on purpose.** A loot table that should be uneven is a
+  256-entry lookup indexed by the raw byte, not a biased `mod`.
+
+### Cycle budget
+
+Measured with CIA2 timer A, one call including the 19- or 28-cycle
+LFSR step, net of `JSR` / `RTS`, over 4,096 calls, screen blanked, PAL
+and NTSC alike (rung 1). Each figure equals the instruction-table count
+over the same draws:
+
+| Way | n = 6: min, max, mean | n = 100: min, max, mean |
+|---|---|---|
+| `r mod n` | 48, 351, 198 | 48, 71, 58 |
+| multiply-high, shift-and-add loop | 177, 226, 201 | 177, 226, 201 |
+| rejection | 41, 644, 60 | 41, 575, 58 |
+
+Rejection is the cheapest on average and the only even one; its worst
+case is a run of rejections, bounded by the generator rather than the
+code. The `**Cost:**` line carries the measured worst, 644, with the
+mean as the typical frame. With the 52-cycle table multiply
+(`table_multiply_8x8`) in place of the loop, multiply-high would cost
+under 100 (rung 3).
+
+### Recipes
+
+- `recipes/kickassembler/random-range.md`: the three ways over a whole
+  LFSR period for `n = 6` and `n = 100`, counted and timed.
+
+## byte_list_sort — Sort a list of byte keys: insertion sort and counting sort
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=9042
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sort-bytes (one insertion sort of 32 random keys with their indexes; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+A game sorts short lists often: objects by Y for a multiplexer or for
+drawing order, a high-score table, the enemies nearest the player.
+The keys are usually bytes and each carries an index back to its
+object. Two sorts cover nearly every case: insertion sort for short or
+nearly sorted lists, and a counting sort for long ones.
+`sprite_multiplex_24` and `sprite_multiplex_game` in `sprite.md` sort
+by Y in their own ways; this entry is the general routine.
+
+### How
+
+**Insertion sort, in place.** Take each key from the second on, move
+the larger keys before it up one place, and drop it into the gap. The
+index is moved with its key.
+
+```asm
+isort:  ldx #1                   // KEY at $4001: KEY-1,Y stays in one page
+outer:  lda KEY,x
+        sta kt
+        lda IDX,x
+        sta it
+        txa
+        tay
+inner:  lda KEY-1,y
+        cmp kt
+        bcc place                // smaller: stop
+        beq place                // equal: stop, so the sort is stable
+        sta KEY,y                // larger: move it up
+        lda IDX-1,y
+        sta IDX,y
+        dey
+        bne inner
+place:  lda kt
+        sta KEY,y
+        lda it
+        sta IDX,y
+        inx
+        cpx nn
+        bne outer
+        rts
+```
+
+**Counting sort, for byte keys.** Count the keys into 256 buckets, turn
+the counts into each bucket's first position, then walk the list in
+order and put each entry at its bucket's next position in an output
+list. The listing is `recipes/kickassembler/sort-bytes.md`.
+
+### Why it works
+
+Insertion sort keeps the part of the list before the current key in
+order, and moves a key only past strictly greater ones, so equal keys
+keep their order: the sort is stable. Its cost is set by how far the
+keys move, 31 cycles a place in the listing above: close to linear on
+a list that is almost in order, the square of the length on a reversed
+one.
+
+Counting sort never compares two keys. Its two passes over the 256
+buckets cost the same whatever the list, and each key costs the same
+70 cycles; walking the input in order makes it stable.
+
+Both were checked in VICE x64sc 3.10 against a Python stable sort on
+lists of 8 to 255 keys, random, sorted and reversed, with every index
+in the right place (`recipes/kickassembler/sort-bytes.md`).
+
+Signed keys need a signed compare. Flipping bit 7 of both sides with
+`EOR #$80` and comparing unsigned is exact. `SEC / SBC` with `BMI` as
+"less than" is not: on 64 random signed keys it left 7 neighbours out
+of order, because the subtraction overflows when the keys are far
+apart with opposite signs (`pitfalls/cpu.md`,
+`signed_compare_bmi_overflow`).
+
+### Variations
+
+- **Sort indexes only.** Keep the keys where they are and sort a list
+  of indexes by `key[index]`: one indirection per compare, but the
+  objects' tables never move (rung 3).
+- **Carry the order between frames.** A multiplexer that keeps last
+  frame's order and re-sorts it with insertion sort pays close to the
+  sorted-list cost when the objects move little.
+- **Word keys.** Compare the high bytes, and the low bytes only on a
+  tie; a counting sort on words becomes two passes, low byte then high
+  (radix sort), each stable (rung 3, not measured here).
+
+### Cycle budget
+
+Measured with the CIA2 timer A / B cascade, one call, net of `JSR` /
+`RTS`, screen blanked, PAL and NTSC alike (rung 1); each figure equals
+the instruction-table count for its list:
+
+| Keys | Insertion, random | Insertion, sorted | Insertion, reversed | Counting |
+|---|---|---|---|---|
+| 8 | 774 | 407 | 1,191 | 7,224 |
+| 16 | 2,511 | 871 | 4,411 | 7,784 |
+| 32 | 9,042 | 1,799 | 16,803 | 8,904 |
+| 64 | 23,837 | 3,655 | 65,395 | 11,144 |
+| 128 | 136,121 | 7,367 | 257,811 | 15,624 |
+| 255 | 526,186 | 14,733 | 1,015,620 | 24,514 |
+
+Counting sort is `70n + 6,664` whatever the order and needs 1,024 bytes
+of buckets and output; it is the cheaper from 32 keys up on these
+lists. The random lists come from one LFSR step per key and are partly
+in order, so shuffled keys cost insertion sort more than the random
+column shows. The `**Cost:**` line carries the 32-key insertion sort,
+once a frame.
+
+### Recipes
+
+- `recipes/kickassembler/sort-bytes.md`: both sorts on six lengths and
+  three orders, timed and checked against a Python model, and the two
+  signed compares.
 
 ## compare_16bit_and_signed — 16-bit, signed and ranged compares
 
@@ -1061,6 +1564,121 @@ the worst of the five, as one call per frame.
 - `recipes/kickassembler/compare-16bit-signed.md`: every idiom over
   the boundary pairs with flags on screen, full sweeps against a
   Python checksum, the bare `BMI` miss count, and the timings.
+
+## add_sub_16bit — 16-bit add, subtract, increment and decrement
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=26
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-base-routines (one 16-bit add, absolute operands)
+
+### Why
+
+Scores, positions wider than 255 pixels, pointers and timers are 16-bit
+values on an 8-bit CPU. Each operation is a short chain of byte
+operations joined by the carry, and each has one detail that is easy to
+get wrong: the carry must be set up before the chain, and `INC` and
+`DEC` do not use it at all. Every figure below was measured in VICE
+x64sc 3.10 by `recipes/kickassembler/base-routines.md`, which also
+sweeps each routine over 65,536 operand pairs against a Python model.
+
+### How
+
+**Add and subtract.** Low byte first; `CLC` before an add, `SEC` before
+a subtract:
+
+```asm
+        clc               // sec for a subtract
+        lda a_lo
+        adc b_lo          // sbc b_lo
+        sta r_lo
+        lda a_hi
+        adc b_hi          // sbc b_hi
+        sta r_hi          // C: carry out of bit 15 / C clear: borrowed
+```
+
+26 cycles with absolute operands, measured for both. With zero-page
+operands it is 20 (rung 3). `fixed_point_8_8` is the same add read as
+whole and fraction.
+
+**Add a byte to a word.**
+
+```asm
+        clc
+        lda r_lo
+        adc #n
+        sta r_lo
+        bcc !+
+        inc r_hi
+!:
+```
+
+15 cycles without a carry, 20 with. `C` at the end is the low byte's
+carry, not a 16-bit overflow: the `INC` does not change it. Measured
+over every word plus 200, `C` was set on 51,200 pairs and the word
+wrapped past `$FFFF` on 200. Test `Z` after the `INC` when the wrap
+matters.
+
+**Increment.** `INC` sets `Z` when the byte wraps to zero:
+
+```asm
+        inc r_lo
+        bne !+
+        inc r_hi
+!:
+```
+
+9 cycles, 14 when the low byte wraps.
+
+**Decrement.** Test the low byte before it changes:
+
+```asm
+        lda r_lo
+        bne !+
+        dec r_hi
+!:      dec r_lo
+```
+
+13 cycles, 18 when it borrows. `DEC` of `$00` gives `$FF` with `Z`
+clear, so a test after the `DEC` cannot see the borrow.
+
+### Why it works
+
+`ADC` adds the operand and `C`, then sets `C` from bit 8 of the sum.
+`SBC` subtracts the operand and the inverse of `C`, and clears `C` when
+it borrowed. Starting with `CLC` or `SEC` makes the low byte a plain add
+or subtract, and the high byte then takes the low byte's carry or
+borrow. `INC` and `DEC` set only `N` and `Z`.
+
+### Variations
+
+- **Longer values.** Add one more `LDA / ADC / STA` per byte; the carry
+  runs through (rung 3).
+- **Signed operands** add and subtract with the same code; the order
+  test differs (`compare_16bit_and_signed`).
+- **BCD scores** use the same chain under `SED`, with interrupts that
+  might run while `D` is set in mind (`cpu-cycle-tricks.md`,
+  `decimal_mode_pitfalls`).
+
+### Cycle budget
+
+| Routine, absolute operands | Cycles |
+|---|---|
+| add or subtract 16 + 16 | 26 |
+| add 8 to 16 | 15, or 20 with a carry |
+| increment | 9, or 14 with a carry |
+| decrement | 13, or 18 with a borrow |
+
+Net of the `JSR / RTS`, identical on PAL and NTSC; each equals its
+instruction-table sum. The `**Cost:**` line carries the add, once a
+frame.
+
+### Recipes
+
+- `recipes/kickassembler/base-routines.md`: each routine timed once and
+  swept over 65,536 pairs against a Python checksum.
 
 ## isqrt_16bit — Integer square root of a 16-bit value
 

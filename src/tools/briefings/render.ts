@@ -16,6 +16,8 @@ function archetypeLabel(
     return ` (${kindWord}: ${resolved.archetype.name}, ${resolved.archetype.title})`;
   if (resolved?.mode === "not_found")
     return ` (${kindWord} "${archetype ?? ""}" is not an archetype the graph knows)`;
+  if (resolved?.mode === "ambiguous")
+    return ` (${kindWord} not chosen: one of ${resolved.candidates.join(", ")})`;
   return archetype ? ` (${kindWord}: ${archetype})` : "";
 }
 
@@ -53,7 +55,8 @@ export function briefSummary(opts: {
   );
 }
 
-function renderArchetype(b: BriefingOutput): string {
+/** A named archetype the graph lacks, or several the brief fits: the line that says so, or "". */
+function renderUnresolved(b: BriefingOutput): string {
   let out = "";
   const missing = b.archetype_not_found;
   if (missing) {
@@ -62,6 +65,17 @@ function renderArchetype(b: BriefingOutput): string {
       (missing.candidates?.length ? ` Did you mean one of: ${missing.candidates.join(", ")}?` : "") +
       ` Known archetypes: ${missing.known.join(", ")}\n\n`;
   }
+  const fits = b.archetype_candidates;
+  if (fits) {
+    out +=
+      `**Archetype:** not chosen. The brief's ${fits.from.map((w) => `"${w}"`).join(", ")} fits ${fits.candidates.join(", ")}; pass archetype to choose one. ` +
+      `Planned with what they share: ${fits.shared_features.join(", ") || "(no technique)"}; pitfalls ${fits.shared_risks.join(", ") || "(none)"}.\n\n`;
+  }
+  return out;
+}
+
+export function renderArchetype(b: BriefingOutput): string {
+  let out = renderUnresolved(b);
   if (b.archetype) {
     out += `**Archetype:** ${b.archetype.name} (${b.archetype.title}, ${b.archetype.kind})\n`;
     if (b.archetype.inferred_from) {
@@ -98,6 +112,12 @@ function renderTechniques(b: BriefingOutput): string {
   for (const t of b.proposed_techniques) {
     out += `| ${t.name} | ${t.category} | ${t.complexity ?? "-"} | ${t.why_proposed} |\n`;
   }
+  const leftOut = b.proposed_techniques.flatMap((t) =>
+    (t.alternatives_left_out ?? []).map(
+      (a) => `- **${t.name}** instead of ${a.name} (${a.stated_on}: ${a.tradeoff})`,
+    ),
+  );
+  if (leftOut.length > 0) out += `\n### Alternatives left out (one per job)\n\n${leftOut.join("\n")}\n`;
   if (b.proposed_techniques.length > 0) {
     out += `\n### Register + KERNAL dependencies\n\n`;
     for (const t of b.proposed_techniques) {
@@ -111,7 +131,12 @@ function renderCompatibility(b: BriefingOutput): string {
   let out = `\n## Compatibility\n\n`;
   const allConflicts = [...b.compatibility.conflicts, ...b.compatibility.warnings];
   if (allConflicts.length === 0) out += `No conflicts detected.\n`;
-  for (const c of allConflicts) out += `- **${c.kind}**: ${c.a} × ${c.b} — ${c.rationale}\n`;
+  for (const c of allConflicts) {
+    const kind = c.underlying_kind ? `${c.kind} (${c.underlying_kind})` : c.kind;
+    const pair = c.a === c.b ? `${c.a}, within its own chain` : `${c.a} × ${c.b}`;
+    out += `- **${kind}** (${c.severity}): ${pair} — ${c.rationale}\n`;
+    if (c.severity === "hard" && c.resolution) out += `  Resolution: ${c.resolution}\n`;
+  }
   if (b.compatibility.shared_infrastructure.length > 0) {
     out += `\n**Shared infrastructure:** `;
     out += b.compatibility.shared_infrastructure.map((s) => s.name).join(", ") + "\n";

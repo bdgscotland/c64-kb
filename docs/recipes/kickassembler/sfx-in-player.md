@@ -7,6 +7,9 @@ techniques: [sfx_in_player]
 file_formats: [PRG]
 uses_registers: [D011, D012, D020, D021, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418, DC04, DC05, DC0D, DC0E, DD0D]
 uses_kernal: []
+claims: [cia1_timer_b (init), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), zero_page $FB-$FE (owns)]
+harness: [cia1_timer_a]
+ram: [colour=$D800-$DBE7]
 ---
 
 <!-- doc-type: recipe -->

@@ -7,6 +7,8 @@ techniques: [fli_image, stable_raster_irq, double_irq]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD00]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -180,8 +182,11 @@ irq2:
         sta $d011
     }
 
-    // Cycle 55 of LAST_LINE. Back to a normal $D011 so line 51 of the next
-    // frame is a natural badline again, then re-arm.
+    // Lines 248-250 cannot be badlines, so their blocks do not stall and
+    // this point is reached before line 249 is drawn (an earlier version
+    // said cycle 55 of LAST_LINE; ifli-image measures it). Back to a normal
+    // $D011 so line 51 of the next frame is a natural badline again, then
+    // re-arm.
     lda #$3b
     sta $d011
     lda #d018(FIRST_LINE & 7)

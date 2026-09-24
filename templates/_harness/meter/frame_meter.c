@@ -10,6 +10,8 @@ static unsigned sample[255];                    // one per recorded frame
 static unsigned acc;                            // this frame's sum so far
 static char hold_at;
 static char *cell;                              // first screen cell of the readout
+static unsigned printed[3];                     // the values in `shown`; 0xffff: never rendered
+static char shown[20];                          // the readout as rendered, copied to the screen
 
 // Stops the timer before reading, so the two byte reads cannot straddle a
 // borrow. Bit 0 of $DD0D says the timer passed zero since the last read:
@@ -50,6 +52,8 @@ void meter_init(unsigned screen, char row, char col, char colour, char hold)
     __asm volatile { plp }
     meter_last = meter_worst = meter_typical = meter_frames = 0;
     acc = 0;
+    printed[0] = printed[1] = printed[2] = 0xffff;
+    shown[6] = shown[13] = 0x20;
 }
 
 // Saturates at 65,535: a frame whose brackets sum past it reads 65,535,
@@ -134,13 +138,39 @@ static char *put5(char *p, char letter, unsigned v)
     return p;
 }
 
+// The readout is rendered into `shown`, a field only when its value changed,
+// and a value one more than before is stepped in its digits (F grows by one
+// a frame while recording). Then every cell of the screen that differs from
+// `shown` is written, so a program that clears the row gets the readout
+// back on the next print. An earlier version rendered all three fields to
+// the screen every frame by repeated subtraction: 2,600 to 4,400 cycles a
+// frame, measured (issue #42 said up to 3,400).
+static void field(char f, char letter, unsigned v)
+{
+    char *p = shown + 7 * f;
+    unsigned was = printed[f];
+    if (v == was)
+        return;
+    printed[f] = v;
+    if (was != 0xffff && v == was + 1)
+    {
+        char *d = p + 5;                        // the last digit
+        while (*d == 0x39)
+            *d-- = 0x30;
+        (*d)++;
+        return;
+    }
+    put5(p, letter, v);
+}
+
 void meter_print(void)
 {
-    char *p = put5(cell, 6, meter_frames);      // screen code 6 = F
-    *p++ = 0x20;
-    p = put5(p, 23, meter_worst);               // 23 = W
-    *p++ = 0x20;
-    put5(p, 20, meter_typical);                 // 20 = T
+    field(0, 6, meter_frames);                  // screen code 6 = F
+    field(1, 23, meter_worst);                  // 23 = W
+    field(2, 20, meter_typical);                // 20 = T
+    for (char i = 0; i < 20; i++)
+        if (cell[i] != shown[i])
+            cell[i] = shown[i];
 }
 
 #else

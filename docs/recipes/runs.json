@@ -24,6 +24,17 @@
       "ntsc": "screenshots/text-overlay-playfield-ntsc.png"
     }
   },
+  "oscar64/simple-shmup": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/simple-shmup.png",
+      "ntsc": "screenshots/simple-shmup-ntsc.png"
+    }
+  },
   "oscar64/joystick-input": {
     "cycles": 24000000,
     "models": [
@@ -106,6 +117,17 @@
     ],
     "shots": {
       "pal": "screenshots/lfsr-random-seed2.png"
+    }
+  },
+  "oscar64/soft-scroll-h": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/soft-scroll-h.png",
+      "ntsc": "screenshots/soft-scroll-h-ntsc.png"
     }
   },
   "oscar64/object-pool": {
@@ -230,6 +252,25 @@
     "shots": {
       "pal": "screenshots/high-score-persist.png",
       "ntsc": "screenshots/high-score-persist-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "oscar64/sprites-off-during-disk-io": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-drive8truedrive",
+      "-drive8type",
+      "1542"
+    ],
+    "shots": {
+      "pal": "screenshots/sprites-off-during-disk-io.png",
+      "ntsc": "screenshots/sprites-off-during-disk-io-ntsc.png"
     },
     "disk": {
       "name": "TEST,01"
@@ -498,6 +539,110 @@
       "ntsc": "screenshots/compare-16bit-signed-ntsc.png"
     }
   },
+  "kickassembler/base-routines": {
+    "cycles": 100000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/base-routines.png",
+      "ntsc": "screenshots/base-routines-ntsc.png"
+    }
+  },
+  "kickassembler/multiply-16x16": {
+    "cycles": 60000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/multiply-16x16.png",
+      "ntsc": "screenshots/multiply-16x16-ntsc.png"
+    }
+  },
+  "kickassembler/multiply-constant": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/multiply-constant.png",
+      "ntsc": "screenshots/multiply-constant-ntsc.png"
+    }
+  },
+  "kickassembler/random-range": {
+    "cycles": 100000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/random-range.png",
+      "ntsc": "screenshots/random-range-ntsc.png"
+    }
+  },
+  "kickassembler/sort-bytes": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sort-bytes.png",
+      "ntsc": "screenshots/sort-bytes-ntsc.png"
+    }
+  },
+  "kickassembler/hires-circle": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/hires-circle.png",
+      "ntsc": "screenshots/hires-circle-ntsc.png"
+    }
+  },
+  "kickassembler/clock-slide": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/clock-slide.png",
+      "ntsc": "screenshots/clock-slide-ntsc.png"
+    }
+  },
+  "kickassembler/one-part-demo": {
+    "cycles": 10000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/one-part-demo.png"
+    }
+  },
+  "kickassembler/fli-music-scroller": {
+    "cycles": 10000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fli-music-scroller.png"
+    }
+  },
   "oscar64/divide-check": {
     "cycles": 600000000,
     "models": [
@@ -700,7 +845,9 @@
       "-controlport1device",
       "3",
       "-controlport2device",
-      "2"
+      "2",
+      "-seed",
+      "1"
     ],
     "shots": {
       "pal": "screenshots/paddle-read.png",
@@ -729,6 +876,42 @@
     "shots": {
       "pal": "screenshots/multi-sprite-object.png",
       "ntsc": "screenshots/multi-sprite-object-ntsc.png"
+    }
+  },
+  "oscar64/sprite-expand": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-expand.png",
+      "ntsc": "screenshots/sprite-expand-ntsc.png"
+    }
+  },
+  "oscar64/sprite-mirror-at-load": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-mirror-at-load.png",
+      "ntsc": "screenshots/sprite-mirror-at-load-ntsc.png"
+    }
+  },
+  "oscar64/sprite-cache-flip": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-cache-flip.png",
+      "ntsc": "screenshots/sprite-cache-flip-ntsc.png"
     }
   },
   "oscar64/charset-parallax": {
@@ -763,7 +946,9 @@
     ],
     "flags": [
       "-controlport1device",
-      "3"
+      "3",
+      "-seed",
+      "1"
     ],
     "shots": {
       "pal": "screenshots/mouse-1351-read.png",
@@ -819,6 +1004,18 @@
     "shots": {
       "pal": "screenshots/sfx-in-player.png",
       "ntsc": "screenshots/sfx-in-player-ntsc.png"
+    }
+  },
+  "kickassembler/sprite-dma-cost": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-dma-cost.png",
+      "ntsc": "screenshots/sprite-dma-cost-ntsc.png"
     }
   },
   "kickassembler/irq-owns-port": {
@@ -879,6 +1076,18 @@
     "shots": {
       "pal": "screenshots/two-player.png",
       "ntsc": "screenshots/two-player-ntsc.png"
+    }
+  },
+  "oscar64/fighter-opponent": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fighter-opponent.png",
+      "ntsc": "screenshots/fighter-opponent-ntsc.png"
     }
   },
   "oscar64/flip-screen-rooms": {
@@ -1375,6 +1584,9 @@
   "kickassembler/tape-turbo-loader": {
     "skip": "needs a TAP on -1, a PLAY press through -moncommands and +dsresetwithcpu, which the verifier has no keys for; the page's pictures are under docs/figures and its Build section gives the exact command"
   },
+  "kickassembler/sparkle-dd02-bank": {
+    "skip": "boots from the D64 the Sparkle PC tool (SparkleCPP, not in this repository) writes from the page's loader script; the verifier can only attach a blank formatted disk. The page's pictures are under docs/figures and its Build section gives the exact commands"
+  },
   "kickassembler/mci-interlace": {
     "cycles": 12000000,
     "models": [
@@ -1520,7 +1732,7 @@
     }
   },
   "kickassembler/pseudo-3d-road": {
-    "cycles": 20000000,
+    "cycles": 21100000,
     "models": [
       "pal",
       "ntsc"
@@ -1620,5 +1832,550 @@
       "pal": "screenshots/sid-env3-filter.png",
       "ntsc": "screenshots/sid-env3-filter-ntsc.png"
     }
+  },
+  "kickassembler/music-player": {
+    "cycles": 50000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/music-player.png",
+      "ntsc": "screenshots/music-player-ntsc.png"
+    }
+  },
+  "kickassembler/mcm-text": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/mcm-text.png",
+      "ntsc": "screenshots/mcm-text-ntsc.png"
+    }
+  },
+  "kickassembler/vsp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/vsp.png",
+      "ntsc": "screenshots/vsp-ntsc.png"
+    }
+  },
+  "kickassembler/afli-image": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "shots": {
+      "pal": "screenshots/afli-image.png"
+    }
+  },
+  "kickassembler/ifli-image": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "shots": {
+      "pal": "screenshots/ifli-image.png"
+    }
+  },
+  "kickassembler/road-sprite-lines": {
+    "cycles": 14500000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/road-sprite-lines.png",
+      "ntsc": "screenshots/road-sprite-lines-ntsc.png"
+    }
+  },
+  "oscar64/cartridge-8k": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O2",
+      "-tf=crt8"
+    ],
+    "shots": {
+      "pal": "screenshots/cartridge-8k.png",
+      "ntsc": "screenshots/cartridge-8k-ntsc.png"
+    },
+    "cartridge": {
+      "file": "oscar64-cartridge-8k.crt",
+      "write": false,
+      "runs": 1
+    }
+  },
+  "oscar64/stable-raster-irq": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "oscar64/stable-raster-irq@O0": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O0"
+    ]
+  },
+  "oscar64/stable-raster-irq@O1": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O1"
+    ]
+  },
+  "oscar64/stable-raster-irq@O3": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O3"
+    ]
+  },
+  "oscar64/stable-raster-irq@Os": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-Os"
+    ]
+  },
+  "oscar64/stable-raster-irq@Oz": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-Oz"
+    ]
+  },
+  "kickassembler/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "oscar64/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "cc65/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/music-sync": {
+    "cycles": 10115000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
+  },
+  "kickassembler/music-sync@off": {
+    "cycles": 9950000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
+  },
+  "kickassembler/raster-split-modes": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/raster-split-modes.png",
+      "ntsc": "screenshots/raster-split-modes-ntsc.png"
+    }
+  },
+  "oscar64/soft-scroll-v": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/soft-scroll-v.png",
+      "ntsc": "screenshots/soft-scroll-v-ntsc.png"
+    }
+  },
+  "oscar64/mcm-ecm-zones": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/mcm-ecm-zones.png",
+      "ntsc": "screenshots/mcm-ecm-zones-ntsc.png"
+    }
+  },
+  "oscar64/sid-detect": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-detect.png",
+      "ntsc": "screenshots/sid-detect-ntsc.png"
+    },
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
+  },
+  "kickassembler/d418-8bit-digi": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/d418-8bit-digi.png",
+      "ntsc": "screenshots/d418-8bit-digi-ntsc.png"
+    }
+  },
+  "kickassembler/sid-volume-bias": {
+    "cycles": 5000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sid-volume-bias.png",
+      "ntsc": "screenshots/sid-volume-bias-ntsc.png"
+    }
+  },
+  "kickassembler/sid-test-bit": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-test-bit.png",
+      "ntsc": "screenshots/sid-test-bit-ntsc.png"
+    }
+  },
+  "kickassembler/nmi-sample-player": {
+    "cycles": 9000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/nmi-sample-player.png",
+      "ntsc": "screenshots/nmi-sample-player-ntsc.png"
+    }
+  },
+  "kickassembler/kefrens-bars": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/kefrens-bars.png",
+      "ntsc": "screenshots/kefrens-bars-ntsc.png"
+    }
+  },
+  "kickassembler/linecrunch": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/linecrunch.png",
+      "ntsc": "screenshots/linecrunch-ntsc.png"
+    }
+  },
+  "kickassembler/agsp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/agsp.png",
+      "ntsc": "screenshots/agsp-ntsc.png"
+    }
+  },
+  "oscar64/trainer-hooks": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/trainer-hooks.png",
+      "ntsc": "screenshots/trainer-hooks-ntsc.png"
+    }
+  },
+  "oscar64/pinball-ball": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/pinball-ball.png",
+      "ntsc": "screenshots/pinball-ball-ntsc.png"
+    }
+  },
+  "oscar64/gap-buffer-editor": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/gap-buffer-editor.png",
+      "ntsc": "screenshots/gap-buffer-editor-ntsc.png"
+    }
+  },
+  "oscar64/monitor-core": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/monitor-core.png",
+      "ntsc": "screenshots/monitor-core-ntsc.png"
+    }
+  },
+  "oscar64/paint-fill": {
+    "cycles": 40000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/paint-fill.png",
+      "ntsc": "screenshots/paint-fill-ntsc.png"
+    }
+  },
+  "oscar64/story-paging": {
+    "cycles": 80000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "disk": {
+      "name": "TEST,01"
+    },
+    "shots": {
+      "pal": "screenshots/story-paging.png",
+      "ntsc": "screenshots/story-paging-ntsc.png"
+    }
+  },
+  "oscar64/control-config": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "qaqop\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/control-config.png",
+      "ntsc": "screenshots/control-config-ntsc.png"
+    }
+  },
+  "kickassembler/fastloader-2bit": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fastloader-2bit.png",
+      "ntsc": "screenshots/fastloader-2bit-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/bitfire-dd00-bank": {
+    "skip": "boots from the D64 Bitfire's d64write (not in this repository) writes, with Bitfire's installer on it; the verifier can only attach a blank formatted disk. The page's pictures are under docs/figures and its Build section gives the exact commands"
+  },
+  "kickassembler/bitfire-level-stream": {
+    "skip": "boots from the D64 Bitfire's d64write (not in this repository) writes, with Bitfire's installer and the four level files on it; the verifier can only attach a blank formatted disk. The page's pictures are under docs/figures and its Build section gives the exact commands"
+  },
+  "kickassembler/printer-output": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-busdevice4",
+      "-devicebackend4",
+      "1",
+      "-pr4drv",
+      "ascii",
+      "-pr4output",
+      "text"
+    ],
+    "shots": {
+      "pal": "screenshots/printer-output.png",
+      "ntsc": "screenshots/printer-output-ntsc.png"
+    }
+  },
+  "kickassembler/d81-partition": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/d81-partition.png",
+      "ntsc": "screenshots/d81-partition-ntsc.png"
+    },
+    "disk": {
+      "name": "PARTS,81",
+      "type": "d81"
+    }
+  },
+  "kickassembler/disk-copier": {
+    "cycles": 120000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/disk-copier.png",
+      "ntsc": "screenshots/disk-copier-ntsc.png"
+    },
+    "disk": {
+      "name": "SOURCE,01"
+    },
+    "disk9": {
+      "name": "TARGET,01"
+    }
+  },
+  "kickassembler/rs232-send": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-userportdevice",
+      "2",
+      "-rsuserdev",
+      "0",
+      "-rsdev1",
+      "rs.out",
+      "-rsuserbaud",
+      "1200"
+    ],
+    "shots": {
+      "pal": "screenshots/rs232-send.png",
+      "ntsc": "screenshots/rs232-send-ntsc.png"
+    }
+  },
+  "kickassembler/tapecart-boot": {
+    "skip": "boots only through VICE's tapecart (-tapeport1device 6 -tcrt) from the TCRT the listing writes and a typed LOAD; the verifier autostarts the PRG and has no key for a TCRT. The page's pictures are under docs/figures and its Build section gives the exact command"
+  },
+  "kickassembler/easyflash-eapi": {
+    "skip": "the listing leaves the EAPI slot at 00:1:1800 empty; the driver is added by a build step outside the listing (ACME and the page's patch script), which the verifier has no key for. The pictures are under docs/figures and the Build section gives the exact commands"
   }
 }

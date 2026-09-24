@@ -567,8 +567,11 @@ came out at 0.838 of PAL rather than exactly 5/6, and why the
 compensated runs differ by 80 ms rather than zero.
 
 **The clock.** `sei` and `icr = $7F` take CIA1 away from the KERNAL,
-whose interrupt otherwise reloads timer A sixty times a second. Timer A
-then counts φ2 from `$FFFF` and timer B, in mode `$51`, counts timer A's
+which leaves timer A running in continuous mode and raising an IRQ about
+sixty times a second. The timer reloads itself from its latch; the KERNAL
+ROM has no store to `$DC04`/`$DC05` in its IRQ path (the only ones are at
+`$F907` and `$FDE4`–`$FDEE`). An earlier version said the KERNAL's
+interrupt reloaded the timer. Timer A then counts φ2 from `$FFFF` and timer B, in mode `$51`, counts timer A's
 underflows, which makes a 32-bit cycle counter. `clock_read` stops both
 before reading so the two halves belong to the same instant, reads the
 four bytes low first, and restarts with `$01` and `$41`, which set START

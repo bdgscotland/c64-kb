@@ -7,6 +7,8 @@ techniques: [dot_flag_sine_plotter, hires_plot, standard_bitmap]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D020, D021, DC04, DC05, DC0E]
 uses_kernal: []
+claims: [vic_raster_irq (init), zero_page $57-$66 (owns)]
+harness: [cia1_timer_a, $02F0-$02FF]
 ---
 
 <!-- doc-type: recipe -->

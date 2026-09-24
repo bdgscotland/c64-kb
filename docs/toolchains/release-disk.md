@@ -19,7 +19,9 @@ it in headless VICE and looking at the screen. Every command and every
 figure here was run on this machine with VICE 3.10's `c1541` and `x64sc`,
 GNU Make 3.81 and Oscar64 build 2026-05-19, on the PRG that the listing in
 [oscar64/platformer-scaffold](../recipes/oscar64/platformer-scaffold.md)
-builds (6,473 bytes, loading at `$0801`). That recipe also writes to the
+builds (6,473 bytes, loading at `$0801`; the build before #93 moved its
+start-up read, which is the one measured here. The current listing
+builds 6,547 bytes, still 26 blocks by the arithmetic below). That recipe also writes to the
 disk it came from, which a release disk has to survive. The per-tool pages hold the build commands; the image
 format is in [c64-file-formats](../formats/c64-file-formats.md) and the
 drive's error numbers in
@@ -171,8 +173,11 @@ is the release disk, so two things follow and both were measured.
 
 **The first OPEN does not hang.** The recipe's page records a start-up
 hang in the OPEN's read-back on PAL, seen when the PRG was injected with
-`-autostartprgmode 1` and a true drive sat idle on the bus, and the fifty
-`vic_waitFrame` calls before the OPEN are its workaround. From the D64
+`-autostartprgmode 1`. Its cause is a read of a file that is not on the
+disk, whose short answer from the drive a badline can hide (pitfall
+`first_open_after_reset_hangs_on_pal`); the fifty `vic_waitFrame` calls
+before the OPEN only moved the phase. The recipe has since dropped them
+and reads the error channel before the file (#93). From the D64
 the OPEN reaches the same drive that has just served the LOAD: the 30
 million cycle PAL and NTSC runs above both show the drive's 62 on row 24
 and `F` on the HUD, so the OPEN completed and its error channel was read.
@@ -181,8 +186,8 @@ way and autostarted from it, also ran: at 30,000,000 cycles PAL its HUD
 read frame 440 with `F` and row 24 read
 `DRIVE: 62, FILE NOT FOUND,00,00`. That is one run, so it says the wait
 was not needed on that run from disk, not that the hang cannot happen
-from disk; the recipe's page still keeps the wait, and this page does
-not overrule it.
+from disk. The recipe now has no wait and reads the error channel
+first, which removes the read that hung.
 
 **The image changes.** At 45,000,000 cycles PAL the autopilot's game
 over had passed: the HUD read `SCORE 00191 LIVES 0 ... W`, row 1 ended

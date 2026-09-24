@@ -63,16 +63,26 @@ static void io_end(void)
 
 // Send cmd on the command channel ("" only reads the status) and read the
 // reply line on the same open channel; disk_code = its two digits.
-static void drive_reply(const char *cmd)
+// drive_ask leaves channel 15 open and says whether it opened: the load
+// keeps it open while its file is, because closing 15 closes every file on
+// the drive.
+static bool drive_ask(const char *cmd)
 {
     disk_code = 99;
     krnio_setnam(cmd);
-    if (krnio_open(15, DRIVE, 15)) {
+    bool open = krnio_open(15, DRIVE, 15);
+    if (open) {
         int n = krnio_gets(15, reply, sizeof(reply));
         if (n >= 2)
             disk_code = (reply[0] - '0') * 10 + (reply[1] - '0');
-        krnio_close(15);
     }
+    return open;
+}
+
+static void drive_reply(const char *cmd)
+{
+    if (drive_ask(cmd))
+        krnio_close(15);
 }
 
 static void write_record(void)
@@ -105,9 +115,15 @@ void hiscore_load(void)
         io_end();
         return;
     }
-    int n = ok ? krnio_read(2, back, sizeof(back)) : 0;
+    // The reply before the file, the file only on 00: after a 62 the drive
+    // keeps no channel, and a read would TALK to it; its 68-cycle answer can
+    // fall in a badline and the KERNAL's wait at $EDD6 has no timeout
+    // (pitfall first_open_after_reset_hangs_on_pal).
+    bool cmd = drive_ask("");
+    int n = (ok && disk_code == 0) ? krnio_read(2, back, sizeof(back)) : 0;
     krnio_close(2);
-    drive_reply("");
+    if (cmd)
+        krnio_close(15);
     if (disk_code == 0 && n == sizeof(record) && back[0] == 'S' && back[1] == 'V' && back[2] == VERSION)
         hiscore = back[3] | (back[4] << 8);
     else if (disk_code == 62 || disk_code == 0 || disk_code == 60)

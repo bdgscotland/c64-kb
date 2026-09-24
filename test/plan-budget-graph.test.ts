@@ -37,6 +37,12 @@ describe("c64_plan_budget over the graph", () => {
     await tech("stable_raster_irq", { cost: { cycles_per_frame: 124 }, cost_basis: "arithmetic" });
     await tech("double_irq", { cost: { cycles_per_frame: 160 }, cost_basis: "arithmetic" });
     await tech("fixed_point_8_8", {});
+    // #41: a Cost measured on a recipe that realises another technique.
+    await tech("region_probe", {
+      cost: { cycles_per_frame: 27301 },
+      cost_basis: "measured-vice",
+      cost_recipe: "oscar64-fixed-point-jump",
+    });
     await f.linkTechniqueRequires("fli_image", "stable_raster_irq");
     await f.linkTechniqueRequires("stable_raster_irq", "double_irq");
     await f.addRecipe({
@@ -101,10 +107,11 @@ describe("c64_plan_budget over the graph", () => {
     expect(r.text).toContain("**Cost measured on:** oscar64-wave-director (worst frame, screen blanked)");
   });
 
-  it("ingest's check names a measured-on recipe and an included technique that are no node", async () => {
+  it("ingest's check names a measured-on recipe that is no node or realises another technique, and an included technique that is no node", async () => {
     const misses = await findCostReferenceMisses(f);
     expect(misses.sort()).toEqual([
       "object_pool: Cost measured on oscar64-no-such-recipe (no such recipe)",
+      "region_probe: Cost measured on oscar64-fixed-point-jump (a recipe that does not realise it)",
       "wave_director: Cost includes ghost_technique (no such technique)",
     ]);
   });

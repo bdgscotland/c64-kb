@@ -157,6 +157,15 @@ pressure on that, never as the end itself.
   Rowlands describe a finishing line at the end of each 25-screen level,
   and on the level's sad version reaching it drops the player through
   the platform to a chamber below.
+  A 25-screen level still plays short at Mayhem's speed. In part 9
+  (Commodore Format issue 34, July 1993, p. 29) they estimate a charge
+  from one end to the other at about 20 seconds, where Clyde Radcliffe
+  of Creatures would take about 2 minutes 40 seconds; their answer was a
+  map technique that re-uses parts of each level to make it longer. The
+  speeds behind that are in part 2 (issue 27, December 1992, p. 51): the
+  scroll takes an initial 1 pixel per 50th of a second and, with inertia,
+  accelerates to 8 pixels per 50th, eight times Creatures' 1; Mayhem
+  walks at up to 3 pixels per 50th and charges at 8.
 - All enemies cleared, boss defeated, health that drains with time. The
   first two are the defaults for a single-screen shooter, a beat-em-up
   room and a stage end: the state changes when the object pool's active

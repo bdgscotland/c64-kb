@@ -7,6 +7,8 @@ techniques: [basic_extension_wedge]
 file_formats: [PRG]
 uses_registers: [D020, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: []
+harness: [cia2_timer_a, cia2_timer_b, $02F0-$02FF]
+ram: [ierror=$0300-$0301, igone=$0308-$0309]
 ---
 
 <!-- doc-type: recipe -->

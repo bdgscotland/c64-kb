@@ -121,6 +121,15 @@ export function isZero(tok: string): boolean {
   return parseNumber(tok) === 0;
 }
 
+/**
+ * The name of a multi-byte state without its byte suffix: rng_lo and rng_hi
+ * are both rng, seed0 and seed1 are both seed. A name with no such suffix is
+ * its own stem.
+ */
+export function byteStem(name: string): string {
+  return name.replace(/(?:_?(?:lo|hi|low|high)|_?[0-9]|_[lh])$/i, "").toLowerCase();
+}
+
 export function hex4(v: number): string {
   return v.toString(16).toUpperCase().padStart(4, "0");
 }

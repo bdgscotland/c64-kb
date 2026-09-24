@@ -2,6 +2,7 @@
 
 import type { ClaimMode, ClaimsBasis } from "../claims.ts";
 import type { ClobberBound } from "../kernal-clobbers.ts";
+import type { CallCount } from "../../domain/calls.ts";
 import type { GameDesignPhase, MeasuredFrame } from "./game-design.ts";
 import type { CostBasis, TechniqueCost } from "./vocabulary.ts";
 
@@ -62,8 +63,26 @@ export type GraphEntity =
       uses_kernal: string[];
       scaffolds: string[];
       source_doc: string;
+      // Recipe claims (schema 34): whether the frontmatter has a claims: key; absent is unknown.
+      claims_stated?: "stated" | "none";
+      claims_basis?: ClaimsBasis;
+      // Devices (schema 36): whether the frontmatter has a devices: key; absent is unknown.
+      devices_stated?: "stated" | "none";
     }
   | { type: "scaffolds"; recipe: string; archetype: string }
+  // Devices (schema 36, #87): docs/CONVENTIONS-devices.md.
+  | {
+      type: "device";
+      name: string;
+      title: string;
+      kind: string;
+      port: string;
+      vice_attach: string;
+      source_doc: string;
+      claims_stated?: "stated" | "none";
+      claims_basis?: ClaimsBasis;
+    }
+  | { type: "requires_device"; recipe: string; device: string }
   | { type: "recipe_occupies"; recipe: string; start: number; end: number }
   | { type: "technique_demands"; technique: string; resource: string; description: string }
   | { type: "implements"; recipe: string; technique: string }
@@ -77,6 +96,8 @@ export type GraphEntity =
       chip?: string;
       cost?: TechniqueCost;
       cost_basis?: CostBasis;
+      // **Cost bytes basis:** (#72): the byte figures' basis when it differs.
+      cost_bytes_basis?: CostBasis;
       // **Cost measured on:** / **Cost includes:** (schema 27).
       cost_recipe?: string;
       cost_conditions?: string;
@@ -89,7 +110,8 @@ export type GraphEntity =
   | {
       type: "claims";
       owner: string;
-      ownerKind: "Technique";
+      // Recipe since schema 34: a recipe's own claims: frontmatter; Device since schema 36.
+      ownerKind: "Technique" | "Recipe" | "Device";
       unit: string;
       mode: ClaimMode;
       ranges?: string;
@@ -101,6 +123,10 @@ export type GraphEntity =
   | { type: "technique_requires_region"; technique: string; region: string }
   | { type: "technique_belongs_to"; technique: string; chip: string }
   | { type: "technique_requires"; technique: string; requires: string }
+  | { type: "technique_alternative"; technique: string; alternative: string; tradeoff: string }
+  | { type: "technique_consumes"; technique: string; format: string }
+  | { type: "library_function"; name: string; header: string; tool: string; source_doc: string }
+  | { type: "wraps"; fn: string; target: string; targetKind: "KernalRoutine" | "Register" }
   | { type: "pitfall"; name: string; title: string; severity: string; region: string; category: string }
   | {
       type: "crash_pattern";
@@ -123,6 +149,16 @@ export type GraphEntity =
       starter?: string;
     }
   | { type: "archetype_features"; archetype: string; technique: string }
+  // Productions (schema 34): the titles an archetype's **Reference titles:** line links.
+  | {
+      type: "production";
+      name: string;
+      kind: "game" | "demo";
+      year?: number;
+      note?: string;
+      url: string;
+    }
+  | { type: "exemplified_by"; archetype: string; production: string; source: string; source_doc: string }
   | { type: "archetype_risks"; archetype: string; pitfall: string }
   // Game designs (schema 28): docs/CONVENTIONS-game-designs.md.
   | {
@@ -133,7 +169,14 @@ export type GraphEntity =
       measured: MeasuredFrame[];
       source_doc: string;
     }
-  | { type: "composes"; design: string; technique: string; phase: GameDesignPhase }
+  | {
+      type: "composes";
+      design: string;
+      technique: string;
+      phase: GameDesignPhase;
+      /** Calls per frame (#37); absent is one. */
+      calls?: CallCount;
+    }
   | { type: "instance_of"; design: string; archetype: string }
   | { type: "realised_by"; design: string; recipe: string };
 

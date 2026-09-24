@@ -7,6 +7,10 @@ techniques: [drive_code_upload_and_job_queue]
 file_formats: [PRG, D64]
 uses_registers: []
 uses_kernal: [SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, CLRCHN, CLOSE]
+devices: [disk_1541_ii]
+claims: [zero_page $A1-$A2 (shares)]
+harness: [$02FF]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->

@@ -2,7 +2,8 @@
 
 import { decimalModeInIrq } from "./asm-decimal.ts";
 import { LABEL } from "./asm-shared.ts";
-import { hex4, isZero, parseNumber, stripAsm } from "./text.ts";
+import { d015MergedAsm } from "./sprite-enable.ts";
+import { byteStem, hex4, isZero, parseNumber, stripAsm } from "./text.ts";
 import {
   OPEN15_MECHANISM,
   PAGES,
@@ -122,33 +123,64 @@ function open15(ctx: LintContext): void {
   });
 }
 
+// Interrupt handler code: an acknowledge of the VIC interrupt, or RTI. A
+// file with it runs under an interrupt installed somewhere, maybe in the
+// file that imports it (shmup-vertical's mux.asm, imported by kernel.asm).
+const HANDLER_CODE = /\b(sta|stx|sty|inc|dec|asl|lsr)\s+\$d019\b|\brti\b/i;
+const BRANCH = /\b(?:bne|beq|bcc|bcs|bpl|bmi)\s+(\S+)/i;
+
+/**
+ * A busy-wait: a branch within three lines of the $D012 read that goes
+ * back to it (`*-n`, an anonymous backward label, or a label on the read
+ * line or the two before it). A forward branch is a test, not a wait:
+ * mux.asm's `cmp $d012 / bcs on_time` asks whether the line has passed.
+ */
+function branchesBack(lines: string[], i: number): boolean {
+  for (let k = i; k < Math.min(lines.length, i + 4); k++) {
+    const target = BRANCH.exec(lineAt(lines, k))?.[1];
+    if (target === undefined) continue;
+    if (/^\*\s*-|^!?-+$/.test(target)) return true;
+    const name = target.replace(/[.$^*+?()[\]{}|\\]/g, "\\$&");
+    const def = new RegExp(String.raw`^\s*${name}:?(\s|$)`, "i");
+    for (let j = Math.max(0, i - 2); j <= k; j++) if (def.test(lineAt(lines, j))) return true;
+  }
+  return false;
+}
+
 /** Raster poll with the KERNAL IRQ live. */
 function rasterPoll(ctx: LintContext): void {
-  if (/\$0314|\$0318|\$fffe|\$fffa|\bsei\b/i.test(ctx.src)) return;
+  if (/\$0314|\$0318|\$fffe|\$fffa|\bsei\b/i.test(ctx.src) || HANDLER_CODE.test(ctx.src)) return;
   ctx.lines.forEach((line, i) => {
     if (!/\b(lda|cmp|ldx|ldy|cpx|cpy|bit)\s+(\$d012|0xd012|53266)\b/i.test(line)) return;
-    const window = ctx.lines.slice(i, i + 4).join("\n");
-    if (!/\b(bne|beq|bcc|bcs|bpl|bmi)\b/i.test(window)) return;
+    if (!branchesBack(ctx.lines, i)) return;
     report(ctx, i, {
       rule: "raster_poll_with_kernal_irq_live",
       pitfall: "raster_irq_first_line_jitter",
       message:
-        "Busy-wait on $D012 in a file that never installs an interrupt (no $0314, $FFFE or SEI). The KERNAL jiffy interrupt is still live, so the poll can be pre-empted across the line it waits for and the loop's entry point moves by whole lines from frame to frame. Either take the interrupt (SEI, or a handler on $0314) or have a raster interrupt own a tick byte the loop waits on. Heuristic: the interrupt may be installed in another file.",
+        "Busy-wait on $D012 in a file that never installs an interrupt and holds no handler code (no $0314, $FFFE, SEI, $D019 acknowledge or RTI). The KERNAL jiffy interrupt is still live, so the poll can be pre-empted across the line it waits for and the loop's entry point moves by whole lines from frame to frame. Either take the interrupt (SEI, or a handler on $0314) or have a raster interrupt own a tick byte the loop waits on. Heuristic: the interrupt may be installed in another file.",
       page: PAGES.rasterPoll,
       certainty: "heuristic",
     });
   });
 }
 
-/** lfsr_zero_state_lockup: a seed label defined as zero. */
+const SEED_DEF =
+  /^\s*(\w*(?:seed|lfsr|rng)\w*):?\s+(?:\.byte|\.word|!byte|!word|byte|word|dc\.b|dc\.w|db|dw)\s+([^\s,]+)\s*$/i;
+
+/**
+ * lfsr_zero_state_lockup: a seed label defined as zero. A byte of a
+ * multi-byte state (rng_hi beside rng_lo) is zero only when every byte of
+ * that state is: `rng_lo: .byte 1` / `rng_hi: .byte 0` is a 16-bit seed of 1.
+ */
 function lfsrZero(ctx: LintContext): void {
-  ctx.lines.forEach((line, i) => {
-    const def =
-      /^\s*(\w*(?:seed|lfsr|rng)\w*):?\s+(?:\.byte|\.word|!byte|!word|byte|word|dc\.b|dc\.w|db|dw)\s+([^\s,]+)\s*$/i.exec(
-        line,
-      );
+  const defs = ctx.lines.map((line) => SEED_DEF.exec(line));
+  const nonZeroStems = new Set(
+    defs.flatMap((d) => (d !== null && !isZero(group(d, 2)) ? [byteStem(group(d, 1))] : [])),
+  );
+  defs.forEach((def, i) => {
     if (!def || !isZero(group(def, 2))) return;
     const name = group(def, 1);
+    if (nonZeroStems.has(byteStem(name))) return;
     if (!new RegExp(`\\b(lsr|asl|ror|rol|eor)\\s+${name}\\b`, "i").test(ctx.src)) return;
     report(ctx, i, {
       rule: "lfsr_zero_state_lockup",
@@ -166,20 +198,48 @@ const D016_LOAD_ENDS = new RegExp(
 );
 const D016_IMMEDIATE = new RegExp(String.raw`^\s*${LABEL}lda\s+#\s*([^\s,]+)\s*$`, "i");
 
+/** A name that says it holds a whole $D016 value: a shadow, or a constant named for the register. */
+const D016_NAMED = /(d016|ctrl2|shadow)/i;
+/** `lda <label>` or `lda <label> + n` from a variable, not an immediate. */
+const D016_LOAD_LABEL = new RegExp(String.raw`^\s*${LABEL}lda\s+([a-z_][^#]*?)\s*$`, "i");
+
+/**
+ * Whether an immediate operand keeps CSEL. A number with bit 3 set does. A
+ * symbol named for the register (#HUD_D016, #PF_D016) is a deliberate
+ * whole-value store; any other symbol is judged by its definition in this
+ * file, and reported when it has none.
+ */
+function immediateKeepsCsel(operand: string, src: string): boolean {
+  const literal = parseNumber(operand);
+  if (literal !== null) return (literal & 0x08) !== 0;
+  if (D016_NAMED.test(operand)) return true;
+  const name = operand.replace(/[^\w]/g, "");
+  if (name === "" || name !== operand) return false;
+  const def = new RegExp(
+    String.raw`^\s*(?:\.const|\.label|\.var|\.equ)?\s*${name}\s*=\s*([$%]?[0-9a-f]+)\b`,
+    "im",
+  ).exec(src);
+  const value = def ? parseNumber(group(def, 1)) : null;
+  return value !== null && (value & 0x08) !== 0;
+}
+
 /**
  * Walk back from a $D016 store to the instruction that loaded A. A read
- * of $D016 or an AND on the way is a masked write; an immediate with bit 3
- * set carries CSEL; anything else is unknown and reported.
+ * of $D016 or an AND on the way is a masked write; an ORA with a constant
+ * composes the whole value on purpose (`ora #$c8`, or `ora #$c0` for 38
+ * columns); a load from a shadow named for the register carries CSEL and
+ * MCM; an immediate is judged by immediateKeepsCsel. Anything else is
+ * unknown and reported. Until #41 the ORA, the shadow and the named
+ * constant were all reported, in five of the starters' deliberate stores.
  */
-function d016StoreKeepsCsel(lines: string[], i: number): boolean {
+function d016StoreKeepsCsel(ctx: LintContext, i: number): boolean {
   for (let j = i - 1; j >= Math.max(0, i - 12); j--) {
-    const l = lineAt(lines, j);
-    if (/\b(lda|ldx|ldy)\s+(\$d016|0xd016|53270)\b/i.test(l) || /\band\s+#/i.test(l)) return true;
+    const l = lineAt(ctx.lines, j);
+    if (/\b(lda|ldx|ldy)\s+(\$d016|0xd016|53270)\b/i.test(l) || /\b(and|ora)\s+#/i.test(l)) return true;
     const imm = D016_IMMEDIATE.exec(l);
-    if (imm) {
-      const literal = parseNumber(group(imm, 1));
-      return literal !== null && (literal & 0x08) !== 0;
-    }
+    if (imm) return immediateKeepsCsel(group(imm, 1), ctx.src);
+    const load = D016_LOAD_LABEL.exec(l);
+    if (load) return D016_NAMED.test(group(load, 1));
     if (D016_LOAD_ENDS.test(l)) return false;
   }
   return false;
@@ -189,12 +249,12 @@ function d016StoreKeepsCsel(lines: string[], i: number): boolean {
 function d016Unmasked(ctx: LintContext): void {
   const store = new RegExp(String.raw`^\s*${LABEL}sta\s+(\$d016|0xd016|53270)\b`, "i");
   ctx.lines.forEach((line, i) => {
-    if (!store.test(line) || d016StoreKeepsCsel(ctx.lines, i)) return;
+    if (!store.test(line) || d016StoreKeepsCsel(ctx, i)) return;
     report(ctx, i, {
       rule: "d016_unmasked_rmw_clobbers_csel_mcm",
       pitfall: "d016_unmasked_rmw_clobbers_csel_mcm",
       message:
-        "STA $D016 with no read of $D016 and no AND mask before it: the naive store zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Use `lda $d016 / and #$f8 / ora xscroll / sta $d016`, or a shadow that carries CSEL and MCM. Heuristic: the value may come from such a shadow.",
+        "STA $D016 with no read of $D016 and no AND mask before it: the naive store zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Use `lda $d016 / and #$f8 / ora xscroll / sta $d016`, or a shadow that carries CSEL and MCM. Heuristic: a load from a shadow not named for the register (d016, ctrl2, shadow) is reported too.",
       page: PAGES.d016,
       certainty: "heuristic",
     });
@@ -233,4 +293,5 @@ export function lintAsm(raw: string, findings: LintFinding[]): void {
   decimalModeInIrq(ctx);
   d016Unmasked(ctx);
   jmpIndirect(ctx);
+  d015MergedAsm(ctx);
 }

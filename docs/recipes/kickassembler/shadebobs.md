@@ -7,6 +7,9 @@ techniques: [shadebobs, bobs_effect]
 file_formats: [PRG]
 uses_registers: [D011, D020, D021, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
+claims: [cia1_timer_b (init), cia1_tod (init), zero_page $FB-$FE (owns)]
+harness: [cia1_timer_a, $0340-$03FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

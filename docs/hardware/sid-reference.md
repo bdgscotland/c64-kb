@@ -64,7 +64,8 @@ their routing bit set in $D417. The filter has an 11-bit cutoff
 ($D415-$D416), a 4-bit resonance ($D417 high nibble), and three mode
 bits in $D418 selecting low-pass (12 dB/oct), band-pass (6 dB/oct),
 and high-pass (12 dB/oct). Mode bits can be combined (LP+HP produces
-notch; all three on produces a phase-shifted blend). Voices not routed
+notch; all three on gives a flat level with a peak or dip at the cutoff,
+see "Filter mode bits" below). Voices not routed
 to the filter bypass it and go straight to the volume DAC.
 
 ### 6581 vs 8580: what programmers care about
@@ -107,6 +108,47 @@ louder, cleaner combined waveforms. The specific bit-pattern depends on
 the chip revision and even on individual chips. Tunes that rely on
 combined waveforms (e.g. triangle+pulse for warm pad sounds) sound
 different on 6581 vs 8580.
+
+How much quieter, measured in VICE x64sc 3.10 reSID (`-sidmodel 0` and
+`1`), from real-time WAV captures (`-sound -sounddev wav`, 44,100 Hz;
+the method is in `runtime/vice-reference.md`, "Recording the SID
+output"). One voice at `$1D45` (440 Hz on PAL), AD `$00`, SR `$F0`,
+volume 15, no filter unless stated. The figure is the RMS of 16-bit
+samples, mean removed, over the middle 0.6 s (0.25 s for the pulse-width
+rows) of each held note. Silence reads 1 to 20.
+
+| Waveform | 6581 | 8580 |
+|---|---|---|
+| Sawtooth `$21` | 2,617 | 2,025 |
+| Triangle `$11` | 2,655 | 2,053 |
+| Pulse `$41`, PW `$800` | 4,669 | 3,522 |
+| Saw+pulse `$61`, PW `$080` to `$700` | 420 to 423 | 2,330 to 2,341 |
+| Saw+pulse `$61`, PW `$800` to `$C00` | 2 | 2,341 to 2,370 |
+| Tri+pulse `$51`, PW `$080` to `$600` | 2,373 to 2,391 | 2,420 to 2,458 |
+| Tri+pulse `$51`, PW `$700` / `$800` / `$A00` / `$C00` / `$F00` | 2,344 / 1,751 / 524 / 226 / 2 | 2,329 / 1,936 / 850 / 304 / 3 |
+| Band-pass, cutoff `$200`, resonance 8: sawtooth | 1,050 | 700 |
+| Same filter: saw+pulse, PW `$800` | 0 | 780 |
+| Same filter: pulse, PW `$800` | 1,247 | 1,047 |
+
+The plain waveforms read about 30 % louder on the 6581 model. Tri+pulse
+reads within 3 % on the two, so "quieter on the 6581" holds for
+saw+pulse and not for every combination.
+
+Two consequences for instrument design:
+
+- **Saw+pulse is close to silent on the 6581.** It is 16 % of a plain
+  sawtooth at PW below `$800` and nothing at PW `$800` or above. On the
+  8580 it matches the sawtooth at any width. A saw+pulse stab through
+  the band-pass that is heard on the 8580 disappears on the 6581. The
+  #50 player's port measured the same in a whole tune: RMS about 100
+  for such a stab against 2,384 for the bass in the same window (from
+  the issue, not re-measured here).
+- **Tri+pulse loudness follows the pulse width on both chips.** The
+  pulse gates the triangle: the level holds near the triangle's up to
+  PW `$600`, then falls to a tenth by `$C00` and to silence at `$F00`.
+  A pulse-width sweep on a tri+pulse pad therefore sweeps its volume.
+  Hold the width below `$700` (the port used a fixed `$200`) to keep
+  the level steady.
 
 **Write-only registers.** Registers $D400-$D418 are write-only. Reading
 one (or an unused address $D41D-$D41F, or any mirror through $D7FF)
@@ -344,9 +386,10 @@ voice 1, voice 3 to voice 2).
 the output is the bit-wise AND of each enabled waveform's 12-bit
 output. Common combinations: TRI+PULSE for warm pad, SAW+PULSE for
 biting lead, TRI+SAW for soft brass. Noise combined with any other
-waveform shifts the noise LFSR's output bits to zero over time (a
-known SID quirk) and is typically used as a one-shot effect with TEST
-to restore the LFSR.
+waveform shifts the noise LFSR's output bits to zero within a few
+hundred cycles (measured in reSID, see Pitfalls; an earlier version
+said "over time") and is typically used as a one-shot effect with
+TEST to restore the LFSR.
 
 ### $D405 — ATDCY1 — Voice 1 attack/decay rate (W)
 
@@ -606,12 +649,18 @@ be audible. Voice 3 routed to the filter (FILT3=1 in $D417) ignores
 3OFF: the mute acts on the bypass path only.
 
 **Filter mode bits.** LP, BP, HP can be combined: LP+HP is a notch
-filter, LP+BP gives a warmer band-pass. BP+HP is not a notch: the sum
-of a high-pass and a band-pass has no zero inside the audio band
-(arithmetic from the two-integrator filter's responses; an earlier
-version called it a notch, against the Filter architecture section).
-Setting all three on simultaneously sums the three responses (rare in
-practice). Setting all three off with $D417 routing bits set produces
+filter. LP+BP is a low-pass, not a band-pass: the sum passes DC at full
+level and falls at 6 dB/oct above the cutoff instead of 12 (an earlier
+version called it "a warmer band-pass"). BP+HP is not a notch: the sum
+of a high-pass and a band-pass has no zero inside the audio band (an
+earlier version called it a notch, against the Filter architecture
+section). All three on gives unity level at low and high frequencies and
+a gain of Q (the resonance) at the cutoff; at Q = 1 it is an all-pass
+that only shifts phase (an earlier version called it "a phase-shifted
+blend"). These responses are arithmetic from reSID's 8580 filter
+equations in VICE's source (`src/resid/filter.h`: HP = BP/Q − LP − input,
+BP and LP each integrate the stage before with a sign inversion), not
+measured; reSID models the 6581 filter with non-linear integrators, so its curves will differ in shape. Setting all three off with $D417 routing bits set produces
 silence for those voices (the filter output is grounded when no mode
 is enabled).
 
@@ -921,15 +970,17 @@ typically uses:
   reSID's 8580 model the volume step with three such voices is about
   5x the bare-voice step, while with only one voice it is no louder
   than bare (the voice DC roughly cancels the mixer's own small
-  offset), so use all three. The earlier text here said PWHI3 was the
+  offset), so use all three (measured by the `sid-volume-bias` recipe:
+  482.3 against 93.5 per volume unit, and −91.8 with one voice). The earlier text here said PWHI3 was the
   DAC; it was wrong: PW has no effect on the output while TEST is set
   (the value is kept and applies when TEST clears), and without TEST
   the comparator output is binary ($000 or $FFF), never proportional
-  to PW. The scene form (Mahoney's 8580 digi, "Musik Run/Stop", 2014)
-  also drives the filter-mode bits in $D418 with the voices routed
-  through the filter and maps sample values through a per-chip lookup
-  table of measured $D418 bytes for ~8-bit output; that extension is
-  from published descriptions, not measured here. Nothing in this
+  to PW. Mahoney's form ("Musik Run/Stop", 2014) routes voices 1 and 2
+  through the filter and plays through a table of measured values of
+  all eight bits of $D418; his paper measures it on both models, not only the 8580
+  as an earlier version of this bullet said. It is built and measured
+  in reSID as `mahoney_d418_8bit_digi` (`techniques/music-sid.md`):
+  about 5.5 effective bits on both reSID models. Nothing in this
   bullet was measured on silicon.
 
 ### Voice 3 as random source
@@ -1064,6 +1115,10 @@ are not touched.
   (e.g. TRI+PULSE) produces a bit-wise AND of the waveform outputs;
   the resulting amplitude is louder on 8580 than 6581. Some specific
   combined-waveform shapes only sound right on one chip revision.
+  Measured in reSID (table under "Combined waveforms" above): saw+pulse
+  is silent on the 6581 at PW `$800` and above, while tri+pulse is as
+  loud on the 6581 as on the 8580 and loses level as PW rises past
+  `$700` on both chips.
 
 - **No frequency read-back.** The current oscillator
   frequency cannot be read. $D41B (OSC3) shows the upper 8 bits of
@@ -1088,8 +1143,11 @@ are not touched.
 
 - **Noise combined with other waveforms zeros the LFSR.** With
   NOISE enabled simultaneously with TRI, SAW, or PULSE, the AND-gate
-  combination eventually drives all LFSR bits to zero, silencing
-  the noise. Once stuck, set TEST briefly to re-seed. This SID
+  combination drives all LFSR bits to zero, silencing the noise. It is
+  fast, not eventual as an earlier version said: in VICE reSID, 400
+  cycles of noise + pulse at F = $2000 locked it on both models, and
+  51,000 cycles with no waveform did not unlock it
+  (`recipes/kickassembler/sid-test-bit.md`). Once stuck, set TEST briefly to re-seed. This SID
   behaviour is also why "noise sweeps" usually pulse
   the TEST bit periodically. A brief pulse is enough: a few cycles of
   TEST re-seeds a zeroed LFSR, because the falling edge shifts a 1

@@ -14,6 +14,8 @@ home_url: https://github.com/drmortalwombat/oscar64/tree/main/include/c64
 
 The `include/c64/` directory in the Oscar64 source tree contains C headers that give Oscar64 programs access to C64 hardware and operating-system services. Each header declares structs that map directly to the hardware register layout, named constants for all bit flags and enumerations, and helper functions for common sequences. Every header with an implementation file uses a `#pragma compile("filename.c")` directive to pull in its implementation (`types.h` and `easyflash.h` are header-only; an earlier version of this page said every header carries the pragma). Including the header links the library; there is no separate link step. A header does not re-export the `vic.h`/`rasterirq.h` names its own API uses, so a fence that calls `vic_waitLine()` or `rirq_wait()` still needs those headers included (see the fences below).
 
+Each header section with a `**Wraps:**` line lists, per public function, the KERNAL routines it calls and the I/O registers it reads or writes, so a C name leads to the pitfalls of what it touches (`c64_pitfalls_for krnio_open`). The lines were read from the `include/c64/*.c` and `*.h` sources of the Oscar64 build this repo verifies with (1.32.271), not from documentation: a `jsr $FFxx` names the KERNAL entry at that address, a field of the `vic`, `cia1`, `cia2` or `sid` struct names the register at its offset, a literal `$Dxxx` names itself, `$01` names the processor port (Register R6510, address `0001`), a field of the `reu` struct names the REU register at its offset (`hardware/reu-reference.md`), and a function inherits what the functions and `__asm` blocks it names reach, in its own `.c` file or another header's. Only the C64 branches of `#if` blocks were read, and a build define is taken at its default: `flossiec.h`'s lines assume `FLOSSIEC_NODISPLAY` and `FLOSSIEC_BORDER` are 0. Code the library uploads to the drive is not C64 I/O and is left out. An earlier version of this paragraph said the lines did not cover calls across `.c` files, `memmap.h`, `reu.h` or `flossiec.h`; they do since #92, and adding `$01` also put R6510 on three `rirq_init_*` lines. `vic_sprxy: D000-D010` means some sprite's X or Y register and `$D010`, depending on the argument.
+
 This is the per-header API reference. For when to use these headers, see [oscar64-reference.md](oscar64-reference.md). When an Oscar64 recipe touches a hardware register, a header usually covers it and is more portable between PAL and NTSC builds than direct POKE/PEEK.
 
 ## types.h — Fundamental C64 type aliases
@@ -35,6 +37,8 @@ word address = 0xD400;   // SID base address
 ```
 
 ## vic.h — VIC-II chip access
+
+**Wraps:** vic_isBottom: D011; vic_setbank: DD00; vic_setmode: D011, D016, D018, DD00; vic_sprgetx: D000, D002, D004, D006, D008, D00A, D00C, D00E, D010; vic_sprxy: D000-D010; vic_waitBelow: D011, D012; vic_waitBottom: D011; vic_waitFrame: D011; vic_waitFrames: D011; vic_waitLine: D011, D012; vic_waitRange: D011, D012; vic_waitTop: D011
 
 `vic.h` provides the `VIC` struct laid over the VIC-II register file at `$D000`. The macro `vic` dereferences a pointer to that address, so `vic.color_border` is a volatile byte write to `$D020`. The header also declares the `VICColors` enum (sixteen named palette entries from `VCOL_BLACK` to `VCOL_LT_GREY`), bit-flag constants for `ctrl1`, `ctrl2`, and `intr_enable`/`intr_ctrl`, and a `VicMode` enum for `vic_setmode`.
 
@@ -152,6 +156,8 @@ sid.voices[0].susrel = 0xA0;
 
 ## cia.h — CIA timer and I/O chip access
 
+**Wraps:** cia_init: DC00, DC02, DC03, DC0D-DC0F, DD00, DD02, DD03, DD0D-DD0F
+
 `cia.h` maps CIA1 at `$DC00` and CIA2 at `$DD00` to `CIA` structs. CIA1 handles the keyboard matrix and both joystick ports (port 2 on `$DC00`, port 1 on `$DC01`; an earlier version named only port 2); CIA2 handles the serial port, user port, and VIC bank select. Its most used call is `cia_init()`, which stops CIA timers and clears pending interrupts so that raster IRQs can take over.
 
 Public API:
@@ -173,6 +179,8 @@ mmap_set(MMAP_NO_ROM);   // then bank out the kernal
 `cia_init()` goes first, the order `samples/sprites/sprmux32.c`, `missile.c` and `hscrollshmup.c` use. The other way round, a CIA1 timer interrupt between the two calls fetches its vector from the RAM under the KERNAL at `$FFFE`, which the program has not written (VICE x64sc powers up with `$FF $FF` there, read here with the ROM banked out). An earlier version of this example called `mmap_set` first.
 
 ## rasterirq.h — Raster interrupt system
+
+**Wraps:** rirq_alloc: D012; rirq_build: D012; rirq_init: D011, D012, D019, D01A, DC0D; rirq_init_crt: D011, D012, D019, D01A; rirq_init_crt_noio: 0001, D011, D012, D019, D01A; rirq_init_io: D011, D012, D019, D01A; rirq_init_kernal: D011, D012, D019, D01A, DC0D; rirq_init_kernal_noio: 0001, D011, D012, D019, D01A, DC0D; rirq_init_memmap: 0001, D011, D012, D019, D01A; rirq_sort: D012; rirq_start: D011, D012, D019
 
 `rasterirq.h` manages up to 16 simultaneous raster interrupt slots (configurable with `-dNUM_IRQS=n`). Each slot fires at a specified raster line and executes up to five memory writes in hand-optimized assembly. The system handles IRQ vector installation and slot sorting so that slots always fire in scanline order even when moved between frames. It does not disable the CIAs: no `rirq_init_*` variant writes `$DC0D`/`$DD0D` (header-read, `rasterirq.c`), so call `cia_init()` first when using `rirq_init_crt`, `rirq_init_crt_noio`, `rirq_init_io` or `rirq_init_memmap` (the variants whose handler does not fall through to the kernal), otherwise the CIA1 timer IRQ keeps entering a handler that never acknowledges it and the splits break up. The two kernal-routed variants (`rirq_init_kernal`, `rirq_init_kernal_noio`, i.e. `rirq_init(true)`) acknowledge `$DC0D` and continue into `$EA31`, so they run without `cia_init()`. It is also not cycle-exact: each slot busy-polls `CMP $D012`, so its writes land at the start of the line below `row`, inside horizontal blanking with a few cycles of jitter. That is enough for a clean full-line colour split, not for FLI, side-border or other cycle-exact effects. An earlier version of this page claimed CIA disabling and stable-raster timing.
 
@@ -230,6 +238,10 @@ This sets up two color splits: a red band from raster 51 to 151, and black above
 
 ## sprites.h — Hardware and multiplexed sprite control
 
+**Wraps:** spr_color: D027-D02E; spr_expand: D017, D01D; spr_move: D000-D010; spr_move16: D000-D010; spr_posx: D000, D002, D004, D006, D008, D00A, D00C, D00E, D010; spr_posy: D001, D003, D005, D007, D009, D00B, D00D, D00F; spr_set: D000-D010, D015, D017, D01C, D01D, D027-D02E; spr_show: D015; vspr_init: D000-D010, D012, D015, D017, D01D, D027-D02E; vspr_update: D000-D010, D027-D02E
+
+The `vspr_*` calls into `rasterirq.c` were followed (rung 1, `sprites.c` and `rasterirq.c`). `vspr_init` builds each slot with `rirq_build`, whose emitted code waits on `$D012`, and `rirq_write` points the slot's stores at the sprite registers listed. `rirq_set`, `rirq_move`, `rirq_data`, `rirq_clear` and `rirq_addrhi`, which `vspr_init`, `vspr_update`, `vspr_shutdown` and `vspr_screen` also call, write only rasterirq's tables and the slot code, so they add no register.
+
 `sprites.h` provides two layers of sprite management. The hardware layer (`spr_*`) operates directly on the eight VIC-II hardware sprites. The virtual layer (`vspr_*`) uses `rasterirq.h` slots 0–8 to multiplex 16 virtual sprites onto the eight physical sprites, repositioning them mid-screen as the beam passes.
 
 Public API — hardware sprites:
@@ -248,6 +260,7 @@ Public API — virtual (multiplexed) sprites:
 
 - `vspr_init(char * screen)` — initializes the multiplexer (occupies rirq slots 0–8)
 - `vspr_shutdown()` — releases rirq slots
+- `vspr_screen(char * screen)` — re-points the multiplexer at a new screen: sprite pointers are written to `screen + $3F8` from then on, by `vspr_update` and by the raster IRQs that place sprites 8 and up. Call it whenever `$D018` moves the screen (see below)
 - `vspr_set(char sp, int x, int y, char image, char color)` — configures virtual sprite `sp` (0–15)
 - `vspr_move(char sp, int x, int y)` — moves a virtual sprite
 - `vspr_movex(char sp, int x)` / `vspr_movey(char sp, int y)` — single-axis moves
@@ -272,7 +285,37 @@ vspr_update();
 rirq_sort();
 ```
 
+`vspr_init` fixes the screen whose pointer bytes the multiplexer writes. After `vic_setmode` moves the screen, the VIC reads pointers from the new screen and the multiplexer keeps writing the old one. Measured in VICE x64sc 3.10 (PAL c64c and NTSC, `-O2`): sixteen virtual sprites with a solid image in block 13, screen moved from `$0400` to `$3C00`. With the `vspr_screen` call all sixteen 24 by 21 boxes were solid in the sprite's colour (504 of 504 pixels each); built without it, none was (107 of 504 pixels lit: the test had zeroed `$3FF8`-`$3FFF`, so the VIC drew block 0, the zero page).
+
+```c
+#include <c64/vic.h>
+#include <c64/rasterirq.h>
+#include <c64/sprites.h>
+#include <string.h>
+
+int main(void)
+{
+    memset((char *)0x0340, 0xff, 63);                  // block 13: a solid sprite
+    rirq_init(true);
+    vspr_init((char *)0x0400);
+    for (char i = 0; i < 16; i++)
+        vspr_set(i, 40 + 32 * (i & 7), i < 8 ? 60 : 160, 13, i < 8 ? VCOL_WHITE : VCOL_YELLOW);
+    vic_setmode(VICM_TEXT, (char *)0x3c00, (char *)0x1000);
+    vspr_screen((char *)0x3c00);                        // without this, pointers go to $07F8
+    vspr_sort();
+    vspr_update();
+    rirq_sort();
+    rirq_start();
+    for (;;) { vspr_sort(); rirq_wait(); vspr_update(); rirq_sort(); }
+    return 0;
+}
+```
+
+For a double-buffered screen, call `vspr_screen` with the page about to be shown before the `$D018` write (`../techniques/memory-banking.md`).
+
 ## joystick.h — Joystick input
+
+**Wraps:** joy_poll: DC00
 
 `joystick.h` polls the joysticks. One call to `joy_poll(n)` reads `$DC00+n` on CIA1 and populates three global arrays. Port numbering (verified against `include/c64/joystick.c`):
 
@@ -300,6 +343,8 @@ Call `joy_poll` once per frame, usually at the start of the game loop, for a fre
 **Note — port 2 and the keyboard column drive share `$DC00`, but a main-loop `joy_poll(0)` cannot see the scan.** SCNKEY is called from inside the KERNAL jiffy IRQ handler (`JSR $EA87` at `$EA7B`) and restores `$7F` before the handler's RTI, so the main loop is never running while the columns are driven (measured in VICE x64sc: 0 of 76,144 main-loop samples caught the `$00` window; `pitfalls/input.md`, joystick2_scan_phantom_press). Only an NMI handler, or an IRQ handler that `cli`s before chaining to `$EA31`, can read the all-pressed phantom value; when polling from such a context, treat `$00` as "scan in progress" and re-read, or take over the IRQ. An earlier version of this page blamed the main loop and advised `sei`/`cli` around the poll, which changes nothing there. Port 1 (`joy_poll(1)`) has no timing hazard either, but a held `1`, LEFT-ARROW, CTRL, `2` or SPACE reads as joystick 1 continuously because the KERNAL leaves column 7 selected.
 
 ## keyboard.h — Keyboard matrix scan
+
+**Wraps:** keyb_poll: DC00-DC03
 
 `keyboard.h` scans the keyboard matrix. The C64 keyboard is an 8x8 matrix read via CIA1 ports A and B; `keyb_poll()` scans the full matrix and records the result. The `KeyScanCode` enum covers all physical keys including shifted variants.
 
@@ -359,6 +404,8 @@ cwin_console_printf(&win, VCOL_YELLOW, "%d", score);
 
 ## mouse.h — 1351 mouse input
 
+**Wraps:** mouse_arm: DC00; mouse_init: D419, D41A, DC00; mouse_poll: D419, D41A, DC00
+
 `mouse.h` reads a Commodore 1351 proportional mouse connected to a joystick port. The 1351 encodes movement in the SID potentiometer registers. `mouse_arm` primes the potentiometer circuit (needs ~4 ms to stabilize before reading) and `mouse_poll` reads the relative displacement.
 
 Public API:
@@ -386,6 +433,8 @@ cursor_y += mouse_dy;
 ```
 
 ## kernalio.h — KERNAL file I/O wrappers
+
+**Wraps:** krnio_chkin: CHKIN; krnio_chkout: CHKOUT; krnio_chrin: CHRIN; krnio_chrout: CHROUT; krnio_close: CLOSE; krnio_clrchn: CLRCHN; krnio_getch: CHKIN, CHRIN, CLRCHN, READST; krnio_gets: CHKIN, CHRIN, CLRCHN, READST; krnio_load: LOAD, SETLFS; krnio_open: CLOSE, OPEN, SETLFS; krnio_putch: CHKOUT, CHROUT, CLRCHN; krnio_puts: CHKOUT, CHROUT, CLRCHN; krnio_read: CHKIN, CHRIN, CLRCHN, READST; krnio_read_lzo: CHKIN, CHRIN, CLRCHN, READST; krnio_save: SAVE, SETLFS; krnio_setnam: SETNAM; krnio_setnam_n: SETNAM; krnio_status: READST; krnio_write: CHKOUT, CHROUT, CLRCHN
 
 `kernalio.h` wraps the C64 KERNAL file I/O routines (SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE) in a C-callable interface. It uses logical file numbers (0–15) as handles and returns `krnioerr` status codes. A measured write, read-back, status-check and provoked-error run is `../recipes/oscar64/save-load-seq-file.md`; the call sequences as techniques are `../techniques/file-io.md`.
 
@@ -421,7 +470,11 @@ krnio_close(2);
 
 String literals passed to `krnio_setnam` should use the `P` prefix (`P"SCORES"`) to ensure PETSCII encoding, since the KERNAL expects PETSCII filenames.
 
+`krnio_setbnk(char filebank, char namebank)` is declared in `kernalio.h` only under `__C128__`, `__C128B__` or `__C128E__`: it calls the C128 KERNAL's SETBNK at `$FF68`, which the C64 KERNAL does not have. Built with `-tm=c64` a call fails with `error 3005: Unknown identifier 'krnio_setbnk'`; with `-tm=c128` the same file builds (Oscar64 1.32.271, the build on this machine). A C64 program selects the RAM under ROM for LOAD or SAVE with `$01` (`memmap.h`), not with this call.
+
 ## iecbus.h — Low-level IEC serial bus
+
+**Wraps:** iec_atn: DD00; iec_close: DD00; iec_listen: DD00; iec_open: DD00; iec_read: DD00; iec_read_bytes: DD00; iec_talk: DD00; iec_unlisten: DD00; iec_untalk: DD00; iec_write: DD00; iec_write_bytes: DD00
 
 `iecbus.h` gives direct access to the IEC serial bus at a lower level than the KERNAL wrappers in `kernalio.h`. Use it for custom serial protocols or when the KERNAL overhead is too high. `iec_status` holds the last operation result.
 
@@ -445,6 +498,47 @@ iec_unlisten();
 ```
 
 Prefer `kernalio.h` for standard file operations. Use `iecbus.h` only for protocol-level control, such as fast loaders or non-standard device protocols.
+
+## flossiec.h — Fast loader for the 1541
+
+**Wraps:** flossiec_close: DD00; flossiec_get: D012, DD00; flossiec_get_lzo: D012, DD00; flossiec_init: DD00; flossiec_mapdir: D011, D012, DD00; flossiec_open: D011, DD00; flossiec_read: D012, DD00; flossiec_read_lzo: D012, DD00; flossiec_shutdown: DD00; flosskio_close: DD00; flosskio_init: CHKOUT, CHROUT, CLOSE, CLRCHN, OPEN, SETLFS, SETNAM; flosskio_mapdir: CHKOUT, CHROUT, CLRCHN, D011, D012, DD00; flosskio_open: CHKOUT, CHROUT, CLRCHN, D011, DD00; flosskio_shutdown: CLOSE
+
+`flossiec.h` installs a read-only fast loader in the drive and streams a file by its first track and sector. It comes in two variants that share the read calls: `flosskio_*` runs alongside the KERNAL, `flossiec_*` without it. `#pragma compile("flossiec.c")` pulls in the implementation.
+
+Public API:
+
+- `flosskio_init(char drive)` / `flossiec_init(char drive)` — upload the drive code; true on success
+- `flosskio_shutdown()` / `flossiec_shutdown()` — remove it
+- `flosskio_mapdir(const char * fnames, floss_blk * blks)` / `flossiec_mapdir(...)` — read the directory and fill one `floss_blk { char track, sector; }` per name in a comma-separated list
+- `flosskio_open(char track, char sector)` / `flossiec_open(...)` — start a file; it must be read to the end before `flosskio_close()` / `flossiec_close()`
+- `flossiec_read(char * dp, unsigned size)` — read up to `size` bytes, return the first address after them
+- `flossiec_read_lzo(char * dp, unsigned size)` — the same for a file written LZO-compressed
+- `flossiec_get()`, `flossiec_get_lzo()`, `flossiec_eof()` — byte-at-a-time reads (inline)
+- Build defines: `FLOSSIEC_BORDER=1` flashes the border while loading, `FLOSSIEC_NODISPLAY=1` blanks the screen, `FLOSSIEC_NOIRQ=1` disables IRQs during a load, `FLOSSIEC_CODE` / `FLOSSIEC_BSS` place its code and data in named sections
+
+What the functions touch, read from `flossiec.c` (rung 1). Every block read goes through `fl_read_buf`, which clocks bytes on CIA2 port A (`$DD00`) and, unless `FLOSSIEC_NODISPLAY=1`, polls `$D012` and holds each byte's exchange off every line where `(line - 50) & 7` is 0 (lines 50, 58, 66 …, each the line before a default-`YSCROLL` badline; why is not stated in the source); `FLOSSIEC_BORDER=1` adds `inc $D020` per byte, and `FLOSSIEC_NODISPLAY=1` clears DEN in `$D011` on open and sets it on close. The `flossiec_*` set talks to the drive through `iecbus.h`, the `flosskio_*` set through `kernalio.h`, and both `*_open` calls wait two frames with `vic_waitFrame`. `*_mapdir` opens track 18 sector 1 and walks the directory chain, keeping only entries whose type byte is `$82` (a closed PRG).
+
+The read starts at the first byte of the file: a PRG's two load-address bytes come first, and `flossiec_read` does not use them. Measured in VICE x64sc 3.10 with true drive emulation (a 1541 on device 8), PAL c64c and NTSC, `-O2`: a 16-block PRG of 4002 bytes (load address `$4000`, then 4000 pattern bytes) read into `$4000` byte for byte from its first byte, and `flossiec_read` returned `Buf + 4002`. Open, read and close took 2,021,780 cycles on PAL (2.05 s) and 2,039,761 on NTSC; the same file through `krnio_open` / `krnio_read` / `krnio_close` took 10,583,134 and 10,994,407, about 5.2 times as long. Cycle counts are from monitor trace stores on either side of each read. The jiffy clock read 122 and 384 jiffies for the same two reads on PAL: it runs slow while the KERNAL serial routines hold IRQs off, so it is not a timer for disk I/O.
+
+```c
+#include <c64/flossiec.h>
+
+int main(void)
+{
+    floss_blk blks[1];
+    flosskio_init(8);
+    if (flosskio_mapdir(p"data", blks))
+    {
+        flosskio_open(blks[0].track, blks[0].sector);
+        char * end = flossiec_read((char *)0x4000, 4002);   // 2 load-address bytes + 4000
+        flosskio_close();
+    }
+    flosskio_shutdown();
+    return 0;
+}
+```
+
+The Oscar64 tree's `samples/kernalio/hiresfload.c` loads an LZO-compressed hires picture the same way with `flossiec_read_lzo`.
 
 ## easyflash.h — EasyFlash cartridge banking
 
@@ -479,12 +573,14 @@ render_level(level_data);
 
 ## memmap.h — Memory map control
 
+**Wraps:** mmap_set: 0001; mmap_trampoline: 0001
+
 `memmap.h` exposes the C64's memory banking register at `$01` and provides constants for common configurations. The C64's PLA interprets three bits of the CPU port to select which combination of BASIC ROM, KERNAL ROM, character ROM, and I/O area is visible at `$A000`–`$FFFF` and `$D000`–`$DFFF`.
 
 Public API:
 
 - `mmap_set(char pla)` — writes `pla` to `$01`; returns previous value; uses `__memmap` to prevent reordering
-- `mmap_trampoline()` — installs an IRQ/NMI trampoline that keeps KERNAL interrupts working when the KERNAL ROM is paged out; call before `mmap_set(MMAP_NO_ROM)`
+- `mmap_trampoline()` — installs an IRQ/NMI trampoline that keeps KERNAL interrupts working when the KERNAL ROM is paged out; call before `mmap_set(MMAP_NO_ROM)`. It writes the RAM vectors at `$FFFA` and `$FFFE`; the trampolines save `$01`, write `$36`, jump through the ROM's vector and restore `$01` on the way out (`memmap.c`, rung 1)
 
 Memory map constants:
 
@@ -523,9 +619,11 @@ mmap_set(old);
 
 ## reu.h — RAM Expansion Unit DMA
 
+**Wraps:** reu_count_pages: DF01-DF08, DF0A; reu_fill: DF01-DF08, DF0A; reu_load: DF01-DF08, DF0A; reu_load2d: DF01-DF08, DF0A; reu_load2dpage: DF01-DF08, DF0A; reu_store: DF01-DF08, DF0A
+
 `reu.h` covers the 1700/1764/1750 RAM Expansion Unit connected at `$DF00`. The REU adds 128 KB, 256 KB, or 512 KB of RAM accessible via DMA. (An earlier version called it battery-backed; nothing here supports that, and the contents are not assumed to survive power-off.) The header maps the REU control registers to a `REU` struct and provides inline helpers for common transfer operations.
 
-Oscar64 ships REU support, but the c64-kb scope is stock C64 hardware and REU recipes are out of scope for this KB. The header is listed so agents know it exists.
+The registers are on [reu-reference.md](../hardware/reu-reference.md) and a measured KickAssembler recipe drives them ([reu-dma](../recipes/kickassembler/reu-dma.md)). An earlier version said REU recipes were out of scope for this KB. Every helper writes the command with bit 4 set (`REU_CMD_FF00`), so the transfer starts at the store to `$DF01`; none reads `$DF00`, so none reports a verify fault or waits for end of block. `reu_fill` holds the C64 address on its argument `c` (`REU_CTRL_FIXL`), which fills REU memory with one byte.
 
 Public API:
 
@@ -535,6 +633,7 @@ Public API:
 - `reu_load(unsigned long raddr, volatile char * dp, unsigned length)` — copy from REU to C64 RAM
 - `reu_fill(unsigned long raddr, char c, unsigned length)` — fill REU memory with a value
 - `reu_load2d(unsigned long raddr, volatile char * dp, char height, unsigned width, unsigned stride)` — 2D DMA transfer (e.g. for tile blitting from REU)
+- `reu_load2dpage(...)` — the same, with the bank written once, so all rows must lie in one 64 KB REU bank
 
 ```c
 #include <c64/reu.h>
@@ -583,3 +682,47 @@ __asm { jsr codebuf }                    // call it
 As of the 2026-05-19 build, calling a byte buffer through a cast function pointer (`((void (*)(void))codebuf)();`) crashes the compiler (exit 139, no `.prg`, no diagnostic) when the buffer is a local, whether the call is direct or through a pointer variable (build; the same class as the `const` function-pointer segfault in the project gotchas). With a global buffer the same cast call compiles, but at `-O2` the stores into the buffer are dead-store-eliminated and the JSR lands on zeroed BSS, so use the inline-asm `jsr`. And `__asm { jsr codebuf }` on a LOCAL (stack) buffer assembles to `JSR $0000` with only a "nullptr dereferenced" warning, which is why the buffer must be `static` or file-scope. The routine is 6 bytes (`asm_im` 2 + `asm_ab` 3 + `asm_np` 1; bytes measured in VICE); an earlier version of this page said 7 and showed the crashing cast call.
 
 Use `asm6502.h` as a last resort: it bypasses all compiler optimizations and type checking. Prefer `__asm { }` inline blocks for most performance-critical code.
+
+## oscar.h — Decompression and debugging helpers
+
+`oscar.h` sits in `include/`, not `include/c64/`, and is included as `<oscar.h>`. It declares the run-time side of the compressed `#embed` forms and two debugging aids.
+
+Public API:
+
+- `oscar_expand_lzo(char * dp, const char * sp)` — expand an `#embed ... lzo` stream to `dp`. Back-references are copied out of the destination, so `dp` must read back what was written (not I/O, not ROM-shadowed RAM)
+- `oscar_expand_lzo_buf(char * dp, const char * sp)` — the same, keeping its window in a 256-byte stack buffer, for a destination that does not read back
+- `oscar_expand_rle(char * dp, const char * sp)` — expand an `#embed ... rle` stream
+- All three return the address after the stream's terminating zero byte, the start of whatever follows it, not the end of the output (`include/oscar.c`)
+- `breakpoint()` — an intrinsic: it emits one `NOP` and writes `break <address of that NOP>` into the `.lbl` file, a VICE monitor command that sets the breakpoint when the file is passed to `-moncommands`
+- `debugcrash()` — emits opcode `$02`, a JAM: the CPU halts there
+
+Measured in VICE x64sc 3.10, PAL c64c, `-O2`: a 1000-byte screen image compressed by both `#embed` forms expanded to `$0400` and to a buffer byte for byte with all three calls, each returned pointer equalled the array's start plus its `sizeof`, and the border went green. The `.lbl` file of that build held `break 0925`, and the listing has a `NOP` at `$0925`.
+
+```c
+#include <c64/vic.h>
+#include <oscar.h>
+#include <string.h>
+
+static const char lz[] = {
+#embed lzo "pattern.bin"
+};
+static const char rl[] = {
+#embed rle "pattern.bin"
+};
+static const char raw[] = {
+#embed "pattern.bin"
+};
+char buf[1000];
+
+int main(void)
+{
+    const char * e1 = oscar_expand_lzo((char *)0x0400, lz);
+    const char * e2 = oscar_expand_rle(buf, rl);
+    bool ok = memcmp((char *)0x0400, raw, 1000) == 0 && memcmp(buf, raw, 1000) == 0
+           && e1 == lz + sizeof(lz) && e2 == rl + sizeof(rl);
+    breakpoint();                                     // "break <addr>" in the .lbl file
+    vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
+    for (;;) ;
+    return 0;
+}
+```

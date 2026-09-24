@@ -22,7 +22,8 @@ deterministic once the mechanism is known.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017, tech_tech_wobbler, dysp_side_border_sprites
+**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017, tech_tech_wobbler, dysp_side_border_sprites, memory_fill_copy, delay_loops
+**Mitigated by techniques:** screen_blank_full_cpu
 
 ### Symptom
 
@@ -71,7 +72,8 @@ Three approaches, often combined (an earlier version said two and listed three):
    line $30 (48); if it is clear then, no line of that frame is a badline and
    the display is blank. Clearing DEN later in the frame does *not* stop the
    remaining badlines; an earlier version of this entry said it did. Sprite
-   DMA still occurs either way.
+   DMA still occurs either way. Measured, with a harness, in
+   `screen_blank_full_cpu` (`docs/techniques/cpu-cycle-tricks.md`).
 
 3. **YSCROLL steering for a region:** on each line of the region write $D011
    with YSCROLL set to a value the line number cannot match (for instance
@@ -275,13 +277,16 @@ set_irq_dynamic:
 ### Symptom
 
 A raster effect that works after the first few frames is unstable on the
-first frame after IRQ enable. Color splits land 1-7 cycles (8-56 pixels; one
-cycle is 8 pixels) to the right on the first frame; an earlier version said
-1-7 pixels. A sprite multiplex update on the first frame puts sprites
+first frame after IRQ enable. Color splits land up to 6 cycles (48 pixels;
+one cycle is 8 pixels) to the right on the first frame; an earlier version
+said 1-7 pixels, then 1-7 cycles. A sprite multiplex update on the first frame puts sprites
 one line too low. The symptom disappears by frame 2. Alternatively, a raster
-effect coded without the stable-raster polling technique shows a permanent 0-7
-cycle wobble that makes split lines look fuzzy: an 8-56 pixel (1-7 cycle) horizontal
-smear on every frame where the interrupted instruction happened to be long.
+effect coded without the stable-raster polling technique shows a permanent 0-6
+cycle wobble that makes split lines look fuzzy: a horizontal smear of up to
+48 pixels on every frame where the interrupted instruction happened to be
+long (0-7 cycles, 56 pixels, if the code uses undocumented 8-cycle opcodes;
+an earlier version said 0-7 and 8-56 pixels for all code, against the
+0-6 window below).
 
 ### Mechanism
 
@@ -423,7 +428,7 @@ IRQ").
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D015
-**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization, sprite_multiplex_game, reu_dma, raster_profile_bars, sprites_only_screen_mode, dysp_side_border_sprites
+**Triggered by techniques:** sprite_multiplex_8, dma_steal_avoidance, sideborder_open, sprite_multiplex_24, sprite_sine_chain, badline_synchronization, sprite_multiplex_game, reu_dma, raster_profile_bars, sprites_only_screen_mode, dysp_side_border_sprites, vector_balls_sprites
 
 ### Symptom
 
@@ -659,7 +664,7 @@ delay:  dec count
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D011
-**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open, sprites_only_screen_mode, dysp_side_border_sprites
+**Triggered by techniques:** fld_flexible_line_distance, sideborder_open, topbottom_border_open, sprites_only_screen_mode, dysp_side_border_sprites, agsp_free_scroll
 
 ### Symptom
 
@@ -683,8 +688,10 @@ whatever was there: the power-on RAM pattern, or the tail of a previous
 program's data, tables or code. Every technique that opens lines the VIC
 does not fetch a row for exposes it: the FLD gap (`fld_flexible_line_distance`),
 a side-border region whose YSCROLL is rewritten each line
-(`sideborder_open`), and the top and bottom borders once opened
-(`topbottom_border_open`). Measured in VICE x64sc 3.10: with `$3FFF` set to
+(`sideborder_open`), the top and bottom borders once opened
+(`topbottom_border_open`), and the last lines of an AGSP screen whose row
+would need a badline after line 247 (`agsp_free_scroll`: one to three
+lines when its fine scroll is 5 to 7, measured in its recipe). Measured in VICE x64sc 3.10: with `$3FFF` set to
 `%10101010`, every line of an 18-line FLD gap on PAL and a 22-line gap on
 NTSC is 160 black and 160 background pixels across x 32-351, alternating
 from x = 32.
@@ -724,3 +731,147 @@ visible, so it plants the pattern deliberately.
 - Technique: `sideborder_open` and `topbottom_border_open` in `techniques/raster.md`: idle lines as a side effect.
 - Hardware: `hardware/vic-ii-reference.md`, "Idle vs display state" and the `$3FFF` phantom-pixel note.
 - Recipe: `recipes/kickassembler/fld.md`, where the byte is `%10101010` and the stripes are measured.
+
+---
+
+## badline_every_line_block_length — A loop that forces a badline on every line breaks when its block is not exactly the free cycles
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** kefrens_bars
+
+### Symptom
+
+A Kefrens band, or any loop that keeps the VIC on one pixel row by making
+every line a badline, works for a few lines and then breaks: every 20
+lines on PAL (22 on NTSC) a few lines of the character's lower rows show
+through, or from some line on the first one or two cells of every line
+are black, or the band falls apart into rows after a few lines. The code
+looks right and the cycle count was done by hand.
+
+### Mechanism
+
+Each line's block runs between two badline stalls, and the stall
+re-aligns the CPU every line. The block writes YSCROLL for the next line,
+and that write must land after the current line's stall ends (cycle 55)
+and before the next line reaches cycle 12. The CPU has 20 cycles there on
+PAL and 22 on NTSC. Measured in VICE x64sc 3.10 with the `kefrens-bars`
+recipe built `:proof=1` and the block length swept (store trace of
+`$D011`, picture decoded with PIL):
+
+| Block, PAL | Block, NTSC | Where the writes settle | What shows |
+|---|---|---|---|
+| 19 | 21 | anywhere; two or more writes in some lines | The band breaks every 20 (22) lines: the second write in a window takes the badline off the current line |
+| 20 | 22 | PAL 3-6, NTSC 62-64 of the line before or 3-4 | Correct on every line |
+| 21 | 23 | PAL 12; NTSC 3 in the traced frame | Cell 0 black on every line from line 58 (PAL) or 60 (NTSC, in the pictured frame): the late badline skips one c-access |
+| 22 | 24 | 13 | Cells 0 and 1 black |
+| 23 | 25 | 14 | RC not reset: rows 1-7 show, then the band is lost |
+
+A block that is too long drifts later by its excess every line until its
+write meets the stall, and settles there. Where it settles depends on the
+instruction order: in one test build a 21-cycle PAL block settled on
+cycle 3 and was correct.
+
+### Fix
+
+Make every block exactly 20 cycles on PAL and 22 on NTSC: count the
+instructions, pad with `nop` and `bit $ea`, and build a separate band for
+each model. Check with a store trace that every `$D011` write lands on the
+same few cycles below 12 in every frame, and look at the first two cells
+of the band, where a late write shows first.
+
+### Worked example
+
+From `recipes/kickassembler/kefrens-bars.md`, the PAL block:
+
+```text
+    stx $d011                    // 4: YSCROLL for the next line
+    ldy pos + k                  // 4
+    sta $2020, y                 // 5: the bar byte into the line buffer
+    ldx #$18 | ((53 + k) & 7)    // 2: YSCROLL for the line after
+    nop                          // 2
+    bit $ea                      // 3: 20 in all; NTSC adds nop to 22
+```
+
+### Cross-references
+
+- Technique: `kefrens_bars` in `techniques/raster.md`.
+- Technique: `badline_synchronization` in `techniques/raster.md`: the 20 and 22 free cycles.
+- Recipe: `recipes/kickassembler/kefrens-bars.md`, "The block-length sweep".
+
+---
+
+## linecrunch_write_outside_window — A linecrunch write outside cycles 58-62 (PAL) repeats a row or crunches nothing
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** linecrunch
+
+### Symptom
+
+A linecrunch that should scroll the screen up N rows shows row 0 N lines
+lower instead, as if it were an FLD; or shows one row twice and skips
+the next; or loses one row whatever N is; or puts a few stray cells at the
+right end of the line above the text. A change of one cycle in the loop
+switches between these and the working effect, and a self-check that
+only times the first badline after the crunch still passes.
+
+### Mechanism
+
+The write must make the badline condition true after the VIC's row-end
+check in cycle 58 of a line with RC = 7, and the condition must be false
+when the next line starts. Measured in VICE x64sc 3.10 with
+`recipes/kickassembler/linecrunch.md` swept one cycle at a time
+(`:ep`, `:en`), store-trace cycles in Bauer's numbering:
+
+| Write cycle | PAL | NTSC |
+|---|---|---|
+| 53 to 57 | No crunch; at 53 to 55 one or two fetched cells at the right of the line above the text | No crunch; at 53 to 56 one to three such cells |
+| 58 to 62 | Crunch | Crunch |
+| 63, 64 | (63 is the last cycle: no crunch) | Crunch on 63 and 64 |
+| The line's last cycle (63 / 65) | No crunch | No crunch |
+| 1, 2 of the next line | One row lost, not N | The same |
+
+In a separate PAL and NTSC test with the writes in the middle of a row,
+a write on 54 to 57 of the row's last line showed that row again and
+skipped the next (Bauer's doubled text lines), and on PAL a matching
+write on cycles 15 to 54 started a late badline, the `vsp_glitch`
+mechanism, and crunched nothing.
+
+The window is five cycles on PAL, so an unstable raster entry with its
+usual jitter lands some frames outside it.
+
+### Fix
+
+Enter from a stable raster and put every write on one cycle in the
+middle of the window: 60 works on both models. Confirm with a store
+trace of `$D011`: every write of the loop on the same cycle, every frame.
+Check the crunch in the picture, not only by timing the badline after
+it: a program's own check that line 51 + N is a badline passes whether or
+not the rows were crunched, because the loop's last write makes that line
+a badline in every case.
+
+### Worked example
+
+From `recipes/kickassembler/linecrunch.md`: a 63-cycle loop (65 on NTSC)
+entered from the double IRQ at a traced delay, one store per line.
+
+```text
+!loop:
+    lda tab, x          // $78 | (line & 7): ECM+BMM blank the crunched line
+    sta $d011           // cycle 60 on both models, by store trace
+    inx
+    cpx n
+    beq !done+
+    Delay(63 - 18)      // 65 - 18 on NTSC
+    jmp !loop-
+```
+
+### Cross-references
+
+- Technique: `linecrunch` in `techniques/raster.md`.
+- Technique: `vsp_glitch` in `techniques/raster.md`: the late badline a write before cycle 55 makes.
+- Recipe: `recipes/kickassembler/linecrunch.md`, "The write-cycle sweep".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.4, §3.14.5.

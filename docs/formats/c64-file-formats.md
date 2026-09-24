@@ -58,7 +58,7 @@ The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or
 
 The EXROM/GAME line combination determines the cartridge's memory mapping mode. Common combinations: EXROM=0/GAME=1 maps 8K at `$8000`; EXROM=0/GAME=0 maps 16K at `$8000`+`$A000`; EXROM=1/GAME=0 maps Ultimax (8K at `$E000`).
 
-EasyFlash carts (hardware type `$0020`) contain up to 64 banks of 16K, each represented by two CHIP packets (one for `$8000`, one for `$A000`).
+EasyFlash carts (hardware type `$0020`) contain up to 64 banks of 16K, each represented by two CHIP packets (one for `$8000`, one for `$A000`). The cartridge boots in Ultimax mode from bank 0 ROMH, so the reset vector is at ROMH offset `$1FFC`. cartconv and the KickAssembler recipes write EXROM 1, GAME 0, chip type 2 and a ROMH load address of `$A000`; Oscar64 writes EXROM 0, GAME 0, chip type 0 and `$E000`; VICE boots both ([cartconv-reference](../toolchains/cartconv-reference.md)). Two places in bank 0 ROMH are conventions EasyProg acts on (its source, `flash.c`): offset `$1800`, 768 bytes, holds the EAPI flash driver when it starts with `65 61 70 69`, and EasyProg then writes its own driver for the fitted chip over `$1800`-`$1AFF`; offset `$1B00` may hold `65 66 2D 6E 41 4D 45 3A` (`EF-Name:`) and a 16-byte PETSCII name for the menu. A save area ships as a packet of `$FF`, because EasyProg erases only the sectors a CRT contains (Programmer's Guide). Decoded from the CRT the `easyflash-eapi` recipe builds, and from the file VICE wrote back after two boots with `-easyflashcrtwrite`: the packets keep their order and size, only the saved bytes change, and VICE rewrites the header's 32-byte name as `EasyFlash`.
 
 Oscar64 writes the container itself with `-tf=crt8`, `-tf=crt16` (type 0) or `-tf=crt` (EasyFlash). KickAssembler has no cartridge directive: in 5.25 `.crt` and `.bank` both fail with `Invalid directive` (run 2026-09-23), so a KickAssembler cartridge is either raw banks written with `outBin` and wrapped by cartconv, or a `.CRT` emitted byte by byte from the source as the `crt-banked` and `easyflash-save` recipes do. An earlier version of this paragraph named those two directives; they do not exist. The header and packet fields as decoded from files built by both tools, the type table, and what each type did when booted are in [cartconv-reference](../toolchains/cartconv-reference.md).
 
@@ -149,7 +149,7 @@ Each 4-byte BAM entry: first byte = free sector count, next 3 bytes = 24-bit bit
 
 | Offset | Size | Field |
 |--------|------|-------|
-| $00–$01 | 2 | Track/sector pointer to next directory sector (0/0 if last) |
+| $00–$01 | 2 | In the first entry of a sector only: track/sector of the next directory sector, `$00 $FF` in the last one; `$00 $00` in the other seven entries. Read with Python from a VICE-made image (see `iec-disk-reference.md`, "Reading the directory"); an earlier version said 0/0 if last |
 | $02 | 1 | File type (`$82`=PRG, `$81`=SEQ, `$83`=USR, `$84`=REL) |
 | $03–$04 | 2 | First sector of file (track, sector) |
 | $05–$14 | 16 | Filename (PETASCII, `$A0`-padded) |
@@ -267,7 +267,9 @@ The header, BAM, and first directory entries all reside on track 40:
 
 BAM entries use 6 bytes each: 1 byte free-sector count + 5 bytes (40-bit bitmap).
 
-**Key differences from D64/D71:** sector interleave is 1 for both files and directories (the 1581 buffers a full track in internal RAM, making interleave irrelevant for sequential read performance). Maximum of approximately 296 directory entries at the root. The 1581 DOS supports partitions and subdirectories. A D81 is a dump of all 3,200 sectors (819,200 bytes from `c1541 -format ... d81`, measured here), so whatever the DOS writes to disk for them is in the image; how it records them was not checked here. (An earlier version said they are not represented in the image.)
+**Key differences from D64/D71:** sector interleave is 1 for both files and directories (the 1581 buffers a full track in internal RAM, making interleave irrelevant for sequential read performance). Maximum of approximately 296 directory entries at the root. The 1581 DOS supports partitions and subdirectories. A D81 is a dump of all 3,200 sectors (819,200 bytes from `c1541 -format ... d81`, measured here), so whatever the DOS writes to disk for them is in the image. (An earlier version said they are not represented in the image, and a later one that how the DOS records them was not checked.)
+
+**Partitions, as the image shows them** (measured on the image `recipes/kickassembler/d81-partition.md` leaves, VICE x64sc 3.10 with the 1581 DOS; rung 1): a partition is a root directory entry of type `$85` (CBM) with its start track and sector and its block count, and the root BAM (40/1, 40/2) marks its tracks used. Formatted as a sub-directory, its first track takes track 40's layout: header at sector 0 (`14 03 44 00`, name, ID, `33 44`), BAM for tracks 1–40 at sector 1 and 41–80 at sector 2 (`44 BB`, ID, `C0`), directory from sector 3. The partition's BAM marks every track outside it as full (`00 00 00 00 00 00`). Byte offset of a block = ((track − 1) × 40 + sector) × 256. `c1541 -dir` lists the partition as a `cbm` file and does not enter it.
 
 **Typical use:** large software archives, tools requiring subdirectory support.
 
@@ -448,13 +450,13 @@ Run as `python3 gcr_g64.py disk.g64 17 0 known.prg` it printed the table above, 
 
 ---
 
-### .NIB — Nibbler-format disk image (preserves bit-level timing)
+### .NIB — Nibbler-format disk image (raw GCR bytes per half-track)
 
-The NIB format is written by the MNIB / nibtools software, which reads a real 1541 connected to a PC (not a separate "Nibbler" hardware device, as an earlier version said; rung 4, not checked against a source here). It captures raw GCR bit streams from a 1541, including bit-level flux timing variation. Where G64 stores cleaned-up GCR byte streams padded to a fixed maximum size, NIB stores the actual byte-level content read directly from the disk surface at a fixed 8,192 bytes per half-track regardless of the track's natural length.
+The NIB format is written by the MNIB / nibtools software, which reads a real 1541 connected to a PC (not a separate "Nibbler" hardware device, as an earlier version said; rung 4, not checked against a source here). It stores the GCR bytes as the 1541 read them off the disk surface, a fixed 8,192 bytes per half-track regardless of the track's natural length, where G64 stores each track's GCR bytes behind a length field, padded to the image's maximum track size (see .G64 above). Whether any timing information survives beyond the byte stream is not established here (rung 4, no nibtools source or real `.nib` checked); an earlier version said the format keeps "bit-level flux timing variation" and in the same paragraph that it stores byte-level content, and its heading said "preserves bit-level timing".
 
 The file contains 84 entries (42 tracks × 2 half-tracks), each exactly 8,192 bytes, for a fixed file size of 688,128 bytes. This page earlier said there is no file header and track 1 begins at offset 0. nibtools files are reported to begin with a 256-byte header starting `MNIB-1541-RAW`, which would put track data at offset 256; neither layout has been checked against a real `.nib` or the nibtools source here, so read the header before trusting any offset.
 
-NIB is used almost exclusively for archival of copy-protected originals where flux timing differences between sectors encode protection information that G64 cannot capture. No assembler toolchain generates it. VICE 3.10 does not read it: `c1541 -attach` on a 688,128-byte file, and on the same data behind a 256-byte `MNIB-1541-RAW` header, fails the G64 import ("Invalid number of tracks" / "Unknown GCR image version") and then misdetects the file as a DHD image, and neither the `c1541` nor the `x64sc` binary contains the string `nib`. Convert to G64 first (nibtools' `nibconv`, not installed here). (An earlier version said VICE reads NIB through a `diskcontents` handler, and this section carried a `Consumed by: vice, c1541` line.)
+NIB is used almost exclusively for archival of copy-protected originals (an earlier version added that it keeps flux timing G64 cannot; see above). No assembler toolchain generates it. VICE 3.10 does not read it: `c1541 -attach` on a 688,128-byte file, and on the same data behind a 256-byte `MNIB-1541-RAW` header, fails the G64 import ("Invalid number of tracks" / "Unknown GCR image version") and then misdetects the file as a DHD image, and neither the `c1541` nor the `x64sc` binary contains the string `nib`. Convert to G64 first (nibtools' `nibconv`, not installed here). (An earlier version said VICE reads NIB through a `diskcontents` handler, and this section carried a `Consumed by: vice, c1541` line.)
 
 **Typical use:** archival of physically copy-protected disks; converted to G64 before VICE can test a loader against the original protection.
 
@@ -573,6 +575,81 @@ The header block's 192 bytes were: type `$01` (relocatable BASIC program), start
 
 ---
 
+### .TCRT — Tapecart image
+
+**Consumed by:** vice
+
+A tapecart is a flash-memory pod on the cassette port: 2 MB of flash, a
+microcontroller that plays a KERNAL-format tape of a small loader, and a
+fast two-bit transfer over the tape port once that loader asks for it.
+A `.tcrt` file holds the pod's whole state: the fastload settings, the
+file name, the loader and the flash.
+The layout is from Ingo Korb's specification, `doc/TCRT Format.md` in
+https://github.com/ikorb/tapecart (version 1, facts only), and VICE
+3.10's reader, `load_tcrt()` in `src/tapeport/tapecart.c`, which agrees
+with it. `kickassembler/tapecart-boot` builds one byte by byte and VICE
+boots it (rung 1); the offsets below are the ones that file uses.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 16 | signature `tapecartImage` + `$0D $0A $1A` (`74 61 70 65 63 61 72 74 49 6D 61 67 65 0D 0A 1A`) |
+| 16 | 2 | version, 1 |
+| 18 | 2 | fastload block: offset in flash |
+| 20 | 2 | fastload block: length in bytes, the two load-address bytes included |
+| 22 | 2 | call address: where the loader jumps after loading |
+| 24 | 16 | file name the C64 prints after `FOUND` |
+| 40 | 1 | flags: bit 0 = the next 171 bytes are a loader; bit 1 = the program supports data block offsets |
+| 41 | 171 | loader code, or 171 zeros when bit 0 is clear |
+| 212 | 4 | length of the flash content that follows, 0 to `$200000` |
+| 216 | n | flash content from address 0; everything past it reads `$FF` |
+
+All fields are little endian. The fastload block is laid out like a PRG
+file: two bytes of load address, then the data. With flag bit 0 clear,
+VICE supplies its copy of the default loader (`tapecart-loader.h`).
+VICE reads the version as the single byte at offset 16 and the rest of
+the header as the specification says; a flash length above 2 MB or a
+wrong signature is refused with a log line.
+
+**What the C64 sees.** In its first mode the tapecart plays an endless
+KERNAL-format tape (VICE's `construct_pulsestream()`): a header block of
+type 3 whose start and end addresses are `$0302` and `$0304`, whose name
+field is the TCRT's file name and whose remaining 171 bytes are the
+loader, then a two-byte data block `$51 $03`. A plain `LOAD` therefore
+reads the loader into the tape buffer at `$0351` and then overwrites the
+BASIC idle vector `$0302` with `$0351`, so the loader starts as soon as
+LOAD returns to BASIC. The loader switches the pod to fastload mode by
+clocking `$CA65` into it on the write line, one bit per motor-on edge,
+and receives a six-byte info block (call address, end address, load
+address) followed by the data. The file name can be anything; the PRG in
+flash decides where the data goes.
+
+Measured with `kickassembler/tapecart-boot` (a 16,641-byte PRG in the
+flash, `LOAD` typed at power-on, VICE x64sc 3.10, traced):
+
+| Stage | PAL cycles | NTSC cycles |
+|---|---|---|
+| header block, `TRD` to `TNIF` | 4,312,537 | 4,311,754 |
+| the KERNAL's pause after `FOUND` | 12,499,955 | 12,975,026 |
+| the `$0302` block, `TRD` to `TNIF` | 850,231 | 850,269 |
+| loader at `$0351` to the program's first instruction | 1,846,677 | 1,850,463 |
+| `LOAD` entered to the program's first instruction | 19,517,885 | 19,995,927 |
+
+The fastload stage moved 16,645 bytes (the six-byte info block and
+16,639 of data) in 1.87 s on PAL and 1.81 s on NTSC, mode switch and the
+pod's 100 ms start delay included: 8,880 and 9,200 bytes a second. The
+specification says "around 9500". The loader started 4,704 cycles after
+the second block's `TNIF`, as LOAD returned to BASIC. The pause after
+`FOUND` is the KERNAL's, the same 12.69 s at either clock as a real
+tape's (`hardware/kernal-routines-reference.md`, `FAH`), and it is
+two-thirds of the boot.
+
+**Typical use:** single-file releases for the tapecart; an emulator's
+persisted tapecart. Not measured here: the command mode, writing flash
+from the C64, a custom loader, data block offsets, and SHIFT+RUN/STOP as
+the way to start the load.
+
+---
+
 ## Music
 
 ### .SID — PSID/RSID music file
@@ -581,7 +658,7 @@ The header block's 192 bytes were: type `$01` (relocatable BASIC program), start
 
 The SID format is the container for C64 music, combining a short metadata header with a C64 binary containing the init and play routines. There are two variants: PSID (Portable SID) for files that run under emulated environments, and RSID (Real SID) for files that require an authentic C64 environment (real interrupt timing, BASIC ROM, etc.).
 
-**Note on producers:** SID files are not produced by the assembler toolchains in this knowledge base. The canonical producers are dedicated C64 music trackers: GoatTracker 2 (cross-platform, exports PSID/RSID), SID-Wizard (native C64 tracker), and DefMON. These tools are not currently represented as Tool nodes in this KB. KickAssembler can *consume* SID files via the `LoadSid` directive to embed a SID player's binary into a larger program, but it does not produce `.sid` files.
+**Note on producers:** SID files are not produced by the assembler toolchains in this knowledge base. The canonical producers are dedicated C64 music trackers: GoatTracker 2 (cross-platform, exports PSID/RSID), SID-Wizard (native C64 tracker), and DefMON. These tools are not currently represented as Tool nodes in this KB. KickAssembler can *consume* SID files via the `LoadSid` directive to embed a SID player's binary into a larger program. It has no SID output type, but a `.file [type="bin"]` segment that writes the header bytes itself produces a valid PSID file: [disassembly-reference](../toolchains/disassembly-reference.md), section "A `.sid` file: init and play", assembles one and plays it in VICE's `vsid`. An earlier version of this note said KickAssembler does not produce `.sid` files.
 
 **File header:**
 
@@ -750,6 +827,97 @@ Decoded from `examples/consultant.sng` (3,060 bytes): bytes 0–7 are `47 54 53 
 
 ---
 
+### .MD5 — HVSC song-length database
+
+`C64Music/DOCUMENTS/Songlengths.md5` in the High Voltage SID Collection:
+how long each subtune of each `.sid` plays, so a player can move on
+instead of looping. A player-side file: a C64 program never reads it.
+Described from HVSC's `Songlengths.faq` and checked against release 84 on
+this machine (`hv_sids.txt`: `Release 84`). HVSC files are research
+material here and are never committed.
+
+The file is INI-style text, CRLF line ends, ASCII only (release 84). Line
+one is `[Database]`. Then, per tune, a comment line with the file's path
+inside HVSC and a `key=value` line:
+
+```text
+; /DEMOS/0-9/12th_Sector_Music.sid
+c7c299ce06ec5ccffb2261fb11b42a73=4:33.108
+```
+
+- **Key**: the MD5 of the whole `.sid` file, header included, as 32
+  lower-case hex digits. Measured: for all 60,572 entries the MD5 of the
+  file at the comment's path equals the key, and every `.sid` in the
+  release has an entry.
+- **Value**: one length per subtune, separated by single spaces, in
+  subtune order. Measured: the count equals the header's song count
+  (offset `$0E`, big-endian) in every entry.
+- **Length**: `m:ss[.SSS]`, minutes with no leading zero, seconds two
+  digits, then optionally 1 to 3 digits of fraction. Of the 87,074
+  lengths in release 84, 70,114 have no fraction and the rest have 1, 2
+  or 3 digits (1,194, 1,469, 14,297). `1:02.5` and `1:02.500` are the
+  same length, so read the fraction as a decimal fraction of a second,
+  not as a count of milliseconds. A length of `0:00` occurs only with a
+  fraction (710 values, the shortest `0:00.001`); the FAQ puts the
+  minimum at one second when there is no fraction.
+
+The length assumes the clock the tune was made for (PAL or NTSC, from
+the header's flags); played at the other rate it is wrong (FAQ).
+
+**The old format** (before HVSC 71, now generated by a script the FAQ
+links to) keyed each tune by an MD5 over selected fields rather than the
+whole file: the data from the data offset, then the init, play and
+song-count fields low byte first, then per speed bit a 0 (VBI) or 60
+(CIA) byte, and a 2 if the tune is NTSC-only. Its lengths are `mm:ss`
+without fraction, optionally followed by `(G)`, `(M)`, `(Z)` or `(B)`
+(gate off, master volume zero, all voices silent, bad memory use or
+estimated). None of this was measured here: release 84 ships only the new
+file.
+
+### .SSL — HVSC song lengths for players on the C64
+
+The FAQ's third form, generated by an HVSC script into a `SONGLENGTHS`
+folder beside each directory of tunes, one `.ssl` per `.sid`: two bytes
+per subtune in BCD, minutes then seconds, no fraction, at most 256
+subtunes (512 bytes). The FAQ's example for `Commando.sid`, lengths
+`3:57 1:02 0:06 …`, is `03 57 01 02 00 06 …`. From the FAQ only; no
+`.ssl` file exists on this machine.
+
+### STIL.txt — HVSC SID Tune Information List
+
+`C64Music/DOCUMENTS/STIL.txt`: covers, subtune names, per-subtune
+composers and comments for tunes in HVSC. The format below is
+`STIL.faq`'s (last updated 2024-06-28), checked by parsing release 84's
+file (108,101 lines).
+
+- **Encoding**: not UTF-8. Every non-ASCII byte is a single-byte Western
+  character (`ü` is `$FC`), and two bytes are `$9A`, which only
+  Windows-1252 maps (to `š`). Decode as Windows-1252. CRLF line ends.
+- **Section headers**: lines starting `###`, 78 characters wide in 1,653
+  of 1,674. The FAQ tells a parser to skip every line starting `#`.
+- **Entry**: a line starting `/` with the path inside HVSC. A path ending
+  `/` is a comment on a whole directory (246 such entries); the others
+  name a `.sid`. Measured: all 18,721 paths exist in the release.
+- **Subtune marker**: `(#n)` alone on a line; the blocks after it belong
+  to subtune `n`, in ascending order. A `COMMENT:` before the first
+  marker applies to the whole file. No marker in release 84 exceeds the
+  file's song count.
+- **Fields**: the tag is right-aligned so the colon is always column 8,
+  then one space: `   NAME:`, ` AUTHOR:`, `  TITLE:`, ` ARTIST:`,
+  `COMMENT:`, in that order within a block. `NAME` is the subtune's
+  original name, `AUTHOR` its composer where the file has several,
+  `TITLE` and `ARTIST` a covered piece and its original artist.
+  A continuation line starts with nine spaces (all 9,660 in release 84).
+- **Cover timestamps**: `TITLE: … (0:18)` means the cover starts at
+  0:18 and runs to the next timestamp or the tune's loop; `(0:18-0:35)`
+  gives both ends. `<?>` marks a doubtful or missing item.
+
+Release 84's tag counts: `TITLE` 19,332, `ARTIST` 19,332, `COMMENT`
+9,427, `NAME` 1,753, `AUTHOR` 741; every non-blank line was a header, a
+path, a marker, a tagged field or a nine-space continuation.
+
+---
+
 ## Graphics Assets
 
 Project files from the two editors most C64 artists hand over: CharPad for character sets, tiles and maps, SpritePad for sprites. Both are the editor's own save format, not a raw export, so a header and per-section framing sit in front of the bytes a program wants. Oscar64's `#embed` reads both directly (`../toolchains/oscar64-reference.md`); every other toolchain in this KB wants the editor's raw binary export, or a converter. `../art/asset-pipelines.md` covers the pipeline side.
@@ -906,6 +1074,167 @@ Version 3 is version 5 without the two overlay distances, a 16-byte header, from
 The attribute byte at offset 63 of each block carries the sprite colour in bits 0–3, an overlay flag in bit 4 and the multicolour flag in bit 7 (Oscar64's reader comment; not measured here beyond the values seen: `$85` for 14 of the 16 mouse sprites, `$85`, `$87`, `$88` and `$8B` across the 128 game sprites, so bit 7 set and colours 5, 7, 8 and 11).
 
 **A file with no signature.** The third sample starts `00 0B 01` and is 6,147 bytes: three bytes then 96 × 64. That is consistent with the older SpritePad's headerless save (three colour bytes, then the blocks), and the three values `00 0B 01` read as plausible colours; the producer is not established here, since nothing in the file names it. Such a file is distinguishable from the signed form only by the missing `SPD`. Oscar64 refuses it with "SPD file format not recognized"; a converter that keys on length can take it as `(size − 3) / 64` sprites.
+
+---
+
+### .KLA — Koala Painter multicolour bitmap image
+
+Koala Painter's picture file, the usual interchange format for C64
+multicolour bitmaps. It is the three regions multicolour bitmap mode reads,
+in the order the VIC-II uses them, after a two-byte load address: 10,003
+bytes in all.
+
+| Offset | Size | Content |
+|--------|------|---------|
+| $0000 | 2 | Load address, little-endian (Koala Painter uses `$6000`) |
+| $0002 | 8000 | Bitmap |
+| $1F42 | 1000 | Screen RAM: the two colours of each cell, one per nibble |
+| $232A | 1000 | Colour RAM: the third colour of each cell, low nibble |
+| $2712 | 1 | Background colour for `$D021`, low nibble |
+
+The layout is `koala_format`'s in `techniques/bitmap-modes.md`, and
+`toolchains/png2prg.md` reports the same layout, 10,003 bytes loading at
+`$2000`, for `png2prg -m koala` output it converted on this machine. No file
+saved by Koala Painter itself was read here. The `koala_format` technique
+displays it (`**Consumes formats:** KLA`);
+`recipes/oscar64/bitmap-koala-viewer.md` reads the regions at offsets 2,
+8002, 9002 and 10002. No Tool node in this knowledge base writes or reads
+a `.KLA` as such.
+
+---
+
+### Four older paint formats: how they were checked
+
+Art Studio, Advanced Art Studio, Doodle and Amica Paint files below were
+read from 47 real files: the C64 samples of the dexvert collection
+(`https://sembiance.com/fileFormatSamples/image/`, directories
+`artStudio`, `advancedArtStudio`, `doodleC64`, `ami`; fetched 2026-09-24,
+not committed here). Each file was decoded in Python to bitmap, screen
+RAM, colour RAM and background; a KickAssembler viewer showed the decoded
+bytes in VICE x64sc 3.10 (PAL, `-default`); the exit screenshot's 320x200
+display window matched a Python render of the same bytes in every pixel
+of all 47 files, and the decoded pictures are recognisable title screens,
+not noise. The layouts agree with RECOIL's decoders (`recoil.fu`,
+SourceForge commit `b1329c9`), and for Art Studio with the BSD-licensed
+`c64img` 3.5 writer. What the paint programs themselves write was not run
+here: nothing below comes from saving a picture in the original program.
+
+The file extension does not tell the formats apart. In the samples,
+`.ART`, `.AAS` and `.OCP` names appear on both the 9,009-byte hires format
+and the 10,018-byte multicolour one (`TETRISREC.OCP` is hires, `BLADE.ART`
+and `sanxion.aas` are multicolour). Decide by length.
+
+### .ART — Art Studio hires bitmap image
+
+OCP Art Studio's hires picture; `.AAS` and `.HPI` are the same format.
+Load address `$2000`; 9,009 bytes in six samples, 9,002 in one.
+
+| Offset | C64 address | Size | Content |
+|--------|-------------|------|---------|
+| $0000 | — | 2 | Load address `$2000` |
+| $0002 | $2000 | 8000 | Bitmap |
+| $1F42 | $3F40 | 1000 | Screen RAM: pixel-1 colour high nibble, pixel-0 colour low nibble |
+| $232A | $4328 | 1 | Border colour, low nibble (9,009-byte files only) |
+| $232B | $4329 | 6 | Not picture data |
+
+The border byte was `$F0` or `$F6` where it was not zero: the high nibble
+is set, as a VIC colour register reads back, so mask it. Two of the seven
+files carry non-zero bytes in the last six (`00 22 00 00 00 22`,
+`52 51 28 C7 00 00`); their meaning is not established here, and
+`c64img` writes them as zero. A 9,002-byte file is the same without the
+border and tail. There is no colour RAM: hires bitmap mode does not read it.
+
+### .OCP — Advanced Art Studio multicolour bitmap image
+
+OCP Advanced Art Studio's multicolour picture; `.MPIC` (the samples'
+`… mpic` names) and `.ART`/`.AAS` are used too. 10,018 bytes in all 22
+samples, load address `$2000`.
+
+| Offset | C64 address | Size | Content |
+|--------|-------------|------|---------|
+| $0000 | — | 2 | Load address `$2000` |
+| $0002 | $2000 | 8000 | Bitmap |
+| $1F42 | $3F40 | 1000 | Screen RAM: bit pair 01 high nibble, 10 low nibble |
+| $232A | $4328 | 1 | Border colour, low nibble |
+| $232B | $4329 | 1 | Background colour for `$D021` (bit pair 00), low nibble |
+| $232C | $432A | 14 | Not picture data |
+| $233A | $4338 | 1000 | Colour RAM: bit pair 11, low nibble |
+
+Mask every colour byte to its low nibble. In 11 of the 22 files at least
+108 of the 1,000 colour-RAM bytes have the high nibble set (colour RAM is
+four bits wide and reads back junk above them), and in ten files the
+border byte reads `$F0`, `$F1`, `$FB` or `$FE` and the background `$F0`. A
+converter that copies these bytes
+unmasked into a `$D021` compare, or into a PNG palette index, goes wrong.
+The 14 bytes between background and colour RAM held zero, `$FF`/`$00`
+patterns, a repeated byte, or what look like leftover memory; they are not
+picture data. Codebase64's list
+(`https://codebase64.net/doku.php?id=base:c64_grafix_files_specs_list_v0.03`)
+gives the same addresses.
+
+### .DD — Doodle hires bitmap image
+
+OMNI's Doodle. The screen RAM comes first, then the bitmap: the reverse
+of Art Studio.
+
+| Offset | C64 address | Size | Content |
+|--------|-------------|------|---------|
+| $0000 | — | 2 | Load address, `$5C00` in 7 of 10 samples |
+| $0002 | $5C00 | 1000 | Screen RAM: pixel-1 colour high nibble, pixel-0 colour low nibble |
+| $03EA | $5FE8 | 24 | Unused (the rest of the 1 KB screen block) |
+| $0402 | $6000 | 8000 | Bitmap |
+| $2342 | $7F40 | 192 | Unused (the rest of the 8 KB bitmap block); absent in 9,026-byte files |
+
+Six samples are 9,218 bytes (screen block 1,024, bitmap block 8,192) and
+four are 9,026 (bitmap 8,000, no tail); both decode from the same offsets.
+Of the 9,218-byte files, one loads at `$1C00` and two carry `$0000` as the
+load address; offset, not load address, locates the data. The 24 unused
+screen bytes were zero in nine files and not in one. KickAssembler's
+`BF_DOODLE` agrees: `.print BF_DOODLE` on 5.25 gives
+`ColorRam=$0000,Bitmap=$0400` (its block name for the screen data is
+`ColorRam`). Codebase64's list places the bitmap at `$7000`; every sample,
+RECOIL and KickAssembler put it at `$6000`, and a `$7000` start would run
+past the end of a 9,218-byte file.
+
+**Consumed by:** kickassembler
+
+### .JJ — Doodle image, run-length packed
+
+A Doodle file packed with a one-byte escape. Load address `$5C00` in both
+samples (6,608 and 1,659 bytes). Byte by byte after the load address:
+
+- `$FE value count`: `count` copies of `value`. Counts 1 to 255 were seen;
+  a count of 0 never appeared.
+- any other byte: itself. A literal `$FE` is `$FE $FE $01`.
+
+Unpack until 9,024 bytes are out: the 1,024-byte screen block, then the
+8,000-byte bitmap, at the `.DD` offsets less two. One sample ends exactly
+there; the other has 71 more bytes after the 9,024th, which a decoder
+must ignore. Koala Painter's `.GG` uses the same scheme (Codebase64's
+list; not measured here).
+
+### .AMI — Amica Paint multicolour bitmap image, run-length packed
+
+Amica Paint's picture: Koala's order packed with a different escape.
+Load address `$4000` in all 13 samples (Codebase64's list says Amica
+loads at `$4400`; no sample does). After the load address:
+
+- `$C2 count value`: `count` copies of `value`. Note the order, count
+  first, the reverse of Doodle's `$FE value count`.
+- `$C2 $00`: end of data. It is the last two bytes of every sample.
+- any other byte: itself. A literal `$C2` is `$C2 $01 $C2` (all 33 runs
+  of length 1 in the samples are that).
+
+Unpacked, the first 10,001 bytes are Koala's layout without its load
+address: bitmap 8,000, screen RAM 1,000, colour RAM 1,000, background 1
+(offsets `$0000`, `$1F40`, `$2328`, `$2710`). One sample unpacks to
+exactly 10,001 bytes; the other twelve to 10,257, with 256 more bytes
+after the background. Those 256 bytes are not picture data (in one file
+they hold groups of four colour indices such as `0A 02 06 07` among `$FF`);
+their role in Amica Paint is not established here. Runs of 3 are the
+shortest used for a repeated value other than `$C2` (2,211 of them in the
+samples), so a packer that emits a run from length 3 up reproduces the
+files' style; a decoder does not care.
 
 ---
 

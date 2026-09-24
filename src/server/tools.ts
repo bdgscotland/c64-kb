@@ -29,6 +29,7 @@ import { demoBriefingTool, gameBriefingTool } from "./tools-briefings.ts";
 import { ingestDocTool, coverageTool, suggestLinksTool, reportGapTool } from "./tools-maintenance.ts";
 import { runGameTool } from "./tools-runtime.ts";
 import { reIrqChainTool, reFrameProfileTool } from "./tools-re.ts";
+import { claimsWatchTool } from "./tools-claims.ts";
 import { memorizationTool } from "../tools/memorization-mcp.ts";
 
 export const TOOLS: readonly RegistrableTool[] = [
@@ -61,6 +62,8 @@ export const TOOLS: readonly RegistrableTool[] = [
   // Reverse engineering: observations from a PRG run headless in VICE
   reIrqChainTool,
   reFrameProfileTool,
+  // Resource claims: a program's stores in VICE against what it declares (#22 step 8)
+  claimsWatchTool,
   // SID Phase A: memorization detection. Absent where the Python analyzer is not installed.
   ...(memorizationTool ? [memorizationTool] : []),
 ];

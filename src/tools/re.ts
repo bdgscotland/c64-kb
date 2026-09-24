@@ -19,7 +19,7 @@ import { analyseRegion, regionCommands, type Marker, type Profile } from "../re/
 import {
   analyseIrqChain,
   execCommands,
-  handlersFrom,
+  liveHandlers,
   storeCommands,
   type IrqChain,
 } from "../re/irq-chain.ts";
@@ -181,7 +181,7 @@ export async function reIrqChain(args: {
   const frame = REGION_TIMING[videoRegion(args.model)].cycles_per_frame;
   try {
     const a = await traced(prg, args, storeCommands());
-    const handlers = handlersFrom(analyseIrqChain(a.hits, frame, a.start).vectors);
+    const handlers = liveHandlers(a.hits, a.start);
     const b = await traced(prg, args, execCommands(handlers));
     const result = analyseIrqChain(b.hits, frame, b.start);
     if (b.entry === null) result.unknowns.push(NO_SYS);

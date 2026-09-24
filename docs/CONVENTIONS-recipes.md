@@ -40,6 +40,78 @@ Archetype`, drops a name that matches no Archetype with a warning, and
 `c64_game_briefing` offers the recipe as the first build step for that
 archetype.
 
+`claims` is optional too. It lists the hardware units the listing chooses,
+beyond what its techniques' `**Claims:**` lines hold, in the same grammar
+(`CONVENTIONS-techniques.md`): `claims: [irq_vector_0314 (owns),
+cia1_timer_a (init)]`. The interrupt vector is the usual entry: a technique
+does not claim a vector, because its recipes choose `$0314` or `$FFFE`.
+Masking CIA1 with one `$7F` store to `$DC0D` before the frame loop is
+`init` on each CIA1 unit that store changes. Write it from a
+`scripts/claims-watch.ts --recipe` trace, never from reading the listing;
+a measurement harness is not a claim. `claims-watch` reads the key, and
+the ingest turns each item into a `Recipe -[:CLAIMS]-> HardwareUnit` edge
+(schema 34; `docs/ONTOLOGY.md`). `claims: []` says the listing chooses no
+unit beyond its techniques' claims; no key reads as unknown. A value
+outside the grammar is refused whole, with a warning. `claims_basis` is
+optional and defaults to `measured-vice`, since the key is written from a
+trace; set it only when the claims were read another way
+(`derived-listing`, `estimated`).
+
+After every ingest a static scan reads each recipe's code fences for
+`sta`, `stx` and `sty` to a unit's fixed address (the vectors, sprite
+registers, SID voices, CIA timers and ports, `$D012`/`$D01A`, the
+expansion pages) and warns when neither `claims:`, the unit words of
+`harness:` nor the techniques' Claims lines (with their REQUIRES) cover
+it (`src/graph/listing-stores.ts`). A `reads` claim does not cover a
+store. It cannot see a store through a pointer or a C assignment, and it
+skips `$D011`, `$D016`, `$D018`, `$D019`, zero page, 0 to `$D015` (every
+sprite off) and self-modified `$FFFF` placeholders. A `$7F` mask write to
+`$DC0D` or `$DD0D` is counted, as the watch counts it: it is `init` on
+each unit it masks. The claims watch is the instrument;
+the scan catches a recipe that has no `claims:` yet.
+
+`harness` is optional and is not a claim. It lists what the listing's
+measurement harness writes, in `claims-watch --harness` form: units or
+address ranges, `harness: [cia1_timer_a]`. The usual entry is the CIA1
+timer a recipe starts and stops around a routine to report its cycles.
+`claims-watch` lists those stores apart and never fails on them; the
+ingest's listing scan reads its unit words and creates no edge from it. A timer the effect itself depends on (a pulse
+clock, a detection) is a claim, not a harness. Where the harness timer is
+also masked at start-up, name it here only: the harness covers that
+store. The result bytes a headless verifier reads (`$02FF`, a record at
+`$02F0-$02FE`) are harness too: `harness: [$02F0-$02FF]`.
+
+`ram` is optional and is not a claim. It lists the listing's own RAM
+outside its PRG's load span, in `claims-watch --range` form:
+`ram: [colour=$D800-$DBFF, buf=$0340-$03FF]`. The usual entries are colour
+RAM, the cassette buffer and RAM under the I/O window. Zero page is
+refused here: a zero-page byte is a unit, so it goes in `claims:` as
+`zero_page $FB-$FE (owns)`, where the compatibility check can see it.
+`claims-watch` reads the key; the ingest ignores it.
+
+`kernal_services` is optional. It names the KERNAL interrupt service the
+listing leaves running, `IRQ` or `NMI`: `kernal_services: [IRQ]` when a
+handler ends in `JMP $EA31` or the CIA1 interrupt is never masked.
+`claims-watch` then accepts the service's zero-page stores inside its
+may-set (`docs/hardware/kernal-routines-reference.md`). It is not
+`uses_kernal`, which names routines the listing calls; the ingest ignores
+it.
+
+`scripts/claims-recipes.ts` (`npm run claims:recipes`) builds every
+KickAssembler recipe and runs `claims-watch --recipe` on it with the
+cycles, flags and disk of its `runs.json` entry. It fails on any store
+these keys, the techniques' Claims lines and `uses_kernal` do not declare.
+
+`devices` is optional: the Device names (`docs/hardware/devices.md`) the
+recipe's pinned run attaches, `devices: [disk_1541_ii]` for a run with a
+`"disk"`, `devices: [reu_1750]` for `-reu -reusize 512`. Each becomes a
+`Recipe -[:REQUIRES_DEVICE]-> Device` edge (schema 36). `[]` says the
+recipe needs nothing beyond the stock machine; no key is unknown.
+`npm run verify:recipes` fails a recipe whose run attaches a device the
+key does not list, or whose key lists one the run does not attach (a
+joystick, which VICE attaches by default, may be listed either way). The
+rules are in `CONVENTIONS-devices.md`.
+
 ## Section structure
 
 After the frontmatter:
@@ -76,7 +148,10 @@ Before a recipe page lands:
    The cycle count, models, extra flags and any fresh disk are pinned per
    recipe in `recipes/runs.json`, and `npm run verify:recipes` re-runs
    every recipe from that manifest and fails on a pixel that differs from
-   the committed PNG. A recipe whose listing builds a cartridge instead of
+   the committed PNG. `"disk": {"name": "NAME,ID"}` is a fresh D64 in
+   drive 8; `"type": "d81"` in it makes a fresh D81 in a 1581 instead,
+   and `"disk9": {"name": "NAME,ID"}` adds a fresh D64 in a 1541-II as
+   drive 9. A recipe whose listing builds a cartridge instead of
    a PRG is pinned with a `"cartridge"` key: `{"file": "x.crt", "write":
    true, "runs": 2}`. The verifier takes `x.crt` from the build's work
    directory (a KickAssembler listing writes it with `outBin`), boots a

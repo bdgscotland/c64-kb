@@ -8,7 +8,7 @@ The Commodore IEC serial bus protocol, the 1541 floppy drive's command interface
 
 ## Overview
 
-The IEC bus (serial IEEE-488 bus) is Commodore's cost-reduced adaptation of the IEEE-488/HP-IB parallel bus used on PET computers. Commodore replaced the 16-wire parallel bus with a 3-wire serial bus to save component costs, at a cost in speed: the standard 1541 protocol delivers approximately 300–400 bytes/second, against the PET's ~4 KB/second. The bus connects the C64 to disk drives (1541, 1571, 1581), printers (MPS-801, MPS-803), and other peripherals via a 6-pin DIN connector on the back of the computer.
+The IEC bus (serial IEEE-488 bus) is Commodore's cost-reduced adaptation of the IEEE-488/HP-IB parallel bus used on PET computers. Commodore replaced the 16-wire parallel bus with a 3-wire serial bus to save component costs, at a cost in speed: the standard 1541 protocol delivers about 400 bytes/second (406 measured in VICE, see [Standard IEC Load Speed](#standard-iec-load-speed-about-400-bytessec); an earlier version said 300–400), against the PET's ~4 KB/second. The bus connects the C64 to disk drives (1541, 1571, 1581), printers (MPS-801, MPS-803), and other peripherals via a 6-pin DIN connector on the back of the computer.
 
 The C64 works the IEC bus through five lines of CIA2 port A: three outputs (ATN, CLK, DATA) and two inputs (CLK, DATA). The same CIA2 chip (`$DD00`–`$DD0F`) that controls the VIC-II bank-switching (`$DD00` bits 0–1) also owns the IEC bus lines. Code that manipulates CIA2 for RS-232 or custom bit-banging must therefore allow for IEC bus contention.
 
@@ -106,7 +106,7 @@ Each byte is transferred serially, bit-by-bit, using a two-line handshake on CLK
 5. Repeat for all 8 bits (LSB first)
 6. Listener holds DATA low (ACK) briefly after the last bit
 
-This handshake means transmission speed is limited by the slowest device on the bus. The 1541 adds overhead because it processes bytes in its own 6502 CPU, handling each bit-transfer in a software loop at 1 MHz. The result is the ~300 byte/sec standard-load throughput.
+This handshake means transmission speed is limited by the slowest device on the bus. The 1541 adds overhead because it processes bytes in its own 6502 CPU, handling each bit-transfer in a software loop at 1 MHz. The result is the ~400 byte/sec standard-load throughput (measured below; an earlier version said ~300).
 
 ### EOI (End Or Identify)
 
@@ -248,7 +248,7 @@ The second is the drive's EOI on the status line's closing `$0D`, seen by the C6
 Three things the table settles:
 
 - **The C64's bit cell is not constant.** The send loop is straight-line code, so its cell is 94 to 96 cycles, but a VIC-II badline steals about 40 cycles from whichever cell it lands in, and one or two of every eight bits were 136 to 139 cycles in every byte sent with the screen on. The drive tolerates it because every bit is handshaken; a loader with cycle-counted loops on the drive side does not, which is why fast loaders blank the screen or sit in the border. Pitfalls `gcr_timing_assumes_stock_drive`, `fastloader_dd00_write_corrupts_resident` and `raster_irq_during_serial_io` are the three places this bites.
-- **The EOI window the C64 applies as listener is 539 cycles, not 256.** ACPTR writes `1` to CIA1 timer B's high byte and force-loads the timer; it never writes the low byte, whose latch is left at whatever the last user set, so the count that ran here was `$01FF`, not `$0100`. That is arithmetic from the trace (539 = 511 plus the loop's overhead), not a measurement of the latch (not measured here). The send-side timeout in "Drive-Not-Ready and Timeout Errors" below writes `4` the same way, so "about 1,024 cycles" is the nominal count and the one that runs is likely `$04FF`, 1,279 cycles; a run in which it fires was not produced (see the caveat).
+- **The EOI window the C64 applies as listener is 539 cycles, not 256.** ACPTR writes `1` to CIA1 timer B's high byte and force-loads the timer; it never writes the low byte, whose latch is left at whatever the last user set, so the count that ran here was `$01FF`, not `$0100`. That is arithmetic from the trace (539 = 511 plus the loop's overhead), not a measurement of the latch here; the remote monitor read `$01FF` in the latch during the #69 hang (`kernal_eoi_wait_misses_timer_b_on_old_cia` in `pitfalls/kernal-and-io.md`). The send-side timeout in "Drive-Not-Ready and Timeout Errors" below writes `4` the same way, so "about 1,024 cycles" is the nominal count and the one that runs is likely `$04FF`, 1,279 cycles; a run in which it fires was not produced (see the caveat).
 - **The drive answers ATN by hardware, not by code.** DATA was low 12 cycles after the ATN store, in both runs, before the drive's CPU could have taken an interrupt. The 1541 gates DATA from ATN in logic, and the KERNAL's 1 ms wait before it looks is for the drive's *software* to catch up, not for the line.
 
 **What this measures and what it does not.** The drive rows are VICE's 1541 and nothing else: they are the reply times of an emulated 6502 running the 325302-01+901229-05 ROM under VICE's drive timing, and the real spread across drives, ROM revisions and third-party devices is not in them. The device-not-present path was traced too, in a run with no disk mounted and `-drive8type 0 +drive8truedrive +busdevice8` in place of the drive flags. An earlier version of this paragraph said that run could not be produced and that something still answered ATN; it had been read from a log holding five runs appended (`log on` appends to an existing file, so a log shared between runs must be split per run before it is parsed), and only the first run in it, made with a disk mounted, had been looked at. With nothing on the bus the trace matches the drive run to the cycle up to the test: ATN store at `$ED33`, DATAHI at +40, the second DATAHI at +1,087, the `$EEA9` read at +1,103. There it returns DATA high, the `BCS` at `$ED47` takes the `$EDAD` path, and ATN is released at `$EDC3` 65 cycles after the test read, so the 1,103 window is confirmed from the refusal itself. Not one byte is sent, which is why the send-side timer at `$ED92` was still not seen to fire: that needs a device that answers ATN and then never acknowledges. The `CHKIN` that followed put TALK on the bus at cycle 3,016,512, released ATN at 3,017,723, ran the talk turnaround regardless, and then waited at `$EEA9` for a CLK edge from cycle 3,019,237 to the 4,500,000 limit: the hang "Drive-Not-Ready and Timeout Errors" below describes, with no timeout. The monitor's drive-side breakpoints (`dev 8`, or the `8:` address prefix) were not tried; everything here is the C64's view of the bus.
@@ -325,17 +325,68 @@ Common drive commands sent to the command channel:
 | NEW | `N0:NAME,ID` | Format disk |
 | BLOCK-READ | `B-R chn drv trk sec` | Read arbitrary sector |
 | BLOCK-WRITE | `B-W chn drv trk sec` | Write arbitrary sector |
+| U1 / U2 | `U1:chn,drv,trk,sec` | Block read / block write of all 256 bytes; the forms a copier uses (`recipes/kickassembler/disk-copier.md`) |
+| BUFFER-POINTER | `B-P:chn,pos` | Set the `#` channel's byte pointer |
+| PARTITION (1581) | `/0:NAME` | Select a partition; `/` returns to the root. Allocation and the rules are in the next section |
 | MEMORY-READ | `M-R addrlo addrhi len` | Read drive RAM/ROM |
 | MEMORY-WRITE | `M-W addrlo addrhi len data` | Write drive RAM |
 | MEMORY-EXECUTE | `M-E addrlo addrhi` | Execute code in drive RAM |
 
 Reading from the command channel after any operation returns the drive status string: a 2-digit error code, message text, track number, sector number, and newline. Error code `00` means no error.
 
+### 1581 partitions and sub-directories
+
+The 1581's DOS adds the `/` command family (1581 User's Guide, section
+6.8; each form below was run in VICE x64sc 3.10 with the 1581 DOS
+`318045-02` by `recipes/kickassembler/d81-partition.md`, rung 1):
+
+| Command | Bytes after the name | Answer measured |
+|---|---|---|
+| allocate | `/0:NAME,` start track, start sector, count low, count high (raw bytes), `,C` | `00, OK,00,00`; over track 40: `67,ILLEGAL TRACK OR SECTOR,40,00` |
+| select | `/0:NAME` | `02, SELECTED PARTITION,<first track>,<last track>`; a partition breaking the sub-directory rules: `77,SELECTED PARTITION ILLEGAL,00,00` |
+| format inside | `N0:name,id` after a `02` | `00, OK,00,00`; header, BAM and directory on the partition's first track, sectors 0 to 3 |
+| root | `/` | `02, SELECTED PARTITION,01,80` |
+
+A partition used as a sub-directory starts at sector 0, holds a multiple
+of 40 blocks and at least 120, and leaves track 40 alone (the guide).
+The allocation does not check this; the select does, and a refused
+select leaves the old area selected, so `N0:` after it formats that
+area (`pitfalls/kernal-and-io.md`,
+`n0_after_failed_partition_select_formats_disk`). The on-disk bytes are
+under ".D81 — 1581 disk image" in `c64-file-formats.md`.
+
 ### Sequential vs Random Access Files
 
 **Sequential files** (PRG, SEQ, USR types) are stored as a linked chain of 256-byte sectors (254 bytes of data per sector; first 2 bytes are next-track/next-sector pointers). Reading is strictly forward.
 
 **Random access files** (REL type) allow seeking to arbitrary records. They use a fixed record length declared at file-open time and maintain side-sectors — dedicated bookkeeping sectors that map logical record numbers to physical track/sector locations. REL files are rarely used in demo/game code but common in productivity applications. The on-disk layout (directory entry bytes, side-sector fields, record padding, the P command's byte order) is decoded from images the 1541 wrote in `c64-file-formats.md`, ".D64", under "REL file".
+
+### Reading the directory
+
+A program can read the directory two ways: the sectors on track 18, or the `$` stream the DOS builds from them. Both were read here from images VICE 3.10 made: a disk formatted by `c1541 -format "TEST,01"` on which the 1541 DOS (VICE true drive, PAL) then wrote three files, and a second `c1541` disk holding eleven files so that the directory takes two sectors. The bytes were read with Python.
+
+**The sectors.** The field layout of the BAM at 18/0 and of each 32-byte entry is in [`c64-file-formats.md`](c64-file-formats.md), ".D64", "Directory and BAM". What the two images add:
+
+- BAM bytes 0-1 are `$12 $01`: the chain starts at 18/1.
+- A directory sector holds eight entries at offsets `$00`, `$20` … `$E0`. Bytes 0-1 of the sector, which are bytes 0-1 of its first entry, link to the next directory sector. The same two bytes of the other seven entries are `$00 $00`.
+- The last directory sector's link is `$00 $FF`, both after `c1541 -format` and after the DOS wrote to it. The eleven-file disk chained 18/1 → 18/4 → `$00 $FF`.
+- A slot never used is 32 zero bytes. Skip a slot with type `$00` but do not stop there: read all eight slots and follow the link to `$00 $FF`, since a scratched file frees a slot in the middle (how the DOS marks it was not measured here).
+- `flossiec_mapdir` in Oscar64's `flossiec.h` walks this chain with its own drive code and keeps only type `$82`, a closed PRG ([oscar64-headers-reference.md](../toolchains/oscar64-headers-reference.md#flossiech--fast-loader-for-the-1541)).
+
+**The `$` stream.** OPEN with the name `$` on a data channel makes the DOS send the directory as a BASIC program. [`oscar64/directory-reader`](../recipes/oscar64/directory-reader.md) reads and parses it; the text below is what that program received from the three-file disk, 160 bytes, the last with ST = `$40`:
+
+| Bytes | Content |
+|---|---|
+| `01 04` | Load address `$0401` |
+| `01 01 00 00` `12 22` name `22 20` `30 31` `20` `32 41` `00` | Header line: link, line number 0, RVS on, the quoted disk name, ID `01`, DOS type `2A` |
+| `01 01 01 00` `20 20 20 22 41 4C 50 48 41 22` … `53 45 51 20 20 00` | Entry line: link, line number = 1 block, `   "ALPHA"`, padding, `SEQ`, end |
+| `01 01 92 02` `42 4C 4F 43 4B 53 20 46 52 45 45 2E` 13 × `20` `00` | Last line: line number = 658 blocks free, `BLOCKS FREE.` |
+| `00 00` | End of program |
+
+- The link bytes are `$01 $01` on every line. They are not addresses; skip them.
+- The disk name on the header line is padded to 16 characters with `$20`, not the `$A0` stored at 18/0 bytes `$90-$9F`.
+- Each entry line was 32 bytes: three spaces (the block counts had one digit), the name in quotes, spaces to fill 16 name characters, one space where a `*` marks an unclosed file, the three type letters, one space where a `<` marks a locked file, one more space, then `$00`. Wider block counts and the `*` and `<` marks were not measured here.
+- The drive keeps the channel busy until the stream is read to the end or closed.
 
 ### The 1541 DOS Error Codes
 
@@ -519,46 +570,48 @@ The listing itself is at `https://g3sl.github.io/c1541rom.html`; it annotates th
 
 ### Drive RAM and the Parallel Trick
 
-The 1541 has 2 KiB of general-purpose RAM. Because the drive's 6502 operates independently of the C64's 6510, both CPUs can coordinate via the IEC bus for synchronization, enabling **parallel loading**: data is transferred over all 8 bits of the user port (Centronics-style) simultaneously rather than serially over the 1-bit IEC DATA line. Combined with bit-banging on the drive side, this achieves 10–25 KB/sec, 30–80x faster than the standard KERNAL loader.
+The 1541 has 2 KiB of general-purpose RAM. Because the drive's 6502 operates independently of the C64's 6510, both CPUs can coordinate via the IEC bus for synchronization, enabling **parallel loading**: data is transferred over all 8 bits of the user port (Centronics-style) simultaneously rather than serially over the 1-bit IEC DATA line. Combined with bit-banging on the drive side, this achieves 10–25 KB/sec, 25–60x the measured ~406 bytes/s of the standard KERNAL loader (an earlier version said 30–80x, from a 300 bytes/s base).
 
 The technique requires custom code running on the drive CPU. The C64 uploads the drive-side routine via the command channel's `M-W` (Memory Write) command, then starts it with `M-E` (Memory Execute). Once the drive routine is running, both sides enter a handshake loop using the user-port lines for data and the IEC bus for control.
 
 ### 1541 job queue and buffers
 
-The addresses uploaded code uses to ask the controller for a sector. The rows marked "run" were exercised by `../recipes/kickassembler/drive-job-queue.md` in VICE x64sc 3.10 with true drive emulation of a 1541 (rung 1); the rest carry the names and meanings of the g3sl.github.io ROM listing (rung 4) and were not run here.
+The addresses uploaded code uses to ask the controller for a sector. The rows marked "run" were exercised by `../recipes/kickassembler/drive-job-queue.md` in VICE x64sc 3.10 with true drive emulation of a 1541 (rung 1). The rows marked "ROM" were read in a disassembly (da65) of the `dos1541-325302-01+901229-05` image, and the bytes quoted are identical in `dos1541ii-251968-03` (rung 1 for what the code does; not run). The rest carry the names and meanings of the g3sl.github.io ROM listing (rung 4) and were not run here. An earlier version of this section marked every job code but `$80` and `$B0`, and every result but `$01`, `$03` and `$0B`, as unconfirmed; the ROM settles all but two results.
 
 | Address | Name | Meaning | Status |
 |---|---|---|---|
-| `$00`–`$05` | JOBS | one job byte per buffer 0–5; bit 7 set means pending, the controller replaces it with a result code | `$01` run |
+| `$00`–`$05` | JOBS | one job byte per buffer 0–5; bit 7 set means pending, the controller replaces it with a result code | `$01` run; ROM: the controller loop at `$F2BE` scans buffer 5 down to 0 |
 | `$06`–`$11` | HDRS | track and sector for each job, two bytes per buffer: `$06`/`$07` buffer 0, `$08`/`$09` buffer 1, up to `$10`/`$11` buffer 5 | `$08`/`$09` run: read back `12 00` |
-| `$12`–`$13` | DSKID | the master disk ID the controller compares each header against; set by a seek job and by `I` | run: `00 00` until a seek, then `30 31` |
-| `$16`–`$1A` | HEADER | the last header read: ID, ID, track, sector, checksum | not run |
+| `$12`–`$13` | DSKID | the master disk ID the controller compares each header against; set by a seek job and by `I` | run: `00 00` until a seek, then `30 31`; ROM: compared at `$F3F6`, copied from `$16`/`$17` at `$F410` |
+| `$16`–`$1A` | HEADER | the last header read: ID, ID, track, sector, checksum | ROM: `$F3DC` EORs all five bytes and fails with `$09` unless the result is 0; `$F3E8` takes the current track from `$18`; `$F427` reads the sector from `$19` |
 | `$0300`–`$06FF` | buffers 0–3 | data buffers lent to channels | `$0400` and `$0600` run |
 | `$0700`–`$07FF` | buffer 4 | the BAM | not run |
 
+The controller keeps the job type, the job byte AND `$78`, in `$45` (`$F39B`); the types below are those values.
+
 | Job code | Meaning | Status |
 |---|---|---|
-| `$80` | read the sector into the buffer | run |
-| `$90` | write the buffer to the sector | not run |
-| `$A0` | verify | not run |
-| `$B0` | seek: find any header on the track, keep its ID | run |
-| `$C0` | bump the head to track 1 | not run |
-| `$D0` | jump to code in the buffer | not run |
-| `$E0` | execute code in the buffer once the motor is up to speed | not run |
+| `$80` | read the sector into the buffer | run; ROM: type `$00` at `$F4CA` |
+| `$90` | write the buffer to the sector | ROM: type `$10` at `$F56E`; fails with `$08` at `$F57A` when `$1C00` bit 4 (write-protect sense) is 0 |
+| `$A0` | verify: compare the sector on disk with the buffer | ROM: type `$20` at `$F691`; compares the GCR bytes under the head, `$07` on the first mismatch |
+| `$B0` | seek: find any header on the track, keep its ID | run; ROM: type `$30` at `$F3EC` copies the header's ID into DSKID and returns `$01` |
+| `$C0` | bump the head to track 1 | ROM: type `$40` at `$F361`; `$F37C` sets the step counter `$4A` to `$A4` and the current track `$22` to 1 |
+| `$D0` | jump to code in the buffer at once | ROM: `$F2C5` compares the whole job byte with `$D0` and jumps to the buffer without starting the motor or moving the head; `$D1` does not take this path |
+| `$E0` | execute code in the buffer once the head is on the job's track | ROM: type `$60` at `$F361`; `$F36E` jumps to the buffer after the step and density setup, before any header is read. The listing says "once the motor is up to speed"; that part is not checked here |
 
 | Result | Meaning | Status |
 |---|---|---|
 | `$01` | done | seen: seek and read |
-| `$02` | header not found | not seen |
-| `$03` | no sync | seen: read of track 40 on a 35-track image |
-| `$04` | data block not found | not seen |
-| `$05` | data checksum error | not seen |
-| `$07` | verify error | not seen |
-| `$08` | write protect | not seen |
-| `$09` | header checksum error | not seen |
-| `$0A` | data block too long | not seen |
-| `$0B` | ID mismatch | seen: read before any seek or `I` |
-| `$10` | byte decoding error | not seen |
+| `$02` | header not found | ROM: `$F407`, after `$5A` (90) failed searches for a header mark (`$F3B1`) |
+| `$03` | no sync | seen: read of track 40 on a 35-track image; ROM: `$F556` starts VIA1 timer 1 with `$D0` in `$1805` and gives up when its high byte drops below `$80` before `$1C00` bit 7 goes low: `$5000` cycles, about 20 ms at 1 MHz (arithmetic) |
+| `$04` | data block not found | ROM: `$F4F6`, the block's first byte is not the data mark `$07` kept in `$47` (set at `$F298`) |
+| `$05` | data checksum error | ROM: `$F4FB` |
+| `$07` | verify error | ROM: `$F6C5` |
+| `$08` | write protect | ROM: `$F57A` |
+| `$09` | header checksum error | ROM: `$F41E` |
+| `$0A` | data block too long | not found as a result in the job code; listing only |
+| `$0B` | ID mismatch | seen: read before any seek or `I`; ROM: `$F41B` |
+| `$10` | byte decoding error | not found as a result in the job code; listing only |
 
 The result codes are the same numbers a `.d64` error block carries; `../pitfalls/loader.md`, `d64_error_byte_is_a_controller_code`, maps them to the error-channel numbers. Two more things measured by the same recipe: a job that fails leaves the error channel at `00, OK,00,00`, and a bare read of channel 15 after an `M-R` has been consumed returns one CR. `M-E` returns to the idle loop on the routine's RTS, and the host's next command waits until it does.
 
@@ -715,9 +768,9 @@ Both devices handle `.D64`, `.D71`, `.D81`, `.T64`, and `.PRG` files from SD car
 
 ## Pitfalls
 
-### Standard IEC Load Speed (~300 bytes/sec)
+### Standard IEC Load Speed (about 400 bytes/sec)
 
-A full 35-track 1541 disk holds 664 blocks × 254 data bytes = 168,656 bytes (about 165 KiB). Measured in VICE x64sc 3.10 (PAL, default 1541-II with true drive emulation), `LOAD"BIG",8,1` of a 50,000-byte file written by `c1541` took 121,174,229 cycles from `JSR $FFD5` at `$E175` to its return, 123 s or about 406 bytes/s including the directory search; at that rate a full disk takes about 7 minutes. (An earlier version said "664 KB usable", over 30 minutes for a full disk and about 2.5 minutes for 50 KB; 664 is the block count.) Nearly every released demo and game therefore uses a custom fastloader. Plan for fastloader integration from the start of any project targeting real hardware.
+A full 35-track 1541 disk holds 664 blocks × 254 data bytes = 168,656 bytes (about 165 KiB). Measured in VICE x64sc 3.10 (PAL, default 1541-II with true drive emulation), `LOAD"BIG",8,1` of a 50,000-byte file written by `c1541` took 121,174,229 cycles from `JSR $FFD5` at `$E175` to its return, 123 s or about 406 bytes/s including the directory search; at that rate a full disk takes about 7 minutes. (An earlier version said "664 KB usable", over 30 minutes for a full disk and about 2.5 minutes for 50 KB; 664 is the block count.) That is why fastloaders exist, and many demos and games ship one; how many do was not counted here. (An earlier version said "nearly every released demo and game", with no source.) Plan for fastloader integration from the start of any project targeting real hardware.
 
 ### VICE Timing Differences with Real Hardware
 
@@ -733,7 +786,7 @@ Code that uses CIA2 for RS-232 (via the user port ACIA emulation) must ensure IE
 
 ### Drive-Not-Ready and Timeout Errors
 
-The KERNAL has one timeout on the bus, and it is short and narrow. The byte-send routine arms CIA1 timer B for about 1,024 cycles (it writes 4 to the timer's high byte at `$ED92`) while it waits for a listener to acknowledge; if nothing answers it sets the READST bit and returns. An absent or unpowered drive is caught before that, and not by the timer: `LISTEN` and `TALK` look at DATA about 1,100 cycles after asserting ATN, and if no device is holding it low they take the device-not-present path at `$EDAD` without sending a byte (measured in the no-drive run under "IEC bit timing, measured" above; an earlier version of this paragraph credited the timer with that detection). The talk turnaround and the byte-receive waits have no timeout at all: a drive that has accepted TALK and never pulls CLK leaves the CPU waiting for ever, which is the start-up hang measured in VICE and described on `recipes/oscar64/high-score-persist.md`. An earlier version of this page said "approximately 64 ms" and implied every stall returns; neither is so. Check READST after every OPEN/CHKIN/CHKOUT for the errors the KERNAL can report, and do not rely on it to return from a stalled transfer.
+The KERNAL has one timeout on the bus, and it is short and narrow. The byte-send routine arms CIA1 timer B for about 1,024 cycles (it writes 4 to the timer's high byte at `$ED92`) while it waits for a listener to acknowledge; if nothing answers it sets the READST bit and returns. An absent or unpowered drive is caught before that, and not by the timer: `LISTEN` and `TALK` look at DATA about 1,100 cycles after asserting ATN, and if no device is holding it low they take the device-not-present path at `$EDAD` without sending a byte (measured in the no-drive run under "IEC bit timing, measured" above; an earlier version of this paragraph credited the timer with that detection). The talk turnaround and the byte-receive waits have no timeout at all: if the C64 never sees CLK go low after TKSA it waits for ever. A drive asked to talk on a channel it does not have (the file's OPEN failed) holds CLK low for only 68 drive cycles, and a badline stall can hide that pulse from the KERNAL's loop; that is the start-up hang measured in VICE, pitfall `first_open_after_reset_hangs_on_pal`. An earlier version of this sentence said the drive never pulls CLK. An earlier version of this page said "approximately 64 ms" and implied every stall returns; neither is so. Check READST after every OPEN/CHKIN/CHKOUT for the errors the KERNAL can report, and do not rely on it to return from a stalled transfer.
 
 ### Directory Track Corruption
 

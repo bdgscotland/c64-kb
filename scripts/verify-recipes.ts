@@ -19,7 +19,10 @@
  * with the drive's RPM wobble switched off (-drive8wobbleamplitude 0
  * -drive8wobblefrequency 0), so a recipe that writes or reads files starts
  * from the same empty disk each time, takes the same number of cycles, and
- * nothing in the repo is modified by the run.
+ * nothing in the repo is modified by the run. "disk": {"name": ..., "type":
+ * "d81"} formats a D81 instead and adds -drive8type 1581. "disk9": {"name":
+ * ...} formats a second D64 and attaches it to a 1541-II as drive 9
+ * (-drive9type 1542, its wobble off too).
  *
  * With "cartridge": {"file": "x.crt", "write": true, "runs": 2}, the build
  * must leave x.crt in the work directory (a KickAssembler listing writes it
@@ -29,6 +32,17 @@
  * that many times in sequence. Run 1's shot is keyed by the model ("pal"),
  * run N's by "<model>-run<N>" ("pal-run2"); the default path for run N is
  * screenshots/<stem>[-<model>]-run<N>.png.
+ *
+ * With "build": ["-Os"], an Oscar64 or cc65 recipe is compiled with those
+ * options in place of the default optimisation flag (-O2 for Oscar64, -O
+ * for cc65); Oscar64 ORs its -O flags together, so they replace rather than
+ * follow it. "-tf=crt8" there makes Oscar64 write <toolchain>-<stem>.crt,
+ * which a "cartridge" entry then names.
+ *
+ * A key "<toolchain>/<stem>@<variant>" is a second run of the same page:
+ * its own build options, cycles, models and shots (default
+ * screenshots/<stem>-<variant>[-<model>].png). `--file` on the page runs
+ * the page and every variant of it.
  *
  * Usage:
  *   node scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
@@ -57,13 +71,20 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { z } from "zod";
 
+import { parseFrontmatter } from "../src/graph/extract/common.ts";
+import { parseDevices } from "../src/graph/extract/device.ts";
+import { recipeDevices } from "../src/graph/extract/recipe.ts";
 import { resolveX64sc, describeX64sc } from "../src/services/vice-bin.ts";
+import { checkCrtType, checkRunDevices } from "./lib/device-check.ts";
 import { RECIPE_TOOLCHAINS, cListing, errorLines, fences, isRecipePage, walk } from "./lib/markdown.ts";
 import { findC1541, findToolchains, which } from "./lib/toolchains.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const RECIPES = join(ROOT, "docs", "recipes");
 const MANIFEST = join(RECIPES, "runs.json");
+// The device sections a recipe's devices: key names (#87, docs/CONVENTIONS-devices.md).
+const DEVICES_DOC = join(ROOT, "docs", "hardware", "devices.md");
+const DEVICES = parseDevices(readFileSync(DEVICES_DOC, "utf8"), relative(ROOT, DEVICES_DOC));
 const argv = process.argv.slice(2);
 const flag = (name: string) => argv.includes(name);
 const opt = (name: string): string | null => {
@@ -85,7 +106,8 @@ const RunSchema = z.object({
   models: z.array(z.string()),
   flags: z.array(z.string()),
   shots: z.record(z.string(), z.string()),
-  disk: z.object({ name: z.string() }).optional(),
+  disk: z.object({ name: z.string(), type: z.enum(["d64", "d81"]).optional() }).optional(),
+  disk9: z.object({ name: z.string() }).optional(),
   cartridge: z
     .object({ file: z.string(), write: z.boolean().optional(), runs: z.number().int().positive().optional() })
     .optional(),
@@ -93,6 +115,8 @@ const RunSchema = z.object({
   // key press the harness has no flag for) says why here; the listing gate
   // still builds it and the page carries its own pictures under docs/figures.
   skip: z.string().optional(),
+  // Compiler options in place of the default optimisation flag (Oscar64, cc65).
+  build: z.array(z.string()).optional(),
 });
 type Run = z.infer<typeof RunSchema>;
 const PartialRunSchema = RunSchema.partial();
@@ -160,13 +184,15 @@ function defaultShots(stem: string, models: string[], runs: number): Record<stri
   );
 }
 
-function jobFor(toolchain: string, md: string): Job {
-  const stem = basename(md, ".md");
-  const m = manifestEntry(`${toolchain}/${stem}`);
+/** The job for a page, or for one "@variant" of it: `stem` then names the variant's files. */
+function jobFor(toolchain: string, md: string, variant?: string): Job {
+  const page = basename(md, ".md");
+  const stem = variant ? `${page}-${variant}` : page;
+  const m = manifestEntry(`${toolchain}/${page}${variant ? `@${variant}` : ""}`);
   const models = m.models ?? ["pal"];
   const shots = m.shots ?? defaultShots(stem, models, m.cartridge?.runs ?? 1);
   return {
-    rel: relative(ROOT, md),
+    rel: relative(ROOT, md) + (variant ? `@${variant}` : ""),
     toolchain,
     stem,
     md,
@@ -176,9 +202,19 @@ function jobFor(toolchain: string, md: string): Job {
       flags: m.flags ?? [],
       shots,
       ...(m.disk === undefined ? {} : { disk: m.disk }),
+      ...(m.disk9 === undefined ? {} : { disk9: m.disk9 }),
       ...(m.cartridge === undefined ? {} : { cartridge: m.cartridge }),
+      ...(m.build === undefined ? {} : { build: m.build }),
     },
   };
+}
+
+/** The "@variant" names runs.json lists for one page. */
+function variantsOf(toolchain: string, page: string): string[] {
+  const prefix = `${toolchain}/${page}@`;
+  return Object.keys(manifest)
+    .filter((k) => k.startsWith(prefix))
+    .map((k) => k.slice(prefix.length));
 }
 
 let skipped = 0;
@@ -196,6 +232,7 @@ for (const toolchain of RECIPE_TOOLCHAINS) {
       continue;
     }
     jobs.push(jobFor(toolchain, md));
+    for (const v of variantsOf(toolchain, basename(md, ".md"))) jobs.push(jobFor(toolchain, md, v));
   }
 }
 if (!jobs.length && !skipped) {
@@ -216,9 +253,9 @@ function buildKick(job: Job, prg: string): Built {
   return { prg: r.status === 0 ? prg : null, log: errorLines(r.stdout + r.stderr) };
 }
 
-function buildOscar(src: string, prg: string): Built {
+function buildOscar(src: string, prg: string, opts: string[]): Built {
   if (!tools.oscar64) return { prg: null, log: "oscar64 not found" };
-  const r = spawnSync(tools.oscar64, ["-tm=c64", "-O2", `-o=${prg}`, src], { encoding: "utf8", cwd: work });
+  const r = spawnSync(tools.oscar64, ["-tm=c64", ...opts, `-o=${prg}`, src], { encoding: "utf8", cwd: work });
   return {
     prg: r.status === 0 ? prg : null,
     log: errorLines(r.stdout + r.stderr) || (r.status === 0 ? "" : `exit ${String(r.status)}`),
@@ -235,7 +272,7 @@ function buildCc65(job: Job, src: string, prg: string, cfgCode: string | undefin
     writeFileSync(cfg, cfgCode);
     cfgArgs.push("-C", cfg);
   }
-  const r = spawnSync(tools.cl65, ["-t", "c64", "-O", ...cfgArgs, "-o", prg, src], {
+  const r = spawnSync(tools.cl65, ["-t", "c64", ...(job.run.build ?? ["-O"]), ...cfgArgs, "-o", prg, src], {
     encoding: "utf8",
     cwd: work,
   });
@@ -250,28 +287,52 @@ function build(job: Job): Built {
   if (!f) return { prg: null, log: "no ```c listing with main()" };
   const src = join(work, `${job.toolchain}-${job.stem}.c`);
   writeFileSync(src, f.code);
-  if (job.toolchain === "oscar64") return buildOscar(src, prg);
+  if (job.toolchain === "oscar64") return buildOscar(src, prg, job.run.build ?? ["-O2"]);
   return buildCc65(job, src, prg, all.find((x) => x.lang === "cfg")?.code);
 }
 
-/**
- * Format a fresh D64 beside the screenshot and return the x64sc arguments
- * that attach it, or an error string.
- */
-function diskArgs(png: string, disk: { name: string }): { args: string[] } | { error: string } {
+type DiskSpec = { name: string; type?: "d64" | "d81" | undefined };
+
+/** Format a fresh image with c1541 at `file`; "" or an error. */
+function formatImage(file: string, name: string, type: string): string {
   if (!tools.c1541)
-    return { error: "runs.json asks for a disk but c1541 was not found (C1541, PATH, .tools/vice-headless)" };
-  const d64 = png.replace(/\.png$/, ".d64");
-  const f = spawnSync(tools.c1541, ["-format", disk.name, "d64", d64], { encoding: "utf8" });
-  if (!existsSync(d64)) {
-    const tail = (f.stderr || f.stdout).split("\n").slice(-2).join(" | ");
-    return { error: `c1541 could not format ${d64} (exit ${String(f.status)}): ${tail}` };
-  }
+    return "runs.json asks for a disk but c1541 was not found (C1541, PATH, .tools/vice-headless)";
+  const f = spawnSync(tools.c1541, ["-format", name, type, file], { encoding: "utf8" });
+  if (existsSync(file)) return "";
+  const tail = (f.stderr || f.stdout).split("\n").slice(-2).join(" | ");
+  return `c1541 could not format ${file} (exit ${String(f.status)}): ${tail}`;
+}
+
+/**
+ * Format the fresh disks beside the screenshot (drive 8, and drive 9 when
+ * runs.json has "disk9") and return the x64sc arguments that attach them,
+ * or an error string.
+ */
+function diskArgs(
+  png: string,
+  disk?: DiskSpec,
+  disk9?: { name: string },
+): { args: string[] } | { error: string } {
+  const args: string[] = [];
   // VICE 3.10 adds a random-phase RPM wobble to the emulated drive by
   // default, which moves a disk operation by a handful of cycles from run
   // to run; a recipe that prints its elapsed time would then differ by a
-  // digit. Pin the drive to a constant speed so the run is repeatable.
-  return { args: ["-8", d64, "-drive8wobbleamplitude", "0", "-drive8wobblefrequency", "0"] };
+  // digit. Pin each drive to a constant speed so the run is repeatable.
+  if (disk) {
+    const type = disk.type ?? "d64";
+    const img = png.replace(/\.png$/, `.${type}`);
+    const err = formatImage(img, disk.name, type);
+    if (err) return { error: err };
+    args.push("-8", img, ...(type === "d81" ? ["-drive8type", "1581"] : []));
+    args.push("-drive8wobbleamplitude", "0", "-drive8wobblefrequency", "0");
+  }
+  if (disk9) {
+    const img = png.replace(/\.png$/, "-9.d64");
+    const err = formatImage(img, disk9.name, "d64");
+    if (err) return { error: err };
+    args.push("-9", img, "-drive9type", "1542", "-drive9wobbleamplitude", "0", "-drive9wobblefrequency", "0");
+  }
+  return { args };
 }
 
 type ViceRun = {
@@ -281,12 +342,13 @@ type ViceRun = {
   cycles: number;
   model: string;
   extra: string[];
-  disk?: { name: string };
+  disk?: DiskSpec;
+  disk9?: { name: string };
 };
 
 /** Run one PRG or cartridge to its pinned cycle count and write the exit screenshot. Returns "" or an error. */
 function runVice(v: ViceRun, x64scPath: string): string {
-  const disk = v.disk ? diskArgs(v.png, v.disk) : { args: [] };
+  const disk = diskArgs(v.png, v.disk, v.disk9);
   if ("error" in disk) return disk.error;
   const args = [
     "-default",
@@ -304,7 +366,8 @@ function runVice(v: ViceRun, x64scPath: string): string {
     v.png,
     ...v.attach,
   ];
-  const r = spawnSync(x64scPath, args, { encoding: "utf8", timeout: 300_000 });
+  // In the work directory, so a file a device writes (a printer's print.dump) lands there, not in the repo.
+  const r = spawnSync(x64scPath, args, { encoding: "utf8", timeout: 300_000, cwd: dirname(v.png) });
   if (!existsSync(v.png)) {
     const tail = (r.stderr || r.stdout).split("\n").slice(-3).join(" | ");
     return `x64sc produced no screenshot (exit ${String(r.status)}${r.signal ? ` ${r.signal}` : ""}): ${tail}`;
@@ -412,6 +475,7 @@ function runBoot(job: Job, boot: { model: string; n: number; attach: string[] },
       model: boot.model,
       extra: job.run.flags,
       ...(job.run.disk === undefined ? {} : { disk: job.run.disk }),
+      ...(job.run.disk9 === undefined ? {} : { disk9: job.run.disk9 }),
     },
     bins.x64sc,
   );
@@ -446,7 +510,22 @@ function runModel(job: Job, built: Output, model: string, bins: Bins): void {
   }
 }
 
+/** The recipe's devices: key (null when absent), as the ingest reads it. */
+function declaredDevices(job: Job): string[] | null {
+  return recipeDevices(parseFrontmatter(readFileSync(job.md, "utf8")).fm.devices, job.rel);
+}
+
+/** Report device problems as one failure; true when there were any. */
+function deviceFailure(job: Job, problems: string[]): boolean {
+  if (problems.length === 0) return false;
+  failures++;
+  say(false, `${job.rel} (devices)`, problems.join("; "));
+  return true;
+}
+
 function runOne(job: Job, bins: Bins): void {
+  const declared = declaredDevices(job);
+  if (deviceFailure(job, checkRunDevices(declared, job.run, DEVICES))) return;
   const cart = job.run.cartridge;
   const crt = cart ? join(work, cart.file) : null;
   // A stale cartridge from an earlier --keep run must not stand in for this build's.
@@ -462,6 +541,7 @@ function runOne(job: Job, bins: Bins): void {
     say(false, `${job.rel} (build)`, `runs.json names cartridge ${crt} but the build did not write it`);
     return;
   }
+  if (crt && deviceFailure(job, checkCrtType(crt, declared ?? [], DEVICES))) return;
   for (const model of job.run.models) runModel(job, { prg, crt }, model, bins);
 }
 
@@ -470,7 +550,7 @@ function runChild(j: Job): Promise<{ lines: string; status: number | null }> {
   const args = [
     process.argv[1] ?? "",
     "--file",
-    j.rel,
+    relative(ROOT, j.md),
     ...(update ? ["--update"] : []),
     ...(allowMissing ? ["--allow-missing"] : []),
     ...(keepDir ? ["--keep", keepDir] : []),
@@ -498,7 +578,8 @@ function runChild(j: Job): Promise<{ lines: string; status: number | null }> {
 // Until this change the N workers called spawnSync, which blocks the event loop, so
 // they ran one child at a time.
 async function runParallel(n: number): Promise<void> {
-  const queue = [...jobs];
+  // One child per page: a child given the page also runs its "@variant" jobs.
+  const queue = jobs.filter((j, i) => jobs.findIndex((k) => k.md === j.md) === i);
   const worker = async () => {
     for (let j = queue.shift(); j; j = queue.shift()) {
       const r = await runChild(j);

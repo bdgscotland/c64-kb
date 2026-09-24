@@ -1,8 +1,9 @@
 /** The lint rules for C (Oscar64, cc65). Each function is one rule; lintC runs them in a fixed order. */
 
 import { OPEN15_MECHANISM, PAGES, SID_READABLE, group, lineAt, report, type LintContext } from "./types.ts";
-import { isZero, parseNumber, stripC } from "./text.ts";
+import { byteStem, isZero, parseNumber, stripC } from "./text.ts";
 import type { LintFinding } from "./types.ts";
+import { d015MergedC } from "./sprite-enable.ts";
 
 const C_SID_PATH = /\bsid((?:\.\w+|\[[^\]]*\])+)/g;
 
@@ -154,8 +155,20 @@ function rasterPoll(ctx: LintContext): void {
   });
 }
 
-/** lfsr_zero_state_lockup: a seed constant of 0. */
+/**
+ * lfsr_zero_state_lockup: a seed constant of 0. A byte of a multi-byte state
+ * (rng_hi beside rng_lo) is zero only when every byte of it is set to zero.
+ */
 function lfsrZero(ctx: LintContext): void {
+  const nonZeroStems = new Set(
+    [
+      ...ctx.src.matchAll(
+        /\b(\w*(?:seed|lfsr|rng|rand_state|random_state)\w*)\s*=(?!=)\s*(0x[0-9a-f]+|[0-9]+)\b/gi,
+      ),
+    ]
+      .filter((m) => !isZero(group(m, 2)))
+      .map((m) => byteStem(group(m, 1))),
+  );
   ctx.lines.forEach((line, i) => {
     const m =
       /\b(?:(?:static|unsigned|char|int|short|long|volatile|const|byte|word)\s+)*(\w*(?:seed|lfsr|rng|rand_state|random_state)\w*)\s*=(?!=)\s*(0x0+|0)\s*[;,]/i.exec(
@@ -163,6 +176,7 @@ function lfsrZero(ctx: LintContext): void {
       );
     if (!m) return;
     const name = group(m, 1);
+    if (nonZeroStems.has(byteStem(name))) return;
     // Only a name the file shifts or XORs is an LFSR state; a counter
     // or flag that happens to contain "seed" or "rng" is not.
     const shifted = new RegExp(`(\\b${name}\\s*(>>=?|<<=?|\\^=?)|(>>|<<|\\^)\\s*${name}\\b)`).test(ctx.src);
@@ -181,9 +195,15 @@ function lfsrZero(ctx: LintContext): void {
   });
 }
 
-/** Whether the right-hand side of a vic.ctrl2 store keeps CSEL: a masked read, or a value with bit 3 set. */
+/**
+ * Whether the right-hand side of a vic.ctrl2 store keeps CSEL: a masked
+ * read, a value with bit 3 set, or a name that says it holds the whole
+ * register (D016_PLAY, ctrl2_shadow). The named form was reported until
+ * #41, in the starters' deliberate `vic.ctrl2 = D016_PLAY | 7`.
+ */
 function keepsCsel(rhs: string): boolean {
   if (/\bvic\s*\.\s*ctrl2\b/.test(rhs) || rhs.includes("&")) return true;
+  if (/(d016|ctrl2|shadow)/i.test(rhs)) return true;
   const lit = parseNumber(rhs);
   if (lit !== null && (lit & 0x08) !== 0) return true;
   return /\b0x[cC]8\b|\b0x[dD]8\b|\b0x18\b|\b0x08\b|\bVIC_CTRL2_CSEL\b|\bVIC_CTRL2_MCM\b/.test(rhs);
@@ -199,7 +219,7 @@ function d016Unmasked(ctx: LintContext): void {
       rule: "d016_unmasked_rmw_clobbers_csel_mcm",
       pitfall: "d016_unmasked_rmw_clobbers_csel_mcm",
       message:
-        "Store to vic.ctrl2 ($D016) of a value not derived from a masked read: the naive `vic.ctrl2 = xscroll` zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Write `vic.ctrl2 = (vic.ctrl2 & 0xF8) | xscroll`, or a shadow that carries CSEL and MCM. Heuristic: the right-hand side may already be such a shadow.",
+        "Store to vic.ctrl2 ($D016) of a value not derived from a masked read: the naive `vic.ctrl2 = xscroll` zeroes CSEL and MCM along with bits 5-7, switching to 38 columns and hires. Write `vic.ctrl2 = (vic.ctrl2 & 0xF8) | xscroll`, or a shadow that carries CSEL and MCM. Heuristic: a shadow not named for the register (d016, ctrl2, shadow) is reported too.",
       page: PAGES.d016,
       certainty: "heuristic",
     });
@@ -221,4 +241,5 @@ export function lintC(raw: string, findings: LintFinding[]): void {
   rasterPoll(ctx);
   lfsrZero(ctx);
   d016Unmasked(ctx);
+  d015MergedC(ctx);
 }

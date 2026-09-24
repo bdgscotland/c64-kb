@@ -1,0 +1,1 @@
+Minimal sources that provoke the messages in the "Reading the errors" table of ../../acme-reference.md. Each was assembled with ACME 0.97 as `acme -o out.bin <file>`; all but segment-overlap.a and forward-zero-page.a (warnings, exit 0) are meant to fail, so none is in a buildable fence.

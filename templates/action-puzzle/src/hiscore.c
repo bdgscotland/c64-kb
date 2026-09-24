@@ -64,23 +64,39 @@ void hi_insert(char rank, const char *name, unsigned long score)
 // two digits. Only called after a named OPEN has answered, because an
 // empty-name OPEN cannot see an absent drive and the CHKIN inside
 // krnio_gets would then hang (the recipe measured it).
-static void drive_reply(const char *cmd)
+// drive_ask leaves channel 15 open and says whether it opened: read_file
+// keeps it open while its file is, because closing 15 closes every file on
+// the drive.
+static bool drive_ask(const char *cmd)
 {
     reply[0] = 0;
     hi_code = 99;
     krnio_setnam(cmd);
-    if (krnio_open(15, DRIVE, 15))
+    bool open = krnio_open(15, DRIVE, 15);
+    if (open)
     {
         int n = krnio_gets(15, reply, sizeof(reply));
         if (n >= 2)
             hi_code = (reply[0] - '0') * 10 + (reply[1] - '0');
-        krnio_close(15);
     }
+    return open;
+}
+
+static void drive_reply(const char *cmd)
+{
+    if (drive_ask(cmd))
+        krnio_close(15);
 }
 
 // Read HISCORE into back[] (filled with $FF first, so a short read cannot
 // pass on old bytes). Returns the byte count; hi_code holds the drive's
-// reply, 99 when no device answered the named OPEN.
+// reply to the OPEN, 99 when no device answered it. The reply is read
+// before the file, and the file only on 00: after a 62 the drive keeps no
+// channel, and a read would TALK to it. The drive answers that TALK with a
+// 68-cycle CLK pulse, a badline can hide it from the KERNAL's wait at $EDD6,
+// and that wait has no timeout (pitfall first_open_after_reset_hangs_on_pal).
+// An earlier version read first and waited 50 frames at start-up, which only
+// moved the phase.
 static int read_file(void)
 {
     memset(back, 0xff, sizeof(back));
@@ -92,11 +108,13 @@ static int read_file(void)
         hi_code = 99;
         return 0;
     }
+    bool cmd = drive_ask("");
     int n = 0;
-    if (ok)
+    if (ok && hi_code == 0)
         n = krnio_read(2, back, sizeof(back));
     krnio_close(2);
-    drive_reply("");
+    if (cmd)
+        krnio_close(15);
     return n;
 }
 

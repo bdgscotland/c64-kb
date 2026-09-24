@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
-import { checkCompatibility, timingBudget } from "../src/tools/query.ts";
+import { checkCompatibility, checkDesignCompatibility, timingBudget } from "../src/tools/query.ts";
+import { CompatibilityCheckSchema } from "../src/schemas/tool-outputs.ts";
 
 describe("checkCompatibility", () => {
   let f: FalkorService;
@@ -114,6 +115,58 @@ describe("checkCompatibility", () => {
 
     const r = await checkCompatibility(["tech_a", "tech_b"]);
     expect(r.structured.shared_infrastructure.some((s) => s.name === "raster_discipline")).toBe(true);
+  });
+
+  it("checks a design phase by phase: an init member is not checked beside play (#37)", async () => {
+    await f.addGameDesign({ name: "phase_test", title: "Phase test", measured: [], source_doc: "p.md" });
+    expect(await f.linkComposes("phase_test", "stable_raster_irq", "play")).toBe(true);
+    expect(await f.linkComposes("phase_test", "raster_bars", "init")).toBe(true);
+    // Flat, the pair shares D016 (warnings); by phase they never run together.
+    const r = await checkDesignCompatibility("phase_test");
+    CompatibilityCheckSchema.parse(r.structured);
+    expect(r.structured.phases).toEqual([
+      { phase: "play", techniques: ["stable_raster_irq"], verdict: "compatible" },
+      { phase: "init", techniques: ["raster_bars"], verdict: "compatible" },
+    ]);
+    expect(r.structured.conflicts).toEqual([]);
+    expect(r.structured.verdict).toBe("compatible");
+    expect(r.structured.design?.name).toBe("phase_test");
+    expect(r.text).toContain("## Phase: init");
+    // An extra member joins its phase, and a finding carries that phase.
+    const withExtra = await checkDesignCompatibility("phase_test", ["raster_bars:play"]);
+    expect(withExtra.structured.verdict).toBe("warnings");
+    expect(withExtra.structured.conflicts.every((c) => c.phase === "play")).toBe(true);
+    await expect(checkDesignCompatibility("no_such_design")).rejects.toThrow(/known: phase_test/);
+  });
+
+  it("names the node type of a refused name that is not a technique (#19)", async () => {
+    await f.addPitfall({
+      name: "jitter_pitfall",
+      title: "Jitter",
+      severity: "high",
+      region: "both",
+      category: "raster",
+    });
+    expect(await f.linkTriggeredBy("jitter_pitfall", "raster_bars", "Technique")).toBe(true);
+    expect(await f.linkMitigatedBy("jitter_pitfall", "stable_raster_irq")).toBe(true);
+    await f.addFileFormat("CRT", "Cartridge image");
+    const r = await checkCompatibility([
+      "raster_bars",
+      "jitter_pitfall",
+      "crt",
+      "Raster_Bars",
+      "nothing_here",
+    ]);
+    expect(r.structured.verdict).toBe("unknown_technique");
+    expect(r.structured.not_found).toEqual(["jitter_pitfall", "crt", "Raster_Bars", "nothing_here"]);
+    expect(r.text).toContain(
+      "- `jitter_pitfall` is a Pitfall (`jitter_pitfall`), not a technique. Arises in: raster_bars. Cured by: stable_raster_irq.",
+    );
+    expect(r.text).toContain("- `crt` is a FileFormat (`CRT`), not a technique.");
+    expect(r.text).toContain("- `Raster_Bars` is the technique `raster_bars`; pass it with that spelling.");
+    expect(r.text).not.toContain("`nothing_here` is");
+    // Caller order is kept.
+    expect(r.text.indexOf("`jitter_pitfall` is")).toBeLessThan(r.text.indexOf("`crt` is"));
   });
 });
 

@@ -7,6 +7,9 @@ techniques: [tech_tech_wobbler, stable_raster_irq, pal_ntsc_detection]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC04, DC05, DC06, DC07, DC0E, DC0F]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), zero_page $02-$61+$FB (owns)]
+harness: [cia1_timer_a, cia1_timer_b, $02E6-$02E9, $02FF]
+ram: [state=$02E0-$02E4, colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -24,9 +27,9 @@ table, 1 to 63; s >> 3 picks the matrix through `$D018` and s & 7 goes
 into XSCROLL. Because the VIC-II reads character codes only on a badline,
 the code forces one on every line of the band the way FLI does: a stable
 raster IRQ reaches a known cycle, and from there one unrolled block per
-line writes `$D018`, `$D016` and then `$D011` with YSCROLL = line & 7,
-timed so the badline condition arises after the cycle-14 row counter
-check and before the c-accesses. The VIC then fetches the 40 codes again
+line writes `$D018`, `$D016` and then `$D011` with YSCROLL = line & 7
+on cycle 14 (store-trace numbering), too late for the cycle-14 row
+counter check and before the c-accesses. The VIC then fetches the 40 codes again
 on that line from the matrix just named. The first three cells of each
 forced line get no fetch and show screen code 255 (the FLI bug), so the
 logo lives in cells 3 to 39. The two register tables for the band are
@@ -48,8 +51,8 @@ is N instead of 3: the sweep. The technique is `tech_tech_wobbler` in
 // badline, into a 40-entry buffer it reuses for the next seven lines, so a
 // text row cannot normally change its codes line by line. This program
 // forces a badline on every line of the logo band the FLI way: on each
-// line it writes YSCROLL = line & 7 into $D011 after cycle 14, so the row
-// counter is not reset and rows still advance, and before the c-accesses,
+// line it writes YSCROLL = line & 7 into $D011 on cycle 14, too late for
+// the cycle-14 check, so the row counter is not reset and rows still advance, and before the c-accesses,
 // so the VIC fetches the 40 codes again on that line from whichever video
 // matrix $D018 names at that moment. Eight matrices hold the same logo
 // shifted right by 0 to 7 cells; the line's shift s in 0..63 selects the
@@ -189,10 +192,10 @@ BasicUpstart2(start)
 * = $0900
 start:
     sei
-    lda #$7f
+    lda #$7f                  // mask every source on both CIAs
     sta $dc0d
-    lda $dc0d
     sta $dd0d
+    lda $dc0d                 // and drop any flag already pending
     lda $dd0d
 
     lda #0
@@ -534,18 +537,25 @@ for this page, and nothing here says what a 6569 or 6567 shows.
 the end of the previous line's stall. PAL, 12,000,000 cycles, one run
 each:
 
-| pad | Block, cycles | `$D011` write, model cycle | Cells with no fetch | What the picture shows |
+| pad | Block, cycles | `$D011` write, store-trace cycle | Cells with no fetch | What the picture shows |
 |---|---|---|---|---|
-| 2 | 22 | 14 | cells 0 and 1 show code 255 | The row counter is reset every line: the band shows only the top pixel row of the letters, sheared, and the whole logo is drawn again unshifted from line 163 to 210. 10,304 white pixels in rows 99 to 194. `figures/tech-tech-pad2-12000000.png` |
-| 3 | 23 | 15 | cells 0 to 2 show code 255 | Correct: the pinned picture |
-| 4 | 24 | 16 | cell 0 keeps the last full fetch (a space), cells 1 to 3 show code 255 | Lines with k = 0 lose the logo's first cell: line 162 first white at 65, not 57. `figures/tech-tech-pad4-12000000.png` |
-| 5 | 25 | 17 | cells 0 and 1 stale, 2 to 4 code 255 | Line 162 first white at 73 |
-| 6 | 26 | 18 | cells 0 to 2 stale, 3 to 5 code 255 | Line 162 first white at 81 |
+| 2 | 22 | 13 | cells 0 and 1 show code 255 | The row counter is reset every line: the band shows only the top pixel row of the letters, sheared, and the whole logo is drawn again unshifted from line 163 to 210. 10,304 white pixels in rows 99 to 194. `figures/tech-tech-pad2-12000000.png` |
+| 3 | 23 | 14 | cells 0 to 2 show code 255 | Correct: the pinned picture |
+| 4 | 24 | 15 | cell 0 keeps the last full fetch (a space), cells 1 to 3 show code 255 | Lines with k = 0 lose the logo's first cell: line 162 first white at 65, not 57. `figures/tech-tech-pad4-12000000.png` |
+| 5 | 25 | 16 | cells 0 and 1 stale, 2 to 4 code 255 | Line 162 first white at 73 |
+| 6 | 26 | 17 | cells 0 to 2 stale, 3 to 5 code 255 | Line 162 first white at 81 |
 
-The model cycle is the block length less eight, the numbering
-`fli-image` uses for its own 23-cycle block; the padding is the
-measurement. One cycle early loses one cell fewer and resets the row
-counter; each cycle late loses one cell more, and the cells that miss
+The write's cycle is from a VICE store trace of `$D011` (`trace store
+d011`, 4,000,000 cycles, every band line of every frame, pads 2, 3 and 4;
+5 and 6 are 4 plus one cycle per pad, not traced): Bauer's numbering, as
+`runtime/vice-reference.md` "What the CYC column counts" defines it. An
+earlier version of this table gave the block length less eight, 14 to
+18, the cycle on which `fli-image`'s model has the condition first true,
+not the write's cycle; it said a write on cycle 14 resets the row
+counter, which the trace contradicts. A write on cycle 13 is seen by the
+cycle-14 check and resets the row counter; a write on cycle 14 is not,
+the same boundary `agsp` traced. One cycle early loses one cell fewer and
+resets the row counter; each cycle late loses one cell more, and the cells that miss
 their fetch on the early side of the three are not code 255 but whatever
 the buffer held from the last complete fetch, here line 115's spaces.
 Nothing in the sweep produced a plain, unwobbled logo: a write late
@@ -555,9 +565,21 @@ On NTSC the block is `LINE_PAD_NTSC` = 5, 25 cycles of a 65-cycle line,
 and the entry delay 204 - 14. With 205 - 14, which `fli-image` suggested
 would be right for the 6567R8, line 116 came out one cycle late (cell 0
 stale, 1 to 3 code 255) and lines 117 to 162 correct; with 204 - 14 all
-47 forced lines are correct. The remaining lines of both models were
-identical in the two settings, because from the first block onwards each
-line is timed by its own stall.
+47 forced lines are correct in the pinned picture. The remaining lines of
+both models were identical in the two settings, because from the first
+block onwards each line is timed by its own stall.
+
+The store trace over the pinned 12,000,000 cycles puts every write of
+lines 117 to 162 on cycle 14 on both models, and line 116's on 14 in
+every PAL frame. On NTSC line 116's write moves: cycle 13 in 296 frames,
+14 in 221, and 14 in every frame after the phase stops, which is when the
+pinned picture is taken. With 205 - 14 it is 14 and 15. So on NTSC,
+while the wave moves, line 116 usually resets the row counter: an NTSC
+exit screenshot at 4,000,000 cycles shows two strip cells on line 116,
+not three, and the logo's first character row nine lines tall, 115 to
+123, with every row below one line lower. The PAL picture at the same
+cycle count is correct. The entry sync is one cycle unstable on NTSC;
+this is issue #100.
 
 Screenshots from the VICE runs this page describes:
 `screenshots/tech-tech.png` (PAL) and `screenshots/tech-tech-ntsc.png`.
@@ -574,8 +596,9 @@ sequence after the last write):
 | Table build in the vertical blank, 48 lines, CIA1 timer B | 2,041 | 2,041 |
 
 Per band line, 63 cycles elapse on PAL and 65 on NTSC; the CPU sees 23
-of them (cycles 55 to 63 of the previous line and 1 to 15 of its own on
-PAL, 25 on NTSC) and every one is spent in the block. The band interrupt
+of them (cycles 55 to 63 of the previous line and 1 to 14 of its own on
+PAL, 55 to 65 and 1 to 14 on NTSC, 25; an earlier version said 1 to 15,
+which is 24 cycles, not 23) and every one is spent in the block. The band interrupt
 is 54 raster lines, 109 to 162, of which the first three are the double
 IRQ's entry and the sync (arithmetic from the listing; the timer figure
 is the measurement).
@@ -597,9 +620,10 @@ buffer. `fli-image` uses this to change colours per line in bitmap mode;
 here the same fetch changes the character codes, so the row of cells that
 the line draws is a different row of a differently shifted logo.
 
-The two timing constraints are `fli-image`'s. The write must land after
-the cycle-14 check, where the VIC resets the row counter RC to 0 if the
-condition already holds, or the band displays pixel row 0 of every cell
+The two timing constraints are `fli-image`'s. The write must not land
+before cycle 14: in cycle 14 the VIC resets the row counter RC to 0 if the
+condition already holds, and a write on cycle 13 is in time for that
+check while one on cycle 14 is not (store trace, above). Otherwise the band displays pixel row 0 of every cell
 on every line and never advances: that is the `:pad=2` picture, with the
 logo drawn again below the band because VCBASE was never moved on. And
 the write must land before the c-accesses' slots have passed: the three
@@ -657,6 +681,18 @@ cycles of padding for the 65-cycle line of the 6567R8, which is VICE's
 `-model ntsc`, and a different entry delay; the c-accesses still occupy
 cycles 15 to 54 and the stall still ends on cycle 55, so the block
 structure is the same. The 64-cycle 6567R56A was not run.
+
+### Masking the CIAs
+
+`start` writes `$7F` to both `$DC0D` and `$DD0D`, then reads both to drop
+any pending flag. An earlier version wrote `$DD0D` with the byte it had
+just read from `$DC0D`. A VICE store trace on `$DD0D` (PAL and NTSC,
+12,000,000 cycles) saw that byte as `$00` on both, and no NMI ran. It is
+still the wrong byte: a CIA1 timer A underflow between `sei` and the
+mask write would make the read `$81`, and `$81` written to `$DD0D`
+enables CIA2 timer A as an NMI source instead of masking it (#88; the
+`$81` case was not produced here, it follows from the ICR's set/clear
+bit 7).
 
 ## What it does not establish
 

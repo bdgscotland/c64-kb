@@ -7,6 +7,10 @@ techniques: [reu_dma]
 file_formats: [PRG]
 uses_registers: [DF00, DF01, DF02, DF03, DF04, DF05, DF06, DF07, DF08, DF09, DF0A, D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D011, D012, D015, D020, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: [CHROUT]
+devices: [reu_1750]
+claims: [sprite_0-7 (init), vic_raster_irq (init), zero_page $FB-$FE (owns)]
+harness: [cia2_timer_a, cia2_timer_b, $02FF]
+ram: [under_io=$D000-$DFFF, colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

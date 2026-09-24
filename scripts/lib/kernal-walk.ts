@@ -328,14 +328,5 @@ export const JUMP_TABLE_SLOTS: readonly number[] = Array.from(
   (_, i) => 0xff81 + 3 * i,
 );
 
-/** Sorted bytes as merged ranges: [[0x90, 0x9A], [0xB7, 0xB7]]. */
-export function toRanges(bytes: Iterable<number>): [number, number][] {
-  const sorted = [...new Set(bytes)].sort((x, y) => x - y);
-  const out: [number, number][] = [];
-  for (const b of sorted) {
-    const last = out.at(-1);
-    if (last && b === last[1] + 1) last[1] = b;
-    else out.push([b, b]);
-  }
-  return out;
-}
+// Moved to src/claims/units.ts with the claims watch (#22 step 8).
+export { toRanges } from "../../src/claims/units.ts";

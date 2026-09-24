@@ -51,5 +51,6 @@ Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj"
   inputSchema: RunGameInputSchema,
   outputSchema: RunGameOutputSchema,
   annotations: RUN_GAME,
+  readsGraph: false,
   run: runGameReply,
 });

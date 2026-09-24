@@ -28,6 +28,16 @@ real time. The recipe below spends 4,846,078 cycles on the drive for a
 32-byte write, a 32-byte read and two status reads, about 4.9 s at PAL
 speed (measured with a CIA2 timer inside the program; rung 1).
 
+The KERNAL's serial routines also take two units while they run, and
+every technique below claims them as `shares`: the serial bus (`$DD00`
+bits 3-5) and CIA1 timer B, which times each byte's handshake. A
+`claims-watch.ts` store trace (VICE x64sc, `--all-ram`) counted, from
+ROM, 314 stores to `$DC07`/`$DC0F` and 2,514 to `$DD00` in the
+KickAssembler round trip below, and 8,438 and 63,448 in
+`recipes/oscar64/load-asset-runtime.md`, whose LOAD is received at
+`$EE22`. A program that keeps its own use of timer B loses it across
+any disk call (`hardware/kernal-routines-reference.md`, "CIA1 timer B").
+
 ---
 
 ## kernal_file_write_seq — Write a sequential file with OPEN/CHKOUT/CHROUT
@@ -36,6 +46,11 @@ speed (measured with a CIA2 timer inside the program; rung 1).
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CLRCHN, CLOSE
+**Cost:** cycles_per_frame=3989946
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-save-load-seq-file (open, write and close of an 18-byte SEQ file, one call, true drive; NTSC, 3,836,200 on PAL)
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
 
 ### Why
 
@@ -174,12 +189,33 @@ afterwards was not measured here. Two ways round it:
   already contiguous in memory.
 - **Text files for other software.** Write `$0D` after each line; the
   drive stores it as an ordinary byte.
+- **A printer instead of a drive.** Device 4, no name, a secondary
+  address that picks the printer's character set (7 for mixed case on
+  Commodore printers), then CHKOUT, CHROUT and CLOSE as here. OPEN with
+  no name never touches the bus, so a missing printer shows at CHKOUT as
+  error 5; check READST after the bytes too. Measured on VICE's file
+  printer: 55 bytes in 66,440 cycles on PAL,
+  `recipes/kickassembler/printer-output.md`.
+
+### Cycle budget
+
+A write is a transition, not a play frame: 3,836,200 cycles on PAL and
+3,989,946 on NTSC for the open, 18 bytes and close of
+`recipes/oscar64/save-load-seq-file.md`, about 195 PAL frames (CIA2
+timers chained, true drive, rung 1). The Cost line carries the NTSC
+figure so a budget names it; it is above one frame, so a budget reports
+it as multi-frame and never sums it into play. Scratch-then-write costs
+more: `templates/adventure` measures 4,463,001 cycles on PAL and
+4,636,828 on NTSC for a scratch, the write of its save record and the
+reply (VICE, true drive). This page had no Cost line before, so a plan
+that saved a file could not say what the save costs.
 
 ### Recipes
 
 - `recipes/kickassembler/file-io-roundtrip.md`
 - `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
 - `recipes/oscar64/high-score-persist.md` (the policy around the calls: first run, scratch-then-write, version byte, no drive; 74 and the scratch reply measured)
+- `recipes/kickassembler/printer-output.md` (the same calls to a printer at device 4: where a missing device is reported, what secondary addresses 0 and 7 print, the byte time)
 
 ---
 
@@ -189,6 +225,11 @@ afterwards was not measured here. Two ways round it:
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Cost:** cycles_per_frame=530736
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-save-load-seq-file (open, read and close of an 18-byte SEQ file, one call, true drive; NTSC, 511,742 on PAL)
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
 
 ### Why
 
@@ -300,6 +341,15 @@ interaction with file I/O".
   logical number can stay open while this one reads; switch with
   CHKIN/CHKOUT and CLRCHN between them.
 
+### Cycle budget
+
+511,742 cycles on PAL and 530,736 on NTSC for the open, 18 bytes and
+close of `recipes/oscar64/save-load-seq-file.md`, about 26 PAL frames
+(CIA2 timers chained, true drive, rung 1); the Cost line carries the
+NTSC figure, a multi-frame transition cost as for the write.
+`templates/adventure` measures 515,221 on PAL and 562,405 on NTSC for
+its record read and the drive's reply.
+
 ### Recipes
 
 - `recipes/kickassembler/file-io-roundtrip.md`
@@ -314,6 +364,11 @@ interaction with file I/O".
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Cost:** cycles_per_frame=81421
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE builds, one bare status read through kernalio.h, open to close, the longest of 8 runs; replies 62, 01 and 00; true drive, PAL; 43,852 the shortest)
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
 
 ### Why
 
@@ -436,6 +491,17 @@ the recipe `../recipes/kickassembler/dos-error-codes.md`.
 - **Hang on a missing drive.** CHKIN on a device that does not answer
   hangs with no timeout, per `hardware/kernal-routines-reference.md`;
   the OPEN's C=1, A=5 return is the last chance to notice, so test it.
+
+### Cycle budget
+
+One read, open to close, is 43,852 to 81,421 cycles in VICE x64sc 3.10
+with the true-drive 1541, two to four PAL frames: measured on
+`recipes/oscar64/platformer-scaffold.md`'s profile builds, CIA2's timers
+chained as a 32-bit counter (the KERNAL's serial code uses CIA1 timer B),
+eight runs over PAL and NTSC, replies `62, FILE NOT FOUND`,
+`01, FILES SCRATCHED` and `00, OK`. The range is the emulated drive's
+timing. It is multi-frame: a budget lists it and does not sum it. The
+page had no figure before #37.
 
 ### Recipes
 
@@ -740,6 +806,21 @@ a raster IRQ misses most frames during it
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, LOAD, SETMSG
+**Cost:** cycles_per_frame=6931765
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-load-asset-runtime (one call, a 2,048-byte file, drive idle before the call, 1541-II true drive emulation, PAL, screen on; 5,572,444 PAL and 5,773,293 NTSC when the drive has just served a SAVE)
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
+**Consumes formats:** PRG
+
+The Cost line is one LOAD in the recipe's program, timed by CIA2 timers A
+and B chained, in VICE x64sc 3.10 with true drive emulation (the recipe's
+"The second start" and its pinned output). It is over 350 PAL frames, so a
+plan runs it between play phases, never inside one: `c64_plan_budget`
+reports a figure above one frame as multi-frame and does not sum it. The
+larger figure includes the drive spinning up and searching the directory.
+The time scales with the file: this is a 2,048-byte file, and no other
+length was measured. Before #96 this page had no Cost line.
 
 ### Why
 
@@ -1078,16 +1159,25 @@ EasyFlash holds two 512 KB Am29F040-type flash chips, one behind ROML
    cartridge's 256 bytes of RAM at `$DF00`), with interrupts off.
 3. **Use EAPI in released software.** EAPI is the EasyFlash flash
    driver. A CRT carries it at bank 0 ROMH offset `$1800` (768 bytes
-   reserved). The program copies it to C64 RAM (c64gameframework uses
-   `$C000`) and calls EAPIInit, which builds a jump table in the
-   cartridge RAM at `$DF80`. The calls are
+   reserved), starting with the signature `65 61 70 69`. The program
+   copies it to C64 RAM (`$0200`-`$7FFF` or `$C000`-`$CFFF`, page
+   aligned) and calls EAPIInit at the copy plus 20, which builds a jump
+   table in the cartridge RAM at `$DF80`. The calls are
    EAPIWriteFlash `$DF80`, EAPIEraseSector `$DF83`, EAPISetBank `$DF86`,
    EAPIGetBank `$DF89`, EAPISetPtr `$DF8C`, EAPISetLen `$DF8F`,
-   EAPIReadFlashInc `$DF92` and EAPIWriteFlashInc `$DF95`. When EasyProg
-   flashes a CRT that has the `eapi` signature there, it swaps in the
-   version for the fitted flash chip. Code that sends Am29F040
-   commands itself, as the recipe does, works only on that chip. VICE
-   emulates it and warns `EF: EAPI not found!` when a CRT has no EAPI.
+   EAPIReadFlashInc `$DF92`, EAPIWriteFlashInc `$DF95`, EAPISetSlot
+   `$DF98` and EAPIGetSlot `$DF9B` (V1.4; an earlier version of this list
+   stopped at `$DF95`). Each writing call switches to Ultimax and back
+   itself, so the caller runs in 16 KB mode with the KERNAL and all of
+   RAM in place. When EasyProg flashes a CRT that has the signature
+   there, it swaps in the version for the fitted flash chip (offsets
+   `$1800`-`$1AFF`; a menu name may follow at `$1B00`). Code that sends
+   Am29F040 commands itself, as `easyflash-save` does, works only on that
+   chip. VICE emulates it and warns `EF: EAPI not found!` when a CRT has
+   no EAPI. Measured through EAPI in VICE (`easyflash-eapi`): EAPIInit
+   5,267 cycles on PAL, an EAPIEraseSector 1,000,489, and an 8-byte
+   record with EAPISetPtr and eight EAPIWriteFlashInc calls 2,264 to
+   2,308.
 
 Saving then works like this. Keep the save sector's banks as `$FF` in
 the CRT, because EasyProg erases only the sectors a CRT contains. At
@@ -1161,6 +1251,7 @@ here. VICE emulates it with `-gmod2eepromimage <file>` and
 ### Recipes
 
 - `recipes/kickassembler/easyflash-save.md` (a self-built EasyFlash CRT that appends a high-score record to bank 8 each boot; persistence shown across two VICE runs with `-easyflashcrtwrite`; erase and program timed)
+- `recipes/kickassembler/easyflash-eapi.md` (the same kind of save through EAPI: the CRT's EAPI slot and name at `00:1:1800` and `00:1:1B00`, the driver patched in by a build step, EAPIInit, erase, write and read back timed across two boots; not pinned)
 
 ---
 
@@ -1193,12 +1284,21 @@ through the job queue.
    error_channel_check does. It stays open for the whole exchange.
 2. Upload. Each `M-W` is a command on channel 15: CHKOUT 15, then the
    bytes `M`, `-`, `W`, address low, address high, count, and `count`
-   data bytes, then CLRCHN. The UNLISTEN runs it. Send at most 32 data
-   bytes per command (the DOS parses the command from a fixed buffer
-   and 32 is the figure loaders use; the recipe sends 32, 32 and 4; a
+   data bytes, then CLRCHN. The UNLISTEN runs it. Send at most 35 data
+   bytes per command: the 1541 ROM refuses a command line longer than
+   41 bytes (`CPY #$2A` at `$C2CE`, then error 32, SYNTAX ERROR; read
+   from `dos1541-325302-01+901229-05.bin`), and the six header bytes
+   leave 35. The routine at `$C2B3` sets that length before the check: it
+   drops the last byte if it is `$0D`, or the last two if the second-to-last
+   is `$0D`. So a 36-byte `M-W` (42 bytes) is refused unless one of its
+   last two data bytes is `$0D`, and then it is accepted; `M-W` copies
+   `count` bytes whatever the stored length. Read from the same ROM, not
+   run. Krill's loader v194 sends 35-byte blocks
+   (`techniques/loaders-packers.md`). The recipe sends 32, 32 and 4; a
    34-byte `M-W` also uploaded and ran in VICE, measured under
-   `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`, and 35 or
-   more was not tried). Advance the address by the count each time.
+   `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`; 35 was not
+   run here. (An earlier version said 32 was the limit loaders use.)
+   Advance the address by the count each time.
 3. Verify with `M-R`: the six bytes `M`, `-`, `R`, low, high, count,
    then CHKIN 15 and `count` CHRIN calls, then CLRCHN. Compare with the
    source. The recipe reads 68 bytes in one command; larger counts were
@@ -1299,9 +1399,12 @@ second on the upload alone, which is why resident loaders upload once.
 **Region:** both
 **Uses registers:** DC06, DC07, DC0D, DC0F
 **Uses kernal:** (none)
+**Claims:** cia1_timer_b (owns), cia1_timer_a (init), cia1_tod (init)
+**Claims basis:** measured-vice
 **Cost:** bytes_code=1060, bytes_data=110, zp_bytes=24
 **Cost basis:** derived-listing
 **Cost measured on:** kickassembler-tape-turbo-loader (whole PRG less the BASIC stub; the code figure includes the report and the 32-bit division, the data is the strings and counters)
+**Consumes formats:** TAP
 
 ### Why
 
@@ -1423,3 +1526,220 @@ one copy.
 ### Recipes
 
 - `recipes/kickassembler/tape-turbo-loader.md` (the TAP-writing script, the loader, the checksum verdict, bytes per second and pulse ranges on both models, and the run with VICE's tape wobble left on)
+
+## story_file_virtual_memory_paging — A file larger than memory, read through a page table and an LRU page cache
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+
+### Why
+
+A program whose data is larger than the RAM it can spare, such as a text
+adventure's story file, a dictionary or a large level set, cannot load
+it whole. It can keep a few pages in memory and read the others from
+disk when they are touched, as a virtual-memory system does. Text-
+adventure interpreters for story files larger than the machine's RAM
+work this way (Infocom's among them, by common account; no interpreter's
+code was read for this page).
+
+### How
+
+**Page table.** Read the directory entry for the file's first track and
+sector, then follow the block chain once: bytes 0 and 1 of each block
+are the next block's track and sector (track 0 ends the chain), and bytes
+2 to 255 are 254 bytes of data. Store one track and sector per block. A
+file of `n` blocks costs `2n` bytes of table and `n` block reads to build
+it; after that any block is one read away. Do not compute the positions:
+the 1541 does not lay a file on consecutive sectors
+(`page_table_assumes_consecutive_sectors`, `pitfalls/kernal-and-io.md`).
+
+**Block read.** Open the command channel and a buffer channel (`OPEN
+5,8,5,"#"`). `U1 5 0 t s` on the command channel reads track `t` sector
+`s` into the drive's buffer; 256 bytes read from channel 5 are then the
+whole block, link bytes first. `B-R` is not the same command: it treats
+byte 0 as a count (`kernal_relative_file_io` and the rel-side-sectors
+recipe measured the difference).
+
+**Cache.** Keep `k` frames of 256 bytes, each with the page it holds and
+when it was last used. A byte address splits into page `addr / 254` and
+offset; a page of 256 bytes on a disk laid out for the purpose (raw
+sectors, no DOS file) makes that a shift. On a hit, return the byte. On a
+miss, choose the frame used longest ago, read the page into it and
+record it. Pin pages the program cannot run without (the interpreter's
+own tables) outside the cache.
+
+**Locality** is what makes it work. A program that returns to the same
+routines and data pages between excursions hits nearly every time; one
+that sweeps the whole file in order misses once a page whatever the
+cache size.
+
+### Why it works
+
+In the recipe a 24-block file and four frames served 640 reads with 631
+hits and 9 misses, the nine distinct pages the access pattern touches,
+and every byte matched the formula the file was written from (measured
+in VICE x64sc 3.10 with 1541 emulation, both models). A miss, one `U1`
+read through the KERNAL, took 708,686 cycles on PAL, about 36 frames; a
+hit 743. The chain on the fresh disk ran 17/00, 17/10, 17/20, 17/08,
+17/18: sectors 10 apart, not consecutive.
+
+### Recipes
+
+- `recipes/oscar64/story-paging.md` (a 24-block SEQ file written to a fresh disk, the page table from the directory and the chain, a 4-frame LRU cache over `U1` reads, 640 reads checked byte for byte, a miss and a hit timed with CIA2, and the consecutive-sector guess read and refuted; PAL and NTSC)
+
+---
+
+## d81_partition_subdirectory — Allocate a 1581 partition with "/0:", select it and format it as a sub-directory
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Requires:** error_channel_check
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
+**Consumes formats:** D81
+
+### Why
+
+A 1581 disk holds 3,160 free blocks and one root directory. A game or
+tool that wants its own directory on the disk, its files invisible to a
+plain `$` listing and its space safe from what is written beside it,
+can put them in a partition used as a sub-directory. The 1581's DOS does
+this with channel-15 commands from a stock machine: no drive code, no
+host tool.
+
+### How
+
+1. Open channel 15 on the drive, bare, and keep it open.
+2. Allocate: send `/0:NAME,` followed by four raw bytes (start track,
+   start sector, block count low, block count high) and `,C`. For a
+   sub-directory the start sector is 0, the count a multiple of 40 and
+   at least 120, and the run must not touch track 40 (1581 User's Guide,
+   section 6.8). Read the status: `00`.
+3. Select: send `/0:NAME`. Read the status and go on only if it begins
+   `02` (`02, SELECTED PARTITION,<first track>,<last track>`).
+4. Format the partition: `N0:name,id`. It writes a header, two BAM
+   sectors and a directory on the partition's first track.
+5. Use the drive as usual: OPEN, CHROUT, LOAD, SAVE and the directory
+   now work inside the partition.
+6. Send `/` to return to the root.
+
+### Why it works
+
+The partition is a CBM file (type `$85`) whose blocks the root BAM marks
+used as one run, so nothing written in the root can land in it. After a
+select the DOS takes its header, BAM and directory from the partition's
+first track, in track 40's layout, and the partition's own BAM marks
+every other track full, so nothing written inside can land outside.
+Measured on the image the recipe's run leaves (VICE x64sc 3.10, 1581
+DOS 318045-02, rung 1): the root entry `85 14 00 50 41 52 54 31`, the
+partition header at 20/0 naming `SUB` and `S1`, its BAM at 20/1 and 20/2
+with tracks 20 to 22 at 36, 39 and 40 free and track 1 at 0, and the
+file `HELLO` at 21/0. The byte-by-byte table is in the recipe.
+
+The select is the only step that checks the rules: a 20-block partition
+from 25/0 allocated with `00, OK` and was refused at the select with
+`77,SELECTED PARTITION ILLEGAL,00,00`; an allocation over track 40 was
+refused at once with `67,ILLEGAL TRACK OR SECTOR,40,00` (measured, PAL).
+A select that fails leaves the previous area selected, so the `N0:` of
+step 4 then formats that area instead: the root, the whole disk
+(measured; `pitfalls/kernal-and-io.md`,
+`n0_after_failed_partition_select_formats_disk`).
+
+### Variations
+
+- **A partition that is not a sub-directory.** Any contiguous run the
+  root BAM does not hold can be allocated as a CBM file, for instance to
+  keep a block range for direct-access data, and the guide says VALIDATE
+  skips CBM entries so it stays allocated. Not measured here.
+- **Sub-directories inside a sub-directory.** The guide allows them one
+  level at a time (`/0:PART2`, then `/0:PART21`); there is no command to
+  go up one level, only `/` to the root. Not measured here.
+
+### Recipes
+
+- `recipes/kickassembler/d81-partition.md` (allocation, select, format, a file written and read inside, `/`, the same file not found from the root, and the image decoded; PAL and NTSC)
+
+---
+
+## disk_copy_block_commands — Copy a disk's used blocks from drive 8 to drive 9 with U1, B-P and U2
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Requires:** error_channel_check
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
+
+### Why
+
+A disk copier, a backup routine in a tool, or a program that clones a
+data disk for the player needs every block of one disk on another,
+including the directory and the BAM. The DOS's file commands cannot do
+it: they see files, not blocks. Its block commands can, from a stock
+machine and with no drive code.
+
+### How
+
+1. On each drive open channel 15 bare and a `#` buffer channel (the name
+   `#`, a secondary address of 2 to 14).
+2. Read the source BAM: send `U1:<sa>,0,18,0` to the source's channel
+   15, `B-P:<sa>,0`, then 256 CHRIN on the buffer channel.
+3. List the used blocks: for each track, the four bytes at 4 × track
+   are a free count and a 24-bit map; a clear bit is a used sector
+   (sector n is bit n mod 8 of byte 1 + n div 8). Tracks 1–17 have 21
+   sectors, 18–24 19, 25–30 18, 31–35 17.
+4. For each used block: `U1` it into the source buffer, read the 256
+   bytes, `B-P:<sa>,0` on the target, write the 256 bytes to its buffer
+   channel, and `U2:<sa>,0,<track>,<sector>` on the target.
+5. Optionally `U1` each block back from the target and compare.
+
+Every command is CHKOUT 15, CHROUT the text, CLRCHN; the UNLISTEN in
+CLRCHN makes the DOS execute it.
+
+### Why it works
+
+`U1` and `U2` read and write one sector through a buffer without the
+DOS's file layer and without touching the BAM, and a `#` channel gives
+the host that buffer as a byte stream. Copying the source BAM like any
+other block makes the target's BAM right with no work, because the same
+blocks are used on both. Measured in the recipe (VICE x64sc 3.10, two
+1541-II, rung 1): 21 blocks copied and compared equal, and the whole
+target image equal to the source, header and disk name included.
+
+The BAM is not the directory: after two files of exactly 2,540 and
+1,778 bytes it marked two blocks used that no file's chain reaches
+(`pitfalls/kernal-and-io.md`,
+`exact_254_multiple_file_leaves_block_allocated`). A BAM-driven copier
+copies them too, which is harmless.
+
+### Variations
+
+- **Follow the chains.** Walk the directory from 18/1 and each file's
+  track-sector links, copy only those blocks, and write the target's
+  BAM from the list. It copies exactly the files and frees leaked
+  blocks, and it must handle every file type's chains. Not built here.
+- **One drive.** Read as many blocks as RAM holds, ask for a disk swap,
+  write them, repeat. The recipe keeps up to 64 blocks in RAM for its
+  compare, which is the same buffer. Not built here.
+- **Whole tracks in the drive.** Upload a routine that reads a track
+  into drive RAM through the job queue (`drive_code_upload_and_job_queue`)
+  and sends it with a fast transfer; the KERNAL path measured here is
+  1.43 s a block. Not built here.
+
+### Cycle budget
+
+Measured, VICE 3.10, screen on, drive wobble off (rung 1): 29,618,542
+cycles on PAL and 30,743,790 on NTSC for 21 blocks, 1,410,407 and
+1,463,990 a block, 1.43 s on both clocks: the drives set the pace. The
+read half alone (U1, B-P and 256 CHRIN; a build without the write) was
+801,648 cycles a block on PAL. A full 664-block disk at that rate is
+about 16 minutes (arithmetic).
+
+### Recipes
+
+- `recipes/kickassembler/disk-copier.md` (drive 8 to drive 9, the block list from the BAM, the copy timed with CIA 2, every block read back and compared; PAL and NTSC)

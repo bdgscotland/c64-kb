@@ -292,6 +292,31 @@ Switch the active segment with `.segment SegName`. Use
 `.file [name="out.prg", segments="Code,Data"]` to write a combined `.prg`
 from multiple segments.
 
+### Code that runs at another address: `.pseudopc`
+
+`.pseudopc addr { ... }` assembles its block for `addr` while the bytes
+go out at the current `*`. Labels inside take the run address:
+
+```asm
+* = $2000 "Block (load)"
+block_load:
+.pseudopc $c000 {
+flash:  ldx #0              // .flash is $C000 in the .vs file
+        // ...
+}
+block_end:                  // back at the storage address: $2000 + size
+```
+
+Copy `block_end - block_load` bytes from `block_load` to the run address
+before the first call. `-showmem` lists the block at its storage address
+(`$2000-$2027 Block (load)`); the `.vs` file lists the labels at the run
+address (`al C:c000 .flash`), so `break .flash` in the monitor stops at
+`$C000`. Measured in
+[recipes/kickassembler/relocated-code-block](../recipes/kickassembler/relocated-code-block.md),
+which also runs the control: the same block assembled for `$2000` and
+called at `$C000` executes a `BRK` in the wiped image. The technique is
+`relocated_code_block` ([memory-banking](../techniques/memory-banking.md)).
+
 ## Multi-file projects
 
 KickAssembler has no object files and no linker. A program is split in one of

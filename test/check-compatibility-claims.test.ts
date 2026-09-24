@@ -231,8 +231,21 @@ describe("resource claims", () => {
   it("irq_chain_table is the host of a raster effect, not a rival to hand the IRQ to", async () => {
     const r = (await checkCompatibility(["scroll_panel_split", "irq_chain_table"])).structured;
     const c = r.conflicts.find((x) => x.kind === "unit_contention");
-    expect(c?.severity).toBe("hard");
+    // Soft since #41: the resolution is to host the effect in the table, so
+    // naming the host must not read as a new hard conflict.
+    expect(c?.severity).toBe("soft");
     expect(c?.resolution).toMatch(/irq_chain_table is the host: rewrite scroll_panel_split's raster handler/);
+  });
+
+  it("adding the suggested irq_chain_table never makes the verdict worse (#41)", async () => {
+    const pair = (await checkCompatibility(["sprite_multiplex_game", "scroll_panel_split"])).structured;
+    expect(pair.verdict).toBe("incompatible");
+    expect(pair.conflicts.find((c) => c.kind === "unit_contention")?.resolution).toMatch(/irq_chain_table/);
+    const hosted = (
+      await checkCompatibility(["sprite_multiplex_game", "scroll_panel_split", "irq_chain_table"])
+    ).structured;
+    expect(hosted.conflicts.filter((c) => c.severity === "hard")).toEqual([]);
+    expect(hosted.verdict).toBe("warnings");
   });
 
   it("a resident loader beside a VIC bank owner: the bank owner must not write $DD00 raw", async () => {
@@ -258,7 +271,9 @@ describe("resource claims", () => {
     );
     const all = await checkCompatibility(["pure_maths", "sfx_engine_beside_music"]);
     expect(all.text).toMatch(/Unit claims are stated for 2 of 2 techniques\./);
-    expect(all.text).toMatch(/interrupt vectors a recipe chooses are not checked yet \(issue #22, step 8\)/);
+    expect(all.text).toMatch(
+      /Recipes' zero-page bytes and required devices are compared as info \(recipe_zero_page_overlap, recipe_device_conflict\)/,
+    );
   });
 
   it("technique lookup returns claims and says unknown when the page states none", async () => {

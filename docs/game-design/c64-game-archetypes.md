@@ -6,7 +6,7 @@ kind: game
 
 # C64 Game Archetypes
 
-This catalog lists eleven game archetypes (genres) of the Commodore 64 library. Each entry gives the defining mechanic, the scene tradition around the genre, a technique fingerprint (the graph Technique nodes to consider when implementing the archetype), the pitfalls most likely to surface during development, three to five historical reference titles, and any known modern or homebrew revivals. It feeds `c64_game_briefing` and is a starting point for agent-built game plans.
+This catalog lists eleven game archetypes (genres) of the Commodore 64 library. Each entry gives the defining mechanic, the scene tradition around the genre, a technique fingerprint (the graph Technique nodes to consider when implementing the archetype), the pitfalls most likely to surface during development, three to five historical reference titles, and any known modern or homebrew revivals. Each reference title links the page that gives its C64 genre and year (C64-Wiki, or Wikipedia where C64-Wiki has no page); for shooters that page also gives the scroll direction. Titles and revivals no source confirmed were removed (issue #40). It feeds `c64_game_briefing` and is a starting point for agent-built game plans.
 
 The technique fingerprints use snake_case names that match Technique nodes in the graph. Only confirmed node names appear here. Where a technique has no graph node, the prose describes it in plain terms; find related content with `c64_search` or `c64_techniques_for`. Pitfall names match H2 headings in `docs/pitfalls/`. Each archetype is an `Archetype` node in the graph, named by its `**Archetype:**` line; the fingerprint and pitfall lines become its `FEATURES` and `RISKS` edges, and `c64_game_briefing` reads them (`docs/CONVENTIONS-archetypes.md`).
 
@@ -30,17 +30,17 @@ The score panel is a fixed band under or over the scrolling field: a raster spli
 
 A road shooter has a car for a ship: in Spy Hunter the road scrolls toward the player and enemy cars and a helicopter attack the player's car. Its extra parts are the car's handling, where throttle is the scroll speed (`vehicle_control`), cars that shove each other off the road (`car_contact_response`), and pursuit cars that pull alongside and ram (`lane_pursuit_ai`). They are not in the fingerprint because a ship shooter has none of them; a brief that names a car or a road finds them by its words.
 
-**Technique fingerprint:** `soft_scroll_v`, `scroll_panel_split`, `sprite_multiplex_game`, `per_frame_hitbox`, `wave_director`, `stable_raster_irq`, `double_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`
+**Technique fingerprint:** `soft_scroll_v`, `scroll_panel_split`, `sprite_multiplex_game`, `per_frame_hitbox`, `wave_director`, `sid_voice_setup`, `sid_play_routine_pattern`, `sfx_in_player`, `sprite_collision_detect`
 
-An earlier fingerprint named `raster_bars`, which nothing in this section uses, and `sprite_multiplex_24`, whose own page scopes it to Oscar64's `vspr_*` path and the fixed-band demo recipe; it named neither the panel split, the hitboxes nor the wave director.
+An earlier fingerprint named `raster_bars`, which nothing in this section uses, and `sprite_multiplex_24`, whose own page scopes it to Oscar64's `vspr_*` path and the fixed-band demo recipe; it named neither the panel split, the hitboxes nor the wave director. Until #41 it also named `stable_raster_irq` and `double_irq`: the panel split polls for its line and times its writes from a delay table, as `kickassembler-scroll-panel-split` and the `shmup-vertical` starter's `kernel.asm` do, so neither is needed (the starter's PLAN.md drops both). `sfx_in_player`, which the starter uses for its effects, was missing.
 
 **Brief words:** vertical shooter, vertical shmup, vertically scrolling, vertical scrolling, vertical scroller, road shooter, road, car, spy hunter
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `sprite_priority_collision_silent`, `raster_irq_first_line_jitter`
 
-**Reference titles:** Commando (1985), Warhawk (1986), Lightforce (1986). Genre and year from general knowledge, not checked against a source here. (An earlier version listed Uridium, Delta, IO, Nemesis and Zynaps, which are horizontal shooters, issue #40.)
+**Reference titles:** [Commando](https://www.c64-wiki.com/wiki/Commando) (1985), [Warhawk](https://www.c64-wiki.com/wiki/Warhawk) (1986), [Lightforce](https://www.c64-wiki.com/wiki/Lightforce) (1987). C64-Wiki files all three as vertically scrolling shoot'em ups. (An earlier version listed Uridium, Delta, IO, Nemesis and Zynaps, which are horizontal shooters, gave Lightforce as 1986, and said the genres were unchecked, issue #40.)
 
-**Modern examples:** Scramble Spirits (scene release 2018, by Saul Cross)
+**Modern examples:** none checked. (An earlier version named Scramble Spirits as a 2018 scene release by Saul Cross; it is a 1990 port of Sega's 1988 arcade game, and no source here confirms the C64 port's scroll direction, issue #40.)
 
 ---
 
@@ -48,7 +48,7 @@ An earlier fingerprint named `raster_bars`, which nothing in this section uses, 
 
 **Archetype:** `horizontal_shmup`
 
-The horizontal shooter scrolls the play field from right to left while the player ship moves vertically against side-scrolling enemy formations. Armalyte (1988) and Katakis (1987) are the canonical C64 examples; R-Type's official conversion (1988) was commercially significant. The defining problem is parallax: depth needs at least two layers scrolling at different rates, which in character mode means two logical screen buffers or sprite tiles over a slower-moving background.
+The horizontal shooter scrolls the play field from right to left while the player ship moves vertically against side-scrolling enemy formations. Armalyte (1988) and Katakis (1988) are the canonical C64 examples; R-Type's official conversion (1988) was commercially significant. The defining problem is parallax: depth needs at least two layers scrolling at different rates, which in character mode means two logical screen buffers or sprite tiles over a slower-moving background.
 
 Character mode scrolls horizontally with $D016's fine-scroll field (0-7 pixels), plus a coarse column shift that moves data within screen RAM. The coarse step moves every row one column: 39 × 25 = 975 bytes of screen RAM plus the same in colour RAM (`char_scroll_buffer_h` in `techniques/scroll.md`), about as much as a vertical row shift (960). The standard engine is `infinite_scroll_h`: XSCROLL in $D016 moves the display 0-7 pixels, and when it wraps the screen shifts one column and the new right-hand column is filled from a map wider than 40 columns. (An earlier version said a column shift touches only 25 non-contiguous bytes, costs more than a row shift, and that the engine touches one column per frame; the whole screen moves every eighth pixel.)
 
@@ -60,9 +60,9 @@ Enemy formations in a horizontal shmup often span the full height of the screen,
 
 **Brief words:** horizontal shooter, horizontal shmup, horizontally scrolling, horizontal scrolling, side scrolling shooter, side scroller, katakis, armalyte, r type
 
-**Reference titles:** Katakis (1987), R-Type (1988), Armalyte (1988), Hawkeye (1988), Enforcer (1992)
+**Reference titles:** [Katakis](https://www.c64-wiki.com/wiki/Katakis) (1988), [R-Type](https://www.c64-wiki.com/wiki/R-Type) (1988), [Armalyte](https://www.c64-wiki.com/wiki/Armalyte) (1988), [Enforcer](https://www.c64-wiki.com/wiki/Enforcer) (1992). C64-Wiki files all four as horizontally scrolling shoot'em ups with parallax. (An earlier version gave Katakis as 1987 and listed Hawkeye, which C64-Wiki files as a scrolling platformer, issue #40.)
 
-**Modern examples:** Berzerk Ball 2 (2011, tribute release)
+**Modern examples:** none checked. (An earlier version named Berzerk Ball 2 (2011); no source for it was found, issue #40.)
 
 ---
 
@@ -70,7 +70,7 @@ Enemy formations in a horizontal shmup often span the full height of the screen,
 
 **Archetype:** `single_screen_platformer`
 
-The single-screen platformer's arena fits entirely on the 40x25 character display. Platforms, ladders and hazards are character tiles; the player and enemies are sprites that obey tile-based collision rules. Bubble Bobble (1987) is a clear example; Manic Miner (1983) set the template earlier. (An earlier version also named Bombuzal, a puzzle game, not a platformer; genres here are from general knowledge, not a source.) With no scroll there is no frame split, but collision detection must run for several actors every frame within the character grid.
+The single-screen platformer's arena fits entirely on the 40x25 character display. Platforms, ladders and hazards are character tiles; the player and enemies are sprites that obey tile-based collision rules. Bubble Bobble (1987) is a clear example; Manic Miner (1983) set the template earlier. (An earlier version also named Bombuzal, a puzzle game, not a platformer.) With no scroll there is no frame split, but collision detection must run for several actors every frame within the character grid.
 
 Tile-based collision on the C64 is a CPU operation, not a hardware one. The game converts a sprite's X/Y position to a screen-RAM row and column, reads the character code at that cell, and looks it up in a table of solid tiles. With eight or more actors each checking several points (top-left, top-right, bottom-left, bottom-right), the per-frame cost adds up. Self-modifying code and zero-page burst loads are the common optimisations: the hot collision table is copied into zero page at load time, and the inner check loop uses zero-page addressing to save a cycle per access.
 
@@ -82,9 +82,9 @@ Enemy AI state machines take a large share of the CPU budget in this genre. Each
 
 **Brief words:** single screen platformer, single screen, ladder, manic miner, bubble bobble
 
-**Reference titles:** Manic Miner (1983), Bubble Bobble (1987), Rainbow Islands (1990), Toki (1991), Creatures (1990)
+**Reference titles:** [Manic Miner](https://www.c64-wiki.com/wiki/Manic_Miner) (1983), [Jumpman](https://www.c64-wiki.com/wiki/Jumpman) (1983), [Lode Runner](https://www.c64-wiki.com/wiki/Lode_Runner) (1983), [Bubble Bobble](https://www.c64-wiki.com/wiki/Bubble_Bobble) (1987). C64-Wiki files all four as single-screen platformers. (An earlier version listed Rainbow Islands, Toki and Creatures, which scroll: C64-Wiki files Rainbow Islands and Creatures as scrolling platformers, Toki was not checked, issue #40.)
 
-**Modern examples:** Gridrunner Revolution port (scene, 2014)
+**Modern examples:** none checked. (An earlier version named a 2014 scene port of Gridrunner Revolution; [Gridrunner Revolution](https://en.wikipedia.org/wiki/Gridrunner_Revolution) is a 2009 Windows game and no C64 port was found, issue #40.)
 
 ---
 
@@ -106,9 +106,9 @@ Physics (gravity, jumping arcs, enemy movement) must be integer-based and fast. 
 
 **Brief words:** scrolling platformer, scrolling platform game, run and gun, turrican, giana sisters
 
-**Reference titles:** Turrican (1990), Turrican II (1991), Creatures (1990), Mayhem in Monsterland (1993), The Great Giana Sisters (1987)
+**Reference titles:** [Turrican](https://www.c64-wiki.com/wiki/Turrican) (1990), [Creatures](https://www.c64-wiki.com/wiki/Creatures) (1990), [Mayhem in Monsterland](https://en.wikipedia.org/wiki/Mayhem_in_Monsterland) (1993), [The Great Giana Sisters](https://www.c64-wiki.com/wiki/The_Great_Giana_Sisters) (1987), [Rainbow Islands](https://www.c64-wiki.com/wiki/Rainbow_Islands) (1989). (An earlier version listed Turrican II, whose C64-Wiki page does not say it scrolls, and gave Rainbow Islands as a single-screen platformer of 1990, issue #40.)
 
-**Modern examples:** Planet Golf (2024, RGCD)
+**Modern examples:** none checked. (An earlier version named Planet Golf (2024); it is a 2017 golf game and is now under Sports, issue #40.)
 
 ---
 
@@ -128,7 +128,7 @@ Isometric projection (Last Ninja style) adds a transform: the logical grid is ro
 
 **Brief words:** top down adventure, action adventure, rpg, dungeon, overworld
 
-**Reference titles:** Green Beret (1986), The Last Ninja (1987), Zak McKracken (1988), Times of Lore (1988)
+**Reference titles:** [The Last Ninja](https://www.c64-wiki.com/wiki/The_Last_Ninja) (1987, isometric), [Times of Lore](https://en.wikipedia.org/wiki/Times_of_Lore) (1988, overhead view), [Gauntlet](https://www.c64-wiki.com/wiki/Gauntlet) (1986, top-down). (An earlier version listed [Green Beret](https://www.c64-wiki.com/wiki/Green_Beret), a 1985 side-view shoot'em up platformer, and [Zak McKracken](https://www.c64-wiki.com/wiki/Zak_McKracken_and_the_Alien_Mindbenders), a side-view point-and-click adventure, issue #40.)
 
 **Modern examples:** none widely known
 
@@ -146,15 +146,17 @@ The display is a static or near-static character grid. Screen RAM is updated onl
 
 Puzzle games are one of the few C64 genres where the SID play routine can share the main loop without raster scheduling, because the frame rate need not be pixel-perfect. A raster wait at the top of the frame (spin on $D011 bit 7 until the blanking period) is enough. The harder work is the puzzle rules: Boulder Dash's diagonal-fall and explosion logic is a small state machine per cell, and running it for all 1000 cells 50 times a second needs careful ordering to avoid simulation artifacts.
 
-**Technique fingerprint:** `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_multiplex_8`, `zero_page_burst`, `self_modifying_code`, `text_mode_overlay_render`
+**Technique fingerprint:** `frame_sync_loop`, `cave_scan_engine`, `charset_animation`, `sid_voice_setup`, `sid_play_routine_pattern`, `zero_page_burst`, `self_modifying_code`, `text_mode_overlay_render`
+
+Until #41 the fingerprint named `sprite_multiplex_8` and `stable_raster_irq`. Neither fits the section: every object is a cell, not a sprite, and a raster wait at the top of the frame is enough. The `action-puzzle` starter, a Boulder Dash-style cave game, uses no sprites and a polled `frame_sync_loop`, and builds on `cave_scan_engine` and `charset_animation`, which the fingerprint did not name.
 
 **Common pitfalls:** `badline_cycle_loss`, `kernal_clobbers_a_x_y`, `d012_wrap_around`, `sprite_priority_collision_silent`
 
 **Brief words:** puzzle, boulder dash, sokoban, pipe dream
 
-**Reference titles:** Boulder Dash (1984), Boulderdash II (1985), Pipe Dream (1990), Oxyd (1990), Sokoban (various ports, 1988)
+**Reference titles:** [Boulder Dash](https://en.wikipedia.org/wiki/Boulder_Dash_(video_game)) (1984), [Boulder Dash II](https://en.wikipedia.org/wiki/Boulder_Dash_II) (1985, "Rockford's Revenge" on the C64), [Pipe Dream](https://en.wikipedia.org/wiki/Pipe_Mania) (1990, Pipe Mania in Europe), [Soko-Ban](https://en.wikipedia.org/wiki/Sokoban) (Spectrum HoloByte; year not checked). Wikipedia files all four as puzzle games with a C64 version. (An earlier version listed Oxyd, which has no C64 version, and gave Sokoban as 1988, issue #40.)
 
-**Modern examples:** Tileworld64 (2022, hobbyist)
+**Modern examples:** none checked. (An earlier version named Tileworld64 (2022); no source for it was found, issue #40.)
 
 ---
 
@@ -170,13 +172,15 @@ Memory is the main constraint. A large text adventure needs story text (often 50
 
 The SID plays simple sound effects (a beep on input, a chord on success or death) or nothing. The VIC-II runs its default 40-column character mode with no custom charset. IRQs, if used, only blink the cursor or keep a real-time clock for timed puzzles. The genre puts the least load on C64-specific hardware and the most on software architecture and data compression.
 
-**Technique fingerprint:** `ram_under_kernal`, `cpu_io_port_bank`, `exomizer_basics`, `sid_voice_setup`, `two_word_parser`
+**Technique fingerprint:** `adventure_database_engine`, `two_word_parser`, `text_input_line`, `kernal_file_write_seq`, `kernal_file_read_seq`, `error_channel_check`, `sid_voice_setup`
+
+Until #41 the fingerprint led with `ram_under_kernal`, `cpu_io_port_bank` and `exomizer_basics`, the strategies of the paragraph above for a story too large for 64 KB with the ROMs in. They are for that large game only; the `adventure` starter fits under $A000 with the ROMs in and drops all three (its PLAN.md). Look them up by name when a game needs them. The fingerprint named neither the engine, the input line nor the save and load a parser game needs.
 
 **Common pitfalls:** `kernal_clobbers_a_x_y`, `kernal_io_mapping_dependency`, `kernal_assumes_sei_cleared`, `ram_under_rom_traps`
 
 **Brief words:** text adventure, interactive fiction, parser, zork, infocom
 
-**Reference titles:** Zork I (C64 port, 1982), The Hitchhiker's Guide to the Galaxy (1984), Leather Goddesses of Phobos (1986), Silicon Dreams trilogy (1985), Guild of Thieves (1987)
+**Reference titles:** [Zork I](https://en.wikipedia.org/wiki/Zork) (1982), [The Hitchhiker's Guide to the Galaxy](https://en.wikipedia.org/wiki/The_Hitchhiker%27s_Guide_to_the_Galaxy_(video_game)) (1984), [Leather Goddesses of Phobos](https://en.wikipedia.org/wiki/Leather_Goddesses_of_Phobos) (1986), [Silicon Dreams](https://en.wikipedia.org/wiki/Silicon_Dreams) (1986 compilation of three 1983-85 games), [The Guild of Thieves](https://en.wikipedia.org/wiki/The_Guild_of_Thieves) (1987). Wikipedia files all five as interactive fiction with a C64 version. (An earlier version gave Silicon Dreams as 1985, issue #40.)
 
 **Modern examples:** none widely known
 
@@ -198,9 +202,9 @@ Action-puzzle input needs debounce logic: when the player holds a direction key,
 
 **Brief words:** action puzzle, puzzle, tetris, falling block, falling piece, klax, match three
 
-**Reference titles:** Tetris (1988), Klax (1990), Columns (1990), Dr. Mario (unofficial port), Welltris (1990)
+**Reference titles:** [Tetris](https://www.c64-wiki.com/wiki/Tetris) (1988), [Klax](https://www.c64-wiki.com/wiki/Klax) (1990), [Welltris](https://en.wikipedia.org/wiki/Welltris) (1991). (An earlier version listed Columns (1990) and an unofficial Dr. Mario port, for which no C64 release was found, and gave Welltris as 1990, issue #40.)
 
-**Modern examples:** Petscii Robots (2020) adjacent; C64Tetris (various homebrew versions, ongoing)
+**Modern examples:** none checked. (An earlier version named Petscii Robots (2020) and "C64Tetris"; the first is a 2021 action adventure, the second names no one game, issue #40.)
 
 ---
 
@@ -208,7 +212,7 @@ Action-puzzle input needs debounce logic: when the player holds a direction key,
 
 **Archetype:** `sports`
 
-Sports games range from one-on-one fighting (International Karate, 1985) to multi-event track and field (Summer Games, 1984). The main technical problem is animation: athletes need many frames of motion (a sprinter may have 8-12 unique stride frames, a judoka a library of throws and stances), switched by game state. Sprite multiplexing is usually needed because athletes are large (2-3 sprites wide) and two to four players may be on screen at once.
+Sports games range from one-on-one fighting (International Karate, 1986 on the C64) to multi-event track and field (Summer Games, 1984). The main technical problem is animation: athletes need many frames of motion (a sprinter may have 8-12 unique stride frames, a judoka a library of throws and stances), switched by game state. Sprite multiplexing is usually needed because athletes are large (2-3 sprites wide) and two to four players may be on screen at once.
 
 International Karate and its sequels use many sprites: each fighter is two or three overlaid hardware sprites in multicolor mode, which gives a 24-pixel-wide character at the cost of color precision. The fight engine is a state machine (standing, walking, blocking, attacking, hit-recovery); each state has an animation sequence and a set of permitted transitions. Hit boxes are bounding boxes checked in software (sprite-to-sprite distances, not only $D01E), because the hardware collision register cannot tell a leg strike from a body strike.
 
@@ -218,11 +222,11 @@ Multi-event sports games (Summer Games, World Games) are a different problem: ea
 
 **Common pitfalls:** `sprite_dma_overflow`, `sprite_priority_collision_silent`, `sprite_x_high_bit_wrong_register`, `sprite_y_expand_double_register_write`
 
-**Brief words:** sports, football, soccer, tennis, athletics, decathlon, olympic, summer games
+**Brief words:** sports, football, soccer, tennis, athletics, decathlon, olympic, summer games, one on one, combat, karate, joust, duel, knight games
 
-**Reference titles:** Summer Games (1984), International Karate (1985), Summer Games II (1985), World Games (1986), International Karate + (1987)
+**Reference titles:** [Summer Games](https://www.c64-wiki.com/wiki/Summer_Games) (1984), [World Games](https://www.c64-wiki.com/wiki/World_Games) (1986), [International Karate](https://www.c64-wiki.com/wiki/International_Karate) (1986), [IK+](https://www.c64-wiki.com/wiki/IK+) (1987), [Barbarian](https://www.c64-wiki.com/wiki/Barbarian_-_The_Ultimate_Warrior) (1987). C64-Wiki files all five as sports, multi-event or fighting sport. (An earlier version gave International Karate as 1985, its Spectrum year; the C64 port is 1986 on C64-Wiki and Wikipedia, and listed Barbarian under Beat-em-up, issue #40.)
 
-**Modern examples:** none widely known
+**Modern examples:** [Planet Golf](https://www.indieretronews.com/2017/07/planet-golf-anticipated-golf-sim-for.html) (2017, RGCD, a golf game)
 
 ---
 
@@ -230,7 +234,9 @@ Multi-event sports games (Summer Games, World Games) are a different problem: ea
 
 **Archetype:** `racing`
 
-Racing games show speed and perspective by warping the road ahead of the player. The pseudo-3D road on the C64 uses raster IRQs to change $D016 (horizontal scroll) per scanline, so the road appears to curve toward a vanishing point. (An earlier version also offered changing "character widths per scanline"; the VIC-II has no character-width setting, only XSCROLL, CSEL and MCM in $D016, `hardware/vic-ii-reference.md`.) Pitstop II (1984) uses a split-screen view; Buggy Boy (1988) renders a wide, tree-lined track; Outrun-style racers need horizon color changes and road-stripe scheduling. Here the raster IRQ is the rendering primitive.
+**Starter:** `racing`
+
+Racing games show speed and perspective by warping the road ahead of the player. The pseudo-3D road on the C64 uses raster IRQs to change $D016 (horizontal scroll) per scanline, so the road appears to curve toward a vanishing point. (An earlier version also offered changing "character widths per scanline"; the VIC-II has no character-width setting, only XSCROLL, CSEL and MCM in $D016, `hardware/vic-ii-reference.md`.) Pitstop II (1984) uses a split-screen view; Buggy Boy (1987) renders a wide, tree-lined track; Outrun-style racers need horizon color changes and road-stripe scheduling. Here the raster IRQ is the rendering primitive.
 
 The road is a row of character cells per scanline, not a sprite or bitmap shape. A per-scanline horizontal shift via $D016 fine scroll makes the curve. Wider curves need larger shifts on consecutive lines; hills are approximated by varying the scanline count given to near and far road sections. Sprites represent other cars: a car at the horizon is a small sprite; as it approaches it moves to a larger Y coordinate and may be expanded with $D017 (Y-expand) or $D01D (X-expand). The scaling steps through discrete sizes, not continuously, but with enough sprite frames the illusion holds.
 
@@ -242,9 +248,9 @@ Color changes for road stripes, sky gradients and roadside scenery are all raste
 
 **Brief words:** racing, racer, race, pseudo 3d, lap, grand prix, pitstop, out run, outrun
 
-**Reference titles:** Pitstop II (1984), Buggy Boy (1988), Street Surfer (1986), Stunt Car Racer (1989), Super Cycle (1986)
+**Reference titles:** [Pitstop II](https://www.c64-wiki.com/wiki/Pitstop_II) (1984), [Buggy Boy](https://www.c64-wiki.com/wiki/Buggy_Boy) (1987), [Street Surfer](https://www.c64-wiki.com/wiki/Street_Surfer) (1986), [Stunt Car Racer](https://www.c64-wiki.com/wiki/Stunt_Car_Racer) (1989), [Super Cycle](https://www.c64-wiki.com/wiki/Super_Cycle) (1986). C64-Wiki files all five as racing games. (An earlier version gave Buggy Boy as 1988; Zzap!64 reviewed the C64 port in issue 32, December 1987, per Wikipedia, issue #40.)
 
-**Modern examples:** Slipstream 5200 (2020, homebrew by Sarah Jane Avory)
+**Modern examples:** none checked. (An earlier version named Slipstream 5200 (2020) by Sarah Jane Avory; no source for it was found, issue #40.)
 
 ---
 
@@ -266,7 +272,7 @@ Enemy AI in beat-em-ups is more complex than in platformers or puzzle games. Eac
 
 **Brief words:** beat em up, brawler, fighting game, double dragon, renegade
 
-**Reference titles:** Renegade (1987), Target: Renegade (1988), IK+ (1987), Double Dragon (1988), Barbarian (1987)
+**Reference titles:** [Renegade](https://en.wikipedia.org/wiki/Renegade_(video_game)) (1987), [Target: Renegade](https://en.wikipedia.org/wiki/Target:_Renegade) (1988), [Double Dragon](https://www.c64-wiki.com/wiki/Double_Dragon_(Melbourne_House)) (1988). Each source files it as a beat 'em up with a C64 version. (An earlier version also listed IK+ and Barbarian; C64-Wiki files both as fighting sport, and they are under Sports, issue #40.)
 
 **Modern examples:** none widely known
 

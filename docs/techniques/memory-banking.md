@@ -114,7 +114,7 @@ first ($34, or $33 if char ROM is acceptable) with interrupts disabled.
 **Mode $35 with custom IRQ vectors.** When HIRAM goes to 0, the CPU's hardware
 IRQ vector at $FFFE/$FFFF and NMI vector at $FFFA/$FFFB are no longer in ROM —
 they read from RAM. Before switching to $35, disable interrupts with SEI, write
-the IRQ and NMI handler addresses to the RAM at $FFFE/$FFFB (writes reach the
+the IRQ and NMI handler addresses to the RAM at $FFFE/$FFFF and $FFFA/$FFFB (an earlier version said "$FFFE/$FFFB"; writes reach the
 underlying RAM even while KERNAL ROM covers them, so write directly), then
 write $35 to $01 and re-enable with CLI. The KERNAL-provided interrupt chain at
 $EA31 is gone; the program owns all interrupts.
@@ -339,6 +339,12 @@ techniques and will be demonstrated in Phase 4+ recipe docs.
 **Cost:** bytes_code=70, bytes_data=2048
 **Cost basis:** derived-listing
 **Cost measured on:** kickassembler-charset-copy-rom-to-ram (one-off copy)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+kickassembler-charset-copy-rom-to-ram: one `$D018` store points the VIC-II
+at the copy, and the copy is only seen through it.
 
 ### Why
 
@@ -569,8 +575,13 @@ two possible bitmap base addresses within the VIC bank:
 The lower two CB bits (bits 2-1) are ignored in bitmap mode; they still affect
 character base selection in text mode but have no effect on the bitmap address.
 
-For VIC bank 0, the two legal bitmap positions in CPU address space are:
-- Bit 3 = 0: bitmap at $0000-$1FFF
+For VIC bank 0, bit 3 selects between:
+- Bit 3 = 0: $0000-$1FFF. Not usable: the VIC sees character ROM at
+  $1000-$1FFF in banks 0 and 2, so the lower half of the screen shows the
+  ROM glyphs, and the upper half is zero page, stack and screen RAM.
+  Measured in VICE x64sc: with $D018 = $10 in bank 0, all 488 cells from
+  bitmap byte $1000 on showed the character ROM bytes. (An earlier version
+  listed $0000-$1FFF as a legal bitmap position in bank 0.)
 - Bit 3 = 1: bitmap at $2000-$3FFF
 
 Screen RAM (the color/nybble data in standard bitmap mode) is positioned
@@ -601,11 +612,13 @@ bitmap-modes.md and recipes/kickassembler/fli-image.md. (An earlier version of
 this paragraph described FLI as a cycle-exact $D018 write during an idle fetch
 and did not mention $D011 or the forced badline.)
 
-**Bitmap at $0000 and sprite multiplexing.** The $0000-$1FFF bitmap position
-overlaps with zero page and the stack ($0000-$01FF). Sprites whose data blocks
-land in $0000-$1FFF are valid as long as the sprite pointer value accounts for
-the collision. Most demos use $2000 for the bitmap and leave
-$0000-$1FFF for code, zero-page variables, and stack.
+**Bitmap at $0000 and sprite multiplexing.** In bank 0 the $0000-$1FFF bitmap
+position is not usable (see above): its lower half overlaps zero page and the
+stack, its upper half is character ROM to the VIC. Sprite data in $1000-$1FFF
+of bank 0 reads character ROM too. In banks 1 and 3 offset $0000 is plain RAM.
+Most programs use $2000 for the bitmap in bank 0 and leave $0000-$1FFF for code,
+zero-page variables and stack. (An earlier version said sprite blocks anywhere
+in $0000-$1FFF are valid.)
 
 ### Cycle budget
 
@@ -625,6 +638,7 @@ No Phase 3 recipes. Bitmap setup will be demonstrated in Phase 4+ recipe docs.
 
 **Complexity:** medium
 **Region:** both
+**Consumes formats:** CRT
 
 ### Why
 
@@ -747,6 +761,9 @@ instruction boundaries against a mid-instruction switch, which cannot happen.)
 
 **Complexity:** medium
 **Region:** both
+**Cost:** cycles_per_frame=0
+**Cost basis:** arithmetic
+**Cost measured on:** kickassembler-scroll-panel-split (one `$01` store at init, and the IRQ enters through `$FFFE` without the KERNAL dispatcher, so no per-frame work)
 **Claims:** irq_vector_fffe (owns), nmi_vector_fffa (owns)
 **Claims basis:** estimated
 
@@ -838,6 +855,29 @@ to the raster and sprite recipes landing in Phase 4+.
 **Region:** both
 **Uses registers:** D018, D011
 **Requires:** screen_ram_relocation
+**Cost:** cycles_per_frame=57
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-double-buffer (the flip and the page toggle, 31 cycles, plus the sprite-pointer copy, 26; PAL and NTSC; the page redraw and the wait for the blank are not in it)
+**Claims:** vic_matrix_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/oscar64/double-buffer.md`
+saw one `$D018` store a frame, changing only the matrix bits. `$D011` is
+polled, not written. The recipe's sprite and CIA1 timer B are its
+demonstration and measurement harness, not the technique's
+([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
+
+The Cost line is the technique's own work, timed by a VICE monitor exec
+trace of the recipe's `-O2` build (x64sc 3.10, PAL and NTSC, the same on
+every frame traced). The flip, from the load of `vm[hidden]` after the
+wait to the store of the toggled index, is 31 cycles. The copy of the
+sprite pointer into the hidden page is 26, a bound: the traced block also
+sets up an argument for the caption. What the program draws into the
+hidden page is not the technique's and is not in the figure; budget it
+with the drawing code. The recipe's full 1 KB redraw takes 12,598 cycles
+on PAL and 13,165 on NTSC. The #22 game test, which copied three rows a
+frame into the hidden page, measured 2,180 and 2,015. Before #96 this
+page had no Cost line, and `c64_plan_budget` reported it as unknown.
 
 ### Why
 
@@ -994,6 +1034,74 @@ the top of RAM, which the plan leaves free.
 
 - `recipes/oscar64/memory-layout.md` — stub, music, charset, sprite, screen and code at planned addresses, printing each symbol's address so the screen can be read against the map
 
+## relocated_code_block — Code stored at one address and run at another
+
+**Complexity:** low
+**Region:** both
+
+**Why.** A PRG loads as one contiguous block from `$0801`, but some code
+must run somewhere else: a loader or an IRQ handler under the I/O area or
+the KERNAL, a routine at `$C000` that survives the main program being
+overwritten, a stub in RAM that runs while a cartridge bank changes. The bytes
+travel in the PRG at a load address and are copied to the run address at
+start-up. Code assembled for the load address fails after the copy:
+every `JSR`, `JMP` and absolute data address inside it still names the
+load address.
+
+**How.** Tell the toolchain the run address, keep the bytes at the load
+address, and copy them before the first call:
+
+| Toolchain | Stored at the load address, linked for the run address | Copy |
+|---|---|---|
+| KickAssembler | `* = $2000` then `.pseudopc $c000 { ... }`; labels inside take `$C0xx` | a copy loop over `block_end - block_load` bytes |
+| Oscar64 | `#pragma section(rcode, 0)` and `#pragma region(rblock, 0x2000, 0x2100, , , {rcode}, 0xc000)`, then `#pragma code(rcode)` / `#pragma data(rcode)` around the block | `memcpy((char *)0xc000, (char *)0x2000, size)` |
+| cc65 | a segment with `load = BLOCK, run = HIRAM, define = yes` in the linker configuration, selected with `#pragma code-name` and `#pragma rodata-name` | `memcpy(_RELOC_RUN__, _RELOC_LOAD__, size)` from the linker's symbols |
+
+Each form was built and run in VICE by the three `relocated-code-block`
+recipes: a border flash stored at `$2000`, copied to `$C000`, the stored
+copy wiped, then called. All three left the border green on PAL and NTSC,
+and a monitor break at `$C000` with the toolchain's label file loaded
+stopped there.
+
+**Why it works.** The CPU executes whatever bytes are at the program
+counter. Relative branches are position-independent; `JSR`, `JMP`,
+absolute and indexed operands are not, so the assembler or linker must
+compute them for the address the code will run at. The copy moves bytes
+unchanged, so the code is right at the run address and wrong anywhere
+else. The KickAssembler recipe's control, assembled for `$2000` and run
+at `$C000`, ended at `READY.` after executing a `BRK` in the wiped image.
+
+**Symbols.** KickAssembler's `.vs` and cc65's `-Ln` file list the run
+address. Oscar64's `.lbl` and `.map` list the storage address (`al 2000
+.flash`), so a monitor break on the label never fires; add the offset to
+the labels in the region before loading them (the Oscar64 recipe has a
+one-line rewrite).
+
+**The stored copy is a fixed address.** The program's own code must not
+grow into it. Oscar64 linked its default `main` region over the block's
+`$2000` with no diagnostic, and cc65 without `fill = yes` wrote the block
+straight after `MAIN` while `__RELOC_LOAD__` still named `$2000` (both
+measured in the recipes). That is the collision
+`charset_blit_overruns_grown_code` in `pitfalls/banking.md` describes;
+declare the block's range in the layout (`memory_layout_plan`).
+
+**Variations.** Several blocks linked for the same run address and
+copied in turn (overlays, `runtime_relocation` in
+[loaders-packers](loaders-packers.md) for relocation at run time); a run
+address under the KERNAL or I/O, which needs `$01` switched for the copy
+and for every call (`cpu_io_port_bank`); a bank-switch stub copied to
+`$0200` so it runs from RAM while the cartridge bank changes, the
+`.pseudopc $0200` example in `pitfalls/banking.md`.
+
+**Cycle budget.** The copy runs once at start-up. The code costs at its
+run address what it would cost anywhere.
+
+### Recipes
+
+- `recipes/kickassembler/relocated-code-block.md` — `.pseudopc`, the `.vs` labels at `$C0xx`, the control that ends at `READY.`
+- `recipes/oscar64/relocated-code-block.md` — a region with a run address, the `.lbl` rewrite for the monitor
+- `recipes/cc65/relocated-code-block.md` — a `load`/`run` segment pair, the linker's `__RELOC_LOAD__` and `__RELOC_RUN__`
+
 ## irq_owns_processor_port — Interrupt handlers that save, set and restore $01
 
 **Complexity:** medium
@@ -1131,6 +1239,12 @@ the opcode sizes).
 **Complexity:** medium
 **Region:** both
 **Uses registers:** DF00, DF01, DF02, DF03, DF04, DF05, DF06, DF07, DF08, DF09, DF0A
+**Claims:** expansion_io2 (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL, `-reu -reusize
+512`) of kickassembler-reu-dma: 161 stores to the REU registers
+`$DF01-$DF0A`.
 
 ### Why
 
@@ -1674,3 +1788,146 @@ time.
 - Emmanuel Marty, LZSA repository (`src/lzsa.c` version string 1.4.1,
   README's licence section, `asm/6502/` headers): https://github.com/emmanuel-marty/lzsa
 - Usage text from each tool run here without arguments.
+
+---
+
+## tinycrunch_and_tscrunch — TSCrunch and TinyCrunch: byte-aligned crunchers that trade ratio for decrunch speed
+
+**Complexity:** low
+**Region:** both
+**Uses kernal:** (none)
+**Alternative to:** zx0_lzsa_decrunchers (faster decrunch per byte, weaker ratio: on the mixed test file below TSCrunch's sfx is 1,432 bytes in 110,386 cycles against Dali's 1,157 in 137,664)
+
+### Why
+
+The crunchers in `zx0_lzsa_decrunchers` and `pucrunch_decruncher` read
+a bit stream: the decruncher shifts a byte of flags or gamma codes for
+every token. A byte-aligned format reads whole bytes, so each token costs
+fewer cycles, at the price of a larger output. Two such crunchers are in
+use on the C64 and both ship with Krill's loader (`krill_loader_integration`):
+
+- **TSCrunch** by Antonio Savona, an "optimal, byte-aligned, LZ+RLE
+  hybrid encoder, designed to maximize decoding speed on NMOS 6502"
+  (README), written as the asset cruncher for the game A Pig Quest.
+  Encoders in C, Go and Java; three KickAssembler decrunchers (regular,
+  small, extreme); a self-extracting mode. Apache-2.0, `LICENSE` in
+  https://github.com/tonysavon/TSCrunch. Version 1.3.2 (commit `4511a75`)
+  was built here from `tscrunch.c`.
+- **TinyCrunch** by Christopher Jam, "a small, fast LZ codec originally
+  thrown together in a hurry for Jam Ball 2" (readme), with three
+  byte-aligned fixed-length token formats, a 100-byte decoder, a faster
+  decoder for self-extractors and a block callback for fast-loader use.
+  Encoder in Python; decoders in ca65 syntax. Version 1.2 (2018), from
+  CSDb release 168629. The archive states no licence: neither the readme
+  nor any source file carries one, so this page takes facts only and
+  keeps no copy.
+
+### How
+
+```text
+tscrunch -x $080d game.prg game-ts.prg     # self-extractor, decruncher in zero page
+tscrunch -x2 $080d game.prg game-ts2.prg   # self-extractor, decruncher in the stack page
+tscrunch -p game.prg level.ts              # raw stream from a PRG, load address dropped
+tscrunch -i level.prg level-inplace.prg    # in-place stream with its load address
+python tc_encode.py -x game.prg game-tc.prg   # TinyCrunch self-extractor, entry $080D
+python tc_encode.py -r level.bin level.tc     # TinyCrunch raw, no header
+```
+
+For data in memory, TSCrunch's `decrunch.asm` is included in the
+program and called through its `TS_DECRUNCH(src, dst)` macro; it keeps
+its pointers in `$F8`-`$FE`. Built here, the regular decruncher is 198
+bytes (`tsdecrunch` to the end of its code in the symbol file). TinyCrunch's decoders take
+the stream address in A and X; its readme gives 100 bytes for the small
+decoder and 79 for the headerless one, and says its self-extractor
+overwrites `$00FA`-`$01BA` and four stack bytes at `$01F3`-`$01F6`.
+TinyCrunch's decoders were not assembled here.
+
+### Why it works
+
+A byte-aligned token puts its type and length in bit fields of one byte
+and its offset in the next one or two. The decoder reads that byte, masks
+or shifts it once and branches; there is no bit reservoir to refill.
+TSCrunch adds run-length tokens for repeated bytes, which is why its
+output on the mixed file, with its 1 KB zero run and byte ramp, is
+smaller than TinyCrunch's. The cost is ratio: on code, whose bytes repeat
+little, both formats leave the file almost as it was.
+
+### Variations
+
+**Where the self-extractor runs.** TSCrunch's `-x` stub runs from the
+zero page and does not save it; `-x2` runs from the stack page. Measured
+here (below), a payload that prints through `CHROUT` printed under `-x2`
+and not under `-x`, for the reason `decruncher_overwrites_kernal_zero_page`
+gives. TinyCrunch's stub printed.
+
+**In-place.** `tscrunch -i` writes a stream that decrunches within its
+own target area; `decrunch.asm` then needs `#define INPLACE`. TinyCrunch's
+`-i` does the same. Not measured here.
+
+**Inside a loader.** Krill's loader can decrunch either format while a
+file loads (`krill_loader_integration`, "Integrated decruncher").
+Not run here.
+
+### Measured
+
+Run on 2026-09-24 in the windowless x64sc build of VICE 3.10 (rung 1). Two
+KickAssembler payloads at `$0801` with `SYS 2061`: a 4,639-byte file of
+code and mixed filler (a 1 KB zero run, a 1 KB byte ramp, a 256-byte sine
+table, 40 copies of a line of text, 64 six-byte instruction groups) and a
+4,247-byte file whose filler is the first 4 KB of the KERNAL ROM. They
+follow the description of the two subjects in `pucrunch_decruncher`
+closely enough that the Dali, bitfire and Exomizer code-file figures
+below come within 0.6 % of that section's, but they are not the same
+files, so compare within this table. A harness copied the self-extractor
+to its load address as LOAD would, set `$2D/$2E` and `$AE/$AF` to its
+end, started a CIA2 32-bit cascade and jumped to the SYS address; the
+payload stops the cascade as its first act. The harness alone reads 8
+cycles. Two PAL runs gave the same figures to the cycle (bitfire's was run
+once). Printed means the
+payload's `CHROUT` line reached the screen.
+
+| Cruncher | Mixed: bytes | Mixed: cycles PAL | Mixed: cycles NTSC | Code: bytes | Code: cycles PAL | Printed |
+|---|---|---|---|---|---|---|
+| none | 4,639 | 8 | 8 | 4,247 | 8 | yes |
+| TSCrunch `-x` | 1,432 | 110,386 | 111,340 | 4,141 | 164,468 | no |
+| TSCrunch `-x2` | 1,441 | 115,589 | 116,668 | 4,150 | 172,723 | yes |
+| TinyCrunch `-x` | 1,943 | 110,754 | 111,873 | 4,110 | 102,625 | yes |
+| Dali `--sfx` (bitfire's build) | 1,157 | 137,664 | 138,900 | 3,798 | 312,429 | yes |
+| bitfire zx0 `--sfx` | 1,151 | 128,206 | 128,848 | 3,793 | 297,387 | no |
+| Exomizer 3.1.3b0 `sfx sys` | 1,218 | 232,904 | 234,831 | 3,780 | 590,870 | yes |
+
+On the mixed file both byte crunchers decrunch in about 110,000 cycles,
+a fifth faster than Dali and half Exomizer's time, and TSCrunch's file is
+275 bytes larger than Dali's. On the code file the difference is larger:
+TinyCrunch took a third of Dali's time and TSCrunch about half, but both
+files are within 4 % of the uncrunched size, where the bit crunchers
+saved about 450 bytes. NTSC figures run 0.5 to 1 % higher, as the NTSC
+columns show. The screen was on in every run.
+
+Raw streams and the in-memory decruncher: `tscrunch -p` wrote 1,201 bytes
+for the mixed file and 3,910 for the code file; `tc_encode.py -r` wrote
+1,488 and 3,875. TSCrunch's `decrunch.asm`, assembled with KickAssembler
+5.25 and called with interrupts off, decrunched the mixed stream in
+86,178 cycles PAL (86,747 NTSC) and the code stream in 94,200 (94,970),
+about 19 and 22 cycles per output byte, and both results were
+byte-identical to the input. TinyCrunch's self-extractor is 455 bytes
+larger than its raw stream on the mixed file and 235 on the code file;
+why it differs by file was not looked into.
+
+The zero page at the payload's entry, against the uncrunched run: 197
+bytes changed under TSCrunch `-x` (`$02` to `$FE`), with `$9A` (the output
+device) at `$B1` and `$99` at `$C8`, so `CHROUT` went to a serial device;
+12 under `-x2`, 11 under TinyCrunch, 16 under Dali and 11 under Exomizer,
+none of them the bytes `CHROUT` reads.
+
+### Recipes
+
+- No recipe yet. As for the other crunchers on this page, the verifier
+  has no step for running a cruncher, and neither tool is in this
+  repository.
+
+### Sources
+
+- Antonio Savona, TSCrunch repository, commit `4511a75` (`README.md`, `tscrunch -h` from the C encoder built here, `decrunch.asm`, `decrunch_small.asm`, `decrunch_extreme.asm`, `LICENSE`): https://github.com/tonysavon/TSCrunch
+- Christopher Jam, TinyCrunch 1.2, `tinycrunch_v1.2.tar.gz` from CSDb release 168629 (`readme.txt`, `tc_encode.py -h`; no licence stated): https://csdb.dk/release/?id=168629
+- Dali and bitfire's zx0 as built from bitfire commit `5a3964b` (`zx0_lzsa_decrunchers`); Exomizer 3.1.3b0 (`exomizer -v`).

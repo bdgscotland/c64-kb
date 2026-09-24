@@ -70,7 +70,24 @@ export function makeProject(name: string, dest: string): string {
   writeFileSync(join(dest, ".mcp.json"), `${JSON.stringify(mcp, null, 2)}\n`);
   const mk = localMk();
   writeFileSync(join(dest, "local.mk"), mk.text);
-  return mk.banner;
+  return `${mk.banner}; ${seedPlanGate(dest)}`;
+}
+
+/**
+ * Marks the starter's shipped PLAN.md as passed without re-running
+ * check-compatibility (#42): building a shipped example must not depend on
+ * the live graph, which another session's ingest can change mid-run. An
+ * edit to PLAN.md, or `make clean`, brings the re-run back.
+ */
+function seedPlanGate(dest: string): string {
+  const gate = join(dest, "harness", "hooks", "plan-gate.py");
+  const r = spawnSync("python3", [gate, "--seed", "PLAN.md", "--cache", "build/.plan-gate"], {
+    cwd: dest,
+    encoding: "utf8",
+  });
+  return r.status === 0
+    ? "plan-gate: the shipped PLAN.md is seeded as passed, not re-run against the live graph"
+    : `plan-gate: not seeded (${(r.stdout || r.stderr || String(r.error)).trim()}); make re-runs check-compatibility`;
 }
 
 /** Runs `make <targets>` in dir: whether it passed, and its output lines. */
@@ -89,11 +106,12 @@ export function verifyTargets(dir: string): string[] {
   return r.ok ? (r.out.at(-1) ?? "").split(/\s+/).filter((t) => t !== "") : [];
 }
 
-/** The lines of a make run worth showing: shots, failures, the meter, summaries. */
+/** The lines of a make run worth showing: shots, failures, the meter, make watch, summaries. */
 export function reportLines(out: string[]): string[] {
   return out.filter(
     (l) =>
-      /^(FAIL|check:|shot:|selftest:|plan-gate:)/.test(l) ||
+      /^(FAIL|check:|shot:|selftest:|plan-gate:|drive:|drivetest:|joyprobe:|watch:|watchtest:)/.test(l) ||
+      /^PASS \S+ +(deadline|sid):/.test(l) ||
       l.includes(" frame meter") ||
       /"\S+"\s+prg/.test(l),
   );

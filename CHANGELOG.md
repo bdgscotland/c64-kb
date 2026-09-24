@@ -5,7 +5,783 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 777, schema 31, tools 2.4.0, package 0.17.1.
+Data 827, schema 39, tools 2.14.0, package 0.27.0.
+
+**Loaders, storage and I/O measured, and three more toolchains in the
+listing gate (data 827; #19 group L, #102).** New recipes run on PAL
+and NTSC: `printer-output` (a missing printer shows at CHKOUT, not
+OPEN; secondary address 7 prints mixed case), `rs232-send` (1200 baud
+through the KERNAL and bit-banged; a CLOSE straight after CLRCHN sent
+nothing until `$02A1` bit 0 clears), `fastloader-2bit` (the transfer
+the 2026-09-23 attempt never finished: 167 cycles a byte; the read
+delay passes from 14 cycles on PAL and 15 on NTSC), `d81-partition`
+(after a refused partition select, `N0:` formats the whole disk),
+`disk-copier` (a file of an exact multiple of 254 bytes leaves one block
+allocated to no file). Recorded with figures and marked skip in
+runs.json: Bitfire's `$DD00` rule (a read-modify-write corrupted every
+file), level streaming (no missed frames in about 930, against 126
+missed with interrupts off; a torn 16-bit counter read is a new
+pitfall), a tapecart TCRT boot, EasyFlash EAPI (two jump-table entries
+were missing on the file-io page). 29 KERNAL tape routines mapped from
+the ROM bytes in all three KERNAL versions; user-port, FLAG and
+expansion-port pin tables cited from the Programmer's Reference Guide;
+TSCrunch and TinyCrunch measured. VICE's drive-trace stamps are host
+time, not drive cycles (#103). `check:listings` builds ACME, 64tass and
+llvm-mos listings; CI installs acme and 64tass.
+
+**Read the error channel first, close it last; tech-tech's cycles; a
+compatibility census; diary facts (data 826; #93, #99, #55, #24).**
+Six listings read a file before the drive's status; each now reads
+status first and the file only on `00`. The #14 pitfall's own fix was
+wrong for an existing file: it closed channel 15 before the read, which
+closes every file on the drive, and high-score-persist read back 0
+bytes (ST `$42`). Channel 15 is now opened after the file and closed
+last; 244 runs (0-60 frames of wait, fresh disk and disk with the file,
+PAL and NTSC) hung at none. The scaffold's first status-first build hit
+the old-CIA EOI hang on NTSC in its save; sprites are now off around
+the game-over disk calls. tech-tech's sweep put the row-counter reset
+one cycle high: a store trace puts it on cycle 13, not 14 (NTSC line
+116 lands on 13 in most frames while the wave moves, #100). A census of
+52 visual techniques (1,326 pairs) is in docs/superpowers/specs; the
+tools pass vector_balls_sprites + fli_image although FLI holds every
+cycle of lines 45-251. Design pages cite the Morpheus, Mayhem and
+Paradroid diaries by issue and page; Braybrook allocated sprites up to
+24 under a safe limit of 32 (the page said he capped at 24).
+
+**Seven application techniques (data 825; #19 group A).** Oscar64
+recipes, each run on PAL and NTSC, self-checking and CIA-timed, each
+with a new pitfall it measures: trainer and cheat hooks (a NOP patch
+over `DEC` ends the game on the first death), pinball ball physics (a
+12 px/frame ball tunnels an 8 px wall without substeps), a gap-buffer
+text editor (a key at the start: 101 cycles against 85,058 for a flat
+array; an overlapping copy in the wrong direction corrupts 1,239 bytes),
+an ML monitor core (its opcode table agrees with VICE's on all 151 legal
+opcodes and round-trips 3,850 KERNAL instructions; resuming a BRK at the
+stacked PC skips the patched instruction), paint brush and flood fill
+(an 8-connected fill leaks through a diagonal outline: 64,000 pixels
+against 4,917), story-file paging over a 4-page cache (the file's blocks
+sit ten sectors apart, not in order), and a control configuration
+screen (a scan ending on RETURN leaves `$DC00` = `$FE`, read as joystick
+2 up). New Oscar64 fault, all three builds: a midpoint-circle loop with
+an inline plot leaves after one pass at -O2/-O3.
+
+**Paint formats, three more toolchains, and tool references (data 824;
+#19 group F).** Art Studio, Advanced Art Studio, Doodle (plain and
+packed) and Amica layouts, checked on 47 sample files decoded in VICE
+against a Python render (Codebase64's list puts Doodle's bitmap at
+`$7000` and Amica at `$4400`; the files say `$6000` and `$4000`). New
+toolchain pages, each with a hello world run on PAL and NTSC and real
+error messages: ACME 0.97 (`-o` overrides `!to … cbm` and drops the load
+address, warning only), 64tass 1.60 (without `-a` text is not
+converted, silently), llvm-mos SDK 23.2.0 (returning from `main` loops
+for ever; `$01` left at `$3F`). Retro Debugger's MCP server driven
+headless (it embeds VICE 3.10, not 3.1; `retro_load` reports success for
+a missing file). SID-Wizard `.swm` and exports; HVSC Songlengths and
+STIL formats (the MD5 key is the whole-file MD5 for all 60,572 entries;
+STIL.txt is Windows-1252). vice-reference documents this repo's CI VICE
+job; agent-harness gains a map of 18 agent-facing C64 tools.
+
+**Kefrens bars, linecrunch and AGSP reproduced (data 823; #16 DEMO-10,
+#19, #5).** Three new techniques with KickAssembler recipes pinned on
+PAL and NTSC. `kefrens_bars`: a test build first proved one fetched
+line re-shown on 129 lines (every band line a badline; #16's plan asked
+for a badline-free region, which cannot re-show it); each line's block
+must be exactly 20 cycles (PAL) or 22 (NTSC), the sweep is the new
+pitfall. `linecrunch`: from Bauer §3.7.2/§3.14.4 and codebase64, a
+one-cycle sweep shows YSCROLL = line & 7 crunches a row only when
+written on cycles 58-62 (PAL) or 58-64 (NTSC); the design that failed on
+2026-09-23 was a late badline and never crunches. `agsp_free_scroll`:
+linecrunch, FLD to a fixed band, a late badline and XSCROLL; sweeps of
+every column, row and fine value match all 200 lines. The VSP column
+shift is the store's cycle minus 14 as a store trace counts it;
+vsp_glitch said minus 15, from VICE's VSP log plus one (vsp_glitch, the
+vsp recipe and vice-reference corrected). scroll.md's misfiled AGSP
+description is corrected.
+
+**Per-item Cost and phased compatibility on a technique list (schema
+39, tools 2.14.0, package 0.27.0, data 822; #94, #95).** New Cost keys
+`cycles_per_item` and `cycles_item_base` (Technique properties
+`cost_cycles_per_item`, `cost_cycles_item_base`): `plan_budget` reads
+`name ×M-N` as items for such a technique, not as whole-figure calls
+(`char_bullets ×12` charged twelve eight-bullet frames). Measured in
+VICE: char_bullets 490 a bullet + 75, per_frame_hitbox 150 a hitting
+pair + 2,992. The game test's list with counts gives PAL 15,091-42,413
++ 2,020, and its measured 16,965 now falls inside. `check_compatibility`
+takes `name:phase` on a plain list, reports `kernal_banked_out` when
+`ram_under_kernal` (KERNAL-out) meets a KERNAL file technique (soft
+across phases), and gains `raster_irq_during_serial_io`,
+`sprites_over_badlines_hang_serial_io` (soft) and `recipe_kernal_out`
+(info); conflicts across phases carry `across`. The game test's T4 is a
+test case.
+
+**Six canon routines, briefing and lint fixes, and an Oscar64 macro
+fault (data 821; #89, #97, #98).** New techniques with KickAssembler
+recipes checked against Python models and CIA-timed on PAL and NTSC:
+`multiply_16x16` (246-272 cycles; dropping the middle carry breaks
+36,069 of 65,536 products), `multiply_by_constant`, `random_in_range`
+(modulo and multiply-high bias alike, rejection even; up to 15
+rejections in a row), `byte_list_sort` (counting sort beats insertion
+from 32 keys), `midpoint_circle` (2,197 pixels exact; a one-byte
+decision variable fails from radius 77), `clock_slide_raster_irq`;
+three new pitfalls in maths.md. game-briefing now gets `lfsr_random`
+and `kernal_load_to_address` for the #22 shooter brief and drops three
+misfits (a word and its stem scored twice; forced techniques kept the
+search's rank). The `lfsr_zero_state_lockup` lint reads a multi-byte
+seed. The game test's "bool in a switch case" stop was an Oscar64 fault
+in the local build only: a call of an empty `#define A()` eats the `;`
+after it, so `if (c) A(); f();` became `if (c) f();` (v1.32.273 and
+upstream correct; reproduced here). The four #19 SID techniques are
+anchored to the SID and NMI pitfalls their pages describe.
+
+**Sprite DMA measured, and four figures the game test lacked (data 820;
+#96).** New recipe `sprite-dma-cost`: a three-band multiplexer whose
+interrupts write the same in every case but `$D015`, with a fixed loop
+timed by CIA2. Eight sprites add 399 cycles a frame (21 lines × 19),
+seventeen add 903, badlines 1,075, with no overlap; PAL and NTSC agree.
+plan-budget's 3 + 2n per line is exact; the game test's 945 came from
+its inputs. A loop under a band of eight sprites runs 1.42 times as
+long (the game test's "about half again"). Cost lines:
+screen_double_buffer_d018 57 (the flip and pointer copy; a page redraw
+is 12,598 PAL), kernal_load_to_address 6,931,765 for 2 KB with the
+drive idle (multi-frame), pal_ntsc_detection 23,032 worst measured
+(23,184 by arithmetic for a line-256 entry; it had only a byte count).
+sfx_in_player claims the three voices and `$D418`.
+
+**REU registers, the rest of Oscar64's wrappers, and reading the
+directory (schema 38, data 819; #92, part of #5).** New
+`hardware/reu-reference.md` (from VICE 3.10's `reu.c`, with the values
+`reu-dma` measured marked) makes `$DF00-$DF0A` Register nodes under a
+new seeded Chip "REU". `**Wraps:**` lines read from Oscar64's sources
+now cover memmap.h and the no-I/O interrupt set-ups (R6510), flossiec.h,
+reu.h (the page said REU was out of scope; `reu-dma` contradicts it)
+and `vspr_init`'s `$D012`: 395 WRAPS edges; `pitfalls-for mmap_set`
+returns four banking pitfalls. iec-disk-reference gains "Reading the
+directory", from bytes read with Python: the last directory sector
+links to `$00 $FF`, not "0/0", and the `$` stream pads the disk name
+with `$20`, not `$A0`.
+
+**Four SID techniques measured in reSID, and the #22 game test (data
+818; #19, #22 step 7).** New recipes, each with WAV runs under
+`-model c64` (6581) and the default 8580, analysed in Python:
+`d418-8bit-digi` (Mahoney's method, tables derived by measurement: 167
+distinct levels on the 6581, 84 on the 8580; an 8-bit sine at 34.8 dB
+SINAD against 24.2 for the plain nibble), `sid-volume-bias` (three bias
+voices bring the 8580's digi within 2.5 dB of the 6581's),
+`sid-test-bit` (TEST resets the oscillator to the same phase from any
+start; noise with pulse locks at `$00` within 400 cycles, and only TEST
+unlocks it; sid-reference said "eventually"), `nmi-sample-player` (a
+CIA 2 NMI every 128 cycles beside raster-IRQ music; the digi modulates
+the music's volume, sidebands 6.1-6.3 dB down). All are reSID, not
+silicon; reSID and Mahoney disagree on filter-routed voices with no
+mode bit, unsettled. The game test (#22 step 7) ran and did not pass:
+a fresh agent built a vertical shooter from the brief; P1, P4, P5 pass,
+P2 3 of 5 traps reported, P3 fails (the budget's low end was above the
+measured worst frame because a technique list takes no counts). Report
+in docs/superpowers/reports/2026-09-24-game-test-22/.
+
+**The PAL first-read hang is a badline hiding a 67-cycle CLK pulse, and
+no frame wait is safe (data 817; #14 IO-12).** Traced with VICE's CPU
+history on both CPUs in three hanging builds: OPEN of a missing file
+fails with 62 (the KERNAL does not report it), the drive becomes talker,
+pulls CLK low at `$E9B3` for 68 drive cycles, finds no channel and
+releases the bus. The KERNAL's `$EDD6` loop (27 cycles a pass, no
+timeout, interrupts off) needs two reads 4 cycles apart to see CLK low;
+a 43-cycle badline inside the pulse leaves at most one, and the C64
+waits for ever. An earlier version said the drive stayed a listener and
+never pulled CLK, and that a start-up wait fixed it: across 0-250
+frames the shipped scaffold hung at 16 counts on PAL (50 runs, 56 hangs).
+Reading the status channel first, or blanking the screen for the read,
+hung at none. high-score-persist's `$1800` bit 0 is DATA IN, not DATA
+OUT. Listings that still read before checking status: #93.
+
+**#5 content, #4 routines, #1 composed recipes, #24 follow-ups, and a
+briefing fix (tools 2.13.1, package 0.26.1, data 816; #5, #4, #1, #24,
+#91).** New recipes, each run on PAL and NTSC and measured:
+`raster-split-modes` (the clean window for the `$D011` store is line
+146 cycle 59 to line 147 cycle 12 on PAL, 11 on NTSC), Oscar64
+`soft-scroll-v` (a late write draws one row 15 lines tall; the row move
+does not fit the off-screen span, 7,403 cycles PAL), `mcm-ecm-zones`,
+`sid-detect` (`$02` on the 8580, `$03` on the 6581; noise under
+`+sound`), `base-routines` (17 routines match their instruction-table
+counts; a byte-into-word add carries 51,200 times, not 200),
+`one-part-demo` and `fli-music-scroller` (PAL; per-line cycle maps
+traced). New techniques `screen_blank_full_cpu` (449 vs 412 loop
+iterations), `add_sub_16bit`, `memory_fill_copy`, `delay_loops`. Oscar64
+headers page gains flossiec.h (a 4,002-byte file in 2,021,780 cycles vs
+10,583,134 through `krnio_read`), oscar.h, vspr_screen; `krnio_setbnk`
+is C128-only (error 3005). game-design-patterns.md's `$D01F` wording
+now states the pixel-class rule; the demo-length sentence quotes
+Raistlin's 16.5-21 minutes. Play calls across the demo starter's part
+switch are 19,656 ±4 cycles apart on PAL, none dropped. New lint rule
+`d015_merged_across_states`; `make gameover` checks for platformer and
+shmup-vertical (a sprite left on fails 4 of 8). A top-40 canon list is
+in docs/superpowers/specs (6 missing: #89). `game-briefing` picks
+between two alternatives by a count the brief states: "24 sprites" now
+gets sprite_multiplex_24 (#91; it fell back to recipe count and never
+read the brief). The recipe ground-truth test lists 12 known hard
+conflicts the composed recipes' frames do not have, until #90.
+
+**Relocated code in three toolchains, Oscar64 -O levels, an Oscar64
+cartridge and music sync (data 815; #15, #16 DEMO-05).** New technique
+`relocated_code_block` with recipes in KickAssembler, Oscar64 and cc65
+that copy a routine from `$2000` to `$C000` and stop on a monitor
+breakpoint there (Oscar64's `.lbl` gives the storage address; cc65
+needs `fill = yes` or the block lands straight after the code, with no
+warning). The stable-raster-irq handler is instruction-identical at
+-O0/-O1/-O2/-Os; -O3 and -Oz move two variables to zero page (5 and 3
+cycles saved); screenshots byte-identical at every level. New
+`oscar64/cartridge-8k` (`-tf=crt8`): `main` starts 305 cycles after the
+vector (cc65's cartridge 1,650,044), the screen is off until the
+program sets up the VIC, an initialised global stays in ROM.
+`verify:recipes` gains a `build` key and `@variant` runs. New technique
+`music_sync_timeline` and recipe `music-sync` (a beat of 24 frames on
+both models; `$D41C` needs a sound device, and the monitor's `m d41c`
+prints 00). New Oscar64 fault, all three builds: a comparison on a
+function's address at `$8000` or above folds wrong.
+
+**Alternatives, consumed formats and Oscar64 wrappers in the graph
+(schema 37, tools 2.13.0, package 0.26.0, data 814; #17 ONTO-07,
+ONTO-08; #19).** `**Alternative to:** name (tradeoff)` becomes
+ALTERNATIVE_TO: ten pairs, each from a page that already compares the
+two (the multiplexers, the packers, the digi methods, bitmap vs
+character scrolling); `technique_lookup` lists them and briefings name
+the alternative they left out. `**Consumes formats:**` on six techniques
+becomes Technique CONSUMES FileFormat (SID, CRT, CTM, PRG, TAP, and a
+new `.KLA` entry). `**Wraps:**` lines read from Oscar64's `include/c64`
+sources give 69 LibraryFunction nodes and 299 WRAPS edges to registers
+and KERNAL routines; `pitfalls_for krnio_open` finds 7 pitfalls through
+SETLFS, OPEN and CLOSE. FalkorDB's `exists()` on a pattern returned true
+with no such edge, and a pattern comprehension first run before an edge
+type existed kept returning 0; the new checks use plain MATCH.
+
+**Tool repairs from #19 (tools 2.12.0, package 0.25.0, data 813).**
+`check_compatibility` says what a refused name is (a Pitfall, a
+FileFormat, a Recipe, or a technique in other case). The gap log is
+replayed after every ingest (and by `c64-kb gaps-replay`): nothing ever
+called `resolveGap`, and `check_compatibility` logged every clean
+COMPATIBLE verdict as a gap (2,493 of 2,634 open); a replay of a copy
+resolved 2,451. `game-briefing` resolves a free-text genre ("a
+platformer") to its candidate archetypes and plans on what they share
+(new optional `archetype_candidates`). `$00`/`$01` are Register nodes
+(D6510, R6510; the KERNAL's IOINIT bytes at `$FDD5` checked), so
+`lookup-register $01` answers and four banking pitfalls reach it; three
+pages said the KB had no such node. `scripts/check-pitfall-coverage.ts`
+lists registers and KERNAL routines no pitfall names (56 of 109, 23 of
+39). sid_env3_filter_envelope and vector_balls_sprites are anchored;
+runtime_relocation, wcf_packer, dig_and_refill and world_state_bits
+wait on a triage decision.
+
+**Device nodes, and a cartridge table that was wrong in four rows
+(schema 36, tools 2.11.0, package 0.24.0, data 812; #87).** Every row of
+the cartridge I/O table in c64-registers-reference.md now comes from
+VICE 3.10's cartridge source (VICE's behaviour, not a real cartridge).
+EasyFlash's `$DF00` is 256 bytes of RAM, not "LED + I/O" (the LED is
+bit 7 of `$DE02`); REU and MMC64 registers were in the `$DE00` column;
+KCS was "$DF00 control" in both columns; Final Cartridge was grouped
+with Action Replay. A `$DE00` write does not trigger the Action Replay
+freeze (bit 6 releases it); the page and the clobbering pitfall said it
+could. New `docs/hardware/devices.md` (11 devices, with Claims and VICE
+attach lines) and `CONVENTIONS-devices.md`; `Device` nodes, recipe
+`devices:` frontmatter as REQUIRES_DEVICE edges (22 recipes), checked by
+verify:recipes against the run's disk, flags and `.crt` type.
+`c64_recipe_lookup` returns devices; `c64_check_compatibility` adds
+`recipe_device_conflict` (reu_dma × cartridge_bank_easyflash clash on
+`expansion_io2`).
+
+**tech-tech masks CIA2 with `$7F` (data 811; #88).** The listing wrote
+to `$DD0D` the byte it had just read from `$DC0D`. A VICE trace on PAL
+and NTSC shows it wrote `$00` and no NMI ran, but a CIA1 underflow
+between `sei` and the store would read back `$81`, and writing that
+enables CIA2 timer A as an NMI (reasoned from the ICR's bit 7, not
+produced). It now writes `$7F` to both, in the same 14 bytes; the
+screenshots still match. The ingest listing scan no longer warns on it.
+
+**Game designs count calls, check per phase, and every platformer
+member has a figure (schema 35, tools 2.10.0, package 0.23.0, data 810;
+#37).** A `**Composes:**` item may say `name ×N` or `×M-N`; COMPOSES
+edges carry `calls_low`/`calls_high` and `c64_plan_budget` multiplies
+(the platformer's HUD is `decimal_print ×2-7`; it was counted once).
+`c64_check_compatibility` takes `design` and checks each phase alone.
+Measured in VICE on profile builds: frame_sync_loop 314 (its old line
+was only a byte count), joystick_autorepeat 73, jump_arc_table 66,
+fixed_point_8_8 31, error_channel_check 81,421 (multi-frame),
+soft_scroll_v 46; text_mode_overlay_render 2,005 typical, 18,984 on a
+lock frame. The platformer's measured worst was 34 % over the
+prediction: six enemies' sprite writes and the test driver were in no
+member, the HUD was one call, and the KERNAL's 60 Hz IRQ costs 235 when
+it lands; with those, play predicts 6,888-14,320 and the measured 8,693
+/ 10,287 fall inside. The shmup loop is timed: worst 8,178 PAL / 8,474
+NTSC, and it runs every frame; its star carry is 45 % of the worst loop,
+not "small". joystick_edge_detect keeps #54's 114 (port read included);
+the platformer's 76 is the split alone.
+
+**Recipe claims in the graph, a listing scan, `c64_claims_watch`, and
+Productions (schema 34, tools 2.9.0, package 0.22.0, data 809; #22 step
+8).** A recipe's `claims:` frontmatter becomes Recipe → HardwareUnit
+CLAIMS edges (Recipe gains `claims_stated`, `claims_basis`; a missing
+key is unknown, `[]` is none). Ingest scans each listing for stores to
+hardware units its claims and its techniques' claims do not declare:
+12 warnings in 5 recipes, 4 real (crt-banked, easyflash-save,
+sparkle-dd02-bank, tape-turbo-loader have no `claims:`), 1 false
+positive (tech-tech). `check_compatibility` gains
+`recipe_zero_page_overlap` (info): soft_scroll_h + sfx_in_player now
+names `$FB-$FE` and 4 recipe pairs. New tool `c64_claims_watch` and CLI
+`claims-watch` run the VICE store trace on a PRG or recipe (the library
+moved to `src/claims/` so it ships). `c64_recipe_lookup` returns claims.
+44 Production nodes with EXEMPLIFIED_BY edges from the sourced archetype
+titles (#40). Devices are #87.
+
+**The #54 content gaps (data 808).** New Oscar64 recipes, each run on
+PAL and NTSC: `fighter-opponent` (a one-on-one opponent from tables:
+reaction delay, range, guard and feint; 120 cycles a step on average,
+295 worst), `sprite-expand` (48 cycles a `spr_expand()` call),
+`sprite-mirror-at-load` (a multicolour frame set mirrored once with a
+pair-preserving table, 9,658 cycles for six blocks; a three-sprite
+object turned in place) and `sprite-cache-flip` in C (a miss 3,692-3,902
+cycles, a hit 42). New sections `fighter_opponent_tables` and
+`fighter_guard_state` on the enemy-behaviour page. Measured Cost lines:
+keyboard_matrix_scan 288, joystick_edge_detect 114, mob_priority 6,
+sprite_collision_detect 16; per_frame_hitbox's line now says what its
+3,693 includes. The `$D01B` rule for a hires bitmap is measured (0 bits
+are background); the multicolour-bitmap rule, Bauer's before, is now
+measured too. Claims lines for sprite_animation_table and five more
+techniques, so check-compatibility rules on all 11 in the TOURNEY set.
+New Oscar64 fault, in the local, released and upstream builds: at -O2 a
+`volatile` global nothing writes is read as its initial value.
+
+**NTSC sprite DMA slots were one cycle off; #6 settled (data 807).**
+Measured in VICE for sprites 0..k on three models, cycle 1 being where
+`$D012` changes: 6567R8 slots are 59 61 63 65 2 4 6 8, CPU resumes on
+10 with all eight on (the reference said 60 62 64 1 3 5 7 9, resuming
+on 11); 6567R56A is 59 61 63 1 3 5 7 9; PAL 8565's 58..9 confirmed.
+vic-ii-reference, dysp and road-sprite-lines corrected (screenshots
+unchanged). sprite.md no longer calls the Y stretcher unverified (the
+sprite-stretcher recipe measures it). Every 1541 job code and results
+`$02`-`$09`, `$0B` are now read from the DOS ROM bytes. Blanking line
+numbers stay Bauer's: VICE draws them in the border colour.
+
+**Serial-I/O sprite hang: CIA model has no effect, drive is a 1541-II
+(data 806; part of #43).** Measured in VICE with true drive over 20 save
+rounds: PAL hangs from 3 sprites, NTSC from 4, on every CIA and VIC-II
+model combination, so this is not the #69 old-CIA fault. VICE's default
+drive 8 is a 1541-II; the pitfall and recipe said 1541. The 1541-II ROM
+matches the 1541's in the ranges the pitfall cites. The recipe is now
+pinned with true drive and the drive type explicit. Real hardware stays
+open on #43.
+
+**Every archetype reference title has a source (data 805; #40).** Each
+title on c64-game-archetypes.md now links a C64-Wiki or Wikipedia page
+giving its C64 genre and year, and for shooters its scroll direction.
+Titles a source contradicted moved or went: Hawkeye (scrolling
+platformer, not a shmup), Rainbow Islands and Creatures (scrolling, not
+single-screen), Green Beret and Zak McKracken (not top-down), IK+ and
+Barbarian (fighting sport, not beat-'em-up), and titles with no C64
+release (Oxyd, Columns, Dr. Mario) or none found. Years corrected:
+Lightforce 1987, Katakis 1988, Silicon Dreams 1986, Welltris 1991,
+Buggy Boy 1987. Every modern example except Sports' is now "none
+checked".
+
+**IRQ entry through `$FF48` is cycle 39-45, not 37-43 (data 804; #85).**
+Measured in VICE on PAL and NTSC with an exec tracepoint on the
+handler's first instruction over 7,742 and 8,850 entries: 39-45
+through `$FF48` → `($0314)`, 10-16 through `$FFFE` with the KERNAL out.
+The old figure (1 + 0-6 + 7 + 29) left out the 2-cycle minimum before
+the interrupt sequence starts, and raster.md called it measured.
+raster.md, sprite.md and six recipes are corrected (double-IRQ budget
+36-42 → 38-44, raster-bars' no-spin store on cycle 61 or later, was
+59). No listing's timing relied on the old window.
+
+**Racing starter: line 203 gets the panel's own `$D016` (#86).** The
+store waited for the badline and wrote on cycle 56, so line 203 was
+drawn in the road's multicolour mode with its last XSCROLL: a cyan line
+across x 32-347, not the 4-pixel strip the issue described. X now holds
+the panel value and `STX $D016` writes on cycle 11. A new check in
+expect.json fails the old shot (316 cyan pixels); `make check` is 56 of
+56 on PAL and NTSC.
+
+**Every runnable recipe passes claims-watch, now a gate (data 803;
+#84).** `npm run claims:recipes` builds each KickAssembler recipe and
+runs claims-watch with its runs.json cycles and flags: 77 pass, 0 fail
+(6 of 77 passed before); two cartridge recipes and two marked skip do
+not run. New recipe frontmatter keys: `ram:` for a recipe's own RAM
+outside the PRG, `kernal_services: [IRQ|NMI]` for a KERNAL interrupt
+service left running. New Claims lines from traces for
+charset_copy_rom_to_ram, basic_extension_wedge, pseudo_3d_road_raster,
+reu_dma, four_player_read and vector_balls_sprites. Two real overlaps
+fixed in listings: paddle-read kept a pointer at `$F5-$F6`, which the
+KERNAL IRQ may write (now `$FE-$FF`); irq-owns-port called `$E544`
+(now CHROUT `$93`). claims-watch now counts stores from `$E000-$E4B6`
+(BASIC's floating point in the KERNAL ROM) as BASIC's.
+
+**One cycle numbering, measured (data 802; #82).** Pages numbered raster
+cycles differently. The knowledge base uses Bauer's 1-63 (1-65 NTSC).
+In VICE's monitor an exec checkpoint's CYC is the instruction's first
+cycle minus one, and a store checkpoint's CYC is the write's cycle as
+Bauer numbers it (the watchpoint is checked one cycle after the
+write). Settled with probes: `$D012` changes on Bauer's cycle 1,
+badline reads are held 12-54, and a store printed as CYC c shows in the
+screenshot from x = 8c − 103 on both models; written up in
+`runtime/vice-reference.md`. Corrected: dysp's NTSC write is on 56 (was
+57); eight-way-scroll's margin is 4 cycles (was 5); sprites-only-screen
+13 and 26 (were 12 and 25); oscar64 sid-music-player 33-39 (were
+32-38); the racing starter's stores are on 7, 13 and 19 (were 6, 12,
+18), and its line-203 `$D016` write lands on cycle 56, not 12 (#86);
+demo and shmup-vertical starter comments. No listing's code changed.
+IRQ entry through `$FF48` measures cycles 39-44, not the 37-43 several
+pages give (#85).
+
+**ingest_doc takes any spelling of a page's path; lint reads only code
+fences (tools 2.8.1, package 0.21.1; #51, #28).** `ingest_doc` given
+`docs/x.md` from the repo root, `x.md` from docs/, or an absolute path
+now resolves each to one source under docs/; before, some spellings
+created a second source or a `docs/docs/` copy. Paths outside docs/ are
+refused. Linting a Markdown page now blanks everything outside C and
+assembly fences, keeping line numbers: music-sid.md gave 7 findings on
+prose (at wrong line numbers) and now gives none, and a real read put
+into its filter fence is reported at its own line.
+
+**Every CIA1 row in the recipe traces is declared (data 801; #83).** 36
+KickAssembler recipes had undeclared CIA1 stores (the issue counted
+15). A new recipe frontmatter key, `harness: [...]`, marks a timer used
+only to measure the listing; claims-watch reads it like `--harness` and
+the ingest ignores it. 30 recipes declare timer A or B as harness;
+start-up masks are `init`; cia-revision-detect owns both timers. New
+Claims lines from traces: `tod_alarm_interrupt` owns `cia1_tod`,
+`tape_turbo_loader` owns `cia1_timer_b`, `paddle_read` owns
+`cia1_port_a` (derived from the listing). tape-turbo-loader now passes
+claims-watch with 0 violations.
+
+**IRQ recipes declare their vector and CIA1 mask (data 800; #81).** 32
+KickAssembler recipes carry a `claims:` frontmatter line from their own
+claims-watch trace: the vector they install (`$0314`, `$FFFE`, `$0318`,
+`$FFFA`) as `owns`, and the start-up `$7F` store to `$DC0D` as `init`.
+The vector is the recipe's choice, not the technique's
+(CONVENTIONS-techniques), so no technique Claims line changed.
+afli-image, sideborder-open and stable-raster-irq now pass claims-watch
+with 0 violations. The ingest does not read recipe claims yet (#22 step
+8).
+
+**Recipe: a raster road with sprites on its lines (data 799; #77).**
+`road-sprite-lines` keeps each road line's `$D016` store on one cycle
+with three sprites moving over the road and its badlines: a 64-byte
+block per line with a branch pad rewritten each frame from a table
+keyed by which of sprites 0-2 fetch on the line and whether it is a
+badline. In VICE monitor traces over 20,000,000 cycles every store
+lands on the same cycle (81,877 PAL, 93,598 NTSC); in 100 screenshots
+every line shows its own XSCROLL. The IRQ chain costs 6,348-6,350
+cycles a frame on PAL and 6,549-6,550 on NTSC (the issue's 6,300 and
+6,500 were arithmetic). Cycle numbering differs between pages; see #82.
+
+**afli_image no longer requires multicolour (data 798; #80).** It
+required `fli_image`, which requires `multicolor_bitmap`, but the
+afli-image listing clears MCM (`$D016` = `$C8`); fli-image and
+ifli-image set it (`$D8`). afli_image now requires
+`stable_raster_irq, standard_bitmap, vic_bank_select` and claims the
+five FLI units itself (claims-watch trace in VICE). The afli-image
+recipe no longer lists `fli_image` in its techniques.
+
+**claims-watch no longer reads RAM stores as I/O (#79).** A store to
+`$D000-$DFFF` with I/O banked out was recorded as the register's value,
+so ifli-image showed a `serial_bus` change that never happened and 1,024
+fill stores labelled "colour RAM". Values are now recorded only when
+`$01` banks I/O in. No recipe's Claims line changes.
+
+**Four new recipes and the last display-field Claims lines (data 797;
+#74).** New KickAssembler recipes, each run in VICE and measured:
+`mcm-text` (all 64,000 display pixels match on PAL and NTSC), `vsp`
+(a 10-character shift decoded row by row; shift = pad − 194 PAL, − 202
+NTSC), `afli-image` and `ifli-image` (PAL; every pixel matches its
+source image). The VSP run corrected `vsp_glitch` in three places: the
+picture moves right, not left; the offset does not carry into the next
+frame; one write a frame moves the whole screen. VICE is the only
+machine it ran on; with `-VICIIvspbug` 2 of 11 runs went wrong. The
+IFLI swap must wait for line 251, since lines 248-250 cannot be
+badlines; fli-image's "cycle 55 of LAST_LINE" comment was wrong for
+the same reason. Claims lines for big_font_2x2, dycp_scroller,
+text_zoom, mcm_text (none), vsp_glitch (now hard against FLD),
+afli_image and ifli_image.
+
+**Starter checks for a frame deadline and a live SID player (data 796;
+#75).** `templates/_harness/watch.py` reads a VICE store trace.
+`DEADLINE_LINE` fails a run whose `WORK_END` mark lands after the
+stated raster line, counted in cycles so a frame-late end on an early
+line is caught; the platformer uses it (line 251: 100 lines spare PAL,
+50 NTSC; an `OVERRUN=1` build fails on 12 of 750 frames). `SID_FRAMES`
+fails a run that stores to the SID in fewer than N frames; all seven
+starters with a player use it, and each `NO_PLAYER` build fails. `make
+selftest` builds both mutations. The check counts frames with SID
+stores, not sound. The platformer README's meter table was already
+stale (11,758 / 6,212 PAL); it now gives 11,774 / 6,227 PAL and
+12,225 / 6,590 NTSC with the marks in.
+
+**Claims lines for twelve more display-field techniques (data 795; part
+of #74).** From claims-watch traces of 14 recipes in VICE:
+badline_synchronization reads `vic_yscroll`; tech_tech_wobbler owns the
+raster IRQ and shares YSCROLL, XSCROLL and the matrix base;
+char_scroll_buffer_h shares XSCROLL; charset_animation,
+standard_bitmap, multicolor_bitmap and koala_format own the char base
+(koala_format now **Requires:** multicolor_bitmap, so the two are not
+rival owners); mci_interlace_bitmap owns the VIC bank, matrix base and
+XSCROLL; hires_plot, bresenham_line and ecm_mode claim none. New hard
+conflicts: mci_interlace_bitmap × soft_scroll_h, charset_animation ×
+standard_bitmap. vsp_glitch, afli_image, ifli_image and mcm_text have
+no recipe to trace and no Claims line.
+
+**Starter claims pass again after the display units (#78).** 231d8b2
+made the VIC scroll and pointer fields claimable, and six starters did
+not declare them: `make claims` failed on action-puzzle, adventure,
+beat-em-up, demo, platformer and shmup-vertical (1 to 4 groups each).
+All nine starters now report 0. The platformer's zero-page range was
+$02-$53; Oscar64's T1 high byte at $54 holds the frame count, so it is
+$02-$54. The demo's PLAN.md still pasted INCOMPATIBLE for
+irq_chain_table × raster_bars, rated soft since cf04297; its plan and
+budget are re-pasted.
+
+**What each music-player feature costs (data 794; #76).** The
+music-player listing gains seven `-define` switches (`NO_VIB`, `NO_PWS`,
+`NO_FLT`, `NO_WT`, `NO_HR`, `NO_LEG`, `NO_FX`); with none defined the PRG
+is byte-identical. `techniques/music-sid.md` has a cycle-budget table
+per feature, measured in VICE over 2,000 play calls on PAL and NTSC.
+Wavetable-every-frame is the largest mean cost (146 cycles PAL); all
+seven off saves 179 at the worst call and 415 on the mean. Worst-call
+savings do not add, since each removal moves the worst call to another
+frame.
+
+**Racing starter (data 793; #53).** `templates/racing`: a pseudo-3D road
+racer with scaled opponent sprites on the road lines, a lap timer and
+collisions. In VICE it passes 54 of 54 checks on PAL and NTSC, rejects
+its FORCE_FAULT build, rebuilds all 96 road lines from its own raster
+splits pixel-for-pixel (`make roadcheck`) and catches 7 of 7 planted
+mutants. Worst and typical frame: 10,358 / 8,816 cycles PAL, 10,750 /
+9,049 NTSC. The road picture updates every 3.5 frames on PAL and 4.9 on
+NTSC; the game steps every frame. Passes on released Oscar64 v1.32.273.
+A second agent's review found the lost-frame detector blind to a
+late-armed line-105 interrupt (now counted), `make claims` failing on
+the #71 display units (now declared), and the picture rate divided by
+coasting steps (3.6 and 5.1 before). Recipe for the road with sprites
+on its lines: #77.
+
+**pseudo-3d-road curves both ways (data 792; #73).** The curve add
+treated every carry as overflow, so a negative dx pinned cx at 255 and
+the road never bent left; the right kerb went to column 39 whenever
+cx + hw passed 255 instead of 319; the redraw never erased the road's
+old cells. The add is now signed and clamped at 0 and 255, the curve
+step is ±18/256 (it was ±51/256, which saturated either way), the kerb
+uses the 9-bit sum, and the redraw repaints grass where the road left.
+Measured in VICE: every `$D016` write still lands on cycle 4 of its own
+line (920 PAL, 1,052 NTSC frames), the PAL shot bends left and the NTSC
+shot right, the road steps every two frames on both. The technique's
+Cost goes from 18,343 to 17,975 cycles; the pinned run is 21,100,000
+cycles (was 20,000,000) so one picture shows each bend.
+
+**Tools refuse to answer from a half-built graph, and the #41 leftovers
+(schema 33, tools 2.8.0, package 0.21.0, data 791; #41).** A clean
+ingest writes an `IngestRun {name:"rebuild"}` node before it wipes and
+deletes it after its report; while it exists every graph-reading MCP tool
+returns `isError` ("The knowledge base is being rebuilt") and the CLI
+exits 1. Seen live: mid-ingest the graph had 150 Recipe nodes and 0
+IMPLEMENTS edges. `lookup_register` puts the register's own section
+first (DC00 and DC01 led with input pages before). `technique_lookup`
+drops documentation chunks that neither sit under the technique's
+heading, come from a realising recipe nor name it; a technique with no
+recipe says so. Ingest warns when a Cost line names a recipe that does
+not realise its technique. `pal_ntsc_detection` gains a bytes-only Cost
+(339, Oscar64 build here). The `$D016` lint no longer flags the 14
+deliberate whole-value stores in `templates/` and `demos/`. Three
+archetype fingerprints over-proposed techniques their starters do not
+use (`vertical_shmup`, `puzzle`, `text_adventure`); each changed line
+says what it said before.
+
+**KERNAL EOI wait against the old 6526 (data 791; part of #69).** New
+pitfall `kernal_eoi_wait_misses_timer_b_on_old_cia`, seen in VICE. The
+KERNAL's EOI window is $01FF timer counts, about 520 cycles; an earlier
+version of the KERNAL routines page said 256 µs. Real-hardware
+confirmation stays open on #69.
+
+**Display-field units and a per-figure bytes basis (schema 32, tools
+2.7.0, package 0.20.0, data 790; #71, #72).** Four HardwareUnits of a
+new kind, `display`: `vic_yscroll` ($D011 bits 0-2), `vic_xscroll`
+($D016 bits 0-2), `vic_matrix_base` and `vic_char_base` ($D018 bits 4-7
+and 1-3). A vertical scroller beside FLD is now a hard ownership
+conflict, not a soft shared-register note; claims-watch traces of 31
+recipes set the Claims lines of the techniques that write those bits.
+A Cost line can carry `**Cost bytes basis:**` so bytes and cycles keep
+their own basis; `plan_budget`'s `weakest_basis` now covers cycles only,
+and a new `bytes.weakest_basis` covers the bytes. Nine pages whose
+cycles were measured but bytes read from the listing now say so.
+
+**pseudo-3d-road's loop fixed, and the #70 leftovers (data 789; #70).**
+The road loop synced on badline 99, so its $D016 writes started on cycle
+56, jittered 2 cycles and drifted 3 more per badline: 0 of 100 lines
+showed their own XSCROLL, and a vertical-blank IRQ that ran into the
+next frame halved the rate. It now syncs on the 97/98 boundary with
+badline bodies that allow for the 43-cycle stall; in the VICE monitor
+all 100 writes land on cycle 4 of their own line on every frame (864
+PAL, 988 NTSC), the screenshot shows each line's own entry, and the Cost
+is 18,343. The road never curves left (#73). eight-way-scroll's rows 0-4
+meet their badlines with 5 cycles to spare at worst (measured); the
+counter still checks row 6, and the page says why. Among the small
+claims: the $3FFF idle pattern does show in VICE (it had said not);
+eight sprites cost about 20,000 cycles/s, not 50-100K; the music play
+call runs on line 255; the KERNAL loads a Koala picture in about 25 s.
+
+**SID capture, loudness and a music design page (data 788; #50).**
+`runtime/vice-reference.md` "Recording the SID output": headless WAV
+capture works only without warp (`-sound -sounddev wav`, real time); the
+dump sink works under warp. `hardware/sid-reference.md` gains measured
+loudness (RMS, 440 Hz, both models): 6581 saw+pulse is about 16 % of a
+sawtooth below pulse width $800 and silent above; tri+pulse is within
+3 % between models, which corrects `techniques/music-sid.md`'s "louder
+on the 8580". New page `music/music-design.md` (instruments, song form,
+voice 3 for effects, budget, chip choice) from the music-player recipe's
+tune. `sid_play_routine_pattern`'s Cost gains its typical call (773 PAL,
+779 NTSC) and byte sizes.
+
+**Headless joystick and harness fixes (data 787; #42, #59).** VICE
+3.10's event playback cannot be used (the power-on reset clears the trap
+`-playback` sets; read from VICE's source, confirmed: three runs never
+left READY). The binary monitor's joystick command reaches $DC00 only
+with control port 2 set to "Joyport I/O simulation" (`-controlport2device
+37`); `templates/_harness/drive.py` drives games that way and counts
+emulated frames, and the five starters' own joystick builds are gone.
+The plan gate no longer consults the live graph for a shipped example;
+a changed answer says so, and an unreachable graph warns. The meter's
+median uses selection (38,742 cycles instead of 854,431) and its print
+rewrites only changed cells (464 and 668 cycles instead of 2,402 and
+2,810). Under `+sound`, $D41B and $D41C read ramps, not the envelope and
+noise; the harness picks a sink that reads them correctly. All eight
+starters pass `verify:templates --selftest`.
+
+**Claims-watch findings (data 785, tools 2.6.1; #35).** The KERNAL's
+serial routines use CIA1 timer B: the ROM stores to $DC07/$DC0F at
+$ED94/$ED99 and $EE22/$EE27, reached by 20 jump-table routines; a
+claims-watch trace counted 314 and 8,438 such stores in two file
+recipes. The four disk techniques now claim `serial_bus` and
+`cia1_timer_b` (shares), so a technique that owns timer B reports a
+conflict with them. Two recipes that bank the KERNAL out now list
+`ram_under_kernal`; it has a Cost of 0 (one $01 store at init), and
+`plan_budget` no longer charges badline cycles for a zero figure. Three
+techniques gained Claims lines; the YSCROLL gap they exposed is #71.
+
+**Sparkle's $DD02 VIC-bank switch, measured with a true drive (data 784; #23).**
+New recipe `kickassembler-sparkle-dd02-bank`: a disk built by SparkleCPP
+loads eight 4 KB bundles while a raster IRQ flips VIC banks 0 and 2 by
+writing $DD02. In VICE x64sc 3.10 with a true 1541: 523 bank writes on
+PAL and 625 on NTSC, none landing on the wrong bank, every bundle's sum
+and XOR matching; 5.21 s on both models. A read-modify-write of $DD00
+loads correctly but shows the wrong bank in 400 of 523 checks (PAL); a
+plain STA $DD00 releases ATN, the drive resets ($EAA0 traced) and the
+first load never returns. `pitfalls/loader.md` had Krill's row backwards:
+Krill v194's README says to switch banks with a plain STA $DD00, at any
+time; the row and its mechanism now say so, with what they said before.
+
+**Cost lines re-read against their recipes (#32, #45).**
+Traced in VICE x64sc 3.10 with monitor tracepoints, from each interrupt's
+acceptance to the end of `RTI`, or across the recipe's own work:
+
+| Technique | Was | Now | What was wrong |
+|---|---|---|---|
+| `irq_chain_table` | 273, estimated | 498 (three slots) | about 91 a slot; measured 159, 180 for the wrap slot |
+| `topbottom_border_open` | 132, arithmetic | 371 NTSC, 353 PAL | left out the `$EA31` exit |
+| `stable_raster_irq` | 124, arithmetic | 310 NTSC, 262 PAL | left out the double IRQ's two-line wait |
+| `raster_bars` | 990 and 600 bytes, estimated | 1,471 NTSC, 1,464 PAL; 577 + 33 bytes | estimates |
+| `sprite_multiplex_24` | 700 and 900 bytes, estimated | 1,667 (fixed bands, no sort); 977 bytes | estimates |
+| `sprite_sine_chain` | 200, 512 bytes, one IRQ | 578-644; 768 bytes; no IRQ | not timed; three tables, and the recipe polls |
+| `text_input_line` | 200, estimated | 361 worst, 107 typical | not measured |
+| `adventure_database_engine` | 14,908 (PAL) | 15,206 (NTSC) | the smaller region's figure |
+| `software_sprite_preshifted` | two objects' bytes | one object's: 1,304 + 1,344 | units mixed with one object's cycles |
+| `kernal_file_write_seq`, `kernal_file_read_seq` | no Cost line | 3,989,946 and 530,736 (NTSC, one call) | a plan that saves could not name the cost |
+
+`table_multiply_8x8` and `lfsr_random` said `arithmetic` for figures that
+come from a timer and a build; they say `derived-listing` now.
+`two_player_state_swap` says its 65 is the per-frame port read.
+`tile_map_render` gains a whole-level unpack figure in prose (40,041 PAL,
+templates/action-puzzle). `CONVENTIONS-techniques.md` allows a one-call
+Cost for a technique that runs only outside play. Two pitfalls gained
+data (sprites enabled before placement cost 342 cycles in the first
+music frame; the adventure starter's first disk calls did not hang), and
+`kickassembler-sprite-multiplex-game` says what its MISSED counter
+cannot see.
+
+Validation rows that moved: `cracktro-template` play high end is now
+1,471 + 1,198 + 7,938 (raster_bars 990 before); `platformer-scaffold` transition has one
+unknown (`error_channel_check`) and two multi-frame members instead of
+three unknowns.
+
+**Compatibility, budget, briefing and lint answers that misled the
+starter builders (tools 2.6.0, package 0.19.0, data 783; #29, part of #41).**
+`check_compatibility` no longer reports a hard conflict between a
+technique and one on its own REQUIRES chain (the FLI, side-border, DYSP
+and tech-tech recipes gave 11 false hard conflicts; now none, checked
+against the real pages by a new test), refuses unknown technique names
+(verdict `unknown_technique`, new `not_found[]`), and no longer suggests
+an `irq_chain_table` that makes the verdict worse. `plan_budget` applies
+one multi-frame threshold to both models and says "over the frame by X"
+instead of "passes". Briefings refuse an unknown archetype, list every
+conflict with its severity, name the brief words behind each proposal,
+and propose file, animation, frame-sync and region techniques from the
+brief's words. `techniques-for --register` accepts any spelling of a
+register. The lint's raster-poll rule no longer fires on a multiplexer.
+
+**sprite_multiplex_game has a measured typical frame (data 781; #33).**
+A CIA1 probe across the sort, the build and every IRQ, over 1,867 PAL and
+2,142 NTSC frames in VICE: largest whole frame 8,785 cycles on PAL and
+8,995 on NTSC (with the 26-27 cycles per IRQ the timer cannot see). The
+Cost line now carries `cycles_per_frame_typical=8995` beside the
+arithmetic worst of 16,600.
+
+**Pitfall: sprites next to badlines hang a KERNAL disk save (data 780; #43).**
+`sprites_over_badlines_hang_serial_io` in `pitfalls/kernal-and-io.md` and
+the recipe `oscar64-sprites-off-during-disk-io`. Measured in VICE x64sc
+3.10 with a true drive, 20 save rounds per case: with sprites drawn over
+two badlines, 3 or more hang on PAL and 4 or more on NTSC; none hang with
+the sprites off the badlines, the screen blanked, or sprites switched
+off around each call. At the hang the C64 waits in the KERNAL bit loop
+($EE5A-$EE63) for one more bit while the drive waits for the byte's
+acknowledge; neither side times out. Not checked on a real 1541.
+
+**`soft-scroll-h` no longer tears (#18).** The carry moved screen and
+colour RAM with `memmove` in 74,041 cycles, 3.8 PAL frames, and the main
+loop's `vic_waitBottom` ran eight XSCROLL steps in one blank, so the
+picture jumped 8 px every four frames and tore. The listing now waits with
+`vic_waitFrame`, writes `$D016` first, and moves screen RAM with an
+unrolled `LDA abs` / `STA abs` copy, top row first: 7,938 cycles, measured
+with CIA2 timers. No whole-screen move fits the blank (975 × 8 = 7,800 >
+7,056 PAL), so the page measures the race instead: every row finishes
+before the beam reaches it (row 24 at line 82 PAL, 127 NTSC), and 18
+one-frame-apart screenshots per model show all 25 rows at one phase and
+1 px per frame. `soft_scroll_h`'s Cost line is now 7,938, so
+`c64_plan_budget` counts it instead of excluding it as multi-frame.
+
+**The #68 claims corrected (techniques, recipes, hardware leftovers).**
+About 95 more claims flagged by the prose pass, each settled and
+corrected with a clause. Measured in VICE among them: the
+`pseudo-3d-road` loop's writes land from cycle 56 of line 100 and drift
+3 cycles per badline (the page now says what the listing does; the
+listing fix is a follow-up); a same-line raster IRQ fires once a frame;
+MCM and ECM switches land at different pixel offsets; a bitmap at $0000
+in bank 0 shows the character ROM from $1000; the NTSC bottom-strip
+sprite threshold is Y <= 5; the SID effect in `sid-music-player` was
+recorded (880 Hz every 151 frames). Three headings changed: "Project
+One", the IEC load speed (about 400 bytes/s, measured 406), the NIB
+subtitle.
+
+**A `.sid` worked example in the disassembly reference (#64).**
+`toolchains/disassembly-reference.md` assembles its own PSID file
+(BSD-3-Clause, no HVSC file), reads init $1000 and play $1003 from the
+header, disassembles the body with da65, and runs it in the windowless
+`vsid`: init once with A = $00, play every 19656 cycles (one PAL frame),
+called from the driver vsid places at $1100. `formats/c64-file-formats.md`
+no longer says KickAssembler cannot produce a `.sid`.
+
+**A full SID music player recipe with measured cost (#50).**
+`recipes/kickassembler/music-player.md`: order lists, patterns,
+instruments with a wavetable, a two-frame hard restart, two filter
+programs and six prioritised effects on voice 3, with an original tune.
+A CIA1 stopwatch over 2,000 calls measures the worst call at 1,198 cycles
+on PAL and 1,174 on NTSC; an ENV3 check finds the music's attack after
+all 11 hand-backs. Two bugs in the source player are fixed: the pulse
+sweep never ran, and the NTSC skip was one call in five, not six.
 
 **Plain prose and corrected claims across docs/ (data 777; #56, #67).**
 Every page's prose lost its machine-written wording in six batches;
@@ -20,6 +796,21 @@ Oscar64 default zero page is 8 bytes; a 50 Hz PAL CIA tick needs latch
 $4CF8; an IEC LOAD runs at ~406 B/s; the KERNAL never uses $DD0C. Search
 recall was measured for #26 (36 queries, recall@5 0.917); the BM25
 encoding stays.
+
+**`c64_re_irq_chain` counts interrupt dispatches, not executions of an
+address (#66).** It counted every execution of every value a vector ever
+held. On `kickassembler/sprite-multiplex-game` that gave 2,338 NMI entries
+at `$0B8C`: the IRQ exit's `rti` doubles as the `nmi:` label, and CIA2
+never raises an NMI. On `kickassembler/raster-bars` it gave 11 handlers for
+10 bars: `$0B04` and `$0C00` exist only between a low-byte and a high-byte
+store to `$0314`. The tool now also traces stores to `$0100-$01FF`, and
+VICE logs an interrupt's pushes with PC high at `$0100` + SP + 3. It names
+the handler from the vectors at that moment, and an entry is that
+handler's first exec within 94 cycles. Measured in VICE x64sc 3.10: the NMI
+handler has 0 entries, the IRQ handler still has 2,338, and raster-bars
+has 10 handlers of 256 entries each. `$0B04` and `$0C00` now appear only
+under the new `transient` field. The output also gains an `interrupts`
+count.
 
 **MEASURED, a demo built only from the KB, is checked in under `demos/measured/`.**
 Five parts (a tech-tech logo with a sprite border scroller, a twister with

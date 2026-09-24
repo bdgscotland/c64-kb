@@ -42,6 +42,8 @@ import {
   type VideoRegion,
 } from "./timing.ts";
 import { assumptionsFor, lockedTo, measuredScreenOn, phaseNotes } from "./budget-notes.ts";
+import { countedFigures, perItemCharge } from "./budget-items.ts";
+import type { CallCount } from "./calls.ts";
 
 export const BUDGET_PHASES = ["play", "transition", "init"] as const;
 export type BudgetPhase = (typeof BUDGET_PHASES)[number];
@@ -63,12 +65,19 @@ const DEFAULT_SPRITE_LINES = 200;
 export interface BudgetCost {
   cycles_per_frame?: number | undefined;
   cycles_per_frame_typical?: number | undefined;
+  /** Worst cycles each item adds (#95): a count on the member charges cycles_item_base + N × this. */
+  cycles_per_item?: number | undefined;
+  /** Cycles of a frame with no items, beside cycles_per_item (#95); absent is 0. */
+  cycles_item_base?: number | undefined;
   cycles_per_line?: number | undefined;
   lines_active?: number | undefined;
   bytes_code?: number | undefined;
   bytes_data?: number | undefined;
   irq_slots?: number | undefined;
+  /** The cycle figures' basis, and the byte figures' too when bytes_basis is absent. */
   basis: BudgetBasis;
+  /** **Cost bytes basis:** (#72): the byte figures' own basis. */
+  bytes_basis?: BudgetBasis | undefined;
   measured_on?: string | undefined;
   conditions?: string | undefined;
   includes?: string[] | undefined;
@@ -87,6 +96,14 @@ export interface BudgetMember {
   /** Recipes that IMPLEMENT the technique: where a missing figure could be measured. */
   recipes?: string[] | undefined;
   cost?: BudgetCost | undefined;
+  /**
+   * Calls per frame (#37): a Cost figure is one call, so a cycles_per_frame
+   * charge is multiplied, low by calls.low and high by calls.high. Absent is
+   * one call. A band or per-line charge is lines, not calls, and is not
+   * multiplied. On a member whose Cost states cycles_per_item (#95) the
+   * count is items, not calls: the charge is cycles_item_base + N × item.
+   */
+  calls?: CallCount | undefined;
 }
 
 export interface BudgetOptions {
@@ -103,8 +120,12 @@ export interface BudgetContributor {
   /** True when the figure is work done every frame (a band or per-line charge): part of the floor. */
   every_frame: boolean;
   basis: BudgetBasis;
-  /** How the figure was charged: the Cost line's cycles_per_frame, per-line × lines, or a raster band. */
-  charge: "cycles_per_frame" | "per_line" | "band";
+  /** How the figure was charged: the Cost line's cycles_per_frame, per-line × lines, a raster band, or base + items × item (#95). */
+  charge: "cycles_per_frame" | "per_line" | "band" | "per_item";
+  /** The calls low and high are multiplied by (#37), or on a per_item charge the items counted (#95). */
+  calls?: CallCount | undefined;
+  /** A per_item charge's figures (#95): low = base + calls.low × each, high = base + calls.high × each. */
+  per_item?: { base: number; each: number } | undefined;
   measured_on: string | null;
   conditions: string | null;
 }
@@ -166,6 +187,8 @@ interface BytesBudget {
   /** Members whose work, and so code, is inside another member's figure that states bytes. */
   inside: { name: string; by: string }[];
   without_bytes: string[];
+  /** The weakest byte basis among the contributors, beside the sum (#72). */
+  weakest_basis: BudgetBasis | null;
 }
 
 export interface PlanBudget {
@@ -213,8 +236,9 @@ function holdsWholeLines(cost: BudgetCost | undefined): boolean {
  * whose conditions say the screen was on counts: one that says nothing is
  * charged. A band charge is whole lines, stalls and all.
  */
+// A figure of zero cycles holds no work for a badline to stretch (#35: ram_under_kernal).
 function includesDisplayStalls(c: BudgetContributor): boolean {
-  if (c.charge === "band") return true;
+  if (c.charge === "band" || c.high === 0) return true;
   return measuredScreenOn(c);
 }
 
@@ -228,6 +252,8 @@ function chargeOf(m: BudgetMember, region: VideoRegion): Charge {
     const lines = bandLines(m.raster_band, region);
     if (lines !== null) return { low: lines * line, high: lines * line, charge: "band" };
   }
+  const items = perItemCharge(m);
+  if (items) return items;
   if (cost.cycles_per_frame !== undefined) {
     return {
       low: cost.cycles_per_frame_typical ?? cost.cycles_per_frame,
@@ -243,10 +269,25 @@ function chargeOf(m: BudgetMember, region: VideoRegion): Charge {
 }
 
 /** The recipe to measure a missing figure on: the one named after the technique first, else the first implementing one. */
+/**
+ * A technique's recipes, the one that realises it most directly first: the
+ * recipe named after it, then the one sharing most words with its name,
+ * then alphabetical. technique_lookup lists them in this order and
+ * plan_budget's "measure it on" takes the first, so the two name the same
+ * recipe. An earlier version took the alphabetical first, and
+ * joystick_edge_detect was to be measured on oscar64-attract-replay while
+ * its card led with oscar64-joystick-input (#41).
+ */
+export function rankRecipesFor(technique: string, recipes: readonly string[]): string[] {
+  const stem = technique.replace(/_/g, "-");
+  const words = new Set(technique.split("_"));
+  const shared = (r: string) => r.split("-").filter((w) => words.has(w)).length;
+  const exact = (r: string) => (r.endsWith(`-${stem}`) ? 1 : 0);
+  return [...recipes].sort((a, b) => exact(b) - exact(a) || shared(b) - shared(a) || a.localeCompare(b));
+}
+
 function recipeToMeasure(m: BudgetMember): string | null {
-  const recipes = m.recipes ?? [];
-  const stem = m.name.replace(/_/g, "-");
-  return recipes.find((r) => r.endsWith(`-${stem}`)) ?? recipes.at(0) ?? null;
+  return rankRecipesFor(m.name, m.recipes ?? []).at(0) ?? null;
 }
 
 function missingWhy(m: BudgetMember): string {
@@ -292,7 +333,11 @@ function absorbed(members: BudgetMember[], region: VideoRegion): Map<string, Bud
   const names = new Set(members.map((m) => m.name));
   const byName = new Map(members.map((m) => [m.name, m]));
   const frame = REGION_TIMING[region].cycles_per_frame;
-  const multi = new Set(members.filter((m) => (chargeOf(m, region)?.high ?? 0) > frame).map((m) => m.name));
+  const isMulti = (m: BudgetMember): boolean => {
+    const c = chargeOf(m, region);
+    return c !== null && c.charge !== "per_item" && c.high > frame;
+  };
+  const multi = new Set(members.filter(isMulti).map((m) => m.name));
   const out = new Map<string, BudgetExcluded>();
   const holds = (m: BudgetMember): boolean => !multi.has(m.name) && !out.has(m.name);
   for (const m of members) {
@@ -405,6 +450,16 @@ interface Sorted {
   irq_slots: number;
 }
 
+/**
+ * A figure above this is multi-frame work on every model: the longest frame,
+ * PAL's 19,656. One threshold for both, so a member is summed or left out
+ * the same way on PAL and NTSC; a figure between the two frames is summed
+ * on NTSC and shows as over that frame. An earlier version used each
+ * region's own frame, and cave_scan_engine's 18,559 was summed on PAL and
+ * silently left out on NTSC (#41).
+ */
+const MULTI_FRAME_ABOVE = Math.max(...Object.values(REGION_TIMING).map((t) => t.cycles_per_frame));
+
 /** Put one member where it belongs: summed, left out as multi-frame, unknown, or not found. */
 function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
   if (!m.found) {
@@ -419,14 +474,18 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
     return;
   }
   const measured_on = m.cost?.measured_on ?? null;
-  if (charge.high > REGION_TIMING[region].cycles_per_frame) {
+  // A per_item charge is one frame's work for its count, never a
+  // multi-frame operation: past the frame it is summed and shows as over.
+  if (charge.charge !== "per_item" && charge.high > MULTI_FRAME_ABOVE) {
     into.excluded.push({ name: m.name, reason: "multi_frame", cycles: charge.high, measured_on });
     return;
   }
+  // The multi-frame test above is on one call; the sum takes every call.
   into.contributors.push({
     name: m.name,
     ...charge,
-    every_frame: charge.charge !== "cycles_per_frame",
+    ...countedFigures(m, charge),
+    every_frame: charge.charge === "band" || charge.charge === "per_line",
     basis: m.cost?.basis ?? "estimated",
     measured_on,
     conditions: m.cost?.conditions ?? null,
@@ -451,7 +510,9 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
   const worst_only = contributors
     .filter(
       (c) =>
-        c.charge === "cycles_per_frame" && byName.get(c.name)?.cost?.cycles_per_frame_typical === undefined,
+        c.charge === "cycles_per_frame" &&
+        c.high > 0 &&
+        byName.get(c.name)?.cost?.cycles_per_frame_typical === undefined,
     )
     .map((c) => c.name);
   const low = contributors.reduce((s, c) => s + c.low, 0);
@@ -501,6 +562,11 @@ function heldEverywhere(phases: PhaseBudget[]): Map<string, string> {
   return held;
 }
 
+/** The byte figures' basis: their own line where the page states one (#72), else the Cost basis. */
+function bytesBasisOf(c: BudgetCost): BudgetBasis {
+  return c.bytes_basis ?? c.basis;
+}
+
 function hasBytes(c: BudgetCost | undefined): c is BudgetCost {
   return c?.bytes_code !== undefined || c?.bytes_data !== undefined;
 }
@@ -512,7 +578,14 @@ function hasBytes(c: BudgetCost | undefined): c is BudgetCost {
  * sum a floor.
  */
 function bytesOf(members: BudgetMember[], held: Map<string, string>): BytesBudget {
-  const out: BytesBudget = { sum: 0, contributors: [], excluded: [], inside: [], without_bytes: [] };
+  const out: BytesBudget = {
+    sum: 0,
+    contributors: [],
+    excluded: [],
+    inside: [],
+    without_bytes: [],
+    weakest_basis: null,
+  };
   const byName = new Map(members.map((m) => [m.name, m]));
   const seen = new Set<string>();
   for (const m of members) {
@@ -535,8 +608,9 @@ function bytesOf(members: BudgetMember[], held: Map<string, string>): BytesBudge
       continue;
     }
     out.sum += bytes;
-    out.contributors.push({ name: m.name, bytes, basis: c.basis });
+    out.contributors.push({ name: m.name, bytes, basis: bytesBasisOf(c) });
   }
+  out.weakest_basis = weakestOf(out.contributors.map((c) => c.basis));
   return out;
 }
 

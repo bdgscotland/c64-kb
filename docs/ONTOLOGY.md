@@ -21,17 +21,21 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (16)
+## Node Types (20)
 
 ### KernalRoutine
 
-A KERNAL ROM jump-table entry ($FF81-$FFF3). An earlier version of this
-line said $FFC0+; the table starts at $FF81 (CINT).
+A KERNAL ROM jump-table entry ($FF81-$FFF3), or one of the tape routines
+inside the ROM that the page lists under "Tape routines inside the ROM",
+at its 901227-03 address and under Commodore's source label (`FAH`,
+`TRD`, `BSIV`). An earlier version of this line said $FFC0+; the table
+starts at $FF81 (CINT). Before the tape section every node was a
+jump-table entry.
 
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Routine name (e.g. "CHROUT") |
-| address | string | Hex jump-table address (e.g. "$FFD2") |
+| address | string | Hex jump-table address (e.g. "$FFD2"), or ROM address for a tape routine (e.g. "$F72C") |
 | input_regs | string | Calling convention (e.g. "A=byte to print") |
 | output_regs | string | Return values (e.g. "C=error flag") |
 | description | string | One-line summary |
@@ -40,19 +44,23 @@ Source: `hardware/kernal-routines-reference.md` (Phase 1).
 
 ### Register
 
-A C64 hardware register at $D000–$DFFF.
+A C64 hardware register: the I/O chips at $D000–$DFFF, and the 6510's
+processor port at $0000/$0001 (D6510, R6510; chip 6510), and the REU's
+registers at $DF00–$DF0A (DF00–DF0A; chip REU, `hardware/reu-reference.md`).
+An earlier version said $D000–$DFFF only; the port had no node until #19,
+the REU none until #92.
 
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Register name (e.g. "D011", "BORDER") |
 | address | string | Hex address (e.g. "$D011") |
-| chip | string | Owning chip ("VIC-II", "SID", "CIA1", "CIA2") |
+| chip | string | Owning chip ("VIC-II", "SID", "CIA1", "CIA2", "6510", "REU") |
 | rw | string | Access type: "R", "W", or "RW" |
 | bit_width | integer | 8 in nearly all cases |
 | default_value | string | Power-on default |
 | side_effects | string | Strobe / write-only / read-clears semantics |
 
-Source: `hardware/c64-registers-reference.md` (Phase 1).
+Source: `hardware/c64-registers-reference.md` (Phase 1); the port from `hardware/6510-cpu-reference.md`.
 
 ### MemoryRegion
 
@@ -71,20 +79,22 @@ Source: `hardware/c64-memory-map.md` (Phase 1).
 
 ### Chip
 
-A C64 silicon component. Static nodes seeded in `ensureSchema()`.
+A C64 silicon component, or the REU's controller in the expansion port.
+Static nodes seeded in `ensureSchema()`.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| name | string | One of: "VIC-II", "SID", "CIA1", "CIA2", "6510" |
+| name | string | One of: "VIC-II", "SID", "CIA1", "CIA2", "6510", "REU" |
 | variants | string | Known revisions / models |
 | role | string | Functional role |
 
-**Hardcoded seed (5 nodes):**
+**Hardcoded seed (6 nodes):**
 - VIC-II (variants: 6569 PAL / 6567 NTSC)
 - SID (variants: 6581 / 8580)
 - CIA1 (6526): keyboard, joystick port 2, timer-A IRQ
 - CIA2 (6526): VIC bank select, RS-232, timer-B NMI
 - 6510: CPU with I/O port at $00/$01
+- REU (1700 / 1764 / 1750): the RAM Expansion Unit's DMA controller at $DF00-$DF0A
 
 ### Region
 
@@ -118,10 +128,13 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | cost_irq_slots | integer, optional | Raster or timer interrupts the technique needs per frame. |
 | cost_sprites_per_line | integer, optional | The most hardware sprites displayed on one raster line of the technique's lines, 0-8 (schema 24). `c64_timing_budget` subtracts their DMA (3 + 2 per sprite, measured) from the line's user cycles. |
 | cost_cycles_per_frame_typical | integer, optional | A measured typical frame beside a worst-frame cost_cycles_per_frame, never above it (schema 27). `c64_plan_budget` sums it for the low end of its range, which is therefore not a floor. |
-| cost_recipe | string, optional | The recipe the cost figures were measured on or counted from, from `**Cost measured on:**` (schema 27). A property, not an edge; ingest warns when it names no Recipe. |
+| cost_cycles_per_item | integer, optional | The worst cycles one more item (a bullet, a tested pair) adds to a frame, measured (#95). A plan count on the technique (`×N`, `×M-N`) is then items, not calls: `c64_plan_budget` charges cost_cycles_item_base + N × this. |
+| cost_cycles_item_base | integer, optional | The cycles of a frame with no items, beside cost_cycles_per_item (#95); absent is 0. |
+| cost_recipe | string, optional | The recipe the cost figures were measured on or counted from, from `**Cost measured on:**` (schema 27). A property, not an edge; ingest warns when it names no Recipe, or a Recipe with no IMPLEMENTS edge to this technique (#41). |
 | cost_conditions | string, optional | The parenthetical after the recipe on that line: "screen blanked", "whole PRG", "one call" and the like (schema 27). `c64_plan_budget` reads "screen on" (the badline stalls that fell inside the figure are in it), "blank" (none are) and "whole PRG" (bytes not summed). |
 | cost_includes | string[], optional | Techniques whose per-frame work is inside this technique's figure, from `**Cost includes:**` (schema 27). Authored, never inferred; ingest warns when a name is no Technique. A budget that lists both counts the included one once. |
-| cost_basis | string, optional | How the cost figures were obtained, one of "measured-vice", "derived-listing", "arithmetic", "estimated"; present exactly when any cost_* property is. The word is the weakest that applies to any figure on the line. |
+| cost_basis | string, optional | How the cost figures were obtained, one of "measured-vice", "derived-listing", "arithmetic", "estimated"; present exactly when any cost_* property is. The word is the weakest that applies to any figure on the line, or, when cost_bytes_basis is present, to every figure but the byte ones. |
+| cost_bytes_basis | string, optional | The basis of cost_bytes_code, cost_bytes_data and cost_zp_bytes when the page states it apart, from `**Cost bytes basis:**` (#72); same four words. Absent means cost_basis covers the bytes too. `c64_plan_budget` takes a phase's weakest basis from cost_basis alone and names the byte sum's weakest basis from this word where present. Cleared with the Cost line. |
 | raster_band | string, optional | The raster lines the technique holds the CPU on, from the page's `**Raster band:**` line (schema 24), in canonical form: sorted inclusive ranges such as "45-250" or "0-44,251-311", or "movable" when the program chooses the lines. Absent when the page states none; a re-ingest that drops the line clears it. `c64_check_compatibility` clears its line-sharing rules for two techniques whose line bands share no line. |
 | claims_stated | string, optional | "stated" when the page's `**Claims:**` line names units, "none" when it says `none` (schema 25). Absent means unknown: the page states nothing, which is not the same as "none". The CLAIMS edges carry the units. |
 | claims_basis | string, optional | How the claims were established: "measured-vice", "derived-listing" or "estimated"; present exactly when claims_stated is. |
@@ -195,6 +208,8 @@ nodes, one per toolchain.
 | toolchain | string | One of: "oscar64", "kickassembler", "cc65" |
 | output_format | string | One of: "prg", "crt", "d64", "bin" |
 | region | string | "pal", "ntsc", or "both" |
+| claims_stated | string, optional | "stated" when the frontmatter's `claims:` names units, "none" for `claims: []` (schema 34). Absent means unknown: the page has no `claims:` key. The CLAIMS edges carry the units. |
+| claims_basis | string, optional | The `claims_basis:` key, or measured-vice when the page has `claims:` without it (the key is written from a claims-watch trace). |
 
 Source: `recipes/<toolchain>/*.md` (Phase 2+).
 
@@ -238,7 +253,7 @@ different question from Resource: a Resource is a kind of machine time
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Seed name (e.g. "sid_voice_2", "vic_raster_irq") |
-| kind | string | sid_voice, sid_shared, sprite, timer, tod, port, bus, irq_source, vector, io_page or zero_page |
+| kind | string | sid_voice, sid_shared, sprite, timer, tod, port, bus, irq_source, display, vector, io_page or zero_page |
 | addresses | string | The registers or bytes (e.g. "$D407-$D40D") |
 | chip | string | Owning chip, "" for the expansion I/O pages; also a BELONGS_TO edge |
 
@@ -252,7 +267,11 @@ register $DC0D/$DD0D: timer A bit 0, timer B bit 1, TOD alarm bit 2),
 control port 2), `cia1_port_b` ($DC01: keyboard rows, control port 1),
 `cia2_vic_bank` ($DD00 bits 0-1), `serial_bus` ($DD00 bits 3-7 and the
 drive), `user_port` ($DD01), `vic_raster_irq` (the one raster compare:
-$D012, $D011 bit 7, $D019/$D01A bit 0), `irq_vector_0314`,
+$D012, $D011 bit 7, $D019/$D01A bit 0), the four VIC display fields
+(kind `display`: `vic_yscroll` $D011 bits 0-2, `vic_xscroll` $D016 bits
+0-2, `vic_matrix_base` $D018 bits 4-7, `vic_char_base` $D018 bits 1-3;
+added for #71, before which two YSCROLL writers met only as a soft
+shared register), `irq_vector_0314`,
 `irq_vector_fffe`, `nmi_vector_0318`, `nmi_vector_fffa`,
 `expansion_io1` ($DE00-$DEFF), `expansion_io2` ($DF00-$DFFF), and
 `zero_page` ($02-$FF), one unit whose bytes ride the CLAIMS and
@@ -279,6 +298,68 @@ Source: `game-design/c64-game-archetypes.md` and, for kind `demo`,
 carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
 schema 21 the briefing tool held four archetype keywords and two forced
 techniques in code and the page's fingerprints were read by nobody.
+
+### Production
+
+A released title an archetype page names as a reference (schema 34).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | The title as the page links it ("The Last Ninja") |
+| kind | string | "game" or "demo", the kind of the page's archetypes |
+| year | integer, optional | The C64 year the page gives; absent when it gives none ("year not checked") |
+| note | string, optional | The rest of the page's parenthesis: "isometric", "Pipe Mania in Europe" |
+| url | string | The C64-Wiki or Wikipedia page the title links for its genre and year |
+
+Source: the `**Reference titles:**` line under each archetype
+(`CONVENTIONS-archetypes.md`). Only a linked title is read, and only the
+list at the head of the line: a title named in the correction prose after
+it is not a production. `**Modern examples:**` lines are not read. Before
+#40 sourced the titles one by one, the design (#22, 3.3) would have
+ingested them at rung 4 with no source.
+
+### Device
+
+A thing plugged into the machine that a recipe's run needs: a joystick or
+other controller in a control port, a user-port adapter, a drive on the
+serial bus, a cartridge or RAM expansion in the expansion port (schema
+36, #87). It answers "what must be attached for this listing to run, and
+can two listings' hardware be attached together?"
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | From the `**Device:**` line (e.g. "disk_1541_ii", "joystick_port_2") |
+| title | string | The H2 text |
+| kind | string | input, output, storage, memory or cartridge (output added with the printer, #19) |
+| port | string | control_1, control_2, user, expansion or serial; every port but serial has one socket |
+| vice_attach | string | How x64sc attaches it: "default", "flags <options>", "disk" (drive 8, D64), "disk d81" (drive 8, a 1581), "disk 9" (drive 9, D64) or "crt <CRT hardware type>" |
+| source_doc | string | The page that defines it |
+| claims_stated | string? | "stated" or "none"; absent when the section has no usable Claims line (unknown) |
+| claims_basis | string? | measured-vice or derived-listing |
+
+Source: `docs/hardware/devices.md`, one H2 per device
+(`CONVENTIONS-devices.md`). A device earns a section only when a recipe's
+pinned run attaches it or VICE attaches it by default; the KoalaPad, the
+Final Cartridge and a second drive have none.
+
+### LibraryFunction
+
+A public function of a C library header, such as Oscar64's `krnio_open`
+(schema 37).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | The C name, case kept (`vic_waitLine`) |
+| header | string | The header that declares it (`kernalio.h`) |
+| tool | string | The page's `tool:` (`oscar64-headers`) |
+| source_doc | string | The page the `**Wraps:**` line is on |
+
+Source: `**Wraps:**` lines on a toolchain page
+(`CONVENTIONS-toolchain-reference.md`), today
+`toolchains/oscar64-headers-reference.md`, read from the Oscar64
+`include/c64` sources. A function with no line is not a node. Names are
+unique across the graph; a second C library with a clashing name would
+need the tool in the key.
 
 ### GameDesign
 
@@ -320,7 +401,24 @@ would split every region rule.
 `jap`, `c64gs`, `pet64` and `ultimax` also exist in this VICE; they are
 left out until a page needs them.
 
-## Edge Types (26)
+### IngestRun
+
+The rebuild marker (#41), not a document entity. A clean batch ingest
+(`ingest:clean`, `ingest --force`) MERGEs the one node `{name: "rebuild"}`
+before it wipes anything and deletes it after its report. While it exists
+every MCP tool that reads the graph, and the matching CLI commands, answer
+"The knowledge base is being rebuilt" instead of answering from a
+half-built graph (`src/services/rebuild-marker.ts`). Not a cleanable label,
+so `clean()` leaves it; an ingest that fails leaves it too, and the tools
+say to rerun the ingest. No index, no edges.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | Always `rebuild` |
+| started_at | string | ISO time the ingest set the marker |
+| flags | string | The ingest's flags, e.g. ` --clean` |
+
+## Edge Types (30)
 
 ### BELONGS_TO
 
@@ -374,6 +472,38 @@ between one technique's prerequisites and the other technique, reporting a
 hit as `prerequisite_conflict`. It never runs them against a prerequisite
 the technique declared itself, and never folds a prerequisite's demands
 into its dependant's.
+
+### ALTERNATIVE_TO
+
+Direction: `Technique → Technique`, property `tradeoff` (schema 37)
+
+Meaning: "these two do the same job another way". The relation is
+symmetric and stored once, in the direction the page wrote it; `tradeoff`
+describes the source against the target, in the page's words. Example:
+`sprite_multiplex_24` ALTERNATIVE_TO `sprite_multiplex_8` (more than 16
+sprites; needs tighter IRQ scheduling, a Y-sorted list and $D010 managed
+across passes). Authored with an `**Alternative to:**` line
+(`CONVENTIONS-techniques.md`) only where the page already compares the
+two. Both ends MATCHed; refused, warned about and counted
+(`alternative_to … dropped`): a self-reference, a pair the other page
+already states, and a pair joined by REQUIRES either way, since a
+technique cannot stand in for its own prerequisite. Batch ingest links
+these after every REQUIRES edge so that check sees them all. Read by
+`c64_technique_lookup` (`alternatives`, either direction, with
+`stated_on`) and the briefings, which keep one technique of each pair and
+list the other under `alternatives_left_out`. It is not REQUIRES and not
+"variant of": `double_irq` and `stable_raster_irq` stay unlinked.
+
+### WRAPS
+
+Direction: `LibraryFunction → KernalRoutine/Register` (schema 37)
+
+Meaning: "this C function calls this KERNAL routine, or reads or writes
+this register", as read from the library's source. Both ends MATCHed, a
+Register by name, address or alias; misses warned about and counted
+(`wraps … dropped`). Read by `c64_pitfalls_for`: a function name answers
+with the pitfalls TRIGGERED_BY what it wraps, each with `via` naming the
+routine or register (topic_kind `LibraryFunction`).
 
 ### TRIGGERED_BY
 
@@ -435,9 +565,17 @@ Meaning: "this tool produces this file format."
 
 ### CONSUMES
 
-Direction: `Tool → FileFormat`
+Direction: `Tool → FileFormat`, `Technique → FileFormat` (schema 37)
 
-Meaning: "this tool reads/converts this file format."
+Meaning: "this tool reads/converts this file format", or "this technique
+reads files of this format". The Tool edge comes from a format H3's
+`**Consumed by:**` line; the Technique edge from a technique's
+`**Consumes formats:**` line (`CONVENTIONS-techniques.md`), both ends
+MATCHed, misses warned about and counted (`consumes_formats … dropped`).
+No tool reads the Technique edge yet; the query it serves is
+`MATCH (:FileFormat {name: 'SID'})<-[:CONSUMES]-(t:Technique)<-[:IMPLEMENTS]-(r:Recipe)`.
+There is no Technique `PRODUCES`: a technique produces a screen, and a
+recipe's `file_formats` (its `PRODUCES` edge) already says what it builds.
 
 ### TARGETS
 
@@ -471,16 +609,38 @@ listed as band-separated, when both techniques carry a `raster_band` of
 line ranges and the ranges share no line. Before schema 24 there was no
 band, and any two `cpu_every_line` techniques were reported as a conflict.
 
+A check by phase (#94: a design, or names given as `name:phase`) runs
+`kernal_rom_out` against KERNAL calls in a later phase as a soft
+`kernal_banked_out` with `across`, since the boundary can bank the KERNAL
+back in. The same check reads `midframe_raster_irqs` and
+`changes_sprite_set` (or a `vic_raster_irq` or sprite claim) against the
+KERNAL routines the pitfalls `raster_irq_during_serial_io` and
+`sprites_over_badlines_hang_serial_io` are TRIGGERED_BY, within a phase
+and across phases, and reports `recipe_kernal_out` (info) when every
+recipe that IMPLEMENTS one technique also implements a `kernal_rom_out`
+technique or CLAIMS `irq_vector_fffe`. To state that a design runs with
+the KERNAL out, list `ram_under_kernal`.
+
 ### CLAIMS
 
-Direction: `Technique → HardwareUnit`
+Direction: `Technique → HardwareUnit`, `Recipe → HardwareUnit` (schema 34),
+`Device → HardwareUnit` (schema 36)
 
 Meaning: "while this technique runs it holds this unit, in this mode"
 (schema 25). Authored with the `**Claims:**` and `**Claims basis:**`
-lines (`CONVENTIONS-techniques.md`). Both ends MATCHed, never MERGEd; a
-miss is warned about and counted in the ingest summary as `claims …
-dropped`. Re-ingesting a technique drops its old CLAIMS edges first, so a
-claim the page stopped making does not outlive it.
+lines (`CONVENTIONS-techniques.md`). From a Recipe: "this listing chooses
+this unit beyond what its techniques claim", from the page's `claims:`
+frontmatter (`CONVENTIONS-recipes.md`): the interrupt vector it installs,
+its zero-page bytes, the CIA units its start-up masks. Both ends MATCHed,
+never MERGEd; a miss is warned about and counted in the ingest summary as
+`claims … dropped`. Re-ingesting a technique or a recipe drops its old
+CLAIMS edges first, so a claim the page stopped making does not outlive it.
+
+After pass 2 the ingest scans each recipe's listing for `sta`, `stx` and
+`sty` to a fixed unit address and warns when no claim of the recipe, its
+`harness:` key or its techniques (with their REQUIRES closure) covers
+that unit (`src/graph/listing-stores.ts`). The warning is printed and
+counted; it creates no edge.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -505,6 +665,36 @@ reports them; the hit that remains carries the rule in `underlying_kind`.
 A technique with no Claims line is reported as unknown, never as
 claiming nothing.
 `c64_techniques_for` filters on a claimed unit.
+Recipe claims are not set against each other as technique claims are: a
+recipe is one way to build a technique. `c64_check_compatibility` reads
+the `zero_page` ones: when a recipe of one input and a recipe of the other
+own zero-page bytes in common, it reports `recipe_zero_page_overlap`
+(info), naming both recipes and the bytes. `c64_recipe_lookup` returns a
+recipe's claims.
+From a Device (schema 36), the `**Claims:**` line on `docs/hardware/devices.md`
+takes two modes only: owns (the device's lines occupy the unit; a second
+owner cannot be attached with it) and shares (devices use the unit side by
+side, as two control ports share the SID pot lines). Re-ingesting the
+page drops a device's old CLAIMS edges first. Device claims are not set
+against technique claims; `recipe_device_conflict` reads them.
+
+### REQUIRES_DEVICE
+
+Direction: `Recipe → Device`
+
+Meaning: "this recipe's pinned run attaches this device" (schema 36),
+from the recipe's `devices:` frontmatter (`CONVENTIONS-devices.md`).
+MATCH both; a miss is counted as `requires_device … dropped`. Re-ingesting
+a recipe drops its old edges first. `npm run verify:recipes` checks the
+key against `docs/recipes/runs.json` before VICE runs: a disk, a cartridge
+of the device's CRT type, or a device's flags in the run must be listed,
+and a listed device must be attached by the run or be VICE's default.
+The Recipe node carries `devices_stated` ("stated" or "none"; absent is
+unknown). `c64_recipe_lookup` returns the devices with their claims;
+`c64_check_compatibility` reports `recipe_device_conflict` (info) when a
+recipe of one input and a recipe of the other require devices that both
+own one unit or sit in one single-socket port (the REU and EasyFlash both
+own `expansion_io2` and both need the expansion port).
 
 ### CLOBBERS_ZP
 
@@ -610,7 +800,8 @@ variants of those names. Read by `c64_recipe_lookup` (`verified_on[]`) and
 ### COMPOSES
 
 Direction: `GameDesign → Technique`, property `phase` ("play",
-"transition" or "init")
+"transition" or "init"), and `calls_low`, `calls_high` when the item
+states a count (`×N` or `×M-N`, #37, schema 35)
 
 Meaning: "this game runs this technique in this phase." Authored with
 the `**Composes:**` line (`CONVENTIONS-game-designs.md`); `name (init)`
@@ -618,7 +809,9 @@ or `name (transition)` sets the phase, play when none is given. One edge
 per phase, so a technique used at start-up and again at game over has
 two. Both ends MATCHed; a miss is warned about and counted as `composes …
 dropped`. Read by `c64_plan_budget`, which budgets each phase alone
-(schema 28).
+(schema 28) and multiplies a member's per-call figure by its count, and
+by `c64_check_compatibility` with a design, which checks each phase's
+members alone.
 
 ### INSTANCE_OF
 
@@ -637,13 +830,22 @@ Meaning: "this recipe builds the design; its measured frame came from
 this listing." From `**Realised by:**`; MATCH both, misses counted as
 `realised_by … dropped` (schema 28).
 
+### EXEMPLIFIED_BY
+
+Direction: `Archetype → Production`, properties `source` (the linked
+C64-Wiki or Wikipedia URL) and `source_doc` (the archetype page)
+
+Meaning: "the page names this title as a reference for the archetype,
+and `source` gives its C64 genre and year" (schema 34). MATCH both;
+misses counted as `exemplified_by … dropped`. No tool reads it yet.
+
 ---
 
 ## Schema state
 
 `ensureSchema()` creates a range index and a unique constraint on the
 primary key of every node label and seeds:
-- `Chip`: VIC-II, SID, CIA1, CIA2, 6510
+- `Chip`: VIC-II, SID, CIA1, CIA2, 6510, REU
 - `Region`: PAL, NTSC
 - `HardwareUnit`: the units listed under HardwareUnit, each BELONGS_TO its chip
 - `MachineVariant` (schema 29): c64, c64c, c64old, ntsc, newntsc, oldntsc, drean (`src/graph/machine-variants.ts`)

@@ -208,6 +208,100 @@ Body.
     }
   });
 
+  it("emits one technique_alternative per **Alternative to:** item, commas inside the tradeoff kept (#17)", () => {
+    const doc = `---
+category: loader
+---
+
+<!-- doc-type: technique-reference -->
+
+# Packers
+
+## wcf_packer — WCF
+
+**Alternative to:** exomizer_basics (worse ratio, legacy only), \`byteboozer_packer\` (a larger depacker), exomizer_basics (again)
+
+Body.
+`;
+    const ents = extractGraphEntities(doc, "techniques/loaders-packers.md");
+    expect(ents.filter((e) => e.type === "technique_alternative")).toEqual([
+      {
+        type: "technique_alternative",
+        technique: "wcf_packer",
+        alternative: "exomizer_basics",
+        tradeoff: "worse ratio, legacy only",
+      },
+      {
+        type: "technique_alternative",
+        technique: "wcf_packer",
+        alternative: "byteboozer_packer",
+        tradeoff: "a larger depacker",
+      },
+    ]);
+  });
+
+  it("refuses a self-reference, a non-snake_case name and an item with no tradeoff under **Alternative to:**", () => {
+    const warnings: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: string) => {
+      warnings.push(msg);
+    };
+    try {
+      const doc = `---
+category: sprite
+---
+
+<!-- doc-type: technique-reference -->
+
+# Sprites
+
+## sprite_multiplex_24 — 24 sprites
+
+**Alternative to:** sprite_multiplex_24 (itself), Sprite Multiplex 8 (more), sprite_multiplex_8
+
+Body.
+`;
+      const ents = extractGraphEntities(doc, "techniques/sprite.md");
+      expect(ents.filter((e) => e.type === "technique_alternative")).toEqual([]);
+      expect(warnings.some((w) => w.includes("lists itself under **Alternative to:**"))).toBe(true);
+      expect(warnings.some((w) => w.includes("not a snake_case technique name"))).toBe(true);
+      expect(warnings.some((w) => w.includes("which is not `name (tradeoff)`"))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
+  it("emits technique_consumes per **Consumes formats:** word, refusing a lower-case one (#17 ONTO-08)", () => {
+    const orig = console.warn;
+    const warnings: string[] = [];
+    console.warn = (msg: string) => {
+      warnings.push(msg);
+    };
+    try {
+      const doc = `---
+category: music
+---
+
+<!-- doc-type: technique-reference -->
+
+# Music
+
+## sid_play_routine_pattern — Init and play
+
+**Consumes formats:** .SID, \`SID\`, sng
+
+Body.
+`;
+      const ents = extractGraphEntities(doc, "techniques/music-sid.md");
+      expect(ents.filter((e) => e.type === "technique_consumes")).toEqual([
+        { type: "technique_consumes", technique: "sid_play_routine_pattern", format: "SID" },
+      ]);
+      expect(warnings.some((w) => w.includes('**Consumes formats:** "sng"'))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
   it("skips files without the technique-reference marker", () => {
     const doc = `## stable_raster_irq — Stable raster IRQ
 

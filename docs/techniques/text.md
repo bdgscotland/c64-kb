@@ -23,8 +23,9 @@ measured here.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** GETIN
-**Cost:** cycles_per_frame=200
-**Cost basis:** estimated
+**Cost:** cycles_per_frame=361, cycles_per_frame_typical=107
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-text-input (the frame's work after the wait: a key frame at worst, an empty queue typical; KERNAL IRQ outside the figure; PAL)
 
 ### Why
 
@@ -143,8 +144,14 @@ records the same limit).
 
 ### Cycle budget
 
-Not raster-critical. The poll is one GETIN call on an empty queue per
-frame, well inside any frame budget; the cost was not measured here.
+Not raster-critical. Traced in the recipe in VICE x64sc 3.10 (PAL),
+from the end of `vic_waitFrame()` to the loop's branch back, with the
+keys `abc`, DEL and `defghijk` typed through `-keybuf`: 105 to 107
+cycles on a frame with an empty queue, 174 to 361 on a
+frame that takes a key, the rejected keys past the cap included. The
+KERNAL's keyboard IRQ is not in these figures; one frame that it
+interrupted read 326. An earlier Cost line said 200, an estimate made
+before this measurement.
 
 ### Recipes
 
@@ -459,6 +466,15 @@ carries one forward call.
 **Cost:** cycles_per_frame=672
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-big-font-scroller (carry frame, in the vertical blank from line 251)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/big-font-scroller.md`: one `$D018` store (`$1C`)
+moves the character base to the built charset at `$3000`, and the font
+holds it every frame. The matrix stays at `$0400`, so the store changes no
+matrix bits. The `$D016` stores are `soft_scroll_h`'s; the raster
+interrupt and the CIA1 timer are the recipe's frame tick and harness.
 
 ### Why
 
@@ -568,9 +584,9 @@ rows (about 12.5 a byte) or 16 a byte for one row.
 **Region:** both
 **Uses registers:** (none)
 **Requires:** text_input_line
-**Cost:** cycles_per_frame=14908
+**Cost:** cycles_per_frame=15206
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-adventure-engine (one command's parse and turn, PAL, display on)
+**Cost measured on:** oscar64-adventure-engine (one command's parse and turn, NTSC, 14,908 on PAL; display on)
 
 ### Why
 
@@ -717,7 +733,7 @@ is loose; half of it is empty on most entries.
 
 ### Cycle budget
 
-The engine's work for one command fits one PAL frame (14,908). Printing
+The engine's work for one command fits one frame (14,908 on PAL, 15,206 on NTSC). Printing
 its output does not: up to 109,866 cycles, 5.6 frames, almost all of it
 the C scroll at about 17,400 a line. Budget the terminal first; print a
 line per frame or scroll in assembly if anything animates.
@@ -734,8 +750,10 @@ interrupts off and the display on, on PAL (NTSC in brackets):
   with items listed costs 7,800 to 12,000, depending on how much text
   is decoded (debug build).
 - **Parse and turn of one command, the worst:** 14,908 (15,206), the
-  winning command. This is the Cost line: one command's work, within a
-  PAL frame of 19,656 cycles.
+  winning command. The NTSC 15,206 is the Cost line, one command's work,
+  within both a PAL frame of 19,656 cycles and an NTSC frame of 17,095;
+  the line carried the PAL 14,908 before, while other pages state the
+  larger region's figure.
 - **Scanning the whole table with no match:** 1,695 cycles for 17
   entries (1,609), about 100 an entry. A 200-entry table would take
   about 20,000 cycles for a command that matches nothing, a frame on
@@ -1015,6 +1033,13 @@ few hundred; neither is in a recipe yet.
 **Cost:** cycles_per_frame=10
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-basic-wedge (one statement dispatch on the fall-through path; 20,478 cycles over 2,006 dispatches)
+**Claims:** zero_page $7A-$7B (shares)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+kickassembler-basic-wedge: 14,522 stores to TXTPTR `$7A-$7B` from CHRGET
+(`$0073`, `$0077`), which runs from RAM. A wedge advances the
+interpreter's text pointer under BASIC's protocol, so it shares it.
 
 **Why.** A front end, a level editor or a test rig written in BASIC
 wants to call machine code from many places, and `SYS` with an address
@@ -1092,3 +1117,71 @@ measured here. The resident part is 267 bytes including the timer latch
 ### Recipes
 
 - `recipes/kickassembler/basic-wedge.md` — `&B` and `&C` behind the $0308 vector with the $0300 hook for `THEN`, a test program typed through the KERNAL queue that exercises a plain statement, the command alone, after a colon, after `THEN`, an unknown letter (the ROM's error) and a timed 1,000-iteration loop with the wedge off and on, verdict at `$02FF`, PAL and NTSC
+
+## text_editor_gap_buffer_and_refresh — An editor's text in a gap buffer, and redrawing only the line that changed
+
+**Complexity:** medium
+**Region:** both
+
+### Why
+
+A word processor or a source editor holds more text than the screen
+shows and inserts at the cursor on every key. In a flat array each key
+typed near the start shifts the whole rest of the text up one byte; at
+1,700 bytes that is 85,000 cycles in the recipe's C, four PAL frames for
+one letter. Redrawing the whole text area after each key costs as much
+again. Both costs grow with the document, and the typist feels them.
+
+### How
+
+**The gap buffer.** One array holds the text before the cursor at its
+bottom and the text after the cursor at its top. The free space between
+is the gap, and the cursor is its lower edge (`gs`); `ge` is its upper
+edge.
+
+- **Type** a character: store it at `gs`, add one. No other byte moves.
+- **Backspace**: subtract one from `gs`. **Delete** forward: add one to
+  `ge`.
+- **Move the cursor left** by one: take the byte below the gap and put
+  it at the top of the gap (`buf[--ge] = buf[--gs]`). **Right**: the
+  reverse (`buf[gs++] = buf[ge++]`). A jump of `k` characters moves `k`
+  bytes, once, however far away the next edit is.
+- **Read** character `i` of the text: `buf[i]` below `gs`, else
+  `buf[i + (ge - gs)]`. Saving, searching and drawing walk the two
+  halves in turn and skip the gap.
+
+The move loops go one byte at a time in the direction shown, which is
+safe for any distance. A block copy that always runs upward is not:
+moving the gap left by more than its own size copies a region over
+itself (`overlapping_copy_wrong_direction`, `pitfalls/cpu.md`).
+
+**The refresh.** Keep the screen row of the cursor line and the text
+index of the first line on screen. After a key that stays within a line,
+redraw that line only, from its first character to the next newline, and
+pad the row with spaces. After a key that adds or removes a newline,
+redraw from the cursor's row to the bottom, or scroll the rows below
+with a screen copy and draw the one new row. Redraw everything only
+when the view moves by more than a row. The recipe has no soft wrap: a
+line longer than 40 characters is cut at the edge. A wrapping editor
+keeps a table of where each screen row starts and redraws from the
+changed row until the table stops changing.
+
+**Where the gap goes in memory.** The recipe uses a 2 KB array. A real
+editor takes all free RAM, `$0801` up to the I/O area or beyond with the
+BASIC ROM banked out (`memory-banking.md`), and reports a full buffer
+when `gs` meets `ge`.
+
+### Why it works
+
+A key typed at the start of a 1,700-byte text took 101 cycles in the
+gap buffer and 85,058 in the flat array (PAL; 85,565 NTSC), measured in
+the recipe with CIA1 timers A and B. The gap buffer pays for its moves
+instead: the cursor jump from the end of a 1,725-byte text to its start
+took 71,522 cycles on PAL, once. Typing is local, so most moves are a
+few bytes. The same scripted edits applied to both stores gave identical
+text. Redrawing one line took 5,095 cycles on PAL against 74,594 for 16
+rows (measured in VICE x64sc 3.10; NTSC 4,880 and 75,505).
+
+### Recipes
+
+- `recipes/oscar64/gap-buffer-editor.md` — a 50-line document, a scripted edit session on a gap buffer and a flat-array reference compared byte for byte, one keystroke timed in each, the cursor jump timed, one-line and full redraws timed, and the block-copy corruption measured; PAL and NTSC

@@ -7,6 +7,7 @@ techniques: [stable_raster_irq, double_irq]
 file_formats: [PRG]
 uses_registers: [D011, D012, D019, D01A, D020, D021, DC0D]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
 ---
 
 <!-- doc-type: recipe -->
@@ -241,13 +242,19 @@ Screenshot from the VICE run this page describes: `screenshots/stable-raster-irq
 
 The VIC-II raises /IRQ at the start of the raster line whose number matches
 $D012. The 6510 finishes the instruction it is executing before it takes the
-interrupt, so the handler begins between 0 and 6 cycles late depending on
-which instruction was running (7 for the slowest documented instructions).
-Then comes a fixed cost: 7 cycles for the interrupt sequence (push PC high,
-PC low, status; fetch the vector), and 29 cycles for the KERNAL's dispatcher
-at $FF48, which pushes A, X and Y, checks the pushed status for the BRK flag
-and jumps through ($0314). The handler's first instruction therefore starts
-on cycle 37 to 43 of the line. Anything that has to happen on a specific
+interrupt: the first instruction that ends on cycle 2 or later, so the
+interrupt sequence starts on cycle 3 at the earliest and, after a 7-cycle
+instruction, on cycle 9. Then comes a fixed cost: 7 cycles for the
+interrupt sequence (push PC high, PC low, status; fetch the vector), and 29
+cycles for the KERNAL's dispatcher at $FF48, which pushes A, X and Y,
+checks the pushed status for the BRK flag and jumps through ($0314). The
+handler's first instruction therefore starts on cycle 39 to 45 of the line,
+measured in VICE x64sc 3.10 on PAL and NTSC (`techniques/raster.md`,
+`stable_raster_irq` Cycle budget). This recipe's `irq1`, traced, started on 39 to
+44 on PAL (8,567 entries) and 39 to 45 on NTSC (9,790), and `irq2`,
+entered from a `NOP`, on 39 or 40.
+An earlier version said 37 to 43, the arithmetic without the 2-cycle
+minimum. Anything that has to happen on a specific
 cycle (a $D016 write for the side border, a $D018 write for FLI) cannot be
 placed from an entry that wobbles by six cycles.
 

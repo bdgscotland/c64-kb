@@ -34,6 +34,12 @@ const LABELS = [
   { label: "Archetype", key: "name", unique: true, cleanable: true },
   // Whole-game compositions from docs/game-design/designs (schema 28).
   { label: "GameDesign", key: "name", unique: true, cleanable: true },
+  // Titles an archetype's Reference titles line links (schema 34).
+  { label: "Production", key: "name", unique: true, cleanable: true },
+  // Things plugged into the machine, from docs/hardware/devices.md (schema 36).
+  { label: "Device", key: "name", unique: true, cleanable: true },
+  // C library functions a toolchain page's **Wraps:** lines name (schema 37).
+  { label: "LibraryFunction", key: "name", unique: true, cleanable: true },
   // Seeds (schema 25) that CLAIMS edges point at; ensureSchema re-MERGEs them.
   { label: "HardwareUnit", key: "name", unique: true, cleanable: false },
   // Seeds (schema 29): the models VICE runs; VERIFIED_ON edges point at them.
@@ -55,6 +61,11 @@ export const CHIPS: readonly { name: string; variants: string; role: string }[] 
   { name: "CIA1", variants: "6526", role: "Keyboard / joystick / timer-A IRQ" },
   { name: "CIA2", variants: "6526", role: "VIC bank / RS-232 / timer-B NMI" },
   { name: "6510", variants: "MOS 6510", role: "CPU (6502-compatible + I/O port at $00/$01)" },
+  {
+    name: "REU",
+    variants: "1700 / 1764 / 1750",
+    role: "RAM Expansion Unit DMA controller at $DF00-$DF0A (cartridge)",
+  },
 ];
 
 export const REGIONS: readonly {

@@ -6,19 +6,27 @@ import { defineConfig } from "vitest/config";
 // that needs a service is never run where the service is missing.
 const UNIT = [
   "test/bm25.test.ts",
+  "test/briefing-alternatives.test.ts",
   "test/briefing-budget.test.ts",
+  "test/briefing-discovery.test.ts",
+  "test/briefing-route-heads.test.ts",
+  "test/check-compatibility-rules.test.ts",
   "test/chunker.test.ts",
   "test/claim-rules.test.ts",
   "test/config.test.ts",
+  "test/doc-path.test.ts",
   "test/extract*.test.ts",
   "test/feedback.test.ts",
   "test/game-design-compare.test.ts",
+  "test/harness-python.test.ts",
   "test/kernal-zp.test.ts",
   "test/kernal-zp-rule.test.ts",
   "test/lint.test.ts",
   "test/machine-variants.test.ts",
+  "test/pitfall-coverage.test.ts",
   "test/plan-budget.test.ts",
   "test/report-gap.test.ts",
+  "test/runs-manifest.test.ts",
 ];
 
 // Tests call clean()/deleteBySource() on whatever they connect to. Point

@@ -104,10 +104,12 @@ describe("checkCompatibility with resource demands", () => {
     expect(text).toMatch(/mystery_technique/);
   });
 
-  it("names a technique that does not exist", async () => {
+  it("refuses a technique that does not exist, and names it", async () => {
     const r = await checkCompatibility(["no_such_thing", "fli_image"]);
     expect(r.structured.data_coverage.at(0)?.found).toBe(false);
-    expect(r.text).toMatch(/no such technique/);
+    expect(r.structured.verdict).toBe("unknown_technique");
+    expect(r.structured.not_found).toEqual(["no_such_thing"]);
+    expect(r.text).toMatch(/No such technique: no_such_thing\./);
   });
 
   it("soft conflicts stay warnings", async () => {
@@ -277,11 +279,11 @@ describe("checkCompatibility: an implied technique against its own prerequisite"
       const r = (await checkCompatibility(inputs)).structured;
       // fli_image declared stable_raster_irq itself; it is not turned against it.
       expect(r.conflicts.filter((c) => c.kind === "prerequisite_conflict")).toEqual([]);
-      // The named pair is still the named pair's business.
-      const named = r.conflicts.filter((c) => c.kind === "cpu_vs_irq");
-      expect(named).toHaveLength(1);
-      expect([named.at(0)?.a, named.at(0)?.b].sort()).toEqual(["ifli_image", "stable_raster_irq"]);
-      expect(r.verdict).toBe("incompatible");
+      // The named pair: stable_raster_irq is on ifli_image's chain, so it is
+      // ifli_image's own entry and cpu_vs_irq does not fire (#29; an earlier
+      // version of this test expected it to).
+      expect(r.conflicts.filter((c) => c.kind === "cpu_vs_irq")).toEqual([]);
+      expect(r.verdict).not.toBe("incompatible");
       // The implied technique is still reported as leaned on.
       const mp = r.shared_infrastructure.filter((s) => s.kind === "missing_prerequisite");
       expect(mp.map((s) => s.name)).toEqual(["fli_image"]);
@@ -443,9 +445,10 @@ describe("evaluateCompatibility (pure rules)", () => {
     });
   });
 
-  it("an unknown technique is reported, not cleared", () => {
+  it("an unknown technique is refused, not cleared", () => {
     const r = evaluateCompatibility(facts(["ghost", "b"], { b: tech() }));
-    expect(r.verdict).toBe("compatible");
+    expect(r.verdict).toBe("unknown_technique");
+    expect(r.not_found).toEqual(["ghost"]);
     expect(r.data_coverage.map((d) => [d.technique, d.found, d.known])).toEqual([
       ["ghost", false, false],
       ["b", true, false],

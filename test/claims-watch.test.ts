@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
 import { HARDWARE_UNITS } from "../src/graph/claims.ts";
-import { Declared } from "../scripts/lib/claims-declared.ts";
+import { Declared } from "../src/claims/declared.ts";
 import {
   kernalMaySets,
   labeller,
@@ -14,7 +14,7 @@ import {
   readPrg,
   recipeFrontmatter,
   withPrerequisites,
-} from "../scripts/lib/claims-sources.ts";
+} from "../src/claims/sources.ts";
 import {
   BASIC_READY,
   ClaimsWatch,
@@ -24,8 +24,8 @@ import {
   portRmwValue,
   storedValue,
   touchedUnits,
-} from "../scripts/lib/claims-trace.ts";
-import { buildUnitMap, CpuPort, parseRanges, sourceOf } from "../scripts/lib/claims-units.ts";
+} from "../src/claims/trace.ts";
+import { buildUnitMap, CpuPort, parseRanges, sourceOf } from "../src/claims/units.ts";
 import { findToolchains } from "../scripts/lib/toolchains.ts";
 
 // scripts/claims-watch.ts (#22 step 6): the unit map read from the
@@ -44,7 +44,10 @@ describe("unit map from the HardwareUnit seed", () => {
     );
     expect(unitsAt(0xd006)).toEqual(["sprite_3:ff"]);
     expect(unitsAt(0xd02a)).toEqual(["sprite_3:ff"]);
-    expect(unitsAt(0xd011)).toEqual(["vic_raster_irq:80"]);
+    // #71: the scroll and pointer fields are units of their own.
+    expect(unitsAt(0xd011)).toEqual(["vic_raster_irq:80", "vic_yscroll:7"]);
+    expect(unitsAt(0xd016)).toEqual(["vic_xscroll:7"]);
+    expect(unitsAt(0xd018)).toEqual(["vic_matrix_base:f0", "vic_char_base:e"]);
     expect(unitsAt(0xd012)).toEqual(["vic_raster_irq:ff"]);
     expect(unitsAt(0xd019)).toEqual(["vic_raster_irq:1"]);
     expect(unitsAt(0xdd00)).toEqual(["cia2_vic_bank:3", "serial_bus:f8"]);
@@ -145,6 +148,11 @@ describe("bits touched on a shared register", () => {
     expect(touchedUnits(map, 0xd015, null, 0x01)).toHaveLength(8);
     expect(touchedUnits(map, 0xd011, 0x1b, 0x9b)).toEqual(["vic_raster_irq"]);
     expect(touchedUnits(map, 0xd011, 0x1b, 0x1b)).toEqual([]);
+    // FLD's per-line store changes YSCROLL only; sideborder's DEC $D016 ($C8 -> $C7) changes XSCROLL and CSEL.
+    expect(touchedUnits(map, 0xd011, 0x1c, 0x1b)).toEqual(["vic_yscroll"]);
+    expect(touchedUnits(map, 0xd016, 0xc7, 0xc8)).toEqual(["vic_xscroll"]);
+    expect(touchedUnits(map, 0xd016, 0xc0, 0xc8)).toEqual([]);
+    expect(touchedUnits(map, 0xd018, 0x35, 0x15)).toEqual(["vic_matrix_base"]);
   });
   it("reads $D019 as acknowledge: a 1 bit touches its source", () => {
     expect(touchedUnits(map, 0xd019, 0x01, 0x01)).toEqual(["vic_raster_irq"]);
@@ -163,6 +171,8 @@ describe("attribution by PC and the 6510 port", () => {
     const port = new CpuPort();
     expect(sourceOf(0xea31, port)).toBe("kernal");
     expect(sourceOf(0xa474, port)).toBe("basic");
+    expect(sourceOf(0xe043, port)).toBe("basic"); // FSQR's helpers, BASIC code in the KERNAL ROM
+    expect(sourceOf(0xe4d3, port)).toBe("kernal");
     expect(sourceOf(0x0810, port)).toBe("program");
     port.store(1, 0x35); // KERNAL and BASIC out, I/O in
     expect(sourceOf(0xea31, port)).toBe("program");
@@ -200,24 +210,48 @@ describe("declarations", () => {
     expect(d.ramVerdict(0x02).verdict).toBe("undeclared");
     expect(d.addHarness("not_a_unit")).toMatch(/not a hardware unit/);
   });
+  it("takes a recipe's ram: ranges and refuses zero page there", () => {
+    const d = new Declared();
+    expect(d.addRam("colour=$D800-$DBFF, $0340-$03FF")).toBeNull();
+    expect(d.ramVerdict(0xd900)).toEqual({ verdict: "claimed", by: "colour" });
+    expect(d.ramVerdict(0x0340).verdict).toBe("claimed");
+    expect(d.ramVerdict(0x0400).verdict).toBe("undeclared");
+    expect(d.addRam("$F7-$F8")).toMatch(/zero page: claim it as zero_page/);
+    expect(d.addRam("$0300-$0200")).toMatch(/backwards/);
+    expect(d.ramVerdict(0xf7).verdict).toBe("undeclared");
+  });
 });
 
 describe("sources read from the docs", () => {
-  const all = loadTechniqueClaims(root);
+  const all = loadTechniqueClaims(join(root, "docs"));
   it("reads a technique's Claims line and its prerequisites", () => {
     expect(all.get("sfx_engine_beside_music")?.claims).toEqual([{ unit: "sid_voice_2", mode: "shares" }]);
     expect(withPrerequisites(["sfx_engine_beside_music"], all)).toContain("sid_play_routine_pattern");
     expect(all.get("sprite_multiplex_game")?.claims?.map((c) => c.unit)).toContain("vic_raster_irq");
   });
   it("reads the KERNAL may-sets, the IRQ service included", () => {
-    const may = kernalMaySets(root);
+    const may = kernalMaySets(join(root, "docs"));
     expect(may.get("SETLFS")).toEqual([[0xb8, 0xba]]);
     expect(may.get("IRQ")?.some(([a, b]) => a <= 0x91 && 0x91 <= b)).toBe(true);
     expect(may.has("NMI")).toBe(true);
   });
   it("reads a recipe's frontmatter", () => {
     const fm = recipeFrontmatter("---\ntechniques: [a_b, c]\nuses_kernal: [CHROUT]\n---\n");
-    expect(fm).toEqual({ techniques: ["a_b", "c"], usesKernal: ["CHROUT"] });
+    expect(fm).toEqual({ techniques: ["a_b", "c"], usesKernal: ["CHROUT"], kernalServices: [] });
+    const both = recipeFrontmatter(
+      "---\ntechniques: []\nclaims: [cia1_tod (init)]\nharness: [cia1_timer_a, $02F0-$02FF]\n---\n",
+    );
+    expect(both).toEqual({
+      techniques: [],
+      usesKernal: [],
+      claims: "cia1_tod (init)",
+      harness: "cia1_timer_a, $02F0-$02FF",
+      kernalServices: [],
+    });
+    const ram = recipeFrontmatter(
+      "---\ntechniques: []\nram: [colour=$D800-$DBFF, $0340-$03FF]\nkernal_services: [IRQ]\n---\n",
+    );
+    expect(ram).toMatchObject({ ram: "colour=$D800-$DBFF, $0340-$03FF", kernalServices: ["IRQ"] });
   });
   it("reads the SYS address of a BASIC stub and both label formats", () => {
     // 10 SYS 2062
@@ -356,6 +390,36 @@ describe("the watch over a log", () => {
     expect(w.violations().map((t) => `${t.finding.verdict} ${t.finding.source} ${t.finding.target}`)).toEqual(
       ["unattributed unknown sid_voice_2"],
     );
+  });
+
+  // #79: ifli-image's shape. With $01 = $34 a store to $DD00 or $D800 goes
+  // to RAM; it must not become the $DD00 shadow, and $D800 is plain RAM.
+  it("keeps a RAM store under I/O out of the register shadow and off colour RAM", () => {
+    const w = new ClaimsWatch({ units: map, screen, declared: new Declared(), start: 0x080e });
+    feedLog(w, [
+      "#1 (Trace store dd00)    1/$001,   1/$01",
+      ".C:fda3  8D 00 DD    STA $DD00      - A:97 X:00 Y:00 SP:f9 ..-..IZ.    2004500",
+      LOG[2] ?? "",
+      LOG[3] ?? "",
+      "#1 (Trace store 0001)   41/$029,  45/$2d",
+      ".C:0810  85 01       STA $01        - A:34 X:00 Y:00 SP:f6 ..-..I..    3049305",
+      "#1 (Trace store dd00)   41/$029,  50/$32",
+      ".C:0812  8D 00 DD    STA $DD00      - A:08 X:00 Y:00 SP:f6 ..-..I..    3049310",
+      "#1 (Trace store d800)   41/$029,  54/$36",
+      ".C:0815  8D 00 D8    STA $D800      - A:08 X:00 Y:00 SP:f6 ..-..I..    3049314",
+      "#1 (Trace store 0001)   41/$029,  58/$3a",
+      ".C:0818  86 01       STX $01        - A:08 X:37 Y:00 SP:f6 ..-..I..    3049318",
+      "#1 (Trace store dd00)   41/$029,  62/$3e",
+      ".C:081a  8D 00 DD    STA $DD00      - A:94 X:37 Y:00 SP:f6 ..-..I..    3049322",
+    ]);
+    expect(w.shadow.get(0xdd00)).toBe(0x94);
+    expect(verdicts(w)).toEqual([
+      "cpu_port program 6510 port",
+      "undeclared program RAM",
+      "undeclared program cia2_vic_bank",
+    ]);
+    const ram = [...w.tallies.values()].find((t) => t.finding.target === "RAM");
+    expect([...(ram?.addrs.keys() ?? [])]).toEqual([0xdd00, 0xd800]);
   });
 
   it("with no entry address, starts at the first store from outside ROM", () => {

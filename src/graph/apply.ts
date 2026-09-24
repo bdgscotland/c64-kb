@@ -22,6 +22,9 @@ const NODE_TYPES = [
   "crash_pattern",
   "archetype",
   "game_design",
+  "production",
+  "device",
+  "library_function",
 ] as const;
 
 export type NodeEntity = Extract<GraphEntity, { type: (typeof NODE_TYPES)[number] }>;
@@ -52,36 +55,32 @@ export function recipeEdges(r: RecipeEntity): RecipeEdge[] {
   ];
 }
 
-export async function applyNode(f: FalkorService, e: NodeEntity): Promise<void> {
-  switch (e.type) {
-    case "register":
-      return f.addRegister(e.name, e.address, e.chip, e.rw, e.aliases);
-    case "kernal_routine":
-      return f.addKernalRoutine(e.name, e.address, e.description);
-    case "memory_region":
-      return f.addMemoryRegion(e.name, e.start, e.end, e.default_use ?? "", e.bank_switchable ?? false);
-    case "tool":
-      return f.addTool(e);
-    case "file_format":
-      return f.addFileFormat(e.name, e.description);
-    case "recipe":
-      return f.addRecipe(e);
-    case "technique":
-      return f.addTechnique(e);
-    case "pitfall":
-      return f.addPitfall(e);
-    case "crash_pattern":
-      return f.addCrashPattern(e);
-    case "archetype":
-      return f.addArchetype(e);
-    case "game_design":
-      return f.addGameDesign(e);
-    default: {
-      // A node type added to NODE_TYPES without a case here is a tsc error.
-      const unhandled: never = e;
-      throw new Error(`no graph applier for node ${JSON.stringify(unhandled)}`);
-    }
-  }
+type NodeByType = { [E in NodeEntity as E["type"]]: E };
+type Applier<E> = (f: FalkorService, e: E) => Promise<void>;
+
+// One entry per node type: a type missing here is a tsc error, as for LINKERS below.
+const APPLIERS: { [K in keyof NodeByType]: Applier<NodeByType[K]> } = {
+  register: (f, e) => f.addRegister(e.name, e.address, e.chip, e.rw, e.aliases),
+  kernal_routine: (f, e) => f.addKernalRoutine(e.name, e.address, e.description),
+  memory_region: (f, e) =>
+    f.addMemoryRegion(e.name, e.start, e.end, e.default_use ?? "", e.bank_switchable ?? false),
+  tool: (f, e) => f.addTool(e),
+  file_format: (f, e) => f.addFileFormat(e.name, e.description),
+  recipe: (f, e) => f.addRecipe(e),
+  technique: (f, e) => f.addTechnique(e),
+  pitfall: (f, e) => f.addPitfall(e),
+  crash_pattern: (f, e) => f.addCrashPattern(e),
+  archetype: (f, e) => f.addArchetype(e),
+  game_design: (f, e) => f.addGameDesign(e),
+  production: (f, e) => f.addProduction(e),
+  device: (f, e) => f.addDevice(e),
+  library_function: (f, e) => f.addLibraryFunction(e),
+};
+
+export function applyNode(f: FalkorService, e: NodeEntity): Promise<void> {
+  // As in applyEdge: the checker cannot correlate the key with the union member.
+  const apply = APPLIERS[e.type] as Applier<NodeEntity>;
+  return apply(f, e);
 }
 
 type EdgeByType = { [E in EdgeEntity as E["type"]]: E };
@@ -118,6 +117,9 @@ const LINKERS: { [K in keyof EdgeByType]: Linker<EdgeByType[K]> } = {
   technique_belongs_to: always((f, e) => f.linkTechniqueBelongsTo(e.technique, e.chip)),
   technique_demands: always((f, e) => f.linkTechniqueDemands(e.technique, e.resource, e.description)),
   technique_requires: (f, e) => f.linkTechniqueRequires(e.technique, e.requires),
+  wraps: (f, e) => f.linkWraps(e.fn, e.target, e.targetKind),
+  technique_consumes: (f, e) => f.linkTechniqueConsumes(e.technique, e.format),
+  technique_alternative: (f, e) => f.linkTechniqueAlternative(e.technique, e.alternative, e.tradeoff),
   triggered_by: (f, e) => f.linkTriggeredBy(e.pitfall, e.target, e.targetKind),
   mitigated_by: (f, e) => f.linkMitigatedBy(e.pitfall, e.target),
   caused_by: (f, e) => f.linkCausedBy(e.symptom, e.target, e.targetKind),
@@ -125,9 +127,11 @@ const LINKERS: { [K in keyof EdgeByType]: Linker<EdgeByType[K]> } = {
   archetype_risks: (f, e) => f.linkArchetypeRisks(e.archetype, e.pitfall),
   claims: (f, e) => f.linkClaims(e),
   kernal_clobbers_zp: (f, e) => f.linkKernalClobbersZp(e),
-  composes: (f, e) => f.linkComposes(e.design, e.technique, e.phase),
+  composes: (f, e) => f.linkComposes(e.design, e.technique, e.phase, e.calls),
   instance_of: (f, e) => f.linkInstanceOf(e.design, e.archetype),
   realised_by: (f, e) => f.linkRealisedBy(e.design, e.recipe),
+  exemplified_by: (f, e) => f.linkExemplifiedBy(e),
+  requires_device: (f, e) => f.linkRequiresDevice(e.recipe, e.device),
 };
 
 /** Create one edge. Resolves false when the link reports the edge did not land. */

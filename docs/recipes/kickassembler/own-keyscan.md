@@ -7,6 +7,10 @@ techniques: [irq_keyboard_own_scan]
 file_formats: [PRG]
 uses_registers: [DC00, DC01, DC02, DC03, DC04, DC05, DC0D, DC0E, D011, D012, D019, D01A, D020, D021]
 uses_kernal: []
+devices: [joystick_port_2]
+claims: [irq_vector_0314 (owns), cia1_timer_b (init), cia1_tod (init), vic_raster_irq (owns), zero_page $02+$F7+$F9+$FB-$FE (owns)]
+harness: [cia1_timer_a, $02FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

@@ -113,7 +113,24 @@ const STOP_WORDS = new Set([
   "most",
   "are",
   "has",
+  // Adverbs and prepositions of place and time. In the #22 shmup brief
+  // "scrolls down", "above a fixed panel" and "on screen at once" matched
+  // high_score_table_insert ("shift down"), mouse_1351_read and
+  // light_pen_read ("once per frame") (#97).
+  "down",
+  "over",
+  "above",
+  "once",
+  "also",
+  "least",
 ]);
+
+// Phrases whose nouns do not name a part. "Sprites on screen at once" is not
+// about the screen, "a map three screens tall" gives a size and "one pixel
+// a frame" a speed; the #22 shmup brief's "screen" and "pixel" matched
+// tile_map_render, screen_wipe and hires_plot through them (#97).
+const IDIOMS =
+  /\b(?:on|off)[- ]screen\b|\bscreens? (?:tall|wide|high|long)\b|\b(?:one|\d+) pixels? (?:a|per) frame\b/gi;
 
 // Acronyms that are also English words. In lower case the brief means the
 // word: "enemy cars ram" put screen_ram_relocation, charset_copy_rom_to_ram
@@ -126,13 +143,42 @@ function isLowerCaseHomograph(raw: string): boolean {
   return ACRONYM_HOMOGRAPHS.has(raw.toLowerCase()) && raw !== raw.toUpperCase();
 }
 
+// Number words count things in a brief ("eight events", "a four-sprite
+// player"); matched against names and titles they proposed
+// sprite_sine_chain ("Eight sprites ...") for eight events and
+// four_player_read for a four-sprite player (#41). A name that starts with
+// one is matched as a phrase instead (numberPhraseMissing).
+const NUMBER_WORDS = new Set(["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]);
+
+/**
+ * One spelling for the words that have two: the brief's "multicolour
+ * bitmap" matched mci_interlace_bitmap's "Multicolour" title and missed
+ * multicolor_bitmap (#41).
+ */
+export function oneSpelling(word: string): string {
+  return word.replace(/colour/g, "color");
+}
+
+/**
+ * A name that starts with a number word (four_player_read,
+ * two_player_state_swap, eight_way_scroll_double_buffer) is proposed only
+ * when the brief says the phrase: "four player", "four-player", "4-player".
+ */
+export function numberPhraseMissing(name: string, description: string): boolean {
+  const [first = "", second = ""] = name.split("_");
+  if (!NUMBER_WORDS.has(first) || second === "") return false;
+  const digit = [...NUMBER_WORDS].indexOf(first) + 1;
+  return !new RegExp(String.raw`\b(${first}|${digit})[- ]${second}`, "i").test(description);
+}
+
 /** Tokenize and add stemmed variants (strip common suffixes like -ing, -er, -ers). */
 export function briefTokens(description: string): string[] {
   const rawTokens = description
+    .replace(IDIOMS, " ")
     .split(/[\s_,:;!?+\-()]+/)
     .filter((t) => !isLowerCaseHomograph(t))
-    .map((t) => t.toLowerCase())
-    .filter((t) => t.length >= 3 && !STOP_WORDS.has(t));
+    .map((t) => oneSpelling(t.toLowerCase().replace(/\.+$/, "")))
+    .filter((t) => t.length >= 3 && !STOP_WORDS.has(t) && !NUMBER_WORDS.has(t));
   return Array.from(
     new Set([
       ...rawTokens,
@@ -142,6 +188,63 @@ export function briefTokens(description: string): string[] {
       ...rawTokens.map((t) => (t.endsWith("s") && t.length > 4 ? t.slice(0, -1) : t)),
     ]),
   ).filter((t) => t.length >= 3);
+}
+
+// Name words that mark a demo effect wherever its page sits:
+// mci_interlace_bitmap, sprite_sine_chain and dypp_sprite_sine_scroller sit
+// on the bitmap and sprite pages, and game briefs drew them in by "bitmap",
+// "sprite" or "eight" (#41).
+const EFFECT_NAME_WORDS = new Set([
+  "interlace",
+  "mci",
+  "fli",
+  "ifli",
+  "afli",
+  "vsp",
+  "dycp",
+  "dypp",
+  "dysp",
+  "fld",
+  "sine",
+  "plasma",
+  "twister",
+  "rotozoom",
+  "wobbler",
+  "shadebobs",
+  "bobs",
+  "vector",
+  "voxel",
+  "plotter",
+]);
+// Words of an effect page's names too common in game briefs to name the effect.
+const GENERIC_NAME_WORDS = new Set([
+  "screen",
+  "sprite",
+  "sprites",
+  "text",
+  "raster",
+  "mode",
+  "color",
+  "colour",
+]);
+
+/**
+ * True when a technique is a demo effect the brief does not name: its page
+ * is in the effect category, or its name carries an effect word, and no
+ * distinctive word of its name is in the brief. The caller applies it to
+ * game briefs, for techniques nothing forced (#41: a Knight Games brief was
+ * proposed mci_interlace_bitmap, vector_balls_sprites, dot_flag_sine_plotter
+ * and hires_plot, and they drove its budget over the frame).
+ */
+export function unaskedEffect(t: { name: string; category: string }, description: string): boolean {
+  const words = t.name.split("_").map(oneSpelling);
+  const marks =
+    t.category === "effect"
+      ? words.filter((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w))
+      : words.filter((w) => EFFECT_NAME_WORDS.has(w));
+  if (marks.length === 0) return false;
+  const tokens = new Set(briefTokens(description));
+  return !marks.some((w) => tokens.has(w));
 }
 
 const AXIS_WORDS = { vertical: ["vertical", "vertically"], horizontal: ["horizontal", "horizontally"] };
@@ -170,6 +273,17 @@ export function contradictsBriefAxis(
   });
 }
 
+const INFLECTIONS = new Set(["s", "es", "ing", "er", "ers", "ed"]);
+
+/** The shortest token `t` inflects ("sprites" → "sprite", "characters" → "charact"), or `t`. */
+function wordBase(t: string, tokens: readonly string[]): string {
+  let base = t;
+  for (const u of tokens) {
+    if (u.length < base.length && t.startsWith(u) && INFLECTIONS.has(t.slice(u.length))) base = u;
+  }
+  return base;
+}
+
 function recipeBonusFor(recipeCount: number): number {
   if (recipeCount >= 2) return 1.5;
   if (recipeCount >= 1) return 0.75;
@@ -181,8 +295,8 @@ function scoreTechnique(
   tokens: string[],
   complexityPenalty: Record<string, number>,
 ): { name: string; hits: number; score: number } {
-  const name = r.name.toLowerCase();
-  const title = (r.title ?? "").toLowerCase();
+  const name = oneSpelling(r.name.toLowerCase());
+  const title = oneSpelling((r.title ?? "").toLowerCase());
   const category = (r.category ?? "").toLowerCase();
   const complexity = (r.complexity ?? "medium").toLowerCase();
   // Whole words only. Substring matching let "budget bar" propose
@@ -195,7 +309,11 @@ function scoreTechnique(
     ...title.split(/[^a-z0-9$.]+/).filter((w) => w.length >= 3),
     category,
   ]);
-  const hits = tokens.filter((t) => words.has(t)).length;
+  // One brief word counts once: "sprites" and its stem "sprite" both hit a
+  // title with "sprites" and a name with "sprite", which scored
+  // mixed_sprite_char_actors and software_sprite_preshifted two hits for
+  // the one word in the #22 shmup brief (#97).
+  const hits = new Set(tokens.filter((t) => words.has(t)).map((t) => wordBase(t, tokens))).size;
 
   // Bonus: if a token is the technique's category word
   const categoryBonus = tokens.some((t) => category === t) ? 0.5 : 0;
@@ -314,5 +432,5 @@ export async function resolveProposedTechniques(
   // Hand back a few more than the limit: the caller caps per category, and
   // a slice taken here before that cap let sixteen raster and sprite hits
   // crowd out the brief's one maths noun.
-  return merged.slice(0, limit + 8);
+  return merged.filter((n) => !numberPhraseMissing(n, description)).slice(0, limit + 8);
 }

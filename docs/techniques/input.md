@@ -25,6 +25,13 @@ so; the rest is marked as arithmetic or as not measured here.
 **Uses registers:** DC00, DC01
 **Claims:** cia1_port_a (reads), cia1_port_b (reads)
 **Claims basis:** derived-listing
+**Cost:** cycles_per_frame=114
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-joystick-input (one port read and the three-way split, Oscar64 -O2, call included; PAL and NTSC)
+
+The edge split alone, without the port read, is 76 cycles: `joy_edge` in
+the platformer scaffold's PROFILE=1 build, one call, display off, PAL and
+NTSC (#37). The line above counts the read too, so a budget uses 114.
 
 ### Why
 
@@ -104,6 +111,15 @@ The recipe below runs the four lines over every (prev, cur) pair, all
 checksum. The 6502 shows `1800 PASS`; the same fold in Python gives `1800`
 (measured in VICE x64sc 3.10, rung 1).
 
+### Cycle budget
+
+76 cycles a call for the Oscar64 `joy_edge` above, which writes its three
+bytes through a struct pointer. Measured in VICE x64sc 3.10 on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=1` build, CIA1 timer
+B around the call, the timer's own 18 cycles subtracted, the display off,
+the same on PAL and NTSC. The port read is not inside: that build's
+autopilot supplies the byte. The page had no figure before #37.
+
 ### Recipes
 
 - `recipes/oscar64/joystick-input.md`
@@ -116,6 +132,9 @@ checksum. The 6502 shows `1800 PASS`; the same fold in Python gives `1800`
 **Region:** both
 **Uses registers:** DC00, DC01
 **Requires:** joystick_edge_detect
+**Cost:** cycles_per_frame=73
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE=1 build, `repeat_step` one call for one direction, display off, PAL and NTSC)
 **Claims:** cia1_port_a (reads), cia1_port_b (reads)
 **Claims basis:** derived-listing
 
@@ -186,6 +205,15 @@ The recipe runs the step over every (age, pressed) pair, 256 by 2, and
 folds `age' | fire << 8` into the same 16-bit checksum. The 6502 shows
 `D1CC PASS`; Python gives `D1CC` (measured in VICE x64sc 3.10, rung 1).
 
+### Cycle budget
+
+73 cycles a call for one direction's counter, largest of 800 frames, on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=1` build (CIA1 timer
+B, the timer's 18 cycles subtracted, display off, PAL and NTSC alike). A
+game that repeats four directions calls it four times; a design says so
+with `joystick_autorepeat ×4` (`CONVENTIONS-game-designs.md`). The page
+had no figure before #37.
+
 ### Recipes
 
 - `recipes/oscar64/joystick-input.md`
@@ -199,6 +227,9 @@ folds `age' | fire << 8` into the same 16-bit checksum. The 6502 shows
 **Uses registers:** DC00, DC01, DC02, DC03
 **Claims:** cia1_port_a (owns), cia1_port_b (reads)
 **Claims basis:** derived-listing
+**Cost:** cycles_per_frame=288
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-joystick-input (all eight columns, Oscar64 -O2, call included; PAL and NTSC)
 
 ### Why
 
@@ -326,6 +357,8 @@ scan can be skipped that frame.
 **Complexity:** medium
 **Region:** both
 **Uses registers:** D419, D41A, DC00, DC01, DC02
+**Claims:** cia1_port_a (owns), cia1_port_b (reads), sid_pots (reads)
+**Claims basis:** derived-listing
 **Cost:** cycles_per_frame=1152, zp_bytes=0, irq_slots=0
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-paddle-read (two ports in one frame)
@@ -704,6 +737,12 @@ listing.
 **Cost:** cycles_per_frame=62, irq_slots=0
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-four-player-read (read inlined, once a frame)
+**Claims:** user_port (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL, a 4-player
+adapter on the user port) of kickassembler-four-player-read: 712 stores
+to `$DD01`, PB7 selecting joystick 3 or 4 each frame.
 
 ### Why
 
@@ -995,9 +1034,12 @@ beam a little after the beam lit the phosphor under it, and the latch
 takes the counter at the moment of the pulse, so LPX reads a constant
 too large; the constant depends on the pen and the display, so the
 program calibrates it once by asking for a touch on a known cell and
-keeping the difference. This is the standard treatment (rung 5, not
-measured here: no pen was available). Both figures and the reading
-pattern are measured in `recipes/kickassembler/light-pen-read.md`.
+keeping the difference. This is the standard treatment (rung 4, not
+measured here: no pen was available, and the recipe leaves `PEN_DELAY`
+at 0). The reading pattern, the conversion and the interrupt's cost are
+measured in `recipes/kickassembler/light-pen-read.md`; a triggering
+pen's latch is not. (An earlier version said "rung 5", a rung the ladder
+does not have, and said both figures were measured in the recipe.)
 
 ### Why it works
 
@@ -1048,7 +1090,8 @@ and no interrupt slot, at the price of reading the latch up to a frame
 late, which a menu does not notice.
 
 **Averaging.** A real pen's LPX can differ by a unit or two from one
-frame to the next (rung 5, not measured here). Averaging the last four
+frame to the next (rung 4, not measured here; an earlier version said
+"rung 5"). Averaging the last four
 frames' values before the conversion steadies a cursor.
 
 ### Cycle budget
@@ -1068,3 +1111,66 @@ not on the line.
 ### Recipes
 
 - `recipes/kickassembler/light-pen-read.md`
+
+## control_config_screen — A controls screen: keys chosen through GETIN, turned into matrix positions, read every frame as an action byte
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00, DC01
+**Uses kernal:** GETIN
+**Requires:** keyboard_matrix_scan
+
+### Why
+
+Players expect to choose between the joystick and keys, and to choose
+the keys. The screen that asks is easy to write with `GETIN`; the game
+that then reads those keys every frame cannot use `GETIN`, which gives
+one character per press and nothing while the key is held. The screen
+has to turn each chosen character into the switch that types it.
+
+### How
+
+**Ask.** For each action, prompt and wait for `GETIN` to return a
+character. Look it up in the KERNAL's unshifted decode table at `$EB81`:
+its index is column times 8 plus row, the column being the `$DC00` bit
+and the row the `$DC01` bit. Store the column and row per action.
+
+**Refuse.** Refuse a character the table does not hold (a shifted or
+Commodore key types from another table; the pointers at `$EB79` list
+all four) and a key already given to another action. Also consider
+refusing RUN/STOP if the game keeps the KERNAL's STOP test, and
+RESTORE, which is not in the matrix at all (`nmi_handler_and_restore_key`).
+
+**Read.** Each frame, for each action select its column and test its
+row; set the action's bit in the joystick layout (up 0, down 1, left 2,
+right 3, fire 4). The rest of the game reads one byte and does not care
+whether it came from keys or a joystick. Then write `$FF` to `$DC00`
+before any joystick-2 read
+(`stale_column_select_reads_as_joystick2`, `pitfalls/input.md`). Three
+keys at three corners of a rectangle in the matrix ghost a fourth
+(`keyboard_matrix_scan`); a screen that wants to be safe can refuse a
+set of keys with that shape, which this page does not build.
+
+**Port choice.** Store per player whether the action byte comes from
+port 2, port 1 or the keys. Port 1 shares CIA1 port B with the keyboard
+rows, so a joystick in port 1 reads as key presses during a scan
+(`keyboard_matrix_scan`, "Why a main-loop scan and a joystick in port 1
+interfere"); a game that offers keys and port 1 together has to accept
+that. With two players the choice is per player
+(`two_player_state_swap`).
+
+**Save it.** A configuration is a few bytes: write it with the high
+scores, or with the save game (`kernal_file_write_seq`).
+
+### Why it works
+
+In the recipe, keys typed through VICE's keyboard queue were mapped to
+Q at column 7 row 6, A at 1/2, O at 4/6, P at 5/1 and RETURN at 0/1, the
+positions the ROM's table holds; a second Q was refused as in use; the
+five-key scan read 0 with nothing held and a synthetic matrix with Q and
+RETURN held gave `$11`. The scan took 253 cycles on PAL (Oscar64 C,
+screen on, CIA1 timers A and B; measured in VICE x64sc 3.10).
+
+### Recipes
+
+- `recipes/oscar64/control-config.md` (five actions configured through `-keybuf` with one duplicate refused, the matrix positions from `$EB81`, the five-key scan timed, the synthetic-matrix check and the stale-column joystick read; PAL and NTSC)

@@ -7,6 +7,8 @@ techniques: [raster_bars]
 file_formats: [PRG]
 uses_registers: [D011, D012, D019, D01A, D020, D021, DC0D]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->
@@ -192,11 +194,23 @@ second table.
 
 ### Where the colour write lands
 
-A raster IRQ's handler begins on cycle 37 to 43 of the line (7 cycles of
-interrupt sequence, 29 of KERNAL dispatcher, 0-6 of instruction completion;
-see `stable-raster-irq.md`). A colour write from there lands two-thirds of
-the way across the visible line and the top edge of the bar has a visible
-step in it. Arming the IRQ on the line above and spinning on `CMP $D012`
+A raster IRQ's handler begins on cycle 39 to 45 of the line, measured in
+VICE x64sc 3.10 on PAL and NTSC (`techniques/raster.md`,
+`stable_raster_irq` Cycle budget): the interrupt sequence starts on cycle
+3 to 9, then 7 cycles of sequence and 29 of KERNAL dispatcher. This
+recipe's ten handlers, traced on PAL and NTSC, start on 39 to 41. An earlier version said
+37 to 43, arithmetic that left out the 2-cycle minimum. A colour write from there lands about
+three-quarters of the way across the line and the top edge of the bar has
+a visible step in it: a test handler whose first instructions are `lda #0`,
+`sta $d020`, `sta $d021` changed the colour at screenshot x 289 to 297 of
+384 on its IRQ line in three PAL captures (VICE x64sc 3.10). That is a
+write on cycle 49 or 50 (`runtime/vice-reference.md`, x = 8c − 103), so
+the handler started on 44 or 45, which the old 37-43 could not give. This recipe's
+handlers do 18 (bar 0) or 24 cycles of loads before the border store, so
+without the spin that store would land at cycle 61 or later: in the right
+border or on the next line (arithmetic, not run; 59 before the entry
+window was measured). (An
+earlier version said two-thirds of the way across, unmeasured.) Arming the IRQ on the line above and spinning on `CMP $D012`
 moves the write to the start of the target line: the spin loop is 7 cycles,
 so it exits on cycles 1-7, and the two 4-cycle stores complete by cycle 15.
 Cycles 1-13 are horizontal blank and cycle 14-15 is the first eight pixels

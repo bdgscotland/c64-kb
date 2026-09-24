@@ -7,6 +7,9 @@ techniques: [dysp_side_border_sprites, sideborder_open, stable_raster_irq, doubl
 file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D004, D005, D006, D007, D010, D011, D012, D015, D016, D017, D019, D01A, D01C, D01D, D027, D028, D029, D02A, DC04, DC05, DC0E]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_b (init), cia1_tod (init), zero_page $02 (owns)]
+harness: [cia1_timer_a]
+ram: [work=$02C0-$02FF]
 ---
 
 <!-- doc-type: recipe -->
@@ -44,7 +47,8 @@ byte-identical across two runs.
 // dysp.asm
 // DYSP: four sprites at different, moving Y positions inside the opened
 // right side border. One write per line opens the border: DEC $D016 with
-// its new value written on cycle 56 (PAL) or 57 (NTSC), as in
+// its new value written on cycle 56 on both models (an earlier version
+// said 57 on NTSC; the store trace prints 56 there too), as in
 // sideborder-open.asm. Sprite DMA then stalls the CPU for a length that
 // depends on WHICH sprites are fetched on that line, so the loop reads a
 // per-line delay from a table rebuilt every frame from the sprites' Y
@@ -116,10 +120,10 @@ BasicUpstart2(start)
 }
 
 // CPU cycles lost after the DEC to the sprite DMA of the sprites in mask.
-// The p-access slots are 58, 60, 62, 1 (PAL) and 60, 62, 64, 1 (NTSC) for
-// sprites 0..3; BA falls three cycles before the first and the CPU resumes
-// two cycles after the last slot. DEC's writes on 55 and 56 (56 and 57 on
-// NTSC) go through while BA is low, so a set holding sprite 0 costs less.
+// The p-access slots are 58, 60, 62, 1 (PAL) and 59, 61, 63, 65 (NTSC
+// 6567R8) for sprites 0..3; BA falls three cycles before the first and the
+// CPU resumes two cycles after the last slot. DEC's writes on 55 and 56 go
+// through while BA is low, so a set holding sprite 0 costs less.
 .function lostcycles(m, ntsc) {
     .if (m == 0) .return 0
     .var f = 0
@@ -551,10 +555,12 @@ border stayed closed until the first sprite line, whose stall moved the
 loop to 56; the sideborder recipe tolerated 41 to 45 because all its
 lines had the stall, and this one has lines without it. On NTSC with
 `ENTRYPADN` 45 every `DEC` reports 56 and every `INC` 40, 2,737 of
-2,737; with 44 the sprite-free lines reported 55 and were closed. The
-monitor's cycle numbers for the two models were not reconciled against
-each other here; what is established is that the value it reports as
-56 opens the border on both.
+2,737; with 44 the sprite-free lines reported 55 and were closed. A
+store trace prints the write's cycle in Bauer's numbering on both
+models (`runtime/vice-reference.md`, "What the CYC column counts",
+measured for issue #82), so the write that opens the border is cycle 56
+on PAL and on NTSC. An earlier version left the two models' numbers
+unreconciled.
 
 **Cycles.** The band is 161 lines of 63 wall cycles on PAL (arithmetic:
 10,143 cycles), 65 on NTSC; the code in each line is 51 cycles plus the
@@ -636,8 +642,11 @@ cycles from the sync to the first `DEC` and its value, 45, was set from
 the write-cycle trace above. `pal_ntsc_detection`'s method from the road
 recipe sets a flag at boot; `irq1` selects the PAL or the NTSC loop by
 it, the loops differ in the `Delay(2)` of the NTSC one and in their
-stall tables (sprite 0's lead-in on NTSC starts on 57, one cycle after
-the write, so a set with sprite 0 costs 4 + 2l there), and both loops
+stall tables (on the 6567R8 sprite 0's lead-in starts on 56, with the
+write, and the CPU resumes on 61 + 2l, so the `INX` on 57 loses
+4 + 2l for a set with sprite 0; an earlier version said the lead-in
+starts on 57, from slot numbers that `vic-ii-reference.md` has since
+corrected by measurement, and the 4 + 2l was right), and both loops
 keep their slide at the same low byte so one entry table serves either.
 
 The IRQ lines 37 to 39 must be free of sprite DMA, or the sync itself
@@ -663,8 +672,5 @@ amplitude 128 about 128); the largest Y is 170 and the smallest 40.
 - Eight sprites. The tables are four bits wide; with eight the largest
   stall is 19 and the slide would need to be longer than the sprite-free
   line's spare cycles allow without moving other work out of the loop.
-- The two monitors' cycle numbering. "56" is what VICE reports for the
-  write that opens the border on both models; whether that is the 6567's
-  cycle 56 or 57 in the datasheet's numbering was not settled.
 - Sets with a gap of two or more sprites, where BA rises between the
   groups; the four sprites here never form one.

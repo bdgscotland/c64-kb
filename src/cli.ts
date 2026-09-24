@@ -18,7 +18,10 @@ import { startMcpServer } from "./server.ts";
 import { closeAll } from "./context.ts";
 import { definedOnly } from "./server/defined-only.ts";
 import { reFrameProfile, reIrqChain } from "./tools/re.ts";
+import { claimsWatch } from "./tools/claims-watch.ts";
+import { claimsWatchReply } from "./server/tools-claims.ts";
 import { registerSetupCommands } from "./cli/setup.ts";
+import { rebuildInProgress, rebuildMessage } from "./services/rebuild-marker.ts";
 
 const TOOLCHAINS = ["oscar64", "kickassembler", "cc65"] as const;
 const REGIONS = ["pal", "ntsc", "both"] as const;
@@ -44,6 +47,33 @@ function regionArg(value: string): string {
 
 const program = new Command();
 
+/**
+ * Commands that answer from the graph. While a batch ingest is rebuilding
+ * it they print the rebuild message and exit 1 instead (#41), as the MCP
+ * tools do (src/server/define-tool.ts).
+ */
+const GRAPH_COMMANDS = new Set([
+  "search",
+  "lookup-register",
+  "lookup-kernal",
+  "memory-map",
+  "lookup-opcode",
+  "pal-ntsc-diff",
+  "toolchain-hint",
+  "recipe-lookup",
+  "recipes-for",
+  "technique-lookup",
+  "techniques-for",
+  "check-compatibility",
+  "timing-budget",
+  "plan-budget",
+  "pitfalls-for",
+  "failure-diagnose",
+  "demo-briefing",
+  "game-briefing",
+  "gaps-replay",
+]);
+
 // Every lookup command prints its markdown, or, under the global --json
 // flag, the same tool's structured object (the shape the MCP server
 // returns). Until data 718 only the briefings honoured the flag.
@@ -60,6 +90,11 @@ program
   .description("Commodore 64 knowledge base")
   .version(getVersions().package)
   .option("--json", "Output JSON instead of human-readable text")
+  .hook("preAction", async (_program, action) => {
+    if (!GRAPH_COMMANDS.has(action.name())) return;
+    const state = await rebuildInProgress();
+    if (state) throw new Error(rebuildMessage(state));
+  })
   .hook("postAction", async (_program, action) => {
     if (action.name() !== "serve") await closeAll();
   });
@@ -116,12 +151,20 @@ program
 program
   .command("ingest-doc")
   .description("Ingest a single markdown file into the KB")
-  .argument("<path>", "Path to markdown file")
+  .argument("<path>", "Path to a markdown file under docs/, relative to here or to docs/, or absolute")
   .action(async (docPath: string) => {
     const { ingestDoc } = await import("./tools/hydrate.ts");
+    const { locateDoc } = await import("./ingest/doc-path.ts");
+    const { config } = await import("./config.ts");
     const fs = await import("fs");
-    const content = fs.readFileSync(docPath, "utf-8");
-    const result = await ingestDoc(docPath, content);
+    const doc = locateDoc(docPath, config.docs.dir);
+    if (doc === null || !fs.existsSync(doc.file)) {
+      console.error(`Rejected: ${docPath} is not a file inside the docs directory (${config.docs.dir}).`);
+      process.exitCode = 1;
+      return;
+    }
+    const content = fs.readFileSync(doc.file, "utf-8");
+    const result = await ingestDoc(doc.file, content);
     console.log(result);
   });
 
@@ -270,12 +313,20 @@ program
   );
 
 program
-  .command("check-compatibility <techniques...>")
-  .description("Check compatibility of two or more techniques (space-separated names)")
-  .action(async (techniques: string[]) => {
-    const { checkCompatibility } = await import("./tools/query.ts");
-    const result = await checkCompatibility(techniques);
+  .command("check-compatibility [techniques...]")
+  .description(
+    'Check compatibility of two or more techniques (space-separated names; "name:phase" checks the list phase by phase, and across phases for state left running against KERNAL disk I/O), or of a game design phase by phase',
+  )
+  .option("--design <name>", "a GameDesign name: each phase (play, init, transition) checked alone")
+  .action(async (techniques: string[], opts: { design?: string }) => {
+    const { checkCompatibility, checkDesignCompatibility } = await import("./tools/query.ts");
+    if (!opts.design && techniques.length < 2) throw new Error("give 2+ techniques, or --design <name>");
+    const result = opts.design
+      ? await checkDesignCompatibility(opts.design, techniques)
+      : await checkCompatibility(techniques);
     emit(result);
+    // A refusal (a name with no technique) is a failure to a script, not a verdict.
+    if (result.structured.verdict === "unknown_technique") process.exitCode = 1;
   });
 
 program
@@ -301,7 +352,7 @@ program
 program
   .command("plan-budget [techniques...]")
   .description(
-    'Budget a set of techniques per phase ("name" or "name:play|transition|init"), or a GameDesign with --design: cycle range, left-out figures, unknowns, verdict, measured frame beside the prediction',
+    'Budget a set of techniques per phase ("name", "name:play|transition|init", "name ×N" or "name ×M-N:phase" for calls, or items where the Cost states cycles_per_item), or a GameDesign with --design: cycle range, left-out figures, unknowns, verdict, measured frame beside the prediction',
   )
   .option("--design <name>", "a GameDesign name; its composed techniques are budgeted by phase")
   .addOption(
@@ -343,7 +394,7 @@ program
 program
   .command("lint <file>")
   .description(
-    "Run the pitfall rules over a C or assembly source file (language from the extension, or --language)",
+    "Run the pitfall rules over a C or assembly source file (language from the extension, or --language), or over the C and assembly fences of a Markdown page",
   )
   .addOption(
     new Option("--language <lang>", "c, asm or auto").choices(["c", "asm", "auto"] as const).default("auto"),
@@ -463,6 +514,49 @@ reOptions(
     JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2),
   );
   if (!r.ok) process.exitCode = 1;
+});
+
+interface ClaimsWatchOpts extends ReOpts {
+  recipe?: string;
+  technique: string[];
+  claim?: string;
+  ram?: string;
+  harness?: string;
+  kernal: string[];
+  screen?: string;
+  allRam?: boolean;
+}
+
+const repeat = (v: string, prev: string[]) => [...prev, ...v.split(",").map((s) => s.trim())];
+
+// The c64_claims_watch tool from the command line (#22 step 8). The repo's
+// scripts/claims-watch.ts takes the same declarations and adds --log, --json.
+reOptions(
+  program
+    .command("claims-watch <prg>")
+    .description("Run a PRG in VICE and check every store against the hardware units it declares")
+    .option("--recipe <name>", "a recipe name or page: its techniques and claims:, harness:, ram: keys")
+    .option("--technique <ids>", "technique ids whose Claims lines declare units", repeat, [])
+    .option("--claim <text>", "units in the Claims-line grammar")
+    .option("--ram <ranges>", "the program's own RAM: [name=]$XXXX[-$YYYY], comma list")
+    .option("--harness <items>", "a measurement harness: units or ranges")
+    .option("--kernal <names>", "KERNAL routines called, or IRQ / NMI", repeat, [])
+    .option("--screen <addr>", "screen RAM base, for the sprite pointers")
+    .option("--all-ram", "also trace $0400-$CFFF and $E000-$FFF9"),
+).action(async (prg: string, o: ClaimsWatchOpts) => {
+  const r = await claimsWatch({
+    ...reArgs(prg, o),
+    recipe: o.recipe,
+    techniques: o.technique,
+    claims: o.claim,
+    ram: o.ram,
+    harness: o.harness,
+    kernal: o.kernal,
+    screen: o.screen,
+    all_ram: o.allRam === true,
+  });
+  console.log(claimsWatchReply(r).text);
+  process.exitCode = r.ok && r.result.verdict === "pass" ? 0 : 1;
 });
 
 try {

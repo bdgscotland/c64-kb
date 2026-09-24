@@ -182,9 +182,12 @@ passages were deleted.
 **The real Krill hazards** are the ones `../techniques/loaders-packers.md`
 documents, and neither involves `$0330`:
 
-- Any raw write to `$DD00`/`$DD02` (a VIC-bank switch, a generic CIA init) while
-  Krill is armed corrupts its bus-lock/installed-state test; see
-  `fastloader_dd00_write_corrupts_resident` below. This is Krill's rule only;
+- A write to `$DD02`, or a `$DD00` value with any of bits 2-7 set (a generic
+  CIA init, a read-modify-write that keeps the read bits), while Krill is armed
+  corrupts its bus-lock/installed-state test; see
+  `fastloader_dd00_write_corrupts_resident` below. A plain store of `$00`-`$03`
+  to `$DD00` is Krill v194's own VIC-bank switch (its README; an earlier version
+  of this bullet forbade every raw `$DD00` write). This is Krill's rule only;
   Sparkle prescribes a `$DD02` write for the VIC bank (an earlier version of
   this bullet said "the loader", which read as a rule for every loader).
 - Any KERNAL serial call (`JSR $FFD5`, a `krnio` save) while the drive is in
@@ -205,7 +208,7 @@ documents, and neither involves `$0330`:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks, iffl_single_file, drive_code_upload_and_job_queue
+**Triggered by techniques:** sparkle_irq_loader, krill_loader_integration, disk_protection_tricks, iffl_single_file, drive_code_upload_and_job_queue, bitfire_loader
 
 ### Symptom
 
@@ -238,6 +241,11 @@ approximately 4-6 µs. If the drive's bit timing deviates (a different clock
 speed, different VIA peripheral chip characteristics, or the JiffyDOS protocol
 instead of the Krill protocol), the C64-side loop times out. Depending on the loader's error handling,
 a timeout either hangs (spin loop) or returns a garbled byte.
+
+Bitfire states the same limit for itself: its readme says it carries no
+workarounds for virtual drives with broken firmware, and names a 1541
+Ultimate-II on firmware 3.7 and an up-to-date VICE as working (section
+"What it can't"). Here it was run in VICE only.
 
 Common non-stock configurations and why each fails:
 
@@ -676,12 +684,12 @@ and the (persistent) resident just above it (e.g. `$CD00`). Verified 2026-05-20:
 
 ---
 
-## fastloader_dd00_write_corrupts_resident — Raw $DD00 writes (VIC bank switch) while a Krill or Sparkle loader is resident corrupt its bus-lock
+## fastloader_dd00_write_corrupts_resident — Raw $DD00 writes (VIC bank switch) while a Krill, Sparkle or Bitfire loader is resident corrupt its bus-lock
 
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00
-**Triggered by techniques:** krill_loader_integration, sparkle_irq_loader
+**Triggered by techniques:** krill_loader_integration, sparkle_irq_loader, bitfire_loader
 
 ### Symptom
 
@@ -701,10 +709,17 @@ out, 6-7 CLK/DATA in; an earlier version of this page said bits 2-7; see
 VIC-bank set does, including Oscar64's `vic_setmode()` and any
 `STA $DD00` / `LDA #v:STA $DD00`) overwrites the IEC bits with values the loader
 did not expect, desyncing the drive protocol. The next drive op then waits forever.
-For Krill, a read-modify-write that changes *only* bits 0-1 while the loader is
-idle is tolerated; a full-byte write, or any write while the loader is
-mid-transfer, is not. Other loaders publish different rules, some the reverse of
-Krill's; the table under Fix gives each. (An earlier version of this page stated
+Krill v194 drives ATN, CLK and DATA through `$DD02` and keeps `$DD00` bits 2-7 at
+0, so a store of `$00`-`$03` to `$DD00` is safe at any time, even from an
+interrupt while a load runs; a value with any of bits 2-7 set is not (v194
+`README`, "Setting the VIC bank"). An earlier version of this paragraph said
+Krill tolerated only a read-modify-write of bits 0-1 while idle and no
+full-byte write; the v194 README prescribes the full-byte store. Sparkle is
+the reverse: it drives the bus through `$DD00` and takes the bank from `$DD02`.
+Bitfire is Krill's side of that split: it clocks the bus through `$DD02`
+and keeps `$DD00` bits 3-5 at 0, so a plain store of `$00`-`$03` is safe
+and a read-modify-write is not, because it copies a pin that reads 1 back
+into the latch. The table under Fix gives each loader's rule. (An earlier version of this page stated
 Krill's rule as the rule for every resident loader.)
 
 ### Fix
@@ -719,32 +734,41 @@ Don't keep the loader resident across VIC mode/bank switches. Two options:
    install→loads→uninstall window. Cost: one drive-code upload per load batch,
    acceptable for infrequent loads. (Tideline ships this, VICE-verified 2026-05-20.)
 2. If the loader must stay resident, switch the bank the way that loader
-   documents. None of these was run here; each rule is from the loader's own
-   documentation (rung 4 here).
+   documents. The Sparkle and Bitfire rows were run in VICE (below); the
+   Krill row is from the loader's own documentation and source, not run
+   here. (An earlier version of this item said none of the rows was run,
+   and a later one that the Bitfire row was not run.)
 
 | Loader | VIC bank switch while resident | Arbitrary `$DD00` values |
 |---|---|---|
-| Krill | `SET_VIC_BANK`; never a raw `$DD00` write | `ENTER_BUS_LOCK` / `LEAVE_BUS_LOCK` |
-| Sparkle 3.4 | Do not write `$DD00`: the loader may read it as a drive command and reset the drive. Write `LDA #$3C+bank : STA $DD02`, bank 0-3 (manual pp. 20-21; common issue 1, p. 29). | "Direct bus lock": `$03` (bits 3-5 clear) to `$DD02`, then any `$DD00` value; restore `$DD00` to `$38` first, then `$DD02` to `$3C`+bank (pp. 22-23). |
-| Bitfire | Plain stores of `$00`-`$03` to `$DD00` "at any time, also while loading"; not a read-modify-write (`LDA $DD00 : AND #$FC : ORA #bank`) (readme, "Bank switching") | Only while idle, between the `bus_lock` and `bus_unlock` macros |
+| Krill v194 | `LDA #bank : STA $DD00` with bank `$00`-`$03` in the usual encoding (`$03` = `$0000`-`$3FFF`), at any time, also from an interrupt while loading; bits 2-7 must be 0, so no read-modify-write that keeps the read bits (README, "Setting the VIC bank"; `SET_VIC_BANK` in `include/loader.inc` is this store). Not `$DD02`: the loader switches ATN, CLK and DATA by writing `$DD02` (`src/hal/hal-c64-c128.inc`), so a Sparkle-style `$DD02` bank write would change the bus. An earlier version of this row said `SET_VIC_BANK` and never a raw `$DD00` write; `SET_VIC_BANK` is a raw `$DD00` write. | While idle only: `ENTER_BUS_LOCK` after a load (empty in v194), `LEAVE_BUS_LOCK` before the next (clears bits 2-7 of `$DD00`) |
+| Sparkle 3.4 | Do not write `$DD00`: the loader may read it as a drive command and reset the drive. Write `LDA #$3C+bank : STA $DD02`, bank 0-3 (manual pp. 20-21; common issue 1, p. 29). Measured in VICE x64sc 3.10 with true drive emulation, PAL and NTSC, by recipe `sparkle-dd02-bank`: 523 such writes from a raster interrupt during eight loads (PAL), every bundle's checksum matched, the VIC never in the wrong bank. A plain `STA $DD00` of `$03`/`$01` from the same interrupt reset the drive and the next load never returned; a read-modify-write of `$DD00` loaded correctly but left the VIC in bank 3 at 400 of 523 checks. | "Direct bus lock": `$03` (bits 3-5 clear) to `$DD02`, then any `$DD00` value; restore `$DD00` to `$38` first, then `$DD02` to `$3C`+bank (pp. 22-23). Not run here. |
+| Bitfire | Plain stores of `$00`-`$03` to `$DD00` "at any time, also while loading"; not a read-modify-write (`LDA $DD00 : AND #$FC : ORA #bank`) (readme, "Bank switching"). Measured in VICE x64sc 3.10 with true drive emulation, PAL and NTSC, by recipe `bitfire-dd00-bank`: 681 plain stores from a raster interrupt during eight loads (PAL), every file's checksum matched, the VIC never in the wrong bank. A read-modify-write from the same interrupt stored `$8B` and `$89` (bit 3 set): every load returned and all eight files were wrong. Sparkle's `$DD02` write also broke every file and never selected bank 2. | Only while idle, between the `bus_lock` and `bus_unlock` macros. Not run here. |
 
    Sparkle also accepts any `$DD02` value between loader calls, as long as
    `$3C`+bank is back before the next call (the "indirect bus lock", pp. 21-22).
-   Why the `$DD02` write selects the bank (not stated in the manual; rung 4):
-   the loader leaves `$DD00` bits 0-1 at 0, so a bit set to output drives 0 and a
-   bit set to input floats to 1, and `$3C`+bank gives the inverted bank value the
-   VIC reads.
+   Why the `$DD02` write selects the bank (not stated in the manual): the
+   loader writes `$DD00` with bits 0-1 at 0 (its receive loop stores `#$08`,
+   `#$C0` and `#$X0`, `sl.asm` in SparkleCPP), so a bit set to output drives 0
+   and a bit set to input floats to 1, and `$3C`+bank gives the inverted bank
+   value the VIC reads. The recipe's interrupt read `$DD00` bits 0-1 before each
+   switch and always found the bank it had set (rung 1; an earlier version of
+   this paragraph was rung 4).
 
 **Sources.** Sparkle 3.4 user manual, Sparta (OMG), chapters "Switching VIC
 banks", "Bus lock" and "Common issues", `manual/` in
 https://github.com/spartaomg/SparkleCPP. Bitfire `readme.txt`, sections "Bank
-switching" and the macro list, https://github.com/bboxy/bitfire. The Krill row
-is unchanged from earlier versions of this page.
+switching" and the macro list, https://github.com/bboxy/bitfire. Krill's
+Loader v194 (Plush, 2022, https://csdb.dk/release/?id=226124): `README`,
+section "Setting the VIC bank"; `include/loader.inc`; `src/hal/hal-c64-c128.inc`,
+the `CIA2_DDRA_*` definitions. (An earlier version said the Krill row was
+unchanged from earlier versions of this page.)
 
 ### Cross-references
 
 - Technique `krill_loader_integration` — VIC-bank / bus-lock protocol; lazy-install recipe
 - Technique `sparkle_irq_loader` — bank switch through `$DD02`, direct and indirect bus lock
+- Technique `bitfire_loader` — bank switch by plain `$DD00` stores; the bus clocked through `$DD02`
 - Register `$DD00` (CIA2) — VIC bank select bits 0-1 vs IEC lines bits 3-7
 - Pitfall `fastloader_kernal_dependency` — the other "first load works, later loads break" trap
 
@@ -1016,7 +1040,7 @@ Not measured here: a genuine Exomizer 2 decruncher against a 3.x stream. The shi
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00
-**Triggered by techniques:** drive_code_upload_and_job_queue, krill_loader_integration, sparkle_irq_loader
+**Triggered by techniques:** drive_code_upload_and_job_queue, krill_loader_integration, sparkle_irq_loader, fastloader_2bit_protocol
 
 ### Symptom
 
@@ -1110,7 +1134,11 @@ Either keep ATN out of the data phase, or make the drive program track it.
    every time it changes, before it drives or reads DATA. With ATNA equal
    to the ATN level the exclusive-or term is 0 and DATA belongs to DATA
    OUT again. The last table row is that fix running: DATA read released
-   in all three phases. Loaders that clock bit pairs with ATN do this
+   in all three phases. The recipe `kickassembler/fastloader-2bit`
+   does it inside the data store instead: ATNA rides in the byte that
+   puts each bit pair out, so one store per ATN edge both sends the pair
+   and lifts the pull; a sample taken before that store reads DATA low
+   (measured, its delay sweep). Loaders that clock bit pairs with ATN do this
    inside their drive-side receive loop; a program that copies their host
    half and writes its own drive half without the ATNA update meets this
    pitfall on the first byte.

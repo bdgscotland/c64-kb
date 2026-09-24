@@ -9,6 +9,7 @@
 # and this starter's own:
 #   make gen        re-run tools/gen.py (world tables, packed text, pictures, script, model)
 #   make disktest   SAVE, a cold reset, LOAD and the same state back, on a true-drive 1541
+#   make drive      the release build played headless (harness/drive.py; README "Driving it headless")
 #   make clean
 NAME   := adventure
 C_MAIN := src/main.c
@@ -27,13 +28,19 @@ SHOT_DISK := 1
 # the KERNAL's key count, which the loop and the autopilot write. keyqueue is
 # the KERNAL keyboard queue; shiftmode $0291 locks SHIFT + C=. --kernal names
 # SCNKEY, which the loop calls every frame, and the file routines save.c calls
-# through kernalio.h.
-CLAIMS_ARGS := --cycles 18000000 --kernal SCNKEY,SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST --claim 'sid_voice_1, sid_voice_2, sid_filter_volume, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, zero_page $$02-$$57+$$C6' --range 'keyqueue=$$0277-$$0280,shiftmode=$$0291,screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$3800-$$3FFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
+# through kernalio.h. vic_char_base: video_init points $D018 at the charset
+# at $3800.
+CLAIMS_ARGS := --cycles 18000000 --kernal SCNKEY,SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST --claim 'sid_voice_1, sid_voice_2, sid_filter_volume, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, vic_char_base, zero_page $$02-$$57+$$C6' --range 'keyqueue=$$0277-$$0280,shiftmode=$$0291,screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$3800-$$3FFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := disktest
+VERIFY_TARGETS := disktest drivetest
+
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 122 frames on PAL and 112 on NTSC; without sound_update
+# (NO_PLAYER) 65 and 57, the effects' first stores (harness/watch.py, VICE x64sc 3.10).
+SID_FRAMES := 90
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -50,16 +57,13 @@ build/gen.stamp: tools/gen.py tools/world.py
 	$(PYTHON) tools/gen.py
 	@touch $@
 
-.PHONY: gen disktest joy
+.PHONY: gen disktest
 gen:
 	$(PYTHON) tools/gen.py
 
-# The normal game with its fire button read from $02FE instead of $DC00, so
-# tools/drive.py can press it headless (README, "Driving it headless").
-joy: build/$(NAME)-joy.prg
-build/$(NAME)-joy.prg: $(C_DEPS) $(METER_DEPS) | plan-gate
-	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
+# make drivetest: the release build played through harness/drive.py: fire on
+# the title (the stick on $DC00), a typed command, a new room.
+DRIVE_STEPS := "until:PRESS RETURN OR FIRE" tap:fire "until:EXITS: N." "type:GO NORTH" "until:A SHED" print
 
 # The disk test, on a true-drive 1541 (DISK_MODEL=pal or ntsc):
 #  1. DISKTEST=1 plays the script up to its SAVE on a fresh copy of the release

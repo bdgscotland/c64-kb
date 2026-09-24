@@ -108,6 +108,8 @@ function splitByGap(rows: QueryLogRow[], windowMinutes: number): { queries: Quer
 export class AnalyticsService {
   private readonly db: Database.Database;
   private readonly s: Statements;
+  /** While set, logQuery records result counts here instead of writing (gap replay). */
+  private captured: number[] | null = null;
 
   constructor(dbPath: string = config.analytics.dbPath) {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -124,6 +126,10 @@ export class AnalyticsService {
    * Log a query and track gaps.
    */
   logQuery(opts: QueryLogOpts): void {
+    if (this.captured) {
+      this.captured.push(opts.resultCount);
+      return;
+    }
     // One IMMEDIATE transaction: the CLI and the MCP server share this file,
     // and a bare SELECT-then-INSERT let two processes both insert the gap.
     this.db
@@ -160,8 +166,31 @@ export class AnalyticsService {
   /**
    * Mark a gap as resolved (e.g., after ingesting new docs).
    */
-  resolveGap(query: string): void {
-    this.s.resolveGap.run(query);
+  resolveGap(query: string, tool?: string): void {
+    if (tool === undefined) this.s.resolveGap.run(query);
+    else this.s.resolveToolGap.run(query, tool);
+  }
+
+  /** Every open gap a tool logged (not one an agent reported), by tool then query. */
+  getLoggedOpenGaps(): Pick<GapRow, "query" | "tool" | "hit_count">[] {
+    return this.s.loggedOpenGaps.all();
+  }
+
+  /**
+   * Run `fn` without writing to the log and return the result counts it
+   * would have logged: replaying a gap must not log it again. One capture
+   * at a time; a second concurrent one throws.
+   */
+  async captureCounts(fn: () => Promise<unknown>): Promise<number[]> {
+    if (this.captured) throw new Error("captureCounts: already capturing");
+    const counts: number[] = [];
+    this.captured = counts;
+    try {
+      await fn();
+    } finally {
+      this.captured = null;
+    }
+    return counts;
   }
 
   /**

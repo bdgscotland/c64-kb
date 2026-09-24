@@ -1175,6 +1175,98 @@ was sourced.)
 
 The SRQ line is not used by the standard C64 KERNAL.
 
+## User port, FLAG inputs and RS-232
+
+### User port pins
+
+The user port is a 24-contact edge connector, 12 on top (1-12) and 12
+underneath (A-N, no G or I), wired to CIA 2 and a few system lines.
+Pin names from the *Commodore 64 Programmer's Reference Guide*, pages
+359-360 and Appendix I; the RS-232 column from the same guide's memory
+map (page 324) and VICE 3.10's `src/rs232drv/rsuser.h`, which agree
+(rung 2). The KERNAL column is read from the ROM (rung 1, `$DD0C` and
+`$DD0D` above).
+
+| Pin | Signal | CIA 2 | KERNAL RS-232 use |
+|---|---|---|---|
+| 1, 12, A, N | GND | | |
+| 2 | +5 V, 100 mA max | | |
+| 3 | /RESET, in and out | | |
+| 4 | CNT1 | CIA 1 CNT | |
+| 5 | SP1 | CIA 1 SP | |
+| 6 | CNT2 | CNT | |
+| 7 | SP2 | SP | |
+| 8 | /PC2 | PC | |
+| 9 | serial ATN | | |
+| 10, 11 | 9 V AC, from the transformer | | |
+| B | /FLAG2 | FLAG | start bit of a received byte (NMI) |
+| C | PB0 | port B bit 0 | RXD, received data |
+| D | PB1 | bit 1 | RTS |
+| E | PB2 | bit 2 | DTR |
+| F | PB3 | bit 3 | RI |
+| H | PB4 | bit 4 | DCD |
+| J | PB5 | bit 5 | none |
+| K | PB6 | bit 6 | CTS |
+| L | PB7 | bit 7 | DSR |
+| M | PA2 | port A bit 2 | TXD, transmitted data |
+
+The guide's own tables disagree in three places, and the table above
+follows its connector drawing and memory map: its pin table labels PB5
+`I` where the drawing has `J`, says pin 7 SP2 comes "from CIA #1" and
+that the bottom row is "PORT B on CIA chip #1"; both are CIA 2
+(`$DD01`, as the same page says).
+
+### PC2: the strobe that is not a register bit
+
+Pin 8 carries CIA 2's /PC output. No register holds it: the CIA pulses
+it low by itself after a read or a write of port B (`$DD01`), so a
+device on the port learns that the C64 has just read or written the
+byte, with no extra instruction. The guide calls it a "handshaking line
+from CIA #2" and refers to the 6526 specification for its timing, not
+reproduced here (rung 4). VICE 3.10 raises the pulse on every read of
+port B and every write of it, not on a write of the direction register
+`$DD03` (`src/core/ciacore.c`, calls to `pulse_ciapc`; rung 3, read
+from the source). Only user-port devices that declare they need the pin
+receive it (`src/c64/c64cia2.c`, `pulse_ciapc`); the parallel drive
+cable is one, and none of the devices this repository's recipes attach
+is. Not measured here.
+
+### The two FLAG inputs
+
+Each CIA has one FLAG input, a negative-edge-triggered interrupt source:
+a falling edge sets bit 4 of the chip's interrupt control register
+whether or not the source is enabled, so it can be polled, and enabling
+it (`$90` to the ICR) turns the edge into an interrupt.
+
+| | CIA 1 FLAG | CIA 2 FLAG |
+|---|---|---|
+| Wired to | cassette read, and the serial bus SRQ IN (guide, `$DC0D` bit 4: "Cassette Read / Serial Bus SRQ Input") | user port pin B |
+| Interrupt | IRQ | NMI |
+| KERNAL use | tape read: `TRD` enters `TAPE` with A = `$90`, and each edge runs `READ` (`$F92C`; traced, `kernal-routines-reference.md`, "Tape routines inside the ROM") | RS-232 receive: `$EF7E` writes `$90` to `$DD0D` so the start bit of a byte raises an NMI |
+| Measured here | `kickassembler/tape-turbo-loader` polls it for every tape pulse, one edge per TAP entry in VICE | no run here drives it |
+| In VICE 3.10 | set by the datasette only (`src/c64/c64datasette.c`); SRQ does not reach it | set by user-port devices, the RS-232 device's start bit and the parallel cable (`src/c64/c64cia2.c`, `c64rsuser.c`, `c64parallel.c`) |
+
+Reading the ICR clears the FLAG bit with every other pending bit, so a
+program that polls FLAG while the KERNAL's interrupt handler also reads
+`$DC0D` loses edges to it; `techniques/file-io.md`, `tape_turbo_loader`,
+masks CIA 1 for that reason. On CIA 2 the same rule means an NMI handler
+that reads `$DD0D` for its own timer can swallow an RS-232 start bit
+(`pitfalls/cia.md`).
+
+### RS-232 on the user port, measured
+
+`kickassembler/rs232-send` sends a line at 1200 baud, 8N1, through the
+KERNAL (OPEN on device 2, the control and command registers as the file
+name) and then with its own routine on PA2 paced by CIA 2 timer A.
+VICE's user-port RS-232 device (`-userportdevice 2`) sampled the pin in
+the middle of each bit and wrote both lines to a file byte for byte, on
+PAL and NTSC. The KERNAL's 16 bytes took 132,214 cycles on PAL, 854 more
+than 160 bit times of 821 cycles; CLRCHN returns long before that, and
+bit 0 of `$02A1` stays set until the last stop bit is out, so wait on it
+before CLOSE. A CLOSE without the wait sent none of the bytes. The
+KERNAL's receive side delivered nothing in VICE here (see the recipe),
+so receive is not measured.
+
 ## Pitfalls
 
 - **CIA1 vs CIA2 confusion**: both chips have the same register layout,

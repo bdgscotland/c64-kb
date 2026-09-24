@@ -16,8 +16,9 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 ## The rules that are enforced
 
 1. **A code listing is built before it lands.** `npm run check:listings`
-   assembles every recipe with the toolchain it names and every
-   KickAssembler fragment in `docs/`. A hook runs it on the file you just
+   assembles every recipe with the toolchain it names, every
+   KickAssembler fragment in `docs/`, and every `acme`, `64tass` and
+   llvm-mos listing. A hook runs it on the file you just
    edited; `npm test` runs it too. Six of eight recipes once shipped without
    ever having been assembled. Never again.
 2. **Anything that draws is run in VICE and the screenshot is measured.**
@@ -67,6 +68,9 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 | KickAssembler 5.25 | `java -jar $KICKASS_JAR file.asm -o out.prg` (set `KICKASS_JAR`; default location `~/Developer/c64/kickassembler/KickAss.jar`) |
 | Oscar64 | `$OSCAR64 -tm=c64 -O2 -o=out.prg file.c` (`OSCAR64` env, `oscar64` on PATH, or the default build `~/Developer/c64/oscar64/bin/oscar64`; headers in `<oscar64>/include/`). That build reports 1.32.271 but is upstream 709bd70 plus one unpublished local fix (c1270bc, an OptimizeInnerLoop bounds crash). Every Oscar64 recipe was verified with it; upstream 709bd70 fails 46 of them and v1.32.273 fails 57 (issue #25) |
 | cc65 | `cl65 -t c64 -O -o out.prg file.c` |
+| ACME 0.97 | `acme -f cbm -o out.prg file.a` (`ACME` env or `acme` on PATH; `brew install acme`) |
+| 64tass 1.60 | `64tass -a -o out.prg file.s` (`TASS64` env or `64tass` on PATH; `brew install tass64`); without `-a` text is copied unconverted |
+| llvm-mos SDK v23.2.0 | `$LLVM_MOS/bin/mos-c64-clang -Os -o out.prg file.c` (`LLVM_MOS` = SDK directory, `mos-c64-clang` on PATH, or `~/Developer/c64/llvm-mos`) |
 | VICE 3.10 headless (PAL c64c: 8565, 8580, 8521) | `GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +sound -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot out.png -autostart out.prg` (`-model ntsc` for 6567R8). ~10–20 s per run; wrap in `timeout`. With no `-model`, `-default` runs the C64C: VIC-II 8565, SID 8580, CIA 8521 (`-dumpconfig` is identical to `-model c64c`). Every runs.json `pal` run and PAL screenshot is that machine, and stays so (#36). Add `-model c64` (6569, 6581, 6526) to check the older machine: the CIA timer interrupt one cycle later, the 6581 filter and `$D418` digis (not measured here), eleven of the sixteen palette entries (`vice-reference.md`). An earlier version of this row said PAL 6569. |
 | Screenshot geometry | PAL 384×272 PNG, screenshot row = raster line − 16 (rows 0–271 are lines 16–287); NTSC (`-model ntsc`) 384×247, row = line − 28, and rows 235–246 are lines 0–11 of the next frame. x = 8 is VIC X coordinate 0; left border x 0–31, right border 352–383. Measure with PIL, never by eye. An earlier version of this row said − 14; 16 and 28 were each derived from three boundaries in `docs/recipes/kickassembler/topbottom-border-open.md`. The full geometry for both models, the sixteen palette RGB triples VICE emits for each, and a decode snippet are in `docs/runtime/vice-reference.md`, section "Reading the exit screenshot", measured by `docs/recipes/kickassembler/palette-cells.md`. |
 | KERNAL / BASIC / char ROM | `/opt/homebrew/opt/vice/share/vice/C64/kernal-901227-03.bin` ($E000), `basic-901226-01.bin` ($A000), `chargen-901225-01.bin` ($D000). Read bytes with python to settle any address or vector claim. |
@@ -77,6 +81,7 @@ the live figures; `CHANGELOG.md` records what an audit changed.
 npm run check:listings     # every listing builds; fails on a missing toolchain unless --allow-missing
 npm run verify:templates   # every starter in templates/, made as a fresh project: build, shot + check on PAL and NTSC, disk; --selftest adds the FORCE_FAULT build and each starter's VERIFY_TARGETS
 npm run verify:recipes     # every recipe runs headless in VICE at its pinned cycles (docs/recipes/runs.json) and matches its committed PNG pixel-for-pixel; --update re-baselines after a deliberate change, --allow-missing tolerates a recipe with no PNG yet
+npm run claims:recipes     # every KickAssembler recipe under claims-watch with its runs.json cycles and flags; fails on a store its techniques' Claims and its claims/harness/ram/kernal_services keys do not declare; cartridge and skipped recipes are listed as not run
 npm run typecheck          # src, scripts and test, strict incl. noUncheckedIndexedAccess; before 2026-09-22 this was `tsc --noEmit` over src/ alone
 npm run lint               # ESLint strict + complexity budget (cyclomatic/cognitive 15, 80 lines/function); split code, never raise a limit
 npm run format:check       # Prettier on TypeScript/JSON/YAML; markdown is never reformatted
@@ -187,11 +192,24 @@ in `src/tools/query.ts`; check which before editing either.
   variable links silently; an immediate-mode `sta` in `__asm` emits opcode
   $FF with no diagnostic; at -O1 to -O3 `c == 255 ? 255 : a[c]` with `a`
   shorter than 256 loses its guard and reads `a[255]` (write it as an `if`);
-  `#define A()` with an empty parameter list is refused (error 3006; fixed
-  upstream); a loop-invariant `array + signed_char` is hoisted and zero-extended
+  a call of `#define A()` (empty parameter list) eats the `;` after it: a
+  non-empty body gives error 3006, an empty body compiles silently and
+  `if (c) A(); f();` becomes `if (c) f();` (local build only; v1.32.273
+  and upstream are correct; an earlier version of this line said the
+  macro is always refused); a loop-invariant `array + signed_char` is hoisted and zero-extended
   (-2 → +254) at every level, upstream too; `a[x]++` after a store indexed by
   `a[x] + 1` can store the wrong value (read `a[x]` into a variable); stores to a
-  local `volatile` vanish at -O1/-O2 (use a global); two `const char` tables
+  local `volatile` vanish at -O1/-O2 (use a global that something writes);
+  at -O2 a `volatile` global that nothing writes is read as its initial
+  value (`g | 8` compiles to `LDA #$0D`; local, v1.32.273 and upstream
+  9a902f6 alike);
+  a comparison on a function's address at `$8000` or above folds wrong
+  (`((unsigned)&main >> 8) >= 0x80` with `main` at `$8080` in a
+  `-tf=crt8` build compiles as false; the same test at `$0880` is right;
+  all three builds);
+  a `while (x >= y)` midpoint-circle loop calling an `inline` plot eight
+  times a pass leaves after one pass at -O2 and -O3 (-O1 is right; all
+  three builds; a `__noinline` wrapper around the plot avoids it); two `const char` tables
   shifted `<< 8` with one index in a loop that also calls a `__noinline`
   function read the second table at the first one's value (-O1 and up);
   four fixed-address arrays cleared in one loop send one array's stores

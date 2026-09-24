@@ -127,3 +127,46 @@ describe("FalkorService - Technique REQUIRES", () => {
     expect(await count("text_zoom", "text_zoom")).toBe(0);
   });
 });
+
+describe("FalkorService - Technique CONSUMES FileFormat (#17 ONTO-08)", () => {
+  let f: FalkorService;
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+    await f.addTechnique({ name: "sid_play_routine_pattern", title: "Init and play", category: "music" });
+    await f.addFileFormat("SID", "PSID/RSID music file");
+    await f.addRecipe({
+      name: "oscar64-sid-music-player",
+      toolchain: "oscar64",
+      output_format: "PRG",
+      region: "both",
+      source_doc: "recipes/oscar64/sid-music-player.md",
+    });
+    await f.linkRecipeImplements("oscar64-sid-music-player", "sid_play_routine_pattern");
+  });
+  afterAll(async () => {
+    await f.close();
+  });
+
+  it("links a technique to an existing format, and the SID-to-recipe path resolves in one MATCH", async () => {
+    expect(await f.linkTechniqueConsumes("sid_play_routine_pattern", "SID")).toBe(true);
+    const r = await f.roQuery(
+      `MATCH (:FileFormat {name: 'SID'})<-[:CONSUMES]-(:Technique)<-[:IMPLEMENTS]-(r:Recipe) RETURN r.name AS name`,
+    );
+    expect(r.data).toEqual([{ name: "oscar64-sid-music-player" }]);
+  });
+
+  it("drops an edge to a format with no node, and creates none", async () => {
+    const orig = console.warn;
+    console.warn = () => undefined;
+    try {
+      expect(await f.linkTechniqueConsumes("sid_play_routine_pattern", "EXO")).toBe(false);
+    } finally {
+      console.warn = orig;
+    }
+    const r = await f.roQuery(`MATCH (x:FileFormat {name: 'EXO'}) RETURN count(x) AS n`);
+    expect(r.data[0]).toHaveProperty("n", 0);
+  });
+});

@@ -7,6 +7,9 @@ techniques: [colour_cycling]
 file_formats: [PRG]
 uses_registers: [D012, D020, D021, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
+claims: [cia1_timer_b (init), cia1_tod (init)]
+harness: [cia1_timer_a, $02FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

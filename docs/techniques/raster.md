@@ -19,8 +19,9 @@ The VIC-II reads its registers continuously and asynchronously. A write takes ef
 **Region:** both
 **Uses registers:** SCROLY, RASTER, VICIRQ, IRQMSK
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=124, lines_active=2, irq_slots=1, zp_bytes=0
-**Cost basis:** arithmetic
+**Cost:** cycles_per_frame=310, lines_active=3, irq_slots=1, zp_bytes=0
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-stable-raster-irq (one double-IRQ entry through $0314 to the synced line, plus the re-arm and exit; screen on, badlines inside; NTSC, 262 on PAL)
 **Claims:** vic_raster_irq (shares)
 **Claims basis:** derived-listing
 
@@ -32,7 +33,7 @@ Up to six cycles of jitter is visible. A write to $D020 (border color) that land
 
 ### How
 
-The standard stable raster IRQ sets an initial IRQ one line before the target line. This first IRQ fires, re-acknowledges the VIC interrupt flag, programs $D012 to the target line, and then runs a tight busy-wait loop that reads $D012 until the counter advances. When the counter matches, the handler is spinning at a known point in the loop; the jitter was used up waiting. The writes that follow land at a predictable cycle offset from the line boundary.
+The standard stable raster IRQ sets an initial IRQ one line before the target line. This first IRQ fires, re-acknowledges the VIC interrupt flag, programs $D012 to the target line, and then runs a tight busy-wait loop that reads $D012 until the counter advances. When the counter matches, the handler leaves the loop within one iteration of the line change: 7 cycles for the tightest loop, `CMP $D012` + `BNE` (4 + 3). The writes that follow land within that window, not on one cycle; the `double_irq` technique removes the rest. (An earlier version said the writes land at a predictable cycle offset.)
 
 The sequence is:
 
@@ -44,19 +45,19 @@ The sequence is:
 
 **Who owns the raster compare.** A stable raster IRQ is a way into a handler, not an effect. The effect that runs in the handler (raster bars, an FLI display, an open border, a multiplexer zone) owns the compare; this technique is how that handler is entered. Its Claims line therefore says `shares`: two effects that each use a stable entry still contend for the one compare, and a stable entry inside an effect's own handler does not.
 
-The cycle-exact busy-wait variation uses two NOP instructions of known cycle count inserted after the $D012 write to absorb the jitter window, landing the following store instructions on a predictable cycle of the target line.
+NOPs inserted after the $D012 write do not absorb jitter. They delay every entry by the same number of cycles, so the following stores still spread over the same 0-6 cycles, only later in the line. Landing on one cycle needs the `double_irq` technique. (An earlier version said two NOPs, 4 cycles, absorb the jitter window.)
 
 ### Why it works
 
-The VIC-II maintains an internal 9-bit raster counter. At the start of each new raster line, the hardware increments this counter and compares it against the 9-bit compare value. If they match AND the raster IRQ mask bit in $D01A bit 0 is set, the chip asserts the IRQ line on the CPU's /IRQ input. The assertion happens on a fixed dot-clock cycle within the line: the start of the line's first half-cycle, which on PAL is cycle 1 of the 63-cycle line.
+The VIC-II maintains an internal 9-bit raster counter. At the start of each new raster line, the hardware increments this counter and compares it against the 9-bit compare value. If they match AND the raster IRQ mask bit in $D01A bit 0 is set, the chip asserts the IRQ line on the CPU's /IRQ input. The assertion happens on a fixed cycle at the start of the line, one cycle later for line 0. This knowledge base calls it cycle 1 (cycle 2 for line 0), numbering cycles 1-63. That is from Christian Bauer's VIC-II article, whose own numbering gives it as cycle 0 or 1; it has not been measured here.
 
-The CPU sees the /IRQ pin go low and responds after completing its current instruction. That variable completion time is the jitter. The stable-IRQ technique uses the raster counter itself as the synchronization point: once the CPU is in the handler, the handler polls $D012 in a tight loop. The raster line has not yet incremented, so the loop spins for whatever remains of the line. When $D012 increments, every later instruction in the handler runs at a fixed cycle offset from that increment.
+The CPU sees the /IRQ pin go low and responds after completing its current instruction. That variable completion time is the jitter. The stable-IRQ technique uses the raster counter itself as the synchronization point: once the CPU is in the handler, the handler polls $D012 in a tight loop. The raster line has not yet incremented, so the loop spins for whatever remains of the line. When $D012 increments, the loop sees it on its next read, 0-6 cycles later for a 7-cycle `CMP $D012` / `BNE` loop, so every later instruction runs within one loop iteration of that increment. (An earlier version said a fixed cycle offset; only the `double_irq` technique gets that.)
 
 The re-acknowledge step (write $01 to $D019) must not be skipped. $D019 bit 0 is the raster interrupt flag. It is set by the VIC when the interrupt fires and cleared by writing a 1 to that bit (the register uses write-1-to-clear semantics, similar to CIA interrupt clearing). If the flag is not cleared, the VIC keeps asserting /IRQ and the CPU re-enters the handler immediately after RTI. Handlers often read $D019 before writing it, to check which interrupt source fired; with a single source the read can be skipped.
 
 ### Variations
 
-**Single IRQ with NOP pad.** For effects that need only 0-1 cycle precision: fire the IRQ, acknowledge, run a few NOPs of known total cycle count, then do the register writes. The NOP padding absorbs worst-case jitter without a polling loop. This works when the action tolerates 1-cycle imprecision.
+**Single IRQ with NOP pad.** For effects that tolerate the full 0-6 cycles of jitter: fire the IRQ, acknowledge, run a few NOPs of known total cycle count, then do the register writes. The pad moves the writes later in the line; it does not narrow the jitter. (An earlier version said the pad absorbs worst-case jitter to 1-cycle precision.)
 
 **Double IRQ.** When zero jitter is required, use two IRQs on adjacent lines. The first IRQ sets up the second; the second uses a counted busy-wait-then-NOP sequence to land on cycle 1 of the target line. See the `double_irq` technique for the full protocol.
 
@@ -68,14 +69,27 @@ The re-acknowledge step (write $01 to $D019) must not be skipped. $D019 bit 0 is
 
 On PAL (63 cycles/line), the accounting is:
 
-- VIC pulls /IRQ low at the start of cycle 1 of the target line (cycle 2 for line 0). An earlier version said "cycle 0"; cycle numbering in this knowledge base starts at 1.
-- CPU finishes current instruction: 0-6 cycles of jitter consumed here.
+- VIC pulls /IRQ low at the start of cycle 1 of the target line (cycle 2 for line 0). An earlier version said "cycle 0"; cycle numbering in this knowledge base starts at 1. The cycle is from Bauer's VIC-II article, not measured here.
+- CPU finishes current instruction. The interrupt follows the first instruction that ends on cycle 2 or later; one that ends on cycle 1 runs on into the next instruction, which also completes. So the interrupt sequence starts on cycle 3 at the earliest (a 2-cycle instruction on cycles 1-2) and on cycle 9 at the latest (an instruction ending on cycle 1, then a 7-cycle `INC abs,X` on cycles 2-8): a 2-cycle minimum plus 0-6 cycles of jitter. Measured in VICE x64sc 3.10 (table below). That the 6510 samples /IRQ on an instruction's second-to-last cycle is the usual 6502 account of why; it is not measured here. An earlier version gave only the 0-6 cycles and no minimum.
 - CPU executes interrupt sequence (7 cycles): two dummy-read cycles, push PC high, push PC low, push P, fetch vector low, fetch vector high; the handler's first opcode fetch follows. (An earlier version counted the handler's first fetch inside the 7; it is the handler's own first cycle.)
 - Entry path: with the KERNAL banked out and $FFFE/$FFFF pointing at the handler, nothing more; through the KERNAL vector, the $FF48 dispatcher adds 29 cycles before the first instruction at $0314 (see Interrupt vector placement).
 - Handler entry overhead (LDA/STA for acknowledgment): 6-8 cycles.
-- Total from IRQ assertion to first usable write: approximately 13-21 cycles with the KERNAL out, 42-50 through $0314 (handler entered on cycle 37-43; measured in VICE, `recipes/kickassembler/stable-raster-irq.md`). An earlier version gave only 13-21 and did not name the entry path.
+- Handler's first instruction: cycle 10-16 of the line with the KERNAL out, 39-45 through $0314, so a first write 6-8 cycles in lands on about cycle 16-24 or 45-53. An earlier version said the handler was entered on cycle 37-43 and the write came 13-21 or 42-50 cycles after the assertion, and called that measured; it was arithmetic (1 + 0-6 + 7 + 29) without the 2-cycle minimum.
 
-Once the busy-wait has synced to the next line boundary the budget on that line is ~55 cycles whichever way the interrupt was entered. The entry cost is paid on the arming line, which is why the IRQ is set one line early. Without a sync, on the arming line itself, about 50 cycles remain with $FFFE pointing at the handler (KERNAL out) and about 20 through $0314 (handler entered on cycle 37-43; see Interrupt vector placement). An earlier version gave 40-50 without saying which entry path. On NTSC (65 cycles/line), the budget is 2 cycles wider per line.
+Measured in VICE x64sc 3.10 (issue #85): an exec tracepoint on the handler's first instruction, raster IRQ on line 20 (no badline, no sprites), a probe varying its own length each frame, main loops of `NOP`s, `INC abs,X` or `ROR abs,X` sleds, a taken `BNE *`, a taken branch across a page, and mixed code. Cycles are Bauer's, the exec CYC plus one (`runtime/vice-reference.md`, "What the CYC column counts"):
+
+| Entry path | Main loop | First instruction, PAL | First instruction, NTSC |
+|---|---|---|---|
+| $FF48 → ($0314) | all loops (7,742 PAL and 8,850 NTSC entries) | 39-45 | 39-45 |
+| $FF48 → ($0314) | `NOP`s and `JMP` | 39-41 | 39-41 |
+| $FF48 → ($0314) | taken `BNE *` | 40-42 | 41-42 |
+| $FFFE (KERNAL out) | all loops (7,738 and 8,835 entries) | 10-16 | 10-16 |
+
+The two ranges differ by the 29 dispatcher cycles. The upper end needs a 7-cycle instruction in the main loop; code built from short instructions enters earlier and over a narrower spread.
+
+Once the busy-wait has synced to the next line boundary the budget on that line is ~55 cycles whichever way the interrupt was entered. The entry cost is paid on the arming line, which is why the IRQ is set one line early. Without a sync, on the arming line itself, about 50 cycles remain with $FFFE pointing at the handler (KERNAL out) and about 20 through $0314 (handler entered on cycle 39-45, 37-43 before #85; see Interrupt vector placement). An earlier version gave 40-50 without saying which entry path. On NTSC (65 cycles/line), the budget is 2 cycles wider per line.
+
+Measured per stable entry, traced in VICE x64sc 3.10 in `recipes/kickassembler/stable-raster-irq.md` from the first interrupt's acceptance to the first instruction after the `$D012` compare, and from the end of the payload to the end of `RTI`: entry 185 to 190 cycles on PAL and 189 to 195 on NTSC, exit 71 to 72 on PAL and 114 to 115 on NTSC. The entry spans three lines, from the arming line to the synced line, and one of them is a badline in the recipe's placement; the NTSC exit crosses a second one. The worst entry plus exit, 262 on PAL and 310 on NTSC, is the Cost line. It said 124 before, by arithmetic that left out the two-line wait of the double IRQ.
 
 Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badline_synchronization`). A handler that fires on a badline loses those cycles before any stores execute. The standard defense is to target the IRQ one line before the badline, perform the writes during that non-bad line, and let the badline pass without stores.
 
@@ -92,8 +106,10 @@ Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badlin
 **Region:** both
 **Uses registers:** EXTCOL, BGCOL0, RASTER, VICIRQ
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=990, lines_active=10, irq_slots=10, bytes_code=600
-**Cost basis:** estimated
+**Cost:** cycles_per_frame=1471, lines_active=10, irq_slots=10, bytes_code=577, bytes_data=33
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-raster-bars (ten handlers through $0314 with their $D012 spins, the $EA31 exit once, no key held; NTSC, 1,464 on PAL)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -136,7 +152,9 @@ The VIC-II's color registers have no buffering. Unlike systems with scanline-lat
 
 ### Cycle budget
 
-Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/raster-bars.md`, measured in VICE), leaving about 20 cycles on the line: enough for the two colour stores (8 cycles, two `STA abs` at 4 each) and the $D012/$D019 bookkeeping (10) and little else; with the KERNAL out and $FFFE pointing at the handler about 50 remain. An earlier version said 50-55 usable and did not name the entry path. On a badline, the 40-43-cycle stall removes almost all work budget; designs that change color on badline rows write the color value one line early.
+Through $0314 the handler is entered on cycle 39-45 (measured in VICE, see the `stable_raster_irq` Cycle budget; an earlier version said 37-43, arithmetic, and called it measured), leaving about 20 cycles on the line: enough for the two colour stores (8 cycles, two `STA abs` at 4 each) and the $D012/$D019 bookkeeping (10) and little else; with the KERNAL out and $FFFE pointing at the handler about 50 remain. An earlier version said 50-55 usable and did not name the entry path. On a badline, the 40-43-cycle stall removes almost all work budget; designs that change color on badline rows write the color value one line early.
+
+Measured per frame in `recipes/kickassembler/raster-bars.md`, traced in VICE x64sc 3.10 from each interrupt's acceptance to the end of `RTI`: 125 cycles for each of bars 1 to 8, 119 (PAL) or 126 (NTSC) for bar 0, and 345 for bar 9, which rotates the palette and exits through `$EA31`; 1,464 a frame on PAL and 1,471 on NTSC. Each handler is armed a line early and spins on `$D012`, and the spin is inside the figure. The code is 577 bytes and the palette 33, from KickAssembler's memory map (`$0900-$0928`, `$0B00-$0D17`; `$0A00-$0A20`). The Cost line said 990 cycles and 600 bytes before, both estimates. Before #72 one basis word covered the whole Cost line, so it said `derived-listing`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `derived-listing` on their own line.
 
 ### Recipes
 
@@ -152,10 +170,20 @@ Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/rast
 
 **Uses registers:** SCROLY, RASTER
 **Demands:** midframe_raster_irqs
+**Claims:** vic_yscroll (reads)
+**Claims basis:** measured-vice
+
+A store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/fld.md`, the one recipe that lists this technique,
+found no store of its own: every `$D011` store there is
+`fld_flexible_line_distance`'s (its per-line YSCROLL writes and its
+per-frame reset to `$1B`). What it needs is which lines are bad, and that
+follows YSCROLL, so it reads the unit whoever owns it. The YSCROLL
+variation below writes the unit and should claim it where a program uses it.
 
 ### Why
 
-The VIC-II takes the badline's cycles from the CPU eight times per character row, and the program cannot opt out. During a badline, the VIC-II fetches the 40 screen codes for the current text row. It does this by pulling BA (Bus Available) low on cycle 12 and taking the phi2 bus for the 40 c-accesses on cycles 15-54. The CPU may only complete write cycles on 12-14 and cannot read again until cycle 55, so the stall it sees is 40-43 cycles: 43 for any ordinary instruction stream (measured 43 for a NOP stream, 42-43 for STA zp in VICE), 40 only when three consecutive write cycles happen to fall on 12-14. Plan on 43 lost and 20 left (63 - 43) on PAL, 22 on NTSC. An earlier version of this paragraph said BA was low "for 40 cycles" and called the stall 40; that counts only the c-access cycles.
+The VIC-II takes the badline's cycles from the CPU once per character row, on its first line (every eighth line), and the program cannot opt out. (An earlier version said eight times per character row.) During a badline, the VIC-II fetches the 40 screen codes for the current text row. It does this by pulling BA (Bus Available) low on cycle 12 and taking the phi2 bus for the 40 c-accesses on cycles 15-54. The CPU may only complete write cycles on 12-14 and cannot read again until cycle 55, so the stall it sees is 40-43 cycles: 43 for any ordinary instruction stream (measured 43 for a NOP stream, 42-43 for STA zp in VICE), 40 only when three consecutive write cycles happen to fall on 12-14. Plan on 43 lost and 20 left (63 - 43) on PAL, 22 on NTSC. An earlier version of this paragraph said BA was low "for 40 cycles" and called the stall 40; that counts only the c-access cycles.
 
 Any timing plan that ignores this loss is wrong. A raster effect that writes 8 registers per line works on non-bad lines but slips by 40-43 cycles on badlines, producing visible glitches. Badline synchronization means knowing which lines are bad (and so where the stalls fall), and writing IRQ handlers that either avoid critical writes on bad lines or account for the 40-43-cycle deduction (plan on 43) when a write must happen on one.
 
@@ -171,11 +199,11 @@ A third approach, used in demo code, accounts for badlines at assembly time: the
 
 ### Why it works
 
-The VIC-II needs character codes to generate text-mode output: which character is in each of the 40 cells of the current row. It fetches these from screen RAM (video matrix), which lives in the VIC bank and is not accessible during the CPU's phi2 cycles; the VIC needs the bus to itself. The chip raises BA (bus available) signal three cycles before it actually needs the bus. The CPU, seeing BA low, knows it cannot issue further memory accesses but completes any instruction that has no remaining memory cycles. After 3 cycles, the VIC takes the phi2 bus for 40 cycles of screen RAM fetch, then releases it. The CPU resumes.
+The VIC-II needs character codes to generate text-mode output: which character is in each of the 40 cells of the current row. It fetches these from screen RAM (video matrix), which lives in the VIC bank and is not accessible during the CPU's phi2 cycles; the VIC needs the bus to itself. The chip pulls BA (bus available) low on cycle 12, three cycles before it needs the bus. In those three cycles the CPU may still complete write cycles, but it stops at its first read. From cycle 15 the VIC takes the phi2 bus for 40 cycles of screen RAM fetch (cycles 15-54), then releases it, and the CPU resumes on cycle 55. The CPU loses 40-43 cycles; plan on 43, as in "Why" above. (An earlier version said the chip "raises" BA, and counted only the 40 fetch cycles.)
 
 The timing is locked to the YSCROLL field because the VIC increments its internal row counter on each badline. The row counter increments when `(current_raster_line & 7) == YSCROLL`. The first badline of a frame must occur while DEN is set, or badlines are suppressed for the entire frame. Clearing DEN this way ("blinking DEN") blanks the display and gives the CPU all cycles back.
 
-NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), but the cycle loss (40-43 cycles) and the available cycles per line (65 on NTSC vs 63 on PAL, so 65 - 43 = 22 left on NTSC) mean the badline penalty as a fraction of a line's budget is slightly lower on NTSC. NTSC has fewer lines per frame, but the badline window ($30–$F7) and the 25 character rows inside it do not depend on the frame length, so an NTSC frame has the same 25 badlines as PAL: 51, 59, …, 243 (measured in VICE x64sc: 2,500 stalls in 100 frames on both the PAL default, a C64C with the 8565, and the 6567R8, and none with DEN clear; an earlier version said the PAL run was a 6569). The shorter NTSC frame loses lines from the vertical blank, not from the display; per frame the CPU has fewer non-bad lines than on PAL (238 against 287), and the 40-cycle stall is a slightly smaller fraction of each 65-cycle bad line. (An earlier version of this paragraph said 24.) An earlier revision of this entry also carried a PAL-only Region tag; the technique applies to both regions, as the figures above show.
+NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), but the cycle loss (40-43 cycles) and the available cycles per line (65 on NTSC vs 63 on PAL, so 65 - 43 = 22 left on NTSC) mean the badline penalty as a fraction of a line's budget is slightly lower on NTSC. NTSC has fewer lines per frame, but the badline window ($30–$F7) and the 25 character rows inside it do not depend on the frame length, so an NTSC frame has the same 25 badlines as PAL: 51, 59, …, 243 (measured in VICE x64sc: 2,500 stalls in 100 frames on both the PAL default, a C64C with the 8565, and the 6567R8, and none with DEN clear; an earlier version said the PAL run was a 6569). The shorter NTSC frame loses lines from the vertical blank, not from the display; per frame the CPU has fewer non-bad lines than on PAL (238 against 287), and the 43-cycle stall (an earlier version said 40) is a slightly smaller fraction of each 65-cycle bad line. (An earlier version of this paragraph said 24.) An earlier revision of this entry also carried a PAL-only Region tag; the technique applies to both regions, as the figures above show.
 
 ### Variations
 
@@ -216,7 +244,7 @@ For cycle-tight code running on every line, the badline constraint means the wor
 
 ### Why
 
-The stable_raster_irq technique reduces jitter to a fraction of a cycle by using a polling loop. The polling loop itself has a granularity of one loop iteration, 5-7 cycles. So the stable IRQ synchronizes to within one loop iteration, not one cycle. For side-border opening, VSP glitch timing and hardware-sprite multiplexing at exact cycle offsets, one or two cycles of residual jitter is too much.
+The stable_raster_irq technique synchronizes with a polling loop, and the loop has a granularity of one iteration: 7 cycles for the tightest form, `CMP $D012` + `BNE` (4 + 3; no read of an I/O register is shorter than 4). So the stable IRQ synchronizes to within one loop iteration, not one cycle. (An earlier version said it reduces jitter to a fraction of a cycle and gave the granularity as 5-7 cycles.) For side-border opening, VSP glitch timing and hardware-sprite multiplexing at exact cycle offsets, any residual jitter is too much.
 
 The double IRQ gives zero-jitter synchronization: the CPU's position on the target raster line is known to within one cycle.
 
@@ -242,28 +270,133 @@ The arithmetic: let `J1` be the jitter in the first IRQ (0-6 cycles). The first 
 
 Knowing the instruction between IRQs (always a NOP in the loop) and knowing the second IRQ fires at a fixed cycle within its line together remove the jitter.
 
-Measured form (`recipes/kickassembler/stable-raster-irq.md`, VICE x64sc): through the KERNAL vector the handler's first instruction starts on cycle 37-43 of the line (7 interrupt sequence + 29 dispatcher + 0-6 jitter), so the first handler cannot finish its setup and be sliding through NOPs before the *next* line's interrupt; it arms the second IRQ two lines down, not one. Entered from a NOP, the second handler has one cycle of residual jitter, which two consecutive reads of $D012 four cycles apart plus a `BEQ` remove: with the right padding the reads straddle the line boundary in one case and not the other, and the branch costs 3 or 2 cycles to compensate. The padding is found by measurement: the recipe's bars align at `SYNC_PAD = 11` and split into two columns at 10 or 12. Two traps: the KERNAL dispatcher executes `TSX` itself, so a stack pointer saved in X by the first handler does not survive into the second (save it in memory); and every line the two handlers and the timed code occupy must be a non-badline except the one inside the NOP slide, where a stall is harmless.
+Measured form (`recipes/kickassembler/stable-raster-irq.md`, VICE x64sc): through the KERNAL vector the handler's first instruction starts on cycle 39-45 of the line (interrupt sequence from cycle 3-9, then 7 for the sequence and 29 for the dispatcher; measured, see the `stable_raster_irq` Cycle budget; an earlier version said 37-43, arithmetic that missed the 2-cycle minimum), so the first handler cannot finish its setup and be sliding through NOPs before the *next* line's interrupt; it arms the second IRQ two lines down, not one. Entered from a NOP, the second handler has one cycle of residual jitter, which two consecutive reads of $D012 four cycles apart plus a `BEQ` remove: with the right padding the reads straddle the line boundary in one case and not the other, and the branch costs 3 or 2 cycles to compensate. The padding is found by measurement: the recipe's bars align at `SYNC_PAD = 11` and split into two columns at 10 or 12. Two traps: the KERNAL dispatcher executes `TSX` itself, so a stack pointer saved in X by the first handler does not survive into the second (save it in memory); and every line the two handlers and the timed code occupy must be a non-badline except the one inside the NOP slide, where a stall is harmless.
 
 ### Variations
 
 **NOP-padded single entry.** Some implementations fold the double-IRQ logic into a single handler that spins until the raster counter advances, then executes a counted NOP sequence to reach the target cycle. This is shorter to write but harder to count cycle-exactly. The two-handler form is easier to document and maintain.
 
-**IRQ set on same line.** A variant sets both IRQs to the same $D012 value. The first fires normally; because the VIC's raster interrupt latches immediately, the second $D012 write (to the same value) causes the IRQ to fire again on the next frame at that same line. The handler must then track which firing it is on, usually with a flag byte.
+**IRQ set on same line: not a variant.** Writing the same $D012 value again from the handler gives no second IRQ in that frame. The next match is the next frame, 312 lines (19,656 cycles) later on PAL: the ordinary once-per-frame IRQ. Measured in VICE x64sc: a handler on line 100 that rewrites $D012 with 100 counted the same one IRQ per frame as one that does not. (An earlier version listed this as a double-IRQ variant, explained by the raster interrupt "latching immediately", and had the handler track which firing it was on.)
 
 **CIA timer second stage.** A CIA timer started in the first IRQ handler fires a second IRQ a counted number of cycles later, so the second trigger does not depend on raster line boundaries. Used for effects that need a write at a specific horizontal dot position across multiple lines.
 
 ### Cycle budget
 
 The double IRQ removes jitter; it does not save cycles, and it spends more than an uncounted single IRQ. The overhead is:
-- First IRQ: through $0314, 36-42 (7 interrupt sequence + 29 dispatcher + 0-6 jitter) + ~12 (ack + set $D012 + RTI) = ~48-54 cycles consumed on the arming line; with the KERNAL out, 7-13 + ~12 = ~19-25. An earlier version gave only the ~19 figure without naming the entry path.
+- First IRQ: through $0314, 38-44 (the handler starts on cycle 39-45, measured) + ~12 (ack + set $D012 + RTI) = ~50-56 cycles consumed on the arming line; with the KERNAL out, 9-15 + ~12 = ~21-27. Before #85 this said 36-42 and 7-13, arithmetic without the 2-cycle minimum. An earlier version gave only the ~19 figure without naming the entry path.
 - Between IRQs: the NOP loop in the main loop body runs for whatever cycles remain in line N after the first RTI (variable but bounded).
 - Second IRQ: 7 (enter) + NOP pad (0-6 cycles) + actual writes.
 
-Total cost per raster split in double-IRQ mode: through $0314, 36-42 + ~12 on the arming line for the first handler, then 36-42 + pad for the second, about 100 cycles over three lines (the first handler arms the second IRQ two lines down, see Why it works), not 35-45 over two as an earlier version said; roughly 60 over two lines with the KERNAL out. Compare 20-30 cycles for an uncounted single-IRQ split with the KERNAL out.
+Total cost per raster split in double-IRQ mode: through $0314, 38-44 + ~12 on the arming line for the first handler, then 38-44 + pad for the second (36-42 twice before #85), about 100 cycles over three lines (the first handler arms the second IRQ two lines down, see Why it works), not 35-45 over two as an earlier version said; roughly 60 over two lines with the KERNAL out. Compare 20-30 cycles for an uncounted single-IRQ split with the KERNAL out.
 
 ### Recipes
 
 - `recipes/kickassembler/stable-raster-irq.md` (includes double-IRQ pattern)
+
+---
+
+## clock_slide_raster_irq — Stable raster IRQ by clock slide: a CIA timer measures the lateness, a branch into a slide removes it
+
+**Complexity:** scene-tier
+**Region:** both
+**Uses registers:** RASTER, VICIRQ, IRQMSK, DC04, DC05, DC0E
+**Demands:** midframe_raster_irqs
+**Cost:** cycles_per_frame=36, lines_active=1, irq_slots=1
+**Cost basis:** arithmetic
+**Cost measured on:** kickassembler-clock-slide (one entry, first instruction to the end of the slide, lateness 0; KERNAL out)
+**Claims:** vic_raster_irq (shares)
+**Claims basis:** derived-listing
+**Alternative to:** double_irq (one interrupt and one line instead of two interrupts over three; needs a CIA timer running for good and a start-up sync)
+
+### Why
+
+`stable_raster_irq` and `double_irq` remove the entry jitter by
+waiting for a raster line to change: the double IRQ spends a second
+interrupt and, in `recipes/kickassembler/stable-raster-irq.md`, 185 to
+190 cycles over three lines. A CIA timer that runs with the period of a
+raster line can tell the handler how late it is instead, and the
+handler can wait exactly that much less, on the interrupt's own line.
+
+### How
+
+1. Once, with interrupts off and the display blanked, start a CIA timer
+   in continuous mode with a latch of one line less one: 62 on PAL, 64
+   on NTSC. Start it on a known cycle of a line: a loop whose passes
+   are one cycle longer than a line reads `$D012` one cycle later each
+   time, and the first read that sees the next line was made on its
+   first cycle.
+2. In the raster handler, read the timer low byte early. The earliest
+   possible entry reads a fixed value `V0` (found by measurement);
+   `V0 - timer` is the lateness `j`.
+3. Store `j` as the offset of a `BPL` into a slide of `$A9` bytes ended
+   by `$24 $EA`. Skipping `j` bytes waits `j` cycles less.
+
+```asm
+irq:    sta za
+        lda #V0          // the timer value of the earliest entry
+        sec
+        sbc $dc04        // j = how many cycles late
+        and #$07
+        sta slide+1
+slide:  bpl slide+2      // skip j bytes
+        .byte $a9, $a9, $a9, $a9, $a9, $a9, $a9, $24, $ea
+        // here on the same cycle every time
+```
+
+The whole program is `recipes/kickassembler/clock-slide.md`.
+
+### Why it works
+
+The timer's period equals a raster line, and a frame is a whole number
+of lines, so the value it holds on a given cycle of a line is the same
+on every line of every frame. A late entry reads the timer later, and
+the timer counts down, so the reading falls by one for each cycle of
+lateness. In the slide, `n` bytes before the `$24` run as `LDA #$A9`
+pairs and then `BIT $EA`, or as pairs, `LDA #$24` and `NOP`: `n + 3`
+cycles either way, one per byte skipped. Measured in VICE x64sc 3.10
+over 2,000 entries: lateness 0 to 6, and one timer value after the
+slide, on PAL and NTSC; the store after the slide lands on x = 305 of
+every bar in both screenshots.
+
+The branch and the slide must sit in one page: a `BPL` taken into the
+next page costs a cycle more and shifts every entry
+(`pitfalls/cpu.md`, `branch_page_cross_extra_cycle`). The recipe checks
+it with `.errorif`.
+
+The handler's own length must not vary if the next entry's lateness is
+to depend only on the main program: an `INC` / `BNE` / `INC` counter in
+the handler of the recipe's first build shifted one entry in a later
+frame, from run to run.
+
+### Variations
+
+- **Through `$0314`.** With the KERNAL in, the handler starts 29 cycles
+  later but the jitter is the same, and the same slide removes it; only
+  `V0` changes.
+- **CIA2 timer, or timer B.** Any free-running timer works; the one
+  chosen is held for good, and the others stay free.
+- **Several lines a frame.** One timer serves every raster interrupt of
+  the frame. The recipe takes seven, three lines apart; two lines apart
+  its handler, with the recording it does, overran the next line's
+  interrupt.
+
+### Cycle budget
+
+From the handler's first instruction to the end of the slide:
+3 + 2 + 4 + 2 + 2 + 4 + 2 + 4 + 3 + (10 - j) = 36 - j cycles, by the
+instruction table; the synced point is on the same cycle of the
+interrupt's line for every `j` (rung 1, the timer read after the
+slide). With the handler entered on cycle `10 + j` (KERNAL out,
+`stable_raster_irq`), that is cycle 46 (rung 3). The `**Cost:**` line
+carries the 36 cycles and one line; the effect's own work and the
+`RTI` are extra. The start-up sync runs once, about 50 lines with the
+display blanked.
+
+### Recipes
+
+- `recipes/kickassembler/clock-slide.md`: seven stable interrupts a
+  frame on PAL and NTSC, 2,000 entries recorded, and the synced store
+  measured in the screenshots.
 
 ---
 
@@ -274,6 +407,15 @@ Total cost per raster split in double-IRQ mode: through $0314, 36-42 + ~12 on th
 
 **Uses registers:** SCROLY, VMCSB
 **Demands:** midframe_raster_irqs
+**Requires:** stable_raster_irq
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/vsp.md`: each frame one `$D011` store on line 252
+sets YSCROLL 7 and the timed store on line 51 sets YSCROLL 3, so the
+technique drives YSCROLL for the whole top of the frame. Its raster
+interrupts are the effect's own, entered through `stable_raster_irq`.
 
 ### Why
 
@@ -287,18 +429,37 @@ VSP is a $D011 trick; the CSEL toggle described here before belongs to
 `sideborder_open`. On the line that is about to be a badline for a
 character row, arrange for the badline condition to be *false* in cycle 14
 (YSCROLL not equal to `line & 7` at that moment), then at a chosen cycle
-between 15 and 53 write $D011 with YSCROLL = `line & 7`, so the condition
+between 14 and 53 (the store's cycle) write $D011 with YSCROLL = `line & 7`, so the condition
 becomes true late. The VIC starts its c-accesses three cycles after BA drops,
 from whichever column slot the beam has reached, and the columns before it
 are not fetched for this row. Because the video counter VC advances only by
 the number of c-accesses actually performed, the row ends with VC short by
-that many characters, and every row after it (and every frame after it,
-until the counter is re-based) starts that many characters earlier in
-screen RAM. The display has moved left by N characters, N being the cycle
-the condition became true minus 15. One cycle-exact write per character row,
-plus a matching adjustment of the screen base, scrolls the whole screen by
-whole characters at no per-line cost; XSCROLL still handles the seven pixel
-steps in between.
+that many characters, and every row after it in the same frame starts that
+many characters earlier in screen RAM: the picture moves right by N
+characters. One cycle-exact write per frame, on the first badline, moves the
+whole screen; the screen base is adjusted for whole screens of travel, and
+XSCROLL still handles the seven pixel steps in between.
+
+Measured in VICE x64sc by `recipes/kickassembler/vsp.md` (PAL and NTSC):
+each cycle of extra delay moves the screen one more character right, from 1
+to 40; the three delays before the first shift spoil only the late row
+itself (one column, two columns, the whole row). The offset does not carry
+into the next frame: a frame without the late write is normal, so the write
+is made every frame. In the numbering the other pages use, the cycle of
+the store as a VICE store trace prints it (`runtime/vice-reference.md`),
+N = cycle − 14: the recipe's 10-character write traces on cycle 24 on
+both models, and `recipes/kickassembler/agsp.md` traced its late write on
+14 + N for every N from 0 to 39 and saw the picture follow, one cell per
+cycle. VICE's VSP-bug log prints `Cycle: 24` for the same write; an
+earlier version of this paragraph read that as a table index one below
+Bauer's cycle, made it 25 and gave N = cycle − 15, and "How" said
+"between 15 and 53". The log and the store trace print the same number
+for the same store, so either the log's "+1" reading was wrong or the log
+reports the cycle after the store; not settled here. By the store's cycle
+the range is 14 to 53. (An earlier version of this paragraph said the display moved left,
+that the offset persisted into later frames until re-based, and that one
+write per character row was needed; the recipe shows right, one frame, and
+one write per frame.)
 
 ### Why it works
 
@@ -340,23 +501,26 @@ describes no detection.)
 
 ### Variations
 
-**Whole-screen scroll.** One write per character row, on the row's badline,
-plus the base-pointer adjustment. **Partial zone.** Only the rows of the
+**Whole-screen scroll.** One write per frame, on the first badline, plus
+the base-pointer adjustment (an earlier version said one per character row). **Partial zone.** Only the rows of the
 play field; rows above and below are ordinary. **Combined with XSCROLL.**
 Whole characters by VSP, pixels by $D016 bits 2-0.
 
 ### Cycle budget
 
-One cycle-exact `STA $D011` per character row on the badline row, plus the
-stable entry that positions it; the badline still costs its 40-43 cycles (plan on 43).
-Nothing per line. The earlier figure of 12 cycles per line via a CSEL toggle
-described the side-border mechanism, misattributed. Not yet measured in this
-knowledge base: there is no VSP recipe, and the account above is from
-Bauer's article and the VICE source, not from a run.
+One cycle-exact `STA $D011` per frame on the first badline, plus the
+stable entry that positions it and the wait to the chosen cycle (in the
+recipe, from a sync on line 48 to line 51); the badline still costs its 40-43
+cycles (plan on 43). Nothing per line. The earlier figure of 12 cycles per
+line via a CSEL toggle described the side-border mechanism, misattributed.
+An earlier version said one write per character row; the recipe measured
+one per frame. The recipe's delay loop was not timed with a CIA.
 
 ### Recipes
 
-(No standalone recipe yet. VSP needs cycle-exact assembly, so it is mainly a KickAssembler technique.)
+- `recipes/kickassembler/vsp.md`: a fixed ten-character shift on PAL and
+  NTSC, with the one-cycle sweep, measured in VICE x64sc only. VICE does not
+  emulate the VSP crash by default, and the recipe is not Safe-VSP hardened.
 
 ### Sources
 
@@ -376,6 +540,14 @@ Bauer's article and the VICE source, not from a run.
 **Cost:** cycles_per_line=63, lines_active=40, irq_slots=2
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-fld (40 lines, the recipe's largest)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/fld.md`
+saw YSCROLL change on every line of the gap and the raster compare
+re-armed each frame. FLD sets the display's row phase, so beside
+`soft_scroll_v` it is an ownership conflict ([#71](https://github.com/bdgscotland/c64-kb/issues/71)). The recipe's
+`$0314` vector, CIA2 timer and zero-page bytes are its own choices.
 
 ### Why
 
@@ -397,11 +569,11 @@ Given a value that is safe for the next line, the write itself may land anywhere
 
 ### Variations
 
-**Linecrunch.** Make a badline happen and then, on the same line, rewrite YSCROLL so the row counter advances without the row being displayed; each crunched line skips one character row. The display moves up instead of down. Not measured here.
+**Linecrunch.** The reverse: a YSCROLL write that matches the line after its cycle 58 makes the next line use up a whole character row, so the display moves up instead of down; see `linecrunch`, measured. (An earlier version of this paragraph said to make a badline happen and then rewrite YSCROLL on the same line so the row counter advances; a badline made during the line is a late badline, `vsp_glitch`, not a crunch.)
 
 **FPP (flexible pixel position).** Rewrite YSCROLL on every line of a row so the VIC repeats or skips single pixel lines of the character data, which stretches and squashes the picture vertically. Not measured here.
 
-**AGSP (any given screen position).** Combine FLD or linecrunch with VSP (`vsp_glitch`) for a whole-screen scroll of any distance in both axes in one frame. Not measured here.
+**AGSP (any given screen position).** Linecrunch, FLD and VSP (`vsp_glitch`) together place the whole screen at any pixel position in one frame; see `agsp_free_scroll`, measured.
 
 **Border stripes.** With the top and bottom borders open (`topbottom_border_open`) the same idle fetch draws `$3FFF` there too; the byte can be changed per line for a cheap full-height pattern.
 
@@ -412,6 +584,301 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 ### Recipes
 
 - `recipes/kickassembler/fld.md` — a bouncing display driven by a sine table, `$3FFF` striped, the first badline read back and checked against 51 + N each frame, PAL and NTSC.
+
+---
+
+## linecrunch — Linecrunch: one character row used up per raster line
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** stable_raster_irq, badline_synchronization
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/linecrunch.md` saw `$D011` written once per
+crunched line and once per frame on line 46, and the raster compare
+re-armed each frame. The recipe's `$0314` vector and zero-page bytes are
+its own choices.
+
+### Why
+
+FLD moves the text display down without moving screen RAM; linecrunch
+moves it up. Each crunched raster line uses up a whole character row, so
+N lines scroll the screen N rows. With the colour and screen data left in
+place, a whole screen, bitmap included, scrolls vertically by rows for a
+few `$D011` writes per frame (Bauer §3.14.4; codebase64 "Linecrunch").
+
+### How
+
+On a line whose row counter RC is 7, write `$D011` with YSCROLL equal to
+that line's low three bits on a cycle between 58 and the line's
+second-to-last cycle: 58 to 62 on PAL, 58 to 64 on NTSC (measured). The
+next line is drawn from the next row with RC still 7, and uses that row
+up. Repeat on every line for N rows. RC is 7 before the first badline of
+a frame, so a run of writes from line 50 crunches from line 51. On the
+last crunched line write a YSCROLL that makes the following line a
+badline: the display resumes there with row N. The crunched lines show
+pixel row 7 of stale character pointers; set ECM and BMM in the same
+writes and they are black.
+
+### Why it works
+
+Bauer (§3.7.2): in cycle 58 of a line with RC = 7 the VIC loads VCBASE
+from VC and goes idle; RC is reset to 0 only by a badline condition in
+cycle 14; VC counts the g-accesses in display state. A condition made
+true after cycle 58 returns the VIC to display state with RC still 7 and
+no c-access. The next line, which no longer matches, is drawn from the
+new VCBASE with RC = 7, VC advances 40, and its cycle 58 moves VCBASE on
+another row. Measured in VICE x64sc 3.10, PAL c64c and NTSC, by
+`recipes/kickassembler/linecrunch.md`: with N writes on cycle 60 the
+first text line is 51 + N and shows row N, pixel row 0, on every frame;
+every line from 51 to the last modelled row matches, 172 on PAL and 144
+on NTSC.
+
+The window is the whole of the design. Swept one cycle at a time in the
+recipe: 58 to 62 crunch on PAL, 58 to 64 on NTSC; the line's last cycle
+(63 or 65) and cycles 53 to 57 do not. A write on 54 to 57 of a row's
+last line repeats the row instead (Bauer's doubled text lines, §3.14.5);
+a matching write on 15 to 54 starts a late badline, the `vsp_glitch`
+mechanism. An earlier plan for this entry (#19, 2026-09-23) made the
+condition true after cycle 14 and false before 58; that is the late
+badline, and it crunched nothing.
+
+### Variations
+
+**Top of screen.** The recipe's form: crunch from line 51, the screen
+starts N rows on and N lines lower. **Mid-screen.** Writes on the last
+line of a row and the lines after it crunch from there; the rows above
+are untouched. **With FLD.** Crunch N rows, then hold the next badline
+off with FLD for the same N lines, and the display starts on line 51
+again, N rows on: a vertical coarse scroll with no gap; measured as part
+of `agsp_free_scroll`. **AGSP.** With VSP for the horizontal part
+(`vsp_glitch`): `agsp_free_scroll`.
+
+### Cycle budget
+
+One `$D011` write per crunched line, at a fixed cycle, so the CPU is
+held for every crunched line: 63 cycles on PAL, 65 on NTSC, from a
+stable raster. In the recipe the loop is 15 cycles of work and the rest
+padding. The picture after the crunch costs nothing.
+
+### Recipes
+
+- `recipes/kickassembler/linecrunch.md` — 0 to 12 rows crunched from a
+  sine, PAL and NTSC, every line of the picture checked, with the
+  write-cycle sweep.
+
+### Sources
+
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.7.2, §3.14.4 "Linecrunch",
+  §3.14.5: https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+- Codebase64, "Linecrunch": https://codebase64.c64.org/doku.php?id=base:linecrunch
+
+---
+
+## agsp_free_scroll — AGSP: the whole screen at any pixel position, from linecrunch, FLD and VSP
+
+**Complexity:** scene-tier
+**Region:** both
+
+**Uses registers:** SCROLY, SCROLX, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** linecrunch, fld_flexible_line_distance, vsp_glitch, stable_raster_irq
+**Raster band:** 46-95 (the agsp recipe's IRQ line is 46; its handler acknowledges on line 86 to 95, measured)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns), vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/agsp.md`
+saw `$D011` written on every line from 50 to the late badline and once
+after it, `$D016` once per frame, and the raster compare re-armed each
+frame. The recipe's `$0314` vector and zero-page bytes are its own choices.
+
+### Why
+
+A game that scrolls in eight directions normally copies screen and colour
+RAM every eight pixels of travel. AGSP (any given screen position) moves
+the VIC's view of screen RAM instead: a few register writes at the top of
+each frame put the text screen at any pixel position, and no byte of the
+screen is copied. The codebase64 article of that name gives the method,
+"VSP ... for the horizontal position and a line crunch ... for the
+vertical position".
+
+### How
+
+At the top of the frame, before the first text row:
+
+1. Crunch M rows with `linecrunch`: M lines, one write each.
+2. Hold the next badline off with FLD for MMAX − M + YS lines, so the
+   crunch and the gap together are always MMAX + YS lines and the top of
+   the text does not move with M. YS (0-7) is the fine vertical scroll.
+3. Make that badline late with `vsp_glitch`: YSCROLL not matching at
+   cycle 14, matching from the write on cycle 14 + N (store-trace cycle).
+   The rows below start N cells earlier in screen RAM.
+4. XSCROLL for the last seven pixels.
+
+Draw every line above the text, the late row included, in an invalid
+mode (ECM and BMM set): it is black, and the late row's first cells are
+stale. The text starts MMAX + YS + 8 lines below line 51.
+
+### Why it works
+
+Each part is its own measured technique. `linecrunch`: a YSCROLL write
+on cycles 58-62 (PAL) or 58-64 (NTSC) of a line with RC = 7 uses up a
+row. `fld_flexible_line_distance`: a YSCROLL that never matches keeps
+the VIC idle. `vsp_glitch`: a late badline fetches the row from the cell
+the beam has reached and leaves the video counter short. Put together in
+`recipes/kickassembler/agsp.md` (VICE x64sc 3.10, PAL c64c and NTSC)
+with MMAX = 16: every value of N (0-39), M (0-16), YS (0-7) and XS (0-7)
+swept one at a time gave a picture whose 200 lines 51-250 all match the
+model pixel for pixel, on both models, and the late write traced on cycle
+14 + N every time. The video counter wraps at 1024, so screen RAM is a
+1,024-byte torus in both axes: `$07E8`-`$07FF` (the sprite pointers)
+appear in the picture. A playfield wider or taller than the screen needs
+the rows and columns that scroll into view written as they arrive, which
+the recipe does not do.
+
+### Variations
+
+**Bitmap.** The video counter also addresses bitmap data, so the same
+writes place a bitmap (Bauer §3.14.6); not measured here. **Fewer rows
+of range.** A smaller MMAX shortens the band and the black area above the
+text, at the cost of vertical range. **Split screen.** The same writes
+lower down move a part of the screen and leave a status area above.
+
+### Cycle budget
+
+The band holds the CPU for every line from 50 to the late badline, one
+write per line at a fixed cycle, from a stable raster; in the recipe the
+handler runs from line 46 to line 86-95, up to 50 raster lines a frame.
+Not timed with a CIA.
+
+The late write is the VSP write, with its crash on some machines
+(`vsp_glitch`, "The VSP crash"): AGSP inherits the Safe VSP rules.
+
+### Recipes
+
+- `recipes/kickassembler/agsp.md` — the text screen on two sines, x 0 to
+  319 and y 0 to 135, PAL and NTSC, every line of the picture checked,
+  with the sweeps of N, M, YS and XS.
+
+### Sources
+
+- Codebase64, "Any Given Screen Positioning (AGSP) VSP with a line
+  crunch": https://codebase64.c64.org/doku.php?id=base:agsp_any_given_screen_position
+
+---
+
+## kefrens_bars — Kefrens bars: one pixel line re-shown on every raster line
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** badline_synchronization
+**Raster band:** 44-214 (the kefrens-bars recipe's IRQ line is 44; its handler acknowledges on line 209 to 214, measured)
+**Cost:** cycles_per_line=63, lines_active=129, irq_slots=1
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-kefrens-bars (128 blocks timed by CIA2: 8,062 cycles PAL, 8,318 NTSC)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/kefrens-bars.md` saw `$D011` written on every
+line of the band with YSCROLL = the next line's `& 7`, and the raster
+compare set once. The recipe's `$0314` vector, CIA2 timer and zero-page
+bytes are its own choices.
+
+### Why
+
+A Kefrens bar screen shows one horizontal line of graphics repeated down a
+band, with a bar stamped into that line once per raster line and never
+erased inside the band, so each line shows every bar drawn above it and
+the bars trail downward. The C64 has no register that repeats a line.
+Redrawing the band as a bitmap each frame costs far more than the 20
+cycles a line the effect uses.
+
+### How
+
+Make every line of the band a badline. On line L, after its badline
+stall, write YSCROLL = `(L + 1) & 7` into `$D011`, so line L + 1 is a
+badline from its first cycle. The VIC then resets its row counter to 0 on
+every line and never advances to the next text row: every line of the
+band shows pixel row 0 of the same text row. Fill that row with 40
+different characters, 0 to 39, and pixel row 0 of those characters, the
+bytes at charset + 8c, is a 40-byte line buffer the CPU can write. In the
+20 cycles between two stalls on PAL (22 on NTSC) the CPU writes the next
+YSCROLL and stores one bar byte into the buffer at the line's column,
+taken from a sine table. The next line shows it, and every line after.
+
+One unrolled block per line, exactly as long as the free cycles: `stx
+$d011`, `ldy pos + k`, `sta buffer,y`, `ldx #next`, and 5 cycles of
+padding on PAL, 7 on NTSC. The badline stall holds the CPU at the same
+place every line, so the block needs no stable raster; the entry only has
+to reach the stall of the first band line before its first write. Clear
+the buffer once per frame, before the band.
+
+### Why it works
+
+Bauer's rules (§3.7.2): RC is reset to 0 in cycle 14 when the badline
+condition holds; VCBASE takes the video counter only in cycle 58 of a
+line with RC = 7. With a badline on every line RC is 0 at cycle 14 and 1
+after cycle 58, never 7, so VCBASE stays at the band's first row. The
+c-accesses re-read the same 40 screen codes each line and the g-accesses
+read row 0 of each character, so a store to a buffer byte before that
+column's g-access shows on that line. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, with the buffer filled with one fixed byte
+(`kefrens-bars` built `:proof=1`): all 129 lines from 51 to 179 showed
+that byte in all 40 cells, and the character's rows 1 to 7 appeared only
+on the seven lines after the band.
+
+The block length is the whole design. Measured (the recipe's sweep): a
+block one cycle shorter than the free cycles fits twice into some windows,
+its second write removes the badline from the current line, and the band
+breaks every 20 lines (PAL) or 22 (NTSC). A longer block drifts later
+every line until its write meets the stall: landing on cycle 12 or 13 the
+badline still starts but the first one or two cells get no c-access and
+show black; on cycle 14 RC is no longer reset and the band is lost.
+
+This corrects the plan in #16, which asked for a badline-free region: the
+repeated line needs a badline on every line, and the cycle budget is the
+20 or 22 cycles a badline leaves.
+
+### Variations
+
+**Bitmap line buffer.** In bitmap mode the g-access reads bitmap +
+8·VC + RC, so with RC = 0 the buffer is again every eighth byte. Not
+measured here.
+
+**Pixel-positioned bars.** Two or three pre-shifted bytes per line put a
+bar anywhere to the pixel; with the `$D011` write that exceeds 20 cycles
+on PAL. Not measured here.
+
+**Colour per column.** Colour RAM of the buffer row gives each column its
+own colour for every line of the band; multicolour gives three colours
+per byte. The recipe uses one multicolour bar byte.
+
+### Cycle budget
+
+The band takes the CPU for every line: 43 cycles of badline stall and 20
+of block on PAL (22 of 65 on NTSC). Measured with CIA2 timer A around
+the recipe's 128 blocks: 8,062 cycles on PAL and 8,318 on NTSC, which is
+128 × 63 and 128 × 65 less the 2 cycles of the timer's own start and stop
+stores, identical in every frame of an 8,000,000-cycle run. The Cost
+line counts the 129 badlines the band shows; the recipe's handler also
+spends lines 44 to 50 clearing the buffer and 180 to 214 rebuilding the
+position table.
+
+### Recipes
+
+- `recipes/kickassembler/kefrens-bars.md` — a 129-line band of multicolour
+  bars from two sine tables, PAL and NTSC, every band line checked against
+  the tables, with the `:proof=1` test and the block-length sweep.
 
 ---
 
@@ -426,8 +893,16 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 **Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2, sprites_per_line=8
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-sideborder-open (42 lines, eight sprites on the line)
-**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns), vic_xscroll (shares), vic_yscroll (shares)
 **Claims basis:** derived-listing
+
+`DEC $D016` / `INC $D016` clears CSEL only when XSCROLL is 0, and passes
+XSCROLL through 7 on the way. The badline-free region is made by
+rewriting YSCROLL on every line. Both are writes inside the band that
+must follow whatever scroll the rest of the frame uses, so `shares`. A
+store trace of `recipes/kickassembler/sideborder-open.md`
+(`scripts/claims-watch.ts`) saw both fields change on every line of the
+band. The two items were added with the units ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 
@@ -509,8 +984,12 @@ Border-opening IRQ overhead plus a sprite multiplex update on the same line can 
 **Cost:** cycles_per_line=63, lines_active=161, cycles_per_frame=13713, cycles_per_frame_typical=13703, irq_slots=3, sprites_per_line=3
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-dysp (the 161-line band at 63 wall cycles a line, every `DEC $D016` traced on cycle 56, plus the CIA-timed table rebuild: 3,570 worst and 3,560 in 254 of 357 frames; the design's largest sprite set on one line is three)
-**Claims:** sprite_0-3 (owns), vic_raster_irq (owns)
+**Claims:** sprite_0-3 (owns), vic_raster_irq (owns), vic_xscroll (shares), vic_yscroll (shares)
 **Claims basis:** derived-listing
+
+The two `shares` items are `sideborder_open`'s, for the same reasons; a
+store trace of `recipes/kickassembler/dysp.md` saw both fields change on
+every line of the band ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 
@@ -638,9 +1117,9 @@ DYCP rows above or below the band. Not built.
 **Region:** both
 **Uses registers:** SCROLY
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=132, lines_active=2, irq_slots=2
-**Cost basis:** arithmetic
-**Cost measured on:** kickassembler-topbottom-border-open (two handlers, without the $EA31 exit)
+**Cost:** cycles_per_frame=371, lines_active=2, irq_slots=2
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-topbottom-border-open (two handlers with the $EA31 exit, no key held; NTSC, 353 on PAL)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -669,7 +1148,7 @@ The VIC-II's vertical border flip-flop (Bauer §3.9) is **set** only when the ra
 
 RSEL=1 while line 247 passes means both of that line's checks look for 251; RSEL=0 while line 251 passes means both of its checks look for 247. Neither matches, the flip-flop stays clear, and there is no other set event until the next frame's bottom comparison. The vertical blank and lines 0–50 go by with the flip-flop clear, so the top border is not drawn either. At line 51 the top comparison resets a flip-flop that is already clear. Restoring RSEL=1 before the next line 247 keeps the cycle going frame after frame.
 
-The window for the clearing write is smaller than "before line 251 ends": the left-edge check on line 251 comes at X=24, about cycle 16, before a raster IRQ handler through $0314 has been entered (cycle 37–43). Measured in VICE x64sc 3.10: a clear on line 247 closes the border from line 248 (the cycle-63 check on 247 saw RSEL=0), clears on 248, 249 and 250 open it, and clears on 251 and 252 leave an ordinary frame with the border from line 251.
+The window for the clearing write is smaller than "before line 251 ends": the left-edge check on line 251 comes at X=24, about cycle 16, before a raster IRQ handler through $0314 has been entered (cycle 39–45, measured; 37–43 before #85). Measured in VICE x64sc 3.10: a clear on line 247 closes the border from line 248 (the cycle-63 check on 247 saw RSEL=0), clears on 248, 249 and 250 open it, and clears on 251 and 252 leave an ordinary frame with the border from line 251.
 
 The side borders are not affected; RSEL only governs the vertical comparison lines. In the opened area the VIC is in its idle state and shows the byte at `$3FFF` in colour 0 over the background colour, so `$3FFF` should be zero. VICE's RAM starts so; hardware RAM is not guaranteed to. Sprites are visible there because the border is no longer drawn over them, not because they render anywhere new.
 
@@ -683,7 +1162,7 @@ The side borders are not affected; RSEL only governs the vertical comparison lin
 
 ### Cycle budget
 
-Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–250 clears RSEL in time with the KERNAL dispatcher's latency included; 247 is too early and 251 too late for a write that lands after cycle 37 (see Why it works). RSEL is part of $D011 with YSCROLL (bits 2–0), DEN (bit 4), BMM and ECM (bits 5 and 6) and RST8 (bit 7), so the toggle is a read-modify-write (`LDA $D011`, `AND` or `ORA` immediate, `STA $D011`: 4 + 2 + 4 = 10 cycles) with bit 7 masked off. With the interrupt bookkeeping ($D012, $0314/$0315, the $D019 acknowledge and the exit) each handler body is about 40 cycles plus the 29-cycle dispatcher, twice per frame, except that the restore handler exits through `$EA31`, the full KERNAL service, which costs about 190 cycles once per frame while no key is held and about 1,600 while one is (measured in VICE x64sc for `recipes/kickassembler/raster-bars.md`; an earlier version of this sentence said "about a thousand", a figure nobody had measured); the opening handler exits through `$EA81`. An earlier version of this paragraph said the write "just needs to land before the end of line 248" and gave the RMW as "3 cycles"; both are replaced by the measured window and the cycle count above.
+Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–250 clears RSEL in time with the KERNAL dispatcher's latency included; 247 is too early and 251 too late for a write that lands after cycle 39 (see Why it works; this said 37 before #85). RSEL is part of $D011 with YSCROLL (bits 2–0), DEN (bit 4), BMM and ECM (bits 5 and 6) and RST8 (bit 7), so the toggle is a read-modify-write (`LDA $D011`, `AND` or `ORA` immediate, `STA $D011`: 4 + 2 + 4 = 10 cycles) with bit 7 masked off. With the interrupt bookkeeping ($D012, $0314/$0315, the $D019 acknowledge and the exit) each handler body is about 40 cycles plus the 29-cycle dispatcher, twice per frame, except that the restore handler exits through `$EA31`, the full KERNAL service, which costs about 190 cycles once per frame while no key is held and about 1,600 while one is (measured in VICE x64sc for `recipes/kickassembler/raster-bars.md`; an earlier version of this sentence said "about a thousand", a figure nobody had measured); the opening handler exits through `$EA81`. Traced in the recipe in VICE x64sc 3.10, from the interrupt's acceptance to the end of `RTI`: the opening handler 95 cycles, the restore handler with `$EA31` 258 on PAL and 276 on NTSC, 353 and 371 a frame with no key held. The Cost line states the NTSC 371; it said 132 before, the two handler bodies without the `$EA31` exit. With a key held, add about 1,400 (the raster-bars figures above, about 1,600 against 190; not measured on this recipe, because a headless run holds no key). An earlier version of this paragraph said the write "just needs to land before the end of line 248" and gave the RMW as "3 cycles"; both are replaced by the measured window and the cycle count above.
 
 ### Recipes
 
@@ -809,9 +1288,9 @@ The mode change can happen anywhere in the frame: top to bottom, multiple splits
 
 ### Why it works
 
-The VIC-II decides how to decode pixel data (and whether to fetch character ROM/RAM or bitmap data) on a per-character-cell basis within each row. The mode registers ($D011 bits 5-6, $D016 bit 4) are read by the chip as it generates each 8-pixel horizontal span. A write to these registers takes effect on the current or immediately next character cell boundary.
+The VIC-II decides how to decode pixel data (and whether to fetch character ROM/RAM or bitmap data) on a per-character-cell basis within each row. The mode registers ($D011 bits 5-6, $D016 bit 4) are read by the chip as it generates each 8-pixel horizontal span. A write to these registers takes effect at the next 8-pixel cycle boundary on screen, not at a character cell boundary. Measured in VICE x64sc for the ECM bit: toggling it in a loop over blank cells put every colour change at the same pixel phase with XSCROLL 0 and 3, while a marker cell moved 3 pixels; so with XSCROLL non-zero the change lands inside a cell. MCM and BMM were not measured. (An earlier version said the write takes effect on the current or next character cell boundary.)
 
-The display mode and the data pointer ($D018) govern three separate things: how pixel bits are interpreted (character vs bitmap), whether two bits per pixel (multicolor) or one bit per pixel (hires) is used, and where in the VIC bank the data lives. Changing $D018 mid-frame redirects character or bitmap fetch to new addresses starting with the next character cell; the change is not batched to the next frame. This allows per-row (or per-line) memory pointer changes without a frame boundary.
+The display mode and the data pointer ($D018) govern three separate things: how pixel bits are interpreted (character vs bitmap), whether two bits per pixel (multicolor) or one bit per pixel (hires) is used, and where in the VIC bank the data lives. Changing $D018 mid-frame is not batched to the next frame. The character or bitmap base (bits 3-1) is read on every g-access, so it changes the source from the line the write lands on; the video-matrix bits (7-4) show from the next character row (both measured in VICE, see the timing paragraph below). Whether a mid-line write switches exactly at the next character cell is not measured here. (An earlier version said the whole of $D018 took effect from the next character cell.) This allows per-row (or per-line) memory pointer changes without a frame boundary.
 
 The YSCROLL field ($D011 bits 2-0) interacts with mode changes: if YSCROLL changes simultaneously with the mode bits, the VIC may trigger a spurious badline (if the new YSCROLL value matches the current `(raster & 7)` condition). To avoid this, keep YSCROLL constant across mode splits, or change it in a separate write on a line where a badline is acceptable.
 
@@ -827,7 +1306,7 @@ The YSCROLL field ($D011 bits 2-0) interacts with mode changes: if YSCROLL chang
 
 ### Cycle budget
 
-Each raster split costs: 3 writes ($D011, $D016, $D018) × 4 cycles = 12 cycles minimum. With IRQ overhead (13-20 cycles with the KERNAL out and $FFFE pointing at the handler, 42-50 through $0314, where the handler is entered on cycle 37-43) a mode split uses about 25-35 or 55-65 cycles on the split line respectively. An earlier version gave only 13-20 without naming the entry path.
+Each raster split costs: 3 writes ($D011, $D016, $D018) × 4 cycles = 12 cycles minimum. With IRQ overhead (a first write on about cycle 16-24 with the KERNAL out and $FFFE pointing at the handler, 45-53 through $0314, where the handler is entered on cycle 39-45, measured) a mode split uses about 25-35 or 55-65 cycles on the split line respectively. An earlier version gave only 13-20 without naming the entry path; before #85 the overhead read 13-20 and 42-50 cycles with entry on cycle 37-43, arithmetic.
 
 On a badline, a mode-split IRQ has only 20 usable cycles on PAL (cycles 1-11 and 55-63; 12-14 for writes only). A 12-cycle triple write fits, with little room for the IRQ overhead. The usual fix is to put the mode split on a non-badline.
 
@@ -837,7 +1316,7 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 
 ### Recipes
 
-(No standalone recipe yet. raster_split_modes appears as part of larger demo or game layout recipes.)
+- `recipes/kickassembler/raster-split-modes.md`: hires bitmap on rows 0-11, text on rows 12-24, switched between lines 146 and 147 by one `$D018` store on line 145 and one `$D011` store, with the store cycles that tear and the ones that do not, measured on PAL and NTSC.
 
 ---
 
@@ -846,6 +1325,19 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D012
+**Cost:** cycles_per_frame=23032, bytes_code=339
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** oscar64-pal-ntsc-detect (one call at boot, SEI to CLI, the worst of 56 entry points, PAL; NTSC 17,514; screen on; whole PRG: the 341-byte file less its load address, built with Oscar64 here)
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/pal-ntsc-detect.md` (`scripts/claims-watch.ts`,
+PAL): the measurement reads `$D011` and `$D012` and stores to no
+HardwareUnit; the recipe's other stores are screen, colour RAM and the
+border colour.
+
+The cycle figure is one call of the recipe's `last_raster_line`, from its `SEI` to its `CLI`, timed by a VICE monitor exec trace (x64sc 3.10). VICE's random autostart delay was left on so that each run entered the routine on a different line: 150 runs per model gave 56 distinct durations on PAL, 3,904 to 23,032 cycles, and 50 on NTSC (`-model ntsc`), 1,263 to 17,514. The worst entry, line 256, was not among them; by arithmetic it takes 23,184 cycles on PAL and 17,550 on the 6567R8 ("Why it works"). Either way one call can take more than a PAL frame, so it belongs before the frame loop. A first sweep timed to the `RTS` instead and got up to 23,291 on PAL and 17,731 on NTSC, above the arithmetic bound: the KERNAL interrupt that became pending during the wait runs between `CLI` and `RTS`, and that time is the KERNAL's, not the routine's. Until #96 the Cost line carried no cycle figure, and the durations under "Why it works" (3,575 to 23,172 cycles on PAL) were measured on the hardware page's KickAssembler listing, which is no recipe. An earlier graph gave this card the fire effect's frame cost (27,301 cycles, measured on kickassembler-fire-effect); ingest now warns when a Cost line names a recipe that does not realise its technique.
 
 ### Why
 
@@ -906,9 +1398,19 @@ None per line. The routine runs once, with interrupts disabled, and holds the CP
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D012, D020
-**Cost:** bytes_code=985
-**Cost basis:** arithmetic
-**Cost measured on:** oscar64-frame-sync-loop (bytes are the whole PRG)
+**Cost:** cycles_per_frame=314, irq_slots=1
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (the raster IRQ from entry to return, 291, plus the loop's tick bookkeeping, 23; PROFILE=1 build, PAL and NTSC; the budget bar's two stores are not inside)
+**Claims:** vic_raster_irq (shares)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/frame-sync-loop.md` (`scripts/claims-watch.ts`,
+PAL): Oscar64's `rasterirq`, which runs the tick, is the program's only
+writer of `$D011`, `$D012`, `$D019` and `$D01A`. The tick is one slot at the sync line and can be
+one entry in another effect's chain, so it shares the compare rather
+than owning it. The `$0314` store in the trace is the recipe's choice of
+entry (Oscar64's `rirq_init_kernal`); the spin-only variation writes
+none of these.
 
 ### Why
 
@@ -1065,15 +1567,29 @@ writes land before the beam reaches what they change.
 ### Cycle budget
 
 None per line. The wait costs nothing useful, only the cycles until the
-line arrives. The interrupt form pays the interrupt's entry and exit once
-per frame, 36 cycles to the handler through `$0314` (settled) plus whatever
-the dispatcher and the handler body add; not broken down here. The bar is
-two absolute stores. What the loop has left is the frame: 312 × 63 =
-19,656 cycles on PAL and 263 × 65 = 17,095 on the 6567R8, less 40 to 43
-for each of the 25 badlines and less any sprite DMA (arithmetic from
-the settled constants); `game-design/game-design-patterns.md` budgets
-about 19,700 after interrupt overhead on PAL, which is a rounding of the
-same figure.
+line arrives. The bar is two absolute stores. What the loop has left is
+the frame: 312 × 63 = 19,656 cycles on PAL and 263 × 65 = 17,095 on the
+6567R8, less 40 to 43 for each of the 25 badlines and less any sprite DMA
+(arithmetic from the settled constants);
+`game-design/game-design-patterns.md` budgets about 19,700 after
+interrupt overhead on PAL, which is a rounding of the same figure.
+
+The interrupt form pays the interrupt once per frame: 36 cycles to the
+handler through `$0314` (settled), then the dispatcher and the handler
+body. For Oscar64's `rasterirq.h` with one slot calling a handler that
+bumps a byte, the whole path is 291 cycles, and the loop's tick
+bookkeeping after the wait 23 more. Measured in VICE x64sc 3.10 on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=1` build: one busy
+loop timed on CIA1 timer B across line 251, where the IRQ lands, against
+the same loop from line 20, least of 32 runs each, the same on PAL and
+NTSC. The Cost line states those 314 cycles since #37. Before, it
+carried only `bytes_code=985`, the whole `frame-sync-loop.md` PRG, which
+a budget does not sum, so every plan named this technique unknown.
+
+`rirq_init(true)` leaves the KERNAL's 60 Hz CIA interrupt running. Each
+time it fires it takes 235 cycles in that build, wherever the loop is.
+It is the KERNAL's cost, not this technique's; a loop that needs the
+cycles turns it off.
 
 ### Recipes
 
@@ -1102,9 +1618,9 @@ same figure.
 **Region:** both
 **Uses registers:** D011, D012, D019, D01A, D020
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=273, lines_active=3, irq_slots=3
-**Cost basis:** estimated
-**Cost measured on:** kickassembler-irq-chain (three empty slots)
+**Cost:** cycles_per_frame=498, lines_active=3, irq_slots=3
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-irq-chain (three slots with two-store handlers and an empty music call, frame-counter print left out, badline stalls left out)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -1266,8 +1782,18 @@ later than that makes the next slot late by the overrun; one that ends
 after the next line has been and gone makes it late by the whole overrun
 plus the re-entry, as measured above. Budget each slot as (next line minus
 this line) × 63 cycles on PAL, less 40 to 43 for each badline in between
-and less about 150 for the dispatcher (arithmetic from the settled
-constants and the cycle counts below).
+and less about 160 for the dispatcher (measured: see below).
+
+**Measured per frame.** Traced in VICE x64sc 3.10 (PAL) with
+monitor tracepoints on `$FF48` and on the `RTI` of `$EA81`, from the
+interrupt's acceptance to the end of `RTI`: 159 cycles for a slot that
+does not wrap, with the recipe's handler (two stores and `RTS`); 180 for
+the wrap slot, frame counter and empty `JSR music_tick` included, with
+the recipe's decimal frame print left out; 498 for the three-slot frame.
+Slot 1 at line 130 measured 202 because the badline at 131 falls inside
+it; the Cost line leaves that stall out, because a budget charges the
+frame's badlines separately. An earlier Cost line said 273, an estimate
+of about 91 a slot; the page's own sum was already about 150 a slot.
 
 ### Why it works
 

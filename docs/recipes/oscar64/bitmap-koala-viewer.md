@@ -307,8 +307,9 @@ sixteen colors (the full C64 palette via 4-bit nibbles), so a Koala image can
 use all sixteen colors, but each 8x8 cell is limited to four simultaneously:
 the global background plus three from the cell's specific nibbles.
 
-The effective resolution is 160x200 pixels (each displayed "pixel" is two
-color-clock cycles wide), so Koala images are coarser than hires bitmap
+The effective resolution is 160x200 pixels (each multicolor pixel is two
+hires pixels wide: 320 / 160; an earlier version said "two color-clock
+cycles", which is a different unit), so Koala images are coarser than hires bitmap
 but have more colors per cell. The 320x200 hires mode allows only two
 colors per cell; Koala Painter trades half the horizontal resolution for
 four colors per cell.
@@ -325,9 +326,13 @@ four colors per cell.
 With the stock C64 VIC bank 0 (`$0000-$3FFF`, CIA2 `$DD00` bits `%11`), the
 recipe writes `$D018 = $18` (`0001_1000`): VM=1 selects screen RAM at bank
 `$0000 + 1*1024 = $0400`, CB2=1 selects bitmap at bank `$0000 + $2000 = $2000`.
-Screen RAM at `$0400` and bitmap at `$2000` suits Oscar64
-programs because it fits the default Oscar64 stack and code layout (`$0A00`
-onward) without overlapping any of the three data areas.
+Screen RAM at `$0400` and bitmap at `$2000` do not fit the default Oscar64
+layout on their own: the default `main` region runs `$0880`–`$A000`
+(oscar64-reference, section ".PRG"), so code and data past 6,016 bytes
+(`$2000` − `$0880`) would grow into the bitmap. The `#pragma region` lines at the top of the listing
+prevent that: `lower` stops at `$2000`, `bitmap_region` holds only the bitmap,
+and `upper` takes everything else from `$4000`. (An earlier version said the
+default layout, "`$0A00` onward", avoided the data areas by itself.)
 
 Color RAM at `$D800` is not configured through `$D018`. The VIC-II always reads
 Color RAM from `$D800-$DBFF` regardless of bank selection; it is mapped to the

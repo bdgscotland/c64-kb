@@ -119,8 +119,14 @@ One more optional line names the playable starter for the archetype
 - Name a starter only where it is a game or effect of that archetype.
   An archetype with no fitting starter carries no line.
 
-The other lines on the page (`**Reference titles:**`, `**Modern
-examples:**`) are prose for the reader and are not read by the extractor.
+`**Reference titles:**` is read (schema 34): each title linked as
+`[Title](url) (year[, note])`, in a comma list at the head of the line,
+becomes a `Production` node with an `Archetype -[:EXEMPLIFIED_BY {source}]->
+Production` edge (`docs/ONTOLOGY.md`). Link every title to the page that
+gives its C64 genre and year (C64-Wiki, or Wikipedia where C64-Wiki has
+no page); an unlinked title is not read. End the list with a full stop;
+prose after it, a correction naming an old title included, is not read.
+`**Modern examples:**` is prose for the reader and is not read.
 
 ## What the briefing does with it
 

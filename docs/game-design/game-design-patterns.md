@@ -56,15 +56,27 @@ regardless of which bullet caused it.
 
 ### Hardware sprite-background collision
 
-Register $D01F records which sprites overlapped a non-zero (non-space)
-foreground character cell during rendering. Same single-bit-per-sprite
-design, same read-clears semantics.
+Register $D01F records which sprites had a drawn pixel over a foreground
+pixel of the playfield. Same single-bit-per-sprite design, same
+read-clears semantics.
 
-Constraints: those of $D01E, plus one: the collision fires on any
-foreground pixel, including decorative tiles. If the map has decorative
-"solid-looking" character cells that are not walls, arrange the character
-set so decorative tiles appear as background-colored pixels at the ROM/RAM
-level (multicolor tricks), or use a separate solid map and ignore $D01F.
+Foreground is a pixel class, not a character cell and not a colour. With
+MCM clear (standard text, ECM, standard bitmap) a 1 bit is foreground and
+a 0 bit is background. With MCM set (multicolour text cells, multicolour
+bitmap) bit pairs 10 and 11 are foreground; 00 and 01 are background,
+whatever colour 01 draws in. A sprite over a solid cell drawn entirely in
+pair 01 latches nothing. Measured in VICE x64sc by
+`../recipes/kickassembler/sprite-priority-classes.md`; the rule is in
+`../hardware/vic-ii-reference.md`, section "Priority". An earlier version
+of this section said $D01F fired on any non-space character cell and on
+any foreground pixel of a decorative tile, a cell-level model that the
+measurement contradicts.
+
+Constraints: those of $D01E, plus one: the collision fires on every
+foreground-class pixel, including decorative tiles. To keep scenery from
+colliding, draw it in multicolour pairs 00 and 01 only (01 can be any
+`$D022` colour and still never collides), draw walls in pairs 10 and 11,
+or keep a separate solid map and ignore $D01F.
 
 Use $D01F for: shmups where the terrain is a single-color foreground
 charset and any contact with it is fatal or obstructing.

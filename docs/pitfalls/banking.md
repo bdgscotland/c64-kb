@@ -21,6 +21,7 @@ section runs into a hardcoded charset/bitmap blit address.
 
 **Severity:** medium
 **Region:** both
+**Triggered by registers:** R6510
 **Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank, big_font_2x2, charset_copy_rom_to_ram
 
 ### Symptom
@@ -157,7 +158,7 @@ over 2048 bytes does the same job.
 
 ### Cross-references
 
-- Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 = LORAM/HIRAM/CHAREN; resolvable via `c64_memory_map 0001`, not `c64_register_lookup` (the KB has no Register node for the CPU port).
+- Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 = LORAM/HIRAM/CHAREN; also the Register R6510 (`c64_lookup_register $01`). An earlier version said the KB had no Register node for the port.
 - Register `D018` — VIC video matrix and charset base; independent of CPU char ROM visibility.
 - Register `DD00` — CIA2 port A; selects the VIC 16 KB bank.
 - Technique `char_rom_under_vic` — char ROM shadow in VIC banks 0 and 2.
@@ -319,6 +320,7 @@ setup_bank1:
 
 **Severity:** medium
 **Region:** both
+**Triggered by registers:** R6510
 **Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation, irq_owns_processor_port, cartridge_save, cartridge_bank_easyflash, basic_rom_float_calls
 
 ### Symptom
@@ -463,8 +465,8 @@ custom_nmi:
 
 - Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 are LORAM, HIRAM, CHAREN; the
   read-modify-write pattern for bits 3-5 (datasette lines) must be preserved.
-  Resolvable via `c64_memory_map 0001`, not `c64_register_lookup` (the KB has no
-  Register node for the CPU port).
+  Also the Register R6510 (`c64_lookup_register $01`); an earlier version said
+  the KB had no Register node for the port.
 - Technique `cpu_io_port_bank` — the full table of all seven CPU memory
   configurations, including the exact $01 values for each combination of banked
   ROMs. The technique doc has the full discussion of the PLA's write-transparency
@@ -480,7 +482,7 @@ custom_nmi:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D018
-**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets, charset_parallax, destructible_char_terrain, hires_plot
+**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets, charset_parallax, destructible_char_terrain, hires_plot, relocated_code_block
 **Mitigated by techniques:** memory_layout_plan
 
 ### Symptom
@@ -571,7 +573,7 @@ be relocated to wherever the linker has free space.
 
 **Severity:** high
 **Region:** both
-**Triggered by registers:** DC0D, D019
+**Triggered by registers:** R6510, DC0D, D019
 **Triggered by techniques:** charset_copy_rom_to_ram, char_rom_under_vic, cpu_io_port_bank, irq_owns_processor_port
 
 ### Symptom
@@ -682,7 +684,7 @@ developed.
 **Severity:** high
 **Region:** both
 **Triggered by kernal:** CHROUT
-**Triggered by techniques:** zx0_lzsa_decrunchers, pucrunch_decruncher, doynax_decruncher, zero_page_burst, byteboozer_packer
+**Triggered by techniques:** zx0_lzsa_decrunchers, pucrunch_decruncher, doynax_decruncher, zero_page_burst, byteboozer_packer, tinycrunch_and_tscrunch
 **Mitigated by techniques:** cpu_io_port_bank
 
 ### Symptom
@@ -789,13 +791,23 @@ bytes; this payload did not. The Doynax self-extractor copies its depacker to
 `$00C2` and up (its technique entry says so); whether it saves what it
 covers was not measured here.
 
+TSCrunch's zero-page self-extractor (`tscrunch -x`) fails the same way as
+bitfire's, measured on 2026-09-24 with a second payload that prints one
+line through `CHROUT` (`tinycrunch_and_tscrunch`): 197 zero-page bytes
+changed at entry (`$02` to `$FE`), `$01` back at `$37`, `$9A` at `$B1`
+and `$99` at `$C8`, and the line did not appear. Its stack-page stub
+(`-x2`) changed 12 bytes and printed; TinyCrunch's stub changed 11 and
+printed. In the same run Dali's standard `--sfx` changed 16 and Exomizer's
+`sfx sys` 11, and both printed.
+
 ### Fix
 
 One of three, in order of cost:
 
 1. **Choose a stub that saves.** Dali's standard `--sfx` and pucrunch's
    default decruncher both let a KERNAL-calling payload run unchanged
-   here. The `--small` flag bought 59 bytes of file on this payload and cost
+   here, and so did TSCrunch's `-x2`, TinyCrunch's stub and Exomizer's
+   `sfx sys`. The `--small` flag bought 59 bytes of file on this payload and cost
    the machine state; take it only for a payload that owns the machine.
 2. **Re-initialise in the payload's prologue.** Before the first KERNAL
    call: write `$37` to `$01` (`cpu_io_port_bank`), then `JSR $FF84`
@@ -890,6 +902,7 @@ d4: 00 > 08   quote-mode flag set
 
 - Technique `zx0_lzsa_decrunchers`: the stubs' layout, the copy loop's span (`$EC` and `$D4` down to `$01`) and the measured footprints.
 - Technique `pucrunch_decruncher`: a decruncher that sits at `$F7` and up and leaves the KERNAL's variables alone.
+- Technique `tinycrunch_and_tscrunch`: TSCrunch's `-x` and `-x2` stubs and TinyCrunch's, measured side by side with Dali, bitfire and Exomizer.
 - Technique `doynax_decruncher` (loaders-packers.md): a depacker at `$00C2` and up; its saving behaviour is not measured here.
 - Technique `cpu_io_port_bank`: the `$01` values; `$34` is the all-RAM map the stubs decrunch under.
 - Technique `memory_layout_plan`: where the payload's own zero-page claims should be written down, so the stub's span is checked against them.

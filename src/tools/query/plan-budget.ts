@@ -15,6 +15,7 @@ import {
   type BudgetPhase,
   type PhaseBudget,
 } from "../../domain/budget.ts";
+import { callsText, splitCalls, type CallCount } from "../../domain/calls.ts";
 import { compareMeasured } from "../../domain/game-design.ts";
 import { CostBasisSchema, type PlanBudgetOutput } from "../../schemas/tool-outputs.ts";
 import { fetchGameDesign, knownGameDesigns, type GameDesignRecord } from "./game-design.ts";
@@ -39,12 +40,15 @@ const MemberRow = z.object({
   raster_band: OptString,
   cycles_per_frame: OptNumber,
   cycles_per_frame_typical: OptNumber,
+  cycles_per_item: OptNumber,
+  cycles_item_base: OptNumber,
   cycles_per_line: OptNumber,
   lines_active: OptNumber,
   bytes_code: OptNumber,
   bytes_data: OptNumber,
   irq_slots: OptNumber,
   basis: CostBasisSchema.nullable(),
+  bytes_basis: CostBasisSchema.nullable(),
   measured_on: OptString,
   conditions: OptString,
   includes: StringList,
@@ -60,9 +64,10 @@ const MEMBERS_QUERY = `MATCH (t:Technique) WHERE t.name IN $names
   OPTIONAL MATCH (r:Recipe)-[:IMPLEMENTS]->(t)
   RETURN t.name AS name, toLower(rr.name) AS requires_region, t.raster_band AS raster_band,
          t.cost_cycles_per_frame AS cycles_per_frame, t.cost_cycles_per_frame_typical AS cycles_per_frame_typical,
+         t.cost_cycles_per_item AS cycles_per_item, t.cost_cycles_item_base AS cycles_item_base,
          t.cost_cycles_per_line AS cycles_per_line, t.cost_lines_active AS lines_active,
          t.cost_bytes_code AS bytes_code, t.cost_bytes_data AS bytes_data, t.cost_irq_slots AS irq_slots,
-         t.cost_basis AS basis, t.cost_recipe AS measured_on, t.cost_conditions AS conditions,
+         t.cost_basis AS basis, t.cost_bytes_basis AS bytes_basis, t.cost_recipe AS measured_on, t.cost_conditions AS conditions,
          t.cost_includes AS includes, closure, collect(DISTINCT r.name) AS recipes`;
 
 // Every Cost includes line in the graph, so an include is followed through
@@ -71,22 +76,41 @@ const INCLUDES_QUERY = `MATCH (t:Technique) WHERE t.cost_includes IS NOT NULL
   RETURN t.name AS name, t.cost_includes AS includes`;
 const IncludesRow = z.object({ name: z.string(), includes: StringList });
 
-/** "name" or "name:phase"; a phase outside play, transition, init is refused. */
-export function parseMemberSpec(spec: string): { name: string; phase: BudgetPhase } | { error: string } {
-  const [rawName = "", rawPhase, ...rest] = spec.trim().split(":");
-  const name = rawName.trim();
-  if (name === "" || rest.length > 0) return { error: `"${spec}" is not "name" or "name:phase"` };
-  if (rawPhase === undefined) return { name, phase: "play" };
-  const phase = BUDGET_PHASES.find((p) => p === rawPhase.trim().toLowerCase());
-  return phase ? { name, phase } : { error: `phase "${rawPhase}" is not one of ${BUDGET_PHASES.join(", ")}` };
+/** A member of a plan: a technique in a phase, with its calls per frame when more than one. */
+export interface MemberSpec {
+  name: string;
+  phase: BudgetPhase;
+  calls?: CallCount;
 }
 
-function memberOf(name: string, phase: BudgetPhase, row: MemberRow | undefined): BudgetMember {
-  if (!row) return { name, phase, found: false };
+/**
+ * "name", "name:phase", "name ×N" or "name ×M-N:phase" (#37); a phase
+ * outside play, transition, init, or a bad call count, is refused.
+ */
+export function parseMemberSpec(spec: string): MemberSpec | { error: string } {
+  const [rawName = "", rawPhase, ...rest] = spec.trim().split(":");
+  if (rawName.trim() === "" || rest.length > 0) return { error: `"${spec}" is not "name" or "name:phase"` };
+  const split = splitCalls(rawName);
+  if ("error" in split) return split;
+  const { name, calls } = split;
+  if (name === "") return { error: `"${spec}" is not "name" or "name:phase"` };
+  const withCalls = calls ? { calls } : {};
+  if (rawPhase === undefined) return { name, phase: "play", ...withCalls };
+  const phase = BUDGET_PHASES.find((p) => p === rawPhase.trim().toLowerCase());
+  return phase
+    ? { name, phase, ...withCalls }
+    : { error: `phase "${rawPhase}" is not one of ${BUDGET_PHASES.join(", ")}` };
+}
+
+function memberOf(spec: MemberSpec, row: MemberRow | undefined): BudgetMember {
+  const { name, phase } = spec;
+  const calls = spec.calls ? { calls: spec.calls } : {};
+  if (!row) return { name, phase, found: false, ...calls };
   return {
     name,
     phase,
     found: true,
+    ...calls,
     requires_region: row.requires_region,
     raster_band: row.raster_band,
     requires_closure: row.closure,
@@ -96,12 +120,15 @@ function memberOf(name: string, phase: BudgetPhase, row: MemberRow | undefined):
           cost: {
             cycles_per_frame: row.cycles_per_frame,
             cycles_per_frame_typical: row.cycles_per_frame_typical,
+            cycles_per_item: row.cycles_per_item,
+            cycles_item_base: row.cycles_item_base,
             cycles_per_line: row.cycles_per_line,
             lines_active: row.lines_active,
             bytes_code: row.bytes_code,
             bytes_data: row.bytes_data,
             irq_slots: row.irq_slots,
             basis: row.basis,
+            ...(row.bytes_basis ? { bytes_basis: row.bytes_basis } : {}),
             measured_on: row.measured_on,
             conditions: row.conditions,
             includes: row.includes,
@@ -112,9 +139,7 @@ function memberOf(name: string, phase: BudgetPhase, row: MemberRow | undefined):
 }
 
 /** Graph rows for the named techniques, as planBudget members in the order asked. */
-export async function fetchBudgetMembers(
-  specs: { name: string; phase: BudgetPhase }[],
-): Promise<BudgetMember[]> {
+export async function fetchBudgetMembers(specs: MemberSpec[]): Promise<BudgetMember[]> {
   const f = await getFalkor();
   const names = [...new Set(specs.map((s) => s.name))];
   const rows = parseRows(MemberRow, await f.roQuery(MEMBERS_QUERY, { names }));
@@ -124,7 +149,7 @@ export async function fetchBudgetMembers(
   const byName = new Map(
     rows.map((r) => [r.name, { ...r, includes: followIncludes(r.name, (n) => direct.get(n) ?? []) }]),
   );
-  return specs.map((s) => memberOf(s.name, s.phase, byName.get(s.name)));
+  return specs.map((s) => memberOf(s, byName.get(s.name)));
 }
 
 function rangeText(p: PhaseBudget): string {
@@ -133,14 +158,25 @@ function rangeText(p: PhaseBudget): string {
   return `${fixed > 0 ? `${range} + ${fixed} fixed` : range} cycles; floor ${p.floor}`;
 }
 
+/** "12" or "0-12": the items a per_item charge counted. */
+function countText(calls: CallCount | undefined): string {
+  if (!calls) return "0";
+  return calls.low === calls.high ? `${calls.high}` : `${calls.low}-${calls.high}`;
+}
+
 function contributorLine(c: PhaseBudget["contributors"][number]): string {
   const figure = c.low === c.high ? `${c.high}` : `${c.low}-${c.high}`;
+  const calls = c.per_item
+    ? `, ${c.per_item.base} + ${countText(c.calls)} items × ${c.per_item.each}`
+    : c.calls
+      ? `, ${callsText(c.calls).trim()} calls`
+      : "";
   const on = c.measured_on
     ? `, on ${c.measured_on}${c.conditions ? ` (${c.conditions})` : ""}`
     : ", recipe not stated";
   const how =
     c.charge === "band" ? ", band lines × line" : c.charge === "per_line" ? ", per line × lines" : "";
-  return `- ${c.name}: ${figure} (${c.basis}${on}${how})\n`;
+  return `- ${c.name}: ${figure} (${c.basis}${on}${how}${calls})\n`;
 }
 
 function excludedLine(e: PhaseBudget["excluded"][number]): string {
@@ -176,7 +212,8 @@ function bytesLine(bytes: PlanBudgetOutput["bytes"]): string {
   if (bytes.contributors.length === 0) return `No member states a byte figure that can be summed.${inside}`;
   const floor =
     bytes.without_bytes.length > 0 ? `; a floor, since ${bytes.without_bytes.join(", ")} state no bytes` : "";
-  return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => c.name).join(", ")}${floor}.${inside}`;
+  const basis = bytes.weakest_basis ? `; weakest basis ${bytes.weakest_basis}` : "";
+  return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => `${c.name} (${c.basis})`).join(", ")}${basis}${floor}.${inside}`;
 }
 
 function renderDesign(b: PlanBudgetOutput): string {
@@ -224,11 +261,11 @@ export function budgetRegion(region: string | undefined): "PAL" | "NTSC" | "both
 
 /** Parse every spec; a malformed one, or a name already listed in the same phase, is refused with the reason. */
 export function parseMemberSpecs(inputs: string[]): {
-  specs: { name: string; phase: BudgetPhase }[];
+  specs: MemberSpec[];
   refused: PlanBudgetOutput["refused"];
 } {
   const refused: PlanBudgetOutput["refused"] = [];
-  const specs: { name: string; phase: BudgetPhase }[] = [];
+  const specs: MemberSpec[] = [];
   const listed = new Set<string>();
   for (const t of inputs) {
     const parsed = parseMemberSpec(t);
@@ -253,9 +290,17 @@ export interface PlanBudgetRequest extends BudgetOptions {
   design?: string | undefined;
 }
 
-/** The design's members as "name" / "name:phase" specs, play first. */
+/** The design's members as "name" / "name ×N:phase" specs, play first. */
 function designSpecs(d: GameDesignRecord): string[] {
-  return d.composes.map((c) => (c.phase === "play" ? c.technique : `${c.technique}:${c.phase}`));
+  return d.composes.map((c) =>
+    specText({ name: c.technique, phase: c.phase, ...(c.calls ? { calls: c.calls } : {}) }),
+  );
+}
+
+/** A spec as the tool echoes it: "name", "name ×N", "name:phase". */
+function specText(s: MemberSpec): string {
+  const name = `${s.name}${callsText(s.calls)}`;
+  return s.phase === "play" ? name : `${name}:${s.phase}`;
 }
 
 async function resolveDesign(
@@ -291,7 +336,7 @@ export async function planBudgetTool(req: PlanBudgetRequest): Promise<PlanBudget
         }
       : null,
     ...(notFound ? { design_not_found: notFound } : {}),
-    techniques: specs.map((s) => (s.phase === "play" ? s.name : `${s.name}:${s.phase}`)),
+    techniques: specs.map(specText),
     refused,
     ...plan,
   };

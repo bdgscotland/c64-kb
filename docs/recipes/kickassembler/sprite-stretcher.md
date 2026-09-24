@@ -7,6 +7,8 @@ techniques: [sprite_stretcher_d017]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01B, D01C, D01D, D021, D027, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_b (init), cia1_tod (init)]
+harness: [cia1_timer_a]
 ---
 
 <!-- doc-type: recipe -->
@@ -333,8 +335,9 @@ gap between them.
 Blue screen, light blue border, nothing on the character screen (the
 program clears it). One white sprite whose rows are horizontal stripes:
 row r holds the byte r+1 three times, so the stripe's pattern within each
-8-pixel group reads as the row number (row 0 is one dot per byte, row 1
-two dots, row 20 the pattern 00010101). In the pinned PAL build the
+8-pixel group reads as the row number plus one in binary (rows 0 and 1,
+$01 and $02, have one dot per byte; row 2, $03, has two; row 20 is
+00010101). An earlier version said row 1 had two dots. In the pinned PAL build the
 sprite runs from raster line 101 to 191, 91 lines tall, and reading the
 stripes top to bottom gives: row 0 on lines 101 to 105, then rows 1 to 9
 on eight lines each (106 to 177), row 10 on four lines (178 to 181), and

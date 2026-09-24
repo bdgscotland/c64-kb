@@ -58,6 +58,7 @@ function contributorsOf(
       ...(c && c.low !== c.high ? { cycles_per_frame_typical: c.low } : {}),
       ...(b !== undefined ? { bytes: b } : {}),
       basis: m.cost.basis,
+      ...(b !== undefined && m.cost.bytes_basis ? { bytes_basis: m.cost.bytes_basis } : {}),
       ...(m.cost.measured_on ? { measured_on: m.cost.measured_on } : {}),
     });
   }
@@ -169,7 +170,8 @@ function contributorText(c: Contributor): string {
   }
   if (c.bytes !== undefined) parts.push(`${c.bytes} bytes`);
   const on = c.measured_on ? `, on ${c.measured_on}` : "";
-  return `- ${c.name}: ${parts.join(", ") || "(no summable figure)"} (${c.basis}${on})\n`;
+  const bytesBasis = c.bytes_basis ? `, bytes ${c.bytes_basis}` : "";
+  return `- ${c.name}: ${parts.join(", ") || "(no summable figure)"} (${c.basis}${bytesBasis}${on})\n`;
 }
 
 export function renderBudgetText(g: Budget): string {

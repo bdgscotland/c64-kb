@@ -123,6 +123,13 @@ of this recipe had only the first slot and described a split at line 101;
 what it produced was an all-white border, because nothing ever wrote light
 blue back.
 
+The page is pinned on PAL and NTSC, and again at `-O0`, `-O1`, `-O3`,
+`-Os` and `-Oz` (`runs.json` keys `oscar64/stable-raster-irq@O0` and so
+on). All six levels give byte-identical screenshots per model. What each
+level changes in the dispatcher and its cycle count is in
+[oscar64-reference](../../toolchains/oscar64-reference.md),
+"Optimisation levels and a raster IRQ".
+
 ## Why this works
 
 ### What `rirq_init` actually does
@@ -151,8 +158,10 @@ To quiet the CIA, write `$DC0D = 0x7F` before `rirq_start`.
 
 Raw VIC-II raster IRQs carry 0-6 cycles of jitter because the CPU finishes
 its current instruction before entering the handler, and on top of that the
-KERNAL dispatcher adds 29 fixed cycles, so the handler starts on cycle 37-43
-of the line. A colour write from there lands two-thirds of the way across the
+KERNAL dispatcher adds 29 fixed cycles, so the handler starts on cycle 39-45
+of the line (measured in VICE x64sc 3.10, `techniques/raster.md`,
+`stable_raster_irq` Cycle budget; this said 37-43 before, arithmetic that
+left out the 2 cycles before the earliest interrupt sequence). A colour write from there lands two-thirds of the way across the
 visible line.
 
 What `rasterirq.c` does about it can be read in `rirq_build`: every
@@ -162,7 +171,7 @@ counter passes the programmed row (A holds the row; the branch falls through
 once `$D012` exceeds it). In the KERNAL-vector mode used here the dispatcher
 arms `$D012` *two* lines before the target (the hardware-vector mode arms it
 one line before; the earlier text said "the row before" for both), so the
-KERNAL's 37-43-cycle entry and the dispatcher's own table walk are paid on
+KERNAL's entry on cycle 39-45 (37-43 before) and the dispatcher's own table walk are paid on
 the lines above and the loop is already spinning when the target line
 begins. Its `CMP` reads `$D012` on cycles 1-7 of that line, the branch falls
 through in 2 and the `STY` (slot 0 is a `STY`, not a `STA`; slot 1 is `STX`)
@@ -183,8 +192,14 @@ was "fixed" and "jitter-free", overstated the library.
 The struct is 32 bytes: a size byte and `RIRQ_SIZE` = 31 bytes of code (the
 earlier text said 31; `sizeof(RIRQCode)` is 32, checked with a compile-time
 assertion against the 2026-05-19 headers); larger variants `RIRQCode10` and
-`RIRQCode20` (62 and 107 bytes) hold 10
-and 20 writes respectively. The writes are stored as immediate operands and
+`RIRQCode20` are 62 and 107 bytes (both checked with the same
+`static_assert`, Oscar64 1.32.271). Size does not grow by a fixed amount per
+write: `rirq_build` emits 15 bytes for the loop and the first two writes, 5
+(`LDA #` / `STA abs`) for each further write and 1 for the `RTS`, so `n`
+writes need 5n + 6 code bytes. 31 fits 5 writes, 61 fits 11 and 106 fits 20;
+the header's `RIRQ_SIZE_10` leaves room for one write more than its name.
+(An earlier version said only "62 and 107 bytes, 10 and 20 writes", which
+reads as a constant cost per write.) The writes are stored as immediate operands and
 absolute addresses of real 6502 instructions inside the struct: no heap, no
 indirection at fire time; the dispatcher `JSR`s into the struct.
 
@@ -200,8 +215,14 @@ budget of a single raster line on both PAL (63 cycles/line) and NTSC
 `rirq_set(n, row, &rirq)` installs the code into IRQ slot `n` and programs it to
 fire one line below `row`. The "one below" offset is a documented convention in
 `rasterirq.h`: `rirq_set(0, 100, ...)` fires at the start of line 101, not
-line 100. This gives the CPU the entirety of line 101 to execute the writes
-before the raster beam reaches the point where writes need to be visible.
+line 100. The offset comes from the wait loop above: `CMP $D012 / BCS`
+falls through only once `$D012` exceeds the row, so the interrupt is taken
+on an earlier line (two earlier in the KERNAL-vector mode) and the writes
+run at the start of line 101: the first by about cycle 13, and all five of
+a full `RIRQCode` 26 cycles after the loop exits (instruction-table
+arithmetic, not measured). An earlier version said the offset gave the CPU
+"the entirety of line 101" to execute the writes; they run in its first
+half.
 
 ### `rirq_sort` and `rirq_start`
 

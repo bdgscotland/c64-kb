@@ -7,6 +7,9 @@ techniques: [soft_scroll_h, char_scroll_buffer_h]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D019, D01A]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), vic_raster_irq (owns), zero_page $FB-$FE (owns)]
+ram: [colour=$D800-$DBFF]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->

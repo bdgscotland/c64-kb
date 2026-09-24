@@ -1,0 +1,6 @@
+!macro poke .addr, .val {
+	lda #.val
+	sta .addr
+}
+	* = $1000
+	poke $d020, 2

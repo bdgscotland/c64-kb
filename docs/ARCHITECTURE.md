@@ -78,7 +78,30 @@ removes an edge a document has stopped asserting.
 **Query**: tools in `src/tools/` read Qdrant (RRF fusion of dense and BM25
 results; keyword-only when Ollama is down) and FalkorDB (Cypher through
 `FalkorService.roQuery`). The query tools log each call to SQLite, so
-queries with no results surface as gap candidates.
+queries with no results surface as gap candidates. Each ingest ends by
+replaying every open logged gap through its tool and resolving the ones
+that now answer (`src/tools/gap-replay.ts`, also `c64-kb gaps-replay`);
+gaps an agent reported with `c64_report_gap` are left open.
+
+**Briefings, one technique per job** (`src/tools/briefings/alternatives.ts`):
+when a proposed plan holds both ends of an `ALTERNATIVE_TO` pair, one
+stays and the other goes into its `alternatives_left_out`. Two forced
+techniques (an archetype's fingerprint, a description rule) both stay.
+Otherwise, in order:
+
+1. A count the brief states. Each "N noun" in the brief ("24 sprites")
+   picks the technique whose title states the same count of the same
+   thing ("Up to 24+ sprites", "8-sprite multiplexer"), or whose side of
+   the tradeoff's "more than M noun" it meets (N > M; the tradeoff
+   describes the technique whose page states it). A count that points at
+   both or neither decides nothing.
+2. A forced technique over a found one.
+3. More realising recipes, then the higher rank.
+
+Before #91 the brief's count was not read: "sprite multiplexer demo with
+24 sprites on screen via raster reuse" kept `sprite_multiplex_8` on its
+recipe count. Neither technique was forced there; the issue's first
+diagnosis, a wording rule forcing the 8-sprite entry, was wrong.
 
 ## CLI-first
 
@@ -88,7 +111,7 @@ Tool logic lives in `src/tools/` as functions returning
 share them:
 
 - **CLI** (`src/cli.ts`): a command per query tool (`c64-kb --help` lists
-  them), plus `services`, `ingest`, `serve` and `version`; `--json` for
+  them), plus `services`, `ingest`, `gaps-replay`, `serve` and `version`; `--json` for
   hooks and scripts.
 - **MCP** (`src/server.ts`, definitions in `src/server/tools-*.ts`): the
   tools the README lists, the static `c64://` resources plus the

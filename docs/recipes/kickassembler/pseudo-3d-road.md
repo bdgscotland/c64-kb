@@ -7,6 +7,9 @@ techniques: [pseudo_3d_road_raster]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D021, D022, D023, DC04, DC05, DC0E]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_b (init), cia1_tod (init), vic_char_base (owns), zero_page $10-$1E (owns)]
+harness: [cia1_timer_a, $02F0-$02FF]
+ram: [state=$02E0-$02E2, colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -15,24 +18,32 @@ uses_kernal: []
 
 ## Synopsis
 
-A perspective road that appears to recede toward a horizon and curve left and
-right, built from two layers. The coarse layer redraws thirteen character rows
-of road in the vertical blank using multicolour characters (grass, road
-surface, kerb, centre stripe) placed at positions derived from a Z table and
-an 8.8 fixed-point centre accumulator. The fine layer runs a cycle-locked
-loop starting at line 99 that writes a precomputed $D016 value for each of
-the hundred road raster lines (100..199), placing the STA $D016 write at
-cycle 11 of each line (before the cycle-14 VIC deadline). The road curves
-because a per-frame delta accumulates signed fixed-point offsets from a
-four-entry segment table; as scroll_z advances the four segments roll toward
-the viewer. Verdict bytes and CIA-timed cycle counts land at $02F0-$02F3 and $02FF.
+A perspective road that recedes toward a horizon, built from two layers.
+The coarse layer draws thirteen character rows of road in multicolour
+characters (grass, road surface, kerb, centre stripe) at positions derived
+from a Z table and an 8.8 fixed-point centre accumulator. The fine layer
+writes a precomputed $D016 value on cycle 4 of each of the hundred road
+lines (100..199), so each line gets its own XSCROLL. Both facts are
+measured in VICE x64sc 3.10, PAL and NTSC: the write cycle on every frame
+of a 20,000,000-cycle run from the monitor, and each line's XSCROLL from
+the screenshot. The road curves left and right as scroll_z rolls a
+four-entry curve table toward the viewer: in the PAL screenshot the far row
+is centred 88 pixels left of the near row, in the NTSC one 95 pixels right.
+(An earlier version added the signed curve delta as unsigned, so the road
+only bent right and pinned at the right edge; see "Road geometry".) Verdict
+bytes and CIA-timed cycle counts land at $02F0-$02F3 and $02FF.
 
-The fine layer uses the double-IRQ method from `stable_raster_irq.md` to
-reach cycle 4 of line 100 with zero jitter, then runs an unrolled 100-iteration
-loop. Each iteration is exactly one raster line long: 63 CPU cycles on PAL,
-65 on NTSC. Badline iterations (lines where (raster & 7) == YSCROLL = 3)
-use 23 CPU cycles on PAL (25 on NTSC); the 40-cycle badline steal absorbs
-the remainder. Separate unrolled loops for PAL and NTSC are selected at boot.
+The fine layer uses the double-IRQ method from `stable-raster-irq.md` to
+reach a fixed cycle of line 98, crosses badline 99 with a fixed delay, then
+runs an unrolled 100-iteration loop: 63 CPU cycles per normal line on PAL,
+65 on NTSC, and 20 (PAL) or 22 (NTSC) on the badline rows (lines where
+(raster & 7) == YSCROLL = 3), which lose 43 cycles to the stall. Separate
+loops for PAL and NTSC are selected at boot. The table computation and the
+coarse redraw run in the main program, one road step every two frames; the
+fine loop runs every frame. (An earlier version of this listing wrote on
+cycle 56 of the line, one line late, and did all the work in a vertical-blank
+IRQ that overran into the next frame, so the whole effect ran only every
+second frame; see "Fine layer: unrolled loop".)
 
 ## Source
 
@@ -42,28 +53,25 @@ the remainder. Separate unrolled loops for PAL and NTSC are selected at boot.
 // Pseudo-3D curving road: multicolour characters (coarse) + per-line
 // $D016 XSCROLL (fine). Charset $3000, screen $0400, VIC bank 0.
 //
-// Three IRQ handlers per frame:
-//   vblank_irq (line 251): compute cx[]/xscroll_d16[], CIA-time coarse redraw,
-//     verdict, re-arm for road_irq1.
-//   road_irq1 (line 97): start CIA fine timer, double-IRQ setup, NOP slide.
-//   road_irq2_pal / road_irq2_ntsc (line 99): cycle-exact sync via double
-//     $D012 read + BEQ, unrolled 100-iteration fine loop, epilogue.
+// Two IRQ handlers per frame and a main loop:
+//   road_irq1 (line 95): start CIA fine timer, arm road_irq2, NOP slide.
+//   road_irq2_pal / road_irq2_ntsc (line 97): sync on the 97/98 boundary
+//     (double $D012 read + BEQ), entry delay across badline 99, unrolled
+//     100-iteration fine loop, fine_done (line 200).
+//   main loop: compute the next tables (about 11,300 cycles, interrupted
+//     by the fine loop), wait for fine_done, publish them (copy + CIA-timed
+//     coarse redraw + verdict, lines 201..1 PAL, 201..47 NTSC). One road
+//     step every two frames; the fine loop runs every frame.
 //
-// Cycle arithmetic (both models land at cycle 4 of line 100 after BEQ sync):
-//   LDA xscroll_d16+j : cycles 4..7 of line 100+j
-//   STA $D016         : cycles 8..11 (WRITE at cycle 11, before cycle-14 deadline)
-//   PAL normal body   : LDA(4) + STA(4) + Delay(55) = 63 cpu cycles
-//   PAL badline body  : LDA(4) + STA(4) + Delay(15) = 23 cpu cycles + 40 stall = 63 elapsed
-//   NTSC normal body  : LDA(4) + STA(4) + Delay(57) = 65 cpu cycles
-//   NTSC badline body : LDA(4) + STA(4) + Delay(17) = 25 cpu cycles + 40 stall = 65 elapsed
-//   Badlines in 100..199 with YSCROLL=3: lines 107,115,123,131,139,147,155,163,171,179,187,195
-//
-// Sync calibration (road_irq1 before NOP slide: 57 cycles PAL, 55 NTSC):
-//   C2 = irq2 entry cycle on line 99 = 38 (zero-jitter) or 39 (one-jitter).
-//   Path inside irq2: ldx+txs(6)+cld(2)+Delay(PAD)+lda+cmp = C2+15+PAD for 2nd read.
-//   PAL: second $D012 read at C2+15+PAD_PAL=63/64. PAD_PAL=10.
-//   NTSC: second $D012 read at C2+15+PAD_NTSC=65/66. PAD_NTSC=12.
-//   BEQ lands at cycle 4 of line 100; STA write at cycle 11.
+// Fine loop timing, measured in the VICE x64sc monitor on every frame of a
+// 20,000,000-cycle run: each STA $D016 writes on cycle 4 of its own line
+// 100+j, PAL and NTSC. The write must land before the line's display
+// starts; see the page for the window.
+//   Normal body  : LDA(4) + STA(4) + Delay(55 PAL / 57 NTSC) = one line
+//   Badline body : LDA(4) + STA(4) + Delay(12 PAL / 14 NTSC) = 20 / 22 cpu
+//                  cycles; the badline stall takes cycles 12..54, 43 cycles,
+//                  because the body is reading (NOPs) when BA falls.
+//   Badlines in 100..199 with YSCROLL=3: lines 107,115,...,195 (and 99).
 //
 // Verdict $02FF = 1 if coarse < 10 000 cycles AND kerb column matches.
 // Coarse cycles at $02F0/$02F1; fine chain (irq1 start to fine_done) at $02F2/$02F3.
@@ -120,7 +128,7 @@ BasicUpstart2(main)
 .const ZP_CXLO  = $11   // cx low byte   (8.8 fraction)
 .const ZP_DXHI  = $12   // dx high byte  (signed per-line-per-line curvature)
 .const ZP_DXLO  = $13   // dx low byte
-.const ZP_SCR   = $14   // scroll_z (0..99; advances 1/frame)
+.const ZP_SCR   = $14   // scroll_z (0..99; advances once per publish, every second frame)
 .const ZP_SEG   = $15   // current curve segment index (0..3)
 .const ZP_REM   = $16   // remaining lines until next segment switch
 .const ZP_T1    = $17   // scratch
@@ -129,6 +137,8 @@ BasicUpstart2(main)
 .const ZP_RPHI  = $1a   // row pointer hi
 .const ZP_LC    = $1b   // left char column for current road row
 .const ZP_RC    = $1c   // right char column for current road row
+.const ZP_CVLO  = $1d   // curve[segment] lo, the current dx step
+.const ZP_CVHI  = $1e   // curve[segment] hi
 
 // Spec result addresses
 .const COARSE_LO = $02f0
@@ -140,9 +150,18 @@ BasicUpstart2(main)
 // Small variables (safe area, below spec result addresses)
 .const SAVED_SP  = $02e0   // saved stack pointer for double-IRQ
 .const REG_FLAG  = $02e1   // 0 = PAL, 1 = NTSC (set once at boot by detect_region)
+.const FRAMES    = $02e2   // incremented by fine_done once a frame
 
 // Road dimensions
 .const NLINES = 100   // raster lines 100..199
+
+// Fine-layer timing constants, each found by measurement (see the page).
+.const SYNC_PAD_PAL   = 11   // puts the two $D012 reads across the 97/98 boundary
+.const SYNC_PAD_NTSC  = 13
+.const ENTRY_PAD_PAL  = 76   // sync to the first write on cycle 4 of line 100
+.const ENTRY_PAD_NTSC = 80
+.const BADLINE_PAD_PAL  = 12 // 20 cpu cycles + 43 stall = 63
+.const BADLINE_PAD_NTSC = 14 // 22 cpu cycles + 43 stall = 65
 .const NROWS  = 13    // character rows 6..18 (r=0=nearest=row18 .. r=12=farthest=row6)
 
 // Delay(n): exactly n cpu cycles of straight-line code, n >= 2.
@@ -158,6 +177,8 @@ cx_hi_buf:    .fill NLINES, 0          // cx integer part per i=0..99 (i=0=neare
 xscroll_d16:  .fill NLINES, D016_BASE  // $D016 value per road line (index 0=line 100)
 left_col:     .fill NROWS, 0
 right_col:    .fill NROWS, 0
+old_left:     .fill NROWS, 0           // left_col and right_col as last drawn
+old_right:    .fill NROWS, 0
 
 // ---- Static tables ($1200) ----
 * = $1200
@@ -174,9 +195,10 @@ hw_table:
     .byte  32, 31, 29, 28, 26, 25, 23, 22, 20, 19
     .byte  17, 16, 14, 13, 11, 10,  8,  7,  5,  4
 
-// Curve deltas (4 segments): 0, +51, 0, -51 in 8.8 signed fixed point.
-// -51 as 16-bit signed: $FFCD.
-curve_lo: .byte   0,  51,   0, $cd
+// Curve deltas (4 segments): 0, +18, 0, -18 in 8.8 signed fixed point
+// (0.07 pixel per line per line). -18 as 16-bit signed: $FFEE. 18 keeps cx
+// in 72..247 and cx - hw >= 8 for every scroll_z; 20 or more hits a clamp.
+curve_lo: .byte   0,  18,   0, $ee
 curve_hi: .byte   0,   0,   0, $ff
 
 // Screen base addresses for road rows r=0..12 (row 18 down to row 6).
@@ -213,19 +235,14 @@ dr_set_flag:
     rts
 
 // ---- road_irq1 handler ($0B00) ----
-// Fires at line 97 (two lines before the sync line 99).
-// Starts CIA fine timer, arms road_irq2 for line 99, saves SP, CLI, NOP slide.
-// irq2 fires during the NOP slide and returns via irq1's stack frame.
-//
-// road_irq1 cycle count before NOP slide:
-//   PAL path:  CIA_start(16) + lda+bne(6) + vector_set(12) + jmp(3) + common(20) = 57 cycles
-//   NTSC path: CIA_start(16) + lda+bne(7) + vector_set(12) + common(20) = 55 cycles
-// irq1 entry at cycle 37-39 of line 97 (main loop jmp = 3 cycles, 0-2 cycle jitter).
-// NOP slide starts at cycle 22-24 of line 98.
-// irq2 /IRQ fires at cycle 1 of line 99; CPU is in NOP slide.
-// irq2 enters at cycle 38 (zero-jitter) or 39 (one-jitter) of line 99.
+// Fires at line 95. Starts the CIA fine timer, arms road_irq2 for line 97,
+// saves SP, CLI, NOP slide. irq2 fires during the slide, so its entry
+// jitter is 0 or 1 cycle, and it returns through irq1's stack frame.
+// Lines 95..97 are not badlines; line 99 is (99 & 7 = 3), which is why the
+// sync happens on the 97/98 boundary and not on line 99.
 * = $0b00
 road_irq1:
+    cld                   // irq2 runs inside this handler and inherits D clear
     // Start CIA fine timer (will run until fine_done stops it)
     lda #$ff              // 2
     sta CIA_TALO          // 4
@@ -248,7 +265,7 @@ ri1_ntsc:
     lda #>road_irq2_ntsc  // 2
     sta $0315             // 4
 ri1_common:
-    lda #99               // 2  arm irq2 for line 99
+    lda #97               // 2  arm irq2 for line 97
     sta D012              // 4
     lda #$01              // 2
     sta D019              // 4  ack irq1
@@ -268,24 +285,23 @@ ri1_common:
     pla
     rti
 
-// ---- vblank_irq handler ($0C00) ----
-// Fires at line 251. Computes tables, CIA-times coarse redraw, verdict.
-// Re-arms for road_irq1 at line 97 and exits.
+// ---- compute ($0C00), called from the main loop ----
+// Builds cx_hi_buf[], xscroll_next[], left_col[] and right_col[] for the
+// current scroll_z. About 11,300 cycles, so it runs in the main program,
+// where road_irq1 can interrupt it; the fine loop meanwhile reads
+// xscroll_d16[], which only publish changes.
 * = $0c00
-vblank_irq:
-    cld             // clear D flag (RTI restores P, so D is restored); arithmetic must be binary
+compute:
 
-    // --- 1. Compute cx[] and xscroll_d16[] ---
+    // --- 1. Compute cx[] and xscroll_next[] in one pass ---
     //
-    // Forward pass i=0..99 (nearest to farthest).
-    // cx[0] = 160.0 (screen centre). dx = 0.
-    // Per step: cx += dx; dx += curve[segment].
+    // i = 0..99, nearest to farthest (i = 0 is raster 199).
+    // cx[0] = 160.0 (screen centre), dx = 0.
+    // Per step: cx += dx (signed, clamped to 0..255); dx += curve[segment].
     // Segment changes every 25 lines; init from scroll_z.
-    // Store cx_hi_buf[i] = integer part of cx[i].
-    //
-    // Backward pass j=0..99:
-    // xscroll_d16[j] = D016_BASE | ((cx_hi_buf[99-j] - hw_table[99-j]) & 7)
-    // (j=0 = line 100 = farthest = i=99; j=99 = line 199 = nearest = i=0)
+    // cx_hi_buf[i] = integer part of cx[i]
+    // xscroll_next[99-i] = D016_BASE | ((cx_hi_buf[i] - hw_table[i]) & 7)
+    // (index 99-i = j, the road line offset: line 100+j reads entry j)
 
     // Compute initial segment: scroll_z / 25 and scroll_z % 25
     lda ZP_SCR
@@ -308,6 +324,11 @@ div25_done:
     sec
     sbc ZP_T1
     sta ZP_REM      // remaining = 25 - (scroll_z % 25)
+    ldx ZP_SEG
+    lda curve_lo, x
+    sta ZP_CVLO
+    lda curve_hi, x
+    sta ZP_CVHI
 
     // cx = 160.0; dx = 0.0
     lda #160
@@ -317,21 +338,34 @@ div25_done:
     sta ZP_DXHI
     sta ZP_DXLO
 
-    ldy #0          // i
+    ldy #0          // i = 0..99
+    ldx #NLINES-1   // 99-i
 fwd_lp:
-    // Store cx integer part
+    // Store cx integer part and this line's $D016 value
     lda ZP_CXHI
     sta cx_hi_buf, y
+    sec
+    sbc hw_table, y     // left edge pixel (integer part)
+    and #$07            // XSCROLL = low 3 bits of left edge
+    ora #D016_BASE      // add MCM+CSEL bits
+    sta xscroll_next, x
+    dex
 
-    // cx += dx  (16-bit 8.8)
+    // cx += dx  (unsigned 8.8 plus signed 8.8)
     clc
     lda ZP_CXLO
     adc ZP_DXLO
     sta ZP_CXLO
     lda ZP_CXHI
     adc ZP_DXHI
-    bcc cx_ok       // carry set = 8-bit overflow: clamp to 255
+    bit ZP_DXHI     // N = sign of dx; BIT leaves C alone
+    bmi cx_neg
+    bcc cx_ok       // dx >= 0: carry = past 255, clamp to 255
     lda #$ff
+    bne cx_ok
+cx_neg:
+    bcs cx_ok       // dx < 0: carry clear = borrow below 0, clamp to 0
+    lda #0
 cx_ok:
     sta ZP_CXHI
     // Clamp below 16 (road approaching left edge)
@@ -341,50 +375,42 @@ cx_ok:
     sta ZP_CXHI
 cx_lo_ok:
 
-    // dx += curve[segment]  (16-bit signed)
-    ldx ZP_SEG
+    // dx += curve[segment]  (16-bit signed, held in ZP_CVLO/HI)
     clc
     lda ZP_DXLO
-    adc curve_lo, x
+    adc ZP_CVLO
     sta ZP_DXLO
     lda ZP_DXHI
-    adc curve_hi, x
+    adc ZP_CVHI
     sta ZP_DXHI
 
     // Advance segment counter
     dec ZP_REM
     bne fwd_no_seg
-    inc ZP_SEG
+    stx ZP_T1
     lda ZP_SEG
+    clc
+    adc #1
     and #3
     sta ZP_SEG
+    tax
+    lda curve_lo, x
+    sta ZP_CVLO
+    lda curve_hi, x
+    sta ZP_CVHI
     lda #25
     sta ZP_REM
+    ldx ZP_T1
 fwd_no_seg:
 
     iny
     cpy #NLINES
     bne fwd_lp
 
-    // Backward pass: j=0..99, X=99..0 (read index), Y=0..99 (write index)
-    ldx #99
-    ldy #0
-bwd_lp:
-    lda cx_hi_buf, x
-    sec
-    sbc hw_table, x     // left_edge pixel (integer part)
-    and #$07            // XSCROLL = low 3 bits of left edge
-    ora #D016_BASE      // add MCM+CSEL bits
-    sta xscroll_d16, y
-    dex
-    iny
-    cpy #NLINES
-    bne bwd_lp
-
     // --- 2. Compute left_col[] and right_col[] for coarse layer ---
     // For r=0..12: i_mid = min(8*r+4, 99)
     // left_col[r]  = (cx_hi_buf[i_mid] - hw_table[i_mid]) >> 3
-    // right_col[r] = (cx_hi_buf[i_mid] + hw_table[i_mid]) >> 3
+    // right_col[r] = min(39, (cx_hi_buf[i_mid] + hw_table[i_mid]) >> 3)
     ldx #0
 cc_lp:
     txa
@@ -413,14 +439,12 @@ cc_lsave:
 
     lda cx_hi_buf, y
     clc
-    adc hw_table, y
-    bcs cc_rovf
+    adc hw_table, y     // 9-bit sum: carry is bit 8
+    ror                 // carry into bit 7: A = sum >> 1
     lsr
-    lsr
-    lsr
+    lsr                 // A = sum >> 3, 0..63
     cmp #40
     bcc cc_rsave
-cc_rovf:
     lda #39
 cc_rsave:
     sta right_col, x
@@ -428,6 +452,19 @@ cc_rsave:
     inx
     cpx #NROWS
     bne cc_lp
+    rts
+
+// ---- publish, called from the main loop just after fine_done (line 200) ----
+// Copies xscroll_next[] into xscroll_d16[], CIA-times the coarse redraw,
+// advances scroll_z and writes the verdict. It must end before road_irq1
+// at line 95; it ends by line 1 (PAL) or 47 (NTSC), see the page.
+publish:
+    ldx #NLINES-1
+pub_cp:
+    lda xscroll_next, x
+    sta xscroll_d16, x
+    dex
+    bpl pub_cp
 
     // --- 3. CIA-timed coarse screen redraw ---
     lda #$ff
@@ -453,15 +490,42 @@ rdr_lp:
     sta ZP_LC
     lda right_col, x
     sta ZP_RC
-    ldy ZP_LC
-    iny
-    lda #CH_ROAD
-rf:
-    cpy ZP_RC
-    bcs rf_end
+
+    // Erase what the road left since the last redraw: grass on
+    // old_left..LC-1 and RC+1..old_right. The fill below covers LC..RC.
+    lda #CH_GRASS
+    ldy old_left, x
+er_l:
+    cpy ZP_LC
+    bcs er_l_end
     sta (ZP_RPLO), y
     iny
-    jmp rf
+    bne er_l            // always taken, Y < 40
+er_l_end:
+    ldy old_right, x
+er_r:
+    cpy ZP_RC
+    beq er_r_end
+    bcc er_r_end
+    sta (ZP_RPLO), y
+    dey
+    bpl er_r            // always taken, Y >= 1
+er_r_end:
+    lda ZP_LC
+    sta old_left, x
+    lda ZP_RC
+    sta old_right, x
+
+    ldy ZP_LC
+    iny
+    cpy ZP_RC
+    bcs rf_end
+    lda #CH_ROAD
+rf:
+    sta (ZP_RPLO), y
+    iny
+    cpy ZP_RC
+    bcc rf
 rf_end:
 
     // Right kerb
@@ -543,31 +607,13 @@ vpass:
     lda #C_GREEN
     sta D020
 vdone:
-
-    // --- 6. Re-arm for road_irq1 at line 97 ---
-    lda #$01
-    sta D019            // ack vblank IRQ
-    lda #<road_irq1
-    sta $0314
-    lda #>road_irq1
-    sta $0315
-    lda #$1b
-    sta D011            // RST8=0
-    lda #97
-    sta D012
-
-    // Exit via KERNAL register-restore + RTI
-    pla
-    tay
-    pla
-    tax
-    pla
-    rti
+    rts
 
 // ---- Main ($0900) ----
 * = $0900
 main:
     sei
+    cld             // compute and publish run here and need binary arithmetic
     lda #$7f
     sta CIA_ICR     // mask all CIA1 IRQ sources
     lda CIA_ICR     // clear pending CIA1 flag
@@ -601,21 +647,29 @@ main:
     lda #0
     sta ZP_SCR
 
-    lda #<vblank_irq
+    lda #<road_irq1
     sta $0314
-    lda #>vblank_irq
+    lda #>road_irq1
     sta $0315
     lda #$1b
-    sta D011        // RST8=0 for line 251
-    lda #251
+    sta D011        // RST8=0 for line 95
+    lda #95
     sta D012
     lda #1
     sta D01A
     sta D019
     cli
 
-idle:
-    jmp idle
+    // One road step per pass: compute the next tables while the fine loop
+    // shows the current ones, wait for fine_done, publish. Two frames a step.
+main_loop:
+    jsr compute
+    lda FRAMES
+wait_frame:
+    cmp FRAMES
+    beq wait_frame      // fine_done increments FRAMES at line 200
+    jsr publish
+    jmp main_loop
 
 // ---- init_charset: 5 chars * 8 bytes at $3000 ----
 init_charset:
@@ -664,37 +718,27 @@ cls_lp:
 // ============================================================
 // road_irq2_pal: stable entry + PAL unrolled fine loop ($1300)
 // ============================================================
-// Entry: cycle 38 or 39 of line 99 (via KERNAL dispatcher from irq2 vector).
-// Sync: ldx+txs(6) + cld(2) + Delay(10) + lda $D012 + cmp $D012 + BEQ =
-//   both zero-jitter and one-jitter converge to cycle 4 of line 100.
-// Immediately into first fine loop iteration; no JMP intervenes.
-// STA $D016 write at cycle 11 of line 100 (at or before deadline of cycle 14).
-// 100 iterations; badline rows use Delay(15) instead of Delay(55).
-// On exit: jmp fine_done.
-
+// Entry at line 97 with 0 or 1 cycle of jitter. The two $D012 reads
+// straddle the 97/98 boundary: BEQ is taken (3 cycles) when both read 97
+// and not (2) when the second reads 98, so both paths leave on the same
+// cycle of line 98. ENTRY_PAD then crosses line 98 and badline 99.
 * = $1300
 road_irq2_pal:
     ldx SAVED_SP          // discard irq2's own stack frame (saved by irq1)
     txs
-    cld                   // clear decimal flag (RTI will restore P); arithmetic must be binary
-    // Sync padding: PAD_PAL=10. With C2=38/39, second D012 read at cycle 63/64.
-    // BEQ: taken (3 cycles) or not (2); both paths land at cycle 4 of line 100.
-    // STA D016 write lands at cycle 11 of each road line, before the cycle-14 deadline.
-    Delay(10)
+    Delay(SYNC_PAD_PAL)
     lda D012
     cmp D012
-    beq pal_fine_start
+    beq pal_sync
+pal_sync:
+    Delay(ENTRY_PAD_PAL)
 pal_fine_start:
-// PAL unrolled fine loop: 100 iterations, each exactly 63 cpu cycles (or elapsed).
-// Iteration j writes xscroll_d16+j to $D016 for road raster line 100+j.
-// Badlines: (100+j) & 7 == 3, i.e., j = 7,15,23,31,39,47,55,63,71,79,87,95.
-//   Badline body: LDA(4)+STA(4)+Delay(15)=23 cpu cycles; 40-cycle steal accounts for rest.
-//   Normal body:  LDA(4)+STA(4)+Delay(55)=63 cpu cycles.
+// Iteration j writes xscroll_d16+j to $D016 on cycle 4 of line 100+j.
 .for (var j = 0; j < 100; j++) {
     lda xscroll_d16+j
     sta D016
     .if (((100+j) & 7) == 3) {
-        Delay(15)
+        Delay(BADLINE_PAD_PAL)
     } else {
         Delay(55)
     }
@@ -703,27 +747,23 @@ pal_fine_end:
     jmp fine_done
 
 // ============================================================
-// road_irq2_ntsc: stable entry + NTSC unrolled fine loop
+// road_irq2_ntsc: the same for the 65-cycle NTSC line
 // ============================================================
-// Same structure as PAL but PAD_NTSC=13 (NTSC line = 65 cycles).
-// Normal body: 65 cpu cycles. Badline body: 25 cpu cycles.
-
 road_irq2_ntsc:
     ldx SAVED_SP
     txs
-    cld                   // clear decimal flag (RTI will restore P)
-    // Sync padding: PAD_NTSC=12. Second D012 read at cycle 65/66 (NTSC boundary).
-    Delay(12)
+    Delay(SYNC_PAD_NTSC)
     lda D012
     cmp D012
-    beq ntsc_fine_start
+    beq ntsc_sync
+ntsc_sync:
+    Delay(ENTRY_PAD_NTSC)
 ntsc_fine_start:
-// NTSC unrolled fine loop: 100 iterations, each exactly 65 cpu cycles (or elapsed).
 .for (var j = 0; j < 100; j++) {
     lda xscroll_d16+j
     sta D016
     .if (((100+j) & 7) == 3) {
-        Delay(17)
+        Delay(BADLINE_PAD_NTSC)
     } else {
         Delay(57)
     }
@@ -750,16 +790,18 @@ fine_done:
     lda #D016_BASE
     sta D016
 
-    // Re-arm for vblank_irq at line 251
+    inc FRAMES         // releases the main loop's publish
+
+    // Re-arm road_irq1 for line 95 of the next frame
     lda #$01
     sta D019           // ack road IRQ
-    lda #<vblank_irq
+    lda #<road_irq1
     sta $0314
-    lda #>vblank_irq
+    lda #>road_irq1
     sta $0315
     lda #$1b
     sta D011           // RST8=0
-    lda #251
+    lda #95
     sta D012
 
     // Exit through irq1's stack frame (SAVED_SP was irq1's post-KERNAL SP)
@@ -769,6 +811,10 @@ fine_done:
     tax
     pla
     rti
+
+// Next frame's $D016 values, built by compute, copied by publish.
+* = $2f00
+xscroll_next: .fill NLINES, D016_BASE
 ```
 
 ## Build
@@ -779,68 +825,141 @@ java -jar KickAss.jar pseudo-3d-road.asm -o pseudo-3d-road.prg
 
 ## Expected output
 
-A perspective road receding toward a horizon at raster line 100, narrowing from
-full width at the nearest row to a few characters wide at the horizon. The road
-curves left and right as scroll_z cycles through the four-segment table. The
-border is green throughout (verdict = 1: coarse redraw under 10,000 cycles and
-kerb column formula matches). Grass is green ($D021 = 5), road surface is dark
-grey ($D022 = 11), kerbs and the centre dash stripe are white ($D023 = 1).
+A road that is full width at the nearest row (raster 199) and a few
+characters wide at the horizon (raster 100). It bends left in the PAL
+screenshot and right in the NTSC one. The border is
+green (verdict = 1: coarse redraw under 10,000 cycles and kerb column
+formula matches). Grass is green ($D021 = 5), road surface dark grey
+($D022 = 11), kerbs and the centre dash white ($D023 = 1).
 
-Within each character row, adjacent raster lines show different XSCROLL values
-and the kerb's left edge appears at different sub-character pixel positions. This
-is visible in the screenshot: rasters 156..162 (screenshot rows 140..146 on PAL)
-show the white kerb at x = 138, 143, 142, 139, 137, 136, 110 on consecutive lines
-(measured in VICE x64sc 3.10, PAL pin), confirming per-line delivery of
-distinct XSCROLL values.
+Each road line shows its own XSCROLL. The check: dump screen RAM and
+`xscroll_d16` at `fine_done`, render every road line from the screen codes,
+the charset and XSCROLL 0..7, and compare with the screenshot row. On both
+pins all 100 lines match their own table entry, and no other XSCROLL value
+reproduces any of them. On PAL, rasters 147..162 (rows 12 and 13, left
+kerb in column 5) carry XSCROLL 5, 5, 6, 5, 6, 6, 7, 6, 7, 7, 0, 7, 0, 0,
+0, 0 and the first white kerb pixel sits at x = 72 + XSCROLL on every line.
 
-**PAL (20,000,000 cycles).** Screenshot `screenshots/pseudo-3d-road.png`;
-md5 8ff3e82b581d6b447d383ef798e45154 on two consecutive runs (verified in VICE
-x64sc 3.10, +autostart-delay-random). Frame shows scroll_z approximately 67
-(arithmetic: (20,000,000 / 19,656 frames - autostart overhead) % 100).
+**Road geometry in the screenshots.** For each of the 13 rows the kerb
+columns in the dumped screen RAM equal the listing's arithmetic, and no
+road, kerb or dash cell lies outside them; this held on every frame of both
+runs after the first publish. The centre of the non-grass span on each
+row's middle line:
 
-**NTSC (20,000,000 cycles, `-model ntsc`).** Screenshot
-`screenshots/pseudo-3d-road-ntsc.png`; md5 2ae7a914d311c8dfeda0bd2cb95d5d42
-on two consecutive runs. Frame shows scroll_z approximately 12 (arithmetic).
-On NTSC, raster 107 (j=7, badline, XSCROLL=1 at this frame) shows kerb at x=274
-and raster 108 (j=8, XSCROLL=7) shows kerb at x=273 (1-pixel difference from
-the 6-XSCROLL-unit difference, within the same character cell).
+| Row (raster) | PAL, scroll_z = 59: kerbs, centre x | NTSC, scroll_z = 24: kerbs, centre x |
+|---|---|---|
+| 18 (199) | columns 1..38, 191.5 | columns 1..38, 191.5 |
+| 14 (167) | 6..30, 186.5 | 12..37, 238.5 |
+| 10 (135) | 5..17, 125.5 | 24..36, 277.5 |
+| 6 (103) | 8..9, 103.5 | 30..31, 286.5 |
 
-**Cycle measurements (VICE x64sc 3.10, monitor dump at scroll_z=4, PAL).**
+x is the screenshot column; x = 32 is the first display pixel, so the
+screen centre, cx = 160, is x = 192.
+
+**PAL (21,100,000 cycles).** Screenshot `screenshots/pseudo-3d-road.png`,
+md5 48362775112a3a141d47e797c5036ddc, the same with and without monitor
+tracepoints (VICE x64sc 3.10, PAL c64c, `+autostart-delay-random`). The
+frame shows scroll_z = 59 (monitor dump).
+
+**NTSC (21,100,000 cycles, `-model ntsc`).** Screenshot
+`screenshots/pseudo-3d-road-ntsc.png`, md5 15be311b61bc933ea7573d3527b66d81.
+The frame shows scroll_z = 24 (monitor dump). (Earlier versions pinned
+20,000,000 cycles; the pin moved so that one picture shows each bend.)
+
+**Write cycles (VICE x64sc 3.10 monitor, a tracepoint on each of the 100
+STA $D016, every frame of the 21,100,000-cycle run).**
+
+| | PAL | NTSC |
+|---|---|---|
+| Frames traced | 920 | 1,052 |
+| STA $D016 writes on | cycle 4 of line 100+j, every j, every frame | cycle 4 of line 100+j, every j, every frame |
+| Loop span | first LDA on cycle 60 of line 99; `fine_done` on cycle 63 of line 199, after a 3-cycle JMP: 6,300 cycles of loop | first LDA on cycle 62 of line 99; `fine_done` on cycle 62 of line 199: 6,500 cycles |
+
+Cycle numbers are Bauer's, 1 to 63 (`runtime/vice-reference.md`, "What
+the CYC column counts"): the store trace prints the write's cycle as 4
+itself, and an exec trace prints an instruction's first cycle one lower
+(the `LDA` on 60 printed 59). An earlier version said every figure was
+the monitor's column plus one, which holds only for exec traces. On this
+scale the badline stall starts on cycle 12.
+
+**Which write cycles work.** Moving ENTRY_PAD moves every write by the same
+amount. On both models all 100 lines matched their table entry for a write
+from cycle 56 of the line before through cycle 12 of the line itself. A
+write on cycle 54 of the line before matched 32 lines (31 on NTSC); one on
+cycle 13 or 14 matched 88, failing on exactly the twelve badlines. Cycle 55
+was not reached by the sweep. Cycle 4 sits 8 cycles inside the late edge.
+These edges are what this picture shows: the first cells of most road lines
+are grass, so a write that shifts only a line's first pixels can go unseen
+here; the VIC's own window may be narrower than this sweep shows. The header comment of an earlier
+version put a "cycle-14 deadline" on the write; on a badline it is cycle 12.
+The sweep and the sync runs below were made before the geometry fix for
+issue #73; that fix did not touch the IRQ handlers or the fine loop, which
+assemble to the same bytes at the same addresses.
+
+**Sync constants.** SYNC_PAD_PAL = 11 and SYNC_PAD_NTSC = 13 give one write
+pattern on every frame. One cycle either side gives two patterns a cycle
+apart, the 0-or-1-cycle irq2 jitter left uncorrected.
+
+**Cycle measurements (CIA1 timer A, read from $02F0-$02F3 by the monitor).**
 
 | Quantity | PAL | NTSC |
 |---|---|---|
-| Coarse redraw (CIA-timed) | 6,332 cycles | 6,162 cycles |
-| Fine chain (irq1 CIA start to fine_done stop) | 6,523 cycles | 6,729 cycles |
-| Fine loop alone (arithmetic: 100 x line) | 6,300 cycles | 6,500 cycles |
+| Coarse redraw at scroll_z = 4 | 5,264 cycles | 5,264 cycles |
+| Coarse redraw, range over the run | 5,257..5,422 | 5,257..5,422 |
+| Fine chain (irq1 CIA start to fine_done stop) | 6,559..6,563 cycles | 6,766..6,770 cycles |
+| Fine loop alone (measured span, above) | 6,300 cycles | 6,500 cycles |
 
-The fine chain overhead above the loop (223 cycles PAL, 229 NTSC) covers road_irq1
-code, the NOP slide, the irq2 KERNAL entry, the sync code, and the CIA stop
-instruction. Verdict = 1 on both models.
+The range leaves out the first redraw (8,324 cycles PAL, 8,582 NTSC),
+which writes grass from column 0 because nothing has been drawn yet. The
+fine chain above the loop (259..263 cycles PAL, 266..270 NTSC) covers
+road_irq1, the NOP slide, the irq2 KERNAL entry, the sync, the entry delay
+across line 99 and the CIA stop. It varies by up to 3 cycles because irq1
+interrupts the main program mid-instruction. (An earlier version gave
+6,332 and 6,162 cycles for the coarse redraw and 6,523 and 6,729 for the
+fine chain; the redraw then ran during the display, where badlines steal
+from it, and the chain started a line later. The redraw figures before
+the #73 fix, 4,872..5,984 PAL and 4,873..6,027 NTSC, drew a road pinned
+against column 39.)
 
-**xscroll_d16 table entries at scroll_z=4 (monitor dump, PAL).**
+**Main-loop timing (monitor tracepoints, every step of the run).**
+`publish` takes 6,879..7,047 cycles and runs from line 201 to line 310..1
+of the next frame on PAL and to line 44..47 on NTSC, before road_irq1 at
+line 95 and outside rows 6..18. `compute` then runs, interrupted once by
+the fine chain, and ends on line 280..285 (PAL) or line 58..63 (NTSC), so
+the main loop waits for the next `fine_done`: one road step every two
+frames, on all 457 PAL and 522 NTSC steps. Compute's first instruction to
+its RTS is 17,747..17,884 cycles on PAL and 17,993..18,178 on NTSC; less
+the fine chain that interrupts it, compute costs about 11,200..11,400
+cycles with badline steals (arithmetic). (An earlier version gave 18,806
+and about 12,200 cycles, and publish ending on line 304 PAL, line 38 NTSC.)
 
-| j (road line offset) | raster | D016 value | XSCROLL | badline |
+**xscroll_d16 at scroll_z = 4 (monitor dump, PAL; the same values from the
+listing's arithmetic run in Python).** Every table dumped at `fine_done`
+after the first publish, 919 of 920 PAL frames and 1,050 of 1,052 NTSC,
+equals the arithmetic for one scroll_z.
+
+| j (road line offset) | raster | $D016 value | XSCROLL | badline |
 |---|---|---|---|---|
 | 7 | 107 | $19 | 1 | yes |
-| 8 | 108 | $1F | 7 | no |
-| 50 | 150 | $18 | 0 | no |
-| 56 | 156 | $1A | 2 | no |
-| 57 | 157 | $1F | 7 | no |
+| 8 | 108 | $1E | 6 | no |
+| 50 | 150 | $1B | 3 | no |
+| 56 | 156 | $18 | 0 | no |
+| 57 | 157 | $1D | 5 | no |
 
-j=7 and j=8 have different XSCROLL values (1 vs 7), confirming the badline
-delay delivers the correct per-line value. j=56 and j=57 differ by 5 units
-and the screenshot at these rasters shows kerb positions differing by 5 pixels,
-matching the table (measured: x=138 and x=143 on both PAL and NTSC pins).
+(An earlier version gave $1F, $1E and $18 for j = 8, 56 and 57: the values
+of the saturating arithmetic fixed under "Road geometry". One before that
+gave $18, $1A and $1F for j = 50, 56 and 57, which were not the scroll_z = 4
+values.)
 
-**Badline finding.** Twelve badlines occur in the road area (rasters 107, 115,
-123, 131, 139, 147, 155, 163, 171, 179, 187, 195, with default YSCROLL=3). Each
-badline iteration uses Delay(15) (PAL) or Delay(17) (NTSC) instead of Delay(55)
-or Delay(57): 23 or 25 CPU cycles that the 40-cycle steal extends to one full
-raster line. The STA $D016 write at cycle 11 completes before BA goes low at
-cycle 12, so the write is never blocked by the steal. The previous (broken)
-implementation used a spin-wait on $D012 which introduced up to 9 cycles of
-jitter, placing writes at cycles 20-28 of each line (past the deadline); post-badline
-lines received the badline row's XSCROLL value instead of their own.
+**Badline finding.** Thirteen badlines touch the fine layer with YSCROLL = 3:
+line 99, crossed by the entry delay, and rasters 107, 115, ..., 195 inside
+the loop. The loop's body for a badline is 20 CPU cycles on PAL (22 on
+NTSC): the write lands on cycle 4, the NOPs are reading when BA falls on
+cycle 12, and the CPU gets cycles 1..11 and 55..63 of the line, losing
+43. (An earlier version used 23 and 25 cycles against a 40-cycle steal; the
+stall is 43 whenever the CPU is reading on cycles 12..14, so every badline
+moved the rest of the loop 3 cycles later. An earlier implementation still
+spun on $D012 and wrote on cycles 20..28.)
 
 ## Why this works
 
@@ -848,62 +967,117 @@ lines received the badline row's XSCROLL value instead of their own.
 round(152 - 1.5 * i))`, arithmetic from the spec formula, gives half-widths
 from 152 (i=0, nearest, raster 199) down to 4 (i=99, farthest, raster 100).
 The centre accumulator cx advances each step by a signed delta dx, and dx
-itself advances by the current segment's curve value (0 or +/-0.20 in 8.8 fixed
-point). One `$D018 = $1C` write points the VIC at the custom charset at $3000.
+itself advances by the current segment's curve value (0 or ±18/256, about
+±0.07 pixel, in 8.8 fixed point). cx is unsigned and dx signed, so the add
+reads the carry by dx's sign: with dx >= 0 a carry means past 255, with
+dx < 0 a clear carry means below 0. The right kerb column is the 9-bit sum
+cx + hw shifted right 3, carry rotated in. One `$D018 = $1C` write points the VIC at the custom charset at $3000.
 Five character patterns cover all road regions: $00 (all %00 = $D021 = green
 grass), $55 (all %01 = $D022 = dark grey road), $A5 (left half white, right
 half grey = left kerb), $5A (mirror), $69 (grey-white-white-grey = centre
 dash). Bit 3 of colour RAM must be set for multicolour mode to apply per cell;
 fill_colram writes 8 to all 1,000 colour RAM locations.
 
-**Fine layer: stable entry.** road_irq1 fires at line 97, starts the CIA fine
-timer, arms road_irq2 for line 99, saves the stack pointer to SAVED_SP, clears
-the I flag and falls through a 40-NOP slide. road_irq2 fires from inside the
-slide at cycle 1 of line 99, interrupting a NOP. This is the double-IRQ method
-from `stable-raster-irq.md`: because the interrupted instruction is always 2
-cycles, the jitter at irq2 entry is 0 or 1 cycle rather than 0 to 6. irq2
-discards its own KERNAL stack frame using SAVED_SP, then runs:
+**Fine layer: stable entry.** road_irq1 fires at line 95, starts the CIA
+fine timer, arms road_irq2 for line 97, saves the stack pointer to SAVED_SP,
+clears the I flag and falls through a 40-NOP slide. road_irq2 fires from
+inside the slide on line 97. This is the double-IRQ method from
+`stable-raster-irq.md`: because the interrupted instruction is always a
+2-cycle NOP, the jitter at irq2 entry is 0 or 1 cycle. irq2 discards its own
+KERNAL stack frame using SAVED_SP, then runs:
 
 - ldx SAVED_SP / txs (6 cycles)
-- Delay(PAD) (PAL: 11 cycles; NTSC: 13 cycles)
+- Delay(SYNC_PAD) (PAL: 11 cycles; NTSC: 13 cycles)
 - lda $D012 / cmp $D012 / beq (10 or 11 cycles)
+- Delay(ENTRY_PAD) (PAL: 76; NTSC: 80), across line 98 and badline 99
 
-The two consecutive reads of $D012 straddle the raster 99/100 boundary: in the
-zero-jitter case both land on line 99 and BEQ is taken (3 cycles); in the
-one-jitter case the second read crosses to line 100 and BEQ is not taken (2
-cycles). Both paths end at cycle 4 of line 100. The Delay
-constant is PAD_PAL=11 (second read at cycle 63 or 64 of line 99 for PAL) and
-PAD_NTSC=13 (second read at cycle 65 or 66 for NTSC).
+The two reads of $D012 straddle the 97/98 boundary: with zero jitter both
+read 97 and BEQ is taken (3 cycles); with one cycle of jitter the second
+reads 98 and BEQ is not taken (2 cycles). Both paths leave on the same
+cycle of line 98. The sync is on 97/98 because line 99 is a badline (99 & 7
+= 3): an earlier version synced on 99/100 with irq1 at 97 and irq2 at 99,
+where the stall landed in the IRQ entry and the sync, and its loop started
+on cycle 49 (PAL) and moved by 2 cycles between frames. road_irq1 clears
+the D flag; irq2 runs inside it and inherits that.
 
-PAL and NTSC have different Delay constants because the line length differs (63
-vs 65 cycles). road_irq1 selects `road_irq2_pal` or `road_irq2_ntsc` based on
+PAL and NTSC have different constants because the line length differs (63
+vs 65 cycles). road_irq1 selects `road_irq2_pal` or `road_irq2_ntsc` from
 the model flag set by detect_region at boot.
 
-**Fine layer: unrolled loop.** From cycle 4 of line 100, the first iteration
-begins immediately: LDA xscroll_d16+0 (cycles 3..6), STA $D016 (write at cycle
-10, before the cycle-14 deadline). The iteration then runs Delay(55) (PAL
-normal) or Delay(15) (PAL badline) to complete exactly 63 real cycles, ending
-at cycle 2 of line 101. The next iteration begins at cycle 3 of line 101. This
-repeats for all 100 road lines.
+**Fine layer: unrolled loop.** Each normal iteration is LDA xscroll_d16+j,
+STA $D016 and Delay(55) (PAL) or Delay(57) (NTSC): one line. Each badline
+iteration uses Delay(12) or Delay(14): 20 or 22 CPU cycles plus the
+43-cycle stall. The write is the STA's last cycle, cycle 4 of line 100+j.
 
-Badline iterations: the CPU stall begins at cycle 15 and lasts 40 cycles (cycles
-15..54). Delay(15) starts at cycle 11 but is interrupted at cycle 15; the stall
-absorbs 40 real cycles, and the delay resumes at cycle 55 with the remaining
-bit-zero-page and NOP instructions, completing at cycle 2 of the next line.
-Total real cycles: LDA(4) + STA(4) + stall(40) + resumed delay(15) = 63.
+Measured before this fix, in the same monitor, with Delay(15) and Delay(17)
+on the badlines and the sync on line 99:
+
+| Iterations j | PAL: write landed on | NTSC: write landed on |
+|---|---|---|
+| 0..6 | cycle 56 of line 100+j | cycle 54 of line 100+j |
+| 8..14 | cycle 59 of line 100+j | cycle 57 of line 100+j |
+| 40..46 | cycle 8 of line 101+j | cycle 4 of line 101+j |
+| 96..99 | cycle 29 of line 101+j | cycle 25 of line 101+j |
+
+Checked against the screenshot the same way as above, that listing showed
+each line with the previous line's XSCROLL (0 of 100 lines matched their own
+entry); lines where a write fell inside the displayed part matched no
+single XSCROLL. (Before that, the page said the loop wrote on cycle 10 or 11 of every line and that
+the badline stall ran from cycle 15 for 40 cycles. A badline leaves the CPU
+20 cycles, 23 only when the instructions on cycles 12..14 are writes.)
+
+**Main loop and frame rate.** The table computation costs about 11,300
+cycles and `publish` about 7,000. Outside the fine chain a PAL
+frame has about 13,100 cycles (19,656 - 6,562) and an NTSC frame about
+10,300 (17,095 - 6,768), so one road step takes two frames. The redraw
+must also not touch rows 6..18 while the beam draws them. So the main loop computes the next tables into
+`xscroll_next` while the fine loop shows the current ones, waits for
+`fine_done` to increment FRAMES at line 200, then `publish` copies the
+tables and redraws the rows before line 95. (An earlier version did both in
+an IRQ at line 251; measured, it ran until line 222 of the next frame,
+missed that frame's line 97 interrupt, and so the fine loop ran every second
+frame, with XSCROLL 0 and the redraw in progress on the frames between.)
+
+Two NTSC frames leave about 20,600 cycles outside the fine chains, and the
+pair needs about 18,300, so the margin is small. A first build of the #73
+fix, with a separate backward pass for `xscroll_next`, the curve read
+through `curve_lo,x` on every line and a 16-cycle fill loop, took 21,171
+cycles for one compute and publish and fell to one road step every three
+NTSC frames (measured). Writing `xscroll_next` in the forward pass, holding
+curve[segment] in zero page and a 14-cycle fill loop brought it back to two.
+
+**Road geometry.** `fwd_lp` adds the signed dx to the unsigned cx and
+clamps by dx's sign (see "Coarse layer"). With curve steps of ±18/256, the
+arithmetic run in Python for all 100 scroll_z values keeps cx in 72..247
+and cx - hw at 8 or more, so no clamp fires and no left kerb column wraps;
+±20 hits a clamp, and ±24 puts the left edge below 0. The four segments
+are straight, right, straight, left, and dx starts at 0 on the nearest line
+each frame, so the nearer bend is right for scroll_z 0..49 and left for
+50..99. The screenshots show 59 (left) and 24 (right). (An earlier version added dx as if
+unsigned and treated any carry as overflow, so a negative dx pinned cx at
+255 at once and a positive dx of up to 5 pixels a line, from steps of
+±51/256, saturated it within a few rows: the road bent right and never
+left. Its right kerb clamped to column 39 whenever cx + hw passed 255, not
+319, so near rows reached the right edge whatever cx was. Issue #73.)
+
+**Clearing the grass.** `publish` keeps the kerb columns it last drew for
+each row in `old_left` and `old_right`, writes grass on old_left..LC-1 and
+RC+1..old_right, then draws LC..RC. Every cell outside the road is grass
+after each redraw (checked on every frame of both runs). (An earlier
+version wrote only LC..RC and listed clearing as not done; left kerbs and
+road cells from earlier steps stayed on screen.)
 
 **Stack management.** irq2 is entered through the KERNAL dispatcher, which
 pushes A, X, Y on top of the CPU's own interrupt frame. road_irq2 discards this
 second frame by restoring irq1's saved stack pointer; the exit sequence
 pla/tay/pla/tax/pla/rti then pops irq1's KERNAL-saved Y, X, A and returns
-through irq1's interrupt frame to the main idle loop. Without this, the stack
+through irq1's interrupt frame to the main loop. Without this, the stack
 grows by six bytes per road_irq2 call.
 
 **IRQ exit via pla/tay/pla/tax/pla/rti.** The KERNAL dispatcher at $FF48
-pushes A, X and Y before calling ($0314). Both vblank_irq and road_irq2 exit
-with this sequence, which pops the KERNAL's saves and RTIs. vblank_irq does
-not push its own saves; the KERNAL's saves are sufficient, and any changes to
-A, X, Y during the handler are overwritten on exit by the KERNAL's originals.
+pushes A, X and Y before calling ($0314). fine_done exits with this
+sequence, which pops the KERNAL's saves and RTIs to the main loop with its
+A, X and Y intact.
 
 ## What it does not establish
 
@@ -915,16 +1089,16 @@ step smoothly between rows (the kerb shifts at each raster boundary) but the
 step between adjacent character rows remains a coarse 8-pixel jump; only the
 sub-character remainder is addressed per-line.
 
-**Per-frame grass clearing.** The coarse redraw does not re-fill grass
-characters before drawing road characters. clear_screen fills all grass at
-startup; as the road curves, old kerb and road characters may accumulate at row
-boundaries. A production effect erases only the cells that moved since the
-previous frame.
-
 **Sky and dashboard colour regions.** $D021 is set once at startup (green).
 Per-raster-region $D021 changes for a blue sky above the horizon and a black
 dashboard below the road are not implemented.
 
-**Cycle budget and correctness.** The loop delivers exactly one write per raster
-line; whether the cx and hw values produce a CORRECT road geometry (one the
-original game engine would compute) is not established here.
+**Sprites on the road.** The sprites are off: a sprite's fetches take
+cycles from every line it is on, and the unrolled loop counts every
+cycle. `road-sprite-lines.md` keeps each line's `$D016` store on one cycle
+with three sprites moving over the road lines, by padding each line for
+the sprites that fetch on it.
+
+**Game-engine geometry.** cx is one byte, so the road centre can reach
+display pixel 255 of 319 and no further. Whether these cx and hw values
+match the road of any real game engine is not established here.

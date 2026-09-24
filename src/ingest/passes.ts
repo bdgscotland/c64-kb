@@ -46,6 +46,7 @@ function countNode(nodes: NodeTally, e: NodeEntity): void {
   else if (e.type === "crash_pattern") nodes.crashPatterns++;
   else if (e.type === "archetype") nodes.archetypes++;
   else if (e.type === "game_design") nodes.gameDesigns++;
+  else if (e.type === "library_function") nodes.libraryFunctions++;
 }
 
 /** Create a file's nodes and queue its edges. Returns the number of nodes created. */
@@ -103,7 +104,13 @@ export async function applyPendingEdges(
   print(`\nPass 2: applying ${edges.length} deferred edges`);
   let edgeFailures = 0;
   let consecutiveFailures = 0;
-  for (const edge of edges) {
+  // ALTERNATIVE_TO is refused between a technique and its prerequisite, so
+  // every REQUIRES edge must be in place before the first one is linked.
+  const ordered = [
+    ...edges.filter((e) => e.type !== "technique_alternative"),
+    ...edges.filter((e) => e.type === "technique_alternative"),
+  ];
+  for (const edge of ordered) {
     try {
       tally.record(edge, await applyEdge(falkor, edge));
       consecutiveFailures = 0;

@@ -780,7 +780,9 @@ to hold that figure. It leaves out the scroll advance, the live count and
 the sprite writes, and `gone()` with its end-of-wave test, which runs only
 when an enemy leaves. The step and frame figures move by a few cycles
 with code layout. These are
-C figures; hand-written assembly would be well under them.
+C figures from Oscar64; no assembly version has been written or measured
+here. (An earlier version said hand-written assembly "would be well under
+them", which nothing on this page measured.)
 
 The difficulty rule is one shift: the spacing is `spacing >> loop`, never
 less than 1. Loop 1's wave 0 therefore spawns every 3 frames, and the

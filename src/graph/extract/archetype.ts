@@ -5,6 +5,7 @@
  */
 
 import { group, matchField, parseFrontmatter, splitH2Sections, warn, type Section } from "./common.ts";
+import { referenceTitles } from "./production.ts";
 import { TECHNIQUE_NAME } from "./technique-entities.ts";
 import type { GraphEntity } from "./types.ts";
 
@@ -12,6 +13,7 @@ const ARCHETYPE_NAME_LINE = /^\*\*Archetype:\*\*\s+`?([a-z][a-z0-9_]*)`?\s*$/m;
 const ARCHETYPE_FINGERPRINT = /^\*\*Technique fingerprint:\*\*\s+(.+)$/m;
 const ARCHETYPE_PITFALLS = /^\*\*Common pitfalls:\*\*\s+(.+)$/m;
 const ARCHETYPE_BRIEF_WORDS = /^\*\*Brief words:\*\*\s+(.+)$/m;
+const REFERENCE_TITLES = /^\*\*Reference titles:\*\*\s+(.+)$/m;
 
 /**
  * The **Brief words:** line: comma-separated words or phrases, backticks
@@ -124,7 +126,24 @@ function sectionEntities(section: Section, ctx: Context): GraphEntity[] {
     },
     ...features.map((technique): GraphEntity => ({ type: "archetype_features", archetype: name, technique })),
     ...risks.map((pitfall): GraphEntity => ({ type: "archetype_risks", archetype: name, pitfall })),
+    ...productionEntities(name, matchField(section.body, REFERENCE_TITLES), ctx),
   ];
+}
+
+/** A Production node and an EXEMPLIFIED_BY edge per linked reference title (schema 34). */
+function productionEntities(archetype: string, line: string | undefined, ctx: Context): GraphEntity[] {
+  if (!line) return [];
+  return referenceTitles(line).flatMap((t): GraphEntity[] => [
+    {
+      type: "production",
+      name: t.title,
+      kind: ctx.kind,
+      url: t.url,
+      ...(t.year !== undefined ? { year: t.year } : {}),
+      ...(t.note ? { note: t.note } : {}),
+    },
+    { type: "exemplified_by", archetype, production: t.title, source: t.url, source_doc: ctx.sourcePath },
+  ]);
 }
 
 export function parseArchetypeDoc(content: string, sourcePath: string): GraphEntity[] {

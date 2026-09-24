@@ -13,9 +13,9 @@ afterAll(async () => {
 });
 
 describe("FalkorService schema seed", () => {
-  it("seeds exactly 5 Chip nodes with expected names", async () => {
+  it("seeds exactly 6 Chip nodes with expected names", async () => {
     const rows = await svc.roQuery(`MATCH (c:Chip) RETURN c.name AS name ORDER BY c.name`);
-    expect(rows.data).toEqual(["6510", "CIA1", "CIA2", "SID", "VIC-II"].map((name) => ({ name })));
+    expect(rows.data).toEqual(["6510", "CIA1", "CIA2", "REU", "SID", "VIC-II"].map((name) => ({ name })));
   });
 
   it("seeds exactly 2 Region nodes (PAL and NTSC)", async () => {
@@ -32,7 +32,7 @@ describe("FalkorService schema seed", () => {
 
   it("getStats returns at least the seeded nodes", async () => {
     const stats = await svc.getStats();
-    expect(stats.nodes).toBeGreaterThanOrEqual(7); // 5 Chip + 2 Region
+    expect(stats.nodes).toBeGreaterThanOrEqual(8); // 6 Chip + 2 Region
     expect(stats.edges).toBeGreaterThanOrEqual(0);
   });
 });

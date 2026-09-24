@@ -107,6 +107,7 @@ Flags for build-and-test automation and basic operation. VICE accepts many more;
 | `-8 <file>` | D64, G64, … | Attach disk image to device 8 (`-help`: "Attach <name> as a disk image in unit #8"). A recipe whose `runs.json` entry carries `"disk": {"name": "TEST,01"}` gets a D64 freshly formatted with `c1541 -format "test,01" d64` attached this way before every run, so the program always sees the same empty disk |
 | `-1 <file>` | T64, TAP | Attach a tape image to the datasette (unit 1) |
 | `-soundvolume <n>` | 0–100 | Audio output level (0 = mute) |
+| `-sounddev <name>` / `-soundarg <file>` | `wav`, `dump`, `dummy`, `coreaudio` | Sound sink. `wav` records audio in real time only; `dump` writes every SID write as text, warp or not. See "Recording the SID output" below |
 | `-keymap <n>` | 0 symbolic, 1 positional, 2/3 user files | Keymap type (default 0) |
 | `-keyboardmapping <n>` | 0 = US, other values select other host layouts | Host keyboard layout used to pick the `.vkm` file |
 | `-cartcrt <file>` | CRT | Attach a cartridge image |
@@ -488,6 +489,31 @@ execution point without a visible window.
 
 On Linux CI, add `Xvfb` or set `SDL_VIDEODRIVER=offscreen` (SDL2 build) to suppress the
 display requirement.
+
+### The SID under `+sound`
+
+The pinned headless command passes `+sound`, which is fastest, but then the
+SID's read-back registers are wrong: `$D41B` (OSC3) and `$D41C` (ENV3)
+follow the emulator's sound buffer, not the voice. A program that reads
+them, for random numbers or an envelope follower, needs a sink that clocks
+the SID: `-sound -sounddev dump -soundarg /dev/null` (or `wav`). Measured
+in the windowless x64sc 3.10, PAL, voice 3 gated with noise, attack 10
+(500 ms), both registers read once a frame for 64 frames, two runs each:
+
+| Sink | `$D41C` (ENV3) | `$D41B` (OSC3, noise) |
+|---|---|---|
+| `+sound` | 1, 201, 145, 89 ...: down 56 a frame, wrapping; not an envelope | 10, 210, 154, 98 ...: the same ramp, 32 values |
+| `-sounddev dummy` | 0 every frame | 254 every frame |
+| `-sounddev dump` | 6, 16, 26, 37 ...: the attack, about 10 a frame | 56 values of 64: noise |
+| `-sounddev wav` | as dump | as dump |
+
+Every sink gave the same bytes on both runs. The template harness takes
+`SOUND_SINK := dump` for this. An earlier version of
+`docs/workflow/agent-harness.md` withdrew a claim that the dummy driver
+breaks these reads, on the evidence of 16 different values from a noise
+voice under `+sound`: those were distinct, but they were the ramp above,
+not noise. Issue #55's filter build found the same (a six-run probe, not
+in this repository).
 
 ---
 
@@ -939,6 +965,47 @@ into a test runner. All three agree on both builds. None of them was run
 against `sim6502-reference.md`'s VICE backend, which uses a different
 server on port 6510.
 
+### Pressing the joystick headless
+
+Joyport Set (`0xa2`, body: port and value, two little-endian words) and
+the text monitor's `jpdb <port> <value>` set a control port's lines only
+when that port holds device 37, "Joyport I/O simulation"
+(`-controlport2device 37`). Port 0 is control port 1, port 1 is control
+port 2. The value is the lines as `$DC00` reads them, active low: `$FF`
+is nothing pressed, `$EF` is fire. The device starts with every line low,
+all four directions and fire held, so set `$FF` before the program reads
+the port. Measured in the windowless x64sc 3.10: a program that waits for
+fire on `$DC00` saw the press with device 37 and never with the default
+joystick device, which ignores the command. The starters under
+`templates/` once said the windowless build's joyport commands never reach
+`$DC00`; that was the default device. An Undump restores the device the
+snapshot was taken with: after undumping a default-device snapshot, the
+press did not arrive.
+
+A run repeats exactly when time is counted in frames and the machine starts
+under the monitor's control. Two exec checkpoints over `$0000-$FFFF`, with
+the conditions `RL == $00` and `RL == $80`, are enabled in turn, so the
+machine stops at the first instruction of raster line 0 once a frame
+(about 500 frames a second of wall time here). The start: connect, set
+`$FF`, Reset (`0xcc`, type 1, a power cycle), then Autostart (`0xdd`).
+Measured: the platformer starter's title came 190 frames in, six runs of
+six; autostarted from the command line instead, and stopped when the
+client connected, it came 180, 185 or 190 frames in. `-initbreak` does not
+help: with no client connected yet it opens the text monitor, which reads
+end of input and lets the machine run. A fire press at a fixed frame gave
+the same CIA1 timer A reading on three PAL and three NTSC runs.
+`templates/_harness/drive.py` does all of this; `make joyprobe` in any
+starter is its proof.
+
+VICE's event history (`-playback`, `-eventsnapshotdir`) is not a way in.
+In 3.10 `-playback` sets a CPU trap while the command line is parsed, and
+the power-on reset during initialisation clears pending traps
+(`interrupt_cpu_status_reset` in `src/interrupt.c`, source read, not
+traced). No monitor command starts playback, and the windowless build has
+no menu. Measured once: an end snapshot carrying a hand-written `EVENT`
+module (one fire press) and its start snapshot, played with `-playback`,
+left the machine at the READY prompt with the start snapshot never loaded.
+
 ### Checking every store against the claims: `scripts/claims-watch.ts`
 
 Route 2 applied to every store a program makes. The script runs a PRG
@@ -1015,8 +1082,8 @@ file round trip at 40,000,000 with a fresh D64):
 
 | Recipe | Declared from the page alone: violations | What had to be added to pass |
 |---|---|---|
-| `kickassembler/sprite-multiplex-game` | `irq_vector_fffe`, `nmi_vector_fffa`, zero page `$02-$39`, screen, colour RAM, `cia2_timer_a`, `cia2_timer_b`; since the ICR rule also `cia1_timer_a`, `cia1_timer_b`, `cia1_tod` (`sta $dc0d`) and `cia2_tod` (`sta $dd0d`) | `ram_under_kernal` (the recipe banks the KERNAL out; its `techniques:` omits it), the zero page, the screen and colour RAM, the two timers and `cia2_tod` as harness, `cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)` |
-| `kickassembler/scroll-panel-split` | `irq_vector_fffe`, screen `$0400-$0747`, panel `$0F20-$0FE7`, `$3FFF`, colour RAM | `ram_under_kernal`, the ranges; `soft_scroll_v` and `char_scroll_buffer_v` have no Claims line |
+| `kickassembler/sprite-multiplex-game` | `irq_vector_fffe`, `nmi_vector_fffa`, zero page `$02-$39`, screen, colour RAM, `cia2_timer_a`, `cia2_timer_b`; since the ICR rule also `cia1_timer_a`, `cia1_timer_b`, `cia1_tod` (`sta $dc0d`) and `cia2_tod` (`sta $dd0d`) | `ram_under_kernal` (the recipe banks the KERNAL out; its `techniques:` omitted it until #35), the zero page, the screen and colour RAM, the two timers and `cia2_tod` as harness, `cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)` |
+| `kickassembler/scroll-panel-split` | `irq_vector_fffe`, screen `$0400-$0747`, panel `$0F20-$0FE7`, `$3FFF`, colour RAM | `ram_under_kernal` (added to `techniques:` in #35), the ranges; `soft_scroll_v` and `char_scroll_buffer_v` had no Claims line (now `none`) |
 | `oscar64/sfx-engine` | Oscar64 runtime zero page (`$0D-$56` seen), BSS, its stack at `$9FFC-$9FFF`, screen, colour RAM, `cia1_timer_a` | the zero page, the map file's BSS and stack, the screen and colour RAM, `cia1_timer_a` as harness |
 | `kickassembler/file-io-roundtrip` | `cia2_timer_a`, `cia2_timer_b` | the two timers as harness; every KERNAL zero-page store fell inside the ten routines' may-sets |
 
@@ -1046,6 +1113,76 @@ What the watch does not see:
   traced.
 - A read-modify-write on an I/O register is valued as unknown, so it
   touches every unit bit there.
+
+---
+
+## Running VICE in a CI job (GitHub Actions)
+
+This repository's own workflow, `.github/workflows/ci.yml`, job
+`recipes`, runs every KickAssembler and cc65 recipe in VICE on each push
+to `main` and each pull request, and compares each exit screenshot with
+the committed PNG pixel for pixel. What follows describes that job as it
+stands and the timings of its runs (GitHub's job records, read with
+`gh run view`); it is the tested pattern for a C64 project's own CI.
+
+### The job's steps
+
+1. **Runner `ubuntu-24.04`**, Node from `.nvmrc`, Java 21 (Temurin) for
+   KickAssembler.
+2. **Packages**: `cc65`, and what VICE's `configure` needs to build:
+   `build-essential xa65 dos2unix libpng-dev pkg-config flex bison
+   libcurl4-openssl-dev`, plus `python3-pil` for the pixel compare.
+   `configure` stops without `flex` or `libcurl` (the build script's
+   header).
+3. **KickAssembler 5.25** downloaded, checked against a pinned SHA-256
+   and retried: the host once served a file that failed the checksum
+   while the same URL was fine seconds later (run 35944152577).
+4. **The windowless VICE** (`npm run vice:headless`,
+   `scripts/build-vice-headless.sh`, described under "A windowless build
+   for batch runs"): VICE 3.10 from the source tarball, digest pinned,
+   configured with `--enable-headlessui`. The tarball carries the ROM
+   images, so the Debian packaging's missing ROMs (Pitfalls, "ROM image
+   licensing") do not arise. `.tools/vice-headless` is cached under a key
+   that hashes the build script, so the build runs only when the script
+   changes.
+5. **The compare**, one recipe page at a time: `node
+   scripts/verify-recipes.ts --file <page> --allow-missing`, which builds
+   the listing, runs x64sc with the page's pinned flags from
+   `docs/recipes/runs.json`, and compares.
+
+### What was learned getting it to pass
+
+- **The Linux headless build matches the macOS baselines.** A Linux
+  build of the script matched every pinned PNG it could run, 2026-09-23
+  (the build script's header). The pins were made on macOS, so the same
+  VICE version and flags give the same frame on both.
+- **Determinism comes from the flags, not the host.** Every run passes
+  `-default` (no user configuration), `+autostart-delay-random`, a fixed
+  `-limitcycles` and a fixed model. `runs.json`'s note says
+  `+autostart-delay-random` is what makes the captured frame the same
+  every time.
+- **Ignore x64sc's exit status.** It is 1 on every `-limitcycles` exit
+  ("A windowless build for batch runs"); judge the screenshot (or a
+  result byte, "Verifying a run without a human").
+- **A wrapper step must not let `bash -e` swallow the name.** The loop
+  captures each page's exit code with `|| rc=$?`; an earlier form ended
+  the step at the first failing page with exit 1 and no page named (run
+  35991987457).
+- **A missing toolchain is excluded by directory, not tolerated.** The
+  Oscar64 recipes are left out until issue #25 pins a released compiler
+  that reproduces them; `verify-recipes` fails a page whose toolchain is
+  absent.
+- **`GSETTINGS_SCHEMA_DIR` is a macOS GTK matter only.** The headless
+  build on Linux needs no GTK and the job sets no such variable.
+
+### Timings measured
+
+| Run | What | Time |
+|---|---|---|
+| 35818950308 (2026-09-23, cache cold) | `npm run vice:headless`: fetch, configure, build | 1 min 40 s |
+| 36010939576 (2026-09-24, cache warm) | restore `.tools/vice-headless` from cache | 4 s |
+| 36010939576 | every KickAssembler and cc65 recipe page, built, run and compared | 5 min 12 s |
+| 36010939576 | the whole `recipes` job | 5 min 50 s |
 
 ---
 
@@ -1118,7 +1255,9 @@ Error parsing command-line options, bailing out. For help use '-help'
 ```
 
 The first line is the checkpoint number, its kind and address, then the
-raster line and the cycle within it, each as decimal/hex. The second is
+raster line and the cycle within it, each as decimal/hex (0-based, and
+what it counts depends on the checkpoint: "What the CYC column counts"
+below). The second is
 the instruction about to execute, not yet executed: memory space and PC,
 opcode bytes, the disassembly with labels substituted, the registers, the
 flags as `NV-BDIZC` with a letter for set and `.` for clear, and the
@@ -1242,6 +1381,112 @@ The stopwatch counts only while the machine runs. Twenty seconds of real
 time at the prompt left it at `2970383`; `r` before and after read the
 same line.
 
+### What the CYC column counts
+
+This knowledge base numbers the cycles of a raster line 1 to 63 (65 on
+the 6567R8) as Bauer's VIC-II article does: `$D012` changes on cycle 1,
+a badline's BA falls on 12, its c-accesses run 15 to 54
+(`hardware/vic-ii-reference.md`). The monitor prints 0 to 62 (0 to 64),
+and what one of its numbers means depends on the checkpoint:
+
+| Monitor output | Its CYC is | Bauer's cycle |
+|---|---|---|
+| exec checkpoint, `step`, `r` (an instruction about to run) | the instruction's first cycle, the opcode fetch | CYC + 1; its k-th cycle is CYC + k |
+| store checkpoint (`watch store`, `tr store`) | one past the store's write cycle: the line is printed after the instruction ends | the write's cycle is CYC as printed |
+
+So for an `STA $D020` traced on exec at CYC 60 the write is Bauer's
+cycle 64, which is cycle 1 of the next line, and the store trace prints
+that line with CYC 1. A store trace's CYC 0 is the previous line's last
+cycle (63, or 65), with the next line's number in the LIN column.
+Before issue #82, pages quoted three numberings: the store trace as
+printed, the exec CYC as printed, and the exec CYC plus one.
+
+Measured 2026-09-24 in VICE x64sc 3.10, PAL (`-default`) and NTSC
+(`-model ntsc`), the same result on both:
+
+- **Exec against store.** `STA $02` traced both ways: exec at CYC 49,
+  stopwatch 3299989; store at CYC 52, stopwatch 3299992. The
+  instruction takes 3 cycles and writes on its third, so the store line
+  is printed one cycle after the write. The source agrees: a store
+  watchpoint is queued during the access and checked after the
+  instruction (`monitor_watch_push_store_addr`, `src/monitor/monitor.c`).
+- **The `$D012` edge.** `LDA $D012 : STA $02 : JMP` with DEN clear
+  (no badline), exec trace on the `STA`, which gives the `LDA`'s read
+  cycle as its CYC − 1: 25,477 reads on PAL over all 63 CYC values,
+  57,197 on NTSC. Every read on CYC 0 returned the new line and every
+  read on CYC 62 (64) the old one. Bauer puts the increment on cycle 1.
+- **The badline stall.** A slide of `NOP`s with DEN set, exec trace on
+  every `NOP`: a `NOP` that started on CYC 10 held its second read and
+  the next instruction started on CYC 55; one that started on CYC 11
+  held its opcode read and the next started on 56; one that started on
+  CYC 9 or earlier ran in 2 cycles. Reads are held from CYC 11 to 53
+  and the first free read is on 54, which is Bauer's cycles 12 to 54
+  and 55. PAL and NTSC give the same numbers.
+
+The monitor takes CYC from the CPU clock modulo the line length
+(`machine_get_line_cycle`, `src/c64/c64.c`), not from the VIC-II, which
+is why it had to be tied to the chip by measurement. VICE's own VIC-II
+log (for example the `VSP Bug: ... Cycle: 24` line of `-VICIIvspbug`)
+prints `vicii.raster_cycle`, a table index that is Bauer's cycle minus
+one (`VICII_PAL_CYCLE(c) = c - 1`, `src/viciisc/viciitypes.h`; not
+checked against the monitor beyond that). Checked once since: the `vsp`
+recipe's write that the log prints as `Cycle: 24` is a store the monitor
+also prints as CYC 24, so for that log the "minus one" does not hold as
+a conversion to the store's cycle; which cycle the log reports was not
+settled.
+
+**Where a store shows in the exit screenshot.** A loop exactly one line
+long locks to the raster, so each of its stores lands on the same cycle
+of every line. DEN is set only on lines 49 to 52, never on line 48, so
+there is no badline and the open display shows `$D021`:
+
+```asm
+BasicUpstart2(start)
+.var ntsc = cmdLineVars.get("NTSC") != null
+* = $0810
+start:  sei
+        lda #$7f
+        sta $dc0d
+        lda $dc0d
+        lda #0
+        sta $3fff           // the idle fetch: background only
+        sta $d015
+        jmp loop
+* = $0a00
+loop:   ldx $d012           // 4
+        lda dentab,x        // 4
+        sta $d011           // 4: DEN on lines 49-52 only
+        lda #2
+        sta $d020           // red border
+        lda #6
+        sta $d021           // blue background
+        .fill 6, $ea
+        lda #0
+        sta $d020           // black border
+        .fill 6, $ea
+        lda #1
+        sta $d021           // white background
+        .if (ntsc) { nop }
+        jmp loop            // 63 cycles, 65 with the NTSC NOP
+* = $0b00
+dentab: .fill 256, (i >= 49 && i <= 52) ? $1b : $0b
+```
+
+Every row of the picture had the same colour edges. A store the trace
+prints as CYC `c` shows its new colour from screenshot x = 8c − 103,
+border and background alike. On PAL the 8565 first draws one light grey
+pixel at 8c − 104; the NTSC picture has none. Pairs measured, with
+different lock phases (set by a delay loop before `jmp loop`, not shown):
+
+| Model | Store-trace CYC → first pixel x |
+|---|---|
+| PAL | 30 → 137, 48 → 281, 50 → 297, 29 → 129, 56 → 345 |
+| NTSC | 22 → 73, 46 → 265, 28 → 121 |
+
+Stores on other cycles fall in the horizontal blank or beyond x 383.
+`recipes/kickassembler/road-sprite-lines.md` found the same line: its
+probe traced on 15 shows from x 17.
+
 ### Memory dump and save
 
 ```text
@@ -1289,6 +1534,66 @@ program is "The Binary Monitor Protocol" above and
 an emulator are [sim6502-reference.md](sim6502-reference.md); the label
 files each toolchain writes are in "Symbol Files" above and in the
 KickAssembler, Oscar64 and cc65 pages' debugging sections.
+
+---
+
+## Recording the SID output
+
+A run can write the SID's audio to a WAV file, or every SID register
+write to a text file, with no audio device. Measured 2026-09-24 with the
+windowless x64sc 3.10 build and reSID, on a one-voice test program
+(a table of waveforms at 440 Hz), at 6,000,000 and 26,000,000 cycles.
+
+| Invocation | Result |
+|---|---|
+| `+warp -sound -sounddev wav -soundarg out.wav` | Works. 16-bit PCM, 48,000 Hz by default; `-soundrate 44100 -soundoutput 1` gives 44,100 Hz mono. Runs in real time: 26,000,000 cycles took 24 to 27 s of wall clock |
+| `-warp -sound -sounddev wav -soundarg out.wav` | A 44-byte header and no samples |
+| the same with `-soundwarpmode 1` | A 44-byte header and no samples |
+| `+warp -sound -sounddev dummy -soundrecdev wav -soundrecarg out.wav` | A 44-byte header and no samples; the log repeats "Sound buffer overflow (cycle based)" |
+| `-sound -sounddev dump -soundarg out.txt` | Every SID write, one line each. Byte-identical with and without `-warp` |
+| `-sound -sounddev dummy -residrawoutput` | The log says "reSID: raw output enabled"; no `resid.raw` appeared in the working directory, with or without warp |
+
+`x64sc -help` lists only `coreaudio/dummy/dump` for `-sounddev`, but
+the startup log lists `coreaudio dummy dump fs wav voc iff aiff
+soundmovie`, and `wav` is accepted.
+
+**What the WAV covers.** Autostart turns warp on while it loads and
+off when the program starts (the log prints "AUTOSTART: Turning Warp
+mode on" and "off"). Nothing is recorded while warp is on, so the file
+starts at about the program's start, not at power-on. At 26,000,000
+cycles the file held 23.389 s. The program's first SID write came at
+cycle 2,970,434 (from the dump), which leaves 23.374 s of emulated time
+after it (arithmetic at 985,248 Hz). The first tone began 7 ms into the
+file.
+
+**The dump format.** One line per write: cycles since the previous
+write, register number (0-24, decimal), value (decimal). From the test
+program, a sawtooth gated on, then off 49.6 frames later:
+
+```text
+8 4 33
+976058 4 32
+```
+
+It needs no real time, so it is the sink for a register trace under
+`-warp`. It is also a "real sound sink" for `$D41B`/`$D41C` reads,
+which return meaningless values under `+sound`
+(`recipes/kickassembler/music-player.md`, "Pitfalls met").
+
+**A loudness measurement.** Record in real time on each model
+(`-sidmodel 0` for the 6581, `1` for the 8580) and read the WAV with
+Python's `wave` and `numpy`. Take the RMS of the samples with the mean
+removed, over a window inside each held note:
+
+```text
+x64sc -default +warp -sidmodel 0 -sound -sounddev wav -soundarg out.wav \
+      -soundrate 44100 -soundoutput 1 +autostart-delay-random \
+      -autostartprgmode 1 -limitcycles 26000000 -autostart test.prg
+```
+
+The combined-waveform table in `hardware/sid-reference.md` was made
+this way. A run is as long as the music, so keep the program short and
+put the notes on known frames.
 
 ---
 

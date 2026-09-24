@@ -2,6 +2,7 @@
 import { z } from "zod";
 import type { Profile } from "../re/frame-profile.ts";
 import type { IrqChain } from "../re/irq-chain.ts";
+import { DISPATCH_WINDOW } from "../re/interrupts.ts";
 import { FrameProfileInput, IrqChainInput, reFrameProfile, reIrqChain, type ReResult } from "../tools/re.ts";
 import { defineTool, READ_ONLY, type ToolReply } from "./define-tool.ts";
 
@@ -23,6 +24,9 @@ const run = z
 
 export const IrqChainOutput = {
   run,
+  interrupts: int.describe(
+    "Interrupts raised after the entry, found from their stack pushes; BRK is not one",
+  ),
   vectors: z.array(
     z.object({
       ...obs,
@@ -46,6 +50,9 @@ export const IrqChainOutput = {
       armed_before: z.array(int),
     }),
   ),
+  transient: z
+    .array(z.object({ vector: vectorName, value: int, writes: int }))
+    .describe("Vector values a write left that no interrupt found: a half-written address, not a handler"),
   unknowns: z.array(z.string()),
 };
 
@@ -78,7 +85,11 @@ export function irqChainReply(r: ReResult<IrqChain>): ToolReply {
           (h) =>
             `handler ${hex(h.handler)} via ${h.via.join(", ") || "?"}: ${h.entries} entries on lines ${h.entry_lines.join(", ")}; armed ${h.armed_before.join(", ") || "?"}`,
         )
-        .join("\n") + unknownsText(c.unknowns),
+        .join("\n") +
+      (c.transient.length
+        ? `\ntransient: ${c.transient.map((t) => `${hex(t.value)} in ${t.vector}`).join(", ")}`
+        : "") +
+      unknownsText(c.unknowns),
   );
 }
 
@@ -96,17 +107,18 @@ const NEEDS = `Needs the windowless x64sc (\`npm run vice:headless\`); refuses a
 export const reIrqChainTool = defineTool({
   name: "c64_re_irq_chain",
   title: "Measure a program's interrupt chain in VICE",
-  description: `Run a .prg headless in VICE x64sc and report its interrupt chain as observations: every write to the IRQ/NMI vectors ($0314/5, $0318/9, $FFFA/B, $FFFE/F) with the value once both bytes are known; every raster line armed by writes to $D012 and $D011 bit 7; every entry into each handler with its raster line, cycle and frame. Writes before the program's entry (the KERNAL's boot) are not reported but set the starting state. A value the trace cannot know (a read-modify-write, a byte never written) is null and listed under unknowns. A $0314 handler's entry line includes the KERNAL dispatch at $FF48.
+  description: `Run a .prg headless in VICE x64sc and report its interrupt chain as observations: every write to the IRQ/NMI vectors ($0314/5, $0318/9, $FFFA/B, $FFFE/F) with the value once both bytes are known; every raster line armed by writes to $D012 and $D011 bit 7; every interrupt, found from its three stack pushes; every entry into each handler with its raster line, cycle and frame. An entry is the first handler the vectors held at an interrupt to run within ${DISPATCH_WINDOW} cycles of it, so code that merely reaches a handler's address (an IRQ exit falling into \`nmi: rti\`) is not counted. A vector value no interrupt found, such as the half-written address between a low-byte and a high-byte store, is listed under transient, not as a handler; a handler the program installed that no interrupt entered is listed with 0 entries. Writes before the program's entry (the KERNAL's boot) are not reported but set the starting state. A value the trace cannot know (a read-modify-write, a byte never written) is null and listed under unknowns. A $0314 handler's entry line includes the KERNAL dispatch at $FF48.
 
 A raster flag already pending in $D019 when $D01A is enabled fires at once, so a first entry may sit on a line no arm explains.
 
 ${NEEDS}
 
 Inputs: prg_path (inside this repo or the temp directory), model pal|ntsc, cycles, disk_path.
-Output (structured): run {prg, model, cycles, entry, start_clock, vice}, handlers [{handler, via, entries, entry_lines, armed_before}], vectors, arms, entries, unknowns; each observation has an id, basis and rung.`,
+Output (structured): run {prg, model, cycles, entry, start_clock, vice}, interrupts, handlers [{handler, via, entries, entry_lines, armed_before}], transient [{vector, value, writes}], vectors, arms, entries, unknowns; each observation has an id, basis and rung.`,
   inputSchema: IrqChainInput,
   outputSchema: IrqChainOutput,
   annotations: READ_ONLY,
+  readsGraph: false,
   run: async (args) => irqChainReply(await reIrqChain(args)),
 });
 
@@ -122,5 +134,6 @@ Output (structured): run {prg, model, cycles, entry, start_clock, vice}, samples
   inputSchema: FrameProfileInput,
   outputSchema: FrameProfileOutput,
   annotations: READ_ONLY,
+  readsGraph: false,
   run: async (args) => frameProfileReply(await reFrameProfile(args)),
 });

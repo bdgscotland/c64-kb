@@ -42,6 +42,7 @@ screen.
 <tr>
 <td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Demo part: logo, sprite sine chain, stable raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
 <td align="center"><a href="templates/beat-em-up/README.md"><img src="docs/figures/starters/beat-em-up.png" width="220" alt="Beat-em-up street fight: the hero, two thugs and a character-drawn brute"></a><br><sub>Beat-em-up</sub></td>
+<td align="center"><a href="templates/racing/README.md"><img src="docs/figures/starters/racing.png" width="220" alt="Pseudo-3D road racer: the road bending left over a crest, two opponents at different sizes"></a><br><sub>Pseudo-3D racer</sub></td>
 </tr>
 </table>
 
@@ -217,7 +218,7 @@ This copies the starter and the shared harness (`templates/_harness/`)
 into the new directory. It writes `.mcp.json` and `local.mk` pointing at
 this checkout, then runs the starter's headless check to prove the copy
 works. `npm run new-project -- --list` names the starters: `shmup-vertical`,
-`platformer`, `action-puzzle`, `adventure`, `beat-em-up`, `demo`, and two
+`platformer`, `action-puzzle`, `adventure`, `beat-em-up`, `racing`, `demo`, and two
 minimal templates that show the harness rather than a game: `hello`
 (Oscar64 calling KickAssembler) and `hello-kick` (KickAssembler only).
 
@@ -240,8 +241,8 @@ test or a lost-frame soak. [docs/workflow/agent-harness.md](docs/workflow/agent-
 explains the loop.
 
 The starters build with the Oscar64 described under [Toolchains](#toolchains).
-`shmup-vertical`, `platformer`, `action-puzzle` and `beat-em-up` are also
-recorded passing on the released v1.32.273 (`make released`).
+`shmup-vertical`, `platformer`, `action-puzzle`, `beat-em-up` and `racing`
+are also recorded passing on the released v1.32.273 (`make released`).
 
 ## Tools
 
@@ -264,9 +265,9 @@ The MCP server and the CLI call the same functions.
 |---|---|
 | `c64_game_briefing` | A game plan from a brief. It routes the brief to an archetype by its words (or takes one), proposes techniques, pitfalls, a toolchain split and a build order, and names the starter to begin from |
 | `c64_demo_briefing` | The same for a demo, with an optional demo archetype (cracktro, demo intro, pack intro, dentro, 4K party intro) |
-| `c64_check_compatibility` | Whether techniques can share a program. Hard conflicts include CPU every line, an interrupt needing cycles the CPU never gives up, a constant sprite set, KERNAL banked out, the serial bus busy, a region mismatch, the same hardware unit owned twice and zero page used twice. Softer notes include shared registers and KERNAL routines, a unit shared or read while another drives it, init order, and KERNAL zero page clobbered. Raster bands that do not overlap clear the line-sharing rules. It follows each technique's prerequisites, and says what the graph does not know |
+| `c64_check_compatibility` | Whether techniques can share a program. Hard conflicts include CPU every line, an interrupt needing cycles the CPU never gives up, a constant sprite set, KERNAL banked out, the serial bus busy, a region mismatch, the same hardware unit owned twice and zero page used twice. Softer notes include shared registers and KERNAL routines, a unit shared or read while another drives it, init order, and KERNAL zero page clobbered, and as info the zero page two recipes of the techniques both use. Raster bands that do not overlap clear the line-sharing rules. Names given as `name:phase` are checked phase by phase, and across phases for a raster IRQ, sprites or a banked-out KERNAL left running against another phase's disk I/O. It follows each technique's prerequisites, and says what the graph does not know |
 | `c64_timing_budget` | Cycles per raster line for one technique on PAL or NTSC: badline, IRQ entry and sprite DMA losses |
-| `c64_plan_budget` | A technique list, per phase (play, transition, init), against a frame: a cycle range from measured figures, what was left out and why, what has no figure yet, and a verdict. Given a game design, it sets that game's measured frame beside the prediction |
+| `c64_plan_budget` | A technique list, per phase (play, transition, init), against a frame, with calls or items per frame (`char_bullets ×0-12`): a cycle range from measured figures, what was left out and why, what has no figure yet, and a verdict. Given a game design, it sets that game's measured frame beside the prediction |
 
 **Build it**
 
@@ -274,7 +275,7 @@ The MCP server and the CLI call the same functions.
 |---|---|
 | `c64_technique_lookup` | A technique: the registers and KERNAL routines it uses, what it requires and what requires it, the recipes that implement it, the pitfalls it avoids |
 | `c64_techniques_for` | Techniques filtered by category, chip, region, register, recipe, prerequisite or the hardware unit they claim |
-| `c64_recipe_lookup` | One recipe: metadata, the page, the machines it was verified on |
+| `c64_recipe_lookup` | One recipe: metadata, the page, the machines it was verified on, the hardware units its listing claims |
 | `c64_recipes_for` | Recipes filtered by toolchain, region, technique, file format or verified machine |
 | `c64_toolchain_hint` | An idiomatic snippet for a toolchain and intent; Oscar64 by default |
 
@@ -311,6 +312,7 @@ the CLI exits 1 on a definite finding.
 | `c64_run_game` | Runs an Oscar64 build (it needs the `.dbj` debug file) in VICE through [vice-mcp](https://github.com/simen/vice-mcp), drives it, and returns a state trace and the screen. It needs vice-mcp built (`VICE_MCP_PATH`) and `x64sc`; the repo's windowless VICE is used when present |
 | `c64_re_irq_chain` | Runs a `.prg` headless in `x64sc` and reports its interrupt chain: every vector write, every raster line armed, and every handler entry with its line, cycle and frame. The PRG must be inside the repo or the temp directory. It needs the windowless `x64sc` (`npm run vice:headless`) |
 | `c64_re_frame_profile` | Runs a `.prg` headless in `x64sc` and times every occurrence of a region between a start and stop marker, in CPU cycles: worst, typical (median), count, unpaired starts and samples over one frame. The PRG must be inside the repo or the temp directory. It needs the windowless `x64sc` (`npm run vice:headless`) |
+| `c64_claims_watch` | Runs a `.prg` headless in `x64sc` under a store trace and checks every store against the hardware units the program declares: a recipe's `claims:` keys, its techniques' Claims lines, explicit claims and the KERNAL routines it calls. Lists each undeclared store with its unit, addresses and PCs. Same PRG and VICE rules as the two above |
 
 The CLI has a command for every tool except the `c64_coverage` row and
 `c64_run_game`. It also has `services`, `ingest`, `serve` and `version`.
@@ -433,6 +435,7 @@ gaps. The MCP server and the CLI share one set of tool functions. See
 | `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run knip` | Type-check, ESLint with a complexity budget, Prettier, unused code |
 | `npm run check:listings` | Build every listing with its toolchain |
 | `npm run verify:recipes` | Run every recipe in VICE and compare with its screenshot; `--update` re-baselines after a deliberate change |
+| `npm run claims:recipes` | Run every KickAssembler recipe under claims-watch and fail on any store it and its techniques do not declare |
 | `npm run verify:templates` | Make a project from every starter and run its checks; `--selftest` adds the broken-build test and each starter's own proofs |
 | `npm run vice:headless` | Build a windowless VICE into `.tools/`, which every emulator run then prefers |
 | `npm run new-project` | Start a project from a starter |

@@ -25,11 +25,14 @@ import { config } from "./config.ts";
 import type { EdgeEntity } from "./graph/apply.ts";
 import { HASH_FILE, VOCAB_FILE, findMarkdown, loadHashes, loadOrFitBM25, log } from "./ingest/files.ts";
 import { chunkText } from "./ingest/points.ts";
+import { scanRecipeListings } from "./ingest/listing-scan.ts";
 import { applyPendingEdges, ingestFile } from "./ingest/passes.ts";
 import { findStubTechniques, linkRegions, reportSummary } from "./ingest/report.ts";
 import { EdgeTally, type NodeTally } from "./ingest/tally.ts";
 import { linkVerifiedOn } from "./ingest/verified-on.ts";
+import { closeAll } from "./context.ts";
 import { chunkMarkdown } from "./services/chunker.ts";
+import { formatGapReplay, replayGaps } from "./tools/gap-replay.ts";
 import { isAvailable as ollamaAvailable } from "./services/embeddings.ts";
 import { FalkorService } from "./services/falkor.ts";
 import { QdrantService } from "./services/qdrant.ts";
@@ -49,8 +52,16 @@ export function parseFlags(argv: string[]): RunFlags {
   return { forceAll, cleanFirst: argv.includes("--clean") || forceAll };
 }
 
-/** Connect both stores, wiping them first on a clean run. */
-async function connectStores(cleanFirst: boolean): Promise<{ qdrant: QdrantService; falkor: FalkorService }> {
+/**
+ * Connect both stores, wiping them first on a clean run. A clean run writes
+ * the rebuild marker before it wipes anything, so the query tools refuse to
+ * answer from the half-built graph (src/services/rebuild-marker.ts, #41). An
+ * incremental run re-MERGEs changed files into a whole graph and sets none.
+ */
+async function connectStores(
+  cleanFirst: boolean,
+  flags: string,
+): Promise<{ qdrant: QdrantService; falkor: FalkorService }> {
   const qdrant = new QdrantService();
   await qdrant.ensureCollection();
   console.log("  qdrant: connected");
@@ -61,6 +72,8 @@ async function connectStores(cleanFirst: boolean): Promise<{ qdrant: QdrantServi
   console.log("  falkordb: connected (schema ensured)");
 
   if (cleanFirst) {
+    await falkor.markRebuildStarted(flags);
+    console.log("  falkordb: rebuild marker set (query tools refuse until the report is done)");
     await falkor.clean();
     console.log("  falkordb: cleaned per-label nodes (schema + Chip/Region seeds preserved)");
     await qdrant.dropCollection();
@@ -89,6 +102,20 @@ function readCorpus(files: string[]): { contents: Map<string, string>; corpus: s
 }
 
 /**
+ * Replay the logged gaps against the stores just built (#19). A failure
+ * here is reported and never fails the ingest.
+ */
+async function replayGapLog(print: (line: string) => void): Promise<void> {
+  try {
+    print(`\n${formatGapReplay(await replayGaps()).trimEnd()}`);
+  } catch (err) {
+    print(`\ngap replay: not run (${err instanceof Error ? err.message : String(err)})`);
+  } finally {
+    await closeAll();
+  }
+}
+
+/**
  * Run a batch ingest; returns the process exit code. Shared by
  * `node src/ingest.ts` (npm run ingest) and `c64-kb ingest`, the only way
  * to build the stores from an npm install.
@@ -106,7 +133,7 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
   }
   console.log(`  embeddings: ${config.ollama.model} via Ollama`);
 
-  const { qdrant, falkor } = await connectStores(cleanFirst);
+  const { qdrant, falkor } = await connectStores(cleanFirst, flags);
 
   const files = findMarkdown(DOCS_DIR);
   console.log(`\nFound ${files.length} markdown files`);
@@ -124,6 +151,7 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
     crashPatterns: 0,
     archetypes: 0,
     gameDesigns: 0,
+    libraryFunctions: 0,
   };
   const pending: EdgeEntity[] = [];
   const print = (line: string): void => {
@@ -139,10 +167,12 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
   // --- Report ---
   await linkRegions(falkor, print);
   await linkVerifiedOn(falkor, DOCS_DIR, print);
+  await scanRecipeListings(falkor, contents, print);
   const stubTechniques = await findStubTechniques(falkor);
   await reportSummary({ qdrant, falkor, nodes, edges, stubTechniques, print });
-
+  if (cleanFirst) await falkor.markRebuildFinished();
   await falkor.close();
+  await replayGapLog(print);
   return 0;
 }
 

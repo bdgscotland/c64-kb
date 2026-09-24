@@ -84,16 +84,33 @@ demand the technique's own text supports.
 | `kernal_rom_out` | runs with the KERNAL ROM banked out |
 | `serial_bus_exclusive` | owns the drive and its serial bus while resident: KERNAL disk I/O to that drive stalls until it is uninstalled (a drive-code fast loader such as Krill's). `c64_check_compatibility` reports `serial_bus_busy` against a technique that uses LOAD, SAVE, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN or the low-level serial calls. |
 
-Four loader words were considered and left out, because no page in this
-repo can state them truthfully yet. `dd00_plain_stores` is Bitfire's rule
-(plain stores of `$00`-`$03`, no read-modify-write); the KB has no Bitfire
-page, and Krill's rule is close to the reverse: a whole-byte store breaks
-it, and a read-modify-write of bits 0-1 while it is idle is tolerated
-(`pitfalls/loader.md`, `fastloader_dd00_write_corrupts_resident`).
-`io_visible_in_irq`, `loads_in_background` and `no_concurrent_loading` are
-Bitfire and Spindle rules; no page here describes a loader that loads in
-the background (Sparkle's calls block, per its manual; an earlier version of
-this sentence called Sparkle a background loader).
+`cpu_exclusive` and `cpu_vs_irq` through `midframe_raster_irqs` do not
+fire between a technique and one that runs inside its own code: when either
+is on the other's `**Requires:**` chain, or when the interrupting side is
+an entry method that `shares` `vic_raster_irq` (its `**Claims:**` line) and
+the `cpu_every_line` side `owns` it. The entry's interrupt starts the
+effect's lines; it does not land inside them. So `fli_image` with
+`double_irq` and `dysp_side_border_sprites` with `sideborder_open` pass,
+while `fli_image` with `sprite_multiplex_24` (which owns the compare and
+interrupts inside the band) still fails. An earlier version fired on every
+such pair, against the fli-image, sideborder-open, dysp and tech-tech
+recipes that run them together (#29). Claims unknown on either side keep
+the rule.
+
+Four loader words were considered and left out. `dd00_plain_stores` is
+Bitfire's rule (plain stores of `$00`-`$03`, no read-modify-write), now
+measured on `bitfire_loader` (recipe `bitfire-dd00-bank`), and Krill v194's
+README prescribes the same store (`pitfalls/loader.md`,
+`fastloader_dd00_write_corrupts_resident`); it is still not in the
+vocabulary, because no compatibility rule reads it yet and the pitfall's
+table carries each loader's rule. An earlier version of this paragraph
+said the KB had no Bitfire page and that Krill's rule was close to the
+reverse. `io_visible_in_irq`, `loads_in_background` and
+`no_concurrent_loading` are Bitfire and Spindle rules. No page here
+describes a loader that loads in the background: Sparkle's and Bitfire's
+load calls block while interrupts keep running (Sparkle per its manual,
+Bitfire measured in `bitfire-dd00-bank`; an earlier version of this
+sentence called Sparkle a background loader).
 
 An optional `**Requires:**` line names the techniques this one presupposes:
 the named technique is set up before, or runs underneath, this one. The
@@ -119,6 +136,46 @@ builds on stable_raster_irq"); `c64_check_compatibility` runs its hard
 rules between one technique's prerequisites and the other technique and
 reports a hit as `prerequisite_conflict`, without changing anyone's
 `**Demands:**`.
+
+An optional `**Alternative to:**` line names techniques that do the same
+job another way, each with its tradeoff in parentheses. The parenthesis
+describes this technique against the named one. The extractor makes one
+`ALTERNATIVE_TO` edge per item (schema 37).
+
+```
+**Alternative to:** sprite_multiplex_8 (more than 16 sprites; needs tighter IRQ scheduling, a Y-sorted list and $D010 managed across passes)
+```
+
+Items are separated by commas outside the parentheses. Write the line
+only where the page already compares the two, and take the tradeoff from
+that comparison. State a pair on one page only; the edge is read in both
+directions. A pair joined by `**Requires:**` either way is not an
+alternative (`fli_image` requires `multicolor_bitmap`, so they are not
+paired), and neither are two techniques a page says to use together
+(`bobs_effect` beside hardware sprites). An item with no tradeoff, a name
+that is not snake_case, or the technique itself is refused at extract; a
+name that is no Technique node, a pair already stated on the other page, or
+a pair joined by REQUIRES is dropped at link time with a warning and
+counted. `c64_technique_lookup` returns the edge as `alternatives`; the
+briefings keep one technique of each pair and report the other under the
+kept one's `alternatives_left_out`.
+
+An optional `**Consumes formats:**` line names the file formats whose
+files the technique reads, by their FileFormat node names (the extension,
+upper case, no dot: `SID`, `CRT`, `KLA`). The extractor makes one
+`CONSUMES` edge per item, Technique to FileFormat (schema 37).
+
+```
+**Consumes formats:** SID
+```
+
+Name only a format that has an H3 in a format or toolchain page
+(`formats/c64-file-formats.md`); the edge is MATCHed at both ends, so a
+misspelt or undocumented format is dropped with a warning and counted,
+never created. It answers "I have a .SID: which technique reads it, and
+which recipe realises that": `MATCH (:FileFormat {name: 'SID'})<-[:CONSUMES]-(t:Technique)<-[:IMPLEMENTS]-(r:Recipe)`.
+A technique produces a screen, not a file, so there is no technique-side
+`PRODUCES`; a recipe's `file_formats` says what it builds.
 
 An optional `**Raster band:**` line names the raster lines on which the
 technique holds the CPU. It rides the Technique node as `raster_band`. For a technique
@@ -173,7 +230,9 @@ number with no stated basis is worse than no number.
 |---|---|
 | `cycles_per_line` | CPU cycles the technique takes on each raster line it is active on. A technique that needs every cycle of the line (FLI, side border) states 63, the whole PAL line. |
 | `cycles_per_frame_typical` | a measured typical frame beside a `cycles_per_frame` that is a worst frame (schema 27): the frame play spends most of its time on, or the worst frame of a real run when `cycles_per_frame` is a built worst case. Only a figure the page states as measured; never above `cycles_per_frame`, and never without it (either is refused with a warning). A budget sums these for its low end; because the figure may be a run's worst frame, and two members' such frames need not coincide, that low end is not a floor and a budget never calls a plan over on it. |
-| `cycles_per_frame` | CPU cycles the technique takes per frame, a PAL frame of 19,656 cycles unless the technique's own page states otherwise. It is the worst frame, not an average: a soft scroller whose column carry runs once in eight frames states the carry frame, because that is the frame a plan has to fit. For a routine that is called on demand (a multiply, a random step), the cost of one call, on the assumption of one call per frame; the page's per-call figure is the number to state. A routine the page places outside the frame loop (a level-start map expand, a one-off table build) states no `cycles_per_frame` at all; its cost stays in the prose, and the line carries only what runs per frame. The figure is the technique's own work, never a demonstration's stand-in payload. |
+| `cycles_per_frame` | CPU cycles the technique takes per frame, a PAL frame of 19,656 cycles unless the technique's own page states otherwise. It is the worst frame, not an average: a soft scroller whose column carry runs once in eight frames states the carry frame, because that is the frame a plan has to fit. For a routine that is called on demand (a multiply, a random step), the cost of one call, on the assumption of one call per frame; the page's per-call figure is the number to state. A routine the page places outside the frame loop (a level-start map expand, a one-off table build) states no `cycles_per_frame` when the line already carries a per-frame figure; its cost stays in the prose. A technique that only ever runs outside play (a disk save, a file read) may state its one-call cost, so that a plan listing it in a transition phase names the figure: above one frame, a budget reports it as `multi_frame` and never sums it. An earlier version of this rule forbade that figure, which left every plan that saves a file with an unknown. The figure is the technique's own work, never a demonstration's stand-in payload. |
+| `cycles_per_item` | the worst CPU cycles one more item adds to a frame, for a technique whose work grows with a count: a bullet, a tested pair (#95). Measured on builds of the recipe with different counts, and stated beside `cycles_per_frame`, which stays the recipe's own count. The measured-on conditions say what an item is. A plan that names the technique with a count, `char_bullets ×12` or `×0-12`, is charged `cycles_item_base` + N × this, low with the first count and high with the second; without a count, `cycles_per_frame`. Before #95 a count multiplied the whole figure as calls, so `char_bullets ×12` charged twelve eight-bullet frames. |
+| `cycles_item_base` | the cycles of a frame with no items, beside `cycles_per_item`; absent is 0, and without `cycles_per_item` it is refused with a warning. |
 | `lines_active` | raster lines per frame on which the technique runs code (the region of a side-border loop, the two lines of a double IRQ). |
 | `bytes_code` | bytes of code in the built recipe's segments, as `-showmem` or the Oscar64 map reports them. When the page states only a PRG size, that size less the two-byte load address, and the measured-on line says `whole PRG` so a budget does not sum a runtime once per technique. |
 | `bytes_data` | bytes of tables, buffers and other data in the built recipe's segments (a sine table, an image, a fade table). |
@@ -191,10 +250,32 @@ number with no stated basis is worse than no number.
 One basis word covers the whole line, so it is the weakest that applies to
 any figure on it: a line with a measured cycle count and an estimated byte
 count says `estimated`. Never write `measured-vice` for a number that was
-not measured or that the page does not state as measured. The values ride
-the Technique node as `cost_<key>` and `cost_basis`; `c64_technique_lookup`
-returns them as `cost` and the briefing tools add them up over a proposed
-set, naming the techniques with no line.
+not measured or that the page does not state as measured.
+
+When the byte figures stand on a different rung from the cycles, an
+optional `**Cost bytes basis:**` line gives them their own word. It covers
+`bytes_code`, `bytes_data` and `zp_bytes`; `**Cost basis:**` then covers
+the rest (the cycle figures, `lines_active`, `irq_slots`,
+`sprites_per_line`), and each word is the weakest in its own group.
+
+```
+**Cost:** cycles_per_frame=1471, bytes_code=577, bytes_data=33
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+```
+
+Without the line, `**Cost basis:**` covers every figure, as it always has.
+Before #72 the line did not exist, so ten pages with VICE-measured cycles
+said `derived-listing` or `arithmetic` because of their bytes, and
+`c64_plan_budget` reported their cycle sums as weaker than they were. A
+bytes basis word outside the set drops the byte figures with a warning and
+keeps the rest; a bytes basis line with no byte figure is ignored with a
+warning.
+
+The values ride the Technique node as `cost_<key>`, `cost_basis` and
+`cost_bytes_basis`; `c64_technique_lookup` returns them as `cost` (with
+`bytes_basis` when the page states one) and the briefing tools add them
+up over a proposed set, naming the techniques with no line.
 
 Two optional lines follow the basis (schema 27). A figure belongs to the
 implementation it was measured on, and one figure can already hold another
@@ -278,6 +359,14 @@ the unit as `shares`: `stable_raster_irq` and `double_irq` say
 the one raster compare. Where the page says an effect is built on such a
 technique, state it on the **Requires:** line too: the check does not set
 a technique against its own prerequisite as a rival owner.
+
+The VIC display fields (`vic_yscroll`, `vic_xscroll`, `vic_matrix_base`,
+`vic_char_base`) follow the same rule. The technique that sets a field for
+the frame owns it (`soft_scroll_v`, `fld_flexible_line_distance`,
+`fli_image`). One that rewrites it only on its own lines and restores it
+shares it (`scroll_panel_split`, `sideborder_open`). The other mode bits
+of `$D011`, `$D016` and `$D018` (DEN, RSEL, CSEL, BMM, ECM, MCM) are not
+units yet.
 
 A technique claims what every implementation needs. What one recipe
 chooses (which vector, which zero-page bytes) is the recipe's claim, not

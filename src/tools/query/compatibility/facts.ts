@@ -5,6 +5,9 @@
  */
 
 import type { Claim } from "../../../graph/claims.ts";
+import type { RecipeDevice } from "./device-rules.ts";
+import type { RecipeZeroPage } from "./recipe-rules.ts";
+import type { RecipeKernalOut, SerialPitfall } from "./state-rules.ts";
 
 export interface TechniqueFacts {
   /** False when the graph has no Technique node of this name. */
@@ -49,6 +52,14 @@ export interface CompatibilityFacts {
   recipeUses: readonly RecipeUse[];
   /** CLOBBERS_ZP may sets (schema 26), canonical ranges, for every KERNAL routine a checked technique USES. */
   kernalClobbers?: ReadonlyMap<string, string>;
+  /** Owned zero page of every recipe that IMPLEMENTS an input (schema 34). */
+  recipeZeroPage?: readonly RecipeZeroPage[];
+  /** Devices required (REQUIRES_DEVICE, schema 36) by every recipe that IMPLEMENTS an input. */
+  recipeDevices?: readonly RecipeDevice[];
+  /** The serial-I/O pitfalls and the KERNAL routines that trigger them (#94). */
+  serialPitfalls?: readonly SerialPitfall[];
+  /** Recipes that build an input and run with the KERNAL out (#94). */
+  recipeKernalOut?: readonly RecipeKernalOut[];
 }
 
 export function pairKey(i: number, j: number): string {

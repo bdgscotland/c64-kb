@@ -41,6 +41,9 @@ field-redraw is what erases them.
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=18984, cycles_per_frame_typical=2005
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-text-overlay-playfield (probe build, CIA2 timer A around each call, screen on, KERNAL IRQ off; worst is a lock frame: the full repaint with 120 cells filled, 17,978 on NTSC with the listing's per-row raster sampling inside, plus the draw-only overlay, 1,006; typical is a frame without a lock, the overlay's erase and draw)
 
 ### Why
 
@@ -222,6 +225,39 @@ screen RAM is double-buffered via `$D018`, the redraw races the beam,
 so the budget is the blank window (107 lines from raster 256 through
 the wrap to raster 51, about 6,700 cycles), not the whole frame.
 
+### The Cost line
+
+The technique has two costs, and one Cost line states both (#37). A
+frame without a lock runs the overlay alone; a frame that changes
+persistent state also runs the repaint. So the typical figure is the
+overlay and the worst is the lock frame, the frame a plan has to fit.
+
+Measured in VICE x64sc 3.10 on a probe build of
+`recipes/oscar64/text-overlay-playfield.md`: CIA2 timer A started before
+and stopped after each call, its own 5 cycles subtracted, screen on,
+KERNAL IRQ off, 60,000,000 cycles.
+
+| Call | PAL | NTSC |
+|---|---|---|
+| `render_field`, 120 cells filled | 17,945 | 17,978 |
+| `render_piece`, erase and draw | 2,005 | 2,005 |
+| `render_piece`, draw only (the frame of a lock) | 1,006 | 1,006 |
+
+The worst frame is 17,978 + 1,006 = 18,984. `render_field` there
+includes the listing's own raster read after every row, which a game
+would leave out. The repaint's extent is the design's choice:
+`recipes/oscar64/falling-blocks.md` redraws only the rows a clear moved,
+9,394 cycles for sixteen rows in a constructed frame, so its design's
+measured frame (6,276) stays far below this line. A plan that never
+repaints the whole field in play is overcharged by this figure; its
+design's Measured frame line is the check.
+
+The issue was open until #37: the recipes disagreed (a full repaint
+every frame against a row redraw), and the page stated no line, so every
+plan named the technique unknown. Splitting it into two techniques was
+not done: the page prescribes one pattern, the overlay every frame and a
+repaint on events, and the figures above are that pattern's two frames.
+
 ### Recipes
 
 - `recipes/oscar64/text-overlay-playfield.md`
@@ -237,6 +273,13 @@ the wrap to raster 51, about 6,700 cycles), not the whole frame.
 **Cost:** cycles_per_frame=196
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-charset-animation (one glyph a frame, in the vertical blank)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/oscar64/charset-animation.md`: `$D018` stores changed the
+character base 63 times in 8 million cycles (form b), and form a
+rewrites glyphs in the set the base names, so both forms hold the base.
 
 ### Why
 
@@ -344,9 +387,9 @@ design's.
 **Region:** both
 **Uses registers:** D018
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=3995
+**Cost:** cycles_per_frame=3995, cycles_per_item=490, cycles_item_base=75
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-char-bullets (eight bullets, worst frame)
+**Cost measured on:** oscar64-char-bullets (eight bullets, worst frame; an item is one bullet, restore plus draw, fitted to builds of 1 to 12 bullets on PAL and NTSC)
 
 ### Why
 
@@ -452,6 +495,27 @@ worst frame seen over about 240 frames on each model, 3,354 + 641 =
 cells (one more chain step) and wall hits. The recipe's full-arena
 compare, 5,873 cycles on PAL and 6,131 on NTSC, is its self-check and
 not part of the technique.
+
+**Per bullet.** The recipe was rebuilt with 1, 2, 4, 8 and 12 bullets
+(`NB`; the reserved codes start at `$100 - NB`, and bullets 8 to 11 get
+start positions of their own) and run 8,000,000 cycles on each model.
+The table is the worst restore plus the worst draw, from the same CIA
+timers, read from memory by the VICE monitor (rung 1).
+
+| Bullets | PAL | NTSC | 75 + 490 × bullets |
+|---|---|---|---|
+| 1 | 386 | 429 | 565 |
+| 2 | 1,001 | 1,001 | 1,055 |
+| 4 | 2,030 | 2,073 | 2,035 |
+| 8 | 3,986 | 3,966 | 3,995 |
+| 12 | 5,872 | 5,871 | 5,955 |
+
+The Cost line's `cycles_per_item=490, cycles_item_base=75` is that last
+column: it passes every measured figure but the NTSC four-bullet one,
+which is 38 cycles over it (a badline). Two bullets cost more than twice
+one because bullets 0 and 1 share a cell and walk the chain. A plan that
+names `char_bullets ×12` is charged 5,955; without a count it is charged
+the recipe's eight, 3,995.
 
 ### Recipes
 

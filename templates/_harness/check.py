@@ -4,9 +4,14 @@
 usage: check.py expect.json pal.png ntsc.png
 
 Exit 0 when every check passes on every model it names, 1 when any fails
-(each failure is a line starting "FAIL" that names the check), 2 on a
-usage error, a setup error or a fault in expect.json (named, before any
-grading).
+(each failure is a line starting "FAIL" that names the check), 2 when it
+refuses to grade: a usage error, a setup error, a fault in expect.json, or a
+picture from another palette (named, before any grading). A refusal prints
+one line starting "FAIL REFUSED" on stdout, so a caller that greps for FAIL
+still sees it; test the exit code, never the text: 0 passed, 1 failed, 2
+nothing was graded. (An earlier version printed refusals on stderr only,
+and a caller's loop that grepped stdout for FAIL graded five refused files
+as five passes.)
 
 Geometry and palette are the ones measured in c64-kb's
 docs/runtime/vice-reference.md, "Reading the exit screenshot" (VICE x64sc
@@ -16,6 +21,10 @@ docs/runtime/vice-reference.md, "Reading the exit screenshot" (VICE x64sc
 column 32). Text cell (row r, column c) starts at x = 32 + 8c, y = 35 + 8r
 (PAL) or 23 + 8r (NTSC). Colours are matched by exact triple against the
 sixteen per model; another VICE version or palette will not match.
+PAL is -default's machine: `-model pal` selects a 6569R3 with its own
+palette (measured: border green (94, 214, 56), not (98, 213, 50)). A shot
+taken that way is refused by name, not graded colour by colour; do not
+pass `-model pal`.
 
 expect.json:
   {
@@ -24,7 +33,9 @@ expect.json:
       ...
     ]
   }
-At least one check, and one of type "verdict", are required. "models"
+At least one check, and one of type "verdict", are required, unless the
+file says "mid_run": true: a pin taken inside a run, before the program can
+have reached its verdict, is graded on its other checks. "models"
 defaults to both. A point is one of
     "x", "y"          screenshot pixels
     "vic_x", "line"   VIC-II X coordinate and raster line. A sprite whose X and Y
@@ -43,6 +54,14 @@ Types:
   sprite   an area, "colour": the pixels of that colour inside "search" (an
            area; default the expected box grown by 16 pixels each way) have
            exactly that bounding box.
+  ink      an area, "min": at least that many pixels of the area are not the
+           "background" colour index (default 0); optional "max" bounds them
+           from above and "colours" lists the only indices they may take.
+           For things drawn somewhere in an area but at no fixed place
+           (orbiting sprites), where a box would pin one phase: choose "min"
+           from the smallest count over every phase. Taken from the
+           MEASURED demo's copy of this harness, where it caught a fault
+           that removed five of six balls and every other check passed.
   text     "row", "col", "text": the cells decode to that text (upper case).
            Optional "dy" (0-7): the rows sit that many pixels below the
            YSCROLL-3 grid, as a panel under a scrolled playfield does (a
@@ -70,6 +89,7 @@ import sys
 try:
     from PIL import Image
 except ImportError:
+    print("FAIL REFUSED check.py needs Pillow: python3 -m pip install pillow (exit 2: nothing was graded)")
     print("check.py needs Pillow: python3 -m pip install pillow", file=sys.stderr)
     sys.exit(2)
 
@@ -88,6 +108,15 @@ PALETTE = {
         (148, 148, 148), (198, 255, 186), (98, 145, 251), (205, 205, 205),
     ],
 }
+# VICE 3.10's `-model pal` (6569R3) palette, measured with the palette-cells
+# recipe: a shot in it is refused (see the docstring). Indices whose triple is
+# the same in both palettes (0, 1, 11, 12, 15) cannot tell them apart.
+PALETTE_MODEL_PAL = [
+    (0, 0, 0), (255, 255, 255), (171, 60, 101), (135, 240, 203),
+    (178, 61, 239), (94, 214, 56), (58, 49, 255), (255, 255, 59),
+    (183, 100, 24), (129, 76, 0), (234, 121, 163), (98, 98, 98),
+    (148, 148, 148), (178, 255, 141), (129, 120, 255), (205, 205, 205),
+]
 # docs/runtime/vice-reference.md, "Geometry".
 GEOMETRY = {
     "pal": {"size": (384, 272), "line_offset": 16, "lines": 312, "text_y0": 35, "frame_cycles": 19656},
@@ -110,13 +139,17 @@ CHARGEN_PATHS = [
     "/usr/share/vice/C64/chargen",
 ]
 REQUIRED = {
-    "verdict": [], "pixel": ["colour"], "rect": ["colour"], "sprite": ["colour"],
+    "verdict": [], "pixel": ["colour"], "rect": ["colour"], "sprite": ["colour"], "ink": ["min"],
     "text": ["row", "col", "text"], "same": [], "meter": ["row", "col"],
 }
 AREA_KEYS = ("vic_x", "line", "width", "height")
 
 
 class SpecError(Exception):
+    pass
+
+
+class Refused(Exception):
     pass
 
 
@@ -182,7 +215,7 @@ def boxes_for(c, name):
     if t == "pixel":
         point_form(c, name)
         return lambda m: point_xy(c, m) * 2
-    if t in ("rect", "sprite"):
+    if t in ("rect", "sprite", "ink"):
         a = area_of(c, name)
         return lambda m: area_box(a, m)
     if t in ("text", "meter"):
@@ -205,8 +238,9 @@ def validate(spec) -> None:
     checks = spec.get("checks") if isinstance(spec, dict) else None
     if not isinstance(checks, list) or not checks:
         raise SpecError("expect.json has no checks")
-    if not any(isinstance(c, dict) and c.get("type") == "verdict" for c in checks):
-        raise SpecError("expect.json has no 'verdict' check: the program's own grade must be read")
+    if not spec.get("mid_run") and not any(isinstance(c, dict) and c.get("type") == "verdict" for c in checks):
+        raise SpecError("expect.json has no 'verdict' check: the program's own grade must be read "
+                        "(a pin inside a run says \"mid_run\": true)")
     for i, c in enumerate(checks):
         name = c.get("name", f"#{i}") if isinstance(c, dict) else f"#{i}"
         if not isinstance(c, dict) or c.get("type") not in REQUIRED:
@@ -216,6 +250,8 @@ def validate(spec) -> None:
                 raise SpecError(f"check '{name}': missing '{k}'")
         if "colour" in c and not (isinstance(c["colour"], int) and 0 <= c["colour"] <= 15):
             raise SpecError(f"check '{name}': 'colour' must be a colour index 0 to 15")
+        if c["type"] == "ink":
+            validate_ink(c, name)
         models = c.get("models", ["pal", "ntsc"])
         if not models or any(m not in GEOMETRY for m in models):
             raise SpecError(f"check '{name}': 'models' must list pal and/or ntsc")
@@ -230,6 +266,15 @@ def validate(spec) -> None:
                     raise SpecError(f"check '{name}': the search area is outside the {m.upper()} picture")
 
 
+def validate_ink(c, name):
+    need_int(c, ["min"] + (["max"] if "max" in c else []), name)
+    if "background" in c and not (isinstance(c["background"], int) and 0 <= c["background"] <= 15):
+        raise SpecError(f"check '{name}': 'background' must be a colour index 0 to 15")
+    cols = c.get("colours", [])
+    if not (isinstance(cols, list) and all(isinstance(v, int) and 0 <= v <= 15 for v in cols)):
+        raise SpecError(f"check '{name}': 'colours' must be a list of colour indices 0 to 15")
+
+
 # ---- pictures and glyphs -------------------------------------------------------------
 class Shot:
     def __init__(self, path: str, model: str):
@@ -237,10 +282,21 @@ class Shot:
         im = Image.open(path).convert("RGB")
         g = GEOMETRY[model]
         if im.size != g["size"]:
-            raise SystemExit(f"check.py: {path} is {im.size[0]} x {im.size[1]}, not a {model.upper()} "
-                             f"exit screenshot ({g['size'][0]} x {g['size'][1]})")
+            raise Refused(f"{path} is {im.size[0]} x {im.size[1]}, not a {model.upper()} "
+                          f"exit screenshot ({g['size'][0]} x {g['size'][1]})")
         self.px, self.g = im.load(), g
         self.lookup = {rgb: i for i, rgb in enumerate(PALETTE[model])}
+        if model == "pal":
+            self.refuse_model_pal(im)
+
+    def refuse_model_pal(self, im):
+        """A picture in the -model pal palette and none of -default's own colours is refused."""
+        only_r3 = set(PALETTE_MODEL_PAL) - set(PALETTE["pal"])
+        only_default = set(PALETTE["pal"]) - set(PALETTE_MODEL_PAL)
+        seen = {rgb for _, rgb in im.getcolors(im.size[0] * im.size[1])}
+        if seen & only_r3 and not seen & only_default:
+            raise Refused(f"{self.path} is in VICE's -model pal (6569R3) palette, not the one -default's PAL "
+                          "machine draws; shoot it without -model pal")
 
     def index(self, x: int, y: int):
         return self.lookup.get(self.px[x, y])
@@ -342,6 +398,27 @@ def check_sprite(c, shot, _ctx):
     return got == want, f"{colour_name(c['colour'])} box {got}, want {want}"
 
 
+def check_ink(c, shot, _ctx):
+    x0, y0, x1, y1 = area_box(c, shot.model)
+    bg = c.get("background", 0)
+    lit = [i for i in (shot.index(x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)) if i != bg]
+    n = len(lit)
+    seen = sorted({i for i in lit if i is not None}, key=lambda i: -lit.count(i))
+    msg = f"{n} pixels of ({x0}, {y0}) to ({x1}, {y1}) are not {colour_name(bg)}"
+    if seen:
+        msg += " (" + ", ".join(f"{lit.count(i)} {NAMES[i]}" for i in seen[:4]) + ")"
+    problems = []
+    if n < c["min"]:
+        problems.append(f"under {c['min']}")
+    if "max" in c and n > c["max"]:
+        problems.append(f"over {c['max']}")
+    if "colours" in c:
+        stray = [i for i in seen if i not in c["colours"]] + ([None] if None in lit else [])
+        if stray:
+            problems.append("stray colour " + ", ".join(colour_name(i) for i in stray))
+    return not problems, msg + ("" if not problems else ": " + "; ".join(problems))
+
+
 def check_text(c, shot, ctx):
     want = c["text"].upper()
     got = read_text(shot, ctx["glyphs"](c), c["row"], c["col"], len(want), c.get("dy", 0))
@@ -391,7 +468,7 @@ def check_meter(c, shot, ctx):
 
 
 CHECKS = {"verdict": check_verdict, "pixel": check_pixel, "rect": check_rect, "sprite": check_sprite,
-          "text": check_text, "same": check_same, "meter": check_meter}
+          "ink": check_ink, "text": check_text, "same": check_same, "meter": check_meter}
 
 
 def glyph_loader(base):
@@ -409,33 +486,42 @@ def glyph_loader(base):
     return get
 
 
+def refuse(msg) -> int:
+    """Exit 2: nothing was graded. One line on stdout a FAIL grep sees, the same on stderr."""
+    print(f"FAIL REFUSED check.py: {msg} (exit 2: nothing was graded)")
+    print(f"check.py: {msg}", file=sys.stderr)
+    return 2
+
+
+def grade(spec, shots, ctx):
+    failed = total = 0
+    for c in spec["checks"]:
+        models = ["pal"] if c["type"] == "same" else c.get("models", ["pal", "ntsc"])
+        for model in models:
+            ok, msg = CHECKS[c["type"]](c, shots[model], ctx)
+            label = "PAL+NTSC" if c["type"] == "same" else model.upper()
+            print(f"{'PASS' if ok else 'FAIL'} {label:8} {c.get('name', c['type'])}: {msg}")
+            failed += not ok
+            total += 1
+    print(f"check: {total - failed} of {total} passed" + ("" if not failed else f", {failed} FAILED"))
+    return 1 if failed else 0
+
+
 def main() -> int:
     if len(sys.argv) != 4:
         print("usage: check.py expect.json pal.png ntsc.png", file=sys.stderr)
-        return 2
+        return refuse("usage: check.py expect.json pal.png ntsc.png")
     try:
         spec = json.load(open(sys.argv[1]))
         validate(spec)
-    except (OSError, ValueError, SpecError) as e:
-        print(f"check.py: {sys.argv[1]}: {e}", file=sys.stderr)
-        return 2
-    shots = {"pal": Shot(sys.argv[2], "pal"), "ntsc": Shot(sys.argv[3], "ntsc")}
+        shots = {"pal": Shot(sys.argv[2], "pal"), "ntsc": Shot(sys.argv[3], "ntsc")}
+    except (OSError, ValueError, SpecError, Refused) as e:
+        return refuse(f"{sys.argv[1]}: {e}")
     ctx = {"glyphs": glyph_loader(os.path.dirname(os.path.abspath(sys.argv[1]))), "ntsc": shots["ntsc"]}
-    failed = total = 0
     try:
-        for c in spec["checks"]:
-            models = ["pal"] if c["type"] == "same" else c.get("models", ["pal", "ntsc"])
-            for model in models:
-                ok, msg = CHECKS[c["type"]](c, shots[model], ctx)
-                label = "PAL+NTSC" if c["type"] == "same" else model.upper()
-                print(f"{'PASS' if ok else 'FAIL'} {label:8} {c.get('name', c['type'])}: {msg}")
-                failed += not ok
-                total += 1
+        return grade(spec, shots, ctx)
     except SpecError as e:
-        print(f"check.py: {sys.argv[1]}: {e}", file=sys.stderr)
-        return 2
-    print(f"check: {total - failed} of {total} passed" + ("" if not failed else f", {failed} FAILED"))
-    return 1 if failed else 0
+        return refuse(f"{sys.argv[1]}: {e}")
 
 
 if __name__ == "__main__":

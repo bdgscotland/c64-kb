@@ -7,6 +7,8 @@ techniques: [colour_fade]
 file_formats: [PRG]
 uses_registers: [D012, D020, D021]
 uses_kernal: []
+claims: [zero_page $FB-$FC (owns)]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -214,8 +216,9 @@ and the autostart are done, about 3 M cycles in: a screenshot at 800,000,
 1,300,000 or 2,000,000 cycles is black on both models with no caption,
 which an earlier session read as the fade having finished. From a PAL
 capture at 4,000,000 cycles that showed the frame in which step 13 began,
-step 0 began between 2,958,232 and 2,977,888 cycles (arithmetic: 52 steps
-of four 19,656-cycle frames back, less up to one frame). On NTSC two
+step 0 began between 2,958,232 and 2,977,888 cycles (arithmetic: 13 steps
+of four 19,656-cycle frames, 52 frames, back, less up to one frame; an
+earlier version said "52 steps", which would be 208 frames). On NTSC two
 captures bracket the step 5 to 6 change between 3,471,620 and 3,500,000
 cycles. 3,725,000 is the count that puts both models at least about one
 frame from any step change under those brackets. A count that lands on the

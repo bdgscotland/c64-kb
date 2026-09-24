@@ -4,16 +4,18 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
 import { checkCompatibility } from "../src/tools/query.ts";
 import { extractGraphEntities } from "../src/graph/extract.ts";
+import { applyEdge, applyNode, isNodeEntity } from "../src/graph/apply.ts";
 
-// Ground truth for the unit rules (#22). Every recipe in docs/recipes was
-// built and run in VICE, so the techniques one recipe implements do coexist
-// on the machine. check_compatibility over a recipe's technique set must
-// therefore report no hard unit_contention or zero_page_overlap, directly
-// or through a prerequisite. The graph is built here from the real
-// technique pages (nodes, REQUIRES, CLAIMS), so a Claims line that sets two
-// cooperating techniques against each other fails this test by name.
+// Ground truth for the compatibility rules (#22, every hard kind since
+// #29). Every recipe in docs/recipes was built and run in VICE, so the
+// techniques one recipe implements do coexist on the machine.
+// check_compatibility over a recipe's technique set must therefore report
+// no hard conflict of any kind, directly or through a prerequisite. The
+// graph is built here from the real pages (Technique and KernalRoutine
+// nodes; REQUIRES, CLAIMS, DEMANDS, REQUIRES_REGION and KERNAL USES edges),
+// so a Demands or Claims line that sets two cooperating techniques against
+// each other fails this test by name.
 const DOCS = path.resolve(__dirname, "../docs");
-const UNIT_KINDS = new Set(["unit_contention", "zero_page_overlap"]);
 
 function markdownUnder(dir: string): string[] {
   return fs
@@ -24,14 +26,23 @@ function markdownUnder(dir: string): string[] {
 
 const extract = (abs: string) => extractGraphEntities(fs.readFileSync(abs, "utf8"), path.relative(DOCS, abs));
 
-// Technique nodes first, then their REQUIRES and CLAIMS edges, as ingest's two passes do.
+const NODES = new Set(["technique", "kernal_routine"]);
+const EDGES = new Set([
+  "technique_requires",
+  "claims",
+  "technique_demands",
+  "technique_requires_region",
+  "technique_uses_kernal",
+]);
+
+// Nodes first, then the edges the hard rules read, as ingest's two passes do.
 async function loadTechniques(f: FalkorService): Promise<void> {
-  const ents = markdownUnder(path.join(DOCS, "techniques")).flatMap(extract);
-  for (const e of ents) if (e.type === "technique") await f.addTechnique(e);
-  for (const e of ents) {
-    if (e.type === "technique_requires") await f.linkTechniqueRequires(e.technique, e.requires);
-    if (e.type === "claims") await f.linkClaims(e);
-  }
+  const ents = [
+    ...markdownUnder(path.join(DOCS, "techniques")),
+    ...markdownUnder(path.join(DOCS, "hardware")),
+  ].flatMap(extract);
+  for (const e of ents) if (isNodeEntity(e) && NODES.has(e.type)) await applyNode(f, e);
+  for (const e of ents) if (!isNodeEntity(e) && EDGES.has(e.type)) await applyEdge(f, e);
 }
 
 describe("recipes against their own technique sets", () => {
@@ -58,22 +69,123 @@ describe("recipes against their own technique sets", () => {
     const rows = await f.roQuery(
       `MATCH (t:Technique {name: 'fli_image'})-[:CLAIMS]->(h:HardwareUnit) RETURN h.name AS unit ORDER BY unit`,
     );
-    expect(rows.data.map((r) => (r as { unit: string }).unit)).toEqual(["cia2_vic_bank", "vic_raster_irq"]);
+    expect(rows.data.map((r) => (r as { unit: string }).unit)).toEqual([
+      "cia2_vic_bank",
+      "vic_char_base",
+      "vic_matrix_base",
+      "vic_raster_irq",
+      "vic_yscroll",
+    ]);
     expect([...recipeSets.values()].filter((t) => t.length > 1).length).toBeGreaterThan(10);
   });
 
-  it("no recipe's technique set has a hard unit conflict", async () => {
+  it("the graph holds the demands and KERNAL uses the hard rules read", async () => {
+    const rows = await f.roQuery(
+      `MATCH (t:Technique {name: 'fli_image'})-[:DEMANDS]->(r:Resource) RETURN r.name AS name ORDER BY name`,
+    );
+    expect(rows.data.map((r) => (r as { name: string }).name)).toEqual([
+      "constant_sprite_set",
+      "cpu_every_line",
+    ]);
+    const kernal = await f.roQuery(`MATCH (:Technique)-[u:USES]->(:KernalRoutine) RETURN count(u) AS n`);
+    expect((kernal.data[0] as { n: number }).n).toBeGreaterThan(0);
+  });
+
+  // #35: the claims watch found these gaps in VICE store traces.
+  it("states the claims the claims watch measured (#35)", async () => {
+    const named = [
+      "soft_scroll_v",
+      "char_scroll_buffer_v",
+      "sid_voice_setup",
+      "kernal_file_write_seq",
+      "kernal_file_read_seq",
+      "kernal_load_to_address",
+    ];
+    const rows = await f.roQuery(
+      `MATCH (t:Technique) WHERE t.name IN $named RETURN t.name AS name, t.claims_stated AS stated ORDER BY name`,
+      { named },
+    );
+    const stated = rows.data as { name: string; stated: string | null }[];
+    expect(stated.filter((r) => r.stated == null).map((r) => r.name)).toEqual([]);
+    expect(stated.length).toBe(named.length);
+    for (const recipe of [
+      "recipes/kickassembler/sprite-multiplex-game.md",
+      "recipes/kickassembler/scroll-panel-split.md",
+    ])
+      expect(recipeSets.get(recipe)).toContain("ram_under_kernal");
+  });
+
+  it("reports a KERNAL disk call against a technique that owns CIA1 timer B (#35)", async () => {
+    await f.addTechnique({
+      name: "timer_b_owner_35",
+      title: "timer_b_owner_35",
+      category: "cpu",
+      complexity: "low",
+      claims_stated: "stated",
+      claims_basis: "derived-listing",
+    });
+    await f.linkClaims({
+      owner: "timer_b_owner_35",
+      ownerKind: "Technique",
+      unit: "cia1_timer_b",
+      mode: "owns",
+      basis: "derived-listing",
+    });
+    for (const disk of ["kernal_file_write_seq", "kernal_file_read_seq", "kernal_load_to_address"]) {
+      const { conflicts } = (await checkCompatibility([disk, "timer_b_owner_35"])).structured;
+      const hit = conflicts.find((c) => c.shared.includes("cia1_timer_b"));
+      expect(hit?.kind, disk).toBe("unit_shared");
+    }
+  });
+
+  // #71: YSCROLL is a HardwareUnit, read from the real pages.
+  it("sets soft_scroll_v against FLD on vic_yscroll, and not against its panel split (#71)", async () => {
+    const fld = (await checkCompatibility(["soft_scroll_v", "fld_flexible_line_distance"])).structured;
+    expect(fld.verdict).toBe("incompatible");
+    const hit = fld.conflicts.find((c) => c.kind === "unit_contention");
+    expect(hit?.shared).toEqual(["vic_yscroll"]);
+    expect(hit?.severity).toBe("hard");
+    const panel = (await checkCompatibility(["soft_scroll_v", "char_scroll_buffer_v", "scroll_panel_split"]))
+      .structured;
+    expect(panel.conflicts.filter((c) => c.severity === "hard")).toEqual([]);
+    expect(panel.conflicts.some((c) => c.kind === "unit_shared" && c.shared.includes("vic_yscroll"))).toBe(
+      true,
+    );
+  });
+
+  // Issue #90: the two composed recipes of #1 chain two raster-compare
+  // owners in one ring and place a movable band clear of the others' lines,
+  // which the rules cannot see yet. Each string is a measured disagreement,
+  // not an accepted conflict; the list must end empty when #90 lands.
+  const KNOWN_DISAGREEMENTS_90 = new Set([
+    "recipes/kickassembler/fli-music-scroller.md: unit_contention fli_image × topbottom_border_open on vic_raster_irq",
+    "recipes/kickassembler/fli-music-scroller.md: cpu_vs_irq fli_image × topbottom_border_open on cpu_every_line, midframe_raster_irqs",
+    "recipes/kickassembler/fli-music-scroller.md: unit_contention fli_image × sprite_border_scroller on vic_raster_irq",
+    "recipes/kickassembler/fli-music-scroller.md: cpu_vs_irq fli_image × sprite_border_scroller on cpu_every_line, midframe_raster_irqs",
+    "recipes/kickassembler/one-part-demo.md: unit_contention sideborder_open × topbottom_border_open on vic_raster_irq",
+    "recipes/kickassembler/one-part-demo.md: cpu_vs_irq sideborder_open × topbottom_border_open on cpu_every_line, midframe_raster_irqs",
+    "recipes/kickassembler/one-part-demo.md: unit_contention sideborder_open × sprite_border_scroller on sprite_0-7, vic_raster_irq",
+    "recipes/kickassembler/one-part-demo.md: cpu_vs_irq sideborder_open × sprite_border_scroller on cpu_every_line, midframe_raster_irqs",
+    "recipes/kickassembler/one-part-demo.md: unit_contention sideborder_open × raster_bars on vic_raster_irq",
+    "recipes/kickassembler/one-part-demo.md: cpu_vs_irq sideborder_open × raster_bars on cpu_every_line, midframe_raster_irqs",
+    "recipes/kickassembler/one-part-demo.md: unit_contention topbottom_border_open × raster_bars on vic_raster_irq",
+    "recipes/kickassembler/one-part-demo.md: unit_contention sprite_border_scroller × raster_bars on vic_raster_irq",
+  ]);
+
+  it("no recipe's technique set has a hard conflict of any kind", async () => {
     const failures: string[] = [];
     for (const [recipe, techniques] of [...recipeSets].sort()) {
       if (techniques.length < 2) continue;
       const { conflicts } = (await checkCompatibility(techniques)).structured;
       for (const c of conflicts) {
         const kind = c.underlying_kind ?? c.kind;
-        if (c.severity !== "hard" || !UNIT_KINDS.has(kind)) continue;
+        if (c.severity !== "hard") continue;
         const via = c.via?.length ? ` via ${c.via.join(", ")}` : "";
         failures.push(`${recipe}: ${kind} ${c.a} × ${c.b}${via} on ${c.shared.join(", ")}`);
       }
     }
-    expect(failures).toEqual([]);
+    expect(failures.filter((f) => !KNOWN_DISAGREEMENTS_90.has(f))).toEqual([]);
+    // A known disagreement that no longer occurs is fixed: take it off the list.
+    expect([...KNOWN_DISAGREEMENTS_90].filter((k) => !failures.includes(k))).toEqual([]);
   }, 120000);
 });

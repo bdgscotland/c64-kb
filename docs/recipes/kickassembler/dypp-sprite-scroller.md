@@ -7,6 +7,9 @@ techniques: [dypp_sprite_sine_scroller]
 file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D012, D015, D017, D01B, D01C, D01D, D020, D021, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, DC04, DC05, DC0E]
 uses_kernal: []
+claims: [zero_page $FB-$FE (owns)]
+harness: [cia1_timer_a, $02FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -467,9 +470,12 @@ sine phase step of 32 between neighbours. The message is
 `EIGHT SPRITES CARRY THE WORDS AND EACH COLUMN BOBS ON ITS OWN SINE`,
 followed by four spaces, repeating. The first character enters at the
 right edge about twenty frames in; before that the sprites are blank.
-At most seven of the eight sprites are ever on screen: the eighth is
+Usually seven of the eight sprites are on screen and the eighth is
 between X 344 and X 383, disabled, carrying the character that comes
-next.
+next. When `p mod 48` is 0, 2, 4 or 6 (4 of the 24 phases) no sprite is
+in that gap and all eight are enabled, the last at X 336 to 342, partly
+under the right border. (An earlier version said at most seven are ever
+on screen; arithmetic from the 48-pixel spacing, not measured here.)
 
 At frame 300 the picture freezes and holds. It shows, left to right,
 `S P R I T E` with a space before the `S`.
@@ -633,8 +639,10 @@ and its `$D010` bit is clear. One with a low byte under 88 (X 256 to
 clear. The mask and the enable byte are built in two locals and written
 once each after the loop, so every sprite's low byte, MSB and enable
 change in the same update. The 40 pixels between 344 and 383 are the
-gap a sprite spends off screen; with 48-pixel spacing and 384 for the
-lap, one sprite is always in it.
+gap a sprite spends off screen. With 48-pixel spacing and 384 for the
+lap, one sprite is in it on 20 of the 24 even phases of `p mod 48`; on
+the other four (0 to 6) the nearest sprite is at X 336 to 342 and none
+is disabled. (An earlier version said one sprite is always in it.)
 
 ### The hand-off at X 4
 

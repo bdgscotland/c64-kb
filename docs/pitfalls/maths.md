@@ -185,3 +185,208 @@ divide-check.md with every bcs deleted, screen read from the PNG:
 - Technique `atan2_8bit` (`docs/techniques/maths.md`) and `docs/recipes/kickassembler/sqrt-atan2.md`, whose `ratio_div` omits the guard because its divisor is at most 128.
 - Technique `isqrt_16bit` (`docs/techniques/maths.md`), a restoring loop of the same family whose 16-bit remainder has room to spare.
 - `docs/recipes/oscar64/divide-check.md`, the sweep whose miss counts are quoted here; its `16/8 ALL` row is the one that catches the fault.
+
+---
+
+## multiply_16x16_middle_carry_dropped — A 16 × 16 multiply that adds the two middle products without carrying into the top byte is wrong by 2²⁴ on large operands
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** multiply_16x16
+**Mitigated by techniques:** multiply_16x16
+
+### Symptom
+
+A 32-bit product is right on every test value tried and wrong in its
+top byte on large operands: a scaled coordinate jumps by a whole screen,
+a 16.16 fixed-point step goes negative. `$00FF × $0101`, `$1234 ×
+$0002` and every operand below `$0100` give the right answer.
+
+### Mechanism
+
+The routine builds `a·b` from four byte products. `al·bl` fills bytes 0
+and 1 and `ah·bh` bytes 2 and 3; the two middle products `ah·bl` and
+`al·bh` are each added at byte 1, as two-byte adds over bytes 1 and 2.
+Those adds can carry out of byte 2: the middle products alone sum to up
+to 2 × 255 × 255 = 130,050, more than 16 bits. A routine that stops
+each add at byte 2 loses that carry, and the top byte is short by 1 for
+each one. When either operand's high byte is small the middle products
+are small and no carry happens, so the fault hides from small tests.
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/multiply-16x16.md`:
+over its 65,536 sweep pairs the carry-less copy gets byte 3 wrong on
+36,069, the count a Python model of the byte arithmetic predicts. The
+technique is on both lines because the fault is the obvious short form
+of its add and its `BCC` / `INC` cures it.
+
+### Fix
+
+After each middle add's high byte, `BCC` over an `INC` of byte 3. It
+costs 3 cycles when there is no carry and 8 when there is.
+
+### Worked example
+
+```asm
+// BAD: bytes 1-2 += ah*bl, the carry out of byte 2 dropped
+        clc
+        lda r1
+        adc m0
+        sta r1
+        lda r2
+        adc m1
+        sta r2
+
+// GOOD: the carry reaches byte 3
+        clc
+        lda r1
+        adc m0
+        sta r1
+        lda r2
+        adc m1
+        sta r2
+        bcc !+
+        inc r3
+!:
+```
+
+### Cross-references
+
+- Technique `multiply_16x16` (`docs/techniques/maths.md`), the routine
+  and its timing.
+- Recipe `docs/recipes/kickassembler/multiply-16x16.md`, the sweep that
+  counts the 36,069 wrong products.
+
+---
+
+## constant_multiply_signed_not_extended — A signed byte multiplied by a constant with its high byte started at zero comes out 256 × k too large for every negative input
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** multiply_by_constant
+**Mitigated by techniques:** multiply_by_constant
+
+### Symptom
+
+A velocity or offset scaled by a constant moves the right way when it
+is positive and jumps far off when it is negative: `-1 × 10` gives
+2,550 instead of -10 (`$09F6` instead of `$FFF6`). Every positive input
+is right, so a test that only moves right or down passes.
+
+### Mechanism
+
+A shift-and-add chain builds a 16-bit result from the input's low byte
+and a high byte that starts at zero, the right start for an unsigned
+byte. A signed byte `x` below zero is the unsigned byte `x + 256`, so
+the chain computes `k × (x + 256)`, which is `k × x + 256 × k`. Modulo
+65,536 that is off by `256 × k` for every negative input and by
+nothing for the others.
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/multiply-constant.md`:
+a `× 10` chain with its high byte started at zero differs from the
+sign-extended one on all 128 negative bytes, each by 2,560, and on
+none of the 128 others. The technique is on both lines because the
+fault is its unsigned form applied to a signed input, and its
+sign-extended form cures it.
+
+### Fix
+
+Start the high byte at `$FF` when bit 7 of the input is set, and use
+that byte, not zero, wherever the chain adds `x` itself. The extension
+costs 1 cycle more for a negative input.
+
+### Worked example
+
+```asm
+// BAD: right for x >= 0, 2,560 too large for every x < 0
+        lda #0
+        sta m_hi
+        lda xin
+
+// GOOD: the sign in the high byte before the first shift
+        ldx #0
+        lda xin
+        bpl !+
+        dex               // X = $FF for a negative input
+!:      stx m_hi
+        stx sx            // xin as 16 bits: sx:xin, for the add of xin
+```
+
+### Cross-references
+
+- Technique `multiply_by_constant` (`docs/techniques/maths.md`).
+- Recipe `docs/recipes/kickassembler/multiply-constant.md`, the sweep
+  that counts the 128 wrong products.
+
+---
+
+## random_range_modulo_bias — A random byte taken modulo n, or scaled by n, favours some results whenever n does not divide 256
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** random_in_range
+**Mitigated by techniques:** random_in_range
+
+### Symptom
+
+A die rolls 1 to 4 slightly more often than 5 and 6; of 100 spawn
+columns the first 56 fill up faster than the rest; a "1 in 100" event
+happens at a rate that depends on which number was picked. Nothing
+fails outright. The bias shows only in counts over many draws, and a
+glance at a few hundred rolls does not reveal a 2.4 % lean.
+
+### Mechanism
+
+A random byte has 256 equally likely values. Mapping them onto `n`
+results gives each result `floor(256 / n)` or one more, and
+`256 mod n` results get the extra one. For `n = 6` that is 43 byte
+values for four faces and 42 for two: those four are 2.4 % more
+likely. For `n = 100` it is 3 byte values for 56 results and 2 for 44:
+the 56 are 50 % more likely. `r mod n` puts the extra values on the
+lowest results; the high byte of `r × n` spreads them out; the split is
+the same either way, because any map from 256 values to `n` results
+has it.
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/random-range.md`,
+over the 65,535 steps of a 16-bit LFSR: `mod` and multiply-high both
+hit their least and most frequent results 10,752 and 11,008 times for
+`n = 6`, and 512 and 768 times for `n = 100`. Rejection hit every result
+8,191 or 8,192 times and 511 or 512 times. The technique is on both
+lines because the fault is its two one-step forms and its rejection
+form cures it.
+
+### Fix
+
+Reject: mask the byte to the smallest `2^k - 1` not below `n - 1` and
+draw again while the result is `n` or more. The mean cost measured 60
+cycles for `n = 6` against 198 for the `mod` loop. Where `n` is a power
+of two, the `AND` alone is exact.
+
+### Worked example
+
+```asm
+// BIASED: 256 = 42 * 6 + 4, so 0..3 come up 43 times in 256, 4..5 42
+roll_bad:
+        jsr lfsr
+        sec
+!:      sbc #6
+        bcs !-
+        adc #6
+        rts
+
+// EVEN: keep 3 bits, throw away 6 and 7
+roll:
+!:      jsr lfsr
+        and #7
+        cmp #6
+        bcs !-
+        rts
+```
+
+### Cross-references
+
+- Technique `random_in_range` (`docs/techniques/maths.md`), the three
+  ways and their cost.
+- Technique `lfsr_random` (`docs/techniques/maths.md`), the byte
+  source.
+- Recipe `docs/recipes/kickassembler/random-range.md`, the counts
+  quoted here.

@@ -43,7 +43,6 @@
 #define SLICE_ROWS    5             // 20 interior rows / SLICES
 #define DEATH_FRAMES  6             // cave frames from a death to the next life; tools/gen.py
 #define LIVES         3
-#define DISK_WAIT     50            // frames before the first OPEN (pitfall first_open_after_reset_hangs_on_pal)
 
 enum { ST_TITLE, ST_NEXT, ST_PLAY, ST_NAME, ST_TABLE };
 
@@ -108,14 +107,6 @@ static char port_read(void)
     if (state == ST_NAME && state_frames >= 4 && state_frames - 4 < ap_name_len)
         return ap_name[state_frames - 4];
     return 0xff;
-}
-#elif defined(JOY_SOURCE)
-// Headless driving of the normal game: the port byte comes from RAM at
-// JOY_SOURCE, which a VICE monitor writes (make joy; README "Driving it
-// headless"). The windowless VICE's joyport commands do not reach $DC00.
-static char port_read(void)
-{
-    return *(volatile char *)JOY_SOURCE;
 }
 #else
 static char port_read(void)
@@ -502,9 +493,6 @@ int main(void)
 {
     __asm { sei }                               // no KERNAL IRQ: the loop polls the raster
     cia1.pra = 0xff;                            // no keyboard column selected
-#if !AUTOPILOT && defined(JOY_SOURCE)
-    *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
-#endif
     render_init();
     // The compare line wait_frame's late test reads: 250. Bit 7 of $D011 is
     // its ninth bit, and the KERNAL leaves compare line 311 behind (bit 8
@@ -522,8 +510,6 @@ int main(void)
 #if AUTOPILOT
     ap_build_name();
 #endif
-    for (char i = 0; i < DISK_WAIT; i++)
-        wait_frame();
     hi_load();                                  // KERNAL: ends in CLI
     __asm { sei }
     cia1.pra = 0xff;
@@ -541,8 +527,10 @@ int main(void)
         if (state == ST_PLAY)
         {
             METER_START;
+#if !NO_PLAYER                                  // make watchtest: the build without it fails SID_FRAMES
             music_play();
             sfx_update();
+#endif
             play_frame_work();
             METER_STOP;                         // the frame's own work ends here
             if (slice == 0)
@@ -562,8 +550,10 @@ int main(void)
         }
         else
         {
+#if !NO_PLAYER                                  // make watchtest: the build without it fails SID_FRAMES
             music_play();
             sfx_update();
+#endif
             if (state == ST_TITLE && pressed(JOY_FIRE))
                 new_game();
             else if (state == ST_NEXT)

@@ -337,8 +337,9 @@ with 999 cells copied.
 
 Ten bits and not sixteen because 2^10 is the first power of two above
 1,000. Every state above 999 is a wasted pull; ten bits wastes 24 in
-1,023, sixteen would waste 64,535 in 65,535 and spend sixty-four pulls
-for every cell. The 24 wasted pulls fall where the sequence puts them,
+1,023, sixteen would waste 64,536 in 65,535 and spend about 66 pulls
+for every cell (65,535 / 999; an earlier version said 64,535 and
+sixty-four). The 24 wasted pulls fall where the sequence puts them,
 and the frame that meets most of them is the worst frame: 3,203 cycles
 against a median of 3,032 in the recipe, so the spread is small and the
 per-frame budget can be taken as N times the per-cell cost plus a little.

@@ -7,6 +7,8 @@ techniques: [sine_table_generation]
 file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D011, D012, D015, D017, D01C, D01D, D020, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: [CHROUT]
+claims: [sprite_0-7 (owns), vic_raster_irq (init), zero_page $02-$11+$FB-$FC (owns)]
+harness: [cia2_timer_a, cia2_timer_b, $02FF]
 ---
 
 <!-- doc-type: recipe -->

@@ -7,6 +7,8 @@ techniques: [basic_rom_float_calls]
 file_formats: [PRG]
 uses_registers: [DC04, DC05, DC0D, DC0E, D011, D012, D020]
 uses_kernal: [CHROUT]
+claims: [cia1_timer_b (init), cia1_tod (init), vic_raster_irq (init), zero_page $FB-$FC (owns)]
+harness: [cia1_timer_a, $02F0-$02FF, $0340-$037F]
 ---
 
 <!-- doc-type: recipe -->

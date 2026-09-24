@@ -27,12 +27,12 @@ A 3D point cloud rotator is the entry-level demoscene 3D effect: a set of points
 
 ### How
 
-A 3x3 rotation matrix is applied to each point in the cloud. For a rotation about two axes (commonly Y then X), the matrix multiplication reduces to six multiplications and six additions per point. On a C64, multiplications are performed via lookup tables: a 512-entry sine table indexed by angle gives both `sin(θ)` and `cos(θ)` (offset by 128 entries), allowing a multiply-by-sine to be implemented as a table lookup plus a scaling shift.
+A 3x3 rotation matrix is applied to each point in the cloud. For a rotation about two axes (commonly Y then X), eight of the combined matrix's nine entries are non-zero, so a point costs eight multiplications and five additions (arithmetic; an earlier version said six and six). On a C64, multiplications are performed via lookup tables: a sine table of 256 entries per turn, indexed by the 8-bit angle, gives both `sin(θ)` and `cos(θ)` = `sin(θ + 64)`, a quarter turn on (`recipes/kickassembler/wireframe-ships.md` keeps the cos form as a second 256-entry table). An earlier version said a 512-entry table with cos 128 entries on, which an 8-bit angle cannot index past entry 255. This allows a multiply-by-sine to be implemented as a table lookup plus a scaling shift.
 
 The per-frame sequence is:
 
 1. Advance the rotation angles (two 8-bit counters, one per axis, incremented by a speed constant each frame).
-2. Recompute the six rotation coefficients from the sine/cosine table: `cos(ax)`, `sin(ax)`, `cos(ay)`, `sin(ay)`, and the four products needed for the combined matrix.
+2. Recompute the eight rotation coefficients (an earlier version said six) from the sine/cosine table: `cos(ax)`, `sin(ax)`, `cos(ay)`, `sin(ay)`, and the four products needed for the combined matrix.
 3. For each point in the cloud, apply the rotation: compute transformed X, Y, Z from the original coordinates and the coefficients.
 4. Apply perspective projection: `screen_x = cx + (tx * FOCAL) / (tz + DEPTH_OFFSET)`, `screen_y = cy + (ty * FOCAL) / (tz + DEPTH_OFFSET)`. Division is a second lookup table: a reciprocal table indexed by Z (built as in `table_generation`, `cpu-cycle-tricks.md`).
 5. Output the projected point to the display.
@@ -86,6 +86,13 @@ For a 32-point cloud at ~75 cycles per point: approximately 2400 cycles per fram
 **Cost:** cycles_per_frame=1389, cycles_per_frame_typical=1318, sprites_per_line=5
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-vector-balls (worst is frame 1, the six swaps that settle the start order; typical is frame 300 with no swap; sprites per line is the most balls sharing a raster line over the 300 frames, counted from the tables)
+**Claims:** sprite_0-7 (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+kickassembler-vector-balls: the balls are the eight sprites, 903 stores to
+each over the run, 300 of them per sprite in `assign` and `col`, once a
+frame.
 
 ### Why
 
@@ -294,7 +301,7 @@ Per-frame total (cube, 3 visible faces): approximately 12,000–25,000 cycles fo
 
 ### Why
 
-The C64's hardware sprites are limited to 8 objects per frame, each 24 pixels wide. Many demoscene effects, several of them from the Amiga and later ported to the C64, need dozens of independently positioned and animated objects on screen at once. BOBs (Blitter OBjects, a term borrowed from the Amiga's blitter hardware and applied to any software-composited screen RAM object) are the C64 answer: pre-render each object into a block of screen RAM or character data, then display it as a character cell (or group of cells) instead of a hardware sprite.
+The C64's hardware sprites are limited to 8 on one raster line, each 24 pixels wide; a multiplexer reuses them further down the frame (`sprite_multiplex_8`), not on the same line. An earlier version said 8 per frame. Many demoscene effects, several of them from the Amiga and later ported to the C64, need dozens of independently positioned and animated objects on screen at once. BOBs (Blitter OBjects, a term borrowed from the Amiga's blitter hardware and applied to any software-composited screen RAM object) are the C64 answer: pre-render each object into a block of screen RAM or character data, then display it as a character cell (or group of cells) instead of a hardware sprite.
 
 This removes the 8-sprite hardware limit. The screen can hold as many BOBs as there are character cells, limited by how many cells the CPU can update each frame.
 
@@ -458,7 +465,7 @@ Full 16-color plasma (40×25 color RAM update), per frame on PAL:
 
 - Per-cell: one or two sine lookups, one masking/OR operation, one screen RAM write = approximately 20–25 cycles per cell.
 - 1,000 cells × 22 cycles = approximately 22,000 cycles per frame.
-- Achievable at 25fps (every other PAL frame, with ~10,000 cycles to spare for other work).
+- Achievable at 25fps (every other PAL frame). Two frames give 39,312 cycles; 50 badlines take 2,150 (43 each), leaving about 15,000 for other work (arithmetic, not measured; an earlier version said ~10,000).
 
 ---
 
@@ -858,8 +865,8 @@ The random Y re-seed on edge wrap stops stars re-entering in a visible column at
 
 Multi-layer (8 sprites + 40-column row-shift for character layer):
 
-- Row shift: copy 40 bytes of screen RAM one position left = approximately 200 cycles per character-mode layer.
-- Combined total: approximately 400–500 cycles per frame for sprite + two character layers.
+- Row shift: copy 40 bytes of screen RAM one position left. Fully unrolled `LDA abs` / `STA abs` is 8 cycles a byte, about 320 cycles per character-mode layer; an indexed loop is about 16 a byte, 640. An earlier version said about 200.
+- Combined total: about 212 + 2 × 320 = 850 cycles per frame for sprite + two unrolled character layers (an earlier version said 400–500).
 
 ---
 
@@ -870,6 +877,16 @@ Multi-layer (8 sprites + 40-column row-shift for character layer):
 **Uses registers:** D016, D011
 **Demands:** midframe_raster_irqs
 **Requires:** stable_raster_irq
+**Claims:** vic_raster_irq (owns), vic_xscroll (shares)
+**Claims basis:** measured-vice
+
+No recipe realises `text_zoom` alone. Store trace (`scripts/claims-watch.ts`,
+VICE x64sc, PAL) of `recipes/kickassembler/tech-tech.md`, whose
+`tech_tech_wobbler` requires it: the band interrupt writes XSCROLL (`$D016`)
+on every band line and restores it below the band, so the field is shared
+with whatever sets it for the rest of the frame; the band's raster
+interrupt is owned. The trace's `$D018` and `$D011` stores are the
+tech-tech's own, not this technique's.
 
 ### Why
 
@@ -934,6 +951,17 @@ Per-character-row IRQ (one IRQ per 8 scanlines, 25 rows):
 **Cost:** cycles_per_frame=5446, cycles_per_line=63, lines_active=54, irq_slots=3, bytes_code=2338, bytes_data=8384, zp_bytes=97
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-tech-tech (the band interrupt, 3,405 cycles from irq1's entry on line 109 to the register restore after line 162, plus the table build of 2,041 in the vertical blank, PAL, screen on, the band's own forced badline stalls inside the figure; the NTSC band is 3,508; bytes_code is the code segment reported by -showmem, almost all of it the two unrolled bands; bytes_data the 384 bytes of tables and the eight 1,000-byte matrices; zp_bytes the two 48-byte register tables and the phase)
+**Claims:** vic_raster_irq (owns), vic_yscroll (shares), vic_xscroll (shares), vic_matrix_base (shares)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/tech-tech.md`: the band writes `$D018` (matrix
+bits only; the character base stays at the ROM font), `$D016` XSCROLL and
+`$D011` YSCROLL on every band line, and step 4 restores all three below
+the band, so it shares the fields with whatever sets them for the frame.
+The band's interrupt is the effect run from `stable_raster_irq`'s entry,
+so it owns the raster compare. The CIA1 timers in the listing time the
+band and are a harness, not a claim.
 
 ### Why
 
@@ -975,7 +1003,9 @@ condition is "($30 <= raster <= $F7) AND (raster & 7 == YSCROLL) AND DEN
 was set on $30". Setting YSCROLL to line & 7 on every line makes every
 line a badline, and each fetch reads the matrix `$D018` names at that
 moment, so each line draws its row of cells from a differently shifted
-copy. The rows still advance because the write lands after cycle 14: the
+copy. The rows still advance because the write lands on cycle 14
+(store-trace numbering), too late for the cycle-14 check; a write on
+cycle 13 is in time for it. An earlier version said "after cycle 14". The
 `fli-image` recipe gives the two-sided constraint, an RC reset if the
 condition holds in cycle 14, and one lost cell per cycle of lateness
 after that, three at best. The `tech-tech` recipe measured both sides on
@@ -1075,7 +1105,7 @@ Frame rate is the main limit. A 160-column 200-row bitmap with a 64-depth walk p
 
 ### Variations
 
-**Lower resolution.** Reduce to 40 character columns (using character mode, one character = one vertical column) and 100 depth steps. The resolution is coarser and the cycle cost drops in proportion: approximately 40 × 50 × 30 = 60,000 cycles per frame, just over 3 PAL frames of work (3 × 19,656 = 58,968), so a render every fourth frame: 12.5fps.
+**Lower resolution.** Reduce to 40 character columns (using character mode, one character = one vertical column) and an average of 50 depth steps a column (an earlier version said 100, which its own sum below does not use). The resolution is coarser and the cycle cost drops in proportion: approximately 40 × 50 × 30 = 60,000 cycles per frame, just over 3 PAL frames of work (3 × 19,656 = 58,968), so a render every fourth frame: 12.5fps.
 
 **Precomputed direction tables.** Move all `cos`/`sin` multiplications into precomputed per-column tables. At startup, for each column compute and store the per-step `(dx, dy)` fixed-point vector. The inner loop then needs only two additions (advance `hx` and `hy`) rather than a multiply. This is the standard approach in C64 voxel implementations.
 
@@ -1142,7 +1172,7 @@ All cycle counts above are approximate and vary with the handler, the table layo
 
 ### Recipes
 
-- `recipes/kickassembler/pseudo-3d-road.md`: coarse layer only (fine layer timing not resolved in that build; see "What it does not establish").
+- `recipes/kickassembler/pseudo-3d-road.md`: a per-line $D016 write on each of 100 lines, measured to give every line its own XSCROLL; no affine warp. (An earlier version said its fine-layer timing was not resolved.)
 
 ---
 
@@ -1152,9 +1182,15 @@ All cycle counts above are approximate and vary with the handler, the table layo
 **Region:** both
 **Uses registers:** D011, D012, D016, D018, D019, D01A, D021, D022, D023, DC04, DC05, DC0E
 **Requires:** stable_raster_irq, irq_chain_table
-**Cost:** cycles_per_frame=12855
+**Cost:** cycles_per_frame=17975
 **Cost basis:** measured-vice
-**Cost measured on:** kickassembler-pseudo-3d-road (the coarse redraw, 6,332 cycles, plus the fine chain, 6,523, on PAL, summed; the per-frame table computation of about 5,000 cycles is an estimate and is not in the figure, see Cycle budget)
+**Cost measured on:** kickassembler-pseudo-3d-road (PAL, the frame of each pair in which the table computation runs: the CPU is busy from line 0 to cycle 20 of line 285 at the latest, the fine chain included; see Cycle budget)
+**Claims:** vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL): `$D016` on
+every road line, 78,216 stores in kickassembler-pseudo-3d-road and 25,112
+in kickassembler-road-sprite-lines.
 
 ### Why
 
@@ -1172,13 +1208,17 @@ $D016 XSCROLL on every raster line of the road area.
 The curvature is produced by a running delta: each step, the road centre cx
 advances by dx, and dx itself advances by the current segment's fixed-point
 curve value. Four segments of 25 lines each (straight, right bend, straight,
-left bend) give one full S-curve over the 100 road lines; as scroll_z advances
-one unit per frame and wraps at 100, the curve pattern scrolls toward the
-viewer continuously.
+left bend) give one S-curve over the 100 road lines; as scroll_z
+advances one unit per road step and wraps at 100, the curve pattern scrolls
+toward the viewer. In the recipe a step takes two frames, and its
+screenshots show a left bend (PAL) and a right one (NTSC). cx is unsigned
+and dx signed, so the add must test the carry by dx's sign; an earlier
+version of the recipe treated every carry as overflow, and the road bent
+right and never left.
 
 ### How
 
-**Coarse layer.** Once per frame in the vertical blank, thirteen character rows
+**Coarse layer.** Once per road step, from the main program just after the fine loop ends on line 200, thirteen character rows
 (the road area, character rows 6–18) are redrawn. For each row r (r = 0 =
 nearest = row 18, r = 12 = farthest = row 6), the routine samples the cx and
 hw values at the row's middle raster line (i_mid = min(8r + 4, 99)), computes
@@ -1190,34 +1230,44 @@ five-character custom multicolour charset covers the five codes (grass,
 road, left kerb, right kerb, dash); $D021, $D022 and $D023 set the three
 colour values used by %00, %01 and %10 pixel pairs respectively.
 
-**Fine layer.** A stable raster IRQ using the double-IRQ method fires at line 99
-(the horizon). The handler runs an unrolled loop of exactly one raster line per
-iteration: 63 CPU cycles on PAL (65 on NTSC). PAL and NTSC use separate
-unrolled loops, selected at boot by a model-detect routine. Each iteration
-loads a precomputed D016 value from a 100-entry table and stores it to $D016 at
-cycle 11 of the target raster line (before the approximately cycle-14 VIC
-deadline). The table entry for road line offset j is
+**Fine layer.** A stable raster IRQ using the double-IRQ method syncs on the
+97/98 boundary, because line 99 is a badline, and a fixed delay crosses line
+99. The handler then runs an unrolled loop of exactly one raster line per
+iteration: 63 cycles on PAL (65 on NTSC), badline stall included. PAL and
+NTSC use separate unrolled loops, selected at boot by a model-detect routine.
+Each iteration loads a precomputed D016 value from a 100-entry table and
+stores it to $D016 on cycle 4 of the target raster line (measured in the VICE
+monitor on every frame; an earlier version said cycle 11, which the loop
+never reached). The table entry for road line offset j is
 `D016_BASE | ((cx[99-j] - hw[99-j]) & 7)`, where D016_BASE carries the MCM and
 CSEL bits. The write shifts the entire character row left or right by 0-7
 pixels, so the kerb character boundary appears at the correct pixel even though
 the character grid is always 8-pixel aligned.
 
 **Badline handling.** Twelve badlines fall in the road area (lines 107, 115,
-123, 131, 139, 147, 155, 163, 171, 179, 187, 195 with YSCROLL=3). On a badline
-the CPU is stalled from cycle 15 to 54 (40 cycles). The unrolled badline body
-uses Delay(15) (PAL) or Delay(17) (NTSC), giving 23 or 25 CPU cycles; the
-40-cycle steal fills the remainder to 63 or 65 elapsed cycles. The STA $D016
-write lands at cycle 11, before the steal begins at cycle 15, so the badline row
-and the row after it each receive their own XSCROLL value (measured: xscroll_d16
-entries for j=7 and j=8 differ in the monitor dump; the adjacent rows show
-distinct kerb pixel positions in the screenshot).
+123, 131, 139, 147, 155, 163, 171, 179, 187, 195 with YSCROLL=3). BA falls on
+cycle 12; the loop is reading (NOPs) then, so the CPU stops at once and
+resumes on cycle 55: it loses cycles 12..54, 43 cycles. The unrolled badline
+body uses Delay(12) (PAL) or Delay(14) (NTSC), giving 20 or 22 CPU cycles;
+the stall fills the rest of the line. The STA $D016 write lands on cycle 4,
+before the stall, so every line, badline or not, receives its own XSCROLL
+(measured: each road line in the screenshot matches its own table entry and
+no other). (An earlier version said the CPU was stalled from cycle 15 to 54,
+40 cycles, with 23- and 25-cycle bodies; measured, that loop gained 3 cycles
+at every badline.)
 
 **cx computation.** The forward pass runs from i = 0 (nearest) to i = 99
 (farthest). cx begins at 160.0 in 8.8 fixed point. At each step: cx += dx,
 then dx += curve[segment], where segment = (i + scroll_z) / 25 & 3 and the
-four curve values are 0, +51, 0, -51 in 8.8 (±0.20 pixels per line per line).
-The integer part of cx is stored in cx_hi_buf[i]. The backward pass fills
-xscroll_d16[j] from cx_hi_buf[99-j] for j = 0..99.
+four curve values are 0, +18, 0, -18 in 8.8 (±0.07 pixel per line per
+line). cx is an unsigned byte and dx signed: with dx >= 0 a carry out of
+the high byte means past 255, with dx < 0 a clear carry means below 0, and
+each clamps. Run in Python for all 100 scroll_z values, ±18 keeps cx in
+72..247 and cx - hw at 8 or more; ±20 reaches a clamp and ±24 puts the left
+edge below 0. (An earlier version gave ±51, which with the unsigned add
+pinned cx at 255.) The same pass stores cx_hi_buf[i] and the $D016 value
+for road line offset j = 99 - i. The right kerb column comes from the 9-bit
+sum cx + hw, since that passes 255 on the near rows.
 
 **IRQ exit.** The handlers exit via `pla/tay/pla/tax/pla/rti`, which pops the
 A, X and Y saved by the KERNAL dispatcher at $FF48 and then RTIs through the
@@ -1231,12 +1281,15 @@ approximately 85 frames.
 
 The VIC-II applies XSCROLL (bits 2–0 of $D016) continuously: a write that
 lands before the first character's pixels leave the sequencer shifts the entire
-remaining line. The deadline is approximately cycle 16 of the raster line (from
-the VIC's horizontal timing; see `mode7_lookalike` for the measured boundary).
+remaining line. In the recipe, a write from cycle 56 of the line before through
+cycle 12 of the line itself gave every road line its own value; cycles 13 and
+14 failed on the badlines only (measured in VICE by moving the entry delay; the
+arithmetic edge from the VIC's horizontal timing is cycle 16, see `text_zoom`).
 By using a stable raster IRQ entry (`stable_raster_irq`, double-IRQ or
 $D012-polling with a fixed-cycle preamble), the tight loop starts at a known
 cycle relative to the horizon line, and each subsequent iteration stays
-synchronised because it is exactly one raster line long. Any jitter in the
+synchronised because it is exactly one raster line long, the badline bodies
+included, which must allow for the 43-cycle stall. Any jitter in the
 initial synchronisation displaces all 100 writes by the same constant offset; a
 wrong initial offset means all writes land slightly late, which is measurable
 (the kerb shows at the wrong pixel) and correctable by adjusting the preamble
@@ -1251,27 +1304,37 @@ artifact is more pronounced.
 
 ### Cycle budget
 
-Per-frame (measured in VICE x64sc 3.10, `recipes/kickassembler/pseudo-3d-road.md`):
+Measured in VICE x64sc 3.10 (`recipes/kickassembler/pseudo-3d-road.md`, PAL; NTSC in the recipe):
 
-- Coarse redraw (CIA-timed): 6,332 cycles PAL; 6,162 cycles NTSC. The redraw covers 13 rows; without per-row grass clearing, it writes only the road, kerb and dash characters.
-- Fine chain (CIA from road_irq1 start to fine_done stop): 6,523 cycles PAL; 6,729 cycles NTSC. The loop itself is 100 x 63 = 6,300 cycles PAL (100 x 65 = 6,500 NTSC); the surplus is the irq1 code, NOP slide, irq2 KERNAL entry, sync code and CIA stop.
-- Total handler: table computation (approximately 5,000 cycles) + coarse (6,332) + fine chain (6,523) ≈ 18,000 cycles per frame on PAL (arithmetic).
+- Fine chain (CIA from road_irq1 start to fine_done stop): 6,559..6,563 cycles, every frame. The loop itself spans exactly 100 lines, 6,300 cycles (6,500 NTSC).
+- Coarse redraw (CIA-timed): 5,257..5,422 cycles over a run, 5,264 at scroll_z = 4, erasing the cells the road left included; with the table copy, `publish` takes 6,879..7,047 cycles (lines 201..310 to 1).
+- Table computation: about 11,200..11,300 cycles (17,747..17,884 elapsed from its first instruction to its RTS, less the fine chain that interrupts it; arithmetic).
+- Together that is more than one frame, so the recipe takes a road step every two frames: in one frame the CPU is busy from line 0 to line 285, in the other for about 13,600 cycles. On NTSC the pair leaves about 2,300 cycles of two frames spare; a slower build fell to one step every three frames (measured, see the recipe).
 
-Badline body: 23 CPU cycles PAL (25 NTSC), with the 40-cycle steal filling the remainder to one full raster line. The STA write at cycle 11 lands before the steal begins at cycle 15, so each badline row and its successor each receive their own XSCROLL value.
+(An earlier version gave 6,332 and 6,523 cycles and "approximately 5,000" for the tables, summed to about 18,000 per frame; the vertical-blank handler that did all of it in fact overran into the next frame. The figures before the #73 geometry fix were a redraw of 4,872..5,984, publish 6,494 and tables about 12,200.)
+
+Badline body: 20 CPU cycles PAL (22 NTSC), plus the 43-cycle stall, one full raster line. The STA write on cycle 4 lands before the stall begins on cycle 12.
 
 ### Variations
 
-**Write in the right border of the previous line.** Writing xscroll_d16[j] at cycle 58–63 of raster line 99 + j rather than at cycle 1–8 of line 100 + j is valid (the VIC carries the new value into the next line) and is immune to badline stalls (the steal happens at cycles 15–54, after the write). The loop structure is identical; only the initial synchronisation point changes.
+**Write in the right border of the previous line.** Writing xscroll_d16[j] at cycle 56–63 of raster line 99 + j rather than early in line 100 + j is valid (the VIC carries the new value into the next line; measured in the recipe's sweep) and is clear of the badline stall, which takes cycles 12–54. (An earlier version said cycles 58–63 and a stall on 15–54.) The loop structure is identical; only the initial synchronisation point changes.
 
 **Wider segment table.** The four-segment table (straight, right, straight, left) can be replaced with any pattern. Eight or sixteen entries give longer curvature sequences. The per-frame computation cost scales with the number of distinct curve values, not the number of segments.
 
 **Sprite horizon.** Adding a single expanded sprite or a colour-split at line 99 gives a solid coloured horizon line separating sky from road without additional raster handlers.
 
+**Sprites on the road lines: one padded block per line.** A sprite's fetches take cycles from every line it is on, so a loop that counts every cycle loses its phase at the first sprite. Each road line becomes one 64-byte block of code: its `$D016` store, then a `BVC` into a slide of `CMP #$C9` bytes ending `C5 EA`, where R bytes from the end take R + 1 cycles. Every frame the branch operands are rewritten from a 16-entry pad table, by the set of sprites 0-2 that fetch on the line (they stall a reading CPU for 5 + 2 × (last − first) cycles at the line's end) and by badline or not (43 more). Sprites 3-7 fetch at the start of a line, over the stores, and stay off the road. Measured in `recipes/kickassembler/road-sprite-lines.md` (VICE x64sc 3.10, PAL and NTSC, three moving sprites): every `$D016` store on the same cycle of its line, every frame. The chain from the line-103 IRQ to the end of the road costs 6,348-6,350 cycles a frame on PAL and 6,549-6,550 on NTSC; rewriting all 96 operands and the sprites' Y adds 3,700. The racing starter (`templates/racing/`) uses the same method with a `$D021` store per line for the grass bands.
+
 ### Pitfalls
 
-- `d016_unmasked_rmw_clobbers_csel_mcm`: the precomputed table stores D016_BASE (MCM + CSEL bits) OR'd into each entry. Omitting this and writing the raw XSCROLL value clears MCM (bit 4) and drops the display to 38-column mode on every road line.
-- `badline_cycle_loss`: a loop body not sized for badlines spans the steal window; post-badline writes arrive late. The shipped listing uses separate badline and normal bodies to absorb the 40-cycle steal without displacing subsequent writes.
+- `d016_unmasked_rmw_clobbers_csel_mcm`: the precomputed table stores D016_BASE (MCM + CSEL bits) OR'd into each entry. Omitting this and writing the raw XSCROLL value clears MCM (bit 4), so the road characters draw in hires, and CSEL (bit 3), which drops the display to 38 columns on every road line. An earlier version put the 38-column drop on MCM.
+- `badline_cycle_loss`: a loop body not sized for badlines spans the steal window; post-badline writes arrive late. The shipped listing uses separate badline and normal bodies, the badline body 43 cycles shorter, so no later write moves. (An earlier version said 40; bodies sized for 40 moved the loop 3 cycles per badline.)
 - `raster_irq_first_line_jitter`: without a stable raster entry, the first loop iteration starts 0–9 cycles late, displacing all 100 writes by the same offset and pushing them past cycle 16.
+
+### Recipes
+
+- `recipes/kickassembler/pseudo-3d-road.md`: both layers, PAL and NTSC, measured in VICE.
+- `recipes/kickassembler/road-sprite-lines.md`: per-line XSCROLL with three sprites moving over the road lines and their badlines, each line padded by the sprites that fetch on it; PAL and NTSC, measured in VICE.
 
 ### Sources
 

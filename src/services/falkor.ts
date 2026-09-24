@@ -96,6 +96,22 @@ export class FalkorService extends FalkorLinks {
   }
 
   /**
+   * The rebuild marker (src/services/rebuild-marker.ts): one IngestRun node
+   * a batch ingest writes before its clean and deletes after its report.
+   * Not a cleanable label, so clean() leaves it.
+   */
+  async markRebuildStarted(flags: string): Promise<void> {
+    await this.write(
+      `MERGE (m:IngestRun {name: 'rebuild'}) SET m.started_at = $started_at, m.flags = $flags`,
+      { started_at: new Date().toISOString(), flags },
+    );
+  }
+
+  async markRebuildFinished(): Promise<void> {
+    await this.write(`MATCH (m:IngestRun {name: 'rebuild'}) DELETE m`);
+  }
+
+  /**
    * Phase 7 coverage tooling will implement per-label orphan queries
    * (Register without BELONGS_TO any Chip, Technique without USES any
    * Register, and so on). Until then the gap is explicit rather than a

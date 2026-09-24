@@ -48,8 +48,7 @@ PAL frame rate is 50.125 Hz (one frame every 19.95 ms). NTSC frame rate is
 unconditionally, the NTSC tick rate is 59.826 / 50.125 = 1.194× the PAL rate,
 a 19.4% tempo increase. Rounded up, this is the "20%
 too fast" figure (an earlier version called 20% the nearest whole
-number; that is 19%) that has followed European C64 ports to U.S. machines for
-decades.
+number; that is 19%).
 
 Tempo subdivision does not change this: a speed value of N ticks per
 note step scales the tempo by the same 20% ratio on NTSC.

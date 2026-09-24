@@ -45,20 +45,26 @@ export async function findStubTechniques(falkor: FalkorService): Promise<string[
 /**
  * **Cost measured on:** and **Cost includes:** (schema 27) are properties,
  * not edges, so no MERGE can drop a bad one: check them against the nodes
- * here. A recipe that is no Recipe, or an included name that is no
- * Technique, is warned about and counted, the same as a dropped edge.
+ * here. A recipe that is no Recipe, a recipe that does not realise the
+ * technique (no IMPLEMENTS edge to it), or an included name that is no
+ * Technique, is warned about and counted, the same as a dropped edge. The
+ * realise check is #41's: a pal_ntsc_detection card once carried the fire
+ * effect's frame cost, measured on kickassembler-fire-effect.
  */
 export async function findCostReferenceMisses(falkor: FalkorService): Promise<string[]> {
   const Row = z.object({
     name: z.string(),
     recipe: z.string().nullable(),
     includes: z.array(z.string()).nullable(),
+    realisers: z.array(z.string()),
   });
   const rows = z.array(Row).parse(
     (
       await falkor.roQuery(
         `MATCH (t:Technique) WHERE t.cost_recipe IS NOT NULL OR t.cost_includes IS NOT NULL
-         RETURN t.name AS name, t.cost_recipe AS recipe, t.cost_includes AS includes`,
+         OPTIONAL MATCH (r:Recipe)-[:IMPLEMENTS]->(t)
+         RETURN t.name AS name, t.cost_recipe AS recipe, t.cost_includes AS includes,
+                collect(r.name) AS realisers`,
       )
     ).data,
   );
@@ -78,6 +84,8 @@ export async function findCostReferenceMisses(falkor: FalkorService): Promise<st
   for (const r of rows) {
     if (r.recipe && !recipes.has(r.recipe))
       misses.push(`${r.name}: Cost measured on ${r.recipe} (no such recipe)`);
+    else if (r.recipe && !r.realisers.includes(r.recipe))
+      misses.push(`${r.name}: Cost measured on ${r.recipe} (a recipe that does not realise it)`);
     for (const inc of r.includes ?? [])
       if (!techniques.has(inc)) misses.push(`${r.name}: Cost includes ${inc} (no such technique)`);
   }
@@ -88,11 +96,17 @@ export async function findCostReferenceMisses(falkor: FalkorService): Promise<st
   return misses;
 }
 
-/** Report label, edge label in the graph, and tally kind, in report order. */
-const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
+/**
+ * Report label, edge label in the graph, and tally kind, in report order;
+ * a fourth element limits the count to edges from that node label (Tools
+ * also write CONSUMES).
+ */
+const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge, from?: string][] = [
   ["triggered_by", "TRIGGERED_BY", "triggered_by"],
   ["caused_by", "CAUSED_BY", "caused_by"],
   ["requires", "REQUIRES", "technique_requires"],
+  ["alternative_to", "ALTERNATIVE_TO", "technique_alternative"],
+  ["consumes_formats", "CONSUMES", "technique_consumes", "Technique"],
   ["mitigated_by", "MITIGATED_BY", "mitigated_by"],
   ["archetype_features", "FEATURES", "archetype_features"],
   ["archetype_risks", "RISKS", "archetype_risks"],
@@ -102,6 +116,9 @@ const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
   ["composes", "COMPOSES", "composes"],
   ["instance_of", "INSTANCE_OF", "instance_of"],
   ["realised_by", "REALISED_BY", "realised_by"],
+  ["exemplified_by", "EXEMPLIFIED_BY", "exemplified_by"],
+  ["requires_device", "REQUIRES_DEVICE", "requires_device"],
+  ["wraps", "WRAPS", "wraps"],
 ];
 
 interface EdgeCount {
@@ -115,8 +132,8 @@ interface EdgeCount {
  * Count what actually landed: an edge whose target name matches no node is
  * dropped by the MERGE, and the request counters cannot see that.
  */
-async function countEdges(falkor: FalkorService, rel: string): Promise<number> {
-  const r = await falkor.roQuery(`MATCH ()-[e:${rel}]->() RETURN count(e) AS n`);
+async function countEdges(falkor: FalkorService, rel: string, from = ""): Promise<number> {
+  const r = await falkor.roQuery(`MATCH (${from ? `:${from}` : ""})-[e:${rel}]->() RETURN count(e) AS n`);
   const row = z.object({ n: z.number() }).safeParse(r.data[0]);
   return row.success ? row.data.n : 0;
 }
@@ -134,10 +151,10 @@ export async function reportSummary(opts: {
   const qStats = await qdrant.getStats();
   const gStats = await falkor.getStats();
   const counts: EdgeCount[] = [];
-  for (const [label, rel, kind] of EDGE_LINES) {
+  for (const [label, rel, kind, from] of EDGE_LINES) {
     counts.push({
       label,
-      landed: await countEdges(falkor, rel),
+      landed: await countEdges(falkor, rel, from),
       distinct: edges.distinct(kind),
       dropped: edges.dropped(kind),
     });
@@ -145,11 +162,13 @@ export async function reportSummary(opts: {
   const sentence = (c: EdgeCount): string =>
     `${c.label}: ${c.landed} edges in graph, ${c.distinct} distinct references, ${c.dropped} dropped.`;
   const record = (c: EdgeCount): string => `${c.label}=${c.landed}/${c.distinct}/dropped=${c.dropped}`;
-  // The first four follow the pitfall and crash-pattern counts, the next
-  // five the archetype count, the last three the game-design count.
-  const pitfallEdges = counts.slice(0, 4);
-  const archetypeEdges = counts.slice(4, 9);
-  const designEdges = counts.slice(9);
+  // The first six follow the pitfall and crash-pattern counts, the next
+  // five the archetype count, the next five (requires_device with them, as
+  // before) the game-design count, the last the library-function count.
+  const pitfallEdges = counts.slice(0, 6);
+  const archetypeEdges = counts.slice(6, 11);
+  const designEdges = counts.slice(11, 16);
+  const libraryEdges = counts.slice(16);
 
   print(`\nQdrant: ${qStats.total_points} vectors`);
   print(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
@@ -161,13 +180,15 @@ export async function reportSummary(opts: {
       ...archetypeEdges.map(sentence),
       `GameDesigns: ${nodes.gameDesigns}.`,
       ...designEdges.map(sentence),
+      `LibraryFunctions: ${nodes.libraryFunctions}.`,
+      ...libraryEdges.map(sentence),
       `Cost references unresolved: ${costMisses.length}.`,
     ].join(" "),
   );
   const droppedRefs = edges.totalDropped();
   if (droppedRefs > 0) {
     console.warn(
-      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds/claims/clobbers-zp/game-design references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
+      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/alternative-to/consumes-formats/mitigated-by/archetype/scaffolds/claims/clobbers-zp/game-design/wraps references named no existing node (or would have closed a REQUIRES cycle, or paired a technique with its prerequisite) and were dropped; see the [falkor] lines above.`,
     );
   }
   log(
@@ -178,6 +199,8 @@ export async function reportSummary(opts: {
       ...archetypeEdges.map(record),
       `game_designs=${nodes.gameDesigns}`,
       ...designEdges.map(record),
+      `library_functions=${nodes.libraryFunctions}`,
+      ...libraryEdges.map(record),
       `cost_reference_misses=${costMisses.length}`,
     ].join(" "),
   );

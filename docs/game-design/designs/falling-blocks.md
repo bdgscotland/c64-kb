@@ -47,8 +47,13 @@ printed after `t_stop` and is not counted.
   240 lines, into the next frame's display
   (`full_field_redraw_exceeds_vblank`).
 
-`text_mode_overlay_render` has no Cost line, so a budget of this design
-lists it as unknown. Its recipes redraw differently: the whole field every
-frame from an Oscar64 loop (17,100-19,400 cycles, `techniques/text-mode-render.md`)
-or only the rows that changed (up to 9,394 here). Which one the technique's Cost
-line should state is not settled.
+Until #37 `text_mode_overlay_render` had no Cost line and a budget of this
+design listed it as unknown. Its line now states the pattern the technique
+page prescribes, measured on `text-overlay-playfield.md`: 2,005 a frame for
+the overlay, 18,984 for a lock frame that repaints the whole field. This
+game never repaints the whole field in play; it redraws only the rows a
+clear moved, up to 9,394 in the constructed frame above. So the
+prediction's high end is far above this game's frames, and the Measured
+frame line, 6,276 on PAL, is the figure to trust. The predicted low end,
+8,370, is above it too: `falling_block_rules` states only its constructed
+upper bound, 5,888, with no typical figure.

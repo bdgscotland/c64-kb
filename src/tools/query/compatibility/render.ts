@@ -3,8 +3,20 @@
  */
 
 import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts";
+import { renderIdentified, type IdentifiedName } from "./identify.ts";
 
 type Output = CompatibilityCheckOutput;
+
+/** The refusal for names the graph does not hold, with a hint when one argument carries several names. */
+function renderNotFound(r: Output, identified: readonly IdentifiedName[]): string {
+  const joined = r.not_found.filter((n) => /[\s,]/.test(n));
+  const hint =
+    joined.length > 0
+      ? ` Several names in one argument? ${joined.map((n) => `"${n}"`).join(", ")} contains a space or comma; pass each technique as its own argument.`
+      : "";
+  const what = identified.length > 0 ? `\n${renderIdentified(identified)}` : "";
+  return `# Compatibility: ${r.techniques.join(" + ")}\n\n**Verdict:** UNKNOWN_TECHNIQUE — refused, no verdict. No such technique: ${r.not_found.join(", ")}.${hint} Check the names with c64_techniques_for.\n${what}`;
+}
 
 function renderVerdict(r: Output, closureOnly: readonly string[]): string {
   let out = `# Compatibility: ${r.techniques.join(" + ")}\n\n**Verdict:** ${r.verdict.toUpperCase()}`;
@@ -19,8 +31,8 @@ function renderVerdict(r: Output, closureOnly: readonly string[]): string {
 
 /**
  * Unit claims: how many inputs state them, and which do not, because an
- * unknown claim set is never read as "claims nothing". Technique claims
- * only: the vectors and zero-page bytes a recipe picks are not in the graph.
+ * unknown claim set is never read as "claims nothing". Recipe claims enter
+ * only through recipe_zero_page_overlap (info), recipe devices through recipe_device_conflict (info).
  */
 function renderClaimsCoverage(r: Output): string {
   const inputs = r.data_coverage.filter((d) => d.implied_by === undefined);
@@ -33,7 +45,7 @@ function renderClaimsCoverage(r: Output): string {
   ];
   const tail =
     notRuledOut.length > 0 ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.` : ".";
-  return `Unit claims are stated for ${stated} of ${inputs.length} techniques${tail} The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).\n\n`;
+  return `Unit claims are stated for ${stated} of ${inputs.length} techniques${tail} Recipes' zero-page bytes and required devices are compared as info (recipe_zero_page_overlap, recipe_device_conflict); the interrupt vector a recipe installs is not, since a combined program installs one handler either way.\n\n`;
 }
 
 function renderConflicts(r: Output, unknownCount: number): string {
@@ -97,7 +109,12 @@ function renderInfrastructure(r: Output): string {
   return out;
 }
 
-export function renderCompatibility(r: Output, closureOnly: readonly string[]): string {
+export function renderCompatibility(
+  r: Output,
+  closureOnly: readonly string[],
+  identified: readonly IdentifiedName[] = [],
+): string {
+  if (r.verdict === "unknown_technique") return renderNotFound(r, identified);
   // "Not covered" is about the named techniques; implied ones are listed
   // separately so the silence-vs-clearance sentence keeps its denominator.
   const unknown = r.data_coverage.filter((d) => !d.known && d.implied_by === undefined);

@@ -11,6 +11,7 @@ import type { FalkorService } from "../../../services/falkor.ts";
 import { CLAIM_MODES, type Claim } from "../../../graph/claims.ts";
 import { parseRows } from "../shared.ts";
 import { inputPairs, pairKey, type CompatibilityFacts, type TechniqueFacts } from "./facts.ts";
+import { RASTER_IRQ_PITFALL, SPRITE_PITFALL } from "./state-rules.ts";
 
 const EdgeRow = z.object({ name: z.string(), target: z.string().nullable() });
 
@@ -184,6 +185,96 @@ async function fetchRecipeUses(f: FalkorService, techniques: readonly string[]) 
   return rows.flatMap((r) => (r.name && r.kind ? [{ name: r.name, kind: r.kind, recipe: r.recipe }] : []));
 }
 
+const RecipeZpRow = z.object({ recipe: z.string(), implements: z.array(z.string()), ranges: z.string() });
+
+/** Owned zero page of every recipe that IMPLEMENTS an input, from its claims: key (schema 34). */
+async function fetchRecipeZeroPage(f: FalkorService, techniques: readonly string[]) {
+  if (techniques.length < 2) return [];
+  return parseRows(
+    RecipeZpRow,
+    await f.roQuery(
+      `MATCH (r:Recipe)-[:IMPLEMENTS]->(t:Technique)
+       WHERE t.name IN $techs
+       WITH r, collect(DISTINCT t.name) AS implements
+       MATCH (r)-[c:CLAIMS {mode: 'owns'}]->(:HardwareUnit {name: 'zero_page'})
+       WHERE c.ranges IS NOT NULL
+       RETURN r.name AS recipe, implements, c.ranges AS ranges ORDER BY recipe`,
+      { techs: techniques },
+    ),
+  );
+}
+
+const RecipeDeviceRow = z.object({
+  recipe: z.string(),
+  implements: z.array(z.string()),
+  device: z.string(),
+  port: z.string(),
+  owns: z.array(z.string()),
+});
+
+/** Devices every recipe that IMPLEMENTS an input requires, with the units each owns (schema 36). */
+async function fetchRecipeDevices(f: FalkorService, techniques: readonly string[]) {
+  if (techniques.length < 2) return [];
+  return parseRows(
+    RecipeDeviceRow,
+    await f.roQuery(
+      `MATCH (r:Recipe)-[:IMPLEMENTS]->(t:Technique)
+       WHERE t.name IN $techs
+       WITH r, collect(DISTINCT t.name) AS implements
+       MATCH (r)-[:REQUIRES_DEVICE]->(d:Device)
+       OPTIONAL MATCH (d)-[c:CLAIMS {mode: 'owns'}]->(h:HardwareUnit)
+       RETURN r.name AS recipe, implements, d.name AS device, d.port AS port,
+              collect(DISTINCT h.name) AS owns
+       ORDER BY recipe, device`,
+      { techs: techniques },
+    ),
+  );
+}
+
+const PitfallRow = z.object({ name: z.string(), routines: z.array(z.string()) });
+
+/** The serial-I/O pitfalls' KERNAL triggers (#94), from their **Triggered by kernal:** lines. */
+async function fetchSerialPitfalls(f: FalkorService) {
+  return parseRows(
+    PitfallRow,
+    await f.roQuery(
+      `MATCH (p:Pitfall)-[:TRIGGERED_BY]->(k:KernalRoutine)
+       WHERE p.name IN $names
+       RETURN p.name AS name, collect(DISTINCT k.name) AS routines ORDER BY name`,
+      { names: [RASTER_IRQ_PITFALL, SPRITE_PITFALL] },
+    ),
+  );
+}
+
+const KernalOutRow = z.object({
+  recipe: z.string(),
+  implements: z.array(z.string()),
+  via: z.array(z.string()),
+});
+
+/**
+ * Every recipe that builds an input (#94), with what makes it run with the
+ * KERNAL out: the techniques it implements that DEMAND kernal_rom_out, and
+ * irq_vector_fffe when it owns that vector. `via` is empty for a recipe
+ * that keeps the KERNAL in.
+ */
+async function fetchRecipeKernalOut(f: FalkorService, techniques: readonly string[]) {
+  if (techniques.length < 2) return [];
+  return parseRows(
+    KernalOutRow,
+    await f.roQuery(
+      `MATCH (r:Recipe)-[:IMPLEMENTS]->(t:Technique)
+       WHERE t.name IN $techs
+       WITH r, collect(DISTINCT t.name) AS implements
+       OPTIONAL MATCH (r)-[:IMPLEMENTS]->(k:Technique)-[:DEMANDS]->(:Resource {name: 'kernal_rom_out'})
+       OPTIONAL MATCH (r)-[:CLAIMS {mode: 'owns'}]->(v:HardwareUnit {name: 'irq_vector_fffe'})
+       WITH r, implements, collect(DISTINCT k.name) + collect(DISTINCT v.name) AS via
+       RETURN r.name AS recipe, implements, via ORDER BY recipe`,
+      { techs: techniques },
+    ),
+  );
+}
+
 const ClobberRow = z.object({ routine: z.string(), ranges: z.string().nullable() });
 
 /** The may set of every KERNAL routine the checked techniques USE (schema 26). */
@@ -208,13 +299,33 @@ async function fetchKernalClobbers(
 export async function fetchCompatibilityFacts(techniques: readonly string[]): Promise<CompatibilityFacts> {
   const f = await getFalkor();
   const requires = await fetchRequires(f, techniques);
-  const [facts, sharedRegisters, sharedKernal, recipeUses] = await Promise.all([
-    fetchFacts(f, [...requires.keys()]),
-    fetchShared(f, techniques, "Register"),
-    fetchShared(f, techniques, "KernalRoutine"),
-    fetchRecipeUses(f, techniques),
+  const [facts, sharedRegisters, sharedKernal, recipeUses, recipeZeroPage, recipeDevices] = await Promise.all(
+    [
+      fetchFacts(f, [...requires.keys()]),
+      fetchShared(f, techniques, "Register"),
+      fetchShared(f, techniques, "KernalRoutine"),
+      fetchRecipeUses(f, techniques),
+      fetchRecipeZeroPage(f, techniques),
+      fetchRecipeDevices(f, techniques),
+    ],
+  );
+  const [serialPitfalls, recipeKernalOut] = await Promise.all([
+    fetchSerialPitfalls(f),
+    fetchRecipeKernalOut(f, techniques),
   ]);
   await fetchClaims(f, facts);
   const kernalClobbers = await fetchKernalClobbers(f, facts);
-  return { techniques, requires, facts, sharedRegisters, sharedKernal, recipeUses, kernalClobbers };
+  return {
+    techniques,
+    requires,
+    facts,
+    sharedRegisters,
+    sharedKernal,
+    recipeUses,
+    kernalClobbers,
+    recipeZeroPage,
+    recipeDevices,
+    serialPitfalls,
+    recipeKernalOut,
+  };
 }

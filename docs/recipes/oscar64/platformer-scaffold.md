@@ -7,6 +7,7 @@ techniques: [tile_map_render, tile_grid_collision, fixed_point_8_8, jump_arc_tab
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D019, D01A, D020, D021, D027, D028, D029, D02A, D02B, D02C, D02D, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D418, D41B, DC00, DC02, DC03, DC06, DC07, DC0F]
 uses_kernal: [SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, READST]
+devices: [disk_1541_ii]
 scaffolds: [single_screen_platformer]
 ---
 
@@ -49,13 +50,19 @@ and move when the code does.
 | What | Where | Why there |
 |---|---|---|
 | BASIC stub and start-up | `$0801` to `$0853` | Oscar64's default; `RUN` or `-autostart` enters here |
-| Code | `$0880` to `$11FE` | default code section; 6,473 bytes of PRG in all, including the two-byte load address |
-| Constant data (RLE map stream, checksums, jump table, wave table, sprite rows) | `$11FE` to `$2148` | default data section, straight after the code |
-| Variables (`bss`) | `$2148` to `$25D5` | the decoded map is first at `$2148` (880 bytes, 40 by 22); the high-score record, its read-back buffer and the 40-byte drive reply follow |
+| Code | `$0880` to `$1F26` | default code section; 6,547 bytes of PRG in all, including the two-byte load address |
+| Constant data (RLE map stream, checksums, jump table, wave table, sprite rows) | `$1F26` to `$2192` | default data section, straight after the code |
+| Variables (`bss`) | `$2192` to `$25F5` | the decoded map is first at `$2192` (880 bytes, 40 by 22); the high-score record, its read-back buffer and the 40-byte drive reply follow |
 | Software stack | grows down from `$9FFE` | Oscar64's default under BASIC ROM |
 | Sprite shapes | `$0340` to `$03FF` | the cassette buffer, blocks 13, 14 and 15 of VIC bank 0, so no bank switch and no region pragma; three shapes is all a scaffold needs and the buffer holds exactly three |
 | Screen | `$0400`, colour at `$D800` | the KERNAL's own screen; rows 0 and 1 are the HUD, rows 2 to 23 the map, row 24 the drive reply |
 | Character set | ROM upper-case set | no custom charset, so nothing to place; the tiles are `$A0` (solid block) and `H` |
+
+The ranges are the `sections` lines of the `.map` Oscar64 writes. An
+earlier version of this table gave the code as `$0880` to `$11FE` and
+the data from `$11FE`: that build's map put the data section's start at
+`$11FE` inside a code section that ran to `$1F08`, and the table had
+taken the one for the other's end.
 
 When a game outgrows this, the first thing to move is the sprite shapes:
 the KERNAL's tape routines own the cassette buffer, and a game with more
@@ -109,7 +116,12 @@ paste its output over the block marked "Generated tables".
 // Defines: AUTOPILOT=1 (default) drives the joystick from the LFSR so a
 //          headless run plays itself; 0 reads control port 2.
 //          BUDGET_BAR=1 (default) paints the border while the loop works.
-//          DISK_WAIT_FRAMES=50 (default) frames to wait before the first OPEN.
+//          PROFILE=0 (default); 1 times each part of the loop body alone,
+//          2 the jump and 8.8 steps inside player_update. Both also time
+//          the raster IRQ and the drive status read, and print the table
+//          over the map at the halt (recipe page, "Profile builds").
+//          PROFILE_BLANK=1 turns the display off during play, so no
+//          badline stall lands inside a timed part.
 
 #include <c64/vic.h>
 #include <c64/cia.h>
@@ -162,6 +174,58 @@ static const char platform_rows[N_PLATFORM_ROWS] = { 4, 8, 12, 16, 21 };
 #endif
 #ifndef BUDGET_BAR
 #define BUDGET_BAR 1
+#endif
+#ifndef PROFILE
+#define PROFILE 0
+#endif
+#ifndef PROFILE_BLANK
+#define PROFILE_BLANK 0
+#endif
+
+#if PROFILE
+// Profile build: CIA1 timer B is restarted around one part of the loop
+// body at a time, so CYC and MAX on the HUD are not the whole loop in this
+// build. A part during which the KERNAL's 60 Hz CIA interrupt ran (the
+// jiffy clock at $A2 moved) goes to its own column, so the two stay apart.
+enum { P_NULL, P_WAKE, P_AUTO, P_EDGE, P_REPEAT, P_WAVE, P_PLAYER, P_HIT,
+       P_TUNE, P_SFX, P_DRAW, P_HUD, P_N };
+#define P_JUMP P_WAVE                      // PROFILE=2 reuses two slots
+#define P_FP   P_PLAYER
+static unsigned prof_clean[P_N], prof_jiffy[P_N];
+static char prof_j;
+#define JIFFY (*(volatile char *)0x00a2)
+static inline void prof_start(void) { prof_j = JIFFY; cia1.crb = 0x00; cia1.tb = 0xffff; cia1.crb = 0x11; }
+static void prof_end(char k)
+{
+    cia1.crb = 0x00;
+    unsigned c = 0xffff - cia1.tb;
+    if (JIFFY != prof_j) { if (c > prof_jiffy[k]) prof_jiffy[k] = c; }
+    else if (c > prof_clean[k]) prof_clean[k] = c;
+}
+// A drive status read takes far more than 65,535 cycles and the KERNAL
+// serial code uses CIA1 timer B, so it is timed on CIA2's timers A and B
+// chained as one 32-bit counter (save-load-seq-file.md).
+static unsigned long prof_io_min = 0xffffffff, prof_io_max;
+static void prof_io_start(void)
+{
+    cia2.cra = 0x00; cia2.crb = 0x00;
+    cia2.ta = 0xffff; cia2.tb = 0xffff;
+    cia2.crb = 0x51;                       // B: force load, start, count A underflows
+    cia2.cra = 0x11;                       // A: force load, start, continuous
+}
+static void prof_io_end(void)
+{
+    cia2.cra = 0x00;
+    unsigned lo = cia2.ta, hi = cia2.tb;
+    unsigned long t = ~(((unsigned long)hi << 16) | lo);
+    if (t > prof_io_max) prof_io_max = t;
+    if (t < prof_io_min) prof_io_min = t;
+}
+#define PB(lvl)    do { if (PROFILE == (lvl)) prof_start(); } while (0)
+#define PE(lvl, k) do { if (PROFILE == (lvl)) prof_end(k); } while (0)
+#else
+#define PB(lvl)
+#define PE(lvl, k)
 #endif
 
 #define SCREEN   ((char *)0x0400)
@@ -704,6 +768,7 @@ static void player_update(char cur, struct JoyEvents *ev, char repeat_fire)
                     solid_at(px + BODY_R, py + BODY_B + 1);
         if (on_ladder && mid == T_LADDER) on_ground = true;   // hanging still
 
+        PB(2);
         if (on_ground && jump_n == 0 && (ev->newp & JOY_FIRE))
         {
             jump_n = 1;
@@ -722,11 +787,14 @@ static void player_update(char cur, struct JoyEvents *ev, char repeat_fire)
         }
         else
             vy_fp = 0;
+        PE(2, P_JUMP);
 
         if (vy_fp)
         {
+            PB(2);
             py_fp += (unsigned)vy_fp;
             int ny = (int)(py_fp >> 8);
+            PE(2, P_FP);
             if (vy_fp > 0)
             {
                 // landing: feet crossed into a solid tile -> snap to its top
@@ -799,20 +867,37 @@ static bool  drive_ok;
 static bool  io_frame;                     // disk I/O ran this frame: timer B is not ours
 static char  disk_state;                   // screen letter: L loaded, F first, W written, X off
 
-static void drive_reply(const char *cmd)
+// Open channel 15 with cmd ("" reads the status only), read one reply line
+// and leave the channel open; returns whether it opened. drive_reply closes
+// it. hs_load keeps it open while its file is: closing 15 closes every file
+// on the drive.
+static bool drive_ask(const char *cmd)
 {
     reply[0] = 0;
     drive_code = 99;
+#if PROFILE
+    bool timed = cmd[0] == 0;              // a bare status read, not a command
+    if (timed) prof_io_start();
+#endif
     krnio_setnam(cmd);
-    if (krnio_open(15, DRIVE, 15))
+    bool open = krnio_open(15, DRIVE, 15);
+    if (open)
     {
-            int n = krnio_gets(15, reply, sizeof(reply));
-            if (n > 0 && reply[n - 1] == 13) reply[n - 1] = 0;
+        int n = krnio_gets(15, reply, sizeof(reply));
+        if (n > 0 && reply[n - 1] == 13) reply[n - 1] = 0;
         if (n >= 2) drive_code = (reply[0] - '0') * 10 + (reply[1] - '0');
-        krnio_close(15);
     }
+#if PROFILE
+    if (timed) prof_io_end();
+#endif
     put_str(DRIVE_ROW, 0, "drive:");
     put_petscii(DRIVE_ROW, 7, reply, 33);
+    return open;
+}
+
+static void drive_reply(const char *cmd)
+{
+    if (drive_ask(cmd)) krnio_close(15);
 }
 
 static int hs_load(void)
@@ -827,10 +912,15 @@ static int hs_load(void)
         drive_ok = false;
         return 0;
     }
+    // The reply before the file, the file only on 00: after a 62 the drive
+    // keeps no channel, and a read would TALK to it; its 68-cycle answer can
+    // fall in a badline and the KERNAL's wait at $EDD6 has no timeout
+    // (pitfall first_open_after_reset_hangs_on_pal).
+    bool cmd = drive_ask("");
     int n = 0;
-    if (ok) n = krnio_read(2, hs_back, sizeof(hs_back));
+    if (ok && drive_code == 0) n = krnio_read(2, hs_back, sizeof(hs_back));
     krnio_close(2);
-    drive_reply("");
+    if (cmd) krnio_close(15);
     return n;
 }
 
@@ -958,6 +1048,63 @@ static void show_game_over(void)
     for (char i = 0; i < 9; i++) COLOUR[GAME_OVER_ROW * 40 + 20 + i] = VCOL_WHITE;
 }
 
+#if PROFILE
+// The raster IRQ's own cost: one busy loop timed from line 245, across
+// line 251 where the IRQ lands, and from line 20, where none is due.
+// Neither window holds a badline, and the sprites are off. The least of
+// 32 runs of each is kept, so a run the KERNAL's CIA IRQ hit is not the
+// figure; the most of the second window is such a hit.
+static volatile char spin_i;
+static unsigned spin_from(char line)
+{
+    while (vic.raster != line) ;
+    cia1.crb = 0x00; cia1.tb = 0xffff; cia1.crb = 0x11;
+    for (spin_i = 0; spin_i < 100; spin_i++) ;
+    cia1.crb = 0x00;
+    return 0xffff - cia1.tb;
+}
+
+static const char prof_label[P_N][7] = {
+    "null  ", "wake  ", "auto  ", "edge  ", "repeat", "wave  ",
+    "player", "hit   ", "tune  ", "sfx   ", "draw  ", "hud   " };
+
+static void prof_show(void)
+{
+    vic.spr_enable = 0;
+    unsigned in_min = 0xffff, out_min = 0xffff, out_max = 0;
+    for (char n = 0; n < 32; n++)
+    {
+        unsigned a = spin_from(245);
+        unsigned b = spin_from(20);
+        if (a < in_min) in_min = a;
+        if (b < out_min) out_min = b;
+        if (b > out_max) out_max = b;
+    }
+    for (unsigned i = 13 * 40; i < 20 * 40; i++) { SCREEN[i] = ' '; COLOUR[i] = VCOL_WHITE; }
+    for (char k = 0; k < P_N; k++)
+    {
+        char row = 13 + (k >> 1), col = (k & 1) ? 20 : 0;
+        put_str(row, col, prof_label[k]);
+        put_dec(row, col + 7, prof_clean[k], 5);
+        put_dec(row, col + 13, prof_jiffy[k], 5);
+    }
+    put_str(19, 0, "irq in");
+    put_dec(19, 7, in_min, 5);
+    put_str(19, 20, "out");
+    put_dec(19, 24, out_min, 5);
+    put_dec(19, 30, out_max, 5);
+    put_str(20, 0, "status read");
+    for (char i = 0; i < 2; i++)
+    {
+        unsigned long t = i ? prof_io_max : prof_io_min;
+        char *p = SCREEN + 20 * 40 + 13 + 10 * i;
+        for (char d = 0; d < 8; d++) p[7 - d] = "0123456789\x01\x02\x03\x04\x05\x06"[(t >> (4 * d)) & 15];
+    }
+    for (char c = 0; c < 40; c++) COLOUR[20 * 40 + c] = VCOL_WHITE;
+    vic.ctrl1 |= 0x10;                     // display back on for the picture
+}
+#endif
+
 static void game_reset(void)
 {
     lives = 3;
@@ -990,15 +1137,8 @@ int main(void)
     rng = (rng << 8) | sid.random;
     if (rng == 0) rng = 0xace1;
 
-    // High score from disk, before the raster IRQ owns the frame. The wait
-    // is a workaround: with no wait the first OPEN hung on PAL in VICE and
-    // never on NTSC. high-score-persist.md, "A start-up hang seen in VICE,
-    // located but not explained", has the monitor trace; fifty frames was
-    // enough in every run tried and the smallest wait was not measured.
-#ifndef DISK_WAIT_FRAMES
-#define DISK_WAIT_FRAMES 50
-#endif
-    for (char i = 0; i < DISK_WAIT_FRAMES; i++) vic_waitFrame();
+    // High score from disk, before the raster IRQ owns the frame. No frame
+    // wait: hs_load reads the error channel before the file.
     hs_start();
 
     spr_init(SCREEN);
@@ -1014,6 +1154,9 @@ int main(void)
     rirq_set(0, SYNC_ROW, &frame_irq);
     rirq_sort();
     rirq_start();
+#if PROFILE_BLANK
+    vic.ctrl1 &= ~0x10;                    // display off: no badline in a timed part
+#endif
 
     unsigned frame = 0, dropped = 0;
     unsigned cyc = 0, cyc_max = 0;
@@ -1027,9 +1170,13 @@ int main(void)
     {
         while (irq_ticks == seen)
             ;
+        PB(1);
         char delta = irq_ticks - seen;
         seen += delta;
         if (delta > 1) dropped += delta - 1;
+        PE(1, P_WAKE);
+        PB(PROFILE);
+        PE(PROFILE, P_NULL);
 
 #if BUDGET_BAR
         if (!passed && !fault_code) vic.color_border = VCOL_WHITE;
@@ -1040,19 +1187,30 @@ int main(void)
         {
             // --- input ---
 #if AUTOPILOT
+            PB(1);
             char cur = autopilot_port();
+            PE(1, P_AUTO);
 #else
             cia1.ddra = 0xff; cia1.ddrb = 0x00; cia1.pra = 0xff;
             char cur = cia1.pra;                 // port 2
 #endif
+            PB(1);
             joy_edge(prev, cur, &ev);
+            PE(1, P_EDGE);
             prev = cur;
+            PB(1);
             char rep = repeat_step(&up_age, !(cur & JOY_UP));
+            PE(1, P_REPEAT);
 
             // --- simulation ---
+            PB(1);
             wave_step(frame);
             update_enemies();
+            PE(1, P_WAVE);
+            PB(1);
             player_update(cur, &ev, rep);
+            PE(1, P_PLAYER);
+            PB(1);
             if (invuln) invuln--;
             else if (hit_enemy())
             {
@@ -1063,13 +1221,20 @@ int main(void)
             }
             if ((frame & 7) == 0) score++;
             if (score > hiscore) hiscore = score;
+            PE(1, P_HIT);
 
             // --- sound: tune first, then the effect re-pokes voice 2 ---
+            PB(1);
             tune_play();
+            PE(1, P_TUNE);
+            PB(1);
             sfx_update();
+            PE(1, P_SFX);
 
             // --- draw ---
+            PB(1);
             player_draw(frame);
+            PE(1, P_DRAW);
 
 #if AUTOPILOT
             if (frame == FORCE_OVER && !game_over) { lives = 0; game_over = true; }
@@ -1080,11 +1245,22 @@ int main(void)
                 sid.fmodevol = SID_FMODE_3_OFF;      // silence: the tune stops
                 rirq_stop();                         // the KERNAL serial code gets the CPU
                 io_frame = true;
+                char spr_on = vic.spr_enable;        // sprites off for the disk calls
+                vic.spr_enable = 0;                  // (pitfall kernal_eoi_wait_misses_timer_b_on_old_cia)
                 hs_game_over();
+                vic.spr_enable = spr_on;
                 rirq_start();
                 seen = irq_ticks;
 #if AUTOPILOT
-                if (frame >= FORCE_OVER) { halted = true; show_game_over(); }
+                if (frame >= FORCE_OVER)
+                {
+                    halted = true;
+                    show_game_over();
+#if PROFILE
+                    prof_show();
+                    seen = irq_ticks;
+#endif
+                }
                 else game_reset();
 #else
                 game_reset();
@@ -1095,7 +1271,9 @@ int main(void)
 
         // The HUD is inside the timed region: cyc is the whole loop body,
         // shown one frame late (the value on screen is the previous frame's).
+        PB(1);
         hud_draw(frame, cyc, cyc_max, dropped);
+        PE(1, P_HUD);
         cyc = timer_stop();
         if (io_frame) io_frame = false;              // KERNAL used timer B: discard
         else if (cyc > cyc_max && frame > 2) cyc_max = cyc;
@@ -1122,7 +1300,7 @@ int main(void)
 oscar64 -tm=c64 -O2 -o=platformer-scaffold.prg platformer-scaffold.c
 ```
 
-Outputs `platformer-scaffold.prg` (6,473 bytes), `.map`, `.asm`, `.lbl`.
+Outputs `platformer-scaffold.prg` (6,547 bytes), `.map`, `.asm`, `.lbl`.
 Add `-dAUTOPILOT=0` for a build that reads control port 2 and
 `-dBUDGET_BAR=0` to leave the border alone.
 
@@ -1165,21 +1343,25 @@ gave byte-identical PNGs on each model.
 
 | | PAL | NTSC |
 |---|---|---|
-| Frame on the HUD | 622 | 711 |
-| `CYC` (previous frame) | 4,966 | 6,628 |
-| `MAX` so far | 8,606 | 10,287 |
+| Frame on the HUD | 671 | 761 |
+| `CYC` (previous frame) | 5,912 | 7,825 |
+| `MAX` so far | 8,640 | 9,581 |
 | `DROP` | 00 | 00 |
-| Score, lives | 148, 3 | 169, 1 |
+| Score, lives | 154, 1 | 176, 2 |
 | Drive row | `62, FILE NOT FOUND,00,00` | same |
 | Border (2, 100) | (98, 213, 50), green | (114, 189, 103), green |
 | `$02FF` from the `trace store` log | `01` | `01` |
-| Player, PNG pixels | white, x 212 to 219, y 166 to 181 | yellow (facing left), x 55 to 62, y 191 to 206 |
-| Cyan enemy pixels | 172, x 68 to 165, y 67 to 176 | 232, x 188 to 315, y 55 to 203 |
-| Light red enemy | x 316 to 323, y 203 to 215 | x 240 to 247, y 55 to 67 |
+| Player, PNG pixels | not drawn: frame 671 is a blink-off frame of its invulnerability after a lost life (`frame & 4`) | yellow (facing left), x 46 to 53, y 157 to 171 |
+| Cyan enemy pixels | 154, x 147 to 351, y 67 to 216 | 232, x 78 to 265, y 55 to 163 |
+| Light red enemy pixels | 56, x 218 to 225, y 131 to 143 | 116 in two enemies, x 36 to 43, y 191 to 203, and x 276 to 283, y 119 to 132 |
 
 The PNGs are `screenshots/platformer-scaffold.png` and
-`screenshots/platformer-scaffold-ntsc.png`. Frame 622 is past the
-frame-600 verdict, so the budget bar is off and the border is green in
+`screenshots/platformer-scaffold-ntsc.png`. The table was re-measured
+when #93 changed the start-up read (below); the earlier pictures were
+taken after a 50-frame wait. Colours are counted in text rows 2 to 23;
+a sprite's box is the pixels that the character cell under it does not
+explain, so a sprite over a ladder or a wall shows only in part. Frame
+671 is past the frame-600 verdict, so the budget bar is off and the border is green in
 both pictures. The frame counts differ because the two models run a
 different number of frames in 18,000,000 cycles, and the scores and lives
 differ because the LFSR is seeded from SID noise at a cycle that depends
@@ -1187,17 +1369,110 @@ on the load.
 
 At 40,000,000 cycles on the same fresh disk, both models: `F 00801`,
 `LIVES 0`, `HI 00191`, state `W`, `GAME OVER` on row 12, `B00191` at the
-end of row 1, `DRIVE: 00, OK,00,00`, `MAX` 8,693 (PAL) and 10,287 (NTSC),
-`DROP 00`, `$02FF` still `01`. The HUD alone, in the halted state, costs
-1,605 cycles (PAL) and 1,671 (NTSC). So the loop body runs about 5,000 to
-7,500 cycles a frame in play with peaks near 10,300 out of 19,656 (PAL)
-or 17,095 (NTSC), and no frame was dropped in 800.
+end of row 1, `DRIVE: 00, OK,00,00`, `MAX` 9,055 (PAL) and 9,775 (NTSC),
+`DROP 00`. The HUD alone, in the halted state, costs 1,788 cycles (PAL)
+and 1,690 to 1,788 (NTSC, at 26,000,000 and 40,000,000 cycles). So the
+loop body runs about 5,000 to 8,000 cycles a frame in play with peaks
+near 9,800 out of 19,656 (PAL) or 17,095 (NTSC), and no frame was
+dropped in 800.
+
+The sprites are turned off (`$D015` = 0) around `hs_game_over`. The
+build with the status-first read but the sprites left on hung on NTSC
+in the frame-800 save, with the machine in ACPTR's EOI wait at `$EE30`
+to `$EE3A`, CIA1 timer B stopped at its latch `$01FF` and its flag
+never seen: `kernal_eoi_wait_misses_timer_b_on_old_cia`
+(`docs/pitfalls/kernal-and-io.md`), stopped with the remote monitor at
+204,000,000 and 780,000,000 cycles. The change of code had moved the
+save's phase; the sprites-off build saved and read back on both
+models.
 
 Two defects of the build this was promoted from are fixed here. `GAME OVER` was written over the map with `put_str`, which
 writes screen codes only; the map draw had left colour RAM black under
 empty tiles, so the text was black on black and no picture showed it.
 `show_game_over` sets the colour cells too. And the read-back value was
 printed at column 27 of row 1, over the `ERR` field; it now follows it.
+
+### Profile builds
+
+`MAX` is the whole loop body. To see which part costs what, the listing
+has two profile builds (#37). The default build is byte-identical with or
+without the profile code (`cmp` of the two PRGs).
+
+```bash
+oscar64 -tm=c64 -O2 -dPROFILE=1 -o=profile1.prg platformer-scaffold.c
+oscar64 -tm=c64 -O2 -dPROFILE=2 -o=profile2.prg platformer-scaffold.c
+# add -dPROFILE_BLANK=1 to either for a run with the display off during play
+```
+
+- `PROFILE=1` restarts CIA1 timer B around each part of the loop body
+  and keeps each part's largest reading. `PROFILE=2` does the same for
+  two steps inside `player_update`: the vertical-velocity step (the jump
+  table or the 8.8 gravity add) and the 8.8 position add.
+- A reading during which the KERNAL's CIA interrupt ran (the jiffy clock
+  at `$A2` moved) goes to a second column, so the two costs stay apart.
+- `null` is the timer's own overhead, an empty part: 18 cycles. Every
+  figure below has it subtracted.
+- Both builds time the raster IRQ: one busy loop from line 245, across
+  line 251 where the IRQ lands, against the same loop from line 20, least
+  of 32 runs each, sprites off, no badline in either window.
+- Both time each bare drive status read (`drive_ask("")`) on CIA2's
+  timers chained as a 32-bit counter, since the KERNAL's serial code
+  uses CIA1 timer B.
+- At the halt the table is printed over rows 13 to 20.
+
+Measured in VICE x64sc 3.10 at 45,000,000 cycles on a fresh disk, the
+table decoded from the exit screenshot with the char ROM. The builds seed
+the LFSR from SID noise at a load-dependent cycle, so each run plays a
+different game; each figure is the largest in that run's 800 frames.
+
+| Part | Technique(s) | PAL, screen on | NTSC, screen on | Display off, both models |
+|---|---|---|---|---|
+| tick bookkeeping after the wait | `frame_sync_loop` | 23 | 23 | 22 |
+| raster IRQ, entry to return | `frame_sync_loop` | 291 | 291 | 291 |
+| `autopilot_port` | none: the test driver | 685 | 657 | 616, 689 |
+| `joy_edge` | `joystick_edge_detect` | 76 | 76 | 76 |
+| `repeat_step` | `joystick_autorepeat` | 73 | 73 | 73 |
+| `wave_step` + `update_enemies` | `object_pool`, `lfsr_random`, sprite writes | 2,748 | 2,768 | 2,546, 2,741 |
+| `player_update` | `tile_grid_collision`, `fixed_point_8_8`, `jump_arc_table` | 1,870 | 1,989 | 1,858, 1,853 |
+| velocity step (`PROFILE=2`) | `jump_arc_table` | 66 | 109 | 66 |
+| 8.8 position add (`PROFILE=2`) | `fixed_point_8_8` | 31 | 74 | 31 |
+| `hit_enemy`, invulnerability, score | none: this listing's own | 707 | 797 | 728, 723 |
+| `tune_play` | `sid_play_routine_pattern` | 368 | 416 | 327, 389 |
+| `sfx_update` | `sfx_engine_beside_music` | 122 | 165 | 122, 149 |
+| `player_draw` | none: sprite writes | 143 | 161 | 110, 135 |
+| `hud_draw` | `decimal_print` ×2-7 | 3,802 | 3,971 | 3,782, 3,647 |
+| KERNAL CIA IRQ, one hit | none: the KERNAL's jiffy IRQ | 235 | 235 | 235 |
+| bare drive status read | `error_channel_check` | 35,675-1,571,939 | 68,373-1,620,150 | 35,197-1,619,832 |
+
+- The display-off column gives PAL then NTSC where they differ.
+- With the screen on, a badline stall can land inside a short part: the
+  NTSC velocity step and position add read 43 cycles above their
+  display-off figure, which is one badline's stall. The display-off
+  figures are the parts' own cost.
+- The raster IRQ lands at line 251, while the loop waits, so it is not
+  inside `MAX`. The KERNAL's 60 Hz CIA interrupt is left running by
+  `rirq_init(true)` and can land inside `MAX`, 235 cycles a hit.
+- Two PAL runs read one `hud_draw` part of about 12,400 to 12,800 cycles
+  in the second column, a part the KERNAL interrupt also ran in. Neither
+  NTSC run did, and a build with one more line of profile code did not.
+  The cause is not found; the figure is left out of the table.
+- The status read row is from one run of each of the four builds per
+  model after #93 moved the status read in front of the file read
+  (45,000,000 cycles, VICE x64sc 3.10). It varies with the emulated
+  drive's timing. The largest reading, about 1,570,000 cycles on PAL and
+  1,620,000 on NTSC, is one read in the game-over read-back; which read
+  it is was not traced. The likely reason is that the drive answers the
+  status TALK only when it has finished opening the file, time the file
+  read used to wait out before the change (inferred, not traced). An
+  earlier version of this row, with the file read first, gave
+  61,016-81,421 (PAL), 61,626-78,964 (NTSC) and 43,852-75,848 (display
+  off), two runs each. The other rows are from the runs before #93; the
+  re-runs of the four builds read each part within about 200 cycles of
+  them, the same order as the table's own spread between runs.
+
+The parts' largest readings do not fall in one frame, so their sum
+(10,617 on PAL) is above `MAX` (8,693 in the runs before #93, 9,055 now). What the table means for the
+design's budget is in `game-design/designs/platformer-scaffold.md`.
 
 ## Why this works
 
@@ -1291,27 +1566,35 @@ runs at frame rate so it is a fifth faster on NTSC. That is
 
 ### High score on disk
 
-At start `hs_load` opens `HISCORE,S,R`, reads five bytes, closes, and
-reads the error channel; 62 means a first run, 00 with a valid record
-means a loaded score, anything else turns saving off. If OPEN fails with
+At start `hs_load` opens `HISCORE,S,R`, then opens channel 15 and reads
+the drive's reply; it reads the five bytes only on `00`, closes the file
+and then channel 15. 62 means a first run, 00 with a valid record means
+a loaded score, anything else turns saving off. If OPEN fails with
 `KRNIO_NODEVICE` the row says `no device` and nothing else touches the
 bus. At game over `hs_game_over` scratches, writes, and reads back, with
-`rirq_stop` around the I/O so the KERNAL's serial timing is undisturbed.
-The three `file-io` techniques `kernal_file_write_seq`,
-`kernal_file_read_seq` and `error_channel_check` are in
-`docs/techniques/file-io.md`; the listing is
-`docs/recipes/oscar64/high-score-persist.md`.
+`rirq_stop` and the sprites off around the I/O. The three `file-io`
+techniques `kernal_file_write_seq`, `kernal_file_read_seq` and
+`error_channel_check` are in `docs/techniques/file-io.md`; the listing
+is `docs/recipes/oscar64/high-score-persist.md`.
 
-`DISK_WAIT_FRAMES` is a workaround and the page says so. The original
-build with no wait before the first OPEN hung on PAL under `-autostart`
-with a true drive, never on NTSC; fifty `vic_waitFrame` calls removed it,
-and so did an unrelated change of code size. The monitor trace is in
-`docs/recipes/oscar64/high-score-persist.md`, section "A start-up hang
-seen in VICE, located but not explained": the C64 spins at `$EDD6`
-waiting for the drive to become the talker after TKSA, and the drive
-stayed a listener. Why it misses the release is not measured, the smallest
-wait that suffices is not measured, and no real 1541 was tried. Keep the
-wait until one of those is.
+The reply comes first because of pitfall
+`first_open_after_reset_hangs_on_pal` (`docs/pitfalls/kernal-and-io.md`).
+On a fresh disk the drive keeps no channel for the file, so a read
+sends it a TALK that it answers by holding CLK low for 68 drive cycles
+and letting go. The KERNAL's loop at `$EDD6` needs two reads 4 cycles
+apart inside that pulse, a badline's 43-cycle stall can take the whole
+of it, and the C64 then waits for ever. Channel 15 is closed after the
+file because closing it closes every file on the drive.
+
+An earlier version of this listing read the file first and waited
+`DISK_WAIT_FRAMES` (default 50) frames before `hs_start`. The wait only
+moved the phase: built with `-dDISK_WAIT_FRAMES=N` for N from 0 to 250,
+that PAL build hung at 16 counts (10, 19, 22 and 56 among the first 61)
+and NTSC at none. The knob is gone. The listing as it is now, built with
+a wait of N frames put back in front of `hs_start` for N from 0 to 60,
+ran on PAL and NTSC at every N, on a fresh disk (the 62 path, 122 runs)
+and on a disk holding a valid record (the 00 path, state `L`, 122 runs),
+12,000,000 cycles each, VICE x64sc 3.10 with the true 1541.
 
 ### The generator
 

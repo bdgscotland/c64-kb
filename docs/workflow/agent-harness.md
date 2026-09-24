@@ -53,6 +53,11 @@ is filled.
 | `make claims` | c64-kb's `scripts/claims-watch.ts` over the AUTOPILOT PRG, when the checkout has it |
 | `make released` | With `OSCAR64_RELEASED=<path>`: the autopilot build from that compiler, shot on PAL and NTSC and graded with the same `expect.json`. On v1.32.273, platformer graded 7 of 23 (a miscompile, #30) and action-puzzle 41 of 41 |
 | `make zp` | The zero-page addresses the compiled C touches, read from Oscar64's listing; with `ZP_CLAIM='$02-$55'` a gate |
+| `make drive STEPS='...'` | The normal build played headless by `harness/drive.py`, the stick on the real `$DC00` (see "Driving the normal build") |
+| `make drivetest` | The starter's `DRIVE_STEPS` played that way; fails when a step never comes |
+| `make joyprobe` | `drive.py`'s own proof: a fire press at the same frame in three runs |
+| `make watch` | With `DEADLINE_LINE` or `SID_FRAMES` set: the frame deadline and the SID player, from a VICE store trace of the autopilot run (see "The frame deadline and the SID player"); `make check` runs it |
+| `make watchtest` | The `OVERRUN` build must fail the deadline and the `NO_PLAYER` build the SID check, on PAL and NTSC; `make selftest` runs it |
 | `make clean` | Removes `build/` and `shots/` |
 
 The headless runs use `-default -warp +sound +autostart-delay-random
@@ -67,11 +72,18 @@ is a stamp file named by its cycle count.
 `make`, `make shot check` and `make disk` there (`--selftest` adds
 `make selftest` and every target the starter lists in `VERIFY_TARGETS`,
 `--only <name>` picks one). A starter's own proof targets (action-puzzle's
-`disktest`, `modelcheck` and `selftest-scan`, adventure's `disktest`,
-platformer's `tearcheck`, shmup-vertical's `stage`, demo's `probe`) prove
+`disktest`, `modelcheck`, `selftest-scan` and `drivetest`, adventure's
+`disktest` and `drivetest`, platformer's `tearcheck`, `stage` and
+`drivetest`, shmup-vertical's `stage`, `joytest` and `longplay`, demo's
+`probe`, hello-kick's `joyprobe`, racing's `roadcheck` and `mutants`) prove
 fixes that `make check` cannot see: the adventure's three save-validation
-checks, for instance, fail only in `disktest`. Measured 2026-09-23: seven
-starters with `--selftest` and their targets, 7 of 7, about 3.5 minutes.
+checks, for instance, fail only in `disktest`. Measured 2026-09-24: eight
+starters with `--selftest` and their targets, 8 of 8, about 10 minutes, most
+of it shmup-vertical's `joytest` and `longplay` (seven starters took about
+3.5 minutes on 2026-09-23, before those two stepped by emulated frames).
+The racing starter, added after that run, took 78 seconds alone
+(`--only racing --selftest`, measured 2026-09-24; `mutants` runs its
+fourteen shots four at a time).
 
 ## A starter's files
 
@@ -99,6 +111,12 @@ screenshot": PAL 384 x 272 with screenshot row = raster line - 16; NTSC
 y = 35 + 8r on PAL and 23 + 8r on NTSC; sixteen exact RGB triples per
 model.
 
+PAL is `-default`'s machine. Do not pass `-model pal`: it selects a 6569R3
+whose palette differs in eleven of sixteen colours (measured with the
+palette-cells recipe: green (94, 214, 56), not (98, 213, 50)). `check.py`
+refuses a PAL shot in that palette by name (exit 2); an earlier version
+graded it colour by colour and failed it with "unknown colour".
+
 One geometry fact was measured here: a sprite whose Y register holds y is
 drawn from raster line y + 1. hello's sprite at X 188, Y 116 covered
 screenshot x 196 to 219 and rows 101 to 121 on PAL, 89 to 109 on NTSC,
@@ -108,7 +126,17 @@ fails; the first draft of hello's `expect.json` did.
 `check.py` validates `expect.json` before it grades: at least one check and
 one `verdict` check, the keys each type needs, colours 0 to 15, and every
 point and area inside the picture on each model the check names. A fault
-is exit 2 with the check's name, never a pass and never a traceback.
+is exit 2 with the check's name, never a pass and never a traceback. A pin
+taken inside a run, before the program can have reached its verdict, says
+`"mid_run": true` and needs no `verdict` check.
+
+Exit codes: 0 every check passed, 1 at least one failed (a `FAIL` line
+names each), 2 nothing was graded. A refusal prints one line starting
+`FAIL REFUSED` on stdout as well as the reason on stderr, so a caller that
+greps for `FAIL` sees it, but a caller must test the exit code, never the
+text. Before, a refusal went to stderr only, and the MEASURED demo's
+verify script, which grepped stdout for `FAIL`, graded five refused expect
+files as five passes for a day (#42).
 
 | Check type | Passes when |
 |---|---|
@@ -116,6 +144,7 @@ is exit 2 with the check's name, never a pass and never a traceback.
 | `pixel` | The point has the colour index. The point is `x`/`y`, `vic_x`/`line`, or `row`/`col` (a cell's centre) |
 | `rect` | Every pixel of an area (`vic_x`, `line`, `width`, `height`) has the colour: a raster bar, or a span with height 1 |
 | `sprite` | The pixels of the colour inside `search` (default the expected box grown by 16) have exactly the expected bounding box |
+| `ink` | At least `min` pixels of an area are not the `background` colour (default 0); optional `max`, and `colours` (the only indices they may take). For things drawn in an area at no fixed place, such as orbiting sprites: take `min` from the smallest count over every phase |
 | `text` | The cells from `row`, `col` read `text` |
 | `same` | Every pixel of the `cells` rectangle, or of an `area`, has the same colour index on PAL and NTSC |
 | `meter` | The meter's readout is there; optional `frames` must match; worst fits `max_worst` (default one frame: 19,656 cycles PAL, 17,095 NTSC); typical is at least 1 (recording has finished) |
@@ -258,6 +287,19 @@ line 55 + 8r), is read with `"dy": 4`: the pixel offset below that grid,
 0 to 7. Measured on a panel at line 215 with YSCROLL 7: with `"dy": 4` the
 score row decoded as written, without it every cell read `?`.
 
+## The SID sink
+
+The headless runs pass `+sound` unless the starter sets `SOUND_SINK`.
+Under `+sound`, and under VICE's dummy sink, `$D41B` (OSC3) and `$D41C`
+(ENV3) read wrong values; a program that reads them sets
+`SOUND_SINK := dump` (`-sound -sounddev dump -soundarg /dev/null`), and
+`drive.py` follows it. The measurements are in vice-reference, "The SID
+under `+sound`". An earlier version of this page withdrew issue #2's claim
+that the dummy driver breaks these reads, because a review read 16
+different values from a noise voice under `+sound`; measured since, those
+values were a wrapping ramp, not noise, and the dummy sink froze both
+registers.
+
 ## A fresh disk per run
 
 With `SHOT_DISK = 1` each headless run attaches its own copy of
@@ -266,6 +308,40 @@ run. VICE writes a save back into the image it attached, so two runs on one
 shared image start from different disks and the pinned shot moves. Measured
 with hello and `SHOT_DISK=1`: two `make shot` runs gave byte-identical
 PNGs and `build/hello.d64` kept its checksum.
+
+The shots autostart the PRG with the disk attached; they do not load it
+from the disk. The INTERCEPTOR review (#44, reported on #42, not re-measured
+here) saw pitfall `first_open_after_reset_hangs_on_pal` hang 9 of 9 PAL
+builds started that way, and none when the same PRG was loaded from the
+D64. A starter whose first disk call comes soon after the start must pass
+it on PAL in `make shot`, and should prove it once from the disk as well
+(action-puzzle's `disktest` loads its release from the D64).
+
+## Driving the normal build
+
+`harness/drive.py PRG STEP...` plays a program over VICE's binary monitor:
+`hold:DIR`, `tap:DIR`, `wait:FRAMES`, `run:SECONDS`, `until:TEXT`,
+`type:TEXT`, `key:RETURN`, `peek:ADDR` and `print`. It reads screen RAM as
+text, at the regions `DRIVE_SCREEN` names (`0400:0-24` by default,
+`C800:21-24` for a HUD page). `make drive STEPS='...'` runs it on the normal
+build; `make drivetest` runs the starter's `DRIVE_STEPS`.
+
+The stick is the real `$DC00`: control port 2 holds VICE's Joyport I/O
+simulation device, whose lines the monitor's Joyport Set command drives.
+Time is emulated frames, each wait stopped at raster line 0 by a
+checkpoint, and the program is autostarted by the monitor after a power
+cycle, so a run repeats exactly (`docs/runtime/vice-reference.md`,
+"Pressing the joystick headless", has the measurements). An earlier
+version of the harness said VICE's joyport command never reaches `$DC00`
+in the windowless build; each game then carried a `make joy` build that
+read its port byte from `$02FE`, and its own `tools/drive.py` stepped by
+the wall clock. Both are gone.
+
+`make joyprobe` builds `harness/joyprobe.asm`, a program that counts
+frames until fire reads pressed on `$DC00`, and presses fire at the same
+frame in three runs: the three screens and CIA1 timer A readings must
+match. Measured 2026-09-24: `FIRE AT FRAME 0065` and timer A `$10F6` on
+PAL, three of three.
 
 ## The frame meter
 
@@ -300,7 +376,9 @@ T<typical>`, five digits each, 20 cells from row 24, column 20.
   the samples by insertion, which held the platformer starter's main loop
   for about 94 frames (1.85M cycles) at its 255th play frame; with the
   selection its verdict came about 2M cycles sooner. The KickAssembler
-  meter still sorts by insertion (not re-measured here). That
+  meter now selects too (#42); an earlier version of this page said it
+  still sorted by insertion, which held one build's main loop for 294,808
+  cycles (#55). That
   is the `cycles_per_frame_typical` of
   [CONVENTIONS-techniques](../CONVENTIONS-techniques.md), the frame play
   spends most of its time on, when the recorded frames are play. An
@@ -318,7 +396,27 @@ T<typical>`, five digits each, 20 cells from row 24, column 20.
   left the program's `wait_frame` counter at `OVERRUNS 00`, and a detector
   that tests the frame flag when the work ends found NTSC joystick play
   losing a frame in 6 of 15 runs. The demo's frame slot, which must end
-  before a split line, reads the raster when its work ends instead.
+  before a split line, reads the raster when its work ends instead. The
+  harness checks the same from outside the program with `DEADLINE_LINE`
+  (see "The frame deadline and the SID player").
+- **Its own cost, outside the brackets.** Measured in VICE x64sc 3.10 with
+  CIA1 timers A and B cascaded around each call (a scratch program, not a
+  starter), 255 samples of 5,000 to 21,383 cycles from an LFSR: the
+  KickAssembler median took 854,431 cycles by insertion sort and 38,742 by
+  selection, and both gave 13,811. The print renders a field into a
+  20-byte copy only when its value changed, stepping F in place, then
+  writes the screen cells that differ from the copy, so a program that
+  clears the row gets the readout back on the next print. Per call:
+
+  | Print | KickAssembler | C (Oscar64 -O2) |
+  |---|---|---|
+  | Before: every field, every frame | 1,972 to 2,402 | 2,597 to 4,410 |
+  | Nothing changed (after the hold) | 464 | 668 |
+  | F one more (recording) | 582 | 776 |
+  | All three fields new | 2,734 | 3,109 to 4,746 |
+
+  Issue #42 put the old C print at up to 3,400 cycles a frame; the
+  measured worst was 4,410, with every digit a 9 or near it.
 - **Build switch.** `FRAME_METER` defaults to `AUTOPILOT`. Without it every
   macro is empty and the release carries none of the meter.
 - **Interrupts.** The KERNAL serial routines end in `CLI`: the ROM bytes at
@@ -349,6 +447,78 @@ NTSC. Both bracket from raster line 250, below the last badline (`$F7`),
 and the sprite is on lines 117 to 137, so no DMA falls in the bracket. The
 grading at frame 150 runs after `METER_STOP` and is in neither figure.
 
+## The frame deadline and the SID player
+
+Two faults leave the pinned screenshot unchanged. A frame's work that ends
+past the line it must end before loses a frame or drifts, and a shot taken
+after the script can still match. A player that is never called leaves the
+run silent: #42 found that the demo with every SID store removed passed
+every gate, and that nothing checked the adventure's sound. `make watch`
+checks both.
+`harness/watch.py` runs the autopilot PRG once a model with the monitor
+tracing stores to `$02FE` and `$D400`-`$D7FF` (`-moncommands`, `-monlog`:
+the mechanism c64-kb's claims-watch uses). Each hit in the log carries its
+raster line, cycle and CPU clock.
+
+| Makefile variable | Passes when |
+|---|---|
+| `DEADLINE_LINE` (`DEADLINE_LINE_NTSC`, default the same) | Every `WORK_END` comes before the first start of that line after its `WORK_BEGIN`, counted in cycles. A run with no begin-end pair fails |
+| `SID_FRAMES` (`SID_FRAMES_NTSC`, default the same) | At least that many frames of the run store to the SID. A frame starts at raster line 0 |
+
+The program marks its work with `WORK_BEGIN` and `WORK_END` (C,
+`frame_meter.h`) or `WorkBegin()` and `WorkEnd()` (KickAssembler,
+`frame_meter.asm`): a store of 1, then 0, to `$02FE`, in AUTOPILOT builds
+only. They are not the meter's brackets: `WORK_END` goes after everything
+that must be done by the line. A starter whose `make claims` traces the
+autopilot build declares `$02FE` as harness (`--harness '...,
+work_mark=$$02FE'`). An end is held to its begin's frame, not read as a
+line: work that ends a whole frame late ends on a line that looks early.
+
+`make check` runs `make watch` when either variable is set, and `make
+selftest` then runs `make watchtest`. That builds two variants of the
+autopilot program, `OVERRUN=1` (`OVERRUN_DEFINE`) and `NO_PLAYER=1`
+(`SILENT_DEFINE`), and needs each to fail its check on PAL and NTSC; a
+KickAssembler part is assembled with the define as well. `frame_meter.h`
+defines both names as 0 when a build does not. The runs last
+`WATCH_CYCLES_PAL` and `WATCH_CYCLES_NTSC`, the shot pins by default. Exit
+codes are check.py's: 0, 1 with `FAIL` lines, 2 with `FAIL REFUSED`.
+
+The deadline, measured on the platformer (`DEADLINE_LINE := 251`, where its
+engine applies the published page and XSCROLL; marks on play frames only):
+
+| Build | PAL | NTSC |
+|---|---|---|
+| normal | 750 frames, the least to spare 6,357 cycles (100 lines; ended on line 150) | 750 frames, 3,312 cycles to spare (50 lines; ended on line 200) |
+| `OVERRUN=1`: one play frame in 64 waits for line 252 | FAIL, 12 of 750; the first ended on line 252, 85 cycles late | FAIL, 12 of 750, 86 cycles late |
+| `OVERRUN=2`: then waits for line 100 as well | FAIL, ended on line 100, 10,157 cycles late | FAIL, ended on line 100, 7,293 cycles late |
+
+`OVERRUN=2` is the case a raster read at the end of the work misses: line
+100 is before 251. With marks on every frame instead of play frames, the
+title's frame that builds the level failed, 398,107 cycles late: a load
+frame, not play, which is why the platformer marks play only.
+
+The SID check on the seven starters with a player: frames with a SID store
+in the autopilot run, to the shot pins.
+
+| Starter | Player | Normal, PAL / NTSC | `NO_PLAYER`, PAL / NTSC | `SID_FRAMES` |
+|---|---|---|---|---|
+| action-puzzle | `music_play`, `sfx_update` | 636 / 703 | 19 / 18 | 300 |
+| adventure | `sound_update` (effects, no music) | 122 / 112 | 65 / 57 | 90 |
+| beat-em-up | the tune, `sfx_update` | 2,561 / 2,540 | 146 / 148 | 1,200 |
+| demo | `MUSIC_PLAY` from the frame chain | 457 / 434 | 2 / 2 | 200 |
+| platformer | the tune, `sfx_update` | 360 / 373 | 14 / 14 | 180 |
+| racing | `sound_frame` | 4,001 / 5,004 | 18 / 18 | 2,000 |
+| shmup-vertical | `music_play` in the split IRQ | 731 / 650 | 1 / 1 | 300 |
+
+A build without its player still stores to the SID: its init silences the
+chip and an effect's start writes its voice. The adventure, with effects
+only, has the narrowest gap. The check counts frames, not stores, and not
+sound: a player that writes wrong notes or volume 0 passes. The demo's own
+`make audio` checks each voice's stores against its frames.
+
+`make watchtest` on the platformer, three builds and six runs, took 14 s;
+one 26,000,000-cycle trace took 1.7 s.
+
 ## The plan gate
 
 `hooks/plan-gate.py` passes `PLAN.md` when it has no `FILL:` line left,
@@ -357,7 +527,30 @@ holds check-compatibility's output (a `# Compatibility: a + b` line and its
 `## play (` section with its `Range` line) for the same techniques, and
 lists each of them as a row of its Techniques table. With `C64KB`
 reachable, `make` also re-runs check-compatibility on the pasted names and
-wants the same Verdict line; the result is cached on `PLAN.md`'s hash.
+wants the same Verdict line. A pass prints one line naming the checkout's
+`KB_DATA_VERSION` and commit, and is cached on `PLAN.md`'s hash with them;
+a different verdict is refused with "the KB's answer changed", both
+verdicts and that version. An unreachable checkout or graph warns and
+checks the structure only.
+
+The re-run is `npx tsx src/cli.ts check-compatibility <names>` in the
+`C64KB` checkout, and it inherits `make`'s environment. So the store it
+asks is whatever that environment names: `FALKOR_GRAPH`, `FALKOR_HOST`
+and `FALKOR_PORT` (`src/config.ts`), and with none set the live graph `c64`
+on port 7379. A plan pasted from a throwaway store (`FALKOR_GRAPH=c64_i22g`
+in the #22 game test) is re-checked against the live graph unless `make`
+runs with the same variables. The pass line names the checkout's
+`KB_DATA_VERSION` and commit, not the graph. The #22 step 7 game test
+found that nothing said so (#97).
+
+The verdict can change with no change to the plan: another session's
+ingest into a shared live graph, or a new KB version. So new-project and
+`verify:templates` seed the cache for a starter's shipped `PLAN.md`
+(`plan-gate.py --seed`), and building a shipped example never consults the
+live graph; an edit to the plan or `make clean` brings the re-run back.
+Before that, `new-project -- hello` failed with WARNINGS pasted against
+COMPATIBLE live, and a starter's build failed during another session's
+ingest (#42).
 
 Every PRG depends on the gate, so `make`, `shot`, `check`, `selftest`,
 `disk`, `claims` and `run` all stop while it fails. As a PreToolUse hook it
@@ -445,10 +638,59 @@ pixel for pixel, because nothing on screen changes after the grade.
    summing IRQ work with `METER_PAUSE`.
 5. Write `expect.json`: the verdict, the text, a `sprite` or `rect` or
    `pixel` check for each feature, a `same` area, the meter with `frames`.
-6. Pin `SHOT_CYCLES_*` after the verdict, where the screen no longer
+6. With a player, set `SID_FRAMES` from a measured run and guard the
+   player's call with `#if !NO_PLAYER`. With a line the work must end
+   before, mark it with `WORK_BEGIN` / `WORK_END`, set `DEADLINE_LINE`, and
+   give `OVERRUN=1` a frame that ends past it.
+7. Pin `SHOT_CYCLES_*` after the verdict, where the screen no longer
    changes; prove it with two pins.
-7. `make shot check selftest disk`, then `npm run verify:templates --
+8. `make shot check selftest disk`, then `npm run verify:templates --
    --only <name> --selftest`.
+
+## Other agent-facing C64 tools
+
+This knowledge base tells an agent what is true about the machine, with
+the evidence, and this harness checks a program against a screenshot. It
+does not drive a live machine for an agent to poke at. Other projects do.
+The table is a survey of GitHub, 2026-09-24 (repository searches such as
+"c64 mcp", "vice mcp", "commodore mcp", "6502 mcp"; each README and the
+repository's licence and last push read through the GitHub API). What
+each row says a tool does is its README's claim, not run here, except
+where a page of this knowledge base is linked.
+
+| Tool | Drives | What an agent gets (README) | Licence (GitHub) |
+|---|---|---|---|
+| [Retro Debugger](../runtime/retrodebugger-reference.md) | its own embedded VICE 3.10 | MCP over stdio: load, pause, step, breakpoints, memory, snapshots, screenshots (run here; see its page) | none in repository |
+| [vice-mcp (simen)](../runtime/vice-mcp-reference.md) | VICE, binary monitor | MCP debugging tools (see its page) | none |
+| [barryw/vice-mcp](https://github.com/barryw/vice-mcp) | a VICE build with the MCP server inside it | HTTP MCP at `127.0.0.1:6510/mcp`: breakpoints, watchpoints, stepping, screenshots, snapshots, symbol files | none |
+| [axewater/mcp-vice-emu](https://github.com/axewater/mcp-vice-emu) | VICE, binary monitor (port 6502) | Start VICE, breakpoints, stepping, screenshots | none |
+| [henols/c64-debug-mcp](https://github.com/henols/c64-debug-mcp) | VICE | Memory read/write/search, breakpoints, watchpoints; npm package | MIT |
+| [chrisgleissner/c64bridge](https://github.com/chrisgleissner/c64bridge) | C64 Ultimate, Ultimate 64, Ultimate II, or VICE | MCP control and programming of either backend; in the official MCP registry | GPL-2.0 |
+| [mbosschaart/Ultimate64MCP](https://github.com/mbosschaart/Ultimate64MCP) | Ultimate devices' REST API | Device control, configuration, audio/video streaming (Ultimate 64) | MIT |
+| [xphileby/c64u-mcp-server](https://github.com/xphileby/c64u-mcp-server) | C64 Ultimate REST API | Run PRG/CRT, play SID and MOD, screenshots, configuration | none |
+| [carledwards/u64ctl](https://github.com/carledwards/u64ctl) | Ultimate 64 REST API | CLI and MCP: memory read/write, disassembly, assemble-upload-run | none |
+| [cliffhall/mcp-c64](https://github.com/cliffhall/mcp-c64) | VICE, 64tass, petcat | Assemble and tokenise BASIC for VICE | none |
+| [nschneir/Project64](https://github.com/nschneir/Project64) | VICE, cc65 | Tools, skills and an MCP for coding and debugging; `c64` CLI | NOASSERTION |
+| [JC-000/c64-test-harness](https://github.com/JC-000/c64-test-harness) | VICE binary monitor, or Ultimate 64 | Python test harness: screen matching, disk images, parallel VICE instances, SID playback and WAV capture | MIT |
+| [Jondalar/C64ReverseEngineeringMCP](https://github.com/Jondalar/C64ReverseEngineeringMCP) | its own headless runtime | Reverse-engineering workbench: disassembly with undocumented opcodes, rebuild verified with KickAssembler or 64tass | GPL-3.0 |
+| [64kramsystem/c64-mcp](https://github.com/64kramsystem/c64-mcp) | Ghidra and its VICE connector | C64 tools over GhidraMCP: display capture, verified memory copy into Ghidra, joystick input | Apache-2.0 |
+| [ricardoquesada/regenerator2000](https://github.com/ricardoquesada/regenerator2000) | files, and VICE for live debugging | Interactive 6502 disassembler (TUI); export to ACME and other assemblers | Apache-2.0 |
+| [GrantMeStrength/6502MCP](https://github.com/GrantMeStrength/6502MCP) | its own 6502 emulator (KIM-1, Apple 1 ROMs) | Assemble, run, debug 6502 over MCP; not C64 hardware | none |
+| [flemming-n-larsen/c64-ctx](https://github.com/flemming-n-larsen/c64-ctx) | none (documents) | C64 reference pages indexed for agents, drawn partly from codebase64 (CC BY-NC-SA 4.0) | NOASSERTION |
+| [MichaelTroelsen/tdz-c64-knowledge](https://github.com/MichaelTroelsen/tdz-c64-knowledge) | none (documents) | MCP search over documents the user ingests (full-text, semantic, fuzzy) | none |
+
+"none" means GitHub detected no licence file on 2026-09-24; read the
+repository for a licence statement before reusing its code. The 6502
+simulator and test runners already described here are in
+[sim6502](../runtime/sim6502-reference.md) and
+[unit-testing-6502](../toolchains/unit-testing-6502.md).
+
+Where the line sits: a debugger or hardware bridge answers "what is this
+machine doing now"; this knowledge base answers "what should it do, and
+how do I know", with each number's rung stated and each listing built and
+run before it lands. The two combine: an agent can read a register's
+behaviour here, then watch it on a live machine through one of the tools
+above.
 
 ## Not measured here
 
@@ -458,12 +700,9 @@ pixel for pixel, because nothing on screen changes after the grade.
 - A starter that uses `SHOT_DISK=1`, `DISK_FILES` or IRQ work inside the
   meter's brackets. hello and hello-kick use none of them; the review ran
   `SHOT_DISK=1` on hello and it passed.
-- Reads of `$D41B` and `$D41C` under `+sound`. An earlier version of this
-  page repeated issue #2's claim that the dummy sound driver breaks them;
-  the review read 16 different values from a noise voice under the pinned
-  command, so the claim is withdrawn, not replaced.
 - Any VICE other than 3.10, or a palette other than `-default`; `check.py`
-  matches exact triples and would fail closed.
+  matches exact triples and would fail closed (and refuses `-model pal` by
+  name).
 - The released Oscar64 (issue #25): the starters were built with the
   build `CLAUDE.md` names.
 - Real hardware.

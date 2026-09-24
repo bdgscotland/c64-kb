@@ -25,16 +25,34 @@
 import { lintAsm } from "./lint/asm-rules.ts";
 import { lintC } from "./lint/c-rules.ts";
 import { detectLanguage } from "./lint/text.ts";
+import { fenceLanguages, fenceMask, isMarkdown } from "./lint/markdown.ts";
 import type { LintCertainty, LintFinding, LintLanguage, LintOptions, LintResult } from "./lint/types.ts";
 
 export { detectLanguage };
 export type { LintFinding, LintOptions, LintResult };
 
+/** The languages to lint: a Markdown page's fence languages (narrowed by an explicit language), else one. */
+function languagesOf(source: string, language: LintOptions["language"]): LintLanguage[] {
+  if (isMarkdown(source)) {
+    const found = fenceLanguages(source);
+    return language === "auto" ? found : found.filter((l) => l === language);
+  }
+  return [language === "auto" ? detectLanguage(source) : language];
+}
+
+/**
+ * Lint C or assembly source. A Markdown page is linted fence by fence:
+ * its prose is never read as code (issue #28), and a page with both C
+ * and assembly fences gets both rule sets.
+ */
 export function lintSource(source: string, opts: LintOptions = { language: "auto" }): LintFinding[] {
-  const language: LintLanguage = opts.language === "auto" ? detectLanguage(source) : opts.language;
+  const markdown = isMarkdown(source);
   const findings: LintFinding[] = [];
-  if (language === "c") lintC(source, findings);
-  else lintAsm(source, findings);
+  for (const language of languagesOf(source, opts.language)) {
+    const text = markdown ? fenceMask(source, language) : source;
+    if (language === "c") lintC(text, findings);
+    else lintAsm(text, findings);
+  }
   findings.sort((a, b) => a.line - b.line || a.rule.localeCompare(b.rule));
   return findings;
 }
@@ -56,11 +74,13 @@ export function lintSourceResult(
   opts: LintOptions = { language: "auto" },
   label?: string,
 ): LintResult {
-  const language: LintLanguage = opts.language === "auto" ? detectLanguage(source) : opts.language;
-  const findings = lintSource(source, { ...opts, language });
+  const languages = languagesOf(source, opts.language);
+  const language: LintLanguage = languages[0] ?? (opts.language === "auto" ? "c" : opts.language);
+  const findings = lintSource(source, opts);
   const summary = summarise(findings);
   const lines: string[] = [];
-  lines.push(`# Lint${label ? `: ${label}` : ""} (${language})`);
+  const kind = isMarkdown(source) ? `markdown, fences: ${languages.join(", ") || "none"}` : language;
+  lines.push(`# Lint${label ? `: ${label}` : ""} (${kind})`);
   lines.push("");
   lines.push(summary);
   for (const f of findings) {

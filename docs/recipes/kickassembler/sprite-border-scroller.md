@@ -7,6 +7,10 @@ techniques: [sprite_border_scroller]
 file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D011, D012, D015, D017, D019, D01A, D01B, D01C, D01D, D020, D021, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_b (init), cia1_tod (init), zero_page $FB-$FE (owns)]
+harness: [cia1_timer_a, $02FF]
+ram: [colour=$D800-$DBFF]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->
@@ -182,7 +186,7 @@ setup:
     cli
     jmp *
 
-// Line OPEN_LINE, entered on cycle 37-43: RSEL to 0 with YSCROLL and DEN
+// Line OPEN_LINE, entered on cycle 39-45: RSEL to 0 with YSCROLL and DEN
 // kept, bit 7 masked off (on a read it is the raster's ninth bit).
 open:
     cld                             // the log arithmetic must be binary
@@ -625,7 +629,8 @@ flip-flop stays clear, and everything from line 251 to the end of the
 frame and on through the next frame's top border is drawn as
 background. `OPEN_LINE` is that recipe's 249, the middle of the three
 lines 248 to 250 it measured as working with a plain `$0314`
-interrupt; `RESTORE_LINE` is 20, inside the 252-to-246 window it swept,
+interrupt, whose handler starts on cycle 39 to 45 (the listing comment
+said 37-43 before that was measured; `techniques/raster.md`); `RESTORE_LINE` is 20, inside the 252-to-246 window it swept,
 chosen here so that the same handler can move the sprites at a moment
 when none of them is being drawn on either model (the last sprite row
 is line 275 on PAL and line 12 of the following frame on NTSC).

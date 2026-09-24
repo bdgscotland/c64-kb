@@ -7,6 +7,10 @@ techniques: [mouse_1351_read]
 file_formats: [PRG]
 uses_registers: [D419, D41A, DC00, DC01, DC02, D012, D020, D021, DD04, DD05, DD0E]
 uses_kernal: []
+devices: [mouse_1351_port_1]
+claims: [cia1_port_a (init), zero_page $F3-$FE (owns)]
+harness: [cia2_timer_a, $02FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -684,13 +688,18 @@ Pinned VICE run (both models, `docs/recipes/runs.json`):
 ```bash
 GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas \
 x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
-      -limitcycles 8000000 -controlport1device 3 \
+      -limitcycles 8000000 -controlport1device 3 -seed 1 \
       -exitscreenshot mouse-1351-read.png -autostart mouse-1351-read.prg
 ```
 
 Add `-model ntsc` for the second picture. `-controlport1device 3` is
 VICE's 1351 mouse on control port 1 (the number is from `x64sc -help`,
-VICE 3.10). Nothing is attached to port 2.
+VICE 3.10). Nothing is attached to port 2. `-seed 1` fixes VICE's
+random number generator, which adds the bit-0 noise to every pot read
+(`makepotval` in `src/sid/sid.c`) and is otherwise seeded from the wall
+clock. The listing drops bit 0, so the picture was the same without it;
+the seed was added after the same noise flaked `paddle-read`'s pin, and
+the pinned picture is unchanged with it (measured in VICE x64sc 3.10).
 
 ## Expected output
 

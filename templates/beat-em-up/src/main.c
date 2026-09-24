@@ -72,14 +72,6 @@ static char port_read(void)
 {
     return ap_next;
 }
-#elif defined(JOY_SOURCE)
-// Headless driving of the normal game (make joy, tools/drive.py): the port
-// byte comes from RAM at JOY_SOURCE, which a VICE monitor writes. The
-// windowless VICE's joyport commands do not reach $DC00.
-static char port_read(void)
-{
-    return *(volatile char *)JOY_SOURCE;
-}
 #else
 static char port_read(void)
 {
@@ -215,9 +207,6 @@ int main(void)
 {
     __asm { sei }                   // the IRQ chain is the only interrupt
     cia1.pra = 0xff;                // no keyboard column selected: $DC00 reads port 2
-#if !AUTOPILOT && defined(JOY_SOURCE)
-    *(volatile char *)JOY_SOURCE = 0xff;    // nothing pressed until the monitor says so
-#endif
     street_init();
     art_build();                    // leaves $01 = $35: BASIC and KERNAL out
     brute_build();                  // his pictures at the four shifts
@@ -284,8 +273,10 @@ int main(void)
             break;
         }
         PON(4)
+#if !NO_PLAYER                      // make watchtest: the build without it fails SID_FRAMES
         __asm { jsr ASM_MUSIC_PLAY }
         sfx_update();
+#endif
         POFF(4)
         PON(6)
         brute_prepare();            // the brute's next picture, half a frame at a time

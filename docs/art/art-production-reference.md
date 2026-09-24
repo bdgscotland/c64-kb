@@ -96,9 +96,9 @@ A PC sprite and animation editor by Subchrist Software, older than Spritemate: C
 
 The standard native Windows charset and tilemap editor. Manages the 256-tile budget, paints characters in multicolor or hires mode, assembles tiles into full-screen tilemaps, and exports screen RAM, Color RAM and character data as binary or assembly source. CharPad project files hold all tile and map data together. Complexity tier: intermediate.
 
-### ProjectOne
+### Project One
 
-A PC tool for C64 graphics by the group Resource, released as versions 0.2 to 0.6 in 2005–2010 (CSDb release search). What it does is not checked here. (An earlier version described it as a layout compositor that generates raster split tables, with no source; a "PETSCII Studio" section was removed because no such tool was found on CSDb.)
+A PC tool for C64 graphics by the group Resource, released as versions 0.2 to 0.6 in 2005–2010 (CSDb release search). What it does is not checked here. (CSDb spells the name "Project One"; an earlier heading read "ProjectOne". An earlier version described it as a layout compositor that generates raster split tables, with no source; a "PETSCII Studio" section was removed because no such tool was found on CSDb.)
 
 ### Historical Tools
 

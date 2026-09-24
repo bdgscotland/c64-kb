@@ -200,6 +200,67 @@ describe("d016 rule reads the load that feeds the store", () => {
   });
 });
 
+// The starters' deliberate whole-value stores (#41): each was reported
+// before the rule knew ORA constants, register-named shadows and constants.
+describe("d016 rule leaves deliberate whole-value stores alone (#41)", () => {
+  const d016 = (src: string, language: "asm" | "c") =>
+    lintSource(src, { language })
+      .filter((x) => x.rule === "d016_unmasked_rmw_clobbers_csel_mcm")
+      .map((x) => x.line);
+
+  it("is quiet on an ORA with a constant, a register-named shadow and a register-named constant", () => {
+    expect(d016("        lda xscroll\n        ora #$c0\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("        lda pf_d016\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("        lda d016_zp + 3\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("        lda #HUD_D016\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016(".const MODE = $d8\n        lda #MODE\n        sta $d016\n", "asm")).toEqual([]);
+    expect(d016("void f(void) {\n    vic.ctrl2 = D016_PLAY | 7;\n}\n", "c")).toEqual([]);
+  });
+
+  it("still reports a bare variable and a constant defined without CSEL", () => {
+    expect(d016("        lda xscroll\n        sta $d016\n", "asm")).toEqual([2]);
+    expect(d016(".const XS = 5\n        lda #XS\n        sta $d016\n", "asm")).toEqual([3]);
+    expect(d016("void f(void) {\n    vic.ctrl2 = xscroll;\n}\n", "c")).toEqual([2]);
+  });
+});
+
+describe("raster poll rule in assembly (#41)", () => {
+  const poll = (src: string) =>
+    lintSource(src, { language: "asm" }).filter((x) => x.rule === "raster_poll_with_kernal_irq_live");
+
+  it("reports a busy-wait that branches back to its $D012 read", () => {
+    expect(
+      poll("wait:   lda $d012\n        cmp #$f8\n        bne wait\n        rts\n").map((x) => x.line),
+    ).toEqual([1]);
+    expect(poll("!:      lda $d012\n        cmp #$f8\n        bne !-\n").map((x) => x.line)).toEqual([1]);
+    expect(poll("        lda $d012\n        cmp #$f8\n        bne *-5\n").map((x) => x.line)).toEqual([1]);
+  });
+
+  it("is quiet on a forward test in a handler file another file imports (shmup-vertical mux.asm)", () => {
+    // Before #41 this fired: mux.asm has no $FFFE or SEI, since kernel.asm
+    // installs the IRQ and imports it; its $D012 compare is a forward test.
+    const mux = [
+      "z_to_split:",
+      "        jsr arm_split",
+      "        lda #SPLIT_LINE-MARGIN",
+      "        cmp $d012",
+      "        bcs on_time",
+      "        inc mux_late",
+      "        jmp split_body",
+      "on_time:",
+      "        lda #$01",
+      "        sta $d019",
+      "        jmp irq_exit",
+    ].join("\n");
+    expect(poll(mux)).toEqual([]);
+    expect(poll(mux.replace("        sta $d019\n", ""))).toEqual([]);
+  });
+
+  it("is quiet on a busy-wait in handler code (an RTI or a $D019 acknowledge in the file)", () => {
+    expect(poll("wait:   lda $d012\n        bne wait\n        asl $d019\n        rti\n")).toEqual([]);
+  });
+});
+
 describe("lfsr rule wants a name the file shifts or XORs", () => {
   it("does not report a counter that merely contains 'seed'", () => {
     const src = "int main(void){ unsigned reseed_count = 0; return 0; }";
@@ -210,6 +271,43 @@ describe("lfsr rule wants a name the file shifts or XORs", () => {
     const src =
       "unsigned seed = 0;\nunsigned step(void){ seed ^= seed << 7; seed ^= seed >> 9; return seed; }\n";
     expect(lintSource(src, { language: "c" }).map((x) => x.rule)).toEqual(["lfsr_zero_state_lockup"]);
+  });
+});
+
+describe("lfsr rule reads a multi-byte seed (#97)", () => {
+  // The #22 game test's step.asm: a 16-bit Galois LFSR whose state is 1.
+  const step = (lo: string): string =>
+    [
+      `rng_lo:    .byte ${lo}              // waves.c rng_seed writes both`,
+      "rng_hi:    .byte 0",
+      "rng_step:",
+      "        lsr rng_hi              // one Galois step",
+      "        ror rng_lo",
+      "        bcc !+",
+      "        lda rng_hi",
+      "        eor #$b4",
+      "        sta rng_hi",
+      "!:      rts",
+    ].join("\n");
+
+  it("is quiet on rng_hi .byte 0 beside rng_lo .byte 1", () => {
+    expect(lintSource(step("1"), { language: "asm" })).toEqual([]);
+  });
+
+  it("still reports a state whose every byte is zero", () => {
+    expect(lintSource(step("0"), { language: "asm" }).map((x) => [x.rule, x.line])).toEqual([
+      ["lfsr_zero_state_lockup", 1],
+      ["lfsr_zero_state_lockup", 2],
+    ]);
+  });
+
+  it("is quiet on the same pattern in C", () => {
+    const src =
+      "char rng_lo = 1, rng_hi = 0;\nchar step(void){ char c = rng_lo & 1; rng_lo = (rng_lo >> 1) | (rng_hi << 7); rng_hi >>= 1; if (c) rng_hi ^= 0xb4; return rng_lo; }\n";
+    expect(lintSource(src, { language: "c" })).toEqual([]);
+    expect(
+      lintSource(src.replace("rng_lo = 1", "rng_lo = 0"), { language: "c" }).map((x) => x.rule),
+    ).toContain("lfsr_zero_state_lockup");
   });
 });
 
@@ -245,5 +343,154 @@ describe("lintSourceResult", () => {
     const r = lintSourceResult("int main(void) { return 0; }", { language: "c" });
     expect(r.structured.findings).toEqual([]);
     expect(r.structured.summary).toBe("No findings.");
+  });
+});
+
+// Issue #28: linting a whole Markdown page read a prose link to
+// music-sid.md as `sid.md`, a read of a SID field. A page is now linted
+// fence by fence; prose is never code.
+describe("lintSource on a Markdown page", () => {
+  const PAGE = [
+    "# Music player",
+    "",
+    "The player follows [SID music](../techniques/music-sid.md) and `c64/sid.h`.",
+    "Writing sid.fmodevol & 0xF0 in prose is not code.",
+    "",
+    "```c",
+    "#include <c64/sid.h>",
+    "void tick(void) {",
+    "    sid.voices[0].ctrl |= 0x01;",
+    "}",
+    "```",
+    "",
+    "```asm",
+    "    lda $d404",
+    "```",
+    "",
+    "```text",
+    "sid.voices[1].freq += 1;",
+    "```",
+  ].join("\n");
+  const findings = lintSource(PAGE);
+
+  it("does not report the prose link or prose mentions", () => {
+    expect(findings.filter((f) => f.line <= 4)).toEqual([]);
+  });
+
+  it("reports the read-modify-write in the C fence at its page line", () => {
+    const line = lineOf(PAGE, "sid.voices[0].ctrl |= 0x01");
+    const f = findings.find((x) => x.rule === "sid_write_only_registers" && x.line === line);
+    expect(f).toBeDefined();
+    expect(f!.certainty).toBe("definite");
+    expect(f!.excerpt).toBe("sid.voices[0].ctrl |= 0x01;");
+  });
+
+  it("runs the assembly rules on the asm fence of the same page", () => {
+    const line = lineOf(PAGE, "lda $d404");
+    expect(findings.some((x) => x.rule === "sid_write_only_registers" && x.line === line)).toBe(true);
+  });
+
+  it("skips a fence that is not C or assembly", () => {
+    expect(findings.some((x) => x.line === lineOf(PAGE, "sid.voices[1].freq += 1"))).toBe(false);
+  });
+
+  it("narrows to one language's fences when the language is given", () => {
+    const c = lintSource(PAGE, { language: "c" });
+    expect(c.map((f) => f.line)).toEqual([lineOf(PAGE, "sid.voices[0].ctrl |= 0x01")]);
+  });
+
+  it("labels the result as Markdown with the fence languages", () => {
+    expect(lintSourceResult(PAGE).text).toContain("(markdown, fences: c, asm)");
+  });
+});
+
+// Issue #28 on the two pages it was seen on. Before the fence mask the
+// whole of music-sid.md was read as C: seven definite findings, two of
+// them `sid.md` in a prose link and none in its code.
+describe("lintSource on the pages of issue #28", () => {
+  const read = (rel: string): string => fs.readFileSync(path.join(here, "../docs", rel), "utf-8");
+
+  it("finds nothing in asset-pipelines.md or music-sid.md, whose C fences only write the SID", () => {
+    expect(lintSource(read("art/asset-pipelines.md"))).toEqual([]);
+    expect(lintSource(read("techniques/music-sid.md"))).toEqual([]);
+  });
+
+  it("reports a read-modify-write put into a C fence of music-sid.md at its page line", () => {
+    const lines = read("techniques/music-sid.md").split("\n");
+    const at = lines.findIndex((l) => l.includes("sid.fmodevol = SID_FMODE_LP | 15;")) + 1;
+    lines.splice(at, 0, "    sid.fmodevol |= 0x10;");
+    const findings = lintSource(lines.join("\n"));
+    expect(findings.map((f) => [f.rule, f.line, f.excerpt])).toEqual([
+      ["sid_write_only_registers", at + 1, "sid.fmodevol |= 0x10;"],
+    ]);
+  });
+});
+
+// Issue #24's lint item: pitfalls/sprite.md sprite_registers_persist_across_state_change.
+describe("d015_merged_across_states", () => {
+  const rule = (src: string, language: "asm" | "c") =>
+    lintSource(src, { language })
+      .filter((x) => x.rule === "d015_merged_across_states")
+      .map((x) => x.line);
+
+  it("reports the merge when $D015 is also written elsewhere (asm)", () => {
+    const src = [
+      "title_enter:",
+      "        lda #$01",
+      "        sta $d015",
+      "        rts",
+      "play_enter:",
+      "        lda $d015",
+      "        ora #$02",
+      "        sta $d015",
+      "        rts",
+    ].join("\n");
+    expect(rule(src, "asm")).toEqual([8]);
+  });
+
+  it("is quiet when every state writes its whole mask, or the merge is the only write (asm)", () => {
+    expect(rule("        lda #$01\n        sta $d015\n        lda #0\n        sta $d015\n", "asm")).toEqual(
+      [],
+    );
+    expect(rule("        lda $d015\n        ora #$02\n        sta $d015\n", "asm")).toEqual([]);
+    expect(
+      rule(
+        "        lda $d015\n        lda mask\n        ora #2\n        sta $d015\n        stx $d015\n",
+        "asm",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports a compound assignment to vic.spr_enable beside another write (C)", () => {
+    const src =
+      "void title(void) {\n    vic.spr_enable = 0;\n}\nvoid play(void) {\n    vic.spr_enable |= 1;\n}\n";
+    expect(rule(src, "c")).toEqual([5]);
+    expect(
+      rule("void play(void) {\n    vic.spr_enable = vic.spr_enable | 1;\n    vic.spr_enable = 0;\n}\n", "c"),
+    ).toEqual([2]);
+  });
+
+  it("is quiet on a per-frame cull of a variable bit (lane-pursuit.md)", () => {
+    const src =
+      "void place(char n) {\n    char bit = 1 << n;\n    vic.spr_enable &= ~bit;\n    vic.spr_enable |= bit;\n}\nvoid title(void) {\n    vic.spr_enable = 0;\n}\n";
+    expect(rule(src, "c")).toEqual([]);
+    expect(
+      rule(
+        "        lda $d015\n        ora bits\n        sta $d015\n        lda #0\n        sta $d015\n",
+        "asm",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is quiet on a lone merge and on plain writes (C)", () => {
+    expect(rule("void play(void) {\n    vic.spr_enable |= 1;\n}\n", "c")).toEqual([]);
+    expect(rule("void a(void) {\n    vic.spr_enable = 0;\n    vic.spr_enable = mask;\n}\n", "c")).toEqual([]);
+  });
+
+  it("finds the bad play-state setup on the pitfall page", () => {
+    const page = fs.readFileSync(path.join(here, "../docs/pitfalls/sprite.md"), "utf-8");
+    const start = page.indexOf("## sprite_registers_persist_across_state_change");
+    const section = page.slice(start, page.indexOf("\n## ", start + 10));
+    expect(rule(section, "asm").length).toBeGreaterThan(0);
   });
 });

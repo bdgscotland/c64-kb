@@ -7,6 +7,7 @@ techniques: []
 file_formats: [CRT]
 uses_registers: [DE00, D020, D021]
 uses_kernal: [IOINIT, RAMTAS, RESTOR, CINT, CHROUT]
+devices: [magic_desk]
 ---
 
 <!-- doc-type: recipe -->

@@ -82,6 +82,8 @@ The default output format. A `.prg` file starts with a two-byte load address hea
 
 Cartridge images are selected with `-tf=crt` (EasyFlash), `-tf=crt8` (generic 8 KB), or `-tf=crt16` (generic 16 KB). The EasyFlash format places the first 16 KB bank into RAM at startup and leaves remaining banks accessible for banked data. The 8 KB and 16 KB generic formats write code and data into the `rom` region at `$8000`–`$A000` or `$8000`–`$C000` with an autostart header. BSS, stack, and heap go into the `main` region from `$0800` to `$8000`.
 
+The crt8 start-up at `$8009` does not call `IOINIT`, `RAMTAS`, `RESTOR` or `CINT`, and it does not copy initialised data to RAM: an initialised global stays in the ROM, a write to it reaches the RAM underneath, and a read returns the ROM byte. The display is off until the program writes `$D011`, and there is no `CHROUT`. `main` was entered 305 cycles after the cartridge vector, on PAL and NTSC. All of this was measured in VICE by [recipes/oscar64/cartridge-8k](../recipes/oscar64/cartridge-8k.md), which is pinned in `runs.json` with the `build` key `["-O2", "-tf=crt8"]`.
+
 **Consumed by:** vice
 
 ### .MAP — Linker map file
@@ -184,6 +186,30 @@ oscar64 {-i=path} [-o=output] [-rt=runtime.c] [-tf=format] [-tm=machine] [-e] [-
 | `NOZPCLEAR` | Skip clearing the zero-page BSS at startup |
 
 These are the spellings `crt.c` tests (`#ifndef NOBSSCLEAR`, line 238; `#ifndef NOZPCLEAR`, line 262). An earlier version of this table gave `NOBSSCLR` and `NOZPCLR`; those compile cleanly and change nothing.
+
+## Optimisation levels and a raster IRQ
+
+The `-O` flags add to each other. `oscar64.cpp` ORs each one into the option word, and only `-O0` clears it (source read, lines 292-321). `-O2 -O1` is therefore `-O2`, `-O2 -Os` is speed and size together, and `-Oz` alone is the default level plus zero-page globals, not `-O3`. To change a level, replace the flag; do not add one after it.
+
+Measured on [recipes/oscar64/stable-raster-irq](../recipes/oscar64/stable-raster-irq.md), built with `-g` at each level (`-g` leaves the PRG byte-identical at `-O2` and `-O3`) and run in VICE x64sc 3.10 on PAL and NTSC:
+
+| Level | PRG bytes | Dispatcher code | Dispatcher cycles, first slot / last slot (PAL) | Same (NTSC) | `$D020` store, line 101, cycle (PAL) | Band lines 101-200, edges straight |
+|---|---|---|---|---|---|---|
+| `-O0` | 1,227 | as `-O2` | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-O1` | 705 | as `-O2` | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-O2` | 596 | 37 instructions | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-O3` | 601 | `nextIRQ`, `rirq_count` in zero page | 89 / 124-125 | 89 / 123-125 | 10, 11 | yes |
+| `-Os` | 592 | as `-O2` | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-Oz` | 698 | as `-O3` | 89 / 124-125 | 89 / 123-125 | 10, 11 | yes |
+
+How each column was measured:
+
+- **Dispatcher code.** `rirq_isr_kernal_io` was cut from each `.asm` and compared instruction by instruction with branch targets masked. It is `__asm` in `rasterirq.c`, and `-Oa` (part of `-O2` and `-O3`) left it unchanged. The only change at any level is `-Oz`, which `-O3` includes: it placed `nextIRQ` at `$F7` and `rirq_count` at `$F8`, the linker's `zeropage` region `$F7`-`$FF`. Five instructions became zero-page forms (`LDX $F7`, `INC $F7`, `STX $F7`).
+- **Dispatcher cycles.** A `-moncommands` trace on the ISR entry, the slot code's entry, the return address after the `JSR` and `$EA81` gave stopwatch deltas over about 50 frames. The spin inside the slot code is excluded, because it waits for the line and its length is not the compiler's. The last slot of the frame pays more because it also re-arms the first slot.
+- **`$D020` store.** The line and cycle come from `trace store d020`. They are the store-trace CYC column ([vice-reference](../runtime/vice-reference.md), "What the CYC column counts"). The two values are the ones seen over the run, apart from one store at cycle 29-32 on the first frame after `rirq_start`; NTSC had 7 and 12 at `-O0`-`-O2` and `-Os`, and 9 and 12 at `-O3` and `-Oz`. The spin loop absorbs most of the dispatcher's saving: the write moves by at most two cycles.
+- **Band.** The exit screenshots of all six levels are byte-identical per model. The left and right border columns are white on raster lines 101-200 and light blue on 100 and 201, and each edge row is one colour from the first border pixel to the last. The level variants are pinned in `runs.json` as `oscar64/stable-raster-irq@O0` and so on, with a `build` key.
+
+The level does not decide whether this raster split is stable. The library does: the write lands inside the horizontal blank at every level because `rasterirq.h` spins on `$D012` in hand-written code. A handler written in C is a different case. Its code, its register use and the stores the compiler may merge or reorder do depend on the level, and none of that was measured here. `vic.h` declares every VIC register `volatile` except `spr_msbx` (header read); keep a register pointer of your own `volatile` too.
 
 ## Target machines
 
@@ -378,6 +404,26 @@ krnio_load(1, 8, 1);
 ```
 
 The overlay file is stored as a `.prg` entry in the D64 directory, uncompressed, and `krnio_load` puts it in place. `#pragma overlay( ovl1, 1, lzo )` stores it LZO-compressed instead; `samples/memmap/overlaylzo.c` opens that file and expands it with `krnio_read_lzo`. Inlays are a separate mechanism (upstream manual, "Inlays"): a region compressed by the linker into a `const char Inlay1[]` array inside the program, expanded on demand with `oscar_expand_lzo` from `oscar.h`. (An earlier version of this sentence pointed overlay users at `oscar_expand_lzo` "to decompress inlays", mixing the two.)
+
+**Code that runs at another address.** `#pragma region` takes an optional seventh argument, the run address. The region's bytes go into the output at `start`, and its code and data are linked for the run address (`Parser.cpp` stores `runaddr - start` as the region's relocation; `samples/memmap/tsr.c` uses it for code that runs at `$C003`):
+
+```c
+#pragma region(main, 0x0880, 0x2000, , , {code, data})            // keep main below the block
+#pragma section(rcode, 0)
+#pragma region(rblock, 0x2000, 0x2100, , , {rcode}, 0xc000)       // stored $2000, runs $C000
+#pragma region(upper, 0x2100, 0xa000, , , {bss, heap, stack})
+
+#pragma code(rcode)
+#pragma data(rcode)
+// functions and tables for $C000
+#pragma code(code)
+#pragma data(data)
+
+// in main, before the first call:
+memcpy((char *)0xc000, (char *)0x2000, 0x100);
+```
+
+Measured in [recipes/oscar64/relocated-code-block](../recipes/oscar64/relocated-code-block.md): the operands inside the block are `$C0xx` (`LDA $c015,x`, `JSR $c01c`) and `main` calls `JSR $c000`, but the `.map` and the `.lbl` list the storage address (`al 2000 .flash`). A monitor `break .flash` with that file loaded sets the checkpoint at `$2000`; add `$A000` to the labels in the region first. Without the `main` and `upper` lines the build succeeded with the default `main` region overlapping the block, and no diagnostic. The technique is `relocated_code_block` ([memory-banking](../techniques/memory-banking.md)).
 
 ## Multi-file projects
 
@@ -771,7 +817,7 @@ The next nine were found by compiling and running this knowledge base's own reci
 
 **A guarded index into an array shorter than 256 loses its guard.** Oscar64 1.32.271 at `-O1`, `-O2` and `-O3` compiles `char h = l == NONE ? NONE : lt[l];` (with `NONE` 255 and `char lt[64]`) to an unguarded `lda nextl,y / tax / cmp lt,x`: it infers `l < 64` from the size of `lt` and applies that to an access that only runs when `l != NONE`, so `l == 255` reads `lt[255]`, past the array. Measured in VICE x64sc: a 25-line test turns the border red at `-O1` to `-O3` and green at `-O0` and `-Os`, and green at `-O2` when `lt` has 256 entries. The same happens in the `nav-area-pathfinding` recipe's table check. Write the guard as a statement (`char h = NONE; if (l != NONE) h = lt[l];`), which compiles correctly. There is no diagnostic. Oscar64 HEAD 9a902f6 still emits the unguarded compare (tested here, #30).
 
-**A function-like macro with an empty parameter list is refused.** `#define A() (x = 1)` followed by `A();` fails with `error 3006: ';' expected` on the line after the call, whatever the body (`(x = 1)`, `x = 1` or `do { x = 1; } while (0)`); `#define A(v) (x = (v))` with `A(1);` builds. Measured with Oscar64 1.32.271 at `-O2`. Give such a macro one parameter, or use a function. Fixed upstream: the same test builds and runs correctly on Oscar64 HEAD 9a902f6 (tested here, #30).
+**A function-like macro with an empty parameter list eats the `;` after its call.** On the local build (1.32.271, upstream 709bd70 plus c1270bc), `A();` loses its semicolon. With a non-empty body the next line fails with `error 3006: ';' expected`, whatever the body (`(x = 1)`, `x = 1` or `do { x = 1; } while (0)`). With an empty body (`#define A()`, the usual way to compile a debug hook out) nothing fails: `if (c) A(); f();` compiles as `if (c) f();`. At `-O0` the generated code is `LDA c / BEQ / JSR f`, so `f` runs only when `c` is non-zero; at `-O2` a `c` known to be 0 removes the call. The same test compiles correctly on released v1.32.273 and on upstream 9a902f6 (all three built and the `.asm` read, #98). In the #22 game test, `bool metering = false; if (metering) meter_open(); play_frame(joy);` with `meter_open()` defined empty lost `play_frame` and the rest of the case, and play stopped. On the local build that source's PRG is 2,104 bytes shorter than the fixed one; on v1.32.273 and upstream the two are byte-identical. The game's DECISIONS.md blamed the `bool` declared inside the `switch` case; without the empty-macro calls, that declaration compiles byte-identical to one outside the switch on all three compilers. `#define A(v) (x = (v))` with `A(1);` builds. Give such a macro one parameter, make it object-like, or use a function. An earlier version of this paragraph said only that the macro is refused; the empty-body form is silent.
 
 **A loop-invariant `array + signed char` is zero-extended.** Oscar64 1.32.271 compiles a loop storing `board[rowoff[y] + px + cx[i]]`, with `px` a global `signed char` equal to -2, by hoisting `board + px` out of the loop as a 16-bit pointer and adding `px` as unsigned (`CLC; LDA #<board; ADC px; ...; LDA #>board; ADC #$00`), so `px` = `$FE` lands the store 256 bytes above the intended cell. Measured in VICE x64sc with a 20-line test (border red; 2 written at `$0400` instead of 4) and in the `falling-blocks` recipe's draft, whose board check failed. It fails at every level (`-O0` to `-Os`), and still fails on Oscar64 HEAD 9a902f6 (tested here, #30). Compute the sum in a variable first (`char x = px + cx[i]; board[rowoff[y] + x] = 1;`), or keep the offset unsigned. There is no diagnostic.
 

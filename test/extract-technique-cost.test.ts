@@ -143,8 +143,10 @@ describe("extractGraphEntities - technique Cost lines", () => {
     expect(Object.keys(COST_VOCABULARY).sort()).toEqual([
       "bytes_code",
       "bytes_data",
+      "cycles_item_base",
       "cycles_per_frame",
       "cycles_per_frame_typical",
+      "cycles_per_item",
       "cycles_per_line",
       "irq_slots",
       "lines_active",
@@ -203,6 +205,32 @@ describe("extractGraphEntities - technique Cost lines", () => {
     expect(t.cost_recipe).toBe("kickassembler-stable-raster-irq");
     expect(t.cost_conditions).toBeUndefined();
     expect(t.cost_includes).toBeUndefined();
+  });
+
+  it("reads a per-item figure and its base, and skips a base without one (#95)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const both = techOf(
+        extractGraphEntities(
+          doc(
+            "**Cost:** cycles_per_frame=3995, cycles_per_item=490, cycles_item_base=75\n**Cost basis:** measured-vice",
+          ),
+          "techniques/text-mode-render.md",
+        ),
+      );
+      expect(both.cost).toEqual({ cycles_per_frame: 3995, cycles_per_item: 490, cycles_item_base: 75 });
+      const alone = techOf(
+        extractGraphEntities(
+          doc("**Cost:** cycles_per_frame=100, cycles_item_base=20\n**Cost basis:** measured-vice"),
+          "techniques/text-mode-render.md",
+        ),
+      );
+      expect(alone.cost).toEqual({ cycles_per_frame: 100 });
+      const msgs = warn.mock.calls.map((c) => String(c[0]));
+      expect(msgs.some((m) => m.includes("cycles_item_base without cycles_per_item"))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("skips a typical figure above the worst, or without one, and keeps the rest", () => {
@@ -266,6 +294,71 @@ describe("extractGraphEntities - technique Cost lines", () => {
       expect(warn.mock.calls.some((c) => String(c[0]).includes("but no **Cost:** line — ignored"))).toBe(
         true,
       );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // #72: a **Cost bytes basis:** line gives the byte figures their own basis.
+  it("reads a Cost bytes basis line as the byte figures' basis, the Cost basis staying the cycles'", () => {
+    const t = techOf(
+      extractGraphEntities(
+        doc(
+          "**Cost:** cycles_per_frame=1471, bytes_code=577, bytes_data=33\n**Cost basis:** measured-vice\n**Cost bytes basis:** `derived-listing`",
+        ),
+        "techniques/raster.md",
+      ),
+    );
+    expect(t.cost).toEqual({ cycles_per_frame: 1471, bytes_code: 577, bytes_data: 33 });
+    expect(t.cost_basis).toBe("measured-vice");
+    expect(t.cost_bytes_basis).toBe("derived-listing");
+  });
+
+  it("leaves cost_bytes_basis absent on a line with one basis word", () => {
+    const t = techOf(
+      extractGraphEntities(
+        doc("**Cost:** cycles_per_frame=52, bytes_data=2048\n**Cost basis:** derived-listing"),
+        "techniques/raster.md",
+      ),
+    );
+    expect(t.cost_basis).toBe("derived-listing");
+    expect(t.cost_bytes_basis).toBeUndefined();
+  });
+
+  it("drops only the byte figures for a bytes basis word outside the set", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const t = techOf(
+        extractGraphEntities(
+          doc(
+            "**Cost:** cycles_per_frame=124, bytes_code=40, zp_bytes=2\n**Cost basis:** measured-vice\n**Cost bytes basis:** counted",
+          ),
+          "techniques/raster.md",
+        ),
+      );
+      expect(t.cost).toEqual({ cycles_per_frame: 124 });
+      expect(t.cost_basis).toBe("measured-vice");
+      expect(t.cost_bytes_basis).toBeUndefined();
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('cost bytes basis "counted"'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("ignores a Cost bytes basis line when the Cost line states no bytes", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const t = techOf(
+        extractGraphEntities(
+          doc(
+            "**Cost:** cycles_per_frame=124\n**Cost basis:** measured-vice\n**Cost bytes basis:** arithmetic",
+          ),
+          "techniques/raster.md",
+        ),
+      );
+      expect(t.cost).toEqual({ cycles_per_frame: 124 });
+      expect(t.cost_bytes_basis).toBeUndefined();
+      expect(warn.mock.calls.some((c) => String(c[0]).includes("no byte figure"))).toBe(true);
     } finally {
       warn.mockRestore();
     }

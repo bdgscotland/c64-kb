@@ -7,6 +7,7 @@ techniques: [cpu_io_port_bank, char_rom_under_vic]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D012, D015, D018, D027]
 uses_kernal: [CHROUT]
+claims: [vic_char_base (owns), sprite_0 (owns)]
 ---
 
 <!-- doc-type: recipe -->

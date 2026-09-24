@@ -19,6 +19,17 @@ Get the plain modes working before any FLI variant. The FLI family builds on the
 **Region:** both
 **Uses registers:** D011, D018
 **Uses kernal:** (none)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store traces (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/hires-plot-line.md`, `recipes/kickassembler/twister.md`
+and `recipes/kickassembler/dot-flag.md`: the set-up's one `$D018` store
+(`$18`) moves the character base to the bitmap at `$2000`, and the mode
+holds it every frame. The matrix stays at `$0400`, so the store changes no
+matrix bits. The set-up's whole-register `$D011` store also clears the
+raster-compare bit 8 the KERNAL left set; that is the listing's choice of
+value, not the technique's claim.
 
 ### Why
 
@@ -77,6 +88,13 @@ Drawing into the bitmap from the main program is safe in the vertical blank or i
 **Requires:** standard_bitmap
 **Cost:** cycles_per_frame=63
 **Cost basis:** measured-vice
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store traces of `recipes/kickassembler/hires-plot-line.md` and
+`recipes/kickassembler/dot-flag.md`: after `standard_bitmap`'s set-up the
+plot stores only to the bitmap and to its own zero page and tables, which
+are the program's memory, not units.
 
 ### Why
 
@@ -146,6 +164,12 @@ The VIC-II fetches the bitmap in the same order it fetches a character set: on e
 **Requires:** hires_plot
 **Cost:** cycles_per_frame=43606
 **Cost basis:** measured-vice
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace of `recipes/kickassembler/hires-plot-line.md`: the line loop
+stores only through `hires_plot` into the bitmap and to zero page the
+recipe chose.
 
 ### Why
 
@@ -197,12 +221,133 @@ Measured with CIA1 timer A in the `hires-plot-line` recipe, display blanked, VIC
 
 ---
 
+## midpoint_circle — Circle by the midpoint algorithm and eight-way symmetry
+
+**Complexity:** medium
+**Region:** both
+**Uses kernal:** (none)
+**Requires:** hires_plot
+**Cost:** cycles_per_frame=7740
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-hires-circle (one radius-10 circle, 64 plots; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+The circle routine stores only through `hires_plot` into the bitmap and
+to its own variables (`recipes/kickassembler/hires-circle.md`).
+
+### Why
+
+Radar rings, explosions, targeting reticles and round playfield
+features need a circle. Computing `sqrt(r² - x²)` per pixel needs a
+square root; the midpoint algorithm walks the circle with additions
+only, one pixel of `y` per step.
+
+### How
+
+Walk one eighth, from `(r, 0)` up to the diagonal; mirror each point
+eight ways.
+
+1. `x = r`, `y = 0`, `d = 1 - r`, with `d` in 16 bits.
+2. While `x >= y`: plot `(cx ± x, cy ± y)` and `(cx ± y, cy ± x)`;
+   `y += 1`; if `d < 0`, `d += 2y + 1`; else `x -= 1` and
+   `d += 2(y - x) + 1`.
+
+```asm
+loop:   lda xx
+        cmp yy
+        bcc done          // x < y: the octant is finished
+        jsr plot8         // the eight mirror images
+        inc yy
+        lda d+1
+        bmi neg           // d < 0: y only
+        dec xx            // else step x in: d += 2(y - x) + 1
+        ...
+        jmp loop
+neg:    lda yy            // d += 2y + 1
+        asl
+        ora #1
+        ...
+        jmp loop
+```
+
+The full routine is in `recipes/kickassembler/hires-circle.md`.
+
+### Why it works
+
+`d` is `x² + y² - r²` evaluated at the midpoint between the two pixels
+the next step can take, straight up or up and in, kept as an integer.
+Its sign says whether that midpoint is inside the circle. Moving one
+step changes it by `2y + 1` or `2(y - x) + 1`, which the loop adds
+instead of squaring. Twelve circles drawn in VICE x64sc 3.10 gave the
+same 2,197 pixels as a Python model of the same steps, pixel for
+pixel in the PAL and NTSC screenshots.
+
+Three widths matter. `x` and `y` fit a byte. The centre's `x` needs two
+bytes on a 320-pixel bitmap. `d` needs two: with its sign read from
+one byte, the octant was wrong for 21 of the radii from 77 to 99, where
+`d` falls below -128 (`pitfalls/cpu.md`,
+`signed_compare_bmi_overflow`). With `x` unsigned, radius 0 must be
+taken apart, or its first step takes `x` from 0 to 255 and the loop
+runs on.
+
+The eight mirror images coincide at the ends of the octant, `y = 0`
+and `x = y`: the twelve circles made 2,264 plots for 2,197 pixels. An
+`ORA` plot does not care. A plot with `EOR`, used to erase by drawing
+again, clears those pixels on the first pass; skip the duplicate
+points or draw with `ORA` and erase with `AND` (rung 3).
+
+### Variations
+
+- **Filled disc.** At each step draw the horizontal spans
+  `cx - x .. cx + x` on rows `cy ± y`, and `cx - y .. cx + y` on rows
+  `cy ± x`, with whole-byte stores in the middle of each span.
+- **Multicolour bitmap.** Plot 2-bit pixels on a 160-wide grid; the
+  circle then looks twice as wide as it is tall unless the `x` offsets
+  are halved (rung 3).
+- **Clipping.** A circle partly off the screen needs each of the eight
+  points tested against 0 to 319 and 0 to 199 before its plot; without
+  it, a point off the bottom writes past the bitmap.
+
+### Cycle budget
+
+Measured with the CIA2 timer A / B cascade, one call, net of `JSR` /
+`RTS`, screen blanked, PAL and NTSC alike (rung 1); each equals the
+instruction-table count:
+
+| Circle | Steps | Cycles |
+|---|---|---|
+| radius 0 | 1 | 897 |
+| radius 10 | 8 | 7,740 |
+| radius 80 | 57 | 54,714 |
+
+One step is 946 cycles when only `y` moves and 977 when `x` moves too;
+728 of them are the eight plots at 91 each. A radius-80 circle takes
+2.8 PAL frames. The timed routine is aligned to a page: at `$0AA6`,
+with its branches crossing into the next page, it measured 7,745 and
+54,748 (`pitfalls/cpu.md`, `branch_page_cross_extra_cycle`). The
+`**Cost:**` line carries the radius-10 circle.
+
+### Recipes
+
+- `recipes/kickassembler/hires-circle.md`: twelve circles, checked
+  pixel for pixel against a Python model, three of them timed, and the
+  one-byte decision variable counted.
+
+---
+
 ## multicolor_bitmap — Multicolor bitmap (MCM)
 
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D016, D018
 **Uses kernal:** (none)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/bitmap-koala-viewer.md`: one `$D018`
+store moves the character base to the bitmap at `$2000` and the mode holds
+it. MCM and BMM are mode bits, not units yet.
 
 ### Why
 
@@ -257,6 +402,12 @@ Multicolor bitmap mode has the same CPU cycle budget as standard bitmap mode. Ba
 **Region:** both
 **Uses registers:** D011, D022, D023, D024
 **Uses kernal:** (none)
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/vehicle-control.md`: the ECM bit rides on
+`soft_scroll_v`'s `$D011` store, and ECM ($D011 bit 6) is not a unit
+yet. A clash with another mode bit cannot be seen by the unit check.
 
 ### Why
 
@@ -295,7 +446,7 @@ ECM is a text mode; the cycle budget is identical to standard text mode. No addi
 
 ### Recipes
 
-- No recipe yet for ECM zones.
+- `recipes/oscar64/mcm-ecm-zones.md`: ECM rows under a multicolour-text zone on one screen, all four background selectors and all sixteen colour RAM values, every pixel checked against the rule in VICE x64sc on PAL and NTSC.
 
 ---
 
@@ -305,6 +456,17 @@ ECM is a text mode; the cycle budget is identical to standard text mode. No addi
 **Region:** both
 **Uses registers:** D016, D018, D021, D022, D023
 **Uses kernal:** (none)
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/mcm-text.md`: the only unit store is one `$D018`
+store (`$1C`) pointing the character base at the recipe's charset at
+`$3000`. Where the charset lives is the program's choice, and a technique
+that draws or animates it (`charset_animation`, `dycp_scroller`) claims
+the base; claiming it here as well would set multicolour text against
+every such technique. MCM ($D016 bit 4) is a mode bit, not a unit yet, so
+a clash with another mode bit cannot be seen by the unit check.
 
 ### Why
 
@@ -348,7 +510,12 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 
 ### Recipes
 
-- No recipe yet for a multicolour character set.
+- `recipes/kickassembler/mcm-text.md`: one glyph in eight multicolour
+  and eight hires cells on one screen, measured pixel for pixel in VICE
+  x64sc on PAL and NTSC, with `$D025`/`$D026` as a control.
+- `recipes/oscar64/mcm-ecm-zones.md`: a multicolour-text zone above an
+  ECM zone, switched by two `rasterirq.h` slots inside blank rows; colour
+  RAM 14 draws light blue in ECM and blue in a multicolour cell.
 
 ---
 
@@ -365,8 +532,15 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-fli-image
 **Cost includes:** stable_raster_irq, double_irq
-**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns)
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns), vic_yscroll (owns), vic_matrix_base (owns), vic_char_base (owns)
 **Claims basis:** derived-listing
+
+The handler stores `$D011` and `$D018` on every FLI line: YSCROLL forces
+the badline, the matrix bits pick the line's colour screen, and each
+whole-byte `$D018` store rewrites the bitmap base with it. A store trace
+of `recipes/kickassembler/fli-image.md` (`scripts/claims-watch.ts`) saw
+YSCROLL and the matrix bits change on every line. The three VIC field
+units were added with the units themselves ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 
@@ -487,8 +661,24 @@ On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-
 **Uses registers:** D011, D018
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
-**Requires:** fli_image
+**Requires:** stable_raster_irq, standard_bitmap, vic_bank_select
 **Raster band:** 45-251 (fli_image's engine, which How says this reuses unchanged)
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns), vic_yscroll (owns), vic_matrix_base (owns), vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/afli-image.md`: the listing writes the VIC bank,
+matrix base, character base, YSCROLL and raster compare, the units
+`fli_image` claims. AFLI's own change is `$D016` = `$C8`, MCM clear, a
+mode bit and not a unit yet. The recipe measures this section's model
+pixel for pixel on PAL, including the `LINE_PAD` 10 row-counter reset
+described under "Cycle budget".
+
+AFLI is a variant of `fli_image`, so it names FLI's prerequisites itself
+with `standard_bitmap` in place of `multicolor_bitmap`. An earlier
+Requires line said `fli_image`, and through it `multicolor_bitmap`, but
+the recipe clears MCM (`$D016` = `$C8`; the fli-image and ifli-image
+listings store `$D8`/`$D9`, MCM set) ([#80](https://github.com/bdgscotland/c64-kb/issues/80)).
 
 ### Why
 
@@ -524,11 +714,21 @@ The cycle budget is identical to `fli_image`: two writes per line (`STA $D018`, 
 
 **Complexity:** scene-tier
 **Region:** PAL
-**Uses registers:** D011, D018
+**Uses registers:** D011, D016, D018, DD00
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
-**Raster band:** 45-251 (fli_image's per-line engine only; the page does not say on which line the image swap runs)
+**Raster band:** 45-251 (fli_image's per-line engine, then the image swap on line 251 in `recipes/kickassembler/ifli-image.md`)
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns), vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/ifli-image.md`: once a frame, on line 251, the swap
+writes the VIC bank (`$DD00`) and XSCROLL (`$D016`, 0 for one image and 1
+for the other), 201 stores of each in 8 million cycles, from the same
+raster interrupt that runs the per-line engine. The other units the trace
+shows are the ones `fli_image` claims. (An earlier version of the Uses
+registers line had only `$D011` and `$D018`; the swap needs both of these.)
 
 ### Why
 
@@ -538,15 +738,17 @@ IFLI is a demoscene C64 art format. It requires two complete, independently prep
 
 ### How
 
-IFLI requires two complete FLI images (each with its own 8000-byte bitmap and its own eight screen RAM pages) stored in memory simultaneously. Colour RAM is single and shared: there is one 1 KB at $D800, read by the VIC-II over its own bus regardless of $D018 or $DD00, and rewriting it between frames (1,000 bytes, at least 8,000 cycles) does not fit in the roughly 7,000-cycle PAL vertical blank the FLI engine leaves free. The %11 colour of each cell is therefore the same in both sub-frames, and IFLI image formats store a single Colour RAM block. (An earlier version of this sentence gave each sub-frame "a Color RAM state", contradicting the cycle budget below.) On even PAL frames, image A is displayed; on odd frames, image B. Alternating at 50 Hz with PAL phosphor persistence, the human eye integrates the two images.
+IFLI requires two complete FLI images (each with its own 8000-byte bitmap and its own eight screen RAM pages) stored in memory simultaneously. Colour RAM is single and shared: there is one 1 KB at $D800, read by the VIC-II over its own bus regardless of $D018 or $DD00, and rewriting it between frames (1,000 bytes, at least 8,000 cycles) does not fit in the roughly 7,000-cycle PAL vertical blank the FLI engine leaves free. The %11 colour of each cell is therefore the same in both sub-frames, and IFLI image formats store a single Colour RAM block. (An earlier version of this sentence gave each sub-frame "a Color RAM state", contradicting the cycle budget below.) On even PAL frames, image A is displayed; on odd frames, image B. The picture changes every frame, 50 times a second on PAL, so each image is shown 25 times a second; with CRT phosphor persistence the eye integrates the two. (An earlier version said the images alternate "at 50 Hz", which is the frame rate, not the rate of either image.)
 
 The frame alternation is driven by a vertical blank IRQ (or a top-of-frame raster IRQ) that swaps the bank layout or bitmap/screen RAM addresses pointed to by $D018. Within each frame, the per-line FLI write block runs exactly as described in `fli_image`.
 
-The two images are typically prepared as slightly horizontally-offset variants of the same source — image B shifted one pixel left or right relative to image A. The overlap creates the perception of 320-wide content. Preparing an IFLI pair from source art is an image-processing task that dedicated tools (IFLI converters) handle.
+The two images are typically prepared as slightly horizontally-offset variants of the same source — image B shifted one pixel left or right relative to image A. The overlap creates the perception of 320-wide content. Preparing an IFLI pair from source art is an image-processing task that dedicated tools (IFLI converters) handle. A one-hires-pixel offset cannot be made in the multicolour data, where a pixel is two wide; `recipes/kickassembler/ifli-image.md` makes it with XSCROLL 1 on B's frames, as `mci_interlace_bitmap` does, and measures B one pixel right of A in VICE x64sc (PAL). How published IFLI viewers make the offset was not checked here.
+
+Measured in the same recipe: the swap has to wait until line 250 has been drawn. Lines 248-250 cannot be badlines, so their blocks do not stall and the CPU leaves the per-line loop before line 249; a swap made there showed the other image on lines 249 and 250 of every frame.
 
 ### Why it works
 
-The VIC-II's output is a composite video signal. On a real CRT display, each scanline's phosphors retain charge for a fraction of a frame. When two similar images alternate at 50 Hz, the eye blends them in both spatial and temporal dimensions. The 160-pixel-wide multicolor pixels of each sub-frame appear to blend with the offset pixels of the opposite frame, which reads as 320-pixel hires color content.
+The VIC-II's output is a composite video signal. On a real CRT display, each scanline's phosphors retain charge for a fraction of a frame. When two similar images alternate frame by frame (each at 25 Hz on PAL), the eye blends them in both spatial and temporal dimensions. The 160-pixel-wide multicolor pixels of each sub-frame appear to blend with the offset pixels of the opposite frame, which reads as 320-pixel hires color content.
 
 The pixel buffer does not change: both frames are full multicolor bitmap images with the same 160x200 pixel grid. The resolution improvement is perceptual, a property of the human visual system and the CRT. IFLI images do not look the same on LCD monitors without post-processing; dedicated IFLI-aware emulator display modes apply a blending filter to simulate the CRT integration.
 
@@ -576,6 +778,13 @@ The cost of IFLI is not cycles but memory: two complete FLI images occupy roughl
 **Cost:** cycles_per_frame=50, bytes_data=18000
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-mci-interlace
+**Claims:** cia2_vic_bank (owns), vic_matrix_base (owns), vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/kickassembler/mci-interlace.md`: each frame the
+switch changes the VIC bank (`$DD00`), the matrix (`$D018` bits 4-7) and
+XSCROLL (`$D016`, the half-pixel shift): 243-244 stores of each in 8
+million cycles. The bitmap base is `multicolor_bitmap`'s.
 
 ### Why
 
@@ -622,6 +831,16 @@ Measured with CIA1 timer A on the recipe, the same on PAL and NTSC: 34 cycles on
 **Region:** both
 **Uses registers:** D011, D016, D018, D021
 **Uses kernal:** (none)
+**Requires:** multicolor_bitmap
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+**Consumes formats:** KLA
+
+Store trace of `recipes/oscar64/bitmap-koala-viewer.md`: display step 5,
+the `$D018` store, moves the character base to the bitmap. The
+`**Requires:**` line was added with the claim: the format is a
+multicolour bitmap, and without it the check would set this technique
+against `multicolor_bitmap` as a rival owner of the base.
 
 ### Why
 
@@ -676,10 +895,78 @@ For Oscar64 programs, the recommended approach is to copy the Koala bitmap to $2
 
 Koala display is not cycle-sensitive once the mode is enabled, but the copy is not small. Measured in VICE x64sc (PAL, CIA timer, screen blanked): a basic indexed page loop (LDA abs,X / STA abs,X / INX / BNE, 14 cycles per byte) copies the 10,000 bytes in about 140,000 cycles, and a fully unrolled LDA abs / STA abs copy costs 8 cycles per byte, 80,000 cycles for the whole image (and 60 KB of code, so a partially unrolled loop lands between the two). With the screen on, badline DMA adds roughly 6 % more. That is four to seven PAL frames of 19,656 cycles; it does not fit the 7,056-cycle vertical border (112 lines x 63, lines 0-50 and 251-311). Copy before enabling BMM, or with the screen blanked (DEN = 0), and only then set $D018/$D011/$D016. Only the bitmap can be displayed in place: a file loaded at $6000 puts it at an 8 KB-aligned offset in bank 1, but the screen RAM that follows at +$1F40 is never 1 KB-aligned when the bitmap is 8 KB-aligned, and Color RAM must always be copied to $D800. An earlier version of this page gave 10,000-12,000 cycles for the copy and a 3,900-cycle VBI window; both were wrong.
 
-For real-time conversion from disk, the raw data rate of the 1541 (approximately 300 bytes/second with standard KERNAL I/O, or 4000-6000 bytes/second with a turbo loader) dominates the timing. Full Koala loads via standard KERNAL take approximately 33 seconds; turbo-loaded Koala files load in under 3 seconds.
+For real-time conversion from disk, the raw data rate of the 1541 dominates the timing: about 406 bytes/second with the standard KERNAL loader (measured in VICE, `formats/iec-disk-reference.md`), 4000-6000 bytes/second with a turbo loader (not measured here). A 10,003-byte Koala file therefore takes about 25 seconds through the KERNAL (arithmetic from the measured rate), and under 3 seconds turbo-loaded. (An earlier version said about 300 bytes/second and 33 seconds.)
 
 ### Recipes
 
 - `recipes/oscar64/bitmap-koala-viewer.md` — embed a .kla file, copy it to display RAM, enable multicolor bitmap mode.
 
 <!-- doc-type: technique-reference -->
+
+---
+
+## paint_program_brush_and_fill — A paint program's brush strokes, scanline flood fill and undo on a hires bitmap
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D016, D018, DD00
+**Requires:** hires_plot, bresenham_line
+
+### Why
+
+A paint program is three operations over a bitmap: put the brush down
+along the path the pointer took, fill an enclosed area, and take back
+the last thing done. Each is simple alone. Together they decide the
+memory map (a second 8,000-byte bitmap for undo), and the fill decides
+whether the program feels usable. A fill that recurses once per pixel
+overruns the 6510's 256-byte stack on the first large area (arithmetic:
+at least a two-byte return address a level, so 128 levels at most), and
+a fill with the wrong connectivity escapes through a diagonal outline.
+
+### How
+
+**Brush.** A brush is a small mask stamped at every point of a Bresenham
+line between two pointer samples. Stamping only at the samples leaves
+gaps when the pointer moves fast. The recipe's brush is a 3x3 square, so
+a horizontal stroke of `n` points sets `3 * (n + 2)` pixels and each
+diagonal step adds 5.
+
+**Fill.** Use a scanline fill with an explicit seed stack, never
+recursion per pixel. Pop a seed; if it is set, drop it. Run left and
+right to the boundary, set the span, and scan the rows above and below
+between its ends, pushing one seed for each run of unset pixels. The
+stack grows with the number of open runs, not with the area. For a fill
+bounded by outlines drawn with lines or circles, scan exactly the span
+on the adjacent rows: 4-connected. Scanning one pixel past each end
+makes it 8-connected, which passes between two outline pixels that
+touch only at a corner (`fill_8_connected_leaks_through_diagonal_outline`,
+`pitfalls/logic.md`). Refuse and report a push past the stack's size
+rather than writing past it.
+
+**Undo.** Copy the bitmap aside before each operation, and copy it back
+to undo. The copy is 8,000 bytes and must live somewhere the program is
+not: RAM under the BASIC ROM with BASIC banked out, or under the KERNAL
+with interrupts off while it is read. Colour RAM and the screen matrix
+need their own copies if the program paints colour. Several levels of
+undo cost 8,000 bytes each, or store only the changed rows' bytes.
+
+**Memory.** The bitmap, its screen matrix and the undo copy take
+17,000 bytes. With a C compiler whose program starts at `$0801`, put the
+bitmap in another VIC bank: the recipe uses bank 1, matrix `$4000`,
+bitmap `$6000`.
+
+### Why it works
+
+The recipe counts the set pixels after every stage and matches a Python
+model of the same drawing on all six counts, and the 18,510 white pixels
+in its screenshot are the model's final figure (measured in VICE x64sc
+3.10, both models). Its scanline fill held at most 4 seeds for a
+128-by-96 rectangle with a block inside and 2 for a disc of radius 40.
+Filled pixel by pixel in Oscar64 C the rectangle's 11,444 pixels took
+4,072,063 cycles on PAL, about 356 a pixel; the undo copy 355,663.
+Setting whole bytes in the middle of each span would cut the fill
+several times (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/paint-fill.md` — two 3x3-brush strokes, a rectangle with a block and a midpoint circle; a 4-connected fill of each, an 8-connected fill that escapes and is undone; every count matched against a Python model, every operation timed with CIA1; PAL and NTSC

@@ -346,7 +346,7 @@ double-write"; see the Fix above for the measurement that retired it.)
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D010
-**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield, dypp_sprite_sine_scroller, sprite_border_scroller, sprites_only_screen_mode, dysp_side_border_sprites
+**Triggered by techniques:** sprite_sine_chain, sprite_multiplex_24, logic_rate_decoupling, sprite_multiplex_game, actor_activation_window, per_frame_hitbox, wave_director, multi_sprite_object, flip_screen_rooms, mixed_sprite_char_actors, lane_depth_engine, dot_3d_rotator, starfield, dypp_sprite_sine_scroller, sprite_border_scroller, sprites_only_screen_mode, dysp_side_border_sprites, vector_balls_sprites
 
 ### Symptom
 
@@ -861,6 +861,11 @@ discard the result to clear the latches. Only then set the state's own
 pointers, positions and colours. A state that uses no sprites calls the
 same routine with a mask of zero. Do not `ORA` and `AND` a state's bits
 into `$D015`; a state owns the whole register while it runs.
+`c64_lint_source` reports that merge as `d015_merged_across_states`: a
+constant ORed or ANDed into `$D015` (or `vic.spr_enable |= 1` in C) in a
+file that writes the register somewhere else too. A merge of a variable
+bit, the per-frame cull of `recipes/oscar64/lane-pursuit.md`, is not
+reported.
 
 Sprite colours and the shared multicolours are not in the list because a
 sprite that is not enabled shows none of them, but a state that reuses a
@@ -964,6 +969,20 @@ Game over, bad:    63 of the banner's 185 white pixels visible, the
                    latched after the play state's one read.
 Game over, fixed:  185 white pixels, no sprite pixels, $D01F 00.
 ```
+
+### The same fault at program start
+
+The first state inherits the power-on values, and it costs cycles as
+well as pixels. A build of the #39 demo starter enabled its eight
+sprites with `$D015` before its first `chain_step` had written their
+positions, so they sat at their power-on Y and their DMA fell on lines
+where the frame's work ran: the music's first frame measured 1,350
+cycles against 1,008 once the sprites were placed before the enable
+(VICE x64sc 3.10, PAL, a scratch build of that starter; rung 1, not
+re-run here). `templates/demo` now writes the positions first
+(`place_sprites` before the `$D015` store in `src/part_main.asm`). A
+program that times its first frames should place its sprites before it
+enables them, or the first figures carry DMA that play never has.
 
 ### Cross-references
 

@@ -15,8 +15,11 @@ demo or game with customised IRQs, banked memory, or BCD arithmetic.
 Three entries are library and host-tooling traps in the same
 disk-and-keyboard I/O workflow: the Oscar64 `krnio_save()` splat, the
 c1541 uppercase-filename PETSCII shift and the Oscar64 `getchx()` RETURN
-remap. The last entry is a hardware-wiring trap: RESTORE drives /NMI
-directly, so no CIA mask reaches it.
+remap. `restore_nmi_not_maskable` is a hardware-wiring trap: RESTORE
+drives /NMI directly, so no CIA mask reaches it. The last two entries
+are VIC-II traps in the KERNAL's receive routine: sprites next to
+badlines make it miss a bit, and on an old 6526 sprite DMA can make it
+miss the EOI timer. Either way it waits for ever.
 
 ---
 
@@ -347,7 +350,7 @@ msg_end:
 
 **Severity:** critical
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, decimal_mode_pitfalls, irq_chain_table, logic_rate_decoupling, sprite_multiplex_game, tod_alarm_interrupt, irq_keyboard_own_scan
+**Triggered by techniques:** stable_raster_irq, decimal_mode_pitfalls, irq_chain_table, logic_rate_decoupling, sprite_multiplex_game, tod_alarm_interrupt, irq_keyboard_own_scan, add_sub_16bit
 
 ### Symptom
 
@@ -522,6 +525,7 @@ sprite_y: .fill 8, i * 21 + 50
 
 **Severity:** high
 **Region:** both
+**Triggered by registers:** R6510
 **Triggered by kernal:** SETLFS, LOAD, SAVE, OPEN, CLOSE
 **Triggered by techniques:** cpu_io_port_bank, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io, directory_read_and_select
 
@@ -660,8 +664,8 @@ needs no zero-page scratch byte.
 
 - Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port)
   — the 6510 processor port data register; bits 0-2 control
-  LORAM/HIRAM/CHAREN. Resolvable via `c64_memory_map 0001`, not
-  `c64_register_lookup` (the KB has no Register node for the CPU port).
+  LORAM/HIRAM/CHAREN. Also the Register R6510 (`c64_lookup_register $01`);
+  an earlier version said the KB had no Register node for the port.
 - KERNAL routines: `SETLFS` ($FFBA), `OPEN` ($FFC0), `CLOSE` ($FFC3),
   `LOAD` ($FFD5), `SAVE` ($FFD8).
 - Pitfall: `kernal_assumes_sei_cleared` — the two pitfalls often occur
@@ -985,7 +989,7 @@ program wants raw PETSCII throughout.
 **Region:** both
 **Triggered by registers:** DD0D
 **Triggered by kernal:** RESTOR, VECTOR
-**Triggered by techniques:** nmi_handler_and_restore_key
+**Triggered by techniques:** nmi_handler_and_restore_key, nmi_sample_player
 
 ### Symptom
 
@@ -1453,168 +1457,888 @@ vic.intr_ctrl = 1; vic.intr_enable = 1;
 
 ---
 
-## first_open_after_reset_hangs_on_pal — The first file read after reset can hang for ever in the TALK turnaround on PAL under VICE autostart, and a frame wait only moves the phase
+## first_open_after_reset_hangs_on_pal — Reading a file whose OPEN failed can hang for ever: the drive answers the TALK with a 68-microsecond CLK pulse, and a badline can hide it
 
 **Severity:** high
 **Region:** PAL
 **Triggered by kernal:** OPEN, CHKIN
 **Triggered by techniques:** kernal_file_read_seq, kernal_file_write_seq, error_channel_check, kernal_load_to_address, directory_read_and_select
 
+The id says "first open after reset" because that is where it was
+found. The cause is not start-up: it is a read of a channel the drive
+does not have. An earlier version of this entry blamed a race at the
+TALK turnaround and could not say which side missed what; the drive
+trace below settles it.
+
 ### Symptom
 
-A program whose first act after its own set-up is to open a file on
-drive 8 and read it never returns from the read. The screen keeps
-whatever was drawn before the call; the drive line the program prints
-on return never appears; a frame counter kept by the main loop stays at
-zero. The KERNAL status byte `$90` is `$00`, so nothing is reported, and
-the CPU sits with the I flag set. Left for 30,000,000 cycles it is still
-there. The same binary on `-model ntsc` runs. A build that waits a
-different number of frames before the call runs, and so does the same
-build when the drive loaded it.
+A program opens a file on drive 8 that is not on the disk and reads it.
+The read never returns. The screen keeps whatever was drawn before the
+call; a frame counter kept by the main loop stays at zero. The KERNAL
+status byte `$90` is `$00`, so nothing is reported, and the CPU sits in
+the KERNAL with the I flag set. Left for 30,000,000 cycles it is still
+there.
 
-The hang is deterministic for a given binary, model and autostart delay:
-the build that hung did so in three runs out of three.
+Whether it hangs is fixed for a given binary, model and launch: a build
+that hung did so in three runs out of three. A build that waits one
+frame more or less before the call usually runs. On a fresh disk the
+first read of a high-score file is exactly this case, which is why it
+was seen at start-up.
 
 ### Mechanism
 
-What is measured (VICE x64sc 3.10 remote monitor, `break edd6`, first
-stop, the platformer scaffold built with `-dDISK_WAIT_FRAMES=10`, PAL):
+Measured in VICE x64sc 3.10 (PAL c64c, true drive emulation, default
+1541-II) with the monitor's CPU history (`chis` over `c:` and `8:`),
+which records both CPUs' instructions without stopping either. The
+history was read at a stop 7,000 cycles into the hang, after the events
+below. Three hanging builds of the platformer scaffold (10, 19 and 56
+frames of wait) showed the same sequence, rung 1:
 
-- The C64 is at `$EDD6` at cycle 4,885,925: the loop after TKSA that
-  waits for the drive to pull CLK low and become the talker. It has no
-  timeout and runs inside the `SEI` bracket that
-  `kernal_assumes_sei_cleared` above describes. `$90` is `$00`, `$BA` is
-  8, `$DD00` reads `$67`: ATN released, CLK released, DATA held low by
-  the C64 as listener.
-- The drive CPU is at `$E8E5`, and 27 C64 cycles later at `$E8F4`, drive
-  stopwatch 4,959,055 (the 1541 clock is 1.000 MHz to the PAL C64's
-  0.985 MHz, which accounts for the whole difference). `$7A` is 1
-  (talker active), `$79` is 0, `$7C` is 0 (no ATN pending), `$84` and
-  `$85` are `$62` (TALK, secondary address 2), `$1800` reads `$03` then
-  `$01`, the job queue `$00` to `$05` reads `00 00 01 0F 01 00` with
-  every job on track 18, `$22` is 18.
-- In the drive ROM (`dos1541-325302-01+901229-05.bin`, rung 1) `$E902`
-  to `$E907` is the wait for ATN release; `$E8D7` to `$E8E0` clears the
-  ATN acknowledge bit; `$E8E3` tests the listener flag and `$E8ED` the
-  talker flag; a talker goes through `$E99C` and `$E9AE` to `$E909`,
-  which is TALK, the routine that pulls CLK. So at the stop the drive
-  had already seen ATN go, knew it was the talker, and was a few dozen
-  cycles from pulling CLK.
+1. OPEN of `HISCORE,S,R` fails on the drive: `62, FILE NOT FOUND`. The
+   drive keeps no channel for the secondary address. The KERNAL does
+   not report this; OPEN returns success.
+2. The read's CHKIN sends TALK and TKSA (`$62`, secondary address 2).
+   The C64 releases ATN and CLK, holds DATA, and waits at `$EDD6` for
+   the drive to pull CLK low.
+3. The drive sees ATN go, finds it is the talker (`$7A` = 1), releases
+   DATA at `$E9A1` and pulls CLK low at `$E9B3`. TALK at `$E909` then
+   looks up the channel for secondary address 2 (`$D0EB`): `$022D`
+   reads `$FF`, no channel, so TALK returns at once and `$EA50` releases every line. The
+   drive goes back to its idle loop at `$EBE7`. CLK was low for 68
+   drive cycles, measured between the two stores in all three runs:
+   67 PAL C64 cycles.
+4. The C64's loop at `$EDD6` is `JSR $EEA9` (`LDA $DD00`, `CMP $DD00`,
+   `BNE`, `ASL`, `RTS`) and `BMI $EDD6`: 27 cycles a pass. It accepts
+   CLK low only when two reads 4 cycles apart both see it.
+5. In each hang a badline stopped the CPU for 43 cycles inside the
+   pulse, on raster lines 179, 195 and 155 (all lines with
+   `(line & 7) = 3`, the default `YSCROLL`). In the 10-frame run the
+   reads before the stall saw CLK high; after it, the `LDA` saw CLK low
+   and the `CMP` 4 cycles later saw it high, so the pair was refused;
+   every read after that saw CLK high. The 56-frame run was the same.
+   In the 19-frame run the `LDA` caught the start of the pulse and the
+   stall came before the `CMP`'s read, which saw CLK high.
+6. The drive is idle and will not pull CLK again. `$EDD6` has no
+   timeout. The C64 waits for ever.
 
-Unperturbed, the C64 never sees CLK go low in 30,000,000 cycles. Reading
-the drive's registers from the monitor at that stop lets the run through
-(two runs each way on `recipes/oscar64/high-score-persist.md`; this
-session's monitor run was cut after two stops, so its own outcome is not
-known). What is inferred from that: the drive state the monitor shows is
-not the state the drive holds in the unperturbed run. The monitor's read
-advances the drive in a different step from the emulator's own
-scheduling, and in that step the drive sees the release. The outcome
-turns on where the two CPUs stand relative to each other when the TALK
-byte goes out under ATN, which is why zero and five frames of wait ran,
-ten hung, twenty and fifty ran, a six-second autostart delay ran, and
-loading the program through the drive ran. A frame wait is a phase
-shift, not a settle time: the drive had been in its idle loop for about
-two seconds by the time of the OPEN in the earlier session's trace, and
-`-iecreset 1`, which resets the drive with the computer, changed
-nothing. Whether a real 1541 can be caught the same way, and which side
-of the emulator's bus model is at fault, are not measured here. The job
-return code `0F` in slot 3 of the queue was not chased.
+Why a badline is needed (rung 3, from the cycle counts above): the
+reads come every 27 cycles, so a 67-cycle pulse always holds a full
+pair unless something stops the CPU. A 40 to 43 cycle stall makes the
+gap between two pairs 67 to 70 cycles, and the pulse fits inside that
+gap when it starts in a window of about 4 to 7 cycles. That is why
+most frame counts run and a few hang.
+
+When the file exists, TALK finds the channel and holds CLK low until
+`$E9BC`, about 138 drive cycles by the ROM path (rung 3, the same count
+gives the 68 above). A single badline cannot hide that. Sprites on the
+badline stretch the stall; that case is
+`sprites_over_badlines_hang_serial_io` below.
+
+On NTSC the pulse is 70 C64 cycles, so the window shrinks to about 1 to
+4 cycles (rung 3). No NTSC run hung (below). Region stays PAL because
+that is what was seen; do not read it as "NTSC is safe".
+
+**What the frame wait did.** The wait moves the TALK's cycle against
+the raster. It does not settle anything on the drive. Earlier readings
+of this entry said the drive "stayed a listener" and that a monitor
+read of the drive "let the run through"; the history shows the drive
+did become the talker and let go 68 cycles later. A monitor stop moves
+the phase by a few cycles, enough to leave or enter the window.
+
+The ROM bytes are the same in both drive ROMs VICE ships
+(`dos1541-325302-01+901229-05.bin` and `dos1541ii-251968-03.bin`,
+`$D0EB`-`$D106`, `$E853`-`$EA55` and `$EBE7`-`$EBFF` compared with
+Python). The C64 side is ROM code and the badline stall is VIC-II
+behaviour, so nothing here depends on VICE; that a real C64 and 1541
+hang the same way is inferred, not measured.
 
 ### Fix
 
-No wait is safe by construction: the smallest wait that ran here was
-zero frames and the one that hung was ten. What held across every run:
+There is no safe frame wait. Across 0 to 250 frames of wait, the PAL
+build hung at 16 of 251 counts (10, 19, 22, 56, 113, 116, 143, 149,
+152, 159, 183, 226, 228, 234, 240, 241). Fifty ran; fifty-six hung.
 
-- Run the shipped binary on PAL under autostart with a fresh disk, once.
-  The hang is deterministic for that binary, so one run answers.
-- If it hangs, move the phase: a different frame count before the first
-  file call, or the call later in start-up. Every wait other than ten
-  ran here, and so did the ten-frame build with `-autostart-delay 6` and
-  when the drive loaded it. Test again after any change to the code that
-  runs before the call; a change of code size has moved it before.
-- Check `$90` (READST) and the error channel after the read rather than
-  assuming the read returns. Nothing the program does once it is inside
-  `$EDD6` gets it out: the loop has no timeout and the I flag is set, so
-  a raster or CIA IRQ watchdog cannot fire. An NMI could, but no such
-  watchdog was built or measured here.
+Two fixes, each measured at every wait from 0 to 60 frames on PAL and
+NTSC (122 runs each, none hung):
 
-The recipe's `DISK_WAIT_FRAMES 50` default ran in every run tried on two
-pages, and remains a phase that happens to work for that binary, not a
-settle time.
+- **Read the error channel before the file.** After the OPEN, open
+  channel 15 and read it. Read the file only if the reply is `00`. A
+  `62` means there is no channel to read, so the program never sends
+  that TALK. Channel 15 always exists, so its own TALK gets the long
+  pulse. Close channel 15 after the file, not before: closing the
+  command channel closes every file on the drive, and a read after it
+  got `READ 0 ST=42` from a file that was there
+  (`recipes/oscar64/high-score-persist.md`, one PAL run). An earlier
+  version of this fix and of the worked example closed 15 between the
+  reply and the read; the runs below that measured it used a fresh disk,
+  so they only took the `62` path, where no read follows.
+- **Or blank the screen for the read.** Clear `$D011` bit 4, wait one
+  frame (DEN is sampled on line `$30`, so the frame the bit is cleared
+  in still has badlines), read, set the bit again. With no badlines the
+  67-cycle pulse is always seen.
+
+In either case check `$90` and the error channel after the read.
+Nothing gets the program out once it is inside `$EDD6`: the I flag is
+set, so a raster or CIA IRQ watchdog cannot fire. An NMI can;
+`recipes/oscar64/sprites-off-during-disk-io.md` uses a CIA2 NMI
+watchdog for the other hang of this kind.
+
+The listings that read the file first (the platformer scaffold,
+`high-score-persist`, `save-load-seq-file`, and the action-puzzle,
+shmup-vertical and adventure starters) were changed to read channel 15
+first, with 15 closed last (#93).
 
 ### Worked example
 
-The platformer scaffold's listing
+The runs used the platformer scaffold's listing
 (`recipes/oscar64/platformer-scaffold.md`), built with
 `oscar64 -tm=c64 -O2 -dDISK_WAIT_FRAMES=N`, run in x64sc 3.10 `-default
 -warp +sound +autostart-delay-random -autostartprgmode 1` with a fresh
-`TEST,01` D64 on a true-drive 1541, wobble off, 10,000,000 cycles unless
-stated, one run per cell unless stated. "Ran" means the top row shows a
-frame count `F` and the bottom row `DRIVE: 62, FILE NOT FOUND,00,00`;
-"hung" means `F 00000` and no drive line. Cells decoded against
-`chargen-901225-01.bin`.
+`TEST,01` D64 on the default true drive, wobble off, 12,000,000 cycles
+(16,000,000 for 61 frames and up), one run per cell. "Ran" means the top
+row shows a frame count and the bottom row `DRIVE: 62, FILE NOT
+FOUND,00,00`; "hung" means `F 00000` and no drive line. Cells decoded
+against `chargen-901225-01.bin`.
 
-| Wait before the first OPEN | PAL, PRG injected | NTSC, PRG injected |
-|---|---|---|
-| 0 frames (6,457-byte PRG) | ran, F 264 | ran, F 293 |
-| 5 frames | ran, F 259 | ran, F 287 |
-| 10 frames | hung, three runs, one of them at 30,000,000 cycles | ran, F 283 |
-| 20 frames | ran, F 244 | ran, F 273 |
-| 50 frames | ran, F 215 | ran, F 243 |
+| Build | PAL, 0 to 60 frames | PAL, 61 to 250 frames | NTSC, 0 to 250 frames |
+|---|---|---|---|
+| listing as shipped (read, then error channel) | hung at 10, 19, 22, 56 | hung at 12 of 190 counts | none hung, 251 runs |
+| error channel first, file read only on `00` | none hung | not run | none hung, 0 to 60 |
+| the listing after #93: channel 15 opened after the file, read first, closed last; no wait knob, one put back for the sweep | none hung, fresh disk; none hung, disk with the file (the `00` path) | not run | none hung, 0 to 60, both disks |
+| `$D011` bit 4 cleared, one frame, read, bit set | none hung | not run | none hung, 0 to 60 |
 
-The 10-frame PAL build, one thing changed at a time, one run each:
+The 0, 5, 10, 20 and 50-frame cells agree with the earlier table this
+replaced: ran, ran, hung, ran, ran on PAL; all ran on NTSC.
+
+The 10-frame PAL build, one thing changed at a time, one run each
+(from the earlier session; each moves the phase):
 
 | Change | Outcome |
 |---|---|
 | `-iecreset 1` | hung |
+| `-drive8idle 0`, `1` or `2` (no idle trap, skip cycles, trap idle) | hung, all three (this session) |
+| `-drive8type 1541` in place of the default 1541-II | ran (this session) |
 | `-autostart-delay 6` (12,000,000 cycles) | ran, F 206 |
-| PRG written to the disk and the D64 autostarted, so the drive loaded it (40,000,000 cycles) | ran, F 800, drive line `01, FILES SCRATCHED` |
+| PRG written to the disk and loaded by the drive | ran, F 800 |
 
-Region PAL rests on the five NTSC runs above and the one on the recipe
-page; no NTSC run has hung, and nothing here says none can.
+More binaries that did not hang, each a different phase (from the
+earlier sessions; each answers for its own binary only):
+
+| Binary | First disk call | PAL | NTSC |
+|---|---|---|---|
+| `templates/adventure`, autopilot build (15,435 bytes) | OPEN 2,060,200 cycles after the program's first instruction (traced, `$F34A`) | ran | ran |
+| `templates/adventure`, `DISKTEST=2` build (15,161 bytes) | LOAD typed first after a cold start | ran | ran |
 
 ```text
-// BAD: the read is the first thing on the bus and its return is assumed
+// BAD: the file's absence is only read after the file has been read
 krnio_setnam("HISCORE,S,R");
-krnio_open(2, 8, 2);
-n = krnio_read(2, buf, 16);      // CHKIN -> TALK, TKSA, then $EDD6 for ever
-// measured: F 00000 and no drive line at 30,000,000 cycles, PAL, ten-frame build
-
-// BETTER: a phase that ran for this binary, tested on PAL once, and the
-// status checked after the read
-for (char i = 0; i < DISK_WAIT_FRAMES; i++) vic_waitFrame();
-krnio_setnam("HISCORE,S,R");
-if (krnio_open(2, 8, 2)) {
-    n = krnio_read(2, buf, 16);
-    st = krnio_status();         // $90: $40 EOF is the good case, $02 timeout
-}
+if (krnio_open(2, 8, 2))            // succeeds: OPEN does not see 62
+    n = krnio_read(2, buf, 16);     // TALK to a channel the drive freed
 krnio_close(2);
-// measured: ran at 0, 5, 20 and 50 frames; the wait does not make the read safe
+drive_reply("");                    // too late
+// measured: F 00000 at 12,000,000 cycles, PAL, 10, 19, 22 and 56-frame builds
+
+// GOOD: ask the drive first, read only on 00, close 15 last
+krnio_setnam("HISCORE,S,R");
+bool ok = krnio_open(2, 8, 2);      // the named OPEN is the device test
+bool cmd = drive_ask("");           // OPEN 15, read the status line, leave 15 open
+if (ok && drive_code == 0)
+    n = krnio_read(2, buf, 16);
+krnio_close(2);
+if (cmd) krnio_close(15);           // CLOSE 15 closes every file on the drive
+// measured: every wait 0 to 60 frames ran, PAL and NTSC, on a fresh disk
+// and on a disk holding the file
 ```
+
+`drive_reply` is the scaffold's own: it opens channel 15 with an empty
+name, reads one line with `krnio_gets` and closes it. It only runs after
+a named OPEN has shown a device answers (`recipes/oscar64/high-score-persist.md`
+explains why).
 
 ### Cross-references
 
 - `recipes/oscar64/high-score-persist.md`, "A start-up hang seen in
-  VICE, located but not explained": the first trace of the same spin,
-  with the byte timings of the OPEN and the directory search.
+  VICE": the first trace of the same spin, with the byte timings of
+  the OPEN and the directory search.
 - `recipes/oscar64/platformer-scaffold.md`, `DISK_WAIT_FRAMES`: the
-  workaround as shipped, and the listing the runs above were built from.
+  listing the runs above were built from.
 - `formats/iec-disk-reference.md`, "Drive-Not-Ready and Timeout Errors":
   the KERNAL's one timeout and the waits that have none.
+- Pitfall `badline_cycle_loss` (`pitfalls/raster-and-badline.md`): the
+  40 to 43 cycle stall.
+- Pitfall `sprites_over_badlines_hang_serial_io` below: the same kind of
+  miss inside a byte, where sprites lengthen the stall.
 - Pitfall `kernal_assumes_sei_cleared` above: the `SEI` bracket the spin
   sits in.
-- Pitfall `raster_irq_during_serial_io` above: the same loops, seen from
-  the raster IRQ's side.
 - Technique `error_channel_check` (`techniques/file-io.md`): the status
-  read the fix asks for after every file call.
+  read the fix moves ahead of the file read.
 
 ### Sources
 
-- Commodore 1541 DOS ROM 325302-01 + 901229-05 (`dos1541-325302-01+901229-05.bin`
-  as shipped with VICE), `$E8D7`-`$E90B`, disassembled for this entry,
+- Commodore 1541 DOS ROMs 325302-01 + 901229-05 and 251968-03 as
+  shipped with VICE, `$D0EB`-`$D106`, `$E853`-`$EA55`, `$EBE7`-`$EC2D`,
+  disassembled with da65 for this entry, rung 1.
+- Commodore 64 KERNAL ROM 901227-03, `$EDC7`-`$EDDC` and
+  `$EEA9`-`$EEB2`, rung 1.
+- VICE x64sc 3.10, 2026-09-24: CPU history of both CPUs in three
+  hanging PAL builds; 746 runs of the scaffold at waits 0 to 250 on PAL
+  and NTSC and of the two fixed builds at 0 to 60; the idle-method and
+  drive-type runs. Rung 1.
+- VICE x64sc 3.10, 2026-09-22: the first monitor session and the
+  `-iecreset`, `-autostart-delay` and load-from-disk runs. Rung 1.
+
+---
+
+## sprites_over_badlines_hang_serial_io — Sprites on the same lines as badlines during a KERNAL disk read make the C64 miss a clock pulse and wait for ever
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D015, D011
+**Triggered by kernal:** IECIN, CHRIN, CHKIN, OPEN, CLOSE
+**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, error_channel_check, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
+
+Measured in VICE x64sc 3.10 with true drive emulation, not on a real
+C64 and 1541 (rung 1, VICE only). VICE's default drive 8 is a 1541-II
+(`Drive8Type=1542`, `formats/iec-disk-reference.md`); an earlier
+version of this line said a 1541. `-drive8type 1541` gave the same
+thresholds (below).
+
+### Symptom
+
+A game saves its high-score file with its sprites on screen, and the
+save never returns. The screen keeps its last frame. Music, raster
+splits and anything else driven by an interrupt stop, because the C64
+is inside a KERNAL serial routine with the I flag set. `$90` is `$00`,
+so nothing is reported. The same save with the sprites off, or with the
+screen blanked, completes. With fewer sprites, or on the other video
+standard, it may complete, or hang a few saves later.
+
+### Mechanism
+
+**What was measured.** A test program (Oscar64, stock KERNAL, its IRQ
+running) enables N solid sprites at Y 100, drawn on raster lines 101 to
+121 over the badlines at 107 and 115. It then does 20 rounds of: scratch
+`TEST` on the command channel, write a 5-byte SEQ file, read the status
+line. Each round paints a cell on the bottom text row: white when it
+starts, green when the drive answered `00`. A hung round is the white
+cell left at the end of 150,000,000 cycles; a round took 5,000,000 to
+6,000,000. Run with `x64sc -default -warp +autostart-delay-random` and a
+fresh D64. PAL is the default c64c (8565 VIC-II, 8521 CIA); NTSC is
+`-model ntsc` (6567R8, 6526). Each cell had three runs, and the three
+always agreed to the round, so they are one sample, not three: as in
+`first_open_after_reset_hangs_on_pal` above, the outcome is fixed for a
+given binary, model and launch.
+
+| Sprites on | PAL c64c | NTSC 6567R8 |
+|---|---|---|
+| 0 | 20 of 20 | 20 of 20 |
+| 1 | 20 of 20 | 20 of 20 |
+| 2 | 20 of 20 | 20 of 20 |
+| 3 | hung in round 1 | 20 of 20 |
+| 4 | hung in round 9 | hung in round 1 |
+| 5 | hung in round 3 | hung in round 1 |
+| 6 | hung in round 1 | hung in round 4 |
+| 7 | hung in round 1 | hung in round 1 |
+| 8 | hung in round 1 | hung in round 4 |
+| 8 at Y 0: from line 1, no badline under them | 20 of 20 | 20 of 20 |
+| 8 at Y 250: from line 251, in the lower border | 20 of 20 | hung in round 1, a different hang (below) |
+| 8, screen blanked (`$D011` bit 4 off) | 20 of 20 | 20 of 20 |
+| 8, `$D015` = 0 around each disk call | 20 of 20 | 20 of 20 |
+
+Badlines fall on lines 48 to 247 (`$30` to `$F7`), so Y 0 and Y 250
+put no badline under the sprites (arithmetic from the measured start
+line). On `-model c64` (6569, 6526) the PAL column repeated for Y 0,
+Y 250, blanked and sprites-off.
+
+**The CIA model does not matter; the video standard does.** The 0 to 8
+sprite rows at Y 100 were run once more on six machines: PAL c64c
+(8521s), PAL c64c with `-cia1model 0 -cia2model 0` (6526s), `-model
+c64` (6569, 6526s), `-model c64 -cia1model 1 -cia2model 1`, NTSC
+(6526s) and NTSC with `-cia1model 1 -cia2model 1`. Every PAL machine
+gave the PAL column above to the round, and both NTSC machines the NTSC
+column. So neither CIA model nor the 8565-versus-6569 VIC-II changes
+the outcome; PAL hangs from 3 sprites, NTSC from 4. That the hang
+survives a new CIA1 on NTSC also separates it from
+`kernal_eoi_wait_misses_timer_b_on_old_cia` below, which a new CIA1
+removes. With `-drive8type 1541` in place of the default 1541-II, the
+thresholds were the same and the round moved: PAL 3 to 8 sprites hung in
+rounds 12, 6, 8, 2, 3 and 1; NTSC 4 to 8 in rounds 1, 1, 1, 2 and 1. The
+round depends on how the run starts: launched under the remote
+monitor without `+autostart-delay-random`, the 8-sprite PAL build hung
+in round 1 once and round 2 once, and the 3-sprite PAL build in round 8
+or later. Whether a build hangs did not change.
+
+The review of the shmup-vertical starter (#39) measured the game
+itself, with 11 multiplexed sprites: it hung on PAL in 1 of 3 runs (PC
+`$ED55`, in the send routine) and on NTSC in 3 of 3 (PC `$EE5A` to
+`$EE63`). With the sprites on and the screen blanked it passed 3 of 3 on
+each model. Those runs are the reviewer's and were not repeated here;
+the send-side hang at `$ED55` was not reproduced by the test program.
+
+**Where it stops.** Six hangs were stopped with the remote monitor: 8
+sprites on PAL and NTSC, 6 on PAL and NTSC, 4 on NTSC, 3 on PAL:
+
+- The C64 is in ACPTR, the KERNAL's receive routine (`$EE13`, reached
+  through IECIN `$FFA5`), in the bit loop at `$EE5A` to `$EE63`, which
+  waits for CLK to go high. The bit counter `$A5` is 1: the C64 has
+  counted seven bits and waits for the eighth. This held in all six.
+- The drive's `$1800` reads `$0C` in all six: it holds CLK low and
+  waits for the listener to pull DATA, the acknowledgement that the
+  byte arrived. In the five stops where the drive's stack was read, its
+  return address (`$E989` or `$E98C`) is inside the loop at `$E987` to
+  `$E98F` that runs after the eighth bit.
+
+So the drive sent eight bits and the C64 saw seven. Neither loop has a
+timeout, so both wait for ever.
+
+**The drive's pulse (rung 1 bytes, rung 3 arithmetic).** In the 1541
+ROM (`dos1541-325302-01+901229-05.bin`; the default 1541-II's
+`dos1541ii-251968-03.bin` has the same bytes in both ranges), the bit loop at `$E95C` puts a
+bit on DATA, releases CLK at `$E9B7` (the bit is valid), then runs
+`LDA $23`, `BNE`, `JSR $FEF3`, `JSR $FEFB`, and pulls CLK low again at
+`$E9AE`. `$FEF3` is a delay loop (`LDX #$05`, `DEX`, `BNE`); it runs
+when `$23` is 0, and `$23` read `$00` in the monitor. From the store
+that releases CLK to the store that pulls it, by instruction count, is
+75 drive cycles: 75 µs at the drive's 1 MHz, 74 PAL or 77 NTSC C64
+cycles. The low half of the bit is 114 to 116 µs by the same count.
+The period, 189 to 191 µs, agrees with the 188 to 199 µs measured on
+the bus for most bits in `formats/iec-disk-reference.md` (a trace, not
+this arithmetic).
+
+**The C64's sample (rung 1 bytes).** The loop at `$EE5A` is `LDA
+$DD00`, `CMP $DD00`, `BNE`, `ASL`, `BPL`: 15 cycles an iteration, and
+it accepts CLK only when two reads 4 cycles apart agree. It must land
+both reads inside the 74-cycle (PAL) window.
+
+**Why the sprites matter (inferred, not traced).** A badline alone
+stops the CPU for 40 to 43 cycles (`badline_cycle_loss`), which leaves
+about 30 cycles of the window. Each sprite on the line adds its own
+fetch cycles next to the badline's. When the stop covers nearly all of
+the window, the loop misses a whole high pulse. The measurements fit
+this: no hang without a badline under the sprites (Y 0, blanked), none
+without sprites, and a threshold in the number of sprites. Where each
+sprite's fetch cycles sit relative to the badline, and why the NTSC
+threshold is one sprite higher, were not traced here; the 6567R8's
+65-cycle line would give a longer gap, but that is not measured.
+
+**A different hang in the same runs.** 8 sprites at Y 250 hung on NTSC
+in round 1, in the other wait inside ACPTR: `$EE30` to `$EE3A`, where
+the C64 waits for the drive's CLK or for CIA1 timer B to signal EOI.
+Timer B was stopped (`$DC0F` = `$08`, one-shot, not running) at its
+latch value `$01FF`: it had run out, and the loop had not seen its
+flag. With `-cia1model 1` (a new CIA) the same build passed 20 of 20
+twice. It is not a sprite-and-badline hang: the sprite DMA put the
+loop's `$DC0D` read in the one cycle where VICE's old CIA loses the
+timer B flag. Measured and explained in
+`kernal_eoi_wait_misses_timer_b_on_old_cia` below (#69).
+
+### Fix
+
+- **Turn the sprites off around every disk call.** Write 0 to `$D015`
+  before the call and restore it after. Measured: 20 of 20 on both
+  models, and part A of `recipes/oscar64/sprites-off-during-disk-io.md`.
+- **Or blank the screen.** Clear `$D011` bit 4 before the call and set
+  it after; with no badlines there is nothing for the sprite fetches to
+  add to. Measured: 20 of 20 on both models with 8 sprites on.
+- **Stop the multiplexer too.** ACPTR ends with `CLI` at `$EE82`, and
+  the send routine with `CLI` at `$EDAB` (rung 1), so interrupts run
+  between bytes. A multiplexer IRQ that writes `$D015` there turns the
+  sprites back on before the next byte (rung 3, from the ROM, not
+  measured). Stop its raster interrupt as `raster_irq_during_serial_io`
+  above describes (clear `$D01A`), or make it write 0 while a flag is
+  set.
+- Do not rely on where the sprites are. Sprites at Y 0 ran here, but a
+  game's sprites move, and three over a badline were enough on PAL.
+
+### Worked example
+
+```c
+// BAD: the multiplexer's sprites stay on while the high score is saved
+krnio_setnam("HISCORE,S,W");
+if (krnio_open(2, 8, 2)) krnio_write(2, rec, sizeof(rec));
+krnio_close(2);
+// measured (test program, 8 sprites on lines 101-121): hangs in ACPTR
+// at $EE5A, $A5 = 1, PAL round 1 and NTSC round 4
+
+// GOOD: raster IRQ off, sprites off, save, then both back on
+vic.intr_enable = 0x00;              // $D01A: the multiplexer cannot run
+vic.spr_enable = 0x00;               // $D015: no sprite fetches
+krnio_setnam("HISCORE,S,W");
+if (krnio_open(2, 8, 2)) krnio_write(2, rec, sizeof(rec));
+krnio_close(2);
+vic.spr_enable = saved_enable;
+vic.intr_enable = 0x01;
+// measured with the $D015 line alone (test program, no multiplexer):
+// 20 of 20 saves on PAL and NTSC. The $D01A line is from the ROM (CLI
+// between bytes), not measured here.
+```
+
+`recipes/oscar64/sprites-off-during-disk-io.md` runs both halves in one
+program and reports `HUNG` from a CIA2 NMI watchdog, since no IRQ can
+fire inside the receive loop.
+
+### Cross-references
+
+- Recipe `oscar64/sprites-off-during-disk-io`: the reproduction and the
+  fix, pinned on PAL and NTSC.
+- Pitfall `raster_irq_during_serial_io` above: the `SEI` brackets and
+  the `$D01A` fix for the raster IRQ.
+- Pitfall `first_open_after_reset_hangs_on_pal` above: another wait
+  without a timeout, and why one run of a build is one sample.
+- Pitfall `badline_cycle_loss` (`pitfalls/raster-and-badline.md`): the
+  40 to 43 cycles.
+- `formats/iec-disk-reference.md`, "IEC bit timing, measured": the
+  bit period when the drive sends.
+- `recipes/oscar64/high-score-persist.md`: a save with no sprites on,
+  the path this pitfall adds sprites to.
+
+### Sources
+
+- Commodore 64 KERNAL ROM 901227-03, `$EE13` to `$EE84`, disassembled
+  in the VICE monitor for this entry, rung 1.
+- Commodore 1541 DOS ROM 325302-01 + 901229-05 as shipped with VICE,
+  `$E909` to `$E9C8` and `$FEF3` to `$FF00`, disassembled for this entry,
   rung 1.
-- Commodore 64 KERNAL ROM 901227-03, `$EDC7`-`$EDDC`, as disassembled for
-  `raster_irq_during_serial_io` above, rung 1.
-- VICE x64sc 3.10, twenty runs of the platformer scaffold at five wait
-  counts on PAL and NTSC and five variants of the ten-frame PAL build,
-  and one remote-monitor session with `break edd6`, 2026-09-22, rung 1.
+- VICE x64sc 3.10, 80 runs of the test program across the conditions in
+  the table and six remote-monitor stops, 2026-09-23 and 2026-09-24,
+  and 72 more for the CIA-model and drive-type rows (0 to 8 sprites on
+  eight machine setups, one run each), 2026-09-24, rung 1.
+- `dos1541ii-251968-03.bin`, the default drive's ROM: `$E909` to `$E9C8`
+  and `$FEF3` to `$FF00` are byte-identical to the 1541 ROM cited
+  above (compared with Python), so the pulse arithmetic holds for both.
+- The review of #39's shmup-vertical starter, point 4: the game runs
+  and the first minimal repro. Reported there, not repeated here.
+
+---
+
+## kernal_eoi_wait_misses_timer_b_on_old_cia — On an old 6526, sprite DMA can put the KERNAL's EOI poll in the one cycle where the timer B flag is lost, and the last byte of a read never arrives
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DC0D, DC06, D015
+**Triggered by kernal:** IECIN, CHRIN, GETIN, LOAD
+**Triggered by techniques:** kernal_file_read_seq, error_channel_check, kernal_load_to_address, directory_read_and_select, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
+
+Measured in VICE x64sc 3.10 with a true-drive 1541 and the old CIA
+model (`-cia1model 0`), not on a real 6526 (rung 1, VICE only).
+
+### Symptom
+
+A disk read with sprites on screen stops at the last byte of a file or
+of the drive's status line. The screen keeps its last frame and
+interrupts stop, because the C64 is inside ACPTR with the I flag set.
+`$90` is `$00`. It happens on a machine with the old 6526 CIA and not
+on one with a 6526A or 8521; in VICE, `-model c64` and `-model ntsc`
+have the old CIA, the default c64c the new one. The sprites need not be
+over a badline: sprites in the lower border are enough.
+
+### Mechanism
+
+**The wait (rung 1, ROM bytes).** After the drive signals it is ready to
+send, ACPTR releases DATA and starts CIA1 timer B one-shot (`$EE20` to
+`$EE27`: `$DC07` = `$01`, `$DC0F` = `$19`). It then polls at `$EE30`:
+`LDA $DC0D`, `AND #$02`, `BNE $EE3E`, `JSR $EEA9`, `BMI $EE30`. The loop
+leaves when CLK goes low (a normal byte) or when the timer B flag is
+set (EOI: the drive is holding back the last byte). The loop reads
+`$DC0D` once every 35 cycles, and a read clears the flag. On EOI the
+drive waits for the C64 to acknowledge by pulling DATA (`$E941` to
+`$E949` in the 1541 ROM, the loop the drive was in when stopped for
+#69). If the C64 never sees the flag, neither side moves.
+
+The KERNAL writes only the high byte of the latch. The low byte is
+whatever `$DC06` last held: `$FF` from reset, so the count is `$01FF`
+(read in the monitor during the #69 hang). The tape routines write
+`$DC06` (`$F93D`, `$FBB1`), and so does any program that uses timer B.
+
+**The lost flag (rung 1, probe).** The probe below copies `$EE20` to
+`$EE2D` instruction for instruction and polls `$DC0D` in a loop of the
+same 35 cycles, with the display blanked so no DMA stalls the CPU. It
+repeats with the latch at `$01E0 + j` for j = 0 to 35, which moves the
+underflow across every phase of the loop, and marks each trial green
+(flag seen) or red (no flag in 1,400 cycles). Screenshot cells measured
+with PIL, one run per model:
+
+| Model | Phases that lost the flag |
+|---|---|
+| `-model c64 -cia1model 0` (6569, 6526) | j = 3 only (latch `$01E3`) |
+| `-model ntsc -cia1model 0` (6567R8, 6526) | j = 3 only |
+| `-model c64c -cia1model 0` | j = 3 only |
+| each of the three with `-cia1model 1` (8521) | none of 36 |
+
+One read phase in 35 loses the flag, which is a one-cycle window. VICE's
+source gates a timer B bug on the old model: an ICR read in the cycle
+before a timer B underflow loses the flag (`cia_revision_irq_one_cycle_late`
+in `pitfalls/cia.md` cites it). The probe fits that rule. The stock
+latch `$01FF` is j = 31, which saw the flag on every model: with no
+stall, the stock KERNAL is safe.
+
+**What moves the phase (rung 1, trace).** The KERNAL runs this wait with
+the I flag set, so only VIC-II DMA can delay the loop's reads. A delay
+of `d` cycles between the timer start and the read near the underflow
+moves that read `d` cycles later. From the probe, the flag is lost when
+`d` is 28, 63, 98 or 133 cycles (28 plus a multiple of 35; arithmetic
+from j = 31 against j = 3).
+
+A test program (the #43 program, `recipes/oscar64/sprites-off-during-disk-io.md`
+with 8 sprites at Y 250 on lines 251 to 271, part B only, 20 rounds of
+scratch, 5-byte SEQ write and status read) hung in round 12 on
+`-model c64 -cia1model 0`, in 3 of 3 runs. A VICE trace of the third run
+(`tr exec ee27`, `tr exec ee30`, `tr exec ee3e`) shows 491 timer starts
+and 24 EOI waits:
+
+- In the hung wait, the timer started on line 264. The polls on lines
+  265 to 271 came 54 cycles apart instead of 35: 8 sprites cost 19
+  cycles a line, 133 cycles in all. The read near the underflow landed
+  516 cycles after the `STA $DC0F`, the one the probe predicts is lost
+  (its `$01E3` loss at 488 plus the 28-cycle latch difference). The
+  flag was never seen; the loop ran until the trace stopped.
+- None of the other 23 EOI waits had a read at 516. Each saw the flag
+  at its first read after 516, 523 to 574 cycles after the start; no
+  earlier read in them came later than 499.
+
+The same build passed 20 of 20 on `-model c64 -cia1model 1` and on the
+default c64c (one run each), and on `-model ntsc -cia1model 0` (two
+runs). The NTSC pass is phase, not safety: the #69 build, a slightly
+different binary, hung on NTSC in round 1 in 3 of 3 runs and passed
+with `-cia1model 1`.
+Which binary and model hang is a lottery set by where the sprites sit
+when each EOI wait starts.
+
+**Why badlines alone do not do it (rung 3).** A badline stops the CPU
+for 40 to 43 cycles (`badline_cycle_loss`). The wait is about 8 lines
+long, so it holds at most two badlines: 0, 40 to 43, or 80 to 86
+cycles, none of which is 28, 63 or 98. Sprite DMA can make other
+totals: 19 cycles a line for 8 sprites here. This holds for the stock
+latch `$01FF` only.
+
+**The same loop elsewhere (rung 3, not measured).** The send routine
+polls the same way at `$ED9F` with latch `$04FF`. There the timer only
+matters when the listener never acknowledges; a lost flag would turn
+the `$03` timeout into a hang. With a latch low byte other than `$FF`,
+the no-stall phase can itself be the lost one: `$E3` (measured, the
+probe's j = 3), and by the same arithmetic `$C0`, `$9D`, `$7A`, `$57`,
+`$34` and `$11`.
+
+Whether a real 6526 loses the flag this way is not measured here. VICE's
+model is the only source this page has for it.
+
+### Fix
+
+- **Turn the sprites off around every disk call.** Write 0 to `$D015`
+  before the call and restore it after, as for
+  `sprites_over_badlines_hang_serial_io` above. With no sprite DMA the
+  only stall is a badline, which cannot reach the lost phase with the
+  stock latch. Measured: the hanging build with this change passed 20
+  of 20 on `-model c64` and `-model ntsc`, both `-cia1model 0`, one run
+  each; so did the same with the screen blanked too.
+- **Put `$FF` back in `$DC06` before disk calls** if the program uses
+  CIA1 timer B. The KERNAL keeps whatever low byte it finds.
+- **Know which CIA you have.** `recipes/kickassembler/cia-revision-detect.md`
+  tells the old 6526 from the others at start-up. In VICE's new-CIA
+  model this wait is safe with sprites on; the sprite-and-badline hang
+  above is not.
+- A CIA2 NMI watchdog, as in the sprites-off recipe, turns the silent
+  hang into a message. It does not recover the transfer.
+
+### Worked example
+
+The probe. It prints 36 cells on the top row: green where the flag was
+seen, red where it was lost. `$C000 + j` holds the colour, `$C040 + j`
+the loop counter left at exit.
+
+```asm
+// Timer B flag loss probe: the KERNAL ACPTR EOI wait ($EE20-$EE3A),
+// same start sequence and same 35-cycle $DC0D read period, with
+// timer B latch $01E0+j for j = 0..35 and a bounded loop.
+BasicUpstart2(start)
+.const N = 36
+* = $0810
+start:
+        jsr $e544               // clear screen
+        sei
+        lda #$7f
+        sta $dc0d
+        sta $dd0d
+        lda $dc0d
+        lda #0
+        sta $d015
+        lda $d011
+        and #$ef
+        sta $d011               // blank: no badlines
+        ldx #3                  // wait three frames so DEN=0 takes hold
+!w:     lda $d012
+        bne !w-
+!w2:    lda $d012
+        beq !w2-
+        dex
+        bne !w-
+        ldy #0
+trial:  tya
+        clc
+        adc #$e0
+        sta $dc06               // latch low
+        ldx #40                 // loop bound, set before the copy
+        // --- the KERNAL's $EE20-$EE2D, instruction for instruction ---
+        lda #$01
+        sta $dc07
+        lda #$19
+        sta $dc0f
+        jsr $ee97
+        lda $dc0d
+        // --- 35-cycle loop, $DC0D read at its start as at $EE30 ---
+loop:   lda $dc0d               // 4
+        and #$02                // 2
+        bne seen                // 2
+        dex                     // 2
+        beq lost                // 2
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop                     // 20
+        jmp loop                // 3  = 35
+seen:   lda #5                  // green
+        .byte $2c
+lost:   lda #2                  // red
+        sta $d800,y
+        sta $c000,y
+        txa
+        sta $c040,y
+        lda #160
+        sta $0400,y
+        iny
+        cpy #N
+        bne trial
+        lda $d011
+        ora #$10
+        sta $d011
+        lda #0
+        sta $d020
+forever: jmp forever
+```
+
+Run with `x64sc -default -warp +sound -autostartprgmode 1 -limitcycles
+6000000 -model c64 -cia1model 0`: cell 3 is red, the other 35 green.
+With `-cia1model 1` all 36 are green.
+
+In a game, the fix is the same line as for the badline hang:
+
+```c
+// BAD: sprites stay on in the lower border while the status is read
+krnio_gets(15, reply, sizeof(reply));
+// measured (-model c64 -cia1model 0, 8 sprites on lines 251-271):
+// hung at an EOI on channel 15 in round 12, polling $EE30 for ever
+
+// GOOD
+vic.spr_enable = 0x00;              // $D015: no sprite DMA
+krnio_gets(15, reply, sizeof(reply));
+vic.spr_enable = saved_enable;
+// measured: 20 of 20 rounds, -model c64 and -model ntsc, old CIA
+```
+
+### Cross-references
+
+- Pitfall `sprites_over_badlines_hang_serial_io` above: the other hang
+  in the same receive routine, and the same fix. That page's "A
+  different hang in the same runs" is this one.
+- Pitfall `cia_revision_irq_one_cycle_late` (`pitfalls/cia.md`): the
+  two CIA models in VICE and the source that gates the timer B bug.
+- Recipe `kickassembler/cia-revision-detect`: telling the old 6526 apart.
+- `hardware/kernal-routines-reference.md`, "CIA1 timer B": which KERNAL
+  routines start the timer.
+- `formats/iec-disk-reference.md`, "EOI (End Or Identify)": the
+  handshake the lost flag breaks.
+
+### Sources
+
+- Commodore 64 KERNAL ROM 901227-03, `$ED92` to `$EDAC` and `$EE13` to
+  `$EEB2`, disassembled with da65 for this entry, rung 1.
+- VICE x64sc 3.10, the probe above on six model settings, and the
+  test program and its two fixed builds in 14 runs, one of them
+  traced, 2026-09-24, rung 1.
+- Issue #69: the NTSC hang, the monitor stop at `$EE30`-`$EE3A`, the
+  timer B state (`$01FF`, `$DC0F` = `$08`) and the drive's return
+  address `$E943`. Reported there, not repeated here.
+
+---
+
+## page_table_assumes_consecutive_sectors — A program that computes a file block's position as first sector plus n reads sectors that are not in the file
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** story_file_virtual_memory_paging, drive_code_upload_and_job_queue
+
+### Symptom
+
+Random access to a file by track and sector returns garbage for every
+block but the first. The first block is right, so the directory lookup
+looks correct.
+
+### Mechanism
+
+The 1541's DOS does not put a file's blocks on consecutive sectors. It
+leaves a gap between one block and the next; the usual account is that
+this gives the drive time to hand a block over before the next one
+passes under the head (not measured here). In the measurement below the
+file started on track 17, beside the directory on track 18. The only
+record of where block `n` is lies in block `n - 1`'s first two bytes. Computing `(t0,
+s0 + n)` reads whatever that sector holds: another file, or a sector
+the disk has never written.
+
+Measured in VICE x64sc 3.10 with 1541 emulation, both models, with the
+recipe below: a 24-block SEQ file written to a freshly formatted disk
+started at 17/00 and went on 17/10, 17/20, 17/08, 17/18. The guess
+`17/01` for block 1 read a sector whose 254 data bytes all differed from
+block 1's, and the guess was wrong for all 23 blocks after the first.
+
+### Fix
+
+Build the table from the chain: read each block once, in order, and
+record where the next one is. A program that owns its disk layout can
+instead write its data with its own sector order (drive code, or `U2`
+block writes of sectors it has allocated) and then compute positions,
+because it chose them.
+
+### Worked example
+
+```c
+// BAD: block n assumed to follow block 0 on the same track
+t = t0;
+s = s0 + n;
+
+// GOOD: the chain, walked once when the file is opened
+for (n = 0, t = t0, s = s0; t != 0; n++) {
+    pt_t[n] = t; pt_s[n] = s;
+    read_block(t, s, blk);          // U1 5 0 t s, 256 bytes
+    t = blk[0]; s = blk[1];
+}
+```
+
+```text
+chain on a fresh disk   17/00 17/10 17/20 17/08 17/18 ...
+guess for block 1       17/01: 254 of 254 data bytes wrong
+```
+
+### Cross-references
+
+- Technique `story_file_virtual_memory_paging` (`docs/techniques/file-io.md`): the page table and the cache
+- Recipe `docs/recipes/oscar64/story-paging.md`: the chain and the refuted guess
+- Technique `drive_code_upload_and_job_queue` (`docs/techniques/file-io.md`): reading sectors by track and sector from drive code, where the same table is needed
+
+---
+
+## n0_after_failed_partition_select_formats_disk — On a 1581, a partition select that fails leaves the root selected, and the N0: meant for the partition formats the whole disk
+
+**Severity:** critical
+**Region:** both
+**Triggered by kernal:** CHKOUT, CHROUT
+**Triggered by techniques:** d81_partition_subdirectory
+**Mitigated by techniques:** error_channel_check
+
+Measured in VICE x64sc 3.10 with true drive emulation of a 1581 (DOS
+`318045-02`), on a D81 from `c1541 -format "PARTS,81" d81`; not on a
+real 1581 (rung 1, VICE only).
+
+### Symptom
+
+A program that makes a partition, selects it and formats it as a
+sub-directory finds afterwards that every file on the disk is gone. The
+directory header now carries the name and ID given to the partition's
+`N0:`, and the partition entry itself has vanished.
+
+### Mechanism
+
+The allocation `/0:NAME,<t><s><lo><hi>,C` does not check the four
+sub-directory rules; the select `/0:NAME` does. A 20-block partition at
+25/0 allocated with `00, OK,00,00` and the select answered
+`77,SELECTED PARTITION ILLEGAL,00,00`. The select changes nothing on a
+refusal, so the root stays the working area, and `N0:SUB,S1` then
+answered `00` and wrote a fresh header, BAM and directory on track 40:
+the root header at 40/0 read `SUB`/`S1`, the `SMALL` entry was gone,
+and the root directory held only the `HELLO` file the program wrote
+next, at 39/0, which it then also found from the root (`MATCH=10`
+twice). The 1581 User's Guide says the same in section 6.8: "Make sure
+that you have successfully selected this partition area before
+formatting. If not, the wrong directory area will be reformatted."
+
+### Fix
+
+Read channel 15 after the select and send `N0:` only if the status
+begins `02` (`02, SELECTED PARTITION,<first>,<last>`). The recipe keeps
+the first two characters of every status line and branches on them:
+
+```asm
+    lda code                  // the status line's first two digits
+    cmp #'0'
+    bne refuse
+    lda code+1
+    cmp #'2'
+    bne refuse                // not selected: no N0:
+```
+
+With the check, the same 20-block partition printed `NOT SELECTED: NO
+N0` and the disk kept its root header and the `SMALL` entry (measured).
+
+### Cross-references
+
+- `techniques/file-io.md`, `d81_partition_subdirectory`, and
+  `error_channel_check` for reading the status line.
+- `recipes/kickassembler/d81-partition.md`: the check, the pinned run
+  and the three variants.
+
+---
+
+## exact_254_multiple_file_leaves_block_allocated — A 1541 file whose length is an exact multiple of 254 bytes leaves one more block marked used in the BAM than its chain holds
+
+**Severity:** low
+**Region:** both
+**Triggered by kernal:** CHROUT, CLOSE
+**Triggered by techniques:** kernal_file_write_seq, disk_copy_block_commands
+
+Measured in VICE x64sc 3.10 with true drive emulation of a 1541-II (DOS
+ROM `251968-03`), on a D64 from `c1541 -format`; not on a real drive
+(rung 1, VICE only).
+
+### Symptom
+
+After writing SEQ files, the disk shows fewer blocks free than the
+directory's block counts account for: one block fewer for each file
+whose length is a multiple of 254. A tool that lists used blocks from
+the BAM finds blocks no file reaches.
+
+### Mechanism
+
+The disk-copier recipe writes `FILE1`, 2,540 bytes (10 × 254), and
+`FILE2`, 1,778 bytes (7 × 254), with OPEN, CHROUT and CLOSE. The
+directory gives them 10 and 7 blocks and their chains end on link bytes
+`00 FF` (254 data bytes in the last block). The BAM entry for track 17
+read `02 00 02 08`: 19 sectors used, while the two chains use 17
+(0–8, 10, 11, 13, 14, 15, 16, 18, 20). Sectors 12 and 17, the next
+sectors of each chain at the drive's interleave of 10, are allocated
+and in no chain. The same program writing 2,530 and 1,771 bytes left
+the BAM with the 17 chain sectors only. So the DOS allocates the next
+block when a block fills, and CLOSE with nothing more to write does not
+give it back (an inference from the two measured BAMs; the DOS code
+that does it was not traced).
+
+### Fix
+
+None is needed for the data, which is intact. To get the blocks back,
+validate the disk: `V0` sent on channel 15 answered `00, OK,00,00`
+and the BAM then listed 19 used blocks, 17/12 and 17/17 free again
+(measured, a build of the recipe with the command after the files are
+written). `c1541 -validate` on the host image freed the same two. A
+program that fills a disk to the last block, or that checks a disk by
+comparing the BAM with the chains, must allow for one such block per
+file.
+
+### Cross-references
+
+- `techniques/file-io.md`, `kernal_file_write_seq` and
+  `disk_copy_block_commands`.
+- `recipes/kickassembler/disk-copier.md`: the images decoded.

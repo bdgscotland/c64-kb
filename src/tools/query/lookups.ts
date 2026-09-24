@@ -4,13 +4,21 @@
  */
 
 import { z } from "zod";
-import { getFalkor, getAnalytics } from "../../context.ts";
+import { getFalkor, getAnalytics, getQdrant } from "../../context.ts";
 import type {
   KernalLookupOutput,
   MemoryMapOutput,
   RegisterLookupOutput,
 } from "../../schemas/tool-outputs.ts";
-import { names, parseRows, renderDocBlocks, searchChunks, toDocChunk } from "./shared.ts";
+import {
+  names,
+  parseRows,
+  registerKey,
+  renderDocBlocks,
+  searchChunks,
+  toDocChunk,
+  type Chunk,
+} from "./shared.ts";
 import type { KernalLookupResult, MemoryMapResult, RegisterLookupResult } from "./types.ts";
 
 function hexToInt(addr: string): number {
@@ -80,7 +88,7 @@ function decimalIoToHex(cleaned: string): string | null {
 }
 
 export async function lookupRegister(nameOrAddr: string): Promise<RegisterLookupResult> {
-  const cleaned = nameOrAddr.trim().toUpperCase().replace(/^\$/, "");
+  const cleaned = registerKey(nameOrAddr);
 
   // Guard: single-letter mnemonic queries match the entire register table and
   // produce useless noise. Return early with a helpful hint.
@@ -129,14 +137,51 @@ export async function lookupRegister(nameOrAddr: string): Promise<RegisterLookup
   return describeRegister(reg);
 }
 
+/** How many chunks a register lookup prints. */
+const REGISTER_DOC_LIMIT = 3;
+/** How many chunks naming the address the own-section scan reads; the hardware pages hold one per register. */
+const OWN_SECTION_SCAN = 256;
+
+/**
+ * The register's own reference section: a chunk whose deepest heading
+ * starts with its address, as the hardware pages write it ("$DC01 — DC01 —
+ * Data Port B (RW)"). The keyword index finds the chunks that contain both
+ * the address and the name (the address alone when the heading carries a
+ * different name); the heading test keeps the entry itself.
+ */
+async function ownSections(reg: z.infer<typeof RegisterRow>): Promise<Chunk[]> {
+  const q = await getQdrant();
+  const addr = reg.addr.toUpperCase();
+  const bare = addr.replace(/^\$/, "");
+  const isOwn = (c: Chunk) => (c.section.split(" > ").at(-1) ?? "").toUpperCase().startsWith(`${addr} `);
+  for (const words of [`${bare} ${reg.name}`, bare]) {
+    const own = (await q.searchByText(words, OWN_SECTION_SCAN)).filter(isOwn);
+    if (own.length > 0) return own;
+  }
+  return [];
+}
+
+/**
+ * The register's own section first, then the hybrid search's best chunks.
+ * The search alone ranked a recipe's mention above the reference entry:
+ * `lookup-register DC01` printed three unrelated sections and not Data
+ * Port B, and `DC00` led with raster-bars.md (#41).
+ */
+async function registerDocumentation(reg: z.infer<typeof RegisterRow>, aliases: string[]): Promise<Chunk[]> {
+  const own = await ownSections(reg);
+  // Include all alias forms so both dense and sparse vectors have
+  // multiple shots at the right chunk.
+  const queryStr = [reg.name, reg.addr, ...aliases].filter(Boolean).join(" ");
+  const { chunks: ranked } = await searchChunks({ query: queryStr, limit: REGISTER_DOC_LIMIT });
+  const key = (c: Chunk) => `${c.source}\u0000${c.section}\u0000${c.text}`;
+  const seen = new Set(own.map(key));
+  return [...own, ...ranked.filter((c) => !seen.has(key(c)))].slice(0, REGISTER_DOC_LIMIT);
+}
+
 async function describeRegister(reg: z.infer<typeof RegisterRow>): Promise<RegisterLookupResult> {
   const aliases = reg.aliases ?? [];
   const chip = reg.chip ?? "unknown";
-
-  // Pull richer context from Qdrant. Include all alias forms so both
-  // dense and sparse vectors have multiple shots at the right chunk.
-  const queryStr = [reg.name, reg.addr, ...aliases].filter(Boolean).join(" ");
-  const { chunks: ctx } = await searchChunks({ query: queryStr, limit: 3 });
+  const ctx = await registerDocumentation(reg, aliases);
 
   const structured: RegisterLookupOutput = {
     found: true,

@@ -11,6 +11,8 @@ import { config } from "../../config.ts";
 import type { RecipeLookupOutput, RecipesForOutput } from "../../schemas/tool-outputs.ts";
 import { effectiveChips } from "../../graph/machine-variants.ts";
 import { describeFilter, names, parseRows, searchChunks, suggestNames, toDocChunk } from "./shared.ts";
+import { claimsOf, renderClaims } from "./techniques.ts";
+import { devicesOf, renderDevices } from "./devices.ts";
 import type { RecipeLookupResult, RecipesForResult } from "./types.ts";
 
 const VerifiedOnRow = z.object({
@@ -63,6 +65,9 @@ const RecipeRow = z.object({
   region: z.string(),
   source_doc: z.string(),
   toolchain_version_verified: z.string().nullable(),
+  claims_stated: z.string().nullish(),
+  claims_basis: z.string().nullish(),
+  devices_stated: z.string().nullish(),
 });
 
 interface SourceListing {
@@ -100,7 +105,9 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
        OPTIONAL MATCH (r)-[:REQUIRES_TOOL]->(tool:Tool)
        RETURN r.toolchain AS toolchain, r.output_format AS output_format,
               r.region AS region, r.source_doc AS source_doc,
-              tool.version_verified AS toolchain_version_verified`,
+              tool.version_verified AS toolchain_version_verified,
+              r.claims_stated AS claims_stated, r.claims_basis AS claims_basis,
+              r.devices_stated AS devices_stated`,
       { name },
     ),
   ).at(0);
@@ -126,6 +133,8 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
   // prose (2026-09-22).
   const source_code = readRecipeListing(source_doc);
   const verified_on = await verifiedOnOf(name);
+  const claims = await claimsOf({ label: "Recipe", name }, row);
+  const devices = await devicesOf(name, row.devices_stated);
 
   const structured: RecipeLookupOutput = {
     name,
@@ -137,6 +146,8 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
     documentation,
     ...(source_code ? { source_code } : {}),
     verified_on,
+    ...claims,
+    ...devices,
   };
 
   let out = `# Recipe: ${name}\n\n`;
@@ -145,6 +156,9 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
   out += `**Region:** ${region}\n`;
   out += `**Source:** \`${source_doc}\`\n`;
   out += `${verifiedOnText(verified_on)}\n`;
+  out += renderClaims(claims, "the page has no claims: key; only its techniques' claims are known");
+  out += renderDevices(devices);
+  out += `\n`;
   for (const d of documentation) {
     out += `## ${d.section}\n${d.text}\n\n---\n\n`;
   }

@@ -16,12 +16,14 @@ This page is a procedure catalogue, not a program: finding a
 PRG's entry point, disassembling with `da65` (cc65 V2.18) driven by an info
 file, walking the KERNAL's interrupt paths, the ROM tables every
 disassembly meets, the byte census, the VICE x64sc 3.10 monitor run in
-batch, and this repo's two trace tools (`re-irq-chain`, `re-frame-profile`).
+batch, this repo's two trace tools (`re-irq-chain`, `re-frame-profile`),
+and finding a `.sid` file's init and play routines.
 
 Every command block below was run on the reference machine, and its output
 is quoted from that run ("…" marks a cut). The inputs are the VICE ROM
 images and this repo's own recipe PRG
-[kickassembler/irq-chain](../recipes/kickassembler/irq-chain.md). Nothing
+[kickassembler/irq-chain](../recipes/kickassembler/irq-chain.md), plus a
+`.sid` file whose listing is on this page. Nothing
 here is taken from a commercial program: per
 [reference-game-sources](../game-design/reference-game-sources.md), a
 commercial disassembly supplies facts, never listings.
@@ -51,6 +53,7 @@ if the recipe changes. Build it with
 | Watch a running program | x64sc `-moncommands file.mon -monlog -monlogname out.log` |
 | Raster IRQ chain of a PRG | `node src/cli.ts re-irq-chain prog.prg` |
 | Cycles between two stores | `node src/cli.ts re-frame-profile prog.prg --start 'store:$D020=$02' --stop 'store:$D020=$05'` |
+| Init and play of a `.sid` | header bytes $0A-$0D, big-endian; confirm with `vsid` and `trace exec` (below) |
 
 ## Finding the entry from the BASIC stub
 
@@ -478,6 +481,276 @@ $ node src/cli.ts re-frame-profile $TMP/irq-chain.prg --start 'store:$D020=$02' 
 From slot 0's border store to slot 1's: typically 5711 cycles. The monitor
 trace agrees: 2996058 − 2990347 = 5711, and so does the raster position,
 91 lines × 63 + (30 − 52) = 5711 (rung 3 from the rung-1 trace).
+
+## A `.sid` file: init and play
+
+A PSID file names its two entry points in the header: init at $0A-$0B
+and play at $0C-$0D, both big-endian. The header layout is in
+[c64-file-formats](../formats/c64-file-formats.md), section ".SID". Read
+the header, disassemble the body from the load address, then run the file
+and watch both addresses execute. Everything below was run on the reference
+machine.
+
+### The file and its provenance
+
+The `.sid` is this repo's own: the listing below assembles the whole file,
+header and player, with KickAssembler 5.25. It is BSD-3-Clause, like the
+repository; the header's "released" field says so. No HVSC file was used:
+per [reference-game-sources](../game-design/reference-game-sources.md),
+the collection is for research and its files may not be committed.
+
+The player plays a C major scale on voice 1, one note every 12 play calls.
+It uses the entry layout the tools must see through: a `JMP` to each
+routine at $1000 and $1003. The frequency words are PAL,
+f × 2^24 / 985248 (rung 3). An earlier version of this page had no `.sid`
+example; issue #64 asked for one.
+
+```kickassembler
+// tune.asm: a one-voice PSID v2 file, header and player, written whole.
+.encoding "ascii"
+.file [name="tune.sid", type="bin", segments="Sid"]
+.segment Sid [start=$0f82]             // $1000 - $7c header - 2 load bytes
+        .text "PSID"
+        .byte $00, $02                 // version 2 (big-endian)
+        .byte $00, $7c                 // data offset
+        .byte $00, $00                 // load address 0: first two data bytes
+        .byte >entry_init, <entry_init // init (big-endian)
+        .byte >entry_play, <entry_play // play (big-endian)
+        .byte $00, $01                 // songs
+        .byte $00, $01                 // start song
+        .byte $00, $00, $00, $00       // speed: every song on the VBI
+        .text "c64-kb scale"
+        .fill 32 - "c64-kb scale".size(), 0
+        .text "c64-kb"
+        .fill 32 - "c64-kb".size(), 0
+        .text "2026 c64-kb, BSD-3-Clause"
+        .fill 32 - "2026 c64-kb, BSD-3-Clause".size(), 0
+        .byte $00, $14                 // flags: PAL, 6581
+        .byte $00, $00, $00, $00       // start page, page length, 2nd/3rd SID
+        .word $1000                    // load address, little-endian
+// $1000
+entry_init: jmp init
+entry_play: jmp play
+
+init:   ldx #$18
+        lda #0
+clear:  sta $d400,x
+        dex
+        bpl clear
+        sta step
+        lda #1
+        sta wait
+        lda #$09
+        sta $d405                      // voice 1 attack 0, decay 9
+        lda #$00
+        sta $d406                      // sustain 0, release 0
+        lda #$0f
+        sta $d418                      // volume 15
+        rts
+
+play:   dec wait
+        bne done
+        lda #12
+        sta wait                       // a note every 12 calls
+        ldx step
+        lda freq_lo,x
+        sta $d400
+        lda freq_hi,x
+        sta $d401
+        lda #$10
+        sta $d404                      // triangle, gate off
+        lda #$11
+        sta $d404                      // triangle, gate on
+        inx
+        cpx #8
+        bne keep
+        ldx #0
+keep:   stx step
+done:   rts
+
+// C major scale from C-4, PAL frequency words (clock 985248 Hz)
+freq_lo: .byte $67, $89, $ed, $3b, $13, $45, $da, $ce
+freq_hi: .byte $11, $13, $15, $17, $1a, $1d, $20, $22
+step:   .byte 0
+wait:   .byte 0
+```
+
+`java -jar KickAss.jar tune.asm` writes `tune.sid`, 230 bytes:
+
+```text
+$ shasum tune.sid
+6bcedeb314cd01ec6e67e42393a689a8dde7217f  tune.sid
+```
+
+`.text` needs `.encoding "ascii"` first. KickAssembler's default encoding
+is screen codes: "PSID" happens to come out as ASCII ($50 $53 $49 $44),
+but "c64-kb" comes out as $03 $36 $34 $2D $0B $02, so the name fields
+would be wrong (both assembled here).
+
+### Step 1: read the header
+
+```text
+$ xxd -l 22 tune.sid
+00000000: 5053 4944 0002 007c 0000 1000 1003 0001  PSID...|........
+00000010: 0001 0000 0000                           ......
+$ xxd -s 0x76 -l 8 tune.sid
+00000076: 0014 0000 0000 0010                      ........
+```
+
+Version 2; data at $7C; load address $0000, so the load address is the
+first two data bytes, `00 10` = $1000, little-endian; init $1000; play
+$1003; one song, start song 1; speed 0 (the VBI); flags $0014 (PAL, 6581).
+An init of $0000 would mean "the load address". A play of $0000 means init
+installs its own interrupt handler; then the play routine is the handler
+init writes to $0314/$0315 or $FFFE/$FFFF, found with `trace store 0314
+0315` as in "The VICE monitor in batch" above. That
+case is not run here.
+
+The same fields from a script:
+
+```text
+$ python3 sidhdr.py tune.sid
+PSID v2 data at $7C, body at file offset $7E
+load $1000-$1067 init $1000 play $1003
+songs 1 start 1 speed $00000000 flags $0014
+name c64-kb scale
+```
+
+```text
+# sidhdr.py
+import struct, sys
+b = open(sys.argv[1], 'rb').read()
+magic = b[0:4].decode()
+ver, off, load, init, play, songs, start = struct.unpack('>HHHHHHH', b[4:18])
+speed, = struct.unpack('>I', b[18:22])
+if load == 0:                        # load address is the first two data bytes, little-endian
+    load = b[off] | b[off + 1] << 8
+    body = off + 2
+else:
+    body = off
+end = load + len(b) - body - 1
+print(f"{magic} v{ver} data at ${off:02X}, body at file offset ${body:02X}")
+print(f"load ${load:04X}-${end:04X} init ${init or load:04X} play ${play:04X}")
+print(f"songs {songs} start {start} speed ${speed:08X} flags ${struct.unpack('>H', b[0x76:0x78])[0]:04X}")
+print("name", b[0x16:0x36].rstrip(b'\0').decode('latin-1'))
+```
+
+### Step 2: disassemble the body
+
+`INPUTOFFS` skips the header and the two load-address bytes ($7C + 2 =
+$7E). The two labels come from the header. The table range comes from the
+operands of `lda $1056,x` and `lda $105E,x` in a first run without it,
+which decoded the tables as `sbc $133B`, `eor $DA` and the like.
+
+```text
+$ cat tune.info
+GLOBAL { STARTADDR $1000; INPUTOFFS $7E; };            # $7C header + 2 load-address bytes
+LABEL  { NAME "sid_init"; ADDR $1000; };               # header $0A-$0B
+LABEL  { NAME "sid_play"; ADDR $1003; };               # header $0C-$0D
+RANGE  { START $1056; END $1067; TYPE ByteTable; };   # operands of lda $1056,x / lda $105E,x, and two variables
+
+$ da65 --info tune.info tune.sid
+…
+sid_init:
+        jmp     L1006
+
+sid_play:
+        jmp     L1028
+
+L1006:  ldx     #$18
+        lda     #$00
+L100A:  sta     $D400,x
+        dex
+        bpl     L100A
+…
+        lda     #$0F
+        sta     $D418
+        rts
+
+L1028:  dec     L1067
+        bne     L1055
+…
+        lda     #$11
+        sta     $D404
+…
+L1056:  .byte   $67,$89,$ED,$3B,$13,$45,$DA,$CE
+L105E:  .byte   $11,$13,$15,$17,$1A,$1D,$20,$22
+L1066:  .byte   $00
+L1067:  .byte   $00
+```
+
+The header addresses are a jump table here, so the routines themselves
+are the `JMP` targets, $1006 and $1028. Init clears the 25 SID registers
+and sets the volume; play counts down and writes voice 1.
+
+### Step 3: run it and watch both addresses
+
+`vsid` is VICE's SID player. The windowless build
+(`scripts/build-vice-headless.sh`) makes it beside x64sc, in the build
+directory's `src/vsid`; like x64sc it needs `-directory` after `-default`,
+pointing at a VICE data directory (here Homebrew's `share/vice`).
+
+```text
+$ vsid -default -directory /opt/homebrew/opt/vice/share/vice -console -warp +sound \
+    -limitcycles 1000000 -moncommands sid.mon -monlog -monlogname sid.log tune.sid < /dev/null
+…
+Vsid: PSID free pages: $1100-$9fff
+Vsid: Driver=$1100, Image=$1000-$1067, Init=$1000, Play=$1003
+Vsid:    Title: c64-kb scale
+Vsid:   Author: c64-kb
+Vsid: Released: 2026 c64-kb, BSD-3-Clause
+Vsid: Using PAL sync
+Vsid: SID model: 6581
+Vsid: Using VICII interrupt
+Vsid: Playing tune 1 out of 1 (default=1)
+
+$ cat sid.mon
+break exec 1000
+command 1 "r ; del 1"
+trace exec 1003
+trace store d404
+```
+
+The log, cut:
+
+```text
+#1 (Stop on  exec 1000)    9/$009,   1/$01
+.C:1000  4C 06 10    JMP $1006      - A:00 X:00 Y:00 SP:fd ..-..IZ.        568
+Executing: r ; del 1
+  ADDR A  X  Y  SP 00 01 NV-BDIZC LIN CYC  STOPWATCH
+.;1000 00 00 00 fd 2f 37 00100110 009 001        568
+#3 (Trace store d404)   12/$00c,  24/$18
+.C:100a  9D 00 D4    STA $D400,X    - A:00 X:04 Y:00 SP:fd ..-..I..        780
+#2 (Trace  exec 1003)    0/$000,  62/$3e
+.C:1003  4C 28 10    JMP $1028      - A:37 X:F9 Y:00 SP:f7 ..-..I..      19718
+#3 (Trace store d404)    1/$001,  42/$2a
+.C:1043  8D 04 D4    STA $D404      - A:10 X:00 Y:00 SP:f7 ..-..I..      19761
+#3 (Trace store d404)    1/$001,  48/$30
+.C:1048  8D 04 D4    STA $D404      - A:11 X:00 Y:00 SP:f7 ..-..I..      19767
+#2 (Trace  exec 1003)    1/$001,   0/$00
+.C:1003  4C 28 10    JMP $1028      - A:37 X:F9 Y:00 SP:f7 ..-..I..      39375
+…
+#3 (Trace store d404)    1/$001,  48/$30
+.C:1048  8D 04 D4    STA $D404      - A:11 X:01 Y:00 SP:f7 ..-..I..     255639
+```
+
+What the run shows (rung 1, VICE x64sc 3.10's vsid, PAL):
+
+| Observation | Value |
+|---|---|
+| Init called | once (a `trace exec 1000` run fired once), at clock 568, with A = $00 for song 1 and `$01` = $37 |
+| Play calls in 1,000,000 cycles | 50, first at clock 19718 |
+| Interval between play calls | 19654 or 19657 cycles; mean 19656.02 = 312 × 63, one PAL frame |
+| Interval between gate-on stores | 235872 cycles every time = 12 × 19656 |
+| Who calls play | vsid's driver at $1100: `$0314` → $1211, `STA $01` with $37, `JSR $11F6`, `JMP ($111B)` → $1003 |
+
+The song number arrives as song − 1: song 1 gives A = $00. The last row
+came from a second command file, `break exec 1003` with
+`command 1 "chis 12 ; d 1100 1120 ; m 0314 0315 ; del 1"`; `m 0314`
+printed `11 12`. The driver takes the page after the image ("free pages
+$1100-$9fff"), so a player that uses RAM past its own end can collide with
+it; the header's start page and page length fields ($78, $79) exist to
+tell a player which pages are free.
 
 ## Packers and loader stubs
 

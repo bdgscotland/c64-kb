@@ -33,7 +33,10 @@
 //
 // meter_print writes "F00144 W01234 T01100" (20 cells) at the row and column
 // given; the character set in use must hold 0-9, F, W and T at their screen
-// codes. check.py reads it back.
+// codes. check.py reads it back. It renders a field only when its value
+// changed (F is stepped in place) into a 20-byte copy, then writes the cells
+// of the screen that differ from that copy: a few hundred cycles a frame once
+// the figures stop changing, and a cleared row comes back on the next print.
 //
 // Timer choice: CIA2 timer A. The KERNAL IRQ uses CIA1 timer A and the KERNAL
 // serial (disk) routines write CIA1 timer B (issue #35), so neither collides.
@@ -55,6 +58,15 @@
 #ifndef FRAME_METER
 #define FRAME_METER AUTOPILOT
 #endif
+// make watchtest's two builds define one of these (harness.mk SILENT_DEFINE,
+// OVERRUN_DEFINE): NO_PLAYER leaves the music and effects player uncalled,
+// OVERRUN makes a frame's work end past DEADLINE_LINE.
+#ifndef NO_PLAYER
+#define NO_PLAYER 0
+#endif
+#ifndef OVERRUN
+#define OVERRUN 0
+#endif
 
 extern unsigned meter_last, meter_worst, meter_typical, meter_frames, meter_zero;
 
@@ -65,14 +77,23 @@ void meter_frame(void);
 void meter_stop(unsigned raw);
 void meter_print(void);
 
+// WORK_BEGIN and WORK_END mark where the frame's work starts and ends, for
+// the harness's DEADLINE_LINE check (watch.py): a store of 1, then of 0, to
+// $02FE, which a VICE store trace reads with its raster line and clock. They
+// are not the meter's brackets: put WORK_END after everything that must be
+// done before the line, bookkeeping included.
 #if FRAME_METER
 #define METER_START (cia2.cra = 0x11)          // force-load $FFFF, start, count phi2
 #define METER_PAUSE meter_add(meter_read())    // add this bracket to the frame's sum
 #define METER_STOP  meter_stop(meter_read())   // add it, then record the frame
+#define WORK_BEGIN  (*(volatile char *)0x02fe = 1)
+#define WORK_END    (*(volatile char *)0x02fe = 0)
 #else
 #define METER_START
 #define METER_PAUSE
 #define METER_STOP
+#define WORK_BEGIN
+#define WORK_END
 #endif
 
 #pragma compile("frame_meter.c")

@@ -79,6 +79,11 @@ handler (e.g. to drive a player routine). The VECTOR jump-table entry
 (`$FF8D`) reads or writes all of them in one call. See [Vectors](#vectors)
 below.
 
+The section [Tape routines inside the ROM](#tape-routines-inside-the-rom)
+is the one exception to the jump-table rule on this page: it lists the
+cassette routines that LOAD and SAVE call, at their ROM addresses, under
+Commodore's own source labels. They have no jump-table entry.
+
 ### KERNAL ROM revisions
 
 Three production KERNAL ROMs shipped in the C64's lifetime, identified
@@ -189,6 +194,30 @@ No jump-table routine but RAMTAS, and neither service, may write $02-$8F, $B2-$B
 
 The walk covers the KERNAL, not BASIC, which uses much of `$02-$8F`.
 
+### CIA1 timer B
+
+The serial routines time each byte's handshake with CIA1 timer B, in
+one-shot mode. The sender writes `$DC07` and `$DC0F` at `$ED94`/`$ED99`,
+the receiver at `$EE22`/`$EE27` (ROM bytes `8D 07 DC`, `8D 0F DC`). A
+walk of the 901227-03 image from each jump-table slot (the walker in
+`scripts/lib/kernal-walk.ts`) reaches the sender from LISTEN, TALK,
+SECOND, TKSA, IECIN, IECOUT, UNTLK, UNLSN, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN,
+CHRIN, CHROUT, GETIN, CLALL, STOP, LOAD and SAVE, and the receiver from
+IECIN, CHRIN, GETIN and LOAD. The tape code writes timer B too
+(`$F93D-$F945`, `$FBB1-$FBBC`), and IOINIT stops it (`$FDB6`).
+
+Measured with `scripts/claims-watch.ts` in VICE x64sc: the KickAssembler
+file round trip (`recipes/kickassembler/file-io-roundtrip.md`) made 314
+ROM stores to timer B; `recipes/oscar64/load-asset-runtime.md`, a SAVE
+and a LOAD of 2,050 bytes, made 8,438. A program that uses timer B
+itself (a second tick, a timed NMI) must reload it after every disk
+call. The KERNAL leaves bit 1 of the `$DC0D` mask clear. A program that
+sets it would also take an interrupt from each one-shot the KERNAL
+starts (from the CIA's behaviour, not measured here). A program that
+writes `$DC06` also changes the KERNAL's count, since the KERNAL writes
+only `$DC07`; on VICE's old 6526 model that can hang the receive wait
+(`kernal_eoi_wait_misses_timer_b_on_old_cia` in `pitfalls/kernal-and-io.md`).
+
 ### Sources
 
 - *Commodore 64 Programmer's Reference Guide* (1982), Appendix B — KERNAL ROM machine language subroutines
@@ -197,6 +226,7 @@ The walk covers the KERNAL, not BASIC, which uses much of `$02-$8F`.
 - sta.c64.org: CBM 64 KERNAL routines — https://sta.c64.org/cbm64krnfunc.html
 - pagetable.com: annotated C64 KERNAL disassembly — https://www.pagetable.com/c64ref/c64disasm/
 - Mapping the Commodore 64 (Sheldon Leemon), KERNAL section — https://www.zimmers.net/anonftp/pub/cbm/c64/manuals/mapping-c64.txt
+- Commodore's KERNAL source for 901227-03 (copyright CBM 1983; labels and comments cited, no code copied), files `tapefile`, `tapecontrol`, `read`, `write` and `declare` — https://github.com/mist64/cbmsrc/tree/master/KERNAL_C64_03
 
 ## Quick reference
 
@@ -1080,7 +1110,10 @@ byte to mark it as a command.
 **Description:** Clocks one byte off the IEC bus from the currently
 talking device. On the last byte of a transfer (EOI), the talker
 waits before sending the first bit; if CLK stays unchanged for about
-256 µs (CIA1 timer B, `$DC07` = `$01`), the KERNAL sets status bit 6
+520 cycles (CIA1 timer B, `$DC07` = `$01` over a low byte left at
+`$FF`, count `$01FF`; the flag was first seen 523 to 574 cycles after
+the start in a VICE trace; an earlier version said 256 µs, which is the
+high byte alone), the KERNAL sets status bit 6
 (`$40`), pulses DATA low to acknowledge, and then reads the eight bits
 (ROM `$EE20-$EE55`). (An earlier version said the signal comes before
 the eighth bit.)
@@ -1224,6 +1257,285 @@ and Plus/4 by replacing all `LDA $DC00` constants with
 set from IOBASE. (An earlier version wrote `LDY (…),Y`, which is not a
 6502 addressing mode.) Almost no C64 software used IOBASE;
 tutorials and listings hard-code the I/O addresses.
+
+## Tape routines inside the ROM
+
+LOAD, SAVE and OPEN reach the Datasette through the routines below. None
+has a jump-table entry: each H3 gives the routine's ROM address and the
+label it carries in Commodore's own KERNAL source (Sources). They are for
+reading a trace, patching a copy of the ROM, or calling one routine the
+way the ROM does; a program that calls them depends on the 901227 ROM
+family and nothing else.
+
+**How the addresses were settled (rung 1).** A script took the first
+four to ten instructions after each label in the source files
+`tapefile`, `tapecontrol`, `read` and `write` and searched a linear
+disassembly of the KERNAL for that mnemonic sequence, immediate operands
+included. Every label below matched exactly one address, the same one in
+901227-01, -02 and -03. Leemon's *Mapping the Commodore 64* gives the
+same addresses without labels, except the write interrupt: it lists
+`$FBC8`, which is `WRTL3`; the vector the ROM's own table installs is
+`$FBCD`.
+
+**The interrupt table.** The tape routines run from the IRQ. `BSIV`
+copies one of four vectors from the ROM table at `$FD9B` into `$0314`,
+chosen by X: 8 gives `$FC6A` (`WRTZ`, write leader), 10 gives `$FBCD`
+(`WRTN`, write data), 12 gives `$EA31` (the normal service), 14 gives
+`$F92C` (`READ`). Read from the ROM bytes. `TAPE` saves the caller's
+vector in `$029F`/`$02A0` first, and its caller waits in a loop at
+`$F8BE` until `$0315` equals `$02A0` again: the tape operation is over
+when the vector is back.
+
+**What a LOAD and a SAVE call, traced (rung 1).** VICE x64sc 3.10, PAL
+and NTSC, `trace exec` on every entry below, tape speed error and wobble
+off. The LOAD read a KERNAL-format TAP of a 19-byte program written by
+the script in `../toolchains/tape-mastering.md`, typed as `LOAD` with no
+name; the SAVE wrote a one-line BASIC program as `SAVE "S"` to a TAP with
+RECORD pressed, and a second run loaded that TAP back and listed
+`10 PRINT 1` on both models. Cycles are VICE's CPU clock from power-on.
+The LOAD run, as made (add `-model ntsc` for NTSC; the SAVE run presses
+RECORD with `tapectrl 4` on a TAP that already holds 1,000 pulses,
+because VICE refused to attach a TAP of none or one):
+
+```text
+load.mon:  logname "load.mlog" / log on / tapectrl 1 /
+           one "trace exec <address>" line per H3 below
+x64sc -default -warp +sound +autostart-delay-random -limitcycles 36000000 \
+  +dsresetwithcpu -dstapewobbleamp 0 -dstapewobblefreq 0 -dsspeedtuning 0 \
+  -dstapeerror 0 -1 t.tap -moncommands load.mon -keybuf 'load\nrun\n'
+```
+
+The monitor's `logname` file is the complete trace; the same lines on
+stdout lost their tail when x64sc exited.
+
+| Step | LOAD, PAL | LOAD, NTSC | Entry sequence |
+|---|---|---|---|
+| LOAD entered (`$F49E`) | 2,153,098 | 2,144,521 | `ZZZ`, `CSTE1`, `FAH` |
+| header block: `TRD` to `TNIF` | 2,156,879 to 16,144,917 | 2,148,259 to 16,135,514 | `FAH` → `RBLK` → `LDAD1` → `TRD` → `CSTE1` → `TAPE` → `BSIV` (X = 14) |
+| pause after `FOUND` | 12,500,191 cycles | 12,975,050 cycles | none |
+| data block: `TRD` to `TNIF` | 28,645,108 to 31,506,595 | 29,110,564 to 31,972,055 | `TRD` → `CSTE1` → `TAPE` → `BSIV` (X = 14) |
+
+| Step | SAVE, PAL | SAVE, NTSC | Entry sequence |
+|---|---|---|---|
+| SAVE entered (`$F5DD`) | 2,188,634 | 2,164,488 | `ZZZ`, `CSTE2`, `TAPEH` |
+| header block: `TAPE` to `STKY` | 2,194,488 to 16,664,623 | 2,170,126 to 16,737,110 | `TAPEH` → `LDAD1` → `CSTE2` → `TAPE` |
+| data block: `TAPE` to `STKY` | 16,665,131 to 19,468,845 | 16,737,688 to 19,559,616 | `TWRT` → `CSTE2` → `TAPE` |
+
+The pause after `FOUND` is 12.69 s at either clock (985,248 and
+1,022,727 Hz), so it is timed in seconds, not cycles; `FAH` reads the
+jiffy clock (`TIME+1`) at `FAH56` before it returns. Within each SAVE
+block `BSIV` ran with X = 8, 10, 8, 10, 8, 10 on both models: leader,
+first copy, the sync run between copies, second copy, `TNOF` (motor
+off), the trailer, then `STKY`. Per-call counts over the whole LOAD, PAL
+(NTSC within 12): `READ` 43,500, `TSTOP` 73,352, `STT1` 5,112,
+`RADJ` 468, `NEWCH` 470, `CMPSTE` 637, `INCSAL` 633.
+
+### $F72C — FAH — Find any tape header
+
+**Output:** C clear on success, X = the header's file type; C set on failure, with A = 0 when STOP was pressed (Commodore source comment)
+**Description:** Reads blocks with `RBLK` until one is a header of type
+1 (the source's "BASIC load file"), 3 ("fixed program type") or 4
+("BASIC data file header"); type 5, end of tape, fails. It prints `FOUND` and the 16-byte
+name when messages are on (bit 7 of `$9D`), then pauses. In 901227-02
+and -03 it calls a patch at `$E4E0` that loops until the jiffy clock's
+middle byte `$A1` reaches a target set from its value on entry, or until
+`$91` is not `$FF`: a key down in the keyboard row that holds RUN/STOP,
+SPACE, Q, 1, 2, CTRL, C= and ← (`cia-reference.md`, keyboard matrix). In
+-01 the same bytes are a loop on `$91` alone, with no timeout. That is
+the rule that ends the pause after `FOUND` (read from the ROM bytes; how
+the measured 12.69 s arises from it was not worked out here). The
+saved `VERCK` (`$93`) is restored around the read. LOAD calls it when no
+name was given; `FAF` calls it otherwise.
+
+### $F76A — TAPEH — Write a tape header block
+
+**Input:** A = header type (stored in `$9E`)
+**Output:** C clear when written; C set if the tape buffer was de-allocated
+**Description:** Fills the 192-byte buffer with spaces, then writes the
+type, start address, end address and file name into it, points the I/O
+pointers at the buffer with `LDAD1`, and writes the block (it continues
+into `TWRT`'s path, so `CSTE2` follows it in a trace). Called from SAVE
+(`$F677`, `$F689`), OPEN (`$F3BF`) and CLOSE (`$F2E8`).
+
+### $F7D0 — ZZZ — Get the tape buffer address
+
+**Output:** X/Y = the buffer address from `$B2`/`$B3`; C clear if the buffer is de-allocated (high byte below 2)
+**Description:** Three instructions. Every tape routine that touches the
+buffer calls it first.
+
+### $F7D7 — LDAD1 — Point the I/O pointers at the tape buffer
+
+**Description:** Sets the start pointer `$C1`/`$C2` to the buffer and
+the end pointer `$AE`/`$AF` to the buffer plus 192, so the next block
+read or written is the buffer itself (a header).
+
+### $F7EA — FAF — Find a tape file by name
+
+**Output:** C clear when a header's name matches; C set on failure
+**Description:** Calls `FAH` and compares the header's name, from offset
+5, with the file name at `($BB)` for its length `$B7`; on a mismatch it
+reads the next header. Called from LOAD (`$F54D`) and OPEN (`$F3A5`).
+
+### $F80D — JTP20 — Advance the tape buffer index
+
+**Output:** Y = the new index `$A6`; Z set when it reaches 192
+**Description:** Called from CHRIN's body (`JSR` at `$F199`) and
+CHROUT's (`$F1E5`): the byte-at-a-time path of a tape file opened with
+OPEN. Not reached by a LOAD or a SAVE (no hit in the traces above).
+
+### $F817 — CSTE1 — Wait for PLAY
+
+**Description:** Returns at once if a button is down. Otherwise prints
+`PRESS PLAY ON TAPE`, polls the sense line and the STOP key until a
+button is down, and prints `OK`. The message is not governed by
+SETMSG's direct-mode test (Leemon).
+
+### $F82E — CS10 — Read the cassette sense line
+
+**Output:** Z set when a button is down (bit 4 of `$01` low)
+**Description:** Reads `$01` twice with `BIT` to debounce. Z is the
+answer; C is always clear.
+
+### $F838 — CSTE2 — Wait for PLAY and RECORD
+
+**Description:** As `CSTE1` with the `PRESS RECORD & PLAY ON TAPE`
+message (the ROM's text at `$F0EB`). It reads the same sense line as
+`CSTE1`, which does not tell RECORD from PLAY, so PLAY alone satisfies
+it (from the code; not tried here).
+
+### $F841 — RBLK — Read the header block
+
+**Description:** Clears the status byte `$90` and `VERCK`, points the
+I/O pointers at the tape buffer with `LDAD1`, and falls into `TRD`.
+Called from `FAH` and from CHRIN (`$F19E`) for a tape file's next block.
+
+### $F84A — TRD — Read a block
+
+**Description:** Waits for PLAY with `CSTE1`, clears the read state,
+and enters `TAPE` with A = `$90` (CIA 1 FLAG interrupt on) and X = 14
+(vector `READ`). LOAD calls it directly (`$F5A5`) for the data block,
+after the header has set the pointers.
+
+### $F864 — WBLK — Write the header block
+
+**Description:** `LDAD1`, then `TWRT`: writes the 192-byte buffer as a
+block. Called from CHROUT (`$F1EA`) when a tape file's buffer is full
+and from CLOSE (`$F2D7`); not reached by the traced SAVE.
+
+### $F867 — TWRT — Write a block
+
+**Description:** Sets the between-block short count (`$AB` = 20), waits
+for PLAY and RECORD, and enters `TAPE` with A = `$82` (CIA 1 timer B
+interrupt) and X = 8 (vector `WRTZ`). SAVE calls it (`$F67C`) for the
+data block.
+
+### $F875 — TAPE — Start a tape block and wait for it
+
+**Input:** A = the CIA 1 interrupt mask to enable; X = the vector index for `BSIV`
+**Description:** Masks every CIA 1 interrupt (`$7F` to `$DC0D`) and
+enables the one in A, sets up timer B, blanks the screen (bit 4 of
+`$D011`), saves `$0314`/`$0315` in `$029F`/`$02A0`, installs the tape
+vector with `BSIV`, starts the motor (bit 5 of `$01` low), counts 255 ×
+255 `DEY` turns at `$F8B5` while the motor runs up, then loops at `$F8BE`
+calling `TSTOP` and `$F6BC` until the vector is restored. `$F6BC` is the
+STOP-key half of UDTIM (label `UD60`), not the clock half, so the jiffy
+clock stands still while a block is read or written; the TAP-mastering
+page measured that.
+
+### $F8D0 — TSTOP — Stop the tape on RUN/STOP
+
+**Description:** Calls STOP; on a press, calls `TNIF`, drops the
+caller's return address and returns with C set.
+
+### $F8E2 — STT1 — Arm the read timeout for the next pulse
+
+**Input:** X = the timeout constant
+**Description:** Called from the read interrupt. Scales X by the
+software servo `CMP0` and loads CIA 1 timer A with a timeout relative to
+timer B, so that a missing pulse raises an interrupt.
+
+### $F92C — READ — Tape read interrupt
+
+**Description:** The IRQ vector while reading. Each entry measures the
+time since the last FLAG edge from CIA 1 timer B, classifies the pulse,
+and builds bits and bytes; `RADJ` stores each finished byte. One entry
+per pulse (43,500 in the traced LOAD).
+
+### $FA60 — RADJ — Store a received byte
+
+**Description:** The part of the read interrupt that takes a finished
+byte: re-arms `STT1`, then runs the byte handler, which stores the byte
+(LOAD) or compares it (VERIFY) and advances the pointer with `INCSAL`.
+On the first copy it records the address of each byte read in error at
+the bottom of the stack page, up to 61; on the second copy it replaces
+only those bytes (Commodore source comments). One entry per byte.
+
+### $FB8E — RD300 — Reset the block pointer to the start
+
+**Description:** Copies the start address `$C1`/`$C2` into the
+running pointer `$AC`/`$AD`. Called at the start of each copy of a
+block, read or written.
+
+### $FB97 — NEWCH — Reset the per-byte counters
+
+**Output:** A = 0
+**Description:** Bit counter `$A3` = 8, and the pulse, error, parity
+and zero counters cleared.
+
+### $FBA6 — WRITE — Write one pulse
+
+**Description:** Loads CIA 1 timer B with the length of the next pulse
+(`$60` or `$B0` in the low byte, chosen by bit 0 of `$BD`) and toggles
+the write line, bit 3 of `$01`.
+
+### $FBCD — WRTN — Tape write interrupt, data
+
+**Description:** The IRQ vector while writing the bytes of a block
+(`BSIV` X = 10). Each copy starts with nine countdown bytes, `$89` down
+to `$81` on the first copy and `$09` to `$01` on the second, then the
+data, each byte as pulse pairs with a parity bit, then the XOR checksum
+(Commodore source). At the end of a copy it hands over to `WRTZ` for the
+sync run or the trailer.
+
+### $FC6A — WRTZ — Tape write interrupt, leader and gaps
+
+**Description:** The IRQ vector while writing the leader, the sync run
+between the two copies and the trailer (`BSIV` X = 8). When the block
+count reaches zero it ends the operation through `STKY`.
+
+### $FC93 — TNIF — Restore the system after a tape block
+
+**Description:** Turns the screen on, stops the motor with `TNOF`,
+masks CIA 1's interrupts, restores the 60 Hz timer A interrupt and puts
+`$029F`/`$02A0` back into `$0314`/`$0315`. That store is what releases
+the wait loop in `TAPE`.
+
+### $FCB8 — STKY — End of a written block
+
+**Description:** `JSR TNIF`, then returns from the interrupt. Reached
+once at the end of each SAVE block in the traces.
+
+### $FCBD — BSIV — Install a tape interrupt vector
+
+**Input:** X = 8, 10, 12 or 14 (see the interrupt table above)
+**Description:** Two loads from `$FD93,X` and two stores to `$0314`/`$0315`.
+The two stores are not atomic; every call in the traces ran with the I
+flag set, so no interrupt could fall between them.
+
+### $FCCA — TNOF — Stop the cassette motor
+
+**Description:** Sets bit 5 of `$01`.
+
+### $FCD1 — CMPSTE — Compare the block pointer with its end
+
+**Output:** C set when `$AC`/`$AD` has reached `$AE`/`$AF`
+**Description:** A 16-bit subtract that keeps only the carry.
+
+### $FCDB — INCSAL — Advance the block pointer
+
+**Description:** 16-bit increment of `$AC`/`$AD`. The same four
+instructions sit at `$E41B` in the BASIC-side part of the ROM, so a
+signature search finds both; this is the one the tape code calls.
 
 ## Pairs and contracts
 

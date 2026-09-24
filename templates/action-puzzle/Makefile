@@ -10,7 +10,7 @@
 #   make gen        re-run tools/gen.py (caves, script, model, note table)
 #   make disktest   the high-score save on a true-drive 1541: save, save over it, cold start, load
 #   make modelcheck every visible cave cell of the shots against tools/gen.py's model
-#   make joy        the normal game reading its port byte from $02FE, for tools/drive.py
+#   make drive      the normal game played headless: make drive STEPS='"until:FIRE TO START" tap:fire print'
 #   make clean
 NAME   := action-puzzle
 C_MAIN := src/main.c
@@ -34,12 +34,23 @@ SHOT_DISK := 1
 # kernalio.h and the KERNAL IRQ, which runs during those calls only.
 # vic_raster_irq: wait_frame sets the compare line and acknowledges the
 # $D019 latch to count dropped frames; the interrupt itself stays disabled.
-CLAIMS_ARGS := --cycles 24000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ --claim 'sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, cia1_port_a, cia1_timer_b, vic_raster_irq, zero_page $$02-$$55' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$2000-$$27FF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
+# vic_char_base: render_init points $D018 at the charset at $2000.
+CLAIMS_ARGS := --cycles 24000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ --claim 'sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, cia1_port_a, cia1_timer_b, vic_raster_irq, vic_char_base, zero_page $$02-$$55' --range 'screen=$$0400-$$07FF,colour=$$D800-$$DBFF,charset=$$2000-$$27FF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod'
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := disktest modelcheck selftest-scan
+VERIFY_TARGETS := disktest modelcheck selftest-scan drivetest
+
+# make drivetest: the normal build (no autopilot) played through harness/drive.py
+# with the stick on $DC00: fire on the title starts cave 1, and holding right
+# digs to a gem.
+DRIVE_STEPS := "until:FIRE TO START" tap:fire "until:LIVES" hold:right "until:GEMS 01/06" print
+
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 636 frames on PAL and 703 on NTSC; without music_play and
+# sfx_update (NO_PLAYER) 19 and 18 (harness/watch.py, VICE x64sc 3.10).
+SID_FRAMES := 300
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -90,14 +101,6 @@ disktest: $(D64) $(PRG_AUTO)
 	$(C1541) -attach $(DISKTEST_D64) -list > build/disktest-dir.txt 2>/dev/null
 	$(call disk_run,disk-load,60000000,$(DISKTEST_D64),)
 	$(PYTHON) tools/disk_check.py $(HARNESS_DIR) build $(DISK_MODEL)
-
-# The normal game with its port byte read from $02FE instead of $DC00, so a
-# VICE monitor can drive it headless (tools/drive.py; README "Driving it headless").
-.PHONY: joy
-joy: build/$(NAME)-joy.prg
-build/$(NAME)-joy.prg: $(C_DEPS) $(METER_DEPS) | plan-gate
-	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
 
 # The scanned bit's self-test: the autopilot built with SCAN_FLAG=0 (the
 # cave-scan recipe's double-move bug) must fail check.py and name E in its

@@ -27,6 +27,15 @@ describe("techniqueLookup", () => {
       cost: { cycles_per_frame: 160, lines_active: 2, irq_slots: 2 },
       cost_basis: "arithmetic",
     });
+    await f.addTechnique({
+      name: "raster_bars",
+      title: "Raster bars",
+      category: "raster",
+      complexity: "low",
+      cost: { cycles_per_frame: 1471, bytes_code: 577, bytes_data: 33 },
+      cost_basis: "measured-vice",
+      cost_bytes_basis: "derived-listing",
+    });
     await f.linkTechniqueRequires("text_zoom", "stable_raster_irq");
     await f.addPitfall({
       name: "raster_irq_first_line_jitter",
@@ -54,6 +63,20 @@ describe("techniqueLookup", () => {
     expect(without.structured.cost).toBeUndefined();
   });
 
+  it("returns a Cost bytes basis apart from the Cost basis when the page states one (#72)", async () => {
+    const r = await techniqueLookup("raster_bars");
+    expect(r.structured.cost).toEqual({
+      cycles_per_frame: 1471,
+      bytes_code: 577,
+      bytes_data: 33,
+      basis: "measured-vice",
+      bytes_basis: "derived-listing",
+    });
+    expect(r.text).toContain("**Cost basis:** measured-vice\n**Cost bytes basis:** derived-listing\n");
+    const one = await techniqueLookup("double_irq");
+    expect(one.text).not.toContain("Cost bytes basis");
+  });
+
   it("returns Technique metadata + USES edges", async () => {
     const r = await techniqueLookup("stable_raster_irq");
     expect(r.structured.name).toBe("stable_raster_irq");
@@ -77,6 +100,49 @@ describe("techniqueLookup", () => {
     ]);
     expect(irq.text).toMatch(/\*\*Required by:\*\* text_zoom/);
     expect(irq.text).toMatch(/\*\*Mitigates:\*\* raster_irq_first_line_jitter \(high\)/);
+  });
+
+  it("reports ALTERNATIVE_TO from either end with its tradeoff, and refuses bad pairs (#17)", async () => {
+    const warnings: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: string) => {
+      warnings.push(msg);
+    };
+    try {
+      await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite" });
+      await f.addTechnique({ name: "sprite_multiplex_24", title: "24 sprites", category: "sprite" });
+      const tradeoff = "more than 16 sprites; needs a Y-sorted list";
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_24", "sprite_multiplex_8", tradeoff)).toBe(
+        true,
+      );
+      // Refused: the other page states the pair already; a self-reference;
+      // a technique and its own prerequisite; a name that is no node.
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_8", "sprite_multiplex_24", "x")).toBe(false);
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_8", "sprite_multiplex_8", "x")).toBe(false);
+      expect(await f.linkTechniqueAlternative("stable_raster_irq", "text_zoom", "x")).toBe(false);
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_8", "no_such_technique", "x")).toBe(false);
+      expect(warnings.some((w) => w.includes("already states this pair"))).toBe(true);
+      expect(warnings.some((w) => w.includes("one requires the other"))).toBe(true);
+      expect(warnings.some((w) => w.includes("not found"))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+    const entry = {
+      tradeoff: "more than 16 sprites; needs a Y-sorted list",
+      stated_on: "sprite_multiplex_24",
+    };
+    const m24 = await techniqueLookup("sprite_multiplex_24");
+    expect(m24.structured.alternatives).toEqual([
+      { name: "sprite_multiplex_8", title: "8-sprite multiplexer", ...entry },
+    ]);
+    const m8 = await techniqueLookup("sprite_multiplex_8");
+    expect(m8.structured.alternatives).toEqual([
+      { name: "sprite_multiplex_24", title: "24 sprites", ...entry },
+    ]);
+    expect(m8.text).toContain(
+      "**Alternatives:** sprite_multiplex_24 (sprite_multiplex_24: more than 16 sprites; needs a Y-sorted list)",
+    );
+    expect((await techniqueLookup("text_zoom")).structured.alternatives).toEqual([]);
   });
 
   it("returns suggestions when not found", async () => {
@@ -125,8 +191,25 @@ describe("techniquesFor", () => {
     });
     await f.linkTechniqueRequires("infinite_scroll_h", "soft_scroll_h");
     await f.linkTechniqueRequires("parallax_dual_layer", "infinite_scroll_h");
+    // Named as the live graph names it: SCROLY at $D011, alias D011.
+    await f.addRegister("SCROLY", "$D011", "VIC-II", "RW", ["D011"]);
+    await f.linkTechniqueUsesRegister("stable_raster_irq", "SCROLY");
+    await f.linkTechniqueUsesRegister("raster_bars", "SCROLY");
   });
   afterAll(async () => f.close());
+
+  it("filters by register name, alias or address, in any case (#41)", async () => {
+    for (const register of ["D011", "$D011", "d011", "0xD011", "SCROLY", "scroly"]) {
+      const r = await techniquesFor({ register });
+      expect(r.structured.techniques.map((t) => t.name).sort(), register).toEqual([
+        "raster_bars",
+        "stable_raster_irq",
+      ]);
+    }
+    expect((await techniquesFor({ register: "D016" })).structured.techniques).toEqual([]);
+    const both = await techniquesFor({ register: "D011", category: "raster" });
+    expect(both.structured.techniques).toHaveLength(2);
+  });
 
   it("filters by requires, following the chain", async () => {
     const r = await techniquesFor({ requires: "soft_scroll_h" });

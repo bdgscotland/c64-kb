@@ -144,8 +144,9 @@ export async function buildOrder(opts: {
   const scaffoldPages: ScaffoldPages = new Map();
   const steps: Omit<Step, "step">[] = [];
   // A game brief that named no archetype and was routed to none has no
-  // scaffold to offer, so it gets no scaffold step.
-  if (opts.isGame && opts.resolved !== undefined) {
+  // scaffold to offer, so it gets no scaffold step; nor does one that fits
+  // several archetypes and chose none.
+  if (opts.isGame && opts.resolved !== undefined && opts.resolved.mode !== "ambiguous") {
     steps.push(await scaffoldStep(opts.resolved, opts.archetype, scaffoldPages));
   }
   steps.push(...techniqueSteps(opts.techs));

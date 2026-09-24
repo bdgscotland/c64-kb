@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
+import { readFileSync } from "node:fs";
+import { getQdrant } from "../src/context.ts";
+import { ingestDoc } from "../src/tools/hydrate.ts";
 import { lookupRegister } from "../src/tools/query.ts";
+import { registerKey } from "../src/tools/query/shared.ts";
 
 // These tests seed just the two registers they need so they are isolated
 // from corpus state. Other test files call clean() which would wipe live data.
@@ -40,5 +44,69 @@ describe("lookupRegister decimal addresses", () => {
     const r = await lookupRegister("A");
     expect(r.structured.found).toBe(false);
     expect(r.text).toMatch(/at least 2 characters/);
+  });
+});
+
+describe("lookupRegister reads a short address as zero page (#19)", () => {
+  it.each(["$01", "01", "1", "$0001", "0001", "r6510"])("%s finds the processor port R6510", async (q) => {
+    await f.addRegister("R6510", "$0001", "6510", "RW", ["0001"]);
+    const r = await lookupRegister(q);
+    expect(r.structured.found).toBe(true);
+    expect(r.structured.name).toBe("R6510");
+  });
+
+  it("keys 'DC00' and 'D011' as before", () => {
+    expect(registerKey("$d011")).toBe("D011");
+    expect(registerKey(" dc00 ")).toBe("DC00");
+    expect(registerKey("$0")).toBe("0000");
+    expect(registerKey("$fe")).toBe("00FE");
+    expect(registerKey("A")).toBe("A");
+    expect(registerKey("FF")).toBe("FF");
+  });
+});
+
+// #41: `lookup-register DC01` printed three unrelated sections and not the
+// register's own entry, and `DC00` led with raster-bars.md. The own section
+// (the hardware page's `### $DC01 — DC01 — ...`) now comes first.
+// The hybrid search alone did not rank the own section first over these.
+const SEEDED = [
+  "hardware/cia-reference.md",
+  "hardware/c64-memory-map.md",
+  "hardware/c64-registers-reference.md",
+  "techniques/input.md",
+  "pitfalls/input.md",
+  "recipes/oscar64/two-player.md",
+  "recipes/kickassembler/raster-bars.md",
+];
+
+describe("lookupRegister documentation leads with the register's own section", () => {
+  beforeAll(async () => {
+    const q = await getQdrant();
+    await q.ensureCollection();
+    for (const rel of SEEDED) {
+      const seeded = await ingestDoc(rel, readFileSync(new URL(`../docs/${rel}`, import.meta.url), "utf8"));
+      if (/not available/i.test(seeded)) throw new Error(`test collection could not be seeded: ${seeded}`);
+    }
+    await f.addRegister("DC00", "$DC00", "CIA1", "RW", []);
+    await f.addRegister("DC01", "$DC01", "CIA1", "RW", []);
+    // Seeding embeds seven large pages through Ollama: over a minute on CI's CPU
+    // runner, so the default 60 s hook limit failed every CI run from 7e5a515.
+  }, 600_000);
+
+  // The test collection is shared by every file; leave it as it was found
+  // (the briefing tests read it and would propose raster_bars from these).
+  afterAll(async () => {
+    const q = await getQdrant();
+    for (const rel of SEEDED) await q.deleteBySource(rel);
+  }, 120_000);
+
+  it.each([
+    ["DC01", "$DC01 — DC01 — Data Port B (RW)"],
+    ["DC00", "$DC00 — DC00 — Data Port A (RW)"],
+  ])("%s", async (reg, heading) => {
+    const r = await lookupRegister(reg);
+    const first = r.structured.documentation.at(0);
+    expect(first?.source).toBe("hardware/cia-reference.md");
+    expect(first?.section.split(" > ").at(-1)).toBe(heading);
   });
 });

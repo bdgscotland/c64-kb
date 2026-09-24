@@ -134,9 +134,14 @@ Tools take a `sha1`, not a path. The tool resolves it through
 `c64_re_session` runs it, verifies `in_play`, writes the snapshot (local,
 gitignored) and returns the frame and cycle at which play was reached. The
 other tools start from that snapshot, so boot, loading and title screens
-are not measured. Keyboard input uses `keybuf`. Joystick input is an open
-problem (below); until it is solved, a session may only use keys or
-fire-free starts.
+are not measured. Keyboard input uses `keybuf`. Joystick input uses the
+binary monitor's Joyport Set with control port 2 holding VICE's Joyport I/O
+simulation device, timed in frames by raster-line checkpoints
+(`docs/runtime/vice-reference.md`, "Pressing the joystick headless";
+`templates/_harness/drive.py`). VICE's event playback, the route #59 set
+out to evaluate, does not start in 3.10. An earlier version of this
+paragraph called joystick input an open problem and limited sessions to
+keys or fire-free starts.
 
 ### The tools
 
@@ -146,7 +151,7 @@ All read-only, all returning `{observations: [{id, …, basis, rung}], unknowns:
 |---|---|---|
 | `c64_re_session` | play reached at frame/cycle; snapshot path | replay the session file |
 | `c64_re_load_map` | load address and span; BASIC stub SYS target; packer signature if known; depack transitions (PC of the first execute into memory written after start) | parse PRG/BASIC; exec trace from start; store trace over RAM with a byte cap |
-| `c64_re_irq_chain` | per frame: each IRQ/NMI entry PC, raster line and cycle of entry, `$D012` plus `$D011` bit 7 as written, vector writes (`$0314/5`, `$0318/9`, `$FFFA/B`, `$FFFE/F`, both bytes), `$D01A`/`$DC0D` masks, KERNAL dispatch or not | store traces on the vectors and VIC/CIA IRQ registers; exec checkpoints on handler entries found; `RL`/`CY` kept |
+| `c64_re_irq_chain` | per frame: each IRQ/NMI entry PC, raster line and cycle of entry, `$D012` plus `$D011` bit 7 as written, vector writes (`$0314/5`, `$0318/9`, `$FFFA/B`, `$FFFE/F`, both bytes), `$D01A`/`$DC0D` masks, KERNAL dispatch or not | store traces on the vectors, the VIC/CIA IRQ registers and the stack (an interrupt's three pushes); exec checkpoints on the handlers the vectors held at an interrupt, an entry being the first of them run after it (an earlier version counted every exec of any value a vector ever held, #66); `RL`/`CY` kept |
 | `c64_re_frame_profile` | per phase over N frames: cycles in each handler (self, nested excluded), in the main loop, idle-wait cycles; worst and typical in the `**Measured frame:**` shape | frame boundary = the handler entry nearest a fixed raster line; `profile` for per-routine totals; exec checkpoints for per-frame attribution |
 | `c64_re_coverage` | per byte range: executed / read / written / unknown, by bank (`$01`) and epoch (before/after each depack transition); VIC bank (`$DD00`), `$D018`, sprite pointers observed | VICE `memmapshow` from a checkpoint after play starts (not a start-up line); targeted ranges first (an earlier version of this row said memmap needed a rebuilt VICE) |
 | `c64_re_disassemble` | disassembly text of a range, seeded from coverage | Regenerator 2000 headless if it passes evaluation (step 1); else da65 with a generated info file |
@@ -298,5 +303,5 @@ said step 1 closes #3 without naming that split.
 | False cycle precision in IRQ attribution | calibration against known figures; nested handlers and KERNAL dispatch counted apart; unknown when unobserved |
 | Trace volume on all-RAM runs | targeted ranges first; byte caps; `memmapshow` from a checkpoint (no rebuild needed, see above) |
 | Coverage mistaken for complete disassembly | `unknown` class; epochs per depack transition |
-| Joystick-only games unreachable | issue above; pilot games chosen to start from keys or fire-free where possible |
+| Joystick-only games unreachable | solved by #59: Joyport Set on the I/O simulation device, frame-timed (see "Session file") |
 | Expression leaking into pages | `study_expression` lint; review of every study page |
