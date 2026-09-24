@@ -2185,5 +2185,17 @@
       "pal": "screenshots/agsp.png",
       "ntsc": "screenshots/agsp-ntsc.png"
     }
+  },
+  "oscar64/trainer-hooks": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/trainer-hooks.png",
+      "ntsc": "screenshots/trainer-hooks-ntsc.png"
+    }
   }
 }

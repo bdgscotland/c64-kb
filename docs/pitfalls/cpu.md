@@ -878,3 +878,73 @@ one place it was written and caught.
   `docs/pitfalls/kernal-and-io.md`: the other Oscar64-specific pitfall,
   for the same "the source is right, the toolchain did something else"
   reading habit
+
+---
+
+## nop_patch_leaves_stale_flags — Three NOPs over a DEC keep the lives but leave the next branch testing an older instruction's flags
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** trainer_and_cheat_hooks, self_modifying_code
+
+### Symptom
+
+An infinite-lives patch replaces `DEC lives` with three NOPs. The lives
+counter stays at 3 as intended, but the game now ends on the first
+death, or never ends a level, or ends at random, depending on what ran
+before the patched line.
+
+### Mechanism
+
+`DEC` writes the byte and also sets Z and N from the result, and the
+game's next instruction is usually a branch on that result: `BEQ
+game_over`. NOP changes no flag, so the branch tests whatever the last
+flag-setting instruction before the patch left. In the recipe's death
+routine that is `LDA #0` two instructions earlier, so Z is set and the
+branch to game over is taken on the first death, with 3 lives still on
+the counter. The same patch in a routine that happened to leave Z clear
+would appear to work, which is why this is found late.
+
+Measured in VICE x64sc 3.10 on both models with the recipe below: the
+unpatched game ends on death 3; with three NOPs it ends on death 1 with
+the counter at 3; with `LDA lives` in the same three bytes it survives
+all eight deaths played, counter at 3.
+
+### Fix
+
+Replace the instruction with one of the same length that sets the flags
+the following code expects. `LDA` of the same address loads the
+unchanged, non-zero count and clears Z; use it when A is reloaded before
+it is read again, as it is in the recipe. Otherwise patch the branch as
+well: two NOPs over the `BEQ`, or its offset byte set to 0. Read the
+instructions after the patch site before choosing.
+
+### Worked example
+
+```asm
+// The game's code:
+            lda #0
+            sta player_state
+            dec lives           // CE lo hi
+            beq game_over       // F0 xx
+
+// BAD: EA EA EA over the DEC; BEQ now tests the Z from LDA #0
+            lda #0
+            sta player_state
+            nop
+            nop
+            nop
+            beq game_over       // taken: Z = 1
+
+// GOOD: AD lo hi, same length; Z comes from the lives byte (3)
+            lda #0
+            sta player_state
+            lda lives
+            beq game_over       // not taken
+```
+
+### Cross-references
+
+- Technique `trainer_and_cheat_hooks` (`docs/techniques/cpu-cycle-tricks.md`): the search, the scan and the patch forms
+- Recipe `docs/recipes/oscar64/trainer-hooks.md`: the three runs above
+- Technique `self_modifying_code` (`docs/techniques/cpu-cycle-tricks.md`): a code patch is a store into an instruction, with the same care about what the following instructions assume

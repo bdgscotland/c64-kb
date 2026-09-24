@@ -1850,3 +1850,67 @@ this page stated the recipe's 130 as the `Cost` and put the fragment at
 ### Recipes
 
 - `recipes/kickassembler/tod-alarm.md` (clock set, alarm three seconds on, the alarm taken as a CIA1 IRQ under the KERNAL's jiffy, frames counted against the model, the drift with TODIN wrong)
+
+## trainer_and_cheat_hooks — Finding a game's lives byte by value search, and patching the code that changes it
+
+**Complexity:** low
+**Region:** both
+
+### Why
+
+A cheat is a change to one instruction: the one that takes a life, spends
+ammunition or runs down a timer. Nobody hands the patcher a symbol table,
+so the work is finding that instruction in a program already in memory.
+The same method serves a developer: an infinite-lives switch for testing
+a late level, found in the build the tester has rather than in the
+source.
+
+### How
+
+**Find the byte.** Note the value on screen (3 lives), search RAM for
+every address holding it, and keep one candidate bit per address. Lose a
+life and keep only the candidates that now hold 2; lose another and keep
+those holding 1. Each pass discards most of the rest. When the counter's
+value is not shown (an energy bar), search for "changed" and "unchanged"
+between two snapshots instead; that is a byte of snapshot per address,
+not a bit, and is not built here. Leave the search tool's own workspace
+out of the range, or its stack changes under it and the count varies
+from run to run.
+
+**Find the code.** Scan memory for the instructions that write the byte:
+`DEC abs` (`$CE lo hi`), `DEC zp` (`$C6 lo`), and where there are none,
+`STA`/`STX`/`STY` and `SBC` sequences that store to it. A three-byte
+pattern can also occur in data; patch each hit in turn and watch the
+byte to tell them apart.
+
+**Patch it.** Replace the instruction with one of the same length that
+leaves the flags as the next instruction expects. A `DEC` is almost
+always followed by a branch on its result, so three NOPs are wrong
+(`nop_patch_leaves_stale_flags`, `pitfalls/cpu.md`); `LDA` of the same
+address is right when A is dead after it, and `BIT` or `ORA #0` shapes
+suit other cases. Changing the branch itself (`BEQ` to two NOPs, or its
+offset to 0) is the other safe form.
+
+**Apply it.** A trainer is a small program that runs before the game,
+asks which cheats to turn on, writes their patches and then starts the
+game. A game that is packed or loaded in parts overwrites a patch made
+too early, so the trainer takes control after the last part is in place:
+it changes the depacker's final jump to point at itself, or hooks the
+loader's return. That hook depends on the game's loader and is described
+here, not built.
+
+### Why it works
+
+The value search needs no knowledge of the program. In the recipe the
+value 3 sat in 18 of 34,816 bytes; after one death one of them held 2,
+and it held 1 after the next. The `DEC` scan then found one site, and
+the `LDA` patch kept the game running for eight deaths with the counter
+at 3 (measured in VICE x64sc 3.10, both models). The first search pass
+is the costly one: 1,483,115 cycles on PAL and 1,495,095 on NTSC for
+34,816 bytes in Oscar64 C, about 43 cycles a byte with the screen on
+(CIA1 timers A and B chained); the later passes visit only candidates.
+An assembler loop would be several times faster (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/trainer-hooks.md` (value search over `$0800-$8FFF` with a candidate bitmap, `DEC` scan, the NOP and LDA patches played for eight deaths each, the first pass timed with CIA1)
