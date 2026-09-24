@@ -20,6 +20,13 @@
 #   CLAIMS_ARGS      arguments to c64-kb's scripts/claims-watch.ts after the PRG
 #   VERIFY_TARGETS   this starter's own proof targets (disktest, tearcheck, probe, ...);
 #                    `npm run verify:templates -- --selftest` runs each after selftest
+#   DRIVE_SCREEN     where make drive and drivetest read screen text (harness/drive.py; default 0400:0-24)
+#   DRIVE_STEPS      drivetest's steps: the normal build played headless, joystick on $DC00
+#   DRIVE_DISK       a .d64 drivetest attaches (a fresh copy each run)
+#   SOUND_SINK       off (default, +sound: fastest), dump or wav. With off, and with
+#                    VICE's dummy sink, $D41B and $D41C (OSC3, ENV3) read wrong values;
+#                    a program that reads them sets SOUND_SINK := dump (the output goes
+#                    to /dev/null). See docs/runtime/vice-reference.md, "The SID under +sound".
 #
 # Tools, each from the environment first:
 #   OSCAR64, KICKASS_JAR, JAVA, X64SC (headless runs), X64SC_WINDOWED (make run),
@@ -46,6 +53,7 @@ SHOT_DISK        ?= 0
 CLAIMS_ARGS      ?=
 VERIFY_TARGETS   ?=
 PLAN_GATE        ?= on
+SOUND_SINK       ?= off
 
 # ---- tools --------------------------------------------------------------------
 OSCAR64 ?= $(firstword $(shell command -v oscar64 2>/dev/null) $(wildcard $(HOME)/Developer/c64/oscar64/bin/oscar64) oscar64)
@@ -81,7 +89,8 @@ RELEASED_SHOTS := shots/released-pal.png shots/released-ntsc.png
 
 METER_DEPS := $(wildcard $(HARNESS_DIR)/meter/*)
 
-VICE_FLAGS = -default -warp +sound +autostart-delay-random -autostartprgmode 1
+SOUND_FLAGS = $(if $(filter off,$(SOUND_SINK)),+sound,-sound -sounddev $(SOUND_SINK) -soundarg /dev/null)
+VICE_FLAGS = -default -warp $(SOUND_FLAGS) +autostart-delay-random -autostartprgmode 1
 # With SHOT_DISK = 1 every headless run attaches its own fresh copy of the
 # release D64 (shots/<shot>.d64), never build/$(NAME).d64 itself: VICE writes
 # a save back into the image it attached, so a run on the shared image would
@@ -92,7 +101,7 @@ shot_disk = @cp $(D64) $(1:.png=.d64)
 shot_disk_flags = -8 $(1:.png=.d64) -drive8wobbleamplitude 0 -drive8wobblefrequency 0
 endif
 
-.PHONY: all build run run-auto shot check selftest disk claims zp released clean plan-gate tools verify-targets
+.PHONY: all build run run-auto shot check selftest disk claims zp released clean plan-gate tools verify-targets drive drivetest joyprobe
 .DELETE_ON_ERROR:
 
 all: plan-gate build
@@ -260,6 +269,37 @@ ifneq ($(strip $(C_MAIN)),)
 else
 	@echo "zp: $(NAME) has no C part; a KickAssembler program's zero page is what its source says."
 endif
+
+# ---- drive: the normal game played headless, joystick on the real $DC00 ----------
+# harness/drive.py sets control port 2's lines through VICE's Joyport I/O
+# simulation device and counts time in frames, so a run repeats exactly.
+#   make drive STEPS='"until:PRESS FIRE" tap:fire "until:LIVES" print'
+# drivetest plays DRIVE_STEPS, the starter's own proof that its normal build
+# (no autopilot) answers the stick; DRIVE_SCREEN says where its text is.
+DRIVE_SCREEN ?= 0400:0-24
+DRIVE_STEPS  ?=
+DRIVE = DRIVE_SCREEN='$(DRIVE_SCREEN)' DRIVE_SOUND=$(SOUND_SINK) X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) $(HARNESS_DIR)/drive.py
+
+drive: $(PRG)
+	$(DRIVE) $(PRG) $(STEPS)
+drivetest: $(PRG) $(DRIVE_DISK)
+	@test -n '$(strip $(DRIVE_STEPS))' || { echo "drivetest: set DRIVE_STEPS in the Makefile"; exit 2; }
+	$(if $(DRIVE_DISK),@cp $(DRIVE_DISK) build/drivetest.d64)
+	$(if $(DRIVE_DISK),DRIVE_DISK=build/drivetest.d64) $(DRIVE) $(PRG) $(DRIVE_STEPS)
+	@echo "drivetest: PASS"
+
+# joyprobe: drive.py's own proof. A KickAssembler program waits for fire on
+# $DC00; drive.py presses it at the same frame in three runs. The press must
+# show, and the three screens and CIA1 timer A readings must match.
+JOYPROBE_STEPS = "until:RUN" wait:100 tap:fire "until:FIRE AT FRAME" peek:d020,dc04,dc05 print
+joyprobe: $(HARNESS_DIR)/joyprobe.asm
+	@mkdir -p build
+	$(KICKASS) $(HARNESS_DIR)/joyprobe.asm -odir $(CURDIR)/build -o $(CURDIR)/build/joyprobe.prg > build/joyprobe.log || { cat build/joyprobe.log; exit 1; }
+	@for i in 1 2 3; do DRIVE_SCREEN=0400:0-24 X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) $(HARNESS_DIR)/drive.py build/joyprobe.prg $(JOYPROBE_STEPS) > build/joyprobe-$$i.txt || { cat build/joyprobe-$$i.txt; exit 1; }; done
+	@cat build/joyprobe-1.txt
+	@for i in 2 3; do diff build/joyprobe-1.txt build/joyprobe-$$i.txt || { echo "joyprobe: FAIL, runs 1 and $$i differ"; exit 1; }; done
+	@grep -q 'peek d020: 245' build/joyprobe-1.txt || { echo "joyprobe: FAIL, the border is not green: fire never reached \$$DC00"; exit 1; }
+	@echo "joyprobe: PASS, fire read on \$$DC00 at the same frame in 3 of 3 runs"
 
 # The starter's own proof targets, one line, for verify-templates to read.
 verify-targets:

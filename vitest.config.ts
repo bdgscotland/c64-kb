@@ -15,6 +15,7 @@ const UNIT = [
   "test/extract*.test.ts",
   "test/feedback.test.ts",
   "test/game-design-compare.test.ts",
+  "test/harness-python.test.ts",
   "test/kernal-zp.test.ts",
   "test/kernal-zp-rule.test.ts",
   "test/lint.test.ts",

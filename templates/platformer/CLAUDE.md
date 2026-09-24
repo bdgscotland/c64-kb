@@ -57,7 +57,8 @@ program a blank one.
 
 Until `PLAN.md` passes, a hook blocks Edit and Write under `src/`, and every
 make target that builds stops (`make plan-gate` says what is missing). With
-C64KB set, `make` re-runs `check-compatibility` and wants the pasted Verdict.
+C64KB set, `make` re-runs `check-compatibility` and wants the pasted Verdict;
+if the KB's answer changed, re-run both tools and re-paste.
 The gate cannot see writes made through a shell command, or outputs edited
 into shape by hand: do neither. `make PLAN_GATE=off` overrides it; say why in
 `PLAN.md` if you do.
@@ -70,6 +71,7 @@ make shot check       # autopilot build, headless PAL and NTSC, graded by expect
 make selftest         # the FORCE_FAULT build must fail the same checks
 make disk             # build/<name>.d64
 make claims           # every store the program makes, against what it declares
+make drive STEPS='"until:PRESS FIRE" tap:fire print'   # the normal build, played headless
 make run              # windowed VICE, for a human
 ```
 
@@ -116,6 +118,20 @@ make run              # windowed VICE, for a human
   `$EDAB`, `$EDB5`, `$EDDB`, `$EE82`). After any disk call, `SEI` again if
   the program runs with the KERNAL IRQ off: otherwise that IRQ lands inside
   the meter's brackets and rewrites `$DC00`.
+- `check.py` exits 0 when every check passed, 1 when one failed, 2 when it
+  graded nothing (a `FAIL REFUSED` line says why). A script that calls it
+  tests the exit code, never the text.
+- The normal build (no autopilot) plays headless through `make drive
+  STEPS='...'`: `harness/drive.py` presses the stick on the real `$DC00` and
+  counts time in frames, so a run repeats exactly.
+- PAL shots use `-default`'s machine. Never pass `-model pal`: its palette
+  differs, and `check.py` refuses the picture.
+- A program that reads `$D41B` or `$D41C` sets `SOUND_SINK := dump`; under
+  the default `+sound` both read wrong values.
+- The shots autostart the PRG with the disk attached. On PAL the first disk
+  call after that can hang (c64-kb pitfall
+  `first_open_after_reset_hangs_on_pal`); prove the disk path once by
+  loading the release from the D64.
 
 ## Calling c64-kb
 

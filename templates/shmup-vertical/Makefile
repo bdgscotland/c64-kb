@@ -1,5 +1,5 @@
 # shmup-vertical: a vertically scrolling shoot-em-up starter. Every target
-# but phases, stage and joy comes from the harness:
+# but phases, stage, joytest and longplay comes from the harness:
 #   make            build build/shmup-vertical.prg (after the PLAN.md gate)
 #   make run        windowed VICE, joystick in port 2
 #   make shot       headless PAL and NTSC exit screenshots of the autopilot build
@@ -8,8 +8,9 @@
 #                   compared with the graded phase-3 shot (tools/phases.py)
 #   make selftest   prove check fails on the FORCE_FAULT=1 build
 #   make stage      the heaviest frame the game makes (-dSTAGE=1): the meter's readout, PAL and NTSC
-#   make joy        the normal game reading its port byte from $02FE, for tools/drive.py
-#   make joytest    the joy build played to GAME OVER and rebooted: the saved HI must show
+#   make drive      the normal game played headless (harness/drive.py), stick on $DC00
+#   make joytest    the normal game played to GAME OVER and rebooted: the saved HI must show
+#   make longplay   a -dGOD=1 build played through the level's later loops, on lost frames
 #   make disk       build/shmup-vertical.d64
 #   make claims     c64-kb's claims-watch over the autopilot build, when available
 #   make clean
@@ -95,37 +96,31 @@ stage: $(PRG_STAGE) $(D64)
 	$(PYTHON) tools/meter.py $(HARNESS_DIR) shots/stage-pal.png pal shots/stage-ntsc.png ntsc
 	$(PYTHON) $(HARNESS_DIR)/check.py stage-expect.json shots/stage-pal.png shots/stage-ntsc.png
 
-# ---- joy: the normal game driven headless ------------------------------------------
-# The port byte comes from $02FE instead of $DC00, so a VICE monitor can
-# drive it (tools/drive.py).
-PRG_JOY := build/$(NAME)-joy.prg
-$(PRG_JOY): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
-	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
+# ---- drive, joytest, longplay: the normal game played headless ---------------------
+# harness/drive.py presses the stick on the real $DC00 and counts time in
+# emulated frames. The text is on the two playfield screens and the panel.
+DRIVE_SCREEN := 8000:0-20,8400:0-20,8800:21-23
 
-.PHONY: joy
-joy: $(PRG_JOY)
-
-# joytest: the joy build played on PAL and NTSC, fire held and the ship
+# joytest: the normal build played on PAL and NTSC, fire held and the ship
 # swept, to GAME OVER; its save, and a reboot on the same fresh disk showing
 # that score as HI; then JOYTEST_SOAK more games a model, each graded on
 # LOST_FRAMES (tools/joytest.py). Any lost frame fails.
 JOYTEST_SOAK ?= 15
 .PHONY: joytest
-joytest: $(PRG_JOY) $(D64)
-	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_JOY) $(D64) --soak $(JOYTEST_SOAK)
+joytest: $(PRG) $(D64)
+	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG) $(D64) --harness $(HARNESS_DIR) --soak $(JOYTEST_SOAK)
 
-# longplay: a joy build whose ship is never lost (-dGOD=1), so fire held and
-# a sweep run through the level's later loops, where the waves come closer
-# together: LONGPLAY_GAMES games a model at once, LONGPLAY_SECONDS of warp
-# each, and any lost frame fails.
-LONGPLAY_SECONDS ?= 40
+# longplay: a build whose ship is never lost (-dGOD=1), so fire held and a
+# sweep run through the level's later loops, where the waves come closer
+# together: LONGPLAY_GAMES games a model at once, LONGPLAY_SECONDS of
+# emulated time each, and any lost frame fails.
+LONGPLAY_SECONDS ?= 740
 LONGPLAY_GAMES ?= 4
 PRG_GOD := build/$(NAME)-god.prg
 $(PRG_GOD): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -dGOD=1 -o=$@ $(C_MAIN)
+	$(OSCAR64_BUILD) -dGOD=1 -o=$@ $(C_MAIN)
 
 .PHONY: longplay
 longplay: $(PRG_GOD) $(D64)
-	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_GOD) $(D64) --long $(LONGPLAY_SECONDS) --soak $$(( $(LONGPLAY_GAMES) - 1 )) --jobs $(LONGPLAY_GAMES)
+	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_GOD) $(D64) --harness $(HARNESS_DIR) --long $(LONGPLAY_SECONDS) --soak $$(( $(LONGPLAY_GAMES) - 1 )) --jobs $(LONGPLAY_GAMES)

@@ -9,6 +9,7 @@
 # and this starter's own:
 #   make gen        re-run tools/gen.py (world tables, packed text, pictures, script, model)
 #   make disktest   SAVE, a cold reset, LOAD and the same state back, on a true-drive 1541
+#   make drive      the release build played headless (harness/drive.py; README "Driving it headless")
 #   make clean
 NAME   := adventure
 C_MAIN := src/main.c
@@ -33,7 +34,7 @@ CLAIMS_ARGS := --cycles 18000000 --kernal SCNKEY,SETLFS,SETNAM,OPEN,CLOSE,CHKIN,
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := disktest
+VERIFY_TARGETS := disktest drivetest
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -50,16 +51,13 @@ build/gen.stamp: tools/gen.py tools/world.py
 	$(PYTHON) tools/gen.py
 	@touch $@
 
-.PHONY: gen disktest joy
+.PHONY: gen disktest
 gen:
 	$(PYTHON) tools/gen.py
 
-# The normal game with its fire button read from $02FE instead of $DC00, so
-# tools/drive.py can press it headless (README, "Driving it headless").
-joy: build/$(NAME)-joy.prg
-build/$(NAME)-joy.prg: $(C_DEPS) $(METER_DEPS) | plan-gate
-	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
+# make drivetest: the release build played through harness/drive.py: fire on
+# the title (the stick on $DC00), a typed command, a new room.
+DRIVE_STEPS := "until:PRESS RETURN OR FIRE" tap:fire "until:EXITS: N." "type:GO NORTH" "until:A SHED" print
 
 # The disk test, on a true-drive 1541 (DISK_MODEL=pal or ntsc):
 #  1. DISKTEST=1 plays the script up to its SAVE on a fresh copy of the release

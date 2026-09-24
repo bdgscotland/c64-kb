@@ -109,14 +109,6 @@ static char port_read(void)
         return ap_name[state_frames - 4];
     return 0xff;
 }
-#elif defined(JOY_SOURCE)
-// Headless driving of the normal game: the port byte comes from RAM at
-// JOY_SOURCE, which a VICE monitor writes (make joy; README "Driving it
-// headless"). The windowless VICE's joyport commands do not reach $DC00.
-static char port_read(void)
-{
-    return *(volatile char *)JOY_SOURCE;
-}
 #else
 static char port_read(void)
 {
@@ -502,9 +494,6 @@ int main(void)
 {
     __asm { sei }                               // no KERNAL IRQ: the loop polls the raster
     cia1.pra = 0xff;                            // no keyboard column selected
-#if !AUTOPILOT && defined(JOY_SOURCE)
-    *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
-#endif
     render_init();
     // The compare line wait_frame's late test reads: 250. Bit 7 of $D011 is
     // its ninth bit, and the KERNAL leaves compare line 311 behind (bit 8

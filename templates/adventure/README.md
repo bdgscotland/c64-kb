@@ -37,7 +37,6 @@ or fire on port 2 starts the game.
 | `src/save.c`, `save.h` | SAVE and LOAD of the state record on drive 8, and what the drive answered (`kernal_file_write_seq`, `kernal_file_read_seq`, `error_channel_check`) |
 | `src/sound.c`, `sound.h` | A key click, a chime when the score rises, a fanfare at the end (`sid_voice_setup`) |
 | `tools/disk_check.py` | Makes the bad saves and grades `make disktest` against the model |
-| `tools/drive.py` | Plays the release build headless over VICE's binary monitor |
 | `expect.json`, `PLAN.md` | The screenshot checks; the plan with the c64-kb tool output it was made from |
 
 Memory: code and data from `$0880` up to the character set at `$3800`
@@ -188,21 +187,25 @@ refused the save the disk test made with `THE SAVE IS FROM ANOTHER VERSION
 
 ## Driving it headless
 
-`tools/drive.py` plays the release build over VICE's binary monitor. It
-types through the monitor's keyboard feed, which writes the KERNAL queue,
-so the release PRG needs no change, and reads screen RAM as text:
+`make drive` plays the release build through `harness/drive.py`, over
+VICE's binary monitor. It types through the monitor's keyboard feed, which
+writes the KERNAL queue, presses fire on the real `$DC00`, counts time in
+emulated frames (a run repeats exactly), and reads screen RAM as text:
 
 ```bash
-python3 tools/drive.py build/adventure.prg "until:PRESS RETURN OR FIRE" key:RETURN \
-    "until:EXITS: N." "type:GO NORTH" "until:A SHED" "type:TAKE THE ROSE" \
-    "type:QUIT" "until:PLAY AGAIN" print
+make drive STEPS='"until:PRESS RETURN OR FIRE" key:RETURN "until:EXITS: N." \
+    "type:GO NORTH" "until:A SHED" "type:TAKE THE ROSE" "type:QUIT" \
+    "until:PLAY AGAIN" print'
 ```
 
-That run (2026-09-23) reached the garden, answered `I DON'T KNOW THE WORD
-ROSE.` without a turn, and ended the game. Fire goes through `make joy`:
-that build reads the port byte from `$02FE`, because the windowless VICE's
-joyport commands do not reach `$DC00` (found in templates/action-puzzle).
-`fire` steps showed title to game, `QUIT`, and ending back to the title.
+That run (2026-09-23, again 2026-09-24 through the harness) reached the
+garden, answered `I DON'T KNOW THE WORD ROSE.` without a turn, and ended
+the game. `tap:fire` steps showed title to game, `QUIT`, and ending back
+to the title; `make drivetest` (a proof target) starts the game with fire.
+An earlier version pressed fire in a separate `make joy` build that read
+the port byte from `$02FE`, because VICE's joyport command seemed not to
+reach `$DC00`; it does, once control port 2 holds the "Joyport I/O
+simulation" device, which `drive.py` selects.
 The first version tested fire by level: fire at the ending went to the
 title and, still held, started a new game; it now acts on a new press.
 
@@ -245,7 +248,7 @@ split; the meter settles it.
    `expect.json`. The script has 4 frames left under the meter's 255: for a
    bigger game, meter a shorter script that still shows every picture and
    the longest reply, and test the rest through `make disktest`'s split or
-   `tools/drive.py`. Every turn scans the whole action table for
+   `make drive`. Every turn scans the whole action table for
    occurrences, so a large table's turn frame must be metered again. Timed
    events (a lamp that burns down) are occurrences with a counter: technique
    `adventure_database_engine`, recipe `oscar64/adventure-engine`.

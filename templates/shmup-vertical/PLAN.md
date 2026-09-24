@@ -504,15 +504,17 @@ identical on PAL and NTSC. FORCE_FAULT starts the ship 16 pixels right: it
 shoots 4 instead of 5 (400 points), is rammed instead of shot, ends at X
 136, and check.py fails the verdict, the text and the ship's box.
 
-`make joytest` plays the normal game (the `$02FE` joy build) headless on
-PAL and NTSC: a fresh disk's title shows HI 000000, a game with fire held
+`make joytest` plays the normal game headless on PAL and NTSC, the stick
+on `$DC00` through `harness/drive.py` (it was a build reading `$02FE` until
+2026-09-24): a fresh disk's title shows HI 000000, a game with fire held
 and the ship swept left and right runs to GAME OVER and saves, and a reboot
 on the same disk shows that score as HI; then 15 more games a model, 4
-machines at once. Every game fails on a lost frame (`LOST_FRAMES`). Scores
-vary from run to run (the drive steps in wall-clock time). `make longplay`
-plays a `-dGOD=1` build, whose ship is never lost, for 40 s of warp a game,
-4 games a model, through the level's later loops, and fails on a lost
-frame.
+machines at once. Every game fails on a lost frame (`LOST_FRAMES`). Each game
+repeats exactly from run to run: the drive counts emulated frames (scores
+varied while it stepped in wall-clock time). `make longplay` plays a
+`-dGOD=1` build, whose ship is never lost, for 740 s of emulated time a
+game (40 s of warp before), 4 games a model, through the level's later
+loops, and fails on a lost frame.
 
 ## Decisions and open questions
 

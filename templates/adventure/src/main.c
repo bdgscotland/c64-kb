@@ -75,18 +75,14 @@ static char key_get(void)
     return k;
 }
 
-// Fire on port 2, read only on the title and the ending. make joy builds it
-// with -dJOY_SOURCE=0x02fe: the byte comes from RAM that tools/drive.py
-// writes, because the windowless VICE's joyport commands never reach $DC00
-// (templates/action-puzzle, README).
+// Fire on port 2, read only on the title and the ending. harness/drive.py
+// presses it headless on the real $DC00 (README, "Driving it headless").
 static bool fire_was = true;            // held at power-on counts as held, not pressed
 
 static bool fire_pressed(void)
 {
 #if AUTOPILOT
     return false;
-#elif defined(JOY_SOURCE)
-    return !(*(volatile char *)JOY_SOURCE & JOY_FIRE);
 #else
     return !(cia1.pra & JOY_FIRE);
 #endif
@@ -388,9 +384,6 @@ int main(void)
     cia1.icr = 0x7f;                    // no CIA1 interrupts: the KERNAL's CLIs find none
     MODE = 0x80;
     KEYN = 0;
-#if !AUTOPILOT && defined(JOY_SOURCE)
-    *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
-#endif
     ntsc = detect_ntsc();
     video_init();
     sound_init(ntsc);

@@ -53,6 +53,9 @@ is filled.
 | `make claims` | c64-kb's `scripts/claims-watch.ts` over the AUTOPILOT PRG, when the checkout has it |
 | `make released` | With `OSCAR64_RELEASED=<path>`: the autopilot build from that compiler, shot on PAL and NTSC and graded with the same `expect.json`. On v1.32.273, platformer graded 7 of 23 (a miscompile, #30) and action-puzzle 41 of 41 |
 | `make zp` | The zero-page addresses the compiled C touches, read from Oscar64's listing; with `ZP_CLAIM='$02-$55'` a gate |
+| `make drive STEPS='...'` | The normal build played headless by `harness/drive.py`, the stick on the real `$DC00` (see "Driving the normal build") |
+| `make drivetest` | The starter's `DRIVE_STEPS` played that way; fails when a step never comes |
+| `make joyprobe` | `drive.py`'s own proof: a fire press at the same frame in three runs |
 | `make clean` | Removes `build/` and `shots/` |
 
 The headless runs use `-default -warp +sound +autostart-delay-random
@@ -67,11 +70,14 @@ is a stamp file named by its cycle count.
 `make`, `make shot check` and `make disk` there (`--selftest` adds
 `make selftest` and every target the starter lists in `VERIFY_TARGETS`,
 `--only <name>` picks one). A starter's own proof targets (action-puzzle's
-`disktest`, `modelcheck` and `selftest-scan`, adventure's `disktest`,
-platformer's `tearcheck`, shmup-vertical's `stage`, demo's `probe`) prove
-fixes that `make check` cannot see: the adventure's three save-validation
-checks, for instance, fail only in `disktest`. Measured 2026-09-23: seven
-starters with `--selftest` and their targets, 7 of 7, about 3.5 minutes.
+`disktest`, `modelcheck`, `selftest-scan` and `drivetest`, adventure's
+`disktest` and `drivetest`, platformer's `tearcheck`, `stage` and
+`drivetest`, shmup-vertical's `stage`, `joytest` and `longplay`, demo's
+`probe`, hello-kick's `joyprobe`) prove fixes that `make check` cannot see: the adventure's three save-validation
+checks, for instance, fail only in `disktest`. Measured 2026-09-24: eight
+starters with `--selftest` and their targets, 8 of 8, about 10 minutes, most
+of it shmup-vertical's `joytest` and `longplay` (seven starters took about
+3.5 minutes on 2026-09-23, before those two stepped by emulated frames).
 
 ## A starter's files
 
@@ -99,6 +105,12 @@ screenshot": PAL 384 x 272 with screenshot row = raster line - 16; NTSC
 y = 35 + 8r on PAL and 23 + 8r on NTSC; sixteen exact RGB triples per
 model.
 
+PAL is `-default`'s machine. Do not pass `-model pal`: it selects a 6569R3
+whose palette differs in eleven of sixteen colours (measured with the
+palette-cells recipe: green (94, 214, 56), not (98, 213, 50)). `check.py`
+refuses a PAL shot in that palette by name (exit 2); an earlier version
+graded it colour by colour and failed it with "unknown colour".
+
 One geometry fact was measured here: a sprite whose Y register holds y is
 drawn from raster line y + 1. hello's sprite at X 188, Y 116 covered
 screenshot x 196 to 219 and rows 101 to 121 on PAL, 89 to 109 on NTSC,
@@ -108,7 +120,17 @@ fails; the first draft of hello's `expect.json` did.
 `check.py` validates `expect.json` before it grades: at least one check and
 one `verdict` check, the keys each type needs, colours 0 to 15, and every
 point and area inside the picture on each model the check names. A fault
-is exit 2 with the check's name, never a pass and never a traceback.
+is exit 2 with the check's name, never a pass and never a traceback. A pin
+taken inside a run, before the program can have reached its verdict, says
+`"mid_run": true` and needs no `verdict` check.
+
+Exit codes: 0 every check passed, 1 at least one failed (a `FAIL` line
+names each), 2 nothing was graded. A refusal prints one line starting
+`FAIL REFUSED` on stdout as well as the reason on stderr, so a caller that
+greps for `FAIL` sees it, but a caller must test the exit code, never the
+text. Before, a refusal went to stderr only, and the MEASURED demo's
+verify script, which grepped stdout for `FAIL`, graded five refused expect
+files as five passes for a day (#42).
 
 | Check type | Passes when |
 |---|---|
@@ -116,6 +138,7 @@ is exit 2 with the check's name, never a pass and never a traceback.
 | `pixel` | The point has the colour index. The point is `x`/`y`, `vic_x`/`line`, or `row`/`col` (a cell's centre) |
 | `rect` | Every pixel of an area (`vic_x`, `line`, `width`, `height`) has the colour: a raster bar, or a span with height 1 |
 | `sprite` | The pixels of the colour inside `search` (default the expected box grown by 16) have exactly the expected bounding box |
+| `ink` | At least `min` pixels of an area are not the `background` colour (default 0); optional `max`, and `colours` (the only indices they may take). For things drawn in an area at no fixed place, such as orbiting sprites: take `min` from the smallest count over every phase |
 | `text` | The cells from `row`, `col` read `text` |
 | `same` | Every pixel of the `cells` rectangle, or of an `area`, has the same colour index on PAL and NTSC |
 | `meter` | The meter's readout is there; optional `frames` must match; worst fits `max_worst` (default one frame: 19,656 cycles PAL, 17,095 NTSC); typical is at least 1 (recording has finished) |
@@ -258,6 +281,19 @@ line 55 + 8r), is read with `"dy": 4`: the pixel offset below that grid,
 0 to 7. Measured on a panel at line 215 with YSCROLL 7: with `"dy": 4` the
 score row decoded as written, without it every cell read `?`.
 
+## The SID sink
+
+The headless runs pass `+sound` unless the starter sets `SOUND_SINK`.
+Under `+sound`, and under VICE's dummy sink, `$D41B` (OSC3) and `$D41C`
+(ENV3) read wrong values; a program that reads them sets
+`SOUND_SINK := dump` (`-sound -sounddev dump -soundarg /dev/null`), and
+`drive.py` follows it. The measurements are in vice-reference, "The SID
+under `+sound`". An earlier version of this page withdrew issue #2's claim
+that the dummy driver breaks these reads, because a review read 16
+different values from a noise voice under `+sound`; measured since, those
+values were a wrapping ramp, not noise, and the dummy sink froze both
+registers.
+
 ## A fresh disk per run
 
 With `SHOT_DISK = 1` each headless run attaches its own copy of
@@ -266,6 +302,40 @@ run. VICE writes a save back into the image it attached, so two runs on one
 shared image start from different disks and the pinned shot moves. Measured
 with hello and `SHOT_DISK=1`: two `make shot` runs gave byte-identical
 PNGs and `build/hello.d64` kept its checksum.
+
+The shots autostart the PRG with the disk attached; they do not load it
+from the disk. The INTERCEPTOR review (#44, reported on #42, not re-measured
+here) saw pitfall `first_open_after_reset_hangs_on_pal` hang 9 of 9 PAL
+builds started that way, and none when the same PRG was loaded from the
+D64. A starter whose first disk call comes soon after the start must pass
+it on PAL in `make shot`, and should prove it once from the disk as well
+(action-puzzle's `disktest` loads its release from the D64).
+
+## Driving the normal build
+
+`harness/drive.py PRG STEP...` plays a program over VICE's binary monitor:
+`hold:DIR`, `tap:DIR`, `wait:FRAMES`, `run:SECONDS`, `until:TEXT`,
+`type:TEXT`, `key:RETURN`, `peek:ADDR` and `print`. It reads screen RAM as
+text, at the regions `DRIVE_SCREEN` names (`0400:0-24` by default,
+`C800:21-24` for a HUD page). `make drive STEPS='...'` runs it on the normal
+build; `make drivetest` runs the starter's `DRIVE_STEPS`.
+
+The stick is the real `$DC00`: control port 2 holds VICE's Joyport I/O
+simulation device, whose lines the monitor's Joyport Set command drives.
+Time is emulated frames, each wait stopped at raster line 0 by a
+checkpoint, and the program is autostarted by the monitor after a power
+cycle, so a run repeats exactly (`docs/runtime/vice-reference.md`,
+"Pressing the joystick headless", has the measurements). An earlier
+version of the harness said VICE's joyport command never reaches `$DC00`
+in the windowless build; each game then carried a `make joy` build that
+read its port byte from `$02FE`, and its own `tools/drive.py` stepped by
+the wall clock. Both are gone.
+
+`make joyprobe` builds `harness/joyprobe.asm`, a program that counts
+frames until fire reads pressed on `$DC00`, and presses fire at the same
+frame in three runs: the three screens and CIA1 timer A readings must
+match. Measured 2026-09-24: `FIRE AT FRAME 0065` and timer A `$10F6` on
+PAL, three of three.
 
 ## The frame meter
 
@@ -300,7 +370,9 @@ T<typical>`, five digits each, 20 cells from row 24, column 20.
   the samples by insertion, which held the platformer starter's main loop
   for about 94 frames (1.85M cycles) at its 255th play frame; with the
   selection its verdict came about 2M cycles sooner. The KickAssembler
-  meter still sorts by insertion (not re-measured here). That
+  meter now selects too (#42); an earlier version of this page said it
+  still sorted by insertion, which held one build's main loop for 294,808
+  cycles (#55). That
   is the `cycles_per_frame_typical` of
   [CONVENTIONS-techniques](../CONVENTIONS-techniques.md), the frame play
   spends most of its time on, when the recorded frames are play. An
@@ -319,6 +391,24 @@ T<typical>`, five digits each, 20 cells from row 24, column 20.
   that tests the frame flag when the work ends found NTSC joystick play
   losing a frame in 6 of 15 runs. The demo's frame slot, which must end
   before a split line, reads the raster when its work ends instead.
+- **Its own cost, outside the brackets.** Measured in VICE x64sc 3.10 with
+  CIA1 timers A and B cascaded around each call (a scratch program, not a
+  starter), 255 samples of 5,000 to 21,383 cycles from an LFSR: the
+  KickAssembler median took 854,431 cycles by insertion sort and 38,742 by
+  selection, and both gave 13,811. The print renders a field into a
+  20-byte copy only when its value changed, stepping F in place, then
+  writes the screen cells that differ from the copy, so a program that
+  clears the row gets the readout back on the next print. Per call:
+
+  | Print | KickAssembler | C (Oscar64 -O2) |
+  |---|---|---|
+  | Before: every field, every frame | 1,972 to 2,402 | 2,597 to 4,410 |
+  | Nothing changed (after the hold) | 464 | 668 |
+  | F one more (recording) | 582 | 776 |
+  | All three fields new | 2,734 | 3,109 to 4,746 |
+
+  Issue #42 put the old C print at up to 3,400 cycles a frame; the
+  measured worst was 4,410, with every digit a 9 or near it.
 - **Build switch.** `FRAME_METER` defaults to `AUTOPILOT`. Without it every
   macro is empty and the release carries none of the meter.
 - **Interrupts.** The KERNAL serial routines end in `CLI`: the ROM bytes at
@@ -357,7 +447,20 @@ holds check-compatibility's output (a `# Compatibility: a + b` line and its
 `## play (` section with its `Range` line) for the same techniques, and
 lists each of them as a row of its Techniques table. With `C64KB`
 reachable, `make` also re-runs check-compatibility on the pasted names and
-wants the same Verdict line; the result is cached on `PLAN.md`'s hash.
+wants the same Verdict line. A pass prints one line naming the checkout's
+`KB_DATA_VERSION` and commit, and is cached on `PLAN.md`'s hash with them;
+a different verdict is refused with "the KB's answer changed", both
+verdicts and that version. An unreachable checkout or graph warns and
+checks the structure only.
+
+The verdict can change with no change to the plan: another session's
+ingest into a shared live graph, or a new KB version. So new-project and
+`verify:templates` seed the cache for a starter's shipped `PLAN.md`
+(`plan-gate.py --seed`), and building a shipped example never consults the
+live graph; an edit to the plan or `make clean` brings the re-run back.
+Before that, `new-project -- hello` failed with WARNINGS pasted against
+COMPATIBLE live, and a starter's build failed during another session's
+ingest (#42).
 
 Every PRG depends on the gate, so `make`, `shot`, `check`, `selftest`,
 `disk`, `claims` and `run` all stop while it fails. As a PreToolUse hook it
@@ -458,12 +561,9 @@ pixel for pixel, because nothing on screen changes after the grade.
 - A starter that uses `SHOT_DISK=1`, `DISK_FILES` or IRQ work inside the
   meter's brackets. hello and hello-kick use none of them; the review ran
   `SHOT_DISK=1` on hello and it passed.
-- Reads of `$D41B` and `$D41C` under `+sound`. An earlier version of this
-  page repeated issue #2's claim that the dummy sound driver breaks them;
-  the review read 16 different values from a noise voice under the pinned
-  command, so the claim is withdrawn, not replaced.
 - Any VICE other than 3.10, or a palette other than `-default`; `check.py`
-  matches exact triples and would fail closed.
+  matches exact triples and would fail closed (and refuses `-model pal` by
+  name).
 - The released Oscar64 (issue #25): the starters were built with the
   build `CLAUDE.md` names.
 - Real hardware.
