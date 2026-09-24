@@ -82,6 +82,17 @@ function checkedTypical(cost: TechniqueCost, where: string): TechniqueCost {
   return rest;
 }
 
+/** An item base is only meaningful beside a per-item figure (#95). */
+function checkedItemBase(cost: TechniqueCost, where: string): TechniqueCost {
+  if (cost.cycles_item_base === undefined || cost.cycles_per_item !== undefined) return cost;
+  warn(
+    `${where} has cycles_item_base without cycles_per_item — item base skipped (see CONVENTIONS-techniques.md)`,
+  );
+  const rest = { ...cost };
+  delete rest.cycles_item_base;
+  return rest;
+}
+
 /**
  * The byte figures' own basis from a **Cost bytes basis:** line (#72). No
  * line: the Cost basis covers them, as it always has. A line with no byte
@@ -165,7 +176,11 @@ function settledCost({ head, meta, sourcePath }: Section): SettledCost | null {
     );
     return null;
   }
-  const { cost, cost_bytes_basis } = bytesBasis(checkedTypical(meta.cost, where), meta.costBytesBasis, where);
+  const { cost, cost_bytes_basis } = bytesBasis(
+    checkedItemBase(checkedTypical(meta.cost, where), where),
+    meta.costBytesBasis,
+    where,
+  );
   if (Object.keys(cost).length === 0) {
     warn(`${where} has a **Cost:** line with no usable pair — Cost not ingested`);
     return null;

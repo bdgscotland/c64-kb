@@ -34,6 +34,8 @@ const COST_KEYS = [
   "cycles_per_line",
   "cycles_per_frame",
   "cycles_per_frame_typical",
+  "cycles_per_item",
+  "cycles_item_base",
   "lines_active",
   "bytes_code",
   "bytes_data",

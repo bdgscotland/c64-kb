@@ -352,7 +352,7 @@ program
 program
   .command("plan-budget [techniques...]")
   .description(
-    'Budget a set of techniques per phase ("name" or "name:play|transition|init"), or a GameDesign with --design: cycle range, left-out figures, unknowns, verdict, measured frame beside the prediction',
+    'Budget a set of techniques per phase ("name", "name:play|transition|init", "name ×N" or "name ×M-N:phase" for calls, or items where the Cost states cycles_per_item), or a GameDesign with --design: cycle range, left-out figures, unknowns, verdict, measured frame beside the prediction',
   )
   .option("--design <name>", "a GameDesign name; its composed techniques are budgeted by phase")
   .addOption(

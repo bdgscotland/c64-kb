@@ -42,6 +42,7 @@ import {
   type VideoRegion,
 } from "./timing.ts";
 import { assumptionsFor, lockedTo, measuredScreenOn, phaseNotes } from "./budget-notes.ts";
+import { countedFigures, perItemCharge } from "./budget-items.ts";
 import type { CallCount } from "./calls.ts";
 
 export const BUDGET_PHASES = ["play", "transition", "init"] as const;
@@ -64,6 +65,10 @@ const DEFAULT_SPRITE_LINES = 200;
 export interface BudgetCost {
   cycles_per_frame?: number | undefined;
   cycles_per_frame_typical?: number | undefined;
+  /** Worst cycles each item adds (#95): a count on the member charges cycles_item_base + N × this. */
+  cycles_per_item?: number | undefined;
+  /** Cycles of a frame with no items, beside cycles_per_item (#95); absent is 0. */
+  cycles_item_base?: number | undefined;
   cycles_per_line?: number | undefined;
   lines_active?: number | undefined;
   bytes_code?: number | undefined;
@@ -95,7 +100,8 @@ export interface BudgetMember {
    * Calls per frame (#37): a Cost figure is one call, so a cycles_per_frame
    * charge is multiplied, low by calls.low and high by calls.high. Absent is
    * one call. A band or per-line charge is lines, not calls, and is not
-   * multiplied.
+   * multiplied. On a member whose Cost states cycles_per_item (#95) the
+   * count is items, not calls: the charge is cycles_item_base + N × item.
    */
   calls?: CallCount | undefined;
 }
@@ -114,10 +120,12 @@ export interface BudgetContributor {
   /** True when the figure is work done every frame (a band or per-line charge): part of the floor. */
   every_frame: boolean;
   basis: BudgetBasis;
-  /** How the figure was charged: the Cost line's cycles_per_frame, per-line × lines, or a raster band. */
-  charge: "cycles_per_frame" | "per_line" | "band";
-  /** The calls low and high are multiplied by, when the member states more than one (#37). */
+  /** How the figure was charged: the Cost line's cycles_per_frame, per-line × lines, a raster band, or base + items × item (#95). */
+  charge: "cycles_per_frame" | "per_line" | "band" | "per_item";
+  /** The calls low and high are multiplied by (#37), or on a per_item charge the items counted (#95). */
   calls?: CallCount | undefined;
+  /** A per_item charge's figures (#95): low = base + calls.low × each, high = base + calls.high × each. */
+  per_item?: { base: number; each: number } | undefined;
   measured_on: string | null;
   conditions: string | null;
 }
@@ -244,6 +252,8 @@ function chargeOf(m: BudgetMember, region: VideoRegion): Charge {
     const lines = bandLines(m.raster_band, region);
     if (lines !== null) return { low: lines * line, high: lines * line, charge: "band" };
   }
+  const items = perItemCharge(m);
+  if (items) return items;
   if (cost.cycles_per_frame !== undefined) {
     return {
       low: cost.cycles_per_frame_typical ?? cost.cycles_per_frame,
@@ -323,7 +333,11 @@ function absorbed(members: BudgetMember[], region: VideoRegion): Map<string, Bud
   const names = new Set(members.map((m) => m.name));
   const byName = new Map(members.map((m) => [m.name, m]));
   const frame = REGION_TIMING[region].cycles_per_frame;
-  const multi = new Set(members.filter((m) => (chargeOf(m, region)?.high ?? 0) > frame).map((m) => m.name));
+  const isMulti = (m: BudgetMember): boolean => {
+    const c = chargeOf(m, region);
+    return c !== null && c.charge !== "per_item" && c.high > frame;
+  };
+  const multi = new Set(members.filter(isMulti).map((m) => m.name));
   const out = new Map<string, BudgetExcluded>();
   const holds = (m: BudgetMember): boolean => !multi.has(m.name) && !out.has(m.name);
   for (const m of members) {
@@ -446,11 +460,6 @@ interface Sorted {
  */
 const MULTI_FRAME_ABOVE = Math.max(...Object.values(REGION_TIMING).map((t) => t.cycles_per_frame));
 
-/** A call count other than exactly one, or undefined. */
-function multiCalls(calls: CallCount | undefined): CallCount | undefined {
-  return calls && (calls.low !== 1 || calls.high !== 1) ? calls : undefined;
-}
-
 /** Put one member where it belongs: summed, left out as multi-frame, unknown, or not found. */
 function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
   if (!m.found) {
@@ -465,17 +474,18 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
     return;
   }
   const measured_on = m.cost?.measured_on ?? null;
-  if (charge.high > MULTI_FRAME_ABOVE) {
+  // A per_item charge is one frame's work for its count, never a
+  // multi-frame operation: past the frame it is summed and shows as over.
+  if (charge.charge !== "per_item" && charge.high > MULTI_FRAME_ABOVE) {
     into.excluded.push({ name: m.name, reason: "multi_frame", cycles: charge.high, measured_on });
     return;
   }
   // The multi-frame test above is on one call; the sum takes every call.
-  const calls = charge.charge === "cycles_per_frame" ? multiCalls(m.calls) : undefined;
   into.contributors.push({
     name: m.name,
     ...charge,
-    ...(calls ? { low: charge.low * calls.low, high: charge.high * calls.high, calls } : {}),
-    every_frame: charge.charge !== "cycles_per_frame",
+    ...countedFigures(m, charge),
+    every_frame: charge.charge === "band" || charge.charge === "per_line",
     basis: m.cost?.basis ?? "estimated",
     measured_on,
     conditions: m.cost?.conditions ?? null,

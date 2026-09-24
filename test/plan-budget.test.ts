@@ -72,6 +72,33 @@ describe("planBudget rules", () => {
     expect(p.high).toBe(9627);
   });
 
+  it("reads a count on a per-item Cost as items: base + N × item, and never multi-frame (#95)", () => {
+    const cost = {
+      cycles_per_frame: 3995,
+      cycles_per_item: 490,
+      cycles_item_base: 75,
+      basis: "measured-vice" as const,
+    };
+    const counted = play(planBudget([m("char_bullets", cost, { calls: { low: 0, high: 12 } })]));
+    expect(counted.contributors[0]).toMatchObject({
+      name: "char_bullets",
+      low: 75,
+      high: 5955,
+      charge: "per_item",
+      calls: { low: 0, high: 12 },
+      per_item: { base: 75, each: 490 },
+      every_frame: false,
+    });
+    // No count: the recipe's own figure, as before #95.
+    const plain = play(planBudget([m("char_bullets", cost)]));
+    expect(plain.contributors[0]).toMatchObject({ low: 3995, high: 3995, charge: "cycles_per_frame" });
+    expect(plain.contributors[0]).not.toHaveProperty("per_item");
+    // Past one frame it is summed and shows, not left out as multi-frame.
+    const many = play(planBudget([m("char_bullets", cost, { calls: { low: 50, high: 50 } })]));
+    expect(many.excluded).toEqual([]);
+    expect(many.high).toBe(24575);
+  });
+
   it("tests one call, not the product, against the multi-frame threshold (#37)", () => {
     const p = play(
       planBudget([
@@ -858,6 +885,37 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
         n.includes("it is not a floor: the figures of ghost_target_tile_ai, game_tree_search, decimal_print"),
       ),
     ).toBe(true);
+  });
+
+  it("the #22 game test's play list with counts puts its measured worst frame inside the range (#95)", () => {
+    // DELTA STRIKE's list (game-test-22 result.md). Its measured worst play
+    // frame, PAL, meter: 16,965. Without counts the low end was 19,712.
+    const list = [
+      "scroll_panel_split",
+      "soft_scroll_v",
+      "screen_double_buffer_d018",
+      "sprite_multiplex_game",
+      "wave_director",
+      "object_pool",
+      "sfx_in_player",
+      "sid_play_routine_pattern",
+      "joystick_edge_detect",
+      "lfsr_random",
+    ];
+    const opts = { region: "PAL" as const, sprites_per_line: 6, sprite_lines: 63 };
+    const before = play(plan([...list, "char_bullets", "per_frame_hitbox"], opts));
+    expect(before.low).toBeGreaterThan(16965);
+    // 8 bolts and 4 dots at most; 8 enemies a frame against the ship and 8
+    // bolts, plus 4 dots against the ship: 76 tested pairs at most.
+    const after = play(plan([...list, "char_bullets ×0-12", "per_frame_hitbox ×0-76"], opts));
+    const fixed = after.fixed_losses.badlines + after.fixed_losses.sprite_dma;
+    expect(after.low).toBeLessThanOrEqual(16965);
+    expect(after.high + fixed).toBeGreaterThanOrEqual(16965);
+    expect(after.contributors.find((c) => c.name === "char_bullets")).toMatchObject({
+      charge: "per_item",
+      low: 75,
+      high: 5955,
+    });
   });
 
   it("every composition's output parses with the tool's schema", () => {
