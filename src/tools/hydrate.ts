@@ -14,24 +14,9 @@ import { extractGraphEntities } from "../graph/extract.ts";
 import { applyEntity } from "../graph/apply.ts";
 import { replaceDocPoints } from "../ingest/points.ts";
 import { config } from "../config.ts";
+import { locateDoc } from "../ingest/doc-path.ts";
 import fs from "fs";
 import path from "path";
-
-/**
- * Resolve a caller-supplied doc path inside the docs directory, or null
- * when it would land outside. Null bytes are stripped and every ".."
- * segment dropped before path.resolve sees the value.
- */
-function resolveDocPath(docPath: string, docsDir: string): string | null {
-  const sanitized = docPath
-    .replace(/\0/g, "") // null bytes
-    .split(path.sep)
-    .filter((seg) => seg !== "..") // remove every parent-dir jump
-    .join(path.sep);
-  const resolved = path.resolve(docsDir, sanitized);
-  if (!resolved.startsWith(docsDir + path.sep) && resolved !== docsDir) return null;
-  return resolved;
-}
 
 export async function ingestDoc(docPath: string, content: string): Promise<string> {
   if (!(await ollamaAvailable())) {
@@ -41,23 +26,26 @@ export async function ingestDoc(docPath: string, content: string): Promise<strin
   const q = await getQdrant();
   await q.ensureCollection();
 
-  // Sanitise docPath before any filesystem call to prevent path traversal.
+  // Resolve docPath before any filesystem call; a path outside docs/ is refused.
   const DOCS_DIR = path.resolve(config.docs.dir);
-  const resolvedDocPath = resolveDocPath(docPath, DOCS_DIR);
-  if (resolvedDocPath === null) {
+  const doc = locateDoc(docPath, DOCS_DIR);
+  if (doc === null) {
     return `Rejected: docPath must be inside the docs directory (${DOCS_DIR}).`;
   }
 
-  // Write the content being indexed. This used to write only when the file
-  // was absent, so an update indexed text the file on disk did not hold and
-  // the next clean ingest silently reverted it.
-  fs.mkdirSync(path.dirname(resolvedDocPath), { recursive: true });
-  fs.writeFileSync(resolvedDocPath, content);
+  // Write the content being indexed, unless the file already holds it. This
+  // used to write only when the file was absent, so an update indexed text
+  // the file on disk did not hold and the next clean ingest silently
+  // reverted it.
+  if (!fs.existsSync(doc.file) || fs.readFileSync(doc.file, "utf-8") !== content) {
+    fs.mkdirSync(path.dirname(doc.file), { recursive: true });
+    fs.writeFileSync(doc.file, content);
+  }
 
   // Chunk + embed + upsert. Live single-doc ingest cannot refit the BM25
   // vocabulary, because that would invalidate every sparse vector already
   // in the collection; without a vocab file the sparse vectors are empty.
-  const source = resolvedDocPath.replace(DOCS_DIR + path.sep, ""); // relative path under docs/
+  const source = doc.source;
   const pointCount = await replaceDocPoints(q, {
     source,
     chunks: chunkMarkdown(content, source),

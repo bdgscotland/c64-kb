@@ -12,6 +12,7 @@ const UNIT = [
   "test/chunker.test.ts",
   "test/claim-rules.test.ts",
   "test/config.test.ts",
+  "test/doc-path.test.ts",
   "test/extract*.test.ts",
   "test/feedback.test.ts",
   "test/game-design-compare.test.ts",

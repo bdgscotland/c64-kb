@@ -308,3 +308,61 @@ describe("lintSourceResult", () => {
     expect(r.structured.summary).toBe("No findings.");
   });
 });
+
+// Issue #28: linting a whole Markdown page read a prose link to
+// music-sid.md as `sid.md`, a read of a SID field. A page is now linted
+// fence by fence; prose is never code.
+describe("lintSource on a Markdown page", () => {
+  const PAGE = [
+    "# Music player",
+    "",
+    "The player follows [SID music](../techniques/music-sid.md) and `c64/sid.h`.",
+    "Writing sid.fmodevol & 0xF0 in prose is not code.",
+    "",
+    "```c",
+    "#include <c64/sid.h>",
+    "void tick(void) {",
+    "    sid.voices[0].ctrl |= 0x01;",
+    "}",
+    "```",
+    "",
+    "```asm",
+    "    lda $d404",
+    "```",
+    "",
+    "```text",
+    "sid.voices[1].freq += 1;",
+    "```",
+  ].join("\n");
+  const findings = lintSource(PAGE);
+
+  it("does not report the prose link or prose mentions", () => {
+    expect(findings.filter((f) => f.line <= 4)).toEqual([]);
+  });
+
+  it("reports the read-modify-write in the C fence at its page line", () => {
+    const line = lineOf(PAGE, "sid.voices[0].ctrl |= 0x01");
+    const f = findings.find((x) => x.rule === "sid_write_only_registers" && x.line === line);
+    expect(f).toBeDefined();
+    expect(f!.certainty).toBe("definite");
+    expect(f!.excerpt).toBe("sid.voices[0].ctrl |= 0x01;");
+  });
+
+  it("runs the assembly rules on the asm fence of the same page", () => {
+    const line = lineOf(PAGE, "lda $d404");
+    expect(findings.some((x) => x.rule === "sid_write_only_registers" && x.line === line)).toBe(true);
+  });
+
+  it("skips a fence that is not C or assembly", () => {
+    expect(findings.some((x) => x.line === lineOf(PAGE, "sid.voices[1].freq += 1"))).toBe(false);
+  });
+
+  it("narrows to one language's fences when the language is given", () => {
+    const c = lintSource(PAGE, { language: "c" });
+    expect(c.map((f) => f.line)).toEqual([lineOf(PAGE, "sid.voices[0].ctrl |= 0x01")]);
+  });
+
+  it("labels the result as Markdown with the fence languages", () => {
+    expect(lintSourceResult(PAGE).text).toContain("(markdown, fences: c, asm)");
+  });
+});

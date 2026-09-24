@@ -148,12 +148,20 @@ program
 program
   .command("ingest-doc")
   .description("Ingest a single markdown file into the KB")
-  .argument("<path>", "Path to markdown file")
+  .argument("<path>", "Path to a markdown file under docs/, relative to here or to docs/, or absolute")
   .action(async (docPath: string) => {
     const { ingestDoc } = await import("./tools/hydrate.ts");
+    const { locateDoc } = await import("./ingest/doc-path.ts");
+    const { config } = await import("./config.ts");
     const fs = await import("fs");
-    const content = fs.readFileSync(docPath, "utf-8");
-    const result = await ingestDoc(docPath, content);
+    const doc = locateDoc(docPath, config.docs.dir);
+    if (doc === null || !fs.existsSync(doc.file)) {
+      console.error(`Rejected: ${docPath} is not a file inside the docs directory (${config.docs.dir}).`);
+      process.exitCode = 1;
+      return;
+    }
+    const content = fs.readFileSync(doc.file, "utf-8");
+    const result = await ingestDoc(doc.file, content);
     console.log(result);
   });
 

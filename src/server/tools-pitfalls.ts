@@ -44,7 +44,7 @@ export const lintSourceTool = defineTool({
 
 Purpose: a self-check an agent runs on the code it just wrote, before building it. No graph or vector store is needed; the rules are text patterns.
 
-Inputs: 'source' is the file text. 'language' is "c", "asm" or "auto" (default; detected from preprocessor lines and statement shape). 'toolchain' is optional and only recorded in the output.
+Inputs: 'source' is the file text. 'language' is "c", "asm" or "auto" (default; detected from preprocessor lines and statement shape). 'toolchain' is optional and only recorded in the output. A Markdown page (any line opening a \`\`\` or ~~~ fence) is linted fence by fence: prose is skipped, c/h/cpp fences get the C rules and asm/kick/kickassembler/acme/ca65 fences the assembly rules, unlabelled and other fences are skipped, and line numbers are the page's; 'language' then narrows to one fence language, and the output's 'language' is the first found.
 
 Output: {language, toolchain?, findings[{rule, pitfall, line, excerpt, message, page, certainty}], summary}. 'certainty' is "definite" (the pattern is the pitfall by construction), "likely" (it is the pitfall unless something outside the file excuses it, such as an earlier named OPEN) or "heuristic" (the pattern often accompanies the pitfall; read the page and decide). 'page' is the repo path of the pitfall or recipe the rule was compiled from, with the pitfall's H2 as the anchor when the source is a pitfall page; 'pitfall' is the pitfall node the rule stands for, or for empty_name_open_15_hangs_on_read the name of the recipe warning it compiles, which is not a pitfall node. 'summary' is one line. Read the message: each uses the page's own words for the mechanism and the fix.
 

@@ -38,7 +38,7 @@ Guidelines: Use to land new reference material from authoritative sources (codeb
 
 Limitations: Cannot refit the BM25 vocabulary on the fly (that would invalidate every existing sparse vector). New tokens introduced by this doc contribute only to the dense vector. Run a full clean re-ingest to incorporate new vocabulary into BM25.
 
-Param notes: 'path' is absolute or relative to docs/, and must resolve inside docs/. 'content' is the full markdown body (frontmatter optional).
+Param notes: 'path' is absolute, relative to docs/ ("hardware/foo.md") or relative to the repository ("docs/hardware/foo.md"); every spelling of one page is stored under its path below docs/, and a path outside docs/ is refused. A page whose file already holds 'content' is not rewritten. 'content' is the full markdown body (frontmatter optional).
 
 Expected length: Single-line summary, e.g. "Ingested 14 chunks from hardware/foo.md."
 
@@ -46,7 +46,9 @@ Example: {"path": "/abs/path/docs/hardware/sid-tricks.md", "content": "# SID tri
   inputSchema: {
     path: z
       .string()
-      .describe("Path of the markdown file, absolute or relative to docs/; must resolve inside docs/"),
+      .describe(
+        "Path of the markdown file: absolute, relative to docs/, or relative to the repository; must resolve inside docs/",
+      ),
     content: z.string().describe("Full markdown content (body, optionally with frontmatter)"),
   },
   annotations: INGEST_DOC,
