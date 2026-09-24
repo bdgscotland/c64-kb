@@ -1223,3 +1223,53 @@ From `recipes/kickassembler/rotozoomer.md`:
 
 - Technique: `rotozoomer_charset` in `techniques/effects-vector-3d.md`.
 - Recipe: `recipes/kickassembler/rotozoomer.md`, "One charset, drawn while shown".
+
+---
+
+## eor_fill_edge_end_plotted_twice — Plotting both ends of every edge before an EOR fill leaves streaks down from the corners
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** glenz_eor_filled_vectors
+
+### Symptom
+
+An EOR-filled polygon or glenz object has thin vertical lines of colour
+running from some corners down to the bottom of the buffer, or single
+columns missing from a face, changing as the object turns.
+
+### Mechanism
+
+The fill sets the pixels between pairs of points in each pixel column,
+so every column must hold an even number of points per face. Where one
+edge of a face ends and the next begins, an edge drawn over the closed
+range x0 to x1 puts a point in the corner's column, and so does the next
+edge: two points on the same line, which cancel, leaving that column
+with an odd count. Measured in VICE x64sc 3.10 with
+`recipes/kickassembler/glenz.md` built `:closed=1`, checked against the
+same faces filled geometrically: 7,082 of 262,144 pixels wrong over the
+64 steps, up to 154 in one step, where the half-open build has 84 (the
+slope's rounding), at most 4.
+
+### Fix
+
+Step each edge over the columns x0 to x1 − 1: the left end in, the right
+end out. A vertical edge then draws nothing, which is correct.
+
+### Worked example
+
+From `recipes/kickassembler/glenz.md`: the assembler stores the width
+x1 − x0 and the plot loop counts it down.
+
+```text
+!px:
+    ...                         // EOR the code into (x, y >> 8)
+    inc x
+    dec n                       // n = x1 - x0: column x1 is not plotted
+    bne !px-
+```
+
+### Cross-references
+
+- Technique: `glenz_eor_filled_vectors` in `techniques/effects-vector-3d.md`.
+- Recipe: `recipes/kickassembler/glenz.md`, "Both ends plotted".

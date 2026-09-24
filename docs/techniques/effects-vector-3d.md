@@ -1146,6 +1146,76 @@ render runs outside any interrupt; the switch waits for line 250.
 
 ---
 
+## glenz_eor_filled_vectors — Glenz vectors: every face EOR-filled, so the back shows through the front
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D016
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/glenz.md`
+saw `$D018`'s charset bits change once per frame drawn; the recipe's
+zero page and result bytes are its own.
+
+### Why
+
+Filled polygons normally need sorting or a visibility test and a span
+fill per line. A glenz object draws every face, front and back, and lets
+the overlaps show in their own colours; with EOR filling the faces need
+no order, no test and no span code, and each costs only its outline.
+
+### How
+
+Give each face a colour code (a multicolour bit pair). For each edge of
+each face, step one pixel column at a time from the left end x0 to
+x1 − 1, y in 8.8 fixed point, and EOR the face's code into the pixel
+(x, y). Then fill: in each pixel column, from the top down, replace each
+byte by the EOR of itself and the byte above. A framebuffer laid out
+column by column, such as the character-set window of
+`rotozoomer_charset`, makes each column 64 consecutive bytes. Draw into
+a hidden buffer and switch.
+
+### Why it works
+
+A convex face crosses a pixel column at two edges; the running EOR
+turns its code on at the first point and off at the second. EOR is its
+own inverse and commutes, so faces can be drawn in any order and
+overlaps keep the EOR of their codes, which is the see-through colour.
+The half-open column range gives the column at a corner exactly one point
+between the two edges meeting there. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, by `recipes/kickassembler/glenz.md`: the window equals a
+model of the listing's algorithm in all 4,096 pixels at the four pinned
+captures and five more; against geometry computed without the EOR fill
+(each face as a polygon, edges exact then rounded) 84 of 262,144 pixels
+differ over the 64 steps, from the 8.8 slope's rounding. Plotting both
+ends of every edge breaks the corner columns: 7,082 differ, as vertical
+streaks.
+
+### Variations
+
+**More colours.** Two bits give three face colours and their EOR
+combinations; hires gives one; a second charset or bitmap plane doubles
+the codes. Not measured here.
+
+**Solid (not see-through).** Draw only the front faces, found by the
+sign of each face's projected area; the EOR fill then gives a solid
+object. Not measured here; `solid_vector_3d` describes span filling.
+
+### Cycle budget
+
+One frame drawn every four PAL frames (78,620 cycles, the wait for a
+switch line included) for the recipe's 64 × 64 window and cube; four
+or five on NTSC.
+
+### Recipes
+
+- `recipes/kickassembler/glenz.md` — a glenz cube, 64 steps, double
+  buffered, every capture compared with two models, PAL and NTSC, with
+  the both-ends control.
+
+---
+
 ## voxel_landscape — Voxel-space landscape rendering
 
 **Complexity:** scene-tier

@@ -2483,5 +2483,25 @@
       "ntsc"
     ],
     "flags": []
+  },
+  "kickassembler/glenz": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/glenz.png",
+      "ntsc": "screenshots/glenz-ntsc.png"
+    }
+  },
+  "kickassembler/glenz@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   }
 }
