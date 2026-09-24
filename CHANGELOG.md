@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 816, schema 37, tools 2.13.1, package 0.26.1.
+Data 817, schema 37, tools 2.13.1, package 0.26.1.
+
+**The PAL first-read hang is a badline hiding a 67-cycle CLK pulse, and
+no frame wait is safe (data 817; #14 IO-12).** Traced with VICE's CPU
+history on both CPUs in three hanging builds: OPEN of a missing file
+fails with 62 (the KERNAL does not report it), the drive becomes talker,
+pulls CLK low at `$E9B3` for 68 drive cycles, finds no channel and
+releases the bus. The KERNAL's `$EDD6` loop (27 cycles a pass, no
+timeout, interrupts off) needs two reads 4 cycles apart to see CLK low;
+a 43-cycle badline inside the pulse leaves at most one, and the C64
+waits for ever. An earlier version said the drive stayed a listener and
+never pulled CLK, and that a start-up wait fixed it: across 0-250
+frames the shipped scaffold hung at 16 counts on PAL (50 runs, 56 hangs).
+Reading the status channel first, or blanking the screen for the read,
+hung at none. high-score-persist's `$1800` bit 0 is DATA IN, not DATA
+OUT. Listings that still read before checking status: #93.
 
 **#5 content, #4 routines, #1 composed recipes, #24 follow-ups, and a
 briefing fix (tools 2.13.1, package 0.26.1, data 816; #5, #4, #1, #24,
