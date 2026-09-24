@@ -5,7 +5,19 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 783, schema 31, tools 2.6.0, package 0.19.0.
+Data 784, schema 31, tools 2.6.0, package 0.19.0.
+
+**Sparkle's $DD02 VIC-bank switch, measured with a true drive (data 784; #23).**
+New recipe `kickassembler-sparkle-dd02-bank`: a disk built by SparkleCPP
+loads eight 4 KB bundles while a raster IRQ flips VIC banks 0 and 2 by
+writing $DD02. In VICE x64sc 3.10 with a true 1541: 523 bank writes on
+PAL and 625 on NTSC, none landing on the wrong bank, every bundle's sum
+and XOR matching; 5.21 s on both models. A read-modify-write of $DD00
+loads correctly but shows the wrong bank in 400 of 523 checks (PAL); a
+plain STA $DD00 releases ATN, the drive resets ($EAA0 traced) and the
+first load never returns. `pitfalls/loader.md` had Krill's row backwards:
+Krill v194's README says to switch banks with a plain STA $DD00, at any
+time; the row and its mechanism now say so, with what they said before.
 
 **Compatibility, budget, briefing and lint answers that misled the
 starter builders (tools 2.6.0, package 0.19.0, data 783; #29, part of #41).**
