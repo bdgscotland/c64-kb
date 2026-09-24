@@ -3,6 +3,7 @@
 import { OPEN15_MECHANISM, PAGES, SID_READABLE, group, lineAt, report, type LintContext } from "./types.ts";
 import { isZero, parseNumber, stripC } from "./text.ts";
 import type { LintFinding } from "./types.ts";
+import { d015MergedC } from "./sprite-enable.ts";
 
 const C_SID_PATH = /\bsid((?:\.\w+|\[[^\]]*\])+)/g;
 
@@ -227,4 +228,5 @@ export function lintC(raw: string, findings: LintFinding[]): void {
   rasterPoll(ctx);
   lfsrZero(ctx);
   d016Unmasked(ctx);
+  d015MergedC(ctx);
 }

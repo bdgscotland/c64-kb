@@ -1,0 +1,8 @@
+{
+  "checks": [
+    { "name": "own verdict: the title after GAME OVER, $D015 = 0, no play HUD (verdict.h, grade_gameover)", "type": "verdict" },
+    { "name": "the title text", "type": "text", "row": 21, "col": 7, "text": "C64-KB PLATFORMER STARTER" },
+    { "name": "the verdict line on row 22", "type": "text", "row": 22, "col": 0, "text": "RESULT 01 PASS" },
+    { "name": "the title's prompt", "type": "text", "row": 24, "col": 0, "text": "PRESS FIRE" }
+  ]
+}

@@ -2,6 +2,7 @@
 
 import { decimalModeInIrq } from "./asm-decimal.ts";
 import { LABEL } from "./asm-shared.ts";
+import { d015MergedAsm } from "./sprite-enable.ts";
 import { hex4, isZero, parseNumber, stripAsm } from "./text.ts";
 import {
   OPEN15_MECHANISM,
@@ -284,4 +285,5 @@ export function lintAsm(raw: string, findings: LintFinding[]): void {
   decimalModeInIrq(ctx);
   d016Unmasked(ctx);
   jmpIndirect(ctx);
+  d015MergedAsm(ctx);
 }

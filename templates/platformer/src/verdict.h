@@ -186,10 +186,65 @@ static void autopilot_blank(void)
     put_num(23, 34, pub_camx, 4);
 }
 
+// make gameover (AP_GIVE_UP=1): the picture after game over. Once GAME OVER
+// has timed out and the title has been up for OVER_WAIT frames, the program
+// checks that the title is the title: no sprite enabled ($D015 = 0, read
+// back from the VIC), the title text on row 21, the score of the lost game
+// copied to the high score, rows 22 and 24 free of the play HUD, and three
+// lives lost on the way. Pitfall sprite_registers_persist_across_state_change.
+#define OVER_WAIT 50
+static char over_seen, over_wait, over_graded;
+
+static bool hud_says(char row, char col, const char *s)
+{
+    const char *p = HUDPAGE + row * 40 + col;
+    for (char i = 0; s[i]; i++)
+    {
+        char c = s[i];
+        if (p[i] != ((c >= 'a' && c <= 'z') ? c - 'a' + 1 : c))
+            return false;
+    }
+    return true;
+}
+
+static void grade_gameover(void)
+{
+    unsigned fails = 0;
+    if (vic.spr_enable != 0)                                fails |= 0x0001;
+    if (!hud_says(21, 7, "c64-kb platformer starter"))      fails |= 0x0002;
+    if (!hud_says(24, 0, "press fire"))                     fails |= 0x0004;
+    for (char i = 0; i < 6; i++)
+        if (hiscore[i] != score[i])                         fails |= 0x0008;
+    for (char c = 0; c < 40; c++)
+        if (HUDPAGE[22 * 40 + c] != CH_SKY)                 fails |= 0x0010;
+    for (char c = 10; c < 20; c++)                          // 20-39: the meter
+        if (HUDPAGE[24 * 40 + c] != CH_SKY)                 fails |= 0x0010;
+    if (lives != 0 || hurts != START_LIVES)                 fails |= 0x0020;
+    bool ok = fails == 0;
+    RESULT = ok ? 0x01 : 0x02;
+    vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
+    put_text(22, 0, ok ? "result 01 pass" : "result 02 fail");
+    if (!ok)
+        put_hex(22, 15, fails);
+}
+
 static void autopilot_frame(void)
 {
     if (state == ST_GRADED)
         return;
+    if (AP_GIVE_UP)
+    {
+        // The title stays the title after the grade (ST_GRADED would draw
+        // the play HUD over it), and the spent script never presses fire.
+        if (state == ST_OVER)
+            over_seen = 1;
+        else if (over_seen && !over_graded && state == ST_TITLE && ++over_wait == OVER_WAIT)
+        {
+            grade_gameover();
+            over_graded = 1;
+        }
+        return;
+    }
     if (metering && state == ST_PLAY)
         check_frame();              // a whole play frame ran (not the one that started the game)
     if (DEBUG_AT && frame == DEBUG_AT)

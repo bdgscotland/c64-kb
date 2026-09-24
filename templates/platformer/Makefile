@@ -1,5 +1,5 @@
 # platformer: the side-scrolling platformer starter. Every target but
-# tearcheck comes from the harness:
+# tearcheck, stage and gameover comes from the harness:
 #   make            build build/platformer.prg (after the PLAN.md gate)
 #   make run        windowed VICE, joystick in port 2
 #   make shot       headless PAL and NTSC exit screenshots of the autopilot build
@@ -8,6 +8,8 @@
 #   make tearcheck  shoot the autopilot run mid-scroll and match every picture
 #                   against a render of the level (tools/tearcheck.py); then
 #                   prove the check fails on the TEAR_DEMO=1 build
+#   make gameover   the AP_GIVE_UP=1 build: three lives go, and the title after
+#                   GAME OVER must be clean; graded by expect-gameover.json
 #   make drive      the normal game played headless (harness/drive.py; README "Driving it headless")
 #   make disk       build/platformer.d64
 #   make claims     c64-kb's claims-watch over the autopilot build
@@ -37,7 +39,7 @@ CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := tearcheck stage drivetest
+VERIFY_TARGETS := tearcheck stage gameover drivetest
 
 # make watch (in make check): the player writes the SID. The autopilot run
 # stored to it in 360 frames on PAL and 373 on NTSC; without the tune and
@@ -94,3 +96,22 @@ stage: $(PRG_STAGE) $(PIN_PAL) $(PIN_NTSC)
 	$(call vice_shot,$(PRG_STAGE),$(SHOT_CYCLES_PAL),,shots/stage-pal.png)
 	$(call vice_shot,$(PRG_STAGE),$(SHOT_CYCLES_NTSC),-model ntsc,shots/stage-ntsc.png)
 	$(PYTHON) $(HARNESS_DIR)/check.py stage-expect.json shots/stage-pal.png shots/stage-ntsc.png
+
+# ---- gameover: the picture after game over is the title ------------------------------
+# The AP_GIVE_UP=1 build holds right from the first frame of play, so three
+# lives go; GAME OVER times out, the title comes back, and fifty frames later
+# the program checks the title (verdict.h, grade_gameover): no sprite
+# enabled, the title text, the high score, no play HUD left. The pins are
+# past that point on each model.
+PRG_OVER := build/$(NAME)-over.prg
+GAMEOVER_PAL  := 40000000
+GAMEOVER_NTSC := 40000000
+$(PRG_OVER): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dAP_GIVE_UP=1 -o=$@ $(C_MAIN)
+
+.PHONY: gameover
+gameover: $(PRG_OVER)
+	$(call vice_shot,$(PRG_OVER),$(GAMEOVER_PAL),,shots/over-pal.png)
+	$(call vice_shot,$(PRG_OVER),$(GAMEOVER_NTSC),-model ntsc,shots/over-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-gameover.json shots/over-pal.png shots/over-ntsc.png

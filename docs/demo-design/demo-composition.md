@@ -256,9 +256,25 @@ budget from the start, not a surprise at linking.
 VICE monitor, logs each hit with its clock to a file, and differences
 consecutive clocks; any gap that is not the figure is a fault. The same
 monitor commands (`trace`, `logname`, `log on`) are documented for another
-purpose on `../runtime/vice-reference.md`; a trace of a play routine across a
-part boundary is not measured here. A trace on stores to $D400 to $D418 asks
-the same question from the register side.
+purpose on `../runtime/vice-reference.md`. A trace on stores to $D400 to $D418
+asks the same question from the register side.
+
+**Measured across a part switch.** The demo starter (`templates/demo`) plays the
+tune from the frame slot at line 236, the last row of every chain, and keeps an
+idle chain of that slot alone running between one part's out-transition and
+the next part's init. A plain build (no `AUTOPILOT`) was run for 10,000,000
+cycles in the windowless VICE x64sc 3.10 with `trace exec 1003` (the play
+entry) and `trace exec` on `start_part`, logged with `logname`. PAL: 354 calls,
+every gap 19,652 to 19,660 cycles, 166 of them exactly 19,656; the three gaps
+before the title-to-main switch were 19,653, 19,657 and 19,655, the three after
+it 19,657, 19,657 and 19,656. NTSC (6567R8): 333 calls, gaps 17,092 to 17,098 and, every
+sixth frame, 34,187 to 34,193, because the starter skips one call in six so a
+50 Hz tune keeps its tempo at 60; the switch fell inside that pattern with no
+other change. Every call entered on line 239, at cycle 17 to 21 on PAL and 25
+to 29 on NTSC (exec-trace CYC; Bauer's cycle is one more). The ±4 is the raster
+IRQ's entry jitter, since the frame slot does not stabilise; no call was
+dropped or doubled. An earlier version of this paragraph said a trace across a
+part boundary was not measured here.
 
 **What breaks when it is skipped.** One dropped call is a click. A doubled
 call is a note that lands early. A call that moves from line 255 to line 50 in

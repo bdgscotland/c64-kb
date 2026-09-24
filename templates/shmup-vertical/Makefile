@@ -1,5 +1,5 @@
 # shmup-vertical: a vertically scrolling shoot-em-up starter. Every target
-# but phases, stage, joytest and longplay comes from the harness:
+# but phases, stage, gameover, joytest and longplay comes from the harness:
 #   make            build build/shmup-vertical.prg (after the PLAN.md gate)
 #   make run        windowed VICE, joystick in port 2
 #   make shot       headless PAL and NTSC exit screenshots of the autopilot build
@@ -8,6 +8,8 @@
 #                   compared with the graded phase-3 shot (tools/phases.py)
 #   make selftest   prove check fails on the FORCE_FAULT=1 build
 #   make stage      the heaviest frame the game makes (-dSTAGE=1): the meter's readout, PAL and NTSC
+#   make gameover   the AP_GIVE_UP=1 build: three ships go, and the title after GAME OVER
+#                   must show no sprite; graded by expect-gameover.json
 #   make drive      the normal game played headless (harness/drive.py), stick on $DC00
 #   make joytest    the normal game played to GAME OVER and rebooted: the saved HI must show
 #   make longplay   a -dGOD=1 build played through the level's later loops, on lost frames
@@ -52,7 +54,7 @@ CLAIMS_ARGS = --cycles 30000000 --disk $(abspath $(D64)) \
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := stage joytest longplay
+VERIFY_TARGETS := stage gameover joytest longplay
 
 # make watch (in make check): the player writes the SID. The autopilot run
 # stored to it in 731 frames on PAL and 650 on NTSC; without the IRQ's
@@ -131,3 +133,22 @@ $(PRG_GOD): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 .PHONY: longplay
 longplay: $(PRG_GOD) $(D64)
 	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_GOD) $(D64) --harness $(HARNESS_DIR) --long $(LONGPLAY_SECONDS) --soak $$(( $(LONGPLAY_GAMES) - 1 )) --jobs $(LONGPLAY_GAMES)
+
+# ---- gameover: the picture after game over is the title ------------------------------
+# The AP_GIVE_UP=1 build plays LOOP_TEST's script (fire held, the ship never
+# moves): three ships go, GAME OVER saves the high score to the disk, the
+# title comes back, and fifty frames later the program checks the title
+# (main.c, grade_gameover): no sprite shown, $D015 = 0, the title text, the
+# high score. Graded before 30,000,000 cycles on both models; the pins are past it.
+PRG_OVER := build/$(NAME)-over.prg
+GAMEOVER_PAL  := 40000000
+GAMEOVER_NTSC := 40000000
+$(PRG_OVER): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dAP_GIVE_UP=1 -o=$@ $(C_MAIN)
+
+.PHONY: gameover
+gameover: $(PRG_OVER) $(D64)
+	$(call vice_shot,$(PRG_OVER),$(GAMEOVER_PAL),,shots/over-pal.png)
+	$(call vice_shot,$(PRG_OVER),$(GAMEOVER_NTSC),-model ntsc,shots/over-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-gameover.json shots/over-pal.png shots/over-ntsc.png

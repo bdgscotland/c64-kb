@@ -1,0 +1,8 @@
+{
+  "checks": [
+    { "name": "own verdict: the title after GAME OVER, no sprite, $D015 = 0, HI = the lost game's score (main.c, grade_gameover)", "type": "verdict" },
+    { "name": "the title text", "type": "text", "row": 6, "col": 11, "text": " DELTA  PATROL " },
+    { "name": "the title's prompt where GAME OVER was", "type": "text", "row": 9, "col": 9, "text": " PUSH FIRE TO START " },
+    { "name": "the verdict line on row 15", "type": "text", "row": 15, "col": 1, "text": "RESULT 01 PASS" }
+  ]
+}

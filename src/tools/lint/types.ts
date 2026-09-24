@@ -36,6 +36,7 @@ export const PAGES = {
   decimal: "docs/pitfalls/kernal-and-io.md#decimal_mode_in_irq_handler",
   d016: "docs/pitfalls/scroll.md#d016_unmasked_rmw_clobbers_csel_mcm",
   jmp: "docs/pitfalls/cpu.md#jmp_indirect_page_boundary_bug",
+  d015: "docs/pitfalls/sprite.md#sprite_registers_persist_across_state_change",
 } as const;
 
 // The two pages that speak to a bare OPEN of channel 15 disagree, and

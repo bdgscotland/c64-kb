@@ -539,6 +539,38 @@
       "ntsc": "screenshots/compare-16bit-signed-ntsc.png"
     }
   },
+  "kickassembler/base-routines": {
+    "cycles": 100000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/base-routines.png",
+      "ntsc": "screenshots/base-routines-ntsc.png"
+    }
+  },
+  "kickassembler/one-part-demo": {
+    "cycles": 10000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/one-part-demo.png"
+    }
+  },
+  "kickassembler/fli-music-scroller": {
+    "cycles": 10000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fli-music-scroller.png"
+    }
+  },
   "oscar64/divide-check": {
     "cycles": 600000000,
     "models": [

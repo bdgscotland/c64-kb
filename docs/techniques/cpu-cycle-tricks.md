@@ -161,6 +161,195 @@ For body B cycles, N iterations: rolled = `N*(B+5)`, 8x unrolled = `(N/8)*(8*B+5
 
 ---
 
+## memory_fill_copy — Filling and copying memory a page at a time
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+
+### Why
+
+Clearing a screen, a bitmap or a buffer, and copying a level, a charset
+or a sprite block, are the most common loops in a C64 program. There
+are two forms worth knowing, a zero-page pointer walked a page at a time
+and one unrolled `abs,X` store per page, and they differ by a factor of
+two in speed. Every figure below was measured in VICE x64sc 3.10 by
+`recipes/kickassembler/base-routines.md`, with the display blanked so no
+badline took a cycle; each equals its instruction-table sum.
+
+### How
+
+**Pointer fill.** `A` = value, `X` = pages, the pointer at `p1` = first
+page:
+
+```asm
+fill:   ldy #0
+!:      sta (p1),y        // 6, page crossing or not
+        iny
+        bne !-
+        inc p1+1          // next page
+        dex
+        bne !-
+```
+
+11 cycles a byte, 10 more a page: 22,618 cycles for eight pages with
+the pointer set-up.
+
+**Unrolled fill.** One store per page, one `INX / BNE` for all of them:
+
+```asm
+        lda #value
+        ldx #0
+!:
+.for (var p = 0; p < 8; p++) {
+        sta BUF + p*256,x
+}
+        inx
+        bne !-
+```
+
+45 cycles per eight bytes: 11,523 for eight pages, half the pointer
+form. The addresses are assembled in, so it fills one fixed block; a
+screen of 1,000 bytes is four stores at `$0400`, `$0500`, `$0600` and
+`$06E8,X`.
+
+**Copies.** `LDA (p1),Y / STA (p2),Y` with both pointers stepped each
+page is 16 cycles a byte (32,906 for eight pages). `LDA src,X / STA
+dst,X` unrolled per page is 77 per eight bytes (19,713 for eight
+pages).
+
+**Overlapping moves.** When the destination is above the source and
+they overlap, copy from the top down:
+
+```asm
+        ldx #0
+!:      dex               // X = 255 .. 0
+        lda BUF,x
+        sta BUF+1,x
+        cpx #0
+        bne !-
+```
+
+The ascending loop reads bytes it has already overwritten: measured, a
+page holding 0, 1, 2 … moved up one byte ascending becomes all zeros,
+and descending becomes the ramp one place up. When the destination is
+below the source, ascending is the safe order.
+
+### Why it works
+
+A store through `(zp),Y` or to `abs,X` always takes the extra cycle an
+index could cost, so it is 6 and 5 whatever the address. A load takes
+it only when the base plus the index crosses a page: `LDA (zp),Y` is 5
+and `LDA abs,X` is 4 when the base is page-aligned, one more for each
+read that crosses when it is not (rung 3). The loop overhead is
+`INY / BNE`, 5 cycles, and the unrolled form pays it once per eight
+bytes instead of every byte.
+
+### Variations
+
+- **No index at all.** Generated `LDA abs / STA abs` pairs cost 8 a
+  byte and 6 bytes of code a byte (`speedcode_generation`).
+- **REU.** On a machine with an REU, a DMA transfer fills or copies at
+  one byte a cycle (`memory-banking.md`, `reu_dma`).
+
+### Cycle budget
+
+| Routine, 8 pages, set-up included | Cycles | Per byte |
+|---|---|---|
+| fill, `STA (zp),Y` | 22,618 | 11.0 |
+| fill, `STA abs,X` unrolled | 11,523 | 5.6 |
+| copy, `(zp),Y` | 32,906 | 16.1 |
+| copy, `abs,X` unrolled | 19,713 | 9.6 |
+
+With the display on, add the badline stalls: 40 to 43 cycles on each of
+25 lines a frame (`pitfalls/raster-and-badline.md`, `badline_cycle_loss`).
+
+### Recipes
+
+- `recipes/kickassembler/base-routines.md`: both fills and both copies
+  timed and checked byte by byte, and the overlapping move both ways.
+
+---
+
+## delay_loops — Counted delay loops and what they cost
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+
+### Why
+
+Raster effects, drive handshakes and hardware settle times need the CPU
+to wait a known number of cycles. A counted loop is the simplest way, and
+its count is exact only when nothing else takes the bus and the branch
+stays on one page. Every figure below was measured in VICE x64sc 3.10
+by `recipes/kickassembler/base-routines.md`.
+
+### How
+
+```asm
+        ldx #n            // 2
+!:      dex               // 2
+        bne !-            // 3 taken, 2 on the last pass
+```
+
+5n + 1 cycles; `n = 0` runs 256 passes for 1,281. Measured: 6, 501 and
+1,281 for n = 1, 100 and 0.
+
+Nested, `Y` outer and `X` inner:
+
+```asm
+        ldy #m
+!o:     ldx #n
+!i:     dex
+        bne !i-
+        dey
+        bne !o-
+```
+
+m(5n + 6) + 1 cycles: 5,061 for m = 10, n = 100 (measured), up to
+329,217 for m = n = 0 (rung 3).
+
+**Page crossing.** A taken branch to another page costs 4. The same
+`LDX #100 / DEX / BNE` placed with `DEX` at `$2FFF` and `BNE` at `$3000`
+measured 600 cycles, 6n, not 501. Pin the loop's page with `.align` or
+an `.assert` so a later edit cannot move it across
+(`pitfalls/cpu.md`, `branch_page_cross_extra_cycle`).
+
+### Why it works
+
+`DEX` is 2 cycles and a taken `BNE` 3, so each pass but the last is 5;
+the last falls through for 2. A taken branch whose target is on a
+different page from the instruction after it adds one cycle for the high
+byte of the program counter.
+
+### Variations
+
+- **Odd counts.** A `NOP` (2) or `BIT $zp` (3) before the loop adds 2 or
+  3; with 5n + 1 that reaches any count from 8 up (rung 3).
+- **Lines and frames.** Wait on `$D012` or a CIA timer instead. Badlines
+  and sprite DMA take cycles from a loop but not from the raster or the
+  CIA clock, so a loop tuned with the display blanked runs long with it
+  on (`pitfalls/raster-and-badline.md`, `badline_cycle_loss`).
+- **Cycle-exact entry.** A stable raster IRQ removes the entry jitter a
+  delay alone cannot (`raster.md`, `stable_raster_irq`).
+
+### Cycle budget
+
+| Loop | Cycles |
+|---|---|
+| `LDX #n / DEX / BNE` | 5n + 1 |
+| the same, branch across a page | 6n |
+| `Y` outer `m`, `X` inner `n` | m(5n + 6) + 1 |
+
+### Recipes
+
+- `recipes/kickassembler/base-routines.md`: n = 1, 100 and 0, the
+  page-crossing loop and the nested loop, each timed with the CIA2
+  timers.
+
+---
+
 ## illegal_opcode_tricks — Useful undocumented opcodes
 
 **Complexity:** high
