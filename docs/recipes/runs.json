@@ -1566,6 +1566,21 @@
       "name": "TEST,01"
     }
   },
+  "kickassembler/fastloader-2bit": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fastloader-2bit.png",
+      "ntsc": "screenshots/fastloader-2bit-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
   "kickassembler/drive-via-probe": {
     "cycles": 30000000,
     "models": [

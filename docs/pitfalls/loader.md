@@ -1030,7 +1030,7 @@ Not measured here: a genuine Exomizer 2 decruncher against a 3.x stream. The shi
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00
-**Triggered by techniques:** drive_code_upload_and_job_queue, krill_loader_integration, sparkle_irq_loader
+**Triggered by techniques:** drive_code_upload_and_job_queue, krill_loader_integration, sparkle_irq_loader, fastloader_2bit_protocol
 
 ### Symptom
 
@@ -1124,7 +1124,11 @@ Either keep ATN out of the data phase, or make the drive program track it.
    every time it changes, before it drives or reads DATA. With ATNA equal
    to the ATN level the exclusive-or term is 0 and DATA belongs to DATA
    OUT again. The last table row is that fix running: DATA read released
-   in all three phases. Loaders that clock bit pairs with ATN do this
+   in all three phases. The recipe `kickassembler/fastloader-2bit`
+   does it inside the data store instead: ATNA rides in the byte that
+   puts each bit pair out, so one store per ATN edge both sends the pair
+   and lifts the pull; a sample taken before that store reads DATA low
+   (measured, its delay sweep). Loaders that clock bit pairs with ATN do this
    inside their drive-side receive loop; a program that copies their host
    half and writes its own drive half without the ATNA update meets this
    pitfall on the first byte.
