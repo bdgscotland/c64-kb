@@ -264,8 +264,11 @@ the first and last characters. Repeated words are stored as token bytes
 
 The census finds every place a ROM or program names an address, then
 classifies each hit by the opcode before it. It is how
-[c64-memory-map](../hardware/c64-memory-map.md) shows that no ROM write
-touches $02A7-$02FF.
+[c64-memory-map](../hardware/c64-memory-map.md) shows that no ROM
+instruction has an absolute operand in $02A7-$02FF. That is not "no ROM
+write": RAMTAS at $FD50 (`A9 00 A8 99 02 00 99 00 02 99 00 03 C8 D0 F4`)
+clears the whole page at reset with `STA $0200,Y`, an indexed write whose
+operand is $0200, outside the range searched.
 
 1. Search the image for the address's two bytes, low first.
 2. For each hit, read the byte before it. It is the opcode if the hit is
