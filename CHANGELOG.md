@@ -5,7 +5,14 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 780, schema 31, tools 2.5.0, package 0.18.0.
+Data 781, schema 31, tools 2.5.0, package 0.18.0.
+
+**sprite_multiplex_game has a measured typical frame (data 781; #33).**
+A CIA1 probe across the sort, the build and every IRQ, over 1,867 PAL and
+2,142 NTSC frames in VICE: largest whole frame 8,785 cycles on PAL and
+8,995 on NTSC (with the 26-27 cycles per IRQ the timer cannot see). The
+Cost line now carries `cycles_per_frame_typical=8995` beside the
+arithmetic worst of 16,600.
 
 **Pitfall: sprites next to badlines hang a KERNAL disk save (data 780; #43).**
 `sprites_over_badlines_hang_serial_io` in `pitfalls/kernal-and-io.md` and
