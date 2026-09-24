@@ -545,14 +545,16 @@ On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
 **Raster band:** 45-251 (fli_image's engine, which How says this reuses unchanged)
-**Claims:** none
+**Claims:** vic_raster_irq (owns)
 **Claims basis:** measured-vice
 
 Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
-`recipes/kickassembler/afli-image.md`: every unit the listing writes (VIC
-bank, matrix base, character base, YSCROLL, raster compare) is claimed by
-`fli_image` and its prerequisites. AFLI's own change is `$D016` with MCM
-clear, a mode bit and not a unit yet. The recipe measures this section's
+`recipes/kickassembler/afli-image.md`: the units the listing writes (VIC
+bank, matrix base, character base, YSCROLL, raster compare) are the ones
+`fli_image` claims. The raster compare is stated here as well because the
+per-line engine runs from AFLI's own interrupt; without it the check does
+not see that the double IRQ the recipe enters through runs inside it. AFLI's
+own change is `$D016` with MCM clear, a mode bit and not a unit yet. The recipe measures this section's
 model pixel for pixel on PAL, including the `LINE_PAD` 10 row-counter
 reset described under "Cycle budget".
 
@@ -595,14 +597,15 @@ The cycle budget is identical to `fli_image`: two writes per line (`STA $D018`, 
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
 **Raster band:** 45-251 (fli_image's per-line engine, then the image swap on line 251 in `recipes/kickassembler/ifli-image.md`)
-**Claims:** cia2_vic_bank (owns), vic_xscroll (owns)
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns), vic_xscroll (owns)
 **Claims basis:** measured-vice
 
 Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
 `recipes/kickassembler/ifli-image.md`: once a frame, on line 251, the swap
 writes the VIC bank (`$DD00`) and XSCROLL (`$D016`, 0 for one image and 1
-for the other), 201 stores of each in 8 million cycles. Everything else
-the trace shows is `fli_image`'s. (An earlier version of the Uses
+for the other), 201 stores of each in 8 million cycles, from the same
+raster interrupt that runs the per-line engine. The other units the trace
+shows are the ones `fli_image` claims. (An earlier version of the Uses
 registers line had only `$D011` and `$D018`; the swap needs both of these.)
 
 ### Why
