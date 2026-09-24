@@ -8,3 +8,10 @@ data/
 storage/
 .tools/
 package-lock.json
+
+# Assembly and other listings: Prettier parses .inc as HTML and fails (CI
+# run on 89af00a, demos/measured/test/stub.inc).
+*.inc
+*.asm
+*.s
+*.a65
