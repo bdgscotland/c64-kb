@@ -1213,8 +1213,18 @@ is free: a different value in one write.
 **Cost:** cycles_per_line=63, lines_active=42, cycles_per_frame=2646, irq_slots=2, sprites_per_line=8
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-sideborder-open (42 lines, eight sprites on the line)
-**Claims:** sprite_0-7 (owns), vic_raster_irq (owns), vic_xscroll (shares), vic_yscroll (shares)
+**Claims:** vic_raster_irq (owns), vic_xscroll (shares), vic_yscroll (shares)
 **Claims basis:** derived-listing
+
+The loop needs a constant sprite set on its lines, not sprites of its
+own: `constant_sprite_set` on the Demands line says so, and whoever sets
+the sprites supplies it. An earlier version claimed `sprite_0-7 (owns)`,
+from the sideborder-open recipe, whose sprites are there only for the
+timing; `c64_check_compatibility` then set it against
+sprite_border_scroller, whose eight sprites are the constant set in
+`recipes/kickassembler/one-part-demo.md` (DEC `$D016` on cycle 56 on
+every line of 352 frames, measured in VICE x64sc;
+[#90](https://github.com/bdgscotland/c64-kb/issues/90)).
 
 `DEC $D016` / `INC $D016` clears CSEL only when XSCROLL is 0, and passes
 XSCROLL through 7 on the way. The badline-free region is made by
@@ -1440,8 +1450,19 @@ DYCP rows above or below the band. Not built.
 **Cost:** cycles_per_frame=371, lines_active=2, irq_slots=2
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-topbottom-border-open (two handlers with the $EA31 exit, no key held; NTSC, 353 on PAL)
-**Claims:** vic_raster_irq (owns)
+**Claims:** vic_raster_irq (shares)
 **Claims basis:** derived-listing
+
+The two writes need a line each, not an interrupt of their own, so the
+technique shares the raster compare: its writes can be one entry in
+another effect's chain, as `frame_sync_loop`'s tick is. Two recipes run
+them so, measured in VICE x64sc: `recipes/kickassembler/fli-music-scroller.md`
+clears RSEL on cycle 11 of line 249 at the end of the FLI handler, and
+`recipes/kickassembler/one-part-demo.md` on cycle 45 of line 248 inside
+the side border's first IRQ. An earlier version said `owns`, from the
+topbottom-border-open recipe's own two handlers, and
+`c64_check_compatibility` then set it against both of those programs
+([#90](https://github.com/bdgscotland/c64-kb/issues/90)).
 
 ### Why
 

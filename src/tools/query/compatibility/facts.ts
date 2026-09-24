@@ -18,8 +18,10 @@ export interface TechniqueFacts {
   registers: number;
   /** USES → KernalRoutine names. */
   kernal: readonly string[];
-  /** **Raster band:** in canonical form, or null. */
+  /** **Raster band:** in canonical form, or null; a caller's placement when bandPlaced. */
   band: string | null;
+  /** The band is the caller's placement (placement.ts, #90), not the page's. */
+  bandPlaced?: boolean;
   /** REQUIRES_REGION, lower case ("pal", "ntsc"), or null. */
   region: string | null;
   category: string | null;
@@ -60,6 +62,8 @@ export interface CompatibilityFacts {
   serialPitfalls?: readonly SerialPitfall[];
   /** Recipes that build an input and run with the KERNAL out (#94). */
   recipeKernalOut?: readonly RecipeKernalOut[];
+  /** Raster bands the caller placed, by technique ("name@lines", #90). */
+  placements?: ReadonlyMap<string, string>;
 }
 
 export function pairKey(i: number, j: number): string {

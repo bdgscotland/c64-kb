@@ -8,6 +8,7 @@
 import { parseRasterBand, rasterBandsOverlap } from "../../../graph/extract.ts";
 import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts";
 import type { TechniqueFacts } from "./facts.ts";
+import { compressUnits } from "./unit-rules.ts";
 
 type ConflictKind = CompatibilityCheckOutput["conflicts"][number]["kind"];
 export type BandSeparated = CompatibilityCheckOutput["band_separated"][number];
@@ -17,6 +18,8 @@ interface HardHit {
   shared: string[];
   rationale: string;
   resolution: string;
+  /** Absent: hard. The one soft rule here is sprite_set against a constant set's supplier (#90). */
+  severity?: "soft";
 }
 
 export interface Named {
@@ -61,14 +64,17 @@ const SERIAL_KERNAL: ReadonlySet<string> = new Set([
 // sprite-set changes; sprite_set) do not fire when both techniques state
 // line bands and the bands share no line: the pair is reported under
 // band_separated instead. A band that is absent or "movable" keeps the
-// conflict, and the rationale says which side is unknown.
+// conflict, and the rationale says which side is unknown. A caller may
+// place a movable or unstated band ("name@lines", placement.ts, #90).
 // continuous_interrupts and kernal_banked_out are not about lines and
 // ignore bands.
 
 function bandText(t: Named): string {
   const b = t.facts.band;
   if (!b) return `${t.name} states no raster band`;
-  if (b === "movable") return `${t.name}'s lines are chosen by the program (movable)`;
+  if (b === "movable")
+    return `${t.name}'s lines are chosen by the program (movable; place it with "${t.name}@lines")`;
+  if (t.facts.bandPlaced) return `${t.name} is placed on lines ${b}`;
   return `${t.name} holds lines ${b}`;
 }
 
@@ -81,7 +87,7 @@ function bandNote(a: Named, b: Named): string {
   const bothLines = lineRanges(a.facts.band) !== null && lineRanges(b.facts.band) !== null;
   return (
     ` Raster bands: ${bandText(a)}; ${bandText(b)}.` +
-    (bothLines ? " The bands overlap." : " Only two stated, disjoint line bands clear this rule.")
+    (bothLines ? " The bands overlap." : " Only two disjoint line bands, stated or placed, clear this rule.")
   );
 }
 
@@ -108,6 +114,9 @@ class HitSink {
   }
   hard(kind: ConflictKind, shared: string[], rationale: string, resolution: string): void {
     this.hits.push({ kind, shared, rationale, resolution });
+  }
+  soft(kind: ConflictKind, shared: string[], rationale: string, resolution: string): void {
+    this.hits.push({ kind, shared, rationale, resolution, severity: "soft" });
   }
   // A rule about sharing raster lines: noted, not fired, on disjoint
   // bands; otherwise fired with the band facts added to its rationale.
@@ -203,6 +212,29 @@ function spriteSetRule(sink: HitSink, x: Named, y: Named): void {
   }
 }
 
+/**
+ * One (x) needs a constant sprite set; the other (y) claims sprites and
+ * does not change them mid-frame (#90). y's sprites can be x's constant
+ * set: kickassembler-one-part-demo opens the side borders around
+ * sprite_border_scroller's eight. Soft, since their DMA is in x's cycle
+ * count wherever they are shown on x's lines. Not reported against x's own
+ * prerequisite or dependant, whose sprites are x's by design.
+ */
+function spriteSupplierRule(sink: HitSink, x: Named, y: Named): void {
+  if (!x.facts.demands.has("constant_sprite_set") || y.facts.demands.has("changes_sprite_set")) return;
+  if (x.requires?.has(y.name) || y.requires?.has(x.name)) return;
+  const sprites = y.facts.claims
+    .filter((c) => /^sprite_\d$/.test(c.unit) && (c.mode === "owns" || c.mode === "shares"))
+    .map((c) => c.unit);
+  if (sprites.length === 0) return;
+  sink.soft(
+    "sprite_set",
+    ["constant_sprite_set", ...compressUnits(sprites)],
+    `${x.name}'s per-line timing counts the sprites active on its lines; ${y.name} sets ${sprites.length === 1 ? "a sprite" : `${sprites.length} sprites`} and does not change the set mid-frame, so they can be that constant set.`,
+    `Keep ${y.name}'s sprites the same on every line of ${x.name}'s region (write their registers outside it) and count their DMA in ${x.name}'s timing, or keep them off those lines.`,
+  );
+}
+
 /** One (x) owns the drive's serial bus while resident; the other (y) does KERNAL disk I/O. */
 function serialBusRule(sink: HitSink, x: Named, y: Named): void {
   if (!x.facts.demands.has("serial_bus_exclusive")) return;
@@ -229,7 +261,7 @@ function kernalBankedOutRule(sink: HitSink, x: Named, y: Named): void {
 }
 
 // Directed rules run a→b then b→a, each rule family in turn.
-const DIRECTED_RULES = [cpuVsIrqRule, spriteSetRule, serialBusRule, kernalBankedOutRule];
+const DIRECTED_RULES = [cpuVsIrqRule, spriteSetRule, spriteSupplierRule, serialBusRule, kernalBankedOutRule];
 
 export function hardRules(a: Named, b: Named): HardRuleResult {
   const bands = disjointBands(a.facts, b.facts);

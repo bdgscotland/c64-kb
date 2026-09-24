@@ -1396,12 +1396,20 @@ Not measured here.
 **Uses kernal:** (none)
 **Requires:** topbottom_border_open, dypp_sprite_sine_scroller
 **Demands:** midframe_raster_irqs
-**Raster band:** 20-46, 249 (the recipe's RESTORE_LINE 20 plus its measured worst frame of 1,586 cycles, about 25 lines; its OPEN_LINE 249)
+**Raster band:** movable (the sprite-border-scroller recipe updates from its RESTORE_LINE 20 for about 25 lines, its measured worst frame of 1,586 cycles, and opens the border on line 249; fli-music-scroller.md updates on lines 273-299, one-part-demo.md from line 273 to line 1)
 **Cost:** cycles_per_frame=1586, cycles_per_frame_typical=829, irq_slots=2, sprites_per_line=8
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-sprite-border-scroller (both handlers' brackets summed per frame, above the display; worst frame is a real hand-off frame, typical is 182 of 300 frames)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
+
+The update can run on any lines where none of its sprites is drawn, so
+the band is `movable`; a program states where it runs it as
+`sprite_border_scroller@lines`. An earlier version stated the recipe's
+lines, 20-46 and 249, as the technique's, and `c64_check_compatibility`
+set it against the FLI's lines 45-251 in `fli-music-scroller.md`, which
+runs the update on lines 273-299 (measured in VICE x64sc;
+[#90](https://github.com/bdgscotland/c64-kb/issues/90)).
 
 ### Why
 

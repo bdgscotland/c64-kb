@@ -4,6 +4,7 @@ toolchain: kickassembler
 output_format: PRG
 region: pal
 techniques: [fli_image, stable_raster_irq, double_irq, vic_bank_select, topbottom_border_open, sprite_border_scroller, sid_play_routine_pattern]
+raster_bands: [sprite_border_scroller@273-299]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D016, D017, D018, D019, D01A, D01B, D01C, D01D, D020, D021, D027, D400, D418, DC0D, DD00, DD04, DD05, DD0E, DD0F]
 uses_kernal: []
@@ -662,35 +663,49 @@ which RSEL = 0 would have matched, and before line 251's.
 
 ## c64_check_compatibility
 
-On the seven techniques in the frontmatter, against a graph ingested from
-this checkout:
+On the seven techniques in the frontmatter, with the scroller placed by
+`raster_bands:` where the trace above measured it, against a graph built
+from this checkout:
 
 ```
 # Compatibility: fli_image + stable_raster_irq + double_irq + vic_bank_select + topbottom_border_open + sprite_border_scroller + sid_play_routine_pattern
-**Verdict:** INCOMPATIBLE — not as combined; each hard conflict below says how to separate them.
+**Verdict:** WARNINGS
 
-## unit_contention (hard): fli_image × topbottom_border_open
-## cpu_vs_irq (hard): fli_image × topbottom_border_open
-## unit_contention (hard): fli_image × sprite_border_scroller
-## cpu_vs_irq (hard): fli_image × sprite_border_scroller
+Placed by the caller: sprite_border_scroller on lines 273-299 (page: movable). The line rules read these bands as stated.
 
-(and 14 soft and 8 info findings, omitted here)
+## unit_shared (soft): fli_image × topbottom_border_open
+## unit_contention (soft): fli_image × sprite_border_scroller
+## sprite_set (soft): fli_image × sprite_border_scroller
+
+(the entry methods' unit_shared, the shared registers and the info
+findings omitted here)
+
+## Separated by raster band (info)
+- fli_image (lines 45-251) and sprite_border_scroller (lines 273-299): cpu_vs_irq does not apply.
 ```
 
-The verdict agrees with the measurement in the sense its resolutions
-give: one raster compare with one chain of handlers (`irq1`, `irq2`,
-`irq_upd`), and no interrupt armed on the FLI's lines. The
-`cpu_vs_irq` finding against `topbottom_border_open` holds because
-that technique states no band; here its one write needs no interrupt at
-all and is the last thing the FLI handler does, on line 249. The
-`cpu_vs_irq` finding against `sprite_border_scroller` quotes that
-technique's band from `sprite-border-scroller.md`, lines 20-46 and 249,
-which does overlap the FLI's 45-251; this recipe moves the scroller's
-handler to line 273 and the finding's resolution is what it does. The
-tool raises nothing for `sid_play_routine_pattern`: the play routine
+The call is `c64_check_compatibility` with
+`sprite_border_scroller@273-299` in place of the bare name. What each
+finding says, and what the recipe does:
+
+- `unit_shared` for topbottom_border_open: its one write is the last
+  thing the FLI handler does, on cycle 11 of line 249; it needs no
+  interrupt of its own.
+- `unit_contention` on `vic_raster_irq`, soft: the FLI's lines 45-251
+  and the scroller's 273-299 do not meet, so one compare serves both as
+  a chain (`irq1`, `irq2`, `irq_upd`), each arming the next.
+- `sprite_set`, soft: the FLI needs a constant sprite set on its lines.
+  The eight sprites are on lines 252-272, below the FLI's last line, and
+  the update writes them from line 275.
+- `cpu_vs_irq` is cleared by the placed band: `irq_upd` is armed for
+  line 273.
+
+The tool raises nothing for `sid_play_routine_pattern`: the play routine
 states no band and no demand of its own, because it runs inside another
-technique's handler. Where that handler may go is the question this
-recipe answers, and the tool leaves it to the program.
+technique's handler. An earlier version of this section showed four
+hard findings (issue #90): `topbottom_border_open` claimed to own the
+compare, and `sprite_border_scroller`'s page stated its own recipe's
+lines, 20-46 and 249, as fixed, which overlap the FLI's.
 
 ## Why this works
 

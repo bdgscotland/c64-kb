@@ -19,6 +19,7 @@ import { clobberKey, kernalClobberRules, type KernalSide, type KernalZpHit } fro
 import { recipeZeroPageRules } from "./recipe-rules.ts";
 import { recipeDeviceRules } from "./device-rules.ts";
 import { stateRules } from "./state-rules.ts";
+import { placeBands } from "./placement.ts";
 
 type Conflict = CompatibilityCheckOutput["conflicts"][number];
 type Coverage = CompatibilityCheckOutput["data_coverage"][number];
@@ -57,7 +58,8 @@ class RuleRunner {
     return r.hits;
   }
   private side(name: string): ClaimSide {
-    return { name, claims: factsOf(this.all, name).claims };
+    const F = factsOf(this.all, name);
+    return { name, claims: F.claims, band: F.band };
   }
   /**
    * The unit-claim rules (schema 25). `rel` says which of the pair requires
@@ -135,7 +137,7 @@ function inputPairConflicts(
         a,
         b,
         kind: h.kind,
-        severity: "hard",
+        severity: h.severity ?? "hard",
         shared: h.shared,
         rationale: h.rationale,
         resolution: h.resolution,
@@ -234,9 +236,11 @@ function closureConflicts(opts: {
   // An implied prerequisite's claims on units its input holds are the
   // input's (absorbInto); the input's own pair reports them.
   const absorb = { ...(u !== x ? { a: x } : {}), ...(v !== y ? { b: y } : {}) };
-  const hits: (UnitHit | KernalZpHit | (HardRuleResult["hits"][number] & { severity: "hard" }))[] = [
+  const hits: (
+    UnitHit | KernalZpHit | (Omit<HardRuleResult["hits"][number], "severity"> & { severity: "hard" | "soft" })
+  )[] = [
     ...opts.rules.units(u, v, NO_RELATION, absorb),
-    ...opts.rules.run(u, v).map((h) => ({ ...h, severity: "hard" as const })),
+    ...opts.rules.run(u, v).map((h) => ({ ...h, severity: h.severity ?? ("hard" as const) })),
   ];
   return hits.map((h) => ({
     a: x,
@@ -301,6 +305,22 @@ function ownChainConflict(
   };
 }
 
+/**
+ * The soft sprite_set note (a constant set's supplier, #90) once per input
+ * pair: a prerequisite that claims the same sprites repeats it, and the
+ * input pair's own note, listed first, already says it.
+ */
+function oneSupplierNote(conflicts: readonly Conflict[]): Conflict[] {
+  const seen = new Set<string>();
+  return conflicts.filter((c) => {
+    if ((c.underlying_kind ?? c.kind) !== "sprite_set" || c.severity !== "soft") return true;
+    const key = [c.a, c.b].sort().join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function verdictOf(
   conflicts: readonly Conflict[],
   notFound: readonly string[],
@@ -317,16 +337,22 @@ function verdictOf(
  * What the graph holds for each technique, so a technique the graph knows
  * nothing about is named as such instead of passing as compatible.
  */
-function dataCoverage(all: CompatibilityFacts, closure: RequiresClosure): Coverage[] {
+function dataCoverage(
+  all: CompatibilityFacts,
+  given: CompatibilityFacts,
+  closure: RequiresClosure,
+): Coverage[] {
   const coverageOf = (t: string): Coverage => {
     const F = factsOf(all, t);
+    const page = factsOf(given, t);
     return {
       technique: t,
       found: F.found,
       registers: F.registers,
       kernal_routines: F.kernal.length,
       demands: [...F.demands].sort(),
-      ...(F.band ? { raster_band: F.band } : {}),
+      ...(page.band ? { raster_band: page.band } : {}),
+      ...(F.band && F.bandPlaced ? { placed_band: F.band } : {}),
       known:
         F.found &&
         (F.registers > 0 || F.kernal.length > 0 || F.demands.size > 0 || F.claimsStated !== "unknown"),
@@ -388,10 +414,13 @@ function sharedInfrastructure(all: CompatibilityFacts, closure: RequiresClosure)
   return out;
 }
 
-export function evaluateCompatibility(all: CompatibilityFacts): CompatibilityEvaluation {
+export function evaluateCompatibility(given: CompatibilityFacts): CompatibilityEvaluation {
+  // Placed bands (#90) replace movable or unstated ones before any rule reads a band.
+  const placed = placeBands(given.facts, given.placements ?? new Map<string, string>());
+  const all: CompatibilityFacts = { ...given, facts: placed.facts };
   const closure = requiresClosure(all.techniques, all.requires);
   const rules = new RuleRunner(all, closure);
-  const conflicts = [
+  const conflicts = oneSupplierNote([
     ...inputPairConflicts(all, closure, rules),
     ...prerequisiteConflicts(all, closure, rules),
     ...ownChainConflicts(all, closure, rules),
@@ -400,15 +429,16 @@ export function evaluateCompatibility(all: CompatibilityFacts): CompatibilityEva
     ...inputPairs(all.techniques).flatMap(({ a, b }) =>
       stateRules({ name: a, facts: factsOf(all, a) }, { name: b, facts: factsOf(all, b) }, all),
     ),
-  ];
+  ]);
   const notFound = all.techniques.filter((t) => !factsOf(all, t).found);
   return {
     conflicts,
     band_separated: rules.separated,
     shared_infrastructure: sharedInfrastructure(all, closure),
-    data_coverage: dataCoverage(all, closure),
+    data_coverage: dataCoverage(all, given, closure),
     not_found: notFound,
     verdict: verdictOf(conflicts, notFound),
+    ...(placed.refused.length > 0 ? { placements_refused: placed.refused } : {}),
     closureOnly: closure.closureOnly,
   };
 }
