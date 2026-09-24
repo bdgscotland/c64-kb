@@ -21,7 +21,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (17)
+## Node Types (18)
 
 ### KernalRoutine
 
@@ -287,6 +287,25 @@ carries an `**Archetype:**` line; `CONVENTIONS-archetypes.md`). Before
 schema 21 the briefing tool held four archetype keywords and two forced
 techniques in code and the page's fingerprints were read by nobody.
 
+### Production
+
+A released title an archetype page names as a reference (schema 34).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | The title as the page links it ("The Last Ninja") |
+| kind | string | "game" or "demo", the kind of the page's archetypes |
+| year | integer, optional | The C64 year the page gives; absent when it gives none ("year not checked") |
+| note | string, optional | The rest of the page's parenthesis: "isometric", "Pipe Mania in Europe" |
+| url | string | The C64-Wiki or Wikipedia page the title links for its genre and year |
+
+Source: the `**Reference titles:**` line under each archetype
+(`CONVENTIONS-archetypes.md`). Only a linked title is read, and only the
+list at the head of the line: a title named in the correction prose after
+it is not a production. `**Modern examples:**` lines are not read. Before
+#40 sourced the titles one by one, the design (#22, 3.3) would have
+ingested them at rung 4 with no source.
+
 ### GameDesign
 
 A whole game: the techniques it runs in each phase, the archetype it is
@@ -344,7 +363,7 @@ say to rerun the ingest. No index, no edges.
 | started_at | string | ISO time the ingest set the marker |
 | flags | string | The ingest's flags, e.g. ` --clean` |
 
-## Edge Types (26)
+## Edge Types (27)
 
 ### BELONGS_TO
 
@@ -675,6 +694,15 @@ Direction: `GameDesign → Recipe`
 Meaning: "this recipe builds the design; its measured frame came from
 this listing." From `**Realised by:**`; MATCH both, misses counted as
 `realised_by … dropped` (schema 28).
+
+### EXEMPLIFIED_BY
+
+Direction: `Archetype → Production`, properties `source` (the linked
+C64-Wiki or Wikipedia URL) and `source_doc` (the archetype page)
+
+Meaning: "the page names this title as a reference for the archetype,
+and `source` gives its C64 genre and year" (schema 34). MATCH both;
+misses counted as `exemplified_by … dropped`. No tool reads it yet.
 
 ---
 

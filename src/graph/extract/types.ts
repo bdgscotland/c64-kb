@@ -129,6 +129,16 @@ export type GraphEntity =
       starter?: string;
     }
   | { type: "archetype_features"; archetype: string; technique: string }
+  // Productions (schema 34): the titles an archetype's **Reference titles:** line links.
+  | {
+      type: "production";
+      name: string;
+      kind: "game" | "demo";
+      year?: number;
+      note?: string;
+      url: string;
+    }
+  | { type: "exemplified_by"; archetype: string; production: string; source: string; source_doc: string }
   | { type: "archetype_risks"; archetype: string; pitfall: string }
   // Game designs (schema 28): docs/CONVENTIONS-game-designs.md.
   | {

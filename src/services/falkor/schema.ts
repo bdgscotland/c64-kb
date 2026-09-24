@@ -34,6 +34,8 @@ const LABELS = [
   { label: "Archetype", key: "name", unique: true, cleanable: true },
   // Whole-game compositions from docs/game-design/designs (schema 28).
   { label: "GameDesign", key: "name", unique: true, cleanable: true },
+  // Titles an archetype's Reference titles line links (schema 34).
+  { label: "Production", key: "name", unique: true, cleanable: true },
   // Seeds (schema 25) that CLAIMS edges point at; ensureSchema re-MERGEs them.
   { label: "HardwareUnit", key: "name", unique: true, cleanable: false },
   // Seeds (schema 29): the models VICE runs; VERIFIED_ON edges point at them.

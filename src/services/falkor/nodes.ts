@@ -283,6 +283,26 @@ export class FalkorNodes extends FalkorBase {
   }
 
   /**
+   * Production (schema 34): a released title an archetype page links as a
+   * reference, with the C64 year the page gives and the page it links.
+   */
+  async addProduction(p: {
+    name: string;
+    kind: string;
+    year?: number | undefined;
+    note?: string | undefined;
+    url: string;
+  }): Promise<void> {
+    const props: NodeProps = { kind: p.kind, url: p.url };
+    const clear: string[] = [];
+    if (p.year !== undefined) props.year = p.year;
+    else clear.push("year");
+    if (p.note) props.note = p.note;
+    else clear.push("note");
+    await this.upsertNode({ label: "Production", name: p.name, props, clear });
+  }
+
+  /**
    * GameDesign (schema 28): a whole game from docs/game-design/designs
    * (docs/CONVENTIONS-game-designs.md). `measured` is the page's Measured
    * frame lines as JSON; a page that drops its region or its measurements

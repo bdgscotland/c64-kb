@@ -110,6 +110,7 @@ const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
   ["composes", "COMPOSES", "composes"],
   ["instance_of", "INSTANCE_OF", "instance_of"],
   ["realised_by", "REALISED_BY", "realised_by"],
+  ["exemplified_by", "EXEMPLIFIED_BY", "exemplified_by"],
 ];
 
 interface EdgeCount {
