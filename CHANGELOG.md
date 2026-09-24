@@ -5,7 +5,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 776, schema 31, tools 2.4.0, package 0.17.1.
+Data 777, schema 31, tools 2.4.0, package 0.17.1.
+
+**Plain prose and corrected claims across docs/ (data 777; #56, #67).**
+Every page's prose lost its machine-written wording in six batches;
+`npm run check:prose` passed on all of them, and a clean ingest keeps the
+graph unchanged. Reading slowly surfaced about 190 claims that looked
+wrong on the hardware, toolchain, runtime, format and pitfall pages; each
+was settled against VICE, the ROM bytes, the compilers or a measured
+page, with a correction clause. The most consequential: the KERNAL jiffy
+clock is ~60 Hz on PAL as well as NTSC (timer latch $4025, 3,590 jiffies
+over 3,000 PAL frames); a stack push writes before it decrements; the
+Oscar64 default zero page is 8 bytes; a 50 Hz PAL CIA tick needs latch
+$4CF8; an IEC LOAD runs at ~406 B/s; the KERNAL never uses $DD0C. Search
+recall was measured for #26 (36 queries, recall@5 0.917); the BM25
+encoding stays.
 
 **Issue #55: the first new technique, `sid_env3_filter_envelope`, lands
 (data 771).** Voice 3's hardware ADSR drives the filter cutoff: `$D416` =
