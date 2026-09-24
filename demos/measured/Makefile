@@ -1,4 +1,4 @@
-# Makefile: MEASURED, a five-part C64 demo built from c64-kb techniques.
+# Makefile: MEASURED — five-part C64 demo built from c64-kb techniques.
 # See DESIGN.md for the part list and PLAN.md for the technique audit.
 NAME     := measured
 KICK_SRC := src/main.asm
@@ -14,7 +14,7 @@ KICK_DEPS := $(wildcard src/*.asm src/*.inc src/*/*.asm src/*/*.inc)
 #   4554 frames x 17,095 = 77.8M; add startup = ~80M.
 #   Pinned at 88,000,000 (8M margin).
 SHOT_CYCLES_PAL  := 100000000
-SHOT_CYCLES_NTSC := 88000000
+SHOT_CYCLES_NTSC := 100000000
 
 DISK_NAME := measured
 

@@ -17,6 +17,14 @@
 # requested. PAL with the real p1; NTSC with the dummy p1 (the real p1 never
 # leaves prepare there, I-010), which starts part 2 about 0.7M cycles earlier
 # than the real one will and every later part about one frame earlier.
+# 2026-09-24, music3 ("Lists (darker)", the full player): the tune keeps its
+# PAL tempo on NTSC (one call in six skipped), so the parts change at the same
+# SECOND on both models and the NTSC windows moved about 4 per cent later in
+# cycles: parts end near 21.9/40.8/59.8/75.5/91.3M PAL and 22.7/42.4/62.0/
+# 78.4/94.7M NTSC (arithmetic from SYNC_POS 12/24/36/46/56 at 1.6 s a bar plus
+# the 3.0M/3.1M autostart; the end screen was seen at 100M on both). The NTSC
+# counts for parts 4 and 5 moved to 70M and 86M; the others sit inside their
+# windows unchanged. Re-measure with a trace before trusting a count near an edge.
 #   Part 1  PAL picture from 2.99M, fade at 21.86M;  NTSC 3.10M, fade at 19.51M
 #   Part 2  PAL 22.78M, fade at 40.73M;              NTSC 19.64M, fade at 35.92M
 #   Part 3  PAL 43.12M, fade at 59.59M;              NTSC 38.00M, fade at 52.33M
@@ -89,8 +97,8 @@ for N in 1 2 3 4 5; do
         1) PAL_CYC=12000000; NTSC_CYC=11000000 ;;
         2) PAL_CYC=32000000; NTSC_CYC=28000000 ;;
         3) PAL_CYC=53000000; NTSC_CYC=47000000 ;;
-        4) PAL_CYC=70000000; NTSC_CYC=62000000 ;;
-        5) PAL_CYC=82000000; NTSC_CYC=70000000 ;;
+        4) PAL_CYC=70000000; NTSC_CYC=70000000 ;;
+        5) PAL_CYC=82000000; NTSC_CYC=86000000 ;;
     esac
 
     run_shot "p${N}-demo-pal"  "${PAL_CYC}"  ""            "shots/p${N}-demo-pal.png"  || FAIL=1

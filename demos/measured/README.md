@@ -180,8 +180,14 @@ this tree; each check is counted once per model.
 
 ## Placeholder and not built
 
-- **The tune** is the original placeholder written for the KB's minimal
-  player; a full player and a new score are in progress.
+- **The tune** is "Lists (darker)", written on 2026-09-24 to a stated
+  grammar (C minor, 150 BPM, a two-bar hook, minor progressions in the
+  themes and one major dominant in the bridge) after the maintainer rejected
+  two earlier rounds, and played by the full player (wavetables, pulse and
+  filter programs, hard restart, swing, NTSC tempo kept). `music/` holds the
+  tune source, the instrument bank, the compiler and the gates it passed
+  (`tunecheck.py`), so it can be regenerated. The parts change on the tune's
+  own bars. The maintainer approved it by ear; nobody else has listened.
 - **Part 1's font.** The scroller's A to Z at `$3800` are hand-typed
   8x8 glyphs doubled 2x2 into sprites, and the logo is a matrix of solid
   cells.

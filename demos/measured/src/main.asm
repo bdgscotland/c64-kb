@@ -1,4 +1,4 @@
-// main.asm: MEASURED, a five-part single-file C64 demo.
+// main.asm: MEASURED: five-part single-file C64 demo.
 // Integrates five part modules and a music player into a sequencer that:
 //   - runs a sorted raster-IRQ dispatcher owned by a single $0314 vector,
 //   - calls music_play once per frame from the line-255 handler,
@@ -17,10 +17,9 @@
 // Each module uses `* = <CODE_BASE> "name"` to place its code; they share this
 // compilation unit so all labels are visible across modules.
 
-.import source "parts/music.asm"         // music_init, music_play, music_pos at MUSIC_BASE ($1000)
+.import source "parts/music3.asm"        // music_init, music_play, music_pos at MUSIC_BASE ($1000): the full player and "Lists (darker)"
 
-// Part modules. During integration a dummy module stood in for each part
-// until its real file arrived; all five imports are the real modules now.
+// Part modules, one file each under parts/.
 .import source "parts/p1_logo.asm"       // real p1 (I-009: no writes in $0800-$0FFF; I-010: RST8 poll under sei/cli)
 .import source "parts/p2_twist.asm"
 .import source "parts/p3_border.asm"     // real p3 (rebuilt 2026-09-23: tables in bank 1 $5000-$5928, I-007 closed)
@@ -32,11 +31,15 @@
 // Parts end at order indices 5, 10, 15, 19, 23 for parts 1..5.
 // 192 frames per order at PAL 50 Hz gives ~18 s for the first three parts (5
 // orders) and ~16 s for parts 4 and 5 (4 orders).  Easy to retune here.
-.const SYNC_POS_1 = 5
-.const SYNC_POS_2 = 10
-.const SYNC_POS_3 = 15
-.const SYNC_POS_4 = 19
-.const SYNC_POS_5 = 22   // tune has 23 orders (0-22) then loops to 19; max reachable = 22
+// "Lists (darker)": music_pos is the bar (1.6 s at 150 BPM); the tune has 60
+// bars (0-59) and loops to bar 4, so every value below is reached once.
+// Parts run 19.2, 19.2, 19.2, 16.0 and 16.0 s; 12, 24, 36 and 56 are section
+// boundaries of the tune, 46 is bar 7 of its second bridge.
+.const SYNC_POS_1 = 12
+.const SYNC_POS_2 = 24
+.const SYNC_POS_3 = 36
+.const SYNC_POS_4 = 46
+.const SYNC_POS_5 = 56
 
 // ---- Sequencer zero page aliases (api.inc defines seq_frame..$0F) ----------
 // These alias seq_tmp ($08-$0F) for specific sequencer roles.
@@ -557,7 +560,7 @@ es_count_loop:
         // for ~500-2000 cycles before calling $0314, making the $D012 read
         // land 8-32 lines past line 255 regardless of actual jitter.  The
         // music-continuity fault (music_fault via seq_mcnt) already checks
-        // that music_play is called once per frame; see the integration record.
+        // that music_play is called once per frame; see integration-issues.md.
         // PASS
         lda #1; sta RESULT_BYTE
         lda #BORDER_PASS; sta $d020
@@ -686,7 +689,7 @@ spc_done:
         // FrameMeterStop that followed would have read the same stopped
         // counter again and doubled the figure. Without it an overrun frame
         // counts Start to Stop, interrupts included, which is what the meter
-        // is for. See the integration record, I-012.
+        // is for. See integration-issues.md I-012.
         rts
 
 // ============================================================================

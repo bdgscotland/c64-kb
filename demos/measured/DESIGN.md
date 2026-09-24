@@ -57,7 +57,7 @@ The autopilot build adds the harness meter's code and its 20-cell readout on row
 
 ## Timing and sync
 
-PAL 50 Hz, NTSC 60 Hz; the player is called every frame, so the tune runs 1.2 times faster on NTSC (the region-timing pitfall; accepted for the demo and stated). The sequencer's part table holds, per part, the `music_pos` value at which its fade starts; the tune is written so those positions fall at the dwell times above. The end screen holds until the cycle limit.
+PAL 50 Hz, NTSC 60 Hz. The sequencer's part table holds, per part, the `music_pos` value at which its fade starts; the tune is written so those positions fall at the dwell times above. The end screen holds until the cycle limit. **Amended 2026-09-24 (music3, "Lists (darker)"):** the player is still called every frame, and on NTSC it skips one call in six (its counter reloads 5), so the tune keeps its PAL tempo and the parts change at the same second on both models; what moves on NTSC is the cycle count at which each change falls, about 4 per cent later, and the pins were re-derived for it (SYNC_POS 12, 24, 36, 46, 56 bars of 1.6 s). This paragraph used to say the tune ran 1.2 times faster on NTSC, which was true of the minimal player and is false now.
 
 ## Autopilot, verdict, meter, checks
 
