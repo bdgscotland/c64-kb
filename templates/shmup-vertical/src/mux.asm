@@ -4,7 +4,7 @@
 // (technique sprite_multiplex_game): a persistent insertion sort by Y, a
 // sorted table built into the half the IRQs are not reading, zone IRQs that
 // reuse the eight hardware sprites further down, and a late guard. Changes
-// here: no zero page (Oscar64 owns $02-$52), sixteen actors, sprite
+// here: no zero page (Oscar64 owns $02-$52), thirteen actors, sprite
 // pointers written into both playfield screens, an enable mask for fewer
 // than eight sprites, and a cut-off Y below which nothing is shown, so no
 // sprite is on the lines where the panel split is timed.
@@ -12,7 +12,8 @@
 // C fills act_y/act_hx/act_ptr/act_col (Y = OFF_Y hides an actor),
 // then calls mux_sort and mux_build once a frame, after mux_ready is 0.
 
-.const N       = 16        // actors
+.const N       = 13        // actors: the ship and twelve enemies (16 cost
+                           // the sort 3 idle actors a frame)
 .const BUF     = 16        // offset of sorted half 1 (a multiple of 8)
 .const MIN_GAP = 21        // a reused slot's next Y must be >= its last Y + 21
 .const JOIN    = 4         // sprites within 4 lines of a zone's first join it
@@ -51,12 +52,14 @@ en_b:    .fill 2*BUF, 0    // $D015 for the half: one bit per slot in use
 slot:    .fill 2*BUF, i & 7
 slot2:   .fill 2*BUF, (i & 7) * 2
 bitm:    .fill 2*BUF, 1 << (i & 7)
+bitc:    .fill 2*BUF, $ff ^ (1 << (i & 7))
 enmask:  .byte $00, $01, $03, $07, $0f, $1f, $3f, $7f, $ff
 
 // build's scratch
 bo:      .byte 0
 acc:     .byte 0
 bk:      .byte 0
+bo8:     .byte 0
 by:      .byte 0
 d010run: .byte 0
 zw:      .byte 0
@@ -106,35 +109,40 @@ s_next: inx
 
 // ---------------------------------------------------------------------------
 // Build the back half: accept each sorted actor that can be shown, keep a
-// running $D010, then group sprites 8 onward into zones.
+// running $D010, then group sprites 8 onward into zones. X stays the write
+// place and Y the actor, with the read place in bk: about 20 cycles an
+// actor fewer than swapping X between the two places, which this loop did
+// first (arithmetic from the cycle counts of its instructions).
 // ---------------------------------------------------------------------------
 mux_build:
         lda mux_front
         eor #BUF
         sta bo
-        sta acc
+        tax                     // X: where the next accepted actor goes
+        clc
+        adc #8
+        sta bo8                 // the first eight always fit
         lda #0
         sta d010run
-        ldx #0
-b_loop: stx bk
-        ldy order,x
+        sta bk                  // the next place in order[]
+b_loop: ldy bk
+        cpy #N
+        beq b_done
+        inc bk
+        lda order,y
+        tay                     // Y: the actor
         lda act_y,y
         cmp #MAX_SY+1
         bcs b_done              // sorted: every later actor is lower still
+        cpx bo8
+        bcc b_accept
         sta by
-        ldx acc
-        txa
-        sec
-        sbc bo
-        cmp #8
-        bcc b_accept            // the first eight always fit
-        lda by
         sec
         sbc sy-8,x              // gap to the last sprite this slot showed
         cmp #MIN_GAP
-        bcc b_next              // too close: this actor is not shown this frame
-b_accept:
+        bcc b_loop              // too close: this actor is not shown this frame
         lda by
+b_accept:
         sta sy,x
         lda act_ptr,y
         sta sptr,x
@@ -143,25 +151,19 @@ b_accept:
         lda act_hx,y            // X = 2 * hx: bit 8 comes out in the carry
         asl
         sta sx,x
-        bcc b_clear
         lda d010run
+        bcc b_clear
         ora bitm,x
-        jmp b_store
+        bcs b_store             // ora leaves the carry set
 b_clear:
-        lda bitm,x
-        eor #$ff
-        and d010run
+        and bitc,x
 b_store:
         sta d010run
         sta sd010,x
         inx
-        stx acc
-b_next: ldx bk
-        inx
-        cpx #N
-        bne b_loop
+        jmp b_loop
 b_done:
-        ldx acc                 // fewer than eight: the frame IRQ writes the
+        stx acc                 // fewer than eight: the frame IRQ writes the
                                 // $D010 stored with entry 7, so fill up to it
 !:      txa
         sec

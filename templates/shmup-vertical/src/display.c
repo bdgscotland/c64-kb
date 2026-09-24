@@ -178,6 +178,9 @@ void put_dec(char *p, unsigned v, char digits)
 #define SCORE_AT (PANEL + 21 * 40 + 8)          // five digits; the sixth is always 0
 #define HI_AT    (PANEL + 21 * 40 + 26)
 static char shown_lives = 0xff;
+// The score's digits change once a frame, in panel_update, however many
+// kills the frame had: the frames with most kills are the heaviest.
+static char score_due;
 
 void panel_draw(void)
 {
@@ -187,6 +190,7 @@ void panel_draw(void)
     put_text(PANEL, 23, 2, "LIVES");
     put_dec(SCORE_AT, score, 5);
     put_dec(HI_AT, hiscore, 5);
+    score_due = 0;
     shown_lives = 0xff;
     panel_update();
 }
@@ -194,7 +198,7 @@ void panel_draw(void)
 // Adds to the score's digits on the panel one digit at a time, so a kill
 // costs a few dozen cycles, not a 16-bit conversion. Call after score and
 // hiscore have been updated.
-void panel_add(char tens)
+static void add_digits(char tens)
 {
     char *p = SCORE_AT + 4;
     char c = tens;
@@ -214,8 +218,17 @@ void panel_add(char tens)
         memcpy(HI_AT, SCORE_AT, 5);
 }
 
+void panel_add(char tens)
+{
+    score_due += tens;
+}
+
 void panel_update(void)
 {
+    if (score_due) {
+        add_digits(score_due);
+        score_due = 0;
+    }
     if (lives != shown_lives) {
         for (char i = 0; i < 5; i++) {
             PANEL[23 * 40 + 8 + i] = i < lives ? G_LIFE : G_WATER;

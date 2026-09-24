@@ -298,8 +298,8 @@ No member states a byte figure that can be summed.
 ```
 
 Measured by the meter (`make shot check`, VICE x64sc 3.10, the script's
-240 play frames): worst 12,912 cycles and typical (the median) 9,529 on
-PAL; worst 13,015 and typical 9,659 on NTSC. The bracket is the C main
+240 play frames): worst 11,681 cycles and typical (the median) 8,374 on
+PAL; worst 11,875 and typical 8,733 on NTSC. The bracket is the C main
 loop's whole frame (CIA2 timer A) plus every IRQ outside it (CIA2 timer B,
 summed by kernel.asm); badlines and sprite DMA inside either are in the
 figures. The split IRQ starts timer B only after its panel writes, so C
@@ -307,7 +307,12 @@ adds its first 289 cycles on PAL, 296 on NTSC (the largest of 245-289 and
 246-296 measured under the VICE monitor from the IRQ sequence to the start
 write). Not in the figures: about 45 cycles per other IRQ taken outside the
 main loop's bracket (the entry before timer B starts and the exit after it
-stops; arithmetic from kernel.asm), one to four a frame. The meter's
+stops; arithmetic from kernel.asm), one to four a frame, nor the loop's
+head (the wait, `level_frame`, the stick) and `meter_open`'s own
+bookkeeping. A frame can therefore be lost with the meter below the frame:
+at 7974a7a the staged run lost one on NTSC with its worst at 16,122. A frame
+far past the frame reads about 65,524, because timer A counts down from
+65,535 and wraps: that reading is a wrap, not a size. The meter's
 readout is printed only after the freeze: printed every frame it cost up
 to 3,404 cycles outside the bracket (measured in the review) and made the
 autopilot build drop frames the game does not.
@@ -320,18 +325,79 @@ enemies' dots stepped there too, `hit.asm` for the enemy boxes, `step.asm`
 for the path step, ready-made glyphs for shots over open water (no merge),
 and a three-row copy of 32 cycles a column (the other version's copy3).
 
+Lost frames are counted by `wait_frame` (main.c) before it waits: a frame
+flag already set means the work ended after the next frame IRQ. The first
+version counted at wake-up, when the frame IRQ count had moved by more
+than one, which a single lost frame never does: the review's mutation M8a
+(one play frame about 2,400 cycles late) passed with `OVERRUNS 00`. The
+count is `overruns` in the verdict and `LOST_FRAMES` at `$02FD` in every
+build, which `make joytest` and `make longplay` read.
+
+With that count, play on NTSC lost frames at 7974a7a where the staged run
+never looked: held fire and a sweep of the ship (the review's drive: 6 of
+15 games, at play frame 465 in 5; a build with `-dWORKEND=1`, 4 of 4, at
+play frames 282-321 and 454-477), when the row-48 saucers and row-56 darts
+are on the screen with bolts, dots and kills. The staged run records play
+frames 150-399. The heaviest play frame, 464, measured by `-dPROFILE=1`
+(each step with IRQs held off, NTSC): 15,385 cycles of steps at 7974a7a
+(bullets 4,925, collide 2,387, waves 3,252, actors 3,035, render 1,572),
+13,357-13,395 after these cuts, each checked by `make check`:
+
+- The bolts' loop moved from C to `glyph.asm` (`bb_run`, with their boxes):
+  bullets at frame 464 from 4,925 to 4,491 (PROFILE).
+- `cb_draw` takes glyph addresses from two 256-byte tables: 35 cycles less
+  a merge (arithmetic). It notes the map's code under a bullet only when
+  `cb_keep` is set, in AUTOPILOT builds, whose verdict checks it: about 40
+  cycles a draw (arithmetic).
+- The dots against the ship moved to `hit.asm` (`dot_scan`); a dot that
+  hits still takes the ship's box off before the enemies are tested.
+- The path bytecode runs in `step.asm` (`en_paths`, `en_fetch`, with the
+  explosions' timers); C calls `on_enemy_fire` for each enemy it lists.
+  The scan and reads in C cost about 330 cycles an enemy that needed a new
+  MOVE (PROFILE).
+- `hit_scan` passes over an enemy whose lines miss every box that is on,
+  and walks a list of the boxes that are on; a box spent by an earlier
+  enemy is checked only on a hit.
+- The score's digits change once a frame (`panel_update`), not once a kill.
+- The spawner reads its wave through a pointer and adds the formation step
+  to X, where it indexed the table and multiplied.
+- The SID copy is unrolled: 200 cycles against 350 (arithmetic).
+- The multiplexer takes 13 actors, not 16 (3 were never used), and its
+  build loop keeps the write place in X: about 20 cycles an actor less
+  (arithmetic).
+- `eb_run` takes the dot's ready-made glyph from a table: 14 cycles a dot
+  less (arithmetic).
+- The frame IRQ skips the meter's hand-over in builds without the meter:
+  about 60 cycles a frame (arithmetic).
+
+One change was tried and taken out: drawing the hidden screen in pieces
+wherever a frame had time left, instead of three rows on each of YSCROLL
+0-6. In the heaviest stretch no frame had time left, so the pieces piled
+onto the last frames before the flip, and the extra calls cost more: 20 to
+56 lost frames in 40 s where the fixed schedule lost 2 to 4 (NTSC, the
+same runs).
+
+After the cuts, with `-dWORKEND=1` (the raster when a frame's work ended,
+counted in lines after line 252): in 4 games of 40 s with a ship that is
+never lost (`-dGOD=1`), the latest end on NTSC was line 254-256 of 263, at
+play frames 464-472, and no frame was lost; on PAL 230-243 of 312. The
+staged run's latest end on NTSC is line 249. `make joytest`: 16 of 16 NTSC
+games and 16 of 16 PAL lost no frame; `make longplay`: 4 games a model of
+about 39,000 (PAL) and 44,000 (NTSC) play frames, none lost.
+
 Against the plan: the tool's range, 26,691-28,709 plus 1,894 fixed, is
 well above the worst frame measured. Where they differ:
 
 - sprite_multiplex_game, 16,600 (arithmetic): its recipe's worst case, 24
-  actors with the sort order reversed. Here 16 actors, and the persistent
-  sort sees a few swaps a frame: sort and build 2,600-3,700 with DMA
-  (PROFILE builds, IRQs off).
+  actors with the sort order reversed. Here 13 actors, and the persistent
+  sort sees a few swaps a frame: sort and build 2,800-3,300 with DMA
+  (PROFILE builds, IRQs off, the staged frame and play's heaviest).
 - char_bullets, 3,995: eight bullets. Here up to 3 bolts and 6 dots: the
-  erase, the restore check and the draw, 2,300-3,850 on the staged frame.
+  erase, the restore check and the draw, 2,300 on the staged frame, 4,000
+  on play's heaviest.
 - per_frame_hitbox, 3,693: 28 pairs of every kind. Here 12 enemies x 5
-  boxes in `hit.asm` plus 6 dots against the ship: about 2,800 staged.
-- wave_director, 1,170-3,188: here about 2,200 staged, twelve slots.
+  boxes in `hit.asm` plus 6 dots against the ship: 1,500-2,600.
+- wave_director, 1,170-3,188: here 2,000-3,000, twelve slots.
 - Not in the tool at all: drawing three rows of the hidden screen (about
   1,700-1,900) and the actor hand-off to the multiplexer.
 - soft_scroll_v, screen_double_buffer_d018, joystick_edge_detect have no
@@ -342,9 +408,10 @@ The graded script's worst frame is not the game's worst case. `make stage`
 (the parade and the row-32 swoop), waits, and fires up a parade column, so
 bolts, dots and a kill share those frames, and meters play frames 150-399.
 Swept over 16 timings (-dSD=0,8,16,24 x -dSX=8,16,24,32), its worst frame
-was 15,991 cycles on PAL and 16,136 on NTSC (SD 24, SX 16, which `make
-stage` now runs: 15,982 and 16,123, typical 11,376 and 11,676), and no run
-lost a frame. Its verdict fails on an overrun or an unrestored bullet cell,
+is 15,064 cycles on PAL and 15,237 on NTSC, typical 9,280 and 9,967 (SD 24,
+SX 16, which `make stage` runs), and no run lost a frame. At 7974a7a the
+same sweep gave 15,991 and 16,136. It is not play's heaviest frame (above):
+`make longplay` covers that. Its verdict fails on an overrun or an unrestored bullet cell,
 and stage-expect.json on a worst over the frame. Before enemy fire the
 review's sweep found 14,575 and 15,066. Two things the first version of
 this plan got wrong: four bolts never fly at once (one shot per 7 frames,
@@ -353,9 +420,11 @@ a bolt lives at most 16: three, arithmetic), and the carry frame (YSCROLL
 
 The bullet draw must end before the beam reaches each cell it changes.
 `-dDRAWEND=1` records the smallest number of lines between the raster
-after a write and the first line of that cell: 17 for a dot on NTSC in the
-graded run, 28 for both kinds on NTSC in the staged run; on PAL the bolts
-were all drawn before line 0 and the dots had 47 or more. Frames that start
+and the first line of each cell drawn, read after all the bolts and again
+after all the dots (a lower bound: the bolts are drawn in `glyph.asm` now):
+on NTSC 19 for a dot in the graded run and 25 in the staged run, 26 for the
+bolts in both; on PAL the bolts were all drawn before line 0 and the dots
+had 69 or more. At 7974a7a, read after each cell: 17 and 28. Frames that start
 late for the harness (the first, the one after a meter_init, the ones where
 the median is found) are left out; the enemy fire window, sprite Y 72-140,
 is what keeps the dots below the draw.
@@ -364,8 +433,8 @@ is what keeps the dots below the draw.
 
 - `$0801-$087F` Oscar64 startup; `$0880-$1FFF` the KickAssembler blob
   (`src/kernel.asm` with `mux.asm`, `sound.asm`, `glyph.asm`, `hit.asm`
-  and `step.asm`: 3,972 bytes, to `$1803`); `$2000-$7FFF` C code, data and
-  stack (code and data end at `$3E51` in the release build).
+  and `step.asm`: 5,162 bytes, to `$1CA9`); `$2000-$7FFF` C code, data and
+  stack (code and data end at `$3D0C` in the release build).
 - VIC bank 2 (`$DD00` bits 0-1 = 01): playfield screens at `$8000` and
   `$8400`, the panel screen at `$8800`, sprite shapes from `$A000` (block
   128), characters at `$B800`. The VIC sees the character ROM at
@@ -412,6 +481,8 @@ Mutations, each run through its target (the review's are in its report):
 | Mutation | Target | Result |
 |---|---|---|
 | The split's phase-5 delay 5 to 7 | `make check` | phases fail YSCROLL 5, PAL and NTSC; the graded shot alone passed |
+| One play frame about 2,400 cycles late (M8a) | `make check` | verdict red, `OVERRUNS 02` PAL, `03` NTSC; the first count passed it with `00` |
+| The same late frame in the joy build (M8b) | `make joytest` | lost frames counted, joytest fails |
 | The erase skips the first cell (`if (p && i)` before, now `beq` after `dey` in cb_erase) | `make check` | verdict red (fact 16) |
 | Enemies never fire (`on_enemy_fire` removed) | `make check` | verdict red, LIVES 3, the ship's end moves |
 | Dots never hurt the ship (`on_ship_shot` removed) | `make check` | verdict red, LIVES 3 |
@@ -433,10 +504,15 @@ identical on PAL and NTSC. FORCE_FAULT starts the ship 16 pixels right: it
 shoots 4 instead of 5 (400 points), is rammed instead of shot, ends at X
 136, and check.py fails the verdict, the text and the ship's box.
 
-`make joytest` plays the normal game (the `$02FE` joy build) headless: a
-fresh disk's title shows HI 000000, a game held on fire runs to GAME OVER
-and saves, and a reboot on the same disk shows that score as HI. Its score
-varies from run to run (the drive steps in wall-clock time).
+`make joytest` plays the normal game (the `$02FE` joy build) headless on
+PAL and NTSC: a fresh disk's title shows HI 000000, a game with fire held
+and the ship swept left and right runs to GAME OVER and saves, and a reboot
+on the same disk shows that score as HI; then 15 more games a model, 4
+machines at once. Every game fails on a lost frame (`LOST_FRAMES`). Scores
+vary from run to run (the drive steps in wall-clock time). `make longplay`
+plays a `-dGOD=1` build, whose ship is never lost, for 40 s of warp a game,
+4 games a model, through the level's later loops, and fails on a lost
+frame.
 
 ## Decisions and open questions
 

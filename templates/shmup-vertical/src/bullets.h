@@ -12,11 +12,10 @@
 // The enemies' bullets, glyphs $F2-$F7.
 #define NEB 6
 
-extern char b_live[NB];
-extern char b_hx[NB];           // half X of the bolt's pixel pair
-extern char b_line[NB];         // raster line of the bolt's top row
-
-// The dots live in glyph.asm, which moves and draws them.
+// The bolts and the dots live in glyph.asm, which moves and draws them.
+#define b_live  ((char *)ASM_BB_LIVE)
+#define b_hx    ((char *)ASM_BB_HX)     // half X of the bolt's pixel pair
+#define b_line  ((char *)ASM_BB_LINE)   // raster line of the bolt's top row
 #define eb_live ((char *)ASM_EB_LIVE)
 #define eb_hx   ((char *)ASM_EB_HX)     // half X of the dot's pixel pair
 #define eb_line ((char *)ASM_EB_LINE)   // raster line of the dot's top row

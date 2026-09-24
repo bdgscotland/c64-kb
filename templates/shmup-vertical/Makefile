@@ -38,17 +38,18 @@ SHOT_DISK := 1
 # bigger main reaches further. The $DC0D stores
 # that mask CIA1 count against all its units. The KERNAL routines are the
 # disk calls of src/hiscore.c (kernalio.h) and the KERNAL IRQ that runs
-# during the first load. CIA2 timers A and B are the frame meter's.
+# during the first load. CIA2 timers A and B are the frame meter's. $02FD
+# is LOST_FRAMES (main.c), which make joytest reads.
 CLAIMS_ARGS = --cycles 30000000 --disk $(abspath $(D64)) \
   --claim 'zero_page $$02-$$56, sprite_0-7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, sid_voice_1-3, sid_filter_volume, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, cia2_vic_bank' \
-  --range 'colour=$$D800-$$DBE7,result=$$02FF' \
+  --range 'colour=$$D800-$$DBE7,result=$$02FF,lost_frames=$$02FD' \
   --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' \
   --kernal 'SETNAM,SETLFS,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ'
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := stage joytest
+VERIFY_TARGETS := stage joytest longplay
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -105,8 +106,26 @@ $(PRG_JOY): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 .PHONY: joy
 joy: $(PRG_JOY)
 
-# joytest: the joy build played to GAME OVER, its save, and a reboot on the
-# same fresh disk showing that score as HI (tools/joytest.py).
+# joytest: the joy build played on PAL and NTSC, fire held and the ship
+# swept, to GAME OVER; its save, and a reboot on the same fresh disk showing
+# that score as HI; then JOYTEST_SOAK more games a model, each graded on
+# LOST_FRAMES (tools/joytest.py). Any lost frame fails.
+JOYTEST_SOAK ?= 15
 .PHONY: joytest
 joytest: $(PRG_JOY) $(D64)
-	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_JOY) $(D64)
+	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_JOY) $(D64) --soak $(JOYTEST_SOAK)
+
+# longplay: a joy build whose ship is never lost (-dGOD=1), so fire held and
+# a sweep run through the level's later loops, where the waves come closer
+# together: LONGPLAY_GAMES games a model at once, LONGPLAY_SECONDS of warp
+# each, and any lost frame fails.
+LONGPLAY_SECONDS ?= 40
+LONGPLAY_GAMES ?= 4
+PRG_GOD := build/$(NAME)-god.prg
+$(PRG_GOD): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -dGOD=1 -o=$@ $(C_MAIN)
+
+.PHONY: longplay
+longplay: $(PRG_GOD) $(D64)
+	X64SC=$(X64SC) $(PYTHON) tools/joytest.py $(PRG_GOD) $(D64) --long $(LONGPLAY_SECONDS) --soak $$(( $(LONGPLAY_GAMES) - 1 )) --jobs $(LONGPLAY_GAMES)

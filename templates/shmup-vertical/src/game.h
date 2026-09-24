@@ -59,7 +59,7 @@
 #define ACT_HX  ((char *)ASM_ACT_HX)       // sprite X = 2 * hx
 #define ACT_PTR ((char *)ASM_ACT_PTR)
 #define ACT_COL ((char *)ASM_ACT_COL)
-#define N_ACTORS 16             // mux.asm's N
+#define N_ACTORS 13             // mux.asm's N: the ship and NE enemies
 #define OFF_Y    0xff           // mux.asm's OFF_Y: not shown
 #define MAX_SY   187            // mux.asm's MAX_SY: lowest sprite Y shown
 

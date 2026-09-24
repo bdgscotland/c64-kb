@@ -107,11 +107,10 @@ mp_music:
 !:      jsr voice
         dex
         bpl !-
-        ldx #24                    // ghost copy: every register, once a frame
-!:      lda ghost,x
-        sta $d400,x
-        dex
-        bpl !-
+        .for (var r = 24; r >= 0; r--) {   // ghost copy: every register, once a
+            lda ghost + r               // frame, top down as the loop did; unrolled,
+            sta $d400 + r               // 200 cycles against 350
+        }
         rts
 
 // One voice, X = 0-2. The music advances every frame, owned or not.

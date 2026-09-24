@@ -12,7 +12,6 @@
 
 void box_off(char slot);
 void box_ship(char hx, char sy);        // where the ship is drawn
-void box_bullet(char i, char hx, char line);
 void collide(void);                     // enemy bullets against the ship, then enemies
                                         // from the actor table against these
 

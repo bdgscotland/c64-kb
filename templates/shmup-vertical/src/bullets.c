@@ -4,8 +4,9 @@
 // that code's glyph into the reserved glyph, OR the shot into it, write the
 // reserved code. Every bullet drawn in a frame goes on one list, bolts
 // first; restoring walks the list backwards, so bullets sharing a cell
-// unwind. The list and the per-bullet work are glyph.asm's (cb_draw,
-// cb_erase, cb_check); this file moves the bullets and says what to draw.
+// unwind. The list, the moves and the draws are glyph.asm's (bb_run for the
+// bolts, eb_run for the dots, cb_draw, cb_erase, cb_check); this file fires
+// the bullets and holds the rules.
 //
 // Bolts: 1 pixel pair wide, rows 2-5 of their cell. A bolt moves up 7 lines
 // a frame while the playfield moves down 1, so it stays on rows 2-5 of
@@ -14,9 +15,9 @@
 // of the bolt's top row (row 2 of the cell, whose top is 48 + YSCROLL + 8 *
 // row). A bolt never straddles two cells.
 //
-// Enemy bullets (moved and drawn by glyph.asm's eb_run): a 2 x 2 dot that falls 2 lines a frame and drifts one pixel
-// pair a frame towards where the ship was, snapped to an even glyph row so
-// it never crosses a cell edge. An enemy fires only between sprite Y 72 and
+// Enemy bullets: a 2 x 2 dot that falls 2 lines a frame and drifts one
+// pixel pair a frame towards where the ship was, snapped to an even glyph
+// row so it never crosses a cell edge. An enemy fires only between sprite Y 72 and
 // 140, so a bullet starts on line 84 or lower, in a cell that starts on line
 // 77 or lower. Bolts are drawn first; the draw must end before the beam
 // reaches the first cell it changes (the measured end is in PLAN.md).
@@ -32,10 +33,7 @@
 #define EB_BOTTOM 140           // ... to 140
 #define eb_dx ((signed char *)ASM_EB_DX)
 
-char b_live[NB], b_hx[NB], b_line[NB];
 unsigned eb_fired;
-
-static const char pair_mask[4] = { 0xc0, 0x30, 0x0c, 0x03 };
 
 #ifdef DRAWEND
 // Measuring only (-dDRAWEND=1): the smallest number of lines between the
@@ -68,6 +66,7 @@ void bullets_reset(void)
     for (char j = 0; j < NEB; j++)
         eb_live[j] = 0;
     __asm { jsr ASM_CB_BEGIN }                  // an empty draw list
+    K_BYTE(ASM_CB_KEEP) = AUTOPILOT;            // bullets_restored needs the map's codes
 }
 
 // The bolt starts in the cell row above the ship's nose, placed as if drawn
@@ -133,44 +132,24 @@ bool bullets_restored(void)
     return !K_BYTE(ASM_CB_FAULT);
 }
 
-// One bullet at screen row r, column c: glyph is its reserved code, m the
-// pixel pair, rows a to a + n - 1 of the glyph.
-static void draw(char r, char c, char glyph, char m, char a, char n)
-{
-    K_BYTE(ASM_CB_R) = r;
-    K_BYTE(ASM_CB_C) = c;
-    K_BYTE(ASM_CB_GLYPH) = glyph;
-    K_BYTE(ASM_CB_MASK) = m;
-    K_BYTE(ASM_CB_ROW) = a;
-    K_BYTE(ASM_CB_N) = n;
-    __asm { jsr ASM_CB_DRAW }
-}
-
 void bullets_move_draw(void)
 {
     K_BYTE(ASM_CB_FRONT) = cur_front;
     K_BYTE(ASM_CB_TOP) = cur_row + 20;
-    __asm { jsr ASM_CB_BEGIN }
-    for (char i = 0; i < NB; i++) {
-        if (!b_live[i])
-            continue;
-        char line = b_line[i] - 7;
-        b_line[i] = line;
-        char r = (char)(line - 50 - cur_y) >> 3;
-        if (line < 50 + 8 + cur_y || r > 19) {       // row 0 is half hidden: gone
-            bullet_kill(i);
-            continue;
-        }
-        char x = b_hx[i] - 12;                      // multicolour pixel on the screen
-        K_BYTE(ASM_CB_FIXED) = G_BOLTS + (x & 3);   // the bolt over open water
-        draw(r, x >> 2, G_BULLET + i, pair_mask[x & 3], 2, 4);
-        box_bullet(i, b_hx[i], line);
-#ifdef DRAWEND
-        drawend_margin(0x0364, line - 2);       // the bolt's cell starts 2 lines up
-#endif
+    K_BYTE(ASM_CB_Y) = cur_y;                   // the YSCROLL showing
+    __asm {
+        jsr ASM_CB_BEGIN
+        jsr ASM_BB_RUN                          // the bolts first
     }
-    K_BYTE(ASM_CB_Y) = cur_y;                   // the enemies' dots: glyph.asm's eb_run
-    __asm { jsr ASM_EB_RUN }
+#ifdef DRAWEND
+    // Read after all the bolts (then all the dots), so a margin here is
+    // smaller than the one just after its own cell was written: a lower
+    // bound.
+    for (char i = 0; i < NB; i++)
+        if (b_live[i])
+            drawend_margin(0x0364, b_line[i] - 2);  // the bolt's cell starts 2 lines up
+#endif
+    __asm { jsr ASM_EB_RUN }                    // then the enemies' dots
 #ifdef DRAWEND
     for (char j = 0; j < NEB; j++)
         if (eb_live[j])

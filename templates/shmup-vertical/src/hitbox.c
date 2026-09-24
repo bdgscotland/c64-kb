@@ -3,13 +3,14 @@
 // across the whole screen, 2-pixel precision) and raster lines, so the test
 // is four one-byte compares and $D010 never enters it.
 //
-// The ship's and the bolts' boxes are emitted where they are drawn, into
-// hit.asm's tables. An enemy's box comes from the multiplexer's actor table,
-// which is what the display showed this frame, and its sprite frame's box
-// (hit.asm fb_*): an explosion's frame has none. Enemies are tested only
-// against the groups they can hurt (the ship and the bolts), never against
-// each other; the enemies' dots only against the ship. hit.asm's hit_scan
-// does the enemy pairs; this file turns its hits into events.
+// The ship's box is emitted where it is drawn (actors_draw), the bolts' by
+// glyph.asm's bb_run, into hit.asm's tables. An enemy's box comes from the
+// multiplexer's actor table, which is what the display showed this frame,
+// and its sprite frame's box (hit.asm fb_*): an explosion's frame has none.
+// Enemies are tested only against the groups they can hurt (the ship and
+// the bolts), never against each other; the enemies' dots only against the
+// ship. hit.asm's dot_scan and hit_scan do the tests; this file turns their
+// hits into events.
 #include "hitbox.h"
 #include "display.h"
 #include "waves.h"
@@ -40,38 +41,12 @@ void box_ship(char hx, char sy)
     hb_on[BOX_PLAYER] = 1;
 }
 
-// A bolt: one pixel pair wide, four lines tall.
-void box_bullet(char i, char hx, char line)
-{
-    char s = BOX_SHOT + i;
-    hb_l[s] = hx;
-    hb_r[s] = hx + 1;
-    hb_t[s] = line;
-    hb_b[s] = line + 4;
-    hb_on[s] = 1;
-}
-
-// Enemy dots against the ship's box: a dot is one pixel pair wide and two
-// lines tall.
-static void ship_hit(void)
-{
-    if (!hb_on[BOX_PLAYER])
-        return;
-    char t = hb_t[BOX_PLAYER], b = hb_b[BOX_PLAYER], l = hb_l[BOX_PLAYER], r = hb_r[BOX_PLAYER];
-    for (char j = 0; j < NEB; j++) {
-        if (!eb_live[j])
-            continue;
-        char y = eb_line[j], x = eb_hx[j];
-        if (y < b && t < y + 2 && x < r && l < x + 1) {
-            on_ship_shot(j);
-            return;
-        }
-    }
-}
-
 void collide(void)
 {
-    ship_hit();
+    __asm { jsr ASM_DOT_SCAN }                  // the enemies' dots against the ship
+    char j = K_BYTE(ASM_DOT_HIT);
+    if (j != 0xff)
+        on_ship_shot(j);                        // its box goes off before the enemies' test
     __asm { jsr ASM_HIT_SCAN }
     char n = K_BYTE(ASM_HIT_N);
     for (char k = 0; k < n; k++) {

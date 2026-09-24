@@ -32,21 +32,21 @@ Make a project from it in c64-kb with
 | `src/main.c` | States (title, play, game over), the ship, the frame loop, the autopilot scripts and their verdict |
 | `src/level.c` | The river map and the downward scroll through two screens |
 | `src/waves.c` | The wave list, the path bytecode (MOVE, LOOP, FIRE, END), the pool of 12 enemies |
-| `src/bullets.c` | The ship's bolts and the enemies' dots: firing, moving, what to draw |
-| `src/hitbox.c` | The ship's and bolts' boxes; the hits turned into events |
+| `src/bullets.c` | The ship's bolts and the enemies' dots: firing and the rules |
+| `src/hitbox.c` | The ship's box; the hits turned into events |
 | `src/display.c` | Character set, sprite art (as text), the score panel |
 | `src/hiscore.c` | The HISCORE file on drive 8 |
 | `src/game.h` | Memory map, the kernel's variables as C names, shared state |
 | `src/kernel.asm` | The raster IRQ chain, the panel split, the three-row copy (KickAssembler) |
 | `src/mux.asm` | The sprite multiplexer: sort, build, zone IRQs |
 | `src/sound.asm` | The music player with effects inside it, and the tune |
-| `src/glyph.asm` | The character-bullet list: draw, erase, the restore check; the dots' step |
-| `src/hit.asm` | Every enemy's box against the ship's and the bolts' |
-| `src/step.asm` | One path step for every flying enemy |
+| `src/glyph.asm` | The character bullets: the bolts' and the dots' moves and draws, the list, the erase, the restore check |
+| `src/hit.asm` | The dots against the ship; every enemy's box against the ship's and the bolts' |
+| `src/step.asm` | The path bytecode run for every enemy, explosions, one path step for every flying enemy |
 | `tools/phases.py` | `make phases`: the panel at every YSCROLL phase against the graded one |
 | `tools/meter.py` | `make stage`: reads the meter off the staged run's shots |
 | `tools/drive.py` | Plays the `make joy` build headless over VICE's binary monitor |
-| `tools/joytest.py` | `make joytest`: a game to GAME OVER, then a reboot that must show the saved HI |
+| `tools/joytest.py` | `make joytest`: games played on PAL and NTSC to GAME OVER, graded on lost frames, and a reboot that must show the saved HI; `make longplay`: long games with a ship that is never lost |
 | `PLAN.md` | The plan, with the c64-kb tool output it was built from |
 | `expect.json`, `stage-expect.json` | What the graded and the staged screenshots must show |
 
@@ -72,30 +72,63 @@ VICE x64sc 3.10, the harness meter. The graded script's 240 play frames:
 
 | Model | Worst frame | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 12,912 cycles | 9,529 | 19,656 |
-| NTSC | 13,015 cycles | 9,659 | 17,095 |
+| PAL | 11,681 cycles | 8,374 | 19,656 |
+| NTSC | 11,875 cycles | 8,733 | 17,095 |
 
-The heaviest case, `make stage` (12 enemies flying, bolts, dots and a kill
-in the same frames, play frames 150-399). The worst of a sweep of its
-timing over 16 variants, and the default it runs:
+`make stage` plays a script that puts 12 enemies, bolts, dots and a kill in
+the same frames, and meters play frames 150-399. The worst of a sweep of its
+timing over 16 variants is the variant it runs:
 
-| Model | Worst of the sweep | `make stage` worst | Typical | Frame |
-|---|---|---|---|---|
-| PAL | 15,991 cycles | 15,982 | 11,376 | 19,656 |
-| NTSC | 16,136 cycles | 16,123 | 11,676 | 17,095 |
+| Model | `make stage` worst | Typical | Frame |
+|---|---|---|---|
+| PAL | 15,064 cycles | 9,280 | 19,656 |
+| NTSC | 15,237 cycles | 9,967 | 17,095 |
 
-No staged or graded run lost a frame (the verdict counts frames that ran
-into the next). The figures hold the C loop's frame and every IRQ, with
-badlines and sprite DMA; about 45 cycles of entry and exit per IRQ outside
-the C loop's bracket are not in them. The meter's readout is printed only
-after the freeze. Printed every frame, it cost up to 3,404 cycles outside the
-bracket and made the autopilot build drop frames that the game itself does
-not. The self-check of the bullet cells (about 250 cycles) runs in AUTOPILOT
-builds only and is inside the figures.
+The figures hold the C loop's frame and every IRQ, with badlines and sprite
+DMA. They leave out the loop's head (the wait, the scroll hand-over, the
+stick), the meter's own bookkeeping and about 45 cycles of entry and exit
+per IRQ outside the C loop's bracket. So a frame can be lost below 17,095:
+at 7974a7a the staged run lost one on NTSC with its worst at 16,122.
+
+The staged worst was not the heaviest frame play reaches. With fire held
+and the ship swept, NTSC play lost frames at 7974a7a: in the review's
+drive, 6 of 15 games, at play frame 465 in 5 of them; in a build of it
+with `-dWORKEND=1`, 4 of 4 games, at play frames 282-321 (the row-32 and
+row-40 swoops) and 454-477 (the row-48 saucers and the row-56 darts on the
+screen together), with bolts, dots and kills in the same frames. The staged
+run stops recording at play frame 399, before the second stretch.
+`-dWORKEND=1` reads the raster when a frame's work ends, in lines after the
+frame IRQ's line 252: the staged run's latest end on NTSC is now line 249
+of 263, and play's is 256, at play frames 464-472.
+
+Cuts to the work brought play back inside the NTSC frame; PLAN.md lists
+them with their figures. The largest: the bolts' loop, the paths and the
+dots' test against the ship moved to KickAssembler; the enemy box scan
+skips enemies whose lines miss every box and walks only the boxes that are
+on; the multiplexer's build loop keeps its write place in a register.
+`make joytest` now plays 16 games a model with fire held and a sweep, and
+fails on any lost frame: 16 of 16 NTSC games lost none. `make longplay`
+plays 4 games a model for 40 s of warp with a ship that is never lost
+(about 44,000 play frames each on NTSC, through the level's later loops):
+none lost a frame. The latest end over those runs was line 256 of 263 on
+NTSC (7 lines, about 450 cycles, to spare) and 243 of 312 on PAL.
+
+A frame far past the frame shows in the meter as about 65,524: CIA2 timer A
+counts down from 65,535 and wraps. A reading that high is a wrap, not the
+frame's size; count the lost frames instead (`OVERRUNS` in the verdict,
+`LOST_FRAMES` at `$02FD` in any build).
+
+The meter's readout is printed only after the freeze. Printed every frame,
+it cost up to 3,404 cycles outside the bracket and made the autopilot build
+drop frames that the game itself does not. The self-check of the bullet
+cells (about 250 cycles, and the map code each draw notes for it) runs in
+AUTOPILOT builds only and is inside the figures.
 
 The bullet draw must end before the beam reaches the cells it changes. The
-smallest margin measured (`-dDRAWEND=1`) was 17 lines, for a dot on NTSC in
-the graded run, and 28 lines, for both kinds, in the staged run.
+smallest margin measured (`-dDRAWEND=1`, NTSC) was 19 lines for a dot in
+the graded run and 25 in the staged run; for the bolts, read after all of
+them were drawn, 26 in both. On PAL the bolts were drawn before line 0 and
+the dots had 69 lines or more.
 
 `make phases` (part of `make check`) freezes the game on each of the eight
 YSCROLL phases and wants the panel identical to the graded one on both
@@ -111,8 +144,8 @@ models: a bad entry in the split's delay table fails it. More in PLAN.md.
    at the last row. Technique `difficulty_ramp_tables`, recipe
    `oscar64-difficulty-tables`.
 3. **Power-ups.** A pickup is one more actor with its own box group against
-   the ship only: `hit.asm` tests its boxes against enemies, so give pickups
-   their own loop beside `ship_hit()` in `hitbox.c`. Technique
+   the ship only: `hit.asm`'s `hit_scan` tests its boxes against enemies,
+   so give pickups their own loop beside `dot_scan` there. Technique
    `per_frame_hitbox`, recipe `oscar64-per-frame-hitbox`.
 
 The level is the `bank` table in `level.c` (river widths every 4 map rows)
@@ -140,9 +173,9 @@ on YSCROLL 3, saves and reloads the high score and grades 18 facts,
 printing the number of the first that fails. `expect.json` then checks the
 verdict, the text, the meter, the ship and all ten parade sprites, the
 river's banks at 30 rows scrolled, the split and the panel. `make selftest`
-starts the ship 16 pixels to the right and must fail. `make stage` and
-`make joytest` are this starter's proof targets (VERIFY_TARGETS), which
-`npm run verify:templates -- --selftest` runs too. `make claims` checks
+starts the ship 16 pixels to the right and must fail. `make stage`, `make
+joytest` and `make longplay` are this starter's proof targets
+(VERIFY_TARGETS), which `npm run verify:templates -- --selftest` runs too. `make claims` checks
 every store the program makes against what the Makefile declares. `make
 joy` builds the normal game reading its stick from `$02FE`, for
 `python3 tools/drive.py build/shmup-vertical-joy.prg "until:PUSH FIRE" tap:fire ...`
@@ -150,5 +183,7 @@ joy` builds the normal game reading its stick from `$02FE`, for
 
 Measuring switches, none in a release build: `-dPROFILE=1` (each step of the
 heaviest frame), `-dDRAWEND=1` (the bullet draw's margin to the beam),
-`-dEVENTLOG=1` (each kill and hit with its frame), `-dLOOP_TEST=1` (play to
-GAME OVER and back), `-dFREEZE_Y=0..7` (freeze on another phase).
+`-dWORKEND=1` (how late in the frame the work ended, at `$0370`; `=2` adds
+each step), `-dEVENTLOG=1` (each kill, hit and lost frame with its frame),
+`-dGOD=1` (the ship is never lost), `-dLOOP_TEST=1` (play to GAME OVER and
+back), `-dFREEZE_Y=0..7` (freeze on another phase).

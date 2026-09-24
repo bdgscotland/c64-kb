@@ -32,11 +32,14 @@ What will bite you here:
   16 PAL shots broken with eight sprites on it; lines 209-213 were clean).
   `make check` runs `make phases`, which compares the panel at all eight
   YSCROLL phases; keep it passing after touching the split.
-- `make stage` meters the heaviest frame the game makes (16,123 of 17,095
-  cycles on NTSC); re-run it after adding work to a frame. It fails if a
-  play frame overran or the worst passes the frame. Work that runs for
-  every enemy or bullet every frame lives in `glyph.asm`, `hit.asm` and
-  `step.asm` for that reason.
+- NTSC has little time to spare. `make stage` meters a staged heavy
+  stretch (worst 15,237 of 17,095 cycles on NTSC), but play reaches
+  heavier frames: `make joytest` and `make longplay` play the game with
+  fire held and a sweep and fail on any lost frame (`LOST_FRAMES`, `$02FD`).
+  In play's heaviest frames the work ended 7 lines before the frame IRQ
+  (`-dWORKEND=1`). Re-run all three after adding work to a frame. Work that
+  runs for every enemy or bullet every frame lives in `glyph.asm`,
+  `hit.asm` and `step.asm` for that reason.
 - Enemy dots are drawn before the beam reaches them only because enemies
   fire from sprite Y 72-140 (`bullets.c`); `-dDRAWEND=1` measures the
   margin. Keep new shots inside a window like it.
@@ -48,9 +51,11 @@ What will bite you here:
   sprites off around them (sprite DMA on badlines hangs the KERNAL's serial
   transfers). `make joytest` proves the save and the reboot.
 - `-dPROFILE=1` times each step of `play_frame` into `$0340` (CIA1 timer B,
-  IRQs held off per step); `-dLOOP_TEST=1` plays to GAME OVER and back to
-  the title; `-dEVENTLOG=1` logs each kill and hit with its frame; `make
-  joy` with `tools/drive.py` drives the normal game.
+  IRQs held off per step); `-dWORKEND=1` records how late a frame's work
+  ended, at `$0370`; `-dLOOP_TEST=1` plays to GAME OVER and back to the
+  title; `-dEVENTLOG=1` logs each kill, hit and lost frame with its frame;
+  `-dGOD=1` keeps the ship; `make joy` with `tools/drive.py` drives the
+  normal game.
 
 ## Before any code
 

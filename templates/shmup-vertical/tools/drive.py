@@ -13,11 +13,13 @@ VICE's joyport commands never reach $DC00. Steps:
   tap:DIR      press for 0.05 s of run time, then release for 0.1 s
   run:SECONDS  let the machine run (warp) that long in real time
   until:TEXT   run until TEXT is on a playfield screen or the panel (300 s limit)
+  peek:ADDR    print the byte at hex ADDR (ADDR,ADDR for several)
   print        print the panel's rows and the non-blank text rows of the screen on display
 The machine is left with the monitor's quit command, so the drive's writes reach the .d64.
-Set DRIVE_DISK to a .d64 to attach it as drive 8. The monitor port is DRIVE_PORT, or a
-free one the script picks (an earlier version always took 6581, so two drives collided).
-Exit 1 when an until: step times out.
+Set DRIVE_DISK to a .d64 to attach it as drive 8, DRIVE_MODEL=ntsc for a 6567R8.
+The monitor port is DRIVE_PORT, or a free one picked for each machine (an
+earlier version always took 6581, so two drives collided). Exit 1 when an
+until: step times out.
 """
 import os
 import socket
@@ -36,7 +38,6 @@ def free_port():
         return s.getsockname()[1]
 
 
-PORT = int(os.environ.get("DRIVE_PORT") or free_port())
 SCREENS = (0x8000, 0x8400)                            # src/game.h PF0, PF1
 PANEL = 0x8800
 BITS = {"none": 0, "up": 1, "down": 2, "left": 4, "right": 8, "fire": 16}
@@ -48,16 +49,20 @@ def text(c):
 
 
 class Vice:
-    def __init__(self, prg):
-        disk = os.environ.get("DRIVE_DISK")
+    def __init__(self, prg, disk=None, model=None):
+        """disk and model default to DRIVE_DISK and DRIVE_MODEL (pal or ntsc)."""
+        disk = disk or os.environ.get("DRIVE_DISK")
+        model = model or os.environ.get("DRIVE_MODEL", "pal")
+        port = int(os.environ.get("DRIVE_PORT") or free_port())
         self.proc = subprocess.Popen(
-            [X64SC, "-default", "-warp", "+sound", "-autostartprgmode", "1", "-binarymonitor",
-             "-binarymonitoraddress", f"ip4://127.0.0.1:{PORT}"]
+            [X64SC, "-default", "-warp"] + (["-model", "ntsc"] if model == "ntsc" else [])
+            + ["+sound", "-autostartprgmode", "1", "-binarymonitor",
+             "-binarymonitoraddress", f"ip4://127.0.0.1:{port}"]
             + (["-8", disk] if disk else []) + ["-autostart", prg],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
             try:
-                self.sock = socket.create_connection(("127.0.0.1", PORT))
+                self.sock = socket.create_connection(("127.0.0.1", port))
                 break
             except OSError:
                 time.sleep(0.1)
@@ -130,6 +135,9 @@ def main():
                         sys.exit(f"drive: '{arg}' never appeared")
                     vice.run(0.1)
                 print(f"drive: '{arg}' on screen")
+            elif name == "peek":
+                for a in arg.split(","):
+                    print(f"peek {a}: {vice.mem(int(a, 16), 1)[0]}")
             elif name == "print":
                 rows = vice.rows()
                 front = 1 if vice.mem(0x0881, 1)[0] == 0x1e else 0   # kernel.asm pf_d018

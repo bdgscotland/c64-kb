@@ -32,8 +32,8 @@ void put_text(char *screen, char row, char col, const char *s);
 void text_colour(char row, char col, char n, char colour);
 void put_dec(char *p, unsigned v, char digits);
 void panel_draw(void);                                  // the whole panel
-void panel_add(char tens);                              // score digits, after add_score
-void panel_update(void);                                // lives, when changed
+void panel_add(char tens);                              // score digits, after add_score (shown by panel_update)
+void panel_update(void);                                // score digits and lives, when changed
 
 #pragma compile("display.c")
 

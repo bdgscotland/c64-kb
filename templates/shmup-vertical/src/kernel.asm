@@ -55,6 +55,7 @@ frame_flag: .byte 0           // the frame IRQ sets 1; the main loop clears it
 frame_cnt:  .byte 0           // frame IRQs taken (wraps)
 cur_y:      .byte 0           // the YSCROLL the frame IRQ applied
 mtr_open:   .byte 1           // 1: IRQs do not time themselves
+mtr_on:     .byte 0           // 1: a meter build (C sets it once)
 irq_own:    .byte 1
 irq_n:      .byte 0           // start/stop pairs of timer B this frame
 irq_cnt:    .byte 0           // ... of the frame that just ended
@@ -139,6 +140,8 @@ nmi:    rti
 
 // ---- frame IRQ, line 252 --------------------------------------------------
 bottom_body:
+        lda mtr_on              // a build without the meter skips the hand-over
+        beq bb_regs             // (60 cycles a frame)
         lda #$00                // the frame ends here: hand its IRQ time to C
         sta $dd0f
         lda #$ff
@@ -163,7 +166,9 @@ bottom_body:
         lda #$01                // the rest of this IRQ counts in the new frame
         sta $dd0f
         inc irq_n
-!:      lda pf_d011
+!:
+bb_regs:
+        lda pf_d011
         sta $d011
         and #7
         sta cur_y

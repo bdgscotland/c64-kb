@@ -10,12 +10,16 @@
 #include "display.h"
 #include "level.h"
 
-static char e_path[NE], e_pc[NE], e_lc[NE], e_type[NE], e_timer[NE];
-// The step itself is step.asm's (en_step); its tables hold the state, the
-// steps left and the step.
+static char e_type[NE];
+// Running the paths and the step are step.asm's (en_paths, en_step); its
+// tables hold each enemy's path state, step and explosion timer.
 #define e_n  ((char *)ASM_EN_N)
 #define e_dx ((signed char *)ASM_EN_DX)
 #define e_dy ((signed char *)ASM_EN_DY)
+#define e_timer ((char *)ASM_EN_TIMER)          // an explosion's frames left
+#define e_path  ((char *)ASM_EN_PATH)
+#define e_pc    ((char *)ASM_EN_PC)
+#define e_lc    ((char *)ASM_EN_LC)
 char waves_started;
 char kills_by_type[3];
 
@@ -23,7 +27,8 @@ char kills_by_type[3];
 // A byte below $80 is MOVE: that many steps of signed dx (half X) and dy
 // (lines). P_LOOP count, target jumps back count - 1 times. P_FIRE fires a
 // bullet at the ship (on_enemy_fire; only from sprite Y 72 to 140). P_END
-// frees the enemy. Nothing else takes a frame.
+// frees the enemy. Nothing else takes a frame. step.asm runs the bytecode
+// (en_fetch) and holds the same three values.
 #define P_END  0x80
 #define P_LOOP 0x81
 #define P_FIRE 0x82
@@ -73,7 +78,8 @@ static const struct Wave wave[NWAVES] = {
 };
 
 static char cursor, loop, last_row;
-static char sp_wave, sp_left, sp_timer;       // the one active spawner
+static const struct Wave *sp_w;               // the one active spawner: its wave,
+static char sp_left, sp_timer, sp_hx;         // enemies to come, frames to the next, its X
 
 static void enemy_free(char e)
 {
@@ -83,6 +89,10 @@ static void enemy_free(char e)
 
 void waves_reset(void)
 {
+    for (char i = 0; i < 6; i++) {             // where step.asm reads each path
+        ((char *)ASM_EN_PLO)[i] = (unsigned)paths[i] & 0xff;
+        ((char *)ASM_EN_PHI)[i] = (unsigned)paths[i] >> 8;
+    }
     for (char e = 0; e < NE; e++)
         enemy_free(e);
     cursor = loop = last_row = 0;
@@ -100,15 +110,18 @@ unsigned waves_due(unsigned pos)
     return n;
 }
 
-static void spawn(char w, char k)
+// One enemy of wave wv at half X hx. The spawner works through a pointer
+// and adds the formation step to X, where it indexed the wave table and
+// multiplied: a spawn frame is often a heavy one.
+static void spawn(const struct Wave *wv, char hx)
 {
     for (char e = 0; e < NE; e++) {
         if (e_state[e] == E_FREE) {
-            char t = wave[w].type;
+            char t = wv->type;
             e_state[e] = E_FLYING;
-            e_hx[e] = wave[w].hx0 + k * wave[w].step;
+            e_hx[e] = hx;
             e_y[e] = Y_ENTRY;
-            e_path[e] = wave[w].path;
+            e_path[e] = wv->path;
             e_pc[e] = e_n[e] = e_lc[e] = 0;
             e_type[e] = t;
             e_ptr[e] = SPR_BLOCK + type_frame[t];
@@ -116,33 +129,6 @@ static void spawn(char w, char k)
             return;
         }
     }                                           // pool full: this one is dropped
-}
-
-// Enemy e has no steps left: read opcodes until a MOVE. Returns 0 when its
-// path has ended. Most frames never come here: a MOVE lasts many steps.
-static char path_fetch(char e)
-{
-    const char *p = paths[e_path[e]];
-    while (e_n[e] == 0) {
-        char pc = e_pc[e];
-        char op = p[pc];
-        if (op == P_END)
-            return 0;
-        if (op == P_FIRE) {
-            on_enemy_fire(e);
-            e_pc[e] = pc + 1;
-        } else if (op == P_LOOP) {
-            if (e_lc[e] == 0)
-                e_lc[e] = p[pc + 1];
-            e_pc[e] = --e_lc[e] ? p[pc + 2] : pc + 3;
-        } else {
-            e_n[e]  = op;
-            e_dx[e] = p[pc + 1];
-            e_dy[e] = p[pc + 2];
-            e_pc[e] = pc + 3;
-        }
-    }
-    return 1;
 }
 
 // Start every wave whose row the scroll has reached: >= and not ==, so a
@@ -155,8 +141,9 @@ static void director(char row)
     }
     last_row = row;
     while (cursor < NWAVES && row >= wave[cursor].row) {
-        sp_wave = cursor;
-        sp_left = wave[cursor].count;
+        sp_w = wave + cursor;
+        sp_left = sp_w->count;
+        sp_hx = sp_w->hx0;
         sp_timer = 0;
         waves_started++;
         cursor++;
@@ -171,10 +158,13 @@ static void spawner(void)
         sp_timer--;
         return;
     }
-    char w = sp_wave;
-    spawn(w, wave[w].count - sp_left);
+    const struct Wave *wv = sp_w;
+    spawn(wv, sp_hx);
+    sp_hx += wv->step;
     sp_left--;
-    char gap = wave[w].spacing >> (loop > 2 ? 2 : loop);    // later loops: closer together
+    char gap = wv->spacing;
+    if (loop)                                   // later loops: closer together
+        gap >>= loop > 2 ? 2 : loop;
     sp_timer = gap ? gap - 1 : 0;
 }
 
@@ -197,18 +187,9 @@ void waves_update(char row)
 {
     director(row);
     spawner();
-    for (char e = 0; e < NE; e++) {
-        char s = e_state[e];
-        if (s == E_FLYING) {
-            if (!e_n[e] && !path_fetch(e))
-                enemy_free(e);                  // the path ended
-        } else if (s == E_BOOM) {
-            char t = --e_timer[e];
-            if (t == 8)
-                e_ptr[e] = SPR_BLOCK + F_BOOM2;
-            else if (t == 0)
-                enemy_free(e);
-        }
-    }
+    __asm { jsr ASM_EN_PATHS }                  // explosions, and new MOVEs from the paths
+    char n = K_BYTE(ASM_EN_NF);
+    for (char k = 0; k < n; k++)
+        on_enemy_fire(((char *)ASM_EN_FIRE)[k]);
     __asm { jsr ASM_EN_STEP }                   // every flying enemy: one step, or off
 }

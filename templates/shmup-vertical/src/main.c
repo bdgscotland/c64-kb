@@ -132,6 +132,12 @@ void on_enemy_fire(char e)
 static void ship_lost(void)
 {
     box_off(BOX_PLAYER);                    // one loss a frame at most
+#ifdef GOD
+    // Measuring only (-dGOD=1, make longplay): the ship is never lost, so a
+    // driven game runs through the level's later loops, where the waves come
+    // closer together. play_frame mirrors play_frames at $02FB.
+    return;
+#endif
     deaths++;
     lives--;
     sfx(3);
@@ -273,25 +279,46 @@ static char port_read(void)
 // A play frame whose work runs past the next frame IRQ (line 252) loses a
 // frame: the scroll and the hidden screen then fall a frame out of step
 // (level_frame takes values the screen does not show yet, and level_render
-// can draw into the screen on display). Nothing guards that; overruns counts
-// it, and the verdict wants 0. Keep a frame's work under the frame. In a
-// meter build the count stops with the recording: the frame after it spends
-// several frames finding the median, harness work outside the brackets.
+// can draw into the screen on display). Nothing guards that; it is counted
+// and the verdict (and make joytest, which reads LOST_FRAMES) wants 0. Keep
+// a frame's work under the frame.
+//
+// The count is taken here, before waiting: a frame flag already set means
+// the work ended after the next frame IRQ. The first version counted only
+// when the frame IRQ count moved by more than one at wake-up, which a single
+// lost frame never does (the review's mutation M8a, one frame late by about
+// 2,400 cycles, passed with 0). In a meter build the count stops with the
+// recording: the frame after it spends several frames finding the median,
+// harness work outside the brackets. The first two play frames are not
+// counted either: play_enter draws both screens (and in a meter build holds
+// IRQs off for its calibration), so play frame 0 starts mid-frame.
+#define LOST_FRAMES (*(volatile char *)0x02fd)  // lost play frames, saturating at 255
 static char last_frame_cnt;
 static unsigned overruns;
 
 static void wait_frame(void)
 {
+    char late = K_FRAME_FLAG;                   // set already: the work ran into the next frame
     while (!K_FRAME_FLAG) ;
     K_FRAME_FLAG = 0;
     char f = K_FRAME_CNT;
-    bool counting = state == ST_PLAY && play_frames;
+    char lost = (char)(f - last_frame_cnt) - (late ? 0 : 1);
+    last_frame_cnt = f;
+    bool counting = state == ST_PLAY && play_frames > 1;
 #if FRAME_METER
     counting = counting && play_frames < PLAY_FRAMES;
 #endif
-    if (counting && (char)(f - last_frame_cnt) != 1)
-        overruns++;
-    last_frame_cnt = f;
+#ifdef STAGE_FROM
+    counting = counting && play_frames != STAGE_FROM + 1;   // its meter_init holds IRQs off
+#endif
+    if (counting && lost) {
+#ifdef EVENTLOG
+        ev_log(4, lost);                        // a lost frame
+#endif
+        overruns += lost;
+        unsigned t = LOST_FRAMES + lost;
+        LOST_FRAMES = t > 255 ? 255 : t;
+    }
 }
 
 #if FRAME_METER
@@ -414,6 +441,35 @@ static void over_enter(void)
     state = ST_OVER;
 }
 
+#ifdef WORKEND
+// Measuring only (-dWORKEND=1): how far past the frame IRQ (line 252) a play
+// frame's work ran, in raster lines (NTSC has 263, PAL 312: past that the
+// frame is lost). At $0370, words: 0 the latest end over the run, 1 its play
+// frame, 2 the frames whose work ended within 8 lines of the frame's end.
+// Frames that woke late (after a lost one) are left out. -dWORKEND=2 also
+// reads the line after each step: words 3-10 that frame's lines when it
+// woke and after each of the 7 steps, 11-17 each step's most lines in any
+// frame; the reads cost about 300 cycles a frame. Any build, the joy build
+// too: nothing is held off, so the timing is the game's own.
+#define WE ((volatile unsigned *)0x0370)
+static unsigned we_step[8];
+static unsigned we_line(void)
+{
+    char hi, lo;
+    do { hi = vic.ctrl1; lo = vic.raster; } while (hi != vic.ctrl1);
+    unsigned l = lo + ((unsigned)(hi & 0x80) << 1);
+    unsigned n = ntsc_arg ? 263 : 312;
+    return l >= 252 ? l - 252 : l + n - 252;
+}
+#if WORKEND > 1
+#define W1(k) we_step[k + 1] = we_line()
+#else
+#define W1(k) if (k == 6) we_step[7] = we_line()
+#endif
+#else
+#define W1(k)
+#endif
+
 #ifdef PROFILE
 // Debug only (-dPROFILE=1): CIA1 timer B times each step of play_frame with
 // IRQs held off (badline and sprite DMA stay in). At $0340, words: 0-6 the
@@ -448,13 +504,16 @@ static void play_frame(char joy)
     drawend_on = drawend_on && play_frames != STAGE_FROM + 1;
 #endif
 #endif
+#ifdef WORKEND
+    we_step[0] = we_line();
+#endif
     P0; bullets_erase();
 #if AUTOPILOT
     if (!bullets_restored()) {              // every cell the last draw changed is the map's again
         bullet_fault = 1;
     }
 #endif
-    bullets_move_draw(); P1(0);
+    bullets_move_draw(); P1(0); W1(0);
 #ifdef DRAWEND
     // Measuring only (-dDRAWEND=1): the latest raster line the bullet draw
     // ended on in a play frame, at $0360 (0 while still above line 250 or
@@ -467,12 +526,34 @@ static void play_frame(char joy)
         if (play_frames > 1 && play_frames < PLAY_FRAMES && e > d[0]) { d[0] = e; d[1] = play_frames; }
     }
 #endif
-    P0; collide(); P1(1);
-    P0; ship_update(joy); P1(2);
-    P0; waves_update(cur_row); P1(3);
-    P0; actors_draw(); P1(4);
-    P0; level_render(); P1(5);
-    P0; level_advance(); panel_update(); P1(6);
+    P0; collide(); P1(1); W1(1);
+    P0; ship_update(joy); P1(2); W1(2);
+    P0; waves_update(cur_row); P1(3); W1(3);
+    P0; actors_draw(); P1(4); W1(4);
+    P0; level_render(); P1(5); W1(5);
+    P0; level_advance(); panel_update(); P1(6); W1(6);
+#ifdef WORKEND
+    if (play_frames > 1 && we_step[0] < 16) {   // started on time
+        unsigned n = ntsc_arg ? 263 : 312;
+        if (we_step[7] > WE[0]) {
+            WE[0] = we_step[7];
+            WE[1] = play_frames;
+#if WORKEND > 1
+            for (char k = 0; k < 8; k++)
+                WE[3 + k] = we_step[k];
+#endif
+        }
+        if (we_step[7] + 8 >= n)
+            WE[2]++;
+#if WORKEND > 1
+        for (char k = 0; k < 7; k++) {
+            unsigned d = we_step[k + 1] - we_step[k];
+            if (d < 200 && d > WE[11 + k])
+                WE[11 + k] = d;
+        }
+#endif
+    }
+#endif
 #ifdef PROFILE
     if (play_frames > 1) {
         unsigned t = K_IRQ_CYC - K_IRQ_CNT * K_IRQ_CAL, sum = 0;
@@ -488,6 +569,9 @@ static void play_frame(char joy)
     }
 #endif
     play_frames++;
+#ifdef GOD
+    *(volatile unsigned *)0x02fb = play_frames;
+#endif
 }
 
 #if AUTOPILOT
@@ -651,6 +735,7 @@ int main(void)
     *(volatile int *)0x0364 = 0x7fff;
     *(volatile int *)0x0366 = 0x7fff;
 #endif
+    LOST_FRAMES = 0;
     hold_screen();                              // show the title while the disk works: the
                                                 // kernel sets the VIC only in kernel_init
 #if AUTOPILOT
@@ -664,6 +749,7 @@ int main(void)
     // playfield; play_enter starts the recording again.
     meter_init((unsigned)SCRATCH, 13, 10, PF_CRAM, METER_HOLD);
     K_MTR_OPEN = 0;                            // IRQs time themselves (timer B)
+    K_BYTE(ASM_MTR_ON) = 1;                     // the frame IRQ hands their sum to C
 #else
     K_MTR_OPEN = 1;                             // no meter: IRQs never touch timer B
 #endif
