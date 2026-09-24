@@ -2,52 +2,35 @@
   <img src="hero.png" alt="c64-kb — Commodore 64 knowledge base for AI-assisted development" width="900">
 </p>
 
-# c64-kb — Commodore 64 knowledge base for AI-assisted development
+# c64-kb
 
-A reference for the stock Commodore 64 that a coding agent can query while
-it builds games, demos and tools. Its numbers say where they came from.
-Every code listing is built with its toolchain before it lands, and every
-recipe is run in the VICE emulator and its picture checked.
+A reference for the stock Commodore 64, served to coding agents over MCP
+and a CLI: hardware, techniques, pitfalls, recipes and toolchains, as
+markdown pages indexed for search and as a graph.
 
-It is served over MCP and a CLI, and comes with playable game starters
-that check themselves in VICE.
+How the pages are checked:
 
----
+- Every code listing is built with the toolchain it names (Oscar64,
+  KickAssembler or cc65) before it lands: `npm run check:listings`.
+- Every recipe is run headless in VICE at a pinned cycle count, on each
+  model its entry in `docs/recipes/runs.json` names, and its screenshot is
+  compared pixel for pixel: `npm run verify:recipes`.
+- A number states its evidence: measured here (VICE, an assembler, the ROM
+  bytes), two independent pages agreeing, arithmetic from stated
+  constants, or unverified.
+- A correction says what the old text claimed.
 
-## Why trust it
+"Verified" means VICE x64sc 3.10 with the real ROM images, not a C64 on a
+bench. PAL runs use VICE's default C64C (VIC-II 8565, SID 8580, CIA 8521);
+`-model c64` is the older 6569 machine. Measurements on real hardware are
+tracked in [#9](https://github.com/bdgscotland/c64-kb/issues/9).
 
-Coding models know the C64 from training data. Much of that is copied
-listings and forum posts, and the timing figures are often wrong. A model
-cannot tell a measured figure from a repeated one. This KB is built so
-that it can:
+## Starters
 
-- **Numbers state their evidence.** Strongest first: measured here
-  (VICE, an assembler, the ROM bytes); two independent pages agree;
-  arithmetic from stated constants; or the author's own knowledge, which
-  is marked unverifiable.
-- **Every listing builds.** `npm run check:listings` builds each recipe
-  with the toolchain it names (Oscar64, KickAssembler or cc65), and
-  assembles every KickAssembler fragment in the docs.
-- **Every recipe runs.** `npm run verify:recipes` runs each recipe headless
-  in VICE at a pinned cycle count, on each machine model its entry in
-  `docs/recipes/runs.json` names (PAL alone where there is none). It
-  compares the picture pixel for pixel with the committed screenshot.
-- **Corrections stay visible.** When an audit finds a page wrong, the fix
-  says what the old text claimed.
-
-"Verified" means VICE x64sc 3.10 and the real ROM images, not a machine
-on a bench. PAL runs use VICE's default C64C (VIC-II 8565, SID 8580,
-CIA 8521); `-model c64` is the older 6569 machine. Measurements on real
-hardware are wanted: see [#9](https://github.com/bdgscotland/c64-kb/issues/9).
-
----
-
-## What the starters play
-
-Each starter in `templates/` is a small game or demo that plays, with a
-title, a game loop, sound, and a check it runs on itself. Each picture is
-the PAL screenshot its own checks grade, with the verdict and the frame
-meter on screen.
+Each starter in `templates/` is a small playable game or demo with a
+title, a game loop, sound and a self-check. Each picture is the PAL
+screenshot its checks grade, with the verdict and the frame meter on
+screen.
 
 <table>
 <tr>
@@ -65,11 +48,11 @@ meter on screen.
 Make a project from one with `npm run new-project -- <starter> <dir>` (see
 [Start a game](#start-a-game)).
 
-## What the recipes draw
+## Recipes
 
-Every picture below is a recipe's committed screenshot, taken from the
-listing on its page at a pinned cycle count. A later run that differs by
-one pixel fails the gate.
+Each picture is a recipe's committed screenshot, taken from the listing
+on its page at a pinned cycle count. A run that differs by one pixel
+fails the gate.
 
 <table>
 <tr>
@@ -85,7 +68,7 @@ one pixel fails the gate.
 <td align="center"><a href="docs/recipes/kickassembler/colour-fade.md"><img src="docs/recipes/kickassembler/screenshots/colour-fade.png" width="220" alt="Luminance fade caught mid-way"></a><br><sub>Luminance fade, step 9</sub></td>
 </tr>
 <tr>
-<td align="center"><a href="docs/recipes/kickassembler/wireframe-ships.md"><img src="docs/recipes/kickassembler/screenshots/wireframe-ships.png" width="220" alt="Three rotating wireframe objects, clipped at the edge, and a galaxy readout"></a><br><sub>Wireframe ships and Elite's galaxy generator</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/wireframe-ships.md"><img src="docs/recipes/kickassembler/screenshots/wireframe-ships.png" width="220" alt="Three rotating wireframe objects, clipped at the edge, and a galaxy readout"></a><br><sub>Wireframe ships and a seeded galaxy</sub></td>
 <td align="center"><a href="docs/recipes/oscar64/ghost-targeting.md"><img src="docs/recipes/oscar64/screenshots/ghost-targeting.png" width="220" alt="Maze with four ghosts steered by target tiles"></a><br><sub>Maze-chase ghost targeting</sub></td>
 <td align="center"><a href="docs/recipes/oscar64/cave-scan.md"><img src="docs/recipes/oscar64/screenshots/cave-scan.png" width="220" alt="Boulder Dash style cave after the scan"></a><br><sub>Cave scan: falling and rolling</sub></td>
 <td align="center"><a href="docs/recipes/oscar64/platformer-scaffold.md"><img src="docs/recipes/oscar64/screenshots/platformer-scaffold.png" width="220" alt="Single-screen platformer with ladders and a HUD"></a><br><sub>Platformer scaffold</sub></td>
@@ -121,8 +104,6 @@ one pixel fails the gate.
 <td align="center"><a href="docs/recipes/kickassembler/sprite-border-scroller.md"><img src="docs/recipes/kickassembler/screenshots/sprite-border-scroller.png" width="220" alt="Sprite scroller in the lower border"></a><br><sub>Scroller in the border</sub></td>
 </tr>
 </table>
-
----
 
 ## Quick start
 
@@ -170,7 +151,7 @@ In a clone, state lives in `./data`. The repo's `.mcp.json` runs
 `node dist/cli.js serve`, so Claude Code opened in the repo connects on
 its own once `dist/` is built.
 
-### Ask it something
+### Example
 
 ```console
 $ c64-kb check-compatibility fli_image sprite_multiplex_24
@@ -208,8 +189,6 @@ From an npm install, add this to the project's `.mcp.json`:
 
 From a clone, use `"command": "node"` and
 `"args": ["/absolute/path/to/c64-kb/dist/cli.js", "serve"]`.
-
----
 
 ## Start a game
 
@@ -249,12 +228,9 @@ The starters build with the Oscar64 described under [Toolchains](#toolchains).
 `shmup-vertical`, `platformer`, `action-puzzle` and `beat-em-up` are also
 recorded passing on the released v1.32.273 (`make released`).
 
----
+## Tools
 
-## What an agent can ask
-
-The MCP server and the CLI call the same functions. Tools are grouped here
-by the question they answer.
+The MCP server and the CLI call the same functions.
 
 **Look something up**
 
@@ -329,9 +305,9 @@ has `services`, `ingest`, `serve` and `version`.
 `c64://register/{name}` for one register. **Prompts:** `c64_demo_brief`
 and `c64_game_brief`.
 
-### What the graph knows that search does not
+### The graph
 
-The same pages feed a knowledge graph (FalkorDB). An agent can ask it:
+The same pages feed a graph in FalkorDB. It answers:
 
 - Which registers and KERNAL routines a technique touches, and which
   recipes implement it.
@@ -351,9 +327,7 @@ The same pages feed a knowledge graph (FalkorDB). An agent can ask it:
 [docs/ONTOLOGY.md](docs/ONTOLOGY.md) lists every node and edge, and the
 page line that produces each.
 
----
-
-## What's in docs/
+## docs/
 
 | Directory | What you find |
 |---|---|
@@ -369,8 +343,6 @@ page line that produces each.
 | [art/](docs/art), [music/](docs/music) | Asset pipelines and music production |
 | [workflow/](docs/workflow) | The agent harness the starters share |
 
----
-
 ## Scope
 
 The stock Commodore 64, PAL and NTSC, and the common peripherals the pages
@@ -378,30 +350,22 @@ cover: the 1541 drive, the 17xx REU, cartridges (including EasyFlash), the
 1351 mouse, paddles and the light pen. Out of scope: the C128, Mega65,
 SuperCPU and Ultimate II+.
 
----
-
 ## Toolchains
 
-- **Oscar64** is the default. `c64_toolchain_hint` answers with it unless
-  told otherwise. Training data is full of cc65 patterns, which work but
-  are not idiomatic for cycle-tight code, and this KB pushes models toward
-  Oscar64.
+- **Oscar64** is the default; `c64_toolchain_hint` answers with it unless
+  asked for another.
 - **KickAssembler** is for work where C costs too many cycles: stable
   raster interrupts, border opening, FLI, multiplexers. KickAssembler
   5.25 is the version verified here.
-- **cc65** has light coverage, for text-mode utilities and cases where its
-  large corpus is the easiest path.
+- **cc65** has light coverage, mostly text-mode utilities.
 
-**The Oscar64 caveat.** The Oscar64 recipes were verified with a locally
-patched build: upstream 709bd70 plus one unpublished fix. Released
+The Oscar64 recipes were verified with a locally patched build: upstream 709bd70 plus one unpublished fix. Released
 Oscar64 fails many of them ([#25](https://github.com/bdgscotland/c64-kb/issues/25)),
 so CI skips the Oscar64 recipes for now. Miscompiles found along the way
 are reported with repros in [#30](https://github.com/bdgscotland/c64-kb/issues/30),
 and `CLAUDE.md` lists the ones that cost time. Whether Oscar64's GPL-3.0
 reaches programs built with its runtime is an open question
 ([#31](https://github.com/bdgscotland/c64-kb/issues/31)).
-
----
 
 ## Configuration
 
@@ -425,8 +389,6 @@ The Qdrant and FalkorDB ports are shifted from their defaults (6333, 6334,
 | `KICKASS_JAR`, `OSCAR64`, `CL65` | Toolchains for the listing gate (the starters read the first two) |
 | `X64SC_BIN`, `VICE_MCP_PATH` | The VICE binary, and vice-mcp for `c64_run_game` |
 
----
-
 ## Architecture
 
 The pages in `docs/` are the source of truth. Ingest reads each page once
@@ -438,11 +400,8 @@ and writes it two ways:
 Ingest runs in two passes: nodes first, then edges. A reference to a node
 that does not exist is reported, never dropped silently. A SQLite database
 records the query tools' calls, so queries that find nothing surface as
-gaps. The
-MCP server and the CLI share one set of tool functions. See
+gaps. The MCP server and the CLI share one set of tool functions. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
----
 
 ## Development
 
@@ -465,8 +424,8 @@ CI runs the type check, lint, formatting, unused-code check and unit tests.
 It also runs integration tests against service containers, the listing and
 recipe gates for KickAssembler and cc65, and an install-and-ingest test of
 the packed package. It skips the Oscar64 listings and recipes until #25,
-and does not run the starters or a full ingest. `npx lefthook install` adds git hooks that
-run the fast gates on what you stage. Releases publish to npm from a
+and does not run the starters or a full ingest. `npx lefthook install`
+adds git hooks that run the fast gates on what you stage. Releases publish to npm from a
 version tag; [CLAUDE.md](CLAUDE.md) gives the steps.
 
 ### Contributing
@@ -491,44 +450,17 @@ and adding a page the graph can read. [CONTRIBUTING.md](CONTRIBUTING.md) covers 
 code conventions. [SECURITY.md](SECURITY.md) says how to report a
 vulnerability; a wrong fact is an ordinary issue.
 
----
-
-## Roadmap
-
-Work is tracked as labelled issues, not phases:
-
-- **Dogfood games.** [#44](https://github.com/bdgscotland/c64-kb/issues/44)
-  INTERCEPTOR is an original Spy Hunter-style game built only through
-  this KB, outside the repo. Every gap it hits becomes an issue.
-- **Whole-game ontology.** Claims, honest budgets and machine variants
-  ([#22](https://github.com/bdgscotland/c64-kb/issues/22)), and the design
-  layer ([#24](https://github.com/bdgscotland/c64-kb/issues/24)).
-- **Oscar64 reproducibility.** [#25](https://github.com/bdgscotland/c64-kb/issues/25),
-  [#30](https://github.com/bdgscotland/c64-kb/issues/30).
-- **Content breadth.** Fast loaders ([#46](https://github.com/bdgscotland/c64-kb/issues/46)),
-  a full music player ([#50](https://github.com/bdgscotland/c64-kb/issues/50)),
-  a racing starter ([#53](https://github.com/bdgscotland/c64-kb/issues/53))
-  and more under the `content` label.
-- **Hardware verification.** Behaviours measured only in VICE, under the
-  `hardware-verification` label. Help with a real C64 is welcome.
-
----
-
 ## Related tools
 
-c64-kb describes what code should be. Two sibling projects run code:
-[vice-mcp](https://github.com/simen/vice-mcp) drives VICE over MCP, and
-[sim6502](https://github.com/barryw/sim6502) unit-tests 6502 code without
-an emulator. Only `c64_run_game` needs vice-mcp; nothing else needs
-either.
-
----
+[vice-mcp](https://github.com/simen/vice-mcp) drives VICE over MCP;
+`c64_run_game` needs it. [sim6502](https://github.com/barryw/sim6502)
+unit-tests 6502 code without an emulator. Nothing else here needs either.
 
 ## License
 
-BSD-3-Clause, covering the code, the documents and the listings.
-Third-party sources are cited, and the terms of each, including which ones
-may be adapted and which are used for facts only, are recorded in
+BSD-3-Clause: the code, the documents and the listings. Third-party
+sources are cited; which may be adapted and which are used for facts only
+is recorded in
 [docs/game-design/reference-game-sources.md](docs/game-design/reference-game-sources.md).
 The package documents GPL tools (Oscar64, VICE) but ships none of their
 code.
