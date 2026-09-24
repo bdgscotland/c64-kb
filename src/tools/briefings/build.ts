@@ -48,22 +48,26 @@ function proposalLimitFor(description: string): number {
 
 /**
  * Drop techniques the lookup did not find (empty name), cap at three per
- * category (P5-6), then cap the non-forced total at the proposal limit.
- * Archetype FEATURES pass both caps.
+ * category (P5-6), then cap the non-archetype total at the proposal limit.
+ * Archetype FEATURES pass both caps. A technique the brief's own words
+ * forced passes the category cap and counts toward the limit: the #22
+ * shmup brief saves a table and loads a map, four io techniques, and the
+ * cap dropped the load (#97).
  */
 function selectTechniques(
   enriched: TechniqueLookupOutput[],
-  archetypeForced: Set<string>,
+  forced: { archetype: Set<string>; described: Set<string> },
   proposalLimit: number,
 ): TechniqueLookupOutput[] {
   const categoryCounts = new Map<string, number>();
   let nonForced = 0;
   return enriched.filter((t) => {
     if (t.name === "") return false;
-    if (archetypeForced.has(t.name)) return true;
+    if (forced.archetype.has(t.name)) return true;
     const cat = t.category || "_uncategorized";
     const count = categoryCounts.get(cat) ?? 0;
-    if (count >= MAX_PER_CATEGORY || nonForced >= proposalLimit) return false;
+    const capped = count >= MAX_PER_CATEGORY && !forced.described.has(t.name);
+    if (capped || nonForced >= proposalLimit) return false;
     categoryCounts.set(cat, count + 1);
     nonForced++;
     return true;
@@ -146,11 +150,13 @@ async function proposeTechniques(
     proposalLimit,
     seeds.archetypeForced.size,
   );
-  // Prepend forced techniques so they survive the per-category MAX cap.
-  for (const name of seeds.forced.slice().reverse()) {
-    if (!techNames.includes(name)) techNames.unshift(name);
-  }
-  const enriched = await Promise.all(techNames.map(async (name) => (await techniqueLookup(name)).structured));
+  // Forced techniques go first, found ones after. Until #97 a forced name
+  // the search had also found kept the search's rank, so the #22 shmup
+  // brief's forced sprite_animation_table sat behind three found sprite
+  // techniques and lost its place to the per-category cap.
+  const forcedSet = new Set(seeds.forced);
+  const ordered = [...seeds.forced, ...techNames.filter((n) => !forcedSet.has(n))];
+  const enriched = await Promise.all(ordered.map(async (name) => (await techniqueLookup(name)).structured));
   // A forced technique stays whatever its axis; a found one on the axis the
   // brief did not ask for goes, and so does, in a game plan, a demo effect
   // the brief does not name.
@@ -165,7 +171,11 @@ async function proposeTechniques(
   // One of each ALTERNATIVE_TO pair, before the caps, so a dropped
   // alternative frees its slot.
   const { kept, leftOut } = oneOfEachAlternative(onAxis, new Set(seeds.forced), description);
-  const techs = selectTechniques(kept, seeds.archetypeForced, proposalLimit);
+  const techs = selectTechniques(
+    kept,
+    { archetype: seeds.archetypeForced, described: forcedSet },
+    proposalLimit,
+  );
   return { techs, leftOut };
 }
 

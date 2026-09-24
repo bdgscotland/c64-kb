@@ -1325,3 +1325,197 @@ describe("briefing discovery helpers", () => {
     expect(contradictsBriefAxis({ name: "soft_scroll_h", title: "x" }, "a scroller")).toBe(false);
   });
 });
+
+describe("gameBriefing on the #22 section 4.1 shmup brief (#97)", () => {
+  let f: FalkorService;
+
+  // Issue #22 section 4.1, the game test's brief, without its closing
+  // instructions to the agent.
+  const BRIEF =
+    "Vertically scrolling shoot-'em-up for a stock PAL C64 that also runs on NTSC. The playfield scrolls down one pixel a frame through a level map at least three screens tall, above a fixed five-row score panel. Up to 16 enemies and the player are sprites on screen at once. Enemies arrive in attack waves triggered by scroll position and follow entry paths. Player bullets are characters, up to eight. Collisions use a hitbox per animation frame. A three-voice tune plays throughout, and sound effects take over one voice. Enemy variation is random. A high-score table is saved to disk, and level 2's map is loaded from disk between levels.";
+
+  const FEATURES = [
+    "soft_scroll_v",
+    "scroll_panel_split",
+    "sprite_multiplex_game",
+    "per_frame_hitbox",
+    "wave_director",
+    "sprite_collision_detect",
+    "sfx_in_player",
+    "sid_play_routine_pattern",
+    "sid_voice_setup",
+  ];
+
+  // Name, title, category and complexity as the technique pages give them,
+  // and a number of implementing recipes. The found techniques the live
+  // graph ranks above text_mode_overlay_render are here too, as they fill
+  // the plan's slots there.
+  const TECHS: [string, string, string, string, number][] = [
+    [
+      "sfx_in_player",
+      "Sound effects inside the music player: voice stealing, priority and hand-back",
+      "music",
+      "medium",
+      2,
+    ],
+    ["sid_play_routine_pattern", "The init+play subroutine convention", "music", "low", 2],
+    ["sid_voice_setup", "Frequency / waveform / ADSR per voice", "music", "low", 2],
+    ["sfx_engine_beside_music", "Sound-effect engine beside a music player", "music", "medium", 2],
+    ["object_pool", "Fixed-slot object pool for enemies, bullets and effects", "logic", "low", 6],
+    [
+      "high_score_table_insert",
+      "A new score into a sorted table: rank, shift down, drop the last, write",
+      "text",
+      "low",
+      1,
+    ],
+    ["tile_grid_collision", "Tile-grid collision against a decoded map", "logic", "medium", 4],
+    ["tile_map_render", "Metatile map decode to screen and colour RAM", "scroll", "medium", 6],
+    ["char_scroll_buffer_v", "Char-mode vertical scroll", "scroll", "medium", 2],
+    ["pal_ntsc_detection", "Detect PAL vs NTSC at boot", "raster", "low", 7],
+    ["frame_sync_loop", "Raster-synced frame loop", "raster", "low", 2],
+    ["soft_scroll_v", "Hardware vertical soft-scroll", "scroll", "low", 2],
+    ["scroll_panel_split", "Vertically scrolled playfield over a fixed score panel", "scroll", "medium", 1],
+    [
+      "sprite_multiplex_game",
+      "Game multiplexer in assembly: persistent sort, double-buffered table, zone IRQs, late guard",
+      "sprite",
+      "high",
+      1,
+    ],
+    [
+      "per_frame_hitbox",
+      "Collision boxes per animation frame, emitted at draw time, tested by group",
+      "sprite",
+      "medium",
+      2,
+    ],
+    [
+      "wave_director",
+      "Attack waves triggered by scroll position, with path bytecode per enemy",
+      "logic",
+      "medium",
+      1,
+    ],
+    ["sprite_collision_detect", "Sprite-sprite and sprite-background collision", "sprite", "low", 1],
+    ["text_mode_overlay_render", "Playfield + moving-piece overlay in text mode", "render", "low", 2],
+    [
+      "mixed_sprite_char_actors",
+      "Large actors drawn partly in hardware sprites and partly in reserved character cells",
+      "sprite",
+      "medium",
+      1,
+    ],
+    [
+      "software_sprite_preshifted",
+      "Pre-shifted masked software sprites in a character back buffer",
+      "sprite",
+      "medium",
+      1,
+    ],
+    [
+      "multi_sprite_object",
+      "Bosses and large objects from several hardware sprites at fixed offsets from one origin",
+      "sprite",
+      "medium",
+      2,
+    ],
+    [
+      "sprite_animation_table",
+      "Sprite animation from tables: frames, durations, end actions and events",
+      "sprite",
+      "low",
+      1,
+    ],
+    ["lfsr_random", "Linear-feedback shift register random numbers", "maths", "low", 2],
+    ["kernal_load_to_address", "LOAD a raw asset to an address of your choosing", "io", "low", 1],
+    ["kernal_file_write_seq", "Write a sequential file with OPEN/CHKOUT/CHROUT", "io", "low", 1],
+    ["kernal_file_read_seq", "Read a sequential file with CHKIN/CHRIN/READST", "io", "low", 1],
+    ["error_channel_check", "Read the drive's status line from channel 15", "io", "low", 1],
+    [
+      "hires_plot",
+      "Set one pixel in a hires bitmap through a row table and a mask table",
+      "bitmap",
+      "low",
+      2,
+    ],
+    ["screen_wipe", "Reveal or hide the screen a row, a column or a line at a time", "effect", "low", 1],
+    ["colour_cycling", "Rotate a colour table through a fixed set of cells", "effect", "low", 1],
+    [
+      "vector_balls_sprites",
+      "Eight sprite balls on a tilted ring, depth-sorted onto the VIC's fixed sprite priority",
+      "effect",
+      "medium",
+      1,
+    ],
+    [
+      "light_pen_read",
+      "Read the light pen's latched beam position from LPX/LPY once per frame",
+      "input",
+      "low",
+      1,
+    ],
+  ];
+
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+    for (const [name, title, category, complexity, recipes] of TECHS) {
+      await f.addTechnique({ name, title, category, complexity });
+      for (let i = 0; i < recipes; i++) {
+        const recipe = `oscar64-${name.replace(/_/g, "-")}-${i}`;
+        await f.addRecipe({
+          name: recipe,
+          toolchain: "oscar64",
+          output_format: "PRG",
+          region: "both",
+          source_doc: `recipes/oscar64/${recipe}.md`,
+        });
+        await f.linkRecipeImplements(recipe, name);
+      }
+    }
+    await f.addArchetype({
+      name: "vertical_shmup",
+      title: "Vertical Shmup",
+      kind: "game",
+      source_doc: "a.md",
+      brief_words: ["vertical shooter", "vertically scrolling"],
+      starter: "shmup-vertical",
+    });
+    for (const t of FEATURES) await f.linkArchetypeFeatures("vertical_shmup", t);
+  });
+
+  afterAll(async () => f.close());
+
+  it("proposes lfsr_random and kernal_load_to_address, and none of the parts that do not fit", async () => {
+    const r = await gameBriefing(BRIEF);
+    expect(r.structured.archetype?.name).toBe("vertical_shmup");
+    const got = r.structured.proposed_techniques.map((t) => t.name);
+    for (const t of [...FEATURES, "lfsr_random", "kernal_load_to_address", "sprite_animation_table"]) {
+      expect(got).toContain(t);
+    }
+    for (const t of [
+      "text_mode_overlay_render",
+      "mixed_sprite_char_actors",
+      "software_sprite_preshifted",
+      "hires_plot",
+      "screen_wipe",
+      "light_pen_read",
+    ]) {
+      expect(got).not.toContain(t);
+    }
+    const why = (n: string) => r.structured.proposed_techniques.find((t) => t.name === n)?.why_proposed;
+    expect(why("lfsr_random")).toBe("The brief asks for random numbers: a linear-feedback shift register");
+    expect(why("kernal_load_to_address")).toBe(
+      "The brief loads data from disk while it runs: LOAD a file to an address the program chooses",
+    );
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("still forces text_mode_overlay_render for a text-mode playfield", async () => {
+    const r = await gameBriefing("A falling block puzzle on a text-mode playfield");
+    expect(r.structured.proposed_techniques.map((t) => t.name)).toContain("text_mode_overlay_render");
+  });
+});
