@@ -1346,10 +1346,21 @@ technique's.
 **Cost:** cycles_per_frame=493
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-sfx-in-player (increment over the player, worst effect frame)
+**Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
+**Claims basis:** measured-vice
 
 Every claim below is register-level: what the player put in its shadow of
 the SID, and so in the SID, measured in VICE x64sc 3.10 by the recipe's
 own checks. Nobody on this machine has listened to it.
+
+The Claims line comes from a `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/sfx-in-player.md` (PAL, 8,000,000 cycles): every
+SID store, `$D400`-`$D418`, came from one instruction, the shadow copy at
+the end of the play call. The effects write only the shadow. The player
+and its effects are one writer, so the technique owns all three voices
+and the filter and volume byte, as its prerequisite
+`sid_play_routine_pattern` does. Before #96 it had no Claims line, and
+`c64_check_compatibility` could not rule out a unit conflict with it.
 
 ### Why
 
