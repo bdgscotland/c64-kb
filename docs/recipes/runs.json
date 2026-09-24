@@ -1693,5 +1693,14 @@
       "pal": "screenshots/vsp.png",
       "ntsc": "screenshots/vsp-ntsc.png"
     }
+  },
+  "kickassembler/afli-image": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "shots": {
+      "pal": "screenshots/afli-image.png"
+    }
   }
 }

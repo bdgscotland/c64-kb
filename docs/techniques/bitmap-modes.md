@@ -544,6 +544,16 @@ On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
 **Raster band:** 45-251 (fli_image's engine, which How says this reuses unchanged)
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/afli-image.md`: every unit the listing writes (VIC
+bank, matrix base, character base, YSCROLL, raster compare) is claimed by
+`fli_image` and its prerequisites. AFLI's own change is `$D016` with MCM
+clear, a mode bit and not a unit yet. The recipe measures this section's
+model pixel for pixel on PAL, including the `LINE_PAD` 10 row-counter
+reset described under "Cycle budget".
 
 ### Why
 
