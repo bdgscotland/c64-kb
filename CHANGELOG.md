@@ -5,7 +5,14 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 770, schema 31, tools 2.3.0, package 0.16.0.
+Data 770, schema 31, tools 2.3.1, package 0.16.1.
+
+**A routed game briefing names its starter (tools 2.3.1, package
+0.16.1).** `c64_game_briefing` with no `archetype` routes by the brief's
+words, but its query did not select `a.starter`, so a routed briefing
+never printed the `new-project` command. Naming the archetype did. The
+route now carries the starter, and a test in `test/briefings.test.ts`
+failed before the fix.
 
 **Every #39 starter is named by its archetype.** `**Starter:**` lines for
 `text_adventure` (adventure), `beat_em_up` (beat-em-up) and `demo_intro`

@@ -141,13 +141,15 @@ function wordsInBrief(brief: string, words: readonly string[]): string[] {
 export async function routeArchetypeFromBrief(description: string): Promise<ArchetypeResolution | undefined> {
   const fk = await getFalkor();
   const result = await fk.roQuery(
-    `MATCH (a:Archetype {kind: "game"}) RETURN a.name AS name, a.title AS title, a.kind AS kind, a.brief_words AS brief_words ORDER BY name`,
+    `MATCH (a:Archetype {kind: "game"}) RETURN a.name AS name, a.title AS title, a.kind AS kind, a.starter AS starter, a.brief_words AS brief_words ORDER BY name`,
   );
   const brief = normaliseBriefText(description);
   const scored = parseRows(BriefWordsRow, result.data).flatMap((r) => {
     if (!r.name) return [];
     const matched = wordsInBrief(brief, r.brief_words ?? []);
-    return matched.length > 0 ? [{ row: { name: r.name, title: r.title, kind: r.kind }, matched }] : [];
+    return matched.length > 0
+      ? [{ row: { name: r.name, title: r.title, kind: r.kind, starter: r.starter }, matched }]
+      : [];
   });
   scored.sort((a, b) => b.matched.length - a.matched.length);
   const [first, second] = scored;
