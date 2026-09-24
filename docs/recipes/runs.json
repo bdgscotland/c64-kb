@@ -763,6 +763,42 @@
       "ntsc": "screenshots/multi-sprite-object-ntsc.png"
     }
   },
+  "oscar64/sprite-expand": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-expand.png",
+      "ntsc": "screenshots/sprite-expand-ntsc.png"
+    }
+  },
+  "oscar64/sprite-mirror-at-load": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-mirror-at-load.png",
+      "ntsc": "screenshots/sprite-mirror-at-load-ntsc.png"
+    }
+  },
+  "oscar64/sprite-cache-flip": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-cache-flip.png",
+      "ntsc": "screenshots/sprite-cache-flip-ntsc.png"
+    }
+  },
   "oscar64/charset-parallax": {
     "cycles": 10000000,
     "models": [

@@ -463,6 +463,9 @@ families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
 **Region:** both
 **Uses registers:** D017, D01D
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=48
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-sprite-expand (one spr_expand call with run-time arguments, screen blanked; PAL and NTSC)
 
 ### Why
 
@@ -524,12 +527,27 @@ about 42 % of the 200-line display window (three stacked reach 126). An
 earlier version of this paragraph called 84 lines "two-thirds of the PAL screen
 height"; two-thirds of 200 is 133.
 
+### Cycle budget
+
+Expansion costs the CPU nothing while the VIC draws; the cost is the
+register writes. Measured in VICE x64sc 3.10 with CIA1 timer B in the
+Oscar64 recipe, screen blanked, one call less an empty call, the same on
+PAL and NTSC: one `spr_expand(sp, x, y)` call with run-time arguments is
+48 cycles (a masked read-modify-write of both registers), the Cost line;
+both registers written as whole bytes with `lda #` / `sta` are 12. With
+constant arguments Oscar64 folds the call to an `ORA #` per register
+(read from its `.asm` listing, not timed).
+
 ### Recipes
 
+- `recipes/oscar64/sprite-expand.md` (one image unexpanded, X-, Y- and
+  both-expanded, each with a collision box scaled by the expand bits and
+  drawn in front; the box and the outline located with PIL on PAL and
+  NTSC; cycles for `spr_expand()`, whole-byte writes and one scaled box).
 - `recipes/kickassembler/sideborder-open.md` (sets $D017 Y-expand for 42-line
-  sprite DMA). No Oscar64 recipe calls `spr_expand()`; an earlier version of
-  this list pointed at `recipes/oscar64/sprite-multiplex-8.md`, which does not
-  use it.
+  sprite DMA). An earlier version of this list said no Oscar64 recipe calls
+  `spr_expand()`, and before that pointed at
+  `recipes/oscar64/sprite-multiplex-8.md`, which does not use it.
 
 ---
 
@@ -539,6 +557,9 @@ height"; two-thirds of 200 is 133.
 **Region:** both
 **Uses registers:** D01E, D01F
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=16
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sprite-priority-classes (one read of each register stored to RAM, screen on; PAL and NTSC)
 
 ### Why
 
@@ -558,8 +579,11 @@ collision occurred since the last read.
 
 **Sprite-background collision ($D01F, SPBGCL):** Each bit n is set whenever any
 non-transparent pixel of sprite n overlaps a *foreground* pixel of the display,
-where foreground means: in standard hires text and hires bitmap, any pixel not
-drawn in background colour 0 ($D021); in ECM, any pixel not drawn in one of
+where foreground means: in standard hires text and hires bitmap, a 1 bit (in a
+hires bitmap the 0 bits are drawn in the screen-RAM low nibble, not $D021, and
+are still background: measured by the `mob_priority` probe, whose sprite on
+0 bits alone latched nothing; an earlier version of this sentence said "any
+pixel not drawn in background colour 0 ($D021)"); in ECM, any pixel not drawn in one of
 BGCOL0–3 (the four background colours are all background); in multicolor text
 and multicolor bitmap, only the %10 and %11 bit-pairs: %01 pixels (BGCOL1/$D022
 in MC text, the video-matrix high nibble in MC bitmap) count as background and
@@ -624,6 +648,16 @@ between their double-wide colored pixels (the %00 pattern bits are transparent).
 The hardware collision test ignores transparent pixels, so collision
 boundaries track visual content rather than bounding boxes.
 
+### Cycle budget
+
+The latching is free; the CPU pays only for the reads. The polling
+pattern above, `lda $d01e / sta` then `lda $d01f / sta` to absolute RAM,
+took 16 cycles in `kickassembler/sprite-priority-classes`, timed with the
+VICE x64sc monitor stopwatch between breakpoints on PAL and NTSC. That
+recipe is this technique's measured instance, and the Cost line. Acting
+on the bits (which sprite, which pair) is the game's own code and not in
+the figure.
+
 ### Recipes
 
 - `recipes/oscar64/simple-shmup.md` (reads $D01E/$D01F each frame). An earlier
@@ -632,7 +666,9 @@ boundaries track visual content rather than bounding boxes.
 - `recipes/kickassembler/sprite-priority-classes.md` clears both registers, lets
   two frames of a still picture latch, reads each once and compares with an
   expectation; it measures that $D01F follows the playfield's bit pattern (pair
-  01 in multicolour text latches nothing) and ignores $D01B.
+  01 in multicolour text latches nothing) and ignores $D01B. It is the
+  instance the Cost line was measured on. There is no Oscar64 recipe that
+  only polls the registers; `simple-shmup` above reads them in C.
 
 ---
 
@@ -765,6 +801,9 @@ position on the preceding line at all).
 **Region:** both
 **Uses registers:** D01B
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=6
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sprite-priority-classes (one `lda #` / `sta $d01b` of the whole byte, screen on; PAL and NTSC)
 
 ### Why
 
@@ -820,8 +859,18 @@ VICE x64sc on PAL and NTSC. Three rules came out, and one correction:
   and pairs 10 and 11 in multicolour text cover the sprite; a 0 bit and pairs
   00 and 01 show it. Pair 01 is background whatever colour `$D022` holds: a
   sprite with its bit set is entirely visible over a cell of solid pair 01.
-  Multicolour bitmap follows the same pair rule (Bauer's VIC-II article,
-  section 3.8.2; not measured here).
+- Bitmap modes follow the same rules, measured by a probe for this entry
+  (VICE x64sc, PAL and NTSC, exit screenshot and `$D01F`). In a hires
+  bitmap a 0 bit is background although its colour comes from the low
+  nibble of screen RAM, not `$D021`: a sprite with its bit set showed on
+  every line of a cell whose 0 bits were blue with `$D021` black, and the
+  1 bits (white, the high nibble) covered it. In a multicolour bitmap pairs
+  00 and 01 (the screen-RAM high nibble) showed the sprite and pairs 10
+  (low nibble) and 11 (colour RAM) covered it. A sprite that sat only on
+  hires 0 bits, or only on multicolour pairs 00 and 01, latched no
+  `$D01F` bit. An earlier version of this list gave the multicolour bitmap
+  rule from Bauer's VIC-II article, section 3.8.2, unmeasured, and said
+  nothing of the hires bitmap.
 - `$D01F` uses the same classes and ignores `$D01B`: the two sprites that
   sat only on pair 01 latched nothing, the six on 1 bits or pairs 10 and 11
   each latched their bit, set or clear.
@@ -863,6 +912,18 @@ exits (returns to front) at precise screen positions.
 **Collision interaction:** $D01B does not disable $D01F (sprite-background
 collision). A background-priority sprite still registers collisions with
 foreground pixels even when rendered behind them.
+
+### Cycle budget
+
+The VIC applies the bit while it draws, at no CPU cost. The CPU pays for
+the write: `lda #` then `sta $d01b` took 6 cycles in
+`kickassembler/sprite-priority-classes`, timed with the VICE x64sc monitor
+stopwatch between breakpoints on PAL and NTSC. That is the Cost line, one
+write per frame. Changing one sprite's bit and keeping the others
+(`lda $d01b / ora # / sta $d01b`) is 10 cycles by the instruction table
+(arithmetic, not measured here). A mid-frame switch under a raster IRQ
+costs the IRQ, not the write (`sprite_multiplex_24` and `stable_raster_irq`
+carry those figures).
 
 ### Recipes
 
@@ -1795,6 +1856,25 @@ computed, every mirrored frame against the assembler's string-reversed
 frame, and the exit screenshot, where each left-facing sprite is the
 pixel mirror of its right-facing neighbour on PAL and NTSC.
 
+### Variations
+
+**Mirror once at load.** When the frame set fits the VIC bank twice,
+mirror every frame once after loading into a resident second facing and
+skip the cache. A turn is then a change of pointers and part offsets,
+with no fill. `recipes/oscar64/sprite-mirror-at-load.md` does it for a
+multicolour set with the pair-preserving table: building the table took
+15,624 cycles, mirroring one 63-byte block 1,575 and a set of six blocks
+(a three-sprite object, two frames) 9,658, all once at load (VICE x64sc,
+CIA1 timer B, screen blanked, PAL and NTSC; compiled C). Every mirrored
+pair matched its source read backwards and the exit screenshot showed
+the left-facing object as the pixel mirror of the right-facing one with
+the same colours. The price is 64 bytes of bank per frame per facing.
+A three-sprite object turning through the cache instead needs three
+fills of 2,100 to 2,700 cycles in the frame it turns (the misses above).
+The Metal Warrior 4 note under Why is this variation. The platformer
+starter's `templates/platformer/src/art.c` mirrors its player's hires
+frames once at start, pixel by pixel without a table.
+
 ### Cycle budget
 
 Measured in VICE x64sc 3.10 with CIA2 timers, screen blanked, IRQs off,
@@ -1820,12 +1900,28 @@ grows. The Cost line's `bytes_data` is arithmetic from the table and slot
 sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
 `cycles_per_frame` figure is measured. Before #72 one basis word covered the whole Cost line, so it said `arithmetic`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `arithmetic` on their own line. The frame data is extra.
 
+The same cache in compiled C (`recipes/oscar64/sprite-cache-flip.md`,
+multicolour frames only, CIA1 timer B, screen blanked, PAL and NTSC):
+a miss is 3,692 cycles facing right and 3,902 facing left for a full
+frame, 3,344 and 3,494 with 15 of 21 rows present, and a hit 42. That is
+about 1,250 cycles a miss above the assembly figures; a left-facing
+miss in C is 62 PAL lines. The Cost line stays the assembly figure; a C game
+budgets the C one.
+
 ### Recipes
 
 - `recipes/kickassembler/sprite-cache-flip.md` (both tables built at
   start and checked, four frames depacked into an 8-slot cache facing
   both ways, one eviction, figures and PASS on screen, the mirror
   measured from the screenshot on PAL and NTSC).
+- `recipes/oscar64/sprite-cache-flip.md` (the cache in C: five packed
+  multicolour frames, 8 slots round-robin, an eviction and a refill
+  checked, four frames shown both ways and measured pixel by pixel on
+  PAL and NTSC, cycles per miss and hit).
+- `recipes/oscar64/sprite-mirror-at-load.md` (the mirror-once-at-load
+  variation: a multicolour set of six blocks mirrored with the
+  pair-preserving table, a three-sprite object turning in place, both
+  facings measured pixel by pixel on PAL and NTSC).
 
 ### Sources
 
@@ -1845,7 +1941,7 @@ sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=3693
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-per-frame-hitbox (eight boxes, 28 pairs)
+**Cost measured on:** oscar64-per-frame-hitbox (eight boxes, 28 pairs of which the masks leave 10; 1,834 to test plus 1,859 to emit, from a build without the demo's pair counters and halved-X arrays; the recipe as shipped prints COLLIDE MAX 2,037 and EMIT MAX 2,148, which include them; in the vertical blank, PAL)
 
 ### Why
 
@@ -1931,6 +2027,22 @@ weak spot can take damage and armour not.
 `width_of_sprite - offset - box_width`; keep one table and mirror at
 emit time.
 
+**Expanded sprites.** Keep the box table in image pixels and scale at
+emit time: on an X-expanded sprite the box's X offset and width double,
+on a Y-expanded one its Y offset and height, and the origin (the X and Y
+registers) does not move, because expansion grows the sprite right and
+down from its top-left corner. `recipes/oscar64/sprite-expand.md` drew
+an 8 x 5 box at image pixel 6, 8 as a sprite in front of its outline,
+in all four expand states, and PIL found the drawn block exactly on the
+scaled box each time: X 112 to 127 for a box of left 112, right 128 on
+an X-expanded sprite at X 100, lines 167 to 176 for top 166, bottom 176
+on a Y-expanded one at Y 150 (VICE x64sc, PAL and NTSC). The box's lines
+are one below its coordinates, as for every sprite pixel, so boxes in
+register coordinates still test correctly against each other. A flipped
+expanded frame uses the expanded width: `48 - 2 * offset - 2 * box_width`
+(arithmetic from the two rules, not measured here). Scaling the box in
+compiled C with variable shifts took 158 cycles a box in that recipe.
+
 **Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` in `game-design/enemy-behaviour-and-difficulty.md`.
 
 ### Cycle budget
@@ -1964,6 +2076,8 @@ cycles instead of 10, so a full 9-bit hit is 64. A masked-out pair is
   bullets through enemies, a 9-bit miss that a low-byte test calls a hit,
   `$D01E` beside the box events, cycles per pair and per frame, the boxes
   drawn as outlines and measured on PAL and NTSC).
+- `recipes/oscar64/sprite-expand.md` (one box scaled for the four expand
+  states and measured on screen; the "Expanded sprites" variation).
 
 ### Sources
 
@@ -2354,7 +2468,15 @@ on top in the lower slot. To face the other way, each part's offset
 becomes `-dx - width` and its image is mirrored (`sprite_cache_flip`).
 c64gameframework stores a mirrored X offset beside the normal one for
 every part, so the flip is a choice of column, not arithmetic
-(`sprite.s`, source read here).
+(`sprite.s`, source read here). With the anchor in the middle of the
+object the parts cover the same span either way and the object turns
+in place. `recipes/oscar64/sprite-mirror-at-load.md` turns a
+three-sprite multicolour object this way, offsets -36, -12 and 12, with
+a left-facing frame set mirrored once at load: every part's registers
+matched a model in each of 128 frames with seven turns, and the exit
+screenshot shows the left-facing object as the exact pixel mirror of the
+right-facing one (PIL, PAL and NTSC). Placing the three parts took 417
+cycles facing right and 460 facing left in compiled C.
 
 ### Why it works
 
@@ -2438,6 +2560,10 @@ counters are not in these figures.
   past the right edge; every part's registers, including its `$D010`
   bit, checked against a model every frame; cycles per update and per
   part; each part's box measured with PIL on PAL and NTSC)
+- `recipes/oscar64/sprite-mirror-at-load.md` (a three-sprite object
+  that turns in place about its anchor, `-dx - width`, with a mirrored
+  frame set; registers checked every frame, the mirror measured on
+  screen)
 
 ### Sources
 
