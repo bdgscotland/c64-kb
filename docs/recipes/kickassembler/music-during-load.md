@@ -755,9 +755,11 @@ that enters a few cycles early never reads the previous frame's count.
 
 The music still stops for the length of each gap and then runs the
 missed steps at once. With this listing's player a step is a few dozen
-cycles. The full player of `music-player.md` costs up to 1,198 cycles a
+cycles. The full player of `music-player.md` costs up to 1,223 cycles a
 call (its Cost line), so 33 steps in one interrupt would be about
-39,500 cycles, two PAL frames (rung 3, arithmetic, not measured here).
+40,400 cycles, more than two PAL frames (rung 3, arithmetic, not
+measured here; 39,500 when the Cost line read 1,198, before #118, and
+41,250 when it read 1,250, before #120).
 A game that cannot afford that can cap the steps per interrupt and let
 the rest follow over the next frames, or skip the missed rows without
 sounding them.

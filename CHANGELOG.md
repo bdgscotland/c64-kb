@@ -5,9 +5,102 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 835, schema 39, tools 2.16.0, package 0.29.0.
+Data 841, schema 39, tools 2.16.0, package 0.29.0.
 
-**Six pitfalls, two technique variations and a luminance dissolve recipe, harvested from a five-part demo's builders (data 835).** The pitfalls, each with the figure that found it: a colour map whose last bytes land in the character window's glyph 255 shows as stripes where the idle fetch draws it; an SEI held across a band's entry line lets that line become a badline (+26 to +40 cycles in 12 of 884 frames); an equality raster poll under a dispatcher's latency spins whole frames where a ">=" poll does not; a per-frame rebuild of a KERNAL-vectored interrupt table loses a frame whenever two entries sit under about four lines apart; sprite pointers written before a screen fill that covers $07F8 leave no sprites; a test cycle limit that lands before the grading frame reads as a pass. `sprite_multiplex_24` gains a measured fixed-row variation (nine rows twenty lines apart, 24 balls, worst 8,294 PAL / 9,176 NTSC); `dysp_side_border_sprites` gains the stall-table finding (the recipe's 16-entry table covers four-sprite sets only; all 256 sets follow a BA-window union rule, band constant equal in 793 of 793 PAL frames with eight sprites). New technique `luminance_dissolve` on the transitions page, proposed from the technique graph's compatibility census: cells visited in a 10-bit LFSR order each step three places down the luminance ladder, and its recipe `kickassembler/luminance-dissolve` measured on both models (period 1,023, worst fade frame 7,490 PAL, black in 84 frames PAL and 100 NTSC, a fault build that skips the luminance step fails its check).
+**Six pitfalls, two technique variations and a luminance dissolve recipe, harvested from a five-part demo's builders (data 841).** The pitfalls, each with the figure that found it: a colour map whose last bytes land in the character window's glyph 255 shows as stripes where the idle fetch draws it; an SEI held across a band's entry line lets that line become a badline (+26 to +40 cycles in 12 of 884 frames); an equality raster poll under a dispatcher's latency spins whole frames where a ">=" poll does not; a per-frame rebuild of a KERNAL-vectored interrupt table loses a frame whenever two entries sit under about four lines apart; sprite pointers written before a screen fill that covers $07F8 leave no sprites; a test cycle limit that lands before the grading frame reads as a pass. `sprite_multiplex_24` gains a measured fixed-row variation (nine rows twenty lines apart, 24 balls, worst 8,294 PAL / 9,176 NTSC); `dysp_side_border_sprites` gains the stall-table finding (the recipe's 16-entry table covers four-sprite sets only; all 256 sets follow a BA-window union rule, band constant equal in 793 of 793 PAL frames with eight sprites). New technique `luminance_dissolve` on the transitions page, proposed from the technique graph's compatibility census: cells visited in a 10-bit LFSR order each step three places down the luminance ladder, and its recipe `kickassembler/luminance-dissolve` measured on both models (period 1,023, worst fade frame 7,490 PAL, black in 84 frames PAL and 100 NTSC, a fault build that skips the luminance step fails its check).
+
+**#110: two road techniques and the speedcode road recipe (data 840).**
+Simon Nicol's unreleased 1989 Martech road (a bitmap fast fill whose
+speedcode is patched where the colour changes) was built and measured
+against the racing starter's character road:
+- The speedcode road's full redraw is 37,628 PAL / 38,033 NTSC cycles,
+  and patching six edges on every line costs 88,000-285,000 cycles a
+  picture.
+- Its edges are no smoother than the character road's, and it needs
+  about 45 KB.
+- It loses for a full game with kerbs.
+
+`techniques/effects-vector-3d.md` gains `speedcode_bitmap_road` and
+`char_row_road`, and `recipes/kickassembler/speedcode-road.md` pins the
+speedcode road on PAL and NTSC. Both are anchored to
+`badline_cycle_loss`.
+**lfsr_random no longer claims the SID (data 839; #112, maintainer
+decision).** The technique claimed SID voice 3, its readback and
+`$D418` (init) and CIA1 timer A, and listed their registers, because
+its first recipe seeded from voice 3; every program that listed it got
+an init-order note and shared SID registers against music techniques
+whatever its seed. The LFSR step touches no hardware: its Claims line is
+`none`, its Uses registers line is gone, and the two recipes that seed
+from voice 3 (oscar64/lfsr-random, lfsr-random-seed2) declare the SID
+in their own `claims:` line. `lfsr_random` beside
+`sid_play_routine_pattern` now reports no SID conflict.
+
+**The pitfall-anchor check exempts four techniques and fails on any
+other unanchored one (data 838; #117).** Maintainer decision: the four
+the #19 triage judged to need no pitfall (dig_and_refill,
+world_state_bits, wcf_packer, runtime_relocation) are listed in
+scripts/check-pitfall-anchors.ts with their reasons; any other technique
+no pitfall names now fails the check (it only listed them before), as
+does an exemption that is gone or has since been anchored. It reads 242
+techniques, 238 anchored, 4 exempt, 0 missing.
+
+**Voice 3 gets a hard restart when an effect hands it back (data 837;
+#120).** A music note within two frames of a sound effect ending had no
+hard restart and could start about 33 ms late (one lead note on PAL
+frame 916). The effect's end now gates voice 3 off with AD and SR at 0
+and hands it to the music two calls later, gating any note the music
+started meanwhile from its first wavetable row. The harness counts every
+note, hand-backs included: all parts on time on PAL, NTSC and the 6581;
+in the SID log every gate had AD and SR at 0 for at least 39,238 cycles
+before it. The worst play call falls to 1,215 PAL / 1,223 NTSC (was
+1,250); every page quoting it carries the new figure with a clause, and
+the per-feature table's "all off" line (1,019, stale since before #118)
+is now 1,075.
+
+**The music player starts a note's gate before its AD and SR (data 836; #118).**
+The player wrote AD and SR 155-175 cycles before the gate, which undoes
+the hard restart for attack-0 instruments; with each part moved onto
+voice 3 and ENV3 read after every call (PAL, 2,000 calls), the old
+order started 146 of 163 drum, 81 of 139 bass and 0 of 43 lead notes on
+time, gate first all of them (NTSC and the 6581 alike). The harness now
+fails a note that does not start in its own call. The worst play call
+rose from 1,198 to 1,250 cycles PAL (1,174 to 1,250 NTSC); the Cost line,
+per-feature table and every page quoting 1,198 carry the new figure
+with a clause. sid-env3-filter's copy takes the same order. The MEASURED
+demo's copy (#119) and a late note right after an effect hands voice 3
+back (#120) are open.
+
+**The music player writes each note's gate before its AD and SR
+(#118).** `music-player.md` wrote AD and SR 155 to 175 cycles before the
+gate, so attack-0 notes waited out the ADSR bug's counter wrap despite
+the hard restart. Its harness now reads ENV3 after every call and
+passes only if every voice-3 note starts inside its call; build switches
+put the bass or the lead on voice 3. Gate first: 163/163 drum, 139/139
+bass, 43/43 lead notes on time; the old order 146, 81 and 0 (PAL,
+reSID). The worst call rose from 1,198 to 1,250 cycles (PAL; NTSC 1,174
+to 1,250): `sid_play_routine_pattern`'s Cost line and the per-feature
+table in music-sid.md were re-measured. The copy in `sid-env3-filter.md`
+takes the same order; its attack samples rise one step, its rest's
+release starts a frame later, and its cycle rows rise 59 on note frames.
+The MEASURED demo's copy of the player keeps the old order (#119); a note within two frames of an effect's
+hand-back still starts without a hard restart (#120).
+
+**Four SID instrument techniques, and a note-start order bug in the
+music player (data 835; part of #55, #118).** New entries in
+sid-instruments.md, each with a recipe that plays through the #50
+player twice (as written, and with the feature off), a register trace
+equal to the program's log on 192 of 192 calls, and WAVs analysed in
+Python under the 6581 and 8580 models (reSID, not silicon):
+`sid_sync_lead` (heard pitch is the master's within 0.1 %),
+`sid_ring_mod_bell` (partials at 0.414 and 2.414 of the carrier),
+`sid_pwm_pad` (second-to-first harmonic follows |cos(pi w/4096)| within
+0.026 on average), `sid_hard_restart_drum` (hits start 0.2-1.1 ms after
+the gate, 33-35 ms without the restart). The #50 player writes a note's
+AD and SR about 150 cycles before its gate, which undoes the hard
+restart for attack 0: 0 of 80 hits on time, 80 of 80 with the gate
+first (#118). sid-env3-filter blamed its NTSC +8 cycles on the old CIA;
+a 6526 PAL run reads the same as the default, so it is the player's
+NTSC skip-counter path.
 
 **A plasma recipe, measured, for a technique that had only an estimate (data 834).** `kickassembler/plasma`: a full-screen colour-RAM plasma, one column term and two row terms, a quarter of the rows repainted each frame, run on PAL and NTSC and pinned at the same cycle count with a per-colour cell census. The row loop is 18 cycles a cell against the technique page's estimate of 30 to 40; the worst frame is 6,830 cycles PAL and 7,088 NTSC, the whole screen in one pass 22,574 (1.15 PAL frames), which is why it is a quarter a frame. A control with the row term dropped collapses to vertical stripes and fails the check. The `plasma` technique gains a measured Cost, a Recipes pointer and a Sources line. Built because the MEASURED demo now carries a plasma in its first part and the KB had no recipe behind it; nobody has watched it animate, the emulator is the only witness.
 

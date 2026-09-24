@@ -1574,6 +1574,183 @@ Badline body: 20 CPU cycles PAL (22 NTSC), plus the 43-cycle stall, one full ras
 
 ---
 
+## char_row_road — Per-line road edges drawn into each character row's own characters, band colours from registers per line
+
+**Complexity:** scene-tier
+**Region:** both
+**Uses registers:** D012, D016, D018, D019, D021, D022, D023
+**Requires:** mcm_text
+**Cost:** cycles_per_line=63, lines_active=128
+**Cost basis:** measured-vice
+**Claims:** vic_raster_irq (owns), vic_matrix_base (owns), vic_char_base (owns)
+**Claims basis:** derived-listing
+
+Read off `templates/racing/src/engine.asm`: the IRQ chain owns the raster
+compare, and each picture swaps the screen and character set in `$D018`
+at line 251. The Cost line is the racing starter's kernel (it has no
+recipe yet), measured in VICE x64sc on PAL and NTSC: it holds every cycle
+of the road lines from the horizon's line to line 250, the screen on and
+sprites 0-3 over the road.
+
+### Why
+
+A road in characters steps its edges by whole characters from one row to
+the next unless every row's edge characters are drawn for that row. The
+maintainer's word for the stepped road of an earlier racer was "shady";
+per-line `$D016` (`pseudo_3d_road_raster`) shifts both edges of a line
+together and still steps between rows. Drawing each row's edge
+characters line by line puts every edge on its own pixel on every line.
+
+### How
+
+Multicolour characters. `%00` is the grass and `%10` the kerb, and both
+are registers written on every road line by a polling kernel (`$D021`,
+`$D023`), so the grass and kerb bands move every frame from the camera's
+position alone: the colour pair is bit 6 of the line's distance plus the
+position's low byte. `%01` is the road (`$D022`), `%11` the centre line
+(colour RAM). So the characters depend only on the road's shape.
+
+Per 8-line row, bottom up: the centre and its step in closed form from
+the curvature under the row (dx + 8c, cx + 8dx + 36c), then the columns
+each edge crosses on the row's first and last line (an edge is straight
+within a row), then the edge characters, one byte per line: position p
+of a span reads `PAGE[X + 64 - 4p]`, where `PAGE` is the kerb width's
+edge table and X the line's pair offset from a ramp table (slope and
+fraction, eight entries), unrolled. Then the row's 40 screen codes, only
+when its spans moved. A row whose centre (to a quarter pair), step (to a
+sixteenth) and horizon are as its copy last drew them is kept. Two
+copies of screen, characters and kernel, swapped at line 251.
+
+### Why it works
+
+The kernel waits for its line in `$D012` (`CMP`, `BNE`, seven cycles a
+turn) and stores `$D021` and `$D023` by cycle 13 and 17: the left border
+of a 38-column screen (the starter's PROBE build, VICE x64sc). Sprites
+0-3 fetch at the end of a line and let the CPU go by cycle 3, so the
+waits absorb them; sprites 4-7 would not. On NTSC a store was seen on
+cycle 18 on lines with sprites 0, 1 and 3 on them, one to two pixels
+into the window at VIC X 31-33; the builder keeps kerb pixels out of
+those three (roadcheck, VICE x64sc). Every road line of the starter's
+still matches a model drawn from the machine's own characters,
+registers and slots on PAL and NTSC (`templates/racing/tools/roadcheck.py`),
+and the edges move at most 4-6 pixels a line with none of 8 or more.
+
+### Cycle budget
+
+The kernel holds each road line from the horizon down, 63 cycles a line
+on PAL and 65 on NTSC. A picture at speed costs about 60,000 cycles of
+row work and 15,000 of sprites (the starter's PROF build, race frames
+only, VICE x64sc), in the main program. With the game's step 25 times a
+second a picture came every 13.3 frames on PAL and 19.8 on NTSC at the
+time of writing (measured, #110).
+
+### Pitfalls
+
+- A span wider than the render's unrolled positions is dropped: a
+  centre line crossing five columns on a bend lost its row when the
+  render took four (the starter, 174 rows a race, measured).
+- `abs,X` with X = `$FF` does not wrap: an insertion sort that stored to
+  `table + 1, X` at the gap wrote 256 bytes past its table.
+
+### Recipes
+
+No recipe yet: the racing starter (`templates/racing/`) implements it.
+
+### Sources
+
+- Measured in VICE x64sc 3.10 on the racing starter (#110).
+
+---
+
+## speedcode_bitmap_road — Bitmap road drawn by per-line speedcode, its edges moved by patching the code (Nicol's method)
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, D019, D021
+**Requires:** multicolor_bitmap
+**Cost:** cycles_per_frame=231671, bytes_code=25601, bytes_data=8000
+**Cost basis:** measured-vice
+**Cost bytes basis:** arithmetic
+**Cost measured on:** kickassembler-speedcode-road (PAL, one picture: the patch's mean 194,037 plus the run's mean 37,634, interrupts off, sprites 0-3 on; 128 road lines of six edges each)
+**Claims:** vic_matrix_base (owns), vic_char_base (owns)
+**Claims basis:** derived-listing
+
+Read off the recipe: the split writes the bitmap's screen and base to
+`$D018` on line 122 and the text top's at line 251.
+
+### Why
+
+Simon Nicol's unreleased 1989 racer is remembered for the best road on
+the C64 (gamesthatwerent, Sources). Its method as reported: a bitmap,
+each road line drawn by a run of pre-generated stores with the colour in
+A, and the code itself patched where the colour changes along the line,
+so moving an edge costs a few byte patches, not a redraw.
+
+### How
+
+Each road line is 40 five-byte slots, one a bitmap byte: `BIT $00` /
+`STA byte` keeps A, `LDA #v` / `STA byte` sets it. A line's slot for
+column c is at 5c, so a patch is a store through a pointer to the line
+with `Y = 5c`. For each line: its edges in multicolour pixels, the byte
+each falls in (`edge / 4`), the mixed value of that byte from two mask
+tables, and the slots to set: the mixed byte and the byte after it (the
+new colour). The line's old slots go back to `BIT`. Then all lines run
+as one routine.
+
+### Why it works
+
+A slot stores whatever A holds, so a run of `BIT` slots paints a colour
+along the line at seven cycles a byte and needs no loop. Measured in
+VICE x64sc 3.10 (`recipes/kickassembler/speedcode-road.md`): the run of
+128 lines × 40 bytes takes 37,634 cycles on PAL and 38,017 on NTSC, and
+the edges move at most 6 pixels a line, none 8 or more.
+
+### Cycle budget
+
+The recipe patches 194,037 cycles a picture on PAL (196,130 NTSC; about
+1,600 a road line: six edges, two slots set and two cleared each), and
+runs 37,634: a picture every 22.1 frames on PAL and 35.2 on NTSC with
+the band kernel running. A tighter patcher's floor is about 63,000 a
+picture (arithmetic from the instruction table: 24 slot stores and six
+edges a line), about 100,000 with the run. The character road
+(`char_row_road`) costs about 60,000 for the same road, double-buffered:
+its geometry is per 8-line row, the bitmap's per line.
+
+### Variations
+
+**Fewer edges.** A road with no kerbs and no centre line has two edges a
+line and a quarter of the patching. Not measured here.
+
+### Pitfalls
+
+- A bitmap has one register colour per line (`$D021`): kerb colours come
+  from screen RAM and colour RAM per 8 × 8 cell, so kerb bands are in
+  the bitmap and move only with the picture.
+- Two bitmaps need two sets of speedcode (the `STA` addresses differ):
+  51,200 bytes. The recipe draws into the bitmap on show, and a moving
+  road tears.
+- Switching from text to multicolour bitmap mid-screen passes through
+  hires bitmap if `$D011` is written before `$D016`: its `%0` pixels take
+  the screen RAM's colour, and on NTSC the line drew black (VICE x64sc,
+  the recipe). Write `$D016`, then `$D011`, then `$D018`.
+
+### Recipes
+
+- `recipes/kickassembler/speedcode-road.md` — 128 lines, six edges each,
+  timed with CIA2, PAL and NTSC, ending on a still.
+
+### Sources
+
+- Simon Nicol's car game: https://www.gamesthatwerent.com/gtw64/car-game-2/
+  (the method, "the best road system anyone had seen on the C64", about
+  40 KB; reported, not measured here).
+- Louis Gorenfeld, "Lou's Pseudo 3d Page": https://www.extentofthejam.com/pseudo/
+- C64 Lotus Esprit Turbo Challenge's road in characters, with expanded
+  sprites over the kerbs that the release dropped:
+  https://www.gamesthatwerent.com/2015/11/lotus-esprit-turbo-challenge-early-proto/
+
+---
+
 ## wireframe_pipeline — Rotated, projected, culled and clipped wireframe objects in a hires bitmap
 
 **Complexity:** high

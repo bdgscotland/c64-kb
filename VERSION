@@ -19,7 +19,7 @@
 # Package version lives in package.json. Bump together with MCP_TOOL_VERSION
 # when shipping.
 
-KB_DATA_VERSION=835
+KB_DATA_VERSION=841
 KB_SCHEMA_VERSION=39
 MCP_TOOL_VERSION=2.16.0
 HVSC_CORPUS_VERSION=hvsc-84-2025-12-25

@@ -242,14 +242,14 @@ Changing $D416 while voices are playing produces a live filter sweep; SID tracke
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418
 **Requires:** sid_voice_setup
-**Cost:** cycles_per_frame=1198, cycles_per_frame_typical=779, irq_slots=1, bytes_code=1414, bytes_data=1070, zp_bytes=0
+**Cost:** cycles_per_frame=1223, cycles_per_frame_typical=768, irq_slots=1, bytes_code=1449, bytes_data=1086, zp_bytes=0
 **Cost basis:** measured-vice
-**Cost measured on:** kickassembler-music-player (worst of 2,000 calls, PAL, a frame where an effect hands voice 3 back; 1,159 with no effect; NTSC 1,174; typical is the NTSC median, PAL 773; bytes from the symbol file: player code $10FD-$1682, data is player state 322 + effect data 249 + octave-6 tables 48 + tune 451)
+**Cost measured on:** kickassembler-music-player (worst of 2,000 calls, NTSC, a frame with no effect that starts a note on all three voices; PAL 1,215, the same kind of frame; typical is the NTSC median, PAL 762; bytes from the symbol file: player code $1182-$172A, data is player state 337 + effect priorities and data 250 + octave-6 tables 48 + tune 451)
 **Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
 **Claims basis:** estimated
 **Consumes formats:** SID
 
-(An earlier version gave 327 cycles, measured on the stub tune of `oscar64-sfx-engine`; a full player with instruments, filter and effects costs 1,198 at worst, measured with CIA1 timer A around every call of `recipes/kickassembler/music-player.md`.)
+(An earlier version gave 327 cycles, measured on the stub tune of `oscar64-sfx-engine`; a full player with instruments, filter and effects costs 1,250 at worst, measured with CIA1 timer A around every call of `recipes/kickassembler/music-player.md`. The line then read 1,198, typical 779, 1,414 bytes of code and 1,070 of data: that player wrote a note's AD and SR before its gate, which undid its hard restart for attack-0 notes; writing the gate first costs 7 cycles a control write and 28 a note start (#118). It then read 1,250, typical 784, 1,435 bytes of code and 1,085 of data, the worst a PAL frame where an effect handed voice 3 back: that hand-back wrote the music's AD and SR with no hard restart, and a note within two frames of it could start late; the hand-back now takes the hard restart, and dropping its separate AD and SR write saved 27 cycles on the worst frames (#120).)
 
 ### Why
 
@@ -350,22 +350,24 @@ What each feature of `recipes/kickassembler/music-player.md` costs, measured in 
 
 | Build | PAL worst | PAL median | PAL mean | NTSC worst | NTSC median | NTSC mean |
 |---|---|---|---|---|---|---|
-| Full player | 1,198 | 773 | 787 | 1,174 | 779 | 788 |
-| `NO_VIB`: no vibrato | 1,159 (-39) | 720.5 (-52.5) | 736 (-51) | 1,174 (0) | 726 (-53) | 741 (-47) |
-| `NO_PWS`: no pulse sweep | 1,159 (-39) | 684 (-89) | 722 (-65) | 1,174 (0) | 691 (-88) | 724 (-64) |
-| `NO_FLT`: no filter program | 1,132 (-66) | 706 (-67) | 716 (-71) | 1,109 (-65) | 707 (-72) | 718 (-70) |
-| `NO_WT`: wavetable read on the note's first frame only (no arpeggios, no drum sweeps) | 1,161 (-37) | 591.5 (-181.5) | 641 (-146) | 1,165 (-9) | 596 (-183) | 644 (-144) |
-| `NO_HR`: no hard restart | 1,198 (0) | 769.5 (-3.5) | 776 (-11) | 1,174 (0) | 766 (-13) | 776 (-12) |
-| `NO_LEG`: no legato | 1,184 (-14) | 764 (-9) | 780 (-7) | 1,193 (+19) | 763 (-16) | 780 (-8) |
-| `NO_FX`: no sound effects | 1,117 (-81) | 737 (-36) | 751 (-36) | 1,125 (-49) | 743 (-36) | 753 (-35) |
-| All seven off | 1,019 (-179) | 303 (-470) | 372 (-415) | 1,027 (-147) | 311 (-468) | 381 (-407) |
+| Full player | 1,215 | 762 | 774 | 1,223 | 768 | 775 |
+| `NO_VIB`: no vibrato | 1,213 (-2) | 703 (-59) | 721 (-53) | 1,221 (-2) | 711 (-57) | 725 (-50) |
+| `NO_PWS`: no pulse sweep | 1,215 (0) | 671 (-91) | 708 (-66) | 1,223 (0) | 675 (-93) | 710 (-65) |
+| `NO_FLT`: no filter program | 1,151 (-64) | 696 (-66) | 704 (-70) | 1,159 (-64) | 695 (-73) | 705 (-70) |
+| `NO_WT`: wavetable read on the note's first frame only (no arpeggios, no drum sweeps) | 1,206 (-9) | 573 (-189) | 622 (-152) | 1,214 (-9) | 578 (-190) | 625 (-150) |
+| `NO_HR`: no hard restart | 1,220 (+5) | 750 (-12) | 759 (-15) | 1,228 (+5) | 747 (-21) | 758 (-17) |
+| `NO_LEG`: no legato | 1,192 (-23) | 752 (-10) | 768 (-6) | 1,200 (-23) | 738 (-30) | 768 (-7) |
+| `NO_FX`: no sound effects | 1,172 (-43) | 721 (-41) | 736 (-38) | 1,180 (-43) | 728 (-40) | 738 (-37) |
+| All seven off | 1,075 (-140) | 281 (-481) | 357 (-417) | 1,083 (-140) | 289 (-479) | 366 (-409) |
 
-- **The worst-call savings do not add.** Removing a feature moves the worst call to another frame. The seven PAL worst-call savings sum to 276, but removing all seven saves 179. The mean savings come close to adding: they sum to 387 on PAL, against 415 for all seven (arithmetic).
-- **Plan the worst frame from the table's worst column, not from the mean.** Hard restart saves nothing at worst because the worst frame is a note-start frame, and the restart runs two frames earlier.
-- **Legato saves cycles.** With `NO_LEG` every note of the legato instrument gates and writes AD and SR, and the NTSC worst call rises by 19.
+The table was re-measured after #118 moved each note's gate before its AD and SR; the first version's full player read 1,198, 773 and 787 on PAL and 1,174, 779 and 788 on NTSC, and every row moved with it. It was re-measured again after #120 gave the effects' hand-back the hard restart and dropped the hand-back's separate AD and SR write; the full player read 1,250, 782 and 795 on PAL and 1,250, 784 and 795 on NTSC, and every row moved again. Two medians fall between two calls (695.5 and 572.5 on PAL) and are rounded up. Without the restart the player's gate stays on from one note to the next unless a rest or a hand-back falls between, so the recipe's note check, which wants a gate edge, counts few notes: `NO_HR` reads 12 of 12 on time on PAL, where it read 5 of 6 before #120 counted the notes next to a hand-back.
+
+- **The worst-call savings do not add.** Removing a feature moves the worst call to another frame. The seven PAL worst-call savings sum to 136, and removing all seven saves 140. The mean savings come close to adding: they sum to 400 on PAL, against 417 for all seven (arithmetic).
+- **Plan the worst frame from the table's worst column, not from the mean.** Hard restart saves nothing at worst (removing it adds 5 cycles) because the worst frame is a note-start frame, and the restart runs two frames earlier.
+- **Legato's cost moves with the code.** With `NO_LEG` every note of the legato instrument gates and writes AD and SR, but the legato test goes too. Here the worst call falls by 23 on both clocks; an earlier version of this line said legato saves cycles, from an NTSC worst call that rose by 27 without it (19 before #118).
 - **The savings depend on the tune.** In "Test Card", one instrument has vibrato (the lead), four have a pulse sweep and two run a filter program. A tune that uses a feature more often gains more by removing it.
 - **Removing a feature changes the sound.** Nobody has listened to any of these builds. `NO_FX` also drops the harness's effect requests, so that build reports FAIL; its cycle counts are still valid.
-- **The floor is 1,019 cycles at worst on PAL.** That is order lists, patterns, envelopes and gates with every feature off.
+- **The floor is 1,075 cycles at worst on PAL.** That is order lists, patterns, envelopes and gates with every feature off. An earlier version of this line said 1,019, the figure before #118; the table's row read 1,104 between #118 and #120.
 
 ### Recipes
 
@@ -1130,9 +1132,10 @@ runs. The loss the catch-up repairs has two causes:
 ### Variations
 
 - **Cap the burst.** After a 33-frame stretch the handler plays 33
-  steps at once. A full player at 1,198 cycles a call (the Cost line of
-  `sid_play_routine_pattern`) would need about 39,500 cycles, two PAL
-  frames (rung 3, not measured). Cap the steps per interrupt, or skip
+  steps at once. A full player at 1,223 cycles a call (the Cost line of
+  `sid_play_routine_pattern`) would need about 40,400 cycles, more than
+  two PAL frames (rung 3, not measured; the figure was 39,500 when the
+  Cost line read 1,198 and 41,250 when it read 1,250). Cap the steps per interrupt, or skip
   the missed rows without sounding them.
 - **TOD instead of CIA2.** A TOD clock also runs through masked
   stretches, but in tenths of a second, five or six frames; it paces a
@@ -1404,7 +1407,7 @@ checksum, and the row advance) and 55 cycles when idle, both including the
 harness's 5 cycles of start/stop overhead. The stub tune's play routine
 costs 332, or 327 net of that overhead, which was the figure on
 `sid_play_routine_pattern`'s Cost line until it took the 1,198 of a full
-player. The engine's own Cost line carries 258 (263 less the 5) as its worst frame and 50 (55 less the 5,
+player (1,250 after #118, 1,223 since #120). The engine's own Cost line carries 258 (263 less the 5) as its worst frame and 50 (55 less the 5,
 idle) as its typical figure. Against a PAL frame of 19,656 cycles the engine is about 1.3 %
 active and 0.25 % idle (arithmetic). A real player's play routine is
 typically several times the stub; its figure is the player's, not this

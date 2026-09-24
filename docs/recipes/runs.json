@@ -2603,5 +2603,68 @@
       "pal": "screenshots/lfsr-seed-cia.png",
       "ntsc": "screenshots/lfsr-seed-cia-ntsc.png"
     }
+  },
+  "kickassembler/sid-sync-lead": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-sync-lead.png",
+      "ntsc": "screenshots/sid-sync-lead-ntsc.png"
+    }
+  },
+  "kickassembler/sid-hr-snare": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-hr-snare.png",
+      "ntsc": "screenshots/sid-hr-snare-ntsc.png"
+    }
+  },
+  "kickassembler/sid-ring-bell": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-ring-bell.png",
+      "ntsc": "screenshots/sid-ring-bell-ntsc.png"
+    }
+  },
+  "kickassembler/sid-pwm-pad": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-pwm-pad.png",
+      "ntsc": "screenshots/sid-pwm-pad-ntsc.png"
+    }
+  },
+  "kickassembler/speedcode-road": {
+    "cycles": 45000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/speedcode-road.png",
+      "ntsc": "screenshots/speedcode-road-ntsc.png"
+    }
   }
 }

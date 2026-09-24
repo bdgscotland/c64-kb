@@ -67,7 +67,9 @@ CIA1 stopwatch is the recipe's own instrument and stays), and the four
 digits the verdict's `WorstDelta` macro prints while finding a maximum go
 to four bytes of RAM (`scratch`) instead of screen row 24, which the
 meter used to share. The build's pictures show the meter's readout and a
-stray `1026` in row 24; this page's pictures do not.
+stray `1026` in row 24; this page's pictures do not. Since the fold the
+player has changed once, to write each note's gate before its AD and SR
+(#118, marked `copy:`).
 
 ```asm
 // sid-env3-filter.asm: the ENV3 filter envelope, measured. c64-kb technique
@@ -769,13 +771,18 @@ scratch: .fill 4, 0                    // WorstDelta's digits go here, not on sc
 //     the program runs as a static cutoff at base; with mu_vmask 0 voice 3
 //     is not gated at all.
 //
-// Two corrections to the base, both one instruction:
+// Three corrections to the base, two of them one instruction:
 //   - copy: the NTSC skip counter reloads 5, not 4, so one call in six is
 //     skipped as the base's comment and tempo arithmetic say (its code
 //     skipped one in five, and its own notes measured 20.0 % of calls).
 //   - copy: the pulse-width sweep added the frame-parity test's result to
 //     the width instead of the sweep (found by the MEASURED demo's port,
 //     in the build's record); `lda mu_pws,x` restored after the test.
+//   - copy: a new note's gate goes out before its AD and SR (mu_envp), as
+//     in music-player.md since #118; the base wrote AD and SR about 150
+//     cycles before the gate, and an attack-0 note (the lead's AD is $08)
+//     then waited for the ADSR bug's counter wrap. Voice 3's kind-2 gate
+//     is written before its AD and SR too.
 //
 // The player (base):
 //   - an order list per voice: pattern numbers, transposes, a loop;
@@ -879,6 +886,7 @@ mu_tmp:   .byte 0
 mu_par:   .byte 0           // frame parity, for the pulse sweeps
 mu_endpat:.byte $ff         // an empty pattern: the first read goes to the order list
 mu_ftktab: .byte 2, 3, 4    // the tick each voice reads its next event on
+mu_envp:  .fill 15, 0       // copy: nonzero at X, AD and SR still to write
 
 sfx_pending: .byte 0        // effect requested since the last play
 sfx_num:     .byte 0        // effect on voice 3, 0 = none
@@ -1276,6 +1284,14 @@ mv_c:   lsr mu_tmp
         lda mu_wave,x
         ora mu_gate,x
         sta $d404,x
+        lda mu_envp,x           // copy: a new note's envelope, after its gate
+        beq !+
+        lda mu_ad,x
+        sta $d405,x
+        lda mu_sr,x
+        sta $d406,x
+        lda #0
+        sta mu_envp,x
 !:      lda #0
         sta mu_upd,x
         lsr mu_tmp
@@ -1432,20 +1448,20 @@ ms_new: lda #1
         sta mu_ad,x
         bit mu_skip
         bmi !+
-        sta $d405,x
-        lda tn_sr,y
+        lda tn_sr,y             // copy: the gate, then AD and SR, in mv_out
         sta mu_sr,x
-        sta $d406,x
+        lda #1
+        sta mu_envp,x
         cpx mu_fvx              // kind 2: the lead's note gates voice 3 with
         bne ms_ret              // the filter table's AD and SR (12 cycles of
         lda mu_fv3              // stores, 22 with the loads and the test)
         beq ms_ret
-        lda mu_fad
+        lda #$11                // triangle + GATE; the frequency stays 0
+        sta $d412
+        lda mu_fad              // copy: AD and SR after the gate
         sta $d413
         lda mu_fsr
         sta $d414
-        lda #$11                // triangle + GATE; the frequency stays 0
-        sta $d412
         rts
 !:      lda tn_sr,y
         sta mu_sr,x
@@ -1753,13 +1769,14 @@ TUNE = dict(
 java -jar KickAss.jar sid-env3-filter.asm -o sid-env3-filter.prg
 ```
 
-Built with KickAssembler 5.25: `$080E`-`$1F4D` (`-showmem`), a PRG of
-5,967 bytes. From the symbol file the harness (loop, stopwatch, log,
+Built with KickAssembler 5.25: `$080E`-`$1F71` (`-showmem`), a PRG of
+6,003 bytes. From the symbol file the harness (loop, stopwatch, log,
 verdict, readout and 920 bytes of screen text) is 3,660 bytes at
-`$080E`-`$1659`; the player follows, 2,188 bytes (105 of state, 192 of
-frequency table built at init, 1,560 of code, 249 of the base's six sound
-effects, unused here, 82 of tables: the build's count over its own symbol
-file, the player being unchanged); the tune's 104 bytes of tables end the
+`$080E`-`$1659`; the player follows, 2,224 bytes: the build's 2,188 (105
+of state, 192 of frequency table built at init, 1,560 of code, 249 of
+the base's six sound effects, unused here, 82 of tables, the build's
+count over its own symbol file) plus 15 of state and 21 of code for the
+gate-first note start (#118); the tune's 104 bytes of tables end the
 file. The log pages are `$3000`-`$3EFF`. No zero page. `-define
 FORCE_FAULT` builds the fault variant; `-define WAV_ON` or `WAV_OFF` a
 recording variant with the mode fixed, no phases and no verdict.
@@ -1783,58 +1800,65 @@ x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
       -exitscreenshot out.png -autostart sid-env3-filter.prg
 ```
 
-PAL (`screenshots/sid-env3-filter.png`, md5 `abc206c6aef2578a7e8c9fc82fcb70d2`):
+PAL (`screenshots/sid-env3-filter.png`, md5 `98a0242a883e5310b959340c9a955a0a`):
 
 ```text
 ENV3 FILTER ENVELOPE  V3 ADSR TO $D416
 A: ENV3 PER FRAME, FRAMES 00-59 OF 192
-0001326496C8FBF6ECE2D8CEC4BAB0A69C92887E
+0002336597C9FCF6ECE2D8CEC4BAB0A69B91877D
 73695F59544F4A45403B3634312F2C2A27252222
 2222222222222222222222222222222222222222
 A: $D416 WRITTEN, SAME FRAMES
-202039526B849D9B96918C87827D78736E69645F
+202139526B849E9B96918C87827D78736D68635E
 59544F4C4A474542403D3B3A3837363533323131
 3131313131313131313131313131313131313131
 B: $D416 WITH THE COPY OFF, SAME FRAMES
 2020202020202020202020202020202020202020
 2020202020202020202020202020202020202020
 2020202020202020202020202020202020202020
-IDENT A 192/192 FLAT B 192/192 E3A=B 190
-RISE 05 PEAK FB HOLD 22 X035 ZERO AT 082
+IDENT A 192/192 FLAT B 192/192 E3A=B 191
+RISE 05 PEAK FC HOLD 22 X035 ZERO AT 084
 PLAY CYCLES    WORST PLAIN  NOTE  RSTRT
-A ENV ON        1003  0460  1003  0735
-B COPY OFF      0996  0453  0996  0728
-C NO ENVELOPE   1026  0459  1026  0719
+A ENV ON        1062  0466  1062  0742
+B COPY OFF      1055  0459  1055  0735
+C NO ENVELOPE   1092  0465  1092  0726
 A-B            +0007 +0007 +0007 +0007
-A-C            -0023 +0001 -0023 +0016
+A-C            -0030 +0001 -0030 +0016
 STOPWATCH 0005  SID DETECT 02  BASE $20
 RESULT 01 PASS
 ```
 
 Rows 23 and 24 are blank.
 
-NTSC (`screenshots/sid-env3-filter-ntsc.png`, md5 `d356026f8735291f087f101673a24c5f`)
+NTSC (`screenshots/sid-env3-filter-ntsc.png`, md5 `50ccd13302bdef8bc425a991e82010a6`)
 differs where the frame does:
 
 ```text
-00015783AEDAFEEDE4DBD2CAB8AFA79E95847B72
-696156524E49453C383533312C2A282623222222
+00025884AFDBFEECE4DBD2C9B8AFA69E95837B72
+696056524D49453C383533302C2A282623222222
 2222222222222222222222222222222222222222
 A: $D416 WRITTEN, SAME FRAMES
-20204B61778D9F96928D89857C77736F6A625D59
-54504B494744423E3C3A39383635343331313131
+20214C62778D9F96928D89847C77736F6A615D59
+54504B494644423E3C3A39383635343331313131
 3131313131313131313131313131313131313131
 ...
-IDENT A 192/192 FLAT B 192/192 E3A=B 083
-RISE 05 PEAK FE HOLD 22 X036 ZERO AT 083
-A ENV ON        1011  0468  1011  0743
-B COPY OFF      1004  0461  1004  0736
-C NO ENVELOPE   1034  0467  1034  0727
+IDENT A 192/192 FLAT B 192/192 E3A=B 079
+RISE 05 PEAK FE HOLD 22 X036 ZERO AT 082
+A ENV ON        1070  0474  1070  0750
+B COPY OFF      1063  0467  1063  0743
+C NO ENVELOPE   1100  0473  1100  0734
 A-B            +0007 +0007 +0007 +0007
-A-C            -0023 +0001 -0023 +0016
+A-C            -0030 +0001 -0030 +0016
 STOPWATCH 0005  SID DETECT 03  BASE $20
 RESULT 01 PASS
 ```
+
+These pictures are of the gate-first note start (#118). The first
+version wrote each note's AD and SR before its gate; its rows differed
+in the attack's first samples (`00 01 32 64 96 C8 FB` on PAL, one step
+lower), the rest (zero at frame 82), `E3A=B 190` (NTSC 083) and the
+cycle rows (A 1,003, 460, 1,003 and 735 on PAL). What moved, and why,
+is under "The shape" and "Cycles".
 
 The border is green (PASS; red would be FAIL). Both pictures were made
 twice, byte-identical. With `-sidenginemodel 256` on PAL and `257` on
@@ -1847,40 +1871,63 @@ counts and the cycle figures included, is the same.
 the byte written to `$D416` equals the byte read from `$D41C` shifted
 right once plus `$20`. `FLAT B 192/192`: with the copy disabled every
 cutoff is `$20`, while the harness's own ENV3 reads show the envelope
-still moving (peak `$FB` in phase B, `$CE` then zero in phase C, from the
-memory dump). `E3A=B 190`: the harness's ENV3 reads agree between phases
-A and B on 190 frames of 192 on PAL, the chip's own envelope under the
+still moving (peak `$FC` in phase B, `$CE` then zero in phase C, from the
+memory dump). `E3A=B 191`: the harness's ENV3 reads agree between phases
+A and B on 191 frames of 192 on PAL (190 before #118), the chip's own envelope under the
 same gate timing (the build's four-file program, whose read fell a few
-hundred cycles later in the frame, agreed on 187); on NTSC only 83,
+hundred cycles later in the frame, agreed on 187); on NTSC only 79 (83 before #118),
 because 192 play calls are 230.4 frames there (one call in six is skipped) and the second loop starts at a
 different point of the skip cycle.
 
-**The shape (rows 2 to 4 and 14).** From the note frame: `01 32 64 96 C8
-FB`, five rising steps of 49 to 51 (attack 8, 100 ms nominal, about 50
-of 255 per 20 ms frame), a peak sample of `$FB` (the attack reaches 255
+**The shape (rows 2 to 4 and 14).** From the note frame: `02 33 65 97 C9
+FC`, five rising steps of 49 to 51 (attack 8, 100 ms nominal, about 50
+of 255 per 20 ms frame), a peak sample of `$FC` (the attack reaches 255
 and the decay begins inside the same frame, so a per-frame sample never
 lands on `$FF`; the verdict asks for `$F0` or more), then the exponential
 decay: 9.5 a frame down to 93 (frame 23), 5.0 a frame down to 54 (frame
 30), 0.7 a frame down to the sustain level `$22` = 34, held 35 frames
-until the note ends at frame 73. In the rest, `22 18 12 0D 0A 07 05 03
-02 00`: zero at frame 82, nine frames of release 8. `$D416` on the same
-frames is the halved byte plus `$20`: `20 20 39 52 6B 84 9D 9B 96 ... 31
-31 31`. On NTSC the rise is 44 a frame (`01 57 83 AE DA FE`, the 86 of
-the first step being two frames, a skipped call falling after the gate),
-the plateau 36 frames, zero at frame 83.
+until the note ends at frame 73. In the rest, `22 22 1E 16 10 0C 09 06
+04 03 01 00`: zero at frame 84. `$D416` on the same frames is the halved
+byte plus `$20`: `20 21 39 52 6B 84 9E 9B 96 ... 31 31 31`. On NTSC the
+rise is 44 a frame (`02 58 84 AF DB FE`, the 86 of the first step being
+two frames, a skipped call falling after the gate), the plateau 36
+frames, zero at frame 82.
+
+Two things moved when the player took the gate-first order (#118), both
+read from the memory dump against the first version's. The attack's
+samples are one step higher (`01 32 64 96 C8 FB` before): with the gate
+first, voice 3's envelope starts under the restart's AD = 0, whose
+attack period is 9 cycles, and can take a step before `$8A` arrives a
+few cycles later (reSID's rate table; not traced cycle by cycle). The
+decay from frame 20 on is the same byte for byte. The release began a
+frame later (`22 18 12 0D 0A 07 05 03 02 00` before, zero at frame 82;
+NTSC zero at 83 before): at the rest's gate-off the rate falls from decay
+10, period 1,954 cycles, to release 8, period 392, and a counter already
+past 392 wraps first, up to 32,768 cycles (the ADSR bug). Whether it has
+to depends on the counter's phase, which the earlier gate moved. This
+explanation is reSID's model applied to the two dumps, not a trace of
+the counter.
 
 **Cycles (rows 16 to 20).** The play call including its JSR and RTS, net
 of the stopwatch's 5 cycles, on the frame named; the same on the two SID
-models; NTSC 8 higher throughout (its frequency table is built the same
-way; the difference is the one-cycle-later CIA of the 6526, as
-`cia-revision-detect` measures). The copy costs 7 cycles more than the
+models; NTSC 8 higher throughout: its path through the player's skip
+counter is `LDA`, `BEQ` not taken, `DEC`, `BPL`, 15 cycles against
+PAL's `LDA`, `BEQ` taken, 7 (instruction table). An earlier version put
+the 8 down to the 6526's one-cycle-later CIA; `sid-hr-snare`, on the
+same player, reads the same figures on PAL `-model c64` (6526) as on the
+default 8521 (measured). The copy costs 7 cycles more than the
 player's static-cutoff path on every one of 192 frames (A minus B, every
 frame, both models, from the memory dump). Against the plain player (A
 minus C): +1 on 175 frames, +22 where a lead note starts after a hard
 restart (six frames: 97, 109, 121, 145, 157, 181), +16 on the seven
-hard-restart frames, +6 on the two rests, -44 on the loop's first frame
-and -23 on its second, where the plain player writes voice 3's rest event
-and the envelope player skips voice 3's music writes. The build's
+hard-restart frames, +6 on the two rests, -51 on the loop's first frame
+and -30 on its second, where the plain player writes voice 3's rest event
+and the envelope player skips voice 3's music writes. The gate-first
+note start (#118) raised the note frames by 59 cycles (1,003 to 1,062 in
+row A): 28 for each of the two voices that start a note, by the
+instruction table, and 3 not broken down. Before it the first two differences were
+-44 and -23 and the rows read A 1,003, 460, 1,003, 735; B 996, 453, 996,
+728; C 1,026, 459, 1,026, 719 on PAL. The build's
 four-file program, with the KB harness's frame meter assembled in after
 the verdict's variables, measured 1,002, 464 and 737 on its A row and +21
 on the six note frames: the meter's code moved the player, and page
@@ -1893,24 +1940,30 @@ monitor dump (`-moncommands`, a store trace on `$02FF` that dumps
 `$3000`-`$3EFF`). After the init clear's one `$D416` write, 576 of 576
 `$D416` writes (one per play call over the three phases) equal the
 program's log of the cutoff it wrote, call by call, on the PAL and NTSC
-runs of this listing (the default SID model of each), and on the build's
-four model and region runs of its four-file program. Write-to-write
-spacing over those calls is 19,066 to 19,865 cycles on PAL; on NTSC
-16,506 to 34,388, the long gap being the call the player skips. The
+runs of this listing (the default SID model of each, re-made after the
+gate-first note start with a store break on `$02FF` whose PC is below
+`$E000`), and on the build's four model and region runs of its four-file
+program. Write-to-write spacing over those calls is 19,009 to 19,868
+cycles on PAL; on NTSC 16,449 to 34,391, the long gap being the call the
+player skips (19,066 to 19,865 and 16,506 to 34,388 before #118). The
 build's runs had one gap of 294,808 cycles on PAL, the frame meter's
 insertion sort at its 195th frame; this listing has no meter and no
 stall.
 
 **The fault build.** With `-define FORCE_FAULT` the copy writes ENV3 plus
-the base without the shift: `IDENT A 016/192` on PAL and `015/192` on
-NTSC (the frames where ENV3 was 0 or 1), row 6 reads
-`20215284B6E81B160C02F8EEE4DAD0C6BCB2A89E` on PAL (the cutoff wraps past
-`$FF` at the peak), `RESULT 02 FAIL`, red border; `A-B` reads `+0005`,
-the dropped `LSR`. Measured on this listing, both models.
+the base without the shift: `IDENT A 014/192` on PAL and `016/192` on
+NTSC (the frames where ENV3 was 0, from the fault build's memory dump:
+14 and 16), row 6 reads `20225385B7E91C160C02F8EEE4DAD0C6BBB1A79D` on
+PAL (the cutoff wraps past `$FF` at the peak), `RESULT 02 FAIL`, red
+border; `A-B` reads `+0005`, the dropped `LSR`. Measured on this
+listing, both models. Before the gate-first note start the counts were
+016 and 015 and row 6 began `20215284`; an earlier version of this
+paragraph said the identity held where ENV3 was 0 or 1, but ENV3 = 1
+halves to 0 and fails it.
 
 **Recordings.** From the build's record, made from its `WAV_ON` and
-`WAV_OFF` builds of this player and tune and not re-recorded from this
-listing: twenty seconds of the phrase from each of the two builds with
+`WAV_OFF` builds of this player and tune, before the gate-first note
+start (#118), and not re-recorded from this listing: twenty seconds of the phrase from each of the two builds with
 the mode fixed, on both SID models, in real time (`+warp -sound
 -sounddev wav -soundarg out.wav -soundrate 44100 -soundoutput 1
 -limitcycles 23000000`; 20.34 s each, 1,794,412 bytes, the autostart
@@ -1960,9 +2013,12 @@ is never written after the init clear, so its oscillator stands at zero:
 on an 8580 R5 with a bypass residual what would leak is a level that
 follows the envelope, not a tone (not measured; reSID has no residual).
 
-**The lead's gate is voice 3's gate.** In `ms_new`, after the lead's AD,
-SR and gate, the player writes voice 3's AD and SR from the filter table
-and `$11` to `$D412`; in `mu_hr` the lead's hard restart (AD = SR = 0,
+**The lead's gate is voice 3's gate.** In `ms_new`, on the lead's note
+frame, the player writes `$11` to `$D412` and then voice 3's AD and SR
+from the filter table; the lead's own gate, AD and SR follow in `mv_out`
+in the same call, gate first (#118; an earlier version of this sentence
+put the lead's AD, SR and gate first, and the base wrote each AD and SR
+before its gate); in `mu_hr` the lead's hard restart (AD = SR = 0,
 gate off, two frames early) is done to voice 3 as well, so the filter's
 attack starts from a reset envelope (`sid_adsr_bug_8580`); in `mu_start`
 the lead's rest clears voice 3's gate, and the release runs. Legato notes
@@ -2019,8 +2075,10 @@ on voice 3 and the envelope cannot share it; none is requested).
 - The register log and the recordings on the model-swapped runs of this
   listing: the log was re-made on the default model of each region, the
   recordings not at all; both stand on the build's four-file program,
-  whose player and tune this listing carries unchanged.
+  whose player and tune this listing carried unchanged until the
+  gate-first note start (#118). The recordings predate that change.
 - A measured Cost for `sid_filter_routing` alone: the proposed 43 cycles
   is the instruction table over this listing's static path.
-- The phase-B envelope's agreement with phase A on NTSC (83 of 192) was
-  explained by the skip cycle's phase, not measured frame by frame.
+- The phase-B envelope's agreement with phase A on NTSC (79 of 192; 83
+  before #118) was explained by the skip cycle's phase, not measured
+  frame by frame.
