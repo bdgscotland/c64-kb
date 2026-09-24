@@ -5,7 +5,17 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 779, schema 31, tools 2.5.0, package 0.18.0.
+Data 780, schema 31, tools 2.5.0, package 0.18.0.
+
+**Pitfall: sprites next to badlines hang a KERNAL disk save (data 780; #43).**
+`sprites_over_badlines_hang_serial_io` in `pitfalls/kernal-and-io.md` and
+the recipe `oscar64-sprites-off-during-disk-io`. Measured in VICE x64sc
+3.10 with a true drive, 20 save rounds per case: with sprites drawn over
+two badlines, 3 or more hang on PAL and 4 or more on NTSC; none hang with
+the sprites off the badlines, the screen blanked, or sprites switched
+off around each call. At the hang the C64 waits in the KERNAL bit loop
+($EE5A-$EE63) for one more bit while the drive waits for the byte's
+acknowledge; neither side times out. Not checked on a real 1541.
 
 **The #68 claims corrected (techniques, recipes, hardware leftovers).**
 About 95 more claims flagged by the prose pass, each settled and
