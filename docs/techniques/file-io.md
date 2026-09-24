@@ -1508,3 +1508,67 @@ one copy.
 ### Recipes
 
 - `recipes/kickassembler/tape-turbo-loader.md` (the TAP-writing script, the loader, the checksum verdict, bytes per second and pulse ranges on both models, and the run with VICE's tape wobble left on)
+
+---
+
+## story_file_virtual_memory_paging — A file larger than memory, read through a page table and an LRU page cache
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+
+### Why
+
+A program whose data is larger than the RAM it can spare, such as a text
+adventure's story file, a dictionary or a large level set, cannot load
+it whole. It can keep a few pages in memory and read the others from
+disk when they are touched, as a virtual-memory system does. Text-
+adventure interpreters for story files larger than the machine's RAM
+work this way (Infocom's among them, by common account; no interpreter's
+code was read for this page).
+
+### How
+
+**Page table.** Read the directory entry for the file's first track and
+sector, then follow the block chain once: bytes 0 and 1 of each block
+are the next block's track and sector (track 0 ends the chain), and bytes
+2 to 255 are 254 bytes of data. Store one track and sector per block. A
+file of `n` blocks costs `2n` bytes of table and `n` block reads to build
+it; after that any block is one read away. Do not compute the positions:
+the 1541 does not lay a file on consecutive sectors
+(`page_table_assumes_consecutive_sectors`, `pitfalls/kernal-and-io.md`).
+
+**Block read.** Open the command channel and a buffer channel (`OPEN
+5,8,5,"#"`). `U1 5 0 t s` on the command channel reads track `t` sector
+`s` into the drive's buffer; 256 bytes read from channel 5 are then the
+whole block, link bytes first. `B-R` is not the same command: it treats
+byte 0 as a count (`kernal_relative_file_io` and the rel-side-sectors
+recipe measured the difference).
+
+**Cache.** Keep `k` frames of 256 bytes, each with the page it holds and
+when it was last used. A byte address splits into page `addr / 254` and
+offset; a page of 256 bytes on a disk laid out for the purpose (raw
+sectors, no DOS file) makes that a shift. On a hit, return the byte. On a
+miss, choose the frame used longest ago, read the page into it and
+record it. Pin pages the program cannot run without (the interpreter's
+own tables) outside the cache.
+
+**Locality** is what makes it work. A program that returns to the same
+routines and data pages between excursions hits nearly every time; one
+that sweeps the whole file in order misses once a page whatever the
+cache size.
+
+### Why it works
+
+In the recipe a 24-block file and four frames served 640 reads with 631
+hits and 9 misses, the nine distinct pages the access pattern touches,
+and every byte matched the formula the file was written from (measured
+in VICE x64sc 3.10 with 1541 emulation, both models). A miss, one `U1`
+read through the KERNAL, took 708,686 cycles on PAL, about 36 frames; a
+hit 743. The chain on the fresh disk ran 17/00, 17/10, 17/20, 17/08,
+17/18: sectors 10 apart, not consecutive.
+
+### Recipes
+
+- `recipes/oscar64/story-paging.md` (a 24-block SEQ file written to a fresh disk, the page table from the directory and the chain, a 4-frame LRU cache over `U1` reads, 640 reads checked byte for byte, a miss and a hit timed with CIA2, and the consecutive-sector guess read and refuted; PAL and NTSC)

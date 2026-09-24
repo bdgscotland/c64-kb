@@ -2245,5 +2245,20 @@
       "pal": "screenshots/paint-fill.png",
       "ntsc": "screenshots/paint-fill-ntsc.png"
     }
+  },
+  "oscar64/story-paging": {
+    "cycles": 80000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "disk": {
+      "name": "TEST,01"
+    },
+    "shots": {
+      "pal": "screenshots/story-paging.png",
+      "ntsc": "screenshots/story-paging-ntsc.png"
+    }
   }
 }
