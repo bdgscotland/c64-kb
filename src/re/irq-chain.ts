@@ -311,12 +311,25 @@ function targetOf(s: State, h: Hit, p: number | null): number | null {
   return null;
 }
 
+/**
+ * $FFFE and $FFFA naming one RAM handler: the entry cannot say whether an
+ * IRQ or an NMI ran it. Both stay in via (neither is transient) and the
+ * interrupt is named in `unknowns`.
+ */
+function sharedRamVector(s: State, clock: number, via: Candidate[]): void {
+  const hw = via.filter((c) => c.vector === "irq_fffe" || c.vector === "nmi_fffa");
+  if (hw.length < 2) return;
+  s.out.unknowns.push(
+    `interrupt at clock ${clock}: $FFFE and $FFFA both name $${hex4(hw[0]?.handler ?? 0).toUpperCase()}, so IRQ or NMI is not known`,
+  );
+}
+
 /** An exec of a traced address: an entry only when it is the dispatch of a waiting interrupt. */
 function onExec(s: State, h: Hit): void {
   if (!interruptOpen(s, h.clock)) return;
   const via: Candidate[] = s.candidates().filter((c) => c.handler === h.addr);
   if (!via.length) return;
-  s.pending.shift();
+  sharedRamVector(s, s.pending.shift() ?? h.clock, via);
   for (const c of via) addTo(s.entered, h.addr, c.vector);
   const line = h.line === -1 ? null : h.line;
   const cycle = h.cycle === -1 ? null : h.cycle;

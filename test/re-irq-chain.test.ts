@@ -399,3 +399,19 @@ describe("KERNAL mapping from $00 and $01", () => {
     expect(r.unknowns.join(" ")).toMatch(/\$00\/\$01 not known at the interrupt at clock 100/);
   });
 });
+
+// Ported from bdgscotland/re-irq-dispatch 7d88cf6 (review fault 3).
+describe("$FFFE and $FFFA naming one RAM handler", () => {
+  it("lists both in via, neither as transient, and calls IRQ or NMI unknown", () => {
+    const banked = [st(0x0001, 0x35, 1), st(0xfffe, 0x00, 2), st(0xffff, 0x20, 3)];
+    const hits = [...banked, st(0xfffa, 0x00, 4), st(0xfffb, 0x20, 5), ex(0x2000, 100, 40), irq(100)];
+    const r = analyseIrqChain(hits, PAL, 0);
+    expect(r.handlers).toEqual([
+      expect.objectContaining({ handler: 0x2000, via: ["irq_fffe", "nmi_fffa"], entries: 1 }),
+    ]);
+    expect(r.transient).toEqual([]);
+    expect(r.unknowns.join(" ")).toMatch(
+      /interrupt at clock 100: \$FFFE and \$FFFA both name \$2000, so IRQ or NMI is not known/,
+    );
+  });
+});
