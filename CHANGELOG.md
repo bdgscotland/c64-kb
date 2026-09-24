@@ -5,7 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 835, schema 39, tools 2.16.0, package 0.29.0.
+Data 836, schema 39, tools 2.16.0, package 0.29.0.
+
+**The music player starts a note's gate before its AD and SR (data 836; #118).**
+The player wrote AD and SR 155-175 cycles before the gate, which undoes
+the hard restart for attack-0 instruments; with each part moved onto
+voice 3 and ENV3 read after every call (PAL, 2,000 calls), the old
+order started 146 of 163 drum, 81 of 139 bass and 0 of 43 lead notes on
+time, gate first all of them (NTSC and the 6581 alike). The harness now
+fails a note that does not start in its own call. The worst play call
+rose from 1,198 to 1,250 cycles PAL (1,174 to 1,250 NTSC); the Cost line,
+per-feature table and every page quoting 1,198 carry the new figure
+with a clause. sid-env3-filter's copy takes the same order. The MEASURED
+demo's copy (#119) and a late note right after an effect hands voice 3
+back (#120) are open.
 
 **The music player writes each note's gate before its AD and SR
 (#118).** `music-player.md` wrote AD and SR 155 to 175 cycles before the
