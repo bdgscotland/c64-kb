@@ -726,16 +726,18 @@ VICE was run as a 6569 only.
 
 ### Variations
 
-**Y stretch (unverified):** The demoscene "stretcher" — clearing and re-setting
-the sprite's $D017 bit every line around cycle 55 so that the sprite repeats
-one row for as long as the toggling continues, reaching the full display
-height for waterfall and flag effects — is a widely described technique, but
-no instrument run on this machine produced a clean stalled row from a per-line
-clear+set (four write phases were tried; all gave irregular, data-dependent
-rows). Treat it as an unverified demoscene technique pending a VICE-verified
-recipe. An earlier version of this section stated it as fact, together with a
-"partial stretch" heat-shimmer variant and a "crunch from line 50 to line 250"
-full-screen sprite; those were not measured.
+**Y stretch:** The demoscene "stretcher", clearing and re-setting the
+sprite's $D017 bit every line so that the sprite repeats one row for as
+long as the toggling continues, is its own entry, `sprite_stretcher_d017`
+below, measured in VICE by `recipes/kickassembler/sprite-stretcher.md`:
+the setting write must land on cycle 55 or earlier (PAL); on 56 it is
+pushed to 61 and nothing is stretched. An earlier version of this
+paragraph marked the stretcher unverified because four write phases had
+given irregular rows. Which cycles those were is not recorded; the
+recipe's sweep gives irregular rows, this entry's crunch, for every
+write from 57 to 62. The "partial stretch"
+heat-shimmer variant and a "crunch from line 50 to line 250" full-screen
+sprite, which an earlier version stated as fact, are still not measured.
 
 **Crunch with multicolor:** The crunch is a row-counter effect and does not
 depend on the horizontal mode, so it applies to multicolor sprites as well
@@ -951,8 +953,9 @@ sprites need independent colors.
 
 **Combined with Y-expand glitch:** A color swap on a Y-crunched sprite produces
 banded gradients on tall stretched sprites for flame and waterfall effects. This
-depends on the Y stretch, which `sprite_y_stretch_glitch` now marks as
-unverified on this machine.
+depends on the Y stretch, `sprite_stretcher_d017`, which is measured; the
+colour swap on a stretched sprite is not. An earlier version said the
+stretch itself was unverified.
 
 ### Cycle budget
 
@@ -1529,8 +1532,8 @@ classic use is the tall logo or the waterfall: one sprite's rows are
 repeated down the screen for as long as the CPU keeps toggling, so a
 24-pixel-wide column of any height costs 63 bytes of sprite data and no
 redraw. The trick is old, widely described and, in this knowledge base,
-was marked unverified: `sprite_y_stretch_glitch` above says that its
-per-line clear+set attempts gave irregular rows. This entry settles that
+was marked unverified: `sprite_y_stretch_glitch` above recorded that
+its per-line clear+set attempts gave irregular rows. This entry settles that
 by measurement. It is reproduced in VICE 3.10, and the edge is one cycle
 wide: the setting write must complete in or before cycle 55 of the
 line, the last CPU write cycle before the sprite's own DMA stalls the
