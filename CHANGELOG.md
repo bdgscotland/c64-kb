@@ -5,7 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 818, schema 37, tools 2.13.1, package 0.26.1.
+Data 819, schema 38, tools 2.13.1, package 0.26.1.
+
+**REU registers, the rest of Oscar64's wrappers, and reading the
+directory (schema 38, data 819; #92, part of #5).** New
+`hardware/reu-reference.md` (from VICE 3.10's `reu.c`, with the values
+`reu-dma` measured marked) makes `$DF00-$DF0A` Register nodes under a
+new seeded Chip "REU". `**Wraps:**` lines read from Oscar64's sources
+now cover memmap.h and the no-I/O interrupt set-ups (R6510), flossiec.h,
+reu.h (the page said REU was out of scope; `reu-dma` contradicts it)
+and `vspr_init`'s `$D012`: 395 WRAPS edges; `pitfalls-for mmap_set`
+returns four banking pitfalls. iec-disk-reference gains "Reading the
+directory", from bytes read with Python: the last directory sector
+links to `$00 $FF`, not "0/0", and the `$` stream pads the disk name
+with `$20`, not `$A0`.
 
 **Four SID techniques measured in reSID, and the #22 game test (data
 818; #19, #22 step 7).** New recipes, each with WAV runs under
