@@ -5,7 +5,14 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 771, schema 31, tools 2.3.1, package 0.17.0.
+Data 771, schema 31, tools 2.3.1, package 0.17.1.
+
+**Package 0.17.1.** The first release published by
+`.github/workflows/release.yml` through npm trusted publishing, with
+provenance; 0.17.0 (2026-09-24) was published by hand. Contents are
+unchanged apart from the version. Trusted publisher on npm:
+`bdgscotland/c64-kb`, `release.yml`, environment `npm`, which only `v*`
+tags can use and which needs the maintainer's approval.
 
 **Licence pass before npm publishing (data 771).** A measured check of
 `docs/` found no copied prose (runs of 25 or more words shared with 108
