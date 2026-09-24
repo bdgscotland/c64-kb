@@ -5,7 +5,27 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 793, schema 33, tools 2.8.0, package 0.21.0.
+Data 794, schema 33, tools 2.8.0, package 0.21.0.
+
+**Starter claims pass again after the display units (#78).** 231d8b2
+made the VIC scroll and pointer fields claimable, and six starters did
+not declare them: `make claims` failed on action-puzzle, adventure,
+beat-em-up, demo, platformer and shmup-vertical (1 to 4 groups each).
+All nine starters now report 0. The platformer's zero-page range was
+$02-$53; Oscar64's T1 high byte at $54 holds the frame count, so it is
+$02-$54. The demo's PLAN.md still pasted INCOMPATIBLE for
+irq_chain_table × raster_bars, rated soft since cf04297; its plan and
+budget are re-pasted.
+
+**What each music-player feature costs (data 794; #76).** The
+music-player listing gains seven `-define` switches (`NO_VIB`, `NO_PWS`,
+`NO_FLT`, `NO_WT`, `NO_HR`, `NO_LEG`, `NO_FX`); with none defined the PRG
+is byte-identical. `techniques/music-sid.md` has a cycle-budget table
+per feature, measured in VICE over 2,000 play calls on PAL and NTSC.
+Wavetable-every-frame is the largest mean cost (146 cycles PAL); all
+seven off saves 179 at the worst call and 415 on the mean. Worst-call
+savings do not add, since each removal moves the worst call to another
+frame.
 
 **Racing starter (data 793; #53).** `templates/racing`: a pseudo-3D road
 racer with scaled opponent sprites on the road lines, a lap timer and
