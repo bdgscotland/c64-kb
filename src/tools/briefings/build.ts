@@ -22,6 +22,7 @@ import {
 import { contradictsBriefAxis, resolveProposedTechniques, unaskedEffect } from "./discovery.ts";
 import { whyProposed } from "./why-proposed.ts";
 import { oneOfEachAlternative, type LeftOut } from "./alternatives.ts";
+import { searchOnlyConflictDrops, type ConflictLeftOut } from "./conflict-drops.ts";
 import { collectPitfalls } from "./plan-pitfalls.ts";
 import { toolchainSplit } from "./toolchain.ts";
 import { buildOrder } from "./build-order.ts";
@@ -79,6 +80,7 @@ interface ReasonContext {
   resolved: ArchetypeResolution | undefined;
   isGame: boolean;
   leftOut: Map<string, LeftOut[]>;
+  conflictsLeftOut: Map<string, ConflictLeftOut[]>;
 }
 
 /**
@@ -114,6 +116,7 @@ function proposedOf(t: TechniqueLookupOutput, ctx: ReasonContext): Proposed {
     region: region.success ? region.data : undefined,
     implementing_recipes: t.recipes.map((r) => r.name),
     ...(ctx.leftOut.has(t.name) ? { alternatives_left_out: ctx.leftOut.get(t.name) } : {}),
+    ...(ctx.conflictsLeftOut.has(t.name) ? { conflicts_left_out: ctx.conflictsLeftOut.get(t.name) } : {}),
   };
 }
 
@@ -142,7 +145,7 @@ async function proposeTechniques(
   archetype: string | undefined,
   resolved: ArchetypeResolution | undefined,
   isGame: boolean,
-): Promise<{ techs: TechniqueLookupOutput[]; leftOut: Map<string, LeftOut[]> }> {
+): Promise<Proposal> {
   const seeds = seedsFor({ description, archetype, resolved, isGame });
   const proposalLimit = proposalLimitFor(description);
   const techNames = await resolveProposedTechniques(
@@ -171,12 +174,42 @@ async function proposeTechniques(
   // One of each ALTERNATIVE_TO pair, before the caps, so a dropped
   // alternative frees its slot.
   const { kept, leftOut } = oneOfEachAlternative(onAxis, new Set(seeds.forced), description);
-  const techs = selectTechniques(
-    kept,
-    { archetype: seeds.archetypeForced, described: forcedSet },
-    proposalLimit,
-  );
-  return { techs, leftOut };
+  const select = (pool: TechniqueLookupOutput[]) =>
+    selectTechniques(pool, { archetype: seeds.archetypeForced, described: forcedSet }, proposalLimit);
+  const { techs, conflictsLeftOut } = await withoutSearchOnlyConflicts(kept, select, forcedSet);
+  return { techs, leftOut, conflictsLeftOut };
+}
+
+interface Proposal {
+  techs: TechniqueLookupOutput[];
+  leftOut: Map<string, LeftOut[]>;
+  conflictsLeftOut: Map<string, ConflictLeftOut[]>;
+}
+
+/**
+ * Select, then drop a technique found only by search that the plan's own
+ * compatibility check calls a hard conflict with a forced member (#97), and
+ * select again so its slot can be filled; a few rounds at most, since a
+ * refill can bring a new conflict.
+ */
+async function withoutSearchOnlyConflicts(
+  pool: TechniqueLookupOutput[],
+  select: (pool: TechniqueLookupOutput[]) => TechniqueLookupOutput[],
+  forced: ReadonlySet<string>,
+): Promise<Pick<Proposal, "techs" | "conflictsLeftOut">> {
+  const conflictsLeftOut = new Map<string, ConflictLeftOut[]>();
+  let techs = select(pool);
+  for (let round = 0; round < 3 && techs.length > 1; round++) {
+    const names = techs.map((t) => t.name);
+    const { structured } = await checkCompatibility(names);
+    const hard = structured.conflicts.filter((c) => c.severity === "hard");
+    const { dropped, leftOut } = searchOnlyConflictDrops(names, hard, forced);
+    if (dropped.size === 0) break;
+    for (const [k, v] of leftOut) conflictsLeftOut.set(k, [...(conflictsLeftOut.get(k) ?? []), ...v]);
+    pool = pool.filter((t) => !dropped.has(t.name));
+    techs = select(pool);
+  }
+  return { techs, conflictsLeftOut };
 }
 
 function archetypeFields(
@@ -273,10 +306,17 @@ export async function buildBriefing(
   const resolved = await resolutionFor(description, archetype, isGame);
   if (archetype !== undefined && resolved?.mode === "not_found")
     return refusal(description, resolved, isGame);
-  const { techs, leftOut } = await proposeTechniques(description, archetype, resolved, isGame);
+  const { techs, leftOut, conflictsLeftOut } = await proposeTechniques(
+    description,
+    archetype,
+    resolved,
+    isGame,
+  );
   const techNames = techs.map((t) => t.name);
 
-  const proposed_techniques = techs.map((t) => proposedOf(t, { description, resolved, isGame, leftOut }));
+  const proposed_techniques = techs.map((t) =>
+    proposedOf(t, { description, resolved, isGame, leftOut, conflictsLeftOut }),
+  );
   const { verdict, compatibility } = await compatibilityOf(techs);
   const pitfalls = await collectPitfalls(techNames, archetypeRisks(resolved));
   const toolchain_split = await toolchainSplit(techs);

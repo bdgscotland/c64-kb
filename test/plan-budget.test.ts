@@ -897,11 +897,12 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
 
   it("the #22 game test's play list with counts puts its measured worst frame inside the range (#95)", () => {
     // DELTA STRIKE's list (game-test-22 result.md). Its measured worst play
-    // frame, PAL, meter: 16,965. Without counts the low end was 19,712.
+    // frame, PAL, meter: 16,965. Without counts the low end was 19,712. The
+    // game copied 0, 3 or 6 rows a frame into the hidden page (#106).
     const list = [
       "scroll_panel_split",
       "soft_scroll_v",
-      "screen_double_buffer_d018",
+      "screen_double_buffer_d018 ×0-6",
       "sprite_multiplex_game",
       "wave_director",
       "object_pool",
@@ -924,6 +925,45 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
       low: 75,
       high: 5955,
     });
+  });
+
+  it("the #22 run-2 shooter list counts the hidden-page redraw, with or without a row count (#106)", () => {
+    // DELTA PATROL's play list (game-test-22 result-2.md, PLAN.md's plan-budget
+    // command). Until #106 screen_double_buffer_d018 was charged 57, the flip
+    // and pointer copy alone, and the 1,716-1,776 cycles of its three rows a
+    // frame were in no figure and not named unknown (T6).
+    const list = (redraw: string) => [
+      "scroll_panel_split",
+      "soft_scroll_v",
+      redraw,
+      "sprite_multiplex_game",
+      "wave_director",
+      "object_pool",
+      "char_bullets",
+      "per_frame_hitbox",
+      "sfx_in_player",
+      "sid_play_routine_pattern",
+      "joystick_edge_detect",
+      "lfsr_random",
+    ];
+    const opts = { region: "PAL" as const, sprites_per_line: 8, sprite_lines: 63 };
+    const redrawOf = (p: PhaseBudget) => p.contributors.find((c) => c.name === "screen_double_buffer_d018");
+    // No count: the recipe's whole-page redraw plus the flip.
+    const uncounted = play(plan(list("screen_double_buffer_d018"), opts));
+    expect(uncounted.unknown).not.toContain("screen_double_buffer_d018");
+    expect(redrawOf(uncounted)).toMatchObject({ charge: "cycles_per_frame", low: 13196, high: 13196 });
+    // Three rows a frame: 57 + 3 × 814, above the game's 1,776 plus 57 for flip and copy.
+    const counted = play(plan(list("screen_double_buffer_d018 ×3"), opts));
+    expect(redrawOf(counted)).toMatchObject({
+      charge: "per_item",
+      low: 2499,
+      high: 2499,
+      per_item: { base: 57, each: 814 },
+    });
+    expect(redrawOf(counted)?.high).toBeGreaterThanOrEqual(1776 + 57);
+    // The measured worst play frame, 16,284 PAL, is inside the counted range.
+    const fixed = counted.fixed_losses.badlines + counted.fixed_losses.sprite_dma;
+    expect(counted.high + fixed).toBeGreaterThanOrEqual(16284);
   });
 
   it("every composition's output parses with the tool's schema", () => {

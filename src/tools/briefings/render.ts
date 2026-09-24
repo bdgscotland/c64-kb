@@ -118,6 +118,13 @@ function renderTechniques(b: BriefingOutput): string {
     ),
   );
   if (leftOut.length > 0) out += `\n### Alternatives left out (one per job)\n\n${leftOut.join("\n")}\n`;
+  const conflicted = b.proposed_techniques.flatMap((t) =>
+    (t.conflicts_left_out ?? []).map(
+      (c) => `- **${c.name}**, a hard ${c.kind} with ${t.name}: ${c.rationale}`,
+    ),
+  );
+  if (conflicted.length > 0)
+    out += `\n### Left out: found by search, and a hard conflict with the plan\n\n${conflicted.join("\n")}\n`;
   if (b.proposed_techniques.length > 0) {
     out += `\n### Register + KERNAL dependencies\n\n`;
     for (const t of b.proposed_techniques) {
