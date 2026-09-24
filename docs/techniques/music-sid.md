@@ -513,7 +513,7 @@ An earlier version of this listing had only two steps. It went from the gate-off
 
 The 6581 has a measurable DC offset at the master volume DAC. Writing varying 4-bit values to $D418 bits 3-0 modulates this offset and produces audible clicks, enabling 4-bit PCM playback (see `digi_4bit`). The 6581's DC-offset amplitude is large enough to produce clear speech and sampled sound at multi-kHz rates.
 
-The 8580 cleaned up the DAC design; the DC offset is nearly absent. The same $D418 write sequence produces volume levels that are too small to hear without hardware assistance. The standard hardware fix is a 330-740 kΩ resistor between SID pin 26 (EXT IN) and either GND (pin 14) or +5 V, which injects a signal into the filter path that the DAC can modulate. Without this resistor, software-only digi on a stock 8580 requires different techniques (see `digi_8bit_hard_restart`).
+The 8580 cleaned up the DAC design; the DC offset is nearly absent. The same $D418 write sequence produces volume levels that are too small to hear without hardware assistance. The standard hardware fix is a 330-740 kΩ resistor between SID pin 26 (EXT IN) and either GND (pin 14) or +5 V, which injects a signal into the filter path that the DAC can modulate. Without this resistor, three bias voices bring a stock 8580's digi back (`sid_8580_digi_bias_and_filter_bypass`: in reSID the 8580 model's plain-digi step is 16.7 dB below the 6581 model's, and 2.5 dB below with three bias voices; an earlier version of this sentence pointed only to `digi_8bit_hard_restart`, which demonstrates no 8580 method).
 
 #### Combined waveforms
 
@@ -605,11 +605,11 @@ On Oscar64, the play-routine pattern applies: an `__interrupt` function writes `
 
 The 6581 SID's output stage sums contributions from the three voice signals, the filter, and the master DAC. The master DAC is a simple resistor-ladder circuit driven by the four VOL bits. Changes to these bits produce a stepped analog output; because the output capacitor cannot instantaneously slew to a new voltage, each step produces a brief current transient that is audible as a click. Streaming clicks at audio rates produces the perception of continuous audio through the same mechanism as any PCM DAC: the ear integrates the rapid changes into a perceived waveform.
 
-The technique works specifically because the 6581's DAC has a non-zero DC offset: the output at VOL=0 is not at the same voltage as at VOL=15, and that absolute shift drives current through the output coupling capacitor. The 8580 corrected this: its output at VOL=0 and VOL=15 are symmetric around the bias point, which reduces the click amplitude.
+The technique works specifically because the 6581's DAC has a non-zero DC offset: the output at VOL=0 is not at the same voltage as at VOL=15, and that absolute shift drives current through the output coupling capacitor. The 8580 corrected this: its output at VOL=0 and VOL=15 are symmetric around the bias point, which reduces the click amplitude. In reSID the level the nibble scales belongs to the voices, even silent ones: routing all three to the filter with no mode bit set makes the step zero on both models (measured, `sid_8580_digi_bias_and_filter_bypass`), so a player's `$D417` bits matter to a digi beside it.
 
 ### Variations
 
-**Digi mixed with SID music.** Some composers run three-voice SID music while simultaneously playing digi samples. The SID voices occupy the synthesizer path; digi drives the volume register. This requires the music play routine to not write $D418 (or to write only the filter-mode bits and leave the lower nibble to the digi routine). Rob Hubbard and Martin Galway pioneered this combination.
+**Digi mixed with SID music.** Some composers run three-voice SID music while simultaneously playing digi samples. The SID voices occupy the synthesizer path; digi drives the volume register. This requires the music play routine to not write $D418 (or to write only the filter-mode bits and leave the lower nibble to the digi routine). The digi also scales the music: the nibble is the master volume, so a sample using the whole 0 to 15 range puts sidebands 6 dB below each note at the note ± the sample's frequencies (measured in reSID, `nmi_sample_player`). Rob Hubbard and Martin Galway pioneered this combination.
 
 **Sample rate selection.** The sample rate a machine can sustain is bounded by CPU cycles per second, not per frame: NTSC runs 1,022,727 cycles/s against PAL's 985,248, so NTSC has about 4 % more cycles for the same sample rate. PAL's longer frame (19,656 cycles vs NTSC's 17,095) only means more cycles between two frame-rate events such as the music player call. (An earlier version said PAL's longer frame let it sustain a higher sample rate.) Most classic digi tunes were composed for PAL systems.
 
@@ -676,9 +676,9 @@ filter_shadow: .byte 0
 sample_data:   .fill 256, 0
 ```
 
-The full 8-bit envelope technique requires precisely timed gate sequences spanning multiple IRQ slots. The envelope counter increments once per specific number of cycles depending on the ATTACK rate value 0 (one increment every ~8-9 cycles at PAL clock: PAL φ2 = 985248 Hz, attack-rate-0 spec = 2 ms to peak, 256 envelope steps → ~7.8 µs/step ≈ 8 φ2 cycles/step by the datasheet figure; measured in VICE reSID, both 6581 and 8580 models, ENV3 rises 3 levels per 27 cycles, i.e. 9 cycles per step, and reaches 255 about 2,080 cycles ≈ 2.1 ms after gate-on. An earlier revision said ~15 cycles per step, which is double the value its own arithmetic gives.) Counting exactly enough IRQ cycles to arrive at the target amplitude requires precise IRQ timing, which is why this is classified scene-tier. The Hermit technique in its simplest deployable form produces 5-6 effective bits; refined variants (Mahoney's "Musik Run/Stop") achieve perceptual quality close to 8 bits.
+The full 8-bit envelope technique requires precisely timed gate sequences spanning multiple IRQ slots. The envelope counter increments once per specific number of cycles depending on the ATTACK rate value 0 (one increment every ~8-9 cycles at PAL clock: PAL φ2 = 985248 Hz, attack-rate-0 spec = 2 ms to peak, 256 envelope steps → ~7.8 µs/step ≈ 8 φ2 cycles/step by the datasheet figure; measured in VICE reSID, both 6581 and 8580 models, ENV3 rises 3 levels per 27 cycles, i.e. 9 cycles per step, and reaches 255 about 2,080 cycles ≈ 2.1 ms after gate-on. An earlier revision said ~15 cycles per step, which is double the value its own arithmetic gives.) Counting exactly enough IRQ cycles to arrive at the target amplitude requires precise IRQ timing, which is why this is classified scene-tier. The Hermit technique in its simplest deployable form produces 5-6 effective bits (not measured here). An earlier version of this sentence called Mahoney's "Musik Run/Stop" a refined variant of it reaching close to 8 bits; Mahoney's method uses no envelope timing (see `mahoney_d418_8bit_digi`).
 
-**Mahoney technique (8580-specific).** Mahoney's 8580 digi routine (released as "Musik Run/Stop", 2014 — title and year from published descriptions, not verified against the release or any document on this machine) drives the 8580 to high-resolution audio by combining the envelope, the volume DAC and the filter's resonance gain. The exact Mahoney and Hermit register sequences are not documented here. An earlier version of this entry named Jan Lund Thomsen and 1994 and called the release "Musik Runs in the Family", while the same page credited Mahoney two paragraphs earlier, two people for one work; the name and year have been dropped rather than resolved, since nothing on this machine settles them. That version also gave a four-step recipe built on holding voice 3 in PULSE+TEST and driving its pulse width as a DAC, followed by a paragraph contradicting it; that mechanism does not work (see the PWM digi variation below) and has been removed.
+**Mahoney technique — now `mahoney_d418_8bit_digi`.** Mahoney's method is its own entry, built and measured from his white paper. An earlier version of this paragraph called it 8580-specific and said it combined the envelope, the volume DAC and the filter's resonance gain; his paper describes one `$D418` store per sample on both chip models, with the voices parked by TEST and the envelopes at sustain 15, voices 1 and 2 routed through the filter at resonance 0, and a table of measured `$D418` values. The paper also settles the release: "Musik Run/Stop", February 2014, Datastorm (an earlier version said the title and year were not verified). An earlier version before that named Jan Lund Thomsen and 1994 and called the release "Musik Runs in the Family". That version also gave a four-step recipe built on holding voice 3 in PULSE+TEST and driving its pulse width as a DAC, followed by a paragraph contradicting it; that mechanism does not work (see the PWM digi variation below) and has been removed. The Hermit register sequence is not documented here.
 
 ### Why it works
 
@@ -686,7 +686,7 @@ The SID has multiple analog signal paths that can be driven by digital writes at
 
 ### Variations
 
-**PWM digi (8580 software-only) — does not work as once described here, and what was described here was not Harsfalvi's method.** The pulse-width-modulation digi of the late 1990s holds no TEST bit: it runs the pulse waveform at `$FFFF` and rewrites the pulse width at the sample rate, and it works on both chip models; it is built and measured under `pwm_digi` below (an earlier version of this paragraph, up to 2026-09-23, called the TEST-bit variant "PWM digi" and drew the conclusion that a pulse-width DAC does not work, which is true only with TEST held). With TEST set the pulse output is held at full scale regardless of PW: measured in VICE reSID on both models, OSC3 reads $FF for PW = $000, $080, $800 and $FFF alike, so PW cannot act as a DAC while TEST is held (an earlier version of this variation said modulating PWHI under TEST changed the DC level, and the How section above said the TEST-locked output was $000; both were wrong). The usable software-only 8580 form is the test-bit DC digi in [sid-reference.md](../hardware/sid-reference.md): PULSE+TEST+GATE ($49) on all three voices as constant full-scale sources through their envelopes, with $D418 as the 4-bit DAC. The exact Mahoney/Hermit sequences are not documented here.
+**PWM digi (8580 software-only) — does not work as once described here, and what was described here was not Harsfalvi's method.** The pulse-width-modulation digi of the late 1990s holds no TEST bit: it runs the pulse waveform at `$FFFF` and rewrites the pulse width at the sample rate, and it works on both chip models; it is built and measured under `pwm_digi` below (an earlier version of this paragraph, up to 2026-09-23, called the TEST-bit variant "PWM digi" and drew the conclusion that a pulse-width DAC does not work, which is true only with TEST held). With TEST set the pulse output is held at full scale regardless of PW: measured in VICE reSID on both models, OSC3 reads $FF for PW = $000, $080, $800 and $FFF alike, so PW cannot act as a DAC while TEST is held (an earlier version of this variation said modulating PWHI under TEST changed the DC level, and the How section above said the TEST-locked output was $000; both were wrong). The usable software-only 8580 form is the test-bit DC digi in [sid-reference.md](../hardware/sid-reference.md): PULSE+TEST+GATE ($49) on all three voices as constant full-scale sources through their envelopes, with $D418 as the 4-bit DAC; Mahoney's form, which also uses the filter-mode bits and a measured table, is `mahoney_d418_8bit_digi`. The Hermit sequence is not documented here.
 
 **Test-bit digi.** Rapidly toggle the TEST bit at audio frequency. The duty cycle of the toggling produces an average DC level that the filter and volume DAC amplify. Produces lower effective resolution but requires only one bit manipulation per sample.
 
@@ -738,6 +738,333 @@ Per sample the recipe's loop is a flag poll (`lda $DD0D`, `and #1`, `beq`) and t
 ### Recipes
 
 - `recipes/kickassembler/pwm-digi.md`
+
+---
+
+## mahoney_d418_8bit_digi — $D418 digi through a measured table of all 256 values
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D404, D405, D406, D40B, D40C, D40D, D412, D413, D414, D415, D416, D417, D418, D41B
+**Demands:** continuous_interrupts
+**Requires:** sid_voice_setup, sid_filter_routing
+**Alternative to:** digi_4bit (all eight bits of $D418 select a level, not just the volume nibble; the table is measured per chip model and the three voices are taken), pwm_digi (one store a sample and no carrier whistle, but the voices and the volume register are both taken and the levels are uneven)
+
+### Why
+
+Pex "Mahoney" Tufvesson's method from the demo "Musik Run/Stop"
+(Datastorm, February 2014), which he described in a white paper,
+"Technical details of Musik Run/Stop" (livet.se/mahoney). It plays a
+sample with one `$D418` store per sample and more than the 16 levels of
+the volume nibble, on both the 6581 and the 8580. One store per sample
+was his reason: at 44.8 kHz there are 22 cycles per sample, and the
+other 8-bit methods need several SID writes. The method as built here
+is from his paper; the levels and tables are measured in reSID, not
+copied from it.
+
+### How
+
+1. Park the three voices at a constant level: attack 0, decay 15 (Mahoney's
+   `$0F`), sustain 15, release 15, then control `$49` (pulse, TEST, gate)
+   on all three. With TEST set the pulse output is high whatever the
+   pulse width, so each voice is a constant level through its envelope.
+2. Route voices 1 and 2 through the filter (`$D417 = $03`, resonance 0)
+   and set the cutoff to the top (`$D415`/`$D416 = $FF`).
+3. Measure the output for each of the 256 values of `$D418`. The recipe
+   writes each value as a square wave against `$00`, and a script reads the
+   levels from a WAV. Mahoney wrote `$00`, then X, then Y, and measured the
+   step on real chips.
+4. Build a 256-entry table: for each sample value, the `$D418` value whose
+   level is nearest the matching point on a straight line between the
+   lowest and highest level. Mahoney made one table per chip model from
+   many chips; the recipe makes one per reSID model and picks it with the
+   `$D41B` check (`sid_8580_vs_6581_differences`).
+5. Per sample: `ldy sample,x` / `lda table,y` / `sta $D418`, on a timer.
+   The recipe polls CIA 2 timer A every 128 cycles under `sei`. A game
+   takes a timer interrupt for each sample instead, which is the
+   `continuous_interrupts` demand.
+
+### Why it works
+
+Voice 3 reaches the output directly. Voices 1 and 2 reach it only
+through whichever filter modes are set, and each mode passes their
+constant level at its own gain and sign. Mahoney measured a filter gain
+of about −1 on real chips. In reSID the LP rows have the opposite sign to
+the direct voice. 3OFF removes the direct voice 3, and the volume nibble
+scales the sum. So the eight bits choose one of sixteen sums at one of
+sixteen volumes. The levels are uneven, which is why the table exists.
+
+Measured in VICE x64sc 3.10 (reSID, not silicon; nobody listened) by
+`recipes/kickassembler/d418-8bit-digi.md`:
+
+| | reSID 6581 | reSID 8580 |
+|---|---|---|
+| Distinct levels among the 256 values | 167 | 84 |
+| Effective bits of the level set | 6.15 | 5.50 |
+| 8-bit sine through the table, SINAD | 34.8 dB (5.5 bits) | 34.7 dB (5.5 bits) |
+| The same sine as the plain `$00`-`$0F` nibble | 24.2 dB (3.7 bits) | 27.1 dB (4.2 bits) |
+| Loudness, table against nibble (RMS) | 2.5 times | 2.8 times |
+
+So in reSID the method gives about 5.5 bits, not 8, on both models.
+Mahoney's paper says every SID emulation falls to about 5-bit resolution
+and offers an emulated Digimax output for that reason; what real chips
+give is his measurement and is not checked here. The 8580 model's levels lie on three
+slopes, about −155, +152 and +307 per volume step, so its table is mostly
+volume steps at three gains.
+
+### Variations
+
+**Per-chip table.** A table measured on one chip plays a skewed signal on
+another. Mahoney's spread across real chips is in his paper and is not
+repeated here. The recipe's sweep phase is the tool for measuring one
+chip, given a way to record it.
+
+**Faster rate.** Mahoney's loop runs at 22 cycles a sample (44.8 kHz) with
+self-modifying page stepping and a table placed at `$xxFF` so that a page
+crossing adds the one cycle needed to even the loop out (his paper,
+section XVII). The recipe does not try that rate.
+
+**Emulator switch.** Mahoney's demo offers a Digimax cartridge output for
+emulators because of the resolution loss above. VICE 3.10 also has an
+engine model "ReSID 8580 + digiboost" (`-sidenginemodel 258`); its effect
+on the plain nibble is measured under `sid_8580_digi_bias_and_filter_bypass`,
+its effect on this table is not measured.
+
+### Recipes
+
+- `recipes/kickassembler/d418-8bit-digi.md`
+
+---
+
+## sid_8580_digi_bias_and_filter_bypass — Bias voices for a $D418 digi, and the routing that silences it
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D404, D405, D406, D40B, D40C, D40D, D412, D413, D414, D417, D418
+**Requires:** digi_4bit, sid_voice_setup
+
+### Why
+
+A `$D418` digi (`digi_4bit`) is loud on a 6581 and quiet on an 8580.
+The volume nibble scales whatever signal reaches the output. With no
+voice sounding that is only the chip's idle level, and the 8580's is
+small. Three voices parked at a constant level give the nibble something
+to scale. Routing those voices to the filter with no filter mode set
+removes everything again. This entry gives the numbers for both, in
+reSID.
+
+### How
+
+1. Park three voices as bias: attack 0, sustain 15, control `$49`
+   (pulse, TEST, gate). With TEST set the pulse output is high whatever
+   the pulse width, so each voice is a constant full-scale level.
+2. Leave their `$D417` routing bits clear, or set a filter mode bit in
+   `$D418` for any voice that is routed. A routed voice with LP, BP and HP
+   all clear reaches the output as nothing.
+3. Play the digi through the low nibble of `$D418` as `digi_4bit` does,
+   keeping the upper bits as chosen.
+
+One bias voice is not enough on the 8580 model: its level and the idle
+level oppose each other, and the step keeps its size. Use all three.
+
+### Why it works
+
+Measured in VICE x64sc 3.10 (reSID, not silicon; nobody listened) by
+`recipes/kickassembler/sid-volume-bias.md`, as the output change per
+volume unit in 16-bit WAV units:
+
+| Setup | reSID 6581 | reSID 8580 |
+|---|---|---|
+| No voice sounding (plain digi) | −640.4 | 93.5 |
+| One bias voice | −1,142.4 | −91.8 |
+| Three bias voices | −2,036.3 | −482.3 |
+| Every voice routed to the filter, no mode bit, with or without bias | 0 | 0 |
+
+The 8580 model's plain digi is 16.7 dB below the 6581 model's; three
+bias voices bring it to 2.5 dB below. What a real 8580 gives, and the
+EXT IN resistor fix used on hardware (`sid_8580_vs_6581_differences`),
+are not measured here.
+
+In reSID the idle level belongs to the voices: routing all three to the
+filter with no mode bit removes it along with any bias. Mahoney's paper
+("Technical details of Musik Run/Stop", 2014) says the opposite for real
+chips: with no mode bit set, the filter's input switches pass routed
+voices to the unfiltered path as well. reSID's model and his measurement
+disagree here, and nothing on this machine settles which holds for
+silicon.
+
+### Variations
+
+**VICE's digi boost.** `-sidenginemodel 258`, which VICE logs as "MOS8580
++ digi boost", gives the 8580 model a plain-digi step of 777.1, larger
+than the 6581 model's. Bias voices then work against it: three cut the
+step to 267.2. A program that adds bias voices for the 8580 plays
+quieter under that setting. It is an emulator switch; what hardware it
+stands for is not stated here.
+
+**Mahoney's table.** Setting some filter mode bits and routing two of
+the three bias voices gives many more levels than the nibble alone
+(`mahoney_d418_8bit_digi`).
+
+### Recipes
+
+- `recipes/kickassembler/sid-volume-bias.md`
+
+---
+
+## sid_test_bit_and_osc_reset_tricks — TEST bit: oscillator reset to a known phase, and unlocking stuck noise
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D404, D40B, D412, D41B
+**Requires:** sid_voice_setup
+
+### Why
+
+The TEST bit (bit 3 of a voice's control register) does two jobs a
+player needs. It resets the voice's phase accumulator, so a note started
+with a TEST pulse starts at the same point of its wave every time: drums
+and phase-locked voices depend on it. And it is the only way back from
+the noise lock. A voice that plays noise combined with any other
+waveform, even briefly, leaves its noise generator stuck at zero; the
+noise stays silent until TEST is pulsed.
+
+### How
+
+**Oscillator reset.** Write the control byte with TEST set (`$29` for
+sawtooth + gate on voice 1, `$28` without gate), then write it with TEST
+clear. The accumulator restarts from zero at the second write. Hard
+restart and drum routines do this one frame before the note
+(`sid_8580_vs_6581_differences`, hard restart).
+
+**Noise lock.** Never select noise together with another waveform on a
+voice whose noise you want later. If a sound effect does it (`$C1`, `$91`
+and the like), write a TEST pulse before the next noise
+note: `$89` then `$81` on voice 1. Turning the voice off, clearing the
+gate or waiting does not unlock it.
+
+### Why it works
+
+Measured in VICE x64sc 3.10 (reSID, not silicon) by
+`recipes/kickassembler/sid-test-bit.md`, reading voice 3 through `$D41B`:
+
+- After TEST is set and cleared, sawtooth at `F = $FFFF` reads the same
+  four values at 4, 73, 142 and 211 cycles after the release in eight
+  trials that started at eight different phases: 3, 72, 141, 210 on the
+  6581 model and one less on the 8580 model. Without TEST the eight
+  trials read eight different values.
+- Noise at `F = $2000` gave 31 different values in 32 reads. After 400
+  cycles of noise + pulse and a return to noise alone, 32 of 32 reads were
+  `$00`, and the WAV of the voice was silent (RMS 2 to 3 against about
+  2,500 on the 6581 model and 1,900 on the 8580 model). After 51,000
+  cycles with no waveform, still `$00`. After a TEST pulse, the first
+  read was `$01` and then 30 different values in 32; the WAV level was
+  back to the free-running level. Noise with saw, with triangle, with
+  pulse at widths `$000`, `$800` and `$FFF`, and with all four locked it
+  as well.
+
+reSID's source (`src/resid/wave.h` in VICE 3.10) gives the mechanism: the
+noise register's feedback is `(bit22 OR TEST) XOR bit17`, and while
+noise and another waveform are selected the combined output is ANDed
+back into the register bits that drive the noise output. Bits only fall
+to zero. From all zeros the feedback stays zero, which is the lock. A
+register step taken with TEST set feeds in a 1. Whether real chips behave
+the same is not measured here; the source's own comment says it wants a
+test program on hardware.
+
+### Variations
+
+**Held TEST.** Holding TEST, instead of pulsing it, freezes the noise
+register and lets its bits drift to one: 36,000 to 39,000 cycles on the
+6581 model and 2.83 to 3.78 million on the 8580 model (`hardware/sid-reference.md`,
+TEST). A pulse of a few cycles is enough to unlock it.
+
+**Chip detection.** The one-cycle difference in the reset (3 against 2 at
+the first read) is what the `$D41B` model check reads
+(`sid_8580_vs_6581_differences`).
+
+**TEST digi.** TEST also holds a pulse voice's output high whatever the
+pulse width; `mahoney_d418_8bit_digi` and
+`sid_8580_digi_bias_and_filter_bypass` use that to park voices at a
+constant level.
+
+### Recipes
+
+- `recipes/kickassembler/sid-test-bit.md`
+
+---
+
+## nmi_sample_player — Sample playback on the CIA 2 NMI beside a raster-IRQ music player
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D418, D019, D01A, DD04, DD05, DD0D, DD0E
+**Demands:** continuous_interrupts
+**Requires:** nmi_handler_and_restore_key, digi_4bit, sid_play_routine_pattern
+
+### Why
+
+A game or demo that plays samples and music together needs the sample
+writes on time while the music routine, the raster effects and the main
+program run. The CIA 2 timer interrupt arrives as an NMI, which `sei`
+cannot hold off, so the sample player keeps its rate whatever else is
+masked. The raster IRQ keeps the frame-rate work, the music among it.
+
+### How
+
+1. Bank the KERNAL out (`$35` in `$01`) and put the NMI handler's address
+   in `$FFFA`/`$FFFB` and the raster handler's in `$FFFE`/`$FFFF`. With the
+   KERNAL in, the NMI goes through its stub and `$0318` instead
+   (`nmi_handler_and_restore_key`).
+2. Run CIA 2 timer A continuously at the sample period and enable its
+   interrupt with `$81` into `$DD0D`.
+3. In the NMI handler: save what it uses, write the next sample to
+   `$D418`, advance the pointer, read `$DD0D`, restore, `rti`. Without the
+   `$DD0D` read, `/NMI` stays low and no further NMI comes.
+4. In the raster IRQ: the music, as `sid_play_routine_pattern` describes,
+   except that it must not write `$D418`. The digi owns the volume nibble;
+   filter mode bits go through a shadow (`digi_4bit`).
+
+### Why it works
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/nmi-sample-player.md`
+(the sound figures are reSID's model, not silicon): one sample every 128
+cycles and the music IRQ once a frame on line 250, over 32,768 samples.
+
+- Every timer A underflow produced one sample (timer B's count agreed on
+  PAL and NTSC), and the IRQ counted 213 PAL and 245 NTSC frames, the
+  run's 213.4 and 245.4 by arithmetic.
+- The NMI handler started 46 cycles apart at the earliest and latest on
+  PAL and 52 on NTSC, by the timer A value it read at entry; with the
+  display blanked, 10 or 11. The difference is the badline. Sample writes
+  therefore jitter by up to about 50 cycles with the screen on.
+- In the WAV the music's notes changed every 0.500 s (25 frames are
+  0.4988 s), and the sample tone was 10 dB above the music on the 6581
+  model and 2 dB below it on the 8580 model.
+- The digi modulates the music. `$D418`'s nibble is the master volume, so
+  every voice is multiplied by the sample; a sample using the whole 0 to
+  15 range put sidebands at the note ± the sample tone, 6.1 to 6.3 dB
+  below the note, where full-depth modulation gives 6.0 dB by
+  arithmetic.
+
+### Variations
+
+**Keeping `$D418` for the music.** `pwm_digi` carries the sample in a
+voice's pulse width, and `mahoney_d418_8bit_digi` uses all of `$D418`;
+the first leaves the volume to the music, the second takes it whole.
+
+**RESTORE.** The RESTORE key raises an NMI as well and lands in the same
+handler as one spurious sample. The recipe does not guard against it;
+`nmi_handler_and_restore_key` covers the options.
+
+**Cost.** The recipe's handler is 7 cycles to enter plus 65 to 76 by the
+instruction table, more than half of each 128-cycle period, and at least
+18 of those cycles record its own lateness. A player without that record
+spends about 54 of every 128 cycles. Not measured; no Cost line.
+
+### Recipes
+
+- `recipes/kickassembler/nmi-sample-player.md`
 
 ---
 

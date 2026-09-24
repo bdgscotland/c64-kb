@@ -2005,5 +2005,65 @@
       "-soundarg",
       "/dev/null"
     ]
+  },
+  "kickassembler/d418-8bit-digi": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/d418-8bit-digi.png",
+      "ntsc": "screenshots/d418-8bit-digi-ntsc.png"
+    }
+  },
+  "kickassembler/sid-volume-bias": {
+    "cycles": 5000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sid-volume-bias.png",
+      "ntsc": "screenshots/sid-volume-bias-ntsc.png"
+    }
+  },
+  "kickassembler/sid-test-bit": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-test-bit.png",
+      "ntsc": "screenshots/sid-test-bit-ntsc.png"
+    }
+  },
+  "kickassembler/nmi-sample-player": {
+    "cycles": 9000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/nmi-sample-player.png",
+      "ntsc": "screenshots/nmi-sample-player-ntsc.png"
+    }
   }
 }

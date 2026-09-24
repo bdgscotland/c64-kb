@@ -386,9 +386,10 @@ voice 1, voice 3 to voice 2).
 the output is the bit-wise AND of each enabled waveform's 12-bit
 output. Common combinations: TRI+PULSE for warm pad, SAW+PULSE for
 biting lead, TRI+SAW for soft brass. Noise combined with any other
-waveform shifts the noise LFSR's output bits to zero over time (a
-known SID quirk) and is typically used as a one-shot effect with TEST
-to restore the LFSR.
+waveform shifts the noise LFSR's output bits to zero within a few
+hundred cycles (measured in reSID, see Pitfalls; an earlier version
+said "over time") and is typically used as a one-shot effect with
+TEST to restore the LFSR.
 
 ### $D405 — ATDCY1 — Voice 1 attack/decay rate (W)
 
@@ -969,15 +970,17 @@ typically uses:
   reSID's 8580 model the volume step with three such voices is about
   5x the bare-voice step, while with only one voice it is no louder
   than bare (the voice DC roughly cancels the mixer's own small
-  offset), so use all three. The earlier text here said PWHI3 was the
+  offset), so use all three (measured by the `sid-volume-bias` recipe:
+  482.3 against 93.5 per volume unit, and −91.8 with one voice). The earlier text here said PWHI3 was the
   DAC; it was wrong: PW has no effect on the output while TEST is set
   (the value is kept and applies when TEST clears), and without TEST
   the comparator output is binary ($000 or $FFF), never proportional
-  to PW. The scene form (Mahoney's 8580 digi, "Musik Run/Stop", 2014)
-  also drives the filter-mode bits in $D418 with the voices routed
-  through the filter and maps sample values through a per-chip lookup
-  table of measured $D418 bytes for ~8-bit output; that extension is
-  from published descriptions, not measured here. Nothing in this
+  to PW. Mahoney's form ("Musik Run/Stop", 2014) routes voices 1 and 2
+  through the filter and plays through a table of measured values of
+  all eight bits of $D418; his paper measures it on both models, not only the 8580
+  as an earlier version of this bullet said. It is built and measured
+  in reSID as `mahoney_d418_8bit_digi` (`techniques/music-sid.md`):
+  about 5.5 effective bits on both reSID models. Nothing in this
   bullet was measured on silicon.
 
 ### Voice 3 as random source
@@ -1140,8 +1143,11 @@ are not touched.
 
 - **Noise combined with other waveforms zeros the LFSR.** With
   NOISE enabled simultaneously with TRI, SAW, or PULSE, the AND-gate
-  combination eventually drives all LFSR bits to zero, silencing
-  the noise. Once stuck, set TEST briefly to re-seed. This SID
+  combination drives all LFSR bits to zero, silencing the noise. It is
+  fast, not eventual as an earlier version said: in VICE reSID, 400
+  cycles of noise + pulse at F = $2000 locked it on both models, and
+  51,000 cycles with no waveform did not unlock it
+  (`recipes/kickassembler/sid-test-bit.md`). Once stuck, set TEST briefly to re-seed. This SID
   behaviour is also why "noise sweeps" usually pulse
   the TEST bit periodically. A brief pulse is enough: a few cycles of
   TEST re-seeds a zeroed LFSR, because the falling edge shifts a 1
