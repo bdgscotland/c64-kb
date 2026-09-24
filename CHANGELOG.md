@@ -5,7 +5,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 802, schema 33, tools 2.8.1, package 0.21.1.
+Data 803, schema 33, tools 2.8.1, package 0.21.1.
+
+**Every runnable recipe passes claims-watch, now a gate (data 803;
+#84).** `npm run claims:recipes` builds each KickAssembler recipe and
+runs claims-watch with its runs.json cycles and flags: 77 pass, 0 fail
+(6 of 77 passed before); two cartridge recipes and two marked skip do
+not run. New recipe frontmatter keys: `ram:` for a recipe's own RAM
+outside the PRG, `kernal_services: [IRQ|NMI]` for a KERNAL interrupt
+service left running. New Claims lines from traces for
+charset_copy_rom_to_ram, basic_extension_wedge, pseudo_3d_road_raster,
+reu_dma, four_player_read and vector_balls_sprites. Two real overlaps
+fixed in listings: paddle-read kept a pointer at `$F5-$F6`, which the
+KERNAL IRQ may write (now `$FE-$FF`); irq-owns-port called `$E544`
+(now CHROUT `$93`). claims-watch now counts stores from `$E000-$E4B6`
+(BASIC's floating point in the KERNAL ROM) as BASIC's.
 
 **One cycle numbering, measured (data 802; #82).** Pages numbered raster
 cycles differently. The knowledge base uses Bauer's 1-63 (1-65 NTSC).

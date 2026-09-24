@@ -434,6 +434,7 @@ gaps. The MCP server and the CLI share one set of tool functions. See
 | `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run knip` | Type-check, ESLint with a complexity budget, Prettier, unused code |
 | `npm run check:listings` | Build every listing with its toolchain |
 | `npm run verify:recipes` | Run every recipe in VICE and compare with its screenshot; `--update` re-baselines after a deliberate change |
+| `npm run claims:recipes` | Run every KickAssembler recipe under claims-watch and fail on any store it and its techniques do not declare |
 | `npm run verify:templates` | Make a project from every starter and run its checks; `--selftest` adds the broken-build test and each starter's own proofs |
 | `npm run vice:headless` | Build a windowless VICE into `.tools/`, which every emulator run then prefers |
 | `npm run new-project` | Start a project from a starter |
