@@ -392,19 +392,42 @@ function onStore(s: State, h: Hit): void {
   else if (h.addr === 0xd011 || h.addr === 0xd012) onArm(s, h);
 }
 
+/** The hits of one observed clock: its stores first, then its execs. */
+function observeClock(s: State, hs: Hit[]): void {
+  for (const h of hs) if (h.kind === "store") onStore(s, h);
+  for (const h of hs) if (h.kind === "exec") onExec(s, h);
+}
+
+/** Runs of consecutive hits that share a clock. */
+function* byClock(all: Hit[]): Generator<[number, Hit[]]> {
+  let run: Hit[] = [];
+  for (const h of all) {
+    if (run.length && run[0]?.clock !== h.clock) {
+      yield [run[0]?.clock ?? 0, run];
+      run = [];
+    }
+    run.push(h);
+  }
+  if (run.length) yield [run[0]?.clock ?? 0, run];
+}
+
 /**
  * Hits with clock < startClock seed the state; the rest are observations.
- * VICE logs a $FFFE handler's first exec before the pushes of the interrupt
- * that entered it, at the same clock, so the interrupts are found first.
+ * VICE logs a $FFFE handler's first exec before the interrupted
+ * instruction's own stores and the pushes, all at one clock (measured on
+ * bdgscotland/re-irq-dispatch's banked-fffe probe: a PHP's push follows
+ * the exec). So at each clock the stores are applied first, then the
+ * execs read: a vector or pointer written by the interrupted instruction
+ * is the one the dispatch used. An earlier version read hits in log order
+ * and took the stale value.
  */
 function walk(hits: Iterable<Hit>, frameCycles: number, startClock: number): State {
   const all = [...hits];
   const s = new State(frameCycles, startClock, indirectPointers(all));
   s.pending = all.filter((h) => h.clock >= startClock && isInterruptPush(h)).map((h) => h.clock);
-  for (const h of all) {
-    if (h.clock < startClock) seed(s, h);
-    else if (h.kind === "exec") onExec(s, h);
-    else if (h.kind === "store") onStore(s, h);
+  for (const [clock, hs] of byClock(all)) {
+    if (clock < startClock) for (const h of hs) seed(s, h);
+    else observeClock(s, hs);
   }
   return s;
 }

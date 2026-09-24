@@ -351,3 +351,25 @@ describe("JMP (pointer) edge cases", () => {
     expect(r.entries[0]?.target).toBeNull();
   });
 });
+
+// Ported from bdgscotland/re-irq-dispatch 7d88cf6. Measured there on
+// banked-fffe (x64sc 3.10): a PHP's own push is logged after the handler's
+// first exec, at the same clock, so log order is not store order.
+describe("stores logged at the interrupt's clock", () => {
+  const banked = [st(0x0001, 0x35, 1), st(0xfffe, 0x00, 2), st(0xffff, 0x20, 3)];
+  it("applies them before naming the handler", () => {
+    // VICE logs the handler's exec, then the interrupted STA's store, then the pushes, all at one clock.
+    const r = analyseIrqChain(
+      [...banked, ex(0x3000, 100, 40), st(0xffff, 0x30, 100), irq(100, 0xf3, "STA")],
+      PAL,
+      0,
+    );
+    expect(r.entries.map((e) => e.handler)).toEqual([0x3000]);
+    expect(r.transient).toEqual([{ vector: "irq_fffe", value: 0x2000, writes: 1 }]);
+  });
+  it("reads a pointer written at that clock as the entry's target", () => {
+    const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($4000)" };
+    const hits = [...banked, st(0x4000, 0x00, 4), st(0x4001, 0x30, 5), jmp, st(0x4001, 0x31, 100), irq(100)];
+    expect(analyseIrqChain(hits, PAL, 0).entries.map((e) => e.target)).toEqual([0x3100]);
+  });
+});
