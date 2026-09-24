@@ -1976,6 +1976,8 @@ cycles instead of 10, so a full 9-bit hit is 64. A masked-out pair is
 **Cost:** cycles_per_frame=747, cycles_per_frame_typical=357
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-sprite-animation-table (six actors, the scenario's worst frame)
+**Claims:** sprite_0-7 (shares)
+**Claims basis:** measured-vice
 
 ### Why
 

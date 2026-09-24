@@ -412,6 +412,13 @@ All of these tricks work because the 1541 provides raw access to the GCR bitstre
 **Complexity:** medium
 **Region:** both
 **Uses kernal:** (none — loads go through Krill's own entry points, not $FFD5; an earlier version of this line said LOAD, which made the compatibility check report a false serial-bus conflict with krill_loader_integration)
+**Claims:** serial_bus (shares)
+**Claims basis:** estimated
+
+Estimated from this page; there is no recipe to trace. Each part
+loads the next through a resident loader, which owns the bus
+(`krill_loader_integration`, `sparkle_irq_loader`); the sequencing
+drives it through that loader's calls.
 
 ### Why
 
@@ -670,6 +677,16 @@ bytes are its pointer, the destination page and `delta`.
 **Complexity:** medium
 **Region:** both
 **Uses kernal:** SETNAM, SETLFS, OPEN, CHKIN, CHRIN, CLRCHN, CLOSE, READST
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/iffl-kernal-skip.md` (`scripts/claims-watch.ts`,
+PAL, 36,000,000 cycles, blank D64 in drive 8): the KERNAL routines on the
+Uses kernal line wrote the serial lines on `$DD00` and CIA1 timer B
+(`$DC07`, `$DC0F`, the serial timeout), the same pair as
+`kernal_file_write_seq`; the program itself wrote no unit except CIA2 timers A
+and B, its timing harness. That is the KERNAL fallback. A drive-code
+IFFL owns the bus through its loader (`krill_loader_integration`).
 
 ### Why
 
