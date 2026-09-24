@@ -157,7 +157,7 @@ convention" places a shadow there.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D415, D416, D417, D418
-**Triggered by techniques:** sid_filter_routing, sid_8580_vs_6581_differences, sidasid_emulation_notes
+**Triggered by techniques:** sid_filter_routing, sid_8580_vs_6581_differences, sidasid_emulation_notes, sid_env3_filter_envelope
 
 ### Symptom
 
@@ -319,7 +319,7 @@ write_cutoff:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D404, D40B, D412
-**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences, sfx_in_player, goattracker_player_api
+**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences, sfx_in_player, goattracker_player_api, sid_env3_filter_envelope
 
 ### Symptom
 
@@ -507,7 +507,7 @@ and the two chips show no difference in reSID, so it has been removed.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D418
-**Triggered by techniques:** sid_voice_setup, lfsr_random
+**Triggered by techniques:** sid_voice_setup, lfsr_random, sid_env3_filter_envelope
 
 ### Symptom
 
