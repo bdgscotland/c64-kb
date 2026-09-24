@@ -73,11 +73,15 @@ is a stamp file named by its cycle count.
 `disktest`, `modelcheck`, `selftest-scan` and `drivetest`, adventure's
 `disktest` and `drivetest`, platformer's `tearcheck`, `stage` and
 `drivetest`, shmup-vertical's `stage`, `joytest` and `longplay`, demo's
-`probe`, hello-kick's `joyprobe`) prove fixes that `make check` cannot see: the adventure's three save-validation
+`probe`, hello-kick's `joyprobe`, racing's `roadcheck` and `mutants`) prove
+fixes that `make check` cannot see: the adventure's three save-validation
 checks, for instance, fail only in `disktest`. Measured 2026-09-24: eight
 starters with `--selftest` and their targets, 8 of 8, about 10 minutes, most
 of it shmup-vertical's `joytest` and `longplay` (seven starters took about
 3.5 minutes on 2026-09-23, before those two stepped by emulated frames).
+The racing starter, added after that run, took 68 seconds alone
+(`--only racing --selftest`, measured 2026-09-24; `mutants` runs its twelve
+shots four at a time).
 
 ## A starter's files
 

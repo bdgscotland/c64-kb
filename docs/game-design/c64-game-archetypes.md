@@ -234,6 +234,8 @@ Multi-event sports games (Summer Games, World Games) are a different problem: ea
 
 **Archetype:** `racing`
 
+**Starter:** `racing`
+
 Racing games show speed and perspective by warping the road ahead of the player. The pseudo-3D road on the C64 uses raster IRQs to change $D016 (horizontal scroll) per scanline, so the road appears to curve toward a vanishing point. (An earlier version also offered changing "character widths per scanline"; the VIC-II has no character-width setting, only XSCROLL, CSEL and MCM in $D016, `hardware/vic-ii-reference.md`.) Pitstop II (1984) uses a split-screen view; Buggy Boy (1988) renders a wide, tree-lined track; Outrun-style racers need horizon color changes and road-stripe scheduling. Here the raster IRQ is the rendering primitive.
 
 The road is a row of character cells per scanline, not a sprite or bitmap shape. A per-scanline horizontal shift via $D016 fine scroll makes the curve. Wider curves need larger shifts on consecutive lines; hills are approximated by varying the scanline count given to near and far road sections. Sprites represent other cars: a car at the horizon is a small sprite; as it approaches it moves to a larger Y coordinate and may be expanded with $D017 (Y-expand) or $D01D (X-expand). The scaling steps through discrete sizes, not continuously, but with enough sprite frames the illusion holds.

@@ -1,0 +1,43 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 24, "col": 0, "text": "RESULT 01 PASS" },
+    { "name": "the race finished, first", "type": "text", "row": 22, "col": 13, "text": "FINISHED 1ST" },
+    { "name": "panel: the last lap, the position", "type": "text", "row": 20, "col": 1, "text": "LAP 2/2" },
+    { "name": "panel: position", "type": "text", "row": 20, "col": 28, "text": "POS 1/4" },
+    { "name": "lap times, 50 frames a second (pinned from the run; the program checks them against its own count)", "type": "text", "row": 21, "col": 14, "text": "L1 0:37.5   L2 0:32.7", "models": ["pal"] },
+    { "name": "lap times, 60 frames a second: the same frame counts", "type": "text", "row": 21, "col": 14, "text": "L1 0:31.2   L2 0:27.3", "models": ["ntsc"] },
+    { "name": "hill: the still's horizon is line 124 (hoff 16, the crest over the kink): sky on it", "type": "rect", "colour": 14, "vic_x": 24, "line": 124, "width": 320, "height": 1 },
+    { "name": "hill: grass from line 125, the first road line (the horizon's row has no road characters)", "type": "rect", "colour": 13, "vic_x": 24, "line": 125, "width": 320, "height": 2 },
+    { "name": "curve: left kerb, line 140", "type": "rect", "colour": 1, "vic_x": 54, "line": 140, "width": 2, "height": 1 },
+    { "name": "curve: right kerb, line 140", "type": "rect", "colour": 1, "vic_x": 122, "line": 140, "width": 2, "height": 1 },
+    { "name": "curve: left kerb, line 150", "type": "rect", "colour": 1, "vic_x": 65, "line": 150, "width": 2, "height": 1 },
+    { "name": "curve: left kerb, line 160", "type": "rect", "colour": 1, "vic_x": 71, "line": 160, "width": 2, "height": 1 },
+    { "name": "curve, per line inside a row (XSCROLL): left kerb on line 163 at X 55", "type": "rect", "colour": 1, "vic_x": 55, "line": 163, "width": 2, "height": 1 },
+    { "name": "curve, per line inside a row: line 165 at X 58", "type": "rect", "colour": 1, "vic_x": 58, "line": 165, "width": 2, "height": 1 },
+    { "name": "curve, per line inside a row: line 167 at X 61", "type": "rect", "colour": 1, "vic_x": 61, "line": 167, "width": 2, "height": 1 },
+    { "name": "curve, per line inside a row: line 171 at X 66", "type": "rect", "colour": 1, "vic_x": 66, "line": 171, "width": 2, "height": 1 },
+    { "name": "curve, per line inside a row: line 175 at X 70", "type": "rect", "colour": 1, "vic_x": 70, "line": 175, "width": 2, "height": 1 },
+    { "name": "curve, per line inside a row: line 178 at X 73", "type": "rect", "colour": 1, "vic_x": 73, "line": 178, "width": 2, "height": 1 },
+    { "name": "curve: right kerb, line 178", "type": "rect", "colour": 1, "vic_x": 237, "line": 178, "width": 2, "height": 1 },
+    { "name": "road: left and right kerbs, line 200 (the player 20 pixels right of the centre line)", "type": "rect", "colour": 1, "vic_x": 28, "line": 200, "width": 2, "height": 1 },
+    { "name": "road: right kerb, line 200", "type": "rect", "colour": 1, "vic_x": 300, "line": 200, "width": 2, "height": 1 },
+    { "name": "road surface between the kerbs, line 200", "type": "rect", "colour": 11, "vic_x": 30, "line": 200, "width": 140, "height": 1 },
+    {
+      "name": "the player's car, picture 5 (24 x 16), at the screen's centre on line 198",
+      "type": "sprite", "colour": 1, "vic_x": 172, "line": 183, "width": 24, "height": 12
+    },
+    {
+      "name": "car 1, 16 units ahead: picture 3 (16 pixels wide), red body",
+      "type": "sprite", "colour": 2, "vic_x": 120, "line": 167, "width": 16, "height": 8
+    },
+    {
+      "name": "car 2, 120 units ahead: picture 0 (4 pixels wide), yellow, on the bend near the horizon",
+      "type": "sprite", "colour": 7, "vic_x": 83, "line": 135, "width": 4, "height": 3,
+      "search": { "vic_x": 60, "line": 128, "width": 60, "height": 20 }
+    },
+    { "name": "the road, lines 107-202, the same on both models (every split lands on the same pixel)", "type": "same", "area": { "vic_x": 24, "line": 107, "width": 320, "height": 96 } },
+    { "name": "the sky and hills, rows 0-6, the same on both models", "type": "same", "cells": [0, 0, 6, 39] },
+    { "name": "frame meter: the game's step and the IRQs, 255 race frames from race frame 200", "type": "meter", "row": 24, "col": 20, "frames": 255 }
+  ]
+}

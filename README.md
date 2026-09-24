@@ -42,6 +42,7 @@ screen.
 <tr>
 <td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Demo part: logo, sprite sine chain, stable raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
 <td align="center"><a href="templates/beat-em-up/README.md"><img src="docs/figures/starters/beat-em-up.png" width="220" alt="Beat-em-up street fight: the hero, two thugs and a character-drawn brute"></a><br><sub>Beat-em-up</sub></td>
+<td align="center"><a href="templates/racing/README.md"><img src="docs/figures/starters/racing.png" width="220" alt="Pseudo-3D road racer: the road bending left over a crest, two opponents at different sizes"></a><br><sub>Pseudo-3D racer</sub></td>
 </tr>
 </table>
 
@@ -217,7 +218,7 @@ This copies the starter and the shared harness (`templates/_harness/`)
 into the new directory. It writes `.mcp.json` and `local.mk` pointing at
 this checkout, then runs the starter's headless check to prove the copy
 works. `npm run new-project -- --list` names the starters: `shmup-vertical`,
-`platformer`, `action-puzzle`, `adventure`, `beat-em-up`, `demo`, and two
+`platformer`, `action-puzzle`, `adventure`, `beat-em-up`, `racing`, `demo`, and two
 minimal templates that show the harness rather than a game: `hello`
 (Oscar64 calling KickAssembler) and `hello-kick` (KickAssembler only).
 
@@ -240,8 +241,8 @@ test or a lost-frame soak. [docs/workflow/agent-harness.md](docs/workflow/agent-
 explains the loop.
 
 The starters build with the Oscar64 described under [Toolchains](#toolchains).
-`shmup-vertical`, `platformer`, `action-puzzle` and `beat-em-up` are also
-recorded passing on the released v1.32.273 (`make released`).
+`shmup-vertical`, `platformer`, `action-puzzle`, `beat-em-up` and `racing`
+are also recorded passing on the released v1.32.273 (`make released`).
 
 ## Tools
 
