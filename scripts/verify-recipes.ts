@@ -37,7 +37,9 @@
  * options in place of the default optimisation flag (-O2 for Oscar64, -O
  * for cc65); Oscar64 ORs its -O flags together, so they replace rather than
  * follow it. "-tf=crt8" there makes Oscar64 write <toolchain>-<stem>.crt,
- * which a "cartridge" entry then names.
+ * which a "cartridge" entry then names. For a KickAssembler recipe the
+ * entries are passed to the assembler before -o: ":mode=1" sets
+ * cmdLineVars, so a variant can build the listing another way.
  *
  * A key "<toolchain>/<stem>@<variant>" is a second run of the same page:
  * its own build options, cycles, models and shots (default
@@ -115,7 +117,8 @@ const RunSchema = z.object({
   // key press the harness has no flag for) says why here; the listing gate
   // still builds it and the page carries its own pictures under docs/figures.
   skip: z.string().optional(),
-  // Compiler options in place of the default optimisation flag (Oscar64, cc65).
+  // Compiler options in place of the default optimisation flag (Oscar64, cc65);
+  // assembler arguments such as ":mode=1" (KickAssembler).
   build: z.array(z.string()).optional(),
 });
 type Run = z.infer<typeof RunSchema>;
@@ -249,7 +252,9 @@ function buildKick(job: Job, prg: string): Built {
     return { prg: null, log: "KickAssembler not found (KICKASS_JAR + java)" };
   const src = join(work, `${job.stem}.asm`);
   writeFileSync(src, f.code);
-  const r = spawnSync(tools.java, ["-jar", tools.kickass, src, "-o", prg], { encoding: "utf8" });
+  const r = spawnSync(tools.java, ["-jar", tools.kickass, src, ...(job.run.build ?? []), "-o", prg], {
+    encoding: "utf8",
+  });
   return { prg: r.status === 0 ? prg : null, log: errorLines(r.stdout + r.stderr) };
 }
 

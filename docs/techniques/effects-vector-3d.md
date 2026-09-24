@@ -1070,6 +1070,227 @@ only there on NTSC at the shipped padding.
 
 ---
 
+## rotozoomer_charset — Rotozoomer: a texture rotated and scaled into a character set used as a framebuffer
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D016
+**Requires:** mcm_text
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/rotozoomer.md` saw `$D018`'s charset bits change
+once per render. The recipe's zero-page bytes and result bytes are its
+own.
+
+### Why
+
+A rotating, zooming texture needs every pixel of the window redrawn each
+frame from a new mapping. A character set is a small framebuffer the
+VIC can show from anywhere in its bank: with the window's codes laid out
+column by column, every pixel line of a column is one byte at a fixed
+offset, and a second charset is a free double buffer.
+
+### How
+
+Fill the window with codes 8col + row (8 rows, 16 columns: codes 0 to
+127), so column col is the 64 bytes at charset + 64col. For each frame's
+angle a and scale s, take the per-pixel step (du, dv) = (cos a, sin a) /
+s and the per-line step (−sin a, cos a) / s in 8.8 fixed point, and the
+first pixel's (u, v) = centre − 32 × (both steps). For each line, copy
+the line start, then for each pixel add the pixel step and read the
+texel from the integer parts, masked to the texture size; pack four
+multicolour pixels a byte and store at charset + 64col + line. Render
+into the charset not shown, then switch the charset bits of `$D018`
+below the window.
+
+### Why it works
+
+Each code's eight bytes are its pixel rows, so the column-major layout
+makes the window a bitmap whose columns are contiguous; the stored byte
+for column col and line y is at one offset, computed once per line. The
+rotation needs no multiplication per pixel: two 16-bit additions move
+(u, v) one pixel along the rotated axis. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, by `recipes/kickassembler/rotozoomer.md`: all 4,096
+window pixels equal a Python model of the listing's arithmetic for the
+step the program reports on screen, at four pinned captures and five
+more; one render takes 376,000 cycles (about 92 a pixel) on PAL. Built to
+draw into the charset on screen, no capture of ten showed a whole step:
+the render spans about 19 frames.
+
+### Variations
+
+**Speedcode.** Unrolling the pixel loop per column and holding (u, v) in
+self-modified operands cuts the per-pixel cost; not measured here.
+
+**Chunky modes.** The same stepping can feed a screen-matrix framebuffer
+(`chunky_4x4_fli_mode`) instead of a charset, 80 × 50 pixels of 16
+colours; not measured here.
+
+**Aspect.** Multicolour pixels are two hires pixels wide; halving the
+horizontal step (du, dv per pixel doubled) draws the texture square.
+Not measured here.
+
+### Cycle budget
+
+About 92 cycles per multicolour pixel in the recipe's loop, badlines
+included: 376,000 cycles for 4,096 pixels on PAL, 19 frames. The
+render runs outside any interrupt; the switch waits for line 250.
+
+### Recipes
+
+- `recipes/kickassembler/rotozoomer.md` — 64 steps of a 16 × 16 texture
+  in a 64 × 64 window, double-buffered, every capture compared pixel for
+  pixel with a model, PAL and NTSC, with the single-buffer control.
+
+---
+
+## glenz_eor_filled_vectors — Glenz vectors: every face EOR-filled, so the back shows through the front
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D016
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/glenz.md`
+saw `$D018`'s charset bits change once per frame drawn; the recipe's
+zero page and result bytes are its own.
+
+### Why
+
+Filled polygons normally need sorting or a visibility test and a span
+fill per line. A glenz object draws every face, front and back, and lets
+the overlaps show in their own colours; with EOR filling the faces need
+no order, no test and no span code, and each costs only its outline.
+
+### How
+
+Give each face a colour code (a multicolour bit pair). For each edge of
+each face, step one pixel column at a time from the left end x0 to
+x1 − 1, y in 8.8 fixed point, and EOR the face's code into the pixel
+(x, y). Then fill: in each pixel column, from the top down, replace each
+byte by the EOR of itself and the byte above. A framebuffer laid out
+column by column, such as the character-set window of
+`rotozoomer_charset`, makes each column 64 consecutive bytes. Draw into
+a hidden buffer and switch.
+
+### Why it works
+
+A convex face crosses a pixel column at two edges; the running EOR
+turns its code on at the first point and off at the second. EOR is its
+own inverse and commutes, so faces can be drawn in any order and
+overlaps keep the EOR of their codes, which is the see-through colour.
+The half-open column range gives the column at a corner exactly one point
+between the two edges meeting there. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, by `recipes/kickassembler/glenz.md`: the window equals a
+model of the listing's algorithm in all 4,096 pixels at the four pinned
+captures and five more; against geometry computed without the EOR fill
+(each face as a polygon, edges exact then rounded) 84 of 262,144 pixels
+differ over the 64 steps, from the 8.8 slope's rounding. Plotting both
+ends of every edge breaks the corner columns: 7,082 differ, as vertical
+streaks.
+
+### Variations
+
+**More colours.** Two bits give three face colours and their EOR
+combinations; hires gives one; a second charset or bitmap plane doubles
+the codes. Not measured here.
+
+**Solid (not see-through).** Draw only the front faces, found by the
+sign of each face's projected area; the EOR fill then gives a solid
+object. Not measured here; `solid_vector_3d` describes span filling.
+
+### Cycle budget
+
+One frame drawn every four PAL frames (78,620 cycles, the wait for a
+switch line included) for the recipe's 64 × 64 window and cube; four
+or five on NTSC.
+
+### Recipes
+
+- `recipes/kickassembler/glenz.md` — a glenz cube, 64 steps, double
+  buffered, every capture compared with two models, PAL and NTSC, with
+  the both-ends control.
+
+---
+
+## raycaster_grid_walls — Column raycaster: one ray per screen column through a grid map
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D018
+**Requires:** ecm_mode
+**Claims:** vic_matrix_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/raycaster.md` saw `$D018`'s matrix bits change
+once per view drawn. The recipe's zero page and result bytes are its
+own.
+
+### Why
+
+A first-person maze or corridor view is walls of varying height, one
+per screen column, from a 2D grid map. A ray per column finds the
+nearest wall; its distance sets the column's height. On a 1 MHz CPU the
+question is how to find the distance without a multiply or divide per
+ray.
+
+### How
+
+For view direction d and view plane p (d turned 90 degrees, scaled by
+the field of view), the ray of column c has direction d + p·cx, cx from
+−1 to 1. March each ray in steps of (d + p·cx) / N from the camera until
+the map cell under it is a wall; the step count k is N times the
+perpendicular distance, so a table h[k] gives the height with no fish-eye
+correction. Keep the column-0 step and the per-column change for each
+view direction in tables, with enough fraction bits (8.16 for N = 8 on a
+40-column screen), so the CPU only adds. Record which cell coordinate
+changed on the last step for the wall's side shade. Draw the column as
+ceiling, wall and floor; extended-colour text with the blank character
+puts the whole view in screen RAM, which double-buffers with `$D018`.
+
+### Why it works
+
+Every ray d + p·cx has the same component along d, so equal steps along
+any of them cover equal distance towards the view plane: counting steps
+measures the perpendicular distance directly. Measured in VICE x64sc
+3.10, PAL c64c and NTSC, by `recipes/kickassembler/raycaster.md`: all
+1,000 screen cells equal a model of the listing's march at the four
+pinned captures and five more; against an exact boundary-to-boundary
+(DDA) raycast of the same scene, 2,115 of 2,560 column heights are equal,
+2,453 within one row, the worst 6 rows off. With the per-column change
+kept in 8.8 only 930 were equal: see the pitfall
+`fixed_point_step_change_rounded_away`.
+
+### Variations
+
+**DDA.** Stepping from cell boundary to cell boundary finds the exact
+distance and never passes a corner, at the cost of a multiply for the
+first boundary and a divide or reciprocal table for the height. Used here
+only as the reference, in Python.
+
+**Textured walls.** The fraction of the hit position along the wall
+gives the texture column; with characters, a column of 8 × 8 cells can
+only be stretched in whole rows. Not measured here.
+
+### Cycle budget
+
+One view every 157,000 to 216,000 cycles on PAL in the recipe (8 to 11
+frames), most of it in the march: the step count is the distance times
+8, per column.
+
+### Recipes
+
+- `recipes/kickassembler/raycaster.md` — a 16 × 16 map, 64 view
+  directions, double-buffered extended-colour text, every capture
+  compared with a model and the march compared with an exact raycast,
+  PAL and NTSC.
+
+---
+
 ## voxel_landscape — Voxel-space landscape rendering
 
 **Complexity:** scene-tier

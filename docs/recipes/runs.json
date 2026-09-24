@@ -2388,5 +2388,163 @@
   },
   "kickassembler/easyflash-eapi": {
     "skip": "the listing leaves the EAPI slot at 00:1:1800 empty; the driver is added by a build step outside the listing (ACME and the page's patch script), which the verifier has no key for. The pictures are under docs/figures and the Build section gives the exact commands"
+  },
+  "kickassembler/fpp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fpp.png",
+      "ntsc": "screenshots/fpp-ntsc.png"
+    }
+  },
+  "kickassembler/fpp@crunch": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":mode=1"
+    ]
+  },
+  "kickassembler/fpp@restart": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":mode=2"
+    ]
+  },
+  "kickassembler/line-doubling": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/line-doubling.png",
+      "ntsc": "screenshots/line-doubling-ntsc.png"
+    }
+  },
+  "kickassembler/line-doubling@later": {
+    "cycles": 8300000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/chunky-4x4": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/chunky-4x4.png",
+      "ntsc": "screenshots/chunky-4x4-ntsc.png"
+    }
+  },
+  "kickassembler/char-zoomer": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/char-zoomer.png",
+      "ntsc": "screenshots/char-zoomer-ntsc.png"
+    }
+  },
+  "kickassembler/char-zoomer@later": {
+    "cycles": 8200000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/rotozoomer": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/rotozoomer.png",
+      "ntsc": "screenshots/rotozoomer-ntsc.png"
+    }
+  },
+  "kickassembler/rotozoomer@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/glenz": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/glenz.png",
+      "ntsc": "screenshots/glenz-ntsc.png"
+    }
+  },
+  "kickassembler/glenz@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/raycaster": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/raycaster.png",
+      "ntsc": "screenshots/raycaster-ntsc.png"
+    }
+  },
+  "kickassembler/raycaster@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/ufli-underlay": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/ufli-underlay.png",
+      "ntsc": "screenshots/ufli-underlay-ntsc.png"
+    }
   }
 }

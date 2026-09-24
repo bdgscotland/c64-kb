@@ -875,3 +875,196 @@ entered from the double IRQ at a traced delay, one store per line.
 - Technique: `vsp_glitch` in `techniques/raster.md`: the late badline a write before cycle 55 makes.
 - Recipe: `recipes/kickassembler/linecrunch.md`, "The write-cycle sweep".
 - Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.4, §3.14.5.
+
+---
+
+## fpp_write_outside_window — An FPP line split in two, blank at the left, or showing the wrong pixel row
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** fpp_flexible_pixel_position, char_zoomer_d018
+
+### Symptom
+
+In an FPP band, some lines show the old charset on their left cells and
+the new one on the rest; or the first one to three cells of a line are
+blank; or a whole line shows the next pixel row of the source instead of
+the one chosen. A one-cycle change in the loop switches between these
+and a clean band.
+
+### Mechanism
+
+Each form of FPP needs its `$D011` write inside a window, and every form
+needs its `$D018` write early enough. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, with `recipes/kickassembler/fpp.md` swept one cycle at a
+time (store-trace cycles, Bauer's numbering); the results were the same
+on both models except where the table says:
+
+| Write | Cycle | Result |
+|---|---|---|
+| `$D018` for line L | up to 15 of L | whole line from the new charset |
+| | 16 + c | cells 0 to c from the old charset |
+| `$D011`, badline form (YSCROLL = L & 7 on line L) | up to 11 | full badline, pixel row 0 |
+| | 12, 13 | cells 0, or 0 and 1, blank: the VIC reads `$FF` as the pointer before it has the bus (the FLI bug) |
+| | 14 on | RC not reset: the line shows pixel row 1, with three blank cells moving right one cell a cycle |
+| `$D011`, restart form | 54 to 57 | row restarts |
+| | 52, 53 | a late badline instead, which holds the CPU to cycle 54 and breaks a cycle-counted loop |
+| `$D011`, RC-held form | 58 to 62 (PAL), 58 to 64 (NTSC) | RC held at 7 |
+| | the line's last cycle | nothing held |
+
+In the badline form a block that runs late is pulled by the stall to a
+write on cycle 11, the last that works, and stays there: it passes in
+VICE with no margin.
+
+### Fix
+
+Pick the form, then put each write on one cycle inside its window, away
+from the edges, and confirm with a store trace of `$D011` and `$D018`:
+every band write on the same cycle, every frame. In the badline form set
+the entry into the first block by trace rather than leaving it to the
+stall; the recipe's writes land on cycles 6 and 2 (PAL), 5 and 1 (NTSC).
+Check the picture line by line, not by eye: a split at cell 1 is one
+character wide.
+
+### Worked example
+
+From `recipes/kickassembler/fpp.md`, mode 0: one 20-cycle block per band
+line (22 on NTSC), the charset first, then the YSCROLL that makes the line
+a badline.
+
+```text
+    lda d18 + 6 + k
+    sta $d018                    // charset for line 60 + k: cycle 2 (PAL)
+    stx $d011                    // YSCROLL = (60 + k) & 7: cycle 6 (PAL)
+    ldx #$18 | ((61 + k) & 7)
+    Delay(6)                     // 8 on NTSC
+```
+
+### Cross-references
+
+- Technique: `fpp_flexible_pixel_position` in `techniques/raster.md`.
+- Technique: `linecrunch` in `techniques/raster.md`: the RC-held write.
+- Pitfall: `linecrunch_write_outside_window`, the same window for a crunch.
+- Recipe: `recipes/kickassembler/fpp.md`, the three sweep sections.
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.3 to §3.14.6.
+
+---
+
+## doubled_row_skips_a_screen_row — A doubled text row uses up two rows of screen and colour RAM
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** line_doubling_and_colour_ram_double_buffer
+
+### Symptom
+
+Text rows made 16 lines tall by the doubled-line write show rows 0, 2, 4
+... of the screen: every second row of the text and of its colours never
+appears, and the last rows of a 25-row screen are unreachable. In bitmap
+mode, by the same rule, the second half of a doubled row would show the
+next row's graphics in the first row's colours (not measured here).
+
+### Mechanism
+
+The write on cycles 54 to 57 of a row's last line wraps RC to 0 and the
+row is drawn again from its latched pointers and colours, but the VIC's
+cycle-58 step still loads VCBASE from VC, which has counted the 40 cells
+of the half just drawn (Bauer §3.7.2, §3.14.5). Each 8-line half moves
+the row base on by one row. Measured in VICE x64sc 3.10, PAL c64c and
+NTSC, with `recipes/kickassembler/line-doubling.md`: with the write the
+rows shown from line 52 in 8-line halves are 1, 1, 3, 3, 5, 5, 7, 7 (PAL,
+buffer 1); built `:nodbl=1`, with the write aimed at RAM, they are 1, 2,
+3, 4, 5, 6, 7, 8.
+
+### Fix
+
+Lay the screen and colour data out in every second row, or use the
+skipped rows on purpose: they are a second colour RAM, picked by starting
+the display one row on with a single crunched line (the recipe's
+buffer 1). Put the text for doubled row j in screen row 2j (or 2j + 1).
+
+### Worked example
+
+From `recipes/kickassembler/line-doubling.md`: row j of buffer b is
+screen row 2j + b, so the refill steps 80 bytes a row.
+
+```text
+    lda ptr
+    clc
+    adc #80                     // the buffer's next row: two screen rows on
+    sta ptr
+```
+
+### Cross-references
+
+- Technique: `line_doubling_and_colour_ram_double_buffer` in `techniques/raster.md`.
+- Technique: `linecrunch` in `techniques/raster.md`: the one-line crunch that picks the odd rows.
+- Recipe: `recipes/kickassembler/line-doubling.md`, "The doubling write cycle".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.5.
+
+---
+
+## mid_row_badline_write_off_by_one — A mid-row forced badline one cycle early freezes every row; one cycle late shifts the colours
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** chunky_4x4_fli_mode, fli_image, ufli_sprite_underlay
+
+### Symptom
+
+A 4 × 4 chunky or FLI-style screen that refetches colours halfway down
+each character row shows the same row over and over from the second row
+down; or its leftmost cells show the colours of the half-row above, with
+the light grey FLI-bug cells one or more cells in from the left edge.
+
+### Mechanism
+
+The `$D011` write that forces the mid-row badline must make the
+condition true on cycle 14 exactly. Earlier, the VIC's cycle-14 check
+sees it and resets RC to 0; RC never reaches 7 in that row, VCBASE is not
+moved on in cycle 58, and every later row is fetched from the same
+VCBASE. Later, RC is left alone but the c-accesses start later, so the
+leftmost cells keep the colours already in the buffer. Measured in VICE
+x64sc 3.10, PAL c64c and NTSC alike, with
+`recipes/kickassembler/chunky-4x4.md` (blocks right in cells 3-39 of rows
+1-24, of 3,552):
+
+| Write cycle | Result |
+|---|---|
+| 11, 12, 13 | 444 right: every row from 1 on shows row 1 |
+| 14 | 3,552 right; cells 0-2 of the bottom half light grey (the FLI bug) |
+| 15, 16, 17 | 3,507, 3,462, 3,417: 1, 2, 3 cells keep the top half's colours |
+
+### Fix
+
+Put the write on cycle 14 and confirm it with a store trace of `$D011`
+on every forced line. Enter the loop from a stable raster; the forced
+badline's own stall then re-times each row, so a correct first row keeps
+the rest correct. Write `$D018` for the new screen before cycle 15 of the
+line and restore it after the stall.
+
+### Worked example
+
+From `recipes/kickassembler/chunky-4x4.md`, one row:
+
+```text
+    lda #D18B
+    sta $d018                   // screen B: cycle 8
+    lda #$3f
+    sta $d011                   // YSCROLL 7 on line 55 + 8r: cycle 14
+    lda #D18A
+    sta $d018                   // screen A again after the stall: cycle 60
+    lda #$3b
+    sta $d011
+```
+
+### Cross-references
+
+- Technique: `chunky_4x4_fli_mode` in `techniques/bitmap-modes.md`.
+- Technique: `fli_image` in `techniques/bitmap-modes.md`.
+- Pitfall: `fpp_write_outside_window`, the same cycles for a badline on every line.
+- Recipe: `recipes/kickassembler/chunky-4x4.md`, "The forced write cycle".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.6.

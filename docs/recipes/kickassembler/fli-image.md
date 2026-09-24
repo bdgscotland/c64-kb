@@ -53,7 +53,8 @@ colour and grey in columns 1-3, the one-cycle-late symptom described under
 // so each line gets its own screen-RAM colours. Eight 1 KB screen pages
 // hold the colours for lines 0, 1, ... 7 (mod 8); on each line the code
 // points $D018 at that line's page and then forces a badline by writing
-// YSCROLL = line & 7 into $D011, timed so the write lands on cycle 15.
+// YSCROLL = line & 7 into $D011, timed so the condition holds from cycle
+// 15: the store's write is on cycle 14 (store trace).
 //
 // The image here is a test pattern, not a picture: the bitmap is all %01
 // pixels, so every pixel takes its colour from the high nibble of screen
@@ -172,7 +173,7 @@ irq2:
 
     // One block per line. The block for line l starts on cycle 55 of line
     // l-1: LINE_PAD cycles of padding, then $D018, then $D011 with its
-    // write on cycle 15 of line l. That write creates the badline
+    // write on cycle 14 of line l (the condition holds from 15). That write creates the badline
     // condition; the CPU is halted on its next read until cycle 55.
     .for (var l = FIRST_LINE + 1; l <= LAST_LINE; l++) {
         Delay(LINE_PAD)
@@ -237,10 +238,14 @@ With a converted image in place of the fills, the picture, with the same
 grey band down the left.
 
 If every eighth line is wrong or the picture repeats one character row
-down the screen, the $D011 write is landing on cycle 14 or earlier and
+down the screen, the $D011 write is landing on cycle 13 or earlier and
 resetting the row counter. If the grey band is four columns wide and the
-first column shows a stale colour, the write is landing on cycle 16; see
-`LINE_PAD` below.
+first column shows a stale colour, the write is landing on cycle 15; see
+`LINE_PAD` below. These are store-trace cycles, the write's own: a store
+trace of this listing puts every forced write on cycle 14 (20,057 of them
+in 5,000,000 cycles on PAL), and the condition holds from cycle 15. An
+earlier version of this paragraph said 14 and 16, counting the cycle the
+condition first holds rather than the write.
 
 Screenshot from the VICE run this page describes: `screenshots/fli-image.png`.
 
