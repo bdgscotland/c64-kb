@@ -1381,9 +1381,12 @@ and reads into buffer 1; the code survived the four jobs and a seek.
 Bus time, PAL, VICE 3.10 (rung 1): 132,742 host cycles for the three
 `M-W` commands carrying 68 bytes, and 163,545 for the single `M-R` that
 read them back, about 135 ms and 166 ms. On the drive side, in drive
-cycles at 1 MHz: the seek 125,859, the successful read 224,071, the
-failed read before the seek 902,630 and the track-40 failure 766,533;
-the failures are the controller's retries and bumps. A loader that
+cycles at 1 MHz from the monitor's drive stopwatch (PAL; NTSC within
+1%): the seek 130,809, the successful read 229,776, the failed read
+before the seek 916,220 and the track-40 failure 778,154; the failures
+are the controller's retries and bumps. An earlier version gave
+125,859, 224,071, 902,630 and 766,533, read from drive-trace stamps,
+which are host-clock catch-up times, not drive cycles (#103). A loader that
 uploads a few hundred bytes therefore spends a noticeable fraction of a
 second on the upload alone, which is why resident loaders upload once.
 
