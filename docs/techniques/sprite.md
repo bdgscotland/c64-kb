@@ -561,8 +561,11 @@ collision occurred since the last read.
 
 **Sprite-background collision ($D01F, SPBGCL):** Each bit n is set whenever any
 non-transparent pixel of sprite n overlaps a *foreground* pixel of the display,
-where foreground means: in standard hires text and hires bitmap, any pixel not
-drawn in background colour 0 ($D021); in ECM, any pixel not drawn in one of
+where foreground means: in standard hires text and hires bitmap, a 1 bit (in a
+hires bitmap the 0 bits are drawn in the screen-RAM low nibble, not $D021, and
+are still background: measured by the `mob_priority` probe, whose sprite on
+0 bits alone latched nothing; an earlier version of this sentence said "any
+pixel not drawn in background colour 0 ($D021)"); in ECM, any pixel not drawn in one of
 BGCOL0–3 (the four background colours are all background); in multicolor text
 and multicolor bitmap, only the %10 and %11 bit-pairs: %01 pixels (BGCOL1/$D022
 in MC text, the video-matrix high nibble in MC bitmap) count as background and
@@ -836,8 +839,18 @@ VICE x64sc on PAL and NTSC. Three rules came out, and one correction:
   and pairs 10 and 11 in multicolour text cover the sprite; a 0 bit and pairs
   00 and 01 show it. Pair 01 is background whatever colour `$D022` holds: a
   sprite with its bit set is entirely visible over a cell of solid pair 01.
-  Multicolour bitmap follows the same pair rule (Bauer's VIC-II article,
-  section 3.8.2; not measured here).
+- Bitmap modes follow the same rules, measured by a probe for this entry
+  (VICE x64sc, PAL and NTSC, exit screenshot and `$D01F`). In a hires
+  bitmap a 0 bit is background although its colour comes from the low
+  nibble of screen RAM, not `$D021`: a sprite with its bit set showed on
+  every line of a cell whose 0 bits were blue with `$D021` black, and the
+  1 bits (white, the high nibble) covered it. In a multicolour bitmap pairs
+  00 and 01 (the screen-RAM high nibble) showed the sprite and pairs 10
+  (low nibble) and 11 (colour RAM) covered it. A sprite that sat only on
+  hires 0 bits, or only on multicolour pairs 00 and 01, latched no
+  `$D01F` bit. An earlier version of this list gave the multicolour bitmap
+  rule from Bauer's VIC-II article, section 3.8.2, unmeasured, and said
+  nothing of the hires bitmap.
 - `$D01F` uses the same classes and ignores `$D01B`: the two sprites that
   sat only on pair 01 latched nothing, the six on 1 bits or pairs 10 and 11
   each latched their bit, set or clear.
