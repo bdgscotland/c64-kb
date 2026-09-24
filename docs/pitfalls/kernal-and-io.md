@@ -1561,10 +1561,17 @@ build hung at 16 of 251 counts (10, 19, 22, 56, 113, 116, 143, 149,
 Two fixes, each measured at every wait from 0 to 60 frames on PAL and
 NTSC (122 runs each, none hung):
 
-- **Read the error channel before the file.** After the OPEN, read
-  channel 15. Read the file only if the reply is `00`. A `62` means
-  there is no channel to read, so the program never sends that TALK.
-  Channel 15 always exists, so its own TALK gets the long pulse.
+- **Read the error channel before the file.** After the OPEN, open
+  channel 15 and read it. Read the file only if the reply is `00`. A
+  `62` means there is no channel to read, so the program never sends
+  that TALK. Channel 15 always exists, so its own TALK gets the long
+  pulse. Close channel 15 after the file, not before: closing the
+  command channel closes every file on the drive, and a read after it
+  got `READ 0 ST=42` from a file that was there
+  (`recipes/oscar64/high-score-persist.md`, one PAL run). An earlier
+  version of this fix and of the worked example closed 15 between the
+  reply and the read; the runs below that measured it used a fresh disk,
+  so they only took the `62` path, where no read follows.
 - **Or blank the screen for the read.** Clear `$D011` bit 4, wait one
   frame (DEN is sampled on line `$30`, so the frame the bit is cleared
   in still has badlines), read, set the bit again. With no badlines the
@@ -1576,8 +1583,10 @@ set, so a raster or CIA IRQ watchdog cannot fire. An NMI can;
 `recipes/oscar64/sprites-off-during-disk-io.md` uses a CIA2 NMI
 watchdog for the other hang of this kind.
 
-Listings in this repository that still read the file before the error
-channel are listed in issue #93.
+The listings that read the file first (the platformer scaffold,
+`high-score-persist`, `save-load-seq-file`, and the action-puzzle,
+shmup-vertical and adventure starters) were changed to read channel 15
+first, with 15 closed last (#93).
 
 ### Worked example
 
@@ -1595,6 +1604,7 @@ against `chargen-901225-01.bin`.
 |---|---|---|---|
 | listing as shipped (read, then error channel) | hung at 10, 19, 22, 56 | hung at 12 of 190 counts | none hung, 251 runs |
 | error channel first, file read only on `00` | none hung | not run | none hung, 0 to 60 |
+| the listing after #93: channel 15 opened after the file, read first, closed last; no wait knob, one put back for the sweep | none hung, fresh disk; none hung, disk with the file (the `00` path) | not run | none hung, 0 to 60, both disks |
 | `$D011` bit 4 cleared, one frame, read, bit set | none hung | not run | none hung, 0 to 60 |
 
 The 0, 5, 10, 20 and 50-frame cells agree with the earlier table this
@@ -1628,14 +1638,16 @@ krnio_close(2);
 drive_reply("");                    // too late
 // measured: F 00000 at 12,000,000 cycles, PAL, 10, 19, 22 and 56-frame builds
 
-// GOOD: ask the drive first, read only on 00
+// GOOD: ask the drive first, read only on 00, close 15 last
 krnio_setnam("HISCORE,S,R");
-bool ok = krnio_open(2, 8, 2);
-drive_reply("");                    // OPEN 15, read the status line, CLOSE 15
+bool ok = krnio_open(2, 8, 2);      // the named OPEN is the device test
+bool cmd = drive_ask("");           // OPEN 15, read the status line, leave 15 open
 if (ok && drive_code == 0)
     n = krnio_read(2, buf, 16);
 krnio_close(2);
-// measured: every wait 0 to 60 frames ran, PAL and NTSC
+if (cmd) krnio_close(15);           // CLOSE 15 closes every file on the drive
+// measured: every wait 0 to 60 frames ran, PAL and NTSC, on a fresh disk
+// and on a disk holding the file
 ```
 
 `drive_reply` is the scaffold's own: it opens channel 15 with an empty

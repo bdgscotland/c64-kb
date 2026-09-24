@@ -135,10 +135,15 @@ make run              # windowed VICE, for a human
   before line `DEADLINE_LINE`, and the SID must be written in at least
   `SID_FRAMES` frames. `make selftest` then runs `make watchtest`: the
   `OVERRUN=1` build must fail the deadline, the `NO_PLAYER=1` build the SID.
-- The shots autostart the PRG with the disk attached. On PAL the first disk
-  call after that can hang (c64-kb pitfall
-  `first_open_after_reset_hangs_on_pal`); prove the disk path once by
-  loading the release from the D64.
+- Read the error channel before a file you open for reading, and read the
+  file only on `00`. On a missing file (`62`) the drive keeps no channel;
+  a read then sends a TALK it answers with a 68-cycle CLK pulse, a badline
+  can hide that pulse from the KERNAL's wait at `$EDD6`, and the wait has
+  no timeout (c64-kb pitfall `first_open_after_reset_hangs_on_pal`). A
+  frame wait before the OPEN only moves the phase. Open channel 15 after
+  the file and close it after the file: closing 15 closes every file on
+  the drive. The shots autostart the PRG with the disk attached; prove the
+  disk path once by loading the release from the D64.
 
 ## Calling c64-kb
 

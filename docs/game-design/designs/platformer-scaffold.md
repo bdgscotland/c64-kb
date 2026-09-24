@@ -14,15 +14,15 @@ the listing's `main()`, not from the recipe's frontmatter.
 **Realised by:** oscar64-platformer-scaffold
 **Region:** both
 **Composes:** tile_map_render (init), lfsr_random (init), kernal_file_read_seq (init), error_channel_check (init), frame_sync_loop, joystick_edge_detect, joystick_autorepeat, object_pool, lfsr_random, tile_grid_collision, fixed_point_8_8, jump_arc_table, sid_play_routine_pattern, sfx_engine_beside_music, decimal_print ×2-7, kernal_file_write_seq (transition), kernal_file_read_seq (transition), error_channel_check (transition), decimal_print (transition)
-**Measured frame:** play pal worst=8693 typical=4966; play ntsc worst=10287 typical=6628 (measured-vice, CIA1 timer B around the whole loop body in VICE x64sc 3.10, recipes/oscar64/platformer-scaffold.md "Expected output")
+**Measured frame:** play pal worst=9055 typical=5912; play ntsc worst=9775 typical=7825 (measured-vice, CIA1 timer B around the whole loop body in VICE x64sc 3.10, recipes/oscar64/platformer-scaffold.md "Expected output")
 
 ### Phases
 
 | Phase | What the listing does |
 |---|---|
-| init | `map_decode_and_draw` draws the whole map once; `tile_map_render` does not run again. The LFSR is seeded from SID voice 3 noise. `hs_start` opens `HISCORE`, reads it and reads the error channel. |
+| init | `map_decode_and_draw` draws the whole map once; `tile_map_render` does not run again. The LFSR is seeded from SID voice 3 noise. `hs_start` opens `HISCORE`, reads the error channel and reads the file only on `00`. |
 | play | Per frame: wait for the raster IRQ's tick, read the stick (`joy_edge`, `repeat_step`), step the waves and enemies (`object_pool`, rows and directions from `rnd`), move the player against `map[]` (`tile_grid_collision`, 8.8 Y, the jump table), play the tune, let the effect re-poke voice 2, redraw the HUD fields that changed (`put_dec`). |
-| transition | At game over `hs_game_over` scratches `HISCORE`, writes it, reads it back and reads the error channel, with the raster IRQ stopped. |
+| transition | At game over `hs_game_over` scratches `HISCORE`, writes it, reads it back and reads the error channel, with the raster IRQ stopped and the sprites off. |
 
 `hud_draw` calls `put_dec` for the frame counter and the cycle count
 every frame, and for score, lives, high score, `MAX` and `DROP` only in
@@ -45,11 +45,14 @@ B.
 - `worst` is `MAX` at 40,000,000 cycles, 800 frames on each model, with no
   frame dropped.
 - `typical` is one frame's `CYC` reading in the exit screenshot at
-  18,000,000 cycles, where the HUD shows frame 622 (PAL) and 711 (NTSC);
-  `CYC` is the previous frame's. It is not a mean. The page's own reading is "about 5,000 to 7,500 cycles a frame in
+  18,000,000 cycles, where the HUD shows frame 671 (PAL) and 761 (NTSC);
+  `CYC` is the previous frame's. It is not a mean. The page's own reading is "about 5,000 to 8,000 cycles a frame in
   play".
-- The HUD alone costs 1,605 cycles (PAL) and 1,671 (NTSC) in the halted
-  state, about a third of the typical reading (arithmetic).
+- The HUD alone costs 1,788 cycles (PAL) and 1,690 to 1,788 (NTSC) in the
+  halted state, about a third of the typical reading (arithmetic).
+- These figures are from the listing after #93 changed its start-up
+  read, which changed the game the autopilot plays. Before it they were
+  worst 8,693 and 10,287, typical 4,966 and 6,628, HUD 1,605 and 1,671.
 
 ### What each part costs
 
@@ -102,6 +105,8 @@ With the missing figures and the call count in, `c64_plan_budget`
 predicts 6,888-14,320 cycles plus 1,075 of badlines for play (6,850-14,282
 while joystick_edge_detect's figure was the 76-cycle split alone; the
 technique's line is 114, port read included); the measured
-worst, 8,693 PAL and 10,287 NTSC, lies inside. The parts not in any
+worst, 9,055 PAL and 9,775 NTSC in the 40,000,000-cycle runs, lies
+inside (8,693 and 10,287 before #93 changed the listing's start-up
+read and so the game the autopilot plays). The parts not in any
 member (about 3,900 cycles on PAL) are covered by the members that
 measured below their figures and by the range's width, not by a member.

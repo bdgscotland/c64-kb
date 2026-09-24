@@ -43,7 +43,6 @@
 #define SLICE_ROWS    5             // 20 interior rows / SLICES
 #define DEATH_FRAMES  6             // cave frames from a death to the next life; tools/gen.py
 #define LIVES         3
-#define DISK_WAIT     50            // frames before the first OPEN (pitfall first_open_after_reset_hangs_on_pal)
 
 enum { ST_TITLE, ST_NEXT, ST_PLAY, ST_NAME, ST_TABLE };
 
@@ -511,8 +510,6 @@ int main(void)
 #if AUTOPILOT
     ap_build_name();
 #endif
-    for (char i = 0; i < DISK_WAIT; i++)
-        wait_frame();
     hi_load();                                  // KERNAL: ends in CLI
     __asm { sei }
     cia1.pra = 0xff;

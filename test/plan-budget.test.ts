@@ -736,7 +736,8 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
   });
 
   it("platformer-scaffold: every member has a figure since #37, and the known range fits", () => {
-    // Measured (platformer-scaffold.md, "What was measured"): CYC 4,966, MAX 8,606-8,693 PAL; 10,287 NTSC.
+    // Measured (platformer-scaffold.md, "Expected output"): CYC 5,912, MAX 8,640-9,055 PAL; 9,775 NTSC
+    // (CYC 4,966, MAX 8,606-8,693 and 10,287 before #93).
     const specs = recipeTechniques("oscar64-platformer-scaffold").map((t) =>
       t === "lfsr_random"
         ? `${t}:init`

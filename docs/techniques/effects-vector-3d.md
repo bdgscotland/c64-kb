@@ -1003,7 +1003,9 @@ condition is "($30 <= raster <= $F7) AND (raster & 7 == YSCROLL) AND DEN
 was set on $30". Setting YSCROLL to line & 7 on every line makes every
 line a badline, and each fetch reads the matrix `$D018` names at that
 moment, so each line draws its row of cells from a differently shifted
-copy. The rows still advance because the write lands after cycle 14: the
+copy. The rows still advance because the write lands on cycle 14
+(store-trace numbering), too late for the cycle-14 check; a write on
+cycle 13 is in time for it. An earlier version said "after cycle 14". The
 `fli-image` recipe gives the two-sided constraint, an RC reset if the
 condition holds in cycle 14, and one lost cell per cycle of lateness
 after that, three at best. The `tech-tech` recipe measured both sides on

@@ -381,8 +381,9 @@ screen; it is timed once with CIA1 timer B and printed, not metered.
   pointer to `cell()`; Oscar64 then computed it for every cell before the
   test and the scan loop took 42 cycles a cell (typical frame 11,812).
   Passing row and column made it 17 (counted from the generated code).
-- Settled: first_open_after_reset_hangs_on_pal. `DISK_WAIT` waits 50 frames
-  before the first OPEN (main.c). `make disktest` ran on PAL and NTSC with a
-  true-drive 1541: the start-up read, two saves (the second replacing the
-  file) and a cold boot that loads it, all without a hang. It is a phase
-  effect, so any change to the code before the first OPEN needs that test again.
+- Settled: first_open_after_reset_hangs_on_pal. `hiscore.c` reads the
+  drive's reply before the file and the file only on `00`, with channel 15
+  closed after the file (#93). An earlier version read the file first and
+  waited 50 frames (`DISK_WAIT`) before the first OPEN, which only moved
+  the phase; the wait is gone. `make disktest` proves the start-up read,
+  two saves and a cold boot that loads the file on a true-drive 1541.

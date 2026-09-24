@@ -91,7 +91,9 @@ describe.skipIf(!canRun)("RE tools reproduce committed measurements", () => {
     expect(Math.abs(worst - 6276) / 6276).toBeLessThanOrEqual(TOLERANCE);
   }, 120_000);
 
-  it("platformer-scaffold: worst in-frame sample within 2% of 8,693 (timer B)", async () => {
+  // 9,055: the recipe's MAX at 40,000,000 cycles PAL since #93 changed its start-up
+  // read (8,693 before; the autopilot now plays a different game).
+  it("platformer-scaffold: worst in-frame sample within 2% of 9,055 (timer B)", async () => {
     const disk = join(keep, "cal.d64");
     expect(spawnSync(c1541 ?? "c1541", ["-format", "TEST,01", "d64", disk]).status).toBe(0);
     const before = readFileSync(disk);
@@ -109,6 +111,6 @@ describe.skipIf(!canRun)("RE tools reproduce committed measurements", () => {
     if (!r.ok) return;
     // The recipe discards frames in which the KERNAL used timer B for disk I/O (io_frame).
     const inFrame = r.result.samples.filter((s) => s.cycles <= PAL_FRAME).map((s) => s.cycles);
-    expect(Math.abs(Math.max(...inFrame) - 8693) / 8693).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(Math.max(...inFrame) - 9055) / 9055).toBeLessThanOrEqual(TOLERANCE);
   }, 300_000);
 });

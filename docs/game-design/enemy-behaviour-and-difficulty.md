@@ -126,12 +126,14 @@ period is five seconds; the first two chase periods are twenty seconds each; aft
 scatter the chase does not end. Every mode change forces a direction reversal, which the player
 learns to read.
 
-Braybrook's robots in Paradroid are the other 8-bit model. His diary for 5 June 1985 plans a
+Braybrook's robots in Paradroid are the other 8-bit model. His diary for 5 June 1985 (Birth of a
+Paradroid part 2, Zzap!64 issue 4, August 1985, p. 77) plans a
 network of invisible roads and junctions, some robots as sentries and others on the beat. On 26
 June they were following their courses and shuddering at corners; on 27 June they paused at
 junctions as if looking around and waited for doors to open before going through. The pause and
 the wait make the robots look as if they think. The same entries record that at full speed the robots drifted
-off their routes and were nearly impossible to shoot, so some were slowed.
+off their routes and were nearly impossible to shoot, so some were slowed (part 3, issue 5,
+September 1985, p. 67).
 
 Per type the table is small: target rule index, speed, junction pause in frames, threshold
 distance for the shy rule, and a flag for waiting at doors.
@@ -379,15 +381,20 @@ scatter duration) change what the problem is, which is Minter's rule in table fo
 
 Density has a floor as well as a ceiling. The Rowlands wrote in part 8 that a sprinkle of enemies
 makes a level too background-orientated and gives it an empty feel, while the hardware forbids too
-many; they called it a fine line between a possible level and a playable level. Part 6 gives their
+many; they called it a fine line between a possible level and a playable level. Part 6 (Commodore
+Format issue 31, April 1993, p. 56) gives their
 ceiling: fifteen monsters on screen, because eight sprites per raster line minus the three Mayhem
 uses leaves five per line for enemies. Their floor is a judgement, not a number, and the check
 above asks only that it is never zero.
 
-Braybrook stated fairness as a rule on 26 June 1985: when the player cannot
+Braybrook stated fairness as a rule on 26 June 1985 (Zzap!64 issue 5, p. 67): when the player cannot
 reasonably finish the job, the fault is the game's, and the cure is a gentler level or a stronger
-gun. His decks also ramp by capability rather than speed: on 29 July he noted that the weak robots
-on the easy decks do not fire and the big ones do.
+gun. The start is hard on purpose: on 11 July (p. 68) he wrote that a transfer from a lowly
+servant droid to a big battle droid is deliberately difficult, because the player starts as the
+lowest of the low. His decks also ramp by capability rather than speed: on 29 July (issue 6,
+October 1985, p. 96) he noted that the weak robots on the easy decks do not fire and the big ones
+do, and on 30 July (p. 97) that the game was much tougher than before and he had not yet cleared a whole
+ship.
 
 The invisible rank counter is the period alternative to rubber banding. The Shmups Wiki gives
 Gradius's Japanese formula as the sum of survival frames divided by 1000, stages completed times
@@ -460,7 +467,10 @@ count.
 Braybrook's diary shows the roles in 1985: a chief test pilot, Robert, returning comments within
 days in early May; the publisher, Gordon Hewson, suggesting on 30 July that a destroyed host robot
 should eject the player with low energy rather than end the game, and on 14 August, after handling
-changes, posting his best score. A design change from a tester's play, with its date, is what a
+changes, posting his best score (issue 6, p. 98). The handling changes came from the testers: on 18
+July (p. 95) they called a safe build quite unplayable; on 23 July (p. 96) the robot got acceleration and
+momentum, so it answers the joystick more slowly, and the gun fires in the joystick's direction
+rather than the robot's. A design change from a tester's play, with its date, is what a
 tester log looks like.
 
 Balancing is a phase, not a week. Elbers' Armalyte history gives nine months of development, with

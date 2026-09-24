@@ -167,7 +167,7 @@ Related: `../toolchains/memory-layout-planning.md`, `../techniques/memory-bankin
 
 **Realised by:** pal_ntsc_detection, multi_load_sequencing, exomizer_basics, sprite_multiplex_game, logic_rate_decoupling, pal-ntsc-detect, memory-layout, sprite-multiplex-game
 
-**Sources:** Sarah Jane Avory (development blog, 10 September 2020); Andrew Braybrook, Mental Procreation (Zzap!64, 1987); Chris Butler (Zzap!64 issue 17, 1986); Manfred Trenz (Recollection diskmag interview); psenough, Teach Yourself Demoscene in 14 Days (MIT licensed guide); Kodiak64 (Seawolves sales post, July 2025)
+**Sources:** Sarah Jane Avory (development blog, 10 September 2020); Andrew Braybrook, Mental Procreation parts 5 and 6 (Zzap!64 issues 27 and 28, 1987, read in the archive.org scans); Chris Butler (Zzap!64 issue 17, 1986); Manfred Trenz (Recollection diskmag interview); psenough, Teach Yourself Demoscene in 14 Days (MIT licensed guide); Kodiak64 (Seawolves sales post, July 2025)
 
 **Checks:**
 
@@ -189,11 +189,15 @@ scope decision sat on reused code rather than on a new engine.
 
 **Video standard.** NTSC runs at 60 frames per second to PAL's 50, so a
 raster-synchronised game gets less CPU time per frame. Braybrook's figure in
-the Morpheus diary (1987) is that American machines run about 16 percent
-slower on raster-synchronised games, and his rule was that everything in the
-European version had to leave at least 16 percent spare processor time; he
-later capped the multiplexer at 24 sprites to safeguard the NTSC build. His
-16 percent is a frame-rate figure (50 / 60 = 0.83). Counting cycles from the
+the Morpheus diary (part 5, Zzap!64 issue 27, July 1987, p. 43, entry for 5
+May 1987) is that American machines run about 16 percent slower on
+raster-synchronised games, and his rule was that everything in the European
+version had to leave at least 16 percent spare processor time. On 19 May
+(part 6, issue 28, August 1987, p. 44) his sprites, counted by type, came to
+24 against a top limit of 32 that he called safe, and he kept to 24 to
+safeguard the NTSC version, which needs CPU use kept down. An earlier version
+of this paragraph said he capped the multiplexer at 24; the 32 is the safe
+limit, the 24 his allocation under it. His 16 percent is a frame-rate figure (50 / 60 = 0.83). Counting cycles from the
 constants in `../hardware/pal-ntsc-reference.md`, a PAL frame is 19,656
 cycles and a 6567R8 NTSC frame is 17,095; 17,095 / 19,656 = 0.87, so about
 13 percent fewer cycles per frame. Not measured here. Avory's answer to the
