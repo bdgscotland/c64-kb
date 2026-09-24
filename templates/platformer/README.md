@@ -35,7 +35,7 @@ and starts the level again.
 | `src/engine.asm` | KickAssembler: the slice copy for the scroll, the two raster IRQs, the tune and its player |
 | `src/autopilot.h`, `src/verdict.h` | AUTOPILOT builds only: the scripted joystick and the self-check |
 | `tools/tearcheck.py` | Renders the level from `src/` and proves no picture tears (`make tearcheck`) |
-| `expect.json`, `stage-expect.json`, `PLAN.md` | The screenshot checks, the crowded-level checks (`make stage`); the plan with the c64-kb tool output |
+| `expect.json`, `stage-expect.json`, `expect-gameover.json`, `PLAN.md` | The screenshot checks, the crowded-level checks (`make stage`), the title after GAME OVER (`make gameover`); the plan with the c64-kb tool output |
 
 ## How a frame runs
 
@@ -146,6 +146,7 @@ slots step on alternate frames.
 | `make selftest` | FORCE_FAULT makes a coin worth 20: the verdict fails, the HUD score reads 000200 | check.py rejected the build |
 | `make tearcheck` | 16 shots a model mid-play, each matched pixel for pixel against a render of the level | 32 of 32 whole or two-frame composites; the TEAR_DEMO build: 2 of 32 torn (the count moves with the code; one is enough) |
 | `make stage` | Every enemy slot live from the first play frame: no late frame, the meter inside one frame | 4 of 4 passed (worst 14,514 PAL, 14,827 NTSC) |
+| `make gameover` | The AP_GIVE_UP build holds right until three lives are gone; fifty frames into the title after GAME OVER the program checks $D015 = 0, the title text, the high score and no play HUD | 8 of 8 passed; with the title leaving the player visible, 4 of 8 (the program's own check, bit $0001) |
 | `make watch` (in `make check`) | Every play frame's work ends before the next line 251, where the engine applies the published page and XSCROLL (`DEADLINE_LINE`); the tune and effects store to the SID in at least 180 frames (`SID_FRAMES`) | 750 frames, the least to spare 100 lines PAL and 50 NTSC; SID stores in 360 frames PAL, 373 NTSC |
 | `make watchtest` (in `make selftest`) | `OVERRUN=1` ends one play frame in 64 on line 252; `NO_PLAYER=1` never calls the tune or `sfx_update` | both fail on PAL and NTSC: 12 of 750 frames 85 and 86 cycles late; SID stores in 14 frames |
 | `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations (after vic_xscroll, vic_matrix_base and vic_char_base became claims-watch units, CLAIMS_ARGS lacked them, and its zero page stopped at $53 while main writes $54: 4 violation groups until both were fixed) |

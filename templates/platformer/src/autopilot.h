@@ -6,7 +6,24 @@
 #define AP_RIGHT (0xff ^ JOY_RIGHT)
 #define AP_LEFT  (0xff ^ JOY_LEFT)
 #define AP_RJUMP (0xff ^ JOY_RIGHT ^ JOY_FIRE)
+#ifndef AP_GIVE_UP
+#define AP_GIVE_UP 0                // 1 (make gameover): hold right from the start; three lives go
+#endif
 
+#if AP_GIVE_UP
+// make gameover: fire on the title, then right and nothing else. The player
+// walks into the first walker or the first pit every life; after GAME OVER
+// the script is spent and the title waits, stick idle, for the grade.
+static const char script[][2] = {
+    { 20, AP_IDLE },
+    {  1, AP_FIRE },
+    {  4, AP_IDLE },
+    {250, AP_RIGHT },
+    {250, AP_RIGHT },
+    {250, AP_RIGHT },
+    {250, AP_RIGHT },
+};
+#else
 static const char script[][2] = {
     { 20, AP_IDLE },                // the title
     {  1, AP_FIRE },                // fire: a new game
@@ -27,4 +44,5 @@ static const char script[][2] = {
     {  1, AP_RJUMP },               // over the second pit
     { 60, AP_RIGHT },               // into the brick wall: it stops the player at x 716
 };
+#endif
 #define SCRIPT_STEPS (sizeof(script) / sizeof(script[0]))
