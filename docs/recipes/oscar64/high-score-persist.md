@@ -722,7 +722,14 @@ divided by 19,656. The frames in the table were recomputed from the
 printed cycle counts, which do not depend on it. The `MODE=0` NTSC build
 detected NTSC and its printed frames agree with the table.
 
-## A start-up hang seen in VICE, located but not explained
+## A start-up hang seen in VICE, explained
+
+The cause is now measured: pitfall `first_open_after_reset_hangs_on_pal`
+(`pitfalls/kernal-and-io.md`). The file was not on the disk, so the drive
+had no channel to talk on; it held CLK low for 68 drive cycles, let go,
+and a badline stalled the C64 through that pulse. The heading of this
+section used to say "located but not explained". The record of the first
+sessions follows as it was found, with what it got wrong marked.
 
 A game built from this recipe, whose first act after its own set-up was
 `krnio_open` of `HISCORE,S,R` on a fresh disk, hung in that OPEN's
@@ -752,22 +759,25 @@ run:
 - The spin is `$EDD6`, the loop after TKSA that waits for the drive to
   pull CLK low and become the talker. It has no timeout. `$DD00` read
   `$67` on every pass: DATA held low by the C64, CLK released by both
-  sides. The drive's port `$1800` read `$01` (DATA OUT set, CLK OUT
-  clear), its secondary-address cell `$84` held `$62`, its ATN-pending
+  sides. The drive's port `$1800` read `$01` (bit 0, DATA IN: the C64
+  holding DATA; the drive driving neither line; an earlier version
+  called bit 0 DATA OUT), its secondary-address cell `$84` held `$62`, its ATN-pending
   flag `$7C` was 0. The drive had taken TALK and TKSA and stayed a
-  listener.
+  listener. (Wrong: these reads came after the pulse. The drive had
+  been the talker for 68 cycles and gone back to idle.)
 - Reading the drive CPU's registers from the monitor at each C64 stop
   made the same run pass: the drive went through `$E8E5`, `$E8F4` and
   `$E909`, the C64 reached ACPTR at `$EE13`, and the program went on
   to its next OPEN. Memory dumps alone did not change the outcome. Two
   runs each way.
 
-What was measured is consistent with a race at the TALK turnaround
-between the C64 releasing ATN and CLK and the drive sampling them. Why
-the drive misses the release, and whether a real drive can, is not
-measured here: the drive's state in the hanging case could only be read
-by an act that changed it. What a program can do is what the
-game did: give the bus a moment before the first OPEN, and check the
-status and the error channel after it rather than assuming the read
-returns. A wait of fifty frames was enough in every run tried; the
-smallest wait that suffices was not measured.
+These sessions called it a race in which the drive missed the release;
+it is the C64 that misses the drive's short pulse, and the monitor's
+reads moved the phase. No wait is safe: the scaffold's PAL build hung at
+16 of the 251 wait counts from 0 to 250 frames, fifty among those that
+ran. What fixes it, measured at every wait from 0 to 60 frames on both
+models, is to read the error channel after the OPEN and read the file
+only on `00`, or to blank the screen for the read. This listing reads the
+file first and the error channel after; on a fresh disk that is the
+case that can hang. It ran in every run here, which says only that its
+phase missed the window.

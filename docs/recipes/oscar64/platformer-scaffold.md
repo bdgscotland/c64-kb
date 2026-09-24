@@ -1118,10 +1118,11 @@ int main(void)
     if (rng == 0) rng = 0xace1;
 
     // High score from disk, before the raster IRQ owns the frame. The wait
-    // is a workaround: with no wait the first OPEN hung on PAL in VICE and
-    // never on NTSC. high-score-persist.md, "A start-up hang seen in VICE,
-    // located but not explained", has the monitor trace; fifty frames was
-    // enough in every run tried and the smallest wait was not measured.
+    // only moves the phase: hs_load reads the file before the error channel,
+    // and on a fresh disk that read can hang for ever on PAL when a badline
+    // hides the drive's 68-cycle CLK pulse (pitfall
+    // first_open_after_reset_hangs_on_pal). 50 frames runs; 10, 19, 22 and
+    // 56 hung. No wait is safe; read the error channel first instead.
 #ifndef DISK_WAIT_FRAMES
 #define DISK_WAIT_FRAMES 50
 #endif
@@ -1536,16 +1537,26 @@ The three `file-io` techniques `kernal_file_write_seq`,
 `docs/techniques/file-io.md`; the listing is
 `docs/recipes/oscar64/high-score-persist.md`.
 
-`DISK_WAIT_FRAMES` is a workaround and the page says so. The original
-build with no wait before the first OPEN hung on PAL under `-autostart`
-with a true drive, never on NTSC; fifty `vic_waitFrame` calls removed it,
-and so did an unrelated change of code size. The monitor trace is in
-`docs/recipes/oscar64/high-score-persist.md`, section "A start-up hang
-seen in VICE, located but not explained": the C64 spins at `$EDD6`
-waiting for the drive to become the talker after TKSA, and the drive
-stayed a listener. Why it misses the release is not measured, the smallest
-wait that suffices is not measured, and no real 1541 was tried. Keep the
-wait until one of those is.
+`DISK_WAIT_FRAMES` does not fix anything; it moves the phase. The cause
+is measured in pitfall `first_open_after_reset_hangs_on_pal`
+(`docs/pitfalls/kernal-and-io.md`): `hs_load` reads `HISCORE` before it
+reads the error channel. On a fresh disk the drive has no channel for
+that read, so it answers the TALK by holding CLK low for 68 drive
+cycles and letting go. The KERNAL's loop at `$EDD6` needs two reads 4
+cycles apart inside that pulse, and a badline's 43-cycle stall can take
+the whole of it. The C64 then waits for ever. This page used to say the
+drive stayed a listener and that the smallest safe wait was not
+measured; the drive did become the talker, and there is no safe wait.
+Built with `-dDISK_WAIT_FRAMES=N` for N from 0 to 250, the PAL build hung
+at 16 counts (10, 19, 22 and 56 among the first 61) and NTSC at none. The
+default 50 is one of the counts that ran, for this binary. Any change to
+the code before `hs_start` moves the phase again.
+
+What the listing should do, measured on a copy of it at every wait from
+0 to 60 frames on PAL and NTSC with no hang: call `drive_reply("")`
+after the OPEN and call `krnio_read` only when `drive_code` is 0. That
+change is not made here, because it changes the timings pinned in
+"Expected output"; issue #93 tracks it.
 
 ### The generator
 
