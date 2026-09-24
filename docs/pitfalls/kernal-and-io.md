@@ -1461,7 +1461,7 @@ vic.intr_ctrl = 1; vic.intr_enable = 1;
 
 **Severity:** high
 **Region:** PAL
-**Triggered by kernal:** OPEN, CHKIN
+**Triggered by kernal:** OPEN, CHKIN, LOAD
 **Triggered by techniques:** kernal_file_read_seq, kernal_file_write_seq, error_channel_check, kernal_load_to_address, directory_read_and_select
 
 The id says "first open after reset" because that is where it was
@@ -1577,6 +1577,20 @@ NTSC (122 runs each, none hung):
   in still has badlines), read, set the bit again. With no badlines the
   67-cycle pulse is always seen.
 
+**LOAD of a file that may be missing.** LOAD sends the name and then
+the TALK in one call, so a program cannot read the error channel in
+between. The drive's answer is the same short pulse: the OPEN of
+secondary 0 fails with `62`, TALK finds no channel and releases the bus
+at `$EA50`, CLK low for 68 drive cycles (ROM count, the same
+instructions and branches as the secondary-2 case above; the path taken
+confirmed with VICE exec traces of the drive, PAL and NTSC). Blank the
+screen for the LOAD as above, or first OPEN the file by name, read
+channel 15, and LOAD only on `00`. `recipes/oscar64/load-asset-runtime.md`
+blanks it (#101); the OPEN-first form was not run. That recipe did not
+hang without the blank either, at 0 to 250 frames of wait on PAL and
+NTSC: its turnaround fell on three raster lines only, none in the
+window. That is its phase, not a margin.
+
 In either case check `$90` and the error channel after the read.
 Nothing gets the program out once it is inside `$EDD6`: the I flag is
 set, so a raster or CIA IRQ watchdog cannot fire. An NMI can;
@@ -1606,6 +1620,8 @@ against `chargen-901225-01.bin`.
 | error channel first, file read only on `00` | none hung | not run | none hung, 0 to 60 |
 | the listing after #93: channel 15 opened after the file, read first, closed last; no wait knob, one put back for the sweep | none hung, fresh disk; none hung, disk with the file (the `00` path) | not run | none hung, 0 to 60, both disks |
 | `$D011` bit 4 cleared, one frame, read, bit set | none hung | not run | none hung, 0 to 60 |
+| LOAD of the missing file, `load-asset-runtime`, before #101 (no blank) | none hung | none hung, 61 to 250 | none hung, 0 to 250 |
+| the same after #101, screen blanked for each LOAD | none hung | none hung, 61 to 250 | none hung, 0 to 250 |
 
 The 0, 5, 10, 20 and 50-frame cells agree with the earlier table this
 replaced: ran, ran, hung, ran, ran on PAL; all ran on NTSC.
@@ -1684,6 +1700,11 @@ explains why).
   hanging PAL builds; 746 runs of the scaffold at waits 0 to 250 on PAL
   and NTSC and of the two fixed builds at 0 to 60; the idle-method and
   drive-type runs. Rung 1.
+- VICE x64sc 3.10, 2026-09-24 (#101): exec traces of the drive at
+  `$E909`, `$E9B3` and `$EA50` during LOAD's TALK, PAL and NTSC; 1,004
+  runs of `load-asset-runtime` at waits 0 to 250 with and without the
+  blank, and 248 more at eight drive speeds. Rung 1. The 68-cycle count
+  for LOAD is from the ROM bytes, rung 3 on rung 1.
 - VICE x64sc 3.10, 2026-09-22: the first monitor session and the
   `-iecreset`, `-autostart-delay` and load-from-disk runs. Rung 1.
 
