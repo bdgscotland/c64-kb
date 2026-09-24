@@ -5,7 +5,19 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 789, schema 31, tools 2.6.1, package 0.19.1.
+Data 790, schema 32, tools 2.7.0, package 0.20.0.
+
+**Display-field units and a per-figure bytes basis (schema 32, tools
+2.7.0, package 0.20.0, data 790; #71, #72).** Four HardwareUnits of a
+new kind, `display`: `vic_yscroll` ($D011 bits 0-2), `vic_xscroll`
+($D016 bits 0-2), `vic_matrix_base` and `vic_char_base` ($D018 bits 4-7
+and 1-3). A vertical scroller beside FLD is now a hard ownership
+conflict, not a soft shared-register note; claims-watch traces of 31
+recipes set the Claims lines of the techniques that write those bits.
+A Cost line can carry `**Cost bytes basis:**` so bytes and cycles keep
+their own basis; `plan_budget`'s `weakest_basis` now covers cycles only,
+and a new `bytes.weakest_basis` covers the bytes. Nine pages whose
+cycles were measured but bytes read from the listing now say so.
 
 **pseudo-3d-road's loop fixed, and the #70 leftovers (data 789; #70).**
 The road loop synced on badline 99, so its $D016 writes started on cycle
