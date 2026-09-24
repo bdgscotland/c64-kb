@@ -8,8 +8,8 @@ import { spawnSync } from "node:child_process";
 // gap loudly instead of failing, and any listing that a present toolchain
 // rejects fails the suite.
 //
-// Set KICKASS_JAR, OSCAR64 and/or CL65 (see the script header) to enable
-// each toolchain. `npm run check:listings` runs the strict form.
+// Set KICKASS_JAR, OSCAR64, CL65, ACME, TASS64 and/or LLVM_MOS (see the
+// script header) to enable each toolchain. `npm run check:listings` runs the strict form.
 
 describe("code listings build", () => {
   it("every recipe builds and every KickAssembler fragment assembles", () => {

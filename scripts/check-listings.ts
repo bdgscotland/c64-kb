@@ -10,7 +10,9 @@
  * `asm` and written in KickAssembler syntax, are assembled with a prelude
  * that defines a program counter and stubs their undefined labels; they may
  * be incomplete, but they may not be syntactically wrong for the assembler
- * they claim.
+ * they claim. Fences tagged `acme` or `64tass`, and the `c` listings with
+ * a main() on a page whose frontmatter says `tool: llvm-mos`, are built
+ * whole, with the flags their pages give, and nothing stubbed.
  *
  * Toolchains are found through environment variables, then PATH, then the
  * default install location (scripts/lib/toolchains.ts):
@@ -19,6 +21,11 @@
  *   OSCAR64       path to the oscar64 binary, else `oscar64` on PATH
  *                 (default ~/Developer/c64/oscar64/bin/oscar64)
  *   CL65          path to cl65, else `cl65` on PATH
+ *   ACME          path to acme, else `acme` on PATH
+ *   TASS64        path to 64tass, else `64tass` on PATH
+ *   LLVM_MOS      the llvm-mos SDK directory (holding bin/mos-c64-clang),
+ *                 else `mos-c64-clang` on PATH
+ *                 (default ~/Developer/c64/llvm-mos)
  *
  * Exit status is non-zero if any listing fails to build, or if a toolchain
  * that some listing needs is missing (pass --allow-missing to downgrade a
@@ -295,6 +302,72 @@ if (kick) {
   missing.add(KICKASS_MISSING);
 }
 
+// ---------------------------------------------------------------------------
+// ACME, 64tass and llvm-mos listings outside the recipes
+// ---------------------------------------------------------------------------
+// These are whole programs, built as the page's own build line builds them;
+// nothing is stubbed. Until issue #102 the gate built none of them, and the
+// three toolchain pages carried listings built only by hand.
+
+interface WholeProgram {
+  /** Does this fence of this page belong to the toolchain? */
+  matches: (f: Fence, page: string) => boolean;
+  tool: "acme" | "tass64" | "mosClang";
+  /** The name printed when the toolchain is missing. */
+  missing: string;
+  ext: string;
+  args: (src: string, out: string) => string[];
+}
+
+const WHOLE_PROGRAMS: WholeProgram[] = [
+  {
+    matches: (f) => f.lang === "acme",
+    tool: "acme",
+    missing: "acme (ACME or acme on PATH)",
+    ext: "a",
+    args: (src, out) => ["-f", "cbm", "-o", out, src],
+  },
+  {
+    matches: (f) => f.lang === "64tass",
+    tool: "tass64",
+    missing: "64tass (TASS64 or 64tass on PATH)",
+    ext: "s",
+    args: (src, out) => ["-a", "-o", out, src],
+  },
+  {
+    // The C listings of a page whose frontmatter says `tool: llvm-mos`.
+    matches: (f, page) =>
+      f.lang === "c" && /\bmain\s*\(/.test(f.code) && /^---\n(?:[\s\S]*?\n)?tool: llvm-mos\n/.test(page),
+    tool: "mosClang",
+    missing: "llvm-mos (LLVM_MOS SDK directory, mos-c64-clang on PATH, or ~/Developer/c64/llvm-mos)",
+    ext: "c",
+    args: (src, out) => ["-Os", "-o", out, src],
+  },
+];
+
+function checkWholeProgram(md: string, f: Fence, w: WholeProgram): void {
+  const exe = tools[w.tool];
+  if (!exe) {
+    skip(w.missing);
+    return;
+  }
+  const stem = `${basename(md, ".md")}-${f.index}`;
+  const src = join(work, `${stem}.${w.ext}`);
+  writeFileSync(src, f.code);
+  const r = spawnSync(exe, w.args(src, join(work, `${stem}.prg`)), { encoding: "utf8", cwd: work });
+  const log = errorLines(r.stdout + r.stderr) || `exit ${String(r.status)}`;
+  report(r.status === 0, `${relative(ROOT, md)} #${f.index} (${w.tool})`, r.status === 0 ? "" : log);
+}
+
+for (const md of walk(DOCS).filter(inScope)) {
+  if (md.includes(`${join("docs", "recipes")}/`)) continue;
+  const page = readFileSync(md, "utf8");
+  for (const f of fences(page)) {
+    const w = WHOLE_PROGRAMS.find((x) => x.matches(f, page));
+    if (w) checkWholeProgram(md, f, w);
+  }
+}
+
 if (recipesSeen === 0 && !onlyRel) {
   console.log("FAIL no recipe pages found under docs/recipes (frontmatter filter broken?)");
   failures++;
@@ -302,7 +375,7 @@ if (recipesSeen === 0 && !onlyRel) {
 
 // ---------------------------------------------------------------------------
 console.log(
-  `\n${built} built, ${recipesSeen} recipe pages seen, ${failures} failed, ${skipped} recipes skipped for missing tools`,
+  `\n${built} built, ${recipesSeen} recipe pages seen, ${failures} failed, ${skipped} listings skipped for missing tools`,
 );
 if (missing.size) {
   console.log(`${allowMissing ? "warning" : "error"}: toolchains not found: ${[...missing].join(", ")}`);
