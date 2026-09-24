@@ -337,6 +337,33 @@ Reading from the command channel after any operation returns the drive status st
 
 **Random access files** (REL type) allow seeking to arbitrary records. They use a fixed record length declared at file-open time and maintain side-sectors — dedicated bookkeeping sectors that map logical record numbers to physical track/sector locations. REL files are rarely used in demo/game code but common in productivity applications. The on-disk layout (directory entry bytes, side-sector fields, record padding, the P command's byte order) is decoded from images the 1541 wrote in `c64-file-formats.md`, ".D64", under "REL file".
 
+### Reading the directory
+
+A program can read the directory two ways: the sectors on track 18, or the `$` stream the DOS builds from them. Both were read here from images VICE 3.10 made: a disk formatted by `c1541 -format "TEST,01"` on which the 1541 DOS (VICE true drive, PAL) then wrote three files, and a second `c1541` disk holding eleven files so that the directory takes two sectors. The bytes were read with Python.
+
+**The sectors.** The field layout of the BAM at 18/0 and of each 32-byte entry is in [`c64-file-formats.md`](c64-file-formats.md), ".D64", "Directory and BAM". What the two images add:
+
+- BAM bytes 0-1 are `$12 $01`: the chain starts at 18/1.
+- A directory sector holds eight entries at offsets `$00`, `$20` … `$E0`. Bytes 0-1 of the sector, which are bytes 0-1 of its first entry, link to the next directory sector. The same two bytes of the other seven entries are `$00 $00`.
+- The last directory sector's link is `$00 $FF`, both after `c1541 -format` and after the DOS wrote to it. The eleven-file disk chained 18/1 → 18/4 → `$00 $FF`.
+- A slot never used is 32 zero bytes. Skip a slot with type `$00` but do not stop there: read all eight slots and follow the link to `$00 $FF`, since a scratched file frees a slot in the middle (how the DOS marks it was not measured here).
+- `flossiec_mapdir` in Oscar64's `flossiec.h` walks this chain with its own drive code and keeps only type `$82`, a closed PRG ([oscar64-headers-reference.md](../toolchains/oscar64-headers-reference.md#flossiech--fast-loader-for-the-1541)).
+
+**The `$` stream.** OPEN with the name `$` on a data channel makes the DOS send the directory as a BASIC program. [`oscar64/directory-reader`](../recipes/oscar64/directory-reader.md) reads and parses it; the text below is what that program received from the three-file disk, 160 bytes, the last with ST = `$40`:
+
+| Bytes | Content |
+|---|---|
+| `01 04` | Load address `$0401` |
+| `01 01 00 00` `12 22` name `22 20` `30 31` `20` `32 41` `00` | Header line: link, line number 0, RVS on, the quoted disk name, ID `01`, DOS type `2A` |
+| `01 01 01 00` `20 20 20 22 41 4C 50 48 41 22` … `53 45 51 20 20 00` | Entry line: link, line number = 1 block, `   "ALPHA"`, padding, `SEQ`, end |
+| `01 01 92 02` `42 4C 4F 43 4B 53 20 46 52 45 45 2E` 13 × `20` `00` | Last line: line number = 658 blocks free, `BLOCKS FREE.` |
+| `00 00` | End of program |
+
+- The link bytes are `$01 $01` on every line. They are not addresses; skip them.
+- The disk name on the header line is padded to 16 characters with `$20`, not the `$A0` stored at 18/0 bytes `$90-$9F`.
+- Each entry line was 32 bytes: three spaces (the block counts had one digit), the name in quotes, spaces to fill 16 name characters, one space where a `*` marks an unclosed file, the three type letters, one space where a `<` marks a locked file, one more space, then `$00`. Wider block counts and the `*` and `<` marks were not measured here.
+- The drive keeps the channel busy until the stream is read to the end or closed.
+
 ### The 1541 DOS Error Codes
 
 The status line is `cc,message,tt,ss` followed by a CR: a two-digit code, the text, then a track and a sector in decimal. The 1541 ROM assembles it at `$E6C7` into the buffer at `$02D5`: two BCD digits from the code, a comma, the text looked up in the table below, a comma, the track, a comma, the sector (rung 1: the `dos1541-325302-01+901229-05` image in `/opt/homebrew/opt/vice/share/vice/DRIVES/`, bytes `$E6C7`–`$E705`). Every code the ROM can put in that line is in this table. The message column is the text field exactly as it comes back, including the leading space some messages have; the "Provoked" column says whether the recipe `../recipes/kickassembler/dos-error-codes.md` produced that reply in VICE x64sc 3.10 (rung 1) or whether the text is only read from the ROM.

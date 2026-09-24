@@ -163,6 +163,8 @@ through `$DFFF`; it decodes nothing in `$DE00-$DEFF`
 (`src/c64/cart/reu.c`, where 512 selects the 1750 and 256 the 1764).
 `kickassembler/reu-dma` attaches it with `-reu -reusize 512` and drives
 its transfers through `$DF01`-`$DF0A`.
+The registers bit by bit, read from the same VICE source, are in
+[reu-reference.md](reu-reference.md).
 
 ## EasyFlash
 
