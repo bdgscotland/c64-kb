@@ -1387,6 +1387,11 @@ tools not installed are marked external."
 **Files:**
 - Modify: `VERSION` (`MCP_TOOL_VERSION` minor bump; `KB_DATA_VERSION` +1 for the new page), `package.json` version (minor, together with the tool version), `CHANGELOG.md`
 
+The "VICE headless rebuild with `--enable-cpuhistory`" issue below was not
+filed: Task 7 measured that `memmapshow` already works in the current
+windowless build when called from a checkpoint after the program has run
+(the earlier probe had called it at start-up, before anything executed).
+
 - [ ] **Step 1: File the spec's issues** (each with acceptance criteria and a link to the spec)
 
 ```bash

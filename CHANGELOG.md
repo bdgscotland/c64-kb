@@ -5,7 +5,37 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 773, schema 31, tools 2.3.2, package 0.17.1.
+Data 773, schema 31, tools 2.4.0, package 0.17.1.
+
+**Two RE tools and the disassembly-reference page (tools 2.4.0, RE pilot
+step 1).** `c64_re_irq_chain` and `c64_re_frame_profile` (`src/tools/re.ts`,
+`src/server/tools-re.ts`; CLI `re-irq-chain`/`re-frame-profile`) run a
+`.prg` headless in VICE x64sc and report its interrupt chain and the
+cycle cost of a marked region as measured observations, each with an id,
+basis and rung; calibration against this repo's own figures is below.
+`docs/toolchains/disassembly-reference.md` (issue #3) covers `da65`, the
+VICE monitor run in batch (checkpoints, `prof`, `chis`, `memmapshow`), the
+ROM tables (each checked by reading `kernal-901227-03.bin`), the KERNAL
+IRQ/NMI walk and the byte-census technique. #3's own text named "$E5B6
+DOS messages" — wrong: $E5B6 is code, the high operand byte of `LDY
+$0277` at $E5B4; DOS messages are in the 1541 drive ROM from $E4FC, not
+the KERNAL. #3 stays open for its remaining item, a worked `.sid` recipe,
+split out to #64 (needs a `.sid` this repo may use). Five more issues
+filed from [the RE design
+spec](docs/superpowers/specs/2026-09-23-reverse-engineering-design.md):
+headless joystick input via VICE event recording/playback (#59, related
+#42), legal scope of game studies for maintainer review (#60), and one
+per pilot game — Gridrunner (#61), Uridium (#62), Elite (#63). The spec
+said `memmapshow` needs a VICE rebuild with `--enable-cpuhistory`; Task 7
+measured that it already works in the current windowless build when
+called from a checkpoint after the program runs (the earlier probe called
+it at start-up, before anything had executed), so that rebuild issue was
+not filed.
+- `docs/hardware/c64-memory-map.md`: the KERNAL's VIC-II power-on table is
+  $ECB9-$ECE7 (47 bytes, copied by the loop at $E5A8), not $ECB9-$ECE6
+  (46 bytes); KEYTAB ends at $ECB8, not $ECB9 ($ECB9 is the power-on
+  table's first byte). Both verified by reading `kernal-901227-03.bin`;
+  earlier versions of these two lines had the off-by-one.
 
 **Plain prose, batch 1 of #56 (data 773).** The design, art, music,
 workflow, game-design and root pages lost their machine-written wording:

@@ -32,13 +32,18 @@ Four threads ran on 2026-09-23 (three Claude agents, one Codex consult).
 What changed the design:
 
 - **VICE 3.10 monitor, run here:** `profile` (added in 3.8; `flat`,
-  `graph`, `func`, `disass`, `context`) and `chis` work in the windowless
-  build under `-moncommands` + `-monlog`. `memmapshow` printed nothing: the
-  access map needs `--enable-cpuhistory`, which
-  `scripts/build-vice-headless.sh` omits. The memmap records access types,
-  not counts. `keybuf` feeds the keyboard buffer; no monitor or binary
-  protocol command presses a joystick. Binary protocol 0x86 (CPU history)
-  is new in 3.10. Sources: VICE manual ch. 6, 12, 13; NEWS.
+  `graph`, `func`, `disass`, `context`), `chis` and `memmapshow` work in
+  the windowless build under `-moncommands` + `-monlog`; the build already
+  defines `FEATURE_CPUMEMHISTORY`. `memmapshow` must be called from a
+  checkpoint's command string after the program has run, not as a
+  start-up line: called before anything executes it prints only its
+  header (measured in Task 7, docs/toolchains/disassembly-reference.md).
+  An earlier version of this bullet said the access map needs a rebuild
+  with `--enable-cpuhistory`; that probe had called `memmapshow` at
+  start-up. The memmap records access types, not counts. `keybuf` feeds
+  the keyboard buffer; no monitor or binary protocol command presses a
+  joystick. Binary protocol 0x86 (CPU history) is new in 3.10. Sources:
+  VICE manual ch. 6, 12, 13; NEWS.
 - **Method (mwenge, Moxon, Lode Runner, pret, Dunki):** hash the exact
   image; find the entry from the BASIC stub or, for packed files, by
   running to the first execute in freshly written memory and snapshotting;
@@ -143,7 +148,7 @@ All read-only, all returning `{observations: [{id, …, basis, rung}], unknowns:
 | `c64_re_load_map` | load address and span; BASIC stub SYS target; packer signature if known; depack transitions (PC of the first execute into memory written after start) | parse PRG/BASIC; exec trace from start; store trace over RAM with a byte cap |
 | `c64_re_irq_chain` | per frame: each IRQ/NMI entry PC, raster line and cycle of entry, `$D012` plus `$D011` bit 7 as written, vector writes (`$0314/5`, `$0318/9`, `$FFFA/B`, `$FFFE/F`, both bytes), `$D01A`/`$DC0D` masks, KERNAL dispatch or not | store traces on the vectors and VIC/CIA IRQ registers; exec checkpoints on handler entries found; `RL`/`CY` kept |
 | `c64_re_frame_profile` | per phase over N frames: cycles in each handler (self, nested excluded), in the main loop, idle-wait cycles; worst and typical in the `**Measured frame:**` shape | frame boundary = the handler entry nearest a fixed raster line; `profile` for per-routine totals; exec checkpoints for per-frame attribution |
-| `c64_re_coverage` | per byte range: executed / read / written / unknown, by bank (`$01`) and epoch (before/after each depack transition); VIC bank (`$DD00`), `$D018`, sprite pointers observed | VICE memmap (needs the rebuilt VICE); until then, exec and store traces over targeted ranges |
+| `c64_re_coverage` | per byte range: executed / read / written / unknown, by bank (`$01`) and epoch (before/after each depack transition); VIC bank (`$DD00`), `$D018`, sprite pointers observed | VICE `memmapshow` from a checkpoint after play starts (not a start-up line); targeted ranges first (an earlier version of this row said memmap needed a rebuilt VICE) |
 | `c64_re_disassemble` | disassembly text of a range, seeded from coverage | Regenerator 2000 headless if it passes evaluation (step 1); else da65 with a generated info file |
 
 `c64_re_disassemble` output is for the agent's working context. It never
@@ -255,15 +260,23 @@ game is studied.
   tools).
 - Committing any image, snapshot or disassembly of a third-party game.
 
-## Issues to file
+## Issues filed
+
+A VICE rebuild issue for memmap access maps is not among these: Task 7
+measured that `memmapshow` already works in the current windowless build
+when called from a checkpoint after the program has run (above); no
+rebuild is needed, so no issue was filed for it.
 
 | Issue | Labels |
 |---|---|
-| VICE headless rebuild with `--enable-cpuhistory` for memmap; capability check in `vice-bin.ts` | harness |
-| Headless joystick input: evaluate VICE event recording/playback; links #42 | harness |
-| Legal scope of game studies: art. 5(3), fair use, no circumvention, no distribution; for maintainer review | harness, big-rock |
-| One per pilot game: Gridrunner, Uridium, Elite, with the acceptance above | big-rock, content |
-| Pilot step 1 closes #3 | content |
+| #59 Headless joystick input: evaluate VICE event recording/playback; links #42 | harness |
+| #60 Legal scope of game studies: art. 5(3), fair use, no circumvention, no distribution; for maintainer review | harness, big-rock |
+| #61 Game study: Gridrunner (pilot step 2) | big-rock, content |
+| #62 Game study: Uridium (pilot step 3) | big-rock, content |
+| #63 Game study: Elite (pilot step 4) | big-rock, content |
+| #64 `.sid` worked recipe: find a player's init and play routines (split from #3) | content |
+
+Pilot step 1 closes #3.
 
 ## Risks
 
@@ -271,7 +284,7 @@ game is studied.
 |---|---|
 | Measuring boot or title instead of play | session file with an `in_play` check; tools start from its snapshot |
 | False cycle precision in IRQ attribution | calibration against known figures; nested handlers and KERNAL dispatch counted apart; unknown when unobserved |
-| Trace volume on all-RAM runs | targeted ranges first; byte caps; memmap once rebuilt |
+| Trace volume on all-RAM runs | targeted ranges first; byte caps; `memmapshow` from a checkpoint (no rebuild needed, see above) |
 | Coverage mistaken for complete disassembly | `unknown` class; epochs per depack transition |
 | Joystick-only games unreachable | issue above; pilot games chosen to start from keys or fire-free where possible |
 | Expression leaking into pages | `study_expression` lint; review of every study page |

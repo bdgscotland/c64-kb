@@ -842,8 +842,10 @@ against the ROM bytes and a SAVE/LOAD round trip in VICE x64sc.
 
 Updated 60 times per second by the KERNAL IRQ. *Not* the PETSCII code —
 this is the row/column matrix index 0-63. The actual key code goes
-through KEYTAB ($EB81-$ECB9) to produce a PETSCII byte that gets
-written to the keyboard buffer at $0277.
+through KEYTAB ($EB81-$ECB8) to produce a PETSCII byte that gets
+written to the keyboard buffer at $0277. An earlier version of this line
+said $ECB9, which is the first byte of the VIC-II power-on table, not
+KEYTAB (verified against `kernal-901227-03.bin`).
 
 ### $00C6-$00C6 — Number of chars in keyboard buffer (NDX)
 
@@ -1928,7 +1930,7 @@ the cursor; the ROM bytes say otherwise.
 
 ### $EA87-$ECE6 — SCNKEY keyboard scanner, key decode and key tables
 
-**Default use:** SCNKEY body $EA87 (jump table $FF9F; $EA9B resets the table pointer to $EB81), KEYLOG table-select routine $EB48 (reached via $028F/$0290; toggles $D018 bit 1 on SHIFT+C= at $EB5E), table pointers $EB79, decode tables $EB81 (unshifted), $EBC2 (shifted), $EC03 (C=), the CHR$(14)/CHR$(142) case switch $EC44-$EC5B, CTRL table $EC78-$ECB8, 47-byte VIC-II power-on register table $ECB9-$ECE6
+**Default use:** SCNKEY body $EA87 (jump table $FF9F; $EA9B resets the table pointer to $EB81), KEYLOG table-select routine $EB48 (reached via $028F/$0290; toggles $D018 bit 1 on SHIFT+C= at $EB5E), table pointers $EB79, decode tables $EB81 (unshifted), $EBC2 (shifted), $EC03 (C=), the CHR$(14)/CHR$(142) case switch $EC44-$EC5B, CTRL table $EC78-$ECB8, 47-byte VIC-II power-on register table $ECB9-$ECE7, copied by the loop at $E5A8 (an earlier version of this line said $ECE6, which is 46 bytes, not 47; verified against `kernal-901227-03.bin`)
 **Bank-switchable:** Yes
 
 ### $ECE7-$ED08 — "LOAD/RUN" string and screen-line low-byte table

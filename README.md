@@ -294,9 +294,11 @@ the CLI exits 1 on a definite finding.
 | `c64_ingest_doc` | Writes a page under `docs/` and ingests it at once |
 | `c64_coverage`, `c64_suggest_links`, `c64_report_gap` | Coverage per category, suggested missing edges, and a record of a query that found nothing |
 | `c64_run_game` | Runs an Oscar64 build (it needs the `.dbj` debug file) in VICE through [vice-mcp](https://github.com/simen/vice-mcp), drives it, and returns a state trace and the screen. It needs vice-mcp built (`VICE_MCP_PATH`) and `x64sc`; the repo's windowless VICE is used when present |
+| `c64_re_irq_chain` | Runs a `.prg` headless in `x64sc` and reports its interrupt chain: every vector write, every raster line armed, and every handler entry with its line, cycle and frame. The PRG must be inside the repo or the temp directory |
+| `c64_re_frame_profile` | Runs a `.prg` headless in `x64sc` and times every occurrence of a region between a start and stop marker, in CPU cycles: worst, typical (median), count, unpaired starts and samples over one frame. The PRG must be inside the repo or the temp directory |
 
-The CLI has a command for every tool except the last two rows. It also
-has `services`, `ingest`, `serve` and `version`.
+The CLI has a command for every tool except the `c64_coverage` row and
+`c64_run_game`. It also has `services`, `ingest`, `serve` and `version`.
 
 **Resources** are whole reference documents at `c64://memory-map`,
 `c64://kernal-jumptable`, `c64://opcodes`, `c64://illegal-opcodes`,
