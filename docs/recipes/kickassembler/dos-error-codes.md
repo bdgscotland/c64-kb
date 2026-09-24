@@ -7,6 +7,7 @@ techniques: [error_channel_check]
 file_formats: [PRG]
 uses_registers: []
 uses_kernal: [SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, READST]
+devices: [disk_1541_ii]
 ---
 
 <!-- doc-type: recipe -->

@@ -2,6 +2,7 @@
 
 import { CLAIMS_BASIS_WORDS, isClaimsBasis, parseClaims, type ClaimsBasis } from "../claims.ts";
 import { group, parseFrontmatter, warn } from "./common.ts";
+import { DEVICE_NAME } from "./device.ts";
 import type { GraphEntity } from "./types.ts";
 
 // Recipe listings declare where they load: KickAssembler `* = $0900`,
@@ -88,6 +89,25 @@ function recipeClaims(
   };
 }
 
+/**
+ * The `devices:` key (schema 36, #87): the Device names the recipe's run
+ * attaches (docs/CONVENTIONS-devices.md). `[]` says it needs none beyond
+ * the stock machine; an absent key is unknown. A name outside the Device
+ * name form refuses the whole key, as a partial list would read as whole.
+ */
+export function recipeDevices(raw: string | undefined, sourcePath: string): string[] | null {
+  if (raw === undefined) return null;
+  const names = parseArray(raw).map((s) => s.replace(/`/g, ""));
+  const bad = names.find((n) => !DEVICE_NAME.test(n));
+  if (bad) {
+    warn(
+      `${sourcePath}: recipe devices lists "${bad}", which is not a device name — devices read as unknown`,
+    );
+    return null;
+  }
+  return [...new Set(names)];
+}
+
 export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity[] {
   const { fm } = parseFrontmatter(content);
   if (!fm.recipe || !fm.toolchain || !fm.output_format || !fm.region) return [];
@@ -99,6 +119,7 @@ export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity
   // (docs/CONVENTIONS-recipes.md). Optional; absent reads as empty.
   const scaffolds = parseArray(fm.scaffolds);
   const claims = recipeClaims(fm, name, sourcePath);
+  const devices = recipeDevices(fm.devices, sourcePath);
   return [
     {
       type: "recipe",
@@ -113,11 +134,13 @@ export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity
       scaffolds,
       source_doc: sourcePath,
       ...(claims ? { claims_stated: claims.stated, claims_basis: claims.basis } : {}),
+      ...(devices ? { devices_stated: devices.length > 0 ? "stated" : "none" } : {}),
     },
     ...techniques.map((technique): GraphEntity => ({ type: "implements", recipe: name, technique })),
     ...scaffolds.map((archetype): GraphEntity => ({ type: "scaffolds", recipe: name, archetype })),
     ...file_formats.map((format): GraphEntity => ({ type: "produces_format", recipe: name, format })),
     ...occupiesEntities(content, name),
     ...(claims?.entities ?? []),
+    ...(devices ?? []).map((device): GraphEntity => ({ type: "requires_device", recipe: name, device })),
   ];
 }

@@ -7,6 +7,7 @@ techniques: [directory_read_and_select, kernal_file_read_seq, kernal_file_write_
 file_formats: [PRG, D64]
 uses_registers: [DC00, D012, D020, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: [SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, READST]
+devices: [disk_1541_ii]
 ---
 
 <!-- doc-type: recipe -->

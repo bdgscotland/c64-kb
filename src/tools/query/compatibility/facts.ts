@@ -5,6 +5,7 @@
  */
 
 import type { Claim } from "../../../graph/claims.ts";
+import type { RecipeDevice } from "./device-rules.ts";
 import type { RecipeZeroPage } from "./recipe-rules.ts";
 
 export interface TechniqueFacts {
@@ -52,6 +53,8 @@ export interface CompatibilityFacts {
   kernalClobbers?: ReadonlyMap<string, string>;
   /** Owned zero page of every recipe that IMPLEMENTS an input (schema 34). */
   recipeZeroPage?: readonly RecipeZeroPage[];
+  /** Devices required (REQUIRES_DEVICE, schema 36) by every recipe that IMPLEMENTS an input. */
+  recipeDevices?: readonly RecipeDevice[];
 }
 
 export function pairKey(i: number, j: number): string {

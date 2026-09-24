@@ -8,6 +8,7 @@
  */
 
 import { parseArchetypeDoc } from "./extract/archetype.ts";
+import { parseDeviceDoc } from "./extract/device.ts";
 import { parseFailureDoc } from "./extract/failure.ts";
 import { parseGameDesignDoc } from "./extract/game-design.ts";
 import { parseHardwareDoc } from "./extract/hardware.ts";
@@ -35,6 +36,7 @@ const PARSERS: readonly (readonly [marker: string, parse: DocParser])[] = [
   ["<!-- doc-type: archetype-reference -->", parseArchetypeDoc],
   ["<!-- doc-type: failure-reference -->", parseFailureDoc],
   ["<!-- doc-type: game-design -->", parseGameDesignDoc],
+  ["<!-- doc-type: device-reference -->", parseDeviceDoc],
 ];
 
 export function extractGraphEntities(content: string, sourcePath: string): GraphEntity[] {

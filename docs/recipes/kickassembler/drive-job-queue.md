@@ -7,6 +7,7 @@ techniques: [drive_code_upload_and_job_queue]
 file_formats: [PRG, D64]
 uses_registers: []
 uses_kernal: [SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, CLRCHN, CLOSE, READST]
+devices: [disk_1541_ii]
 harness: [$02FF]
 ---
 

@@ -7,6 +7,7 @@ techniques: [light_pen_read]
 file_formats: [PRG]
 uses_registers: [D013, D014, D019, D01A, D011, D012, DC00, DC01, DC0D, DD04, DD05, DD0E, D020, D021]
 uses_kernal: []
+devices: [light_pen_port_1]
 claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), zero_page $F7-$FE (owns)]
 harness: [cia2_timer_a, vic_raster_irq, $02FF]
 ---

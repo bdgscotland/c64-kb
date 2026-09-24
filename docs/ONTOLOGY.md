@@ -21,7 +21,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (18)
+## Node Types (19)
 
 ### KernalRoutine
 
@@ -306,6 +306,30 @@ it is not a production. `**Modern examples:**` lines are not read. Before
 #40 sourced the titles one by one, the design (#22, 3.3) would have
 ingested them at rung 4 with no source.
 
+### Device
+
+A thing plugged into the machine that a recipe's run needs: a joystick or
+other controller in a control port, a user-port adapter, a drive on the
+serial bus, a cartridge or RAM expansion in the expansion port (schema
+36, #87). It answers "what must be attached for this listing to run, and
+can two listings' hardware be attached together?"
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | From the `**Device:**` line (e.g. "disk_1541_ii", "joystick_port_2") |
+| title | string | The H2 text |
+| kind | string | input, storage, memory or cartridge |
+| port | string | control_1, control_2, user, expansion or serial; every port but serial has one socket |
+| vice_attach | string | How x64sc attaches it: "default", "flags <options>", "disk" or "crt <CRT hardware type>" |
+| source_doc | string | The page that defines it |
+| claims_stated | string? | "stated" or "none"; absent when the section has no usable Claims line (unknown) |
+| claims_basis | string? | measured-vice or derived-listing |
+
+Source: `docs/hardware/devices.md`, one H2 per device
+(`CONVENTIONS-devices.md`). A device earns a section only when a recipe's
+pinned run attaches it or VICE attaches it by default; the KoalaPad, the
+Final Cartridge and a second drive have none.
+
 ### GameDesign
 
 A whole game: the techniques it runs in each phase, the archetype it is
@@ -363,7 +387,7 @@ say to rerun the ingest. No index, no edges.
 | started_at | string | ISO time the ingest set the marker |
 | flags | string | The ingest's flags, e.g. ` --clean` |
 
-## Edge Types (27)
+## Edge Types (28)
 
 ### BELONGS_TO
 
@@ -516,7 +540,8 @@ band, and any two `cpu_every_line` techniques were reported as a conflict.
 
 ### CLAIMS
 
-Direction: `Technique → HardwareUnit`, `Recipe → HardwareUnit` (schema 34)
+Direction: `Technique → HardwareUnit`, `Recipe → HardwareUnit` (schema 34),
+`Device → HardwareUnit` (schema 36)
 
 Meaning: "while this technique runs it holds this unit, in this mode"
 (schema 25). Authored with the `**Claims:**` and `**Claims basis:**`
@@ -563,6 +588,30 @@ the `zero_page` ones: when a recipe of one input and a recipe of the other
 own zero-page bytes in common, it reports `recipe_zero_page_overlap`
 (info), naming both recipes and the bytes. `c64_recipe_lookup` returns a
 recipe's claims.
+From a Device (schema 36), the `**Claims:**` line on `docs/hardware/devices.md`
+takes two modes only: owns (the device's lines occupy the unit; a second
+owner cannot be attached with it) and shares (devices use the unit side by
+side, as two control ports share the SID pot lines). Re-ingesting the
+page drops a device's old CLAIMS edges first. Device claims are not set
+against technique claims; `recipe_device_conflict` reads them.
+
+### REQUIRES_DEVICE
+
+Direction: `Recipe → Device`
+
+Meaning: "this recipe's pinned run attaches this device" (schema 36),
+from the recipe's `devices:` frontmatter (`CONVENTIONS-devices.md`).
+MATCH both; a miss is counted as `requires_device … dropped`. Re-ingesting
+a recipe drops its old edges first. `npm run verify:recipes` checks the
+key against `docs/recipes/runs.json` before VICE runs: a disk, a cartridge
+of the device's CRT type, or a device's flags in the run must be listed,
+and a listed device must be attached by the run or be VICE's default.
+The Recipe node carries `devices_stated` ("stated" or "none"; absent is
+unknown). `c64_recipe_lookup` returns the devices with their claims;
+`c64_check_compatibility` reports `recipe_device_conflict` (info) when a
+recipe of one input and a recipe of the other require devices that both
+own one unit or sit in one single-socket port (the REU and EasyFlash both
+own `expansion_io2` and both need the expansion port).
 
 ### CLOBBERS_ZP
 

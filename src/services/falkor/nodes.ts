@@ -216,6 +216,7 @@ export class FalkorNodes extends FalkorBase {
     source_doc: string;
     claims_stated?: "stated" | "none" | undefined;
     claims_basis?: string | undefined;
+    devices_stated?: "stated" | "none" | undefined;
   }): Promise<void> {
     // Named field by field: callers pass whole extracted entities, whose other fields must not land.
     const props: NodeProps = {
@@ -229,11 +230,47 @@ export class FalkorNodes extends FalkorBase {
       props.claims_stated = r.claims_stated;
       props.claims_basis = r.claims_basis;
     } else clear.push("claims_stated", "claims_basis");
+    if (r.devices_stated) props.devices_stated = r.devices_stated;
+    else clear.push("devices_stated");
     await this.upsertNode({ label: "Recipe", name: r.name, props, clear });
-    // As for a technique (schema 34): the page owns its CLAIMS edges outright.
+    // As for a technique (schema 34): the page owns its CLAIMS and (schema 36)
+    // REQUIRES_DEVICE edges outright; pass 2 re-adds the ones it still states.
     await this.write(`MATCH (r:Recipe {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`, {
       name: r.name,
     });
+    await this.write(`MATCH (r:Recipe {name: $name})-[d:REQUIRES_DEVICE]->(:Device) DELETE d`, {
+      name: r.name,
+    });
+  }
+
+  /**
+   * Device (schema 36, #87): a joystick, drive or cartridge a recipe's run
+   * attaches, from docs/hardware/devices.md. The page owns its CLAIMS edges.
+   */
+  async addDevice(d: {
+    name: string;
+    title: string;
+    kind: string;
+    port: string;
+    vice_attach: string;
+    source_doc: string;
+    claims_stated?: "stated" | "none" | undefined;
+    claims_basis?: string | undefined;
+  }): Promise<void> {
+    const props: NodeProps = {
+      title: d.title,
+      kind: d.kind,
+      port: d.port,
+      vice_attach: d.vice_attach,
+      source_doc: d.source_doc,
+    };
+    const clear: string[] = [];
+    if (d.claims_stated && d.claims_basis) {
+      props.claims_stated = d.claims_stated;
+      props.claims_basis = d.claims_basis;
+    } else clear.push("claims_stated", "claims_basis");
+    await this.upsertNode({ label: "Device", name: d.name, props, clear });
+    await this.write(`MATCH (d:Device {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`, { name: d.name });
   }
 
   async addTechnique(t: TechniqueNode): Promise<void> {

@@ -28,6 +28,8 @@ const CONFLICT_KINDS = [
   "kernal_clobbers_zp", // one calls a KERNAL routine that may write zero-page bytes the other claims (soft)
   // Schema 34, from recipes' claims: frontmatter:
   "recipe_zero_page_overlap", // a recipe of one and a recipe of the other own zero-page bytes in common (info)
+  // Schema 36, from recipes' devices: frontmatter and docs/hardware/devices.md:
+  "recipe_device_conflict", // a recipe of one and a recipe of the other need devices that own one unit or share a one-socket port (info)
 ] as const;
 
 const DesignPhaseSchema = z.enum(["play", "transition", "init"]);

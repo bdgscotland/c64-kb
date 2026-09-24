@@ -119,6 +119,19 @@ const ClaimSchema = z.object({
   relocatable: z.boolean().optional(),
 });
 
+// A Device a recipe REQUIRES (schema 36): its port, how VICE attaches it,
+// and the units it owns or shares (claims_stated "unknown": no Claims line).
+const RequiredDeviceSchema = z.object({
+  name: z.string(),
+  title: z.string(),
+  kind: z.string(),
+  port: z.string(),
+  vice_attach: z.string(),
+  claims: z.array(ClaimSchema),
+  claims_stated: ClaimsStatedSchema,
+  claims_basis: z.string().optional(),
+});
+
 export const RecipeLookupSchema = z.object({
   name: z.string(),
   toolchain: z.string(),
@@ -143,6 +156,11 @@ export const RecipeLookupSchema = z.object({
   claims: z.array(ClaimSchema).optional(),
   claims_stated: ClaimsStatedSchema.optional(),
   claims_basis: z.string().optional(),
+  // The devices the recipe's pinned run attaches, from its devices:
+  // frontmatter and docs/hardware/devices.md (schema 36). devices_stated is
+  // "unknown" when the page has no devices: key, "none" for devices: [].
+  devices: z.array(RequiredDeviceSchema).optional(),
+  devices_stated: ClaimsStatedSchema.optional(),
 });
 
 export const RecipesForSchema = z.object({

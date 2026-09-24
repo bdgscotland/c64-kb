@@ -7,6 +7,7 @@ techniques: [kernal_load_to_address, error_channel_check]
 file_formats: [PRG]
 uses_registers: [D011, D012, D018, D019, D01A, D020, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: [SETLFS, SETNAM, LOAD, SAVE, OPEN, CLOSE, CHKIN, CHRIN, CLRCHN, READST]
+devices: [disk_1541_ii]
 ---
 
 <!-- doc-type: recipe -->

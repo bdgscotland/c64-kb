@@ -28,7 +28,8 @@ export type TrackedEdge =
   | "composes"
   | "instance_of"
   | "realised_by"
-  | "exemplified_by";
+  | "exemplified_by"
+  | "requires_device";
 
 /**
  * A key per distinct (source, target, kind) reference, so a doc naming the
@@ -63,6 +64,8 @@ function referenceKey(e: EdgeEntity): [TrackedEdge, string] | null {
       return [e.type, `${e.design}|${e.recipe}`];
     case "exemplified_by":
       return [e.type, `${e.archetype}|${e.production}`];
+    case "requires_device":
+      return [e.type, `${e.recipe}|${e.device}`];
     default:
       return null;
   }
