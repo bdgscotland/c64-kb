@@ -1,0 +1,4 @@
+	* = $1000
+	lda later
+	!fill 3,0
+later = $fb
