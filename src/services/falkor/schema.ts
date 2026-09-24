@@ -13,7 +13,7 @@ interface LabelSpec {
   readonly key: "name" | "symptom";
   /** A uniqueness constraint makes a duplicate fail at write time instead of merging silently. */
   readonly unique: boolean;
-  /** Holds ingested-doc entities; clean() wipes it. Chip and Region are seeds ensureSchema re-MERGEs. */
+  /** Holds ingested-doc entities; clean() wipes it. Chip, Region, HardwareUnit and MachineVariant are seeds ensureSchema re-MERGEs. */
   readonly cleanable: boolean;
 }
 

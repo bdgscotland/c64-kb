@@ -383,7 +383,7 @@ $(BUILD)/game.prg: src/main.c \
     $(BUILD)/bitmap.bin $(BUILD)/screen.bin \
     $(BUILD)/color.bin $(BUILD)/bgcolor.bin \
     $(BUILD)/music_player.prg
-	$(OSCAR64) -n -O2 -tf=prg $< -o $@
+	$(OSCAR64) -tm=c64 -n -O2 -tf=prg -o=$@ $<
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -391,6 +391,8 @@ $(BUILD):
 clean:
 	rm -rf $(BUILD)
 ```
+
+(An earlier version passed `-o $@`: Oscar64 rejects that with `error 3004: Invalid command line argument '-o'`; it takes `-o=<file>`, and `-tm=c64` names the target machine. Checked with the Oscar64 build `CLAUDE.md` names.)
 
 Make's dependency tracking re-converts and recompiles when a `.kla` changes. For projects with many assets, a per-asset
 conversion pattern rule (`$(BUILD)/%.bin: $(SRC_ART)/%.kla`) reduces boilerplate.

@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 775, schema 31, tools 2.4.0, package 0.17.1.
+Data 776, schema 31, tools 2.4.0, package 0.17.1.
 
 **Issue #55: the first new technique, `sid_env3_filter_envelope`, lands
 (data 771).** Voice 3's hardware ADSR drives the filter cutoff: `$D416` =

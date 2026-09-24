@@ -642,11 +642,11 @@ this listing." From `**Realised by:**`; MATCH both, misses counted as
 ## Schema state
 
 `ensureSchema()` creates a range index and a unique constraint on the
-primary key of every node label (16) and seeds:
-- 5 `Chip` nodes (VIC-II, SID, CIA1, CIA2, 6510)
-- 2 `Region` nodes (PAL, NTSC)
-- the `HardwareUnit` nodes listed under HardwareUnit, each BELONGS_TO its chip
-- 7 `MachineVariant` nodes (schema 29)
+primary key of every node label and seeds:
+- `Chip`: VIC-II, SID, CIA1, CIA2, 6510
+- `Region`: PAL, NTSC
+- `HardwareUnit`: the units listed under HardwareUnit, each BELONGS_TO its chip
+- `MachineVariant` (schema 29): c64, c64c, c64old, ntsc, newntsc, oldntsc, drean (`src/graph/machine-variants.ts`)
 
 Everything else is produced by `npm run ingest` from `docs/`. Of the
 edge types defined here, one is populated by nothing: `BUILDS_ON`, which
