@@ -5,7 +5,19 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 787, schema 31, tools 2.6.1, package 0.19.1.
+Data 788, schema 31, tools 2.6.1, package 0.19.1.
+
+**SID capture, loudness and a music design page (data 788; #50).**
+`runtime/vice-reference.md` "Recording the SID output": headless WAV
+capture works only without warp (`-sound -sounddev wav`, real time); the
+dump sink works under warp. `hardware/sid-reference.md` gains measured
+loudness (RMS, 440 Hz, both models): 6581 saw+pulse is about 16 % of a
+sawtooth below pulse width $800 and silent above; tri+pulse is within
+3 % between models, which corrects `techniques/music-sid.md`'s "louder
+on the 8580". New page `music/music-design.md` (instruments, song form,
+voice 3 for effects, budget, chip choice) from the music-player recipe's
+tune. `sid_play_routine_pattern`'s Cost gains its typical call (773 PAL,
+779 NTSC) and byte sizes.
 
 **Headless joystick and harness fixes (data 787; #42, #59).** VICE
 3.10's event playback cannot be used (the power-on reset clears the trap
