@@ -5,7 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 791, schema 33, tools 2.8.0, package 0.21.0.
+Data 792, schema 33, tools 2.8.0, package 0.21.0.
+
+**pseudo-3d-road curves both ways (data 792; #73).** The curve add
+treated every carry as overflow, so a negative dx pinned cx at 255 and
+the road never bent left; the right kerb went to column 39 whenever
+cx + hw passed 255 instead of 319; the redraw never erased the road's
+old cells. The add is now signed and clamped at 0 and 255, the curve
+step is ±18/256 (it was ±51/256, which saturated either way), the kerb
+uses the 9-bit sum, and the redraw repaints grass where the road left.
+Measured in VICE: every `$D016` write still lands on cycle 4 of its own
+line (920 PAL, 1,052 NTSC frames), the PAL shot bends left and the NTSC
+shot right, the road steps every two frames on both. The technique's
+Cost goes from 18,343 to 17,975 cycles; the pinned run is 21,100,000
+cycles (was 20,000,000) so one picture shows each bend.
 
 **Tools refuse to answer from a half-built graph, and the #41 leftovers
 (schema 33, tools 2.8.0, package 0.21.0, data 791; #41).** A clean
