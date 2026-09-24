@@ -14,6 +14,7 @@ type HardwareUnitKind =
   | "port"
   | "bus"
   | "irq_source"
+  | "display"
   | "vector"
   | "io_page"
   | "zero_page";
@@ -56,6 +57,18 @@ export const HARDWARE_UNITS: readonly HardwareUnit[] = [
     name: "vic_raster_irq",
     kind: "irq_source",
     addresses: "$D012, $D011 bit 7, $D019/$D01A bit 0",
+    chip: "VIC-II",
+  },
+  // The scroll and pointer fields (#71). Two techniques that each set one
+  // of these on the same lines fight; a register-level shared_register hit
+  // could not say so. $D018 bit 0 is unused.
+  { name: "vic_yscroll", kind: "display", addresses: "$D011 bits 0-2 (YSCROLL)", chip: "VIC-II" },
+  { name: "vic_xscroll", kind: "display", addresses: "$D016 bits 0-2 (XSCROLL)", chip: "VIC-II" },
+  { name: "vic_matrix_base", kind: "display", addresses: "$D018 bits 4-7 (screen matrix)", chip: "VIC-II" },
+  {
+    name: "vic_char_base",
+    kind: "display",
+    addresses: "$D018 bits 1-3 (character or bitmap base)",
     chip: "VIC-II",
   },
   { name: "irq_vector_0314", kind: "vector", addresses: "$0314-$0315", chip: "6510" },

@@ -239,7 +239,7 @@ different question from Resource: a Resource is a kind of machine time
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Seed name (e.g. "sid_voice_2", "vic_raster_irq") |
-| kind | string | sid_voice, sid_shared, sprite, timer, tod, port, bus, irq_source, vector, io_page or zero_page |
+| kind | string | sid_voice, sid_shared, sprite, timer, tod, port, bus, irq_source, display, vector, io_page or zero_page |
 | addresses | string | The registers or bytes (e.g. "$D407-$D40D") |
 | chip | string | Owning chip, "" for the expansion I/O pages; also a BELONGS_TO edge |
 
@@ -253,7 +253,11 @@ register $DC0D/$DD0D: timer A bit 0, timer B bit 1, TOD alarm bit 2),
 control port 2), `cia1_port_b` ($DC01: keyboard rows, control port 1),
 `cia2_vic_bank` ($DD00 bits 0-1), `serial_bus` ($DD00 bits 3-7 and the
 drive), `user_port` ($DD01), `vic_raster_irq` (the one raster compare:
-$D012, $D011 bit 7, $D019/$D01A bit 0), `irq_vector_0314`,
+$D012, $D011 bit 7, $D019/$D01A bit 0), the four VIC display fields
+(kind `display`: `vic_yscroll` $D011 bits 0-2, `vic_xscroll` $D016 bits
+0-2, `vic_matrix_base` $D018 bits 4-7, `vic_char_base` $D018 bits 1-3;
+added for #71, before which two YSCROLL writers met only as a soft
+shared register), `irq_vector_0314`,
 `irq_vector_fffe`, `nmi_vector_0318`, `nmi_vector_fffa`,
 `expansion_io1` ($DE00-$DEFF), `expansion_io2` ($DF00-$DFFF), and
 `zero_page` ($02-$FF), one unit whose bytes ride the CLAIMS and

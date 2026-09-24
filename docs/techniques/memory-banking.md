@@ -848,6 +848,14 @@ to the raster and sprite recipes landing in Phase 4+.
 **Region:** both
 **Uses registers:** D018, D011
 **Requires:** screen_ram_relocation
+**Claims:** vic_matrix_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/oscar64/double-buffer.md`
+saw one `$D018` store a frame, changing only the matrix bits. `$D011` is
+polled, not written. The recipe's sprite and CIA1 timer B are its
+demonstration and measurement harness, not the technique's
+([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 

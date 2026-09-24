@@ -1509,8 +1509,13 @@ inside the frame and the rest wraps. Not built here.
 **Cost:** cycles_per_frame=5094, cycles_per_line=63, lines_active=85, irq_slots=2, sprites_per_line=1, bytes_code=2628, bytes_data=67
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-sprite-stretcher (CIA1 timer A over the toggled lines 100 to 181, screen on, one sprite; the double-IRQ entry on 97 to 99 is outside the bracket; the bytes are the `-showmem` blocks, code $0900-$1343 and the sprite plus three result bytes)
-**Claims:** sprite_0 (owns), vic_raster_irq (owns)
+**Claims:** sprite_0 (owns), vic_raster_irq (owns), vic_yscroll (init)
 **Claims basis:** derived-listing
+
+The recipe sets YSCROLL 0 once, so its unrolled line table knows where
+the badlines fall (one store in a `scripts/claims-watch.ts` trace). A
+YSCROLL owner beside it moves those badlines and breaks the table; the
+`init` item was added with the unit ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 

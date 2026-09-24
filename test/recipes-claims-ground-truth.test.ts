@@ -69,7 +69,13 @@ describe("recipes against their own technique sets", () => {
     const rows = await f.roQuery(
       `MATCH (t:Technique {name: 'fli_image'})-[:CLAIMS]->(h:HardwareUnit) RETURN h.name AS unit ORDER BY unit`,
     );
-    expect(rows.data.map((r) => (r as { unit: string }).unit)).toEqual(["cia2_vic_bank", "vic_raster_irq"]);
+    expect(rows.data.map((r) => (r as { unit: string }).unit)).toEqual([
+      "cia2_vic_bank",
+      "vic_char_base",
+      "vic_matrix_base",
+      "vic_raster_irq",
+      "vic_yscroll",
+    ]);
     expect([...recipeSets.values()].filter((t) => t.length > 1).length).toBeGreaterThan(10);
   });
 
@@ -130,6 +136,21 @@ describe("recipes against their own technique sets", () => {
       const hit = conflicts.find((c) => c.shared.includes("cia1_timer_b"));
       expect(hit?.kind, disk).toBe("unit_shared");
     }
+  });
+
+  // #71: YSCROLL is a HardwareUnit, read from the real pages.
+  it("sets soft_scroll_v against FLD on vic_yscroll, and not against its panel split (#71)", async () => {
+    const fld = (await checkCompatibility(["soft_scroll_v", "fld_flexible_line_distance"])).structured;
+    expect(fld.verdict).toBe("incompatible");
+    const hit = fld.conflicts.find((c) => c.kind === "unit_contention");
+    expect(hit?.shared).toEqual(["vic_yscroll"]);
+    expect(hit?.severity).toBe("hard");
+    const panel = (await checkCompatibility(["soft_scroll_v", "char_scroll_buffer_v", "scroll_panel_split"]))
+      .structured;
+    expect(panel.conflicts.filter((c) => c.severity === "hard")).toEqual([]);
+    expect(panel.conflicts.some((c) => c.kind === "unit_shared" && c.shared.includes("vic_yscroll"))).toBe(
+      true,
+    );
   });
 
   it("no recipe's technique set has a hard conflict of any kind", async () => {

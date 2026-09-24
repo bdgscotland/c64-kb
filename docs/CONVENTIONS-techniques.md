@@ -314,6 +314,14 @@ the one raster compare. Where the page says an effect is built on such a
 technique, state it on the **Requires:** line too: the check does not set
 a technique against its own prerequisite as a rival owner.
 
+The VIC display fields (`vic_yscroll`, `vic_xscroll`, `vic_matrix_base`,
+`vic_char_base`) follow the same rule. The technique that sets a field for
+the frame owns it (`soft_scroll_v`, `fld_flexible_line_distance`,
+`fli_image`). One that rewrites it only on its own lines and restores it
+shares it (`scroll_panel_split`, `sideborder_open`). The other mode bits
+of `$D011`, `$D016` and `$D018` (DEN, RSEL, CSEL, BMM, ECM, MCM) are not
+units yet.
+
 A technique claims what every implementation needs. What one recipe
 chooses (which vector, which zero-page bytes) is the recipe's claim, not
 the technique's. A measurement harness is not a claim: the CIA timers a

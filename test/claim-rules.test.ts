@@ -50,6 +50,39 @@ describe("unitRules", () => {
   });
 });
 
+// #71: YSCROLL is a unit, so two techniques that both set it fight.
+describe("VIC scroll fields", () => {
+  const softScrollV = side("soft_scroll_v", { unit: "vic_yscroll", mode: "owns" });
+  const fld = side(
+    "fld_flexible_line_distance",
+    { unit: "vic_raster_irq", mode: "owns" },
+    { unit: "vic_yscroll", mode: "owns" },
+  );
+
+  it("soft_scroll_v beside FLD: unit_contention on vic_yscroll, hard", () => {
+    const hits = unitRules(softScrollV, fld, none);
+    expect(hits.map((h) => [h.kind, h.severity, h.shared])).toEqual([
+      ["unit_contention", "hard", ["vic_yscroll"]],
+    ]);
+    expect(hits[0]?.resolution).toMatch(/one of each field/);
+  });
+
+  it("a panel split that rewrites YSCROLL under the scroller stays soft", () => {
+    const split = side(
+      "scroll_panel_split",
+      { unit: "vic_raster_irq", mode: "owns" },
+      { unit: "vic_yscroll", mode: "shares" },
+    );
+    const hits = unitRules(split, softScrollV, { aRequiresB: true, bRequiresA: false });
+    expect(hits.map((h) => [h.kind, h.severity])).toEqual([["unit_shared", "soft"]]);
+  });
+
+  it("a horizontal and a vertical scroller do not meet", () => {
+    const softScrollH = side("soft_scroll_h", { unit: "vic_xscroll", mode: "owns" });
+    expect(unitRules(softScrollH, softScrollV, none)).toEqual([]);
+  });
+});
+
 describe("absorbInto", () => {
   it("drops an implied technique's claims on units its input holds, but never zero page", () => {
     const input = side(
