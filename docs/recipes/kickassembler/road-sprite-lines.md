@@ -580,8 +580,9 @@ too (measured for issue #82, both models). Its README called them 6 and
 first cycle is Bauer's 2.
 
 **The pads.** The VIC fetches sprites 0-2 at the end of a line (pointer
-slots 58, 60 and 62 on PAL, 60, 62 and 64 on NTSC,
-`hardware/vic-ii-reference.md`, Sprite DMA). A reading CPU stops three
+slots 58, 60 and 62 on PAL, 59, 61 and 63 on NTSC,
+`hardware/vic-ii-reference.md`, Sprite DMA; an earlier version said 60,
+62 and 64 on NTSC, which that page has corrected by measurement). A reading CPU stops three
 cycles before the first of them and resumes two after the last: 5 +
 2 × (last − first) cycles, whichever sprites lie between (the arithmetic
 of `dysp.md`). A sprite whose Y register is y fetches on lines y to
@@ -600,7 +601,8 @@ mask of the sprites on each line from their Y, then one `LDX mask+j;
 LDA pad,X; STA block+operand` per line, unrolled.
 
 **Why only sprites 0-2.** Sprites 3-7 have their slots at the start of
-the next line (cycles 1-9 in `vic-ii-reference.md`). Their stall would
+the next line (cycles 1-9 on PAL; on the 6567R8 sprite 3's is cycle 65
+and 4-7's are 2-8, `vic-ii-reference.md`). Their stall would
 land on the block's stores and move them, and the XSCROLL store would no
 longer be on a fixed cycle.
 Sprites 0-2 stall the slide, which has no stores.

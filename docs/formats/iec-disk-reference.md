@@ -525,40 +525,42 @@ The technique requires custom code running on the drive CPU. The C64 uploads the
 
 ### 1541 job queue and buffers
 
-The addresses uploaded code uses to ask the controller for a sector. The rows marked "run" were exercised by `../recipes/kickassembler/drive-job-queue.md` in VICE x64sc 3.10 with true drive emulation of a 1541 (rung 1); the rest carry the names and meanings of the g3sl.github.io ROM listing (rung 4) and were not run here.
+The addresses uploaded code uses to ask the controller for a sector. The rows marked "run" were exercised by `../recipes/kickassembler/drive-job-queue.md` in VICE x64sc 3.10 with true drive emulation of a 1541 (rung 1). The rows marked "ROM" were read in a disassembly (da65) of the `dos1541-325302-01+901229-05` image, and the bytes quoted are identical in `dos1541ii-251968-03` (rung 1 for what the code does; not run). The rest carry the names and meanings of the g3sl.github.io ROM listing (rung 4) and were not run here. An earlier version of this section marked every job code but `$80` and `$B0`, and every result but `$01`, `$03` and `$0B`, as unconfirmed; the ROM settles all but two results.
 
 | Address | Name | Meaning | Status |
 |---|---|---|---|
-| `$00`–`$05` | JOBS | one job byte per buffer 0–5; bit 7 set means pending, the controller replaces it with a result code | `$01` run |
+| `$00`–`$05` | JOBS | one job byte per buffer 0–5; bit 7 set means pending, the controller replaces it with a result code | `$01` run; ROM: the controller loop at `$F2BE` scans buffer 5 down to 0 |
 | `$06`–`$11` | HDRS | track and sector for each job, two bytes per buffer: `$06`/`$07` buffer 0, `$08`/`$09` buffer 1, up to `$10`/`$11` buffer 5 | `$08`/`$09` run: read back `12 00` |
-| `$12`–`$13` | DSKID | the master disk ID the controller compares each header against; set by a seek job and by `I` | run: `00 00` until a seek, then `30 31` |
-| `$16`–`$1A` | HEADER | the last header read: ID, ID, track, sector, checksum | not run |
+| `$12`–`$13` | DSKID | the master disk ID the controller compares each header against; set by a seek job and by `I` | run: `00 00` until a seek, then `30 31`; ROM: compared at `$F3F6`, copied from `$16`/`$17` at `$F410` |
+| `$16`–`$1A` | HEADER | the last header read: ID, ID, track, sector, checksum | ROM: `$F3DC` EORs all five bytes and fails with `$09` unless the result is 0; `$F3E8` takes the current track from `$18`; `$F427` reads the sector from `$19` |
 | `$0300`–`$06FF` | buffers 0–3 | data buffers lent to channels | `$0400` and `$0600` run |
 | `$0700`–`$07FF` | buffer 4 | the BAM | not run |
 
+The controller keeps the job type, the job byte AND `$78`, in `$45` (`$F39B`); the types below are those values.
+
 | Job code | Meaning | Status |
 |---|---|---|
-| `$80` | read the sector into the buffer | run |
-| `$90` | write the buffer to the sector | not run |
-| `$A0` | verify | not run |
-| `$B0` | seek: find any header on the track, keep its ID | run |
-| `$C0` | bump the head to track 1 | not run |
-| `$D0` | jump to code in the buffer | not run |
-| `$E0` | execute code in the buffer once the motor is up to speed | not run |
+| `$80` | read the sector into the buffer | run; ROM: type `$00` at `$F4CA` |
+| `$90` | write the buffer to the sector | ROM: type `$10` at `$F56E`; fails with `$08` at `$F57A` when `$1C00` bit 4 (write-protect sense) is 0 |
+| `$A0` | verify: compare the sector on disk with the buffer | ROM: type `$20` at `$F691`; compares the GCR bytes under the head, `$07` on the first mismatch |
+| `$B0` | seek: find any header on the track, keep its ID | run; ROM: type `$30` at `$F3EC` copies the header's ID into DSKID and returns `$01` |
+| `$C0` | bump the head to track 1 | ROM: type `$40` at `$F361`; `$F37C` sets the step counter `$4A` to `$A4` and the current track `$22` to 1 |
+| `$D0` | jump to code in the buffer at once | ROM: `$F2C5` compares the whole job byte with `$D0` and jumps to the buffer without starting the motor or moving the head; `$D1` does not take this path |
+| `$E0` | execute code in the buffer once the head is on the job's track | ROM: type `$60` at `$F361`; `$F36E` jumps to the buffer after the step and density setup, before any header is read. The listing says "once the motor is up to speed"; that part is not checked here |
 
 | Result | Meaning | Status |
 |---|---|---|
 | `$01` | done | seen: seek and read |
-| `$02` | header not found | not seen |
-| `$03` | no sync | seen: read of track 40 on a 35-track image |
-| `$04` | data block not found | not seen |
-| `$05` | data checksum error | not seen |
-| `$07` | verify error | not seen |
-| `$08` | write protect | not seen |
-| `$09` | header checksum error | not seen |
-| `$0A` | data block too long | not seen |
-| `$0B` | ID mismatch | seen: read before any seek or `I` |
-| `$10` | byte decoding error | not seen |
+| `$02` | header not found | ROM: `$F407`, after `$5A` (90) failed searches for a header mark (`$F3B1`) |
+| `$03` | no sync | seen: read of track 40 on a 35-track image; ROM: `$F556` starts VIA1 timer 1 with `$D0` in `$1805` and gives up when its high byte drops below `$80` before `$1C00` bit 7 goes low: `$5000` cycles, about 20 ms at 1 MHz (arithmetic) |
+| `$04` | data block not found | ROM: `$F4F6`, the block's first byte is not the data mark `$07` kept in `$47` (set at `$F298`) |
+| `$05` | data checksum error | ROM: `$F4FB` |
+| `$07` | verify error | ROM: `$F6C5` |
+| `$08` | write protect | ROM: `$F57A` |
+| `$09` | header checksum error | ROM: `$F41E` |
+| `$0A` | data block too long | not found as a result in the job code; listing only |
+| `$0B` | ID mismatch | seen: read before any seek or `I`; ROM: `$F41B` |
+| `$10` | byte decoding error | not found as a result in the job code; listing only |
 
 The result codes are the same numbers a `.d64` error block carries; `../pitfalls/loader.md`, `d64_error_byte_is_a_controller_code`, maps them to the error-channel numbers. Two more things measured by the same recipe: a job that fails leaves the error channel at `00, OK,00,00`, and a bare read of channel 15 after an `M-R` has been consumed returns one CR. `M-E` returns to the idle loop on the routine's RTS, and the host's next command waits until it does.
 
