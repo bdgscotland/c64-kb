@@ -51,6 +51,16 @@ Masking CIA1 with one `$7F` store to `$DC0D` before the frame loop is
 a measurement harness is not a claim. `claims-watch` reads the key; the
 ingest does not yet (#22, step 8).
 
+`harness` is optional and is not a claim. It lists what the listing's
+measurement harness writes, in `claims-watch --harness` form: units or
+address ranges, `harness: [cia1_timer_a]`. The usual entry is the CIA1
+timer a recipe starts and stops around a routine to report its cycles.
+`claims-watch` lists those stores apart and never fails on them; the
+ingest ignores the key. A timer the effect itself depends on (a pulse
+clock, a detection) is a claim, not a harness. Where the harness timer is
+also masked at start-up, name it here only: the harness covers that
+store.
+
 ## Section structure
 
 After the frontmatter:

@@ -7,7 +7,7 @@ techniques: []
 file_formats: [PRG]
 uses_registers: [DC04, DC05, DC06, DC07, DC0D, DC0E, DC0F, D011, D012, D020]
 uses_kernal: []
-claims: [irq_vector_fffe (owns), nmi_vector_fffa (owns)]
+claims: [irq_vector_fffe (owns), nmi_vector_fffa (owns), cia1_timer_a (owns), cia1_timer_b (owns), cia1_tod (init)]
 ---
 
 <!-- doc-type: recipe -->

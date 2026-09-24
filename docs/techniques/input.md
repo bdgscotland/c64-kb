@@ -326,6 +326,8 @@ scan can be skipped that frame.
 **Complexity:** medium
 **Region:** both
 **Uses registers:** D419, D41A, DC00, DC01, DC02
+**Claims:** cia1_port_a (owns), cia1_port_b (reads), sid_pots (reads)
+**Claims basis:** derived-listing
 **Cost:** cycles_per_frame=1152, zp_bytes=0, irq_slots=0
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-paddle-read (two ports in one frame)

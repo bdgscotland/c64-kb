@@ -74,6 +74,8 @@ export interface RecipeFrontmatter {
   usesKernal: string[];
   /** The raw `claims:` value, when the recipe carries one. */
   claims?: string;
+  /** The raw `harness:` value: units or ranges a measurement harness writes (as --harness). */
+  harness?: string;
 }
 
 const flowArray = (fm: string, key: string): string[] | undefined => {
@@ -89,10 +91,12 @@ const flowArray = (fm: string, key: string): string[] | undefined => {
 export function recipeFrontmatter(text: string): RecipeFrontmatter {
   const fm = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "";
   const claims = /^claims:\s*\[(.*)\]\s*$/m.exec(fm)?.[1];
+  const harness = /^harness:\s*\[(.*)\]\s*$/m.exec(fm)?.[1];
   return {
     techniques: flowArray(fm, "techniques") ?? [],
     usesKernal: flowArray(fm, "uses_kernal") ?? [],
     ...(claims !== undefined ? { claims } : {}),
+    ...(harness !== undefined ? { harness } : {}),
   };
 }
 

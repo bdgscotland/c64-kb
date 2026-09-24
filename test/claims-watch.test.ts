@@ -226,6 +226,15 @@ describe("sources read from the docs", () => {
   it("reads a recipe's frontmatter", () => {
     const fm = recipeFrontmatter("---\ntechniques: [a_b, c]\nuses_kernal: [CHROUT]\n---\n");
     expect(fm).toEqual({ techniques: ["a_b", "c"], usesKernal: ["CHROUT"] });
+    const both = recipeFrontmatter(
+      "---\ntechniques: []\nclaims: [cia1_tod (init)]\nharness: [cia1_timer_a, $02F0-$02FF]\n---\n",
+    );
+    expect(both).toEqual({
+      techniques: [],
+      usesKernal: [],
+      claims: "cia1_tod (init)",
+      harness: "cia1_timer_a, $02F0-$02FF",
+    });
   });
   it("reads the SYS address of a BASIC stub and both label formats", () => {
     // 10 SYS 2062

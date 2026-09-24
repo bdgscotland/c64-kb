@@ -8,7 +8,8 @@
  *
  * Declarations (each option repeats; values are comma lists):
  *   --technique ids   the units each technique's **Claims:** line names, and those of the techniques it REQUIRES
- *   --recipe page     the page's frontmatter `techniques:` (as --technique), `uses_kernal:` (as --kernal), `claims:`
+ *   --recipe page     the page's frontmatter `techniques:` (as --technique), `uses_kernal:` (as --kernal), `claims:`,
+ *                     `harness:` (as --harness)
  *   --claim text      units in the Claims-line grammar: `irq_vector_0314, zero_page $FB-$FE, sid_voice_2 (shares)`
  *   --range ranges    the program's own RAM: `[name=]$XXXX[-$YYYY]`; the PRG's load span is always declared
  *   --harness items   a measurement harness: units or ranges whose stores are listed apart and never fail
@@ -111,6 +112,8 @@ function declareTechniques(d: Declared, notes: string[]): { techniques: string[]
     kernal = [...kernal, ...fm.usesKernal];
     const err = fm.claims === undefined ? null : d.addClaimText(fm.claims, basename(opt.recipe));
     if (err) fail(`${opt.recipe} claims: ${err}`);
+    const herr = fm.harness === undefined ? null : d.addHarness(fm.harness);
+    if (herr) fail(`${opt.recipe} harness: ${herr}`);
   }
   const all = loadTechniqueClaims(root);
   const techniques = withPrerequisites(ids, all);

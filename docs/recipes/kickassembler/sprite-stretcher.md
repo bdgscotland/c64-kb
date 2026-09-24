@@ -8,6 +8,7 @@ file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01B, D01C, D01D, D021, D027, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
 claims: [irq_vector_0314 (owns), cia1_timer_b (init), cia1_tod (init)]
+harness: [cia1_timer_a]
 ---
 
 <!-- doc-type: recipe -->

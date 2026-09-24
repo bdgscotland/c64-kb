@@ -7,6 +7,7 @@ techniques: [mouse_1351_read]
 file_formats: [PRG]
 uses_registers: [D419, D41A, DC00, DC01, DC02, D012, D020, D021, DD04, DD05, DD0E]
 uses_kernal: []
+claims: [cia1_port_a (init)]
 ---
 
 <!-- doc-type: recipe -->

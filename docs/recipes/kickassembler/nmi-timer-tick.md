@@ -7,6 +7,8 @@ techniques: [nmi_handler_and_restore_key]
 file_formats: [PRG]
 uses_registers: [D011, D020, DC04, DC05, DC06, DC07, DC0D, DC0E, DC0F, DD04, DD05, DD0D, DD0E]
 uses_kernal: []
+claims: [cia1_tod (init)]
+harness: [cia1_timer_a, cia1_timer_b]
 ---
 
 <!-- doc-type: recipe -->

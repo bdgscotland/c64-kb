@@ -1354,6 +1354,8 @@ second on the upload alone, which is why resident loaders upload once.
 **Region:** both
 **Uses registers:** DC06, DC07, DC0D, DC0F
 **Uses kernal:** (none)
+**Claims:** cia1_timer_b (owns), cia1_timer_a (init), cia1_tod (init)
+**Claims basis:** measured-vice
 **Cost:** bytes_code=1060, bytes_data=110, zp_bytes=24
 **Cost basis:** derived-listing
 **Cost measured on:** kickassembler-tape-turbo-loader (whole PRG less the BASIC stub; the code figure includes the report and the 32-bit division, the data is the strings and counters)

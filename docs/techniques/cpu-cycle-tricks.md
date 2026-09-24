@@ -1390,6 +1390,8 @@ worst frame.
 **Complexity:** low
 **Region:** both
 **Uses registers:** DC08, DC09, DC0A, DC0B, DC0D, DC0E, DC0F
+**Claims:** cia1_tod (owns), cia1_timer_a (init), cia1_timer_b (init)
+**Claims basis:** measured-vice
 **Cost:** cycles_per_frame=122
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-tod-alarm (on the frame the alarm fires)

@@ -7,6 +7,7 @@ techniques: [isometric_tile_engine, tile_map_render]
 file_formats: [PRG]
 uses_registers: [D018, D01B, D015, D000, D001, D010, D020, D021, DC04, DC05, DC0E]
 uses_kernal: []
+harness: [cia1_timer_a]
 ---
 
 <!-- doc-type: recipe -->
