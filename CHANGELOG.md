@@ -5,7 +5,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 775, schema 31, tools 2.4.0, package 0.17.1.
+Data 776, schema 31, tools 2.4.0, package 0.17.1.
+
+**Issue #55: the first new technique, `sid_env3_filter_envelope`, lands
+(data 771).** Voice 3's hardware ADSR drives the filter cutoff: `$D416` =
+(`$D41C` >> 1) + base every frame, with 3OFF set and FILT3 clear, so the
+cutoff has the chip's own attack, staged decay, sustain and release. A
+new technique page, `techniques/sid-instruments.md`, holds it. The recipe
+`kickassembler/sid-env3-filter` pins the identity on 192 of 192 frames on
+PAL and NTSC and on both SID models, the copy at 7 cycles a frame over a
+static cutoff and 22 on the worst frame over the same player with no
+envelope (measured, CIA1 bracket). Its `runs.json` entry adds `-sound
+-sounddev dump -soundarg /dev/null` after the verifier's `+sound`:
+without a real sound sink reSID does not clock the envelope and `$D41C`
+returns nothing useful (measured). The page's listing is the build's four
+sources folded into one file, and the pins were re-made from it.
 
 **Two RE tools and the disassembly-reference page (data 775, tools 2.4.0,
 RE pilot step 1).** `c64_re_irq_chain` and `c64_re_frame_profile` (`src/tools/re.ts`,
