@@ -1823,6 +1823,14 @@
       "ntsc": "screenshots/dysp-ntsc.png"
     }
   },
+  "kickassembler/dysp@moving": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
   "kickassembler/sid-env3-filter": {
     "cycles": 18000000,
     "models": [
