@@ -1216,6 +1216,81 @@ or five on NTSC.
 
 ---
 
+## raycaster_grid_walls — Column raycaster: one ray per screen column through a grid map
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D018
+**Requires:** ecm_mode
+**Claims:** vic_matrix_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/raycaster.md` saw `$D018`'s matrix bits change
+once per view drawn. The recipe's zero page and result bytes are its
+own.
+
+### Why
+
+A first-person maze or corridor view is walls of varying height, one
+per screen column, from a 2D grid map. A ray per column finds the
+nearest wall; its distance sets the column's height. On a 1 MHz CPU the
+question is how to find the distance without a multiply or divide per
+ray.
+
+### How
+
+For view direction d and view plane p (d turned 90 degrees, scaled by
+the field of view), the ray of column c has direction d + p·cx, cx from
+−1 to 1. March each ray in steps of (d + p·cx) / N from the camera until
+the map cell under it is a wall; the step count k is N times the
+perpendicular distance, so a table h[k] gives the height with no fish-eye
+correction. Keep the column-0 step and the per-column change for each
+view direction in tables, with enough fraction bits (8.16 for N = 8 on a
+40-column screen), so the CPU only adds. Record which cell coordinate
+changed on the last step for the wall's side shade. Draw the column as
+ceiling, wall and floor; extended-colour text with the blank character
+puts the whole view in screen RAM, which double-buffers with `$D018`.
+
+### Why it works
+
+Every ray d + p·cx has the same component along d, so equal steps along
+any of them cover equal distance towards the view plane: counting steps
+measures the perpendicular distance directly. Measured in VICE x64sc
+3.10, PAL c64c and NTSC, by `recipes/kickassembler/raycaster.md`: all
+1,000 screen cells equal a model of the listing's march at the four
+pinned captures and five more; against an exact boundary-to-boundary
+(DDA) raycast of the same scene, 2,115 of 2,560 column heights are equal,
+2,453 within one row, the worst 6 rows off. With the per-column change
+kept in 8.8 only 930 were equal: see the pitfall
+`fixed_point_step_change_rounded_away`.
+
+### Variations
+
+**DDA.** Stepping from cell boundary to cell boundary finds the exact
+distance and never passes a corner, at the cost of a multiply for the
+first boundary and a divide or reciprocal table for the height. Used here
+only as the reference, in Python.
+
+**Textured walls.** The fraction of the hit position along the wall
+gives the texture column; with characters, a column of 8 × 8 cells can
+only be stretched in whole rows. Not measured here.
+
+### Cycle budget
+
+One view every 157,000 to 216,000 cycles on PAL in the recipe (8 to 11
+frames), most of it in the march: the step count is the distance times
+8, per column.
+
+### Recipes
+
+- `recipes/kickassembler/raycaster.md` — a 16 × 16 map, 64 view
+  directions, double-buffered extended-colour text, every capture
+  compared with a model and the march compared with an exact raycast,
+  PAL and NTSC.
+
+---
+
 ## voxel_landscape — Voxel-space landscape rendering
 
 **Complexity:** scene-tier

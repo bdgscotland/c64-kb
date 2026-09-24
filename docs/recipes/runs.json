@@ -2503,5 +2503,25 @@
       "ntsc"
     ],
     "flags": []
+  },
+  "kickassembler/raycaster": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/raycaster.png",
+      "ntsc": "screenshots/raycaster-ntsc.png"
+    }
+  },
+  "kickassembler/raycaster@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   }
 }

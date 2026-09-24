@@ -390,3 +390,59 @@ roll:
   source.
 - Recipe `docs/recipes/kickassembler/random-range.md`, the counts
   quoted here.
+
+---
+
+## fixed_point_step_change_rounded_away — A per-column change kept in 8.8 loses up to half its value, and the error grows across the screen
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** raycaster_grid_walls
+
+### Symptom
+
+A raycaster, rotozoomer or any effect that adds a small change to a
+step value once per column looks right at the left edge and increasingly
+wrong to the right: walls at the wrong distance, a texture that skews.
+
+### Mechanism
+
+When the change per column is under one unit of the last place, rounding
+it to that place loses up to half of it, and the loss adds up at every
+column. In `recipes/kickassembler/raycaster.md` the ray step is 8.8 and
+the change per column (0.66 × 2/40 of a cell, over 8 steps) is 0.6 to 0.9
+of 1/256: stored in 8.8 it became 1 or 0. Measured against an exact
+raycast of the same scene in an earlier build that kept it in 8.8: 930
+of 2,560 column heights equal, errors up to 10 rows; with the change and
+the running step in 8.16 (a third byte), 2,115 equal and none more than
+6 rows off.
+
+### Fix
+
+Keep the change and the running value it is added to with at least as
+many fraction bits as the number of additions needs: a change rounded to
+1/65,536 is off by at most half of that, so 40 additions drift by at
+most 20/65,536. Use only the top bytes where the value is consumed.
+
+### Worked example
+
+From `recipes/kickassembler/raycaster.md`: 24-bit accumulation, 16-bit
+use.
+
+```text
+    clc
+    lda sxf                     // the third, lowest byte
+    adc cxf
+    sta sxf
+    lda sx                      // sx/sx+1: the 8.8 step the march adds
+    adc cx
+    sta sx
+    lda sx + 1
+    adc cx + 1
+    sta sx + 1
+```
+
+### Cross-references
+
+- Technique: `raycaster_grid_walls` in `techniques/effects-vector-3d.md`.
+- Recipe: `recipes/kickassembler/raycaster.md`, "Against an exact raycast".
