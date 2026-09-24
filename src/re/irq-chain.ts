@@ -26,6 +26,14 @@
  * so a $0314 handler's line includes the KERNAL's dispatch at $FF48 (29
  * cycles) and a $FFFE handler's does not.
  *
+ * Which vectors an interrupt reads follows the banking: $0314/$0318
+ * through the KERNAL when $00 and $01 map it (HIRAM read high, CpuPort),
+ * the RAM at $FFFE/$FFFA when they do not. An earlier version ignored the
+ * banking and took any vector's value that ran first. Before any store to
+ * $00/$01 (a trace without the KERNAL's boot) and after one the trace
+ * cannot value, both sets are candidates; the latter is named in
+ * `unknowns`.
+ *
  * A handler whose first instruction is `JMP (pointer)` hides a chain that
  * rewrites the pointer, not the vector (Commando: $4134 JMP ($0406), five
  * parts a frame). Each entry names the pointer's value at that moment
@@ -40,6 +48,7 @@
  * IRQ exit's RTI) and on kickassembler/raster-bars 11 handlers for 10 bars,
  * one of them a TAX inside handler 0 (#66).
  */
+import { CpuPort } from "../claims/units.ts";
 import { storedValue, type Hit } from "./monlog.ts";
 import {
   candidates,
@@ -113,6 +122,7 @@ const obs = (id: string): Obs => ({ id, basis: "measured-vice", rung: 1 });
 export function storeCommands(): string {
   return (
     [
+      "trace store 0000 0001",
       "trace store 0100 01ff",
       "trace store 0314 0319",
       "trace store fffa ffff",
@@ -173,6 +183,8 @@ class State {
   d011: Byte = undefined;
   d012: Byte = undefined;
   lastArm: number | null = null;
+  /** $00 and $01; null until the trace stores to either (then the power-on values fill the other). */
+  port: CpuPort | null = null;
   out: IrqChain = {
     interrupts: 0,
     vectors: [],
@@ -203,6 +215,16 @@ class State {
     this.frameCycles = frameCycles;
     this.startClock = startClock;
     this.ptrBytes = new Set(pointers.flatMap(pointerBytes));
+  }
+
+  /** The KERNAL mapped (HIRAM set), banked out, or null when $00/$01 are unknown. */
+  mapped(): boolean | null {
+    const bits = this.port?.bits ?? null;
+    return bits === null ? null : (bits & 2) !== 0;
+  }
+
+  candidates(): Candidate[] {
+    return candidates((v) => this.vector(v), this.mapped());
   }
 
   vector(name: VectorName): number | null {
@@ -259,9 +281,13 @@ function onArm(s: State, h: Hit): void {
   s.out.arms.push({ ...obs(`a${s.out.arms.length}`), line, pc: h.pc, clock: h.clock, at_line });
 }
 
-function onInterrupt(s: State): void {
+function onInterrupt(s: State, h: Hit): void {
   s.out.interrupts++;
-  for (const c of candidates((v) => s.vector(v))) addTo(s.live, c.handler, c.vector);
+  if (s.port && s.mapped() === null)
+    s.out.unknowns.push(
+      `$00/$01 not known at the interrupt at clock ${h.clock}; both the KERNAL and the RAM vectors are candidates`,
+    );
+  for (const c of s.candidates()) addTo(s.live, c.handler, c.vector);
 }
 
 /** Is an interrupt waiting whose window holds this clock? Older ones are dropped as unmatched. */
@@ -288,7 +314,7 @@ function targetOf(s: State, h: Hit, p: number | null): number | null {
 /** An exec of a traced address: an entry only when it is the dispatch of a waiting interrupt. */
 function onExec(s: State, h: Hit): void {
   if (!interruptOpen(s, h.clock)) return;
-  const via: Candidate[] = candidates((v) => s.vector(v)).filter((c) => c.handler === h.addr);
+  const via: Candidate[] = s.candidates().filter((c) => c.handler === h.addr);
   if (!via.length) return;
   s.pending.shift();
   for (const c of via) addTo(s.entered, h.addr, c.vector);
@@ -364,8 +390,15 @@ function transients(s: State): Transient[] {
 }
 
 /** A write before the entry clock: update the state, observe nothing. */
+/** A store to $00 or $01: the banking from here on. */
+function onPort(s: State, h: Hit): void {
+  s.port ??= new CpuPort();
+  s.port.store(h.addr, storedValue(h));
+}
+
 function seed(s: State, h: Hit): void {
   if (h.kind !== "store") return;
+  if (h.addr <= 0x0001) onPort(s, h);
   if (s.ptrBytes.has(h.addr)) s.bytes.set(h.addr, storedValue(h));
   if (vectorOf(h.addr)) s.bytes.set(h.addr, storedValue(h));
   else if (h.addr === 0xd011 || h.addr === 0xd012) setArm(s, h);
@@ -387,7 +420,8 @@ function unwrittenBytes(s: State): void {
 function onStore(s: State, h: Hit): void {
   if (s.ptrBytes.has(h.addr)) s.bytes.set(h.addr, storedValue(h));
   const v = vectorOf(h.addr);
-  if (isInterruptPush(h)) onInterrupt(s);
+  if (isInterruptPush(h)) onInterrupt(s, h);
+  else if (h.addr <= 0x0001) onPort(s, h);
   else if (v) onVector(s, h, v);
   else if (h.addr === 0xd011 || h.addr === 0xd012) onArm(s, h);
 }

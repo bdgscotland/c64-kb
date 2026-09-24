@@ -373,3 +373,29 @@ describe("stores logged at the interrupt's clock", () => {
     expect(analyseIrqChain(hits, PAL, 0).entries.map((e) => e.target)).toEqual([0x3100]);
   });
 });
+
+// Ported from bdgscotland/re-irq-dispatch 7d88cf6 (review fault 2): the
+// banking decides which vectors an interrupt reads, and $00 decides with $01.
+describe("KERNAL mapping from $00 and $01", () => {
+  const both = [st(0x314, 0x00, 3), st(0x315, 0x20, 4), st(0xfffe, 0x00, 5), st(0xffff, 0x30, 6)];
+  it("$01=$35 with $00=$2D leaves HIRAM an input, read high: the KERNAL dispatches through $0314", () => {
+    const hits = [st(0x0000, 0x2d, 1), st(0x0001, 0x35, 2), ...both, irq(100), ex(0x3000, 100, 40)];
+    const r = analyseIrqChain([...hits, ex(0x2000, 129, 40)], PAL, 0);
+    expect(r.handlers).toEqual([expect.objectContaining({ handler: 0x2000, via: ["irq_0314"], entries: 1 })]);
+    expect(r.unknowns).toEqual([]);
+    expect(storeCommands()).toContain("trace store 0000 0001");
+  });
+  it("$01=$35 with the power-on $00=$2F banks it out: $FFFE's RAM value is the handler", () => {
+    const hits = [st(0x0001, 0x35, 2), ...both, irq(100), ex(0x2000, 100, 40), ex(0x3000, 105, 40)];
+    const r = analyseIrqChain(hits, PAL, 0);
+    expect(r.handlers).toEqual([expect.objectContaining({ handler: 0x3000, via: ["irq_fffe"], entries: 1 })]);
+  });
+  it("names $00/$01 unknown after a read-modify-write and dispatches by what executed", () => {
+    const hits = [st(0x0001, 0x37, 1), st(0x0001, 0, 2, "DEC"), ...both, irq(100), ex(0x2000, 129, 40)];
+    const r = analyseIrqChain(hits, PAL, 0);
+    expect(r.handlers[0]).toEqual(
+      expect.objectContaining({ handler: 0x2000, via: ["irq_0314"], entries: 1 }),
+    );
+    expect(r.unknowns.join(" ")).toMatch(/\$00\/\$01 not known at the interrupt at clock 100/);
+  });
+});
