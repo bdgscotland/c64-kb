@@ -2045,7 +2045,7 @@ expanded frame uses the expanded width: `48 - 2 * offset - 2 * box_width`
 (arithmetic from the two rules, not measured here). Scaling the box in
 compiled C with variable shifts took 158 cycles a box in that recipe.
 
-**Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` in `game-design/enemy-behaviour-and-difficulty.md`.
+**Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` below, and the pattern of that name in `game-design/enemy-behaviour-and-difficulty.md`.
 
 ### Cycle budget
 
@@ -2118,6 +2118,67 @@ cycles instead of 10, so a full 9-bit hit is 64. A masked-out pair is
 - cadaver/c64gameframework (MIT), `actor.s` (CheckActorCollision,
   CheckBulletCollision, AF_GROUPFLAGS) and `sprite.s` (bounds emitted by
   the sprite draw), https://github.com/cadaver/c64gameframework
+
+---
+
+## fighter_guard_state — A fighter's guard as a box: the guard box replaces the body box, and the box a blade meets decides block or hit
+
+**Complexity:** low
+**Region:** both
+**Cost:** cycles_per_frame=364, cycles_per_frame_typical=41
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-fighter-opponent (both fighters' blades against body or guard boxes, X only, one floor; worst a hit with its push-apart; screen blanked, interrupts off)
+**Claims:** none
+**Claims basis:** derived-listing
+
+The design, its checks and what breaks without it are the pattern of the
+same name in `game-design/enemy-behaviour-and-difficulty.md`. This entry
+is the mechanism and its cost, so that `technique-lookup` can name it; an
+earlier version of the KB had only the pattern section (#113).
+
+### Why
+
+A guard changes what a blade meets. Put it in the boxes and the one
+pair test that handles every contact resolves it. A guard flag checked
+after damage has to be checked by every damage source, and a new one
+(a projectile, a throw) forgets it.
+
+### How
+
+1. On a guard frame, emit a guard box in a guard group where the body
+   box would be, over the part of the body the guard covers. Emit no
+   body box.
+2. Give a blade's pair mask both groups. A blade then meets a guard box
+   or a body box, never both.
+3. Guard box met: blocked, no damage, both fighters pushed apart (3
+   pixels in the recipe). Body box met: a hit, a stun, a 6-pixel push.
+4. A per-swing flag ends the blade after its first contact, so one swing
+   resolves once.
+
+### Why it works
+
+The body box is absent while the guard box is present, so the group of
+the box the blade met is the result. Height and facing are more boxes,
+not more rules: a high and a low guard are two boxes, and a guard box
+offset forward leaves the back of the body exposed. The full box test is
+`per_frame_hitbox`'s four compares; the recipe has one floor and tests X
+only.
+
+### Variations
+
+- High and low guards as two guard boxes over two parts of the body.
+- A guard that covers the front only, so a blow from behind lands.
+
+### Cycle budget
+
+Measured in the recipe with CIA2 timer A around each of 2,400 `resolve`
+calls, less an empty start and stop, interrupts off and the screen
+blanked (Oscar64 -O2, VICE x64sc, PAL and NTSC the same): 364 cycles
+worst, a hit with its push-apart loop, and 41 mean.
+
+### Recipes
+
+- `recipes/oscar64/fighter-opponent.md` — the opponent's guard frame replaces its body box; blows landed and blocked counted for both fighters and checked against a Python model
 
 ---
 
