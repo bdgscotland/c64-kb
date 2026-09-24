@@ -53,6 +53,13 @@ calls, and is not multiplied. A count of 0 in the worst frame, or M above
 N, drops the item with a warning. The count rides the `COMPOSES` edge as
 `calls_low` and `calls_high`.
 
+On a technique whose Cost line states `cycles_per_item` (#95), the count
+is items, not calls: `char_bullets ×0-12` is up to twelve bullets, and
+the plan charges `cycles_item_base` + M × item for the low end and the
+same with N for the high. A count of 0 is allowed as M there, for a
+frame with no bullets. `c64_plan_budget` takes the same `×N` on a plain
+technique list.
+
 ```
 **Composes:** frame_sync_loop, decimal_print ×2-7, kernal_file_write_seq (transition)
 ```

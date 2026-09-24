@@ -12,9 +12,30 @@ import { evaluateCompatibility } from "./rules.ts";
 
 export { evaluateCompatibility } from "./rules.ts";
 export { checkDesignCompatibility } from "./design.ts";
+import { checkPhasedCompatibility, membersByPhase } from "./design.ts";
+import { parseMemberSpec } from "../plan-budget.ts";
 export type { CompatibilityFacts, TechniqueFacts } from "./facts.ts";
 
-export async function checkCompatibility(techniques: string[]): Promise<CompatibilityCheckResult> {
+/**
+ * A list with any "name:phase" is checked by phase, like a design (#94);
+ * otherwise as one set. A call or item count ("name ×N", plan_budget's
+ * syntax) is read and dropped: it does not change what can coexist.
+ */
+export async function checkCompatibility(specs: string[]): Promise<CompatibilityCheckResult> {
+  if (specs.some((s) => s.includes(":"))) {
+    const by = membersByPhase([], specs);
+    return checkPhasedCompatibility(by, { title: [...new Set([...by.values()].flat())].join(" + ") });
+  }
+  return checkOneSet(specs.map(nameOf));
+}
+
+/** The technique name of a spec with a count; a spec that does not parse is passed on whole. */
+function nameOf(spec: string): string {
+  const parsed = parseMemberSpec(spec);
+  return "error" in parsed ? spec : parsed.name;
+}
+
+async function checkOneSet(techniques: string[]): Promise<CompatibilityCheckResult> {
   const facts = await fetchCompatibilityFacts(techniques);
   const { closureOnly, ...evaluation } = evaluateCompatibility(facts);
 

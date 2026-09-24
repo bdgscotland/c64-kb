@@ -40,6 +40,8 @@ const MemberRow = z.object({
   raster_band: OptString,
   cycles_per_frame: OptNumber,
   cycles_per_frame_typical: OptNumber,
+  cycles_per_item: OptNumber,
+  cycles_item_base: OptNumber,
   cycles_per_line: OptNumber,
   lines_active: OptNumber,
   bytes_code: OptNumber,
@@ -62,6 +64,7 @@ const MEMBERS_QUERY = `MATCH (t:Technique) WHERE t.name IN $names
   OPTIONAL MATCH (r:Recipe)-[:IMPLEMENTS]->(t)
   RETURN t.name AS name, toLower(rr.name) AS requires_region, t.raster_band AS raster_band,
          t.cost_cycles_per_frame AS cycles_per_frame, t.cost_cycles_per_frame_typical AS cycles_per_frame_typical,
+         t.cost_cycles_per_item AS cycles_per_item, t.cost_cycles_item_base AS cycles_item_base,
          t.cost_cycles_per_line AS cycles_per_line, t.cost_lines_active AS lines_active,
          t.cost_bytes_code AS bytes_code, t.cost_bytes_data AS bytes_data, t.cost_irq_slots AS irq_slots,
          t.cost_basis AS basis, t.cost_bytes_basis AS bytes_basis, t.cost_recipe AS measured_on, t.cost_conditions AS conditions,
@@ -117,6 +120,8 @@ function memberOf(spec: MemberSpec, row: MemberRow | undefined): BudgetMember {
           cost: {
             cycles_per_frame: row.cycles_per_frame,
             cycles_per_frame_typical: row.cycles_per_frame_typical,
+            cycles_per_item: row.cycles_per_item,
+            cycles_item_base: row.cycles_item_base,
             cycles_per_line: row.cycles_per_line,
             lines_active: row.lines_active,
             bytes_code: row.bytes_code,
@@ -153,9 +158,19 @@ function rangeText(p: PhaseBudget): string {
   return `${fixed > 0 ? `${range} + ${fixed} fixed` : range} cycles; floor ${p.floor}`;
 }
 
+/** "12" or "0-12": the items a per_item charge counted. */
+function countText(calls: CallCount | undefined): string {
+  if (!calls) return "0";
+  return calls.low === calls.high ? `${calls.high}` : `${calls.low}-${calls.high}`;
+}
+
 function contributorLine(c: PhaseBudget["contributors"][number]): string {
   const figure = c.low === c.high ? `${c.high}` : `${c.low}-${c.high}`;
-  const calls = c.calls ? `, ${callsText(c.calls).trim()} calls` : "";
+  const calls = c.per_item
+    ? `, ${c.per_item.base} + ${countText(c.calls)} items × ${c.per_item.each}`
+    : c.calls
+      ? `, ${callsText(c.calls).trim()} calls`
+      : "";
   const on = c.measured_on
     ? `, on ${c.measured_on}${c.conditions ? ` (${c.conditions})` : ""}`
     : ", recipe not stated";

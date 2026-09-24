@@ -124,6 +124,8 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | cost_irq_slots | integer, optional | Raster or timer interrupts the technique needs per frame. |
 | cost_sprites_per_line | integer, optional | The most hardware sprites displayed on one raster line of the technique's lines, 0-8 (schema 24). `c64_timing_budget` subtracts their DMA (3 + 2 per sprite, measured) from the line's user cycles. |
 | cost_cycles_per_frame_typical | integer, optional | A measured typical frame beside a worst-frame cost_cycles_per_frame, never above it (schema 27). `c64_plan_budget` sums it for the low end of its range, which is therefore not a floor. |
+| cost_cycles_per_item | integer, optional | The worst cycles one more item (a bullet, a tested pair) adds to a frame, measured (#95). A plan count on the technique (`×N`, `×M-N`) is then items, not calls: `c64_plan_budget` charges cost_cycles_item_base + N × this. |
+| cost_cycles_item_base | integer, optional | The cycles of a frame with no items, beside cost_cycles_per_item (#95); absent is 0. |
 | cost_recipe | string, optional | The recipe the cost figures were measured on or counted from, from `**Cost measured on:**` (schema 27). A property, not an edge; ingest warns when it names no Recipe, or a Recipe with no IMPLEMENTS edge to this technique (#41). |
 | cost_conditions | string, optional | The parenthetical after the recipe on that line: "screen blanked", "whole PRG", "one call" and the like (schema 27). `c64_plan_budget` reads "screen on" (the badline stalls that fell inside the figure are in it), "blank" (none are) and "whole PRG" (bytes not summed). |
 | cost_includes | string[], optional | Techniques whose per-frame work is inside this technique's figure, from `**Cost includes:**` (schema 27). Authored, never inferred; ingest warns when a name is no Technique. A budget that lists both counts the included one once. |
@@ -602,6 +604,18 @@ loader) against any technique that USES a KERNAL serial or file routine
 listed as band-separated, when both techniques carry a `raster_band` of
 line ranges and the ranges share no line. Before schema 24 there was no
 band, and any two `cpu_every_line` techniques were reported as a conflict.
+
+A check by phase (#94: a design, or names given as `name:phase`) runs
+`kernal_rom_out` against KERNAL calls in a later phase as a soft
+`kernal_banked_out` with `across`, since the boundary can bank the KERNAL
+back in. The same check reads `midframe_raster_irqs` and
+`changes_sprite_set` (or a `vic_raster_irq` or sprite claim) against the
+KERNAL routines the pitfalls `raster_irq_during_serial_io` and
+`sprites_over_badlines_hang_serial_io` are TRIGGERED_BY, within a phase
+and across phases, and reports `recipe_kernal_out` (info) when every
+recipe that IMPLEMENTS one technique also implements a `kernal_rom_out`
+technique or CLAIMS `irq_vector_fffe`. To state that a design runs with
+the KERNAL out, list `ram_under_kernal`.
 
 ### CLAIMS
 

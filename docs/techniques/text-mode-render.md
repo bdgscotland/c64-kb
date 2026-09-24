@@ -387,9 +387,9 @@ design's.
 **Region:** both
 **Uses registers:** D018
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=3995
+**Cost:** cycles_per_frame=3995, cycles_per_item=490, cycles_item_base=75
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-char-bullets (eight bullets, worst frame)
+**Cost measured on:** oscar64-char-bullets (eight bullets, worst frame; an item is one bullet, restore plus draw, fitted to builds of 1 to 12 bullets on PAL and NTSC)
 
 ### Why
 
@@ -495,6 +495,27 @@ worst frame seen over about 240 frames on each model, 3,354 + 641 =
 cells (one more chain step) and wall hits. The recipe's full-arena
 compare, 5,873 cycles on PAL and 6,131 on NTSC, is its self-check and
 not part of the technique.
+
+**Per bullet.** The recipe was rebuilt with 1, 2, 4, 8 and 12 bullets
+(`NB`; the reserved codes start at `$100 - NB`, and bullets 8 to 11 get
+start positions of their own) and run 8,000,000 cycles on each model.
+The table is the worst restore plus the worst draw, from the same CIA
+timers, read from memory by the VICE monitor (rung 1).
+
+| Bullets | PAL | NTSC | 75 + 490 × bullets |
+|---|---|---|---|
+| 1 | 386 | 429 | 565 |
+| 2 | 1,001 | 1,001 | 1,055 |
+| 4 | 2,030 | 2,073 | 2,035 |
+| 8 | 3,986 | 3,966 | 3,995 |
+| 12 | 5,872 | 5,871 | 5,955 |
+
+The Cost line's `cycles_per_item=490, cycles_item_base=75` is that last
+column: it passes every measured figure but the NTSC four-bullet one,
+which is 38 cycles over it (a badline). Two bullets cost more than twice
+one because bullets 0 and 1 share a cell and walk the chain. A plan that
+names `char_bullets ×12` is charged 5,955; without a count it is charged
+the recipe's eight, 3,995.
 
 ### Recipes
 

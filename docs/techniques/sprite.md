@@ -1941,9 +1941,9 @@ budgets the C one.
 **Region:** both
 **Uses registers:** D010
 **Uses kernal:** (none)
-**Cost:** cycles_per_frame=3693
+**Cost:** cycles_per_frame=3693, cycles_per_item=150, cycles_item_base=2992
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-per-frame-hitbox (eight boxes, 28 pairs of which the masks leave 10; 1,834 to test plus 1,859 to emit, from a build without the demo's pair counters and halved-X arrays; the recipe as shipped prints COLLIDE MAX 2,037 and EMIT MAX 2,148, which include them; in the vertical blank, PAL)
+**Cost measured on:** oscar64-per-frame-hitbox (eight boxes, 28 pairs of which the masks leave 10; an item is one tested pair that hits, over a base of eight boxes and no tested pair, see Cycle budget; 1,834 to test plus 1,859 to emit, from a build without the demo's pair counters and halved-X arrays; the recipe as shipped prints COLLIDE MAX 2,037 and EMIT MAX 2,148, which include them; in the vertical blank, PAL)
 
 ### Why
 
@@ -2061,6 +2061,38 @@ test and 1,859 to emit, 3,693 in all, which is the Cost line. The same on
 NTSC except the emit, which runs past the NTSC vertical blank into a
 badline and reads 2,234. Figures move by a few cycles as the code grows
 and the layout shifts.
+
+**Per pair and per box.** Measured in VICE x64sc 3.10, CIA1 timer B,
+interrupts masked, read from memory by the VICE monitor (rung 1). Two
+kinds of build: the recipe's scenario without the pair counters and
+halved-X arrays, with its masks as shipped (10 of 28 pairs tested),
+all zero (none tested) or all set (all 28 tested); and a bench of the
+recipe's `emit_boxes` and `collide` with N one-box actors at one
+position, so every tested pair runs all four compares and hits, and
+`event_bit` runs.
+
+| Build | Collide | Emit |
+|---|---|---|
+| recipe, 8 boxes, none tested | 1,089 | 1,796 |
+| recipe, 8 boxes, 10 tested (as shipped) | 1,826 | 1,860 PAL, 1,903 NTSC |
+| recipe, 8 boxes, all 28 tested | 2,419 | 1,796 PAL, 1,882 NTSC |
+| bench, 4 / 8 / 12 / 16 boxes, every pair masked | 343 / 1,082 / 2,202 / 3,706 | 505 / 1,097 / 1,641 / 2,185 |
+| bench, 4 / 8 / 12 / 16 boxes, every pair tested and hitting | 1,237 / 5,249 / 11,499 / 20,233 | 497 / 1,081 / 1,617 / 2,153 |
+
+The bench is the same on PAL and NTSC, screen blanked. A masked pair
+costs 28 to 34 cycles (the bench's slope). A tested pair that hits
+costs 138 to 149 more than a masked one from 6 pairs up (184 for a lone
+pair); one that fails its first compare costs less. Emit is about 140
+cycles a one-box actor in the bench and about 232 a box in the recipe,
+whose actors carry one or two boxes each.
+
+The Cost line's `cycles_per_item=150, cycles_item_base=2992` counts
+tested pairs: 2,992 is the recipe's eight boxes with none tested, the
+masked collide (1,089) plus the worst emit (1,903), and 150 is a hitting
+pair. A plan that names `per_frame_hitbox ×40` is charged 2,992 + 40 ×
+150 = 8,992. The base holds eight boxes and 28 pairs; with more boxes,
+add about 232 per box emitted and 34 per masked pair from the table, by
+hand. Without a count the plan is charged the recipe's frame, 3,693.
 
 Hand-written assembly is much cheaper; this is arithmetic from the
 instruction table (rung 3), not measured here. With the box arrays

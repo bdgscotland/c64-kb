@@ -10,6 +10,9 @@ export const COST_VOCABULARY: Record<string, string> = {
   cycles_per_frame: "CPU cycles the technique takes per frame (PAL 19,656 unless the page says otherwise)",
   cycles_per_frame_typical:
     "CPU cycles on a typical frame, measured, when cycles_per_frame is a worst frame (schema 27); never above cycles_per_frame",
+  cycles_per_item:
+    "worst CPU cycles each item adds to a frame (a bullet, a tested pair), measured (#95); a plan's count on the technique charges cycles_item_base + N × this",
+  cycles_item_base: "CPU cycles of a frame with no items, beside cycles_per_item (#95); never without it",
   lines_active: "raster lines per frame on which the technique runs code",
   bytes_code: "bytes of code in the built recipe's segments",
   bytes_data: "bytes of tables, buffers and other data in the built recipe's segments",

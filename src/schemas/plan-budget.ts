@@ -23,9 +23,12 @@ const PlanPhaseSchema = z.object({
       high: z.number().int(),
       every_frame: z.boolean(),
       basis: CostBasisSchema,
-      charge: z.enum(["cycles_per_frame", "per_line", "band"]),
-      // Present when low and high are one call's figure times this many (#37).
+      charge: z.enum(["cycles_per_frame", "per_line", "band", "per_item"]),
+      // Present when low and high are one call's figure times this many (#37),
+      // or, on a per_item charge (#95), the items counted.
       calls: z.object({ low: z.number().int(), high: z.number().int() }).optional(),
+      // per_item only (#95): low = base + calls.low × each, high = base + calls.high × each.
+      per_item: z.object({ base: z.number().int(), each: z.number().int() }).optional(),
       measured_on: z.string().nullable(),
       conditions: z.string().nullable(),
     }),

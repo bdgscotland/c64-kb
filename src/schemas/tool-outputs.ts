@@ -198,6 +198,10 @@ const TechniqueCostSchema = z.object({
   sprites_per_line: z.number().int().optional(),
   // Schema 27: a measured typical frame beside a worst-frame cycles_per_frame.
   cycles_per_frame_typical: z.number().int().optional(),
+  // #95: worst cycles each item adds, and a frame with none; plan_budget's
+  // "name ×N" on the technique charges base + N × item.
+  cycles_per_item: z.number().int().optional(),
+  cycles_item_base: z.number().int().optional(),
   basis: CostBasisSchema,
   // **Cost bytes basis:** (#72): the basis of bytes_code, bytes_data and
   // zp_bytes when the page states one apart; `basis` then covers the rest.
