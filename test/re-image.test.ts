@@ -177,6 +177,35 @@ const MEASURED_LIST_STDOUT = [
 // case where c1541 does write to stderr.
 const MEASURED_MISSING_FILE_STDERR = "cannot read `nope' on unit 8\ninvalid filename\n";
 
+// Fix round 3 (.superpowers/sdd/2026-09-24-re-step2-commando/task-2-rereview.md):
+// `-list` on the maintainer's own Commando.d64 (data/games/manifest.json;
+// copied first, per resolveImage's own rule, never the original), measured
+// the same way as the fixtures above. Every scratched file on this disk
+// shows as a DEL row with 0 blocks, the same leading digit as the header:
+// `0    "----------------" del `. Its 16-dash name even fills the header's
+// own 16-character field width, so neither "block count 0" nor "name is 16
+// characters" alone tells a DEL row from the header — only the header's
+// bare-2-char-ID/2-char-type tail versus a DEL row's file-type tail does.
+const MEASURED_COMMANDO_LIST_STDOUT = [
+  "\u001b[97;40mOPENCBM\u001b[0m: opening dynamic library libopencbm.dylib failed!",
+  "D64 disk image recognised: /tmp/commando-measure/copy.d64, 35 tracks.",
+  "Unit 8 drive 0: D64 disk image attached: /tmp/commando-measure/copy.d64.",
+  '0 "www.c64hq.com   " 00 2a',
+  '0    "----------------" del ',
+  '120  "commando+5hi/rem" prg ',
+  '1    "commando hi /rem" prg ',
+  '0    "----------------" del ',
+  '117  "commando +   /dr" prg ',
+  '0    "----------------" del ',
+  '170  "commando"         prg ',
+  '0    "----------------" del ',
+  '183  "commando ii"      prg ',
+  '0    "----------------" del ',
+  "73 blocks free.",
+  "Unit 8 drive 0: D64 disk image detached: /tmp/commando-measure/copy.d64.",
+  "",
+].join("\n");
+
 describe("hasDirectoryHeader", () => {
   it("is true for a real listing's own header row", () => {
     expect(hasDirectoryHeader(MEASURED_LIST_STDOUT)).toBe(true);
@@ -198,6 +227,49 @@ describe("hasDirectoryHeader", () => {
   it("is false for empty or unparseable text", () => {
     expect(hasDirectoryHeader("")).toBe(false);
     expect(hasDirectoryHeader("Error - Cannot read image header.\n")).toBe(false);
+  });
+
+  // Fix round 3: block count 0 alone does not mean "header" — a DEL entry
+  // is also 0 blocks, and a short, unpadded quoted name is not a header
+  // either (a real header's name is always the full 16-character field).
+  it('is false for a 0-block file row shaped like a header but with a file-type tail (0 "prog" prg)', () => {
+    expect(hasDirectoryHeader('0 "prog" prg\n663 blocks free.\n')).toBe(false);
+  });
+
+  it('is false for a 0-block row with a quoted name and nothing else (0 "prog")', () => {
+    expect(hasDirectoryHeader('0 "prog"\n663 blocks free.\n')).toBe(false);
+  });
+
+  it("is true for the real header measured on the maintainer's own Commando.d64", () => {
+    expect(hasDirectoryHeader(MEASURED_COMMANDO_LIST_STDOUT)).toBe(true);
+  });
+
+  it("keeps a DEL row (0 blocks, a 16-dash name filling the header's own field width) out of being read as the header", () => {
+    // The true header is still row 0; every DEL row's file-shaped tail
+    // ("del", not two bare 2-character fields) rules each one out, whether
+    // it is scanned or not — hasDirectoryHeader only looks at the first
+    // row, which here correctly is the real header, not a DEL row.
+    expect(hasDirectoryHeader(MEASURED_COMMANDO_LIST_STDOUT)).toBe(true);
+    expect(directoryOf(MEASURED_COMMANDO_LIST_STDOUT)).toEqual([
+      "----------------",
+      "commando+5hi/rem",
+      "commando hi /rem",
+      "----------------",
+      "commando +   /dr",
+      "----------------",
+      "commando",
+      "----------------",
+      "commando ii",
+      "----------------",
+    ]);
+  });
+
+  it("is false when a DEL row is the only, first row (no real header at all)", () => {
+    // The exact class of bug the re-review reported, via the other case
+    // that also has a leading 0: a listing whose first row is a DEL entry,
+    // not the disk-name header.
+    const headerless = '0    "----------------" del \n663 blocks free.\n';
+    expect(hasDirectoryHeader(headerless)).toBe(false);
   });
 });
 

@@ -75,8 +75,8 @@ function readManifest(manifestPath: string): Record<string, ManifestEntry> | nul
   }
 }
 
-/** A `c1541 -list` row: a leading number (block count, or 0 for the disk-name header), then a quoted string. */
-const ROW = /^\s*(\d+)\s+"([^"]*)"/gm;
+/** A `c1541 -list` row: a leading number (block count, or 0 for the disk-name header), a quoted name, then whatever trails it. */
+const ROW = /^\s*(\d+)\s+"([^"]*)"(.*)$/gm;
 
 /**
  * The file names a `c1541 -list` directory printout reports, in order. The
@@ -88,16 +88,35 @@ export function directoryOf(text: string): string[] {
   return [...text.matchAll(ROW)].slice(1).map((m) => (m[2] ?? "").trimEnd());
 }
 
+// A file row's own trailing field is its file type, optionally locked (<)
+// or a splat/error (*) — never the header's. block count 0 does not by
+// itself mean "header": a DEL entry is also 0 blocks (measured on
+// Commando.d64: `0    "----------------" del `), and its 16-dash name even
+// fills the same 16-character field width as a real disk name.
+const FILE_TYPE = /\b(prg|seq|usr|rel|del)[<*]?\s*$/i;
+// The header's own two trailing fields, exactly: a bare 2-character disk ID
+// then a 2-character DOS type, nothing else (measured: `0 "www.c64hq.com   " 00 2a`
+// on Commando.d64; `0 "test            " 01 2a` on a c1541 -format fixture).
+const HEADER_TAIL = /^\s+\S{2}\s+\S{2}\s*$/;
+
 /**
  * True only when the first `c1541 -list` row is the disk-name header
- * itself: `0 "<disk name>" <id>` (measured: block count 0, never seen on a
- * real file row). A listing whose first row is a file (no header at all —
- * a truncated or corrupted listing) is not trustworthy: `directoryOf` would
- * silently drop that file as if it were the header.
+ * itself, matched by shape, not merely a leading "0": a 16-character quoted
+ * name (the D64 BAM's fixed disk-name width — a file's own name is never
+ * padded to 16, only the header's is) followed by a bare 2-character disk
+ * ID and a 2-character DOS type, and never a row ending in a file type. A
+ * listing whose first row is a file, or a DEL entry, or is empty or
+ * unparseable, is not trustworthy: `directoryOf` would otherwise silently
+ * drop that row as if it were the header.
  */
 export function hasDirectoryHeader(text: string): boolean {
   const first = [...text.matchAll(ROW)][0];
-  return first?.[1] === "0";
+  if (!first) return false;
+  const [, blocks, name, tail = ""] = first;
+  if (blocks !== "0") return false;
+  if ((name ?? "").length !== 16) return false;
+  if (FILE_TYPE.test(tail)) return false;
+  return HEADER_TAIL.test(tail);
 }
 
 function classify(imagePath: string): "prg" | "d64" | null {
