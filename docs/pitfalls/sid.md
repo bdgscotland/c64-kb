@@ -520,7 +520,7 @@ and the two chips show no difference in reSID, so it has been removed.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D418
-**Triggered by techniques:** sid_voice_setup, lfsr_random, sid_env3_filter_envelope, sid_8580_digi_bias_and_filter_bypass, sid_sync_lead
+**Triggered by techniques:** sid_voice_setup, lfsr_random, sid_env3_filter_envelope, sid_8580_digi_bias_and_filter_bypass, sid_sync_lead, sid_ring_mod_bell
 
 ### Symptom
 

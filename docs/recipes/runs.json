@@ -2575,5 +2575,16 @@
       "pal": "screenshots/sid-hr-snare.png",
       "ntsc": "screenshots/sid-hr-snare-ntsc.png"
     }
+  },
+  "kickassembler/sid-ring-bell": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-ring-bell.png",
+      "ntsc": "screenshots/sid-ring-bell-ntsc.png"
+    }
   }
 }

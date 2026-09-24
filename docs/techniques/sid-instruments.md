@@ -401,3 +401,100 @@ worst call here is 1,012 cycles on PAL.
 ### Recipes
 
 - `recipes/kickassembler/sid-sync-lead.md`
+
+---
+
+## sid_ring_mod_bell — A ring-modulated bell: triangle carrier, an unheard modulator a tritone up
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D400, D401, D404, D405, D406, D40E, D40F, D412, D417, D418
+**Requires:** sid_play_routine_pattern
+**Cost:** cycles_per_frame=289, cycles_per_frame_typical=36
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sid-ring-bell (per play call, phase A against phase B, which has RING off and voice 3 resting: the modulator voice's player work; the RING bit itself adds nothing; worst is a call where the modulator starts a note, PAL and NTSC alike)
+**Claims:** sid_voice_1 (owns), sid_voice_3 (owns), sid_filter_volume (shares)
+**Claims basis:** derived-listing
+
+Every claim below was measured in VICE x64sc 3.10 (reSID, 6581 and 8580
+models, PAL and NTSC) by the recipe's log, the dump sink's register
+trace and WAV recordings. Nobody has listened to the recordings.
+`sid_voice_setup` in `music-sid.md` describes ring modulation as a
+variation; this is the instrument built and measured through the #50
+player.
+
+### Why
+
+A bell's partials are not harmonics of one pitch. The SID's waveforms
+give only harmonic spectra, except through ring modulation, which puts a
+voice's triangle at the sums and differences of two frequencies. Voice 1
+rings against voice 3, so voice 3 has to run at the modulator's pitch
+and stay silent.
+
+### How
+
+- Voice 1, the carrier: triangle + RING (`$14`) in its wavetable; attack
+  0, decay 9, sustain 0, release 9, for a struck envelope.
+- Voice 3, the modulator: the carrier's pattern, through an order list
+  whose transpose puts it six semitones up (`$A6`). A plain instrument;
+  it loads a filter program that writes `$D417` = `$F0` (no voice
+  filtered) and `$D418` = `$8F` (3OFF, volume 15).
+- Pick an interval whose frequency ratio is not a small whole number; six
+  semitones is 1.414.
+
+### Why it works
+
+The SID folds its sawtooth into a triangle on the accumulator's MSB; with
+RING set the fold uses voice 1's MSB XORed with voice 3's
+(`sid-reference.md`, "Ring modulation"). The triangle flips at the
+modulator's rate, which multiplies it by a square wave: the output lies
+at the sums and differences of the two frequencies and their odd
+multiples. Voice 3's accumulator runs gated or not, and 3OFF with FILT3
+clear takes it off the output.
+
+Measured on the recipe, a spectrum over eight frames from each note's
+gate, carrier E5 659.3 Hz and modulator 932.3 Hz on the first note:
+
+| | Strongest partials, × carrier | On the carrier's harmonics |
+|---|---|---|
+| RING on (both models) | 2.414, 0.418, 3.241, 5.247 | 1.5 % to 5.1 % over 8 notes |
+| RING off (the carrier alone) | 1, 3, 5, 7 | 100 % |
+
+0.414 and 2.414 are the modulator minus and plus the carrier; 3.243 and
+5.243 are three times the modulator minus and plus it (arithmetic). The
+two strongest partials are within 1 dB of each other on every note.
+
+The trace a correct build leaves: every call where voice 1 sounds has
+`$D404` = `$15`; voice 3's frequency is 1.414 times voice 1's on every
+such call; `$D418` = `$8F` and `$D417` = `$F0` from voice 3's first note.
+
+### Variations
+
+**Other intervals.** Any ratio away from a whole number gives an
+inharmonic set; a whole number of octaves puts every partial on the
+carrier's harmonics (arithmetic; not built).
+
+**Moving modulator.** A wavetable or vibrato on voice 3 sweeps the
+partials while the carrier holds (not built).
+
+**Voice 2 as carrier.** Voice 2 rings against voice 1, leaving voice 3
+free (not built).
+
+### Cycle budget
+
+Per play call, the bell with its modulator against the carrier alone,
+PAL: +36 on 147 calls of 192, +56 on 13; for each modulator note, +112
+on the call that reads it, +98 on its hard restart, +189 on the call
+before it and +289 on its own call; NTSC the same. The whole player's
+worst call here is 1,014 cycles on PAL.
+
+### Pitfalls met
+
+- `sid_voice3_disable_silent_bit`: 3OFF silences voice 3 only with FILT3
+  clear; the tune's filter program routes no voice.
+- `sid_adsr_bug_8580`: the bell's attack is 0; the player writes the gate
+  before AD and SR (`sid_hard_restart_drum`, #118).
+
+### Recipes
+
+- `recipes/kickassembler/sid-ring-bell.md`

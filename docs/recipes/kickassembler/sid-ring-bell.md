@@ -1,9 +1,9 @@
 ---
-recipe: sid-sync-lead
+recipe: sid-ring-bell
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [sid_sync_lead]
+techniques: [sid_ring_mod_bell]
 file_formats: [PRG]
 uses_registers: [D011, D012, D019, D01A, D020, D021, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418, DC04, DC05, DC0D, DC0E, DD0D]
 uses_kernal: []
@@ -14,31 +14,31 @@ ram: [colour=$D800-$DBFF]
 
 <!-- doc-type: recipe -->
 
-# KickAssembler — A hard-sync lead through the music player: voice 3 the unheard master, voice 1 the slave
+# KickAssembler — A ring-modulated bell through the music player: triangle carrier on voice 1, an unheard modulator on voice 3
 
 Verified on: VICE x64sc 3.10, the windowless build, reSID; PAL c64c
 (8565, 8580, 8521) as `-default` and PAL `-model c64` (6569, 6581,
 6526); NTSC `-model ntsc` (6567R8, 6581, 6526). KickAssembler 5.25.
-2026-09-24. Canonical name `kickassembler-sid-sync-lead`. Nobody has
+2026-09-24. Canonical name `kickassembler-sid-ring-bell`. Nobody has
 listened to the recordings: every figure below is a register trace or a
 measurement of a WAV file, all reSID, none silicon.
 
 ## Synopsis
 
-A lead played by the #50 music player (`music-player.md`, with the
-note-start order of `sid-hr-snare`). Voice 1 is the slave: sawtooth with
-SYNC set, and a wavetable that steps its pitch from 12 to 29 semitones
-above the note over nine frames and holds there. Voice 3 is the master:
-the same eight notes, unheard behind 3OFF (bit 7 of `$D418`, set by the
-tune's filter program, which routes no voice through the filter). The
-harness plays the tune's first 192 calls twice: A as written, B with
-SYNC cleared and voice 3 resting, the slave alone. It logs voice 1's
-control byte and note and voice 3's note after every call, times every
+A bell played by the #50 music player (`music-player.md`, with the
+note-start order of `sid-hr-snare`). Voice 1 is the carrier: triangle
+with RING set, attack 0, decay 9, sustain 0. Voice 3 is the modulator:
+the same notes six semitones higher (its order list's transpose), unheard
+behind 3OFF with no voice routed through the filter. The harness plays
+the tune's first 192 calls twice: A as written, B with RING cleared and
+voice 3 resting, the carrier alone. It logs voice 1's control byte and
+note and voice 3's note and control byte after every call, times every
 call, checks the logs and grades itself: `$02FF` = `$01` and a green
-border on PASS, `$02` and red on FAIL. In the recordings, A sounds at the
-master's pitch on every note, to 0.1 %, while B sounds at the slave's.
-`-define FORCE_FAULT` writes phase A without SYNC. The technique is
-`sid_sync_lead` in `techniques/sid-instruments.md`.
+border on PASS, `$02` and red on FAIL. In the recordings, A's strongest
+partials sit at the difference and the sum of the two frequencies, and
+under 6 % of its power lies on the carrier's harmonics; B's is all
+there. `-define FORCE_FAULT` writes phase A without RING. The technique
+is `sid_ring_mod_bell` in `techniques/sid-instruments.md`.
 
 ## Source
 
@@ -47,18 +47,19 @@ the #50 player (its sound effects compiled out; one change, the
 note-start order, marked at `mu_envp`), and the tune.
 
 ```asm
-// sid-sync-lead.asm: a hard-sync lead played by the #50 music player.
-// Voice 1 is the slave: sawtooth with SYNC set, a wavetable that steps its
-// pitch 12 to 29 semitones above the note. Voice 3 is the master: the same
-// notes, unheard behind 3OFF (bit 7 of $D418, set by the tune's filter
-// program, FILT3 clear). The harness plays the tune's first 192 calls
-// twice: A as written, B with the SYNC bit cleared and voice 3 resting (the
-// slave alone). It logs voice 1's control byte and note and voice 3's note
-// every call, times every call with CIA1 timer A, checks the log and prints
-// the result: $02FF = $01 and a green border on PASS, $02 and red on FAIL.
-// After the report the tune keeps playing, A and B alternating, for a
-// recording. -define FORCE_FAULT writes phase A without the SYNC bit.
-// Build: java -jar KickAss.jar sid-sync-lead.asm -o sid-sync-lead.prg
+// sid-ring-bell.asm: a ring-modulated bell played by the #50 music player.
+// Voice 1 is the carrier: triangle with RING set, a fast attack and a long
+// decay to silence. Voice 3 is the modulator: the same notes six semitones
+// higher (the order list's transpose), unheard behind 3OFF (bit 7 of
+// $D418, set by the tune's filter program, FILT3 clear). The harness plays
+// the tune's first 192 calls twice: A as written, B with the RING bit
+// cleared and voice 3 resting (the carrier alone). It logs voice 1's
+// control byte and note and voice 3's note every call, times every call
+// with CIA1 timer A, checks the log and prints the result: $02FF = $01 and
+// a green border on PASS, $02 and red on FAIL. After the report the tune
+// keeps playing, A and B alternating, for a recording. -define FORCE_FAULT
+// writes phase A without the RING bit.
+// Build: java -jar KickAss.jar sid-ring-bell.asm -o sid-ring-bell.prg
 #define NO_FX
 
 BasicUpstart2(start)
@@ -257,12 +258,13 @@ nmi:    rti
 // ---------------------------------------------------------------------------
 .const ROWRES = 20
 .const SHOW   = 4           // first call shown on screen
-.const WT_SYNC  = 2             // instrument 1's wavetable start in A
-.const WT_PLAIN = 12            // and in B: the same rows without SYNC
+.const WT_RING  = 2             // instrument 1's wavetable start in A
+.const WT_PLAIN = 4             // and in B: the same row without RING
+.const MODUP    = 6             // the modulator's transpose, semitones
 #if FORCE_FAULT
-.const SYNCW = $20              // the fault: phase A has no SYNC either
+.const RINGW = $10              // the fault: phase A has no RING either
 #else
-.const SYNCW = $22              // sawtooth + SYNC
+.const RINGW = $14              // triangle + RING
 #endif
 
 // Nothing to read before the call.
@@ -272,19 +274,20 @@ nmi:    rti
 // Per call, after music_play: what the player last gave the SID, from its
 // state (the SID's registers cannot be read back).
 .macro LOG(c0, c1, c2, c3) {
-        lda mu_wave             // voice 1 control: waveform, SYNC, GATE
+        lda mu_wave             // voice 1 control: waveform, RING, GATE
         ora mu_gate
         sta c0,y
-        lda mu_arp              // voice 1 note this frame (the slave)
+        lda mu_arp              // voice 1 note this frame (the carrier)
         sta c1,y
-        lda mu_arp+14           // voice 3 note this frame (the master)
+        lda mu_arp+14           // voice 3 note this frame (the modulator)
         sta c2,y
-        lda mu_note             // voice 1's pattern note
+        lda mu_wave+14          // voice 3 control
+        ora mu_gate+14
         sta c3,y
 }
 
-// A: the sync lead as written. B: the SYNC bit off, voice 3 resting.
-set_a:  lda #WT_SYNC
+// A: the bell as written. B: the RING bit off, voice 3 resting.
+set_a:  lda #WT_RING
         sta tn_wt+1
         lda #<tn_ord3
         sta tn_ordlo+2
@@ -305,25 +308,28 @@ report: HEXROW(LOGA0, 2)
         HEXROW(LOGB0, 8)
         HEXROW(LOGB2, 10)
         ldx #0
-rp_n:   lda LOGA0,x             // A: gated calls, and those with SYNC
-        lsr
-        bcc !+
+rp_n:   lda LOGA0,x             // A: gated calls, those with RING, and
+        lsr                     // those with the modulator 6 semitones up
+        bcc rp_b
         inc gated_a
-        and #1                  // SYNC, bit 1 before the shift
+        lsr
+        lsr                     // RING, bit 2 before the shifts
+        bcc !+
+        inc ring_a
+!:      lda LOGA1,x
+        clc
+        adc #MODUP
+        cmp LOGA2,x
+        bne rp_b
+        inc mod_a
+rp_b:   lda LOGB0,x             // B: no RING
+        and #4
         beq !+
-        inc sync_a
-!:      lda LOGA2,x             // A: the master on the slave's pattern note
-        cmp LOGA3,x
-        bne !+
-        inc mast_a
-!:      lda LOGB0,x             // B: no SYNC
-        and #2
-        beq !+
-        inc sync_b
+        inc ring_b
 !:      lda LOGB2,x             // B: voice 3 never given a note
         bne !+
         inc zero_b
-!:      lda LOGA1,x             // the slave's note stream, A against B
+!:      lda LOGA1,x             // the carrier's note stream, A against B
         cmp LOGB1,x
         bne !+
         inc same_ab
@@ -331,21 +337,20 @@ rp_n:   lda LOGA0,x             // A: gated calls, and those with SYNC
         cpx #LOOP
         bne rp_n
         PUTB(gated_a, 12, 7)
-        PUTB(sync_a, 12, 21)
-        PUTB(sync_b, 12, 35)
-        PUTB(mast_a, 13, 7)
+        PUTB(ring_a, 12, 21)
+        PUTB(ring_b, 12, 35)
+        PUTB(mod_a, 13, 7)
         PUTB(zero_b, 13, 21)
         PUTB(same_ab, 13, 35)
         CYCLES(CYALO, CYAHI, 16, 15)
         CYCLES(CYBLO, CYBHI, 17, 15)
         lda gated_a             // the verdict
         beq rp_fail
-        cmp sync_a
+        cmp ring_a
         bne rp_fail
-        lda sync_b
+        cmp mod_a
         bne rp_fail
-        lda mast_a
-        cmp #LOOP
+        lda ring_b
         bne rp_fail
         lda zero_b
         cmp #LOOP
@@ -360,31 +365,31 @@ rp_fail:
         jmp verdict
 
 gated_a: .byte 0
-sync_a:  .byte 0
-sync_b:  .byte 0
-mast_a:  .byte 0
+ring_a:  .byte 0
+ring_b:  .byte 0
+mod_a:   .byte 0
 zero_b:  .byte 0
 same_ab: .byte 0
 
 labels:
-        .text "SYNC LEAD: V1 SAW+SYNC, V3 MASTER, 3OFF "   // row 0
+        .text "RING BELL: V1 TRI+RING, V3 +6, 3OFF     "   // row 0
         .text "A: V1 CONTROL, CALLS 04-23              "   // row 1
         .text "                                        "   // row 2
-        .text "A: V1 NOTE (THE SLAVE), SAME CALLS      "   // row 3
+        .text "A: V1 NOTE (THE CARRIER), SAME CALLS    "   // row 3
         .text "                                        "   // row 4
-        .text "A: V3 NOTE (THE MASTER), SAME CALLS     "   // row 5
+        .text "A: V3 NOTE (THE MODULATOR), SAME CALLS  "   // row 5
         .text "                                        "   // row 6
-        .text "B: V1 CONTROL, SYNC OFF, V3 RESTING     "   // row 7
+        .text "B: V1 CONTROL, RING OFF, V3 RESTING     "   // row 7
         .text "                                        "   // row 8
         .text "B: V3 NOTE, SAME CALLS                  "   // row 9
         .text "                                        "   // row 10
         .text "OF 192 CALLS                            "   // row 11
-        .text "GATE A        SYNC A        SYNC B      "   // row 12
-        .text "MAST A        V3 0 B        V1 A=B      "   // row 13
+        .text "GATE A        RING A        RING B      "   // row 12
+        .text "V3+6 A        V3 0 B        V1 A=B      "   // row 13
         .text "                                        "   // row 14
         .text "PLAY CYCLES    WORST BEST               "   // row 15
-        .text "A SYNC LEAD                             "   // row 16
-        .text "B SLAVE ALONE                           "   // row 17
+        .text "A RING BELL                             "   // row 16
+        .text "B CARRIER ONLY                          "   // row 17
         .text "                                        "   // row 18
         .text "                                        "   // row 19
         .text "RESULT                                  "   // row 20
@@ -1453,38 +1458,35 @@ o6_pal_hi:  .fill 12, >round(440 * pow(2, (i + 72 - 57) / 12) * 16777216 / PAL_C
 o6_ntsc_lo: .fill 12, <round(440 * pow(2, (i + 72 - 57) / 12) * 16777216 / NTSC_CLOCK)
 o6_ntsc_hi: .fill 12, >round(440 * pow(2, (i + 72 - 57) / 12) * 16777216 / NTSC_CLOCK)
 // ===========================================================================
-// The tune: eight notes, E4 G4 A4 B4 D5 B4 A4 G4, four steps of six frames
-// each, on voice 1 (the sync lead) and voice 3 (its master). Formats as in
-// the music-player recipe: patterns of note $00-$5F (A4 = 57), $60 rest,
-// $80 + n instrument, $BF + n duration; order lists of patterns and $FF
-// loop; instruments AD, SR, wavetable start, pulse, sweep, vibrato, delay,
-// filter program, flags; wavetable rows of waveform and relative note
-// (waveform 0 with note $FF holds); filter program 1 of cutoff, speed,
-// min, max, $D417, mode.
+// The tune: eight notes, E5 G5 A5 B5 D6 B5 A5 G5, four steps of six frames
+// each, on voice 1 (the bell) and voice 3 (its modulator, transposed up six
+// semitones by its order list). Formats as in the music-player recipe:
+// patterns of note $00-$5F (A4 = 57), $60 rest, $80 + n instrument, $BF + n
+// duration; order lists of patterns, $A0 + n transpose and $FF loop;
+// instruments AD, SR, wavetable start, pulse, sweep, vibrato, delay, filter
+// program, flags; wavetable rows of waveform and relative note (waveform 0
+// with note $FF holds); filter program 1 of cutoff, speed, min, max, $D417,
+// mode.
 // ===========================================================================
 tn_speed: .byte $06, $06
 tn_ordlo: .byte <tn_ord1, <tn_ord2, <tn_ord3
 tn_ordhi: .byte >tn_ord1, >tn_ord2, >tn_ord3
 tn_patlo: .byte <tn_p0, <tn_p1, <tn_p2
 tn_pathi: .byte >tn_p0, >tn_p1, >tn_p2
-//        instrument 0: the master (triangle, unheard); 1: the sync lead
+//        instrument 0: the modulator (triangle, unheard); 1: the bell
 tn_ad:    .byte $00, $09
-tn_sr:    .byte $f0, $a9
-tn_wt:    .byte $00, WT_SYNC
+tn_sr:    .byte $f0, $09
+tn_wt:    .byte $00, WT_RING
 tn_pwl:   .byte $00, $00
 tn_pwh:   .byte $80, $80
 tn_pws:   .byte $00, $00
 tn_vib:   .byte $00, $00
 tn_vdel:  .byte $00, $00
-tn_flt:   .byte $01, $00        // the master loads filter program 1: 3OFF
+tn_flt:   .byte $01, $00        // the modulator loads filter program 1: 3OFF
 tn_flags: .byte $00, $00
-// rows 0-1 the master; 2-11 the lead, A; 12-21 the lead, B
-tn_wtw:   .byte $10, $00
-          .byte SYNCW, SYNCW, SYNCW, SYNCW, SYNCW, SYNCW, SYNCW, SYNCW, SYNCW, $00
-          .byte $20, $20, $20, $20, $20, $20, $20, $20, $20, $00
-tn_wtn:   .byte $00, $ff
-          .byte 12, 14, 17, 19, 22, 24, 26, 27, 29, $ff
-          .byte 12, 14, 17, 19, 22, 24, 26, 27, 29, $ff
+// rows 0-1 the modulator; 2-3 the bell, A; 4-5 the bell, B
+tn_wtw:   .byte $10, $00, RINGW, $00, $10, $00
+tn_wtn:   .byte $00, $ff, $00, $ff, $00, $ff
 // filter program 1: no voice filtered, no filter mode, 3OFF, volume 15
 tn_fcut:  .byte $00, $00
 tn_fspd:  .byte $00, $00
@@ -1494,12 +1496,12 @@ tn_fres:  .byte $00, $f0
 tn_fmode: .byte $00, $80
 tn_ord1:  .byte $00, $ff, $00
 tn_ord2:  .byte $02, $ff, $00
-tn_ord3:  .byte $01, $ff, $00
+tn_ord3:  .byte $a0 + MODUP, $01, $ff, $00
 tn_rest:  .byte $02, $ff, $00
-// lead: i=sync E4 G4 A4 B4 D5 B4 A4 G4, 4 steps each
-tn_p0:    .byte $81, $c3, $34, $37, $39, $3b, $3e, $3b, $39, $37, $ff
-// master: i=master, the same notes
-tn_p1:    .byte $80, $c3, $34, $37, $39, $3b, $3e, $3b, $39, $37, $ff
+// bell: i=bell E5 G5 A5 B5 D6 B5 A5 G5, 4 steps each
+tn_p0:    .byte $81, $c3, $40, $43, $45, $47, $4a, $47, $45, $43, $ff
+// modulator: i=modulator, the same notes (transposed by the order list)
+tn_p1:    .byte $80, $c3, $40, $43, $45, $47, $4a, $47, $45, $43, $ff
 // rest: 32 steps
 tn_p2:    .byte $cf, $60, $cf, $60, $ff
 ```
@@ -1507,14 +1509,13 @@ tn_p2:    .byte $cf, $60, $cf, $60, $ff
 ## Build
 
 ```bash
-java -jar KickAss.jar sid-sync-lead.asm -o sid-sync-lead.prg
+java -jar KickAss.jar sid-ring-bell.asm -o sid-ring-bell.prg
 ```
 
 KickAssembler 5.25: one assert, 0 failed. The PRG loads at `$0801` and
-ends at `$1926`. From the symbol file: harness `$0810`-`$10A4`; player
-`$10A5`-`$18A5`; tune `$18A6`-`$1926`. Logs at `$3000`-`$3BFF`, outside
-the PRG. No zero page. The player's build switches (`SR_FIRST`,
-`AD_FIRST`, and the #50 page's `NO_VIB` and the rest) still apply.
+ends at `$190E`. From the symbol file: harness `$0810`-`$10AB`; player
+`$10AC`-`$18AC`; tune `$18AD`-`$190E`. Logs at `$3000`-`$3BFF`, outside
+the PRG. No zero page.
 
 ## Expected output
 
@@ -1526,137 +1527,121 @@ register, so the pinned run is the verifier's default:
 
 ```text
 x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
-      -limitcycles 13000000 [-model ntsc] -exitscreenshot out.png -autostart sid-sync-lead.prg
+      -limitcycles 13000000 [-model ntsc] -exitscreenshot out.png -autostart sid-ring-bell.prg
 ```
 
-PAL (`screenshots/sid-sync-lead.png`, md5 `ed156c8ea816f167b55bf4c3cc2b18a7`):
+PAL (`screenshots/sid-ring-bell.png`, md5 `0da3c4e3346c6af4d4a70856ca8026af`):
 
 ```text
-SYNC LEAD: V1 SAW+SYNC, V3 MASTER, 3OFF
+RING BELL: V1 TRI+RING, V3 +6, 3OFF
 A: V1 CONTROL, CALLS 04-23
-2323232323232323232323232323232323232323
-A: V1 NOTE (THE SLAVE), SAME CALLS
-404245474A4C4E4F515151515151515151515151
-A: V3 NOTE (THE MASTER), SAME CALLS
-3434343434343434343434343434343434343434
-B: V1 CONTROL, SYNC OFF, V3 RESTING
-2121212121212121212121212121212121212121
+1515151515151515151515151515151515151515
+A: V1 NOTE (THE CARRIER), SAME CALLS
+4040404040404040404040404040404040404040
+A: V3 NOTE (THE MODULATOR), SAME CALLS
+4646464646464646464646464646464646464646
+B: V1 CONTROL, RING OFF, V3 RESTING
+1111111111111111111111111111111111111111
 B: V3 NOTE, SAME CALLS
 0000000000000000000000000000000000000000
 OF 192 CALLS
-GATE A 00174  SYNC A 00174  SYNC B 00000
-MAST A 00192  V3 0 B 00192  V1 A=B 00192
+GATE A 00174  RING A 00174  RING B 00000
+V3+6 A 00174  V3 0 B 00192  V1 A=B 00192
 
 PLAY CYCLES    WORST BEST
-A SYNC LEAD    01012 00393
-B SLAVE ALONE  00967 00357
+A RING BELL    01014 00391
+B CARRIER ONLY 00957 00355
 ```
 
 Row 20 reads `RESULT PASS`; the border is green. `-model c64` gives the
-same text.
+same text. NTSC (`screenshots/sid-ring-bell-ntsc.png`, md5
+`2685be7e0c66992e7b75a37b6c604f9f`) has the same rows and counts; its cycles read `01022
+00399` and `00965 00363`.
 
-NTSC (`screenshots/sid-sync-lead-ntsc.png`, md5 `b7a46b972fa95eb0044db49b0fc36087`) differs
-in the slave row, where a skipped call holds a step for a second call,
-and in the cycles:
-
-```text
-40404245474A4C4C4E4F51515151515151515151
-A SYNC LEAD    01020 00401
-B SLAVE ALONE  00975 00365
-```
-
-**The rows.** The first note, E4 (`$34`), is gated on call 4. Voice 1's
-control byte is `$23`: sawtooth, SYNC, gate. Its note steps `$40 $42 $45
-$47 $4A $4C $4E $4F` and holds `$51` (E4 + 29, A6). Voice 3 sits on the
-note itself. In B the control byte is `$21` and voice 3 is never given a
-note. The counts: SYNC on all 174 gated calls of A and none of B; voice
-3's note equals voice 1's pattern note on 192 of 192 calls of A; voice 1's
-note stream is the same in A and B on 192 of 192.
+**The rows.** The first note, E5 (`$40`), is gated on call 4. Voice 1's
+control byte is `$15`: triangle, RING, gate. Voice 3 sits six semitones
+up (`$46`). In B the control byte is `$11` and voice 3 is never given a
+note. The counts: RING on all 174 gated calls of A and none of B; voice
+3 six semitones above voice 1 on all 174 gated calls of A; voice 1's
+note stream the same in A and B on 192 of 192.
 
 **The register trace.** From the dump sink, on PAL (both SID models) and
-NTSC: `$D404`, voice 1's frequency and voice 3's frequency equal the
-program's log on 192 of 192 calls in each phase. SYNC is set on 188
-calls of A (the 174 gated and the 14 hard-restart calls, gate off) and
-on none of B. `$D418` becomes `$8F` on call 3 of A, when voice 3's first
-note loads the filter program, and `$D417` `$F0` (resonance 15, no voice
-routed); in B they stay `$0F` and `$00`. The slave-to-master frequency
-ratios, register over register: 2.000, 2.245, 2.669, 2.996, 3.563,
-4.000, 4.490, 4.756 and, held, 5.339.
+NTSC: voice 1's control byte and frequency and voice 3's frequency and
+control byte equal the program's log on 192 of 192 calls in each phase.
+RING is set on 188 calls of A (the gated calls and the hard-restart
+calls) and none of B. `$D418` reads `$8F` in A from voice 3's first note
+and `$0F` throughout B. Voice 3's frequency over voice 1's is 1.414 on
+every gated call.
 
-**The fault build.** `-define FORCE_FAULT`: control `$21` in A, `SYNC A
+**The fault build.** `-define FORCE_FAULT`: control `$11` in A, `RING A
 00000`, `RESULT FAIL`, red border, on PAL and NTSC.
 
-**Cycles.** Per call, A minus B, PAL: +36 on 147 calls of 192 (voice
-3 holding a note), +57 on 12; for each of voice 3's notes, +112 on the
-call that reads it, +99 on its hard restart, +190 on the call before it
-(the instrument's set-up) and +292 on its own call; +207 to +210 on
-calls 3, 4 and 100. Worst +292. Voice 1's code path is the same in
-both phases: SYNC is one bit of a byte the wavetable already writes. The
-difference is voice 3 playing notes instead of rests. NTSC reads the
-same differences and 8 more in every play figure (the player's NTSC
-skip counter; `sid-hr-snare`).
+**Cycles.** Per call, A minus B, PAL: +36 on 147 calls of 192 (voice 3
+holding a note), +56 on 13; for each of voice 3's notes, +112 on the
+call that reads it, +98 on its hard restart, +189 on the call before it
+and +289 on its own call; +204 to +210 on calls 3, 4 and 100. Worst
++289. Voice 1's path is the same in both phases: RING is one bit of the
+waveform byte. NTSC reads the same differences.
 
-**Recordings.** Real time, 44,100 Hz mono (`+warp -sound -sounddev wav
--soundrate 44100 -soundoutput 1 -limitcycles 20000000`), once with
-`-model c64` (6581) and once as `-default` (8580); the files are not
-committed. Calls are placed from the start-up `music_init`'s `$D418`
-click as in `sid-hr-snare`. For each note, ten calls from 10 calls
-after its gate (the sweep is over): the fundamental by autocorrelation
-(the first lag whose peak is within 10 % of the highest, 60 to 5,000 Hz,
-parabolic refinement). Master and slave frequencies are the registers
-times the clock over 2^24 (arithmetic).
+**Recordings.** Real time, 44,100 Hz mono, once with `-model c64` (6581)
+and once as `-default` (8580), made and aligned as in `sid-sync-lead`;
+the files are not committed. For each note, eight calls from the call
+after its gate, a Hann-windowed spectrum: the five strongest peaks above
+40 Hz, as multiples of the carrier's frequency; and the share of the
+power from 80 Hz to 8 kHz that lies within 3 % of a whole multiple of
+the carrier (arithmetic: the carrier is `$40` E5 = 659.3 Hz on the first
+note, the modulator 932.3 Hz; their ratio is 1.414).
 
-| Note | Master, Hz | Slave, Hz | A heard, 6581 / 8580 | B heard, 6581 / 8580 |
-|---|---|---|---|---|
-| E4 | 329.6 | 1,760.0 | 329.5 / 329.5 | 1,760.7 / 1,760.7 |
-| G4 | 392.0 | 2,093.0 | 392.0 / 392.0 | 2,094.3 / 2,094.2 |
-| A4 | 440.0 | 2,349.4 | 440.2 / 440.2 | 2,345.1 / 2,345.2 |
-| B4 | 493.9 | 2,637.0 | 494.1 / 494.1 | 2,631.0 / 2,631.1 |
-| D5 | 587.4 | 3,135.9 | 587.5 / 587.5 | 3,138.5 / 3,138.5 |
+| First note, E5 | Strongest partials, × carrier (dB to the top) | On the carrier's harmonics |
+|---|---|---|
+| A, 6581 | 2.414 (0), 0.418 (-1), 3.241 (-10), 5.247 (-11), 8.069 (-15) | 5.1 % |
+| A, 8580 | 2.414 (0), 0.418 (-1), 3.241 (-10), 5.247 (-11), 6.074 (-15) | 5.1 % |
+| B, 6581 | 0.998 (0), 3.003 (-19), 4.999 (-28), 6.995 (-32), 10.997 (-40) | 100 % |
+| B, 8580 | 0.998 (0), 3.003 (-20), 4.999 (-28), 6.995 (-35), 9.001 (-39) | 100 % |
 
-The last three notes (B4, A4, G4) read as their first appearance, and the
-second A and B passes in each file agree with the first. A is at the
-master's pitch within 0.1 % on every note; B at the slave's within 0.2 %,
-the autocorrelation's lag resolution at 44.1 kHz. Level (RMS over the
-same windows, the first seven notes; the eighth's window runs into the
-next phase's init): A 1,684 to 1,762 on the 6581 model and 1,276 to
-1,334 on the 8580; B 1,550 to 1,628 and 1,240 to 1,300.
+Over all eight notes of A the two strongest partials are always 0.412 to
+0.418 and 2.414 to 2.417 times the carrier, within 1 dB of each other,
+and the harmonic share is 1.5 % to 5.1 % on both models; over B it is
+100 % to three places. The second pass of each phase gives the same
+figures.
+Level (RMS over the same windows): A 1,720 to 1,753 on the 6581 model
+and 1,284 to 1,309 on the 8580; B 1,677 to 1,681 and 1,318 to 1,322.
 
 ## Why this works
 
-**SYNC restarts the slave on the master's cycle.** With SYNC set, voice
-1's accumulator is reset each time voice 3's accumulator MSB rises
-(`sid-reference.md`, "Oscillator sync"). The output then repeats at voice
-3's period, whatever voice 1's frequency; voice 1's frequency decides how
-much of its sawtooth ramp plays inside each period, which is the timbre.
-Stepping the slave upward while the master holds moves that timbre and
-not the pitch: A's heard pitch is the master's on every note, B's is the
-slave's.
+**RING swaps the carrier's triangle for its XOR with the modulator.** The
+SID makes a triangle by folding the sawtooth on its accumulator's MSB.
+With RING set, the fold uses voice 1's MSB XORed with voice 3's
+(`sid-reference.md`, "Ring modulation"): the triangle flips over at
+the modulator's rate. A square wave multiplying a triangle puts the output at
+sums and differences of their frequencies. With a modulator 1.414 times
+the carrier those land at 0.414 and 2.414 times it (voice 3 minus voice
+1, and their sum), then 3 × 1.414 − 1 = 3.243 and 3 × 1.414 + 1 = 5.243
+(arithmetic), which is the peak list measured. None of them is a
+harmonic of either voice: the bell.
 
-**The master needs to run, not to be heard.** Sync reads voice 3's
-oscillator, which advances whenever its frequency is non-zero and TEST
-is clear, gate or no gate (`sid-reference.md`, measured). 3OFF takes
-voice 3 off the bypass path; with FILT3 clear that is its only path
+**The modulator needs to run, not to be heard.** Ring modulation reads
+voice 3's accumulator, which runs whatever its gate or envelope; 3OFF
+with FILT3 clear takes voice 3 off its only path to the output
 (`pitfalls/sid.md`, `sid_voice3_disable_silent_bit`). The tune's filter
-program writes `$D417` = `$F0` and `$D418` = `$8F`: no voice filtered,
-no filter mode, 3OFF, volume 15.
+program writes `$D417` = `$F0` and `$D418` = `$8F`.
 
-**The player needs nothing new.** SYNC is bit 1 of the waveform byte the
-wavetable already carries (`$22`); the master is a second pattern with
-the same notes and a plain instrument; 3OFF is a filter program. The
-cost is voice 3's own play work.
+**The player needs nothing new.** RING is bit 2 of the wavetable's
+waveform byte (`$14`); the modulator is the carrier's pattern played on
+voice 3 through an order list with a transpose of +6 (`$A6`).
 
 ## Pitfalls met
 
 `sid_voice3_disable_silent_bit` (3OFF with FILT3 clear),
-`sid_adsr_bug_8580` (the lead's attack is 0; the player writes the gate
-before AD and SR, #118), `pal_ntsc_tempo_mismatch` (a skipped NTSC call
-stretches a wavetable step).
+`sid_adsr_bug_8580` (the bell's attack is 0; the player writes the gate
+before AD and SR, #118).
 
 ## What it does not establish
 
-- Anything about silicon. On an 8580 R5 with a bypass residual, voice 3
-  may leak through 3OFF; reSID models none.
-- How it sounds. The figures are pitch, level and register ratios;
-  nobody here has listened.
-- A sweep by vibrato or a moving master: not built.
+- Anything about silicon, or an 8580 R5's leak through 3OFF, which reSID
+  does not model.
+- How it sounds. The figures are partials and levels; nobody here has
+  listened.
+- Other intervals: only +6 semitones was built. A modulator at a whole
+  number of octaves above the carrier would put the sums and differences
+  on the carrier's harmonics (arithmetic), not a bell.
