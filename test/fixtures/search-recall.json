@@ -83,6 +83,10 @@
       "expected": ["pitfalls/kernal-and-io.md"]
     },
     {
+      "query": "disk read hangs on the last byte, old 6526 CIA loses the timer B flag",
+      "expected": ["pitfalls/kernal-and-io.md"]
+    },
+    {
       "query": "writes go to RAM under ROM, reads return ROM",
       "expected": ["pitfalls/banking.md", "techniques/memory-banking.md"]
     },

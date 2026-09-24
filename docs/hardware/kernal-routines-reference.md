@@ -208,7 +208,10 @@ and a LOAD of 2,050 bytes, made 8,438. A program that uses timer B
 itself (a second tick, a timed NMI) must reload it after every disk
 call. The KERNAL leaves bit 1 of the `$DC0D` mask clear. A program that
 sets it would also take an interrupt from each one-shot the KERNAL
-starts (from the CIA's behaviour, not measured here).
+starts (from the CIA's behaviour, not measured here). A program that
+writes `$DC06` also changes the KERNAL's count, since the KERNAL writes
+only `$DC07`; on VICE's old 6526 model that can hang the receive wait
+(`kernal_eoi_wait_misses_timer_b_on_old_cia` in `pitfalls/kernal-and-io.md`).
 
 ### Sources
 
@@ -1101,7 +1104,10 @@ byte to mark it as a command.
 **Description:** Clocks one byte off the IEC bus from the currently
 talking device. On the last byte of a transfer (EOI), the talker
 waits before sending the first bit; if CLK stays unchanged for about
-256 µs (CIA1 timer B, `$DC07` = `$01`), the KERNAL sets status bit 6
+520 cycles (CIA1 timer B, `$DC07` = `$01` over a low byte left at
+`$FF`, count `$01FF`; the flag was first seen 523 to 574 cycles after
+the start in a VICE trace; an earlier version said 256 µs, which is the
+high byte alone), the KERNAL sets status bit 6
 (`$40`), pulses DATA low to acknowledge, and then reads the eight bits
 (ROM `$EE20-$EE55`). (An earlier version said the signal comes before
 the eighth bit.)

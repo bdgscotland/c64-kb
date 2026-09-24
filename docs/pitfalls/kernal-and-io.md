@@ -16,9 +16,10 @@ Three entries are library and host-tooling traps in the same
 disk-and-keyboard I/O workflow: the Oscar64 `krnio_save()` splat, the
 c1541 uppercase-filename PETSCII shift and the Oscar64 `getchx()` RETURN
 remap. `restore_nmi_not_maskable` is a hardware-wiring trap: RESTORE
-drives /NMI directly, so no CIA mask reaches it. The last entry is a
-VIC-II trap: sprites next to badlines during a disk read make the
-KERNAL miss a bit and wait for ever.
+drives /NMI directly, so no CIA mask reaches it. The last two entries
+are VIC-II traps in the KERNAL's receive routine: sprites next to
+badlines make it miss a bit, and on an old 6526 sprite DMA can make it
+miss the EOI timer. Either way it waits for ever.
 
 ---
 
@@ -1757,10 +1758,10 @@ the C64 waits for the drive's CLK or for CIA1 timer B to signal EOI.
 Timer B was stopped (`$DC0F` = `$08`, one-shot, not running) at its
 latch value `$01FF`: it had run out, and the loop had not seen its
 flag. With `-cia1model 1` (a new CIA) the same build passed 20 of 20
-twice. That fits the old 6526's timer B bug, which VICE
-models on the old CIA only (`cia_revision_irq_one_cycle_late` in
-`pitfalls/cia.md` names it); it is not a sprite-and-badline hang. Filed
-as #69.
+twice. It is not a sprite-and-badline hang: the sprite DMA put the
+loop's `$DC0D` read in the one cycle where VICE's old CIA loses the
+timer B flag. Measured and explained in
+`kernal_eoi_wait_misses_timer_b_on_old_cia` below (#69).
 
 ### Fix
 
@@ -1834,3 +1835,259 @@ fire inside the receive loop.
   rung 1.
 - The review of #39's shmup-vertical starter, point 4: the game runs
   and the first minimal repro. Reported there, not repeated here.
+
+---
+
+## kernal_eoi_wait_misses_timer_b_on_old_cia — On an old 6526, sprite DMA can put the KERNAL's EOI poll in the one cycle where the timer B flag is lost, and the last byte of a read never arrives
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** DC0D, DC06, D015
+**Triggered by kernal:** IECIN, CHRIN, GETIN, LOAD
+**Triggered by techniques:** kernal_file_read_seq, error_channel_check, kernal_load_to_address, directory_read_and_select, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
+
+Measured in VICE x64sc 3.10 with a true-drive 1541 and the old CIA
+model (`-cia1model 0`), not on a real 6526 (rung 1, VICE only).
+
+### Symptom
+
+A disk read with sprites on screen stops at the last byte of a file or
+of the drive's status line. The screen keeps its last frame and
+interrupts stop, because the C64 is inside ACPTR with the I flag set.
+`$90` is `$00`. It happens on a machine with the old 6526 CIA and not
+on one with a 6526A or 8521; in VICE, `-model c64` and `-model ntsc`
+have the old CIA, the default c64c the new one. The sprites need not be
+over a badline: sprites in the lower border are enough.
+
+### Mechanism
+
+**The wait (rung 1, ROM bytes).** After the drive signals it is ready to
+send, ACPTR releases DATA and starts CIA1 timer B one-shot (`$EE20` to
+`$EE27`: `$DC07` = `$01`, `$DC0F` = `$19`). It then polls at `$EE30`:
+`LDA $DC0D`, `AND #$02`, `BNE $EE3E`, `JSR $EEA9`, `BMI $EE30`. The loop
+leaves when CLK goes low (a normal byte) or when the timer B flag is
+set (EOI: the drive is holding back the last byte). The loop reads
+`$DC0D` once every 35 cycles, and a read clears the flag. On EOI the
+drive waits for the C64 to acknowledge by pulling DATA (`$E941` to
+`$E949` in the 1541 ROM, the loop the drive was in when stopped for
+#69). If the C64 never sees the flag, neither side moves.
+
+The KERNAL writes only the high byte of the latch. The low byte is
+whatever `$DC06` last held: `$FF` from reset, so the count is `$01FF`
+(read in the monitor during the #69 hang). The tape routines write
+`$DC06` (`$F93D`, `$FBB1`), and so does any program that uses timer B.
+
+**The lost flag (rung 1, probe).** The probe below copies `$EE20` to
+`$EE2D` instruction for instruction and polls `$DC0D` in a loop of the
+same 35 cycles, with the display blanked so no DMA stalls the CPU. It
+repeats with the latch at `$01E0 + j` for j = 0 to 35, which moves the
+underflow across every phase of the loop, and marks each trial green
+(flag seen) or red (no flag in 1,400 cycles). Screenshot cells measured
+with PIL, one run per model:
+
+| Model | Phases that lost the flag |
+|---|---|
+| `-model c64 -cia1model 0` (6569, 6526) | j = 3 only (latch `$01E3`) |
+| `-model ntsc -cia1model 0` (6567R8, 6526) | j = 3 only |
+| `-model c64c -cia1model 0` | j = 3 only |
+| each of the three with `-cia1model 1` (8521) | none of 36 |
+
+One read phase in 35 loses the flag, which is a one-cycle window. VICE's
+source gates a timer B bug on the old model: an ICR read in the cycle
+before a timer B underflow loses the flag (`cia_revision_irq_one_cycle_late`
+in `pitfalls/cia.md` cites it). The probe fits that rule. The stock
+latch `$01FF` is j = 31, which saw the flag on every model: with no
+stall, the stock KERNAL is safe.
+
+**What moves the phase (rung 1, trace).** The KERNAL runs this wait with
+the I flag set, so only VIC-II DMA can delay the loop's reads. A delay
+of `d` cycles between the timer start and the read near the underflow
+moves that read `d` cycles later. From the probe, the flag is lost when
+`d` is 28, 63, 98 or 133 cycles (28 plus a multiple of 35; arithmetic
+from j = 31 against j = 3).
+
+A test program (the #43 program, `recipes/oscar64/sprites-off-during-disk-io.md`
+with 8 sprites at Y 250 on lines 251 to 271, part B only, 20 rounds of
+scratch, 5-byte SEQ write and status read) hung in round 12 on
+`-model c64 -cia1model 0`, in 3 of 3 runs. A VICE trace of the third run
+(`tr exec ee27`, `tr exec ee30`, `tr exec ee3e`) shows 491 timer starts
+and 24 EOI waits:
+
+- In the hung wait, the timer started on line 264. The polls on lines
+  265 to 271 came 54 cycles apart instead of 35: 8 sprites cost 19
+  cycles a line, 133 cycles in all. The read near the underflow landed
+  516 cycles after the `STA $DC0F`, the one the probe predicts is lost
+  (its `$01E3` loss at 488 plus the 28-cycle latch difference). The
+  flag was never seen; the loop ran until the trace stopped.
+- None of the other 23 EOI waits had a read at 516. Each saw the flag
+  at its first read after 516, 523 to 574 cycles after the start; no
+  earlier read in them came later than 499.
+
+The same build passed 20 of 20 on `-model c64 -cia1model 1` and on the
+default c64c (one run each), and on `-model ntsc -cia1model 0` (two
+runs). The NTSC pass is phase, not safety: the #69 build, a slightly
+different binary, hung on NTSC in round 1 in 3 of 3 runs and passed
+with `-cia1model 1`.
+Which binary and model hang is a lottery set by where the sprites sit
+when each EOI wait starts.
+
+**Why badlines alone do not do it (rung 3).** A badline stops the CPU
+for 40 to 43 cycles (`badline_cycle_loss`). The wait is about 8 lines
+long, so it holds at most two badlines: 0, 40 to 43, or 80 to 86
+cycles, none of which is 28, 63 or 98. Sprite DMA can make other
+totals: 19 cycles a line for 8 sprites here. This holds for the stock
+latch `$01FF` only.
+
+**The same loop elsewhere (rung 3, not measured).** The send routine
+polls the same way at `$ED9F` with latch `$04FF`. There the timer only
+matters when the listener never acknowledges; a lost flag would turn
+the `$03` timeout into a hang. With a latch low byte other than `$FF`,
+the no-stall phase can itself be the lost one: `$E3` (measured, the
+probe's j = 3), and by the same arithmetic `$C0`, `$9D`, `$7A`, `$57`,
+`$34` and `$11`.
+
+Whether a real 6526 loses the flag this way is not measured here. VICE's
+model is the only source this page has for it.
+
+### Fix
+
+- **Turn the sprites off around every disk call.** Write 0 to `$D015`
+  before the call and restore it after, as for
+  `sprites_over_badlines_hang_serial_io` above. With no sprite DMA the
+  only stall is a badline, which cannot reach the lost phase with the
+  stock latch. Measured: the hanging build with this change passed 20
+  of 20 on `-model c64` and `-model ntsc`, both `-cia1model 0`, one run
+  each; so did the same with the screen blanked too.
+- **Put `$FF` back in `$DC06` before disk calls** if the program uses
+  CIA1 timer B. The KERNAL keeps whatever low byte it finds.
+- **Know which CIA you have.** `recipes/kickassembler/cia-revision-detect.md`
+  tells the old 6526 from the others at start-up. In VICE's new-CIA
+  model this wait is safe with sprites on; the sprite-and-badline hang
+  above is not.
+- A CIA2 NMI watchdog, as in the sprites-off recipe, turns the silent
+  hang into a message. It does not recover the transfer.
+
+### Worked example
+
+The probe. It prints 36 cells on the top row: green where the flag was
+seen, red where it was lost. `$C000 + j` holds the colour, `$C040 + j`
+the loop counter left at exit.
+
+```asm
+// Timer B flag loss probe: the KERNAL ACPTR EOI wait ($EE20-$EE3A),
+// same start sequence and same 35-cycle $DC0D read period, with
+// timer B latch $01E0+j for j = 0..35 and a bounded loop.
+BasicUpstart2(start)
+.const N = 36
+* = $0810
+start:
+        jsr $e544               // clear screen
+        sei
+        lda #$7f
+        sta $dc0d
+        sta $dd0d
+        lda $dc0d
+        lda #0
+        sta $d015
+        lda $d011
+        and #$ef
+        sta $d011               // blank: no badlines
+        ldx #3                  // wait three frames so DEN=0 takes hold
+!w:     lda $d012
+        bne !w-
+!w2:    lda $d012
+        beq !w2-
+        dex
+        bne !w-
+        ldy #0
+trial:  tya
+        clc
+        adc #$e0
+        sta $dc06               // latch low
+        ldx #40                 // loop bound, set before the copy
+        // --- the KERNAL's $EE20-$EE2D, instruction for instruction ---
+        lda #$01
+        sta $dc07
+        lda #$19
+        sta $dc0f
+        jsr $ee97
+        lda $dc0d
+        // --- 35-cycle loop, $DC0D read at its start as at $EE30 ---
+loop:   lda $dc0d               // 4
+        and #$02                // 2
+        bne seen                // 2
+        dex                     // 2
+        beq lost                // 2
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop                     // 20
+        jmp loop                // 3  = 35
+seen:   lda #5                  // green
+        .byte $2c
+lost:   lda #2                  // red
+        sta $d800,y
+        sta $c000,y
+        txa
+        sta $c040,y
+        lda #160
+        sta $0400,y
+        iny
+        cpy #N
+        bne trial
+        lda $d011
+        ora #$10
+        sta $d011
+        lda #0
+        sta $d020
+forever: jmp forever
+```
+
+Run with `x64sc -default -warp +sound -autostartprgmode 1 -limitcycles
+6000000 -model c64 -cia1model 0`: cell 3 is red, the other 35 green.
+With `-cia1model 1` all 36 are green.
+
+In a game, the fix is the same line as for the badline hang:
+
+```c
+// BAD: sprites stay on in the lower border while the status is read
+krnio_gets(15, reply, sizeof(reply));
+// measured (-model c64 -cia1model 0, 8 sprites on lines 251-271):
+// hung at an EOI on channel 15 in round 12, polling $EE30 for ever
+
+// GOOD
+vic.spr_enable = 0x00;              // $D015: no sprite DMA
+krnio_gets(15, reply, sizeof(reply));
+vic.spr_enable = saved_enable;
+// measured: 20 of 20 rounds, -model c64 and -model ntsc, old CIA
+```
+
+### Cross-references
+
+- Pitfall `sprites_over_badlines_hang_serial_io` above: the other hang
+  in the same receive routine, and the same fix. That page's "A
+  different hang in the same runs" is this one.
+- Pitfall `cia_revision_irq_one_cycle_late` (`pitfalls/cia.md`): the
+  two CIA models in VICE and the source that gates the timer B bug.
+- Recipe `kickassembler/cia-revision-detect`: telling the old 6526 apart.
+- `hardware/kernal-routines-reference.md`, "CIA1 timer B": which KERNAL
+  routines start the timer.
+- `formats/iec-disk-reference.md`, "EOI (End Or Identify)": the
+  handshake the lost flag breaks.
+
+### Sources
+
+- Commodore 64 KERNAL ROM 901227-03, `$ED92` to `$EDAC` and `$EE13` to
+  `$EEB2`, disassembled with da65 for this entry, rung 1.
+- VICE x64sc 3.10, the probe above on six model settings, and the
+  test program and its two fixed builds in 14 runs, one of them
+  traced, 2026-09-24, rung 1.
+- Issue #69: the NTSC hang, the monitor stop at `$EE30`-`$EE3A`, the
+  timer B state (`$01FF`, `$DC0F` = `$08`) and the drive's return
+  address `$E943`. Reported there, not repeated here.
