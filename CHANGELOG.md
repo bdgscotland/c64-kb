@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 817, schema 37, tools 2.13.1, package 0.26.1.
+Data 818, schema 37, tools 2.13.1, package 0.26.1.
+
+**Four SID techniques measured in reSID, and the #22 game test (data
+818; #19, #22 step 7).** New recipes, each with WAV runs under
+`-model c64` (6581) and the default 8580, analysed in Python:
+`d418-8bit-digi` (Mahoney's method, tables derived by measurement: 167
+distinct levels on the 6581, 84 on the 8580; an 8-bit sine at 34.8 dB
+SINAD against 24.2 for the plain nibble), `sid-volume-bias` (three bias
+voices bring the 8580's digi within 2.5 dB of the 6581's),
+`sid-test-bit` (TEST resets the oscillator to the same phase from any
+start; noise with pulse locks at `$00` within 400 cycles, and only TEST
+unlocks it; sid-reference said "eventually"), `nmi-sample-player` (a
+CIA 2 NMI every 128 cycles beside raster-IRQ music; the digi modulates
+the music's volume, sidebands 6.1-6.3 dB down). All are reSID, not
+silicon; reSID and Mahoney disagree on filter-routed voices with no
+mode bit, unsettled. The game test (#22 step 7) ran and did not pass:
+a fresh agent built a vertical shooter from the brief; P1, P4, P5 pass,
+P2 3 of 5 traps reported, P3 fails (the budget's low end was above the
+measured worst frame because a technique list takes no counts). Report
+in docs/superpowers/reports/2026-09-24-game-test-22/.
 
 **The PAL first-read hang is a badline hiding a 67-cycle CLK pulse, and
 no frame wait is safe (data 817; #14 IO-12).** Traced with VICE's CPU
