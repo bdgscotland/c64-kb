@@ -9,6 +9,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Argument, type Command } from "commander";
@@ -31,12 +32,14 @@ const COMPOSE_ARGS: Record<string, string[]> = {
  */
 function compose(action: string): number {
   const args = COMPOSE_ARGS[action] ?? [];
+  const storage = process.env.C64_KB_STORAGE ?? path.join(config.dataDir, "storage");
+  // Create the bind-mount folders as this user first. On Linux, Docker
+  // creates a missing one as root, parents included, and the data folder
+  // then refuses the ingest's writes (EACCES on ingest.log, CI 2026-09-24).
+  for (const store of ["qdrant", "falkordb"]) fs.mkdirSync(path.join(storage, store), { recursive: true });
   const r = spawnSync("docker", ["compose", "-f", COMPOSE_FILE, "-p", "c64-kb", ...args], {
     stdio: "inherit",
-    env: {
-      ...process.env,
-      C64_KB_STORAGE: process.env.C64_KB_STORAGE ?? path.join(config.dataDir, "storage"),
-    },
+    env: { ...process.env, C64_KB_STORAGE: storage },
   });
   if (r.error) {
     console.error(`c64-kb services: could not run docker (${r.error.message}). Install Docker, then retry.`);
