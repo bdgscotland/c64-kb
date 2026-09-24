@@ -31,7 +31,7 @@ there and what is not; "missing" means no entry.
 | 2 | 16-bit and ranged compares (maths) | covered | `maths.md` `compare_16bit_and_signed`; `compare-16bit-signed.md` |
 | 3 | 8 × 8 multiply, 16-bit product (maths) | covered | `maths.md` `table_multiply_8x8` |
 | 4 | 16 × 16 multiply, 32-bit product (maths) | covered | `maths.md` `multiply_16x16`; `multiply-16x16.md` |
-| 5 | Multiply by a constant (maths) | missing | no entry |
+| 5 | Multiply by a constant (maths) | covered | `maths.md` `multiply_by_constant`; `multiply-constant.md` |
 | 6 | 8- and 16-bit division, divide by ten (maths) | covered | `maths.md` `division_8_16bit`; `oscar64/divide-check.md` |
 | 7 | Square root (maths) | covered | `maths.md` `isqrt_16bit`; `sqrt-atan2.md` |
 | 8 | atan2 (maths) | covered | `maths.md` `atan2_8bit`; `sqrt-atan2.md` |
@@ -69,7 +69,7 @@ there and what is not; "missing" means no entry.
 | 40 | Music player call from an IRQ (SID) | covered | `music-sid.md` `sid_play_routine_pattern`; `music-player.md` |
 
 Totals when recorded: 33 covered, 1 partial, 6 missing. Issue #89 has
-since moved row 4 to covered.
+since moved rows 4 and 5 to covered.
 
 ## Missing and partial
 

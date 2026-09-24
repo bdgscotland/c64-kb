@@ -255,3 +255,64 @@ costs 3 cycles when there is no carry and 8 when there is.
   and its timing.
 - Recipe `docs/recipes/kickassembler/multiply-16x16.md`, the sweep that
   counts the 36,069 wrong products.
+
+---
+
+## constant_multiply_signed_not_extended — A signed byte multiplied by a constant with its high byte started at zero comes out 256 × k too large for every negative input
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** multiply_by_constant
+**Mitigated by techniques:** multiply_by_constant
+
+### Symptom
+
+A velocity or offset scaled by a constant moves the right way when it
+is positive and jumps far off when it is negative: `-1 × 10` gives
+2,550 instead of -10 (`$09F6` instead of `$FFF6`). Every positive input
+is right, so a test that only moves right or down passes.
+
+### Mechanism
+
+A shift-and-add chain builds a 16-bit result from the input's low byte
+and a high byte that starts at zero, the right start for an unsigned
+byte. A signed byte `x` below zero is the unsigned byte `x + 256`, so
+the chain computes `k × (x + 256)`, which is `k × x + 256 × k`. Modulo
+65,536 that is off by `256 × k` for every negative input and by
+nothing for the others.
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/multiply-constant.md`:
+a `× 10` chain with its high byte started at zero differs from the
+sign-extended one on all 128 negative bytes, each by 2,560, and on
+none of the 128 others. The technique is on both lines because the
+fault is its unsigned form applied to a signed input, and its
+sign-extended form cures it.
+
+### Fix
+
+Start the high byte at `$FF` when bit 7 of the input is set, and use
+that byte, not zero, wherever the chain adds `x` itself. The extension
+costs 1 cycle more for a negative input.
+
+### Worked example
+
+```asm
+// BAD: right for x >= 0, 2,560 too large for every x < 0
+        lda #0
+        sta m_hi
+        lda xin
+
+// GOOD: the sign in the high byte before the first shift
+        ldx #0
+        lda xin
+        bpl !+
+        dex               // X = $FF for a negative input
+!:      stx m_hi
+        stx sx            // xin as 16 bits: sx:xin, for the add of xin
+```
+
+### Cross-references
+
+- Technique `multiply_by_constant` (`docs/techniques/maths.md`).
+- Recipe `docs/recipes/kickassembler/multiply-constant.md`, the sweep
+  that counts the 128 wrong products.

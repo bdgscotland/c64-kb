@@ -351,6 +351,123 @@ line carries 272, once a frame, and the four 512-byte tables.
   65,536-pair sweep against a Python checksum, and the carry-less copy
   counted.
 
+## multiply_by_constant — Multiply by a constant with a shift-and-add chain
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=68
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-multiply-constant (one call, signed byte × 10, negative input; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+Most multiplies in a game are by a number fixed when the code is
+written: a row times 40 for a screen address, a line times 320 for a
+bitmap address, a score times 10 before a digit is added. A chain of
+shifts and adds does each of these in 36 to 68 cycles with no table,
+where the general 8 × 8 table multiply costs 52 cycles and 2,048 bytes
+(`table_multiply_8x8`).
+
+### How
+
+Write the constant as a sum or difference of powers of two and shift
+the input to each. Keep the high byte in memory and `ROL` it after
+every `ASL` of the low byte; start the `ROL`s only where the result
+stops fitting in a byte.
+
+```asm
+// row * 40 = (4 row + row) * 8; row * 5 fits a byte for row < 52
+        lda #0
+        sta m_hi
+        lda row
+        asl
+        asl               // C clear: row < 64
+        adc row
+        asl
+        rol m_hi
+        asl
+        rol m_hi
+        asl
+        rol m_hi
+        sta m_lo          // 46 cycles
+```
+
+`y × 320` is `y × 256 + y × 64`. The `× 256` is `y` in the high byte,
+and `y × 64` is two right shifts of `y × 256`:
+
+```asm
+        lda #0
+        sta m_lo
+        lda y
+        lsr
+        ror m_lo
+        lsr
+        ror m_lo          // A = y >> 2, m_lo = (y & 3) << 6
+        clc
+        adc y
+        sta m_hi          // 36 cycles, y < 205
+```
+
+A constant just below a power of two is a subtract: `x × 7 = 8x - x`,
+62 cycles on a 16-bit word.
+
+A signed input is widened by its sign before the first shift: the high
+byte starts at `$FF` when bit 7 is set. Left at zero, every negative
+input comes out `256 × k` too large (`pitfalls/maths.md`,
+`constant_multiply_signed_not_extended`).
+
+### Why it works
+
+`ASL` shifts bit 7 into `C` and `ROL` shifts `C` into bit 0, so the
+pair doubles a 16-bit value. Adding shifted copies is the long
+multiplication of the constant's binary digits, done at assembly time
+for the zeros. After a `ROL` of a high byte below `$80`, `C` is clear,
+and an `ADC` that follows needs no `CLC`; after one of `$FF` (a
+negative signed value) it is set, and it does.
+
+Every input of five routines was run in VICE x64sc 3.10 and folded into
+a checksum that matches a Python model: `x × 10` for all 256 unsigned
+and all 256 signed bytes, `row × 40` for rows 0 to 24, `y × 320` for
+lines 0 to 199 and `x × 7` for all 65,536 words
+(`recipes/kickassembler/multiply-constant.md`).
+
+### Variations
+
+- **A table.** `row × 40` for 25 rows is 50 bytes of table and two
+  indexed loads, 8 cycles before the stores (rung 3); the chain wins
+  where memory is short or the input range is wide.
+- **Constants with many one bits.** Use a subtract (`15 = 16 - 1`,
+  `63 = 64 - 1`) or factors (`45 = 5 × 9`, each factor a few shifts
+  and one add).
+- **Fixed-point scale.** A fraction such as `× 0.75` is `x - x / 4`:
+  right shifts instead of left, with the dropped bits the rounding
+  error (rung 3).
+
+### Cycle budget
+
+Measured with CIA2 timer A, one call, net of `JSR` / `RTS`, screen
+blanked, PAL and NTSC alike (rung 1); every figure is its
+instruction-table sum:
+
+| Routine | Cycles |
+|---|---|
+| unsigned byte × 10, 16-bit result | 45, or 50 with the carry |
+| signed byte × 10, 16-bit result | 67, or 68 for a negative input |
+| row × 40, rows 0 to 24 | 46 |
+| y × 320, lines 0 to 199 | 36 |
+| 16-bit word × 7, modulo 65,536 | 62 |
+
+The `**Cost:**` line carries the dearest, the signed `× 10`, once a
+frame.
+
+### Recipes
+
+- `recipes/kickassembler/multiply-constant.md`: the five chains, every
+  input run and timed, and the zero-extended signed form counted.
+
 ## division_8_16bit — Shift-and-subtract division, reciprocals and divide by ten
 
 **Complexity:** low
