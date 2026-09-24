@@ -154,10 +154,16 @@ player's cost spread (below).
 
 Measured (recipe): while an effect runs, voice 3's music keeps reading
 its patterns but writes nothing, and `$D417` is masked with `$FB` so
-voice 3 leaves the filter. When the effect ends, the music's next note
-on voice 3 gates a fresh attack. All 11 hand-backs in the recipe's
-script were followed by that attack, within 11 frames on PAL and 13 on
-NTSC.
+voice 3 leaves the filter. When the effect's data ends, the player
+gives voice 3 the hard restart (gate off, AD = SR = 0) and hands it to
+the music two calls later, so the music's next note on voice 3 gates a
+fresh attack that starts in its own call, like every other note. All 11
+hand-backs in the recipe's script were followed by that attack, within
+9 frames on PAL and 11 on NTSC. A note whose step falls in the two
+restart calls starts at the hand-back, one or two frames late. Before
+#120 the hand-back came on the frame the data ended, with the music's
+AD and SR and no restart, and one lead note within two frames of it
+started about 33 ms late.
 
 Craft guidance: put on voice 3 what the tune can lose for a second. A
 shot that cuts the drums and chords leaves bass and melody, and the
@@ -172,24 +178,29 @@ timer A around the call:
 
 | Figure | PAL | NTSC |
 |---|---|---|
-| Worst call | 1,250 | 1,250 |
-| Worst call with no effect | 1,242 | 1,250 |
-| Median | 782 | 784 |
-| Best | 451 | 459 |
+| Worst call | 1,215 | 1,223 |
+| Worst call with no effect | 1,215 | 1,223 |
+| Median | 762 | 768 |
+| Best | 430 | 438 |
 | Skipped call (NTSC tempo) | none | 32 each, one call in six |
 
 The table was re-measured after the player moved each note's gate
 before its AD and SR (#118); it read 1,198, 1,159, 773 and 454 on PAL
-before.
+before. It was re-measured again after the hand-back took the hard
+restart (#120); it read 1,250, 1,242, 782 and 451 on PAL and 1,250,
+1,250, 784 and 459 on NTSC before.
 
 What costs the most, from the recipe's traces:
 
 - **Three notes starting on one step.** The costliest frames with no
   effect each start a note on all three voices (gate, AD and SR written
   for each).
-- **An effect handing voice 3 back.** On PAL the worst hand-back frame
-  costs 8 cycles more than the worst music-only frame (39 before #118);
-  on NTSC the worst frame has no effect.
+- **Not an effect's end.** On the frame an effect's data ends voice 3
+  is still the effect's, so the music writes nothing there, and the
+  hand-back two calls later cost at most 1,084 cycles on PAL. Before
+  #120 the hand-back came on that first frame with an AD and SR
+  rewrite, and the worst PAL hand-back frame cost 8 cycles more than
+  the worst music-only frame (39 before #118).
 - **A shadow copy.** This player writes straight to the SID. The
   shadow-register player in `recipes/kickassembler/sfx-in-player.md`
   pays 351 cycles a frame for its copy.

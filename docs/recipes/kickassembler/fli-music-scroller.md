@@ -634,8 +634,8 @@ holds the CPU from cycle 15 to cycle 54, and the block's own 23 cycles,
 `LINE_PAD` of 11 and 12 of stores, are all spent placing the `$D011`
 write on cycle 15 (arithmetic from `fli-image.md`'s block). No cycle in
 the band is spare for a call of any length, let alone a full player's
-(`music-player.md` measures 1,250 cycles at worst, 1,198 before its
-note-start fix in #118), and an interrupt
+(`music-player.md` measures 1,223 cycles at worst; 1,198 before its
+note-start fix in #118, 1,250 before its hand-back fix in #120), and an interrupt
 armed inside the band would not be taken: the FLI handler runs with
 interrupts off from line 47 to line 251. The only places are the lines
 outside the band, 251 to 44 of the next frame, and the tune is called

@@ -374,9 +374,14 @@ AD, gate, SR, 73; gate, AD, SR, 80. The late hits start 33.0 to 34.8 ms
 after the gate write in the recordings, on both chip models. Write the
 gate first. The #50 player (`recipes/kickassembler/music-player.md`)
 does since #118; its note check, with each part of its tune played on
-voice 3, reads 163 of 163 drum, 139 of 139 bass and 43 of 43 lead notes
-starting in their own call, against 146, 81 and 0 in the old order
-(PAL, VICE x64sc 3.10).
+voice 3, reads 169 of 169 drum, 146 of 146 bass and 46 of 46 lead notes
+starting in their own call, against 148, 98 and 0 in the old order
+(PAL, VICE x64sc 3.10). A voice a sound effect borrows needs the same
+restart when it goes back to the music: the #50 player first handed
+voice 3 back with the music's AD and SR and no restart, and a lead note
+on the next frame started late (#120). It now zeroes AD and SR, gate
+off, and hands the voice back two calls later. Before #120 the check
+left out notes next to a hand-back and read 163, 139 and 43 notes.
 
 **8580 behavior and the reset bug.** The 8580 introduced an internal
 difference in the envelope reset path. On hard restart (the
