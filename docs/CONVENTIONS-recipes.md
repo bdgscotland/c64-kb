@@ -102,6 +102,20 @@ KickAssembler recipe and runs `claims-watch --recipe` on it with the
 cycles, flags and disk of its `runs.json` entry. It fails on any store
 these keys, the techniques' Claims lines and `uses_kernal` do not declare.
 
+`raster_bands` is optional. It says on which raster lines the recipe runs
+a technique whose page band is `movable` or unstated
+(`CONVENTIONS-techniques.md`, **Raster band:**), as `name@lines` in the
+band grammar: `raster_bands: [sideborder_open@248-272,
+sprite_border_scroller@273-311,0-1]`. Take the lines from a VICE trace of
+the recipe, from the first interrupt line of the technique to the line
+its code ends on at the latest. `c64_check_compatibility` takes the same
+`name@lines` form, and `test/recipes-claims-ground-truth.test.ts` checks
+each recipe's technique set with its bands placed. A technique whose
+page states lines cannot be placed: the check refuses it and keeps the
+page's band. An item naming a technique `techniques:` does not list, or
+a band outside the grammar, is dropped at extract with a warning. The
+ingest creates no edge from it.
+
 `devices` is optional: the Device names (`docs/hardware/devices.md`) the
 recipe's pinned run attaches, `devices: [disk_1541_ii]` for a run with a
 `"disk"`, `devices: [reu_1750]` for `-reu -reusize 512`. Each becomes a

@@ -85,7 +85,8 @@ export type GraphEntity =
   | { type: "requires_device"; recipe: string; device: string }
   | { type: "recipe_occupies"; recipe: string; start: number; end: number }
   | { type: "technique_demands"; technique: string; resource: string; description: string }
-  | { type: "implements"; recipe: string; technique: string }
+  // band: where the recipe runs the technique (raster_bands:, #90); not written to the graph.
+  | { type: "implements"; recipe: string; technique: string; band?: string }
   | { type: "produces_format"; recipe: string; format: string }
   | {
       type: "technique";

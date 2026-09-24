@@ -207,7 +207,12 @@ ranges and no line is in both, those rules do not fire and the pair is
 listed under `band_separated`. When they overlap, or either side has no
 line or says `movable`, the conflict stands and its rationale says which.
 `continuous_interrupts` and `kernal_banked_out` are not about lines and
-ignore bands. The band covers every line the technique owns, including a
+ignore bands. Two techniques that both own `vic_raster_irq` on disjoint
+line bands are one chain on the one compare, so that `unit_contention`
+is soft. A caller places a movable or unstated band with `name@lines`
+(a recipe with `raster_bands:`, `CONVENTIONS-recipes.md`); the rules then
+read it as stated. Write `movable` when the lines are the program's
+choice, not the lines one recipe happened to use. The band covers every line the technique owns, including a
 stable-raster entry above its visible region, since an interrupt there
 breaks it just as one inside does. Take it from the page's own text or its
 recipe's constants; where neither says, write no line.
