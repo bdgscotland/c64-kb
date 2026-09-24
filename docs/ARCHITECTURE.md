@@ -78,7 +78,10 @@ removes an edge a document has stopped asserting.
 **Query**: tools in `src/tools/` read Qdrant (RRF fusion of dense and BM25
 results; keyword-only when Ollama is down) and FalkorDB (Cypher through
 `FalkorService.roQuery`). The query tools log each call to SQLite, so
-queries with no results surface as gap candidates.
+queries with no results surface as gap candidates. Each ingest ends by
+replaying every open logged gap through its tool and resolving the ones
+that now answer (`src/tools/gap-replay.ts`, also `c64-kb gaps-replay`);
+gaps an agent reported with `c64_report_gap` are left open.
 
 ## CLI-first
 
@@ -88,7 +91,7 @@ Tool logic lives in `src/tools/` as functions returning
 share them:
 
 - **CLI** (`src/cli.ts`): a command per query tool (`c64-kb --help` lists
-  them), plus `services`, `ingest`, `serve` and `version`; `--json` for
+  them), plus `services`, `ingest`, `gaps-replay`, `serve` and `version`; `--json` for
   hooks and scripts.
 - **MCP** (`src/server.ts`, definitions in `src/server/tools-*.ts`): the
   tools the README lists, the static `c64://` resources plus the

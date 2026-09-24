@@ -67,4 +67,14 @@ export function registerSetupCommands(program: Command): void {
       const forceAll = opts.force === true;
       process.exitCode = await runIngest({ forceAll, cleanFirst: forceAll || opts.clean === true });
     });
+
+  program
+    .command("gaps-replay")
+    .description("Replay every open logged gap through its tool and resolve the ones that now answer")
+    .action(async () => {
+      const { replayGaps, formatGapReplay } = await import("../tools/gap-replay.ts");
+      const report = await replayGaps();
+      if (program.opts().json === true) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      else process.stdout.write(formatGapReplay(report, true));
+    });
 }

@@ -71,6 +71,7 @@ const GRAPH_COMMANDS = new Set([
   "failure-diagnose",
   "demo-briefing",
   "game-briefing",
+  "gaps-replay",
 ]);
 
 // Every lookup command prints its markdown, or, under the global --json

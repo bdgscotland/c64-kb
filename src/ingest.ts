@@ -30,7 +30,9 @@ import { applyPendingEdges, ingestFile } from "./ingest/passes.ts";
 import { findStubTechniques, linkRegions, reportSummary } from "./ingest/report.ts";
 import { EdgeTally, type NodeTally } from "./ingest/tally.ts";
 import { linkVerifiedOn } from "./ingest/verified-on.ts";
+import { closeAll } from "./context.ts";
 import { chunkMarkdown } from "./services/chunker.ts";
+import { formatGapReplay, replayGaps } from "./tools/gap-replay.ts";
 import { isAvailable as ollamaAvailable } from "./services/embeddings.ts";
 import { FalkorService } from "./services/falkor.ts";
 import { QdrantService } from "./services/qdrant.ts";
@@ -100,6 +102,20 @@ function readCorpus(files: string[]): { contents: Map<string, string>; corpus: s
 }
 
 /**
+ * Replay the logged gaps against the stores just built (#19). A failure
+ * here is reported and never fails the ingest.
+ */
+async function replayGapLog(print: (line: string) => void): Promise<void> {
+  try {
+    print(`\n${formatGapReplay(await replayGaps()).trimEnd()}`);
+  } catch (err) {
+    print(`\ngap replay: not run (${err instanceof Error ? err.message : String(err)})`);
+  } finally {
+    await closeAll();
+  }
+}
+
+/**
  * Run a batch ingest; returns the process exit code. Shared by
  * `node src/ingest.ts` (npm run ingest) and `c64-kb ingest`, the only way
  * to build the stores from an npm install.
@@ -154,8 +170,8 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
   const stubTechniques = await findStubTechniques(falkor);
   await reportSummary({ qdrant, falkor, nodes, edges, stubTechniques, print });
   if (cleanFirst) await falkor.markRebuildFinished();
-
   await falkor.close();
+  await replayGapLog(print);
   return 0;
 }
 

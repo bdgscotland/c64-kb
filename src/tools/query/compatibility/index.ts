@@ -21,7 +21,13 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
   getAnalytics().logQuery({
     tool: "c64_check_compatibility",
     query: techniques.join("+"),
-    resultCount: evaluation.conflicts.length,
+    // The inputs the graph could answer about; 0 (a gap) for a refusal or
+    // silence on every input. It was the conflict count, so every clean
+    // COMPATIBLE verdict was logged as a gap (#19).
+    resultCount:
+      evaluation.verdict === "unknown_technique"
+        ? 0
+        : evaluation.data_coverage.filter((d) => d.implied_by === undefined && d.known).length,
   });
 
   const structured: CompatibilityCheckOutput = {
