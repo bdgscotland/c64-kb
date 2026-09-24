@@ -131,6 +131,26 @@ joystick 4's (VICE's `src/userport/userport_joystick.c`, "CGA userport
 joy adapter"). `kickassembler/four-player-read` attaches it with
 `-userportdevice 3` and counts presses on both adapter joysticks.
 
+## RS-232 interface on the user port
+
+**Device:** `rs232_userport`
+**Device kind:** output
+**Device port:** user
+**VICE attach:** flags -userportdevice 2
+**Claims:** user_port (owns)
+**Claims basis:** derived-listing
+
+VICE's "Userport RS232/Modem": the level shifter a C64 needs between
+its user port and an RS-232 line. It samples TXD on PA2 and drives RXD
+on PB0 and FLAG2, and reads RTS and DTR from PB1 and PB2
+(`src/rs232drv/rsuser.c` and `rsuser.h`, VICE 3.10; the claim on
+`$DD01` is read from that source). The host end is set apart from the
+attach: `-rsuserdev 0 -rsdev1 <file>` sends what it receives to a file,
+`-rsuserbaud` sets the rate it samples at. `kickassembler/rs232-send`
+attaches it and checks the file; that run only transmits, and receiving
+was not reproduced (the recipe says what was tried), so the kind here
+is `output`.
+
 ## 1541-II as drive 8
 
 **Device:** `disk_1541_ii`

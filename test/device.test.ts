@@ -31,6 +31,7 @@ describe("the devices page", () => {
       "mouse_1351_port_1",
       "light_pen_port_1",
       "four_player_adapter_cga",
+      "rs232_userport",
       "disk_1541_ii",
       "disk_1581",
       "disk_1541_ii_drive_9",

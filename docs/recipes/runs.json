@@ -2254,5 +2254,26 @@
     "disk9": {
       "name": "TARGET,01"
     }
+  },
+  "kickassembler/rs232-send": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-userportdevice",
+      "2",
+      "-rsuserdev",
+      "0",
+      "-rsdev1",
+      "rs.out",
+      "-rsuserbaud",
+      "1200"
+    ],
+    "shots": {
+      "pal": "screenshots/rs232-send.png",
+      "ntsc": "screenshots/rs232-send-ntsc.png"
+    }
   }
 }
