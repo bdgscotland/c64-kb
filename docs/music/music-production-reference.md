@@ -291,7 +291,7 @@ against 100 ms. The music plays 20% faster on NTSC. (An earlier version
 gave 500 BPM for both and called frames per beat a ratio; the frame rates
 are 985248 / (63 * 312) = 50.1 Hz and 1022727 / (65 * 263) = 59.8 Hz.)
 
-Players handle the two regions in one of two ways:
+Players handle the two regions in one of three ways:
 
 - PAL-only assumption. The player assumes 50 Hz and the musician
   calibrates tempo in frames at 50 Hz. On NTSC hardware the music plays
@@ -307,6 +307,14 @@ Players handle the two regions in one of two ways:
   because the ratio 60/50 = 1.2 is not an integer; the best attainable
   match is a closest-fraction approximation that may still drift over
   longer compositions.
+
+- Skipped calls. The player keeps one PAL tempo table and, on NTSC,
+  skips one `play` call in six, so it advances about 49.9 times a second
+  (59.826 × 5 ÷ 6, arithmetic). `recipes/kickassembler/music-player.md`
+  measures 333 skips in 2,000 calls, each costing 32 cycles. Check the
+  ratio in the code, not the comment: that player's source reloaded its
+  skip counter with 4 and skipped one call in five (47.9 a second, 4.5 %
+  slower than PAL) while its comment said six.
 
 For musicians: author at PAL (50 Hz). If NTSC compatibility matters, tell
 the programmer and ask for a dual-rate player.

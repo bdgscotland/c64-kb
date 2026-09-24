@@ -107,6 +107,7 @@ Flags for build-and-test automation and basic operation. VICE accepts many more;
 | `-8 <file>` | D64, G64, … | Attach disk image to device 8 (`-help`: "Attach <name> as a disk image in unit #8"). A recipe whose `runs.json` entry carries `"disk": {"name": "TEST,01"}` gets a D64 freshly formatted with `c1541 -format "test,01" d64` attached this way before every run, so the program always sees the same empty disk |
 | `-1 <file>` | T64, TAP | Attach a tape image to the datasette (unit 1) |
 | `-soundvolume <n>` | 0–100 | Audio output level (0 = mute) |
+| `-sounddev <name>` / `-soundarg <file>` | `wav`, `dump`, `dummy`, `coreaudio` | Sound sink. `wav` records audio in real time only; `dump` writes every SID write as text, warp or not. See "Recording the SID output" below |
 | `-keymap <n>` | 0 symbolic, 1 positional, 2/3 user files | Keymap type (default 0) |
 | `-keyboardmapping <n>` | 0 = US, other values select other host layouts | Host keyboard layout used to pick the `.vkm` file |
 | `-cartcrt <file>` | CRT | Attach a cartridge image |
@@ -1355,6 +1356,66 @@ program is "The Binary Monitor Protocol" above and
 an emulator are [sim6502-reference.md](sim6502-reference.md); the label
 files each toolchain writes are in "Symbol Files" above and in the
 KickAssembler, Oscar64 and cc65 pages' debugging sections.
+
+---
+
+## Recording the SID output
+
+A run can write the SID's audio to a WAV file, or every SID register
+write to a text file, with no audio device. Measured 2026-09-24 with the
+windowless x64sc 3.10 build and reSID, on a one-voice test program
+(a table of waveforms at 440 Hz), at 6,000,000 and 26,000,000 cycles.
+
+| Invocation | Result |
+|---|---|
+| `+warp -sound -sounddev wav -soundarg out.wav` | Works. 16-bit PCM, 48,000 Hz by default; `-soundrate 44100 -soundoutput 1` gives 44,100 Hz mono. Runs in real time: 26,000,000 cycles took 24 to 27 s of wall clock |
+| `-warp -sound -sounddev wav -soundarg out.wav` | A 44-byte header and no samples |
+| the same with `-soundwarpmode 1` | A 44-byte header and no samples |
+| `+warp -sound -sounddev dummy -soundrecdev wav -soundrecarg out.wav` | A 44-byte header and no samples; the log repeats "Sound buffer overflow (cycle based)" |
+| `-sound -sounddev dump -soundarg out.txt` | Every SID write, one line each. Byte-identical with and without `-warp` |
+| `-sound -sounddev dummy -residrawoutput` | The log says "reSID: raw output enabled"; no `resid.raw` appeared in the working directory, with or without warp |
+
+`x64sc -help` lists only `coreaudio/dummy/dump` for `-sounddev`, but
+the startup log lists `coreaudio dummy dump fs wav voc iff aiff
+soundmovie`, and `wav` is accepted.
+
+**What the WAV covers.** Autostart turns warp on while it loads and
+off when the program starts (the log prints "AUTOSTART: Turning Warp
+mode on" and "off"). Nothing is recorded while warp is on, so the file
+starts at about the program's start, not at power-on. At 26,000,000
+cycles the file held 23.389 s. The program's first SID write came at
+cycle 2,970,434 (from the dump), which leaves 23.374 s of emulated time
+after it (arithmetic at 985,248 Hz). The first tone began 7 ms into the
+file.
+
+**The dump format.** One line per write: cycles since the previous
+write, register number (0-24, decimal), value (decimal). From the test
+program, a sawtooth gated on, then off 49.6 frames later:
+
+```text
+8 4 33
+976058 4 32
+```
+
+It needs no real time, so it is the sink for a register trace under
+`-warp`. It is also a "real sound sink" for `$D41B`/`$D41C` reads,
+which return meaningless values under `+sound`
+(`recipes/kickassembler/music-player.md`, "Pitfalls met").
+
+**A loudness measurement.** Record in real time on each model
+(`-sidmodel 0` for the 6581, `1` for the 8580) and read the WAV with
+Python's `wave` and `numpy`. Take the RMS of the samples with the mean
+removed, over a window inside each held note:
+
+```text
+x64sc -default +warp -sidmodel 0 -sound -sounddev wav -soundarg out.wav \
+      -soundrate 44100 -soundoutput 1 +autostart-delay-random \
+      -autostartprgmode 1 -limitcycles 26000000 -autostart test.prg
+```
+
+The combined-waveform table in `hardware/sid-reference.md` was made
+this way. A run is as long as the music, so keep the program short and
+put the notes on known frames.
 
 ---
 

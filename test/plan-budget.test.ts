@@ -631,8 +631,9 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     );
     // tile_map_render 268 + tile_grid_collision 2,345 + object_pool 380 + decimal_print 1,361
     // + sid_play_routine_pattern 1,198 (kickassembler-music-player's worst call;
-    // 327 until data 779, the stub tune) + sfx_engine_beside_music 50-258.
-    expect([pal.low, pal.high]).toEqual([5602, 5810]);
+    // 327 until data 779, the stub tune; its typical 779, the median call, is the
+    // low end) + sfx_engine_beside_music 50-258.
+    expect([pal.low, pal.high]).toEqual([5183, 5810]);
     expect(pal.fixed_losses.badlines).toBe(1075);
     expect(pal.verdict).toBe("undetermined");
     // #45: kernal_file_write_seq and kernal_file_read_seq gained Cost lines
