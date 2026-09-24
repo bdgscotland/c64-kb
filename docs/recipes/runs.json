@@ -2443,5 +2443,25 @@
       "pal": "screenshots/chunky-4x4.png",
       "ntsc": "screenshots/chunky-4x4-ntsc.png"
     }
+  },
+  "kickassembler/char-zoomer": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/char-zoomer.png",
+      "ntsc": "screenshots/char-zoomer-ntsc.png"
+    }
+  },
+  "kickassembler/char-zoomer@later": {
+    "cycles": 8200000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   }
 }

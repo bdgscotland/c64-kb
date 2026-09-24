@@ -999,6 +999,88 @@ cycles a line, 25 of them spent on the two writes and the loop in the recipe.
 
 ---
 
+## char_zoomer_d018 — Vertical zoomer: one `$D018` write per line picks any of 24 source lines
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** D018, SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** fpp_flexible_pixel_position
+**Claims:** vic_matrix_base (owns), vic_char_base (owns), vic_yscroll (owns), vic_raster_irq (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/char-zoomer.md` saw `$D018` (both its matrix and
+charset bits) and `$D011` written once per band line, and the raster
+compare re-armed each frame. The VIC bank and zero-page bytes are the
+recipe's.
+
+### Why
+
+A logo that grows and shrinks vertically, or bounces with a squash, is a
+per-line choice of which source line to show. The badline form of FPP
+makes that choice with `$D018`, but a charset gives only one pixel row
+per code, so one screen of 40 codes gives eight source lines from eight
+charsets. Choosing the screen with the same write gives more.
+
+### How
+
+Make every line of the band a badline, as in the badline form of
+`fpp_flexible_pixel_position`: RC is 0 on every line and the codes are
+fetched again each line. Put a screen in the unused upper 1K of each 2K
+charset slot. Give screen g codes 40g to 40g + 39 in every row, and put
+source line 3b + g in pixel row 0 of those codes in charset b. Then one
+`$D018` value, screen g and charset b, is one source line: 24 lines from
+three screens and eight charsets in one VIC bank, plus a screen of blank
+codes. Per frame, fill a table of `$D018` values, one per band line,
+from the zoom: line y shows floor((y − centre) / scale) + the source
+centre.
+
+### Why it works
+
+The VIC reads the codes from the matrix `$D018` names on each badline,
+and each code's byte from the charset `$D018` names at its g-access
+(Bauer §3.7.2); with RC held at 0 both reads use the value written for
+that line. Measured in VICE x64sc 3.10, PAL c64c and NTSC, by
+`recipes/kickassembler/char-zoomer.md`: on all 128 band lines of four
+pinned pictures (two zoom steps on each model) every line decoded to the
+source line or blank line the assembler's table gives for one zoom
+step, all 24 source lines appearing. The write windows are the badline
+form's, measured in `fpp`: `$D018` by cycle 15, `$D011` by cycle 11.
+
+### Variations
+
+**Horizontal zoom.** Draw the logo at several widths and pick the width
+per frame with the charset bits; the recipe does not, because its eight
+charsets hold the lines. Not measured here.
+
+**More lines.** Codes 120 to 127 hold the blank; with 128 codes per
+charset, three screens is the most that fit, so more source lines need a
+second VIC bank switched mid-frame, or a bitmap. Not measured here.
+
+### Cycle budget
+
+The badline form: the VIC takes 40 cycles of every band line and the
+CPU's 20 (PAL) or 22 (NTSC) go to the `$D018` and `$D011` writes. The
+frame's table copy is 128 loads and stores in the border.
+
+### Recipes
+
+- `recipes/kickassembler/char-zoomer.md` — a 24-line test logo zoomed
+  1 to 5.33 times on a 128-line band, PAL and NTSC, every line decoded
+  against the zoom tables.
+
+### Sources
+
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.7.2:
+  https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+- Codebase64, "Flexible Pixel Position (FPP)":
+  https://codebase64.c64.org/doku.php?id=base:fpp
+
+---
+
 ## line_doubling_and_colour_ram_double_buffer — Doubled text rows, and two colour RAMs in one
 
 **Complexity:** high

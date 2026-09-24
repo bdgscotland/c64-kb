@@ -883,7 +883,7 @@ entered from the double IRQ at a traced delay, one store per line.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D018
-**Triggered by techniques:** fpp_flexible_pixel_position
+**Triggered by techniques:** fpp_flexible_pixel_position, char_zoomer_d018
 
 ### Symptom
 
