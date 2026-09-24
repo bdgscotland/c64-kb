@@ -161,7 +161,8 @@ jobs:
         run: |
           fail=0
           for f in docs/recipes/kickassembler/*.md docs/recipes/cc65/*.md; do
-            node scripts/verify-recipes.ts --file "$f" --allow-missing | tail -1 | grep -q " 0 failed" || { echo "FAILED: $f"; fail=1; }
+            out=$(node scripts/verify-recipes.ts --file "$f" --allow-missing 2>&1)
+            printf '%s\n' "$out" | tail -1 | grep -q " 0 failed" || { echo "FAILED: $f"; printf '%s\n' "$out" | grep -E "^FAIL" ; fail=1; }
           done
           exit $fail
 
