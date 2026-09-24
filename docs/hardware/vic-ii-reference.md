@@ -1062,6 +1062,16 @@ sprite, 210 for sprites 0 and 7 as two separate BA groups). This is why
 full-screen multiplexers of more than 8 sprites have to do their pointer
 rewrites during specific cycle windows.
 
+Over a frame with the screen on, the per-line figure sums exactly.
+`recipes/kickassembler/sprite-dma-cost.md` times a 14,112-cycle loop
+across the frame with CIA2 timer A under a three-band multiplexer. Eight
+sprites add 399 cycles (21 × 19); 17 sprites, as 8 + 8 + 1, add 903
+(2 × 399 + 21 × 5). Badlines inside the sprite bands add their 43 on top,
+with no overlap. Same counts on PAL and NTSC, measured in VICE x64sc 3.10.
+Locally the loss is larger: a loop under a band of eight sprites took 645
+cycles against 455 with the sprites off, 1.42 times as long, because each
+line leaves 44 of 63 cycles (46 of 65 on NTSC).
+
 The VIC-II asserts BA (Bus Available) low three cycles before each sprite
 fetch. The CPU then completes its current memory cycle and releases the
 bus on the next read cycle. Write cycles are not blocked by BA, so the

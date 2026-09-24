@@ -934,6 +934,18 @@
       "ntsc": "screenshots/sfx-in-player-ntsc.png"
     }
   },
+  "kickassembler/sprite-dma-cost": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-dma-cost.png",
+      "ntsc": "screenshots/sprite-dma-cost-ntsc.png"
+    }
+  },
   "kickassembler/irq-owns-port": {
     "cycles": 8000000,
     "models": [
