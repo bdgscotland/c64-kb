@@ -5,7 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 795, schema 33, tools 2.8.0, package 0.21.0.
+Data 796, schema 33, tools 2.8.0, package 0.21.0.
+
+**Starter checks for a frame deadline and a live SID player (data 796;
+#75).** `templates/_harness/watch.py` reads a VICE store trace.
+`DEADLINE_LINE` fails a run whose `WORK_END` mark lands after the
+stated raster line, counted in cycles so a frame-late end on an early
+line is caught; the platformer uses it (line 251: 100 lines spare PAL,
+50 NTSC; an `OVERRUN=1` build fails on 12 of 750 frames). `SID_FRAMES`
+fails a run that stores to the SID in fewer than N frames; all seven
+starters with a player use it, and each `NO_PLAYER` build fails. `make
+selftest` builds both mutations. The check counts frames with SID
+stores, not sound. The platformer README's meter table was already
+stale (11,758 / 6,212 PAL); it now gives 11,774 / 6,227 PAL and
+12,225 / 6,590 NTSC with the marks in.
 
 **Claims lines for twelve more display-field techniques (data 795; part
 of #74).** From claims-watch traces of 14 recipes in VICE:
