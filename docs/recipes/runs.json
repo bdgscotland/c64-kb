@@ -2185,5 +2185,25 @@
       "pal": "screenshots/agsp.png",
       "ntsc": "screenshots/agsp-ntsc.png"
     }
+  },
+  "kickassembler/printer-output": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-busdevice4",
+      "-devicebackend4",
+      "1",
+      "-pr4drv",
+      "ascii",
+      "-pr4output",
+      "text"
+    ],
+    "shots": {
+      "pal": "screenshots/printer-output.png",
+      "ntsc": "screenshots/printer-output-ntsc.png"
+    }
   }
 }

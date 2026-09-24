@@ -189,6 +189,13 @@ afterwards was not measured here. Two ways round it:
   already contiguous in memory.
 - **Text files for other software.** Write `$0D` after each line; the
   drive stores it as an ordinary byte.
+- **A printer instead of a drive.** Device 4, no name, a secondary
+  address that picks the printer's character set (7 for mixed case on
+  Commodore printers), then CHKOUT, CHROUT and CLOSE as here. OPEN with
+  no name never touches the bus, so a missing printer shows at CHKOUT as
+  error 5; check READST after the bytes too. Measured on VICE's file
+  printer: 55 bytes in 66,440 cycles on PAL,
+  `recipes/kickassembler/printer-output.md`.
 
 ### Cycle budget
 
@@ -208,6 +215,7 @@ that saved a file could not say what the save costs.
 - `recipes/kickassembler/file-io-roundtrip.md`
 - `recipes/oscar64/save-load-seq-file.md` (the same sequence through Oscar64's kernalio.h, with a provoked 62)
 - `recipes/oscar64/high-score-persist.md` (the policy around the calls: first run, scratch-then-write, version byte, no drive; 74 and the scratch reply measured)
+- `recipes/kickassembler/printer-output.md` (the same calls to a printer at device 4: where a missing device is reported, what secondary addresses 0 and 7 print, the byte time)
 
 ---
 

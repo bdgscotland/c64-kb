@@ -148,6 +148,28 @@ each device on it answers to its own number. A run that sets
 `-drive8type` to anything but 1542 is refused by verify:recipes, because
 this section would no longer describe it.
 
+## Printer as device 4
+
+**Device:** `printer_device_4`
+**Device kind:** output
+**Device port:** serial
+**VICE attach:** flags -busdevice4 -devicebackend4 1 -pr4drv ascii -pr4output text
+**Claims:** serial_bus (shares)
+**Claims basis:** measured-vice
+
+A printer on the serial bus as device 4, the number Commodore printers
+answer to by default. VICE's file printer stands in for it: `-busdevice4`
+puts device 4 on the bus, `-devicebackend4 1` makes it the file printer,
+and `-pr4drv ascii -pr4output text` write what it receives as ASCII text
+to `print.dump` in the directory x64sc runs in (the default
+`PrinterTextDevice1`; without these options `-dumpconfig` prints
+`BusDevice4=0` and `Printer4=0`, VICE 3.10). The bus is shared under the
+same protocol as a drive. `kickassembler/printer-output` attaches it and
+prints through OPEN, CHKOUT and CHROUT; that page also records what
+happens when either of the first two options is left out. The ASCII
+driver is not a real printer's character set, and no MPS model is
+emulated here.
+
 ## REU 1750 (512 KB)
 
 **Device:** `reu_1750`

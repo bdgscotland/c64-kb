@@ -25,7 +25,7 @@ and the recipe whose run attaches it.
 | Line | Value |
 |------|-------|
 | `**Device:**` | The node name, lower case with underscores. A controller carries its port in the name (`joystick_port_2`), since one in port 1 and one in port 2 occupy different units. |
-| `**Device kind:**` | `input`, `storage`, `memory` or `cartridge` |
+| `**Device kind:**` | `input`, `output` (a printer), `storage`, `memory` or `cartridge`. `output` was added with the printer section; before it a printer had no kind to take. |
 | `**Device port:**` | `control_1`, `control_2`, `user`, `expansion` or `serial`. Every port but `serial` has one socket, so two devices on it cannot be attached at once. |
 | `**VICE attach:**` | How x64sc attaches it: `default` (attached with no option; quote the `-dumpconfig` line in the prose), `flags <x64sc options>` (the exact options, e.g. `flags -controlport2device 2`), `disk` (a runs.json `"disk"`, a D64 in drive 8) or `crt <n>` (a runs.json `"cartridge"` whose `.crt` header gives hardware type n). |
 | `**Claims:**` | The technique Claims grammar (`CONVENTIONS-techniques.md`) with two modes only: `owns` (the device's lines occupy the unit; a second owner cannot be attached with it) and `shares` (devices use the unit side by side under a protocol, as two ports share the SID pot lines). `none` when it occupies no unit. No line is unknown, never none. |

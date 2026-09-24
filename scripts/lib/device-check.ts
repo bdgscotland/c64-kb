@@ -18,7 +18,14 @@ export interface RunAttach {
 // x64sc options that attach a device. One in a run's flags that no device
 // section's flags line accounts for means the page describes a machine the
 // run is not.
-const ATTACH_OPTIONS = ["-controlport1device", "-controlport2device", "-userportdevice", "-reu", "-georam"];
+const ATTACH_OPTIONS = [
+  "-controlport1device",
+  "-controlport2device",
+  "-userportdevice",
+  "-reu",
+  "-georam",
+  "-busdevice4",
+];
 const DRIVE_TYPE_1541_II = "1542";
 
 /** Index of `seq` as a contiguous run inside `flags`, or -1. */

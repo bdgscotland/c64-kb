@@ -32,6 +32,7 @@ describe("the devices page", () => {
       "light_pen_port_1",
       "four_player_adapter_cga",
       "disk_1541_ii",
+      "printer_device_4",
       "reu_1750",
       "easyflash",
       "magic_desk",
@@ -139,6 +140,14 @@ describe("checkRunDevices", () => {
     expect(checkRunDevices(["easyflash"], { flags: [], cartridge: { file: "x.crt" } }, devices)).toEqual([]);
     // A default device needs no option in the run.
     expect(checkRunDevices(["joystick_port_2"], { flags: [] }, devices)).toEqual([]);
+    expect(
+      checkRunDevices(
+        ["printer_device_4"],
+        { flags: ["-busdevice4", "-devicebackend4", "1", "-pr4drv", "ascii", "-pr4output", "text"] },
+        devices,
+      ),
+    ).toEqual([]);
+    expect(byName.get("printer_device_4")?.kind).toBe("output");
   });
 
   it("fails a run that attaches what the page does not list", () => {
@@ -150,6 +159,10 @@ describe("checkRunDevices", () => {
     ]);
     expect(checkRunDevices([], { flags: ["-controlport1device", "5"] }, devices)[0]).toMatch(
       /-controlport1device 5 matches no device/,
+    );
+    // -busdevice4 alone is not the printer's attach line: VICE's device 4 then answers without a backend.
+    expect(checkRunDevices([], { flags: ["-busdevice4"] }, devices)[0]).toMatch(
+      /-busdevice4 {2}matches no device/,
     );
   });
 

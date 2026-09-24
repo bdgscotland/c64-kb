@@ -330,7 +330,7 @@ can two listings' hardware be attached together?"
 |----------|------|-------------|
 | name | string | From the `**Device:**` line (e.g. "disk_1541_ii", "joystick_port_2") |
 | title | string | The H2 text |
-| kind | string | input, storage, memory or cartridge |
+| kind | string | input, output, storage, memory or cartridge (output added with the printer, #19) |
 | port | string | control_1, control_2, user, expansion or serial; every port but serial has one socket |
 | vice_attach | string | How x64sc attaches it: "default", "flags <options>", "disk" or "crt <CRT hardware type>" |
 | source_doc | string | The page that defines it |

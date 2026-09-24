@@ -12,7 +12,7 @@ import { CLAIMS_BASIS_WORDS, isClaimsBasis, parseClaims, type Claim, type Claims
 import { group, matchField, splitH2Sections, warn } from "./common.ts";
 import type { GraphEntity } from "./types.ts";
 
-const DEVICE_KINDS = ["input", "storage", "memory", "cartridge"] as const;
+const DEVICE_KINDS = ["input", "output", "storage", "memory", "cartridge"] as const;
 type DeviceKind = (typeof DEVICE_KINDS)[number];
 const DEVICE_PORTS = ["control_1", "control_2", "user", "expansion", "serial"] as const;
 export type DevicePort = (typeof DEVICE_PORTS)[number];
