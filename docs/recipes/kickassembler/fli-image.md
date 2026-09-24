@@ -180,8 +180,11 @@ irq2:
         sta $d011
     }
 
-    // Cycle 55 of LAST_LINE. Back to a normal $D011 so line 51 of the next
-    // frame is a natural badline again, then re-arm.
+    // Lines 248-250 cannot be badlines, so their blocks do not stall and
+    // this point is reached before line 249 is drawn (an earlier version
+    // said cycle 55 of LAST_LINE; ifli-image measures it). Back to a normal
+    // $D011 so line 51 of the next frame is a natural badline again, then
+    // re-arm.
     lda #$3b
     sta $d011
     lda #d018(FIRST_LINE & 7)

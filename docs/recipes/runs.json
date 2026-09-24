@@ -1702,5 +1702,14 @@
     "shots": {
       "pal": "screenshots/afli-image.png"
     }
+  },
+  "kickassembler/ifli-image": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "shots": {
+      "pal": "screenshots/ifli-image.png"
+    }
   }
 }
