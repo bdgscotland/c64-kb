@@ -89,6 +89,41 @@ npm run health             # live counts; README carries none, so nothing to upd
 
 `.github/workflows/ci.yml` runs all of these except the ingest; Oscar64 recipes are skipped there until #25. `npx lefthook install` once per clone adds git hooks that run the fast ones on what you stage. In a Claude Code session the hooks format, lint and type-check each edited `.ts` file, and a Stop hook builds `dist/` and runs the unit tests once per turn.
 
+## Releasing to npm
+
+The package is `c64-kb` on npm (unscoped, BSD-3-Clause). A release is
+outward-facing: tag only when the maintainer asks for one.
+
+1. Land the work on `main` with every gate green (above).
+2. Set the version in both package files: `npm version <x.y.z>
+   --no-git-tag-version`. Bump `MCP_TOOL_VERSION` in `VERSION` with the
+   tool surface (major: breaking schema, minor: new tool or field, patch:
+   fix). Head the CHANGELOG entry with the new versions.
+3. Commit, push to `main`, then `git tag v<x.y.z>` and
+   `git push origin v<x.y.z>`. The tag must equal package.json's version,
+   or `.github/workflows/release.yml` fails.
+4. The workflow runs typecheck, lint and the unit tests, then waits for the
+   maintainer's approval in the GitHub `npm` environment. It then publishes
+   through npm trusted publishing: no token, provenance added by npm. A
+   version already on npm is skipped, so re-running a tag is safe.
+5. Check `npm view c64-kb version`. Users upgrade with
+   `npm install -g c64-kb` and must run `c64-kb ingest --clean` after it.
+
+The package ships `dist`, `docs`, `templates` and `VERSION` (package.json
+`files`). A doc or starter change reaches users only through a release.
+
+## The README
+
+README.md is the public front page. Keep it current in the same push as
+the work:
+- A new starter gets its picture in "What the starters play": its own
+  graded PAL screenshot, copied to `docs/figures/starters/<name>.png`.
+- A new or changed MCP tool updates the tools section. A new npm script
+  or gate updates the development section.
+- No counts (rule 8 and the tallies note above). Link a live figure's
+  source (`c64-kb health`, CHANGELOG) instead of quoting it.
+- Never link a path that is not on `main`.
+
 ## Map
 
 - `docs/` — the knowledge base. `CONVENTIONS-*.md` define the extractable
