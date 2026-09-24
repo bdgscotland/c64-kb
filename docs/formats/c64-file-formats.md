@@ -149,7 +149,7 @@ Each 4-byte BAM entry: first byte = free sector count, next 3 bytes = 24-bit bit
 
 | Offset | Size | Field |
 |--------|------|-------|
-| $00–$01 | 2 | Track/sector pointer to next directory sector (0/0 if last) |
+| $00–$01 | 2 | In the first entry of a sector only: track/sector of the next directory sector, `$00 $FF` in the last one; `$00 $00` in the other seven entries. Read with Python from a VICE-made image (see `iec-disk-reference.md`, "Reading the directory"); an earlier version said 0/0 if last |
 | $02 | 1 | File type (`$82`=PRG, `$81`=SEQ, `$83`=USR, `$84`=REL) |
 | $03–$04 | 2 | First sector of file (track, sector) |
 | $05–$14 | 16 | Filename (PETASCII, `$A0`-padded) |

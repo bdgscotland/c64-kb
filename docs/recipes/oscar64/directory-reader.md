@@ -224,7 +224,7 @@ static void parse_directory(void)
             q++;
             while (q < end && raw[q] != '"' && i < 16) {
                 char c = raw[q++];
-                if (c == 0xa0)           // the header pads with shifted spaces
+                if (c == 0xa0)           // a 1541 pads with $20; $A0 is mapped too
                     c = ' ';
                 dir.disk[i++] = c;
             }
@@ -504,8 +504,10 @@ on the last line it is the count of free blocks. The text of an entry
 is padding, the name in quotes, padding, an optional `*` for a file
 that was never closed, the three type letters and an optional `<` for
 a locked file. The header line begins with `$12`, reverse on, and
-quotes the disk name padded to sixteen characters with `$A0`; the
-parser turns those into spaces and trims them.
+quotes the disk name padded to sixteen characters with spaces; the
+parser trims them. An earlier version said the padding was `$A0`; the
+160 bytes this program received, written out to a file and read back,
+carry `$20` (`formats/iec-disk-reference.md`, "Reading the directory").
 
 The parser reads from a buffer rather than from the bus so that the
 parse can be timed on its own and so that CLRCHN and CLOSE happen
