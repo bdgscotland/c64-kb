@@ -5,7 +5,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 801, schema 33, tools 2.8.1, package 0.21.1.
+Data 802, schema 33, tools 2.8.1, package 0.21.1.
+
+**One cycle numbering, measured (data 802; #82).** Pages numbered raster
+cycles differently. The knowledge base uses Bauer's 1-63 (1-65 NTSC).
+In VICE's monitor an exec checkpoint's CYC is the instruction's first
+cycle minus one, and a store checkpoint's CYC is the write's cycle as
+Bauer numbers it (the watchpoint is checked one cycle after the
+write). Settled with probes: `$D012` changes on Bauer's cycle 1,
+badline reads are held 12-54, and a store printed as CYC c shows in the
+screenshot from x = 8c − 103 on both models; written up in
+`runtime/vice-reference.md`. Corrected: dysp's NTSC write is on 56 (was
+57); eight-way-scroll's margin is 4 cycles (was 5); sprites-only-screen
+13 and 26 (were 12 and 25); oscar64 sid-music-player 33-39 (were
+32-38); the racing starter's stores are on 7, 13 and 19 (were 6, 12,
+18), and its line-203 `$D016` write lands on cycle 56, not 12 (#86);
+demo and shmup-vertical starter comments. No listing's code changed.
+IRQ entry through `$FF48` measures cycles 39-44, not the 37-43 several
+pages give (#85).
 
 **ingest_doc takes any spelling of a page's path; lint reads only code
 fences (tools 2.8.1, package 0.21.1; #51, #28).** `ingest_doc` given
