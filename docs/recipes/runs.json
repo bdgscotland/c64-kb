@@ -1786,5 +1786,16 @@
       "pal": "screenshots/road-sprite-lines.png",
       "ntsc": "screenshots/road-sprite-lines-ntsc.png"
     }
+  },
+  "kickassembler/raster-split-modes": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/raster-split-modes.png",
+      "ntsc": "screenshots/raster-split-modes-ntsc.png"
+    }
   }
 }

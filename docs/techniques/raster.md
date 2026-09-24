@@ -909,7 +909,7 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 
 ### Recipes
 
-(No standalone recipe yet. raster_split_modes appears as part of larger demo or game layout recipes.)
+- `recipes/kickassembler/raster-split-modes.md`: hires bitmap on rows 0-11, text on rows 12-24, switched between lines 146 and 147 by one `$D018` store on line 145 and one `$D011` store, with the store cycles that tear and the ones that do not, measured on PAL and NTSC.
 
 ---
 
