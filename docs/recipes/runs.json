@@ -611,6 +611,18 @@
       "ntsc": "screenshots/hires-circle-ntsc.png"
     }
   },
+  "kickassembler/clock-slide": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/clock-slide.png",
+      "ntsc": "screenshots/clock-slide-ntsc.png"
+    }
+  },
   "kickassembler/one-part-demo": {
     "cycles": 10000000,
     "models": [

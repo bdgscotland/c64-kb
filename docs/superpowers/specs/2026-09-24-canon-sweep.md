@@ -53,7 +53,7 @@ there and what is not; "missing" means no entry.
 | 24 | Cycle-exact measuring of a routine (interrupts) | covered | the CIA2 cascade in `base-routines.md` and `compare-16bit-signed.md` |
 | 25 | Raster IRQ set-up (interrupts) | covered | `raster.md` `irq_chain_table`; `irq-chain.md` |
 | 26 | Stable raster, double IRQ (interrupts) | covered | `raster.md` `stable_raster_irq`, `double_irq`; `stable-raster-irq.md` |
-| 27 | Stable raster by clock slide (interrupts) | missing | no clock-slide entry |
+| 27 | Stable raster by clock slide (interrupts) | covered | `raster.md` `clock_slide_raster_irq`; `clock-slide.md` |
 | 28 | CIA timer IRQ and NMI, RESTORE (interrupts) | covered | `cpu-cycle-tricks.md` `nmi_handler_and_restore_key`; `nmi-timer-tick.md` |
 | 29 | TOD clock (CIA) | covered | `cpu-cycle-tricks.md` `tod_alarm_interrupt`; `tod-alarm.md` |
 | 30 | Keyboard scanning without the KERNAL (I/O) | covered | `input.md` `keyboard_matrix_scan`, `irq_keyboard_own_scan`; `own-keyscan.md` |
@@ -69,8 +69,8 @@ there and what is not; "missing" means no entry.
 | 40 | Music player call from an IRQ (SID) | covered | `music-sid.md` `sid_play_routine_pattern`; `music-player.md` |
 
 Totals when recorded: 33 covered, 1 partial, 6 missing. Issue #89 has
-since moved rows 4, 5, 11 and 37 from missing, and row 14 from partial,
-to covered.
+since moved rows 4, 5, 11, 27 and 37 from missing, and row 14 from
+partial, to covered.
 
 ## Missing and partial
 
