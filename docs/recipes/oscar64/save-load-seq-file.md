@@ -102,19 +102,27 @@ static void put_hex4(unsigned v)
     put_hex2(v & 0xff);
 }
 
-// Open the command channel, read one status line, close it again.
-// Prints the line without its trailing CR.
-static void drive_reply(void)
+// Open the command channel and read one status line; the channel stays
+// open. Prints the line without its trailing CR and returns whether the
+// channel opened. drive_reply closes it again.
+static bool drive_ask(void)
 {
     reply[0] = 0;
     krnio_setnam("");
-    if (krnio_open(15, DRIVE, 15)) {
+    bool open = krnio_open(15, DRIVE, 15);
+    if (open) {
         int n = krnio_gets(15, reply, sizeof(reply));
         if (n > 0 && reply[n - 1] == 13)
             reply[n - 1] = 0;
-        krnio_close(15);
     }
     printf("DRIVE: %s\n", reply);
+    return open;
+}
+
+static void drive_reply(void)
+{
+    if (drive_ask())
+        krnio_close(15);
 }
 
 // chk = ((chk ^ b) * 5 + 1) & 0xffff over n bytes
@@ -182,16 +190,26 @@ int main(void)
     put_hex4(chk);
     printf(chk == EXPECT_CHK ? " PASS\n" : " FAIL\n");
 
-    // 6. provoke 62: open a file that is not on the disk
+    // 6. provoke 62: open a file that is not on the disk. Ask the drive
+    //    before reading, and read only on 00: after 62 the drive has no
+    //    channel, and a read would TALK to it, which can hang for ever
+    //    (pitfall first_open_after_reset_hangs_on_pal). Channel 15 is
+    //    closed after channel 4: closing 15 closes every file on the drive.
     printf("OPEN NOFILE,S,R\n");
     krnio_setnam("NOFILE,S,R");
     ok = krnio_open(4, DRIVE, 4);
     printf("OPEN %d ST=", ok);   put_hex2(krnio_status());
-    n = krnio_read(4, back, sizeof(back));
-    printf(" READ %d ST=", n);    put_hex2(krnio_pstatus[4]);
-    krnio_close(4);
     putchar('\n');
-    drive_reply();
+    bool cmd = drive_ask();
+    if (ok && reply[0] == '0' && reply[1] == '0') {
+        n = krnio_read(4, back, sizeof(back));
+        printf("READ %d ST=", n);    put_hex2(krnio_pstatus[4]);
+    } else
+        printf("NOT READ");
+    putchar('\n');
+    krnio_close(4);
+    if (cmd)
+        krnio_close(15);
 
     printf("CYCLES WRITE $");
     put_hex4(tw >> 16);  put_hex4(tw & 0xffff);
@@ -235,16 +253,17 @@ DRIVE: 00, OK,00,00
 MATCH ABC 12000
 CHK CD2A PASS
 OPEN NOFILE,S,R
-OPEN 1 ST=00 READ 0 ST=42
+OPEN 1 ST=00
 DRIVE: 62, FILE NOT FOUND,00,00
-CYCLES WRITE $003A82B0 READ $0007CBBB
+NOT READ
+CYCLES WRITE $003A7A60 READ $0007CE9C
 
 READY.
 ```
 
 Light blue text on blue, the ordinary power-on screen. The `CYCLES`
 line is the run's own measurement and is the only line that differs
-between regions: the NTSC picture shows `$003CDAB5` and `$00081929` (both regions with the emulated drive's RPM wobble switched off, as the verifier pins it; an earlier version of this page quoted a run with VICE's default wobble, which moves these figures by a few hundred cycles between runs).
+between regions: the NTSC picture shows `$003CDB03` and `$00081937` (both regions with the emulated drive's RPM wobble switched off, as the verifier pins it; an earlier version of this page quoted a run with VICE's default wobble, which moves these figures by a few hundred cycles between runs).
 Screenshots from the VICE runs this page describes:
 `screenshots/save-load-seq-file.png` (PAL) and
 `screenshots/save-load-seq-file-ntsc.png` (NTSC), both from the pinned
@@ -272,15 +291,23 @@ command channel. They answer different questions:
   close.
 - Missing file: `krnio_open` returns 1 and ST is `00`. KERNAL OPEN's
   carry flag reports device-not-present or too-many-files, never a DOS
-  error, so a true from `krnio_open` is not a found file. The
-  `krnio_read` that follows returns 0 with ST `$42`, EOF plus a read
-  timeout, and the drive's reply is `62, FILE NOT FOUND,00,00`. Reading
-  channel 15 is the only way to get that text.
+  error, so a true from `krnio_open` is not a found file. The drive's
+  reply is `62, FILE NOT FOUND,00,00`, and the listing then does not
+  read. Reading channel 15 is the only way to get that text. An earlier
+  version read first: `krnio_read` returned 0 with ST `$42`, EOF plus a
+  read timeout, and only then read the reply. That read sends a TALK to
+  a channel the drive does not have, which can hang for ever on PAL
+  (`../../pitfalls/kernal-and-io.md`,
+  `first_open_after_reset_hangs_on_pal`). Channel 15 stays open until
+  channel 4 is closed, because closing the command channel closes every
+  file on the drive.
 
 The cycle figures come from CIA2 timers A and B chained as a 32-bit
 counter, measured in VICE x64sc with true drive emulation, and cover
-the open, transfer and close of each step (PAL: write 3,836,200 cycles,
-read 511,742; NTSC: 3,989,946 and 530,736). The write costs seven times
+the open, transfer and close of each step (PAL: write 3,832,416 cycles,
+read 511,644; NTSC: 3,988,227 and 530,743; the build before #93 changed
+step 6 read 3,836,200 and 511,742, 3,989,946 and 530,736: moving the
+code moved the phase by a few thousand cycles). The write costs seven times
 the read; the likely reason is that the drive writes the data block,
 the directory and the BAM at close, but that split was not measured
 here. An earlier draft printed the KERNAL jiffy clock

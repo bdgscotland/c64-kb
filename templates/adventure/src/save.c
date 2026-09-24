@@ -21,7 +21,10 @@ static char fold8(const char *p, char n)
 // Send cmd on channel 15 ("" reads the status only) and keep the first two
 // digits of the reply. Named first: an empty-name OPEN cannot see an absent
 // drive, and the read after it would then hang (oscar64/high-score-persist).
-static void drive_reply(const char *cmd)
+// drive_ask leaves channel 15 open for the caller to close: game_load keeps
+// it open while its file is, because closing 15 closes every file on the
+// drive.
+static void drive_ask(const char *cmd)
 {
     disk_code = 99;
     krnio_setnam(cmd);
@@ -30,6 +33,11 @@ static void drive_reply(const char *cmd)
         ok = false;
     if (ok && krnio_gets(15, reply, sizeof(reply)) >= 2)
         disk_code = (reply[0] - '0') * 10 + (reply[1] - '0');
+}
+
+static void drive_reply(const char *cmd)
+{
+    drive_ask(cmd);
     krnio_close(15);
 }
 
@@ -126,9 +134,14 @@ void game_load(void)
         error_line();
         return;
     }
-    int n = ok ? krnio_read(2, rec, sizeof(rec)) : 0;
+    // The reply before the file, the file only on 00: after a 62 the drive
+    // keeps no channel, and a read would TALK to it; its 68-cycle answer can
+    // fall in a badline and the KERNAL's wait at $EDD6 has no timeout
+    // (pitfall first_open_after_reset_hangs_on_pal).
+    drive_ask("");
+    int n = (ok && disk_code == 0) ? krnio_read(2, rec, sizeof(rec)) : 0;
     krnio_close(2);
-    drive_reply("");
+    krnio_close(15);
     if (disk_code == 62)
         reply_line(M_NOSAVE);
     else if (disk_code != 0)
