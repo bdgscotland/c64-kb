@@ -1797,5 +1797,16 @@
       "pal": "screenshots/raster-split-modes.png",
       "ntsc": "screenshots/raster-split-modes-ntsc.png"
     }
+  },
+  "oscar64/soft-scroll-v": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/soft-scroll-v.png",
+      "ntsc": "screenshots/soft-scroll-v-ntsc.png"
+    }
   }
 }

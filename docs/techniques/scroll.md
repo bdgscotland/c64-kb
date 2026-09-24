@@ -208,6 +208,7 @@ no figure before #37.
 ### Recipes
 
 - `recipes/kickassembler/scroll-panel-split.md` scrolls a playfield vertically through all eight YSCROLL phases above a fixed panel; `recipes/oscar64/soft-scroll-h.md` is the horizontal counterpart.
+- `recipes/oscar64/soft-scroll-v.md` scrolls the whole text screen up one line a frame, measures the unrolled row move against the beam on PAL and NTSC, and builds the trap (`-dLATE_WRITE=1`: YSCROLL written on line 150 draws one row twice).
 
 ---
 
@@ -411,6 +412,7 @@ frame's active display period.
 ### Recipes
 
 - `recipes/kickassembler/scroll-panel-split.md` shifts the rows on the carry frame and scrolls through all eight YSCROLL phases above a fixed panel.
+- `recipes/oscar64/soft-scroll-v.md` moves 24 rows with an unrolled copy, top row first, from line 247: 7,403 cycles on PAL and 7,659 on NTSC, at least 114 and 66 lines ahead of the VIC's row fetches.
 
 ---
 
