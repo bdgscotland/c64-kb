@@ -159,6 +159,16 @@ Measured per frame in `recipes/kickassembler/raster-bars.md`, traced in VICE x64
 
 **Uses registers:** SCROLY, RASTER
 **Demands:** midframe_raster_irqs
+**Claims:** vic_yscroll (reads)
+**Claims basis:** measured-vice
+
+A store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/fld.md`, the one recipe that lists this technique,
+found no store of its own: every `$D011` store there is
+`fld_flexible_line_distance`'s (its per-line YSCROLL writes and its
+per-frame reset to `$1B`). What it needs is which lines are bad, and that
+follows YSCROLL, so it reads the unit whoever owns it. The YSCROLL
+variation below writes the unit and should claim it where a program uses it.
 
 ### Why
 

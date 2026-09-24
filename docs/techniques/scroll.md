@@ -205,6 +205,17 @@ blank or in a stable raster window above line $30.
 **Region:** both
 **Uses registers:** D016
 **Uses kernal:** (none)
+**Claims:** vic_xscroll (shares)
+**Claims basis:** measured-vice
+
+Store traces of `recipes/oscar64/soft-scroll-h.md`,
+`recipes/kickassembler/sine-scroller.md`, `big-font-scroller.md`,
+`dycp-scroller.md` and `cracktro-template.md`: each writes XSCROLL with one
+`$D016` store a frame, and the carry's reset to 7 is that store's value
+on the wrap frame. The carry follows `soft_scroll_h`'s phase, so it shares
+the unit that technique owns, as `char_scroll_buffer_v` shares
+`vic_yscroll`. Screen and colour RAM are the program's memory. The one
+`$D018` store in the big-font and DYCP recipes is their own charset's.
 
 ### Why
 

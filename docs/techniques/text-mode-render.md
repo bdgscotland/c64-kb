@@ -237,6 +237,13 @@ the wrap to raster 51, about 6,700 cycles), not the whole frame.
 **Cost:** cycles_per_frame=196
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-charset-animation (one glyph a frame, in the vertical blank)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/oscar64/charset-animation.md`: `$D018` stores changed the
+character base 63 times in 8 million cycles (form b), and form a
+rewrites glyphs in the set the base names, so both forms hold the base.
 
 ### Why
 

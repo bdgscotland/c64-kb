@@ -934,6 +934,17 @@ Per-character-row IRQ (one IRQ per 8 scanlines, 25 rows):
 **Cost:** cycles_per_frame=5446, cycles_per_line=63, lines_active=54, irq_slots=3, bytes_code=2338, bytes_data=8384, zp_bytes=97
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-tech-tech (the band interrupt, 3,405 cycles from irq1's entry on line 109 to the register restore after line 162, plus the table build of 2,041 in the vertical blank, PAL, screen on, the band's own forced badline stalls inside the figure; the NTSC band is 3,508; bytes_code is the code segment reported by -showmem, almost all of it the two unrolled bands; bytes_data the 384 bytes of tables and the eight 1,000-byte matrices; zp_bytes the two 48-byte register tables and the phase)
+**Claims:** vic_raster_irq (owns), vic_yscroll (shares), vic_xscroll (shares), vic_matrix_base (shares)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/tech-tech.md`: the band writes `$D018` (matrix
+bits only; the character base stays at the ROM font), `$D016` XSCROLL and
+`$D011` YSCROLL on every band line, and step 4 restores all three below
+the band, so it shares the fields with whatever sets them for the frame.
+The band's interrupt is the effect run from `stable_raster_irq`'s entry,
+so it owns the raster compare. The CIA1 timers in the listing time the
+band and are a harness, not a claim.
 
 ### Why
 

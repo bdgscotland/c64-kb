@@ -19,6 +19,17 @@ Get the plain modes working before any FLI variant. The FLI family builds on the
 **Region:** both
 **Uses registers:** D011, D018
 **Uses kernal:** (none)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store traces (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/hires-plot-line.md`, `recipes/kickassembler/twister.md`
+and `recipes/kickassembler/dot-flag.md`: the set-up's one `$D018` store
+(`$18`) moves the character base to the bitmap at `$2000`, and the mode
+holds it every frame. The matrix stays at `$0400`, so the store changes no
+matrix bits. The set-up's whole-register `$D011` store also clears the
+raster-compare bit 8 the KERNAL left set; that is the listing's choice of
+value, not the technique's claim.
 
 ### Why
 
@@ -77,6 +88,13 @@ Drawing into the bitmap from the main program is safe in the vertical blank or i
 **Requires:** standard_bitmap
 **Cost:** cycles_per_frame=63
 **Cost basis:** measured-vice
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store traces of `recipes/kickassembler/hires-plot-line.md` and
+`recipes/kickassembler/dot-flag.md`: after `standard_bitmap`'s set-up the
+plot stores only to the bitmap and to its own zero page and tables, which
+are the program's memory, not units.
 
 ### Why
 
@@ -146,6 +164,12 @@ The VIC-II fetches the bitmap in the same order it fetches a character set: on e
 **Requires:** hires_plot
 **Cost:** cycles_per_frame=43606
 **Cost basis:** measured-vice
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace of `recipes/kickassembler/hires-plot-line.md`: the line loop
+stores only through `hires_plot` into the bitmap and to zero page the
+recipe chose.
 
 ### Why
 
@@ -203,6 +227,12 @@ Measured with CIA1 timer A in the `hires-plot-line` recipe, display blanked, VIC
 **Region:** both
 **Uses registers:** D011, D016, D018
 **Uses kernal:** (none)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/bitmap-koala-viewer.md`: one `$D018`
+store moves the character base to the bitmap at `$2000` and the mode holds
+it. MCM and BMM are mode bits, not units yet.
 
 ### Why
 
@@ -257,6 +287,12 @@ Multicolor bitmap mode has the same CPU cycle budget as standard bitmap mode. Ba
 **Region:** both
 **Uses registers:** D011, D022, D023, D024
 **Uses kernal:** (none)
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/vehicle-control.md`: the ECM bit rides on
+`soft_scroll_v`'s `$D011` store, and ECM ($D011 bit 6) is not a unit
+yet. A clash with another mode bit cannot be seen by the unit check.
 
 ### Why
 
@@ -583,6 +619,13 @@ The cost of IFLI is not cycles but memory: two complete FLI images occupy roughl
 **Cost:** cycles_per_frame=50, bytes_data=18000
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-mci-interlace
+**Claims:** cia2_vic_bank (owns), vic_matrix_base (owns), vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/kickassembler/mci-interlace.md`: each frame the
+switch changes the VIC bank (`$DD00`), the matrix (`$D018` bits 4-7) and
+XSCROLL (`$D016`, the half-pixel shift): 243-244 stores of each in 8
+million cycles. The bitmap base is `multicolor_bitmap`'s.
 
 ### Why
 
@@ -629,6 +672,15 @@ Measured with CIA1 timer A on the recipe, the same on PAL and NTSC: 34 cycles on
 **Region:** both
 **Uses registers:** D011, D016, D018, D021
 **Uses kernal:** (none)
+**Requires:** multicolor_bitmap
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/bitmap-koala-viewer.md`: display step 5,
+the `$D018` store, moves the character base to the bitmap. The
+`**Requires:**` line was added with the claim: the format is a
+multicolour bitmap, and without it the check would set this technique
+against `multicolor_bitmap` as a rival owner of the base.
 
 ### Why
 
