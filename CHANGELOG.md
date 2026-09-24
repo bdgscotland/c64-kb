@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 770, schema 31, tools 2.3.1, package 0.17.0.
+Data 771, schema 31, tools 2.3.1, package 0.17.0.
+
+**Licence pass before npm publishing (data 771).** A measured check of
+`docs/` found no copied prose (runs of 25 or more words shared with 108
+cited sources and the classic references are number tables only) and no
+substantial third-party code. Four fixes. `wireframe-ships` reproduced
+Elite's 32 two-letter name tokens (QQ16), commercial game data; it now
+uses its own table of the same shape, so its systems print GUBUDUIS ...
+NEYA instead of TIBEDIED ... LAVE; seeds, coordinates and every cycle
+count are unchanged, re-verified in VICE on both models (0 pixels from
+the model). Three examples in `kickassembler-reference.md` (the SID
+player, `ClearScreen`, `mov`) followed the KickAssembler manual line for
+line; they are rewritten and now share no 8-word run with it, and the
+new SID player was run in VICE against a test tune (one `play` per PAL
+frame). `oscar64-headers-reference.md` said `license: MIT`; Oscar64 is
+GPL-3.0. The SID ADSR table now names its source.
 
 **npm package (package 0.17.0).** An installed package could not do
 anything useful: batch ingest existed only as an npm script in a clone,

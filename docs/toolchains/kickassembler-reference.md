@@ -430,20 +430,19 @@ A macro groups assembler directives for inline expansion. Call site labels do
 not collide across invocations because each call gets its own scope:
 
 ```asm
-.macro ClearScreen(screen, clearByte) {
-    lda #clearByte
-    ldx #0
-loop:
-    sta screen,x
-    sta screen+$100,x
-    sta screen+$200,x
-    sta screen+$300,x
-    inx
-    bne loop
+.macro FillColourRam(colour) {
+        lda #colour
+        ldx #250
+next:   dex                     // 249 down to 0, four quarters of 250
+        sta $d800,x
+        sta $d800+250,x
+        sta $d800+500,x
+        sta $d800+750,x
+        bne next                // Z from dex; sta leaves the flags alone
 }
 
-ClearScreen($0400, $20)
-ClearScreen($0800, $20)
+FillColourRam(1)                // white
+FillColourRam(14)               // light blue; this call's `next` is its own label
 ```
 
 The leading `:` before a macro call is optional from version 4.0 but
@@ -459,13 +458,13 @@ arguments separated by colons. Inside the body, arguments are `CmdValue`
 objects; inspect them with `.getType()` and `.getValue()`:
 
 ```kickassembler
-.pseudocommand mov src:tar {
-    lda src
-    sta tar
+.pseudocommand store value : dest {
+    lda value
+    sta dest
 }
 
-mov #10 : $1000         // lda #10 / sta $1000
-mov source,x : target   // lda source,x / sta target
+store #0 : $d020          // lda #0 / sta $d020
+store table,y : $0400,x   // lda table,y / sta $0400,x
 ```
 
 Use `CmdArgument(AT_IMMEDIATE, value)` to construct new argument values
@@ -616,49 +615,40 @@ fields and binary data as script properties:
 | `music.name` | string | Song title |
 | `music.author` | string | Author name |
 
-The canonical raster-IRQ music player idiom:
+A raster-interrupt player built on those properties:
 
 ```asm
 .var music = LoadSid("tune.sid")
 
-BasicUpstart2(start)
+BasicUpstart2(main)
 
-start:
-    ldx #0
-    ldy #0
-    lda #music.startSong-1
-    jsr music.init        // init points into loaded SID data
+main:   sei
+        lda #$7f
+        sta $dc0d               // CIA1: no timer interrupts
+        lda $dc0d               // acknowledge one already pending
+        lda #<player
+        ldx #>player
+        sta $0314               // KERNAL IRQ vector
+        stx $0315
+        lda #$f8                // raster line 248, below the text
+        sta $d012
+        lda $d011
+        and #$7f                // raster compare bit 8 = 0
+        sta $d011
+        lda #$01
+        sta $d01a               // raster interrupt on
+        lda #music.startSong-1  // the tune's default song, 0-based
+        jsr music.init
+        cli
+!:      jmp !-
 
-    sei
-    lda #<irq
-    sta $0314
-    lda #>irq
-    sta $0315
-    lda #$01
-    sta $d01a             // raster IRQ source only
-    lda #$7f
-    sta $dc0d             // mask every CIA1 source
-    lda $dc0d             // and drop a pending one
-    asl $d019
-    lda #$7e              // raster line for IRQ
-    sta $d012
-    lda #$1b
-    sta $d011
-    cli
-    jmp *
+player: lda #$01
+        sta $d019               // acknowledge the raster interrupt
+        jsr music.play
+        jmp $ea81               // KERNAL: restore Y, X, A and RTI
 
-irq:
-    asl $d019
-    jsr music.play        // play points into loaded SID data
-    pla
-    tay
-    pla
-    tax
-    pla
-    rti
-
-    *=music.location "SID data"
-    .fill music.size, music.getData(i)
+        *= music.location "SID data"
+        .fill music.size, music.getData(i)
 ```
 
 The assembler resolves `music.init` and `music.play` to the actual addresses

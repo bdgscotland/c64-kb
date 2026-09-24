@@ -199,7 +199,9 @@ All times are at a nominal 1 MHz clock; on a real C64 they are ~1.5%
 longer on PAL (985,248 Hz) and ~2.2% shorter on NTSC (1,022,727 Hz).
 (An earlier revision gave a single "~1.49%" for both; that was the PAL
 figure only.) Decay and release share the same table; their values are
-roughly 3x the matching attack value.
+roughly 3x the matching attack value. The nominal times are the ones the
+Commodore 64 Programmer's Reference Guide (1982) prints for the SID's
+envelope rates; they are the chip's documented behaviour, not measured here.
 
 | Value | Attack | Decay/Release |
 |-------|--------|---------------|

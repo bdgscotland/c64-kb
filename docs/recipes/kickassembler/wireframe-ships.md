@@ -32,8 +32,8 @@ checksum of the bitmap against the Python model below. Pass 2 erases,
 rewinds and runs the same 48 updates with the counters off, timing each
 object with CIA1, and checks the bitmap again. It then times one matrix
 build and one ship transform, generates the first eight systems of
-Elite's first galaxy from three 16-bit seeds, checks the names and
-coordinates against the model, and prints everything under the window.
+Elite's first galaxy from its three 16-bit seeds (named from this recipe's
+own letter pairs), checks the names and coordinates against the model, and prints everything under the window.
 It writes `$01` to `$02FF` and turns the border green when every check
 matches, `$02` and red otherwise. The techniques are
 `wireframe_pipeline` in `techniques/effects-vector-3d.md` and
@@ -1703,8 +1703,8 @@ p10_1:      .byte >10000000, >1000000, >100000, >10000, >1000, >100, >10, >1
 p10_2:      .byte (10000000 >> 16), (1000000 >> 16), (100000 >> 16), 0, 0, 0, 0, 0
 rowlo:      .fill 25, <(BITMAP + i*320)
 rowhi:      .fill 25, >(BITMAP + i*320)
-// Elite's two-letter tokens, 0 prints nothing ('.' = silent letter)
-pairs:      .text "..LEXEGEZACEBISOUSESARMAINDIREA.ERATENBERALAVETIEDORQUANTEISRION"
+// this recipe's own two-letter tokens, 0 prints nothing ('.' = silent letter)
+pairs:      .text "..VOKARUZEMOTINAORULPISAEKDUWEO.FEJALOBUHINEYAGUISTAMIROCUALPEXI"
 t_wire:     .text "WIREFRAME @"
 t_lines:    .text " LINES @"
 t_upd:      .text " UPDATES @"
@@ -1746,7 +1746,7 @@ ang_a0:  .byte 0, 40, 100
 ang_b0:  .byte 20, 0, 60
 stp_a:   .byte 3, -2, 2
 stp_b:   .byte 2, 3, -3
-exp_names: .text "TIBEDIEDQUBE    LELEER  BIARGE  XEQUERINTIRAOR  RABEDIRALAVE    "
+exp_names: .text "GUBUDUISMIBU    VOVOFE  TIPIRU  KAMIFEEKGUHITA  HIBUDUHINEYA    "
 exp_gx:  .byte 2, 152, 77, 83, 180, 172, 69, 20
 exp_gy:  .byte 45, 102, 121, 104, 65, 88, 124, 86
 
@@ -2001,7 +2001,7 @@ def fletcher(bm):
     return s1, s2, pop
 
 # ---- galaxy ----
-PAIRS = "..LEXEGEZACEBISOUSESARMAINDIREA.ERATENBERALAVETIEDORQUANTEISRION"
+PAIRS = "..VOKARUZEMOTINAORULPISAEKDUWEO.FEJALOBUHINEYAGUISTAMIROCUALPEXI"
 def twist(s): return [s[1], s[2], (s[0] + s[1] + s[2]) & 0xFFFF]
 def galaxy(n):
     s = [0x5A4A, 0x0248, 0xB753]; out = []
@@ -2081,14 +2081,14 @@ if __name__ == "__main__":
 then the data lines of the listing, then the eight systems:
 
 ```text
-// TIBEDIED x=  2 y= 45 seeds 5A4A 0248 B753
-// QUBE     x=152 y=102 seeds CD80 98B8 7A1D
-// LELEER   x= 77 y=121 seeds F32A 4D9C 211B
-// BIARGE   x= 83 y=104 seeds D098 5394 860D
-// XEQUERIN x=180 y= 65 seeds 83DA B420 E233
-// TIRAOR   x=172 y= 88 seeds B080 ACE0 778D
-// RABEDIRA x= 69 y=124 seeds F95A 45D4 141B
-// LAVE     x= 20 y= 86 seeds AD38 149C 151D
+// GUBUDUIS x=  2 y= 45 seeds 5A4A 0248 B753
+// MIBU     x=152 y=102 seeds CD80 98B8 7A1D
+// VOVOFE   x= 77 y=121 seeds F32A 4D9C 211B
+// TIPIRU   x= 83 y=104 seeds D098 5394 860D
+// KAMIFEEK x=180 y= 65 seeds 83DA B420 E233
+// GUHITA   x=172 y= 88 seeds B080 ACE0 778D
+// HIBUDUHI x= 69 y=124 seeds F95A 45D4 141B
+// NEYA     x= 20 y= 86 seeds AD38 149C 151D
 ```
 
 The screenshot check compares bitmap rows 0-15 of the exit screenshot
@@ -2133,10 +2133,10 @@ WORST UPDATE 155708 LAST 131620
 LINE CALLS 1991 CYC/LINE 2350
 MATRIX 523 CYC/VERTEX 1179 SHIP 47467
 GALAXY PASS CYC/SYSTEM 733
-TIBEDIED 2,45       QUBE     152,102
-LELEER   77,121     BIARGE   83,104
-XEQUERIN 180,65     TIRAOR   172,88
-RABEDIRA 69,124     LAVE     20,86
+GUBUDUIS 2,45       MIBU     152,102
+VOVOFE   77,121     TIPIRU   83,104
+KAMIFEEK 180,65     GUHITA   172,88
+HIBUDUHI 69,124     NEYA     20,86
 ```
 
 That is the PAL screen. The NTSC screen differs only in the timings:
@@ -2281,14 +2281,17 @@ before each of four twists; the pair is used for the first three twists,
 and for the fourth only when bit 6 of `s0` low byte is set. Pair 0 adds
 nothing, and a `.` in the pair table is a silent second letter. After
 the four twists the seeds are the next system's. The rule is Elite's, as
-Moxon documents it; the code is this recipe's. The token string is data
-from Elite (Ian Bell and David Braben, 1984) as Moxon lists it at QQ16.
-Index 0 is written `..` because it is never used, and the silent letter
-is written `.`.
+Moxon documents it; the code is this recipe's. The 32 letter pairs are
+this recipe's own, so the names are not Elite's; the seeds and
+coordinates are. The table keeps Elite's shape, index 0 unused (`..`)
+and a silent second letter at index 15 (`O.`), so every name has the
+length Elite's has and the cycle counts are unchanged. An earlier
+version used Elite's own token string (QQ16), which is game data this
+repository cannot redistribute; it printed TIBEDIED, QUBE, ... LAVE.
 Moxon's worked example gives Lave's seeds as `s0 = $AD38`,
-`s1 = $149C`, `s2 = $151D`, with the pairs LA (token 149) and VE (token
-150), coordinates x = 20 and y = 86. The program's eighth system is
-LAVE, with those seeds (model) and coordinates (screen).
+`s1 = $149C`, `s2 = $151D` and coordinates x = 20 and y = 86. The
+program's eighth system (NEYA here) has those seeds (model) and
+coordinates (screen).
 
 ## What this recipe does not show
 
@@ -2317,5 +2320,5 @@ seed byte left by one bit (Moxon, not run here).
   https://elite.bbcelite.com/deep_dives/generating_system_data.html
   (x = `s1_hi`, y = `s0_hi` shifted right once).
 - Mark Moxon, C64 Elite variable QQ16:
-  https://elite.bbcelite.com/c64/main/variable/qq16.html (the 32
-  two-letter tokens, 128-159).
+  https://elite.bbcelite.com/c64/main/variable/qq16.html (Elite's 32
+  two-letter tokens, 128-159; not reproduced here).
