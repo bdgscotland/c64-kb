@@ -83,6 +83,26 @@ replaying every open logged gap through its tool and resolving the ones
 that now answer (`src/tools/gap-replay.ts`, also `c64-kb gaps-replay`);
 gaps an agent reported with `c64_report_gap` are left open.
 
+**Briefings, one technique per job** (`src/tools/briefings/alternatives.ts`):
+when a proposed plan holds both ends of an `ALTERNATIVE_TO` pair, one
+stays and the other goes into its `alternatives_left_out`. Two forced
+techniques (an archetype's fingerprint, a description rule) both stay.
+Otherwise, in order:
+
+1. A count the brief states. Each "N noun" in the brief ("24 sprites")
+   picks the technique whose title states the same count of the same
+   thing ("Up to 24+ sprites", "8-sprite multiplexer"), or whose side of
+   the tradeoff's "more than M noun" it meets (N > M; the tradeoff
+   describes the technique whose page states it). A count that points at
+   both or neither decides nothing.
+2. A forced technique over a found one.
+3. More realising recipes, then the higher rank.
+
+Before #91 the brief's count was not read: "sprite multiplexer demo with
+24 sprites on screen via raster reuse" kept `sprite_multiplex_8` on its
+recipe count. Neither technique was forced there; the issue's first
+diagnosis, a wording rule forcing the 8-sprite entry, was wrong.
+
 ## CLI-first
 
 Tool logic lives in `src/tools/` as functions returning

@@ -164,7 +164,7 @@ async function proposeTechniques(
   );
   // One of each ALTERNATIVE_TO pair, before the caps, so a dropped
   // alternative frees its slot.
-  const { kept, leftOut } = oneOfEachAlternative(onAxis, new Set(seeds.forced));
+  const { kept, leftOut } = oneOfEachAlternative(onAxis, new Set(seeds.forced), description);
   const techs = selectTechniques(kept, seeds.archetypeForced, proposalLimit);
   return { techs, leftOut };
 }
