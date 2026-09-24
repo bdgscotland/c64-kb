@@ -934,6 +934,11 @@ end address returned in X/Y is that pointer after the last store.
   as line 170; the screen was not blanked (`$D011` bit 4 still set,
   text drawn in a mid-transfer picture). `raster_irq_during_serial_io`
   has the fix, which is to clear `$D01A` around the call.
+- **Sprites on during LOAD.** LOAD receives through ACPTR, so sprites
+  over badlines hang it as they hang a sequential read: measured from
+  3 sprites on PAL and 4 on NTSC in VICE x64sc
+  (`sprites_over_badlines_hang_serial_io`). Write 0 to `$D015` around
+  the call.
 - **From Oscar64.** `krnio_load(fnum, device, channel)` in
   `kernalio.c` passes X = Y = 0 to LOAD, so with secondary 0 it loads
   to `$0000`; it is only useful with secondary 1. To choose the address
