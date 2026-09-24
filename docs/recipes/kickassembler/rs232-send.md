@@ -8,7 +8,7 @@ file_formats: [PRG]
 uses_registers: [DD00, DD04, DD05, DD0D, DD0E, DC06, DC07, DC0F, D011]
 uses_kernal: [SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CLRCHN, CLOSE, READST]
 devices: [rs232_userport]
-claims: [cia2_timer_a (owns), cia2_timer_b (init), cia2_tod (init), vic_raster_irq (init)]
+claims: [cia2_timer_a (owns), cia2_timer_b (init), cia2_tod (init), vic_raster_irq (init), cia2_vic_bank (shares), serial_bus (shares)]
 harness: [cia1_timer_b, $02FF]
 ---
 
@@ -417,7 +417,9 @@ is blanked and interrupts are off so that nothing delays a write by
 more than a few cycles; VICE samples each bit in its middle (`rsuser.c`,
 `bit_clk_ticks / 2`), so the margin is half a bit, 410 cycles on PAL.
 The routine writes PA2 by read-modify-write of `$DD00`, which leaves the
-VIC bank bits and the serial bus lines as they were.
+VIC bank bits and the serial bus lines as they were; the claims list
+them as `shares` for that reason (the claims watch saw no store change
+either unit's bits).
 
 The KERNAL's receive side was tried in the same VICE set-up and did
 not deliver a byte: a pipe to `cat` echoing the transmitted line, a pipe
