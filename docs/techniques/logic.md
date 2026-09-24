@@ -2485,9 +2485,15 @@ test alone lands hits across lanes all game long.
    end and write actor k into hardware sprite k: position, the `$D010`
    bit, the pointer and the colour all move with the actor. The VIC-II
    draws a lower-numbered sprite over a higher one, so the nearest
-   actor is sprite 0 and overlaps every other. With a multiplexer the
-   same sorted list is the slot order it builds from, and the depth
-   order and the raster order agree because both are Y.
+   actor is sprite 0 and overlaps every other. A Y-sorted multiplexer
+   does the opposite: `sprite_multiplex_game` assigns slot = sorted
+   index mod 8 in ascending Y, so of two overlapping actors the farther
+   (upper) one gets the lower sprite number and is drawn in front
+   (measured in VICE x64sc 3.10 with that recipe's listing, both orders
+   of two pinned actors; the #39 beat-em-up review). An earlier version
+   of this step said the depth order and the raster order agree because
+   both are Y; they are opposite. The `beat-em-up` starter keeps its
+   fighters in a band of their own, written near to far.
 4. **The hit window.** For each attacker on an active frame, in sorted
    order, test each other actor: the absolute difference of the two
    plane Ys must be within a small window (six lines in the recipe),
@@ -2524,9 +2530,12 @@ happens.
   the sprite is drawn at plane Y less height, the sort and the hit
   window still use the plane Y, and a stored ground Y means landing
   restores the lane without a search.
-- **More actors.** Past eight sprites the priority assignment becomes
-  the slot order of `sprite_multiplex_game`, whose persistent sort is
-  this one; the hit order still follows the same list.
+- **More actors.** Past eight sprites the sort is still this one, but
+  `sprite_multiplex_game`'s slot order draws the farther actor in
+  front (step 3), so depth priority needs the slots inside each zone
+  assigned near to far, which the recipe does not do (not built here).
+  The hit order still follows the sorted list. An earlier version said
+  the multiplexer's slot order gives the priority directly.
 - **Boxes per frame.** Replace the fixed reach with `per_frame_hitbox`
   boxes emitted at draw time, keeping the plane Y window as the first
   gate before the box compare.
