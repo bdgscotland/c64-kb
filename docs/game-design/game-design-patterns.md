@@ -110,9 +110,10 @@ pure 6510 arithmetic. Typical cost is 28–35 cycles per pair.
 ```
 
 At 8 actors, that is 28 pair-checks worst case (n*(n-1)/2). At 35 cycles
-per check, 28 pairs cost ~980 cycles, under 1 % of a PAL frame. At 16
-actors the cost is ~3920 cycles, still within budget if bounding-box is
-the only collision layer.
+per check, 28 pairs cost ~980 cycles, about 5 % of a PAL frame's 19,656
+(63 × 312). At 16 actors (120 pairs) the cost is ~4,200 cycles, about
+21 %, still within budget if bounding-box is the only collision layer.
+(An earlier version said under 1 % and ~3,920 cycles at 16 actors.)
 
 Use software bounding-box for: platformers that need sub-tile accuracy
 for landing/hitting platforms, and for adventure games where the player
@@ -260,7 +261,8 @@ banked ROM into the map buffer on demand.
 ## Enemy / actor state machines
 
 All moving non-player objects are actors. The sprite system sets the C64's
-actor limit: eight hardware sprites per frame. Multiplexed setups handle
+actor limit: eight hardware sprites on any one raster line (an earlier
+version said per frame; see `sprite_dma_overflow` in `pitfalls/sprite.md`). Multiplexed setups handle
 16–32 logical sprites; software-rendered actors (character graphics) can go
 higher at a high cycle cost.
 
@@ -525,10 +527,14 @@ The most common C64 pattern. The game runs one logical screen buffer. A raster
 IRQ fires at the bottom of the playfield to swap sprite pointers and perform
 any split-screen HUD work. Scroll column copies happen in the vertical blank
 IRQ. Everything is single-buffered: the CPU writes to screen RAM while the
-VIC-II reads from it, which is safe because writes and reads contend only
-during the 8 raster lines of badlines, producing at most one garbled
-character per badline. This is the "scroll tear" that well-timed VBlank
-copies avoid.
+VIC-II reads from it. A CPU write never garbles a VIC read; the risk is a
+race with the beam. If the beam crosses a coarse-scroll copy, rows above
+it show the old screen and rows below the new one: the "scroll tear".
+Copy behind the beam, or into a second matrix swapped with $D018
+(`screen_double_buffer_d018`); a full shift does not fit the vertical
+blank (`char_scroll_buffer_v` and `eight_way_scroll_double_buffer` in
+`techniques/scroll.md`). (An earlier version blamed CPU/VIC contention on
+badlines, garbling one character per badline.)
 
 The frame structure:
 
@@ -548,8 +554,10 @@ Raster IRQ fires at HUD split line:
 ```
 
 The main loop processes input, advances actor states, resolves collision,
-and updates score. On PAL (50 Hz) the loop has ~19 700 cycles of CPU time
-per frame after IRQ overhead. The loop's wait-for-frame, frame counter,
+and updates score. On PAL (50 Hz) a whole frame is 19,656 cycles (63 × 312);
+the loop gets what badlines (about 1,000), sprite DMA and the IRQs leave,
+not measured here. (An earlier version said ~19 700 cycles after IRQ
+overhead, more than the whole frame.) The loop's wait-for-frame, frame counter,
 dropped-frame detection and border-colour budget bar are the technique
 `frame_sync_loop` in `techniques/raster.md` (recipe
 `recipes/oscar64/frame-sync-loop.md`); reading the controls as press
@@ -810,8 +818,8 @@ Score is stored as BCD (binary-coded decimal) because display requires
 per-digit output and BCD avoids a full binary-to-decimal conversion every
 frame.
 
-**Per-digit increment (simple):** Six bytes for a six-digit score. Each
-byte holds two BCD digits (packed: high nibble = tens, low nibble = units).
+**Per-digit increment (simple):** Three bytes for a six-digit score
+(an earlier version said six). Each byte holds two BCD digits (packed: high nibble = tens, low nibble = units).
 Use the 6510 ADC instruction with the D (decimal) flag set (SED before ADC,
 CLD after). Carry propagates automatically through packed BCD.
 

@@ -38,7 +38,7 @@ limits were 1 KB or less — sometimes 256 bytes — because the cracked game im
 had to fit alongside the intro in the C64's 64 KB address space. Every byte of code
 and every raster line of display time was accounted for.
 
-From the mid-1990s, cracktros were increasingly made for their own sake. Groups like Triad, Onslaught, F4CG (Fairlight's successor formation), and
+From the mid-1990s, cracktros were increasingly made for their own sake. Groups like Triad, Onslaught, F4CG and
 Genesis Project continued releasing cracks with attached intros well into the 2000s
 and 2010s. The cracktro format also migrated to demo parties as a compo category:
 productions capped at 4 KB compete on the same terms as the 1985 originals. It
@@ -61,8 +61,11 @@ The logo occupies roughly the top half of the visible screen — approximately 8
 is the hardest element to get right visually.
 
 Two implementation paths exist. The first is a bitmap logo: a hi-res or multicolor
-bitmap loaded into $4000–$7FFF (standard VIC-II bitmap area), with color data in
-screen RAM and color RAM. The VIC-II's multicolor bitmap mode (bit 5 of $D011 = 1,
+bitmap on an 8 KB boundary inside the chosen 16 KB VIC bank (for example
+$6000 in bank 1, $4000–$7FFF), with color data in screen RAM and color RAM.
+(An earlier version called $4000–$7FFF "the standard VIC-II bitmap area";
+there is none: the bitmap sits at $0000 or $2000 within whichever bank
+`$DD00` selects, per `../hardware/vic-ii-reference.md`.) The VIC-II's multicolor bitmap mode (bit 5 of $D011 = 1,
 bit 4 of $D016 = 1) gives three colors plus background, enough for a bold logo
 glyph. The second path is a large custom multicolor charset: a 4x4 or 8x4
 character-cell logo built from custom character definitions. The charset uses less
@@ -72,27 +75,36 @@ must fit under 1 KB.
 Either way, the logo is static. Cracktros do not animate the logo; the animation
 budget goes to the sprite layer beneath it.
 
-Logo placement in screen coordinates: top edge at raster line ~40 (the first visible
-line below the top border), bottom edge at approximately raster line 140. This leaves
-roughly 100 raster lines for the sprite layer and 40 lines for the scroller bar.
+Logo placement in screen coordinates: top edge at raster line 51 (the first line
+of the 25-row display window on PAL), bottom edge at approximately raster line 140.
+That leaves lines 140–234, about 95, for the sprite layer and character rows 23–24
+(lines 235–250) for a double-height scroller, or row 24 (243–250) for a single one;
+the bottom border starts on line 251. (An earlier version put the first line below
+the top border at 40 and gave the scroller 40 lines.)
 
 Color conventions: see Conventions below.
 
 ### Side-Border Sprites
 
-The left and right side borders normally hide anything behind them; the VIC-II's
-horizontal blank window cuts them off. Side-border opening (`sideborder_open`) uses
-two timed writes in the horizontal blank so the VIC-II leaves the border generator
-disabled, exposing roughly 7 pixels of sprite rendering on each side.
+The left and right side borders normally hide anything behind them: the VIC-II's
+border flip-flop is set at X=344 (CSEL=1) or X=335 (CSEL=0) and draws border colour
+until X=24 on the next line. Side-border opening (`sideborder_open`) is one write per
+line: CSEL goes from 1 to 0 on cycle 56 (PAL), between the two set positions, so
+the flip-flop stays clear and neither this line's right border nor the next line's
+left border is drawn. Sprites then show across the whole side border; in a VICE PAL
+screenshot that is 32 pixels each side (x 0–31 and 352–383). (An earlier version
+called the border a "horizontal blank window", described two writes, and said about
+7 pixels were exposed; 7 pixels is how far CSEL=0 widens the left border.)
 
 In a cracktro, side-border sprites are decoration: thin vertical bars, dashed lines
 or simple shapes that frame the screen. They show that the coder can open the
 border.
 
-It needs a stable raster IRQ (`stable_raster_irq`) firing on
-the correct scanline for each horizontal blank crossing. The two VIC-II writes
-($D016 wide / $D016 narrow) must land within a ±1 cycle window. See
-`../techniques/raster.md` for the exact cycle budget.
+It needs a stable raster IRQ (`stable_raster_irq`) and a per-line loop that puts
+the write on cycle 56 of every line in the band, exactly; on a badline the loop's
+`DEC $D016` cannot reach cycle 56, so the band is kept badline-free. The measured
+listing is `../recipes/kickassembler/sideborder-open.md`; see `../techniques/raster.md`
+for the technique. (An earlier version gave a ±1-cycle window for two writes.)
 
 In intros smaller than 1 KB, side-border opening is sometimes omitted to save code
 space. In any intro above approximately 512 bytes it is expected.
@@ -242,7 +254,9 @@ The loader that replaces the exit-to-game logic is `multi_load_sequencing` in
 
 **Archetype:** `dentro`
 
-The "dentro" (a mid-1990s portmanteau of "demo" and "dentro") is a multi-part
+The "dentro" (usually read as "demo" plus "intro"; the origin is not sourced
+here, and an earlier version called it a mid-1990s portmanteau of "demo" and
+"dentro") is a multi-part
 production in the 8 KB to 16 KB range, usually 2 to 4 parts. Each part is a
 self-contained effect with its own raster setup and SID tune. A minimal loader
 sequences the parts from disk. The dentro sits between the one-screen intro and the
@@ -286,9 +300,11 @@ greetings list of 10 to 30 groups.
 
 ### Logo Placement and Sizing
 
-Logo top edge: no higher than raster line 40 (first line below top border). Logo
-bottom edge: no lower than raster line 140. This preserves the 100-line sprite zone
-(140–190) and the scroller zone (190–248). The logo fills the horizontal screen
+Logo top edge: no higher than raster line 51 (first line of the 25-row display
+window). Logo bottom edge: no lower than raster line 140. This preserves the sprite
+zone (lines 140–234, about 95 lines) and the scroller zone (character rows 23–24,
+lines 235–250). (An earlier version said line 40, a "100-line" sprite zone of
+140–190, which is 50 lines, and a scroller zone of 190–248.) The logo fills the horizontal screen
 fully — 320 pixels wide for hi-res, 160 pixels wide for multicolor (with 2x pixel
 width).
 
@@ -374,8 +390,8 @@ what it builds today.
 
 KickAssembler is the primary toolchain for cracktros because it gives cycle-exact
 control over the raster timing that `sideborder_open` needs. Oscar64 suits game logic
-and high-level demo structure; where every cycle of the horizontal blank window
-counts, use hand-assembled KickAssembler.
+and high-level demo structure; where the write must land on one
+cycle of the line, use hand-assembled KickAssembler.
 
 ### Technique Checklist
 
@@ -410,7 +426,7 @@ raster band.
   implementation details, sine table patterns, sprite chain construction
 - `../techniques/scroll.md` — `soft_scroll_h` implementation; scroller buffer
   management; fine-scroll register protocol
-- `../techniques/raster.md` — `stable_raster_irq` and `sideborder_open`; cycle
-  budget for the horizontal blank window; two-write timing protocol
+- `../techniques/raster.md` — `stable_raster_irq` and `sideborder_open`; the
+  one-write-per-line cycle-56 timing
 - `../techniques/music-sid.md` — `sid_play_routine_pattern`; SID binary relocation;
   init/play entry point conventions

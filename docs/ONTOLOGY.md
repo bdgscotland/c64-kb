@@ -9,8 +9,10 @@ crash/failure patterns. It answers multi-hop queries such as
 registers does this effect touch?" or "is FLI compatible with sprite-
 multiplex-24 in PAL?"
 
-`ensureSchema()` creates the indexes, constraints and the `Chip`, `Region`
-and `HardwareUnit` seed nodes; every other node and edge comes from ingesting `docs/`.
+`ensureSchema()` creates the indexes, constraints and the `Chip`, `Region`,
+`HardwareUnit` and `MachineVariant` seed nodes (`src/services/falkor.ts`);
+every other node and edge comes from ingesting `docs/`. An earlier version
+of this sentence left out `MachineVariant`.
 
 Design principles:
 - 5–12 node types, 8–20 edge types (maintainable range for a domain KB)
@@ -228,7 +230,7 @@ Source: `techniques/*.md` `**Demands:**` lines.
 A named piece of hardware that one technique can hold while another wants
 it: a SID voice, a sprite, a CIA timer, the raster compare, an interrupt
 vector, zero page (schema 25). Seeded by `ensureSchema()` from
-`HARDWARE_UNITS` in `src/graph/extract.ts`, like Chip and Region, so a
+`HARDWARE_UNITS` in `src/graph/claims.ts`, like Chip and Region, so a
 `**Claims:**` line can only name a unit that exists. It answers a
 different question from Resource: a Resource is a kind of machine time
 ("every CPU cycle on its lines"), a HardwareUnit is a register set.
@@ -537,8 +539,8 @@ outside the may set.
 Direction: `Register → MemoryRegion`, `KernalRoutine → MemoryRegion`
 
 Meaning: "this address lies inside this memory-map region." Derived from
-the numeric addresses after ingest; before this edge existed the 220
-MemoryRegion nodes were all orphans.
+the numeric addresses after ingest; before this edge existed every
+MemoryRegion node was an orphan.
 
 ### OCCUPIES
 
