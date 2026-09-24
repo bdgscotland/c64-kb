@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 796, schema 33, tools 2.8.0, package 0.21.0.
+Data 797, schema 33, tools 2.8.0, package 0.21.0.
+
+**Four new recipes and the last display-field Claims lines (data 797;
+#74).** New KickAssembler recipes, each run in VICE and measured:
+`mcm-text` (all 64,000 display pixels match on PAL and NTSC), `vsp`
+(a 10-character shift decoded row by row; shift = pad − 194 PAL, − 202
+NTSC), `afli-image` and `ifli-image` (PAL; every pixel matches its
+source image). The VSP run corrected `vsp_glitch` in three places: the
+picture moves right, not left; the offset does not carry into the next
+frame; one write a frame moves the whole screen. VICE is the only
+machine it ran on; with `-VICIIvspbug` 2 of 11 runs went wrong. The
+IFLI swap must wait for line 251, since lines 248-250 cannot be
+badlines; fli-image's "cycle 55 of LAST_LINE" comment was wrong for
+the same reason. Claims lines for big_font_2x2, dycp_scroller,
+text_zoom, mcm_text (none), vsp_glitch (now hard against FLD),
+afli_image and ifli_image.
 
 **Starter checks for a frame deadline and a live SID player (data 796;
 #75).** `templates/_harness/watch.py` reads a VICE store trace.
