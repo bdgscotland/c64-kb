@@ -5,21 +5,30 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 773, schema 31, tools 2.4.0, package 0.17.1.
+Data 774, schema 31, tools 2.4.0, package 0.17.1.
 
-**Two RE tools and the disassembly-reference page (tools 2.4.0, RE pilot
-step 1).** `c64_re_irq_chain` and `c64_re_frame_profile` (`src/tools/re.ts`,
+**Two RE tools and the disassembly-reference page (data 774, tools 2.4.0,
+RE pilot step 1).** `c64_re_irq_chain` and `c64_re_frame_profile` (`src/tools/re.ts`,
 `src/server/tools-re.ts`; CLI `re-irq-chain`/`re-frame-profile`) run a
 `.prg` headless in VICE x64sc and report its interrupt chain and the
 cycle cost of a marked region as measured observations, each with an id,
-basis and rung; calibration against this repo's own figures is below.
+basis and rung, returned whole as MCP structured content with a text
+summary. A run counts from the first execution of the PRG's BASIC SYS
+target; when that never runs within the cycles given the tool refuses
+(reason `no-entry`). Writes before it (the KERNAL's boot) seed the state
+but are not reported. A `disk_path` is copied and the copy attached, so
+writes to it are discarded. Needs the windowless x64sc (`npm run
+vice:headless`). Deferred to later steps: per-routine `prof` totals, the
+frame mode of `c64_re_frame_profile` (it times a region between two
+markers), and the `$D01A`/`$DC0D` mask report. Calibration against this
+repo's own figures is in the next entry.
 `docs/toolchains/disassembly-reference.md` (issue #3) covers `da65`, the
 VICE monitor run in batch (checkpoints, `prof`, `chis`, `memmapshow`), the
 ROM tables (each checked by reading `kernal-901227-03.bin`), the KERNAL
 IRQ/NMI walk and the byte-census technique. #3's own text named "$E5B6
 DOS messages" — wrong: $E5B6 is code, the high operand byte of `LDY
 $0277` at $E5B4; DOS messages are in the 1541 drive ROM from $E4FC, not
-the KERNAL. #3 stays open for its remaining item, a worked `.sid` recipe,
+the KERNAL. #3 is closed; its remaining item, a worked `.sid` recipe, is
 split out to #64 (needs a `.sid` this repo may use). Five more issues
 filed from [the RE design
 spec](docs/superpowers/specs/2026-09-23-reverse-engineering-design.md):
@@ -31,11 +40,48 @@ measured that it already works in the current windowless build when
 called from a checkpoint after the program runs (the earlier probe called
 it at start-up, before anything had executed), so that rebuild issue was
 not filed.
-- `docs/hardware/c64-memory-map.md`: the KERNAL's VIC-II power-on table is
-  $ECB9-$ECE7 (47 bytes, copied by the loop at $E5A8), not $ECB9-$ECE6
-  (46 bytes); KEYTAB ends at $ECB8, not $ECB9 ($ECB9 is the power-on
-  table's first byte). Both verified by reading `kernal-901227-03.bin`;
-  earlier versions of these two lines had the off-by-one.
+- `docs/hardware/c64-memory-map.md`: the KERNAL's VIC-II power-on table
+  is 46 bytes, $ECB9-$ECE6; the page called it 47. The copy loop at
+  $E5A8 (`LDX #$2F`) copies 47 bytes to $D000-$D02E, the 47th being
+  $ECE7, the `L` of the LOAD/RUN string, which lands in $D02E (sprite 7
+  colour). KEYTAB ends at $ECB8, not $ECB9 ($ECB9 is the power-on table's
+  first byte). Both read from `kernal-901227-03.bin`.
+
+**RE tools calibrated against this repo's own measured figures
+(`test/re-calibration.test.ts`).** Before any third-party game is
+studied, `reIrqChain` and `reFrameProfile` (`src/tools/re.ts`) had to
+reproduce three figures this repo already committed, at a fixed 2%
+tolerance; none missed. Measured in VICE x64sc 3.10 (windowless),
+rung 1 — the tools' own trace, not a reading from the recipe pages.
+- `kickassembler/irq-chain`: armed lines exact, `{40, 130, 260}` against
+  the listing's `LINE0`/`LINE1`/`LINE2`. Raw `arms[]` also held `{4, 296}`
+  a few cycles apart — the composite of the dispatcher's two separate
+  writes, `$D012` then `$D011`'s bit 7. `handlers[].armed_before`, the
+  state at each actual entry (the field `test/re-tools.test.ts` already
+  reads for this), is `{40, 130, 260}` and is what the test checks.
+  Since boot writes seed the state, `arms[]` also opens with 55 (the
+  listing's `STA $D011` at $0858 combined with the KERNAL's power-on
+  $D012 of $37), then 40 from its `STA $D012` six cycles later; before,
+  that first arm was null.
+- `oscar64/falling-blocks`, CIA1 timer A, 12,500,000 cycles: measured
+  worst 6,277 against the design page's 6,276 — 1 cycle, 0.02%.
+  `main()` calls `worst_subject()` once, before the scripted game's own
+  per-frame loop (falling-blocks.md lines 525 and 552), and times its
+  RULES and RENDER parts with the same `$DC0E` pair; the run's first two
+  samples were that constructed 20-row case (measured 5,718 and 9,312
+  against the page's own 5,717 and 9,311), not a frame of the game, and
+  are excluded by program order, not by value.
+- `oscar64/platformer-scaffold`, CIA1 timer B, 40,000,000 cycles, fresh
+  `TEST,01` disk: measured worst-in-frame 8,694 against the design
+  page's 8,693 — 1 cycle, 0.01%. The run held one sample over a frame
+  (4,444,670 cycles, the KERNAL's disk I/O on timer B), excluded as
+  `io_frame` per the recipe's own text.
+- `oscar64/simple-shmup` has no CIA timer harness — no `t_start`/
+  `t_stop`, no `$DC0E`/`$DC0F` bracket — confirmed against the source.
+  Data 758's design-validation table below already called
+  `simple_shmup_oscar64` "not timed"; this task found the same thing
+  independently, from the listing, not the table. Nothing was measured
+  here; this is a gap, not a calibration.
 
 **Plain prose, batch 1 of #56 (data 773).** The design, art, music,
 workflow, game-design and root pages lost their machine-written wording:
@@ -104,38 +150,6 @@ exist, and state goes to `$XDG_DATA_HOME/c64-kb` (or
 tarball into an empty folder and runs services, ingest and a lookup. A
 release workflow publishes on a `v*` tag; the first publish and the
 licence check are open in #52.
-
-**RE tools calibrated against this repo's own measured figures
-(`test/re-calibration.test.ts`).** Before any third-party game is
-studied, `reIrqChain` and `reFrameProfile` (`src/tools/re.ts`) had to
-reproduce three figures this repo already committed, at a fixed 2%
-tolerance; none missed. Measured in VICE x64sc 3.10 (windowless),
-rung 1 — the tools' own trace, not a reading from the recipe pages.
-- `kickassembler/irq-chain`: armed lines exact, `{40, 130, 260}` against
-  the listing's `LINE0`/`LINE1`/`LINE2`. Raw `arms[]` also held `{4, 296}`
-  a few cycles apart — the composite of the dispatcher's two separate
-  writes, `$D012` then `$D011`'s bit 7. `handlers[].armed_before`, the
-  state at each actual entry (the field `test/re-tools.test.ts` already
-  reads for this), is `{40, 130, 260}` and is what the test checks.
-- `oscar64/falling-blocks`, CIA1 timer A, 12,500,000 cycles: measured
-  worst 6,277 against the design page's 6,276 — 1 cycle, 0.02%.
-  `main()` calls `worst_subject()` once, before the scripted game's own
-  per-frame loop (falling-blocks.md lines 525 and 552), and times its
-  RULES and RENDER parts with the same `$DC0E` pair; the run's first two
-  samples were that constructed 20-row case (measured 5,718 and 9,312
-  against the page's own 5,717 and 9,311), not a frame of the game, and
-  are excluded by program order, not by value.
-- `oscar64/platformer-scaffold`, CIA1 timer B, 40,000,000 cycles, fresh
-  `TEST,01` disk: measured worst-in-frame 8,694 against the design
-  page's 8,693 — 1 cycle, 0.01%. The run held one sample over a frame
-  (4,444,670 cycles, the KERNAL's disk I/O on timer B), excluded as
-  `io_frame` per the recipe's own text.
-- `oscar64/simple-shmup` has no CIA timer harness — no `t_start`/
-  `t_stop`, no `$DC0E`/`$DC0F` bracket — confirmed against the source.
-  Data 758's design-validation table below already called
-  `simple_shmup_oscar64` "not timed"; this task found the same thing
-  independently, from the listing, not the table. Nothing was measured
-  here; this is a gap, not a calibration.
 
 **A routed game briefing names its starter (tools 2.3.1, package
 0.16.1).** `c64_game_briefing` with no `archetype` routes by the brief's

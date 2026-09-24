@@ -216,6 +216,13 @@ pages, so the rule has no exceptions.
    Write `docs/toolchains/disassembly-reference.md` (issue #3: da65, the
    monitor commands above, the ROM tables, the byte census), every command
    run here with output quoted. Close #3.
+
+   As landed, step 1 deferred three parts of the tool rows above to later
+   steps: per-routine `prof` totals, the frame mode of
+   `c64_re_frame_profile` (frame boundary at a handler entry, cycles per
+   handler and phase; step 1 times a region between two markers), and
+   the `$D01A`/`$DC0D` mask report of `c64_re_irq_chain` (the stores are
+   traced, not reported).
 2. **Gridrunner** (PRG, unpacked). `c64_re_session`, `c64_re_load_map`,
    `c64_re_coverage` (targeted mode). Every observation cross-checked
    against mwenge's byte-identical source; the first study page; the
@@ -234,7 +241,10 @@ game is studied.
   committed as fixtures (logs from our own PRGs only; no third-party
   bytes).
 - Calibration (pilot step 1) is a vitest suite that runs VICE, gated like
-  `verify:recipes`, and is added to CI.
+  `verify:recipes` (`test/re-calibration.test.ts`). It does not run in CI:
+  it needs Oscar64, which CI skips until #25, and every VICE-backed test
+  skips where no windowless x64sc is present, as on the CI test runners.
+  An earlier version of this line said it was added to CI.
 - Tool tests use our own PRGs. Third-party images are never needed by CI;
   study pages are checked by lint and by the ingest, not by replay.
 - `npm run check:listings`, `lint`, `typecheck`, `knip`, `test`,
@@ -276,7 +286,9 @@ rebuild is needed, so no issue was filed for it.
 | #63 Game study: Elite (pilot step 4) | big-rock, content |
 | #64 `.sid` worked recipe: find a player's init and play routines (split from #3) | content |
 
-Pilot step 1 closes #3.
+#3 was closed by pilot step 1 (`docs/toolchains/disassembly-reference.md`);
+its worked `.sid` recipe moved to #64. An earlier version of this line
+said step 1 closes #3 without naming that split.
 
 ## Risks
 

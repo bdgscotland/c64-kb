@@ -71,11 +71,19 @@ decimal 2064 = $0810, where the byte is $78 (`SEI`). Rung 1.
 
 `readPrg` in `src/re/prg.ts` applies the same rule: only for load address
 $0801, it looks for $9E at or after offset 4 of the line and reads 3 to 5
-digits, allowing a `(` and spaces. `end` is the address of the last byte.
+digits, allowing a `(` and spaces. `end` is the address of the last byte;
+`bytes` is the file as passed in. Printed with `load` and `end` in hex:
 
 ```text
-{ load: '801', end: '94d', sys: 2064 }
+{
+  load: '801',
+  end: '94d',
+  bytes: <Buffer 01 08 0b 08 0a 00 9e 32 30 36 34 00 00 00 00 00 00 78 a9 7f 8d 0d dc ad 0d dc a2 00 a9 20 9d 00 04 9d 00 05 9d 00 06 9d 00 07 a9 01 9d 00 d8 9d 00 d9 ... 285 more bytes>,
+  sys: 2064
+}
 ```
+
+An earlier version of this block left out the `bytes` field.
 
 A SYS target that is not near the stub's end, or a stub whose line text is
 not `SYS`, is the first sign of a packer or a custom loader (next sections).
@@ -249,7 +257,7 @@ Each address below was checked by reading the bytes of
 |---|---|
 | $FD30-$FD4F | 16 vectors, copied to $0314-$0333: `EA31 FE66 FE47 F34A F291 F20E F250 F333 F157 F1CA F6ED F13E F32F FE66 F4A5 F5ED` (IRQ, BRK, NMI, OPEN … ISAVE) |
 | $FF81-$FFF5 | 39 three-byte entries. 29 are `JMP abs`; 10 are `JMP (ind)` through the RAM vectors: $FFC0-$FFD2 via $031A-$0326, $FFE1-$FFE7 via $0328-$032C. First `FF81: 4C 5B FF`, last `FFF3: 4C 00 E5` |
-| $ECB9-$ECE7 | VIC-II power-on values, 47 bytes, copied by `LDX #$2F / LDA $ECB8,X / STA $CFFF,X / DEX / BNE` at $E5A8 to $D000-$D02E. The last byte, $4C, is the "L" of "LOAD\rRUN\r" at $ECE7; it lands in $D02E, which read back $FC (grey) in VICE |
+| $ECB9-$ECE6 | VIC-II power-on values, 46 bytes. `LDX #$2F / LDA $ECB8,X / STA $CFFF,X / DEX / BNE` at $E5A8 copies 47 bytes to $D000-$D02E: the 47th, $4C at $ECE7, is the "L" of "LOAD\rRUN\r"; it lands in $D02E, which read back $FC (grey) in VICE. An earlier version of this row gave the table as $ECB9-$ECE7, 47 bytes |
 | $F0BD-$F12A | The KERNAL's ten messages, from "I/O ERROR #" to "OK". Each ends in a byte with bit 7 set. Eight begin with $0D; "FOR " and "PRESS RECORD & PLAY ON TAPE" do not |
 | $E5B6 | Not a table. It is the high operand byte of `LDY $0277` at $E5B4, the keyboard-buffer fetch |
 

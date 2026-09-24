@@ -1930,7 +1930,7 @@ the cursor; the ROM bytes say otherwise.
 
 ### $EA87-$ECE6 — SCNKEY keyboard scanner, key decode and key tables
 
-**Default use:** SCNKEY body $EA87 (jump table $FF9F; $EA9B resets the table pointer to $EB81), KEYLOG table-select routine $EB48 (reached via $028F/$0290; toggles $D018 bit 1 on SHIFT+C= at $EB5E), table pointers $EB79, decode tables $EB81 (unshifted), $EBC2 (shifted), $EC03 (C=), the CHR$(14)/CHR$(142) case switch $EC44-$EC5B, CTRL table $EC78-$ECB8, 47-byte VIC-II power-on register table $ECB9-$ECE7, copied by the loop at $E5A8 (an earlier version of this line said $ECE6, which is 46 bytes, not 47; verified against `kernal-901227-03.bin`)
+**Default use:** SCNKEY body $EA87 (jump table $FF9F; $EA9B resets the table pointer to $EB81), KEYLOG table-select routine $EB48 (reached via $028F/$0290; toggles $D018 bit 1 on SHIFT+C= at $EB5E), table pointers $EB79, decode tables $EB81 (unshifted), $EBC2 (shifted), $EC03 (C=), the CHR$(14)/CHR$(142) case switch $EC44-$EC5B, CTRL table $EC78-$ECB8, VIC-II power-on register table $ECB9-$ECE6 (46 bytes). The copy loop at $E5A8 (`LDX #$2F`, `LDA $ECB8,X`, `STA $CFFF,X`, `DEX`, `BNE`) copies 47 bytes to $D000-$D02E: the 47th is $ECE7, the `L` ($4C) of the LOAD/RUN string below, and lands in $D02E (sprite 7 colour). Read from `kernal-901227-03.bin`. An earlier version of this line called the table 47 bytes: its end, $ECE6, was right; 47 is the count the loop copies, not the table's length
 **Bank-switchable:** Yes
 
 ### $ECE7-$ED08 — "LOAD/RUN" string and screen-line low-byte table
@@ -2573,7 +2573,7 @@ images):
 | $E500-$E5C9   | IOBASE $E500, SCREEN $E505, PLOT $E50A, CINT body $E518, clear screen $E544, VIC init $E5A0 |
 | $E5CA-$EA30   | Screen editor: keyboard/screen input, CHROUT screen body $E716, scroll $E8EA |
 | $EA31-$EA86   | Default IRQ handler (CIA acknowledge $EA7E, register restore/RTI $EA81) |
-| $EA87-$ECE6   | SCNKEY $EA87, KEYLOG $EB48, key decode tables $EB81-$ECB8, VIC power-on table $ECB9 |
+| $EA87-$ECE6   | SCNKEY $EA87, KEYLOG $EB48, key decode tables $EB81-$ECB8, VIC power-on table $ECB9-$ECE6 (the copy at $E5A8 also takes $ECE7) |
 | $ECE7-$ED08   | "LOAD/RUN" string, screen-line low-byte table      |
 | $ED09-$EEBA   | IEC bus (TALK $ED09, LISTEN $ED0C, SECOND $EDB9, TKSA $EDC7, IECOUT $EDDD, UNTLK $EDEF, UNLSN $EDFE, IECIN $EE13, 1 ms delay $EEB3) |
 | $EEBB-$F0BC   | RS-232 driver                                      |
