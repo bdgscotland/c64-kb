@@ -1159,16 +1159,25 @@ EasyFlash holds two 512 KB Am29F040-type flash chips, one behind ROML
    cartridge's 256 bytes of RAM at `$DF00`), with interrupts off.
 3. **Use EAPI in released software.** EAPI is the EasyFlash flash
    driver. A CRT carries it at bank 0 ROMH offset `$1800` (768 bytes
-   reserved). The program copies it to C64 RAM (c64gameframework uses
-   `$C000`) and calls EAPIInit, which builds a jump table in the
-   cartridge RAM at `$DF80`. The calls are
+   reserved), starting with the signature `65 61 70 69`. The program
+   copies it to C64 RAM (`$0200`-`$7FFF` or `$C000`-`$CFFF`, page
+   aligned) and calls EAPIInit at the copy plus 20, which builds a jump
+   table in the cartridge RAM at `$DF80`. The calls are
    EAPIWriteFlash `$DF80`, EAPIEraseSector `$DF83`, EAPISetBank `$DF86`,
    EAPIGetBank `$DF89`, EAPISetPtr `$DF8C`, EAPISetLen `$DF8F`,
-   EAPIReadFlashInc `$DF92` and EAPIWriteFlashInc `$DF95`. When EasyProg
-   flashes a CRT that has the `eapi` signature there, it swaps in the
-   version for the fitted flash chip. Code that sends Am29F040
-   commands itself, as the recipe does, works only on that chip. VICE
-   emulates it and warns `EF: EAPI not found!` when a CRT has no EAPI.
+   EAPIReadFlashInc `$DF92`, EAPIWriteFlashInc `$DF95`, EAPISetSlot
+   `$DF98` and EAPIGetSlot `$DF9B` (V1.4; an earlier version of this list
+   stopped at `$DF95`). Each writing call switches to Ultimax and back
+   itself, so the caller runs in 16 KB mode with the KERNAL and all of
+   RAM in place. When EasyProg flashes a CRT that has the signature
+   there, it swaps in the version for the fitted flash chip (offsets
+   `$1800`-`$1AFF`; a menu name may follow at `$1B00`). Code that sends
+   Am29F040 commands itself, as `easyflash-save` does, works only on that
+   chip. VICE emulates it and warns `EF: EAPI not found!` when a CRT has
+   no EAPI. Measured through EAPI in VICE (`easyflash-eapi`): EAPIInit
+   5,267 cycles on PAL, an EAPIEraseSector 1,000,489, and an 8-byte
+   record with EAPISetPtr and eight EAPIWriteFlashInc calls 2,264 to
+   2,308.
 
 Saving then works like this. Keep the save sector's banks as `$FF` in
 the CRT, because EasyProg erases only the sectors a CRT contains. At
@@ -1242,6 +1251,7 @@ here. VICE emulates it with `-gmod2eepromimage <file>` and
 ### Recipes
 
 - `recipes/kickassembler/easyflash-save.md` (a self-built EasyFlash CRT that appends a high-score record to bank 8 each boot; persistence shown across two VICE runs with `-easyflashcrtwrite`; erase and program timed)
+- `recipes/kickassembler/easyflash-eapi.md` (the same kind of save through EAPI: the CRT's EAPI slot and name at `00:1:1800` and `00:1:1B00`, the driver patched in by a build step, EAPIInit, erase, write and read back timed across two boots; not pinned)
 
 ---
 
