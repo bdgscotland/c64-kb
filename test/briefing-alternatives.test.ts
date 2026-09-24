@@ -4,10 +4,10 @@ import type { TechniqueLookupOutput } from "../src/schemas/tool-outputs.ts";
 
 type Alt = { name: string; tradeoff: string; stated_on: string };
 
-function tech(name: string, recipes: number, alternatives: Alt[] = []): TechniqueLookupOutput {
+function tech(name: string, recipes: number, alternatives: Alt[] = [], title = name): TechniqueLookupOutput {
   return {
     name,
-    title: name,
+    title,
     category: "sprite",
     complexity: "high",
     uses_registers: [],
@@ -47,6 +47,51 @@ describe("oneOfEachAlternative (#17 ONTO-07)", () => {
     expect(
       oneOfEachAlternative([m8(3), m24(0)], new Set(["sprite_multiplex_24"])).kept.map((t) => t.name),
     ).toEqual(["sprite_multiplex_24"]);
+  });
+
+  // #91: the brief states a count; the titles and tradeoff are the pages' own.
+  const brief24 = "sprite multiplexer demo with 24 sprites on screen via raster reuse";
+  const real24 = (recipes: number) =>
+    tech(
+      "sprite_multiplex_24",
+      recipes,
+      [{ name: "sprite_multiplex_8", tradeoff, stated_on: "sprite_multiplex_24" }],
+      "Up to 24+ sprites via raster reuse",
+    );
+  const real8 = (recipes: number) =>
+    tech(
+      "sprite_multiplex_8",
+      recipes,
+      [{ name: "sprite_multiplex_24", tradeoff, stated_on: "sprite_multiplex_24" }],
+      "8-sprite multiplexer",
+    );
+
+  it("keeps the technique whose title states the brief's count over one with more recipes (#91)", () => {
+    const { kept, leftOut } = oneOfEachAlternative([real8(3), real24(1)], new Set(), brief24);
+    expect(kept.map((t) => t.name)).toEqual(["sprite_multiplex_24"]);
+    expect(leftOut.get("sprite_multiplex_24")?.map((e) => e.name)).toEqual(["sprite_multiplex_8"]);
+    expect(
+      oneOfEachAlternative([real24(1), real8(0)], new Set(), "an 8-sprite multiplexer").kept.map(
+        (t) => t.name,
+      ),
+    ).toEqual(["sprite_multiplex_8"]);
+  });
+
+  it("reads the tradeoff's 'more than N' against the brief's count, and a count beats forcing", () => {
+    const untitled24 = tech("sprite_multiplex_24", 0, [
+      { name: "sprite_multiplex_8", tradeoff, stated_on: "sprite_multiplex_24" },
+    ]);
+    expect(
+      oneOfEachAlternative([real8(3), untitled24], new Set(["sprite_multiplex_8"]), "20 sprites").kept.map(
+        (t) => t.name,
+      ),
+    ).toEqual(["sprite_multiplex_24"]);
+    // 12 is not more than 16, and 24 frames is not a sprite count: recipes decide.
+    for (const b of ["12 sprites", "24 frames of animation", "no number here"]) {
+      expect(oneOfEachAlternative([real24(1), real8(3)], new Set(), b).kept.map((t) => t.name)).toEqual([
+        "sprite_multiplex_8",
+      ]);
+    }
   });
 
   it("keeps both when both are forced", () => {
