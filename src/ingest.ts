@@ -25,6 +25,7 @@ import { config } from "./config.ts";
 import type { EdgeEntity } from "./graph/apply.ts";
 import { HASH_FILE, VOCAB_FILE, findMarkdown, loadHashes, loadOrFitBM25, log } from "./ingest/files.ts";
 import { chunkText } from "./ingest/points.ts";
+import { scanRecipeListings } from "./ingest/listing-scan.ts";
 import { applyPendingEdges, ingestFile } from "./ingest/passes.ts";
 import { findStubTechniques, linkRegions, reportSummary } from "./ingest/report.ts";
 import { EdgeTally, type NodeTally } from "./ingest/tally.ts";
@@ -149,6 +150,7 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
   // --- Report ---
   await linkRegions(falkor, print);
   await linkVerifiedOn(falkor, DOCS_DIR, print);
+  await scanRecipeListings(falkor, contents, print);
   const stubTechniques = await findStubTechniques(falkor);
   await reportSummary({ qdrant, falkor, nodes, edges, stubTechniques, print });
   if (cleanFirst) await falkor.markRebuildFinished();

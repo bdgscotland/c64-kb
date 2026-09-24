@@ -271,7 +271,7 @@ describe("resource claims", () => {
     );
     const all = await checkCompatibility(["pure_maths", "sfx_engine_beside_music"]);
     expect(all.text).toMatch(/Unit claims are stated for 2 of 2 techniques\./);
-    expect(all.text).toMatch(/interrupt vectors a recipe chooses are not checked yet \(issue #22, step 8\)/);
+    expect(all.text).toMatch(/Recipes' zero-page bytes are compared as info \(recipe_zero_page_overlap\)/);
   });
 
   it("technique lookup returns claims and says unknown when the page states none", async () => {

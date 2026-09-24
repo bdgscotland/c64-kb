@@ -196,15 +196,21 @@ const ClaimRow = z.object({
 
 type ClaimsPart = Pick<TechniqueLookupOutput, "claims" | "claims_stated" | "claims_basis">;
 
-/** CLAIMS → HardwareUnits (schema 25). No Claims line reads as "unknown", never as "none". */
-async function claimsOf(row: TechniqueRow): Promise<ClaimsPart> {
+/**
+ * CLAIMS → HardwareUnits of a Technique (schema 25) or a Recipe (schema 34).
+ * No Claims line (or claims: key) reads as "unknown", never as "none".
+ */
+export async function claimsOf(
+  owner: { label: "Technique" | "Recipe"; name: string },
+  stored: { claims_stated?: string | null | undefined; claims_basis?: string | null | undefined },
+): Promise<ClaimsPart> {
   const f = await getFalkor();
   const rows = parseRows(
     ClaimRow,
     await f.roQuery(
-      `MATCH (t:Technique {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
+      `MATCH (t:${owner.label} {name: $name})-[c:CLAIMS]->(h:HardwareUnit)
        RETURN h.name AS unit, c.mode AS mode, c.ranges AS ranges, c.relocatable AS relocatable ORDER BY h.name`,
-      { name: row.name },
+      { name: owner.name },
     ),
   );
   const claims = rows.map((c) => ({
@@ -214,14 +220,18 @@ async function claimsOf(row: TechniqueRow): Promise<ClaimsPart> {
     ...(c.relocatable ? { relocatable: true } : {}),
   }));
   const stated =
-    row.claims_stated === "stated" || row.claims_stated === "none" ? row.claims_stated : "unknown";
-  return { claims, claims_stated: stated, ...(row.claims_basis ? { claims_basis: row.claims_basis } : {}) };
+    stored.claims_stated === "stated" || stored.claims_stated === "none" ? stored.claims_stated : "unknown";
+  return {
+    claims,
+    claims_stated: stated,
+    ...(stored.claims_basis ? { claims_basis: stored.claims_basis } : {}),
+  };
 }
 
 /** The Claims line as the page would write it, runs of units compressed (sprite_0-7). */
-function renderClaims(t: TechniqueLookupOutput): string {
+export function renderClaims(t: ClaimsPart, unknown = "the page states no unit claims"): string {
   if (t.claims_stated === undefined || t.claims_stated === "unknown") {
-    return `**Claims:** unknown (the page states no unit claims; a unit conflict with it cannot be ruled out)\n`;
+    return `**Claims:** unknown (${unknown}; a unit conflict with it cannot be ruled out)\n`;
   }
   if (t.claims_stated === "none") return `**Claims:** none\n**Claims basis:** ${t.claims_basis ?? ""}\n`;
   const byMode = new Map<string, string[]>();
@@ -243,7 +253,7 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
 
   const cost = costOf(row);
   const edges = await neighbourhoodOf(name);
-  const claims = await claimsOf(row);
+  const claims = await claimsOf({ label: "Technique", name: row.name }, row);
 
   // Documentation chunks from Qdrant, only those about the technique (#41)
   const documentation = (await techniqueDocumentation(name, row.title ?? "")).map(toDocChunk);

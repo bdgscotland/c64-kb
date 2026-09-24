@@ -260,7 +260,7 @@ export class FalkorLinks extends FalkorNodes {
    */
   async linkClaims(c: {
     owner: string;
-    ownerKind: "Technique";
+    ownerKind: "Technique" | "Recipe";
     unit: string;
     mode: string;
     ranges?: string | undefined;
@@ -395,6 +395,31 @@ export class FalkorLinks extends FalkorNodes {
       to: { label: "Archetype", name: archetype },
       warn: `linkInstanceOf: ${design} -> ${archetype} (Archetype) — game design or archetype not found`,
     });
+  }
+
+  /**
+   * EXEMPLIFIED_BY (schema 34): the archetype page names this title as a
+   * reference and links `source` for its genre and year. MATCH both.
+   */
+  async linkExemplifiedBy(e: {
+    archetype: string;
+    production: string;
+    source: string;
+    source_doc: string;
+  }): Promise<boolean> {
+    const rows = await this.write(
+      `MATCH (a:Archetype {name: $archetype})
+       MATCH (p:Production {name: $production})
+       MERGE (a)-[x:EXEMPLIFIED_BY]->(p)
+       SET x.source = $source, x.source_doc = $source_doc
+       RETURN 1`,
+      e,
+    );
+    if (rows.length > 0) return true;
+    console.warn(
+      `[falkor] linkExemplifiedBy: ${e.archetype} -> ${e.production} — archetype or production not found, edge dropped`,
+    );
+    return false;
   }
 
   /** REALISED_BY (schema 28): this recipe builds the design. MATCH both. */

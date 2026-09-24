@@ -15,9 +15,9 @@
  * lands at $0100 + SP + 1..3. An interrupt's pushes show the interrupted
  * instruction.
  */
-import type { Declared } from "./claims-declared.ts";
-import { CpuPort, sourceOf, type ScreenBytes, type Source, type UnitMap } from "./claims-units.ts";
-import { parseHit, storedValue, type Hit } from "../../src/re/monlog.ts";
+import type { Declared } from "./declared.ts";
+import { CpuPort, sourceOf, type ScreenBytes, type Source, type UnitMap } from "./units.ts";
+import { parseHit, storedValue, type Hit } from "../re/monlog.ts";
 
 export { parseHit, storedValue, type Hit };
 

@@ -1,6 +1,7 @@
 /** recipe pages (docs/CONVENTIONS-recipes.md): frontmatter lists plus load addresses read from the listing. */
 
-import { group, parseFrontmatter } from "./common.ts";
+import { CLAIMS_BASIS_WORDS, isClaimsBasis, parseClaims, type ClaimsBasis } from "../claims.ts";
+import { group, parseFrontmatter, warn } from "./common.ts";
 import type { GraphEntity } from "./types.ts";
 
 // Recipe listings declare where they load: KickAssembler `* = $0900`,
@@ -40,6 +41,53 @@ function occupiesEntities(content: string, recipe: string): GraphEntity[] {
   return entities;
 }
 
+interface RecipeClaims {
+  stated: "stated" | "none";
+  basis: ClaimsBasis;
+  entities: GraphEntity[];
+}
+
+/**
+ * The `claims:` key (schema 34), in the Claims-line grammar
+ * (docs/CONVENTIONS-recipes.md). `[]` or `[none]` says the listing chooses
+ * no unit beyond its techniques' claims; an absent key is unknown. The key
+ * is written from a claims-watch trace, so the basis is measured-vice unless
+ * `claims_basis:` says otherwise. A value outside the grammar is refused
+ * whole, with a warning: a partial set would read as a complete one.
+ */
+function recipeClaims(
+  fm: Partial<Record<string, string>>,
+  recipe: string,
+  sourcePath: string,
+): RecipeClaims | null {
+  const raw = fm.claims;
+  if (raw === undefined) return null;
+  const basis = fm.claims_basis ?? "measured-vice";
+  if (!isClaimsBasis(basis)) {
+    warn(
+      `${sourcePath}: recipe claims_basis "${basis}" is not one of ${CLAIMS_BASIS_WORDS.join(", ")} — claims not ingested`,
+    );
+    return null;
+  }
+  const inner = raw.replace(/^\[/, "").replace(/\]$/, "").trim();
+  const parsed = inner === "" ? [] : parseClaims(inner);
+  if ("error" in parsed) {
+    warn(`${sourcePath}: recipe claims refused (${parsed.error}) — its claims read as unknown`);
+    return null;
+  }
+  return {
+    stated: parsed.length > 0 ? "stated" : "none",
+    basis,
+    entities: parsed.map((c): GraphEntity => ({
+      type: "claims",
+      owner: recipe,
+      ownerKind: "Recipe",
+      ...c,
+      basis,
+    })),
+  };
+}
+
 export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity[] {
   const { fm } = parseFrontmatter(content);
   if (!fm.recipe || !fm.toolchain || !fm.output_format || !fm.region) return [];
@@ -50,6 +98,7 @@ export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity
   // scaffolds: Archetype names this recipe is a starting point for
   // (docs/CONVENTIONS-recipes.md). Optional; absent reads as empty.
   const scaffolds = parseArray(fm.scaffolds);
+  const claims = recipeClaims(fm, name, sourcePath);
   return [
     {
       type: "recipe",
@@ -63,10 +112,12 @@ export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity
       uses_kernal: parseArray(fm.uses_kernal),
       scaffolds,
       source_doc: sourcePath,
+      ...(claims ? { claims_stated: claims.stated, claims_basis: claims.basis } : {}),
     },
     ...techniques.map((technique): GraphEntity => ({ type: "implements", recipe: name, technique })),
     ...scaffolds.map((archetype): GraphEntity => ({ type: "scaffolds", recipe: name, archetype })),
     ...file_formats.map((format): GraphEntity => ({ type: "produces_format", recipe: name, format })),
     ...occupiesEntities(content, name),
+    ...(claims?.entities ?? []),
   ];
 }

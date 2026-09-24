@@ -184,6 +184,25 @@ async function fetchRecipeUses(f: FalkorService, techniques: readonly string[]) 
   return rows.flatMap((r) => (r.name && r.kind ? [{ name: r.name, kind: r.kind, recipe: r.recipe }] : []));
 }
 
+const RecipeZpRow = z.object({ recipe: z.string(), implements: z.array(z.string()), ranges: z.string() });
+
+/** Owned zero page of every recipe that IMPLEMENTS an input, from its claims: key (schema 34). */
+async function fetchRecipeZeroPage(f: FalkorService, techniques: readonly string[]) {
+  if (techniques.length < 2) return [];
+  return parseRows(
+    RecipeZpRow,
+    await f.roQuery(
+      `MATCH (r:Recipe)-[:IMPLEMENTS]->(t:Technique)
+       WHERE t.name IN $techs
+       WITH r, collect(DISTINCT t.name) AS implements
+       MATCH (r)-[c:CLAIMS {mode: 'owns'}]->(:HardwareUnit {name: 'zero_page'})
+       WHERE c.ranges IS NOT NULL
+       RETURN r.name AS recipe, implements, c.ranges AS ranges ORDER BY recipe`,
+      { techs: techniques },
+    ),
+  );
+}
+
 const ClobberRow = z.object({ routine: z.string(), ranges: z.string().nullable() });
 
 /** The may set of every KERNAL routine the checked techniques USE (schema 26). */
@@ -208,13 +227,23 @@ async function fetchKernalClobbers(
 export async function fetchCompatibilityFacts(techniques: readonly string[]): Promise<CompatibilityFacts> {
   const f = await getFalkor();
   const requires = await fetchRequires(f, techniques);
-  const [facts, sharedRegisters, sharedKernal, recipeUses] = await Promise.all([
+  const [facts, sharedRegisters, sharedKernal, recipeUses, recipeZeroPage] = await Promise.all([
     fetchFacts(f, [...requires.keys()]),
     fetchShared(f, techniques, "Register"),
     fetchShared(f, techniques, "KernalRoutine"),
     fetchRecipeUses(f, techniques),
+    fetchRecipeZeroPage(f, techniques),
   ]);
   await fetchClaims(f, facts);
   const kernalClobbers = await fetchKernalClobbers(f, facts);
-  return { techniques, requires, facts, sharedRegisters, sharedKernal, recipeUses, kernalClobbers };
+  return {
+    techniques,
+    requires,
+    facts,
+    sharedRegisters,
+    sharedKernal,
+    recipeUses,
+    kernalClobbers,
+    recipeZeroPage,
+  };
 }

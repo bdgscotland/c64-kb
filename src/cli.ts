@@ -18,6 +18,8 @@ import { startMcpServer } from "./server.ts";
 import { closeAll } from "./context.ts";
 import { definedOnly } from "./server/defined-only.ts";
 import { reFrameProfile, reIrqChain } from "./tools/re.ts";
+import { claimsWatch } from "./tools/claims-watch.ts";
+import { claimsWatchReply } from "./server/tools-claims.ts";
 import { registerSetupCommands } from "./cli/setup.ts";
 import { rebuildInProgress, rebuildMessage } from "./services/rebuild-marker.ts";
 
@@ -505,6 +507,49 @@ reOptions(
     JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2),
   );
   if (!r.ok) process.exitCode = 1;
+});
+
+interface ClaimsWatchOpts extends ReOpts {
+  recipe?: string;
+  technique: string[];
+  claim?: string;
+  ram?: string;
+  harness?: string;
+  kernal: string[];
+  screen?: string;
+  allRam?: boolean;
+}
+
+const repeat = (v: string, prev: string[]) => [...prev, ...v.split(",").map((s) => s.trim())];
+
+// The c64_claims_watch tool from the command line (#22 step 8). The repo's
+// scripts/claims-watch.ts takes the same declarations and adds --log, --json.
+reOptions(
+  program
+    .command("claims-watch <prg>")
+    .description("Run a PRG in VICE and check every store against the hardware units it declares")
+    .option("--recipe <name>", "a recipe name or page: its techniques and claims:, harness:, ram: keys")
+    .option("--technique <ids>", "technique ids whose Claims lines declare units", repeat, [])
+    .option("--claim <text>", "units in the Claims-line grammar")
+    .option("--ram <ranges>", "the program's own RAM: [name=]$XXXX[-$YYYY], comma list")
+    .option("--harness <items>", "a measurement harness: units or ranges")
+    .option("--kernal <names>", "KERNAL routines called, or IRQ / NMI", repeat, [])
+    .option("--screen <addr>", "screen RAM base, for the sprite pointers")
+    .option("--all-ram", "also trace $0400-$CFFF and $E000-$FFF9"),
+).action(async (prg: string, o: ClaimsWatchOpts) => {
+  const r = await claimsWatch({
+    ...reArgs(prg, o),
+    recipe: o.recipe,
+    techniques: o.technique,
+    claims: o.claim,
+    ram: o.ram,
+    harness: o.harness,
+    kernal: o.kernal,
+    screen: o.screen,
+    all_ram: o.allRam === true,
+  });
+  console.log(claimsWatchReply(r).text);
+  process.exitCode = r.ok && r.result.verdict === "pass" ? 0 : 1;
 });
 
 try {

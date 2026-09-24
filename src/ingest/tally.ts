@@ -27,7 +27,8 @@ export type TrackedEdge =
   | "kernal_clobbers_zp"
   | "composes"
   | "instance_of"
-  | "realised_by";
+  | "realised_by"
+  | "exemplified_by";
 
 /**
  * A key per distinct (source, target, kind) reference, so a doc naming the
@@ -60,6 +61,8 @@ function referenceKey(e: EdgeEntity): [TrackedEdge, string] | null {
       return [e.type, `${e.design}|${e.archetype}`];
     case "realised_by":
       return [e.type, `${e.design}|${e.recipe}`];
+    case "exemplified_by":
+      return [e.type, `${e.archetype}|${e.production}`];
     default:
       return null;
   }
