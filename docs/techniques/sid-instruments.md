@@ -145,9 +145,14 @@ same on the 6581 and 8580 models; NTSC reads 8 higher in every cell:
 
 | | worst frame | plain frame | lead note frame | lead restart frame |
 |---|---|---|---|---|
-| A, the mechanism on | 1003 | 460 | 1003 (frame 1) | 735 |
-| B, voice 3 gated, the copy off | 996 | 453 | 996 | 728 |
-| C, no envelope at all | 1026 | 459 | 1026 | 719 |
+| A, the mechanism on | 1062 | 466 | 1062 (frame 1) | 742 |
+| B, voice 3 gated, the copy off | 1055 | 459 | 1055 | 735 |
+| C, no envelope at all | 1092 | 465 | 1092 | 726 |
+
+The table was re-measured after the player moved each note's gate
+before its AD and SR (#118); it read 1003, 460, 1003 and 735 on row A
+before, and the differences below are unchanged except the first two
+frames'.
 
 The copy costs 7 cycles more than the player's static-cutoff path on
 every one of 192 frames (A minus B), which the instruction table
@@ -157,12 +162,13 @@ test's taken branch adds one. The mechanism alone, with an immediate
 base and no log stores, is 14; with the base in memory 16. Against the
 plain player (A minus C): +1 on 175 frames of 192, +22 on the six frames
 where a lead note starts after a hard restart, +16 on the seven
-hard-restart frames, +6 on the two rest frames, and -44 and -23 on the
-loop's first two frames, where the plain player writes voice 3's rest
+hard-restart frames, +6 on the two rest frames, and -51 and -30 on the
+loop's first two frames (-44 and -23 before #118), where the plain player writes voice 3's rest
 event and the envelope player skips voice 3's music writes altogether.
 The worst-frame figure on the Cost line is the +22; the typical is the
-+1. The whole player's worst call, 1,003 cycles, is 5.1 % of a PAL frame
-and 5.9 % of an NTSC one (arithmetic). The build's four-file program,
++1. The whole player's worst call, 1,062 cycles (NTSC 1,070), is 5.4 %
+of a PAL frame and 6.3 % of an NTSC one (arithmetic; 1,003 before
+#118). The build's four-file program,
 with a frame meter assembled in after the verdict's variables, measured
 1,002, 464 and 737 on row A and +21 on the six note frames: moving the
 player moved page crossings in its indexed loads, and every figure by at

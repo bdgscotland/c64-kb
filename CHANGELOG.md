@@ -7,6 +7,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 835, schema 39, tools 2.16.0, package 0.29.0.
 
+**The music player writes each note's gate before its AD and SR
+(#118).** `music-player.md` wrote AD and SR 155 to 175 cycles before the
+gate, so attack-0 notes waited out the ADSR bug's counter wrap despite
+the hard restart. Its harness now reads ENV3 after every call and
+passes only if every voice-3 note starts inside its call; build switches
+put the bass or the lead on voice 3. Gate first: 163/163 drum, 139/139
+bass, 43/43 lead notes on time; the old order 146, 81 and 0 (PAL,
+reSID). The worst call rose from 1,198 to 1,250 cycles (PAL; NTSC 1,174
+to 1,250): `sid_play_routine_pattern`'s Cost line and the per-feature
+table in music-sid.md were re-measured. The copy in `sid-env3-filter.md`
+takes the same order; its attack samples rise one step, its rest's
+release starts a frame later, and its cycle rows rise 59 on note frames.
+The MEASURED demo's copy of the player keeps the old order (#119); a note within two frames of an effect's
+hand-back still starts without a hard restart (#120).
+
 **Four SID instrument techniques, and a note-start order bug in the
 music player (data 835; part of #55, #118).** New entries in
 sid-instruments.md, each with a recipe that plays through the #50

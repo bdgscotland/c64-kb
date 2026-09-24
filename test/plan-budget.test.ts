@@ -752,13 +752,13 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // joystick_autorepeat, joystick_edge_detect, jump_arc_table.
     expect(pal.unknown).toEqual([]);
     // tile_map_render 268 + tile_grid_collision 2,345 + object_pool 380 + decimal_print 1,361
-    // + sid_play_routine_pattern 1,198 (kickassembler-music-player's worst call;
-    // its typical 779, the median call, is the low end) + sfx_engine_beside_music 50-258
+    // + sid_play_routine_pattern 1,250 (kickassembler-music-player's worst call;
+    // its typical 784, the median call, is the low end; 1,198 and 779 before #118) + sfx_engine_beside_music 50-258
     // + the #37 figures from the platformer's profile builds: frame_sync_loop 314,
     // joystick_autorepeat 73, jump_arc_table 66, fixed_point_8_8 31; joystick_edge_detect
     // 114 (oscar64-joystick-input, port read included, #54; the platformer's 76 is the
     // split alone and is prose on the page).
-    expect([pal.low, pal.high]).toEqual([5781, 6408]);
+    expect([pal.low, pal.high]).toEqual([5786, 6460]);
     expect(pal.fixed_losses.badlines).toBe(1075);
     expect(pal.verdict).toBe("fits");
     // #45 gave the file transfers Cost lines and #37 error_channel_check (81,421,
@@ -780,7 +780,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // soft_scroll_v was unknown until then: 46, the step and the $D011 write.
     const pal = play(plan(recipeTechniques("oscar64-simple-shmup")));
     expect(pal.unknown).toEqual([]);
-    expect(pal.high).toBe(5301 + 1198 + 46);
+    expect(pal.high).toBe(5301 + 1250 + 46);
     expect(pal.verdict).toBe("fits");
   });
 
@@ -793,8 +793,8 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
       { name: "char_scroll_buffer_h", reason: "included_by", by: "soft_scroll_h" },
     ]);
     // raster_bars 1,471 (#32: measured in kickassembler-raster-bars, NTSC; 990 was an estimate)
-    // + sid_play_routine_pattern 1,198 + soft_scroll_h 7,938.
-    expect(pal.high).toBe(1471 + 1198 + 7938);
+    // + sid_play_routine_pattern 1,250 + soft_scroll_h 7,938.
+    expect(pal.high).toBe(1471 + 1250 + 7938);
     expect(pal.unknown).toEqual([]);
     expect(pal.to_measure).toEqual([]);
     expect(pal.verdict).toBe("fits");

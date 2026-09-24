@@ -43,8 +43,9 @@ is `sid_ring_mod_bell` in `techniques/sid-instruments.md`.
 ## Source
 
 One file in four parts: the harness, the instrument's log and report,
-the #50 player (its sound effects compiled out; one change, the
-note-start order, marked at `mu_envp`), and the tune.
+the #50 player (its sound effects compiled out; its note-start order,
+marked at `mu_envp`, is the one `music-player.md` has had since #118),
+and the tune.
 
 ```asm
 // sid-ring-bell.asm: a ring-modulated bell played by the #50 music player.

@@ -372,7 +372,11 @@ uses for the gate's first cycles (VICE 3.10 `src/resid/envelope.cc`,
 150 cycles later (the #50 player's order), 0 started in their own frame;
 AD, gate, SR, 73; gate, AD, SR, 80. The late hits start 33.0 to 34.8 ms
 after the gate write in the recordings, on both chip models. Write the
-gate first; #118 carries this to the #50 player.
+gate first. The #50 player (`recipes/kickassembler/music-player.md`)
+does since #118; its note check, with each part of its tune played on
+voice 3, reads 163 of 163 drum, 139 of 139 bass and 43 of 43 lead notes
+starting in their own call, against 146, 81 and 0 in the old order
+(PAL, VICE x64sc 3.10).
 
 **8580 behavior and the reset bug.** The 8580 introduced an internal
 difference in the envelope reset path. On hard restart (the

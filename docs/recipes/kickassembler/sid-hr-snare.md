@@ -1676,8 +1676,9 @@ activated during first cycle of attack phase"), which let about one hit
 in eleven through to the wrap. Gate first, the registers still hold the
 restart's zeros at the edge, so every period is the shortest; AD and SR
 follow within 24 cycles, and a write of AD in the attack state sets the
-attack's own period. This order is the listing's only change to the #50
-player; #118 carries it to the #50 page.
+attack's own period. This order was the listing's only change to the #50
+player; #118 carried it to `music-player.md`, whose note check found the
+same split on the tune's three parts.
 
 **Noise and pulse rows alternate, never combine.** A noise waveform
 combined with another zeroes the noise register's bits within a few
@@ -1699,5 +1700,3 @@ can put three calls between restart and hit).
   this repository has not done on a chip.
 - How it sounds. The figures describe onset and level; nobody here has
   listened.
-- The write order in the `music-player` tune: which of its notes start
-  late is #118's work.

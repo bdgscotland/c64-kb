@@ -36,7 +36,10 @@ API is `music_init` (A = 0 PAL, 1 NTSC), `music_play` once a frame, and
 the KERNAL banked out, as a game does, times all 2,000 `music_play` calls
 with CIA1 timer A, fires 15 effect requests on fixed frames, and checks
 that after every hand-back ENV3 shows the music's next attack on voice 3.
-It prints the figures and PASS or FAIL. Use it as the play routine of a
+It also checks that every note voice 3 starts begins its attack inside
+its own play call: the player writes a new note's gate before its AD and
+SR, the order `sid-hr-snare` measured (#118). It prints the figures and
+PASS or FAIL. Use it as the play routine of a
 game, or as the measured reference for a music budget.
 
 ## Source
@@ -53,10 +56,19 @@ written or edited by hand.
 // sound effects on voice 3, driven from a raster IRQ with the KERNAL banked
 // out, as a game runs it. The harness times every music_play call with
 // CIA1 timer A, fires effects on fixed frames, watches ENV3 for the music's
-// first attack after each effect hands voice 3 back, and prints the result.
+// first attack after each effect hands voice 3 back, checks that every note
+// voice 3 starts outside an effect begins its attack inside its own play
+// call (ENV3 read just after the call), and prints the result.
 // Build: java -jar KickAss.jar music-player.asm -o music-player.prg
+// -define FORCE_FAULT builds the player's first note-start order (AD and SR
+// before the gate, SR_FIRST): the note check fails. -define V3_BASS or
+// V3_LEAD swaps that part's order list onto voice 3, so the note check
+// reads its instruments' attacks.
 // In VICE, run it with a real sound sink (-sound -sounddev dump -soundarg
 // /dev/null): with +sound, $D41C does not return the envelope.
+#if FORCE_FAULT
+#define SR_FIRST
+#endif
 
 BasicUpstart2(start)
 
@@ -135,6 +147,13 @@ start:
         lda $dc05
         adc #0
         sta kc+1
+#if V3_BASS
+        SWAP(tn_ordlo, 0, 2)    // measurement build: the bass on voice 3
+        SWAP(tn_ordhi, 0, 2)
+#elif V3_LEAD
+        SWAP(tn_ordlo, 1, 2)    // measurement build: the lead on voice 3
+        SWAP(tn_ordhi, 1, 2)
+#endif
         lda ntsc
         jsr music_init
         lda #$1b
@@ -184,6 +203,8 @@ irq:    pha
         jsr music_play
         lda #0
         sta $dc0e
+        lda $d41c               // ENV3 just after the play call
+        sta envnow
         lda kc
         sec
         sbc $dc04
@@ -196,6 +217,7 @@ irq:    pha
         sta fxflag
         jsr stats
         jsr handback
+        jsr notes
         lda env
         sta envprev
         inc frame
@@ -305,6 +327,46 @@ hb_edge:
         sta wait
 !:      rts
 
+// A note start on voice 3: the player's gate off before the call and on
+// after it, with no effect starting or running in this call or the two
+// before it. It is on time when ENV3, read just after the call, is above
+// zero: the attack began in the call. A note that waits for the ADSR bug's
+// counter wrap reads 0 there. A note on either of the two frames after a
+// hand-back is left out: its hard restart ran while the effect owned the
+// SID, and the hand-back's AD and SR write is less than two frames before
+// its gate.
+notes:  lda fxflag
+        beq !+
+        lda #0
+        sta quiet
+        rts
+!:      lda quiet               // calls in a row with no effect, up to 2
+        cmp #2
+        bcs !+
+        inc quiet
+        bcc nt_ret              // (C clear: fewer than 2 before this one)
+!:      lda gatebefore
+        bne nt_ret
+        lda mu_gate+14
+        beq nt_ret
+        inc starts
+        bne !+
+        inc starts+1
+!:      lda envnow
+        beq nt_ret
+        inc ontime
+        bne nt_ret
+        inc ontime+1
+nt_ret: rts
+
+// Swap two bytes of a table (the V3_BASS and V3_LEAD builds).
+.macro SWAP(t, a, b) {
+        lda t+a
+        ldx t+b
+        sta t+b
+        stx t+a
+}
+
 // Effect requests on fixed frames. Two on one frame: the player's queue
 // keeps the higher priority.
 script: ldx sidx
@@ -375,6 +437,8 @@ report: PUT(frame, 3, 14)
         PUTB(maxwait, 12, 14)
         PUTB(cut, 12, 30)
         PUTB(bad, 13, 14)
+        PUT(starts, 14, 14)
+        PUT(ontime, 14, 30)
         // verdict
         lda asked
         cmp #EXP_ASKED
@@ -390,6 +454,15 @@ report: PUT(frame, 3, 14)
         lda cut
         ora bad
         bne fail
+        lda starts              // every voice 3 note start on time
+        ora starts+1
+        beq fail
+        lda starts
+        cmp ontime
+        bne fail
+        lda starts+1
+        cmp ontime+1
+        bne fail
         ldx #0                  // skipped calls: none on PAL, 1 in 6 on NTSC
         ldy #0
         lda ntsc
@@ -402,7 +475,7 @@ report: PUT(frame, 3, 14)
         bne fail
         ldx #3
 !:      lda passtxt,x
-        sta SCREEN+14*40+14,x
+        sta SCREEN+15*40+14,x
         dex
         bpl !-
         lda #5
@@ -410,7 +483,7 @@ report: PUT(frame, 3, 14)
         rts
 fail:   ldx #3
 !:      lda failtxt,x
-        sta SCREEN+14*40+14,x
+        sta SCREEN+15*40+14,x
         dex
         bpl !-
         lda #2
@@ -461,8 +534,9 @@ labels:
         .text "HAND-BACKS           ATTACKS            "   // row 11
         .text "LONGEST WAIT         CUT                "   // row 12
         .text "WRONG GATE                              "   // row 13
-        .text "RESULT                                  "   // row 14
-        .fill 768 - 15 * 40, $20
+        .text "NOTES ON V3          IN CALL            "   // row 14
+        .text "RESULT                                  "   // row 15
+        .fill 768 - 16 * 40, $20
 
 // Variables
 ntsc:       .byte 0
@@ -486,6 +560,10 @@ fxbefore:   .byte 0
 gatebefore: .byte 0
 env:        .byte 0
 envprev:    .byte 0
+envnow:     .byte 0
+quiet:      .byte 0
+starts:     .word 0
+ontime:     .word 0
 sidx:       .byte 0
 asked:      .byte 0
 hb:         .byte 0
@@ -511,7 +589,7 @@ maxwait:    .byte 0
 //     arpeggios, and absolute notes for drums), pulse width and sweep,
 //     vibrato depth, speed and delay, a filter program, legato;
 //   - hard restart two frames before every note that is not legato:
-//     gate off and AD = SR = 0, then the note's AD, SR and gate on its step;
+//     gate off and AD = SR = 0, then the note's gate, AD and SR on its step;
 //   - one filter program at a time: a cutoff sweep that stops or bounces;
 //   - two speeds (frames a step) that alternate: swing when unequal.
 // Effects take voice 3 by priority and give it back with the music's AD, SR
@@ -606,6 +684,17 @@ sfx_num:     .byte 0        // effect on voice 3, 0 = none
 sfx_pos:     .byte 0        // next byte of its data
 sfx_taken:   .byte 0        // effects started (for the verdict)
 
+// A new note's gate goes out before its AD and SR (mu_envp). After the
+// hard restart AD = SR = 0, so at the gate's edge every rate period is the
+// shortest and the rate counter cannot be past it; AD and SR follow within
+// 24 cycles. The first version wrote AD and SR about 150 cycles before the
+// gate, and an attack-0 note then waited for the ADSR bug's counter wrap,
+// about 32,600 cycles: SR's release rate ran until the gate, and reSID uses
+// the decay rate for the gate's first cycles. Measured in VICE x64sc 3.10
+// (reSID) by sid-hr-snare and by this harness's note check (#118).
+// -define SR_FIRST restores the old order; -define AD_FIRST writes AD, then
+// the gate, then SR.
+mu_envp: .fill 15, 0        // nonzero at X: AD and SR still to write
 mu_flo: .fill 96, 0         // frequency table, built by music_init
 mu_fhi: .fill 96, 0
 
@@ -986,6 +1075,18 @@ mv_c:   lsr mu_tmp
         lda mu_wave,x
         ora mu_gate,x
         sta $d404,x
+#if !SR_FIRST
+        lda mu_envp,x           // a new note's envelope, after its gate
+        beq !+                  // (see mu_envp)
+#if !AD_FIRST
+        lda mu_ad,x
+        sta $d405,x
+#endif
+        lda mu_sr,x
+        sta $d406,x
+        lda #0
+        sta mu_envp,x
+#endif
 !:      lda #0
         sta mu_upd,x
         lsr mu_tmp
@@ -1130,10 +1231,23 @@ ms_new: lda #1
         sta mu_ad,x
         bit mu_skip
         bmi !+
-        sta $d405,x
-        lda tn_sr,y
+#if SR_FIRST
+        sta $d405,x             // the old order: AD, SR, then the gate in
+        lda tn_sr,y             // mv_out
         sta mu_sr,x
         sta $d406,x
+#elif AD_FIRST
+        sta $d405,x             // AD, then the gate, then SR
+        lda tn_sr,y
+        sta mu_sr,x
+        lda #1
+        sta mu_envp,x
+#else
+        lda tn_sr,y             // the gate, then AD and SR, in mv_out
+        sta mu_sr,x
+        lda #1
+        sta mu_envp,x
+#endif
         rts
 !:      lda tn_sr,y
         sta mu_sr,x
@@ -1422,25 +1536,32 @@ java -jar KickAss.jar music-player.asm -o music-player.prg
 ```
 
 Built with KickAssembler 5.25: one assert (the effect data fits one index
-byte), 0 failed. The PRG occupies `$0801`-`$196E`. From the symbol file:
+byte), 0 failed. The PRG occupies `$0801`-`$1A16`. From the symbol file:
 
 | Part | Range | Bytes |
 |---|---|---|
-| Harness (code, text, variables) | `$0810`-`$0FBA` | 1,963 |
-| Player state and frequency table | `$0FBB`-`$10FC` | 322 |
-| Player code | `$10FD`-`$1682` | 1,414 |
-| Effect priorities, pointers and data | `$1683`-`$177B` | 249 |
-| Octave-6 frequency tables, PAL and NTSC | `$177C`-`$17AB` | 48 |
-| Tune "Test Card" | `$17AC`-`$196E` | 451 |
+| Harness (code, text, variables) | `$0810`-`$103E` | 2,095 |
+| Player state and frequency table | `$103F`-`$118F` | 337 |
+| Player code | `$1190`-`$172A` | 1,435 |
+| Effect priorities, pointers and data | `$172B`-`$1823` | 249 |
+| Octave-6 frequency tables, PAL and NTSC | `$1824`-`$1853` | 48 |
+| Tune "Test Card" | `$1854`-`$1A16` | 451 |
 
-The player and tune together are 2,484 bytes, with no zero page.
+The player and tune together are 2,520 bytes, with no zero page. The
+gate-first note start (#118) added 15 bytes of state (`mu_envp`) and 21
+of code to the 2,484 of the first version.
 
 **Build switches.** `-define NO_VIB`, `NO_PWS`, `NO_FLT`, `NO_WT`,
 `NO_HR`, `NO_LEG` or `NO_FX` removes one feature, for measuring what it
 costs: `java -jar KickAss.jar -define NO_VIB music-player.asm -o
 music-player.prg`. With no switch, the PRG is byte-identical to the one
 measured below. The cost of each feature is tabled under "Cycle budget"
-for `sid_play_routine_pattern` in `techniques/music-sid.md`.
+for `sid_play_routine_pattern` in `techniques/music-sid.md`. Three more
+switches change the note start: `SR_FIRST` restores the first version's
+order (AD, SR, then the gate), `AD_FIRST` writes AD, the gate, then SR,
+and `FORCE_FAULT` is `SR_FIRST`. Two change only the harness: `V3_BASS`
+and `V3_LEAD` swap that part's order list with the drums', so the note
+check reads the bass's or the lead's instruments on voice 3.
 
 ## Expected output
 
@@ -1464,15 +1585,16 @@ TUNE: TEST CARD, E MINOR, SWING 7/5
 CLOCK         PAL
 CALLS TIMED   02000
 SKIPPED CALLS 00000  COST     00000
-PLAY WORST    01198  AT FRAME 01816
-MUSIC ONLY    01159  AT FRAME 00580
-WITH EFFECT   01198  AT FRAME 01816
-PLAY BEST     00454
+PLAY WORST    01250  AT FRAME 01816
+MUSIC ONLY    01242  AT FRAME 00580
+WITH EFFECT   01250  AT FRAME 01816
+PLAY BEST     00451
 
 FX ASKED      00015  STARTED  00013
 HAND-BACKS    00011  ATTACKS  00011
 LONGEST WAIT  00011  CUT      00000
 WRONG GATE    00000
+NOTES ON V3   00163  IN CALL  00163
 RESULT        PASS
 ```
 
@@ -1481,11 +1603,12 @@ NTSC (`screenshots/music-player-ntsc.png`) differs in these rows:
 ```text
 CLOCK         NTSC
 SKIPPED CALLS 00333  COST     00032
-PLAY WORST    01174  AT FRAME 01819
-MUSIC ONLY    01167  AT FRAME 00696
-WITH EFFECT   01174  AT FRAME 01819
-PLAY BEST     00462
+PLAY WORST    01250  AT FRAME 00696
+MUSIC ONLY    01250  AT FRAME 00696
+WITH EFFECT   01236  AT FRAME 01819
+PLAY BEST     00459
 LONGEST WAIT  00013  CUT      00000
+NOTES ON V3   00131  IN CALL  00131
 ```
 
 The border is green on both (PASS; red is FAIL).
@@ -1498,27 +1621,76 @@ from a VICE monitor trace of the harness's `cost` stores over the same
 
 | | PAL | NTSC |
 |---|---|---|
-| Worst call | 1,198 | 1,174 |
-| Worst call with no effect running or starting | 1,159 | 1,167 |
-| Median | 773 | 779 |
-| Mean | 787 | 788 |
-| Best | 454 | 462 |
+| Worst call | 1,250 | 1,250 |
+| Worst call with no effect running or starting | 1,242 | 1,250 |
+| Median | 782 | 784 |
+| Mean | 795 | 795 |
+| Best | 451 | 459 |
 | Skipped calls (NTSC tempo) | 0 | 333 of 2,000, 32 cycles each |
 
-1,198 cycles is 19.0 PAL raster lines of 63 cycles; 1,174 is 18.1 NTSC
-lines of 65 (arithmetic). Budget 1,200 cycles a frame for this player
-with this tune. A different tune moves the figure; the
-harness measures any tune dropped into the third part of the listing.
+1,250 cycles is 19.8 PAL raster lines of 63 cycles and 19.2 NTSC lines
+of 65 (arithmetic). Budget 1,250 cycles a frame for this player with
+this tune. A different tune moves the figure; the harness measures any
+tune dropped into the third part of the listing. The first version,
+which wrote AD and SR before the gate, measured 1,198 PAL and 1,174 NTSC
+at worst, 1,159 and 1,167 with no effect, medians 773 and 779, means 787
+and 788, best 454 and 462. The gate-first order costs 7 cycles on a
+control write that starts no note (the `mu_envp` test) and 28 on one
+that does (instruction table), and the worst frames start three notes.
 
-**The worst frames.** A second trace logged the SID stores on every
-frame. The six costliest frames with no effect all start a note on all
-three voices: each writes the gate on to `$D404`, `$D40B` and `$D412`
-and writes AD and SR for all three. The two costliest frames overall
-(1,198 at frame 1816 and 1,197 at frame 208, PAL) are hand-back frames:
+**The worst frames.** The costliest PAL frames with no effect, 1,241 and
+1,242 cycles (frames 580, 772, 1348 and 1540 among them), all start a
+note on all three voices: the gate goes on for voices 1, 2 and 3 in the
+same call (a harness variant that logged each voice's gate edge per
+frame; 46 of the 2,000 frames do this). The two costliest frames overall
+(1,250 at frame 1816 and 1,249 at frame 208, PAL) are hand-back frames:
 an effect ends, the player rewrites voice 3's AD, SR, pulse width and
 control, and on the same frame voices 1 and 3 start notes. On PAL the
-worst hand-back frame costs 39 cycles more than the worst music-only
-frame; on NTSC the gap is 7. The NTSC frames were not traced.
+worst hand-back frame costs 8 cycles more than the worst music-only
+frame; on NTSC the worst frame is a music-only one, 14 above the worst
+hand-back frame. An earlier version of this paragraph, before the
+gate-first order, gave 1,198 and 1,197 and gaps of 39 and 7. The NTSC
+frames were not traced.
+
+**The note check.** ENV3 is read just after every timed call. A note
+start is a call after which the player's voice 3 gate is on and before
+which it was off, with no effect in that call or the two before it (a
+note on either frame after a hand-back has had no hard restart on the
+SID, only the hand-back's own AD and SR write). It is on time when that
+ENV3 read is not zero. `NOTES ON V3 00163 IN CALL 00163`: every drum hit
+of the 2,000 PAL calls began its attack inside its call; on NTSC 131 of
+131. A harness variant that counts the left-out notes too reads 167 of
+167 drum notes, 144 of 144 bass notes and 45 of 46 lead notes on time:
+the late one is the lead note on frame 916, the frame after the oil
+effect's hand-back (#120). The same count, with the note-start order and the part
+on voice 3 changed by the build switches (PAL, 2,000 calls; every
+instrument of "Test Card" has attack 0):
+
+| Part on voice 3 (instruments, AD / SR) | gate, AD, SR (this listing) | AD, gate, SR (`AD_FIRST`) | AD, SR, gate (`SR_FIRST`, the first version) |
+|---|---|---|---|
+| drums (4-8: `$06`-`$08`, `$03` / `$50`, `$00`) | 163 / 163 | 150 / 163 | 146 / 163 |
+| bass (`V3_BASS`; 0, 1: `$0A` / `$80`, `$08` / `$A6`) | 139 / 139 | 128 / 139 | 81 / 139 |
+| lead (`V3_LEAD`; 2, 3: `$0A` / `$A9`, `$09` / `$C8`) | 43 / 43 | 39 / 43 | 0 / 43 |
+
+NTSC (`-model ntsc`), in the same order: drums 131, 120 and 127 of 131;
+bass 112, 101 and 88 of 112; lead 27, 22 and 13 of 27. PAL `-model c64`
+(6581) gives the PAL figures exactly. The late counts in the two old
+orders depend on the rate counter's phase at each gate, so they move
+when the code moves: a harness variant a few bytes longer read 143, 94
+and 0 for `SR_FIRST`. In that variant every late note's ENV3 was still 0
+one frame after its call and above 0 two frames after it, which is the
+ADSR bug's counter wrap of up to 32,768 cycles (1.66 PAL frames).
+`-define FORCE_FAULT` reads `IN CALL 00146` on PAL and `00127` on NTSC,
+`RESULT FAIL`, red border.
+
+**The register order.** From the dump sink's file of the PAL run (every
+SID write with its cycle delta): of 460 gate-on edges on `$D404`,
+`$D40B` and `$D412`, 447 are followed by that voice's AD 15 cycles and
+SR 24 cycles after the gate; the other 13 are effect rows, with no AD or
+SR near them. Two of the 447 start on a hand-back frame, and the
+hand-back's rewrite also puts AD and SR 84 and 75 cycles before their
+gate, in both orders. In the `SR_FIRST` build the other 445 note starts
+write AD 155 to 175 cycles and SR 155 to 161 cycles before the gate.
 
 **The script and the counts.** Frames count from the first IRQ. An
 effect requested on frame f starts on frame f (its header: AD, SR, pulse
@@ -1562,20 +1734,32 @@ a frame, which the player stores doubled and applies every other frame.
 next event on its own tick: voice 1 two frames before the step, voice 2
 three, voice 3 four (`mu_ftktab`). The hard restart happens two frames
 before the step. The new instrument's pulse width, vibrato and filter
-program load one frame before. The step frame then writes AD, SR and the
-control byte for each voice that starts a note. This spread keeps the
-worst frame near 1,160 cycles when all three voices start notes on one
-step. Speeds under 5 frames a step would put two of these jobs on one
+program load one frame before. The step frame then writes the control
+byte, AD and SR for each voice that starts a note. This spread keeps the
+worst frame near 1,240 cycles when all three voices start notes on one
+step (1,160 before the gate-first order). Speeds under 5 frames a step
+would put two of these jobs on one
 frame, so the tune's speeds must be 5 or more.
 
-**The hard restart keeps the note's attack.** Two frames before a note
-that is not legato, the player clears the gate and writes AD = SR = 0, so
-the envelope releases at the fastest rate. On the note's own frame it
-writes the note's AD and SR, then the control byte. The traced frame 208
-shows `$D405` = `$0A`, `$D406` = `$80`, then `$D404` = `$09`: the bass's
-envelope, then TEST and GATE from its wavetable's first row. The sawtooth
-follows on the next frame. The attack therefore starts on the note's
-frame, under the note's own envelope. This is not the hard-restart
+**The hard restart keeps the note's attack, if the gate comes first.**
+Two frames before a note that is not legato, the player clears the gate
+and writes AD = SR = 0, so the envelope releases at the fastest rate,
+period 9 cycles, and the rate counter wraps below 9 within 32,768 cycles
+(two PAL frames are 39,312). On the note's own frame it writes the
+control byte (for the bass, `$09`: TEST and GATE from its wavetable's
+first row; the sawtooth follows on the next frame), then AD 15 cycles
+later and SR 24 cycles later. At the gate's edge the registers still hold
+the restart's zeros, so every rate period is the shortest and the counter
+cannot be past it; the attack starts inside the call. The first version
+wrote AD and SR 155 to 175 cycles before the gate, and that could undo
+the restart for an instrument with attack 0: SR written with the gate
+off makes its release rate the rate at once, and with a release above 0
+the counter can run past the attack's period of 9 before the gate; AD
+written first leaves the decay rate at the edge, which reSID uses for
+the edge's first cycles (`sid-hr-snare`, "Why this works"). A note that
+found the counter past 9 waited for its wrap, about 33 ms. An earlier version of this paragraph said the attack
+started on the note's frame; the note check above shows it did for 81 of
+139 bass notes and none of 43 lead notes. This is not the hard-restart
 listing that issue #49 corrects, which sets TEST and GATE a frame early
 under SR = `$F0` and loses the attack.
 
@@ -1587,13 +1771,17 @@ voice 3 leaves the filter while the effect plays. When the effect's data
 ends, `fx_end` marks voice 3's AD, SR, pulse width, frequency and control
 for rewriting, with the gate off, on that same frame. The music's next
 note therefore gates a fresh attack under the music's envelope. That is
-the attack the ENV3 check finds. Priorities decide the rest:
+the attack the ENV3 check finds. It is not always on time: a note whose
+hard restart fell while the effect owned the voice has only the
+hand-back's AD and SR write behind it, less than two frames before its
+gate (frame 916 of the `V3_LEAD` build starts a lead note late this way;
+the note check leaves such notes out; #120). Priorities decide the rest:
 `sfx_request` keeps the higher of two requests in one frame, and a
 request below the running effect's priority is dropped at play time.
 
 **Writes go straight to the SID.** There is no shadow copy. A voice whose
 wavetable holds and has no vibrato or sweep writes nothing, which is why
-the median call is about 780 cycles and the best about 460. The price is
+the median call is about 780 cycles and the best about 450. The price is
 the pitfall `sid_write_only_registers`: the player's state is the only
 record of what the SID holds. `recipes/kickassembler/sfx-in-player.md`
 uses a 25-byte shadow and pays 351 cycles a frame for the copy.
@@ -1613,7 +1801,7 @@ general problem.
 ## Corrections to the source player
 
 This listing is the #50 player (INTERCEPTOR's `sound.asm`, 2026-09-23)
-with two fixes. The same fixes are in the copy inside
+with three fixes. The same fixes are in the copy inside
 `recipes/kickassembler/sid-env3-filter.md`.
 
 - **Pulse sweep.** The source added the frame-parity test's result to the
@@ -1624,6 +1812,12 @@ with two fixes. The same fixes are in the copy inside
   skipped one call in five, not the one in six its comment says. That is
   47.86 music frames a second, 4.5 % slower than PAL. This listing
   reloads 5, and the harness counts 333 skips in 2,000 calls.
+- **Note-start order** (#118). The source wrote a note's AD and SR in
+  `ms_new` and its gate 155 to 175 cycles later in `mv_out`, and so undid
+  the hard restart for attack-0 instruments. This listing writes the gate
+  first and AD and SR after it (`mu_envp`); the note check above measures
+  both orders. The MEASURED demo's copy of the player keeps the old
+  order (#119).
 
 The source's debug solo switch and its option to move the state to high
 RAM are left out. The API is unchanged.
@@ -1642,6 +1836,10 @@ RAM are left out. The API is unchanged.
 - **The KERNAL's RAM test shows up in a store trace.** A trace of the
   harness's variables also catches the boot-time RAM test's `$55` and
   `$AA` stores. Keep only stores whose PC is below `$E000`.
+- **The ADSR bug undid the hard restart** (`sid_adsr_bug_8580`). The
+  first version wrote a note's AD and SR before its gate, and attack-0
+  notes started about 33 ms late despite the restart; the note check
+  found it (#118).
 
 ## What it does not establish
 
@@ -1652,6 +1850,9 @@ RAM are left out. The API is unchanged.
   different on the 6581 and the 8580 (`sid_8580_vs_6581_differences` in
   `techniques/music-sid.md`). The cycle counts do not depend on the SID
   model.
+- **The note start on silicon.** The late attacks and the gate-first
+  cure are reSID's model, the decay rate at the gate's edge included;
+  no chip was sampled.
 - **Other tunes.** The worst call depends on where note starts and
   hand-backs fall. For the three INTERCEPTOR tunes, the source's notes
   measured a worst call of 1,142 to 1,178 cycles on PAL with an older

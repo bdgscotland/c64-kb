@@ -172,19 +172,24 @@ timer A around the call:
 
 | Figure | PAL | NTSC |
 |---|---|---|
-| Worst call | 1,198 | 1,174 |
-| Worst call with no effect | 1,159 | 1,167 |
-| Median | 773 | 779 |
-| Best | 454 | 462 |
+| Worst call | 1,250 | 1,250 |
+| Worst call with no effect | 1,242 | 1,250 |
+| Median | 782 | 784 |
+| Best | 451 | 459 |
 | Skipped call (NTSC tempo) | none | 32 each, one call in six |
 
-What costs the most, from the recipe's register trace:
+The table was re-measured after the player moved each note's gate
+before its AD and SR (#118); it read 1,198, 1,159, 773 and 454 on PAL
+before.
 
-- **Three notes starting on one step.** The six costliest frames with
-  no effect each start a note on all three voices (AD, SR and gate
-  written for each).
+What costs the most, from the recipe's traces:
+
+- **Three notes starting on one step.** The costliest frames with no
+  effect each start a note on all three voices (gate, AD and SR written
+  for each).
 - **An effect handing voice 3 back.** On PAL the worst hand-back frame
-  costs 39 cycles more than the worst music-only frame.
+  costs 8 cycles more than the worst music-only frame (39 before #118);
+  on NTSC the worst frame has no effect.
 - **A shadow copy.** This player writes straight to the SID. The
   shadow-register player in `recipes/kickassembler/sfx-in-player.md`
   pays 351 cycles a frame for its copy.
