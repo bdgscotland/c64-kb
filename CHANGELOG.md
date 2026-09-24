@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 781, schema 31, tools 2.5.0, package 0.18.0.
+Data 782, schema 31, tools 2.5.0, package 0.18.0.
 
 **sprite_multiplex_game has a measured typical frame (data 781; #33).**
 A CIA1 probe across the sort, the build and every IRQ, over 1,867 PAL and
@@ -23,6 +23,19 @@ the sprites off the badlines, the screen blanked, or sprites switched
 off around each call. At the hang the C64 waits in the KERNAL bit loop
 ($EE5A-$EE63) for one more bit while the drive waits for the byte's
 acknowledge; neither side times out. Not checked on a real 1541.
+
+**`soft-scroll-h` no longer tears (#18).** The carry moved screen and
+colour RAM with `memmove` in 74,041 cycles, 3.8 PAL frames, and the main
+loop's `vic_waitBottom` ran eight XSCROLL steps in one blank, so the
+picture jumped 8 px every four frames and tore. The listing now waits with
+`vic_waitFrame`, writes `$D016` first, and moves screen RAM with an
+unrolled `LDA abs` / `STA abs` copy, top row first: 7,938 cycles, measured
+with CIA2 timers. No whole-screen move fits the blank (975 × 8 = 7,800 >
+7,056 PAL), so the page measures the race instead: every row finishes
+before the beam reaches it (row 24 at line 82 PAL, 127 NTSC), and 18
+one-frame-apart screenshots per model show all 25 rows at one phase and
+1 px per frame. `soft_scroll_h`'s Cost line is now 7,938, so
+`c64_plan_budget` counts it instead of excluding it as multi-frame.
 
 **The #68 claims corrected (techniques, recipes, hardware leftovers).**
 About 95 more claims flagged by the prose pass, each settled and

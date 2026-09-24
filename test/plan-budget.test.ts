@@ -605,16 +605,18 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.verdict).toBe("undetermined");
   });
 
-  it("cracktro-template: soft_scroll_h is multi-frame, so the char buffer it includes is unknown; undetermined", () => {
+  it("cracktro-template: soft_scroll_h's carry fits a frame and holds the char buffer; fits", () => {
     // Measured: all non-split work in about 7,000 cycles of blank, screenshot stable (cracktro-template.md).
-    // soft_scroll_h's 74,041 is left out of this frame, so it holds nothing
-    // here: char_scroll_buffer_h is a member with no figure (review finding 4).
+    // soft_scroll_h is 7,938 since #18 (unrolled move, soft-scroll-h.md); before, its
+    // 74,041-cycle memmove was multi_frame, left out, and char_scroll_buffer_h was unknown.
     const pal = play(plan(recipeTechniques("kickassembler-cracktro-template")));
-    expect(pal.excluded.map((e) => [e.name, e.reason])).toEqual([["soft_scroll_h", "multi_frame"]]);
-    expect(pal.high).toBe(990 + 1198);
-    expect(pal.unknown).toEqual(["char_scroll_buffer_h"]);
-    expect(pal.to_measure.find((t) => t.technique === "char_scroll_buffer_h")?.recipe).not.toBeNull();
-    expect(pal.verdict).toBe("undetermined");
+    expect(pal.excluded).toEqual([
+      { name: "char_scroll_buffer_h", reason: "included_by", by: "soft_scroll_h" },
+    ]);
+    expect(pal.high).toBe(990 + 1198 + 7938);
+    expect(pal.unknown).toEqual([]);
+    expect(pal.to_measure).toEqual([]);
+    expect(pal.verdict).toBe("fits");
   });
 
   it("fli-image: the band rule gives 13,041, the arithmetic truth, and fits", () => {

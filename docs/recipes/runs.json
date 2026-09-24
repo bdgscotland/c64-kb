@@ -108,6 +108,17 @@
       "pal": "screenshots/lfsr-random-seed2.png"
     }
   },
+  "oscar64/soft-scroll-h": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/soft-scroll-h.png",
+      "ntsc": "screenshots/soft-scroll-h-ntsc.png"
+    }
+  },
   "oscar64/object-pool": {
     "cycles": 8000000,
     "models": [
