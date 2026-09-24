@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 785, schema 31, tools 2.6.1, package 0.19.1.
+Data 786, schema 31, tools 2.6.1, package 0.19.1.
 
 **Claims-watch findings (data 785, tools 2.6.1; #35).** The KERNAL's
 serial routines use CIA1 timer B: the ROM stores to $DC07/$DC0F at
@@ -29,6 +29,39 @@ plain STA $DD00 releases ATN, the drive resets ($EAA0 traced) and the
 first load never returns. `pitfalls/loader.md` had Krill's row backwards:
 Krill v194's README says to switch banks with a plain STA $DD00, at any
 time; the row and its mechanism now say so, with what they said before.
+
+**Cost lines re-read against their recipes (#32, #45).**
+Traced in VICE x64sc 3.10 with monitor tracepoints, from each interrupt's
+acceptance to the end of `RTI`, or across the recipe's own work:
+
+| Technique | Was | Now | What was wrong |
+|---|---|---|---|
+| `irq_chain_table` | 273, estimated | 498 (three slots) | about 91 a slot; measured 159, 180 for the wrap slot |
+| `topbottom_border_open` | 132, arithmetic | 371 NTSC, 353 PAL | left out the `$EA31` exit |
+| `stable_raster_irq` | 124, arithmetic | 310 NTSC, 262 PAL | left out the double IRQ's two-line wait |
+| `raster_bars` | 990 and 600 bytes, estimated | 1,471 NTSC, 1,464 PAL; 577 + 33 bytes | estimates |
+| `sprite_multiplex_24` | 700 and 900 bytes, estimated | 1,667 (fixed bands, no sort); 977 bytes | estimates |
+| `sprite_sine_chain` | 200, 512 bytes, one IRQ | 578-644; 768 bytes; no IRQ | not timed; three tables, and the recipe polls |
+| `text_input_line` | 200, estimated | 361 worst, 107 typical | not measured |
+| `adventure_database_engine` | 14,908 (PAL) | 15,206 (NTSC) | the smaller region's figure |
+| `software_sprite_preshifted` | two objects' bytes | one object's: 1,304 + 1,344 | units mixed with one object's cycles |
+| `kernal_file_write_seq`, `kernal_file_read_seq` | no Cost line | 3,989,946 and 530,736 (NTSC, one call) | a plan that saves could not name the cost |
+
+`table_multiply_8x8` and `lfsr_random` said `arithmetic` for figures that
+come from a timer and a build; they say `derived-listing` now.
+`two_player_state_swap` says its 65 is the per-frame port read.
+`tile_map_render` gains a whole-level unpack figure in prose (40,041 PAL,
+templates/action-puzzle). `CONVENTIONS-techniques.md` allows a one-call
+Cost for a technique that runs only outside play. Two pitfalls gained
+data (sprites enabled before placement cost 342 cycles in the first
+music frame; the adventure starter's first disk calls did not hang), and
+`kickassembler-sprite-multiplex-game` says what its MISSED counter
+cannot see.
+
+Validation rows that moved: `cracktro-template` play high end is now
+1,471 + 1,198 + 7,938 (raster_bars 990 before); `platformer-scaffold` transition has one
+unknown (`error_channel_check`) and two multi-frame members instead of
+three unknowns.
 
 **Compatibility, budget, briefing and lint answers that misled the
 starter builders (tools 2.6.0, package 0.19.0, data 783; #29, part of #41).**

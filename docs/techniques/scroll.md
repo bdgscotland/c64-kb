@@ -1076,6 +1076,18 @@ cycles is about 55% of the ~19,656-cycle PAL frame, so it belongs at level
 start, not inside the scroll loop; the scroll loop does one edge decode
 per character step.
 
+A whole-level unpack is a transition cost, and the Cost line cannot
+carry it beside the per-frame column edge: one technique has one
+`cycles_per_frame`. The recipe's 11-row map takes 8,828 + 10,731 =
+19,559 cycles to decode and expand (the table above; arithmetic on
+two measurements). A game-sized cave takes more:
+`templates/action-puzzle` times its decode of cave 2 at 40,041 cycles
+on PAL and 40,519 on NTSC, screen on, CIA1 timer B, about two PAL
+frames, and its PLAN gives 28,193 to 50,447 a room for the C decoder
+of `recipes/oscar64/level-rle-decoder.md`. Budget it in the transition
+phase, on a static or blanked screen. An earlier version of this page
+gave only the column edge, 268.
+
 ### Recipes
 
 - `recipes/oscar64/tile-map-render.md`

@@ -894,8 +894,9 @@ off, in `recipes/oscar64/sfx-engine.md` (rung 1): the engine costs 263
 cycles on a frame it owns the voice (seven stores, four byte copies for the
 checksum, and the row advance) and 55 cycles when idle, both including the
 harness's 5 cycles of start/stop overhead. The stub tune's play routine
-costs 332, or 327 net of that overhead, which is the figure on the Cost
-line above. The engine's own Cost line carries 258 (263 less the 5) as its worst frame and 50 (55 less the 5,
+costs 332, or 327 net of that overhead, which was the figure on
+`sid_play_routine_pattern`'s Cost line until it took the 1,198 of a full
+player. The engine's own Cost line carries 258 (263 less the 5) as its worst frame and 50 (55 less the 5,
 idle) as its typical figure. Against a PAL frame of 19,656 cycles the engine is about 1.3 %
 active and 0.25 % idle (arithmetic). A real player's play routine is
 typically several times the stub; its figure is the player's, not this

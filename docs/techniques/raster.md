@@ -19,8 +19,9 @@ The VIC-II reads its registers continuously and asynchronously. A write takes ef
 **Region:** both
 **Uses registers:** SCROLY, RASTER, VICIRQ, IRQMSK
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=124, lines_active=2, irq_slots=1, zp_bytes=0
-**Cost basis:** arithmetic
+**Cost:** cycles_per_frame=310, lines_active=3, irq_slots=1, zp_bytes=0
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-stable-raster-irq (one double-IRQ entry through $0314 to the synced line, plus the re-arm and exit; screen on, badlines inside; NTSC, 262 on PAL)
 **Claims:** vic_raster_irq (shares)
 **Claims basis:** derived-listing
 
@@ -77,6 +78,8 @@ On PAL (63 cycles/line), the accounting is:
 
 Once the busy-wait has synced to the next line boundary the budget on that line is ~55 cycles whichever way the interrupt was entered. The entry cost is paid on the arming line, which is why the IRQ is set one line early. Without a sync, on the arming line itself, about 50 cycles remain with $FFFE pointing at the handler (KERNAL out) and about 20 through $0314 (handler entered on cycle 37-43; see Interrupt vector placement). An earlier version gave 40-50 without saying which entry path. On NTSC (65 cycles/line), the budget is 2 cycles wider per line.
 
+Measured per stable entry, traced in VICE x64sc 3.10 in `recipes/kickassembler/stable-raster-irq.md` from the first interrupt's acceptance to the first instruction after the `$D012` compare, and from the end of the payload to the end of `RTI`: entry 185 to 190 cycles on PAL and 189 to 195 on NTSC, exit 71 to 72 on PAL and 114 to 115 on NTSC. The entry spans three lines, from the arming line to the synced line, and one of them is a badline in the recipe's placement; the NTSC exit crosses a second one. The worst entry plus exit, 262 on PAL and 310 on NTSC, is the Cost line. It said 124 before, by arithmetic that left out the two-line wait of the double IRQ.
+
 Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badline_synchronization`). A handler that fires on a badline loses those cycles before any stores execute. The standard defense is to target the IRQ one line before the badline, perform the writes during that non-bad line, and let the badline pass without stores.
 
 ### Recipes
@@ -92,8 +95,9 @@ Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badlin
 **Region:** both
 **Uses registers:** EXTCOL, BGCOL0, RASTER, VICIRQ
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=990, lines_active=10, irq_slots=10, bytes_code=600
-**Cost basis:** estimated
+**Cost:** cycles_per_frame=1471, lines_active=10, irq_slots=10, bytes_code=577, bytes_data=33
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-raster-bars (ten handlers through $0314 with their $D012 spins, the $EA31 exit once, no key held; NTSC, 1,464 on PAL)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -137,6 +141,8 @@ The VIC-II's color registers have no buffering. Unlike systems with scanline-lat
 ### Cycle budget
 
 Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/raster-bars.md`, measured in VICE), leaving about 20 cycles on the line: enough for the two colour stores (8 cycles, two `STA abs` at 4 each) and the $D012/$D019 bookkeeping (10) and little else; with the KERNAL out and $FFFE pointing at the handler about 50 remain. An earlier version said 50-55 usable and did not name the entry path. On a badline, the 40-43-cycle stall removes almost all work budget; designs that change color on badline rows write the color value one line early.
+
+Measured per frame in `recipes/kickassembler/raster-bars.md`, traced in VICE x64sc 3.10 from each interrupt's acceptance to the end of `RTI`: 125 cycles for each of bars 1 to 8, 119 (PAL) or 126 (NTSC) for bar 0, and 345 for bar 9, which rotates the palette and exits through `$EA31`; 1,464 a frame on PAL and 1,471 on NTSC. Each handler is armed a line early and spins on `$D012`, and the spin is inside the figure. The code is 577 bytes and the palette 33, from KickAssembler's memory map (`$0900-$0928`, `$0B00-$0D17`; `$0A00-$0A20`). The Cost line said 990 cycles and 600 bytes before, both estimates.
 
 ### Recipes
 
@@ -638,9 +644,9 @@ DYCP rows above or below the band. Not built.
 **Region:** both
 **Uses registers:** SCROLY
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=132, lines_active=2, irq_slots=2
-**Cost basis:** arithmetic
-**Cost measured on:** kickassembler-topbottom-border-open (two handlers, without the $EA31 exit)
+**Cost:** cycles_per_frame=371, lines_active=2, irq_slots=2
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-topbottom-border-open (two handlers with the $EA31 exit, no key held; NTSC, 353 on PAL)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -683,7 +689,7 @@ The side borders are not affected; RSEL only governs the vertical comparison lin
 
 ### Cycle budget
 
-Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–250 clears RSEL in time with the KERNAL dispatcher's latency included; 247 is too early and 251 too late for a write that lands after cycle 37 (see Why it works). RSEL is part of $D011 with YSCROLL (bits 2–0), DEN (bit 4), BMM and ECM (bits 5 and 6) and RST8 (bit 7), so the toggle is a read-modify-write (`LDA $D011`, `AND` or `ORA` immediate, `STA $D011`: 4 + 2 + 4 = 10 cycles) with bit 7 masked off. With the interrupt bookkeeping ($D012, $0314/$0315, the $D019 acknowledge and the exit) each handler body is about 40 cycles plus the 29-cycle dispatcher, twice per frame, except that the restore handler exits through `$EA31`, the full KERNAL service, which costs about 190 cycles once per frame while no key is held and about 1,600 while one is (measured in VICE x64sc for `recipes/kickassembler/raster-bars.md`; an earlier version of this sentence said "about a thousand", a figure nobody had measured); the opening handler exits through `$EA81`. An earlier version of this paragraph said the write "just needs to land before the end of line 248" and gave the RMW as "3 cycles"; both are replaced by the measured window and the cycle count above.
+Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–250 clears RSEL in time with the KERNAL dispatcher's latency included; 247 is too early and 251 too late for a write that lands after cycle 37 (see Why it works). RSEL is part of $D011 with YSCROLL (bits 2–0), DEN (bit 4), BMM and ECM (bits 5 and 6) and RST8 (bit 7), so the toggle is a read-modify-write (`LDA $D011`, `AND` or `ORA` immediate, `STA $D011`: 4 + 2 + 4 = 10 cycles) with bit 7 masked off. With the interrupt bookkeeping ($D012, $0314/$0315, the $D019 acknowledge and the exit) each handler body is about 40 cycles plus the 29-cycle dispatcher, twice per frame, except that the restore handler exits through `$EA31`, the full KERNAL service, which costs about 190 cycles once per frame while no key is held and about 1,600 while one is (measured in VICE x64sc for `recipes/kickassembler/raster-bars.md`; an earlier version of this sentence said "about a thousand", a figure nobody had measured); the opening handler exits through `$EA81`. Traced in the recipe in VICE x64sc 3.10, from the interrupt's acceptance to the end of `RTI`: the opening handler 95 cycles, the restore handler with `$EA31` 258 on PAL and 276 on NTSC, 353 and 371 a frame with no key held. The Cost line states the NTSC 371; it said 132 before, the two handler bodies without the `$EA31` exit. With a key held, add about 1,400 (the raster-bars figures above, about 1,600 against 190; not measured on this recipe, because a headless run holds no key). An earlier version of this paragraph said the write "just needs to land before the end of line 248" and gave the RMW as "3 cycles"; both are replaced by the measured window and the cycle count above.
 
 ### Recipes
 
@@ -1102,9 +1108,9 @@ same figure.
 **Region:** both
 **Uses registers:** D011, D012, D019, D01A, D020
 **Demands:** midframe_raster_irqs
-**Cost:** cycles_per_frame=273, lines_active=3, irq_slots=3
-**Cost basis:** estimated
-**Cost measured on:** kickassembler-irq-chain (three empty slots)
+**Cost:** cycles_per_frame=498, lines_active=3, irq_slots=3
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-irq-chain (three slots with two-store handlers and an empty music call, frame-counter print left out, badline stalls left out)
 **Claims:** vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -1266,8 +1272,18 @@ later than that makes the next slot late by the overrun; one that ends
 after the next line has been and gone makes it late by the whole overrun
 plus the re-entry, as measured above. Budget each slot as (next line minus
 this line) × 63 cycles on PAL, less 40 to 43 for each badline in between
-and less about 150 for the dispatcher (arithmetic from the settled
-constants and the cycle counts below).
+and less about 160 for the dispatcher (measured: see below).
+
+**Measured per frame.** Traced in VICE x64sc 3.10 (PAL) with
+monitor tracepoints on `$FF48` and on the `RTI` of `$EA81`, from the
+interrupt's acceptance to the end of `RTI`: 159 cycles for a slot that
+does not wrap, with the recipe's handler (two stores and `RTS`); 180 for
+the wrap slot, frame counter and empty `JSR music_tick` included, with
+the recipe's decimal frame print left out; 498 for the three-slot frame.
+Slot 1 at line 130 measured 202 because the badline at 131 falls inside
+it; the Cost line leaves that stall out, because a budget charges the
+frame's badlines separately. An earlier Cost line said 273, an estimate
+of about 91 a slot; the page's own sum was already about 150 a slot.
 
 ### Why it works
 

@@ -1213,6 +1213,14 @@ both models. It cannot count the phantom itself, because a headless
 VICE run holds no key; that half rests on the wiring in
 `hardware/cia-reference.md` and was not measured here.
 
+The whole per-frame read, both ports with the held-off `$FF` store,
+measures 65 cycles in the recipe (`READ 65` on its screen, PAL and NTSC;
+39 without the store and the held-off interrupt). That 65 is the Cost
+line's `cycles_per_frame`. The swap's 206 cycles run once per death,
+not per frame, so the line does not carry them; a plan that budgets a
+death frame adds them. An earlier version of this page did not say
+which of the two figures the Cost line held.
+
 ### Why it works
 
 The swap is correct because the block is complete: nothing a player
