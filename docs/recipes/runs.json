@@ -1922,5 +1922,56 @@
       "-soundarg",
       "/dev/null"
     ]
+  },
+  "kickassembler/raster-split-modes": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/raster-split-modes.png",
+      "ntsc": "screenshots/raster-split-modes-ntsc.png"
+    }
+  },
+  "oscar64/soft-scroll-v": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/soft-scroll-v.png",
+      "ntsc": "screenshots/soft-scroll-v-ntsc.png"
+    }
+  },
+  "oscar64/mcm-ecm-zones": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/mcm-ecm-zones.png",
+      "ntsc": "screenshots/mcm-ecm-zones-ntsc.png"
+    }
+  },
+  "oscar64/sid-detect": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-detect.png",
+      "ntsc": "screenshots/sid-detect-ntsc.png"
+    },
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
   }
 }

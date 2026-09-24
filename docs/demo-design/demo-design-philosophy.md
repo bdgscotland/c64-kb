@@ -91,9 +91,13 @@ outstanding tune when the visuals are comparable.
 ### Demo (Full, No Strict Size Cap)
 
 The full demo category has no size ceiling, but a disk-based C64 demo must fit on one or two
-sides of a 1541 disk (approximately 165K or 330K usable). Most full demos run four to eight
-minutes, contain three to six parts separated by loaders, and are the work of a coder, musician
-and graphician.
+sides of a 1541 disk (approximately 165K or 330K usable). Full demos contain several parts
+separated by loaders and are the work of a coder, musician and graphician. Running times at the
+top of the field are long: at X 2023 Raistlin gives about sixteen and a half minutes for Mojo and
+for Wonderland XIV, eighteen for Multiverse and twenty-one for Next Level, and calls fifteen
+minutes and more the norm for the bigger demos (one competition, his figures; see
+`./demo-composition.md`, `pacing_and_length`). An earlier version of this paragraph said most
+full demos run four to eight minutes, with no source.
 
 The most ambitious work appears here. Multi-part construction with per-part loaders (see
 `../techniques/loaders-packers.md`) lets each part own the full 64K address space. One part can be
