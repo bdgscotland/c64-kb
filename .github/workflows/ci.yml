@@ -11,9 +11,12 @@ on:
 permissions:
   contents: read
 
+# A pull request's newer push replaces its older run. On main every commit
+# gets a full run: two sessions push there minutes apart, and cancelling
+# left no finished run at all (five cancelled in a row, 2026-09-24).
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
