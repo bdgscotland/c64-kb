@@ -561,6 +561,16 @@
       "pal": "screenshots/one-part-demo.png"
     }
   },
+  "kickassembler/fli-music-scroller": {
+    "cycles": 10000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fli-music-scroller.png"
+    }
+  },
   "oscar64/divide-check": {
     "cycles": 600000000,
     "models": [
