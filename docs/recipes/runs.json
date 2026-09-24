@@ -700,7 +700,9 @@
       "-controlport1device",
       "3",
       "-controlport2device",
-      "2"
+      "2",
+      "-seed",
+      "1"
     ],
     "shots": {
       "pal": "screenshots/paddle-read.png",
@@ -763,7 +765,9 @@
     ],
     "flags": [
       "-controlport1device",
-      "3"
+      "3",
+      "-seed",
+      "1"
     ],
     "shots": {
       "pal": "screenshots/mouse-1351-read.png",
