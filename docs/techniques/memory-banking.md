@@ -1061,6 +1061,14 @@ address. Oscar64's `.lbl` and `.map` list the storage address (`al 2000
 the labels in the region before loading them (the Oscar64 recipe has a
 one-line rewrite).
 
+**The stored copy is a fixed address.** The program's own code must not
+grow into it. Oscar64 linked its default `main` region over the block's
+`$2000` with no diagnostic, and cc65 without `fill = yes` wrote the block
+straight after `MAIN` while `__RELOC_LOAD__` still named `$2000` (both
+measured in the recipes). That is the collision
+`charset_blit_overruns_grown_code` in `pitfalls/banking.md` describes;
+declare the block's range in the layout (`memory_layout_plan`).
+
 **Variations.** Several blocks linked for the same run address and
 copied in turn (overlays, `runtime_relocation` in
 [loaders-packers](loaders-packers.md) for relocation at run time); a run

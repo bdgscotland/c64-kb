@@ -482,7 +482,7 @@ custom_nmi:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D018
-**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets, charset_parallax, destructible_char_terrain, hires_plot
+**Triggered by techniques:** screen_double_buffer_d018, bitmap_relocation, speedcode_generation, charset_animation, big_font_2x2, dycp_scroller, char_bullets, charset_parallax, destructible_char_terrain, hires_plot, relocated_code_block
 **Mitigated by techniques:** memory_layout_plan
 
 ### Symptom

@@ -433,6 +433,11 @@ from the chip, so it follows the sound itself: in the recipe it read
 - ENV3 as a level meter for a bar or a logo's size, rather than a
   trigger.
 
+Gating voice 3 on at each beat and off a row later is the pattern the
+ADSR bug catches (`sid_adsr_bug_8580` in `pitfalls/sid.md`): in the
+recipe, ENV3 held its value for one more frame after the gate cleared
+and the rate dropped from decay 9 to release 0.
+
 ### Cycle budget
 
 Reading two counters and comparing them costs a few dozen cycles a

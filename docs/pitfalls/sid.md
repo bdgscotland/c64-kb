@@ -319,7 +319,7 @@ write_cutoff:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D404, D40B, D412
-**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences, sfx_in_player, goattracker_player_api, sid_env3_filter_envelope
+**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences, sfx_in_player, goattracker_player_api, sid_env3_filter_envelope, music_sync_timeline
 
 ### Symptom
 
