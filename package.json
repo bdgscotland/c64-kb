@@ -71,7 +71,8 @@
     "docs",
     "templates",
     "VERSION",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "docker-compose.yml"
   ],
   "exports": {
     "./package.json": "./package.json"
@@ -88,5 +89,18 @@
     "better-sqlite3": true,
     "fsevents": false,
     "lefthook": false
+  },
+  "keywords": [
+    "commodore-64",
+    "c64",
+    "6502",
+    "mcp",
+    "model-context-protocol",
+    "knowledge-base",
+    "retro"
+  ],
+  "homepage": "https://github.com/bdgscotland/c64-kb#readme",
+  "bugs": {
+    "url": "https://github.com/bdgscotland/c64-kb/issues"
   }
 }

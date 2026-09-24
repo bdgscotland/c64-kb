@@ -36,3 +36,19 @@ a comment saying why that one line is the exception.
 - Nothing the MCP server reaches writes to stdout; that is the protocol
   stream. Use `console.error`.
 - Relative imports end in `.ts`; Node runs the sources directly.
+
+## Releasing to npm
+
+1. Bump `version` in `package.json` (and `MCP_TOOL_VERSION` in `VERSION` if
+   the tool surface changed), add the CHANGELOG entry, merge to main, and
+   wait for CI to pass. CI's `package` job installs the packed tarball into
+   an empty folder and runs `services up`, `ingest` and a lookup.
+2. `git tag v<version> && git push origin v<version>`. The `release`
+   workflow checks the tag matches `package.json`, runs the gates, and
+   publishes with npm trusted publishing (no token; provenance attached).
+
+One-time setup before the first tagged release: on npmjs.com, add this
+repository and `.github/workflows/release.yml` as the package's trusted
+publisher. npm cannot link a trusted publisher to a name that does not exist
+yet, so the very first publish is done by hand: `npm publish --access public`
+from a clean checkout of the tagged commit.

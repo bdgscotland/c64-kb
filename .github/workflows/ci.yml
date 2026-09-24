@@ -139,3 +139,41 @@ jobs:
             node scripts/verify-recipes.ts --file "$f" --allow-missing | tail -1 | grep -q " 0 failed" || { echo "FAILED: $f"; fail=1; }
           done
           exit $fail
+
+  package:
+    name: the npm package works from an empty folder
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: pack
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: install the tarball into an empty project
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir app && cd app && npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/c64-kb-*.tgz
+          npx c64-kb version
+      - name: start the stores with the package's own command
+        working-directory: ${{ runner.temp }}/app
+        run: npx c64-kb services up
+      - name: Ollama with the embedding model
+        run: |
+          docker run -d --name ollama -p 11434:11434 ollama/ollama:0.34.3@sha256:7ab595e4ead391f6818c7215297781282babe0701f6d9a9f8862ac591360a58b
+          for i in $(seq 30); do curl -sf http://localhost:11434/api/tags > /dev/null && break; sleep 2; done
+          curl -sf http://localhost:11434/api/pull -d '{"model":"mxbai-embed-large"}' | tail -1
+      # Two pages keep the job short; the full corpus is the integration job's.
+      - name: ingest, then look something up
+        working-directory: ${{ runner.temp }}/app
+        run: |
+          mkdir docs-mini
+          cp node_modules/c64-kb/docs/hardware/vic-ii-reference.md node_modules/c64-kb/docs/techniques/raster.md docs-mini/
+          DOCS_DIR="$PWD/docs-mini" npx c64-kb ingest --clean
+          npx c64-kb lookup-register D011 | grep -q "SCROLY"
+          npx c64-kb search "stable raster interrupt" | grep -q "stable_raster_irq"
+          test -f "$HOME/.local/share/c64-kb/bm25-vocab.json"
+          test ! -e node_modules/c64-kb/data

@@ -133,10 +133,31 @@ stale within two commits.
 
 ## Quick start
 
-You need Node.js 24+, Docker, and [Ollama](https://ollama.com/) with
+You need Node.js 24.12+, Docker, and [Ollama](https://ollama.com/) with
 `mxbai-embed-large` pulled. Ingest needs Ollama (it embeds every chunk and
 stops if it cannot). Once ingested, querying works without it: search falls
 back to keyword-only and the graph tools are unaffected.
+
+### From npm
+
+```bash
+npm install -g c64-kb
+ollama pull mxbai-embed-large
+
+c64-kb services up        # Qdrant (port 7333) and FalkorDB (7379) in Docker
+c64-kb ingest             # builds both stores from the docs in the package; a few minutes
+c64-kb health             # what the stores hold
+
+claude mcp add c64-kb -- c64-kb serve    # connect Claude Code
+```
+
+State (the analytics database, BM25 vocabulary, ingest hashes, and the
+containers' volumes) goes to `$XDG_DATA_HOME/c64-kb`, else
+`~/.local/share/c64-kb`; set `C64_KB_DATA_DIR` to put it elsewhere. After
+upgrading the package, run `c64-kb ingest --clean` so the stores match the
+new docs. `c64-kb services down` stops the containers and keeps their data.
+
+### From a clone
 
 ```bash
 # Start backing services (Qdrant + FalkorDB)
@@ -150,7 +171,7 @@ npm run build
 npm run ingest
 
 # Verify services and content
-npx c64-kb health
+npm run health
 
 # Start the MCP server (for Claude Code or other MCP clients)
 npm run dev:serve
