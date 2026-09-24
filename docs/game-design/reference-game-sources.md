@@ -2,8 +2,8 @@
 
 # Reference Game Sources: what an agent may read, and what it may copy
 
-When a mechanism is not in this knowledge base, the next best thing is a
-complete game that does it. This page lists the public C64 game, engine,
+When a mechanism is not in this knowledge base, read a complete game that
+does it. This page lists the public C64 game, engine,
 loader and packer sources, what each holds, the licence each states, and
 what this repository may do with it. The repository is BSD-3-Clause
 (`LICENSE`), so a source's licence decides whether its code or text can

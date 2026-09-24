@@ -2,7 +2,7 @@
 tool: vice-mcp
 tool_kind: debug-bridge
 maintainer: simen
-license: MIT
+license: none stated
 home_url: https://github.com/simen/vice-mcp
 ---
 

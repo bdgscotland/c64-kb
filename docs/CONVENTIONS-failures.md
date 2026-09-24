@@ -1,7 +1,7 @@
 # Failure Pattern Reference Conventions
 
-Failure-pattern docs live in `docs/c64-failure-patterns.md` (single
-file). Each entry is one CrashPattern node, keyed by `symptom`.
+All failure patterns live in one file, `docs/c64-failure-patterns.md`.
+Each entry is one CrashPattern node, keyed by `symptom`.
 
 The marker `<!-- doc-type: failure-reference -->` MUST appear in the
 first 10 lines for the extractor to process the file.
@@ -31,16 +31,16 @@ Following each H2 block:
 ```
 
 `Likely causes` is a comma-separated list of free-form cause tags
-(short snake_case strings). Stored as a JSON-encoded array on the
-node. NOT graph edges — graph edges go through the `Caused by …`
+(short snake_case strings), stored as a JSON-encoded array on the
+node. They are NOT graph edges; edges come from the `Caused by …`
 lines.
 
-`Caused by …` lines emit CAUSED_BY edges, same structure as Pitfall's
-TRIGGERED_BY.
+`Caused by …` lines emit CAUSED_BY edges, with the same structure as
+Pitfall's TRIGGERED_BY.
 
 ## Section structure inside a CrashPattern
 
 1. **Visible/audible symptom** (1–2 sentences, vivid)
 2. **Likely causes** (parallel to the metadata list, expanded)
-3. **Diagnosis steps** (numbered, concrete — what to inspect in vice-mcp)
+3. **Diagnosis steps** (numbered: what to inspect in vice-mcp)
 4. **Common fixes** (1–3 paragraphs)

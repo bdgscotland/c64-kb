@@ -4,9 +4,8 @@
 
 How people who shipped C64 software decided what to build first, how much
 memory each part could have, how big the game could be, and what tools they
-wrote. These are design patterns, not techniques: decisions taken before or
-between the techniques, each naming the techniques and recipes here that
-carry it out. Every fact is attributed to a person and a year; a number is
+wrote. Each design pattern is a decision taken before or between the
+techniques, and names the techniques and recipes here that carry it out. Every fact is attributed to a person and a year; a number is
 theirs or is shown as a sum. Nothing on this page was measured in VICE.
 
 ---
@@ -116,7 +115,7 @@ came to add the music, said he needed about 6K, and there was no room; a
 level was cut to make it. Manfred Trenz said he hated playing Turrican
 without in-game music, and that there was no possibility of putting it in.
 Dane of Booze Design said a continuous soundtrack in a C64 demo is tricky
-precisely because the visuals and effects on screen limit the memory and
+because the visuals and effects on screen limit the memory and
 raster time left for it.
 
 **The shape.** Andrew Braybrook's Paradroid diary (1985) is the worked
@@ -178,7 +177,7 @@ Related: `../toolchains/memory-layout-planning.md`, `../techniques/memory-bankin
 - Takes the same number of seconds to traverse a section on PAL and on NTSC, within one frame.
 - Keeps the on-screen sprite count at or below the limit the plan set for NTSC.
 
-**Why.** Three decisions set the ceiling on everything else: how many loads,
+**Why.** Three decisions limit everything else: how many loads,
 which video standards, and how much time. Each is cheap on day one and
 expensive on the last day.
 
@@ -312,7 +311,7 @@ Related: `../art/asset-pipelines.md`, `../art/art-production-reference.md`,
 
 - Ships a sources file in the build's documentation that names an author and a year for every design fact the documentation cites.
 
-The rest is the writer's discipline, not a build property: a person and a
+The rest is for the writer to keep, since no build can check it: a person and a
 year for every fact, no unlicensed scan linked, every number the source's or
 arithmetic.
 

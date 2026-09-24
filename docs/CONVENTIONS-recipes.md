@@ -1,14 +1,14 @@
 # Recipe Conventions
 
 Recipes live in `docs/recipes/<toolchain>/<recipe-name>.md`. Each recipe is a
-complete, buildable example with source, build command, expected output, and a
-description of why it's done this way. The same conceptual demo MAY have one
-recipe per toolchain (e.g. `oscar64/raster-bars.md`, `kickassembler/raster-bars.md`)
-— they are distinct Recipe nodes IMPLEMENTS-edged to the same Technique.
+complete, buildable example with source, build command, expected output and an
+explanation of the design. The same demo MAY have one
+recipe per toolchain (e.g. `oscar64/raster-bars.md`, `kickassembler/raster-bars.md`);
+they are distinct Recipe nodes IMPLEMENTS-edged to the same Technique.
 
 The marker `<!-- doc-type: recipe -->` MUST appear immediately after the
-frontmatter — line 12 of every recipe, after the ten frontmatter lines and
-one blank; the extractor matches it anywhere in the file. An earlier
+frontmatter: line 12 of every recipe, after the ten frontmatter lines and
+one blank. The extractor matches it anywhere in the file. An earlier
 version of this line said "in the first 10 lines", which no recipe
 satisfied.
 
@@ -45,14 +45,14 @@ archetype.
 After the frontmatter:
 
 1. `# <Human-readable title>` (H1, exactly one)
-2. `## Synopsis` — one paragraph: what this recipe demonstrates and when to use it
-3. `## Source` — a single fenced code block with the complete source listing
-4. `## Build` — the exact shell command(s) to produce the artifact
-5. `## Expected output` — what you should see on screen / in the .prg
-6. `## Why this works` — one to three paragraphs walking through the load-bearing
-   lines, calling out chip-specific quirks or toolchain idioms
+2. `## Synopsis`: one paragraph, what this recipe demonstrates and when to use it
+3. `## Source`: a single fenced code block with the complete source listing
+4. `## Build`: the exact shell command(s) to produce the artifact
+5. `## Expected output`: what appears on screen / in the .prg
+6. `## Why this works`: one to three paragraphs on the lines the result
+   depends on, naming chip-specific quirks or toolchain idioms
 
-Recipes are atomic — no "and another variation". Variations are separate recipes.
+A recipe shows one thing. Variations are separate recipes.
 
 ## Naming
 
@@ -62,10 +62,10 @@ The filename matches the `recipe:` frontmatter value. Directory matches `toolcha
 
 ## Verification (required)
 
-A recipe page is not done when it reads well. Before it lands:
+Before a recipe page lands:
 
 1. The listing is extracted from the page and built with the toolchain the
-   page names — `npm run check:listings` does exactly that and is run by
+   page names. `npm run check:listings` does this and is run by
    `npm test`. A listing that does not build does not land.
 2. For anything that draws, the PRG is run headless in VICE with the
    pinned command (`x64sc -default -warp +sound +autostart-delay-random
@@ -101,6 +101,5 @@ A recipe page is not done when it reads well. Before it lands:
    line padding) is labelled as measured in VICE, with what the picture
    looks like when it is off by one. VICE is the instrument; the pages do
    not claim bench measurements.
-4. If the page corrects an earlier version, it says what was wrong. That
-   history is worth more to the next reader than a clean surface.
+4. If the page corrects an earlier version, it says what was wrong.
 

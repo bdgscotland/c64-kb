@@ -23,15 +23,15 @@ kind: game                    # game | demo; optional, defaults to game
 `kind` applies to every archetype in the file. Any other word refuses the
 whole file with a warning, the way an unknown technique category does.
 
-`kind: demo` is the demo forms: the source is
+`kind: demo` covers the demo forms. The source is
 `docs/demo-design/intro-cracktro-patterns.md`, whose crack intro, demo
 intro, pack intro, dentro and 4K party intro are each one `Archetype`
-node. A form is the node; the parts a multi-part production is cut into
-are not a node type, and a page must not try to make them one. The entry
+node. The form is the node. The parts of a multi-part production
+are not a node type, and a page must not make them one. The entry
 format, the edge lines and the ingest counts are the same as for games,
-and `c64_demo_briefing` with `archetype` reads the node exactly as
-`c64_game_briefing` does. Archetype names are unique across every
-archetype page, not just within one: the ingest merges the node on its
+and `c64_demo_briefing` with `archetype` reads the node as
+`c64_game_briefing` does. Archetype names must be unique across all
+archetype pages, not only within one: the ingest merges the node on its
 name alone, so a name repeated on a second page overwrites the first
 page's node (its kind, title and source) and both pages' edges land on
 the one node. The extractor only refuses a repeat within a single file.
@@ -147,9 +147,9 @@ page ingested, the page is the source of truth.
 
 After the H2 and the `**Archetype:**` line, free-form prose covering:
 
-1. **What it is** — the defining mechanic and the scene tradition
-2. **Where the budget goes** — the technical constraint that shapes it
-3. **How the pieces fit** — sprites, scroll, SID, loading, in plain terms
+1. **What it is**: the defining mechanic and the scene tradition
+2. **Where the budget goes**: the technical constraint that shapes it
+3. **How the pieces fit**: sprites, scroll, SID, loading, in plain terms
 4. The `**Technique fingerprint:**`, `**Common pitfalls:**` and
    `**Brief words:**` lines
 5. `**Reference titles:**` and `**Modern examples:**`

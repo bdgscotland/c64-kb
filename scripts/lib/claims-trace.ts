@@ -17,62 +17,9 @@
  */
 import type { Declared } from "./claims-declared.ts";
 import { CpuPort, sourceOf, type ScreenBytes, type Source, type UnitMap } from "./claims-units.ts";
+import { parseHit, storedValue, type Hit } from "../../src/re/monlog.ts";
 
-export interface Hit {
-  kind: "store" | "exec";
-  addr: number;
-  pc: number;
-  mnemonic: string;
-  operand: string;
-  a: number;
-  x: number;
-  y: number;
-  sp: number;
-  /** Flags after the instruction, as VICE prints them: `N.-..IZC`. */
-  flags: string;
-  clock: number;
-}
-
-const HEAD = /^#\d+ \(Trace\s+(store|exec)\s+([0-9a-f]{4})\)/;
-const INSN =
-  /^\.C:([0-9a-f]{4})\s+(?:[0-9A-F]{2} )+\s*([A-Z]{3})\s*(.*?)\s*- A:([0-9A-F]{2}) X:([0-9A-F]{2}) Y:([0-9A-F]{2}) SP:([0-9a-f]{2})\s+(\S+)\s+(\d+)/;
-
-/** Parse one hit from its two lines; null for anything else. */
-export function parseHit(head: string, insn: string): Hit | null {
-  const h = HEAD.exec(head);
-  const i = INSN.exec(insn);
-  if (!h || !i) return null;
-  const n = (k: number, radix = 16) => parseInt(i[k] ?? "", radix);
-  return {
-    kind: h[1] as Hit["kind"],
-    addr: parseInt(h[2] ?? "", 16),
-    pc: n(1),
-    mnemonic: i[2] ?? "",
-    operand: i[3] ?? "",
-    a: n(4),
-    x: n(5),
-    y: n(6),
-    sp: n(7),
-    flags: i[8] ?? "",
-    clock: n(9, 10),
-  };
-}
-
-/** The byte a store wrote, when the instruction says: STA/STX/STY/SAX. */
-export function storedValue(hit: Hit): number | null {
-  switch (hit.mnemonic) {
-    case "STA":
-      return hit.a;
-    case "STX":
-      return hit.x;
-    case "STY":
-      return hit.y;
-    case "SAX":
-      return hit.a & hit.x;
-    default:
-      return null;
-  }
-}
+export { parseHit, storedValue, type Hit };
 
 /**
  * The byte a read-modify-write left on the 6510 port ($00 or $01), from the

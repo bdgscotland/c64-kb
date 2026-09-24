@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { z } from "zod";
+import { z } from "zod";
+import {
+  FrameProfileOutput,
+  frameProfileReply,
+  IrqChainOutput,
+  irqChainReply,
+} from "../src/server/tools-re.ts";
 import {
   RegisterLookupSchema,
   KernalLookupSchema,
@@ -34,8 +40,17 @@ import {
 // Not called, because they have side effects outside the test stores:
 // c64_run_game kills the x64sc on monitor port 6502 and starts one;
 // c64_ingest_doc writes a file under docs/ (and c64_memorization_check is
-// listed only where the Python analyzer is installed).
-const SKIP = new Set(["c64_run_game", "c64_ingest_doc", "c64_memorization_check"]);
+// listed only where the Python analyzer is installed). c64_re_irq_chain and
+// c64_re_frame_profile run VICE for seconds; their runs are covered by
+// test/re-tools.test.ts and test/re-calibration.test.ts, and their reply
+// builders by the stub results at the end of this file.
+const SKIP = new Set([
+  "c64_run_game",
+  "c64_ingest_doc",
+  "c64_memorization_check",
+  "c64_re_irq_chain",
+  "c64_re_frame_profile",
+]);
 
 // Tool -> [arguments, output schema or null for a text-only tool].
 const CALLS: Record<string, [Record<string, unknown>, z.ZodType | null]> = {
@@ -129,4 +144,75 @@ describe("MCP tools over stdio", () => {
       }
     }, 130000);
   }
+});
+
+describe("RE tool replies carry the whole result", () => {
+  const run = {
+    prg: "/tmp/t.prg",
+    model: "pal" as const,
+    cycles: 4_000_000,
+    entry: 0x080d,
+    start_clock: 2_500_000,
+    vice: "x64sc",
+  };
+  const o = { basis: "measured-vice" as const, rung: 1 as const };
+
+  it("declares an outputSchema for both", () => {
+    for (const name of ["c64_re_irq_chain", "c64_re_frame_profile"])
+      expect(tools.find((t) => t.name === name)?.outputSchema, name).toBeDefined();
+  });
+
+  it("c64_re_irq_chain: structured content parses with its schema and holds every observation", () => {
+    const result = {
+      vectors: [
+        {
+          ...o,
+          id: "v0",
+          vector: "irq_fffe" as const,
+          value: 0x0840,
+          pc: 0x0815,
+          clock: 2_500_010,
+          line: 30,
+        },
+      ],
+      arms: [{ ...o, id: "a0", line: 100, pc: 0x0820, clock: 2_500_020, at_line: 30 }],
+      entries: [{ ...o, id: "e0", handler: 0x0840, line: 100, cycle: 12, clock: 2_510_000, frame: 0 }],
+      handlers: [
+        { handler: 0x0840, via: ["irq_fffe" as const], entries: 1, entry_lines: [100], armed_before: [100] },
+      ],
+      unknowns: ["irq_0314: $0315 never written, so the handler address is unknown"],
+    };
+    const r = irqChainReply({ ok: true, run, result });
+    expect(r.text).toMatch(/handler \$0840 via irq_fffe/);
+    const parsed = z.object(IrqChainOutput).safeParse(r.structured);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(r.structured).toEqual({ run, ...result });
+  });
+
+  it("c64_re_frame_profile: every sample with its frame is in the structured content", () => {
+    const samples = [0, 1, 2].map((i) => ({
+      ...o,
+      id: `s${i}`,
+      cycles: 500 + i,
+      start_clock: 2_500_000 + i * 19_656,
+      frame: i,
+    }));
+    const result = { samples, worst: 502, typical: 501, count: 3, unpaired: 0, over_frame: 0, unknowns: [] };
+    const r = frameProfileReply({ ok: true, run, result });
+    const parsed = z.object(FrameProfileOutput).safeParse(r.structured);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(parsed.data?.samples.map((s) => s.frame)).toEqual([0, 1, 2]);
+  });
+
+  it("a refusal is text and isError, with no structured content", () => {
+    const r = frameProfileReply({
+      ok: false,
+      reason: "no-entry",
+      error: "entry $080D not reached in 200000 cycles; raise cycles",
+    });
+    expect(r).toEqual({
+      text: "refused (no-entry): entry $080D not reached in 200000 cycles; raise cycles",
+      isError: true,
+    });
+  });
 });

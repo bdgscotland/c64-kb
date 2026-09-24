@@ -222,10 +222,12 @@ describe("sources read from the docs", () => {
   it("reads the SYS address of a BASIC stub and both label formats", () => {
     // 10 SYS 2062
     const stub = [0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, ...Buffer.from("2062"), 0, 0, 0, 0x60];
-    expect(readPrg(Uint8Array.from(stub))).toEqual({
+    const bytes = Uint8Array.from(stub);
+    expect(readPrg(bytes)).toEqual({
       load: 0x0801,
       end: 0x0801 + stub.length - 3,
       sys: 2062,
+      bytes,
     });
     const labels = readLabels(".label start=$80e\nal C:0820 .irq\nal 00f7 .ZeroEnd\n");
     expect([...labels]).toEqual([

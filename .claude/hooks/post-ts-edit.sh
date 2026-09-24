@@ -26,7 +26,7 @@ BIN="$REPO_ROOT/node_modules/.bin"
 REPORT=""
 [ -x "$BIN/prettier" ] && "$BIN/prettier" --write --log-level=warn "$REL" >/dev/null 2>&1 || true
 if [ -x "$BIN/eslint" ]; then
-  if ! LINT=$("$BIN/eslint" --max-warnings=0 --format=unix "$REL" 2>&1); then
+  if ! LINT=$("$BIN/eslint" --max-warnings=0 "$REL" 2>&1); then
     REPORT+="LINT FAILED in $REL:"$'\n'"$(printf '%s\n' "$LINT" | head -30)"$'\n'
   fi
 fi

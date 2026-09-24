@@ -4,13 +4,15 @@
 
 The FalkorDB knowledge graph models C64 hardware (chips, registers,
 memory regions), demo and game techniques, toolchains, pitfalls, and
-crash/failure patterns. Designed to support multi-hop queries like
+crash/failure patterns. It answers multi-hop queries such as
 "what techniques use the copper-equivalent stable raster IRQ?" or "what
 registers does this effect touch?" or "is FLI compatible with sprite-
 multiplex-24 in PAL?"
 
-`ensureSchema()` creates the indexes, constraints and the `Chip`, `Region`
-and `HardwareUnit` seed nodes; every other node and edge comes from ingesting `docs/`.
+`ensureSchema()` creates the indexes, constraints and the `Chip`, `Region`,
+`HardwareUnit` and `MachineVariant` seed nodes (`src/services/falkor.ts`);
+every other node and edge comes from ingesting `docs/`. An earlier version
+of this sentence left out `MachineVariant`.
 
 Design principles:
 - 5–12 node types, 8–20 edge types (maintainable range for a domain KB)
@@ -80,9 +82,9 @@ A C64 silicon component. Static nodes seeded in `ensureSchema()`.
 **Hardcoded seed (5 nodes):**
 - VIC-II (variants: 6569 PAL / 6567 NTSC)
 - SID (variants: 6581 / 8580)
-- CIA1 (6526) — keyboard, joystick port 2, timer-A IRQ
-- CIA2 (6526) — VIC bank select, RS-232, timer-B NMI
-- 6510 — CPU with I/O port at $00/$01
+- CIA1 (6526): keyboard, joystick port 2, timer-A IRQ
+- CIA2 (6526): VIC bank select, RS-232, timer-B NMI
+- 6510: CPU with I/O port at $00/$01
 
 ### Region
 
@@ -150,7 +152,7 @@ Source: `pitfalls/*.md` (one Pitfall per H2; the file an earlier version of this
 
 ### CrashPattern
 
-A symptom-keyed failure record (no Guru codes on C64 — failures are
+A symptom-keyed failure record (the C64 has no Guru codes; failures are
 visual or behavioral).
 
 | Property | Type | Description |
@@ -183,8 +185,8 @@ Source: toolchain reference docs (Phase 2).
 
 ### Recipe
 
-A buildable code recipe. The same demo concept can have multiple Recipe
-nodes — one per toolchain.
+A buildable code recipe. The same demo can have several Recipe
+nodes, one per toolchain.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -228,7 +230,7 @@ Source: `techniques/*.md` `**Demands:**` lines.
 A named piece of hardware that one technique can hold while another wants
 it: a SID voice, a sprite, a CIA timer, the raster compare, an interrupt
 vector, zero page (schema 25). Seeded by `ensureSchema()` from
-`HARDWARE_UNITS` in `src/graph/extract.ts`, like Chip and Region, so a
+`HARDWARE_UNITS` in `src/graph/claims.ts`, like Chip and Region, so a
 `**Claims:**` line can only name a unit that exists. It answers a
 different question from Resource: a Resource is a kind of machine time
 ("every CPU cycle on its lines"), a HardwareUnit is a register set.
@@ -344,11 +346,11 @@ Meaning: "this recipe demonstrates this technique."
 
 Direction: `Recipe → Recipe`
 
-Meaning: "this recipe depends on a prior recipe — learn that first."
+Meaning: "this recipe depends on a prior recipe; learn that first."
 
 Listed since the ontology was drafted, but no extractor emits it and no
 tool reads it (checked 2026-09-22: `BUILDS_ON` occurs nowhere in `src/`
-or `test/`). The prerequisite relation the docs actually state is between
+or `test/`). The prerequisite relation the docs state is between
 techniques, and that is `REQUIRES` below.
 
 ### REQUIRES
@@ -356,7 +358,7 @@ techniques, and that is `REQUIRES` below.
 Direction: `Technique → Technique`
 
 Meaning: "this technique presupposes that one is already set up or running
-underneath it" — `text_zoom` REQUIRES `stable_raster_irq` (an IRQ on every
+underneath it". Examples: `text_zoom` REQUIRES `stable_raster_irq` (an IRQ on every
 scanline of its zone), `infinite_scroll_h` REQUIRES `soft_scroll_h` and
 `char_scroll_buffer_h`, `sid_filter_routing` REQUIRES `sid_voice_setup`.
 Authored per technique with a `**Requires:**` line
@@ -369,9 +371,9 @@ stub; an edge that would close a cycle is refused. Read by
 (`requires` filter, following the chain) and `c64_check_compatibility`,
 which takes each input's REQUIRES closure and runs the hard DEMANDS rules
 between one technique's prerequisites and the other technique, reporting a
-hit as `prerequisite_conflict` — never against a prerequisite the technique
-declared itself, and never by folding a prerequisite's demands into its
-dependant's.
+hit as `prerequisite_conflict`. It never runs them against a prerequisite
+the technique declared itself, and never folds a prerequisite's demands
+into its dependant's.
 
 ### TRIGGERED_BY
 
@@ -388,7 +390,7 @@ to carry as well (`sprite_dma_overflow` was TRIGGERED_BY
 Direction: `Pitfall → Technique`
 
 Meaning: "applying this technique is the Fix section's remedy for this
-pitfall" — `raster_irq_first_line_jitter` MITIGATED_BY `double_irq`, the
+pitfall". Examples: `raster_irq_first_line_jitter` MITIGATED_BY `double_irq`, the
 three region-timing pitfalls MITIGATED_BY `pal_ntsc_detection`. Authored
 with a `**Mitigated by techniques:**` line (`CONVENTIONS-pitfalls.md`);
 Technique targets only, both ends MATCHed, misses warned about and counted
@@ -447,14 +449,14 @@ Meaning: "this tool targets this chip (e.g. GoatTracker targets SID)."
 
 Direction: `KernalRoutine → KernalRoutine`
 
-Meaning: "if you call A you also need B" (e.g. SETLFS + SETNAM + LOAD).
+Meaning: "a call to A also needs B" (e.g. SETLFS + SETNAM + LOAD).
 
 ### DEMANDS
 
 Direction: `Technique → Resource`
 
 Meaning: "while this technique is active it needs this machine-level
-resource" — every CPU cycle on its lines, a constant sprite set, a
+resource": every CPU cycle on its lines, a constant sprite set, a
 badline-free region, the KERNAL banked out, and so on. Authored per
 technique with a `**Demands:**` line from the fixed vocabulary in
 `CONVENTIONS-techniques.md`. `c64_check_compatibility` derives its hard
@@ -537,8 +539,8 @@ outside the may set.
 Direction: `Register → MemoryRegion`, `KernalRoutine → MemoryRegion`
 
 Meaning: "this address lies inside this memory-map region." Derived from
-the numeric addresses after ingest; before this edge existed the 220
-MemoryRegion nodes were all orphans.
+the numeric addresses after ingest; before this edge existed every
+MemoryRegion node was an orphan.
 
 ### OCCUPIES
 
@@ -552,7 +554,7 @@ the listing's own load addresses (`* = $0900`, `#pragma region(...)`,
 
 Direction: `Archetype → Technique`
 
-Meaning: "a game of this shape is built on this technique" —
+Meaning: "a game of this shape is built on this technique". Examples:
 `vertical_shmup` FEATURES `sprite_multiplex_game`, `text_adventure` FEATURES
 `ram_under_kernal`. Authored with the `**Technique fingerprint:**` line
 (`CONVENTIONS-archetypes.md`); both ends MATCHed, a name that matches no
@@ -565,7 +567,7 @@ per-category cap.
 
 Direction: `Archetype → Pitfall`
 
-Meaning: "a game of this shape commonly meets this pitfall" —
+Meaning: "a game of this shape commonly meets this pitfall". Examples:
 `racing` RISKS `raster_line_count_difference`, `top_down_adventure` RISKS
 `vic_bank_visibility_collision`. Authored with the `**Common pitfalls:**`
 line; same MATCH-both discipline, misses counted as `archetype_risks …
@@ -579,7 +581,7 @@ technique's code the pitfall arises in.
 Direction: `Recipe → Archetype`
 
 Meaning: "this recipe is a complete starting point for a game of this
-shape; copy it and change it, do not start from a blank file" —
+shape; copy it and change it, do not start from a blank file". Example:
 `oscar64-simple-shmup` SCAFFOLDS `vertical_shmup`. Authored with the
 `scaffolds:` key in the recipe's frontmatter (`CONVENTIONS-recipes.md`),
 an array of Archetype names. Both ends MATCHed, never MERGEd: a name that
@@ -648,7 +650,7 @@ primary key of every node label (16) and seeds:
 
 Everything else is produced by `npm run ingest` from `docs/`. Of the
 edge types defined here, one is populated by nothing: `BUILDS_ON`, which
-no page asserts and no tool reads (its fate is issue #17). `REQUIRES_TOOL`
+no page asserts and no tool reads (issue #17 decides it). `REQUIRES_TOOL`
 was in that state until data 713, when the recipe-to-tool link the
 ingester had been writing as `USES` was given its ontology name.
 `npx c64-kb health` prints the live node and edge figures; they are not

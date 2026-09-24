@@ -11,9 +11,12 @@ on:
 permissions:
   contents: read
 
+# A pull request's newer push replaces its older run. On main every commit
+# gets a full run: two sessions push there minutes apart, and cancelling
+# left no finished run at all (five cancelled in a row, 2026-09-24).
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -86,12 +89,23 @@ jobs:
           distribution: temurin
           java-version: "21"
       - run: npm ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/kickass/KickAssembler.zip
+          key: kickassembler-5.25-9ef752c12b25f64b
+      # theweb.dk once served a file that failed the checksum (run
+      # 35944152577) while the same URL was fine seconds later: retry.
       - name: KickAssembler 5.25
         run: |
           mkdir -p .tools/kickass && cd .tools/kickass
-          curl -sfL -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip
-          echo "9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6  KickAssembler.zip" | sha256sum -c -
-          unzip -q KickAssembler.zip KickAss.jar
+          sum=9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6
+          for i in 1 2 3 4 5; do
+            echo "$sum  KickAssembler.zip" | sha256sum -c --status - 2>/dev/null && break
+            curl -sfL --retry 3 -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip || true
+            sleep $((i * 5))
+          done
+          echo "$sum  KickAssembler.zip" | sha256sum -c -
+          unzip -q -o KickAssembler.zip KickAss.jar
       - run: sudo apt-get install -y -qq cc65
       # Oscar64 is skipped (--allow-missing) until issue #25 pins a released
       # compiler that reproduces the recipes; today only a locally patched
@@ -117,12 +131,23 @@ jobs:
       - run: >-
           sudo apt-get install -y -qq cc65 build-essential xa65 dos2unix libpng-dev
           pkg-config flex bison libcurl4-openssl-dev python3-pil
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/kickass/KickAssembler.zip
+          key: kickassembler-5.25-9ef752c12b25f64b
+      # theweb.dk once served a file that failed the checksum (run
+      # 35944152577) while the same URL was fine seconds later: retry.
       - name: KickAssembler 5.25
         run: |
           mkdir -p .tools/kickass && cd .tools/kickass
-          curl -sfL -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip
-          echo "9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6  KickAssembler.zip" | sha256sum -c -
-          unzip -q KickAssembler.zip KickAss.jar
+          sum=9ef752c12b25f64b55bafecfabf23dfc90a8216b1a293548b2147ed7c15f55a6
+          for i in 1 2 3 4 5; do
+            echo "$sum  KickAssembler.zip" | sha256sum -c --status - 2>/dev/null && break
+            curl -sfL --retry 3 -o KickAssembler.zip https://theweb.dk/KickAssembler/KickAssembler.zip || true
+            sleep $((i * 5))
+          done
+          echo "$sum  KickAssembler.zip" | sha256sum -c -
+          unzip -q -o KickAssembler.zip KickAss.jar
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/vice-headless
@@ -136,6 +161,45 @@ jobs:
         run: |
           fail=0
           for f in docs/recipes/kickassembler/*.md docs/recipes/cc65/*.md; do
-            node scripts/verify-recipes.ts --file "$f" --allow-missing | tail -1 | grep -q " 0 failed" || { echo "FAILED: $f"; fail=1; }
+            out=$(node scripts/verify-recipes.ts --file "$f" --allow-missing 2>&1)
+            printf '%s\n' "$out" | tail -1 | grep -q " 0 failed" || { echo "FAILED: $f"; printf '%s\n' "$out" | grep -E "^FAIL" ; fail=1; }
           done
           exit $fail
+
+  package:
+    name: the npm package works from an empty folder
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: pack
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: install the tarball into an empty project
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir app && cd app && npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/c64-kb-*.tgz
+          npx c64-kb version
+      - name: start the stores with the package's own command
+        working-directory: ${{ runner.temp }}/app
+        run: npx c64-kb services up
+      - name: Ollama with the embedding model
+        run: |
+          docker run -d --name ollama -p 11434:11434 ollama/ollama:0.34.3@sha256:7ab595e4ead391f6818c7215297781282babe0701f6d9a9f8862ac591360a58b
+          for i in $(seq 30); do curl -sf http://localhost:11434/api/tags > /dev/null && break; sleep 2; done
+          curl -sf http://localhost:11434/api/pull -d '{"model":"mxbai-embed-large"}' | tail -1
+      # Two pages keep the job short; the full corpus is the integration job's.
+      - name: ingest, then look something up
+        working-directory: ${{ runner.temp }}/app
+        run: |
+          mkdir docs-mini
+          cp node_modules/c64-kb/docs/hardware/vic-ii-reference.md node_modules/c64-kb/docs/techniques/raster.md docs-mini/
+          DOCS_DIR="$PWD/docs-mini" npx c64-kb ingest --clean
+          npx c64-kb lookup-register D011 | grep -q "SCROLY"
+          npx c64-kb search "stable raster interrupt" | grep -q "stable_raster_irq"
+          test -f "$HOME/.local/share/c64-kb/bm25-vocab.json"
+          test ! -e node_modules/c64-kb/data

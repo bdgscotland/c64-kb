@@ -17,7 +17,7 @@
  *                     may write to zero page
  *   --screen addr     screen RAM, so a store to screen+$3F8+n counts as sprite_n (its pointer)
  * Run:
- *   --cycles n (8000000), --model pal|ntsc, --disk d64 (drive 8), --start addr (else the SYS
+ *   --cycles n (8000000), --model pal|ntsc, --disk d64 (drive 8, a copy), --start addr (else the SYS
  *   address of a BASIC stub, else the first store from outside ROM), --all-ram (also trace
  *   $0400-$CFFF and $E000-$FFF9; default traces $0000-$03FF, $D000-$DFFF, $FFFA-$FFFF),
  *   --labels file (.sym or VICE labels; default: beside the PRG), --log file (read a saved
@@ -37,23 +37,15 @@
  * may-sets of the declared routines, or a store from a ROM window
  * ($A000-$BFFF, $E000-$FFFF) while $01 is unknown, which cannot be attributed. Exit 2 on a usage or setup error.
  * Needs x64sc (X64SC_BIN, .tools/vice-headless, PATH); a run of 8M cycles
- * takes about a second.
+ * takes about a second. The run goes through src/services/vice-batch.ts,
+ * shared with the reverse-engineering tools; unlike the old inline launch,
+ * it refuses a windowed x64sc (exit 2) unless C64KB_ALLOW_WINDOWED=1.
  */
-import { spawnSync } from "node:child_process";
-import {
-  createReadStream,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  copyFileSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { createReadStream, existsSync, readFileSync, copyFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
-import { describeX64sc, resolveX64sc } from "../src/services/vice-bin.ts";
+import { runBatch, ViceBatchError, type BatchResult, type Model } from "../src/services/vice-batch.ts";
 import { Declared } from "./lib/claims-declared.ts";
 import { reportJson, reportText } from "./lib/claims-report.ts";
 import {
@@ -172,34 +164,21 @@ function monCommands(start: number | undefined): string {
   return lines.join("\n") + "\n";
 }
 
-/** Run the PRG and return the path of the trace log (inside `work`). */
-function runVice(prgPath: string, start: number | undefined, work: string): string {
-  const x64sc = resolveX64sc();
-  if (!x64sc) fail(describeX64sc(x64sc));
-  if (!process.env.GSETTINGS_SCHEMA_DIR && existsSync("/opt/homebrew/share/glib-2.0/schemas"))
-    process.env.GSETTINGS_SCHEMA_DIR = "/opt/homebrew/share/glib-2.0/schemas";
-  copyFileSync(prgPath, join(work, "p.prg"));
-  writeFileSync(join(work, "watch.mon"), monCommands(start));
-  const log = join(work, "trace.log");
-  const args = ["-default", "-warp", "+sound", "-autostartprgmode", "1"];
-  if (opt.model === "ntsc") args.push("-model", "ntsc");
-  if (opt.disk) args.push("-8", opt.disk);
-  args.push(
-    "-moncommands",
-    "watch.mon",
-    "-monlog",
-    "-monlogname",
-    log,
-    "-limitcycles",
-    String(Number(opt.cycles)),
-  );
-  args.push("-autostart", "p.prg");
-  // The windowless x64sc also echoes every hit to stdout: discard it (ENOBUFS on a pipe).
-  const r = spawnSync(x64sc.path, args, { cwd: work, stdio: "ignore", timeout: 600_000 });
-  // -limitcycles ends the run with exit status 1.
-  if (r.status !== 0 && r.status !== 1) fail(`x64sc exited ${String(r.status)} ${String(r.error ?? "")}`);
-  if (!existsSync(log)) fail(`x64sc wrote no monitor log at ${log}`);
-  return log;
+/** Run the PRG in VICE (src/services/vice-batch.ts) and return the result positioned at the trace log. */
+async function runVice(prgPath: string, start: number | undefined): Promise<BatchResult> {
+  const model: Model = opt.model === "ntsc" ? "ntsc" : "pal";
+  try {
+    return await runBatch({
+      prg: prgPath,
+      monCommands: monCommands(start),
+      cycles: Number(opt.cycles),
+      model,
+      ...(opt.disk ? { disk: opt.disk } : {}),
+    });
+  } catch (e) {
+    if (e instanceof ViceBatchError) fail(e.message);
+    throw e;
+  }
 }
 
 async function feedFile(watch: ClaimsWatch, path: string): Promise<void> {
@@ -227,13 +206,19 @@ function watchFor(start: number | undefined, declared: Declared): ClaimsWatch {
 
 /** Run VICE (or read --log) and feed every hit to the watch. */
 async function traceInto(watch: ClaimsWatch, prgPath: string, start: number | undefined): Promise<void> {
-  const work = mkdtempSync(join(tmpdir(), "claims-watch-"));
+  let result: BatchResult | undefined;
+  let log: string;
+  if (opt.log) {
+    log = opt.log;
+  } else {
+    result = await runVice(prgPath, start);
+    log = result.log;
+  }
   try {
-    const log = opt.log ?? runVice(prgPath, start, work);
     await feedFile(watch, log);
     if (opt["keep-log"] && !opt.log) copyFileSync(log, opt["keep-log"]);
   } finally {
-    rmSync(work, { recursive: true, force: true });
+    result?.dispose();
   }
 }
 

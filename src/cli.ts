@@ -10,12 +10,15 @@
  * another program (stdout to a pipe is asynchronous).
  */
 
+import path from "node:path";
 import { Command, InvalidArgumentError, Option } from "commander";
 import { health, formatHealth } from "./tools/intelligence.ts";
 import { getVersions } from "./services/versions.ts";
 import { startMcpServer } from "./server.ts";
 import { closeAll } from "./context.ts";
 import { definedOnly } from "./server/defined-only.ts";
+import { reFrameProfile, reIrqChain } from "./tools/re.ts";
+import { registerSetupCommands } from "./cli/setup.ts";
 
 const TOOLCHAINS = ["oscar64", "kickassembler", "cc65"] as const;
 const REGIONS = ["pal", "ntsc", "both"] as const;
@@ -60,6 +63,8 @@ program
   .hook("postAction", async (_program, action) => {
     if (action.name() !== "serve") await closeAll();
   });
+
+registerSetupCommands(program);
 
 program
   .command("version")
@@ -412,6 +417,53 @@ program
       emit(result);
     }
   });
+
+/** --cycles for the RE commands: an integer from 100,000, the MCP tools' own floor. */
+function cyclesArg(value: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 100_000 || n > 200_000_000)
+    throw new InvalidArgumentError("--cycles must be an integer from 100000 to 200000000.");
+  return n;
+}
+
+const reOptions = (c: Command): Command =>
+  c
+    .addOption(new Option("--model <m>", "pal or ntsc").choices(["pal", "ntsc"]).default("pal"))
+    .addOption(new Option("--cycles <n>", "run length").argParser(cyclesArg).default(8_000_000))
+    .option("--disk <d64>", "drive 8 (copied; writes are discarded)");
+
+interface ReOpts {
+  model: "pal" | "ntsc";
+  cycles: number;
+  disk?: string;
+}
+
+const reArgs = (prg: string, o: ReOpts) => ({
+  prg_path: path.resolve(prg),
+  model: o.model,
+  cycles: o.cycles,
+  ...(o.disk ? { disk_path: path.resolve(o.disk) } : {}),
+});
+
+reOptions(program.command("re-irq-chain <prg>")).action(async (prg: string, o: ReOpts) => {
+  const r = await reIrqChain(reArgs(prg, o));
+  console.log(JSON.stringify(r, null, 2));
+  if (!r.ok) process.exitCode = 1;
+});
+
+reOptions(
+  program
+    .command("re-frame-profile <prg>")
+    .requiredOption("--start <marker>", 'e.g. "store:$DC0F=$11"')
+    .requiredOption("--stop <marker>", 'e.g. "store:$DC0F=$00"'),
+).action(async (prg: string, o: ReOpts & { start: string; stop: string }) => {
+  const r = await reFrameProfile({ ...reArgs(prg, o), start: o.start, stop: o.stop });
+  // The MCP reply's structured content carries every sample; the CLI prints the count, not the list.
+  console.log(
+    JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2),
+  );
+  if (!r.ok) process.exitCode = 1;
+});
 
 try {
   await program.parseAsync(process.argv);

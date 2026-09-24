@@ -45,7 +45,7 @@ Inputs:
 
 Output: structured RunGameOutput with state_address, state_size, frames_observed, inputs_fired, trace[{at_ms, bytes}], final_screen, exit_reason.
 
-Limitations: kills any existing x64sc on the machine to ensure clean state. Assumes x64sc binary is on PATH. Designed for the parallel-input-cell pattern (see loop/demo/unlock-trap.c); BP-driven games don't fit.
+Limitations: stops only an x64sc a previous run left on monitor port 6502, so parallel emulator runs are safe. Uses the repo's windowless VICE in .tools/ when present, else x64sc on PATH. Needs the .dbj file oscar64 -g writes, so it runs Oscar64 builds only. Designed for the parallel-input-cell pattern (the program polls a state struct the tool writes into); games that must be driven from breakpoints don't fit.
 
 Example: {"prg_path": "/.../unlock-trap.prg", "dbj_path": "/.../unlock-trap.dbj", "inputs": [{"after_ms": 1000, "offset_in_state": 9, "bytes": [1]}, {"after_ms": 2000, "offset_in_state": 8, "bytes": [1]}], "max_duration_ms": 8000}`,
   inputSchema: RunGameInputSchema,

@@ -104,7 +104,7 @@ Example: {"kind": "technique-register", "limit": 10}`,
 export const reportGapTool = defineTool({
   name: "c64_report_gap",
   title: "Report a knowledge gap",
-  description: `Record a query that produced no useful result, so the gap surfaces in c64_coverage and (later) the dashboard backlog. Agents should call this when they searched but couldn't ground their answer.
+  description: `Record a query that produced no useful result, so the gap surfaces in c64_coverage. Agents should call this when they searched but couldn't ground their answer.
 
 Inputs:
   - query (required): the query that returned nothing useful

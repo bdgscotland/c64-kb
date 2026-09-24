@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 771, schema 31, tools 2.3.1, package 0.16.1.
+Data 775, schema 31, tools 2.4.0, package 0.17.1.
 
 **Issue #55: the first new technique, `sid_env3_filter_envelope`, lands
 (data 771).** Voice 3's hardware ADSR drives the filter cutoff: `$D416` =
@@ -20,6 +20,166 @@ envelope (measured, CIA1 bracket). Its `runs.json` entry adds `-sound
 without a real sound sink reSID does not clock the envelope and `$D41C`
 returns nothing useful (measured). The page's listing is the build's four
 sources folded into one file, and the pins were re-made from it.
+
+**Two RE tools and the disassembly-reference page (data 775, tools 2.4.0,
+RE pilot step 1).** `c64_re_irq_chain` and `c64_re_frame_profile` (`src/tools/re.ts`,
+`src/server/tools-re.ts`; CLI `re-irq-chain`/`re-frame-profile`) run a
+`.prg` headless in VICE x64sc and report its interrupt chain and the
+cycle cost of a marked region as measured observations, each with an id,
+basis and rung, returned whole as MCP structured content with a text
+summary. A run counts from the first execution of the PRG's BASIC SYS
+target; when that never runs within the cycles given the tool refuses
+(reason `no-entry`). Writes before it (the KERNAL's boot) seed the state
+but are not reported. A `disk_path` is copied and the copy attached, so
+writes to it are discarded. Needs the windowless x64sc (`npm run
+vice:headless`). Deferred to later steps: per-routine `prof` totals, the
+frame mode of `c64_re_frame_profile` (it times a region between two
+markers), and the `$D01A`/`$DC0D` mask report. Calibration against this
+repo's own figures is in the next entry.
+`docs/toolchains/disassembly-reference.md` (issue #3) covers `da65`, the
+VICE monitor run in batch (checkpoints, `prof`, `chis`, `memmapshow`), the
+ROM tables (each checked by reading `kernal-901227-03.bin`), the KERNAL
+IRQ/NMI walk and the byte-census technique. #3's own text named "$E5B6
+DOS messages" — wrong: $E5B6 is code, the high operand byte of `LDY
+$0277` at $E5B4; DOS messages are in the 1541 drive ROM from $E4FC, not
+the KERNAL. #3 is closed; its remaining item, a worked `.sid` recipe, is
+split out to #64 (needs a `.sid` this repo may use). Five more issues
+filed from [the RE design
+spec](docs/superpowers/specs/2026-09-23-reverse-engineering-design.md):
+headless joystick input via VICE event recording/playback (#59, related
+#42), legal scope of game studies for maintainer review (#60), and one
+per pilot game — Gridrunner (#61), Uridium (#62), Elite (#63). The spec
+said `memmapshow` needs a VICE rebuild with `--enable-cpuhistory`; Task 7
+measured that it already works in the current windowless build when
+called from a checkpoint after the program runs (the earlier probe called
+it at start-up, before anything had executed), so that rebuild issue was
+not filed.
+- `docs/hardware/c64-memory-map.md`: the KERNAL's VIC-II power-on table
+  is 46 bytes, $ECB9-$ECE6; the page called it 47. The copy loop at
+  $E5A8 (`LDX #$2F`) copies 47 bytes to $D000-$D02E, the 47th being
+  $ECE7, the `L` of the LOAD/RUN string, which lands in $D02E (sprite 7
+  colour). KEYTAB ends at $ECB8, not $ECB9 ($ECB9 is the power-on table's
+  first byte). Both read from `kernal-901227-03.bin`.
+
+**RE tools calibrated against this repo's own measured figures
+(`test/re-calibration.test.ts`).** Before any third-party game is
+studied, `reIrqChain` and `reFrameProfile` (`src/tools/re.ts`) had to
+reproduce three figures this repo already committed, at a fixed 2%
+tolerance; none missed. Measured in VICE x64sc 3.10 (windowless),
+rung 1 — the tools' own trace, not a reading from the recipe pages.
+- `kickassembler/irq-chain`: armed lines exact, `{40, 130, 260}` against
+  the listing's `LINE0`/`LINE1`/`LINE2`. Raw `arms[]` also held `{4, 296}`
+  a few cycles apart — the composite of the dispatcher's two separate
+  writes, `$D012` then `$D011`'s bit 7. `handlers[].armed_before`, the
+  state at each actual entry (the field `test/re-tools.test.ts` already
+  reads for this), is `{40, 130, 260}` and is what the test checks.
+  Since boot writes seed the state, `arms[]` also opens with 55 (the
+  listing's `STA $D011` at $0858 combined with the KERNAL's power-on
+  $D012 of $37), then 40 from its `STA $D012` six cycles later; before,
+  that first arm was null.
+- `oscar64/falling-blocks`, CIA1 timer A, 12,500,000 cycles: measured
+  worst 6,277 against the design page's 6,276 — 1 cycle, 0.02%.
+  `main()` calls `worst_subject()` once, before the scripted game's own
+  per-frame loop (falling-blocks.md lines 525 and 552), and times its
+  RULES and RENDER parts with the same `$DC0E` pair; the run's first two
+  samples were that constructed 20-row case (measured 5,718 and 9,312
+  against the page's own 5,717 and 9,311), not a frame of the game, and
+  are excluded by program order, not by value.
+- `oscar64/platformer-scaffold`, CIA1 timer B, 40,000,000 cycles, fresh
+  `TEST,01` disk: measured worst-in-frame 8,694 against the design
+  page's 8,693 — 1 cycle, 0.01%. The run held one sample over a frame
+  (4,444,670 cycles, the KERNAL's disk I/O on timer B), excluded as
+  `io_frame` per the recipe's own text.
+- `oscar64/simple-shmup` has no CIA timer harness — no `t_start`/
+  `t_stop`, no `$DC0E`/`$DC0F` bracket — confirmed against the source.
+  Data 758's design-validation table below already called
+  `simple_shmup_oscar64` "not timed"; this task found the same thing
+  independently, from the listing, not the table. Nothing was measured
+  here; this is a gap, not a calibration.
+
+**Claims corrected (data 774; #57, #58, #40).** The prose pass of #56
+found about 40 claims that looked wrong; each was settled against VICE,
+the ROM bytes, the assemblers, a measured page or arithmetic, and each
+change says what the page said before. Among them: `CLD` takes 2 cycles
+(timed in VICE), not 1; `$37` is the default memory map, not a way to
+drop the KERNAL (ROM `$FDD5` stores `$E7`); a badline takes 40 to 43
+cycles; sprite DMA uses two-cycle slots from cycle 58 to 10; a multicolour
+pixel is 2 wide and a sprite 7.5 % of the screen width; FILT3 is `$D417`
+bit 2; 6 frames a beat is 500 BPM on PAL and 600 on NTSC; the
+vertical-shooter archetype no longer names horizontal shooters;
+`__attribute__` placement in `art/asset-pipelines.md` was not Oscar64
+syntax (error 3005) and is now `#pragma region`/`section`, compiled and
+checked in the map. The pattern `dim_colors_on_8580` was about sound and
+is now `quiet_audio_on_8580`. Claims no instrument could settle now say
+"not checked here".
+
+**Plain prose, batch 1 of #56 (data 773).** The design, art, music,
+workflow, game-design and root pages lost their machine-written wording:
+reversal openers, importance claims, metaphors, editorial adjectives,
+scaffolding and em-dash asides. `npm run check:prose` passed on all 26
+pages (every code block, table row, heading and metadata line unchanged;
+every number, hex value, code span, link and acronym still there as often
+as before). A clean ingest gives the same 925 nodes and 5,403 edges, every
+node property and edge identical; 46 of 50 top-5 search results for ten
+queries on these pages are unchanged. The pass found about 40 claims that
+look wrong; they were not changed and are listed in #57 and #58.
+
+**Stale pages and tool descriptions found by the README audit (data 772,
+tools 2.3.2).**
+- `docs/ARCHITECTURE.md`: counts removed; the CLI list, node labels,
+  derived edges and analytics location brought up to date; the
+  verification section now covers verify:recipes, claims-watch,
+  verify:templates, CI and releases.
+- Tool descriptions: `c64_search` said the corpus had no cartridge pages
+  (it has cartridges, the REU and the 1541); `c64_recipes_for` called its
+  technique filter a no-op (it matches a Technique name through
+  IMPLEMENTS); `c64_run_game` said it kills any x64sc (only the one on
+  monitor port 6502), assumed x64sc on PATH, and cited a `loop/` directory
+  that does not exist; `c64_report_gap` promised a dashboard nothing
+  tracks.
+- Licence fields: sim6502 is GPL-3.0 on GitHub, not MIT; simen/vice-mcp
+  states no licence, and the page said MIT. The sim6502 page now says its
+  VICE backend's `barryw/vice-mcp` is a VICE fork, not the MCP bridge
+  `c64_run_game` drives.
+- `agent-harness.md` said claims-watch was not on the branch; it is.
+  CLAUDE.md said CI runs every gate but the ingest; it runs neither
+  verify:templates nor anything Oscar64.
+- `docs/figures/fig6-architecture.png` and `fig7-ontology.png` removed:
+  they showed stale counts and nothing linked them.
+
+**Package 0.17.1.** The first release published by
+`.github/workflows/release.yml` through npm trusted publishing, with
+provenance; 0.17.0 (2026-09-24) was published by hand. Since 0.17.0 it
+carries the plainer README, prose batch 1 of #56 and the corrected tool
+descriptions (tools 2.3.2). Trusted publisher on npm:
+`bdgscotland/c64-kb`, `release.yml`, environment `npm`, which only `v*`
+tags can use and which needs the maintainer's approval.
+
+**Licence pass before npm publishing (data 771).** A measured check of
+`docs/` found no copied prose (runs of 25 or more words shared with 108
+cited sources and the classic references are number tables only) and no
+substantial third-party code. Four fixes. `wireframe-ships` reproduced
+Elite's 32 two-letter name tokens (QQ16), commercial game data; it now
+uses its own table of the same shape, so its systems print GUBUDUIS ...
+NEYA instead of TIBEDIED ... LAVE; seeds, coordinates and every cycle
+count are unchanged, re-verified in VICE on both models (0 pixels from
+the model). Three examples in `kickassembler-reference.md` (the SID
+player, `ClearScreen`, `mov`) followed the KickAssembler manual line for
+line; they are rewritten and now share no 8-word run with it, and the
+new SID player was run in VICE against a test tune (one `play` per PAL
+frame). `oscar64-headers-reference.md` said `license: MIT`; Oscar64 is
+GPL-3.0. The SID ADSR table now names its source.
+
+**npm package (package 0.17.0).** An installed package could not do
+anything useful: batch ingest existed only as an npm script in a clone,
+`docker-compose.yml` was not shipped, and state was written inside the
+package folder. `c64-kb ingest` and `c64-kb services up|down|status` now
+exist, and state goes to `$XDG_DATA_HOME/c64-kb` (or
+`~/.local/share/c64-kb`, or `C64_KB_DATA_DIR`) when the package is under
+`node_modules`; a clone still uses `data/`. CI installs the packed
+tarball into an empty folder and runs services, ingest and a lookup. A
+release workflow publishes on a `v*` tag; the first publish and the
+licence check are open in #52.
 
 **A routed game briefing names its starter (tools 2.3.1, package
 0.16.1).** `c64_game_briefing` with no `archetype` routes by the brief's
