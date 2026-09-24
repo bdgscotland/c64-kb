@@ -431,6 +431,7 @@ work; the interrupt's own cost is its handler's.
 ### Recipes
 
 - `recipes/kickassembler/bitfire-dd00-bank.md`: builds a Bitfire disk with `d64write`, switches the VIC bank with plain `$DD00` stores from a raster interrupt while eight files load, and checks each file by checksum; two variants use a read-modify-write and Sparkle's `$DD02` write instead. Run in VICE, PAL and NTSC; not pinned in `runs.json`, pictures under `docs/figures/`.
+- `recipes/kickassembler/bitfire-level-stream.md`: loads each next level of a game while the game runs in a raster interrupt (`in_game_level_streaming`).
 
 ### Sources
 
@@ -596,6 +597,100 @@ Per-part load time (Krill fast loader, 50 KB packed part, ~30 KB after Exomizer 
 ### Recipes
 
 - No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; it is a one-part PRG whose only hand-off is a fire-button JMP to a configured entry address, with no load between parts.)
+
+---
+
+## in_game_level_streaming — Load the next level while the current one is played
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D012, D019, D01A
+**Uses kernal:** (none)
+**Demands:** serial_bus_exclusive
+**Cost:** cycles_per_frame=75030, bytes_data=4128
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-bitfire-level-stream (one level switch: copy of seventeen pages from staging to play buffer and sixteen pointer relocations, screen on, PAL, one call; the level size is the recipe's)
+
+The Cost line is the switch, a one-off at each level's end (3.8 PAL
+frames), not work done every frame; the loading itself costs the game
+nothing but the cycles the loader takes from the main program.
+
+### Why
+
+A game whose levels do not all fit in memory has to load between them,
+and a load stops the game unless the game can run while it happens.
+`multi_load_sequencing` covers the demo form: a part ends and a
+transition effect runs while the next part loads. A game wants no
+transition at all: the next level should already be in memory when the
+player reaches the end of this one.
+
+### How
+
+1. **Put the game in the interrupt.** Everything that must happen every
+   frame (movement, drawing, the frame counter) runs in a raster
+   interrupt. The main program does only the loading and the switch.
+2. **Use a loader whose calls tolerate interrupts.** Bitfire's and
+   Sparkle's load calls block the main program, but the C64 clocks the
+   transfer, so the interrupt can take any cycle and the drive waits
+   (`bitfire_loader`, `sparkle_irq_loader`). A loader that needs every
+   cycle, or that runs with interrupts off, stops the game.
+3. **Load ahead into a staging buffer.** Shortly after a level starts,
+   ask for the next level file. It loads to one fixed staging address;
+   the level being played is in a separate play buffer, untouched.
+4. **Switch at the level's end.** The interrupt sets a flag when the
+   level ends; the main program sees the flag, tells the interrupt to
+   pause the playfield, copies the staging buffer into the play buffer
+   and relocates the level's absolute pointers by the difference of the
+   two addresses, then lets play resume.
+
+### Why it works
+
+The loader call and the game never compete for the same cycles in a way
+that matters: the interrupt pre-empts the loader, and the loader's
+protocol is clocked by the C64, so a delay only slows the load.
+Measured (recipe `bitfire-level-stream`, VICE x64sc 3.10, PAL and NTSC,
+rung 1): three 17-block levels loaded in 39 to 57 frames each, while the
+game ran every one of 930 PAL and 936 NTSC frames; a CIA timer that
+counts real frames found none missed. The same program with the loads
+made under `SEI` missed 126 PAL and 154 NTSC frames.
+
+The staging buffer is what makes the lookahead safe: the next file can
+land while the current level is still read from the play buffer, and a
+Bitfire file has one load address, so every level file is assembled for
+the staging address and relocated on the copy. The relocation is one
+add per pointer high byte, sixteen in the recipe.
+
+The end-of-level signal must be one byte the interrupt writes. A main
+loop that compares a 16-bit counter the interrupt increments can read
+the low byte before a carry and the high byte after it; in one build of
+the recipe that ended levels at frame 256 instead of 300
+(`irq_shared_word_torn_read`, `pitfalls/cpu.md`).
+
+### Variations
+
+**Double buffering without a copy.** Two play buffers and level files
+assembled for alternate buffers remove the copy and its 3.8 frames, at
+the cost of a second buffer and a fixed order of levels. Not built here.
+
+**Packed levels.** Load a Dali-packed file with `link_load_comp`, or load
+it raw and decrunch it at the switch; the load is shorter and the switch
+longer. Not built here.
+
+**Several files per level.** Load the level's graphics, map and music as
+separate files, one per stretch of play, when a level is larger than one
+staging buffer. Not built here.
+
+### Cycle budget
+
+Measured, recipe `bitfire-level-stream` (rung 1): the loads took 39 to 57
+frames for 4,128 bytes each, started at frame 10 of a 300-frame level and
+arrived by frame 67; the switch took 75,024 to 75,030 cycles (3.8 PAL
+frames) for the copy and relocation. The recipe's switch is 10 PAL
+frames and 12 NTSC because it also reads every row back as a check.
+
+### Recipes
+
+- `recipes/kickassembler/bitfire-level-stream.md`: four levels streamed with Bitfire while a raster interrupt runs the game, with a CIA frame counter for missed frames and a `SEI` control. Run in VICE, PAL and NTSC; not pinned in `runs.json`, pictures under `docs/figures/`.
 
 ---
 

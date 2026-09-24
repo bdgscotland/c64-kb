@@ -11,8 +11,9 @@ that leans on it: code that is correct in isolation and fails in context,
 such as a branch cycle count that changes with binary placement, illegal
 opcodes that disappear on CMOS silicon, an indirect-jump address fetch that
 wraps at page boundaries, a signed compare that turns over, an LFSR that
-never leaves zero, and an assembler optimiser that separates a patch from
-the instruction it patches. Each has broken cycle-tight or portable C64
+never leaves zero, an assembler optimiser that separates a patch from
+the instruction it patches, and a 16-bit counter an interrupt changes
+between the two loads that read it. Each has broken cycle-tight or portable C64
 code. (An earlier version of this paragraph counted
 three.)
 
@@ -878,3 +879,88 @@ one place it was written and caught.
   `docs/pitfalls/kernal-and-io.md`: the other Oscar64-specific pitfall,
   for the same "the source is right, the toolchain did something else"
   reading habit
+
+---
+
+## irq_shared_word_torn_read — A main loop that reads a 16-bit counter the interrupt increments can pair a stale low byte with a new high byte
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** in_game_level_streaming
+
+### Symptom
+
+A level, a timer or a wave ends early by a whole low-byte wrap: at frame
+256 instead of 300, and only sometimes. The next build, with nothing
+changed but code elsewhere moving, runs correctly, so the fault looks
+fixed when it is not.
+
+### Mechanism
+
+The 6510 reads a 16-bit value as two separate loads. An interrupt can
+run between them. When the main loop compares a counter that the
+interrupt increments, and the interrupt carries the low byte from `$FF`
+to `$00` between the two reads, the main loop sees the old low byte
+`$FF` and the new high byte: a value 256 too high.
+
+Measured in VICE x64sc 3.10, PAL, in a build of recipe
+`bitfire-level-stream` whose main loop tested for the end of a 300-frame
+level with `lda pos / cmp #<300 / lda pos+1 / sbc #>300 / bcc wait`
+(rung 1). `$FF` passes the low-byte compare and sets carry; a high byte
+of 1 then gives 1 - 1 = 0 with carry set, and the loop exits at frame
+256. `trace exec` put 5,228,492 and 5,228,497 cycles between the second
+and third level switches and between the third and fourth, 266 frames
+including the 10 of the switch, against 310 for the first level. A
+rebuild with the code at other addresses did not show it: whether the
+interrupt lands between the two loads depends on where the loop's
+instructions fall relative to the frame.
+
+### Fix
+
+Make the comparison where the counter is written. The interrupt compares
+both bytes after it increments them, which is atomic from the main
+loop's side, and sets a one-byte flag; the main loop tests the flag.
+This is the form `bitfire-level-stream` ships, and it ran every level
+to 300 frames on PAL and NTSC.
+
+Where the main loop must read the value itself, read the high byte, the
+low byte and the high byte again, and start over if the two high bytes
+differ; or read it with the interrupt masked (`SEI` ... `CLI`), which
+delays the interrupt by the few cycles of the read. Neither was measured
+here.
+
+### Worked example
+
+```asm
+// BAD: two loads; an interrupt between them can make $00FF read as
+// $01FF, and the loop exits at frame 256, 44 frames early
+wait:
+    lda pos
+    cmp #<300
+    lda pos + 1
+    sbc #>300
+    bcc wait
+
+// GOOD: the interrupt compares, the main loop reads one byte
+// in the interrupt, after incrementing pos:
+    lda pos
+    cmp #<300
+    bne not_yet
+    lda pos + 1
+    cmp #>300
+    bne not_yet
+    inc at_end
+not_yet:
+// in the main loop:
+wait2:
+    lda at_end
+    beq wait2
+```
+
+### Cross-references
+
+- Technique `in_game_level_streaming` (`docs/techniques/loaders-packers.md`)
+  and recipe `docs/recipes/kickassembler/bitfire-level-stream.md`: where
+  it was measured
+- Pitfall `signed_compare_bmi_overflow` in this file: the other way a
+  multi-byte compare goes wrong

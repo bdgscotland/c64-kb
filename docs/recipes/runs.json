@@ -1590,6 +1590,9 @@
   "kickassembler/bitfire-dd00-bank": {
     "skip": "boots from the D64 Bitfire's d64write (not in this repository) writes, with Bitfire's installer on it; the verifier can only attach a blank formatted disk. The page's pictures are under docs/figures and its Build section gives the exact commands"
   },
+  "kickassembler/bitfire-level-stream": {
+    "skip": "boots from the D64 Bitfire's d64write (not in this repository) writes, with Bitfire's installer and the four level files on it; the verifier can only attach a blank formatted disk. The page's pictures are under docs/figures and its Build section gives the exact commands"
+  },
   "kickassembler/mci-interlace": {
     "cycles": 12000000,
     "models": [
