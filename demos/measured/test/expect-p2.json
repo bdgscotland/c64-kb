@@ -1,0 +1,142 @@
+{
+  "note": "Part 2 TWIST at frame 300 (t_last = 299 for the column, ball time 300). Points are VIC X and raster line: a bitmap pixel (xb, yb) is vic_x xb + 24, line yb + 51; band line L is bitmap row 36 + L. The three rows are the twister recipe's measured table (first and last lit pixel); the overlap pixels are inside the vector-balls recipe's ball 0 over ball 1 rectangle (PAL columns 232 to 240, rows 131 to 143), which read 96 white and 18 grey here as on the recipe's page. NTSC note: the NTSC half-copy fix means that at frame 300 the top 60 band lines (0..59) carry phase 42 on NTSC (drawn at t=298, even frame) while the bottom 68 lines (60..127) carry phase 43 (drawn at t=299, odd frame). Checks for specific lit-pixel positions on band lines 0 and 40 are PAL-only because those lines are in the top half and their phase-specific positions differ by one step between PAL (phase 43) and NTSC (phase 42). Band line 100 is in the bottom half and passes on both models. The same-area check is PAL-only because the top and bottom halves carry consecutive phases on NTSC, so the band area differs from PAL.",
+  "checks": [
+    {
+      "name": "verdict: selfcheck read the sorted order, the registers, the pointers and three bitmap rows back",
+      "type": "verdict"
+    },
+
+    {
+      "name": "band line 0 (phase 43, PAL): first lit pixel bitmap x 132",
+      "type": "pixel",
+      "vic_x": 156,
+      "line": 87,
+      "colour": 1,
+      "models": ["pal"]
+    },
+    { "name": "band line 0: x 131 unlit", "type": "pixel", "vic_x": 155, "line": 87, "colour": 0 },
+    {
+      "name": "band line 0: solid face 0 spans x 132 to 144 (right edge 145 exclusive, PAL phase 43)",
+      "type": "rect",
+      "vic_x": 156,
+      "line": 87,
+      "width": 13,
+      "height": 1,
+      "colour": 1,
+      "models": ["pal"]
+    },
+    {
+      "name": "band line 0: last lit pixel x 186 (dither under the edge at 188)",
+      "type": "pixel",
+      "vic_x": 210,
+      "line": 87,
+      "colour": 1
+    },
+    { "name": "band line 0: x 187 unlit", "type": "pixel", "vic_x": 211, "line": 87, "colour": 0 },
+
+    {
+      "name": "band line 40 (phase 19, PAL): first lit pixel x 132 (face 2 lights multiples of 4 from 129)",
+      "type": "pixel",
+      "vic_x": 156,
+      "line": 127,
+      "colour": 1,
+      "models": ["pal"]
+    },
+    { "name": "band line 40: x 131 unlit", "type": "pixel", "vic_x": 155, "line": 127, "colour": 0 },
+    {
+      "name": "band line 40: last lit pixel x 168 under the edge at 169 (PAL phase 19)",
+      "type": "pixel",
+      "vic_x": 192,
+      "line": 127,
+      "colour": 1,
+      "models": ["pal"]
+    },
+    {
+      "name": "band line 40: x 169 unlit (face 3 is empty)",
+      "type": "pixel",
+      "vic_x": 193,
+      "line": 127,
+      "colour": 0
+    },
+
+    {
+      "name": "band line 100 (phase 15): first lit pixel x 128",
+      "type": "pixel",
+      "vic_x": 152,
+      "line": 187,
+      "colour": 1
+    },
+    { "name": "band line 100: x 127 unlit", "type": "pixel", "vic_x": 151, "line": 187, "colour": 0 },
+    {
+      "name": "band line 100: last lit pixel x 156 under the edge at 157",
+      "type": "pixel",
+      "vic_x": 180,
+      "line": 187,
+      "colour": 1
+    },
+    { "name": "band line 100: x 157 unlit", "type": "pixel", "vic_x": 181, "line": 187, "colour": 0 },
+
+    {
+      "name": "left of the column is black at the band's top (bitmap x 100 to 127, rows 36 to 49)",
+      "type": "rect",
+      "vic_x": 124,
+      "line": 87,
+      "width": 28,
+      "height": 14,
+      "colour": 0
+    },
+
+    {
+      "name": "ball 1 (near, white, sprite 3 at 224,146) over ball 0 (far, grey, sprite 5 at 213,142): white on top at the overlap's middle",
+      "type": "pixel",
+      "vic_x": 228,
+      "line": 152,
+      "colour": 1
+    },
+    {
+      "name": "ball 1 over ball 0: white on top at the overlap's left, lower half",
+      "type": "pixel",
+      "vic_x": 226,
+      "line": 155,
+      "colour": 1
+    },
+    {
+      "name": "ball 1 over ball 0: white on top, lower half",
+      "type": "pixel",
+      "vic_x": 230,
+      "line": 156,
+      "colour": 1
+    },
+    {
+      "name": "ball 0's grey rim outside ball 1's ellipse (the 18 grey pixels the recipe counts)",
+      "type": "pixel",
+      "vic_x": 226,
+      "line": 147,
+      "colour": 12
+    },
+    {
+      "name": "ball 2 (near, white, sprite 1 at 201,139) over ball 0: white on top",
+      "type": "pixel",
+      "vic_x": 220,
+      "line": 152,
+      "colour": 1
+    },
+
+    {
+      "name": "ball 1's white ellipse: bounding box from its column 1 (search starts at vic_x 225 to keep ball 2's white out)",
+      "type": "sprite",
+      "vic_x": 225,
+      "line": 147,
+      "width": 23,
+      "height": 21,
+      "colour": 1,
+      "search": { "vic_x": 225, "line": 146, "width": 26, "height": 27 }
+    },
+
+    {
+      "name": "bottom half of the band (rasters 147-214, band lines 60-127) is the same on PAL and NTSC: both models draw it with phase 43 at frame 300",
+      "type": "same",
+      "area": { "vic_x": 120, "line": 147, "width": 136, "height": 68 }
+    }
+  ]
+}

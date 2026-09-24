@@ -1,0 +1,43 @@
+{
+  "note": "Part 4 FIRE (colour-RAM fire effect) inside the demo at an arbitrary frame.  Dropped from expect-p4.json: the verdict check (expect-p4 was the standalone test which grades itself at frame 300; the demo shot is not at frame 300), specific colour-RAM cell colours (fire is seeded by LFSR so the exact cell colours vary frame to frame).  Kept: the fire shows non-black colours in the lower half of the screen (rows 15-24, where heat diffuses up from the seed row); the top rows are likely black or very dark since flame has not reached; the border and background are black (D020=0, D021=0 from p4 setup).  2026-09-23: the note's guess that the top rows stay dark was wrong on both models (row 0 is lit up to 784 pixels), and the PAL-versus-NTSC comparison of row 0 compared two different frames of an LFSR fire; replaced by two ink checks on rows the fire always occupies, thresholds measured (I-008).",
+  "checks": [
+    {
+      "name": "verdict absent (mid-demo shot, border is black, program has not reached end screen)",
+      "type": "verdict"
+    },
+    {
+      "name": "border black (D020=0); line 30: NTSC has no row for line 20 and check.py refused the file (I-008)",
+      "type": "pixel",
+      "vic_x": 4,
+      "line": 30,
+      "colour": 0
+    },
+    {
+      "name": "pixel at vic_x 40, line 45 is black: line 45 is in the top border (the screen starts at line 50), so this repeats the border check; the old name called it the top-left of the screen (renamed 2026-09-23)",
+      "type": "pixel",
+      "vic_x": 40,
+      "line": 45,
+      "colour": 0
+    },
+    {
+      "name": "seed row (row 24, lines 242 to 249) is burning: at least 800 lit pixels of 2,560 at any phase (measured 1,160 to 1,648 over eight phases on both models, from the part's first frame to just before its fade; the old check compared row 0 between the two models' different frames and row 0 is lit 0 to 784 pixels depending on phase; verify.sh's first real grading, 2026-09-23, I-008)",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 242,
+      "width": 320,
+      "height": 8,
+      "background": 0,
+      "min": 800
+    },
+    {
+      "name": "lower ten rows (rows 15 to 24, lines 170 to 249) carry the fire: at least 8,000 lit pixels of 25,600 (measured 12,136 at the first frame, 19,648 to 23,928 later)",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 170,
+      "width": 320,
+      "height": 80,
+      "background": 0,
+      "min": 8000
+    }
+  ]
+}

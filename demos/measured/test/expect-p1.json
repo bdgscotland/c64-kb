@@ -1,0 +1,88 @@
+{
+  "checks": [
+    {
+      "name": "verdict",
+      "type": "verdict",
+      "models": ["pal", "ntsc"]
+    },
+    {
+      "name": "logo_rule_pal",
+      "type": "rect",
+      "models": ["pal"],
+      "vic_x": 112,
+      "line": 156,
+      "width": 176,
+      "height": 6,
+      "colour": 1,
+      "_comment": "Solid white rule at band row 13 (raster lines 155-162). matCell(k,13*40+c) returns code 0 (font all-$FF) for every column; colour RAM white at those positions. This reads a known matrix cell value (code 0) through the custom font: if either the matrix content or font is wrong, white pixels are absent. Phase-independent width: the wobble shifts each band line by 0 to 55 pixels (the sine is capped at 55, k_max 6), so the cells of the 40-column rule that are white at every phase run from vic_x 24 + 55 to 343 - 55, and this rect covers 112 to 287 of them. Until 2026-09-23 it was 220 wide (to 331), written for the phase at the 10,000,000-cycle shot of an earlier part 1; when part 1's PAL/NTSC detection was put under SEI the prepare took a different number of frames, the phase at the shot moved, and the rule's right end fell 41 pixels short of 331 on PAL."
+    },
+    {
+      "name": "logo_rule_ntsc",
+      "type": "rect",
+      "models": ["ntsc"],
+      "vic_x": 112,
+      "line": 156,
+      "width": 176,
+      "height": 6,
+      "colour": 1,
+      "_comment": "Same rule on NTSC, the same phase-independent width."
+    },
+    {
+      "name": "top_border_open_pal",
+      "type": "rect",
+      "models": ["pal"],
+      "vic_x": 60,
+      "line": 32,
+      "width": 200,
+      "height": 12,
+      "colour": 0,
+      "_comment": "Lines 32-43 are in the top border area (display starts at line 51). With the h249/h20 border trick, this area shows $D021=0 (black) not border green."
+    },
+    {
+      "name": "top_border_open_ntsc",
+      "type": "rect",
+      "models": ["ntsc"],
+      "vic_x": 60,
+      "line": 32,
+      "width": 200,
+      "height": 12,
+      "colour": 0,
+      "_comment": "Same top-border check on NTSC (display also starts at line 51)."
+    },
+    {
+      "name": "bottom_border_black_pal",
+      "type": "rect",
+      "models": ["pal"],
+      "vic_x": 60,
+      "line": 252,
+      "width": 200,
+      "height": 2,
+      "colour": 0,
+      "_comment": "Lines 252-253: between display end (line 250) and sprite start (line 255). Should be black background, not border green."
+    },
+    {
+      "name": "scroller_pal",
+      "type": "ink",
+      "models": ["pal"],
+      "vic_x": 24,
+      "line": 256,
+      "width": 296,
+      "height": 12,
+      "min": 30,
+      "colours": [1],
+      "_comment": "Eight sprites at Y=254 appear at raster lines 255-274. Lines 256-267 checked. min=30 white pixels verifies rendered glyphs (2x2 doubled from custom font) are visible in the opened lower border."
+    },
+    {
+      "name": "scroller_ntsc",
+      "type": "ink",
+      "models": ["ntsc"],
+      "vic_x": 24,
+      "line": 256,
+      "width": 296,
+      "height": 6,
+      "min": 30,
+      "colours": [1],
+      "_comment": "NTSC: sprite Y=254 gives raster lines 255-262 (8 rows). Lines 256-261 checked."
+    }
+  ]
+}

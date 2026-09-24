@@ -1,0 +1,29 @@
+{
+  "checks": [
+    { "name": "own verdict (border): music_pos = 1 at frame 300 and calls = frames", "type": "verdict" },
+    { "name": "title", "type": "text", "row": 0, "col": 0, "text": "MEASURED MUSIC TEST" },
+    {
+      "name": "order index at frame 300: 300 / 192 = 1",
+      "type": "text",
+      "row": 0,
+      "col": 28,
+      "text": "POS $01"
+    },
+    {
+      "name": "frame count and call count, one call per frame",
+      "type": "text",
+      "row": 1,
+      "col": 0,
+      "text": "FRAME $012C CALLS $012C"
+    },
+    { "name": "shadow readout present", "type": "text", "row": 2, "col": 0, "text": "SHADOW" },
+    { "name": "shadow byte $18: volume 15, no filter", "type": "text", "row": 3, "col": 29, "text": "0F" },
+    { "name": "play cost labels", "type": "text", "row": 4, "col": 0, "text": "PLAY WORST $" },
+    { "name": "verdict line", "type": "text", "row": 5, "col": 0, "text": "RESULT    PASS" },
+    {
+      "name": "readout the same on both models: the call costs the same on PAL and NTSC",
+      "type": "same",
+      "cells": [0, 0, 5, 39]
+    }
+  ]
+}

@@ -105,6 +105,21 @@ fails the gate.
 </tr>
 </table>
 
+## Built from the KB
+
+[MEASURED](demos/measured/README.md) is a five-part demo written from
+the techniques and recipes above and nothing else, run headless under the
+harness on PAL and NTSC with a verdict byte, a frame meter and pinned
+screenshots; its README lists each part's technique, recipe and measured
+frame cost.
+
+<table>
+<tr>
+<td align="center"><a href="demos/measured/README.md"><img src="demos/measured/shots/pal.png" width="220" alt="MEASURED's end screen: each part's worst and typical cycles, the verdict and the frame meter"></a><br><sub>The end screen grades the five parts and prints their cost</sub></td>
+<td align="center"><a href="demos/measured/README.md"><img src="demos/measured/test/shots/p3-pal.png" width="220" alt="Part 3 of MEASURED: bars and rings in the opened side borders over a text scroller"></a><br><sub>Part 3 puts sprites in the open side border over a scroller</sub></td>
+</tr>
+</table>
+
 ## Quick start
 
 You need Node.js 24.12 or later, Docker, and [Ollama](https://ollama.com/)
