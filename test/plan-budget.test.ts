@@ -820,14 +820,15 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.verdict).toBe("fits");
   });
 
-  it("falling-blocks: undetermined, the render and the autorepeat named", () => {
+  it("falling-blocks: undetermined, pal_ntsc_detection named, the render measured", () => {
     // Measured: the scripted game's dearest frame 6,276 PAL / 6,491 NTSC; the built worst subject 15,028 / 15,282.
     const b = plan(recipeTechniques("oscar64-falling-blocks"), { region: "both" });
     const pal = play(b, "PAL");
     // The frontmatter names seven since #22 step 4, every one in play here.
-    // #37 measured frame_sync_loop, joystick_edge_detect and joystick_autorepeat.
-    expect(pal.unknown.sort()).toEqual(["pal_ntsc_detection", "text_mode_overlay_render"]);
-    expect(pal.high).toBe(5888 + 14 + 314 + 76 + 73);
+    // #37 measured frame_sync_loop, joystick_edge_detect, joystick_autorepeat
+    // and text_mode_overlay_render (a lock frame's full repaint, 18,984).
+    expect(pal.unknown.sort()).toEqual(["pal_ntsc_detection"]);
+    expect(pal.high).toBe(5888 + 14 + 314 + 76 + 73 + 18984);
     expect(pal.verdict).toBe("undetermined");
     expect(play(b, "NTSC").verdict).toBe("undetermined");
   });
