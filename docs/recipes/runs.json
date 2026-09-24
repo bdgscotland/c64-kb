@@ -1803,6 +1803,14 @@
       "ntsc": "screenshots/tech-tech-ntsc.png"
     }
   },
+  "kickassembler/tech-tech@moving": {
+    "cycles": 4005000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
   "kickassembler/dysp": {
     "cycles": 10000000,
     "models": [
