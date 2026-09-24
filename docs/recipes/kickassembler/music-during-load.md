@@ -641,12 +641,68 @@ timer, catch-up, raster, catch-up, CIA1 timer; rung 1, not pinned):
 | Raster | 3 | 515 to 549 | 65 to 94 (13 to 17 %) | 606 to 650 | 72 to 115 (12 to 18 %) |
 | Catch-up | 3 | 547 to 548 | 0 | 614 to 654 | 0 |
 
-The same file took up to 35 PAL and 49 NTSC frames longer from one load
-to the next. The long loads are the ones with a gap of 23 to 40 frames,
-and they came only with the raster and catch-up drivers; every CIA1
-timer load was among the shortest. Whether the raster handler or the
-disk's position at the start of the load causes that is not settled by
-these runs.
+### Why FRAMES differs from load to load
+
+An earlier version of this section said the same file took up to 35 PAL
+and 49 NTSC frames longer from one load to the next, with the raster and
+catch-up drivers only, and left the cause open (#112). The loads did not
+take that much longer. `FRAMES` started late.
+
+`FRAMES` counts from the first interrupt after the mode is armed. Soon
+after it is called, LOAD masks interrupts and keeps them masked until the
+first byte arrives, while the drive finds the file: 21 to 44 frames over
+all the runs below. Interrupts were still taken 0.4 PAL and 0.7 NTSC
+frames into the call. If the first interrupt comes before
+that stretch, `FRAMES` includes it and `GAP` shows it. If it comes after,
+`FRAMES` misses it. The page's short loads are the ones that missed it.
+
+Traced in the two pinned runs (trace on stores to `$AE`, LOAD's store
+pointer, and on execution at `$FFD5` and at the handler; the exit
+screenshots stayed pixel-identical to the committed ones; rung 1):
+
+| Run | Driver | LOAD call to return | Masked opening | First interrupt | `FRAMES` |
+|---|---|---|---|---|---|
+| PAL | CIA1 timer | 538.6 | 24.6 | +25.0 | 514 |
+| PAL | Raster | 548.3 | 34.2 | +33.8 | 515 |
+| PAL | Catch-up | 548.3 | 34.2 | +0.4 | 547 |
+| NTSC | CIA1 timer | 634.9 | 29.4 | +30.0 | 605 |
+| NTSC | Raster | 650.8 | 37.3 | +0.7 | 650 |
+| NTSC | Catch-up | 654.2 | 40.6 | +40.1 | 614 |
+
+All figures are frames. "First interrupt" is counted from the LOAD
+call. When the first interrupt falls after the opening, `LOST` misses
+the opening too. In the PAL CIA1 and raster loads and the NTSC CIA1 load,
+about 25, 34 and 29 frames passed with no step before `FRAMES` started.
+`LOST` does not count them.
+
+What really moves the load time is where the disk is in its turn when
+LOAD is called. An experiment build of this listing waited 0 to 19
+steps of about 10,300 cycles before each LOAD, which moves the call
+through one revolution. The masked opening then formed a sawtooth over
+one revolution:
+
+| Model | Opening, after a LOAD | Opening, after the SAVE | Byte transfer (first byte to last) |
+|---|---|---|---|
+| PAL | 26.8 to 36.3 | 21.2 to 30.7 | 510.2 to 510.3 (some 507.1) |
+| NTSC | 32.1 to 44.0 | 25.5 to 36.8 | 601.0 to 609.1 |
+
+A revolution at 300 rpm is 10.0 PAL or 12.0 NTSC frames. The jump at the
+sawtooth's edge is 9.5 PAL and 11.3 NTSC frames, about one revolution.
+That fits the drive just missing the sector it wants and waiting a full
+turn for it; the drive's side was not traced (rung 3). These runs were in
+VICE x64sc 3.10 with the true-drive 1541 and the drive's speed wobble off,
+as `verify:recipes` runs it (rung 1). That is VICE's drive model, not a
+bench 1541.
+
+At nearly the same rotational position the raster and catch-up drivers
+gave the same opening, within 0.05 frames, so the driver makes no
+difference.
+Handler length does, but only to the byte transfer. Padding the handler
+by about 3,850 cycles, a fifth of a PAL frame, lengthened the transfer
+from 510 to 613 to 625 frames. The KERNAL's handshake waits for the C64,
+so every cycle spent in the handler between bytes delays the load. With
+the recipe's short handlers the PAL byte transfer was the same for all
+three drivers, within 0.1 frame.
 
 ## Why this works
 
