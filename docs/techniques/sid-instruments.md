@@ -9,7 +9,11 @@ chip: SID
 
 Techniques that make an instrument out of the chip's own parts: an
 envelope generator, an oscillator or a readback register put to a use
-other than the voice it belongs to. `music-sid.md` covers the foundation
+other than the voice it belongs to, and instruments built from the
+control register's features (sync, ring modulation, the pulse width, the
+gate and the envelope rates) through the #50 music player, each
+measured against the same instrument with the feature off.
+`music-sid.md` covers the foundation
 these stand on (voice setup, filter routing, the play routine convention,
 the two chip revisions); the entries here presuppose it and say so on
 their **Requires:** lines. Every figure carries its rung: measured in
@@ -198,3 +202,111 @@ entry in the tune.
 ### Recipes
 
 - `recipes/kickassembler/sid-env3-filter.md`
+
+---
+
+## sid_hard_restart_drum — A fast-attack drum from noise and pulse rows, hard-restarted, gate before AD and SR
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D40E, D40F, D410, D411, D412, D413, D414
+**Requires:** sid_play_routine_pattern
+**Cost:** cycles_per_frame=47, cycles_per_frame_typical=0
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sid-hr-snare (per play call, the hard restart and the gate-first order against the plain #50 player: phase A against phase B of the FORCE_FAULT build; worst is a restart call, PAL and NTSC alike)
+**Claims:** sid_voice_3 (owns)
+**Claims basis:** derived-listing
+
+Every claim below was measured in VICE x64sc 3.10 (reSID, 6581 and 8580
+models, PAL and NTSC) by the recipe's ENV3 reads, the dump sink's
+register trace and WAV recordings. Nobody has listened to the
+recordings.
+
+### Why
+
+A drum wants its attack on the frame the pattern names. With attack 0
+the envelope reaches its peak in about 2 ms, unless the ADSR bug holds
+it: a rate counter that has run past the attack's period waits for its
+15-bit wrap, 32,768 cycles, 33 ms on PAL (`pitfalls/sid.md`,
+`sid_adsr_bug_8580`). A drum's rest runs a release rate whose period is
+far above attack 0's, so an unprepared hit almost always waits.
+
+### How
+
+- Give the drum AD with attack 0 and SR with sustain 0: here AD `$08`,
+  SR `$08`. Voice 3 in the recipe, so ENV3 can watch it; any voice works.
+- A wavetable of one waveform per row: noise at a high absolute note,
+  two pulse rows falling (absolute C4 and A3, width `$800`), then noise
+  falling and held. Absolute notes make every hit the same drum whatever
+  note the pattern gives.
+- Two frames before each hit, gate off and AD = SR = 0 (the #50
+  player's hard restart, `mu_hr`).
+- On the hit's frame write the control byte with the gate first, then
+  AD, then SR. The recipe's player defers AD and SR to just after the
+  control write (`mu_envp`): 15 and 24 cycles after the gate.
+
+### Why it works
+
+The restart sets release 0, the shortest period, two frames (39,312
+cycles) before the hit, so any wrap it starts is over and the counter
+cycles inside that period when the gate arrives. At the gate's edge the
+registers still hold the restart's zeros, so the attack begins at once;
+AD and SR then set the drum's own rates. Written before the gate, SR's
+release 8 runs the counter past 8 in the 150 cycles to the gate, and AD's
+decay 8 is the period reSID uses for the edge's first cycles
+(`src/resid/envelope.cc`, `writeCONTROL_REG`); either undoes the
+restart.
+
+Measured on the recipe (PAL, eight hits a phase; the start-up wait moved
+through ten values to move the SID's counter phase, 80 hits a row):
+
+| Note-frame order | Hard restart | None |
+|---|---|---|
+| gate, AD, SR | 80 / 80 on time | 10 / 80 |
+| AD, gate, SR | 73 / 80 | 8 / 80 |
+| AD, SR, gate (the #50 player) | 0 / 80 | 1 / 80 |
+
+"On time" is ENV3 above zero when read just after the hit's play call.
+The on-time hits without a restart are each phase's first, which follows
+the harness's `music_init`. Gate first: 80 of 80 on the 6581 model and 35
+of 35 on NTSC. In the recordings, on-time hits reach 30 % of their peak
+0.2 to 1.1 ms after the gate write and late ones 33.0 to 34.8 ms, on
+both models; a late hit plays its first two wavetable rows, the noise
+crack and the first pulse row, into a silent envelope.
+
+The trace a correct build leaves in the dump sink: two calls before
+every hit, `$D413` = `$D414` = 0 with the gate off; on the hit, `$D412`
+with the gate, then `$D413` and `$D414`. A #50-order build writes the
+hit's `$D413` and `$D414` about 150 cycles before `$D412`.
+
+### Variations
+
+**Longer drums.** A release above 0 is safe with the gate-first order:
+the recipe's release is 8. A sustain above 0 would hold a tone until the
+rest (not built).
+
+**The TEST-bit restart.** `sid-reference.md` lists a restart that sets
+TEST on the middle frame to phase-lock the oscillator (not built here).
+
+**Without the player.** Another player that writes AD, SR and the gate
+on one frame can take the same order: gate, then AD, then SR (not built
+here).
+
+### Cycle budget
+
+Per play call, PAL, the listing against the plain #50 player: 0 on 102
+calls of 192, +7 on 54 (the `mu_envp` test on a control write), +28 on
+hit calls, +29 on restart calls, +47 worst. The restart alone (phase A
+against B): +29 on a restart call, +9 on a call that checks for one
+before a rest; the same on NTSC.
+
+### Pitfalls met
+
+- `sid_adsr_bug_8580`: the restart and the write order are the fix; the
+  order is the part the pitfall's hard restart does not cover on its own.
+- `sidasid_emulation_notes`: ENV3 reads need a real sound sink in VICE;
+  the pinned run uses `-sound -sounddev dump`.
+
+### Recipes
+
+- `recipes/kickassembler/sid-hr-snare.md`

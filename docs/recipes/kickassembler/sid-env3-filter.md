@@ -1871,9 +1871,12 @@ the plateau 36 frames, zero at frame 83.
 
 **Cycles (rows 16 to 20).** The play call including its JSR and RTS, net
 of the stopwatch's 5 cycles, on the frame named; the same on the two SID
-models; NTSC 8 higher throughout (its frequency table is built the same
-way; the difference is the one-cycle-later CIA of the 6526, as
-`cia-revision-detect` measures). The copy costs 7 cycles more than the
+models; NTSC 8 higher throughout: its path through the player's skip
+counter is `LDA`, `BEQ` not taken, `DEC`, `BPL`, 15 cycles against
+PAL's `LDA`, `BEQ` taken, 7 (instruction table). An earlier version put
+the 8 down to the 6526's one-cycle-later CIA; `sid-hr-snare`, on the
+same player, reads the same figures on PAL `-model c64` (6526) as on the
+default 8521 (measured). The copy costs 7 cycles more than the
 player's static-cutoff path on every one of 192 frames (A minus B, every
 frame, both models, from the memory dump). Against the plain player (A
 minus C): +1 on 175 frames, +22 where a lead note starts after a hard

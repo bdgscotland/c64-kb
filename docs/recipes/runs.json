@@ -2546,5 +2546,34 @@
       "pal": "screenshots/ufli-underlay.png",
       "ntsc": "screenshots/ufli-underlay-ntsc.png"
     }
+  },
+  "kickassembler/sid-sync-lead": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-sync-lead.png",
+      "ntsc": "screenshots/sid-sync-lead-ntsc.png"
+    }
+  },
+  "kickassembler/sid-hr-snare": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-hr-snare.png",
+      "ntsc": "screenshots/sid-hr-snare-ntsc.png"
+    }
   }
 }
