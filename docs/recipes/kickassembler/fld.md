@@ -52,7 +52,7 @@ from the first that did not. PAL and NTSC.
 // matched and $02 from the first frame that did not.
 
 .const FLD_START  = 50       // first line whose YSCROLL is rewritten
-.const SYNC_PAD   = 11       // measured in VICE, as in stable-raster-irq
+.const SYNC_PAD   = 11       // PAL, as in stable-raster-irq; NTSC would need 13 (see page)
 .const RESULT     = $02ff
 .const IDLE_BYTE  = $3fff    // VIC bank 0: the idle-state fetch address
 
@@ -383,6 +383,22 @@ or 1 by the cycle the line-51 write lands on, never N, and the readout
 row was legible in the build that did not move. The double IRQ is kept
 so that the loop starts on a known line; the per-line placement is
 tolerant, the entry line is not.
+
+The double IRQ settles the cycle on PAL only, and FLD does not need it
+settled. Exec trace of `irq2` and of the `cld` after its `beq`, 8,000,000
+cycles (the monitor's CYC as printed; Bauer's cycle is one more): on PAL
+`irq2` enters on cycle 38 of line 47 in 153 frames and 39 in 102, and the
+`cld` is on cycle 3 of line 48 in all 255. On NTSC the same padding of
+11 leaves the jitter in: entry on 38 in 248 frames and 39 in 39, `cld`
+on 1 and 2 in the same frames, because the two `$D012` reads fall inside
+line 47 on a 65-cycle line. Nothing after the sync counts cycles: the
+`$1B` store lands early in line 48 either way, and the handler then polls
+`$D012` for line 50 and for every gap line, and a poll's exit cycle moves
+by up to seven cycles with its entry phase. `$02FF` stays `$01` on both
+models. A program that does need the cycle on NTSC pads 13 there: the
+same trace with `SYNC_PAD` 13 put the `cld` on cycle 3 in all 287 NTSC
+frames. One constant cannot serve both models; `tech-tech.md` and
+`dysp.md` pick the padding by a region flag set at boot (issue #111).
 
 After the last write, on line 49 + N, YSCROLL is `(51 + N) & 7`. Line
 50 + N does not match, line 51 + N does, and the VIC fetches row 0 there.
