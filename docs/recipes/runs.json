@@ -2005,5 +2005,17 @@
       "-soundarg",
       "/dev/null"
     ]
+  },
+  "kickassembler/kefrens-bars": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/kefrens-bars.png",
+      "ntsc": "screenshots/kefrens-bars-ntsc.png"
+    }
   }
 }

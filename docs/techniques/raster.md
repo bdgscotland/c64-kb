@@ -475,6 +475,115 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 
 ---
 
+## kefrens_bars — Kefrens bars: one pixel line re-shown on every raster line
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** badline_synchronization
+**Raster band:** 44-214 (the kefrens-bars recipe's IRQ line is 44; its handler acknowledges on line 209 to 214, measured)
+**Cost:** cycles_per_line=63, lines_active=129, irq_slots=1
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-kefrens-bars (128 blocks timed by CIA2: 8,062 cycles PAL, 8,318 NTSC)
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/kefrens-bars.md` saw `$D011` written on every
+line of the band with YSCROLL = the next line's `& 7`, and the raster
+compare set once. The recipe's `$0314` vector, CIA2 timer and zero-page
+bytes are its own choices.
+
+### Why
+
+A Kefrens bar screen shows one horizontal line of graphics repeated down a
+band, with a bar stamped into that line once per raster line and never
+erased inside the band, so each line shows every bar drawn above it and
+the bars trail downward. The C64 has no register that repeats a line.
+Redrawing the band as a bitmap each frame costs far more than the 20
+cycles a line the effect uses.
+
+### How
+
+Make every line of the band a badline. On line L, after its badline
+stall, write YSCROLL = `(L + 1) & 7` into `$D011`, so line L + 1 is a
+badline from its first cycle. The VIC then resets its row counter to 0 on
+every line and never advances to the next text row: every line of the
+band shows pixel row 0 of the same text row. Fill that row with 40
+different characters, 0 to 39, and pixel row 0 of those characters, the
+bytes at charset + 8c, is a 40-byte line buffer the CPU can write. In the
+20 cycles between two stalls on PAL (22 on NTSC) the CPU writes the next
+YSCROLL and stores one bar byte into the buffer at the line's column,
+taken from a sine table. The next line shows it, and every line after.
+
+One unrolled block per line, exactly as long as the free cycles: `stx
+$d011`, `ldy pos + k`, `sta buffer,y`, `ldx #next`, and 5 cycles of
+padding on PAL, 7 on NTSC. The badline stall holds the CPU at the same
+place every line, so the block needs no stable raster; the entry only has
+to reach the stall of the first band line before its first write. Clear
+the buffer once per frame, before the band.
+
+### Why it works
+
+Bauer's rules (§3.7.2): RC is reset to 0 in cycle 14 when the badline
+condition holds; VCBASE takes the video counter only in cycle 58 of a
+line with RC = 7. With a badline on every line RC is 0 at cycle 14 and 1
+after cycle 58, never 7, so VCBASE stays at the band's first row. The
+c-accesses re-read the same 40 screen codes each line and the g-accesses
+read row 0 of each character, so a store to a buffer byte before that
+column's g-access shows on that line. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, with the buffer filled with one fixed byte
+(`kefrens-bars` built `:proof=1`): all 129 lines from 51 to 179 showed
+that byte in all 40 cells, and the character's rows 1 to 7 appeared only
+on the seven lines after the band.
+
+The block length is the whole design. Measured (the recipe's sweep): a
+block one cycle shorter than the free cycles fits twice into some windows,
+its second write removes the badline from the current line, and the band
+breaks every 20 lines (PAL) or 22 (NTSC). A longer block drifts later
+every line until its write meets the stall: landing on cycle 12 or 13 the
+badline still starts but the first one or two cells get no c-access and
+show black; on cycle 14 RC is no longer reset and the band is lost.
+
+This corrects the plan in #16, which asked for a badline-free region: the
+repeated line needs a badline on every line, and the cycle budget is the
+20 or 22 cycles a badline leaves.
+
+### Variations
+
+**Bitmap line buffer.** In bitmap mode the g-access reads bitmap +
+8·VC + RC, so with RC = 0 the buffer is again every eighth byte. Not
+measured here.
+
+**Pixel-positioned bars.** Two or three pre-shifted bytes per line put a
+bar anywhere to the pixel; with the `$D011` write that exceeds 20 cycles
+on PAL. Not measured here.
+
+**Colour per column.** Colour RAM of the buffer row gives each column its
+own colour for every line of the band; multicolour gives three colours
+per byte. The recipe uses one multicolour bar byte.
+
+### Cycle budget
+
+The band takes the CPU for every line: 43 cycles of badline stall and 20
+of block on PAL (22 of 65 on NTSC). Measured with CIA2 timer A around
+the recipe's 128 blocks: 8,062 cycles on PAL and 8,318 on NTSC, which is
+128 × 63 and 128 × 65 less the 2 cycles of the timer's own start and stop
+stores, identical in every frame of an 8,000,000-cycle run. The Cost
+line counts the 129 badlines the band shows; the recipe's handler also
+spends lines 44 to 50 clearing the buffer and 180 to 214 rebuilding the
+position table.
+
+### Recipes
+
+- `recipes/kickassembler/kefrens-bars.md` — a 129-line band of multicolour
+  bars from two sine tables, PAL and NTSC, every band line checked against
+  the tables, with the `:proof=1` test and the block-length sweep.
+
+---
+
 ## sideborder_open — Open the side border
 
 **Complexity:** high

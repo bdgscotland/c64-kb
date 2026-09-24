@@ -729,3 +729,71 @@ visible, so it plants the pattern deliberately.
 - Technique: `sideborder_open` and `topbottom_border_open` in `techniques/raster.md`: idle lines as a side effect.
 - Hardware: `hardware/vic-ii-reference.md`, "Idle vs display state" and the `$3FFF` phantom-pixel note.
 - Recipe: `recipes/kickassembler/fld.md`, where the byte is `%10101010` and the stripes are measured.
+
+---
+
+## badline_every_line_block_length — A loop that forces a badline on every line breaks when its block is not exactly the free cycles
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** kefrens_bars
+
+### Symptom
+
+A Kefrens band, or any loop that keeps the VIC on one pixel row by making
+every line a badline, works for a few lines and then breaks: every 20
+lines on PAL (22 on NTSC) a few lines of the character's lower rows show
+through, or from some line on the first one or two cells of every line
+are black, or the band falls apart into rows after a few lines. The code
+looks right and the cycle count was done by hand.
+
+### Mechanism
+
+Each line's block runs between two badline stalls, and the stall
+re-aligns the CPU every line. The block writes YSCROLL for the next line,
+and that write must land after the current line's stall ends (cycle 55)
+and before the next line reaches cycle 12. The CPU has 20 cycles there on
+PAL and 22 on NTSC. Measured in VICE x64sc 3.10 with the `kefrens-bars`
+recipe built `:proof=1` and the block length swept (store trace of
+`$D011`, picture decoded with PIL):
+
+| Block, PAL | Block, NTSC | Where the writes settle | What shows |
+|---|---|---|---|
+| 19 | 21 | anywhere; two or more writes in some lines | The band breaks every 20 (22) lines: the second write in a window takes the badline off the current line |
+| 20 | 22 | PAL 3-6, NTSC 62-64 of the line before or 3-4 | Correct on every line |
+| 21 | 23 | PAL 12; NTSC 3 in the traced frame | Cell 0 black on every line from line 58 (PAL) or 60 (NTSC, in the pictured frame): the late badline skips one c-access |
+| 22 | 24 | 13 | Cells 0 and 1 black |
+| 23 | 25 | 14 | RC not reset: rows 1-7 show, then the band is lost |
+
+A block that is too long drifts later by its excess every line until its
+write meets the stall, and settles there. Where it settles depends on the
+instruction order: in one test build a 21-cycle PAL block settled on
+cycle 3 and was correct.
+
+### Fix
+
+Make every block exactly 20 cycles on PAL and 22 on NTSC: count the
+instructions, pad with `nop` and `bit $ea`, and build a separate band for
+each model. Check with a store trace that every `$D011` write lands on the
+same few cycles below 12 in every frame, and look at the first two cells
+of the band, where a late write shows first.
+
+### Worked example
+
+From `recipes/kickassembler/kefrens-bars.md`, the PAL block:
+
+```text
+    stx $d011                    // 4: YSCROLL for the next line
+    ldy pos + k                  // 4
+    sta $2020, y                 // 5: the bar byte into the line buffer
+    ldx #$18 | ((53 + k) & 7)    // 2: YSCROLL for the line after
+    nop                          // 2
+    bit $ea                      // 3: 20 in all; NTSC adds nop to 22
+```
+
+### Cross-references
+
+- Technique: `kefrens_bars` in `techniques/raster.md`.
+- Technique: `badline_synchronization` in `techniques/raster.md`: the 20 and 22 free cycles.
+- Recipe: `recipes/kickassembler/kefrens-bars.md`, "The block-length sweep".
