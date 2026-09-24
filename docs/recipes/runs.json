@@ -2209,5 +2209,17 @@
       "pal": "screenshots/pinball-ball.png",
       "ntsc": "screenshots/pinball-ball-ntsc.png"
     }
+  },
+  "oscar64/gap-buffer-editor": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/gap-buffer-editor.png",
+      "ntsc": "screenshots/gap-buffer-editor-ntsc.png"
+    }
   }
 }

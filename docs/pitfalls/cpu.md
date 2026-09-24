@@ -11,8 +11,9 @@ that leans on it: code that is correct in isolation and fails in context,
 such as a branch cycle count that changes with binary placement, illegal
 opcodes that disappear on CMOS silicon, an indirect-jump address fetch that
 wraps at page boundaries, a signed compare that turns over, an LFSR that
-never leaves zero, and an assembler optimiser that separates a patch from
-the instruction it patches. Each has broken cycle-tight or portable C64
+never leaves zero, an assembler optimiser that separates a patch from
+the instruction it patches, a NOP patch that leaves a branch testing old
+flags, and an upward copy that overwrites its own source. Each has broken cycle-tight or portable C64
 code. (An earlier version of this paragraph counted
 three.)
 
@@ -948,3 +949,77 @@ instructions after the patch site before choosing.
 - Technique `trainer_and_cheat_hooks` (`docs/techniques/cpu-cycle-tricks.md`): the search, the scan and the patch forms
 - Recipe `docs/recipes/oscar64/trainer-hooks.md`: the three runs above
 - Technique `self_modifying_code` (`docs/techniques/cpu-cycle-tricks.md`): a code patch is a store into an instruction, with the same care about what the following instructions assume
+
+---
+
+## overlapping_copy_wrong_direction — An upward block copy onto a higher, overlapping address repeats its first bytes through the rest
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** text_editor_gap_buffer_and_refresh, memory_fill_copy
+
+### Symptom
+
+A move that works in every test starts to scramble text or data once the
+block is large. In an editor with a gap buffer: jumping the cursor from
+the end of a long document to its start turns most of the document into
+a repeating run of the first few hundred characters, but only when the
+document is nearly as large as the buffer. Short jumps and a large
+free space never show it.
+
+### Mechanism
+
+An ascending copy reads byte `i` of the source and writes byte `i` of the
+destination, lowest first. When the destination starts `d` bytes above
+the source and the two overlap, byte `d` of the source has already been
+overwritten by byte 0 by the time it is read. From there the copy reads
+its own output: the first `d` bytes repeat, period `d`, through the rest
+of the destination.
+
+A gap buffer's left move is that copy. The bytes `buf[gs-k .. gs-1]` go
+to `buf[ge-k .. ge-1]`, `d = ge - gs` above them: the gap. The regions
+overlap exactly when the move `k` is longer than the gap. A buffer with a
+lot of free space hides the fault; the gap shrinks as the document grows,
+and a jump that was safe yesterday is not today.
+
+Measured in the recipe (VICE x64sc 3.10, PAL and NTSC): 1,725 bytes of
+text in a 2,048-byte buffer, gap 323. An ascending block copy of a
+320-byte move gave text equal to the reference. The ascending copy of the
+full 1,725-byte jump left 1,239 bytes different from the reference. The
+byte-at-a-time move, highest address first, left 0.
+
+### Fix
+
+Choose the direction from the addresses: when the destination is above
+the source, copy from the top down; when it is below, from the bottom
+up. For a gap buffer that is fixed per direction: moving left copies
+downward from the top (`buf[--ge] = buf[--gs]`), moving right copies
+upward (`buf[gs++] = buf[ge++]`). In C, `memmove` must handle overlap and
+`memcpy` need not; check what the library's routine does before using
+it for a gap move. In assembler, the descending loop is on
+`memory_fill_copy`.
+
+### Worked example
+
+```c
+// BAD: one ascending copy for a left move of k bytes
+s = buf + gs - k;  d = buf + ge - k;
+while (k--) *d++ = *s++;        // wrong when k > ge - gs
+
+// GOOD: highest byte first
+s = buf + gs;  e = buf + ge;
+while (k--) *--e = *--s;
+```
+
+```text
+text 1,725 bytes, buffer 2,048, gap 323
+ascending copy, move 320     bytes differing: 0
+ascending copy, move 1,725   bytes differing: 1,239
+descending move, 1,725       bytes differing: 0
+```
+
+### Cross-references
+
+- Technique `text_editor_gap_buffer_and_refresh` (`docs/techniques/text.md`): the gap buffer and its two move loops
+- Recipe `docs/recipes/oscar64/gap-buffer-editor.md`: the three moves above
+- Technique `memory_fill_copy` (`docs/techniques/cpu-cycle-tricks.md`): the overlapping move both ways in assembler, measured on a page

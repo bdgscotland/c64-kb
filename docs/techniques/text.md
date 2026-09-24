@@ -1117,3 +1117,71 @@ measured here. The resident part is 267 bytes including the timer latch
 ### Recipes
 
 - `recipes/kickassembler/basic-wedge.md` — `&B` and `&C` behind the $0308 vector with the $0300 hook for `THEN`, a test program typed through the KERNAL queue that exercises a plain statement, the command alone, after a colon, after `THEN`, an unknown letter (the ROM's error) and a timed 1,000-iteration loop with the wedge off and on, verdict at `$02FF`, PAL and NTSC
+
+## text_editor_gap_buffer_and_refresh — An editor's text in a gap buffer, and redrawing only the line that changed
+
+**Complexity:** medium
+**Region:** both
+
+### Why
+
+A word processor or a source editor holds more text than the screen
+shows and inserts at the cursor on every key. In a flat array each key
+typed near the start shifts the whole rest of the text up one byte; at
+1,700 bytes that is 85,000 cycles in the recipe's C, four PAL frames for
+one letter. Redrawing the whole text area after each key costs as much
+again. Both costs grow with the document, and the typist feels them.
+
+### How
+
+**The gap buffer.** One array holds the text before the cursor at its
+bottom and the text after the cursor at its top. The free space between
+is the gap, and the cursor is its lower edge (`gs`); `ge` is its upper
+edge.
+
+- **Type** a character: store it at `gs`, add one. No other byte moves.
+- **Backspace**: subtract one from `gs`. **Delete** forward: add one to
+  `ge`.
+- **Move the cursor left** by one: take the byte below the gap and put
+  it at the top of the gap (`buf[--ge] = buf[--gs]`). **Right**: the
+  reverse (`buf[gs++] = buf[ge++]`). A jump of `k` characters moves `k`
+  bytes, once, however far away the next edit is.
+- **Read** character `i` of the text: `buf[i]` below `gs`, else
+  `buf[i + (ge - gs)]`. Saving, searching and drawing walk the two
+  halves in turn and skip the gap.
+
+The move loops go one byte at a time in the direction shown, which is
+safe for any distance. A block copy that always runs upward is not:
+moving the gap left by more than its own size copies a region over
+itself (`overlapping_copy_wrong_direction`, `pitfalls/cpu.md`).
+
+**The refresh.** Keep the screen row of the cursor line and the text
+index of the first line on screen. After a key that stays within a line,
+redraw that line only, from its first character to the next newline, and
+pad the row with spaces. After a key that adds or removes a newline,
+redraw from the cursor's row to the bottom, or scroll the rows below
+with a screen copy and draw the one new row. Redraw everything only
+when the view moves by more than a row. The recipe has no soft wrap: a
+line longer than 40 characters is cut at the edge. A wrapping editor
+keeps a table of where each screen row starts and redraws from the
+changed row until the table stops changing.
+
+**Where the gap goes in memory.** The recipe uses a 2 KB array. A real
+editor takes all free RAM, `$0801` up to the I/O area or beyond with the
+BASIC ROM banked out (`memory-banking.md`), and reports a full buffer
+when `gs` meets `ge`.
+
+### Why it works
+
+A key typed at the start of a 1,700-byte text took 101 cycles in the
+gap buffer and 85,058 in the flat array (PAL; 85,565 NTSC), measured in
+the recipe with CIA1 timers A and B. The gap buffer pays for its moves
+instead: the cursor jump from the end of a 1,725-byte text to its start
+took 71,522 cycles on PAL, once. Typing is local, so most moves are a
+few bytes. The same scripted edits applied to both stores gave identical
+text. Redrawing one line took 5,095 cycles on PAL against 74,594 for 16
+rows (measured in VICE x64sc 3.10; NTSC 4,880 and 75,505).
+
+### Recipes
+
+- `recipes/oscar64/gap-buffer-editor.md` — a 50-line document, a scripted edit session on a gap buffer and a flat-array reference compared byte for byte, one keystroke timed in each, the cursor jump timed, one-line and full redraws timed, and the block-copy corruption measured; PAL and NTSC
