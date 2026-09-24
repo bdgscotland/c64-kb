@@ -6,15 +6,14 @@ category: raster
 
 # Raster and Badline Pitfalls
 
-The pitfalls in this document share a common thread: they all stem from
-the VIC-II's asynchronous relationship with the CPU. The chip runs on the same
-clock but does not wait for the CPU to finish what it is doing. Badlines steal
+These pitfalls come from the VIC-II sharing the bus with the CPU. The chip
+runs on the same clock but does not wait for the CPU to finish what it is
+doing. Badlines steal
 cycles without warning. The raster compare register wraps silently at line 255.
 Sprite DMA freezes the CPU mid-instruction. The stable-raster polling technique
-(and its two-handler `double_irq` refinement) exists precisely because the
-first IRQ you enable has unpredictable entry timing. Each pitfall below has
-caused demo coders and game developers to lose hours to glitches that look random but are in fact completely deterministic once
-you know the mechanism.
+(and its two-handler `double_irq` refinement) exists because the first IRQ
+enabled has unpredictable entry timing. Each glitch below looks random and is
+deterministic once the mechanism is known.
 
 ---
 
@@ -27,18 +26,17 @@ you know the mechanism.
 
 ### Symptom
 
-The raster IRQ handler runs correctly during development, then silently breaks
+The raster IRQ handler runs correctly during development, then breaks
 every 8 lines. Color bars bleed across line boundaries. Sprite Y-position writes
-arrive one scanline late. A tight per-line loop that works in isolation suddenly
-takes 40 extra cycles at unpredictable intervals. The glitch looks like random
-jitter but repeats at exactly 8-line intervals because the underlying cause is
-perfectly periodic.
+arrive one scanline late. A tight per-line loop that works in isolation takes
+40 extra cycles on some lines. The glitch looks like random jitter but repeats
+at 8-line intervals.
 
 ### Mechanism
 
 A badline occurs on every raster line where `(raster_line & 7) == YSCROLL`,
 where YSCROLL is the low 3 bits of $D011 (default value 3). With the default
-YSCROLL, badlines fall at raster lines 51, 59, 67 ... 243 — 25 lines per frame
+YSCROLL, badlines fall at raster lines 51, 59, 67 ... 243: 25 lines per frame
 in both regions (the window $30-$F7 and the 25 character rows do not depend on
 frame length; an earlier version of this entry said 24 on NTSC). On each
 badline, the VIC-II must fetch the 40 screen code bytes for the character row
@@ -57,8 +55,8 @@ DMA is on top of that: each active sprite takes two bus cycles at the end of
 the line (cycles 58-63 for sprites 0-2, 1-10 of the next line for 3-7), with BA
 dropping at cycle 55, three cycles before the first (an earlier version of this
 entry put sprites 0-2 at 55-62 and then counted the BA lead-in a second time),
-so a badline with all eight sprites active leaves the CPU almost nothing — one
-guaranteed cycle; see `vic_bus_takeover_on_dma` below for the measurement.
+so a badline with all eight sprites active leaves the CPU almost nothing (one
+guaranteed cycle); see `vic_bus_takeover_on_dma` below for the measurement.
 
 ### Fix
 
@@ -72,7 +70,7 @@ Two approaches, often combined:
 2. **DEN off for the whole frame:** the VIC latches DEN once, during raster
    line $30 (48); if it is clear then, no line of that frame is a badline and
    the display is blank. Clearing DEN later in the frame does *not* stop the
-   remaining badlines — an earlier version of this entry said it did. Sprite
+   remaining badlines; an earlier version of this entry said it did. Sprite
    DMA still occurs either way.
 
 3. **YSCROLL steering for a region:** on each line of the region write $D011
@@ -157,31 +155,31 @@ target resolves to target+256 — that exists on PAL only for targets 0-55 (NTSC
 only $D012, each handler inherits whatever RST8 the previous one left, so
 alternate splits land 256 lines away, or the chain stalls on a target above the
 last line and the frame rate appears to halve. (An earlier version of this
-entry said a single stale write could fire twice per frame; it cannot — see
+entry said a single stale write could fire twice per frame; it cannot. See
 Mechanism.)
 
-On NTSC the effect is more immediately visible: the frame is only 263 lines
+On NTSC the effect shows sooner: the frame is only 263 lines
 (6567R8; 262 on the 6567R56A), so lines 256-262 are ordinary visible
 bottom-border lines (the NTSC vertical blank is lines 13-40, per
 `docs/hardware/pal-ntsc-reference.md`; an earlier version of this entry called
 256-262 "vertical blank"), and any bottom-border effect crosses line 255 without
-deliberately targeting high line numbers — a handler that chains forward by
+deliberately targeting high line numbers: a handler that chains forward by
 setting `$D012 = next_line` forgets the 9th bit and wraps to `next_line - 256`.
 
 ### Mechanism
 
 The VIC-II's internal raster counter is 9 bits wide. $D012 holds the low 8 bits
-of the raster compare target. The 9th bit (the high bit) is bit 7 of $D011 —
+of the raster compare target. The 9th bit (the high bit) is bit 7 of $D011,
 the RST8 bit. When the compare target is 256 or higher, RST8 must be set. When
 the compare target is 255 or lower, RST8 must be clear.
 
-The failure mode is: code writes only `STA $D012` with the low byte of the
+The fault: code writes only `STA $D012` with the low byte of the
 desired line, and never touches $D011 bit 7. On the first frame this works if
 the target line is below 256. On a line at or above 256, the actual compare
 target the VIC sees is `desired_line & 0xFF` with the 9th bit from whatever
 $D011 bit 7 happens to be. If it is clear, the compare fires at line
-`target - 256` instead of `target`. One IRQ fires per frame, at the wrong line
-— the compare is a single 9-bit value, so it can never match two lines in one
+`target - 256` instead of `target`. One IRQ fires per frame, at the wrong line:
+the compare is a single 9-bit value, so it can never match two lines in one
 frame. (An earlier version of this page said two IRQs fire per frame; measured
 in VICE x64sc: RST8=0/$D012=4 gives exactly one IRQ per frame at line 4,
 RST8=1/$D012=80 gives none, on both PAL and NTSC.) Two firings only occur when
@@ -274,43 +272,43 @@ set_irq_dynamic:
 
 ### Symptom
 
-A raster effect that works perfectly after the first few frames is unstable on
-the very first frame after IRQ enable. Color splits land 1-7 pixels to the right
+A raster effect that works after the first few frames is unstable on the
+first frame after IRQ enable. Color splits land 1-7 pixels to the right
 on the first frame. A sprite multiplex update on the first frame puts sprites
 one line too low. The symptom disappears by frame 2. Alternatively, a raster
 effect coded without the stable-raster polling technique shows a permanent 0-7
-cycle wobble that makes split lines look "fuzzy" — a 1-7 pixel horizontal smear
+cycle wobble that makes split lines look fuzzy: a 1-7 pixel horizontal smear
 on every frame where the interrupted instruction happened to be long.
 
 ### Mechanism
 
-The 6510 does not sample the /IRQ line between clock cycles — it samples it at
+The 6510 does not sample the /IRQ line between clock cycles; it samples it at
 the end of each instruction. When the VIC-II asserts the IRQ line, the CPU
 finishes whatever instruction it is currently executing, then begins the 7-cycle
 interrupt entry sequence (two dummy cycles, push PCH, push PCL, push P, fetch
 vector low, fetch vector high; the handler's first opcode fetch is its own first
-cycle — an earlier version of this entry counted it inside the 7). The number
+cycle; an earlier version of this entry counted it inside the 7). The number
 of cycles between the VIC asserting the line and the handler's first instruction executing depends on how many cycles
 were left in the interrupted instruction. A 2-cycle `NOP` interrupted on its
 last cycle adds 1 cycle of delay; a 6-cycle `STA ($zp,X)` interrupted on its
 first cycle adds 5 cycles of delay. The total jitter window is 0-6 cycles for
-common instructions (the 7-cycle `BRK` is a pathological case that adds up to
+common instructions (the 7-cycle `BRK` adds up to
 6 cycles, but is not found in normal runtime code).
 
-On the very first frame after enabling IRQs (writing $D01A bit 0 = 1), the CPU
-has no idea what instruction it will be executing when the first IRQ fires. The
+On the first frame after enabling IRQs (writing $D01A bit 0 = 1), the CPU
+may be executing any instruction when the first IRQ fires. The
 jitter is random within the 0-6 cycle window. On subsequent frames, if the
 main loop is a tight `JMP *` or a counted NOP sled, the interrupted instruction
 is always the same (a 3-cycle `JMP`, leaving 0-2 cycles of jitter, or a 2-cycle
-`NOP`, leaving 0-1 — an earlier version of this entry called `JMP *` a 2-cycle
+`NOP`, leaving 0-1; an earlier version of this entry called `JMP *` a 2-cycle
 branch; a taken same-page branch is itself 3 cycles), so the jitter narrows
-— but it does not disappear. The polling loop bounds the jitter to one loop
+but does not disappear. The polling loop bounds the jitter to one loop
 iteration (0-8 cycles for the 9-cycle `LDA/CMP/BNE` form); the `double_irq`
 variant then removes that residual before the cycle-tight register writes begin.
 That is why `stable_raster_irq` is on both metadata lines above: the pitfall
 is what a raster interrupt does before the technique is applied to it (the
-naive form), and the technique's polling loop — with `double_irq` for the
-last cycle — is the cure.
+naive form), and the technique's polling loop (with `double_irq` for the
+last cycle) is the cure.
 
 ### Fix
 
@@ -326,7 +324,7 @@ polling pattern:
    poll $D012 in a tight loop until the counter increments to N. (An earlier
    version of this entry said to set $D012 to N here; that re-arms the compare
    for a line the handler is still polling through, latches a second IRQ that
-   is never acknowledged, and re-enters the handler straight after RTI — see the
+   is never acknowledged, and re-enters the handler straight after RTI; see the
    worked example.)
 3. Once $D012 reads N, execute a counted NOP pad to place the writes at the
    desired cycle to within the loop's residual (the pad sets the mean position
@@ -336,10 +334,10 @@ polling pattern:
 The polling loop at step 2 bounds whatever jitter existed on entry to the
 handler. By the time the loop exits ($D012 has just incremented to N), every
 subsequent instruction runs within one poll iteration of the start of line N.
-The initial first-frame jitter is bounded the same way — the first handler
+The first-frame jitter is bounded the same way. The first handler
 entry may be anywhere within line N-1, but the polling loop absorbs that and
-exits within one poll iteration of the start of line N regardless — but not at
-one fixed cycle: the exit cycle still depends on where in the iteration the
+exits within one poll iteration of the start of line N regardless, though not
+at one fixed cycle: the exit cycle still depends on where in the iteration the
 entry fell.
 
 ### Worked example
@@ -383,7 +381,7 @@ irq_stable_setup:
     rti
 ```
 
-The key insight: the `LDA $D012 / CMP / BNE` loop quantises the jitter window
+The `LDA $D012 / CMP / BNE` loop quantises the jitter window
 to its own 9-cycle period; it does not remove it (an earlier version of this
 entry said the loop "consumes" the jitter and the writes land at a fixed cycle;
 measured in VICE x64sc, the exit phase spread equalled the entry spread). The
@@ -422,8 +420,8 @@ IRQ").
 
 ### Symptom
 
-A raster IRQ that runs cleanly with no sprites enabled suddenly slips its timing
-when sprites are turned on. The slip is not random — it is proportional to the
+A raster IRQ that runs cleanly with no sprites enabled slips its timing
+when sprites are turned on. The slip is not random: it is proportional to the
 number of sprites active on the scanline where the IRQ handler runs. With 8
 sprites active on the handler's line, the CPU appears to freeze for approximately
 19 cycles mid-instruction, then resume. Register writes that were cycle-tight
@@ -456,7 +454,7 @@ lines 100 and 200, DEN off, sprites at Y=150 (21 DMA lines): 105/147/231/399
 cycles stolen over the 21 lines of 1/2/4/8 sprites (= 21 × 5, 7, 11, 19), and
 210 for sprites 0 and 7 as two BA groups (21 × 10). The 3 lead-in cycles per
 group being write-usable is from the VIC-II reference and Bauer's model, not
-measured here. Sprite DMA and badline costs simply add: 8 sprites plus 5
+measured here. Sprite DMA and badline costs add: 8 sprites plus 5
 badlines over lines 140-180 measured 614 = 399 + 5 × 43.
 
 With all 8 sprites enabled and active on a single line, the VIC steals 3 cycles
@@ -464,7 +462,7 @@ of BA + 8 × 2 s-access = 19 cycles from the CPU on that line. On PAL, this
 reduces the effective CPU budget from 63 cycles to 44 cycles. On NTSC, from 65
 cycles to 46 cycles.
 
-The CPU cannot choose when the stall happens — it is determined by the VIC's
+The CPU cannot choose when the stall happens; it is determined by the VIC's
 internal DMA schedule, which runs on fixed cycle slots within each line. If an
 instruction spans a DMA window, the CPU stalls mid-instruction and resumes when
 the VIC releases the bus. The instruction completes correctly but takes more wall
@@ -505,8 +503,8 @@ Strategies:
    is not currently showing.
 
 4. **Use the sprite DMA window deliberately.** Some advanced techniques
-   (sprite-crunch, sprite stretching) exploit the DMA cycle slots. Out of scope
-   here, but the point is the DMA slots are fixed and therefore predictable.
+   (sprite-crunch, sprite stretching) exploit the DMA cycle slots. They are out of
+   scope here; the DMA slots are fixed and therefore predictable.
 
 ### Worked example
 
@@ -549,10 +547,10 @@ sprite_irq_correct:
   sprites per frame; its cycle budget section discusses DMA accounting.
 - Register: `D015` (SPENA — sprite enable bits; each set bit triggers DMA
   on active lines for that sprite).
-- Pitfall: `badline_cycle_loss` — the two cycle thieves stack, not overlap: a
+- Pitfall: `badline_cycle_loss` — the two costs add and do not overlap: a
   badline on a line with 8 active sprites leaves the CPU one cycle on PAL
   (cycle 11), plus at most the three write-only cycles 12-14 if the instruction
-  in flight is writing then — 4 at best, never the 20-23 an earlier version of
+  in flight is writing then: 4 at best, never the 20-23 an earlier version of
   this entry gave. Measured in VICE x64sc: 43 (badline) + 19 (eight sprites) =
   62 of 63 cycles stolen on every line where both occur (915 - 516 - 399 = 0
   over two overlapping lines; 1314 - 516 - 798 = 0 over five). The sprite
@@ -579,7 +577,7 @@ panel's grey and width but stray light-blue character pixels where the rule
 row should be. The rest of the panel is correct. The flicker repeats every
 eight pixels of scroll. Measured with PIL on the recipe's `USE_TABLE = 0`
 build at YSCROLL 6, PAL and NTSC: line 215 x 39-351 on blue, lines 216-221
-x 32-351 on grey (98, 98, 98), line 222 on identical to the reference.
+x 32-351 on grey (98, 98, 98), line 222 onward identical to the reference.
 
 ### Mechanism
 

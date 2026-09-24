@@ -6,23 +6,18 @@ category: sid
 
 # SID Pitfalls
 
-The MOS 6581/8580 SID chip has a register interface that looks
-straightforward on paper but hides several hardware-level traps that
-catch even experienced composers and coders. These pitfalls fall into
-two clusters: the write-only nature of the entire register bank
-(which forces a shadow-RAM discipline on all SID code), and the
-substantial behavioral differences between the two SID revisions
-(which means a song or digi routine calibrated on a 6581 can fail
-audibly on an 8580, or vice versa). The ADSR-reset bug and the voice-3
-silent-bit divergence are both in the second cluster, and both have
-safe workarounds that are easy to apply once you understand the
-underlying mechanism. SID replacements that do not emulate the read side (the
+The MOS 6581/8580 SID chip's pitfalls fall into two clusters: the
+write-only register bank (which forces a shadow copy in RAM for all SID
+code), and the behavioral differences between the two SID revisions (a
+song or digi routine calibrated on a 6581 can fail audibly on an 8580,
+or vice versa). The ADSR-reset bug and the voice-3 silent-bit divergence
+are both in the second cluster, and both have workarounds. SID replacements that do not emulate the read side (the
 SwinSID) are a separate case: `sid_replacement_d41b_unreadable`.
 
 All pitfalls in this document apply equally to PAL and NTSC
 systems; none of them are timing-region-specific. The filter cutoff
-curve pitfall is the most musically impactful and deserves particular
-attention when writing cross-compatible SID music.
+curve pitfall has the largest audible effect on SID music written for
+both chips.
 
 ---
 
@@ -36,12 +31,12 @@ attention when writing cross-compatible SID music.
 ### Symptom
 
 Code that reads a SID control register expecting to see what was
-previously written instead gets corrupted data — the last byte
+previously written instead gets the last byte
 written to (or read from) the SID, not the register's value (an
 earlier version of this sentence said "the high byte of the read
 address, the last byte the VIC-II fetched, or floating-bus noise";
 neither of the first two ever appears). A read-modify-write pattern like "set bit 3 of
-$D418 without touching the other bits" silently destroys the filter
+$D418 without touching the other bits" destroys the filter
 mode and volume settings if no shadow register is maintained.
 The failure mode is usually silent (the wrong register value takes
 effect immediately, but there is no error signal) or manifests as
@@ -56,12 +51,12 @@ $D400-$D418 (an earlier version of this sentence said 29; $D418 −
 $D400 + 1 = 25, the same count the Fix below uses), followed by four
 read-only registers at $D419-$D41C. The SID has no read path for
 these registers. A read does not float the bus: the chip drives it
-with the byte it last held — the last value written to any of its 32
+with the byte it last held: the last value written to any of its 32
 addresses ($D400-$D41F and every mirror through $D7FF) or the last
 value read from $D419-$D41C. That byte decays to $00 after roughly
 7k cycles on a 6581 and roughly 660k cycles on an 8580 (measured in
 VICE 3.10 reSID with the SID being clocked; real chips also decay but
-were not measured here — see sid-reference.md). It is not the address
+were not measured here; see sid-reference.md). It is not the address
 high byte and not a VIC-II fetch, which is what an earlier version of
 this paragraph said; either way it is not register state and must
 never be used as such. (For testers: in VICE, a run with sound
@@ -69,8 +64,8 @@ disabled (`+sound`) returns $00 from these reads via a fallback path
 and does not emulate this behaviour, and with the dummy driver or
 warp mode the held byte never fades.)
 
-The four read-only registers ($D419-$D41C) are a completely different
-story: POTX ($D419) and POTY ($D41A) return real paddle A/D values;
+The four read-only registers ($D419-$D41C) behave differently:
+POTX ($D419) and POTY ($D41A) return real paddle A/D values;
 RANDOM ($D41B) returns the upper 8 bits of voice 3's oscillator
 accumulator; ENV3 ($D41C) returns voice 3's current envelope level.
 These are the only SID addresses where reads are meaningful.
@@ -95,7 +90,7 @@ mapped 1:1 to the SID register layout. Under BASIC/KERNAL the free
 zero page is only $02 and $FB-$FE, so a 25-byte shadow cannot live
 there; $033C-$03FB is the cassette buffer, free only when tape I/O is
 not in use, or use any RAM above your program. An earlier version of
-this paragraph recommended `$C5` through `$DD` — that block is the
+this paragraph recommended `$C5` through `$DD`; that block is the
 KERNAL's keyboard and screen-editor state ($C5 LSTX, $C6 NDX, $CB-$CD
 key/cursor, $D1-$D6 screen line and cursor, $D9-$F2 the line link
 table; see c64-memory-map.md), and a shadow there corrupts the
@@ -172,23 +167,23 @@ evenly-stepped across the frequency range on an 8580 sounds
 compressed at the low end and widely-spaced at the high end on a
 6581. Two 6581 boards of the same chip revision may produce
 noticeably different filter sounds from the same register values.
-The problem is invisible in code review — the register writes are
-correct — but audible immediately on mismatched hardware.
+Code review cannot find it (the register writes are correct), but it
+is audible at once on mismatched hardware.
 
 ### Mechanism
 
 The 6581 and 8580 implement the same filter architecture (11-bit
-cutoff, 4-bit resonance, shared LP/BP/HP modes) but use fundamentally
+cutoff, 4-bit resonance, shared LP/BP/HP modes) but use
 different analog circuit designs for the cutoff cell.
 
 **6581 filter — non-linear and chip-variable.** The 6581 filter is a
 switched-capacitor design. The relationship between the 11-bit cutoff
 register value and the resulting cutoff frequency in Hz is
-non-linear — roughly sigmoidal on a logarithmic frequency scale.
+non-linear, roughly sigmoidal on a logarithmic frequency scale.
 The low end of the register range (roughly $D416 = $00-$30) produces
 almost no frequency change; the mid-range ($40-$A0) sweeps across
 most of the audible spectrum; the upper range ($A0-$FF) compresses
-back. Additionally, the curve varies substantially between individual
+back. The curve also varies between individual
 6581 chips from different manufacturing batches. The same $D416 value
 of $60 may produce a cutoff of 800 Hz on one 6581 and 1200 Hz on
 another from a different batch. This inter-chip variation is inherent
@@ -204,16 +199,16 @@ is consistent between 8580 chips.
 
 **Resonance.** The 4-bit resonance (RESON, $D417 bits 7-4) controls
 Q differently between chip revisions. At RES=12-15, the 6581 often
-distorts audibly — a characteristic "gritty" resonance that scene SID
-musicians frequently exploit. The 8580 at RES=15 can self-oscillate
+distorts audibly, a "gritty" resonance that scene SID
+musicians use. The 8580 at RES=15 can self-oscillate
 cleanly around the cutoff frequency, producing a sine-like tone that
 is useful as a "fourth voice." A patch tuned at RES=15 for a specific
-6581 timbre typically sounds clean and different on 8580.
+6581 timbre sounds clean and different on 8580.
 
 ### Fix
 
 There is no single software fix that makes the same patch sound
-identical on both chips. The standard approaches are:
+identical on both chips. The approaches:
 
 **Per-chip cutoff tables.** Ship two cutoff frequency tables, one
 calibrated for 6581 and one for 8580. At startup, detect the chip
@@ -223,7 +218,7 @@ table. GoatTracker implements this with its "chip-select" toggle that
 exports per-chip filter tuning. SidFactory II has similar per-chip
 compensation.
 
-**Target one chip explicitly.** For scene-quality demos or game
+**Target one chip explicitly.** For demo or game
 music, choose a target chip and tune all filter patches against that
 chip. Document the target in the .SID header's 16-bit big-endian
 flags word at $76-$77: bits 4-5 of byte $77 give the first SID's
@@ -245,7 +240,7 @@ software: the only readable voice-3 registers are $D41B (OSC3) and
 $D41C (ENV3), and both sit before the filter in the signal path (see
 sid-reference.md, Filter signal flow), so no cutoff, mode or routing
 write changes what they return. An earlier version of this section
-proposed reading ENV3 through the filter, which cannot work — $D41B
+proposed reading ENV3 through the filter, which cannot work: $D41B
 and $D41C sit before the filter; run in VICE reSID, ENV3 read $FF
 with cutoff $00, cutoff $FF, FILT3 = 0 and 3OFF = 1 alike on both chip
 models, and the deleted listing returned "8580-like" on both chips by
@@ -259,10 +254,10 @@ The standard detection routine uses $D41B instead: write $FF to
 $D412, $D40E and $D40F, then write $20 to $D412 (sawtooth, TEST and
 GATE cleared) and read $D41B immediately. The value differs between
 revisions because the two chips reset and restart the accumulator
-differently — measured in VICE x64sc reSID, `-sidmodel 0` returns 3
+differently. Measured in VICE x64sc reSID, `-sidmodel 0` returns 3
 and `-sidmodel 1` returns 2; real-hardware values are unverified here,
 treat them as the same. Detection is imprecise (some SIDs answer
-ambiguously) — use it only to select between precomputed cutoff
+ambiguously); use it only to select between precomputed cutoff
 tables, and offer a settings toggle as the fallback. When testing this
 in headless VICE, the $D41B/$D41C reads are only meaningful with a
 real sound sink (`-sound -sounddev wav -soundarg out.wav`); the usual
@@ -330,11 +325,11 @@ audible on fast-changing note sequences (arpeggios). An earlier version
 of this Symptom also described digi samples coming out "louder, quieter,
 or with a shifted peak on 8580" and players with "envelope timing drift
 on the other chip"; both rested on a per-chip attack-step difference
-that the Mechanism below withdraws — none has been measured.
+that the Mechanism below withdraws; none has been measured.
 
 ### Mechanism
 
-Both the 6581 and 8580 share an ADSR bug rooted in the design of
+Both the 6581 and 8580 share an ADSR bug in
 the 15-bit envelope rate counter. The bug triggers when the CPU
 writes a new (smaller) rate value to $D405 or $D406 at a time when
 the envelope's internal 15-bit rate counter has already counted past
@@ -353,14 +348,14 @@ attack 0 after the counter had run 5,120 cycles stalled the envelope
 attack 1 instead gave 27,173 / 27,350; the rate-0 attack itself takes
 ~2,280 cycles, which is where the 2 ms figure belongs). An earlier
 version of this paragraph said the 6581's wrap at rate 0 was "close
-to the 2 ms attack time" — that confused the attack duration with the
+to the 2 ms attack time"; that confused the attack duration with the
 wrap. Hard restart works by writing AD/SR = 0 two frames before the
 gate: 2 × 19,705 = 39,410 cycles covers the worst-case wrap, one
 frame (19,705) does not.
 
 **8580 behavior and the reset bug.** The 8580 introduced an internal
-difference in the envelope reset path. On hard restart — where the
-code writes AD=0 and SR=0 then clears GATE — the 8580's envelope
+difference in the envelope reset path. On hard restart (the
+code writes AD=0 and SR=0, then clears GATE) the 8580's envelope
 can enter an intermediate "hold at level" state caused by the reset
 bug before it begins the release phase. At rate 0 the envelope steps
 roughly every 9 φ2 cycles on either chip (2 ms / 256 steps = 7.7 µs
@@ -379,8 +374,8 @@ models reach peak within the same poll count), so an earlier version
 of this paragraph, which derived a systematic 1-3 count envelope
 offset on the 8580 from a slower attack step, rested on a premise
 that has been withdrawn. Digi routines do drift between real chips,
-but for other reasons — DC offset, the volume DAC's mixing
-nonlinearity and the filter — not from the attack step rate.
+but for other reasons (DC offset, the volume DAC's mixing
+nonlinearity and the filter), not from the attack step rate.
 
 ### Fix
 
@@ -427,13 +422,13 @@ per-chip digi timing constants (`.byte 15` for the 6581, `.byte 17
 ; empirically measured on 8580 silicon` for the 8580); neither value
 came from a measurement, the only measured figure is one number for
 both chips (~9 cycles per attack step at rate 0, VICE reSID), and the
-listing has been removed rather than corrected — do not keep a
+listing has been removed rather than corrected. Do not keep a
 per-chip constant.
 
 **For music (not digi):** the standard hard restart is sufficient
 for music playback on both revisions. Only digi routines that
-require sub-millisecond envelope-level precision need to care about
-the attack step timing at all, and no per-chip difference in it has
+require sub-millisecond envelope-level precision depend on
+the attack step timing, and no per-chip difference in it has
 been measured.
 
 ### Worked example
@@ -493,7 +488,7 @@ and the two chips show no difference in reSID, so it has been removed.
 - Technique: `digi_8bit_hard_restart` — the hard-restart digi family and
   the measured rate-0 envelope timing (9 φ2 cycles per attack step in
   reSID on both chip models; the exact Hermit/Mahoney register sequences
-  are not documented in this knowledge base — an earlier version of this
+  are not documented in this knowledge base; an earlier version of this
   line promised "full Hermit/Mahoney digi routine documentation")
 - Pitfall: `sid_write_only_registers` — always use shadow for D404 read-modify-write
 
@@ -510,24 +505,24 @@ and the two chips show no difference in reSID, so it has been removed.
 
 Code that configures voice 3 as a silent LFO or random-number source
 by setting $D418 bit 7 (the "3OFF" bit) hears voice 3 leaking
-audibly on some 8580 boards. The leak is a faint but perceptible
-tone or noise — particularly noticeable in quiet passages. Conversely,
+audibly on some 8580 boards. The leak is a faint
+tone or noise, audible in quiet passages. Conversely,
 a "muted melodic" arrangement that intentionally plays a pitched
 voice 3 melody silenced via bit 7 (a known trick on 6581 for adding
 a silent modulator voice) fails on certain 8580 revisions where the
-voice is clearly audible.
+voice is audible.
 
 ### Mechanism
 
 Bit 7 of $D418 (SIGVOL) is documented as "3OFF: disconnect voice 3
 from audio output." The mechanism differs between chip revisions.
 
-**6581 behavior.** On the 6581, the 3OFF bit reliably disconnects
+**6581 behavior.** On the 6581, the 3OFF bit disconnects
 voice 3 from the mixer that feeds the volume DAC. Voice 3's
-oscillator and envelope continue running normally — the oscillator
+oscillator and envelope keep running. The oscillator
 output is still visible at $D41B (RANDOM/OSC3) and the envelope at
-$D41C (ENV3) — but no audio from voice 3 reaches the output pin.
-This is the basis for the classic pattern of using voice 3 as a free
+$D41C (ENV3), but no audio from voice 3 reaches the output pin.
+This is the basis for the pattern of using voice 3 as a free
 LFO or random source without its sound being audible.
 
 **8580 behavior — filter routing caveat applies to both chips.**
@@ -536,8 +531,8 @@ filter), then $D418 bit 7 does NOT silence it on either chip.
 The 3OFF bit only disconnects the bypass path (the direct route from
 the envelope output to the volume DAC that bypasses the filter). A
 filtered voice 3 still sends its post-filter signal to the DAC
-regardless of bit 7. This behavior is consistent between 6581 and
-8580 — it is simply not always understood.
+regardless of bit 7. This behavior is the same on the 6581 and
+8580.
 
 **8580 revision differences on the bypass path.** On 8580 chips
 manufactured after approximately 1990 (typically the R5 revision and
@@ -554,14 +549,14 @@ audible.
 A secondary mechanism: voice 3 routed through the filter (FILT3=1 in
 $D417) is entirely unaffected by 3OFF on any chip revision. Code
 that sets FILT3 and 3OFF simultaneously and expects silence will hear
-voice 3 through the filter on all chip revisions. This is by far the
+voice 3 through the filter on all chip revisions. This is the
 more common source of the symptom compared to the 8580 R5 revision
 bypass issue.
 
 ### Fix
 
-**Do not rely solely on $D418 bit 7 for silence.** The safe approach
-for voice 3 used as an LFO or modulation source is:
+**Do not rely solely on $D418 bit 7 for silence.** For voice 3 used
+as an LFO or modulation source:
 
 1. Clear FILT3 in $D417 (voice 3 bypasses the filter; bit 7 then
    works as intended on 6581 and most 8580s).
@@ -570,12 +565,12 @@ for voice 3 used as an LFO or modulation source is:
    the attack and decay phases and then holds at zero. Even if
    the bypass bleed reaches the output on some 8580 R5 chips,
    zero envelope means zero audio.
-3. Optionally, set $D418 bit 7 as well for belt-and-suspenders
+3. Optionally, set $D418 bit 7 as well as extra
    protection on 6581 (where the bit works reliably).
 
 For the voice-3-as-LFO pattern ($D41B read each frame), the
-oscillator continues running at zero envelope perfectly well.
-ENV3 ($D41C) is the envelope itself — if sustain=0, ENV3 reads
+oscillator keeps running at zero envelope.
+ENV3 ($D41C) is the envelope itself: if sustain=0, ENV3 reads
 zero during the sustain phase, which means ENV3-as-LFO only
 provides signal during the attack and decay portions of the
 envelope. For a sustained LFO, use the oscillator output ($D41B,

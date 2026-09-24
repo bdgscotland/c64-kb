@@ -23,16 +23,16 @@ was not run here. It is a .NET application; on this machine it was run
 from a Release build of the repository checkout with the
 `dotnet` 10.0.400 runtime, and its banner reported `v3.4.0`. The licence
 in the frontmatter is the two-clause BSD notice in the README's License
-section (no LICENSE file in the checkout). The chosen Tool node is sim6502 because it is the
-program that ran here; 64spec below is a KickAssembler source library,
+section (no LICENSE file in the checkout). The Tool node is sim6502
+because it is the program that ran here; 64spec below is a KickAssembler source library,
 not a separate executable, and the hand-rolled driver is a pattern.
 
 This page is about the layer under the whole-program verify. The
 `headless-verify` recipes ([KickAssembler](../recipes/kickassembler/headless-verify.md),
 [Oscar64](../recipes/oscar64/headless-verify.md)) and the vice-reference
 section "Verifying a run without a human" grade one program with one
-byte at `$02FF`. A game also wants the smaller question answered many
-times: does this one routine give the right answer for these inputs.
+byte at `$02FF`. A unit test asks a smaller question many times: does
+one routine give the right answer for these inputs.
 Three routes are measured below, on the same routine, the signed 16-bit
 compare from `compare_16bit_and_signed`.
 
@@ -145,7 +145,7 @@ A failing assertion prints the test as `FAILED` with the assertion's
 message and the values (`Expected 0 == 1 in assertion '...'`), the
 suite line becomes `2 of 3`, and the exit code is 1.
 
-Two things the run taught. A memory read in an assertion is
+Two findings from the run. A memory read in an assertion is
 `[symbol]` for a symbol or `peekbyte($addr)` for a bare address;
 `[$02ff]` is a parse error. And the simulator has no KERNAL: the first
 version of the third test called the driver's entry point, which prints
@@ -168,8 +168,8 @@ and how they compare with x64sc was not measured here.
 `64spec.asm`, opens with `sfspec: :init_spec()`, runs code and asserts
 with pseudocommands such as `:assert_a_equal #42`, `:assert_n_set`,
 `:assert_c_cleared`, and closes with `:finish_spec()`. It assembled
-unchanged with KickAssembler 5.25 (`-libdir` pointing at its `lib/`),
-which was not a given for a 2019 library, and the two quick-start
+unchanged with KickAssembler 5.25 (`-libdir` pointing at its `lib/`)
+despite dating from 2019, and the two quick-start
 examples and a three-assertion spec on the compare routine were run in
 VICE with the pinned command:
 
@@ -215,7 +215,7 @@ case-table driver was not written here.
 ## What unit tests cannot see
 
 A unit test runs the routine with the machine otherwise idle. It cannot
-see the things the C64 does to a routine while the game is running:
+see what the C64 does to a routine while the game is running:
 a badline stealing 40 to 43 cycles from the middle of it, the raster
 position when it finishes, an IRQ arriving between two instructions
 that were meant to be atomic, sprite DMA, or the CIA timer that the

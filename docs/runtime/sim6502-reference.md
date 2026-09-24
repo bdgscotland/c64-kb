@@ -12,11 +12,11 @@ home_url: https://github.com/barryw/sim6502
 
 ## Tool
 
-sim6502 is a unit-test framework for 6502 assembly programs. It loads assembled `.prg` binaries into an execution backend, runs test routines via a small DSL, and asserts against register state, memory contents, and cycle counts. It exits 0 on pass and non-zero on any failure (see Exit codes below), making it suitable for CI.
+sim6502 is a unit-test framework for 6502 assembly programs. It loads assembled `.prg` binaries into an execution backend, runs test routines via a small DSL, and asserts against register state, memory contents, and cycle counts. It exits 0 on pass and non-zero on any failure (see Exit codes below), so it can gate CI.
 
 **Targets:** 6510
 
-sim6502 supports four execution backends. For C64 work the two relevant ones are the internal simulator (`sim`) and the VICE emulator (`vice`). The `novavm` and `verilator` backends target a different hardware platform (e6502/NovaVM) and are out of scope for C64 development.
+sim6502 supports four execution backends. For C64 work the two that matter are the internal simulator (`sim`) and the VICE emulator (`vice`). The `novavm` and `verilator` backends target a different hardware platform (e6502/NovaVM) and are out of scope for C64 development.
 
 The tool is distributed as a .NET CLI application. Test files use a custom DSL with a `.6502` extension (sometimes called `.test` in older project conventions). The grammar is defined in ANTLR 4 at `sim6502/Grammar/sim6502.g4` in the repository.
 
@@ -53,7 +53,7 @@ dotnet Sim6502TestRunner.dll -s tests.6502 --filter "sprite*" --list   # list wi
 
 ## The Test DSL
 
-Test files are parsed by an ANTLR 4 grammar. The canonical grammar file is `sim6502/Grammar/sim6502.g4`. The following syntax is derived directly from that grammar.
+Test files are parsed by an ANTLR 4 grammar. The grammar file is `sim6502/Grammar/sim6502.g4`; the syntax below is taken from it.
 
 ### File structure
 
@@ -117,7 +117,7 @@ Symbols from a `.sym` file are referenced with square brackets. Namespaced symbo
 
 ### Assignments
 
-Inside `test` or `setup` blocks, you set up memory and registers before calling a subroutine:
+Inside `test` or `setup` blocks, assignments set memory and registers before a subroutine call:
 
 ```
 ; Register assignment
@@ -153,7 +153,7 @@ jsr($2000, stop_on_address = $2100, fail_on_brk = true)
 jsr([FillMemory], stop_on_address = [CopyMemory], fail_on_brk = false)
 ```
 
-`stop_on_rts` tracks call depth correctly — RTS calls from nested subroutines do not trigger exit. `fail_on_brk = true` fails the test if a BRK instruction is encountered.
+`stop_on_rts` tracks call depth, so an RTS from a nested subroutine does not end the call. `fail_on_brk = true` fails the test if a BRK instruction is encountered.
 
 ### Assertions
 
@@ -227,7 +227,7 @@ test("test-id", "Description", skip = true, trace = true, tags = "smoke,regressi
 
 ### Complete example
 
-This is a self-contained test for a sprite-positioning routine that matches the patterns in the sim6502 README:
+A self-contained test for a sprite-positioning routine, following the patterns in the sim6502 README:
 
 ```
 suites {
@@ -260,7 +260,7 @@ suites {
 
 ## Simulator vs. VICE Backend
 
-sim6502 supports two backends relevant to C64 work:
+Two backends apply to C64 work:
 
 | Backend | Flag | Speed | Hardware emulation |
 |---------|------|-------|--------------------|
@@ -285,7 +285,7 @@ sim6502 supports two backends relevant to C64 work:
 
 ### Using the VICE backend
 
-The VICE backend requires a VICE fork with MCP server support built in (mainstream VICE does not include this). That fork is `barryw/vice-mcp`, a different project from `simen/vice-mcp`, the Node MCP bridge that `c64_run_game` drives ([vice-mcp-reference](vice-mcp-reference.md)):
+The VICE backend requires a VICE fork with MCP server support built in (stock VICE does not have it). That fork is `barryw/vice-mcp`, a different project from `simen/vice-mcp`, the Node MCP bridge that `c64_run_game` drives ([vice-mcp-reference](vice-mcp-reference.md)):
 
 ```bash
 git clone -b feature/mcp-server https://github.com/barryw/vice-mcp.git
@@ -307,7 +307,7 @@ dotnet Sim6502TestRunner.dll -s tests.6502 --backend vice --launch-vice   # auto
 dotnet Sim6502TestRunner.dll -s tests.6502 --backend vice --vice-warp false  # real-time speed
 ```
 
-Note: the VICE backend used by sim6502 (`--mcpserver`, port 6510) is a different integration point than the standalone vice-mcp MCP server (port 6502): sim6502 uses HTTP JSON-RPC; vice-mcp uses the binary monitor. They are compatible tools that can coexist.
+The VICE backend used by sim6502 (`--mcpserver`, port 6510) is separate from the standalone vice-mcp MCP server (port 6502): sim6502 uses HTTP JSON-RPC; vice-mcp uses the binary monitor. The two can coexist.
 
 ## Loading a Program
 
@@ -337,7 +337,7 @@ Symbol files let tests reference named labels instead of hardcoded addresses:
 symbols("/build/program.sym")
 ```
 
-sim6502 currently supports KickAssembler `.sym` format:
+sim6502 reads KickAssembler `.sym` format:
 
 ```
 .label ENABLE=$80
@@ -371,7 +371,7 @@ suite("C64 with ROMs") {
 
 ## Cycle Counting
 
-`cycles` is reset once per test, before the suite's `setup` block (if any) runs, and then accumulates across every `jsr` in that test — including any `jsr` inside `setup`. It is not reset by `jsr`. Measured on sim6502 commit d6f6812 (banner v3.4.0, tag v3.14.0), `sim` backend: after a 328,713-cycle call followed by an 8-cycle call, `cycles` read 328,721; a `setup { jsr(...) }` of 8 cycles plus an 8-cycle test call read 16. The `vice` backend has the same semantics (the stopwatch is reset only at test start). To time one routine, give it its own test with no `setup` `jsr`, or assert on `cycles` before the second `jsr`. An earlier version of this page said it reset with each `jsr`. It is available in assertions:
+`cycles` is reset once per test, before the suite's `setup` block (if any) runs, and then accumulates across every `jsr` in that test, including any `jsr` inside `setup`. It is not reset by `jsr`. Measured on sim6502 commit d6f6812 (banner v3.4.0, tag v3.14.0), `sim` backend: after a 328,713-cycle call followed by an 8-cycle call, `cycles` read 328,721; a `setup { jsr(...) }` of 8 cycles plus an 8-cycle test call read 16. The `vice` backend has the same semantics (the stopwatch is reset only at test start). To time one routine, give it its own test with no `setup` `jsr`, or assert on `cycles` before the second `jsr`. An earlier version of this page said it reset with each `jsr`. It is available in assertions:
 
 ```
 jsr([StableRasterSetup], stop_on_rts = true, fail_on_brk = true)
@@ -380,7 +380,7 @@ jsr([StableRasterSetup], stop_on_rts = true, fail_on_brk = true)
 assert(cycles < 300, "Setup fits in one raster line (63 cycles PAL, budget 300)")
 ```
 
-Cycle counting is meaningful on both `sim` and `vice` backends, but with different accuracy:
+Both `sim` and `vice` backends count cycles, with different accuracy:
 
 - **`sim`**: counts instruction cycles from the 6502 timing tables; does not model DMA, interrupts, or memory banking delays
 - **`vice`**: cycle-accurate, includes DMA stealing, interrupt overhead, all hardware effects
@@ -389,7 +389,7 @@ For stable-raster-IRQ recipes, always verify cycle counts with `--backend vice` 
 
 ## CI Integration
 
-sim6502 exits `0` if all tests pass and non-zero otherwise — `1` test failure or abort, `2` parse error, `3` semantic error. This maps directly to standard CI exit-code conventions.
+sim6502 exits `0` if all tests pass and non-zero otherwise: `1` test failure or abort, `2` parse error, `3` semantic error. Any CI runner treats non-zero as failure.
 
 **GitHub Actions example:**
 
@@ -420,11 +420,11 @@ Flags are uppercase when set, lowercase when clear.
 
 ## Pairing with vice-mcp
 
-sim6502 and vice-mcp cover two different phases of the development loop:
+sim6502 and vice-mcp cover different phases of development:
 
-**sim6502** is the automated test harness. It runs fast and headlessly on the `sim` backend, and hardware-accurately on the `vice` backend. Run it in a tight loop as code changes. When all tests are green, the recipe is correct by assertion.
+**sim6502** is the automated test harness. It runs fast and headlessly on the `sim` backend, and hardware-accurately on the `vice` backend. Run it on every change. Green means every assertion passed.
 
-**vice-mcp** is the interactive debugger. Use it when a sim6502 test fails and you need to understand the failure interactively — step through instructions, observe VIC-II state, catch watchpoint hits, examine sprite data addresses.
+**vice-mcp** is the interactive debugger. Use it when a sim6502 test fails: step through instructions, read VIC-II state, catch watchpoint hits, examine sprite data addresses.
 
 **Agent workflow:**
 
@@ -446,17 +446,17 @@ sim6502 and vice-mcp cover two different phases of the development loop:
 5. Fix code → return to step 1
 ```
 
-sim6502's `vice` backend and vice-mcp are different servers, not one integration point. sim6502 posts JSON-RPC 2.0 (`tools/call`, tools such as `vice.registers.get` and `vice.checkpoint.add`) over HTTP to the MCP server compiled into the barryw/vice-mcp VICE fork (`x64sc -mcpserver -mcpserverport 6510`); stock VICE 3.9 has no `-mcpserver` option (checked with `x64sc -help`). vice-mcp speaks the VICE binary-monitor protocol over TCP to any VICE started with `-binarymonitor` (port 6502), which the fork should also accept but which no one has tested here. In practice run the sim6502 suite against the fork first, then open a vice-mcp session against a `-binarymonitor` instance for interactive debugging; the two do not share a connection, and the sequencing is a workflow choice, not a technical exclusion. An earlier version of this paragraph said both connected to the same VICE binary and could not run at once.
+sim6502's `vice` backend and vice-mcp are different servers, not one integration point. sim6502 posts JSON-RPC 2.0 (`tools/call`, tools such as `vice.registers.get` and `vice.checkpoint.add`) over HTTP to the MCP server compiled into the barryw/vice-mcp VICE fork (`x64sc -mcpserver -mcpserverport 6510`); stock VICE 3.9 has no `-mcpserver` option (checked with `x64sc -help`). vice-mcp speaks the VICE binary-monitor protocol over TCP to any VICE started with `-binarymonitor` (port 6502), which the fork should also accept but which no one has tested here. Run the sim6502 suite against the fork first, then open a vice-mcp session against a `-binarymonitor` instance for interactive debugging; the two do not share a connection, and the sequencing is a workflow choice, not a technical exclusion. An earlier version of this paragraph said both connected to the same VICE binary and could not run at once.
 
 ## Pitfalls
 
 **Undocumented opcodes abort the `sim` backend.** The `sim` backend (Aaron Mell's 6502Net core) implements only the 151 documented opcodes; the 6510 table is the 6502 table. Executing any of the other 105 — LAX, SAX, DCP, ISC, the undocumented NOPs such as $1A, all of them — throws `The OpCode xx @ address yyyy is not supported on MOS6510`, and the runner stops the whole run at that point with exit code 1: later tests in the suite never execute and no summary is printed (measured on v3.4.0 with LAX zp $A7 and NOP $1A). An earlier version of this paragraph said the sim backend "may differ from VICE" on these opcodes, which implied they ran. Recipes that use undocumented opcodes must declare `--backend vice` as canonical in their frontmatter; VICE x64sc executes the stable NMOS set.
 
-**CIA timers and IRQs fire on `vice` but not on `sim`.** A test that asserts `cycles < 1000` may pass on `sim` (no interrupts) and fail on `vice` (CIA timer fires, pushes registers, runs IRQ handler, adds overhead). For timing-sensitive tests, measure on `vice` and set the cycle budget accordingly.
+**CIA timers and IRQs fire on `vice` but not on `sim`.** A test that asserts `cycles < 1000` may pass on `sim` (no interrupts) and fail on `vice` (CIA timer fires, pushes registers, runs IRQ handler, adds overhead). For timing-sensitive tests, measure on `vice` and set the cycle budget from that.
 
 **Oscar64 does not emit KickAssembler `.sym` files.** Oscar64 generates `.lbl` label files (different format). The `symbols()` directive in sim6502 only accepts KickAssembler `.sym` format. When testing Oscar64 output, either hardcode addresses in tests or add a build step to convert `.lbl` to `.sym`.
 
-**`stop_on_rts` and non-standard returns.** The two backends stop on a different mechanism. On `--backend sim`, the simulator keeps a JSR/RTS counter and stops when it returns to zero, so any RTS that was not paired with a JSR — the push-address-then-RTS dispatch idiom, or a routine that pops its own return address before returning — throws the count off and the run stops early or not at all. On `--backend vice`, `stop_on_rts` pushes a synthetic return address so the routine's final RTS lands on `$0000`, where a checkpoint halts execution; there is no depth calculation, and nested calls and JMP tail calls all return through the real stack and stop correctly. What defeats it is a routine that never returns through the stack entry it was called with (it discards or rewrites that return address), or code that legitimately runs at `$0000`. For such routines use `stop_on_address` on an instruction the routine is known to execute; note that `stop_on_address = 0` is treated as unset on both backends. (From `ViceBackend.cs`; an earlier version of this pitfall said the `vice` backend did a depth calculation that tail calls could upset.)
+**`stop_on_rts` and non-standard returns.** The two backends stop on a different mechanism. On `--backend sim`, the simulator keeps a JSR/RTS counter and stops when it returns to zero, so any RTS that was not paired with a JSR (the push-address-then-RTS dispatch idiom, or a routine that pops its own return address before returning) throws the count off and the run stops early or not at all. On `--backend vice`, `stop_on_rts` pushes a synthetic return address so the routine's final RTS lands on `$0000`, where a checkpoint halts execution; there is no depth calculation, and nested calls and JMP tail calls all return through the real stack and stop correctly. What defeats it is a routine that never returns through the stack entry it was called with (it discards or rewrites that return address), or code that legitimately runs at `$0000`. For such routines use `stop_on_address` on an instruction the routine is known to execute. `stop_on_address = 0` is treated as unset on both backends. (From `ViceBackend.cs`; an earlier version of this pitfall said the `vice` backend did a depth calculation that tail calls could upset.)
 
 **Snapshot restore race on `vice` backend.** The VICE backend saves a snapshot after loading all binaries, and restores it before each test. If VICE's snapshot directory is out of space or has a permissions issue, the run fails immediately. Check VICE logs if you see `Failed to save snapshot 'sim6502_suite_N'`.
 

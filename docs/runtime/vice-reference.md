@@ -13,10 +13,10 @@ version_verified: "3.10"
 ## Tool
 
 VICE (Versatile Commodore Emulator) is an open-source emulator that runs software
-written for the Commodore 8-bit computer family on modern hardware. For c64-kb purposes
-the only relevant binary is `x64sc`, the cycle-accurate C64 emulator. VICE exposes a
+written for the Commodore 8-bit computer family on modern hardware. c64-kb uses only
+`x64sc`, the cycle-accurate C64 emulator. VICE exposes a
 TCP-based binary monitor protocol on port 6502 that allows external programs to inspect
-and control the running machine — read and write memory, set breakpoints, capture the
+and control the running machine: read and write memory, set breakpoints, capture the
 screen, load and execute programs, and save snapshots. The vice-mcp server speaks this
 protocol on behalf of agents; agents do not drive the protocol directly.
 
@@ -41,7 +41,7 @@ sudo dnf install vice
 
 After installation, ROM images must be present. On Homebrew macOS they land in
 `/opt/homebrew/share/vice/C64/`. On Linux, packages that include the ROMs place them in
-`/usr/share/vice/C64/`; Debian's does not include them. VICE will refuse to start
+`/usr/share/vice/C64/`; Debian's does not include them. VICE refuses to start
 without a valid `kernal`, `basic`, and `chargen` ROM.
 
 ### Basic run
@@ -76,17 +76,15 @@ VICE ships multiple binaries, one per emulated machine.
 
 `x64sc` uses a cycle-exact 6510/VIC-II core; both binaries offer true 1541 drive
 emulation (an earlier version of this page credited it to `x64sc` alone). It is
-slower than `x64` on the host but produces correct raster timing, correct CIA timer
-behaviour, and correct SID timing — all of which matter when verifying demo or game
-code. Always use `x64sc` for correctness. See the Pitfalls section for the consequences
+slower than `x64` on the host but gets raster timing, CIA timer behaviour and SID
+timing right, which demo and game code depend on. Always use `x64sc` for correctness. See the Pitfalls section for the consequences
 of reaching for `x64` instead.
 
 ---
 
 ## CLI Flags
 
-The table below covers flags relevant to build-and-test automation and basic operation.
-VICE accepts many more; run `x64sc --help` for the full list.
+Flags for build-and-test automation and basic operation. VICE accepts many more; run `x64sc --help` for the full list.
 
 | Flag | Argument | Effect |
 |------|----------|--------|
@@ -114,8 +112,8 @@ VICE accepts many more; run `x64sc --help` for the full list.
 | `-cartcrt <file>` | CRT | Attach a cartridge image |
 | `+cart` | — | Disable cartridge (note: plus sign, not minus) |
 
-Flags that begin with `+` instead of `-` are boolean toggles that explicitly turn a
-feature off; their `-` counterparts turn it on.
+A flag that begins with `+` instead of `-` turns a feature off; its `-` counterpart
+turns it on.
 
 An earlier revision of this page listed `-quitafter <seconds>`, `-1541-8`,
 `-tape1 <file>`, `-snapshot <file>` and `-keyboard <layout>`; x64sc 3.10 has none of
@@ -163,8 +161,8 @@ drawn, not as evidence about the program; move `-limitcycles` and look again.
 ## The Binary Monitor Protocol
 
 VICE exposes a binary remote monitor over TCP when started with `-binarymonitor`. The
-default address is `ip4://127.0.0.1:6502`. The port number is a deliberate nod to the
-6502 processor.
+default address is `ip4://127.0.0.1:6502`. Port 6502 is named after the
+processor.
 
 ### Enabling the monitor
 
@@ -176,7 +174,7 @@ Once VICE is running, any TCP client can connect and send commands.
 
 ### Frame format
 
-Every message — command or response — shares a common wire layout:
+Commands and responses share one wire layout:
 
 **Request frame**
 
@@ -254,14 +252,14 @@ wraps the protocol in a clean MCP tool surface; see
 
 VICE attaches disk and tape images as virtual peripheral devices. Device 8 is the
 primary disk drive (1541 by default). The relevant attachment flags are `-8 <file>` for
-disk images and `-1 <file>` for tape images. `-autostart` can also accept a
-disk or tape image path directly and will load the first file.
+disk images and `-1 <file>` for tape images. `-autostart` also accepts a
+disk or tape image path and loads the first file.
 
 ### .D64 — Single-sided 35-track 1541 disk image
 
-The standard 1541 disk image format. A D64 file contains 35 tracks of raw sector data.
+A D64 file, the standard 1541 disk image, contains 35 tracks of raw sector data.
 Sector count varies by zone: tracks 1–17 carry 21 sectors each, tracks 18–24 carry 19
-sectors each, tracks 25–30 carry 18 each, and tracks 31–35 carry 17 each — 683 sectors
+sectors each, tracks 25–30 carry 18 each, and tracks 31–35 carry 17 each; 683 sectors
 total. Each sector is 256 bytes, giving a total image size of 174,848 bytes (or 175,531
 bytes with the optional per-sector error-code extension). Track 18 / sector 0 holds the
 BAM (Block Availability Map) and disk name; the directory occupies track 18 sectors 1–18
@@ -270,14 +268,14 @@ and supports up to 144 file entries.
 **Produced by:** c1541
 **Consumed by:** vice
 
-D64 is the go-to format for distributing finished software. It cannot represent
+D64 is the usual format for distributing finished software. It cannot represent
 non-standard track layouts or copy-protection schemes; for those cases use G64.
 
 ### .G64 — GCR-encoded 1541 disk image
 
-G64 stores raw GCR (Group Code Recording) bitstream data — the actual flux transitions
-the 1541 read head would encounter. The format supports up to 84 track slots (42 full
-tracks plus 42 half-tracks), though typical 1541 media uses only 35. Because the
+G64 stores raw GCR (Group Code Recording) bitstream data: the flux transitions
+the 1541 read head would see. The format supports up to 84 track slots (42 full
+tracks plus 42 half-tracks), though standard 1541 media uses only 35. Because the
 bitstream is preserved verbatim, G64 can represent disks with non-standard sector
 interleavings, custom loaders, weak bits, and copy-protection schemes that D64 cannot
 encode. Track size varies by zone, with outer tracks holding more GCR bytes than inner
@@ -296,19 +294,19 @@ T64 is a container format created for the C64s emulator. It stores one or more P
 files in a simple 32-byte-aligned directory structure: a 64-byte file header (signature
 + tape version + directory capacity + tape name), followed by 32-byte directory entries
 (file type, load address, end address, data offset, filename in PETSCII), followed by
-the raw file data. T64 is not a raw tape recording — it is closer to a ZIP file for
+the raw file data. T64 is not a raw tape recording; it is closer to a ZIP file for
 PRGs. It has no concept of tape timing or loader protocol. `c1541` can only read a T64
 (its `tape` command extracts files from one); it does not write them.
 
 **Consumed by:** vice
 
-T64 is a convenient way to ship a single PRG for distribution via "tape" when accurate
-tape timing is not required. For raw pulse-level fidelity use TAP.
+T64 can ship a single PRG as a tape image when tape timing is not
+required. For raw pulse-level fidelity use TAP.
 
 ### .TAP — Raw tape pulse-width data
 
 TAP stores the cassette signal as a sequence of bytes, each representing the time (in
-hardware counter units) between successive signal transitions — the literal pulse widths
+hardware counter units) between successive signal transitions: the pulse widths
 the C64 CIA timer measured. A 20-byte file header carries the signature `C64-TAPE-RAW`,
 a version byte, three reserved bytes, and a 4-byte little-endian data-area size (the
 length excludes the header). Version 0 encodes
@@ -329,8 +327,8 @@ smaller and easier to work with.
 `c1541` is a standalone command-line disk-image maintenance tool shipped with VICE. It
 can create D64 and G64 images, list and extract files, write PRG files into a disk
 image, validate the BAM, inspect block chains, and perform low-level block operations
-(peek, poke, fill). It supports batch mode — prefix commands with `-` to chain them
-non-interactively — and interactive mode with tab completion.
+(peek, poke, fill). It runs in batch mode (prefix commands with `-` to chain them
+non-interactively) or interactively with tab completion.
 
 ```bash
 # Create a fresh D64 and write a PRG into it
@@ -338,15 +336,15 @@ c1541 -format "mygame,01" d64 mygame.d64
 c1541 -attach mygame.d64 -write hello.prg hello
 ```
 
-`c1541` is the right tool for assembling a releasable disk image from one or more
-compiled PRG files before handing the D64 to VICE for a run.
+Use `c1541` to build a disk image from one or more compiled PRG files before handing
+the D64 to VICE for a run.
 
 ---
 
 ## Symbol Files
 
 The VICE text monitor (launched interactively or via `-moncommands`) can load symbol
-tables that map label names to addresses. Two formats are relevant:
+tables that map label names to addresses. The formats:
 
 | Format | Extension | Produced by | Example entry |
 |--------|-----------|-------------|---------------|
@@ -372,8 +370,8 @@ ll "build/hello.lbl"
 ```
 
 Once loaded, the disassembler, breakpoint expressions, and memory commands can use label
-names instead of raw hex addresses. This makes monitor sessions with `vice-mcp` far more
-readable. Load symbols at startup by putting the `ll` command in a file and passing it
+names instead of raw hex addresses, which also applies to monitor sessions with
+`vice-mcp`. Load symbols at startup by putting the `ll` command in a file and passing it
 via `-moncommands`.
 
 ---
@@ -405,19 +403,17 @@ the autostart delay) or put `undump "file.vsf"` in a `-moncommands` file (restor
 immediately, before the first instruction). There is no `-snapshot` option; an earlier
 version of this page listed one, and x64sc 3.10 rejects it as unknown.
 
-Via the binary monitor, `Dump` (opcode `0x41`) and `Undump` (opcode `0x42`) provide the
-same capability programmatically. vice-mcp exposes both operations as MCP tools.
+Via the binary monitor, `Dump` (opcode `0x41`) and `Undump` (opcode `0x42`) do the
+same over the socket. vice-mcp exposes both operations as MCP tools.
 
-Snapshots are useful for reproducible automated testing: run to a known program counter,
-save a snapshot, then restore it at the start of each test run to eliminate variable
-boot-time state.
+For reproducible automated tests, run to a known program counter, save a snapshot, then
+restore it at the start of each test run to remove variable boot-time state.
 
 ---
 
 ## Region Selection
 
-VICE supports both PAL and NTSC machine configurations. The difference is significant
-for cycle-accurate timing work: PAL machines run at 985,248 cycles/second with 312 scan
+VICE emulates both PAL and NTSC machines. For cycle-accurate timing work: PAL machines run at 985,248 cycles/second with 312 scan
 lines per frame (50 Hz), while NTSC machines run at 1,022,727 cycles/second with 263
 scan lines per frame (60 Hz). Raster positions, raster IRQ timing, and the number of
 cycles available per frame differ between regions.
@@ -431,23 +427,23 @@ x64sc -ntsc  -autostart demo.prg    # NTSC
 
 The compiled-in default is a PAL C64 (MachineVideoStandard=1, VICIIModel=1; measured on
 x64sc 3.10 with `-default -dumpconfig`, unchanged under en_US, de_DE, ja_JP and C
-locales — the locale moves the keyboard mapping, not the video standard). A saved config
+locales; the locale moves the keyboard mapping, not the video standard). A saved config
 file (vicerc) can override it, and `-default` bypasses that file, so pass `-pal`, `-ntsc`
 or `-model` explicitly in automated runs. An earlier version of this sentence said the
 default depended on the system locale; it does not. If a program behaves differently
 under PAL vs NTSC, a raster timing assumption is almost always the cause.
 
-For a full treatment of the hardware differences between PAL and NTSC C64 variants, see
+For the hardware differences between PAL and NTSC C64 variants, see
 [../hardware/pal-ntsc-reference.md](../hardware/pal-ntsc-reference.md).
 
 ---
 
 ## Headless and Automated Invocation
 
-An agent (or CI script) running VICE in a build-verify loop wants no GUI, maximum
-speed, and deterministic exit. The pattern is:
+An agent (or CI script) running VICE in a build-verify loop needs no GUI, maximum
+speed, and a deterministic exit:
 
-1. Compile the PRG with oscar64or KickAssembler.
+1. Compile the PRG with oscar64 or KickAssembler.
 2. Launch `x64sc` in warp mode with a binary monitor and a short timeout.
 3. Connect via vice-mcp (or a raw TCP client) to set a checkpoint at the expected
    success address.
@@ -481,8 +477,8 @@ so that vice-mcp can detect the breakpoint hit via a Checkpoint event response
 (request ID `0xffffffff`).
 
 For screenshot capture without user interaction, `Display Get` (`0x84`) returns raw
-pixel data for the current frame. This lets an agent record what the screen looks like
-at a given execution point without requiring a visible window.
+pixel data for the current frame. An agent can record the screen at a given
+execution point without a visible window.
 
 On Linux CI, add `Xvfb` or set `SDL_VIDEODRIVER=offscreen` (SDL2 build) to suppress the
 display requirement.
@@ -746,7 +742,7 @@ that compares whole pictures.
 ### Route 2: the machine, over `-moncommands`
 
 A `-moncommands` file runs at startup, before the program, so it cannot
-simply dump `$02FF`. It can arm a tracepoint that dumps it when the store
+dump `$02FF` directly. It can arm a tracepoint that dumps it when the store
 happens, and log everything the monitor prints to a file:
 
 ```
@@ -786,8 +782,8 @@ case "$code" in 01) exit 0;; 02) exit 1;; *) exit 2;; esac
 ### A windowless build for batch runs
 
 The GTK build opens a window on every launch and takes the desktop's focus,
-which a verifier run of sixty recipes turns into a constant interruption;
-`-minimized` does not help, the window still activates before it shrinks.
+so a verifier run of sixty recipes keeps interrupting the desktop;
+`-minimized` does not help, because the window still activates before it shrinks.
 VICE 3.10 ships a third front end besides GTK and SDL: configure the
 source with `--enable-headlessui` and the resulting `x64sc` has no window,
 no Dock tile and never registers with the window server, while the exit
@@ -795,8 +791,8 @@ screenshot still works because it is taken from the emulated frame in the
 machine core. Measured 2026-09-22 on macOS: the headless build's exit
 screenshots for four pinned recipes, PAL and NTSC, were byte-identical to
 the pins, and the process never appeared in LaunchServices while a GTK
-instance next to it was listed as the frontmost application. Two things to
-know: a build that is not installed needs `-directory <vice data dir>` and
+instance next to it was listed as the frontmost application. Two caveats:
+a build that is not installed needs `-directory <vice data dir>` and
 it must come after `-default`, because `-default` resets the search path;
 and the exit status on the cycle limit is 1 by design in both builds. The
 build takes under a minute (`brew install dos2unix xa` first; a plain
@@ -1292,13 +1288,13 @@ KickAssembler, Oscar64 and cc65 pages' debugging sections.
 
 ## Integration with vice-mcp
 
-vice-mcp is a separate MCP server that acts as a bridge between agents and a running
+vice-mcp is a separate MCP server between agents and a running
 VICE instance. It maintains a TCP connection to VICE's binary monitor, translates MCP
 tool calls into binary monitor frames, and returns structured results. Agents invoke
 vice-mcp tools such as `vice_read_memory`, `vice_set_breakpoint`, `vice_screenshot`, and
 `vice_autostart`; they never send raw binary monitor frames.
 
-From a deployment perspective: start `x64sc` first with `-binarymonitor
+Start `x64sc` first with `-binarymonitor
 -binarymonitoraddress ip4://127.0.0.1:6502`, then start the vice-mcp server, which
 connects to that address. Both processes run concurrently for the duration of the
 inspection session.
@@ -1324,7 +1320,7 @@ build time as an earlier version of this page said: the same x64sc 3.10 binary l
 `gtk3_sym.vkm` under `en_US` and `gtk3_sym_de.vkm` under `de_DE.UTF-8` (measured with
 `-default`). The default keymap type is symbolic (KeymapIndex 0). Code injected via
 `Keyboard Feed` (`0x72`) sends raw PETSCII, so this does not affect monitor or
-programmatic input, but it matters when a test scenario types characters through the
+programmatic input, but it does affect a test that types characters through the
 emulated keyboard. Pass `-keymap 0 -keyboardmapping 0` explicitly for a US symbolic
 keymap regardless of host locale. There is no `-keyboard` option: `-keyboard en` is
 rejected as ambiguous (it is a prefix of `-keyboardmapping`, `-keyboardtype` and
@@ -1334,14 +1330,14 @@ rejected as ambiguous (it is a prefix of `-keyboardmapping`, `-keyboardtype` and
 
 The VICE source tarball ships the Commodore ROM images (kernal, basic, chargen) in its
 data/ tree, and the Homebrew formula installs them from that tarball into
-`/opt/homebrew/share/vice/C64/` — nothing is fetched separately (an earlier version of
+`/opt/homebrew/share/vice/C64/`; nothing is fetched separately (an earlier version of
 this page said the formula downloaded them from a community source; `brew cat vice` has
 no such resource). Some Linux distributions strip them for licensing reasons: Debian's
 `vice` package lives in contrib and explicitly excludes the ROMs (see its README.ROMs),
 so there you must obtain them yourself. In that case, and in any Docker or CI image
 built from such a package, supply the ROM images and point VICE at them via `-kernal`,
-`-basic`, and `-chargen`, or place them in the expected directory. Failure to provide
-ROMs produces a startup error and a blank screen.
+`-basic`, and `-chargen`, or place them in the expected directory. Without the
+ROMs VICE gives a startup error and a blank screen.
 
 ### Monitor port conflicts
 
@@ -1358,8 +1354,8 @@ On macOS Homebrew (`brew install vice`, 3.10 at time of writing) both `x64` and
 GLib-GIO-ERROR **: No GSettings schemas are installed on the system
 ```
 
-The compiled schemas DO exist at `/opt/homebrew/share/glib-2.0/schemas/`, but
-GTK3 doesn't search that path by default. Export the schema location before
+The compiled schemas exist at `/opt/homebrew/share/glib-2.0/schemas/`, but
+GTK3 does not search that path by default. Export the schema location before
 launching:
 
 ```bash
@@ -1369,8 +1365,8 @@ x64sc -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6502 -autostart hello
 ```
 
 The template harness (`templates/_harness/harness.mk`) exports
-`GSETTINGS_SCHEMA_DIR` for its `run` target, which is enough on this machine. They are harmless on Linux (the
-paths just don't exist).
+`GSETTINGS_SCHEMA_DIR` for its `run` target, which is enough on this machine. The two exports are harmless on Linux, where
+the paths do not exist.
 
 This is a packaging issue in the Homebrew GTK3 bottle, not a VICE bug.
 
@@ -1380,7 +1376,7 @@ When `-drive8type 1541` is active with true drive emulation enabled (the default
 `x64sc`), disk access is cycle-accurate and slow even in warp mode. If load time
 dominates a test run and timing accuracy of the drive is not the subject of the test,
 disable true drive emulation for unit 8 with `+drive8truedrive` to use the faster IEC
-fast-path (the option is per unit — `+drive9truedrive` … `+drive11truedrive` likewise —
+fast-path (the option is per unit, with `+drive9truedrive` … `+drive11truedrive` likewise,
 since VICE 3.6; a bare `+truedrive`, which an earlier version of this page gave, is
 rejected as an unknown option by x64sc 3.10).
 

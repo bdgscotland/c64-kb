@@ -2,23 +2,23 @@
 
 # IEC Bus and 1541 Disk Drive Reference
 
-This document covers the Commodore IEC serial bus protocol, the 1541 floppy drive's command interface, and the practical concerns of writing C64 code that talks to disk drives. The IEC bus is the physical transport underlying KERNAL disk I/O (LOAD, SAVE, OPEN, CLOSE, CHKIN, CHKOUT) and any custom fast-loader that bypasses the KERNAL. For the KERNAL jump-table entries that drive IEC communication from the C64 side, see `../hardware/kernal-routines-reference.md`.
+The Commodore IEC serial bus protocol, the 1541 floppy drive's command interface, and what C64 code that talks to disk drives has to do. The IEC bus is the physical transport underlying KERNAL disk I/O (LOAD, SAVE, OPEN, CLOSE, CHKIN, CHKOUT) and any custom fast-loader that bypasses the KERNAL. For the KERNAL jump-table entries that drive IEC communication from the C64 side, see `../hardware/kernal-routines-reference.md`.
 
 ---
 
 ## Overview
 
-The IEC bus (serial IEEE-488 bus) is Commodore's cost-reduced adaptation of the IEEE-488/HP-IB parallel bus used on PET computers. Commodore replaced the 16-wire parallel bus with a 3-wire serial bus to save component costs, at a severe performance penalty: the standard 1541 protocol delivers approximately 300–400 bytes/second, against the PET's ~4 KB/second. The bus connects the C64 to disk drives (1541, 1571, 1581), printers (MPS-801, MPS-803), and other peripherals via a 6-pin DIN connector on the back of the computer.
+The IEC bus (serial IEEE-488 bus) is Commodore's cost-reduced adaptation of the IEEE-488/HP-IB parallel bus used on PET computers. Commodore replaced the 16-wire parallel bus with a 3-wire serial bus to save component costs, at a cost in speed: the standard 1541 protocol delivers approximately 300–400 bytes/second, against the PET's ~4 KB/second. The bus connects the C64 to disk drives (1541, 1571, 1581), printers (MPS-801, MPS-803), and other peripherals via a 6-pin DIN connector on the back of the computer.
 
-The C64 works the IEC bus through five lines of CIA2 port A: three outputs (ATN, CLK, DATA) and two inputs (CLK, DATA). The same CIA2 chip (`$DD00`–`$DD0F`) that controls the VIC-II bank-switching (`$DD00` bits 0–1) also owns the IEC bus lines. This dual use means that code which manipulates CIA2 for RS-232 or custom bit-banging must be aware of IEC bus contention.
+The C64 works the IEC bus through five lines of CIA2 port A: three outputs (ATN, CLK, DATA) and two inputs (CLK, DATA). The same CIA2 chip (`$DD00`–`$DD0F`) that controls the VIC-II bank-switching (`$DD00` bits 0–1) also owns the IEC bus lines. Code that manipulates CIA2 for RS-232 or custom bit-banging must therefore allow for IEC bus contention.
 
-All IEC communication from the C64 side goes through KERNAL routines. User programs should always call the KERNAL jump table (`$FF81`–`$FFF5`), never poke CIA2 directly for IEC purposes — the internal routine addresses changed between KERNAL revisions and are private implementation details.
+All IEC communication from the C64 side goes through KERNAL routines. User programs should always call the KERNAL jump table (`$FF81`–`$FFF5`), never poke CIA2 directly for IEC purposes; the internal routine addresses changed between KERNAL revisions and are private implementation details.
 
 ---
 
 ## Pin Map and Electrical Characteristics
 
-The IEC bus is open-collector. For each line, every device has a driver that can pull the line to ground and do nothing else, and a pull-up lets the line float to +5 V when no driver is on. A line is therefore **asserted ("true") when it is low** and **released ("false") when it is high**, and any one device can hold it low against all the others — which is what the handshakes rely on: a listener that is not ready keeps DATA low and the talker cannot proceed.
+The IEC bus is open-collector. For each line, every device has a driver that can pull the line to ground and do nothing else, and a pull-up lets the line float to +5 V when no driver is on. A line is therefore **asserted ("true") when it is low** and **released ("false") when it is high**, and any one device can hold it low against all the others. The handshakes rely on this: a listener that is not ready keeps DATA low and the talker cannot proceed.
 
 **DIN-6 connector pinout:**
 
@@ -43,7 +43,7 @@ The IEC bus is open-collector. For each line, every device has a driver that can
 | 2 | output | RS-232 TXD | user port, not IEC — the KERNAL's RS-232 transmitter writes it |
 | 1–0 | output | VIC-II bank select | not IEC — see `../hardware/cia-reference.md` |
 
-The two directions have opposite senses and both matter. **Writing 1 to an output bit pulls its line low** — the port reaches the bus through inverting open-collector drivers (the 7406 on the C64 schematic, rung 4) — so releasing a line means *clearing* its bit, and the KERNAL's routine for "clock high" is an `AND`. **Reading 1 on an input bit means the line is high**, i.e. released; a line that anything is holding low reads 0. The KERNAL's device-present test is exactly that: assert ATN, release our own DATA, and if DATA IN still reads 1 nobody is holding it, so nobody is there.
+The two directions have opposite senses. **Writing 1 to an output bit pulls its line low**: the port reaches the bus through inverting open-collector drivers (the 7406 on the C64 schematic, rung 4), so releasing a line means *clearing* its bit, and the KERNAL's routine for "clock high" is an `AND`. **Reading 1 on an input bit means the line is high**, i.e. released; a line that anything is holding low reads 0. The KERNAL's device-present test is that: assert ATN, release our own DATA, and if DATA IN still reads 1 nobody is holding it, so nobody is there.
 
 The evidence, all rung 1 from the ROM bytes (the labels are the KERNAL source's names, rung 4):
 
@@ -59,15 +59,15 @@ The evidence, all rung 1 from the ROM bytes (the labels are the KERNAL source's 
 | `$ED41`–`$ED47` | in ISOUR | `JSR DATAHI / JSR DEBPIA / BCS $EDAD` | carry set — DATA IN reads 1 — with ATN asserted goes to `$EDAD`, `LDA #$80`, the device-not-present status; a present drive holds DATA low, and low reads 0 |
 | `$FE7B` | RS-232 transmit | `LDA $DD00 / AND #$FB / ORA $B5 / STA $DD00` | bit 2 is the RS-232 TXD bit |
 
-Measured too, in VICE x64sc 3.10 with `-drive8truedrive` (rung 1): once the C64 has released its own lines — the probe stored `$07` before its first read; see the reset state below for why that matters — `$DD00` reads `$C7` (bits 6–7 both 1); write bit 4 and it reads `$97` (CLK IN fell to 0); write bit 5 instead and it reads `$67` (DATA IN fell to 0); after `JSR $FFB1` (LISTEN 8) with a 1541 attached it reads `$1F` — ATN and CLK held by the C64, DATA held by the drive, all three inputs 0 — and READST is `$00`, while with no drive attached the same call leaves `$C7` and READST `$80`.
+Measured too, in VICE x64sc 3.10 with `-drive8truedrive` (rung 1): once the C64 has released its own lines (the probe stored `$07` before its first read; the reset state below says why), `$DD00` reads `$C7` (bits 6–7 both 1); write bit 4 and it reads `$97` (CLK IN fell to 0); write bit 5 instead and it reads `$67` (DATA IN fell to 0); after `JSR $FFB1` (LISTEN 8) with a 1541 attached it reads `$1F` (ATN and CLK held by the C64, DATA held by the drive, all three inputs 0) and READST is `$00`, while with no drive attached the same call leaves `$C7` and READST `$80`.
 
-**Data direction and reset state.** IOINIT (`$FDA3`) sets the port up at `$FDCB`–`$FDD4`: `LDA #$07 / STA $DD00`, then `LDA #$3F / STA $DD02` (rung 1). The DDR default is therefore `$3F` — bits 0–5 output, 6–7 input — and user code has no reason to change it. The `$07` is not where the port ends up, though. IOINIT's last instruction, at `$FDF6`, is `JMP $FF6E`, and `$FF6E`–`$FF7F` — `LDA #$81 / STA $DC0D / LDA $DC0E / AND #$80 / ORA #$11 / STA $DC0E / JMP $EE8E` — finishes with the only `JMP CLKLO` in the KERNAL (rung 1). A freshly reset C64 therefore parks CLK asserted: the port register is `$17` and `$DD00` reads `$97`. Measured in VICE x64sc 3.10 (rung 1): a program whose first instruction is `LDA $DD00` shows `$97`, and `$C7` only after it stores `$07`; the readings are identical with `-drive8truedrive` and a 1541 attached and with no drive, so nothing on the emulated bus was pulling. `$C7` is the bus after the C64 has released its lines — a `$07` store does that, and so does the `JSR CLKHI / JMP DATAHI` pair at `$EE0D`–`$EE12` that the KERNAL's UNLSN and UNTLK both end with.
+**Data direction and reset state.** IOINIT (`$FDA3`) sets the port up at `$FDCB`–`$FDD4`: `LDA #$07 / STA $DD00`, then `LDA #$3F / STA $DD02` (rung 1). The DDR default is therefore `$3F` (bits 0–5 output, 6–7 input), and user code has no reason to change it. The `$07` is not where the port ends up. IOINIT's last instruction, at `$FDF6`, is `JMP $FF6E`, and `$FF6E`–`$FF7F` (`LDA #$81 / STA $DC0D / LDA $DC0E / AND #$80 / ORA #$11 / STA $DC0E / JMP $EE8E`) finishes with the only `JMP CLKLO` in the KERNAL (rung 1). A freshly reset C64 therefore parks CLK asserted: the port register is `$17` and `$DD00` reads `$97`. Measured in VICE x64sc 3.10 (rung 1): a program whose first instruction is `LDA $DD00` shows `$97`, and `$C7` only after it stores `$07`; the readings are identical with `-drive8truedrive` and a 1541 attached and with no drive, so nothing on the emulated bus was pulling. `$C7` is the bus after the C64 has released its lines. A `$07` store does that, and so does the `JSR CLKHI / JMP DATAHI` pair at `$EE0D`–`$EE12` that the KERNAL's UNLSN and UNTLK both end with.
 
-**One register, both directions.** The C64 reads the bus and drives its own lines through the same byte, which is why every KERNAL primitive above is a read-modify-write: a bare `STA $DD00` would also rewrite the VIC bank and TXD. Custom IEC code must mask the same way, and anything that changes the VIC bank while the bus is busy — a raster interrupt switching banks under a loader, say — must carry bits 3–5 through unchanged or it will drop CLK or DATA in the middle of a byte.
+**One register, both directions.** The C64 reads the bus and drives its own lines through the same byte, which is why every KERNAL primitive above is a read-modify-write: a bare `STA $DD00` would also rewrite the VIC bank and TXD. Custom IEC code must mask the same way, and anything that changes the VIC bank while the bus is busy (a raster interrupt switching banks under a loader, say) must carry bits 3–5 through unchanged or it will drop CLK or DATA in the middle of a byte.
 
 Port B (`$DD01`) and its DDR (`$DD03`) carry no IEC signal. They are the user port's data lines, which is where parallel-cable loaders put their eight data bits.
 
-**Correction (2026-09-21).** The table this replaces had every IEC row wrong — CLK IN on bit 7, DATA IN on bit 6, ATN on bit 4, CLK OUT on bit 3, DATA OUT on bit 2, and "bits 2, 3, 4 output" for the DDR — and said the inputs were "ORed with the output lines inside the CIA". A loader written from it would have toggled the RS-232 TXD line as DATA and sampled DATA as CLK. `../hardware/cia-reference.md` has the bit numbers right but gives the input sense the other way round ("reading `1` from bit 6 means the bus is being held low"); the ISOUR test and the VICE readings above both say 1 is released. A draft of this section written the same day said IOINIT's `$07` store left all three IEC lines released and called `$C7` the idle reading without saying whose idle; IOINIT's last instruction asserts CLK, and `$C7` is what the C64 sees after it has released its own lines.
+**Correction (2026-09-21).** The table this replaces had every IEC row wrong (CLK IN on bit 7, DATA IN on bit 6, ATN on bit 4, CLK OUT on bit 3, DATA OUT on bit 2, and "bits 2, 3, 4 output" for the DDR) and said the inputs were "ORed with the output lines inside the CIA". A loader written from it would have toggled the RS-232 TXD line as DATA and sampled DATA as CLK. `../hardware/cia-reference.md` has the bit numbers right but gives the input sense the other way round ("reading `1` from bit 6 means the bus is being held low"); the ISOUR test and the VICE readings above both say 1 is released. A draft of this section written the same day said IOINIT's `$07` store left all three IEC lines released and called `$C7` the idle reading without saying whose idle; IOINIT's last instruction asserts CLK, and `$C7` is what the C64 sees after it has released its own lines.
 
 ---
 
@@ -102,7 +102,7 @@ Each byte is transferred serially, bit-by-bit, using a two-line handshake on CLK
 5. Repeat for all 8 bits (LSB first)
 6. Listener holds DATA low (ACK) briefly after the last bit
 
-This handshake means transmission speed is limited by the slowest device on the bus. The 1541 introduces significant overhead because it processes bytes in its own 6502 CPU, handling each bit-transfer in a software loop at 1 MHz. The result is the notorious ~300 byte/sec standard-load throughput.
+This handshake means transmission speed is limited by the slowest device on the bus. The 1541 adds overhead because it processes bytes in its own 6502 CPU, handling each bit-transfer in a software loop at 1 MHz. The result is the ~300 byte/sec standard-load throughput.
 
 ### EOI (End Or Identify)
 
@@ -120,7 +120,7 @@ After data transfer is complete, the C64 asserts ATN and sends the UNLISTEN (`$3
 
 ## IEC bit timing, measured
 
-The prose above says what the handshake does; this section says how long each part takes when the 901227-03 KERNAL does it, read off a cycle-stamped trace of every `$DD00` access in VICE x64sc 3.10 with `-drive8truedrive -drive8type 1541` and a freshly formatted disk (rung 1). Two probes were traced: one that does `CHKOUT` on channel 15, sends `M-R $00 $00 $04` and reads the four bytes back, and one that only reads the status line, which is the shortest way to get an EOI *from* the drive. The body of the first, without its BASIC stub:
+This section times each part of the handshake as the 901227-03 KERNAL does it, read off a cycle-stamped trace of every `$DD00` access in VICE x64sc 3.10 with `-drive8truedrive -drive8type 1541` and a freshly formatted disk (rung 1). Two probes were traced: one that does `CHKOUT` on channel 15, sends `M-R $00 $00 $04` and reads the four bytes back, and one that only reads the status line, which is the shortest way to get an EOI *from* the drive. The body of the first, without its BASIC stub:
 
 ```kick
 iec_timing:
@@ -241,7 +241,7 @@ The second is the drive's EOI on the status line's closing `$0D`, seen by the C6
 | EOI, C64 receiving: acknowledge pulse | C64 | 84 | 85.3 | 82.1 | `$EEA5` to `$EE9C`, with CLKHI at `$EE8A` between |
 | UNTALK: ATN asserted from a different place | C64 | | | | `STA $DD00` at `$EDF8`, not `$ED33` |
 
-Three things the table settles that the prose could not:
+Three things the table settles:
 
 - **The C64's bit cell is not constant.** The send loop is straight-line code, so its cell is 94 to 96 cycles, but a VIC-II badline steals about 40 cycles from whichever cell it lands in, and one or two of every eight bits were 136 to 139 cycles in every byte sent with the screen on. The drive tolerates it because every bit is handshaken; a loader with cycle-counted loops on the drive side does not, which is why fast loaders blank the screen or sit in the border. Pitfalls `gcr_timing_assumes_stock_drive`, `fastloader_dd00_write_corrupts_resident` and `raster_irq_during_serial_io` are the three places this bites.
 - **The EOI window the C64 applies as listener is 539 cycles, not 256.** ACPTR writes `1` to CIA1 timer B's high byte and force-loads the timer; it never writes the low byte, whose latch is left at whatever the last user set, so the count that ran here was `$01FF`, not `$0100`. That is arithmetic from the trace (539 = 511 plus the loop's overhead), not a measurement of the latch (not measured here). The send-side timeout in "Drive-Not-Ready and Timeout Errors" below writes `4` the same way, so "about 1,024 cycles" is the nominal count and the one that runs is likely `$04FF`, 1,279 cycles; a run in which it fires was not produced (see the caveat).
@@ -417,9 +417,9 @@ A `$00` byte is treated as no error by image tools. So a D64 can carry 20 to 29 
 
 ## Identifying the drive over the command channel
 
-`M-R` (memory read) on the command channel returns raw bytes from the drive's own address space, and each DOS keeps its power-on message in ROM at a fixed place. Four bytes therefore say which firmware is answering — and the same four bytes are the honest form of the "is this a real 1541?" test that a GCR fast loader wants before it uploads drive code (`../pitfalls/loader.md`, `gcr_timing_assumes_stock_drive`).
+`M-R` (memory read) on the command channel returns raw bytes from the drive's own address space, and each DOS keeps its power-on message in ROM at a fixed place. Four bytes therefore say which firmware is answering. The same four bytes are the correct form of the "is this a real 1541?" test that a GCR fast loader wants before it uploads drive code (`../pitfalls/loader.md`, `gcr_timing_assumes_stock_drive`).
 
-**Where the string is** (rung 1: the bytes of the drive ROM images VICE 3.10 ships in `/opt/homebrew/opt/vice/share/vice/DRIVES/`). In the 1541 the error-message table holds entry 73 at `$E5B6`: the number byte `$73`, then `CBM DOS V2.6 1541` from `$E5B7` to `$E5C7`, with bit 7 set on the first text byte (`$C3`) and on the last (`$B1`) — that is how the table marks a message's ends. The same entry in the other images:
+**Where the string is** (rung 1: the bytes of the drive ROM images VICE 3.10 ships in `/opt/homebrew/opt/vice/share/vice/DRIVES/`). In the 1541 the error-message table holds entry 73 at `$E5B6`: the number byte `$73`, then `CBM DOS V2.6 1541` from `$E5B7` to `$E5C7`, with bit 7 set on the first text byte (`$C3`) and on the last (`$B1`); that is how the table marks a message's ends. The same entry in the other images:
 
 | VICE image | Drive | Text at `$E5BF` | Bytes at `$E5C4`–`$E5C7` | Byte at `$E5C3` |
 |---|---|---|---|---|
@@ -431,9 +431,9 @@ A `$00` byte is treated as no error by image tools. So a D64 can carry 20 to 29 
 | `dos1570-315090-01` | 1570 | `V3.0 1570` | `31 35 37 B0` — "1570" | `$20` |
 | `dos1581-318045-02` | 1581 | `FF FF FF FF …` | `FF FF FF FF` | `$FF` |
 
-The 1581's ROM (32 KB from `$8000`) has nothing at that address. Its message is `COPYRIGHT CBM DOS V10 1581`: entry 73 at `$A6D0`, text from `$A6D1`, with "1581" at `$A6E7`–`$A6EA` (`31 35 38 B1`). The 1551 image (`dos1551-318008-01`) is a different bus altogether — the Plus/4's parallel port, not IEC (rung 4) — and is laid out differently again.
+The 1581's ROM (32 KB from `$8000`) has nothing at that address. Its message is `COPYRIGHT CBM DOS V10 1581`: entry 73 at `$A6D0`, text from `$A6D1`, with "1581" at `$A6E7`–`$A6EA` (`31 35 38 B1`). The 1551 image (`dos1551-318008-01`) is a different bus (the Plus/4's parallel port, not IEC; rung 4) and is laid out differently again.
 
-**The command.** From the 1541's handler (MEMRD, `$CB20`, rung 1 from the bytes): the letter after `M-` is compared with `R`, `W` and `E` — anything else is error 31 — the address is taken from `$0203` (low byte) and `$0204` (high byte), and if the command is at least six bytes long the byte at `$0205` is the count; a shorter command, or a count of 1, returns one byte. So the full form is the six bytes `M-R` `lo` `hi` `count`, sent as the "filename" of an OPEN on secondary address 15 (or with `PRINT#`; the CR it appends is ignored). The drive then delivers `count` bytes on channel 15, the last with EOI; read them with CHRIN after CHKIN 15 (or `GET#`, one per call — `INPUT#` splits its input at a CR, a comma or a colon, so it is the wrong tool for raw bytes).
+**The command.** From the 1541's handler (MEMRD, `$CB20`, rung 1 from the bytes): the letter after `M-` is compared with `R`, `W` and `E` (anything else is error 31), the address is taken from `$0203` (low byte) and `$0204` (high byte), and if the command is at least six bytes long the byte at `$0205` is the count; a shorter command, or a count of 1, returns one byte. So the full form is the six bytes `M-R` `lo` `hi` `count`, sent as the "filename" of an OPEN on secondary address 15 (or with `PRINT#`; the CR it appends is ignored). The drive then delivers `count` bytes on channel 15, the last with EOI; read them with CHRIN after CHKIN 15 (or `GET#`, one per call; `INPUT#` splits its input at a CR, a comma or a colon, so it is the wrong tool for raw bytes).
 
 **A fragment that shows the answer.** Opens the command channel, asks for the four bytes at `$E5C4`, strips the end-marker bit and puts them at the top left of the screen (digits have the same code in PETSCII and in screen code):
 
@@ -473,17 +473,17 @@ cmd:
 cmd_end:
 ```
 
-Run in VICE x64sc 3.10 (PAL) with `-drive8truedrive` and a freshly formatted `.d64` attached (rung 1): `-drive8type 1541`, `1542` (the 1541-II) and the default drive each put `1541` on the screen; `-drive8type 1571` puts `1571`; `-drive8type 1581` with a `.d81` puts four `$7F` glyphs, the `$FF` bytes with bit 7 stripped. Each glyph was matched against the character ROM's bitmap with zero differing pixels. With true drive emulation off the row stayed blank — the answer comes from the emulated drive's ROM, not from a VICE shortcut.
+Run in VICE x64sc 3.10 (PAL) with `-drive8truedrive` and a freshly formatted `.d64` attached (rung 1): `-drive8type 1541`, `1542` (the 1541-II) and the default drive each put `1541` on the screen; `-drive8type 1571` puts `1571`; `-drive8type 1581` with a `.d81` puts four `$7F` glyphs, the `$FF` bytes with bit 7 stripped. Each glyph was matched against the character ROM's bitmap with zero differing pixels. With true drive emulation off the row stayed blank: the answer comes from the emulated drive's ROM, not from a VICE shortcut.
 
 **`$41` is not a ROM byte.** The `$41` ("A") that detection routines sometimes go looking for is the DOS-version marker at offset 2 of the BAM sector, track 18 sector 0, written to the disk when it is formatted (rung 1: `c1541 -format test,01 d64 test.d64`, then byte 357 × 256 + 2 of the file reads `$41`). The 1541 ROM holds that constant at `$FED5` (VERNUM in the listing) and compares the BAM's byte against it. Testing for `$41` at `$E5C3` confuses the two: `$E5C3` is `$20`, the space between `V2.6` and `1541`, in every 1541-family image above, so such a test never passes.
 
-One thing observed and not explained: in VICE, asserting ATN by hand with CLK left released did not get DATA pulled by the emulated 1541 within 330 ms, while ATN together with CLK — which is what the KERNAL does — did. Do as the KERNAL does; the mechanism was not chased.
+One thing observed and not explained: in VICE, asserting ATN by hand with CLK left released did not get DATA pulled by the emulated 1541 within 330 ms, while ATN together with CLK, which is what the KERNAL does, did. Do as the KERNAL does; the mechanism was not chased.
 
 ---
 
 ## 1541 Drive ROM
 
-The 1541 has its own 6502 at 1 MHz, 2 KiB of RAM at `$0000`–`$07FF` (rung 4) and 16 KiB of ROM at `$C000`–`$FFFF` (rung 1: the image is 16,384 bytes and its reset vector at `$FFFC` reads `$EAA0`). The firmware — CBM DOS 2.6 — runs the file system by itself; the C64 only ever talks to it over the bus.
+The 1541 has its own 6502 at 1 MHz, 2 KiB of RAM at `$0000`–`$07FF` (rung 4) and 16 KiB of ROM at `$C000`–`$FFFF` (rung 1: the image is 16,384 bytes and its reset vector at `$FFFC` reads `$EAA0`). The firmware, CBM DOS 2.6, runs the file system by itself; the C64 only ever talks to it over the bus.
 
 Entry points, for reading a disassembly or for code uploaded with `M-W` and started with `M-E`. The bytes are rung 1 from the `dos1541-325302-01+901229-05` image and are identical in `dos1541ii-251968-03` and, except where the table says otherwise, in the 1540 image; the names are those of the g3sl.github.io listing, which takes them from *Inside Commodore DOS* (rung 4).
 
@@ -515,9 +515,9 @@ The listing itself is at `https://g3sl.github.io/c1541rom.html`; it annotates th
 
 ### Drive RAM and the Parallel Trick
 
-The 1541 has 2 KiB of general-purpose RAM. Because the drive's 6502 operates independently of the C64's 6510, both CPUs can coordinate via the IEC bus for synchronization, enabling **parallel loading**: data is transferred over all 8 bits of the user port (Centronics-style) simultaneously rather than serially over the 1-bit IEC DATA line. Combined with bit-banging on the drive side, this achieves 10–25 KB/sec — 30–80x faster than the standard KERNAL loader.
+The 1541 has 2 KiB of general-purpose RAM. Because the drive's 6502 operates independently of the C64's 6510, both CPUs can coordinate via the IEC bus for synchronization, enabling **parallel loading**: data is transferred over all 8 bits of the user port (Centronics-style) simultaneously rather than serially over the 1-bit IEC DATA line. Combined with bit-banging on the drive side, this achieves 10–25 KB/sec, 30–80x faster than the standard KERNAL loader.
 
-The technique requires custom code running on the drive CPU. The C64 uploads the drive-side routine via the command channel's `M-W` (Memory Write) command, then starts it with `M-E` (Memory Execute). Once the drive routine is running, both sides enter a tight handshake loop using the user-port lines for data and the IEC bus for control.
+The technique requires custom code running on the drive CPU. The C64 uploads the drive-side routine via the command channel's `M-W` (Memory Write) command, then starts it with `M-E` (Memory Execute). Once the drive routine is running, both sides enter a handshake loop using the user-port lines for data and the IEC bus for control.
 
 ### 1541 job queue and buffers
 
@@ -560,20 +560,20 @@ The result codes are the same numbers a `.d64` error block carries; `../pitfalls
 
 ### Notable Fastloaders
 
-Several widely-used fastloaders from the demoscene implement this approach:
+Demoscene fastloaders that use this approach:
 
 - **Krill's Loader** — widely used in modern demos; open source; supports 1541/1571/1581/SD2IEC; PAL and NTSC safe via CIA-timer calibration
 - **Spindle** — DreamLoad-compatible, optimized for original 1541 hardware
 - **DreamLoad** — older but common in late-1990s/early-2000s releases
 - **Kung Fu Flash loader** — targets flash-cart hardware with direct SD access
 
-From the KB's toolchain perspective, a fastloader is an assembly module linked into the PRG (Oscar64: inline asm or an external `.asm` included via the linker; KickAssembler: `import binary` or included source). The drive-side routine is a binary blob uploaded at runtime. Oscar64 or KickAssembler produce the drive-side stub as a `.BIN` and the loader includes it as a `char[]` array or embedded resource.
+In this KB's toolchains, a fastloader is an assembly module linked into the PRG (Oscar64: inline asm or an external `.asm` included via the linker; KickAssembler: `import binary` or included source). The drive-side routine is a binary blob uploaded at runtime. Oscar64 or KickAssembler produce the drive-side stub as a `.BIN` and the loader includes it as a `char[]` array or embedded resource.
 
 ### Timing Considerations
 
-The 1541's 6502 runs at 1 MHz from a 16 MHz crystal divided by sixteen — a fixed oscillator that has nothing to do with the disk. What changes with the track is the bit-cell clock: a programmable counter divides the same 16 MHz by 13, 14, 15 or 16 under two "density" bits, so the longer outer tracks are written denser in time and hold more sectors (rung 4: Ruud Baltissen's page on the 1541 board, which names a 74177 as the ÷16 stage and a 74LS193 as the counter the VIA's PB5/PB6 "density bits" preload, with divisors 13, 14, 15 and 16 for tracks 1–17, 18–24, 25–30 and 31–35 — not measured here). The ROM's half of that is rung 1: at `$F33C`–`$F358` the DOS compares the track against the boundary table at `$FED7` (36, 31, 25, 18), ending with a zone index of 3 for tracks 1–17 down to 0 for tracks 31–35, fetches the matching sectors-per-track from `$FED1` (21, 19, 18, 17 for indices 3 to 0), shifts the index left five places and writes it into bits 5–6 of `$1C00` with `LDA $1C00 / AND #$9F / ORA $44 / STA $1C00`. Index 3 is the fastest bit clock, index 0 the slowest.
+The 1541's 6502 runs at 1 MHz from a 16 MHz crystal divided by sixteen, a fixed oscillator independent of the disk. What changes with the track is the bit-cell clock: a programmable counter divides the same 16 MHz by 13, 14, 15 or 16 under two "density" bits, so the longer outer tracks are written denser in time and hold more sectors (rung 4: Ruud Baltissen's page on the 1541 board, which names a 74177 as the ÷16 stage and a 74LS193 as the counter the VIA's PB5/PB6 "density bits" preload, with divisors 13, 14, 15 and 16 for tracks 1–17, 18–24, 25–30 and 31–35; not measured here). The ROM's half of that is rung 1: at `$F33C`–`$F358` the DOS compares the track against the boundary table at `$FED7` (36, 31, 25, 18), ending with a zone index of 3 for tracks 1–17 down to 0 for tracks 31–35, fetches the matching sectors-per-track from `$FED1` (21, 19, 18, 17 for indices 3 to 0), shifts the index left five places and writes it into bits 5–6 of `$1C00` with `LDA $1C00 / AND #$9F / ORA $44 / STA $1C00`. Index 3 is the fastest bit clock, index 0 the slowest.
 
-Drives still vary — crystals have tolerances and spindles do not all turn at exactly 300 rpm — and a fast loader with cycle-counted loops on both ends has to leave room for that; the KERNAL protocol is immune because every bit is handshaken. The PAL/NTSC difference is on the C64 side only: 985,248 Hz against 1,022,727 Hz, while the drive is 1 MHz in both regions, so a loader that counts C64 cycles against drive cycles must know which C64 it is on. The `c64_pal_ntsc_diff` tool in this KB has the numbers.
+Drives still vary (crystals have tolerances and spindles do not all turn at exactly 300 rpm), and a fast loader with cycle-counted loops on both ends has to leave room for that; the KERNAL protocol is immune because every bit is handshaken. The PAL/NTSC difference is on the C64 side only: 985,248 Hz against 1,022,727 Hz, while the drive is 1 MHz in both regions, so a loader that counts C64 cycles against drive cycles must know which C64 it is on. The `c64_pal_ntsc_diff` tool in this KB has the numbers.
 
 **Correction (2026-09-21).** The earlier text said the drive CPU's clock was "derived from the disk rotation rate, synchronous with the GCR bit cells" and that "PAL C64 drives run at 985,248 Hz". Neither is so: the CPU clock is the crystal, only the bit clock is switched, and it is switched by track zone rather than by anything measured off the disk; the two frequencies quoted are the C64's, not the drive's.
 
@@ -699,11 +699,11 @@ Which buffers uploaded code may take: with only channel 15 open, buffers 1 and 3
 
 ## SD2IEC and Ultimate II+
 
-These modern IEC-compatible peripherals are flagged here for completeness but are **out of scope** for this KB's primary hardware target (stock C64 PAL/NTSC).
+These modern IEC-compatible peripherals are **out of scope** for this KB's primary hardware target (stock C64 PAL/NTSC).
 
-**SD2IEC** is a microcontroller-based IEC device that reads/writes SD cards. It emulates the 1541 command set well enough for most purposes but has no drive CPU — it cannot execute drive-side code, making all `M-W`/`M-E` based fastloaders non-functional. SD2IEC supports a subset of fastloaders via native acceleration modes (Krill's Loader, for example, has an SD2IEC-compatible codepath).
+**SD2IEC** is a microcontroller-based IEC device that reads/writes SD cards. It emulates the 1541 command set well enough for most purposes but has no drive CPU: it cannot execute drive-side code, making all `M-W`/`M-E` based fastloaders non-functional. SD2IEC supports a subset of fastloaders via native acceleration modes (Krill's Loader, for example, has an SD2IEC-compatible codepath).
 
-**Ultimate II+** (Gideon's Logic) is an FPGA cartridge that includes an accurate 1541 emulation with real drive CPU, plus fast IEC (via FBI fast loader built into the cartridge firmware). It is the gold standard for hardware-accurate fast loading on modern C64 setups but represents cartridge-extended hardware outside the stock scope.
+**Ultimate II+** (Gideon's Logic) is an FPGA cartridge that includes an accurate 1541 emulation with real drive CPU, plus fast IEC (via FBI fast loader built into the cartridge firmware). It is used for hardware-accurate fast loading on modern C64 setups but is cartridge-extended hardware outside the stock scope.
 
 Both devices handle `.D64`, `.D71`, `.D81`, `.T64`, and `.PRG` files from SD cards, making them the most common way demosceners develop on real hardware today.
 
@@ -713,19 +713,19 @@ Both devices handle `.D64`, `.D71`, `.D81`, `.T64`, and `.PRG` files from SD car
 
 ### Standard IEC Load Speed (~300 bytes/sec)
 
-The headline limitation of the IEC bus is its throughput. A full 35-track 1541 disk (664 KB usable) takes over 30 minutes to read entirely via the KERNAL LOAD. A typical 50 KB program takes about 2.5 minutes. This is universally considered unacceptable for released software; virtually every released demo and game uses a custom fastloader. Plan for fastloader integration from the start of any project targeting real hardware.
+A full 35-track 1541 disk (664 KB usable) takes over 30 minutes to read entirely via the KERNAL LOAD over the IEC bus. A typical 50 KB program takes about 2.5 minutes. Nearly every released demo and game therefore uses a custom fastloader. Plan for fastloader integration from the start of any project targeting real hardware.
 
 ### VICE Timing Differences with Real Hardware
 
-VICE's 1541 emulation is accurate for correctness but the default configuration does not emulate the real-time IEC bus timing precisely. Programs that rely on cycle-counted timing in IEC routines (including some fastloaders) may work correctly in VICE but fail on real hardware, or vice versa. Use VICE's `-drive8truedrive` option (and `-drivesound` if you want to hear the head) to enable the more accurate (but slower) true-drive emulation during testing; an earlier version of this sentence spelled them `--drivesound 1 --drive8truedrive 1`, which x64sc 3.10 refuses — its options take a single dash and no argument.
+VICE's 1541 emulation is accurate for correctness but the default configuration does not emulate the real-time IEC bus timing precisely. Programs that rely on cycle-counted timing in IEC routines (including some fastloaders) may work correctly in VICE but fail on real hardware, or vice versa. Use VICE's `-drive8truedrive` option (and `-drivesound` to hear the head) to enable the more accurate (but slower) true-drive emulation during testing; an earlier version of this sentence spelled them `--drivesound 1 --drive8truedrive 1`, which x64sc 3.10 refuses: its options take a single dash and no argument.
 
 The `c64_pal_ntsc_diff` MCP tool and `../hardware/pal-ntsc-reference.md` detail the clock-rate differences that affect CIA-timer-based IEC routines.
 
 ### CIA2 Contention: IEC Bus vs RS-232
 
-CIA2 Port B (`$DD01`) is the user port's eight data lines (RS-232 or a parallel cable); Port A (`$DD00`) holds the IEC outputs in bits 3–5, the RS-232 TXD line in bit 2 and the VIC bank in bits 0–1. A parallel fast loader drives Port B freely — nothing there touches the bus — but every write to Port A must be a masked read-modify-write, and the bug to look for is a loader, or an interrupt handler switching VIC banks, that stores a whole byte to `$DD00` and thereby releases or asserts ATN, CLK or DATA. An earlier version of this paragraph had the IEC outputs at bits 2–4 and the fault on Port B; both were wrong.
+CIA2 Port B (`$DD01`) is the user port's eight data lines (RS-232 or a parallel cable); Port A (`$DD00`) holds the IEC outputs in bits 3–5, the RS-232 TXD line in bit 2 and the VIC bank in bits 0–1. A parallel fast loader drives Port B freely (nothing there touches the bus), but every write to Port A must be a masked read-modify-write, and the bug to look for is a loader, or an interrupt handler switching VIC banks, that stores a whole byte to `$DD00` and thereby releases or asserts ATN, CLK or DATA. An earlier version of this paragraph had the IEC outputs at bits 2–4 and the fault on Port B; both were wrong.
 
-Similarly, code that uses CIA2 for RS-232 (via the user port ACIA emulation) must ensure IEC I/O is not simultaneously active. The KERNAL does not serialize these; user code must guard access.
+Code that uses CIA2 for RS-232 (via the user port ACIA emulation) must ensure IEC I/O is not simultaneously active. The KERNAL does not serialize these; user code must guard access.
 
 ### Drive-Not-Ready and Timeout Errors
 
@@ -733,7 +733,7 @@ The KERNAL has one timeout on the bus, and it is short and narrow. The byte-send
 
 ### Directory Track Corruption
 
-Track 18 is the most-written track on a 1541. The directory and BAM are updated on every file write or scratch. Repeated use without a VALIDATE (`V0` command channel) command can produce a corrupted BAM — sectors marked allocated that are actually free, or vice versa. VALIDATE rebuilds the BAM by walking every file chain and reconstructing the bitmap. Running VALIDATE on a disk with active writes will abort any open file writes. The c1541 utility (bundled with VICE) can perform offline BAM repair.
+Track 18 is the most-written track on a 1541. The directory and BAM are updated on every file write or scratch. Repeated use without a VALIDATE (`V0` command channel) command can produce a corrupted BAM: sectors marked allocated that are actually free, or vice versa. VALIDATE rebuilds the BAM by walking every file chain and reconstructing the bitmap. Running VALIDATE on a disk with active writes will abort any open file writes. The c1541 utility (bundled with VICE) can perform offline BAM repair.
 
 ---
 

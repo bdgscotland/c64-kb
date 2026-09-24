@@ -12,13 +12,13 @@ home_url: https://github.com/bdgscotland/c64-kb
 
 ## Tool
 
-This page is a procedure, not a program. It takes a PRG that one of the
-toolchains built and turns it into a TAP image a user can attach as a
+This page is a procedure, not a program. It turns a PRG that one of the
+toolchains built into a TAP image a user can attach as a
 cassette and start with `LOAD` and `RUN`, then proves the image loads by
 running it in headless VICE and looking at the screen. Two routes are
 shown: the KERNAL's own format, which any C64 reads with no software of
 its own, and a turbo block placed behind a small KERNAL-format loader,
-which is how a commercial tape got its speed. Every command and every
+which is how commercial tapes loaded faster. Every command and every
 figure here was run on this machine with the windowless x64sc build of
 VICE 3.10 (`-warp`, PAL unless the line says NTSC) on two payloads: a
 202-byte KickAssembler test program that sets the border green and
@@ -30,7 +30,7 @@ which measured them on a TAP the KERNAL itself recorded; the writer here
 was checked against that recording with the same decoder. No third-party
 mastering tool was used: a search for a licence-clear `prg2tap` source
 could not be run inside this session's budget, none is installed on this
-machine, and the writers below are short enough to own.
+machine, and the writers below are short enough to keep on this page.
 
 **Targets:** 6510
 
@@ -68,7 +68,7 @@ significant first, and an odd parity bit, each bit a pair of pulses.
 Those rules are the formats page's measurement and are restated in the
 pitfall
 [tape_bit_is_a_pulse_pair_not_a_pulse](../pitfalls/loader.md); this page
-does not repeat the figures, it uses them.
+uses the figures without repeating them.
 
 ## The KERNAL-format writer
 
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     main(sys.argv)
 ```
 
-Three choices in it are worth knowing. The pulse values `$2F`, `$43`
+Three choices in the writer. The pulse values `$2F`, `$43`
 and `$58` are the most common bytes in the KERNAL's own recording, so a
 reader that copes with the KERNAL's tapes copes with these. The
 0.33 s silence between the two blocks is a 24-bit TAP v1 entry, the
@@ -189,7 +189,7 @@ form VICE itself recorded at that point. The file name goes in as
 upper-case ASCII, which is unshifted PETSCII and shows as capitals in
 the C64's default font; the same shift trap that
 [release-disk](release-disk.md) records for `c1541` applies to any name
-typed in lower case in a shell, and this script upper-cases for you.
+typed in lower case in a shell, and this script upper-cases the name.
 
 On the test program:
 
@@ -300,8 +300,8 @@ OK
 
 The pictures are `../figures/tape-turbo-master-pal.png` and
 `../figures/tape-turbo-master-ntsc.png` (NTSC reads `CYCLES 1540493
-B/S 334 NTSC`), byte-identical on two runs each. `LEADIN 11995` is the
-detail that matters: the KERNAL stops the motor within a handful of
+B/S 334 NTSC`), byte-identical on two runs each. `LEADIN 11995` shows
+the motor timing: the KERNAL stops the motor within a handful of
 pulses of the end of its second copy, and the stub restarts it, so the
 loader saw 11,995 of the 12,000 lead-in pulses the recipe writes for a
 tape that runs from power-on. Behind a stub the lead-in can be short.

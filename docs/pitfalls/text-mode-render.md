@@ -22,8 +22,8 @@ a C64 text-mode field redraw is "cheap enough that the simplest 'rewrite
 everything every frame, overlay last' loop just works". It does not: the
 10×20 `render_field` listed below costs about 16,400 cycles (15,500 with
 the display blanked; VICE x64sc PAL, Oscar64 -O2, CIA-timed), and the
-race-free budget is much smaller — `vic_waitBottom` returns at raster
-256 and the display window resumes at 51, 107 lines, ~6,700 cycles — so
+race-free budget is much smaller (`vic_waitBottom` returns at raster
+256 and the display window resumes at 51: 107 lines, ~6,700 cycles), so
 the full repaint runs to about line 205 of the next frame. The shape
 that works is: paint the field on state changes only, and per frame
 erase the piece's previous cells from `field[][]` and draw its current
@@ -43,19 +43,19 @@ instead.
 
 A Tetris-like (or any falling-piece / moving-overlay game) draws the
 playfield + an active piece on top. The active piece moves every
-gravity tick, but on screen you see EITHER (a) a smeared trail of every
+gravity tick, but the screen shows EITHER (a) a smeared trail of every
 position the piece has occupied since spawn, or (b) the piece appears
-to "skip" rows and only becomes visible near the bottom of the field,
-where row activity is highest. Empty rows above appear truly empty
+to skip rows and only becomes visible near the bottom of the field,
+where row activity is highest. Empty rows above appear empty
 even though the piece passed through them.
 
-The bug is the same in both cases — render_field's "skip cells where
-field[r][c] hasn't changed" optimization is silently dropping the
-writes needed to *clear* the piece's previous position.
+Both have one cause: render_field's "skip cells where field[r][c]
+hasn't changed" optimization drops the writes that clear the piece's
+previous position.
 
 ### Mechanism
 
-The piece is rendered as an OVERLAY — its cells aren't in the
+The piece is rendered as an OVERLAY: its cells are not in the
 `field[][]` array until the piece locks. The render loop is:
 
 ```c
@@ -65,15 +65,15 @@ render_piece();   // walks active piece's 4 cells, overwrites screen + color RAM
 
 When `render_field` repaints every cell unconditionally, render_piece's
 prior-frame writes get overwritten by the (correct) empty-cell content
-of the playfield. The piece moves cleanly. The "trail" from the
-previous frame is implicitly erased.
+of the playfield. The piece moves cleanly. The trail from the
+previous frame is erased as a side effect.
 
-The moment `render_field` adds a "skip if field[r][c] equals last
-frame's field[r][c]" cache, this property collapses:
+When `render_field` adds a "skip if field[r][c] equals last frame's
+field[r][c]" cache, that erase stops:
 
 - The piece at frame N-1 is drawn over cells (r, c) where field[r][c] == 0.
 - Frame N: piece moves to (r+1, c). render_field sees field[r][c] is
-  still 0, "unchanged" — skips. The piece's prior screen-RAM write
+  still 0, treats it as unchanged and skips it. The piece's prior screen-RAM write
   ($A0 + color) survives. render_piece draws the new position.
 - On screen: piece at (r, c) AND (r+1, c). Trail.
 - After 20 gravity ticks: piece smeared across 20 rows.
@@ -84,15 +84,14 @@ appeared with no descent."
 
 ### Fix
 
-The naïve advice "just rewrite the whole field every frame" is WRONG
-on a typical Oscar64 build — see `full_field_redraw_exceeds_vblank`.
-The correct overlay shape is to track the piece's prior position and
-erase + draw only those ~8 cells per frame; `render_field` runs only
+Rewriting the whole field every frame is WRONG on a typical Oscar64
+build; see `full_field_redraw_exceeds_vblank`. Instead, track the
+piece's prior position and erase + draw only those ~8 cells per frame; `render_field` runs only
 on persistent-state changes (line clear, restart, initial paint).
 
 The render order must be: erase prev piece (from field[][] content),
-then draw current piece. Both passes use the piece-cells table — no
-separate dirty-rectangle tracking on the field.
+then draw current piece. Both passes use the piece-cells table; the
+field needs no separate dirty-rectangle tracking.
 
 ```c
 // render_field: unconditional field repaint. Call it on state changes
@@ -123,7 +122,7 @@ void render_piece(void) {
 ```
 
 Because even the 10×20 field redraw is too slow for the per-frame
-budget on an Oscar64 build, you must EITHER:
+budget on an Oscar64 build, the fix is EITHER:
 
 - Track the piece's prior position separately and explicitly write
   spaces there before drawing the new position (a "dirty rectangle"
@@ -131,10 +130,9 @@ budget on an Oscar64 build, you must EITHER:
 - Skip the optimization for the rows the piece currently occupies +
   the rows it occupied last frame.
 
-The first approach is cleaner, and it is the one the listing under
-`full_field_redraw_exceeds_vblank` shows. An earlier version of this
+The listing under `full_field_redraw_exceeds_vblank` uses the first. An earlier version of this
 section ended by saying neither was needed on a 10×20 playfield because
-the unconditional rewrite was "well within budget"; it is not — the
+the unconditional rewrite was "well within budget". It is not: the
 listing above measures about 16,400 cycles a call against a ~6,700-cycle
 race-free window (VICE x64sc, PAL, CIA-timed), which is the third
 pitfall on this page.
@@ -168,8 +166,8 @@ void render_field(void) {
 - Technique: `text_mode_overlay_render` (`docs/techniques/text-mode-render.md`)
 - Related: any game-archetype briefing that proposes a text-mode
   playfield + moving overlay (Tetris, Sokoban, Boulder Dash, board
-  games). `c64_game_briefing` with archetype `puzzle` should surface
-  this pitfall automatically.
+  games). `c64_game_briefing` with archetype `puzzle` should return
+  this pitfall.
 
 ---
 
@@ -181,10 +179,10 @@ void render_field(void) {
 
 ### Symptom
 
-A Tetris-like correctly draws a GAME OVER banner (or a line-clear flash
-animation) — for ONE frame. The next frame the banner disappears and
+A Tetris-like draws a GAME OVER banner (or a line-clear flash
+animation) for ONE frame. The next frame the banner disappears and
 the playfield reappears as if nothing happened. The state machine has
-correctly flipped to STATE_OVER (or STATE_LINE_FLASH), but the screen
+flipped to STATE_OVER (or STATE_LINE_FLASH), but the screen
 keeps showing the active game.
 
 ### Mechanism
@@ -255,29 +253,28 @@ A Tetris-like (or any per-frame text-mode redraw game) shows the
 piece correctly in the bottom few rows (at most screen rows 20-24) but
 the UPPER rows look empty or stale, even though a memory dump of
 screen RAM shows the piece at the correct upper row. The piece appears to "teleport" into
-the lower screen — you can see it land but never see it descend from
-the top.
+the lower screen: it is seen to land but never to descend from the top.
 
-Confusingly, `readMemory` on screen RAM at any moment shows the piece
-at the expected row. The bug is visual-only and exists because the
-CPU and the VIC raster are racing.
+`readMemory` on screen RAM at any moment shows the piece at the
+expected row. The bug is visual only: the CPU and the VIC raster are
+racing.
 
 ### Mechanism
 
 The C64 has no frame buffer. The VIC reads screen RAM line by line
 during the visible portion of the raster (PAL lines ~50-249), and the
 CPU can write to screen RAM at any time. After `vic_waitBottom`
-returns at raster 256 there are 107 raster lines — 56 of lower border
-and blanking to the wrap at 311, then 51 of upper border — before the
+returns at raster 256 there are 107 raster lines (56 of lower border
+and blanking to the wrap at 311, then 51 of upper border) before the
 display window resumes at raster 51 and the VIC fetches screen RAM
 again: 107 × 63 ≈ **6,700 cycles** in which the CPU can write screen
 RAM without the raster racing it. (The 56 lines to the wrap alone are
 ~3,500 cycles, which is what an earlier version of this page called
 "the vblank window"; the race-free budget is nearly twice that.)
 
-A naïve full-field redraw — walk every cell of a 10×20 playfield
-(rendered 2-chars-wide = 200 cells × 2 chars), write screen RAM + color
-RAM — costs about 78-86 cycles per cell in Oscar64 -O2 output: the
+A full-field redraw (walk every cell of a 10×20 playfield, rendered
+2-chars-wide = 200 cells × 2 chars, write screen RAM + color RAM)
+costs about 78-86 cycles per cell in Oscar64 -O2 output: the
 listing in the first section measures 15,519 cycles with the display
 blanked and about 16,400 wall-clock started at raster 256 with badline
 stalls counted in (CIA-timed in VICE x64sc), and the recipe's
@@ -292,12 +289,12 @@ When `render_field` is called every frame after `vic_waitBottom`:
    runs about 16,400 cycles for the listing in the first section
    (measured in VICE x64sc, PAL, CIA2 timer; 17,100-17,450 for the
    recipe's version) and does not finish until about raster 205-220 of
-   the NEXT frame — well past the top of the display window, which
+   the NEXT frame, well past the top of the display window, which
    resumed at line 51. An earlier version of this page said "lines 0 →
    156, ~76 lines past vblank end"; neither number follows from its own
    figures (18,400 / 63 is 292 lines, which from 256 wraps to about
    236) and neither was measured.
-2. The field rows themselves are not what you see go wrong. The loop
+2. The field rows themselves are not what goes wrong. The loop
    advances about 13 raster lines per field row while the VIC's badlines
    advance 8, so each playfield row is rewritten before the VIC fetches
    it, for every playfield origin from screen row 1 down: rows 0-3 land
@@ -309,31 +306,30 @@ When `render_field` is called every frame after `vic_waitBottom`:
    the row's badline, so that row can show the field one frame late
    after a lock). An earlier version of this page said the CPU was
    still clearing playfield rows 0..7 after the VIC had drawn them and
-   "caught up around row 8 of the playfield (= screen row ~20)" — which
+   "caught up around row 8 of the playfield (= screen row ~20)", which
    is also impossible on its face, since a 20-row field on a 25-row
    screen puts playfield row 8 on screen row 13 at the lowest.
 3. What loses the race is the piece overlay. `render_piece` runs only
    after `render_field` returns, at about raster 205-220, when every
-   screen row whose badline (51 + 8·row) is earlier than that — rows 0
-   to about 19 — has already been fetched for this frame; and the next
+   screen row whose badline (51 + 8·row) is earlier than that (rows 0
+   to about 19) has already been fetched for this frame; and the next
    frame's `render_field` erases the piece again before the badline of
    every row it could have reached. So only piece cells on screen rows
-   whose fetch falls after the overlay write — screen rows 20-24 at
+   whose fetch falls after the overlay write (screen rows 20-24 at
    most, whose badlines are 211-243, and fewer the longer the overlay
-   takes — are ever displayed. With FIELD_ROW0 = 4 that is the bottom
+   takes) are ever displayed. With FIELD_ROW0 = 4 that is the bottom
    two to four playfield rows (rows 16-19); with a field ending higher
    on the screen, fewer or none. Every row above that shows the piece
    erased.
 
 Net effect: the field content is current everywhere, but the piece is
-invisible in every row above the bottom few; it "appears" only once
+invisible in every row above the bottom few. It appears only once
 gravity has moved it into the screen rows whose badline falls after
-the overlay write — which is the "teleports into the lower screen"
+the overlay write. That is the "teleports into the lower screen"
 symptom.
 
-This is a frame-budget bug, not a logic bug. The unconditional redraw
-pattern that "feels safe" because it has no caching, no dirty-cell
-state — is itself the trap.
+This is a frame-budget bug, not a logic bug. The unconditional redraw,
+with no caching and no dirty-cell state, is itself the cause.
 
 ### Fix
 
@@ -371,28 +367,27 @@ void render_piece(void) {
 }
 ```
 
-Per-frame cost drops to 8 cell writes — about **~2,000 cycles** in
+Per-frame cost drops to 8 cell writes, about **~2,000 cycles** in
 Oscar64 -O2 (`render_piece` measured at 1,998 cycles on CIA 2 timer A,
 ~250 a call through `paint_cell`; see
 `recipes/oscar64/text-overlay-playfield.md`), or roughly 150–200 cycles
 in hand assembly with precomputed addresses. Either fits the ~3,500
-cycles to the frame wrap with room to spare, and the 107 raster lines
-(~6,700 cycles) between raster 256 and the display window resuming at
-line 51 are the real race-free budget. An earlier version of this page
+cycles to the frame wrap, and the 107 raster lines (~6,700 cycles)
+between raster 256 and the display window resuming at line 51 are the
+full race-free budget. An earlier version of this page
 said ~120 cycles, which is 15 a cell against the ~92 it had just priced
 an Oscar64 cell write at. Call `render_field()` only when persistent
-state actually changes:
+state changes:
 
 - After a line-clear shift (rare).
 - After game-over restart (rare).
 - Initial paint from `render_init()` (once).
 
 Reset `have_prev = 0` whenever `render_field` runs so the next frame
-doesn't try to "erase" cells that have moved.
+does not try to erase cells that have moved.
 
-For a brief frame during a line clear, the full redraw will tear —
-that's acceptable because line clears are rare and the tear lasts
-exactly one frame.
+During a line clear the full redraw tears for exactly one frame. Line
+clears are rare, so this is acceptable.
 
 ### Why the naïve advice is wrong
 
@@ -400,22 +395,22 @@ This pitfall corrects an earlier version of `text_mode_overlay_render`
 and `dirty_cell_skip_leaves_overlay_trail` that claimed full redraw
 is cheap on C64 ("4800 cycles, 24% of a PAL frame"). That estimate
 under-counted Oscar64's loop overhead and ignored the cost of color
-RAM writes. puzzle-tetris-c64-kb put it at ~18,000 cycles — an
-estimate in the fix commit, never timed; the same listing measures
-15,500-16,400 in VICE and the recipe's version 17,100-17,450 — any of
-which runs through the 107-line race-free window and well into the
+RAM writes. puzzle-tetris-c64-kb put it at ~18,000 cycles, an
+estimate in the fix commit, never timed. The same listing measures
+15,500-16,400 in VICE and the recipe's version 17,100-17,450; any of
+these runs through the 107-line race-free window and well into the
 visible draw of the next frame.
 
-The takeaway: 200 cell writes IS expensive on a 1 MHz 6502 when
-each "write" is actually 2 STA-absolute + 2 color-RAM STA + indexed
-addressing overhead + loop counter. Don't trust intuitive estimates
-for per-frame text-mode work; measure or budget explicitly.
+200 cell writes are expensive on a 1 MHz 6502 when each write is
+2 STA-absolute + 2 color-RAM STA + indexed addressing overhead + loop
+counter. Measure per-frame text-mode work or budget it from cycle
+counts; do not estimate it by feel.
 
 ### Cross-references
 
 - Technique: `text_mode_overlay_render`
-- Related: `dirty_cell_skip_leaves_overlay_trail` (the bug class you
-  hit if you try to fix this by adding a dirty-cell cache to
+- Related: `dirty_cell_skip_leaves_overlay_trail` (the bug that follows
+  from fixing this by adding a dirty-cell cache to
   `render_field` instead of switching to an overlay pattern).
 
 ---
@@ -525,8 +520,8 @@ something unrelated stops. Which thing depends on how far the index
 went and what value it carried. The jiffy clock freezes, the cursor
 stops flashing and the keyboard goes dead; or the keyboard alone goes
 dead while the joystick still reads; or a CIA-timed measurement returns
-nonsense while the frame count stays plausible (that last is how the
-`recipes/oscar64/difficulty-tables.md` build met it: coins drawn on text
+nonsense while the frame count stays plausible (the
+`recipes/oscar64/difficulty-tables.md` build hit that last one: coins drawn on text
 rows up to 28 put the colour writes at `$D800 + 1120` and beyond). No
 cell on the screen is wrong, because every cell was written before the
 index left the chip.
@@ -636,7 +631,7 @@ fill_colour_bad:
 ```
 
 That form stops at `$DBFF` and is harmless. The one that reaches the
-CIA is its 16-bit cousin, a pointer walked until the high byte turns
+CIA is the 16-bit form, a pointer walked until the high byte turns
 over, which is what the difficulty-tables build and the measured fill
 above both did:
 
@@ -703,7 +698,7 @@ fill_colour_good:
   the I/O map that puts CIA1 at `$DC00`; `hardware/cia-reference.md` for
   what each of the sixteen registers does with the byte it is given.
 - **Recipe:** `recipes/oscar64/difficulty-tables.md`, "A bug this page
-  had": the overrun met in the wild, at `$D800 + 1120`.
+  had": the overrun as it happened in a build, at `$D800 + 1120`.
 - **Not measured here:** NTSC (the mechanism is address arithmetic and
   has no region term); a real key press after the overrun (the harness
   cannot press one; the keyboard consequence is read from the port bytes
@@ -721,16 +716,16 @@ fill_colour_good:
 
 ### Symptom
 
-An `IF PEEK(53280)=2` that is silently false after `POKE 53280,2`. A
+An `IF PEEK(53280)=2` that is false after `POKE 53280,2`. A
 `cmp #2` after `lda $d020` whose branch is never taken. A colour saved
 with `lda $d021` and used as a table index that reads 240 bytes past the
 end of a sixteen-entry table. A "restore the border" routine that works,
 because a write only takes the low four bits, while the compare in the
 same program does not. Nothing crashes and nothing is drawn wrong; the
-program just takes the other branch, and the bug looks like logic.
+program takes the other branch, and the bug looks like logic.
 
-This bit the BASIC wedge recipe on its first run: `&B 2` set the border
-red, `IF PEEK(53280)=2 THEN` skipped its line without a word, and the
+The BASIC wedge recipe hit this on its first run: `&B 2` set the border
+red, `IF PEEK(53280)=2 THEN` skipped its line, and the
 verdict byte was never written.
 
 ### Mechanism
@@ -760,9 +755,9 @@ not measured here; VICE, both models, is what the table below shows.
 
 ### Fix
 
-Mask before you compare: `and #$0f` after the read, or `(PEEK(53280)
+Mask before comparing: `and #$0f` after the read, or `(PEEK(53280)
 AND 15)` in BASIC. If a colour is going to index a table, mask it first.
-Better, keep your own copy of each colour in RAM and never read the
+Better: keep a copy of each colour in RAM and never read the
 register back; the register is write-only in effect, and a shadow byte
 also survives a raster routine that changes the border mid-frame. A read
 of a VIC colour register that is stored, compared or indexed without a
@@ -831,12 +826,12 @@ POKE53281,3:PRINTPEEK(53281);PEEK(53281)AND15   ->  243  3
 ### Cross-references
 
 - Technique: `basic_extension_wedge` (`techniques/text.md`), whose
-  recipe met this and masks with `AND 15`
+  recipe hit this and masks with `AND 15`
 - Recipe: `recipes/kickassembler/basic-wedge.md`, the run that found it
 - Registers: `$D020` to `$D02E`, `$D016`, `$D018`, `$D019`, `$D01A`
   (`hardware/vic-ii-reference.md`; each entry marks the bits that read 1)
 - Pitfall: `d016_unmasked_rmw_clobbers_csel_mcm` (`pitfalls/scroll.md`),
-  the read-modify-write face of the same two bits on `$D016`
+  the read-modify-write form of the same two bits on `$D016`
 - Pitfall: `sprite_priority_collision_silent` (`pitfalls/sprite.md`),
   the read trap on `$D01E`/`$D01F`, which is clearing, not garbage
 - Pitfall: `sid_write_only_registers` (`pitfalls/sid.md`), the
@@ -855,18 +850,18 @@ POKE53281,3:PRINTPEEK(53281);PEEK(53281)AND15   ->  243  3
 The program switches a text screen to Extended Colour Mode and the
 display window goes black. Not blank: black. The border keeps its
 colour, the raster interrupts keep firing, and sprites still show, so
-the machine is plainly running. The four background bands the code set
-up are not there, and neither are the glyphs. Worse, the game keeps
-playing against the field nobody can see: the sprite-to-background
+the machine is running. The four background bands the code set up are
+not there, and neither are the glyphs. The game also keeps playing
+against the invisible field: the sprite-to-background
 collision bit still sets when a sprite crosses a glyph, and a sprite
 set to run behind the playfield is still cut by the glyph pixels, which
 are now the same black as everything round them.
 
-The usual route in is a mode change. The previous screen was a
+The usual cause is a mode change. The previous screen was a
 multicolour character screen, so `$D016` still holds `$D8` with MCM
 (bit 4) set. The ECM screen's setup writes `$D011` with bit 6 and never
-touches `$D016`, because ECM is a `$D011` mode and the writer's mental
-model of `$D016` is "scroll and 38-column". ECM and MCM are now both
+touches `$D016`, because ECM is a `$D011` mode and `$D016` is thought of
+as "scroll and 38-column". ECM and MCM are now both
 set, and that pair is not a mode.
 
 ### Mechanism
@@ -880,7 +875,7 @@ ECM+BMM+MCM as "output is black", and says that in those modes "the
 display sequencer still runs, but the pixel data output is forced to
 black. Collisions and sprites still function."
 
-That last sentence is the trap. The sequencer still classifies each
+The live collisions are the trap. The sequencer still classifies each
 pixel as foreground or background, and the sprite unit still compares
 against that classification for `$D01F` and for the `$D01B` priority
 mask; only the colour lookup is replaced by black. So the picture
@@ -915,10 +910,10 @@ here.
 
 ### Fix
 
-Clear MCM before you set ECM, or in the same handful of cycles, and
+Clear MCM before setting ECM, or in the same handful of cycles, and
 never assume `$D016` from the last screen. Write the whole `$D016` byte
 for the new screen (`$C8` for a 40-column, unscrolled ECM screen) rather
-than leaving whatever the previous mode put there. If you must
+than leaving whatever the previous mode put there. For a
 read-modify-write, `and #$EF` clears the bit without disturbing CSEL and
 XSCROLL. In a raster split from multicolour text to ECM, store `$D016`
 first and `$D011` second, so the only intermediate state is plain text
@@ -928,7 +923,7 @@ Write a sanity check into the setup routine during development: after
 the mode writes, `lda $d011`, `and #$40`, and if it is set, `lda $d016`,
 `and #$10`, which must be zero. Bits 7 and 6 of `$D016` read as ones
 (`vic_colour_register_upper_nibble_reads_set` above), so mask before
-you compare.
+comparing.
 
 ### Worked example
 
@@ -1027,8 +1022,8 @@ The glyphs the program did print are there in outline but not as
 drawn, each one a mixture of the tail of one source glyph and the head
 of the next. Text
 written with the same screen codes against a raw charset export comes
-out right, so the codes and the `$D018` value are not the problem. The
-assembler and the compiler both said nothing.
+out right, so the codes and the `$D018` value are not the problem. Neither
+the assembler nor the compiler reported anything.
 
 ### Mechanism
 
@@ -1115,9 +1110,9 @@ binary" export, per `art/asset-pipelines.md`, not measured here) and
 embed that, so the build does
 not carry the version-dependent offset at all; or strip the container
 in a build step with the walker on the formats page. Check the version
-byte before you settle on an offset.
+byte before choosing an offset.
 
-A cheap guard for the build you have: read byte 0 of the charset bank
+A guard for an existing build: read byte 0 of the charset bank
 before pointing `$D018` at it, and stop if it is `$43`, the `C` of
 `CTM`. A real glyph 0 can hold `$43` (it is a row of `01000011`), so
 the check is a tripwire during development, not a proof.

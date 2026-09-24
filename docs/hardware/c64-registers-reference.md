@@ -2,16 +2,15 @@
 
 ## Overview
 
-This document is a single-page index of every memory-mapped I/O register
-visible to the 6510 in the $D000-$DFFF window of a stock Commodore 64.
-It exists so an agent (or a human) who knows only an address — "what
-lives at $D012?" — can land on the right chip without first guessing
-which datasheet to open.
+A single-page index of every memory-mapped I/O register visible to the
+6510 in the $D000-$DFFF window of a stock Commodore 64. A reader who
+knows only an address ("what lives at $D012?") finds the right chip
+here without guessing which datasheet to open.
 
-It is intentionally **tabular only**. Each chip's registers are listed
-in a name + address + R/W + one-line description grid. The full
-per-register detail — bit layouts, side effects, timing notes, code
-snippets — lives in the per-chip reference documents:
+It is **tabular only**. Each chip's registers are listed in a name +
+address + R/W + one-line description grid. Per-register detail (bit
+layouts, side effects, timing notes, code snippets) is in the per-chip
+reference documents:
 
 - [VIC-II reference](vic-ii-reference.md) — $D000-$D02F
 - [SID reference](sid-reference.md) — $D400-$D41C
@@ -21,18 +20,16 @@ snippets — lives in the per-chip reference documents:
 `src/graph/extract.ts` pulls one `Register` node per H3 of the form
 `### $XXXX — NAME — Description (RW)`. Duplicating those H3s here and
 in the per-chip docs would create double-counted nodes and ambiguous
-ownership edges. The Phase-1 plan (Task 8) calls out this choice
-explicitly: H3s live in the per-chip docs; this composite is purely an
-index. The doc-type marker at the foot of the file tells the extractor
+ownership edges. The Phase-1 plan (Task 8) records this choice:
+H3s live in the per-chip docs; this file is only an index. The doc-type marker at the foot of the file tells the extractor
 this is hardware-reference content so it is parsed and validated, but
 since there are no register-shaped H3s in it, no `Register` nodes are
 created from this file.
 
-Wherever you see an unusual addressing range — the $D040-$D3FF VIC-II
-mirror, the $D420-$D7FF SID mirror, the per-CIA $xx10-$xxFF mirrors —
-this doc is also the single place that documents the **shadow regions**.
-Those mirrors are real hardware behaviour, not aliases bolted on by
-software. Touching them counts as touching the underlying register and
+This file is also the one place that documents the **shadow regions**:
+the $D040-$D3FF VIC-II mirror, the $D420-$D7FF SID mirror and the
+per-CIA $xx10-$xxFF mirrors. They come from the hardware decode, not
+from software aliases. Touching them counts as touching the underlying register and
 can cause every side effect the real register causes.
 
 ## Conventions used in this doc
@@ -45,7 +42,7 @@ can cause every side effect the real register causes.
   register; the per-chip doc is authoritative.
 - "R", "W", "RW" describe what the CPU can do at that address.
 - "Latching" / "destructive" notes mean the act of reading or writing that
-  address changes hidden state in the chip beyond the visible data byte —
+  address changes hidden state in the chip beyond the visible data byte;
   see the bit-level treatment in the per-chip doc.
 - "Mirror" / "shadow" mean the same physical register responds to multiple
   CPU addresses because the chip only decodes the low bits of the address.
@@ -77,7 +74,7 @@ The window only appears at all because CHAREN (bit 2 of $01) and the
 HIRAM/LORAM bits decide whether the area maps to I/O, to character
 ROM, or to RAM. With CHAREN = 1 (and LORAM or HIRAM = 1) the CPU sees
 I/O; with CHAREN = 0 (and LORAM or HIRAM = 1) the CPU sees the 4 KB
-character ROM at $D000-$DFFF instead — this is how programs copy the
+character ROM at $D000-$DFFF instead. This is how programs copy the
 ROM font ($01 = $33, SEI first, because the KERNAL IRQ handler's
 LDA $DC0D would read font bytes instead of the CIA). To reach the RAM
 under $D000-$DFFF clear both LORAM and HIRAM ($01 = $30 or $34); CHAREN
@@ -89,7 +86,7 @@ bank-switching treatment.
 
 (An earlier version of this page said the character ROM was visible to
 the VIC-II only and never to the CPU, and that clearing CHAREN exposed
-RAM; both were wrong — measured in VICE x64sc: with $01 = $33 the CPU
+RAM; both were wrong. Measured in VICE x64sc: with $01 = $33 the CPU
 reads $3C/$66/$18 at $D000/$D001/$DBE8, bytes 0, 1 and $BE8 of the
 chargen ROM, and with $01 = $30 it reads back RAM.)
 
@@ -207,19 +204,19 @@ $003F) + $D000`.
 
 Code seen in the wild that uses shadow addresses (for example writing
 $D420 instead of $D400, or addressing the raster counter as $D052 in a
-relocatable loop) is correct hardware-level code, but it's rare. Most
-of the time, an address outside $D000-$D02F is a bug — a missing zero
+relocatable loop) is correct hardware-level code, but rare. More
+often, an address outside $D000-$D02F is a bug: a missing zero
 in the literal, a stale pointer, a `STA absolute,Y` whose Y register
 walked past 47.
 
 The 16x mirror is the same effect that lets the VIC-IIe revision
 re-use those addresses for new functions without breaking software:
-old software won't be writing $D030 on purpose, and if it does, it
+old software does not write $D030 on purpose, and if it does, it
 already expected the write to be a no-op.
 
 ### VIC-II quick lookup by function
 
-When you know the visual effect you want but not the register:
+From the visual effect to the register:
 
 | You want to ...                                             | Register(s)               |
 |-------------------------------------------------------------|---------------------------|
@@ -249,17 +246,17 @@ When you know the visual effect you want but not the register:
 
 The SID (MOS 6581 or its later 8580 successor) exposes 29 registers in a
 32-byte page. The first 25 are write-only and the last 4 read-only, so
-you cannot recover state from the first 25 by reading them back.
+state in the first 25 cannot be recovered by reading them back.
 Reading a write-only SID register ($D400-$D418),
 or one of the undecoded addresses $D41D-$D41F (and their mirrors
 through $D7FF), returns the byte the SID last drove on its data bus:
 the last value WRITTEN to any SID register, or the last value READ from
-$D419-$D41C — a read of ENV3 or OSC3 refreshes it too. It is not $FF,
+$D419-$D41C (a read of ENV3 or OSC3 refreshes it too). It is not $FF,
 not $00, and not the CPU's last fetched byte, on either chip model.
 Measured in VICE 3.10 x64sc with reSID (`-sound -sounddev dummy
 -sidengine 1`, both `-sidmodel 0` and `1`): after STA $D400,#$AA the
 reads of $D401 and $D41D-$D41F all return $AA; after LDA $D41C (=$00)
-a read of $D41D returns $00. The held byte fades to $00 — in reSID
+a read of $D41D returns $00. The held byte fades to $00: in reSID
 after about 7k cycles on the 6581 model and about 660k on the 8580
 model, measured on [sid-reference.md](sid-reference.md) ("Write-only
 registers"); an earlier version of this paragraph said the byte was
@@ -272,7 +269,7 @@ fetch; none matched the instrument. Harness note: with sound disabled
 (`+sound`, the command line in CLAUDE.md) VICE substitutes a stand-in
 SID that returns $00 for every write-only/undecoded read, so a $00 seen
 that way is the emulator, not the chip. For bit-level detail on each register, the
-ADSR rate table, filter routing, and the well-known oddities (the
+ADSR rate table, filter routing, and the known oddities (the
 $D418 master-volume click, the ADSR-bug, voice 3 mute, the absent
 test pin readback), see [sid-reference.md](sid-reference.md).
 
@@ -309,7 +306,7 @@ test pin readback), see [sid-reference.md](sid-reference.md).
 | $D41C   | ENV3    | R   | Voice 3 envelope generator output             |
 
 $D41D, $D41E, and $D41F are not decoded. Reads return the held bus byte
-described above — the last SID write or the last $D419-$D41C read, on
+described above: the last SID write or the last $D419-$D41C read, on
 either chip model (VICE 3.10 x64sc, reSID, both `-sidmodel` values:
 $AA after STA $D400,#$AA; $00 after LDA $D41C). Writes are discarded.
 An earlier version of this paragraph said floating bus on a 6581 and
@@ -355,18 +352,17 @@ the 32-byte register page repeats 31 times.
 `effective = ((addr - $D400) AND $001F) + $D400`.
 
 A write to $D420 hits FRELO1. A write to $D7E0 hits FRELO1. A write to
-$D7E0+$18 = $D7F8 hits SIGVOL ($D418) — that means a stray store to a
-"safe-looking" high address in the I/O range can pop the speaker just
-as loudly as a direct write to $D418, and it can do so in code that
-never mentions $D418 by name. See the [Pitfalls](#pitfalls) section
+$D7E0+$18 = $D7F8 hits SIGVOL ($D418). A stray store to a high address in the I/O range
+can therefore pop the speaker as loudly as a direct write to $D418, in
+code that never mentions $D418 by name. See the [Pitfalls](#pitfalls) section
 below.
 
 Second-SID boards decode a second chip at $D420 or $D500 (or another
-base inside this shadow window), gating the original SID's chip-select
-— which products, and at which base, is not verified here (an earlier
+base inside this shadow window), gating the original SID's chip-select.
+Which products do so, and at which base, is not verified here (an earlier
 version named "SID-Wizard 8-bit DAC", which is a tracker, not a board).
-On stock hardware, however, the entire $D420-$D7FF range is one
-chip — the same SID, mirrored.
+On stock hardware the entire $D420-$D7FF range is one chip: the same
+SID, mirrored.
 
 ### SID quick lookup by function
 
@@ -393,20 +389,20 @@ chip — the same SID, mirrored.
 | Read voice 3 envelope output (LFO source)             | $D41C                      |
 | Reset SID completely                                  | Write 0 to $D404, $D40B, $D412, $D418; then re-init |
 
-Word-of-warning patterns:
+Warnings:
 
 - A common "fade out" routine writes $00..$0F to $D418 over time.
-  But writing $D418 also reconfigures filter mode and voice-3 mute
-  — so the standard idiom is to OR with the current $D418 value
+  Writing $D418 also reconfigures filter mode and voice-3 mute,
+  so the usual idiom is to OR with the current $D418 value
   cached in zero page, not to write a raw nibble. Writing a raw
-  nibble silently un-mutes voice 3 and switches the filter to "no
+  nibble un-mutes voice 3 and switches the filter to "no
   filter" mode.
 - How completely $D418 bit 7 (3OFF) silences voice 3 on real silicon
   is reported differently for the two chips in different sources, and
   is not measured here (an earlier version of this bullet asserted
   that the 6581's mixer leaks; `pitfalls/sid.md` asserts the reverse).
   In reSID both models drop voice 3 from the direct path. Do not rely
-  on 3OFF for silence on either chip — set the voice's volume to zero
+  on 3OFF for silence on either chip; set the voice's volume to zero
   through its envelope instead.
 
 ## Color RAM ($D800-$DBFF)
@@ -416,12 +412,12 @@ foreground color. Unlike RAM elsewhere in the C64, it is **4 bits wide**:
 each address stores only the low nibble (0-15). The high nibble is not
 stored anywhere: on a 6510 read it is whatever was last left on the
 data bus, and on a C64 that is the byte the VIC-II fetched in the phi1
-half-cycle just before the CPU's read — glyph or bitmap data inside the
+half-cycle just before the CPU's read: glyph or bitmap data inside the
 display window, sprite pointers and sprite data, the DRAM-refresh bytes
 from $3Fxx, and the idle fetch from $3FFF (or $39FF with ECM) in the
 borders. It therefore changes with raster position, screen contents and
 the VIC bank, and it is not the address high byte $D8 as this page
-previously said — the CPU's operand fetch of $D8 is overwritten by the
+previously said; the CPU's operand fetch of $D8 is overwritten by the
 VIC's fetch before the read cycle. Measured in VICE x64sc 3.10 (PAL):
 with $3FFF=$A5, $3F00-$3FFE=$C3 and the sprite pointers set to $B0, a
 cell holding 5 read $A5 in 77 of 100 border samples, $B5, $C5 and $05
@@ -438,34 +434,34 @@ Color RAM is always at $D800-$DBFF regardless of which VIC-II video
 bank is selected by CIA2 $DD00 bits 0-1, because the VIC-II has a
 dedicated wire to the color RAM that bypasses the normal address
 multiplexer. The VIC-II reads the low nibble of color RAM in parallel
-with each character matrix fetch — the chip pin is the same pin used
+with each character matrix fetch; the chip pin is the same pin used
 to provide the high 4 bits of the character matrix, and on display
 fetch the color RAM's data is multiplexed on top.
 
-Practical consequences:
+Consequences:
 
 - **Always writable — through the I/O window.** Colour RAM never
   write-protects, but the CPU only reaches it while I/O is mapped at
   $D000. A write made with I/O banked out lands in the DRAM underneath
   $D800 and the VIC never sees it (measured in VICE x64sc: colour RAM
-  seeded 5, then `LDA #$34 / STA $01 / LDA #9 / STA $D800` — the cell
+  seeded 5, then `LDA #$34 / STA $01 / LDA #9 / STA $D800`; the cell
   still displays colour 5 and reads back 5 once I/O is restored).
 - **High nibble undefined.** Reads of $D800+n only contain meaningful
   data in bits 0-3.
 - **Reachable only through the I/O window.** The VIC always sees colour
   RAM, whatever $01 or $DD00 say. The CPU sees it only while I/O is
-  banked in — $01 bits 0-2 = %101, %110 or %111 ($35/$36/$37). With
+  banked in: $01 bits 0-2 = %101, %110 or %111 ($35/$36/$37). With
   CHAREN = 0 and LORAM or HIRAM set (%001-%011, $31-$33) the CPU reads
   character ROM at $D800-$DBFF instead; with LORAM = HIRAM = 0
   (%000/%100, $30/$34) it reads and writes the plain RAM underneath, and
   CHAREN makes no difference. All eight modes measured in VICE x64sc.
   An earlier version of this page said only CHAREN mattered; it does
-  not — code in the all-RAM configuration ($34) must bank I/O back in
+  not. Code in the all-RAM configuration ($34) must bank I/O back in
   ($35) before touching colour RAM.
 - **Power-on contents are random.** Most programs `LDA #col / STA $D800,X`
-  in a loop before turning on the screen. If you switch into a screen mode
-  before initializing color RAM, the visible glyphs will use whatever
-  random nibble is in RAM as their foreground color.
+  in a loop before turning on the screen. A screen mode switched on
+  before initializing color RAM shows glyphs in whatever random
+  nibble is in RAM as their foreground color.
 
 For multicolor character mode, bit 3 of color RAM toggles per-cell
 whether that character uses the multicolor palette ($D021/$D022/$D023
@@ -490,9 +486,9 @@ this page said 50 Hz on PAL; the ROM bytes at $FDE2-$FDF5 of
 kernal-901227-03 say otherwise, and a VICE x64sc count gives 299
 jiffies in 250 PAL frames, not 250.
 
-For bit-level detail on each register — including the keyboard scan
+For bit-level detail on each register (the keyboard scan
 matrix, the joystick bit-to-pin mapping, the TOD clock's BCD
-encoding, and how the timer control bits interact — see
+encoding, and how the timer control bits interact), see
 [cia-reference.md](cia-reference.md).
 
 | Address | Name | R/W | Description                                            |
@@ -578,18 +574,16 @@ responds to all of $DC00-$DCFF, so the 16-byte register page repeats
 
 `effective = ((addr - $DC00) AND $000F) + $DC00`.
 
-The shadow has the same destructive properties as the real registers —
-notably, **a read of $DCnD with the low nibble = D acknowledges and
+The shadow has the same destructive properties as the real registers.
+In particular, **a read of $DCnD with the low nibble = D acknowledges and
 clears all pending IRQ source bits**. A loop that walks `LDA $DC00,X`
-across a wide range of X will, on every 16th byte, silently
-acknowledge CIA1's IRQ register and lose any pending interrupt source
-bits. Well-behaved C64 software does not walk $D000-$DFFF with a
-generic loop for exactly this reason: the area is hostile to careless
-reads. A memory test or copy that needs those 4 KB either skips them or
+across a wide range of X acknowledges CIA1's IRQ register on every
+16th byte and loses any pending interrupt source bits. C64 software
+does not walk $D000-$DFFF with a generic loop for this reason. A memory test or copy that needs those 4 KB either skips them or
 banks the I/O area out first and reads the RAM underneath (see the I/O
 window layout section above and c64-memory-map.md). An earlier revision
 of this sentence had lost its negation and read as though software
-walks the I/O area deliberately. The hazard is measured, not assumed:
+walks the I/O area deliberately. The hazard is measured:
 in VICE x64sc 3.10, with a Timer A underflow pending, a `LDA $DC00,X`
 walk over X = 0..255 left $DC0D reading $00, while a walk over
 X = 0..12 that never touched an $xD address left it reading $81.
@@ -658,12 +652,12 @@ Key wiring points (the per-pin table is in
   KERNAL handler at $FE47 masks $DD0D with $7F, reads it, and goes to the
   RS-232 code only if a CIA2 bit is set; with none set it checks for a
   cartridge (CBM80 → JMP ($8002)), then the STOP key, and warm-starts
-  BASIC through ($A002) only when RUN/STOP is held — RESTORE alone
-  returns. That is why RUN/STOP+RESTORE is "almost a reset". (An earlier
+  BASIC through ($A002) only when RUN/STOP is held; RESTORE alone
+  returns. That is why RUN/STOP+RESTORE is almost a reset. (An earlier
   version of this page said RESTORE came in on /FLAG, bit 4, and that the
   KERNAL armed it; IOINIT at $FDA3 writes $7F to $DD0D, which disables
   FLAG, and the only KERNAL code that enables FLAG is RS-232 receive at
-  $EF7E — read from kernal-901227-03.bin.) The dispatch table, the
+  $EF7E; read from kernal-901227-03.bin.) The dispatch table, the
   20-cycle cost of taking $0318 and the NMI lock are in
   `pitfalls/kernal-and-io.md` → `restore_nmi_not_maskable`.
 
@@ -705,10 +699,9 @@ Same 4-bit decode rule as CIA1: the 16-byte page mirrors 15 times.
 `effective = ((addr - $DD00) AND $000F) + $DD00`.
 
 Like CIA1, reads of $DDnD with low nibble = D ack and clear CIA2's
-pending NMI source bits. Most of the time NMIs are not enabled and
-the shadow does no harm, but if a program is using a CIA2 timer NMI
-(common for fast loaders and SoundMonitor-style audio) the same hazard
-applies.
+pending NMI source bits. NMIs are usually not enabled and the shadow
+does no harm, but a program using a CIA2 timer NMI (common for fast
+loaders and SoundMonitor-style audio) faces the same hazard.
 
 ## I/O expansion ($DE00-$DFFF)
 
@@ -724,7 +717,7 @@ decode its own registers.
 Behaviour with no cartridge present:
 
 - Reads return open bus: the byte the VIC-II fetched in the preceding
-  phi1 half-cycle, all eight bits — in the border the idle byte at $3FFF
+  phi1 half-cycle, all eight bits: in the border the idle byte at $3FFF
   of the current VIC bank, on screen glyph/bitmap data, plus sprite
   pointers and $3Fxx refresh bytes. It is not the address high byte, and
   the CPU drives nothing during a read (this page previously said
@@ -753,16 +746,14 @@ Common conventions:
 Software written to be cartridge-agnostic must avoid touching $DE00-$DFFF
 unless it knows what cartridge is plugged in. A spurious write here can
 freeze the machine (Action Replay freeze trigger), swap RAM banks
-underneath the running program (EasyFlash), or — for fast loaders that
-use a REU detection routine — silently mis-detect and lose data.
+underneath the running program (EasyFlash), or, for fast loaders that
+use a REU detection routine, mis-detect and lose data.
 
 ## Address-to-chip dispatch table
 
-This is the inverse table to the per-chip lists above: given any
-address in $D000-$DFFF, find the chip and the effective canonical
-register it resolves to. The intent is that an agent can land here
-from an arbitrary literal seen in disassembly and figure out what
-the program is touching.
+The inverse of the per-chip lists above: given any address in
+$D000-$DFFF, for example a literal seen in disassembly, find the chip
+and the effective canonical register it resolves to.
 
 | If address is in ...   | The chip is ...    | The effective register is ...                                                              |
 |------------------------|--------------------|--------------------------------------------------------------------------------------------|
@@ -784,10 +775,10 @@ the program is touching.
 
 After RESET, the KERNAL initializes a subset of these registers to
 known values before turning on the screen. The chips themselves do
-not all power-up in a defined state — the per-chip docs list which
+not all power-up in a defined state; the per-chip docs list which
 bits are guaranteed and which are floating.
 
-Highlights of the KERNAL-set state. Two columns, because they differ:
+The KERNAL-set state, in two columns because they differ:
 what the KERNAL stores (ROM 901227-03, IOINIT $FDA3 and the VIC table
 at $ECB9) and what the register reads back afterwards (measured in VICE
 x64sc 3.10). An earlier version of this table mixed the two in one
@@ -815,13 +806,13 @@ more than an earlier version of this page said (it claimed the VIC-II
 kept its display mode and colour RAM was untouched; both are wrong,
 read from the 901227-03 ROM and measured in VICE x64sc). The KERNAL NMI
 handler ($FE47) reads $DD0D; when no CIA2 source fired it checks for a
-cartridge, scans the STOP key, and with STOP held runs RESTOR ($FD15 —
+cartridge, scans the STOP key, and with STOP held runs RESTOR ($FD15:
 the RAM vectors $0314-$0333 go back to the KERNAL defaults, so a custom
-IRQ or NMI handler is gone too), IOINIT ($FDA3 — both CIAs
+IRQ or NMI handler is gone too), IOINIT ($FDA3: both CIAs
 re-programmed, $DD00 = $07, $01 = $E7, and $D418 = 0, the KERNAL's only
-SID write) and CINT ($E518 — all 47 VIC-II registers rewritten from the
+SID write) and CINT ($E518: all 47 VIC-II registers rewritten from the
 $ECB9 table: $D011 $1B, $D016 $C8 as read back ($08 is written), $D018
-$14, $D020 $0E, $D021 $06, sprite colours 1-7 and grey for sprite 7 —
+$14, $D020 $0E, $D021 $06, sprite colours 1-7 and grey for sprite 7,
 then screen RAM filled with spaces and colour RAM with $0E), and
 finally jumps through ($A002) to the BASIC warm start. Only the SID's
 $D400-$D417 keep their values, muted by volume 0: a note that was
@@ -834,27 +825,26 @@ the RS-232 enable byte $02A1.
 
 ## Pitfalls
 
-- **Shadow-register confusion.** A "wrong" address that happens to fall
-  inside the I/O area very often does the same thing as the matching
+- **Shadow-register confusion.** A wrong address that falls
+  inside the I/O area often does the same thing as the matching
   base address, not nothing. Writing $D420 is writing $D400 (FRELO1);
-  writing $D7F8 is writing $D418 (SIGVOL — speaker pop); writing $D052
-  is writing $D012 (raster compare — your raster IRQ moves). A null
+  writing $D7F8 is writing $D418 (SIGVOL, speaker pop); writing $D052
+  is writing $D012 (raster compare: the raster IRQ moves). A null
   pointer plus a small offset can hit live hardware. See the per-chip
   shadow sections above for the exact modulo rules.
 
-- **$D7FF SID side-effects.** The very last byte of the SID shadow
-  region, $D7FF, mirrors $D41F, which is technically unused on a stock
+- **$D7FF SID side-effects.** The last byte of the SID shadow
+  region, $D7FF, mirrors $D41F, which is unused on a stock
   SID. But $D7F8 mirrors $D418, $D7E5 mirrors $D405, $D7E0 mirrors
   $D400. A program that uses $D700-$D7FF as scratchpad RAM because
-  "those addresses look free" is in fact writing every single SID
-  register on every store. This is one of the more common causes of
-  random clicks, mysterious sustained tones after a tune ends, and
-  paddle-readback corruption.
+  the addresses look free is writing SID registers on every store.
+  This is a common cause of random clicks, sustained tones after a
+  tune ends, and paddle-readback corruption.
 
 - **Color RAM high nibble is garbage.** `LDA $D800` returns `$?n` where
   `?` is the byte the VIC fetched in the preceding phi1 cycle (idle byte
   $3FFF in the border, glyph/bitmap data on screen, sprite pointers,
-  $3Fxx refresh) — not $D8, as this page once said. VICE x64sc:
+  $3Fxx refresh), not $D8, as this page once said. VICE x64sc:
   $A5/$B5/$C5/$05 for a cell holding 5 with $3FFF=$A5. Always mask with
   `AND #$0F` before comparing.
 
@@ -863,13 +853,13 @@ the RS-232 enable byte $02A1.
   bit. Code that wants to inspect IRQ state without losing pending
   interrupts has to mask interrupts (SEI), latch the read, and then
   re-enable. The same hazard applies to every shadow address ending
-  in $D inside CIA1 or CIA2 — there are 16 such addresses per CIA in
+  in $D inside CIA1 or CIA2; there are 16 such addresses per CIA in
   the $xx00-$xxFF page.
 
-- **$DE00 / $DF00 cartridge clobbering.** A naive memory test or RAM
-  copy that walks $D000-$DFFF will, on a machine with an Action
-  Replay or Final Cartridge plugged in, trigger the cartridge's
-  freeze logic or swap its RAM banks under the program. The standard
+- **$DE00 / $DF00 cartridge clobbering.** A memory test or RAM
+  copy that walks $D000-$DFFF, on a machine with an Action
+  Replay or Final Cartridge plugged in, triggers the cartridge's
+  freeze logic or swaps its RAM banks under the program. The stock
   C64 KERNAL avoids $DE00 / $DF00 entirely. Software that needs to
   detect free RAM should treat $DE00-$DFFF as off-limits unless it
   has positively identified the cartridge (or absence thereof).
@@ -877,31 +867,30 @@ the RS-232 enable byte $02A1.
 - **$D02F / $D030-$D03F are not always idle.** On a stock C64 these
   read $FF and writes are ignored. On a C128 in C64 mode (with the
   C128's VIC-IIe chip) $D02F is the extra-keyboard scan and $D030 is
-  the test-bit / 2 MHz clock select. Writing $D030 on a C128 will
-  drop the machine into 2 MHz mode and corrupt the display. Code that
+  the test-bit / 2 MHz clock select. Writing $D030 on a C128
+  drops the machine into 2 MHz mode and corrupt the display. Code that
   targets "the C64" should still treat $D030-$D03F as untouchable.
 
 - **VIC-II $D019 acknowledge.** Writing $D019 acknowledges interrupts
   by writing a 1 to each source bit. Programs that do `LDA $D019 / STA
-  $D019` to "ack all sources" rely on the fact that $D019 reads only
-  meaningful bits and the latch+ack pattern works. The shadow
-  registers $D059, $D099, ..., $D3D9 work the same way — but again,
-  a stray write that happens to land on one of these is a real
-  acknowledgement.
+  $D019` to "ack all sources" rely on $D019 reading only
+  meaningful bits and on the latch+ack pattern working. The shadow
+  registers $D059, $D099, ..., $D3D9 work the same way, so a stray
+  write that lands on one of these is a real acknowledgement.
 
 - **Color RAM extra bytes ($DBE8-$DBFF).** These 24 bytes are RAM but
   are unused by any standard screen mode. Some games use them as
   free RAM for sprite multiplexers or scratch. Their contents survive
   any bank switch (the chip is separate and is not written through
   while I/O is out), but like the rest of colour RAM the CPU can only
-  read or write them while I/O is mapped — and they are still
+  read or write them while I/O is mapped, and they are
   nibble-wide, so do not use them for byte storage.
 
 - **SID write-only registers do not read back.** Code that wants to
   modify a single bit of, say, $D404 (voice 1 control) cannot
-  `LDA $D404 / ORA #$01 / STA $D404` — the read returns the SID's
+  `LDA $D404 / ORA #$01 / STA $D404`: the read returns the SID's
   last bus byte (see the SID registers section), not the register's
-  contents, so the OR result is wrong. The standard idiom is to keep a
+  contents, so the OR result is wrong. The usual idiom is to keep a
   shadow copy of every SID register in zero page or low RAM and to
   read/modify/write the shadow, then `STA $D404`. The same applies
   to every $D400-$D418 register. Player libraries (Hubbard's, Galway's,
@@ -912,12 +901,11 @@ the RS-232 enable byte $02A1.
   the entire TOD value into the read register so that minutes, seconds,
   and tenths can be read coherently. The latch is released by reading
   $DC08 (tenths). Reading hours and then never reading tenths leaves
-  the clock frozen in the read register — although the underlying
-  counter keeps running, subsequent reads of seconds/minutes return
-  the latched value until tenths is read. Code that "peeks" at the
-  hour without intending to read the rest of the clock will silently
-  freeze its own view of the time. The write side has the mirror rule
-  — writing $DC0B stops the clock until $DC08 is written — and $DC0F
+  the clock frozen in the read register: the underlying counter keeps
+  running, but later reads of seconds/minutes return the latched value
+  until tenths is read. Code that reads only the hour freezes its own
+  view of the time. The write side has the mirror rule (writing $DC0B
+  stops the clock until $DC08 is written), and $DC0F
   bit 7 must be 0 for those writes to reach the clock rather than the
   alarm; `pitfalls/cia.md` → `tod_read_order_latch` carries both rules
   and the VICE measurement behind them.
@@ -925,8 +913,8 @@ the RS-232 enable byte $02A1.
 - **$DD00 bits are inverted for VIC bank select.** Bits 0-1 of $DD00
   drive the high two address pins of the VIC-II, but they are
   inverted. `LDA #$00 / STA $DD00` (with DDR set appropriately) puts
-  the VIC into bank 3 ($C000-$FFFF), not bank 0. To put the VIC into
-  bank 0 you must write `%11` to bits 0-1. Confusingly, the KERNAL's
+  the VIC into bank 3 ($C000-$FFFF), not bank 0. The VIC needs
+  `%11` in bits 0-1 for bank 0. The KERNAL's
   default leaves the VIC in bank 0 ($0000-$3FFF) by writing $07 to
   $DD00 (DDR = $3F).
 
@@ -945,14 +933,14 @@ the RS-232 enable byte $02A1.
   stops badlines; and it has nothing to do with opening the side
   borders, which is the CSEL ($D016 bit 3) 1→0 write on cycle 56. Code
   that lands on one of these combinations during initialization looks
-  crashed when the chip is just drawing black. (An earlier version of
+  crashed while the chip is drawing black. (An earlier version of
   this entry attributed the black modes to $D016 bit 5 and to "bits 4
   and 5 of $D011", called them equivalent to disabling the screen, and
   said demos used them to open the side borders; none of that is so.)
 
 - **Reading $DC04 / $DC05 while Timer A is running IS racy.** An earlier
   version of this note claimed a "hidden read latch" made the two-byte
-  read atomic; there is none — the 6526 latches only the TOD (a read of
+  read atomic; there is none. The 6526 latches only the TOD (a read of
   the hours freezes it, a read of the tenths releases it). Timer reads
   return the live counter, so a borrow out of the low byte between the
   two reads leaves the pair one page off (measured in VICE x64sc 3.10
@@ -960,10 +948,10 @@ the RS-232 enable byte $02A1.
   pairs read 256 low, and a high byte read 1,297 cycles after a low-byte
   read had moved five pages, not zero). Read high, low, high and retry
   when the two high bytes differ, or stop the timer ($DC0E bit 0) around
-  the read — the idioms in cia-reference.md. Writes are the other half:
+  the read (the idioms in cia-reference.md). Writes are the other half:
   they go to the latch, and the counter takes the value only on
   underflow, on force-load ($DC0E bit 4), or on a high-byte write while
-  the timer is stopped — so "set timer, then read back to confirm" on a
+  the timer is stopped, so "set timer, then read back to confirm" on a
   running timer sees the old count.
 
 ## Sources
@@ -985,7 +973,7 @@ Primary:
   annotated KERNAL & memory-map disassembly
 
 Cross-checked against the per-chip references in this repository,
-which carry the bit-level register detail this index intentionally
+which carry the bit-level register detail this index
 omits:
 
 - [vic-ii-reference.md](vic-ii-reference.md)

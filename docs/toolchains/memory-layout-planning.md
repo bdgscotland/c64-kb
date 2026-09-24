@@ -52,10 +52,10 @@ Each row is a fixed fact about the machine or a firm convention. The
 | `$E000`-`$FFFF` | KERNAL ROM, banked by `$01` bit 1. | RAM under it is usable only with a custom IRQ path. | [memory-banking](../techniques/memory-banking.md) ram_under_kernal |
 | `$1000` | Music, by convention. | Most SID files relocate to `$1000` and expect `$1000`-`$1FFF` (rung 4, from the SID file corpus; not measured here). | convention |
 
-Two consequences fall out. In bank 0 the VIC can use `$0000`-`$0FFF`
-(minus zero page and the stack) and `$2000`-`$3FFF` for graphics, and
-nothing else. And the only 4 KB the VIC cannot see, `$1000`-`$1FFF`, is
-exactly where music and other CPU-only data belong.
+Two consequences. In bank 0 the VIC can use `$0000`-`$0FFF` (minus zero
+page and the stack) and `$2000`-`$3FFF` for graphics, and nothing else.
+The only 4 KB the VIC cannot see, `$1000`-`$1FFF`, is where music and other
+CPU-only data go.
 
 ## The worked layout
 
@@ -111,7 +111,7 @@ start:
 
 Confirm with `-showmem`. The virtual block is marked `*`. The stub prints
 as three blocks because `BasicUpstart2` opens `Basic` and `Basic End`
-inside the one you named. This is the map of the full recipe listing:
+inside the named one. This is the map of the full recipe listing:
 
 ```
 Memory Map
@@ -349,7 +349,7 @@ or garbage, and a wrong pointer shows a sprite made of code bytes.
 - Under any of the three, a charset that is not 2 KB-aligned or a sprite
   that is not 64-byte-aligned cannot be addressed: `$D018` and the sprite
   pointers only hold multiples, so the VIC fetches from the aligned
-  address below the symbol. None of the tools checks this for you.
+  address below the symbol. None of the tools checks this.
 
 ## See also
 

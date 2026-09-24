@@ -19,7 +19,7 @@ Pitfalls in the arithmetic a game does on the 6510: tables built by the assemble
 
 ### Symptom
 
-A sprite, a scroller row or a raster bar driven from an unsigned sine table sweeps smoothly up to the top of its range, then for seven consecutive frames sits at the other end of it (value 0, which for a sprite's Y is the top of the screen), then carries on as if nothing had happened. The other half of the swing is fine. The table's range is 0 to 255, as intended, and a glance at the first few entries shows nothing wrong, because the fault is only in the entries around the peak.
+A sprite, a scroller row or a raster bar driven from an unsigned sine table sweeps smoothly up to the top of its range, then for seven consecutive frames sits at the other end of it (value 0, which for a sprite's Y is the top of the screen), then carries on. The other half of the swing is fine. The table's range is 0 to 255, as intended, and a glance at the first few entries shows nothing wrong, because the fault is only in the entries around the peak.
 
 ### Mechanism
 
@@ -29,7 +29,7 @@ The natural way to write an unsigned table centred on 128 is `128 + 128 * sin`, 
 
 The slope gives a test that needs no reference table. A sine of amplitude 128 changes by at most `128 * 2 * pi / 256`, which is 3.14 per entry (arithmetic), so after rounding no two neighbours in a correct table differ by more than 4. Measured: the largest step in the wrapped table is 255 (entry 60 is `$FF`, entry 61 is `$00`); in `128 + round(127 * sin)` and in `floor(128 + 127.5 * sin)` it is 4.
 
-On the machine the fault is one screenshot. A program that writes `50 + entry / 2` to sprite 0's Y register once a frame, stopped on the frame after entry `$40`, shows the sprite at raster lines 50 to 70 with the wrapped table and at lines 177 to 197 with the amplitude-127 table, the same program with one table name changed.
+One screenshot shows the fault. A program that writes `50 + entry / 2` to sprite 0's Y register once a frame, stopped on the frame after entry `$40`, shows the sprite at raster lines 50 to 70 with the wrapped table and at lines 177 to 197 with the amplitude-127 table, the same program with one table name changed.
 
 `table_generation` is on both metadata lines because the fault is the obvious form of its table and its listed scalings cure it.
 

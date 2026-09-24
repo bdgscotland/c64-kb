@@ -6,15 +6,14 @@ category: sprite
 
 # Sprite Pitfalls
 
-The VIC-II provides exactly eight hardware sprites. Every sprite technique
-that goes beyond this hard limit — multiplexers, Y-stretch, mid-frame
-recoloring — requires tight coordination between CPU writes and the VIC's
-internal state machine. The pitfalls in this document describe the most
-common failures: silent drops when too many sprites share a line, visual
-artifacts when expansion state changes at the wrong moment, coordinate
-teleportation when the 9th X bit is forgotten, collisions that vanish
-before the CPU can read them, and sprites the game counts while the border
-hides them. All of them have bitten experienced C64 coders.
+The VIC-II has eight hardware sprites. A technique that goes beyond that
+limit (multiplexers, Y-stretch, mid-frame recoloring) has to time its CPU
+writes against the VIC's internal state machine. The pitfalls below: drops
+when too many sprites share a line, artifacts when expansion state changes
+at the wrong moment, sprites jumping in X when the 9th X bit is forgotten,
+collisions that vanish before the CPU can read them, and sprites the game
+counts while the border hides them. Experienced C64 coders hit all of
+them.
 
 ---
 
@@ -30,28 +29,26 @@ hides them. All of them have bitten experienced C64 coders.
 
 A multiplexed sprite engine that is supposed to show twelve, sixteen, or
 more objects on screen displays only the first eight on any given raster
-line. Logical sprites whose slot was re-armed too early or too late silently
+line. Logical sprites whose slot was re-armed too early or too late
 disappear; in a naively ordered multiplexer these are the later entries in
 the list, which is a software ordering, not a hardware one. There is no
-visible corruption or tearing — sprites simply are not drawn, as if they
-were never enabled.
+corruption or tearing: the sprites are not drawn, as if never enabled.
 The bug is easy to miss when objects are spread vertically because each
 frame only a few lines have more than eight sprites active simultaneously.
 The effect becomes obvious when objects cluster near the same Y coordinate:
-a game with many bullets or enemies at the same height suddenly loses half
-its sprites.
+a game with many bullets or enemies at the same height loses half its
+sprites.
 
 ### Mechanism
 
-The VIC-II has exactly eight sprite DMA channels — one per sprite index
+The VIC-II has eight sprite DMA channels, one per sprite index
 (0 through 7). On each raster line the chip checks every enabled sprite's Y
 register against the current raster line and, for any slot whose 21-line
 (42 if Y-expanded) DMA is already running, fetches that slot's three data
 bytes via the s-access cycles for that channel; the eight slots are
 independent and no slot has priority over another for activation. There
-are no additional DMA channels hiding behind software flags. The hardware
-simply has eight slots, and eight is the absolute maximum simultaneously
-active sprites per raster line.
+are no more DMA channels, so eight is the maximum number of sprites active
+on one raster line.
 
 A multiplexer that repositions sprites by writing new Y coordinates between
 groups relies on each hardware slot being free when its next logical sprite
@@ -59,10 +56,10 @@ is due. The chip compares each enabled slot's Y with the raster line late in
 every line (cycles 55-56 in Bauer's timing; measured in VICE, a Y write
 landing before roughly cycle 55 of the target line still starts the sprite
 on the next line) and starts the sprite's DMA only if that slot's DMA is
-currently off. Two things therefore lose a sprite, without error, without a
-flag, and without any signal visible to the programmer: a slot re-armed to a
+currently off. Two things therefore lose a sprite, with no error and no
+flag: a slot re-armed to a
 Y that matches while the slot's own DMA is still running (the incoming
-sprite is skipped for the rest of the frame — measured in VICE x64sc, a slot
+sprite is skipped for the rest of the frame; measured in VICE x64sc, a slot
 at Y=100 rewritten on line 112 to Y=120 never re-appeared, while Y=121 did),
 and a Y written after the raster has already passed it, which the compare
 never matches again that frame. $D015 has only eight bits; the chip never
@@ -72,20 +69,20 @@ ascending order and always discards the highest-indexed sprite on a
 contested line; the drop is per slot and depends on timing, not on index.)
 
 `sprite_multiplex_8` is on both metadata lines above for that reason: the
-overflow arises inside a naive multiplexer — one whose IRQ fires late or
-whose sort leaves two groups on one line — and a correct one, sorted and
+overflow arises inside a naive multiplexer (one whose IRQ fires late or
+whose sort leaves two groups on one line), and a correct one, sorted and
 spaced as the Fix describes, is what prevents it.
 
 ### Fix
 
-The fix is a correct sprite multiplexer running off raster IRQs, with two
-requirements that must both hold:
+Use a sprite multiplexer driven by raster IRQs that meets both
+requirements:
 
 1. **Y-sorted logical sprites.** Before each frame, sort the entire logical
-   sprite list by ascending Y position. This ensures that when you assign
-   the first eight logical sprites to hardware slots 0-7 and schedule the
-   next IRQ for the ninth sprite's Y position, the groups are already
-   separated along the Y axis.
+   sprite list by ascending Y position. Then, when the first eight logical
+   sprites go to hardware slots 0-7 and the next IRQ is scheduled for the
+   ninth sprite's Y position, the groups are already separated along the
+   Y axis.
 
 2. **Minimum gap between groups.** Each group must begin at least one
    raster line below the bottom of the previous group. The VIC considers a
@@ -160,14 +157,14 @@ irq_group2:
     rti
 ```
 
-Critical invariant: every element of `logicY[8..15]` that reuses a hardware
+Invariant: every element of `logicY[8..15]` that reuses a hardware
 slot must be at least 21 lines below that slot's previous Y (42 if
 Y-expanded). Measured in VICE x64sc 3.10: a slot rewritten to old Y + 21
-re-displays on the very next line with no gap, old Y + 20 never appears
+re-displays on the next line with no gap, old Y + 20 never appears
 again that frame, old Y + 22 leaves one blank line (Y-expanded: + 42
-seamless, + 41 dropped). The mechanism — the outgoing sprite's DMA switches
+seamless, + 41 dropped). The mechanism (the outgoing sprite's DMA switches
 off in cycle 16 of line Y + 21 and the Y compare that would re-arm the slot
-runs in cycle 55 of that same line — is from Bauer's VIC article, not
+runs in cycle 55 of that same line) is from Bauer's VIC article, not
 measured here. An earlier revision of this paragraph said 22 and claimed a
 21-line gap dropped a sprite; it does not. The 3-4 lines of slack in the Fix
 come on top of the 21 for a different reason: the IRQ at `logicY[8] - 4`
@@ -175,7 +172,7 @@ also rewrites the slot's X, pointer and colour, and those act on the
 still-running outgoing sprite from the next line (a colour write on line 112
 recolours a Y = 100 sprite's rows 113-121, measured in VICE), so with that
 IRQ scheme the practical same-slot spacing is 21 plus the slack, and a
-20-line gap silently drops the incoming sprite for that frame.
+20-line gap drops the incoming sprite for that frame.
 
 ### Cross-references
 
@@ -203,13 +200,13 @@ IRQ scheme the practical same-slot spacing is 21 plus the slack, and a
 A sprite that is supposed to switch from Y-expanded to normal height
 mid-frame, while it is still in the display area, is occasionally the wrong
 length: it comes out of the switch with its rows out of order and ends many
-lines lower than it should — the "sprite crunch". The fault depends on the
+lines lower than it should. This is the "sprite crunch". The fault depends on the
 exact cycle the $D017 write lands on within the raster line, so it comes and
 goes with IRQ jitter: at almost every cycle position the switch is clean
-(the sprite simply continues unexpanded from its current row), and at one
+(the sprite continues unexpanded from its current row), and at one
 cycle position it crunches. An earlier version of this section described a
-one-line artifact — a single repeated or skipped row at the line of the
-write — on every mid-sprite write. Measured in VICE x64sc 3.10 PAL, no such
+one-line artifact (a single repeated or skipped row at the line of the
+write) on every mid-sprite write. Measured in VICE x64sc 3.10 PAL, no such
 artifact exists: a clear at 62 of 64 cycle positions gave a clean switch
 with no repeated or skipped row, and the remaining 2 positions gave the
 crunch (a +21-line change, rows re-fetched out of order). A sentence here
@@ -228,7 +225,7 @@ is inverted once per line (Bauer places this in cycle 55; VICE 3.10's PAL
 cycle table, as read for `sprite_y_stretch_glitch` in
 `docs/techniques/sprite.md`, at cycle 56). In cycle 16 of the following
 line the 6-bit sprite data counter base MCBASE is loaded from the data
-counter MC — moving the sprite on to its next 3-byte row — only if the
+counter MC (moving the sprite on to its next 3-byte row) only if the
 flip-flop is set; otherwise MCBASE is left alone and the same row is
 fetched again. MCBASE is a counter, not the toggle; neither it nor the
 flip-flop appears in the Programmer's Reference Guide. (An earlier version
@@ -238,13 +235,12 @@ A $D017 clear that lands anywhere else in the line does nothing worse than
 set the flip-flop: from the next cycle-16 step the sprite advances a row
 every line and finishes as a plain unexpanded sprite from its current row.
 The problem is one cycle only. If the clear lands on cycle 15 (VICE 3.10's
-PAL cycle table) of one of the sprite's display lines after the first —
-immediately before the cycle-16 MCBASE step — the chip does not handle the
-transition cleanly and MCBASE is loaded with a blend of its old value and
+PAL cycle table) of one of the sprite's display lines after the first
+(immediately before the cycle-16 MCBASE step), MCBASE is loaded with a blend of its old value and
 MC rather than either; the sprite's remaining length changes once, by a
 data-dependent amount, and the rows come out of order. This is the "sprite
-crunch" that `sprite_y_stretch_glitch` exploits deliberately; here it is an
-accidental side effect of an otherwise normal register update. Which line
+crunch" that `sprite_y_stretch_glitch` exploits deliberately; here it is a
+side effect of an ordinary register update. Which line
 the write must land on is characterised in that technique entry (it
 measured the second display line of a sprite at Y=100); in the
 verification of this entry the crunching clear was pinned to raster line
@@ -254,13 +250,13 @@ is one on which MCBASE advances has not been measured and is not claimed.
 
 ### Fix
 
-The fix is to control *where in the line* the single $D017 write lands, not
-to write the register twice. Fire a stable raster IRQ on the target line and
+Control *where in the line* the single $D017 write lands; do not write
+the register twice. Fire a stable raster IRQ on the target line and
 issue one `sta $D017` at a known cycle position that is not the crunch
 cycle; anywhere on the sprite's first display line, or on a line before the
 sprite starts, is also safe. A second write does not help: an earlier
-version of this entry prescribed a "double-write trick" — two back-to-back
-STAs to "resynchronize" the toggle — and said a single write produced a
+version of this entry prescribed a "double-write trick" (two back-to-back
+STAs to "resynchronize" the toggle) and said a single write produced a
 one-line repeated or skipped row. A 64-position single-vs-double sweep in
 VICE x64sc 3.10 PAL (a clear of one sprite's bit at every cycle position of
 a display line, once as `sta $D017 / nop / nop` and once as
@@ -270,12 +266,12 @@ write produced byte-for-byte the same crunch. The earlier text also said
 the second write came "one CPU cycle later"; two consecutive `sta $D017`
 instructions in fact write four cycles apart (STA abs is 4 cycles and the
 write is its last cycle), well past the cycle-16 step it would have needed
-to influence. Do not reach for a read-modify-write (`inc`/`dec`/`asl
+to influence. Do not use a read-modify-write (`inc`/`dec`/`asl
 $D017`) to get consecutive-cycle writes either: an RMW does write twice on
 consecutive cycles, but its first write is the old register value.
 
 If the sprite's Y expand state only needs to change between frames (not
-mid-frame), the simplest moment is during vertical blank, before the
+mid-frame), change it during vertical blank, before the
 sprite's Y position comes into view: the sprite's DMA is off, so the
 expansion flip-flop is held set and the crunch cycle cannot be hit.
 
@@ -283,7 +279,7 @@ expansion flip-flop is held set and the crunch cycle cannot be hit.
 
 The following KickAssembler snippet fires a stable raster IRQ one line
 above the sprite's current top edge, then issues a single write to flip
-sprite 3's Y-expand bit off cleanly. On that line the sprite's DMA has not
+sprite 3's Y-expand bit off. On that line the sprite's DMA has not
 started, so the write cannot land on the crunch cycle. (An earlier version
 of this listing wrote $D017 twice; the second write changed nothing in a
 64-position VICE sweep and has been removed.)
@@ -320,10 +316,10 @@ transition was swept for the crunch in the verification above; setting the
 bit mid-sprite was not measured here and is not claimed to be safe at every
 cycle.
 
-For situations where multiple sprites need simultaneous Y-expand state
-changes, include all sprite bits in the mask value and issue the one write.
-A single STA covering all eight sprites is sufficient; one write per sprite
-is wasteful and risks introducing timing skew between sprites. (An earlier
+When several sprites change Y-expand state together, include all their
+bits in the mask value and issue the one write. One STA covers all eight
+sprites; one write per sprite costs cycles and can skew timing between
+sprites. (An earlier
 version of these two paragraphs said both transitions "require the
 double-write"; see the Fix above for the measurement that retired it.)
 
@@ -346,30 +342,30 @@ double-write"; see the Fix above for the measurement that retired it.)
 
 ### Symptom
 
-A sprite moving smoothly from left to right across the screen suddenly
-teleports from near the right edge back to the far left when its X
+A sprite moving smoothly from left to right across the screen jumps
+from near the right edge back to the far left when its X
 coordinate crosses 256. The motion is otherwise smooth in both the
 sub-256 and the 256+ ranges. The jump happens exactly at the X=256
 boundary and reverses at the same boundary when moving right-to-left.
-In a game this manifests as an enemy or projectile that vanishes off
+In a game this shows as an enemy or projectile that vanishes off
 the right side of the screen and reappears at the left at the same Y
-position — as if the coordinate space wraps at 256.
+position, as if the coordinate space wraps at 256.
 
 ### Mechanism
 
 The VIC-II uses a 9-bit X coordinate for each sprite. The low 8 bits live
 in the per-sprite register at `$D000 + sprite * 2` (sprite 0 → $D000,
-sprite 1 → $D002, ..., sprite 7 → $D00E). The 9th bit — the MSB —
+sprite 1 → $D002, ..., sprite 7 → $D00E). The 9th bit, the MSB,
 does not live in those per-sprite registers. All eight MSBs are packed
 into a single shared register: **$D010 (MSIGX)**. Bit 0 of $D010 is the
 MSB for sprite 0, bit 1 for sprite 1, and so on through bit 7 for sprite 7.
 
 The common mistake is to maintain a 9-bit (or 16-bit) X variable in game
 code but write only the low 8 bits to `$D000 + sprite * 2`, forgetting
-$D010 entirely. When X < 256 this is invisible — the MSB is 0 and $D010's
+$D010 entirely. When X < 256 this is invisible: the MSB is 0 and $D010's
 corresponding bit is already 0 (or was never set). When X reaches 256, the
 low 8 bits wrap to 0 and the hardware X coordinate becomes 0 with the MSB
-still clear — the sprite teleports to X=0 on screen. Setting the MSB in
+still clear, so the sprite jumps to X=0 on screen. Setting the MSB in
 $D010 when X ≥ 256 would place the sprite correctly at the screen position
 corresponding to the full 9-bit value, but the write never happens.
 
@@ -382,17 +378,17 @@ about 232 pixels from the window's left edge and is fully visible; it is
 still fully visible at X=320 (occupying 320..343), begins to be covered by
 the right border from X=321, and is entirely hidden in the border from
 X=344 (measured in VICE x64sc: X=256 renders at VIC X 256..279, screenshot
-x 264-287). Note the helper below already assumes this range (0-343). An
+x 264-287). The helper below assumes this range (0-343). An
 earlier version of this paragraph put X=0 at the window's left edge and
 X=256 "slightly past the right edge", with X=256..344 clipped; both were
 wrong.
 
 ### Fix
 
-Always update $D010 when moving any sprite across the X=256 boundary. The
-correct pattern is a read-modify-write: read the current $D010 value, set
+Always update $D010 when moving any sprite across the X=256 boundary. Use a
+read-modify-write: read the current $D010 value, set
 or clear the bit corresponding to the sprite being moved, then write the
-modified value back. Never assume $D010 is 0 — other sprites in the same
+modified value back. Never assume $D010 is 0: other sprites in the same
 frame may have their MSB bits set.
 
 In C (Oscar64), a helper macro handles the 9-bit write atomically:
@@ -437,10 +433,10 @@ in zero page:
 ```
 
 For multiplexed sprites that reassign hardware channels mid-frame, rebuild
-the entire $D010 byte during each IRQ handler pass — accumulate the MSB
+the entire $D010 byte during each IRQ handler pass: accumulate the MSB
 bits for all eight currently-assigned logical sprites and write the combined
-mask once. This avoids stale MSB bits from the previous hardware assignment
-lingering in $D010.
+mask once. No stale MSB bit from the previous hardware assignment is then left
+in $D010.
 
 ### Cross-references
 
@@ -463,65 +459,64 @@ lingering in $D010.
 ### Symptom
 
 The game's collision detection misses hits that visually occurred. Two
-sprites clearly overlapped on screen but the game did not react — the
+sprites overlapped on screen but the game did not react: the
 enemy was not destroyed, the player did not take damage. The bug is
-intermittent: most collisions register correctly, but some are silently
+intermittent: most collisions register correctly, but some are
 lost, especially during busy frames with many simultaneous overlaps or
 when the game logic runs late in the frame. Occasionally the reverse
-happens: a collision is detected a frame after the visual overlap, making
-the response feel one frame delayed.
+happens: a collision is detected a frame after the visual overlap, so the
+response comes one frame late.
 
 A related symptom appears when the programmer reads $D01E or $D01F in an
-interrupt handler and also checks it in the main loop — the main-loop check
+interrupt handler and also checks it in the main loop. The main-loop check
 always sees zero because the interrupt already cleared the register.
 
 ### Mechanism
 
-$D01E (SPSPCL — sprite-to-sprite collision) and $D01F (SPBGCL —
+$D01E (SPSPCL, sprite-to-sprite collision) and $D01F (SPBGCL,
 sprite-to-background collision) are latched registers. The VIC-II sets
 individual bits during raster rendering as collisions are detected in
 hardware. Each bit, once set, stays set until the CPU reads the register.
-The act of reading the register — any read, from any address mode, at any
-privilege level — clears all bits in that register simultaneously. This
-is the "read-to-clear" mechanic.
+Any read of the register, in any addressing mode, clears all its bits at
+once: the register is read-to-clear.
 
 The latching behavior means that collisions accumulate: if sprite 0 hits
 sprite 3 on line 80 and sprite 0 hits sprite 5 on line 120, by the time
 the CPU reads $D01E at the end of the frame, bit 0, bit 3, and bit 5 are
 all set (sprite 5's bit is set too, since both sprites involved in each
 collision have their bits latched). A single read at any point after line
-80 captures all of this correctly — provided nothing else read $D01E first.
+80 captures all of this, provided nothing else read $D01E first.
 
-Two patterns cause silent losses:
+Two patterns lose collisions:
 
 **Double-read:** An interrupt handler reads $D01E to check for a collision.
-This clears the register. Later, the main loop reads $D01E again — it sees
-zero. The collision events from that frame are gone. This is especially
-common when a VIC IRQ is used to detect collisions in the IRQ handler and
+This clears the register. Later, the main loop reads $D01E again and sees
+zero. The collision events from that frame are gone. This is common
+when a VIC IRQ is used to detect collisions in the IRQ handler and
 the main loop independently polls the same register.
 
 **Late read with prior clear:** If any code path reads $D01E or $D01F as a
-side effect (even a "harmless" diagnostic read, or a read inside a debugger
+side effect (even a diagnostic read, or a read inside a debugger
 print routine), that read destroys the accumulated collision state. A
-diagnostic that works fine on its own can suppress collision detection when
+diagnostic that works on its own can suppress collision detection when
 enabled.
 
-A second, subtler issue: the registers report *which sprites* were involved
+A second issue: the registers report *which sprites* were involved
 in collisions, not *which specific pair*. If sprites A, B, and C all
 overlap each other, bits for A, B, and C are all set, but the register
-gives no information about which pairs actually touched. Games that need
+gives no information about which pairs touched. Games that need
 pair-level resolution must infer it from the bit pattern combined with
 spatial reasoning.
 
 ### Fix
 
 **Establish a single read point per frame.** Read $D01E and $D01F exactly
-once per frame — at the start of the game loop, before any other code can
-inadvertently read them — and immediately store both values in RAM variables.
+once per frame, at the start of the game loop before any other code can
+read them, and store both values in RAM variables at once.
 All collision processing for that frame operates on the cached values.
 Never read $D01E or $D01F a second time in the same frame.
 
-The safest place is at the very start of the frame, in the vertical blank
+Put the read at the start of the frame, in the vertical blank
 handler or as the first action of the main game loop body after the
 `rirq_wait()` call:
 
@@ -536,14 +531,14 @@ frameStart:
 ```
 
 **For per-line IRQ-driven collision response:** Enable the collision IRQ via
-$D01A bit 2 (EMMC, sprite-sprite) and bit 1 (EMBC, sprite-background) — the
+$D01A bit 2 (EMMC, sprite-sprite) and bit 1 (EMBC, sprite-background), the
 same layout as $D019. (An earlier version of this sentence had the two bits
 swapped.) The VIC fires an
 IRQ on the same line the collision is latched. Inside the IRQ handler, read
 $D019 first to identify the interrupt source (bit 2 = sprite-sprite, bit
 1 = sprite-background), then read $D01E or $D01F as appropriate. Acknowledge
 with a write-1-to-clear to the matching bit of $D019. This gives sub-frame
-collision timing but requires careful separation from any main-loop reads.
+collision timing, and the main loop must then not read the registers.
 
 ```kickassembler
 // IRQ handler that distinguishes collision type via $D019
@@ -567,8 +562,8 @@ irq_collision:
     rti
 ```
 
-**Do not read $D01E or $D01F in diagnostic or logging code** without
-understanding that every such read is destructive. During development,
+**Do not read $D01E or $D01F in diagnostic or logging code**: every
+such read clears them. During development,
 gate diagnostic reads behind a flag or read them only in a context where
 the cached variable is immediately populated.
 
@@ -593,17 +588,16 @@ the cached variable is immediately populated.
 
 ### Symptom
 
-Two faces of one fact.
+One cause, two symptoms.
 
 The HUD says three enemies are alive and the player sees two. A shot
 fired at the edge of the screen never lands and never stops. The object
 is there in every table the game keeps, its sprite is enabled, its
 collision bit fires when something walks into it, and nobody can see it,
 because its X is 10, or 350, and the border is drawn over it. A game
-built blind, with the counts checked and the picture not looked at, ships
-this.
+tested on its counts and never on its picture ships this.
 
-The other face needs the side borders open. A sprite sliding left off
+The second needs the side borders open. A sprite sliding left off
 the picture, its X stepping down from $1E0 through $1FF and on to $20F
 (which the chip sees as $00F), blinks out for eight steps and comes back.
 On NTSC it does not blink.
@@ -624,7 +618,7 @@ Only the pixels are missing. Whether `$D01E` still latches a
 sprite-to-sprite hit under the border was not measured here; `$D01F`
 does not, since border pixels are not foreground (`mob_priority`).
 
-The seam is a different thing. A PAL line is 63 cycles of 8 pixels, 504
+The seam has a different cause. A PAL line is 63 cycles of 8 pixels, 504
 positions, so the VIC-II's X counter runs 0 to $1F7 and wraps. The nine
 bits can hold $1F8 to $1FF, but the counter never reaches those values,
 so a sprite placed there never matches and is not drawn on any line.
@@ -789,7 +783,7 @@ Borders open, sprite 0 at the seam:
 
 ### Symptom
 
-The title screen's pointer, or a piece of its logo, is still sitting on
+The title screen's pointer, or a piece of its logo, is still on
 the play field after the game starts. The player sprite is twice as wide
 as it should be, or shows in the wrong colours, on the first game after
 the title and looks right after a death. A GAME OVER banner has the
@@ -820,8 +814,8 @@ enabled stays enabled, at its title position, over the field. The logo's
 X expansion and multicolour bit were set on sprite 0, and the play state
 reuses sprite 0 for the player, so the player is drawn 48 pixels wide
 with its bit pairs read as multicolour, in a colour from `$D025` or
-`$D026` that the play state never set. Nothing goes wrong in the code;
-the chip is doing what it was last told.
+`$D026` that the play state never set. The code has no error; the chip
+does what it was last told.
 
 `$D01F` and `$D01E` make it a logic fault and not only a picture. Both
 are latches: a bit is set when a hit is drawn and stays set until the

@@ -8,18 +8,18 @@ region: PAL+NTSC
 
 The Commodore 64 shipped in two main video regions that are mostly software-
 compatible but differ in clock rate, frame timing, raster geometry, and SID
-audio frequency. Code that does not account for the region difference will
-exhibit one or more of: music played at the wrong tempo, raster IRQs that
+audio frequency. Code that ignores the region difference shows one or
+more of: music played at the wrong tempo, raster IRQs that
 fire on the wrong line, sprite multiplexers that overflow the visible area,
 side-border-opening tricks that fail outright, and digi playback that pitches
 up or down by roughly 4%.
 
-The two regions covered by this document are:
+The two regions:
 
 - **PAL** — used in Europe, Australia, parts of South America, and most of
   Asia. Driven by a 17.734472 MHz crystal divided by 18 (some sources give
   17.734475 MHz, four times the PAL colour subcarrier; the 0.17 Hz that
-  makes on the CPU clock is below anything measured here — an earlier
+  makes on the CPU clock is below anything measured here; an earlier
   version of this line paired 17.734475 with the 985,248.444 Hz quotient
   below, which belongs to 17.734472), a CPU clock of approximately
   985,248 Hz. Frame rate is 50 Hz, 312 scanlines per frame,
@@ -29,8 +29,8 @@ The two regions covered by this document are:
   1,022,727 Hz. Frame rate is ~59.826 Hz (commonly called "60 Hz"), 263
   scanlines per frame, 65 cycles per scanline.
 
-Two minor variants — **PAL-N** (Argentina/Paraguay/Uruguay; the Drean
-C64, VIC 6572) and **PAL-M** (Brazil) — are out of scope for the tables
+Two minor variants, **PAL-N** (Argentina/Paraguay/Uruguay; the Drean
+C64, VIC 6572) and **PAL-M** (Brazil), are out of scope for the tables
 in this reference, but they do NOT share PAL CPU timing, as an earlier
 version of this page said. Measured in VICE x64sc with `-model drean`
 (not on a 6572 on a bench): 312 raster lines of **65** cycles, 20,280
@@ -40,7 +40,7 @@ NTSC-length line on a PAL-length frame. Consequences: a per-frame CIA
 timer needs $4F37 (20,279) there, not $4CC7; any loop padded to 63
 cycles per line drifts 2 cycles per line, so PAL stable-raster and
 side-border code loses sync; the SID clock follows the CPU clock, so
-PAL frequency tables play about 3.9 % sharp (1,023,440 / 985,248) — use
+PAL frequency tables play about 3.9 % sharp (1,023,440 / 985,248); use
 NTSC-derived tables. Frame rate is 50.46 Hz, so per-frame music tempo
 is within 1 % of PAL. All three detection methods below report PAL-N
 as PAL (max raster 311, frame time $4F38 >= $4800, KERNAL $02A6 = 1).
@@ -101,19 +101,19 @@ the NTSC CPU clock is also 3.8% faster. That means:
 - A music routine called once per frame plays about 19% faster on NTSC
   (59.83 Hz vs 50.12 Hz frames; measured in VICE x64sc as 600 vs 502
   frames per 10 s of CIA TOD time). An earlier version of this page said
-  15%, which is the cycle-count ratio — it describes the CPU budget per
+  15%, which is the cycle-count ratio; it describes the CPU budget per
   frame, not tempo. See [Music tempo](#music-tempo).
 - A demo effect that consumes N cycles per frame has 2,561 more cycles
   to work with on PAL.
-- A raster split that "just barely fits" on PAL may not fit on NTSC
+- A raster split that only just fits on PAL may not fit on NTSC
   because each scanline is 2 cycles longer (giving more time per line)
   but each frame contains 49 fewer scanlines (50 on the R56A, whose
-  lines are only 1 cycle longer) to work with — the cycle budget is
-  what matters, not the line count.
+  lines are only 1 cycle longer). The cycle budget is what matters, not
+  the line count.
 
 ### Visible region
 
-The "visible region" is the rectangle of raster lines where the VIC-II
+The visible region is the rectangle of raster lines where the VIC-II
 generates picture content (as opposed to vertical or horizontal blanking).
 Lines outside the visible Y range still execute on the CPU, but anything
 drawn there will be off-screen.
@@ -124,7 +124,7 @@ the R56A; vertical blank 13-40). These spans are from Bauer's VIC-II
 article and are not measured here; what is measured (VICE x64sc 3.10)
 is the frame length: maximum raster line 311 PAL, 262 R8, 261 R56A. An
 earlier revision of this page gave 16-287 (272 lines) for PAL and
-41-300 (260 lines) for NTSC — the PAL figure is VICE's default
+41-300 (260 lines) for NTSC. The PAL figure is VICE's default
 screenshot crop (384x272, raster 16-287), not the chip's picture area,
 and it left lines 288-299 unaccounted for against this page's own
 "vertical blank starts line 300"; the NTSC figure ran 38 lines past the
@@ -133,22 +133,22 @@ end of a 263-line frame. VICE's default exit screenshots crop to raster
 either as the visible area.
 
 The default 25-row text display lives at lines 51-250 in both regions,
-which is centered on PAL but pushed slightly low on NTSC. Most games
-work fine because they target the 200-line display, not the larger
+which is centered on PAL but slightly low on NTSC. Most games are
+unaffected because they target the 200-line display, not the larger
 visible area.
 
 ### Badline range
 
-A "badline" is a scanline on which the VIC-II steals 40-43 cycles from
+A badline is a scanline on which the VIC-II steals 40-43 cycles from
 the CPU to fetch character pointers. By default, badlines occur on every
-8th line starting at line 51 ($33) — lines 51, 59, 67, ..., 243 in both
+8th line starting at line 51 ($33): lines 51, 59, 67, ..., 243 in both
 regions, 25 badlines for 25 character rows (measured in VICE x64sc, PAL
 and NTSC R8). An earlier revision gave 247 here and $F8 (248) in the
 table; neither is a badline: 248 lies outside the $30–$F7 window the
 condition tests, and 247 & 7 = 7 ≠ YSCROLL (3). The badline range
 itself is region-independent because it is anchored to the fixed raster
 window $30-$F7 (48-247) and to YSCROLL ($D011 bits 0-2), gated by DEN
-having been set on line $30 — not to the border geometry: RSEL ($D011
+having been set on line $30, not to the border geometry. RSEL ($D011
 bit 3) and CSEL ($D016 bit 3) move the border, not the badlines.
 Measured in VICE x64sc 3.10 on the 8565 (VICE's default C64C; an earlier
 version said 6569), 6567R8 and 6567R56A: clearing
@@ -163,16 +163,16 @@ the display window:
   (244-311) after the last.
 - NTSC R8 has 51 lines (0-50) before and 19 lines (244-262) after.
 
-The narrow post-display window on NTSC is the main reason NTSC
-demos struggle with effects that "open" the bottom border — there
-are far fewer lines to do setup work between the last badline and
-the next frame's first badline.
+The short post-display window on NTSC is the main reason NTSC demos have
+trouble with effects that open the bottom border: there are fewer
+lines for setup work between the last badline and the next frame's
+first badline.
 
 ## VIC-II chip differences
 
 The PAL/NTSC split is enforced by which VIC-II chip is socketed.
-There is no software register to read region directly; agents must
-detect by timing or by the raster line counter (see
+There is no software register that reports the region; software must
+detect it by timing or by the raster line counter (see
 [Detection at runtime](#detection-at-runtime)).
 
 ### 6569 — PAL VIC-II family
@@ -194,30 +194,30 @@ Commodore's largest market for the C64.
 
 - **6567R56A** — the original NTSC chip. 262 scanlines per frame, 64
   cycles per scanline (measured in VICE x64sc `-model oldntsc`). Its
-  shipping history — early U.S. machines, 1982-83 — is from published
+  shipping history (early U.S. machines, 1982-83) is from published
   sources and not verified here.
 - **6567R8** — the standard NTSC chip from 1983 onward. 263
-  scanlines per frame, 65 cycles per scanline. This is what
-  virtually all NTSC software is written for.
+  scanlines per frame, 65 cycles per scanline. Almost all NTSC software
+  is written for it.
 - **8562** — HMOS-II NTSC VIC-II shipped in the C64C. Timing-
   compatible with 6567R8.
 
 The 6567R56A is the only common case where "NTSC" is not enough
 information to write timing-exact code. Code that needs to run
-on R56A machines must detect by counting raster lines in a frame
-(262 vs 263) — see [Detection at runtime](#detection-at-runtime).
+on R56A machines must detect it by counting raster lines in a frame
+(262 vs 263); see [Detection at runtime](#detection-at-runtime).
 
 ### Cross-region chip swaps
 
 Physically swapping a 6569 for a 6567 (or vice versa) in a real
 machine does not work without also changing the crystal oscillator,
-because the CPU and VIC-II share a clock. Emulators sidestep this
-by letting you select a region independent of any physical part.
+because the CPU and VIC-II share a clock. Emulators let the user
+select a region independent of any physical part.
 
 ## SID frequency table differences
 
-The SID chip's tone generators are clocked from the CPU clock (called
-phi2 — "phase 2"). A given $D400 register value therefore produces
+The SID chip's tone generators are clocked from the CPU clock (phi2,
+"phase 2"). A given $D400 register value therefore produces
 different output frequencies on PAL vs NTSC.
 
 The SID frequency formula is:
@@ -229,7 +229,7 @@ output_hz = (freq_register * cpu_clock_hz) / 16777216
 where `freq_register` is the 16-bit value written to $D400/$D401
 (or $D407/$D408, $D40E/$D40F) and `16777216` is 2^24.
 
-Using the canonical clocks:
+With the standard clocks:
 
 - PAL: `output_hz = freq_register * 985248 / 16777216`
 - NTSC: `output_hz = freq_register * 1022727 / 16777216`
@@ -255,8 +255,8 @@ played on PAL plays roughly 0.65 semitones flat.
 
 ### Common approach: two frequency tables
 
-The usual approach is one precomputed frequency table per region —
-96 notes × 2 bytes = 192 bytes each, so carrying both is cheap — and a
+The usual approach is one precomputed frequency table per region
+(96 notes × 2 bytes = 192 bytes each, so carrying both is cheap) and a
 region flag read once at start-up (`pal_ntsc_detection` in
 `techniques/raster.md`) to choose between them. Which named editors and
 players do this, and how, is not verified here; an earlier version of
@@ -275,7 +275,7 @@ A4 at:
 7493 * 1022727 / 16777216 = 456.8 Hz
 ```
 
-which is 65 cents sharp — clearly audible.
+which is 65 cents sharp, clearly audible.
 
 ### Filter cutoff and resonance
 
@@ -291,8 +291,8 @@ The two CIA chips ($DC00-$DCFF and $DD00-$DDFF) contain 16-bit timers
 clocked from phi2 (the CPU clock). A timer loaded with value `N`
 fires after `N+1` cycles (the +1 accounts for the reload itself).
 
-For "once per frame" timing without a raster IRQ, the typical CIA
-timer A latch value is:
+For once-per-frame timing without a raster IRQ, the CIA timer A latch
+value is:
 
 | Region        | Timer A latch | Cycles per frame |
 |---------------|---------------|------------------|
@@ -308,9 +308,9 @@ of this table said cycles - 2.)
 
 The KERNAL's default IRQ uses CIA #1 timer A at roughly 60 Hz on BOTH
 regions; it is not once per frame. At reset ($FDDD, entered from IOINIT
-and again from CINT once $FF5B has set the PAL/NTSC flag at $02A6 —
+and again from CINT once $FF5B has set the PAL/NTSC flag at $02A6:
 1 = PAL, 0 = NTSC) it writes the timer A latch as $4025 on PAL (16,422
-cycles, 59.996 Hz) and $4295 on NTSC (17,046 cycles, 59.998 Hz) — ROM
+cycles, 59.996 Hz) and $4295 on NTSC (17,046 cycles, 59.998 Hz), from ROM
 bytes $FDE2-$FDF5. Read from the 901227-03 ROM image and confirmed in
 VICE x64sc by sampling the free-running counter (maximum seen $401E on
 PAL, $428E on NTSC). So TI/TI$ ticks about 60 times a second on a PAL
@@ -330,14 +330,13 @@ A music driver that runs once per frame plays at:
 - NTSC: 59.83 Hz (one tick per ~16.71 ms)
 
 If the music data is authored at 50 Hz tick rate and played on NTSC
-without correction, the music plays 19.4% faster — a noticeably
-brighter tempo. The standard fix is to skip one call in six on NTSC —
-run the driver from the frame IRQ but skip its update on every 6th
-call, so it ticks on five of every six frames: 59.83 × 5/6 ≈ 49.86 Hz,
+without correction, the music plays 19.4% faster. The standard fix is
+to skip one call in six on NTSC: run the driver from the frame IRQ but
+skip its update on every 6th call, so it ticks on five of every six frames: 59.83 × 5/6 ≈ 49.86 Hz,
 0.54% below PAL's 50.12 Hz, inaudible. The other option is to ship
 per-region tempo tables in the music data (checklist item (c) below;
 region-timing.md, Approach 2). Do not force a 50 Hz tick from a CIA
-timer instead — see region-timing.md, "What not to do". An earlier
+timer instead (see region-timing.md, "What not to do"). An earlier
 revision of this sentence said "every 6th NTSC frame instead of every
 5th", which read literally is one call in six, or 9.97 Hz (measured in
 VICE x64sc: 50 calls in 300 NTSC frames against 250 for five-of-six).
@@ -345,17 +344,17 @@ Most modern drivers handle this automatically given a region flag.
 
 ## Border timing differences
 
-The VIC-II has two famous timing windows that let demo code "open"
-the screen border — turning the normally-fixed border colour region
-into addressable pixels. The exact cycle window during which the
+The VIC-II has two timing windows that let code open the screen
+border, turning the normally fixed border colour region into
+addressable pixels. The exact cycle window during which the
 border-disable bits ($D011 bit 3 for vertical, $D016 bit 3 for
 horizontal) must be toggled differs slightly between PAL and NTSC.
 
 ### Top/bottom border (vertical) opening
 
 To open the bottom border, code must clear $D011 bit 3 (24-row mode)
-after the VIC-II has finished comparing line 247 — the bottom-border
-line for 24-row mode (RSEL=0) — and before it starts comparing line
+after the VIC-II has finished comparing line 247 (the bottom-border
+line for 24-row mode, RSEL=0) and before it starts comparing line
 251, the bottom-border line for 25-row mode (RSEL=1); then restore
 RSEL=1 from line 252 on. RSEL must still be 1 for the whole of line 247
 and already be 0 when line 251 begins, so the RSEL=0 write lands in
@@ -385,7 +384,7 @@ There is no separate top-border write. Once the bottom comparison has
 been suppressed the flip-flop stays clear through the vertical blank
 and the next frame's top border, and line 51's top comparison resets a
 flip-flop that is already clear; a write near line 55 on its own opens
-nothing (measured in VICE x64sc 3.10 — the two writes, the window sweep
+nothing (measured in VICE x64sc 3.10; the two writes, the window sweep
 and the controls are in `recipes/kickassembler/topbottom-border-open.md`).
 
 ### Side border (horizontal) opening
@@ -414,7 +413,7 @@ border closed.
 
 ## Sample rate caveats for $D418 digi
 
-"$D418 digi" is the technique of generating pseudo-PCM audio by
+$D418 digi generates pseudo-PCM audio by
 rapidly writing 4-bit volume values to the SID volume register
 ($D418). The output sample rate equals the rate at which $D418
 is written.
@@ -436,7 +435,7 @@ However, a digi played by a CIA timer at a fixed cycle interval
 will drift more:
 
 - A timer of $0080 (128+1 = 129 cycles per sample) gives
-  ~7,638 Hz on PAL and ~7,928 Hz on NTSC R8 — a 290 Hz / ~3.8%
+  ~7,638 Hz on PAL and ~7,928 Hz on NTSC R8, a 290 Hz / ~3.8%
   difference, audible as a pitch shift.
 
 To play a sample at the same rate on both regions, scale the
@@ -449,12 +448,12 @@ timer_ntsc = timer_pal * (1022727 / 985248)
 
 ### 8580 vs 6581 digi
 
-The 6581 SID has a known DC-coupling quirk in $D418 that makes
+The 6581 SID has a DC-coupling quirk in $D418 that makes
 $D418 digi loud and clear. The 8580 SID fixes this DC quirk, which
 makes $D418 digi much quieter (some tracks are barely audible on
-an 8580). This is a chip-revision issue, not a region issue —
+an 8580). This is a chip-revision issue, not a region issue:
 both 6581 and 8580 ship in both PAL and NTSC machines. C64Cs from
-~1986 onward typically ship with 8580; earlier C64s ship with 6581.
+~1986 onward usually ship with 8580; earlier C64s ship with 6581.
 
 ## Detection at runtime
 
@@ -469,9 +468,9 @@ set is the last line of the frame: $37 (311) on PAL, $06 (262) on the
 6567R8, $05 (261) on the 6567R56A.
 
 Maximum raster line value:
-- PAL: 311 ($137 — i.e., $D012=$37 with $D011 bit 7=1)
-- NTSC R8: 262 ($106 — $D012=$06 with $D011 bit 7=1)
-- NTSC R56A: 261 ($105 — $D012=$05 with $D011 bit 7=1)
+- PAL: 311 ($137, i.e. $D012=$37 with $D011 bit 7=1)
+- NTSC R8: 262 ($106: $D012=$06 with $D011 bit 7=1)
+- NTSC R56A: 261 ($105: $D012=$05 with $D011 bit 7=1)
 
 The routine below tracks the low byte while RST8 is set and returns
 the region when RST8 falls. It works from any entry line. The earlier
@@ -514,14 +513,14 @@ The `wait_lo` loop closes a race at the end of the band, not the start.
 A call landing in the last cycles of line 311 reads $D012 on that line
 and $D011 on line 0, so `bpl wrapped` is taken before the first `tay`
 and Y is still 0: the routine would answer R56A on a PAL machine. A call
-landing mid-band needs no guard — the lines it skips are the smaller
-values — but with the guard `wait_hi` can only exit at line 256.
+landing mid-band needs no guard (the lines it skips are the smaller
+values), but with the guard `wait_hi` can only exit at line 256.
 Measured on the equivalent tracking loop (`pal_ntsc_detection` in
 `techniques/raster.md`, VICE x64sc 3.10): without the guard, entered on
 PAL line 311 with the entry phase swept in 4-cycle steps, 2 of 16 phases
 returned the register's preloaded junk; with it, all 16 returned $37.
 Runtime depends on the entry line: 57 lines at best on PAL (called from
-line 255) and 368 at worst (called as RST8 rises — the rest of that
+line 255) and 368 at worst (called as RST8 rises: the rest of that
 band, 256 clear lines, and a whole band again), 8 to 270 lines on the
 6567R8; that loop measured 3,575 and 23,172 cycles on PAL, 500 and
 17,535 on the R8, 432 and 17,131 on the R56A against CIA 1 timer A.
@@ -588,7 +587,7 @@ wait0b:
 ;         else         -> NTSC  ($42C0..$42C7)
 ```
 
-The threshold $4800 (18,432) sits comfortably between the NTSC R8
+The threshold $4800 (18,432) lies between the NTSC R8
 cycle count (17,095) and the PAL cycle count (19,656).
 
 ### Method 2: Read $D012 wrap point
@@ -602,7 +601,7 @@ is the discriminator:
 - NTSC R56A: $D012 reaches $05 (5) then wraps -> max line 261
 
 Practical discriminator: read $D012 when $D011 bit 7 is 1. If
-the value is ever $10 or higher, you're on PAL.
+the value is ever $10 or higher, the machine is PAL.
 
 ```
 ; Detect PAL vs NTSC by raster line wrap. Carry clear = NTSC,
@@ -629,7 +628,7 @@ is_ntsc:
 ```
 
 An earlier version of this listing read $D012 once, immediately after
-RST8 rose — i.e. on line 256, where $D012 is 0 — and so returned NTSC
+RST8 rose (i.e. on line 256, where $D012 is 0), and so returned NTSC
 on a PAL machine from every raster phase below 272 (six of eight phases
 measured in VICE x64sc); the prose above it already described polling,
 the code did not. The `wait_lo` guard is the end-of-band race from
@@ -638,7 +637,7 @@ there and take `bpl is_ntsc` on line 0. Technique: `pal_ntsc_detection`
 in `techniques/raster.md`; recipe: `recipes/oscar64/pal-ntsc-detect.md`.
 
 This is the shortest reliable detect. It does not distinguish R8 from
-R56A — for that, use the Method 1 `detect_region` routine above, whose
+R56A; for that, use the Method 1 `detect_region` routine above, whose
 Y register ends as $06 on the R8 and $05 on the R56A (measured in VICE
 x64sc 3.10, `-model ntsc` and `-model oldntsc`, not on hardware).
 
@@ -668,14 +667,13 @@ were wrong.
 **Recommendation:** Use Method 2 (poll $D012 while RST8=1) for simple
 PAL/NTSC distinction. Use Method 1's `detect_region` to distinguish R8
 from R56A (Y = $06 / $05; measured in VICE x64sc 3.10, `-model ntsc`
-and `-model oldntsc`, not on hardware), or `time_frame` if you want the
-cycle count itself. $02A6 is a free check only when you know nothing
-has touched it since reset.
+and `-model oldntsc`, not on hardware), or `time_frame` for the
+cycle count itself. $02A6 is a free check only when nothing is known
+to have touched it since reset.
 
 ## Region-portability checklist
 
-When writing code intended to run on both regions, parameterize
-the following:
+Code intended to run on both regions must parameterize the following:
 
 - [ ] **CPU clock constant.** Define a symbol (e.g., `CPU_CLOCK`)
       and select it at startup based on detected region. Used by
@@ -693,7 +691,7 @@ the following:
       region-independent because the display window is the same.
       But anything placed below the display window must be checked
       against the NTSC wrap point: lines 263-311 do not exist on the
-      6567R8 (262-311 on the R56A) — a raster IRQ set there never
+      6567R8 (262-311 on the R56A); a raster IRQ set there never
       fires on NTSC (measured in VICE x64sc: an IRQ at line 262 fires
       on both regions, one at line 263 fires only on PAL). Lines
       251-262 exist in both regions. An earlier version of this page
@@ -721,8 +719,7 @@ the following:
       17,095/19,656 = 0.870, which is the CPU-budget ratio and leaves
       the game 3.8% fast (the NTSC/PAL clock ratio). Many ported
       European games skip the scaling and play 19.4% faster on U.S.
-      machines (the famous "European games run too fast in the U.S."
-      problem).
+      machines.
 - [ ] **Loader timing.** Custom IRQ-based loaders that bit-
       bang the serial bus often depend on cycle counts; many
       PAL loaders fail on NTSC because the timing windows
@@ -765,7 +762,7 @@ the following:
   KERNAL ($02A6) detection all report a PAL-N (Drean, 6572) machine
   as PAL, but its lines are 65 cycles, not 63 (measured in VICE x64sc
   `-model drean`; 20,280 cycles per frame). Cycle-exact PAL code and
-  PAL SID tables are wrong there. If you must tell them apart, time a
+  PAL SID tables are wrong there. To tell them apart, time a
   frame: 20,280 vs 19,656 cycles ($4F vs $4C in the high byte)
   separates PAL-N from PAL; the raster wrap cannot. PAL-M is
   unmeasured (no VICE model). An earlier version of this bullet said

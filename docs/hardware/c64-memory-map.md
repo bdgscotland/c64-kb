@@ -2,14 +2,13 @@
 
 ## Overview
 
-The Commodore 64 has a flat 16-bit address space — exactly 65,536 bytes from
-$0000 to $FFFF — but it ships with far more than 64 KB of physical storage.
+The Commodore 64 has a flat 16-bit address space (65,536 bytes from
+$0000 to $FFFF) but more than 64 KB of physical storage.
 Inside the machine there are 64 KB of dynamic RAM, 8 KB of BASIC ROM, 8 KB
 of KERNAL ROM, 4 KB of character generator ROM, the 47-register VIC-II,
 the 29-register SID, two CIA chips, and 1 KB of nibble-wide Color RAM. All
-of those pieces have to share the single address bus the 6510 sees. They do
-not coexist in parallel — they are *banked* in and out of view by a tiny
-configuration latch built into the CPU itself.
+of those pieces share the single address bus the 6510 sees. They are
+*banked* in and out of view by a configuration latch built into the CPU.
 
 The 6510 has six on-chip I/O pins that exit the chip alongside the address
 and data buses. The lowest three of those pins (P0, P1, P2) drive the
@@ -17,21 +16,16 @@ PLA chip's bank-select inputs. Software controls them by writing the
 data-direction register at $0000 (DDR) and the data register at $0001.
 With three bits there are eight possible patterns; the PLA collapses them
 into seven distinct memory layouts that swap chunks of RAM, ROM, and I/O
-into the address space. Every C64 program — every game, every demo, every
-copy-protection scheme — ultimately reduces to choosing one of those
-seven configurations and writing to whatever happens to be visible.
+into the address space. Every C64 program runs in one of those seven
+configurations and writes to whatever is visible.
 
-This document maps the entire $0000-$FFFF address space, explains how
-banking works, lists every fixed-purpose region of zero page, the stack
-page, KERNAL workspace, ROM ranges, and the I/O area. It is the primary
-reference for any code that needs to know "is this address RAM or ROM
-right now?" or "what does the KERNAL clobber if I let it run?"
+This page maps $0000-$FFFF, explains banking, and lists every
+fixed-purpose region of zero page, the stack page, KERNAL workspace, ROM
+ranges and the I/O area. It answers "is this address RAM or ROM right
+now?" and "what does the KERNAL clobber if I let it run?"
 
-Memory addresses in this doc use the standard Commodore convention:
-hexadecimal with a `$` prefix, four digits, uppercase. The dollar sign is
-syntactically meaningful in 6502 assemblers and is the recognized
-canonical form across the entire C64 documentation corpus. Decimal
-equivalents are given where useful.
+Addresses are hexadecimal with a `$` prefix, four digits, uppercase,
+the form 6502 assemblers and C64 documentation use. Decimal equivalents are given where useful.
 
 ### The 64KB address space at a glance
 
@@ -75,15 +69,15 @@ visible to the CPU:
 - CIA #1 at $DC00-$DC0F (16 bytes; shadow-repeats every 16 bytes through $DCFF)
 - CIA #2 at $DD00-$DD0F (16 bytes; shadow-repeats every 16 bytes through $DDFF)
 - Cartridge ROMs and expansion-port I/O at $DE00-$DFFF and $8000-$9FFF
-  and $A000-$BFFF (depending on cartridge type — GAME and EXROM lines)
+  and $A000-$BFFF (depending on cartridge type: GAME and EXROM lines)
 
 The 64 KB of DRAM is always physically present at every address. When a
 ROM is "banked in," the PLA disables the RAM's CAS line for reads only in
-that range — writes still go to RAM. This is why you can poke a value into
-$E000 even though KERNAL ROM is mapped there: the byte lands in the RAM
-underneath and reveals itself if you bank the ROM out. This dual-write
-behavior is critical for relocating screens, swapping in custom fonts,
-and using $E000-$FFFF as 8 KB of additional RAM by banking KERNAL out.
+that range; writes still go to RAM. A value poked into $E000 while KERNAL
+ROM is mapped there lands in the RAM underneath and reads back once the
+ROM is banked out. Relocating screens, custom fonts, and using
+$E000-$FFFF as 8 KB of additional RAM with KERNAL banked out all depend
+on this.
 
 ### Reset state
 
@@ -106,8 +100,8 @@ ROM in, KERNAL ROM in, I/O in (the default user layout).
 
 The KERNAL cold start ($FCE2, via the $FFFC vector) runs IOINIT, RAMTAS,
 RESTOR and CINT in that order. RAMTAS ($FF87 → $FD50) clears $0002-$0101
-and $0200-$03FF — the rest of the stack page, $0102-$01FF, is not touched
-— sets the tape-buffer pointer $B2/$B3 to $033C, finds the top of memory
+and $0200-$03FF (the rest of the stack page, $0102-$01FF, is not touched),
+sets the tape-buffer pointer $B2/$B3 to $033C, finds the top of memory
 by walking pages from $0400 (MEMTOP = $A000 with BASIC ROM in), and sets
 MEMBOT to $0800 ($0282) and the screen page $0288 to $04. It does not
 clear the screen and it does not install any vector: its page-3 clear
@@ -136,8 +130,7 @@ configuration) with all ROMs visible.
 - **Bank** in the C128/REU sense: 64 KB chunks. Not applicable to a
   stock C64.
 
-This doc covers CPU banks. VIC-II banking is independent and orthogonal —
-the VIC sees its own memory map and never sees ROMs (with one wrinkle:
+This page covers CPU banks. VIC-II banking is independent: the VIC sees its own memory map and never sees ROMs (with one wrinkle:
 the character ROM is shadowed into VIC banks 0 and 2 at $1000-$1FFF and
 $9000-$9FFF respectively).
 
@@ -158,7 +151,7 @@ The address space resolves at each fetch through three layers:
 
 1. **CPU pins** A0-A15 emit the address.
 2. **PLA (906114)** sees A12-A15 (the high nibble, which picks the 4 KB
-   chunk — the same inputs listed under [Bank switching](#bank-switching)),
+   chunk; the same inputs listed under [Bank switching](#bank-switching)),
    the GAME/EXROM lines from the cartridge, and the LORAM/HIRAM/CHAREN
    lines from the 6510's processor port. It produces enable signals:
    CASRAM (RAM read enable), ROML/ROMH (cartridge ROM enables), KERNAL,
@@ -182,7 +175,7 @@ For most software the only thing that matters is the value at $01. Bits
 Higher bits of $01 are used for cassette control (bits 3-5) and the cassette
 sense line (bit 4 input).
 
-The seven distinct CPU bank configurations (with no cartridge attached —
+The seven distinct CPU bank configurations (no cartridge attached:
 GAME=1, EXROM=1) are summarized in the [Bank switching](#bank-switching)
 section.
 
@@ -191,7 +184,7 @@ section.
 These ranges are always RAM regardless of $01 setting, on a stock C64 with
 no cartridge:
 
-- $0000-$0001 — processor port (special — see below)
+- $0000-$0001 — processor port (special; see below)
 - $0002-$9FFF — 40 KB of contiguous RAM
 - $C000-$CFFF — 4 KB of free RAM
 
@@ -209,9 +202,9 @@ These ranges depend on $01 and cartridge lines:
 
 ## Memory regions
 
-The following H3 entries cover the entire $0000-$FFFF address space. Each
-region includes its default function on a freshly-booted C64, whether the
-region is bank-switchable, and key sub-addresses or registers within it.
+The H3 entries below cover $0000-$FFFF. Each gives the region's default
+function on a freshly booted C64, whether it is bank-switchable, and its
+key sub-addresses or registers.
 
 ### $0000-$0001 — Processor I/O port
 
@@ -233,7 +226,7 @@ input pins, the value read reflects the pin's external state.
 **Reset value:** DDR = $2F; data written by IOINIT = $E7, reads back as $37 (see Reset state above).
 
 After reset, bits 0-2 of $01 are outputs driving LORAM, HIRAM, CHAREN
-high — selecting BASIC ROM + KERNAL ROM + I/O visible.
+high, selecting BASIC ROM + KERNAL ROM + I/O visible.
 
 | Bit | Name      | I/O   | Function                                                              |
 |-----|-----------|-------|-----------------------------------------------------------------------|
@@ -247,20 +240,19 @@ high — selecting BASIC ROM + KERNAL ROM + I/O visible.
 | 7   | -         | -     | No pin on the 6510. As an input it reads the last level driven when it was an output, decaying to 0 after a few hundred ms (VICE models 350,000-420,000 cycles, ~0.35-0.43 s; measured 360k-417k in x64sc 3.10). Reads 0 after boot ($01 = $37). Do not rely on it. |
 
 **Notes:**
-- **DDR must be set first.** When you write a new value to $01, the
-  underlying CPU latches the value through the DDR mask. Bits configured
-  as input ignore writes. If you intend to drive a pin, set the DDR
-  bit to 1 first, then write the data register.
+- **DDR must be set first.** A write to $01 is latched through the DDR
+  mask. Bits configured as input ignore writes. To drive a pin, set the
+  DDR bit to 1 first, then write the data register.
 - **Reading $01 can be glitchy.** When CASSMOT is driving low (motor on)
   and you read $01, the input bit CASSSENS may read back as the most
   recent value the line was driven to during the cassette sense window.
   This is reported in *Mapping the Commodore 64* (p. 32) and is not
-  checked here — no tape device is attached in the headless runs.
+  checked here: no tape device is attached in the headless runs.
 - **Bit 6/7 unconnected.** On a stock C64 these pins are not bonded out
   and read as their previous output state with very slow capacitive
   decay. *Do not rely on bit 6/7 values for anything.* An earlier version
   of the table said these bits were "pulled high"; the reset state
-  DDR=$2F / $01=$37 contradicts that — they are inputs reading 0, and a
+  DDR=$2F / $01=$37 contradicts that: they are inputs reading 0, and a
   driven 0 switched to input stays 0. See
   [6510-cpu-reference.md](6510-cpu-reference.md#reading-the-port) for the
   decay figure.
@@ -272,9 +264,9 @@ high — selecting BASIC ROM + KERNAL ROM + I/O visible.
 
 Cleared to $00 by RAMTAS (`STA $0002,Y` at $FD53) and never touched
 again: no instruction in the BASIC (901226-01) or KERNAL (901227-03) ROM
-names $02 apart from that clearing loop — the only `$02` operands are
+names $02 apart from that clearing loop. The only `$02` operands are
 `$02,X` offsets into FAC1/FAC2 in the math package, with X = $61 or $69
-(the sites at $B4DF and $B98D-$B9B0 run with X ≥ $19) — and a sentinel
+(the sites at $B4DF and $B98D-$B9B0 run with X ≥ $19). A sentinel
 POKEd into $02 survives a forced garbage collection (FRE(0)) and the
 BASIC I/O error path (verified against the ROM images and in VICE x64sc
 3.9). An earlier version of this entry said BASIC used $02 as a working
@@ -288,8 +280,8 @@ start address through whichever zero-page pointer the caller names in A.
 **Default use:** Vector to BASIC's float-to-fix conversion ($B1AA)
 **Bank-switchable:** No (always RAM)
 
-Patchable: if you want to override how BASIC converts floats to integers,
-point this here. Installed by BASIC's cold-start initialisation at $E3BF
+Patch this vector to override how BASIC converts floats to integers.
+Installed by BASIC's cold-start initialisation at $E3BF
 (the KERNAL reset reaches it only via JMP ($A000) -> $E394 -> JSR $E3BF),
 not by the KERNAL. RESTOR ($FF8A -> $FD15) rewrites only $0314-$0333 from
 the table at $FD30 and leaves $03-$06 alone; an earlier version of this
@@ -438,7 +430,7 @@ garbage collection runs.
 **Bank-switchable:** No
 
 Lower MEMSIZ to reserve a chunk of high RAM for assembly code, custom
-char sets, or sprite data. MEMSIZ is BASIC's hard cap — string heap
+char sets, or sprite data. MEMSIZ is BASIC's hard cap; the string heap
 grows down from MEMSIZ.
 
 ### $0039-$003A — CURLIN (current BASIC line number)
@@ -446,8 +438,8 @@ grows down from MEMSIZ.
 **Default use:** Line number of the currently-executing BASIC statement; in direct mode only the high byte is set ($3A = $FF) — the low byte keeps whatever line ran last
 **Bank-switchable:** No
 
-A useful test: PEEK(58) = 255 means direct mode. Do not compare the
-16-bit value with 65535 — the main loop ($A490: LDX #$FF / STX $3A) sets
+PEEK(58) = 255 means direct mode. Do not compare the
+16-bit value with 65535: the main loop ($A490: LDX #$FF / STX $3A) sets
 only the high byte, so after a program has run the pair reads $FFnn with
 nn the low byte of the last executed line, and even on a fresh boot it
 reads 65280 ($39 is 0 from the KERNAL's RAM clear; nothing in either ROM
@@ -508,7 +500,7 @@ RESTORE sets DATPTR back to start of program.
 **Default use:** Step the BASIC garbage collector adds to its walk pointer ($22-$23): 3 while scanning the temporary string-descriptor stack and array elements, 7 while scanning simple variables (set at $B54D and $B56A, applied at $B5F6); BASIC cold start initialises it to 3 ($E3EA). Not a string length, and not VALTYP — the numeric/string type flag is $000D.
 **Bank-switchable:** No
 
-Conventionally labelled FOUR6 (the Microsoft/Commodore source name — not
+Conventionally labelled FOUR6 (the Microsoft/Commodore source name; not
 verified from an instrument on this machine). An earlier version of this
 entry was headed VALTYP; that name belongs to $000D, and the ROM shows
 $53 is the collector's step size (3 or 7), not a length.
@@ -584,7 +576,7 @@ ROM images.
 **Bank-switchable:** No
 
 Machine code copied from the ROM image at $E3A2 by BASIC's cold-start
-init ($E3BF, in the KERNAL ROM image) at reset — the CHRGET/CHRGOT
+init ($E3BF, in the KERNAL ROM image) at reset. It is the CHRGET/CHRGOT
 subroutine BASIC uses to read its own tokenized program. CHRGET is $0073
 (advance TXTPTR then fetch); CHRGOT is $0079 (re-fetch the current byte
 without advancing); the LDA operand at $007A-$007B is TXTPTR. The bytes
@@ -593,16 +585,16 @@ LDA $E3A2,X / STA $73,X): the CHRGET/CHRGOT subroutine at $73-$8A plus
 the initial RND seed at $8B-$8F ($80 $4F $C7 $52 $58). $E3A2 is BASIC
 interpreter code that physically lives in the KERNAL ROM chip's
 $E000-$E4D2 span (kernal-901227-03.bin offset $03A2), not in
-basic-901226-01.bin. Nothing else reinstalls it — not the KERNAL's
-RESTOR/CINT/IOINIT and not the RUN/STOP-RESTORE warm start at $E37B — so
+basic-901226-01.bin. Nothing else reinstalls it (not the KERNAL's
+RESTOR/CINT/IOINIT and not the RUN/STOP-RESTORE warm start at $E37B), so
 once overwritten only a cold start ($E394, SYS 58260) or a reset brings
 it back. An earlier version of this page said the KERNAL copies it in at
 reset.
 
 **Notes:**
 - This block is *executable code in zeropage*. Overwriting it crashes BASIC.
-- If you don't use BASIC (i.e. you're a pure assembly program that
-  doesn't return to the READY prompt), this 24-byte range is free.
+- A program that does not use BASIC and never returns to the READY
+  prompt can use this 24-byte range.
 
 ### $007A-$007B — TXTPTR (BASIC program pointer)
 
@@ -610,7 +602,7 @@ reset.
 **Bank-switchable:** No
 
 Embedded inside the CHRGET routine. Modifying TXTPTR changes where
-BASIC reads its next statement — used by RUN, GOTO, GOSUB.
+BASIC reads its next statement. RUN, GOTO and GOSUB use it.
 
 ### $008B-$008F — RNDX (random number seed)
 
@@ -721,7 +713,7 @@ flag does NOT control: the tape prompts 'PRESS PLAY ON TAPE' / 'PRESS
 RECORD & PLAY ON TAPE' and the 'OK' after them are printed
 unconditionally ($F81E/$F82B enter the printer at $F12F, past the $9D
 test), and 'FILE NOT FOUND' is BASIC's message from its own error table,
-not the KERNAL's — the KERNAL prints 'I/O ERROR #4' for that case.
+not the KERNAL's; the KERNAL prints 'I/O ERROR #4' for that case.
 Verified against the ROM bytes and in VICE x64sc.
 
 ### $009E-$009F — Cassette block-read pointer + byte temp
@@ -742,11 +734,11 @@ Verified against the ROM bytes and in VICE x64sc.
 
 Incremented once per KERNAL IRQ by UDTIM ($FFEA → $F69B). That IRQ is
 CIA #1 Timer A, which the KERNAL sets at $FDDD from the $02A6 region flag
-to ≈60 Hz on BOTH regions — latch $4025 on PAL (16,422 cycles, 59.996 Hz)
+to ≈60 Hz on BOTH regions: latch $4025 on PAL (16,422 cycles, 59.996 Hz)
 and $4295 on NTSC (17,046 cycles, 59.998 Hz), read from the 901227-03
 ROM and confirmed in VICE x64sc (359 jiffies in 300 PAL frames, 301 in
 300 NTSC frames; a second run counted 298-299 ticks in 250 PAL frames).
-So TI counts ~60ths of a second everywhere and runs very slightly *slow*
+So TI counts ~60ths of a second everywhere and runs slightly *slow*
 on both (0.007 % on PAL, 0.003 % on NTSC); UDTIM's 24-hour rollover at
 $4F1A01 = 86,400 × 60 assumes the same 60/s. An earlier version of this
 page said the PAL IRQ was 50 Hz and TI ran fast; neither was true. See
@@ -819,7 +811,7 @@ trip in VICE x64sc.
 
 Start address for SAVE (copied from the zero-page pointer named in A,
 $F5E4/$F5E8) and for tape LOAD ($F59C/$F5A0); a serial LOAD does not use
-it — it stores straight through $AE/$AF.
+it and stores straight through $AE/$AF.
 
 ### $00C3-$00C4 — MEMUSS: load address passed to LOAD
 
@@ -832,17 +824,17 @@ and the file's own address is used. A tape LOAD overwrites it with the
 header's start address for non-relocatable (type 3) files or when SA≠0
 ($F56C-$F575). The VECTOR routine ($FD1A) borrows it as the pointer to
 the caller's vector table. SAVE never touches it. Earlier revisions of
-this page called it the end-address pointer; that is $AE/$AF — verified
-against the ROM bytes and a SAVE/LOAD round trip in VICE x64sc.
+this page called it the end-address pointer; that is $AE/$AF (verified
+against the ROM bytes and a SAVE/LOAD round trip in VICE x64sc).
 
 ### $00C5-$00C5 — Last key pressed (matrix code)
 
 **Default use:** Raw matrix index of last key scanned by IRQ; $40 = no key
 **Bank-switchable:** No
 
-Updated 60 times per second by the KERNAL IRQ. *Not* the PETSCII code —
-this is the row/column matrix index 0-63. The actual key code goes
-through KEYTAB ($EB81-$ECB8) to produce a PETSCII byte that gets
+Updated 60 times per second by the KERNAL IRQ. *Not* the PETSCII code:
+this is the row/column matrix index 0-63. The key code goes
+through KEYTAB ($EB81-$ECB8) to produce a PETSCII byte, which is
 written to the keyboard buffer at $0277. An earlier version of this line
 said $ECB9, which is the first byte of the VIC-II power-on table, not
 KEYTAB (verified against `kernal-901227-03.bin`).
@@ -948,7 +940,7 @@ continuation of the row above (a fresh screen has bit 7 set on every
 entry). The KERNAL walks this table to find a logical line's start and
 length. (This page previously ended the table at $F1 and had a separate
 "$00F2 — Insert mode count" entry; the KERNAL's fill loop at $E544
-writes 26 entries and never addresses $F2 on its own — there is one
+writes 26 entries and never addresses $F2 on its own; there is one
 insert counter and it is $D8.)
 
 ### $00F3-$00F4 — Color RAM pointer
@@ -1013,7 +1005,7 @@ KERNAL.
 - $0100-$010F shared with tape buffer index in some workflows
 - $01FA-$01FF reserved for KERNAL's deepest pushes during reset
 - Floating-point ASCII conversion (BASIC's FOUT, $BDDD) uses $00FF-$010F
-  as a temporary buffer — $0100-$010F from PRINT, $00FF-$010E from STR$
+  as a temporary buffer: $0100-$010F from PRINT, $00FF-$010E from STR$
   (measured in VICE; *Mapping the C64* p. 39 gives $0100-$010A, which is
   five bytes short)
 
@@ -1022,8 +1014,7 @@ KERNAL.
   and overwrites the top of the stack page. There is no overflow trap.
 - **JSR pushes return-address-minus-one.** RTS pulls then increments.
   This affects manual stack manipulation.
-- BASIC uses *much* more of the stack than a typical assembly program,
-  especially with deep GOSUBs and nested FOR loops. Each GOSUB pushes
+- BASIC's stack use grows with nested GOSUBs and FOR loops. Each GOSUB pushes
   5 bytes; each FOR pushes 18 bytes.
 
 ### $0200-$0258 — BASIC input buffer (BUF)
@@ -1031,9 +1022,9 @@ KERNAL.
 **Default use:** Direct-mode keyboard input buffer; lines from screen end up here
 **Bank-switchable:** No
 
-89-byte buffer. When you hit RETURN at the BASIC prompt, the screen line
-under the cursor is copied to $0200-$0258 (or until 89 chars or RETURN
-hits) and then tokenized.
+89-byte buffer. RETURN at the BASIC prompt copies the screen line under
+the cursor to $0200-$0258 (up to 89 chars or the RETURN), and the line is
+then tokenized.
 
 ### $0259-$0262 — Logical file table (LAT)
 
@@ -1055,8 +1046,8 @@ hits) and then tokenized.
 **Default use:** PETSCII keystrokes waiting to be consumed by GETIN; max 10 chars
 **Bank-switchable:** No
 
-Stuff characters here and update NDX ($C6) to inject keystrokes — this
-is how autostart utilities feed BASIC a "LOAD..." command after reset.
+Stuff characters here and update NDX ($C6) to inject keystrokes.
+Autostart utilities feed BASIC a "LOAD..." command after reset this way.
 
 ### $0281-$0282 — MEMSTR (start of basic memory)
 
@@ -1093,7 +1084,7 @@ char processed. Read by all subsequent PRINTs.
 
 Used by PLOT and CHROUT to compute screen addresses. Change this byte to
 move the screen to a different page; also update VIC-II $D018 and the
-line-link table to keep things consistent.
+line-link table to match.
 
 ### $0289-$0289 — Keyboard buffer max size
 
@@ -1152,11 +1143,11 @@ shift/Ctrl/C= flags in $028D, picks one of the four tables listed at
 $EB79 ($EB81 unshifted, $EBC2 shifted, $EC03 C=, $EC78 Ctrl) and stores
 that address in $F5/$F6, then exits with JMP $EAE0, where the keyscan
 fetches the PETSCII code with LDY $CB / LDA ($F5),Y. To install custom
-key tables, point $028F/$0290 at a routine that does the same — leave
-the table address in $F5/$F6 and exit via JMP $EAE0 — rather than at a
+key tables, point $028F/$0290 at a routine that does the same (leave
+the table address in $F5/$F6 and exit via JMP $EAE0), not at a
 table: this vector holds a code address, not a table address. (An
 earlier version of this entry called it a pointer to the decode table
-itself; it never was — the table pointer is $F5/$F6, see $00F5-$00F6.
+itself; it never was. The table pointer is $F5/$F6, see $00F5-$00F6.
 Read from the 901227-03 ROM and confirmed in VICE: $028F/$0290 = $48 $EB
 at boot.)
 
@@ -1289,8 +1280,8 @@ USR() sets this vector.
 **Default use:** Pointer to IRQ handler; default $EA31
 **Bank-switchable:** No
 
-**This is THE vector** for replacing the IRQ. Every C64 demo that does
-raster effects writes to $0314/$0315 to point at its own raster handler.
+**This is THE vector** for replacing the IRQ handler. C64 demos that do
+raster effects write $0314/$0315 to point at their own raster handler.
 
 ### $0316-$0317 — CBINV (BRK vector)
 
@@ -1393,9 +1384,9 @@ ROM's IEC-bus byte-banging routine.
 **Default use:** 192-byte tape I/O buffer
 **Bank-switchable:** No
 
-When the cassette is not in use, this 192-byte buffer is free RAM. It
-is a popular place to hide small machine-language routines (raster
-interrupt handlers, sprite editors). Programs that load themselves into
+When the cassette is not in use, this 192-byte buffer is free RAM, and a
+common place for small machine-language routines (raster interrupt
+handlers, sprite editors). Programs that load themselves into
 this buffer and then exit can survive a tape LOAD.
 
 ### $03FC-$03FF — Unused / sound workspace
@@ -1413,7 +1404,7 @@ VIC-II reads screen codes from here when fetching characters for the
 text display. Writing a character code (0-255) to $0400+row*40+col
 places that character on screen.
 
-The screen code is *not* PETSCII — it is an 8-bit index into the
+The screen code is *not* PETSCII: it is an 8-bit index into the
 character generator. In the default uppercase/graphics set, codes 0–31
 are @ A–Z [ £ ] ↑ ←, 32–63 are space, punctuation and the digits (48–57
 = 0–9), 64–127 are the graphics glyphs, and 128–255 are the same 128
@@ -1441,7 +1432,7 @@ at $D9-$F2.
 **Default use:** 8 bytes — one sprite pointer per hardware sprite (0-7)
 **Bank-switchable:** No (RAM region; visible to VIC inside VIC bank)
 
-The eight bytes at the *very end* of screen memory hold the sprite
+The eight bytes at the end of screen memory hold the sprite
 pointers. Each byte's value × 64 is the address (within the current
 VIC bank) of that sprite's 63-byte data block.
 
@@ -1468,11 +1459,11 @@ last 8 bytes of the 1 KB screen page, screen base + $3F8.)
 **Notes:**
 - A pure-assembly program with no BASIC stub can use $0801-$9FFF as 38 KB
   of contiguous free RAM.
-- Loading at $0801 with a BASIC stub like `1 SYS 2061` is the canonical
+- Loading at $0801 with a BASIC stub like `1 SYS 2061` is the standard
   way to autostart a machine-language program (2061 = $080D, the address
   just past the stub).
-- The screen at $0400-$07FF is a separate region — *not* part of the BASIC
-  area despite being lower in memory.
+- The screen at $0400-$07FF is a separate region, *not* part of the BASIC
+  area, although it is lower in memory.
 
 ### $0800-$0800 — BASIC start sentinel
 
@@ -1496,13 +1487,13 @@ last 8 bytes of the 1 KB screen page, screen base + $3F8.)
 
 The BASIC interpreter lives here on a fresh boot. Bank out by clearing
 LORAM ($01 bit 0) to reveal the 8 KB of RAM underneath. The RAM is
-*always there* — writes to $A000-$BFFF always go to RAM. Reads return
+*always there*: writes to $A000-$BFFF always go to RAM. Reads return
 ROM bytes only when the BASIC ROM is banked in.
 
 **Notes:**
-- This is the standard place to put a 256-cell character set (only need
-  2 KB at $1000 or $3000 inside the VIC bank — but the underlying RAM
-  here is sometimes used for sprite data or extra screen pages).
+- This is the standard place to put a 256-cell character set (it needs
+  only 2 KB, at $1000 or $3000 inside the VIC bank); the underlying RAM
+  here is also used for sprite data or extra screen pages.
 - A 16 KB cartridge (EXROM = 0, GAME = 0) maps its ROMH here whenever
   HIRAM = 1, whatever LORAM is (modes 2, 3, 6 and 7); with HIRAM = 0 the
   range is RAM even with the cart present. See
@@ -1527,14 +1518,14 @@ ends up (`JMP ($A000)` at $FCFE, after IOINIT, RAMTAS, RESTOR and CINT).
 Cartridge auto-start does not involve $A000 at all. The reset routine
 ($FCE2) first calls the signature check at $FD02, which compares
 $8004-$8008 with `$C3 $C2 $CD $38 $30` ("CBM80", held at $FD10) and, on
-a match, does `JMP ($8000)` — the cartridge *cold*-start vector — before
+a match, does `JMP ($8000)` (the cartridge *cold*-start vector) before
 any RAM or I/O initialisation. A cart ROM's first nine bytes are
 therefore: cold vector (2), warm vector (2), `CBM80` (5), at
 $8000-$8008. The warm vector at $8002 is taken by the RESTORE/NMI
 handler ($FE56: `JSR $FD02; BNE; JMP ($8002)`), and only when CIA #2 did
 not raise the NMI. See the $8000 pitfall below. (An earlier version of
 this page put the signature at $A000 and had reset jump through the warm
-vector; both were wrong — at reset $A000 is BASIC ROM, whose first bytes
+vector; both were wrong: at reset $A000 is BASIC ROM, whose first bytes
 are the `$94 $E3 $7B $E3 'CBMBASIC'` shown above. Verified against
 kernal-901227-03 bytes and in VICE x64sc 3.10.)
 
@@ -1608,13 +1599,13 @@ kernal-901227-03 bytes and in VICE x64sc 3.10.)
 **Default use:** PEEK ($B80D), POKE ($B824), WAIT ($B82D), FADDH/FSUB/FADD ($B849/$B850/$B867), LOG ($B9EA), FMULT ($BA28), CONUPK ($BA8C)
 **Bank-switchable:** Yes
 
-This is the famous "Microsoft BASIC math". FADD is at $B867 (FADDT
+This is the "Microsoft BASIC math" package. FADD is at $B867 (FADDT
 $B86A; FSUB $B850, FMULT $BA28, FDIV $BB0F, FIN $BCF3, FOUT $BDDD, SQR
-$BF71) — an earlier revision said $B6DB, which is FRETMS, the
+$BF71). An earlier revision said $B6DB, which is FRETMS, the
 string-descriptor-stack pop. The package runs on past $BAE1 to EXP at
 $BFED, which ends with JMP $E000: SIN, COS, TAN, ATN and RND live in the
 KERNAL ROM ($E26B, $E264, $E2B4, $E30E, $E097). Demo coders sometimes
-bank in BASIC just to call these.
+bank in BASIC to call these.
 
 ### $BAE2-$BFFF — Rest of the floating-point package (FIN, FOUT, SQR, EXP)
 
@@ -1635,17 +1626,17 @@ and kernal-901227-03.bin.
 **Default use:** 4 KB of always-RAM, never overlaid by any ROM or I/O
 **Bank-switchable:** No
 
-This 4 KB region is special: it is the **largest contiguous chunk of RAM
+This 4 KB region is the **largest contiguous chunk of RAM
 guaranteed to be RAM in every bank configuration**. Cartridges can't map
 here; KERNAL doesn't touch it; BASIC doesn't use it.
 
-Everyone uses $C000 for machine-language routines that need to coexist
-with BASIC. The canonical pattern is to write a BASIC loader that POKEs
-a small ML routine into $C000 and then SYS 49152 to call it.
+$C000 is the usual home for machine-language routines that coexist
+with BASIC. The common pattern is a BASIC loader that POKEs a small ML
+routine into $C000 and calls it with SYS 49152.
 
 **Notes:**
 - Some software uses $C800-$CFFF as a 2 KB custom character set since
-  it falls within VIC bank 3 at $C000-$FFFF — but only after relocating
+  it falls within VIC bank 3 at $C000-$FFFF, but only after relocating
   the VIC bank. By default the VIC sees bank 0 ($0000-$3FFF) and would
   not fetch from $C000.
 - Cassette I/O does NOT use $C000-$CFFF (it uses $033C-$03FB only).
@@ -1689,7 +1680,7 @@ Full per-register details are in [vic-ii-reference.md](vic-ii-reference.md).
 **Bank-switchable:** Yes
 
 Reading $D040 returns the same value as $D000, and so on. Avoid relying
-on this — direct-address all VIC writes in the $D000-$D03F window.
+on this: direct-address all VIC writes in the $D000-$D03F window.
 
 ### $D400-$D418 — SID registers
 
@@ -1730,7 +1721,7 @@ Full per-register details are in [sid-reference.md](sid-reference.md).
 **Bank-switchable:** Yes
 
 Like the VIC mirrors, every 32-byte block from $D420 onward is an alias
-of $D400-$D41F. The SID's last register $D41C cuts off at 29; writes to
+of $D400-$D41F. The SID has 29 registers, the last at $D41C; writes to
 $D41D-$D41F have no effect.
 
 ### $D800-$DBE7 — Color RAM (visible 1000 bytes)
@@ -1818,8 +1809,8 @@ ticks via CIA #1 Timer A.
 | $DD0F  | Control B                                       |
 
 CIA #2's IRQ line drives the 6510's NMI pin (not IRQ). The RESTORE key
-also pulls /NMI low — in parallel with CIA2's /IRQ, not through the CIA,
-so no $DD0D write touches it (this line used to say "through CIA #2";
+also pulls /NMI low, in parallel with CIA2's /IRQ and not through the
+CIA, so no $DD0D write touches it (this line used to say "through CIA #2";
 see `pitfalls/kernal-and-io.md` → `restore_nmi_not_maskable`).
 
 **$DD00 bits 0-1** select the VIC-II bank, *inverted*:
@@ -1867,7 +1858,7 @@ KERNAL out and I/O still in.
 
 The sub-map below was rebuilt from the 901227-03 jump table and the
 $FD30 vector table because ten of its earlier headings named routines
-that live elsewhere — RESET at $FCE2 not $FCFC, RAMTAS at $FD50 not
+that live elsewhere: RESET at $FCE2 not $FCFC, RAMTAS at $FD50 not
 $FD90+, SCNKEY at $EA87 not $E4AC, the keyboard decode tables at
 $EB81-$ECB8 not $ECE7, SETMSG/MEMTOP/MEMBOT at $FE18/$FE25/$FE34 not
 $F130, the IRQ handler at $EA31-$EA86 not $E97D, and the cassette read
@@ -1913,13 +1904,12 @@ from the kernal-901227-03 ROM bytes, it:
 2. Runs the cursor blink ($EA34-$EA60), skipped when $CC is non-zero.
 3. Handles the cassette-switch / tape-motor sense via $01 ($EA61-$EA79).
 4. Calls SCNKEY ($EA7B: JSR $EA87).
-5. Reads $DC0D to acknowledge CIA #1 — last, at $EA7E.
+5. Reads $DC0D to acknowledge CIA #1 (last, at $EA7E).
 6. Restores Y, X and A and RTIs ($EA81-$EA86).
 
-Replacing $0314/$0315 with your own handler lets you intercept this
-sequence — typically you JMP $EA31 to run the whole service after your
-raster routine completes, or JMP $EA81 for the bare register-restore
-exit. $EA7E is not a cursor-skipping shortcut: it is the
+A handler installed in $0314/$0315 runs in place of this sequence. It
+usually ends with JMP $EA31 to run the whole service after the raster
+routine, or JMP $EA81 for the bare register-restore exit. $EA7E is not a cursor-skipping shortcut: it is the
 acknowledge-and-exit tail (LDA $DC0D, then $EA81's PLA/TAY/PLA/TAX/PLA/
 RTI), so entering there skips the jiffy clock, the STOP-key sense and
 the keyboard scan as well as the cursor. Measured in VICE x64sc: with
@@ -2120,9 +2110,9 @@ this points at $FF48 which saves registers and then JMPs through
 $0314 (IRQ) or $0316 (BRK).
 
 **Crucial:** If you bank out KERNAL ROM ($01 = $35 or lower) and IRQ
-fires, the CPU reads $FFFE/$FFFF *from RAM*. You must have pre-loaded
-RAM bytes at $FFFE/$FFFF with the address of your own IRQ handler before
-banking out, or the machine will crash. Same for NMI ($FFFA/$FFFB) and
+fires, the CPU reads $FFFE/$FFFF *from RAM*. Load the RAM bytes at
+$FFFE/$FFFF with the address of your own IRQ handler before banking out,
+or the machine will crash. Same for NMI ($FFFA/$FFFB) and
 RESET ($FFFC/$FFFD).
 
 ## Bank switching
@@ -2142,7 +2132,7 @@ inputs are:
 
 The PLA hardwires 32 possible input combinations into seven distinct
 output configurations (plus a few cartridge-only modes). These are the
-**memory modes** — sometimes called **banks** in PLA literature.
+**memory modes**, sometimes called **banks** in PLA literature.
 
 Software running on a bare C64 (no cart) sees five practically-useful
 configurations and two rarely-used edge cases.
@@ -2191,12 +2181,12 @@ RAM but still want KERNAL routines accessible.
 | $E000-$FFFF  | KERNAL ROM   |
 
 The I/O chips at $D000-$DFFF are replaced by the character generator
-ROM. Useful for copying the character set into RAM (`LDA $D000,X / STA
-target,X`) — you read the font directly, then bank I/O back in.
+ROM. Used to copy the character set into RAM (`LDA $D000,X / STA
+target,X`): read the font, then bank I/O back in.
 
 **Caution:** With I/O banked out, you cannot read CIA, VIC, or SID
 registers. *And* the IRQ vector goes through $FFFE/$FFFF which still
-points at the KERNAL ROM, so the KERNAL IRQ handler will run — and the
+points at the KERNAL ROM, so the KERNAL IRQ handler will run, and the
 KERNAL handler tries to LDA $DC0D *which now reads the character ROM*.
 It does not work; an earlier version of this page said it generally did.
 The handler does discard the value, but the read itself is the
@@ -2205,14 +2195,14 @@ touches the CIA's interrupt register, and the ICR is cleared only when
 the CIA sees the read. With CHAREN = 0 the PLA selects the character ROM
 instead of the CIA, so the flag stays set, /IRQ stays low, and because
 RTI has no interrupt-delay the CPU re-enters the handler immediately
-after every RTI. The main program never executes another instruction —
-measured in VICE x64sc: with a `$0314` handler counting passes, a
+after every RTI. The main program never executes another instruction
+(measured in VICE x64sc: with a `$0314` handler counting passes, a
 main-program instruction counter stayed at 0 across 4,909 handler passes
 in 20M cycles and 7,822 in 30M, while the identical code with $01 = $37
-finished inside one jiffy. (The handler also reads $DC01 as char-ROM
+finished inside one jiffy). (The handler also reads $DC01 as char-ROM
 byte $99, so SCNKEY runs a full phantom matrix scan on every pass.)
 *Always SEI before banking the character ROM in, and restore $01 before
-CLI — not only "if timing matters".*
+CLI, not only "if timing matters".*
 
 ### Mode 26 — KERNAL + character ROM (no BASIC, no I/O)
 
@@ -2236,7 +2226,7 @@ CLI — not only "if timing matters".*
 | $D000-$DFFF  | Character ROM|
 | $E000-$FFFF  | RAM          |
 
-Almost never used — see Mode 24 instead.
+Almost never used; see Mode 24 instead.
 
 ### Mode 29 — I/O only (no BASIC, no KERNAL)
 
@@ -2249,8 +2239,8 @@ Almost never used — see Mode 24 instead.
 | $D000-$DFFF  | I/O          |
 | $E000-$FFFF  | RAM          |
 
-The most common alternative to mode 31. Demos and games use this when
-they want all RAM but still need to talk to VIC/SID/CIA. The big catch:
+The most common alternative to mode 31. Demos and games use it to get
+all RAM while still talking to VIC/SID/CIA. The catch:
 the IRQ vectors at $FFFE/$FFFF are now in RAM. You must:
 
 1. Disable IRQs with SEI.
@@ -2261,7 +2251,7 @@ the IRQ vectors at $FFFE/$FFFF are now in RAM. You must:
 
 (An earlier version of this page gave LORAM = 0 for modes 29 and 25 and
 CHAREN = 1 for mode 24; the $01 values and the truth table below were
-right, the bit prose was not — measured in VICE x64sc: $35 maps
+right, the bit prose was not. Measured in VICE x64sc: $35 maps
 RAM/I-O/RAM at $A000/$D000/$E000, $31 maps RAM/char ROM/RAM, and $30
 and $34 are both all RAM.)
 
@@ -2276,11 +2266,11 @@ and $34 are both all RAM.)
 | $D000-$DFFF  | RAM          |
 | $E000-$FFFF  | RAM          |
 
-A pure 64 KB of RAM. Used for software that brings its own everything
-— typically the cracked-game intro / demoscene "filler" code that
+64 KB of RAM and nothing else. Used by software that brings its own
+everything, such as cracked-game intros and demoscene "filler" code that
 needs maximum RAM for music + graphics + code.
 
-**Same IRQ catch as mode 29.** Plus you lose all I/O — your code must
+**Same IRQ catch as mode 29.** All I/O is gone as well, so the code must
 either disable interrupts and never need to talk to VIC/SID/CIA, or
 temporarily bank I/O back in (`LDA #$35 / STA $01`) when needed.
 
@@ -2295,7 +2285,7 @@ CHAREN x 4 + GAME x 8 + EXROM x 16, so the eight rows here are $01 bits
 this page called this table the full 32-mode table; it never was.
 
 Cart-active modes (EXROM = 0 or GAME = 0) include "Ultimax" cartridges
-where ROMH+ROML+CHAREN+I/O selectively replace huge swaths of the map.
+where ROMH+ROML+CHAREN+I/O replace large parts of the map.
 
 | Mode | $01 | LORAM | HIRAM | CHAREN | $8000-$9FFF | $A000-$BFFF | $D000-$DFFF | $E000-$FFFF |
 |------|-----|-------|-------|--------|-------------|-------------|-------------|-------------|
@@ -2308,24 +2298,24 @@ where ROMH+ROML+CHAREN+I/O selectively replace huge swaths of the map.
 | 25   | 1   | 1     | 0     | 0      | RAM         | RAM         | CHARROM     | RAM         |
 | 24   | 0   | 0     | 0     | 0      | RAM         | RAM         | RAM         | RAM         |
 
-The seven distinct configurations boil down to **which of {RAM, BASIC,
+The seven distinct configurations differ in **which of {RAM, BASIC,
 CHARROM} sits at $A000-$BFFF**, **which of {RAM, KERNAL} sits at
 $E000-$FFFF**, and **which of {RAM, CHARROM, I/O} sits at $D000-$DFFF**.
 
 ### Writes always go to RAM
 
-This is the most important invariant in C64 banking: **writes to
+The C64 banking invariant: **writes to
 $A000-$BFFF, $D000-$DFFF (when I/O isn't there), and $E000-$FFFF always
 hit RAM**. Reads return ROM bytes when ROM is banked in; writes never
-do — they always update the underlying DRAM cell.
+do; they always update the underlying DRAM cell.
 
 Exceptions to this rule:
 - $D000-$DFFF when I/O is banked in: writes go to the chip (VIC, SID,
-  CIA, Color RAM, etc.) — not to RAM.
+  CIA, Color RAM, etc.), not to RAM.
 - $D000-$DFFF when CHARROM is banked in: writes go to RAM (character ROM
-  is read-only). This is unintuitive — you can write to $D000 while
-  CHARROM is selected and the byte will be silently buried in RAM, only
-  visible if you then bank I/O *out* and CHARROM out and read again.
+  is read-only). A write to $D000 while CHARROM is selected lands in
+  RAM, visible only after banking I/O *out* and CHARROM out and reading
+  again.
 
 ### DDR must be set before $01 writes
 
@@ -2337,10 +2327,10 @@ and 6 are inputs). Bits 0-2 are *always* outputs in the default config,
 so writing $35, $36, $37 to $01 takes effect.
 
 **The pitfall:** code that does `LDA #$30 / STA $01` to bank to mode 24
-needs to *first* write $2F to $00 — otherwise some prior program may
+needs to *first* write $2F to $00; otherwise a prior program may
 have left bit 7 of DDR as an input, in which case the high bit of $01
-won't change. In practice this is rarely a problem on a reset-fresh C64
-but is a known reliability issue when chaining loader stages.
+won't change. This is rarely a problem on a freshly reset C64 but is a
+known reliability issue when chaining loader stages.
 
 The safest banking sequence:
 
@@ -2355,28 +2345,28 @@ STA $01
 ### Cartridge modes (EXROM / GAME)
 
 When a cartridge is inserted, EXROM and/or GAME pull low and the PLA
-maps cartridge ROM into the address space. The two relevant cart
-configurations are:
+maps cartridge ROM into the address space. The cart configurations
+are:
 
 - **8 KB cart** (EXROM = 0, GAME = 1): ROML at $8000-$9FFF.
 - **16 KB cart** (EXROM = 0, GAME = 0): ROML at $8000-$9FFF + ROMH at
   $A000-$BFFF, with BASIC ROM disabled. ROMH at $A000 requires HIRAM = 1;
   LORAM only gates ROML (measured in VICE x64sc).
-- **Ultimax cart** (EXROM = 1, GAME = 0): a weird hybrid where ROML is
-  at $8000-$9FFF + ROMH is at $E000-$FFFF replacing KERNAL, *and* most
-  of the RAM is disabled. Used by the Commodore Ultimax — the only place
-  in the C64 ecosystem this matters.
+- **Ultimax cart** (EXROM = 1, GAME = 0): ROML at $8000-$9FFF + ROMH at
+  $E000-$FFFF replacing KERNAL, *and* most of the RAM is disabled. Used
+  by the Commodore Ultimax, the only place in the C64 ecosystem this
+  matters.
 
 The PLA truth table for cart modes is documented in *The C64 PLA
-Dissected*. Most software developers don't need to think about cart
-modes unless they're writing cartridges or copy-protection.
+Dissected*. Cart modes matter only to code that is a cartridge or
+copy-protection.
 
 ## Zero page details
 
-The 6510's zero-page addressing modes — LDA $XX, LDA $XX,X, LDA
-($XX,X), LDA ($XX),Y — are one or two cycles faster than absolute
+The 6510's zero-page addressing modes (LDA $XX, LDA $XX,X, LDA
+($XX,X), LDA ($XX),Y) are one or two cycles faster than absolute
 modes and use one fewer byte. Zero page (the first 256 bytes of RAM,
-$0000-$00FF) is therefore precious real estate. The KERNAL and BASIC
+$0000-$00FF) is therefore scarce, and the KERNAL and BASIC
 have already claimed most of it.
 
 ### What KERNAL uses
@@ -2400,14 +2390,14 @@ The KERNAL workspace in zero page is roughly $90-$FE. Subsections:
   logical line, clear means it continues the row above. (This page
   previously ended the table at $F1 and put the insert count at $F2; the
   KERNAL's fill loop at $E544 writes 26 entries and never addresses $F2
-  on its own — measured from the ROM and in VICE x64sc.)
+  on its own; measured from the ROM and in VICE x64sc.)
 - **$F3-$F4** — Colour RAM pointer for the current line (low byte = $D1;
   high byte = ($D2 & 3) | $D8).
 - **$F5-$F6** — Key decode table pointer.
 - **$F7-$FA** — RS-232 buffer pointers.
 
-If your program calls *any* KERNAL routine — even CHROUT — the KERNAL
-will read and write zero page. The full list of zeropage bytes the
+Calling *any* KERNAL routine, even CHROUT, makes the KERNAL
+read and write zero page. The full list of zeropage bytes the
 KERNAL uses is in *Mapping the Commodore 64* chapter 1.
 
 Five zero-page bytes are never touched by either ROM after RAMTAS's
@@ -2417,16 +2407,15 @@ only four).
 ### What BASIC uses
 
 BASIC's workspace is $03-$8F, with the executable CHRGET routine at
-$73-$8A ($02 is not BASIC's — see $0002 above).
+$73-$8A ($02 is not BASIC's; see $0002 above).
 
 - **$03-$8A** — Working registers and pointers for parsing, tokenization,
   expression evaluation, floating-point math.
 - **$8B-$8F** — RND seed.
 
-If your program doesn't return to the BASIC READY prompt and doesn't
-call BASIC ROM routines, all of $03-$8F is free except where it overlaps
-the CHRGET code at $73-$8A. To free up $73-$8A, you'd need to make sure
-no future BASIC interpretation happens.
+A program that never returns to the BASIC READY prompt and calls no
+BASIC ROM routines can use all of $03-$8F except the CHRGET code at
+$73-$8A. $73-$8A is free only if no BASIC interpretation happens again.
 
 ### Best practices for zero page
 
@@ -2437,8 +2426,8 @@ When writing assembly that coexists with KERNAL:
    prevents the KERNAL IRQ (jiffy clock + keyscan) from clobbering your
    bytes mid-operation.
 3. **Read $0314-$0333 to find what hooks you've installed.** A
-   non-default vector indicates someone else has installed a handler
-   and may use additional zero page.
+   non-default vector means another handler is installed and may use
+   additional zero page.
 
 When writing assembly that takes over the machine completely (bank
 KERNAL out + own IRQ handler):
@@ -2449,7 +2438,7 @@ KERNAL out + own IRQ handler):
 ## Stack page
 
 $0100-$01FF is the 6502/6510 hardware stack. The stack pointer S
-descends from $01FF and the page address is hard-coded — the stack
+descends from $01FF and the page address is hard-coded: the stack
 *always* lives on page 1.
 
 ### Stack operations
@@ -2467,7 +2456,7 @@ descends from $01FF and the page address is hard-coded — the stack
 
 ### BASIC use of the stack
 
-BASIC pushes substantial state on the stack for GOSUB and FOR-NEXT:
+BASIC pushes state on the stack for GOSUB and FOR-NEXT:
 
 - **GOSUB** pushes 5 bytes: `$8D` (GOSUB token), current line number
   (2 bytes), text pointer (2 bytes).
@@ -2481,8 +2470,8 @@ BASIC pushes substantial state on the stack for GOSUB and FOR-NEXT:
   the name, and that entry made the itemization sum to 20 (verified
   against the ROM at $A75D-$A7AD and a stack dump in VICE x64sc).
 
-So a deeply-nested BASIC program can exhaust the stack faster than you'd
-expect — 8 nested FORs = 144 bytes, more than half the stack.
+Nested BASIC loops use the stack quickly: 8 nested FORs = 144 bytes,
+more than half the stack.
 
 ### Assembly hygiene
 
@@ -2493,8 +2482,8 @@ Earlier text credited the $FB to the KERNAL. By the time a SYS reaches
 your code S is lower again: $F7 for a SYS typed at the READY prompt on a
 freshly booted machine, $F6 for a SYS inside a RUN program or typed
 after one (RUN's CLR resets the base to $FA, then the statement
-dispatcher's JSR and SYS's pushed return address each take two bytes) —
-both measured in VICE x64sc 3.10. Pure-assembly programs that take over
+dispatcher's JSR and SYS's pushed return address each take two bytes).
+Both measured in VICE x64sc 3.10. Pure-assembly programs that take over
 should do `LDX #$FF / TXS` to reset the stack pointer to the top.
 
 When you push values for "local variables" via PHA, pull them back in
@@ -2511,22 +2500,21 @@ keyboard scanning, the IRQ/NMI handlers, the BRK handler, the IEC bus
 driver, the RS-232 driver, and the cassette driver. It also contains
 the standard reset routine.
 
-The public interface is the jump table at $FF81-$FFF5 — 39 entries of 3
+The public interface is the jump table at $FF81-$FFF5: 39 entries of 3
 bytes each. Twenty-nine are `JMP addr`; the ten I/O entries (OPEN,
 CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, STOP, GETIN, CLALL) are
 `JMP (vector)` through the RAM vectors at $031A-$032D, which is why
 patching $0326/$0327 redirects `JSR $FFD2` while a direct `JSR $F1CA`
 bypasses the hook. (An earlier version said every entry was a direct
-`JMP addr`; the ROM bytes show opcode $6C at ten of them.) Calling
-KERNAL routines through the jump table is *strongly* preferred over
-calling them directly: the jump table is stable across KERNAL ROM
-revisions; the implementation addresses are not.
+`JMP addr`; the ROM bytes show opcode $6C at ten of them.) Call
+KERNAL routines through the jump table, not directly: the jump table is
+stable across KERNAL ROM revisions; the implementation addresses are not.
 
 ### KERNAL revisions
 
 Three production KERNAL ROMs shipped: 901227-01, -02 and -03 (the C64C's
 combined 16 KB BASIC+KERNAL mask, usually given as 251913-01, is
-documented as carrying the -03 KERNAL — no image on this machine, not
+documented as carrying the -03 KERNAL; no image on this machine, not
 measured here). `PEEK(65408)` ($FF80) returns 170, 0 or 3. The jump
 table $FF81-$FFF5 is at the same addresses in all three and 38 of 39
 targets are unchanged; the one that moved is CINT ($FF81 = `JMP $E518`
@@ -2553,7 +2541,7 @@ images):
   ($F761): -01 waits for a key to register in $91; -02/-03 wait until
   the jiffy clock's middle byte $A1 has advanced by three (`ADC #$02`
   with the carry left set by the preceding `CPY #$15`, roughly 9-13 s)
-  or a key registers in $91 — routine $E4E0. The tape read/write code
+  or a key registers in $91 (routine $E4E0). The tape read/write code
   $F767-$FCFB, every pulse-timing constant included, is byte-identical
   in all three, and so are the keyboard scan, decode and key tables
   ($EA13-$ECC9). An earlier version of this section said the revisions
@@ -2596,7 +2584,7 @@ images):
 | $FFF6-$FFF9   | Unused                                             |
 | $FFFA-$FFFF   | CPU vectors (NMI $FE43, RESET $FCE2, IRQ/BRK $FF48) |
 
-The previous version of this table misattributed several ranges — the
+The previous version of this table misattributed several ranges: the
 keyboard scan sat inside a row labelled "IEC bus driver", the cassette
 read IRQ was labelled "Disk LOAD/SAVE via IEC", RAMTAS was placed in the
 BASIC-entry row, "$FF48-$FF80" was called IRQ/BRK preamble although
@@ -2654,18 +2642,17 @@ The full jump table is documented in
 
 ### Critical KERNAL internal addresses
 
-A few internal KERNAL addresses are worth knowing because they're
-referenced by replacement IRQ handlers:
+Replacement IRQ handlers refer to these internal KERNAL addresses:
 
 - **$EA31** — default IRQ handler entry (the one $0314 points to).
-  After your custom raster IRQ, you typically `JMP $EA31` to chain
+  A custom raster IRQ usually ends with `JMP $EA31` to chain
   back to the default handler.
 - **$EA7E** — acknowledge-and-exit tail of the default handler:
   `LDA $DC0D`, then the `$EA81` register restore and RTI. It does not
   run UDTIM or SCNKEY; chain here only when your own handler has done,
   or does not need, the jiffy clock, the STOP key and the keyboard.
   (This bullet used to say $EA7E kept UDTIM and the keyscan and skipped
-  only the cursor blink; it skips all three — an agent following the
+  only the cursor blink; it skips all three, and an agent following the
   old text ships a dead keyboard, a frozen TI$ and a dead RUN/STOP.)
 - **$EA81** — bare exit: PLA/TAY/PLA/TAX/PLA/RTI. Chain here from a
   handler that has acknowledged its own interrupt source.
@@ -2678,7 +2665,7 @@ referenced by replacement IRQ handlers:
   refreshes $91. An earlier revision called this the "RUN/STOP loop
   entry" that RUN/STOP+RESTORE bounces to; it is not. RUN/STOP+RESTORE
   is the NMI handler ($FFFA → $FE43 → ($0318) = **$FE47**): it
-  acknowledges CIA #2 ($DD0D — a CIA #2 NMI takes the RS-232 path
+  acknowledges CIA #2 ($DD0D; a CIA #2 NMI takes the RS-232 path
   instead), checks for a CBM80 cartridge ($FD02; a cartridge's $8002
   vector wins), then `JSR $F6BC`, `JSR $FFE1`, and if STOP is down falls
   into **$FE66**: RESTOR ($FD15), IOINIT ($FDA3), CINT ($E518),
@@ -2730,8 +2717,7 @@ kernal-901227-03.bin.
 
 ### Useful BASIC entry points
 
-Even if you're writing pure assembly, a few BASIC ROM routines are
-worth calling. The addresses and behaviour below are read from the
+Pure assembly programs can call these BASIC ROM routines too. The addresses and behaviour below are read from the
 basic-901226-01 ROM image; the names are the conventional Microsoft
 BASIC labels, corroborated by the call sites (PRINT's number path is
 FOUT's only caller, FPWRT's tail is EXP's only caller, FOR loads its
@@ -2757,7 +2743,7 @@ the six entries mislabelled; each line says what it used to claim.
 - **$BCF3** — FIN (ASCII at TXTPTR to FAC). Call it the way the ROM
   does: JSR $0079 (CHRGOT) or $0073 (CHRGET) first, so A holds the first
   character and the carry is clear for a digit; both ROM callers ($AE8A,
-  $B7D7) do exactly that.
+  $B7D7) do that.
 - **$BDDD** — FOUT (FAC to a $00-terminated ASCII string starting at
   $0100; A/Y return the pointer).
 - **$BFED** — EXP (e^FAC; continues at $E000). Earlier revisions called
@@ -2780,7 +2766,7 @@ images and $0310-$0312 the USR JMP, not further vectors.
 | IGONE   | $A7E4   | Execute a tokenized statement      |
 | IEVAL   | $AE86   | Evaluate an expression             |
 
-These get re-initialized to the defaults above on every reset. Custom
+These are re-initialized to the defaults above on every reset. Custom
 BASIC extensions (Simon's BASIC, Power BASIC, etc.) wedge in by patching
 these vectors.
 
@@ -2795,9 +2781,9 @@ HIRAM is 1 so the I/O area isn't kept visible).
 
 The character ROM holds two complete 256-character sets:
 
-- **Set 1 (uppercase + graphics):** $D000-$D7FF (2 KB) — the default
+- **Set 1 (uppercase + graphics):** $D000-$D7FF (2 KB), the default
   after reset.
-- **Set 2 (uppercase + lowercase):** $D800-$DFFF (2 KB) — switched in
+- **Set 2 (uppercase + lowercase):** $D800-$DFFF (2 KB), switched in
   by pressing SHIFT+C= or by VIC's character pointer.
 
 Each character is 8 bytes (8 × 8 = 64 pixels). 256 chars × 8 bytes =
@@ -2820,7 +2806,7 @@ An earlier version of this table put space, punctuation and the digits
 at codes 64-127 and listed a backslash at code 28; measured against
 `chargen-901225-01.bin`, the digits and punctuation are codes 32-63
 (`0` is code 48 at $D180), codes 64-127 are the graphics set (code 64 at
-$D200 is the horizontal bar), and code 28 is £ — the C64 character ROM
+$D200 is the horizontal bar), and code 28 is £; the C64 character ROM
 has no backslash. The reverse-video halves are the bitwise inverse of
 codes 0-127 for every glyph except `@`: reversed `@` (code 128, $D400
 and $DC00) differs from the true inverse by one pixel in row 6 ($99
@@ -2840,13 +2826,13 @@ The character ROM is *shadowed* into VIC banks 0 and 2:
 - Bank 2 ($8000-$BFFF): char ROM at $9000-$9FFF.
 - Banks 1 and 3 see RAM there.
 
-This is why custom character sets typically live in VIC bank 1 or 3:
+So custom character sets usually live in VIC bank 1 or 3:
 those banks don't have the character ROM shadowed, so the VIC sees
 whatever RAM is there.
 
 ### Copying the char ROM to RAM
 
-The canonical pattern for a custom font is to copy the char ROM out
+The usual way to make a custom font is to copy the char ROM out
 of $D000-$D7FF into RAM somewhere (often $3000-$37FF), then update
 $D018 to point at the RAM copy. The copy code:
 
@@ -2915,13 +2901,13 @@ across a much larger address window:
   $DDFF.
 
 Software should always address the canonical low addresses ($D000,
-$D400, $DC00, $DD00) — the shadows are an artifact of partial address
+$D400, $DC00, $DD00). The shadows are an artifact of partial address
 decoding, not a feature, and some clones don't replicate them.
 
 ### When you read from a non-existent I/O location
 
-If you read from an address in the I/O block that no chip drives, you
-get an "open bus" read: whatever the data bus last carried, which on a
+A read from an address in the I/O block that no chip drives is an
+"open bus" read: whatever the data bus last carried, which on a
 C64 is usually the byte the VIC-II fetched in the preceding half-cycle.
 On a stock machine that means $DE00-$DFFF with no cartridge fitted (and
 the upper nibble of Color RAM, see $D800 above). The VIC-II's unused
@@ -2934,10 +2920,9 @@ values are unpredictable; don't rely on them.
 ### I/O timing
 
 Reading or writing any I/O register takes the normal 4 CPU cycles for
-the access. The CIAs and SID have no wait states. The VIC-II can,
-however, *steal* the bus from the CPU on badlines and during sprite
-DMA, which appears to the CPU as the instruction simply taking longer
-to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
+the access. The CIAs and SID have no wait states. The VIC-II can
+*steal* the bus from the CPU on badlines and during sprite DMA; to the
+CPU the instruction takes longer to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
 
 ## Pitfalls
 
@@ -2945,7 +2930,7 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   $90-$FE while interrupts are enabled risks the KERNAL IRQ handler
   reading or writing the same byte. The IRQ ticks about 60 times a
   second on both PAL and NTSC (CIA #1 Timer A, latch $4025 on PAL and
-  $4295 on NTSC — the period is latch+1 cycles; see $00A0-$00A2; an
+  $4295 on NTSC, period latch+1 cycles; see $00A0-$00A2; an
   earlier version said "or 50 Hz on PAL") and runs UDTIM ($FFEA) + the
   keyscan, both of which touch zeropage. Disable IRQs (SEI) before
   manipulating KERNAL-owned zero-page bytes.
@@ -2953,7 +2938,7 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
 - **$0000 / $0001 — DDR must be set first.** Writing to the
   processor-port data register $01 only affects pins configured as
   outputs by the DDR at $00. If a prior program (or a bug) has left
-  bits of $00 as inputs, your bank-switch write won't take. Always
+  bits of $00 as inputs, a bank-switch write won't take. Always
   write the expected DDR ($2F for a stock C64) before writing $01:
   `LDA #$2F / STA $00 / LDA #$35 / STA $01`.
 
@@ -2961,7 +2946,7 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   are not bonded out on a stock C64 (the C128's 8502 gives bit 6 to the
   CAPS LOCK key; whether SX-64 boards differ is sometimes claimed and
   not verified here).
-  Reading them yields the last-driven value with very slow capacitive
+  Reading them yields the last-driven value with slow capacitive
   decay. Treat as undefined and mask off when reading $01 for the
   bank-config bits.
 
@@ -2969,15 +2954,14 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   When you bank KERNAL ROM out (any mode with HIRAM = 0), $FFFA/$FFFB
   (NMI), $FFFC/$FFFD (RESET), and $FFFE/$FFFF (IRQ/BRK) are *RAM*. The
   CPU still reads them on interrupts. You *must* populate those RAM
-  bytes with valid handler addresses before banking out. Forgetting
-  causes the machine to jump to wherever-uninitialized-RAM-happens-to-
-  point and crash. The fix: SEI; write your handler addresses into
+  bytes with valid handler addresses before banking out. Otherwise
+  the CPU jumps through whatever uninitialised RAM holds and crashes. The fix: SEI; write your handler addresses into
   $FFFA-$FFFF; then write $01.
 
 - **$D018 — CHROUT changes it for exactly two codes, and the keyboard
   can too.** CHROUT does not touch $D018 on ordinary output (an earlier
   version of this page said it wrote $D018 on every call "in screen
-  mode 1"; the KERNAL has no such path — the 901227-03 ROM holds only
+  mode 1"; the KERNAL has no such path; the 901227-03 ROM holds only
   the two conditional stores named here). PETSCII $0E / CHR$(14) *sets*
   bit 1 (charset 2, lower case) and $8E / CHR$(142) *clears* it
   ($EC44-$EC5B); the IRQ keyscan *toggles* bit 1 with EOR when SHIFT+C=
@@ -2988,7 +2972,7 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   is the usual victim, because bit 1 selects the odd 2 KB half: a font
   at $2000 ($D018 = $18) becomes $2800 ($1A) on SHIFT+C=. Remedies: do
   not send $0E/$8E; lock the keyboard path with CHR$(8) (or POKE $0291
-  = $80) — which does *not* suppress the CHROUT codes (measured: after
+  = $80), which does *not* suppress the CHROUT codes (measured: after
   CHR$(8), CHR$(14) still set bit 1); or re-write $D018 in your own
   IRQ. Wrapping every CHROUT in a save/restore of $D018 is unnecessary.
 
@@ -2998,7 +2982,7 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   low. Off-by-one bank selection is a classic crash mode. (An earlier
   version of this entry was headed $DC00-$DCFF; that range is CIA #1,
   the keyboard/joystick chip, and writing bank bits there leaves the
-  VIC where it was — measured in VICE x64sc.)
+  VIC where it was, measured in VICE x64sc.)
 
 - **$D7FF — SID write side-effects via shadow.** A write to $D7FF lands
   in SID register $1F (which is undefined). Some emulators handle this
@@ -3014,15 +2998,15 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   machine, or stay inside those five.
 
 - **$0100-$01FF — stack page wraparound.** The stack pointer S is 8
-  bits and wraps from $00 to $FF without warning — but only your own
+  bits and wraps from $00 to $FF without warning, but only your own
   machine code can get there. BASIC guards its stack: every GOSUB, FOR
   and expression-nesting level first calls the check at $A3FB, which
   raises ?OUT OF MEMORY (error 16) unless the stack pointer seen inside
   that routine is at least 2×n+$3E ($44 for GOSUB, n=3; $50 for FOR,
   n=9; $40 per expression level, n=1). So `10 GOSUB 10` stops with
-  "?OUT OF MEMORY ERROR IN 10" and S never falls below about $40 —
-  measured in VICE x64sc: the GOSUB loop trips with S=$40, 64 bytes of
-  the page still unused. An earlier version of this page said a deep
+  "?OUT OF MEMORY ERROR IN 10" and S never falls below about $40
+  (measured in VICE x64sc: the GOSUB loop trips with S=$40, 64 bytes of
+  the page still unused). An earlier version of this page said a deep
   BASIC nest wraps S past zero with no trap; it does not. PHA/JSR chains
   in your own code under an existing stack have no such guard: that is
   where the wrap bites.
@@ -3031,7 +3015,7 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   RESTOR routine ($FF8A, body at $FD15) copies the ROM default table at
   $FD30-$FD4F over $0314-$0333. Calling RESTOR, VECTOR ($FF8D) with
   C=0, or anything that runs the reset ($FCE2) or RUN/STOP+RESTORE
-  ($FE47) sequence — both of which call RESTOR themselves — wipes your
+  ($FE47) sequence (both call RESTOR themselves), wipes your
   custom IRQ handler. IOINIT ($FF84) and CINT ($FF81) do *not*: the only
   callers of $FD15 in the ROM are $FCF8 and $FE66, and in VICE x64sc a
   custom $0314/$0315 survives both IOINIT and CINT and is replaced by
@@ -3040,14 +3024,14 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   last such call.
 
 - **$0800 — BASIC program-start sentinel.** BASIC requires the byte
-  just below TXTTAB — $0800, not $0801 as an earlier revision of this
-  entry said — to be $00 (see $0800 above). It stands in for the
+  just below TXTTAB ($0800, not $0801 as an earlier revision of this
+  entry said) to be $00 (see $0800 above). It stands in for the
   end-of-line marker of the line before the first one: RUN and NEW both
   reset TXTPTR to TXTTAB−1 (RUNC, $A68E) and the next-statement fetch
   ($A7BE) reads that byte, so anything but $00 there answers
   `?SYNTAX ERROR` (measured in VICE x64sc: `POKE 2048,1` then RUN →
   `?SYNTAX ERROR`; NEW → `?SYNTAX ERROR` too, although the program is
-  still erased). LIST is unaffected — it walks the link chain from
+  still erased). LIST is unaffected: it walks the link chain from
   TXTTAB. $0801–$0802 are the first line's link pointer and are
   non-zero in any program with a line (`0B 08` for the stub below). A
   machine-language file with load address $0801 cannot disturb the
@@ -3066,22 +3050,22 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   $8000-$9FFF is ordinary RAM when no cartridge is inserted, so if a
   program leaves those nine bytes looking like a cartridge header, the
   next reset jumps through whatever is at $8000 instead of booting
-  BASIC — a trick reset-protected software has used deliberately, and a
-  crash mode if it is left there by accident (which programs do it is
+  BASIC. Reset-protected software has used this deliberately, and it is a
+  crash mode if left there by accident (which programs do it is
   not verified here). (An earlier version placed the check at
-  $A000-$A008; $A000 is BASIC ROM at reset and is never checked — the
+  $A000-$A008; $A000 is BASIC ROM at reset and is never checked; the
   ROM compares $8003,X, verified against kernal-901227-03 and in VICE.)
 
 - **$D018 — pointing at non-existent character data.** The character-set
   bits in $D018 (bits 1-3) point to 2 KB chunks inside the current VIC
-  bank. If you select a chunk that has no font data — say a screen
-  RAM range — the display will show garbage. Always set $D018 to a
+  bank. A chunk that holds no font data (a screen
+  RAM range, say) displays garbage. Always set $D018 to a
   known-good font pointer before enabling display.
 
 - **$DD00 — touching CIA #2 disables RS-232.** Writes to $DD00 control
-  both VIC-II bank selection *and* the RS-232 transmit line. If you're
-  using RS-232 + want to change VIC bank, you must mask carefully:
-  preserve bits 2-7 of $DD00 while updating bits 0-1.
+  both VIC-II bank selection *and* the RS-232 transmit line. With RS-232
+  in use, a VIC bank change must preserve bits 2-7 of $DD00 while
+  updating bits 0-1.
 
 - **$FFFE-$FFFF — IRQ fired during bank switch.** If an IRQ fires between
   your write to $01 (banking KERNAL out) and your install of the new
@@ -3091,12 +3075,12 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
 - **$D012 raster wrap vs $D011 bit 7.** $D012 reports the low 8 bits
   of the current raster line, but PAL has 312 raster lines (NTSC has
   263). Lines ≥ 256 read $D012 with bit 8 in $D011. Comparing $D012
-  to 256+ requires combining $D011 bit 7 — see
+  to 256+ requires combining $D011 bit 7; see
   [vic-ii-reference.md](vic-ii-reference.md#raster-system).
 
 - **Mixing CHAREN + raster IRQs.** If you bank in the character ROM
   ($01 with CHAREN = 0) and a raster IRQ fires, the IRQ handler will
-  read $DC0D as part of acknowledging — but $DC0D is now reading
+  read $DC0D as part of acknowledging, but $DC0D now reads
   character-ROM data, not the CIA. The KERNAL's IRQ acknowledge will
   not clear the CIA, and the IRQ will fire again immediately, locking
   the machine. Always bank I/O in before allowing IRQs.
@@ -3114,30 +3098,30 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   STR$ and LIST entries start one byte lower, at $00FF. Measured in
   VICE x64sc by seeding $00F8-$011F and calling the routine. An earlier
   version of this note called the routine the KERNAL's, said it was
-  reached through CHROUT, and stopped the buffer at $010A — CHROUT
+  reached through CHROUT, and stopped the buffer at $010A; CHROUT
   prints one character and never converts a number. Anything parked at
   $00FF-$010F (a depacker, a saved register block, the tape error log)
   is overwritten the next time BASIC prints a number. Pushed data is
-  only reached once S has descended below $10 — about 240 bytes deep —
+  only reached once S has descended below $10 (about 240 bytes deep),
   so "PHA'd 11 bytes" was never the hazard.
 
 - **$DE00/$DF00 open bus.** With no cartridge, reads from $DE00-$DFFF
   return open-bus garbage (typically the last VIC fetch). Don't probe
-  for cartridge presence by reading these — write a known pattern
+  for cartridge presence by reading these; write a known pattern
   and read it back, or use a dedicated detection sequence.
 
 - **$0000/$0001 cassette-motor write side-effect.** Writing to $01
   with bit 5 cleared turns on the cassette motor. If your bank-switch
-  code uses `LDA #$05 / STA $01`, you're also turning the cassette
+  code uses `LDA #$05 / STA $01`, it also turns the cassette
   motor *on*. Mask carefully: typical bank values keep bit 5 = 1.
 
 - **MEMSIZ is snapshotted by BASIC.** $0283/$0284 is the KERNAL's
   top-of-memory, set by RAMTAS (via $FE2D) at reset. BASIC copies it
   into its own MEMSIZ ($37/$38) and STRBOT/FRETOP ($33/$34) once, at
   cold start ($E40A-$E414: SEC / JSR $FF99 / STX $37 / STY $38 /
-  STX $33 / STY $34), and never reads $0283/$0284 again — the BASIC ROM
+  STX $33 / STY $34), and never reads $0283/$0284 again; the BASIC ROM
   contains no reference to it. Poking $0283/$0284, or calling MEMTOP
-  ($FF99) with C=0 — which does nothing but STX $0283 / STY $0284 —
+  ($FF99) with C=0 (which does nothing but STX $0283 / STY $0284)
   therefore has no effect on BASIC's string space (an earlier revision
   of this page said to call MEMTOP instead of poking; measured in VICE,
   both leave BASIC's top at $A000 and the next string is placed just
@@ -3147,7 +3131,7 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   resync BASIC from the KERNAL's top is RS-232: OPEN/CLOSE of device 2
   returns pseudo-error $F0 with the new top in X/Y ($F47D), and BASIC's
   error handler ($E0F9) stores it to $37/$38 and jumps into CLR at
-  $A663 — which is why OPEN 2,2 performs an automatic CLR and lowers
+  $A663, which is why OPEN 2,2 performs an automatic CLR and lowers
   BASIC's top by 512 bytes.
 
 - **TXTPTR mid-statement.** Modifying $7A/$7B (TXTPTR) while a BASIC
@@ -3155,24 +3139,24 @@ to execute. See [vic-ii-reference.md](vic-ii-reference.md#raster-system).
   chosen address. Useful for "GOSUB to dynamic line number" but easy
   to crash if you point at non-BASIC data.
 
-- **$0801 BASIC stub for ML programs.** The canonical ML autostart
+- **$0801 BASIC stub for ML programs.** The standard ML autostart
   uses a BASIC stub like `10 SYS 2064` at $0801: `0B 08` (link to the
   next line at $080B) `0A 00` (line 10) `9E` (SYS token) `32 30 36 34`
   ("2064" as PETSCII digits) `00` (end of line) `00 00` (end of
-  program) — 12 bytes, $0801-$080C — with the ML at $0810 (= 2064).
+  program): 12 bytes, $0801-$080C, with the ML at $0810 (= 2064).
   This is byte-for-byte what KickAssembler 5.25's `BasicUpstart2` emits
-  for code at `*=$0810`; the assembler zero-fills $080D-$080F. If you
-  type the line at the keyboard instead, the tokenizer keeps the space
-  after SYS: `0C 08 0A 00 9E 20 32 30 36 34 00 00 00`, 13 bytes to
+  for code at `*=$0810`; the assembler zero-fills $080D-$080F. Typed
+  at the keyboard instead, the line keeps the space after SYS (the
+  tokenizer stores it): `0C 08 0A 00 9E 20 32 30 36 34 00 00 00`, 13 bytes to
   $080D with the link at $080C (measured in VICE x64sc 3.10). An earlier
-  version of this bullet mixed the two forms — the $20 space with the
-  12-byte link $080B — and put the ML at $080D, which SYS 2064 does not
+  version of this bullet mixed the two forms (the $20 space with the
+  12-byte link $080B) and put the ML at $080D, which SYS 2064 does not
   reach ($080D is 2061). Skipping the stub and loading raw code at
   $0801 means the user must type `SYS 2049` (2049 = $0801).
 
 - **CIA timers count φ2 cycles.** In the default input mode (CRA bit 5
-  = 0, CRB bits 5-6 = 00) a timer *decrements* once per CPU cycle —
-  985,248/s PAL, 1,022,727/s NTSC — and underflows every latch+1 cycles
+  = 0, CRB bits 5-6 = 00) a timer *decrements* once per CPU cycle
+  (985,248/s PAL, 1,022,727/s NTSC) and underflows every latch+1 cycles
   (measured in VICE x64sc: latch 9 gives 400 underflows in 4006
   cycles). There is no prescaler; the rate is set by the latch, and
   Timer B can instead be clocked by Timer A underflows (CRB INMODE 10,

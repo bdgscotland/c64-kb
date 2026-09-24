@@ -2,7 +2,7 @@
 
 # C64 File Formats
 
-This document catalogs the file formats produced and consumed by the C64 toolchain and runtime ecosystem. Each section covers the physical layout, intended use, and relationships to tools in this knowledge base. Disk-image bit-level details follow the authoritative specifications published by Peter Schepers at `https://ist.uwaterloo.ca/~schepers/formats.html`. Producers and consumers reflect the current Tool node set; where the canonical producer is a music tracker or hardware-specific utility not yet represented as a Tool node, this is noted explicitly.
+File formats produced and consumed by the C64 toolchain and runtime: layout, use, and which tools in this knowledge base read or write each. Disk-image bit-level details follow the specifications published by Peter Schepers at `https://ist.uwaterloo.ca/~schepers/formats.html`. Producers and consumers are the current Tool node set; where the canonical producer is a music tracker or hardware utility not yet a Tool node, the section says so.
 
 ---
 
@@ -13,11 +13,11 @@ This document catalogs the file formats produced and consumed by the C64 toolcha
 **Produced by:** oscar64, kickassembler, cc65
 **Consumed by:** vice, c1541
 
-The `.PRG` file is the fundamental C64 executable container. It consists of a 2-byte little-endian load address followed by raw 6502/6510 machine code. The load address tells the loader (KERNAL or a fastloader) where in the C64's 64 KiB address space to place the data; execution then begins either at the BASIC start vector or at an address specified via a `SYS` call or direct `RUN/STOP + RESTORE` sequence.
+The `.PRG` file is the C64 executable container. It consists of a 2-byte little-endian load address followed by raw 6502/6510 machine code. The load address tells the loader (KERNAL or a fastloader) where in the C64's 64 KiB address space to place the data; execution then begins either at the BASIC start vector or at an address specified via a `SYS` call or direct `RUN/STOP + RESTORE` sequence.
 
 Oscar64 produces `.prg` directly via its built-in linker. KickAssembler emits `.prg` as its default output when a load address is specified in the source. cc65 requires a separate `ld65` linker invocation with an appropriate config file to produce a `.prg`.
 
-The 2-byte header makes `.PRG` trivially distinct from `.BIN`: a load address of `$0801` is the standard BASIC program start for autostarting demos (the BASIC stub `10 SYS 2064` or similar). A load address of `$C000` or other high-memory address signals a directly-assembled utility or IRQ routine.
+The 2-byte header distinguishes `.PRG` from `.BIN`: a load address of `$0801` is the standard BASIC program start for autostarting demos (the BASIC stub `10 SYS 2064` or similar). A load address of `$C000` or other high-memory address signals a directly-assembled utility or IRQ routine.
 
 Maximum useful size is bounded by available RAM: roughly 38 KiB for a pure program (bank-switched or streaming loaders can exceed this). On real hardware, programs above approximately 50 KiB require multi-part loading.
 
@@ -28,7 +28,7 @@ Maximum useful size is bounded by available RAM: roughly 38 KiB for a pure progr
 **Produced by:** oscar64, kickassembler, cartconv
 **Consumed by:** vice, easyflash, ef3, cartconv
 
-The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or more ROM banks with metadata about the cartridge hardware type. It is the standard interchange format for C64 cartridge software and EasyFlash cart images used in the demoscene.
+The `.CRT` format (defined by the VICE team, current spec v1.00) packages one or more ROM banks with metadata about the cartridge hardware type. It is the interchange format for C64 cartridge software and EasyFlash cart images used in the demoscene.
 
 **File header (64 bytes):**
 
@@ -69,7 +69,7 @@ Oscar64 writes the container itself with `-tf=crt8`, `-tf=crt16` (type 0) or `-t
 **Produced by:** oscar64, kickassembler
 **Consumed by:** vice, c1541
 
-A raw binary file with no header — purely machine code or data at an implicit address. Used for ROM images, screen data, sprite sheets, or intermediate build artifacts before final linking. VICE can load `.BIN` files with an explicit address override via `-autostart-handle-tde` or the monitor's `l` command. The distinction from `.PRG` is the absence of the 2-byte load-address header.
+A raw binary file with no header: machine code or data at an implicit address. Used for ROM images, screen data, sprite sheets, or intermediate build artifacts before final linking. VICE can load `.BIN` files with an explicit address override via `-autostart-handle-tde` or the monitor's `l` command. The distinction from `.PRG` is the absence of the 2-byte load-address header.
 
 KickAssembler emits `.bin` when the `.pc` directive is used without the auto-generated header. Oscar64 can emit raw binary payloads for specific linker segments.
 
@@ -77,13 +77,13 @@ KickAssembler emits `.bin` when the `.pc` directive is used without the auto-gen
 
 ## Disk Images
 
-Disk image formats capture the content of floppy disks used with the Commodore 1541, 1571, and 1581 drives. The canonical technical specifications are maintained by Peter Schepers; the descriptions below draw directly from those specifications.
+Disk image formats capture the content of floppy disks used with the Commodore 1541, 1571, and 1581 drives. The canonical specifications are maintained by Peter Schepers; the descriptions below follow them.
 
 ### .D64 — Single-sided 35-track 1541 disk image
 
 **Consumed by:** vice, c1541
 
-The D64 is a sector-for-sector copy of a Commodore 1541 (or 1540) single-sided floppy disk. It is the most widely used C64 disk image format, standard for software distribution, fastloader testing, and demo release packaging.
+The D64 is a sector-for-sector copy of a Commodore 1541 (or 1540) single-sided floppy disk. It is the most widely used C64 disk image format, used for software distribution, fastloader testing, and demo release packaging.
 
 **Physical layout:**
 
@@ -248,7 +248,7 @@ Directory: track 18, same 144-file maximum. Native 1571 mode uses 6-sector inter
 
 **Consumed by:** vice, c1541
 
-The D81 represents a Commodore 1581 double-density 3.5-inch disk, offering substantially more capacity than either the 1541 or 1571.
+The D81 represents a Commodore 1581 double-density 3.5-inch disk, with more capacity than the 1541 or 1571.
 
 **Physical layout:**
 
@@ -277,7 +277,7 @@ BAM entries use 6 bytes each: 1 byte free-sector count + 5 bytes (40-bit bitmap)
 
 **Consumed by:** vice, c1541
 
-The G64 format preserves the raw GCR (Group Code Recording) encoding of a 1541 disk, including inter-sector gaps, SYNC marks, and variable track lengths. Unlike D64, which discards the physical encoding and retains only sector data, G64 retains the full magnetic track layout. This makes G64 essential for copy-protected software, custom loader timing, and anything where the exact physical track structure matters.
+The G64 format preserves the raw GCR (Group Code Recording) encoding of a 1541 disk, including inter-sector gaps, SYNC marks, and variable track lengths. Unlike D64, which discards the physical encoding and retains only sector data, G64 retains the full magnetic track layout. G64 is therefore needed for copy-protected software, custom loader timing, and anything where the exact physical track structure matters.
 
 **File header (12 bytes):**
 
@@ -353,7 +353,7 @@ By inspection of the sixteen words: none holds three zero bits in a row, none st
 | 5 | 1 | Disk ID, first character | `$A0` |
 | 6–7 | 2 | Padding | `$0F $0F` |
 
-The 10 GCR bytes were `52 56 B5 29 6B D2 B4 A5 55 55`. All 21 headers on track 17 carried sectors 0 to 20 in order, each with a checksum equal to the XOR of its sector, track and two ID bytes. The disk ID is worth a look: c1541 3.10 wrote `$A0 $A0` into every sector header, while the BAM at track 18 sector 0 (bytes `$A2`–`$A3`) holds `30 31`, the `01` given on the command line, and the directory listing shows `01`. The disk loaded all the same under true drive emulation, as above; the ROM is documented as taking the ID from a sector header when it initialises a disk rather than from the BAM, which would explain that, but the mechanism is not measured here. A tool that expects the header ID to match the directory line will not find that in a c1541-formatted G64. Because both ID bytes were `$A0`, which of the two characters comes first on the track was not measured here; the order in the table is the ROM's as documented, not confirmed by this image. What the ROM's own formatter writes into the header on a real disk is not measured here either.
+The 10 GCR bytes were `52 56 B5 29 6B D2 B4 A5 55 55`. All 21 headers on track 17 carried sectors 0 to 20 in order, each with a checksum equal to the XOR of its sector, track and two ID bytes. The disk ID differs: c1541 3.10 wrote `$A0 $A0` into every sector header, while the BAM at track 18 sector 0 (bytes `$A2`–`$A3`) holds `30 31`, the `01` given on the command line, and the directory listing shows `01`. The disk still loaded under true drive emulation, as above; the ROM is documented as taking the ID from a sector header when it initialises a disk rather than from the BAM, which would explain that, but the mechanism is not measured here. A tool that expects the header ID to match the directory line will not find that in a c1541-formatted G64. Because both ID bytes were `$A0`, which of the two characters comes first on the track was not measured here; the order in the table is the ROM's as documented, not confirmed by this image. What the ROM's own formatter writes into the header on a real disk is not measured here either.
 
 **Data block.** After each data sync, 325 GCR bytes decode to 260:
 
@@ -470,7 +470,7 @@ Tape images represent the content of Commodore Datasette cassette recordings. Th
 
 **Consumed by:** vice
 
-The T64 format was designed by the C64S emulator as a container for one or more C64 programs, nominally sourced from tape. Despite the name, T64 does not represent the tape data stream — it is a directory-based archive of PRG files with load/end addresses.
+The T64 format was designed by the C64S emulator as a container for one or more C64 programs, nominally sourced from tape. Despite the name, T64 does not represent the tape data stream. It is a directory-based archive of PRG files with load/end addresses.
 
 **File header (64 bytes):**
 
@@ -508,7 +508,7 @@ File data is stored sequentially after the directory, pointed to by each entry's
 
 **Consumed by:** vice
 
-The TAP format records the raw pulse-width timing of a Commodore Datasette tape recording. Unlike T64, TAP faithfully represents the actual cassette data stream, including turbo loaders, custom protection schemes, and non-standard encoding. This makes it the preferred format for archival and protection research.
+The TAP format records the raw pulse-width timing of a Commodore Datasette tape recording. Unlike T64, TAP represents the actual cassette data stream, including turbo loaders, custom protection schemes, and non-standard encoding. This makes it the preferred format for archival and protection research.
 
 **File header (20 bytes):**
 
@@ -527,7 +527,7 @@ Each byte represents a pulse: the duration is `(byte_value × 8) / 985,248` seco
 
 **Version `$01`:** A data byte of `$00` is followed by 3 additional bytes giving the true pulse duration as a 24-bit little-endian cycle count. This extension handles long pauses and turbo-loader timing precisely.
 
-Standard KERNAL tape encoding uses three pulse lengths, and a data bit is a pair of pulses, not one pulse. **Correction (2026-09-23).** This paragraph used to say the KERNAL used "two pulse lengths: short (~370 µs, PAL) for a 0 bit, long (~530 µs) for a 1 bit". A decoder written from that sentence reads garbage from every KERNAL tape: the two figures it gave are roughly the short and medium pulses, the long pulse was missing, and no single pulse carries a bit. The subsection below replaces it, from a SAVE recorded in VICE. Turbo loaders (e.g., FINISH, Novaload, Freeload) use completely different encoding schemes, all of which TAP preserves faithfully.
+Standard KERNAL tape encoding uses three pulse lengths, and a data bit is a pair of pulses, not one pulse. **Correction (2026-09-23).** This paragraph used to say the KERNAL used "two pulse lengths: short (~370 µs, PAL) for a 0 bit, long (~530 µs) for a 1 bit". A decoder written from that sentence reads garbage from every KERNAL tape: the two figures it gave are roughly the short and medium pulses, the long pulse was missing, and no single pulse carries a bit. The subsection below replaces it, from a SAVE recorded in VICE. Turbo loaders (e.g., FINISH, Novaload, Freeload) use other encoding schemes, and TAP preserves them all.
 
 #### KERNAL bit encoding
 
@@ -581,7 +581,7 @@ The header block's 192 bytes were: type `$01` (relocatable BASIC program), start
 
 **Consumed by:** vice, sidplayfp, kickassembler
 
-The SID format is a standard container for C64 music, combining a short metadata header with a C64 binary containing the init and play routines. The format exists in two variants: PSID (Portable SID) for files that run under emulated environments, and RSID (Real SID) for files that require an authentic C64 environment (real interrupt timing, BASIC ROM, etc.).
+The SID format is the container for C64 music, combining a short metadata header with a C64 binary containing the init and play routines. There are two variants: PSID (Portable SID) for files that run under emulated environments, and RSID (Real SID) for files that require an authentic C64 environment (real interrupt timing, BASIC ROM, etc.).
 
 **Note on producers:** SID files are not produced by the assembler toolchains in this knowledge base. The canonical producers are dedicated C64 music trackers: GoatTracker 2 (cross-platform, exports PSID/RSID), SID-Wizard (native C64 tracker), and DefMON. These tools are not currently represented as Tool nodes in this KB. KickAssembler can *consume* SID files via the `LoadSid` directive to embed a SID player's binary into a larger program, but it does not produce `.sid` files.
 
@@ -873,7 +873,7 @@ On `background.ctm` it prints markers `$B0DA` to `$B5DA` at `$000E`, `$0152`, `$
 
 **What Oscar64 emits.** `ctm_chars` is the character section, 8 bytes a character. `ctm_attr1` is one byte a character: the material in the high nybble, and in colouring method `2` the character's colour in the low nybble; in colouring method `1` it is instead one byte a tile, the tile colour, with the materials discarded (read from Oscar64's reader, not measured here: no sample uses method `1`); `ctm_attr2` in display mode `4` packs the second and third colour bytes. `ctm_tiles8` and `ctm_map8` take the low byte of each 16-bit cell; `ctm_tiles16` and `ctm_map16` keep the word (declare the array `unsigned` and add the `word` specifier); `ctm_tiles8sw` swaps the array so the tile index is innermost. Measured on the windowless x64sc build of VICE 3.10 with Oscar64 1.32.271 embedding `background.ctm` and `mouse.spd`, the program printed, and Python read the same bytes from the same offsets: `CHARS 320: 00 00 00 FF 00 00 55 00`, `ATTR1 40: 00 20 10 30 40 60 50 70`, `TILES8 40: 00 01 02 03 04 05 06 07`, `TILES16 80: 0000 0001 0002 0003`, `MAP8 240: 06 06 06 06 06 06 06 06`, `SPRITES 1024: 00 00 00 F0 00 00 FC 00`. The exit screenshot is `../figures/ctm-spd-embed-probe.png`, identical bytes on two runs. No recipe page pins it: the verifier compiles a listing alone in a fresh directory, and an `#embed` needs the asset beside the source.
 
-Oscar64's documentation names version 8; its reader also takes version 9, and it checks neither the signature nor any other version. Embedding the version 5 sample with `ctm_chars` compiled without a word of complaint and gave an array of 7,364 bytes: the reader took bytes `$04`–`$05` (`$0B00`) as the first marker, `$06`–`$07` plus one (3,085) as the character count, asked for 24,680 bytes and was handed the rest of the file, header, attributes, tiles and map together. Check the version byte before you embed.
+Oscar64's documentation names version 8; its reader also takes version 9, and it checks neither the signature nor any other version. Embedding the version 5 sample with `ctm_chars` compiled without a warning and gave an array of 7,364 bytes: the reader took bytes `$04`–`$05` (`$0B00`) as the first marker, `$06`–`$07` plus one (3,085) as the character count, asked for 24,680 bytes and was handed the rest of the file, header, attributes, tiles and map together. Check the version byte before embedding.
 
 ---
 
@@ -1098,9 +1098,9 @@ print("colour RAM at body+%d; $D020 at body+%d = %02x" % (col, 1 + 0x20, vic[1 +
 
 Its last two lines for the PAL file were `port bytes 37 2f 00 00 | RAM at body+4, trailing 15` and `colour RAM at body+761; $D020 at body+33 = 00`.
 
-**What a snapshot is good for in a headless pipeline.** Two things. First, a state to diff: after a run, the RAM image at file byte 209 is the whole address space in order, so a test can compare the bytes a program owns against an expected image, or two runs against each other, without printing anything to the screen. Do not expect two snapshots of the same program to be byte-identical: the PAL run above, repeated, gave a file that differed in 946 bytes, 943 of them single bytes scattered through RAM at addresses the program never wrote (the emulated power-on contents) and 3 in the CIA modules, while the CPU clock was the same 3,022,363 in both. Diff the regions the program wrote, the register block and colour RAM, not the whole file. Second, a save point: a long run can be stopped once at a known address, dumped, and every later test can start from that file with `undump "file.vsf"` in a `-moncommands` file, or by passing it to `-autostart`, which skips the boot and the load each time. The VICE reference's Snapshots section has the restore side.
+**What a snapshot is good for in a headless pipeline.** First, a state to diff: after a run, the RAM image at file byte 209 is the whole address space in order, so a test can compare the bytes a program owns against an expected image, or two runs against each other, without printing anything to the screen. Do not expect two snapshots of the same program to be byte-identical: the PAL run above, repeated, gave a file that differed in 946 bytes, 943 of them single bytes scattered through RAM at addresses the program never wrote (the emulated power-on contents) and 3 in the CIA modules, while the CPU clock was the same 3,022,363 in both. Diff the regions the program wrote, the register block and colour RAM, not the whole file. Second, a save point: a long run can be stopped once at a known address, dumped, and every later test can start from that file with `undump "file.vsf"` in a `-moncommands` file, or by passing it to `-autostart`, which skips the boot and the load each time. The VICE reference's Snapshots section has the restore side.
 
-VSF is strictly a VICE internal format. It is not suitable for interchange between emulators and has no use in the toolchain build pipeline.
+VSF is a VICE internal format. It is not suitable for interchange between emulators and has no use in the toolchain build pipeline.
 
 ---
 
@@ -1132,7 +1132,7 @@ al HHHH .SYMBOLNAME
 
 where `HHHH` is the 4-digit hex address and `SYMBOLNAME` is the C or assembly label. The leading `al` prefix is the VICE monitor `add_label` command mnemonic.
 
-VICE loads `.lbl` files via `ll <filename>` in its built-in monitor, enabling symbolic display of disassembly, breakpoints by name (`break main`), and watch expressions. This tight integration between Oscar64 and VICE is a primary reason for Oscar64's status as the preferred toolchain in this KB.
+VICE loads `.lbl` files via `ll <filename>` in its built-in monitor, enabling symbolic display of disassembly, breakpoints by name (`break main`), and watch expressions. This link between Oscar64 and VICE is a main reason Oscar64 is the preferred toolchain in this KB.
 
 ---
 
@@ -1141,7 +1141,7 @@ VICE loads `.lbl` files via `ll <filename>` in its built-in monitor, enabling sy
 **Produced by:** kickassembler
 **Consumed by:** vice
 
-KickAssembler emits a VICE symbol file (conventionally `.vs` or `-symbols.txt`) when invoked with the `--vicesymbols` flag. Format matches the VICE `al` label format used by `.LBL` files. The file is loaded into VICE the same way (`ll <filename>`) and provides identical symbolic debugging capability to Oscar64's `.lbl` output.
+KickAssembler emits a VICE symbol file (conventionally `.vs` or `-symbols.txt`) when invoked with the `--vicesymbols` flag. Format matches the VICE `al` label format used by `.LBL` files. The file is loaded into VICE the same way (`ll <filename>`) and gives the same symbolic debugging as Oscar64's `.lbl` output.
 
 ---
 
@@ -1152,7 +1152,7 @@ KickAssembler emits a VICE symbol file (conventionally `.vs` or `-symbols.txt`) 
 
 Oscar64 can emit an assembly listing (`.asm`) showing the 6502 instructions generated for each C source statement. This intermediate representation is useful for cycle-counting and verifying that the compiler has produced efficient code for hot paths (raster handlers, sprite sorters, etc.).
 
-The listing format is not a formal standard; it is Oscar64-specific human-readable text with C source lines interleaved with the generated opcodes and addresses. It is not directly assembled by KickAssembler or cc65 — the "Consumed by" relationship above refers to the practice of manually extracting hot inner loops for hand-optimization in an assembler.
+The listing format is not a formal standard; it is Oscar64-specific human-readable text with C source lines interleaved with the generated opcodes and addresses. It is not directly assembled by KickAssembler or cc65. The "Consumed by" relationship above means hot inner loops are extracted by hand and hand-optimized in an assembler.
 
 ---
 
@@ -1184,7 +1184,7 @@ Object file format is ca65-specific binary and not directly human-readable. It i
 
 **Consumed by:** vice
 
-The P00 format (from the PC64 emulator by Wolfgang Lorenz) wraps a single C64 PRG file in a 26-byte header that preserves the original PETASCII filename and file type — information that is lost when storing a C64 file on a host filesystem that does not support PETASCII or Commodore file-type metadata.
+The P00 format (from the PC64 emulator by Wolfgang Lorenz) wraps a single C64 PRG file in a 26-byte header that preserves the original PETASCII filename and file type, information that is lost when storing a C64 file on a host filesystem that does not support PETASCII or Commodore file-type metadata.
 
 **File header (26 bytes):**
 

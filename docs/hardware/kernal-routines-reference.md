@@ -6,8 +6,8 @@ The Commodore 64 KERNAL is the 8 KiB ROM at `$E000-$FFFF` that provides the
 machine's operating-system layer: character I/O, file I/O over the IEC serial
 bus, the screen editor, the 60/50 Hz IRQ jiffy clock, the STOP-key check, and
 the cold-start / warm-start sequences. User programs do not call KERNAL code at
-its real ROM addresses — those moved between Commodore machines (VIC-20, PET,
-C64, C128, Plus/4). Instead, the KERNAL exposes a **jump table** in the last
+its real ROM addresses, which moved between Commodore machines (VIC-20, PET,
+C64, C128, Plus/4). They call the KERNAL's **jump table** in the last
 128 bytes of the address space, from `$FF81` upward, where each entry is a
 3-byte `JMP abs` instruction to the real routine. Commodore promised this
 table would be source-compatible across machines; in practice the shared
@@ -25,43 +25,43 @@ ROMs do not. Read from the VICE ROM images: PET 901439-04-07 / 901465-03 /
 318020-05.)
 
 There are **39 jump-table entries** spanning `$FF81-$FFF3`. The portion from
-`$FFC0-$FFF5` is the historically-documented "user jump table" that the
+`$FFC0-$FFF5` is the "user jump table" that the
 *Commodore 64 Programmer's Reference Guide* and the *KERNAL Reference Manual*
-encourage application programmers to call directly. The entries from
-`$FF81-$FFBD` are lower-level — most are used internally by the higher-level
-routines, but a handful (SETLFS, SETNAM, READST, MEMTOP, MEMBOT) are essential
-for application code as well.
+tell application programmers to call directly. The entries from
+`$FF81-$FFBD` are lower-level. The higher-level routines use most of them
+internally; application code also needs SETLFS, SETNAM, READST, MEMTOP and
+MEMBOT.
 
-Every routine in this document is documented at its **jump-table address**,
+Every routine here is listed at its **jump-table address**,
 not its real ROM address. Calling code should always `JSR $FFD2` (CHROUT),
 never `JSR $F1CA` (CHROUT's own body, reached through the `$0326` vector) or
 `JSR $E716` (the screen-output routine CHROUT dispatches to when the output
 device is 3; device 4 and up goes to IECOUT at `$EDDD`). An earlier version
 of this page named `$E716` as CHROUT's ROM address; it is the screen editor's
-print routine — `$0326` defaults to `$F1CA` in every 901227 ROM (read from
+print routine; `$0326` defaults to `$F1CA` in every 901227 ROM (read from
 the ROM images). The jump-table addresses are the stable contract; the
-ROM-internal addresses are private implementation detail and can move
+ROM-internal addresses are implementation detail and can move
 between KERNAL revisions and do move between Commodore machines. (The three
 C64 revisions 901227-01, -02 and -03 differ in 277 bytes of in-place patches
-spread over several dozen byte ranges — e.g. `$E4AC-$E4FF`, `$F428-$F44C`,
-`$FF5B-$FF80` — and no entry address moved; `$F1CA`, `$E716` and `$F49E` are
+spread over several dozen byte ranges (e.g. `$E4AC-$E4FF`, `$F428-$F44C`,
+`$FF5B-$FF80`), and no entry address moved; `$F1CA`, `$E716` and `$F49E` are
 at the same addresses in all three, so the examples here illustrate the
-contract, not a case where it bit. Other Commodore machines put every
+contract, not a case where bypassing it breaks. Other Commodore machines put every
 routine elsewhere.)
 
-The 39 routines group naturally into eight categories:
+The 39 routines fall into eight categories:
 
 1. **Initialization** — CINT, IOINIT, RAMTAS, RESTOR, VECTOR. These run at
    power-on and reset; an application normally calls them only to recover
    after corrupting state.
 2. **High-level file I/O** — SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT,
-   CLRCHN, CLALL, LOAD, SAVE. The supported way to talk to disk, tape, and
+   CLRCHN, CLALL, LOAD, SAVE. The supported way to talk to disk, tape and
    printer.
 3. **Character I/O** — CHRIN, CHROUT, GETIN. The screen editor and keyboard
    queue funnel through these.
 4. **Low-level IEC bus** — LISTEN, TALK, SECOND, TKSA, IECIN, IECOUT, UNLSN,
-   UNTLK, READST. Direct serial-bus protocol for fast loaders and bus
-   custom code.
+   UNTLK, READST. Direct serial-bus protocol for fast loaders and custom
+   bus code.
 5. **Screen + cursor** — PLOT, SCREEN.
 6. **Time + STOP key** — RDTIM, SETTIM, UDTIM, STOP.
 7. **Memory** — MEMTOP, MEMBOT (BASIC top-of-memory and bottom-of-memory
@@ -81,7 +81,7 @@ below.
 
 ### KERNAL ROM revisions
 
-Three production-run KERNAL ROMs shipped in the C64 lifetime, identified
+Three production KERNAL ROMs shipped in the C64's lifetime, identified
 by the Commodore part number printed on the ROM chip:
 
 - **901227-01** — the original KERNAL. No PAL/NTSC detection: CINT's
@@ -100,9 +100,9 @@ by the Commodore part number printed on the ROM chip:
   after the tape FOUND message becomes a timed wait on the jiffy clock
   that a keypress also ends (`$E4E0`). This is the only cassette change;
   no tape timing constant differs (`$F767-$FCFB` identical).
-- **901227-03** — the most common ROM, shipped in the bulk of C64
-  units sold from mid-1983 onward, and the source of all addresses in
-  this doc and the source most other documentation cites by default.
+- **901227-03** — the most common ROM, shipped in most C64
+  units sold from mid-1983 onward. All addresses in this page come from it,
+  as do most other documents' by default.
   The screen clear fills colour RAM with the current text colour
   (`$E4DA` = `LDA $0286`), plus small screen-editor (`$E57C-$E599`,
   `$E621`) and RS-232 (`$EF94` -> `$E4D3`) patches.
@@ -118,7 +118,7 @@ jump-table targets and all sixteen default RAM vectors are identical,
 and the one changed entry (CINT) points at a wrapper that still calls
 `$E518`. The IEC bus routines, RAMTAS, LOAD, CHROUT's body (`$F1CA`)
 and the screen-output routine (`$E716`) are byte-identical in all
-three, so `JSR $F1CA`, `JSR $E716` or `JSR $F49E` would in fact work on
+three, so `JSR $F1CA`, `JSR $E716` or `JSR $F49E` would work on
 every 901227 revision. Use the jump table anyway: it is the contract
 Commodore kept across machines (the VIC-20, C128 and Plus/4 internals
 are elsewhere), and it survives the RAM-vector hooks that direct calls
@@ -132,20 +132,20 @@ KERNAL. An earlier revision of this page named 318020-05 here; that
 part is the C128-mode KERNAL/editor ROM, a different program (its jump
 table points into `$C000`/`$E1xx` and its reset vector is `$FF3D`).
 VICE x128 loads `kernal64-901227-03.bin` for C64 mode, byte-identical
-to the C64's 901227-03 — measured by dumping the `c64rom` bank from
-x128 3.10 in `-go64` mode. VICE also ships two variants for that slot,
+to the C64's 901227-03 (measured by dumping the `c64rom` bank from
+x128 3.10 in `-go64` mode). VICE also ships two variants for that slot,
 `kernal64-325179-01` and `-325182-01`, differing from 901227-03 in 54
 and 24 bytes (table bytes and one small patch; none in the
 `$FF81-$FFF4` jump table). The part number on a real C128's C64-ROM
 chip (usually given as 251913-01, a combined BASIC+KERNAL mask) is from
 documentation, not measured here. Either way the 39-entry jump table is
-at the same addresses with identical semantics — programs that use only
+at the same addresses with identical semantics, so programs that use only
 the jump table run unchanged on a C128 in C64 mode.
 
 ### Zero page each routine writes
 
-Each routine below carries `**Clobbers zero page:**` lines. They matter to
-any program that keeps its own variables in zero page and still calls the
+Each routine below carries `**Clobbers zero page:**` lines, for any
+program that keeps its own variables in zero page and still calls the
 KERNAL.
 
 - `(may; ROM walk from $FFxx, power-on vectors)` is an upper bound:
@@ -245,7 +245,7 @@ The full 39-entry jump table, in address order. Each entry is a 3-byte
 | `$FFF0` | PLOT    | Read or set cursor row/column                                      |
 | `$FFF3` | IOBASE  | Return base address of I/O block (always `$DC00` on C64)           |
 
-Three categorical points are non-obvious from the names:
+Three points the names do not show:
 
 - **`IECIN`/`IECOUT`** are documented in the original Commodore 64
   *Programmer's Reference Guide* under the older PET-era names `ACPTR`
@@ -259,7 +259,7 @@ Three categorical points are non-obvious from the names:
 
 ## File I/O routines
 
-The high-level file I/O surface is a stateful three-step protocol:
+High-level file I/O is a stateful protocol:
 
 1. **Configure** the next file operation with SETLFS (logical file, device,
    secondary address) and SETNAM (filename buffer pointer, length).
@@ -268,9 +268,9 @@ The high-level file I/O surface is a stateful three-step protocol:
    with CHRIN / GETIN, write with CHROUT. Reset to defaults with CLRCHN.
 4. **Close** with CLOSE or CLALL.
 
-This is the same protocol the BASIC `OPEN`, `PRINT#`, `INPUT#`, and `CLOSE`
-statements drive. A machine-language program that wants to open and read
-a sequential file from drive 8 does:
+BASIC's `OPEN`, `PRINT#`, `INPUT#`, and `CLOSE`
+statements drive the same protocol. To open and read
+a sequential file from drive 8:
 
 ```asm
         ; OPEN 2,8,2,"FILE,S,R"
@@ -302,8 +302,8 @@ fname:  .byte "FILE,S,R"
 fname_end:
 ```
 
-Listings in this document are generic 6502 assembler syntax — `;`
-comments and `.byte "…"` strings, as ca65 accepts them — not
+Listings in this page are generic 6502 assembler syntax (`;`
+comments and `.byte "…"` strings, as ca65 accepts them), not
 KickAssembler fragments, and `npm run check:listings` does not build
 them (it assembles only `asm` fences written in KickAssembler syntax
 with no `;` lines). In KickAssembler use `//` comments and `.text "…"`;
@@ -312,21 +312,20 @@ letters, digits and punctuation coincide with the unshifted PETSCII a
 drive expects (`FILE,S,R` -> `46 49 4C 45 2C 53 2C 52`; `petscii_mixed`
 would give `C6 C9 CC C5 …`). Under ca65 `-t c64` the same literal
 assembles to shifted PETSCII `C6 C9 CC C5 …`, so set the filename bytes
-deliberately in whichever assembler you use (both byte sequences
+explicitly in either assembler (both byte sequences
 measured with KickAssembler 5.25 and ca65 2.19).
 
-Three rules trip up first-time KERNAL programmers:
+Three rules of the KERNAL file protocol:
 
-- **SETLFS + SETNAM state survives across calls** until you overwrite it.
-  If you call SETLFS once with secondary=2 and then call OPEN a second
-  time without calling SETLFS again, the second OPEN will reuse
-  secondary=2.
+- **SETLFS + SETNAM state survives across calls** until overwritten.
+  After SETLFS with secondary=2 and an OPEN, a second OPEN without another SETLFS
+  reuses secondary=2.
 - **CHKIN/CHKOUT require a prior successful OPEN.** They return C=1 +
   error code 3 ("file not open") if the logical file number doesn't
   refer to an open file.
-- **CLRCHN must be called before CLOSE.** If you `CLOSE` while CHKIN
+- **CLRCHN must be called before CLOSE.** After a `CLOSE` while CHKIN
   has redirected input to that file, the next CHRIN reads from a
-  closed file and returns garbage. Always: `CLRCHN`, then `CLOSE`.
+  closed file and returns garbage. The order is `CLRCHN`, then `CLOSE`.
 
 ### $FFBA — SETLFS — Set logical file parameters
 
@@ -344,7 +343,7 @@ it. The familiar rule that file numbers 128-255 get a linefeed after
 every carriage return is BASIC's, not the KERNAL's: PRINT#, CMD and any
 PRINT while CMD is active send `$0A` after `$0D` when bit 7 of the
 current channel byte `$13` is set (BASIC ROM `$AAD7`, `BIT $13`). CHROUT
-adds no byte of its own whatever the file number — measured in VICE
+adds no byte of its own whatever the file number. Measured in VICE
 x64sc: `SETLFS` 200 followed by `CHROUT $0D` delivers `$0D` alone, while
 BASIC's `PRINT#200` hands CHROUT `$0D,$0A` and `PRINT#100` hands `$0D`.
 (An earlier revision placed this rule under SETLFS as if the KERNAL
@@ -355,8 +354,8 @@ units. Secondary address (Y) is device-specific: for the 1541 disk drive,
 0=load PRG, 1=save PRG, 2-14=open named channel, 15=command channel. `$FF`
 (any value with bit 7 set) means "send no secondary address" on the
 serial bus: OPEN, CHKIN, CHKOUT and CLOSE then skip the
-secondary-address byte, and OPEN sends nothing at all — not even the
-filename — so it suits an unnamed channel such as a printer, not a named
+secondary-address byte, and OPEN sends nothing at all, not even the
+filename, so it suits an unnamed channel such as a printer, not a named
 disk file. It is what BASIC's OPEN supplies for device 3 and above when
 the third parameter is omitted; for tape and RS-232 BASIC defaults to 0.
 Tape reads the secondary address: for OPEN, 0 = read, 1 = write, 2 =
@@ -398,7 +397,7 @@ KERNAL records the logical file number in its open-file table
 (`$0259-$0262` for LF, `$0263-$026C` for device, `$026D-$0276` for
 secondary). Errors: 1=too many open files (10 already open), 2=logical
 file number already open, 5=device not present, 6=logical file number 0
-(the only 6 OPEN returns; OPEN never returns 7 — 6 and 7 as direction
+(the only 6 OPEN returns; OPEN never returns 7; 6 and 7 as direction
 errors belong to CHKIN/CHKOUT), 9=illegal device (tape OPEN with the
 tape-buffer pointer `$B2/$B3` below `$0200`). OPEN's own code-4 exit is
 on the tape branch only and is reached only through the STOP key during
@@ -407,11 +406,11 @@ by the last LOAD or VERIFY) is non-zero; with `$93` = 0 the same STOP
 returns C=1, A=0. A name that is not on the tape does not produce 4: the
 search reads on until an end-of-tape marker, which OPEN returns as C=1,
 A=5 (BASIC prints ?DEVICE NOT PRESENT). Disk OPEN never reports a
-missing file — read the error channel. Errors 1, 2 and 6 are detected
+missing file; read the error channel. Errors 1, 2 and 6 are detected
 before the table entry is stored; for 4, 5 and 9 the entry has already
 been added (`$98` incremented, LFN/device/secondary stored at
 `$0259/$0263/$026D,X`) and stays there, so a retry with the same logical
-file number returns 2 — CLOSE it (or CLALL) first. (An earlier version
+file number returns 2. CLOSE it (or CLALL) first. (An earlier version
 of this entry listed 6 and 7 as direction errors, called 4 LOAD-only and
 said a failed OPEN left no table entry; all three were checked against
 the KERNAL ROM bytes and in VICE x64sc.) OPEN on tape (device 1) also
@@ -432,7 +431,7 @@ LISTEN + close-secondary (`$E0 | sec`), then UNLISTEN. The KERNAL
 removes the entry from its open-file table. Calling CLOSE on a
 logical file number that isn't open returns silently (no error). If
 the file is currently the active input or output channel, CLOSE does
-*not* reset the channel — call CLRCHN first.
+*not* reset the channel; call CLRCHN first.
 
 ### $FFC6 — CHKIN — Redirect input to logical file
 
@@ -474,7 +473,7 @@ in VICE x64sc both on an empty bus and with another drive present);
 7=not output file, raised for the keyboard (device 0) and for a tape
 file opened with secondary address 0 (read). Disk channels are not
 direction-checked: CHKOUT on a channel opened `,S,R` returns C=0 (A=8),
-the bytes you CHROUT afterwards are accepted, and with the 1541-II DOS
+bytes sent with CHROUT afterwards are accepted, and with the 1541-II DOS
 in VICE the drive's error channel still read 00 afterwards, so nothing
 reports the mistake. An earlier version said 7 meant the device was
 opened for read; that is the tape rule only.
@@ -503,14 +502,14 @@ CLRCHN between operations on different files.
 **Clobbers zero page:** $90, $94-$95, $98-$9A, $A3, $A5 (may; ROM walk from $FFE7, power-on vectors)
 **Pairs with:** CLRCHN
 **Description:** Closes all open logical files at once by zeroing the
-KERNAL's open-file count (`$0098`). This does *not* send proper CLOSE
-commands to IEC devices — it just discards the KERNAL's open-file
-table. CLALL also calls CLRCHN, so default channels are reset. Use
-CLALL when you need to reset I/O state from an unknown starting
-point (e.g. in an error handler), and accept that any disk-side state
-(open relative-file channels with dirty buffers) will be left
-dangling until you UNLISTEN. The jump-table entry for CLALL is at
-`$FFE7`, despite its conceptual pair with CLOSE.
+KERNAL's open-file count (`$0098`). It does *not* send CLOSE
+commands to IEC devices; it discards the KERNAL's open-file
+table. CLALL also calls CLRCHN, so default channels are reset.
+CLALL resets I/O state from an unknown starting
+point (e.g. in an error handler). Any disk-side state
+(open relative-file channels with dirty buffers) is left
+dangling until an UNLISTEN. The jump-table entry for CLALL is
+`$FFE7`, not beside CLOSE.
 
 ### $FFD5 — LOAD — Load or verify a file
 
@@ -530,20 +529,20 @@ stores each byte with `STA ($AE),Y` through the zero-page pointer
 `$AE/$AF` (EAL/EAH, the store at `$F51C`; the tape path stores through
 `$AC/$AD` at `$FB41`), and a 6510 write to a ROM-mapped address always
 lands in the RAM beneath. An earlier version of this page said the
-pointer was in page 1 — that is the stack. The rule does *not* extend
+pointer was in page 1, which is the stack. The rule does *not* extend
 to `$D000-$DFFF`: LOAD never touches `$01`, so it runs with I/O mapped
 in, and a file whose load address falls there is written into the
 VIC/SID/CIA registers or colour RAM while the RAM underneath is left
 untouched (measured in VICE x64sc: a `,8,1` load of two bytes to
 `$D020` set the border and background registers and left the RAM
-beneath at its prefill). You cannot bank I/O out around the call — the
+beneath at its prefill). I/O cannot be banked out around the call: the
 serial routines drive the IEC bus through CIA2 at `$DD00` and the tape
-routines time pulses through CIA1 — so LOAD such data elsewhere and
-copy it under I/O yourself with interrupts disabled. Loading straight
+routines time pulses through CIA1. LOAD such data elsewhere and
+copy it under I/O with interrupts disabled. Loading straight
 into colour RAM at `$D800` is the one case where writing the chips is
 what you want. After a successful load, X/Y hold the address
 immediately *past* the last byte loaded. With A=1, LOAD compares the
-file against memory instead of writing — sets the status byte's "verify
+file against memory instead of writing and sets the status byte's "verify
 mismatch" bit on differences. Errors: 4=file not found, 5=device not
 present, 8=missing filename, 9=illegal device. A C=1 return with A=0 is
 none of these: RUN/STOP aborted the transfer. The serial loop calls
@@ -571,19 +570,19 @@ pointed to by A (the BASIC start-of-program pointer at `$2B/$2C`
 is the conventional value, which is why BASIC `SAVE` saves the
 current program). The end-address+1 is passed directly in X/Y.
 On the serial bus the first two bytes sent are the start address (low,
-high), then the data — the format LOAD expects. On tape the addresses
+high), then the data, the format LOAD expects. On tape the addresses
 are not in the data stream at all: the KERNAL writes a separate
-192-byte header block first (`$F76A`: type byte — 1 relocatable, 3
-non-relocatable when the secondary address has bit 0 set — then start
+192-byte header block first (`$F76A`: type byte (1 relocatable, 3
+non-relocatable when the secondary address has bit 0 set), then start
 address, end-address+1, and the filename, space-padded), and the data
 block that follows is the raw memory bytes with no address prefix. An
 earlier version of this page said both tape and serial began with the
 load address; only serial does (KERNAL 901227-03, `$F617-$F621` vs
 `$F76A`/`$F867`). Errors: 5=device not present, 8=missing filename,
 9=illegal device. As with LOAD, C=1 with A=0 means RUN/STOP aborted the
-transfer — polled before every byte on the serial bus (`$F62E`), and
-while waiting for RECORD/PLAY and during the block write on tape — not
-an I/O error; BASIC reports it as ?BREAK ERROR (ROM bytes
+transfer, not an I/O error. STOP is polled before every byte on the serial bus (`$F62E`), and
+while waiting for RECORD/PLAY and during the block write on tape.
+BASIC reports it as ?BREAK ERROR (ROM bytes
 `$F62E`/`$F633`, `$F8D0`).
 
 ## Character I/O
@@ -591,7 +590,7 @@ an I/O error; BASIC reports it as ?BREAK ERROR (ROM bytes
 The C64's character-I/O layer has three entry points: CHROUT for writing,
 CHRIN for blocking reads, and GETIN for non-blocking reads. All three
 indirect through RAM vectors at `$0326` (BSOUT), `$0324` (CHRIN), and
-`$032A` (GETIN) — patching those vectors hooks every character that
+`$032A` (GETIN); patching those vectors hooks every character that
 flows through the KERNAL.
 
 ### $FFD2 — CHROUT — Output a character
@@ -606,13 +605,13 @@ flows through the KERNAL.
 by default; a logical file if CHKOUT was called). The byte is
 interpreted as PETSCII: printable codes (`$20-$5F`, `$60-$7F`,
 `$A0-$FF`) display the corresponding character; control codes do
-their named action — `$0D` = carriage return, `$11` = cursor down,
+their named action: `$0D` = carriage return, `$11` = cursor down,
 `$13` = home, `$14` = delete, `$93` = clear screen, `$05/$1C/$1E/$1F/$81/$90/$95/$9F` etc.
 = color changes, `$0E` = lower/upper case, `$8E` = upper/graphics
 case. When writing to the screen, CHROUT *does* modify VIC-II state:
 PETSCII `$0E` and `$8E` write to `$D018` to switch the character
 ROM source between charset 1 and charset 2; color changes write to
-the current-color byte at `$0286` (page 2, not zero page — earlier
+the current-color byte at `$0286` (page 2, not zero page. Earlier
 text called it zero-page; the KERNAL stores it with an absolute
 `STX $0286` at `$E8D6`, measured in VICE x64sc: CHROUT `$1C` leaves
 `$0286` = 2). To suppress these side
@@ -654,7 +653,7 @@ cursor) is `text_input_line` in `../techniques/text.md`.
 **Description:** Returns immediately. With the default keyboard
 channel, GETIN reads one byte from the keyboard queue (`$0277-$0280`)
 maintained by the IRQ handler; if the queue is empty, A=0. With an
-IEC device active (after CHKIN), GETIN behaves like CHRIN — it
+IEC device active (after CHKIN), GETIN behaves like CHRIN and
 *does* block on the bus, because the IEC protocol has no peek-ahead.
 The non-blocking property only applies to the keyboard. GETIN is
 the standard primitive for game loops and any code that must remain
@@ -672,8 +671,8 @@ responsive while polling input.
 **Description:** Returns the physical dimensions of the screen. On a
 stock C64 this is always X=40, Y=25. The routine exists so that
 programs targeting the whole Commodore-8-bit family (which includes
-80-column machines like the C128) can adapt to the screen they're
-running on without hard-coding 40x25.
+80-column machines like the C128) can adapt to the screen they
+run on without hard-coding 40x25.
 
 ### $FFF0 — PLOT — Get or set cursor position
 
@@ -686,11 +685,10 @@ running on without hard-coding 40x25.
 **Description:** Reads or writes the cursor position used by the
 screen editor. With C=1 (read mode), returns the current row in X
 and current column in Y. With C=0 (write mode), moves the cursor
-to the supplied row/column. PLOT does not draw anything; it just
-positions the cursor so the next CHROUT writes there. Note the
-unusual axis order: X holds the *row* (0-24) and Y holds the
-*column* (0-39), which is the opposite of typical (x,y) plotting
-conventions.
+to the supplied row/column. PLOT draws nothing; it
+positions the cursor so the next CHROUT writes there. X holds the
+*row* (0-24) and Y holds the *column* (0-39), the reverse of (x,y)
+plotting convention.
 
 ### $FF81 — CINT — Initialize screen editor
 
@@ -709,7 +707,7 @@ size `$0289` = 10, the key-repeat delay `$028C` = 10 and speed `$028B`
 = 4, and the default character colour `$0286` = 14 (light blue), and
 initializes the IRQ-driven keyboard queue. (An earlier version of this
 page said CINT also set the keyboard-table pointer `$F5/$F6`; it does
-not — read from the 901227-03 ROM and confirmed in VICE, `$E518-$E598`
+not. Read from the 901227-03 ROM and confirmed in VICE: `$E518-$E598`
 never stores to `$F5/$F6`. That pointer is written by SCNKEY only on a
 scan that finds a key held: first to `$EB81` at `$EA9D/$EAA1`, then
 re-selected by shift state through the `$028F` vector at `$EB48`; an
@@ -731,8 +729,8 @@ overwrites screen and color RAM.
 **Pairs with:** GETIN, UDTIM
 **Description:** Reads the STOP-key flag (zero page `$91`, set by UDTIM
 (`$FFEA`), not SCNKEY, to `$7F` when STOP is held in its matrix column)
-and returns Z=1 if STOP is currently pressed. The
-canonical interruptible-loop pattern is:
+and returns Z=1 if STOP is currently pressed. An
+interruptible loop:
 
 ```asm
 loop:   jsr $FFE1       ; STOP
@@ -744,22 +742,21 @@ abort:  ; restore state, exit
 ```
 
 STOP reads `$91`, not the keyboard matrix directly, so it depends on
-the IRQ handler running. If the user has disabled IRQs (`SEI` without
-re-enabling), STOP will never return Z=1. To make STOP work in an
+the IRQ handler running. With IRQs disabled (`SEI` without
+re-enabling), STOP never returns Z=1. To make STOP work in an
 IRQ-disabled context, `JSR $FFEA` (UDTIM) inside the loop (this also
 advances the jiffy clock, so call it at most once per frame if `TI$`
 matters). An earlier version of this page said to call SCNKEY (`$FF9F`)
-here; SCNKEY never writes `$91` — the only store to `$91` in the KERNAL
-is UDTIM's at `$F6DA` — so that advice could not have worked. UDTIM
+here; SCNKEY never writes `$91` (the only store to `$91` in the KERNAL
+is UDTIM's at `$F6DA`), so that advice could not have worked. UDTIM
 reads the STOP column through `$DC01` without selecting it, relying on
-`$DC00` still holding `$7F` as SCNKEY and the KERNAL IRQ leave it. STOP
-also serves a secondary purpose in some KERNAL routines: when called
-from inside disk I/O, it aborts the operation, and when called from
-the cassette routines, it aborts the tape transfer.
+`$DC00` still holding `$7F` as SCNKEY and the KERNAL IRQ leave it. Some
+KERNAL routines also call STOP: inside disk I/O it aborts the
+operation, and in the cassette routines it aborts the tape transfer.
 
 ## Time and jiffy clock
 
-The C64 maintains a 24-bit "jiffy clock" — a counter of `1/60`-second
+The C64 keeps a 24-bit "jiffy clock", a counter of `1/60`-second
 ticks (1/50 in PAL territory, despite the name) that wraps every
 24 hours. The counter lives at `$A0/$A1/$A2` (high/mid/low byte) and
 is incremented by UDTIM, which is called from the IRQ handler every
@@ -775,9 +772,9 @@ jiffy. BASIC exposes the counter via the `TI` (numeric) and `TI$`
 **Clobbers zero page:** $A0-$A2 (must; VICE x64sc store trace, SETTIM)
 **Pairs with:** RDTIM, UDTIM
 **Description:** Stores the supplied 24-bit value into the jiffy-clock
-counter. Note the high-byte-first ordering, which is opposite the
-6502's natural little-endian. This is the routine that BASIC's
-`TI$ = "000000"` translates to. SETTIM disables IRQs while writing
+counter. The order is high byte first, the reverse of the
+6502's little-endian convention. BASIC's
+`TI$ = "000000"` uses this routine. SETTIM disables IRQs while writing
 the three bytes, so the IRQ handler can't see a half-updated value.
 
 ### $FFDE — RDTIM — Read the jiffy clock
@@ -790,7 +787,7 @@ the three bytes, so the IRQ handler can't see a half-updated value.
 **Pairs with:** SETTIM, UDTIM
 **Description:** Reads the three-byte jiffy counter and returns it in
 A/X/Y (high/mid/low). Disables IRQs during the read so the value is
-atomic. For a millisecond-ish elapsed-time stopwatch, call RDTIM
+atomic. For elapsed time, call RDTIM
 twice and subtract; one jiffy = 1/60 s NTSC or 1/50 s PAL.
 
 ### $FFEA — UDTIM — Increment jiffy clock + check STOP
@@ -809,14 +806,13 @@ slightly). UDTIM also reads the keyboard-matrix row that contains
 the STOP key (column at port `$DC00`, row at port `$DC01`) and
 sets `$91` to `$7F` if STOP is pressed, which is what makes the
 STOP routine work. UDTIM is called from the IRQ handler at `$EA31`
-every jiffy — if you replace the IRQ vector with your own code,
-you must `JSR $FFEA` somewhere in your handler or the jiffy clock
-and STOP will freeze.
+every jiffy. A handler that replaces the IRQ vector must
+`JSR $FFEA`, or the jiffy clock and STOP freeze.
 
 ## Memory
 
 The two memory routines manipulate the KERNAL's notion of where RAM
-starts and ends. They share a unified read/write convention:
+starts and ends. Both use one read/write convention:
 **carry-flag = direction**. C=0 means "write the supplied value into
 the KERNAL pointer"; C=1 means "read the current value into the
 return registers".
@@ -830,15 +826,15 @@ return registers".
 **Pairs with:** MEMBOT, RAMTAS
 **Description:** Reads or writes the KERNAL's top-of-memory pointer,
 stored at `$0283-$0284`. On a stock 38911-byte BASIC system, the
-default value is `$A000` (`$00`/`$A0`) — BASIC strings grow downward
+default value is `$A000` (`$00`/`$A0`); BASIC strings grow downward
 from this address, and BASIC's free-memory message reports
 `top - vartab`. Lowering MEMTOP reserves a block at the top of RAM
 that BASIC will not touch; for example, setting it to `$C000` keeps
 the 4 KiB at `$C000-$CFFF` free for machine-language code that
-coexists with BASIC. Most programs use this protect-from-BASIC
-mechanism by writing MEMTOP early in their startup. Note that
-lowering MEMTOP does *not* shrink memory available to ML programs;
-it only signals BASIC to stay below the new ceiling.
+coexists with BASIC. Most programs protect memory from BASIC this
+way, writing MEMTOP early in their startup. Lowering MEMTOP does
+*not* shrink memory available to ML programs; it only tells BASIC
+to stay below the new ceiling.
 
 ### $FF9C — MEMBOT — Read or set bottom of RAM
 
@@ -853,7 +849,7 @@ placing the bottom of the BASIC text area at `$0801` (the byte at
 `$0800` is a required zero terminator). Raising MEMBOT reserves a
 block at the bottom of RAM for non-BASIC use. Setting MEMBOT does
 *not* relocate the existing BASIC program; if BASIC has already
-loaded a program, you must move it manually. Application programs
+loaded a program, it must be moved by hand. Application programs
 that need a small RAM scratchpad often raise MEMBOT to `$0900` or
 `$0A00`, leaving the cassette buffer at `$033C-$03FB` free if
 they need more space without disturbing BASIC.
@@ -885,7 +881,7 @@ KERNAL routine.
 | `$0332-$0333` | ISAVE   | SAVE (called by `$FFD8`)                                 |
 
 The four initialization routines below populate or restore these
-vectors and other related state.
+vectors and related state.
 
 ### $FF84 — IOINIT — Initialize I/O chips
 
@@ -899,8 +895,8 @@ Timer A on CIA1 for the 60/50 Hz jiffy IRQ), initializes the SID
 (silences all three voices), sets the IEC bus lines to idle, and
 clears the CIA interrupt-control registers. Called once at power-on
 between RAMTAS and CINT. Application code can call IOINIT to recover
-from chip-state corruption, but doing so will silence any in-progress
-sound and reset the keyboard-scan IRQ rate to the KERNAL default.
+from chip-state corruption, but doing so silences any in-progress
+sound and resets the keyboard-scan IRQ rate to the KERNAL default.
 
 ### $FF87 — RAMTAS — RAM test and clear
 
@@ -922,7 +918,7 @@ $0200,Y / STA $0300,Y` with Y 0-255, confirmed in VICE x64sc 3.10. It
 sets MEMTOP to the discovered top and MEMBOT to `$0800`,
 clears the cassette buffer at `$033C-$03FB`. RAMTAS is destructive
 and is normally called only at power-on. Calling it from a running
-program will erase the BASIC input buffer and the open-file table.
+program erases the BASIC input buffer and the open-file table.
 
 ### $FF8A — RESTOR — Restore default vectors
 
@@ -950,9 +946,9 @@ the KERNAL's vector area at `$0314-$0333`. With C=1, copies *from*
 the vector area into the supplied buffer (snapshot the current vector
 state). With C=0, copies *into* the vector area from the supplied
 table (install a complete vector set in one call). Typical use:
-snapshot with C=1, patch one or two entries, install with C=0 — but
-in practice it's cheaper to just write the two bytes of the one
-vector you care about directly to `$0326`/`$0327` etc.
+snapshot with C=1, patch one or two entries, install with C=0.
+Writing the two bytes of a single vector directly to
+`$0326`/`$0327` etc. is cheaper.
 
 ### $FF90 — SETMSG — Set KERNAL message verbosity
 
@@ -963,11 +959,11 @@ vector you care about directly to `$0326`/`$0327` etc.
 **Pairs with:** OPEN, LOAD, SAVE
 **Description:** Controls whether the KERNAL prints status messages
 to the screen during file operations. A=`$80` (bit 7 only) enables
-error messages but suppresses control messages — useful when an
-application wants to handle "press play on tape" prompts itself.
+error messages but suppresses control messages, for an
+application that handles "press play on tape" prompts itself.
 A=`$C0` enables both (the default for BASIC). A=`$00` suppresses
-everything — useful for headless tools that drive the KERNAL from
-machine code and don't want stray text appearing on screen.
+everything, for headless tools that drive the KERNAL from
+machine code and want no stray text on screen.
 
 ## IEC bus low-level
 
@@ -976,15 +972,15 @@ directly, byte by byte. Most application code never calls them
 because OPEN/CLOSE/LOAD/SAVE wrap them, but custom bus protocols
 (fast loaders, IEEE-488 adapters, custom drive commands) use them.
 
-The IEC protocol is a five-state sequence:
+The IEC protocol is a fixed sequence:
 
 1. **LISTEN/TALK** sends a device-address byte with the ATN line low
    to announce which device is being addressed.
 2. **SECOND/TKSA** sends a secondary-address byte (still with ATN
-   low) — typically a file-channel number on disk drives, or a
+   low): usually a file-channel number on disk drives, or a
    format command.
 3. **IECOUT/IECIN** transfers data bytes one at a time, with ATN
-   high — IECOUT writes (after LISTEN+SECOND), IECIN reads (after
+   high. IECOUT writes (after LISTEN+SECOND), IECIN reads (after
    TALK+TKSA).
 4. **UNLSN/UNTLK** ends the transfer by releasing the bus.
 
@@ -999,14 +995,14 @@ The IEC protocol is a five-state sequence:
 the IEC bus with the ATN line asserted. After LISTEN, all subsequent
 data sent via IECOUT goes to the addressed device until UNLSN is
 sent. The status byte (READST) is set to `$80` if the device does
-not acknowledge — device not present. Internally the routine
+not acknowledge (device not present). Internally the routine
 manipulates the data line (`$DD00` bit 5), clock line (`$DD00`
 bit 4), and ATN line (`$DD00` bit 3) of CIA2 port A to drive the
 serial bus signals; on a real C64 the entire byte takes about
 1 ms. Multiple LISTEN commands can be sent in sequence to address
 multiple listeners simultaneously, but only one device can talk
-at a time. The device argument is just the device number 0-30;
-the `$20 | device` encoding is done internally.
+at a time. The device argument is the device number 0-30;
+the routine applies the `$20 | device` encoding.
 
 ### $FFB4 — TALK — Send TALK command
 
@@ -1017,13 +1013,13 @@ the `$20 | device` encoding is done internally.
 **Pairs with:** TKSA, IECIN, UNTLK
 **Description:** Sends the TALK command byte (`$40 | device`) on the
 IEC bus with ATN asserted. After TALK, the addressed device becomes
-the bus talker, and the C64 will receive its data via IECIN until
+the bus talker, and the C64 receives its data via IECIN until
 UNTLK is sent. Status byte set to `$80` on no-acknowledge. Only one
 device on the bus can be the talker at any time, so a TALK command
 implicitly silences any previous talker. After the TALK byte goes
 out, the routine releases ATN and the device begins to drive the
 data line; the first IECIN call then reads the first byte the
-device produces. If you want to read from a specific channel of a
+device produces. To read from a specific channel of a
 disk drive (e.g. the error channel at secondary 15), follow TALK
 with TKSA.
 
@@ -1095,8 +1091,8 @@ line and the bus returns to idle. The command is broadcast, so
 all listeners and the (single) talker simultaneously hear it; the
 talker stops talking, the listeners stop listening for that
 talker. Use UNTLK to end a TALK transaction. Calling UNTLK with
-no active talker is harmless — the command is sent to all
-devices but none act on it.
+no active talker is harmless: the command is sent to all
+devices and none act on it.
 
 ### $FFAE — UNLSN — Send UNLISTEN
 
@@ -1109,7 +1105,7 @@ devices but none act on it.
 asserted. All bus-listening devices stop receiving data. Use
 UNLSN to end a LISTEN transaction. On a disk drive, UNLSN with
 secondary `$F0` (file-open) pending tells the drive to finalize
-the OPEN — the drive parses the filename it received since
+the OPEN: the drive parses the filename it received since
 LISTEN+SECOND, locates the file, and is ready for subsequent
 IECIN/IECOUT against the opened channel. Without UNLSN the
 drive doesn't know the filename is complete and won't open the
@@ -1174,10 +1170,10 @@ the STOP flag and jiffy clock updating.
 **Description:** On the C64 this routine is a no-op. It exists for
 source compatibility with the PET, where it controlled the timeout
 behavior of the IEEE-488 bus. The C64's IEC serial bus has its own
-fixed timeout logic that cannot be disabled. Code can call SETTMO
-without effect; the routine just returns. The C64 ROM does contain
-a SETTMO entry point for compatibility with code originally written
-for the VIC-1541 IEEE adapter and PET — on those machines the
+fixed timeout logic that cannot be disabled. Calling SETTMO
+has no effect. The C64 ROM keeps
+a SETTMO entry point for compatibility with code written
+for the VIC-1541 IEEE adapter and PET; on those machines the
 input A controls whether the bus driver times out after about 64 ms
 or waits forever. On a stock C64 with only IEC devices, the
 timeouts are wired in: the KERNAL's IEC driver gives up after
@@ -1194,22 +1190,20 @@ suspicious IECIN/IECOUT is the C64 substitute for SETTMO.
 **Pairs with:** SCREEN
 **Description:** Returns the base address of the I/O block, which
 on the C64 is always `$DC00` (the start of CIA1). Self-relocating
-code that wants to address CIAs / SID / VIC-II by offset from
-this base can use IOBASE so that it remains portable to other
+code that addresses CIAs / SID / VIC-II by offset from
+this base can use IOBASE to stay portable to other
 Commodore machines where the I/O block lives elsewhere. On the
 C64 the value is fixed in ROM and never changes. The original
 intent was to let one program binary run on C64, C128, B-series,
 and Plus/4 by replacing all `LDA $DC00` constants with
 `LDY ($IOBASE_VEC),Y` indirect-Y addressing through an
-IOBASE-derived pointer. In practice almost no C64 software
-took advantage — the I/O addresses are so deeply hard-coded
-in tutorials and listings that compatibility was lost long
-before IOBASE was needed.
+IOBASE-derived pointer. Almost no C64 software used IOBASE;
+tutorials and listings hard-code the I/O addresses.
 
 ## Pairs and contracts
 
-KERNAL routines compose into stateful sequences. The graph below
-captures which calls must precede which.
+KERNAL routines form stateful sequences. The graph below
+shows which calls must precede which.
 
 ```
 SETLFS ─┐
@@ -1233,22 +1227,21 @@ SETNAM ─┘     │      CHKOUT ─► CHROUT ─┤
 | 6     | CLRCHN  | Releases channel (sends UNTALK or UNLISTEN)               |
 | 7     | CLOSE   | Tells device to close its end of the channel              |
 
-Each step is independent — the KERNAL doesn't enforce ordering — but
-skipping or reordering creates predictable bugs:
+The KERNAL does not enforce the order. Skipping or reordering a step
+causes these bugs:
 
 - **Skipping SETLFS before OPEN** uses stale parameters from the
-  previous SETLFS call. Calling OPEN twice in a row will reuse the
+  previous SETLFS call. Calling OPEN twice in a row reuses the
   last set of parameters, which is usually wrong.
 - **Skipping SETNAM** is legal for some devices (printer, screen,
   tape with no name) but produces error 8 ("missing filename") for
   disk OPENs that need a filename.
 - **CHRIN/CHROUT without CHKIN/CHKOUT** acts on the default channel
-  (keyboard in, screen out). This is sometimes intentional, but it's
-  a frequent bug when programmers forget that CHKIN/CHKOUT are
-  required to redirect.
+  (keyboard in, screen out). Sometimes that is intended; forgetting
+  that CHKIN/CHKOUT are required to redirect is a frequent bug.
 - **CLOSE without CLRCHN** leaves the channel selected as the active
-  input or output. The next CHRIN/CHROUT will operate on a
-  freshly-closed file and fail. Always: CLRCHN, then CLOSE.
+  input or output. The next CHRIN/CHROUT operates on a
+  closed file and fails. The order is CLRCHN, then CLOSE.
 
 ### IEC raw-bus chain
 
@@ -1297,16 +1290,16 @@ Or, equivalently, before exit:
         jsr $FF8A          ; RESTOR — restores all 16 vectors at once
 ```
 
-RESTOR is the brute-force option. If your program patched only the
+RESTOR resets every vector. For a program that patched only the
 IRQ vector, RESTOR is fine. If something else (e.g. a wedge that
 patched IBSOUT to filter screen output) was already running, RESTOR
-will erase its patches too.
+erases its patches too.
 
 ### Time-clock pairing
 
 `SETTIM`/`RDTIM` operate on the three-byte counter that `UDTIM`
 increments. Programs that disable IRQs and then read the jiffy clock
-will see a frozen value; either re-enable IRQs or call UDTIM manually
+see a frozen value; either re-enable IRQs or call UDTIM manually
 inside the critical section to keep the counter advancing.
 
 ### Cold-start / warm-start sequence
@@ -1324,19 +1317,19 @@ RESET → STX $D016         ; harmless write to anchor the stack
 ```
 
 In jump-table terms: IOINIT → RAMTAS → RESTOR → CINT, then jump to
-BASIC. An application that wants to restart "from scratch" without
-a hard reset can call the same four routines (in the same order)
-followed by `JMP $A000` (or its own entry point).
+BASIC. To restart without a hard reset, an application can call
+the same four routines (in the same order) followed by `JMP $A000`
+(or its own entry point).
 
 ### Status-byte interaction with file I/O
 
 Every file-I/O routine that touches the IEC or cassette bus updates
 the status byte at `$90`. Reading the status byte via READST is the
-*only* reliable way to detect end-of-file and bus errors — the
+*only* reliable way to detect end-of-file and bus errors; the
 carry flag returned from CHRIN/CHROUT/IECIN/IECOUT signals only
 "could not complete this operation", not "end of file".
 
-The canonical end-of-file read loop:
+An end-of-file read loop:
 
 ```asm
 read_loop:
@@ -1355,13 +1348,13 @@ ok:     rts
 A common mistake is to use `bcc` after CHRIN instead of READST.
 CHRIN clears carry on a successful read *including the last byte
 of the file*, then sets EOI in the status byte. The carry doesn't
-become set until the byte *after* EOI, by which point you've
-already read past end-of-file. Always test READST, not carry, for
+become set until the byte *after* EOI, by which point the program
+has already read past end-of-file. Test READST, not carry, for
 end-of-file.
 
 ### Worked examples
 
-These are complete, runnable snippets that show the canonical
+These snippets show the standard
 KERNAL call sequences. All examples assume the assembler's
 default segment starts somewhere safe (e.g. `$0801` with a BASIC
 SYS stub, or `$C000` for a standalone ML program).
@@ -1370,7 +1363,7 @@ SYS stub, or `$C000` for a standalone ML program).
 
 As a technique with a measured round-trip: `error_channel_check` in `../techniques/file-io.md` and `../recipes/kickassembler/file-io-roundtrip.md`.
 
-A common "is my disk command happy?" check — open the command
+To check the drive's status, open the command
 channel (secondary 15), read the response into a buffer until
 end-of-file or CR, then close.
 
@@ -1514,7 +1507,7 @@ old_hi: .byte 0
 
 #### Polling input non-blocking in a game loop
 
-The canonical game-loop input pattern:
+A game-loop input pattern:
 
 ```asm
 game_loop:
@@ -1536,13 +1529,13 @@ quit:   rts
 
 GETIN doesn't block on the keyboard, so the loop runs every
 frame regardless of input. STOP is checked at the end of each
-iteration. This is the same loop structure BASIC programs use
-when they alternate between `GET A$` and game logic, except in
-ML it runs hundreds of times faster.
+iteration. BASIC programs that alternate between `GET A$` and
+game logic use the same structure; in ML it runs hundreds of times
+faster.
 
 #### Reading the jiffy clock for timing
 
-A simple "wait 30 jiffies" delay using RDTIM:
+A 30-jiffy delay using RDTIM:
 
 ```asm
         jsr $FFDE       ; RDTIM — A=high, X=mid, Y=low
@@ -1559,14 +1552,13 @@ start_lo: .byte 0
 ```
 
 For longer waits, store all three RDTIM bytes and do 24-bit
-subtraction. Note that RDTIM reads atomically (with IRQs briefly
+subtraction. RDTIM reads atomically (with IRQs briefly
 disabled), so the three bytes are always consistent.
 
 ### Pair-with notation
 
-The `**Pairs with:**` lines on each routine identify routines that
-typically appear together in correct code. The pairing has three
-flavors:
+The `**Pairs with:**` lines on each routine name routines that
+appear together in correct code. There are three kinds of pairing:
 
 - **Setup pairing** — must call routine X before routine Y for Y
   to have valid input (e.g. SETLFS pairs with OPEN; LISTEN pairs
@@ -1578,17 +1570,16 @@ flavors:
   state (e.g. MEMTOP and RAMTAS; SETTIM and RDTIM).
 
 The graph extractor reads these lines and produces `PAIRS_WITH`
-edges in the knowledge graph, so a developer asking "what do I
-need to call before OPEN?" can navigate from OPEN to its
-SETLFS+SETNAM dependencies in one query.
+edges in the knowledge graph, so one query from OPEN finds what must
+precede OPEN: its SETLFS+SETNAM dependencies.
 
 ## Pitfalls
 
 - **CHROUT modifies VIC-II state.** Writing PETSCII `$0E` (charset 2
   / lower case) or `$8E` (charset 1 / upper-graphics) causes CHROUT
-  to write to `$D018`, changing the character ROM source. If your
-  program has set up a custom bitmap or a charset other than the
-  KERNAL defaults, sending a `$0E` or `$8E` byte will revert it.
+  to write to `$D018`, changing the character ROM source. With a
+  custom bitmap or a charset other than the KERNAL defaults set up,
+  sending a `$0E` or `$8E` byte reverts it.
   Color-code PETSCII bytes (`$05`, `$1C`-`$1F`, `$81`, `$90`-`$9F`)
   similarly write to the current-color byte at `$0286` (page 2, not
   zero page) and change the foreground color of subsequent character
@@ -1600,36 +1591,35 @@ SETLFS+SETNAM dependencies in one query.
   C=1 + error code 3 ("file not open") if the logical file isn't
   in the open-file table. A common pattern bug is to call OPEN,
   check carry, jump to error on failure, then unconditionally call
-  CHKIN on the (un-opened) logical file — which then fails with
-  the misleading error 3. Always re-check carry after each
+  CHKIN on the (un-opened) logical file, which then fails with
+  the misleading error 3. Check carry after every
   KERNAL call.
 
 - **CHKOUT to a disk file opened for read does NOT fail.** Measured
   in VICE x64sc: `OPEN 2,8,2,"FILE,S,R"` then CHKOUT 2 returns C=0; the
   bytes are accepted and, with the 1541-II DOS, the error channel still
   reads 00. Error 7 comes only from the keyboard (device 0) or a tape
-  file opened for read. Use CHKIN for a read channel; nothing will tell
-  you if you do not. (Earlier text said CHKOUT returned error 7 here;
+  file opened for read. Use CHKIN for a read channel; nothing reports
+  the mistake otherwise. (Earlier text said CHKOUT returned error 7 here;
   it does not.)
 
 - **CLOSE without CLRCHN leaves a dangling channel.** Subsequent
-  CHRIN/CHROUT will read/write to a closed file's slot. Symptoms:
-  garbage bytes, frozen reads, status byte not updating. The cure
-  is unconditional: `JSR $FFCC` (CLRCHN) immediately after every
+  CHRIN/CHROUT read/write to a closed file's slot. Symptoms:
+  garbage bytes, frozen reads, status byte not updating. Call
+  `JSR $FFCC` (CLRCHN) immediately after every
   CHRIN/CHROUT loop, before any CLOSE.
 
 - **CLALL doesn't tell IEC devices to close.** Unlike CLOSE, CLALL
-  just zeros the KERNAL's open-file table. Disk-side state (channel
+  only zeros the KERNAL's open-file table. Disk-side state (channel
   buffers, dirty relative-file blocks) is left untouched until the
-  device sees an UNLISTEN. After CLALL, if you re-OPEN a file
-  with the same secondary on the same device, the drive may return
+  device sees an UNLISTEN. After CLALL, a re-OPEN of a file
+  with the same secondary on the same device may return
   stale data from the abandoned channel.
 
 - **LOAD destination is X/Y on the call, but X/Y on return mean
-  end-address.** A programmer who calls LOAD then expects X/Y to
-  still hold the load address will see the value after the last
-  byte loaded — often 65535-ish for a long load that fills memory
-  to the top. The output-X/Y convention is *end-address + 1*, so
+  end-address.** Code that expects X/Y to still hold the load
+  address after LOAD gets the address after the last byte loaded
+  (near 65535 for a long load that fills memory to the top). The output-X/Y convention is *end-address + 1*, so
   for a file loaded to `$1000-$1FFF` the call returns X=`$00`,
   Y=`$20` (i.e. `$2000`).
 
@@ -1649,19 +1639,18 @@ SETLFS+SETNAM dependencies in one query.
 
 - **STOP depends on the IRQ handler.** Reading `$91` only returns
   `$7F` if UDTIM (`$FFEA`) has been sampling the STOP column each
-  jiffy — the IRQ handler at `$EA31` calls it before SCNKEY. In an
-  SEI-protected critical section, STOP will never trigger. To make
-  STOP work inside SEI code, `JSR $FFEA` explicitly inside your loop
+  jiffy; the IRQ handler at `$EA31` calls it before SCNKEY. In an
+  SEI-protected critical section, STOP never triggers. To make
+  STOP work inside SEI code, `JSR $FFEA` inside the loop
   (at most once per frame if `TI$` matters, since it also advances
   the jiffy clock). An earlier version of this bullet said to call
-  SCNKEY; SCNKEY does not write `$91` — the only store to it in the
-  KERNAL is UDTIM's at `$F6DA`.
+  SCNKEY; SCNKEY does not write `$91` (the only store to it in the
+  KERNAL is UDTIM's at `$F6DA`).
 
-- **UDTIM is required by STOP.** If you install a custom IRQ
-  handler that doesn't `JSR $FFEA`, the jiffy clock will stop and
-  the STOP-key detection will stop working as a side effect (since
-  STOP reads `$91`, which UDTIM updates via the keyboard-row read
-  buried in its code).
+- **UDTIM is required by STOP.** A custom IRQ
+  handler that does not `JSR $FFEA` stops the jiffy clock and
+  STOP-key detection (STOP reads `$91`, which UDTIM updates from
+  its keyboard-row read).
 
 - **PAL machines drift on TI$.** The KERNAL uses the same constants
   for the jiffy-clock wrap regardless of region. On PAL machines
@@ -1672,14 +1661,14 @@ SETLFS+SETNAM dependencies in one query.
 
 - **GETIN blocks on IEC.** Only the keyboard channel makes GETIN
   non-blocking. After a CHKIN to an IEC device, GETIN waits for a
-  byte from the bus just like CHRIN does. If you need a polling
-  read from a disk file, you must implement timeouts yourself
+  byte from the bus just like CHRIN does. A polling
+  read from a disk file needs its own timeout
   using a CIA timer.
 
 - **SECOND/TKSA encoding is non-obvious.** The secondary-address
-  byte is not just the secondary number — it's `$60 | sec` for an
+  byte is not the bare secondary number: it is `$60 | sec` for an
   open channel, `$F0 | sec` for open-file, `$E0 | sec` for close.
-  Passing the raw secondary number to SECOND will address the
+  Passing the raw secondary number to SECOND addresses the
   wrong command bits.
 
 - **IOBASE on the C64 is always `$DC00`.** Code that uses IOBASE
@@ -1688,61 +1677,59 @@ SETLFS+SETNAM dependencies in one query.
   / PET compatibility where I/O lives at different addresses, but
   on the C64 the offset arithmetic is non-trivial.
 
-- **SETTMO is a no-op.** It accepts a parameter and returns. If
-  you're chasing a real timeout misbehavior on the IEC bus, SETTMO
-  isn't the answer — the C64's bus timeouts are wired in and
-  cannot be changed from software. The right fix is usually
+- **SETTMO is a no-op.** It accepts a parameter and returns.
+  SETTMO does not fix IEC bus timeouts: the C64's bus timeouts are
+  wired in and cannot be changed from software. The usual fix is
   retrying the operation after the status byte reports `$01`
   (write timeout) or `$02` (read timeout).
 
 - **MEMTOP doesn't protect RAM from ML code.** Lowering MEMTOP
   only tells BASIC to stay below the new ceiling. Direct
   pokes from ML, including the KERNAL's own LOAD into RAM
-  beyond MEMTOP, ignore it. To truly protect RAM from
-  KERNAL+BASIC, you must also avoid `LOAD` calls that would
+  beyond MEMTOP, ignore it. Protecting RAM from
+  KERNAL+BASIC also means avoiding `LOAD` calls that would
   span the protected region.
 
 - **MEMBOT doesn't relocate the BASIC program.** Raising MEMBOT
   after BASIC has loaded a program leaves the program at the
   old address; BASIC will then misread its own start pointer.
   Set MEMBOT before BASIC loads anything (or before any
-  CHRGET-based BASIC operation runs), or accept that you must
-  also move the program manually.
+  CHRGET-based BASIC operation runs), or also move the program
+  by hand.
 
-- **RAMTAS is destructive.** Never call RAMTAS from a running
-  program unless you want to lose the BASIC input buffer,
+- **RAMTAS is destructive.** Calling RAMTAS from a running
+  program loses the BASIC input buffer,
   the cassette buffer at `$033C-$03FB`, and the open-file
   table. The cold-start sequence calls RAMTAS exactly once,
   before any application state exists.
 
 - **CINT clears the screen.** Calling CINT from an application
-  will fill screen RAM with spaces and color RAM with the
-  current foreground color. If you need to re-init the VIC-II
-  for text mode without clearing the screen, write to the
+  fills screen RAM with spaces and color RAM with the
+  current foreground color. To re-init the VIC-II
+  for text mode without clearing the screen, write the
   VIC-II registers directly rather than calling CINT.
 
-- **VECTOR with C=0 installs all 16 vectors.** Don't use VECTOR
-  to patch one vector — pointing the supplied table at random
-  memory will overwrite the other 15 KERNAL vectors with
-  garbage and crash the machine on the next IRQ. Patch single
+- **VECTOR with C=0 installs all 16 vectors.** Do not use VECTOR
+  to patch one vector: pointing the supplied table at random
+  memory overwrites the other 15 KERNAL vectors with
+  garbage and crashes the machine on the next IRQ. Patch single
   vectors by writing directly to `$0314`-`$0333`.
 
 - **SETMSG bit 7 alone suppresses control messages but allows
-  errors.** A `$80` value is the standard "no chatty messages
-  but tell me about real errors" setting for applications.
-  `$C0` is the default BASIC-style verbose setting. `$00` is
-  silent — the KERNAL will not print anything during file
+  errors.** Applications use `$80` to keep error messages and
+  drop the rest. `$C0` is the BASIC default, with both. `$00` is
+  silent: the KERNAL prints nothing during file
   operations even if the device is missing, so the
   application must check carry/status itself.
 
 - **The fast-load problem.** The KERNAL's IEC bus protocol is
-  notoriously slow — about 400-800 bytes/sec on a 1541. Every
-  successful commercial fast-loader (Action Replay, Final
-  Cartridge, Krakout, JiffyDOS, Epyx Fastload, etc.) replaces
+  slow: about 400-800 bytes/sec on a 1541. Commercial
+  fast-loaders (Action Replay, Final
+  Cartridge, Krakout, JiffyDOS, Epyx Fastload, etc.) replace
   the KERNAL's IECIN/IECOUT bit-banging with custom code that
   uploads a small handler to the drive's 6502 and uses
-  non-standard line timing for 5-15x speedup. Such fast-loaders
-  typically patch IBSOUT, ILOAD, and ISAVE vectors to call into
+  non-standard line timing for 5-15x speedup. They
+  usually patch IBSOUT, ILOAD, and ISAVE vectors to call into
   the cartridge code. After running with a fast-loader cart,
   vector state is non-default and RESTOR is necessary before
   removing the cartridge or returning to BASIC.
@@ -1750,25 +1737,23 @@ SETLFS+SETNAM dependencies in one query.
 - **CHKIN on the screen returns success silently.** CHKIN on
   device 3 (screen) succeeds with C=0 but then CHRIN returns
   the screen contents at the cursor row, byte by byte, in a
-  PETSCII-encoded form. This is the legacy "read the screen as
-  if it were input" mechanism that early Commodore BASIC used
-  to implement the screen editor. Modern code that accidentally
-  invokes this by re-using a logical file number tied to the
-  screen sees mysterious "input" arriving from nowhere.
+  PETSCII-encoded form. Early Commodore BASIC used this
+  mechanism to read the screen as input for the screen editor.
+  Code that re-uses a logical file number tied to the screen
+  receives that screen text as unexpected input.
 
 - **A logical-file collision is a silent error in some calls.**
   OPEN with a logical file number that is already open returns
   error 2 ("file already open"). But CLOSE on a logical file
-  that is not open returns C=0 (success). This asymmetry can
-  mask state bugs — a CLOSE that should report "wasn't open"
-  silently succeeds. The cure is to track open-file state in
-  the application rather than relying on the KERNAL to detect
-  double-closes.
+  that is not open returns C=0 (success), so a CLOSE that should
+  report "wasn't open" succeeds silently and can mask state bugs.
+  Track open-file state in the application; the KERNAL does not
+  detect double-closes.
 
 - **Zero-page locations the KERNAL routines use.** Many KERNAL
-  routines use specific zero-page bytes as workspace. Programs
-  that themselves use the same zero-page locations and call
-  the KERNAL between writes will see their values clobbered.
+  routines use zero-page bytes as workspace. A program that
+  uses the same zero-page locations and calls the KERNAL
+  between writes sees its values clobbered.
   The most-touched locations:
 
   | Addr      | Used by                                            |
@@ -1797,15 +1782,15 @@ SETLFS+SETNAM dependencies in one query.
   own use must avoid calling any KERNAL routine that touches
   them, or save and restore the affected bytes around each
   KERNAL call. The screen-editor zero-page locations
-  (`$D1-$F2`) are particularly aggressive — calling CHROUT
+  (`$D1-$F2`) take the most writes: calling CHROUT
   modifies a dozen of them.
 
 - **Banking and KERNAL calls.** KERNAL ROM is mapped in at
   `$E000-$FFFF` only when `$01` bit 1 (HIRAM) is set. When
   HIRAM is cleared (e.g. to expose the underlying RAM at
   `$E000-$FFFF`), KERNAL jump-table calls become "JMP to
-  whatever's in RAM at `$FFD2`" — typically garbage. The
-  conventional pattern is to save `$01`, set HIRAM, call the
+  whatever's in RAM at `$FFD2`", usually garbage. The
+  usual pattern is to save `$01`, set HIRAM, call the
   KERNAL routine, restore `$01`. The CPU's IRQ/NMI vectors
   also live in the KERNAL bank at `$FFFA-$FFFF`, so disabling
   HIRAM without first disabling interrupts is a fast crash:

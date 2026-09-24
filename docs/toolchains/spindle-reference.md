@@ -169,11 +169,11 @@ default, and five zero-page bytes at `$F4` to `$F8`. `pefchain -r`, `-b`
 and `-z` move all three. Between loader calls the buffer page and the
 zero-page bytes may be used, if declared with `P` and `Z`; the resident
 page may not be touched. pefchain's own suggestion text confirms the
-default fence: it offered "pages 04-2f,31-ff and zero-page locations
+defaults: it offered "pages 04-2f,31-ff and zero-page locations
 02-f3,f9-ff" as the free space around a part that used page `$30` (run
-here, quoted from the collision case below). Note `$0400` to `$07FF` is
-not reserved: the default screen is ordinary free memory to pefchain,
-and the worked example shows what that means.
+here, quoted from the collision case below). `$0400` to `$07FF` is not
+reserved: the default screen is ordinary free memory to pefchain, and
+the worked example shows the result.
 
 ## The script and the pefchain command line
 
@@ -409,15 +409,15 @@ Suggestion: Move things around or insert a part that only touches pages 04-2f,31
 The chart then shows the blank part between them and a second blank
 part's driver at `$0526`, and the free-block count drops by one. The
 handbook says the filler is a black screen while the loader clears the
-way; that disk was not booted here. This is not an error even when the
-seam is unwanted; read the warnings. To share memory on purpose,
-the second part declares `I first, last` and pefchain treats the
+way; that disk was not booted here. It is not an error even when the
+seam is unwanted; read the warnings. To share memory on purpose, the
+second part declares `I first, last` and pefchain treats the
 overlap as inherited rather than colliding (from the handbook, not
 provoked here).
 
 ## Build integration
 
-Three rules of make do the whole thing, with the `.efo` rule using
+Three make rules build the disk, with the `.efo` rule using
 `-binfile` and `.DELETE_ON_ERROR:` so a failed assembly does not leave
 a stale object for `mkpef` to package. Keep each part in its own
 directory with its own script line, as the bundled example does, so a
@@ -441,8 +441,8 @@ first of `lsr $d019`, was no longer where the linker and the code
 agreed. Run here: the raster interrupt was never acknowledged, the
 handler re-entered mostly every 30 to 37 cycles, the frame counter
 reached 49 in 1,535 cycles and the driver never got to its poll, so
-part 1 never ended. `bit.abs $0000` (`2c 00 00`) fixed it and nothing else changed.
-Check the three bytes in the `.efo` before blaming the loader.
+part 1 never ended. `bit.abs $0000` (`2c 00 00`) fixed it and nothing
+else changed. Check the three bytes in the `.efo` before blaming the loader.
 
 **The screen is not reserved.** Pages `$04` to `$07` are free memory to
 pefchain and it used them for the blank part's code. A part that shows
@@ -451,8 +451,8 @@ in `setup`, or declare `P $04 $07`, or point `$D018` somewhere the part
 loads.
 
 **A shared page is a warning, not an error.** The link succeeds with a
-blank filler inserted. A seam that turns black for a frame is this
-message being ignored.
+blank filler inserted. A seam that turns black for a frame means this
+warning was ignored.
 
 **`bit $0000` stays if no player is installed.** The handbook says so;
 with no `M` tag anywhere in this script the part ran to its frame count

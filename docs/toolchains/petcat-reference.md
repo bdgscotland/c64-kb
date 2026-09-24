@@ -129,7 +129,7 @@ The source, `stub.bas`. Lowercase throughout (see Pitfalls):
 ```
 
 `petcat -w2 -l 0801 -o stub.prg -- stub.bas` exited 0 and wrote 64 bytes.
-A hand count agrees: 2 (load address) + 25 (line 10: link 2, number 2,
+A hand count: 2 (load address) + 25 (line 10: link 2, number 2,
 `print` token `$99`, the space, the quote, `$93`, `$05`, 14 text bytes,
 the quote, the zero) + 13 (line 20) + 13 (line 30) + 9 (line 40) + 2
 (end marker) = 64. The links in the file are `$081A`, `$0827`, `$0834`,
@@ -178,8 +178,7 @@ read `$E7` as a token it has no keyword for. Use `-w2` for the C64, always.
 The stub is one text file, tokenised once, and the machine code is
 appended after it. Run here: `10 sys 2304` tokenised to a 15-byte file
 (13 bytes of stub at `$0801` to `$080D`, so the first free byte is
-`$080E`); KickAssembler
-assembled a 15-byte program at `$0900` with no `BasicUpstart`; a build
+`$080E`); KickAssembler assembled a 15-byte program at `$0900` with no `BasicUpstart`; a build
 step wrote the stub file, then 242 zero bytes, then the code file minus
 its two-byte load address, 270 bytes in all; VICE autostarted it and the
 border turned green (`(98,213,50)` in the PAL PNG), the code's own
@@ -219,7 +218,7 @@ needs petcat when the loader is a BASIC program in its own right.
 
 The alternative for KickAssembler projects is `BasicUpstart2(label)`
 ([kickassembler-reference](kickassembler-reference.md)), which emits the
-stub from inside the assembly source. petcat earns its place when the
+stub from inside the assembly source. petcat is worth using when the
 stub is more than one `SYS`: a loader that prints a title in colour,
 asks a question, pokes a setting, and then calls the code.
 
@@ -263,8 +262,8 @@ a listing petcat itself produced, or use the `{$xx}` hex escape.
 
 **Keywords hide inside names.** `color` tokenised as `COL` plus the `or`
 token under `-w2`; a variable named `tone` or `format` will meet the same
-rule. This is the C64's own behaviour, so petcat is right to do it, but
-the listing will not look like the source.
+rule. The C64's own tokeniser does the same; the listing will not look
+like the source.
 
 **Line length.** petcat imposed no limit that was met here: a line with a
 90-character string tokenised to 103 bytes and ran, printing all 90

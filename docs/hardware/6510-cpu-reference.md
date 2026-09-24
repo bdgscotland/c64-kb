@@ -7,9 +7,8 @@ chip: 6510
 ## Overview
 
 The MOS 6510 is the CPU of the Commodore 64. It is binary-compatible with the
-MOS 6502 — same instruction set, same cycle counts, same addressing modes,
-same bus protocol, same interrupt behavior — with one Commodore-specific
-addition: a built-in six-bit I/O port mapped into the lowest two bytes of the
+MOS 6502 (same instruction set, cycle counts, addressing modes, bus
+protocol and interrupt behavior) with one Commodore-specific addition: a built-in six-bit I/O port mapped into the lowest two bytes of the
 CPU's address space at $00 (data direction) and $01 (data). That port drives
 the C64's bank-switching logic and the cassette motor / sense lines. Apart
 from those two addresses the 6510 looks and behaves exactly like a 6502 to
@@ -28,7 +27,7 @@ For the assembly programmer the practical consequences are:
   the BRK 2-byte signature, the undefined decimal flag at reset, the
   invalid N/V/Z flags after ADC/SBC in decimal mode (C is correct; an
   earlier version of this bullet named a "lack of carry-propagation" in
-  decimal mode, which is not a real erratum — measured in VICE,
+  decimal mode, which is not a real erratum; measured in VICE,
   SED / CLC / LDA #$99 / ADC #$01 gives A=$00 with C=1, see
   [BCD mode](#bcd-mode)), and so on.
 - Reading address $00 returns the data-direction register; reading $01
@@ -39,10 +38,10 @@ For the assembly programmer the practical consequences are:
   machines (1022727 Hz). All instruction cycle counts in this document are
   CPU cycles; convert to wall-clock time using the regional clock.
 
-This document covers the 6510's programmer-visible model: registers, status
+Below: the 6510's programmer-visible model (registers, status
 flags, addressing modes, stack mechanics, interrupt vectors, page-crossing
 penalties, the I/O port at $00/$01, and a per-opcode reference for every
-legal instruction. Illegal/undocumented opcodes are in a companion document.
+legal instruction). Illegal/undocumented opcodes are in a companion document.
 
 ### 6510 vs 6502 — the differences
 
@@ -56,7 +55,7 @@ legal instruction. Illegal/undocumented opcodes are in a companion document.
 | BCD mode | works | works |
 | Reset behavior | I=1, D undefined | I=1, D undefined (KERNAL clears D) |
 
-In practical terms: a 6502 disassembler reads 6510 code without modification,
+A 6502 disassembler reads 6510 code without modification,
 a 6502 cycle-counter is accurate on a 6510, and a 6502 assembler emits valid
 6510 code. The only place 6510-specific behavior shows up is when code reads
 or writes addresses $00 or $01.
@@ -79,7 +78,7 @@ For complete C64 memory layout including ROM/RAM banking driven by $01, see
 
 ## Registers
 
-The 6510 has a deliberately small register file. There are three 8-bit
+The 6510 has three 8-bit
 general-purpose registers, an 8-bit stack pointer, a 16-bit program counter,
 and an 8-bit status register. That is the entire programmer-visible state.
 
@@ -96,7 +95,7 @@ PHA/PLA. Most arithmetic results land here.
 An 8-bit index register. It can be used as a loop counter (INX/DEX/CPX),
 as a stack pointer for relocatable stack frames (TXS, TSX), and as the
 offset in zero-page,X / absolute,X / (zp,X) addressing modes. Unlike the
-accumulator, X cannot be pushed/pulled directly on the stack; you transfer
+accumulator, X cannot be pushed/pulled directly on the stack; transfer
 via A (TXA/PHA, PLA/TAX) or use TXS to dump X into the SP register.
 
 ### Y — Index Register Y
@@ -104,10 +103,10 @@ via A (TXA/PHA, PLA/TAX) or use TXS to dump X into the SP register.
 An 8-bit index register similar to X but with a different addressing-mode
 footprint. Y is used in zero-page,Y (only LDX/STX), absolute,Y, and
 (zp),Y addressing. The (zp),Y mode (indirect indexed) is the most common
-way to dereference a 16-bit pointer in zero page — Y is the index added
+way to dereference a 16-bit pointer in zero page; Y is the index added
 *after* the indirection.
 
-Critically: X is used for *pre-indexed* indirect addressing `(zp,X)` and
+X is used for *pre-indexed* indirect addressing `(zp,X)` and
 Y is used for *post-indexed* indirect addressing `(zp),Y`. The two modes
 have very different semantics; see [Addressing modes](#addressing-modes).
 
@@ -133,8 +132,8 @@ read or written directly by software; it is observed only via the
 addresses pushed on the stack by JSR/BRK/IRQ/NMI.
 
 The PC pushed for JSR points to the *last byte of the JSR instruction*,
-not the next instruction. RTS therefore pulls and adds 1. This becomes
-relevant when constructing fake return addresses on the stack.
+not the next instruction. RTS therefore pulls and adds 1. Fake return
+addresses built on the stack must allow for this.
 
 ### P — Processor Status Register
 
@@ -174,7 +173,7 @@ Examples: NOP, CLC, SEI, INX, RTS. One byte total.
 
 ### Accumulator
 
-Operates on A directly. Encoded the same way as implied — no operand
+Operates on A directly. Encoded the same way as implied: no operand
 byte. Most assemblers write this as `LSR A` or just `LSR`. Examples:
 ASL A, LSR A, ROL A, ROR A. One byte total.
 
@@ -191,18 +190,17 @@ is implicitly $00. Two bytes total. Faster than absolute (saves one
 cycle) because the CPU does not need to fetch a separate high byte.
 Example: `LDA $80` loads from address $0080.
 
-Zero page is the most precious resource on the 6510 — fast access and the
-only location where indirect addressing modes can dereference pointers.
+On the 6510, zero page is fast and is the only location where indirect addressing modes can dereference pointers.
 On the C64, BASIC's workspace occupies most of $02–$8F and the KERNAL's
 most of $90–$FA ($00–$01 are the 6510 port, $FF is BASIC's
 number-formatting scratch). With BASIC running, the only bytes both
-leave alone are $02 and $FB–$FE — not "$02–$07", as an earlier version
+leave alone are $02 and $FB–$FE, not "$02–$07", as an earlier version
 of this paragraph said. $03–$06 hold the float↔integer conversion
 vectors that BASIC's cold start installs ($B1AA at $03/$04, $B391 at
 $05/$06, stored at $E3D4–$E3DE); BASIC never calls through them itself,
 so they are usable only if nothing else on the machine relies on them.
-$07–$08 are live BASIC temporaries — string literals, DATA/READ, GOTO
-line numbers, AND/OR and INT all write them — and are not free while
+$07–$08 are live BASIC temporaries (string literals, DATA/READ, GOTO
+line numbers, AND/OR and INT all write them) and are not free while
 BASIC runs. Much more is usable once BASIC is not in use. See
 [c64-memory-map.md](c64-memory-map.md).
 
@@ -221,8 +219,8 @@ of zero page rather than into $0100.
 ### Zero page,Y — `$xx,Y`
 
 Same as zero page,X but using Y. Only available for `LDX $xx,Y` and
-`STX $xx,Y`. There is no `LDA $xx,Y` — you must use absolute,Y or
-copy Y into X first.
+`STX $xx,Y`. There is no `LDA $xx,Y`; use absolute,Y or copy Y into X
+first.
 
 ### Absolute — `$xxxx`
 
@@ -272,7 +270,7 @@ page if `$xx`=$FF), then add Y to that pointer to form the effective
 address. Cycles: 5 plus 1 if adding Y crosses a page boundary. Writes
 always pay the penalty (always 6 cycles for STA ($zp),Y).
 
-The bread-and-butter pointer-dereference mode. Every "for each byte in
+The standard pointer-dereference mode. Every "for each byte in
 this string / buffer" loop on the C64 uses it.
 
 ### Relative — `$xx` (branches)
@@ -308,13 +306,13 @@ low byte and always points to the next free byte. Operations:
 
 Notes on the JSR / RTS pairing:
 
-- JSR pushes the address of *its last operand byte* — PC + 2 where PC
+- JSR pushes the address of *its last operand byte*: PC + 2 where PC
   is the address of the JSR opcode, which is one less than the address
   of the next instruction (an earlier version of this note said
   "(PC + 2) minus one", using PC in a different sense from the table
   above). RTS pulls that and adds 1, landing on the correct next
-  instruction. This means you can JSR to a location whose return path
-  is constructed by hand on the stack — push (target − 1) and execute
+  instruction. So code can JSR to a location whose return path
+  is constructed by hand on the stack: push (target − 1) and execute
   RTS to "jump" to `target`.
 
 Notes on the B flag:
@@ -352,7 +350,7 @@ round (measured in VICE: LDA #$10 / CMP #$20 leaves N=1, C=0). Because
 this is bit 7 of an 8-bit unsigned difference, N after CMP is not a
 signed less-than test (e.g. A=$80 CMP #$01 gives N=0, C=1 although
 −128 < +1): use C (BCS/BCC) for unsigned ≥/<, and for a signed compare
-use SEC / SBC and test N XOR V (BVC/BVS then BMI/BPL) — CMP itself
+use SEC / SBC and test N XOR V (BVC/BVS then BMI/BPL); CMP itself
 never writes V.
 
 BIT is the exception: BIT sets N to bit 7 of the *operand*, regardless
@@ -380,7 +378,7 @@ section above. Not a hardware flip-flop.
 When set, ADC and SBC perform BCD (binary-coded-decimal) arithmetic on
 their operands. See [BCD mode](#bcd-mode) below for details.
 
-D is **undefined at power-on / reset** on a real 6502 — the silicon
+D is **undefined at power-on / reset** on a real 6502; the silicon
 makes no guarantee. The 6510 inherits this, and the C64 KERNAL reset
 routine explicitly executes `CLD` before any ADC/SBC. Code that takes
 over the reset vector and forgets to CLD can hit garbage arithmetic on
@@ -409,8 +407,8 @@ a CMP means "equal").
 Multiple meanings depending on instruction:
 
 - ADC: C is the carry-in; after the operation, C holds the carry-out.
-- SBC: C is the *inverted* borrow-in (you must SEC before the first
-  SBC to mean "no borrow"). After the operation C holds the
+- SBC: C is the *inverted* borrow-in (SEC before the first SBC means
+  "no borrow"). After the operation C holds the
   inverted borrow-out.
 - CMP/CPX/CPY: C is set if register ≥ operand (unsigned).
 - ASL/ROL: C receives the bit shifted *out of* bit 7.
@@ -440,21 +438,21 @@ Key behaviors and gotchas:
   instruction in either ROM). Neither the IRQ dispatcher at $FF48, the
   default IRQ service at $EA31, nor the NMI path at $FE43/$FE47
   executes CLD, so KERNAL interrupt code runs with whatever D the
-  interrupted code left — an earlier version of this bullet said the
+  interrupted code left. An earlier version of this bullet said the
   KERNAL clears D at the start of every IRQ/NMI, and it does not. The
   default IRQ path survives D=1 only by accident: its only ADC/SBC are
   UDTIM's three compare-style SBCs ($F6AA/$F6AE/$F6B2), which use just
   the carry, and on the NMOS 6510 SBC's carry-out is the same in
-  decimal and binary mode. Do not rely on that — anything else you
-  route through ($0314)/($0318) inherits the caller's D. Keep SED/CLD
+  decimal and binary mode. Do not rely on that: anything else routed
+  through ($0314)/($0318) inherits the caller's D. Keep SED/CLD
   pairs short, SEI around them if an interrupt that does arithmetic
   could land inside, and CLD first thing in any handler of your own
   that uses ADC/SBC.
 
 ### Flag-modification summary
 
-Quick lookup of which flags each instruction touches (the per-opcode
-H3 entries below give the canonical list, this is just a cheat sheet):
+Which flags each instruction touches (the per-opcode H3 entries below
+give the canonical list):
 
 | Instruction | N | V | Z | C | I | D |
 |-------------|---|---|---|---|---|---|
@@ -489,7 +487,7 @@ The top six bytes of the address space hold three 16-bit interrupt vectors:
 All three vectors are 16-bit little-endian pointers. On the C64 they
 sit in KERNAL ROM at the top of $FFxx. The IRQ/BRK and NMI vectors
 point to small ROM dispatchers ($FF48 and $FE43) which in turn jump
-through user-modifiable RAM vectors in page 3 ($0314–$0319) — page 3
+through user-modifiable RAM vectors in page 3 ($0314–$0319), page 3
 only; an earlier version of this sentence said "zero page or page 3",
 and nothing in zero page is involved. The RESET vector points to the
 KERNAL reset routine ($FCE2), which ends in `JMP ($A000)` (or
@@ -502,7 +500,7 @@ page-3 vector:
 | BRK        | $0316/$0317 | KERNAL BRK handler |
 | NMI        | $0318/$0319 | KERNAL NMI handler |
 
-For a custom IRQ on the C64, the typical pattern is:
+For a custom IRQ on the C64, either:
 
 1. Bank out KERNAL ROM (set $01 bit 1 to 0) so that $FFFE/$FFFF reads
    from RAM, *or*
@@ -962,9 +960,9 @@ If N=0, branch.
 
 Software interrupt. Pushes (PC + 2), pushes P with B=1, sets I=1,
 and jumps to the address in $FFFE/$FFFF. The byte following the
-BRK opcode is reserved as a signature byte and is *skipped* — the
-return address pushed is PC + 2, not PC + 1. This means BRK is
-effectively a 2-byte instruction even though its opcode is one byte.
+BRK opcode is reserved as a signature byte and is *skipped*: the
+return address pushed is PC + 2, not PC + 1. BRK is therefore
+a 2-byte instruction even though its opcode is one byte.
 
 Used historically for breakpoints in monitors (the monitor inserts a
 $00 byte and reads its own table by the address of the BRK − 1).
@@ -986,7 +984,7 @@ If V=0, branch.
 
 ### BVS — Branch if Overflow Set (V=1)
 
-If V=1, branch. Note: V is set by ADC/SBC and by BIT; CLV explicitly
+If V=1, branch. V is set by ADC/SBC and by BIT; CLV explicitly
 clears it. A common trick: use BVS with V cleared as a hand-rolled
 unconditional non-branch placeholder, or use BVS / BVC as control
 flow based on BIT's bit-6 readout.
@@ -1030,7 +1028,7 @@ critical section that started with SEI.
 
 ### CLV — Clear Overflow
 
-Clears V. There is no "SEV" — V can only be set by ADC/SBC, BIT, or
+Clears V. There is no "SEV": V can only be set by ADC/SBC, BIT, or
 restored from a pushed status byte by PLP/RTI.
 
 ### $B8 — CLV impl — Clear overflow flag
@@ -1274,7 +1272,7 @@ Adds 1 to Y.
 
 Unconditional jump. Two modes: absolute (jump to a fixed address) and
 indirect (jump to the address stored at the operand). The indirect
-form has the famous page-wrap bug — see [Pitfalls](#pitfalls).
+form has the page-wrap bug; see [Pitfalls](#pitfalls).
 
 ### $4C — JMP abs — Jump, absolute
 
@@ -1526,7 +1524,7 @@ N and Z reflect the value pulled.
 ### PLP — Pull Processor Status
 
 Pulls a byte from the stack into P. Bits 4 (B) and 5 (unused) of the
-pulled byte are *ignored* — they are not transferred to the live P
+pulled byte are *ignored*: they are not transferred to the live P
 register, which has no B flip-flop.
 
 ### $28 — PLP impl — Pull processor status
@@ -1569,7 +1567,7 @@ bit 7 becomes new C.
 Rotates the operand right one bit through C. C becomes new bit 7; old
 bit 0 becomes new C.
 
-The original NMOS 6502 mask-rev A did not have ROR — it executed as
+The original NMOS 6502 mask-rev A did not have ROR; it executed as
 an unspecified result. All 6510s and all post-rev-A 6502s implement
 ROR correctly. Practical C64 code can assume ROR works.
 
@@ -1744,8 +1742,8 @@ always pay the page-cross-style penalty as a dummy-read cycle).
 
 ### STX — Store X
 
-Writes X to the operand address. Note: zero-page-indexed form uses Y
-(`STX zp,Y`), not X — symmetrical with LDX zp,Y. There is no
+Writes X to the operand address. The zero-page-indexed form uses Y
+(`STX zp,Y`), not X, matching LDX zp,Y. There is no
 `STX abs,X` or `STX abs,Y`.
 
 ### $86 — STX zp — Store X, zero page
@@ -1821,8 +1819,8 @@ Copies X into A.
 
 ### TXS — Transfer X to Stack Pointer
 
-Copies X into SP. **Does not set flags** — this is the one transfer
-instruction that is flag-silent, so you can set up SP without
+Copies X into SP. **Does not set flags.** It is the one transfer
+instruction that is flag-silent, so SP can be set up without
 disturbing the rest of the program state. Conventional startup:
 `LDX #$FF / TXS`.
 
@@ -1864,9 +1862,9 @@ Write instructions always take their worst-case cycle count regardless
 of page-cross, because the CPU performs a dummy read at the
 pre-fixup address before the real write:
 
-- `STA abs,X`, `STA abs,Y`, `STA (zp),Y` — always 5 / 5 / 6 cycles.
+- `STA abs,X`, `STA abs,Y`, `STA (zp),Y`: always 5 / 5 / 6 cycles.
 - Read-modify-write instructions (`ASL abs,X`, `DEC abs,X`,
-  `INC abs,X`, `LSR abs,X`, `ROL abs,X`, `ROR abs,X`) — always 7
+  `INC abs,X`, `LSR abs,X`, `ROL abs,X`, `ROR abs,X`): always 7
   cycles.
 
 For these, the cycle count in the table and detail entries is the
@@ -1881,7 +1879,7 @@ indexed-into-table reads never cross a page; or to use zero-page
 indirection (`(zp),Y`) with a manually-incremented high byte; or to
 unroll the loop so each iteration's address is a fixed absolute.
 
-Branch crossings are easier to deal with: keep tight loops within a
+For branches, keep tight loops within a
 single page so the back-branch is always same-page (3 cycles, not 4).
 
 ## The I/O port at $00 / $01
@@ -1920,8 +1918,8 @@ ROM/RAM/IO banking and the Datasette interface:
 
 The KERNAL uses bit 4 only as a button switch: its cassette-switch test
 at $F82E (`LDA #$10 / BIT $01`) drives the "PRESS PLAY ON TAPE" wait at
-$F817 and the "PRESS RECORD & PLAY ON TAPE" wait at $F838 — the same
-single bit, so software cannot tell which button is down — and the
+$F817 and the "PRESS RECORD & PLAY ON TAPE" wait at $F838 (the same
+single bit, so software cannot tell which button is down), and the
 default IRQ's motor interlock at $EA61 turns the motor off (bit 5 = 1)
 while bit 4 reads 1 and on while it reads 0. Tape data is never read
 from this port: the tape-read setup enables the CIA1 FLAG interrupt
@@ -1932,7 +1930,7 @@ data line; it is the switch.
 
 The KERNAL's IOINIT ($FDA3; entered from RESET at $FCE2 and from the
 jump table at $FF84) writes DATA=$E7 to $01 first and then DDR=$2F to
-$00 (`LDA #$E7 / STA $01 / LDA #$2F / STA $00` at $FDD5) — an earlier
+$00 (`LDA #$E7 / STA $01 / LDA #$2F / STA $00` at $FDD5). An earlier
 version of this paragraph said "DATA=$37", which is what the port
 *reads back*, not what is written. DDR=$2F makes bits 0,1,2,3,5 outputs
 and bit 4 an input. With no tape button pressed, $01 then reads back as
@@ -1946,7 +1944,7 @@ datasette idle.
 
 The bottom three bits of $01 select one of eight combinations, seven of
 them distinct: %000 and %100 are both all-RAM. %110 ($36) and %111 ($37)
-are NOT the same — %110 has RAM at $A000–$BFFF, %111 has BASIC ROM
+are NOT the same: %110 has RAM at $A000–$BFFF, %111 has BASIC ROM
 there (an earlier version of this sentence called 6 and 7 the identical
 pair; the table below, and a VICE read of $A000 in each mode, say
 otherwise):
@@ -1970,7 +1968,7 @@ banking modes are available; those are covered in
 
 - Bank out I/O (set bit 2 = 0 with bit 1 = 1) to access character
   ROM at $D000–$DFFF for copying it into RAM.
-- Bank out everything (set bits 0,1,2 = 0) for a 64KB RAM space —
+- Bank out everything (set bits 0,1,2 = 0) for a 64KB RAM space,
   needed by full-RAM games and many demos.
 - Bank out KERNAL (bit 1 = 0) to install a custom IRQ vector at
   $FFFE/$FFFF without going through the KERNAL dispatcher.
@@ -1986,7 +1984,7 @@ When reading $01, the value returned is:
 
 Reading $00 returns the data direction register itself.
 
-A subtle hardware effect on the two pin-less bits: bits 6 and 7 have
+Bits 6 and 7 have
 no package pin, so when they are switched from output to input the
 last driven level lingers on the floating input. A 1 written there
 keeps reading as 1 for a few hundred milliseconds before decaying to 0
@@ -1994,7 +1992,7 @@ keeps reading as 1 for a few hundred milliseconds before decaying to 0
 independently for each bit, and its source notes a measured average of
 roughly 350 ms for a 6510 and 1.5 s for an 8500, varying with
 temperature); a driven 0 stays 0. An earlier version of this paragraph
-said "several milliseconds" and attributed the effect to every pin —
+said "several milliseconds" and attributed the effect to every pin:
 two orders of magnitude short, and wrong about the wired pins. The six
 wired pins do not behave this way on a C64 board: LORAM/HIRAM/CHAREN
 (bits 0–2) have pull-ups and read 1 as inputs regardless of what was
@@ -2002,7 +2000,7 @@ last driven, bit 4 is always an input, and bits 3 and 5 read whatever
 the cassette circuitry holds them at (VICE: bit 3 keeps its last driven
 level, bit 5 reads 0). Do not rely on bits 6/7 for anything; the memory
 map's $0000–$0001 entry says the same. Defensive code that toggles DDR
-mid-frame should account for this — see
+mid-frame should account for this; see
 [$0000-$0001 — Processor I/O port](c64-memory-map.md#0000-0001--processor-io-port)
 and the [Pitfalls](c64-memory-map.md#pitfalls) bullet on bits 6/7 in
 the memory map, which note the decay but give no figure.
@@ -2010,7 +2008,7 @@ the memory map, which note the decay but give no figure.
 ### Why this matters for code
 
 Any code that writes to $00 or $01 changes the visible memory map for
-the very next instruction fetch. If your code is running from a
+the very next instruction fetch. If the code is running from a
 location that gets banked out, the *next* fetch returns the new
 mapping's contents. Standard practice: run banking-switch code from a
 location that maps to RAM in BOTH the old and the new configuration.
@@ -2018,14 +2016,14 @@ With no cartridge, $0002–$9FFF and $C000–$CFFF are RAM in every $01
 setting (in practice use $0200 upward, clear of zero page and the
 stack), so put general-purpose banking switchers there. $A000–$BFFF,
 $D000–$DFFF and $E000–$FFFF are the multiplexed region (see the table
-above) — code there is fetched from BASIC ROM, character ROM/I/O or
+above). Code there is fetched from BASIC ROM, character ROM/I/O or
 KERNAL ROM the instant a write to $01 selects them, so only place a
 switcher there if neither configuration it switches between maps ROM
 or I/O over it. An earlier version of this paragraph said "$0200–$BFFF
 is always present"; $A000–$BFFF is BASIC ROM whenever LORAM and HIRAM
 are both 1.
 
-The very common idiom:
+The common idiom:
 
 ```asm
     SEI                ; block IRQ (which would re-read KERNAL)
@@ -2058,12 +2056,12 @@ The very common idiom:
 - **Zero-page,X wraps inside zero page.** `LDA $80,X` with X=$F0
   reads from $70, not $0170. The same applies to `STA $xx,X` and
   the rest of the `zp,X` family.
-- **(zp,X) and (zp),Y are different beasts.** `LDA ($10,X)` adds X
+- **(zp,X) and (zp),Y are different.** `LDA ($10,X)` adds X
   to the pointer *address* inside zero page; `LDA ($10),Y` adds Y
   to the dereferenced pointer *value*. Mixing them up is the most
   common 6510 bug.
 - **Branches are signed 8-bit relative.** Range is −128 to +127. If
-  your assembler reports "branch out of range", insert a `BCC :+ /
+  the assembler reports "branch out of range", insert a `BCC :+ /
   JMP target / :` trampoline.
 - **C must be cleared before first ADC, set before first SBC.** ADC
   and SBC always use the live C; stale C from a CMP or shift will
@@ -2074,15 +2072,15 @@ The very common idiom:
 - **RTI does not add 1.** RTS does. Mismatching them (RTI from a JSR
   or RTS from an IRQ) lands one byte off.
 - **TXS does not modify flags.** All other T?? transfers do. This is
-  intentional so you can set SP between flag-sensitive operations.
+  intentional so SP can be set between flag-sensitive operations.
 - **STA abs,X/Y, STA (zp),Y, and all RMW indexed always pay the
-  page-cross penalty.** No "+1*" in their cycle table — the penalty
+  page-cross penalty.** No "+1*" in their cycle table; the penalty
   is baked into the constant cycle count. Demo coders who balance
   read and write cycles need to remember this.
 - **Reading $01 with input pins.** Pins configured as input in $00
   return live pin state. If a cartridge or external hardware drives
   these lines, the read value is not what was last written.
-- **Writing to $01 immediately remaps memory.** If your code is
+- **Writing to $01 immediately remaps memory.** If the code is
   located in the region being remapped, the next fetch hits the
   new mapping. Always bank-switch from a region that is identical
   in both mappings (i.e. $0200–$9FFF or $C000–$CFFF on the C64).
