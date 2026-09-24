@@ -2,10 +2,10 @@
 
 ## System overview
 
-c64-kb is a knowledge-base MCP server: hybrid vector search over a corpus of
-markdown reference documents, plus a knowledge graph of the entities those
-documents define, both served to Claude Code (or any MCP client) over stdio,
-and to the terminal through the same functions as a CLI.
+c64-kb is an MCP server with two stores: hybrid vector search over
+markdown reference documents, and a knowledge graph of the entities those
+documents define. Both are served to Claude Code (or any MCP client) over
+stdio, and to the terminal as a CLI through the same functions.
 
 ```
 +---------------------+     +----------------------+
@@ -48,7 +48,7 @@ and to the terminal through the same functions as a CLI.
 **Ingest** (`src/ingest.ts` and `src/ingest/`, `npm run ingest` or
 `c64-kb ingest`):
 
-1. Walk `docs/` for markdown (`docs/superpowers/` is skipped if present). `formats/` is walked first so FileFormat descriptions win the
+1. Walk `docs/` for markdown, skipping `docs/superpowers/` if present. `formats/` is walked first so FileFormat descriptions win the
    on-create race; nothing else depends on order.
 2. Chunk each file by `##`/`###` heading (`src/services/chunker.ts`: up to
    1,500 characters per chunk, split on paragraph boundaries above that,
@@ -124,8 +124,8 @@ share them:
 ### Embeddings (`src/services/embeddings.ts`)
 
 `mxbai-embed-large` through Ollama at `:11434`, 1024 dimensions, 8
-concurrent requests by default (`EMBED_CONCURRENCY`). Returns null when Ollama is unreachable; query paths
-fall back to keyword search, ingest stops.
+concurrent requests by default (`EMBED_CONCURRENCY`). Returns null when Ollama is unreachable: query paths
+fall back to keyword search and ingest stops.
 
 ### Analytics (`src/services/analytics.ts`)
 
@@ -181,5 +181,5 @@ it. The gates below run VICE themselves.
 
 All on localhost. `docker-compose.yml` ships Qdrant and FalkorDB (started
 by `c64-kb services up` or `docker compose up -d`); Ollama is installed on
-the host. The MCP server is not containerized: stdio
-transport means the process runs beside the Claude Code session.
+the host. The MCP server runs outside the containers, beside the Claude Code
+session, because its transport is stdio.

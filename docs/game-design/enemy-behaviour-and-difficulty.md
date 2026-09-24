@@ -2,11 +2,10 @@
 
 # Enemy Behaviour and Difficulty: how enemies act and how a game gets harder
 
-This page is about what enemies do and how a game ramps, as design. It sits above the actor table,
-the state byte and the handler jump table, which `./game-design-patterns.md` covers in its "Enemy
-/ actor state machines" section; read that first. These are design patterns, not techniques: a
-technique steps an actor along a path; a pattern says which path, at what speed, and why the
-player believes it.
+What enemies do and how a game ramps, as design. The actor table, the state byte and the handler
+jump table sit below this page, in the "Enemy / actor state machines" section of
+`./game-design-patterns.md`; read that first. A technique steps an actor along a path; a design
+pattern here says which path, at what speed, and why the player believes it.
 
 Sources are named in prose and on each Sources line; a number from a source is that person's
 number. Nothing on this page was measured in VICE.
@@ -43,7 +42,7 @@ Position and slot are kept, so the change cannot fail for want of a free slot. �
 Hessian to let the player take over an enemy tank and cut the feature; the mechanism stayed.
 
 Spawning during another actor's life. Smoke puffs, multi-part explosions and turret bullets are
-actors created by an actor. The trap is pool starvation: an effect that spawns every frame takes
+actors created by an actor. The risk is pool starvation: an effect that spawns every frame takes
 the slot the player's next bullet needs. Öörni reserves index ranges for effects so it cannot.
 Give the pool three bands: player and player shots, enemies and their shots, effects.
 
@@ -99,14 +98,14 @@ Related: `./game-design-patterns.md` (slot table, state byte, object pool), `../
 Crawford's 1984 list of ways to balance a game against one player has four entries: vast
 resources, artificial smarts, limited information and pace. Vast resources means many opponents
 with rudimentary intelligence (Space Invaders, Missile Command, Asteroids, Centipede, Tempest); he
-calls it by far the most used method and the easiest, and on an 8-bit machine it is the honest
-default. What lifts it is distinct behaviour per type at near-zero cost, and the cheapest distinct
-behaviour is a different target.
+calls it by far the most used method and the easiest, and on an 8-bit machine it is the default.
+Distinct behaviour per type improves it at near-zero cost, and the cheapest distinct behaviour is a
+different target.
 
 ### The shape
 
-Pittman's disassembly-checked account of Pac-Man is the canonical case: one chase routine and four
-target rules.
+Pittman's disassembly-checked account of Pac-Man is the standard example: one chase routine and
+four target rules.
 
 ```
 type      target while chasing                                 reads as
@@ -123,14 +122,14 @@ Each type also has a fixed corner cell it targets in scatter mode and can never 
 circles there. A timer alternates scatter and chase. Pittman's table: on levels one to four the
 first two scatter periods are seven seconds and the last two five; from level five every scatter
 period is five seconds; the first two chase periods are twenty seconds each; after the fourth
-scatter the chase does not end. Every mode change forces a direction reversal, the tell the player
+scatter the chase does not end. Every mode change forces a direction reversal, which the player
 learns to read.
 
 Braybrook's robots in Paradroid are the other 8-bit model. His diary for 5 June 1985 plans a
 network of invisible roads and junctions, some robots as sentries and others on the beat. On 26
 June they were following their courses and shuddering at corners; on 27 June they paused at
 junctions as if looking around and waited for doors to open before going through. The pause and
-the wait are what read as thought. The same entries record that at full speed the robots drifted
+the wait make the robots look as if they think. The same entries record that at full speed the robots drifted
 off their routes and were nearly impossible to shoot, so some were slowed.
 
 Per type the table is small: target rule index, speed, junction pause in frames, threshold
@@ -144,8 +143,8 @@ timer or an `lfsr_random` pause, are enough to pass.
 
 ### What breaks when it is skipped
 
-Four enemies with one target rule are one enemy four times; the player finds the loop that beats
-it in a minute. Robots that never pause read as bullets, and robots at bullet speed cannot be
+Four enemies with one target rule behave as one enemy repeated four times; the player finds the
+loop that beats it in a minute. Robots that never pause read as bullets, and robots at bullet speed cannot be
 shot, which Braybrook found on the first day they worked.
 
 Related: `./game-design-patterns.md` ("Path-based vs reactive AI"), `./c64-game-archetypes.md` (`top_down_adventure`, `action_puzzle`), `./game-structure.md` (a level's end condition).
@@ -170,7 +169,7 @@ Related: `./game-design-patterns.md` ("Path-based vs reactive AI"), `./c64-game-
 
 ### Why
 
-A shooter's enemies are choreography, and choreography is data. The Galaga analysis makes three
+A shooter's enemy movements are scripted, and the script is data. The Galaga analysis makes three
 observations that transfer to any fixed or scrolling shooter: the aliens enter gradually and can
 be shot before they reach formation; their dives are smooth, slow enough to be hit and fast enough
 to be missed; and shots that lean toward the player, more concentrated than in Galaxian, look
@@ -204,7 +203,7 @@ Galaga material, not a figure from it, and not measured here; it is a data chang
 
 Enemies released on a frame timer instead of a scroll position drift from the scenery they were
 placed against. A dive faster than the player's shot cannot be hit. A spawn script that keeps
-steering its enemies is a second state machine fighting the first.
+steering its enemies competes with the actors' own state machines.
 
 Related: `../techniques/logic.md` (`wave_director`, `object_pool`), `../recipes/oscar64/wave-director.md`, `../recipes/oscar64/simple-shmup.md`, `./c64-game-archetypes.md` (`vertical_shmup`, `horizontal_shmup`).
 
@@ -229,7 +228,7 @@ Related: `../techniques/logic.md` (`wave_director`, `object_pool`), `../recipes/
 
 ### Why
 
-A ramp made of one column is a ramp the player reads in two levels. Minter said in 1983 that the
+A ramp that changes one column is learned by the player in two levels. Minter said in 1983 that the
 later levels of Attack of the Mutant Camels were made harder by adding new problems rather than by
 speeding up the action, and that enemies were added to punish tactics found in Gridrunner: the
 Traitorous Humanoid exists to stop a player sitting still. Crawford's test for the whole curve is
@@ -254,7 +253,7 @@ ceiling: fifteen monsters on screen, because eight sprites per raster line minus
 uses leaves five per line for enemies. Their floor is a judgement, not a number, and the check
 above asks only that it is never zero.
 
-Fairness is a rule, not a feeling. Braybrook's rule of 26 June 1985: when the player cannot
+Braybrook stated fairness as a rule on 26 June 1985: when the player cannot
 reasonably finish the job, the fault is the game's, and the cure is a gentler level or a stronger
 gun. His decks also ramp by capability rather than speed: on 29 July he noted that the weak robots
 on the easy decks do not fire and the big ones do.
@@ -263,9 +262,9 @@ The invisible rank counter is the period alternative to rubber banding. The Shmu
 Gradius's Japanese formula as the sum of survival frames divided by 1000, stages completed times
 three, a power-up value, options times two and a difficulty setting, the whole halved and capped
 at 15; the US Nemesis version weights the terms differently. The page does not say what rank
-changes in play, so nothing about its effect is claimed here. The shape is what matters: a handful
-of additive counters the player never sees, a shift, and a small cap. It rises with success rather
-than falling with failure, and it is a byte, not a system.
+changes in play, so nothing about its effect is claimed here. The shape: a handful of additive
+counters the player never sees, a shift, and a small cap. It rises with success rather than
+falling with failure, and it fits in a byte.
 
 Frame rate is part of the table. Anything that counts frames ramps a fifth faster on NTSC. Read
 "60 Hz vs 50 Hz update rate and cross-region releases" in `./game-design-patterns.md` and either

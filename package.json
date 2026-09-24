@@ -38,7 +38,8 @@
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "knip": "knip"
+    "knip": "knip",
+    "check:prose": "node scripts/check-prose-edit.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

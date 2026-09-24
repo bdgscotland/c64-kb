@@ -3,7 +3,7 @@
 # Game design: single-screen platformer scaffold (Oscar64)
 
 The design of `recipes/oscar64/platformer-scaffold.md` as a whole game:
-what runs in each phase, and what its frame measured. The phases come from
+what runs in each phase and what its frame measured. The phases come from
 the listing's `main()`, not from the recipe's frontmatter.
 `CONVENTIONS-game-designs.md` defines the lines.
 
@@ -24,7 +24,7 @@ the listing's `main()`, not from the recipe's frontmatter.
 | play | Per frame: wait for the raster IRQ's tick, read the stick (`joy_edge`, `repeat_step`), step the waves and enemies (`object_pool`, rows and directions from `rnd`), move the player against `map[]` (`tile_grid_collision`, 8.8 Y, the jump table), play the tune, let the effect re-poke voice 2, redraw the HUD fields that changed (`put_dec`). |
 | transition | At game over `hs_game_over` scratches `HISCORE`, writes it, reads it back and reads the error channel, with the raster IRQ stopped. |
 
-`tile_map_render` is in init, not play: an earlier plan for this page (the
+`tile_map_render` is in init. An earlier plan for this page (the
 #22 design) put it in play, which would charge a map redraw to every frame.
 
 ### What the measured frame holds

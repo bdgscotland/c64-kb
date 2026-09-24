@@ -216,7 +216,7 @@ Evidence, rung 1:
   137, on PAL and NTSC. Only the KickAssembler routine writes those
   registers, so the call and its arguments arrived.
 
-Rules the mechanism brings. The blob lives between `$0880` and `$1000`.
+Rules that follow from the mechanism. The blob lives between `$0880` and `$1000`.
 Below `$0880` it would overlap Oscar64's startup code, which the linker
 allows in silence (a blob at `$0810` linked, and the program never
 started); `asm.h`'s `#error` stops that build with "error 3032: the
@@ -340,7 +340,7 @@ time. The review of this harness found that the earlier single calibration
 could land on DMA and read 5 cycles low; that is what the line-0 minimum
 fixes. The same review saw W move between 1,510 and 1,538 cycles, in steps
 of 14, with code layout alone, which it put down to branches crossing pages
-(not re-measured here): compare two builds' W knowing that.
+(not re-measured here); allow for it when comparing two builds' W.
 
 hello's figures: worst 194, typical 172 cycles (195 and 173 since the
 selection changed the meter's code layout); hello-kick's: worst 178,
@@ -362,8 +362,8 @@ wants the same Verdict line; the result is cached on `PLAN.md`'s hash.
 Every PRG depends on the gate, so `make`, `shot`, `check`, `selftest`,
 `disk`, `claims` and `run` all stop while it fails. As a PreToolUse hook it
 blocks (exit 2) an Edit, MultiEdit, Write or NotebookEdit under `src/`,
-after resolving the path with realpath. `make PLAN_GATE=off` is the
-deliberate override. It replaces the old starters' `.kb-briefing-done`
+after resolving the path with realpath. `make PLAN_GATE=off` overrides
+it. It replaces the old starters' `.kb-briefing-done`
 marker, which `touch` satisfied.
 
 Measured: two hand-typed heading lines fail it; a pasted Verdict changed

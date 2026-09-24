@@ -15,19 +15,18 @@ graph edges are emitted by the `Caused by …` lines.
 **Caused by registers:** D011, D018, DD00
 **Caused by techniques:** vic_bank_select
 
-The display is completely dark — either a single solid color (usually
-black border plus black background) or a frame that never shows any
-characters or bitmap data. The machine is not frozen; it is actively
-drawing nothing.
+The display is dark: a single solid color (usually black border plus
+black background), or a frame that never shows characters or bitmap
+data. The machine is not frozen; it is drawing nothing.
 
-The most common root cause is a VIC bank mismatch introduced by
-incorrectly writing $DD00 (CIA2 Port A). The VIC-II fetches screen RAM,
+The most common cause is a VIC bank mismatch from a wrong write to
+$DD00 (CIA2 Port A). The VIC-II fetches screen RAM,
 charset or bitmap data, and sprite bitmaps from a 16 KB window selected
 by bits 0–1 of $DD00. Four banks are available (bank 0 at $0000,
 bank 1 at $4000, bank 2 at $8000, bank 3 at $C000). If the bank is
 switched without also updating $D018 to point screen RAM and
 character/bitmap data inside the new bank, the VIC reads from the wrong
-addresses — usually all-zero ROM or garbage — and draws a blank field.
+addresses (usually all-zero ROM or garbage) and draws a blank field.
 A second cause is leaving bit 4 of $D011 (DEN, Display Enable) clear;
 the chip blanks the display entirely when this bit is 0. A third cause
 is a $D018 video-matrix pointer that falls outside the active bank
@@ -35,14 +34,14 @@ because the offset nibble was set before the bank was switched.
 
 **Diagnosis steps:**
 1. Via vice-mcp, read memory at $D011. If bit 4 is 0 the screen is
-   intentionally blanked — set it to re-enable.
+   blanked; set it to re-enable.
 2. Read $DD00 bits 0–1. Bank = 3 − (bits 0–1). Verify this matches
-   where your screen RAM and charset/bitmap data live.
+   where the screen RAM and charset/bitmap data live.
 3. Read $D018. High nibble = screen-RAM offset (×$0400 within bank).
    Low nibble = charset pointer (×$0800) or bitmap pointer ($08 = bitmap
    at bank base, $18 = bitmap at bank_base+$2000). Confirm the resolved
    addresses fall inside the bank.
-4. Attempt to write a known character code to screen RAM and read it
+4. Write a known character code to screen RAM and read it
    back. If the read returns the written value, the RAM is visible but
    the VIC is looking elsewhere.
 
@@ -66,7 +65,7 @@ The display shows a chaotic pattern of random character glyphs or
 high-frequency color noise instead of the intended image. Bitmap mode
 was selected but the content looks like character-mode garbage.
 
-Three distinct configurations must align for bitmap mode to work: $D011
+Three settings must agree for bitmap mode to work: $D011
 bit 5 (BMM) must be set; $D018 bit 3 selects whether the bitmap data
 lives at the VIC bank base or at +$2000 within the bank; and $D018 high
 nibble places screen RAM (which holds the foreground/background color
@@ -107,26 +106,25 @@ The two ranges must not overlap within the VIC bank.
 **Caused by registers:** D015, D000
 **Caused by techniques:** sprite_multiplex_8
 
-Sprites blink on and off in an apparently random pattern — appearing
-correct on some frames and vanishing or shifting position on others.
-The effect is not consistent across runs, which points to a race between
-CPU writes and VIC DMA reads.
+Sprites blink on and off at random: correct on some frames, vanished
+or shifted on others. The pattern differs between runs, which points to
+a race between CPU writes and VIC DMA reads.
 
 The VIC-II reads sprite data from 64-byte blocks in the VIC bank during
-specific DMA windows — typically cycles 58–61 per sprite per active
-scanline. If the CPU writes sprite X/Y position or enable-bit registers
+specific DMA windows (typically cycles 58–61 per sprite per active
+scanline). If the CPU writes sprite X/Y position or enable-bit registers
 during one of those windows, the VIC may see a torn value: the high
 byte of a new position combined with the low byte of the old, or a
 sprite-enable bit that transitions mid-DMA. The result is a sprite that
 appears one pixel-row too high or low on one frame, or one that
 disappears entirely when the enable bit clears at exactly the wrong
-moment. Random patterns emerge because the relative phase between CPU
+moment. The pattern looks random because the relative phase between CPU
 and VIC shifts each frame unless the raster IRQ is stabilised.
 
 **Diagnosis steps:**
 1. Set a vice-mcp raster breakpoint at the first sprite-active line and
    dump $D000-$D017 to verify they match intended values.
-2. Instrument your sprite-update routine to log the value of $D012
+2. Instrument the sprite-update routine to log the value of $D012
    (raster line) at the moment of each write. Writes occurring in
    the DMA window of an active sprite are unsafe.
 3. Enable VICE's raster-beam display and single-step through the
@@ -163,16 +161,16 @@ it overruns by a handful of cycles, and the VIC begins DMA before the
 CPU finishes writing the new Y positions. Because the overrun happens
 only when the sort list reaches a certain length, the period of the
 flicker matches the period of the heaviest frame in the animation. A
-secondary cause is a raster IRQ that fires too late — either because
-the D012 target line was miscounted or because a badline stole the
-extra cycles that a tight timing routine relied on.
+secondary cause is a raster IRQ that fires too late, because either
+the D012 target line was miscounted or a badline stole the
+cycles a tight timing routine relied on.
 
 **Diagnosis steps:**
 1. Add a cycle counter (read $DC04/$DC05 CIA1 timer) at entry and exit
-   of your IRQ handler. Log the delta over 60 frames and look for
-   frames where the count spikes above your budget.
+   of the IRQ handler. Log the delta over 60 frames and look for
+   frames where the count spikes above the budget.
 2. Set a vice-mcp breakpoint at the known flicker line and inspect
-   $D012 to confirm the raster IRQ is actually firing on the intended
+   $D012 to confirm the raster IRQ fires on the intended
    line.
 3. Count the number of active sprites on each frame class and compare
    against the sprite-sort worst-case cycle estimate.
@@ -203,11 +201,10 @@ the 9th (MSB) lives as a single bit in $D010 for each of the eight
 sprites. Software that stores sprite X as a single byte and writes only
 the low register will leave the MSB stale. When the sprite crosses
 X=255 the displayed position wraps to 0 instead of advancing to 256,
-making the sprite appear to teleport to the left edge and immediately
-leave the visible area. For Y, values 255 (and 0–7) place the sprite
+so the sprite jumps to the left edge and leaves the visible area. For Y, values 255 (and 0–7) place the sprite
 above or on the top border; values above 230 (approximately, depending
 on PAL/NTSC) push it below the visible area. A sprite at Y=255 is never
-drawn — it simply disappears.
+drawn.
 
 **Diagnosis steps:**
 1. In vice-mcp, set a watch on the sprite's X register ($D000 + 2×N)
@@ -220,8 +217,8 @@ drawn — it simply disappears.
    sprite Y range 0–249 active). Confirm the Y value is valid for the
    target region.
 4. Check whether the sprite's priority bit ($D01B) is set, which causes
-   it to appear behind the background bitmap, making it effectively
-   invisible on non-$D021 pixels.
+   it to appear behind the background bitmap, so it is hidden on
+   non-$D021 pixels.
 
 Store sprite X as a 16-bit value internally. Derive the low byte as
 `x & 0xFF` and the MSB contribution as `(x >> 8) & 1`. Before writing
@@ -239,11 +236,11 @@ when intentionally hiding a sprite via the enable bit ($D015) instead.
 **Diagnosis steps:** Check $D012 IRQ trigger line vs actual raster position at handler entry using CIA1 timer delta; count cycles consumed in the IRQ handler path; verify $D011 bits 0-2 (Y scroll) are not being written on different lines each frame; use vice-mcp raster breakpoint to compare actual vs expected raster position at scroll register write.
 **Caused by registers:** D011, D012
 
-The entire display shakes or jerks vertically — typically by one or
-two pixel rows — once per frame. The jitter is usually consistent in
+The whole display jerks vertically, typically by one or
+two pixel rows, once per frame. The jitter is usually consistent in
 magnitude but may vary by one raster line between frames.
 
-The root cause is nearly always a scroll-register write ($D011 bits
+The cause is nearly always a scroll-register write ($D011 bits
 2–0, Y-scroll) that arrives at a different raster line on different
 frames. The VIC-II displays a character row eight lines tall; writing Y-
 scroll mid-row shifts which pixel row the VIC outputs, causing the
@@ -265,11 +262,11 @@ budget is silently consumed and the critical write is delayed.
 3. Instrument the code: temporarily write a distinctive value to $D020
    (border color) immediately at IRQ entry and at the scroll write to
    produce a color stripe. Measure its position on a frame grabber or
-   VICE's raster display — if it wobbles, the IRQ is unstable.
+   VICE's raster display. If it moves between frames, the IRQ is unstable.
 4. Count cycles between IRQ trigger and D011 write and verify the line
    falls in a non-badline region.
 
-Use the stable double-IRQ technique to eliminate jitter: fire the first
+Use the stable double-IRQ technique to remove jitter: fire the first
 IRQ above the target line, set D012 to the exact target line and exit;
 the second IRQ writes the scroll register with cycle precision. If
 badlines are unavoidable between the IRQ and the write, advance the
@@ -284,15 +281,15 @@ timer delta measurement.
 **Diagnosis steps:** Attach vice-mcp and read the CPU status register P — if bit 2 (I flag) is set, interrupts are globally masked; read $0314-$0315 (IRQ vector) and confirm they point to a valid handler; read the stack pointer and top-of-stack bytes to detect overflow; read $D01A (VIC IRQ enable) and $DC0D (CIA1 ICR) to confirm interrupt sources are enabled.
 **Caused by kernal:** CHKIN, CHKOUT
 
-The program halts — it neither crashes to BASIC nor responds to any
+The program halts. It neither crashes to BASIC nor responds to any
 input. The border color does not change, no music plays, and no raster
 effects occur. The STOP key may or may not respond depending on whether
 KERNAL interrupt handling is still active.
 
-Three distinct failure modes produce this symptom. First: `SEI` was
+Three failure modes produce this symptom. First: `SEI` was
 executed to protect a critical section and the matching `CLI` never
-ran, leaving interrupts permanently masked — timers, raster IRQs, and
-keyboard scans all silently fail. Second: the IRQ vector at $0314–$0315
+ran, so interrupts stay masked: timers, raster IRQs and
+keyboard scans all stop without an error. Second: the IRQ vector at $0314–$0315
 was overwritten with a corrupt address; the CPU vectors there on the
 next interrupt, executes garbage, and loops or crashes. Third: a
 runaway IRQ handler overflows the 6510's hardware stack (page $01,
@@ -315,7 +312,7 @@ $01FF, and corrupts CPU state.
 
 Ensure every `SEI` is paired with a `CLI` before any blocking loop or
 `RTS`. Never call KERNAL routines like `CHKIN` or `CHKOUT` with
-interrupts disabled — they loop on IEC bus signals and will deadlock.
+interrupts disabled: they loop on IEC bus signals and deadlock.
 Write the IRQ vector as an atomic pair with interrupts disabled. For
 stack overflow, reduce handler nesting depth and prevent IRQ re-entry.
 
@@ -328,17 +325,17 @@ stack overflow, reduce handler nesting depth and prevent IRQ re-entry.
 **Caused by registers:** D012
 **Caused by techniques:** sid_play_routine_pattern, sid_voice_setup
 
-Music is audibly off-tempo — notes hold too long or too short, and the
+Music is off-tempo: notes hold too long or too short, and the
 overall BPM differs from the intended tempo by approximately 4% or by
 a small fixed ratio. All three SID voices are affected equally.
 
-The universal cause is a CIA timer value hard-coded for PAL running on
+The cause is a CIA timer value hard-coded for PAL running on
 an NTSC machine (or vice versa). CIA1 Timer A drives most SID players:
 a PAL timer value of $4CC7 (19,655 cycles) on an NTSC machine fires
-every 19.2 ms instead of 20.1 ms — 3.8% too fast. SID players that
-use the VIC raster IRQ for timing are equally affected: PAL produces
-50 frames/sec, NTSC ~60 frames/sec — a 20% difference that makes
-music dramatically wrong on the wrong region.
+every 19.2 ms instead of 20.1 ms, 3.8% too fast. SID players that
+use the VIC raster IRQ for timing are affected too: PAL produces
+50 frames/sec, NTSC ~60 frames/sec, a 20% difference that puts the
+music far off on the wrong region.
 
 **Diagnosis steps:**
 1. Read $DC04/$DC05 at program startup before the player init runs.
@@ -370,15 +367,15 @@ than frame counts.
 **Caused by techniques:** sid_voice_setup
 
 All three SID voices are programmed with frequencies, waveforms, and
-envelope settings, yet the audio output is completely silent. No pops,
-no tones, nothing. The SID registers read back the values that were
+envelope settings, but the audio output is silent: no pops,
+no tones. The SID registers read back the values that were
 written.
 
-Four independent gates can silence the SID simultaneously. The most
+Four independent settings can each silence the SID. The most
 common is $D418 low nibble = $00: the master volume DAC is at zero
 and the analog output is muted regardless of what the three voices are
 doing. The second is a GATE bit (bit 0 of $D404, $D40B, or $D412)
-that was never set to 1 — the ADSR envelope stays at zero (attack
+that was never set to 1: the ADSR envelope stays at zero (attack
 never starts) and the voice produces no output. The third is filter
 misconfiguration: if all three voices are routed through the filter
 ($D417 bits 0–2 all set) and $D418 selects only high-pass output on a
@@ -420,14 +417,14 @@ A sharp click or pop is audible at the boundary between two notes, or
 at the moment a gate is asserted on a new note when the previous
 envelope has not fully released.
 
-The SID ADSR hardware has a well-documented bug: the envelope counter
+The SID ADSR hardware has a documented bug: the envelope counter
 is a 15-bit accumulator, and if the rate register is updated to a
 value whose compare threshold the counter has already passed, the
 counter must wrap the full 15-bit range (up to 32,768 cycles, roughly
 33 ms at PAL) before the new rate takes effect. When a new note's gate
 is asserted before the previous release has completed, the residual
 envelope level is non-zero and the new attack begins from that elevated
-level, producing an audible step transient — the click. Additionally,
+level, producing an audible step transient: the click. Also,
 if the oscillator phase accumulator is not reset between notes, the new
 tone starts from a random phase offset that can produce a click at the
 note onset even when the envelope is clean.
@@ -436,7 +433,7 @@ note onset even when the envelope is clean.
 1. In vice-mcp, set a write watchpoint on $D404 (voice 1 control).
    Step through the note-change sequence and verify the sequence is:
    gate-off ($D404 &= ~$01) → wait release → $08 pulse → new note.
-2. Read $D41C (ENV3) if the failing voice is voice 3 — this shows the
+2. Read $D41C (ENV3) if the failing voice is voice 3; it shows the
    live envelope value. A non-zero value at gate-on confirms the
    release was incomplete.
 3. Count CPU cycles between gate-off and gate-on. For typical release
@@ -462,7 +459,7 @@ zero before the attack begins.
 **Caused by registers:** D016
 **Caused by techniques:** soft_scroll_h, stable_raster_irq
 
-The horizontal scroll is supposed to move at a fixed rate but the
+The horizontal scroll should move at a fixed rate but the
 display occasionally stutters by one pixel column, or the text appears
 to vibrate back and forth by one pixel. On frames that exhibit the
 jitter, the scroll position is off by exactly one step.
@@ -471,10 +468,10 @@ Horizontal smooth scrolling is controlled by bits 2–0 of $D016
 (X-scroll, 0–7 pixels). The VIC reads this register at the start of
 each visible character row. If the CPU writes the new X-scroll value
 after the VIC has already latched it for the current row, the update
-takes effect one raster line late — the first row of characters scrolls
+takes effect one raster line late: the first row of characters scrolls
 by the old value while the remaining rows use the new value. On the
 next frame the timing may be correct, producing alternating one-off and
-on-target positions: the jitter. Badlines exacerbate this because they
+on-target positions: the jitter. Badlines make this worse because they
 steal 40 cycles just as the CPU needs to be writing the scroll register,
 pushing the write past the VIC's sample point.
 
@@ -497,7 +494,7 @@ Use the stable double-IRQ pattern: fire the first IRQ several lines
 above the target, set D012 to the exact write line, and write $D016
 in the second IRQ with cycle precision. Adjust the D016 write to
 occur during the horizontal blank portion of the target raster line
-(before cycle 16 on a PAL VIC-II) to guarantee the VIC samples the
+(before cycle 16 on a PAL VIC-II) so the VIC samples the
 new value for all visible rows. If a badline is unavoidable, add a
 compensation of 40 cycles to the stable-IRQ entry wait loop.
 
@@ -511,9 +508,9 @@ compensation of 40 cycles to the stable-IRQ entry wait loop.
 **Caused by techniques:** multicolor_bitmap
 
 Colors appear correct in terms of shape (the image is recognizable) but
-the palette is shifted — what should be the background color appears
+the palette is shifted: the background color appears
 where the foreground color should be, or sprite shared colors are
-swapped, or two of the four color values appear to be exchanged.
+swapped, or two of the four color values are exchanged.
 
 Multicolor character and bitmap modes use a fixed mapping between 2-bit
 pixel values and color sources. In multicolor bitmap mode (Koala format)
@@ -536,7 +533,7 @@ interpreted differently, shifting the palette.
    Read $D025 and $D026 and compare against the sprite's intended
    shared colors.
 3. Convert the on-screen color index to decimal and look up the C64
-   color value table — the most common mistake is confusing the color
+   color value table. The most common mistake is confusing the color
    index (0–15) with a register address.
 4. Use vice-mcp to read a single cell's screen RAM word and color RAM
    byte and trace which color value maps to which pixel pattern.
@@ -546,8 +543,8 @@ where color_1 is the `%01` value and color_2 is the `%10` value. Use
 a consistent reference (C64Wiki color chart) for the 4-bit color
 indices 0–15. For multicolor sprites, ensure $D01C has the correct bit
 set before the sprite appears, and load $D025/$D026 before enabling
-sprites ($D015). Double-check sprite color registers: sprite 0's own
-color is $D027, sprite 1's is $D028, etc. — these are separate from
+sprites ($D015). Check the sprite color registers: sprite 0's own
+color is $D027, sprite 1's is $D028, etc.; these are separate from
 $D025/$D026 which are shared across all multicolor sprites.
 
 ---
@@ -559,13 +556,13 @@ $D025/$D026 which are shared across all multicolor sprites.
 **Caused by registers:** D418
 **Caused by techniques:** sid_8580_vs_6581_differences
 
-Audio output is noticeably quieter on a C64C or late-model machine
+Audio output is quieter on a C64C or late-model machine
 (which uses the 8580 SID) than on an earlier machine (6581). The tones
 are recognizable but the overall level is lower and some filter effects
 sound different. On high-filter-cutoff settings the signal may
 disappear entirely on the 8580.
 
-The 6581 and 8580 differ in three measurable ways. First, the filter
+The 6581 and 8580 differ in three ways. First, the filter
 cutoff curve: on the 6581 it is highly non-linear and varies between
 chips; a cutoff value that opens the filter wide on one 6581 may have
 almost no effect on another. The 8580 has a linear curve. A code path
@@ -573,13 +570,13 @@ tuned for 6581 filter behavior will produce a different tonal character
 on the 8580. Second, the 8580 DAC for digi playback ($D418 used as a
 PWM DAC) has a different step size than the 6581, making samples sound
 clipped or too quiet. Third, the 8580's combined-waveform output
-levels differ from the 6581's — timbres that work on one may be muted
+levels differ from the 6581's; timbres that work on one may be muted
 on the other.
 
 **Diagnosis steps:**
 1. Confirm the target SID revision: read the environment configuration
-   or detect heuristically by exploiting a filter-response difference
-   (write $D415/$D416 = $00/$00 and check audio — on 6581 this fully
+   or detect it from a filter-response difference
+   (write $D415/$D416 = $00/$00 and check audio: on 6581 this fully
    closes the filter; on 8580 the cutoff minimum is different).
 2. Read $D415-$D416 and compute the cutoff frequency. If the value was
    tuned for the 6581's non-linear curve, recalibrate for the 8580's
@@ -610,17 +607,17 @@ sample scaling factors for each chip variant.
 The program loads correctly on 9 out of 10 attempts but occasionally
 hangs mid-load, crashes to BASIC, or corrupts a small region of the
 loaded data. The failure is not reproducible at a specific sector,
-suggesting a timing-sensitive race rather than a data error.
+which points to a timing-sensitive race rather than a data error.
 
 The C64's IEC bus is software-timed: both the drive and the C64
 measure bit timing in CPU cycles rather than via a hardware UART. Any
-deviation in CPU availability — an NMI, a raster IRQ, or a badline —
+loss of CPU time (an NMI, a raster IRQ or a badline)
 can corrupt a bit. Fastloaders that push the bus to 3× or 4× KERNAL
 speed have very narrow windows; an interrupt firing on a critical
 bit edge drops the bit. GCR decoding adds further sensitivity: off-
 spec drive timing from head wear can miss a sync mark and begin
-decoding at the wrong byte boundary, producing exactly the sporadic
-corruption observed.
+decoding at the wrong byte boundary, producing sporadic
+corruption.
 
 **Diagnosis steps:**
 1. Disable all IRQs during the load phase (`SEI` before entering the
@@ -628,16 +625,16 @@ corruption observed.
    interfering with the timing loop.
 2. Log the C64-side byte count at crash time across 20 runs. Consistent
    crash positions (within ±2 bytes) point to a specific sector or
-   block boundary; random positions point to an IRQ interference.
+   block boundary; random positions point to IRQ interference.
 3. Switch from the fastloader to the KERNAL LOAD routine ($FFD5) and
    retest. If stability improves, the custom loader has a timing margin
    issue.
 4. On a real disk setup, try a known-good diskette and compare crash
-   rates — GCR drift is drive-specific.
+   rates; GCR drift is drive-specific.
 
 Disable the KERNAL's CIA1 interrupt by reading $DC0D (ICR acknowledge)
 before entering the time-critical receive loop, and re-enable it on
-exit. Widen timing windows where the protocol allows — most fastloaders
+exit. Widen timing windows where the protocol allows; most fastloaders
 have a configurable bit-cell width. If crashes correlate with a sector
 boundary, add a retry at sector level. For Krill or Sparkle (IRQs
 enabled during load), verify the installed IRQ handler never calls any
@@ -656,11 +653,11 @@ corrupts variables when invoked from inside an IRQ handler. The bug is
 not present when interrupts are disabled, and disabling interrupts
 temporarily at the point of failure makes it disappear.
 
-Two distinct mechanisms produce this symptom. The more subtle is
+Two mechanisms produce this symptom. The first is
 decimal mode: the 6510 does not automatically clear the decimal flag (D
 bit of P) on IRQ entry, unlike the 65C02. If the main program uses BCD
 arithmetic (`SED` / `CLD`) and an IRQ fires while the D flag is set,
-all arithmetic inside the handler operates in BCD — `ADC` and `SBC`
+all arithmetic inside the handler operates in BCD: `ADC` and `SBC`
 produce Binary Coded Decimal results rather than binary results. A
 handler that adds a frame counter or adjusts a position variable will
 silently produce wrong values on every frame after the first `SED` in
@@ -678,14 +675,14 @@ at a sensitive moment in the main loop.
    `PHA / TXA / PHA / TYA / PHA` (save A, X, Y) appears before any
    register modification.
 3. Check all JSR targets called from inside the handler for zero-page
-   side effects — any write to a ZP location that the mainline reads
+   side effects. Any write to a ZP location that the mainline reads
    is a potential corruption point.
 4. Verify the handler ends with `PLA / TAY / PLA / TAX / PLA / RTI` in
    that exact order, and that it is `RTI` (not `RTS` which does not
    restore P).
 
 Add `CLD` as the first instruction of every IRQ handler before any
-arithmetic — one cycle eliminates the entire decimal-mode class. Save
+arithmetic; one cycle removes the whole decimal-mode class. Save
 and restore all used registers in the prologue/epilogue. Subroutines
 called from inside the handler must also preserve all registers they
 use. For zero-page variables shared between main and IRQ, write to a

@@ -2,16 +2,15 @@
 
 # C64 Art Asset Pipelines
 
-This document answers one narrow question: how does a file produced by an artist
-or musician on a modern host — a Koala bitmap, a SpritePad sprite sheet, a CharPad
-charset, a PETSCII screen, a GoatTracker song — become bytes that Oscar64 or
-KickAssembler code can include at build time?
+How a file an artist or musician makes on a modern host (a Koala bitmap, a
+SpritePad sprite sheet, a CharPad charset, a PETSCII screen, a GoatTracker song)
+becomes bytes that Oscar64 or KickAssembler code can include at build time.
 
-The artist side of the workflow is covered in `./art-production-reference.md`. The
-music side is covered in `../music/music-production-reference.md`. The compression
-and loading side is covered in `../techniques/loaders-packers.md`. The binary format
-specifications are in `../formats/c64-file-formats.md`. This document sits between
-those references and focuses purely on the conversion and integration step.
+The artist side is in `./art-production-reference.md`, the music side in
+`../music/music-production-reference.md`, compression and loading in
+`../techniques/loaders-packers.md`, and the binary format specifications in
+`../formats/c64-file-formats.md`. This page covers only the conversion and
+integration step between them.
 
 ---
 
@@ -51,12 +50,11 @@ For KickAssembler, `.import binary` with an offset skips the header in-place:
 
 The 1000-byte color RAM chunk must be copied to `$D800` at runtime because the
 C64's color memory is not directly addressable for `incbin`-style placement. A
-tight loop or `memcpy`-style routine handles this before the VIC is switched to
+short loop or `memcpy`-style routine copies it before the VIC is switched to
 multicolor bitmap mode.
 
-**Byte-order note.** The Koala format uses no multi-byte fields beyond the load
-address — all data regions are plain bytes. There is no endianness issue beyond
-the load address itself.
+**Byte-order note.** The Koala format has no multi-byte field except the load
+address; all data regions are plain bytes.
 
 **Multicolor cell layout.** Each 8×8 cell in the bitmap uses 2 bits per pixel,
 packed high-bit-first within each byte. Bit pairs `%00`, `%01`, `%10`, `%11` map
@@ -66,8 +64,8 @@ the other way round; decoding a png2prg Koala file against its source image gave
 0 wrong pixels with this order and 16,000 of 32,000 with the old one, and VICE
 showed the file pixel-exact (see [png2prg](../toolchains/png2prg.md), "Round trip,
 measured"). The cell ordering is left-to-right, top-to-bottom in reading order.
-A converter that re-packs pixels must replicate this cell-major layout or the
-image will display with scrambled columns.
+A converter that re-packs pixels must keep this cell-major layout or the image
+displays with scrambled columns.
 
 ---
 
@@ -88,7 +86,7 @@ SpritePad 2.x `.spd` files begin with a 9-byte header:
 Each sprite immediately follows as a 64-byte block (63 bytes of pixel data + 1
 byte containing the sprite color in the low nybble).
 
-For production use, the typical path is:
+For production use, the usual path is:
 
 1. Export from SpritePad as a raw binary (File → Export → Binary). SpritePad
    writes only the 64-byte blocks with no header, suitable for direct `incbin`.
@@ -96,7 +94,7 @@ For production use, the typical path is:
    from a converter script at build time rather than by hand.
 
 A sprite multiplexer expects a table of sprite data pointers. Each pointer is a
-single byte giving the high byte of the sprite data address divided by 64 — the
+single byte giving the high byte of the sprite data address divided by 64: the
 value written to `$07F8`–`$07FF` (the VIC sprite data pointers at the default
 screen location). For a contiguous 64-byte-aligned sprite bank starting at `$3000`:
 
@@ -107,12 +105,12 @@ sprite 1 data at $3040 → pointer byte = $C1
 ```
 
 **Multicolor double-pixel padding.** In multicolor sprite mode, each pixel is 2
-bits wide and displays as a double-width pixel — the physical sprite is 24 pixels
-wide but displayed as 12 double-pixels. A converter tool porting hires art to
+bits wide and displays as a double-width pixel: the physical sprite is 24 pixels
+wide but displayed as 12 double-pixels. A converter porting hires art to
 multicolor must halve the horizontal resolution. Direct incbin of a hires sprite
-block into a multicolor slot produces the correct bit layout but the wrong visual —
-no converter can recover lost horizontal detail, so multicolor sprites must be
-authored at the correct reduced resolution.
+block into a multicolor slot gives the correct bit layout but the wrong picture.
+No converter can recover lost horizontal detail, so multicolor sprites must be
+drawn at the reduced resolution.
 
 ---
 
@@ -129,7 +127,7 @@ data. **Correction (2026-09-23).** No decoded file has a 32-byte header: version
 - **Attribute data (CharPad 2.x):** 1 byte per character giving the character's
   color and attribute flags.
 
-For most production work, CharPad's File → Export paths emit simpler outputs:
+For most production work, CharPad's File → Export paths give simpler outputs:
 
 - **Characters binary:** raw 8-byte character data, 2048 bytes for a full charset.
   Load this at a VIC-visible address aligned to a 2KB boundary (e.g., `$2000`,
@@ -146,9 +144,8 @@ KickAssembler places them with `.import binary` at the appropriate addresses.
 **Alignment requirement.** The VIC-II reads character ROM or custom charset data
 from addresses determined by `$D018` bits 1–3 (charset base) and bit 4 (screen
 base). The charset must be aligned to a 2 KB boundary within the current VIC bank
-(`$DD00` bits 0–1 select the bank). A charset placed at an odd address will
-display as garbage — the alignment constraint must be enforced in the build script
-or the linker config, not left to chance.
+(`$DD00` bits 0–1 select the bank). A charset at a misaligned address displays as
+garbage, so enforce the alignment in the build script or the linker config.
 
 ---
 
@@ -163,12 +160,12 @@ A PETSCII screen consists of two 1000-byte arrays:
 - **Color RAM:** 40×25 bytes of color nybbles (low 4 bits used, high 4 ignored).
 
 For PetMate and Marq's editor, File → Export → Binary produces a 2000-byte file
-(screen + color concatenated) or two separate 1000-byte files. Either layout is
-suitable for `incbin`. The color half must be `memcpy`'d to `$D800` at runtime.
+(screen + color concatenated) or two separate 1000-byte files. Either works with
+`incbin`. The color half must be `memcpy`'d to `$D800` at runtime.
 
 Most PETSCII editors export with load addresses prepended. Strip 2 bytes from each
-chunk as with Koala. Some editors export in SEQ or PRG format — use `dd` or a
-small Python script to extract just the payload bytes.
+chunk as with Koala. Some editors export in SEQ or PRG format; use `dd` or a
+small Python script to extract the payload bytes.
 
 ---
 
@@ -268,10 +265,9 @@ entry when compiled in.
 
 ### Oscar64 native data inclusion
 
-Oscar64's `#pragma data` and `__attribute__((aligned))` allow static byte arrays
-to be placed at specific linker-controlled addresses. For small assets that do not
-need to be VIC-bank-aligned, embedding data directly in the C source avoids an
-extra conversion step:
+Oscar64's `#pragma data` and `__attribute__((aligned))` place static byte arrays
+at linker-controlled addresses. For small assets that need no VIC-bank alignment,
+embedding the data in the C source saves a conversion step:
 
 ```c
 // Declares a byte array placed by the linker in the 'main' region.
@@ -282,17 +278,17 @@ static const unsigned char charset_data[] = {
 };
 ```
 
-Oscar64 supports `#embed` (C23) for importing raw binary files at compile time.
-This is suitable for assets under a few kilobytes. For larger assets or assets
+Oscar64 supports `#embed` (C23) for importing raw binary files at compile time,
+suitable for assets under a few kilobytes. For larger assets or assets
 that must be placed at hardware-constrained addresses, use a separate `.bin` with
 the linker config or KickAssembler's `.import binary`.
 
 ### Custom Python/Node converter patterns
 
-When the standard tool chain cannot produce the exact layout needed — address
-remapping, palette quantization, table reordering — a short converter script is
-the least-friction solution. The skeleton below handles the most common case:
-strip a load-address header and split into named output chunks.
+When the standard tools cannot produce the layout needed (address remapping,
+palette quantization, table reordering), write a short converter script. The
+skeleton below covers the most common case: strip a load-address header and split
+the file into named output chunks.
 
 ```python
 #!/usr/bin/env python3
@@ -326,8 +322,8 @@ offset += COLOR_SIZE
 print("Wrote bitmap, screen, color, bgcolor to", dest)
 ```
 
-This pattern — read entire file, slice by known offsets, write named outputs —
-applies to any format with a fixed layout. Extend it to emit a C header with
+The same pattern (read the file, slice at known offsets, write named outputs)
+works for any format with a fixed layout. Extend it to emit a C header with
 `__attribute__((section(...)))` declarations if the Oscar64 build benefits from
 compile-time inclusion.
 
@@ -337,7 +333,7 @@ compile-time inclusion.
 
 ### Makefile / build-script pattern
 
-The canonical pattern for a C64 build with asset conversion is:
+A C64 build with asset conversion runs in this order:
 
 1. Artist commits source files (`.kla`, `.spd`, `.ctm`, `.sng`) to the repository.
 2. A conversion step runs first, producing `.bin` / `.inc` artifacts in a build
@@ -346,8 +342,8 @@ The canonical pattern for a C64 build with asset conversion is:
    binary`, or `incbin`.
 4. The linker (Oscar64 integrated, or `ld65` for cc65) produces the final `.prg`.
 
-This separation keeps source-controlled art in the artist's native format and the
-build artifacts reproducible and disposable.
+Source control holds the art in the artist's native format; the build artifacts
+are reproducible and disposable.
 
 ```makefile
 BUILD    := build
@@ -377,57 +373,55 @@ clean:
 	rm -rf $(BUILD)
 ```
 
-Make's dependency tracking ensures that a changed `.kla` triggers re-conversion
-and recompilation automatically. For projects with many assets, a per-asset
+Make's dependency tracking re-converts and recompiles when a `.kla` changes. For projects with many assets, a per-asset
 conversion pattern rule (`$(BUILD)/%.bin: $(SRC_ART)/%.kla`) reduces boilerplate.
 
 ### Common pitfalls
 
 **Byte-order surprises with multi-byte table entries.** Any time a converter emits
-16-bit values (sprite pointer tables, PRG load addresses, tilemap indices), verify
+16-bit values (sprite pointer tables, PRG load addresses, tilemap indices), check
 endianness. The 6502 is little-endian; a script that emits `struct.pack('>H', v)`
-(big-endian) will produce a reversed pointer table that causes subtle crashes.
+(big-endian) produces a byte-swapped pointer table and crashes that are hard to
+trace.
 Use `struct.pack('<H', v)` for all 16-bit and 32-bit fields in 6502-targeted data.
 
 **Color-RAM endianness.** Color RAM at `$D800` holds one nybble per cell. The
 nybble is in the low 4 bits of each byte; the upper 4 bits are undefined on read.
 Some older tools export color data with the color in the high nybble. A color
-display that appears uniformly wrong (all cells one color, or all black) is
-usually a nybble-position bug: `AND #$0F` or shift the data appropriately in the
+display that is uniformly wrong (all cells one color, or all black) is usually a
+nybble-position bug: `AND #$0F` or shift the data appropriately in the
 converter.
 
 **Multicolor sprite double-pixel padding.** A multicolor sprite cell is 24 bits
 wide but displayed as 12 double-pixels. If the source sprite was drawn at 24-pixel
-hires resolution and then converted by bit-packing pairs, the result will look
+hires resolution and then converted by bit-packing pairs, the result looks
 compressed horizontally. Multicolor sprites must be drawn at 12-pixel effective
 width, stored as the standard 64-byte block format, and imported without horizontal
-scaling. Document this constraint in the art brief so artists author at the correct
+scaling. Put this constraint in the art brief so artists draw at the right
 resolution.
 
 **VIC bank and charset alignment.** The VIC-II can only address 16 KB at a time
 (bank 0: `$0000`–`$3FFF`, bank 1: `$4000`–`$7FFF`, bank 2: `$8000`–`$BFFF`,
 bank 3: `$C000`–`$FFFF`). Within a bank, charset data must start at a 2 KB
 boundary and bitmap data at an 8 KB boundary. A build that places a charset at
-`$2100` instead of `$2000` due to a missing `ALIGN` directive in the linker config
-will display character corruption that has no obvious cause at runtime.
+`$2100` instead of `$2000` because of a missing `ALIGN` directive in the linker
+config shows corrupted characters with no obvious cause at runtime.
 
 ### Compression: Exomizer integration
 
-For productions where disk space or RAM footprint is a constraint, Exomizer 3 is
-the standard compression pass. Exomizer accepts any raw binary or PRG and produces
+Where disk space or RAM is short, Exomizer 3 is the standard compression pass. Exomizer accepts any raw binary or PRG and produces
 either a self-extracting PRG or a raw compressed stream for use with a separate
 depacker. See `../techniques/loaders-packers.md` for the full operational details.
 
-The key trade-off in an asset pipeline is decrunch time versus disk size:
+The trade-off in an asset pipeline is decrunch time against disk size:
 
 - A Koala bitmap (10001 payload bytes) compresses to roughly 6000–7500 bytes with
   Exomizer, depending on the image content. Bitmaps with large solid areas compress
-  better; dithered bitmaps approach incompressibility.
+  better; dithered bitmaps barely compress.
 - Decrunch time for a 6 KB stream on a stock 6510 at 1 MHz is approximately
   0.3–0.5 seconds, imperceptible during a loading screen.
-- A full sprite bank (e.g., 128 sprites × 64 bytes = 8192 bytes) typically
-  compresses to around 4000–6000 bytes. Sprite data with animation frames sharing
-  similar content compresses well.
+- A full sprite bank (e.g., 128 sprites × 64 bytes = 8192 bytes) compresses to
+  around 4000–6000 bytes. Animation frames with similar content compress well.
 
 Exomizer raw stream mode (`exomizer raw`) is used when the depacker is embedded in
 the production code rather than prepended to the file:
@@ -436,10 +430,10 @@ the production code rather than prepended to the file:
 exomizer raw -o bitmap.exo build/bitmap.bin
 ```
 
-The depacker entry point and depacker code are linked into the production's PRG,
-and the decompression call precedes the VIC switch-on. This avoids the overhead of
-a separate self-extracting PRG layer when multiple assets are decompressed in
-sequence.
+The depacker code and entry point are linked into the production's PRG, and the
+decompression call comes before the VIC switch-on. When several assets are
+decompressed in sequence, this avoids a separate self-extracting PRG layer for
+each.
 
 ---
 
@@ -447,8 +441,8 @@ sequence.
 
 ### Example 1: Koala bitmap → Oscar64 C header
 
-This Makefile target converts a Koala file and produces a C header that Oscar64
-can `#include`. The header declares `extern` arrays with section attributes that
+This Makefile target converts a Koala file into a C header that Oscar64 can
+`#include`. The header declares `extern` arrays with section attributes that
 the Oscar64 linker places at the correct VIC-visible addresses.
 
 ```makefile
@@ -526,8 +520,8 @@ and the `stop` entry it described at base+6 is not in the player's jump table.
 ### Example 3: Sprite sheet converter skeleton
 
 This skeleton reads a SpritePad raw binary export (64 bytes per sprite, no header)
-and emits a C array plus a pointer table for an 8-sprite multiplexer. It produces
-one `.h` file.
+and emits a C array plus a pointer table for an 8-sprite multiplexer, in one `.h`
+file.
 
 ```python
 #!/usr/bin/env python3
@@ -567,8 +561,8 @@ out_path.write_text("".join(lines))
 print(f"Converted {count} sprites from {src_path.name}")
 ```
 
-The alignment constraint `aligned(64)` ensures the Oscar64 linker places the sprite
-bank at a 64-byte boundary, making the pointer arithmetic (`address / 64`) exact.
+The alignment constraint `aligned(64)` makes the Oscar64 linker place the sprite
+bank at a 64-byte boundary, so the pointer arithmetic (`address / 64`) is exact.
 If the linker does not honor the 64-byte alignment (verify with the `.map` output),
 add a dedicated linker segment with an explicit start address.
 

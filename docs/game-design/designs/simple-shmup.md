@@ -19,9 +19,9 @@ them, so none is named here.
 
 No Measured frame line: the recipe does not time its loop. Timing it (a
 CIA timer around the loop body, the harness of `platformer-scaffold.md`)
-is what would give this design one.
+would give this design one.
 
 The recipe's frontmatter also scaffolds `horizontal_shmup`, but the
-listing scrolls vertically (`soft_scroll_v`), and a horizontal game
+listing scrolls vertically (`soft_scroll_v`). A horizontal game
 changes the scroll technique, so this design is an instance of
 `vertical_shmup` only. An earlier version listed both archetypes.

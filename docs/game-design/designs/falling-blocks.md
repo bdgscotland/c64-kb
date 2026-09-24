@@ -35,10 +35,10 @@ no jiffy handler is inside the figure. The screen is on and each frame
 starts at raster line 250, so badline stalls are inside. The HUD is
 printed after `t_stop` and is not counted.
 
-- `worst` is the dearest frame of the scripted five-piece game: its
+- `worst` is the most expensive frame of the scripted five-piece game: its
   four-line clear, rules and render together, six rows redrawn.
 - No `typical` is given. The page's other figure, `MOVE MAX` 2,113 on both
-  models, is the dearest frame without a lock, not a common frame.
+  models, is the most expensive frame without a lock, not a common frame.
 - The page also times a constructed frame the game cannot reach: a
   twenty-row stack, a four-line clear, sixteen rows collapsed. Rules 5,717
   (PAL) and 5,888 (NTSC), render 9,311 and 9,394, 15,028 and 15,282 in

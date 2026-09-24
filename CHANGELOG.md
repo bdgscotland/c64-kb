@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 772, schema 31, tools 2.3.2, package 0.17.1.
+Data 773, schema 31, tools 2.3.2, package 0.17.1.
+
+**Plain prose, batch 1 of #56 (data 773).** The design, art, music,
+workflow, game-design and root pages lost their machine-written wording:
+reversal openers, importance claims, metaphors, editorial adjectives,
+scaffolding and em-dash asides. `npm run check:prose` passed on all 26
+pages (every code block, table row, heading and metadata line unchanged;
+every number, hex value, code span, link and acronym still there as often
+as before). A clean ingest gives the same 925 nodes and 5,403 edges, every
+node property and edge identical; 46 of 50 top-5 search results for ten
+queries on these pages are unchanged. The pass found about 40 claims that
+look wrong; they were not changed and are listed in #57 and #58.
 
 **Stale pages and tool descriptions found by the README audit (data 772,
 tools 2.3.2).**

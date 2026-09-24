@@ -1,7 +1,7 @@
 # Toolchain Reference Conventions
 
-All toolchain reference docs in `docs/toolchains/` and `docs/runtime/` follow these
-patterns so `src/graph/extract.ts` can parse them. Deviation breaks the graph build.
+Toolchain reference docs in `docs/toolchains/` and `docs/runtime/` follow these
+patterns so `src/graph/extract.ts` can parse them. A doc that deviates breaks the graph build.
 
 The marker `<!-- doc-type: toolchain-reference -->` MUST appear in the first 10
 lines for the extractor to process the file.
@@ -19,17 +19,17 @@ home_url: https://github.com/drmortalwombat/oscar64
 ```
 
 `tool`, `tool_kind`, and `home_url` are required. `maintainer` and `license` are
-optional but strongly preferred.
+optional but expected.
 
 An optional `version_verified: "5.25"` key names the version of the tool
 that this repo's gates (`check:listings`, `verify:recipes`) ran with, as
 the tool itself reports it: the KickAssembler banner, `oscar64`'s
 "Starting oscar64 …" line, `cl65 --version`. Quote it so YAML keeps it a
 string. It becomes `Tool.version_verified`, and `c64_recipe_lookup`
-names it beside the recipe's toolchain. It is a statement about this
-machine, not a minimum: an older or newer release may or may not build
-the same listing. Change it when the gates move to a new version, in the
-same commit.
+names it beside the recipe's toolchain. It records what this machine
+ran, not a minimum; another release may or may not build
+the same listing. Change it in the same commit that moves the gates to a
+new version.
 
 ## Tool entry
 
@@ -76,13 +76,13 @@ the chunker preserves the link; the extractor does not currently follow these.
 
 ## Section structure
 
-After `## Tool`, content sections follow free-form H2s. Recommended section order:
+After `## Tool`, content sections are free-form H2s. Recommended order:
 
 1. Quick reference (install one-liner, basic CLI invocation)
 2. Build pipeline (input file types → output file types)
 3. Core CLI flags / common arguments
-4. Idioms — toolchain-specific patterns the LLM should prefer
-5. Header reference (for c-compilers and assembler libraries — H3 per header file)
+4. Idioms: toolchain-specific patterns the LLM should prefer
+5. Header reference (for c-compilers and assembler libraries; H3 per header file)
 6. Common pitfalls
 7. See also (links to recipes, related tools)
 
