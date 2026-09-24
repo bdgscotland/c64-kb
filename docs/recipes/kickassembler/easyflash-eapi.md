@@ -8,6 +8,9 @@ file_formats: [CRT]
 uses_registers: [DE00, DE02, DC04, DC05, DC06, DC07, DC0E, DC0F, D011, D016, D018, D020, D021]
 uses_kernal: []
 devices: [easyflash]
+claims: [expansion_io1 (owns), expansion_io2 (owns), zero_page $02-$08+$FB-$FE (owns)]
+claims_basis: derived-listing
+ram: [screen=$0400-$07E7, main=$0800-$0FFF, eapi=$C000-$C2FF, colour=$D800-$DBE7]
 harness: [cia1_timer_a, cia1_timer_b, $02FF]
 ---
 
@@ -651,6 +654,12 @@ writes; it has no step to add the driver, and the cartridge it would boot
 is the failing one above. `../runs.json` therefore lists the page with a
 `"skip"` key, the pictures are under `docs/figures/`, and the commands
 above made them.
+
+The frontmatter's `claims:` is read from the listing and the driver's
+documented behaviour (`claims_basis: derived-listing`), not from a
+`claims-watch` trace, since the watch autostarts a PRG. `expansion_io2`
+is the jump table EAPIInit builds at `$DF80`; the driver's borrowed zero
+page `$4B`-`$4C` is restored and not claimed.
 
 ## Expected output
 

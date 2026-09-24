@@ -7,6 +7,9 @@ techniques: [bitfire_loader]
 file_formats: [PRG, D64]
 uses_registers: [D011, D012, D018, D019, D01A, D020, D021, DC0D, DD00, DD02, DD0D]
 uses_kernal: [SETLFS, SETNAM, LOAD]
+claims: [cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), cia2_vic_bank (owns), serial_bus (shares), vic_raster_irq (owns), irq_vector_fffe (owns), zero_page $10-$21 (owns)]
+claims_basis: derived-listing
+ram: [screen2=$8400-$87E7, colour=$D800-$DBE7, data=$2000-$7FFF, data2=$A000-$BFFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -593,6 +596,13 @@ are numbered 0-7 in the order of the `-b` options, and each takes 17
 blocks. `-autostart` on the D64 loads and runs the directory's first
 entry, the test. Add `-model ntsc` for the NTSC run. `:mode=1` and
 `:mode=2` build the other two variants; rebuild the disk after each.
+
+The frontmatter's `claims:` is read from the pinned listing
+(`claims_basis: derived-listing`), not from a `claims-watch` trace: the
+watch autostarts a PRG, and this program boots from the disk Bitfire's
+`d64write` writes, which this repository does not build. `serial_bus
+(shares)` is the pinned plain store to `$DD00`, which also writes the
+bus bits; Bitfire's readme allows it.
 
 ## Expected output
 
