@@ -5,7 +5,15 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 810, schema 35, tools 2.10.0, package 0.23.0.
+Data 811, schema 35, tools 2.10.0, package 0.23.0.
+
+**tech-tech masks CIA2 with `$7F` (data 811; #88).** The listing wrote
+to `$DD0D` the byte it had just read from `$DC0D`. A VICE trace on PAL
+and NTSC shows it wrote `$00` and no NMI ran, but a CIA1 underflow
+between `sei` and the store would read back `$81`, and writing that
+enables CIA2 timer A as an NMI (reasoned from the ICR's bit 7, not
+produced). It now writes `$7F` to both, in the same 14 bytes; the
+screenshots still match. The ingest listing scan no longer warns on it.
 
 **Game designs count calls, check per phase, and every platformer
 member has a figure (schema 35, tools 2.10.0, package 0.23.0, data 810;
