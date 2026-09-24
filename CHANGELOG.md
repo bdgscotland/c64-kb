@@ -7,6 +7,12 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 797, schema 33, tools 2.8.0, package 0.21.0.
 
+**claims-watch no longer reads RAM stores as I/O (#79).** A store to
+`$D000-$DFFF` with I/O banked out was recorded as the register's value,
+so ifli-image showed a `serial_bus` change that never happened and 1,024
+fill stores labelled "colour RAM". Values are now recorded only when
+`$01` banks I/O in. No recipe's Claims line changes.
+
 **Four new recipes and the last display-field Claims lines (data 797;
 #74).** New KickAssembler recipes, each run in VICE and measured:
 `mcm-text` (all 64,000 display pixels match on PAL and NTSC), `vsp`
