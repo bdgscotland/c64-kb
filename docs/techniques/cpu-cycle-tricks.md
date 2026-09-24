@@ -512,7 +512,7 @@ On each badline the VIC pulls BA low on cycle 12 and takes the bus on cycles 15-
 
 **Sprite fetch avoidance.** Active sprites steal additional cycles per line: 2 bus cycles of s-accesses per enabled sprite, plus a 3-cycle BA lead-in (write-only for the CPU) paid once per contiguous group of active sprite slots: up to 3 + 8 × 2 = 19 cycles per line with all eight on (measured in VICE x64sc: 105 / 399 / 210 cycles over the 21 DMA lines for one sprite / eight sprites / sprites 0+7, the last forming two BA groups; badline + eight sprites measured 40 + 19 = 59 stolen, 4 left). An earlier version of this page counted 4 cycles per sprite in two 2-cycle windows, which double-counts the single 2-cycle s-access window per sprite. Disable sprites on critical lines or account for their steal in the cycle budget.
 
-**Blanking the display.** DEN ($D011 bit 4) is sampled once per frame, on raster line $30 (48): hold it clear across line $30 and that frame has no badlines at all, so every line gives the CPU 63 cycles (measured in VICE x64sc: a 14-cycle poll loop over lines 100-199 ran 450 iterations with DEN clear across $30 against 412 with DEN set). Clearing DEN later in the frame does not remove the remaining badlines of that frame (the same loop with DEN cleared at line 100 still ran 412), so this is a per-frame choice for loaders and compute phases, not a per-line one; an earlier version of this page implied it worked mid-frame. Keep DEN clear across line 51 too for the border colour over the whole screen; clear on $30 but set again before 51 gives a badline-free frame whose window still opens on idle-state graphics (see `docs/hardware/vic-ii-reference.md`, $D011).
+**Blanking the display.** See `screen_blank_full_cpu`. DEN ($D011 bit 4) is sampled once per frame, on raster line $30 (48): hold it clear across line $30 and that frame has no badlines at all, so every line gives the CPU 63 cycles (measured in VICE x64sc: a 14-cycle poll loop over lines 100-199 ran 450 iterations with DEN clear across $30 against 412 with DEN set). Clearing DEN later in the frame does not remove the remaining badlines of that frame (the same loop with DEN cleared at line 100 still ran 412), so this is a per-frame choice for loaders and compute phases, not a per-line one; an earlier version of this page implied it worked mid-frame. Keep DEN clear across line 51 too for the border colour over the whole screen; clear on $30 but set again before 51 gives a badline-free frame whose window still opens on idle-state graphics (see `docs/hardware/vic-ii-reference.md`, $D011).
 
 ### Cycle budget
 
@@ -532,6 +532,95 @@ A full-screen effect that runs IRQs on every visible line (200 lines) at a badli
 ### Recipes
 
 - No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; that recipe has a text logo, not a sprite, and its bars avoid badlines by choosing `BAR_START = 88` from an IRQ ring, not phase-inverted scheduling.)
+
+---
+
+## screen_blank_full_cpu — Blank the screen for a frame with no badlines
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D011, D012
+**Uses kernal:** (none)
+
+### Why
+
+Badlines take 40 to 43 cycles from the CPU on every eighth display line. A
+loader, a depacker or a precalculation phase that shows nothing loses about
+a twentieth of the frame to them for no benefit. Clearing DEN removes them.
+
+### How
+
+DEN is `$D011` bit 4. The VIC samples it once per frame, on raster line
+`$30` (48). If DEN is clear on that line, the frame has no badlines at all
+and every line gives the CPU its full 63 cycles on PAL, 65 on NTSC 6567R8.
+The screen shows border colour from top to bottom.
+
+Measured in VICE x64sc 3.10, PAL (default C64C) and `-model ntsc`, with the
+harness below: a 14-cycle poll loop counted iterations from line 100 to
+line 200 in three frames.
+
+| Frame | PAL iterations | NTSC iterations |
+|---|---|---|
+| DEN clear across line `$30` | 449 | 464 |
+| DEN set | 412 | 427 |
+| DEN set on `$30`, cleared on line 100 | 412 | 426 |
+
+The 37 extra PAL iterations are 518 cycles, within one loop pass of the
+twelve badlines in lines 100 to 199 at 43 cycles each (516; arithmetic
+from the table, YSCROLL 3). The third row is
+the trap: clearing DEN after line `$30` removes no badline of that frame.
+Blanking is a per-frame decision, made before line `$30`.
+
+```kickassembler
+// Frame with DEN clear across line $30; count a 14-cycle loop over lines 100-199.
+// Counts land in X (low) and Y (high). Run with SEI and CIA interrupts off.
+blank_frame:
+!:  lda $d011           // wait for line >= 256, then for the wrap to line 0
+    bpl !-
+!:  lda $d011
+    bmi !-
+!:  lda $d012
+    cmp #$20
+    bne !-
+    lda $d011
+    and #$ef            // DEN off before line $30
+    sta $d011
+!:  lda $d012
+    cmp #100
+    bne !-
+    ldx #0
+    ldy #0
+count:                  // inx 2, bne 3, lda 4, cmp 2, bcc 3 = 14 cycles
+    inx
+    bne !+
+    iny
+!:  lda $d012
+    cmp #200
+    bcc count
+    rts
+```
+
+To show the picture again, set DEN before line `$30` of the next frame.
+Keep DEN clear across line 51 as well if the whole screen must stay border
+colour: clear on `$30` but set again before line 51 gives a badline-free
+frame whose display window still opens, showing idle-state graphics
+(`docs/hardware/vic-ii-reference.md`, `$D011`).
+
+### Variations
+
+**Sprites still steal.** DEN does not stop sprite DMA. An enabled sprite on
+a line still costs its 2 cycles plus the BA lead-in
+(`phase_inverted_irq`, "Sprite fetch avoidance"). Clear `$D015` too for the
+full 63.
+
+**Blank the whole phase.** Clear DEN once and leave it clear until the
+work ends, and every frame is badline-free. The depack timings in
+`docs/techniques/loaders-packers.md` (a 50 KB copy loop, about 820,000
+cycles) were measured this way, with the screen blanked.
+
+### Recipes
+
+- No recipe yet. The measurement above ran from the harness in this entry.
 
 ---
 
