@@ -1602,5 +1602,23 @@
       "pal": "screenshots/dysp.png",
       "ntsc": "screenshots/dysp-ntsc.png"
     }
+  },
+  "kickassembler/sid-env3-filter": {
+    "cycles": 18000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-env3-filter.png",
+      "ntsc": "screenshots/sid-env3-filter-ntsc.png"
+    }
   }
 }
