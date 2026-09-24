@@ -1068,6 +1068,85 @@ spends about 54 of every 128 cycles. Not measured; no Cost line.
 
 ---
 
+## music_during_kernal_load — Keep a tune in time through a KERNAL LOAD with a CIA2 frame clock and catch-up
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DD04, DD05, DD06, DD07, DD0E, DD0F, D012, D019, D01A
+**Requires:** sid_play_routine_pattern, kernal_load_to_address
+**Claims:** cia2_timer_a (owns), cia2_timer_b (owns)
+**Claims basis:** measured-vice
+
+### Why
+
+A game that loads a level through the KERNAL wants its music to keep
+playing. The KERNAL's serial routines mask interrupts for each byte and
+while they wait for the drive, so a player called once per interrupt
+misses frames and the tune slows down and drifts. Measured over a
+4,096-byte LOAD with a true-drive 1541 in VICE x64sc 3.10
+(`recipes/kickassembler/music-during-load.md`, nine loads per model):
+
+| Driver | PAL steps lost | NTSC steps lost |
+|---|---|---|
+| CIA1 timer A interrupt, one step each | 32 to 35 % | 28 to 31 % |
+| Raster interrupt, one step each | 13 to 17 % | 12 to 18 % |
+| Raster interrupt with the catch-up below | 0 | 0 |
+
+### How
+
+1. Before the load, start a frame clock the serial code does not touch:
+   CIA2 timer A continuous with a latch of one frame less one (19,655
+   PAL, 17,094 NTSC 6567R8; `$02A6` tells them apart), and CIA2 timer B
+   counting timer A's underflows (`$DD0F` = `$51`) from `$FFFF`.
+2. Keep the music on an interrupt. A raster interrupt loses fewer
+   frames than a CIA1 timer interrupt, so the tune falls less far
+   behind before each catch-up; the recipe's catch-up runs on one.
+3. In the handler, read timer B (high, low, high again until the two
+   high reads agree), frames elapsed = `$FFFF` minus it, and call the
+   player until the step count equals frames elapsed.
+4. Start the clock inside the first interrupt with timer A's first
+   period a little short (the recipe uses 1,000 cycles), so each
+   underflow lands before the interrupt it pairs with and a handler
+   that enters a few cycles early never reads last frame's count.
+
+### Why it works
+
+ACPTR (`$EE13`-`$EE84`) and the send routine use `$DD00` for the bus
+and CIA1 timer B for their timeouts; nothing in them writes CIA2's
+timers (a claims-watch trace of the recipe saw no ROM store to
+`$DD04`-`$DD0F`). CIA2 keeps counting through every masked
+stretch, so the count of frames is right whenever the handler next
+runs. The loss the catch-up repairs has two causes:
+
+- A raster match that arrives while interrupts are masked waits in
+  `$D019` and is taken at the next `CLI`, but a second match in the
+  same stretch is not recorded. The longest stretch measured was 40
+  NTSC frames.
+- A CIA1 timer A underflow during ACPTR is lost outright: ACPTR polls
+  `$DC0D` at `$EE2D` and `$EE30` for its timer B timeout, and that read
+  clears every CIA1 flag and releases `/IRQ` (ROM bytes, rung 1;
+  `hardware/cia-reference.md`). Hence the higher loss.
+
+### Variations
+
+- **Cap the burst.** After a 33-frame stretch the handler plays 33
+  steps at once. A full player at 1,198 cycles a call (the Cost line of
+  `sid_play_routine_pattern`) would need about 39,500 cycles, two PAL
+  frames (rung 3, not measured). Cap the steps per interrupt, or skip
+  the missed rows without sounding them.
+- **TOD instead of CIA2.** A TOD clock also runs through masked
+  stretches, but in tenths of a second, five or six frames; it paces a
+  catch-up coarsely and leaves both CIA2 timers free. Not measured
+  here.
+
+### Recipes
+
+- `recipes/kickassembler/music-during-load.md`: the three drivers over
+  the same file, PAL and NTSC, with frames, steps, steps lost and the
+  longest gap on screen.
+
+---
+
 ## sidfx_layered_chip — Two-SID setups
 
 **Complexity:** scene-tier
