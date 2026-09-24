@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 788, schema 31, tools 2.6.1, package 0.19.1.
+Data 789, schema 31, tools 2.6.1, package 0.19.1.
+
+**pseudo-3d-road's loop fixed, and the #70 leftovers (data 789; #70).**
+The road loop synced on badline 99, so its $D016 writes started on cycle
+56, jittered 2 cycles and drifted 3 more per badline: 0 of 100 lines
+showed their own XSCROLL, and a vertical-blank IRQ that ran into the
+next frame halved the rate. It now syncs on the 97/98 boundary with
+badline bodies that allow for the 43-cycle stall; in the VICE monitor
+all 100 writes land on cycle 4 of their own line on every frame (864
+PAL, 988 NTSC), the screenshot shows each line's own entry, and the Cost
+is 18,343. The road never curves left (#73). eight-way-scroll's rows 0-4
+meet their badlines with 5 cycles to spare at worst (measured); the
+counter still checks row 6, and the page says why. Among the small
+claims: the $3FFF idle pattern does show in VICE (it had said not);
+eight sprites cost about 20,000 cycles/s, not 50-100K; the music play
+call runs on line 255; the KERNAL loads a Koala picture in about 25 s.
 
 **SID capture, loudness and a music design page (data 788; #50).**
 `runtime/vice-reference.md` "Recording the SID output": headless WAV
