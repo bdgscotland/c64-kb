@@ -1914,3 +1914,72 @@ An assembler loop would be several times faster (not measured here).
 ### Recipes
 
 - `recipes/oscar64/trainer-hooks.md` (value search over `$0800-$8FFF` with a candidate bitmap, `DEC` scan, the NOP and LDA patches played for eight deaths each, the first pass timed with CIA1)
+
+## machine_language_monitor_core — A monitor's dump, table-driven disassembler, mini-assembler and BRK breakpoints
+
+**Complexity:** medium
+**Region:** both
+
+### Why
+
+A monitor is how a program is inspected and patched on the machine
+itself: show memory, show it as code, type an instruction in, stop at an
+address and look at the registers. Cartridge and disk monitors all have
+these four parts. Built into a game or a tool, the same core gives a
+debug screen; built alone, it is a development tool that needs nothing
+but the machine.
+
+### How
+
+**Dump.** Print an address and eight bytes a line as hex; the ASCII or
+screen-code column beside them is optional. Reading `$D000-$DFFF` shows
+I/O, not RAM, unless the bank is switched first, and reading some I/O
+registers changes them (`$DC0D` clears the CIA's interrupt flags), so a
+dump of the I/O area is not harmless.
+
+**Disassembler.** Two 256-entry tables indexed by opcode: the mnemonic
+number and the addressing mode. The mode gives the length (1 to 3) and
+the operand format. Thirteen modes cover the legal set: implied,
+accumulator, immediate, zero page, zero page X and Y, absolute, absolute
+X and Y, indirect, (zp,X), (zp),Y and relative. Print a branch's target,
+not its offset. The 105 opcodes outside the legal set print as data
+(`???` in the recipe); a monitor that names them uses a third table
+(`docs/hardware/6502-illegal-opcodes.md`).
+
+**Mini-assembler.** Read the disassembler's own format back: the
+mnemonic, then the operand's shape and its digit count (two hex digits
+for zero page, four for absolute), then look up the opcode for that
+mnemonic and mode in a reverse table built once from the forward tables.
+A branch mnemonic takes a target address and stores the offset, refused
+outside -128 to +127. Test the pair by round trip: disassemble,
+reassemble, compare bytes.
+
+**Breakpoints.** Save the opcode at the address, write `BRK` (`$00`)
+there and run. With the KERNAL in, a BRK arrives through `$FFFE` at
+`$FF48`, which pushes A, X and Y, sees the B bit in the stacked status
+and jumps through `$0316`; point that vector at the handler. The stack
+then holds, from SP+1: Y, X, A, P, PC low, PC high. The stacked PC is the
+BRK's address plus 2. The handler records the registers, writes the
+saved opcode back, and to continue with the instruction that was
+replaced it must first subtract 2 from the stacked PC
+(`brk_resume_at_stacked_pc_skips_instruction`, `pitfalls/cpu.md`). It
+leaves through `$EA81` (`PLA TAY PLA TAX PLA RTI`). Single-stepping is
+the same trick: a temporary BRK after the current instruction, and at
+both targets of a branch. The default `$0316` is `$FE66`, the KERNAL's
+BRK warm start (ROM table at `$FD30`).
+
+### Why it works
+
+The recipe's tables agree with VICE's monitor on all 151 legal opcodes
+(mnemonic, mode and length) and give no legal name to the other 105; its
+disassembler and assembler round-trip every legal opcode and all 3,850
+instructions of the KERNAL ROM decoded in sequence from `$E000`, with no
+byte wrong (measured in VICE x64sc 3.10, both models). The round trip
+costs 2,451 cycles an instruction on PAL in Oscar64 C, 9.4 million for
+the ROM, most of it the text formatting and parsing. A first version
+that searched the 256-entry table for each assembled line had not
+finished at 30 million.
+
+### Recipes
+
+- `recipes/oscar64/monitor-core.md` (a dump line, the disassembler and assembler round-tripped over all legal opcodes and the KERNAL ROM, a BRK breakpoint through `$0316` resumed at PC - 2 and at PC, the round trip timed with CIA1, PAL and NTSC)

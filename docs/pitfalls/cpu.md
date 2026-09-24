@@ -13,8 +13,9 @@ opcodes that disappear on CMOS silicon, an indirect-jump address fetch that
 wraps at page boundaries, a signed compare that turns over, an LFSR that
 never leaves zero, an assembler optimiser that separates a patch from
 the instruction it patches, a NOP patch that leaves a branch testing old
-flags, and an upward copy that overwrites its own source. Each has broken cycle-tight or portable C64
-code. (An earlier version of this paragraph counted
+flags, an upward copy that overwrites its own source, and a breakpoint
+that resumes past the instruction it replaced. Each has broken
+cycle-tight or portable C64 code. (An earlier version of this paragraph counted
 three.)
 
 ---
@@ -1023,3 +1024,73 @@ descending move, 1,725       bytes differing: 0
 - Technique `text_editor_gap_buffer_and_refresh` (`docs/techniques/text.md`): the gap buffer and its two move loops
 - Recipe `docs/recipes/oscar64/gap-buffer-editor.md`: the three moves above
 - Technique `memory_fill_copy` (`docs/techniques/cpu-cycle-tricks.md`): the overlapping move both ways in assembler, measured on a page
+
+---
+
+## brk_resume_at_stacked_pc_skips_instruction — A breakpoint handler that returns to the stacked PC skips the instruction the BRK replaced and the byte after it
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** machine_language_monitor_core
+**Mitigated by techniques:** machine_language_monitor_core
+
+### Symptom
+
+A breakpoint stops where it should and shows sensible registers. After
+"go", the program misbehaves: a register holds a value it should have
+lost, a store is missing, or, when the replaced instruction was one
+byte long, the CPU runs from the middle of the next instruction and
+crashes a few instructions later.
+
+### Mechanism
+
+`BRK` is a two-byte instruction. It pushes the address of the BRK plus
+2, then the status with the B bit set. The byte after the BRK is never
+executed; it is often called the signature byte. A handler that puts the
+original opcode back and returns with `RTI` resumes at BRK + 2: the
+instruction at the breakpoint never runs, and if it was shorter than two
+bytes the CPU lands inside the next one. The pitfall is in the naive
+form of a monitor's breakpoint; the technique's resume rule cures it.
+
+Measured in VICE x64sc 3.10 on both models with the recipe below. The
+test routine is `LDX #$99`, `LDA #$11`, `LDX #$22` (the breakpoint),
+`LDY #$33`, then stores X and Y. The BRK at `$0E66` stacked PC `$0E68`.
+Resumed at `$0E68`, the routine stored X = `$99`: the `LDX #$22` was
+skipped. Resumed at `$0E66` after the stacked PC was lowered by 2, it
+stored X = `$22`. Y was `$33` both times.
+
+### Fix
+
+In the handler, subtract 2 from the stacked PC before `RTI`, after
+writing the original opcode back. To keep the breakpoint armed for the
+next pass, execute the one instruction with a temporary BRK after it,
+then put the breakpoint back. A BRK used as a system call with its
+signature byte as an argument is the case where resuming at the stacked
+PC is right.
+
+### Worked example
+
+```asm
+// Entered through $0316; stack from SP+1: Y, X, A, P, PCL, PCH.
+brk_handler:
+            tsx
+            // ... record registers, write the saved opcode back ...
+// BAD: RTI now resumes at BRK + 2
+//          jmp $ea81
+
+// GOOD: stacked PC - 2 is the breakpoint address
+            sec
+            lda $0105,x
+            sbc #2
+            sta $0105,x
+            lda $0106,x
+            sbc #0
+            sta $0106,x
+            jmp $ea81           // PLA TAY PLA TAX PLA RTI
+```
+
+### Cross-references
+
+- Technique `machine_language_monitor_core` (`docs/techniques/cpu-cycle-tricks.md`): the breakpoint cycle and the stack layout
+- Recipe `docs/recipes/oscar64/monitor-core.md`: the two resumes above
+- `docs/hardware/kernal-routines-reference.md`: the IRQ entry at `$FF48` and the exits at `$EA31` and `$EA81`

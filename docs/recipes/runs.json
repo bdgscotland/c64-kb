@@ -2221,5 +2221,17 @@
       "pal": "screenshots/gap-buffer-editor.png",
       "ntsc": "screenshots/gap-buffer-editor-ntsc.png"
     }
+  },
+  "oscar64/monitor-core": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/monitor-core.png",
+      "ntsc": "screenshots/monitor-core-ntsc.png"
+    }
   }
 }
