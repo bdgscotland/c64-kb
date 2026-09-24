@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
 import { HARDWARE_UNITS } from "../src/graph/claims.ts";
-import { Declared } from "../scripts/lib/claims-declared.ts";
+import { Declared } from "../src/claims/declared.ts";
 import {
   kernalMaySets,
   labeller,
@@ -14,7 +14,7 @@ import {
   readPrg,
   recipeFrontmatter,
   withPrerequisites,
-} from "../scripts/lib/claims-sources.ts";
+} from "../src/claims/sources.ts";
 import {
   BASIC_READY,
   ClaimsWatch,
@@ -24,8 +24,8 @@ import {
   portRmwValue,
   storedValue,
   touchedUnits,
-} from "../scripts/lib/claims-trace.ts";
-import { buildUnitMap, CpuPort, parseRanges, sourceOf } from "../scripts/lib/claims-units.ts";
+} from "../src/claims/trace.ts";
+import { buildUnitMap, CpuPort, parseRanges, sourceOf } from "../src/claims/units.ts";
 import { findToolchains } from "../scripts/lib/toolchains.ts";
 
 // scripts/claims-watch.ts (#22 step 6): the unit map read from the
@@ -223,14 +223,14 @@ describe("declarations", () => {
 });
 
 describe("sources read from the docs", () => {
-  const all = loadTechniqueClaims(root);
+  const all = loadTechniqueClaims(join(root, "docs"));
   it("reads a technique's Claims line and its prerequisites", () => {
     expect(all.get("sfx_engine_beside_music")?.claims).toEqual([{ unit: "sid_voice_2", mode: "shares" }]);
     expect(withPrerequisites(["sfx_engine_beside_music"], all)).toContain("sid_play_routine_pattern");
     expect(all.get("sprite_multiplex_game")?.claims?.map((c) => c.unit)).toContain("vic_raster_irq");
   });
   it("reads the KERNAL may-sets, the IRQ service included", () => {
-    const may = kernalMaySets(root);
+    const may = kernalMaySets(join(root, "docs"));
     expect(may.get("SETLFS")).toEqual([[0xb8, 0xba]]);
     expect(may.get("IRQ")?.some(([a, b]) => a <= 0x91 && 0x91 <= b)).toBe(true);
     expect(may.has("NMI")).toBe(true);

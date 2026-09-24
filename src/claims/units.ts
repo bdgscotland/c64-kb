@@ -5,7 +5,7 @@
  * src/graph/claims.ts, parsed from its `addresses` strings, so a change to
  * the seed changes the watch with it.
  */
-import { HARDWARE_UNITS, type HardwareUnit } from "../../src/graph/claims.ts";
+import { HARDWARE_UNITS, type HardwareUnit } from "../graph/claims.ts";
 
 /** A unit's share of one register: the bits it owns (0xFF for the whole byte). */
 interface UnitBits {
@@ -183,4 +183,16 @@ export function sourceOf(pc: number, port: CpuPort): Source {
   if (pc >= 0xe000 && port.kernal) return pc <= BASIC_IN_KERNAL_END ? "basic" : "kernal";
   if (pc >= 0xa000 && pc <= 0xbfff && port.basic) return "basic";
   return "program";
+}
+
+/** Sorted bytes as merged ranges: [[0x90, 0x9A], [0xB7, 0xB7]]. */
+export function toRanges(bytes: Iterable<number>): [number, number][] {
+  const sorted = [...new Set(bytes)].sort((x, y) => x - y);
+  const out: [number, number][] = [];
+  for (const b of sorted) {
+    const last = out.at(-1);
+    if (last && b === last[1] + 1) last[1] = b;
+    else out.push([b, b]);
+  }
+  return out;
 }

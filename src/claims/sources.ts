@@ -5,10 +5,12 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { extractGraphEntities, type GraphEntity } from "../../src/graph/extract.ts";
-import { parseClobbers } from "../../src/graph/kernal-clobbers.ts";
-import { zeroPageRangesFromCanonical, type Claim } from "../../src/graph/claims.ts";
-import { KERNAL_PAGE } from "./kernal-zp-page.ts";
+import { extractGraphEntities, type GraphEntity } from "../graph/extract.ts";
+import { parseClobbers } from "../graph/kernal-clobbers.ts";
+import { zeroPageRangesFromCanonical, type Claim } from "../graph/claims.ts";
+
+/** The KERNAL reference page, relative to the docs directory. */
+const KERNAL_PAGE = "hardware/kernal-routines-reference.md";
 
 export interface TechniqueClaims {
   /** null: the page has no settled Claims line, so its claims are unknown. */
@@ -43,8 +45,7 @@ function absorb(out: Map<string, TechniqueClaims>, e: GraphEntity): void {
 }
 
 /** Every technique id -> its Claims (as the extractor settles them) and its REQUIRES. */
-export function loadTechniqueClaims(root: string): Map<string, TechniqueClaims> {
-  const docs = join(root, "docs");
+export function loadTechniqueClaims(docs: string): Map<string, TechniqueClaims> {
   const out = new Map<string, TechniqueClaims>();
   const warn = console.warn;
   console.warn = () => undefined; // the extractor's page warnings belong to the ingest, not here
@@ -111,10 +112,10 @@ export function recipeFrontmatter(text: string): RecipeFrontmatter {
  * Routine name -> its may-set, from the `(may; ROM walk ...)` lines of the
  * KERNAL page, plus `IRQ` and `NMI` from the page's services table.
  */
-export function kernalMaySets(root: string): Map<string, [number, number][]> {
-  const text = readFileSync(join(root, KERNAL_PAGE), "utf8");
+export function kernalMaySets(docs: string): Map<string, [number, number][]> {
+  const text = readFileSync(join(docs, KERNAL_PAGE), "utf8");
   const out = new Map<string, [number, number][]>();
-  for (const e of extractGraphEntities(text, relative(join(root, "docs"), join(root, KERNAL_PAGE))))
+  for (const e of extractGraphEntities(text, KERNAL_PAGE))
     if (e.type === "kernal_clobbers_zp" && e.bound === "may")
       out.set(e.routine, zeroPageRangesFromCanonical(e.ranges));
   for (const m of text.matchAll(/^\| (IRQ|NMI) `\$[0-9A-F]{4}`[^|]*\| (.+?) \|$/gm)) {
@@ -124,7 +125,7 @@ export function kernalMaySets(root: string): Map<string, [number, number][]> {
   return out;
 }
 
-export { readPrg, type Prg } from "../../src/re/prg.ts";
+export { readPrg, type Prg } from "../re/prg.ts";
 
 /**
  * Labels from a KickAssembler .sym (`.label name=$0812`) or a VICE label

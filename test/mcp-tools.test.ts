@@ -43,13 +43,15 @@ import {
 // listed only where the Python analyzer is installed). c64_re_irq_chain and
 // c64_re_frame_profile run VICE for seconds; their runs are covered by
 // test/re-tools.test.ts and test/re-calibration.test.ts, and their reply
-// builders by the stub results at the end of this file.
+// builders by the stub results at the end of this file. c64_claims_watch
+// runs VICE too: test/claims-watch-tool.test.ts covers its run and reply.
 const SKIP = new Set([
   "c64_run_game",
   "c64_ingest_doc",
   "c64_memorization_check",
   "c64_re_irq_chain",
   "c64_re_frame_profile",
+  "c64_claims_watch",
 ]);
 
 // Tool -> [arguments, output schema or null for a text-only tool].

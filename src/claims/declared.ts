@@ -4,13 +4,8 @@
  * under, and the KERNAL routines it calls (whose may-sets bound what the
  * ROM may write to zero page on its behalf).
  */
-import {
-  parseClaims,
-  zeroPageRangesFromCanonical,
-  type Claim,
-  type ClaimMode,
-} from "../../src/graph/claims.ts";
-import { hex2, parseRanges, rangeHolding, rangeText, type NamedRange } from "./claims-units.ts";
+import { parseClaims, zeroPageRangesFromCanonical, type Claim, type ClaimMode } from "../graph/claims.ts";
+import { hex2, parseRanges, rangeHolding, rangeText, type NamedRange } from "./units.ts";
 
 export interface UnitClaim {
   modes: Set<ClaimMode>;

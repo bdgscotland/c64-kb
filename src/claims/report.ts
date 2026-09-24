@@ -3,9 +3,8 @@
  * then a line per unit, the harness, and what the program wrote that no
  * unit owns. Plain text for a person, JSON for the game test's harness.
  */
-import { toRanges } from "./kernal-walk.ts";
-import { pcList, type ClaimsWatch, type Tally, type Verdict } from "./claims-trace.ts";
-import { hex2, hex4 } from "./claims-units.ts";
+import { pcList, type ClaimsWatch, type Tally, type Verdict } from "./trace.ts";
+import { hex2, hex4, toRanges } from "./units.ts";
 
 const addrText = (addrs: Map<number, number>, max = 8): string => {
   const ranges = toRanges(addrs.keys());
