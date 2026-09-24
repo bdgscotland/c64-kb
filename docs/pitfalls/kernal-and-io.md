@@ -1647,8 +1647,11 @@ krnio_close(2);
 **Triggered by kernal:** IECIN, CHRIN, CHKIN, OPEN, CLOSE
 **Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, error_channel_check, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
 
-Measured in VICE x64sc 3.10 with a true-drive 1541, not on a real C64
-and 1541 (rung 1, VICE only).
+Measured in VICE x64sc 3.10 with true drive emulation, not on a real
+C64 and 1541 (rung 1, VICE only). VICE's default drive 8 is a 1541-II
+(`Drive8Type=1542`, `formats/iec-disk-reference.md`); an earlier
+version of this line said a 1541. `-drive8type 1541` gave the same
+thresholds (below).
 
 ### Symptom
 
@@ -1683,7 +1686,9 @@ given binary, model and launch.
 | 2 | 20 of 20 | 20 of 20 |
 | 3 | hung in round 1 | 20 of 20 |
 | 4 | hung in round 9 | hung in round 1 |
+| 5 | hung in round 3 | hung in round 1 |
 | 6 | hung in round 1 | hung in round 4 |
+| 7 | hung in round 1 | hung in round 1 |
 | 8 | hung in round 1 | hung in round 4 |
 | 8 at Y 0: from line 1, no badline under them | 20 of 20 | 20 of 20 |
 | 8 at Y 250: from line 251, in the lower border | 20 of 20 | hung in round 1, a different hang (below) |
@@ -1692,10 +1697,23 @@ given binary, model and launch.
 
 Badlines fall on lines 48 to 247 (`$30` to `$F7`), so Y 0 and Y 250
 put no badline under the sprites (arithmetic from the measured start
-line). On `-model c64` (6569, 6526) the PAL column repeated for 0, 2, 3
-and 8 sprites, Y 0, Y 250, blanked and sprites-off. With
-`-cia1model 1`, 8 sprites at Y 100 still hung (PAL round 1, NTSC round
-4). The round depends on how the run starts: launched under the remote
+line). On `-model c64` (6569, 6526) the PAL column repeated for Y 0,
+Y 250, blanked and sprites-off.
+
+**The CIA model does not matter; the video standard does.** The 0 to 8
+sprite rows at Y 100 were run once more on six machines: PAL c64c
+(8521s), PAL c64c with `-cia1model 0 -cia2model 0` (6526s), `-model
+c64` (6569, 6526s), `-model c64 -cia1model 1 -cia2model 1`, NTSC
+(6526s) and NTSC with `-cia1model 1 -cia2model 1`. Every PAL machine
+gave the PAL column above to the round, and both NTSC machines the NTSC
+column. So neither CIA model nor the 8565-versus-6569 VIC-II changes
+the outcome; PAL hangs from 3 sprites, NTSC from 4. That the hang
+survives a new CIA1 on NTSC also separates it from
+`kernal_eoi_wait_misses_timer_b_on_old_cia` below, which a new CIA1
+removes. With `-drive8type 1541` in place of the default 1541-II, the
+thresholds were the same and the round moved: PAL 3 to 8 sprites hung in
+rounds 12, 6, 8, 2, 3 and 1; NTSC 4 to 8 in rounds 1, 1, 1, 2 and 1. The
+round depends on how the run starts: launched under the remote
 monitor without `+autostart-delay-random`, the 8-sprite PAL build hung
 in round 1 once and round 2 once, and the 3-sprite PAL build in round 8
 or later. Whether a build hangs did not change.
@@ -1724,7 +1742,8 @@ So the drive sent eight bits and the C64 saw seven. Neither loop has a
 timeout, so both wait for ever.
 
 **The drive's pulse (rung 1 bytes, rung 3 arithmetic).** In the 1541
-ROM (`dos1541-325302-01+901229-05.bin`), the bit loop at `$E95C` puts a
+ROM (`dos1541-325302-01+901229-05.bin`; the default 1541-II's
+`dos1541ii-251968-03.bin` has the same bytes in both ranges), the bit loop at `$E95C` puts a
 bit on DATA, releases CLK at `$E9B7` (the bit is valid), then runs
 `LDA $23`, `BNE`, `JSR $FEF3`, `JSR $FEFB`, and pulls CLK low again at
 `$E9AE`. `$FEF3` is a delay loop (`LDX #$05`, `DEX`, `BNE`); it runs
@@ -1832,7 +1851,11 @@ fire inside the receive loop.
   rung 1.
 - VICE x64sc 3.10, 80 runs of the test program across the conditions in
   the table and six remote-monitor stops, 2026-09-23 and 2026-09-24,
-  rung 1.
+  and 72 more for the CIA-model and drive-type rows (0 to 8 sprites on
+  eight machine setups, one run each), 2026-09-24, rung 1.
+- `dos1541ii-251968-03.bin`, the default drive's ROM: `$E909` to `$E9C8`
+  and `$FEF3` to `$FF00` are byte-identical to the 1541 ROM cited
+  above (compared with Python), so the pulse arithmetic holds for both.
 - The review of #39's shmup-vertical starter, point 4: the game runs
   and the first minimal repro. Reported there, not repeated here.
 

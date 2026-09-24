@@ -23,7 +23,8 @@ returns. A CIA2 timer-B NMI is a watchdog that prints `HUNG` when one
 disk call has run for 3,000,000 cycles. It is the reproduction for
 pitfall `sprites_over_badlines_hang_serial_io`. Copy the part A
 pattern into any game that saves with sprites on screen. The hang is
-measured in VICE x64sc 3.10 with a true-drive 1541, not on hardware.
+measured in VICE x64sc 3.10 with true drive emulation and VICE's
+default 1541-II, not on hardware; an earlier version said a 1541.
 
 ## Source
 
@@ -169,8 +170,9 @@ int main(void)
 oscar64 -tm=c64 -O2 -o=sprites-off-during-disk-io.prg sprites-off-during-disk-io.c
 ```
 
-The run needs a formatted disk in drive 8. VICE's true-drive emulation
-is on by default:
+The run needs a formatted disk in drive 8. VICE's true drive emulation
+is on by default, and its default drive is a 1541-II; `runs.json` pins
+both with `-drive8truedrive -drive8type 1542`:
 
 ```bash
 c1541 -format "test,01" d64 test.d64
@@ -218,7 +220,9 @@ Measured on both PNGs with PIL, text cells decoded against
 
 The picture is final by 20,000,000 cycles on PAL and 25,000,000 on NTSC.
 Six runs, three per model, at 30,000,000 gave one PNG per model; so did
-25,000,000, and so did PAL and NTSC with `-cia1model 1`. On `-model c64`
+25,000,000, and so did PAL and NTSC with `-cia1model 1`, with
+`-cia1model 1 -cia2model 1`, and with `-drive8type 1541`: the same
+pixels as the baselines. On `-model c64`
 (6569, 6526) the text and the band are the same; the palette differs.
 
 ## Why this works
