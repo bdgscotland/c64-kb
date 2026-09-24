@@ -341,6 +341,17 @@ ECM is a text mode; the cycle budget is identical to standard text mode. No addi
 **Region:** both
 **Uses registers:** D016, D018, D021, D022, D023
 **Uses kernal:** (none)
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/mcm-text.md`: the only unit store is one `$D018`
+store (`$1C`) pointing the character base at the recipe's charset at
+`$3000`. Where the charset lives is the program's choice, and a technique
+that draws or animates it (`charset_animation`, `dycp_scroller`) claims
+the base; claiming it here as well would set multicolour text against
+every such technique. MCM ($D016 bit 4) is a mode bit, not a unit yet, so
+a clash with another mode bit cannot be seen by the unit check.
 
 ### Why
 
@@ -384,7 +395,9 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 
 ### Recipes
 
-- No recipe yet for a multicolour character set.
+- `recipes/kickassembler/mcm-text.md`: one glyph in eight multicolour
+  and eight hires cells on one screen, measured pixel for pixel in VICE
+  x64sc on PAL and NTSC, with `$D025`/`$D026` as a control.
 
 ---
 
@@ -532,6 +545,18 @@ On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
 **Raster band:** 45-251 (fli_image's engine, which How says this reuses unchanged)
+**Claims:** vic_raster_irq (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/afli-image.md`: the units the listing writes (VIC
+bank, matrix base, character base, YSCROLL, raster compare) are the ones
+`fli_image` claims. The raster compare is stated here as well because the
+per-line engine runs from AFLI's own interrupt; without it the check does
+not see that the double IRQ the recipe enters through runs inside it. AFLI's
+own change is `$D016` with MCM clear, a mode bit and not a unit yet. The recipe measures this section's
+model pixel for pixel on PAL, including the `LINE_PAD` 10 row-counter
+reset described under "Cycle budget".
 
 ### Why
 
@@ -567,11 +592,21 @@ The cycle budget is identical to `fli_image`: two writes per line (`STA $D018`, 
 
 **Complexity:** scene-tier
 **Region:** PAL
-**Uses registers:** D011, D018
+**Uses registers:** D011, D016, D018, DD00
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
 **Requires:** fli_image
-**Raster band:** 45-251 (fli_image's per-line engine only; the page does not say on which line the image swap runs)
+**Raster band:** 45-251 (fli_image's per-line engine, then the image swap on line 251 in `recipes/kickassembler/ifli-image.md`)
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns), vic_xscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/ifli-image.md`: once a frame, on line 251, the swap
+writes the VIC bank (`$DD00`) and XSCROLL (`$D016`, 0 for one image and 1
+for the other), 201 stores of each in 8 million cycles, from the same
+raster interrupt that runs the per-line engine. The other units the trace
+shows are the ones `fli_image` claims. (An earlier version of the Uses
+registers line had only `$D011` and `$D018`; the swap needs both of these.)
 
 ### Why
 
@@ -585,7 +620,9 @@ IFLI requires two complete FLI images (each with its own 8000-byte bitmap and it
 
 The frame alternation is driven by a vertical blank IRQ (or a top-of-frame raster IRQ) that swaps the bank layout or bitmap/screen RAM addresses pointed to by $D018. Within each frame, the per-line FLI write block runs exactly as described in `fli_image`.
 
-The two images are typically prepared as slightly horizontally-offset variants of the same source — image B shifted one pixel left or right relative to image A. The overlap creates the perception of 320-wide content. Preparing an IFLI pair from source art is an image-processing task that dedicated tools (IFLI converters) handle.
+The two images are typically prepared as slightly horizontally-offset variants of the same source — image B shifted one pixel left or right relative to image A. The overlap creates the perception of 320-wide content. Preparing an IFLI pair from source art is an image-processing task that dedicated tools (IFLI converters) handle. A one-hires-pixel offset cannot be made in the multicolour data, where a pixel is two wide; `recipes/kickassembler/ifli-image.md` makes it with XSCROLL 1 on B's frames, as `mci_interlace_bitmap` does, and measures B one pixel right of A in VICE x64sc (PAL). How published IFLI viewers make the offset was not checked here.
+
+Measured in the same recipe: the swap has to wait until line 250 has been drawn. Lines 248-250 cannot be badlines, so their blocks do not stall and the CPU leaves the per-line loop before line 249; a swap made there showed the other image on lines 249 and 250 of every frame.
 
 ### Why it works
 

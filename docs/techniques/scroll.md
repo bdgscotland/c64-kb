@@ -1143,6 +1143,15 @@ gave only the column edge, 268.
 **Cost basis:** measured-vice
 **Cost bytes basis:** derived-listing
 **Cost measured on:** kickassembler-dycp-scroller (worst frame, 39 columns, in the vertical blank)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/dycp-scroller.md`: one `$D018` store (`$1C`) moves
+the character base to the strip charset at `$3000`, which the copy
+rewrites every frame. The matrix stays at `$0400`. The `$D016` stores are
+`soft_scroll_h`'s; the raster interrupt and the CIA2 timer are the
+recipe's frame tick and harness.
 
 ### Why
 

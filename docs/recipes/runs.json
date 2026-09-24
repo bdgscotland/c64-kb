@@ -1671,5 +1671,45 @@
       "pal": "screenshots/music-player.png",
       "ntsc": "screenshots/music-player-ntsc.png"
     }
+  },
+  "kickassembler/mcm-text": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/mcm-text.png",
+      "ntsc": "screenshots/mcm-text-ntsc.png"
+    }
+  },
+  "kickassembler/vsp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/vsp.png",
+      "ntsc": "screenshots/vsp-ntsc.png"
+    }
+  },
+  "kickassembler/afli-image": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "shots": {
+      "pal": "screenshots/afli-image.png"
+    }
+  },
+  "kickassembler/ifli-image": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "shots": {
+      "pal": "screenshots/ifli-image.png"
+    }
   }
 }

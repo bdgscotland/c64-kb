@@ -870,6 +870,16 @@ Multi-layer (8 sprites + 40-column row-shift for character layer):
 **Uses registers:** D016, D011
 **Demands:** midframe_raster_irqs
 **Requires:** stable_raster_irq
+**Claims:** vic_raster_irq (owns), vic_xscroll (shares)
+**Claims basis:** measured-vice
+
+No recipe realises `text_zoom` alone. Store trace (`scripts/claims-watch.ts`,
+VICE x64sc, PAL) of `recipes/kickassembler/tech-tech.md`, whose
+`tech_tech_wobbler` requires it: the band interrupt writes XSCROLL (`$D016`)
+on every band line and restores it below the band, so the field is shared
+with whatever sets it for the rest of the frame; the band's raster
+interrupt is owned. The trace's `$D018` and `$D011` stores are the
+tech-tech's own, not this technique's.
 
 ### Why
 

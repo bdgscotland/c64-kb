@@ -466,6 +466,15 @@ carries one forward call.
 **Cost:** cycles_per_frame=672
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-big-font-scroller (carry frame, in the vertical blank from line 251)
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/big-font-scroller.md`: one `$D018` store (`$1C`)
+moves the character base to the built charset at `$3000`, and the font
+holds it every frame. The matrix stays at `$0400`, so the store changes no
+matrix bits. The `$D016` stores are `soft_scroll_h`'s; the raster
+interrupt and the CIA1 timer are the recipe's frame tick and harness.
 
 ### Why
 
