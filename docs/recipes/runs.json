@@ -1786,5 +1786,141 @@
       "pal": "screenshots/road-sprite-lines.png",
       "ntsc": "screenshots/road-sprite-lines-ntsc.png"
     }
+  },
+  "oscar64/cartridge-8k": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O2",
+      "-tf=crt8"
+    ],
+    "shots": {
+      "pal": "screenshots/cartridge-8k.png",
+      "ntsc": "screenshots/cartridge-8k-ntsc.png"
+    },
+    "cartridge": {
+      "file": "oscar64-cartridge-8k.crt",
+      "write": false,
+      "runs": 1
+    }
+  },
+  "oscar64/stable-raster-irq": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "oscar64/stable-raster-irq@O0": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O0"
+    ]
+  },
+  "oscar64/stable-raster-irq@O1": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O1"
+    ]
+  },
+  "oscar64/stable-raster-irq@O3": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O3"
+    ]
+  },
+  "oscar64/stable-raster-irq@Os": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-Os"
+    ]
+  },
+  "oscar64/stable-raster-irq@Oz": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-Oz"
+    ]
+  },
+  "kickassembler/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "oscar64/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "cc65/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/music-sync": {
+    "cycles": 10115000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
+  },
+  "kickassembler/music-sync@off": {
+    "cycles": 9950000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
   }
 }

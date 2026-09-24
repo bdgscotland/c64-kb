@@ -375,6 +375,82 @@ What each feature of `recipes/kickassembler/music-player.md` costs, measured in 
 
 ---
 
+## music_sync_timeline — Effects timed to the tune's rows and beats
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D41C, D020
+**Requires:** sid_play_routine_pattern
+
+### Why
+
+An effect that moves with the music reads as designed. The play routine
+already knows where the tune is: it counts frames into a row and rows
+into a pattern. An effect that reads those counters stays locked to the
+music for the whole part, where a separate frame counter drifts as soon
+as the tune's tempo or the model changes.
+
+### How
+
+A tracker tune advances one row every `speed` frames, and the musician
+puts a beat every `rows_per_beat` rows. The play routine is called once
+a frame, so:
+
+- **Frames per row** is the tune's speed. **Frames per beat** is
+  `speed × rows_per_beat`: 24 for speed 6 and 4 rows a beat.
+- **Tempo** follows from the frame rate: `BPM = frame_rate × 60 /
+  (speed × rows_per_beat)`. With speed 6 and 4 rows a beat that is 125.3
+  on PAL (50.125 Hz) and 149.6 on NTSC (59.826 Hz), arithmetic from
+  the clocks in `hardware/pal-ntsc-reference.md`. The same tune runs
+  about 19 % faster on NTSC unless the player changes speed there. The
+  recipe measured the beat period as 471,744 cycles on PAL and 410,280
+  on NTSC: 24 frames on each, 0.479 s and 0.401 s.
+- **The row counter** is the timeline. The effect reads the player's own
+  row and tick after `play` returns and decides from them: a flash on
+  the first frames of every beat row, a scene change at pattern 2,
+  row 0. A table of (pattern, row, action) entries turns this into a
+  script the musician's order list drives.
+- **ENV3** (`$D41C`) is the output of voice 3's envelope, 0-255. It
+  jumps when voice 3 is struck and falls with its decay, so it can drive
+  an effect's size directly. It only tracks what voice 3 plays, and
+  VICE returns it only with a real sound device: under `+sound` the
+  recipe's reads were `85 2E F5 BD 84 4B 40`, not the envelope, and the
+  monitor's `m d41c` printed `00` while the CPU read `$ED`.
+
+### Why it works
+
+Row and tick change only inside `play`. An effect that reads them after
+the call, in the same interrupt, sees the state the SID was just given:
+the frame the row turns is the frame the note starts. ENV3 is read
+from the chip, so it follows the sound itself: in the recipe it read
+`$2F` on the frame of the strike and `$ED` one frame later on PAL.
+
+### Variations
+
+- A timing table of frame numbers, worked out from the tempo, when the
+  player exposes no counters. It breaks when the tune is edited.
+- A CIA timer as the clock, for a player not called once a frame
+  (a multispeed tune).
+- ENV3 as a level meter for a bar or a logo's size, rather than a
+  trigger.
+
+Gating voice 3 on at each beat and off a row later is the pattern the
+ADSR bug catches (`sid_adsr_bug_8580` in `pitfalls/sid.md`): in the
+recipe, ENV3 held its value for one more frame after the gate cleared
+and the rate dropped from decay 9 to release 0.
+
+### Cycle budget
+
+Reading two counters and comparing them costs a few dozen cycles a
+frame (instruction-table arithmetic, not measured). The play routine's
+own cost is the `sid_play_routine_pattern` figure.
+
+### Recipes
+
+- `recipes/kickassembler/music-sync.md` (a stub player's row counter flashes the border on the beat; pinned on and off the beat, PAL and NTSC; ENV3 read each frame)
+
+---
+
 ## sid_8580_vs_6581_differences — Chip revision differences
 
 **Complexity:** low

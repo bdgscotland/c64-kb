@@ -1019,6 +1019,74 @@ the top of RAM, which the plan leaves free.
 
 - `recipes/oscar64/memory-layout.md` — stub, music, charset, sprite, screen and code at planned addresses, printing each symbol's address so the screen can be read against the map
 
+## relocated_code_block — Code stored at one address and run at another
+
+**Complexity:** low
+**Region:** both
+
+**Why.** A PRG loads as one contiguous block from `$0801`, but some code
+must run somewhere else: a loader or an IRQ handler under the I/O area or
+the KERNAL, a routine at `$C000` that survives the main program being
+overwritten, a stub in RAM that runs while a cartridge bank changes. The bytes
+travel in the PRG at a load address and are copied to the run address at
+start-up. Code assembled for the load address fails after the copy:
+every `JSR`, `JMP` and absolute data address inside it still names the
+load address.
+
+**How.** Tell the toolchain the run address, keep the bytes at the load
+address, and copy them before the first call:
+
+| Toolchain | Stored at the load address, linked for the run address | Copy |
+|---|---|---|
+| KickAssembler | `* = $2000` then `.pseudopc $c000 { ... }`; labels inside take `$C0xx` | a copy loop over `block_end - block_load` bytes |
+| Oscar64 | `#pragma section(rcode, 0)` and `#pragma region(rblock, 0x2000, 0x2100, , , {rcode}, 0xc000)`, then `#pragma code(rcode)` / `#pragma data(rcode)` around the block | `memcpy((char *)0xc000, (char *)0x2000, size)` |
+| cc65 | a segment with `load = BLOCK, run = HIRAM, define = yes` in the linker configuration, selected with `#pragma code-name` and `#pragma rodata-name` | `memcpy(_RELOC_RUN__, _RELOC_LOAD__, size)` from the linker's symbols |
+
+Each form was built and run in VICE by the three `relocated-code-block`
+recipes: a border flash stored at `$2000`, copied to `$C000`, the stored
+copy wiped, then called. All three left the border green on PAL and NTSC,
+and a monitor break at `$C000` with the toolchain's label file loaded
+stopped there.
+
+**Why it works.** The CPU executes whatever bytes are at the program
+counter. Relative branches are position-independent; `JSR`, `JMP`,
+absolute and indexed operands are not, so the assembler or linker must
+compute them for the address the code will run at. The copy moves bytes
+unchanged, so the code is right at the run address and wrong anywhere
+else. The KickAssembler recipe's control, assembled for `$2000` and run
+at `$C000`, ended at `READY.` after executing a `BRK` in the wiped image.
+
+**Symbols.** KickAssembler's `.vs` and cc65's `-Ln` file list the run
+address. Oscar64's `.lbl` and `.map` list the storage address (`al 2000
+.flash`), so a monitor break on the label never fires; add the offset to
+the labels in the region before loading them (the Oscar64 recipe has a
+one-line rewrite).
+
+**The stored copy is a fixed address.** The program's own code must not
+grow into it. Oscar64 linked its default `main` region over the block's
+`$2000` with no diagnostic, and cc65 without `fill = yes` wrote the block
+straight after `MAIN` while `__RELOC_LOAD__` still named `$2000` (both
+measured in the recipes). That is the collision
+`charset_blit_overruns_grown_code` in `pitfalls/banking.md` describes;
+declare the block's range in the layout (`memory_layout_plan`).
+
+**Variations.** Several blocks linked for the same run address and
+copied in turn (overlays, `runtime_relocation` in
+[loaders-packers](loaders-packers.md) for relocation at run time); a run
+address under the KERNAL or I/O, which needs `$01` switched for the copy
+and for every call (`cpu_io_port_bank`); a bank-switch stub copied to
+`$0200` so it runs from RAM while the cartridge bank changes, the
+`.pseudopc $0200` example in `pitfalls/banking.md`.
+
+**Cycle budget.** The copy runs once at start-up. The code costs at its
+run address what it would cost anywhere.
+
+### Recipes
+
+- `recipes/kickassembler/relocated-code-block.md` — `.pseudopc`, the `.vs` labels at `$C0xx`, the control that ends at `READY.`
+- `recipes/oscar64/relocated-code-block.md` — a region with a run address, the `.lbl` rewrite for the monitor
+- `recipes/cc65/relocated-code-block.md` — a `load`/`run` segment pair, the linker's `__RELOC_LOAD__` and `__RELOC_RUN__`
+
 ## irq_owns_processor_port — Interrupt handlers that save, set and restore $01
 
 **Complexity:** medium
