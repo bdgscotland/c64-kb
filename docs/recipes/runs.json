@@ -2233,5 +2233,17 @@
       "pal": "screenshots/monitor-core.png",
       "ntsc": "screenshots/monitor-core-ntsc.png"
     }
+  },
+  "oscar64/paint-fill": {
+    "cycles": 40000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/paint-fill.png",
+      "ntsc": "screenshots/paint-fill-ntsc.png"
+    }
   }
 }

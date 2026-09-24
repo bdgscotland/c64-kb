@@ -902,3 +902,71 @@ For real-time conversion from disk, the raw data rate of the 1541 dominates the 
 - `recipes/oscar64/bitmap-koala-viewer.md` — embed a .kla file, copy it to display RAM, enable multicolor bitmap mode.
 
 <!-- doc-type: technique-reference -->
+
+---
+
+## paint_program_brush_and_fill — A paint program's brush strokes, scanline flood fill and undo on a hires bitmap
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D016, D018, DD00
+**Requires:** hires_plot, bresenham_line
+
+### Why
+
+A paint program is three operations over a bitmap: put the brush down
+along the path the pointer took, fill an enclosed area, and take back
+the last thing done. Each is simple alone. Together they decide the
+memory map (a second 8,000-byte bitmap for undo), and the fill decides
+whether the program feels usable. A fill that recurses once per pixel
+overruns the 6510's 256-byte stack on the first large area (arithmetic:
+at least a two-byte return address a level, so 128 levels at most), and
+a fill with the wrong connectivity escapes through a diagonal outline.
+
+### How
+
+**Brush.** A brush is a small mask stamped at every point of a Bresenham
+line between two pointer samples. Stamping only at the samples leaves
+gaps when the pointer moves fast. The recipe's brush is a 3x3 square, so
+a horizontal stroke of `n` points sets `3 * (n + 2)` pixels and each
+diagonal step adds 5.
+
+**Fill.** Use a scanline fill with an explicit seed stack, never
+recursion per pixel. Pop a seed; if it is set, drop it. Run left and
+right to the boundary, set the span, and scan the rows above and below
+between its ends, pushing one seed for each run of unset pixels. The
+stack grows with the number of open runs, not with the area. For a fill
+bounded by outlines drawn with lines or circles, scan exactly the span
+on the adjacent rows: 4-connected. Scanning one pixel past each end
+makes it 8-connected, which passes between two outline pixels that
+touch only at a corner (`fill_8_connected_leaks_through_diagonal_outline`,
+`pitfalls/logic.md`). Refuse and report a push past the stack's size
+rather than writing past it.
+
+**Undo.** Copy the bitmap aside before each operation, and copy it back
+to undo. The copy is 8,000 bytes and must live somewhere the program is
+not: RAM under the BASIC ROM with BASIC banked out, or under the KERNAL
+with interrupts off while it is read. Colour RAM and the screen matrix
+need their own copies if the program paints colour. Several levels of
+undo cost 8,000 bytes each, or store only the changed rows' bytes.
+
+**Memory.** The bitmap, its screen matrix and the undo copy take
+17,000 bytes. With a C compiler whose program starts at `$0801`, put the
+bitmap in another VIC bank: the recipe uses bank 1, matrix `$4000`,
+bitmap `$6000`.
+
+### Why it works
+
+The recipe counts the set pixels after every stage and matches a Python
+model of the same drawing on all six counts, and the 18,510 white pixels
+in its screenshot are the model's final figure (measured in VICE x64sc
+3.10, both models). Its scanline fill held at most 4 seeds for a
+128-by-96 rectangle with a block inside and 2 for a disc of radius 40.
+Filled pixel by pixel in Oscar64 C the rectangle's 11,444 pixels took
+4,072,063 cycles on PAL, about 356 a pixel; the undo copy 355,663.
+Setting whole bytes in the middle of each span would cut the fill
+several times (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/paint-fill.md` — two 3x3-brush strokes, a rectangle with a block and a midpoint circle; a 4-connected fill of each, an 8-connected fill that escapes and is undone; every count matched against a Python model, every operation timed with CIA1; PAL and NTSC

@@ -162,3 +162,65 @@ four substeps        ... 273 276 279, then 282 is in the wall  crossed: no
 - Technique `pinball_ball_physics` (`docs/techniques/logic.md`): the map, the reflection and the substep rule
 - Recipe `docs/recipes/oscar64/pinball-ball.md`: the two shots and their trails
 - Technique `tile_grid_collision` (`docs/techniques/logic.md`): the same destination-only test for a platformer, safe while no actor moves more than a cell a frame
+
+---
+
+## fill_8_connected_leaks_through_diagonal_outline — An 8-connected flood fill escapes through the corner-touching pixels of a line or circle outline and floods the screen
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** paint_program_brush_and_fill, midpoint_circle, bresenham_line
+
+### Symptom
+
+Filling inside a circle or a slanted polygon floods the whole picture.
+Filling a rectangle drawn with horizontal and vertical lines works, so
+the fill looks correct until the first round or diagonal shape.
+
+### Mechanism
+
+A midpoint circle and a Bresenham line are 8-connected: where they step
+diagonally, two consecutive pixels touch only at a corner, and the two
+pixels beside that corner are unset. A fill that treats diagonal
+neighbours as connected (the 8-connected form, which a scanline fill
+gets by scanning one pixel past each end of a span) steps through that
+corner and out. A 4-connected fill only moves up, down, left and right,
+so an 8-connected outline stops it. The rule is that the fill and the
+outline must use opposite connectivity.
+
+Measured in VICE x64sc 3.10 on both models with the recipe below: an
+8-connected fill from the centre of a midpoint circle of radius 40
+filled all 64,000 pixels of the screen; a 4-connected fill from the
+same seed filled the circle's 4,917 interior pixels and stopped. A
+Python model of the same drawing gives the same two counts.
+
+### Fix
+
+Fill 4-connected against outlines drawn with lines and circles. If the
+program's outlines are 4-connected (drawn with no diagonal steps, as a
+"thick" line), an 8-connected fill is the one that is safe. Keep an undo
+copy before every fill so a leak costs one keypress.
+
+### Worked example
+
+```c
+// BAD: 8-connected, scans one pixel past the span on the rows above and below
+a = xl > 0 ? xl - 1 : 0;
+b = xr < 319 ? xr + 1 : 319;
+
+// GOOD against line and circle outlines: 4-connected, the span itself
+a = xl;
+b = xr;
+```
+
+```text
+circle r = 40 at (220, 56), seed at the centre
+8-connected fill   64,000 pixels set (the whole screen)
+4-connected fill    4,917 pixels set (the interior)
+```
+
+### Cross-references
+
+- Technique `paint_program_brush_and_fill` (`docs/techniques/bitmap-modes.md`): the scanline fill and the undo copy
+- Recipe `docs/recipes/oscar64/paint-fill.md`: the two fills and the undo between them
+- Techniques `midpoint_circle` and `bresenham_line` (`docs/techniques/bitmap-modes.md`): the 8-connected outlines
