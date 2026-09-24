@@ -141,7 +141,7 @@ slots step on alternate frames.
 | `make selftest` | FORCE_FAULT makes a coin worth 20: the verdict fails, the HUD score reads 000200 | check.py rejected the build |
 | `make tearcheck` | 16 shots a model mid-play, each matched pixel for pixel against a render of the level | 32 of 32 whole or two-frame composites; the TEAR_DEMO build: 2 of 32 torn (the count moves with the code; one is enough) |
 | `make stage` | Every enemy slot live from the first play frame: no late frame, the meter inside one frame | 4 of 4 passed (worst 14,523 PAL, 14,829 NTSC) |
-| `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations |
+| `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations (after vic_xscroll, vic_matrix_base and vic_char_base became claims-watch units, CLAIMS_ARGS lacked them, and its zero page stopped at $53 while main writes $54: 4 violation groups until both were fixed) |
 | `make disk` | `build/platformer.d64`; it boots to the title | |
 
 The self-check (`src/verdict.h`) grades the game's own state after the

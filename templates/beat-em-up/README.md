@@ -180,7 +180,7 @@ scroll here costs 3,031 at most.
 | `make selftest` | FORCE_FAULT makes a punch worth 20: the verdict fails, the HUD score differs | check.py rejected the build |
 | `make flickercheck` | Two shots inside each of three photo stops, PAL and NTSC: every pixel of the sprite fighters and the brute's cells matches a render built from `src/`, `$D01B` priority included; then the FLICKER_DEMO build, which drops one sprite part, must fail | 12 of 12 whole; photo 1 has 162 of the brute's pixels over a fighter behind him, photo 2 98 of a fighter over him; the demo: 2 of 6 with a part missing |
 | `make gameover` | The AP_GIVE_UP build loses three lives; GAME OVER must be whole with LIVES 0 (it once read GAME OVETHUG) | 8 of 8 passed |
-| `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations |
+| `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations (after vic_xscroll, vic_matrix_base and vic_char_base became claims-watch units, CLAIMS_ARGS lacked them: 3 violation groups until they were declared) |
 | `make disk` | `build/beat-em-up.d64`; it boots to the title (90M cycles, true drive) | |
 
 `npm run verify:templates -- --only beat-em-up --selftest` runs all of

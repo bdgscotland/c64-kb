@@ -40,9 +40,11 @@ SHOT_DISK := 1
 # that mask CIA1 count against all its units. The KERNAL routines are the
 # disk calls of src/hiscore.c (kernalio.h) and the KERNAL IRQ that runs
 # during the first load. CIA2 timers A and B are the frame meter's. $02FD
-# is LOST_FRAMES (main.c), which make joytest reads.
+# is LOST_FRAMES (main.c), which make joytest reads. The frame and split IRQs
+# write $D011 (YSCROLL, the river's row phase) and $D018 (the front screen
+# and the panel's), and hold_screen sets $D018.
 CLAIMS_ARGS = --cycles 30000000 --disk $(abspath $(D64)) \
-  --claim 'zero_page $$02-$$56, sprite_0-7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, sid_voice_1-3, sid_filter_volume, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, cia2_vic_bank' \
+  --claim 'zero_page $$02-$$56, sprite_0-7, vic_raster_irq, vic_yscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, sid_voice_1-3, sid_filter_volume, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, cia2_vic_bank' \
   --range 'colour=$$D800-$$DBE7,result=$$02FF,lost_frames=$$02FD' \
   --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' \
   --kernal 'SETNAM,SETLFS,OPEN,CLOSE,CHKIN,CHKOUT,CLRCHN,CHRIN,CHROUT,READST,IRQ'

@@ -66,11 +66,11 @@ Command: `npx tsx src/cli.ts check-compatibility irq_chain_table stable_raster_i
 ```text
 # Compatibility: irq_chain_table + stable_raster_irq + raster_bars + sprite_sine_chain + char_scroll_buffer_h + sid_play_routine_pattern + screen_wipe + pal_ntsc_detection + raster_profile_bars
 
-**Verdict:** INCOMPATIBLE — not as combined; each hard conflict below says how to separate them.
+**Verdict:** WARNINGS
 
 Checked with 2 implied prerequisite(s): frame_sync_loop, sid_voice_setup.
 
-Unit claims are stated for 5 of 9 techniques; a unit conflict cannot be ruled out for: char_scroll_buffer_h, screen_wipe, pal_ntsc_detection, raster_profile_bars, frame_sync_loop (prerequisite), sid_voice_setup (prerequisite). The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).
+Unit claims are stated for 5 of 9 techniques; a unit conflict cannot be ruled out for: char_scroll_buffer_h, screen_wipe, pal_ntsc_detection, raster_profile_bars, frame_sync_loop (prerequisite). The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).
 
 ## unit_shared (soft): irq_chain_table × stable_raster_irq
 **Shared:** vic_raster_irq
@@ -81,7 +81,7 @@ irq_chain_table owns the raster compare; stable_raster_irq runs inside irq_chain
 **Shared:** IRQMSK, VICIRQ, RASTER, SCROLY
 Both techniques touch register(s) IRQMSK, VICIRQ, RASTER, SCROLY. This says they write the same registers, not that they fight: keep each one's writes in its own raster region, or have one of them own the register and the other read a shadow copy.
 
-## unit_contention (hard): irq_chain_table × raster_bars
+## unit_contention (soft): irq_chain_table × raster_bars
 **Shared:** vic_raster_irq
 Both irq_chain_table and raster_bars own vic_raster_irq: each writes or holds it every frame and expects no one else to.
 **Resolution:** irq_chain_table is the host: rewrite raster_bars's raster handler(s) as entries in irq_chain_table's table, so the table alone programs $D012 and raster_bars runs inside it.
@@ -159,20 +159,23 @@ Both techniques touch register(s) RASTER. This says they write the same register
 ## Shared Infrastructure (info)
 - **frame_sync_loop** (prerequisite, not in the set): required by raster_profile_bars; included in the check as implied. Set it up first.
 - **sid_voice_setup** (prerequisite, not in the set): required by sid_play_routine_pattern; included in the check as implied. Set it up first.
+- **BGCOL0** (Register) shared via recipe(s): oscar64-raster-bars, kickassembler-tech-tech, kickassembler-cracktro-template
+- **EXTCOL** (Register) shared via recipe(s): oscar64-raster-bars, kickassembler-tech-tech, kickassembler-cracktro-template
+- **VICIRQ** (Register) shared via recipe(s): oscar64-raster-bars, kickassembler-tech-tech, kickassembler-cracktro-template, kickassembler-dysp
+- **RASTER** (Register) shared via recipe(s): oscar64-raster-bars, kickassembler-tech-tech, kickassembler-cracktro-template, kickassembler-dysp
 - **DC0F** (Register) shared via recipe(s): kickassembler-tech-tech
 - **DC0E** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-dysp
 - **DC07** (Register) shared via recipe(s): kickassembler-tech-tech
 - **DC06** (Register) shared via recipe(s): kickassembler-tech-tech
 - **DC05** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-dysp
 - **DC04** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-dysp
-- **BGCOL0** (Register) shared via recipe(s): kickassembler-tech-tech, oscar64-raster-bars, kickassembler-cracktro-template
-- **EXTCOL** (Register) shared via recipe(s): kickassembler-tech-tech, oscar64-raster-bars, kickassembler-cracktro-template
-- **IRQMSK** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-dysp, kickassembler-cracktro-template
-- **VICIRQ** (Register) shared via recipe(s): kickassembler-tech-tech, oscar64-raster-bars, kickassembler-dysp, kickassembler-cracktro-template
+- **IRQMSK** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-cracktro-template, kickassembler-dysp
 - **VMCSB** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-cracktro-template
-- **SCROLX** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-dysp, kickassembler-cracktro-template
-- **RASTER** (Register) shared via recipe(s): kickassembler-tech-tech, oscar64-raster-bars, kickassembler-dysp, kickassembler-cracktro-template
-- **SCROLY** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-dysp, kickassembler-cracktro-template
+- **SCROLX** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-cracktro-template, kickassembler-dysp
+- **SCROLY** (Register) shared via recipe(s): kickassembler-tech-tech, kickassembler-cracktro-template, kickassembler-dysp
+- **DC0D** (Register) shared via recipe(s): kickassembler-cracktro-template
+- **DC00** (Register) shared via recipe(s): kickassembler-cracktro-template
+- **SIGVOL** (Register) shared via recipe(s): kickassembler-cracktro-template
 - **SP3COL** (Register) shared via recipe(s): kickassembler-dysp
 - **SP2COL** (Register) shared via recipe(s): kickassembler-dysp
 - **SP1COL** (Register) shared via recipe(s): kickassembler-dysp
@@ -190,16 +193,15 @@ Both techniques touch register(s) RASTER. This says they write the same register
 - **M1X** (Register) shared via recipe(s): kickassembler-dysp
 - **M0Y** (Register) shared via recipe(s): kickassembler-dysp
 - **M0X** (Register) shared via recipe(s): kickassembler-dysp
-- **DC0D** (Register) shared via recipe(s): kickassembler-cracktro-template
-- **DC00** (Register) shared via recipe(s): kickassembler-cracktro-template
-- **SIGVOL** (Register) shared via recipe(s): kickassembler-cracktro-template
 - **raster_discipline**: Multiple raster-discipline techniques present. Verify IRQ stack ordering and timing budget.
 ```
 
 What the warnings mean for this program:
 
-- irq_chain_table x raster_bars, hard (both own vic_raster_irq): taken as the
-  tool says. The bars are not a ring of their own; they are one row of the
+- irq_chain_table x raster_bars, soft (both own vic_raster_irq, and the
+  chain host is in the set): taken as the tool says. An earlier paste said
+  hard and INCOMPATIBLE; check_compatibility has reported this pair soft
+  since cf04297. The bars are not a ring of their own; they are one row of the
   main part's chain, and only the dispatcher's table programs `$D012`.
 - irq_chain_table x stable_raster_irq and stable_raster_irq x raster_bars,
   unit_shared: the stable entry is a subroutine (`stabilise`) that a slot
@@ -225,40 +227,40 @@ Techniques: irq_chain_table, stable_raster_irq, raster_bars, sprite_sine_chain, 
 
 ## play (PAL, 19656 cycles a frame): undetermined
 
-Range 2381 + 1873 fixed cycles; floor 1873; weakest basis estimated; IRQ slots 16.
+Range 4169-4588 + 1873 fixed cycles; floor 0; weakest basis measured-vice; IRQ slots 15.
 
 Summed:
-- irq_chain_table: 273 (estimated, on kickassembler-irq-chain (three empty slots))
-- stable_raster_irq: 124 (arithmetic, recipe not stated)
-- raster_bars: 990 (estimated, recipe not stated)
-- sprite_sine_chain: 200 (estimated, on kickassembler-sprite-sine-chain (eight sprites; not timed))
-- sid_play_routine_pattern: 327 (measured-vice, on oscar64-sfx-engine (the recipe's stub tune; a real player costs several times more))
+- irq_chain_table: 498 (measured-vice, on kickassembler-irq-chain (three slots with two-store handlers and an empty music call, frame-counter print left out, badline stalls left out))
+- stable_raster_irq: 310 (measured-vice, on kickassembler-stable-raster-irq (one double-IRQ entry through $0314 to the synced line, plus the re-arm and exit; screen on, badlines inside; NTSC, 262 on PAL))
+- raster_bars: 1471 (measured-vice, on kickassembler-raster-bars (ten handlers through $0314 with their $D012 spins, the $EA31 exit once, no key held; NTSC, 1,464 on PAL))
+- sprite_sine_chain: 644 (measured-vice, on kickassembler-sprite-sine-chain (eight sprites, the update loop and the $D010 write, frame-counter print left out; in the lower border; PAL and NTSC))
+- sid_play_routine_pattern: 779-1198 (measured-vice, on kickassembler-music-player (worst of 2,000 calls, PAL, a frame where an effect hands voice 3 back; 1,159 with no effect; NTSC 1,174; typical is the NTSC median, PAL 773; bytes from the symbol file: player code $10FD-$1682, data is player state 322 + effect data 249 + octave-6 tables 48 + tune 451))
 - raster_profile_bars: 467 (measured-vice, on oscar64-raster-profile-bars (worst frame, screen blanked))
 
 To measure:
 - char_scroll_buffer_h: no **Cost:** line; measure it on kickassembler-big-font-scroller
 
 Notes:
-- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because irq_chain_table, stable_raster_irq, raster_bars, sprite_sine_chain, sid_play_routine_pattern, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact: no summed figure already holds a stall.
+- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because irq_chain_table, raster_bars, sprite_sine_chain, sid_play_routine_pattern, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact unless a figure already holds stalls: stable_raster_irq was measured with the screen on and already holds the stalls that fell inside it, so the charge is too high by that much and the over test counts 0.
 - Unknown is not zero: char_scroll_buffer_h has no cycles figure, so the verdict cannot be fits.
 
 ## play (NTSC, 17095 cycles a frame): undetermined
 
-Range 2381 + 1873 fixed cycles; floor 1873; weakest basis estimated; IRQ slots 16.
+Range 4169-4588 + 1873 fixed cycles; floor 0; weakest basis measured-vice; IRQ slots 15.
 
 Summed:
-- irq_chain_table: 273 (estimated, on kickassembler-irq-chain (three empty slots))
-- stable_raster_irq: 124 (arithmetic, recipe not stated)
-- raster_bars: 990 (estimated, recipe not stated)
-- sprite_sine_chain: 200 (estimated, on kickassembler-sprite-sine-chain (eight sprites; not timed))
-- sid_play_routine_pattern: 327 (measured-vice, on oscar64-sfx-engine (the recipe's stub tune; a real player costs several times more))
+- irq_chain_table: 498 (measured-vice, on kickassembler-irq-chain (three slots with two-store handlers and an empty music call, frame-counter print left out, badline stalls left out))
+- stable_raster_irq: 310 (measured-vice, on kickassembler-stable-raster-irq (one double-IRQ entry through $0314 to the synced line, plus the re-arm and exit; screen on, badlines inside; NTSC, 262 on PAL))
+- raster_bars: 1471 (measured-vice, on kickassembler-raster-bars (ten handlers through $0314 with their $D012 spins, the $EA31 exit once, no key held; NTSC, 1,464 on PAL))
+- sprite_sine_chain: 644 (measured-vice, on kickassembler-sprite-sine-chain (eight sprites, the update loop and the $D010 write, frame-counter print left out; in the lower border; PAL and NTSC))
+- sid_play_routine_pattern: 779-1198 (measured-vice, on kickassembler-music-player (worst of 2,000 calls, PAL, a frame where an effect hands voice 3 back; 1,159 with no effect; NTSC 1,174; typical is the NTSC median, PAL 773; bytes from the symbol file: player code $10FD-$1682, data is player state 322 + effect data 249 + octave-6 tables 48 + tune 451))
 - raster_profile_bars: 467 (measured-vice, on oscar64-raster-profile-bars (worst frame, screen blanked))
 
 To measure:
 - char_scroll_buffer_h: no **Cost:** line; measure it on kickassembler-big-font-scroller
 
 Notes:
-- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because irq_chain_table, stable_raster_irq, raster_bars, sprite_sine_chain, sid_play_routine_pattern, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact: no summed figure already holds a stall.
+- Fixed losses 1873 cycles (badlines 25 × 43 = 1075, lines 51-243 every eighth with YSCROLL 3, sprite DMA 798; arithmetic) charged because irq_chain_table, raster_bars, sprite_sine_chain, sid_play_routine_pattern, raster_profile_bars are not stated as measured with the screen on. A stall takes its cycles wherever the code runs, so the charge is exact unless a figure already holds stalls: stable_raster_irq was measured with the screen on and already holds the stalls that fell inside it, so the charge is too high by that much and the over test counts 0.
 - Unknown is not zero: char_scroll_buffer_h has no cycles figure, so the verdict cannot be fits.
 - Cycles per frame are the pages' figures, most measured on PAL; the same code takes about the same cycles on NTSC, against a 17,095-cycle frame.
 
@@ -290,7 +292,7 @@ Notes:
 Range 0 cycles; floor 0; weakest basis (nothing summed); IRQ slots 0.
 
 To measure:
-- pal_ntsc_detection: no **Cost:** line; measure it on kickassembler-dysp
+- pal_ntsc_detection: the Cost line has no cycles_per_frame (nor cycles_per_line with lines_active); measure it on oscar64-pal-ntsc-detect
 
 Notes:
 - Unknown is not zero: pal_ntsc_detection has no cycles figure, so the verdict cannot be fits.
@@ -301,7 +303,7 @@ Notes:
 Range 0 cycles; floor 0; weakest basis (nothing summed); IRQ slots 0.
 
 To measure:
-- pal_ntsc_detection: no **Cost:** line; measure it on kickassembler-dysp
+- pal_ntsc_detection: the Cost line has no cycles_per_frame (nor cycles_per_line with lines_active); measure it on oscar64-pal-ntsc-detect
 
 Notes:
 - Unknown is not zero: pal_ntsc_detection has no cycles figure, so the verdict cannot be fits.
@@ -310,7 +312,8 @@ Notes:
 
 ## Bytes
 
-Sum 1112 over raster_bars, sprite_sine_chain; a floor, since irq_chain_table, stable_raster_irq, char_scroll_buffer_h, sid_play_routine_pattern, screen_wipe, pal_ntsc_detection, raster_profile_bars state no bytes.
+Sum 3862 over raster_bars (derived-listing), sprite_sine_chain (derived-listing), sid_play_routine_pattern (measured-vice); weakest basis derived-listing; a floor, since irq_chain_table, stable_raster_irq, char_scroll_buffer_h, screen_wipe, raster_profile_bars state no bytes.
+- pal_ntsc_detection: 339 bytes left out, the whole program, not the technique
 
 ## Assumptions
 
@@ -322,7 +325,10 @@ Sum 1112 over raster_bars, sprite_sine_chain; a floor, since irq_chain_table, st
 - Sprites: 8 a line on 42 lines, (3 + 2 × 8) × 42 = 798 cycles of DMA a frame (3 + 2n measured in VICE x64sc for sprites numbered without gaps).
 ```
 
-What is unknown and how the meter settles it:
+What is unknown and how the meter settles it (written against the first
+paste, which predicted 2,381 + 1,873 cycles with raster_bars at 990; the
+paste above, re-run for #78 after more Cost lines were measured, says
+4,169-4,588 + 1,873 with raster_bars at 1,471):
 
 - raster_bars' 990 cycles is ten chained IRQs that spin one line each. This
   kernel holds the CPU from the stable slot's line to the last bar line:
