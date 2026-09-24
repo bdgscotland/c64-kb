@@ -7,6 +7,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 769, schema 31, tools 2.3.0, package 0.16.0.
 
+**Issue #39: `shmup-vertical` loses no frames on NTSC.**
+- The lost-frame counter could not see a single late frame: it counted
+  frame-counter steps other than 1. It now checks the frame flag before
+  waiting.
+- With it, NTSC play lost frames at play frames 282-321 and 454-477,
+  which the staged run never reached. The heaviest steps moved to
+  KickAssembler, and the latest end of work is now line 256 of 263 on
+  NTSC.
+- `make joytest` plays 16 games per model with fire held and sweeping,
+  and fails on any lost frame. `make longplay` plays about 40,000 frames
+  per model with an invulnerable ship. Both run 0 lost.
+
 **Issue #39: the `beat-em-up` starter lands; `lane_depth_engine`
 corrected (data 769).**
 - `templates/beat-em-up` is a three-stage street brawler in Oscar64 plus
