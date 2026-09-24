@@ -973,11 +973,12 @@ typically uses:
   DAC; it was wrong: PW has no effect on the output while TEST is set
   (the value is kept and applies when TEST clears), and without TEST
   the comparator output is binary ($000 or $FFF), never proportional
-  to PW. The scene form (Mahoney's 8580 digi, "Musik Run/Stop", 2014)
-  also drives the filter-mode bits in $D418 with the voices routed
-  through the filter and maps sample values through a per-chip lookup
-  table of measured $D418 bytes for ~8-bit output; that extension is
-  from published descriptions, not measured here. Nothing in this
+  to PW. Mahoney's form ("Musik Run/Stop", 2014) routes voices 1 and 2
+  through the filter and plays through a table of measured values of
+  all eight bits of $D418; his paper measures it on both models, not only the 8580
+  as an earlier version of this bullet said. It is built and measured
+  in reSID as `mahoney_d418_8bit_digi` (`techniques/music-sid.md`):
+  about 5.5 effective bits on both reSID models. Nothing in this
   bullet was measured on silicon.
 
 ### Voice 3 as random source

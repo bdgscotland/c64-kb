@@ -1786,5 +1786,23 @@
       "pal": "screenshots/road-sprite-lines.png",
       "ntsc": "screenshots/road-sprite-lines-ntsc.png"
     }
+  },
+  "kickassembler/d418-8bit-digi": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/d418-8bit-digi.png",
+      "ntsc": "screenshots/d418-8bit-digi-ntsc.png"
+    }
   }
 }
