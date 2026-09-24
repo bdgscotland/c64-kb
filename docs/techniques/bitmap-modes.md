@@ -825,6 +825,90 @@ Measured with CIA1 timer A on the recipe, the same on PAL and NTSC: 34 cycles on
 
 ---
 
+## ufli_sprite_underlay — UFLI: hires FLI every second line with seven sprites under and over the picture
+
+**Complexity:** scene-tier
+**Region:** both
+**Uses registers:** D011, D018, D015, D017, D01B, D01D
+**Demands:** cpu_every_line, midframe_raster_irqs, constant_sprite_set
+**Requires:** stable_raster_irq, badline_synchronization
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns), vic_matrix_base (owns), sprite_0 (owns), sprite_1 (owns), sprite_2 (owns), sprite_3 (owns), sprite_4 (owns), sprite_5 (owns), sprite_6 (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/ufli-underlay.md` saw `$D011` and the matrix bits
+of `$D018` written on every second line, the Y registers of sprites 0-6
+moved four times a frame, and the raster compare re-armed each frame.
+
+### Why
+
+Hires bitmap gives two colours per 8 × 8 cell; FLI gives two per 8 × 1
+or 8 × 2. A layer of sprites behind the bitmap adds a third colour to the
+cell's 0 pixels, and a sprite in front of the leftmost three cells hides
+the FLI bug. Codebase64 calls the arrangement UFLI and its successors
+UIFLI, MUFLI and NUFLI; NUFLI files are made by a converter that
+generates the display code for each picture.
+
+### How
+
+Put sprites 1 to 6 x-expanded side by side behind the bitmap (`$D01B`
+bits set) from X 48, covering 288 pixels, and sprite 0 unexpanded at X 24
+in front of the leftmost 24. Keep four screens, one per line pair of a
+character row. On each row's third, fifth and seventh lines, write
+`$D011` with YSCROLL = the line's low bits on cycle 14 exactly, after
+setting `$D018` to that pair's screen on the line before. With seven
+sprites on, the CPU runs only from about cycle 9 of each line to 54, and
+on the forced lines only to 14; write each line's code as one block
+started by the sprite halt. Y-expand the sprites and move them down
+between rows.
+
+### Why it works
+
+The forced badline on cycle 14 fetches the new screen's colours without
+resetting RC (measured in `chunky_4x4_fli_mode`), and its three `$FF`
+cells fall under sprite 0. A sprite with its priority bit set is drawn
+only over the bitmap's 0 pixels. Measured in VICE x64sc 3.10, PAL c64c and
+NTSC, by `recipes/kickassembler/ufli-underlay.md`: every half-cell of
+lines 51 to 250 matches the model, 16,000 of 16,000, on both models,
+and with sprite 0 moved into the border the FLI bug shows exactly where
+the model puts it. The forced writes swept: on 12 or 13 the rows stop
+advancing (6,808 half-cells wrong); on 15 or 16 the bug moves into cell
+3, past sprite 0 (184 wrong). The last line pair of the screen, lines
+249-250, cannot have a new screen: badlines end at line 247.
+
+### Variations
+
+**Multicolour sprites and colour splits.** The sprites can be multicolour
+and their colours changed per line where cycles allow (MUFLI). Not
+measured here.
+
+**NUFLI.** A converter chooses, per picture, which sprite and register
+changes to make on which lines and generates the display code; the file
+holds that code. Its layout is not documented here: no specification was
+found beyond codebase64's description.
+
+### Cycle budget
+
+The CPU is held for the whole display: on each line about 46 free cycles
+before the sprite halt on lines without a badline, 6 on forced lines, 3
+on a row's own badline. The recipe's odd-line blocks spend 8 to 30 of
+the 46.
+
+### Recipes
+
+- `recipes/kickassembler/ufli-underlay.md` — a full-height test picture,
+  every half-cell decoded, PAL and NTSC, with the forced-write sweep and
+  the sprite-0 control.
+
+### Sources
+
+- Codebase64, "UFLI": https://codebase64.c64.org/doku.php?id=base:ufli
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.5, §3.8, §3.14.3:
+  https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+
+---
+
 ## chunky_4x4_fli_mode — 4×4 chunky pixels: a fixed bitmap, two screens, one forced badline per row
 
 **Complexity:** high

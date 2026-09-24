@@ -1011,7 +1011,7 @@ screen row 2j + b, so the refill steps 80 bytes a row.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D011, D018
-**Triggered by techniques:** chunky_4x4_fli_mode, fli_image
+**Triggered by techniques:** chunky_4x4_fli_mode, fli_image, ufli_sprite_underlay
 
 ### Symptom
 

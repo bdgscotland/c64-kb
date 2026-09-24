@@ -2523,5 +2523,17 @@
       "ntsc"
     ],
     "flags": []
+  },
+  "kickassembler/ufli-underlay": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/ufli-underlay.png",
+      "ntsc": "screenshots/ufli-underlay-ntsc.png"
+    }
   }
 }
