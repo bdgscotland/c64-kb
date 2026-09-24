@@ -935,6 +935,141 @@ a `.KLA` as such.
 
 ---
 
+### Four older paint formats: how they were checked
+
+Art Studio, Advanced Art Studio, Doodle and Amica Paint files below were
+read from 47 real files: the C64 samples of the dexvert collection
+(`https://sembiance.com/fileFormatSamples/image/`, directories
+`artStudio`, `advancedArtStudio`, `doodleC64`, `ami`; fetched 2026-09-24,
+not committed here). Each file was decoded in Python to bitmap, screen
+RAM, colour RAM and background; a KickAssembler viewer showed the decoded
+bytes in VICE x64sc 3.10 (PAL, `-default`); the exit screenshot's 320x200
+display window matched a Python render of the same bytes in every pixel
+of all 47 files, and the decoded pictures are recognisable title screens,
+not noise. The layouts agree with RECOIL's decoders (`recoil.fu`,
+SourceForge commit `b1329c9`), and for Art Studio with the BSD-licensed
+`c64img` 3.5 writer. What the paint programs themselves write was not run
+here: nothing below comes from saving a picture in the original program.
+
+The file extension does not tell the formats apart. In the samples,
+`.ART`, `.AAS` and `.OCP` names appear on both the 9,009-byte hires format
+and the 10,018-byte multicolour one (`TETRISREC.OCP` is hires, `BLADE.ART`
+and `sanxion.aas` are multicolour). Decide by length.
+
+### .ART — Art Studio hires bitmap image
+
+OCP Art Studio's hires picture; `.AAS` and `.HPI` are the same format.
+Load address `$2000`; 9,009 bytes in six samples, 9,002 in one.
+
+| Offset | C64 address | Size | Content |
+|--------|-------------|------|---------|
+| $0000 | — | 2 | Load address `$2000` |
+| $0002 | $2000 | 8000 | Bitmap |
+| $1F42 | $3F40 | 1000 | Screen RAM: pixel-1 colour high nibble, pixel-0 colour low nibble |
+| $232A | $4328 | 1 | Border colour, low nibble (9,009-byte files only) |
+| $232B | $4329 | 6 | Not picture data |
+
+The border byte was `$F0` or `$F6` where it was not zero: the high nibble
+is set, as a VIC colour register reads back, so mask it. Two of the seven
+files carry non-zero bytes in the last six (`00 22 00 00 00 22`,
+`52 51 28 C7 00 00`); their meaning is not established here, and
+`c64img` writes them as zero. A 9,002-byte file is the same without the
+border and tail. There is no colour RAM: hires bitmap mode does not read it.
+
+### .OCP — Advanced Art Studio multicolour bitmap image
+
+OCP Advanced Art Studio's multicolour picture; `.MPIC` (the samples'
+`… mpic` names) and `.ART`/`.AAS` are used too. 10,018 bytes in all 22
+samples, load address `$2000`.
+
+| Offset | C64 address | Size | Content |
+|--------|-------------|------|---------|
+| $0000 | — | 2 | Load address `$2000` |
+| $0002 | $2000 | 8000 | Bitmap |
+| $1F42 | $3F40 | 1000 | Screen RAM: bit pair 01 high nibble, 10 low nibble |
+| $232A | $4328 | 1 | Border colour, low nibble |
+| $232B | $4329 | 1 | Background colour for `$D021` (bit pair 00), low nibble |
+| $232C | $432A | 14 | Not picture data |
+| $233A | $4338 | 1000 | Colour RAM: bit pair 11, low nibble |
+
+Mask every colour byte to its low nibble. In 11 of the 22 files at least
+108 of the 1,000 colour-RAM bytes have the high nibble set (colour RAM is
+four bits wide and reads back junk above them), and in ten files the
+border byte reads `$F0`, `$F1`, `$FB` or `$FE` and the background `$F0`. A
+converter that copies these bytes
+unmasked into a `$D021` compare, or into a PNG palette index, goes wrong.
+The 14 bytes between background and colour RAM held zero, `$FF`/`$00`
+patterns, a repeated byte, or what look like leftover memory; they are not
+picture data. Codebase64's list
+(`https://codebase64.net/doku.php?id=base:c64_grafix_files_specs_list_v0.03`)
+gives the same addresses.
+
+### .DD — Doodle hires bitmap image
+
+OMNI's Doodle. The screen RAM comes first, then the bitmap: the reverse
+of Art Studio.
+
+| Offset | C64 address | Size | Content |
+|--------|-------------|------|---------|
+| $0000 | — | 2 | Load address, `$5C00` in 7 of 10 samples |
+| $0002 | $5C00 | 1000 | Screen RAM: pixel-1 colour high nibble, pixel-0 colour low nibble |
+| $03EA | $5FE8 | 24 | Unused (the rest of the 1 KB screen block) |
+| $0402 | $6000 | 8000 | Bitmap |
+| $2342 | $7F40 | 192 | Unused (the rest of the 8 KB bitmap block); absent in 9,026-byte files |
+
+Six samples are 9,218 bytes (screen block 1,024, bitmap block 8,192) and
+four are 9,026 (bitmap 8,000, no tail); both decode from the same offsets.
+Of the 9,218-byte files, one loads at `$1C00` and two carry `$0000` as the
+load address; offset, not load address, locates the data. The 24 unused
+screen bytes were zero in nine files and not in one. KickAssembler's
+`BF_DOODLE` agrees: `.print BF_DOODLE` on 5.25 gives
+`ColorRam=$0000,Bitmap=$0400` (its block name for the screen data is
+`ColorRam`). Codebase64's list places the bitmap at `$7000`; every sample,
+RECOIL and KickAssembler put it at `$6000`, and a `$7000` start would run
+past the end of a 9,218-byte file.
+
+**Consumed by:** kickassembler
+
+### .JJ — Doodle image, run-length packed
+
+A Doodle file packed with a one-byte escape. Load address `$5C00` in both
+samples (6,608 and 1,659 bytes). Byte by byte after the load address:
+
+- `$FE value count`: `count` copies of `value`. Counts 1 to 255 were seen;
+  a count of 0 never appeared.
+- any other byte: itself. A literal `$FE` is `$FE $FE $01`.
+
+Unpack until 9,024 bytes are out: the 1,024-byte screen block, then the
+8,000-byte bitmap, at the `.DD` offsets less two. One sample ends exactly
+there; the other has 71 more bytes after the 9,024th, which a decoder
+must ignore. Koala Painter's `.GG` uses the same scheme (Codebase64's
+list; not measured here).
+
+### .AMI — Amica Paint multicolour bitmap image, run-length packed
+
+Amica Paint's picture: Koala's order packed with a different escape.
+Load address `$4000` in all 13 samples (Codebase64's list says Amica
+loads at `$4400`; no sample does). After the load address:
+
+- `$C2 count value`: `count` copies of `value`. Note the order, count
+  first, the reverse of Doodle's `$FE value count`.
+- `$C2 $00`: end of data. It is the last two bytes of every sample.
+- any other byte: itself. A literal `$C2` is `$C2 $01 $C2` (all 33 runs
+  of length 1 in the samples are that).
+
+Unpacked, the first 10,001 bytes are Koala's layout without its load
+address: bitmap 8,000, screen RAM 1,000, colour RAM 1,000, background 1
+(offsets `$0000`, `$1F40`, `$2328`, `$2710`). One sample unpacks to
+exactly 10,001 bytes; the other twelve to 10,257, with 256 more bytes
+after the background. Those 256 bytes are not picture data (in one file
+they hold groups of four colour indices such as `0A 02 06 07` among `$FF`);
+their role in Amica Paint is not established here. Runs of 3 are the
+shortest used for a repeated value other than `$C2` (2,211 of them in the
+samples), so a packer that emits a run from length 3 up reproduces the
+files' style; a decoder does not care.
+
+---
+
 ## Memory Snapshots
 
 ### .VSF — VICE snapshot
