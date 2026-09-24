@@ -26,6 +26,14 @@
  * so a $0314 handler's line includes the KERNAL's dispatch at $FF48 (29
  * cycles) and a $FFFE handler's does not.
  *
+ * A handler whose first instruction is `JMP (pointer)` hides a chain that
+ * rewrites the pointer, not the vector (Commando: $4134 JMP ($0406), five
+ * parts a frame). Each entry names the pointer's value at that moment
+ * (`target`) and the handler's `dispatch` counts entries per target. The
+ * pointer is read from the entry's exec hit; when pass B finds one, a third
+ * pass adds stores to its two bytes (indirectPointers). The bytes are read
+ * with the 6502's page wrap: JMP ($xxFF) takes the high byte from $xx00.
+ *
  * An earlier version put an exec checkpoint on every value a vector ever
  * held and counted every execution as an entry: on
  * kickassembler/sprite-multiplex-game it reported 2,338 NMI entries (the
@@ -62,17 +70,25 @@ interface Arm extends Obs {
 }
 interface Entry extends Obs {
   handler: number;
+  /** For a handler that is `JMP (pointer)`: the pointer's value at this entry, else null. */
+  target: number | null;
   line: number | null;
   cycle: number | null;
   clock: number;
   frame: number;
 }
-interface HandlerSummary {
-  handler: number;
-  via: VectorName[];
+interface Counts {
   entries: number;
   entry_lines: number[];
   armed_before: number[];
+}
+interface HandlerSummary extends Counts {
+  handler: number;
+  via: VectorName[];
+  /** The pointer when the handler's first instruction is `JMP (pointer)`, else null. */
+  pointer: number | null;
+  /** Entries by the address the pointer named at each: the sub-handlers. */
+  dispatch: (Counts & { target: number })[];
 }
 /** A vector value some write left but no interrupt ever found there. */
 interface Transient {
@@ -108,8 +124,35 @@ export function storeCommands(): string {
   );
 }
 
-export function execCommands(handlers: number[]): string {
-  return storeCommands() + handlers.map((h) => `trace exec ${hex4(h)} ${hex4(h)}`).join("\n") + "\n";
+/** The two bytes JMP (p) reads: the 6502 takes the high byte from the same page ($xxFF, then $xx00). */
+const pointerBytes = (p: number): [number, number] => [p, (p & 0xff00) | ((p + 1) & 0xff)];
+
+/** Pass B's commands: the stores, an exec checkpoint on each handler, and each pointer's two bytes. */
+export function execCommands(handlers: number[], pointers: number[] = []): string {
+  const ptrs = pointers.flatMap((p) => {
+    const [lo, hi] = pointerBytes(p);
+    return hi === lo + 1
+      ? [`trace store ${hex4(lo)} ${hex4(hi)}`]
+      : [lo, hi].map((b) => `trace store ${hex4(b)} ${hex4(b)}`);
+  });
+  const execs = handlers.map((h) => `trace exec ${hex4(h)} ${hex4(h)}`);
+  return storeCommands() + [...ptrs, ...execs].map((l) => l + "\n").join("");
+}
+
+/** The pointer a `JMP ($xxxx)` reads, from the exec hit's operand; else null. */
+function pointerOf(h: Hit): number | null {
+  const m = h.mnemonic === "JMP" ? /^\(\$([0-9A-F]{4})\)$/i.exec(h.operand) : null;
+  return m ? parseInt(m[1] ?? "", 16) : null;
+}
+
+/** Every pointer a traced `JMP ($xxxx)` read: the stores the next pass must trace. */
+export function indirectPointers(hits: Iterable<Hit>): number[] {
+  const out = new Set<number>();
+  for (const h of hits) {
+    const p = h.kind === "exec" ? pointerOf(h) : null;
+    if (p !== null) out.add(p);
+  }
+  return [...out].sort((a, b) => a - b);
 }
 
 function vectorOf(addr: number): { name: VectorName; hi: boolean } | null {
@@ -139,7 +182,10 @@ class State {
     transient: [],
     unknowns: [],
   };
-  armedBefore = new Map<number, Set<number>>();
+  /** The armed line at each entry, by entry index. */
+  entryArm: (number | null)[] = [];
+  /** Handler -> the pointer its `JMP (pointer)` reads. */
+  pointer = new Map<number, number>();
   /** Handler -> the vectors that held it at an interrupt. */
   live = new Map<number, Set<VectorName>>();
   /** Handler -> the vectors an entry into it was dispatched through. */
@@ -150,10 +196,13 @@ class State {
 
   readonly frameCycles: number;
   readonly startClock: number;
+  /** Bytes of every pointer a traced `JMP (pointer)` read. */
+  readonly ptrBytes: Set<number>;
 
-  constructor(frameCycles: number, startClock: number) {
+  constructor(frameCycles: number, startClock: number, pointers: number[]) {
     this.frameCycles = frameCycles;
     this.startClock = startClock;
+    this.ptrBytes = new Set(pointers.flatMap(pointerBytes));
   }
 
   vector(name: VectorName): number | null {
@@ -225,6 +274,17 @@ function interruptOpen(s: State, clock: number): boolean {
   return t !== undefined && t <= clock;
 }
 
+/** The value a `JMP (pointer)` handler jumps through at this entry; null when unknown. */
+function targetOf(s: State, h: Hit, p: number | null): number | null {
+  if (p === null) return null;
+  const [lo, hi] = pointerBytes(p).map((b) => s.bytes.get(b));
+  if (lo != null && hi != null) return (hi << 8) | lo;
+  s.out.unknowns.push(
+    `pointer $${hex4(p).toUpperCase()} not known at the entry at clock ${h.clock}, so its target is unknown`,
+  );
+  return null;
+}
+
 /** An exec of a traced address: an entry only when it is the dispatch of a waiting interrupt. */
 function onExec(s: State, h: Hit): void {
   if (!interruptOpen(s, h.clock)) return;
@@ -235,15 +295,18 @@ function onExec(s: State, h: Hit): void {
   const line = h.line === -1 ? null : h.line;
   const cycle = h.cycle === -1 ? null : h.cycle;
   if (line === null) s.out.unknowns.push(`raster timing not logged for handler entry at $${hex4(h.addr)}`);
+  const p = pointerOf(h);
+  if (p !== null) s.pointer.set(h.addr, p);
   s.out.entries.push({
     ...obs(`e${s.out.entries.length}`),
     handler: h.addr,
+    target: targetOf(s, h, p),
     line,
     cycle,
     clock: h.clock,
     frame: Math.floor((h.clock - s.startClock) / s.frameCycles),
   });
-  if (s.lastArm !== null) addTo(s.armedBefore, h.addr, s.lastArm);
+  s.entryArm.push(s.lastArm);
 }
 
 const sorted = <T extends number | string>(xs: Iterable<T>): T[] =>
@@ -256,20 +319,36 @@ function installed(s: State): number[] {
   );
 }
 
+/** Entry indices grouped by a key, in key order; entries whose key is null are left out. */
+function group(s: State, key: (e: Entry) => number | null, seed: number[] = []): [number, number[]][] {
+  const by = new Map<number, number[]>(seed.map((k) => [k, []]));
+  s.out.entries.forEach((e, i) => {
+    const k = key(e);
+    if (k !== null) by.set(k, [...(by.get(k) ?? []), i]);
+  });
+  return [...by.entries()].sort(([a], [b]) => a - b);
+}
+
+function counts(s: State, is: number[]): Counts {
+  return {
+    entries: is.length,
+    entry_lines: sorted(is.flatMap((i) => s.out.entries[i]?.line ?? [])),
+    armed_before: sorted(is.flatMap((i) => s.entryArm[i] ?? [])),
+  };
+}
+
 /** Every handler entered, and every handler the program installed that no interrupt entered. */
 function summarise(s: State): HandlerSummary[] {
-  const by = new Map<number, Entry[]>();
-  for (const h of installed(s)) by.set(h, []);
-  for (const e of s.out.entries) by.set(e.handler, [...(by.get(e.handler) ?? []), e]);
-  return [...by.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([handler, es]) => ({
-      handler,
-      via: sorted((es.length ? s.entered : s.live).get(handler) ?? []),
-      entries: es.length,
-      entry_lines: sorted(es.flatMap((e) => (e.line === null ? [] : [e.line]))),
-      armed_before: sorted(s.armedBefore.get(handler) ?? []),
-    }));
+  return group(s, (e) => e.handler, installed(s)).map(([handler, is]) => ({
+    handler,
+    via: sorted((is.length ? s.entered : s.live).get(handler) ?? []),
+    ...counts(s, is),
+    pointer: s.pointer.get(handler) ?? null,
+    dispatch: group(s, (e) => (e.handler === handler ? e.target : null)).map(([target, ts]) => ({
+      target,
+      ...counts(s, ts),
+    })),
+  }));
 }
 
 function transients(s: State): Transient[] {
@@ -287,6 +366,7 @@ function transients(s: State): Transient[] {
 /** A write before the entry clock: update the state, observe nothing. */
 function seed(s: State, h: Hit): void {
   if (h.kind !== "store") return;
+  if (s.ptrBytes.has(h.addr)) s.bytes.set(h.addr, storedValue(h));
   if (vectorOf(h.addr)) s.bytes.set(h.addr, storedValue(h));
   else if (h.addr === 0xd011 || h.addr === 0xd012) setArm(s, h);
 }
@@ -305,6 +385,7 @@ function unwrittenBytes(s: State): void {
 }
 
 function onStore(s: State, h: Hit): void {
+  if (s.ptrBytes.has(h.addr)) s.bytes.set(h.addr, storedValue(h));
   const v = vectorOf(h.addr);
   if (isInterruptPush(h)) onInterrupt(s);
   else if (v) onVector(s, h, v);
@@ -318,7 +399,7 @@ function onStore(s: State, h: Hit): void {
  */
 function walk(hits: Iterable<Hit>, frameCycles: number, startClock: number): State {
   const all = [...hits];
-  const s = new State(frameCycles, startClock);
+  const s = new State(frameCycles, startClock, indirectPointers(all));
   s.pending = all.filter((h) => h.clock >= startClock && isInterruptPush(h)).map((h) => h.clock);
   for (const h of all) {
     if (h.clock < startClock) seed(s, h);

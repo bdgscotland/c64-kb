@@ -179,9 +179,19 @@ describe("RE tool replies carry the whole result", () => {
         },
       ],
       arms: [{ ...o, id: "a0", line: 100, pc: 0x0820, clock: 2_500_020, at_line: 30 }],
-      entries: [{ ...o, id: "e0", handler: 0x0840, line: 100, cycle: 12, clock: 2_510_000, frame: 0 }],
+      entries: [
+        { ...o, id: "e0", handler: 0x0840, target: 0x0900, line: 100, cycle: 12, clock: 2_510_000, frame: 0 },
+      ],
       handlers: [
-        { handler: 0x0840, via: ["irq_fffe" as const], entries: 1, entry_lines: [100], armed_before: [100] },
+        {
+          handler: 0x0840,
+          via: ["irq_fffe" as const],
+          entries: 1,
+          entry_lines: [100],
+          armed_before: [100],
+          pointer: 0x0406,
+          dispatch: [{ target: 0x0900, entries: 1, entry_lines: [100], armed_before: [100] }],
+        },
       ],
       transient: [{ vector: "irq_fffe" as const, value: 0x0800, writes: 1 }],
       unknowns: ["irq_0314: $0315 never written, so the handler address is unknown"],
@@ -189,6 +199,7 @@ describe("RE tool replies carry the whole result", () => {
     const r = irqChainReply({ ok: true, run, result });
     expect(r.text).toMatch(/handler \$0840 via irq_fffe/);
     expect(r.text).toMatch(/transient: \$0800 in irq_fffe/);
+    expect(r.text).toMatch(/JMP \(\$0406\)\n {2}-> \$0900: 1 entries on lines 100; armed 100/);
     const parsed = z.object(IrqChainOutput).safeParse(r.structured);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
     expect(r.structured).toEqual({ run, ...result });

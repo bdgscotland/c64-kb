@@ -1,7 +1,14 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Hit } from "../src/re/monlog.ts";
+import { readHits, type Hit } from "../src/re/monlog.ts";
 import { REGION_TIMING } from "../src/domain/timing.ts";
-import { analyseIrqChain, execCommands, liveHandlers, storeCommands } from "../src/re/irq-chain.ts";
+import {
+  analyseIrqChain,
+  execCommands,
+  indirectPointers,
+  liveHandlers,
+  storeCommands,
+} from "../src/re/irq-chain.ts";
 import { isInterruptPush } from "../src/re/interrupts.ts";
 
 const base: Hit = {
@@ -280,5 +287,67 @@ describe("monitor commands", () => {
     expect(storeCommands()).toContain("trace store fffa ffff");
     expect(storeCommands()).toContain("trace store d011 d012");
     expect(execCommands([0x2000])).toContain("trace exec 2000 2000");
+  });
+});
+
+const fixture = async (name: string): Promise<Hit[]> => {
+  const out: Hit[] = [];
+  for await (const h of readHits(join(import.meta.dirname, "fixtures", "re", name))) out.push(h);
+  return out;
+};
+
+// Ported from bdgscotland/re-irq-dispatch f561ac8. Fixture measured in the
+// windowless x64sc 3.10, PAL: source test/fixtures/re/jmp-indirect.asm.
+describe("a handler that is JMP (pointer) (fixture jmp-indirect.monlog)", () => {
+  // $0314 -> irq ($0843) = JMP ($033C); parts $0846, $085D, $0874 each re-arm
+  // $D012 (120, 200, 50) and point $033C at the next.
+  const ENTRY = 2970521; // the fixture's first exec of the SYS target $080E
+  it("finds the pointer and traces both its bytes in the next pass", async () => {
+    const hits = await fixture("jmp-indirect.monlog");
+    expect(indirectPointers(hits)).toEqual([0x033c]);
+    expect(execCommands([0x0843], [0x033c])).toContain("trace store 033c 033d");
+  });
+  it("reports each entry against the part the pointer named at that moment", async () => {
+    const r = analyseIrqChain(await fixture("jmp-indirect.monlog"), PAL, ENTRY);
+    expect(r.handlers).toEqual([
+      expect.objectContaining({
+        handler: 0x0843,
+        entries: 13,
+        pointer: 0x033c,
+        dispatch: [
+          { target: 0x0846, entries: 5, entry_lines: [50], armed_before: [50] },
+          { target: 0x085d, entries: 4, entry_lines: [120], armed_before: [120] },
+          { target: 0x0874, entries: 4, entry_lines: [200], armed_before: [200] },
+        ],
+      }),
+    ]);
+    expect(r.entries.slice(0, 3).map((e) => e.target)).toEqual([0x0846, 0x085d, 0x0874]);
+  });
+});
+
+describe("JMP (pointer) edge cases", () => {
+  const jmpInd = (addr: number, ptr: number, clock: number): Hit => ({
+    ...ex(addr, clock, 40),
+    mnemonic: "JMP",
+    operand: `($${ptr.toString(16).toUpperCase().padStart(4, "0")})`,
+  });
+  const setup = [st(0x0001, 0x35, 1), st(0xfffe, 0x00, 2), st(0xffff, 0x20, 3)];
+  it("reads the high byte from the start of the page for JMP ($xxFF), as the 6502 does", () => {
+    const hits = [...setup, st(0x10ff, 0x00, 4), st(0x1000, 0x30, 5), st(0x1100, 0x40, 6)];
+    const r = analyseIrqChain([...hits, jmpInd(0x2000, 0x10ff, 100), irq(100)], PAL, 0);
+    expect(r.entries.map((e) => e.target)).toEqual([0x3000]);
+    expect(execCommands([0x2000], [0x10ff])).toContain("trace store 1000 1000");
+  });
+  it("leaves the target unknown when a pointer byte was read-modify-written", () => {
+    const hits = [...setup, st(0x4000, 0x00, 4), st(0x4001, 0x30, 5), st(0x4000, 0, 6, "INC")];
+    const r = analyseIrqChain([...hits, jmpInd(0x2000, 0x4000, 100), irq(100)], PAL, 0);
+    expect(r.entries.map((e) => e.target)).toEqual([null]);
+    expect(r.handlers[0]?.dispatch).toEqual([]);
+    expect(r.unknowns.join(" ")).toMatch(/pointer \$4000 not known at the entry at clock 100/);
+  });
+  it("gives a handler that is not JMP (pointer) no pointer and no dispatch", () => {
+    const r = analyseIrqChain([...setup, ex(0x2000, 100, 40), irq(100)], PAL, 0);
+    expect(r.handlers[0]).toEqual(expect.objectContaining({ pointer: null, dispatch: [] }));
+    expect(r.entries[0]?.target).toBeNull();
   });
 });

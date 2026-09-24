@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -122,5 +122,29 @@ describe.skipIf(!canRun)("c64_re_irq_chain in VICE", () => {
     expect(h?.armed_before).toEqual([100]);
     expect(h?.entry_lines.every((l) => l === 100 || l === 101)).toBe(true);
     expect(h?.entries).toBeGreaterThan(10);
+  }, 120_000);
+});
+
+// Ported from bdgscotland/re-irq-dispatch f561ac8 and fa2f00f.
+describe.skipIf(!canRun)("c64_re_irq_chain through a JMP (pointer) handler", () => {
+  it("names the three parts behind a $0314 handler that is JMP ($033C)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "re-jmpind-"));
+    // Assembled from a copy: KickAssembler writes a .sym beside its source.
+    copyFileSync(join(import.meta.dirname, "fixtures", "re", "jmp-indirect.asm"), join(dir, "t.asm"));
+    expect(
+      spawnSync(tools.java ?? "java", ["-jar", tools.kickass ?? "", "t.asm", "-o", "t.prg"], { cwd: dir })
+        .status,
+    ).toBe(0);
+    const r = await reIrqChain({ prg_path: join(dir, "t.prg"), model: "pal", cycles: 4_000_000 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.result.handlers).toHaveLength(1);
+    const h = r.result.handlers[0];
+    expect(h?.pointer).toBe(0x033c);
+    expect(h?.dispatch.map((d) => [d.target, d.entry_lines, d.armed_before])).toEqual([
+      [0x0846, [50], [50]],
+      [0x085d, [120], [120]],
+      [0x0874, [200], [200]],
+    ]);
   }, 120_000);
 });

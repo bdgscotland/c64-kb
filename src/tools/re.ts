@@ -19,6 +19,7 @@ import { analyseRegion, regionCommands, type Marker, type Profile } from "../re/
 import {
   analyseIrqChain,
   execCommands,
+  indirectPointers,
   liveHandlers,
   storeCommands,
   type IrqChain,
@@ -182,7 +183,10 @@ export async function reIrqChain(args: {
   try {
     const a = await traced(prg, args, storeCommands());
     const handlers = liveHandlers(a.hits, a.start);
-    const b = await traced(prg, args, execCommands(handlers));
+    let b = await traced(prg, args, execCommands(handlers));
+    // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
+    const pointers = indirectPointers(b.hits);
+    if (pointers.length) b = await traced(prg, args, execCommands(handlers, pointers));
     const result = analyseIrqChain(b.hits, frame, b.start);
     if (b.entry === null) result.unknowns.push(NO_SYS);
     return { ok: true, run: info(prg, args, b), result };

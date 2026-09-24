@@ -39,7 +39,15 @@ export const IrqChainOutput = {
   ),
   arms: z.array(z.object({ ...obs, line: int.nullable(), pc: int, clock: int, at_line: int.nullable() })),
   entries: z.array(
-    z.object({ ...obs, handler: int, line: int.nullable(), cycle: int.nullable(), clock: int, frame: int }),
+    z.object({
+      ...obs,
+      handler: int,
+      target: int.nullable().describe("For a JMP (pointer) handler, the pointer's value at this entry"),
+      line: int.nullable(),
+      cycle: int.nullable(),
+      clock: int,
+      frame: int,
+    }),
   ),
   handlers: z.array(
     z.object({
@@ -48,6 +56,10 @@ export const IrqChainOutput = {
       entries: int,
       entry_lines: z.array(int),
       armed_before: z.array(int),
+      pointer: int.nullable().describe("The pointer when the handler's first instruction is JMP (pointer)"),
+      dispatch: z
+        .array(z.object({ target: int, entries: int, entry_lines: z.array(int), armed_before: z.array(int) }))
+        .describe("A JMP (pointer) handler's entries by the address the pointer named at each"),
     }),
   ),
   transient: z
@@ -76,16 +88,21 @@ function reply<T extends object>(r: ReResult<T>, text: (t: T) => string): ToolRe
 
 const unknownsText = (u: string[]) => (u.length ? `\nunknown: ${[...new Set(u)].join("; ")}` : "");
 
+const handlerText = (h: IrqChain["handlers"][number]) =>
+  `handler ${hex(h.handler)} via ${h.via.join(", ") || "?"}: ${h.entries} entries on lines ${h.entry_lines.join(", ")}; armed ${h.armed_before.join(", ") || "?"}` +
+  (h.pointer === null ? "" : `; JMP (${hex(h.pointer)})`) +
+  h.dispatch
+    .map(
+      (d) =>
+        `\n  -> ${hex(d.target)}: ${d.entries} entries on lines ${d.entry_lines.join(", ")}; armed ${d.armed_before.join(", ") || "?"}`,
+    )
+    .join("");
+
 export function irqChainReply(r: ReResult<IrqChain>): ToolReply {
   return reply(
     r,
     (c) =>
-      c.handlers
-        .map(
-          (h) =>
-            `handler ${hex(h.handler)} via ${h.via.join(", ") || "?"}: ${h.entries} entries on lines ${h.entry_lines.join(", ")}; armed ${h.armed_before.join(", ") || "?"}`,
-        )
-        .join("\n") +
+      c.handlers.map(handlerText).join("\n") +
       (c.transient.length
         ? `\ntransient: ${c.transient.map((t) => `${hex(t.value)} in ${t.vector}`).join(", ")}`
         : "") +
@@ -107,14 +124,14 @@ const NEEDS = `Needs the windowless x64sc (\`npm run vice:headless\`); refuses a
 export const reIrqChainTool = defineTool({
   name: "c64_re_irq_chain",
   title: "Measure a program's interrupt chain in VICE",
-  description: `Run a .prg headless in VICE x64sc and report its interrupt chain as observations: every write to the IRQ/NMI vectors ($0314/5, $0318/9, $FFFA/B, $FFFE/F) with the value once both bytes are known; every raster line armed by writes to $D012 and $D011 bit 7; every interrupt, found from its three stack pushes; every entry into each handler with its raster line, cycle and frame. An entry is the first handler the vectors held at an interrupt to run within ${DISPATCH_WINDOW} cycles of it, so code that merely reaches a handler's address (an IRQ exit falling into \`nmi: rti\`) is not counted. A vector value no interrupt found, such as the half-written address between a low-byte and a high-byte store, is listed under transient, not as a handler; a handler the program installed that no interrupt entered is listed with 0 entries. Writes before the program's entry (the KERNAL's boot) are not reported but set the starting state. A value the trace cannot know (a read-modify-write, a byte never written) is null and listed under unknowns. A $0314 handler's entry line includes the KERNAL dispatch at $FF48.
+  description: `Run a .prg headless in VICE x64sc and report its interrupt chain as observations: every write to the IRQ/NMI vectors ($0314/5, $0318/9, $FFFA/B, $FFFE/F) with the value once both bytes are known; every raster line armed by writes to $D012 and $D011 bit 7; every interrupt, found from its three stack pushes; every entry into each handler with its raster line, cycle and frame. An entry is the first handler the vectors held at an interrupt to run within ${DISPATCH_WINDOW} cycles of it, so code that merely reaches a handler's address (an IRQ exit falling into \`nmi: rti\`) is not counted. A vector value no interrupt found, such as the half-written address between a low-byte and a high-byte store, is listed under transient, not as a handler; a handler the program installed that no interrupt entered is listed with 0 entries. Writes before the program's entry (the KERNAL's boot) are not reported but set the starting state. A value the trace cannot know (a read-modify-write, a byte never written) is null and listed under unknowns. A $0314 handler's entry line includes the KERNAL dispatch at $FF48. When a handler's first instruction is JMP (pointer), each entry also names the pointer's value at that moment (target), and the handler's dispatch list counts entries per target: the sub-handlers of a chain that rewrites one pointer, not the vector (a third run traces the pointer's two bytes).
 
 A raster flag already pending in $D019 when $D01A is enabled fires at once, so a first entry may sit on a line no arm explains.
 
 ${NEEDS}
 
 Inputs: prg_path (inside this repo or the temp directory), model pal|ntsc, cycles, disk_path.
-Output (structured): run {prg, model, cycles, entry, start_clock, vice}, interrupts, handlers [{handler, via, entries, entry_lines, armed_before}], transient [{vector, value, writes}], vectors, arms, entries, unknowns; each observation has an id, basis and rung.`,
+Output (structured): run {prg, model, cycles, entry, start_clock, vice}, interrupts, handlers [{handler, via, entries, entry_lines, armed_before, pointer, dispatch [{target, entries, entry_lines, armed_before}]}], transient [{vector, value, writes}], vectors, arms, entries (with target), unknowns; each observation has an id, basis and rung.`,
   inputSchema: IrqChainInput,
   outputSchema: IrqChainOutput,
   annotations: READ_ONLY,
