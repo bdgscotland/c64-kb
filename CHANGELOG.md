@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 786, schema 31, tools 2.6.1, package 0.19.1.
+Data 787, schema 31, tools 2.6.1, package 0.19.1.
+
+**Headless joystick and harness fixes (data 787; #42, #59).** VICE
+3.10's event playback cannot be used (the power-on reset clears the trap
+`-playback` sets; read from VICE's source, confirmed: three runs never
+left READY). The binary monitor's joystick command reaches $DC00 only
+with control port 2 set to "Joyport I/O simulation" (`-controlport2device
+37`); `templates/_harness/drive.py` drives games that way and counts
+emulated frames, and the five starters' own joystick builds are gone.
+The plan gate no longer consults the live graph for a shipped example;
+a changed answer says so, and an unreachable graph warns. The meter's
+median uses selection (38,742 cycles instead of 854,431) and its print
+rewrites only changed cells (464 and 668 cycles instead of 2,402 and
+2,810). Under `+sound`, $D41B and $D41C read ramps, not the envelope and
+noise; the harness picks a sink that reads them correctly. All eight
+starters pass `verify:templates --selftest`.
 
 **Claims-watch findings (data 785, tools 2.6.1; #35).** The KERNAL's
 serial routines use CIA1 timer B: the ROM stores to $DC07/$DC0F at
