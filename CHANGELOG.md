@@ -7,6 +7,37 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 770, schema 31, tools 2.3.1, package 0.16.1.
 
+**RE tools calibrated against this repo's own measured figures
+(`test/re-calibration.test.ts`).** Before any third-party game is
+studied, `reIrqChain` and `reFrameProfile` (`src/tools/re.ts`) had to
+reproduce three figures this repo already committed, at a fixed 2%
+tolerance; none missed.
+- `kickassembler/irq-chain`: armed lines exact, `{40, 130, 260}` against
+  the listing's `LINE0`/`LINE1`/`LINE2`. Raw `arms[]` also held `{4, 296}`
+  a few cycles apart — the composite of the dispatcher's two separate
+  writes, `$D012` then `$D011`'s bit 7. `handlers[].armed_before`, the
+  state at each actual entry (the field `test/re-tools.test.ts` already
+  reads for this), is `{40, 130, 260}` and is what the test checks.
+- `oscar64/falling-blocks`, CIA1 timer A, 12,500,000 cycles: measured
+  worst 6,277 against the design page's 6,276 — 1 cycle, 0.02%.
+  `main()` calls `worst_subject()` once, before the scripted game's own
+  per-frame loop (falling-blocks.md lines 525 and 552), and times its
+  RULES and RENDER parts with the same `$DC0E` pair; the run's first two
+  samples were that constructed 20-row case (measured 5,718 and 9,312
+  against the page's own 5,717 and 9,311), not a frame of the game, and
+  are excluded by program order, not by value.
+- `oscar64/platformer-scaffold`, CIA1 timer B, 40,000,000 cycles, fresh
+  `TEST,01` disk: measured worst-in-frame 8,694 against the design
+  page's 8,693 — 1 cycle, 0.01%. The run held one sample over a frame
+  (4,444,670 cycles, the KERNAL's disk I/O on timer B), excluded as
+  `io_frame` per the recipe's own text.
+- `oscar64/simple-shmup` has no CIA timer harness — no `t_start`/
+  `t_stop`, no `$DC0E`/`$DC0F` bracket — confirmed against the source.
+  Data 758's design-validation table below already called
+  `simple_shmup_oscar64` "not timed"; this task found the same thing
+  independently, from the listing, not the table. Nothing was measured
+  here; this is a gap, not a calibration.
+
 **A routed game briefing names its starter (tools 2.3.1, package
 0.16.1).** `c64_game_briefing` with no `archetype` routes by the brief's
 words, but its query did not select `a.starter`, so a routed briefing
