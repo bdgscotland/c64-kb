@@ -46,6 +46,9 @@ Environment:
   DRIVE_LIMIT   the frame limit of an until: step
   DRIVE_SOUND   off (default, +sound), dump or wav: the SID sink, as harness.mk's
                 SOUND_SINK ($D41B and $D41C read right only with dump or wav)
+  DRIVE_EXITSHOT  a PNG path: VICE writes its exit screenshot there when the steps end.
+                The machine is then stopped at raster line 0, so the picture is the
+                whole frame just drawn (make gallery)
   X64SC         the emulator (default: the windowless build)
 It is also a module: Vice(prg).joy(bits), .frames(n), .mem(addr, n), .rows(),
 .quit(); tools/joytest.py in the shmup-vertical starter uses it that way.
@@ -102,6 +105,8 @@ class Vice:
                 "-binarymonitor", "-binarymonitoraddress", f"ip4://127.0.0.1:{port}"]
         args += ["-model", "ntsc"] if self.model == "ntsc" else []
         args += ["-8", disk] if disk else []
+        shot = os.environ.get("DRIVE_EXITSHOT")
+        args += ["-exitscreenshot", os.path.abspath(shot)] if shot else []
         self.proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.sock = self._connect(port)
         self.rid = 0

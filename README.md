@@ -28,21 +28,20 @@ tracked in [#9](https://github.com/bdgscotland/c64-kb/issues/9).
 ## Starters
 
 Each starter in `templates/` is a small playable game or demo with a
-title, a game loop, sound and a self-check. Each picture is the PAL
-screenshot its checks grade, with the verdict and the frame meter on
-screen.
+title, a game loop, sound and a self-check. Each picture is the normal
+build in play on PAL.
 
 <table>
 <tr>
-<td align="center"><a href="templates/shmup-vertical/README.md"><img src="docs/figures/starters/shmup-vertical.png" width="220" alt="Vertical shooter over a fixed score panel, enemies in a wave"></a><br><sub>Vertical shooter</sub></td>
-<td align="center"><a href="templates/platformer/README.md"><img src="docs/figures/starters/platformer.png" width="220" alt="Side-scrolling platformer with a walker, a hill and a HUD"></a><br><sub>Scrolling platformer</sub></td>
-<td align="center"><a href="templates/action-puzzle/README.md"><img src="docs/figures/starters/action-puzzle.png" width="220" alt="Boulder Dash style cave with the high-score table"></a><br><sub>Boulder Dash-style cave</sub></td>
-<td align="center"><a href="templates/adventure/README.md"><img src="docs/figures/starters/adventure.png" width="220" alt="Text adventure at its ending: the telescope, the comet and the score"></a><br><sub>Text adventure</sub></td>
+<td align="center"><a href="templates/shmup-vertical/README.md"><img src="docs/figures/starters/shmup-vertical.png" width="220" alt="A wave of bugs over the river, the ship firing"></a><br><sub>Vertical shooter</sub></td>
+<td align="center"><a href="templates/platformer/README.md"><img src="docs/figures/starters/platformer.png" width="220" alt="The player jumping onto a walker on a scrolling level"></a><br><sub>Scrolling platformer</sub></td>
+<td align="center"><a href="templates/action-puzzle/README.md"><img src="docs/figures/starters/action-puzzle.png" width="220" alt="A half-dug cave with boulders, gems and a butterfly"></a><br><sub>Boulder Dash-style cave</sub></td>
+<td align="center"><a href="templates/adventure/README.md"><img src="docs/figures/starters/adventure.png" width="220" alt="The garden picture over the story text and the parser"></a><br><sub>Text adventure</sub></td>
 </tr>
 <tr>
-<td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Demo part: logo, sprite sine chain, stable raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
-<td align="center"><a href="templates/beat-em-up/README.md"><img src="docs/figures/starters/beat-em-up.png" width="220" alt="Beat-em-up street fight: the hero, two thugs and a character-drawn brute"></a><br><sub>Beat-em-up</sub></td>
-<td align="center"><a href="templates/racing/README.md"><img src="docs/figures/starters/racing.png" width="220" alt="Pseudo-3D road racer: the road bending left over a crest, two opponents at different sizes"></a><br><sub>Pseudo-3D racer</sub></td>
+<td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Logo, sprite sine chain, raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
+<td align="center"><a href="templates/beat-em-up/README.md"><img src="docs/figures/starters/beat-em-up.png" width="220" alt="The hero kicking the brute on the street"></a><br><sub>Beat-em-up</sub></td>
+<td align="center"><a href="templates/racing/README.md"><img src="docs/figures/starters/racing.png" width="220" alt="Racing behind two opponents on the road"></a><br><sub>Pseudo-3D racer</sub></td>
 </tr>
 </table>
 
@@ -51,58 +50,34 @@ Make a project from one with `npm run new-project -- <starter> <dir>` (see
 
 ## Recipes
 
-Each picture is a recipe's committed screenshot, taken from the listing
-on its page at a pinned cycle count. A run that differs by one pixel
-fails the gate.
+A selection of recipe screenshots. Each is the committed screenshot of
+the listing on its page, taken at a pinned cycle count; a run that
+differs by one pixel fails the gate.
 
 <table>
 <tr>
-<td align="center"><a href="docs/recipes/kickassembler/cracktro-template.md"><img src="docs/recipes/kickassembler/screenshots/cracktro-template.png" width="220" alt="Cracktro template: logo, raster bars, sine scroller"></a><br><sub>Cracktro template</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/sideborder-open.md"><img src="docs/recipes/kickassembler/screenshots/sideborder-open.png" width="220" alt="Side border opened with sprites in it"></a><br><sub>Side border open</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/sprite-multiplex-24.md"><img src="docs/recipes/kickassembler/screenshots/sprite-multiplex-24.png" width="220" alt="24 sprites from eight hardware slots"></a><br><sub>24-sprite multiplexer</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/fli-image.md"><img src="docs/recipes/kickassembler/screenshots/fli-image.png" width="220" alt="FLI image with the three grey columns"></a><br><sub>FLI</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/fire-effect.md"><img src="docs/recipes/kickassembler/screenshots/fire-effect.png" width="220" alt="A flame that rises and cools"></a><br><sub>Fire</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/tech-tech.md"><img src="docs/recipes/kickassembler/screenshots/tech-tech.png" width="220" alt="A logo waved sideways line by line"></a><br><sub>Tech-tech</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/twister.md"><img src="docs/recipes/kickassembler/screenshots/twister.png" width="220" alt="A turning square column"></a><br><sub>Twister</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/kefrens-bars.md"><img src="docs/recipes/kickassembler/screenshots/kefrens-bars.png" width="220" alt="One line stamped on every raster line"></a><br><sub>Kefrens bars</sub></td>
 </tr>
 <tr>
-<td align="center"><a href="docs/recipes/oscar64/tile-map-render.md"><img src="docs/recipes/oscar64/screenshots/tile-map-render.png" width="220" alt="RLE-compressed metatile map decoded to the screen"></a><br><sub>Tile map from RLE</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/text-overlay-playfield.md"><img src="docs/recipes/oscar64/screenshots/text-overlay-playfield.png" width="220" alt="Text-mode playfield with a falling piece"></a><br><sub>Text-mode playfield</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/simple-shmup.md"><img src="docs/recipes/oscar64/screenshots/simple-shmup.png" width="220" alt="Vertical shmup with starfield and enemies"></a><br><sub>Simple shmup</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/colour-fade.md"><img src="docs/recipes/kickassembler/screenshots/colour-fade.png" width="220" alt="Luminance fade caught mid-way"></a><br><sub>Luminance fade, step 9</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sprite-multiplex-24.md"><img src="docs/recipes/kickassembler/screenshots/sprite-multiplex-24.png" width="220" alt="24 sprites from the VIC-II's 8"></a><br><sub>24-sprite multiplexer</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/dycp-scroller.md"><img src="docs/recipes/kickassembler/screenshots/dycp-scroller.png" width="220" alt="Each letter of the scroller at its own height"></a><br><sub>DYCP scroller</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sine-scroller.md"><img src="docs/recipes/kickassembler/screenshots/sine-scroller.png" width="220" alt="A scroller on a sine wave"></a><br><sub>Sine scroller</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/sprite-border-scroller.md"><img src="docs/recipes/kickassembler/screenshots/sprite-border-scroller.png" width="220" alt="A sprite scroller in the lower border"></a><br><sub>Scroller in the border</sub></td>
 </tr>
 <tr>
-<td align="center"><a href="docs/recipes/kickassembler/wireframe-ships.md"><img src="docs/recipes/kickassembler/screenshots/wireframe-ships.png" width="220" alt="Three rotating wireframe objects, clipped at the edge, and a galaxy readout"></a><br><sub>Wireframe ships and a seeded galaxy</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/ghost-targeting.md"><img src="docs/recipes/oscar64/screenshots/ghost-targeting.png" width="220" alt="Maze with four ghosts steered by target tiles"></a><br><sub>Maze-chase ghost targeting</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/cave-scan.md"><img src="docs/recipes/oscar64/screenshots/cave-scan.png" width="220" alt="Boulder Dash style cave after the scan"></a><br><sub>Cave scan: falling and rolling</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/platformer-scaffold.md"><img src="docs/recipes/oscar64/screenshots/platformer-scaffold.png" width="220" alt="Single-screen platformer with ladders and a HUD"></a><br><sub>Platformer scaffold</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/cracktro-template.md"><img src="docs/recipes/kickassembler/screenshots/cracktro-template.png" width="220" alt="Raster bars, greetings and a scroller"></a><br><sub>Cracktro</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/raster-split-modes.md"><img src="docs/recipes/kickassembler/screenshots/raster-split-modes.png" width="220" alt="A bitmap above, text below, split on one line"></a><br><sub>Split screen modes</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/colour-fade.md"><img src="docs/recipes/kickassembler/screenshots/colour-fade.png" width="220" alt="Colour bars fading to black"></a><br><sub>Colour fade</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/isometric-room.md"><img src="docs/recipes/kickassembler/screenshots/isometric-room.png" width="220" alt="An isometric room drawn back to front"></a><br><sub>Isometric room</sub></td>
 </tr>
 <tr>
-<td align="center"><a href="docs/recipes/kickassembler/scroll-panel-split.md"><img src="docs/recipes/kickassembler/screenshots/scroll-panel-split.png" width="220" alt="Vertically scrolling playfield above a fixed score panel"></a><br><sub>Scroll with a fixed panel</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/sprite-multiplex-game.md"><img src="docs/recipes/kickassembler/screenshots/sprite-multiplex-game.png" width="220" alt="24 actors from eight sprites, with sort and IRQ timings"></a><br><sub>Game multiplexer, 24 actors</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/big-font-scroller.md"><img src="docs/recipes/kickassembler/screenshots/big-font-scroller.png" width="220" alt="2x2 big font with measured cycle counts"></a><br><sub>2x2 big font</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/dycp-scroller.md"><img src="docs/recipes/kickassembler/screenshots/dycp-scroller.png" width="220" alt="DYCP scroller: each character at its own height"></a><br><sub>DYCP scroller</sub></td>
-</tr>
-<tr>
-<td align="center"><a href="docs/recipes/kickassembler/isometric-room.md"><img src="docs/recipes/kickassembler/screenshots/isometric-room.png" width="220" alt="Isometric room of diamond tiles and blocks with a sprite player"></a><br><sub>Isometric room</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/fire-effect.md"><img src="docs/recipes/kickassembler/screenshots/fire-effect.png" width="220" alt="Colour-RAM fire with a luminance-ordered palette"></a><br><sub>Colour-RAM fire</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/dot-flag.md"><img src="docs/recipes/kickassembler/screenshots/dot-flag.png" width="220" alt="A grid of dots on two sines"></a><br><sub>Dot flag</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/dypp-sprite-scroller.md"><img src="docs/recipes/kickassembler/screenshots/dypp-sprite-scroller.png" width="220" alt="Sprite scroller with each letter on its own sine"></a><br><sub>DYPP sprite scroller</sub></td>
-</tr>
-<tr>
-<td align="center"><a href="docs/recipes/kickassembler/mci-interlace.md"><img src="docs/recipes/kickassembler/screenshots/mci-interlace.png" width="220" alt="Multicolour interlace test card, one field"></a><br><sub>Multicolour interlace, one field</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/sprite-priority-classes.md"><img src="docs/recipes/kickassembler/screenshots/sprite-priority-classes.png" width="220" alt="Sprite priority classes against a character playfield"></a><br><sub>Sprite priority classes</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/beat-em-up-lanes.md"><img src="docs/recipes/oscar64/screenshots/beat-em-up-lanes.png" width="220" alt="Beat-em-up lanes with fighters sorted by depth"></a><br><sub>Beat-em-up lanes</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/bitmap-koala-viewer.md"><img src="docs/recipes/oscar64/screenshots/bitmap-koala-viewer.png" width="220" alt="Koala bitmap viewer showing a generated test picture"></a><br><sub>Koala viewer</sub></td>
-</tr>
-<tr>
-<td align="center"><a href="docs/recipes/oscar64/vehicle-control.md"><img src="docs/recipes/oscar64/screenshots/vehicle-control.png" width="220" alt="Car on a scrolling road with verges and water"></a><br><sub>Vehicle control</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/car-contact.md"><img src="docs/recipes/oscar64/screenshots/car-contact.png" width="220" alt="Cars pushing each other off the road"></a><br><sub>Car contact and push</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/twister.md"><img src="docs/recipes/kickassembler/screenshots/twister.png" width="220" alt="Twister bar of sprites"></a><br><sub>Twister</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/tech-tech.md"><img src="docs/recipes/kickassembler/screenshots/tech-tech.png" width="220" alt="Tech-tech logo waving line by line"></a><br><sub>Tech-tech</sub></td>
-</tr>
-<tr>
-<td align="center"><a href="docs/recipes/oscar64/destructible-terrain.md"><img src="docs/recipes/oscar64/screenshots/destructible-terrain.png" width="220" alt="Terrain dug and built by walking creatures"></a><br><sub>Destructible terrain</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/adventure-engine.md"><img src="docs/recipes/oscar64/screenshots/adventure-engine.png" width="220" alt="Text adventure played to its ending"></a><br><sub>Adventure engine</sub></td>
-<td align="center"><a href="docs/recipes/oscar64/falling-blocks.md"><img src="docs/recipes/oscar64/screenshots/falling-blocks.png" width="220" alt="Falling-blocks board with score and timings"></a><br><sub>Falling blocks</sub></td>
-<td align="center"><a href="docs/recipes/kickassembler/sprite-border-scroller.md"><img src="docs/recipes/kickassembler/screenshots/sprite-border-scroller.png" width="220" alt="Sprite scroller in the lower border"></a><br><sub>Scroller in the border</sub></td>
+<td align="center"><a href="docs/recipes/kickassembler/road-sprite-lines.md"><img src="docs/recipes/kickassembler/screenshots/road-sprite-lines.png" width="220" alt="A raster road with sprite cars on its lines"></a><br><sub>Raster road</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/text-window-menu.md"><img src="docs/recipes/oscar64/screenshots/text-window-menu.png" width="220" alt="A pause menu in a window over the game"></a><br><sub>Window menu</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/simple-shmup.md"><img src="docs/recipes/oscar64/screenshots/simple-shmup.png" width="220" alt="A small vertical shoot-em-up"></a><br><sub>Simple shooter</sub></td>
+<td align="center"><a href="docs/recipes/oscar64/text-overlay-playfield.md"><img src="docs/recipes/oscar64/screenshots/text-overlay-playfield.png" width="220" alt="A falling piece drawn over a text playfield"></a><br><sub>Falling blocks</sub></td>
 </tr>
 </table>
 
@@ -113,13 +88,6 @@ the techniques and recipes above and nothing else, run headless under the
 harness on PAL and NTSC with a verdict byte, a frame meter and pinned
 screenshots; its README lists each part's technique, recipe and measured
 frame cost.
-
-<table>
-<tr>
-<td align="center"><a href="demos/measured/README.md"><img src="demos/measured/shots/pal.png" width="220" alt="MEASURED's end screen: each part's worst and typical cycles, the verdict and the frame meter"></a><br><sub>The end screen grades the five parts and prints their cost</sub></td>
-<td align="center"><a href="demos/measured/README.md"><img src="demos/measured/test/shots/p3-pal.png" width="220" alt="Part 3 of MEASURED: bars and rings in the opened side borders over a text scroller"></a><br><sub>Part 3 puts sprites in the open side border over a scroller</sub></td>
-</tr>
-</table>
 
 ## Quick start
 
