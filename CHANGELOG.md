@@ -5,7 +5,16 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 837, schema 39, tools 2.16.0, package 0.29.0.
+Data 838, schema 39, tools 2.16.0, package 0.29.0.
+
+**The pitfall-anchor check exempts four techniques and fails on any
+other unanchored one (data 838; #117).** Maintainer decision: the four
+the #19 triage judged to need no pitfall (dig_and_refill,
+world_state_bits, wcf_packer, runtime_relocation) are listed in
+scripts/check-pitfall-anchors.ts with their reasons; any other technique
+no pitfall names now fails the check (it only listed them before), as
+does an exemption that is gone or has since been anchored. It reads 242
+techniques, 238 anchored, 4 exempt, 0 missing.
 
 **Voice 3 gets a hard restart when an effect hands it back (data 837;
 #120).** A music note within two frames of a sound effect ending had no
