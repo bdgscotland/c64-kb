@@ -934,6 +934,14 @@ end address returned in X/Y is that pointer after the last store.
   as line 170; the screen was not blanked (`$D011` bit 4 still set,
   text drawn in a mid-transfer picture). `raster_irq_during_serial_io`
   has the fix, which is to clear `$D01A` around the call.
+- **Music across the load.** A tune driven once per interrupt falls
+  behind during LOAD: 13 to 18 % of frames lost from a raster
+  interrupt and 28 to 35 % from a CIA1 timer A interrupt over a
+  4,096-byte load, the second worse because ACPTR's `$DC0D` polls
+  acknowledge timer A's flag as well as timer B's.
+  `music_during_kernal_load` in `techniques/music-sid.md` keeps the
+  tune in time with a CIA2 frame clock and a catch-up; measured in
+  `recipes/kickassembler/music-during-load.md`.
 - **From Oscar64.** `krnio_load(fnum, device, channel)` in
   `kernalio.c` passes X = Y = 0 to LOAD, so with secondary 0 it loads
   to `$0000`; it is only useful with secondary 1. To choose the address
@@ -947,6 +955,9 @@ end address returned in X/Y is that pointer after the last store.
 - `recipes/kickassembler/file-io-roundtrip.md` (write and read side;
   the LOAD measurements above came from a scratch program that is not a
   recipe)
+- `recipes/kickassembler/music-during-load.md` (a 4,096-byte file
+  saved and loaded three times under a music interrupt; steps lost
+  per driver, PAL and NTSC)
 - `recipes/oscar64/load-asset-runtime.md` (a 2 KB charset built in
   RAM, saved as a PRG on the first run, loaded with secondary 0 to
   `$3800` and shown; the I flag, the raster IRQ and `$D011` measured

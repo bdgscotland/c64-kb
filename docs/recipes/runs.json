@@ -2275,5 +2275,19 @@
       "pal": "screenshots/control-config.png",
       "ntsc": "screenshots/control-config-ntsc.png"
     }
+  },
+  "kickassembler/music-during-load": {
+    "cycles": 60000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/music-during-load.png",
+      "ntsc": "screenshots/music-during-load-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
   }
 }

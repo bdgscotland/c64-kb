@@ -1309,6 +1309,7 @@ tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
 **Region:** both
 **Triggered by kernal:** OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE
 **Triggered by techniques:** stable_raster_irq, frame_sync_loop, kernal_file_write_seq, kernal_file_read_seq, kernal_relative_file_io, kernal_load_to_address, directory_read_and_select
+**Mitigated by techniques:** music_during_kernal_load
 
 ### Symptom
 
@@ -1439,8 +1440,18 @@ vic.intr_ctrl = 1; vic.intr_enable = 1;
   during file I/O": the test program and the same figures beside the
   save-file recipe.
 - `recipes/oscar64/stable-raster-irq.md`, "What `rirq_init` actually
-  does": the dispatcher shares the IRQ line with the CIA jiffy timer,
-  which the brackets above stall in the same way (not measured here).
+  does": the dispatcher shares the IRQ line with the CIA jiffy timer.
+  An earlier version of this line said the brackets stall a CIA timer
+  interrupt the same way, not measured. They do worse: ACPTR's `$DC0D`
+  polls at `$EE2D` and `$EE30` acknowledge a pending timer A flag, so the
+  interrupt is lost, not delayed. Over a 4,096-byte LOAD a CIA1 timer A
+  interrupt at the frame rate was taken in 65 to 72 % of frames against
+  82 to 88 % for a raster interrupt, PAL and NTSC
+  (`recipes/kickassembler/music-during-load.md`, rung 1).
+- Technique `music_during_kernal_load` (`techniques/music-sid.md`):
+  music kept in time across the load by counting frames on CIA2 timers
+  A and B, which the serial code does not touch, and catching up in the
+  handler; 0 steps lost in the same measurement.
 
 ### Sources
 
