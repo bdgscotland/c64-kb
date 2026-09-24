@@ -101,6 +101,7 @@ const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge][] = [
   ["triggered_by", "TRIGGERED_BY", "triggered_by"],
   ["caused_by", "CAUSED_BY", "caused_by"],
   ["requires", "REQUIRES", "technique_requires"],
+  ["alternative_to", "ALTERNATIVE_TO", "technique_alternative"],
   ["mitigated_by", "MITIGATED_BY", "mitigated_by"],
   ["archetype_features", "FEATURES", "archetype_features"],
   ["archetype_risks", "RISKS", "archetype_risks"],
@@ -155,11 +156,11 @@ export async function reportSummary(opts: {
   const sentence = (c: EdgeCount): string =>
     `${c.label}: ${c.landed} edges in graph, ${c.distinct} distinct references, ${c.dropped} dropped.`;
   const record = (c: EdgeCount): string => `${c.label}=${c.landed}/${c.distinct}/dropped=${c.dropped}`;
-  // The first four follow the pitfall and crash-pattern counts, the next
+  // The first five follow the pitfall and crash-pattern counts, the next
   // five the archetype count, the last three the game-design count.
-  const pitfallEdges = counts.slice(0, 4);
-  const archetypeEdges = counts.slice(4, 9);
-  const designEdges = counts.slice(9);
+  const pitfallEdges = counts.slice(0, 5);
+  const archetypeEdges = counts.slice(5, 10);
+  const designEdges = counts.slice(10);
 
   print(`\nQdrant: ${qStats.total_points} vectors`);
   print(`FalkorDB: ${gStats.nodes} nodes, ${gStats.edges} edges`);
@@ -177,7 +178,7 @@ export async function reportSummary(opts: {
   const droppedRefs = edges.totalDropped();
   if (droppedRefs > 0) {
     console.warn(
-      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/mitigated-by/archetype/scaffolds/claims/clobbers-zp/game-design references named no existing node (or would have closed a REQUIRES cycle) and were dropped; see the [falkor] lines above.`,
+      `[ingest] WARNING: ${droppedRefs} trigger/cause/requires/alternative-to/mitigated-by/archetype/scaffolds/claims/clobbers-zp/game-design references named no existing node (or would have closed a REQUIRES cycle, or paired a technique with its prerequisite) and were dropped; see the [falkor] lines above.`,
     );
   }
   log(

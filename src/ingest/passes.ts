@@ -103,7 +103,13 @@ export async function applyPendingEdges(
   print(`\nPass 2: applying ${edges.length} deferred edges`);
   let edgeFailures = 0;
   let consecutiveFailures = 0;
-  for (const edge of edges) {
+  // ALTERNATIVE_TO is refused between a technique and its prerequisite, so
+  // every REQUIRES edge must be in place before the first one is linked.
+  const ordered = [
+    ...edges.filter((e) => e.type !== "technique_alternative"),
+    ...edges.filter((e) => e.type === "technique_alternative"),
+  ];
+  for (const edge of ordered) {
     try {
       tally.record(edge, await applyEdge(falkor, edge));
       consecutiveFailures = 0;

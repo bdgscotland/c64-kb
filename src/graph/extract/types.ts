@@ -123,6 +123,7 @@ export type GraphEntity =
   | { type: "technique_requires_region"; technique: string; region: string }
   | { type: "technique_belongs_to"; technique: string; chip: string }
   | { type: "technique_requires"; technique: string; requires: string }
+  | { type: "technique_alternative"; technique: string; alternative: string; tradeoff: string }
   | { type: "pitfall"; name: string; title: string; severity: string; region: string; category: string }
   | {
       type: "crash_pattern";

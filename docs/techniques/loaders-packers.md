@@ -123,6 +123,7 @@ The documented usage calls `install`/`loadraw` **directly**, so the `$0330` vect
 **Complexity:** medium
 **Region:** both
 **Uses kernal:** (none — runtime depacker is standalone)
+**Alternative to:** exomizer_basics (worse compression ratio; only for legacy codebases built around it), byteboozer_packer (worse compression ratio and a larger depacker; only for legacy codebases built around it)
 
 ### Why
 
@@ -215,6 +216,7 @@ Depacker size: approximately 200 bytes for the `sfx sys` variant (Exomizer 3.1.2
 **Complexity:** medium
 **Region:** both
 **Uses kernal:** (none)
+**Alternative to:** exomizer_basics (faster depacking, worse compression ratio, a depacker of comparable size)
 
 ### Why
 
@@ -324,6 +326,7 @@ Transfer: 72 C64 cycles a byte (p. 3). At 985,248 cycles a second on PAL that is
 **Complexity:** low
 **Region:** both
 **Uses kernal:** (none)
+**Alternative to:** exomizer_basics (faster depacking, worse compression ratio)
 
 ### Why
 

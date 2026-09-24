@@ -102,6 +102,49 @@ describe("techniqueLookup", () => {
     expect(irq.text).toMatch(/\*\*Mitigates:\*\* raster_irq_first_line_jitter \(high\)/);
   });
 
+  it("reports ALTERNATIVE_TO from either end with its tradeoff, and refuses bad pairs (#17)", async () => {
+    const warnings: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: string) => {
+      warnings.push(msg);
+    };
+    try {
+      await f.addTechnique({ name: "sprite_multiplex_8", title: "8-sprite multiplexer", category: "sprite" });
+      await f.addTechnique({ name: "sprite_multiplex_24", title: "24 sprites", category: "sprite" });
+      const tradeoff = "more than 16 sprites; needs a Y-sorted list";
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_24", "sprite_multiplex_8", tradeoff)).toBe(
+        true,
+      );
+      // Refused: the other page states the pair already; a self-reference;
+      // a technique and its own prerequisite; a name that is no node.
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_8", "sprite_multiplex_24", "x")).toBe(false);
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_8", "sprite_multiplex_8", "x")).toBe(false);
+      expect(await f.linkTechniqueAlternative("stable_raster_irq", "text_zoom", "x")).toBe(false);
+      expect(await f.linkTechniqueAlternative("sprite_multiplex_8", "no_such_technique", "x")).toBe(false);
+      expect(warnings.some((w) => w.includes("already states this pair"))).toBe(true);
+      expect(warnings.some((w) => w.includes("one requires the other"))).toBe(true);
+      expect(warnings.some((w) => w.includes("not found"))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+    const entry = {
+      tradeoff: "more than 16 sprites; needs a Y-sorted list",
+      stated_on: "sprite_multiplex_24",
+    };
+    const m24 = await techniqueLookup("sprite_multiplex_24");
+    expect(m24.structured.alternatives).toEqual([
+      { name: "sprite_multiplex_8", title: "8-sprite multiplexer", ...entry },
+    ]);
+    const m8 = await techniqueLookup("sprite_multiplex_8");
+    expect(m8.structured.alternatives).toEqual([
+      { name: "sprite_multiplex_24", title: "24 sprites", ...entry },
+    ]);
+    expect(m8.text).toContain(
+      "**Alternatives:** sprite_multiplex_24 (sprite_multiplex_24: more than 16 sprites; needs a Y-sorted list)",
+    );
+    expect((await techniqueLookup("text_zoom")).structured.alternatives).toEqual([]);
+  });
+
   it("returns suggestions when not found", async () => {
     const r = await techniqueLookup("stable_raster");
     expect(r.structured.name).toBe("");

@@ -253,6 +253,68 @@ export class FalkorLinks extends FalkorNodes {
   }
 
   /**
+   * ALTERNATIVE_TO (schema 37): two techniques that do the same job another
+   * way; `tradeoff` describes the source against the target, as its page
+   * states it. The relation is symmetric and stored once, in the direction
+   * the page wrote it. Refused, with a warning by name: a self-reference; a
+   * pair already stored from the other page (one page states the pair); a
+   * pair joined by REQUIRES either way, since a technique cannot stand in for
+   * its own prerequisite; an end that is no Technique. Batch ingest links
+   * these after every REQUIRES edge. Returns whether the edge landed.
+   * The checks are plain MATCHes. Measured on FalkorDB here: exists() on a
+   * pattern answered true with no such edge, and a pattern comprehension
+   * compiled on a graph with no ALTERNATIVE_TO edge yet kept answering 0
+   * after the first one landed.
+   */
+  async linkTechniqueAlternative(
+    techniqueName: string,
+    alternativeName: string,
+    tradeoff: string,
+  ): Promise<boolean> {
+    const pair = `${techniqueName} -> ${alternativeName}`;
+    if (techniqueName === alternativeName) {
+      console.warn(`[falkor] linkTechniqueAlternative: ${techniqueName} -> itself — refused`);
+      return false;
+    }
+    const ends = { a: techniqueName, b: alternativeName };
+    const found = async (cypher: string) => (await this.roQuery(cypher, ends)).data.length > 0;
+    if (
+      await found(`MATCH (:Technique {name: $b})-[:ALTERNATIVE_TO]->(:Technique {name: $a}) RETURN 1 LIMIT 1`)
+    ) {
+      console.warn(
+        `[falkor] linkTechniqueAlternative: ${pair} — ${alternativeName}'s page already states this pair; state it on one page — refused`,
+      );
+      return false;
+    }
+    if (
+      (await found(
+        `MATCH (:Technique {name: $a})-[:REQUIRES*1..12]->(:Technique {name: $b}) RETURN 1 LIMIT 1`,
+      )) ||
+      (await found(
+        `MATCH (:Technique {name: $b})-[:REQUIRES*1..12]->(:Technique {name: $a}) RETURN 1 LIMIT 1`,
+      ))
+    ) {
+      console.warn(
+        `[falkor] linkTechniqueAlternative: ${pair} — one requires the other, so neither is an alternative to it — refused`,
+      );
+      return false;
+    }
+    const rows = await this.write(
+      `MATCH (a:Technique {name: $a})
+       MATCH (b:Technique {name: $b})
+       MERGE (a)-[e:ALTERNATIVE_TO]->(b)
+       SET e.tradeoff = $tradeoff
+       RETURN 1`,
+      { a: techniqueName, b: alternativeName, tradeoff },
+    );
+    if (rows.length === 0)
+      console.warn(
+        `[falkor] linkTechniqueAlternative: ${pair} — one or both techniques not found, edge dropped`,
+      );
+    return rows.length > 0;
+  }
+
+  /**
    * CLAIMS (schema 25): a technique holds a HardwareUnit in a mode (owns,
    * shares, reads, init); zero_page carries its byte ranges. Both ends must
    * exist: the unit is a seed and the technique came from pass 1, so a MERGE

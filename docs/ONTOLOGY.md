@@ -387,7 +387,7 @@ say to rerun the ingest. No index, no edges.
 | started_at | string | ISO time the ingest set the marker |
 | flags | string | The ingest's flags, e.g. ` --clean` |
 
-## Edge Types (28)
+## Edge Types (29)
 
 ### BELONGS_TO
 
@@ -441,6 +441,27 @@ between one technique's prerequisites and the other technique, reporting a
 hit as `prerequisite_conflict`. It never runs them against a prerequisite
 the technique declared itself, and never folds a prerequisite's demands
 into its dependant's.
+
+### ALTERNATIVE_TO
+
+Direction: `Technique → Technique`, property `tradeoff` (schema 37)
+
+Meaning: "these two do the same job another way". The relation is
+symmetric and stored once, in the direction the page wrote it; `tradeoff`
+describes the source against the target, in the page's words. Example:
+`sprite_multiplex_24` ALTERNATIVE_TO `sprite_multiplex_8` (more than 16
+sprites; needs tighter IRQ scheduling, a Y-sorted list and $D010 managed
+across passes). Authored with an `**Alternative to:**` line
+(`CONVENTIONS-techniques.md`) only where the page already compares the
+two. Both ends MATCHed; refused, warned about and counted
+(`alternative_to … dropped`): a self-reference, a pair the other page
+already states, and a pair joined by REQUIRES either way, since a
+technique cannot stand in for its own prerequisite. Batch ingest links
+these after every REQUIRES edge so that check sees them all. Read by
+`c64_technique_lookup` (`alternatives`, either direction, with
+`stated_on`) and the briefings, which keep one technique of each pair and
+list the other under `alternatives_left_out`. It is not REQUIRES and not
+"variant of": `double_irq` and `stable_raster_irq` stay unlinked.
 
 ### TRIGGERED_BY
 

@@ -20,6 +20,7 @@ import {
 } from "./archetype.ts";
 import { contradictsBriefAxis, resolveProposedTechniques, unaskedEffect } from "./discovery.ts";
 import { whyProposed } from "./why-proposed.ts";
+import { oneOfEachAlternative, type LeftOut } from "./alternatives.ts";
 import { collectPitfalls } from "./plan-pitfalls.ts";
 import { toolchainSplit } from "./toolchain.ts";
 import { buildOrder } from "./build-order.ts";
@@ -72,6 +73,7 @@ interface ReasonContext {
   description: string;
   resolved: ArchetypeResolution | undefined;
   isGame: boolean;
+  leftOut: Map<string, LeftOut[]>;
 }
 
 /**
@@ -103,6 +105,7 @@ function proposedOf(t: TechniqueLookupOutput, ctx: ReasonContext): Proposed {
     uses_kernal: t.uses_kernal.map((k) => k.name),
     region: region.success ? region.data : undefined,
     implementing_recipes: t.recipes.map((r) => r.name),
+    ...(ctx.leftOut.has(t.name) ? { alternatives_left_out: ctx.leftOut.get(t.name) } : {}),
   };
 }
 
@@ -131,7 +134,7 @@ async function proposeTechniques(
   archetype: string | undefined,
   resolved: ArchetypeResolution | undefined,
   isGame: boolean,
-): Promise<TechniqueLookupOutput[]> {
+): Promise<{ techs: TechniqueLookupOutput[]; leftOut: Map<string, LeftOut[]> }> {
   const seeds = seedsFor({ description, archetype, resolved, isGame });
   const proposalLimit = proposalLimitFor(description);
   const techNames = await resolveProposedTechniques(
@@ -155,7 +158,11 @@ async function proposeTechniques(
         (isGame && unaskedEffect(t, seeds.searchDescription))
       ),
   );
-  return selectTechniques(onAxis, seeds.archetypeForced, proposalLimit);
+  // One of each ALTERNATIVE_TO pair, before the caps, so a dropped
+  // alternative frees its slot.
+  const { kept, leftOut } = oneOfEachAlternative(onAxis, new Set(seeds.forced));
+  const techs = selectTechniques(kept, seeds.archetypeForced, proposalLimit);
+  return { techs, leftOut };
 }
 
 function archetypeFields(
@@ -248,10 +255,10 @@ export async function buildBriefing(
   const resolved = await resolutionFor(description, archetype, isGame);
   if (archetype !== undefined && resolved?.mode === "not_found")
     return refusal(description, resolved, isGame);
-  const techs = await proposeTechniques(description, archetype, resolved, isGame);
+  const { techs, leftOut } = await proposeTechniques(description, archetype, resolved, isGame);
   const techNames = techs.map((t) => t.name);
 
-  const proposed_techniques = techs.map((t) => proposedOf(t, { description, resolved, isGame }));
+  const proposed_techniques = techs.map((t) => proposedOf(t, { description, resolved, isGame, leftOut }));
   const { verdict, compatibility } = await compatibilityOf(techs);
   const pitfalls = await collectPitfalls(techNames, resolved?.mode === "graph" ? resolved.risks : []);
   const toolchain_split = await toolchainSplit(techs);

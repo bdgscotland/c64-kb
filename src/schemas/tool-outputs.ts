@@ -211,6 +211,13 @@ const TechniqueCostSchema = z.object({
 });
 export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
 
+const AlternativeSchema = z.object({
+  name: z.string(),
+  title: z.string(),
+  tradeoff: z.string(),
+  stated_on: z.string(),
+});
+
 export const TechniqueLookupSchema = z.object({
   name: z.string(),
   title: z.string(),
@@ -226,6 +233,10 @@ export const TechniqueLookupSchema = z.object({
   // this one (requires) and techniques that presuppose this one (required_by).
   requires: z.array(TechniqueRefSchema).optional(),
   required_by: z.array(TechniqueRefSchema).optional(),
+  // ALTERNATIVE_TO edges either way (schema 37): techniques that do the same
+  // job another way. tradeoff is the page's parenthesis and describes
+  // stated_on (the technique whose page states the pair) against the other.
+  alternatives: z.array(AlternativeSchema).optional(),
   // MITIGATED_BY edges pointing here: pitfalls whose Fix is this technique.
   mitigates: z.array(z.object({ name: z.string(), title: z.string(), severity: z.string() })).optional(),
   documentation: z.array(DocChunkSchema),
@@ -381,6 +392,12 @@ export const BriefingSchema = z.object({
       uses_kernal: z.array(z.string()),
       region: z.enum(["pal", "ntsc", "both"]).optional(),
       implementing_recipes: z.array(z.string()),
+      // ALTERNATIVE_TO partners the plan dropped in this technique's favour
+      // (schema 37): one technique per job. tradeoff describes stated_on
+      // against the other, as that page states it.
+      alternatives_left_out: z
+        .array(z.object({ name: z.string(), tradeoff: z.string(), stated_on: z.string() }))
+        .optional(),
     }),
   ),
   compatibility: z.object({

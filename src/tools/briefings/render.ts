@@ -98,6 +98,12 @@ function renderTechniques(b: BriefingOutput): string {
   for (const t of b.proposed_techniques) {
     out += `| ${t.name} | ${t.category} | ${t.complexity ?? "-"} | ${t.why_proposed} |\n`;
   }
+  const leftOut = b.proposed_techniques.flatMap((t) =>
+    (t.alternatives_left_out ?? []).map(
+      (a) => `- **${t.name}** instead of ${a.name} (${a.stated_on}: ${a.tradeoff})`,
+    ),
+  );
+  if (leftOut.length > 0) out += `\n### Alternatives left out (one per job)\n\n${leftOut.join("\n")}\n`;
   if (b.proposed_techniques.length > 0) {
     out += `\n### Register + KERNAL dependencies\n\n`;
     for (const t of b.proposed_techniques) {

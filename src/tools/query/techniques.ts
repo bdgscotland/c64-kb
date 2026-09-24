@@ -117,6 +117,7 @@ async function techniqueNotFound(name: string): Promise<TechniqueLookupResult> {
     recipes: [],
     requires: [],
     required_by: [],
+    alternatives: [],
     mitigates: [],
     documentation: [],
   };
@@ -130,6 +131,12 @@ async function techniqueNotFound(name: string): Promise<TechniqueLookupResult> {
 const AddressedRow = z.object({ name: z.string(), address: z.string().nullable() });
 const RecipeRefRow = z.object({ name: z.string(), toolchain: z.string() });
 const TechniqueRefRow = z.object({ name: z.string(), title: z.string().nullable() });
+const AlternativeRow = z.object({
+  name: z.string(),
+  title: z.string().nullable(),
+  tradeoff: z.string().nullable(),
+  stated_on: z.string(),
+});
 const PitfallRefRow = z.object({
   name: z.string(),
   title: z.string().nullable(),
@@ -138,7 +145,7 @@ const PitfallRefRow = z.object({
 
 type Neighbourhood = Pick<
   TechniqueLookupOutput,
-  "uses_registers" | "uses_kernal" | "recipes" | "requires" | "required_by" | "mitigates"
+  "uses_registers" | "uses_kernal" | "recipes" | "requires" | "required_by" | "alternatives" | "mitigates"
 >;
 
 /** Recipes in plan_budget's order (rankRecipesFor), so the card and the budget lead with the same one. */
@@ -150,11 +157,11 @@ function byRank<R extends { name: string }>(technique: string, recipes: R[]): R[
   return [...recipes].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
 }
 
-/** The technique's edges: USES, IMPLEMENTS (reverse), REQUIRES both ways, MITIGATED_BY (reverse). */
+/** The technique's edges: USES, IMPLEMENTS (reverse), REQUIRES both ways, ALTERNATIVE_TO either way, MITIGATED_BY (reverse). */
 async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
   const f = await getFalkor();
   const q = (cypher: string) => f.roQuery(cypher, { name });
-  const [regs, kernal, recipes, requires, requiredBy, mitigates] = await Promise.all([
+  const [regs, kernal, recipes, requires, requiredBy, alternatives, mitigates] = await Promise.all([
     q(`MATCH (t:Technique {name: $name})-[:USES]->(r:Register)
        RETURN r.name AS name, r.address AS address`),
     q(`MATCH (t:Technique {name: $name})-[:USES]->(k:KernalRoutine)
@@ -167,6 +174,11 @@ async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
     // REQUIRES (reverse) → techniques that presuppose this one
     q(`MATCH (t:Technique {name: $name})<-[:REQUIRES]-(d:Technique)
        RETURN d.name AS name, d.title AS title ORDER BY d.name`),
+    // ALTERNATIVE_TO, either direction (schema 37) → techniques that do the
+    // same job another way; the tradeoff describes stated_on against the other
+    q(`MATCH (t:Technique {name: $name})-[e:ALTERNATIVE_TO]-(o:Technique)
+       RETURN o.name AS name, o.title AS title, e.tradeoff AS tradeoff, startNode(e).name AS stated_on
+       ORDER BY o.name`),
     // MITIGATED_BY (reverse) → pitfalls whose Fix is this technique
     q(`MATCH (t:Technique {name: $name})<-[:MITIGATED_BY]-(p:Pitfall)
        RETURN p.name AS name, p.title AS title, p.severity AS severity ORDER BY p.name`),
@@ -179,6 +191,12 @@ async function neighbourhoodOf(name: string): Promise<Neighbourhood> {
     recipes: byRank(name, parseRows(RecipeRefRow, recipes)),
     requires: parseRows(TechniqueRefRow, requires).map(ref),
     required_by: parseRows(TechniqueRefRow, requiredBy).map(ref),
+    alternatives: parseRows(AlternativeRow, alternatives).map((a) => ({
+      name: a.name,
+      title: a.title ?? "",
+      tradeoff: a.tradeoff ?? "",
+      stated_on: a.stated_on,
+    })),
     mitigates: parseRows(PitfallRefRow, mitigates).map((p) => ({
       name: p.name,
       title: p.title ?? "",
@@ -320,6 +338,10 @@ function renderTechnique(
   line(
     "Required by",
     (t.required_by ?? []).map((r) => r.name),
+  );
+  line(
+    "Alternatives",
+    (t.alternatives ?? []).map((a) => `${a.name} (${a.stated_on}: ${a.tradeoff})`),
   );
   line(
     "Mitigates",

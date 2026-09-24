@@ -549,6 +549,7 @@ The technique works specifically because the 6581's DAC has a non-zero DC offset
 **Uses registers:** D418, D404, D405, D406
 **Demands:** continuous_interrupts
 **Requires:** sid_voice_setup
+**Alternative to:** digi_4bit (more than the 16 levels of the $D418 nibble, through the voice's envelope; described here, not demonstrated)
 
 ### Why
 
@@ -624,6 +625,7 @@ The SID has multiple analog signal paths that can be driven by digital writes at
 **Cost:** cycles_per_frame=4774
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-pwm-digi (per-sample work at a 128-cycle period, PAL)
+**Alternative to:** digi_4bit (no $D418 write per sample and no 6581 DAC offset, so the volume register stays with the music; it takes a voice), digi_8bit_hard_restart (the pulse width carries the sample, not the envelope, and no 8580 quirk is needed)
 
 ### Why
 

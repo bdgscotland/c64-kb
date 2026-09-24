@@ -115,6 +115,7 @@ const LINKERS: { [K in keyof EdgeByType]: Linker<EdgeByType[K]> } = {
   technique_belongs_to: always((f, e) => f.linkTechniqueBelongsTo(e.technique, e.chip)),
   technique_demands: always((f, e) => f.linkTechniqueDemands(e.technique, e.resource, e.description)),
   technique_requires: (f, e) => f.linkTechniqueRequires(e.technique, e.requires),
+  technique_alternative: (f, e) => f.linkTechniqueAlternative(e.technique, e.alternative, e.tradeoff),
   triggered_by: (f, e) => f.linkTriggeredBy(e.pitfall, e.target, e.targetKind),
   mitigated_by: (f, e) => f.linkMitigatedBy(e.pitfall, e.target),
   caused_by: (f, e) => f.linkCausedBy(e.symptom, e.target, e.targetKind),
