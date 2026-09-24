@@ -8,6 +8,7 @@ file_formats: [CRT]
 uses_registers: [DE00, DE02, DC04, DC05, DC06, DC07, DC0E, DC0F, D011, D016, D018, D020, D021]
 uses_kernal: []
 devices: [easyflash]
+harness: [cia1_timer_a, cia1_timer_b, $02FF]
 ---
 
 <!-- doc-type: recipe -->
