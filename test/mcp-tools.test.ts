@@ -164,6 +164,7 @@ describe("RE tool replies carry the whole result", () => {
 
   it("c64_re_irq_chain: structured content parses with its schema and holds every observation", () => {
     const result = {
+      interrupts: 1,
       vectors: [
         {
           ...o,
@@ -180,10 +181,12 @@ describe("RE tool replies carry the whole result", () => {
       handlers: [
         { handler: 0x0840, via: ["irq_fffe" as const], entries: 1, entry_lines: [100], armed_before: [100] },
       ],
+      transient: [{ vector: "irq_fffe" as const, value: 0x0800, writes: 1 }],
       unknowns: ["irq_0314: $0315 never written, so the handler address is unknown"],
     };
     const r = irqChainReply({ ok: true, run, result });
     expect(r.text).toMatch(/handler \$0840 via irq_fffe/);
+    expect(r.text).toMatch(/transient: \$0800 in irq_fffe/);
     const parsed = z.object(IrqChainOutput).safeParse(r.structured);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
     expect(r.structured).toEqual({ run, ...result });

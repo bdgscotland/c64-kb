@@ -21,6 +21,21 @@ $4CF8; an IEC LOAD runs at ~406 B/s; the KERNAL never uses $DD0C. Search
 recall was measured for #26 (36 queries, recall@5 0.917); the BM25
 encoding stays.
 
+**`c64_re_irq_chain` counts interrupt dispatches, not executions of an
+address (#66).** It counted every execution of every value a vector ever
+held. On `kickassembler/sprite-multiplex-game` that gave 2,338 NMI entries
+at `$0B8C`: the IRQ exit's `rti` doubles as the `nmi:` label, and CIA2
+never raises an NMI. On `kickassembler/raster-bars` it gave 11 handlers for
+10 bars: `$0B04` and `$0C00` exist only between a low-byte and a high-byte
+store to `$0314`. The tool now also traces stores to `$0100-$01FF`, and
+VICE logs an interrupt's pushes with PC high at `$0100` + SP + 3. It names
+the handler from the vectors at that moment, and an entry is that
+handler's first exec within 94 cycles. Measured in VICE x64sc 3.10: the NMI
+handler has 0 entries, the IRQ handler still has 2,338, and raster-bars
+has 10 handlers of 256 entries each. `$0B04` and `$0C00` now appear only
+under the new `transient` field. The output also gains an `interrupts`
+count.
+
 **MEASURED, a demo built only from the KB, is checked in under `demos/measured/`.**
 Five parts (a tech-tech logo with a sprite border scroller, a twister with
 vector balls, DYSP side-border sprites over a soft scroller, a fire effect,

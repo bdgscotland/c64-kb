@@ -14,24 +14,40 @@
  * that sets a vector low byte then high byte (or $D012 then $D011) leaves
  * one observation of the mixed value in between: in `vectors` a handler
  * address that was never meant, in `arms` a line that was never meant.
- * `handlers` and `armed_before` read the state at each entry, not those.
+ * A vector value no interrupt ever found is listed in `transient`, not as
+ * a handler; `armed_before` reads the state at each entry.
  *
- * Two passes: storeCommands() finds the vector values; execCommands() adds
- * an exec checkpoint on each handler they named. An entry is the handler's
- * first instruction, so a $0314 handler's line includes the KERNAL's
- * dispatch at $FF48 (29 cycles) and a $FFFE handler's does not.
+ * Two passes. storeCommands() traces the vectors and the stack, which
+ * finds each interrupt (src/re/interrupts.ts) and the handlers the vectors
+ * held at that moment; execCommands() adds an exec checkpoint on each. An
+ * entry is the first of those handlers executed after an interrupt, so an
+ * address the program reaches any other way (an IRQ exit that falls into
+ * an `nmi: rti`) is not one. An entry is the handler's first instruction,
+ * so a $0314 handler's line includes the KERNAL's dispatch at $FF48 (29
+ * cycles) and a $FFFE handler's does not.
+ *
+ * An earlier version put an exec checkpoint on every value a vector ever
+ * held and counted every execution as an entry: on
+ * kickassembler/sprite-multiplex-game it reported 2,338 NMI entries (the
+ * IRQ exit's RTI) and on kickassembler/raster-bars 11 handlers for 10 bars,
+ * one of them a TAX inside handler 0 (#66).
  */
 import { storedValue, type Hit } from "./monlog.ts";
-
-const VECTORS = { irq_0314: 0x0314, nmi_0318: 0x0318, nmi_fffa: 0xfffa, irq_fffe: 0xfffe } as const;
-type VectorName = keyof typeof VECTORS;
+import {
+  candidates,
+  DISPATCH_WINDOW,
+  isInterruptPush,
+  VECTORS,
+  type Candidate,
+  type VectorName,
+} from "./interrupts.ts";
 
 export interface Obs {
   id: string;
   basis: "measured-vice";
   rung: 1;
 }
-export interface VectorWrite extends Obs {
+interface VectorWrite extends Obs {
   vector: VectorName;
   value: number | null;
   pc: number;
@@ -58,11 +74,20 @@ interface HandlerSummary {
   entry_lines: number[];
   armed_before: number[];
 }
+/** A vector value some write left but no interrupt ever found there. */
+interface Transient {
+  vector: VectorName;
+  value: number;
+  writes: number;
+}
 export interface IrqChain {
+  /** Interrupts raised after the entry, from the stack pushes; BRK is not one. */
+  interrupts: number;
   vectors: VectorWrite[];
   arms: Arm[];
   entries: Entry[];
   handlers: HandlerSummary[];
+  transient: Transient[];
   unknowns: string[];
 }
 
@@ -72,6 +97,7 @@ const obs = (id: string): Obs => ({ id, basis: "measured-vice", rung: 1 });
 export function storeCommands(): string {
   return (
     [
+      "trace store 0100 01ff",
       "trace store 0314 0319",
       "trace store fffa ffff",
       "trace store d011 d012",
@@ -86,10 +112,6 @@ export function execCommands(handlers: number[]): string {
   return storeCommands() + handlers.map((h) => `trace exec ${hex4(h)} ${hex4(h)}`).join("\n") + "\n";
 }
 
-export function handlersFrom(vectors: VectorWrite[]): number[] {
-  return [...new Set(vectors.flatMap((v) => (v.value === null ? [] : [v.value])))].sort((a, b) => a - b);
-}
-
 function vectorOf(addr: number): { name: VectorName; hi: boolean } | null {
   for (const [name, base] of Object.entries(VECTORS) as [VectorName, number][]) {
     if (addr === base) return { name, hi: false };
@@ -101,23 +123,49 @@ function vectorOf(addr: number): { name: VectorName; hi: boolean } | null {
 /** A register byte: undefined never written, null written but not logged. */
 type Byte = number | null | undefined;
 
+const addTo = <K, V>(m: Map<K, Set<V>>, k: K, v: V) => m.set(k, (m.get(k) ?? new Set()).add(v));
+
 class State {
   bytes = new Map<number, number | null>();
   d011: Byte = undefined;
   d012: Byte = undefined;
   lastArm: number | null = null;
-  out: IrqChain = { vectors: [], arms: [], entries: [], handlers: [], unknowns: [] };
+  out: IrqChain = {
+    interrupts: 0,
+    vectors: [],
+    arms: [],
+    entries: [],
+    handlers: [],
+    transient: [],
+    unknowns: [],
+  };
   armedBefore = new Map<number, Set<number>>();
-  via = new Map<number, Set<VectorName>>();
+  /** Handler -> the vectors that held it at an interrupt. */
+  live = new Map<number, Set<VectorName>>();
+  /** Handler -> the vectors an entry into it was dispatched through. */
+  entered = new Map<number, Set<VectorName>>();
+  /** Clocks of the interrupts not yet matched to an entry, oldest first. */
+  pending: number[] = [];
+  unmatched = 0;
+
+  readonly frameCycles: number;
+  readonly startClock: number;
+
+  constructor(frameCycles: number, startClock: number) {
+    this.frameCycles = frameCycles;
+    this.startClock = startClock;
+  }
+
+  vector(name: VectorName): number | null {
+    const lo = this.bytes.get(VECTORS[name]);
+    const hi = this.bytes.get(VECTORS[name] + 1);
+    return lo == null || hi == null ? null : (hi << 8) | lo;
+  }
 }
 
 function onVector(s: State, h: Hit, v: { name: VectorName; hi: boolean }): void {
   const value = storedValue(h);
   s.bytes.set(h.addr, value);
-  const base = VECTORS[v.name];
-  const lo = s.bytes.get(base);
-  const hi = s.bytes.get(base + 1);
-  const full = lo == null || hi == null ? null : (hi << 8) | lo;
   if (value === null)
     s.out.unknowns.push(`${h.mnemonic} $${hex4(h.addr).toUpperCase()} at $${hex4(h.pc)}: byte not logged`);
   const line = h.line === -1 ? null : h.line;
@@ -125,12 +173,11 @@ function onVector(s: State, h: Hit, v: { name: VectorName; hi: boolean }): void 
   s.out.vectors.push({
     ...obs(`v${s.out.vectors.length}`),
     vector: v.name,
-    value: full,
+    value: s.vector(v.name),
     pc: h.pc,
     clock: h.clock,
     line,
   });
-  if (full !== null) s.via.set(full, (s.via.get(full) ?? new Set()).add(v.name));
 }
 
 function setArm(s: State, h: Hit): number | null {
@@ -163,8 +210,28 @@ function onArm(s: State, h: Hit): void {
   s.out.arms.push({ ...obs(`a${s.out.arms.length}`), line, pc: h.pc, clock: h.clock, at_line });
 }
 
-function onEntry(s: State, h: Hit, frameCycles: number, startClock: number): void {
-  const frame = Math.floor((h.clock - startClock) / frameCycles);
+function onInterrupt(s: State): void {
+  s.out.interrupts++;
+  for (const c of candidates((v) => s.vector(v))) addTo(s.live, c.handler, c.vector);
+}
+
+/** Is an interrupt waiting whose window holds this clock? Older ones are dropped as unmatched. */
+function interruptOpen(s: State, clock: number): boolean {
+  while (s.pending.length && (s.pending[0] ?? 0) < clock - DISPATCH_WINDOW) {
+    s.pending.shift();
+    s.unmatched++;
+  }
+  const t = s.pending[0];
+  return t !== undefined && t <= clock;
+}
+
+/** An exec of a traced address: an entry only when it is the dispatch of a waiting interrupt. */
+function onExec(s: State, h: Hit): void {
+  if (!interruptOpen(s, h.clock)) return;
+  const via: Candidate[] = candidates((v) => s.vector(v)).filter((c) => c.handler === h.addr);
+  if (!via.length) return;
+  s.pending.shift();
+  for (const c of via) addTo(s.entered, h.addr, c.vector);
   const line = h.line === -1 ? null : h.line;
   const cycle = h.cycle === -1 ? null : h.cycle;
   if (line === null) s.out.unknowns.push(`raster timing not logged for handler entry at $${hex4(h.addr)}`);
@@ -174,24 +241,47 @@ function onEntry(s: State, h: Hit, frameCycles: number, startClock: number): voi
     line,
     cycle,
     clock: h.clock,
-    frame,
+    frame: Math.floor((h.clock - s.startClock) / s.frameCycles),
   });
-  if (s.lastArm !== null) s.armedBefore.set(h.addr, (s.armedBefore.get(h.addr) ?? new Set()).add(s.lastArm));
+  if (s.lastArm !== null) addTo(s.armedBefore, h.addr, s.lastArm);
 }
 
+const sorted = <T extends number | string>(xs: Iterable<T>): T[] =>
+  [...new Set(xs)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+/** Values the program wrote to a vector that an interrupt later found there. */
+function installed(s: State): number[] {
+  return s.out.vectors.flatMap((v) =>
+    v.value !== null && s.live.get(v.value)?.has(v.vector) ? [v.value] : [],
+  );
+}
+
+/** Every handler entered, and every handler the program installed that no interrupt entered. */
 function summarise(s: State): HandlerSummary[] {
   const by = new Map<number, Entry[]>();
+  for (const h of installed(s)) by.set(h, []);
   for (const e of s.out.entries) by.set(e.handler, [...(by.get(e.handler) ?? []), e]);
-  const sorted = (xs: Iterable<number>) => [...new Set(xs)].sort((a, b) => a - b);
   return [...by.entries()]
     .sort(([a], [b]) => a - b)
     .map(([handler, es]) => ({
       handler,
-      via: [...(s.via.get(handler) ?? [])].sort(),
+      via: sorted((es.length ? s.entered : s.live).get(handler) ?? []),
       entries: es.length,
       entry_lines: sorted(es.flatMap((e) => (e.line === null ? [] : [e.line]))),
       armed_before: sorted(s.armedBefore.get(handler) ?? []),
     }));
+}
+
+function transients(s: State): Transient[] {
+  const out = new Map<string, Transient>();
+  for (const v of s.out.vectors) {
+    if (v.value === null || s.live.get(v.value)?.has(v.vector)) continue;
+    const key = `${v.vector}:${v.value}`;
+    const t = out.get(key) ?? { vector: v.vector, value: v.value, writes: 0 };
+    t.writes++;
+    out.set(key, t);
+  }
+  return [...out.values()].sort((a, b) => a.value - b.value);
 }
 
 /** A write before the entry clock: update the state, observe nothing. */
@@ -214,24 +304,44 @@ function unwrittenBytes(s: State): void {
   }
 }
 
-/** Hits with clock < startClock seed the state; the rest are observations. */
-export function analyseIrqChain(hits: Iterable<Hit>, frameCycles: number, startClock: number): IrqChain {
-  const s = new State();
-  for (const h of hits) {
-    if (h.clock < startClock) {
-      seed(s, h);
-      continue;
-    }
-    if (h.kind === "exec") {
-      onEntry(s, h, frameCycles, startClock);
-      continue;
-    }
-    if (h.kind !== "store") continue;
-    const v = vectorOf(h.addr);
-    if (v) onVector(s, h, v);
-    else if (h.addr === 0xd011 || h.addr === 0xd012) onArm(s, h);
+function onStore(s: State, h: Hit): void {
+  const v = vectorOf(h.addr);
+  if (isInterruptPush(h)) onInterrupt(s);
+  else if (v) onVector(s, h, v);
+  else if (h.addr === 0xd011 || h.addr === 0xd012) onArm(s, h);
+}
+
+/**
+ * Hits with clock < startClock seed the state; the rest are observations.
+ * VICE logs a $FFFE handler's first exec before the pushes of the interrupt
+ * that entered it, at the same clock, so the interrupts are found first.
+ */
+function walk(hits: Iterable<Hit>, frameCycles: number, startClock: number): State {
+  const all = [...hits];
+  const s = new State(frameCycles, startClock);
+  s.pending = all.filter((h) => h.clock >= startClock && isInterruptPush(h)).map((h) => h.clock);
+  for (const h of all) {
+    if (h.clock < startClock) seed(s, h);
+    else if (h.kind === "exec") onExec(s, h);
+    else if (h.kind === "store") onStore(s, h);
   }
+  return s;
+}
+
+/** Every handler a vector held at an interrupt: the exec checkpoints of the second pass. */
+export function liveHandlers(hits: Iterable<Hit>, startClock: number): number[] {
+  return sorted(walk(hits, 1, startClock).live.keys());
+}
+
+export function analyseIrqChain(hits: Iterable<Hit>, frameCycles: number, startClock: number): IrqChain {
+  const s = walk(hits, frameCycles, startClock);
+  const unmatched = s.unmatched + s.pending.length;
+  if (unmatched)
+    s.out.unknowns.push(
+      `${unmatched} of ${s.out.interrupts} interrupts entered no traced handler within ${DISPATCH_WINDOW} cycles`,
+    );
   unwrittenBytes(s);
   s.out.handlers = summarise(s);
+  s.out.transient = transients(s);
   return s.out;
 }
