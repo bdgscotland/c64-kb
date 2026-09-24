@@ -5,7 +5,15 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 797, schema 33, tools 2.8.0, package 0.21.0.
+Data 798, schema 33, tools 2.8.0, package 0.21.0.
+
+**afli_image no longer requires multicolour (data 798; #80).** It
+required `fli_image`, which requires `multicolor_bitmap`, but the
+afli-image listing clears MCM (`$D016` = `$C8`); fli-image and
+ifli-image set it (`$D8`). afli_image now requires
+`stable_raster_irq, standard_bitmap, vic_bank_select` and claims the
+five FLI units itself (claims-watch trace in VICE). The afli-image
+recipe no longer lists `fli_image` in its techniques.
 
 **claims-watch no longer reads RAM stores as I/O (#79).** A store to
 `$D000-$DFFF` with I/O banked out was recorded as the register's value,
