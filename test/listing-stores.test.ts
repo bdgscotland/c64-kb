@@ -123,10 +123,11 @@ describe("listing scan: what counts as declared", () => {
 // The measurement behind "false positives are low": every recipe page in
 // docs/, scanned against the Claims lines as the extractor reads them. The
 // 69 recipes with claims: pass the claims watch (npm run claims:recipes),
-// so a warning on one of them is a false positive by that measure: there is
-// one, tech-tech, whose `sta $dd0d` writes the byte just read from $DC0D,
-// a value no static read can know. The other four have no claims: key and
-// do store to those units. Update this list when a page changes, and say why.
+// so a warning on one of them would be a false positive by that measure:
+// there are none. (Tech-tech was one until #88: its `sta $dd0d` wrote the
+// byte just read from $DC0D; it now writes $7F and claims the CIA2 units
+// init.) The four listed have no claims: key and do store to those units.
+// Update this list when a page changes, and say why.
 describe("listing scan over the real recipe pages", () => {
   const docs = join(import.meta.dirname, "..", "docs");
   const md = (d: string) =>
@@ -162,7 +163,6 @@ describe("listing scan over the real recipe pages", () => {
       "recipes/kickassembler/easyflash-save.md",
       "recipes/kickassembler/sparkle-dd02-bank.md",
       "recipes/kickassembler/tape-turbo-loader.md",
-      "recipes/kickassembler/tech-tech.md",
     ]);
   });
 });

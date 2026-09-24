@@ -7,7 +7,7 @@ techniques: [tech_tech_wobbler, stable_raster_irq, pal_ntsc_detection]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC04, DC05, DC06, DC07, DC0E, DC0F]
 uses_kernal: []
-claims: [irq_vector_0314 (owns), cia1_tod (init), zero_page $02-$61+$FB (owns)]
+claims: [irq_vector_0314 (owns), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), zero_page $02-$61+$FB (owns)]
 harness: [cia1_timer_a, cia1_timer_b, $02E6-$02E9, $02FF]
 ram: [state=$02E0-$02E4, colour=$D800-$DBFF]
 ---
@@ -192,10 +192,10 @@ BasicUpstart2(start)
 * = $0900
 start:
     sei
-    lda #$7f
+    lda #$7f                  // mask every source on both CIAs
     sta $dc0d
-    lda $dc0d
     sta $dd0d
+    lda $dc0d                 // and drop any flag already pending
     lda $dd0d
 
     lda #0
@@ -660,6 +660,18 @@ cycles of padding for the 65-cycle line of the 6567R8, which is VICE's
 `-model ntsc`, and a different entry delay; the c-accesses still occupy
 cycles 15 to 54 and the stall still ends on cycle 55, so the block
 structure is the same. The 64-cycle 6567R56A was not run.
+
+### Masking the CIAs
+
+`start` writes `$7F` to both `$DC0D` and `$DD0D`, then reads both to drop
+any pending flag. An earlier version wrote `$DD0D` with the byte it had
+just read from `$DC0D`. A VICE store trace on `$DD0D` (PAL and NTSC,
+12,000,000 cycles) saw that byte as `$00` on both, and no NMI ran. It is
+still the wrong byte: a CIA1 timer A underflow between `sei` and the
+mask write would make the read `$81`, and `$81` written to `$DD0D`
+enables CIA2 timer A as an NMI source instead of masking it (#88; the
+`$81` case was not produced here, it follows from the ICR's set/clear
+bit 7).
 
 ## What it does not establish
 
