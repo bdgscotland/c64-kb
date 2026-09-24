@@ -1405,6 +1405,9 @@
   "kickassembler/tape-turbo-loader": {
     "skip": "needs a TAP on -1, a PLAY press through -moncommands and +dsresetwithcpu, which the verifier has no keys for; the page's pictures are under docs/figures and its Build section gives the exact command"
   },
+  "kickassembler/sparkle-dd02-bank": {
+    "skip": "boots from the D64 the Sparkle PC tool (SparkleCPP, not in this repository) writes from the page's loader script; the verifier can only attach a blank formatted disk. The page's pictures are under docs/figures and its Build section gives the exact commands"
+  },
   "kickassembler/mci-interlace": {
     "cycles": 12000000,
     "models": [

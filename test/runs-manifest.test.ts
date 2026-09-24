@@ -42,3 +42,28 @@ describe("runs.json pins the VICE seed for pot devices", () => {
     expect(potPortsWithoutSeed(manifest)).toEqual([]);
   });
 });
+
+// A recipe the verifier cannot run is listed with "skip"; its page then keeps
+// its own pictures under docs/figures. Every picture such a page cites must
+// exist, or the page claims a measurement nobody can look at (#23).
+describe("skipped recipes cite pictures that exist", () => {
+  const root = path.join(import.meta.dirname, "..", "docs");
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "recipes", "runs.json"), "utf8")) as Record<
+    string,
+    { skip?: string } | string
+  >;
+  const skipped = Object.entries(manifest)
+    .filter(([, run]) => typeof run === "object" && typeof run.skip === "string")
+    .map(([key]) => key);
+
+  it("includes the Sparkle $DD02 recipe", () => {
+    expect(skipped).toContain("kickassembler/sparkle-dd02-bank");
+  });
+
+  it.each(skipped)("%s", (key) => {
+    const md = fs.readFileSync(path.join(root, "recipes", `${key}.md`), "utf8");
+    const cited = [...md.matchAll(/\.\.\/\.\.\/figures\/([\w.-]+\.png)/g)].map((m) => m[1] ?? "");
+    expect(cited.length).toBeGreaterThan(0);
+    for (const name of cited) expect(fs.existsSync(path.join(root, "figures", name)), name).toBe(true);
+  });
+});
