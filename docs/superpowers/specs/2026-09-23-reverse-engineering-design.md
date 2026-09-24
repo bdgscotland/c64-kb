@@ -240,6 +240,88 @@ pages, so the rule has no exceptions.
 After step 4, the tools and page format are reviewed before any further
 game is studied.
 
+## Amendment 2026-09-24: Commando is the first study
+
+Maintainer decision after a dogfood run on Commando (Capcom/Elite, 1985;
+the maintainer's own `Commando.d64`, a c64hq release; file `commando`
+sha1 `0c19361689f6c977afe2e00e80be303a3d16be5b`). Every fact in this
+section was measured in VICE x64sc 3.10 (windowless, PAL c64c) on that
+image, which stays outside the repository. The gap log is in the plan for
+this step.
+
+**What the run showed the design had wrong or missing.**
+
+- *Joystick input is not an open problem for polling games.* The title loop
+  reads `LDA $DC00` at `$0FB2` and compares `CMP #$6F` at `$0FB5`. A trace
+  checkpoint on `$0FB5` with `ignore` and `command N "r a = 6f"` sets the
+  register the game just read, and play starts. A session's input is
+  therefore a list of register injections at the game's own read
+  instructions, not a key or joystick event list (an earlier version of the
+  session file below used `frame`/`joy2` events that no instrument here can
+  deliver). #59 was closed on main meanwhile by another route: the binary
+  monitor's joystick command reaches `$DC00` with `-controlport2device 37`
+  (`templates/_harness/drive.py`). That needs a live monitor session; the
+  batch (`-moncommands`) runs these tools use still need register injection,
+  so a session may list both kinds of input.
+- *Packed games are the normal case, so the load map comes first.* The file
+  has two stubs (`SYS 2217 COMPUTERBRAINS`, then `SYS 2066 C.C.S.`), a
+  decruncher running in the stack page at `$018C` that writes over
+  `$FFFA-$FFFF`, and a second copy at `$3EB3`. Vector writes during a depack
+  are transient values (the #66 fix reports them so), not the program's
+  intent.
+- *A snapshot is a RAM dump, not a `.vsf`.* A checkpoint `command` running
+  `save "<file>" 0 0000 ffff` after `bank ram` dumps all 64 KB at a chosen
+  moment; da65 reads the dump. Replaying the session from power-on takes
+  seconds, so no VICE snapshot is kept (an earlier version stored one).
+- *Handlers dispatch through RAM pointers.* Commando's only vector target is
+  `$4134: JMP ($0406)`; five parts rewrite the pointer and `$D012` in turn
+  (lines 30, 50/52, 192, 213, 222 on the title). `c64_re_irq_chain` follows
+  such a pointer since #66.
+- *Frames must start on a raster line.* Numbering frames from the start
+  clock rotated each frame's list of entry lines. A frame is numbered from
+  line 0 (clock of line 0 derived from any hit's line and cycle).
+- *A D64 is an image, not a PRG.* Tools take the sha1 of a D64 plus a file
+  name; the tool extracts the file with c1541 into the run's work directory.
+
+**Revised session file.**
+
+```json
+{
+  "image": { "sha1": "b2ca4794…", "kind": "d64", "file": "commando", "title": "Commando", "release": "c64hq" },
+  "machine": { "model": "c64c" },
+  "inject": [ { "at_pc": "$0FB5", "after_hits": 1000, "set": { "a": "$6F" }, "why": "title waits for fire: CMP #$6F" } ],
+  "in_play": { "check": "exec", "pc": "$4134", "after_clock": 36000000 },
+  "limitcycles": 60000000
+}
+```
+
+`hits` are decimal in the file and written to the monitor as hex (VICE
+reads monitor numbers as hex: `ignore 1 1000` skips 4,096 hits).
+
+**Revised tool list for this step.** `c64_re_session` (replay, verify
+`in_play`, return the clock), `c64_re_snapshot` (RAM dump and the VIC
+registers at a session state: bank from `$DD00`, screen, charset and bitmap
+from `$D018`, sprite pointers, `$01`; the dump stays under `data/`),
+`c64_re_load_map` (stubs, SYS targets, decruncher writer PCs and their
+destination ranges, transient vectors, the clock of the first dispatch to
+a program handler), `c64_re_coverage` (memmap at a session state), and the
+existing `c64_re_irq_chain` and `c64_re_frame_profile` taking a session
+(sha1 plus session file) as well as a PRG path. Frame mode and per-routine
+`prof` totals land here: a studied game has no timer of its own.
+
+**Revised pilot order.** Step 2 is Commando (packed, D64,
+`vertical_shmup`, a reference title of that archetype already), with the
+schema 32 changes, the `study_expression` lint and the first study page.
+Step 3 is Gridrunner, where every observation is cross-checked against
+mwenge's byte-identical source; a disagreement there is a tool defect found
+before more studies rest on the tools. Steps 4 and 5 are Uridium and Elite
+as before. Content that the Commando run measured lands with step 2: the
+end-to-end study method page, the packer section of
+`toolchains/disassembly-reference.md` (now run here, no longer rung 4),
+input by register injection, monitor numbers in hex, and a technique for
+blanking a band with the invalid ECM+BMM mode on purpose (the KB has it
+only as a pitfall).
+
 ## Testing
 
 - `src/re/*` parsers are pure and unit-tested on saved monitor logs
