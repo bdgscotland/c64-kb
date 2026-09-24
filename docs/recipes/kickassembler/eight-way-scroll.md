@@ -1297,8 +1297,8 @@ to 24). During those fields, rows not yet rewritten show the previous
 origin's colour alongside the new matrix. The exit screenshots above are
 taken in the clean window; a capture inside the three stale fields shows
 grey horizontal rules in the rows not yet rewritten and a dimmer HUD row
-for one field while row 1's colour updates. This is documented in "What it
-does not establish" below.
+for one field while row 1's colour updates (see "What it does not
+establish").
 
 Screenshots from the VICE runs this page describes:
 `screenshots/eight-way-scroll.png` (PAL) and
@@ -1323,14 +1323,14 @@ value and no column or row is half drawn at the border.
 
 ### Why the matrix is double buffered
 
-A whole-tile step needs all 1,000 matrix bytes replaced. That copy is far
+A whole-tile step needs all 1,000 matrix bytes replaced. That copy is
 too long for the blank on either model, so it cannot be done between
 fields; drawn into the live page it would be visible as a tear running
 down the screen. Instead it goes into the page that is not on display, and
 only the `$D018` VM nibble changes when it is complete. The flip is one
 store in the blank.
 
-The flip is refused unless the spare page already holds exactly the origin
+The flip is refused unless the spare page already holds the origin
 wanted, and every refusal is counted. That counter reading zero is the
 evidence that the redraw always finished in time.
 
@@ -1361,8 +1361,8 @@ crossings are sixteen fields apart on straight legs and there is always room.
 The requirement is five fields: four fields of matrix redraw make the spare
 page ready so a flip is possible from the fifth field, and the four colour
 calls finish in the same span. The minimum gap between crossings is six
-fields at half speed, leaving one field of slack. Half speed is sufficient;
-a slower rate is not needed.
+fields at half speed, leaving one field of slack. A slower rate is not
+needed.
 
 In the flip field, the matrix band is drawn into the page still on display
 until raster 251. `irqPrep` toggles `pgVis` at the flip decision while
@@ -1408,7 +1408,7 @@ Three handlers a field: raster 4 for the band-limited colour write,
 152 + YSCROLL for the path step, flip decision and matrix band, and 251
 for the register writes in the blank. Each arms the next one's `$D012` and
 vector as its first act, before doing any work. A handler here can run for
-well over a raster line, and if it armed its successor at the end it would
+more than a raster line, and if it armed its successor at the end it would
 arm a compare the beam had already passed and lose a whole field.
 
 The VIC sets the raster interrupt flag regardless of the CPU's interrupt
@@ -1419,9 +1419,9 @@ handler's `rti`. That is what lets a late `irqApply` be detected: if
 at whatever raster `irqPrep` left the CPU, and reading `$D012` at
 `irqApply`'s entry gives a number below 251.
 
-The `$D016` write is deliberately whole-register (`lda pendD16; sta $D016`)
-rather than read-modify-write. Two lint findings flag this as a potential
-CSEL or MCM collision, but the write is intentional: CSEL and MCM are both
+The `$D016` write is whole-register (`lda pendD16; sta $D016`)
+rather than read-modify-write. Two lint findings flag it as a possible
+CSEL or MCM collision. It is not one: CSEL and MCM are both
 left at 0 throughout, and a read-modify-write would require an extra byte
 of state to track the stable bits.
 
@@ -1464,9 +1464,8 @@ budget the verdict checks. The NTSC figure is the larger of the two:
 **Colour continuity across a flip.** A tile crossing writes colour to
 colour RAM over four consecutive `irqColB` calls (two for the top half,
 two for the bottom). During those fields the rows not yet rewritten show
-the previous origin's colour alongside the new matrix, producing a brief
-mismatch. This lasts three displayed fields (60 ms PAL, 50 ms NTSC) and
-is the trade-off the band cap makes. Rows 0 to 4 may show old colour for
+the previous origin's colour alongside the new matrix for three displayed
+fields (60 ms PAL, 50 ms NTSC). This is the cost of the band cap. Rows 0 to 4 may show old colour for
 one field on NTSC when `irqColB` starts late enough that the first band
 finishes after row 4's badline.
 

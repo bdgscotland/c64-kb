@@ -526,7 +526,7 @@ remainder is at least the divisor, the divisor is subtracted and a 1 is
 set in the bit of the dividend that was just vacated. After as many
 passes as the dividend has bits, the dividend byte(s) hold the quotient
 and the remainder register holds the remainder. Both come out of one
-loop, which is what makes the same routine serve `/` and `%`.
+loop, so the same routine serves `/` and `%`.
 
 The partial remainder can be one bit wider than the divisor: before the
 subtract it is up to twice the divisor less one. `rol rem8` shifts that
@@ -560,9 +560,9 @@ range and is on the technique page; it is not in this listing because
 it needs a multiply.
 
 The five-digit print by repeated division is three times the cost of
-the subtract-powers print, 2,793 cycles against 936, and it is the
-answer to the question of whether a HUD should divide by ten: it should
-not, on this CPU, unless the digits are needed in the other order. The
+the subtract-powers print, 2,793 cycles against 936, so a HUD should
+not divide by ten on this CPU unless the digits are needed in the other
+order. The
 divide route's advantage is the units digit first, which suits a
 right-to-left field or a number of unknown width.
 

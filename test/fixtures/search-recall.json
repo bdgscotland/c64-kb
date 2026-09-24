@@ -1,0 +1,150 @@
+{
+  "description": "Search recall fixture (issue #26). Each query is one a C64 programmer would ask; expected lists the one or two pages under docs/ (paths relative to docs/, as Qdrant's source payload holds them) a correct answer must come from. A query counts as recalled when any expected page is among the top 5 sources. Run: node scripts/search-recall.ts.",
+  "k": 5,
+  "queries": [
+    {
+      "query": "$D011",
+      "expected": ["hardware/vic-ii-reference.md", "hardware/c64-registers-reference.md"]
+    },
+    {
+      "query": "CHROUT",
+      "expected": ["hardware/kernal-routines-reference.md"]
+    },
+    {
+      "query": "$FFD2",
+      "expected": ["hardware/kernal-routines-reference.md"]
+    },
+    {
+      "query": "LAX",
+      "expected": ["hardware/6502-illegal-opcodes.md"]
+    },
+    {
+      "query": "SAX store A AND X",
+      "expected": ["hardware/6502-illegal-opcodes.md"]
+    },
+    {
+      "query": "sta $d020 border colour",
+      "expected": ["hardware/vic-ii-reference.md", "hardware/c64-registers-reference.md"]
+    },
+    {
+      "query": "$D418",
+      "expected": ["hardware/sid-reference.md", "hardware/c64-registers-reference.md"]
+    },
+    {
+      "query": "$DD00 VIC bank select",
+      "expected": ["hardware/cia-reference.md", "techniques/memory-banking.md"]
+    },
+    {
+      "query": "read the TOD clock hours first then tenths",
+      "expected": ["pitfalls/cia.md", "hardware/cia-reference.md"]
+    },
+    {
+      "query": "one read of $DC0D clears every interrupt flag",
+      "expected": ["pitfalls/cia.md", "hardware/cia-reference.md"]
+    },
+    {
+      "query": "badline steals cycles from the CPU",
+      "expected": ["pitfalls/raster-and-badline.md", "techniques/raster.md"]
+    },
+    {
+      "query": "stable raster interrupt",
+      "expected": ["techniques/raster.md", "recipes/kickassembler/stable-raster-irq.md"]
+    },
+    {
+      "query": "open the side border",
+      "expected": ["techniques/raster.md", "recipes/kickassembler/sideborder-open.md"]
+    },
+    {
+      "query": "SID registers are write-only, reading returns garbage",
+      "expected": ["pitfalls/sid.md", "hardware/sid-reference.md"]
+    },
+    {
+      "query": "6581 vs 8580 filter differences",
+      "expected": ["hardware/sid-reference.md", "pitfalls/sid.md"]
+    },
+    {
+      "query": "sprite X position above 255 needs $D010",
+      "expected": ["pitfalls/sprite.md", "hardware/vic-ii-reference.md"]
+    },
+    {
+      "query": "more than 8 sprites with a multiplexer",
+      "expected": ["techniques/sprite.md", "recipes/kickassembler/sprite-multiplex-24.md"]
+    },
+    {
+      "query": "detect PAL or NTSC at runtime",
+      "expected": ["hardware/pal-ntsc-reference.md", "techniques/raster.md"]
+    },
+    {
+      "query": "calling KERNAL routines under SEI re-enables interrupts",
+      "expected": ["pitfalls/kernal-and-io.md"]
+    },
+    {
+      "query": "IRQ handler must CLD decimal mode",
+      "expected": ["pitfalls/kernal-and-io.md"]
+    },
+    {
+      "query": "writes go to RAM under ROM, reads return ROM",
+      "expected": ["pitfalls/banking.md", "techniques/memory-banking.md"]
+    },
+    {
+      "query": "copy the character ROM into RAM",
+      "expected": ["recipes/kickassembler/charset-copy-rom-to-ram.md", "techniques/memory-banking.md"]
+    },
+    {
+      "query": "REU DMA transfer",
+      "expected": ["recipes/kickassembler/reu-dma.md", "techniques/memory-banking.md"]
+    },
+    {
+      "query": "horizontal smooth scroll with $D016",
+      "expected": ["techniques/scroll.md", "recipes/oscar64/soft-scroll-h.md"]
+    },
+    {
+      "query": "FLI image display",
+      "expected": ["techniques/bitmap-modes.md", "recipes/kickassembler/fli-image.md"]
+    },
+    {
+      "query": "read a 1351 mouse",
+      "expected": ["recipes/kickassembler/mouse-1351-read.md", "techniques/input.md"]
+    },
+    {
+      "query": "D64 disk image directory on track 18",
+      "expected": ["formats/c64-file-formats.md", "formats/iec-disk-reference.md"]
+    },
+    {
+      "query": "1541 DOS error codes",
+      "expected": ["formats/iec-disk-reference.md", "recipes/kickassembler/dos-error-codes.md"]
+    },
+    {
+      "query": "exomizer compression",
+      "expected": ["techniques/loaders-packers.md"]
+    },
+    {
+      "query": "convert a BASIC listing to PRG with petcat",
+      "expected": ["toolchains/petcat-reference.md"]
+    },
+    {
+      "query": "make a .crt cartridge image with cartconv",
+      "expected": ["toolchains/cartconv-reference.md"]
+    },
+    {
+      "query": "relocate a SID tune to another address",
+      "expected": ["toolchains/sidreloc.md"]
+    },
+    {
+      "query": "cc1541 write files to a d64",
+      "expected": ["toolchains/cc1541-reference.md"]
+    },
+    {
+      "query": "KickAssembler macros and pseudocommands",
+      "expected": ["toolchains/kickassembler-reference.md"]
+    },
+    {
+      "query": "Oscar64 command line flags",
+      "expected": ["toolchains/oscar64-reference.md"]
+    },
+    {
+      "query": "cc65 linker config file",
+      "expected": ["toolchains/cc65-reference.md"]
+    }
+  ]
+}

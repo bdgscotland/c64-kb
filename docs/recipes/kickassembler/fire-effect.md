@@ -398,7 +398,7 @@ interrupt mask cleared and its timer in use for the measurement, so a
 stray store there would change the figures. The full rewrite of colour
 RAM through an index is also what
 `full_field_redraw_exceeds_vblank` on the same page describes, and here
-it does overrun: the halving is the answer, not a fit.
+it does overrun, which is why the update is split in two halves.
 
 ### Region
 

@@ -1193,8 +1193,7 @@ end of row 1, `DRIVE: 00, OK,00,00`, `MAX` 8,693 (PAL) and 10,287 (NTSC),
 7,500 cycles a frame in play with peaks near 10,300 out of 19,656 (PAL)
 or 17,095 (NTSC), and no frame was dropped in 800.
 
-Two defects of the build this was promoted from are fixed here and worth
-knowing about. `GAME OVER` was written over the map with `put_str`, which
+Two defects of the build this was promoted from are fixed here. `GAME OVER` was written over the map with `put_str`, which
 writes screen codes only; the map draw had left colour RAM black under
 empty tiles, so the text was black on black and no picture showed it.
 `show_game_over` sets the colour cells too. And the read-back value was

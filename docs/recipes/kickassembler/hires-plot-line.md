@@ -667,7 +667,7 @@ starts at `$2000 + (y / 8) * 320` and the byte for scanline y inside it is
 `+ (y & 7)`. The row table holds that sum for each of the 200 values of y,
 low bytes in one page and high bytes in another. Adding `x & $F8` to the
 low byte, with x's high byte carried into the high byte, reaches the cell:
-`x & $F8` is the column times eight, which is exactly the byte offset of
+`x & $F8` is the column times eight, which is the byte offset of
 that column's cell within the row. The bit inside the byte is the mask
 table entry for `x & 7`, `$80` for the leftmost pixel, and an `ORA` sets
 it without disturbing its neighbours. Each table sits in one page because

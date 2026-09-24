@@ -24,7 +24,7 @@ that the program prints. A Python snippet reads the bars from the exit
 screenshot and turns them into lines and cycles, and the page checks the
 two methods against each other. Build switches `PROFILE_BARS` and
 `PROFILE_CIA` remove either method. Use it as the harness to drop real
-subsystems into when a frame overruns and you need to know which one did
+subsystems into when a frame overruns, to find which one did
 it. The technique is `raster_profile_bars` in `techniques/raster.md`.
 
 ## Source
@@ -390,7 +390,7 @@ the subsystem would cost in the border.
 
 The program runs `SEI` first: an interrupt that lands inside a bracket is
 counted as that subsystem's time and stretches its band. A game with a
-raster IRQ chain sees exactly that, and should either accept it or read
+raster IRQ chain sees that, and should either accept it or read
 `MAX` knowing an interrupt may be in it. `vic_waitLine(56)` starts the
 bars in the display on purpose, so the badline tax is visible. Bars
 that fall in lines 288-311 or 0-15 (PAL) are not in the exit screenshot;

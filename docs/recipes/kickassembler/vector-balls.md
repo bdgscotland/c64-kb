@@ -526,12 +526,12 @@ ball past X 255.
 
 ### One bubble pass
 
-A full sort every frame would be safe and costs more than it buys. The
+A full sort every frame would be safe but costs more. The
 balls move a step of one 256th of a turn a frame, and two of them only
 change depth order by crossing, so the previous frame's order is at
 most a few adjacent swaps from the new one, and a single pass performs
-them. The check after the pass is what turns that argument into a
-number; it is the six settling frames and then none.
+them. The check after the pass measures this: six settling frames and
+then none.
 
 ## What it does not establish
 

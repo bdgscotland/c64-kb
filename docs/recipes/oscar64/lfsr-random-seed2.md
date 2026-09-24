@@ -326,8 +326,8 @@ random here.
 
 ## Why this works
 
-Everything on the main page applies. The one difference worth its own
-paragraph is how the constant gets in. `seed = FIXED_SEED;` produced a
+Everything on the main page applies. The one difference is how the constant
+gets in. `seed = FIXED_SEED;` produced a
 932-byte PRG whose 8-bit period loop was an unconditional jump: Oscar64
 (build 2026-05-19) treated the `volatile` compare against a
 compile-time constant as always true and removed the rest of `main`, so

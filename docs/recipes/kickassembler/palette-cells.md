@@ -17,9 +17,9 @@ uses_kernal: []
 
 Paints each of the 16 VIC-II colours into a known band of screen cells,
 labels each band with its hex index, and sets the border to colour 9. The
-exit screenshot is then a picture of the emulator's palette: sample one
-pixel per band and you have the RGB triple VICE emits for that colour
-index on that machine model. Use it to calibrate a screenshot decoder, or
+exit screenshot is then a picture of the emulator's palette: one pixel
+sampled per band gives the RGB triple VICE emits for that colour index
+on that machine model. Use it to calibrate a screenshot decoder, or
 to check which palette an unfamiliar VICE build or configuration is using.
 
 ## Source
@@ -193,7 +193,7 @@ pixels of the cell take the foreground colour from colour RAM, so a cell
 holding `$A0` is a solid 8x8 block of whatever value sits in `$D800` at
 the same offset. Filling 32 such cells per row gives a band wide enough
 to sample anywhere without touching a glyph edge. The background is set
-to 0 so colour 0's band is deliberately invisible; its digit still marks
+to 0 so colour 0's band is invisible; its digit still marks
 the row.
 
 The digits and title are written as screen codes, not PETSCII, because

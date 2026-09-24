@@ -12,16 +12,15 @@ home_url: https://github.com/bdgscotland/c64-kb
 
 ## Tool
 
-This page is a procedure, not a program. It takes a PRG that one of the
-toolchains built and turns it into a D64 image a user can put in drive 8
+This page is a procedure, not a program. It turns a PRG that one of the
+toolchains built into a D64 image a user can put in drive 8
 and start with `LOAD"*",8,1`, then proves the image boots by autostarting
 it in headless VICE and looking at the screen. Every command and every
 figure here was run on this machine with VICE 3.10's `c1541` and `x64sc`,
 GNU Make 3.81 and Oscar64 build 2026-05-19, on the PRG that the listing in
 [oscar64/platformer-scaffold](../recipes/oscar64/platformer-scaffold.md)
-builds (6,473 bytes, loading at `$0801`). That recipe was chosen because
-it also writes to the disk it came from, which is the case a release disk
-has to survive. The per-tool pages hold the build commands; the image
+builds (6,473 bytes, loading at `$0801`). That recipe also writes to the
+disk it came from, which a release disk has to survive. The per-tool pages hold the build commands; the image
 format is in [c64-file-formats](../formats/c64-file-formats.md) and the
 drive's error numbers in
 [iec-disk-reference](../formats/iec-disk-reference.md).
@@ -129,8 +128,8 @@ machine to autostart '*'`, `Loading program '*'`, `Entered ROM at $e5d4`,
 `Searching for ...`, `Loading`, `Entered ROM at $ea21`, `Ready`,
 `Starting program.`, then `Main CPU: Error - cycle limit reached.` and
 exit status 1, which is the `-limitcycles` exit. The KERNAL loaded the
-file from the emulated 1541 through the serial bus, and that is the point
-of the test.
+file from the emulated 1541 through the serial bus, which is what the test
+checks.
 
 **This is not the path the recipe verifier uses, and the cycle counts
 do not carry over.** `scripts/verify-recipes.ts` runs
@@ -220,14 +219,14 @@ over had passed: the HUD read `SCORE 00191 LIVES 0 ... W`, row 1 ended
   notes.
 - 1541 or fast loader: the KERNAL load measured here had 26 blocks in
   memory inside 22 million cycles from power-on, about 22 seconds of
-  machine time including the reset and autostart delay; a full disk through the
-  KERNAL is the half hour that
+  machine time including the reset and autostart delay; a full disk through
+  the KERNAL is the half hour that
   [iec-disk-reference](../formats/iec-disk-reference.md) quotes under
   "Speed and Throughput". Nothing here needs a fast loader. A game that
   streams levels does, and its loader's disk layout is then part of the
   release format; no fast loader was run on this page.
 - If the game saves to its disk: the image changes, the disk must be
-  writable, and the game's answer to 26 is worth one run with
+  writable, and the game's answer to 26 needs one run with
   `-attach8ro`.
 
 ## Makefile target

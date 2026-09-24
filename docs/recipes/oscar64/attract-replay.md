@@ -384,7 +384,7 @@ in the reseeded run the hazard hits on demo frame 263 (the model's
 figure; the frame was not read off the emulator), the player is sent
 back to the start, and the last 21 frames of the recording carry it
 from there to 50, 106. That hit is the event the recording was made
-against. Same inputs, different world, different ending.
+against.
 
 The `$02FF` values were read as the border colour and the text; the byte
 itself was not read over the monitor in this run. The abort build,
@@ -414,7 +414,7 @@ the number of frames to hold it. A count of zero ends the stream. There
 is no second code path for the demo, which is the reason to build it
 this way: whatever the game does, the demo does too.
 
-Determinism is what makes the recording replay. The game's only source
+Determinism makes the recording replay. The game's only source
 of variation is the LFSR, and `start_demo` sets it to `REC_SEED` before
 the first demo frame. The same seed, the same input bytes, the same
 number of frames, and every intermediate state is the one the recording
@@ -429,8 +429,7 @@ for a recording tool that might store one.
 
 The frame is the unit. `wait_frame` polls `$D012` for line 250 once per
 loop, so one recording pair counts frames on both regions and a 285-frame
-demo is 285 frames on PAL and on NTSC; it takes less wall time on NTSC,
-and that is all. The idle timer is a byte counting frames of nothing on
+demo is 285 frames on PAL and on NTSC; it only takes less wall time on NTSC. The idle timer is a byte counting frames of nothing on
 the port and resetting on anything, so a player who touches the stick
 never sees the demo.
 

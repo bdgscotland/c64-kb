@@ -18,11 +18,11 @@ uses_kernal: []
 Demonstrates the `isometric_tile_engine` technique on stock hardware: a fixed
 8-by-8 cell map drawn in painter's diagonal order into a 40-by-25 text screen,
 hardware sprite 0 as the player figure, and `$D01B` bit 0 toggled by a scan of
-the cells in front of the player. Three tile shapes -- floor diamond (4 chars
-wide by 2 tall), one-tile block (4 by 4), and two-tile tall block (4 by 6) --
+the cells in front of the player. Three tile shapes (floor diamond, 4 chars
+wide by 2 tall; one-tile block, 4 by 4; two-tile tall block, 4 by 6)
 are built from 13 custom glyphs in a 2 KB charset at `$3000`. CIA 1 timer A
 measures two full room redraws and a single block draw. A four-cell verdict at
-`$02FF` confirms the drawing is correct.
+`$02FF` checks the drawing.
 
 Use this recipe as the starting point for any isometric tile engine that needs
 the depth bit: replace the map and charset, keep the painter loop and depth
@@ -1067,10 +1067,10 @@ at each position, then the room is redrawn once more and the border turns green.
 
 **Verdict byte checks** (all must match for `$02FF = 1`):
 
-- `$04B2` (screen row 4, col 18): char code 1 -- top-left of floor tile at (0,0)
-- `$0530` (screen row 7, col 24): char code 1 -- top-left of block(4,1) top face
-- `$0400` (screen row 0, col 0): char code `$20` -- empty cell above the room
-- `$0624` (screen row 13, col 28): char code 9 -- side face of tall block(7,2)
+- `$04B2` (screen row 4, col 18): char code 1, top-left of floor tile at (0,0)
+- `$0530` (screen row 7, col 24): char code 1, top-left of block(4,1) top face
+- `$0400` (screen row 0, col 0): char code `$20`, empty cell above the room
+- `$0624` (screen row 13, col 28): char code 9, side face of tall block(7,2)
 
 **Timer measurements** (CIA 1 timer A, one-shot from `$FFFF`, stored as
 `$FFFF - timer_value`; measured in VICE x64sc 3.10 PAL):
@@ -1125,8 +1125,8 @@ player. If that cell is a block and its character box (4 cols by 4 or 6 rows)
 overlaps the sprite's character box (3 cols by 3 rows, positioned from
 `sprite_x = 24 + 8*(col+2)`, `sprite_y = 45 + 8*row`), the routine sets
 `$D01B` bit 0, placing the sprite behind all playfield characters. One bit
-covers the whole sprite: the limitation is that the player appears behind every
-character on screen when the bit is set, not just the block in question. The
+covers the whole sprite, so the player appears behind every character on
+screen when the bit is set, not just the block in question. The
 Variations section of the technique entry discusses the fix.
 
 ## What it does not establish

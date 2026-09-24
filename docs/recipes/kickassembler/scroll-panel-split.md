@@ -332,8 +332,8 @@ inside line 215, so the panel's badline starts late.
 The delay of 5 passes was found by trying values at YSCROLL 3: on both models
 4 and 5 are clean, 3 or less writes `$D016` before line 214's right border
 (line 214 grows to x 351), and 6 misses the start of line 215 (lines 215-222
-differ on PAL, 215-219 on NTSC). At 4, NTSC YSCROLL 5 also widened line 214, so 5 is the value that
-is clean at all eight phases on both models. At YSCROLL 6 the entry is 0.
+differ on PAL, 215-219 on NTSC). At 4, NTSC YSCROLL 5 also widened line
+214, so 5 is the value that is clean at all eight phases on both models. At YSCROLL 6 the entry is 0.
 
 ## Why this works
 
@@ -356,8 +356,9 @@ delay: the stall itself is the wait. c64gameframework's panel table,
 8, 8, 8, 8, 8, 5, 0, 8 (`aligneddata.s` line 71, read, not run here), polls
 line 229 and runs its delay on line 230, which is 6 mod 8, and its entry for
 6 is also 0; its shorter entry for phase 5 matches the finding above that
-phase 5 is the sensitive one at 4 passes on NTSC. Every register value is loaded before the
-poll, so after the stall only the three stores remain; with the loads after
+phase 5 is the sensitive one at 4 passes on NTSC.
+
+Every register value is loaded before the poll, so after the stall only the three stores remain; with the loads after
 the poll, NTSC's two extra cycles a line pushed `$D016` past line 215's left
 border. The poll uses `bcs`, not `bne`, so a late entry cannot wait a whole
 frame.

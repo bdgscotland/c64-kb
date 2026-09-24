@@ -14,8 +14,8 @@ scan runs entirely inside the IRQ handler, a main-loop poll of
 `$DC00`/`$DC01` sees the KERNAL's idle state (`$DC00` = `$7F`,
 `$DC01` = `$FF`); the ghost input this page used to promise a
 main-loop poller does not occur (measured in VICE x64sc, below). What
-does bite is code that pre-empts the IRQ handler — an NMI or a nested
-handler — and the static crosstalk between held keys and port 1.
+does bite is code that pre-empts the IRQ handler (an NMI or a nested
+handler) and the static crosstalk between held keys and port 1.
 
 ---
 
@@ -30,17 +30,17 @@ handler — and the static crosstalk between held keys and port 1.
 ### Symptom
 
 Code that samples `$DC00` from a context that can interrupt the
-KERNAL's jiffy IRQ handler — an NMI handler, or an IRQ handler that
-`cli`s before chaining to `$EA31` — occasionally reads `$00`: all
+KERNAL's jiffy IRQ handler (an NMI handler, or an IRQ handler that
+`cli`s before chaining to `$EA31`) occasionally reads `$00`: all
 five joystick-2 bits low, UP+DOWN+LEFT+RIGHT+FIRE at once. A binary
 monitor stopped at the right moment sees the same `$00`; a moment
 later it reads `$7F` (no input). The reading appears only while the
-KERNAL IRQ is enabled — programs that `sei` and install their own
-IRQ don't exhibit it.
+KERNAL IRQ is enabled. Programs that `sei` and install their own
+IRQ do not show it.
 
 An earlier revision of this entry said a *main-loop* `joy_poll(0)`
 (Oscar64 `joystick.h`) races the scan and produces the same phantom
-presses — a "press fire to start" screen advancing by itself. That
+presses (a "press fire to start" screen advancing by itself). That
 was wrong: SCNKEY is called from inside the IRQ handler and finishes
 before the handler's RTI, so the main loop is never executing while
 the columns are driven. Measured in VICE x64sc (PAL): a main loop
@@ -48,7 +48,7 @@ polling `$DC00` roughly every 50 cycles for 250 jiffies with the
 KERNAL IRQ live read `$7F` on all 76,144 samples, `$00` on none. A
 CIA2 timer NMI (~101-cycle period) doing the same poll in the same
 program caught `$00` roughly once per jiffy scan (242 and 277 hits in
-two 250-jiffy runs — it is run-dependent) while the main loop in the
+two 250-jiffy runs; it is run-dependent) while the main loop in the
 same runs saw it 0 times in 35,653 and 28,382 reads. If a main-loop
 poll sees ghost input, look elsewhere: a held key in column 7 on port
 1 (Fix C), or a bug in the poller.
@@ -72,11 +72,11 @@ The KERNAL IRQ handler at `$EA31` runs every jiffy and calls SCNKEY
 (`$EA87`, the routine behind the `$FF9F` jump-table entry; the
 handler's own call is a direct `JSR $EA87` at `$EA7B`). SCNKEY's
 first step is to detect *any* key-pressed by driving all eight
-columns active-low simultaneously — it writes `$00` to the `$DC00`
+columns active-low simultaneously. It writes `$00` to the `$DC00`
 data register (DDR A was set to `$FF` by IOINIT at reset and SCNKEY
 never touches it; an earlier revision said the scan wrote the DDR,
-which it does not — the only DDR-A store in the KERNAL is `STX $DC02`
-at `$FDC8`) — then reads `$DC01` looking for any zero bit.
+which it does not: the only DDR-A store in the KERNAL is `STX $DC02`
+at `$FDC8`), then reads `$DC01` looking for any zero bit.
 
 From that store until the scan restores `$7F` (`LDA #$7F / STA $DC00`
 at `$EB42-$EB44`), `$DC00` reads `$00`. On the no-key path that is 38
@@ -92,23 +92,23 @@ y-axis tiebreak), `joyx[0]=-1` (left wins x-axis), `joyb[0]=true`.
 Who can be inside that window: the IRQ handler itself is not
 re-entered (the I flag is set), so only an NMI, a handler that `cli`s
 before chaining to the KERNAL, or an external monitor can observe it.
-The main loop cannot — the CPU is in the handler for the whole scan.
+The main loop cannot: the CPU is in the handler for the whole scan.
 The roughly one-hit-per-scan rate of the NMI probe above does not
 contradict the 38-cycle figure: each NMI pre-emption costs the
 interrupted handler on the order of 40-60 cycles of the ~101-cycle
 NMI period (arithmetic from the probe's instruction counts, not
 measured), so the IRQ handler advances well under 101 cycles between
-NMI samples and a 38-cycle window is rarely stepped over — and is
+NMI samples and a 38-cycle window is rarely stepped over, and is
 sometimes sampled twice, which is why one run logged 277 hits in 250
 scans.
 
-This isn't an Oscar64 bug — a `PEEK($DC00)` from an NMI in any
-toolchain has the same hazard. It's a shared-pin property of the C64
+This is not an Oscar64 bug: a `PEEK($DC00)` from an NMI in any
+toolchain has the same hazard. It is a shared-pin property of the C64
 plus the KERNAL's choice to drive the columns from the jiffy IRQ.
 
 ### Fix
 
-Three reliable options, in order of effort:
+Three options, in order of effort:
 
 **A. Use keyboard input instead of joystick port 2.** The KERNAL
 keyboard buffer at `$0277-$0280` is filled by SCNKEY itself; reading
@@ -120,10 +120,10 @@ the default `iocharmap` (`IOCHM_ASCII`) letters pass through
 unchanged, so the W key arrives as `$57` (`'W'`) in either display
 case mode (KERNAL unshifted table at `$EB81`, index 9), and a
 comparison against `'w'` (`$77`) is a dead branch. Compare against
-the upper-case literal, or call `iocharmap(IOCHM_PETSCII_1)` first —
+the upper-case literal, or call `iocharmap(IOCHM_PETSCII_1)` first,
 which also emits CHR$(142) and switches the display to the
 uppercase/graphics font. This page used to call the result "clean
-PETSCII codes"; it is not quite: RETURN arrives as `10`, not PETSCII
+PETSCII codes"; it is not: RETURN arrives as `10`, not PETSCII
 `13`. See `pitfalls/kernal-and-io.md` (getchx_petscii_remaps_return)
 for the RETURN remap.
 
@@ -136,8 +136,8 @@ if (k == 'W')  fast();        // 'w' ($77) never matches under IOCHM_ASCII
 ```
 
 **B. Keep the poll out of anything that pre-empts the jiffy IRQ.**
-If you must read `$DC00` from an NMI handler or from a handler that
-`cli`s before chaining to `$EA31`, either take over the IRQ so no
+A read of `$DC00` from an NMI handler or from a handler that
+`cli`s before chaining to `$EA31` must either take over the IRQ so no
 KERNAL scan runs at all, or treat a `$00` sample as "scan in
 progress" and re-read. Taking over the IRQ stops the KERNAL keyboard
 buffer filling, so combine it with `keyb_poll()` (which reads the
@@ -150,31 +150,31 @@ __asm { cli }
 ```
 
 The `sei`/`cli` bracket above, which an earlier revision of this page
-recommended for a main-loop poll, changes nothing there — the
+recommended for a main-loop poll, changes nothing there (the
 main-loop measurement in the Symptom was taken *without* it and saw
-no phantom reads — and `sei` does not hold off an NMI. It is kept
-only as the shape of the call inside a handler you own. Taking over
-the IRQ entirely is the conventional approach for action games.
+no phantom reads), and `sei` does not hold off an NMI. It is kept
+only as the shape of the call inside a handler you own. Action games
+conventionally take over the IRQ entirely.
 
 **C. Poll port 1 (`joy_poll(1)` → `$DC01`) instead.** Port 1
-(`joy_poll(1)`, `$DC01`) has no scan-timing hazard either — from the
+(`joy_poll(1)`, `$DC01`) has no scan-timing hazard either. From the
 main loop, neither port does: SCNKEY runs entirely inside the jiffy
 IRQ, so only an NMI or a nested handler can observe it mid-scan, and
 the scan reads the rows without driving them (measured in VICE
 x64sc: 0 of 140,179 main-loop reads of `$DC01` across three
 250-jiffy runs differed from `$FF`, and a CIA2-NMI probe that
-pre-empted the scan still never saw `$DC01` move — 0 deviations in
-~40,000 NMI samples — while `$DC00` was caught at `$00` 277 times in
+pre-empted the scan still never saw `$DC01` move (0 deviations in
+~40,000 NMI samples), while `$DC00` was caught at `$00` 277 times in
 the same run). Port 1's real problem is static: the KERNAL leaves
 `$DC00` at `$7F` between scans (`$EB42`, and IOINIT), so column 7 is
-always selected and five held keys read as joystick 1 continuously —
+always selected and five held keys read as joystick 1 continuously:
 `1` = UP, LEFT-ARROW = DOWN, CTRL = LEFT, `2` = RIGHT, SPACE = FIRE
 (C=, Q and RUN/STOP share the column but land on bits 5-7, which
 `joy_poll` ignores). Conversely a joystick in port 1 makes the KERNAL
 type keys (see `hardware/cia-reference.md`, joystick interference).
 An earlier revision of this fix described a "narrower" timing race
 on port 1; there is none. Single-player games conventionally use
-port 2 anyway, so this only helps if your design naturally fits
+port 2 anyway, so this helps only a design that fits
 two-player or supports port-1 input.
 
 ### Worked example
@@ -192,8 +192,8 @@ bool fire = joyb[0] != 0 || getchx() == ' ';
 Its title screen advanced to PLAY on tick 1, the game applied a FAST
 action without user input, and reached a steady phase=PLAY state in
 ~3 seconds. This page originally blamed phantom joystick reads from
-the scan window. Given the measurement in the Symptom — a main-loop
-poll never sees the window — that attribution was wrong; the real
+the scan window. Given the measurement in the Symptom (a main-loop
+poll never sees the window), that attribution was wrong; the real
 cause was not established (a held or stuck column-7 key, a `$DC02`
 left at `$00` by earlier code, or the poller itself are candidates).
 Replacing the joystick path with keyboard-only made the symptom
@@ -242,7 +242,7 @@ never touches a DDR. A program that clears `$DC02` "to make port A an
 input for the joystick" turns every column line into a high-impedance
 input. SCNKEY's column writes then drive nothing, `$DC01` reads `$FF`
 whatever is held, and the jiffy scan reports no key for as long as the
-DDR stays clear. The reference page states this directly
+DDR stays clear. The reference page says so
 (`hardware/cia-reference.md`, the `$DC02` entry): "if you clear `$DC02`
 to read joystick 2 you must restore `$FF` yourself; the jiffy scan will
 not."

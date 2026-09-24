@@ -12,13 +12,13 @@ home_url: https://github.com/simen/vice-mcp
 
 ## Tool
 
-vice-mcp is an MCP server that bridges AI agents to the VICE Commodore 64 emulator. It speaks the [VICE Binary Monitor Protocol](https://vice-emu.sourceforge.io/vice_13.html) over a TCP socket and re-exposes VICE's capabilities as structured MCP tools that return interpreted, agent-friendly JSON rather than raw hex bytes.
+vice-mcp is an MCP server that bridges AI agents to the VICE Commodore 64 emulator. It speaks the [VICE Binary Monitor Protocol](https://vice-emu.sourceforge.io/vice_13.html) over a TCP socket and exposes VICE's capabilities as MCP tools that return interpreted JSON rather than raw hex bytes.
 
 **Targets:** 6510
 
-The design priority is semantic output over raw data: `readScreen` returns decoded PETSCII text, not screen codes; `readVicState` returns graphics mode names and color names, not register values; `readSprites` returns visibility analysis with diagnostic hints. Every response also includes a `hint` field and a `_meta` block showing connection state.
+Output is interpreted, not raw: `readScreen` returns decoded PETSCII text, not screen codes; `readVicState` returns graphics mode names and color names, not register values; `readSprites` returns visibility analysis with diagnostic hints. Every response also includes a `hint` field and a `_meta` block showing connection state.
 
-vice-mcp is the runtime-introspection half of the agent toolchain. It does not build or assemble code (use [oscar64](../toolchains/oscar64-reference.md) or [KickAssembler](../toolchains/kickassembler-reference.md) for that). It does not run deterministic unit tests (use [sim6502](sim6502-reference.md) for that). It connects to a live emulator process and lets the agent observe and manipulate machine state interactively.
+vice-mcp is the runtime-introspection half of the agent toolchain. It does not build or assemble code (use [oscar64](../toolchains/oscar64-reference.md) or [KickAssembler](../toolchains/kickassembler-reference.md) for that). It does not run deterministic unit tests (use [sim6502](sim6502-reference.md) for that). It connects to a live emulator process so the agent can read and change machine state.
 
 ## Quick Reference
 
@@ -46,7 +46,7 @@ cd vice-mcp && npm install && npm run build && npm start
 
 These lines install upstream simen/vice-mcp (1.0.1, last pushed 2025-12-30), which has no Input Injection tools. For `sendKey` and `pressJoystick` install the fork instead: `claude mcp add vice-mcp -- npx github:bdgscotland/vice-mcp` (1.1.0, pushed 2026-05-18; no pull request against upstream exists as of 2026-09-22, so do not expect `github:simen/vice-mcp` to pick it up). The fork's own README still shows the upstream install lines; ignore them. An earlier version of this page gave only the upstream lines and then documented the fork's tools as if they came with them.
 
-**Manual config** — `claude mcp add` (above) is the normal route; it writes the entry to Claude Code's own store (`~/.claude.json`, or the project's `.mcp.json` with `-s project`). To register by hand, put the block below in the project's `.mcp.json`, or under the top-level `mcpServers` key of `~/.claude.json` for user scope. The upstream README's `~/.claude/claude_desktop_config.json` (which this page used to repeat) is not a path Claude Code reads — `claude_desktop_config.json` is Claude Desktop's file, which lives under `~/Library/Application Support/Claude/` and is only consulted by `claude mcp add-from-claude-desktop`.
+**Manual config** — `claude mcp add` (above) is the normal route; it writes the entry to Claude Code's own store (`~/.claude.json`, or the project's `.mcp.json` with `-s project`). To register by hand, put the block below in the project's `.mcp.json`, or under the top-level `mcpServers` key of `~/.claude.json` for user scope. The upstream README's `~/.claude/claude_desktop_config.json` (which this page used to repeat) is not a path Claude Code reads. `claude_desktop_config.json` is Claude Desktop's file, which lives under `~/Library/Application Support/Claude/` and is only consulted by `claude mcp add-from-claude-desktop`.
 
 ```json
 {
@@ -59,7 +59,7 @@ These lines install upstream simen/vice-mcp (1.0.1, last pushed 2025-12-30), whi
 }
 ```
 
-Restart Claude Code after adding the server. The server connects lazily; call `connect` first before any other tool.
+Restart Claude Code after adding the server. The server connects lazily; call `connect` before any other tool.
 
 ## Tool Surface
 
@@ -122,7 +122,7 @@ The text monitor is the interactive twin of this API; its commands, register lin
 
 ### Input Injection
 
-Available only in the bdgscotland fork (1.1.0); see the install note in Quick Reference. Closes the agent loop for game-style code that reads the keyboard or joystick — no more JSR-NOP patching joystick poll routines.
+Available only in the bdgscotland fork (1.1.0); see the install note in Quick Reference. With them an agent can drive code that reads the keyboard or joystick without JSR-NOP patching of joystick poll routines.
 
 | Tool | Description |
 |------|-------------|
@@ -156,7 +156,7 @@ readScreen() → expect "2" on the response line
 
 ## Semantic Layer
 
-The four semantic-layer tools are the primary reason to prefer vice-mcp over raw binary monitor access. They translate hardware register values into named, structured data that an agent can reason about directly.
+The four semantic-layer tools are the main reason to use vice-mcp rather than the raw binary monitor. They translate register values into named fields.
 
 ### readVicState
 
@@ -174,7 +174,7 @@ Reads all 47 VIC-II registers ($D000–$D02E) and CIA2 ($DD00 for bank selection
 - `displayEnabled` — DEN flag ($D011 bit 4)
 - `hint` — diagnostic string, e.g., `"standard text mode, 3 sprites enabled but only 2 visible. Use readSprites() for details."`
 
-This single call gives the agent a complete picture of the current video configuration without requiring any knowledge of VIC-II register layouts.
+One call returns the whole video configuration; the agent needs no knowledge of VIC-II register layouts.
 
 ### readSprites
 
@@ -188,11 +188,11 @@ Reads VIC-II registers plus sprite pointer slots at `screenAddress + $3F8`. For 
 - `multicolor`, `expandX`, `expandY`, `priority` (`"front"` or `"behind"`)
 - `dataAddress` — absolute address of sprite data in the active VIC bank, with a `region` classification and a `warning` string for suspicious addresses (e.g., pointing into ROM or the zero page)
 
-Common issues surfaced automatically: sprite off-screen, wrong bank, data pointer pointing into ROM.
+Problems it flags: sprite off-screen, wrong bank, data pointer pointing into ROM.
 
 ## Watchpoint Workflow
 
-Watchpoints stop emulation when a memory address is read or written. The canonical pattern for catching a raster interrupt mid-frame:
+Watchpoints stop emulation when a memory address is read or written. The usual pattern for catching a raster interrupt mid-frame:
 
 ```
 1. connect()
@@ -229,7 +229,7 @@ Breakpoints and watchpoints share the same ID namespace. `deleteBreakpoint(id)` 
 
 ## State Checkpoints
 
-`saveSnapshot` and `loadSnapshot` wrap VICE's native snapshot format (`.vsf`). The snapshot captures all memory, CPU registers, VIC-II, SID, CIA states, and attached drive state. This enables deterministic agent loops:
+`saveSnapshot` and `loadSnapshot` wrap VICE's native snapshot format (`.vsf`). The snapshot captures all memory, CPU registers, VIC-II, SID, CIA states, and attached drive state, so an agent loop can return to a known state:
 
 ```
 saveSnapshot("before-sprite-test.vsf")
@@ -249,7 +249,7 @@ Snapshot files accumulate on disk. The VICE binary monitor protocol codes for th
 
 ## Pairing with c64-kb
 
-vice-mcp provides runtime observation; c64-kb provides reference knowledge. The two complement each other in an agent loop:
+vice-mcp reads the running machine; c64-kb supplies the reference facts. In an agent loop:
 
 **Example: agent debugging a VIC-II display-enable issue**
 
@@ -308,10 +308,10 @@ vice-mcp provides runtime observation; c64-kb provides reference knowledge. The 
 
 ## Pairing with sim6502
 
-vice-mcp and sim6502 serve different roles in the development loop:
+vice-mcp and sim6502 do different jobs:
 
-- **sim6502** runs fast, deterministic, headless tests against either an internal CPU simulator or the VICE backend. It is the CI gate: green means the routine works correctly by assertion.
-- **vice-mcp** connects to a live VICE instance for interactive, exploratory debugging. It is the hand-debugger: use it when a sim6502 test fails and you need to understand why.
+- **sim6502** runs fast, deterministic, headless tests against either an internal CPU simulator or the VICE backend. It is the CI gate: green means every assertion passed.
+- **vice-mcp** connects to a live VICE instance for interactive debugging. Use it when a sim6502 test fails and the cause is not clear.
 
 **Recommended workflow:**
 
@@ -338,7 +338,7 @@ sim6502's `--backend vice` does not talk to this server: it connects to the embe
 
 **Stale checkpoints.** There is no known checkpoint ceiling (see Watchpoint Workflow; an earlier version of this pitfall claimed a finite table that failed silently), but a checkpoint you forgot, with stop set, halts the emulator at an unexpected place, and the list tools cannot show you one set outside this session. Call `listWatchpoints` and `listBreakpoints` and delete what you no longer need.
 
-**Screenshot performance.** `screenshot` transfers the full display buffer (raw pixel data, base64-encoded). This is substantially larger than any other vice-mcp response. On slow machines or over network connections, it can be a bottleneck. Prefer `readScreen` (text) or `readVicState` (semantic) for non-visual checks.
+**Screenshot performance.** `screenshot` transfers the full display buffer (raw pixel data, base64-encoded). It is larger than any other vice-mcp response and can be slow on slow machines or over a network. Prefer `readScreen` (text) or `readVicState` (semantic) for non-visual checks.
 
 **Session-local checkpoint tracking.** `listBreakpoints` and `listWatchpoints` only return checkpoints set through the current vice-mcp session. Breakpoints set directly via VICE's built-in monitor UI or command line are not visible to these tools.
 

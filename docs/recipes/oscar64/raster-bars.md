@@ -18,9 +18,8 @@ uses_kernal: []
 Fifteen color bars cycling down the screen, one per raster split, using
 `rasterirq.h`. Each bar changes both the border color (`$D020`) and the
 background color (`$D021`) for its band. The bars shift upward by one slot
-every two frames, producing a smooth rainbow animation. This recipe builds
-directly on `stable-raster-irq.md` and shows how multiple `RIRQCode` slots
-compose into a full multi-split raster effect.
+every two frames. The recipe builds on `stable-raster-irq.md` and shows how
+several `RIRQCode` slots combine into one multi-split raster effect.
 
 ## Source
 
@@ -131,8 +130,8 @@ Load with `LOAD"RASTER-BARS",8,1 : RUN` or via VICE autostart.
 ## Expected output
 
 Fifteen horizontal color bands fill the display area, each 13 raster lines
-tall, cycling through the C64 16-color palette. The entire stack of bars
-drifts upward smoothly at half the frame rate (one color step every two
+tall, cycling through the C64 16-color palette. The stack of bars
+drifts upward at half the frame rate (one color step every two
 frames). Below the bar stack the border and background are black. The color
 boundaries are straight horizontal lines, with two exceptions: the bars that
 begin on lines 51 and 155 start on badlines, and on those two lines the
@@ -149,14 +148,13 @@ line late and drew the last bar 14 lines tall, 233-246), black from line 246
 down, line 155 showing a cyan border over a still-green display row.
 
 On PAL (50 Hz) the palette completes one full cycle in 32 frames (0.64 seconds).
-On NTSC (60 Hz) the same 32-frame cycle completes in 0.53 seconds, running
-slightly faster.
+On NTSC (60 Hz) the same 32-frame cycle completes in 0.53 seconds.
 
 ## Why this works
 
 ### Foundation: stable raster IRQ
 
-This recipe is a direct extension of `stable-raster-irq.md`. Every slot in the
+This recipe extends `stable-raster-irq.md`. Every slot in the
 `bars` array is entered on the line above its target and spins on `CMP $D012`
 until the target line begins. The loop exits within the first 1-7 cycles of
 the target line, the first write (`STY $D020`) completes by about cycle 12
@@ -174,7 +172,7 @@ line.
 `rasterirq.h` maintains a sorted table of `NUM_IRQS` IRQ slots, 16 by
 default. After `rirq_sort()`, the dispatcher walks this table on every frame,
 firing each slot when the raster beam reaches the programmed line. Oscar64's
-own `colorbars.c` sample uses exactly this pattern with 15 slots. This recipe
+own `colorbars.c` sample uses this pattern with 15 slots. This recipe
 uses 15 bars plus a reset slot: 16, the whole table.
 
 The earlier version of this recipe used 16 bars plus the reset slot.
@@ -191,18 +189,17 @@ Each `RIRQCode` holds two write slots (border and background). Two writes per
 slot consume 8 cycles (`STY abs` then `STX abs`, 4 cycles each). With
 `BAR_HEIGHT = 13`, there are 13 raster lines between each consecutive pair of
 slots (this section said 12 while the listing said 13; 13 is what the code
-builds and what the render shows), giving the dispatcher ample time to exit
+builds and what the render shows), enough for the dispatcher to leave
 one IRQ and enter the next. The minimum safe gap between two slots is
-approximately 4-5 raster lines on PAL, accounting for IRQ entry/exit
+about 4-5 raster lines on PAL, accounting for IRQ entry/exit
 overhead; that figure is an estimate and was not measured here.
 
 ### `rirq_data` for animation without rebuilding
 
 `rirq_data(&bars[i], slot, byte)` patches only the data byte of write slot
 `slot` inside an existing `RIRQCode`. This is cheaper than calling `rirq_write`
-because it does not touch the target address. For animation where only the color
-value changes each frame — as in the cycling palette here — `rirq_data` is the
-correct tool. The address half of each slot (pointing at `$D020` and `$D021`)
+because it does not touch the target address. When only the color
+value changes each frame, as in the cycling palette here, use `rirq_data`. The address half of each slot (pointing at `$D020` and `$D021`)
 never changes; only the color index rotates.
 
 ### D020 vs D021: border and background
@@ -210,10 +207,10 @@ never changes; only the color index rotates.
 $D020 is the border color. It governs the colored region outside the active
 display window. $D021 is background color 0, which fills the background of
 each character cell in standard text mode (and all cells in blank/space
-characters). Writing both registers to the same color makes the entire visible
-area — border and display — appear as a solid horizontal band. Writing only
+characters). Writing both registers to the same color makes the whole visible
+area (border and display) one horizontal band. Writing only
 $D020 would color the border stripe while leaving the display interior at its
-previous background color, useful for thinner decorative bars. Writing only
+previous background color. Writing only
 $D021 would change the display area interior without touching the border.
 
 ### Badline interaction
@@ -224,12 +221,12 @@ cycles 15-54 and pulls BA low on cycle 12, so the CPU loses 40-43 cycles;
 plan on 43 (this text said a flat 40; see `docs/pitfalls/raster-and-badline.md`).
 For this recipe the poll loop exits in cycles 1-7 of the target line and the
 6510 is halted at its first read after BA has been low for three cycles, so
-a write that has not completed by cycle 14 waits until cycle 55 or later —
-after the display window, and in the right border. The standard defense is
-to target splits at non-badline rows. With `FIRST_LINE = 51` and
+a write that has not completed by cycle 14 waits until cycle 55 or later,
+after the display window, and in the right border. The usual defense is
+to put splits on non-badline rows. With `FIRST_LINE = 51` and
 `BAR_HEIGHT = 13` that is not fully possible: 13 is coprime to 8, so the
 fifteen boundaries cover every residue and two of them are badlines whatever
-`FIRST_LINE` is chosen — with 51, the bars starting on lines 51 and 155
+`FIRST_LINE` is chosen; with 51, the bars starting on lines 51 and 155
 (this text used to say
 `BAR_HEIGHT = 12` and "the visual result is clean"; the render shows the
 background write landing late on both lines, and on line 51 the border

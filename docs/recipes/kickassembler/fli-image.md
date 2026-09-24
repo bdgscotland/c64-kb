@@ -21,7 +21,7 @@ instead of sharing one set with the other seven lines of its character row.
 Eight 1 KB screen pages hold the colours for lines 0, 1, ... 7 (mod 8). On
 each line the code points $D018 at that line's page and then forces a
 badline by writing YSCROLL = line & 7 into $D011, timed so the condition
-arises on cycle 15 — late enough that the row counter is not reset, early
+arises on cycle 15: late enough that the row counter is not reset, early
 enough that only three character columns miss their fetch. That miss is the
 FLI bug.
 
@@ -320,7 +320,7 @@ With 40 cycles of every line taken by the VIC and 12 by the two writes,
 the CPU has about 11 cycles per line of its own for 200 lines: nothing.
 Music, sprites and everything else happen in the 112 lines of border. A
 sprite active in the FLI region would move the CPU's stall and break the
-timing; FLI pictures with sprites time them into the budget deliberately.
+timing; FLI pictures with sprites time them into the budget.
 
 ### Region
 

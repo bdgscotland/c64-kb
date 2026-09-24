@@ -2207,8 +2207,8 @@ normal and the line of sight was within 0.018 of 0, about 1 degree from
 edge-on. The model counts a disagreement only beyond 0.02 of edge-on,
 and there were none. That check is in the Python model only; the listing
 does not do it. An edge is drawn when either of its two faces is
-visible, and only once. That matters with EOR, because an edge drawn
-twice would cancel itself.
+visible, and only once: with EOR, an edge drawn twice would cancel
+itself.
 
 **Clipping.** Each endpoint gets an outcode (left, right, above, below).
 If the two outcodes share a bit, the line is wholly outside and is
@@ -2229,8 +2229,8 @@ The plot is `ptr = ylo/yhi[y]` for the row, then
 bitmap x never passes 255, so the column offset fits Y. The x-major
 loop reloads `ptr` only when y steps.
 
-**Why the line drawer is slow.** This is a correct, fully measured
-first recipe, not a fast plotter. The figures below are arithmetic from
+**Why the line drawer is slow.** It was written to be correct and
+measured, not fast. The figures below are arithmetic from
 the instruction table over the listing's loops, and the pixel counts
 come from the model; only the totals were measured. An x-major pixel
 without a y step costs about 43 cycles: the plot itself

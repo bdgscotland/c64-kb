@@ -617,7 +617,7 @@ to any pixel row by copying it into a strip of a custom charset, and
 scrolls it sideways with `$D016` and a ring buffer. Here the hardware
 does both: a sprite's Y register is a pixel row and its X register a
 pixel column, so a column's height and its scroll are two register
-writes. Nothing is copied per frame. The price is that there are eight
+writes. Nothing is copied per frame. The limit is that there are eight
 sprites, so eight columns, and a sprite image is 24 pixels wide, so the
 columns sit 48 apart and each one carries a doubled 16 by 16 glyph.
 

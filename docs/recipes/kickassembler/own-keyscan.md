@@ -801,8 +801,8 @@ Row 4 reads low in all eight columns while PB4 is grounded, which is the
 seen from the other side: F1, Z, C, B, M, `.`, R-SHIFT and SPACE all
 appear held. The four watched keys are all on row 4, so all four show
 16 press events and 15 repeat events over 152 frames with age 4 at
-exit, and the net cost rises to 945. Five presses a second is one press per ten frames,
-five frames held: one press event and one repeat event (at age 4) per
+exit, and the net cost rises to 945. Five presses a second is one press per
+ten frames, five frames held: one press event and one repeat event (at age 4) per
 cycle, and 152 / 10 rounds to the 16 and 15 seen. `DIRTY` is 77 of
 152, the held half. The verdict is red in that run, by design: a dirty
 matrix fails it, and the run exists to show a dirty matrix. The exit
@@ -815,8 +815,8 @@ it.
 interrupt mask, so Timer A's underflow no longer reaches the CPU and
 the jiffy IRQ, with SCNKEY inside it, stops. Nothing else is needed:
 SCNKEY is only ever called from that handler. The raster IRQ goes
-through the KERNAL's `$FF48` entry and `$0314`, so registers are pushed
-for us and the handler leaves through `$EA81`, the six bytes `PLA TAY
+through the KERNAL's `$FF48` entry and `$0314`, so the KERNAL pushes the
+registers and the handler leaves through `$EA81`, the six bytes `PLA TAY
 PLA TAX PLA RTI` (read from the ROM image). `$EA7E` is `LDA $DC0D` then
 those six bytes, a bare exit that also acknowledges CIA1, and `$EA7B`
 is `JSR $EA87`, the SCNKEY call itself, followed by the two: jumping to
@@ -857,8 +857,7 @@ held. Of the 781, the scan itself is 252, measured by an earlier build
 of this listing that stopped the timer straight after the `$FF`
 restore, and that agrees with the instruction arithmetic (7 to set up,
 eight passes of 30 with the last branch not taken, 6 to restore). An
-earlier build restarted a still-running
-one-shot timer with a force load and no stop, and read 509 where the
+earlier build restarted a still-running one-shot timer with a force load and no stop, and read 509 where the
 monitor's cycle counter said 252 between the start store and the read;
 the monitor's own peek of `$DC04/$DC05` at that point said `$FF05`,
 250 elapsed, disagreeing with what the CPU's read returned. Stopping
@@ -876,6 +875,5 @@ both paths: part A copies each table image into `cur` and calls
 `update_keys`, exactly as the IRQ does with a live image. The sequence
 covers a press, a second key in another column joining and leaving,
 the first repeat at age 4 and the second at 6, a release, and two
-keys down at once. The
-expected table checks two ages, the repeat count and column 7's two
+keys down at once. The expected table checks two ages, the repeat count and column 7's two
 edge sets after every frame, forty bytes in all.

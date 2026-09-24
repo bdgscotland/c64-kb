@@ -16,22 +16,21 @@ scaffolds: [vertical_shmup, horizontal_shmup]
 
 ## Synopsis
 
-A minimal but complete vertical-scrolling shoot-em-up implemented in Oscar64 C.
+A vertical-scrolling shoot-em-up in Oscar64 C.
 The player controls a ship via joystick port 2, fires bullets upward, and must
 avoid enemies that enter from the top in sine-wave formations. A starfield scrolls
 downward using `$D011` YSCROLL (one-pixel-per-frame soft scroll; an earlier
 version of this sentence said `$D016`, which is XSCROLL). Eight hardware
 sprites are multiplexed via `vspr_*` to display the player, four enemies, and up
-to three active bullets simultaneously. Collisions are software bounding-box
+to three active bullets. Collisions are software bounding-box
 tests; `$D01E`/`$D01F` are read only to clear them (see "Collision detection"
-below — an earlier version of this sentence said collisions were detected
+below; an earlier version of this sentence said collisions were detected
 through `$D01E`). A background SID stub drives the play-routine pattern once per
-frame from a raster IRQ. The program is fully playable: load in VICE, push joystick
+frame from a raster IRQ. The program is playable: load in VICE, push joystick
 port 2, and shoot the enemies.
 
-This is the hero recipe of Phase 4. It demonstrates the full agent-loop
-capability: an agent reading this recipe and the cross-referenced technique docs
-can reconstruct a working shmup shell from scratch. Cross-references:
+This was the Phase 4 recipe: an agent reading it and the technique
+pages it cites should be able to rebuild a working shmup shell. Cross-references:
 `docs/recipes/oscar64/sprite-multiplex-8.md` for `vspr_*` idioms,
 `docs/recipes/oscar64/sid-music-player.md` for the play-routine pattern,
 `docs/recipes/oscar64/soft-scroll-h.md` for `$D016` XSCROLL mechanics.
@@ -822,16 +821,16 @@ simple-shmup.prg`. Joystick port 2. Push to move; fire button to shoot.
 Black screen with a top HUD row reading `SCORE: 000000` in yellow and white. A
 light-blue player ship sprite sits at the bottom-center (sprite X 160, Y 220).
 Sixteen white stars, each a solid 8x8 block character (`$A0`, not a dot), scroll
-smoothly downward. Press the fire button: up to three light-green bullet sprites
+downward. Press the fire button: up to three light-green bullet sprites
 advance upward and vanish at the top. Four red enemy diamond sprites are
-spawned on the very first frame (the wave timer starts at 0 and no enemy is
+spawned on the first frame (the wave timer starts at 0 and no enemy is
 active; an earlier version said "after 120 frames") and descend one pixel per
 loop iteration while oscillating horizontally in a triangle-wave approximation
 of a sine. When a bullet overlaps an enemy, the bullet vanishes, the enemy
 flickers yellow (`VCOL_YELLOW`, not orange as an earlier version said) for 12
 frames, and the score increments by 10. If an enemy reaches the player sprite,
 both explode (the player in orange), and the player respawns after 90 frames. A
-simple C-major-triad arpeggio plays on SID voice 0 throughout (not listened to
+C-major-triad arpeggio plays on SID voice 0 throughout (not listened to
 here).
 
 Measured in headless VICE (PAL, 8,000,000 cycles, no joystick input): the
@@ -851,7 +850,7 @@ The main loop follows the Oscar64 pattern shown in the `sprites.h` header
 comment and in `samples/sprites/multiplexer.c` and `sprmux32.c` (an earlier
 version pointed at `samples/games/breakout.c` and `hscrollshmup.c`, which do
 not use `vspr_*` or `rirq_wait` at all). Both samples call `rirq_init()`
-before `vspr_init()`; `vspr_init()` does not call it for you:
+before `vspr_init()`; `vspr_init()` does not call it:
 
 ```
 rirq_wait();          // sync: all IRQs for last frame are done
@@ -862,11 +861,11 @@ rirq_sort();          // re-sort IRQ slot table after vspr_update moved slots
 ```
 
 `rirq_wait()` blocks until the last raster IRQ of the previous frame has fired.
-This guarantees that `vspr_update()` is never called while the multiplexer IRQ
-is reading the sprite slot table — a race condition that would corrupt sprite
+So `vspr_update()` is never called while the multiplexer IRQ
+is reading the sprite slot table; that race would corrupt sprite
 positions. Everything between `rirq_wait()` and the bottom of the loop executes
 in the vertical blank or during the active display period (for long games), but
-the critical `vspr_update()` must happen before the raster beam reaches the first
+`vspr_update()` must happen before the raster beam reaches the first
 reuse IRQ trigger line.
 
 ### Sprite multiplexer: eight slots for nine objects
@@ -880,10 +879,10 @@ The multiplexer supports up to 16 logical sprites displayed via two passes of 8
 hardware sprites each. This recipe uses 8 logical sprites: one player, three
 bullets, four enemies. Eight logical sprites fit in a single hardware pass, so
 `vspr_update()` finds no ninth sprite and calls `rirq_clear()` on every reuse
-slot each frame; only the sync IRQ fires. Anything you put in slots 0-7 is
+slot each frame; only the sync IRQ fires. Anything placed in slots 0-7 is
 therefore cleared on the next `vspr_update()`, which is why the music slot is 9.
 With a second wave of enemies adding up to eight more sprites, the reuse IRQs
-would automatically activate to handle the second group.
+would activate to handle the second group.
 
 The sprite pointer block at `Screen + $3F8` (address `$07F8`) holds one byte per
 hardware slot telling the VIC which 64-byte block of sprite data that slot
@@ -899,10 +898,10 @@ block number 128. `vspr_set(sp, x, y, 128+n, color)` assigns logical sprite
 0-7 pixels. Incrementing YSCROLL each frame scrolls the display downward at
 1 pixel per frame. When YSCROLL wraps from 7 back to 0, the character grid
 snaps back 8 pixels upward; to cancel this visible snap, the character layer is
-shifted down by one row simultaneously. This is the same carry mechanic described
+shifted down by one row in the same frame. This is the same carry mechanic described
 in `docs/recipes/oscar64/soft-scroll-h.md` applied to the Y axis.
 
-The star positions come from the C library's `rand()`, which is fine for a
+The star positions come from the C library's `rand()`, which is enough for a
 demonstration and deterministic from one run to the next. A game wants a
 seeded generator that costs a few cycles a call; that is `lfsr_random` in
 `docs/techniques/maths.md`, with the recipe `lfsr-random.md` beside this one.
@@ -912,7 +911,7 @@ block character (screen code `$A0`) drawn directly into the screen RAM. When the
 carry fires (`yscroll` wraps), each star's row is incremented modulo 24 (rows
 1-24, preserving HUD row 0). The write to `vic.ctrl1 = (vic.ctrl1 & 0x78) |
 yscroll` preserves the DEN bit (display enable), the BMM bit (0 = text mode),
-ECM and RSEL while updating YSCROLL — and deliberately drops bit 7. On a read
+ECM and RSEL while updating YSCROLL, and drops bit 7 on purpose. On a read
 bit 7 is the current raster line's bit 8, on a write it is bit 8 of the raster
 compare (`docs/hardware/vic-ii-reference.md`, `docs/pitfalls/raster-and-badline.md`).
 This write runs just after `rirq_wait()` returns, with the beam past line 255,
@@ -920,11 +919,11 @@ so an earlier version of this listing that masked with `0xF8` and "preserved
 the raster MSB" wrote a 1 back into the compare, moved the raster IRQ to line
 256+, and froze the game after exactly one frame (measured: the exit screenshot
 was identical at 8 and 12 million cycles). The read-modify-write is a single
-expression thanks to Oscar64's volatile struct field access.
+expression through Oscar64's volatile struct field access.
 
 The cost per frame is one write to `$D011` plus (on carry frames, once per 8
 frames) `NUM_STARS` screen RAM updates. At 16 stars that is 32 byte writes
-per carry — negligible compared to the sprite update cost.
+per carry, small next to the sprite update cost.
 
 ### Collision detection
 
@@ -935,7 +934,7 @@ slot indices collided; after `vspr_sort`, logical sprite 0 (player) may be
 mapped to hardware slot 3 or 7 depending on Y ordering. Mapping hardware bits
 back to logical sprites requires tracking the sort-order mapping, which
 `vspr_*` does not expose. Instead, `$D01E` and `$D01F` are read and discarded
-each frame purely to reset the latches (preventing stale collision bits from
+each frame only to reset the latches (preventing stale collision bits from
 persisting across frames). The AABB tests are then performed directly on the
 `player_x/y` and `enemies[e].x/y` coordinates, which are always in the correct
 coordinate space.
@@ -947,7 +946,7 @@ lines are thin (`BULLET_HW = 2`, `BULLET_HH = 6`). These values give
 collisions that match the visual overlap to within a few pixels.
 
 For a production game: read `$D01E` via a VIC collision IRQ (bit 1 of `$D01A`)
-for sub-frame latency, use the bitmask to quickly narrow which hardware sprite
+for sub-frame latency, use the bitmask to narrow which hardware sprite
 pairs are involved, then do an AABB test only for those pairs. This avoids
 testing all O(N*M) pairs every frame.
 
@@ -958,23 +957,23 @@ is approximated with a 64-entry table generated at startup using integer linear
 ramp: each quarter of the table ramps from 0 to 30 and back, giving a triangle
 approximation to a sine with amplitude ±30 pixels. Each enemy is phase-shifted
 by 16 table entries (90 degrees of the 64-entry cycle) so adjacent enemies
-oscillate in a visually separated pattern rather than all moving together.
+do not all move together.
 
-A real game would use an actual `sin()` lookup precomputed at compile time or
+A game would use a `sin()` lookup precomputed at compile time or
 fetched from a table in `docs/techniques/effects-vector-3d.md`. The triangle
-approximation suffices for the recipe's purpose: demonstrating the state machine
-and entry/removal logic clearly.
+approximation is enough to show the state machine
+and the entry/removal logic.
 
 ### Music via `rirq_call` and the play-routine pattern
 
 The arpeggio function `music_play()` is installed as a raster IRQ call in slot
 9 with row 0 using `rirq_call` (rasterirq programs row-1 into `$D012`, so the
-call actually lands at line 255, after the vspr sync IRQ at 250). This is the `sid_play_routine_pattern` technique from
+call lands at line 255, after the vspr sync IRQ at 250). This is the `sid_play_routine_pattern` technique from
 `docs/techniques/music-sid.md` applied to a hand-written play stub rather than
 an embedded SID binary. Each call advances `music_tick`; every 6 frames it
 writes a new note frequency to SID voice 0 and re-gates the envelope. The call
-runs at the top of every frame in the raster IRQ context, identical to how a
-GoatTracker-generated play routine would be invoked.
+runs at the top of every frame in the raster IRQ context, the way a
+GoatTracker-generated play routine is called.
 
 To replace the stub arpeggio with a real SID tune, add the memory layout and
 function-pointer infrastructure from `docs/recipes/oscar64/sid-music-player.md`,
@@ -997,4 +996,4 @@ With `__striped`, all `enemies[i].x` values are contiguous in memory, then all
 `enemies[i].y`, etc. The compiler accesses `enemies[i].x` as `LDA x_base, Y`
 without a multiply, cutting the per-element access cost from 4+ cycles to 2.
 The current recipe's 4-enemy array is small enough that the difference is not
-measurable; `__striped` becomes important when enemy counts exceed 8.
+measurable; `__striped` matters when enemy counts exceed 8.

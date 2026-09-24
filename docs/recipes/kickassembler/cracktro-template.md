@@ -29,8 +29,7 @@ open side borders and a sprite layer. The side-border trick needs the whole
 CPU for every line it covers and a badline-free, sprite-constant region
 (`sideborder-open.md` explains both); it does not drop into a bar handler as
 "two writes, timing approximate", which is what the old text said and what
-its listing did, to no visible effect. Add it as its own raster region if you
-want it.
+its listing did, to no visible effect. Add it as its own raster region.
 
 Verified in VICE x64sc: logo, bars with the greetings text on top, the wave,
 the prompt. The fire exit was not exercised (no joystick in the headless run).
@@ -432,8 +431,8 @@ About 11 KB, most of it the 1,000-byte screen image and the tables.
 
 Top four rows: a blue/light-blue/white/light-blue banner with the two title
 lines. Lines 88-147: ten six-line raster bars cycling through the palette one
-step per frame — border and screen background take adjacent palette entries,
-so each bar is two-tone — with the four greetings rows in white on top of
+step per frame (border and screen background take adjacent palette entries,
+so each bar is two-tone), with the four greetings rows in white on top of
 them. Every colour change lands in the left border, measured at x=0..1 of the
 VICE screenshot (an earlier build of this listing tore three of them
 mid-line; see "Bar lines and badlines"). Below that, black. Rows 18-22: the scroll text in white on a two-row sine wave,
@@ -449,8 +448,8 @@ Screenshot from the VICE run this page describes: `screenshots/cracktro-template
 ### One ring, three kinds of handler
 
 The frame is a ring: `irq_vbl` at line 250 does all the work that is not a
-raster split — SID play, the scroller's state and redraw, the fire check, the
-palette step — because from line 250 to line 51 of the next frame there are
+raster split (SID play, the scroller's state and redraw, the fire check, the
+palette step), because from line 250 to line 51 of the next frame there are
 about 7,000 cycles and nothing to look at. It arms `irq_bar0` for line 87.
 The ten bar handlers are the `BarIRQ` macro from `raster-bars.md`, each
 spinning on `$D012` to put its two colour writes in the horizontal blank,
@@ -471,10 +470,9 @@ which are 0, 6, 4, 2 (mod 8) in rotation and never 3, so no bar's first line
 is a badline with the default YSCROLL. The old layout started at line 91,
 which is a badline, and its own text noticed and left it as a TODO.
 
-That is not the whole story, and the version of this listing before
-2026-09-22 showed it. Each handler is armed for the line *before* its bar and
-spins on `$D012` from there, and the lines before bars 2, 6 and the end — 99,
-123 and 147 — are badlines (3 mod 8). An IRQ raised on a badline is not taken
+The version of this listing before 2026-09-22 had a second fault. Each handler is armed for the line *before* its bar and
+spins on `$D012` from there, and the lines before bars 2, 6 and the end (99,
+123 and 147) are badlines (3 mod 8). An IRQ raised on a badline is not taken
 until the VIC gives the bus back around cycle 55, so the handler reached its
 spin loop late and its colour write landed part-way across line 100, 124 and
 148: measured in the VICE screenshot, the new border colour on line 100 began
@@ -488,11 +486,11 @@ all eleven colour changes are in the left border (screenshot x=0..1).
 ### The scroller region
 
 The band is rows 18-22 (lines 195-234). `$D016` is written with the current
-XSCROLL at line 194 — the last line of row 17, which is blank — and cleared
+XSCROLL at line 194 (the last line of row 17, which is blank) and cleared
 at line 250. Because 38-column mode is on for the whole screen, the logo and
 greetings lose their edge columns too; that is why the text rows of the
 screen image keep columns 0 and 39 empty (the earlier text said the whole
-image did; rows 0 and 3 are solid reverse-space bars and simply get clipped
+image did; rows 0 and 3 are solid reverse-space bars and are clipped
 by the wider border). The redraw and the buffer shift are the routines from
 `sine-scroller.md` with a two-row amplitude.
 
@@ -514,7 +512,7 @@ the VIC's interrupt source off and acknowledges it, puts `$EA31` back in
 bits"), drops any pending CIA flag, and jumps. Interrupts are still disabled
 at that point, which is what a game entry expects; the BASIC warm start
 placeholder re-enables them itself (checked in VICE: `SEI`, jiffy clock
-zeroed, `JMP $A474`, then `PRINT TI` gives a non-zero count — the `READY.`
+zeroed, `JMP $A474`, then `PRINT TI` gives a non-zero count; the `READY.`
 print goes out through CHROUT, whose screen path ends in `CLI` at `$E6B4`
 in the 901227-03 KERNAL). The earlier version jumped to `$xxxx`,
 which is not a number and did not assemble.

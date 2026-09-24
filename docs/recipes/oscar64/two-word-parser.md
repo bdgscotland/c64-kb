@@ -15,7 +15,7 @@ uses_kernal: [GETIN]
 
 ## Synopsis
 
-The smallest text-adventure parser of the period: a verb dictionary and
+A minimal text-adventure parser in the style of the period: a verb dictionary and
 a noun dictionary of stems cut to four letters, an input line split at
 its first space, each half looked up by stem, and an action table of
 verb, noun, room and handler rows searched in order. Three rooms with

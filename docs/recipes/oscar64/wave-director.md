@@ -747,7 +747,7 @@ positions in the table.
 ## Why this works
 
 The trigger compares the scroll position, not the frame. The 50-frame hold
-proves it: waves 3 to 5 start 50 frames late and at their exact positions,
+shows it: waves 3 to 5 start 50 frames late and at their exact positions,
 so the enemies meet the same scenery they were placed against. A frame-keyed
 table would have started them on frames 309, 399 and 489, while the scroll
 stood still. The compare is `>=`, and the director loops while the next

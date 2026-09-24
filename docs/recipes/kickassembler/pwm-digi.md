@@ -426,7 +426,7 @@ after it, which blanks the display and stops badline DMA:
 | 36 | blanked | 01 PASS | `$BFFF` | 16,384 |
 | 128 | on | 01 PASS | `$BFFF` | 16,384 |
 
-Below 31 the loop is simply too slow and the excess is large. From 32
+Below 31 the loop is too slow and the excess is large. From 32
 upward the excess grows with the period instead of shrinking, which a
 loop that is merely too slow cannot produce. It is the badline: the poll
 reads and clears the flag, so two underflows between one poll and the
@@ -446,7 +446,7 @@ does not. Periods between 36 and 128 were not tried, and the CIA model is
 not the variable (`PERIOD` 32 with `-ciamodel 1` gave the same `$BD42`).
 A program that needs a rate near the loop's floor should measure its own
 period the way this listing does, with timer B, with the display it will
-really run under.
+run under.
 
 CIA 2 is used rather than CIA 1 so that the KERNAL's jiffy timer keeps
 running and nothing has to be restored on exit. Writing `$7F` to `$DD0D`

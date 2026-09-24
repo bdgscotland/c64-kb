@@ -922,7 +922,7 @@ run in VICE and matches the Python model with the same change.
 The cooling counter is per car, not per pair. A car that is cooling can
 still be hit by a third car that is not: the truck in the double contact
 gives an impulse to car 3 and then to car 4 in the same frame, because
-car 4 was not cooling. The other side of this: two cars that have each
+car 4 was not cooling. Conversely, two cars that have each
 just hit something else get no impulse on their first touch with each
 other, only the push.
 
@@ -936,7 +936,7 @@ Y 132 and 200; a car that can leave the screen needs the row clamped.
 Every car stays below X 256 on this road, so `$D010` is always 0; a
 wider road needs the ninth bit.
 
-The checksum is a second computation, not the first repeated: the Python
+The checksum is an independent check: the Python
 model on this page runs the same rules on its own integers and predicts
 the pass's value, and the HUD's running value matches the model's at the
 frame each screenshot shows. An earlier build stored the start positions

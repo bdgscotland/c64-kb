@@ -642,8 +642,8 @@ not `85`: bit 2, CLK IN, was the other way when the drive got to the
 `M-R`), in the sector numbers of the `HDR` fields (the disk was at a
 different angle each time), and in one host read: after the track 1
 seek the host read `$1C00` as `74`, not `F4`, because bit 7 was low as
-a sync mark passed under the head. The two `T12` lines are the point
-of the repeated first seek: the drive's zero page held `$22 = 00` at
+a sync mark passed under the head. The two `T12` lines show why the
+first seek is repeated: the drive's zero page held `$22 = 00` at
 rest, the first job found a header on track 19 without stepping and
 recorded `13`, and only the second request for track 18 moved the head
 (`C` goes from `D4` to `D6`: two half-steps). Track 1 then differs from
@@ -660,7 +660,7 @@ are `screenshots/drive-via-probe.png` and
 
 The host side is the job-queue recipe's: channel 15, `M-W` in 32-byte
 chunks, `M-R` for readback, `M-E` to start. The drive routine differs
-in two ways. It photographs the ports itself, right after `bmi wait`
+in two ways. It copies the ports itself, right after `bmi wait`
 falls through, which is the only way to see `$1C00` with the motor
 running and the stepper where the job left it, since a host `M-R` can
 only be answered once the routine has returned. And before it reads

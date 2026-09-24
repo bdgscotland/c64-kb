@@ -14,17 +14,17 @@ version_verified: "2.18"
 
 ## Tool
 
-cc65 is a complete cross-development package for 65(C)02 systems. It includes a
+cc65 is a cross-development package for 65(C)02 systems: a
 C compiler (`cc65`), a macro assembler (`ca65`), a linker (`ld65`), a librarian
-(`ar65`), and a driver wrapper (`cl65`) that orchestrates the whole pipeline. The
-suite targets a wide range of retro platforms; for c64-kb purposes the relevant
+(`ar65`), and a driver (`cl65`) that runs the whole pipeline. The
+suite targets many retro platforms; for c64-kb the
 target is `-t c64`.
 
-cc65 has an enormous published corpus — decades of tutorials, forum posts, and
-open-source games — which makes it the path of least resistance for LLMs trained
-on that data. **This doc exists primarily to help the agent recognize cc65 patterns
-and evaluate whether switching to [oscar64](oscar64-reference.md) would produce
-tighter, faster code.** In most action-game and demo contexts, it would.
+cc65 has a large published corpus (tutorials, forum posts and
+open-source games), so LLMs trained
+on that data default to it. **This page helps the agent recognize cc65 patterns
+and judge whether switching to [oscar64](oscar64-reference.md) would produce
+smaller, faster code.** For most action games and demos, it would.
 
 **Targets:** 6510
 
@@ -52,25 +52,25 @@ The full cc65 pipeline runs three tools in sequence:
 hello.c  →[cc65]→  hello.s  →[ca65]→  hello.o  →[ld65]→  hello.prg
 ```
 
-`cl65` is the driver that invokes each step automatically (see next section).
-Individual tools can be called directly when fine-grained control is needed —
-for example, mixing hand-written ca65 assembly with C translation units.
+`cl65` is the driver that invokes each step (see next section).
+Each tool can also be called directly, for example to mix
+hand-written ca65 assembly with C translation units.
 
 ### .PRG — Program file (executable)
 
 **Produced by:** cc65
 **Consumed by:** vice, c1541
 
-Two-byte load address prefix followed by machine code. The standard C64
+Two-byte load address followed by machine code; the C64
 executable format. `ld65` writes this when given the `c64` target config.
 
 ### .S — C compiler assembly output
 
 **Produced by:** cc65
 
-Human-readable 6502 assembly emitted by the `cc65` compiler stage. Useful for
-inspecting codegen quality and understanding what overhead the compiler is
-adding. Pass directly to `ca65` or let `cl65` handle it.
+6502 assembly emitted by the `cc65` compiler stage. Read it to
+see the code the compiler generates and its
+overhead. Pass it directly to `ca65` or let `cl65` handle it.
 
 ### .O — Object file
 
@@ -90,8 +90,8 @@ platform libraries ship as `.lib` files bundled with the cc65 distribution.
 
 ## The cl65 wrapper
 
-`cl65` is the recommended entry point. It detects file types by extension and
-invokes `cc65 → ca65 → ld65` in the right order.
+`cl65` is the usual entry point. It detects file types by extension and
+invokes `cc65 → ca65 → ld65` in order.
 
 Common flags:
 
@@ -105,8 +105,8 @@ Common flags:
 | `-T` (`--add-source`) | Interleave the C source as comments in the generated assembly. An earlier version of this row said `-T` keeps intermediate files; it does not, and `cl65` has no such flag. To inspect the `.s`, stop the pipeline with `-S` (or run `cc65 -O -t c64 file.c` directly); `-c` stops after assembling. `cl65` leaves the `.o` files in place by default. |
 
 The `-Cl` flag places local variables in BSS rather than on the software stack.
-This cuts call overhead noticeably but breaks reentrancy. Acceptable for most
-C64 code where recursion is deliberate and bounded.
+This cuts call overhead but breaks reentrancy, which most
+C64 code can accept: recursion there is deliberate and bounded.
 
 For multi-file projects, name each `.c` and `.s` source on the command line and
 `cl65` links them in one pass:
@@ -118,7 +118,7 @@ cl65 -O -t c64 -Cl -o game.prg main.c sprite.c irq.s
 ### ca65 notes
 
 Hand-written `.s` files go through `ca65`, which differs from KickAssembler in
-three ways that bite (measured with ca65 V2.18, Homebrew cc65 2.19):
+three ways that cause errors (measured with ca65 V2.18, Homebrew cc65 2.19):
 
 - Illegal opcodes (`lax`, `sax`, `dcp`, …) need `.setcpu "6502X"` in the file
   or `--cpu 6502X` on the command line; without it every illegal mnemonic
@@ -221,8 +221,8 @@ view of where each segment lands, and how to move one, is
 
 ## Standard library highlights
 
-cc65 ships extensive C64-specific headers alongside the standard ones. The
-table below covers the subset relevant to typical C64 use:
+cc65 ships C64-specific headers alongside the standard ones. The
+ones most C64 programs use:
 
 | Header | Purpose |
 |--------|---------|
@@ -234,31 +234,31 @@ table below covers the subset relevant to typical C64 use:
 | `stdio.h` | Standard I/O — available but large; prefer `conio.h` for text output |
 | `string.h` | Standard string functions |
 
-`conio.h` is the idiomatic output library for text-mode programs. `cbm.h`
-exposes the KERNAL routines via C-callable wrappers without requiring inline
-assembly. `peekpoke.h` fills the gap where C's type system would otherwise
-require casts through pointers.
+`conio.h` is the usual output library for text-mode programs. `cbm.h`
+wraps the KERNAL routines as C functions, so no inline
+assembly is needed. `peekpoke.h` replaces the casts through pointers that C's
+type system would otherwise require.
 
 ## When to use cc65
 
 - **Text-mode utilities and tools** — BASIC replacements, directory listers,
-  config editors. The `conio.h` API covers the use-case well and the corpus
-  of examples is large.
-- **Corpus-heavy domains** — when training data for a specific pattern (e.g. CBM
-  serial bus access via `cbm.h`) is overwhelmingly cc65-flavored, using cc65
-  lowers the chance the agent generates incorrect Oscar64 translations.
-- **Educational contrast** — studying a cc65 `.s` output alongside Oscar64's
-  output for the same source is a reliable way to demonstrate where and why
-  Oscar64 wins on codegen.
+  config editors. The `conio.h` API covers them and there
+  are many examples.
+- **Corpus-heavy domains** — when most training data for a pattern (e.g. CBM
+  serial bus access via `cbm.h`) is cc65 code, using cc65
+  lowers the chance the agent writes an incorrect Oscar64 translation.
+- **Educational contrast** — comparing a cc65 `.s` output with Oscar64's
+  output for the same source shows where and why
+  Oscar64 generates better code.
 - **Porting POSIX-adjacent code** — cc65's header set is closer to standard C
-  than Oscar64's, so porting a small existing utility is occasionally easier
+  than Oscar64's, so a small existing utility is sometimes easier to port
   here first.
 
 ## When NOT to use cc65
 
 - **Action games, scrollers, platformers** — frame budgets are tight. cc65's
-  function-call overhead and absence of register allocation make inner loops
-  measurably slower than Oscar64 equivalents.
+  function-call overhead and lack of register allocation make inner loops
+  slower than the Oscar64 equivalents.
 - **Demos, raster effects, sprite multiplexers** — cycle-exact timing work.
   cc65 is not cycle-aware. Use Oscar64 for C code and KickAssembler for
   hand-rolled timing routines.
@@ -269,33 +269,31 @@ require casts through pointers.
   smaller"): `unsigned char x:3;` AND `unsigned short x:3;` (int-sized on
   cc65) both fail with `Bit-field has invalid type` (measured 2026-09-22).
   Newer git cc65 is reported to relax this (unverified here); do not rely on
-  char-typed bit-fields from a distro package. Oscar64 treats them as
-  first-class.
+  char-typed bit-fields from a distro package. Oscar64 supports them.
 - **Code-size-sensitive releases** — cc65 produces larger binaries for
   equivalent logic. Under the built-in `c64.cfg` a program gets
   `$080D`–`$D000`: 51,187 bytes, about 50 KB, the top 2 KB of it the software
   stack (`cl65 -Ln` symbols `__MAIN_START__`, `__HIMEM__`, `__STACKSIZE__`;
   the startup code banks BASIC ROM out). An earlier version of this page said
-  38 KB, which is BASIC's free-bytes figure, not cc65's. Code size still
-  matters on a machine this small.
+  38 KB, which is BASIC's free-bytes figure, not cc65's.
 
-The rule of thumb: if Oscar64 has a clear idiom for the task (see
-[oscar64-reference.md](oscar64-reference.md)), use Oscar64. Reach for cc65 only
-when the corpus availability advantage is concrete and measurable.
+If Oscar64 has a clear idiom for the task (see
+[oscar64-reference.md](oscar64-reference.md)), use Oscar64. Use cc65 only
+when existing cc65 examples for the task give a concrete advantage.
 
 ## Linker configs
 
 `ld65` is driven by a linker configuration file that describes the target's
 memory map, segments, and output format. The cc65 distribution ships a
-ready-made config for the C64 at `cfg/c64.cfg`. For most programs, the
-`-t c64` flag loads this config automatically.
+config for the C64 at `cfg/c64.cfg`, and the
+`-t c64` flag loads it.
 
 The built-in config maps the standard segments:
 
 - `EXEHDR` — the BASIC stub (`SYS 2061`) at `$0801`–`$080C`; `STARTUP` — the
   C runtime entry, at `$080D` (the stub's SYS target); `LOWCODE` (optional)
   then `CODE` — your compiled code, after STARTUP (`$0840` for a minimal
-  conio program built with cc65 2.19 — read the `--mapfile` segment list
+  conio program built with cc65 2.19; read the `--mapfile` segment list
   rather than assuming a fixed address; an earlier version of this page put
   `CODE` at `$0801`, which is the stub itself); then `RODATA`, `DATA`,
   `INIT`, `ONCE` in that order within MAIN.
@@ -308,9 +306,9 @@ The built-in config maps the standard segments:
   byte to this segment under the built-in c64 config fails to link
   (`Segment 'ZEROPAGE' overflows memory area 'ZP' by 1 byte`, measured with
   cc65 2.19). For your own zero-page variables, copy `cfg/c64.cfg` and add a
-  second zero-page area on the four bytes BASIC and the KERNAL leave free —
-  e.g. `ZP2: file = "", start = $00FB, size = $0004;` in MEMORY and
-  `EXTZP: load = ZP2, type = zp, optional = yes;` in SEGMENTS — then define
+  second zero-page area on the four bytes BASIC and the KERNAL leave free
+  (e.g. `ZP2: file = "", start = $00FB, size = $0004;` in MEMORY and
+  `EXTZP: load = ZP2, type = zp, optional = yes;` in SEGMENTS), then define
   the variable in assembly (`.segment "EXTZP" : zeropage` / `_myzp: .res 1`)
   and expose it to C with `extern unsigned char myzp; #pragma zpsym("myzp")`
   (the pragma must follow the declaration). Do not simply enlarge `ZP` past
@@ -318,10 +316,10 @@ The built-in config maps the standard segments:
   bytes are the `register` bank, so `register` locals (with `-Or`) are the
   only zero-page you get without a custom config.
 
-For non-standard layouts — cartridges, custom load addresses, split-bank
-programs — write a custom `.cfg` file and pass it with `--config`. The
-linker config language is well-documented in the cc65 `ld65` manual and
-the existing `cfg/c64.cfg` is a readable starting template.
+For non-standard layouts (cartridges, custom load addresses, split-bank
+programs), write a custom `.cfg` file and pass it with `--config`. The
+cc65 `ld65` manual documents the config language, and
+`cfg/c64.cfg` is a starting template.
 
 ## Cartridge builds
 
@@ -460,9 +458,9 @@ your own code.
 
 ## Idioms — cc65 vs Oscar64
 
-cc65 and Oscar64 differ in ways that matter at the codegen level. The agent
-should recognize these patterns to avoid inadvertently reaching for the weaker
-option.
+cc65 and Oscar64 generate different code for the same C. The agent
+should recognize these patterns so it does not pick the slower
+option by accident.
 
 **Function call overhead.** cc65 uses a software stack (pointed to by `sp`
 in zero page, but located in main RAM below `__HIMEM__`; an earlier version
@@ -475,31 +473,31 @@ only for non-leaf or recursive functions (see
 [oscar64-reference.md](oscar64-reference.md)); nothing is passed in A/X/Y.
 cc65's default `__fastcall__` convention does put the rightmost argument in
 A/X and pushes the rest through its `sp`-indexed software stack. Oscar64's
-inner loops are substantially cheaper. If a function is called in a tight
+inner loops are cheaper. If a function is called in a tight
 raster IRQ or per-scanline loop, the cc65 overhead accumulates into missed
 raster windows.
 
-**Bitfields.** Oscar64 supports bitfields in structs natively and maps them
-to efficient read-modify-write sequences. cc65 supports them with restrictions
+**Bitfields.** Oscar64 supports bitfields in structs and compiles them
+to short read-modify-write sequences. cc65 supports them with restrictions
 (only `int`/`unsigned int`/`enum` members; `unsigned char` fields do not
-compile) and the codegen is less predictable. Writing a hardware
+compile) and the generated code is less predictable. Writing a hardware
 register struct like `VIC_CR1` with bitfields is idiomatic Oscar64; in cc65
 the same code requires explicit masks and shifts or falls back to `POKE`.
 
-**Struct-by-value.** Passing structs by value in cc65 is expensive — the
-compiler copies through the software stack. Oscar64 handles small structs in
-registers. Where the code passes hardware-register shadow structs or sprite
-coordinate pairs around frequently, Oscar64's ABI wins clearly.
+**Struct-by-value.** Passing structs by value in cc65 is expensive: the
+compiler copies them through the software stack. Oscar64 handles small structs in
+registers. Where the code often passes hardware-register shadow structs or sprite
+coordinate pairs, Oscar64's ABI is faster.
 
 **Static locals via `-Cl`.** cc65's `-Cl` flag converts local variables to
-static (BSS) allocation. This is a performance hack that produces faster code
-at the cost of reentrancy. Oscar64 does not need this flag because it performs
-stack allocation analysis and promotes locals to registers or static storage
-automatically where safe.
+static (BSS) allocation. The code is faster
+and not reentrant. Oscar64 has no such flag: its
+stack allocation analysis promotes locals to registers or static storage
+where safe.
 
-**Choosing cc65.** The agent picks cc65 when the corpus availability advantage
-is real: a known-working cc65 snippet for CBM serial I/O, or a text-mode UI
-library built around `conio.h`, is worth more than a theoretically optimal
+**Choosing cc65.** The agent picks cc65 when existing cc65 code
+gives a real advantage: a known-working cc65 snippet for CBM serial I/O, or a text-mode UI
+library built around `conio.h`, is worth more than a faster
 Oscar64 translation that may contain ABI errors. When the task is creative
 (new code, not porting), default to Oscar64.
 
@@ -564,9 +562,9 @@ for VICE/vice-mcp" and "Debugging with VICE") and
 ## Pitfalls
 
 **Static initializers in ROM sections.** The cc65 `DATA` segment holds
-initialized writable data. If a custom linker config accidentally places `DATA`
+initialized writable data. If a custom linker config places `DATA`
 in a ROM region, the program links clean and misbehaves at run time.
-Always verify the segment map with `--mapfile` output. An earlier version of
+Check the segment map in the `--mapfile` output. An earlier version of
 this entry said the globals read back as zeros; measured on the
 [cartridge-8k](../recipes/cc65/cartridge-8k.md) recipe with `DATA` in ROM,
 they read back their initialisers, writes to them were lost, and the run
@@ -579,8 +577,8 @@ heap and BSS. Only the two-byte stack pointer `sp` lives in zero page
 ($02/$03). An earlier version of this page said the stack was in zero page
 and about 256 bytes; both were wrong. Deep recursion overflows it silently
 downward into heap and BSS data, not into zero page. Raise it with
-`-Wl -D,__STACKSIZE__=0x1000` (if you write `$1000`, quote it — an unquoted
-`$1000` is eaten by the shell and ld65 reports `Invalid definition`) or a
+`-Wl -D,__STACKSIZE__=0x1000` (if you write `$1000`, quote it: the shell eats an unquoted
+`$1000` and ld65 reports `Invalid definition`) or a
 custom linker config; keep call depth shallow and prefer iterative
 algorithms. `-Cl` moves locals off the stack, which reduces per-frame usage,
 but does not protect against deep recursion itself.
@@ -588,12 +586,12 @@ but does not protect against deep recursion itself.
 **`printf` code size.** `printf` from `stdio.h` pulls in the full format-string
 parser, adding roughly 2–3 KB to the binary. For output in a C64 program,
 `cputs()` from `conio.h` or a direct KERNAL `CHROUT` call (via `cbm.h`) is
-far smaller. Reserve `printf` for debugging builds only.
+much smaller. Keep `printf` to debugging builds.
 
 **Mixing `conio.h` screen coordinates with direct VIC writes.** `conio.h`
 maintains its own cursor state. Writing directly to screen RAM (`$0400`) or
-color RAM (`$D800`) bypasses that state. Either use `conio.h` exclusively for
-text output, or bypass it entirely and drive the hardware directly.
+color RAM (`$D800`) bypasses that state. Use `conio.h` for all
+text output, or not at all and drive the hardware directly.
 
 **Implicit `int` promotions.** 8-bit values compared or computed in expressions
 get promoted to `int` (16-bit) in C. cc65 emits 16-bit arithmetic sequences

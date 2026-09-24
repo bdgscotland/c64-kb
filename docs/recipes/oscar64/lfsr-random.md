@@ -374,8 +374,8 @@ on the page and not the compiler's rendering of it. The state variables
 are `volatile` because the first build was not: Oscar64 does not treat
 inline assembler as writing the globals it names, kept `s16` in a
 register across the call, and the screen read `FIRST C8 C8 C8 ...` and
-`P8 001`. The cycle figures were right even then; only the C side was
-blind.
+`P8 001`. The cycle figures were right even then; only the C side read stale
+state.
 
 The period walk starts from the live seed and the checksum walk from
 state 1. The period proves the seed is on the full cycle; a fold from a

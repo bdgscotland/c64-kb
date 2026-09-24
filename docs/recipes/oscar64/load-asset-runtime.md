@@ -353,7 +353,7 @@ Read the lines in order:
   with it clear. That is the `kernal_assumes_sei_cleared` pitfall
   measured on LOAD itself: the serial primitives end in `CLI`, so a
   caller's `SEI` does not survive the first byte on the bus, and there
-  is nothing to restore afterwards because the flag is simply gone.
+  is nothing to restore afterwards because the flag is already clear.
 - `SAVE 1 ST=00`: `krnio_save(8, built, built + 2048)` wrote the set as
   the PRG `CHARSET` whose two-byte header says `$2235`, the address of
   `built`. 7.7 million cycles, 390 frames, drive reply `00, OK`. The

@@ -769,7 +769,7 @@ Actor 10 was left somewhere between pixel 688 and 695 and woke at
 the scan skips it for the rest of the level with one `AND` of the flag
 byte.
 
-The margin is what hides the scan's latency. Eight entries a tick means
+The margin hides the scan's latency. Eight entries a tick means
 each entry is looked at every 4 ticks, and at 16 pixels a tick the camera
 moves 8 columns in 4 ticks. An entry examined one column outside the
 window can be 8 columns closer when it is next examined, so a margin of 8

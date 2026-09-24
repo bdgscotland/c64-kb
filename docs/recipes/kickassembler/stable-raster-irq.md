@@ -17,7 +17,7 @@ uses_kernal: []
 
 A raster interrupt that begins executing on the same cycle of the same line
 every time, through the KERNAL vector at $0314, using the double-IRQ method.
-The stability is made visible rather than asserted: ten independent
+The stability is shown on screen: ten independent
 interrupts per frame each draw a six-line bar whose left edge is written on
 one fixed cycle, and the ten edges line up in one column. A `STABLE = 0`
 build of the same source draws the bars from a plain raster IRQ and shows
@@ -197,7 +197,7 @@ java -jar KickAss.jar stable-raster-irq.asm -o control.prg -define CONTROL
 ```
 
 (with `.const STABLE = 1` replaced by `#if CONTROL .const STABLE = 0 #else
-.const STABLE = 1 #endif` if you prefer the switch on the command line).
+.const STABLE = 1 #endif` for a command-line switch).
 
 ## Expected output
 
@@ -214,8 +214,8 @@ said "one or two" steps and "the same height"). Because the control's
 sixth line is the badline 67, its white edge write slips by the badline
 stall and lands in the border of the next line, so each control bar shows
 five clean lines and a stray white strip at the far left one line below.
-That the stagger changes from frame to frame was not re-checked here; note
-that the main loop is 26 cycles and a PAL frame is 19,656 = 756 × 26
+That the stagger changes from frame to frame was not re-checked here; the
+main loop is 26 cycles and a PAL frame is 19,656 = 756 × 26
 cycles, so the pattern may repeat exactly. The stagger itself is the
 interrupt entry jitter: the 7-cycle `INC abs,X` instructions in the main
 loop delay the interrupt by up to six cycles depending on where in the
@@ -248,7 +248,7 @@ PC low, status; fetch the vector), and 29 cycles for the KERNAL's dispatcher
 at $FF48, which pushes A, X and Y, checks the pushed status for the BRK flag
 and jumps through ($0314). The handler's first instruction therefore starts
 on cycle 37 to 43 of the line. Anything that has to happen on a specific
-cycle — a $D016 write for the side border, a $D018 write for FLI — cannot be
+cycle (a $D016 write for the side border, a $D018 write for FLI) cannot be
 placed from an entry that wobbles by six cycles.
 
 ### The double IRQ
@@ -282,9 +282,9 @@ The padding is the one number that has to be found rather than derived,
 because it depends on exactly which cycle the interrupt sequence starts on
 relative to the raster compare. 11 is the value measured in VICE for this
 code path (KERNAL dispatcher, NOP slide). Change anything before the sync
-reads — the dispatcher, the instruction interrupted, the position of the
-`TXS` — and the number moves. The picture tells you immediately: a wrong
-value produces two columns instead of one.
+reads (the dispatcher, the instruction interrupted, the position of the
+`TXS`) and the number moves. A wrong value shows in the picture as two
+columns instead of one.
 
 ### The stack
 
@@ -305,7 +305,7 @@ drawn twice.
 ### Which lines
 
 A badline (`(line & 7) == YSCROLL`, so lines 51, 59, 67, ... with the
-default YSCROLL of 3) stalls the CPU for 40 to 43 cycles — plan on 43, the
+default YSCROLL of 3) stalls the CPU for 40 to 43 cycles. Plan on 43; the
 CPU keeps 20 of the 63 (an earlier version said a flat 40). The sync line
 and the six drawn lines must not be badlines, or the 63-cycle loop slips by
 that much; the control build's sixth line shows exactly this. The
@@ -319,8 +319,8 @@ the slide, the sync on 60, and the bars on 61 to 66, with the next badline on
 CIA1's timer A interrupt is masked ($7F to $DC0D) so the only IRQ source is
 the VIC. This handler never calls the KERNAL's service routine, so the jiffy
 clock stops and the keyboard is not scanned while the program runs; that is
-the usual trade in a demo part. If you need them, call `JMP $EA31` from one
-handler per frame: $EA31 runs the clock, the cursor, the keyboard scan and
+the usual trade in a demo part. To keep them, end one handler per frame
+with `JMP $EA31`: $EA31 runs the clock, the cursor, the keyboard scan and
 then reads $DC0D, and with CIA1 masked that read is harmless.
 
 Three addresses that are easy to confuse, read from the 901227-03 KERNAL
@@ -354,7 +354,7 @@ method is the same.
 
 ## What this recipe does not show
 
-It does not put the stable entry to use — that is what `sideborder-open`
-and `fli-image` do. The cycle numbers for entry and padding are VICE
+It does not put the stable entry to use; `sideborder-open` and
+`fli-image` do. The cycle numbers for entry and padding are VICE
 measurements; a 6569 on a bench may differ by a cycle in the padding, and
 the picture is the check.

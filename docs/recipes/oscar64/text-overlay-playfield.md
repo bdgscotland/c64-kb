@@ -348,7 +348,7 @@ keeps going.
 The picture is the 16,000,000-cycle capture, tick 654. Verified in VICE
 x64sc 3.10 (PAL, the default C64C: 8565, 8580, 8521; an earlier version said
 6569), headless, warp, with `+autostart-delay-random`.
-That switch is not in the usual invocation and it matters here: without it
+That switch is not in the usual invocation; without it
 three identical runs at `-limitcycles 8000000` read ticks 249, 238 and 240,
 because VICE adds a random delay before the autostart `RUN` by default;
 with it, three runs read 250, 250, 250. Read the counter, never the cycle
@@ -390,8 +390,8 @@ overlay digits and the decoder refused that cell. It is not in the table,
 and it is the reason the counter, not the cycle count, names a frame.
 (Audit note, 2026-09-22, rung 1: `docs/recipes/runs.json` pins this
 recipe at 16,000,000 cycles for *both* models, so `verify-recipes` renders
-that same tick-745 NTSC frame — `OVERLAY 8?` with the units digit
-half-written — and reports it as differing from the committed NTSC picture,
+that same tick-745 NTSC frame (`OVERLAY 8?` with the units digit
+half-written) and reports it as differing from the committed NTSC picture,
 which is the 8 M capture at tick 281. The PAL arm matches pixel for pixel
 at 16 M. Until the NTSC pin is 8,000,000 that mismatch is the pin, not the
 listing.)
@@ -414,17 +414,17 @@ The two numbers on row 24 (rung 1, read from the same captures):
   cycles on CIA 2's timer A in a probe build; the two reads are the rest.
 
 **Correction.** The first version of this page had no `sei`, and its row-24
-figures — `FULL PAINT 0277` at 4 and at 16 cells, `0285` at 120,
-`OVERLAY 33` — were the paint plus the KERNAL's interrupt. Oscar64's C64
+figures (`FULL PAINT 0277` at 4 and at 16 cells, `0285` at 120,
+`OVERLAY 33`) were the paint plus the KERNAL's interrupt. Oscar64's C64
 start-up leaves the 60 Hz IRQ running (the one `sei` in its `crt.c` is under
 the NES target, and the assembly it generated for that listing contained
 none), and the service routine, four to five raster lines each time, landed
 once or twice inside every paint and inside about one overlay in eight: the
 same histogram probe with the interrupt on read 33 in 569 of 654 frames, 37
 in 12, 17 in 3, and some other value in the remaining 70. The paint figure
-also depended on where the interrupt fell — 277 in runs with
+also depended on where the interrupt fell (277 in runs with
 `+autostart-delay-random`, 281 in a run without it at tick 244, same lock,
-same picture otherwise — and that page's "277 for the empty field" was
+same picture otherwise), and that page's "277 for the empty field" was
 wrong twice over: 277 was the 4-cell paint after the first lock, and the
 empty-field paint had never been captured (it is 275, tick 99 above). The
 cycle figures derived from those numbers (17,450–17,950 cycles, 88 a cell)
@@ -433,11 +433,11 @@ the 8 M, 16 M and 60 M captures land on the same ticks as before (250, 654,
 2867) with the same 994 cells matching, so the lost frame per lock below
 never depended on it.
 
-And one number the counter gives for free: between the 8 M and 16 M captures
+The counter gives one more number: between the 8 M and 16 M captures
 the emulated C64 ran 8,000,000 cycles, 407.0 PAL frames, and the counter
 advanced 404. Three locks lie between those ticks (288, 440, 568), and 10 M
 and 12 M captures (ticks 351 and 452) agree: one lock, one lost frame. The
-lock frame is well over 312 lines of work counted from line 256: 272 of
+lock frame is over 312 lines of work counted from line 256: 272 of
 paint, 19 for the four-digit display, 17 of overlay and 23 for its own
 display come to 331 before the field writes, `spawn` and the wrap
 arithmetic, and a probe bracket around the whole frame, with its own
@@ -453,8 +453,8 @@ capture is 384×247, the tick is 281, all 994 modelled cells match, and row
 312 − 263, because `LINES_PER_FRAME` is still 312: the paint wraps once and
 the wrap is counted as 312 lines, and the overlay begins after line 256 and
 crosses the wrap, so the modulo adds a frame's worth. The true values are
-266 and 32 lines — 17,290 and 2,080 cycles at 65 a line, against 17,136 and
-2,079 on PAL — and the overlay itself has no region dependence. Set
+266 and 32 lines (17,290 and 2,080 cycles at 65 a line, against 17,136 and
+2,079 on PAL), and the overlay itself has no region dependence. Set
 `LINES_PER_FRAME` to 263 for a build whose display is right on NTSC. The
 first version of this page said it had not been run on NTSC; the shipped
 build of that version reads `0319` and `81` there, the interrupt inside the
@@ -473,7 +473,7 @@ because the field array is that memory. When the piece locks it is written
 into `field[][]` and `have_prev` is cleared, so the erase pass is skipped on
 that frame and the new piece starts clean. `prev_type` is carried as well as
 `prev_x, prev_y` for the general form of the technique, where the shape can
-change between frames — a rotation, or a lock that does not repaint — and
+change between frames (a rotation, or a lock that does not repaint) and
 erasing the new shape's cells at the old position would leave the old
 shape's cells behind. In this listing it is redundant: `cur_type` changes
 only in `spawn()`, which is reached only through `render_field()`, which
@@ -481,34 +481,34 @@ clears `have_prev`, so whenever the erase pass runs `prev_type == cur_type`.
 
 ### Why the full paint is not per frame
 
-`render_field` is the honest cost of "just redraw everything": 272 raster
+`render_field` is the cost of "just redraw everything": 272 raster
 lines for this loop, which is already the fast form, with row pointers,
 unrolled two-column stores and no per-cell multiply. The first draft of this
 page routed the 200 cells through `paint_cell` and measured 707 lines, 2.3
 frames, and lost two frames at every lock. The generated `paint_cell` is
-about 60 instructions — shift-and-add for `(2 + y) × 40`, the `2·x` offset,
-four indirect stores — and an opcode tally of the body Oscar64 emitted comes
+about 60 instructions (shift-and-add for `(2 + y) × 40`, the `2·x` offset,
+four indirect stores), and an opcode tally of the body Oscar64 emitted comes
 to 173–175 cycles before the `JSR`/`RTS` and the caller's argument setup
 (rung 3, from the rung-1 listing). Measured, it is about 250 cycles a call
 as `render_piece` runs it (1,998 cycles for eight) and 707 × 63 / 200 ≈ 220
 in that first draft's loop, interrupt included. The first version of this
 page said "about 50 instructions, roughly 100 cycles a call", which its own
-numbers contradicted. Fine eight times a frame, ruinous two hundred times.
+numbers contradicted. That is affordable eight times a frame, not two hundred times.
 That draft also displayed `83`, because the timer took the difference of two
 raster reads modulo 312 and the true value was 83 + 2 × 312. The counter
 caught it: the run lost 58 ticks over 29 locks. The `render_field` above
 samples the raster after every row and counts the wraps, so its number
 cannot alias unless a single row takes a whole frame.
 
-The whole per-frame path — `show_tick`, `tick`, `render_piece` and the
-overlay's own number display — measures 57 lines (rung 1: a probe build of
+The whole per-frame path (`show_tick`, `tick`, `render_piece` and the
+overlay's own number display) measures 57 lines (rung 1: a probe build of
 this listing that brackets the loop body instead of the overlay alone, tick
 250, same VICE run parameters; 41 on the first frame, whose overlay is the
-17-line kind, and up to 63 on some others — every eighth frame `tick` runs
+17-line kind, and up to 63 on some others; every eighth frame `tick` runs
 `fits()` and moves the piece, which is the likely extra, not separately
 measured). The parts, on CIA 2's timer A in the same
 probe: `show_tick` 123 cycles, `tick` 22 on a frame with no move,
-`render_piece` 1,998, and the display 1,445 — two raster reads at 57 each,
+`render_piece` 1,998, and the display 1,445: two raster reads at 57 each,
 the two digits at 522, and 809 for the `% LINES_PER_FRAME`, which is a
 16-bit division in Oscar64's runtime because 312 does not fit a byte. The
 first version of this page gave 43 lines here, which is what the bracket
@@ -518,8 +518,8 @@ listing and belongs inside. The eight cell writes are done within the first
 wrap; the digit arithmetic runs a line past the wrap and stores into row 24
 while the beam is in the top border. The display window does not resume
 until raster 51, so there are 107 lines of race-free time and the per-frame
-work uses 53 % of them. The full paint at 272 lines cannot fit, and that is
-the whole point of the technique: the redraw is reserved for the events that
+work uses 53 % of them. The full paint at 272 lines cannot fit, so the technique
+reserves the redraw for the events that
 change `field[][]`.
 
 On the lock frame in this listing the paint is invisible: the overlay had
@@ -527,7 +527,7 @@ already drawn the piece where it locked, in the same code and colour, so
 the 200 writes change nothing on screen. The one-frame stall is the only
 symptom. A line clear, which this stub does not implement, would shift the
 field and make the paint visible for one frame; the technique page calls
-that tear acceptable, and it is, once per clear.
+that tear acceptable once per clear.
 
 ### The three pitfalls, by name
 
@@ -546,7 +546,7 @@ that tear acceptable, and it is, once per clear.
   inner `if` removed paints the un-spawnable red Z over the banner on that
   one frame: four of the nine characters (`E OV`) become red cells and stay
   that way, since nothing repaints them, and the piece's upper two cells
-  land on four empty cells of field row 0 above them — eight cells differ
+  land on four empty cells of field row 0 above them; eight cells differ
   from the correct model, zero from a model with the gate removed. Picture:
   `screenshots/text-overlay-playfield-ungated-control.png`.
 - `full_field_redraw_exceeds_vblank` — measured above: 272 lines against a
@@ -558,10 +558,10 @@ that tear acceptable, and it is, once per clear.
 
 ### Oscar64 details that cost time
 
-- The KERNAL's IRQ is live in an Oscar64 program until you stop it. The
+- The KERNAL's IRQ is live in an Oscar64 program until the program stops it. The
   C64 start-up in `crt.c` never executes `sei` (its one `sei` is under
   `OSCAR_TARGET_NES`), so without the `__asm { sei }` at the top of `main`
-  the 60 Hz service routine — four to five raster lines each time — lands
+  the 60 Hz service routine (four to five raster lines each time) lands
   inside anything longer than a frame, and inside a 33-line bracket about
   one time in eight, and a raster-line timer reports it as the cost of
   whatever it interrupted. `__asm { sei }` is the spelling the `sprmux32.c`

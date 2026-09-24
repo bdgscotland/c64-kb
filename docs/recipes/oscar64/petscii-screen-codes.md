@@ -367,7 +367,7 @@ for s in range(0x80): chk = fold(chk, s2p(s))
 print(hex(chk))            # 0x2200
 ```
 
-The first `PASS` is the one that matters: it says the rule in `pet2scr()`
+The first `PASS` says the rule in `pet2scr()`
 agrees with what the KERNAL wrote to screen RAM for all 224 codes, on
 this run, in VICE x64sc 3.10. The checksums pin the routines' output to
 the Python transcription so a later edit that changes a boundary is

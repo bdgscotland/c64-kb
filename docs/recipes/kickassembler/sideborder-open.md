@@ -227,8 +227,8 @@ Screenshot from the VICE run this page describes: `screenshots/sideborder-open.p
 ### The border flip-flop
 
 The VIC-II's main border flip-flop is *set* at a fixed horizontal
-position — X=344 when CSEL=1 (40 columns), X=335 when CSEL=0 (38
-columns) — and *reset* at X=24 or X=31 respectively, both only while the
+position, X=344 when CSEL=1 (40 columns) and X=335 when CSEL=0 (38
+columns), and *reset* at X=24 or X=31 respectively, both only while the
 vertical border flip-flop is clear. Set means "draw border colour". On PAL
 the beam is at X=335 during cycle 55 and at X=344 during cycle 56.
 
@@ -237,7 +237,7 @@ is 0 when the beam passes 344, that comparison does nothing either. So a
 1-to-0 transition landing between the two leaves the flip-flop clear for
 the rest of the line, and since the reset comparison at X=24/31 on the next
 line has nothing to reset, the next line's left border is not drawn either.
-That is the whole trick, and it is one write per line: `DEC $D016` on $C8
+It is one write per line: `DEC $D016` on $C8
 gives $C7 (CSEL=0, and XSCROLL=7 as a side effect, which does not matter on
 an idle display), `INC $D016` afterwards restores $C8 in time for the next
 line's comparisons. The restore has the whole of the next line up to cycle
@@ -284,8 +284,9 @@ earliest write on 58. That is not established: by the same cycle budget, a
 `STA $D016` whose high address byte is the read stalled on cycle 12
 completes that read on 55 and writes on 56 (arithmetic from the stated
 cycles, not measured here; `docs/techniques/raster.md` still states the
-absolute form). The loop
-writes $D011 on every line with YSCROLL = (line+4)&7, which never matches,
+absolute form).
+
+The loop writes $D011 on every line with YSCROLL = (line+4)&7, which never matches,
 so no badline condition arises during the region. Line 101 itself, the
 first, has YSCROLL 3 and 101&7 = 5, and is safe without help.
 
@@ -293,9 +294,9 @@ The cost is the display: with no badlines the VIC has no new character row
 to fetch and goes to its idle state, showing the byte at $3FFF (zero on a
 stock machine) in the background colour. The band is blank. Opening the
 side border *with* a live character display on badline rows is a different
-and much harder problem; the recipes that appear to do it either cover the
-badline rows or use the tricks catalogued under `fld_flexible_line_distance` and `vsp_glitch` in
-`docs/techniques/raster.md`.
+and harder problem; the recipes that appear to do it either cover the
+badline rows or use the methods listed under `fld_flexible_line_distance`
+and `vsp_glitch` in `docs/techniques/raster.md`.
 
 ### The stable entry and the two paddings
 
@@ -306,7 +307,7 @@ trying 41-45 in VICE and all five open the region, because a `DEC` that
 starts a cycle or two off still gets its writes into the BA-low window on
 the first line and the sprite stall re-phases everything from the second
 line on. That tolerance is a property of this code path with sprites, not
-of the trick. Re-measured for this page with pads 41, 42, 43 and 44: all
+of the method. Re-measured for this page with pads 41, 42, 43 and 44: all
 four give a pixel-identical picture, and in none of them does line 101's
 own right border open (the band starts on 102), so which pad, if any, lands
 the first `DEC` on cycle 51 of line 101 has not been identified; the
@@ -325,8 +326,8 @@ visible left border is X 480-503 then 0-23, the right border 344-375 on a
 typical display. X=500 puts a sprite across the wrap in the left border;
 X=344 puts one at the start of the right border. Both need bit 8 of X, as
 does the yellow sprite at X=280, hence `%11000001` in $D010 (the earlier
-`%10000001` left sprite 6 at X=24). A sprite with Y=101 has its DMA turned on at
-cycle 55 of line 101 and is drawn from line 102, which is why the region
+`%10000001` left sprite 6 at X=24). A sprite with Y=101 has its DMA
+turned on at cycle 55 of line 101 and is drawn from line 102, which is why the region
 loop starts its `DEC` on line 101 and the opened band is seen from 102.
 
 ### NTSC

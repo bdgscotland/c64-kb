@@ -286,7 +286,7 @@ of the driver would not change. The cases are the ones a signed compare
 gets wrong when written naively: the two overflow pairs at `$8000` and
 `$7FFF`, the most negative value against itself, and pairs whose low
 bytes borrow. `BAD_CASE` guards a case with a wrong expectation rather
-than a wrong routine, so the red build proves the driver reports a
+than a wrong routine, so the red build shows the driver reports a
 failure, its count and its index, without anyone editing the code under
 test.
 

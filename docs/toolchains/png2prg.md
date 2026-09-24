@@ -18,9 +18,9 @@ rules into C64 data: a Koala multicolour bitmap, a hires bitmap,
 charsets (single-colour, multicolour, mixed, PETSCII, ECM), sprites, or a
 multicolour interlace bitmap. It finds the palette and the background
 colour itself. It does not reduce colours or dither: a full-colour picture
-is refused, not converted. That makes it a build step for art an artist
-or an agent drew to C64 rules, and it closes a loop: a VICE exit
-screenshot converts back to the same bytes (measured below).
+is refused, not converted. It is a build step for art already drawn to
+C64 rules. A VICE exit screenshot converts back to the same bytes
+(measured below).
 
 The repository has no LICENSE file (checked at commit `4cf8d5b`,
 2025-05-10), so the frontmatter says `NOASSERTION`. Use it as a build
@@ -111,8 +111,8 @@ The clash message names the cell by index and by top-left pixel, in
 takes the nearest. The VICE 3.10 `-default` PAL palette (the triples in
 [vice-reference](../runtime/vice-reference.md), "The default palette")
 matched png2prg's entry "vice 3.7.1 internal" at distance 0. The NTSC
-screenshot's nearest palette was "le funge", at distance 341. Drawing with the VICE PAL table is the
-safe choice. Run here.
+screenshot's nearest palette was "le funge", at distance 341. Draw with
+the VICE PAL table. Run here.
 
 ## Round trip, measured
 
@@ -141,9 +141,9 @@ safe choice. Run here.
 8. `png2prg -m koala -d` on the source: the displayer PRG, run the same
    way at 6,000,000 and 12,000,000 cycles, also showed 0 differing pixels.
 
-So for art drawn in the palette and within the cell rules, nothing is lost
-in either direction. What png2prg decides for you is which colour goes in
-which bit pair. `-bpc` states a preference, not a guarantee: when the game
+For art drawn in the palette and within the cell rules, nothing is lost
+in either direction. png2prg chooses which colour goes in which bit pair.
+`-bpc` states a preference, not a guarantee: when the game
 needs a colour on a fixed pair (for example, the same `%11` colour-RAM value
 everywhere so colour RAM can be filled once), pass `-bpc` and then check the
 colour-RAM bytes in the output.

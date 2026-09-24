@@ -365,7 +365,7 @@ from either. Reading `$D018` back for the check masks bit 0: it is not
 implemented and returns 1 (the monitor dump shows `1D` for a stored
 `1C`).
 
-The comparison is what the technique page's cost figures rest on. The
+The technique page's cost figures rest on this comparison. The
 in-place rewrite is 196 cycles for 240 animated cells, and would be 196
 for 1,000; redrawing the same 240 cells at the measured 12 cycles each
 would be 2,880 (arithmetic from the 200-cell figure), and the redraw's
@@ -373,7 +373,7 @@ cost grows with the field. The redraw here changes only screen codes;
 an animation done that way also needs one glyph per phase in the
 charset, eight codes for this ripple, where method (a) needs one.
 
-The self-check is what makes the verdict mean something. It does not
+The self-check does not
 trust the value it just wrote: it reads the eight bytes back through the
 same `set[which]` pointer with `memcmp`, reads `$D018` back from the
 chip, and compares both with tables indexed by the frame count, so a

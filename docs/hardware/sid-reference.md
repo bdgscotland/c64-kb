@@ -12,7 +12,7 @@ analog filter, two paddle A/D converters, and a 4-bit master-volume DAC.
 
 This reference covers both the original 6581 (used 1982-1986) and the
 later 8580 (1987-1992). Most software runs on both, but the two parts
-differ audibly in three places that programmers care about: filter
+differ audibly in three places: filter
 cutoff curve, sample replay via the volume register, and combined
 waveform output level.
 
@@ -25,8 +25,8 @@ analog multi-mode filter, and finally a 4-bit master-volume DAC. The
 chip uses a 5-bit address bus internally; the upper bits of $D4xx are
 decoded by the C64's PLA. The register window is mirrored every 32
 bytes throughout $D400-$D7FF on the C64. On the C128 the mirrors stop
-at $D4FF: $D420-$D4FF still alias the SID, and nothing above it does —
-writes to $D5xx-$D7xx never reach the chip and reads there return other
+at $D4FF: $D420-$D4FF still alias the SID, and nothing above it does.
+Writes to $D5xx-$D7xx never reach the chip and reads there return other
 C128 I/O (the MMU at $D500, the VDC at $D600), measured in VICE x128 in
 both C64 mode and native mode. An earlier revision of this page said
 the C128 did not mirror at all and reserved $D420-$D4FF for a second
@@ -48,7 +48,7 @@ Each of the three voices contains:
 - A control register with GATE/SYNC/RING/TEST bits in the low nibble
   and the four waveform-enable bits in the high nibble.
 
-Voice 3 is special in two ways: its oscillator output is readable at
+Voice 3 differs from the others in two ways: its oscillator output is readable at
 $D41B (OSC3) and its envelope output is readable at $D41C (ENV3),
 making it the C64's only built-in random-number source and a free
 LFO (the noise setup for seeding, and the LFSR it should seed rather than
@@ -70,29 +70,28 @@ to the filter bypass it and go straight to the volume DAC.
 ### 6581 vs 8580: what programmers care about
 
 **Filter cutoff curve.** On the 6581 the cutoff vs register-value curve
-is non-linear and looks roughly sigmoidal on a log scale; in addition
-the curve varies wildly between individual chips depending on the
-manufacturing batch. A cutoff value that opens the filter wide on one
+is non-linear, roughly sigmoidal on a log scale, and varies widely
+between individual chips depending on the manufacturing batch. A cutoff value that opens the filter wide on one
 6581 may have almost no effect on another. On the 8580 the curve is
-linear and consistent between chips, matching the designer's intent.
+linear and consistent between chips.
 Music tuned for one chip often sounds wrong on the other; SID players
 typically ship per-chip tuning data.
 
-**ADSR bug.** Both chips have a hardware quirk where, if you reduce an
-AD or SR rate to a smaller value than the envelope's internal rate
-counter has already exceeded, the rate counter must wrap all the way
+**ADSR bug.** On both chips, if an AD or SR rate is reduced to a
+smaller value than the envelope's internal rate counter has already
+exceeded, the rate counter must wrap all the way
 around its 15-bit range (up to 32768 cycles, ~33 ms at PAL) before the
 envelope resumes. The bug also causes the very first cycle of attack
-and decay to use the wrong rate. The standard workaround is a "hard
-restart" (see Programming patterns).
+and decay to use the wrong rate. The usual workaround is a hard
+restart (see Programming patterns).
 
 **$D418 sample replay.** Writing rapidly-varying values to the lower 4
 bits of the volume register modulates the master DAC and produces
 audible clicks. On the 6581 this is loud enough to play 4-bit PCM
-samples at multi-kHz rates and is the classic "digi" technique used
+samples at multi-kHz rates and is the "digi" technique used
 in Ghostbusters, Arkanoid, Mahoney's Musik Demo, and most C64 speech
 synthesizers. On the 8580 the same writes are nearly inaudible because
-the digital-to-analog stage is cleaner; the standard hardware fix is a
+the digital-to-analog stage is cleaner; the usual hardware fix is a
 330-740 kΩ resistor between SID pin 26 (EXT IN) and pin 14 (GND) or
 between EXT IN and +5 V, which forces some signal into the filter and
 restores the click. Software-only digi techniques on stock 8580s
@@ -104,10 +103,10 @@ produces a logical AND of the waveform outputs at the bit level. The
 louder, cleaner combined waveforms. The specific bit-pattern depends on
 the chip revision and even on individual chips. Tunes that rely on
 combined waveforms (e.g. triangle+pulse for warm pad sounds) sound
-distinctly different on 6581 vs 8580.
+different on 6581 vs 8580.
 
 **Write-only registers.** Registers $D400-$D418 are write-only. Reading
-one — or an unused address $D41D-$D41F, or any mirror through $D7FF —
+one (or an unused address $D41D-$D41F, or any mirror through $D7FF)
 does not return open bus: the SID drives the bus with the byte it last
 held, which is the last value written to any address in its 32-byte
 window ($D41D-$D41F included) or the last value read from $D419-$D41C,
@@ -116,7 +115,7 @@ roughly 660k cycles on the 8580 (measured in VICE 3.10 x64sc reSID:
 held at 6.4k and gone at 7.7k cycles on the 6581 model, held at 658k
 and gone at 669k on the 8580 model; real chips fade too, not measured
 here). An earlier version of this page said the read gave the high
-byte of the address or the last VIC-II fetch; neither ever appears — a
+byte of the address or the last VIC-II fetch; neither ever appears: a
 read of $D704 right after writing $A5 to $D401 returns $A5, not $D7.
 Either way it is not register state: code that needs read-modify-write
 must keep a software shadow. The $D419-$D41C registers are read-only;
@@ -269,7 +268,7 @@ $000 holds the pulse output constantly high ($FFF), $800 gives a 50 %
 square wave, and $FFF holds it low except for one accumulator step in
 4096 (an earlier version of this page had the two DC levels swapped;
 measured in VICE x64sc/reSID on both the 6581 and 8580 models, by OSC3
-read-back and by the raw audio output — a PW=$800 square wave's rails
+read-back and by the raw audio output: a PW=$800 square wave's rails
 are exactly the PW=$000 and PW=$FFF levels, and PW=$FFF sits at the
 same level as a sawtooth held at accumulator zero).
 
@@ -287,7 +286,7 @@ High 4 bits (PW11-PW8) of the 12-bit pulse-width value for voice 1.
 The 12-bit pulse width divides one oscillator period into 4096 steps.
 The output is low while the accumulator's top 12 bits are below `PW`
 and high for the rest of the period, so PW = $800 (= 2048) is a square
-wave. Sweeping PW with a small LFO produces classic SID "pulse PWM"
+wave. Sweeping PW with a small LFO produces the SID "pulse PWM"
 pads.
 
 ### $D404 — VCREG1 — Voice 1 control register (W)
@@ -312,8 +311,8 @@ the only way to trigger and end notes.
 
 **TEST.** Setting TEST resets the phase accumulator to zero and holds
 it there as long as TEST is set. The noise LFSR stops shifting and
-keeps its contents; held long enough its bits drift to one, not zero —
-measured in VICE x64sc 3.10 (reSID), the noise output read at $D41B is
+keeps its contents; held long enough its bits drift to one, not zero.
+Measured in VICE x64sc 3.10 (reSID), the noise output read at $D41B is
 unchanged for about 35,000 cycles on a 6581 and reads $FF by about
 38,000; on an 8580 it is unchanged for about 2.5 million cycles and
 reads $FF by about 3.5 million. It never reads $00. Clearing TEST
@@ -366,8 +365,8 @@ rate table. Decay falls exponentially from peak to the sustain level.
 | 7-4 | SUSTAIN | Sustain level (0=silent, 15=peak) |
 | 3-0 | RELEASE | Release rate (0-15, see ADSR table) |
 
-Sustain is a 4-bit level; the envelope holds at `sustain * $11` — $00,
-$11, $22 ... $FF — after decay completes (measured on ENV3 in VICE; an
+Sustain is a 4-bit level; the envelope holds at `sustain * $11` ($00,
+$11, $22 ... $FF) after decay completes (measured on ENV3 in VICE; an
 earlier version said `sustain << 4`, which would make sustain 15 hold
 at $F0, not the $FF peak). Release fires when GATE is cleared and
 decays exponentially from the current envelope value to zero at the
@@ -440,7 +439,7 @@ voice 1's oscillator MSB; SYNC syncs voice 2 to voice 1.
 
 Low 8 bits of voice 3's 16-bit oscillator frequency.
 
-Voice 3 has a special role as the master for SYNC/RING (it is the
+Voice 3 is the master for SYNC/RING (it is the
 modulator for voice 1) and is the only voice with readable oscillator
 and envelope outputs via $D41B/$D41C.
 
@@ -539,7 +538,7 @@ the 8580 reaches noticeably higher Q before self-oscillation.
 
 The low 3 bits of the 11-bit cutoff frequency. Many tunes only update
 $D416 (the high 8 bits) and leave $D415 at zero, giving 8-bit cutoff
-resolution; the extra 3 bits in $D415 are mostly useful for slow
+resolution; the extra 3 bits in $D415 matter mostly for slow
 sweeps.
 
 ### $D416 — CUTHI — Filter cutoff frequency high (W)
@@ -556,8 +555,7 @@ cutoff = ($D416 << 3) | ($D415 & 7), giving an 11-bit value 0-2047.
 On the 6581 the mapping from this value to actual cutoff Hz is
 chip-dependent and non-linear (roughly sigmoid on a log scale). On
 the 8580 the mapping is linear and consistent. Tunes that sweep
-cutoff for filter automation will sound noticeably different across
-chip revisions.
+cutoff for filter automation sound different across chip revisions.
 
 ### $D417 — RESON — Filter resonance and routing (W)
 
@@ -573,7 +571,7 @@ chip revisions.
 
 **Resonance.** The 4-bit resonance value emphasises frequencies near
 the cutoff. On the 6581 high resonance values often cause distortion
-(this is musically desirable for some applications); on the 8580
+(some music relies on it); on the 8580
 resonance is cleaner and reaches higher Q before clipping.
 
 **Routing.** Each FILT bit selects whether that voice/input passes
@@ -599,9 +597,9 @@ for lead synth work while voices 2-3 carry unfiltered bass and pad.
 
 **3OFF (voice 3 mute).** Disconnects voice 3 from the final audio
 output without affecting its oscillator or envelope. Used when voice 3
-is configured as an LFO/random source for $D41B/$D41C and shouldn't be
-audible. Note: voice 3 routed to the filter (FILT3=1 in $D417) ignores
-3OFF — the mute happens at the bypass path only.
+is configured as an LFO/random source for $D41B/$D41C and should not
+be audible. Voice 3 routed to the filter (FILT3=1 in $D417) ignores
+3OFF: the mute acts on the bypass path only.
 
 **Filter mode bits.** LP, BP, HP can be combined: LP+HP is a notch
 filter, LP+BP gives a warmer band-pass, BP+HP is also a notch.
@@ -611,14 +609,13 @@ silence for those voices (the filter output is grounded when no mode
 is enabled).
 
 **Volume DAC.** The 4-bit VOL field scales the audio output linearly.
-This DAC is the entry point for the classic 4-bit sample replay
+This DAC is the entry point for the 4-bit sample replay
 ("$D418 digi") technique: writing changing values in the low nibble
 produces audible clicks at the sample rate, allowing PCM playback
-mixed with regular SID music. The DAC is shared with everything so
-suddenly changing VOL between non-zero values while voices are gated
-produces a "pop" — this is the same artifact that makes sample replay
-work, and is also why turning the SID on/off at fade time should
-fade VOL gradually.
+mixed with regular SID music. The DAC is shared with everything, so
+a sudden change of VOL between non-zero values while voices are gated
+produces a pop. That is the artifact that makes sample replay work,
+and the reason to fade VOL gradually when turning the SID on or off.
 
 ## Read-only registers
 
@@ -640,9 +637,9 @@ typically $00-$DF.
 
 The A/D circuit takes about 512 system cycles (~520 us PAL) to settle
 after the multiplex source changes; reads made sooner return stale or
-transitional values. Wait a full 512 cycles — nine PAL raster lines
-(eight NTSC; eight PAL lines is 504 and still inside the window) —
-after writing the selector before sampling, and in practice switch on
+transitional values. Wait a full 512 cycles (nine PAL raster lines;
+eight NTSC; eight PAL lines is 504 and still inside the window)
+after writing the selector before sampling. In practice, switch on
 one frame and read on the next. An earlier revision said two raster
 lines, which is 126 cycles; measured in VICE x64sc with a 1351 on
 port 1, $D419 reads noise up to 508 cycles after the selector write
@@ -670,21 +667,21 @@ at the moment of the conversion.
 Returns the upper 8 bits of voice 3's oscillator output. What appears
 here depends on the waveform selected in $D412:
 
-- **Noise selected.** Returns bits from the 23-bit LFSR — the standard
+- **Noise selected.** Returns bits from the 23-bit LFSR, the usual
   C64 random-number source. Set voice 3 to NOISE+GATE with a high
   frequency value, mute it with $D418 bit 7, and read $D41B for a
   fresh pseudo-random byte. Some bits move faster than others, so
   combine multiple reads for whitening.
-- **Triangle selected.** Returns the rising/falling triangle slope —
-  useful as a slow LFO if voice 3's frequency is low.
+- **Triangle selected.** Returns the rising/falling triangle slope,
+  usable as a slow LFO if voice 3's frequency is low.
 - **Sawtooth selected.** Returns the ramp value.
 - **Pulse selected.** Returns $00 or $FF depending on phase
-  (effectively useless as a control source).
+  (of little use as a control source).
 
 When the TEST bit ($D412 bit 3) is set, what $D41B reads depends on
 the waveform (measured in VICE x64sc reSID, 6581 and 8580 models; an
 earlier revision of this page said it always reads zero, which holds
-only for triangle and sawtooth). Triangle and sawtooth read $00 — the
+only for triangle and sawtooth). Triangle and sawtooth read $00: the
 accumulator is reset and held at zero. Pulse reads $FF whatever PW
 holds ($000, $800 and $FFF all give $FF; TEST forces the pulse output
 high). Noise keeps returning the LFSR's current bits, and if TEST is
@@ -730,7 +727,7 @@ freqtbl:
 ```
 
 (Earlier revisions labelled the first eight entries C-1..G-1; they are
-octave 0 in the same A4 = 440 Hz numbering as the rest of the table —
+octave 0 in the same A4 = 440 Hz numbering as the rest of the table;
 $0117 is 16.38 Hz.)
 
 To play a note in voice 1: load the 16-bit value from `freqtbl,note`,
@@ -805,18 +802,18 @@ modulator voice's oscillator MSB.
 
 The RING bit in $D404 must be set, the TRI waveform must be enabled,
 and voice 3 must have a non-zero frequency. Voice 3's GATE state is
-irrelevant — the ring-mod source is the oscillator MSB, not the
+irrelevant: the ring-mod source is the oscillator MSB, not the
 post-envelope output. (An earlier revision of this listing wrote $11
 here, which is TRI + GATE; measured in VICE x64sc reSID, $10 leaves
-OSC3 advancing with ENV3 at zero.) Voice 3 should typically not also
-be playing audibly; either mute it via $D418 bit 7 or leave its
-envelope at zero.
+OSC3 advancing with ENV3 at zero.) Voice 3 should normally not be
+audible as well: mute it via $D418 bit 7 or leave its envelope at
+zero.
 
 ### Oscillator sync
 
 Hard sync resets the slave oscillator's accumulator whenever the
-master oscillator's MSB rises. Produces aggressive, formant-like
-harmonics that depend on the ratio between master and slave
+master oscillator's MSB rises. The result is formant-like harmonics
+that depend on the ratio between master and slave
 frequencies.
 
 ```
@@ -841,16 +838,16 @@ clear, whatever GATE and the waveform bits say. Measured in VICE x64sc
 master read $05 and $0D where an unsynced control read $28, the same
 as with the master gated; with the master at F=0 or with its TEST bit
 held, no sync occurred. An earlier revision of this page said gating
-was needed for the accumulator to advance reliably; it is not — GATE
-drives only the envelope. Gate the master only if you want to hear it
-(with the default all-zero ADSR a gated master only clicks). Sweep the
-slave (voice 1) frequency for the classic sync sweep.
+was needed for the accumulator to advance reliably; it is not; GATE
+drives only the envelope. Gate the master only to hear it (with the
+default all-zero ADSR a gated master only clicks). Sweep the slave
+(voice 1) frequency for the sync sweep.
 
 ### ADSR-bug delay (intentional)
 
-You can deliberately exploit the ADSR bug as a timed delay. Set the
+The ADSR bug can serve as a timed delay. Set the
 sustain level high, then write a smaller AD or SR value than the
-current envelope-counter position; the envelope will hang at its
+current envelope-counter position; the envelope hangs at its
 current level until the rate counter wraps. Some early SID composers
 used this as a "stuck note" effect, though most players treat it as
 something to avoid.
@@ -885,7 +882,7 @@ lo_nibble:
   rti
 ```
 
-The shifts are written as bare `lsr` for portability — KickAssembler
+The shifts are written as bare `lsr` for portability: KickAssembler
 rejects `lsr a` (Unknown symbol 'a'); ca65 accepts both. An earlier
 version of this listing used `inc nibble_flag` as the toggle, which
 flips bit 7 only every 128 calls, so it played the low nibble of bytes
@@ -894,7 +891,7 @@ flips bit 7 only every 128 calls, so it played the low nibble of bytes
 call, and `inc sample_idx` now advances only after the high nibble has
 gone out.
 
-On a stock 8580 this produces almost no audible output. The classic
+On a stock 8580 this produces almost no audible output. The usual
 hardware fix is a 330 kΩ - 740 kΩ resistor between EXT IN (pin 26) and
 GND (pin 14), or between EXT IN and +5 V. Software-only digi on 8580
 typically uses:
@@ -910,7 +907,7 @@ typically uses:
   5x the bare-voice step, while with only one voice it is no louder
   than bare (the voice DC roughly cancels the mixer's own small
   offset), so use all three. The earlier text here said PWHI3 was the
-  DAC; it was wrong — PW has no effect on the output while TEST is set
+  DAC; it was wrong: PW has no effect on the output while TEST is set
   (the value is kept and applies when TEST clears), and without TEST
   the comparator output is binary ($000 or $FFF), never proportional
   to PW. The scene form (Mahoney's 8580 digi, "Musik Run/Stop", 2014)
@@ -939,7 +936,7 @@ random:
   rts
 ```
 
-Note: setting NOISE+GATE+TEST and then clearing TEST is sometimes
+Setting NOISE+GATE+TEST and then clearing TEST is sometimes
 needed to seed the LFSR; on cold start the LFSR may be in a stuck
 state.
 
@@ -971,17 +968,17 @@ lfo_tick:
 
 $D403 keeps only bits 3-0, so storing OSC3 unshifted (as an earlier
 version of this block did) applies the triangle's LOW nibble, which
-wraps 0-15 every couple of frames at this frequency — measured in VICE
-x64sc (reSID) the applied values run 0,9,3,12,6,0,9,… — a jitter over
-the whole pulse-width range, not the slow sweep described. Shifted,
+wraps 0-15 every couple of frames at this frequency; measured in VICE
+x64sc (reSID), the applied values run 0,9,3,12,6,0,9,…. That is a
+jitter over the whole pulse-width range, not the slow sweep described. Shifted,
 the value steps by at most 1 per frame. For finer steps also write
 OSC3<<4 to $D402 (12-bit PW = OSC3 × 16); keep the sweep away from PW
 $000 and $FFF, which are silent (see Pitfalls).
 
 ### Avoiding $D418 volume pops
 
-When transitioning from playing to silent (e.g. end of game), don't
-just drop volume to zero — that causes the loudest possible click.
+When transitioning from playing to silent (e.g. end of game), do not
+drop volume straight to zero; that causes the loudest possible click.
 Instead, gate-off all voices first and let the release phase decay,
 then fade VOL down through the lower nibble values. Conversely on
 startup, write filter mode bits and volume only after gating voices
@@ -1011,16 +1008,16 @@ are not touched.
 ## Pitfalls
 
 - **Write-only registers.** $D400-$D418 cannot be read back. A read
-  returns the SID's held bus byte — the last write to any SID address
+  returns the SID's held bus byte (the last write to any SID address
   or the last $D419-$D41C read, fading to $00 within ~7k cycles (6581)
-  / ~660k cycles (8580) in reSID — not open-bus garbage and not the
+  / ~660k cycles (8580) in reSID), not open-bus garbage and not the
   address high byte as this page used to say. Code that needs to
   modify a single bit of a register must maintain a software shadow.
   See [sid.md](../pitfalls/sid.md) (`sid_write_only_registers`).
 
 - **ADSR bug.** Reducing the AD or SR rate below the envelope's
   internal counter position causes the counter to wrap through its
-  full 15-bit range before the envelope resumes — up to 33 ms at PAL.
+  full 15-bit range before the envelope resumes, up to 33 ms at PAL.
   Mitigate with a hard restart sequence applied 1-2 frames before
   each note gate. See [sid.md](../pitfalls/sid.md) (`sid_adsr_bug_8580`;
   the entry's heading names the 8580 but its Mechanism covers both
@@ -1031,17 +1028,17 @@ are not touched.
   enables 4-bit sample replay; for music playback always fade VOL
   gradually and gate voices off first to let release decay.
 
-- **8580 sample replay broken.** The classic $D418 digi technique
+- **8580 sample replay broken.** The $D418 digi technique
   produces nearly silent output on 8580 SIDs because the cleaner DAC
-  doesn't leak DC. Either install the 330-740 kΩ EXT-IN-to-GND
+  does not leak DC. Either install the 330-740 kΩ EXT-IN-to-GND
   resistor mod or use a software-only digi (the test-bit DC digi:
   three voices held at constant full-scale output with
-  PULSE+TEST+GATE, $D418 as the DAC — not pulse-width modulation, see
+  PULSE+TEST+GATE, $D418 as the DAC, not pulse-width modulation; see
   Programming patterns).
 
 - **Filter cutoff varies across chips.** The 6581 cutoff curve varies
-  drastically between individual chips of the same revision. A
-  cutoff sweep tuned on one 6581 may sound completely different on
+  widely between individual chips of the same revision. A
+  cutoff sweep tuned on one 6581 may sound different on
   another. The 8580 cutoff is consistent but uses a different
   (linear vs sigmoidal) curve than the 6581, so 6581-tuned music
   sounds wrong on 8580 and vice versa. Music players typically ship
@@ -1052,8 +1049,8 @@ are not touched.
   the resulting amplitude is louder on 8580 than 6581. Some specific
   combined-waveform shapes only sound right on one chip revision.
 
-- **No frequency read-back.** You cannot read the current oscillator
-  frequency. You can read $D41B (OSC3) to see the upper 8 bits of
+- **No frequency read-back.** The current oscillator
+  frequency cannot be read. $D41B (OSC3) shows the upper 8 bits of
   voice 3's accumulator, but the frequency register itself is
   write-only.
 
@@ -1069,20 +1066,20 @@ are not touched.
   noise freezes the LFSR where it is (its bits drift to one if TEST is
   held ~35k cycles on a 6581, ~2.5M on an 8580, measured in VICE);
   clearing TEST shifts it once and lets it run on from there. The
-  output jumps at both edges, so don't toggle TEST during sustained
-  noise notes unless you want a click. An earlier version said TEST
+  output jumps at both edges, so toggling TEST during sustained
+  noise notes clicks. An earlier version said TEST
   reset the LFSR to zero; it does not.
 
-- **Noise combined with other waveforms zeros the LFSR.** If you
-  enable NOISE simultaneously with TRI, SAW, or PULSE, the AND-gate
+- **Noise combined with other waveforms zeros the LFSR.** With
+  NOISE enabled simultaneously with TRI, SAW, or PULSE, the AND-gate
   combination eventually drives all LFSR bits to zero, silencing
-  the noise. Once stuck, set TEST briefly to re-seed. This is a
-  well-known SID quirk and is also why "noise sweeps" usually pulse
-  the TEST bit periodically. A brief pulse is enough — a few cycles of
+  the noise. Once stuck, set TEST briefly to re-seed. This SID
+  behaviour is also why "noise sweeps" usually pulse
+  the TEST bit periodically. A brief pulse is enough: a few cycles of
   TEST re-seeds a zeroed LFSR, because the falling edge shifts a 1
   into bit 0 when bit 17 is 0 (measured in VICE: $D41B reads $01 right
-  after the pulse and runs on). Holding TEST longer only matters if
-  you want the register driven to all ones.
+  after the pulse and runs on). Holding TEST longer only matters to
+  drive the register to all ones.
 
 - **Voice 3 mute ($D418 bit 7) only mutes the bypass path.** If
   voice 3 has FILT3=1 in $D417, it still goes to the filter and
@@ -1117,8 +1114,8 @@ are not touched.
   the same as $D400. On the C128 the mirrors stop at $D4FF: a write to
   $D512 or $D700 never reaches the SID (measured in VICE x128; an
   earlier revision said the C128 reserved this area for a second SID,
-  which it does not). Don't rely on any mirror for cross-machine code
-  — above $D4FF it is not the SID on a C128, and $D420 and $D500 are
+  which it does not). Do not rely on any mirror for cross-machine code:
+  above $D4FF it is not the SID on a C128, and $D420 and $D500 are
   the bases add-on second-SID boards usually decode (see
   [c64-registers-reference.md](c64-registers-reference.md)), so
   portable code addresses $D400-$D41C only.
@@ -1131,7 +1128,7 @@ are not touched.
 - **$D41D-$D41F are not a constant.** These addresses are unused; a
   read returns the SID's held bus byte (last write or last $D419-$D41C
   read, fading to $00), not the high byte of the address as this page
-  used to say. Don't use them as a "guaranteed zero" or any other
+  used to say. Do not use them as a "guaranteed zero" or any other
   constant source.
 
 <!-- doc-type: hardware-reference -->

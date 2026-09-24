@@ -77,8 +77,8 @@ cc1541 -a art.d64       # print the options that would recreate this directory
 cc1541 -h               # the full option list
 ```
 
-The `-i "26"` above is deliberate: it is the form that produced the
-header line discussed under Pitfalls, and `cc1541 -a art.d64` prints it
+The `-i "26"` above is the form that produced the header line discussed
+under Pitfalls, and `cc1541 -a art.d64` prints it
 back as `-i "26"`. A separate one-file image built with `-i "26 2a"`
 (`id.d64`) put `32 36 20 32 41` at `$A2` to `$A6`.
 
@@ -171,14 +171,14 @@ Run here, the eight entries of block 18/1 (one block; its link was
 | 6 | `$82` | `1 10` | `4C 45 56 45 4C 31 A0 A0 A0 A0 A0 A0 A0 A0 A0 A0` | 4 |
 | 7 | `$82` | `2 1` | `4C 45 56 45 4C 32 A0 A0 A0 A0 A0 A0 A0 A0 A0 A0` | 4 |
 
-So the three tricks are three fields. `-T DEL` is the type byte `$80`:
+Each of the three options sets one field. `-T DEL` is the type byte `$80`:
 DEL (0) with the closed bit (`$80`) set, the value `-a` prints back as
 `-T 128`. `-L` is a first-block pointer of `0 0` and no blocks
 allocated: the BAM still reported 655 blocks free with five art entries
 on the disk, the count a freshly formatted disk has after 9 blocks (1
 for the game, 8 for the two 1,000-byte files) are taken. `-B` is the
-16-bit count at `$1E`; nothing checks it against the chain. The `$A0`
-trick is in the name bytes alone: `-f "game#a0,8,1"` stores `GAME`,
+16-bit count at `$1E`; nothing checks it against the chain. An embedded
+`$A0` changes only the name bytes: `-f "game#a0,8,1"` stores `GAME`,
 one `$A0`, then `,8,1` and the padding.
 
 Entry 2's name was 15 characters, so the sixteenth byte is the `$A0`
@@ -270,8 +270,7 @@ The `rm -f` matters: cc1541 adds to an existing image, so without it
 every `make` appends a second copy of each entry (the `-o` flag refuses
 duplicates instead, not run here). The image is a plain file, so
 [release-disk](release-disk.md)'s checks apply to it unchanged, and
-`c1541 -list` is a cheap gate that the entries are where the rule put
-them.
+`c1541 -list` checks that the entries are where the rule put them.
 
 ## Pitfalls
 

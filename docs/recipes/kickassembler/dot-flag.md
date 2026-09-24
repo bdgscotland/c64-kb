@@ -408,7 +408,7 @@ java -jar KickAss.jar dot-flag.asm -define NOERASE -o dot-flag-noerase.prg
 A black screen with 128 white single pixels in a 16 by 8 grid that has
 been bent twice: the columns lean left and right along one sine, and the
 rows rise and fall along another that also runs across the columns, so
-the whole grid reads as a flag rippling in a wind. After 300 frames the
+the grid ripples like a flag. After 300 frames the
 program stops drawing and the picture holds still.
 
 Measured in VICE x64sc 3.10 with the pinned command at 12,000,000 cycles,
@@ -523,7 +523,7 @@ viewer sees as flicker on the right of the picture and the mid-motion
 figure shows as 91 lit pixels of 128. A build that wanted the picture
 whole every field would draw into a second bitmap and swap `$D018` in
 the blank, at the price of a second 8,000-byte bitmap and a second
-erase list; this listing does not, because the point of it is the plot
+erase list; this listing does not, because it demonstrates the plot
 and the erase.
 
 Both models finish a frame inside a frame: the worst display-on frame is

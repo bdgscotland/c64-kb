@@ -7,13 +7,13 @@ category: cpu
 # CPU Pitfalls
 
 Pitfalls in the 6510's own behaviour, and in what a toolchain does to code
-that leans on it: behaviour that is locally correct but globally surprising,
+that leans on it: code that is correct in isolation and fails in context,
 such as a branch cycle count that changes with binary placement, illegal
 opcodes that disappear on CMOS silicon, an indirect-jump address fetch that
 wraps at page boundaries, a signed compare that turns over, an LFSR that
 never leaves zero, and an assembler optimiser that separates a patch from
-the instruction it patches. Each has caused cycle-tight and portable C64
-code to fail in production. (An earlier version of this paragraph counted
+the instruction it patches. Each has broken cycle-tight or portable C64
+code. (An earlier version of this paragraph counted
 three.)
 
 ---
@@ -28,17 +28,16 @@ three.)
 ### Symptom
 
 Cycle-counted raster IRQ code drifts by exactly one cycle depending on where
-the linker places the assembled output. Color bars that were pixel-perfect in
+the linker places the assembled output. Color bars that were correct in
 development land on the wrong line in the final build. A stable-raster handler
-that was verified working at $2000 breaks when the code is relocated to $2FF0
-and a branch straddles the $3000 boundary. The symptom is a one-cycle jitter
-that is completely reproducible — it is not random, it just changes with the
-binary's load address.
+that works at $2000 breaks when the code is relocated to $2FF0
+and a branch straddles the $3000 boundary. The one-cycle shift is
+reproducible: it changes with the binary's load address, not at random.
 
 ### Mechanism
 
-All conditional branches on the 6510 — BCC, BCS, BEQ, BMI, BNE, BPL, BVC,
-BVS — use the relative addressing mode. The branch instruction is 2 bytes
+All conditional branches on the 6510 (BCC, BCS, BEQ, BMI, BNE, BPL, BVC,
+BVS) use the relative addressing mode. The branch instruction is 2 bytes
 (opcode + signed displacement). Cycle cost follows three cases:
 
 | Outcome | Cycles |
@@ -50,9 +49,9 @@ BVS — use the relative addressing mode. The branch instruction is 2 bytes
 The "page" check compares the high byte of `PC + 2` (where the CPU is after
 fetching the 2-byte branch instruction) with the high byte of the branch target.
 If they differ, the CPU performs an extra internal cycle to fix up the high byte
-of the program counter — a "page-crossing penalty."
+of the program counter (the page-crossing penalty).
 
-For code that does not need cycle precision, this is irrelevant — one extra
+For code that does not need cycle precision, this does not matter: one extra
 cycle out of thousands is noise. For stable-raster IRQ handlers, per-line
 raster effects, or sprite multiplexers where the cycle budget per scanline is
 counted in single digits, a one-cycle slip means the write to `$D020` or
@@ -60,7 +59,7 @@ counted in single digits, a one-cycle slip means the write to `$D020` or
 branch target's page rather than any runtime value, the same source assembles
 to different cycle counts depending on the `.o` file's placement in the binary.
 
-The pitfall is most acute in routines that loop across page boundaries. A
+The pitfall is worst in routines that loop across page boundaries. A
 `BNE loop` at `$20FD` branching back into `$20xx` costs 3 cycles. The
 identical instruction at `$20FF` branching to the same target costs 4 cycles
 because `$20FF + 2 = $2101`, whose high byte differs from `$20xx`.
@@ -83,11 +82,11 @@ raster_loop:
 **Eliminate the branch.** Branchless equivalents remove the variable entirely.
 Tight polling loops can be replaced with NOP chains (`NOP` = 2 cycles; the
 undocumented one-byte NOPs $1A/$3A/$5A are also 2 cycles and 1 byte, so they
-buy nothing over `NOP` except a CMOS incompatibility — an earlier version of
+buy nothing over `NOP` except a CMOS incompatibility; an earlier version of
 this sentence recommended them; on a 65816 $1A/$3A/$5A are `INC A`/`DEC A`/
-`PHY`, measured in xscpu64, so the third one corrupts the stack — see
+`PHY`, measured in xscpu64, so the third one corrupts the stack; see
 illegal_opcode_portability below. For a 3-cycle pad use the
-legal `bit zp`, or `nop zp` ($04) if the flags must survive — noting that $04
+legal `bit zp`, or `nop zp` ($04) if the flags must survive, noting that $04
 is itself undocumented and carries the same portability caveat; see the
 padding section of `docs/hardware/6502-illegal-opcodes.md`) or the `BIT $abs`
 skip trick. A spin-wait with `DEC zp / BNE` that straddles a page boundary
@@ -98,7 +97,7 @@ section in a 256-byte aligned region using `.align $100`. Two separate
 constraints apply. Page: a taken branch pays the +1 only when the high byte of
 PC+2 differs from the target's, so inside a page-aligned section a branch to a
 target in that section crosses only if its opcode sits on the page's last two
-bytes (offset $FE or $FF) — a branch at offset $F0 back to offset $80 still
+bytes (offset $FE or $FF); a branch at offset $F0 back to offset $80 still
 costs 3. Range: the displacement is -128..+127 from PC+2, so a backward branch
 to the aligned start can sit no further than offset 126. Keeping the whole
 section under 128 bytes satisfies both at once, which is why it is a safe rule
@@ -172,38 +171,38 @@ jitter_loop_fixed:
 
 ### Symptom
 
-Code using LAX, SAX, AXS, ALR, ARR, DCP, or the RMW family works perfectly on
+Code using LAX, SAX, AXS, ALR, ARR, DCP, or the RMW family works on
 real C64 hardware and under VICE. The same code loaded into a SuperCPU-equipped
 machine executes differently or hangs. A sim6502 unit test in strict CMOS mode
 fails on every illegal opcode. An assembler in 65C02 mode refuses the
 mnemonics outright (KickAssembler `.cpu _65c02`: "Pseudo command 'lax' not
-defined"; ca65 `.setcpu "65C02"`: error) — but a routine emitted with `.byte`
-sails through and mis-executes on the CMOS part with no error at all. (An
+defined"; ca65 `.setcpu "65C02"`: error), but a routine emitted with `.byte`
+assembles and mis-executes on the CMOS part with no error at all. (An
 earlier version of this sentence said the assembler silently treats the bytes
-as NOPs; it does not — measured with KickAssembler 5.25 and ca65.) The
+as NOPs; it does not (measured with KickAssembler 5.25 and ca65).) The
 assumption that the target CPU is NMOS was never documented.
 
 ### Mechanism
 
 Illegal opcodes arise from the NMOS 6502 decode matrix. Each opcode byte selects
 a column (addressing mode) and a row (operation). The "illegal" cells are
-undefined combinations where two operation strobes activate simultaneously —
-producing fused instructions that the MOS engineers never designed but that the
+undefined combinations where two operation strobes activate simultaneously,
+producing fused instructions that the MOS engineers did not design but that the
 silicon executes deterministically. The safe tier (LAX, SAX, ANC, ALR, ARR,
 AXS, DCP, ISC, SLO, RLA, SRE, RRA) is consistent across every NMOS 6502 and
 6510 ever manufactured.
 
 The portability boundary is the NMOS / CMOS divide:
 
-**65C02 (CMOS revision):** All undefined opcode slots were deliberately filled
+**65C02 (CMOS revision):** All undefined opcode slots were filled
 with explicit NOPs of varying byte lengths and cycle counts. The decode matrix
 was redesigned. On a 65C02 the byte $A7 (LAX zero-page) is either a NOP of
 vendor-specific length or, on Rockwell/WDC parts, a bit-manipulation
 instruction (the $x7 column is SMB/RMB there); either way A and X are not
 loaded and the program continues from the wrong state. (An earlier version of
 this paragraph stated flatly "a 2-cycle 2-byte NOP"; that varies by 65C02
-vendor and was not measured here.) On the 6510, $A7 executes `A = X = M[zp]`
-— a completely different side effect.
+vendor and was not measured here.) On the 6510, $A7 executes `A = X = M[zp]`,
+a different side effect.
 
 **65816 (WDC 16-bit extension, used in SuperCPU):** The SuperCPU accelerator for
 the C64 fits a 65816 CPU and runs C64 code in emulation mode. The 65816 has no
@@ -218,11 +217,11 @@ byte, $1A incremented A, $EB swapped A with B.) Code that runs identically on
 
 **8500 (late C64 and C64C):** The 8500 is the same NMOS microarchitecture as the
 6510, shrunk to a smaller process. The safe illegal opcodes behave identically
-to the 6510. This part is fine.
+to the 6510.
 
 **VICE default mode (x64sc):** VICE in its default cycle-exact mode (x64sc)
 implements the safe NMOS illegal opcodes faithfully. Development under VICE is
-not sufficient to catch CMOS portability issues — VICE matches the real 6510.
+not sufficient to catch CMOS portability issues: VICE matches the real 6510.
 
 **sim6502:** Behavior depends on the configuration. sim6502 may run in either
 NMOS or strict mode. Code that relies on illegal opcodes must be tested under the
@@ -317,7 +316,7 @@ assembles `lax sprite_y,y` to `B7` and `dcp compare_y` to `C7` natively
 (measured), so the macros were unnecessary; worse, `.byte $b7, addr` with a
 non-zero-page `addr` silently truncated the label to its low byte with no
 error. If a `.byte` escape is ever kept, guard it with
-`.errorif addr >= $100, "operand not in zero page"`, not `.assert` — measured
+`.errorif addr >= $100, "operand not in zero page"`, not `.assert`. Measured
 on KickAssembler 5.25, a failed `.assert` still writes the PRG and exits 0,
 while `.errorif` aborts with exit 1 and no output file.
 
@@ -340,10 +339,10 @@ while `.errorif` aborts with exit 1 and no output file.
 
 ### Symptom
 
-A jump table dispatch jumps to a completely wrong address. Changing the target
+A jump table dispatch jumps to a wrong address. Changing the target
 address in the table has no effect. Moving the table by one byte in memory
 makes the bug disappear; moving it back brings it back. Moving it by two does
-not help in general — a 2-byte stride keeps every entry's parity, so the fault
+not help in general: a 2-byte stride keeps every entry's parity, so the fault
 just shifts to the neighbouring entry (it only clears if that neighbour would
 fall off the end of the table); an earlier version of this sentence said one
 or two bytes. The bug is
@@ -370,8 +369,8 @@ cross a page boundary. Concretely:
   $1000 (not $1100). **Wrong.**
 
 The CPU wraps the low byte of the pointer address within the same page. This is
-not a timing issue or an edge case in the address decoder — it is the documented
-behavior of the original 6502 silicon, reproduced faithfully in every NMOS
+not a timing issue or an edge case in the address decoder; it is the documented
+behavior of the original 6502 silicon, reproduced in every NMOS
 6510 and 8500. It is sometimes called the "JMP indirect page-wrap bug" or the
 "6502 JMP indirect bug."
 
@@ -395,9 +394,9 @@ still avoid $xxFF placement to be safe on the 6510.
 **Never place a JMP indirect vector or jump table entry at a $xxFF address.**
 
 The safest approach is page-alignment. The bug fires when the low-byte slot
-of a jump table entry is at an address ending in $FF — i.e., when
+of a jump table entry is at an address ending in $FF, i.e. when
 `table_base + (2 * index)` == $xxFF. For a page-aligned table at $xx00,
-entries land at $xx00, $xx02, $xx04, ... $xxFE — all even, none at $xxFF.
+entries land at $xx00, $xx02, $xx04, ... $xxFE: all even, none at $xxFF.
 Page alignment with a 2-byte stride is a complete fix.
 
 ```kick
@@ -620,7 +619,7 @@ set flip bit 7 with `EOR #$80`, which also resets `N`. For 16-bit
 values do the `SBC` on the high byte with the borrow from a `CMP` of
 the low bytes. Where the test is against a constant in the same half
 of the range, or the values can be biased by `$80`, an unsigned `CMP`
-needs no fix-up at all.
+needs no fix-up.
 
 ### Worked example
 
@@ -682,12 +681,12 @@ __asm volatile   mul cs 0f09 exp 0f09 miss 00000   pass
 __asm            mul cs c524 exp 0f09 miss 00000   fail
 ```
 
-The miss counter is the trap inside the trap. It reads `00000` in the
+The miss counter hides the fault too. It reads `00000` in the
 failing build because every one of the 65,536 products is wrong and a
-16-bit counter of 65,536 misses wraps to zero. The checksum is the only
-tell. Recomputing the checksum in Python from the instruction sequence
+16-bit counter of 65,536 misses wraps to zero. Only the checksum
+shows it. Recomputing the checksum in Python from the instruction sequence
 that actually executes (below) gives `C524` and 65,536 misses, so the
-number on screen is fully accounted for by the mechanism.
+mechanism explains the number on screen.
 
 ### Mechanism
 
@@ -757,7 +756,7 @@ stores resolve to `$0C16`, `$0C1F`, `$0C19` and `$0C22`, which are the
 operand bytes of the four indexed reads at `$0C15`, `$0C1E`, `$0C18`
 and `$0C21` in the same copy. The `-O2` volatile build and the `-O0`
 non-volatile build both pass; `-O0` is a control, not a fix, because
-the optimiser is simply not run at that level.
+the optimiser is not run at that level.
 
 ### Fix
 
@@ -782,7 +781,7 @@ Moving the routine to a separate assembler source file is not an option
 in Oscar64: the compiler has no object linker and no external symbol
 resolution (`toolchains/oscar64-reference.md`, "Calling KickAssembler
 code from Oscar64"), so a hand-assembled routine has to be embedded as
-bytes at a fixed address and called by `jsr`. That does put it beyond
+bytes at a fixed address and called by `jsr`. That puts it beyond
 the optimiser's reach, but it was not measured here.
 
 ### Worked example

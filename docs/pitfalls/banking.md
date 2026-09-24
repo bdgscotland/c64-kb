@@ -9,12 +9,11 @@ category: banking
 The C64 has three independent banking layers: $01 selects which ROMs the CPU
 reads, $DD00 selects which 16 KB window VIC uses, and $D018 positions assets
 within that window. Each layer has its own addressing logic, reset defaults, and
-failure mode. The pitfalls here cover the most costly traps: the char ROM
-invisible to the CPU under I/O mapping, the VIC 16 KB constraint that silently
-invalidates all asset pointers when you move data between banks, the
-read/write asymmetry that makes RAM under BASIC or KERNAL appear to vanish, and
-the high-level-language trap where a growing code section silently runs into a
-hardcoded charset/bitmap blit address.
+failure mode. The pitfalls here: the char ROM invisible to the CPU under I/O
+mapping; the VIC 16 KB window, which invalidates all asset pointers when data
+moves between banks; the read/write asymmetry that makes RAM under BASIC or
+KERNAL appear to vanish; and a high-level-language build whose growing code
+section runs into a hardcoded charset/bitmap blit address.
 
 ---
 
@@ -35,8 +34,7 @@ instead of font data.
 
 ### Mechanism
 
-The $D000-$DFFF range is what hardware engineers call a "multiplexed window." At
-any given moment it can contain one of three things:
+The $D000-$DFFF range holds one of three things at any moment:
 
 1. The I/O devices: VIC-II registers ($D000-$D3FF), SID ($D400-$D7FF), Color
    RAM ($D800-$DBFF), CIA #1 ($DC00-$DCFF), CIA #2 ($DD00-$DDFF), and cartridge
@@ -62,15 +60,15 @@ $E000-$FFFF respectively.
 
 The VIC-II is not subject to this constraint. VIC has its own separate hardware
 pathway to the character ROM, routed through the PLA independently of the CPU
-banking bits. In VIC banks 0 and 2, the PLA automatically redirects VIC's
-character generator fetches to the char ROM at the appropriate offset ($1000-$1FFF
+banking bits. In VIC banks 0 and 2, the PLA redirects VIC's
+character generator fetches to the char ROM ($1000-$1FFF
 in bank 0, $9000-$9FFF in bank 2) regardless of $01. This is why the default
-screen works correctly out of reset — VIC reads the char ROM via its own path
-while the CPU cannot see it at all.
+screen works out of reset: VIC reads the char ROM through its own path
+while the CPU cannot see it.
 
 The second trap is interrupt safety. While $01 = $33, I/O is invisible: any IRQ
-that fires — the KERNAL's own 60 Hz CIA-1 timer interrupt as much as a raster
-IRQ you set up — cannot acknowledge its source. The KERNAL handler's LDA $DC0D
+that fires (the KERNAL's own 60 Hz CIA-1 timer interrupt as much as a raster
+IRQ) cannot acknowledge its source. The KERNAL handler's LDA $DC0D
 at $EA7E reads character ROM instead of the CIA, and a raster handler's write to
 $D019 lands in the RAM under the ROM instead of the VIC. The flag stays set,
 /IRQ stays low, the handler re-enters after every RTI and the main program never
@@ -148,7 +146,7 @@ A full copy of the primary font is 2 KB (256 characters × 8 bytes = eight
 256-byte pages, $D000-$D7FF), which is why the loop above has eight load/store
 pairs; a single-page or two-page loop copies only the first 32 or 64 characters.
 An earlier version of this listing had two pages and claimed to copy the whole
-font — it moved 512 bytes, and the remaining 1,536 were never copied (measured in
+font; it moved 512 bytes, and the remaining 1,536 were never copied (measured in
 VICE x64sc: 174 mismatches against char ROM in $2200-$27FF; the eight-pair loop
 leaves $2000-$27FF byte-identical). In Oscar64 or cc65, a 16-bit pointer loop
 over 2048 bytes does the same job.
@@ -175,22 +173,21 @@ over 2048 bytes does the same job.
 Sprites that display correctly in one VIC bank become invisible or show corrupt
 graphics when the VIC bank is changed. The screen fills with garbage characters
 or goes black. Moving a sprite's shape data to a new RAM location produces no
-visible change, while the old — now incorrect — graphics continue to appear.
+visible change, while the old graphics continue to appear.
 Setting up a bitmap in bank 1 while leaving the screen matrix in bank 0 produces
 a garbled display that looks nothing like the intended bitmap. Setting sprite
 pointer values ($07F8-$07FF or their equivalent in the current screen RAM) to
 seemingly correct offsets results in the wrong sprite image appearing.
 
-All of these symptoms share the same root cause: a mismatch between the 16 KB
-window VIC is looking through and the actual RAM location of the assets it is
-supposed to fetch.
+All of these have one cause: the 16 KB window VIC reads through does not
+contain the RAM the assets are in.
 
 ### Mechanism
 
-The VIC-II chip has a 14-bit address bus. It cannot independently access all
-64 KB of the C64's RAM — it can only see 16,384 bytes at a time. CIA2 port A
+The VIC-II chip has a 14-bit address bus. It sees 16,384 bytes at a time, not
+all 64 KB of the C64's RAM. CIA2 port A
 bits 0-1 (register $DD00) act as the upper two bits of VIC's address, selecting
-which 16 KB "bank" the VIC sees:
+which 16 KB bank the VIC sees:
 
 | $DD00 bits 1-0 | VIC bank | CPU address range | Notes                         |
 |----------------|----------|-------------------|-------------------------------|
@@ -202,7 +199,7 @@ which 16 KB "bank" the VIC sees:
 The bit patterns are inverted: `11` selects bank 0, `00` selects bank 3. This
 inversion comes from inverting buffers between CIA2 PA0-PA1 and VIC's VA14-VA15
 lines on the motherboard. Writing the raw bank number directly to $DD00 selects
-the wrong bank — always invert and mask.
+the wrong bank; invert and mask.
 
 Within its current 16 KB window, VIC interprets every pointer as a bank-relative
 offset, not an absolute address. Every VIC data structure is affected at once:
@@ -223,11 +220,11 @@ offset, not an absolute address. Every VIC data structure is affected at once:
   in 64-byte blocks. Sprite pointer 0 = $07F8; the value N means the sprite
   shape data starts at (vic_bank_base + N × 64).
 
-The most common collision scenario: a developer moves asset data to bank 1 for
+The common collision: a developer moves asset data to bank 1 for
 more RAM, writes $DD00 to select bank 1, but leaves the screen matrix at $0400
 and sprite pointers at $07F8-$07FF. VIC now reads its screen data from $4400
 (bank 1 offset $0400), not $0400. Everything that was working in bank 0 is now
-reading from a completely different area of RAM that may be uninitialized.
+reading from a different area of RAM that may be uninitialized.
 
 A subtler variant: screen matrix moved to bank 1 correctly, but sprite shape data
 left in bank 0. Sprite pointer N × 64 now addresses bank 1 RAM at $4000 + N×64,
@@ -240,14 +237,14 @@ have no char ROM shadow and are preferred for fully custom graphics.
 ### Fix
 
 Keep all VIC-readable assets (screen matrix, charset/bitmap, sprite shapes) in
-the same 16 KB bank. For custom layouts prefer bank 1 ($4000-$7FFF) — no char
+the same 16 KB bank. For custom layouts prefer bank 1 ($4000-$7FFF), which has no char
 ROM shadow. When switching:
 
 1. Pick the VIC bank; use bank 1 or 3 for custom graphics (no char ROM shadow).
 2. Write $DD00: `lda $DD00 / and #$FC / ora #<inverted_bank_bits> / sta $DD00`.
    Inverted codes: bank 0 = %11, bank 1 = %10, bank 2 = %01, bank 3 = %00.
 3. Set $D018: hi-nibble = screen_offset / $0400; low nibble =
-   (charset_offset / $0800) << 1 — the 3-bit charset field occupies bits 1-3 and
+   (charset_offset / $0800) << 1; the 3-bit charset field occupies bits 1-3 and
    bit 0 is unused (reads as 1). In bitmap mode only bit 3 matters:
    (bitmap_offset / $2000) << 3. An earlier version of this step omitted the
    shift, which for the example below yields $D018 = $11 and a charset fetched
@@ -330,20 +327,19 @@ reads back as floating-point math routines. Checksumming RAM that was just writt
 with known values returns the KERNAL ROM checksum instead.
 
 The converse symptom also occurs: a developer banks ROM out with $01 = $35 to
-reclaim RAM at $E000-$FFFF and then is surprised that the memory was already
-populated — because a previous write through the ROM window succeeded silently
-and the bytes were waiting in RAM all along.
+reclaim RAM at $E000-$FFFF and finds the memory already populated: an earlier
+write through the ROM window reached RAM, and the bytes were there all along.
 
 ### Mechanism
 
 The PLA enforces an asymmetric rule: reads honour the banking state (ROM wins
-when banked in), but a write to a ROM-mapped range reaches the underlying DRAM —
+when banked in), but a write to a ROM-mapped range reaches the underlying DRAM:
 $A000-$BFFF and $E000-$FFFF whatever $01 says, and $D000-$DFFF while character
 ROM is mapped there (CHAREN = 0 with LORAM or HIRAM set, e.g. $33). It is NOT
 true of $D000-$DFFF while I/O is mapped ($35/$36/$37): there the write lands in
 the VIC/SID/CIA/colour-RAM register and the RAM beneath is untouched (measured in
-VICE x64sc: RAM under $D000 seeded $A5 at $34, $2D written at $37 read back $2D —
-the sprite-0 X register — and the RAM still read $A5 once I/O was banked out; the
+VICE x64sc: RAM under $D000 seeded $A5 at $34, $2D written at $37 read back $2D
+(the sprite-0 X register), and the RAM still read $A5 once I/O was banked out; the
 same write at $A000 and $E000 landed in RAM). An earlier version of this
 paragraph said writes reach RAM "regardless" of the banking state, which is
 false for the I/O window. To put data under I/O, bank it out first ($34, or $33
@@ -365,7 +361,7 @@ lda $a000       // Returns BASIC ROM content, not $42 — the ROM wins the read
 | $E000-$FFFF   | KERNAL (8 KB) | HIRAM (bit 1) = 0    | $35 or $34     |
 
 $33 is the value for READING the char ROM at $D000 (see above), not for reaching
-the RAM under it — an earlier version of this table listed $33 on the $D000 row,
+the RAM under it; an earlier version of this table listed $33 on the $D000 row,
 which banks the char ROM *in* (measured in VICE x64sc: $D000 under $31/$32/$33
 reads $3C, glyph '@' row 0; RAM seeded $A5 under $D000 is seen only at $30 and
 $34). $30/$34 also bank out KERNAL, BASIC and all I/O, so SEI first and touch no
@@ -469,7 +465,7 @@ custom_nmi:
   configurations, including the exact $01 values for each combination of banked
   ROMs. The technique doc has the full discussion of the PLA's write-transparency
   behavior and the interrupt-vector pre-write requirement.
-- Technique `ram_under_kernal` — specifically covers using $E000-$FFFF as RAM,
+- Technique `ram_under_kernal` — covers using $E000-$FFFF as RAM,
   the custom interrupt vector setup, and cycle budget implications of losing the
   KERNAL IRQ chain.
 
@@ -486,9 +482,9 @@ custom_nmi:
 ### Symptom
 
 A C64 program built with a high-level toolchain (Oscar64, cc65) boots, runs its
-init, then crashes — often back to the BASIC `READY.` prompt — after a code
+init, then crashes (often back to the BASIC `READY.` prompt) after a code
 change that only touched logic far from the boot path. The init runs far enough
-to set early globals (a sentinel byte you poll reads as initialised), but the
+to set early globals (a polled sentinel byte reads as initialised), but the
 main loop never starts. Adding *more* unrelated code makes the crash appear or
 worsen; reverting a few hundred bytes of code makes it vanish. The crash is
 sensitive to total program size, not to the content of the change.
@@ -496,44 +492,44 @@ sensitive to total program size, not to the content of the change.
 ### Mechanism
 
 C compilers place code and read-only data contiguously from the load address
-upward; the linker grows the code/data image toward higher addresses as you add
-functions and string literals. Custom-graphics C64 programs frequently blit a
+upward; the linker grows the code/data image toward higher addresses as
+functions and string literals are added. Custom-graphics C64 programs frequently blit a
 charset to a *hardcoded* VIC address (commonly `$3000` or `$3800` in bank 0) and
 sprite/bitmap data to other fixed addresses, deliberately time-sharing those
 addresses with const data (e.g. a title bitmap that was already copied elsewhere
 at startup). This works only while an **implicit invariant** holds: the code
 section ends *below* the lowest hardcoded blit address.
 
-Nothing enforces that invariant. The compiler does not know `$3000` is special —
-it is just a literal pointer in a `memcpy`. When the code section grows past the
+Nothing enforces that invariant. The compiler does not know `$3000` is special;
+it is a literal pointer in a `memcpy`. When the code section grows past the
 blit address, the runtime blit (e.g. `init_charset()` writing 2 KB of glyph data
 to `$3000`) overwrites *live executable code* with charset bytes. Execution
 survives until the CPU calls a function that now lives in the clobbered range and
-runs glyph data as instructions — typically a `JAM`/`BRK` storm or a stray `RTS`
+runs glyph data as instructions: typically a `JAM`/`BRK` storm or a stray `RTS`
 that unwinds into the KERNAL warm-start, i.e. `READY.`.
 
-`$D018` is the register that makes the blit address load-bearing: its low nibble
+`$D018` is the register that pins the blit address: its low nibble
 selects the charset/bitmap offset within the VIC bank, so the asset *must* live
-at that fixed 2 KB-aligned (charset) or 8 KB-aligned (bitmap) address — it cannot
-simply be relocated to wherever the linker has free space.
+at that fixed 2 KB-aligned (charset) or 8 KB-aligned (bitmap) address; it cannot
+be relocated to wherever the linker has free space.
 
 ### Fix
 
 1. **Diagnose with the linker map.** Oscar64 emits a `.MAP` on every build; its
    `sections` list shows `<start> - <end> : DATA, code` (address range first,
-   then the name — an earlier version of this step had the order reversed, so a
+   then the name; an earlier version of this step had the order reversed, so a
    grep for `DATA, code :` finds nothing). Compare the code-section end
    against every hardcoded blit address. If `code_end > charset_addr`, that is the
    bug. (cc65: read the map's segment list the same way.)
 2. **Move the blit targets to the top of the bank**, above the projected code
    ceiling: put the charset at the highest 2 KB-aligned slot in the bank (bank 0
    → `$3800`) and any sprite/extra data just below it at the right alignment.
-   Update the asset pointer register write — with Oscar64's `vic_setmode(mode,
+   Update the asset pointer register write. With Oscar64's `vic_setmode(mode,
    screen, charset)` this is automatic; in assembly recompute `$D018` and the
    sprite-pointer bytes by hand.
 3. **Document the surviving invariant** ("code must end below `$3780`") next to
-   the address constants, because step 2 only raises the ceiling — it does not
-   remove it. The durable cure is to move the graphics to a VIC bank that does
+   the address constants, because step 2 only raises the ceiling; it does not
+   remove it. The lasting fix is to move the graphics to a VIC bank that does
    not overlap the program image at all, or to shrink the time-shared const.
 
 ### Worked example
@@ -558,10 +554,10 @@ simply be relocated to wherever the linker has free space.
 - Register `D018` — VMCSB; high nibble = screen offset, low nibble bits 1-3 =
   charset offset (× $0800), bit 3 = bitmap offset (× $2000). Forces graphics
   assets to fixed bank-relative addresses.
-- Pitfall `vic_bank_visibility_collision` — the other half of the layout story:
+- Pitfall `vic_bank_visibility_collision` — the other layout constraint:
   once assets are correctly placed, they must all share one 16 KB VIC bank.
 - Toolchain `oscar64-reference` — the `.MAP` "objects by size" / region list is
-  the primary diagnostic for an over-large image; Oscar64 places BSS/heap/stack
+  the diagnostic for an over-large image; Oscar64 places BSS/heap/stack
   above the code+data image, so a growing image walks toward fixed asset
   addresses with no build-time warning.
 
@@ -576,7 +572,7 @@ simply be relocated to wherever the linker has free space.
 
 ### Symptom
 
-The program stops dead somewhere inside a character ROM copy, or just
+The program stops somewhere inside a character ROM copy, or just
 after one. No crash to `READY.`, no garbage, no border flash: the
 screen stays as it was. If the copy was meant to be followed by a
 `$D018` write, the font never changes. A machine in this state does not
@@ -699,7 +695,7 @@ then sets a byte:
   store happens and the border changes, but the line is not on the
   screen. The eleven screen codes were found at `$4CC7`, an address in
   otherwise unused RAM well above the payload (which ends at `$1433`):
-  it is nothing more than the two decruncher bytes left in the editor's
+  it is the two decruncher bytes left in the editor's
   line pointer `$D1/$D2` (`$4CBA`) plus its column `$D3` (`$0D`).
 
 The same payload crunched with Dali's standard `--sfx` and with pucrunch
@@ -735,8 +731,7 @@ each decrunch cost under a quarter of a second of emulated time.
 | Dali `--sfx --small` | 178 (`$01` to `$B7`) | `$34` | `$02` | no |
 | bitfire `zx0 --sfx` | 201 (`$02` to `$D4`) | `$37` | `$A6` | no |
 
-The two failures have different fatal bytes, and neither is the one a
-first guess would name:
+The two failures have different fatal bytes:
 
 - **Dali `--small`** leaves `$01` at `$34`. `JSR $FFD2` then executes
   the last bytes of the crunched stream, which the stub parked under
@@ -750,8 +745,8 @@ first guess would name:
   starts CIA2's timer and enables its NMI; the NMI handler at `$FE47`
   then re-enters about every 75 cycles, the stack pointer falls six
   bytes per entry, and the payload never runs again. It is not a wait
-  loop: the routine's buffer check at `$F017` ran once. Restoring `$01` and `$9A` (with `$99` for
-  good measure) and nothing else made the payload print on the
+  loop: the routine's buffer check at `$F017` ran once. Restoring `$01` and `$9A` (and `$99`)
+  and nothing else made the payload print on the
   original screen, at the row `RUN` left the cursor on.
 - **bitfire** hands over with the KERNAL mapped: the last thing its
   zero-page decruncher does before the jump is `DEC $01`, thirteen
@@ -768,8 +763,8 @@ first guess would name:
   KERNAL's variables are wrong in three different ways, and the list
   stops there only because the payload calls nothing else.
 
-The two stubs that pass are not clean either, and the difference is
-what they touch. Dali's standard stub pushes the zero page onto the
+The two stubs that pass also change the zero page, but not bytes the
+print path reads. Dali's standard stub pushes the zero page onto the
 stack before the copy and pops it back before the jump; it entered the
 payload with the stack pointer at `$FF`, ten bytes of its own exit code
 still at `$E3` to `$EC` (in the screen line link table), and BASIC's
@@ -777,13 +772,13 @@ pointers at `$2D` to `$32`, `$39/$3A` and `$AE/$AF` rewritten, none of
 which the print path reads. Pucrunch's decruncher sits at `$F7` to `$FF`
 and leaves those nine bytes changed, plus the same BASIC pointers; the
 KERNAL's own variables are below `$F7` and the RS-232 pointers at `$F7`
-to `$FA` are idle. Pucrunch is on the Triggered-by line for those nine
-unsaved bytes all the same: `$F7` to `$FA` are the RS-232 buffer
+to `$FA` are idle. Pucrunch is still on the Triggered-by line for those nine
+unsaved bytes: `$F7` to `$FA` are the RS-232 buffer
 pointers, `$FB` to `$FE` the free zero page a payload may already be
 using, `$FF` BASIC's float-to-ASCII workspace, and `$2D/$2E` BASIC's
 end-of-program pointer, so a payload that expects any of them to hold
-what they held before the stub ran meets the same mechanism on a
-narrower front; this payload did not. The Doynax self-extractor copies its depacker to
+what they held before the stub ran meets the same mechanism on fewer
+bytes; this payload did not. The Doynax self-extractor copies its depacker to
 `$00C2` and up (its technique entry says so); whether it saves what it
 covers was not measured here.
 
@@ -908,12 +903,11 @@ so this entry anchors on the technique alone.
 
 ### Symptom
 
-The first bank switch of an EasyFlash program is also its last sane
-instruction. Code that runs to the `STA $DE00` and then crashes, or runs a
-routine nobody called, or leaves the screen and border colours the previous
-bank's code would never have chosen. The same routine works when the test
+An EasyFlash program goes wrong at its first bank switch. Code runs to
+the `STA $DE00` and then crashes, or runs a routine nobody called, or leaves
+the screen and border colours the previous bank's code would never have chosen. The same routine works when the test
 build copies it to RAM and runs it there, and fails again the moment it is
-run from the cartridge. Debugging is confusing because the store itself is
+run from the cartridge. The store itself is
 fine: a monitor confirms the bank register took the value.
 
 The mode-register form is worse. A `STA $DE02` written in bank 0 HIROM at
@@ -926,7 +920,7 @@ code from wherever the PC happened to be.
 The 6510 does not know a bank switch happened. `STA $DE00` is four cycles:
 opcode, operand low, operand high, write. The cartridge latches the new bank
 number on the write, which is the instruction's last cycle, so the store
-always completes and the accumulator keeps its value. The very next cycle is
+always completes and the accumulator keeps its value. The next cycle is
 the next opcode fetch, at the next address, and if that address is inside
 `$8000-$9FFF` (or `$A000-$BFFF` in 16 KB mode) the fetch is served by the
 NEW bank. Whatever bytes the new bank holds at that offset are executed as
@@ -983,7 +977,7 @@ are the KERNAL ROM's (901227-03, offsets `$0027-$002F`), not the
 cartridge's. `$0400` stayed `$00` and the border stayed light blue: nothing
 after the store in HIROM ever ran.
 
-The whole of the pitfall is therefore in the bytes at the ADDRESS AFTER the
+The fault is therefore in the bytes at the ADDRESS AFTER the
 store. Two things make it safe: the code after the store lives in RAM, which
 no bank register touches; or every bank that can be selected carries the
 same bytes at that address, so it does not matter which one serves the
@@ -1045,9 +1039,8 @@ stub:
 stub_end:
 ```
 
-The alternative fix is not code but layout: the bytes at the switch site
-must be the same in every bank. That is a property of the built `.crt`, so
-check it there.
+The other fix is layout: identical bytes at the switch site in every bank,
+checked in the built `.crt`.
 
 ### Cross-references
 

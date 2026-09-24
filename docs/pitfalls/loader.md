@@ -6,16 +6,13 @@ category: loader
 
 # Loader Pitfalls
 
-The pitfalls in this document share a common thread: they all arise from
-the gap between what a fast loader expects and what the surrounding program
-(or its build toolchain) provides. Fast loaders are invasive by design — they patch KERNAL vectors, bypass
-the 1541 ROM entirely, and assume that the drive's hardware is exactly as stock as
-the day it left the factory. Any code that assumes it can restore "normal" state,
-any hardware that deviates from 1541 timing, and any program data layout that
-conflicts with the BASIC stub can each silently corrupt loading in ways that look
-like intermittent hardware failure. The pitfalls below have burned every C64
-coder who encountered them for the first time: the symptoms appear random but the
-mechanisms are completely deterministic.
+Each pitfall here comes from a mismatch between what a fast loader expects
+and what the surrounding C64 program (or its build toolchain) provides. Fast
+loaders patch KERNAL vectors, bypass the 1541 ROM, and assume the drive is
+stock. Code that restores "normal" state, hardware that deviates from 1541
+timing, and a data layout that conflicts with the BASIC stub can each corrupt
+loading silently. The symptoms look like intermittent hardware failure; the
+mechanisms are deterministic.
 
 ---
 
@@ -29,15 +26,14 @@ mechanisms are completely deterministic.
 ### Symptom
 
 A production installs a `$FFD5`-hooking fast loader successfully during startup. The first
-part loads at full speed. After the first part installs its own raster IRQ handler
-— or after any block of initialization code that includes "restore KERNAL vectors"
-as a housekeeping step — subsequent LOAD calls revert to the slow KERNAL serial
-protocol. The second part loads in 130 seconds instead of 6 seconds. On hardware
-with a serial bus that has even marginal IEC signal quality, the slow KERNAL
-protocol may also produce read errors that never appeared with the fast path
-active.
+part loads at full speed. After the first part installs its own raster IRQ handler,
+or runs any initialization block that includes "restore KERNAL vectors" as a
+housekeeping step, later LOAD calls revert to the slow KERNAL serial
+protocol. The second part loads in 130 seconds instead of 6 seconds. On a serial
+bus with marginal IEC signal quality, the slow KERNAL protocol may also produce
+read errors that never appeared with the fast path active.
 
-A subtler variant: code that calls KERNAL `RESTOR` (`$FF8A`, no arguments — an
+A subtler variant: code that calls KERNAL `RESTOR` (`$FF8A`, no arguments; an
 earlier version of this page said `$FF8D, mode=0`; `$FF8D` is `VECTOR`) at the
 start of initialization resets all sixteen KERNAL RAM vectors `$0314-$0333` to
 their ROM defaults, including `$0330/$0331` (the LOAD vector). This silently undoes
@@ -50,17 +46,17 @@ Loaders that interpose on the KERNAL LOAD hook `ILOAD` at `$0330/$0331` so that
 The KERNAL jump table entry at `$FFD5` (LOAD) is `JMP $F49E`; `$F49E` saves X/Y
 to `$C3/$C4` and then jumps through `$0330` (`ILOAD`, two bytes, little-endian),
 whose ROM default is `$F4A5` (KERNAL 901227-03, read from the `$FD30` vector
-table — rung 1; an earlier version of this page gave `$FA31`, which is inside the
+table, rung 1; an earlier version of this page gave `$FA31`, which is inside the
 tape-read code). A hooking loader overwrites `$0330/$0331` with the address of
-its own C64-side receive loop, and all subsequent `JSR $FFD5` calls take the fast
-path transparently.
+its own C64-side receive loop, and every later `JSR $FFD5` call takes the fast
+path.
 
-Krill v194 does NOT work this way, and neither does Sparkle — an earlier version
+Krill v194 does NOT work this way, and neither does Sparkle; an earlier version
 of this page said both did. Krill's API (`install`/`loadraw`/`loadcompd`) is
-called directly and its source contains no write to `$0330` — not even in
+called directly and its source contains no write to `$0330`, not even in
 `LOAD_VIA_KERNAL_FALLBACK` mode, whose fallback path calls `OPEN`/`CHKIN`/`BASIN`
 byte-by-byte rather than `$FFD5` (from the v194 source as read for this
-correction; the source is not on this machine, so rung 4 here — the technique
+correction; the source is not on this machine, so rung 4 here; the technique
 page `../techniques/loaders-packers.md` "v194 concrete integration reference"
 agrees that the documented usage never goes through `$FFD5`). Sparkle's IRQ
 loader uses no KERNAL routine at all (see `sparkle_irq_loader`, "Uses kernal:
@@ -85,7 +81,7 @@ targets. Three common culprits:
 
    (An earlier version of this block wrote `$FA31`, which is inside the KERNAL's
    tape-read code, and spelled the mnemonics in capitals, which KickAssembler 5.25
-   rejects — "Pseudo command SEI not defined"; the fence had never been assembled.)
+   rejects ("Pseudo command SEI not defined"); the fence had never been assembled.)
 
    This pattern appears in generic IRQ-setup templates where the author
    intended only to stabilize the IRQ vector (`$0314/$0315`) but copied a
@@ -105,24 +101,24 @@ targets. Three common culprits:
 3. **Cold-start or warm-start flow.** A production that jumps to `$FCE2`
    (KERNAL RESET / cold start) or `$FE66` (the KERNAL RUN/STOP-RESTORE warm
    start) as part of a "reset to safe state" sequence will reinitialize RAM
-   vectors — both paths run RESTOR (`$FD15`, the body behind `$FF8A`), which
+   vectors: both paths run RESTOR (`$FD15`, the body behind `$FF8A`), which
    rewrites `$0314-$0333` from the ROM table. An earlier version of this page
    named `$FD15` itself as the warm start; it is the RESTOR body, rung 1 from
    the ROM bytes. This is rare but occasionally appears in cracktros that chain
    off a previous production's reset path.
 
-The fastloader's drive-side code is unaffected — it remains running in the
-1541's RAM until the drive is reset. The C64 side is what breaks: the receive
-loop address is gone, and `JSR $FFD5` now calls the slow ROM routine. Because
-the drive is still in its fast-protocol mode, the slow ROM routine and the fast
-drive protocol are completely mismatched. Depending on the loader and the
-drive state, this manifests as extremely slow loading (the drive times out and
+The fastloader's drive-side code is unaffected: it keeps running in the
+1541's RAM until the drive is reset. The C64 side breaks: the receive
+loop address is gone, and `JSR $FFD5` now calls the slow ROM routine. The
+drive is still in its fast-protocol mode, so the slow ROM routine and the fast
+drive protocol do not match. Depending on the loader and the
+drive state, the result is very slow loading (the drive times out and
 falls back to a safe state), as a hung bus (the drive is waiting for the fast
 handshake that never comes), or as a "?FILE NOT FOUND" error.
 
 ### Fix
 
-Two approaches, depending on what the IRQ setup code actually needs:
+Two approaches, depending on what the IRQ setup code needs:
 
 **Option A — Save and restore the LOAD vector around IRQ install:**
 
@@ -157,9 +153,9 @@ saved_load_hi: .byte 0
 
 (An earlier version of this listing was in capitals, which KickAssembler 5.25
 rejects; it now assembles.) Both the save and the restore sit inside the
-`SEI`/`CLI` window here only to keep the example compact; in practice, save the
+`SEI`/`CLI` window here only to keep the example compact. In practice, save the
 vector before any code that might disturb it, and restore it as soon as that code
-has run — before `CLI` if an IRQ handler reads the LOAD vector. (An earlier
+has run (before `CLI` if an IRQ handler reads the LOAD vector). (An earlier
 version of this sentence said the save was "before `SEI`", which described a
 different listing.)
 
@@ -171,7 +167,7 @@ same block from a caller-supplied table; an earlier version of this page named
 only `$FF8D`, so a search that followed it missed every real `JSR $FF8A`). Unless
 there is a deliberate reason to restore the LOAD vector,
 delete those writes. The IRQ vector at `$0314/$0315` can be patched without
-touching the LOAD vector — they are independent RAM vectors.
+touching the LOAD vector; they are independent RAM vectors.
 
 **What this page used to say, and no longer does.** An earlier version carried an
 "Option C — re-run Krill install after IRQ setup", claiming the installer was
@@ -180,14 +176,14 @@ IRQ dispatched through the LOAD vector on every block. Neither loader touches
 `$0330`, so there is no vector to re-patch; Krill's `install` tests CIA2 DDRA for
 an existing installation and returns OK without doing anything, and if that test
 fails while the drive is already in loader mode a second `install` hangs on the
-KERNAL serial path (rung 4 here — the Krill source is not on this machine). Both
+KERNAL serial path (rung 4 here; the Krill source is not on this machine). Both
 passages were deleted.
 
 **The real Krill hazards** are the ones `../techniques/loaders-packers.md`
-already documents, and they have nothing to do with `$0330`:
+documents, and neither involves `$0330`:
 
 - Any raw write to `$DD00`/`$DD02` (a VIC-bank switch, a generic CIA init) while
-  Krill is armed corrupts its bus-lock/installed-state test — see
+  Krill is armed corrupts its bus-lock/installed-state test; see
   `fastloader_dd00_write_corrupts_resident` below. This is Krill's rule only;
   Sparkle prescribes a `$DD02` write for the VIC bank (an earlier version of
   this bullet said "the loader", which read as a rule for every loader).
@@ -216,7 +212,7 @@ already documents, and they have nothing to do with `$0330`:
 A demo that loads cleanly on a real stock 1541 hangs indefinitely on an SD2IEC,
 corrupts data silently on a 1571 running in 1541-compatibility mode, produces
 random read errors on a JiffyDOS-modified 1541, or loads correctly on PAL but
-not on NTSC. The loading symptom looks like a hardware fault — the drive's
+not on NTSC. It looks like a hardware fault: the drive's
 activity LED may flash abnormally, or the C64 may freeze at the loading screen
 with no visible error. On SD2IEC the LED typically blinks in an error pattern;
 on a JiffyDOS 1541 the machine may hang at the first block receive with the
@@ -227,10 +223,10 @@ that fails on SD2IEC loads correctly every time on a real 1541.
 
 ### Mechanism
 
-GCR-level fast loaders — Krill, Sparkle, and similar — bypass the KERNAL's IEC
-serial routines entirely. Instead of calling `IECIN` or `IECOUT`, they install
-custom drive-side code (via `M-W`/`M-E` commands) and then communicate with that
-code using direct bit-banging of CIA2 `$DD00` on the C64 side. The C64-side
+GCR-level fast loaders (Krill, Sparkle and similar) bypass the KERNAL's IEC
+serial routines. Instead of calling `IECIN` or `IECOUT`, they install
+custom drive-side code (via `M-W`/`M-E` commands) and talk to that
+code by bit-banging CIA2 `$DD00` on the C64 side. The C64-side
 receive loop is a tight, cycle-counted loop. Each iteration tests a specific bit
 of `$DD00` (the CLK line, bit 6, or the DATA line, bit 7) and waits for a
 transition within a hard cycle-count window.
@@ -238,10 +234,9 @@ transition within a hard cycle-count window.
 The drive-side code sends each byte at a cadence tuned to the stock 1541's 1 MHz
 6502 clock (1,000,000 cycles per second at the drive's internal clock rate). The
 C64-side loop expects each bit transition to arrive within a window of
-approximately 4-6 µs. If the drive's bit timing deviates — because it is running
-at a different clock speed, because it has different VIA peripheral chip
-characteristics, or because its protocol is JiffyDOS rather than the Krill
-protocol — the C64-side loop times out. Depending on the loader's error handling,
+approximately 4-6 µs. If the drive's bit timing deviates (a different clock
+speed, different VIA peripheral chip characteristics, or the JiffyDOS protocol
+instead of the Krill protocol), the C64-side loop times out. Depending on the loader's error handling,
 a timeout either hangs (spin loop) or returns a garbled byte.
 
 Common non-stock configurations and why each fails:
@@ -250,41 +245,41 @@ Common non-stock configurations and why each fails:
 Commodore DOS level. It speaks the standard KERNAL IEC serial protocol but does
 not emulate GCR at the hardware level at all. `M-W`/`M-E` commands either return
 an error or are silently ignored, so Krill's drive-side code never installs. The
-C64 side then tries to do the fast handshake with a device that has no idea what
-the fast protocol is, and the bus hangs.
+C64 side then attempts the fast handshake with a device that does not speak
+the fast protocol, and the bus hangs.
 
 **1571 in 1541-compatibility mode.** The 1571 can be addressed as device 8 in
 1541 mode, but its VIA chip timings and its internal bus arbitration differ from
 the 1541. Krill's drive-side timing constants were measured on 1541 hardware; the
 1571's slightly different VIA propagation delays shift the bit window outside the
-C64-side tolerance. This causes occasional bit errors that corrupt the loaded data
-in ways that are not immediately obvious — the program may start but behave
-incorrectly because a few bytes of code or data were flipped.
+C64-side tolerance. The result is occasional bit errors that corrupt the loaded
+data without an obvious sign: the program may start but behave incorrectly
+because a few bytes of code or data were flipped.
 
 **JiffyDOS-modified 1541.** JiffyDOS replaces the 1541 ROM with a ROM that
 implements the JiffyDOS burst protocol. When Krill's drive-side code is uploaded
 via `M-W`/`M-E` and executed, it overwrites the JiffyDOS RAM driver in the
-drive's RAM workspace. This usually causes Krill to work correctly on a JiffyDOS
-machine — but only if the Krill version's timing constants were compiled for the
+drive's RAM workspace. Krill then usually works on a JiffyDOS
+machine, but only if the Krill version's timing constants were compiled for the
 stock 1541 MHz clock, and only if the JiffyDOS kernel does not re-initialize the
 RAM workspace between command-channel operations. Some JiffyDOS revisions
 periodically restore their RAM workspace, which can corrupt the in-place Krill
 drive code during a multi-part load sequence.
 
 **NTSC timing.** The C64-side receive loop's cycle counts are valid at PAL's
-0.985 MHz system clock. NTSC runs at 1.022 MHz — approximately 3.8% faster.
+0.985 MHz system clock. NTSC runs at 1.022 MHz, approximately 3.8% faster.
 Each of the four 18-cycle handshake phases in Krill's receive loop resynchronises
 on an ATN edge, so the drift does not accumulate across a byte; what matters is
 the fixed gap of about 10 C64 cycles between toggling ATN and reading the bus,
 which the 1541 (whose 1 MHz clock does not change with the video standard) needs
 up to 14 of its own cycles to beat. At 3.8% that gap shrinks by well under one
-cycle — Krill's own `NTSC_COMPATIBILITY` build restores it by adding exactly one
-cycle to each phase — which is enough to push a phase already at the edge of its
-window over it. (An earlier version of this page said the shift was "roughly 3-4
+cycle, which is enough to push a phase already at the edge of its window over
+it; Krill's own `NTSC_COMPATIBILITY` build restores the gap by adding exactly one
+cycle to each phase. (An earlier version of this page said the shift was "roughly 3-4
 cycles" per window; 3.8% of an 18-cycle phase is 0.7 cycles, and of the whole
-72-cycle byte 2.7 — rung 3 from the phase lengths in
+72-cycle byte 2.7; rung 3 from the phase lengths in
 `../techniques/loaders-packers.md` "Cycle budget".) Krill's build has an NTSC
-switch — the `NTSC_COMPATIBILITY` define in `loaderconfig.inc` (the config file
+switch: the `NTSC_COMPATIBILITY` define in `loaderconfig.inc` (the config file
 selected with `EXTCONFIGPATH=`, or `include/config.inc`) of its cc65/ca65 build;
 it is not a KickAssembler `-D` flag, and it is not a `make` command-line variable
 either (the Makefile does not forward one to ca65). An earlier version of this
@@ -300,7 +295,7 @@ errors on borderline machines.
 **Detect the drive before installing the fast loader.** Ask the DOS for its own
 version string. `M-R` on the command channel returns raw bytes of drive memory,
 and the 1541's power-on message `CBM DOS V2.6 1541` sits in ROM at
-`$E5B7`–`$E5C7`, so the four bytes from `$E5C4` read `1541` — the last of them
+`$E5B7`–`$E5C7`, so the four bytes from `$E5C4` read `1541`. The last of them is
 `$B1`, `'1'` with bit 7 set, which is the message table's end marker, so strip
 bit 7 before comparing. A 1571 answers `1571` from the same address, a 1581
 answers `$FF $FF $FF $FF` (its ROM has nothing there), and what an SD2IEC answers
@@ -309,11 +304,11 @@ VICE 3.10 ships (325302-01+901229-05 and the 1541-II's 251968-03); the
 behaviour is rung 1 in VICE x64sc 3.10 with `-drive8truedrive` on drive types
 1541, 1541-II, 1571 and 1581, where the routine below returned carry clear for
 the 1541 and carry set for the 1571. What the test identifies is the firmware,
-not the mechanism. A 1540 — the same mechanism, older DOS — answers `V170` from
+not the mechanism. A 1540 (the same mechanism, older DOS) answers `V170` from
 that address (rung 1, its ROM image), and a 1541 whose ROM has been replaced
 (JiffyDOS, SpeedDOS, Dolphin DOS) will not say `1541` there either (rung 4; no
 such ROM ships with VICE), so the routine sends both down the KERNAL path. That
-is the safe side to fail on, but note it is stricter than the Mechanism paragraph
+is the safe side to fail on, but it is stricter than the Mechanism paragraph
 above, which says Krill's drive code usually runs on a JiffyDOS 1541. The table of
 images and addresses is in `../formats/iec-disk-reference.md`, "Identifying the
 drive over the command channel".
@@ -378,23 +373,23 @@ reply:
 ```
 
 **Correction (2026-09-21).** The earlier text expected `$41` at `$E5C3` and called
-it "the DOS version byte". `$E5C3` is `$20` — the space between `V2.6` and `1541`
-— in every 1541-family ROM VICE ships (1540, 1541, 1541-II, 1570, 1571), so that
+it "the DOS version byte". `$E5C3` is `$20` (the space between `V2.6` and `1541`)
+in every 1541-family ROM VICE ships (1540, 1541, 1541-II, 1570, 1571), so that
 test never matched and the fast path was never installed. `$41` ("A") is the
 DOS-version marker at offset 2 of the BAM sector, track 18 sector 0, which the
 format routine writes to the disk; the ROM keeps that constant at `$FED5`, not at
 `$E5C3`.
 
-**Provide a KERNAL fallback branch.** The most robust approach is to ship two
+**Provide a KERNAL fallback branch.** Ship two
 load paths: the GCR fast path for stock 1541 hardware, and a `JSR $FFD5` KERNAL
 LOAD fallback for everything else. Detect the drive at startup, set a flag, and
 branch on the flag at each load call. This adds ~50 bytes of overhead but
 eliminates drive-compatibility bugs from the entire production.
 
 Krill's Loader has this built in: set `LOAD_VIA_KERNAL_FALLBACK=1` in
-`loaderconfig.inc` and the loader transparently falls back to the KERNAL load
+`loaderconfig.inc` and the loader falls back to the KERNAL load
 path when drive-code installation fails (incompatible drive such as SD2IEC, or
-true-drive emulation disabled) — no hand-rolled detection branch needed. The
+true-drive emulation disabled), with no hand-rolled detection branch. The
 cost is a larger host-side stub and KERNAL-speed loading on those devices; see
 `../techniques/loaders-packers.md` "v194 concrete integration reference".
 
@@ -402,8 +397,8 @@ cost is a larger host-side stub and KERNAL-speed loading on those devices; see
 compile the Krill C64-side stub twice with the appropriate clock constant and
 select the right binary at startup based on the CIA timer reading (standard PAL/
 NTSC detection: count CIA1 timer ticks per VBL interrupt; PAL = 19,656 cycles,
-NTSC = 17,095 on the 6567R8 (16,768 on the older 6567R56A) — a 15% difference
-that is easy to detect reliably within a single frame. An earlier version of this
+NTSC = 17,095 on the 6567R8 (16,768 on the older 6567R56A), a 15% difference
+that is easy to detect within a single frame. An earlier version of this
 page gave NTSC as ~16,715, which is the NTSC frame time in microseconds, not its
 cycle count; 65 × 263 = 17,095 and 64 × 262 = 16,768, rung 3, matching
 `../hardware/pal-ntsc-reference.md`).
@@ -431,7 +426,7 @@ byte by byte (rung 1); VICE x64sc 3.10 with `-drive8truedrive` for the runs
 ### Symptom
 
 A program loads without error. Typing `RUN` causes BASIC to execute the SYS stub
-and launch the machine code as expected — but the machine code immediately
+and launch the machine code as expected, but the machine code immediately
 behaves incorrectly: the first few reads from the data area return garbage values,
 a lookup table produces wrong results, a sprite shape read from `$0801` produces
 a corrupt sprite, or a character set starting at `$0800` is garbled in its first
@@ -445,7 +440,7 @@ coincides with the BASIC stub's footprint.
 A second pattern: a program that places data at `$0801` and tests it at startup
 reads the correct data in the assembler's simulation but reads BASIC stub bytes
 on real hardware or in VICE, because the programmer forgot that the loaded PRG
-begins with the stub at `$0801` — the data they assembled at `$0801` was
+begins with the stub at `$0801`: the data they assembled at `$0801` was
 overwritten by the stub in the final PRG layout.
 
 ### Mechanism
@@ -472,7 +467,7 @@ $080C    $00    End of BASIC program (link hi = 0)
 $080D    ...    First byte of machine code (entry point = 2061 decimal)
 ```
 
-This layout means that `$0801` through `$080C` (inclusive — 12 bytes) belong to
+This layout means that `$0801` through `$080C` (inclusive, 12 bytes) belong to
 BASIC, and the machine code proper begins at `$080D`. Any data the programmer
 places at addresses `$0801` through `$080C` will be overwritten by the stub
 bytes above when the final PRG is assembled with the standard BASIC autostart.
@@ -494,16 +489,15 @@ target is `2064` (`$0810`) but data is placed starting at `$080D`, the region
 `$080D`-`$0810` is ambiguously both stub and data and will contain the stub's
 trailing null bytes.
 
-Note that `SYS 2064` points to `$0810`, not `$080D`. The difference of three
+`SYS 2064` points to `$0810`, not `$080D`. The difference of three
 bytes is the end-of-program null word (`$0000`) plus one byte of alignment in
 some assembler output. Different assemblers and different stub templates produce
-slightly different layouts; the canonical addresses to check are wherever the
-PRG assembles the stub and wherever the PRG's data begins — if they overlap, the
-collision exists regardless of which specific addresses are involved.
+slightly different layouts. Check where the PRG assembles the stub and where
+the PRG's data begins; if they overlap, the collision exists.
 
 ### Fix
 
-Three options, each with different trade-offs:
+Three options:
 
 **Option A — Move data after the stub (preferred for new code).**
 
@@ -535,7 +529,7 @@ again after launch).**
 
 The BASIC stub is only needed once: for the initial `RUN` that invokes `SYS`.
 After `SYS` transfers control to machine code, the stub bytes at `$0801`-`$080C`
-are dead — BASIC is no longer running and the BASIC program area is not used by
+are dead: BASIC is no longer running and the BASIC program area is not used by
 the machine code. The entry code can immediately overwrite those bytes with real
 data:
 
@@ -565,7 +559,7 @@ real_data:
 This technique is common in 256-byte intros where every available byte of address
 space is used and the stub area must double as a data carrier. (The Option A and
 Option B listings were in capitals until 2026-09-22, which KickAssembler 5.25
-rejects — "Pseudo command JMP not defined" — so neither had ever been assembled;
+rejects ("Pseudo command JMP not defined"), so neither had ever been assembled;
 both build now.)
 
 **Option C — Use a CRT (cartridge) format to bypass the BASIC stub entirely.**
@@ -584,10 +578,10 @@ data placement does not overlap the stub using the `.assert` directive:
 ```
 
 If data is intended to start at exactly `$080D` (immediately after the stub), also
-ensure the SYS target in the stub matches: `SYS 2061` for entry at `$080D`,
+check that the SYS target in the stub matches: `SYS 2061` for entry at `$080D`,
 `SYS 2064` for entry at `$0810`. Mismatches between the SYS operand and the
-actual entry label are a second source of subtle boot failures distinct from the
-data collision described above.
+actual entry label are a second cause of boot failures, separate from the
+data collision.
 
 ### Cross-references
 
@@ -604,19 +598,18 @@ data collision described above.
 
 ### Symptom
 
-You build Krill's Loader from source, the build is clean (exit 0, no warnings),
-the blobs are the expected size and disassemble to sane code — but at runtime the
+Krill's Loader builds from source cleanly (exit 0, no warnings), and
+the blobs are the expected size and disassemble to sane code, but at runtime the
 installed loader does not work: `install` either hangs or returns
-`DEVICE_NOT_PRESENT` (`$FE`), and `loadraw` never succeeds. Meanwhile Krill's own
-*prebuilt* `loadertest-cNN.d64` (shipped in the archive) runs perfectly in the
-same emulator, which makes it look like your integration is at fault when the real
-culprit is the assembler.
+`DEVICE_NOT_PRESENT` (`$FE`), and `loadraw` never succeeds. Krill's own
+*prebuilt* `loadertest-cNN.d64` (shipped in the archive) runs in the
+same emulator, so the integration looks at fault when the assembler is.
 
 ### Mechanism
 
 Krill's Loader (repository version 194, 2022) is developed against cc65 **git
 master**, not the last tagged release. The Homebrew/distro `cc65` is **V2.18**
-(2018) — four years of cc65 codegen changes behind. Some construct in Krill's
+(2018), four years of cc65 codegen changes behind. Some construct in Krill's
 drive/host code is miscompiled by 2.18 in a way that passes assembly cleanly but
 breaks the cycle-exact serial protocol, so the drive never responds. Verified
 2026-05-20: Homebrew cc65 2.18 → broken loader; cc65 git **V2.19** (`cc3c40c`) →
@@ -632,8 +625,8 @@ PATH=<cc65-git>/bin:$PATH CC65_HOME=<cc65-git> make -C loader/src PLATFORM=c64 p
 ```
 
 Validate against Krill's prebuilt `loadertest` first: if the prebuilt works in
-your emulator but your freshly-built loader does not, suspect the assembler before
-your integration. Also note `make-loadersymbolsinc.pl` calls `grep -P`, so on
+the emulator but the freshly built loader does not, suspect the assembler before
+the integration. `make-loadersymbolsinc.pl` calls `grep -P`, so on
 macOS put GNU grep ahead of BSD grep or the symbol-file step errors.
 
 ### Cross-references
@@ -652,7 +645,7 @@ macOS put GNU grep ahead of BSD grep or the symbol-file step errors.
 ### Symptom
 
 A fast loader whose resident/host code is placed low in RAM (e.g. `RESIDENT=$0200`)
-hangs the moment `install` runs — before the first load. Move the resident
+hangs as soon as `install` runs, before the first load. Move the resident
 elsewhere and install completes normally.
 
 ### Mechanism
@@ -662,13 +655,13 @@ upload the drive code via `M-W`. KERNAL `OPEN` writes the logical-file tables
 (LAT/FAT/SAT) at **`$0259-$0276`**, and `$0200-$0258` is the BASIC/KERNAL input
 buffer. A resident placed at `$0200` (e.g. `$0200-$02EC`) overlaps that workspace;
 the KERNAL OPEN corrupts the resident (or vice-versa) mid-install, so the
-handshake never completes. The address looks "free" because nothing visible uses
-it once BASIC is out of the way — but the KERNAL serial path does.
+handshake never completes. The address looks free because nothing visible uses
+it once BASIC is out of the way, but the KERNAL serial path does.
 
 ### Fix
 
 Place the resident outside KERNAL/BASIC zero-page-adjacent workspace. The free
-4 KB block at `$C000-$CFFF` works well: put the (transient) installer at `$C000`
+4 KB block at `$C000-$CFFF` works: put the (transient) installer at `$C000`
 and the (persistent) resident just above it (e.g. `$CD00`). Verified 2026-05-20:
 `RESIDENT=$0200` hung install; `RESIDENT=$CD00` fixed it.
 
@@ -689,8 +682,8 @@ and the (persistent) resident just above it (e.g. `$CD00`). Verified 2026-05-20:
 ### Symptom
 
 A GCR fast loader is installed and one load works. Then the program switches VIC
-graphics mode or VIC bank (anything that writes CIA2 `$DD00`) — e.g. a bitmap
-title screen toggling to a text play screen — and the *next* `loadraw` (or
+graphics mode or VIC bank (anything that writes CIA2 `$DD00`, e.g. a bitmap
+title screen toggling to a text play screen), and the *next* `loadraw` (or
 `uninstall`) hangs. The first load worked, so the loader looks fine until the mode
 switch; the hang then looks unrelated to graphics.
 
@@ -698,11 +691,11 @@ switch; the hang then looks unrelated to graphics.
 
 `$DD00` is shared: bits 0-1 select the VIC bank, bit 2 is the user-port RS-232 TXD
 line, and bits 3-7 are the IEC bus lines the loader bit-bangs (3-5 ATN/CLK/DATA
-out, 6-7 CLK/DATA in — an earlier version of this page said bits 2-7; see
+out, 6-7 CLK/DATA in; an earlier version of this page said bits 2-7; see
 `../hardware/cia-reference.md` §`$DD00`). While the loader is installed it owns the IEC bits and keeps a
-"bus-lock" state in them. A raw write of the whole `$DD00` byte — exactly what a
+"bus-lock" state in them. A raw write of the whole `$DD00` byte (what a
 VIC-bank set does, including Oscar64's `vic_setmode()` and any
-`STA $DD00` / `LDA #v:STA $DD00` — overwrites the IEC bits with values the loader
+`STA $DD00` / `LDA #v:STA $DD00`) overwrites the IEC bits with values the loader
 did not expect, desyncing the drive protocol. The next drive op then waits forever.
 For Krill, a read-modify-write that changes *only* bits 0-1 while the loader is
 idle is tolerated; a full-byte write, or any write while the loader is
@@ -714,13 +707,13 @@ Krill's rule as the rule for every resident loader.)
 
 Don't keep the loader resident across VIC mode/bank switches. Two options:
 
-1. **Lazy install (robust, verified):** install only around each load batch
+1. **Lazy install (verified):** install only around each load batch
    (probe / level load / load-game), `uninstall` immediately after, then re-assert
    the VIC bank with a read-modify-write (`$DD00 = ($DD00 & $FC) | bank`). With the
    loader uninstalled by default, the drive sits in DOS, so saves are plain KERNAL
-   `krnio` with no uninstall dance and no `vic_setmode` ever runs inside the
-   install→loads→uninstall window. Cost: one drive-code upload per load batch —
-   fine for infrequent loads. (Tideline ships this, VICE-verified 2026-05-20.)
+   `krnio` with no uninstall step and no `vic_setmode` ever runs inside the
+   install→loads→uninstall window. Cost: one drive-code upload per load batch,
+   acceptable for infrequent loads. (Tideline ships this, VICE-verified 2026-05-20.)
 2. If the loader must stay resident, switch the bank the way that loader
    documents. None of these was run here; each rule is from the loader's own
    documentation (rung 4 here).
@@ -765,7 +758,7 @@ A tool, a loader's own D64 reader or a page reads the 683-byte error block appen
 
 ### Mechanism
 
-The 1541 has two processors' worth of logic in one 6502: the floppy controller side runs sector jobs and hands back a one-byte return code, and the DOS side turns that code into the number and text on the error channel. The D64 error block stores the controller's return code, one byte per sector in track then sector order. `$01` is a clean read. The codes an image can carry, and what the error channel prints for each, measured on the windowless x64sc build of VICE 3.10 with `-drive8truedrive -drive8type 1541` and a `U1` block read of each flagged sector:
+The 1541's one 6502 runs two layers of code: the floppy controller side runs sector jobs and hands back a one-byte return code, and the DOS side turns that code into the number and text on the error channel. The D64 error block stores the controller's return code, one byte per sector in track then sector order. `$01` is a clean read. The codes an image can carry, and what the error channel prints for each, measured on the windowless x64sc build of VICE 3.10 with `-drive8truedrive -drive8type 1541` and a `U1` block read of each flagged sector:
 
 | Byte | Controller condition | DOS number | Measured on VICE 3.10 |
 |------|----------------------|-----------|-----------------------|
@@ -782,7 +775,7 @@ The 1541 has two processors' worth of logic in one 6502: the floppy controller s
 
 VICE 3.10 honours `$02`, `$03`, `$04`, `$05`, `$09` and `$0B` by building the sector's GCR with the named field spoiled (`gcr.c` in its source: sync bytes, header block ID, data block ID, the two checksums, the header's disk ID). It ignores `$07`, `$08` and `$0F`, so a read of such a sector returns `0, OK`. Codes `$0A` and `$10` were not measured here.
 
-Two rows say the printed number depends on how many sectors on the track are flagged. That is the drive ROM's doing, not the emulator's: VICE spoils only the flagged sector, and a ROM that cannot find the header it wants reports `20` whether the header is missing, has a wrong checksum or has a wrong ID. `21` (no sync at all) and `29` (ID mismatch) appear when every sector on the track carries the code. A first version of this measurement put all the flags on track 1 and read `29` for the `$02` and `$05` sectors and `20` for the `$0B` one: a wrong-ID header on the same track leaks into the ROM's per-track seek. Keep flagged sectors on separate tracks when you test an image tool.
+Two rows say the printed number depends on how many sectors on the track are flagged. The drive ROM causes this, not the emulator: VICE spoils only the flagged sector, and a ROM that cannot find the header it wants reports `20` whether the header is missing, has a wrong checksum or has a wrong ID. `21` (no sync at all) and `29` (ID mismatch) appear when every sector on the track carries the code. A first version of this measurement put all the flags on track 1 and read `29` for the `$02` and `$05` sectors and `20` for the `$0B` one: a wrong-ID header on the same track leaks into the ROM's per-track seek. When testing an image tool, keep flagged sectors on separate tracks.
 
 ### Fix
 
@@ -870,7 +863,7 @@ A tape tool, a TAP-to-PRG converter or a loader's own tape reader treats each pu
 
 The KERNAL tape stream has three pulse lengths, and a bit is a pair of them. Measured from a SAVE recorded on the windowless x64sc build of VICE 3.10 (PAL), one TAP entry per full pulse: short pulses centre on `$2F` (376 cycles, about 382 µs), medium on `$43` (536 cycles, about 544 µs) and long on `$58` (704 cycles, about 715 µs), each cluster a few units wide because the write interrupt reprograms the timer from software. Short then medium is a 0, medium then short is a 1, long then medium is the byte marker that opens every byte, and long then short closes a block copy. A byte is twenty pulses: the marker pair, eight data-bit pairs least significant bit first, and a parity pair that makes the count of ones in the nine bits odd. Every block is written twice, each copy opened by a countdown, `$89` down to `$81` before the first and `$09` down to `$01` before the second, and closed by a one-byte XOR checksum of the data and the end-of-block marker.
 
-A single-pulse model cannot see any of that. It has no symbol for the medium pulse, so it lumps it with one neighbour or the other, and it has no byte boundary, so any timing hiccup shifts every later bit. The confusion is understandable: the leader before a block really is a run of single short pulses, so the first ten seconds of a tape look like a one-pulse-per-bit stream of zeros, and the medium and long pulses only appear once data starts.
+A single-pulse model cannot see any of that. It has no symbol for the medium pulse, so it lumps it with one neighbour or the other, and it has no byte boundary, so any timing hiccup shifts every later bit. The leader before a block is a run of single short pulses, so the first ten seconds of a tape look like a one-pulse-per-bit stream of zeros, and the medium and long pulses only appear once data starts.
 
 ### Fix
 
@@ -938,7 +931,7 @@ A file crunched with Exomizer 3's `mem`, `raw` or `level` command is fed to a de
 
 ### Mechanism
 
-Exomizer 3.0.0 (2018-05-16) changed the crunched bit stream to make the 6502 decruncher faster, and its changelog says the change is incompatible. Which shape the stream takes is set by `-P<bitfield>`, a value from 0 to 63. `exo31info.txt` gives the bits; in our words:
+Exomizer 3.0.0 (2018-05-16) changed the crunched bit stream to make the 6502 decruncher faster, and its changelog says the change is incompatible. Which shape the stream takes is set by `-P<bitfield>`, a value from 0 to 63. `exo31info.txt` gives the bits, paraphrased here:
 
 | Bit | Value | What it changes in the stream |
 |-----|-------|-------------------------------|
@@ -953,7 +946,7 @@ Exomizer 3.0.0 (2018-05-16) changed the crunched bit stream to make the 6502 dec
 
 The stream carries no byte that says which bits it was written with. The decruncher's assumptions are assembled in. In the shipped 6502 decrunchers (`exodecrs/exodecrunch.s` for ca65, and the `kick`, `acme` and `dasm` copies) two of the bits have a switch: `EXTRA_TABLE_ENTRY_FOR_LENGTH_THREE` must be defined for a stream crunched with `-P+16`, and `DONT_REUSE_OFFSET` for one crunched with `-P-32`. Bits 0 to 3 have no switch: those sources read the 3.x form only, so they cannot read a `-P0` stream at all, and a decruncher that reads the `-P0` form cannot read theirs. The readme in `exodecrs/` says the two streaming decrunchers, `exostreamdecr1.s` and `exostreamdecr2.s`, still read the old layout, so streams for them are crunched with `-P0`. The decruncher source also names `DECRUNCH_FORWARDS` for a stream crunched with `-f`, `LITERAL_SEQUENCES_NOT_USED` for `-c` and `MAX_SEQUENCE_LENGTH_256` for `-M256`; the last two are optional size savings, the first is a hard requirement like the `-P` pair.
 
-Why the `-P0` case crashes rather than stalling: the decruncher first builds its tables from the encoding at the head of the stream, then copies literals and back-references downward from the end address the stream names. Read with the wrong bit order, the lengths and offsets are noise. In the measured run the output pointer crossed below the destination start with a store to `$2FFF` at 3,100,944 cycles and wrote another 9,747 bytes, one per address, down through the embedded crunched stream (`$0A8B` to `$0C23` in that build) and the decruncher's own 156-byte table (`$09EF` to `$0A8A`) to `$09EC`, before the CPU executed a `$00` byte and reached `$FE66`, the KERNAL's BRK entry, at 3,377,428 cycles. The KERNAL's BRK path goes through the BASIC warm-start vector, which clears the screen and prints `READY.`; the border colour the harness had set was reset along with it, which is the tell that distinguishes this from a hang.
+Why the `-P0` case crashes rather than stalling: the decruncher first builds its tables from the encoding at the head of the stream, then copies literals and back-references downward from the end address the stream names. Read with the wrong bit order, the lengths and offsets are noise. In the measured run the output pointer crossed below the destination start with a store to `$2FFF` at 3,100,944 cycles and wrote another 9,747 bytes, one per address, down through the embedded crunched stream (`$0A8B` to `$0C23` in that build) and the decruncher's own 156-byte table (`$09EF` to `$0A8A`) to `$09EC`, before the CPU executed a `$00` byte and reached `$FE66`, the KERNAL's BRK entry, at 3,377,428 cycles. The KERNAL's BRK path goes through the BASIC warm-start vector, which clears the screen and prints `READY.`; the border colour the harness had set was reset along with it, which distinguishes this from a hang.
 
 ### Fix
 
@@ -964,7 +957,7 @@ Crunch with the flags the decruncher was built for, and keep the two from the sa
 - A third-party loader with Exomizer decrunching built in (Krill's `loadcompd`, for example): read its release notes for the Exomizer version and flags it expects and crunch with those.
 - `sfx` output needs nothing; the stub always matches its payload.
 
-When a decrunch misbehaves and the cruncher's version is in doubt, `exomizer -v` prints it, and the stream itself has a crude tell: in our `mem -l auto` files of the same input the third byte was `$01` under the defaults and `$80` under `-P0`. That is an observation from one input, not a documented signature.
+When a decrunch misbehaves and the cruncher's version is in doubt, `exomizer -v` prints it, and the stream itself gives a rough hint: in the `mem -l auto` files made here from one input the third byte was `$01` under the defaults and `$80` under `-P0`. That is an observation, not a documented signature.
 
 ### Worked example
 
@@ -1055,7 +1048,7 @@ below.
 A resident drive program that leaves ATNA at 0 therefore gets the same
 hardware answer every time the host asserts ATN: DATA goes low, and
 nothing the program writes to DATA OUT can lift it, because the term is
-or-ed in. Set ATNA to 1 and the mirror image happens: DATA is held low the
+or-ed in. Set ATNA to 1 and the reverse happens: DATA is held low the
 whole time ATN is released, and freed only while ATN is asserted. Either
 way a host that strobes ATN and reads DATA sees ATN, not data.
 
@@ -1094,8 +1087,8 @@ which set the DOS's attention flag at `$7C` from `00` to `01` (measured,
 monitor read at each phase; it stayed `01` after ATN was released), but
 the routine that would act on it, set ATNA and take the bus runs from the
 DOS idle loop (ROM listing, rung 4), and a resident program never returns
-there. So the DOS does not "take over" a bus a resident program holds; it
-only notes that it was asked to.
+there. So the DOS does not take over a bus a resident program holds; it
+only records the request.
 
 ### Fix
 
@@ -1115,9 +1108,8 @@ Either keep ATN out of the data phase, or make the drive program track it.
    half and writes its own drive half without the ATNA update meets this
    pitfall on the first byte.
 
-Both halves matter on the host too: the C64's `$DD00` has no such gate,
-so the host cannot see the problem from its own port; it just reads what
-the drive's hardware put on the line.
+The C64's `$DD00` has no such gate, so the host cannot see the cause
+from its own port; it reads what the drive's hardware put on the line.
 
 ### Worked example
 

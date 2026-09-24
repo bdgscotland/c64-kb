@@ -421,7 +421,7 @@ same one-pixel difference holds at every measured row.
 Control, `XSHIFT = 0`: the frame B screenshot at 4,990,300 cycles has the
 diagonal on 190 and 191 at row 134, and on 32 and 33, 72 and 73, 136 and
 137, 216 and 217, 296 and 297 and 350 and 351 at the other six rows,
-exactly frame A's columns, with 400 light green pixels in the window. The
+frame A's columns, with 400 light green pixels in the window. The
 band stripes still swap between the frames, the diagonal does not move,
 and column 32 is no longer blank. The frame A screenshot of the control
 is byte-identical to the shifted build's.

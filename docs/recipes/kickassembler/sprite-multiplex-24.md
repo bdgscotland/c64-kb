@@ -21,8 +21,8 @@ raster IRQ above each band writes that band's eight sprites into the eight
 hardware slots. The bands are far enough apart that every slot has finished
 drawing band N's sprite before band N+1's IRQ rewrites it. Because the
 animation keeps every sprite inside its band, this recipe does not need the
-per-frame Y sort that a general multiplexer needs; the text says what you
-give up for that.
+per-frame Y sort that a general multiplexer needs; "Why no sort" says
+what that costs.
 
 Verified in VICE x64sc: three rows of eight sprites, three shapes, fifteen
 colours, drifting right and bobbing.
@@ -265,7 +265,7 @@ Y occupies lines Y+1 to Y+21 (measured in VICE 3.10 on PAL and NTSC: Y=100
 draws lines 101–121). From then on it draws 21 lines (42 if Y-expanded) from
 the pointer and X the registers held when each line was drawn, and turns
 the DMA off. So a slot
-whose sprite has finished — its Y plus 21 has passed — can be given a new
+whose sprite has finished (its Y plus 21 has passed) can be given a new
 Y, X, pointer and colour, and will draw a second sprite lower down the same
 frame. Eight slots, three passes, twenty-four sprites.
 
@@ -277,11 +277,11 @@ each band from Y rather than Y+1: 52-89, 116-153, 180-217). Band 1's IRQ
 fires at line 99, after band 0's lowest possible last line (89) and 17
 lines before band 1's highest possible Y (116, first drawn line 117);
 band 2's at 163; band 0's at 227, after band 2 and long before the next
-frame's band 0. Each IRQ has 17 lines — about 940 cycles once the three
+frame's band 0. Each IRQ has 17 lines, about 940 cycles once the three
 badlines in the gap (with YSCROLL=3, lines 99, 107 and 115 for band 1)
-have taken their 43 each, not the "over a thousand" an earlier version
-said — to do its 374 cycles of register writes plus the interrupt
-overhead, so it does not need a stable entry.
+have taken their 43 each, to do its 374 cycles of register writes plus
+the interrupt overhead, so it does not need a stable entry. An earlier
+version said "over a thousand" cycles.
 
 ### Why no sort
 
@@ -289,13 +289,12 @@ A general multiplexer sorts its logical sprites by Y every frame and hands
 them out to slots in that order, because its sprites move freely and any
 eight of them may be the next eight on screen. That sort is the expensive
 and bug-prone part; the earlier version of this recipe had one, and it did
-not work — among other things, it read the sprite Y through `lda spr_y`
+not work: among other things, it read the sprite Y through `lda spr_y`
 without an index and its inner loop shuffled the wrong elements. This
 recipe removes the need for it by construction: the animation keeps every
 sprite within ±8 lines of its band's base Y, so the band membership never
-changes and the slot assignment is static. That is a real restriction
-(sprites cannot cross between bands), and it is the restriction most
-simple games and intros accept. The sorted version is described under
+changes and the slot assignment is static. The cost is that sprites
+cannot cross between bands; most simple games and intros accept that. The sorted version is described under
 `sprite_multiplex_24` in `docs/techniques/sprite.md`.
 
 ### $D010

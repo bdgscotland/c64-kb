@@ -246,7 +246,7 @@ RETURN.
 `getchx()` is Oscar64's non-blocking key fetch: `conio.c` defines `bsin`
 as `$FFE4`, GETIN, and returns whatever GETIN put in A, `0` when the
 queue at `$0277` is empty. `-keybuf` writes into that same queue, so the
-headless run exercises exactly the path a real keypress takes after the
+headless run exercises the same path a real keypress takes after the
 KERNAL's IRQ has scanned the matrix. The loop polls once per frame
 behind `vic_waitFrame()`, which waits on bit 7 of `$D011` (raster line
 256 and above) to clear and then set, so `frames` advances once per

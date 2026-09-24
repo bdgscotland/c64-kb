@@ -443,7 +443,7 @@ coordinates are even here, so a 2 by 2 dot never crosses a cell edge. A
 bullet that can straddle an edge needs two or four cells and as many
 reserved glyphs.
 
-The reverse restore order is what makes shared cells safe. When bullet 1
+The reverse restore order makes shared cells safe. When bullet 1
 is drawn into bullet 0's cell it saves $F8, bullet 0's code, and builds
 its glyph from bullet 0's merged glyph, so both dots show. Restoring
 bullet 1 first puts $F8 back, and restoring bullet 0 next puts the

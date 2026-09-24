@@ -12,7 +12,7 @@ home_url: https://github.com/bdgscotland/c64-kb
 
 ## Tool
 
-This page is a procedure catalogue, not a program. It covers finding a
+This page is a procedure catalogue, not a program: finding a
 PRG's entry point, disassembling with `da65` (cc65 V2.18) driven by an info
 file, walking the KERNAL's interrupt paths, the ROM tables every
 disassembly meets, the byte census, the VICE x64sc 3.10 monitor run in
@@ -398,7 +398,7 @@ What each command gave:
   $D020 on line 41 cycle 52, slot 1 on line 132 cycle 30.
 - `prof flat` ranks functions by the entry address they were called at.
   `a7ed` is in BASIC ROM; `SYS` was issued from there and the program's
-  `JMP *` never returns, which is our reading of why its Self is 94.4%
+  `JMP *` never returns, which is the reading here of why its Self is 94.4%
   (rung 4). The Total column exceeded 100% here; read Self.
 - `save` wrote live memory, not the file: the dump differs from the PRG at
   $08A9-$08AA (`jsr $08D0`, the rewritten operand), $0948 (next slot,
@@ -422,7 +422,7 @@ What each command gave:
 - **`-monlogname` appends.** A second run to the same log name added to
   the end of the first run's log. Use a fresh name or delete it first.
 - **The first log entry is always the reset**, `#1 (Stop on exec fce2)`
-  at clock 6, before any checkpoint of yours.
+  at clock 6, before any checkpoint in the command file.
 - **Labels work.** `ll "labels.vs"` loads a VICE label file (KickAssembler
   writes one with `-vicesymbols`). After it, `break exec .irq` set the
   checkpoint at $0876, and `d` printed `LDX .slot` instead of `LDX $0947`.
@@ -434,7 +434,7 @@ What each command gave:
 
 ## The trace tools: `re-irq-chain` and `re-frame-profile`
 
-Both run the batch monitor for you and return JSON with a rung on each
+Both run the batch monitor and return JSON with a rung on each
 observation. The PRG must be inside the repo or the OS temp directory
 (`os.tmpdir()`, `/var/folders/…/T` on macOS); a path elsewhere is refused
 with `"reason": "path"`.

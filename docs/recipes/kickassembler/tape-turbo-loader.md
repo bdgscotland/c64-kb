@@ -861,7 +861,7 @@ uses the same register and is left out for the same reason. Timer A's
 interrupt is re-enabled afterwards so the KERNAL's clock and keyboard
 scan resume.
 
-The 256-cycle 0 pulse is not arbitrary. An earlier build of this recipe
+The 256-cycle 0 pulse replaced a shorter one. An earlier build of this recipe
 used 208 and 416 cycles with the threshold at 312, and its checksum
 came out `C0` against the tape's `40`: the first data byte read `83`
 for `03`, a 0 read as 376 cycles. The loader had spent about 170

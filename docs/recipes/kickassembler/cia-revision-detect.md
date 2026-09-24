@@ -362,5 +362,4 @@ tells them apart.
 
 The classifier compares against the two pairs measured in VICE. A pair
 that matches neither reports `$FF`; on hardware this recipe has not
-been run, and a machine that gives a third pair is telling you
-something this page does not know.
+been run, and a third pair is a case this page does not cover.

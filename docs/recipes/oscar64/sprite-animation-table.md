@@ -654,7 +654,7 @@ entry is entered, so changing a duration moves the shot with the
 picture, and an animation cut off before that entry never fires. A game
 reads the log (or a flag) after the steps and spawns the bullet there.
 
-The check is honest because the model uses different arithmetic: it
+The check is independent because the model uses different arithmetic: it
 spends the elapsed frames entry by entry from the animation's start, and
 reports an event only when the time runs out exactly on an entry's
 first frame. An off-by-one in the countdown moves every event, as the

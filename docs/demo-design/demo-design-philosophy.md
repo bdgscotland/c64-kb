@@ -226,10 +226,14 @@ distinctive greeting styles across decades of releases.
 bits 0–2) as a way to show more text than fits on screen without flicker. (An earlier version
 said the scroll registers were CIA-timer-driven; they belong to the VIC-II, and a CIA timer
 plays no part in scrolling.) A smooth one-pixel-
-per-frame left scroll of a character row is nearly free on the 6510 in hardware scroll mode (the
-VIC-II fine scroll register, with a software column shift once per full character width). That
-made scrollers the natural medium for group messages: unlimited text, smooth motion, no
-per-character cost. A demo in the oldschool tradition without a scroller reads as deliberately
+per-frame left scroll of a character row is cheap on the 6510: seven frames in eight cost one
+`$D016` write (6 cycles), and on the eighth the 39 characters of the row move left one column,
+about 8 cycles per byte unrolled (LDA abs / STA abs), so ~312 cycles, doubled if colour RAM moves
+too (`../techniques/scroll.md`, `soft_scroll_h` and `char_scroll_buffer_h`; the 312 is arithmetic from its
+per-byte figure). That is
+under 2 % of a 19,656-cycle PAL frame, and the cost grows with the row width, not the text
+length. That made scrollers the natural medium for group messages: unlimited text and smooth
+motion. (An earlier version said the scroll was nearly free with no per-character cost.) A demo in the oldschool tradition without a scroller reads as deliberately
 minimalist. The scroller text is the group's main direct message to the viewer, often more
 personal and candid than anything else the coders had to publish in at the time.
 

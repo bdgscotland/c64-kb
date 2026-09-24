@@ -981,8 +981,8 @@ transfer and moves nothing. It then sets `$01` = `$34` and writes to
 (measured: the 4 KB compared equal at `$34`, and the program went on to
 time and print normally, which it could not do after 4 KB of pattern
 had been written over the VIC and CIA registers; codebase64 describes
-the same use). The check runs at `$34` too. `LDA $FF00` / `STA $FF00` writes back the byte
-already there, so the RAM under the KERNAL is not changed. A test
+the same use). The check runs at `$34` too. `LDA $FF00` / `STA $FF00` writes back the
+byte already there, so the RAM under the KERNAL is not changed. A test
 program that read `$C055` after arming and after a read of `$FF00` found
 it unchanged both times; after the write it held the fetched byte.
 

@@ -6,11 +6,11 @@ category: cia
 
 # CIA Pitfalls
 
-Pitfalls in the two 6526 CIAs that are not about reading the keyboard or
-joysticks — those are in `pitfalls/input.md`. The entries here are about
-the chip's own sequencing rules: registers whose *order* of access is
-part of their contract, so that code which touches them in the wrong
-order gets a wrong answer without any error to show for it.
+Pitfalls in the two 6526 CIAs other than keyboard and joystick reading
+(those are in `pitfalls/input.md`). The entries here are about the
+chip's own sequencing rules: registers whose *order* of access matters.
+Code that touches them in the wrong order gets a wrong answer and no
+error.
 
 ---
 
@@ -23,8 +23,8 @@ order gets a wrong answer without any error to show for it.
 
 ### Symptom
 
-Four different failures, one cause. Which one you get depends on which
-order your code touched `$DC08`-`$DC0B` in.
+Four failures, one cause. Which one appears depends on the order in
+which the code touched `$DC08`-`$DC0B`.
 
 1. **A tenths digit that lags.** A clock display polled once a second
    shows seconds, minutes and hours moving while the tenths digit is
@@ -32,8 +32,8 @@ order your code touched `$DC08`-`$DC0B` in.
    the seconds. The code reads tenths first and hours last.
 2. **A frozen clock.** Every read of the four TOD registers returns the
    same time, forever, although the game has been running for minutes.
-   Somewhere the code read `$DC0B` — often a lone peek at the hours or
-   the AM/PM bit — and never read `$DC08` afterwards.
+   Somewhere the code read `$DC0B` (often a lone peek at the hours or
+   the AM/PM bit) and never read `$DC08` afterwards.
 3. **A clock that never starts.** The program sets the time and the
    registers read back exactly what was written, an hour later. The
    code wrote tenths first and hours last.
@@ -52,31 +52,30 @@ that corrected them is below.
 
 ### Mechanism
 
-The 6526's time-of-day clock is four BCD registers — tenths (`$DC08`),
-seconds (`$DC09`), minutes (`$DC0A`), hours with the AM/PM flag in bit 7
-(`$DC0B`) — counting a 50 Hz or 60 Hz input on the chip's TOD pin. Two
-sequencing rules are built into the silicon, and both key on the
+The 6526's time-of-day clock is four BCD registers: tenths (`$DC08`),
+seconds (`$DC09`), minutes (`$DC0A`), and hours with the AM/PM flag in
+bit 7 (`$DC0B`). They count a 50 Hz or 60 Hz input on the chip's TOD
+pin. Two sequencing rules are built into the chip. Both key on the
 *hours* register at one end and the *tenths* register at the other:
 
 - **Reading.** A read of `$DC0B` latches all four registers: from that
   moment every read of `$DC08`-`$DC0B` returns the values as they stood
   at the hours read. The latch is released by a read of `$DC08`. The
-  counter keeps running underneath the latch the whole time; only what
-  you *see* is frozen. This exists so that a four-byte read can never
-  straddle a carry (59.9 to 00.0) — provided it starts at hours and
-  ends at tenths.
+  counter keeps running underneath the latch; only what a read returns
+  is frozen. This exists so that a four-byte read can never straddle a
+  carry (59.9 to 00.0), provided it starts at hours and ends at tenths.
 - **Writing.** A write to `$DC0B` stops the clock. It does not run
   again until `$DC08` is written. This exists so that a four-byte
-  *write* cannot be overtaken by a tick halfway through — provided it
+  *write* cannot be overtaken by a tick halfway through, provided it
   starts at hours and ends at tenths. Written the other way round, the
   clock is stopped by the last write and stays stopped.
 - **Clock or alarm.** Bit 7 of `$DC0F` (CRB, ALARM) chooses what a TOD
   *write* lands in: 0 = the clock, 1 = the alarm. Reads always return
   the clock, whatever bit 7 says (the datasheet's statement; the read
   side of that was not measured here). The alarm registers sit at the
-  same four addresses, so "set the clock with bit 7 = 1" silently
-  programs the alarm and leaves the clock alone — neither set nor
-  stopped, in VICE (rows E, G and H below). One caveat on the "nor
+  same four addresses, so "set the clock with bit 7 = 1" programs the
+  alarm and leaves the clock alone: neither set nor stopped, in VICE
+  (rows E, G and H below). One caveat on the "nor
   stopped": the datasheet's "stopped whenever a write to the Hours
   register occurs" is not conditioned on bit 7, so a 6526 may pause
   the clock on an alarm-side hours write until the alarm-side tenths
@@ -85,32 +84,31 @@ sequencing rules are built into the silicon, and both key on the
   it would matter only to code that writes the alarm's hours alone.
 - **Rate.** Bit 7 of `$DC0E` (CRA, TODIN) tells the chip whether the
   TOD pin carries 50 Hz (1) or 60 Hz (0), i.e. whether to divide by 5
-  or by 6 to make a tenth. The KERNAL does not set this for you:
+  or by 6 to make a tenth. The KERNAL does not set it:
   IOINIT writes `$08` to `$DC0E` (`LDA #$08` at `$FDAE`, `STA $DC0E`
   at `$FDB0`, in KERNAL 901227-03) and the same `$08` to `$DD0E` at
   `$FDB3`, which leaves bit 7 clear on both CIAs, and the
   region-dependent timer setup at `$FF6E` reads `$DC0E` back, masks
-  with `#$80` and ORs in `$11` — it preserves whatever bit 7 was, it
-  never sets it. On a PAL machine the TOD therefore counts a 50 Hz
+  with `#$80` and ORs in `$11`, which preserves bit 7 and never sets
+  it. On a PAL machine the TOD therefore counts a 50 Hz
   input with the 60 Hz divider, five-sixths of true speed, until a
   program sets the bit. (ROM bytes read from the 901227-03 image,
-  rung 1 — an earlier version of this page placed the `LDA`/`STA` pair
+  rung 1; an earlier version of this page placed the `LDA`/`STA` pair
   at `$FDB0` alone; the five-sixths is arithmetic from the datasheet's
   divider, and the VICE run in the measurement section below confirms
   the ratio.)
 
-Everything in the first three bullets is what the MOS 6526 datasheet
-says in its "Time of Day Clock" section, and it is what VICE x64sc 3.10
-does when measured (rung 1, below). It is not what two pages in this
-repository said, which is why this entry exists: a reader who trusted
-them wrote code with the read latch and the write halt on the wrong
-registers.
+The first three bullets are what the MOS 6526 datasheet says in its
+"Time of Day Clock" section, and what VICE x64sc 3.10 does when
+measured (rung 1, below). Two pages in this repository said otherwise,
+and code written from them put the read latch and the write halt on the
+wrong registers.
 
-One consequence worth stating because it follows from the rules rather
-than from any measurement: the latch is chip state, not per-caller
+One consequence follows from the rules, not from a measurement: the
+latch is chip state, not per-caller
 state. If an interrupt handler reads `$DC08` while the main loop is
 between its hours read and its tenths read, the main loop's latch is
-gone and its remaining reads are live — a torn time with the correct
+gone and its remaining reads are live: a torn time with the correct
 order on both sides. Keep all TOD reads in one context, or bracket the
 four reads with `SEI`/`CLI` when an IRQ handler also reads the clock.
 `SEI` does not hold off an NMI, so an NMI handler (RESTORE, or anything
@@ -118,16 +116,15 @@ raised through CIA2) must leave `$DC08`-`$DC0B` alone altogether.
 
 ### Fix
 
-- **Read** in the order `$DC0B`, `$DC0A`, `$DC09`, `$DC08` — hours
-  first, tenths last. If you only want one register and it is hours,
-  read `$DC08` afterwards anyway to drop the latch. Any other single
-  register can be read on its own.
+- **Read** in the order `$DC0B`, `$DC0A`, `$DC09`, `$DC08`: hours
+  first, tenths last. To read hours alone, read `$DC08` afterwards to
+  drop the latch. Any other single register can be read on its own.
 - **Write** in the order `$DC0B`, `$DC0A`, `$DC09`, `$DC08` with
   `$DC0F` bit 7 = 0. The clock is stopped from the first write to the
-  last and starts at exactly the time you set. To program the alarm,
+  last and starts at exactly the time written. To program the alarm,
   do the same four writes with bit 7 = 1, then put bit 7 back to 0
   before any code that expects to set the clock.
-- **Set the rate** yourself: `$DC0E` bit 7 = 1 on a PAL machine (50 Hz
+- **Set the rate**: `$DC0E` bit 7 = 1 on a PAL machine (50 Hz
   mains), 0 on NTSC (60 Hz). The KERNAL leaves it 0 on both.
 - Values are BCD; the hours register carries AM/PM in bit 7.
 
@@ -225,17 +222,17 @@ time after boot), `-exitscreenshot`. PAL
 7 = 0. Nothing here was run on a 6526 on a bench. An earlier version said
 the PAL run was a 6569; `x64sc -default` is the C64C, whose CIAs are 8521s,
 while the NTSC run's are 6526s. VICE derives the TOD
-tick from emulated cycles, not from the host clock — the probe runs
+tick from emulated cycles, not from the host clock: the probe runs
 under `-warp` and the clock still advances 1.5 s in 75 PAL frames, and
 `src/core/ciacore.c` in the VICE tree schedules the tick as an alarm
-`todticks` cycles apart — so the readings below are about the chip
-model VICE implements, at emulated speed.
+`todticks` cycles apart. The readings below are therefore about the
+chip model VICE implements, at emulated speed.
 
 The probe (listing below, exactly as run) clears the screen, sets the
 clock to 00:00:00.0 in the correct order, waits a known number of
 frames by watching `$D012`, and stores a reverse-space (`$A0`) on a
 fixed screen row at the column equal to the tenths value it read. One
-test per row, so the screenshot *is* the result. Decoded with PIL,
+test per row, so the screenshot is the result. Decoded with PIL,
 which first finds the display area as the run of non-border pixels
 (border red, background blue): the PAL screenshot is 384×272 with the
 display at y 35-234, so screen row 0 is at PNG y = 35, and the NTSC one
@@ -264,7 +261,7 @@ version had):
 
 The seven tests (A, B, E, F1, G, H, I) gave the same digit on every
 run. The two controls vary by one between runs, and the cause was
-tested rather than guessed: VICE's autostart delay is randomised by
+tested: VICE's autostart delay is randomised by
 default, and two PAL runs with `+autostart-delay-random` came out
 identical (C = 5, D = 2, every test digit as above; the page's first
 version made the same check on its seven-row probe and read C = 5,
@@ -283,16 +280,16 @@ where the next read 4.)
 Row B also shows what the earlier text would have predicted wrongly: if
 the hours write started the clock, B would read 4 or 5 like C. Row A
 shows the other half: if the tenths read latched and the hours read
-released, A would read 4 or 5 too. Row I settles a third reading that
-is in circulation (C64-Wiki's `$DC0B` entry has a stopped clock wait
+released, A would read 4 or 5 too. Row I settles a third claim in
+circulation (C64-Wiki's `$DC0B` entry has a stopped clock wait
 for a *read* of the tenths register): the tenths read at 0.3 s did not
 restart it, the clock still stood at 0 a second and a half later, and
-only the tenths write in `reset_tod` set it going again — the
+only the tenths write in `reset_tod` set it going again: the
 datasheet's rule, in VICE.
 
-One more PAL run with CRA bit 7 left at 0 — the state the KERNAL leaves
+One more PAL run with CRA bit 7 left at 0 (the state the KERNAL leaves
 it in; the listing's PAL branch with its `ora #$80` changed to
-`and #$7f` — reads C = 2, D = 2, E = 2, A = 2, F2 = 5, G = 5 and H = 5,
+`and #$7f`) reads C = 2, D = 2, E = 2, A = 2, F2 = 5, G = 5 and H = 5,
 with B, I and F1 still 0: 1.5 s of waiting advanced the clock about
 1.25 s and 1.8 s about 1.5 s, the five-sixths ratio above (rung 1 for
 the emulator's divider; the datasheet describes the same divide-by-6).
@@ -546,8 +543,8 @@ then find the single lit eight-pixel cell on each of rows 6, 8, 10, 12,
 14, 16, 18, 20, 22 and 24 and read its column. The NTSC frame counts
 are for the 6567R8 (65 × 263 = 17,095 cycles a frame, 59.83 Hz); on a
 6567R56A (64 × 262 = 16,768 cycles, 60.99 Hz) the same seconds would
-need 18, 41, 73 and 91 frames — arithmetic from the settled line
-counts, rung 3, not run.
+need 18, 41, 73 and 91 frames (arithmetic from the settled line
+counts, rung 3, not run).
 
 ### Cross-references
 
@@ -640,12 +637,12 @@ it.
 **The STOP check.** The KERNAL's handler at `$FE47` (the default
 `$0318` target) reads `$DD0D` and branches on bit 7. Set means a CIA2
 source: it runs the RS-232 code. Clear means the NMI came from
-somewhere else, and the only somewhere else is the RESTORE key. It then
+somewhere else, and the only other source is the RESTORE key. It then
 samples the keyboard row that holds RUN/STOP through `$F6BC` and tests
 it through `$FFE1`; if the key is down it falls into `$FE66`: RESTOR,
 IOINIT, CINT and `JMP ($A002)`, the BASIC warm start. There is no flag a
 program can set to opt out; the decision is made from the CIA2 flag
-being absent, which is exactly the state a RESTORE press produces. This
+being absent, which is the state a RESTORE press produces. This
 is from the ROM bytes of `kernal-901227-03.bin`, read for
 `restore_nmi_not_maskable`; the warm-start branch itself needs RUN/STOP
 held and was not run headless.
@@ -676,7 +673,7 @@ only when the handler is meant to consume the event: a RESTORE-only
 stub that also reads `$DD0D` discards a timer or RS-232 flag that
 arrived in the same instant.
 
-A program that wants both, a live CIA2 tick and a dead RESTORE key,
+A program that wants both a live CIA2 tick and a dead RESTORE key
 takes the vector, acknowledges in the handler, and either ignores the
 extra entry a press produces or tests bit 7 of `$DD0D` before acting.
 
@@ -775,7 +772,7 @@ machine and one cycle out on another, with nothing else changed.
   other revision and reads a wrong bit, so the same disk that loads on
   the development machine fails on another.
 
-Which machine is "right" is whichever the code was tuned on. Two
+The code is right on the machine it was tuned on. Two
 revisions of the chip shipped in the C64 and both are common.
 
 ### Mechanism
@@ -803,8 +800,7 @@ source is the named authority for the real-hardware claim; no 6526 was
 put on a bench for this entry, and the one-cycle figure for hardware
 stands at rung 4.
 
-Measured in VICE x64sc 3.10, the difference is exactly what the model
-says. A probe starts CIA1 Timer B free-running from `$FFFF` and, four
+Measured in VICE x64sc 3.10, the difference matches the model. A probe starts CIA1 Timer B free-running from `$FFFF` and, four
 cycles later, Timer A one-shot from latch `$40 + k` for eight phases
 `k`, then executes 400 cycles of 2-cycle `NOP`s. The handler's first
 instruction is `lda $DC06`. The screen shows `E - N`, where `E` is
@@ -954,16 +950,16 @@ to look for its own event, and one of them never sees it.
 - A tape or serial routine spins on bit 4 of `$DC0D` waiting for a
   FLAG edge. A timer on the same chip underflows while it spins. The
   routine that later checks the timer bit finds it clear, and its
-  timeout, its tick or its bit-cell clock is simply gone.
+  timeout, its tick or its bit-cell clock is gone.
 - The other way round: a timer poll runs first and a FLAG edge that
   arrived during it is consumed by the timer poll. The FLAG waiter
-  then waits for an edge that has already been and gone.
+  then waits for an edge that has already passed.
 - On CIA2, a read of `$DD0D` from the main program while a Timer A
   underflow is arriving leaves the NMI handler with nothing to
   dispatch on, and at one phase the NMI itself is not raised: the read
   returns `$01`, the handler never runs, and the tick is lost.
 
-Nothing errors. The register just reads `$00` the second time.
+Nothing errors. The register reads `$00` the second time.
 
 ### Mechanism
 
@@ -972,9 +968,9 @@ at one address. A write sets or clears mask bits. A read returns the
 five event flags in bits 0..4 (Timer A, Timer B, TOD alarm, serial,
 FLAG) with bit 7 set if any flagged event is also enabled in the mask,
 and the read clears all of them together. There is no way to read one
-flag and leave the others standing. The data sheet's word for this is
-that the register is cleared on read; the consequence is that whoever
-reads it first owns every event that had arrived by then.
+flag and leave the others standing. The data sheet calls the register
+cleared on read. Whoever reads it first owns every event that had
+arrived by then.
 
 Measured in VICE x64sc 3.10, PAL and NTSC, default CIA model and
 `-ciamodel 0`, same bytes in all three runs unless a row says otherwise.

@@ -14,7 +14,7 @@ version_verified: "1.0"
 ## Tool
 
 sidreloc moves a PSID tune by whole pages and can move its zero-page
-variables to a range you name. Most tunes are linked to run at `$1000`,
+variables to a given range. Most tunes are linked to run at `$1000`,
 which is often where a game's code or map wants to be. sidreloc rewrites
 the tune so it runs somewhere else, then checks the result by playing the
 original and the moved tune side by side.
@@ -188,9 +188,9 @@ On the test tune, original against `tune-c000.sid` and against
 did not return from init within 200,000 instructions, because its `jmp`
 operands still pointed at `$10xx`. Run here.
 
-After the check, play the moved tune in the game itself: the game's own
-use of the zero-page range you gave with `-z`, and of any RAM the tune
-writes outside its load range, is something neither check can see.
+After the check, play the moved tune in the game itself. Neither check
+sees the game's own use of the `-z` zero-page range, or of any RAM the tune
+writes outside its load range.
 
 ## What defeats it
 
@@ -213,8 +213,8 @@ figure is his, not measured here.
 - Digi tunes that use NMI (`--nmi-calls`).
 - Whether the official 1.0 tarball matches the mirror's `2de6b01` sources
   byte for byte. At `2de6b01` the mirror already has an `#ifdef HAVE_ERR_H`
-  guard in `sidreloc.c` and `solver.c`, hence `-DHAVE_ERR_H` above. The mirror's README says no source changes were made; the
-  AUR package records the tarball's MD5 as `987cac9c5c5e210eee897f4689aea002`.
+  guard in `sidreloc.c` and `solver.c`, hence `-DHAVE_ERR_H` above. The
+  mirror's README says no source changes were made; the AUR package records the tarball's MD5 as `987cac9c5c5e210eee897f4689aea002`.
 
 ## Sources
 

@@ -24,8 +24,8 @@ A game needs it when its code is assembled or compiled as a flat ROM
 image and the emulator or the flash tool wants the container: the
 header names the hardware type, and from that VICE decides which bank
 register to emulate. The other route is to emit the `.CRT` from the
-assembler itself, which is what the two KickAssembler cartridge recipes
-do; cartconv then serves as the checker (`-c`) and the inspector (`-f`).
+assembler itself, as the two KickAssembler cartridge recipes do;
+cartconv is then the checker (`-c`) and the inspector (`-f`).
 
 The licence in the frontmatter is VICE's, read from
 `/opt/homebrew/opt/vice/COPYING` (GPL version 2 with the "any later
@@ -189,8 +189,8 @@ loops: `-tf=crt8` wrote type 0, EXROM 0, GAME 1, one 8 KB packet;
 `-tf=crt16` wrote type 0, EXROM 0, GAME 0, one 16 KB packet; `-tf=crt`
 wrote type 32 with EXROM 0, GAME 0, bank 0 ROML at `$8000` and bank 0
 ROMH at `$E000`, both chip type 0. `crt8` and `crt` booted green in
-x64sc; `crt16` was not booted here. Note the EasyFlash header
-difference: cartconv writes EXROM 1, GAME 0 and chip type 2 for the same
+x64sc; `crt16` was not booted here. The EasyFlash headers differ:
+cartconv writes EXROM 1, GAME 0 and chip type 2 for the same
 hardware id. VICE booted both. Which one a flash tool prefers was not
 measured here.
 
@@ -225,8 +225,7 @@ broken`; a packet length larger than the data that follows it only
 printed `chunk length exceeds data size` and exited 0, so read the
 output as well as the status. It also exits 0 when it cannot open the
 file (run here), so a script should test that the file exists first.
-`cartconv -f`
-prints what VICE will see. Run both on any hand-emitted container before
+`cartconv -f` prints what VICE will see. Run both on any hand-emitted container before
 blaming the emulator: a wrong packet length makes the next `CHIP`
 signature land in the wrong place, and VICE's error names the offset.
 

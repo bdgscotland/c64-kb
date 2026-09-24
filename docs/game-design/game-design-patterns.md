@@ -74,7 +74,14 @@ charset and any contact with it is fatal or obstructing.
 ### Software bounding-box collision
 
 Compare each actor's X, Y extents against every other actor's extents in
-pure 6510 arithmetic. Typical cost is 28–35 cycles per pair.
+pure 6510 arithmetic. The routine below, called with `JSR` and with its
+eight variables in zero page, costs 28 cycles per pair when the first test
+rejects, 66 on a hit and 67 at worst (rejected by the last test); with
+absolute variables 31, 78 and 79. Measured in VICE x64sc with a CIA 2
+timer, screen blanked so no badline or sprite DMA stole cycles; the
+caller's cost of loading each pair into the variables is not included.
+(An earlier version said 28–35 cycles per pair, which covers only the
+first-test rejection.)
 
 ```asm
 ; Actor A at (ax, ay), width aw, height ah
@@ -109,11 +116,15 @@ pure 6510 arithmetic. Typical cost is 28–35 cycles per pair.
     rts
 ```
 
-At 8 actors, that is 28 pair-checks worst case (n*(n-1)/2). At 35 cycles
-per check, 28 pairs cost ~980 cycles, about 5 % of a PAL frame's 19,656
-(63 × 312). At 16 actors (120 pairs) the cost is ~4,200 cycles, about
-21 %, still within budget if bounding-box is the only collision layer.
-(An earlier version said under 1 % and ~3,920 cycles at 16 actors.)
+At 8 actors, that is 28 pair-checks worst case (n*(n-1)/2). At the
+zero-page worst case of 67 cycles, 28 pairs cost ~1,900 cycles, about
+10 % of a PAL frame's 19,656 (63 × 312); if most pairs are far apart and
+reject at the first test (28 cycles), ~800. At 16 actors (120 pairs) the
+worst case is ~8,000 cycles, about 41 % of the frame before the caller's
+loop overhead, so check only the pairs that can collide (player against
+enemies, bullets against enemies) rather than every pair. (Earlier
+versions said under 1 %, then ~980 and ~4,200 cycles, both from a 35-cycle
+per-pair figure.)
 
 Use software bounding-box for: platformers that need sub-tile accuracy
 for landing/hitting platforms, and for adventure games where the player

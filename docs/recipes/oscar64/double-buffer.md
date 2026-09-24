@@ -230,11 +230,11 @@ selects the page, the constant $04 keeps the character base at $1000.
 which is line 256, below the last display line; the video matrix is
 fetched on badlines only, so the new page is complete before the first
 badline of the next frame. Waiting for clear-then-set rather than set
-alone is what stops a short draw flipping twice in one bottom border.
+alone stops a short draw flipping twice in one bottom border.
 
 `draw_page` writes the whole 1 KB page, not the 1,000 visible cells: the
 256-byte template goes to +0, +256, +512 and +768 as four `STA abs,y`
-per byte read, which is what makes the draw fit in a frame. The price is
+per byte read, which makes the draw fit in a frame. The price is
 that bytes 1000 to 1023 are overwritten too, and +$3F8 is sprite 0's
 pointer on whichever page is visible. `s[0x3f8] = SPR_BLOCK` after the
 fill is the mirror: both pages carry pointer 13 at the moment they become

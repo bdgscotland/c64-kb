@@ -538,7 +538,7 @@ left in its previous order, which is what a stable insertion sort does
 by itself. `hit_test` walks the same order, so with more actors the
 pair loop can stop early on the Y compare.
 
-A hit is three gates in the cheap order. The Y window first: the
+A hit passes three gates, cheapest first. The Y window first: the
 absolute difference of two plane Ys against `WIN`, one byte compare,
 which fails for most pairs. Then reach, a signed 16-bit difference with
 the sign chosen by the attacker's facing, so an attack cannot connect
@@ -551,7 +551,7 @@ second attack and one attack each from actors 1 and 3 have the only
 target in reach 15 or more lines away, and those are the three misses
 the count expects.
 
-The monitor is a second computation, not the first one repeated. Each
+The monitor checks the window independently. Each
 hit logs both plane Ys at the moment it connects; `monitor_hits`
 recomputes the difference as a signed int over the whole log and counts
 any above the window. It re-checks the log at the moment of each new

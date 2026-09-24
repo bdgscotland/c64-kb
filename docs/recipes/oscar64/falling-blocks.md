@@ -831,8 +831,8 @@ frame. The whole subject frame, 15,028 cycles on PAL and 15,282 on NTSC,
 runs about 240 and 235 raster lines from line 250 (divided by 63 and 65,
 arithmetic), well past the start of the next frame's display, so the
 collapse frame can tear the field once (`full_field_redraw_exceeds_vblank`
-in `pitfalls/text-mode-render.md`). A game that cares redraws only the
-rows that moved over two frames, or builds the next field in a second
+in `pitfalls/text-mode-render.md`). To avoid it, redraw only the rows
+that moved, over two frames, or build the next field in a second
 screen (`screen_double_buffer_d018`).
 
 `render` erases the piece where it was last drawn and draws it where it

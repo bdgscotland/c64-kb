@@ -6,18 +6,17 @@ category: kernal
 
 # KERNAL and I/O Pitfalls
 
-Most pitfalls in this document share a common thread: they arise from
-the KERNAL's implicit contract with the surrounding hardware state (three
-entries sit outside that thread — the Oscar64 `krnio_save()` splat, the c1541
-uppercase-filename PETSCII shift and the Oscar64 `getchx()` RETURN remap are
-library and host-tooling traps in the same disk-and-keyboard I/O workflow — and
-the last entry is a hardware-wiring trap: RESTORE drives /NMI directly, so no
-CIA mask reaches it). The KERNAL
-was written assuming a specific execution environment — interrupts enabled,
-registers free to clobber, the CPU memory map at its stock $37 configuration,
-and decimal mode cleared. Each entry below describes one way that assumption
-collides with the real-world context of a demo or game that has customised
-IRQs, banked memory, or BCD arithmetic.
+Most pitfalls here come from the KERNAL's implicit contract with the
+hardware state. The KERNAL assumes interrupts enabled, registers free to
+clobber, the CPU memory map at its stock $37 configuration, and decimal
+mode cleared. Each entry describes one way that assumption fails in a
+demo or game with customised IRQs, banked memory, or BCD arithmetic.
+
+Three entries are library and host-tooling traps in the same
+disk-and-keyboard I/O workflow: the Oscar64 `krnio_save()` splat, the
+c1541 uppercase-filename PETSCII shift and the Oscar64 `getchx()` RETURN
+remap. The last entry is a hardware-wiring trap: RESTORE drives /NMI
+directly, so no CIA mask reaches it.
 
 ---
 
@@ -32,32 +31,32 @@ IRQs, banked memory, or BCD arithmetic.
 
 A raster IRQ scheme runs cleanly until the code issues a disk or tape I/O call.
 Immediately after the JSR to OPEN, LOAD or CHKIN, the raster split collapses:
-color bars bleed, sprites misplace, or the entire display tears. In more subtle
+color bars bleed, sprites misplace, or the entire display tears. In subtler
 cases the raster handler appears to execute twice on the same frame, or the
-stable-raster double-IRQ polling loop hangs indefinitely. With tape routines the
-symptom is often a complete machine hang — the KERNAL is waiting for a
+stable-raster double-IRQ polling loop hangs. With tape routines the
+symptom is often a machine hang: the KERNAL is waiting for a
 keyboard character inside CLI context, the raster IRQ fires at an unexpected
 stack depth, and the machine can no longer process RESTORE.
 
 A variation: the code wraps a KERNAL call in SEI to protect a critical section.
 The routine returns normally but the critical section's register state has been
-scrambled — the KERNAL's own internal CLI re-enabled IRQs and the raster handler
+scrambled: the KERNAL's own CLI re-enabled IRQs and the raster handler
 fired mid-section.
 
 ### Mechanism
 
 The CLIs are not in OPEN, LOAD, SAVE, CHKIN, CHKOUT, CLOSE or CLRCHN
-themselves — none of those bodies contains a CLI (ROM census of
+themselves; none of those bodies contains a CLI (ROM census of
 `kernal-901227-03.bin`: no $58 byte in OPEN $F34A-$F3D4, CHKIN $F20E-$F24F,
 CHKOUT $F250-$F290, LOAD $F49E-$F5DC or SAVE $F5DD-$F68E; an earlier version
-of this entry said the CLIs were "in their bodies") — but in the serial-bus
-primitives they call (LISTEN, TALK, SECOND, TKSA, ACPTR, CIOUT, UNTALK,
+of this entry said the CLIs were "in their bodies"). They are in the serial-bus
+primitives those routines call (LISTEN, TALK, SECOND, TKSA, ACPTR, CIOUT, UNTALK,
 UNLSN, $ED09-$EEB2). Each primitive brackets its bit-level handshake in
 SEI ... CLI: the byte transfer itself runs with interrupts DISABLED, and the
 routine exits with an unconditional CLI ($EDAB and $EDB5 after LISTEN/TALK/
 SECOND, $EDDB after the bus turnaround, $EE82 after ACPTR) whatever the I flag
-the caller had. Every routine that reaches them on a serial device — OPEN,
-CHKIN, CHKOUT, CLOSE, CLRCHN, LOAD and SAVE — therefore returns with
+the caller had. Every routine that reaches them on a serial device (OPEN,
+CHKIN, CHKOUT, CLOSE, CLRCHN, LOAD and SAVE) therefore returns with
 interrupts enabled (measured in VICE x64sc with a true-drive 1541 and traps
 off: all seven return with I=0 when entered under SEI). Tape does the same by
 a different route: tape LOAD and SAVE set up their own IRQ under SEI and then
@@ -66,8 +65,8 @@ enabled, and the restore at $FC93 (PHP/SEI ... PLP) puts back that post-CLI
 state, so they too return with I=0.
 
 This is by design: OPEN, LOAD, and SAVE can take millions of cycles (a
-standard KERNAL IEC LOAD from a 1541 runs at roughly 300-600 bytes per
-second, i.e. two to three seconds per kilobyte — measured in VICE x64sc with
+standard KERNAL IEC LOAD from a 1541 runs at 300-600 bytes per
+second, i.e. two to three seconds per kilobyte; measured in VICE x64sc with
 true drive emulation: 8,192 bytes in 871 jiffies, about 14.5 s;
 `hardware/cia-reference.md`, `formats/iec-disk-reference.md` and
 `techniques/loaders-packers.md` measure the same order. An earlier version of
@@ -75,7 +74,7 @@ this entry said "tens of thousands of cycles" and "roughly 1 second per
 kilobyte", which understated the exposure window by half), and the jiffy
 clock IRQ at $EA31 must continue running during that time to keep the
 60/50 Hz time base accurate and to service the keyboard queue. The KERNAL
-authors assumed the caller had IRQs enabled at the time of the JSR — the machine
+authors assumed the caller had IRQs enabled at the JSR: the machine
 boots with CLI, BASIC runs with CLI, and the KERNAL's own IRQ handler at $EA31
 is designed to be re-entrant only in specific ways.
 
@@ -87,11 +86,11 @@ the KERNAL routine, and the KERNAL either hangs or corrupts its own zero-page
 workspace because the handler saved new state on top of the KERNAL's
 partially-built stack frame.
 
-SETLFS and SETNAM do not contain CLI (they merely store values in zero page —
+SETLFS and SETNAM do not contain CLI (they only store values in zero page:
 SETLFS at $FE00 is STA $B8/STX $BA/STY $B9/RTS, and P measured after
 SEI;SETLFS is $35, I still set), but OPEN, LOAD, SAVE, CHKIN, CHKOUT, CLRCHN
 and CLOSE all return with interrupts enabled when the channel is a serial-bus
-(IEC) device — the CLI sits in the byte-send tail at $EDAB and the receive
+(IEC) device. The CLI sits in the byte-send tail at $EDAB and the receive
 tail at $EE82, so LISTEN/TALK/SECOND/TKSA/ACPTR/UNLSN/UNTLK inherit it.
 Addressed to the screen or keyboard (devices 0-3) the same calls leave the I
 flag untouched (measured: CHKIN on a screen file under SEI left P = $36).
@@ -103,9 +102,9 @@ CLOSE, CLRCHN and SAVE off it.
 Never call KERNAL file I/O routines from inside a raster IRQ handler. The IRQ
 handler is the wrong context for long, unpredictable-duration operations.
 
-Leave IRQs enabled (CLI) when issuing KERNAL file I/O. The raster IRQ will
-fire during the operation, but as long as the handler is reentrant-safe this
-is harmless. If a critical section must use SEI, complete it before the KERNAL
+Leave IRQs enabled (CLI) when issuing KERNAL file I/O. The raster IRQ
+fires during the operation, which is harmless if the handler is
+reentrant-safe. If a critical section must use SEI, complete it before the KERNAL
 call:
 
 ```kick
@@ -178,7 +177,7 @@ fname_end:
   `SAVE` ($FFD8), `CHKIN` ($FFC6), `CHKOUT` ($FFC9), `CLOSE` ($FFC3),
   `CLRCHN` ($FFCC).
 - Pitfall: `kernal_io_mapping_dependency` — the two pitfalls often appear
-  together; banking out the KERNAL while also calling OPEN is doubly fatal.
+  together; banking out the KERNAL and calling OPEN hits both.
 
 ---
 
@@ -193,24 +192,23 @@ fname_end:
 
 A loop that calls GETIN to poll the keyboard loses its Y index. A sprite
 multiplex routine that calls GETIN to check for keypresses returns with the
-sprite index in Y replaced by the key code and X by the old queue length — but
+sprite index in Y replaced by the key code and X by the old queue length, but
 only when a key was waiting; with an empty queue both come back intact, so the
 bug appears only while the player types (measured in VICE x64sc: empty queue,
-X=$77/Y=$88 unchanged; one key queued, X=$01, Y=$41 — an earlier version of
+X=$77/Y=$88 unchanged; one key queued, X=$01, Y=$41; an earlier version of
 this entry said Y came back as zero, which it never does for a real key). A
 character output sequence that builds a string index in X finds X reset to a
-garbage value after CHKOUT. The bugs are particularly elusive because they
-surface only on certain code paths — if the developer tests the loop without
-any KERNAL calls inserted, everything is fine; adding a single JSR $FFE4 breaks
-the loop silently if the developer assumed Y was preserved. (An earlier version
+garbage value after CHKOUT. The bugs surface only on some code paths: the
+loop works without KERNAL calls, and a single JSR $FFE4 breaks it silently
+if the code assumed Y was preserved. (An earlier version
 of this entry used CHROUT as the example; CHROUT preserves A on success, so
-that loop worked as written — see the contract list below.)
+that loop worked as written; see the contract list below.)
 
 A subtler variant: the code saves only A around CHKIN, assumes X and Y are
-untouched, then finds X changed on return — on a disk or other serial-bus
-channel it is the device number (8), on a keyboard or screen file it is the
-open-file-table index (0 for the first file), on a tape file it is the stored
-secondary address ($60) — and mistakes it for an error sentinel. An earlier
+untouched, then finds X changed on return and mistakes it for an error
+sentinel. On a disk or other serial-bus channel X is the device number (8),
+on a keyboard or screen file the open-file-table index (0 for the first
+file), on a tape file the stored secondary address ($60). An earlier
 version of this entry said X was always the table index; ROM $F237 is TAX on
 the device number before TALK, and CHKIN on logical file 1, device 8 was
 measured in VICE x64sc returning X=$08.
@@ -218,22 +216,22 @@ measured in VICE x64sc returning X=$08.
 ### Mechanism
 
 The KERNAL authors saved space and cycles by preserving only the registers that
-callers genuinely need back. The documented contract is the Affects line in each
+callers need back. The documented contract is the Affects line in each
 routine's reference entry. Any register listed in Affects may be changed; any
-register absent from Affects is not guaranteed preserved either — treat absence
-as "not documented as changed on the success path only." The safe assumption is:
-any register not explicitly listed as output is potentially clobbered.
+register absent from Affects is not guaranteed preserved either; absence means
+"not documented as changed on the success path only". The safe assumption:
+any register not listed as output may be clobbered.
 
 Specific contracts for the most-called routines:
 
 - **CHROUT ($FFD2):** Affects C; A is preserved on success (C=0) and comes
-  back as 0 on the error return (C=1) — KERNAL reference; measured in VICE
+  back as 0 on the error return (C=1). Sources: KERNAL reference; measured in VICE
   x64sc (LDA #$41 / JSR $FFD2 to the screen returned A=$41) and in ROM ($E716
   PHA … $E6B0 PLA/TAX/PLA/CLC/CLI/RTS; error tail $F201 LDA $9E / BCC +2 /
   LDA #0 / RTS). X and Y are preserved. An earlier version of this entry listed A
   as clobbered.
-- **CHRIN ($FFCF):** Affects A, X, Y, C — all three registers may change.
-- **GETIN ($FFE4):** Affects A, X, Y, C — same as CHRIN.
+- **CHRIN ($FFCF):** Affects A, X, Y, C: all three registers may change.
+- **GETIN ($FFE4):** Affects A, X, Y, C, as CHRIN.
 - **CHKIN ($FFC6):** Affects A, X, C. A returns the device number on success
   (A=8 disk, A=3 screen, A=0 keyboard, measured; ROM $F233 STA $99 with
   A = FA).
@@ -249,11 +247,11 @@ and restore every register listed in Affects that the caller also needs after
 the call returns. Use PHA/PLA for A, TXA/PHA/PLA/TAX for X, and TYA/PHA/PLA/TAY
 for Y.
 
-Unless you have verified the Affects line and confirmed which registers the
-caller doesn't need after the call, preserve all three around every KERNAL JSR.
+Unless the Affects line has been checked against what the caller needs after
+the call, preserve all three around every KERNAL JSR.
 The cost is 29 cycles (13 to save, 16 to restore, from the 6510 reference's
 per-instruction figures: PHA 3, PLA 4, the transfers 2 each) plus the
-JSR/RTS — negligible outside of tight raster loops. An earlier version of this
+JSR/RTS, negligible outside tight raster loops. An earlier version of this
 entry said 15, which no subset that saves all three registers can reach.
 
 ```kick
@@ -276,7 +274,7 @@ entry said 15, which no subset that saves all three registers can reach.
 
 In tight loops, check Affects and save only what is needed. If the counter is
 in X and the routine touches only A and C (e.g. CHROUT), a bare PHA/JSR/PLA
-suffices — and for CHROUT even that is only needed if you take the error path.
+suffices; for CHROUT even that is needed only on the error path.
 
 ### Worked example
 
@@ -335,9 +333,8 @@ msg_end:
 
 - KERNAL routines: `CHROUT` ($FFD2), `CHRIN` ($FFCF), `GETIN` ($FFE4),
   `CHKIN` ($FFC6), `CHKOUT` ($FFC9).
-- Pitfall: `kernal_assumes_sei_cleared` — both pitfalls stem from the same
-  root cause: the KERNAL assumes a specific runtime contract that the caller
-  must uphold.
+- Pitfall: `kernal_assumes_sei_cleared` — both come from one cause: the
+  KERNAL assumes a runtime contract that the caller must uphold.
 
 ---
 
@@ -351,17 +348,16 @@ msg_end:
 
 BCD arithmetic running in the main loop produces correct results in isolation
 but yields random garbage when the raster IRQ fires during the calculation.
-The corruption is intermittent — it depends on whether the IRQ fires between
-the SED and CLD instructions in the main-loop BCD block. Debugging is painful
-because inserting a SEI/CLI wrapper around the BCD block "fixes" the problem
-(it does — by preventing the IRQ from firing during the critical window) without
-revealing the real cause. The same corruption appears in SID player timing
+The corruption is intermittent: it depends on whether the IRQ fires between
+the SED and CLD instructions in the main-loop BCD block. A SEI/CLI wrapper
+around the BCD block fixes the problem, by keeping the IRQ out of that window,
+and so hides the real cause. The same corruption appears in SID player timing
 code that uses BCD to accumulate tick counts, and in any BASIC-style score
 counter kept as packed BCD in zero page.
 
 A related variant: two handlers coexist (music player + raster effect) and one
 uses SED/CLD for a BCD calculation. If the second handler fires while the first
-is between SED and CLD — via NMI or a chained IRQ that re-enables interrupts —
+is between SED and CLD (via NMI or a chained IRQ that re-enables interrupts),
 the second handler's ADC/SBC produces wrong results.
 
 ### Mechanism
@@ -371,30 +367,30 @@ register (P). When D = 1, ADC and SBC perform BCD (binary-coded-decimal)
 arithmetic: result nibbles are adjusted so that each hex digit represents a
 decimal digit 0-9. When D = 0, addition and subtraction are pure binary.
 
-Crucially, the D flag is **not automatically cleared or saved on IRQ entry**.
+The D flag is **not automatically cleared or saved on IRQ entry**.
 The 6502 interrupt sequence pushes the program counter (PCH, PCL) and the
 processor status register (P) onto the stack, then fetches the IRQ vector and
 begins executing the handler. The pushed P contains the D flag as it was at
-the time of the interrupt — but the processor itself does not clear D. The
+the time of the interrupt, but the processor does not clear D. The
 handler runs with D still set if the interrupted code had executed SED and not
 yet executed CLD.
 
-This means: if main-loop code is between `SED` and `CLD`, and an IRQ fires,
-the IRQ handler's ADC and SBC instructions run in BCD mode. Any addition or
-subtraction in the handler — including pointer arithmetic, counter decrements,
-and index calculations — will produce BCD-adjusted results instead of binary
+If main-loop code is between `SED` and `CLD` and an IRQ fires, the IRQ
+handler's ADC and SBC instructions run in BCD mode. Any addition or
+subtraction in the handler, including pointer arithmetic, counter decrements
+and index calculations, produces BCD-adjusted results instead of binary
 results. A handler that adds 8 to a pointer stored in zero page will compute
 8 + 0 = 8 correctly in BCD, but 9 + 1 will produce $10 (decimal 10 as BCD)
 instead of $0A (decimal 10 as binary). The pointer lands in the wrong page.
 The raster effect writes to the wrong address. The corruption is data-dependent
-and nearly impossible to trace without knowing that D is set.
+and hard to trace without knowing that D is set.
 
 On NMOS silicon, N, V, and Z are undefined after a decimal-mode ADC/SBC. C
 reflects decimal carry. Code in the handler that branches on carry after an
-addition will take the wrong branch when D is unexpectedly set.
+addition will take the wrong branch when D is set.
 
 RTI restores P from the stack, including D. After RTI, the main-loop BCD block
-resumes with D = 1 as expected — but the damage inside the handler's execution
+resumes with D = 1, but the damage inside the handler's execution
 window may already have corrupted effect or music state for the current frame.
 
 ### Fix
@@ -420,19 +416,19 @@ irq_handler:
                             // to whatever the interrupted code had set
 ```
 
-The `CLD` costs 2 cycles and 1 byte. It is not optional. Place it after the
+The `CLD` costs 2 cycles and 1 byte. Place it after the
 register saves (the PHA/TXA/PHA/TYA/PHA sequence does not perform arithmetic,
 so those instructions are safe even with D set) and before any instruction that
 uses ADC, SBC, or reads the C/N/V/Z flags after such an instruction.
 
-The RTI at the end of the handler automatically restores D (along with all
-other flags) from the pushed P — so the main-loop BCD block resumes correctly
+The RTI at the end of the handler restores D (with all
+other flags) from the pushed P, so the main-loop BCD block resumes correctly
 with D = 1 after the handler exits. No explicit SED is needed in the handler's
 exit path.
 
 NMI handlers require the same discipline. The NMI vector fires regardless of
-the I flag and also does not clear D — if you use the NMI for digi playback or
-any other purpose, it needs CLD too.
+the I flag and also does not clear D. An NMI handler for digi playback or
+any other purpose needs CLD too.
 
 ### Worked example
 
@@ -502,7 +498,7 @@ sprite_y: .fill 8, i * 21 + 50
   notes that the KERNAL dispatcher pushes A, X and Y); the
   PHA/TXA/PHA/TYA/PHA + CLD stanza above is the reference form. Neither
   stable-raster recipe currently executes CLD, and on the Oscar64 side
-  `rasterirq.h`'s own ISRs do not either — the KERNAL's $FF48 dispatcher and
+  `rasterirq.h`'s own ISRs do not either: the KERNAL's $FF48 dispatcher and
   $EA31 service routine contain no CLD, so a handler reached through $0314
   inherits whatever D was. (An earlier version of this entry said the
   technique doc discussed the prelude; it does not.)
@@ -525,9 +521,9 @@ sprite_y: .fill 8, i * 21 + 50
 
 Disk or tape I/O that works in a plain BASIC or kernal environment crashes
 silently when called from a demo or game that has changed $01 to enable an
-all-RAM or partial-RAM banking mode. The crash is typically a wild branch: the
+all-RAM or partial-RAM banking mode. The crash is a wild branch: the
 CPU fetches an opcode from RAM at $E000-$FFFF where the KERNAL ROM used to be,
-executes whatever byte it finds there as an opcode, and veers off into garbage.
+executes whatever byte it finds there as an opcode, and runs on into garbage.
 In some configurations the machine appears to freeze; in others it resets.
 
 A variant: the code correctly sets $01 = $37 for the KERNAL call, but later
@@ -538,7 +534,7 @@ restored value, which may not match what the KERNAL's internal routines expect.
 A related issue: code banks in $35 for bitmap RAM access, then calls CHROUT.
 CHROUT at $FFD2 is a three-byte JMP in KERNAL ROM. With HIRAM = 0 ($35 has
 bit 1 clear), the address $FFD2 contains RAM, not ROM. The JSR executes
-whatever bytes happen to be there and branches to a garbage address.
+whatever bytes are there and branches to a garbage address.
 
 ### Mechanism
 
@@ -553,7 +549,7 @@ PLA (906114):
   When 1, $D000-$DFFF is the I/O block (VIC-II, SID, CIA1, CIA2).
 
 The stock reset state is $01 = $37 (binary %00110111), giving LORAM=1, HIRAM=1,
-CHAREN=1 — KERNAL ROM at $E000-$FFFF, BASIC ROM at $A000-$BFFF, I/O at
+CHAREN=1: KERNAL ROM at $E000-$FFFF, BASIC ROM at $A000-$BFFF, I/O at
 $D000-$DFFF.
 
 Common demo/game banking modes and their effects on KERNAL accessibility:
@@ -567,11 +563,11 @@ Common demo/game banking modes and their effects on KERNAL accessibility:
 | $33       |  1    |  1    |  0     | **Yes**             | No (char ROM)|
 | $30       |  0    |  0    |  0     | **No — RAM**        | No           |
 
-Modes $35, $34, and $30 are popular in demos because they allow the CPU to
+Modes $35, $34, and $30 are popular in demos because they let the CPU
 see RAM at $E000-$FFFF (useful for placing time-critical code, decompression
 buffers, or sprite data up high). But KERNAL ROM must be visible ($01 bit 1
-HIRAM = 1) for any KERNAL call — including the jump-table entries themselves —
-to work. The jump table entries at $FF81-$FFF3 are three-byte JMP instructions
+HIRAM = 1) for any KERNAL call to work, including the jump-table entries
+themselves. The jump table entries at $FF81-$FFF3 are three-byte JMP instructions
 in KERNAL ROM. If HIRAM = 0, those addresses contain whatever the program wrote
 into RAM there, not JMP instructions.
 
@@ -604,9 +600,8 @@ This ensures:
 3. The exact caller's $01 value is restored after the call, not a hardcoded
    value that may not match what the caller had.
 
-The save is to the stack (PHA/PLA). Using a zero-page byte for the save is
-also common, but the stack is simpler and does not require allocating a
-zero-page scratch byte.
+The save is to the stack (PHA/PLA). A zero-page byte also works; the stack
+needs no zero-page scratch byte.
 
 ### Worked example
 
@@ -659,9 +654,8 @@ zero-page scratch byte.
   `c64_register_lookup` (the KB has no Register node for the CPU port).
 - KERNAL routines: `SETLFS` ($FFBA), `OPEN` ($FFC0), `CLOSE` ($FFC3),
   `LOAD` ($FFD5), `SAVE` ($FFD8).
-- Pitfall: `kernal_assumes_sei_cleared` — the two pitfalls are frequently
-  encountered together in demo loaders; OPEN can simultaneously trip both
-  if the caller has disabled IRQs and banked out the KERNAL.
+- Pitfall: `kernal_assumes_sei_cleared` — the two pitfalls often occur
+  together in demo loaders; OPEN trips both if the caller has disabled IRQs and banked out the KERNAL.
 - `docs/hardware/c64-memory-map.md` — full PLA truth table with all 32 banking
   mode combinations.
 
@@ -678,12 +672,12 @@ zero-page scratch byte.
 An Oscar64 game calls `krnio_save(8, &state, &state + sizeof(state))` to
 persist a struct to a `.d64` attached as drive 8. The function returns
 `true` (apparent success) and a directory entry appears with the chosen
-filename — but the entry is marked `*PRG` with 0 blocks, and the file
+filename, but the entry is marked `*PRG` with 0 blocks, and the file
 cannot be read back via `c1541 -read`, via the game's own `krnio_load`,
 or via BASIC `LOAD"NAME",8`. It appears in two forms: no blocks allocated
 at all; or blocks allocated (the free-block count drops) with no directory
 record of them. Both forms were reproduced on demand by terminating x64sc
-with `-limitcycles` while the 1541 was still writing — which is what the
+with `-limitcycles` while the 1541 was still writing, which is what the
 symptom means (see Mechanism).
 
 The `*` flag preceding `PRG` in a `c1541 -list` output is the
@@ -693,15 +687,15 @@ splat bit never completed.
 
 ### Mechanism
 
-Oscar64's `krnio_save()` wraps KERNAL `SAVE` ($FFD8) — SETLFS plus
-`JSR $FFD8`, per `kernalio.c` — which is the same routine that BASIC's
+Oscar64's `krnio_save()` wraps KERNAL `SAVE` ($FFD8): SETLFS plus
+`JSR $FFD8`, per `kernalio.c`. That is the same routine BASIC's
 `SAVE"NAME",8` invokes. The KERNAL SAVE flow snapshots a contiguous memory
 block as a PRG file (two-byte load address header + raw bytes): it forces
 the secondary address to $61 at $F5FA (ROM bytes A9 61 85 B9) and closes the
 file through the KERNAL's own IEC close path. It is not broken. Under VICE
-3.10 with true drive emulation — the default, and the only configuration
+3.10 with true drive emulation (the default, and the only configuration
 in which drive 8 exists under `-default`; with `+drive8truedrive` there is
-no device 8 at all and the program never returns from its first IEC call —
+no device 8 at all and the program never returns from its first IEC call),
 `krnio_save()` of a 64-byte struct to a fresh c1541-formatted `.d64`
 produces a clean 1-block PRG (`c1541 -list`: `1 "tideline" prg`, no `*`,
 662 blocks free) that reads back intact (66 bytes = load address + struct),
@@ -738,16 +732,16 @@ a file with no 2-byte load-address header, reads back symmetrically with
 
 Give the drive time to finish. In a headless run, do not cut x64sc before
 the program's own done marker appears on screen; interactively, wait for
-the busy LED to go out or for `krnio_save` to return — and check the disk
-only afterwards. An earlier version of this entry told you to avoid
+the busy LED to go out or for `krnio_save` to return, and check the disk
+only afterwards. An earlier version of this entry said to avoid
 `krnio_save()`; the splat it described was the emulator being stopped
 mid-write, and the same cut splats the open/write/close pattern too.
 
 `krnio_open` / `krnio_write` / `krnio_close` is still the better fit for
-arbitrary structured data — game state, score tables, scenario maps — on
-its real merits: no 2-byte load-address header in the file, a symmetric
+arbitrary structured data (game state, score tables, scenario maps), for
+its own reasons: no 2-byte load-address header in the file, a symmetric
 read with `krnio_read`, and `@0:` replace semantics. Reserve `krnio_save()`
-for genuinely BASIC-compatible memory snapshots (e.g. a sprite table at a
+for BASIC-compatible memory snapshots (e.g. a sprite table at a
 fixed address that BASIC will `LOAD` into the right place).
 
 ### Worked example
@@ -773,21 +767,21 @@ if (krnio_open(2, 8, 2)) {
 //                          read(2, &state, sizeof(state)); close(2).
 ```
 
-The `@0:` replace prefix is important if the file might already exist.
-Without it the drive refuses the open with DOS error 63 FILE EXISTS — but
+The `@0:` replace prefix matters if the file might already exist.
+Without it the drive refuses the open with DOS error 63 FILE EXISTS, but
 `krnio_open()` still returns true, because it only reports KERNAL OPEN's
 carry, which a serial device sets for device-not-present or too-many-files,
 never for a DOS error. The following `krnio_write()` also reports the full
 byte count, yet nothing reaches the disk and the old file is left as it was
 (measured under VICE 3.10: open returned true, write returned 64, command
 channel read 63, file contents unchanged; an earlier version of this entry
-said the call returned false). If you need to know, open the command channel
+said the call returned false). To detect it, open the command channel
 (secondary address 15) and `krnio_read` the status line after the open.
 
 ### Cross-references
 
 - Oscar64 sample: `samples/kernalio/filewrite.c` and `fileread.c` —
-  the authoritative pattern.
+  the reference pattern.
 - Oscar64 header: `c64/kernalio.h` exposes both `krnio_save` (memory
   snapshots with a load address) and `krnio_open`/`write`/`close`
   (structured data).
@@ -813,15 +807,15 @@ A host tool authors a data file onto a `.d64` with
 `c1541 -attach disk.d64 -write host.bin TDLVL00`. The file appears in the
 directory, and `c1541 -read TDLVL00` round-trips it byte-for-byte. But the C64
 program that opens it with `krnio_setnam("TDLVL00")` + `krnio_open(2, 8, 2)`
-gets an open that appears to succeed — `krnio_open` returns true, because
+gets an open that appears to succeed (`krnio_open` returns true, because
 KERNAL OPEN's carry reports only device-not-present and table errors, never a
-DOS error — but `krnio_read` returns 0 bytes and the command channel (open
+DOS error), but `krnio_read` returns 0 bytes and the command channel (open
 15,8,15 and read) answers `62, FILE NOT FOUND` (measured in VICE x64sc; an
 earlier version of this entry said `krnio_open` returned false). Listing the
 disk directory from inside the emulator (`LOAD"$",8` then `LIST`) shows the
 filename rendered as graphics characters (e.g. `#####00`) instead of `TDLVL00`.
 A file the *game itself* wrote with the same logical name (via `krnio_write`)
-opens fine — only the host-authored file fails.
+opens fine; only the host-authored file fails.
 
 ### Mechanism
 
@@ -843,16 +837,15 @@ drive answers 62, FILE NOT FOUND on the command channel; KERNAL OPEN itself
 still returns C=0, so the C64 side sees a successful open with an empty file.
 
 Game-written files are immune because the game both writes and reads with the
-same ASCII byte sequence — they match each other regardless of absolute
-encoding. The mismatch appears only when one side is `c1541` (host) and the
+same ASCII byte sequence, so the bytes match whatever the encoding. The mismatch appears only when one side is `c1541` (host) and the
 other is the game (C64). `c1541 -read` is symmetric with `-write`, so a
-host-only round-trip never reveals the problem — only a real C64-side open does.
+host-only round-trip never reveals the problem; only a real C64-side open does.
 
 ### Fix
 
 Pass the c64 filename to `c1541` in **lowercase**. `c1541` then maps lowercase
-ASCII `a-z` to unshifted PETSCII 0x41-0x5A — i.e. `'t'` (0x74) → 0x54 — exactly
-the bytes the game's uppercase-ASCII C string requests, and they render
+ASCII `a-z` to unshifted PETSCII 0x41-0x5A (`'t'` (0x74) → 0x54), the bytes
+the game's uppercase-ASCII C string requests, and they render
 correctly as `TDLVL00` in the C64 directory.
 
 ```bash
@@ -866,9 +859,9 @@ c1541 -attach disk.d64 -write tdlvl00.bin tdlvl00
 Diagnose a suspected mismatch by listing the directory from inside the running
 emulator (`LOAD"$",8` then `LIST`): a name rendered as graphics characters is
 the tell. Test for the condition by reading the error channel after OPEN, or
-by checking `krnio_read`'s byte count — not by testing `krnio_open`'s return
+by checking `krnio_read`'s byte count, not by testing `krnio_open`'s return
 value, which is true either way. (The autostart program name's encoding does
-not matter — autostart loads by directory position, not by name match.)
+not matter: autostart loads by directory position, not by name match.)
 
 ### Worked example
 
@@ -906,9 +899,9 @@ subprocess.run(["c1541", "-attach", "disk.d64", "-write", "tdlvl00.bin", c64name
 
 ### Symptom
 
-A key handler that tests `key == 0x0d` for RETURN never fires — RETURN feels
-"dead" — while letter and space keys work normally. Typically shows up on a
-menu ("press RETURN to start") or a confirm action: the cursor moves, letters
+A key handler that tests `key == 0x0d` for RETURN never fires, so RETURN
+looks dead while letter and space keys work. It shows up on a menu ("press
+RETURN to start") or a confirm action: the cursor moves, letters
 register, but RETURN does nothing.
 
 ### Mechanism
@@ -928,26 +921,26 @@ if (giocharmap >= IOCHM_ASCII) {
 ```
 
 `giocharmap` starts at IOCHM_ASCII (`conio.c` line 3: `static IOCharMap
-giocharmap = IOCHM_ASCII;`), so the remap is on unless you call
-`iocharmap(IOCHM_TRANSPARENT)` — a program that never calls `iocharmap()` at
-all is affected. Measured in VICE 3.10 with Oscar64 2026-05-19 (`-keybuf` with
+giocharmap = IOCHM_ASCII;`), so the remap is on unless the program calls
+`iocharmap(IOCHM_TRANSPARENT)`. A program that never calls `iocharmap()` is
+affected. Measured in VICE 3.10 with Oscar64 2026-05-19 (`-keybuf` with
 a newline, which puts PETSCII $0D in the KERNAL buffer): raw GETIN $0D;
 `getchx()` on the default map $0A; after `iocharmap(IOCHM_TRANSPARENT)` $0D;
 after `iocharmap(IOCHM_PETSCII_2)` $0A. An earlier version of this entry named
 only IOCHM_PETSCII_2 as the cause.
 
-So a RETURN keypress (PETSCII `$0D`) reaches your code as `$0A`. Any comparison
+So a RETURN keypress (PETSCII `$0D`) reaches the program as `$0A`. Any comparison
 against `$0D` silently misses. (The reverse map preserves `$0D` on *output*, so
-printing is unaffected — only keyboard input is remapped.)
+printing is unaffected; only keyboard input is remapped.)
 
-The bug hides easily when input is also drivable by a test harness that writes
-an action code directly (e.g. a state byte) instead of going through `getchx` —
+The bug hides when input can also be driven by a test harness that writes
+an action code directly (e.g. a state byte) instead of going through `getchx`:
 the harness path never exercises the key comparison, so RETURN looks fine in
 automated tests but is broken for a real keypress.
 
 ### Fix
 
-Accept `$0A` (or both `$0A` and `$0D`) everywhere you test for RETURN:
+Accept `$0A` (or both `$0A` and `$0D`) wherever the code tests for RETURN:
 
 ```c
 // bad — never matches RETURN unless iocharmap(IOCHM_TRANSPARENT) was called
@@ -960,8 +953,8 @@ if (key == 0x0d || key == 0x0a) start_level();
 In a `switch`, add `case 0x0a:` alongside `case 0x0d:`.
 
 The alternative is `iocharmap(IOCHM_TRANSPARENT)`, which disables the
-rewrite — but it also disables the PETSCII case-swap, so use it only if you
-want raw PETSCII throughout.
+rewrite. It also disables the PETSCII case-swap, so use it only when the
+program wants raw PETSCII throughout.
 
 ### Cross-references
 
@@ -989,28 +982,27 @@ presses RUN/STOP+RESTORE, even though its init wrote `$10` (or `$7F`) to
 `$DD0D` "to switch the RESTORE NMI off". Everything the program held through
 the KERNAL goes with it: `$0314` is back at `$EA31`, the jiffy IRQ is running
 again, `$01` is back to the stock map, the VIC is in text mode at `$0400`. The
-code is still in memory, which is the whole point of the key.
+code is still in memory, which is what the key is for.
 
 RESTORE alone, without RUN/STOP, is quieter: a stable-raster split tears or a
-sprite multiplexer misplaces for one frame per press — the KERNAL's handler
-ran 182 cycles at an unpredictable point in the frame, from the NMI sequence
+sprite multiplexer misplaces for one frame per press, while `$DD0D` reads
+`$00` and no CIA2 source is enabled. The KERNAL's handler ran 182 cycles at an unpredictable point in the frame, from the NMI sequence
 to its `RTI`, with no cartridge, `$02A1 = 0` and no key held (rung 1: measured
 in VICE x64sc 3.10 as 189 cycles across a CIA1 Timer A count, 7 of them the
 trampoline described under Mechanism; the instruction path summed by hand
-from the bytes gives the same 189) — while `$DD0D` reads `$00` and no CIA2
-source is enabled. A program with its own NMI-timed player is not in this
+from the bytes gives the same 189). A program with its own NMI-timed player is not in this
 case: it owns `$0318`, so the KERNAL path never runs for it, and a press hands
-its handler one extra, early entry instead — spurious unless the handler
+its handler one extra, early entry instead, spurious unless the handler
 tests bit 7 of `$DD0D` before acting.
 
 A third form: the protection was there and vanished. The program pointed
 `$0318` at its own handler, then later ran the customary "put the KERNAL
 vectors back" line. `JSR $FF8A` (RESTOR) copies the ROM table at `$FD30` and
 writes `$FE47` back unconditionally. VECTOR with C = 0 (`$FF8D`) installs
-whatever 32-byte table the caller points at — VECTOR (`$FF8D` → `$FD1A`)
+whatever 32-byte table the caller points at (VECTOR, `$FF8D` → `$FD1A`,
 copies through a 32-byte loop at `$FD20`, whose C = 0 path is `LDA ($C3),Y`
 (`$FD25`) `: STA ($C3),Y : STA $0314,Y` (`$FD29`); an earlier draft put the
-pair at `$FD1A`, which is the entry's `STX $C3` — so it puts `$FE47` back
+pair at `$FD1A`, which is the entry's `STX $C3`). So it puts `$FE47` back
 when that table was captured with C = 1
 before `$0318` was changed, which is the usual snapshot-then-restore idiom.
 Either way `$0318` is `$FE47` again.
@@ -1027,16 +1019,16 @@ through a capacitor, C38, to a monostable whose output pulls the 6510's /NMI
 pin low for the length of its pulse. CIA2's /IRQ output is on the same pin.
 The two are in parallel: either can assert /NMI, neither passes through the
 other, and nothing about the key touches CIA2's FLAG pin, its interrupt
-control register, or any bit you can write in `$DD0D`. The monostable is one
+control register, or any writable bit in `$DD0D`. The monostable is one
 half of the 556 dual timer at U20 on the boards whose parts lists the
-C64-Wiki's motherboard page carries — ASSY 326298 (1982, schematic 326106),
+C64-Wiki's motherboard page carries: ASSY 326298 (1982, schematic 326106),
 250407 (1983), 250425 (1984) and 250466 (1986, schematic 252278); on the
 250469 (1987 on) U20 is the 8701 clock generator and the RESTORE one-shot was
 not traced for this entry. On early boards C38 is 51 pF, small enough that a
 slow press does not fire the one-shot (the German C64-Wiki's cure is 4.7 nF).
 No figure for the pulse length is claimed here; it was not measured. The key
-was not pressed for this entry — `-keybuf` stuffs the KERNAL's keyboard
-buffer, and RESTORE is not a matrix key — so the circuit itself stands on the
+was not pressed for this entry (`-keybuf` stuffs the KERNAL's keyboard
+buffer, and RESTORE is not a matrix key), so the circuit itself stands on the
 C64-Wiki's description; what the KERNAL does with the resulting NMI, below,
 is from the bytes. An earlier draft cited "drawing 252278, reproduced in the
 Programmer's Reference Guide": 252278 is the 250466's schematic and the 1982
@@ -1058,27 +1050,26 @@ The CPU vector at `$FFFA` holds `$FE43`. What runs from there:
 | `$FE64` | `D0 0C` | `BNE $FE72` — not held: join the RS-232 path, which finds nothing to do, writes `$02A1` back to `$DD0D` (`$FEB6`-`$FEBB`), pulls Y, X, A and `RTI`s (`$FEBC`-`$FEC1`). |
 | `$FE66` | `20 15 FD` `20 A3 FD` `20 18 E5` `6C 02 A0` | Held: RESTOR, IOINIT, the screen editor's VIC and screen reset, then `JMP ($A002)` — the BASIC warm start. |
 
-Read the branch at `$FE54` again. The handler decides "this was RESTORE" by
-finding **no** CIA2 flag. It never sees the key; it cannot. Masking FLAG — or
-every source — in `$DD0D` only guarantees that the flag is absent, which *is*
-the RESTORE case. `$DD0D = $10` is a no-op twice over: bit 7 clear makes it a
+At the branch at `$FE54` the handler decides "this was RESTORE" by finding
+**no** CIA2 flag. It never sees the key. Masking FLAG, or every source, in
+`$DD0D` only guarantees that the flag is absent, which is the RESTORE case. `$DD0D = $10` is a no-op twice over: bit 7 clear makes it a
 CLEAR-mask write, so it clears a FLAG mask that IOINIT had already cleared,
-and the key was never going to raise that flag in the first place.
+and the key never raises that flag.
 
-The same bytes give one more thing for free. The `LDA #$7F : STA $DD0D` at
+The same bytes show one more effect. The `LDA #$7F : STA $DD0D` at
 `$FE4C` wipes whatever CIA2 mask the program had set, and the exit at `$FEB6`
-re-enables only what `$02A1` — the KERNAL's RS-232 shadow — holds. A program
+re-enables only what `$02A1` (the KERNAL's RS-232 shadow) holds. A program
 that arms a CIA2 timer NMI while leaving `$0318` at `$FE47` loses that mask
 on the first RESTORE press or RS-232 event (rung 1, from the bytes; not run).
 
-Measured (rung 1; VICE x64sc 3.10, PAL C64C: 8565, 8580, 8521 — the build on
-this machine, the rest of this repository was checked against 3.9; an
+Measured (rung 1; VICE x64sc 3.10, PAL C64C: 8565, 8580, 8521, the build on
+this machine; the rest of this repository was checked against 3.9; an
 earlier version said PAL 6569, but `x64sc -default` is the C64C): a CIA2 Timer A one-shot NMI
 was sent through `$0318` to a trampoline of `BIT $DD0D` and `JMP $FE47`,
 preceded by a counter increment, with IRQs off and `$91` pre-set to `$00`.
 After the NMI, `$91`
 read `$FF`: the KERNAL's handler took the no-flag branch and `$F6BC` wrote the
-keyboard row into it. The control — the same trampoline without the `BIT` —
+keyboard row into it. The control, the same trampoline without the `BIT`,
 left `$91` at `$00`: the standing flag sent it down the `BMI`. The screen
 cells that displayed `$91` were decoded against the character ROM, not read
 by eye. The warm-start branch itself (`$FE66` onward) was not exercised: it
@@ -1086,7 +1077,7 @@ needs RUN/STOP held, and a headless run has no keys.
 
 **RUN/STOP without the IRQ.** Because `$F6BC` samples the hardware,
 RUN/STOP+RESTORE warm-starts with IRQs disabled and the keyboard scan stopped.
-What it does need is `$DC00` still driving column 7 low: IOINIT leaves
+It does need `$DC00` still driving column 7 low: IOINIT leaves
 `$DC00 = $7F` (the store at `$FDAB`) and SCNKEY writes `$7F` back on exit
 (`$EB42`), so the row read at `$F6BC` sees STOP on bit 7. A program that has
 left another value in `$DC00` with bit 7 high blinds the check, and
@@ -1101,36 +1092,36 @@ instruction on. The smallest one is a single `RTI`; from BASIC, `POKE
 792,193` aims `$0318` at `$FEC1`, which is the `RTI` at the end of the
 KERNAL's own handler (the byte at `$FEC1` is `$40`). Conditions and costs:
 
-- Every press still costs 20 cycles — the NMI sequence (7), the `SEI` (2),
-  the `JMP ($0318)` (5) and the `RTI` (6) — at an arbitrary point in the
-  frame; cycle-exact code shows it once per press. Measured (rung 1, VICE
+- Every press still costs 20 cycles at an arbitrary point in the frame:
+  the NMI sequence (7), the `SEI` (2), the `JMP ($0318)` (5) and the
+  `RTI` (6). Cycle-exact code shows it once per press. Measured (rung 1, VICE
   x64sc 3.10): CIA1 Timer A counting across a 200-cycle block of `NOP`s with
   DEN off read `$FF2C` with the CIA2 NMI masked and `$FF18` with it taken,
-  through a RAM `rti` and through the `$FEC1` stub alike — 20 either way. An
+  through a RAM `rti` and through the `$FEC1` stub alike: 20 either way. An
   earlier draft of this entry said 13, having left out the `SEI` and the
   indirect jump.
 - The handler gets control with nothing saved. The KERNAL's `PHA : TXA : PHA
-  : TYA : PHA` is at `$FE47`, after the vector, not before it — a handler
+  : TYA : PHA` is at `$FE47`, after the vector, not before it. A handler
   that does more than `RTI` saves what it touches.
 - Do not read `$DD0D` in this handler "to be safe" if the program also uses
   CIA2 NMIs: the read discards a CIA2 flag that may have arrived, and with it
   the timer or RS-232 event it announced. If both are in play, test bit 7 of
-  `$DD0D` and read it only when you mean to.
+  `$DD0D` and read it only when the handler is meant to consume the event.
 - It holds only while `$0318` does. RESTOR (`$FF8A`) copies the ROM table
   and writes `$FE47` back unconditionally, and so does the warm start, which
   calls it (`$FE66`). VECTOR with C = 0 (`$FF8D`) installs whatever table the
-  caller passes — the usual snapshot-then-restore idiom passes one captured
+  caller passes; the usual snapshot-then-restore idiom passes one captured
   before `$0318` was changed, and that one holds `$FE47`. That is why those
   two routines are on this entry's Triggered-by line.
 - It needs the KERNAL ROM mapped in (`$01` bit 1 set). With HIRAM = 0 the CPU
-  fetches `$FFFA` from RAM and the vector is yours to supply there;
+  fetches `$FFFA` from RAM and the program must supply the vector there;
   `ram_under_rom_traps` in `pitfalls/banking.md` shows the pattern.
 
 **B — the NMI lock.** The 6510's NMI input is edge-sensitive: an NMI is taken
 on the high-to-low transition of /NMI, and a line that then stays low is not
 taken again. Arm a CIA2 Timer A one-shot with its NMI mask set and give it a
 handler that never reads `$DD0D`. The timer underflows once, CIA2 sets its IR
-bit and pulls /NMI low, the handler runs once — and /NMI then stays low for as
+bit and pulls /NMI low, the handler runs once, and /NMI then stays low for as
 long as the flag stands. No later source can make an edge: not a second
 underflow, not the 556. The lock holds until something reads `$DD0D`.
 
@@ -1138,9 +1129,9 @@ Measured (rung 1; VICE x64sc 3.10): with the handler in the listing below, two
 one-shots produced one NMI (the counter cell showed `1`); the same program
 with `LDA $DD0D` in the handler produced two (`2`); and the locked program
 with a single `LDA $DD0D` from the main loop before a third one-shot produced
-two — the read, and nothing else, re-arms the edge. Costs: every CIA2 NMI is
+two: the read, and nothing else, re-arms the edge. Costs: every CIA2 NMI is
 forfeited (RS-232, NMI-timed digi and music players), and any code that reads
-`$DD0D` — yours, or a KERNAL RS-232 routine — silently unlocks it.
+`$DD0D` (the program's own, or a KERNAL RS-232 routine) silently unlocks it.
 
 **What does not work.** Any value written to `$DD0D`; `SEI` (it masks /IRQ
 only); stopping the KERNAL IRQ scan (the NMI path samples STOP itself).
@@ -1148,7 +1139,7 @@ only); stopping the KERNAL IRQ scan (the NMI path samples STOP itself).
 ### Worked example
 
 The pattern the registers page used to recommend. It clears a mask that is
-already clear, and the key never went through the CIA anyway:
+already clear, and the key never went through the CIA:
 
 ```kick
 // DOES NOTHING TO RESTORE. Bit 7 clear = CLEAR-mask write; FLAG's mask is
@@ -1158,7 +1149,7 @@ already clear, and the key never went through the CIA anyway:
 ```
 
 Fix A. Only the `SEI` at `$FE43` runs between the CPU's vector fetch and
-`($0318)`, so the stub is the whole story of a RESTORE press:
+`($0318)`, so the stub is all that a RESTORE press runs:
 
 ```kick
 // Fix A: take the NMI vector. $FE43 is SEI / JMP ($0318); only the SEI runs
@@ -1245,7 +1236,7 @@ main program continues.
 
 The experiment behind the "absence of a flag" claim. Put this at `$0318`,
 fire a CIA2 timer NMI, and the KERNAL's own handler cannot tell it from a
-RESTORE press — with RUN/STOP held it would warm-start:
+RESTORE press; with RUN/STOP held it would warm-start:
 
 ```kick
 tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
@@ -1257,14 +1248,14 @@ tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
 - `hardware/cia-reference.md` → "NMI vector (CIA2 + RESTORE)" — the dispatch
   summary; its "Disabling RESTORE" paragraph points back here.
 - `hardware/c64-registers-reference.md` → CIA2 key wiring points and quick
-  lookup — corrected together with this entry; they used to name FLAG bit 4
+  lookup, corrected together with this entry; they used to name FLAG bit 4
   and recommend `$DD0D = $10`.
 - `hardware/kernal-routines-reference.md` → Vectors table (NMINV `$0318`,
   ISTOP `$0328`), RESTOR (`$FF8A`), VECTOR (`$FF8D`).
 - Pitfall `decimal_mode_in_irq_handler` — an NMI handler that does arithmetic
   needs `CLD` as well.
 - Pitfall `ram_under_rom_traps` (`pitfalls/banking.md`) — the all-RAM case,
-  where `$FFFA` is yours and the KERNAL dispatch is out of the picture.
+  where the program supplies `$FFFA` and the KERNAL dispatch is out of the picture.
 - Technique `stable_raster_irq` — the routine whose once-per-press jitter is
   the RESTORE-alone symptom.
 
@@ -1376,9 +1367,9 @@ row before the left in every split, the store landing mid-line.
 
 ### Fix
 
-Do not run file I/O under a raster effect you want to keep. For a game,
-save and load on a static screen with the raster IRQ off, and put the
-screen and border into the state you want held before the first call:
+Do not run file I/O under a raster effect that must stay intact. For a
+game, save and load on a static screen with the raster IRQ off, and set
+the screen and border to the state to be held before the first call:
 
 ```c
     vic.color_border = VCOL_BLACK;      // whatever the static screen wants
@@ -1520,7 +1511,7 @@ return code `0F` in slot 3 of the queue was not chased.
 No wait is safe by construction: the smallest wait that ran here was
 zero frames and the one that hung was ten. What held across every run:
 
-- Run the binary you ship on PAL under autostart with a fresh disk, once.
+- Run the shipped binary on PAL under autostart with a fresh disk, once.
   The hang is deterministic for that binary, so one run answers.
 - If it hangs, move the phase: a different frame count before the first
   file call, or the call later in start-up. Every wait other than ten
