@@ -20,6 +20,14 @@ The Oscar64 canonical interface for this chip lives in `c64/sid.h`, which define
 **Complexity:** low
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414
+**Claims:** sid_voice_1-3 (shares)
+**Claims basis:** derived-listing
+
+`shares`, as a way into a voice rather than an effect: the technique is
+the register layout, and which voice it writes is the caller's choice.
+The technique that plays the voice (a player, an instrument, an effect)
+owns it. Read off `recipes/kickassembler/music-player.md`, which writes
+all three voices through `$D400,X` with X = 0, 7, 14.
 
 ### Why
 

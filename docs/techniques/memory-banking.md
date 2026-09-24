@@ -754,6 +754,9 @@ instruction boundaries against a mid-instruction switch, which cannot happen.)
 
 **Complexity:** medium
 **Region:** both
+**Cost:** cycles_per_frame=0
+**Cost basis:** arithmetic
+**Cost measured on:** kickassembler-scroll-panel-split (one `$01` store at init, and the IRQ enters through `$FFFE` without the KERNAL dispatcher, so no per-frame work)
 **Claims:** irq_vector_fffe (owns), nmi_vector_fffa (owns)
 **Claims basis:** estimated
 

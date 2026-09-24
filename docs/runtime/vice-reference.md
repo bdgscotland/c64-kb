@@ -1015,8 +1015,8 @@ file round trip at 40,000,000 with a fresh D64):
 
 | Recipe | Declared from the page alone: violations | What had to be added to pass |
 |---|---|---|
-| `kickassembler/sprite-multiplex-game` | `irq_vector_fffe`, `nmi_vector_fffa`, zero page `$02-$39`, screen, colour RAM, `cia2_timer_a`, `cia2_timer_b`; since the ICR rule also `cia1_timer_a`, `cia1_timer_b`, `cia1_tod` (`sta $dc0d`) and `cia2_tod` (`sta $dd0d`) | `ram_under_kernal` (the recipe banks the KERNAL out; its `techniques:` omits it), the zero page, the screen and colour RAM, the two timers and `cia2_tod` as harness, `cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)` |
-| `kickassembler/scroll-panel-split` | `irq_vector_fffe`, screen `$0400-$0747`, panel `$0F20-$0FE7`, `$3FFF`, colour RAM | `ram_under_kernal`, the ranges; `soft_scroll_v` and `char_scroll_buffer_v` have no Claims line |
+| `kickassembler/sprite-multiplex-game` | `irq_vector_fffe`, `nmi_vector_fffa`, zero page `$02-$39`, screen, colour RAM, `cia2_timer_a`, `cia2_timer_b`; since the ICR rule also `cia1_timer_a`, `cia1_timer_b`, `cia1_tod` (`sta $dc0d`) and `cia2_tod` (`sta $dd0d`) | `ram_under_kernal` (the recipe banks the KERNAL out; its `techniques:` omitted it until #35), the zero page, the screen and colour RAM, the two timers and `cia2_tod` as harness, `cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)` |
+| `kickassembler/scroll-panel-split` | `irq_vector_fffe`, screen `$0400-$0747`, panel `$0F20-$0FE7`, `$3FFF`, colour RAM | `ram_under_kernal` (added to `techniques:` in #35), the ranges; `soft_scroll_v` and `char_scroll_buffer_v` had no Claims line (now `none`) |
 | `oscar64/sfx-engine` | Oscar64 runtime zero page (`$0D-$56` seen), BSS, its stack at `$9FFC-$9FFF`, screen, colour RAM, `cia1_timer_a` | the zero page, the map file's BSS and stack, the screen and colour RAM, `cia1_timer_a` as harness |
 | `kickassembler/file-io-roundtrip` | `cia2_timer_a`, `cia2_timer_b` | the two timers as harness; every KERNAL zero-page store fell inside the ten routines' may-sets |
 

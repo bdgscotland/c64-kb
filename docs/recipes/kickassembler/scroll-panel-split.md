@@ -3,7 +3,7 @@ recipe: scroll-panel-split
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [scroll_panel_split, soft_scroll_v, char_scroll_buffer_v]
+techniques: [scroll_panel_split, soft_scroll_v, char_scroll_buffer_v, ram_under_kernal]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD0D]
 uses_kernal: []
@@ -24,6 +24,10 @@ line's right border; `$D021` follows one line later. The table has one short
 entry, for YSCROLL 6, the phase at which line 214 is a badline. This is the
 `scroll_panel_split` technique; set `USE_TABLE` to 0 to see the one-phase
 glitch it prevents (pitfall `scroll_phase_breaks_panel_split`).
+The KERNAL is banked out and the IRQs go through `$FFFE`, which is
+`ram_under_kernal` (`docs/techniques/memory-banking.md`). An earlier
+version's `techniques:` omitted it; the `scripts/claims-watch.ts` store
+trace found the `$FFFE` writes (#35).
 
 ## Source
 

@@ -112,6 +112,15 @@ earlier `memmove` of screen and colour RAM, 3.8 PAL frames, which tore.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** (none)
+**Claims:** none
+**Claims basis:** derived-listing
+
+`none` is read off `recipes/kickassembler/scroll-panel-split.md`: the
+technique writes only `$D011` bits 0-2 (YSCROLL) and keeps bit 7, and no
+seeded HardwareUnit holds YSCROLL. Beside another YSCROLL writer such as
+`fld_flexible_line_distance` the compatibility check reports only the
+soft `shared_register` on `$D011`, never an ownership conflict
+([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
 ### Why
 
@@ -280,6 +289,14 @@ cycles (`recipes/oscar64/soft-scroll-h.md`).
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** (none)
+**Claims:** none
+**Claims basis:** derived-listing
+
+`none` is read off `recipes/kickassembler/scroll-panel-split.md`: besides
+YSCROLL (see `soft_scroll_v`) the carry moves screen and colour RAM,
+which are the program's memory, not units. That listing copies with
+absolute indexed loads and stores and no zero-page pointer; a pointer
+copy's bytes are the recipe's claim.
 
 ### Why
 
