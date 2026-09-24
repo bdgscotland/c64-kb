@@ -918,9 +918,10 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D012
-**Cost:** bytes_code=339
-**Cost basis:** derived-listing
-**Cost measured on:** oscar64-pal-ntsc-detect (whole PRG: the 341-byte file less its load address, built with Oscar64 here)
+**Cost:** cycles_per_frame=23032, bytes_code=339
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** oscar64-pal-ntsc-detect (one call at boot, SEI to CLI, the worst of 56 entry points, PAL; NTSC 17,514; screen on; whole PRG: the 341-byte file less its load address, built with Oscar64 here)
 **Claims:** none
 **Claims basis:** measured-vice
 
@@ -929,7 +930,7 @@ PAL): the measurement reads `$D011` and `$D012` and stores to no
 HardwareUnit; the recipe's other stores are screen, colour RAM and the
 border colour.
 
-The Cost line carries no cycle figure. The durations under "Why it works" (3,575 to 23,172 cycles on PAL) were measured on the hardware page's KickAssembler listing, which is no recipe, so they stay in the prose. An earlier graph gave this card the fire effect's frame cost (27,301 cycles, measured on kickassembler-fire-effect); ingest now warns when a Cost line names a recipe that does not realise its technique.
+The cycle figure is one call of the recipe's `last_raster_line`, from its `SEI` to its `CLI`, timed by a VICE monitor exec trace (x64sc 3.10). VICE's random autostart delay was left on so that each run entered the routine on a different line: 150 runs per model gave 56 distinct durations on PAL, 3,904 to 23,032 cycles, and 50 on NTSC (`-model ntsc`), 1,263 to 17,514. The worst entry, line 256, was not among them; by arithmetic it takes 23,184 cycles on PAL and 17,550 on the 6567R8 ("Why it works"). Either way one call can take more than a PAL frame, so it belongs before the frame loop. A first sweep timed to the `RTS` instead and got up to 23,291 on PAL and 17,731 on NTSC, above the arithmetic bound: the KERNAL interrupt that became pending during the wait runs between `CLI` and `RTS`, and that time is the KERNAL's, not the routine's. Until #96 the Cost line carried no cycle figure, and the durations under "Why it works" (3,575 to 23,172 cycles on PAL) were measured on the hardware page's KickAssembler listing, which is no recipe. An earlier graph gave this card the fire effect's frame cost (27,301 cycles, measured on kickassembler-fire-effect); ingest now warns when a Cost line names a recipe that does not realise its technique.
 
 ### Why
 

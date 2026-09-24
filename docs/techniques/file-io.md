@@ -798,9 +798,21 @@ a raster IRQ misses most frames during it
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, LOAD, SETMSG
+**Cost:** cycles_per_frame=6931765
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-load-asset-runtime (one call, a 2,048-byte file, drive idle before the call, 1541-II true drive emulation, PAL, screen on; 5,572,444 PAL and 5,773,293 NTSC when the drive has just served a SAVE)
 **Claims:** serial_bus (shares), cia1_timer_b (shares)
 **Claims basis:** measured-vice
 **Consumes formats:** PRG
+
+The Cost line is one LOAD in the recipe's program, timed by CIA2 timers A
+and B chained, in VICE x64sc 3.10 with true drive emulation (the recipe's
+"The second start" and its pinned output). It is over 350 PAL frames, so a
+plan runs it between play phases, never inside one: `c64_plan_budget`
+reports a figure above one frame as multi-frame and does not sum it. The
+larger figure includes the drive spinning up and searching the directory.
+The time scales with the file: this is a 2,048-byte file, and no other
+length was measured. Before #96 this page had no Cost line.
 
 ### Why
 

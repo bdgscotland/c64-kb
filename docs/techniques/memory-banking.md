@@ -855,6 +855,9 @@ to the raster and sprite recipes landing in Phase 4+.
 **Region:** both
 **Uses registers:** D018, D011
 **Requires:** screen_ram_relocation
+**Cost:** cycles_per_frame=57
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-double-buffer (the flip and the page toggle, 31 cycles, plus the sprite-pointer copy, 26; PAL and NTSC; the page redraw and the wait for the blank are not in it)
 **Claims:** vic_matrix_base (owns)
 **Claims basis:** measured-vice
 
@@ -863,6 +866,18 @@ saw one `$D018` store a frame, changing only the matrix bits. `$D011` is
 polled, not written. The recipe's sprite and CIA1 timer B are its
 demonstration and measurement harness, not the technique's
 ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
+
+The Cost line is the technique's own work, timed by a VICE monitor exec
+trace of the recipe's `-O2` build (x64sc 3.10, PAL and NTSC, the same on
+every frame traced). The flip, from the load of `vm[hidden]` after the
+wait to the store of the toggled index, is 31 cycles. The copy of the
+sprite pointer into the hidden page is 26, a bound: the traced block also
+sets up an argument for the caption. What the program draws into the
+hidden page is not the technique's and is not in the figure; budget it
+with the drawing code. The recipe's full 1 KB redraw takes 12,598 cycles
+on PAL and 13,165 on NTSC. The #22 game test, which copied three rows a
+frame into the hidden page, measured 2,180 and 2,015. Before #96 this
+page had no Cost line, and `c64_plan_budget` reported it as unknown.
 
 ### Why
 
