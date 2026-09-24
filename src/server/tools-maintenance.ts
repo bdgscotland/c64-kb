@@ -50,6 +50,7 @@ Example: {"path": "/abs/path/docs/hardware/sid-tricks.md", "content": "# SID tri
     content: z.string().describe("Full markdown content (body, optionally with frontmatter)"),
   },
   annotations: INGEST_DOC,
+  readsGraph: false,
   run: async ({ path: p, content }) => ({ text: await ingestDoc(p, content) }),
 });
 
@@ -121,5 +122,6 @@ Example: {"query": "stable raster IRQ on REU-attached systems", "tool_called": "
   },
   outputSchema: ReportGapSchema.shape,
   annotations: REPORT_GAP,
+  readsGraph: false,
   run: ({ query, tool_called, notes }) => reportGap({ query, ...definedOnly({ tool_called, notes }) }),
 });

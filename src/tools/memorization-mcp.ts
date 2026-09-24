@@ -105,6 +105,7 @@ Limitations: copies[] is always [] in Phase A — identifying WHICH reference ma
       inputSchema: InputSchema.shape,
       // Runs a local subprocess that reads its inputs and writes nothing.
       annotations: READ_ONLY,
+      readsGraph: false,
       run: async ({ candidate_events, reference_events }) => {
         const reply = await runService(
           JSON.stringify({ kind: "check", events: candidate_events, references: reference_events }),

@@ -34,6 +34,7 @@ Returns a markdown table with one row per service. Expected length: ~6 lines.
 Example: {} — no arguments.`,
   inputSchema: {},
   annotations: READ_ONLY,
+  readsGraph: false,
   run: async () => ({ text: formatHealth(await health()) }),
 });
 

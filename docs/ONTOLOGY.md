@@ -21,7 +21,7 @@ Design principles:
   category, not separate `CopperTechnique`/`SpriteTechnique` labels).
 - Edge names: verb-based SCREAMING_SNAKE reading as sentences.
 
-## Node Types (16)
+## Node Types (17)
 
 ### KernalRoutine
 
@@ -118,7 +118,7 @@ soft scroll, plasma, hard-restart, illegal-opcode trick, etc.).
 | cost_irq_slots | integer, optional | Raster or timer interrupts the technique needs per frame. |
 | cost_sprites_per_line | integer, optional | The most hardware sprites displayed on one raster line of the technique's lines, 0-8 (schema 24). `c64_timing_budget` subtracts their DMA (3 + 2 per sprite, measured) from the line's user cycles. |
 | cost_cycles_per_frame_typical | integer, optional | A measured typical frame beside a worst-frame cost_cycles_per_frame, never above it (schema 27). `c64_plan_budget` sums it for the low end of its range, which is therefore not a floor. |
-| cost_recipe | string, optional | The recipe the cost figures were measured on or counted from, from `**Cost measured on:**` (schema 27). A property, not an edge; ingest warns when it names no Recipe. |
+| cost_recipe | string, optional | The recipe the cost figures were measured on or counted from, from `**Cost measured on:**` (schema 27). A property, not an edge; ingest warns when it names no Recipe, or a Recipe with no IMPLEMENTS edge to this technique (#41). |
 | cost_conditions | string, optional | The parenthetical after the recipe on that line: "screen blanked", "whole PRG", "one call" and the like (schema 27). `c64_plan_budget` reads "screen on" (the badline stalls that fell inside the figure are in it), "blank" (none are) and "whole PRG" (bytes not summed). |
 | cost_includes | string[], optional | Techniques whose per-frame work is inside this technique's figure, from `**Cost includes:**` (schema 27). Authored, never inferred; ingest warns when a name is no Technique. A budget that lists both counts the included one once. |
 | cost_basis | string, optional | How the cost figures were obtained, one of "measured-vice", "derived-listing", "arithmetic", "estimated"; present exactly when any cost_* property is. The word is the weakest that applies to any figure on the line. |
@@ -319,6 +319,23 @@ would split every region rule.
 
 `jap`, `c64gs`, `pet64` and `ultimax` also exist in this VICE; they are
 left out until a page needs them.
+
+### IngestRun
+
+The rebuild marker (#41), not a document entity. A clean batch ingest
+(`ingest:clean`, `ingest --force`) MERGEs the one node `{name: "rebuild"}`
+before it wipes anything and deletes it after its report. While it exists
+every MCP tool that reads the graph, and the matching CLI commands, answer
+"The knowledge base is being rebuilt" instead of answering from a
+half-built graph (`src/services/rebuild-marker.ts`). Not a cleanable label,
+so `clean()` leaves it; an ingest that fails leaves it too, and the tools
+say to rerun the ingest. No index, no edges.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| name | string | Always `rebuild` |
+| started_at | string | ISO time the ingest set the marker |
+| flags | string | The ingest's flags, e.g. ` --clean` |
 
 ## Edge Types (26)
 

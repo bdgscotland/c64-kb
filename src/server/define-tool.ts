@@ -11,6 +11,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { rebuildInProgress, rebuildMessage } from "../services/rebuild-marker.ts";
 
 /** What a tool's `run` returns: the markdown text and, for a tool with an outputSchema, the typed payload. */
 export interface ToolReply {
@@ -27,6 +28,12 @@ export interface ToolDefinition<In extends z.ZodRawShape> {
   inputSchema: In;
   outputSchema?: ZodRawShapeCompat;
   annotations: ToolAnnotations;
+  /**
+   * False for a tool that never answers from the graph (health, lint, the
+   * VICE runs, gap reports, ingest_doc). Every other tool is refused while
+   * a rebuild marker is set; see guardRebuild.
+   */
+  readsGraph?: false;
   run: (args: z.output<z.ZodObject<In>>) => ToolReply | Promise<ToolReply>;
 }
 
@@ -53,6 +60,17 @@ function toCallToolResult(reply: ToolReply): CallToolResult {
 }
 
 /**
+ * While a batch ingest is rebuilding the graph, a tool that reads it
+ * answers with the rebuild message and isError, not with what the half-built
+ * graph holds (#41: "Pitfalls (0)" mid-ingest). Null lets the tool run.
+ */
+async function guardRebuild(readsGraph: false | undefined): Promise<ToolReply | null> {
+  if (readsGraph === false) return null;
+  const state = await rebuildInProgress();
+  return state ? { text: rebuildMessage(state), isError: true } : null;
+}
+
+/**
  * Wrap one tool. The SDK validates the arguments against `inputSchema`
  * before the handler runs; the handler parses them once more with the same
  * schema so `run` gets typed arguments without a cast (the SDK's handler
@@ -74,7 +92,8 @@ export function defineTool<In extends z.ZodRawShape>(def: ToolDefinition<In>): R
           ...(def.outputSchema === undefined ? {} : { outputSchema: def.outputSchema }),
           annotations: def.annotations,
         },
-        async (args) => toCallToolResult(await def.run(parser.parse(args))),
+        async (args) =>
+          toCallToolResult((await guardRebuild(def.readsGraph)) ?? (await def.run(parser.parse(args)))),
       );
     },
   };

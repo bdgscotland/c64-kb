@@ -118,6 +118,7 @@ Output (structured): run {prg, model, cycles, entry, start_clock, vice}, interru
   inputSchema: IrqChainInput,
   outputSchema: IrqChainOutput,
   annotations: READ_ONLY,
+  readsGraph: false,
   run: async (args) => irqChainReply(await reIrqChain(args)),
 });
 
@@ -133,5 +134,6 @@ Output (structured): run {prg, model, cycles, entry, start_clock, vice}, samples
   inputSchema: FrameProfileInput,
   outputSchema: FrameProfileOutput,
   annotations: READ_ONLY,
+  readsGraph: false,
   run: async (args) => frameProfileReply(await reFrameProfile(args)),
 });
