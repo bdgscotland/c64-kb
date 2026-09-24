@@ -151,8 +151,10 @@ To quiet the CIA, write `$DC0D = 0x7F` before `rirq_start`.
 
 Raw VIC-II raster IRQs carry 0-6 cycles of jitter because the CPU finishes
 its current instruction before entering the handler, and on top of that the
-KERNAL dispatcher adds 29 fixed cycles, so the handler starts on cycle 37-43
-of the line. A colour write from there lands two-thirds of the way across the
+KERNAL dispatcher adds 29 fixed cycles, so the handler starts on cycle 39-45
+of the line (measured in VICE x64sc 3.10, `techniques/raster.md`,
+`stable_raster_irq` Cycle budget; this said 37-43 before, arithmetic that
+left out the 2 cycles before the earliest interrupt sequence). A colour write from there lands two-thirds of the way across the
 visible line.
 
 What `rasterirq.c` does about it can be read in `rirq_build`: every
@@ -162,7 +164,7 @@ counter passes the programmed row (A holds the row; the branch falls through
 once `$D012` exceeds it). In the KERNAL-vector mode used here the dispatcher
 arms `$D012` *two* lines before the target (the hardware-vector mode arms it
 one line before; the earlier text said "the row before" for both), so the
-KERNAL's 37-43-cycle entry and the dispatcher's own table walk are paid on
+KERNAL's entry on cycle 39-45 (37-43 before) and the dispatcher's own table walk are paid on
 the lines above and the loop is already spinning when the target line
 begins. Its `CMP` reads `$D012` on cycles 1-7 of that line, the branch falls
 through in 2 and the `STY` (slot 0 is a `STY`, not a `STA`; slot 1 is `STX`)

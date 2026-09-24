@@ -112,11 +112,16 @@ same-image, same-color sprite swarms (bullet patterns, particle effects).
 On PAL, each raster line is 63 cycles. Through the KERNAL vector ($0314) the
 handler's first instruction runs 36 cycles after the interrupt is taken (7 for
 the interrupt sequence and 29 for the $FF48 dispatcher: PHA TXA PHA TYA PHA TSX
-LDA $0104,X AND #$10 BEQ JMP ($0314)), plus 0–6 cycles of jitter from the
-interrupted instruction, and more if the interrupt lands on a badline.
+LDA $0104,X AND #$10 BEQ JMP ($0314)), and the interrupt is taken 2 to 8
+cycles after the raster compare (0–6 cycles of jitter from the interrupted
+instruction on top of a 2-cycle minimum), so the handler starts on cycle
+39–45 of its line (measured in VICE, `techniques/raster.md`,
+`stable_raster_irq` Cycle budget), later if the interrupt lands on a
+badline.
 Acknowledging $D019 costs about 6 more, and the bare exit through $EA81 (PLA
 TAY PLA TAX PLA RTI) 22, so the round trip is about 64 cycles, a full raster
-line, of which the 36–42 before the first write eat into the slack.
+line, of which the 38–44 before the handler's first instruction eat into
+the slack. An earlier version said 36–42 and gave no minimum.
 Banking the KERNAL out and pointing $FFFE/$FFFF at the handler removes the
 29-cycle dispatcher. (An earlier version of this section put the whole
 entry/acknowledge/exit overhead at about 15 cycles, which is not consistent

@@ -208,7 +208,7 @@ carry:                       // 6 + 3 taken
     nop                      // 2
     jmp loop                 // 3   = 20
 
-// One handler for the five slots. Entered on cycle 37-43 of its line
+// One handler for the five slots. Entered on cycle 39-45 of its line
 // through the KERNAL dispatcher; the $D011 write lands about 20 cycles in.
 irq:
     lda #$19
@@ -381,8 +381,9 @@ The RAM at `$0340` was dumped from the monitor on the store to `done`
 (`-moncommands` with `tr store 0348` and `m 0340 0350`); the store lands
 at cycle 8,881,007 on PAL, 300 frames after the first interrupt at
 2,990,271. `frames` read 300 in every run, `d011_rd` read `$0B` and
-`d012_rd` 254 (the handler enters line 253 on cycle 37 to 43 and the read
-is 25 cycles later, in line 254), so the writes landed where the table
+`d012_rd` 254 (the handler enters line 253 on cycle 39 to 45 and the read
+is 25 cycles later, in line 254; the entry said 37 to 43 before it was
+measured, here and in the listing comment), so the writes landed where the table
 says. `meter` is the iterations counted in frame 300; one iteration is 20
 cycles.
 
@@ -529,7 +530,7 @@ shorter frame and VICE's 247-row window include, as itemised above.
   the top comparison line, both measured in VICE);
   `recipes/kickassembler/topbottom-border-open.md` (the RSEL write window
   and the `$3FFF` readback); `recipes/kickassembler/stable-raster-irq.md`
-  (handler entry on cycle 37 to 43); `pitfalls/raster-and-badline.md`
+  (handler entry on cycle 39 to 45); `pitfalls/raster-and-badline.md`
   (`d012_wrap_around`, `idle_fetch_byte_shows_in_gaps`,
   `vic_bus_takeover_on_dma`); `pitfalls/sprite.md`
   (`sprite_x_high_bit_wrong_register`).
