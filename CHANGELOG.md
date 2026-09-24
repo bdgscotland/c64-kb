@@ -5,7 +5,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 834, schema 39, tools 2.16.0, package 0.29.0.
+Data 835, schema 39, tools 2.16.0, package 0.29.0.
+
+**Four SID instrument techniques, and a note-start order bug in the
+music player (data 835; part of #55, #118).** New entries in
+sid-instruments.md, each with a recipe that plays through the #50
+player twice (as written, and with the feature off), a register trace
+equal to the program's log on 192 of 192 calls, and WAVs analysed in
+Python under the 6581 and 8580 models (reSID, not silicon):
+`sid_sync_lead` (heard pitch is the master's within 0.1 %),
+`sid_ring_mod_bell` (partials at 0.414 and 2.414 of the carrier),
+`sid_pwm_pad` (second-to-first harmonic follows |cos(pi w/4096)| within
+0.026 on average), `sid_hard_restart_drum` (hits start 0.2-1.1 ms after
+the gate, 33-35 ms without the restart). The #50 player writes a note's
+AD and SR about 150 cycles before its gate, which undoes the hard
+restart for attack 0: 0 of 80 hits on time, 80 of 80 with the gate
+first (#118). sid-env3-filter blamed its NTSC +8 cycles on the old CIA;
+a 6526 PAL run reads the same as the default, so it is the player's
+NTSC skip-counter path.
 
 **A plasma recipe, measured, for a technique that had only an estimate (data 834).** `kickassembler/plasma`: a full-screen colour-RAM plasma, one column term and two row terms, a quarter of the rows repainted each frame, run on PAL and NTSC and pinned at the same cycle count with a per-colour cell census. The row loop is 18 cycles a cell against the technique page's estimate of 30 to 40; the worst frame is 6,830 cycles PAL and 7,088 NTSC, the whole screen in one pass 22,574 (1.15 PAL frames), which is why it is a quarter a frame. A control with the row term dropped collapses to vertical stripes and fails the check. The `plasma` technique gains a measured Cost, a Recipes pointer and a Sources line. Built because the MEASURED demo now carries a plasma in its first part and the KB had no recipe behind it; nobody has watched it animate, the emulator is the only witness.
 
