@@ -257,10 +257,12 @@ the longer line, not analysed here.
 
 With VICE's VSP-bug emulation on (`-VICIIvspbug`), VICE logs each event
 as `VSP Bug: Line: 3/51  Cycle: 24` for the pinned PAL build: its write
-lands on line 51 at VICE's cycle 24. Whether VICE counts that from 0 or
-from 1 was not checked. Counted from 0 it is cycle 25 in the 1-based
-numbering of Bauer's article, and a shift of 10 is `25 - 15`, what the
-technique page's formula gives. The recipe does not otherwise tie
+lands on line 51 at VICE's cycle 24. That log prints VICE's cycle-table
+index, which is Bauer's cycle minus one (`runtime/vice-reference.md`,
+"What the CYC column counts", from the VICE source), so the write is
+cycle 25 in Bauer's numbering, and a shift of 10 is `25 - 15`, what the
+technique page's formula gives. An earlier version left the counting
+base unchecked. The recipe does not otherwise tie
 `VSP_PAD` to an absolute cycle.
 
 ### One frame without the write

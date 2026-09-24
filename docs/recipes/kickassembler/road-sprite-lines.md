@@ -29,8 +29,10 @@ is the method of the racing starter (`templates/racing/src/engine.asm`),
 cut down to the one technique.
 
 Measured in VICE x64sc 3.10 on PAL c64c (8565/8580/8521) and NTSC
-(6567R8): the monitor puts every `STA $D016` of the road on cycle 7 of its
-own line and every probe `STA $D020` on cycle 15, on every frame of
+(6567R8): the monitor's store trace puts every `STA $D016` of the road on
+cycle 7 of its own line and every probe `STA $D020` on cycle 15 (Bauer's
+numbering, which is what a store trace prints:
+`runtime/vice-reference.md`, "What the CYC column counts"), on every frame of
 20,000,000-cycle runs on both models; 100 exit screenshots, 50 a model,
 show all 96 lines at their table XSCROLL and all 84 probes at x 17. With
 the pads blind to the sprites, 32 to 75 of the 84 probes a shot land
@@ -43,7 +45,8 @@ somewhere else.
 //
 // A raster road with three sprites on its lines. Every road line 107-202
 // has one 64-byte block of code; each block starts on the same cycle of
-// its line. Cycles are the VICE monitor's CYC column (see the page):
+// its line. Cycles are Bauer's (1-63), as the VICE monitor's store trace
+// prints the write's cycle (docs/runtime/vice-reference.md):
 //
 //   normal line  LDA #xs  STA $D016    XSCROLL, written on cycle 7
 //                NOP
@@ -499,10 +502,14 @@ $d020`), 20,000,000 cycles a model, stores from the road blocks only:
 | `STA $D020` (normal lines) | 71,640, all cycle 15 | 81,898, all cycle 15 |
 | Blocks with more than one (line, cycle) | 0 | 0 |
 
-The cycles are the monitor's CYC column as it prints it.
-`pseudo-3d-road.md` adds one to that column; this page does not, so its
-"cycle 4" is this page's 3. With these numbers a badline blocks the CPU's
-reads from cycle 12 (next paragraph); the probe's cycle 15 shows at x 17.
+The cycles are the store trace's CYC as it prints it, which is the
+write's cycle in Bauer's numbering. `pseudo-3d-road.md`'s "cycle 4" is
+the same numbering: its store trace prints 4 (measured for issue #82).
+An earlier version said that page added one to the column and that its
+4 was this page's 3 (it adds one only to exec CYC), and listed the
+mapping to Bauer's numbering as not settled. A badline blocks the
+CPU's reads from cycle 12 (next paragraph); the probe's cycle 15 shows
+at x 17, as x = 8c − 103 in `runtime/vice-reference.md` gives.
 The sprite tracks put all 16 pad cases (8 sprite sets, normal and
 badline) on the road within the first 44 frames (arithmetic from the
 listing's speeds), so the trace covers each of them hundreds of times.
@@ -543,7 +550,7 @@ the RTI, 134 PAL and 161 NTSC frames).**
 
 | | PAL | NTSC |
 |---|---|---|
-| `irq_top`'s first instruction (line 103, cycle 9-11) to `road_done` | 6,348-6,350 | 6,549-6,550 |
+| `irq_top`'s first instruction (line 103, cycle 10-12; the exec trace printed 9-11, which an earlier version quoted as is) to `road_done` | 6,348-6,350 | 6,549-6,550 |
 | `road_done` to the RTI: `update` (sprite Y, masks, 96 operands) and the exit | 3,699-3,700 | 3,697-3,700 |
 | The IRQs' whole share of a frame | 10,047-10,049 of 19,656 | 10,246-10,250 of 17,095 |
 | RTI on | line 262 | line 260 |
@@ -566,10 +573,10 @@ cycles; entered on an odd byte, the last pair reads as `CMP #$C5` and a
 cycles from 2 up is one operand. A badline block stores `$D016` only and
 is reading when the VIC takes the bus: the CPU loses the 43 cycles from
 12 to 54 (the `BADLOSS` found for the racing starter; measured here as
-the whole chain staying exact). The starter's README counts a block's
-first cycle as cycle 1 and so calls its `$D016` and `$D021` stores 6 and
-12; with the same sync and the same block start the monitor would print
-7 and 13 for them (arithmetic, not traced there).
+the whole chain staying exact). The starter's stores trace on 7 and 13
+too (measured for issue #82, both models). Its README called them 6 and
+12, counting the block's first cycle as cycle 1, until #82; the block's
+first cycle is Bauer's 2.
 
 **The pads.** The VIC fetches sprites 0-2 at the end of a line (pointer
 slots 58, 60 and 62 on PAL, 60, 62 and 64 on NTSC,
@@ -623,7 +630,4 @@ so this listing uses the border.
 - Sprites 3-7 on the road, Y-expanded sprites, and a sprite reused lower
   down the road (its Y and pointer rewritten from inside the blocks):
   none of them is built or measured here.
-- The mapping from the monitor's CYC column to the numbering of Bauer's
-  article is not settled on this page; `pseudo-3d-road.md` and `dysp.md`
-  differ on it. The measurements above hold in the monitor's own numbers.
 - A real 6569, 8565 or 6567. Everything here is VICE x64sc 3.10.

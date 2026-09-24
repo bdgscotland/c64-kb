@@ -66,13 +66,17 @@ as a subroutine a slot handler calls. It arms a second IRQ four lines on,
 slides through NOPs, and on the second entry reads `$D012` twice so the
 last cycle of jitter is absorbed; then it puts back the line the
 dispatcher armed and returns. Measured with the VICE monitor: the caller
-goes on at cycle 51 of line 153 on both models (the monitor numbers the
-cycles of a line 0 to 62 on PAL, 0 to 64 on NTSC).
+goes on at cycle 52 of line 153 on both models. Cycles here are Bauer's,
+1 to 63 (65 on NTSC): an exec trace prints an instruction's first cycle
+one lower, a store trace prints a write's cycle as is (c64-kb
+`docs/runtime/vice-reference.md`, "What the CYC column counts"). An
+earlier version gave the exec trace's figures as printed: 51 here, and
+60, 62, 0 and 4 below.
 
 The kernel is one unrolled chunk per bar line: load the line's colour,
-store it to `$D020` and `$D021`, wait. Each `STA $D020` starts on cycle 60
-(PAL) or 62 (NTSC) of the line above, so the stores write on cycles 0 and
-4 of the bar line, and the next chunk starts exactly 63 or 65 cycles later
+store it to `$D020` and `$D021`, wait. Each `STA $D020` starts on cycle 61
+(PAL) or 63 (NTSC) of the line above, so the stores write on cycles 1 and
+5 of the bar line (store trace, both models), and the next chunk starts exactly 63 or 65 cycles later
 on normal lines and badlines alike (VICE monitor, two consecutive chunks,
 the first on the badline 155). On a badline the chunk has only NOPs after
 its stores, and the VIC's stall is the rest of the line.

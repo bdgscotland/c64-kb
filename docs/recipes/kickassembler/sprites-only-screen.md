@@ -317,8 +317,9 @@ Screenshot from the pinned run: `screenshots/sprites-only-screen.png`
 minus 28, wrapping into the next frame's lines 0 to 11 at the bottom).
 Pinned at 12,000,000 cycles on both models. The picture is static from the
 program's second frame, so the beam position at the limit does not change
-it; for the record it is line 156, cycle 12 on PAL and line 252, cycle 25
-on NTSC, arithmetic from the last traced interrupt entry (checked against
+it; for the record it is line 156, cycle 13 on PAL and line 252, cycle 26
+on NTSC in Bauer's numbering (an earlier version gave the monitor's
+0-based 12 and 25), arithmetic from the last traced interrupt entry (checked against
 the six entries before it). Two runs per model gave byte-identical files:
 MD5 `fa6585d3223bfdb7aecf0135e9683862` (PAL) and
 `60d418e7941332ba382e22a614e0f85f` (NTSC).

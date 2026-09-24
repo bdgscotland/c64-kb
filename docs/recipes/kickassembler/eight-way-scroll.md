@@ -1401,8 +1401,9 @@ new colour. A row takes 10 to 12 lines to write, more than the 8 between
 badlines, so the last row, row 4, is the tightest. Measured with monitor
 tracepoints where each row's copy returns, over every first-band call of
 both pins (67 PAL, 79 NTSC): every row returned before BA fell on its
-badline; the least margin was 5 cycles, row 4 on NTSC returning on cycle 7
-of line 80 with YSCROLL 0, from a call whose row 0 started on line 26.
+badline; the least margin was 4 cycles, row 4 on NTSC returning on cycle 8
+of line 80 with YSCROLL 0 (Bauer's numbering; the exec trace printed 7,
+and an earlier version read that as cycle 7 and a margin of 5), from a call whose row 0 started on line 26.
 `irqColB` entered as late as line 32 in that run, though never on a
 first-band field. A first-band call starting six lines later than the
 tightest one would end row 4 about six lines later, after its badline for

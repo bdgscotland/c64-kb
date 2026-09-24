@@ -533,11 +533,13 @@ loops, and fails on a lost frame.
 - The panel split is the recipe's code and delays, with a multicolour
   40-column playfield, and two changes found by measuring. Entered through
   the common IRQ entry, its poll started about 30 cycles late; at YSCROLL 5
-  on PAL the writes then reached cycle 1 of line 215 in 4 frames of every
+  on PAL the writes then reached cycle 1 of line 215 (numbering not
+  recorded; Bauer's 2 if it was the exec trace's, as the figures below were) in 4 frames of every
   12 and the panel's first row showed playfield characters. The split now
   has its own vector entry, as short as the recipe's pushes. Its writes
-  then start between cycle 58 of line 214 and cycle 0 of line 215 (PAL; 58
-  to 64 on NTSC), and `$D016` goes last so `$D018` lands four cycles
+  then start between cycle 57 of line 214 and cycle 1 of line 215 (PAL; 57
+  to 65 on NTSC; Bauer's numbering, remeasured for c64-kb issue #82; an
+  earlier version gave the exec trace's 58 to 0 and 58 to 64), and `$D016` goes last so `$D018` lands four cycles
   earlier. Freezing the game on each of the eight phases gave panel lines
   215-250 pixel-identical to YSCROLL 3 on PAL and NTSC, and 14 consecutive
   frames of each phase on each model showed a clean panel row.

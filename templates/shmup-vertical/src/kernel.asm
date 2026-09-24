@@ -230,9 +230,11 @@ waitline:
         lda #PANEL_D011
 delay:  dec count               // absolute: 9 cycles a pass, 8 on the way out
         bpl delay
-// The writes start between cycle 58 of line 214 and cycle 0 of line 215 on
-// PAL (58 to 64 on NTSC), the poll's jitter, measured under the VICE
-// monitor at every YSCROLL. In the recipe's order ($D016 first) the $D018
+// The writes start between cycle 57 of line 214 and cycle 1 of line 215 on
+// PAL (57 to 65 of line 214 on NTSC), the poll's jitter, in Bauer's
+// numbering, measured under the VICE monitor (an earlier comment gave the
+// exec trace's 0-based 58 to 0 and 58 to 64; a 20,000,000-cycle re-run
+// for c64-kb issue #82 also started one on exec CYC 56). In the recipe's order ($D016 first) the $D018
 // write came a cycle from too late at the far end: a run with it at cycle
 // 12 of line 215 showed playfield characters in the panel's first row.
 // $D016 last buys four cycles; it only switches multicolour off, and the

@@ -18,9 +18,9 @@
 //
 // How the road is drawn (c64-kb pseudo_3d_road_raster, with the sprites that
 // recipe leaves out): every road line has one block of code, entered on
-// cycle 1 of its line. A block stores the line's $D016 (XSCROLL: the curve,
-// written on cycle 6) and $D021 (the grass band, or the sky above the
-// horizon: the hill, written on cycle 12), then branches into a slide of
+// cycle 2 of its line. A block stores the line's $D016 (XSCROLL: the curve,
+// written on cycle 7) and $D021 (the grass band, or the sky above the
+// horizon: the hill, written on cycle 13), then branches into a slide of
 // CMP #$C9 bytes that makes the line 63 cycles (65 on NTSC). A badline
 // block stores $D016 only: the VIC holds the bus from cycle 12 to 54, and
 // the line keeps the colour of the line above. Sprites 0-2 fetch their data
@@ -88,7 +88,7 @@
 
 // Block layout (bytes from a block's start) and cycles before its slide.
 #if PROBE
-.const NB_HEAD = 17             // + LDA #, STA $D021: the probe colour, written on cycle 18
+.const NB_HEAD = 17             // + LDA #, STA $D021: the probe colour, written on cycle 19
 .const NB_CYC  = 21
 #else
 .const NB_HEAD = 12
@@ -318,7 +318,7 @@ irq_top:
 // Line 105: entered from a NOP, so 0 or 1 cycle late. The two $D012 reads
 // straddle the change to line 106 in one case and not the other; BEQ takes
 // one cycle more in the case that was early. Then the first road block on
-// cycle 1 of line 107.
+// cycle 2 of line 107.
 .macro Sync(pad, entry) {
         ldx sp_save
         txs                     // drop this IRQ's frame: irq_top's stays below
@@ -339,14 +339,16 @@ sync_pal:  Sync(SYNC_P, ENTRY_P)
 sync_ntsc: Sync(SYNC_N, ENTRY_N)
 
 // ---- after line 203's stores: back to line 251 --------------------------------------------
-// Each road copy ends with line 203's block, a badline: $D018 on cycle 6
+// Each road copy ends with line 203's block, a badline: $D018 on cycle 7
 // (the video matrix is read from cycle 15; c64-kb raster_split_modes),
-// $D016 on cycle 12. $D021 lands here, after the VIC's fetch: row 19 is
+// $D016 on cycle 56, held by the badline (its STA reads on cycle 12).
+// $D021 lands here, after the VIC's fetch: row 19 is
 // solid characters, so no background shows on its lines.
 hud_rest:
         lda #C_HUD
         sta $d021
-        lda $d012               // read on cycle 64: line 204 on PAL, 203 on NTSC
+        lda $d012               // read on line 204: cycle 6 on PAL, 4 on NTSC
+                                // (VICE; an earlier comment said 203 on NTSC)
         cmp #HUD_LINE
         bcc !late+
         cmp #HUD_LINE + 2
@@ -457,10 +459,10 @@ ztab:
             Slide(NB_SLIDE)
         }
     }
-        lda #D018_HUD           // line 203, cycle 1
-        sta $d018               // written on cycle 6, before the c-accesses from 15
+        lda #D018_HUD           // line 203, cycle 2
+        sta $d018               // written on cycle 7, before the c-accesses from 15
         lda #D016_HUD
-        sta $d016               // written on cycle 12
+        sta $d016               // reads on 12: held by the badline, written on 56
         jmp hud_rest
 }
 

@@ -96,8 +96,9 @@ mutants:
 
 # ---- probe: the road's timing, line by line ----------------------------------------
 # PROBE=1 adds a second $D021 store to every normal road block, written on
-# cycle 18: the probe colour starts at the same x on every such line when
-# every block starts on cycle 1. This is how SYNC_* and ENTRY_* in
+# cycle 19 (Bauer's numbering; an earlier comment said 18): the probe
+# colour starts at the same x on every such line when every block starts
+# on cycle 2. This is how SYNC_* and ENTRY_* in
 # engine.asm were found (README, "The road's timing").
 PRG_PROBE := build/$(NAME)-probe.prg
 KICK_PROBE_FLAGS ?=

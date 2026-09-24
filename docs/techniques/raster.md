@@ -330,9 +330,10 @@ to 40; the three delays before the first shift spoil only the late row
 itself (one column, two columns, the whole row). The offset does not carry
 into the next frame: a frame without the late write is normal, so the write
 is made every frame. VICE's VSP-bug log puts the recipe's 10-character write
-at its cycle 24 of the line; if VICE counts from 0 that is cycle 25, and 10
-is 25 − 15 as the formula N = cycle − 15 says, but the counting base was not
-checked. (An earlier version of this paragraph said the display moved left,
+at its cycle 24 of the line, a 0-based table index (VICE source,
+`runtime/vice-reference.md`), so Bauer's cycle 25, and 10 is 25 − 15 as
+the formula N = cycle − 15 says. An earlier version left the counting
+base unchecked. (An earlier version of this paragraph said the display moved left,
 that the offset persisted into later frames until re-based, and that one
 write per character row was needed; the recipe shows right, one frame, and
 one write per frame.)

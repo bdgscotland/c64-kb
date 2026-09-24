@@ -201,8 +201,9 @@ msg_read:
 !done:  rts
 
 // ---- the slots ----------------------------------------------------------------------
-// Line 148: stabilise returns on cycle 51 of line 153 (both models, the
-// monitor's numbering), then the kernel for this model (patched at start)
+// Line 148: stabilise returns on cycle 52 of line 153 (both models,
+// Bauer's numbering; the monitor's exec trace prints 51), then the kernel
+// for this model (patched at start)
 // draws lines 155 to 210.
 bars_slot:
         jsr stabilise
@@ -223,9 +224,10 @@ scroll_slot:
 // One chunk a line: load the line's colour, store it to $D020 and $D021 in
 // the horizontal blank, then wait for the next line. Measured with the VICE
 // monitor (README, "The stable entry and the bars"): each chunk's STA $D020 starts on
-// cycle 60 (PAL) or 62 (NTSC) of the line above, so the stores write on
-// cycles 0 and 4 of the bar line, in the monitor's numbering (0 to 62 or 64),
-// and the next chunk starts exactly one line later, badline or not.
+// cycle 61 (PAL) or 63 (NTSC) of the line above, so the stores write on
+// cycles 1 and 5 of the bar line, in Bauer's numbering (an earlier comment
+// gave the exec trace's 0-based 60, 62, 0 and 4), and the next chunk
+// starts exactly one line later, badline or not.
 // A normal line gives the CPU all its cycles. A badline ((line & 7) == 3
 // with YSCROLL 3) takes the bus from the CPU for 43 cycles, so its chunk
 // has only NOPs after the stores: all read cycles, which the VIC holds, and

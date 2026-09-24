@@ -21,7 +21,8 @@ this program depends on:
   copies (`src/engine.asm`, `road_a` and `road_b`); the builder
   (`src/builder.asm`) patches the copy not shown and `irq_blank` swaps the
   copies, the screens and the sprites as one. A block's stores land on
-  cycles 6 ($D016) and 12 ($D021) of its line only because every block
+  cycles 7 ($D016) and 13 ($D021) of its line (Bauer's numbering; an
+  earlier version said 6 and 12) only because every block
   before it took exactly 63 cycles (65 on NTSC). Anything that changes a
   block's length, the sync constants (`SYNC_*`, `ENTRY_*`) or `BADLOSS`
   must be re-measured with the PROBE build (`make build/racing-probe.prg`,

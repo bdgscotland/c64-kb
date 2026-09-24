@@ -61,7 +61,7 @@ copied), petscii_written_to_screen_ram (screen codes), cia_timer_phi2_difference
 | Technique | Why | Recipe it starts from | Pitfalls read (`pitfalls-for`) |
 |---|---|---|---|
 | pseudo_3d_road_raster | the road: characters for the width, $D016 per line for the bend, $D021 per line for the bands and the horizon | kickassembler-pseudo-3d-road; the per-line pad for sprite fetches from kickassembler-dysp | badline_cycle_loss, raster_irq_first_line_jitter, d016_unmasked_rmw_clobbers_csel_mcm, colour_ram_index_past_last_cell_hits_cia1 |
-| stable_raster_irq | the first road block on cycle 1 of line 107 | kickassembler-stable-raster-irq | raster_irq_first_line_jitter, decimal_mode_in_irq_handler |
+| stable_raster_irq | the first road block on cycle 2 of line 107 (Bauer's numbering; an earlier version said 1) | kickassembler-stable-raster-irq | raster_irq_first_line_jitter, decimal_mode_in_irq_handler |
 | double_irq | IRQ at 103 into a NOP slide, the second at 105, two $D012 reads | kickassembler-stable-raster-irq | branch_page_cross_extra_cycle, irq_during_charen_window |
 | irq_chain_table | one chain: 251 (the frame, the swap), 103, 105 (the road), then 203 (the panel) | kickassembler-irq-chain | d012_wrap_around |
 | pal_ntsc_detection | the last line's number decides the pads and the sync | kickassembler-pseudo-3d-road (detect_region) | raster_line_count_difference |
