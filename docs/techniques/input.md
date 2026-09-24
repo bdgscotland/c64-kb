@@ -29,6 +29,10 @@ so; the rest is marked as arithmetic or as not measured here.
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-joystick-input (one port read and the three-way split, Oscar64 -O2, call included; PAL and NTSC)
 
+The edge split alone, without the port read, is 76 cycles: `joy_edge` in
+the platformer scaffold's PROFILE=1 build, one call, display off, PAL and
+NTSC (#37). The line above counts the read too, so a budget uses 114.
+
 ### Why
 
 A port byte is a level: bit 4 low means the fire button is down right
@@ -107,6 +111,15 @@ The recipe below runs the four lines over every (prev, cur) pair, all
 checksum. The 6502 shows `1800 PASS`; the same fold in Python gives `1800`
 (measured in VICE x64sc 3.10, rung 1).
 
+### Cycle budget
+
+76 cycles a call for the Oscar64 `joy_edge` above, which writes its three
+bytes through a struct pointer. Measured in VICE x64sc 3.10 on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=1` build, CIA1 timer
+B around the call, the timer's own 18 cycles subtracted, the display off,
+the same on PAL and NTSC. The port read is not inside: that build's
+autopilot supplies the byte. The page had no figure before #37.
+
 ### Recipes
 
 - `recipes/oscar64/joystick-input.md`
@@ -119,6 +132,9 @@ checksum. The 6502 shows `1800 PASS`; the same fold in Python gives `1800`
 **Region:** both
 **Uses registers:** DC00, DC01
 **Requires:** joystick_edge_detect
+**Cost:** cycles_per_frame=73
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE=1 build, `repeat_step` one call for one direction, display off, PAL and NTSC)
 **Claims:** cia1_port_a (reads), cia1_port_b (reads)
 **Claims basis:** derived-listing
 
@@ -188,6 +204,15 @@ direction only.
 The recipe runs the step over every (age, pressed) pair, 256 by 2, and
 folds `age' | fire << 8` into the same 16-bit checksum. The 6502 shows
 `D1CC PASS`; Python gives `D1CC` (measured in VICE x64sc 3.10, rung 1).
+
+### Cycle budget
+
+73 cycles a call for one direction's counter, largest of 800 frames, on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=1` build (CIA1 timer
+B, the timer's 18 cycles subtracted, display off, PAL and NTSC alike). A
+game that repeats four directions calls it four times; a design says so
+with `joystick_autorepeat ×4` (`CONVENTIONS-game-designs.md`). The page
+had no figure before #37.
 
 ### Recipes
 

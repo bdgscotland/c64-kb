@@ -19,7 +19,7 @@ Pages live in `docs/game-design/designs/`, one design per file. The marker
 **Instance of:** single_screen_platformer
 **Realised by:** oscar64-platformer-scaffold
 **Region:** both
-**Composes:** tile_map_render (init), decimal_print, lfsr_random (init), kernal_file_write_seq (transition)
+**Composes:** tile_map_render (init), decimal_print ×2-7, lfsr_random (init), kernal_file_write_seq (transition)
 **Measured frame:** play pal worst=8693 typical=4966; play ntsc worst=10287 typical=6628 (measured-vice, CIA1 timer B around the loop body, recipes/oscar64/platformer-scaffold.md "Expected output")
 ```
 
@@ -42,6 +42,26 @@ the frame loop. `name (init)` runs once before play; `name (transition)`
 runs between plays (a level load, a game-over save). A technique used in
 two phases is listed twice, once per phase. Any other phase word is
 refused with a warning.
+
+A Cost figure is one call. A technique the frame calls more than once
+carries a count before the phase: `name ×N` for N calls every frame,
+`name ×M-N` for M calls in the cheapest frame and N in the worst. `*N`,
+or `xN` after a space, is read the same. `c64_plan_budget` multiplies the
+member's low end by M and its high end by N; whether one call is above a
+frame is still judged on one call. A band or per-line charge is lines, not
+calls, and is not multiplied. A count of 0 in the worst frame, or M above
+N, drops the item with a warning. The count rides the `COMPOSES` edge as
+`calls_low` and `calls_high`.
+
+```
+**Composes:** frame_sync_loop, decimal_print ×2-7, kernal_file_write_seq (transition)
+```
+
+The platformer's HUD prints two fields every frame (the frame counter and
+the cycle count) and up to five more when they change, so its
+`decimal_print` is `×2-7`. Count the calls in the listing's frame loop,
+not in the recipe's prose. Before #37 there was no count, and the budget
+charged that HUD one call.
 
 List what the listing runs, not what the recipe's frontmatter says. Read
 the frame loop. When the two differ, fix the frontmatter or say why in the
@@ -72,4 +92,8 @@ game's listing.
 
 No claims, zero page or memory lines yet: those are per-technique
 (`CONVENTIONS-techniques.md`) and per-recipe. `c64_check_compatibility`
-takes the technique list.
+takes a design name and checks each phase alone, since init and
+transition members do not run beside play; before #37 it took only a
+technique list, and a flat list of a design reported conflicts between
+techniques that never run together. What one phase leaves configured for
+the next is not checked.

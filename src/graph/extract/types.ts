@@ -2,6 +2,7 @@
 
 import type { ClaimMode, ClaimsBasis } from "../claims.ts";
 import type { ClobberBound } from "../kernal-clobbers.ts";
+import type { CallCount } from "../../domain/calls.ts";
 import type { GameDesignPhase, MeasuredFrame } from "./game-design.ts";
 import type { CostBasis, TechniqueCost } from "./vocabulary.ts";
 
@@ -149,7 +150,14 @@ export type GraphEntity =
       measured: MeasuredFrame[];
       source_doc: string;
     }
-  | { type: "composes"; design: string; technique: string; phase: GameDesignPhase }
+  | {
+      type: "composes";
+      design: string;
+      technique: string;
+      phase: GameDesignPhase;
+      /** Calls per frame (#37); absent is one. */
+      calls?: CallCount;
+    }
   | { type: "instance_of"; design: string; archetype: string }
   | { type: "realised_by"; design: string; recipe: string };
 

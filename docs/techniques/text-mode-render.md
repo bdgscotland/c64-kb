@@ -41,6 +41,9 @@ field-redraw is what erases them.
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=18984, cycles_per_frame_typical=2005
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-text-overlay-playfield (probe build, CIA2 timer A around each call, screen on, KERNAL IRQ off; worst is a lock frame: the full repaint with 120 cells filled, 17,978 on NTSC with the listing's per-row raster sampling inside, plus the draw-only overlay, 1,006; typical is a frame without a lock, the overlay's erase and draw)
 
 ### Why
 
@@ -221,6 +224,39 @@ above). Fitting inside a frame is not the criterion in any case: unless
 screen RAM is double-buffered via `$D018`, the redraw races the beam,
 so the budget is the blank window (107 lines from raster 256 through
 the wrap to raster 51, about 6,700 cycles), not the whole frame.
+
+### The Cost line
+
+The technique has two costs, and one Cost line states both (#37). A
+frame without a lock runs the overlay alone; a frame that changes
+persistent state also runs the repaint. So the typical figure is the
+overlay and the worst is the lock frame, the frame a plan has to fit.
+
+Measured in VICE x64sc 3.10 on a probe build of
+`recipes/oscar64/text-overlay-playfield.md`: CIA2 timer A started before
+and stopped after each call, its own 5 cycles subtracted, screen on,
+KERNAL IRQ off, 60,000,000 cycles.
+
+| Call | PAL | NTSC |
+|---|---|---|
+| `render_field`, 120 cells filled | 17,945 | 17,978 |
+| `render_piece`, erase and draw | 2,005 | 2,005 |
+| `render_piece`, draw only (the frame of a lock) | 1,006 | 1,006 |
+
+The worst frame is 17,978 + 1,006 = 18,984. `render_field` there
+includes the listing's own raster read after every row, which a game
+would leave out. The repaint's extent is the design's choice:
+`recipes/oscar64/falling-blocks.md` redraws only the rows a clear moved,
+9,394 cycles for sixteen rows in a constructed frame, so its design's
+measured frame (6,276) stays far below this line. A plan that never
+repaints the whole field in play is overcharged by this figure; its
+design's Measured frame line is the check.
+
+The issue was open until #37: the recipes disagreed (a full repaint
+every frame against a row redraw), and the page stated no line, so every
+plan named the technique unknown. Splitting it into two techniques was
+not done: the page prescribes one pattern, the overlay every frame and a
+repaint on events, and the figures above are that pattern's two frames.
 
 ### Recipes
 

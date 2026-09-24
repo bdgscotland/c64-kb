@@ -370,15 +370,22 @@ export class FalkorLinks extends FalkorNodes {
   /**
    * COMPOSES (schema 28): the design runs this technique in this phase.
    * Keyed by phase, so one technique may be composed in two phases. Both
-   * ends MATCHed, never MERGEd.
+   * ends MATCHed, never MERGEd. `calls` (#37) lands as calls_low and
+   * calls_high, and is removed when the page stops stating it.
    */
-  async linkComposes(design: string, technique: string, phase: string): Promise<boolean> {
+  async linkComposes(
+    design: string,
+    technique: string,
+    phase: string,
+    calls?: { low: number; high: number },
+  ): Promise<boolean> {
     const rows = await this.write(
       `MATCH (g:GameDesign {name: $design})
        MATCH (t:Technique {name: $technique})
-       MERGE (g)-[:COMPOSES {phase: $phase}]->(t)
+       MERGE (g)-[c:COMPOSES {phase: $phase}]->(t)
+       SET c.calls_low = $calls_low, c.calls_high = $calls_high
        RETURN 1`,
-      { design, technique, phase },
+      { design, technique, phase, calls_low: calls?.low ?? null, calls_high: calls?.high ?? null },
     );
     if (rows.length > 0) return true;
     console.warn(

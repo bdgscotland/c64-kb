@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { getFalkor } from "../../context.ts";
 import { BUDGET_PHASES, type BudgetPhase } from "../../domain/budget.ts";
+import type { CallCount } from "../../domain/calls.ts";
 import type { DesignMeasurement } from "../../domain/game-design.ts";
 import { CostBasisSchema } from "../../schemas/cost-basis.ts";
 import { parseRows } from "./shared.ts";
@@ -17,7 +18,7 @@ export interface GameDesignRecord {
   region: "PAL" | "NTSC" | "both" | null;
   instance_of: string[];
   realised_by: string[];
-  composes: { technique: string; phase: BudgetPhase }[];
+  composes: { technique: string; phase: BudgetPhase; calls?: CallCount }[];
   measured: DesignMeasurement[];
   source_doc: string;
 }
@@ -47,7 +48,14 @@ const DesignRow = z.object({
   source_doc: z.string().nullable(),
   archetypes: StringList,
   recipes: StringList,
-  composes: z.array(z.object({ technique: z.string().nullable(), phase: z.string().nullable() })),
+  composes: z.array(
+    z.object({
+      technique: z.string().nullable(),
+      phase: z.string().nullable(),
+      calls_low: z.number().int().nullable().optional(),
+      calls_high: z.number().int().nullable().optional(),
+    }),
+  ),
 });
 
 const DESIGN_QUERY = `MATCH (g:GameDesign) WHERE g.name IN $names
@@ -58,16 +66,19 @@ const DESIGN_QUERY = `MATCH (g:GameDesign) WHERE g.name IN $names
   OPTIONAL MATCH (g)-[c:COMPOSES]->(t:Technique)
   RETURN g.name AS name, g.title AS title, g.region AS region, g.measured AS measured,
          g.source_doc AS source_doc, archetypes, recipes,
-         collect({technique: t.name, phase: c.phase}) AS composes`;
+         collect({technique: t.name, phase: c.phase, calls_low: c.calls_low, calls_high: c.calls_high}) AS composes`;
 
 function isPhase(p: string | null): p is BudgetPhase {
   return BUDGET_PHASES.some((x) => x === p);
 }
 
 function recordOf(row: z.infer<typeof DesignRow>): GameDesignRecord {
-  const composes = row.composes.flatMap((c) =>
-    c.technique && isPhase(c.phase) ? [{ technique: c.technique, phase: c.phase }] : [],
-  );
+  const composes = row.composes.flatMap((c) => {
+    if (!c.technique || !isPhase(c.phase)) return [];
+    const calls =
+      typeof c.calls_high === "number" ? { low: c.calls_low ?? c.calls_high, high: c.calls_high } : undefined;
+    return [{ technique: c.technique, phase: c.phase, ...(calls ? { calls } : {}) }];
+  });
   // Phase order, then technique name, so the expansion does not depend on edge order.
   composes.sort(
     (a, b) =>

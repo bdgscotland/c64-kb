@@ -120,6 +120,9 @@ earlier `memmove` of screen and colour RAM, 3.8 PAL frames, which tore.
 **Region:** both
 **Uses registers:** D011
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=46
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-simple-shmup (`stars_update` on a frame without a carry: the YSCROLL step and the `$D011` write, CIA2 timer A, screen on, PAL and NTSC; the carry frame's layer move is not the technique's)
 **Claims:** vic_yscroll (owns)
 **Claims basis:** measured-vice
 
@@ -192,6 +195,15 @@ STA $D011: 12-14 cycles (3 + 2 + 3 + 4 with zero-page operands, 14 with
 absolute ones; an earlier version said 10-12). Because changing YSCROLL inside a visible
 raster can produce glitches, the write should happen during the vertical
 blank or in a stable raster window above line $30.
+
+Measured on `recipes/oscar64/simple-shmup.md` (VICE x64sc 3.10, CIA2
+timer A around `stars_update`, screen on): 46 cycles for the YSCROLL step
+and the `$D011` write from Oscar64, the same on PAL and NTSC. That is the
+Cost line. The carry once in eight frames moves the layer, which is not
+this technique's work: that listing's 16 star cells took 3,525 to 3,802,
+and a whole-screen move is `char_scroll_buffer_v`'s. A plan with a carry
+lists the technique that moves the layer beside this one. The page had
+no figure before #37.
 
 ### Recipes
 

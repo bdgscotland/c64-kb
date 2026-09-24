@@ -110,6 +110,12 @@ paste its output over the block marked "Generated tables".
 //          headless run plays itself; 0 reads control port 2.
 //          BUDGET_BAR=1 (default) paints the border while the loop works.
 //          DISK_WAIT_FRAMES=50 (default) frames to wait before the first OPEN.
+//          PROFILE=0 (default); 1 times each part of the loop body alone,
+//          2 the jump and 8.8 steps inside player_update. Both also time
+//          the raster IRQ and the drive status read, and print the table
+//          over the map at the halt (recipe page, "Profile builds").
+//          PROFILE_BLANK=1 turns the display off during play, so no
+//          badline stall lands inside a timed part.
 
 #include <c64/vic.h>
 #include <c64/cia.h>
@@ -162,6 +168,58 @@ static const char platform_rows[N_PLATFORM_ROWS] = { 4, 8, 12, 16, 21 };
 #endif
 #ifndef BUDGET_BAR
 #define BUDGET_BAR 1
+#endif
+#ifndef PROFILE
+#define PROFILE 0
+#endif
+#ifndef PROFILE_BLANK
+#define PROFILE_BLANK 0
+#endif
+
+#if PROFILE
+// Profile build: CIA1 timer B is restarted around one part of the loop
+// body at a time, so CYC and MAX on the HUD are not the whole loop in this
+// build. A part during which the KERNAL's 60 Hz CIA interrupt ran (the
+// jiffy clock at $A2 moved) goes to its own column, so the two stay apart.
+enum { P_NULL, P_WAKE, P_AUTO, P_EDGE, P_REPEAT, P_WAVE, P_PLAYER, P_HIT,
+       P_TUNE, P_SFX, P_DRAW, P_HUD, P_N };
+#define P_JUMP P_WAVE                      // PROFILE=2 reuses two slots
+#define P_FP   P_PLAYER
+static unsigned prof_clean[P_N], prof_jiffy[P_N];
+static char prof_j;
+#define JIFFY (*(volatile char *)0x00a2)
+static inline void prof_start(void) { prof_j = JIFFY; cia1.crb = 0x00; cia1.tb = 0xffff; cia1.crb = 0x11; }
+static void prof_end(char k)
+{
+    cia1.crb = 0x00;
+    unsigned c = 0xffff - cia1.tb;
+    if (JIFFY != prof_j) { if (c > prof_jiffy[k]) prof_jiffy[k] = c; }
+    else if (c > prof_clean[k]) prof_clean[k] = c;
+}
+// A drive status read takes far more than 65,535 cycles and the KERNAL
+// serial code uses CIA1 timer B, so it is timed on CIA2's timers A and B
+// chained as one 32-bit counter (save-load-seq-file.md).
+static unsigned long prof_io_min = 0xffffffff, prof_io_max;
+static void prof_io_start(void)
+{
+    cia2.cra = 0x00; cia2.crb = 0x00;
+    cia2.ta = 0xffff; cia2.tb = 0xffff;
+    cia2.crb = 0x51;                       // B: force load, start, count A underflows
+    cia2.cra = 0x11;                       // A: force load, start, continuous
+}
+static void prof_io_end(void)
+{
+    cia2.cra = 0x00;
+    unsigned lo = cia2.ta, hi = cia2.tb;
+    unsigned long t = ~(((unsigned long)hi << 16) | lo);
+    if (t > prof_io_max) prof_io_max = t;
+    if (t < prof_io_min) prof_io_min = t;
+}
+#define PB(lvl)    do { if (PROFILE == (lvl)) prof_start(); } while (0)
+#define PE(lvl, k) do { if (PROFILE == (lvl)) prof_end(k); } while (0)
+#else
+#define PB(lvl)
+#define PE(lvl, k)
 #endif
 
 #define SCREEN   ((char *)0x0400)
@@ -704,6 +762,7 @@ static void player_update(char cur, struct JoyEvents *ev, char repeat_fire)
                     solid_at(px + BODY_R, py + BODY_B + 1);
         if (on_ladder && mid == T_LADDER) on_ground = true;   // hanging still
 
+        PB(2);
         if (on_ground && jump_n == 0 && (ev->newp & JOY_FIRE))
         {
             jump_n = 1;
@@ -722,11 +781,14 @@ static void player_update(char cur, struct JoyEvents *ev, char repeat_fire)
         }
         else
             vy_fp = 0;
+        PE(2, P_JUMP);
 
         if (vy_fp)
         {
+            PB(2);
             py_fp += (unsigned)vy_fp;
             int ny = (int)(py_fp >> 8);
+            PE(2, P_FP);
             if (vy_fp > 0)
             {
                 // landing: feet crossed into a solid tile -> snap to its top
@@ -803,6 +865,10 @@ static void drive_reply(const char *cmd)
 {
     reply[0] = 0;
     drive_code = 99;
+#if PROFILE
+    bool timed = cmd[0] == 0;              // a bare status read, not a command
+    if (timed) prof_io_start();
+#endif
     krnio_setnam(cmd);
     if (krnio_open(15, DRIVE, 15))
     {
@@ -811,6 +877,9 @@ static void drive_reply(const char *cmd)
         if (n >= 2) drive_code = (reply[0] - '0') * 10 + (reply[1] - '0');
         krnio_close(15);
     }
+#if PROFILE
+    if (timed) prof_io_end();
+#endif
     put_str(DRIVE_ROW, 0, "drive:");
     put_petscii(DRIVE_ROW, 7, reply, 33);
 }
@@ -958,6 +1027,63 @@ static void show_game_over(void)
     for (char i = 0; i < 9; i++) COLOUR[GAME_OVER_ROW * 40 + 20 + i] = VCOL_WHITE;
 }
 
+#if PROFILE
+// The raster IRQ's own cost: one busy loop timed from line 245, across
+// line 251 where the IRQ lands, and from line 20, where none is due.
+// Neither window holds a badline, and the sprites are off. The least of
+// 32 runs of each is kept, so a run the KERNAL's CIA IRQ hit is not the
+// figure; the most of the second window is such a hit.
+static volatile char spin_i;
+static unsigned spin_from(char line)
+{
+    while (vic.raster != line) ;
+    cia1.crb = 0x00; cia1.tb = 0xffff; cia1.crb = 0x11;
+    for (spin_i = 0; spin_i < 100; spin_i++) ;
+    cia1.crb = 0x00;
+    return 0xffff - cia1.tb;
+}
+
+static const char prof_label[P_N][7] = {
+    "null  ", "wake  ", "auto  ", "edge  ", "repeat", "wave  ",
+    "player", "hit   ", "tune  ", "sfx   ", "draw  ", "hud   " };
+
+static void prof_show(void)
+{
+    vic.spr_enable = 0;
+    unsigned in_min = 0xffff, out_min = 0xffff, out_max = 0;
+    for (char n = 0; n < 32; n++)
+    {
+        unsigned a = spin_from(245);
+        unsigned b = spin_from(20);
+        if (a < in_min) in_min = a;
+        if (b < out_min) out_min = b;
+        if (b > out_max) out_max = b;
+    }
+    for (unsigned i = 13 * 40; i < 20 * 40; i++) { SCREEN[i] = ' '; COLOUR[i] = VCOL_WHITE; }
+    for (char k = 0; k < P_N; k++)
+    {
+        char row = 13 + (k >> 1), col = (k & 1) ? 20 : 0;
+        put_str(row, col, prof_label[k]);
+        put_dec(row, col + 7, prof_clean[k], 5);
+        put_dec(row, col + 13, prof_jiffy[k], 5);
+    }
+    put_str(19, 0, "irq in");
+    put_dec(19, 7, in_min, 5);
+    put_str(19, 20, "out");
+    put_dec(19, 24, out_min, 5);
+    put_dec(19, 30, out_max, 5);
+    put_str(20, 0, "status read");
+    for (char i = 0; i < 2; i++)
+    {
+        unsigned long t = i ? prof_io_max : prof_io_min;
+        char *p = SCREEN + 20 * 40 + 13 + 10 * i;
+        for (char d = 0; d < 8; d++) p[7 - d] = "0123456789\x01\x02\x03\x04\x05\x06"[(t >> (4 * d)) & 15];
+    }
+    for (char c = 0; c < 40; c++) COLOUR[20 * 40 + c] = VCOL_WHITE;
+    vic.ctrl1 |= 0x10;                     // display back on for the picture
+}
+#endif
+
 static void game_reset(void)
 {
     lives = 3;
@@ -1014,6 +1140,9 @@ int main(void)
     rirq_set(0, SYNC_ROW, &frame_irq);
     rirq_sort();
     rirq_start();
+#if PROFILE_BLANK
+    vic.ctrl1 &= ~0x10;                    // display off: no badline in a timed part
+#endif
 
     unsigned frame = 0, dropped = 0;
     unsigned cyc = 0, cyc_max = 0;
@@ -1027,9 +1156,13 @@ int main(void)
     {
         while (irq_ticks == seen)
             ;
+        PB(1);
         char delta = irq_ticks - seen;
         seen += delta;
         if (delta > 1) dropped += delta - 1;
+        PE(1, P_WAKE);
+        PB(PROFILE);
+        PE(PROFILE, P_NULL);
 
 #if BUDGET_BAR
         if (!passed && !fault_code) vic.color_border = VCOL_WHITE;
@@ -1040,19 +1173,30 @@ int main(void)
         {
             // --- input ---
 #if AUTOPILOT
+            PB(1);
             char cur = autopilot_port();
+            PE(1, P_AUTO);
 #else
             cia1.ddra = 0xff; cia1.ddrb = 0x00; cia1.pra = 0xff;
             char cur = cia1.pra;                 // port 2
 #endif
+            PB(1);
             joy_edge(prev, cur, &ev);
+            PE(1, P_EDGE);
             prev = cur;
+            PB(1);
             char rep = repeat_step(&up_age, !(cur & JOY_UP));
+            PE(1, P_REPEAT);
 
             // --- simulation ---
+            PB(1);
             wave_step(frame);
             update_enemies();
+            PE(1, P_WAVE);
+            PB(1);
             player_update(cur, &ev, rep);
+            PE(1, P_PLAYER);
+            PB(1);
             if (invuln) invuln--;
             else if (hit_enemy())
             {
@@ -1063,13 +1207,20 @@ int main(void)
             }
             if ((frame & 7) == 0) score++;
             if (score > hiscore) hiscore = score;
+            PE(1, P_HIT);
 
             // --- sound: tune first, then the effect re-pokes voice 2 ---
+            PB(1);
             tune_play();
+            PE(1, P_TUNE);
+            PB(1);
             sfx_update();
+            PE(1, P_SFX);
 
             // --- draw ---
+            PB(1);
             player_draw(frame);
+            PE(1, P_DRAW);
 
 #if AUTOPILOT
             if (frame == FORCE_OVER && !game_over) { lives = 0; game_over = true; }
@@ -1084,7 +1235,15 @@ int main(void)
                 rirq_start();
                 seen = irq_ticks;
 #if AUTOPILOT
-                if (frame >= FORCE_OVER) { halted = true; show_game_over(); }
+                if (frame >= FORCE_OVER)
+                {
+                    halted = true;
+                    show_game_over();
+#if PROFILE
+                    prof_show();
+                    seen = irq_ticks;
+#endif
+                }
                 else game_reset();
 #else
                 game_reset();
@@ -1095,7 +1254,9 @@ int main(void)
 
         // The HUD is inside the timed region: cyc is the whole loop body,
         // shown one frame late (the value on screen is the previous frame's).
+        PB(1);
         hud_draw(frame, cyc, cyc_max, dropped);
+        PE(1, P_HUD);
         cyc = timer_stop();
         if (io_frame) io_frame = false;              // KERNAL used timer B: discard
         else if (cyc > cyc_max && frame > 2) cyc_max = cyc;
@@ -1198,6 +1359,78 @@ writes screen codes only; the map draw had left colour RAM black under
 empty tiles, so the text was black on black and no picture showed it.
 `show_game_over` sets the colour cells too. And the read-back value was
 printed at column 27 of row 1, over the `ERR` field; it now follows it.
+
+### Profile builds
+
+`MAX` is the whole loop body. To see which part costs what, the listing
+has two profile builds (#37). The default build is byte-identical with or
+without the profile code (`cmp` of the two PRGs).
+
+```bash
+oscar64 -tm=c64 -O2 -dPROFILE=1 -o=profile1.prg platformer-scaffold.c
+oscar64 -tm=c64 -O2 -dPROFILE=2 -o=profile2.prg platformer-scaffold.c
+# add -dPROFILE_BLANK=1 to either for a run with the display off during play
+```
+
+- `PROFILE=1` restarts CIA1 timer B around each part of the loop body
+  and keeps each part's largest reading. `PROFILE=2` does the same for
+  two steps inside `player_update`: the vertical-velocity step (the jump
+  table or the 8.8 gravity add) and the 8.8 position add.
+- A reading during which the KERNAL's CIA interrupt ran (the jiffy clock
+  at `$A2` moved) goes to a second column, so the two costs stay apart.
+- `null` is the timer's own overhead, an empty part: 18 cycles. Every
+  figure below has it subtracted.
+- Both builds time the raster IRQ: one busy loop from line 245, across
+  line 251 where the IRQ lands, against the same loop from line 20, least
+  of 32 runs each, sprites off, no badline in either window.
+- Both time each bare drive status read (`drive_reply("")`) on CIA2's
+  timers chained as a 32-bit counter, since the KERNAL's serial code
+  uses CIA1 timer B.
+- At the halt the table is printed over rows 13 to 20.
+
+Measured in VICE x64sc 3.10 at 45,000,000 cycles on a fresh disk, the
+table decoded from the exit screenshot with the char ROM. The builds seed
+the LFSR from SID noise at a load-dependent cycle, so each run plays a
+different game; each figure is the largest in that run's 800 frames.
+
+| Part | Technique(s) | PAL, screen on | NTSC, screen on | Display off, both models |
+|---|---|---|---|---|
+| tick bookkeeping after the wait | `frame_sync_loop` | 23 | 23 | 22 |
+| raster IRQ, entry to return | `frame_sync_loop` | 291 | 291 | 291 |
+| `autopilot_port` | none: the test driver | 685 | 657 | 616, 689 |
+| `joy_edge` | `joystick_edge_detect` | 76 | 76 | 76 |
+| `repeat_step` | `joystick_autorepeat` | 73 | 73 | 73 |
+| `wave_step` + `update_enemies` | `object_pool`, `lfsr_random`, sprite writes | 2,748 | 2,768 | 2,546, 2,741 |
+| `player_update` | `tile_grid_collision`, `fixed_point_8_8`, `jump_arc_table` | 1,870 | 1,989 | 1,858, 1,853 |
+| velocity step (`PROFILE=2`) | `jump_arc_table` | 66 | 109 | 66 |
+| 8.8 position add (`PROFILE=2`) | `fixed_point_8_8` | 31 | 74 | 31 |
+| `hit_enemy`, invulnerability, score | none: this listing's own | 707 | 797 | 728, 723 |
+| `tune_play` | `sid_play_routine_pattern` | 368 | 416 | 327, 389 |
+| `sfx_update` | `sfx_engine_beside_music` | 122 | 165 | 122, 149 |
+| `player_draw` | none: sprite writes | 143 | 161 | 110, 135 |
+| `hud_draw` | `decimal_print` ×2-7 | 3,802 | 3,971 | 3,782, 3,647 |
+| KERNAL CIA IRQ, one hit | none: the KERNAL's jiffy IRQ | 235 | 235 | 235 |
+| bare drive status read | `error_channel_check` | 61,016-81,421 | 61,626-78,964 | 43,852-75,848 |
+
+- The display-off column gives PAL then NTSC where they differ.
+- With the screen on, a badline stall can land inside a short part: the
+  NTSC velocity step and position add read 43 cycles above their
+  display-off figure, which is one badline's stall. The display-off
+  figures are the parts' own cost.
+- The raster IRQ lands at line 251, while the loop waits, so it is not
+  inside `MAX`. The KERNAL's 60 Hz CIA interrupt is left running by
+  `rirq_init(true)` and can land inside `MAX`, 235 cycles a hit.
+- Two PAL runs read one `hud_draw` part of about 12,400 to 12,800 cycles
+  in the second column, a part the KERNAL interrupt also ran in. Neither
+  NTSC run did, and a build with one more line of profile code did not.
+  The cause is not found; the figure is left out of the table.
+- The status read range is two runs of each build per model, the
+  replies `62, FILE NOT FOUND`, `01, FILES SCRATCHED` and `00, OK`. It
+  varies with the emulated drive's timing.
+
+The parts' largest readings do not fall in one frame, so their sum
+(10,617 on PAL) is above `MAX` (8,693). What the table means for the
+design's budget is in `game-design/designs/platformer-scaffold.md`.
 
 ## Why this works
 

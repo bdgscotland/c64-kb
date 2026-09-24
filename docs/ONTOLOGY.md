@@ -668,7 +668,8 @@ variants of those names. Read by `c64_recipe_lookup` (`verified_on[]`) and
 ### COMPOSES
 
 Direction: `GameDesign → Technique`, property `phase` ("play",
-"transition" or "init")
+"transition" or "init"), and `calls_low`, `calls_high` when the item
+states a count (`×N` or `×M-N`, #37)
 
 Meaning: "this game runs this technique in this phase." Authored with
 the `**Composes:**` line (`CONVENTIONS-game-designs.md`); `name (init)`
@@ -676,7 +677,9 @@ or `name (transition)` sets the phase, play when none is given. One edge
 per phase, so a technique used at start-up and again at game over has
 two. Both ends MATCHed; a miss is warned about and counted as `composes …
 dropped`. Read by `c64_plan_budget`, which budgets each phase alone
-(schema 28).
+(schema 28) and multiplies a member's per-call figure by its count, and
+by `c64_check_compatibility` with a design, which checks each phase's
+members alone.
 
 ### INSTANCE_OF
 

@@ -312,11 +312,17 @@ program
   );
 
 program
-  .command("check-compatibility <techniques...>")
-  .description("Check compatibility of two or more techniques (space-separated names)")
-  .action(async (techniques: string[]) => {
-    const { checkCompatibility } = await import("./tools/query.ts");
-    const result = await checkCompatibility(techniques);
+  .command("check-compatibility [techniques...]")
+  .description(
+    "Check compatibility of two or more techniques (space-separated names), or of a game design phase by phase",
+  )
+  .option("--design <name>", "a GameDesign name: each phase (play, init, transition) checked alone")
+  .action(async (techniques: string[], opts: { design?: string }) => {
+    const { checkCompatibility, checkDesignCompatibility } = await import("./tools/query.ts");
+    if (!opts.design && techniques.length < 2) throw new Error("give 2+ techniques, or --design <name>");
+    const result = opts.design
+      ? await checkDesignCompatibility(opts.design, techniques)
+      : await checkCompatibility(techniques);
     emit(result);
     // A refusal (a name with no technique) is a failure to a script, not a verdict.
     if (result.structured.verdict === "unknown_technique") process.exitCode = 1;

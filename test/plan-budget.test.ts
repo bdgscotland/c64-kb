@@ -55,6 +55,34 @@ describe("planBudget rules", () => {
     expect(b.verdict).toBe("undetermined");
   });
 
+  it("multiplies a per-call figure by the calls a frame, low by the fewest and high by the most (#37)", () => {
+    const b = planBudget([
+      m("decimal_print", { cycles_per_frame: 1361, basis: "measured-vice" }, { calls: { low: 2, high: 7 } }),
+      m("a", { cycles_per_frame: 100, cycles_per_frame_typical: 50, basis: "measured-vice" }),
+    ]);
+    const p = play(b);
+    expect(p.contributors[0]).toMatchObject({
+      name: "decimal_print",
+      low: 2722,
+      high: 9527,
+      calls: { low: 2, high: 7 },
+    });
+    expect(p.contributors[1]).not.toHaveProperty("calls");
+    expect(p.low).toBe(2772);
+    expect(p.high).toBe(9627);
+  });
+
+  it("tests one call, not the product, against the multi-frame threshold (#37)", () => {
+    const p = play(
+      planBudget([
+        m("x", { cycles_per_frame: 5000, basis: "measured-vice" }, { calls: { low: 5, high: 5 } }),
+      ]),
+    );
+    expect(p.excluded).toEqual([]);
+    expect(p.high).toBe(25000);
+    expect(p.verdict).toBe("undetermined");
+  });
+
   it("names the recipe that realises the technique most directly, as the card lists first (#41)", () => {
     // It named oscar64-attract-replay, the alphabetical first; the card led with joystick-input.
     const p = play(
@@ -536,6 +564,26 @@ describe("parseMemberSpec", () => {
     expect(parseMemberSpec(":play")).toHaveProperty("error");
   });
 
+  it("reads a call count, ×N or ×M-N, before the phase (#37)", () => {
+    expect(parseMemberSpec("decimal_print ×7")).toEqual({
+      name: "decimal_print",
+      phase: "play",
+      calls: { low: 7, high: 7 },
+    });
+    expect(parseMemberSpec("decimal_print*2-7:init")).toEqual({
+      name: "decimal_print",
+      phase: "init",
+      calls: { low: 2, high: 7 },
+    });
+    expect(parseMemberSpec("decimal_print x0-3")).toEqual({
+      name: "decimal_print",
+      phase: "play",
+      calls: { low: 0, high: 3 },
+    });
+    expect(parseMemberSpec("decimal_print ×7-2")).toHaveProperty("error");
+    expect(parseMemberSpec("decimal_print ×0")).toHaveProperty("error");
+  });
+
   it("counts a name listed twice in one phase once, and says so", () => {
     expect(parseMemberSpecs(["object_pool", "a:b:c", "object_pool:play", "object_pool:init"])).toEqual({
       specs: [
@@ -660,7 +708,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(b.bytes.contributors.find((c) => c.name === "sprite_cache_flip")?.basis).toBe("arithmetic");
   });
 
-  it("platformer-scaffold: undetermined, four unknowns named, known range well under the measured 8,693 peak", () => {
+  it("platformer-scaffold: every member has a figure since #37, and the known range fits", () => {
     // Measured (platformer-scaffold.md, "What was measured"): CYC 4,966, MAX 8,606-8,693 PAL; 10,287 NTSC.
     const specs = recipeTechniques("oscar64-platformer-scaffold").map((t) =>
       t === "lfsr_random"
@@ -672,39 +720,40 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(specs).toContain("sid_play_routine_pattern");
     const b = plan(specs, { region: "both" });
     const pal = play(b, "PAL");
-    expect(pal.unknown.sort()).toEqual(
-      ["fixed_point_8_8", "frame_sync_loop", "joystick_autorepeat", "jump_arc_table"].sort(),
-    );
-    expect(pal.to_measure.find((t) => t.technique === "frame_sync_loop")?.recipe).toBe(
-      "oscar64-frame-sync-loop",
-    );
+    // Until #37 five were unknown: fixed_point_8_8, frame_sync_loop,
+    // joystick_autorepeat, joystick_edge_detect, jump_arc_table.
+    expect(pal.unknown).toEqual([]);
     // tile_map_render 268 + tile_grid_collision 2,345 + object_pool 380 + decimal_print 1,361
     // + sid_play_routine_pattern 1,198 (kickassembler-music-player's worst call;
-    // 327 until data 779, the stub tune; its typical 779, the median call, is the
-    // low end) + sfx_engine_beside_music 50-258 + joystick_edge_detect 114
-    // (measured on oscar64-joystick-input since #54; unknown before).
-    expect([pal.low, pal.high]).toEqual([5297, 5924]);
+    // its typical 779, the median call, is the low end) + sfx_engine_beside_music 50-258
+    // + the #37 figures from the platformer's profile builds: frame_sync_loop 314,
+    // joystick_autorepeat 73, jump_arc_table 66, fixed_point_8_8 31; joystick_edge_detect
+    // 114 (oscar64-joystick-input, port read included, #54; the platformer's 76 is the
+    // split alone and is prose on the page).
+    expect([pal.low, pal.high]).toEqual([5781, 6408]);
     expect(pal.fixed_losses.badlines).toBe(1075);
-    expect(pal.verdict).toBe("undetermined");
-    // #45: kernal_file_write_seq and kernal_file_read_seq gained Cost lines
-    // (oscar64-save-load-seq-file, 3,989,946 and 530,736 NTSC), so they are
-    // named as multi-frame instead of unknown; error_channel_check is still unknown.
+    expect(pal.verdict).toBe("fits");
+    // #45 gave the file transfers Cost lines and #37 error_channel_check (81,421,
+    // the platformer's longest status read): all three are multi-frame, none unknown.
     const transition = b.phases.find((p) => p.phase === "transition");
-    expect(transition?.unknown).toEqual(["error_channel_check"]);
+    expect(transition?.unknown).toEqual([]);
     expect(transition?.excluded.map((e) => [e.name, e.reason, e.cycles]).sort()).toEqual([
+      ["error_channel_check", "multi_frame", 81421],
       ["kernal_file_read_seq", "multi_frame", 530736],
       ["kernal_file_write_seq", "multi_frame", 3989946],
     ]);
     expect(transition?.verdict).toBe("undetermined");
-    expect(b.bytes.excluded.map((e) => e.name).sort()).toEqual(["frame_sync_loop", "lfsr_random"]);
+    // frame_sync_loop's bytes_code=985 was the whole frame-sync-loop PRG; #37 dropped it.
+    expect(b.bytes.excluded.map((e) => e.name).sort()).toEqual(["lfsr_random"]);
   });
 
-  it("simple-shmup: undetermined, soft_scroll_v unknown", () => {
-    // Not measured whole (simple-shmup.md: main loop 123 runs against about 245 music IRQs, "not settled").
+  it("simple-shmup: every member has a figure since #37, and it fits", () => {
+    // Measured whole since #37 (simple-shmup.md): worst 8,178 PAL, 8,474 NTSC.
+    // soft_scroll_v was unknown until then: 46, the step and the $D011 write.
     const pal = play(plan(recipeTechniques("oscar64-simple-shmup")));
-    expect(pal.unknown).toEqual(["soft_scroll_v"]);
-    expect(pal.high).toBe(5301 + 1198);
-    expect(pal.verdict).toBe("undetermined");
+    expect(pal.unknown).toEqual([]);
+    expect(pal.high).toBe(5301 + 1198 + 46);
+    expect(pal.verdict).toBe("fits");
   });
 
   it("cracktro-template: soft_scroll_h's carry fits a frame and holds the char buffer; fits", () => {
@@ -734,11 +783,12 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.verdict).toBe("fits");
   });
 
-  it("scroll-panel-split: undetermined with the two scroll techniques named", () => {
+  it("scroll-panel-split: undetermined with the carry technique named", () => {
     // Truth by arithmetic: carry frame 413 + 20 rows × 560 = 11,613 (scroll-panel-split.md).
     const pal = play(plan(recipeTechniques("kickassembler-scroll-panel-split")));
-    expect(pal.high).toBe(413);
-    expect(pal.unknown.sort()).toEqual(["char_scroll_buffer_v", "soft_scroll_v"]);
+    // soft_scroll_v gained its 46 (simple-shmup, #37); the carry stays char_scroll_buffer_v's.
+    expect(pal.high).toBe(413 + 46);
+    expect(pal.unknown.sort()).toEqual(["char_scroll_buffer_v"]);
     expect(pal.fixed_losses.badlines).toBe(0);
     expect(pal.verdict).toBe("undetermined");
   });
@@ -772,19 +822,15 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.verdict).toBe("fits");
   });
 
-  it("falling-blocks: undetermined, the render and the autorepeat named", () => {
+  it("falling-blocks: undetermined, pal_ntsc_detection named, the render measured", () => {
     // Measured: the scripted game's dearest frame 6,276 PAL / 6,491 NTSC; the built worst subject 15,028 / 15,282.
     const b = plan(recipeTechniques("oscar64-falling-blocks"), { region: "both" });
     const pal = play(b, "PAL");
     // The frontmatter names seven since #22 step 4, every one in play here.
-    expect(pal.unknown.sort()).toEqual([
-      "frame_sync_loop",
-      "joystick_autorepeat",
-      "pal_ntsc_detection",
-      "text_mode_overlay_render",
-    ]);
-    // + 114 for joystick_edge_detect, measured since #54.
-    expect(pal.high).toBe(5888 + 14 + 114);
+    // #37 measured frame_sync_loop, joystick_edge_detect, joystick_autorepeat
+    // and text_mode_overlay_render (a lock frame's full repaint, 18,984).
+    expect(pal.unknown.sort()).toEqual(["pal_ntsc_detection"]);
+    expect(pal.high).toBe(5888 + 14 + 314 + 114 + 73 + 18984);
     expect(pal.verdict).toBe("undetermined");
     expect(play(b, "NTSC").verdict).toBe("undetermined");
   });

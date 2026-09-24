@@ -24,6 +24,17 @@
       "ntsc": "screenshots/text-overlay-playfield-ntsc.png"
     }
   },
+  "oscar64/simple-shmup": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/simple-shmup.png",
+      "ntsc": "screenshots/simple-shmup-ntsc.png"
+    }
+  },
   "oscar64/joystick-input": {
     "cycles": 24000000,
     "models": [

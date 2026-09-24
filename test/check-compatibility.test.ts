@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
-import { checkCompatibility, timingBudget } from "../src/tools/query.ts";
+import { checkCompatibility, checkDesignCompatibility, timingBudget } from "../src/tools/query.ts";
+import { CompatibilityCheckSchema } from "../src/schemas/tool-outputs.ts";
 
 describe("checkCompatibility", () => {
   let f: FalkorService;
@@ -114,6 +115,28 @@ describe("checkCompatibility", () => {
 
     const r = await checkCompatibility(["tech_a", "tech_b"]);
     expect(r.structured.shared_infrastructure.some((s) => s.name === "raster_discipline")).toBe(true);
+  });
+
+  it("checks a design phase by phase: an init member is not checked beside play (#37)", async () => {
+    await f.addGameDesign({ name: "phase_test", title: "Phase test", measured: [], source_doc: "p.md" });
+    expect(await f.linkComposes("phase_test", "stable_raster_irq", "play")).toBe(true);
+    expect(await f.linkComposes("phase_test", "raster_bars", "init")).toBe(true);
+    // Flat, the pair shares D016 (warnings); by phase they never run together.
+    const r = await checkDesignCompatibility("phase_test");
+    CompatibilityCheckSchema.parse(r.structured);
+    expect(r.structured.phases).toEqual([
+      { phase: "play", techniques: ["stable_raster_irq"], verdict: "compatible" },
+      { phase: "init", techniques: ["raster_bars"], verdict: "compatible" },
+    ]);
+    expect(r.structured.conflicts).toEqual([]);
+    expect(r.structured.verdict).toBe("compatible");
+    expect(r.structured.design?.name).toBe("phase_test");
+    expect(r.text).toContain("## Phase: init");
+    // An extra member joins its phase, and a finding carries that phase.
+    const withExtra = await checkDesignCompatibility("phase_test", ["raster_bars:play"]);
+    expect(withExtra.structured.verdict).toBe("warnings");
+    expect(withExtra.structured.conflicts.every((c) => c.phase === "play")).toBe(true);
+    await expect(checkDesignCompatibility("no_such_design")).rejects.toThrow(/known: phase_test/);
   });
 });
 

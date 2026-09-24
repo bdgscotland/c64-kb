@@ -412,6 +412,13 @@ The two numbers on row 24 (rung 1, read from the same captures):
 - `OVERLAY 33 LINES`, 2,079 cycles, for the eight `paint_cell` calls plus
   the two raster reads that bracket them. `render_piece` alone is 1,998
   cycles on CIA 2's timer A in a probe build; the two reads are the rest.
+- A second probe build (#37), CIA 2 timer A around each call, its own 5
+  cycles subtracted, 60,000,000 cycles: `render_field` 17,945 (PAL) and
+  17,978 (NTSC) with 120 cells filled, its per-row raster sampling
+  included; `render_piece` 2,005 with an erase, 1,006 draw-only on the
+  lock frame, on both models. The 7-cycle gap to 1,998 is that build's
+  code placement. These are the figures on `text_mode_overlay_render`'s
+  Cost line.
 
 **Correction.** The first version of this page had no `sei`, and its row-24
 figures (`FULL PAINT 0277` at 4 and at 16 cells, `0285` at 120,

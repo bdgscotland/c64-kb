@@ -990,9 +990,9 @@ None per line. The routine runs once, with interrupts disabled, and holds the CP
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D012, D020
-**Cost:** bytes_code=985
-**Cost basis:** arithmetic
-**Cost measured on:** oscar64-frame-sync-loop (bytes are the whole PRG)
+**Cost:** cycles_per_frame=314, irq_slots=1
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (the raster IRQ from entry to return, 291, plus the loop's tick bookkeeping, 23; PROFILE=1 build, PAL and NTSC; the budget bar's two stores are not inside)
 **Claims:** vic_raster_irq (shares)
 **Claims basis:** measured-vice
 
@@ -1159,15 +1159,29 @@ writes land before the beam reaches what they change.
 ### Cycle budget
 
 None per line. The wait costs nothing useful, only the cycles until the
-line arrives. The interrupt form pays the interrupt's entry and exit once
-per frame, 36 cycles to the handler through `$0314` (settled) plus whatever
-the dispatcher and the handler body add; not broken down here. The bar is
-two absolute stores. What the loop has left is the frame: 312 × 63 =
-19,656 cycles on PAL and 263 × 65 = 17,095 on the 6567R8, less 40 to 43
-for each of the 25 badlines and less any sprite DMA (arithmetic from
-the settled constants); `game-design/game-design-patterns.md` budgets
-about 19,700 after interrupt overhead on PAL, which is a rounding of the
-same figure.
+line arrives. The bar is two absolute stores. What the loop has left is
+the frame: 312 × 63 = 19,656 cycles on PAL and 263 × 65 = 17,095 on the
+6567R8, less 40 to 43 for each of the 25 badlines and less any sprite DMA
+(arithmetic from the settled constants);
+`game-design/game-design-patterns.md` budgets about 19,700 after
+interrupt overhead on PAL, which is a rounding of the same figure.
+
+The interrupt form pays the interrupt once per frame: 36 cycles to the
+handler through `$0314` (settled), then the dispatcher and the handler
+body. For Oscar64's `rasterirq.h` with one slot calling a handler that
+bumps a byte, the whole path is 291 cycles, and the loop's tick
+bookkeeping after the wait 23 more. Measured in VICE x64sc 3.10 on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=1` build: one busy
+loop timed on CIA1 timer B across line 251, where the IRQ lands, against
+the same loop from line 20, least of 32 runs each, the same on PAL and
+NTSC. The Cost line states those 314 cycles since #37. Before, it
+carried only `bytes_code=985`, the whole `frame-sync-loop.md` PRG, which
+a budget does not sum, so every plan named this technique unknown.
+
+`rirq_init(true)` leaves the KERNAL's 60 Hz CIA interrupt running. Each
+time it fires it takes 235 cycles in that build, wherever the loop is.
+It is the KERNAL's cost, not this technique's; a loop that needs the
+cycles turns it off.
 
 ### Recipes
 
