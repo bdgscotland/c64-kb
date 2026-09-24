@@ -852,6 +852,11 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 **Complexity:** low
 **Region:** both
 **Uses registers:** D011, D012
+**Cost:** bytes_code=339
+**Cost basis:** derived-listing
+**Cost measured on:** oscar64-pal-ntsc-detect (whole PRG: the 341-byte file less its load address, built with Oscar64 here)
+
+The Cost line carries no cycle figure. The durations under "Why it works" (3,575 to 23,172 cycles on PAL) were measured on the hardware page's KickAssembler listing, which is no recipe, so they stay in the prose. An earlier graph gave this card the fire effect's frame cost (27,301 cycles, measured on kickassembler-fire-effect); ingest now warns when a Cost line names a recipe that does not realise its technique.
 
 ### Why
 

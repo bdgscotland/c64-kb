@@ -45,20 +45,26 @@ export async function findStubTechniques(falkor: FalkorService): Promise<string[
 /**
  * **Cost measured on:** and **Cost includes:** (schema 27) are properties,
  * not edges, so no MERGE can drop a bad one: check them against the nodes
- * here. A recipe that is no Recipe, or an included name that is no
- * Technique, is warned about and counted, the same as a dropped edge.
+ * here. A recipe that is no Recipe, a recipe that does not realise the
+ * technique (no IMPLEMENTS edge to it), or an included name that is no
+ * Technique, is warned about and counted, the same as a dropped edge. The
+ * realise check is #41's: a pal_ntsc_detection card once carried the fire
+ * effect's frame cost, measured on kickassembler-fire-effect.
  */
 export async function findCostReferenceMisses(falkor: FalkorService): Promise<string[]> {
   const Row = z.object({
     name: z.string(),
     recipe: z.string().nullable(),
     includes: z.array(z.string()).nullable(),
+    realisers: z.array(z.string()),
   });
   const rows = z.array(Row).parse(
     (
       await falkor.roQuery(
         `MATCH (t:Technique) WHERE t.cost_recipe IS NOT NULL OR t.cost_includes IS NOT NULL
-         RETURN t.name AS name, t.cost_recipe AS recipe, t.cost_includes AS includes`,
+         OPTIONAL MATCH (r:Recipe)-[:IMPLEMENTS]->(t)
+         RETURN t.name AS name, t.cost_recipe AS recipe, t.cost_includes AS includes,
+                collect(r.name) AS realisers`,
       )
     ).data,
   );
@@ -78,6 +84,8 @@ export async function findCostReferenceMisses(falkor: FalkorService): Promise<st
   for (const r of rows) {
     if (r.recipe && !recipes.has(r.recipe))
       misses.push(`${r.name}: Cost measured on ${r.recipe} (no such recipe)`);
+    else if (r.recipe && !r.realisers.includes(r.recipe))
+      misses.push(`${r.name}: Cost measured on ${r.recipe} (a recipe that does not realise it)`);
     for (const inc of r.includes ?? [])
       if (!techniques.has(inc)) misses.push(`${r.name}: Cost includes ${inc} (no such technique)`);
   }
