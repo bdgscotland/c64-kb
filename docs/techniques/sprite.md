@@ -463,6 +463,9 @@ families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
 **Region:** both
 **Uses registers:** D017, D01D
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=48
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-sprite-expand (one `spr_expand()` call with run-time arguments, screen blanked; PAL and NTSC)
 
 ### Why
 
@@ -524,12 +527,27 @@ about 42 % of the 200-line display window (three stacked reach 126). An
 earlier version of this paragraph called 84 lines "two-thirds of the PAL screen
 height"; two-thirds of 200 is 133.
 
+### Cycle budget
+
+Expansion costs the CPU nothing while the VIC draws; the cost is the
+register writes. Measured in VICE x64sc 3.10 with CIA1 timer B in the
+Oscar64 recipe, screen blanked, one call less an empty call, the same on
+PAL and NTSC: one `spr_expand(sp, x, y)` call with run-time arguments is
+48 cycles (a masked read-modify-write of both registers), the Cost line;
+both registers written as whole bytes with `lda #` / `sta` are 12. With
+constant arguments Oscar64 folds the call to an `ORA #` per register
+(read from its `.asm` listing, not timed).
+
 ### Recipes
 
+- `recipes/oscar64/sprite-expand.md` (one image unexpanded, X-, Y- and
+  both-expanded, each with a collision box scaled by the expand bits and
+  drawn in front; the box and the outline located with PIL on PAL and
+  NTSC; cycles for `spr_expand()`, whole-byte writes and one scaled box).
 - `recipes/kickassembler/sideborder-open.md` (sets $D017 Y-expand for 42-line
-  sprite DMA). No Oscar64 recipe calls `spr_expand()`; an earlier version of
-  this list pointed at `recipes/oscar64/sprite-multiplex-8.md`, which does not
-  use it.
+  sprite DMA). An earlier version of this list said no Oscar64 recipe calls
+  `spr_expand()`, and before that pointed at
+  `recipes/oscar64/sprite-multiplex-8.md`, which does not use it.
 
 ---
 
@@ -1971,6 +1989,22 @@ weak spot can take damage and armour not.
 `width_of_sprite - offset - box_width`; keep one table and mirror at
 emit time.
 
+**Expanded sprites.** Keep the box table in image pixels and scale at
+emit time: on an X-expanded sprite the box's X offset and width double,
+on a Y-expanded one its Y offset and height, and the origin (the X and Y
+registers) does not move, because expansion grows the sprite right and
+down from its top-left corner. `recipes/oscar64/sprite-expand.md` drew
+an 8 x 5 box at image pixel 6, 8 as a sprite in front of its outline,
+in all four expand states, and PIL found the drawn block exactly on the
+scaled box each time: X 112 to 127 for a box of left 112, right 128 on
+an X-expanded sprite at X 100, lines 167 to 176 for top 166, bottom 176
+on a Y-expanded one at Y 150 (VICE x64sc, PAL and NTSC). The box's lines
+are one below its coordinates, as for every sprite pixel, so boxes in
+register coordinates still test correctly against each other. A flipped
+expanded frame uses the expanded width: `48 - 2 * offset - 2 * box_width`
+(arithmetic from the two rules, not measured here). Scaling the box in
+compiled C with variable shifts took 158 cycles a box in that recipe.
+
 ### Cycle budget
 
 Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked, in the
@@ -2002,6 +2036,8 @@ cycles instead of 10, so a full 9-bit hit is 64. A masked-out pair is
   bullets through enemies, a 9-bit miss that a low-byte test calls a hit,
   `$D01E` beside the box events, cycles per pair and per frame, the boxes
   drawn as outlines and measured on PAL and NTSC).
+- `recipes/oscar64/sprite-expand.md` (one box scaled for the four expand
+  states and measured on screen; the "Expanded sprites" variation).
 
 ### Sources
 
