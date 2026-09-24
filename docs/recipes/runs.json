@@ -551,6 +551,16 @@
       "ntsc": "screenshots/base-routines-ntsc.png"
     }
   },
+  "kickassembler/one-part-demo": {
+    "cycles": 10000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/one-part-demo.png"
+    }
+  },
   "oscar64/divide-check": {
     "cycles": 600000000,
     "models": [
