@@ -745,12 +745,13 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(b.bytes.excluded.map((e) => e.name).sort()).toEqual(["lfsr_random"]);
   });
 
-  it("simple-shmup: undetermined, soft_scroll_v unknown", () => {
-    // Not measured whole (simple-shmup.md: main loop 123 runs against about 245 music IRQs, "not settled").
+  it("simple-shmup: every member has a figure since #37, and it fits", () => {
+    // Measured whole since #37 (simple-shmup.md): worst 8,178 PAL, 8,474 NTSC.
+    // soft_scroll_v was unknown until then: 46, the step and the $D011 write.
     const pal = play(plan(recipeTechniques("oscar64-simple-shmup")));
-    expect(pal.unknown).toEqual(["soft_scroll_v"]);
-    expect(pal.high).toBe(5301 + 1198);
-    expect(pal.verdict).toBe("undetermined");
+    expect(pal.unknown).toEqual([]);
+    expect(pal.high).toBe(5301 + 1198 + 46);
+    expect(pal.verdict).toBe("fits");
   });
 
   it("cracktro-template: soft_scroll_h's carry fits a frame and holds the char buffer; fits", () => {
@@ -780,11 +781,12 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.verdict).toBe("fits");
   });
 
-  it("scroll-panel-split: undetermined with the two scroll techniques named", () => {
+  it("scroll-panel-split: undetermined with the carry technique named", () => {
     // Truth by arithmetic: carry frame 413 + 20 rows × 560 = 11,613 (scroll-panel-split.md).
     const pal = play(plan(recipeTechniques("kickassembler-scroll-panel-split")));
-    expect(pal.high).toBe(413);
-    expect(pal.unknown.sort()).toEqual(["char_scroll_buffer_v", "soft_scroll_v"]);
+    // soft_scroll_v gained its 46 (simple-shmup, #37); the carry stays char_scroll_buffer_v's.
+    expect(pal.high).toBe(413 + 46);
+    expect(pal.unknown.sort()).toEqual(["char_scroll_buffer_v"]);
     expect(pal.fixed_losses.badlines).toBe(0);
     expect(pal.verdict).toBe("undetermined");
   });

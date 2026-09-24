@@ -5,7 +5,7 @@ output_format: PRG
 region: both
 techniques: [sprite_multiplex_8, soft_scroll_v, sid_play_routine_pattern]
 file_formats: [PRG]
-uses_registers: [D015, D000, D001, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, D01E, D01F, D011, D016, D012, D019, D01A, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418]
+uses_registers: [D015, D000, D001, D010, D027, D028, D029, D02A, D02B, D02C, D02D, D02E, D01E, D01F, D011, D016, D012, D019, D01A, DC06, DC07, DC0F, DD04, DD05, DD0E, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418]
 uses_kernal: []
 scaffolds: [vertical_shmup, horizontal_shmup]
 ---
@@ -60,13 +60,15 @@ reads `$D01E` only to clear it, so neither technique is implemented here.
 // would add reuse IRQs only for a ninth and later sprite.
 //
 // Screen layout:
-//   Row 0:  HUD (score)
+//   Row 0:  HUD (score, then the frame timer: C last loop, M largest,
+//           V the star scroll's least and largest, all in cycles)
 //   Rows 1-24: play field with downward-scrolling starfield
 //
 // Compile:
 //   oscar64 -O2 -o=simple-shmup.prg -tf=prg simple-shmup.c
 //
 #include <c64/vic.h>
+#include <c64/cia.h>
 #include <c64/sid.h>
 #include <c64/sprites.h>
 #include <c64/rasterirq.h>
@@ -698,6 +700,40 @@ static void check_respawn(void)
 }
 
 // ============================================================================
+// Frame timer (the harness of platformer-scaffold.md): CIA1 timer B around
+// the loop body, CIA2 timer A around stars_update. The KERNAL owns CIA1
+// timer A. Each count has the timer's own start-stop cost, measured once
+// at start-up, taken off.
+// ============================================================================
+static inline void tb_start(void) { cia1.crb = 0x00; cia1.tb = 0xffff; cia1.crb = 0x11; }
+static inline unsigned tb_stop(void) { cia1.crb = 0x00; return 0xffff - cia1.tb; }
+static inline void ta2_start(void) { cia2.cra = 0x00; cia2.ta = 0xffff; cia2.cra = 0x11; }
+static inline unsigned ta2_stop(void) { cia2.cra = 0x00; return 0xffff - cia2.ta; }
+
+static unsigned cyc_max, scroll_min = 0xffff, scroll_max, loops;
+
+static void put_num(char col, unsigned v, char digits)
+{
+    for (char k = digits; k-- > 0; ) {
+        Screen[col + k] = 48 + v % 10;
+        Color[col + k]  = VCOL_WHITE;
+        v /= 10;
+    }
+}
+
+static void timer_hud(unsigned cyc)
+{
+    Screen[14] = 3;  Color[14] = VCOL_YELLOW;     // C
+    put_num(15, cyc, 5);
+    Screen[21] = 13; Color[21] = VCOL_YELLOW;     // M
+    put_num(22, cyc_max, 5);
+    Screen[28] = 22; Color[28] = VCOL_YELLOW;     // V
+    put_num(29, scroll_min, 4);
+    Screen[33] = 45; Color[33] = VCOL_YELLOW;     // -
+    put_num(34, scroll_max, 4);
+}
+
+// ============================================================================
 // main
 // ============================================================================
 int main(void)
@@ -778,6 +814,11 @@ int main(void)
     // ===================================================================
     // Main loop
     // ===================================================================
+    tb_start();
+    unsigned tb_null = tb_stop();
+    ta2_start();
+    unsigned ta2_null = ta2_stop();
+
     for (;;)
     {
         // 1. Wait for all raster IRQs of this frame to finish.
@@ -785,6 +826,7 @@ int main(void)
         //    reuse IRQ has fired and will not read vspr data again until
         //    vspr_update reprograms it for the next frame.
         rirq_wait();
+        tb_start();
 
         // 2. Update game logic
         update_player();
@@ -794,12 +836,24 @@ int main(void)
         check_respawn();
 
         // 3. Stars (soft vertical scroll via $D011 YSCROLL)
+        ta2_start();
         stars_update();
+        unsigned sc = ta2_stop() - ta2_null;
 
         // 4. Sprite multiplexer: sort -> update -> re-sort rirq slots
         vspr_sort();
         vspr_update();
         rirq_sort();
+        unsigned cyc = tb_stop() - tb_null;
+
+        // The timer figures, outside the timed region; the first frames
+        // are start-up and are not kept.
+        if (++loops > 2) {
+            if (cyc > cyc_max) cyc_max = cyc;
+            if (sc > scroll_max) scroll_max = sc;
+            if (sc < scroll_min) scroll_min = sc;
+        }
+        timer_hud(cyc);
 
         // (music_play runs automatically from the music_rirq slot)
     }
@@ -836,14 +890,42 @@ both explode (the player in orange), and the player respawns after 90 frames. A
 C-major-triad arpeggio plays on SID voice 0 throughout (not listened to
 here).
 
-Measured in headless VICE (PAL, 8,000,000 cycles, no joystick input): the
-verify screenshot shows the HUD, the player at the bottom centre and four red
-diamonds in a row about two-thirds of the way down the play field (sprite Y
-about 178), with the star
-blocks displaced from their start rows. In an instrumented build the main loop
-had run 123 times while the music call had run about 245 times over the same
-interval; whether the loop runs every second frame or the two counters measure
-different intervals was not settled here.
+After the score, row 0 carries the frame timer (#37), in cycles: `C` the
+last loop body, `M` the largest since the third frame, `V` the least and
+the largest `stars_update`. CIA1 timer B brackets the loop body from
+`rirq_wait()` to `rirq_sort()`; CIA2 timer A brackets `stars_update`.
+Each timer's own start-stop count, taken once at start-up, is subtracted.
+The figures are drawn after the timer stops, so the drawing is not in
+them.
+
+Measured in headless VICE x64sc 3.10, no joystick input, the pinned
+8,000,000-cycle runs (`screenshots/simple-shmup.png`,
+`screenshots/simple-shmup-ntsc.png`), decoded with the char ROM and
+measured with PIL:
+
+| | PAL | NTSC |
+|---|---|---|
+| Row 0 | `SCORE: 000000 C04619 M08147 V0046-3525` | `SCORE: 000000 C04911 M08453 V0046-3741` |
+| Red diamonds | 440 pixels, x 56 to 235, raster lines 180 to 194 | 440 pixels, x 112 to 259, lines 195 to 209 |
+| Player | x 173 to 191, lines 221 to 240 | x 173 to 191, lines 221 to 240 |
+
+The same build at 40,000,000 cycles read `M08178 V0046-3583` (PAL) and
+`M08474 V0046-3802` (NTSC). The loop body's worst is under half the
+frame on both models.
+
+The screen is on and the KERNAL's 60 Hz interrupt runs (`rirq_init(true)`),
+so badline stalls and any KERNAL interrupt that lands in the body are in
+the figures. `V` is 46 on the seven frames in eight with no carry; the
+largest is a carry frame, which moves the 16 star cells.
+
+An earlier version of this page reported, from an instrumented build, 123
+loops against about 245 music calls and left open whether the loop ran
+every second frame. A debug build of this listing that also counted
+`rirq_count` read 123 loops and 123 frames at 8,000,000 cycles on PAL:
+the loop runs every frame. The music count was not measured again.
+
+The PAL picture differs from the one pinned before #37 only in row 0 (542
+pixels, x 145 to 334): the timer adds no change to the game.
 
 ## Why this works
 
@@ -925,9 +1007,12 @@ the raster MSB" wrote a 1 back into the compare, moved the raster IRQ to line
 was identical at 8 and 12 million cycles). The read-modify-write is a single
 expression through Oscar64's volatile struct field access.
 
-The cost per frame is one write to `$D011` plus (on carry frames, once per 8
-frames) `NUM_STARS` screen RAM updates. At 16 stars that is 32 byte writes
-per carry, small next to the sprite update cost.
+`stars_update` measured 46 cycles on a frame without a carry and 3,525
+to 3,802 on a carry frame (the `V` field above). The carry is 16 erases,
+16 draws and 16 colour writes, each address `star_row[i] * COLS +
+star_x[i]` worked out again. An earlier version called it 32 byte writes
+and "small next to the sprite update cost"; 3,802 is 45 % of the loop
+body's largest reading, 8,474 on NTSC.
 
 ### Collision detection
 
