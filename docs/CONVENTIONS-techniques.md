@@ -84,6 +84,19 @@ demand the technique's own text supports.
 | `kernal_rom_out` | runs with the KERNAL ROM banked out |
 | `serial_bus_exclusive` | owns the drive and its serial bus while resident: KERNAL disk I/O to that drive stalls until it is uninstalled (a drive-code fast loader such as Krill's). `c64_check_compatibility` reports `serial_bus_busy` against a technique that uses LOAD, SAVE, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN or the low-level serial calls. |
 
+`cpu_exclusive` and `cpu_vs_irq` through `midframe_raster_irqs` do not
+fire between a technique and one that runs inside its own code: when either
+is on the other's `**Requires:**` chain, or when the interrupting side is
+an entry method that `shares` `vic_raster_irq` (its `**Claims:**` line) and
+the `cpu_every_line` side `owns` it. The entry's interrupt starts the
+effect's lines; it does not land inside them. So `fli_image` with
+`double_irq` and `dysp_side_border_sprites` with `sideborder_open` pass,
+while `fli_image` with `sprite_multiplex_24` (which owns the compare and
+interrupts inside the band) still fails. An earlier version fired on every
+such pair, against the fli-image, sideborder-open, dysp and tech-tech
+recipes that run them together (#29). Claims unknown on either side keep
+the rule.
+
 Four loader words were considered and left out, because no page in this
 repo can state them truthfully yet. `dd00_plain_stores` is Bitfire's rule
 (plain stores of `$00`-`$03`, no read-modify-write); the KB has no Bitfire

@@ -6,6 +6,16 @@ import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts"
 
 type Output = CompatibilityCheckOutput;
 
+/** The refusal for names the graph does not hold, with a hint when one argument carries several names. */
+function renderNotFound(r: Output): string {
+  const joined = r.not_found.filter((n) => /[\s,]/.test(n));
+  const hint =
+    joined.length > 0
+      ? ` Several names in one argument? ${joined.map((n) => `"${n}"`).join(", ")} contains a space or comma; pass each technique as its own argument.`
+      : "";
+  return `# Compatibility: ${r.techniques.join(" + ")}\n\n**Verdict:** UNKNOWN_TECHNIQUE — refused, no verdict. No such technique: ${r.not_found.join(", ")}.${hint} Check the names with c64_techniques_for.\n`;
+}
+
 function renderVerdict(r: Output, closureOnly: readonly string[]): string {
   let out = `# Compatibility: ${r.techniques.join(" + ")}\n\n**Verdict:** ${r.verdict.toUpperCase()}`;
   if (r.verdict === "incompatible")
@@ -98,6 +108,7 @@ function renderInfrastructure(r: Output): string {
 }
 
 export function renderCompatibility(r: Output, closureOnly: readonly string[]): string {
+  if (r.verdict === "unknown_technique") return renderNotFound(r);
   // "Not covered" is about the named techniques; implied ones are listed
   // separately so the silence-vs-clearance sentence keeps its denominator.
   const unknown = r.data_coverage.filter((d) => !d.known && d.implied_by === undefined);

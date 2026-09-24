@@ -22,6 +22,8 @@ interface HardHit {
 export interface Named {
   name: string;
   facts: TechniqueFacts;
+  /** Everything on this technique's REQUIRES chain, when the caller knows it. */
+  requires?: ReadonlySet<string>;
 }
 
 export interface HardRuleResult {
@@ -132,8 +134,8 @@ function regionRule(sink: HitSink, a: Named, b: Named): void {
 }
 
 function cpuExclusiveRule(sink: HitSink, a: Named, b: Named): void {
-  // Both need every CPU cycle on their lines.
-  if (a.facts.demands.has("cpu_every_line") && b.facts.demands.has("cpu_every_line")) {
+  // Both need every CPU cycle on their lines, and neither runs inside the other.
+  if (a.facts.demands.has("cpu_every_line") && b.facts.demands.has("cpu_every_line") && !runsInside(a, b)) {
     sink.line(
       "cpu_exclusive",
       ["cpu_every_line"],
@@ -143,12 +145,27 @@ function cpuExclusiveRule(sink: HitSink, a: Named, b: Named): void {
   }
 }
 
+const rasterIrqMode = (t: Named) => t.facts.claims.find((c) => c.unit === "vic_raster_irq")?.mode;
+
+/**
+ * y runs inside x's own code, so its interrupt or its cycles are x's, not a
+ * second claim on x's lines (#29). Either y is on x's REQUIRES chain (or x
+ * on y's: dysp_side_border_sprites opens the side border it requires in
+ * its own loop), or y is an entry method that shares the raster compare
+ * x owns (fli-image.md and sideborder-open.md enter through a double IRQ,
+ * which neither page requires). Unknown claims keep the rule.
+ */
+function runsInside(x: Named, y: Named): boolean {
+  if (x.requires?.has(y.name) || y.requires?.has(x.name)) return true;
+  return rasterIrqMode(y) === "shares" && rasterIrqMode(x) === "owns";
+}
+
 /** One needs every CPU cycle (x); the other (y) interrupts mid-frame. */
 function cpuVsIrqRule(sink: HitSink, x: Named, y: Named): void {
   const X = x.facts.demands;
   const Y = y.facts.demands;
   if (!X.has("cpu_every_line")) return;
-  if (Y.has("midframe_raster_irqs")) {
+  if (Y.has("midframe_raster_irqs") && !runsInside(x, y)) {
     sink.line(
       "cpu_vs_irq",
       ["cpu_every_line", "midframe_raster_irqs"],

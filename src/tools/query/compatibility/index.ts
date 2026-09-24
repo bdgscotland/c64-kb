@@ -28,6 +28,7 @@ export async function checkCompatibility(techniques: string[]): Promise<Compatib
     band_separated: evaluation.band_separated,
     shared_infrastructure: evaluation.shared_infrastructure,
     data_coverage: evaluation.data_coverage,
+    not_found: evaluation.not_found,
     verdict: evaluation.verdict,
   };
   return { structured, text: renderCompatibility(structured, closureOnly) };

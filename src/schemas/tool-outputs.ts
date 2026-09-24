@@ -314,7 +314,9 @@ export const CompatibilityCheckSchema = z.object({
   band_separated: z.array(BandSeparatedSchema),
   shared_infrastructure: z.array(SharedInfrastructureSchema),
   data_coverage: z.array(CompatibilityCoverageSchema),
-  verdict: z.enum(["compatible", "warnings", "incompatible"]),
+  // Input names with no Technique node; any makes the verdict unknown_technique.
+  not_found: z.array(z.string()),
+  verdict: z.enum(["compatible", "warnings", "incompatible", "unknown_technique"]),
 });
 
 export const TimingBudgetSchema = z.object({
