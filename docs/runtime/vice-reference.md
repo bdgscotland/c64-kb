@@ -1116,6 +1116,76 @@ What the watch does not see:
 
 ---
 
+## Running VICE in a CI job (GitHub Actions)
+
+This repository's own workflow, `.github/workflows/ci.yml`, job
+`recipes`, runs every KickAssembler and cc65 recipe in VICE on each push
+to `main` and each pull request, and compares each exit screenshot with
+the committed PNG pixel for pixel. What follows describes that job as it
+stands and the timings of its runs (GitHub's job records, read with
+`gh run view`); it is the tested pattern for a C64 project's own CI.
+
+### The job's steps
+
+1. **Runner `ubuntu-24.04`**, Node from `.nvmrc`, Java 21 (Temurin) for
+   KickAssembler.
+2. **Packages**: `cc65`, and what VICE's `configure` needs to build:
+   `build-essential xa65 dos2unix libpng-dev pkg-config flex bison
+   libcurl4-openssl-dev`, plus `python3-pil` for the pixel compare.
+   `configure` stops without `flex` or `libcurl` (the build script's
+   header).
+3. **KickAssembler 5.25** downloaded, checked against a pinned SHA-256
+   and retried: the host once served a file that failed the checksum
+   while the same URL was fine seconds later (run 35944152577).
+4. **The windowless VICE** (`npm run vice:headless`,
+   `scripts/build-vice-headless.sh`, described under "A windowless build
+   for batch runs"): VICE 3.10 from the source tarball, digest pinned,
+   configured with `--enable-headlessui`. The tarball carries the ROM
+   images, so the Debian packaging's missing ROMs (Pitfalls, "ROM image
+   licensing") do not arise. `.tools/vice-headless` is cached under a key
+   that hashes the build script, so the build runs only when the script
+   changes.
+5. **The compare**, one recipe page at a time: `node
+   scripts/verify-recipes.ts --file <page> --allow-missing`, which builds
+   the listing, runs x64sc with the page's pinned flags from
+   `docs/recipes/runs.json`, and compares.
+
+### What was learned getting it to pass
+
+- **The Linux headless build matches the macOS baselines.** A Linux
+  build of the script matched every pinned PNG it could run, 2026-09-23
+  (the build script's header). The pins were made on macOS, so the same
+  VICE version and flags give the same frame on both.
+- **Determinism comes from the flags, not the host.** Every run passes
+  `-default` (no user configuration), `+autostart-delay-random`, a fixed
+  `-limitcycles` and a fixed model. `runs.json`'s note says
+  `+autostart-delay-random` is what makes the captured frame the same
+  every time.
+- **Ignore x64sc's exit status.** It is 1 on every `-limitcycles` exit
+  ("A windowless build for batch runs"); judge the screenshot (or a
+  result byte, "Verifying a run without a human").
+- **A wrapper step must not let `bash -e` swallow the name.** The loop
+  captures each page's exit code with `|| rc=$?`; an earlier form ended
+  the step at the first failing page with exit 1 and no page named (run
+  35991987457).
+- **A missing toolchain is excluded by directory, not tolerated.** The
+  Oscar64 recipes are left out until issue #25 pins a released compiler
+  that reproduces them; `verify-recipes` fails a page whose toolchain is
+  absent.
+- **`GSETTINGS_SCHEMA_DIR` is a macOS GTK matter only.** The headless
+  build on Linux needs no GTK and the job sets no such variable.
+
+### Timings measured
+
+| Run | What | Time |
+|---|---|---|
+| 35818950308 (2026-09-23, cache cold) | `npm run vice:headless`: fetch, configure, build | 1 min 40 s |
+| 36010939576 (2026-09-24, cache warm) | restore `.tools/vice-headless` from cache | 4 s |
+| 36010939576 | every KickAssembler and cc65 recipe page, built, run and compared | 5 min 12 s |
+| 36010939576 | the whole `recipes` job | 5 min 50 s |
+
+---
+
 ## Text monitor for debugging
 
 Everything in this section was measured on 2026-09-22 with VICE x64sc
