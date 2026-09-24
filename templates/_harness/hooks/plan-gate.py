@@ -17,14 +17,21 @@ the c64-kb output the plan was made from.
 
 The plan passes when:
   - PLAN.md exists and has no "FILL:" placeholder left;
-  - it holds check-compatibility's output: a "# Compatibility: a + b" line
+  - it holds check-compatibility's output: a "# Compatibility: a + b" line,
+    or the by-phase form "# Compatibility by phase: a + b" (a list with
+    "name:phase") or "# Compatibility by phase: Title (`design`)" (--design),
     followed by a "**Verdict:** ..." line;
   - it holds plan-budget's output: a "# Budget plan: ..." line followed by a
     "Techniques: a, b" line and a "## play (" section with its "Range" line;
   - every technique those two outputs name is a row of the "## Techniques"
-    table (first cell), and the two outputs name the same techniques.
+    table (first cell), and the two outputs name the same techniques. A
+    count or a phase on a name ("char_bullets ×14", "x:transition") is read
+    and dropped, in the outputs and in the table.
 With --c64kb pointing at a c64-kb checkout, `make` also re-runs
-check-compatibility on the pasted names and requires the same Verdict line.
+check-compatibility and requires the same Verdict line: on the pasted names
+for the flat form, on plan-budget's "Techniques:" list (with its phases and
+counts) for a by-phase list, and with --design for a design. Before #107
+the gate read only the flat form and plain names.
 The pass is cached against PLAN.md's contents in --cache, with the
 checkout's KB_DATA_VERSION and commit, which the pass line and a refusal
 both print. When the checkout or its graph cannot be reached, it warns and
@@ -62,31 +69,56 @@ def section_after(lines, start, pattern, stop=r"^# "):
     return None
 
 
+def name_of(spec):
+    """'char_bullets ×14' / '`x`:transition' -> the technique name."""
+    m = re.match(r"`?([a-z0-9_]+)", spec.strip())
+    return m.group(1) if m else spec.strip()
+
+
 def table_names(lines):
     names, inside = set(), False
     for line in lines:
         if re.match(r"^## ", line):
             inside = line.strip().lower() == "## techniques"
             continue
-        m = re.match(r"^\|\s*`?([a-z0-9_]+)`?\s*\|", line)
+        m = re.match(r"^\|\s*`?([a-z0-9_]+)`?(?:\s*\u00d7\s*\d+(?:-\d+)?|:[a-z]+)*\s*\|", line)
         if inside and m:
             names.add(m.group(1))
     return names
 
 
+COMPAT_HEAD = re.compile(r"^# Compatibility( by phase)?:(.*)$")
+
+
+def compat_head(lines):
+    """(line index, by phase, names, design) of the check-compatibility output, or None."""
+    for i, line in enumerate(lines):
+        m = COMPAT_HEAD.match(line)
+        if not m:
+            continue
+        title = m.group(2).strip()
+        design = re.search(r"\(`([a-z0-9_]+)`\)$", title) if m.group(1) else None
+        if design:
+            return i, True, [], design.group(1)
+        return i, bool(m.group(1)), [name_of(t) for t in title.split("+") if t.strip()], None
+    return None
+
+
 def parse(text):
-    """(problems, compat names, pasted verdict)."""
+    """(problems, compat names, pasted verdict, the arguments that re-run check-compatibility)."""
     lines = text.splitlines()
     problems = []
     n = sum("FILL:" in line for line in lines)
     if n:
         problems.append(f"{n} FILL: placeholder(s) left")
-    compat, verdict, budget = [], None, []
-    ci = next((i for i, line in enumerate(lines) if line.startswith("# Compatibility:")), None)
-    if ci is None:
-        problems.append("no check-compatibility output (a line starting '# Compatibility:')")
+    compat, verdict, budget, specs, rerun = [], None, [], [], []
+    head = compat_head(lines)
+    if head is None:
+        problems.append("no check-compatibility output (a line starting '# Compatibility:' "
+                        "or '# Compatibility by phase:')")
     else:
-        compat = [t.strip() for t in lines[ci].split(":", 1)[1].split("+") if t.strip()]
+        ci, by_phase, compat, design = head
+        rerun = ["--design", design] if design else (None if by_phase else compat)
         vi = section_after(lines, ci, r"^\*\*Verdict:\*\*")
         if vi is None:
             problems.append("the check-compatibility output has no '**Verdict:**' line")
@@ -101,22 +133,24 @@ def parse(text):
         if ti is None or pi is None or section_after(lines, pi, r"^Range ", stop=r"^#") is None:
             problems.append("the plan-budget output is not whole (no 'Techniques:', '## play (' or 'Range' line)")
         else:
-            budget = [t.strip().split(":")[0] for t in lines[ti].split(":", 1)[1].split(",") if t.strip()]
+            specs = [t.strip() for t in lines[ti].split(":", 1)[1].split(",") if t.strip()]
+            budget = [name_of(t) for t in specs]
     table = table_names(lines)
     for t in compat + budget:
         if t not in table:
             problems.append(f"technique '{t}' is in the pasted output but not in the Techniques table")
     if compat and budget and set(compat) != set(budget):
         problems.append("check-compatibility and plan-budget were run on different techniques")
-    return problems, compat, verdict
+    # A by-phase list is re-run on plan-budget's list, which keeps the phases and counts.
+    return problems, compat, verdict, specs if rerun is None else rerun
 
 
-def rerun_verdict(c64kb, names):
+def rerun_verdict(c64kb, args):
     """The Verdict line check-compatibility prints now, or None when it cannot run."""
     if not c64kb or not os.path.isfile(os.path.join(c64kb, "src", "cli.ts")):
         return None
     try:
-        r = subprocess.run(["npx", "tsx", "src/cli.ts", "check-compatibility", *names],
+        r = subprocess.run(["npx", "tsx", "src/cli.ts", "check-compatibility", *args],
                            cwd=c64kb, capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -157,8 +191,9 @@ def write_cache(cache, digest, how, verdict):
 
 
 def short(verdict):
-    """'**Verdict:** WARNINGS — ...' -> 'WARNINGS'."""
-    return (verdict or "").replace("**Verdict:**", "").split("\u2014")[0].strip()
+    """'**Verdict:** WARNINGS — ...' or '**Verdict:** WARNINGS, the worst ...' -> 'WARNINGS'."""
+    m = re.match(r"[A-Z_]+", (verdict or "").replace("**Verdict:**", "").strip())
+    return m.group(0) if m else ""
 
 
 def check(plan, c64kb=None, cache=None):
@@ -166,14 +201,14 @@ def check(plan, c64kb=None, cache=None):
     if not os.path.isfile(plan):
         return [f"{plan} does not exist: copy it from the harness's PLAN.md.template"], None
     text = open(plan).read()
-    problems, compat, verdict = parse(text)
+    problems, _, verdict, rerun = parse(text)
     if problems or not c64kb:
         return problems, None
     digest = hashlib.sha256(text.encode()).hexdigest()
     seen = read_cache(cache) if cache else {}
     if seen.get("plan_sha256") == digest:
         return [], f"plan-gate: {plan} passes (unchanged; {seen.get('checked')}: {short(seen.get('verdict'))})"
-    now = rerun_verdict(c64kb, compat)
+    now = rerun_verdict(c64kb, rerun)
     if now is None:
         return [], (f"plan-gate: warning: could not re-run check-compatibility in {c64kb} "
                     "(no checkout, or its graph is down); checked the plan's structure only")
@@ -192,7 +227,7 @@ def check(plan, c64kb=None, cache=None):
 def seed(plan, cache):
     """Mark a starter's shipped plan as passed, without the re-run."""
     text = open(plan).read()
-    problems, _, verdict = parse(text)
+    problems, _, verdict, _ = parse(text)
     if problems:
         return problems
     write_cache(cache, hashlib.sha256(text.encode()).hexdigest(),
