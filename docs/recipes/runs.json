@@ -1786,5 +1786,26 @@
       "pal": "screenshots/road-sprite-lines.png",
       "ntsc": "screenshots/road-sprite-lines-ntsc.png"
     }
+  },
+  "oscar64/cartridge-8k": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O2",
+      "-tf=crt8"
+    ],
+    "shots": {
+      "pal": "screenshots/cartridge-8k.png",
+      "ntsc": "screenshots/cartridge-8k-ntsc.png"
+    },
+    "cartridge": {
+      "file": "oscar64-cartridge-8k.crt",
+      "write": false,
+      "runs": 1
+    }
   }
 }

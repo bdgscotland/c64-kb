@@ -82,6 +82,8 @@ The default output format. A `.prg` file starts with a two-byte load address hea
 
 Cartridge images are selected with `-tf=crt` (EasyFlash), `-tf=crt8` (generic 8 KB), or `-tf=crt16` (generic 16 KB). The EasyFlash format places the first 16 KB bank into RAM at startup and leaves remaining banks accessible for banked data. The 8 KB and 16 KB generic formats write code and data into the `rom` region at `$8000`–`$A000` or `$8000`–`$C000` with an autostart header. BSS, stack, and heap go into the `main` region from `$0800` to `$8000`.
 
+The crt8 start-up at `$8009` does not call `IOINIT`, `RAMTAS`, `RESTOR` or `CINT`, and it does not copy initialised data to RAM: an initialised global stays in the ROM, a write to it reaches the RAM underneath, and a read returns the ROM byte. The display is off until the program writes `$D011`, and there is no `CHROUT`. `main` was entered 305 cycles after the cartridge vector, on PAL and NTSC. All of this was measured in VICE by [recipes/oscar64/cartridge-8k](../recipes/oscar64/cartridge-8k.md), which is pinned in `runs.json` with the `build` key `["-O2", "-tf=crt8"]`.
+
 **Consumed by:** vice
 
 ### .MAP — Linker map file

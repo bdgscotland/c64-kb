@@ -189,7 +189,9 @@ loops: `-tf=crt8` wrote type 0, EXROM 0, GAME 1, one 8 KB packet;
 `-tf=crt16` wrote type 0, EXROM 0, GAME 0, one 16 KB packet; `-tf=crt`
 wrote type 32 with EXROM 0, GAME 0, bank 0 ROML at `$8000` and bank 0
 ROMH at `$E000`, both chip type 0. `crt8` and `crt` booted green in
-x64sc; `crt16` was not booted here. The EasyFlash headers differ:
+x64sc; `crt16` was not booted here. The `crt8` build is pinned as a
+recipe, [oscar64/cartridge-8k](../recipes/oscar64/cartridge-8k.md),
+booted on PAL and NTSC by the verifier. The EasyFlash headers differ:
 cartconv writes EXROM 1, GAME 0 and chip type 2 for the same
 hardware id. VICE booted both. Which one a flash tool prefers was not
 measured here.

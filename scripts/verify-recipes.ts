@@ -30,6 +30,17 @@
  * run N's by "<model>-run<N>" ("pal-run2"); the default path for run N is
  * screenshots/<stem>[-<model>]-run<N>.png.
  *
+ * With "build": ["-Os"], an Oscar64 or cc65 recipe is compiled with those
+ * options in place of the default optimisation flag (-O2 for Oscar64, -O
+ * for cc65); Oscar64 ORs its -O flags together, so they replace rather than
+ * follow it. "-tf=crt8" there makes Oscar64 write <toolchain>-<stem>.crt,
+ * which a "cartridge" entry then names.
+ *
+ * A key "<toolchain>/<stem>@<variant>" is a second run of the same page:
+ * its own build options, cycles, models and shots (default
+ * screenshots/<stem>-<variant>[-<model>].png). `--file` on the page runs
+ * the page and every variant of it.
+ *
  * Usage:
  *   node scripts/verify-recipes.ts                 # every recipe; exit 1 on any mismatch or missing baseline
  *   node scripts/verify-recipes.ts --file docs/recipes/kickassembler/raster-bars.md
@@ -100,6 +111,8 @@ const RunSchema = z.object({
   // key press the harness has no flag for) says why here; the listing gate
   // still builds it and the page carries its own pictures under docs/figures.
   skip: z.string().optional(),
+  // Compiler options in place of the default optimisation flag (Oscar64, cc65).
+  build: z.array(z.string()).optional(),
 });
 type Run = z.infer<typeof RunSchema>;
 const PartialRunSchema = RunSchema.partial();
@@ -167,13 +180,15 @@ function defaultShots(stem: string, models: string[], runs: number): Record<stri
   );
 }
 
-function jobFor(toolchain: string, md: string): Job {
-  const stem = basename(md, ".md");
-  const m = manifestEntry(`${toolchain}/${stem}`);
+/** The job for a page, or for one "@variant" of it: `stem` then names the variant's files. */
+function jobFor(toolchain: string, md: string, variant?: string): Job {
+  const page = basename(md, ".md");
+  const stem = variant ? `${page}-${variant}` : page;
+  const m = manifestEntry(`${toolchain}/${page}${variant ? `@${variant}` : ""}`);
   const models = m.models ?? ["pal"];
   const shots = m.shots ?? defaultShots(stem, models, m.cartridge?.runs ?? 1);
   return {
-    rel: relative(ROOT, md),
+    rel: relative(ROOT, md) + (variant ? `@${variant}` : ""),
     toolchain,
     stem,
     md,
@@ -184,8 +199,17 @@ function jobFor(toolchain: string, md: string): Job {
       shots,
       ...(m.disk === undefined ? {} : { disk: m.disk }),
       ...(m.cartridge === undefined ? {} : { cartridge: m.cartridge }),
+      ...(m.build === undefined ? {} : { build: m.build }),
     },
   };
+}
+
+/** The "@variant" names runs.json lists for one page. */
+function variantsOf(toolchain: string, page: string): string[] {
+  const prefix = `${toolchain}/${page}@`;
+  return Object.keys(manifest)
+    .filter((k) => k.startsWith(prefix))
+    .map((k) => k.slice(prefix.length));
 }
 
 let skipped = 0;
@@ -203,6 +227,7 @@ for (const toolchain of RECIPE_TOOLCHAINS) {
       continue;
     }
     jobs.push(jobFor(toolchain, md));
+    for (const v of variantsOf(toolchain, basename(md, ".md"))) jobs.push(jobFor(toolchain, md, v));
   }
 }
 if (!jobs.length && !skipped) {
@@ -223,9 +248,9 @@ function buildKick(job: Job, prg: string): Built {
   return { prg: r.status === 0 ? prg : null, log: errorLines(r.stdout + r.stderr) };
 }
 
-function buildOscar(src: string, prg: string): Built {
+function buildOscar(src: string, prg: string, opts: string[]): Built {
   if (!tools.oscar64) return { prg: null, log: "oscar64 not found" };
-  const r = spawnSync(tools.oscar64, ["-tm=c64", "-O2", `-o=${prg}`, src], { encoding: "utf8", cwd: work });
+  const r = spawnSync(tools.oscar64, ["-tm=c64", ...opts, `-o=${prg}`, src], { encoding: "utf8", cwd: work });
   return {
     prg: r.status === 0 ? prg : null,
     log: errorLines(r.stdout + r.stderr) || (r.status === 0 ? "" : `exit ${String(r.status)}`),
@@ -242,7 +267,7 @@ function buildCc65(job: Job, src: string, prg: string, cfgCode: string | undefin
     writeFileSync(cfg, cfgCode);
     cfgArgs.push("-C", cfg);
   }
-  const r = spawnSync(tools.cl65, ["-t", "c64", "-O", ...cfgArgs, "-o", prg, src], {
+  const r = spawnSync(tools.cl65, ["-t", "c64", ...(job.run.build ?? ["-O"]), ...cfgArgs, "-o", prg, src], {
     encoding: "utf8",
     cwd: work,
   });
@@ -257,7 +282,7 @@ function build(job: Job): Built {
   if (!f) return { prg: null, log: "no ```c listing with main()" };
   const src = join(work, `${job.toolchain}-${job.stem}.c`);
   writeFileSync(src, f.code);
-  if (job.toolchain === "oscar64") return buildOscar(src, prg);
+  if (job.toolchain === "oscar64") return buildOscar(src, prg, job.run.build ?? ["-O2"]);
   return buildCc65(job, src, prg, all.find((x) => x.lang === "cfg")?.code);
 }
 
@@ -493,7 +518,7 @@ function runChild(j: Job): Promise<{ lines: string; status: number | null }> {
   const args = [
     process.argv[1] ?? "",
     "--file",
-    j.rel,
+    relative(ROOT, j.md),
     ...(update ? ["--update"] : []),
     ...(allowMissing ? ["--allow-missing"] : []),
     ...(keepDir ? ["--keep", keepDir] : []),
@@ -521,7 +546,8 @@ function runChild(j: Job): Promise<{ lines: string; status: number | null }> {
 // Until this change the N workers called spawnSync, which blocks the event loop, so
 // they ran one child at a time.
 async function runParallel(n: number): Promise<void> {
-  const queue = [...jobs];
+  // One child per page: a child given the page also runs its "@variant" jobs.
+  const queue = jobs.filter((j, i) => jobs.findIndex((k) => k.md === j.md) === i);
   const worker = async () => {
     for (let j = queue.shift(); j; j = queue.shift()) {
       const r = await runChild(j);
