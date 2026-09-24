@@ -113,7 +113,24 @@ const STOP_WORDS = new Set([
   "most",
   "are",
   "has",
+  // Adverbs and prepositions of place and time. In the #22 shmup brief
+  // "scrolls down", "above a fixed panel" and "on screen at once" matched
+  // high_score_table_insert ("shift down"), mouse_1351_read and
+  // light_pen_read ("once per frame") (#97).
+  "down",
+  "over",
+  "above",
+  "once",
+  "also",
+  "least",
 ]);
+
+// Phrases whose nouns do not name a part. "Sprites on screen at once" is not
+// about the screen, "a map three screens tall" gives a size and "one pixel
+// a frame" a speed; the #22 shmup brief's "screen" and "pixel" matched
+// tile_map_render, screen_wipe and hires_plot through them (#97).
+const IDIOMS =
+  /\b(?:on|off)[- ]screen\b|\bscreens? (?:tall|wide|high|long)\b|\b(?:one|\d+) pixels? (?:a|per) frame\b/gi;
 
 // Acronyms that are also English words. In lower case the brief means the
 // word: "enemy cars ram" put screen_ram_relocation, charset_copy_rom_to_ram
@@ -157,6 +174,7 @@ export function numberPhraseMissing(name: string, description: string): boolean 
 /** Tokenize and add stemmed variants (strip common suffixes like -ing, -er, -ers). */
 export function briefTokens(description: string): string[] {
   const rawTokens = description
+    .replace(IDIOMS, " ")
     .split(/[\s_,:;!?+\-()]+/)
     .filter((t) => !isLowerCaseHomograph(t))
     .map((t) => oneSpelling(t.toLowerCase().replace(/\.+$/, "")))
@@ -255,6 +273,17 @@ export function contradictsBriefAxis(
   });
 }
 
+const INFLECTIONS = new Set(["s", "es", "ing", "er", "ers", "ed"]);
+
+/** The shortest token `t` inflects ("sprites" → "sprite", "characters" → "charact"), or `t`. */
+function wordBase(t: string, tokens: readonly string[]): string {
+  let base = t;
+  for (const u of tokens) {
+    if (u.length < base.length && t.startsWith(u) && INFLECTIONS.has(t.slice(u.length))) base = u;
+  }
+  return base;
+}
+
 function recipeBonusFor(recipeCount: number): number {
   if (recipeCount >= 2) return 1.5;
   if (recipeCount >= 1) return 0.75;
@@ -280,7 +309,11 @@ function scoreTechnique(
     ...title.split(/[^a-z0-9$.]+/).filter((w) => w.length >= 3),
     category,
   ]);
-  const hits = tokens.filter((t) => words.has(t)).length;
+  // One brief word counts once: "sprites" and its stem "sprite" both hit a
+  // title with "sprites" and a name with "sprite", which scored
+  // mixed_sprite_char_actors and software_sprite_preshifted two hits for
+  // the one word in the #22 shmup brief (#97).
+  const hits = new Set(tokens.filter((t) => words.has(t)).map((t) => wordBase(t, tokens))).size;
 
   // Bonus: if a token is the technique's category word
   const categoryBonus = tokens.some((t) => category === t) ? 0.5 : 0;

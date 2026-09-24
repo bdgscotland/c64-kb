@@ -533,6 +533,16 @@ a different verdict is refused with "the KB's answer changed", both
 verdicts and that version. An unreachable checkout or graph warns and
 checks the structure only.
 
+The re-run is `npx tsx src/cli.ts check-compatibility <names>` in the
+`C64KB` checkout, and it inherits `make`'s environment. So the store it
+asks is whatever that environment names: `FALKOR_GRAPH`, `FALKOR_HOST`
+and `FALKOR_PORT` (`src/config.ts`), and with none set the live graph `c64`
+on port 7379. A plan pasted from a throwaway store (`FALKOR_GRAPH=c64_i22g`
+in the #22 game test) is re-checked against the live graph unless `make`
+runs with the same variables. The pass line names the checkout's
+`KB_DATA_VERSION` and commit, not the graph. The #22 step 7 game test
+found that nothing said so (#97).
+
 The verdict can change with no change to the plan: another session's
 ingest into a shared live graph, or a new KB version. So new-project and
 `verify:templates` seed the cache for a starter's shipped `PLAN.md`

@@ -267,8 +267,11 @@ const FALLBACK_FORCED_TECHNIQUES = new Map<string, string[]>([
 // a technique a builder needed that the keyword scorer never proposed.
 const FORCED_BY_DESCRIPTION_PATTERN: { pattern: RegExp; techniques: string[]; reason?: string }[] = [
   {
+    // "playfield" alone forced it until #97: every scrolling game has a
+    // playfield, and the #22 shmup brief ("the playfield scrolls down") got
+    // a falling-piece renderer.
     pattern:
-      /\b(text[- ]mode|petscii|playfield|tetris|tetromino|sokoban|boulder dash|board game|falling (block|piece))\b/i,
+      /\b(text[- ]mode|petscii|tetris|tetromino|sokoban|boulder dash|board game|falling (block|piece))\b/i,
     techniques: ["text_mode_overlay_render"],
   },
   {
@@ -276,6 +279,20 @@ const FORCED_BY_DESCRIPTION_PATTERN: { pattern: RegExp; techniques: string[]; re
     pattern: /^(?=[\s\S]*\bsav(?:e|ed|es|ing)\b)(?=[\s\S]*\b(?:disk|disc|drive|file)s?\b)/i,
     techniques: ["kernal_file_write_seq", "kernal_file_read_seq", "error_channel_check"],
     reason: "The brief saves to disk: a sequential file written and read back, and the drive's status read",
+  },
+  {
+    // Level data, a map or an asset LOADed while the game runs (#97: the
+    // #22 shmup brief loads level 2's map and got no LOAD technique).
+    pattern: /\bload(?:s|ed|ing)?\b[^.]{0,40}\bfrom (?:the )?(?:disk|disc|drive)\b/i,
+    techniques: ["kernal_load_to_address"],
+    reason: "The brief loads data from disk while it runs: LOAD a file to an address the program chooses",
+  },
+  {
+    // "Enemy variation is random" matched lfsr_random's title with one word
+    // and lost to generic hits (#97).
+    pattern: /\b(?:random(?:ly|ness|i[sz]ed?)?|pseudo-?random|rng)\b/i,
+    techniques: ["lfsr_random"],
+    reason: "The brief asks for random numbers: a linear-feedback shift register",
   },
   {
     pattern: /^(?=[\s\S]*\bPAL\b)(?=[\s\S]*\bNTSC\b)/i,
