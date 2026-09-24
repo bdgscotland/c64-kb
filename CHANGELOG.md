@@ -5,7 +5,29 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 826, schema 39, tools 2.14.0, package 0.27.0.
+Data 827, schema 39, tools 2.14.0, package 0.27.0.
+
+**Loaders, storage and I/O measured, and three more toolchains in the
+listing gate (data 827; #19 group L, #102).** New recipes run on PAL
+and NTSC: `printer-output` (a missing printer shows at CHKOUT, not
+OPEN; secondary address 7 prints mixed case), `rs232-send` (1200 baud
+through the KERNAL and bit-banged; a CLOSE straight after CLRCHN sent
+nothing until `$02A1` bit 0 clears), `fastloader-2bit` (the transfer
+the 2026-09-23 attempt never finished: 167 cycles a byte; the read
+delay passes from 14 cycles on PAL and 15 on NTSC), `d81-partition`
+(after a refused partition select, `N0:` formats the whole disk),
+`disk-copier` (a file of an exact multiple of 254 bytes leaves one block
+allocated to no file). Recorded with figures and marked skip in
+runs.json: Bitfire's `$DD00` rule (a read-modify-write corrupted every
+file), level streaming (no missed frames in about 930, against 126
+missed with interrupts off; a torn 16-bit counter read is a new
+pitfall), a tapecart TCRT boot, EasyFlash EAPI (two jump-table entries
+were missing on the file-io page). 29 KERNAL tape routines mapped from
+the ROM bytes in all three KERNAL versions; user-port, FLAG and
+expansion-port pin tables cited from the Programmer's Reference Guide;
+TSCrunch and TinyCrunch measured. VICE's drive-trace stamps are host
+time, not drive cycles (#103). `check:listings` builds ACME, 64tass and
+llvm-mos listings; CI installs acme and 64tass.
 
 **Read the error channel first, close it last; tech-tech's cycles; a
 compatibility census; diary facts (data 826; #93, #99, #55, #24).**
