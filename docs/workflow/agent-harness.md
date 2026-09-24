@@ -56,7 +56,6 @@ is filled.
 | `make drive STEPS='...'` | The normal build played headless by `harness/drive.py`, the stick on the real `$DC00` (see "Driving the normal build") |
 | `make drivetest` | The starter's `DRIVE_STEPS` played that way; fails when a step never comes |
 | `make joyprobe` | `drive.py`'s own proof: a fire press at the same frame in three runs |
-| `make gallery` | `shots/gallery.png`: the normal build played by the starter's `GALLERY_SCRIPT` to a chosen moment, a PAL picture for a README with no verdict or meter (see "Driving the normal build") |
 | `make watch` | With `DEADLINE_LINE` or `SID_FRAMES` set: the frame deadline and the SID player, from a VICE store trace of the autopilot run (see "The frame deadline and the SID player"); `make check` runs it |
 | `make watchtest` | The `OVERRUN` build must fail the deadline and the `NO_PLAYER` build the SID check, on PAL and NTSC; `make selftest` runs it |
 | `make clean` | Removes `build/` and `shots/` |
@@ -338,21 +337,25 @@ in the windowless build; each game then carried a `make joy` build that
 read its port byte from `$02FE`, and its own `tools/drive.py` stepped by
 the wall clock. Both are gone.
 
-`make gallery` plays `GALLERY_SCRIPT` the same way and keeps VICE's exit
-screenshot, written when the steps end (`DRIVE_EXITSHOT`). The machine is
-then stopped at raster line 0, so the picture is a whole frame, and the same
-script gives the same picture: five starters' pictures matched pixel for
-pixel over two runs and a separate capture of the same frame (VICE x64sc
-3.10, 2026-09-24). A starter whose moment a fixed stick cannot reach sets
-`GALLERY_DRIVER` to its own player: the beat-em-up's `tools/gallery.py` adds
-a `fight:FRAMES` step that plays its autopilot's bot on the real stick,
-reading the fighters from RAM at the addresses in Oscar64's map.
-
 `make joyprobe` builds `harness/joyprobe.asm`, a program that counts
 frames until fire reads pressed on `$DC00`, and presses fire at the same
 frame in three runs: the three screens and CIA1 timer A readings must
 match. Measured 2026-09-24: `FIRE AT FRAME 0065` and timer A `$10F6` on
 PAL, three of three.
+
+## make gallery
+
+`make gallery` writes `shots/gallery.png`, a PAL picture of the normal
+build in play for a README: no verdict, meter or debug text. `drive.py`
+plays the starter's `GALLERY_SCRIPT` and VICE writes its exit screenshot
+when the steps end (`DRIVE_EXITSHOT`). The machine is then stopped at
+raster line 0, so the picture is a whole frame, and the same script gives
+the same PNG byte for byte (VICE x64sc 3.10, 2026-09-24: five starters,
+two runs each from fresh `new-project` copies, equal to
+`docs/figures/starters/`). A starter whose moment a fixed stick cannot
+reach sets `GALLERY_DRIVER` to its own player; the beat-em-up's
+`tools/gallery.py` adds `fight:FRAMES`, its autopilot's bot on the real
+stick.
 
 ## The frame meter
 
