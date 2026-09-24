@@ -1807,5 +1807,68 @@
       "write": false,
       "runs": 1
     }
+  },
+  "oscar64/stable-raster-irq": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "oscar64/stable-raster-irq@O0": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O0"
+    ]
+  },
+  "oscar64/stable-raster-irq@O1": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O1"
+    ]
+  },
+  "oscar64/stable-raster-irq@O3": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-O3"
+    ]
+  },
+  "oscar64/stable-raster-irq@Os": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-Os"
+    ]
+  },
+  "oscar64/stable-raster-irq@Oz": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      "-Oz"
+    ]
   }
 }

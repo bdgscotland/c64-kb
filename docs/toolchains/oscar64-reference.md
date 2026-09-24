@@ -187,6 +187,30 @@ oscar64 {-i=path} [-o=output] [-rt=runtime.c] [-tf=format] [-tm=machine] [-e] [-
 
 These are the spellings `crt.c` tests (`#ifndef NOBSSCLEAR`, line 238; `#ifndef NOZPCLEAR`, line 262). An earlier version of this table gave `NOBSSCLR` and `NOZPCLR`; those compile cleanly and change nothing.
 
+## Optimisation levels and a raster IRQ
+
+The `-O` flags add to each other. `oscar64.cpp` ORs each one into the option word, and only `-O0` clears it (source read, lines 292-321). `-O2 -O1` is therefore `-O2`, `-O2 -Os` is speed and size together, and `-Oz` alone is the default level plus zero-page globals, not `-O3`. To change a level, replace the flag; do not add one after it.
+
+Measured on [recipes/oscar64/stable-raster-irq](../recipes/oscar64/stable-raster-irq.md), built with `-g` at each level (`-g` leaves the PRG byte-identical at `-O2` and `-O3`) and run in VICE x64sc 3.10 on PAL and NTSC:
+
+| Level | PRG bytes | Dispatcher code | Dispatcher cycles, first slot / last slot (PAL) | Same (NTSC) | `$D020` store, line 101, cycle (PAL) | Band lines 101-200, edges straight |
+|---|---|---|---|---|---|---|
+| `-O0` | 1,227 | as `-O2` | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-O1` | 705 | as `-O2` | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-O2` | 596 | 37 instructions | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-O3` | 601 | `nextIRQ`, `rirq_count` in zero page | 89 / 124-125 | 89 / 123-125 | 10, 11 | yes |
+| `-Os` | 592 | as `-O2` | 94 / 127-128 | 94 / 128 | 11, 13 | yes |
+| `-Oz` | 698 | as `-O3` | 89 / 124-125 | 89 / 123-125 | 10, 11 | yes |
+
+How each column was measured:
+
+- **Dispatcher code.** `rirq_isr_kernal_io` was cut from each `.asm` and compared instruction by instruction with branch targets masked. It is `__asm` in `rasterirq.c`, and `-Oa` (part of `-O2` and `-O3`) left it unchanged. The only change at any level is `-Oz`, which `-O3` includes: it placed `nextIRQ` at `$F7` and `rirq_count` at `$F8`, the linker's `zeropage` region `$F7`-`$FF`. Five instructions became zero-page forms (`LDX $F7`, `INC $F7`, `STX $F7`).
+- **Dispatcher cycles.** A `-moncommands` trace on the ISR entry, the slot code's entry, the return address after the `JSR` and `$EA81` gave stopwatch deltas over about 50 frames. The spin inside the slot code is excluded, because it waits for the line and its length is not the compiler's. The last slot of the frame pays more because it also re-arms the first slot.
+- **`$D020` store.** The line and cycle come from `trace store d020`. They are the store-trace CYC column ([vice-reference](../runtime/vice-reference.md), "What the CYC column counts"). The two values are the ones seen over the run, apart from one store at cycle 29-32 on the first frame after `rirq_start`; NTSC had 7 and 12 at `-O0`-`-O2` and `-Os`, and 9 and 12 at `-O3` and `-Oz`. The spin loop absorbs most of the dispatcher's saving: the write moves by at most two cycles.
+- **Band.** The exit screenshots of all six levels are byte-identical per model. The left and right border columns are white on raster lines 101-200 and light blue on 100 and 201, and each edge row is one colour from the first border pixel to the last. The level variants are pinned in `runs.json` as `oscar64/stable-raster-irq@O0` and so on, with a `build` key.
+
+The level does not decide whether this raster split is stable. The library does: the write lands inside the horizontal blank at every level because `rasterirq.h` spins on `$D012` in hand-written code. A handler written in C is a different case. Its code, its register use and the stores the compiler may merge or reorder do depend on the level, and none of that was measured here. `vic.h` declares every VIC register `volatile` except `spr_msbx` (header read); keep a register pointer of your own `volatile` too.
+
 ## Target machines
 
 The `-tm=` flag selects the target. The default is `c64`.

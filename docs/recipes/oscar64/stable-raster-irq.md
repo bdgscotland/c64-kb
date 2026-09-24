@@ -123,6 +123,13 @@ of this recipe had only the first slot and described a split at line 101;
 what it produced was an all-white border, because nothing ever wrote light
 blue back.
 
+The page is pinned on PAL and NTSC, and again at `-O0`, `-O1`, `-O3`,
+`-Os` and `-Oz` (`runs.json` keys `oscar64/stable-raster-irq@O0` and so
+on). All six levels give byte-identical screenshots per model. What each
+level changes in the dispatcher and its cycle count is in
+[oscar64-reference](../../toolchains/oscar64-reference.md),
+"Optimisation levels and a raster IRQ".
+
 ## Why this works
 
 ### What `rirq_init` actually does
