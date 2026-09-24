@@ -316,3 +316,77 @@ costs 1 cycle more for a negative input.
 - Technique `multiply_by_constant` (`docs/techniques/maths.md`).
 - Recipe `docs/recipes/kickassembler/multiply-constant.md`, the sweep
   that counts the 128 wrong products.
+
+---
+
+## random_range_modulo_bias — A random byte taken modulo n, or scaled by n, favours some results whenever n does not divide 256
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** random_in_range
+**Mitigated by techniques:** random_in_range
+
+### Symptom
+
+A die rolls 1 to 4 slightly more often than 5 and 6; of 100 spawn
+columns the first 56 fill up faster than the rest; a "1 in 100" event
+happens at a rate that depends on which number was picked. Nothing
+fails outright. The bias shows only in counts over many draws, and a
+glance at a few hundred rolls does not reveal a 2.4 % lean.
+
+### Mechanism
+
+A random byte has 256 equally likely values. Mapping them onto `n`
+results gives each result `floor(256 / n)` or one more, and
+`256 mod n` results get the extra one. For `n = 6` that is 43 byte
+values for four faces and 42 for two: those four are 2.4 % more
+likely. For `n = 100` it is 3 byte values for 56 results and 2 for 44:
+the 56 are 50 % more likely. `r mod n` puts the extra values on the
+lowest results; the high byte of `r × n` spreads them out; the split is
+the same either way, because any map from 256 values to `n` results
+has it.
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/random-range.md`,
+over the 65,535 steps of a 16-bit LFSR: `mod` and multiply-high both
+hit their least and most frequent results 10,752 and 11,008 times for
+`n = 6`, and 512 and 768 times for `n = 100`. Rejection hit every result
+8,191 or 8,192 times and 511 or 512 times. The technique is on both
+lines because the fault is its two one-step forms and its rejection
+form cures it.
+
+### Fix
+
+Reject: mask the byte to the smallest `2^k - 1` not below `n - 1` and
+draw again while the result is `n` or more. The mean cost measured 60
+cycles for `n = 6` against 198 for the `mod` loop. Where `n` is a power
+of two, the `AND` alone is exact.
+
+### Worked example
+
+```asm
+// BIASED: 256 = 42 * 6 + 4, so 0..3 come up 43 times in 256, 4..5 42
+roll_bad:
+        jsr lfsr
+        sec
+!:      sbc #6
+        bcs !-
+        adc #6
+        rts
+
+// EVEN: keep 3 bits, throw away 6 and 7
+roll:
+!:      jsr lfsr
+        and #7
+        cmp #6
+        bcs !-
+        rts
+```
+
+### Cross-references
+
+- Technique `random_in_range` (`docs/techniques/maths.md`), the three
+  ways and their cost.
+- Technique `lfsr_random` (`docs/techniques/maths.md`), the byte
+  source.
+- Recipe `docs/recipes/kickassembler/random-range.md`, the counts
+  quoted here.

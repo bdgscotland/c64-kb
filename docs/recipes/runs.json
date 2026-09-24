@@ -575,6 +575,18 @@
       "ntsc": "screenshots/multiply-constant-ntsc.png"
     }
   },
+  "kickassembler/random-range": {
+    "cycles": 100000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/random-range.png",
+      "ntsc": "screenshots/random-range-ntsc.png"
+    }
+  },
   "kickassembler/one-part-demo": {
     "cycles": 10000000,
     "models": [

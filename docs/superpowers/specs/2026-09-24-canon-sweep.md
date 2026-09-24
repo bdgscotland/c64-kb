@@ -37,7 +37,7 @@ there and what is not; "missing" means no entry.
 | 8 | atan2 (maths) | covered | `maths.md` `atan2_8bit`; `sqrt-atan2.md` |
 | 9 | Sine table generation (maths) | covered | `cpu-cycle-tricks.md` `sine_table_generation`; `sine-table-runtime.md` |
 | 10 | Random numbers, LFSR (maths) | covered | `maths.md` `lfsr_random` |
-| 11 | Random numbers in a range, even distribution (maths) | missing | no entry |
+| 11 | Random numbers in a range, even distribution (maths) | covered | `maths.md` `random_in_range`; `random-range.md` |
 | 12 | Hex and decimal number printing (maths, I/O) | covered | `text.md` `decimal_print`; `oscar64/print-number.md` |
 | 13 | BCD score counters (game) | covered | `text.md` `high_score_table_insert`; `high-score-insert.md` |
 | 14 | Sorting a list (maths) | partial | sprite sorts in `sprite.md` `sprite_multiplex_24` and `sprite_multiplex_game`; no general sort entry |
@@ -69,7 +69,7 @@ there and what is not; "missing" means no entry.
 | 40 | Music player call from an IRQ (SID) | covered | `music-sid.md` `sid_play_routine_pattern`; `music-player.md` |
 
 Totals when recorded: 33 covered, 1 partial, 6 missing. Issue #89 has
-since moved rows 4 and 5 to covered.
+since moved rows 4, 5 and 11 to covered.
 
 ## Missing and partial
 

@@ -1149,6 +1149,107 @@ The checksum fold in those pages is `chk = ((chk ^ value) * 5 + 1) &
 value does not depend on the live seed; it is not the rotate fold used
 by `fpcheck.c` above.
 
+## random_in_range — Random numbers in a range with an even distribution
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Requires:** lfsr_random
+**Cost:** cycles_per_frame=644, cycles_per_frame_typical=60
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-random-range (one rejection call for n = 6, 16-bit LFSR step included: worst and mean of 4,096 calls; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+A game wants a value in `0..n-1` far more often than a raw byte: a die
+face, one of 100 spawn columns, one of 6 enemy types. `lfsr_random`
+gives bytes. Turning a byte into a range the obvious way, `r mod n`,
+makes some values more likely than others whenever `n` does not divide
+256, and for `n = 100` the favoured ones come up half as often again.
+
+### How
+
+Three ways, all measured over a whole LFSR period in
+`recipes/kickassembler/random-range.md`:
+
+- **`r mod n`**: subtract `n` until the byte goes below it. Biased.
+- **Multiply-high**: the high byte of `r × n`. The same bias, spread
+  over the range instead of piled at the bottom.
+- **Rejection**: keep the low `k` bits, where `2^k` is the smallest
+  power of two not below `n`, and draw again while the result is `n` or
+  more. Even.
+
+```asm
+rnd_rej:                  // A = 0..n-1, every value equally likely
+!:      jsr lfsr          // A = next random byte
+        and mask          // 2^k - 1: 7 for n = 6, 127 for n = 100
+        cmp nval
+        bcs !-            // n or more: draw again
+        rts
+```
+
+For a power of two, `n = 2^k`, the `AND` alone is exact and never
+rejects.
+
+### Why it works
+
+A byte has 256 values; `n` results can each get the same number of
+them only when `n` divides 256. Otherwise `256 mod n` results get one
+byte value more than the rest: for `n = 6`, four faces get 43 and two
+get 42, and for `n = 100`, 56 values get 3 and 44 get 2. That holds for
+any map from one byte to one result, `mod` and multiply-high alike, so
+over the LFSR's 65,535 steps both gave the same fewest and most hits:
+10,752 and 11,008 for `n = 6`, 512 and 768 for `n = 100` (rung 1,
+matching a Python model; `pitfalls/maths.md`,
+`random_range_modulo_bias`). A wider source reduces the bias without
+removing it.
+
+Masking to `k` bits gives `2^k` equally likely values; discarding the
+top `2^k - n` of them leaves `n` equally likely ones. Over the same
+period the counts were 8,191 to 8,192 for `n = 6` and 511 to 512 for
+`n = 100`: the one missing hit is the LFSR state 0, which never
+occurs.
+
+### Variations
+
+- **Precomputed limit.** `n` and `mask` in the code as immediates saves
+  4 cycles a try (rung 3).
+- **A 16-bit range.** The same rejection on a 16-bit draw, masked to
+  the bits of `n - 1`; each try costs a 16-bit compare.
+- **Several steps per byte.** One LFSR step shifts the state one bit,
+  so consecutive bytes share seven bits and rejections come in runs:
+  the measured worst was 15 in a row. Stepping eight times per byte
+  removes the shared bits at eight times the step cost (rung 3).
+- **Uneven on purpose.** A loot table that should be uneven is a
+  256-entry lookup indexed by the raw byte, not a biased `mod`.
+
+### Cycle budget
+
+Measured with CIA2 timer A, one call including the 19- or 28-cycle
+LFSR step, net of `JSR` / `RTS`, over 4,096 calls, screen blanked, PAL
+and NTSC alike (rung 1). Each figure equals the instruction-table count
+over the same draws:
+
+| Way | n = 6: min, max, mean | n = 100: min, max, mean |
+|---|---|---|
+| `r mod n` | 48, 351, 198 | 48, 71, 58 |
+| multiply-high, shift-and-add loop | 177, 226, 201 | 177, 226, 201 |
+| rejection | 41, 644, 60 | 41, 575, 58 |
+
+Rejection is the cheapest on average and the only even one; its worst
+case is a run of rejections, bounded by the generator rather than the
+code. The `**Cost:**` line carries the measured worst, 644, with the
+mean as the typical frame. With the 52-cycle table multiply
+(`table_multiply_8x8`) in place of the loop, multiply-high would cost
+under 100 (rung 3).
+
+### Recipes
+
+- `recipes/kickassembler/random-range.md`: the three ways over a whole
+  LFSR period for `n = 6` and `n = 100`, counted and timed.
+
 ## compare_16bit_and_signed — 16-bit, signed and ranged compares
 
 **Complexity:** low
