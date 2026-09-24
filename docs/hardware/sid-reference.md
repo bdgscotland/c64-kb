@@ -969,7 +969,8 @@ typically uses:
   reSID's 8580 model the volume step with three such voices is about
   5x the bare-voice step, while with only one voice it is no louder
   than bare (the voice DC roughly cancels the mixer's own small
-  offset), so use all three. The earlier text here said PWHI3 was the
+  offset), so use all three (measured by the `sid-volume-bias` recipe:
+  482.3 against 93.5 per volume unit, and −91.8 with one voice). The earlier text here said PWHI3 was the
   DAC; it was wrong: PW has no effect on the output while TEST is set
   (the value is kept and applies when TEST clears), and without TEST
   the comparator output is binary ($000 or $FFF), never proportional
