@@ -41,14 +41,16 @@ Source: `hardware/kernal-routines-reference.md` (Phase 1).
 ### Register
 
 A C64 hardware register: the I/O chips at $D000–$DFFF, and the 6510's
-processor port at $0000/$0001 (D6510, R6510; chip 6510). An earlier
-version said $D000–$DFFF only; the port had no node until #19.
+processor port at $0000/$0001 (D6510, R6510; chip 6510), and the REU's
+registers at $DF00–$DF0A (DF00–DF0A; chip REU, `hardware/reu-reference.md`).
+An earlier version said $D000–$DFFF only; the port had no node until #19,
+the REU none until #92.
 
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Register name (e.g. "D011", "BORDER") |
 | address | string | Hex address (e.g. "$D011") |
-| chip | string | Owning chip ("VIC-II", "SID", "CIA1", "CIA2") |
+| chip | string | Owning chip ("VIC-II", "SID", "CIA1", "CIA2", "6510", "REU") |
 | rw | string | Access type: "R", "W", or "RW" |
 | bit_width | integer | 8 in nearly all cases |
 | default_value | string | Power-on default |
@@ -73,20 +75,22 @@ Source: `hardware/c64-memory-map.md` (Phase 1).
 
 ### Chip
 
-A C64 silicon component. Static nodes seeded in `ensureSchema()`.
+A C64 silicon component, or the REU's controller in the expansion port.
+Static nodes seeded in `ensureSchema()`.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| name | string | One of: "VIC-II", "SID", "CIA1", "CIA2", "6510" |
+| name | string | One of: "VIC-II", "SID", "CIA1", "CIA2", "6510", "REU" |
 | variants | string | Known revisions / models |
 | role | string | Functional role |
 
-**Hardcoded seed (5 nodes):**
+**Hardcoded seed (6 nodes):**
 - VIC-II (variants: 6569 PAL / 6567 NTSC)
 - SID (variants: 6581 / 8580)
 - CIA1 (6526): keyboard, joystick port 2, timer-A IRQ
 - CIA2 (6526): VIC bank select, RS-232, timer-B NMI
 - 6510: CPU with I/O port at $00/$01
+- REU (1700 / 1764 / 1750): the RAM Expansion Unit's DMA controller at $DF00-$DF0A
 
 ### Region
 
@@ -823,7 +827,7 @@ misses counted as `exemplified_by … dropped`. No tool reads it yet.
 
 `ensureSchema()` creates a range index and a unique constraint on the
 primary key of every node label and seeds:
-- `Chip`: VIC-II, SID, CIA1, CIA2, 6510
+- `Chip`: VIC-II, SID, CIA1, CIA2, 6510, REU
 - `Region`: PAL, NTSC
 - `HardwareUnit`: the units listed under HardwareUnit, each BELONGS_TO its chip
 - `MachineVariant` (schema 29): c64, c64c, c64old, ntsc, newntsc, oldntsc, drean (`src/graph/machine-variants.ts`)

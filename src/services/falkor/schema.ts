@@ -61,6 +61,11 @@ export const CHIPS: readonly { name: string; variants: string; role: string }[] 
   { name: "CIA1", variants: "6526", role: "Keyboard / joystick / timer-A IRQ" },
   { name: "CIA2", variants: "6526", role: "VIC bank / RS-232 / timer-B NMI" },
   { name: "6510", variants: "MOS 6510", role: "CPU (6502-compatible + I/O port at $00/$01)" },
+  {
+    name: "REU",
+    variants: "1700 / 1764 / 1750",
+    role: "RAM Expansion Unit DMA controller at $DF00-$DF0A (cartridge)",
+  },
 ];
 
 export const REGIONS: readonly {
