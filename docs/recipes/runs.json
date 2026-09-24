@@ -2220,5 +2220,39 @@
       "pal": "screenshots/printer-output.png",
       "ntsc": "screenshots/printer-output-ntsc.png"
     }
+  },
+  "kickassembler/d81-partition": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/d81-partition.png",
+      "ntsc": "screenshots/d81-partition-ntsc.png"
+    },
+    "disk": {
+      "name": "PARTS,81",
+      "type": "d81"
+    }
+  },
+  "kickassembler/disk-copier": {
+    "cycles": 120000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/disk-copier.png",
+      "ntsc": "screenshots/disk-copier-ntsc.png"
+    },
+    "disk": {
+      "name": "SOURCE,01"
+    },
+    "disk9": {
+      "name": "TARGET,01"
+    }
   }
 }

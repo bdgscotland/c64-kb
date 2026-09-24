@@ -15,8 +15,9 @@ into REQUIRES_DEVICE edges.
 
 Every device here is attached by a pinned run in `docs/recipes/runs.json`
 or is VICE's default, so each has a recipe or a `-dumpconfig` line behind
-it. A device no recipe attaches (the KoalaPad, the Final Cartridge, a
-second drive) has no section.
+it. A device no recipe attaches (the KoalaPad, the Final Cartridge) has
+no section. An earlier version of this sentence also named a second
+drive; `kickassembler/disk-copier` attaches one as drive 9.
 
 How to read the claims: `owns` means the device's lines occupy the unit,
 so a second device that owns it cannot be attached at the same time (one
@@ -148,6 +149,43 @@ each device on it answers to its own number. A run that sets
 `-drive8type` to anything but 1542 is refused by verify:recipes, because
 this section would no longer describe it.
 
+## 1581 as drive 8
+
+**Device:** `disk_1581`
+**Device kind:** storage
+**Device port:** serial
+**VICE attach:** disk d81
+**Claims:** serial_bus (shares)
+**Claims basis:** measured-vice
+
+Commodore's 3.5-inch drive, 80 tracks of 40 256-byte sectors, 3,160
+blocks free on a fresh disk. A runs.json `"disk"` with `"type": "d81"`
+formats a fresh D81 with `c1541 -format NAME,ID d81` and attaches it
+with `-8 image -drive8type 1581`; `src/drive/drive.h` defines
+`DRIVE_TYPE_1581` as 1581 (VICE 3.10), and the drive runs VICE's
+`dos1581-318045-02.bin`. `kickassembler/d81-partition` is the recipe
+whose run attaches it. A run that sets `-drive8type` itself with a D81 is
+refused: the verifier sets it. The 1581's DOS answers the same channel-15
+commands as the 1541's plus the `/` partition family
+(`../formats/iec-disk-reference.md`, "1581 partitions and
+sub-directories").
+
+## 1541-II as drive 9
+
+**Device:** `disk_1541_ii_drive_9`
+**Device kind:** storage
+**Device port:** serial
+**VICE attach:** disk 9
+**Claims:** serial_bus (shares)
+**Claims basis:** measured-vice
+
+A second 1541-II on the serial bus, answering to device 9. `x64sc
+-default -dumpconfig` prints `Drive9Type=0`: VICE attaches no second
+drive by default. A runs.json `"disk9"` formats a fresh D64 and attaches
+it with `-9 image -drive9type 1542`, the drive's wobble off as for drive
+8. `kickassembler/disk-copier` is the recipe whose run attaches it. The
+two drives share the bus by device number; `-9` or `-drive9type` in a
+run's flags is refused, so a second drive is always this section.
 ## Printer as device 4
 
 **Device:** `printer_device_4`

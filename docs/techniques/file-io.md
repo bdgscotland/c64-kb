@@ -1516,3 +1516,154 @@ one copy.
 ### Recipes
 
 - `recipes/kickassembler/tape-turbo-loader.md` (the TAP-writing script, the loader, the checksum verdict, bytes per second and pulse ranges on both models, and the run with VICE's tape wobble left on)
+
+## d81_partition_subdirectory — Allocate a 1581 partition with "/0:", select it and format it as a sub-directory
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Requires:** error_channel_check
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
+**Consumes formats:** D81
+
+### Why
+
+A 1581 disk holds 3,160 free blocks and one root directory. A game or
+tool that wants its own directory on the disk, its files invisible to a
+plain `$` listing and its space safe from what is written beside it,
+can put them in a partition used as a sub-directory. The 1581's DOS does
+this with channel-15 commands from a stock machine: no drive code, no
+host tool.
+
+### How
+
+1. Open channel 15 on the drive, bare, and keep it open.
+2. Allocate: send `/0:NAME,` followed by four raw bytes (start track,
+   start sector, block count low, block count high) and `,C`. For a
+   sub-directory the start sector is 0, the count a multiple of 40 and
+   at least 120, and the run must not touch track 40 (1581 User's Guide,
+   section 6.8). Read the status: `00`.
+3. Select: send `/0:NAME`. Read the status and go on only if it begins
+   `02` (`02, SELECTED PARTITION,<first track>,<last track>`).
+4. Format the partition: `N0:name,id`. It writes a header, two BAM
+   sectors and a directory on the partition's first track.
+5. Use the drive as usual: OPEN, CHROUT, LOAD, SAVE and the directory
+   now work inside the partition.
+6. Send `/` to return to the root.
+
+### Why it works
+
+The partition is a CBM file (type `$85`) whose blocks the root BAM marks
+used as one run, so nothing written in the root can land in it. After a
+select the DOS takes its header, BAM and directory from the partition's
+first track, in track 40's layout, and the partition's own BAM marks
+every other track full, so nothing written inside can land outside.
+Measured on the image the recipe's run leaves (VICE x64sc 3.10, 1581
+DOS 318045-02, rung 1): the root entry `85 14 00 50 41 52 54 31`, the
+partition header at 20/0 naming `SUB` and `S1`, its BAM at 20/1 and 20/2
+with tracks 20 to 22 at 36, 39 and 40 free and track 1 at 0, and the
+file `HELLO` at 21/0. The byte-by-byte table is in the recipe.
+
+The select is the only step that checks the rules: a 20-block partition
+from 25/0 allocated with `00, OK` and was refused at the select with
+`77,SELECTED PARTITION ILLEGAL,00,00`; an allocation over track 40 was
+refused at once with `67,ILLEGAL TRACK OR SECTOR,40,00` (measured, PAL).
+A select that fails leaves the previous area selected, so the `N0:` of
+step 4 then formats that area instead: the root, the whole disk
+(measured; `pitfalls/kernal-and-io.md`,
+`n0_after_failed_partition_select_formats_disk`).
+
+### Variations
+
+- **A partition that is not a sub-directory.** Any contiguous run the
+  root BAM does not hold can be allocated as a CBM file, for instance to
+  keep a block range for direct-access data, and the guide says VALIDATE
+  skips CBM entries so it stays allocated. Not measured here.
+- **Sub-directories inside a sub-directory.** The guide allows them one
+  level at a time (`/0:PART2`, then `/0:PART21`); there is no command to
+  go up one level, only `/` to the root. Not measured here.
+
+### Recipes
+
+- `recipes/kickassembler/d81-partition.md` (allocation, select, format, a file written and read inside, `/`, the same file not found from the root, and the image decoded; PAL and NTSC)
+
+## disk_copy_block_commands — Copy a disk's used blocks from drive 8 to drive 9 with U1, B-P and U2
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Requires:** error_channel_check
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
+
+### Why
+
+A disk copier, a backup routine in a tool, or a program that clones a
+data disk for the player needs every block of one disk on another,
+including the directory and the BAM. The DOS's file commands cannot do
+it: they see files, not blocks. Its block commands can, from a stock
+machine and with no drive code.
+
+### How
+
+1. On each drive open channel 15 bare and a `#` buffer channel (the name
+   `#`, a secondary address of 2 to 14).
+2. Read the source BAM: send `U1:<sa>,0,18,0` to the source's channel
+   15, `B-P:<sa>,0`, then 256 CHRIN on the buffer channel.
+3. List the used blocks: for each track, the four bytes at 4 × track
+   are a free count and a 24-bit map; a clear bit is a used sector
+   (sector n is bit n mod 8 of byte 1 + n div 8). Tracks 1–17 have 21
+   sectors, 18–24 19, 25–30 18, 31–35 17.
+4. For each used block: `U1` it into the source buffer, read the 256
+   bytes, `B-P:<sa>,0` on the target, write the 256 bytes to its buffer
+   channel, and `U2:<sa>,0,<track>,<sector>` on the target.
+5. Optionally `U1` each block back from the target and compare.
+
+Every command is CHKOUT 15, CHROUT the text, CLRCHN; the UNLISTEN in
+CLRCHN makes the DOS execute it.
+
+### Why it works
+
+`U1` and `U2` read and write one sector through a buffer without the
+DOS's file layer and without touching the BAM, and a `#` channel gives
+the host that buffer as a byte stream. Copying the source BAM like any
+other block makes the target's BAM right with no work, because the same
+blocks are used on both. Measured in the recipe (VICE x64sc 3.10, two
+1541-II, rung 1): 21 blocks copied and compared equal, and the whole
+target image equal to the source, header and disk name included.
+
+The BAM is not the directory: after two files of exactly 2,540 and
+1,778 bytes it marked two blocks used that no file's chain reaches
+(`pitfalls/kernal-and-io.md`,
+`exact_254_multiple_file_leaves_block_allocated`). A BAM-driven copier
+copies them too, which is harmless.
+
+### Variations
+
+- **Follow the chains.** Walk the directory from 18/1 and each file's
+  track-sector links, copy only those blocks, and write the target's
+  BAM from the list. It copies exactly the files and frees leaked
+  blocks, and it must handle every file type's chains. Not built here.
+- **One drive.** Read as many blocks as RAM holds, ask for a disk swap,
+  write them, repeat. The recipe keeps up to 64 blocks in RAM for its
+  compare, which is the same buffer. Not built here.
+- **Whole tracks in the drive.** Upload a routine that reads a track
+  into drive RAM through the job queue (`drive_code_upload_and_job_queue`)
+  and sends it with a fast transfer; the KERNAL path measured here is
+  1.43 s a block. Not built here.
+
+### Cycle budget
+
+Measured, VICE 3.10, screen on, drive wobble off (rung 1): 29,618,542
+cycles on PAL and 30,743,790 on NTSC for 21 blocks, 1,410,407 and
+1,463,990 a block, 1.43 s on both clocks: the drives set the pace. The
+read half alone (U1, B-P and 256 CHRIN; a build without the write) was
+801,648 cycles a block on PAL. A full 664-block disk at that rate is
+about 16 minutes (arithmetic).
+
+### Recipes
+
+- `recipes/kickassembler/disk-copier.md` (drive 8 to drive 9, the block list from the BAM, the copy timed with CIA 2, every block read back and compared; PAL and NTSC)

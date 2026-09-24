@@ -2152,3 +2152,116 @@ vic.spr_enable = saved_enable;
 - Issue #69: the NTSC hang, the monitor stop at `$EE30`-`$EE3A`, the
   timer B state (`$01FF`, `$DC0F` = `$08`) and the drive's return
   address `$E943`. Reported there, not repeated here.
+
+---
+
+## n0_after_failed_partition_select_formats_disk — On a 1581, a partition select that fails leaves the root selected, and the N0: meant for the partition formats the whole disk
+
+**Severity:** critical
+**Region:** both
+**Triggered by kernal:** CHKOUT, CHROUT
+**Triggered by techniques:** d81_partition_subdirectory
+**Mitigated by techniques:** error_channel_check
+
+Measured in VICE x64sc 3.10 with true drive emulation of a 1581 (DOS
+`318045-02`), on a D81 from `c1541 -format "PARTS,81" d81`; not on a
+real 1581 (rung 1, VICE only).
+
+### Symptom
+
+A program that makes a partition, selects it and formats it as a
+sub-directory finds afterwards that every file on the disk is gone. The
+directory header now carries the name and ID given to the partition's
+`N0:`, and the partition entry itself has vanished.
+
+### Mechanism
+
+The allocation `/0:NAME,<t><s><lo><hi>,C` does not check the four
+sub-directory rules; the select `/0:NAME` does. A 20-block partition at
+25/0 allocated with `00, OK,00,00` and the select answered
+`77,SELECTED PARTITION ILLEGAL,00,00`. The select changes nothing on a
+refusal, so the root stays the working area, and `N0:SUB,S1` then
+answered `00` and wrote a fresh header, BAM and directory on track 40:
+the root header at 40/0 read `SUB`/`S1`, the `SMALL` entry was gone,
+and the root directory held only the `HELLO` file the program wrote
+next, at 39/0, which it then also found from the root (`MATCH=10`
+twice). The 1581 User's Guide says the same in section 6.8: "Make sure
+that you have successfully selected this partition area before
+formatting. If not, the wrong directory area will be reformatted."
+
+### Fix
+
+Read channel 15 after the select and send `N0:` only if the status
+begins `02` (`02, SELECTED PARTITION,<first>,<last>`). The recipe keeps
+the first two characters of every status line and branches on them:
+
+```asm
+    lda code                  // the status line's first two digits
+    cmp #'0'
+    bne refuse
+    lda code+1
+    cmp #'2'
+    bne refuse                // not selected: no N0:
+```
+
+With the check, the same 20-block partition printed `NOT SELECTED: NO
+N0` and the disk kept its root header and the `SMALL` entry (measured).
+
+### Cross-references
+
+- `techniques/file-io.md`, `d81_partition_subdirectory`, and
+  `error_channel_check` for reading the status line.
+- `recipes/kickassembler/d81-partition.md`: the check, the pinned run
+  and the three variants.
+
+---
+
+## exact_254_multiple_file_leaves_block_allocated — A 1541 file whose length is an exact multiple of 254 bytes leaves one more block marked used in the BAM than its chain holds
+
+**Severity:** low
+**Region:** both
+**Triggered by kernal:** CHROUT, CLOSE
+**Triggered by techniques:** kernal_file_write_seq, disk_copy_block_commands
+
+Measured in VICE x64sc 3.10 with true drive emulation of a 1541-II (DOS
+ROM `251968-03`), on a D64 from `c1541 -format`; not on a real drive
+(rung 1, VICE only).
+
+### Symptom
+
+After writing SEQ files, the disk shows fewer blocks free than the
+directory's block counts account for: one block fewer for each file
+whose length is a multiple of 254. A tool that lists used blocks from
+the BAM finds blocks no file reaches.
+
+### Mechanism
+
+The disk-copier recipe writes `FILE1`, 2,540 bytes (10 × 254), and
+`FILE2`, 1,778 bytes (7 × 254), with OPEN, CHROUT and CLOSE. The
+directory gives them 10 and 7 blocks and their chains end on link bytes
+`00 FF` (254 data bytes in the last block). The BAM entry for track 17
+read `02 00 02 08`: 19 sectors used, while the two chains use 17
+(0–8, 10, 11, 13, 14, 15, 16, 18, 20). Sectors 12 and 17, the next
+sectors of each chain at the drive's interleave of 10, are allocated
+and in no chain. The same program writing 2,530 and 1,771 bytes left
+the BAM with the 17 chain sectors only. So the DOS allocates the next
+block when a block fills, and CLOSE with nothing more to write does not
+give it back (an inference from the two measured BAMs; the DOS code
+that does it was not traced).
+
+### Fix
+
+None is needed for the data, which is intact. To get the blocks back,
+validate the disk: `V0` sent on channel 15 answered `00, OK,00,00`
+and the BAM then listed 19 used blocks, 17/12 and 17/17 free again
+(measured, a build of the recipe with the command after the files are
+written). `c1541 -validate` on the host image freed the same two. A
+program that fills a disk to the last block, or that checks a disk by
+comparing the BAM with the chains, must allow for one such block per
+file.
+
+### Cross-references
+
+- `techniques/file-io.md`, `kernal_file_write_seq` and
+  `disk_copy_block_commands`.
+- `recipes/kickassembler/disk-copier.md`: the images decoded.

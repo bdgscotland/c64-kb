@@ -19,7 +19,10 @@
  * with the drive's RPM wobble switched off (-drive8wobbleamplitude 0
  * -drive8wobblefrequency 0), so a recipe that writes or reads files starts
  * from the same empty disk each time, takes the same number of cycles, and
- * nothing in the repo is modified by the run.
+ * nothing in the repo is modified by the run. "disk": {"name": ..., "type":
+ * "d81"} formats a D81 instead and adds -drive8type 1581. "disk9": {"name":
+ * ...} formats a second D64 and attaches it to a 1541-II as drive 9
+ * (-drive9type 1542, its wobble off too).
  *
  * With "cartridge": {"file": "x.crt", "write": true, "runs": 2}, the build
  * must leave x.crt in the work directory (a KickAssembler listing writes it
@@ -103,7 +106,8 @@ const RunSchema = z.object({
   models: z.array(z.string()),
   flags: z.array(z.string()),
   shots: z.record(z.string(), z.string()),
-  disk: z.object({ name: z.string() }).optional(),
+  disk: z.object({ name: z.string(), type: z.enum(["d64", "d81"]).optional() }).optional(),
+  disk9: z.object({ name: z.string() }).optional(),
   cartridge: z
     .object({ file: z.string(), write: z.boolean().optional(), runs: z.number().int().positive().optional() })
     .optional(),
@@ -198,6 +202,7 @@ function jobFor(toolchain: string, md: string, variant?: string): Job {
       flags: m.flags ?? [],
       shots,
       ...(m.disk === undefined ? {} : { disk: m.disk }),
+      ...(m.disk9 === undefined ? {} : { disk9: m.disk9 }),
       ...(m.cartridge === undefined ? {} : { cartridge: m.cartridge }),
       ...(m.build === undefined ? {} : { build: m.build }),
     },
@@ -286,24 +291,48 @@ function build(job: Job): Built {
   return buildCc65(job, src, prg, all.find((x) => x.lang === "cfg")?.code);
 }
 
-/**
- * Format a fresh D64 beside the screenshot and return the x64sc arguments
- * that attach it, or an error string.
- */
-function diskArgs(png: string, disk: { name: string }): { args: string[] } | { error: string } {
+type DiskSpec = { name: string; type?: "d64" | "d81" | undefined };
+
+/** Format a fresh image with c1541 at `file`; "" or an error. */
+function formatImage(file: string, name: string, type: string): string {
   if (!tools.c1541)
-    return { error: "runs.json asks for a disk but c1541 was not found (C1541, PATH, .tools/vice-headless)" };
-  const d64 = png.replace(/\.png$/, ".d64");
-  const f = spawnSync(tools.c1541, ["-format", disk.name, "d64", d64], { encoding: "utf8" });
-  if (!existsSync(d64)) {
-    const tail = (f.stderr || f.stdout).split("\n").slice(-2).join(" | ");
-    return { error: `c1541 could not format ${d64} (exit ${String(f.status)}): ${tail}` };
-  }
+    return "runs.json asks for a disk but c1541 was not found (C1541, PATH, .tools/vice-headless)";
+  const f = spawnSync(tools.c1541, ["-format", name, type, file], { encoding: "utf8" });
+  if (existsSync(file)) return "";
+  const tail = (f.stderr || f.stdout).split("\n").slice(-2).join(" | ");
+  return `c1541 could not format ${file} (exit ${String(f.status)}): ${tail}`;
+}
+
+/**
+ * Format the fresh disks beside the screenshot (drive 8, and drive 9 when
+ * runs.json has "disk9") and return the x64sc arguments that attach them,
+ * or an error string.
+ */
+function diskArgs(
+  png: string,
+  disk?: DiskSpec,
+  disk9?: { name: string },
+): { args: string[] } | { error: string } {
+  const args: string[] = [];
   // VICE 3.10 adds a random-phase RPM wobble to the emulated drive by
   // default, which moves a disk operation by a handful of cycles from run
   // to run; a recipe that prints its elapsed time would then differ by a
-  // digit. Pin the drive to a constant speed so the run is repeatable.
-  return { args: ["-8", d64, "-drive8wobbleamplitude", "0", "-drive8wobblefrequency", "0"] };
+  // digit. Pin each drive to a constant speed so the run is repeatable.
+  if (disk) {
+    const type = disk.type ?? "d64";
+    const img = png.replace(/\.png$/, `.${type}`);
+    const err = formatImage(img, disk.name, type);
+    if (err) return { error: err };
+    args.push("-8", img, ...(type === "d81" ? ["-drive8type", "1581"] : []));
+    args.push("-drive8wobbleamplitude", "0", "-drive8wobblefrequency", "0");
+  }
+  if (disk9) {
+    const img = png.replace(/\.png$/, "-9.d64");
+    const err = formatImage(img, disk9.name, "d64");
+    if (err) return { error: err };
+    args.push("-9", img, "-drive9type", "1542", "-drive9wobbleamplitude", "0", "-drive9wobblefrequency", "0");
+  }
+  return { args };
 }
 
 type ViceRun = {
@@ -313,12 +342,13 @@ type ViceRun = {
   cycles: number;
   model: string;
   extra: string[];
-  disk?: { name: string };
+  disk?: DiskSpec;
+  disk9?: { name: string };
 };
 
 /** Run one PRG or cartridge to its pinned cycle count and write the exit screenshot. Returns "" or an error. */
 function runVice(v: ViceRun, x64scPath: string): string {
-  const disk = v.disk ? diskArgs(v.png, v.disk) : { args: [] };
+  const disk = diskArgs(v.png, v.disk, v.disk9);
   if ("error" in disk) return disk.error;
   const args = [
     "-default",
@@ -444,6 +474,7 @@ function runBoot(job: Job, boot: { model: string; n: number; attach: string[] },
       model: boot.model,
       extra: job.run.flags,
       ...(job.run.disk === undefined ? {} : { disk: job.run.disk }),
+      ...(job.run.disk9 === undefined ? {} : { disk9: job.run.disk9 }),
     },
     bins.x64sc,
   );
