@@ -5,7 +5,28 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 832, schema 39, tools 2.15.0, package 0.28.0.
+Data 833, schema 39, tools 2.16.0, package 0.29.0.
+
+**Chained raster interrupts and placed bands in the compatibility check
+(tools 2.16.0, package 0.29.0, data 833; #90, #112, #24).** Two owners
+of the raster compare whose bands (stated or placed) share no line are
+now a soft conflict with a "chain the handlers" resolution, not hard; a
+spec `name@lines` places a technique whose page band is movable (a
+placement against a stated band is refused and reported in
+`placements_refused`); `sprite_set` is soft when the partner claims
+sprites but does not change them mid-frame. Page fixes behind it:
+sideborder_open claimed `sprite_0-7` from its own recipe's timing
+sprites (the recipe now claims them); topbottom_border_open's RSEL
+write runs inside another handler in both composed recipes, so it
+shares the compare; sprite_border_scroller's band is movable. Both
+composed demo recipes now check as WARNINGS and the ground-truth test's
+12-string allowlist is gone; 29 topbottom_border_open pairs and 3
+sideborder_open pairs move from incompatible to warnings, none harder.
+music-during-load's longer loads were a late frame count: LOAD masks
+interrupts 21-44 frames while the drive finds the file, and the first
+interrupt after that is not counted; the masked stretch follows the
+disk's rotational position. production-planning cites Crawford's
+pre-programming phase (The Art of Computer Game Design, ch. 5).
 
 **The fighter patterns resolve as techniques; harness zero page (data
 832; #113, #114, #115).** `technique-lookup fighter_opponent_tables`
