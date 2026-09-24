@@ -1870,5 +1870,29 @@
     "build": [
       "-Oz"
     ]
+  },
+  "kickassembler/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "oscar64/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "cc65/relocated-code-block": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   }
 }

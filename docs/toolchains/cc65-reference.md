@@ -321,6 +321,45 @@ programs), write a custom `.cfg` file and pass it with `--config`. The
 cc65 `ld65` manual documents the config language, and
 `cfg/c64.cfg` is a starting template.
 
+### Code that runs at another address: `load` and `run`
+
+A segment with `load` and `run` in different memory areas is stored at
+the first and linked for the second. `define = yes` exports
+`__NAME_LOAD__`, `__NAME_RUN__` and `__NAME_SIZE__`, which C reaches with
+one underscore fewer:
+
+```cfg
+MEMORY {
+    MAIN:  file = %O, define = yes, start = __HEADER_LAST__, size = $2000 - __HEADER_LAST__, fill = yes;
+    BLOCK: file = %O,               start = $2000,           size = $0100;
+    HIRAM: file = "", define = yes, start = $C000,           size = $0100;
+}
+SEGMENTS {
+    RELOC: load = BLOCK, run = HIRAM, type = ro, define = yes;
+}
+```
+
+```c
+#pragma code-name (push, "RELOC")
+void flash(void) { /* ... */ }
+#pragma code-name (pop)
+
+extern unsigned char _RELOC_LOAD__[], _RELOC_RUN__[], _RELOC_SIZE__[];
+memcpy(_RELOC_RUN__, _RELOC_LOAD__, (unsigned)_RELOC_SIZE__);
+```
+
+`--mapfile` and the `-Ln` label file give the run address
+(`RELOC 00C000`, `al 00C000 ._flash`). Three things measured in
+[recipes/cc65/relocated-code-block](../recipes/cc65/relocated-code-block.md)
+with cc65 2.19: `fill = yes` on the area before `BLOCK` is what puts the
+bytes at `$2000`, and without it the PRG was 607 bytes and the block
+followed `MAIN` directly, with no warning; cc65 writes a file's
+read-only data ahead of its code, so a table in the same segment lands at
+`$C000` first; and functions come out in the order they were first
+declared. The recipe puts the table in its own segment and declares the
+entry function first. The technique is `relocated_code_block`
+([memory-banking](../techniques/memory-banking.md)).
+
 ## Cartridge builds
 
 A generic 8 KB cartridge is a linker configuration, a start-up routine

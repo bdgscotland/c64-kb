@@ -405,6 +405,26 @@ krnio_load(1, 8, 1);
 
 The overlay file is stored as a `.prg` entry in the D64 directory, uncompressed, and `krnio_load` puts it in place. `#pragma overlay( ovl1, 1, lzo )` stores it LZO-compressed instead; `samples/memmap/overlaylzo.c` opens that file and expands it with `krnio_read_lzo`. Inlays are a separate mechanism (upstream manual, "Inlays"): a region compressed by the linker into a `const char Inlay1[]` array inside the program, expanded on demand with `oscar_expand_lzo` from `oscar.h`. (An earlier version of this sentence pointed overlay users at `oscar_expand_lzo` "to decompress inlays", mixing the two.)
 
+**Code that runs at another address.** `#pragma region` takes an optional seventh argument, the run address. The region's bytes go into the output at `start`, and its code and data are linked for the run address (`Parser.cpp` stores `runaddr - start` as the region's relocation; `samples/memmap/tsr.c` uses it for code that runs at `$C003`):
+
+```c
+#pragma region(main, 0x0880, 0x2000, , , {code, data})            // keep main below the block
+#pragma section(rcode, 0)
+#pragma region(rblock, 0x2000, 0x2100, , , {rcode}, 0xc000)       // stored $2000, runs $C000
+#pragma region(upper, 0x2100, 0xa000, , , {bss, heap, stack})
+
+#pragma code(rcode)
+#pragma data(rcode)
+// functions and tables for $C000
+#pragma code(code)
+#pragma data(data)
+
+// in main, before the first call:
+memcpy((char *)0xc000, (char *)0x2000, 0x100);
+```
+
+Measured in [recipes/oscar64/relocated-code-block](../recipes/oscar64/relocated-code-block.md): the operands inside the block are `$C0xx` (`LDA $c015,x`, `JSR $c01c`) and `main` calls `JSR $c000`, but the `.map` and the `.lbl` list the storage address (`al 2000 .flash`). A monitor `break .flash` with that file loaded sets the checkpoint at `$2000`; add `$A000` to the labels in the region first. Without the `main` and `upper` lines the build succeeded with the default `main` region overlapping the block, and no diagnostic. The technique is `relocated_code_block` ([memory-banking](../techniques/memory-banking.md)).
+
 ## Multi-file projects
 
 There are no object files and no separate link step. Every source file is
