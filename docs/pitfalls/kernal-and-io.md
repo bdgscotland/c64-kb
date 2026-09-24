@@ -15,8 +15,10 @@ demo or game with customised IRQs, banked memory, or BCD arithmetic.
 Three entries are library and host-tooling traps in the same
 disk-and-keyboard I/O workflow: the Oscar64 `krnio_save()` splat, the
 c1541 uppercase-filename PETSCII shift and the Oscar64 `getchx()` RETURN
-remap. The last entry is a hardware-wiring trap: RESTORE drives /NMI
-directly, so no CIA mask reaches it.
+remap. `restore_nmi_not_maskable` is a hardware-wiring trap: RESTORE
+drives /NMI directly, so no CIA mask reaches it. The last entry is a
+VIC-II trap: sprites next to badlines during a disk read make the
+KERNAL miss a bit and wait for ever.
 
 ---
 
@@ -1618,3 +1620,202 @@ krnio_close(2);
 - VICE x64sc 3.10, twenty runs of the platformer scaffold at five wait
   counts on PAL and NTSC and five variants of the ten-frame PAL build,
   and one remote-monitor session with `break edd6`, 2026-09-22, rung 1.
+
+---
+
+## sprites_over_badlines_hang_serial_io — Sprites on the same lines as badlines during a KERNAL disk read make the C64 miss a clock pulse and wait for ever
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D015, D011
+**Triggered by kernal:** IECIN, CHRIN, CHKIN, OPEN, CLOSE
+**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, error_channel_check, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
+
+Measured in VICE x64sc 3.10 with a true-drive 1541, not on a real C64
+and 1541 (rung 1, VICE only).
+
+### Symptom
+
+A game saves its high-score file with its sprites on screen, and the
+save never returns. The screen keeps its last frame. Music, raster
+splits and anything else driven by an interrupt stop, because the C64
+is inside a KERNAL serial routine with the I flag set. `$90` is `$00`,
+so nothing is reported. The same save with the sprites off, or with the
+screen blanked, completes. With fewer sprites, or on the other video
+standard, it may complete, or hang a few saves later.
+
+### Mechanism
+
+**What was measured.** A test program (Oscar64, stock KERNAL, its IRQ
+running) enables N solid sprites at Y 100, drawn on raster lines 101 to
+121 over the badlines at 107 and 115. It then does 20 rounds of: scratch
+`TEST` on the command channel, write a 5-byte SEQ file, read the status
+line. Each round paints a cell on the bottom text row: white when it
+starts, green when the drive answered `00`. A hung round is the white
+cell left at the end of 150,000,000 cycles; a round took 5,000,000 to
+6,000,000. Run with `x64sc -default -warp +autostart-delay-random` and a
+fresh D64. PAL is the default c64c (8565 VIC-II, 8521 CIA); NTSC is
+`-model ntsc` (6567R8, 6526). Each cell had three runs, and the three
+always agreed to the round, so they are one sample, not three: as in
+`first_open_after_reset_hangs_on_pal` above, the outcome is fixed for a
+given binary, model and launch.
+
+| Sprites on | PAL c64c | NTSC 6567R8 |
+|---|---|---|
+| 0 | 20 of 20 | 20 of 20 |
+| 1 | 20 of 20 | 20 of 20 |
+| 2 | 20 of 20 | 20 of 20 |
+| 3 | hung in round 1 | 20 of 20 |
+| 4 | hung in round 9 | hung in round 1 |
+| 6 | hung in round 1 | hung in round 4 |
+| 8 | hung in round 1 | hung in round 4 |
+| 8 at Y 0: from line 1, no badline under them | 20 of 20 | 20 of 20 |
+| 8 at Y 250: from line 251, in the lower border | 20 of 20 | hung in round 1, a different hang (below) |
+| 8, screen blanked (`$D011` bit 4 off) | 20 of 20 | 20 of 20 |
+| 8, `$D015` = 0 around each disk call | 20 of 20 | 20 of 20 |
+
+Badlines fall on lines 48 to 247 (`$30` to `$F7`), so Y 0 and Y 250
+put no badline under the sprites (arithmetic from the measured start
+line). On `-model c64` (6569, 6526) the PAL column repeated for 0, 2, 3
+and 8 sprites, Y 0, Y 250, blanked and sprites-off. With
+`-cia1model 1`, 8 sprites at Y 100 still hung (PAL round 1, NTSC round
+4). The round depends on how the run starts: launched under the remote
+monitor without `+autostart-delay-random`, the 8-sprite PAL build hung
+in round 1 once and round 2 once, and the 3-sprite PAL build in round 8
+or later. Whether a build hangs did not change.
+
+The review of the shmup-vertical starter (#39) measured the game
+itself, with 11 multiplexed sprites: it hung on PAL in 1 of 3 runs (PC
+`$ED55`, in the send routine) and on NTSC in 3 of 3 (PC `$EE5A` to
+`$EE63`). With the sprites on and the screen blanked it passed 3 of 3 on
+each model. Those runs are the reviewer's and were not repeated here;
+the send-side hang at `$ED55` was not reproduced by the test program.
+
+**Where it stops.** Six hangs were stopped with the remote monitor: 8
+sprites on PAL and NTSC, 6 on PAL and NTSC, 4 on NTSC, 3 on PAL:
+
+- The C64 is in ACPTR, the KERNAL's receive routine (`$EE13`, reached
+  through IECIN `$FFA5`), in the bit loop at `$EE5A` to `$EE63`, which
+  waits for CLK to go high. The bit counter `$A5` is 1: the C64 has
+  counted seven bits and waits for the eighth. This held in all six.
+- The drive's `$1800` reads `$0C` in all six: it holds CLK low and
+  waits for the listener to pull DATA, the acknowledgement that the
+  byte arrived. In the five stops where the drive's stack was read, its
+  return address (`$E989` or `$E98C`) is inside the loop at `$E987` to
+  `$E98F` that runs after the eighth bit.
+
+So the drive sent eight bits and the C64 saw seven. Neither loop has a
+timeout, so both wait for ever.
+
+**The drive's pulse (rung 1 bytes, rung 3 arithmetic).** In the 1541
+ROM (`dos1541-325302-01+901229-05.bin`), the bit loop at `$E95C` puts a
+bit on DATA, releases CLK at `$E9B7` (the bit is valid), then runs
+`LDA $23`, `BNE`, `JSR $FEF3`, `JSR $FEFB`, and pulls CLK low again at
+`$E9AE`. `$FEF3` is a delay loop (`LDX #$05`, `DEX`, `BNE`); it runs
+when `$23` is 0, and `$23` read `$00` in the monitor. From the store
+that releases CLK to the store that pulls it, by instruction count, is
+75 drive cycles: 75 µs at the drive's 1 MHz, 74 PAL or 77 NTSC C64
+cycles. The low half of the bit is 114 to 116 µs by the same count.
+The period, 189 to 191 µs, agrees with the 188 to 199 µs measured on
+the bus for most bits in `formats/iec-disk-reference.md` (a trace, not
+this arithmetic).
+
+**The C64's sample (rung 1 bytes).** The loop at `$EE5A` is `LDA
+$DD00`, `CMP $DD00`, `BNE`, `ASL`, `BPL`: 15 cycles an iteration, and
+it accepts CLK only when two reads 4 cycles apart agree. It must land
+both reads inside the 74-cycle (PAL) window.
+
+**Why the sprites matter (inferred, not traced).** A badline alone
+stops the CPU for 40 to 43 cycles (`badline_cycle_loss`), which leaves
+about 30 cycles of the window. Each sprite on the line adds its own
+fetch cycles next to the badline's. When the stop covers nearly all of
+the window, the loop misses a whole high pulse. The measurements fit
+this: no hang without a badline under the sprites (Y 0, blanked), none
+without sprites, and a threshold in the number of sprites. Where each
+sprite's fetch cycles sit relative to the badline, and why the NTSC
+threshold is one sprite higher, were not traced here; the 6567R8's
+65-cycle line would give a longer gap, but that is not measured.
+
+**A different hang in the same runs.** 8 sprites at Y 250 hung on NTSC
+in round 1, in the other wait inside ACPTR: `$EE30` to `$EE3A`, where
+the C64 waits for the drive's CLK or for CIA1 timer B to signal EOI.
+Timer B was stopped (`$DC0F` = `$08`, one-shot, not running) at its
+latch value `$01FF`: it had run out, and the loop had not seen its
+flag. With `-cia1model 1` (a new CIA) the same build passed 20 of 20
+twice. That fits the old 6526's timer B bug, which VICE
+models on the old CIA only (`cia_revision_irq_one_cycle_late` in
+`pitfalls/cia.md` names it); it is not a sprite-and-badline hang. Filed
+as #69.
+
+### Fix
+
+- **Turn the sprites off around every disk call.** Write 0 to `$D015`
+  before the call and restore it after. Measured: 20 of 20 on both
+  models, and part A of `recipes/oscar64/sprites-off-during-disk-io.md`.
+- **Or blank the screen.** Clear `$D011` bit 4 before the call and set
+  it after; with no badlines there is nothing for the sprite fetches to
+  add to. Measured: 20 of 20 on both models with 8 sprites on.
+- **Stop the multiplexer too.** ACPTR ends with `CLI` at `$EE82`, and
+  the send routine with `CLI` at `$EDAB` (rung 1), so interrupts run
+  between bytes. A multiplexer IRQ that writes `$D015` there turns the
+  sprites back on before the next byte (rung 3, from the ROM, not
+  measured). Stop its raster interrupt as `raster_irq_during_serial_io`
+  above describes (clear `$D01A`), or make it write 0 while a flag is
+  set.
+- Do not rely on where the sprites are. Sprites at Y 0 ran here, but a
+  game's sprites move, and three over a badline were enough on PAL.
+
+### Worked example
+
+```c
+// BAD: the multiplexer's sprites stay on while the high score is saved
+krnio_setnam("HISCORE,S,W");
+if (krnio_open(2, 8, 2)) krnio_write(2, rec, sizeof(rec));
+krnio_close(2);
+// measured (test program, 8 sprites on lines 101-121): hangs in ACPTR
+// at $EE5A, $A5 = 1, PAL round 1 and NTSC round 4
+
+// GOOD: raster IRQ off, sprites off, save, then both back on
+vic.intr_enable = 0x00;              // $D01A: the multiplexer cannot run
+vic.spr_enable = 0x00;               // $D015: no sprite fetches
+krnio_setnam("HISCORE,S,W");
+if (krnio_open(2, 8, 2)) krnio_write(2, rec, sizeof(rec));
+krnio_close(2);
+vic.spr_enable = saved_enable;
+vic.intr_enable = 0x01;
+// measured with the $D015 line alone (test program, no multiplexer):
+// 20 of 20 saves on PAL and NTSC. The $D01A line is from the ROM (CLI
+// between bytes), not measured here.
+```
+
+`recipes/oscar64/sprites-off-during-disk-io.md` runs both halves in one
+program and reports `HUNG` from a CIA2 NMI watchdog, since no IRQ can
+fire inside the receive loop.
+
+### Cross-references
+
+- Recipe `oscar64/sprites-off-during-disk-io`: the reproduction and the
+  fix, pinned on PAL and NTSC.
+- Pitfall `raster_irq_during_serial_io` above: the `SEI` brackets and
+  the `$D01A` fix for the raster IRQ.
+- Pitfall `first_open_after_reset_hangs_on_pal` above: another wait
+  without a timeout, and why one run of a build is one sample.
+- Pitfall `badline_cycle_loss` (`pitfalls/raster-and-badline.md`): the
+  40 to 43 cycles.
+- `formats/iec-disk-reference.md`, "IEC bit timing, measured": the
+  bit period when the drive sends.
+- `recipes/oscar64/high-score-persist.md`: a save with no sprites on,
+  the path this pitfall adds sprites to.
+
+### Sources
+
+- Commodore 64 KERNAL ROM 901227-03, `$EE13` to `$EE84`, disassembled
+  in the VICE monitor for this entry, rung 1.
+- Commodore 1541 DOS ROM 325302-01 + 901229-05 as shipped with VICE,
+  `$E909` to `$E9C8` and `$FEF3` to `$FF00`, disassembled for this entry,
+  rung 1.
+- VICE x64sc 3.10, 80 runs of the test program across the conditions in
+  the table and six remote-monitor stops, 2026-09-23 and 2026-09-24,
+  rung 1.
+- The review of #39's shmup-vertical starter, point 4: the game runs
+  and the first minimal repro. Reported there, not repeated here.

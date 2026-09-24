@@ -235,6 +235,21 @@
       "name": "TEST,01"
     }
   },
+  "oscar64/sprites-off-during-disk-io": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprites-off-during-disk-io.png",
+      "ntsc": "screenshots/sprites-off-during-disk-io-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
   "kickassembler/memory-layout": {
     "cycles": 8000000,
     "models": [
