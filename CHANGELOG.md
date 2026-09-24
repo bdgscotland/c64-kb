@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 820, schema 38, tools 2.13.1, package 0.26.1.
+Data 821, schema 38, tools 2.13.1, package 0.26.1.
+
+**Six canon routines, briefing and lint fixes, and an Oscar64 macro
+fault (data 821; #89, #97, #98).** New techniques with KickAssembler
+recipes checked against Python models and CIA-timed on PAL and NTSC:
+`multiply_16x16` (246-272 cycles; dropping the middle carry breaks
+36,069 of 65,536 products), `multiply_by_constant`, `random_in_range`
+(modulo and multiply-high bias alike, rejection even; up to 15
+rejections in a row), `byte_list_sort` (counting sort beats insertion
+from 32 keys), `midpoint_circle` (2,197 pixels exact; a one-byte
+decision variable fails from radius 77), `clock_slide_raster_irq`;
+three new pitfalls in maths.md. game-briefing now gets `lfsr_random`
+and `kernal_load_to_address` for the #22 shooter brief and drops three
+misfits (a word and its stem scored twice; forced techniques kept the
+search's rank). The `lfsr_zero_state_lockup` lint reads a multi-byte
+seed. The game test's "bool in a switch case" stop was an Oscar64 fault
+in the local build only: a call of an empty `#define A()` eats the `;`
+after it, so `if (c) A(); f();` became `if (c) f();` (v1.32.273 and
+upstream correct; reproduced here). The four #19 SID techniques are
+anchored to the SID and NMI pitfalls their pages describe.
 
 **Sprite DMA measured, and four figures the game test lacked (data 820;
 #96).** New recipe `sprite-dma-cost`: a three-band multiplexer whose

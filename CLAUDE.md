@@ -188,8 +188,11 @@ in `src/tools/query.ts`; check which before editing either.
   variable links silently; an immediate-mode `sta` in `__asm` emits opcode
   $FF with no diagnostic; at -O1 to -O3 `c == 255 ? 255 : a[c]` with `a`
   shorter than 256 loses its guard and reads `a[255]` (write it as an `if`);
-  `#define A()` with an empty parameter list is refused (error 3006; fixed
-  upstream); a loop-invariant `array + signed_char` is hoisted and zero-extended
+  a call of `#define A()` (empty parameter list) eats the `;` after it: a
+  non-empty body gives error 3006, an empty body compiles silently and
+  `if (c) A(); f();` becomes `if (c) f();` (local build only; v1.32.273
+  and upstream are correct; an earlier version of this line said the
+  macro is always refused); a loop-invariant `array + signed_char` is hoisted and zero-extended
   (-2 → +254) at every level, upstream too; `a[x]++` after a store indexed by
   `a[x] + 1` can store the wrong value (read `a[x]` into a variable); stores to a
   local `volatile` vanish at -O1/-O2 (use a global that something writes);

@@ -604,7 +604,7 @@ counts, rung 3, not run).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD0D
-**Triggered by techniques:** nmi_handler_and_restore_key
+**Triggered by techniques:** nmi_handler_and_restore_key, nmi_sample_player
 **Mitigated by techniques:** nmi_handler_and_restore_key
 
 ### Symptom

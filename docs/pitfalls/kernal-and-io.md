@@ -989,7 +989,7 @@ program wants raw PETSCII throughout.
 **Region:** both
 **Triggered by registers:** DD0D
 **Triggered by kernal:** RESTOR, VECTOR
-**Triggered by techniques:** nmi_handler_and_restore_key
+**Triggered by techniques:** nmi_handler_and_restore_key, nmi_sample_player
 
 ### Symptom
 

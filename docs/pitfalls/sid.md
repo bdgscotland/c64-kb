@@ -157,7 +157,7 @@ convention" places a shadow there.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D415, D416, D417, D418
-**Triggered by techniques:** sid_filter_routing, sid_8580_vs_6581_differences, sidasid_emulation_notes, sid_env3_filter_envelope
+**Triggered by techniques:** sid_filter_routing, sid_8580_vs_6581_differences, sidasid_emulation_notes, sid_env3_filter_envelope, mahoney_d418_8bit_digi, sid_8580_digi_bias_and_filter_bypass, sid_test_bit_and_osc_reset_tricks
 
 ### Symptom
 
@@ -507,7 +507,7 @@ and the two chips show no difference in reSID, so it has been removed.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D418
-**Triggered by techniques:** sid_voice_setup, lfsr_random, sid_env3_filter_envelope
+**Triggered by techniques:** sid_voice_setup, lfsr_random, sid_env3_filter_envelope, sid_8580_digi_bias_and_filter_bypass
 
 ### Symptom
 
@@ -657,7 +657,7 @@ lfo_tick:
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D41B
-**Triggered by techniques:** lfsr_random, sid_8580_vs_6581_differences
+**Triggered by techniques:** lfsr_random, sid_8580_vs_6581_differences, sid_test_bit_and_osc_reset_tricks, mahoney_d418_8bit_digi
 
 ### Symptom
 
