@@ -171,8 +171,10 @@ is the release disk, so two things follow and both were measured.
 
 **The first OPEN does not hang.** The recipe's page records a start-up
 hang in the OPEN's read-back on PAL, seen when the PRG was injected with
-`-autostartprgmode 1` and a true drive sat idle on the bus, and the fifty
-`vic_waitFrame` calls before the OPEN are its workaround. From the D64
+`-autostartprgmode 1`. Its cause is a read of a file that is not on the
+disk, whose short answer from the drive a badline can hide (pitfall
+`first_open_after_reset_hangs_on_pal`); the fifty `vic_waitFrame` calls
+before the OPEN only move the phase. From the D64
 the OPEN reaches the same drive that has just served the LOAD: the 30
 million cycle PAL and NTSC runs above both show the drive's 62 on row 24
 and `F` on the HUD, so the OPEN completed and its error channel was read.
