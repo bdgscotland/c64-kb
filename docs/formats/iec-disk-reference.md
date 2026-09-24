@@ -325,11 +325,35 @@ Common drive commands sent to the command channel:
 | NEW | `N0:NAME,ID` | Format disk |
 | BLOCK-READ | `B-R chn drv trk sec` | Read arbitrary sector |
 | BLOCK-WRITE | `B-W chn drv trk sec` | Write arbitrary sector |
+| U1 / U2 | `U1:chn,drv,trk,sec` | Block read / block write of all 256 bytes; the forms a copier uses (`recipes/kickassembler/disk-copier.md`) |
+| BUFFER-POINTER | `B-P:chn,pos` | Set the `#` channel's byte pointer |
+| PARTITION (1581) | `/0:NAME` | Select a partition; `/` returns to the root. Allocation and the rules are in the next section |
 | MEMORY-READ | `M-R addrlo addrhi len` | Read drive RAM/ROM |
 | MEMORY-WRITE | `M-W addrlo addrhi len data` | Write drive RAM |
 | MEMORY-EXECUTE | `M-E addrlo addrhi` | Execute code in drive RAM |
 
 Reading from the command channel after any operation returns the drive status string: a 2-digit error code, message text, track number, sector number, and newline. Error code `00` means no error.
+
+### 1581 partitions and sub-directories
+
+The 1581's DOS adds the `/` command family (1581 User's Guide, section
+6.8; each form below was run in VICE x64sc 3.10 with the 1581 DOS
+`318045-02` by `recipes/kickassembler/d81-partition.md`, rung 1):
+
+| Command | Bytes after the name | Answer measured |
+|---|---|---|
+| allocate | `/0:NAME,` start track, start sector, count low, count high (raw bytes), `,C` | `00, OK,00,00`; over track 40: `67,ILLEGAL TRACK OR SECTOR,40,00` |
+| select | `/0:NAME` | `02, SELECTED PARTITION,<first track>,<last track>`; a partition breaking the sub-directory rules: `77,SELECTED PARTITION ILLEGAL,00,00` |
+| format inside | `N0:name,id` after a `02` | `00, OK,00,00`; header, BAM and directory on the partition's first track, sectors 0 to 3 |
+| root | `/` | `02, SELECTED PARTITION,01,80` |
+
+A partition used as a sub-directory starts at sector 0, holds a multiple
+of 40 blocks and at least 120, and leaves track 40 alone (the guide).
+The allocation does not check this; the select does, and a refused
+select leaves the old area selected, so `N0:` after it formats that
+area (`pitfalls/kernal-and-io.md`,
+`n0_after_failed_partition_select_formats_disk`). The on-disk bytes are
+under ".D81 — 1581 disk image" in `c64-file-formats.md`.
 
 ### Sequential vs Random Access Files
 

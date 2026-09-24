@@ -2213,3 +2213,55 @@ N0` and the disk kept its root header and the `SMALL` entry (measured).
   `error_channel_check` for reading the status line.
 - `recipes/kickassembler/d81-partition.md`: the check, the pinned run
   and the three variants.
+
+---
+
+## exact_254_multiple_file_leaves_block_allocated — A 1541 file whose length is an exact multiple of 254 bytes leaves one more block marked used in the BAM than its chain holds
+
+**Severity:** low
+**Region:** both
+**Triggered by kernal:** CHROUT, CLOSE
+**Triggered by techniques:** kernal_file_write_seq, disk_copy_block_commands
+
+Measured in VICE x64sc 3.10 with true drive emulation of a 1541-II (DOS
+ROM `251968-03`), on a D64 from `c1541 -format`; not on a real drive
+(rung 1, VICE only).
+
+### Symptom
+
+After writing SEQ files, the disk shows fewer blocks free than the
+directory's block counts account for: one block fewer for each file
+whose length is a multiple of 254. A tool that lists used blocks from
+the BAM finds blocks no file reaches.
+
+### Mechanism
+
+The disk-copier recipe writes `FILE1`, 2,540 bytes (10 × 254), and
+`FILE2`, 1,778 bytes (7 × 254), with OPEN, CHROUT and CLOSE. The
+directory gives them 10 and 7 blocks and their chains end on link bytes
+`00 FF` (254 data bytes in the last block). The BAM entry for track 17
+read `02 00 02 08`: 19 sectors used, while the two chains use 17
+(0–8, 10, 11, 13, 14, 15, 16, 18, 20). Sectors 12 and 17, the next
+sectors of each chain at the drive's interleave of 10, are allocated
+and in no chain. The same program writing 2,530 and 1,771 bytes left
+the BAM with the 17 chain sectors only. So the DOS allocates the next
+block when a block fills, and CLOSE with nothing more to write does not
+give it back (an inference from the two measured BAMs; the DOS code
+that does it was not traced).
+
+### Fix
+
+None is needed for the data, which is intact. To get the blocks back,
+validate the disk: `V0` sent on channel 15 answered `00, OK,00,00`
+and the BAM then listed 19 used blocks, 17/12 and 17/17 free again
+(measured, a build of the recipe with the command after the files are
+written). `c1541 -validate` on the host image freed the same two. A
+program that fills a disk to the last block, or that checks a disk by
+comparing the BAM with the chains, must allow for one such block per
+file.
+
+### Cross-references
+
+- `techniques/file-io.md`, `kernal_file_write_seq` and
+  `disk_copy_block_commands`.
+- `recipes/kickassembler/disk-copier.md`: the images decoded.
