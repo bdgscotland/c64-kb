@@ -465,7 +465,7 @@ families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=48
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-sprite-expand (one `spr_expand()` call with run-time arguments, screen blanked; PAL and NTSC)
+**Cost measured on:** oscar64-sprite-expand (one spr_expand call with run-time arguments, screen blanked; PAL and NTSC)
 
 ### Why
 
