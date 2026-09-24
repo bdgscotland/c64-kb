@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 806, schema 33, tools 2.8.1, package 0.21.1.
+Data 807, schema 33, tools 2.8.1, package 0.21.1.
+
+**NTSC sprite DMA slots were one cycle off; #6 settled (data 807).**
+Measured in VICE for sprites 0..k on three models, cycle 1 being where
+`$D012` changes: 6567R8 slots are 59 61 63 65 2 4 6 8, CPU resumes on
+10 with all eight on (the reference said 60 62 64 1 3 5 7 9, resuming
+on 11); 6567R56A is 59 61 63 1 3 5 7 9; PAL 8565's 58..9 confirmed.
+vic-ii-reference, dysp and road-sprite-lines corrected (screenshots
+unchanged). sprite.md no longer calls the Y stretcher unverified (the
+sprite-stretcher recipe measures it). Every 1541 job code and results
+`$02`-`$09`, `$0B` are now read from the DOS ROM bytes. Blanking line
+numbers stay Bauer's: VICE draws them in the border colour.
 
 **Serial-I/O sprite hang: CIA model has no effect, drive is a 1541-II
 (data 806; part of #43).** Measured in VICE with true drive over 20 save
