@@ -402,6 +402,11 @@ export const BriefingSchema = z.object({
       alternatives_left_out: z
         .array(z.object({ name: z.string(), tradeoff: z.string(), stated_on: z.string() }))
         .optional(),
+      // Techniques found only by search that check-compatibility calls a
+      // hard conflict with this one, left out of the plan (#97).
+      conflicts_left_out: z
+        .array(z.object({ name: z.string(), kind: z.string(), rationale: z.string() }))
+        .optional(),
     }),
   ),
   compatibility: z.object({
