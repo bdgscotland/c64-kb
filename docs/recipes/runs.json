@@ -1682,5 +1682,16 @@
       "pal": "screenshots/mcm-text.png",
       "ntsc": "screenshots/mcm-text-ntsc.png"
     }
+  },
+  "kickassembler/vsp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/vsp.png",
+      "ntsc": "screenshots/vsp-ntsc.png"
+    }
   }
 }

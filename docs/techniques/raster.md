@@ -291,6 +291,15 @@ Total cost per raster split in double-IRQ mode: through $0314, 36-42 + ~12 on th
 
 **Uses registers:** SCROLY, VMCSB
 **Demands:** midframe_raster_irqs
+**Requires:** stable_raster_irq
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+`recipes/kickassembler/vsp.md`: each frame one `$D011` store on line 252
+sets YSCROLL 7 and the timed store on line 51 sets YSCROLL 3, so the
+technique drives YSCROLL for the whole top of the frame. Its raster
+interrupts are the effect's own, entered through `stable_raster_irq`.
 
 ### Why
 
@@ -309,13 +318,24 @@ becomes true late. The VIC starts its c-accesses three cycles after BA drops,
 from whichever column slot the beam has reached, and the columns before it
 are not fetched for this row. Because the video counter VC advances only by
 the number of c-accesses actually performed, the row ends with VC short by
-that many characters, and every row after it (and every frame after it,
-until the counter is re-based) starts that many characters earlier in
-screen RAM. The display has moved left by N characters, N being the cycle
-the condition became true minus 15. One cycle-exact write per character row,
-plus a matching adjustment of the screen base, scrolls the whole screen by
-whole characters at no per-line cost; XSCROLL still handles the seven pixel
-steps in between.
+that many characters, and every row after it in the same frame starts that
+many characters earlier in screen RAM: the picture moves right by N
+characters. One cycle-exact write per frame, on the first badline, moves the
+whole screen; the screen base is adjusted for whole screens of travel, and
+XSCROLL still handles the seven pixel steps in between.
+
+Measured in VICE x64sc by `recipes/kickassembler/vsp.md` (PAL and NTSC):
+each cycle of extra delay moves the screen one more character right, from 1
+to 40; the three delays before the first shift spoil only the late row
+itself (one column, two columns, the whole row). The offset does not carry
+into the next frame: a frame without the late write is normal, so the write
+is made every frame. VICE's VSP-bug log puts the recipe's 10-character write
+at its cycle 24 of the line; if VICE counts from 0 that is cycle 25, and 10
+is 25 − 15 as the formula N = cycle − 15 says, but the counting base was not
+checked. (An earlier version of this paragraph said the display moved left,
+that the offset persisted into later frames until re-based, and that one
+write per character row was needed; the recipe shows right, one frame, and
+one write per frame.)
 
 ### Why it works
 
@@ -357,23 +377,26 @@ describes no detection.)
 
 ### Variations
 
-**Whole-screen scroll.** One write per character row, on the row's badline,
-plus the base-pointer adjustment. **Partial zone.** Only the rows of the
+**Whole-screen scroll.** One write per frame, on the first badline, plus
+the base-pointer adjustment (an earlier version said one per character row). **Partial zone.** Only the rows of the
 play field; rows above and below are ordinary. **Combined with XSCROLL.**
 Whole characters by VSP, pixels by $D016 bits 2-0.
 
 ### Cycle budget
 
-One cycle-exact `STA $D011` per character row on the badline row, plus the
-stable entry that positions it; the badline still costs its 40-43 cycles (plan on 43).
-Nothing per line. The earlier figure of 12 cycles per line via a CSEL toggle
-described the side-border mechanism, misattributed. Not yet measured in this
-knowledge base: there is no VSP recipe, and the account above is from
-Bauer's article and the VICE source, not from a run.
+One cycle-exact `STA $D011` per frame on the first badline, plus the
+stable entry that positions it and the wait to the chosen cycle (in the
+recipe, from a sync on line 48 to line 51); the badline still costs its 40-43
+cycles (plan on 43). Nothing per line. The earlier figure of 12 cycles per
+line via a CSEL toggle described the side-border mechanism, misattributed.
+An earlier version said one write per character row; the recipe measured
+one per frame. The recipe's delay loop was not timed with a CIA.
 
 ### Recipes
 
-(No standalone recipe yet. VSP needs cycle-exact assembly, so it is mainly a KickAssembler technique.)
+- `recipes/kickassembler/vsp.md`: a fixed ten-character shift on PAL and
+  NTSC, with the one-cycle sweep, measured in VICE x64sc only. VICE does not
+  emulate the VSP crash by default, and the recipe is not Safe-VSP hardened.
 
 ### Sources
 
