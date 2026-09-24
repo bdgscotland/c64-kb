@@ -1308,6 +1308,8 @@ Badline body: 20 CPU cycles PAL (22 NTSC), plus the 43-cycle stall, one full ras
 
 **Sprite horizon.** Adding a single expanded sprite or a colour-split at line 99 gives a solid coloured horizon line separating sky from road without additional raster handlers.
 
+**Sprites on the road lines: one padded block per line.** A sprite's fetches take cycles from every line it is on, so a loop that counts every cycle loses its phase at the first sprite. Each road line becomes one 64-byte block of code: its `$D016` store, then a `BVC` into a slide of `CMP #$C9` bytes ending `C5 EA`, where R bytes from the end take R + 1 cycles. Every frame the branch operands are rewritten from a 16-entry pad table, by the set of sprites 0-2 that fetch on the line (they stall a reading CPU for 5 + 2 × (last − first) cycles at the line's end) and by badline or not (43 more). Sprites 3-7 fetch at the start of a line, over the stores, and stay off the road. Measured in `recipes/kickassembler/road-sprite-lines.md` (VICE x64sc 3.10, PAL and NTSC, three moving sprites): every `$D016` store on the same cycle of its line, every frame. The chain from the line-103 IRQ to the end of the road costs 6,348-6,350 cycles a frame on PAL and 6,549-6,550 on NTSC; rewriting all 96 operands and the sprites' Y adds 3,700. The racing starter (`templates/racing/`) uses the same method with a `$D021` store per line for the grass bands.
+
 ### Pitfalls
 
 - `d016_unmasked_rmw_clobbers_csel_mcm`: the precomputed table stores D016_BASE (MCM + CSEL bits) OR'd into each entry. Omitting this and writing the raw XSCROLL value clears MCM (bit 4), so the road characters draw in hires, and CSEL (bit 3), which drops the display to 38 columns on every road line. An earlier version put the 38-column drop on MCM.
@@ -1317,6 +1319,7 @@ Badline body: 20 CPU cycles PAL (22 NTSC), plus the 43-cycle stall, one full ras
 ### Recipes
 
 - `recipes/kickassembler/pseudo-3d-road.md`: both layers, PAL and NTSC, measured in VICE.
+- `recipes/kickassembler/road-sprite-lines.md`: per-line XSCROLL with three sprites moving over the road lines and their badlines, each line padded by the sprites that fetch on it; PAL and NTSC, measured in VICE.
 
 ### Sources
 

@@ -1711,5 +1711,17 @@
     "shots": {
       "pal": "screenshots/ifli-image.png"
     }
+  },
+  "kickassembler/road-sprite-lines": {
+    "cycles": 14500000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/road-sprite-lines.png",
+      "ntsc": "screenshots/road-sprite-lines-ntsc.png"
+    }
   }
 }

@@ -1086,6 +1086,12 @@ sub-character remainder is addressed per-line.
 Per-raster-region $D021 changes for a blue sky above the horizon and a black
 dashboard below the road are not implemented.
 
+**Sprites on the road.** The sprites are off: a sprite's fetches take
+cycles from every line it is on, and the unrolled loop counts every
+cycle. `road-sprite-lines.md` keeps each line's `$D016` store on one cycle
+with three sprites moving over the road lines, by padding each line for
+the sprites that fetch on it.
+
 **Game-engine geometry.** cx is one byte, so the road centre can reach
 display pixel 255 of 319 and no further. Whether these cx and hw values
 match the road of any real game engine is not established here.
