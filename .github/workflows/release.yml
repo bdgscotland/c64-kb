@@ -31,4 +31,13 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:unit
-      - run: npm publish --access public
+      # A version already on npm (the first one is published by hand) is
+      # skipped, so re-running a tag's workflow is safe.
+      - name: publish unless this version is already on npm
+        run: |
+          v=$(node -p 'require("./package.json").version')
+          if npm view "c64-kb@$v" version > /dev/null 2>&1; then
+            echo "c64-kb@$v is already on npm; nothing to publish"
+          else
+            npm publish --access public
+          fi
