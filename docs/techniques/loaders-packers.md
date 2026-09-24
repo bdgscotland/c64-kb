@@ -790,3 +790,120 @@ cost of the drive-code scan and seek was not measured here.
 - Cadaver, "IFFL system": https://cadaver.github.io/rants/iffl.html
 
 ---
+
+## fastloader_2bit_protocol — Two bits per edge over CLK and DATA, the C64 as the clock
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** DD00
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CLRCHN, CLOSE
+**Demands:** serial_bus_exclusive
+**Requires:** drive_code_upload_and_job_queue
+**Claims:** serial_bus (owns), cia2_vic_bank (shares)
+**Claims basis:** derived-listing
+**Cost:** cycles_per_frame=42758
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-fastloader-2bit (one call: a 256-byte block, screen blanked, the drive's sector read not included)
+
+### Why
+
+The KERNAL moves one bit per handshake and about 406 bytes a second
+from a 1541 (`../formats/iec-disk-reference.md`). A fast loader puts
+code on the drive and moves two bits at a time instead, one on CLK and
+one on DATA, the two lines the drive can pull. Every 1541 fast loader
+that uses the standard cable does some form of this. The recipe here
+moves a 256-byte sector in 42,758 cycles: 5,900 bytes a second on PAL
+and 6,124 on NTSC, about fourteen times the KERNAL (measured, VICE 3.10).
+
+### How
+
+1. Upload the drive half with `M-W` and start it with `M-E`
+   (`drive_code_upload_and_job_queue`). It reads the sector through the
+   job queue, sets the I flag, and pulls DATA low to say it is ready.
+2. The C64 releases CLK and DATA (`$DD00` bits 4 and 5 clear, bank bits
+   kept), waits for DATA to be released by the DOS and then pulled by
+   the drive.
+3. Per bit pair, the C64 flips ATN (`$DD00` bit 3). The drive, waiting
+   on ATN IN (bit 7 of `$1800`), stores the pair: the low bit to DATA
+   OUT (bit 1), the high bit to CLK OUT (bit 3), and ATNA (bit 4) equal
+   to the new ATN level in the same store. Two four-entry tables, one
+   with bit 4 set and one without, turn a two-bit value into that byte.
+4. The C64 reads `$DD00` a fixed time after its store, at least the
+   drive's worst answer time: 14 cycles on PAL and 15 on NTSC in the
+   recipe (measured). `ASL` / `ROR` twice moves bits 7 and 6 into the
+   byte; four pairs and an `EOR #$FF` make a byte.
+5. After the last pair, one more pair of edges lets the drive release
+   the lines, clear the ATN edge its VIA latched (read `$1801`) and
+   return to the DOS with `CLI`.
+
+### Why it works
+
+Both lines are open collector: a 1 in a drive output bit pulls its
+line low, and the C64 reads a low line as 0, so the byte arrives
+inverted. The drive holds each pair until the next edge, so the C64
+side has a minimum delay and no maximum: a badline, a sprite or an
+interrupt between an edge and its read only makes the read later. The
+recipe received all 256 bytes with the screen on and the KERNAL's
+interrupt running, at the same thresholds (measured, both models).
+
+ATN is the clock line because the C64 must leave CLK and DATA to the
+drive. The 1541 pulls DATA low in hardware whenever ATN differs from
+ATNA (`../pitfalls/loader.md`, `atn_assert_drives_data_low_via_atna`),
+so the drive must carry ATNA in every store. From the edge to that
+store the pull is on, and a C64 that samples in that window reads DATA
+low: the recipe's too-early delays returned bytes near `$55`.
+
+The minimum delay is the drive's poll and store: a 7-cycle `BIT
+$1800` / `BPL` loop and 6 cycles from the read that sees the edge to
+the store's write, 13 µs at most (instruction table, rung 3). The
+recipe's sweep found the threshold between 13 and 14 C64 cycles on
+PAL and between 14 and 15 on NTSC, both brackets holding 13 µs. The
+drive is at 1 MHz in both regions and the C64 is not, which is why
+NTSC needs one more cycle. Cadaver's 2-bit loader page gives the same
+pair of numbers, "14 clock cycles delay for PAL and 15 cycles for
+NTSC", for its own loop (rung 4 for his loop; the match is noted, not
+relied on).
+
+### Variations
+
+- **The drive as the clock.** The drive answers one handshake per byte
+  and then sends the four pairs on its own fixed schedule; the C64
+  must sample each at the right cycle. That loop has no slack, so a
+  badline, a sprite or an interrupt during a byte loses bits, and
+  loaders of this kind wait until no badline can fall inside the byte,
+  keep sprites off and disable interrupts per byte (Cadaver's 2-bit
+  loader page, rung 4). This is the form the classic "badlines break
+  fast loaders" rule is about. Not built here.
+- **A faster C64 loop.** The recipe's pair costs 24 cycles beyond the
+  delay (`LDA #`, `STA`, `LDA`, two `ASL`, two `ROR` zero page). A
+  table lookup instead of the shifts, or the pairs of a byte read into
+  registers and combined once, shortens it. The floor then is the
+  drive: 24 cycles of its own between a store and its next poll in the
+  recipe. Not measured here.
+- **CLK as the clock and ATN left alone.** One bit per edge on DATA
+  only, with the C64 toggling CLK; it avoids the ATNA gate but halves
+  the rate. Not built here.
+
+### Cycle budget
+
+Measured, VICE 3.10, PAL and NTSC (rung 1): 42,758 cycles for 256
+bytes at the pinned delay, the same count on both models because the
+C64's loop is fixed; 167 cycles a byte, four pairs 38 cycles apart and
+15 more across a byte boundary. Each cycle of delay adds four cycles a
+byte. At the smallest delay that worked, 38,662 cycles (PAL) and
+39,686 (NTSC). With the screen on and interrupts enabled, 45,853
+(PAL) and 46,245 (NTSC). The drive's sector read before the transfer
+is not in these figures.
+
+### Recipes
+
+- `recipes/kickassembler/fastloader-2bit.md` (upload, job-queue read,
+  the 256-byte transfer checked against the BAM, the delay swept one
+  cycle at a time on both models, the alignment table, and the
+  screen-on variant)
+
+### Sources
+
+- Cadaver, rant on 2-bit loading: https://cadaver.github.io/rants/2bitload.html
+
+---
