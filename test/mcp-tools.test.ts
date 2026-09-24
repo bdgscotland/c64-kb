@@ -34,8 +34,16 @@ import {
 // Not called, because they have side effects outside the test stores:
 // c64_run_game kills the x64sc on monitor port 6502 and starts one;
 // c64_ingest_doc writes a file under docs/ (and c64_memorization_check is
-// listed only where the Python analyzer is installed).
-const SKIP = new Set(["c64_run_game", "c64_ingest_doc", "c64_memorization_check"]);
+// listed only where the Python analyzer is installed). c64_re_irq_chain and
+// c64_re_frame_profile run VICE for seconds; covered by test/re-tools.test.ts
+// and test/re-calibration.test.ts.
+const SKIP = new Set([
+  "c64_run_game",
+  "c64_ingest_doc",
+  "c64_memorization_check",
+  "c64_re_irq_chain",
+  "c64_re_frame_profile",
+]);
 
 // Tool -> [arguments, output schema or null for a text-only tool].
 const CALLS: Record<string, [Record<string, unknown>, z.ZodType | null]> = {

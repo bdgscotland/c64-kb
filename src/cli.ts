@@ -10,12 +10,14 @@
  * another program (stdout to a pipe is asynchronous).
  */
 
+import path from "node:path";
 import { Command, InvalidArgumentError, Option } from "commander";
 import { health, formatHealth } from "./tools/intelligence.ts";
 import { getVersions } from "./services/versions.ts";
 import { startMcpServer } from "./server.ts";
 import { closeAll } from "./context.ts";
 import { definedOnly } from "./server/defined-only.ts";
+import { reFrameProfile, reIrqChain } from "./tools/re.ts";
 
 const TOOLCHAINS = ["oscar64", "kickassembler", "cc65"] as const;
 const REGIONS = ["pal", "ntsc", "both"] as const;
@@ -412,6 +414,45 @@ program
       emit(result);
     }
   });
+
+program
+  .command("re-irq-chain <prg>")
+  .option("--model <m>", "pal or ntsc", "pal")
+  .option("--cycles <n>", "run length", "8000000")
+  .action(async (prg: string, o: { model: string; cycles: string }) => {
+    const r = await reIrqChain({
+      prg_path: path.resolve(prg),
+      model: o.model === "ntsc" ? "ntsc" : "pal",
+      cycles: Number(o.cycles),
+    });
+    console.log(JSON.stringify(r, null, 2));
+    if (!r.ok) process.exitCode = 1;
+  });
+
+program
+  .command("re-frame-profile <prg>")
+  .requiredOption("--start <marker>", 'e.g. "store:$DC0F=$11"')
+  .requiredOption("--stop <marker>", 'e.g. "store:$DC0F=$00"')
+  .option("--model <m>", "pal or ntsc", "pal")
+  .option("--cycles <n>", "run length", "8000000")
+  .option("--disk <d64>", "drive 8")
+  .action(
+    async (prg: string, o: { start: string; stop: string; model: string; cycles: string; disk?: string }) => {
+      const r = await reFrameProfile({
+        prg_path: path.resolve(prg),
+        model: o.model === "ntsc" ? "ntsc" : "pal",
+        cycles: Number(o.cycles),
+        start: o.start,
+        stop: o.stop,
+        ...(o.disk ? { disk_path: path.resolve(o.disk) } : {}),
+      });
+      // Every sample is in the MCP reply; the CLI prints the count, not the list.
+      console.log(
+        JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2),
+      );
+      if (!r.ok) process.exitCode = 1;
+    },
+  );
 
 try {
   await program.parseAsync(process.argv);
