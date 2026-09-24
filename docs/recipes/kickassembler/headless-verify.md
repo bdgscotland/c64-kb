@@ -7,6 +7,7 @@ techniques: []
 file_formats: [PRG]
 uses_registers: [D020]
 uses_kernal: [CHROUT]
+harness: [$02FF]
 ---
 
 <!-- doc-type: recipe -->

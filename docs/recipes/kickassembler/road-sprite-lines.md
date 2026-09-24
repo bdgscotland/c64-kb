@@ -7,7 +7,8 @@ techniques: [pseudo_3d_road_raster, double_irq, stable_raster_irq, pal_ntsc_dete
 file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D004, D005, D010, D011, D012, D015, D016, D017, D018, D019, D01A, D01B, D01C, D01D, D020, D021, D027, D028, D029, DC0D, DD0D]
 uses_kernal: []
-claims: [irq_vector_fffe (owns), nmi_vector_fffa (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+claims: [irq_vector_fffe (owns), nmi_vector_fffa (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), sprite_0-2 (owns), vic_char_base (owns), zero_page $FB-$FE (owns)]
+ram: [state=$02F0-$02F2, colour=$D800-$DBE7]
 ---
 
 <!-- doc-type: recipe -->

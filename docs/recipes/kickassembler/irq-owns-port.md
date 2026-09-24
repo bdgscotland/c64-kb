@@ -6,9 +6,11 @@ region: both
 techniques: [irq_owns_processor_port]
 file_formats: [PRG]
 uses_registers: [D011, D012, D019, D01A, D020, D400, D401, D404, D405, D406, D418, DC04, DC05, DC0D, DC0E, DD04, DD05, DD0D, DD0E]
-uses_kernal: []
-claims: [cia1_timer_b (init), cia1_tod (init)]
-harness: [cia1_timer_a]
+uses_kernal: [CHROUT]
+claims: [cia1_timer_b (init), cia1_tod (init), cia2_timer_a (owns), cia2_timer_b (init), cia2_tod (init), vic_raster_irq (owns), sid_voice_1 (owns), sid_filter_volume (owns), zero_page $FB-$FE (owns)]
+harness: [cia1_timer_a, $02FF]
+ram: [under_io=$D000-$DFFF]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->
@@ -116,7 +118,8 @@ BasicUpstart2(start)
 
 // ---------------------------------------------------------------- main
 start:
-    jsr $e544                    // KERNAL clear screen, while it is still in
+    lda #$93
+    jsr $ffd2                    // CHROUT clear screen, while the KERNAL is still in
     sei
     lda #$7f
     sta $dc0d                    // CIA1: no interrupts

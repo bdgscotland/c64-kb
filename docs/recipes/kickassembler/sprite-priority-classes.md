@@ -7,6 +7,9 @@ techniques: [mob_priority, sprite_collision_detect]
 file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D004, D005, D006, D007, D008, D009, D00A, D00B, D00C, D00D, D00E, D00F, D010, D012, D015, D016, D017, D018, D01B, D01C, D01D, D01E, D01F, D020, D021, D022, D023, D025, D026, D027, D028, D029, D02A, D02B, D02C, D02D, D02E]
 uses_kernal: []
+claims: [vic_char_base (owns), sprite_0-7 (owns)]
+harness: [$02FF]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

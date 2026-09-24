@@ -7,6 +7,8 @@ techniques: [high_score_table_insert]
 file_formats: [PRG]
 uses_registers: [D011, D020, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: []
+claims: [zero_page $FB-$FE (owns)]
+harness: [cia2_timer_a, cia2_timer_b, vic_raster_irq, $02FF]
 ---
 
 <!-- doc-type: recipe -->

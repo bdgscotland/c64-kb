@@ -169,9 +169,18 @@ export class CpuPort {
 /** Who ran the store, by PC and the banking at that moment; "unknown" for a ROM window while $01 is unknown. */
 export type Source = "program" | "kernal" | "basic" | "unknown";
 
+/**
+ * BASIC's code runs on past $BFFF into the KERNAL ROM: the floating-point
+ * routines FSQR, EXP, SIN and their helpers sit at $E000-$E4B6, and
+ * $E4B7-$E4D2 is $AA filler (read from kernal-901227-03.bin). Stores from
+ * there are BASIC's, not the KERNAL's. An earlier version called them
+ * KERNAL stores outside every may-set (basic-float-calls, #84).
+ */
+const BASIC_IN_KERNAL_END = 0xe4b6;
+
 export function sourceOf(pc: number, port: CpuPort): Source {
   if (port.bits === null && (pc >= 0xe000 || (pc >= 0xa000 && pc <= 0xbfff))) return "unknown";
-  if (pc >= 0xe000 && port.kernal) return "kernal";
+  if (pc >= 0xe000 && port.kernal) return pc <= BASIC_IN_KERNAL_END ? "basic" : "kernal";
   if (pc >= 0xa000 && pc <= 0xbfff && port.basic) return "basic";
   return "program";
 }

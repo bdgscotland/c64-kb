@@ -7,6 +7,8 @@ techniques: [pwm_digi]
 file_formats: [PRG]
 uses_registers: [D400, D401, D402, D403, D404, D405, D406, D418, D020, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F]
 uses_kernal: [CHROUT]
+claims: [cia2_timer_a (owns), cia2_tod (init), sid_filter_volume (init)]
+harness: [cia2_timer_b, $02FF]
 ---
 
 <!-- doc-type: recipe -->

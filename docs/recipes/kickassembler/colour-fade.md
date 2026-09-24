@@ -7,6 +7,8 @@ techniques: [colour_fade]
 file_formats: [PRG]
 uses_registers: [D012, D020, D021]
 uses_kernal: []
+claims: [zero_page $FB-$FC (owns)]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

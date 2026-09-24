@@ -76,6 +76,10 @@ export interface RecipeFrontmatter {
   claims?: string;
   /** The raw `harness:` value: units or ranges a measurement harness writes (as --harness). */
   harness?: string;
+  /** The raw `ram:` value: the program's own RAM outside its load span and zero page (as --range). */
+  ram?: string;
+  /** `kernal_services:`: the KERNAL IRQ or NMI service the program leaves running (as --kernal). */
+  kernalServices: string[];
 }
 
 const flowArray = (fm: string, key: string): string[] | undefined => {
@@ -92,11 +96,14 @@ export function recipeFrontmatter(text: string): RecipeFrontmatter {
   const fm = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "";
   const claims = /^claims:\s*\[(.*)\]\s*$/m.exec(fm)?.[1];
   const harness = /^harness:\s*\[(.*)\]\s*$/m.exec(fm)?.[1];
+  const ram = /^ram:\s*\[(.*)\]\s*$/m.exec(fm)?.[1];
   return {
     techniques: flowArray(fm, "techniques") ?? [],
     usesKernal: flowArray(fm, "uses_kernal") ?? [],
     ...(claims !== undefined ? { claims } : {}),
     ...(harness !== undefined ? { harness } : {}),
+    ...(ram !== undefined ? { ram } : {}),
+    kernalServices: flowArray(fm, "kernal_services") ?? [],
   };
 }
 

@@ -7,6 +7,8 @@ techniques: [runtime_relocation]
 file_formats: [PRG]
 uses_registers: [D011, D020, DD04, DD05, DD0E]
 uses_kernal: [CHROUT]
+claims: [vic_raster_irq (init), zero_page $22-$2D+$FB-$FE (owns)]
+harness: [cia2_timer_a, $02FF]
 ---
 
 <!-- doc-type: recipe -->

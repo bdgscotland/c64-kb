@@ -706,6 +706,12 @@ listing.
 **Cost:** cycles_per_frame=62, irq_slots=0
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-four-player-read (read inlined, once a frame)
+**Claims:** user_port (owns)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL, a 4-player
+adapter on the user port) of kickassembler-four-player-read: 712 stores
+to `$DD01`, PB7 selecting joystick 3 or 4 each frame.
 
 ### Why
 

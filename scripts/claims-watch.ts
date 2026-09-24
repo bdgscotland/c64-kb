@@ -8,8 +8,8 @@
  *
  * Declarations (each option repeats; values are comma lists):
  *   --technique ids   the units each technique's **Claims:** line names, and those of the techniques it REQUIRES
- *   --recipe page     the page's frontmatter `techniques:` (as --technique), `uses_kernal:` (as --kernal), `claims:`,
- *                     `harness:` (as --harness)
+ *   --recipe page     the page's frontmatter `techniques:` (as --technique), `uses_kernal:` and
+ *                     `kernal_services:` (as --kernal), `claims:`, `harness:` (as --harness), `ram:` (as --range)
  *   --claim text      units in the Claims-line grammar: `irq_vector_0314, zero_page $FB-$FE, sid_voice_2 (shares)`
  *   --range ranges    the program's own RAM: `[name=]$XXXX[-$YYYY]`; the PRG's load span is always declared
  *   --harness items   a measurement harness: units or ranges whose stores are listed apart and never fail
@@ -18,7 +18,8 @@
  *                     may write to zero page
  *   --screen addr     screen RAM, so a store to screen+$3F8+n counts as sprite_n (its pointer)
  * Run:
- *   --cycles n (8000000), --model pal|ntsc, --disk d64 (drive 8, a copy), --start addr (else the SYS
+ *   --cycles n (8000000), --model pal|ntsc, --disk d64 (drive 8, a copy), --vice-arg=x (one extra
+ *   x64sc argument, repeated: a recipe's runs.json flags), --start addr (else the SYS
  *   address of a BASIC stub, else the first store from outside ROM), --all-ram (also trace
  *   $0400-$CFFF and $E000-$FFF9; default traces $0000-$03FF, $D000-$DFFF, $FFFA-$FFFF),
  *   --labels file (.sym or VICE labels; default: beside the PRG), --log file (read a saved
@@ -83,6 +84,7 @@ const { values: opt, positionals } = parseArgs({
     cycles: { type: "string", default: "8000000" },
     model: { type: "string", default: "pal" },
     disk: { type: "string" },
+    "vice-arg": { type: "string", multiple: true, default: [] },
     "all-ram": { type: "boolean", default: false },
     labels: { type: "string" },
     log: { type: "string" },
@@ -102,19 +104,25 @@ const addr = (s: string, what: string): number => {
   return parseInt(m[1] ?? "", 16);
 };
 
+/** A recipe page: its technique ids and KERNAL names; its claims, harness and RAM go into `d`. */
+function declareRecipe(d: Declared, page: string): { ids: string[]; kernal: string[] } {
+  const fm = recipeFrontmatter(readFileSync(page, "utf8"));
+  const err = fm.claims === undefined ? null : d.addClaimText(fm.claims, basename(page));
+  if (err) fail(`${page} claims: ${err}`);
+  const herr = fm.harness === undefined ? null : d.addHarness(fm.harness);
+  if (herr) fail(`${page} harness: ${herr}`);
+  const rerr = fm.ram === undefined ? null : d.addRam(fm.ram);
+  if (rerr) fail(`${page} ram: ${rerr}`);
+  const bad = fm.kernalServices.find((k) => k !== "IRQ" && k !== "NMI");
+  if (bad !== undefined) fail(`${page} kernal_services: "${bad}" is not IRQ or NMI`);
+  return { ids: fm.techniques, kernal: [...fm.usesKernal, ...fm.kernalServices] };
+}
+
 /** Units from technique pages (and their prerequisites) and from a recipe's frontmatter. */
 function declareTechniques(d: Declared, notes: string[]): { techniques: string[]; kernal: string[] } {
-  let ids = list(opt.technique);
-  let kernal = list(opt.kernal);
-  if (opt.recipe) {
-    const fm = recipeFrontmatter(readFileSync(opt.recipe, "utf8"));
-    ids = [...ids, ...fm.techniques];
-    kernal = [...kernal, ...fm.usesKernal];
-    const err = fm.claims === undefined ? null : d.addClaimText(fm.claims, basename(opt.recipe));
-    if (err) fail(`${opt.recipe} claims: ${err}`);
-    const herr = fm.harness === undefined ? null : d.addHarness(fm.harness);
-    if (herr) fail(`${opt.recipe} harness: ${herr}`);
-  }
+  const page = opt.recipe ? declareRecipe(d, opt.recipe) : { ids: [], kernal: [] };
+  const ids = [...list(opt.technique), ...page.ids];
+  const kernal = [...list(opt.kernal), ...page.kernal];
   const all = loadTechniqueClaims(root);
   const techniques = withPrerequisites(ids, all);
   for (const id of techniques) {
@@ -177,6 +185,7 @@ async function runVice(prgPath: string, start: number | undefined): Promise<Batc
       cycles: Number(opt.cycles),
       model,
       ...(opt.disk ? { disk: opt.disk } : {}),
+      args: opt["vice-arg"],
     });
   } catch (e) {
     if (e instanceof ViceBatchError) fail(e.message);

@@ -7,7 +7,9 @@ techniques: [mci_interlace_bitmap]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D020, D021, DC04, DC05, DC0E, DD00]
 uses_kernal: []
-harness: [cia1_timer_a]
+harness: [cia1_timer_a, $02F0-$02FF]
+claims: [vic_raster_irq (init), zero_page $FB-$FE (owns)]
+ram: [colour=$D800-$DBFF]
 ---
 
 <!-- doc-type: recipe -->

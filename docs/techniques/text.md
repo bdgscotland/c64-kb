@@ -1033,6 +1033,13 @@ few hundred; neither is in a recipe yet.
 **Cost:** cycles_per_frame=10
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-basic-wedge (one statement dispatch on the fall-through path; 20,478 cycles over 2,006 dispatches)
+**Claims:** zero_page $7A-$7B (shares)
+**Claims basis:** measured-vice
+
+Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
+kickassembler-basic-wedge: 14,522 stores to TXTPTR `$7A-$7B` from CHRGET
+(`$0073`, `$0077`), which runs from RAM. A wedge advances the
+interpreter's text pointer under BASIC's protocol, so it shares it.
 
 **Why.** A front end, a level editor or a test rig written in BASIC
 wants to call machine code from many places, and `SYS` with an address

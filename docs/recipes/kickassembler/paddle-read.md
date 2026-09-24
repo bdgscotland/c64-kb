@@ -7,6 +7,9 @@ techniques: [paddle_read]
 file_formats: [PRG]
 uses_registers: [D419, D41A, DC00, DC01, DC02, D020, D021]
 uses_kernal: []
+claims: [zero_page $F7-$FF (owns)]
+harness: [$02FF]
+kernal_services: [IRQ]
 ---
 
 <!-- doc-type: recipe -->
@@ -63,7 +66,7 @@ code a paddle game runs; only the source of the voltage differs.
 .const zp_row     = $f7         // screen pointer for the printers
 .const zp_saved_y = $f9
 .const idx        = $fa
-.const zp_lbl     = $f5         // pointer into the label table
+.const zp_lbl     = $fe         // pointer into the label table ($FE-$FF; it was $F5-$F6, which the KERNAL IRQ's scan may write)
 
 BasicUpstart2(start)
 

@@ -7,8 +7,9 @@ techniques: [four_player_read]
 file_formats: [PRG]
 uses_registers: [D000, D001, D011, D012, D015, D020, D021, D027, DC00, DC01, DC02, DC04, DC05, DC0D, DC0E, DD01, DD03]
 uses_kernal: []
-claims: [cia1_timer_b (init), cia1_tod (init), cia1_port_a (init)]
-harness: [cia1_timer_a]
+claims: [cia1_timer_b (init), cia1_tod (init), cia1_port_a (init), sprite_0-3 (owns), zero_page $F0-$F3+$F7-$FD (owns)]
+harness: [cia1_timer_a, $02FF]
+ram: [colour=$D800-$DBFF, sprites=$0340-$037F]
 ---
 
 <!-- doc-type: recipe -->

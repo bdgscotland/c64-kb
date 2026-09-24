@@ -7,7 +7,8 @@ techniques: [fld_flexible_line_distance, stable_raster_irq, double_irq, badline_
 file_formats: [PRG]
 uses_registers: [D011, D012, D019, D01A, DC0D, DD04, DD05, DD0E]
 uses_kernal: []
-claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), zero_page $02-$09 (owns)]
+harness: [cia2_timer_a, $02FF]
 ---
 
 <!-- doc-type: recipe -->

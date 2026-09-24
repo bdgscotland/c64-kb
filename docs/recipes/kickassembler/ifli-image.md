@@ -7,7 +7,8 @@ techniques: [ifli_image, fli_image, stable_raster_irq, double_irq]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD00]
 uses_kernal: []
-claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), zero_page $FB-$FD (owns)]
+ram: [colour=$D800-$DBFF, screens=$D000-$DFFF]
 ---
 
 <!-- doc-type: recipe -->

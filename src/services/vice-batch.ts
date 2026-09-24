@@ -35,6 +35,8 @@ export interface BatchRun {
   model: Model;
   /** A D64 attached as drive 8, through a copy: writes to it are discarded. */
   disk?: string;
+  /** Extra x64sc arguments (a recipe's runs.json `flags`: controller ports, an REU, a key buffer). */
+  args?: readonly string[];
 }
 
 export interface BatchResult {
@@ -61,6 +63,7 @@ function viceArgs(run: BatchRun, log: string): string[] {
   const args = ["-default", "+autostart-delay-random", "-warp", "+sound", "-autostartprgmode", "1"];
   if (run.model === "ntsc") args.push("-model", "ntsc");
   if (run.disk) args.push("-8", "d.d64");
+  args.push(...(run.args ?? []));
   args.push("-moncommands", "watch.mon", "-monlog", "-monlogname", log, "-limitcycles", String(run.cycles));
   args.push("-autostart", "p.prg");
   return args;
