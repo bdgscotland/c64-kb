@@ -5,6 +5,7 @@
  */
 
 import type { Claim } from "../../../graph/claims.ts";
+import type { RecipeZeroPage } from "./recipe-rules.ts";
 
 export interface TechniqueFacts {
   /** False when the graph has no Technique node of this name. */
@@ -49,6 +50,8 @@ export interface CompatibilityFacts {
   recipeUses: readonly RecipeUse[];
   /** CLOBBERS_ZP may sets (schema 26), canonical ranges, for every KERNAL routine a checked technique USES. */
   kernalClobbers?: ReadonlyMap<string, string>;
+  /** Owned zero page of every recipe that IMPLEMENTS an input (schema 34). */
+  recipeZeroPage?: readonly RecipeZeroPage[];
 }
 
 export function pairKey(i: number, j: number): string {

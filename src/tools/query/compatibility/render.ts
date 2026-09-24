@@ -29,8 +29,8 @@ function renderVerdict(r: Output, closureOnly: readonly string[]): string {
 
 /**
  * Unit claims: how many inputs state them, and which do not, because an
- * unknown claim set is never read as "claims nothing". Technique claims
- * only: the vectors and zero-page bytes a recipe picks are not in the graph.
+ * unknown claim set is never read as "claims nothing". Recipe claims enter
+ * only through recipe_zero_page_overlap (info).
  */
 function renderClaimsCoverage(r: Output): string {
   const inputs = r.data_coverage.filter((d) => d.implied_by === undefined);
@@ -43,7 +43,7 @@ function renderClaimsCoverage(r: Output): string {
   ];
   const tail =
     notRuledOut.length > 0 ? `; a unit conflict cannot be ruled out for: ${notRuledOut.join(", ")}.` : ".";
-  return `Unit claims are stated for ${stated} of ${inputs.length} techniques${tail} The zero-page bytes and interrupt vectors a recipe chooses are not checked yet (issue #22, step 8).\n\n`;
+  return `Unit claims are stated for ${stated} of ${inputs.length} techniques${tail} Recipes' zero-page bytes are compared as info (recipe_zero_page_overlap); the interrupt vector a recipe installs is not, since a combined program installs one handler either way.\n\n`;
 }
 
 function renderConflicts(r: Output, unknownCount: number): string {

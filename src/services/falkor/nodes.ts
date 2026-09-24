@@ -214,15 +214,26 @@ export class FalkorNodes extends FalkorBase {
     output_format: string;
     region: string;
     source_doc: string;
+    claims_stated?: "stated" | "none" | undefined;
+    claims_basis?: string | undefined;
   }): Promise<void> {
     // Named field by field: callers pass whole extracted entities, whose other fields must not land.
-    const props = {
+    const props: NodeProps = {
       toolchain: r.toolchain,
       output_format: r.output_format,
       region: r.region,
       source_doc: r.source_doc,
     };
-    await this.upsertNode({ label: "Recipe", name: r.name, props });
+    const clear: string[] = [];
+    if (r.claims_stated && r.claims_basis) {
+      props.claims_stated = r.claims_stated;
+      props.claims_basis = r.claims_basis;
+    } else clear.push("claims_stated", "claims_basis");
+    await this.upsertNode({ label: "Recipe", name: r.name, props, clear });
+    // As for a technique (schema 34): the page owns its CLAIMS edges outright.
+    await this.write(`MATCH (r:Recipe {name: $name})-[c:CLAIMS]->(:HardwareUnit) DELETE c`, {
+      name: r.name,
+    });
   }
 
   async addTechnique(t: TechniqueNode): Promise<void> {

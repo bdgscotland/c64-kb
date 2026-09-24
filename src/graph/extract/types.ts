@@ -62,6 +62,9 @@ export type GraphEntity =
       uses_kernal: string[];
       scaffolds: string[];
       source_doc: string;
+      // Recipe claims (schema 34): whether the frontmatter has a claims: key; absent is unknown.
+      claims_stated?: "stated" | "none";
+      claims_basis?: ClaimsBasis;
     }
   | { type: "scaffolds"; recipe: string; archetype: string }
   | { type: "recipe_occupies"; recipe: string; start: number; end: number }
@@ -91,7 +94,8 @@ export type GraphEntity =
   | {
       type: "claims";
       owner: string;
-      ownerKind: "Technique";
+      // Recipe since schema 34: a recipe's own claims: frontmatter.
+      ownerKind: "Technique" | "Recipe";
       unit: string;
       mode: ClaimMode;
       ranges?: string;

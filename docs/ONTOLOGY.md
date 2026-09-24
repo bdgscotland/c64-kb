@@ -196,6 +196,8 @@ nodes, one per toolchain.
 | toolchain | string | One of: "oscar64", "kickassembler", "cc65" |
 | output_format | string | One of: "prg", "crt", "d64", "bin" |
 | region | string | "pal", "ntsc", or "both" |
+| claims_stated | string, optional | "stated" when the frontmatter's `claims:` names units, "none" for `claims: []` (schema 34). Absent means unknown: the page has no `claims:` key. The CLAIMS edges carry the units. |
+| claims_basis | string, optional | The `claims_basis:` key, or measured-vice when the page has `claims:` without it (the key is written from a claims-watch trace). |
 
 Source: `recipes/<toolchain>/*.md` (Phase 2+).
 
@@ -495,14 +497,23 @@ band, and any two `cpu_every_line` techniques were reported as a conflict.
 
 ### CLAIMS
 
-Direction: `Technique → HardwareUnit`
+Direction: `Technique → HardwareUnit`, `Recipe → HardwareUnit` (schema 34)
 
 Meaning: "while this technique runs it holds this unit, in this mode"
 (schema 25). Authored with the `**Claims:**` and `**Claims basis:**`
-lines (`CONVENTIONS-techniques.md`). Both ends MATCHed, never MERGEd; a
-miss is warned about and counted in the ingest summary as `claims …
-dropped`. Re-ingesting a technique drops its old CLAIMS edges first, so a
-claim the page stopped making does not outlive it.
+lines (`CONVENTIONS-techniques.md`). From a Recipe: "this listing chooses
+this unit beyond what its techniques claim", from the page's `claims:`
+frontmatter (`CONVENTIONS-recipes.md`): the interrupt vector it installs,
+its zero-page bytes, the CIA units its start-up masks. Both ends MATCHed,
+never MERGEd; a miss is warned about and counted in the ingest summary as
+`claims … dropped`. Re-ingesting a technique or a recipe drops its old
+CLAIMS edges first, so a claim the page stopped making does not outlive it.
+
+After pass 2 the ingest scans each recipe's listing for `sta`, `stx` and
+`sty` to a fixed unit address and warns when no claim of the recipe, its
+`harness:` key or its techniques (with their REQUIRES closure) covers
+that unit (`src/graph/listing-stores.ts`). The warning is printed and
+counted; it creates no edge.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -527,6 +538,12 @@ reports them; the hit that remains carries the rule in `underlying_kind`.
 A technique with no Claims line is reported as unknown, never as
 claiming nothing.
 `c64_techniques_for` filters on a claimed unit.
+Recipe claims are not set against each other as technique claims are: a
+recipe is one way to build a technique. `c64_check_compatibility` reads
+the `zero_page` ones: when a recipe of one input and a recipe of the other
+own zero-page bytes in common, it reports `recipe_zero_page_overlap`
+(info), naming both recipes and the bytes. `c64_recipe_lookup` returns a
+recipe's claims.
 
 ### CLOBBERS_ZP
 

@@ -104,6 +104,16 @@ export const ToolchainHintSchema = z.object({
   sources: z.array(DocChunkSchema),
 });
 
+// A CLAIMS edge (schema 25): the HardwareUnit, the mode, and for zero_page
+// the canonical byte ranges ("02-0D,24-2F") and whether they relocate.
+const ClaimSchema = z.object({
+  unit: z.string(),
+  mode: z.enum(["owns", "shares", "reads", "init"]),
+  ranges: z.string().optional(),
+  relocatable: z.boolean().optional(),
+});
+const ClaimsStatedSchema = z.enum(["stated", "none", "unknown"]);
+
 export const RecipeLookupSchema = z.object({
   name: z.string(),
   toolchain: z.string(),
@@ -122,6 +132,12 @@ export const RecipeLookupSchema = z.object({
   // Empty when none; pinned false means runs.json has no entry and the
   // run uses its defaults (PAL, 8,000,000 cycles).
   verified_on: z.array(VerifiedOnSchema).optional(),
+  // The units the listing chooses beyond its techniques' claims, from the
+  // page's claims: frontmatter (schema 34): the IRQ vector, its zero-page
+  // bytes. "unknown" when the page has no claims: key.
+  claims: z.array(ClaimSchema).optional(),
+  claims_stated: ClaimsStatedSchema.optional(),
+  claims_basis: z.string().optional(),
 });
 
 export const RecipesForSchema = z.object({
@@ -171,16 +187,6 @@ const TechniqueCostSchema = z.object({
   includes: z.array(z.string()).optional(),
 });
 export type TechniqueCostOutput = z.infer<typeof TechniqueCostSchema>;
-
-// A CLAIMS edge (schema 25): the HardwareUnit, the mode, and for zero_page
-// the canonical byte ranges ("02-0D,24-2F") and whether they relocate.
-const ClaimSchema = z.object({
-  unit: z.string(),
-  mode: z.enum(["owns", "shares", "reads", "init"]),
-  ranges: z.string().optional(),
-  relocatable: z.boolean().optional(),
-});
-const ClaimsStatedSchema = z.enum(["stated", "none", "unknown"]);
 
 export const TechniqueLookupSchema = z.object({
   name: z.string(),
@@ -248,6 +254,8 @@ const CONFLICT_KINDS = [
   "init_order", // one uses a unit once at start-up that the other then owns (info)
   // Schema 26, from **Clobbers zero page:** lines on the KERNAL page:
   "kernal_clobbers_zp", // one calls a KERNAL routine that may write zero-page bytes the other claims (soft)
+  // Schema 34, from recipes' claims: frontmatter:
+  "recipe_zero_page_overlap", // a recipe of one and a recipe of the other own zero-page bytes in common (info)
 ] as const;
 
 const CompatibilityConflictSchema = z.object({

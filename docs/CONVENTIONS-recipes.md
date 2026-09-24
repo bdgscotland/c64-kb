@@ -48,15 +48,33 @@ does not claim a vector, because its recipes choose `$0314` or `$FFFE`.
 Masking CIA1 with one `$7F` store to `$DC0D` before the frame loop is
 `init` on each CIA1 unit that store changes. Write it from a
 `scripts/claims-watch.ts --recipe` trace, never from reading the listing;
-a measurement harness is not a claim. `claims-watch` reads the key; the
-ingest does not yet (#22, step 8).
+a measurement harness is not a claim. `claims-watch` reads the key, and
+the ingest turns each item into a `Recipe -[:CLAIMS]-> HardwareUnit` edge
+(schema 34; `docs/ONTOLOGY.md`). `claims: []` says the listing chooses no
+unit beyond its techniques' claims; no key reads as unknown. A value
+outside the grammar is refused whole, with a warning. `claims_basis` is
+optional and defaults to `measured-vice`, since the key is written from a
+trace; set it only when the claims were read another way
+(`derived-listing`, `estimated`).
+
+After every ingest a static scan reads each recipe's code fences for
+`sta`, `stx` and `sty` to a unit's fixed address (the vectors, sprite
+registers, SID voices, CIA timers and ports, `$D012`/`$D01A`, the
+expansion pages) and warns when neither `claims:`, the unit words of
+`harness:` nor the techniques' Claims lines (with their REQUIRES) cover
+it (`src/graph/listing-stores.ts`). A `reads` claim does not cover a
+store. It cannot see a store through a pointer or a C assignment, and it
+skips `$D011`, `$D016`, `$D018`, `$D019`, zero page, stores that only
+switch units off (0 to `$D015`, a mask-clearing `$DC0D`/`$DD0D` write) and
+self-modified `$FFFF` placeholders. The claims watch is the instrument;
+the scan catches a recipe that has no `claims:` yet.
 
 `harness` is optional and is not a claim. It lists what the listing's
 measurement harness writes, in `claims-watch --harness` form: units or
 address ranges, `harness: [cia1_timer_a]`. The usual entry is the CIA1
 timer a recipe starts and stops around a routine to report its cycles.
 `claims-watch` lists those stores apart and never fails on them; the
-ingest ignores the key. A timer the effect itself depends on (a pulse
+ingest's listing scan reads its unit words and creates no edge from it. A timer the effect itself depends on (a pulse
 clock, a detection) is a claim, not a harness. Where the harness timer is
 also masked at start-up, name it here only: the harness covers that
 store. The result bytes a headless verifier reads (`$02FF`, a record at

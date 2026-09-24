@@ -260,7 +260,7 @@ export class FalkorLinks extends FalkorNodes {
    */
   async linkClaims(c: {
     owner: string;
-    ownerKind: "Technique";
+    ownerKind: "Technique" | "Recipe";
     unit: string;
     mode: string;
     ranges?: string | undefined;
