@@ -3,7 +3,7 @@ recipe: afli-image
 toolchain: kickassembler
 output_format: PRG
 region: pal
-techniques: [afli_image, fli_image, stable_raster_irq, double_irq]
+techniques: [afli_image, stable_raster_irq, double_irq]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC0D, DD00]
 uses_kernal: []
