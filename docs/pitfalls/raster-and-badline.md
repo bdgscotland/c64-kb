@@ -875,3 +875,76 @@ entered from the double IRQ at a traced delay, one store per line.
 - Technique: `vsp_glitch` in `techniques/raster.md`: the late badline a write before cycle 55 makes.
 - Recipe: `recipes/kickassembler/linecrunch.md`, "The write-cycle sweep".
 - Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.4, §3.14.5.
+
+---
+
+## fpp_write_outside_window — An FPP line split in two, blank at the left, or showing the wrong pixel row
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** fpp_flexible_pixel_position
+
+### Symptom
+
+In an FPP band, some lines show the old charset on their left cells and
+the new one on the rest; or the first one to three cells of a line are
+blank; or a whole line shows the next pixel row of the source instead of
+the one chosen. A one-cycle change in the loop switches between these
+and a clean band.
+
+### Mechanism
+
+Each form of FPP needs its `$D011` write inside a window, and every form
+needs its `$D018` write early enough. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, with `recipes/kickassembler/fpp.md` swept one cycle at a
+time (store-trace cycles, Bauer's numbering); the results were the same
+on both models except where the table says:
+
+| Write | Cycle | Result |
+|---|---|---|
+| `$D018` for line L | up to 15 of L | whole line from the new charset |
+| | 16 + c | cells 0 to c from the old charset |
+| `$D011`, badline form (YSCROLL = L & 7 on line L) | up to 11 | full badline, pixel row 0 |
+| | 12, 13 | cells 0, or 0 and 1, blank: the VIC reads `$FF` as the pointer before it has the bus (the FLI bug) |
+| | 14 on | RC not reset: the line shows pixel row 1, with three blank cells moving right one cell a cycle |
+| `$D011`, restart form | 54 to 57 | row restarts |
+| | 52, 53 | a late badline instead, which holds the CPU to cycle 54 and breaks a cycle-counted loop |
+| `$D011`, RC-held form | 58 to 62 (PAL), 58 to 64 (NTSC) | RC held at 7 |
+| | the line's last cycle | nothing held |
+
+In the badline form a block that runs late is pulled by the stall to a
+write on cycle 11, the last that works, and stays there: it passes in
+VICE with no margin.
+
+### Fix
+
+Pick the form, then put each write on one cycle inside its window, away
+from the edges, and confirm with a store trace of `$D011` and `$D018`:
+every band write on the same cycle, every frame. In the badline form set
+the entry into the first block by trace rather than leaving it to the
+stall; the recipe's writes land on cycles 6 and 2 (PAL), 5 and 1 (NTSC).
+Check the picture line by line, not by eye: a split at cell 1 is one
+character wide.
+
+### Worked example
+
+From `recipes/kickassembler/fpp.md`, mode 0: one 20-cycle block per band
+line (22 on NTSC), the charset first, then the YSCROLL that makes the line
+a badline.
+
+```text
+    lda d18 + 6 + k
+    sta $d018                    // charset for line 60 + k: cycle 2 (PAL)
+    stx $d011                    // YSCROLL = (60 + k) & 7: cycle 6 (PAL)
+    ldx #$18 | ((61 + k) & 7)
+    Delay(6)                     // 8 on NTSC
+```
+
+### Cross-references
+
+- Technique: `fpp_flexible_pixel_position` in `techniques/raster.md`.
+- Technique: `linecrunch` in `techniques/raster.md`: the RC-held write.
+- Pitfall: `linecrunch_write_outside_window`, the same window for a crunch.
+- Recipe: `recipes/kickassembler/fpp.md`, the three sweep sections.
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.3 to §3.14.6.

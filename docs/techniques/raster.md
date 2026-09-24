@@ -571,7 +571,7 @@ Given a value that is safe for the next line, the write itself may land anywhere
 
 **Linecrunch.** The reverse: a YSCROLL write that matches the line after its cycle 58 makes the next line use up a whole character row, so the display moves up instead of down; see `linecrunch`, measured. (An earlier version of this paragraph said to make a badline happen and then rewrite YSCROLL on the same line so the row counter advances; a badline made during the line is a late badline, `vsp_glitch`, not a crunch.)
 
-**FPP (flexible pixel position).** Rewrite YSCROLL on every line of a row so the VIC repeats or skips single pixel lines of the character data, which stretches and squashes the picture vertically. Not measured here.
+**FPP (flexible pixel position).** Hold the row counter with a YSCROLL write on every line and pick each line's pixel line with `$D018`; see `fpp_flexible_pixel_position`, measured. (An earlier version of this paragraph said the YSCROLL writes themselves repeat or skip pixel lines; they only hold RC.)
 
 **AGSP (any given screen position).** Linecrunch, FLD and VSP (`vsp_glitch`) together place the whole screen at any pixel position in one frame; see `agsp_free_scroll`, measured.
 
@@ -879,6 +879,123 @@ position table.
 - `recipes/kickassembler/kefrens-bars.md` — a 129-line band of multicolour
   bars from two sine tables, PAL and NTSC, every band line checked against
   the tables, with the `:proof=1` test and the block-length sweep.
+
+---
+
+## fpp_flexible_pixel_position — FPP: any pixel line on any raster line, chosen with `$D018`
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER, D018
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** badline_synchronization, stable_raster_irq
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns), vic_char_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/fpp.md`
+saw `$D011` and `$D018` written once per band line and the raster compare
+re-armed each frame. The recipe's `$0314` vector, VIC bank, screen base
+and zero-page bytes are its own choices.
+
+### Why
+
+A logo stretched, squashed, flipped or waved vertically needs each raster
+line to show a pixel line of the source that is not the next one down.
+Redrawing the graphics each frame costs a copy per line; the VIC can
+instead be kept from advancing its row counter, so that a register write
+per line picks what each line shows (codebase64 "FPP", "Introduction to
+Vertical Tweaks").
+
+### How
+
+Hold the row counter RC at a known value on every line of the band, and
+write `$D018` on each line to name the charset the line is drawn from.
+Three ways to hold RC, measured:
+
+- **A badline every line.** On each line write YSCROLL = line & 7 by
+  cycle 11. RC is 0 on every line; the line shows pixel row 0. The VIC
+  takes 40 cycles a line and the CPU has 20 (PAL) or 22 (NTSC), enough
+  for a `$D018` and a `$D011` write.
+- **RC held at 7.** Write YSCROLL = line & 7 on a cycle from 58 to the
+  line's second-to-last on every line: the linecrunch write. No row is
+  fetched and every line shows pixel row 7 of the pointers already
+  latched. No DMA; the CPU is held by a cycle-exact loop.
+- **Rows restarted.** Write the same value on cycles 54 to 57. At the end
+  of each character row RC wraps to 0 with no fetch, so the row repeats;
+  line L shows pixel row (L − first line) & 7. No DMA.
+
+`$D018` must be written by cycle 15 of the line it serves. The source
+graphics are the chosen pixel row of up to eight charsets per VIC bank:
+eight source lines in the first two forms, 64 in the third, with the row
+fixed by the line.
+
+### Why it works
+
+A line in display state is drawn from the latched character pointers and
+the byte at charset + 8 × pointer + RC, the charset read at each cell's
+g-access (Bauer §3.7.2). RC is reset to 0 in cycle 14 of a badline and
+advances in cycle 58 unless the VIC goes idle there with RC = 7. A badline
+every line resets it every line; a matching write after cycle 58 of an
+RC = 7 line returns the VIC to display state with RC still 7 (§3.14.4);
+a matching write on 54 to 57 of an RC = 7 line keeps the VIC in display
+state so RC wraps to 0 with no fetch (§3.14.5, doubled text lines).
+
+Measured in VICE x64sc 3.10, PAL c64c and NTSC, by
+`recipes/kickassembler/fpp.md`: all three forms put the charset named for
+each line on all 128 band lines, with the pixel row predicted, in every
+pinned picture. The write windows were swept one cycle at a time:
+
+| Write | Works | Outside it |
+|---|---|---|
+| Badline form, `$D011` | up to cycle 11 | 12, 13: the first one or two cells blank (the FLI bug); 14 on: RC not reset, pixel row 1 |
+| Restart form, `$D011` | 54 to 57 | 52, 53: a late badline; 58 on: RC held instead |
+| RC-held form, `$D011` | 58 to 62 PAL, 58 to 64 NTSC | the line's last cycle: nothing |
+| `$D018`, all forms | up to cycle 15 | 16 + c: cells 0 to c keep the old charset |
+
+An earlier version of the FLD entry described FPP as rewriting YSCROLL on
+every line of a row so the VIC repeats or skips pixel lines of the
+character data, unmeasured. The pixel line comes from RC, which YSCROLL
+only holds; the line is picked with `$D018`.
+
+### Variations
+
+**Bitmap.** In bitmap mode the g-access reads bitmap + 8 × VC + RC. VC
+does not move in the badline form, so the line is again pixel row 0 of
+the band's first row, and `$D018` bit 3 picks one of two bitmaps. Not
+measured here. In the RC-held form VC moves on 40 cells a line, so a
+bitmap is shrunk, not repeated (codebase64 calls that FPD).
+
+**New pointers every line.** Only the badline form fetches pointers each
+line; changing the screen bits of `$D018` too selects other character
+codes per line, as FLI does with colours (`fli_image`). Not measured here.
+
+**Repeating the first line.** Codebase64 names a fourth form, a
+badline loop shortened until the VIC stops fetching new graphics. Not
+built here.
+
+### Cycle budget
+
+Badline form: the VIC takes 40 of every band line's cycles (43 counting
+BA), the CPU's 20 (PAL) or 22 (NTSC) go to the two writes and a load. The
+other two forms take no DMA, but hold the CPU in a loop of 63 or 65
+cycles a line, 25 of them spent on the two writes and the loop in the recipe.
+
+### Recipes
+
+- `recipes/kickassembler/fpp.md` — a 128-line band from eight charsets in
+  all three forms (`:mode`), PAL and NTSC, every band line decoded, with
+  the four write-cycle sweeps.
+
+### Sources
+
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.7.2, §3.14.3 to §3.14.6:
+  https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+- Codebase64, "Flexible Pixel Position (FPP)" and "Introduction to
+  Vertical Tweaks":
+  https://codebase64.c64.org/doku.php?id=base:fpp,
+  https://codebase64.c64.org/doku.php?id=base:introduction_to_vertical_tweaks
 
 ---
 
