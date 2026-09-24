@@ -1,0 +1,1 @@
+Minimal sources that provoke the messages in the "Reading the errors" table of ../../64tass-reference.md. Each was assembled with 64tass 1.60.3243 as `64tass -q -o out.bin <file>`; all but segment-overlap.s (silent, exit 0) and jmp-indirect-page-bug.s (warning, exit 0) are meant to fail, so none is in a buildable fence.
