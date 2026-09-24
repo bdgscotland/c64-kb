@@ -1834,5 +1834,17 @@
       "pal": "screenshots/sid-test-bit.png",
       "ntsc": "screenshots/sid-test-bit-ntsc.png"
     }
+  },
+  "kickassembler/nmi-sample-player": {
+    "cycles": 9000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/nmi-sample-player.png",
+      "ntsc": "screenshots/nmi-sample-player-ntsc.png"
+    }
   }
 }

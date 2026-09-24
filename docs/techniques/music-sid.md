@@ -533,7 +533,7 @@ The technique works specifically because the 6581's DAC has a non-zero DC offset
 
 ### Variations
 
-**Digi mixed with SID music.** Some composers run three-voice SID music while simultaneously playing digi samples. The SID voices occupy the synthesizer path; digi drives the volume register. This requires the music play routine to not write $D418 (or to write only the filter-mode bits and leave the lower nibble to the digi routine). Rob Hubbard and Martin Galway pioneered this combination.
+**Digi mixed with SID music.** Some composers run three-voice SID music while simultaneously playing digi samples. The SID voices occupy the synthesizer path; digi drives the volume register. This requires the music play routine to not write $D418 (or to write only the filter-mode bits and leave the lower nibble to the digi routine). The digi also scales the music: the nibble is the master volume, so a sample using the whole 0 to 15 range puts sidebands 6 dB below each note at the note ± the sample's frequencies (measured in reSID, `nmi_sample_player`). Rob Hubbard and Martin Galway pioneered this combination.
 
 **Sample rate selection.** The sample rate a machine can sustain is bounded by CPU cycles per second, not per frame: NTSC runs 1,022,727 cycles/s against PAL's 985,248, so NTSC has about 4 % more cycles for the same sample rate. PAL's longer frame (19,656 cycles vs NTSC's 17,095) only means more cycles between two frame-rate events such as the music player call. (An earlier version said PAL's longer frame let it sustain a higher sample rate.) Most classic digi tunes were composed for PAL systems.
 
@@ -915,6 +915,80 @@ constant level.
 ### Recipes
 
 - `recipes/kickassembler/sid-test-bit.md`
+
+---
+
+## nmi_sample_player — Sample playback on the CIA 2 NMI beside a raster-IRQ music player
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D418, D019, D01A, DD04, DD05, DD0D, DD0E
+**Demands:** continuous_interrupts
+**Requires:** nmi_handler_and_restore_key, digi_4bit, sid_play_routine_pattern
+
+### Why
+
+A game or demo that plays samples and music together needs the sample
+writes on time while the music routine, the raster effects and the main
+program run. The CIA 2 timer interrupt arrives as an NMI, which `sei`
+cannot hold off, so the sample player keeps its rate whatever else is
+masked. The raster IRQ keeps the frame-rate work, the music among it.
+
+### How
+
+1. Bank the KERNAL out (`$35` in `$01`) and put the NMI handler's address
+   in `$FFFA`/`$FFFB` and the raster handler's in `$FFFE`/`$FFFF`. With the
+   KERNAL in, the NMI goes through its stub and `$0318` instead
+   (`nmi_handler_and_restore_key`).
+2. Run CIA 2 timer A continuously at the sample period and enable its
+   interrupt with `$81` into `$DD0D`.
+3. In the NMI handler: save what it uses, write the next sample to
+   `$D418`, advance the pointer, read `$DD0D`, restore, `rti`. Without the
+   `$DD0D` read, `/NMI` stays low and no further NMI comes.
+4. In the raster IRQ: the music, as `sid_play_routine_pattern` describes,
+   except that it must not write `$D418`. The digi owns the volume nibble;
+   filter mode bits go through a shadow (`digi_4bit`).
+
+### Why it works
+
+Measured in VICE x64sc 3.10 by `recipes/kickassembler/nmi-sample-player.md`
+(the sound figures are reSID's model, not silicon): one sample every 128
+cycles and the music IRQ once a frame on line 250, over 32,768 samples.
+
+- Every timer A underflow produced one sample (timer B's count agreed on
+  PAL and NTSC), and the IRQ counted 213 PAL and 245 NTSC frames, the
+  run's 213.4 and 245.4 by arithmetic.
+- The NMI handler started 46 cycles apart at the earliest and latest on
+  PAL and 52 on NTSC, by the timer A value it read at entry; with the
+  display blanked, 10 or 11. The difference is the badline. Sample writes
+  therefore jitter by up to about 50 cycles with the screen on.
+- In the WAV the music's notes changed every 0.500 s (25 frames are
+  0.4988 s), and the sample tone was 10 dB above the music on the 6581
+  model and 2 dB below it on the 8580 model.
+- The digi modulates the music. `$D418`'s nibble is the master volume, so
+  every voice is multiplied by the sample; a sample using the whole 0 to
+  15 range put sidebands at the note ± the sample tone, 6.1 to 6.3 dB
+  below the note, where full-depth modulation gives 6.0 dB by
+  arithmetic.
+
+### Variations
+
+**Keeping `$D418` for the music.** `pwm_digi` carries the sample in a
+voice's pulse width, and `mahoney_d418_8bit_digi` uses all of `$D418`;
+the first leaves the volume to the music, the second takes it whole.
+
+**RESTORE.** The RESTORE key raises an NMI as well and lands in the same
+handler as one spurious sample. The recipe does not guard against it;
+`nmi_handler_and_restore_key` covers the options.
+
+**Cost.** The recipe's handler is 7 cycles to enter plus 65 to 76 by the
+instruction table, more than half of each 128-cycle period, and at least
+18 of those cycles record its own lateness. A player without that record
+spends about 54 of every 128 cycles. Not measured; no Cost line.
+
+### Recipes
+
+- `recipes/kickassembler/nmi-sample-player.md`
 
 ---
 
