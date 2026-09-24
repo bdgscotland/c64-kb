@@ -48,7 +48,8 @@ DRIVE_SCREEN := C800:19-24
 DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:GO!" hold:fire "until:SPEED 480" print
 
 # make watch (in make check): the player writes the SID. The autopilot run
-# stored to it in 4,001 frames on PAL and 5,004 on NTSC; without sound_frame
+# stored to it in 4,025 frames on PAL and 5,006 on NTSC (4,001 and 5,004
+# before #86 moved line 203's store); without sound_frame
 # (NO_PLAYER) 18 and 18 (harness/watch.py, VICE x64sc 3.10).
 SID_FRAMES := 2000
 

@@ -5,7 +5,25 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 803, schema 33, tools 2.8.1, package 0.21.1.
+Data 804, schema 33, tools 2.8.1, package 0.21.1.
+
+**IRQ entry through `$FF48` is cycle 39-45, not 37-43 (data 804; #85).**
+Measured in VICE on PAL and NTSC with an exec tracepoint on the
+handler's first instruction over 7,742 and 8,850 entries: 39-45
+through `$FF48` → `($0314)`, 10-16 through `$FFFE` with the KERNAL out.
+The old figure (1 + 0-6 + 7 + 29) left out the 2-cycle minimum before
+the interrupt sequence starts, and raster.md called it measured.
+raster.md, sprite.md and six recipes are corrected (double-IRQ budget
+36-42 → 38-44, raster-bars' no-spin store on cycle 61 or later, was
+59). No listing's timing relied on the old window.
+
+**Racing starter: line 203 gets the panel's own `$D016` (#86).** The
+store waited for the badline and wrote on cycle 56, so line 203 was
+drawn in the road's multicolour mode with its last XSCROLL: a cyan line
+across x 32-347, not the 4-pixel strip the issue described. X now holds
+the panel value and `STX $D016` writes on cycle 11. A new check in
+expect.json fails the old shot (316 cyan pixels); `make check` is 56 of
+56 on PAL and NTSC.
 
 **Every runnable recipe passes claims-watch, now a gate (data 803;
 #84).** `npm run claims:recipes` builds each KickAssembler recipe and
