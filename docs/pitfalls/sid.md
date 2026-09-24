@@ -26,7 +26,7 @@ both chips.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D400, D404, D40B, D412, D418
-**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip, sfx_in_player, digi_4bit, sidasid_emulation_notes
+**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip, sfx_in_player, digi_4bit, sidasid_emulation_notes, sid_pwm_pad
 
 ### Symptom
 
@@ -319,7 +319,7 @@ write_cutoff:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D404, D40B, D412
-**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences, sfx_in_player, goattracker_player_api, sid_env3_filter_envelope, music_sync_timeline
+**Triggered by techniques:** digi_8bit_hard_restart, sid_8580_vs_6581_differences, sfx_in_player, goattracker_player_api, sid_env3_filter_envelope, music_sync_timeline, sid_hard_restart_drum
 
 ### Symptom
 
@@ -360,6 +360,19 @@ wrap. Hard restart works by writing AD/SR = 0 two frames before the
 gate: 2 × 19,656 = 39,312 cycles (63 × 312 per PAL frame) covers the
 worst-case wrap, one frame (19,656) does not. (An earlier version used
 19,705, which is φ2 / 50, not the frame.)
+
+**The note frame's write order.** The restart is undone if the note
+frame writes AD or SR before the gate. Written first with the gate off,
+SR's release rate is in force at once and its counter runs past a fast
+attack's period before the gate; AD's decay rate is the period reSID
+uses for the gate's first cycles (VICE 3.10 `src/resid/envelope.cc`,
+`writeCONTROL_REG`). Measured in VICE x64sc 3.10 (reSID) by
+`recipes/kickassembler/sid-hr-snare.md`, an attack-0 snare with AD
+`$08`, SR `$08`, 80 hard-restarted hits per order: AD, SR, then the gate
+150 cycles later (the #50 player's order), 0 started in their own frame;
+AD, gate, SR, 73; gate, AD, SR, 80. The late hits start 33.0 to 34.8 ms
+after the gate write in the recordings, on both chip models. Write the
+gate first; #118 carries this to the #50 player.
 
 **8580 behavior and the reset bug.** The 8580 introduced an internal
 difference in the envelope reset path. On hard restart (the
@@ -507,7 +520,7 @@ and the two chips show no difference in reSID, so it has been removed.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D418
-**Triggered by techniques:** sid_voice_setup, lfsr_random, sid_env3_filter_envelope, sid_8580_digi_bias_and_filter_bypass
+**Triggered by techniques:** sid_voice_setup, lfsr_random, sid_env3_filter_envelope, sid_8580_digi_bias_and_filter_bypass, sid_sync_lead, sid_ring_mod_bell
 
 ### Symptom
 
