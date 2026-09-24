@@ -27,12 +27,12 @@ A 3D point cloud rotator is the entry-level demoscene 3D effect: a set of points
 
 ### How
 
-A 3x3 rotation matrix is applied to each point in the cloud. For a rotation about two axes (commonly Y then X), the matrix multiplication reduces to six multiplications and six additions per point. On a C64, multiplications are performed via lookup tables: a 512-entry sine table indexed by angle gives both `sin(θ)` and `cos(θ)` (offset by 128 entries), allowing a multiply-by-sine to be implemented as a table lookup plus a scaling shift.
+A 3x3 rotation matrix is applied to each point in the cloud. For a rotation about two axes (commonly Y then X), the matrix multiplication reduces to six multiplications and six additions per point. On a C64, multiplications are performed via lookup tables: a sine table of 256 entries per turn, indexed by the 8-bit angle, gives both `sin(θ)` and `cos(θ)` = `sin(θ + 64)`, a quarter turn on (`recipes/kickassembler/wireframe-ships.md` keeps the cos form as a second 256-entry table). An earlier version said a 512-entry table with cos 128 entries on, which an 8-bit angle cannot index past entry 255. This allows a multiply-by-sine to be implemented as a table lookup plus a scaling shift.
 
 The per-frame sequence is:
 
 1. Advance the rotation angles (two 8-bit counters, one per axis, incremented by a speed constant each frame).
-2. Recompute the six rotation coefficients from the sine/cosine table: `cos(ax)`, `sin(ax)`, `cos(ay)`, `sin(ay)`, and the four products needed for the combined matrix.
+2. Recompute the eight rotation coefficients (an earlier version said six) from the sine/cosine table: `cos(ax)`, `sin(ax)`, `cos(ay)`, `sin(ay)`, and the four products needed for the combined matrix.
 3. For each point in the cloud, apply the rotation: compute transformed X, Y, Z from the original coordinates and the coefficients.
 4. Apply perspective projection: `screen_x = cx + (tx * FOCAL) / (tz + DEPTH_OFFSET)`, `screen_y = cy + (ty * FOCAL) / (tz + DEPTH_OFFSET)`. Division is a second lookup table: a reciprocal table indexed by Z (built as in `table_generation`, `cpu-cycle-tricks.md`).
 5. Output the projected point to the display.
@@ -294,7 +294,7 @@ Per-frame total (cube, 3 visible faces): approximately 12,000–25,000 cycles fo
 
 ### Why
 
-The C64's hardware sprites are limited to 8 objects per frame, each 24 pixels wide. Many demoscene effects, several of them from the Amiga and later ported to the C64, need dozens of independently positioned and animated objects on screen at once. BOBs (Blitter OBjects, a term borrowed from the Amiga's blitter hardware and applied to any software-composited screen RAM object) are the C64 answer: pre-render each object into a block of screen RAM or character data, then display it as a character cell (or group of cells) instead of a hardware sprite.
+The C64's hardware sprites are limited to 8 on one raster line, each 24 pixels wide; a multiplexer reuses them further down the frame (`sprite_multiplex_8`), not on the same line. An earlier version said 8 per frame. Many demoscene effects, several of them from the Amiga and later ported to the C64, need dozens of independently positioned and animated objects on screen at once. BOBs (Blitter OBjects, a term borrowed from the Amiga's blitter hardware and applied to any software-composited screen RAM object) are the C64 answer: pre-render each object into a block of screen RAM or character data, then display it as a character cell (or group of cells) instead of a hardware sprite.
 
 This removes the 8-sprite hardware limit. The screen can hold as many BOBs as there are character cells, limited by how many cells the CPU can update each frame.
 
@@ -458,7 +458,7 @@ Full 16-color plasma (40×25 color RAM update), per frame on PAL:
 
 - Per-cell: one or two sine lookups, one masking/OR operation, one screen RAM write = approximately 20–25 cycles per cell.
 - 1,000 cells × 22 cycles = approximately 22,000 cycles per frame.
-- Achievable at 25fps (every other PAL frame, with ~10,000 cycles to spare for other work).
+- Achievable at 25fps (every other PAL frame). Two frames give 39,312 cycles; 50 badlines take 2,150 (43 each), leaving about 15,000 for other work (arithmetic, not measured; an earlier version said ~10,000).
 
 ---
 
@@ -858,8 +858,8 @@ The random Y re-seed on edge wrap stops stars re-entering in a visible column at
 
 Multi-layer (8 sprites + 40-column row-shift for character layer):
 
-- Row shift: copy 40 bytes of screen RAM one position left = approximately 200 cycles per character-mode layer.
-- Combined total: approximately 400–500 cycles per frame for sprite + two character layers.
+- Row shift: copy 40 bytes of screen RAM one position left. Fully unrolled `LDA abs` / `STA abs` is 8 cycles a byte, about 320 cycles per character-mode layer; an indexed loop is about 16 a byte, 640. An earlier version said about 200.
+- Combined total: about 212 + 2 × 320 = 850 cycles per frame for sprite + two unrolled character layers (an earlier version said 400–500).
 
 ---
 
@@ -1075,7 +1075,7 @@ Frame rate is the main limit. A 160-column 200-row bitmap with a 64-depth walk p
 
 ### Variations
 
-**Lower resolution.** Reduce to 40 character columns (using character mode, one character = one vertical column) and 100 depth steps. The resolution is coarser and the cycle cost drops in proportion: approximately 40 × 50 × 30 = 60,000 cycles per frame, just over 3 PAL frames of work (3 × 19,656 = 58,968), so a render every fourth frame: 12.5fps.
+**Lower resolution.** Reduce to 40 character columns (using character mode, one character = one vertical column) and an average of 50 depth steps a column (an earlier version said 100, which its own sum below does not use). The resolution is coarser and the cycle cost drops in proportion: approximately 40 × 50 × 30 = 60,000 cycles per frame, just over 3 PAL frames of work (3 × 19,656 = 58,968), so a render every fourth frame: 12.5fps.
 
 **Precomputed direction tables.** Move all `cos`/`sin` multiplications into precomputed per-column tables. At startup, for each column compute and store the per-step `(dx, dy)` fixed-point vector. The inner loop then needs only two additions (advance `hx` and `hy`) rather than a multiply. This is the standard approach in C64 voxel implementations.
 
@@ -1195,8 +1195,8 @@ colour values used by %00, %01 and %10 pixel pairs respectively.
 iteration: 63 CPU cycles on PAL (65 on NTSC). PAL and NTSC use separate
 unrolled loops, selected at boot by a model-detect routine. Each iteration
 loads a precomputed D016 value from a 100-entry table and stores it to $D016 at
-cycle 11 of the target raster line (before the approximately cycle-14 VIC
-deadline). The table entry for road line offset j is
+cycle 11 of the target raster line (before the cycle-16 deadline in `text_zoom`;
+an earlier version said about cycle 14). The table entry for road line offset j is
 `D016_BASE | ((cx[99-j] - hw[99-j]) & 7)`, where D016_BASE carries the MCM and
 CSEL bits. The write shifts the entire character row left or right by 0-7
 pixels, so the kerb character boundary appears at the correct pixel even though
@@ -1269,7 +1269,7 @@ Badline body: 23 CPU cycles PAL (25 NTSC), with the 40-cycle steal filling the r
 
 ### Pitfalls
 
-- `d016_unmasked_rmw_clobbers_csel_mcm`: the precomputed table stores D016_BASE (MCM + CSEL bits) OR'd into each entry. Omitting this and writing the raw XSCROLL value clears MCM (bit 4) and drops the display to 38-column mode on every road line.
+- `d016_unmasked_rmw_clobbers_csel_mcm`: the precomputed table stores D016_BASE (MCM + CSEL bits) OR'd into each entry. Omitting this and writing the raw XSCROLL value clears MCM (bit 4), so the road characters draw in hires, and CSEL (bit 3), which drops the display to 38 columns on every road line. An earlier version put the 38-column drop on MCM.
 - `badline_cycle_loss`: a loop body not sized for badlines spans the steal window; post-badline writes arrive late. The shipped listing uses separate badline and normal bodies to absorb the 40-cycle steal without displacing subsequent writes.
 - `raster_irq_first_line_jitter`: without a stable raster entry, the first loop iteration starts 0–9 cycles late, displacing all 100 writes by the same offset and pushing them past cycle 16.
 

@@ -225,9 +225,12 @@ sprite. The main loop is paced by `rirq_wait()`, one iteration per frame.
 Measured in VICE 3.10 (PAL) with the positions held at frame 200: twelve
 221-pixel diamonds at raster lines 92–230, at exactly the Y values the
 arithmetic gives (the first drawn row is at raster line Y+1). On the orbit
-used here the ninth-lowest sprite is always at least ~60 lines below the
-lowest, well past the 23-line reuse point, so no reused slot is asked to
-draw before its first sprite has finished (arithmetic, not a flicker sweep).
+used here every sprite, taken in Y order, is at least 89 lines above the
+sprite eight places after it, well past the 23-line reuse point, so no
+reused slot is asked to draw before its first sprite has finished (the
+minimum of Y[i+8] − Y[i] for i = 0–3 over every frame phase, computed in
+Python from the listing's tables; not a flicker sweep). An earlier version
+said "at least ~60 lines" and compared only the first and ninth sprites.
 
 An earlier version of this page said eight sprites sat "in the top half" and
 one IRQ "at the midpoint" moved them to the bottom half; there is no single

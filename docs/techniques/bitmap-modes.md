@@ -538,7 +538,7 @@ IFLI is a demoscene C64 art format. It requires two complete, independently prep
 
 ### How
 
-IFLI requires two complete FLI images (each with its own 8000-byte bitmap and its own eight screen RAM pages) stored in memory simultaneously. Colour RAM is single and shared: there is one 1 KB at $D800, read by the VIC-II over its own bus regardless of $D018 or $DD00, and rewriting it between frames (1,000 bytes, at least 8,000 cycles) does not fit in the roughly 7,000-cycle PAL vertical blank the FLI engine leaves free. The %11 colour of each cell is therefore the same in both sub-frames, and IFLI image formats store a single Colour RAM block. (An earlier version of this sentence gave each sub-frame "a Color RAM state", contradicting the cycle budget below.) On even PAL frames, image A is displayed; on odd frames, image B. Alternating at 50 Hz with PAL phosphor persistence, the human eye integrates the two images.
+IFLI requires two complete FLI images (each with its own 8000-byte bitmap and its own eight screen RAM pages) stored in memory simultaneously. Colour RAM is single and shared: there is one 1 KB at $D800, read by the VIC-II over its own bus regardless of $D018 or $DD00, and rewriting it between frames (1,000 bytes, at least 8,000 cycles) does not fit in the roughly 7,000-cycle PAL vertical blank the FLI engine leaves free. The %11 colour of each cell is therefore the same in both sub-frames, and IFLI image formats store a single Colour RAM block. (An earlier version of this sentence gave each sub-frame "a Color RAM state", contradicting the cycle budget below.) On even PAL frames, image A is displayed; on odd frames, image B. The picture changes every frame, 50 times a second on PAL, so each image is shown 25 times a second; with CRT phosphor persistence the eye integrates the two. (An earlier version said the images alternate "at 50 Hz", which is the frame rate, not the rate of either image.)
 
 The frame alternation is driven by a vertical blank IRQ (or a top-of-frame raster IRQ) that swaps the bank layout or bitmap/screen RAM addresses pointed to by $D018. Within each frame, the per-line FLI write block runs exactly as described in `fli_image`.
 
@@ -546,7 +546,7 @@ The two images are typically prepared as slightly horizontally-offset variants o
 
 ### Why it works
 
-The VIC-II's output is a composite video signal. On a real CRT display, each scanline's phosphors retain charge for a fraction of a frame. When two similar images alternate at 50 Hz, the eye blends them in both spatial and temporal dimensions. The 160-pixel-wide multicolor pixels of each sub-frame appear to blend with the offset pixels of the opposite frame, which reads as 320-pixel hires color content.
+The VIC-II's output is a composite video signal. On a real CRT display, each scanline's phosphors retain charge for a fraction of a frame. When two similar images alternate frame by frame (each at 25 Hz on PAL), the eye blends them in both spatial and temporal dimensions. The 160-pixel-wide multicolor pixels of each sub-frame appear to blend with the offset pixels of the opposite frame, which reads as 320-pixel hires color content.
 
 The pixel buffer does not change: both frames are full multicolor bitmap images with the same 160x200 pixel grid. The resolution improvement is perceptual, a property of the human visual system and the CRT. IFLI images do not look the same on LCD monitors without post-processing; dedicated IFLI-aware emulator display modes apply a blending filter to simulate the CRT integration.
 

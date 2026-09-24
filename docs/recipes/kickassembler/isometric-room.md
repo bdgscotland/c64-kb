@@ -1124,7 +1124,10 @@ iterates all 64 cells. Any cell with `x + y > px + py` is in front of the
 player. If that cell is a block and its character box (4 cols by 4 or 6 rows)
 overlaps the sprite's character box (3 cols by 3 rows, positioned from
 `sprite_x = 24 + 8*(col+2)`, `sprite_y = 45 + 8*row`), the routine sets
-`$D01B` bit 0, placing the sprite behind all playfield characters. One bit
+`$D01B` bit 0, placing the sprite behind the foreground pixels of every
+character; background-colour (`$D021`) pixels still show the sprite. (An
+earlier version said "behind all playfield characters"; `vic-ii-reference.md`
+and `techniques/sprite.md` agree it is foreground pixels only.) One bit
 covers the whole sprite, so the player appears behind every character on
 screen when the bit is set, not just the block in question. The
 Variations section of the technique entry discusses the fix.

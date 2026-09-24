@@ -114,7 +114,7 @@ first ($34, or $33 if char ROM is acceptable) with interrupts disabled.
 **Mode $35 with custom IRQ vectors.** When HIRAM goes to 0, the CPU's hardware
 IRQ vector at $FFFE/$FFFF and NMI vector at $FFFA/$FFFB are no longer in ROM —
 they read from RAM. Before switching to $35, disable interrupts with SEI, write
-the IRQ and NMI handler addresses to the RAM at $FFFE/$FFFB (writes reach the
+the IRQ and NMI handler addresses to the RAM at $FFFE/$FFFF and $FFFA/$FFFB (an earlier version said "$FFFE/$FFFB"; writes reach the
 underlying RAM even while KERNAL ROM covers them, so write directly), then
 write $35 to $01 and re-enable with CLI. The KERNAL-provided interrupt chain at
 $EA31 is gone; the program owns all interrupts.
@@ -569,8 +569,13 @@ two possible bitmap base addresses within the VIC bank:
 The lower two CB bits (bits 2-1) are ignored in bitmap mode; they still affect
 character base selection in text mode but have no effect on the bitmap address.
 
-For VIC bank 0, the two legal bitmap positions in CPU address space are:
-- Bit 3 = 0: bitmap at $0000-$1FFF
+For VIC bank 0, bit 3 selects between:
+- Bit 3 = 0: $0000-$1FFF. Not usable: the VIC sees character ROM at
+  $1000-$1FFF in banks 0 and 2, so the lower half of the screen shows the
+  ROM glyphs, and the upper half is zero page, stack and screen RAM.
+  Measured in VICE x64sc: with $D018 = $10 in bank 0, all 488 cells from
+  bitmap byte $1000 on showed the character ROM bytes. (An earlier version
+  listed $0000-$1FFF as a legal bitmap position in bank 0.)
 - Bit 3 = 1: bitmap at $2000-$3FFF
 
 Screen RAM (the color/nybble data in standard bitmap mode) is positioned
@@ -601,11 +606,13 @@ bitmap-modes.md and recipes/kickassembler/fli-image.md. (An earlier version of
 this paragraph described FLI as a cycle-exact $D018 write during an idle fetch
 and did not mention $D011 or the forced badline.)
 
-**Bitmap at $0000 and sprite multiplexing.** The $0000-$1FFF bitmap position
-overlaps with zero page and the stack ($0000-$01FF). Sprites whose data blocks
-land in $0000-$1FFF are valid as long as the sprite pointer value accounts for
-the collision. Most demos use $2000 for the bitmap and leave
-$0000-$1FFF for code, zero-page variables, and stack.
+**Bitmap at $0000 and sprite multiplexing.** In bank 0 the $0000-$1FFF bitmap
+position is not usable (see above): its lower half overlaps zero page and the
+stack, its upper half is character ROM to the VIC. Sprite data in $1000-$1FFF
+of bank 0 reads character ROM too. In banks 1 and 3 offset $0000 is plain RAM.
+Most programs use $2000 for the bitmap in bank 0 and leave $0000-$1FFF for code,
+zero-page variables and stack. (An earlier version said sprite blocks anywhere
+in $0000-$1FFF are valid.)
 
 ### Cycle budget
 

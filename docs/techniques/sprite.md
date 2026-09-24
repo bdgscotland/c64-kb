@@ -170,9 +170,10 @@ sprite-based status bars use the same approach.
 The algorithm extends the 8-sprite multiplexer:
 
 1. **Sort by Y:** Before each frame, sort the entire logical sprite array by
-   ascending Y position. Oscar64's `vspr_sort()` performs an insertion sort,
-   which is cache-friendly and fast on nearly-sorted lists (typical across
-   consecutive frames).
+   ascending Y position. Oscar64's `vspr_sort()` performs an insertion sort
+   on an index array (`spriteOrder`, in `include/c64/sprites.c`), which is
+   fast on nearly-sorted lists (typical across consecutive frames). An
+   earlier version called it cache-friendly; the 6510 has no cache.
 
 2. **Assign the first eight to hardware directly:** The top eight logical
    sprites (lowest Y values) are written to hardware at frame start.
@@ -556,8 +557,11 @@ pixel is nonzero at the same position as a non-transparent background pixel from
 the display data.
 
 The chip sets the latch during the *raster scan*, before the CPU sees the
-result, so the hardware has already resolved sub-pixel-exact
-rectangular overlap by the time the CPU reads the register at end-of-frame.
+result, so the hardware has already resolved pixel-exact overlap of
+non-transparent pixels, not of bounding rectangles, by the time the CPU
+reads the register at end-of-frame (`hardware/vic-ii-reference.md`,
+"Collisions"). An earlier version said "sub-pixel-exact rectangular
+overlap".
 
 The read-to-clear mechanic is a hardware simplification: there is no separate
 write-clear path. The register's internal flip-flops reset on the read cycle.
@@ -924,7 +928,9 @@ c (cycles numbered 1–63, the numbering in which the CSEL side-border pulse
 lands on cycle 56) takes effect from sprite X ≈ 8c − 111. So a write on cycle
 16 recolours a sprite at X=24 (the left edge of the display window) from its
 first pixel, cycle 18 splits it at X=33, and cycle 34 splits a sprite at X=152
-at X=161. Equivalently, the STA's write cycle must be ≈ 16 + (X_split − 24)/8;
+at X=161. Equivalently, the STA's write cycle is c = (X_split + 111)/8,
+rounded down (X=24 gives 16, X=33 gives 18, X=161 gives 34); an earlier
+version wrote 16 + (X_split − 24)/8, which gives 17 for X=33;
 subtract the stable IRQ's entry-to-STA cost to get the delay. Use
 `rirq_delay()` (5 cycles per unit) plus NOP padding (2 cycles) for sub-5-cycle
 alignment. An earlier version of this section placed a sprite at X 24–47 "during
@@ -1391,17 +1397,22 @@ again from line 261, which is the topbottom recipe's parked sprite and
 is drawn twice; a Y from 0 to 29 draws inside the open top border
 (lines 1 to 50) and, on PAL, a second time on lines 257 to 306 of the
 opened bottom strip, because Y is compared with the low eight bits of
-the raster; only the NTSC frame, ending at 262, drops the second copy
-for Y above 6. A scroller there leaves the bottom strip empty only on
+the raster. On NTSC (6567R8, lines 0 to 262) the second copy starts on
+line 257 + Y, so only Y up to 5 draws in the bottom strip; Y = 6 starts
+on line 0 of the next frame. The copy then runs on across the frame
+wrap as one 21-line sprite (Y = 4: lines 261, 262, then 0 onwards), with
+no separate top copy. Measured in VICE x64sc with the topbottom recipe
+and Y of 4 to 7; an earlier version said the NTSC copy was dropped for
+Y above 6. A scroller there leaves the bottom strip empty only on
 NTSC. Not built here.
 
 **Expanded sprites for a taller font.** Setting the sprite's bit in
 `$D017` doubles the 21 rows to 42, lines 255 to 296 on PAL, still inside
 the frame; with `$D01D` as well the glyph is 32 by 32 and the spacing
 must grow to 96 with a lap of 768, as the DYPP entry says. On NTSC 42
-rows from line 255 reach line 34 of the next frame, into the top
-border, and the rows past line 262 depend on the set. Not measured
-here.
+rows from line 255 reach line 33 of the next frame, into the top
+border (measured in VICE x64sc with the topbottom recipe, Y = 254 and
+`$D017` set; an earlier version said line 34 and "not measured").
 
 **DYPP bobbing inside the border.** `dypp_sprite_sine_scroller`'s Y sine
 fits in the strip only within a narrow band, because Y is eight bits

@@ -17,8 +17,11 @@ uses_kernal: []
 
 Drives a precompiled SID tune's init and play subroutines from Oscar64 C using
 `rasterirq.h`. The SID binary is embedded into the PRG at compile time with
-`#embed`, placed at a fixed address, and called through two extern function
-pointers. A raster IRQ fires at line 0 every frame and calls the play routine,
+`#embed`, placed at a fixed address, and called by literal address: init
+from a two-line `__asm` block, play through `rirq_call` with
+`(void *)0x1003`. (An earlier version said "two extern function pointers";
+a call through a const function pointer crashes the compiler, see below.)
+A raster IRQ fires at line 0 every frame and calls the play routine,
 so the play rate stays at 50/60 Hz whatever the main loop costs. A second
 voice uses the `sid_voice_setup` and `sid_filter_routing` techniques for a
 sound effect beside the tune. This is the Oscar64 pattern for playing SID
@@ -305,7 +308,7 @@ Load and run: `LOAD"SID-MUSIC-PLAYER",8,1` then `RUN`, or pass
 ## Expected output
 
 The screen displays `SID PLAYER` in cyan on a black background with a black
-border. With the stub tune no audio is produced. (An earlier version of the
+border. (An earlier version of the
 listing called `hud_init()` before the loop that fills colour RAM with white,
 so the label came out white while this section said cyan; measured on the
 VICE screenshot, row 0 held 216 white pixels. `hud_init()` now runs after the
@@ -317,13 +320,26 @@ on its function-pointer calls (see below), and once that was worked around
 the linker had discarded the unreferenced stub array, so `JSR $1000`
 executed zeros (a `BRK`) and the machine dropped to BASIC's warm start
 with a cleared screen. `__export` on the array is the fix; the `.map` file
-shows the `sidtune` section at five bytes instead of zero. With a real PSID tune embedded at `$1000`, the tune plays
-at 50 Hz (PAL) or 60 Hz (NTSC). Every three seconds voice 2
-triggers a sawtooth tone on A5 that sweeps through a low-pass filter from fully
-open to closed over 40 frames, then releases. The filter sweep does not interrupt
-the tune because the play routine only writes voices 1 and 3 in a typical
-three-voice arrangement; voice 2 and `$D417`/`$D418` are reserved for the effect
-during its active window.
+shows the `sidtune` section at five bytes instead of zero.
+
+With the stub tune the only sound is the effect. Measured from VICE's SID
+register dump (`-sounddev dump`, PAL, 12,000,000 cycles): about 90 frames
+after start-up voice 2 is gated on with sawtooth (`$D40B` = `$21`) at
+frequency `$3A89` (A5, 880 Hz on PAL), `$D417` = `$F2` (resonance 15, voice 2
+filtered) and `$D418` = `$1F` (low-pass, volume 15); the cutoff falls each
+frame, and 39 frames later the gate drops (`$D40B` = `$20`), `$D417` = 0 and
+`$D418` = `$0F`. The trigger repeats every 151 frames, 3.01 s on PAL and
+2.52 s on NTSC. (An earlier version said the stub produced no audio.)
+
+With a real PSID tune embedded at `$1000` the tune plays at 50 Hz (PAL) or
+60 Hz (NTSC) as well; that case has not been run here. The effect writes
+voice 2, `$D417` and `$D418`, so it only leaves the tune intact if the tune
+leaves voice 2 free, which is what this recipe assumes (see
+`sid_filter_routing` below). A tune that writes `$D417` or `$D418` while
+the effect is active overrides it until the next trigger. An earlier
+version said a typical three-voice play routine "only writes voices 1
+and 3" and that `$D417`/`$D418` were reserved for the effect; a three-voice
+tune writes all three voices, and nothing reserves those registers.
 
 ## Why this works
 
@@ -365,16 +381,21 @@ was never the problem.
 slot. When the raster beam crosses line 0, the raster engine executes the JSR,
 the play routine runs, and execution returns to the engine's exit path. It calls
 a subroutine from the raster system without a
-custom `__hwinterrupt` handler. The stable-raster guarantee in `rasterirq.h`
-means the play call happens at a fixed cycle offset from the top of each frame.
-Music tempo is therefore independent of main-loop duration: even if the main loop
+custom `__hwinterrupt` handler. The slot fires on the same raster line every
+frame, so play runs once per frame near the top of the screen; the entry
+cycle varies by a few cycles, because `rasterirq.h` spins on `$D012` and
+is not cycle-exact (`stable-raster-irq.md`, "What stable means here").
+An earlier version called this a "stable-raster guarantee" and a "fixed
+cycle offset". Music tempo is therefore independent of main-loop duration: even if the main loop
 takes 30,000 cycles one frame and 2,000 the next, the play routine fires in
 the same window at the top of each frame.
 
-`play` is called at line 0, not at the bottom of the visible
-area, because most play routines touch `$D418` (the master volume register), which
-must not change during active rendering if other SID voices or digi playback are
-coexisting. Line 0 is in the top border, before the display window, which
+`play` is called at line 0. Any fixed line gives one call per frame; line
+0 puts the play routine's raster time in the top border, away from any
+raster work the program does on the visible screen. (An earlier version
+said line 0 was needed because `$D418` "must not change during active
+rendering"; no source was given, and the SID's registers have no link to
+the raster.) Line 0 is in the top border, before the display window, which
 opens at line 51 on PAL and NTSC alike (see `hardware/pal-ntsc-reference`; an
 earlier version of this sentence put the NTSC figure "around line 41", which
 is where NTSC's vertical blank ends and the border becomes visible, not where
@@ -389,8 +410,10 @@ flags, four bytes at `$12-$15` with one bit per song (an earlier version said
 "byte `$12`"), record whether a tune is CIA-timer-driven (its own timer, immune
 to this) or VBI-driven (frame-rate-dependent). Most GoatTracker tunes are
 VBI-driven and therefore play faster on NTSC. A
-cross-region product should detect the machine at startup (read `$D011` across
-two known raster lines to check frame rate) and use a CIA timer IRQ for the
+cross-region product should detect the machine at startup (the
+`pal-ntsc-detect` recipe watches one frame's RST8 band and keeps the highest
+`$D012` value seen; an earlier version said to read `$D011` across two known
+raster lines, a method no page here specifies or measures) and use a CIA timer IRQ for the
 play call on NTSC at the PAL equivalent period. For a demo or game that targets
 one region, accept the tempo difference or compose for NTSC.
 
@@ -404,8 +427,10 @@ const char sid_binary[] = { #embed "mytune.bin" };
 
 With the section and region pragmas, this puts
 binary data at a fixed address in a PRG without a separate assembler stub
-or a runtime file-load. The full workflow: strip the PSID header with any hex
-editor or the `sidstripe` utility, confirm the stripped file starts at the
+or a runtime file-load. The full workflow: strip the PSID header with a hex
+editor or `tail -c +125 tune.sid > tune.bin` for a 124-byte v2 header
+(check the data-offset word at `$06-$07` first; an earlier version named a
+`sidstripe` utility that could not be found), confirm the stripped file starts at the
 correct load address, embed it, rebuild. No makefile changes; no extra linker
 scripts.
 

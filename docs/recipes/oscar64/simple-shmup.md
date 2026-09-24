@@ -20,9 +20,11 @@ A vertical-scrolling shoot-em-up in Oscar64 C.
 The player controls a ship via joystick port 2, fires bullets upward, and must
 avoid enemies that enter from the top in sine-wave formations. A starfield scrolls
 downward using `$D011` YSCROLL (one-pixel-per-frame soft scroll; an earlier
-version of this sentence said `$D016`, which is XSCROLL). Eight hardware
-sprites are multiplexed via `vspr_*` to display the player, four enemies, and up
-to three active bullets. Collisions are software bounding-box
+version of this sentence said `$D016`, which is XSCROLL). The player, four
+enemies and up to three active bullets are eight logical sprites set through
+the `vspr_*` multiplexer API; eight fit on the eight hardware sprites in one
+pass, so no reuse IRQ fires (see "Sprite multiplexer" below; an earlier
+version of this sentence said the eight were multiplexed). Collisions are software bounding-box
 tests; `$D01E`/`$D01F` are read only to clear them (see "Collision detection"
 below; an earlier version of this sentence said collisions were detected
 through `$D01E`). A background SID stub drives the play-routine pattern once per
@@ -54,7 +56,8 @@ reads `$D01E` only to clear it, so neither technique is implemented here.
 //   3  bullet 2
 //   4-7 enemies 0-3
 //
-// Hardware sprites: 8 slots multiplexed by vspr_* over two vertical passes.
+// Hardware sprites: 8 logical sprites on the 8 slots in one pass; vspr_*
+// would add reuse IRQs only for a ninth and later sprite.
 //
 // Screen layout:
 //   Row 0:  HUD (score)
@@ -993,7 +996,14 @@ __striped struct Enemy { int x; char y; bool active; char timer; } enemies[16];
 ```
 
 With `__striped`, all `enemies[i].x` values are contiguous in memory, then all
-`enemies[i].y`, etc. The compiler accesses `enemies[i].x` as `LDA x_base, Y`
-without a multiply, cutting the per-element access cost from 4+ cycles to 2.
+`enemies[i].y`, etc. The field load is an indexed absolute `LDA` (4 cycles)
+either way; what `__striped` removes is the index scaling. Compiled with
+Oscar64 1.32.271 `-O2`, the plain 5-byte struct array reads `enemies[i].y`
+as `LDY __multab5L,X` then `LDA enemies+2,Y` (a multiply-by-5 table lookup
+per index, 4 cycles plus the table), and the striped one as
+`LDA enemies_y,X`. A plain array past 256 bytes cannot be reached with an
+8-bit index at all, while each stripe stays under 256 bytes up to 256
+elements. (An earlier version said the access cost fell "from 4+ cycles
+to 2"; no 6502 indexed load takes 2 cycles.)
 The current recipe's 4-enemy array is small enough that the difference is not
 measurable; `__striped` matters when enemy counts exceed 8.

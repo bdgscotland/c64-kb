@@ -21,18 +21,20 @@ of road in the vertical blank using multicolour characters (grass, road
 surface, kerb, centre stripe) placed at positions derived from a Z table and
 an 8.8 fixed-point centre accumulator. The fine layer runs a cycle-locked
 loop starting at line 99 that writes a precomputed $D016 value for each of
-the hundred road raster lines (100..199), placing the STA $D016 write at
-cycle 11 of each line (before the cycle-14 VIC deadline). The road curves
+the hundred road raster lines (100..199). The loop is meant to place each
+STA $D016 write at cycle 11; measured in the VICE x64sc monitor it does not
+(see "Fine layer: unrolled loop" below). The road curves
 because a per-frame delta accumulates signed fixed-point offsets from a
 four-entry segment table; as scroll_z advances the four segments roll toward
 the viewer. Verdict bytes and CIA-timed cycle counts land at $02F0-$02F3 and $02FF.
 
 The fine layer uses the double-IRQ method from `stable_raster_irq.md` to
-reach cycle 4 of line 100 with zero jitter, then runs an unrolled 100-iteration
-loop. Each iteration is exactly one raster line long: 63 CPU cycles on PAL,
-65 on NTSC. Badline iterations (lines where (raster & 7) == YSCROLL = 3)
-use 23 CPU cycles on PAL (25 on NTSC); the 40-cycle badline steal absorbs
-the remainder. Separate unrolled loops for PAL and NTSC are selected at boot.
+reach a fixed cycle of line 100, then runs an unrolled 100-iteration loop:
+63 CPU cycles per normal line on PAL, 65 on NTSC, and 23 (PAL) or 25 (NTSC)
+on the badline rows (lines where (raster & 7) == YSCROLL = 3). The badline
+stall is 43 cycles, not 40, so the loop is not locked to the raster; the
+measured write cycles are below. Separate unrolled loops for PAL and NTSC
+are selected at boot.
 
 ## Source
 
@@ -49,7 +51,9 @@ the remainder. Separate unrolled loops for PAL and NTSC are selected at boot.
 //   road_irq2_pal / road_irq2_ntsc (line 99): cycle-exact sync via double
 //     $D012 read + BEQ, unrolled 100-iteration fine loop, epilogue.
 //
-// Cycle arithmetic (both models land at cycle 4 of line 100 after BEQ sync):
+// Intended cycle arithmetic. Measured in the VICE monitor the loop starts at
+// cycle 49 (PAL) / 47 (NTSC) and drifts 3 cycles per badline (the stall is 43,
+// not 40); see "Fine layer: unrolled loop" in the page.
 //   LDA xscroll_d16+j : cycles 4..7 of line 100+j
 //   STA $D016         : cycles 8..11 (WRITE at cycle 11, before cycle-14 deadline)
 //   PAL normal body   : LDA(4) + STA(4) + Delay(55) = 63 cpu cycles
@@ -63,7 +67,7 @@ the remainder. Separate unrolled loops for PAL and NTSC are selected at boot.
 //   Path inside irq2: ldx+txs(6)+cld(2)+Delay(PAD)+lda+cmp = C2+15+PAD for 2nd read.
 //   PAL: second $D012 read at C2+15+PAD_PAL=63/64. PAD_PAL=10.
 //   NTSC: second $D012 read at C2+15+PAD_NTSC=65/66. PAD_NTSC=12.
-//   BEQ lands at cycle 4 of line 100; STA write at cycle 11.
+//   Intended: BEQ lands at cycle 4 of line 100, STA write at cycle 11 (not met; see page).
 //
 // Verdict $02FF = 1 if coarse < 10 000 cycles AND kerb column matches.
 // Coarse cycles at $02F0/$02F1; fine chain (irq1 start to fine_done) at $02F2/$02F3.
@@ -668,7 +672,7 @@ cls_lp:
 // Sync: ldx+txs(6) + cld(2) + Delay(10) + lda $D012 + cmp $D012 + BEQ =
 //   both zero-jitter and one-jitter converge to cycle 4 of line 100.
 // Immediately into first fine loop iteration; no JMP intervenes.
-// STA $D016 write at cycle 11 of line 100 (at or before deadline of cycle 14).
+// Intended STA $D016 write at cycle 11 of line 100; measured at 56 (see page).
 // 100 iterations; badline rows use Delay(15) instead of Delay(55).
 // On exit: jmp fine_done.
 
@@ -679,7 +683,7 @@ road_irq2_pal:
     cld                   // clear decimal flag (RTI will restore P); arithmetic must be binary
     // Sync padding: PAD_PAL=10. With C2=38/39, second D012 read at cycle 63/64.
     // BEQ: taken (3 cycles) or not (2); both paths land at cycle 4 of line 100.
-    // STA D016 write lands at cycle 11 of each road line, before the cycle-14 deadline.
+    // Intended STA D016 write at cycle 11 of each road line; measured later (see page).
     Delay(10)
     lda D012
     cmp D012
@@ -688,7 +692,7 @@ pal_fine_start:
 // PAL unrolled fine loop: 100 iterations, each exactly 63 cpu cycles (or elapsed).
 // Iteration j writes xscroll_d16+j to $D016 for road raster line 100+j.
 // Badlines: (100+j) & 7 == 3, i.e., j = 7,15,23,31,39,47,55,63,71,79,87,95.
-//   Badline body: LDA(4)+STA(4)+Delay(15)=23 cpu cycles; 40-cycle steal accounts for rest.
+//   Badline body: LDA(4)+STA(4)+Delay(15)=23 cpu cycles; the stall is 43, so +3 drift.
 //   Normal body:  LDA(4)+STA(4)+Delay(55)=63 cpu cycles.
 .for (var j = 0; j < 100; j++) {
     lda xscroll_d16+j
@@ -835,9 +839,10 @@ matching the table (measured: x=138 and x=143 on both PAL and NTSC pins).
 **Badline finding.** Twelve badlines occur in the road area (rasters 107, 115,
 123, 131, 139, 147, 155, 163, 171, 179, 187, 195, with default YSCROLL=3). Each
 badline iteration uses Delay(15) (PAL) or Delay(17) (NTSC) instead of Delay(55)
-or Delay(57): 23 or 25 CPU cycles that the 40-cycle steal extends to one full
-raster line. The STA $D016 write at cycle 11 completes before BA goes low at
-cycle 12, so the write is never blocked by the steal. The previous (broken)
+or Delay(57): 23 or 25 CPU cycles. The page said these plus a 40-cycle steal
+made one full raster line and that the write at cycle 11 beat BA going low
+at cycle 12. Measured, the stall is 43 cycles and the writes are not at
+cycle 11; see "Fine layer: unrolled loop". The previous (broken)
 implementation used a spin-wait on $D012 which introduced up to 9 cycles of
 jitter, placing writes at cycles 20-28 of each line (past the deadline); post-badline
 lines received the badline row's XSCROLL value instead of their own.
@@ -864,33 +869,49 @@ from `stable-raster-irq.md`: because the interrupted instruction is always 2
 cycles, the jitter at irq2 entry is 0 or 1 cycle rather than 0 to 6. irq2
 discards its own KERNAL stack frame using SAVED_SP, then runs:
 
-- ldx SAVED_SP / txs (6 cycles)
-- Delay(PAD) (PAL: 11 cycles; NTSC: 13 cycles)
+- ldx SAVED_SP / txs (6 cycles), cld (2 cycles)
+- Delay(PAD) (PAL: 10 cycles; NTSC: 12 cycles)
 - lda $D012 / cmp $D012 / beq (10 or 11 cycles)
 
 The two consecutive reads of $D012 straddle the raster 99/100 boundary: in the
 zero-jitter case both land on line 99 and BEQ is taken (3 cycles); in the
 one-jitter case the second read crosses to line 100 and BEQ is not taken (2
-cycles). Both paths end at cycle 4 of line 100. The Delay
-constant is PAD_PAL=11 (second read at cycle 63 or 64 of line 99 for PAL) and
-PAD_NTSC=13 (second read at cycle 65 or 66 for NTSC).
+cycles). The design intent is that both paths end at cycle 4 of line 100;
+measured, they do not (below). The listing's Delay constants are PAD_PAL=10
+and PAD_NTSC=12. (An earlier version of this paragraph said 11 and 13, and
+left out the cld.)
 
 PAL and NTSC have different Delay constants because the line length differs (63
 vs 65 cycles). road_irq1 selects `road_irq2_pal` or `road_irq2_ntsc` based on
 the model flag set by detect_region at boot.
 
-**Fine layer: unrolled loop.** From cycle 4 of line 100, the first iteration
-begins immediately: LDA xscroll_d16+0 (cycles 3..6), STA $D016 (write at cycle
-10, before the cycle-14 deadline). The iteration then runs Delay(55) (PAL
-normal) or Delay(15) (PAL badline) to complete exactly 63 real cycles, ending
-at cycle 2 of line 101. The next iteration begins at cycle 3 of line 101. This
-repeats for all 100 road lines.
+**Fine layer: unrolled loop.** Each normal iteration is LDA xscroll_d16+j,
+STA $D016 and Delay(55) (PAL): 63 cycles. Each badline iteration replaces the
+delay with Delay(15). The intent was a write at cycle 10 or 11 of every line.
 
-Badline iterations: the CPU stall begins at cycle 15 and lasts 40 cycles (cycles
-15..54). Delay(15) starts at cycle 11 but is interrupted at cycle 15; the stall
-absorbs 40 real cycles, and the delay resumes at cycle 55 with the remaining
-bit-zero-page and NOP instructions, completing at cycle 2 of the next line.
-Total real cycles: LDA(4) + STA(4) + stall(40) + resumed delay(15) = 63.
+Measured in the VICE x64sc 3.10 monitor (a breakpoint on each iteration's LDA,
+one PAL frame; the monitor's CYC column counts 0..62, one less than the
+cycle numbers used here, which puts the badline stall's start on cycle 12):
+
+| Iterations j | PAL: STA $D016 write lands at | NTSC: write lands at |
+|---|---|---|
+| 0..6 | cycle 56 of line 100+j | cycle 54 of line 100+j |
+| 8..14 | cycle 59 of line 100+j | cycle 57 of line 100+j |
+| 40..46 | cycle 8 of line 101+j | cycle 4 of line 101+j |
+| 96..99 | cycle 29 of line 101+j | cycle 25 of line 101+j |
+
+On another frame the first LDA started 2 cycles earlier, so the entry is not
+jitter-free either. The badline stall hits whatever instruction reads on
+cycle 12: in this loop that is the normal-body delay of the iteration before
+the badline, and the CPU loses cycles 12..54, 43 cycles. The short body saves
+only 40, so every badline moves the rest of the loop 3 cycles later; after
+twelve badlines the last write lands on cycle 29 of the following line.
+(An earlier version said the loop started at cycle 4, wrote at cycle 10 or
+11 of every line, and that the badline stall ran from cycle 15 for 40 cycles
+inside Delay(15). A badline leaves the CPU 20 cycles, 23 only when the
+instructions on cycles 12..14 are writes.) The screenshot still shows a
+different kerb position on adjacent lines; what the late writes do to each
+line is not measured here, and the loop is not yet cycle-exact.
 
 **Stack management.** irq2 is entered through the KERNAL dispatcher, which
 pushes A, X, Y on top of the CPU's own interrupt frame. road_irq2 discards this
@@ -925,6 +946,6 @@ previous frame.
 Per-raster-region $D021 changes for a blue sky above the horizon and a black
 dashboard below the road are not implemented.
 
-**Cycle budget and correctness.** The loop delivers exactly one write per raster
-line; whether the cx and hw values produce a CORRECT road geometry (one the
+**Cycle budget and correctness.** The loop makes one $D016 write per road
+iteration, but not at a fixed cycle (see "Fine layer: unrolled loop"); whether the cx and hw values produce a CORRECT road geometry (one the
 original game engine would compute) is not established here.

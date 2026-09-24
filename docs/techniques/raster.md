@@ -32,7 +32,7 @@ Up to six cycles of jitter is visible. A write to $D020 (border color) that land
 
 ### How
 
-The standard stable raster IRQ sets an initial IRQ one line before the target line. This first IRQ fires, re-acknowledges the VIC interrupt flag, programs $D012 to the target line, and then runs a tight busy-wait loop that reads $D012 until the counter advances. When the counter matches, the handler is spinning at a known point in the loop; the jitter was used up waiting. The writes that follow land at a predictable cycle offset from the line boundary.
+The standard stable raster IRQ sets an initial IRQ one line before the target line. This first IRQ fires, re-acknowledges the VIC interrupt flag, programs $D012 to the target line, and then runs a tight busy-wait loop that reads $D012 until the counter advances. When the counter matches, the handler leaves the loop within one iteration of the line change: 7 cycles for the tightest loop, `CMP $D012` + `BNE` (4 + 3). The writes that follow land within that window, not on one cycle; the `double_irq` technique removes the rest. (An earlier version said the writes land at a predictable cycle offset.)
 
 The sequence is:
 
@@ -44,19 +44,19 @@ The sequence is:
 
 **Who owns the raster compare.** A stable raster IRQ is a way into a handler, not an effect. The effect that runs in the handler (raster bars, an FLI display, an open border, a multiplexer zone) owns the compare; this technique is how that handler is entered. Its Claims line therefore says `shares`: two effects that each use a stable entry still contend for the one compare, and a stable entry inside an effect's own handler does not.
 
-The cycle-exact busy-wait variation uses two NOP instructions of known cycle count inserted after the $D012 write to absorb the jitter window, landing the following store instructions on a predictable cycle of the target line.
+NOPs inserted after the $D012 write do not absorb jitter. They delay every entry by the same number of cycles, so the following stores still spread over the same 0-6 cycles, only later in the line. Landing on one cycle needs the `double_irq` technique. (An earlier version said two NOPs, 4 cycles, absorb the jitter window.)
 
 ### Why it works
 
-The VIC-II maintains an internal 9-bit raster counter. At the start of each new raster line, the hardware increments this counter and compares it against the 9-bit compare value. If they match AND the raster IRQ mask bit in $D01A bit 0 is set, the chip asserts the IRQ line on the CPU's /IRQ input. The assertion happens on a fixed dot-clock cycle within the line: the start of the line's first half-cycle, which on PAL is cycle 1 of the 63-cycle line.
+The VIC-II maintains an internal 9-bit raster counter. At the start of each new raster line, the hardware increments this counter and compares it against the 9-bit compare value. If they match AND the raster IRQ mask bit in $D01A bit 0 is set, the chip asserts the IRQ line on the CPU's /IRQ input. The assertion happens on a fixed cycle at the start of the line, one cycle later for line 0. This knowledge base calls it cycle 1 (cycle 2 for line 0), numbering cycles 1-63. That is from Christian Bauer's VIC-II article, whose own numbering gives it as cycle 0 or 1; it has not been measured here.
 
-The CPU sees the /IRQ pin go low and responds after completing its current instruction. That variable completion time is the jitter. The stable-IRQ technique uses the raster counter itself as the synchronization point: once the CPU is in the handler, the handler polls $D012 in a tight loop. The raster line has not yet incremented, so the loop spins for whatever remains of the line. When $D012 increments, every later instruction in the handler runs at a fixed cycle offset from that increment.
+The CPU sees the /IRQ pin go low and responds after completing its current instruction. That variable completion time is the jitter. The stable-IRQ technique uses the raster counter itself as the synchronization point: once the CPU is in the handler, the handler polls $D012 in a tight loop. The raster line has not yet incremented, so the loop spins for whatever remains of the line. When $D012 increments, the loop sees it on its next read, 0-6 cycles later for a 7-cycle `CMP $D012` / `BNE` loop, so every later instruction runs within one loop iteration of that increment. (An earlier version said a fixed cycle offset; only the `double_irq` technique gets that.)
 
 The re-acknowledge step (write $01 to $D019) must not be skipped. $D019 bit 0 is the raster interrupt flag. It is set by the VIC when the interrupt fires and cleared by writing a 1 to that bit (the register uses write-1-to-clear semantics, similar to CIA interrupt clearing). If the flag is not cleared, the VIC keeps asserting /IRQ and the CPU re-enters the handler immediately after RTI. Handlers often read $D019 before writing it, to check which interrupt source fired; with a single source the read can be skipped.
 
 ### Variations
 
-**Single IRQ with NOP pad.** For effects that need only 0-1 cycle precision: fire the IRQ, acknowledge, run a few NOPs of known total cycle count, then do the register writes. The NOP padding absorbs worst-case jitter without a polling loop. This works when the action tolerates 1-cycle imprecision.
+**Single IRQ with NOP pad.** For effects that tolerate the full 0-6 cycles of jitter: fire the IRQ, acknowledge, run a few NOPs of known total cycle count, then do the register writes. The pad moves the writes later in the line; it does not narrow the jitter. (An earlier version said the pad absorbs worst-case jitter to 1-cycle precision.)
 
 **Double IRQ.** When zero jitter is required, use two IRQs on adjacent lines. The first IRQ sets up the second; the second uses a counted busy-wait-then-NOP sequence to land on cycle 1 of the target line. See the `double_irq` technique for the full protocol.
 
@@ -68,7 +68,7 @@ The re-acknowledge step (write $01 to $D019) must not be skipped. $D019 bit 0 is
 
 On PAL (63 cycles/line), the accounting is:
 
-- VIC pulls /IRQ low at the start of cycle 1 of the target line (cycle 2 for line 0). An earlier version said "cycle 0"; cycle numbering in this knowledge base starts at 1.
+- VIC pulls /IRQ low at the start of cycle 1 of the target line (cycle 2 for line 0). An earlier version said "cycle 0"; cycle numbering in this knowledge base starts at 1. The cycle is from Bauer's VIC-II article, not measured here.
 - CPU finishes current instruction: 0-6 cycles of jitter consumed here.
 - CPU executes interrupt sequence (7 cycles): two dummy-read cycles, push PC high, push PC low, push P, fetch vector low, fetch vector high; the handler's first opcode fetch follows. (An earlier version counted the handler's first fetch inside the 7; it is the handler's own first cycle.)
 - Entry path: with the KERNAL banked out and $FFFE/$FFFF pointing at the handler, nothing more; through the KERNAL vector, the $FF48 dispatcher adds 29 cycles before the first instruction at $0314 (see Interrupt vector placement).
@@ -155,7 +155,7 @@ Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/rast
 
 ### Why
 
-The VIC-II takes the badline's cycles from the CPU eight times per character row, and the program cannot opt out. During a badline, the VIC-II fetches the 40 screen codes for the current text row. It does this by pulling BA (Bus Available) low on cycle 12 and taking the phi2 bus for the 40 c-accesses on cycles 15-54. The CPU may only complete write cycles on 12-14 and cannot read again until cycle 55, so the stall it sees is 40-43 cycles: 43 for any ordinary instruction stream (measured 43 for a NOP stream, 42-43 for STA zp in VICE), 40 only when three consecutive write cycles happen to fall on 12-14. Plan on 43 lost and 20 left (63 - 43) on PAL, 22 on NTSC. An earlier version of this paragraph said BA was low "for 40 cycles" and called the stall 40; that counts only the c-access cycles.
+The VIC-II takes the badline's cycles from the CPU once per character row, on its first line (every eighth line), and the program cannot opt out. (An earlier version said eight times per character row.) During a badline, the VIC-II fetches the 40 screen codes for the current text row. It does this by pulling BA (Bus Available) low on cycle 12 and taking the phi2 bus for the 40 c-accesses on cycles 15-54. The CPU may only complete write cycles on 12-14 and cannot read again until cycle 55, so the stall it sees is 40-43 cycles: 43 for any ordinary instruction stream (measured 43 for a NOP stream, 42-43 for STA zp in VICE), 40 only when three consecutive write cycles happen to fall on 12-14. Plan on 43 lost and 20 left (63 - 43) on PAL, 22 on NTSC. An earlier version of this paragraph said BA was low "for 40 cycles" and called the stall 40; that counts only the c-access cycles.
 
 Any timing plan that ignores this loss is wrong. A raster effect that writes 8 registers per line works on non-bad lines but slips by 40-43 cycles on badlines, producing visible glitches. Badline synchronization means knowing which lines are bad (and so where the stalls fall), and writing IRQ handlers that either avoid critical writes on bad lines or account for the 40-43-cycle deduction (plan on 43) when a write must happen on one.
 
@@ -171,11 +171,11 @@ A third approach, used in demo code, accounts for badlines at assembly time: the
 
 ### Why it works
 
-The VIC-II needs character codes to generate text-mode output: which character is in each of the 40 cells of the current row. It fetches these from screen RAM (video matrix), which lives in the VIC bank and is not accessible during the CPU's phi2 cycles; the VIC needs the bus to itself. The chip raises BA (bus available) signal three cycles before it actually needs the bus. The CPU, seeing BA low, knows it cannot issue further memory accesses but completes any instruction that has no remaining memory cycles. After 3 cycles, the VIC takes the phi2 bus for 40 cycles of screen RAM fetch, then releases it. The CPU resumes.
+The VIC-II needs character codes to generate text-mode output: which character is in each of the 40 cells of the current row. It fetches these from screen RAM (video matrix), which lives in the VIC bank and is not accessible during the CPU's phi2 cycles; the VIC needs the bus to itself. The chip pulls BA (bus available) low on cycle 12, three cycles before it needs the bus. In those three cycles the CPU may still complete write cycles, but it stops at its first read. From cycle 15 the VIC takes the phi2 bus for 40 cycles of screen RAM fetch (cycles 15-54), then releases it, and the CPU resumes on cycle 55. The CPU loses 40-43 cycles; plan on 43, as in "Why" above. (An earlier version said the chip "raises" BA, and counted only the 40 fetch cycles.)
 
 The timing is locked to the YSCROLL field because the VIC increments its internal row counter on each badline. The row counter increments when `(current_raster_line & 7) == YSCROLL`. The first badline of a frame must occur while DEN is set, or badlines are suppressed for the entire frame. Clearing DEN this way ("blinking DEN") blanks the display and gives the CPU all cycles back.
 
-NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), but the cycle loss (40-43 cycles) and the available cycles per line (65 on NTSC vs 63 on PAL, so 65 - 43 = 22 left on NTSC) mean the badline penalty as a fraction of a line's budget is slightly lower on NTSC. NTSC has fewer lines per frame, but the badline window ($30–$F7) and the 25 character rows inside it do not depend on the frame length, so an NTSC frame has the same 25 badlines as PAL: 51, 59, …, 243 (measured in VICE x64sc: 2,500 stalls in 100 frames on both the PAL default, a C64C with the 8565, and the 6567R8, and none with DEN clear; an earlier version said the PAL run was a 6569). The shorter NTSC frame loses lines from the vertical blank, not from the display; per frame the CPU has fewer non-bad lines than on PAL (238 against 287), and the 40-cycle stall is a slightly smaller fraction of each 65-cycle bad line. (An earlier version of this paragraph said 24.) An earlier revision of this entry also carried a PAL-only Region tag; the technique applies to both regions, as the figures above show.
+NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), but the cycle loss (40-43 cycles) and the available cycles per line (65 on NTSC vs 63 on PAL, so 65 - 43 = 22 left on NTSC) mean the badline penalty as a fraction of a line's budget is slightly lower on NTSC. NTSC has fewer lines per frame, but the badline window ($30–$F7) and the 25 character rows inside it do not depend on the frame length, so an NTSC frame has the same 25 badlines as PAL: 51, 59, …, 243 (measured in VICE x64sc: 2,500 stalls in 100 frames on both the PAL default, a C64C with the 8565, and the 6567R8, and none with DEN clear; an earlier version said the PAL run was a 6569). The shorter NTSC frame loses lines from the vertical blank, not from the display; per frame the CPU has fewer non-bad lines than on PAL (238 against 287), and the 43-cycle stall (an earlier version said 40) is a slightly smaller fraction of each 65-cycle bad line. (An earlier version of this paragraph said 24.) An earlier revision of this entry also carried a PAL-only Region tag; the technique applies to both regions, as the figures above show.
 
 ### Variations
 
@@ -216,7 +216,7 @@ For cycle-tight code running on every line, the badline constraint means the wor
 
 ### Why
 
-The stable_raster_irq technique reduces jitter to a fraction of a cycle by using a polling loop. The polling loop itself has a granularity of one loop iteration, 5-7 cycles. So the stable IRQ synchronizes to within one loop iteration, not one cycle. For side-border opening, VSP glitch timing and hardware-sprite multiplexing at exact cycle offsets, one or two cycles of residual jitter is too much.
+The stable_raster_irq technique synchronizes with a polling loop, and the loop has a granularity of one iteration: 7 cycles for the tightest form, `CMP $D012` + `BNE` (4 + 3; no read of an I/O register is shorter than 4). So the stable IRQ synchronizes to within one loop iteration, not one cycle. (An earlier version said it reduces jitter to a fraction of a cycle and gave the granularity as 5-7 cycles.) For side-border opening, VSP glitch timing and hardware-sprite multiplexing at exact cycle offsets, any residual jitter is too much.
 
 The double IRQ gives zero-jitter synchronization: the CPU's position on the target raster line is known to within one cycle.
 
@@ -248,7 +248,7 @@ Measured form (`recipes/kickassembler/stable-raster-irq.md`, VICE x64sc): throug
 
 **NOP-padded single entry.** Some implementations fold the double-IRQ logic into a single handler that spins until the raster counter advances, then executes a counted NOP sequence to reach the target cycle. This is shorter to write but harder to count cycle-exactly. The two-handler form is easier to document and maintain.
 
-**IRQ set on same line.** A variant sets both IRQs to the same $D012 value. The first fires normally; because the VIC's raster interrupt latches immediately, the second $D012 write (to the same value) causes the IRQ to fire again on the next frame at that same line. The handler must then track which firing it is on, usually with a flag byte.
+**IRQ set on same line: not a variant.** Writing the same $D012 value again from the handler gives no second IRQ in that frame. The next match is the next frame, 312 lines (19,656 cycles) later on PAL: the ordinary once-per-frame IRQ. Measured in VICE x64sc: a handler on line 100 that rewrites $D012 with 100 counted the same one IRQ per frame as one that does not. (An earlier version listed this as a double-IRQ variant, explained by the raster interrupt "latching immediately", and had the handler track which firing it was on.)
 
 **CIA timer second stage.** A CIA timer started in the first IRQ handler fires a second IRQ a counted number of cycles later, so the second trigger does not depend on raster line boundaries. Used for effects that need a write at a specific horizontal dot position across multiple lines.
 
@@ -809,7 +809,7 @@ The mode change can happen anywhere in the frame: top to bottom, multiple splits
 
 ### Why it works
 
-The VIC-II decides how to decode pixel data (and whether to fetch character ROM/RAM or bitmap data) on a per-character-cell basis within each row. The mode registers ($D011 bits 5-6, $D016 bit 4) are read by the chip as it generates each 8-pixel horizontal span. A write to these registers takes effect on the current or immediately next character cell boundary.
+The VIC-II decides how to decode pixel data (and whether to fetch character ROM/RAM or bitmap data) on a per-character-cell basis within each row. The mode registers ($D011 bits 5-6, $D016 bit 4) are read by the chip as it generates each 8-pixel horizontal span. A write to these registers takes effect at the next 8-pixel cycle boundary on screen, not at a character cell boundary. Measured in VICE x64sc for the ECM bit: toggling it in a loop over blank cells put every colour change at the same pixel phase with XSCROLL 0 and 3, while a marker cell moved 3 pixels; so with XSCROLL non-zero the change lands inside a cell. MCM and BMM were not measured. (An earlier version said the write takes effect on the current or next character cell boundary.)
 
 The display mode and the data pointer ($D018) govern three separate things: how pixel bits are interpreted (character vs bitmap), whether two bits per pixel (multicolor) or one bit per pixel (hires) is used, and where in the VIC bank the data lives. Changing $D018 mid-frame redirects character or bitmap fetch to new addresses starting with the next character cell; the change is not batched to the next frame. This allows per-row (or per-line) memory pointer changes without a frame boundary.
 

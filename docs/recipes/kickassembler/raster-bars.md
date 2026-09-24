@@ -194,9 +194,15 @@ second table.
 
 A raster IRQ's handler begins on cycle 37 to 43 of the line (7 cycles of
 interrupt sequence, 29 of KERNAL dispatcher, 0-6 of instruction completion;
-see `stable-raster-irq.md`). A colour write from there lands two-thirds of
-the way across the visible line and the top edge of the bar has a visible
-step in it. Arming the IRQ on the line above and spinning on `CMP $D012`
+see `stable-raster-irq.md`). A colour write from there lands about
+three-quarters of the way across the line and the top edge of the bar has
+a visible step in it: a test handler whose first instructions are `lda #0`,
+`sta $d020`, `sta $d021` changed the colour at screenshot x 289 to 297 of
+384 on its IRQ line in three PAL captures (VICE x64sc 3.10). This recipe's
+handlers do 18 (bar 0) or 24 cycles of loads before the border store, so
+without the spin that store would land at cycle 59 or later: in the right
+border or on the next line (arithmetic, not run). (An
+earlier version said two-thirds of the way across, unmeasured.) Arming the IRQ on the line above and spinning on `CMP $D012`
 moves the write to the start of the target line: the spin loop is 7 cycles,
 so it exits on cycles 1-7, and the two 4-cycle stores complete by cycle 15.
 Cycles 1-13 are horizontal blank and cycle 14-15 is the first eight pixels

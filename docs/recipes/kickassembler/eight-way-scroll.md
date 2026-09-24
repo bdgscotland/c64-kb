@@ -1467,15 +1467,22 @@ two for the bottom). During those fields the rows not yet rewritten show
 the previous origin's colour alongside the new matrix for three displayed
 fields (60 ms PAL, 50 ms NTSC). This is the cost of the band cap. Rows 0 to 4 may show old colour for
 one field on NTSC when `irqColB` starts late enough that the first band
-finishes after row 4's badline.
+finishes after row 4's badline. That is a different deadline from the
+row-6 badline the violation counter checks. Measured on NTSC in the VICE
+x64sc monitor (a breakpoint where the first band returns, 25 crossings):
+with YSCROLL 0 the band ended on line 80 or 81, at or after row 4's badline
+(line 80) and well before row 6's (line 96), so the counter stayed at zero
+while row 4 could still be fetched with old colour.
 
 **Camera path coverage.** `MAX_COL` and `MAX_ROW` clamp the visible
 origin so the camera never leaves the world. The path used here stays in
 columns 4 to 12 and rows 8 to 16, so those clamps are never reached.
 Whether the design is correct at the boundary is not tested.
 
-**The one-pixel-per-field form.** At full speed the camera crosses a tile
-boundary every field. Tile crossings are then eight fields apart on
+**The one-pixel-per-field form.** At full speed the camera moves one pixel
+every field, so on a straight leg it crosses an 8-pixel tile boundary every
+eight fields. (An earlier version said it crossed a tile boundary every
+field.) Tile crossings are then eight fields apart on
 straight legs, but the minimum gap on diagonals falls to three fields,
 which is less than the five-field requirement. The band at `BAND_MAX = 7`
 fits the available windows at either speed; what full speed loses is the

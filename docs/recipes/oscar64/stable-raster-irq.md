@@ -183,8 +183,14 @@ was "fixed" and "jitter-free", overstated the library.
 The struct is 32 bytes: a size byte and `RIRQ_SIZE` = 31 bytes of code (the
 earlier text said 31; `sizeof(RIRQCode)` is 32, checked with a compile-time
 assertion against the 2026-05-19 headers); larger variants `RIRQCode10` and
-`RIRQCode20` (62 and 107 bytes) hold 10
-and 20 writes respectively. The writes are stored as immediate operands and
+`RIRQCode20` are 62 and 107 bytes (both checked with the same
+`static_assert`, Oscar64 1.32.271). Size does not grow by a fixed amount per
+write: `rirq_build` emits 15 bytes for the loop and the first two writes, 5
+(`LDA #` / `STA abs`) for each further write and 1 for the `RTS`, so `n`
+writes need 5n + 6 code bytes. 31 fits 5 writes, 61 fits 11 and 106 fits 20;
+the header's `RIRQ_SIZE_10` leaves room for one write more than its name.
+(An earlier version said only "62 and 107 bytes, 10 and 20 writes", which
+reads as a constant cost per write.) The writes are stored as immediate operands and
 absolute addresses of real 6502 instructions inside the struct: no heap, no
 indirection at fire time; the dispatcher `JSR`s into the struct.
 
@@ -200,8 +206,14 @@ budget of a single raster line on both PAL (63 cycles/line) and NTSC
 `rirq_set(n, row, &rirq)` installs the code into IRQ slot `n` and programs it to
 fire one line below `row`. The "one below" offset is a documented convention in
 `rasterirq.h`: `rirq_set(0, 100, ...)` fires at the start of line 101, not
-line 100. This gives the CPU the entirety of line 101 to execute the writes
-before the raster beam reaches the point where writes need to be visible.
+line 100. The offset comes from the wait loop above: `CMP $D012 / BCS`
+falls through only once `$D012` exceeds the row, so the interrupt is taken
+on an earlier line (two earlier in the KERNAL-vector mode) and the writes
+run at the start of line 101: the first by about cycle 13, and all five of
+a full `RIRQCode` 26 cycles after the loop exits (instruction-table
+arithmetic, not measured). An earlier version said the offset gave the CPU
+"the entirety of line 101" to execute the writes; they run in its first
+half.
 
 ### `rirq_sort` and `rirq_start`
 

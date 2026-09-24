@@ -232,7 +232,10 @@ shift and a memory copy.
 ### Variations
 
 - **Double-buffered screen RAM:** Maintain two screen-RAM pages and
-  alternate which one $D018 points to, avoiding tearing on fast machines.
+  alternate which one $D018 points to. The copy goes into the hidden page
+  and the switch is one write, so the raster never overtakes a half-done
+  copy. (An earlier version said this avoids tearing "on fast machines";
+  every stock C64 runs at the same ~1 MHz.)
 - **Unrolled move:** On stock C64 there is no DMA. Unrolling the copy
   into straight LDA abs / STA abs pairs brings it to 8 cycles per byte
   (8,000 cycles for 40×25), which still exceeds the off-screen span on
@@ -519,12 +522,19 @@ continuous motion.
 
 ### Cycle budget
 
-The per-frame cost is dominated by the occasional screen-RAM column shift,
-which fires once every 8 frames at 1 px/frame. Amortized over 8 frames
-on PAL (50 Hz), the average cost per frame is approximately 1,000 / 8 ×
-10 cycles = ~1,250 cycles amortized from screen copy, plus ~10 cycles per
-frame for the XSCROLL write. This fits a game with a
-budget of ~18,000 CPU cycles per frame.
+The cost is dominated by the column shift, which fires once every 8
+frames at 1 px/frame and lands in one frame, not eight. At ~10 cycles per
+byte the 1,000-byte screen-RAM shift costs ~10,000 cycles, and the colour
+RAM shift in step 3d as much again: ~20,000 cycles against a PAL budget of
+~18,581 per frame (`char_scroll_buffer_h`, Cycle budget). The seven frames
+between carries cost ~10 cycles each for the XSCROLL write. So the carry
+frame does not fit as written. Build the shifted screen in a second page
+over the frames before the carry and flip $D018 on it (`char_scroll_buffer_h`,
+Variations); colour RAM at $D800 has no second page, so its shift stays in
+the carry frame unless the colours are uniform. (An earlier version
+averaged the shift over 8 frames, ~1,250 cycles per frame, and said it
+fits a ~18,000-cycle game budget; the average does not help the frame
+the shift lands in.)
 
 ### Recipes
 
@@ -842,8 +852,8 @@ identical. The cost difference is in the carry: where character mode
 carries by rotating 1000 bytes of screen RAM, bitmap mode must carry by
 rotating 8000 bytes of raw pixel data. The $D018 page-flip trick avoids
 moving pixel data altogether by pointing the VIC at a different memory
-region, leaving the shifting work to the back-buffer renderer which runs
-across multiple cycles asynchronously.
+region, leaving the shifting work to the back-buffer renderer, which runs
+across several frames. (An earlier version said "across multiple cycles".)
 
 ### Variations
 

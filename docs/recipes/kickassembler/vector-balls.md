@@ -487,7 +487,9 @@ the routine: from reset every sprite's Y is 0, which the VIC also
 matches at raster line 256, so the reset-state sprites took DMA from the
 timed window on the first frame. The listing now parks every Y at 130
 in the setup. A first repair wrote `sta $d001,x` with X counting 0 to 7,
-which lands on $D001 to $D008 and leaves sprites 5 to 7 at Y 0; that
+which lands on $D001 to $D008: the Y registers of sprites 0 to 3 and
+the X registers of sprites 1 to 4, leaving sprites 4 to 7 at Y 0 (an
+earlier version said sprites 5 to 7); that
 build read 1,608, and the pair table fixed it.
 
 ### Frame count and cycles

@@ -517,7 +517,9 @@ Measured in VICE x64sc 3.10 with CIA1 timer B around the display update of
 `recipes/kickassembler/logic-rate-decoupling.md` (rung 1): 384 cycles on a
 midpoint frame for eight sprites, the table pick and the interpolation
 loop, identical on PAL and NTSC. The instruction table gives the same
-count: 49 cycles for the call and the pick, 42 per sprite. The IRQ's
+count: 49 cycles for the call and the pick, 42 per sprite, one less for
+the last branch (49 + 8 × 42 − 1 = 384; an earlier version left out the
+one, so its terms summed to 385). The IRQ's
 timekeeping and guard add about 67 cycles more by the instruction table
 (80 while the event checks run; rung 3, not timed), and the KERNAL IRQ
 entry and exit about 58 more, so the IRQ side is near 510 cycles a frame. Memory is
@@ -1258,7 +1260,8 @@ deselects every column sees only the stick.
 and cannot be tested by anyone but the programmer. It also cannot be
 scaled: a spawn interval of 60 written as a literal means 1.2 seconds
 on a PAL machine and 1.0 on an NTSC one, and every level of the game
-arrives a fifth early on the second. Put the knobs in a table with one
+arrives a sixth sooner on the second, because NTSC frames come a fifth
+faster (an earlier version said "a fifth early"). Put the knobs in a table with one
 row per level and every one of them becomes a byte a designer can
 change, a row a test can read, and a value a region scaler can pass
 through once at level start.
@@ -2951,8 +2954,10 @@ map ahead that overrides the target when the road runs out.
    shifting its magnitude and restoring the sign. That rounds toward
    zero, the same way left and right, and does not depend on how a
    language shifts a negative number, so a model can match the code
-   exactly. A 6502 has no arithmetic shift; `CMP #$80 : ROR` floors
+   exactly. A 6502 has no arithmetic shift; `CMP #$80` then `ROR` floors
    instead, which leaves -1 to -7 at -1, a one-unit pull to the left.
+   Write the two on separate lines: an earlier version wrote
+   `CMP #$80 : ROR`, which KickAssembler 5.25 rejects as a syntax error.
 5. **The lead.** RAM aims at the player's x plus eight frames of its
    lateral speed: where the player will be rather than where it is. In
    the recipe's model it did not raise the hit rate: 3 contacts from 7

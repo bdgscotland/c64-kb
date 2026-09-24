@@ -1193,12 +1193,16 @@ through the job queue.
    error_channel_check does. It stays open for the whole exchange.
 2. Upload. Each `M-W` is a command on channel 15: CHKOUT 15, then the
    bytes `M`, `-`, `W`, address low, address high, count, and `count`
-   data bytes, then CLRCHN. The UNLISTEN runs it. Send at most 32 data
-   bytes per command (the DOS parses the command from a fixed buffer
-   and 32 is the figure loaders use; the recipe sends 32, 32 and 4; a
+   data bytes, then CLRCHN. The UNLISTEN runs it. Send at most 35 data
+   bytes per command: the 1541 ROM refuses a command line longer than
+   41 bytes (`CPY #$2A` at `$C2CE`, then error 32, SYNTAX ERROR; read
+   from `dos1541-325302-01+901229-05.bin`), and the six header bytes
+   leave 35. Krill's loader v194 sends 35-byte blocks
+   (`techniques/loaders-packers.md`). The recipe sends 32, 32 and 4; a
    34-byte `M-W` also uploaded and ran in VICE, measured under
-   `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`, and 35 or
-   more was not tried). Advance the address by the count each time.
+   `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`; 35 was not
+   run here. (An earlier version said 32 was the limit loaders use.)
+   Advance the address by the count each time.
 3. Verify with `M-R`: the six bytes `M`, `-`, `R`, low, high, count,
    then CHKIN 15 and `count` CHRIN calls, then CLRCHN. Compare with the
    source. The recipe reads 68 bytes in one command; larger counts were

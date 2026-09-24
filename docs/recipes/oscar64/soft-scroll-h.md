@@ -201,8 +201,10 @@ frame, moving the left and right borders in and out.
 
 XSCROLL = 0 means no pixel shift relative to the character grid. XSCROLL = 7
 shifts the display seven pixels to the right (the content appears shifted seven
-pixels to the right within each character cell, which is the same as the content
-starting its render seven pixels earlier per character column). Scrolling left
+pixels to the right within each character cell: every character column starts
+seven pixels later). An earlier version said "seven pixels earlier"; a larger
+XSCROLL delays the display, which is why it moves right (`mci-interlace.md`
+shifts its second frame right by one pixel the same way). Scrolling left
 means decrementing XSCROLL each frame.
 
 ### The carry: screen RAM column shift

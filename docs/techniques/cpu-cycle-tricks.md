@@ -60,7 +60,7 @@ lda_color:
 
 ### Why it works
 
-The 6510 has no instruction cache or prefetch buffer. A write to any RAM address takes effect before the next instruction fetch from that address. The self-modified byte is visible immediately on the next iteration. CMOS derivatives (65C02, 65816) have prefetch buffers and do not share this property, so self-modification is a reliable NMOS-6510-specific technique.
+The 6510 has no instruction cache or prefetch buffer. A write to any RAM address takes effect before the next instruction fetch from that address. The self-modified byte is visible immediately on the next iteration. (An earlier version said the CMOS 65C02 and 65816 have prefetch buffers that break self-modification; neither has one, and the C64's CPU is the 6510 in any case.)
 
 ### Variations
 
@@ -204,11 +204,11 @@ The 6502 decode matrix assigns addressing modes to columns and operations to row
 
 ### Variations
 
-**Undocumented NOPs for cycle padding.** The six 1-byte NOPs ($1A, $3A, $5A, $7A, $DA, $FA) cost 2 cycles / 1 byte, tighter than `BIT zp` (3 cycles / 2 bytes). Used in cycle-exact raster code to add exactly 2 cycles without consuming a branch slot or growing code by 2 bytes.
+**Undocumented 1-byte NOPs.** The six 1-byte NOPs ($1A, $3A, $5A, $7A, $DA, $FA) cost 2 cycles / 1 byte, the same as the official `NOP` ($EA) (`docs/hardware/6502-illegal-opcodes.md`, `docs/hardware/6510-cpu-reference.md`). They gain nothing for cycle padding; use $EA. (An earlier version recommended them for 2-cycle padding as tighter than `BIT zp`, as if $EA were not already 2 cycles / 1 byte.)
 
 ### Cycle budget
 
-Per call site: LAX zp saves 3 cycles vs LDA+LDX; SAX zp saves 2 vs AND+STA; ALR saves 2 vs AND+LSR; DCP zp saves 3 vs DEC+CMP; SLO zp saves 3 vs ASL+ORA (measured in VICE x64sc; an earlier version of this page had SAX saving 5 and DCP/SLO saving 2). In a 20-entry sprite multiplexer, these accumulate to 30-60 cycles per raster line, enough to free an extra badline slot.
+Per call site: LAX zp saves 3 cycles vs LDA+LDX; SAX zp saves 2 vs AND+STA; ALR saves 2 vs AND+LSR; DCP zp saves 3 vs DEC+CMP; SLO zp saves 3 vs ASL+ORA (measured in VICE x64sc; an earlier version of this page had SAX saving 5 and DCP/SLO saving 2). What that adds up to per raster line depends on how many such pairs a routine runs there; it has not been measured here. (An earlier version claimed 30-60 cycles per line in a 20-entry sprite multiplexer, "enough to free an extra badline slot", with no source.)
 
 ### Recipes
 
@@ -297,7 +297,7 @@ For a tight inner loop that accesses the same variable many times, moving that v
 
 ### How
 
-Map the hot variables of inner loops to zero-page addresses. The C64's zero-page layout has pre-allocated areas: $00 (CPU DDR) and $01 (I/O port / banking) are off-limits. $02 and $FB-$FE are the only bytes neither ROM touches after reset. $03-$8F is BASIC workspace (free if the program never returns to BASIC). $90-$FA is KERNAL working storage: the jiffy clock ($A0-$A2), keyboard buffer count ($C6), cursor/blink state ($CC-$CF), screen-line pointer ($D1-$D2), cursor column ($D3) and line-link table ($D9-$F2) are all above $BF and are written by the default IRQ every frame, so this range is unsafe while the KERNAL IRQ or CHROUT is in use, not merely without a full KERNAL replacement. $F7-$FA are the RS-232 buffer pointers, touched only by OPEN/CLOSE of device 2, which is why the demo convention of a 16-bit pointer at $FA-$FB survives in practice. $FF is BASIC's FOUT (number-to-string) scratch. (An earlier version of this page ended the KERNAL range at $BF and listed $FA-$FF as conventional free scratch.) See `docs/hardware/c64-memory-map.md` for the full layout.
+Map the hot variables of inner loops to zero-page addresses. The C64's zero-page layout has pre-allocated areas: $00 (CPU DDR) and $01 (I/O port / banking) are off-limits. $02 and $FB-$FE are the only bytes neither ROM touches after reset. $03-$8F is BASIC workspace (free if the program never returns to BASIC). $90-$FA is KERNAL working storage: the jiffy clock ($A0-$A2), keyboard buffer count ($C6), cursor/blink state ($CC-$CF), screen-line pointer ($D1-$D2), cursor column ($D3) and line-link table ($D9-$F2) are all above $BF. The default IRQ writes $91, $A0-$A2, $C0, $C5, $C6, $CB, $CD-$CF and $F3-$F6 every frame; the screen editor (CHROUT) writes $D1-$D3 and $D9-$F2 (read from the KERNAL ROM by tracing the code from $EA31 and $E716). So this range is unsafe while the KERNAL IRQ or CHROUT is in use, not merely without a full KERNAL replacement. (An earlier version said the default IRQ writes $D1-$D3 and $D9-$F2 every frame; it writes neither.) $F7-$FA are the RS-232 buffer pointers, touched only by OPEN/CLOSE of device 2, which is why the demo convention of a 16-bit pointer at $FA-$FB survives in practice. $FF is BASIC's FOUT (number-to-string) scratch. (An earlier version of this page ended the KERNAL range at $BF and listed $FA-$FF as conventional free scratch.) See `docs/hardware/c64-memory-map.md` for the full layout.
 
 Demos that take over the machine fully (disable BASIC and KERNAL ROMs, install custom IRQ/NMI/RESET handlers) can use $02-$FF minus $00/$01.
 
@@ -476,9 +476,9 @@ The BIT trick saves 2 bytes at the cost of 1 extra cycle on the "path A" executi
 
 ### Why
 
-VIC-II bus-stealing (also called "bad lines") occurs when the VIC needs to fetch character or bitmap data for the current raster line. During these fetches, the VIC asserts AEC (Address Enable Control) low for a fixed number of phi1 half-cycles, placing the address bus under VIC control and preventing the CPU from completing bus cycles. The CPU is halted for 40 cycles on each badline (every 8th displayed line in the character set window).
+VIC-II bus-stealing (also called "bad lines") occurs when the VIC needs to fetch character or bitmap data for the current raster line. During these fetches, the VIC asserts AEC (Address Enable Control) low for a fixed number of phi1 half-cycles, placing the address bus under VIC control and preventing the CPU from completing bus cycles. The CPU loses 40-43 cycles on each badline (every 8th displayed line in the character set window): plan on 43, because BA drops on cycle 12 and the CPU stops at its first read after that (see below). (An earlier version said the CPU is halted for 40.)
 
-The usual response is to work around bad lines: minimize computation, precompute, and accept that badline rows cost 40 cycles of CPU time. Phase-inverted IRQ scheduling goes further: instead of firing IRQs at the start of each line (where they may or may not land on a badline), fire IRQs timed to land in the free portion of the cycle budget where VIC bus activity is light or absent. On non-badlines, the full 63 cycles are available to the CPU; on badlines, 20 cycles are guaranteed (23 if the CPU happens to be in write cycles when BA drops on cycle 12). By scheduling IRQs to avoid the 40-cycle steal window, code can maintain a more predictable per-IRQ cycle budget.
+The usual response is to work around bad lines: minimize computation, precompute, and accept that badline rows cost 43 cycles of CPU time (an earlier version said 40). Phase-inverted IRQ scheduling goes further: instead of firing IRQs at the start of each line (where they may or may not land on a badline), fire IRQs timed to land in the free portion of the cycle budget where VIC bus activity is light or absent. On non-badlines, the full 63 cycles are available to the CPU; on badlines, 20 cycles are guaranteed (23 if the CPU happens to be in write cycles when BA drops on cycle 12). By scheduling IRQs to avoid the steal window (BA low from cycle 12, bus taken on cycles 15-54), code can maintain a more predictable per-IRQ cycle budget.
 
 ### How
 
@@ -506,7 +506,7 @@ The handler is installed at $0314/$0315 with the KERNAL in, which is why it exit
 
 ### Why it works
 
-VIC's AEC signal halts the CPU for 40 cycles during each badline. The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. IRQ jitter (see `stable_raster_irq` in `docs/techniques/raster.md`) is absorbed by the polling loop; the 11-cycle pre-steal window (cycles 1-11; stores may also land on 12-14) is wide enough to contain worst-case jitter (an earlier version said 15 cycles).
+On each badline the VIC pulls BA low on cycle 12 and takes the bus on cycles 15-54, so the CPU loses 40-43 cycles, 43 for an ordinary instruction stream. (An earlier version said AEC halts the CPU for 40 cycles.) The steal window is fixed on all PAL and NTSC variants. By firing IRQs in the pre-steal or post-steal free windows, handlers have a known stable cycle budget. IRQ jitter (see `stable_raster_irq` in `docs/techniques/raster.md`) is absorbed by the polling loop; the 11-cycle pre-steal window (cycles 1-11; stores may also land on 12-14) is wide enough to contain worst-case jitter (an earlier version said 15 cycles).
 
 ### Variations
 
@@ -584,13 +584,13 @@ Total DMA steal per frame on a fully-featured PAL display (all borders open, 8 s
 
 | Source | Steal cycles |
 |---|---|
-| Badlines (25 lines * 40 cycles) | 1000 |
+| Badlines (25 lines * 43 cycles: 3 BA lead-in + 40 fetches) | 1075 |
 | Sprite DMA (3 BA lead-in + 8 sprites * 2 cycles = 19 * 200 lines, upper bound) | 3800 |
-| Total steal | ~4800 |
-| Available CPU cycles per frame (63 * 312 = 19656 - 4800) | ~14856 |
-| Available as % of frame | ~76% |
+| Total steal | ~4875 |
+| Available CPU cycles per frame (63 * 312 = 19656 - 4875) | ~14781 |
+| Available as % of frame | ~75% |
 
-The sprite row is an upper bound: sprite DMA occurs only on lines where a sprite is displayed, and the 3-cycle lead-in is per contiguous group of active slots, so a sparse enable pattern can cost slightly more per sprite than the all-eight figure. An earlier version of this table counted 4 cycles per sprite in two 2-cycle windows (32 per line, 6400 per frame, ~62% available), which double-counts the single 2-cycle s-access window per sprite; the 19-per-line figure is measured in VICE x64sc (399 cycles over the 21 DMA lines of eight sprites).
+The sprite row is an upper bound: sprite DMA occurs only on lines where a sprite is displayed, and the 3-cycle lead-in is per contiguous group of active slots, so a sparse enable pattern can cost slightly more per sprite than the all-eight figure. An earlier version of this table counted 4 cycles per sprite in two 2-cycle windows (32 per line, 6400 per frame, ~62% available), which double-counts the single 2-cycle s-access window per sprite, and counted badlines at 40 cycles without the 3-cycle BA lead-in; the 19-per-line figure is measured in VICE x64sc (399 cycles over the 21 DMA lines of eight sprites).
 
 A demo that disables sprites on 100 of the 200 visible lines recovers about 1900 steal cycles (an earlier version said 3200), roughly a 13% improvement in usable CPU time. Combined with display blanking on heavy-compute segments, most C64 demo effects stay within budget by applying avoidance selectively on the lines where tight register writes are needed.
 
@@ -1251,8 +1251,9 @@ pushed there, so the RAM vector at `$0318`/`$0319` is the whole
 dispatch from its second instruction on, and a handler installed there
 gets control with A, X and Y untouched. With the KERNAL banked out
 (`$01` bit 1 clear) the CPU reads `$FFFA`/`$FFFB` from RAM and the
-handler's address goes there instead; `memory_layout_plan` in
-`techniques/memory-banking.md` covers the all-RAM layout.
+handler's address goes there instead; `ram_under_kernal` in
+`techniques/memory-banking.md` covers the all-RAM layout (an earlier
+version pointed at `memory_layout_plan`, which defers to it).
 
 **What the KERNAL's handler does.** The default `$0318` target is
 `$FE47`. It pushes A, X and Y, writes `$7F` to `$DD0D` and reads it

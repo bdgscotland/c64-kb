@@ -995,9 +995,12 @@ beam a little after the beam lit the phosphor under it, and the latch
 takes the counter at the moment of the pulse, so LPX reads a constant
 too large; the constant depends on the pen and the display, so the
 program calibrates it once by asking for a touch on a known cell and
-keeping the difference. This is the standard treatment (rung 5, not
-measured here: no pen was available). Both figures and the reading
-pattern are measured in `recipes/kickassembler/light-pen-read.md`.
+keeping the difference. This is the standard treatment (rung 4, not
+measured here: no pen was available, and the recipe leaves `PEN_DELAY`
+at 0). The reading pattern, the conversion and the interrupt's cost are
+measured in `recipes/kickassembler/light-pen-read.md`; a triggering
+pen's latch is not. (An earlier version said "rung 5", a rung the ladder
+does not have, and said both figures were measured in the recipe.)
 
 ### Why it works
 
@@ -1048,7 +1051,8 @@ and no interrupt slot, at the price of reading the latch up to a frame
 late, which a menu does not notice.
 
 **Averaging.** A real pen's LPX can differ by a unit or two from one
-frame to the next (rung 5, not measured here). Averaging the last four
+frame to the next (rung 4, not measured here; an earlier version said
+"rung 5"). Averaging the last four
 frames' values before the conversion steadies a cursor.
 
 ### Cycle budget
