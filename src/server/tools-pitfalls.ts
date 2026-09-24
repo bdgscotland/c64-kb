@@ -64,6 +64,7 @@ See also: c64_pitfalls_for for every pitfall a register, routine or technique tr
   },
   outputSchema: LintSourceSchema.shape,
   annotations: READ_ONLY,
+  readsGraph: false,
   run: ({ source, language, toolchain }) =>
     lintSourceResult(source, { language, ...definedOnly({ toolchain }) }),
 });

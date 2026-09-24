@@ -12,18 +12,11 @@ import {
   type TechniqueLookupOutput,
   type TechniquesForOutput,
 } from "../../schemas/tool-outputs.ts";
-import {
-  describeFilter,
-  names,
-  parseRows,
-  searchChunks,
-  suggestNames,
-  toDocChunk,
-  type Chunk,
-} from "./shared.ts";
+import { describeFilter, names, parseRows, suggestNames, toDocChunk, type Chunk } from "./shared.ts";
 import { CLAIM_MODES } from "../../graph/claims.ts";
 import { compressUnits } from "./compatibility/unit-rules.ts";
 import { rankRecipesFor } from "../../domain/budget.ts";
+import { techniqueDocumentation } from "./technique-docs.ts";
 import type { TechniqueLookupResult, TechniquesForResult } from "./types.ts";
 
 /** A number property, or null when the node has none (or a non-number). */
@@ -252,9 +245,8 @@ export async function techniqueLookup(name: string): Promise<TechniqueLookupResu
   const edges = await neighbourhoodOf(name);
   const claims = await claimsOf(row);
 
-  // Documentation chunks from Qdrant
-  const { chunks: ctx } = await searchChunks({ query: `${name} ${row.title ?? ""}`.trim(), limit: 3 });
-  const documentation = ctx.map(toDocChunk);
+  // Documentation chunks from Qdrant, only those about the technique (#41)
+  const documentation = (await techniqueDocumentation(name, row.title ?? "")).map(toDocChunk);
 
   getAnalytics().logQuery({ tool: "c64_technique_lookup", query: name, resultCount: 1 });
 
@@ -323,10 +315,9 @@ function renderTechnique(
     "Mitigates",
     (t.mitigates ?? []).map((m) => `${m.name} (${m.severity})`),
   );
-  if (t.recipes.length > 0) {
-    out += `\n## Recipes\n\n`;
-    for (const r of t.recipes) out += `- \`${r.name}\` (${r.toolchain})\n`;
-  }
+  out += `\n## Recipes\n\n`;
+  if (t.recipes.length === 0) out += `No recipe realises this technique yet.\n`;
+  for (const r of t.recipes) out += `- \`${r.name}\` (${r.toolchain})\n`;
   if (documentation.length > 0) {
     out += `\n## Documentation\n\n`;
     for (const d of documentation) out += `### ${d.source} > ${d.section}\n${d.text}\n\n---\n\n`;

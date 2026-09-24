@@ -49,8 +49,16 @@ export function parseFlags(argv: string[]): RunFlags {
   return { forceAll, cleanFirst: argv.includes("--clean") || forceAll };
 }
 
-/** Connect both stores, wiping them first on a clean run. */
-async function connectStores(cleanFirst: boolean): Promise<{ qdrant: QdrantService; falkor: FalkorService }> {
+/**
+ * Connect both stores, wiping them first on a clean run. A clean run writes
+ * the rebuild marker before it wipes anything, so the query tools refuse to
+ * answer from the half-built graph (src/services/rebuild-marker.ts, #41). An
+ * incremental run re-MERGEs changed files into a whole graph and sets none.
+ */
+async function connectStores(
+  cleanFirst: boolean,
+  flags: string,
+): Promise<{ qdrant: QdrantService; falkor: FalkorService }> {
   const qdrant = new QdrantService();
   await qdrant.ensureCollection();
   console.log("  qdrant: connected");
@@ -61,6 +69,8 @@ async function connectStores(cleanFirst: boolean): Promise<{ qdrant: QdrantServi
   console.log("  falkordb: connected (schema ensured)");
 
   if (cleanFirst) {
+    await falkor.markRebuildStarted(flags);
+    console.log("  falkordb: rebuild marker set (query tools refuse until the report is done)");
     await falkor.clean();
     console.log("  falkordb: cleaned per-label nodes (schema + Chip/Region seeds preserved)");
     await qdrant.dropCollection();
@@ -106,7 +116,7 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
   }
   console.log(`  embeddings: ${config.ollama.model} via Ollama`);
 
-  const { qdrant, falkor } = await connectStores(cleanFirst);
+  const { qdrant, falkor } = await connectStores(cleanFirst, flags);
 
   const files = findMarkdown(DOCS_DIR);
   console.log(`\nFound ${files.length} markdown files`);
@@ -141,6 +151,7 @@ export async function runIngest({ forceAll, cleanFirst }: RunFlags): Promise<num
   await linkVerifiedOn(falkor, DOCS_DIR, print);
   const stubTechniques = await findStubTechniques(falkor);
   await reportSummary({ qdrant, falkor, nodes, edges, stubTechniques, print });
+  if (cleanFirst) await falkor.markRebuildFinished();
 
   await falkor.close();
   return 0;

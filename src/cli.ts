@@ -19,6 +19,7 @@ import { closeAll } from "./context.ts";
 import { definedOnly } from "./server/defined-only.ts";
 import { reFrameProfile, reIrqChain } from "./tools/re.ts";
 import { registerSetupCommands } from "./cli/setup.ts";
+import { rebuildInProgress, rebuildMessage } from "./services/rebuild-marker.ts";
 
 const TOOLCHAINS = ["oscar64", "kickassembler", "cc65"] as const;
 const REGIONS = ["pal", "ntsc", "both"] as const;
@@ -44,6 +45,32 @@ function regionArg(value: string): string {
 
 const program = new Command();
 
+/**
+ * Commands that answer from the graph. While a batch ingest is rebuilding
+ * it they print the rebuild message and exit 1 instead (#41), as the MCP
+ * tools do (src/server/define-tool.ts).
+ */
+const GRAPH_COMMANDS = new Set([
+  "search",
+  "lookup-register",
+  "lookup-kernal",
+  "memory-map",
+  "lookup-opcode",
+  "pal-ntsc-diff",
+  "toolchain-hint",
+  "recipe-lookup",
+  "recipes-for",
+  "technique-lookup",
+  "techniques-for",
+  "check-compatibility",
+  "timing-budget",
+  "plan-budget",
+  "pitfalls-for",
+  "failure-diagnose",
+  "demo-briefing",
+  "game-briefing",
+]);
+
 // Every lookup command prints its markdown, or, under the global --json
 // flag, the same tool's structured object (the shape the MCP server
 // returns). Until data 718 only the briefings honoured the flag.
@@ -60,6 +87,11 @@ program
   .description("Commodore 64 knowledge base")
   .version(getVersions().package)
   .option("--json", "Output JSON instead of human-readable text")
+  .hook("preAction", async (_program, action) => {
+    if (!GRAPH_COMMANDS.has(action.name())) return;
+    const state = await rebuildInProgress();
+    if (state) throw new Error(rebuildMessage(state));
+  })
   .hook("postAction", async (_program, action) => {
     if (action.name() !== "serve") await closeAll();
   });

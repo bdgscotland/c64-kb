@@ -30,9 +30,9 @@ The score panel is a fixed band under or over the scrolling field: a raster spli
 
 A road shooter has a car for a ship: in Spy Hunter the road scrolls toward the player and enemy cars and a helicopter attack the player's car. Its extra parts are the car's handling, where throttle is the scroll speed (`vehicle_control`), cars that shove each other off the road (`car_contact_response`), and pursuit cars that pull alongside and ram (`lane_pursuit_ai`). They are not in the fingerprint because a ship shooter has none of them; a brief that names a car or a road finds them by its words.
 
-**Technique fingerprint:** `soft_scroll_v`, `scroll_panel_split`, `sprite_multiplex_game`, `per_frame_hitbox`, `wave_director`, `stable_raster_irq`, `double_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`
+**Technique fingerprint:** `soft_scroll_v`, `scroll_panel_split`, `sprite_multiplex_game`, `per_frame_hitbox`, `wave_director`, `sid_voice_setup`, `sid_play_routine_pattern`, `sfx_in_player`, `sprite_collision_detect`
 
-An earlier fingerprint named `raster_bars`, which nothing in this section uses, and `sprite_multiplex_24`, whose own page scopes it to Oscar64's `vspr_*` path and the fixed-band demo recipe; it named neither the panel split, the hitboxes nor the wave director.
+An earlier fingerprint named `raster_bars`, which nothing in this section uses, and `sprite_multiplex_24`, whose own page scopes it to Oscar64's `vspr_*` path and the fixed-band demo recipe; it named neither the panel split, the hitboxes nor the wave director. Until #41 it also named `stable_raster_irq` and `double_irq`: the panel split polls for its line and times its writes from a delay table, as `kickassembler-scroll-panel-split` and the `shmup-vertical` starter's `kernel.asm` do, so neither is needed (the starter's PLAN.md drops both). `sfx_in_player`, which the starter uses for its effects, was missing.
 
 **Brief words:** vertical shooter, vertical shmup, vertically scrolling, vertical scrolling, vertical scroller, road shooter, road, car, spy hunter
 
@@ -146,7 +146,9 @@ The display is a static or near-static character grid. Screen RAM is updated onl
 
 Puzzle games are one of the few C64 genres where the SID play routine can share the main loop without raster scheduling, because the frame rate need not be pixel-perfect. A raster wait at the top of the frame (spin on $D011 bit 7 until the blanking period) is enough. The harder work is the puzzle rules: Boulder Dash's diagonal-fall and explosion logic is a small state machine per cell, and running it for all 1000 cells 50 times a second needs careful ordering to avoid simulation artifacts.
 
-**Technique fingerprint:** `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_multiplex_8`, `zero_page_burst`, `self_modifying_code`, `text_mode_overlay_render`
+**Technique fingerprint:** `frame_sync_loop`, `cave_scan_engine`, `charset_animation`, `sid_voice_setup`, `sid_play_routine_pattern`, `zero_page_burst`, `self_modifying_code`, `text_mode_overlay_render`
+
+Until #41 the fingerprint named `sprite_multiplex_8` and `stable_raster_irq`. Neither fits the section: every object is a cell, not a sprite, and a raster wait at the top of the frame is enough. The `action-puzzle` starter, a Boulder Dash-style cave game, uses no sprites and a polled `frame_sync_loop`, and builds on `cave_scan_engine` and `charset_animation`, which the fingerprint did not name.
 
 **Common pitfalls:** `badline_cycle_loss`, `kernal_clobbers_a_x_y`, `d012_wrap_around`, `sprite_priority_collision_silent`
 
@@ -170,7 +172,9 @@ Memory is the main constraint. A large text adventure needs story text (often 50
 
 The SID plays simple sound effects (a beep on input, a chord on success or death) or nothing. The VIC-II runs its default 40-column character mode with no custom charset. IRQs, if used, only blink the cursor or keep a real-time clock for timed puzzles. The genre puts the least load on C64-specific hardware and the most on software architecture and data compression.
 
-**Technique fingerprint:** `ram_under_kernal`, `cpu_io_port_bank`, `exomizer_basics`, `sid_voice_setup`, `two_word_parser`
+**Technique fingerprint:** `adventure_database_engine`, `two_word_parser`, `text_input_line`, `kernal_file_write_seq`, `kernal_file_read_seq`, `error_channel_check`, `sid_voice_setup`
+
+Until #41 the fingerprint led with `ram_under_kernal`, `cpu_io_port_bank` and `exomizer_basics`, the strategies of the paragraph above for a story too large for 64 KB with the ROMs in. They are for that large game only; the `adventure` starter fits under $A000 with the ROMs in and drops all three (its PLAN.md). Look them up by name when a game needs them. The fingerprint named neither the engine, the input line nor the save and load a parser game needs.
 
 **Common pitfalls:** `kernal_clobbers_a_x_y`, `kernal_io_mapping_dependency`, `kernal_assumes_sei_cleared`, `ram_under_rom_traps`
 
