@@ -143,10 +143,19 @@ export function touchedUnits(
   return owners.filter((o) => o.mask === 0xff || (o.mask & changed) !== 0).map((o) => o.unit);
 }
 
+/** $D000-$DFFF: I/O when the port banks it in, RAM to a store otherwise. */
+const isIoAddr = (addr: number): boolean => addr >= 0xd000 && addr <= 0xdfff;
+
 export class ClaimsWatch {
   readonly port = new CpuPort();
   readonly tallies = new Map<string, Tally>();
-  /** Last value written per I/O register, from every store seen (boot included). */
+  /**
+   * Last value written per I/O register, from every store seen (boot
+   * included) while I/O was banked in. A store to $D000-$DFFF with I/O
+   * banked out goes to RAM and leaves the register alone. An earlier version
+   * shadowed it anyway: ifli-image's RAM fill of $DC00-$DFFF under $01 = $34
+   * made its next $DD00 store read as a serial_bus change (#79).
+   */
   readonly shadow = new Map<number, number>();
   started = false;
   startClock: number | null = null;
@@ -215,6 +224,7 @@ export class ClaimsWatch {
 
   private remember(addr: number, value: number | null): void {
     if (addr <= 1) this.port.store(addr, value);
+    if (isIoAddr(addr) && !this.port.io) return;
     if (value === null) this.shadow.delete(addr);
     else this.shadow.set(addr, value);
   }
@@ -238,14 +248,14 @@ export class ClaimsWatch {
 
   /** Units at this address; "io_unowned" for an I/O store that touches no unit's bits. */
   private unitsAt(addr: number, value: number | null): string[] | "io_unowned" {
-    const io = addr >= 0xd000 && addr <= 0xdfff && this.port.io;
+    const io = isIoAddr(addr) && this.port.io;
     // Colour RAM is the program's own memory: judged by --range, like screen RAM.
     if (io && addr >= 0xd800 && addr <= 0xdbff) return [];
     if (io) {
       const got = touchedUnits(this.opt.units, addr, value, this.shadow.get(addr));
       return got.length > 0 ? got : "io_unowned";
     }
-    if (addr >= 0xd000 && addr <= 0xdfff) return [];
+    if (isIoAddr(addr)) return [];
     const base = this.opt.screenBase;
     if (base !== undefined) {
       const hit = this.opt.screen.find((s) => base + s.offset === addr);
@@ -263,7 +273,9 @@ export class ClaimsWatch {
   }
 
   private ramFinding(addr: number, source: Source): Finding {
-    const target = addr < 0x100 ? "zero page" : addr >= 0xd800 && addr <= 0xdbff ? "colour RAM" : "RAM";
+    // $D800-$DBFF is colour RAM only with I/O banked in; an earlier version labelled it so always (#79).
+    const colour = addr >= 0xd800 && addr <= 0xdbff && this.port.io;
+    const target = addr < 0x100 ? "zero page" : colour ? "colour RAM" : "RAM";
     if (source === "kernal" && addr < 0x100) {
       const by = this.opt.declared.kernalMay.get(addr);
       return by

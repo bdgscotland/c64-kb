@@ -366,6 +366,36 @@ describe("the watch over a log", () => {
     );
   });
 
+  // #79: ifli-image's shape. With $01 = $34 a store to $DD00 or $D800 goes
+  // to RAM; it must not become the $DD00 shadow, and $D800 is plain RAM.
+  it("keeps a RAM store under I/O out of the register shadow and off colour RAM", () => {
+    const w = new ClaimsWatch({ units: map, screen, declared: new Declared(), start: 0x080e });
+    feedLog(w, [
+      "#1 (Trace store dd00)    1/$001,   1/$01",
+      ".C:fda3  8D 00 DD    STA $DD00      - A:97 X:00 Y:00 SP:f9 ..-..IZ.    2004500",
+      LOG[2] ?? "",
+      LOG[3] ?? "",
+      "#1 (Trace store 0001)   41/$029,  45/$2d",
+      ".C:0810  85 01       STA $01        - A:34 X:00 Y:00 SP:f6 ..-..I..    3049305",
+      "#1 (Trace store dd00)   41/$029,  50/$32",
+      ".C:0812  8D 00 DD    STA $DD00      - A:08 X:00 Y:00 SP:f6 ..-..I..    3049310",
+      "#1 (Trace store d800)   41/$029,  54/$36",
+      ".C:0815  8D 00 D8    STA $D800      - A:08 X:00 Y:00 SP:f6 ..-..I..    3049314",
+      "#1 (Trace store 0001)   41/$029,  58/$3a",
+      ".C:0818  86 01       STX $01        - A:08 X:37 Y:00 SP:f6 ..-..I..    3049318",
+      "#1 (Trace store dd00)   41/$029,  62/$3e",
+      ".C:081a  8D 00 DD    STA $DD00      - A:94 X:37 Y:00 SP:f6 ..-..I..    3049322",
+    ]);
+    expect(w.shadow.get(0xdd00)).toBe(0x94);
+    expect(verdicts(w)).toEqual([
+      "cpu_port program 6510 port",
+      "undeclared program RAM",
+      "undeclared program cia2_vic_bank",
+    ]);
+    const ram = [...w.tallies.values()].find((t) => t.finding.target === "RAM");
+    expect([...(ram?.addrs.keys() ?? [])]).toEqual([0xdd00, 0xd800]);
+  });
+
   it("with no entry address, starts at the first store from outside ROM", () => {
     const w = new ClaimsWatch({ units: map, screen, declared: new Declared() });
     feedLog(w, LOG);
