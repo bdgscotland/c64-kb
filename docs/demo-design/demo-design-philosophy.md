@@ -211,7 +211,9 @@ Genesis Project, Onslaught) give transitions their own development time, like an
 **Tune sync.** An effect that moves with the music's beat grid reads as designed, not as a
 coincidence. Tune sync can come from hardcoded timing tables derived from the musician's tempo,
 from CIA timer comparisons, or from live SID voice-amplitude sampling. The simplest form, raster
-bars that expand on the beat, is immediately legible to a scene audience. Complex sync, with
+bars that expand on the beat, is immediately legible to a scene audience. The row-counter and ENV3
+routes, with frames per beat worked from the tempo, are `music_sync_timeline`
+(`../techniques/music-sid.md`) and its measured recipe `../recipes/kickassembler/music-sync.md`. Complex sync, with
 several visual parameters driven independently by different frequency bands, marks a high-ambition
 production.
 

@@ -1894,5 +1894,33 @@
       "ntsc"
     ],
     "flags": []
+  },
+  "kickassembler/music-sync": {
+    "cycles": 10115000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
+  },
+  "kickassembler/music-sync@off": {
+    "cycles": 9950000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ]
   }
 }
