@@ -366,7 +366,8 @@ function runVice(v: ViceRun, x64scPath: string): string {
     v.png,
     ...v.attach,
   ];
-  const r = spawnSync(x64scPath, args, { encoding: "utf8", timeout: 300_000 });
+  // In the work directory, so a file a device writes (a printer's print.dump) lands there, not in the repo.
+  const r = spawnSync(x64scPath, args, { encoding: "utf8", timeout: 300_000, cwd: dirname(v.png) });
   if (!existsSync(v.png)) {
     const tail = (r.stderr || r.stdout).split("\n").slice(-3).join(" | ");
     return `x64sc produced no screenshot (exit ${String(r.status)}${r.signal ? ` ${r.signal}` : ""}): ${tail}`;
