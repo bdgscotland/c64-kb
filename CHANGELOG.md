@@ -5,7 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 794, schema 33, tools 2.8.0, package 0.21.0.
+Data 795, schema 33, tools 2.8.0, package 0.21.0.
+
+**Claims lines for twelve more display-field techniques (data 795; part
+of #74).** From claims-watch traces of 14 recipes in VICE:
+badline_synchronization reads `vic_yscroll`; tech_tech_wobbler owns the
+raster IRQ and shares YSCROLL, XSCROLL and the matrix base;
+char_scroll_buffer_h shares XSCROLL; charset_animation,
+standard_bitmap, multicolor_bitmap and koala_format own the char base
+(koala_format now **Requires:** multicolor_bitmap, so the two are not
+rival owners); mci_interlace_bitmap owns the VIC bank, matrix base and
+XSCROLL; hires_plot, bresenham_line and ecm_mode claim none. New hard
+conflicts: mci_interlace_bitmap × soft_scroll_h, charset_animation ×
+standard_bitmap. vsp_glitch, afli_image, ifli_image and mcm_text have
+no recipe to trace and no Claims line.
 
 **Starter claims pass again after the display units (#78).** 231d8b2
 made the VIC scroll and pointer fields claimable, and six starters did
