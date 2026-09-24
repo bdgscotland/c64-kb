@@ -5,7 +5,17 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 799, schema 33, tools 2.8.0, package 0.21.0.
+Data 800, schema 33, tools 2.8.0, package 0.21.0.
+
+**IRQ recipes declare their vector and CIA1 mask (data 800; #81).** 32
+KickAssembler recipes carry a `claims:` frontmatter line from their own
+claims-watch trace: the vector they install (`$0314`, `$FFFE`, `$0318`,
+`$FFFA`) as `owns`, and the start-up `$7F` store to `$DC0D` as `init`.
+The vector is the recipe's choice, not the technique's
+(CONVENTIONS-techniques), so no technique Claims line changed.
+afli-image, sideborder-open and stable-raster-irq now pass claims-watch
+with 0 violations. The ingest does not read recipe claims yet (#22 step
+8).
 
 **Recipe: a raster road with sprites on its lines (data 799; #77).**
 `road-sprite-lines` keeps each road line's `$D016` store on one cycle
