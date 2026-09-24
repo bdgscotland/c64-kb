@@ -24,7 +24,8 @@ next. It scans the same range for `DEC` of the survivor, then patches
 that instruction two ways and plays each patched game for up to eight
 deaths. Three NOPs keep the lives at 3 but end the game on the first
 death; `LDA` of the same address keeps it running. CIA1 timers A and B
-time the first search pass. `$02FF` holds `01` and the border is green
+time the first search pass; the count goes to `$02FB-$02FE`, low byte
+first, not to the screen. `$02FF` holds `01` and the border is green
 when one candidate survives, it is the lives byte, one `DEC` is found,
 the unpatched game ends on death 3, the NOP game on death 1 and the LDA
 game survives all eight; else `02` and red. It implements
@@ -45,7 +46,8 @@ measures `nop_patch_leaves_stale_flags` (`pitfalls/cpu.md`).
 // NOP patch keeps lives at 3 but the BEQ after it tests the Z flag left by
 // the LDA #0 before it, so the first death is game over. The LDA patch
 // sets Z from the lives byte and the game runs on. CIA1 timers A and B
-// time the first search pass. $02FF holds 01 and the border is green when
+// time the first search pass; the count goes to $02FB-$02FE, low byte
+// first. $02FF holds 01 and the border is green when
 // exactly one candidate survives, one DEC is found, the NOP patch ends the
 // game on the first death and the LDA patch survives eight; else 02, red.
 #include <c64/vic.h>
@@ -54,6 +56,7 @@ measures `nop_patch_leaves_stale_flags` (`pitfalls/cpu.md`).
 #define SCREEN ((char *)0x0400)
 #define COLOUR ((char *)0xd800)
 #define RESULT (*(volatile char *)0x02ff)
+#define CYCLES ((volatile char *)0x02fb)   // pass 1 cycles, 32 bits, low byte first
 
 #define LO 0x0800u
 #define HI 0x9000u
@@ -271,8 +274,11 @@ int main(void)
     put_dec(2, 9, n3, 5);
     put_dec(2, 19, n2, 3);
     put_dec(2, 27, n1, 3);
-    put_str(3, 0, "pass 1 cycles");
-    put_dec(3, 14, cyc, 7);
+    // The count depends on how many bytes match, so on the power-on RAM:
+    // it goes to $02FB-$02FE for the monitor, not to the pinned screen.
+    put_str(3, 0, "pass 1 cycles at $02fb");
+    for (char i = 0; i < 4; i++)
+        CYCLES[i] = (char)(cyc >> (8 * i));
     put_str(4, 0, "lives at $      dec at $      decs");
     put_hex16(4, 10, addr);
     put_hex16(4, 24, site);
@@ -302,13 +308,25 @@ oscar64 -tm=c64 -O2 -o=trainer-hooks.prg trainer-hooks.c
 ```
 
 Run headless (the program finishes in well under 8,000,000 cycles and
-holds its screen):
+holds its screen). `cycles.mon` logs `$02FB-$02FF` when the verdict is
+stored (the route in `runtime/vice-reference.md`, "Route 2: the
+machine, over `-moncommands`"):
 
-```bash
-x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 -exitscreenshot trainer-hooks.png -autostart trainer-hooks.prg
+```
+logname "cycles.log"
+log on
+trace store 02ff
+command 1 "m 02fb 02ff"
 ```
 
-Add `-model ntsc` for the NTSC picture. The PRG is 1,926 bytes.
+```bash
+x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 -limitcycles 8000000 -raminitrandomchance 0 -moncommands cycles.mon -exitscreenshot trainer-hooks.png -autostart trainer-hooks.prg
+grep '^>C:02fb' cycles.log | tail -1
+```
+
+Add `-model ntsc` for the NTSC picture. The PRG is 1,924 bytes.
+`-raminitrandomchance 0` is in the pinned run (`runs.json`); why is in
+"Expected output".
 
 ## Expected output
 
@@ -319,8 +337,8 @@ White text on black, green border. PAL,
 trainer: value search, dec scan, patch
 
 search 3:00018   2:001   1:001
-pass 1 cycles 1483115
-lives at $0f85  dec at $0b8f  decs  01
+pass 1 cycles at $02fb
+lives at $0f83  dec at $0b84  decs  01
 
 patch  deaths  lives  (8 max)
 none   03
@@ -330,11 +348,36 @@ lda    08     03
 pass
 ```
 
-NTSC, `screenshots/trainer-hooks-ntsc.png`: the same rows with
-`pass 1 cycles 1495095`. Read from both screenshots with a PIL decoder
-that matches each cell against the character ROM (VICE x64sc 3.10). The
-two addresses are where this build put them; another compiler version
-moves them, and the search finds them wherever they are.
+NTSC, `screenshots/trainer-hooks-ntsc.png`: the same rows. Read from
+both screenshots with a PIL decoder that matches each cell against the
+character ROM (VICE x64sc 3.10). The two addresses are where this build
+put them; another compiler version moves them, and the search finds
+them wherever they are.
+
+The monitor log's last line is `>C:02fb  6d a1 16 00` on PAL
+($0016A16D, 1,483,117 cycles) and `>C:02fb  39 d0 16 00` on NTSC
+($0016D039, 1,495,097), then `>C:02ff  01`: the same bytes on ten runs
+of each model with VICE's default RAM and on three with
+`-raminitrandomchance 0`.
+
+The search reads RAM the program never wrote, so its first count
+depends on the power-on contents. VICE fills RAM with a pattern of
+`$00` and `$FF` plus random bit flips (`RAMInitRandomChance=10` in
+`-dumpconfig`), and the random part changed between invocations here:
+six runs started together at chance 400 put their extra 3s at one set
+of addresses, three runs started later at another. At the default the
+count was 18 on 40 direct runs of this build and 60 of a probe build
+that lists the addresses. One of 38 `verify:recipes` runs of this page
+counted 19 (`search 3:00019`), as did one run of the earlier build by
+another session, whose pass 1 then took 33 more cycles. With
+`-raminitrandomchance 0` the count was 18 on 40 `verify:recipes` runs
+of both models, four at a time. A real C64's power-on RAM varies too,
+and the search copes the same way: the second pass still left one
+candidate in the run that counted 19. (An earlier version printed the
+cycle count on row 3, and issue #109 put the change down to interrupt
+or autostart timing. Every run here with the same RAM gave the same
+cycle count; it is now read from `$02FB`, so the picture does not
+carry it.)
 
 ## Why this works
 
@@ -345,19 +388,25 @@ the first narrowing (a score digit, a counter that happens to match),
 and the answer is another death and another pass. The first pass reads
 every byte and sets a candidate bit; the later passes only visit bytes
 whose bit is set, so they cost a fraction of the first. The first pass
-takes 1,483,115 cycles on PAL and 1,495,095 on NTSC, about 43 cycles a
+takes 1,483,117 cycles on PAL and 1,495,097 on NTSC, about 43 cycles a
 byte in C with the screen on (measured with CIA1 timers A and B
-chained, interrupts off).
+chained, interrupts off, read from `$02FB`). The build that printed the
+count on screen, laid out two bytes longer, gave 1,483,115 and
+1,495,095.
 
 The range stops at `$8FFF` because Oscar64 puts this program's stack at
-`$9000-$9FF0` (its `.map` file). A first build searched to `$9FFF` and
-counted 19 candidates on one run and 20 on the next with the same PRG:
-the searcher's own stack changes under it. A search tool running inside
-the machine it searches has to leave its own workspace out of the range.
+`$9000-$9FF0` (its `.map` file). A build of this listing searching to
+`$9FFF` counts 19 candidates, not 18, on four runs with and four
+without `-raminitrandomchance 0`: the searcher's own stack is searched
+with the game. A first build counted 19 on one run and 20 on the next;
+the 20 was not reproduced here, and the random RAM above is one way to
+get it (an earlier version blamed the stack changing between runs). A
+search tool running inside the machine it searches has to leave its
+own workspace out of the range.
 
 The scan for the code that changes the byte looks for `$CE lo hi`
 (`DEC abs`) and, for a zero-page byte, `$C6 lo`. It finds one, at
-`$0B8F`, whose next two bytes are `$F0 $08`: the game's `BEQ` to game
+`$0B84`, whose next two bytes are `$F0 $08`: the game's `BEQ` to game
 over. Those bytes were read from the PRG file. A three-byte opcode
 pattern can occur in data as well; a scan that finds more than one is
 narrowed by patching each and watching the byte, as the next step does.

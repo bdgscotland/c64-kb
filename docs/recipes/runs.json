@@ -2192,7 +2192,10 @@
       "pal",
       "ntsc"
     ],
-    "flags": [],
+    "flags": [
+      "-raminitrandomchance",
+      "0"
+    ],
     "shots": {
       "pal": "screenshots/trainer-hooks.png",
       "ntsc": "screenshots/trainer-hooks-ntsc.png"
