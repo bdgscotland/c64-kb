@@ -7,6 +7,7 @@ techniques: [sid_8580_vs_6581_differences]
 file_formats: [PRG]
 uses_registers: [D011, D012, D020, D40E, D40F, D412, D41B]
 uses_kernal: [CHROUT]
+claims: [sid_voice_3 (owns)]
 harness: [$02F0-$02F1]
 ---
 
