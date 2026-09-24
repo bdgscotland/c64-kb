@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 813, schema 36, tools 2.12.0, package 0.25.0.
+Data 814, schema 37, tools 2.13.0, package 0.26.0.
+
+**Alternatives, consumed formats and Oscar64 wrappers in the graph
+(schema 37, tools 2.13.0, package 0.26.0, data 814; #17 ONTO-07,
+ONTO-08; #19).** `**Alternative to:** name (tradeoff)` becomes
+ALTERNATIVE_TO: ten pairs, each from a page that already compares the
+two (the multiplexers, the packers, the digi methods, bitmap vs
+character scrolling); `technique_lookup` lists them and briefings name
+the alternative they left out. `**Consumes formats:**` on six techniques
+becomes Technique CONSUMES FileFormat (SID, CRT, CTM, PRG, TAP, and a
+new `.KLA` entry). `**Wraps:**` lines read from Oscar64's `include/c64`
+sources give 69 LibraryFunction nodes and 299 WRAPS edges to registers
+and KERNAL routines; `pitfalls_for krnio_open` finds 7 pitfalls through
+SETLFS, OPEN and CLOSE. FalkorDB's `exists()` on a pattern returned true
+with no such edge, and a pattern comprehension first run before an edge
+type existed kept returning 0; the new checks use plain MATCH.
 
 **Tool repairs from #19 (tools 2.12.0, package 0.25.0, data 813).**
 `check_compatibility` says what a refused name is (a Pitfall, a
