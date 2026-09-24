@@ -5,7 +5,25 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 827, schema 39, tools 2.14.0, package 0.27.0.
+Data 827, schema 39, tools 2.15.0, package 0.27.0.
+
+**`c64_re_irq_chain` sees through a `JMP (pointer)` handler (tools
+2.15.0).** Commando's only interrupt handler is `$4134: JMP ($0406)`;
+each raster part rewrites `$0406/$0407`, so all 11,374 entries landed on
+`$4134` and its five parts a frame were invisible. When a handler's first
+instruction is `JMP ($xxxx)`, a third run traces the pointer's two bytes:
+each entry gains `target`, each handler `pointer` and `dispatch` (entries,
+lines and armed lines per target). Measured in VICE x64sc 3.10, PAL, 60M
+cycles (image not in the repo): `$41C5` on line 30, `$4284` on 50/52,
+`$4389` on 192, `$4137` on 213, `$4188` on 222, about 2,275 entries each.
+Three more faults, ported from the unmerged `re-irq-dispatch` branch:
+stores logged at an interrupt's clock are applied before its dispatch is
+read (VICE logs the handler's first exec before them); the banking comes
+from `$00` with `$01` (`CpuPort`), so a RAM `$FFFE` value is no candidate
+while the KERNAL is mapped (Commando listed `$0000`, `$0334` and `$CA53`
+as installed handlers); `$FFFE` and `$FFFA` naming one RAM handler are
+both in `via` and the interrupt is named under unknowns.
+sprite-multiplex-game and raster-bars give the same result as before.
 
 **Loaders, storage and I/O measured, and three more toolchains in the
 listing gate (data 827; #19 group L, #102).** New recipes run on PAL
