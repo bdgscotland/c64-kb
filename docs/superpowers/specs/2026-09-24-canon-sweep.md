@@ -63,14 +63,14 @@ there and what is not; "missing" means no entry.
 | 34 | String input (I/O) | covered | `text.md` `text_input_line` |
 | 35 | Disk load and save through the KERNAL (I/O, KERNAL) | covered | `file-io.md` `kernal_load_to_address`, `kernal_file_write_seq`; `file-io-roundtrip.md` |
 | 36 | Plotting pixels and drawing lines (VIC) | covered | `bitmap-modes.md` `hires_plot`, `bresenham_line`; `hires-plot-line.md` |
-| 37 | Circle drawing (VIC) | missing | no entry |
+| 37 | Circle drawing (VIC) | covered | `bitmap-modes.md` `midpoint_circle`; `hires-circle.md` |
 | 38 | PAL/NTSC detection (VIC) | covered | `raster.md` `pal_ntsc_detection`; `oscar64/pal-ntsc-detect.md` |
 | 39 | SID model detection (SID) | missing | no entry; issue #24 backlog lists a `$D41B` recipe |
 | 40 | Music player call from an IRQ (SID) | covered | `music-sid.md` `sid_play_routine_pattern`; `music-player.md` |
 
 Totals when recorded: 33 covered, 1 partial, 6 missing. Issue #89 has
-since moved rows 4, 5 and 11 from missing, and row 14 from partial, to
-covered.
+since moved rows 4, 5, 11 and 37 from missing, and row 14 from partial,
+to covered.
 
 ## Missing and partial
 
