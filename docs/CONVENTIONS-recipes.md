@@ -40,6 +40,17 @@ Archetype`, drops a name that matches no Archetype with a warning, and
 `c64_game_briefing` offers the recipe as the first build step for that
 archetype.
 
+`claims` is optional too. It lists the hardware units the listing chooses,
+beyond what its techniques' `**Claims:**` lines hold, in the same grammar
+(`CONVENTIONS-techniques.md`): `claims: [irq_vector_0314 (owns),
+cia1_timer_a (init)]`. The interrupt vector is the usual entry: a technique
+does not claim a vector, because its recipes choose `$0314` or `$FFFE`.
+Masking CIA1 with one `$7F` store to `$DC0D` before the frame loop is
+`init` on each CIA1 unit that store changes. Write it from a
+`scripts/claims-watch.ts --recipe` trace, never from reading the listing;
+a measurement harness is not a claim. `claims-watch` reads the key; the
+ingest does not yet (#22, step 8).
+
 ## Section structure
 
 After the frontmatter:

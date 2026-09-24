@@ -7,6 +7,7 @@ techniques: [charset_copy_rom_to_ram]
 file_formats: [PRG]
 uses_registers: [D011, D012, D018, D020, DC0D, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), nmi_vector_0318 (owns)]
 ---
 
 <!-- doc-type: recipe -->

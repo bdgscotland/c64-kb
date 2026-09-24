@@ -7,6 +7,7 @@ techniques: [big_font_2x2, char_scroll_buffer_h, soft_scroll_h]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D019, D01A, D020, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
+claims: [irq_vector_0314 (owns), cia1_timer_b (init), cia1_tod (init)]
 ---
 
 <!-- doc-type: recipe -->
