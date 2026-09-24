@@ -61,9 +61,9 @@ describe("region samples", () => {
   });
 
   it("does not match a load hit at the store marker address", () => {
-    const load = (clock: number): Hit => ({ ...base, kind: "load", clock });
-    const p = analyseRegion([load(10), st(0x11, 20), st(0, 520)], TIMER_B, PAL, 0);
-    expect(p).toMatchObject({ count: 1, unpaired: 0, worst: 500 });
+    const load = (a: number, clock: number): Hit => ({ ...base, kind: "load", a, clock });
+    const p = analyseRegion([load(0x11, 10), st(0, 20)], TIMER_B, PAL, 0);
+    expect(p).toMatchObject({ count: 0, samples: [], worst: null, typical: null });
   });
 });
 
