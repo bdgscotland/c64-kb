@@ -8,6 +8,7 @@ import type { CompatibilityCheckResult } from "../types.ts";
 import { fetchCompatibilityFacts } from "./fetch.ts";
 import { identifyNames } from "./identify.ts";
 import { renderCompatibility } from "./render.ts";
+import { readPlacements } from "./placement.ts";
 import { evaluateCompatibility } from "./rules.ts";
 
 export { evaluateCompatibility } from "./rules.ts";
@@ -19,14 +20,17 @@ export type { CompatibilityFacts, TechniqueFacts } from "./facts.ts";
 /**
  * A list with any "name:phase" is checked by phase, like a design (#94);
  * otherwise as one set. A call or item count ("name ×N", plan_budget's
- * syntax) is read and dropped: it does not change what can coexist.
+ * syntax) is read and dropped: it does not change what can coexist. A
+ * band ("name@248-272") places a movable technique on those lines (#90).
  */
-export async function checkCompatibility(specs: string[]): Promise<CompatibilityCheckResult> {
+export async function checkCompatibility(given: string[]): Promise<CompatibilityCheckResult> {
+  const { specs, placements } = readPlacements(given);
   if (specs.some((s) => s.includes(":"))) {
     const by = membersByPhase([], specs);
-    return checkPhasedCompatibility(by, { title: [...new Set([...by.values()].flat())].join(" + ") });
+    const title = [...new Set([...by.values()].flat())].join(" + ");
+    return checkPhasedCompatibility(by, { title }, placements);
   }
-  return checkOneSet(specs.map(nameOf));
+  return checkOneSet(specs.map(nameOf), placements);
 }
 
 /** The technique name of a spec with a count; a spec that does not parse is passed on whole. */
@@ -35,8 +39,11 @@ function nameOf(spec: string): string {
   return "error" in parsed ? spec : parsed.name;
 }
 
-async function checkOneSet(techniques: string[]): Promise<CompatibilityCheckResult> {
-  const facts = await fetchCompatibilityFacts(techniques);
+async function checkOneSet(
+  techniques: string[],
+  placements: ReadonlyMap<string, string>,
+): Promise<CompatibilityCheckResult> {
+  const facts = { ...(await fetchCompatibilityFacts(techniques)), placements };
   const { closureOnly, ...evaluation } = evaluateCompatibility(facts);
 
   getAnalytics().logQuery({
@@ -58,6 +65,7 @@ async function checkOneSet(techniques: string[]): Promise<CompatibilityCheckResu
     shared_infrastructure: evaluation.shared_infrastructure,
     data_coverage: evaluation.data_coverage,
     not_found: evaluation.not_found,
+    ...(evaluation.placements_refused ? { placements_refused: evaluation.placements_refused } : {}),
     verdict: evaluation.verdict,
   };
   // A refused name may still be a node of another type: say which (#19).

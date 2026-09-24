@@ -323,7 +323,7 @@ costs 1 cycle more for a negative input.
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** random_in_range
+**Triggered by techniques:** random_in_range, fighter_opponent_tables
 **Mitigated by techniques:** random_in_range
 
 ### Symptom

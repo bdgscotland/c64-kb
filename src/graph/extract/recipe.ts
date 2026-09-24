@@ -3,6 +3,7 @@
 import { CLAIMS_BASIS_WORDS, isClaimsBasis, parseClaims, type ClaimsBasis } from "../claims.ts";
 import { group, parseFrontmatter, warn } from "./common.ts";
 import { DEVICE_NAME } from "./device.ts";
+import { parseRasterBand } from "./raster-band.ts";
 import type { GraphEntity } from "./types.ts";
 
 // Recipe listings declare where they load: KickAssembler `* = $0900`,
@@ -108,6 +109,39 @@ export function recipeDevices(raw: string | undefined, sourcePath: string): stri
   return [...new Set(names)];
 }
 
+/**
+ * The `raster_bands:` key (#90): where the recipe runs a technique whose
+ * page band is movable or unstated, `[sideborder_open@248-272,
+ * sprite_border_scroller@273-311,0-1]`, in the **Raster band:** grammar,
+ * from the recipe's measured trace. check_compatibility takes the same
+ * "name@lines" form. An item naming a technique the recipe does not list,
+ * or a band outside the grammar, is dropped with a warning.
+ */
+function recipeRasterBands(
+  raw: string | undefined,
+  techniques: readonly string[],
+  sourcePath: string,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  const inner = (raw ?? "").trim().replace(/^\[/, "").replace(/\]$/, "").trim();
+  if (inner === "") return out;
+  // A comma before a digit continues a band ("273-311,0-1"); one before a name starts an item.
+  for (const item of inner.split(/,(?=\s*[A-Za-z_])/).map((s) => s.trim())) {
+    const at = item.indexOf("@");
+    const name = at < 0 ? item : item.slice(0, at).trim();
+    const band = parseRasterBand(at < 0 ? "" : item.slice(at + 1));
+    if (!techniques.includes(name)) {
+      warn(`${sourcePath}: raster_bands names ${name}, which techniques: does not list — dropped`);
+    } else if ("error" in band || band.kind !== "lines") {
+      const why = "error" in band ? band.error : "a placement names lines";
+      warn(`${sourcePath}: raster_bands item "${item}" refused (${why}) — dropped`);
+    } else {
+      out.set(name, band.canonical);
+    }
+  }
+  return out;
+}
+
 export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity[] {
   const { fm } = parseFrontmatter(content);
   if (!fm.recipe || !fm.toolchain || !fm.output_format || !fm.region) return [];
@@ -120,6 +154,7 @@ export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity
   const scaffolds = parseArray(fm.scaffolds);
   const claims = recipeClaims(fm, name, sourcePath);
   const devices = recipeDevices(fm.devices, sourcePath);
+  const bands = recipeRasterBands(fm.raster_bands, techniques, sourcePath);
   return [
     {
       type: "recipe",
@@ -136,7 +171,10 @@ export function parseRecipeDoc(content: string, sourcePath: string): GraphEntity
       ...(claims ? { claims_stated: claims.stated, claims_basis: claims.basis } : {}),
       ...(devices ? { devices_stated: devices.length > 0 ? "stated" : "none" } : {}),
     },
-    ...techniques.map((technique): GraphEntity => ({ type: "implements", recipe: name, technique })),
+    ...techniques.map((technique): GraphEntity => {
+      const band = bands.get(technique);
+      return { type: "implements", recipe: name, technique, ...(band ? { band } : {}) };
+    }),
     ...scaffolds.map((archetype): GraphEntity => ({ type: "scaffolds", recipe: name, archetype })),
     ...file_formats.map((format): GraphEntity => ({ type: "produces_format", recipe: name, format })),
     ...occupiesEntities(content, name),

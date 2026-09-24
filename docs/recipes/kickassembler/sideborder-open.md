@@ -7,7 +7,7 @@ techniques: [sideborder_open, stable_raster_irq, double_irq]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D019, D01A, D000, D001, D010, D015, D017, D027]
 uses_kernal: []
-claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init)]
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), sprite_0-7 (owns)]
 ---
 
 <!-- doc-type: recipe -->

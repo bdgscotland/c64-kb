@@ -86,6 +86,9 @@ const CompatibilityCoverageSchema = z.object({
   demands: z.array(z.string()),
   // The page's **Raster band:** in canonical form ("45-250", "movable").
   raster_band: z.string().optional(),
+  // The lines the caller placed it on ("name@248-272", #90), which the line
+  // rules read instead of a movable or unstated page band.
+  placed_band: z.string().optional(),
   known: z.boolean(),
   // Whether the page states unit claims: "unknown" when it has no Claims
   // line, so a unit conflict involving it cannot be ruled out.
@@ -108,12 +111,16 @@ export const CompatibilityCheckSchema = z.object({
   techniques: z.array(z.string()),
   conflicts: z.array(CompatibilityConflictSchema),
   // Pairs a line-sharing rule would have caught, cleared because both pages
-  // state **Raster band:** line ranges that share no raster line (schema 24).
+  // state **Raster band:** line ranges (or the caller placed them, #90) that
+  // share no raster line (schema 24).
   band_separated: z.array(BandSeparatedSchema),
   shared_infrastructure: z.array(SharedInfrastructureSchema),
   data_coverage: z.array(CompatibilityCoverageSchema),
   // Input names with no Technique node; any makes the verdict unknown_technique.
   not_found: z.array(z.string()),
+  // Placements ("name@lines") not used, and why: a band outside the grammar,
+  // or a page that states its own lines. The page's band stands (#90).
+  placements_refused: z.array(z.object({ input: z.string(), why: z.string() })).optional(),
   verdict: z.enum(["compatible", "warnings", "incompatible", "unknown_technique"]),
   // A GameDesign given as input (#37): its phases were checked one at a
   // time, since init and transition members do not run beside play. The

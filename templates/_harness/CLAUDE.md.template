@@ -78,8 +78,12 @@ make run              # windowed VICE, for a human
 - A KickAssembler part called from C is a raw blob at its own `* =` address,
   `$0880` or above; `build/asm.h` gives C its labels as `ASM_<LABEL>`
   (`ASM_<SCOPE>_<LABEL>` inside a scope). Pass arguments through bytes in the
-  blob, not Oscar64's zero page (`$02` up; the top depends on the program:
-  `make zp` lists what the build's code touches).
+  blob, not Oscar64's zero page. Its registers are `$02`-`$52`; its saved
+  temporaries start at `$53` and grow with the program (the platformer's main
+  reaches `$54`). `make zp` lists what the build's code touches and `make
+  claims` measures what the run writes; the `zero_page` item in CLAIMS_ARGS
+  covers both. An earlier version said `$02` to `$52`, which is the registers
+  only.
 - The meter takes CIA2 timer A. Do not open RS-232 (device 2) while it runs.
 - The KERNAL serial routines end in `CLI` (ROM bytes `58 60` / `58 18` at
   `$EDAB`, `$EDB5`, `$EDDB`, `$EE82`). After any disk call, `SEI` again if

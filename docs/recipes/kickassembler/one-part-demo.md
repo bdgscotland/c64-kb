@@ -4,6 +4,7 @@ toolchain: kickassembler
 output_format: PRG
 region: pal
 techniques: [sideborder_open, topbottom_border_open, sprite_border_scroller, raster_bars, stable_raster_irq, double_irq, sid_play_routine_pattern]
+raster_bands: [raster_bars@17-50, sideborder_open@248-272, sprite_border_scroller@273-311,0-1]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D016, D017, D019, D01A, D01B, D01C, D01D, D020, D021, D027, D400, D418, DC0D, DD04, DD05, DD0E, DD0F]
 uses_kernal: []
@@ -808,41 +809,57 @@ Why the regions do not collide:
 
 ## c64_check_compatibility
 
-On the seven techniques in the frontmatter, against a graph ingested from
-this checkout:
+On the seven techniques in the frontmatter, with the bands of
+`raster_bands:` placed as the trace above measured them, against a graph
+built from this checkout:
 
 ```
 # Compatibility: sideborder_open + topbottom_border_open + sprite_border_scroller + raster_bars + stable_raster_irq + double_irq + sid_play_routine_pattern
-**Verdict:** INCOMPATIBLE — not as combined; each hard conflict below says how to separate them.
+**Verdict:** WARNINGS
 
-## unit_contention (hard): sideborder_open × topbottom_border_open
-## cpu_vs_irq (hard): sideborder_open × topbottom_border_open
-## unit_contention (hard): sideborder_open × sprite_border_scroller
-## cpu_vs_irq (hard): sideborder_open × sprite_border_scroller
-## unit_contention (hard): sideborder_open × raster_bars
-## cpu_vs_irq (hard): sideborder_open × raster_bars
-## unit_contention (hard): topbottom_border_open × raster_bars
-## unit_contention (hard): sprite_border_scroller × raster_bars
+Placed by the caller: sideborder_open on lines 248-272 (page: movable); sprite_border_scroller on lines 0-1,273-311 (page: movable); raster_bars on lines 17-50 (page: no band). The line rules read these bands as stated.
 
-(and 16 soft and 9 info findings, omitted here)
+## unit_shared (soft): sideborder_open × topbottom_border_open
+## unit_contention (soft): sideborder_open × sprite_border_scroller
+## sprite_set (soft): sideborder_open × sprite_border_scroller
+## unit_contention (soft): sideborder_open × raster_bars
+## unit_shared (soft): topbottom_border_open × raster_bars
+## unit_contention (soft): sprite_border_scroller × raster_bars
+
+(the entry methods' unit_shared, the shared registers and the info
+findings omitted here)
+
+## Separated by raster band (info)
+- sideborder_open (lines 248-272) and sprite_border_scroller (lines 0-1,273-311): cpu_vs_irq does not apply.
+- sideborder_open (lines 248-272) and raster_bars (lines 17-50): cpu_vs_irq does not apply.
 ```
 
-What the recipe does with each hard finding:
+The call is `c64_check_compatibility` with
+`sideborder_open@248-272`, `sprite_border_scroller@273-311,0-1` and
+`raster_bars@17-50` in place of the bare names. What each finding
+says, and what the recipe does:
 
-- `unit_contention` on `vic_raster_irq` (five pairs): one raster
-  compare, one chain of four handlers (`irq_top1`, `irq_top2`,
-  `irq_bot1`, `irq_bot2`), each arming the next. This is the resolution
-  the tool gives.
-- `cpu_vs_irq` (sideborder_open against the other three): no interrupt
-  is armed inside lines 251-271; the other handlers run on lines 17-50
-  and 273 to line 1 of the next frame. The tool cannot clear the rule
-  because sideborder_open's band is movable; the trace above shows the
-  bands are disjoint.
-- `unit_contention` on `sprite_0-7` (sideborder_open × sprite_border_scroller):
-  the tool and the measurement disagree. The side-border loop needs eight
-  sprites on its lines and the scroller supplies them; separating them, as
-  the resolution says, would leave the loop without its constant set.
-  Filed as issue #90.
+- `unit_contention` on `vic_raster_irq` (three pairs), soft: the bands do
+  not meet, so one compare serves all three as a chain. The recipe's
+  chain is four handlers (`irq_top1`, `irq_top2`, `irq_bot1`,
+  `irq_bot2`), each arming the next.
+- `unit_shared` for topbottom_border_open: its RSEL write is one store
+  inside `irq_bot1`, on cycle 45 of line 248.
+- `sprite_set`, soft: the scroller's eight sprites are the side-border
+  loop's constant set. All eight have Y 251 and are enabled in every
+  frame; the update writes their registers from line 273, after the
+  loop.
+- `cpu_vs_irq` is cleared by the placed bands: no interrupt is armed
+  inside lines 248-272.
+
+Without the placements, `sideborder_open`'s band is movable and
+`raster_bars` states none, so `cpu_vs_irq` and the three contentions
+stay hard; the rationale says which band is unknown. An earlier version
+of this section showed eight hard findings and filed the sprite
+contention as a disagreement with the measurement (issue #90):
+`sideborder_open` claimed `sprite_0-7 (owns)` and `topbottom_border_open`
+claimed to own the compare, and the check had no way to be told the
+bands.
 
 ## Why this works
 
