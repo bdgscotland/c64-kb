@@ -14,7 +14,7 @@ import { FalkorLinks } from "./falkor/links.ts";
 import { CHIPS, CLEANABLE_LABELS, REGIONS, createIndexes } from "./falkor/schema.ts";
 
 export class FalkorService extends FalkorLinks {
-  /** Indexes, constraints and the Chip and Region seed nodes. Safe to re-run. */
+  /** Indexes, constraints and the seed nodes (Chip, Region, HardwareUnit, MachineVariant). Safe to re-run. */
   async ensureSchema(): Promise<void> {
     await createIndexes(this.graph());
     for (const chip of CHIPS) {
