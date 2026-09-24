@@ -124,8 +124,13 @@ reaches users only through a release.
 
 README.md is the public front page. Keep it current in the same push as
 the work:
-- A new starter gets its picture in "What the starters play": its own
-  graded PAL screenshot, copied to `docs/figures/starters/<name>.png`.
+- A new starter gets its picture in "What the starters play": a clean
+  capture of the normal build in play, with no verdict, meter or debug
+  text, made reproducibly by `make gallery` and copied to
+  `docs/figures/starters/<name>.png`. The graded shots stay the checks'
+  baselines; they are not front-page pictures. (Maintainer, 2026-09-24:
+  the graded shots showed debug text; an earlier version of this rule
+  used them.)
 - A new or changed MCP tool updates the tools section. A new npm script
   or gate updates the development section.
 - No counts (rule 8 and the tallies note above). Link a live figure's
