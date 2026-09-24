@@ -92,3 +92,73 @@ recipe's own maze, longest path 76: $02FF = 01 with +1 and with cap
 - Technique `bfs_distance_map` (`docs/techniques/logic.md`): the one-byte map with 255 as the sentinel, and the window variation that bounds the flood at a radius.
 - `docs/recipes/oscar64/bfs-distance-map.md`: the program these figures were measured on; its maze peaks at 76 and cannot show the wrap.
 - Technique `ghost_target_tile_ai` (`docs/techniques/logic.md`): the coordinate-steering rule a chaser on a saturated cell can fall back to.
+
+---
+
+## ball_tunnels_thin_wall — A ball moved once per frame skips a wall thinner than its step, and nothing ever tests the cells in between
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** pinball_ball_physics
+**Mitigated by techniques:** pinball_ball_physics
+
+### Symptom
+
+The ball behaves on every slow test. Off a flipper, or after a long fall,
+it passes straight through a post, a lane divider or a thin wall and
+carries on on the far side, sometimes out of the table. It happens on
+some shots and not on others of nearly the same speed.
+
+### Mechanism
+
+A collision test that looks only at the cell the ball will stand on
+after the frame's move cannot see a wall between the old and the new
+position. When the step is longer than the wall is thick, whether the
+ball lands inside the wall depends on where it started: in the recipe, a
+shot at 12 px per frame from x = 228 stands on 276 and then 288, and the
+wall covers 280 to 287, so no test ever sees it. From x = 226 the ball
+would land on 286, inside the wall, and bounce. That is why only some
+shots go through. The pitfall belongs to the naive form of
+`pinball_ball_physics`; the substep rule in that technique is the cure.
+
+Measured in VICE x64sc 3.10 on both models with the recipe: the
+one-step shot's trail continues at columns 36 and 37 beyond the wall at
+column 35; the substepped shot's trail stops at column 34 and returns.
+
+### Fix
+
+Move in substeps no longer than the thinnest wall: choose the count per
+frame from the larger of `|vx|` and `|vy|` (the recipe uses powers of
+two and a 4-pixel limit against 8-pixel walls). Or cap the ball's speed
+at the thinnest wall's thickness per frame. Or test every cell along the
+step, which is the same cost as substeps without the reflection
+between them. Draw no wall thinner than the largest step the table
+allows.
+
+### Worked example
+
+```c
+// BAD: one step per frame, only the destination cell is tested
+nx = b->x + b->vx;
+ny = b->y + b->vy;
+if (cell_kind(nx, ny) != K_EMPTY) reflect(b, cell_kind(nx, ny));
+else { b->x = nx; b->y = ny; }
+
+// GOOD: substeps of at most 4 px (64 in 1/16 px), 8-px walls
+m = max(abs(b->vx), abs(b->vy));
+shift = 0;
+while ((m >> shift) > 64 && shift < 3) shift++;
+for (i = 0; i < (1 << shift); i++) { /* the step above with v >> shift */ }
+```
+
+```text
+shot at 12 px/frame from x = 228, wall x = 280-287 (column 35)
+one step per frame   positions 228 240 252 264 276 288 ...   crossed: yes
+four substeps        ... 273 276 279, then 282 is in the wall  crossed: no
+```
+
+### Cross-references
+
+- Technique `pinball_ball_physics` (`docs/techniques/logic.md`): the map, the reflection and the substep rule
+- Recipe `docs/recipes/oscar64/pinball-ball.md`: the two shots and their trails
+- Technique `tile_grid_collision` (`docs/techniques/logic.md`): the same destination-only test for a platformer, safe while no actor moves more than a cell a frame

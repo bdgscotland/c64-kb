@@ -2197,5 +2197,17 @@
       "pal": "screenshots/trainer-hooks.png",
       "ntsc": "screenshots/trainer-hooks-ntsc.png"
     }
+  },
+  "oscar64/pinball-ball": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/pinball-ball.png",
+      "ntsc": "screenshots/pinball-ball-ntsc.png"
+    }
   }
 }
