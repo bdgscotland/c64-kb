@@ -2260,5 +2260,20 @@
       "pal": "screenshots/story-paging.png",
       "ntsc": "screenshots/story-paging-ntsc.png"
     }
+  },
+  "oscar64/control-config": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "qaqop\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/control-config.png",
+      "ntsc": "screenshots/control-config-ntsc.png"
+    }
   }
 }

@@ -1111,3 +1111,66 @@ not on the line.
 ### Recipes
 
 - `recipes/kickassembler/light-pen-read.md`
+
+## control_config_screen — A controls screen: keys chosen through GETIN, turned into matrix positions, read every frame as an action byte
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00, DC01
+**Uses kernal:** GETIN
+**Requires:** keyboard_matrix_scan
+
+### Why
+
+Players expect to choose between the joystick and keys, and to choose
+the keys. The screen that asks is easy to write with `GETIN`; the game
+that then reads those keys every frame cannot use `GETIN`, which gives
+one character per press and nothing while the key is held. The screen
+has to turn each chosen character into the switch that types it.
+
+### How
+
+**Ask.** For each action, prompt and wait for `GETIN` to return a
+character. Look it up in the KERNAL's unshifted decode table at `$EB81`:
+its index is column times 8 plus row, the column being the `$DC00` bit
+and the row the `$DC01` bit. Store the column and row per action.
+
+**Refuse.** Refuse a character the table does not hold (a shifted or
+Commodore key types from another table; the pointers at `$EB79` list
+all four) and a key already given to another action. Also consider
+refusing RUN/STOP if the game keeps the KERNAL's STOP test, and
+RESTORE, which is not in the matrix at all (`nmi_handler_and_restore_key`).
+
+**Read.** Each frame, for each action select its column and test its
+row; set the action's bit in the joystick layout (up 0, down 1, left 2,
+right 3, fire 4). The rest of the game reads one byte and does not care
+whether it came from keys or a joystick. Then write `$FF` to `$DC00`
+before any joystick-2 read
+(`stale_column_select_reads_as_joystick2`, `pitfalls/input.md`). Three
+keys at three corners of a rectangle in the matrix ghost a fourth
+(`keyboard_matrix_scan`); a screen that wants to be safe can refuse a
+set of keys with that shape, which this page does not build.
+
+**Port choice.** Store per player whether the action byte comes from
+port 2, port 1 or the keys. Port 1 shares CIA1 port B with the keyboard
+rows, so a joystick in port 1 reads as key presses during a scan
+(`keyboard_matrix_scan`, "Why a main-loop scan and a joystick in port 1
+interfere"); a game that offers keys and port 1 together has to accept
+that. With two players the choice is per player
+(`two_player_state_swap`).
+
+**Save it.** A configuration is a few bytes: write it with the high
+scores, or with the save game (`kernal_file_write_seq`).
+
+### Why it works
+
+In the recipe, keys typed through VICE's keyboard queue were mapped to
+Q at column 7 row 6, A at 1/2, O at 4/6, P at 5/1 and RETURN at 0/1, the
+positions the ROM's table holds; a second Q was refused as in use; the
+five-key scan read 0 with nothing held and a synthetic matrix with Q and
+RETURN held gave `$11`. The scan took 253 cycles on PAL (Oscar64 C,
+screen on, CIA1 timers A and B; measured in VICE x64sc 3.10).
+
+### Recipes
+
+- `recipes/oscar64/control-config.md` (five actions configured through `-keybuf` with one duplicate refused, the matrix positions from `$EB81`, the five-key scan timed, the synthetic-matrix check and the stale-column joystick read; PAL and NTSC)
