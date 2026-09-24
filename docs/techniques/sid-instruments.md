@@ -310,3 +310,94 @@ before a rest; the same on NTSC.
 ### Recipes
 
 - `recipes/kickassembler/sid-hr-snare.md`
+
+---
+
+## sid_sync_lead — A hard-sync lead: voice 3 the unheard master, a stepped slave on voice 1
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D400, D401, D404, D405, D406, D40E, D40F, D412, D417, D418
+**Requires:** sid_play_routine_pattern
+**Cost:** cycles_per_frame=292, cycles_per_frame_typical=36
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sid-sync-lead (per play call, phase A against phase B, which has SYNC off and voice 3 resting: the master voice's player work; the SYNC bit itself adds nothing; worst is a call where the master starts a note, PAL and NTSC alike)
+**Claims:** sid_voice_1 (owns), sid_voice_3 (owns), sid_filter_volume (shares)
+**Claims basis:** derived-listing
+
+Every claim below was measured in VICE x64sc 3.10 (reSID, 6581 and 8580
+models, PAL and NTSC) by the recipe's log, the dump sink's register
+trace and WAV recordings. Nobody has listened to the recordings.
+`sid_voice_setup` in `music-sid.md` describes sync as a variation; this
+is the instrument built and measured through the #50 player.
+
+### Why
+
+Hard sync gives a lead whose timbre can move while its pitch stays put:
+the brightness sweep of an analogue sync lead. The SID syncs voice 1 to
+voice 3, so voice 3 has to run at the note's pitch. A player that spends
+voice 3 on it needs that voice to be silent.
+
+### How
+
+- Voice 1, the slave: a wavetable whose rows carry sawtooth + SYNC
+  (`$22`) with relative notes that climb, here +12, +14, +17, +19, +22,
+  +24, +26, +27, +29, one row a frame, then hold. Attack 0, sustain 10.
+- Voice 3, the master: the same pattern notes with a plain instrument
+  (triangle). Its instrument loads a filter program that writes `$D417`
+  = `$F0` (no voice filtered) and `$D418` = `$8F` (3OFF, volume 15).
+- Choose a final interval that is not a whole-number ratio; the recipe's
+  +29 semitones is a ratio of 5.339.
+
+### Why it works
+
+SYNC resets voice 1's accumulator each time voice 3's accumulator MSB
+rises (`sid-reference.md`, "Oscillator sync"). The output repeats at the
+master's period; the slave's frequency sets how much of its sawtooth ramp
+plays inside each period. Voice 3's oscillator runs whether gated or not,
+and 3OFF with FILT3 clear takes it off the only path to the output.
+
+Measured on the recipe, a window of ten frames after each note's sweep,
+the fundamental by autocorrelation:
+
+| | E4 | G4 | A4 | B4 | D5 |
+|---|---|---|---|---|---|
+| master, Hz | 329.6 | 392.0 | 440.0 | 493.9 | 587.4 |
+| heard with SYNC (both models) | 329.5 | 392.0 | 440.2 | 494.1 | 587.5 |
+| heard without (the slave alone) | 1,760.7 | 2,094.3 | 2,345.1 | 2,631.0 | 3,138.5 |
+
+The trace a correct build leaves: every call where voice 1 sounds has
+`$D404` = `$23`; voice 3's frequency is the note's on every call; `$D418`
+= `$8F` and `$D417` = `$F0` from voice 3's first note. The slave's
+frequency over the master's steps 2.000, 2.245, 2.669, 2.996, 3.563,
+4.000, 4.490, 4.756 and holds at 5.339.
+
+### Variations
+
+**A different sweep.** Any wavetable shape works; a fall, a bounce or a
+slower climb (not built).
+
+**Pulse slave.** `$42` syncs a pulse wave; its width is a second timbre
+control (not built).
+
+**Voice 2 as slave.** Voice 2 syncs to voice 1: a sync lead that leaves
+voice 3 free, at the cost of voice 1 (not built).
+
+### Cycle budget
+
+Per play call, the lead with its master against the slave alone, PAL:
++36 on 147 calls of 192, +57 on 12; for each master note, +112 on the
+call that reads it, +99 on its hard restart, +190 on the call before it
+and +292 on its own call; NTSC the same. The whole player's
+worst call here is 1,012 cycles on PAL.
+
+### Pitfalls met
+
+- `sid_voice3_disable_silent_bit`: 3OFF silences voice 3 only with FILT3
+  clear; the tune's filter program routes no voice.
+- `sid_adsr_bug_8580`: the lead's attack is 0; the player writes the gate
+  before AD and SR (`sid_hard_restart_drum`, #118).
+
+### Recipes
+
+- `recipes/kickassembler/sid-sync-lead.md`
