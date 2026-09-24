@@ -3,11 +3,11 @@ recipe: ufli-underlay
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [ufli_sprite_underlay, chunky_4x4_fli_mode, stable_raster_irq, double_irq, pal_ntsc_detection, vic_bank_select]
+techniques: [ufli_sprite_underlay, stable_raster_irq, double_irq, pal_ntsc_detection, vic_bank_select]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D017, D018, D019, D01A, D01B, D01C, D01D, D020, D021, D027, DC0D, DD00]
 uses_kernal: []
-claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), cia2_vic_bank (owns), zero_page $03-$07 (owns)]
+claims: [irq_vector_0314 (owns), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), cia2_vic_bank (owns), vic_char_base (owns), zero_page $03-$07 (owns)]
 ram: [state=$02E0, vic=$4000-$7FFF, scratch=$C000-$C1FF]
 ---
 

@@ -1111,7 +1111,7 @@ frame's table copy is 128 loads and stores in the border.
 
 **Uses registers:** SCROLY, RASTER
 **Demands:** cpu_every_line, midframe_raster_irqs
-**Requires:** stable_raster_irq, badline_synchronization
+**Requires:** stable_raster_irq, badline_synchronization, linecrunch, fld_flexible_line_distance
 **Claims:** vic_raster_irq (owns), vic_yscroll (owns)
 **Claims basis:** measured-vice
 

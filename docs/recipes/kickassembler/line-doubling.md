@@ -3,7 +3,7 @@ recipe: line-doubling
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [line_doubling_and_colour_ram_double_buffer, linecrunch, fld_flexible_line_distance, stable_raster_irq, double_irq, badline_synchronization, pal_ntsc_detection]
+techniques: [line_doubling_and_colour_ram_double_buffer, stable_raster_irq, double_irq, badline_synchronization, pal_ntsc_detection]
 file_formats: [PRG]
 uses_registers: [D011, D012, D018, D019, D01A, D020, D021, DC0D]
 uses_kernal: []

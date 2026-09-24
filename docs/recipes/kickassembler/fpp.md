@@ -3,7 +3,7 @@ recipe: fpp
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [fpp_flexible_pixel_position, linecrunch, stable_raster_irq, double_irq, badline_synchronization, pal_ntsc_detection]
+techniques: [fpp_flexible_pixel_position, stable_raster_irq, double_irq, badline_synchronization, pal_ntsc_detection]
 file_formats: [PRG]
 uses_registers: [D011, D012, D018, D019, D01A, D020, D021, DC0D, DD00]
 uses_kernal: []

@@ -3,7 +3,7 @@ recipe: glenz
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [glenz_eor_filled_vectors, rotozoomer_charset, mcm_text]
+techniques: [glenz_eor_filled_vectors, mcm_text]
 file_formats: [PRG]
 uses_registers: [D011, D012, D016, D018, D020, D021, D022, D023, DC0D]
 uses_kernal: []
