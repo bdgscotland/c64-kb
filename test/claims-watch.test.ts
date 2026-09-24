@@ -208,6 +208,16 @@ describe("declarations", () => {
     expect(d.ramVerdict(0x02).verdict).toBe("undeclared");
     expect(d.addHarness("not_a_unit")).toMatch(/not a hardware unit/);
   });
+  it("takes a recipe's ram: ranges and refuses zero page there", () => {
+    const d = new Declared();
+    expect(d.addRam("colour=$D800-$DBFF, $0340-$03FF")).toBeNull();
+    expect(d.ramVerdict(0xd900)).toEqual({ verdict: "claimed", by: "colour" });
+    expect(d.ramVerdict(0x0340).verdict).toBe("claimed");
+    expect(d.ramVerdict(0x0400).verdict).toBe("undeclared");
+    expect(d.addRam("$F7-$F8")).toMatch(/zero page: claim it as zero_page/);
+    expect(d.addRam("$0300-$0200")).toMatch(/backwards/);
+    expect(d.ramVerdict(0xf7).verdict).toBe("undeclared");
+  });
 });
 
 describe("sources read from the docs", () => {
@@ -225,7 +235,7 @@ describe("sources read from the docs", () => {
   });
   it("reads a recipe's frontmatter", () => {
     const fm = recipeFrontmatter("---\ntechniques: [a_b, c]\nuses_kernal: [CHROUT]\n---\n");
-    expect(fm).toEqual({ techniques: ["a_b", "c"], usesKernal: ["CHROUT"] });
+    expect(fm).toEqual({ techniques: ["a_b", "c"], usesKernal: ["CHROUT"], kernalServices: [] });
     const both = recipeFrontmatter(
       "---\ntechniques: []\nclaims: [cia1_tod (init)]\nharness: [cia1_timer_a, $02F0-$02FF]\n---\n",
     );
@@ -234,7 +244,12 @@ describe("sources read from the docs", () => {
       usesKernal: [],
       claims: "cia1_tod (init)",
       harness: "cia1_timer_a, $02F0-$02FF",
+      kernalServices: [],
     });
+    const ram = recipeFrontmatter(
+      "---\ntechniques: []\nram: [colour=$D800-$DBFF, $0340-$03FF]\nkernal_services: [IRQ]\n---\n",
+    );
+    expect(ram).toMatchObject({ ram: "colour=$D800-$DBFF, $0340-$03FF", kernalServices: ["IRQ"] });
   });
   it("reads the SYS address of a BASIC stub and both label formats", () => {
     // 10 SYS 2062

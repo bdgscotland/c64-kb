@@ -85,6 +85,20 @@ export class Declared {
     return null;
   }
 
+  /**
+   * A recipe's `ram:` value: its own RAM outside the PRG's load span, as
+   * --range ranges. Zero page is refused: it is a unit, claimed in `claims:`
+   * as `zero_page $XX-$YY`, so the compatibility check can see it.
+   */
+  addRam(raw: string): string | null {
+    const r = parseRanges(raw);
+    if ("error" in r) return r.error;
+    const zp = r.find((x) => x.first < 0x100);
+    if (zp) return `${rangeText(zp.first, zp.last)} is zero page: claim it as zero_page in claims:`;
+    this.ranges.push(...r);
+    return null;
+  }
+
   addKernal(routine: string, bytes: readonly [number, number][]): void {
     this.kernalRoutines.push(routine);
     for (const [first, last] of bytes)

@@ -59,7 +59,29 @@ timer a recipe starts and stops around a routine to report its cycles.
 ingest ignores the key. A timer the effect itself depends on (a pulse
 clock, a detection) is a claim, not a harness. Where the harness timer is
 also masked at start-up, name it here only: the harness covers that
-store.
+store. The result bytes a headless verifier reads (`$02FF`, a record at
+`$02F0-$02FE`) are harness too: `harness: [$02F0-$02FF]`.
+
+`ram` is optional and is not a claim. It lists the listing's own RAM
+outside its PRG's load span, in `claims-watch --range` form:
+`ram: [colour=$D800-$DBFF, buf=$0340-$03FF]`. The usual entries are colour
+RAM, the cassette buffer and RAM under the I/O window. Zero page is
+refused here: a zero-page byte is a unit, so it goes in `claims:` as
+`zero_page $FB-$FE (owns)`, where the compatibility check can see it.
+`claims-watch` reads the key; the ingest ignores it.
+
+`kernal_services` is optional. It names the KERNAL interrupt service the
+listing leaves running, `IRQ` or `NMI`: `kernal_services: [IRQ]` when a
+handler ends in `JMP $EA31` or the CIA1 interrupt is never masked.
+`claims-watch` then accepts the service's zero-page stores inside its
+may-set (`docs/hardware/kernal-routines-reference.md`). It is not
+`uses_kernal`, which names routines the listing calls; the ingest ignores
+it.
+
+`scripts/claims-recipes.ts` (`npm run claims:recipes`) builds every
+KickAssembler recipe and runs `claims-watch --recipe` on it with the
+cycles, flags and disk of its `runs.json` entry. It fails on any store
+these keys, the techniques' Claims lines and `uses_kernal` do not declare.
 
 ## Section structure
 
