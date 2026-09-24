@@ -5,7 +5,25 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 807, schema 33, tools 2.8.1, package 0.21.1.
+Data 808, schema 33, tools 2.8.1, package 0.21.1.
+
+**The #54 content gaps (data 808).** New Oscar64 recipes, each run on
+PAL and NTSC: `fighter-opponent` (a one-on-one opponent from tables:
+reaction delay, range, guard and feint; 120 cycles a step on average,
+295 worst), `sprite-expand` (48 cycles a `spr_expand()` call),
+`sprite-mirror-at-load` (a multicolour frame set mirrored once with a
+pair-preserving table, 9,658 cycles for six blocks; a three-sprite
+object turned in place) and `sprite-cache-flip` in C (a miss 3,692-3,902
+cycles, a hit 42). New sections `fighter_opponent_tables` and
+`fighter_guard_state` on the enemy-behaviour page. Measured Cost lines:
+keyboard_matrix_scan 288, joystick_edge_detect 114, mob_priority 6,
+sprite_collision_detect 16; per_frame_hitbox's line now says what its
+3,693 includes. The `$D01B` rule for a hires bitmap is measured (0 bits
+are background); the multicolour-bitmap rule, Bauer's before, is now
+measured too. Claims lines for sprite_animation_table and five more
+techniques, so check-compatibility rules on all 11 in the TOURNEY set.
+New Oscar64 fault, in the local, released and upstream builds: at -O2 a
+`volatile` global nothing writes is read as its initial value.
 
 **NTSC sprite DMA slots were one cycle off; #6 settled (data 807).**
 Measured in VICE for sprites 0..k on three models, cycle 1 being where
