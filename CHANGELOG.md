@@ -5,7 +5,34 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 815, schema 37, tools 2.13.0, package 0.26.0.
+Data 816, schema 37, tools 2.13.1, package 0.26.1.
+
+**#5 content, #4 routines, #1 composed recipes, #24 follow-ups, and a
+briefing fix (tools 2.13.1, package 0.26.1, data 816; #5, #4, #1, #24,
+#91).** New recipes, each run on PAL and NTSC and measured:
+`raster-split-modes` (the clean window for the `$D011` store is line
+146 cycle 59 to line 147 cycle 12 on PAL, 11 on NTSC), Oscar64
+`soft-scroll-v` (a late write draws one row 15 lines tall; the row move
+does not fit the off-screen span, 7,403 cycles PAL), `mcm-ecm-zones`,
+`sid-detect` (`$02` on the 8580, `$03` on the 6581; noise under
+`+sound`), `base-routines` (17 routines match their instruction-table
+counts; a byte-into-word add carries 51,200 times, not 200),
+`one-part-demo` and `fli-music-scroller` (PAL; per-line cycle maps
+traced). New techniques `screen_blank_full_cpu` (449 vs 412 loop
+iterations), `add_sub_16bit`, `memory_fill_copy`, `delay_loops`. Oscar64
+headers page gains flossiec.h (a 4,002-byte file in 2,021,780 cycles vs
+10,583,134 through `krnio_read`), oscar.h, vspr_screen; `krnio_setbnk`
+is C128-only (error 3005). game-design-patterns.md's `$D01F` wording
+now states the pixel-class rule; the demo-length sentence quotes
+Raistlin's 16.5-21 minutes. Play calls across the demo starter's part
+switch are 19,656 ±4 cycles apart on PAL, none dropped. New lint rule
+`d015_merged_across_states`; `make gameover` checks for platformer and
+shmup-vertical (a sprite left on fails 4 of 8). A top-40 canon list is
+in docs/superpowers/specs (6 missing: #89). `game-briefing` picks
+between two alternatives by a count the brief states: "24 sprites" now
+gets sprite_multiplex_24 (#91; it fell back to recipe count and never
+read the brief). The recipe ground-truth test lists 12 known hard
+conflicts the composed recipes' frames do not have, until #90.
 
 **Relocated code in three toolchains, Oscar64 -O levels, an Oscar64
 cartridge and music sync (data 815; #15, #16 DEMO-05).** New technique

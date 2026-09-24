@@ -22,7 +22,7 @@ deterministic once the mechanism is known.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017, tech_tech_wobbler, dysp_side_border_sprites
+**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017, tech_tech_wobbler, dysp_side_border_sprites, memory_fill_copy, delay_loops
 **Mitigated by techniques:** screen_blank_full_cpu
 
 ### Symptom

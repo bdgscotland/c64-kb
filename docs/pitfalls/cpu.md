@@ -22,7 +22,7 @@ three.)
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram, isqrt_16bit, atan2_8bit, bresenham_line, zero_page_burst
+**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram, isqrt_16bit, atan2_8bit, bresenham_line, zero_page_burst, delay_loops
 **Mitigated by techniques:** bit_test_trick
 
 ### Symptom
@@ -585,7 +585,7 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai, add_sub_16bit
 **Mitigated by techniques:** compare_16bit_and_signed
 
 ### Symptom
