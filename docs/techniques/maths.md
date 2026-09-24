@@ -1109,6 +1109,121 @@ the worst of the five, as one call per frame.
   the boundary pairs with flags on screen, full sweeps against a
   Python checksum, the bare `BMI` miss count, and the timings.
 
+## add_sub_16bit — 16-bit add, subtract, increment and decrement
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=26
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-base-routines (one 16-bit add, absolute operands)
+
+### Why
+
+Scores, positions wider than 255 pixels, pointers and timers are 16-bit
+values on an 8-bit CPU. Each operation is a short chain of byte
+operations joined by the carry, and each has one detail that is easy to
+get wrong: the carry must be set up before the chain, and `INC` and
+`DEC` do not use it at all. Every figure below was measured in VICE
+x64sc 3.10 by `recipes/kickassembler/base-routines.md`, which also
+sweeps each routine over 65,536 operand pairs against a Python model.
+
+### How
+
+**Add and subtract.** Low byte first; `CLC` before an add, `SEC` before
+a subtract:
+
+```asm
+        clc               // sec for a subtract
+        lda a_lo
+        adc b_lo          // sbc b_lo
+        sta r_lo
+        lda a_hi
+        adc b_hi          // sbc b_hi
+        sta r_hi          // C: carry out of bit 15 / C clear: borrowed
+```
+
+26 cycles with absolute operands, measured for both. With zero-page
+operands it is 20 (rung 3). `fixed_point_8_8` is the same add read as
+whole and fraction.
+
+**Add a byte to a word.**
+
+```asm
+        clc
+        lda r_lo
+        adc #n
+        sta r_lo
+        bcc !+
+        inc r_hi
+!:
+```
+
+15 cycles without a carry, 20 with. `C` at the end is the low byte's
+carry, not a 16-bit overflow: the `INC` does not change it. Measured
+over every word plus 200, `C` was set on 51,200 pairs and the word
+wrapped past `$FFFF` on 200. Test `Z` after the `INC` when the wrap
+matters.
+
+**Increment.** `INC` sets `Z` when the byte wraps to zero:
+
+```asm
+        inc r_lo
+        bne !+
+        inc r_hi
+!:
+```
+
+9 cycles, 14 when the low byte wraps.
+
+**Decrement.** Test the low byte before it changes:
+
+```asm
+        lda r_lo
+        bne !+
+        dec r_hi
+!:      dec r_lo
+```
+
+13 cycles, 18 when it borrows. `DEC` of `$00` gives `$FF` with `Z`
+clear, so a test after the `DEC` cannot see the borrow.
+
+### Why it works
+
+`ADC` adds the operand and `C`, then sets `C` from bit 8 of the sum.
+`SBC` subtracts the operand and the inverse of `C`, and clears `C` when
+it borrowed. Starting with `CLC` or `SEC` makes the low byte a plain add
+or subtract, and the high byte then takes the low byte's carry or
+borrow. `INC` and `DEC` set only `N` and `Z`.
+
+### Variations
+
+- **Longer values.** Add one more `LDA / ADC / STA` per byte; the carry
+  runs through (rung 3).
+- **Signed operands** add and subtract with the same code; the order
+  test differs (`compare_16bit_and_signed`).
+- **BCD scores** use the same chain under `SED`, with interrupts that
+  might run while `D` is set in mind (`cpu-cycle-tricks.md`,
+  `decimal_mode_pitfalls`).
+
+### Cycle budget
+
+| Routine, absolute operands | Cycles |
+|---|---|
+| add or subtract 16 + 16 | 26 |
+| add 8 to 16 | 15, or 20 with a carry |
+| increment | 9, or 14 with a carry |
+| decrement | 13, or 18 with a borrow |
+
+Net of the `JSR / RTS`, identical on PAL and NTSC; each equals its
+instruction-table sum. The `**Cost:**` line carries the add, once a
+frame.
+
+### Recipes
+
+- `recipes/kickassembler/base-routines.md`: each routine timed once and
+  swept over 65,536 pairs against a Python checksum.
+
 ## isqrt_16bit — Integer square root of a 16-bit value
 
 **Complexity:** low

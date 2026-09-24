@@ -539,6 +539,18 @@
       "ntsc": "screenshots/compare-16bit-signed-ntsc.png"
     }
   },
+  "kickassembler/base-routines": {
+    "cycles": 100000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/base-routines.png",
+      "ntsc": "screenshots/base-routines-ntsc.png"
+    }
+  },
   "oscar64/divide-check": {
     "cycles": 600000000,
     "models": [
