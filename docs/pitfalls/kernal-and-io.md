@@ -65,15 +65,20 @@ enabled, and the restore at $FC93 (PHP/SEI ... PLP) puts back that post-CLI
 state, so they too return with I=0.
 
 This is by design: OPEN, LOAD, and SAVE can take millions of cycles (a
-standard KERNAL IEC LOAD from a 1541 runs at 300-600 bytes per
-second, i.e. two to three seconds per kilobyte; measured in VICE x64sc with
-true drive emulation: 8,192 bytes in 871 jiffies, about 14.5 s;
+standard KERNAL IEC LOAD from a 1541, measured in VICE x64sc with true
+drive emulation: 8,192 bytes in 871 jiffies, about 14.5 s, so about 565
+bytes per second or 1.8 s per kilobyte;
 `hardware/cia-reference.md`, `formats/iec-disk-reference.md` and
 `techniques/loaders-packers.md` measure the same order. An earlier version of
 this entry said "tens of thousands of cycles" and "roughly 1 second per
-kilobyte", which understated the exposure window by half), and the jiffy
+kilobyte", which understated the exposure window by almost half; a later one
+said "300-600 bytes per second, two to three seconds per kilobyte", which
+does not match its own measurement), and the jiffy
 clock IRQ at $EA31 must continue running during that time to keep the
-60/50 Hz time base accurate and to service the keyboard queue. The KERNAL
+jiffy clock accurate and to service the keyboard queue. The jiffy is about
+60 Hz on both PAL and NTSC: the KERNAL loads CIA1 Timer A with $4025 on PAL
+and $4295 on NTSC (ROM bytes at $FDDD-$FDF5), which is 59.99 Hz at 985,248 Hz
+and 60.00 Hz at 1,022,727 Hz. (An earlier version said "60/50 Hz time base".) The KERNAL
 authors assumed the caller had IRQs enabled at the JSR: the machine
 boots with CLI, BASIC runs with CLI, and the KERNAL's own IRQ handler at $EA31
 is designed to be re-entrant only in specific ways.
@@ -367,8 +372,9 @@ register (P). When D = 1, ADC and SBC perform BCD (binary-coded-decimal)
 arithmetic: result nibbles are adjusted so that each hex digit represents a
 decimal digit 0-9. When D = 0, addition and subtraction are pure binary.
 
-The D flag is **not automatically cleared or saved on IRQ entry**.
-The 6502 interrupt sequence pushes the program counter (PCH, PCL) and the
+The D flag is **not cleared on IRQ entry** on the NMOS 6510. It is saved, as
+one bit of the pushed P, and RTI restores it. (An earlier version said "not
+automatically cleared or saved".) The 6502 interrupt sequence pushes the program counter (PCH, PCL) and the
 processor status register (P) onto the stack, then fetches the IRQ vector and
 begins executing the handler. The pushed P contains the D flag as it was at
 the time of the interrupt, but the processor does not clear D. The
@@ -376,12 +382,14 @@ handler runs with D still set if the interrupted code had executed SED and not
 yet executed CLD.
 
 If main-loop code is between `SED` and `CLD` and an IRQ fires, the IRQ
-handler's ADC and SBC instructions run in BCD mode. Any addition or
-subtraction in the handler, including pointer arithmetic, counter decrements
-and index calculations, produces BCD-adjusted results instead of binary
-results. A handler that adds 8 to a pointer stored in zero page will compute
-8 + 0 = 8 correctly in BCD, but 9 + 1 will produce $10 (decimal 10 as BCD)
-instead of $0A (decimal 10 as binary). The pointer lands in the wrong page.
+handler's ADC and SBC instructions run in BCD mode. Every ADC or SBC in the
+handler, including pointer arithmetic and counters stepped with ADC or SBC,
+produces BCD-adjusted results instead of binary results. INC, DEC, INX, DEX,
+INY, DEY, ASL, LSR, ROL, ROR and CMP are binary whatever D holds. A handler
+that adds 8 to a zero-page pointer holding $00 gets $08 either way, but from
+$08 it gets $16 in BCD instead of $10. (An earlier version listed counter
+decrements as affected and mixed an add-8 example with 9 + 1.) The pointer
+lands in the wrong place.
 The raster effect writes to the wrong address. The corruption is data-dependent
 and hard to trace without knowing that D is set.
 
@@ -527,7 +535,9 @@ executes whatever byte it finds there as an opcode, and runs on into garbage.
 In some configurations the machine appears to freeze; in others it resets.
 
 A variant: the code correctly sets $01 = $37 for the KERNAL call, but later
-restores $01 to $34 (all RAM) or $35 (I/O + KERNAL but no BASIC) without
+restores $01 to $34 (all RAM) or $35 (I/O only; BASIC and KERNAL are RAM, as
+the table below shows; an earlier version said "I/O + KERNAL but no BASIC",
+which is $36) without
 saving and restoring the exact value it found. Subsequent KERNAL calls use the
 restored value, which may not match what the KERNAL's internal routines expect.
 
@@ -698,7 +708,8 @@ in which drive 8 exists under `-default`; with `+drive8truedrive` there is
 no device 8 at all and the program never returns from its first IEC call),
 `krnio_save()` of a 64-byte struct to a fresh c1541-formatted `.d64`
 produces a clean 1-block PRG (`c1541 -list`: `1 "tideline" prg`, no `*`,
-662 blocks free) that reads back intact (66 bytes = load address + struct),
+663 blocks free; a fresh D64 has 664, and a 66-byte file written with
+`c1541 -write` leaves 663; an earlier version said 662) that reads back intact (66 bytes = load address + struct),
 and `krnio_save` returns true. Built with Oscar64 2026-05-19 and run in
 x64sc 3.10; an earlier version of this entry said the splat was
 "observed under VICE 3.x with and without -drive8truedrive", and that
@@ -885,8 +896,9 @@ subprocess.run(["c1541", "-attach", "disk.d64", "-write", "tdlvl00.bin", c64name
 - Tooling: VICE `c1541 -write` / `-read` perform ASCII→PETSCII on the c64
   filename; their conversion is self-consistent, which is why a host-only
   round-trip hides the bug.
-- Discovered authoring Tideline level files (`TDLVLnn`) for Phase H4; see
-  `loop/games/CLAUDE.md` disk-testing notes.
+- Discovered authoring Tideline level files (`TDLVLnn`) for Phase H4. (An
+  earlier version pointed to disk-testing notes in a file outside this
+  repository.)
 
 ---
 
@@ -1062,9 +1074,11 @@ re-enables only what `$02A1` (the KERNAL's RS-232 shadow) holds. A program
 that arms a CIA2 timer NMI while leaving `$0318` at `$FE47` loses that mask
 on the first RESTORE press or RS-232 event (rung 1, from the bytes; not run).
 
-Measured (rung 1; VICE x64sc 3.10, PAL C64C: 8565, 8580, 8521, the build on
-this machine; the rest of this repository was checked against 3.9; an
-earlier version said PAL 6569, but `x64sc -default` is the C64C): a CIA2 Timer A one-shot NMI
+Measured (rung 1; VICE x64sc 3.10, PAL C64C: 8565 VIC-II, 8580 SID, 8521
+CIAs, which is what `x64sc -default` selects, read from `-dumpconfig`:
+`VICIIModel=1`, `SidModel=1`, `CIA1Model=1`; an earlier version said PAL
+6569, and that the rest of the repository was checked against 3.9; it pins
+3.10): a CIA2 Timer A one-shot NMI
 was sent through `$0318` to a trampoline of `BIT $DD0D` and `JMP $FE47`,
 preceded by a counter increment, with IRQs off and `$91` pre-set to `$00`.
 After the NMI, `$91`

@@ -4,7 +4,7 @@
 
 The Commodore 64 KERNAL is the 8 KiB ROM at `$E000-$FFFF` that provides the
 machine's operating-system layer: character I/O, file I/O over the IEC serial
-bus, the screen editor, the 60/50 Hz IRQ jiffy clock, the STOP-key check, and
+bus, the screen editor, the 60 Hz IRQ jiffy clock, the STOP-key check, and
 the cold-start / warm-start sequences. User programs do not call KERNAL code at
 its real ROM addresses, which moved between Commodore machines (VIC-20, PET,
 C64, C128, Plus/4). They call the KERNAL's **jump table** in the last
@@ -293,9 +293,9 @@ read_loop:
         jsr $FFB7       ; READST
         beq read_loop   ; ST=0 means more bytes available
 
+        jsr $FFCC       ; CLRCHN
         lda #2
         jsr $FFC3       ; CLOSE
-        jsr $FFCC       ; CLRCHN
         rts
 
 fname:  .byte "FILE,S,R"
@@ -326,6 +326,7 @@ Three rules of the KERNAL file protocol:
 - **CLRCHN must be called before CLOSE.** After a `CLOSE` while CHKIN
   has redirected input to that file, the next CHRIN reads from a
   closed file and returns garbage. The order is `CLRCHN`, then `CLOSE`.
+  (An earlier version of the listing above called CLOSE first.)
 
 ### $FFBA — SETLFS — Set logical file parameters
 
@@ -507,8 +508,10 @@ commands to IEC devices; it discards the KERNAL's open-file
 table. CLALL also calls CLRCHN, so default channels are reset.
 CLALL resets I/O state from an unknown starting
 point (e.g. in an error handler). Any disk-side state
-(open relative-file channels with dirty buffers) is left
-dangling until an UNLISTEN. The jump-table entry for CLALL is
+(open relative-file channels with dirty buffers) stays open in the
+drive: CLALL sends UNLISTEN/UNTALK through CLRCHN but no close command
+(ROM `$F32F`). Whether and when the drive closes those channels is not
+measured here. (An earlier version said an UNLISTEN closes them.) The jump-table entry for CLALL is
 `$FFE7`, not beside CLOSE.
 
 ### $FFD5 — LOAD — Load or verify a file
@@ -745,8 +748,9 @@ STOP reads `$91`, not the keyboard matrix directly, so it depends on
 the IRQ handler running. With IRQs disabled (`SEI` without
 re-enabling), STOP never returns Z=1. To make STOP work in an
 IRQ-disabled context, `JSR $FFEA` (UDTIM) inside the loop (this also
-advances the jiffy clock, so call it at most once per frame if `TI$`
-matters). An earlier version of this page said to call SCNKEY (`$FF9F`)
+advances the jiffy clock, so if `TI$` matters call it once per
+1/60 s; once per frame runs the clock 17% slow on PAL, where a frame
+is 1/50 s. An earlier version said "at most once per frame"). An earlier version of this page said to call SCNKEY (`$FF9F`)
 here; SCNKEY never writes `$91` (the only store to `$91` in the KERNAL
 is UDTIM's at `$F6DA`), so that advice could not have worked. UDTIM
 reads the STOP column through `$DC01` without selecting it, relying on
@@ -757,8 +761,15 @@ operation, and in the cassette routines it aborts the tape transfer.
 ## Time and jiffy clock
 
 The C64 keeps a 24-bit "jiffy clock", a counter of `1/60`-second
-ticks (1/50 in PAL territory, despite the name) that wraps every
-24 hours. The counter lives at `$A0/$A1/$A2` (high/mid/low byte) and
+ticks on PAL and NTSC alike, that wraps every 24 hours. The CIA1 timer A
+latch is chosen by region so the rate stays near 60 Hz: `$4025`
+(16,421) on PAL, `$4295` (17,045) on NTSC (ROM `$FDDD-$FDF8`, the end of
+IOINIT, which CINT jumps back into after setting `$02A6`); the
+timer period is latch + 1, so 985,248 / 16,422 = 59.99 Hz PAL and
+1,022,727 / 17,046 = 60.00 Hz NTSC. Measured in VICE x64sc: over 3,000
+frames the counter advanced 3,590 jiffies on PAL (1.197 per frame) and
+3,009 on NTSC. The jiffy is not tied to the video frame. (An earlier
+version said the clock ticks at 1/50 s in PAL territory.) The counter lives at `$A0/$A1/$A2` (high/mid/low byte) and
 is incremented by UDTIM, which is called from the IRQ handler every
 jiffy. BASIC exposes the counter via the `TI` (numeric) and `TI$`
 (string `HHMMSS`) reserved variables.
@@ -788,7 +799,8 @@ the three bytes, so the IRQ handler can't see a half-updated value.
 **Description:** Reads the three-byte jiffy counter and returns it in
 A/X/Y (high/mid/low). Disables IRQs during the read so the value is
 atomic. For elapsed time, call RDTIM
-twice and subtract; one jiffy = 1/60 s NTSC or 1/50 s PAL.
+twice and subtract; one jiffy = 1/60 s on both PAL and NTSC (see
+"Time and jiffy clock" above; an earlier version said 1/50 s PAL).
 
 ### $FFEA — UDTIM — Increment jiffy clock + check STOP
 
@@ -799,10 +811,12 @@ twice and subtract; one jiffy = 1/60 s NTSC or 1/50 s PAL.
 **Clobbers zero page:** $91, $A2 (must; VICE x64sc store trace, UDTIM once)
 **Pairs with:** RDTIM, SETTIM, STOP
 **Description:** Increments the 24-bit jiffy-clock counter at
-`$A0/$A1/$A2` by one. Wraps to zero after `$4F1A00` (24 hours of
-1/60 s ticks) or `$4A6800` (24 hours of 1/50 s ticks; KERNAL uses
-the NTSC constant unless explicitly told otherwise, so PAL drifts
-slightly). UDTIM also reads the keyboard-matrix row that contains
+`$A0/$A1/$A2` by one. When the count reaches `$4F1A01` it is reset
+to zero (compare at ROM `$F6A7-$F6B4`), so the clock runs `$000000` to
+`$4F1A00`, 24 hours of 1/60 s ticks. There is one constant for both
+regions; the PAL timer latch already runs the clock at 60 Hz. (An
+earlier version gave a second PAL wrap constant, `$4A6800`, and said
+PAL drifts; neither value nor drift is in the ROM.) UDTIM also reads the keyboard-matrix row that contains
 the STOP key (column at port `$DC00`, row at port `$DC01`) and
 sets `$91` to `$7F` if STOP is pressed, which is what makes the
 STOP routine work. UDTIM is called from the IRQ handler at `$EA31`
@@ -829,10 +843,14 @@ stored at `$0283-$0284`. On a stock 38911-byte BASIC system, the
 default value is `$A000` (`$00`/`$A0`); BASIC strings grow downward
 from this address, and BASIC's free-memory message reports
 `top - vartab`. Lowering MEMTOP reserves a block at the top of RAM
-that BASIC will not touch; for example, setting it to `$C000` keeps
-the 4 KiB at `$C000-$CFFF` free for machine-language code that
-coexists with BASIC. Most programs protect memory from BASIC this
-way, writing MEMTOP early in their startup. Lowering MEMTOP does
+that BASIC will not touch; for example, setting it to `$9000` keeps
+the 4 KiB at `$9000-$9FFF` free for machine-language code that
+coexists with BASIC. `$C000-$CFFF` needs no protection: it is above
+the default `$A000`. (An earlier version used `$C000` as the example,
+which raises MEMTOP.) BASIC copies MEMTOP into its own top pointer
+`$37/$38` only at cold start (ROM `$E40A`), so a running program that
+lowers MEMTOP must also set `$37/$38` (and `$33/$34`) or cold-start
+BASIC. Lowering MEMTOP does
 *not* shrink memory available to ML programs; it only tells BASIC
 to stay below the new ceiling.
 
@@ -891,10 +909,11 @@ vectors and related state.
 **Clobbers zero page:** $00-$01 (may; ROM walk from $FF84, power-on vectors)
 **Pairs with:** CINT, RAMTAS, RESTOR
 **Description:** Initializes the two CIA chips (sets DDRs, programs
-Timer A on CIA1 for the 60/50 Hz jiffy IRQ), initializes the SID
+Timer A on CIA1 for the 60 Hz jiffy IRQ on both regions), initializes the SID
 (silences all three voices), sets the IEC bus lines to idle, and
-clears the CIA interrupt-control registers. Called once at power-on
-between RAMTAS and CINT. Application code can call IOINIT to recover
+clears the CIA interrupt-control registers. Called once at power-on,
+first, before RAMTAS, RESTOR and CINT (ROM `$FCF2`; an earlier version
+said between RAMTAS and CINT). Application code can call IOINIT to recover
 from chip-state corruption, but doing so silences any in-progress
 sound and resets the keyboard-scan IRQ rate to the KERNAL default.
 
@@ -906,7 +925,8 @@ sound and resets the keyboard-scan IRQ rate to the KERNAL default.
 **Clobbers zero page:** $02-$FF (may; ROM walk from $FF87, power-on vectors; also stores through ($C1))
 **Pairs with:** IOINIT, CINT, MEMTOP, MEMBOT
 **Description:** Performs the RAM-test portion of cold start: walks
-through each page from `$0800` upward writing `$55` then `$AA` then
+through each page from `$0400` upward (ROM `$FD68`; an earlier
+version said `$0800`) writing `$55` then `$AA` then
 reading back, until it finds a page that doesn't echo back the
 written value, which becomes the top-of-RAM. Zeroes `$0002-$00FF` and
 `$0200-$03FF` (zero page below the stack, the BASIC input buffer and
@@ -1058,9 +1078,12 @@ byte to mark it as a command.
 **Clobbers zero page:** $90, $95, $A4-$A5 (may; ROM walk from $FFA5, power-on vectors)
 **Pairs with:** TALK, TKSA, UNTLK, READST
 **Description:** Clocks one byte off the IEC bus from the currently
-talking device. On the last byte of a transfer (EOI), the device
-holds the data line low for an extended period before the eighth
-bit; the KERNAL detects this and sets status byte bit 6 (`$40`).
+talking device. On the last byte of a transfer (EOI), the talker
+waits before sending the first bit; if CLK stays unchanged for about
+256 µs (CIA1 timer B, `$DC07` = `$01`), the KERNAL sets status bit 6
+(`$40`), pulses DATA low to acknowledge, and then reads the eight bits
+(ROM `$EE20-$EE55`). (An earlier version said the signal comes before
+the eighth bit.)
 Call READST after each IECIN to detect EOI and error conditions
 (`$01` = timeout writing, `$02` = timeout reading, `$80` = device
 not present). Historical name: ACPTR.
@@ -1120,8 +1143,10 @@ filename byte follows.
 **Clobbers zero page:** $90 (may; ROM walk from $FFB7, power-on vectors)
 **Clobbers zero page:** $90 (must; VICE x64sc store trace, READST)
 **Pairs with:** IECIN, IECOUT, CHRIN, CHROUT
-**Description:** Reads and clears the KERNAL's serial-bus status
-byte. Bit values:
+**Description:** Reads the KERNAL's status byte `$90` and returns it
+in A without clearing it (ROM `$FE1A`: `LDA $90`, `ORA $90`, `STA $90`).
+Only for RS-232 (device 2) does READST clear its byte, `$0297`. (An
+earlier version said READST clears the status byte.) Bit values:
 
 | Bit | Hex   | Meaning (cassette)              | Meaning (serial bus)              |
 |-----|-------|---------------------------------|-----------------------------------|
@@ -1167,15 +1192,14 @@ the STOP flag and jiffy clock updating.
 **Affects:** None
 **Clobbers zero page:** none (may; ROM walk from $FFA2, power-on vectors)
 **Pairs with:** READST
-**Description:** On the C64 this routine is a no-op. It exists for
-source compatibility with the PET, where it controlled the timeout
-behavior of the IEEE-488 bus. The C64's IEC serial bus has its own
-fixed timeout logic that cannot be disabled. Calling SETTMO
-has no effect. The C64 ROM keeps
-a SETTMO entry point for compatibility with code written
-for the VIC-1541 IEEE adapter and PET; on those machines the
-input A controls whether the bus driver times out after about 64 ms
-or waits forever. On a stock C64 with only IEC devices, the
+**Description:** Stores A in `$0285` and returns (ROM `$FE21`). No
+code in the KERNAL or BASIC ROM reads `$0285`, so the call changes
+no bus behaviour; an IEEE-488 cartridge's own driver could read it.
+(An earlier version said SETTMO is a no-op and named a "VIC-1541 IEEE
+adapter"; the store is real, and that product name is not verified.)
+It exists for source compatibility with the PET, where it controlled
+the timeout behaviour of the IEEE-488 bus. The C64's IEC serial bus
+has its own fixed timeout logic that cannot be disabled. On a stock C64 with only IEC devices, the
 timeouts are wired in: the KERNAL's IEC driver gives up after
 about 64 ms of clock-low time and sets the status byte to `$02`
 (read timeout) or `$01` (write timeout). Reading READST after a
@@ -1196,8 +1220,9 @@ Commodore machines where the I/O block lives elsewhere. On the
 C64 the value is fixed in ROM and never changes. The original
 intent was to let one program binary run on C64, C128, B-series,
 and Plus/4 by replacing all `LDA $DC00` constants with
-`LDY ($IOBASE_VEC),Y` indirect-Y addressing through an
-IOBASE-derived pointer. Almost no C64 software used IOBASE;
+`LDA (ptr),Y` indirect-indexed accesses through a zero-page pointer
+set from IOBASE. (An earlier version wrote `LDY (…),Y`, which is not a
+6502 addressing mode.) Almost no C64 software used IOBASE;
 tutorials and listings hard-code the I/O addresses.
 
 ## Pairs and contracts
@@ -1233,9 +1258,11 @@ causes these bugs:
 - **Skipping SETLFS before OPEN** uses stale parameters from the
   previous SETLFS call. Calling OPEN twice in a row reuses the
   last set of parameters, which is usually wrong.
-- **Skipping SETNAM** is legal for some devices (printer, screen,
-  tape with no name) but produces error 8 ("missing filename") for
-  disk OPENs that need a filename.
+- **OPEN with no filename** (SETNAM length 0) is legal on every
+  device. On a serial device it returns C=0 and sends nothing to the
+  drive (ROM `$F3D9`). Error 8 ("missing filename") comes from LOAD
+  and SAVE to a serial device with no name (ROM `$F4B8`, `$F5FE`). (An
+  earlier version said a disk OPEN without a name returns error 8.)
 - **CHRIN/CHROUT without CHKIN/CHKOUT** acts on the default channel
   (keyboard in, screen out). Sometimes that is intended; forgetting
   that CHKIN/CHKOUT are required to redirect is a frequent bug.
@@ -1308,7 +1335,7 @@ The KERNAL's reset vector (`$FFFC`) points at the cold-start routine
 that runs this sequence:
 
 ```
-RESET → STX $D016         ; harmless write to anchor the stack
+RESET → STX $D016         ; VIC control 2; TXS at $FCE5 set the stack
       → JSR $FDA3 (IOINIT)
       → JSR $FD50 (RAMTAS)
       → JSR $FD15 (RESTOR)
@@ -1318,8 +1345,9 @@ RESET → STX $D016         ; harmless write to anchor the stack
 
 In jump-table terms: IOINIT → RAMTAS → RESTOR → CINT, then jump to
 BASIC. To restart without a hard reset, an application can call
-the same four routines (in the same order) followed by `JMP $A000`
-(or its own entry point).
+the same four routines (in the same order) followed by `JMP ($A000)`
+(or its own entry point). `$A000` holds the BASIC cold-start vector,
+not code; an earlier version wrote `JMP $A000`.
 
 ### Status-byte interaction with file I/O
 
@@ -1478,7 +1506,10 @@ data_end:
 
 Replace the system IRQ handler with one that does custom work
 each jiffy but still calls UDTIM so the jiffy clock and STOP
-key keep working.
+key keep working. It exits through `$EA81`, which pulls Y, X, A and
+returns, so it skips the cursor blink and SCNKEY; to keep those, end
+with `jmp (old_lo)` instead and drop the `jsr $FFEA`, because `$EA31`
+calls UDTIM itself (ROM `$EA31` = `JSR $FFEA`).
 
 ```asm
 install:
@@ -1496,14 +1527,18 @@ install:
 
 my_irq:
         ; ... my custom work, fast ...
-        lda $D019       ; ack VIC IRQs
-        sta $D019
         jsr $FFEA       ; UDTIM — keep jiffy clock + STOP working
-        jmp (old_irq_target)
-old_irq_target = $EA31  ; default KERNAL IRQ entry, or use stashed vector
-old_lo: .byte 0
+        lda $DC0D       ; ack the CIA1 timer A IRQ
+        jmp $EA81       ; KERNAL exit: restore Y, X, A; RTI
+old_lo: .byte 0         ; saved $0314/$0315, for chaining or uninstall
 old_hi: .byte 0
 ```
+
+An earlier version acked `$D019`, called UDTIM and then did
+`jmp (old_irq_target)` with `old_irq_target = $EA31`. That jumps
+through the code bytes at `$EA31/$EA32` (to `$EA20`), acks the wrong
+chip for the KERNAL's CIA IRQ, and would have run UDTIM twice per
+jiffy had it reached `$EA31`.
 
 #### Polling input non-blocking in a game loop
 
@@ -1580,7 +1615,10 @@ precede OPEN: its SETLFS+SETNAM dependencies.
   to write to `$D018`, changing the character ROM source. With a
   custom bitmap or a charset other than the KERNAL defaults set up,
   sending a `$0E` or `$8E` byte reverts it.
-  Color-code PETSCII bytes (`$05`, `$1C`-`$1F`, `$81`, `$90`-`$9F`)
+  Color-code PETSCII bytes (`$05`, `$1C`, `$1E`, `$1F`, `$81`, `$90`,
+  `$95`-`$9C`, `$9E`, `$9F`; the table at ROM `$E8DA`; an earlier
+  version gave `$1C`-`$1F` and `$90`-`$9F`, which include cursor and
+  control codes)
   similarly write to the current-color byte at `$0286` (page 2, not
   zero page) and change the foreground color of subsequent character
   writes. To
@@ -1610,9 +1648,10 @@ precede OPEN: its SETLFS+SETNAM dependencies.
   CHRIN/CHROUT loop, before any CLOSE.
 
 - **CLALL doesn't tell IEC devices to close.** Unlike CLOSE, CLALL
-  only zeros the KERNAL's open-file table. Disk-side state (channel
-  buffers, dirty relative-file blocks) is left untouched until the
-  device sees an UNLISTEN. After CLALL, a re-OPEN of a file
+  only zeros the KERNAL's open-file table and runs CLRCHN. Disk-side
+  state (channel buffers, dirty relative-file blocks) is left
+  untouched; no close command is sent. (An earlier version said the
+  drive's state waits for an UNLISTEN; CLALL already sends one.) After CLALL, a re-OPEN of a file
   with the same secondary on the same device may return
   stale data from the abandoned channel.
 
@@ -1642,8 +1681,9 @@ precede OPEN: its SETLFS+SETNAM dependencies.
   jiffy; the IRQ handler at `$EA31` calls it before SCNKEY. In an
   SEI-protected critical section, STOP never triggers. To make
   STOP work inside SEI code, `JSR $FFEA` inside the loop
-  (at most once per frame if `TI$` matters, since it also advances
-  the jiffy clock). An earlier version of this bullet said to call
+  (once per 1/60 s if `TI$` matters, since it also advances the
+  jiffy clock; once per PAL frame runs it slow; an earlier version
+  said "at most once per frame"). An earlier version of this bullet said to call
   SCNKEY; SCNKEY does not write `$91` (the only store to it in the
   KERNAL is UDTIM's at `$F6DA`).
 
@@ -1652,12 +1692,13 @@ precede OPEN: its SETLFS+SETNAM dependencies.
   STOP-key detection (STOP reads `$91`, which UDTIM updates from
   its keyboard-row read).
 
-- **PAL machines drift on TI$.** The KERNAL uses the same constants
-  for the jiffy-clock wrap regardless of region. On PAL machines
-  the clock ticks at 50 Hz but wraps at the NTSC-calibrated 24-hour
-  value, so `TI$` slowly drifts behind wall-clock time. For
-  accurate timing on PAL, use a CIA timer A in 50 Hz mode and
-  ignore TI$.
+- **The jiffy clock is 60 Hz on PAL too, not the frame rate.** The
+  KERNAL loads CIA1 timer A with `$4025` on PAL and `$4295` on NTSC,
+  so both tick at about 60 Hz (measured in VICE x64sc: 3,590 jiffies in 3,000
+  PAL frames, 1.2 per frame). A wait of N jiffies meant as N frames
+  ends 17% early on PAL; sync to the raster for per-frame work. (An earlier version of
+  this bullet said PAL ticks at 50 Hz and drifts on TI$; the ROM has
+  one wrap value, `$4F1A01`, and no drift from region.)
 
 - **GETIN blocks on IEC.** Only the keyboard channel makes GETIN
   non-blocking. After a CHKIN to an IEC device, GETIN waits for a
@@ -1677,8 +1718,9 @@ precede OPEN: its SETLFS+SETNAM dependencies.
   / PET compatibility where I/O lives at different addresses, but
   on the C64 the offset arithmetic is non-trivial.
 
-- **SETTMO is a no-op.** It accepts a parameter and returns.
-  SETTMO does not fix IEC bus timeouts: the C64's bus timeouts are
+- **SETTMO does not change IEC timeouts.** It stores A in `$0285`,
+  which nothing in the KERNAL reads (an earlier version called it a
+  no-op). It does not fix IEC bus timeouts: the C64's bus timeouts are
   wired in and cannot be changed from software. The usual fix is
   retrying the operation after the status byte reports `$01`
   (write timeout) or `$02` (read timeout).
@@ -1725,7 +1767,7 @@ precede OPEN: its SETLFS+SETNAM dependencies.
 - **The fast-load problem.** The KERNAL's IEC bus protocol is
   slow: about 400-800 bytes/sec on a 1541. Commercial
   fast-loaders (Action Replay, Final
-  Cartridge, Krakout, JiffyDOS, Epyx Fastload, etc.) replace
+  Cartridge, JiffyDOS, Epyx Fastload, etc.) replace
   the KERNAL's IECIN/IECOUT bit-banging with custom code that
   uploads a small handler to the drive's 6502 and uses
   non-standard line timing for 5-15x speedup. They
@@ -1813,7 +1855,7 @@ precede OPEN: its SETLFS+SETNAM dependencies.
   (STOP flag), `$A0-$A2` (jiffy clock), `$0314-$0333` (RAM
   vectors), and `$0259-$0276` (open-file tables). See
   [cia-reference.md](cia-reference.md) for the CIA1 timer
-  programming that drives the 60/50 Hz IRQ that calls UDTIM.
+  programming that drives the 60 Hz IRQ that calls UDTIM.
   See [vic-ii-reference.md](vic-ii-reference.md) for the
   `$D018` register that CHROUT writes when processing PETSCII
   case-toggle bytes (`$0E`, `$8E`).

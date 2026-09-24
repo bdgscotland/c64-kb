@@ -60,7 +60,7 @@ guaranteed cycle); see `vic_bus_takeover_on_dma` below for the measurement.
 
 ### Fix
 
-Two approaches, often combined:
+Three approaches, often combined (an earlier version said two and listed three):
 
 1. **Badline avoidance:** Schedule IRQ handlers to fire on non-bad lines. Given
    a fixed YSCROLL of 3, any line where `(target_line & 7) != 3` is safe. A
@@ -161,7 +161,9 @@ Mechanism.)
 On NTSC the effect shows sooner: the frame is only 263 lines
 (6567R8; 262 on the 6567R56A), so lines 256-262 are ordinary visible
 bottom-border lines (the NTSC vertical blank is lines 13-40, per
-`docs/hardware/pal-ntsc-reference.md`; an earlier version of this entry called
+`docs/hardware/pal-ntsc-reference.md`, which takes it from Bauer's VIC-II
+article, not a measurement; VICE's NTSC screenshot crop of lines 28-262 and
+0-11 is not the blank; an earlier version of this entry called
 256-262 "vertical blank"), and any bottom-border effect crosses line 255 without
 deliberately targeting high line numbers: a handler that chains forward by
 setting `$D012 = next_line` forgets the 9th bit and wraps to `next_line - 256`.
@@ -273,12 +275,13 @@ set_irq_dynamic:
 ### Symptom
 
 A raster effect that works after the first few frames is unstable on the
-first frame after IRQ enable. Color splits land 1-7 pixels to the right
-on the first frame. A sprite multiplex update on the first frame puts sprites
+first frame after IRQ enable. Color splits land 1-7 cycles (8-56 pixels; one
+cycle is 8 pixels) to the right on the first frame; an earlier version said
+1-7 pixels. A sprite multiplex update on the first frame puts sprites
 one line too low. The symptom disappears by frame 2. Alternatively, a raster
 effect coded without the stable-raster polling technique shows a permanent 0-7
-cycle wobble that makes split lines look fuzzy: a 1-7 pixel horizontal smear
-on every frame where the interrupted instruction happened to be long.
+cycle wobble that makes split lines look fuzzy: an 8-56 pixel (1-7 cycle) horizontal
+smear on every frame where the interrupted instruction happened to be long.
 
 ### Mechanism
 
@@ -292,8 +295,12 @@ of cycles between the VIC asserting the line and the handler's first instruction
 were left in the interrupted instruction. A 2-cycle `NOP` interrupted on its
 last cycle adds 1 cycle of delay; a 6-cycle `STA ($zp,X)` interrupted on its
 first cycle adds 5 cycles of delay. The total jitter window is 0-6 cycles for
-common instructions (the 7-cycle `BRK` adds up to
-6 cycles, but is not found in normal runtime code).
+common instructions (the 7-cycle read-modify-write
+`abs,X` forms such as `INC abs,X` add up to 6 cycles and are common in
+ordinary code: measured in VICE x64sc, a sled of `INC abs,X` gives seven
+distinct entry cycles, per `vic-ii-reference.md`; undocumented 8-cycle
+opcodes such as `SLO (zp),Y` widen the window to 0-7. An earlier version
+named only `BRK` as a 7-cycle instruction and called it rare in runtime code).
 
 On the first frame after enabling IRQs (writing $D01A bit 0 = 1), the CPU
 may be executing any instruction when the first IRQ fires. The
@@ -347,7 +354,7 @@ entry fell.
 // late depending on what instruction was running when the IRQ fired.
 irq_jittery:
     lda #BLUE
-    sta $d020               // Horizontal seam varies by 0-6 pixels
+    sta $d020               // Seam varies by 0-6 cycles (0-48 pixels)
     asl $d019               // Ack
     rti
 

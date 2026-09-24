@@ -7,9 +7,9 @@ chip: VIC-II
 
 # Bitmap Modes
 
-The VIC-II supports two hardware bitmap modes — standard hires and multicolor — each with its own memory layout, color resolution, and practical constraints. On top of these two fundamental modes, the scene has developed several scanline-switching techniques (FLI, AFLI, IFLI) that exploit the chip's internal video-matrix pipeline to push color fidelity far beyond what the hardware naively supports. This document covers the techniques in the bitmap family, from the simplest mode enable, a pixel plot and a line, through the most demanding interlaced scanline-switcher.
+The VIC-II has two hardware bitmap modes, standard hires and multicolor, each with its own memory layout, color resolution and constraints. On top of them, scanline-switching techniques (FLI, AFLI, IFLI) use the chip's video-matrix pipeline to give more colors per cell than either mode allows. This page covers the bitmap family, from the mode enable, a pixel plot and a line, through the interlaced scanline-switcher.
 
-Understanding the bitmap modes thoroughly is a prerequisite before attempting FLI variants. The FLI family builds entirely on the standard bitmap addressing described here; a mistake in the memory layout will manifest as wrong colors in an FLI image just as much as in a plain bitmap.
+Get the plain modes working before any FLI variant. The FLI family builds on the standard bitmap addressing described here, and a mistake in the memory layout shows as wrong colors in an FLI image just as in a plain bitmap.
 
 ---
 
@@ -22,7 +22,7 @@ Understanding the bitmap modes thoroughly is a prerequisite before attempting FL
 
 ### Why
 
-The default character mode gives only 40x25 cells with two colors per cell drawn from a shared character generator. Bitmap mode breaks that constraint: every one of the 64,000 pixels in the 320x200 display window is individually addressable in one of two colors chosen independently for each 8x8 cell. This is the foundation of all full-screen painted or rendered graphics on the C64.
+The default character mode gives only 40x25 cells with two colors per cell drawn from a shared character generator. In bitmap mode every one of the 64,000 pixels in the 320x200 display window is individually addressable in one of two colors chosen independently for each 8x8 cell. Full-screen painted or rendered graphics on the C64 are built on it.
 
 ### How
 
@@ -31,7 +31,7 @@ Enable standard bitmap mode by setting bit 5 (BMM) of $D011 to 1. The VIC-II's d
 Two separate memory areas are required within the current 16 KB VIC bank:
 
 - **Bitmap data**: 8000 bytes (320x200 / 8) arranged as 25 rows of 40 cells, each cell occupying 8 consecutive bytes (one byte per scanline within the cell). The base address is controlled by $D018 bit 3 (CB2): 0 places the bitmap at offset $0000 in the bank, 1 places it at $2000.
-- **Screen RAM (video matrix)**: 1000 bytes at any 1 KB boundary within the VIC bank, selected by $D018 bits 7-4. Each screen RAM byte encodes the two colors for one 8x8 cell — the high nibble is the foreground color (set bits in bitmap), the low nibble is the background color (clear bits).
+- **Screen RAM (video matrix)**: 1000 bytes at any 1 KB boundary within the VIC bank, selected by $D018 bits 7-4. Each screen RAM byte encodes the two colors for one 8x8 cell: the high nibble is the foreground color (set bits in bitmap), the low nibble is the background color (clear bits).
 
 Color RAM ($D800-$DBFF) is not read in standard bitmap mode.
 
@@ -45,15 +45,15 @@ To set up a standard bitmap:
 
 ### Why it works
 
-In standard text mode the chip's g-access fetches a byte from the character generator ROM or RAM. In bitmap mode the same g-access mechanism reads sequentially from the 8000-byte bitmap area instead — the chip simply treats the bitmap as a 40x25x8 character set in which every character has a unique glyph. The per-cell two-color attribute lives in the video matrix (screen RAM), which the chip fetches on each badline exactly as it does in text mode. The only difference is which pixel source the chip reads on g-access cycles.
+In standard text mode the chip's g-access fetches a byte from the character generator ROM or RAM. In bitmap mode the same g-access mechanism reads sequentially from the 8000-byte bitmap area instead; the chip treats the bitmap as a 40x25x8 character set in which every character has a unique glyph. The per-cell two-color attribute lives in the video matrix (screen RAM), which the chip fetches on each badline exactly as it does in text mode. The only difference is which pixel source the chip reads on g-access cycles.
 
 ### Variations
 
-**Split-screen hires/text**: program a raster IRQ to toggle $D011 bit 5 at the desired scanline boundary. This gives a bitmap area above and a text area below (or vice versa) within the same frame. Remember to update $D018 if the screen RAM positions differ between the two halves.
+**Split-screen hires/text**: program a raster IRQ to toggle $D011 bit 5 at the desired scanline boundary. This gives a bitmap area above and a text area below (or vice versa) within the same frame. Update $D018 if the screen RAM positions differ between the two halves.
 
 **Two-bitmap pages**: keep two 8000-byte areas at $0000 and $2000 in the VIC bank and alternate $D018 bit 3 each frame for double-buffering. Allows one page to be drawn while the other is displayed, eliminating partial-frame tearing.
 
-**Single-colour full bitmap**: fill every screen RAM byte with the same value whose two nibbles differ (e.g. $10 = white ink on black), so the whole 320x200 area is one two-colour canvas; then the bitmap bits alone draw the picture. (Equal nibbles make ink and paper the same colour and the drawing disappears — an earlier version of this paragraph said to make them equal. Measured in VICE x64sc: screen byte $12 renders bitmap $FF white and $00 red.)
+**Single-colour full bitmap**: fill every screen RAM byte with the same value whose two nibbles differ (e.g. $10 = white ink on black), so the whole 320x200 area is one two-colour canvas; then the bitmap bits alone draw the picture. (Equal nibbles make ink and paper the same colour and the drawing disappears; an earlier version of this paragraph said to make them equal. Measured in VICE x64sc: screen byte $12 renders bitmap $FF white and $00 red.)
 
 ### Cycle budget
 
@@ -208,7 +208,7 @@ Measured with CIA1 timer A in the `hires-plot-line` recipe, display blanked, VIC
 
 Standard bitmap mode gives 320x200 pixel resolution with only two colors per 8x8 cell. Many full-screen paintings require more than two colors per cell. Multicolor bitmap trades horizontal resolution for additional colors: each 8x8 cell gets four independent colors, at the cost of halving horizontal resolution to 160x200 (each displayed pixel is two bits wide).
 
-The overwhelming majority of "C64 art" seen online — artwork from Koala Painter, Advanced Art Studio, PETSCII editors set to bitmap mode — is multicolor bitmap.
+Most C64 bitmap art (Koala Painter, Advanced Art Studio, PETSCII editors set to bitmap mode) is multicolor bitmap.
 
 ### How
 
@@ -227,15 +227,15 @@ Each 2-bit pattern in a bitmap byte maps to a color source:
 
 This gives three per-cell colors plus one global shared background, for a total of four colors per cell. The Color RAM nibble (%11 color) is read from $D800 indexed by cell position, same as in multicolor text mode.
 
-Because each pixel is two bits, each pixel row is still 40 bytes, one per cell, but each byte now yields four double-wide pixels, so a row is 160 pixels and the bitmap remains 8000 bytes — byte layout is unchanged, only interpretation differs. (An earlier version described this as "40 cells x 4 bytes per horizontal tile", which is not the layout.)
+Because each pixel is two bits, each pixel row is still 40 bytes, one per cell, but each byte now yields four double-wide pixels, so a row is 160 pixels and the bitmap remains 8000 bytes; the byte layout is unchanged, only its interpretation differs. (An earlier version described this as "40 cells x 4 bytes per horizontal tile", which is not the layout.)
 
 ### Why it works
 
-The multicolor bit in $D016 changes how the chip interprets the pixel shift register during g-access rendering. Instead of emitting one bit per pixel clock (hires: eight 1-clock pixels per byte), the chip takes two bits every second pixel clock and holds each 2-bit pair on the output for two clocks (four 2-clock pixels per byte). A byte still lasts the eight clocks of its cell — measured in VICE x64sc, the four pairs of one byte span the full 8-pixel cell width; an earlier version said "4 clocks per byte". The two-bit pattern is decoded through the four-entry color lookup described above. All other chip mechanics — badlines, video matrix fetches, memory banking — are unchanged.
+The multicolor bit in $D016 changes how the chip interprets the pixel shift register during g-access rendering. Instead of emitting one bit per pixel clock (hires: eight 1-clock pixels per byte), the chip takes two bits every second pixel clock and holds each 2-bit pair on the output for two clocks (four 2-clock pixels per byte). A byte still lasts the eight clocks of its cell (measured in VICE x64sc: the four pairs of one byte span the full 8-pixel cell width; an earlier version said "4 clocks per byte"). The two-bit pattern is decoded through the four-entry color lookup described above. All other chip mechanics (badlines, video matrix fetches, memory banking) are unchanged.
 
 ### Variations
 
-**Mixed hires/multicolor bitmap**: you cannot mix per-cell within a single bitmap frame using only these two mode bits. However, you can do a full-frame mode switch via raster IRQ between a hires region and a multicolor region.
+**Mixed hires/multicolor bitmap**: these two mode bits cannot mix modes per cell within one bitmap frame. A raster IRQ can switch mode between a hires region and a multicolor region.
 
 **Programmatic color cycling**: write new values to $D021 or to screen RAM/Color RAM bytes during the vertical blank each frame. Changing $D021 shifts the %00 color across the entire bitmap simultaneously, a cheap way to animate background tones or produce global color washes.
 
@@ -243,7 +243,7 @@ The multicolor bit in $D016 changes how the chip interprets the pixel shift regi
 
 ### Cycle budget
 
-Multicolor bitmap mode has the same CPU cycle budget as standard bitmap mode. Badlines, sprite DMA, and VBI overhead are identical. There is no extra cost for the MCM pixel decoding — it is done entirely in VIC-II hardware.
+Multicolor bitmap mode has the same CPU cycle budget as standard bitmap mode. Badlines, sprite DMA, and VBI overhead are identical. There is no extra cost for the MCM pixel decoding; the VIC-II does it in hardware.
 
 ### Recipes
 
@@ -260,9 +260,9 @@ Multicolor bitmap mode has the same CPU cycle budget as standard bitmap mode. Ba
 
 ### Why
 
-Standard text mode gives each character cell one foreground color and one global background color ($D021). For games that need distinct background regions — sky, ground, water — changing $D021 globally is too coarse. Extended Color Mode (ECM) allows four different background colors selectable per character cell, at the cost of reducing the usable character set from 256 to 64 glyphs.
+Standard text mode gives each character cell one foreground color and one global background color ($D021). For games that need distinct background regions (sky, ground, water), changing $D021 globally is too coarse. Extended Color Mode (ECM) allows four different background colors selectable per character cell, at the cost of reducing the usable character set from 256 to 64 glyphs.
 
-ECM is a text mode, not a bitmap mode, but it belongs in this document because it shares the $D011 control register with the bitmap modes and is part of the full mode-bit matrix that technique writers must understand.
+ECM is a text mode, not a bitmap mode, but it belongs in this document because it shares the $D011 control register with the bitmap modes and is part of the full mode-bit matrix.
 
 ### How
 
@@ -285,9 +285,9 @@ The VIC-II character decoder reads the character pointer from the video matrix (
 
 ### Variations
 
-**Platform game zones**: use codes 0-63 for sky-colored background, 64-127 for earth-colored cells, 128-191 for cave cells. The glyphs can be the same 64 tiles — only their background tint changes. This gives a cheap color-region effect with minimal code.
+**Platform game zones**: use codes 0-63 for sky-colored background, 64-127 for earth-colored cells, 128-191 for cave cells. The glyphs can be the same 64 tiles; only their background tint changes. This gives a cheap color-region effect with minimal code.
 
-**ECM + sprite overlay**: since sprites render over the ECM background exactly as in text mode, a sprite-based player character requires no special handling. The ECM background acts as a colored playing field.
+**ECM + sprite overlay**: since sprites render over the ECM background as in text mode, a sprite-based player character requires no special handling. The ECM background acts as a colored playing field.
 
 ### Cycle budget
 
@@ -308,7 +308,7 @@ ECM is a text mode; the cycle budget is identical to standard text mode. No addi
 
 ### Why
 
-Standard text mode gives 8x8 hires character cells with two colors each. Sometimes you want per-cell multicolor character graphics — sprites are limited to 8 and are expensive in terms of DMA cycles; a custom character set with 4-color glyphs can render complex repeating graphics cheaply. Multicolor character mode gives 4x8 effective resolution per character cell (double-wide pixels) with four colors, three of which can be shared across all cells or chosen globally.
+Standard text mode gives 8x8 hires character cells with two colors each. Sprites are limited to 8 and cost DMA cycles; a custom character set with 4-color glyphs renders repeating graphics cheaply. Multicolor character mode gives 4x8 effective resolution per character cell (double-wide pixels) with four colors, three of which can be shared across all cells or chosen globally.
 
 ### How
 
@@ -316,7 +316,7 @@ Enable multicolor character mode by setting bit 4 of $D016 (MCM) to 1. BMM ($D01
 
 The color assignment per cell depends on bit 3 of the Color RAM nibble for that cell:
 
-- If Color RAM bit 3 is **0**, the cell renders as a standard hires character — 8x8, two colors (foreground = Color RAM bits 0-2, background = $D021). MCM has no effect on this cell.
+- If Color RAM bit 3 is **0**, the cell renders as a standard hires character: 8x8, two colors (foreground = Color RAM bits 0-2, background = $D021). MCM has no effect on this cell.
 - If Color RAM bit 3 is **1**, the cell renders as multicolor: 4x8 double-wide pixels, four colors:
 
 | Pattern | Color source |
@@ -326,19 +326,19 @@ The color assignment per cell depends on bit 3 of the Color RAM nibble for that 
 | %10 | $D023 (BGCOL2) |
 | %11 | Color RAM bits 0-2 (per-cell, 8 colors only) |
 
-The glyph data is fetched from the character generator normally; the chip only changes how it interprets the bit patterns. Custom character sets work identically to text mode — set $D018 bits 3-1 to the desired character generator base, and populate that RAM with 8 bytes per glyph.
+The glyph data is fetched from the character generator normally; the chip only changes how it interprets the bit patterns. Custom character sets work as in text mode: set $D018 bits 3-1 to the desired character generator base, and populate that RAM with 8 bytes per glyph.
 
-Note that %11 pattern in MCM text uses only the low 3 bits of Color RAM, giving 8 foreground choices (not 16). This contrasts with multicolor bitmap mode, where %11 uses all 4 Color RAM bits for 16 choices.
+The %11 pattern in MCM text uses only the low 3 bits of Color RAM, giving 8 foreground choices (not 16). This contrasts with multicolor bitmap mode, where %11 uses all 4 Color RAM bits for 16 choices.
 
 $D025/$D026 (sprite multicolour 0/1) were formerly listed in the Uses registers line because setup routines often write them alongside; they play no part in character MCM (measured in VICE x64sc: an MCM cell with $D025/$D026 set to distinct colours rendered only $D021/$D022/$D023/Colour-RAM) and have been removed from the Uses line.
 
 ### Why it works
 
-In the chip's pixel rendering path, the MCM bit in $D016 selects whether to clock the output shift register at 1 bit per clock (hires) or 2 bits per clock (multicolor). The per-cell opt-in through Color RAM bit 3 means the chip must check that bit every cell during rendering. The character generator fetch is otherwise unchanged — the same 8 bytes are read; the bit-pair interpretation happens in the output shift register, not the character generator.
+In the chip's pixel rendering path, the MCM bit in $D016 selects whether to clock the output shift register at 1 bit per clock (hires) or 2 bits per clock (multicolor). The per-cell opt-in through Color RAM bit 3 means the chip must check that bit every cell during rendering. The character generator fetch is otherwise unchanged: the same 8 bytes are read; the bit-pair interpretation happens in the output shift register, not the character generator.
 
 ### Variations
 
-**Mixed hires/multicolor cells**: set Color RAM bit 3 selectively so some cells render hires and others render multicolor. This allows a mix of fine-detail character graphics and color-rich multicolor ones in the same 40x25 grid.
+**Mixed hires/multicolor cells**: set Color RAM bit 3 selectively so some cells render hires and others render multicolor. Fine-detail hires characters and multicolor characters then share the same 40x25 grid.
 
 **Animation through charset swaps**: switch $D018 bits 3-1 during the vertical blank to point to an alternate character set, giving full-screen character animation at 50/60 Hz without touching individual screen RAM bytes.
 
@@ -370,9 +370,9 @@ MCM text mode has the same cycle budget as standard text mode. No per-frame over
 
 ### Why
 
-Multicolor bitmap mode gives 160x200 pixels with only four colors per 8x8 cell. The constraint is that the VIC-II reuses the same screen RAM row for all 8 scanlines that make up one character row, meaning the per-cell color palette repeats 8 times vertically. An image with rich vertical color variation — a gradient, a portrait, a landscape — must compress 8 vertical pixels of color choice into a single screen RAM byte.
+Multicolor bitmap mode gives 160x200 pixels with only four colors per 8x8 cell. The VIC-II reuses the same screen RAM row for all 8 scanlines that make up one character row, meaning the per-cell color palette repeats 8 times vertically. An image with vertical color variation (a gradient, a portrait, a landscape) must compress 8 vertical pixels of color choice into a single screen RAM byte.
 
-FLI (Flexible Line Interpretation) breaks this constraint by re-uploading new screen RAM values to the chip on every scanline. The result is that each of the 200 visible scanlines effectively has its own per-cell color palette. A multicolor FLI image has 160x200 pixels with up to 8000 unique color combinations (one per cell-per-line), versus MCM's 1000 cell palettes shared 8 lines each.
+FLI (Flexible Line Interpretation) re-uploads new screen RAM values to the chip on every scanline, so each of the 200 visible scanlines has its own per-cell color palette. A multicolor FLI image has 160x200 pixels with up to 8000 unique color combinations (one per cell-per-line), versus MCM's 1000 cell palettes shared 8 lines each.
 
 ### How
 
@@ -434,11 +434,11 @@ The stable raster entry is needed once, at the top: after that the natural badli
 
 ### Variations
 
-**Eight pages, not "reduced"**: an earlier version listed the eight-page layout here as a "reduced-bank" variation of a 200-page baseline; there was no such baseline. Eight pages is not a reduction of anything: a line needs 40 colour bytes, 200 lines need 8000, and eight 1 KB pages hold exactly that with page p, row r serving line 8r+p. Eight is also all that fits, since the pages must share the 16 KB VIC bank with the 8 KB bitmap and $D018's VM nibble reaches only 16 pages in a bank. The page is chosen by $D018, not by YSCROLL; YSCROLL only decides which line becomes a badline.
+**Eight pages, not "reduced"**: an earlier version listed the eight-page layout here as a "reduced-bank" variation of a 200-page baseline; there was no such baseline. Eight pages is what the data needs: a line needs 40 colour bytes, 200 lines need 8000, and eight 1 KB pages hold exactly that with page p, row r serving line 8r+p. Eight is also all that fits, since the pages must share the 16 KB VIC bank with the 8 KB bitmap and $D018's VM nibble reaches only 16 pages in a bank. The page is chosen by $D018, not by YSCROLL; YSCROLL only decides which line becomes a badline.
 
-**FLI with static bitmap**: the bitmap data itself does not change per scanline. Only screen RAM rotates. This allows the bitmap to carry shape information while screen RAM carries the color information, making them independently editable in tools.
+**FLI with static bitmap**: the bitmap data itself does not change per scanline. Only screen RAM rotates. The bitmap carries shape information and screen RAM carries color information, so tools can edit them independently.
 
-**Sprite overlay on FLI**: sprites are not affected by $D018 changes. Sprites render normally on top of or behind the FLI bitmap according to $D01B priority bits. This means a FLI background can coexist with sprite-based characters.
+**Sprite overlay on FLI**: sprites are not affected by $D018 changes. Sprites render normally on top of or behind the FLI bitmap according to $D01B priority bits. A FLI background can therefore coexist with sprite-based characters.
 
 ### Cycle budget (PAL)
 
@@ -472,7 +472,7 @@ Code size: 16 bytes per line unrolled, 3.2 KB for 200 lines. The old
 figure of "25-30 cycles per line" for an IRQ-per-line handler described
 something that does not fit in a badline and was never run.
 
-On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-54, the stall still ends on cycle 55 and the $D011 write must still land on cycle 15, so each line's padding grows by the line's extra cycles — `LINE_PAD` 13 on the 6567R8 (65 cycles) and 12 on the 6567R56A (64), instead of the recipe's 11. The entry delay spans three lines and grows the same way (`ENTRY_PAD` 204 on the 6567R8); with the PAL value the first two or three FLI lines come out wrong. Measured in VICE x64sc `-model ntsc` / `-model oldntsc`: with the PAL padding one grey column appears on the 6567R8; with 13 (12 on the R56A) the same three as PAL, and with the entry delay also lengthened the picture matches PAL line for line. (An earlier version of this paragraph spoke of "badline onset relative to IRQ fire"; there is no per-line IRQ in the method, so that named nothing.)
+On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-54, the stall still ends on cycle 55 and the $D011 write must still land on cycle 15, so each line's padding grows by the line's extra cycles: `LINE_PAD` 13 on the 6567R8 (65 cycles) and 12 on the 6567R56A (64), instead of the recipe's 11. The entry delay spans three lines and grows the same way (`ENTRY_PAD` 204 on the 6567R8); with the PAL value the first two or three FLI lines come out wrong. Measured in VICE x64sc `-model ntsc` / `-model oldntsc`: with the PAL padding one grey column appears on the 6567R8; with 13 (12 on the R56A) the same three as PAL, and with the entry delay also lengthened the picture matches PAL line for line. (An earlier version of this paragraph spoke of "badline onset relative to IRQ fire"; there is no per-line IRQ in the method, so that named nothing.)
 
 ### Recipes
 
@@ -492,13 +492,13 @@ On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-
 
 ### Why
 
-AFLI is hires FLI: the FLI trick applied to standard bitmap mode instead of multicolour. Plain hires gives 320x200 pixels but only two colours per 8x8 cell, both from the cell's screen RAM byte. Re-fetching screen RAM on every line, exactly as `fli_image` does, shrinks the attribute cell to 8x1: every line of every cell gets its own foreground and background pair. Each cell stays two-colour; dithering between adjacent pairs simulates more, and the result reads like 16-colour dithered PC graphics (`art/art-production-reference.md`, "AFLI — Advanced FLI (Hires FLI)", agrees and does not cite this page).
+AFLI is hires FLI: the FLI trick applied to standard bitmap mode instead of multicolour. Plain hires gives 320x200 pixels but only two colours per 8x8 cell, both from the cell's screen RAM byte. Re-fetching screen RAM on every line, as `fli_image` does, shrinks the attribute cell to 8x1: every line of every cell gets its own foreground and background pair. Each cell stays two-colour; dithering between adjacent pairs simulates more, and the result reads like 16-colour dithered PC graphics (`art/art-production-reference.md`, "AFLI — Advanced FLI (Hires FLI)", agrees and does not cite this page).
 
-An earlier version of this section described AFLI as multicolour FLI plus a second 8 KB bitmap whose CB bit was toggled per line, giving "interleaved two-plane pixels". That was wrong: there is one bitmap, the mode is hires, and $D016's MCM bit stays clear. Its memory budget was also impossible — two 8 KB bitmaps at $0000 and $2000 fill a 16 KB VIC bank, leaving no room for the eight screen pages the same text required.
+An earlier version of this section described AFLI as multicolour FLI plus a second 8 KB bitmap whose CB bit was toggled per line, giving "interleaved two-plane pixels". That was wrong: there is one bitmap, the mode is hires, and $D016's MCM bit stays clear. Its memory budget was also impossible: two 8 KB bitmaps at $0000 and $2000 fill a 16 KB VIC bank, leaving no room for the eight screen pages the same text required.
 
 ### How
 
-Layout: eight 1 KB screen pages at bank+$0000..$1FFF (line `l` uses page `l & 7`) and the 8000-byte hires bitmap at bank+$2000 — exactly the `fli_image` layout, 16 KB in total. Set BMM ($D011 bit 5) and leave MCM ($D016 bit 4) clear; the CB bit of $D018 is 1 throughout, only the VM nibble changes per line.
+Layout: eight 1 KB screen pages at bank+$0000..$1FFF (line `l` uses page `l & 7`) and the 8000-byte hires bitmap at bank+$2000, the `fli_image` layout, 16 KB in total. Set BMM ($D011 bit 5) and leave MCM ($D016 bit 4) clear; the CB bit of $D018 is 1 throughout, only the VM nibble changes per line.
 
 The per-line engine is `fli_image`'s, unchanged: one stable raster entry at the top of the frame, then an unrolled `LDA #page / STA $D018 / LDA #$38|(line&7) / STA $D011` block per line, the $D011 write making the badline condition true on cycle 15, the CPU stalled to cycle 55 on every line. Colour RAM is fetched by the c-access but not used in hires bitmap mode, so both colours of every 8x1 cell come from the line's screen page (high nibble foreground, low nibble background).
 
@@ -510,13 +510,13 @@ The VIC-II fills its 40-entry colour latch from the video matrix only on a badli
 
 ### Variations
 
-**AFLI for portraits**: the technique is particularly effective for human faces and gradients where vertical colour resolution is most perceptually significant.
+**AFLI for portraits**: suits faces and gradients, where vertical colour resolution shows most.
 
 **Hires IFLI**: two AFLI frames alternated at frame rate, i.e. two bitmaps and two sets of eight screen pages (32 KB across two VIC banks); see `ifli_image`.
 
 ### Cycle budget (PAL)
 
-The cycle budget is identical to `fli_image`: two writes per line (`STA $D018`, `STA $D011`), the $D011 write making the badline condition true on cycle 15, nothing left over — the $D018 value carries more bits but the instruction costs the same four cycles. An earlier version said AFLI adds 2-4 cycles per line and that the write lands "before cycle 15"; neither is right. The 63-cycle line is 40 VIC bus + 12 block + 11 padding, so there is no slack, and a write effective on cycle 14 resets RC: measured in VICE x64sc (PAL) with the fli-image listing's bitmap rows alternating $55/$00, `LINE_PAD` 10 shows every line drawing bitmap row 0 and only two grey columns, `LINE_PAD` 11 shows the rows advancing and three grey columns.
+The cycle budget is identical to `fli_image`: two writes per line (`STA $D018`, `STA $D011`), the $D011 write making the badline condition true on cycle 15, nothing left over; the $D018 value carries more bits but the instruction costs the same four cycles. An earlier version said AFLI adds 2-4 cycles per line and that the write lands "before cycle 15"; neither is right. The 63-cycle line is 40 VIC bus + 12 block + 11 padding, so there is no slack, and a write effective on cycle 14 resets RC: measured in VICE x64sc (PAL) with the fli-image listing's bitmap rows alternating $55/$00, `LINE_PAD` 10 shows every line drawing bitmap row 0 and only two grey columns, `LINE_PAD` 11 shows the rows advancing and three grey columns.
 
 ---
 
@@ -532,27 +532,27 @@ The cycle budget is identical to `fli_image`: two writes per line (`STA $D018`, 
 
 ### Why
 
-Even with FLI providing per-scanline color variation, the horizontal pixel resolution of multicolor bitmap remains 160 pixels. IFLI (Interlaced FLI) pushes effective resolution to 320x200 by rendering two different FLI frames on alternating PAL frames and relying on the display's phosphor persistence to blend them. The viewer perceives an image with more horizontal detail than either frame alone provides.
+FLI gives per-scanline color variation, but the horizontal pixel resolution of multicolor bitmap remains 160 pixels. IFLI (Interlaced FLI) raises effective resolution to 320x200 by rendering two different FLI frames on alternating PAL frames and relying on the display's phosphor persistence to blend them. The viewer perceives an image with more horizontal detail than either frame alone provides.
 
-IFLI images are some of the highest-quality C64 artwork in the demoscene. The technique requires two complete, independently prepared FLI images and a precise frame-alternating engine.
+IFLI is a demoscene C64 art format. It requires two complete, independently prepared FLI images and a frame-alternating engine.
 
 ### How
 
-IFLI requires two complete FLI images — each with its own 8000-byte bitmap and its own eight screen RAM pages — stored in memory simultaneously. Colour RAM is single and shared: there is one 1 KB at $D800, read by the VIC-II over its own bus regardless of $D018 or $DD00, and rewriting it between frames (1,000 bytes, at least 8,000 cycles) does not fit in the roughly 7,000-cycle PAL vertical blank the FLI engine leaves free. The %11 colour of each cell is therefore the same in both sub-frames, and IFLI image formats store a single Colour RAM block. (An earlier version of this sentence gave each sub-frame "a Color RAM state", contradicting the cycle budget below.) On even PAL frames, image A is displayed; on odd frames, image B. Alternating at 50 Hz with PAL phosphor persistence, the human eye integrates the two images.
+IFLI requires two complete FLI images (each with its own 8000-byte bitmap and its own eight screen RAM pages) stored in memory simultaneously. Colour RAM is single and shared: there is one 1 KB at $D800, read by the VIC-II over its own bus regardless of $D018 or $DD00, and rewriting it between frames (1,000 bytes, at least 8,000 cycles) does not fit in the roughly 7,000-cycle PAL vertical blank the FLI engine leaves free. The %11 colour of each cell is therefore the same in both sub-frames, and IFLI image formats store a single Colour RAM block. (An earlier version of this sentence gave each sub-frame "a Color RAM state", contradicting the cycle budget below.) On even PAL frames, image A is displayed; on odd frames, image B. Alternating at 50 Hz with PAL phosphor persistence, the human eye integrates the two images.
 
 The frame alternation is driven by a vertical blank IRQ (or a top-of-frame raster IRQ) that swaps the bank layout or bitmap/screen RAM addresses pointed to by $D018. Within each frame, the per-line FLI write block runs exactly as described in `fli_image`.
 
-The two images are typically prepared as slightly horizontally-offset variants of the same source — image B shifted one pixel left or right relative to image A. The overlap creates the perception of 320-wide content. Preparing an IFLI pair from source art is a non-trivial image processing task; dedicated tools (IFLI converters) handle this.
+The two images are typically prepared as slightly horizontally-offset variants of the same source — image B shifted one pixel left or right relative to image A. The overlap creates the perception of 320-wide content. Preparing an IFLI pair from source art is an image-processing task that dedicated tools (IFLI converters) handle.
 
 ### Why it works
 
-The VIC-II's output is a composite video signal. On a real CRT display, each scanline's phosphors retain charge for a fraction of a frame. When two similar images alternate at 50 Hz, the eye blends them in both spatial and temporal dimensions. The 160-pixel-wide multicolor pixels of each sub-frame appear to blend with the offset pixels of the opposite frame, creating the illusion of 320-pixel hires color content.
+The VIC-II's output is a composite video signal. On a real CRT display, each scanline's phosphors retain charge for a fraction of a frame. When two similar images alternate at 50 Hz, the eye blends them in both spatial and temporal dimensions. The 160-pixel-wide multicolor pixels of each sub-frame appear to blend with the offset pixels of the opposite frame, which reads as 320-pixel hires color content.
 
-This does not work at the pixel buffer level — both frames are full multicolor bitmap images with the same 160x200 pixel grid. The resolution improvement is entirely perceptual, a property of the human visual system and the CRT. IFLI images do not look the same on LCD monitors without post-processing; dedicated IFLI-aware emulator display modes apply a blending filter to simulate the CRT integration.
+The pixel buffer does not change: both frames are full multicolor bitmap images with the same 160x200 pixel grid. The resolution improvement is perceptual, a property of the human visual system and the CRT. IFLI images do not look the same on LCD monitors without post-processing; dedicated IFLI-aware emulator display modes apply a blending filter to simulate the CRT integration.
 
 ### Variations
 
-**IFLI on NTSC**: the two sub-frames alternate at 30 Hz (60 Hz frame rate) instead of PAL's 25 Hz. The engine is the same; what differs is the per-line cycle count (65 vs 63), which lengthens the per-line padding by two cycles and needs its own cycle counting — see the NTSC note under `fli_image`. An earlier version of this paragraph said 30 Hz flickers *more* because it is "closer to the flicker-fusion threshold"; that mechanism was inverted (the threshold is the rate above which flicker is no longer seen, so being nearer to it from below means less visible flicker, not more) and nothing in this repo measures either standard. How visible the flicker is on PAL or NTSC is a display and viewer question, not measured here.
+**IFLI on NTSC**: the two sub-frames alternate at 30 Hz (60 Hz frame rate) instead of PAL's 25 Hz. The engine is the same; what differs is the per-line cycle count (65 vs 63), which lengthens the per-line padding by two cycles and needs its own cycle counting; see the NTSC note under `fli_image`. An earlier version of this paragraph said 30 Hz flickers *more* because it is "closer to the flicker-fusion threshold"; that mechanism was inverted (the threshold is the rate above which flicker is no longer seen, so being nearer to it from below means less visible flicker, not more) and nothing in this repo measures either standard. How visible the flicker is on PAL or NTSC is a display and viewer question, not measured here.
 
 **Hires IFLI**: two hires-FLI (`afli_image`) frames alternated, i.e. two bitmaps and two sets of eight screen pages (32 KB across two VIC banks), doubling the effective colour resolution of the 8x1 cells. (An earlier version called this "IFLI with AFLI basis" and spoke of "four complete image planes"; it is two.)
 
@@ -560,9 +560,9 @@ This does not work at the pixel buffer level — both frames are full multicolor
 
 ### Cycle budget (PAL)
 
-IFLI's per-frame cycle budget is the same as FLI: one stable raster entry per frame and an unrolled two-write block per line — there is no per-line IRQ, and could not be (see `fli_image`; an earlier version of this sentence said "one stable raster IRQ per scanline"). The extra work is a handful of writes at the top of each frame to switch to the other image: since one FLI image (eight 1 KB screen pages plus an 8000-byte bitmap) fills a 16 KB VIC bank, the two images live in two banks and the swap is a $DD00 bank write, with the same unrolled $D018/$D011 block serving both. That is a few dozen cycles in the border lines.
+IFLI's per-frame cycle budget is the same as FLI: one stable raster entry per frame and an unrolled two-write block per line; there is no per-line IRQ, and could not be (see `fli_image`; an earlier version of this sentence said "one stable raster IRQ per scanline"). The extra work is a handful of writes at the top of each frame to switch to the other image: since one FLI image (eight 1 KB screen pages plus an 8000-byte bitmap) fills a 16 KB VIC bank, the two images live in two banks and the swap is a $DD00 bank write, with the same unrolled $D018/$D011 block serving both. That is a few dozen cycles in the border lines.
 
-The real cost of IFLI is not cycles but memory: two complete FLI images occupy roughly 2 x (8000 + 8 x 1000) = 32,000 bytes of VIC-accessible RAM, plus Color RAM, which is a fixed 1 KB at $D800 and shared between both sub-frames.
+The cost of IFLI is not cycles but memory: two complete FLI images occupy roughly 2 x (8000 + 8 x 1000) = 32,000 bytes of VIC-accessible RAM, plus Color RAM, which is a fixed 1 KB at $D800 and shared between both sub-frames.
 
 ---
 
@@ -625,9 +625,9 @@ Measured with CIA1 timer A on the recipe, the same on PAL and NTSC: 34 cycles on
 
 ### Why
 
-Koala Painter (1984) was the dominant C64 painting tool throughout the 1980s and into the 1990s. Its file format became the de facto interchange format for C64 multicolor bitmap images. An enormous corpus of C64 artwork survives in .kla format. Any program or demo that needs to display arbitrary C64 artwork must be able to parse and display Koala files.
+Koala Painter (1984) was the most used C64 painting tool through the 1980s and into the 1990s, and its file format became the de facto interchange format for C64 multicolor bitmap images. Much C64 artwork survives in .kla format, so a program that displays arbitrary C64 artwork has to parse Koala files.
 
-Beyond historical importance, the Koala format is also the most compact and direct representation of a multicolor bitmap image. Understanding it means understanding the precise relationship between bitmap data, screen RAM, Color RAM, and the background color register.
+The format is also a direct representation of a multicolor bitmap image: bitmap data, screen RAM, Color RAM and the background color register, as the chip reads them.
 
 ### How
 
@@ -643,7 +643,7 @@ A Koala Painter file has the following structure:
 
 Total file size: 10003 bytes (with 2-byte load address) or 10001 bytes (raw, some variants omit the load address).
 
-The load address at offset 0 is a standard C64 PRG-format header — two bytes little-endian indicating where the file should be loaded in CPU address space. Koala Painter itself loads the file to $6000, placing bitmap at $6000, screen RAM at $7F40, Color RAM at $8328, and background byte at $8710. These addresses are commonly used by display loaders to avoid the need to parse the header.
+The load address at offset 0 is a standard C64 PRG-format header: two bytes little-endian indicating where the file should be loaded in CPU address space. Koala Painter itself loads the file to $6000, placing bitmap at $6000, screen RAM at $7F40, Color RAM at $8328, and background byte at $8710. These addresses are commonly used by display loaders to avoid the need to parse the header.
 
 **Display procedure**:
 
@@ -658,7 +658,7 @@ The load address at offset 0 is a standard C64 PRG-format header — two bytes l
 
 The Koala format is a direct serialization of the three memory regions that multicolor bitmap mode reads during rendering. The bitmap data feeds g-accesses directly; screen RAM feeds c-accesses on badlines; Color RAM is read separately by the chip at cycle granularity as $D800 + cell_offset. The background byte goes to $D021, which the chip reads for the %00 color on every rendered pixel. Placing these exactly as the format specifies and enabling the two mode bits produces the image immediately.
 
-The VIC bank and $D018 pointer configuration determines where in the 64 KB address space the chip looks. If loading to $6000 (within VIC bank 1, CIA2 $DD00 bits = %10), the bitmap is at bank-offset $2000, placing $D018 CB2 = 1. The screen data at $7F40 is at bank-offset $3F40, which is not on a 1 KB boundary ($3F40 mod $400 = $340), so no $D018 VM value can point the VIC at it in place; the nearest page, VM = %1111, is $7C00. The offset $1F40 is itself $340 past a 1 KB boundary, so no 8 KB-aligned load address puts both the bitmap and the screen block where $D018 can reach them. The bitmap can stay at $6000 (bank 1, CB = 1), but the screen block must be copied to a 1 KB-aligned page in the same bank that does not overlap the bitmap ($4000-$5C00, i.e. VM = %0000-%0111), and Color RAM to $D800 in any case. Most display loaders simply copy all three blocks to a clean layout, as below. (An earlier version said the screen offset "rounds to $3C00"; it does not round, and the page at $7C00 holds no Koala data.)
+The VIC bank and $D018 pointer configuration determines where in the 64 KB address space the chip looks. If loading to $6000 (within VIC bank 1, CIA2 $DD00 bits = %10), the bitmap is at bank-offset $2000, placing $D018 CB2 = 1. The screen data at $7F40 is at bank-offset $3F40, which is not on a 1 KB boundary ($3F40 mod $400 = $340), so no $D018 VM value can point the VIC at it in place; the nearest page, VM = %1111, is $7C00. The offset $1F40 is itself $340 past a 1 KB boundary, so no 8 KB-aligned load address puts both the bitmap and the screen block where $D018 can reach them. The bitmap can stay at $6000 (bank 1, CB = 1), but the screen block must be copied to a 1 KB-aligned page in the same bank that does not overlap the bitmap ($4000-$5C00, i.e. VM = %0000-%0111), and Color RAM to $D800 in any case. Most display loaders copy all three blocks to a clean layout, as below. (An earlier version said the screen offset "rounds to $3C00"; it does not round, and the page at $7C00 holds no Koala data.)
 
 For Oscar64 programs, the recommended approach is to copy the Koala bitmap to $2000 in bank 0 (VIC offset $2000), screen RAM to $0400 (VIC offset $0400), and Color RAM directly to $D800, then set $D018 = $18 (VM = 1 = $0400, CB = bit 3 = 1 = $2000 bitmap). This keeps the VIC configuration simple and predictable.
 
@@ -666,7 +666,7 @@ For Oscar64 programs, the recommended approach is to copy the Koala bitmap to $2
 
 **Streaming from disk**: load the Koala file in the background using a turbo loader while displaying a placeholder screen, then swap in the bitmap on a VBI boundary. The Koala layout is sequential enough that the copy sequence is also the disk read order.
 
-**Koala animation**: $D018 can only place a bitmap at offset $0000 or $2000 of the current 16 KB bank (bit 3; bits 1-2 are ignored in bitmap mode — measured in VICE x64sc), and two 8000-byte bitmaps leave only two 192-byte gaps, neither a 1 KB-aligned block for a second screen RAM page, so two complete frames do not fit one bank. In practice each resident frame lives in its own VIC bank (bitmap at offset $2000 in banks 0 and 2 to avoid the character ROM shadow at $1000-$1FFF/$9000-$9FFF), selected by $DD00 bits 0-1 and $D018 together — at most four frames resident at once. $D018/$DD00 redirect only the bitmap and video matrix: each frame's 1,000-byte Colour RAM block must still be copied to $D800 (about 8,000 cycles unrolled, LDA abs/STA abs) and its background byte written to $D021. With frames resident the flip itself is cheap; loading from disk is the limit, which is where the practical 6-10 fps comes from. (Earlier text said several frames could be flipped by $D018 alone.)
+**Koala animation**: $D018 can only place a bitmap at offset $0000 or $2000 of the current 16 KB bank (bit 3; bits 1-2 are ignored in bitmap mode, measured in VICE x64sc), and two 8000-byte bitmaps leave only two 192-byte gaps, neither a 1 KB-aligned block for a second screen RAM page, so two complete frames do not fit one bank. Each resident frame lives in its own VIC bank (bitmap at offset $2000 in banks 0 and 2 to avoid the character ROM shadow at $1000-$1FFF/$9000-$9FFF), selected by $DD00 bits 0-1 and $D018 together, so at most four frames resident at once. $D018/$DD00 redirect only the bitmap and video matrix: each frame's 1,000-byte Colour RAM block must still be copied to $D800 (about 8,000 cycles unrolled, LDA abs/STA abs) and its background byte written to $D021. With frames resident the flip itself is cheap; loading from disk is the limit, which is where the practical 6-10 fps comes from. (Earlier text said several frames could be flipped by $D018 alone.)
 
 **Koala + sprite overlay**: because sprites are independent of bitmap mode, a Koala image can serve as a full-screen background with sprite-based animated foreground elements. Set $D01B appropriately for depth ordering.
 
@@ -674,7 +674,7 @@ For Oscar64 programs, the recommended approach is to copy the Koala bitmap to $2
 
 ### Cycle budget
 
-Koala display is not cycle-sensitive once the mode is enabled, but the copy is not small. Measured in VICE x64sc (PAL, CIA timer, screen blanked): a basic indexed page loop (LDA abs,X / STA abs,X / INX / BNE, 14 cycles per byte) copies the 10,000 bytes in about 140,000 cycles, and a fully unrolled LDA abs / STA abs copy costs 8 cycles per byte, 80,000 cycles for the whole image (and 60 KB of code, so in practice a partially unrolled loop lands between the two). With the screen on, badline DMA adds roughly 6 % more. That is four to seven PAL frames of 19,656 cycles; it does not fit the 7,056-cycle vertical border (112 lines x 63, lines 0-50 and 251-311). Copy before enabling BMM, or with the screen blanked (DEN = 0), and only then set $D018/$D011/$D016. Only the bitmap can be displayed in place: a file loaded at $6000 puts it at an 8 KB-aligned offset in bank 1, but the screen RAM that follows at +$1F40 is never 1 KB-aligned when the bitmap is 8 KB-aligned, and Color RAM must always be copied to $D800. An earlier version of this page gave 10,000-12,000 cycles for the copy and a 3,900-cycle VBI window; both were wrong.
+Koala display is not cycle-sensitive once the mode is enabled, but the copy is not small. Measured in VICE x64sc (PAL, CIA timer, screen blanked): a basic indexed page loop (LDA abs,X / STA abs,X / INX / BNE, 14 cycles per byte) copies the 10,000 bytes in about 140,000 cycles, and a fully unrolled LDA abs / STA abs copy costs 8 cycles per byte, 80,000 cycles for the whole image (and 60 KB of code, so a partially unrolled loop lands between the two). With the screen on, badline DMA adds roughly 6 % more. That is four to seven PAL frames of 19,656 cycles; it does not fit the 7,056-cycle vertical border (112 lines x 63, lines 0-50 and 251-311). Copy before enabling BMM, or with the screen blanked (DEN = 0), and only then set $D018/$D011/$D016. Only the bitmap can be displayed in place: a file loaded at $6000 puts it at an 8 KB-aligned offset in bank 1, but the screen RAM that follows at +$1F40 is never 1 KB-aligned when the bitmap is 8 KB-aligned, and Color RAM must always be copied to $D800. An earlier version of this page gave 10,000-12,000 cycles for the copy and a 3,900-cycle VBI window; both were wrong.
 
 For real-time conversion from disk, the raw data rate of the 1541 (approximately 300 bytes/second with standard KERNAL I/O, or 4000-6000 bytes/second with a turbo loader) dominates the timing. Full Koala loads via standard KERNAL take approximately 33 seconds; turbo-loaded Koala files load in under 3 seconds.
 

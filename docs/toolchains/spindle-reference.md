@@ -458,7 +458,9 @@ warning was ignored.
 with no `M` tag anywhere in this script the part ran to its frame count
 with the slot in place. The loaded bytes were not disassembled here, so
 whether the slot was rewritten to a `jsr` to a stub or left as `bit` is
-from the handbook. Budget 4 cycles a frame for it either way.
+from the handbook. Left as `bit abs` it costs 4 cycles a frame; a `jsr`
+to a stub that only returns costs at least 12 (`jsr` 6 + `rts` 6). (An
+earlier version said 4 cycles either way.)
 
 **The `-limitcycles` picture on a D64 boot is later than on a PRG.**
 Autostart of a disk goes through the KERNAL's `LOAD"*",8,1` and the

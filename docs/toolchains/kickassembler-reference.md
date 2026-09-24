@@ -847,10 +847,15 @@ installs today, and nothing in the jar refuses Java 8, though execution on a
 Java 8 runtime was not tested on this machine.
 
 **Encoding issues with `.text`.** The default encoding is `screencode_mixed`.
-If your screen target uses the uppercase+graphics charset (the power-on
-default on a stock C64), strings written with `screencode_mixed` will
-produce garbled output. Switch with `.encoding "screencode_upper"` before
-any `.text` directive that targets upper-case-only output.
+It assembles lower-case source letters to `$01`–`$1A` and upper-case ones
+to `$41`–`$5A`; digits and punctuation are the same in both encodings
+(measured, KickAssembler 5.25, `"hello WORLD 123!"`). On the
+uppercase+graphics charset (the power-on default) lower-case source letters
+therefore show as capitals and only upper-case source letters show as
+graphics glyphs. `.encoding "screencode_upper"` maps upper-case source
+letters to `$01`–`$1A` and passes lower-case ones through as `$61`–`$7A`,
+graphics again, so under it write the text in capitals. (An earlier version
+said `screencode_mixed` text was garbled on that charset.)
 
 **Macro hygiene.** Labels declared inside a macro are scoped to the macro
 call, so `loop:` in a macro does not collide across invocations. A `.var`

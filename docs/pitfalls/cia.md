@@ -668,7 +668,7 @@ RESTOR (`$FF8A`) or VECTOR (`$FF8D`) with an old table, since both put
 `$FE47` back.
 
 For the second, read `$DD0D` in every handler that services a CIA2
-source. `BIT $DD0D` costs 4 cycles and touches no register. Do the read
+source. `BIT $DD0D` costs 4 cycles and leaves A, X and Y alone; it changes only N, V and Z. (An earlier version said it touches no register.) Do the read
 only when the handler is meant to consume the event: a RESTORE-only
 stub that also reads `$DD0D` discards a timer or RS-232 flag that
 arrived in the same instant.

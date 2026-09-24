@@ -81,13 +81,17 @@ The IEC bus has one **controller** (always the C64), one **talker** (the device 
 
 The C64 initiates bus activity by pulling ATN low. While ATN is asserted, all devices on the bus treat incoming bytes as command bytes (not data). The C64 sends a 1-byte command:
 
-- **Bits 7–5:** Command type:
-  - `$20` (001xxxxx) — LISTEN: address a device as a listener
-  - `$40` (010xxxxx) — TALK: address a device as a talker
-  - `$60` (011xxxxx) — OPEN CHANNEL / SECONDARY ADDRESS: follows LISTEN or TALK
-  - `$E0` (111xxxxx) — CLOSE
-  - `$F0` (111xxxxx) — OPEN (also a secondary address command)
-- **Bits 4–0:** Device address (0–30; C64 itself is address 0, drives default to 8–11, printers to 4–7)
+- **LISTEN and TALK:** bits 7–5 are the command, bits 4–0 the device (0–30).
+  - `$20` + device (001xxxxx) — LISTEN: address a device as a listener
+  - `$40` + device (010xxxxx) — TALK: address a device as a talker
+  - `$3F` UNLISTEN and `$5F` UNTALK use device 31
+- **Secondary address:** sent after LISTEN or TALK; bits 7–4 are the command, bits 3–0 the channel (0–15).
+  - `$60` + channel (0110xxxx) — data to or from an open channel
+  - `$E0` + channel (1110xxxx) — CLOSE
+  - `$F0` + channel (1111xxxx) — OPEN; the filename follows
+- **Device numbers:** the KERNAL's OPEN (`$F34A`) handles device 0 (keyboard), 1–2 (Datassette, RS-232) and 3 (screen) itself and sends only 4 and up over the bus. Drives default to 8–11, printers to 4–7.
+
+The command bytes are rung 1, read from `kernal-901227-03.bin`: `ORA #$40` at `$ED09` (TALK), `ORA #$20` at `$ED0C` (LISTEN), `ORA #$60` at `$F36B`, `ORA #$F0` at `$F3E8` (OPEN), `ORA #$E0` at `$F64F` (CLOSE), and `LDA #$5F` / `LDA #$3F` at `$EDFB` / `$EDFE`. An earlier version gave `$F0` as 111xxxxx, gave the secondary-address commands a 5-bit device field instead of a 4-bit channel, and called the C64 itself device 0, which is the keyboard and never on the bus.
 
 After sending LISTEN or TALK + secondary address, the C64 releases ATN. The addressed device becomes active; all others go passive.
 
@@ -562,12 +566,12 @@ The result codes are the same numbers a `.d64` error block carries; `../pitfalls
 
 Demoscene fastloaders that use this approach:
 
-- **Krill's Loader** — widely used in modern demos; open source; supports 1541/1571/1581/SD2IEC; PAL and NTSC safe via CIA-timer calibration
-- **Spindle** — DreamLoad-compatible, optimized for original 1541 hardware
+- **Krill's Loader** — widely used in modern demos; source published. Its v194 `loader/README` lists native support for the 1541, 1570/71, 1581, CMD FD and 1541U, and SD2IEC only through the KERNAL fallback ("slow"); NTSC support is a build option, off in the pre-built binaries. (An earlier version listed SD2IEC among the supported drives and said it was PAL/NTSC safe through CIA-timer calibration.)
+- **Spindle** — lft's loader and disk-building system for the 1541 (rung 4, not checked here; an earlier version called it DreamLoad-compatible, which nothing here supports)
 - **DreamLoad** — older but common in late-1990s/early-2000s releases
 - **Kung Fu Flash loader** — targets flash-cart hardware with direct SD access
 
-In this KB's toolchains, a fastloader is an assembly module linked into the PRG (Oscar64: inline asm or an external `.asm` included via the linker; KickAssembler: `import binary` or included source). The drive-side routine is a binary blob uploaded at runtime. Oscar64 or KickAssembler produce the drive-side stub as a `.BIN` and the loader includes it as a `char[]` array or embedded resource.
+In this KB's toolchains, a fastloader is an assembly module linked into the PRG (Oscar64: `__asm` blocks, or a binary pulled into a `char[]` initialiser with `#embed "file.bin"`; KickAssembler: `.import binary "file.bin"` or `#import` of source). Both were built here with a 3-byte test file. Oscar64 has no object linker, so an external `.asm` cannot be linked in; an earlier version said it could, and wrote the KickAssembler directive without its dot, which 5.25 rejects as a syntax error.. The drive-side routine is a binary blob uploaded at runtime. Oscar64 or KickAssembler produce the drive-side stub as a `.BIN` and the loader includes it as a `char[]` array or embedded resource.
 
 ### Timing Considerations
 
@@ -701,9 +705,9 @@ Which buffers uploaded code may take: with only channel 15 open, buffers 1 and 3
 
 These modern IEC-compatible peripherals are **out of scope** for this KB's primary hardware target (stock C64 PAL/NTSC).
 
-**SD2IEC** is a microcontroller-based IEC device that reads/writes SD cards. It emulates the 1541 command set well enough for most purposes but has no drive CPU: it cannot execute drive-side code, making all `M-W`/`M-E` based fastloaders non-functional. SD2IEC supports a subset of fastloaders via native acceleration modes (Krill's Loader, for example, has an SD2IEC-compatible codepath).
+**SD2IEC** is a microcontroller-based IEC device that reads/writes SD cards. It emulates the 1541 command set well enough for most purposes but has no drive CPU: it cannot execute drive-side code, making all `M-W`/`M-E` based fastloaders non-functional. Some fastloaders run on it through the KERNAL instead: Krill's v194 README supports SD2IEC only through its KERNAL fallback, which it calls "slow". (An earlier version said Krill's loader had an SD2IEC codepath.)
 
-**Ultimate II+** (Gideon's Logic) is an FPGA cartridge that includes an accurate 1541 emulation with real drive CPU, plus fast IEC (via FBI fast loader built into the cartridge firmware). It is used for hardware-accurate fast loading on modern C64 setups but is cartridge-extended hardware outside the stock scope.
+**Ultimate II+** (Gideon's Logic) is an FPGA cartridge that includes a 1541 emulation that runs drive code (rung 4, not checked here). An earlier version also credited it with an "FBI fast loader" in its firmware; nothing here supports that. Krill's v194 README lists the 1541U among its natively supported drives. It is used for hardware-accurate fast loading on modern C64 setups but is cartridge-extended hardware outside the stock scope.
 
 Both devices handle `.D64`, `.D71`, `.D81`, `.T64`, and `.PRG` files from SD cards, making them the most common way demosceners develop on real hardware today.
 
@@ -713,11 +717,11 @@ Both devices handle `.D64`, `.D71`, `.D81`, `.T64`, and `.PRG` files from SD car
 
 ### Standard IEC Load Speed (~300 bytes/sec)
 
-A full 35-track 1541 disk (664 KB usable) takes over 30 minutes to read entirely via the KERNAL LOAD over the IEC bus. A typical 50 KB program takes about 2.5 minutes. Nearly every released demo and game therefore uses a custom fastloader. Plan for fastloader integration from the start of any project targeting real hardware.
+A full 35-track 1541 disk holds 664 blocks × 254 data bytes = 168,656 bytes (about 165 KiB). Measured in VICE x64sc 3.10 (PAL, default 1541-II with true drive emulation), `LOAD"BIG",8,1` of a 50,000-byte file written by `c1541` took 121,174,229 cycles from `JSR $FFD5` at `$E175` to its return, 123 s or about 406 bytes/s including the directory search; at that rate a full disk takes about 7 minutes. (An earlier version said "664 KB usable", over 30 minutes for a full disk and about 2.5 minutes for 50 KB; 664 is the block count.) Nearly every released demo and game therefore uses a custom fastloader. Plan for fastloader integration from the start of any project targeting real hardware.
 
 ### VICE Timing Differences with Real Hardware
 
-VICE's 1541 emulation is accurate for correctness but the default configuration does not emulate the real-time IEC bus timing precisely. Programs that rely on cycle-counted timing in IEC routines (including some fastloaders) may work correctly in VICE but fail on real hardware, or vice versa. Use VICE's `-drive8truedrive` option (and `-drivesound` to hear the head) to enable the more accurate (but slower) true-drive emulation during testing; an earlier version of this sentence spelled them `--drivesound 1 --drive8truedrive 1`, which x64sc 3.10 refuses: its options take a single dash and no argument.
+x64sc 3.10 started with `-default` already runs drive 8 as a 1541-II (`Drive8Type=1542`) with true drive emulation on (`Drive8TrueEmulation=1`, both read with the monitor's `resourceget`). An earlier version said the default configuration does not emulate IEC timing. Emulation is still not a real drive: a loader with cycle-counted IEC routines can pass in VICE and fail on hardware, or the reverse. `-drive8truedrive` and `+drive8truedrive` turn it on and off (x64sc `-help`: "hardware-level emulation of disk drive"), which matters when a saved configuration has turned it off; `-drivesound` plays the head noise; an earlier version of this sentence spelled them `--drivesound 1 --drive8truedrive 1`, which x64sc 3.10 refuses: its options take a single dash and no argument.
 
 The `c64_pal_ntsc_diff` MCP tool and `../hardware/pal-ntsc-reference.md` detail the clock-rate differences that affect CIA-timer-based IEC routines.
 
@@ -733,7 +737,7 @@ The KERNAL has one timeout on the bus, and it is short and narrow. The byte-send
 
 ### Directory Track Corruption
 
-Track 18 is the most-written track on a 1541. The directory and BAM are updated on every file write or scratch. Repeated use without a VALIDATE (`V0` command channel) command can produce a corrupted BAM: sectors marked allocated that are actually free, or vice versa. VALIDATE rebuilds the BAM by walking every file chain and reconstructing the bitmap. Running VALIDATE on a disk with active writes will abort any open file writes. The c1541 utility (bundled with VICE) can perform offline BAM repair.
+Track 18 is the most-written track on a 1541. The directory and BAM are updated on every file write or scratch. What corrupts the BAM is a write file left open, not repeated use. Measured in VICE x64sc 3.10 with true drive emulation: a BASIC program wrote twelve 7-block SEQ files and scratched nine, closing every file, and left 643 blocks free, exactly 664 − 3 × 7, which `c1541 -validate` did not change. The same program followed by one file opened for write and never closed left a 0-block `*SEQ` entry and 636 blocks free; `c1541 -validate` removed the entry and returned the 7 lost blocks, back to 643. (An earlier version said repeated use without VALIDATE corrupts the BAM.) VALIDATE (`V0` on the command channel) rebuilds the BAM by walking every file chain and reconstructing the bitmap. Running VALIDATE on a disk with active writes will abort any open file writes. The c1541 utility (bundled with VICE) can perform offline BAM repair.
 
 ---
 

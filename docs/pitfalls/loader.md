@@ -257,11 +257,11 @@ data without an obvious sign: the program may start but behave incorrectly
 because a few bytes of code or data were flipped.
 
 **JiffyDOS-modified 1541.** JiffyDOS replaces the 1541 ROM with a ROM that
-implements the JiffyDOS burst protocol. When Krill's drive-side code is uploaded
+implements JiffyDOS's own fast serial protocol. (An earlier version called it a burst protocol; burst is the 1571/1581 fast-serial mode, a different thing. Rung 4, not checked here.) When Krill's drive-side code is uploaded
 via `M-W`/`M-E` and executed, it overwrites the JiffyDOS RAM driver in the
 drive's RAM workspace. Krill then usually works on a JiffyDOS
 machine, but only if the Krill version's timing constants were compiled for the
-stock 1541 MHz clock, and only if the JiffyDOS kernel does not re-initialize the
+stock 1541's 1 MHz clock, and only if the JiffyDOS kernel does not re-initialize the
 RAM workspace between command-channel operations. Some JiffyDOS revisions
 periodically restore their RAM workspace, which can corrupt the in-place Krill
 drive code during a multi-part load sequence.
@@ -460,7 +460,7 @@ $0805    $9E    BASIC token for SYS
 $0806    $32    PETSCII '2'
 $0807    $30    PETSCII '0'
 $0808    $36    PETSCII '6'
-$0809    $34    PETSCII '4'
+$0809    $31    PETSCII '1'
 $080A    $00    End of BASIC line
 $080B    $00    End of BASIC program (link lo = 0)
 $080C    $00    End of BASIC program (link hi = 0)
@@ -478,20 +478,24 @@ The collision arises in two distinct ways:
 places a data table, sprite shape, or character ROM copy at `$0801`, intending to
 use it from machine code. Because the PRG loads to `$0801` and the BASIC stub
 occupies the first 12 bytes, those 12 bytes of the programmer's data are replaced
-by BASIC stub bytes. The machine code reads `$9E $32 $30 $36 $34 $00 ...` (the
+by BASIC stub bytes. The machine code reads `$9E $32 $30 $36 $31 $00 ...` (the
 SYS token and address digits) instead of the intended data values.
 
 **Collision type B — SYS target address mismatch with data placement.** The
 programmer adjusts the SYS address in the stub (e.g., changing `SYS 2064` to
 `SYS 2061` or `SYS 2080`) to accommodate a slightly longer or shorter header
 sequence, but does not correspondingly move the data that follows. If the SYS
-target is `2064` (`$0810`) but data is placed starting at `$080D`, the region
-`$080D`-`$0810` is ambiguously both stub and data and will contain the stub's
-trailing null bytes.
+target is `2064` (`$0810`) but the code that follows the stub starts at
+`$080D`, the CPU enters three bytes into it. If the target is `2061` but the
+code starts at `$0810`, the CPU executes the three bytes at `$080D`-`$080F`
+first.
 
-`SYS 2064` points to `$0810`, not `$080D`. The difference of three
-bytes is the end-of-program null word (`$0000`) plus one byte of alignment in
-some assembler output. Different assemblers and different stub templates produce
+`SYS 2064` points to `$0810`, not `$080D`. A four-digit stub ends at `$080C`,
+its end-of-program null word included (`$080B`-`$080C`), so the three bytes
+`$080D`-`$080F` are padding that some templates leave before the code. (An
+earlier version of this entry spelled `2064` in the stub table above while
+naming `$080D` as the entry, and called the three bytes "the end-of-program
+null word plus one byte of alignment"; the null word is inside the stub.) Different assemblers and different stub templates produce
 slightly different layouts. Check where the PRG assembles the stub and where
 the PRG's data begins; if they overlap, the collision exists.
 
@@ -1096,7 +1100,10 @@ Either keep ATN out of the data phase, or make the drive program track it.
 
 1. Do not use ATN as a data-phase signal. Run the custom protocol on CLK
    and DATA with ATN released on the host side, as the KERNAL itself does
-   between the command bytes. Reserve ATN for what the DOS expects it to
+   for data bytes: it asserts ATN only while it sends LISTEN, TALK and the
+   secondary address (`ORA #$08` into `$DD00` at `$ED2E`), and releases it
+   at `$EDBE` (`AND #$F7`). (An earlier version said the KERNAL releases ATN
+   between the command bytes, which is backwards.) Reserve ATN for what the DOS expects it to
    mean: get the drive's attention. This is the simple case and the one
    the job-queue recipe leaves the bus in.
 2. If ATN is the strobe, the drive program must copy ATN IN into ATNA

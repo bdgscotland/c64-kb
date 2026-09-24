@@ -116,7 +116,8 @@ lda #$FF
 sta $D015                    // enable all 8 hardware sprites
 
 // Schedule IRQ for group 2 (logical sprites 8-15)
-// Fire one line above the topmost sprite in the next group
+// Fire 4 lines above the topmost sprite in the next group
+// (an earlier comment said one line; the code has always subtracted 4)
 lda logicY + 8
 sec
 sbc #4                       // 4-line slack
@@ -297,10 +298,12 @@ irq_clear_yexpand:
     sta $D019            // acknowledge VIC raster IRQ
 
     // Single write: clear bit 3 of $D017 (sprite 3 Y-expand off)
-    lda #%11110111       // new value: sprite 3 bit clear, others unchanged
+    lda #%11110111       // new value: sprite 3 off, sprites 0-2 and 4-7 Y-expanded
     sta $D017            // one write is enough; the flip-flop is held set from here
 
-    // Re-arm IRQ for next occurrence
+    // Re-arm IRQ for next occurrence. Only the low byte is written:
+    // $D011 bit 7 (compare bit 8) is left as it is, so nextIrqLine
+    // must lie on the same side of line 256 as the current setting.
     lda #<nextIrqLine
     sta $D012
 
@@ -309,6 +312,11 @@ irq_clear_yexpand:
     pla
     rti
 ```
+
+The immediate value replaces all eight bits of $D017, so this listing
+leaves sprites 0-2 and 4-7 Y-expanded. To change sprite 3 alone, `lda $D017`
+and `and #%11110111` before the one write; reading $D017 has no side effect.
+(An earlier comment in the listing said the other bits were unchanged.)
 
 If the target is to toggle expansion *on* (set the bit) rather than off,
 the same single write applies with the appropriate mask. Only the *clear*
@@ -391,7 +399,11 @@ or clear the bit corresponding to the sprite being moved, then write the
 modified value back. Never assume $D010 is 0: other sprites in the same
 frame may have their MSB bits set.
 
-In C (Oscar64), a helper macro handles the 9-bit write atomically:
+In C (Oscar64), a helper function does the read-modify-write. It is not
+atomic: `|=` and `&=` on $D010 are a read, a modify and a write, and an IRQ
+that writes $D010 between the read and the write loses its change. Call it
+with IRQs off, or let only one context write $D010. (An earlier version
+called it a macro that handles the write atomically.)
 
 ```c
 // Set sprite n to 9-bit X position xpos (0-343)
@@ -544,6 +556,8 @@ collision timing, and the main loop must then not read the registers.
 // IRQ handler that distinguishes collision type via $D019
 irq_collision:
     pha
+    txa
+    pha                 // X is used below; an earlier version saved only A
     lda $D019           // read VIC interrupt status register
     and #%00000110      // mask: bit 2 = sprite-sprite, bit 1 = sprite-bg
     beq !notCollision+  // if neither bit set, not a collision IRQ
@@ -558,6 +572,8 @@ irq_collision:
     sta $D019           // acknowledge: write-1-to-clear the same bits
 
 !notCollision:
+    pla
+    tax
     pla
     rti
 ```

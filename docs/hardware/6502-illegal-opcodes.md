@@ -30,8 +30,9 @@ A handful are *fatal*: they hang the CPU until reset (the
 The illegal opcodes have been reverse-engineered since the late 1970s.
 The C64 demoscene uses them as ordinary instructions to save cycles and
 bytes, for example to fit a 50-frame-per-second multiplexer in the
-badline budget. Modern cycle-exact emulators (VICE, x64sc, Kowalski)
-implement them, and modern assemblers accept their mnemonics once told the CPU
+badline budget. VICE implements them (its x64sc is the cycle-exact C64
+model this page measures with; an earlier version listed "VICE, x64sc,
+Kowalski" as three emulators), and modern assemblers accept their mnemonics once told the CPU
 is NMOS (acme `!cpu 6510`, ca65 `.setcpu "6502X"`; KickAssembler needs
 nothing; dasm not measured here).
 
@@ -382,8 +383,11 @@ useful for accumulating signed differences against an incrementing index.
 **AXS** = `X = (A & X) - imm`. Performs the AND of A and X, subtracts an
 immediate, stores the result in X. The carry and N/Z flags reflect the
 comparison the same way CMP would. **Decimal mode does not apply**: AXS
-is always binary, even with D=1. This is the only 6502 instruction that
-ignores decimal mode for subtraction.
+is always binary, even with D=1, like CMP/CPX/CPY and the decrements.
+Measured in VICE x64sc with D=1: AXS #$01 with A=$FF, X=$10 gives X=$0F;
+DEC, DEX and DCP take $10 to $0F; only SBC gives the BCD $09. (An
+earlier version said AXS was the only instruction that ignores decimal
+mode for subtraction.)
 
 Useful as a "test-then-decrement-X" combo when X holds a loop counter
 masked against the accumulator.
@@ -414,9 +418,11 @@ legal. Common uses:
 
 The 3-cycle and 4-cycle NOPs (`NOP zp`, `NOP abs`, `NOP abs,X`) perform a
 read of the addressed location with no effect. The read *is* visible on
-the address bus, which can have side effects on memory-mapped I/O. Be
-careful with `NOP $D019` for example, because reading $D019 has no side
-effect but reading some other I/O addresses does.
+the address bus, which can have side effects on memory-mapped I/O.
+`NOP $D019` is harmless: measured in VICE x64sc, the raster flag was
+still set after it. `NOP $DC0D` or `NOP $DD0D` clears the CIA's pending
+interrupt flags (see [Pitfalls](#pitfalls) below). (An earlier version
+gave `NOP $D019` as the example to be careful with.)
 
 ## Unstable illegal opcodes
 
@@ -1222,7 +1228,8 @@ Cycle-exact raster code regularly needs padding of a few cycles to align
 register writes to the badline boundary. An earlier version of this page
 recommended the 1-byte $1A/$3A/$5A/$7A/$DA/$FA undocumented NOPs for this;
 that was wrong: they are exactly the shape of the legal `nop` ($EA,
-1 byte, 2 cycles; all seven measured 2 cycles in VICE x64sc) and buy
+1 byte, 2 cycles; the six and $EA all measured 2 cycles in VICE x64sc,
+eight in a row timed by CIA1 Timer B) and buy
 nothing except a 65C02 incompatibility. No 6502 instruction takes fewer
 than 2 cycles, so a 1-cycle adjustment is made by swapping a 2-cycle
 instruction for a 3-cycle one, and the illegal family covers
@@ -1312,10 +1319,11 @@ ever needed.)
   bit 5; in decimal mode the accumulator is BCD-adjusted as well and N
   holds the carry-in. An earlier version said the flags matched in
   decimal mode, the reverse of what VICE x64sc measures.
-- **AXS ignores decimal mode**: AXS ($CB) is the *only* 6502 instruction
-  with subtraction that does not honor the D flag. The result is always
-  binary regardless of D=0 or D=1. Most other illegal opcodes that
-  involve ADC/SBC (RRA, ISC) *do* honor decimal mode.
+- **AXS ignores decimal mode**: AXS ($CB) subtracts in binary with D=1,
+  like CMP/CPX/CPY, DEC/DEX/DEY and DCP (measured in VICE x64sc: AXS,
+  DEC, DEX and DCP all took $10 to $0F with D=1). The illegal opcodes
+  that involve ADC/SBC (RRA, ISC) *do* honor decimal mode. (An earlier
+  version called AXS the *only* subtraction that ignores D.)
 - **RMW forms always pay the page-cross cost**: SLO/RLA/SRE/RRA/DCP/ISC
   in their abs,X / abs,Y / (zp),Y modes always take the worst-case
   cycle count (7 or 8); there is no page-cross saving on RMW

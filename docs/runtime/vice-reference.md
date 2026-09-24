@@ -312,8 +312,14 @@ a version byte, three reserved bytes, and a 4-byte little-endian data-area size 
 length excludes the header). Version 0 encodes
 each pulse as `period = (8 × byte) / 985248` seconds; a `0x00` byte signals an
 overflow. Version 1 reuses `0x00` as an escape: three following bytes give the actual
-cycle count for long pulses. TAP files are typically 8–16 times larger than the
-equivalent PRG data because each source bit expands to one pulse-width byte.
+cycle count for long pulses. Each pulse is one TAP byte, so the file is far larger
+than the PRG. KERNAL format spends 40 TAP bytes per payload byte (twenty pulses,
+written twice) plus constant leaders: a 202-byte program made a 49,418-byte TAP and a
+1,183-byte one 88,658 bytes (measured in
+[tape-mastering.md](../toolchains/tape-mastering.md)). A turbo format with one pulse
+per bit spends about 8 per byte (arithmetic, not measured here). (An earlier version
+said TAP files were typically 8–16 times larger than the PRG, one pulse byte per
+source bit.)
 
 **Produced by:** tapclk, mtap
 **Consumed by:** vice
@@ -505,7 +511,7 @@ draw the same thing, and say which on the page.
 
 ### Geometry
 
-| | PAL (default `c64`) | NTSC (`-model ntsc`) |
+| | PAL (default, the `c64c` configuration) | NTSC (`-model ntsc`) |
 |---|---|---|
 | PNG size | 384 x 272 | 384 x 247 |
 | Display rows (y) | 35 to 234 | 23 to 222 |
@@ -782,7 +788,7 @@ case "$code" in 01) exit 0;; 02) exit 1;; *) exit 2;; esac
 ### A windowless build for batch runs
 
 The GTK build opens a window on every launch and takes the desktop's focus,
-so a verifier run of sixty recipes keeps interrupting the desktop;
+so a verifier run over the recipes keeps interrupting the desktop;
 `-minimized` does not help, because the window still activates before it shrinks.
 VICE 3.10 ships a third front end besides GTK and SDL: configure the
 source with `--enable-headlessui` and the resulting `x64sc` has no window,
@@ -1291,8 +1297,11 @@ KickAssembler, Oscar64 and cc65 pages' debugging sections.
 vice-mcp is a separate MCP server between agents and a running
 VICE instance. It maintains a TCP connection to VICE's binary monitor, translates MCP
 tool calls into binary monitor frames, and returns structured results. Agents invoke
-vice-mcp tools such as `vice_read_memory`, `vice_set_breakpoint`, `vice_screenshot`, and
-`vice_autostart`; they never send raw binary monitor frames.
+vice-mcp tools such as `readMemory`, `setBreakpoint`, `screenshot` and
+`loadProgram`; they never send raw binary monitor frames. (An earlier version
+named them `vice_read_memory`, `vice_set_breakpoint`, `vice_screenshot` and
+`vice_autostart`; the names above are the ones registered in vice-mcp's
+`src/index.ts` and listed in [vice-mcp-reference.md](vice-mcp-reference.md).)
 
 Start `x64sc` first with `-binarymonitor
 -binarymonitoraddress ip4://127.0.0.1:6502`, then start the vice-mcp server, which
@@ -1342,8 +1351,10 @@ ROMs VICE gives a startup error and a blank screen.
 ### Monitor port conflicts
 
 Port 6502 may be in use if multiple VICE instances or other tools occupy it. Pass a
-different port via `-binarymonitoraddress ip4://127.0.0.1:6510` (or any free port) when
-running parallel test instances.
+different port via `-binarymonitoraddress ip4://127.0.0.1:6503` (or any free port) when
+running parallel test instances. Avoid 6510: the text monitor sessions above and
+`sim6502-reference.md`'s VICE backend already use it. (An earlier version suggested
+6510.)
 
 ### macOS Homebrew: g_settings_new crash on launch
 

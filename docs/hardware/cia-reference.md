@@ -222,9 +222,11 @@ doing.
 
 **Chip:** CIA1
 
-Data-direction register for port B. The KERNAL keyboard scanner sets
-this to `$00` so PB0-PB7 are all inputs (rows being read). After
-RESET the default is `$00`.
+Data-direction register for port B. IOINIT sets it to `$00`
+(`LDX #$00 / STX $DC03` at `$FDBC`, read from the KERNAL ROM), so
+PB0-PB7 are all inputs (rows being read); SCNKEY never writes it.
+After RESET the default is `$00`. (An earlier version said the keyboard
+scanner set it.)
 
 With Timer A or Timer B output to PB6/PB7 enabled via the PBON bit of
 `$DC0E`/`$DC0F`, those bits of `$DC03` are forced to output regardless
@@ -554,7 +556,9 @@ C-L. These are general-purpose I/O pins commonly used for:
 
 - RS-232 receive data (bit 0 is RXD)
 - RS-232 modem-control signals (RTS, DTR, RI, DCD, CTS, DSR)
-- User-port parallel cables (1541 fastloaders, 1571 burst mode)
+- User-port parallel cables (parallel 1541 fast loaders). (An earlier
+  version listed 1571 burst mode here; burst mode runs over the serial
+  bus, not the user port, rung 4.)
 - Hardware MIDI interfaces
 - Centronics printer cables
 
@@ -572,10 +576,13 @@ DDR for CIA2 port A. The KERNAL sets this to `$3F` so that bits 0-5
 are outputs (VIC bank, RS-232 TXD, IEC ATN/CLK/DATA OUT) and bits 6-7
 are inputs (IEC CLK IN, IEC DATA IN).
 
-Clearing `$DD02` to `$00` makes the VIC bank-select bits inputs, and
-the VIC sees whatever the bus floats to, typically `$3FFF` lines
-all-high, putting the VIC in bank 0. Writes to `$DD00` then have no
-effect until the DDR is restored.
+Clearing `$DD02` to `$00` makes the VIC bank-select bits inputs. The
+port's pull-ups hold them high, and the inverted pair selects bank 0
+(`$0000-$3FFF`). Measured in VICE x64sc: with bank 1 selected in
+`$DD00`, storing `$00` to `$DD02` switched the display to bank 0's
+screen. Writes to `$DD00` then have no effect on the bank until the DDR
+is restored. (An earlier version said the VIC saw "whatever the bus
+floats to, typically `$3FFF` lines all-high".)
 
 ### $DD03 — DD03 — Data Direction Register B (RW)
 
@@ -904,9 +911,11 @@ toggle:
 - OUTMODE = 0: PB6/PB7 *pulses* for one phi-2 cycle on each underflow.
 - OUTMODE = 1: PB6/PB7 *toggles* on each underflow.
 
-This is most often used on CIA1 to generate a tone at a precise
-frequency, but the C64 does not route PB6/PB7 to anything audible by
-default. The cassette port writes a pulse train to record bytes, but
+The C64 routes PB6/PB7 to nothing audible. On CIA1 they are keyboard
+matrix lines, so timer output there disturbs the keyboard scan; on
+CIA2 they are user-port pins, the only place the output leaves the
+machine. (An earlier version said the output was most often used on
+CIA1 to generate a tone.) The cassette port writes a pulse train to record bytes, but
 that is CASS WRITE on the 6510 itself, not the CIA.
 
 ### IRQ / NMI on underflow
@@ -1102,17 +1111,22 @@ high), the VIC sees bank 0. The all-high reset state of an
 open-collector / TTL bus thus gives the default that puts screen RAM
 at `$0400` with no setup.
 
-**Character ROM caveat**: the character ROM is mirrored only into VIC
-banks 0 and 2 (where addresses `$x000-$x1FFF` of the VIC's view map to
-the C64's `$D000-$DFFF` I/O area, which when accessed by the VIC
-returns the character ROM). In banks 1 and 3, the VIC sees pure RAM at
-that range. To use a custom charset in bank 1 or 3, copy the char ROM
+**Character ROM caveat**: the VIC sees the character ROM at `$1000-$1FFF`
+of banks 0 and 2 (CPU addresses `$1000-$1FFF` and `$9000-$9FFF`); the
+PLA maps it there for VIC fetches, whatever `$01` says
+([vic-ii-reference.md](vic-ii-reference.md) and
+[c64-memory-map.md](c64-memory-map.md) agree). In banks 1 and 3, the
+VIC sees pure RAM at that range. (An earlier version gave the range as
+`$x000-$x1FFF` and said the VIC reached the ROM through the `$D000`
+I/O area.) To use a custom charset in bank 1 or 3, copy the char ROM
 to RAM in the new bank first.
 
 ## Serial bus (CIA2 port A bits 3-7)
 
-The C64's serial-IEC bus is a 4-wire (plus ground) bus carrying ATN,
-CLOCK, DATA, and SRQ. ATN/CLOCK/DATA each have one driver per device
+The C64's serial-IEC connector is a 6-pin DIN carrying SRQ, ground,
+ATN, CLOCK, DATA and RESET (pinout in
+[iec-disk-reference.md](../formats/iec-disk-reference.md)). (An earlier
+version called it a 4-wire bus plus ground and left out RESET.) ATN/CLOCK/DATA each have one driver per device
 plus a pull-up to +5V. A device drives the line by pulling it to
 ground (open-collector), and the line reads high when no device is
 pulling.
@@ -1145,15 +1159,19 @@ to end, measured in VICE x64sc with true drive emulation, where an
 the same range the loader and IEC pages use. An earlier revision of
 this page said ~50 bytes per second, which its own 400 µs-per-bit
 figure contradicted. A 50 KB part takes over two minutes. Most
-games and demos replace the KERNAL loader with a fastloader that
-uses Timer A on CIA1 or CIA2 to pace high-speed bit transfers,
-either by reusing CLK/DATA in non-standard timing or by adding new
-wires through the serial port's extra pins.
+games and demos replace the KERNAL loader with a fast loader.
 
-**Fastloaders** typically take over the IRQ vector or NMI vector,
-saturate the bus with a custom 2-bit-per-clock protocol, and require
-matching code in the 1541 disk drive's 6502. Examples: JiffyDOS, Final
-Cartridge III, Action Replay, EXOS, Krill's loader.
+**Fast loaders** upload matching code to the 1541's 6502 (`M-W`,
+`M-E`) and move data over CLK and DATA with cycle-counted loops on both
+ends instead of a handshake per bit, which is why they blank the screen
+or sit in the border ([iec-disk-reference.md](../formats/iec-disk-reference.md)).
+Krill's loader and Sparkle are examples
+([pitfalls/loader.md](../pitfalls/loader.md)). Parallel loaders add a
+user-port cable instead. (An earlier version said fast loaders pace
+transfers with CIA timers, add wires through the serial port's extra
+pins and take over the IRQ or NMI vector, and named JiffyDOS, which
+replaces the ROMs rather than uploading code (rung 4); none of that
+was sourced.)
 
 The SRQ line is not used by the standard C64 KERNAL.
 
@@ -1266,8 +1284,11 @@ The SRQ line is not used by the standard C64 KERNAL.
   `($0318)` at a `RTI` to absorb a RESTORE NMI.
 - **The "all-output trick" on $DC02**: setting `$DC02 = $FF` and
   `$DC00 = $00` drives all eight keyboard columns low. Reading
-  `$DC01` then returns the OR of every pressed-key row. That answers
-  "any key pressed?" fast but does not say *which* key.
+  `$DC01` then returns `$FF` if no key is down; each `0` bit marks a
+  row with at least one key pressed (a pressed key pulls its row low,
+  so the read is the AND of the eight single-column reads). That
+  answers "any key pressed?" fast but does not say *which* key. (An
+  earlier version said the read returned the OR.)
 - **Joystick port 1 is on port B, port 2 is on port A**: joy 2 is on
   `$DC00`, joy 1 on `$DC01`. C64 game-dev tutorials warn about it and
   new C64 coders still get it wrong.

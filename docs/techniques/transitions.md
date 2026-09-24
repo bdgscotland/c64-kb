@@ -26,7 +26,7 @@ raster sweep, a charset flicker and a DRAM fade have no recipe yet.
 ### Why
 
 The VIC-II has sixteen fixed colours and no brightness control, so a
-picture cannot be dimmed by scaling. What it can do is substitute: each
+picture cannot be dimmed by scaling. It can substitute instead: each
 colour on screen is replaced, step by step, by a darker colour from the
 same sixteen until everything is black. Done over a second or so this
 reads as a fade, and it costs nothing in the picture itself: the shapes
@@ -67,8 +67,8 @@ dark grey; yellow through light green and green. Rounding in the table
 merges ranks, so two colours adjacent in the order can show the same
 colour for a step; in the recipe, step 9 shows only eight distinct
 colours across the sixteen bars. Dark colours reach black first (blue,
-rank 1, is black from step 9) while white takes all sixteen steps, which
-is what a real fade looks like: the dark parts go first.
+rank 1, is black from step 9) while white takes all sixteen steps, so
+the dark parts go first.
 
 ### Variations
 
@@ -210,9 +210,8 @@ the pace differs by a fifth between PAL and NTSC.
 
 ### Why
 
-A cut between two parts is a discontinuity the eye notices. A wipe turns
-the cut into an event: the old picture goes out along an edge, the new one
-comes in along another. On the C64 the cheap version needs no picture
+A wipe replaces the cut between two parts: the old picture goes out along
+an edge, the new one comes in along another. On the C64 the cheap version needs no picture
 buffer at all. The screen stays where it is and its colour is taken away
 or given back, one strip at a time.
 

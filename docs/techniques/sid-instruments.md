@@ -38,14 +38,14 @@ about how they sound.
 
 ### Why
 
-The filter is the SID's one moving timbre, and the KB's ways of moving it
-are a software table stepped once a frame (`sid_filter_routing`, the #50
+The filter is the SID's one moving timbre. The KB moves it with a
+software table stepped once a frame (`sid_filter_routing`, the #50
 player's filter program) or voice 3's oscillator read as an LFO
 (`sid_filter_routing`, "Filter as LFO target"). Neither gives the cutoff
-what every voice gets for free: an attack, a decay through the chip's
+what every voice already has: an attack, a decay through the chip's
 exponential stages, a sustain level, a release. The chip has a third
-envelope generator, and its output is readable at `$D41C`. Give up voice
-3's sound and its envelope becomes the filter's.
+envelope generator, and its output is readable at `$D41C`. With voice 3
+silenced, its envelope can drive the filter.
 
 ### How
 
@@ -67,7 +67,7 @@ entry carries the envelope's AD, SR and base; the voice whose instrument
 names it is the lead; the player's mu_skip mechanism, which keeps a music
 voice from writing while an effect owns it, keeps voice 3 silent in the
 same way, and masks FILT3 off in `$D417` while the envelope owns the
-voice. The identity in the last bullet is the pin: for every frame the
+voice. The recipe checks the identity in the last bullet: for every frame the
 byte written to `$D416` equals the byte read from `$D41C`, shifted, plus
 the base.
 
@@ -85,8 +85,7 @@ release step down with periods that double at 93, 54, 26, 14 and 6
 Halving the byte fits the 8-bit cutoff register above a base, and the
 filter takes each write as it lands.
 
-What the register trace shows that no component shows: a `$D416` sequence
-that rises by a constant step (about 25 a frame at attack 8), falls with
+The register trace is a `$D416` sequence that rises by a constant step (about 25 a frame at attack 8), falls with
 a per-frame slope that halves at the stage boundaries, holds at a level,
 and falls again to the base when the gate clears, while satisfying
 `$D416` = (`$D41C` >> 1) + base on every frame. A software sweep gives

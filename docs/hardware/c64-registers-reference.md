@@ -209,10 +209,11 @@ often, an address outside $D000-$D02F is a bug: a missing zero
 in the literal, a stale pointer, a `STA absolute,Y` whose Y register
 walked past 47.
 
-The 16x mirror is the same effect that lets the VIC-IIe revision
-re-use those addresses for new functions without breaking software:
-old software does not write $D030 on purpose, and if it does, it
-already expected the write to be a no-op.
+$D02F-$D03F inside the page are unused on the 6569: measured in VICE
+x64sc, `LDA` from $D02F, $D030, $D03F and the mirror $D06F all return
+$FF. That gap, not the mirroring, is what let the C128's VIC-IIe put
+new registers at $D02F and $D030 (rung 4) without breaking C64
+software. (An earlier version credited the 16x mirror.)
 
 ### VIC-II quick lookup by function
 
@@ -235,8 +236,9 @@ From the visual effect to the register:
 | Switch screen mode (text / bitmap / MCM / ECM)              | $D011 bits 5,6; $D016 bit 4 |
 | Smooth-scroll vertically                                    | $D011 bits 0-2 (YSCROLL)  |
 | Smooth-scroll horizontally                                  | $D016 bits 0-2 (XSCROLL)  |
-| Switch to 38-column mode (open side borders)                | $D016 bit 3 = 0           |
-| Switch to 24-row mode (open top/bottom borders)             | $D011 bit 3 = 0           |
+| Switch to 38-column mode (window 16 px narrower; the border stays shut) | $D016 bit 3 = 0 |
+| Switch to 24-row mode (window 4 lines shorter at top and bottom; the border stays shut) | $D011 bit 3 = 0 |
+| Open the borders                                            | Timed CSEL / RSEL writes, not the bits alone: see vic-ii-reference.md. An earlier revision of the two rows above said the bits opened the borders |
 | Set border color                                            | $D020                     |
 | Set background color (mode 0)                               | $D021                     |
 | Point video matrix at screen RAM base                       | $D018 bits 4-7            |
@@ -431,12 +433,14 @@ that needs a byte-clean value must mask with `AND #$0F`.
 | $DBE8-$DBFF   | Unused by stock screen modes; on 4-bit chip, reads as undefined nibble high, low nibble is RAM |
 
 Color RAM is always at $D800-$DBFF regardless of which VIC-II video
-bank is selected by CIA2 $DD00 bits 0-1, because the VIC-II has a
-dedicated wire to the color RAM that bypasses the normal address
-multiplexer. The VIC-II reads the low nibble of color RAM in parallel
-with each character matrix fetch; the chip pin is the same pin used
-to provide the high 4 bits of the character matrix, and on display
-fetch the color RAM's data is multiplexed on top.
+bank is selected by CIA2 $DD00 bits 0-1, because it is a separate
+4-bit-wide chip, not part of the DRAM the bank bits choose from. Each
+c-access reads 12 bits: the 8-bit screen code from the bank and the
+colour nibble from color RAM in the same cycle
+([vic-ii-reference.md](vic-ii-reference.md), memory access table). The
+nibble arrives on four extra VIC data lines (rung 4). (An earlier
+version said a dedicated wire bypassed the address multiplexer and that
+the nibble shared a pin with the matrix's high bits.)
 
 Consequences:
 
@@ -466,14 +470,17 @@ Consequences:
 For multicolor character mode, bit 3 of color RAM toggles per-cell
 whether that character uses the multicolor palette ($D021/$D022/$D023
 + low 3 bits of color RAM) or the standard hi-res palette ($D021 +
-color RAM low nibble). See [vic-ii-reference.md](vic-ii-reference.md)
+color RAM bits 0-2, so only colours 0-7). (An earlier version said the
+hi-res cell used the whole nibble; bit 3 is the mode switch.) See [vic-ii-reference.md](vic-ii-reference.md)
 multicolor text mode section.
 
 ## CIA1 registers ($DC00-$DC0F)
 
 CIA1 is the 6526 Complex Interface Adapter wired to the keyboard
-matrix, the two control-port joysticks, the paddles (multiplexed with
-joystick port 1), and the system IRQ line. It is the source of the
+matrix, the two control-port joysticks, the paddle select for both
+ports ($DC00 bits 6-7 pick which port's pair the SID's POTX/POTY read;
+see the quick lookup below), and the system IRQ line. (An earlier
+version said the paddles were multiplexed with joystick port 1.) It is the source of the
 jiffy-clock IRQ that drives most KERNAL timing. The KERNAL programs it
 to ~60 Hz on BOTH regions, not 60/50: the timer-load tail of IOINIT
 ($FDDD-$FDF8), which CINT ($FF5B) re-enters once it has detected the
@@ -609,7 +616,7 @@ user port's data lines, and the system NMI line.
 | $DD09   | DD09 | RW  | Time-of-day seconds                                        |
 | $DD0A   | DD0A | RW  | Time-of-day minutes                                        |
 | $DD0B   | DD0B | RW  | Time-of-day hours                                          |
-| $DD0C   | DD0C | RW  | Serial shift register (RS-232 receive)                     |
+| $DD0C   | DD0C | RW  | Serial shift register (unused by the KERNAL)               |
 | $DD0D   | DD0D | RW  | Interrupt control register — drives /NMI                   |
 | $DD0E   | DD0E | RW  | Control register A (Timer A)                               |
 | $DD0F   | DD0F | RW  | Control register B (Timer B)                               |
@@ -622,7 +629,7 @@ Quick groupings:
 | Timer A                    | $DD04, $DD05, $DD0E                  |
 | Timer B                    | $DD06, $DD07, $DD0F                  |
 | Time-of-day                | $DD08-$DD0B                          |
-| RS-232 receive             | $DD0C                                |
+| Shift register             | $DD0C                                |
 | NMI source                 | $DD0D                                |
 
 Key wiring points (the per-pin table is in
@@ -667,8 +674,8 @@ Key wiring points (the per-pin table is in
 |--------------------------------------------------|---------------------------|
 | Switch VIC-II to bank N (0-3)                    | $DD00 bits 0-1 = NOT N    |
 | Drive the IEC serial bus (1541 etc.)             | $DD00 bits 3,4,5 (ATN, CLK, DATA out) |
-| Read IEC serial bus status                       | $DD00 bits 6,7 + $DD01 (user-port-routed) |
-| Set up an RS-232 receive                         | $DD0C, $DD04, $DD05, $DD0E |
+| Read IEC serial bus status                       | $DD00 bits 6,7 (CLK IN, DATA IN). $DD01 is the user port, not the bus; an earlier revision of this row added it |
+| Set up an RS-232 receive                         | $DD01 bit 0 (RXD), Timer B $DD06/$DD07/$DD0F, FLAG in $DD0D. The KERNAL ROM never reads or writes $DD0C (searched kernal-901227-03.bin); an earlier revision of this row and of the table above called $DD0C the RS-232 receive register |
 | Use Timer A for music IRQ via NMI                | $DD04, $DD05, $DD0E, $DD0D bit 0 |
 | Neutralise the RESTORE key                       | Point $0318/$0319 at an RTI or your own handler ($FE43 does SEI / JMP ($0318) with nothing pushed, so a bare RTI is valid). No $DD0D value masks it — an earlier revision of this row said $DD0D = $10, which clears an already-clear bit and leaves RESTORE armed. Pitfall: `restore_nmi_not_maskable` |
 | Acknowledge any pending CIA2 NMI                 | Read $DD0D                |
@@ -700,8 +707,10 @@ Same 4-bit decode rule as CIA1: the 16-byte page mirrors 15 times.
 
 Like CIA1, reads of $DDnD with low nibble = D ack and clear CIA2's
 pending NMI source bits. NMIs are usually not enabled and the shadow
-does no harm, but a program using a CIA2 timer NMI (common for fast
-loaders and SoundMonitor-style audio) faces the same hazard.
+does no harm, but a program using a CIA2 timer NMI (the KERNAL's
+RS-232 driver is one) faces the same hazard. (An earlier version called
+CIA2 timer NMIs common for fast loaders and SoundMonitor-style audio;
+nothing here supports that.)
 
 ## I/O expansion ($DE00-$DFFF)
 

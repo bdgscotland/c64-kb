@@ -7,23 +7,20 @@ chip: 6510
 
 # Memory Banking Techniques
 
-The Commodore 64 is a machine built on layered illusions. Its 6510 CPU sees a flat
-16-bit address space, but that 64 KB window simultaneously looks onto 64 KB of
-dynamic RAM, 8 KB of BASIC ROM, 8 KB of KERNAL ROM, 4 KB of character generator
-ROM, the VIC-II register set, the SID, two CIA chips, and a slab of Color RAM.
-None of those components occupy distinct address ranges — they all occupy the same
-ranges, bank-switched in and out by hardware. The programmer's job is to control
-which physical device answers a given address at any given moment, and to keep
-the VIC-II's separate 16 KB view coherent with whatever CPU-visible layout has
-been selected.
+The Commodore 64's 6510 CPU sees a flat 16-bit address space. That 64 KB window
+looks onto 64 KB of dynamic RAM, 8 KB of BASIC ROM, 8 KB of KERNAL ROM, 4 KB of
+character generator ROM, the VIC-II register set, the SID, two CIA chips, and
+Color RAM. These components share address ranges and are bank-switched in and out
+by hardware. The program controls which device answers a given address at a given
+moment, and keeps the VIC-II's separate 16 KB view coherent with the CPU-visible
+layout it has selected.
 
-Banking on the C64 is not a special mode you enable for advanced work. It is the
-default state of the machine from the first instruction after reset. Every write to
-$D011 silently depends on the I/O chip being visible at $D000. Every IRQ relies on
-KERNAL ROM or a RAM replacement being readable at $FFFA-$FFFF. Understanding the
-banking system is a prerequisite for any serious C64 development.
+Banking on the C64 is active from the first instruction after reset. Every write
+to $D011 depends on the I/O chip being visible at $D000. Every IRQ relies on
+KERNAL ROM or a RAM replacement being readable at $FFFA-$FFFF. Every C64 program
+depends on the banking state.
 
-This document covers the CPU I/O port that selects which ROMs are visible, the
+Sections below: the CPU I/O port that selects which ROMs are visible, the
 CIA2 register that defines VIC's 16 KB working window, the relationship between
 VIC banking and character ROM visibility, $D018's role in positioning screen RAM
 and bitmaps within the VIC bank, the EasyFlash cartridge's per-bank mechanism,
@@ -38,9 +35,9 @@ and the technique of hiding working data under KERNAL ROM.
 
 ### Why
 
-Every C64 program eventually outgrows the default memory layout. BASIC ROM at
-$A000-$BFFF eats 8 KB that could hold graphics data, music, or game code.
-KERNAL ROM at $E000-$FFFF eats another 8 KB. If a program needs to address the
+A C64 program that outgrows the default memory layout needs the ROM ranges.
+BASIC ROM at $A000-$BFFF takes 8 KB that could hold graphics data, music, or
+game code. KERNAL ROM at $E000-$FFFF takes another 8 KB. If a program needs to address the
 character ROM to copy its bitmap patterns into RAM, the I/O chips must be
 temporarily replaced by the character ROM window. The CPU I/O port is the
 single switch that controls all of this.
@@ -87,7 +84,7 @@ talk to VIC-II, SID, and CIA. Mode $34 replaces I/O with RAM as well, giving a
 flat 64 KB of RAM at the cost of losing direct register access.
 
 Mode $33 is used when a program needs to read the built-in character ROM at
-$D000-$DFFF — for example to copy the ROM font into a custom RAM location for
+$D000-$DFFF, for example to copy the ROM font into a custom RAM location for
 modification.
 
 ### Why it works
@@ -99,26 +96,26 @@ of those five inputs it asserts or deasserts the chip-select lines for each ROM
 and the I/O devices. The RAM is always physically present; the PLA merely disables
 the RAM's CAS line in a specific address range when it wants a ROM or I/O device
 to win that range on reads. Writes to a ROM-mapped range always go to the
-underlying RAM — the PLA routes a write cycle at $A000-$BFFF or $E000-$FFFF to
+underlying RAM: the PLA routes a write cycle at $A000-$BFFF or $E000-$FFFF to
 RAM whatever $01 says, and the same holds for $D000-$DFFF while character ROM is
 mapped there (CHAREN = 0 with LORAM or HIRAM set). It is NOT true of $D000-$DFFF
 while I/O is mapped ($35/$36/$37): there the write goes to the VIC/SID/CIA/colour-RAM
 register and the RAM beneath is untouched (measured in VICE x64sc: RAM under $D000
-seeded $1D in mode $34; $2D written to $D000 with $01 = $37 read back as $2D — the
-sprite-0 X register — and the RAM under it still read $1D once I/O was banked out;
+seeded $1D in mode $34; $2D written to $D000 with $01 = $37 read back as $2D, the
+sprite-0 X register, and the RAM under it still read $1D once I/O was banked out;
 the same test with $E000 put the byte in RAM). An earlier version of this page
-said writes go to RAM in every banking state. So you can write code or data into
-$E000-$FFFF even while KERNAL ROM is banked in — the bytes land in RAM and become
-visible once KERNAL is banked out; to put data under I/O, bank it out first ($34,
-or $33 if char ROM is acceptable) with interrupts disabled.
+said writes go to RAM in every banking state. Code or data can therefore be
+written into $E000-$FFFF while KERNAL ROM is banked in. The bytes land in RAM and
+become visible once KERNAL is banked out. To put data under I/O, bank it out
+first ($34, or $33 if char ROM is acceptable) with interrupts disabled.
 
 ### Variations
 
 **Mode $35 with custom IRQ vectors.** When HIRAM goes to 0, the CPU's hardware
 IRQ vector at $FFFE/$FFFF and NMI vector at $FFFA/$FFFB are no longer in ROM —
 they read from RAM. Before switching to $35, disable interrupts with SEI, write
-your IRQ and NMI handler addresses to the RAM at $FFFE/$FFFB (these are in the
-underlying RAM even while KERNAL ROM covers them — just write directly), then
+the IRQ and NMI handler addresses to the RAM at $FFFE/$FFFB (writes reach the
+underlying RAM even while KERNAL ROM covers them, so write directly), then
 write $35 to $01 and re-enable with CLI. The KERNAL-provided interrupt chain at
 $EA31 is gone; the program owns all interrupts.
 
@@ -127,14 +124,14 @@ disable IRQs (SEI), write $33 to $01 to swap char ROM into $D000-$DFFF, perform
 the copy loop, then write $37 back to restore normal layout, then CLI. The copy
 must be complete before re-enabling the I/O chips.
 
-**Preserving bits 3-5.** Bits 3 and 5 of $01 are datasette outputs — bit 3 the
-write line, bit 5 the motor (0 = motor ON) — and bit 4 is the tape-button sense
+**Preserving bits 3-5.** Bits 3 and 5 of $01 are datasette outputs (bit 3 the
+write line, bit 5 the motor, 0 = motor ON), and bit 4 is the tape-button sense
 input (DDR $2F leaves it an input, so writes to it do nothing). The constants
 above ($33-$37) all keep bit 5 set, so writing them directly does not start the
-motor; a value with bit 5 clear does — `LDA #$05 / STA $01` banks out the ROMs
+motor. A value with bit 5 clear does: `LDA #$05 / STA $01` banks out the ROMs
 and switches the motor on, and under mode $35 nothing turns it off again, because
-the interlock that does so ($EA61) is part of the KERNAL IRQ you have just
-removed. Prefer read-modify-write when changing only the banking bits so that
+the interlock that does so ($EA61) is part of the KERNAL IRQ that mode removes.
+Prefer read-modify-write when changing only the banking bits so that
 bits 3 and 5 are left as the tape code set them: read $01, AND #$F8, OR in the
 new banking value, write back. (An earlier version of this paragraph called bit 4
 an output that controls the datasette; it is the switch-sense input, as the DDR
@@ -149,8 +146,8 @@ immediately by the new memory layout being visible on the next instruction fetch
 
 ### Recipes
 
-No Phase 3 recipes target this technique directly. Banking is a supporting
-infrastructure technique — recipes for specific effects (stable IRQ, raster bars,
+No Phase 3 recipes target this technique directly. Banking supports other
+techniques: recipes for specific effects (stable IRQ, raster bars,
 custom charsets) use mode $35 or $37 as their starting point. Recipes land in
 Phase 4+.
 
@@ -170,8 +167,8 @@ The VIC-II chip has a 14-bit internal address bus: it can independently access
 any of 16,384 bytes (16 KB) of the C64's RAM. But the C64 has 64 KB of RAM.
 To allow VIC to reach graphics data anywhere in the address space, CIA2 port A
 bits 0-1 act as a two-bit extension that shifts VIC's 16 KB window to one of
-four positions. Choosing the right VIC bank is the first decision in any
-memory layout — everything else (screen RAM position, char set or bitmap position,
+four positions. The VIC bank is the first decision in any memory layout.
+Everything else (screen RAM position, char set or bitmap position,
 sprite data, sprite pointer table) is relative to whichever 16 KB bank VIC sees.
 
 ### How
@@ -187,7 +184,7 @@ lowest two bits alongside the IEC serial bus and RS-232 lines:
 | 00             | 3        | $C000-$FFFF               |
 
 After reset the KERNAL sets $DD02 (CIA2 port A DDR) to $3F (bits 0-5 are
-outputs). Bits 0-1 of $DD00 reset to 11, placing VIC in bank 0 — which is why
+outputs). Bits 0-1 of $DD00 reset to 11, placing VIC in bank 0, which is why
 the default screen at $0400 is visible to VIC without any setup.
 
 To change the bank, always read-modify-write $DD00: read the current value, mask
@@ -200,11 +197,10 @@ Between CIA2 port A pins PA0-PA1 and the VIC-II's address-bus extension inputs
 VA14-VA15 there is a pair of inverting buffers on the C64 motherboard. The two
 bit-patterns are therefore inverted with respect to each other: when CIA2 drives
 both pins high (the all-ones reset state), the VIC receives low on VA14-VA15,
-which it interprets as bank 0. The counter-intuitive mapping — that bit pattern
-11 means bank 0 — comes from this inversion. The design choice is pragmatic:
-TTL open-collector bus lines default to a pulled-high state, so the safe reset
-state (everything high) naturally delivers VIC bank 0 and screen RAM at $0400
-without any software configuration.
+which it interprets as bank 0. Bit pattern 11 means bank 0 because of this
+inversion. TTL open-collector bus lines default to a pulled-high state, so the
+reset state (everything high) delivers VIC bank 0 and screen RAM at $0400
+without software configuration.
 
 After changing $DD00, the new bank address extension takes effect immediately on
 the next VIC fetch cycle. If the raster is currently rendering and VIC is
@@ -216,15 +212,15 @@ raster interrupt timed to occur in the overscan region.
 
 **Banks 1 and 3 for full custom layouts.** VIC banks 1 ($4000-$7FFF) and 3
 ($C000-$FFFF) contain no char ROM shadow; the VIC sees only RAM there. This is
-the preferred layout for demos that use fully custom graphics and want maximum
-clarity: all graphics live in one 16 KB bank, the CPU never accidentally reads
-char ROM data, and the mapping is unambiguous.
+the preferred layout for demos with fully custom graphics: all graphics live in
+one 16 KB bank, the CPU never accidentally reads char ROM data, and the mapping
+is unambiguous.
 
 **Multi-bank sprite tricks.** Sprite data must be addressable within VIC's current
 bank, but the CPU can freely write into any bank's RAM while VIC sees only its
 own bank. Double-buffering sprite data in the off-bank (writing to the other
-16 KB while VIC reads this 16 KB) is a clean way to animate sprites without
-tearing, by flipping $DD00 once per frame rather than per-sprite.
+16 KB while VIC reads this 16 KB) animates sprites without tearing, by
+flipping $DD00 once per frame rather than per-sprite.
 
 ### Cycle budget
 
@@ -247,18 +243,17 @@ graphics recipes. Recipes land in Phase 4+.
 ### Why
 
 The C64 ships with a 4 KB character generator ROM containing the default
-uppercase/graphics and lower-case/uppercase font data. Most programs need a
-custom font, custom symbols, or a modified character set at some point. Before
-any custom character data can be used, the developer must either place their
-custom data at the address VIC expects to find characters, or understand how
-the ROM characters are shadowed into VIC banks 0 and 2 so that the default
-font remains available without consuming RAM.
+uppercase/graphics and lower-case/uppercase font data. A program that needs a
+custom font, custom symbols, or a modified character set must place that data
+at the address VIC expects to find characters. The ROM characters are shadowed
+into VIC banks 0 and 2, so the default font is available there without
+consuming RAM.
 
 ### How
 
 The character ROM resides at $D000-$DFFF from the CPU's perspective (when CHAREN
 is 0 and at least LORAM or HIRAM is 1). But VIC-II does not share the CPU's
-address space — VIC has its own 16 KB window determined by $DD00. The character
+address space; VIC has its own 16 KB window determined by $DD00. The character
 ROM hardware includes a second set of decode logic that makes it appear inside
 VIC banks 0 and 2 at specific offsets:
 
@@ -301,10 +296,9 @@ Common choices:
 Inside the C64 motherboard, the character ROM's chip-select line responds not
 only to the CPU-side address decoder but also to a separate signal derived from
 VIC's address bus via the same PLA. When VIC is in bank 0 or bank 2, and VIC
-generates an internal address in the $1000-$1FFF window — CPU $1000-$1FFF in
-bank 0, CPU $9000-$9FFF in bank 2 — the PLA asserts char ROM's chip-select instead of RAM's CAS
-line. The CPU never knows this is happening — from the CPU's side those are
-ordinary RAM locations whose content is readable and writable. The char ROM
+generates an internal address in the $1000-$1FFF window (CPU $1000-$1FFF in
+bank 0, CPU $9000-$9FFF in bank 2), the PLA asserts char ROM's chip-select
+instead of RAM's CAS line. The CPU does not see this: from the CPU's side those are ordinary RAM locations whose content is readable and writable. The char ROM
 shadow is VIC-only hardware behavior, not a side-effect of CPU banking.
 
 ### Variations
@@ -315,7 +309,7 @@ at different $D018 CB offsets and switch fonts by writing $D018 on a per-raster-
 line basis in an IRQ. The VIC applies the new $D018 value from the next character
 fetch onward, enabling per-line font changes.
 
-**Charset placement at $3800 in bank 0.** Advanced demos sometimes place a
+**Charset placement at $3800 in bank 0.** Demos sometimes place a
 charset near the end of bank 0 ($3800-$3FFF is 2 KB). This allows sprite pointers
 and the sprite pool to coexist in the same 16 KB bank with no gaps.
 
@@ -326,7 +320,7 @@ into target RAM, restore $01 to $37. Then point $D018 at the RAM copy.
 ### Cycle budget
 
 No cycle budget for the bank configuration itself. If $D018 is changed inside a
-raster IRQ, the timing of where the new char base takes effect matters — see the
+raster IRQ, the timing of where the new char base takes effect matters; see the
 raster techniques doc.
 
 ### Recipes
@@ -377,7 +371,7 @@ in the `$D000` window instead of the VIC, SID, CIAs and colour RAM. The
 PLA switches on the next bus cycle. Writes in that window go to the RAM
 underneath, not to the ROM and not to the I/O chips.
 
-The interrupt flag is the whole safety of the technique. The KERNAL's
+The interrupt flag is what makes the copy safe. The KERNAL's
 IRQ handler acknowledges CIA1 by reading `$DC0D`, scans the keyboard
 through `$DC00`/`$DC01`, and a raster handler acknowledges the VIC by
 writing `$D019`. While the ROM is mapped every one of those addresses
@@ -425,7 +419,7 @@ plus 22 for the two `$01` switches). With the display on it is 20,784
 on PAL and 21,150 on NTSC, the difference being the badlines the window
 spans. The 4 KB copy with the display on is 39,580 PAL, 40,267 NTSC;
 arithmetic puts it at 38,165 with the display blanked, not measured
-here. Two figures from earlier builds are worth knowing: a copy routine
+here. Two figures from earlier builds: a copy routine
 that holds `SEI` and `CLI` inside the timed window reads about 470
 cycles high, because the KERNAL IRQ that fell due during the copy runs
 at the `CLI`; and a loop whose `BNE` crosses a page boundary reads 255
@@ -481,13 +475,13 @@ With VM_bits ranging from 0 to 15, the 16 possible positions are:
 
 The default KERNAL value of $D018 is $14 (binary 0001 0100), giving VM = %0001
 = 1, which places screen RAM at offset $0400 within bank 0, i.e. CPU address
-$0400. This is the "READY." screen you see at boot. ($14 is the value the KERNAL
-writes; the register reads back as $15 because bit 0 is unused and reads 1 —
+$0400. This is the "READY." screen at boot. ($14 is the value the KERNAL
+writes; the register reads back as $15 because bit 0 is unused and reads 1;
 measured in VICE x64sc.)
 
 Sprite pointers always follow the screen RAM: the 8 bytes at screen_base + $3F8
 (screen_base + 1016) hold the sprite data-block pointers. When screen RAM moves,
-sprite pointers move with it automatically — they are at a fixed offset from the
+sprite pointers move with it: they are at a fixed offset from the
 screen base, not at a fixed CPU address.
 
 To move screen RAM, write a new value to $D018 keeping the CB bits unchanged:
@@ -509,24 +503,24 @@ seven lines; sprite pointers at video_matrix_base + $3F8 are fetched once per
 raster line. (An earlier version said one byte was fetched on each character
 clock of the visible area, which is not how the video matrix is read.)
 Only the upper bits of that address come from VM; the lower 10 bits are the
-running character clock counter. The effect is that moving VM simply shifts the
-entire screen fetch window by multiples of 1 KB within the VIC bank — a pure
-hardware address-offset operation with no software overhead per character.
+running character clock counter. Moving VM shifts the entire screen fetch window
+by multiples of 1 KB within the VIC bank, with no software overhead per
+character.
 
 ### Variations
 
 **Screen at $3C00.** Placing screen RAM at the top of VIC bank 0 ($3C00-$3FE7,
 the 1 KB block running to $3FFF; an earlier version said $3FEF, which is 1008 bytes)
 frees the lower 15 KB for code and graphics. The 8 bytes of sprite pointers at
-$3FF8-$3FFF are conveniently at the very top of the bank. This is a common
+$3FF8-$3FFF are at the top of the bank. This is a common
 layout for demos that use a full custom layout in bank 0.
 
 **Double-buffered screen RAM.** (Worked through, with the sprite pointer
 mirror and a measured recipe, as `screen_double_buffer_d018` below.) Two
 screen buffers can live at different VM
 offsets (e.g., $0000 and $0400 within the bank). The visible buffer flips by
-changing VM bits; the invisible buffer is updated by the CPU. This avoids all
-screen-tearing artifacts on text-mode displays; the flip lands at the next
+changing VM bits; the invisible buffer is updated by the CPU. This avoids
+screen tearing on text-mode displays; the flip lands at the next
 badline, so write $D018 during the border or vertical blank for a whole-frame
 swap.
 
@@ -537,7 +531,7 @@ video-matrix bytes only during cycles 15-54 of a badline and reuses that latch
 for the remaining seven lines of the character row, so a $D018 write mid-row
 leaves the current row on the old base and moves the display from the next row
 down (measured in VICE x64sc: written on line 54, effective from line 59).
-Sprite pointers are the exception — they are fetched every line and follow the
+Sprite pointers are the exception: they are fetched every line and follow the
 new base from the next line. There is no cycle overhead beyond the write. (An
 earlier version said the write took effect at the next video matrix fetch, which
 read as "immediately".)
@@ -559,8 +553,7 @@ recipe docs.
 
 Standard C64 bitmap modes (hires and multicolor) require an 8 KB block of RAM
 holding the pixel data. With the VIC bank being only 16 KB wide, there are only
-two valid positions for the bitmap within the bank. Programs need to know which
-positions are available and how to select between them.
+two valid positions for the bitmap within the bank.
 
 ### How
 
@@ -593,7 +586,7 @@ Instead of a separate character fetch to look up a bitmap address, the VIC
 directly computes: bitmap_base + (character_row * 320) + (character_column * 8)
 + scan_line_within_row. The bitmap base is the one degree of freedom in this
 computation, and it is encoded in a single bit of $D018 because only powers of
-two from 0 to 8192 are legal — an 8 KB block must land on an 8 KB boundary.
+two from 0 to 8192 are legal: an 8 KB block must land on an 8 KB boundary.
 
 ### Variations
 
@@ -611,7 +604,7 @@ and did not mention $D011 or the forced badline.)
 **Bitmap at $0000 and sprite multiplexing.** The $0000-$1FFF bitmap position
 overlaps with zero page and the stack ($0000-$01FF). Sprites whose data blocks
 land in $0000-$1FFF are valid as long as the sprite pointer value accounts for
-the collision. In practice most demos use $2000 for the bitmap and leave
+the collision. Most demos use $2000 for the bitmap and leave
 $0000-$1FFF for code, zero-page variables, and stack.
 
 ### Cycle budget
@@ -642,8 +635,8 @@ organized as up to 64 banks of 16 KB each. The cartridge presents two 8 KB ROM
 windows simultaneously (LOROM at $8000-$9FFF and HIROM at $A000-$BFFF), and
 software selects which 16 KB bank to page in by writing to the cartridge's bank
 register. The entire flash contents become accessible as a sequence of banked
-8 KB ROM windows, making EasyFlash the simplest way to distribute a large game
-or demo that exceeds the 64 KB address space.
+8 KB ROM windows, so an EasyFlash can hold a large game or demo that exceeds
+the 64 KB address space.
 
 ### How
 
@@ -655,7 +648,7 @@ Ultimax mode: bank 0's HIROM is mapped at $E000-$FFFF (ROML at $8000 in Ultimax
 per the memory-map reference; not measured here), the CPU fetches its reset
 vector from $FFFC of that HIROM, and the KERNAL is not mapped. The startup code
 therefore lives in bank 0 HIROM, not LOROM. It typically copies a stub to RAM
-and writes $07 to $DE02 (MODE=1, EXROM=1, GAME=1 — bit set means the line is
+and writes $07 to $DE02 (MODE=1, EXROM=1, GAME=1; bit set means the line is
 asserted) to enter 16 KB mode, in which:
 
 - $8000-$9FFF is LOROM (cartridge ROM, low bank)
@@ -677,11 +670,11 @@ The EasyFlash hardware decodes two I/O addresses in expansion area 1:
 
 Writing a bank number (0-63) to $DE00 immediately pages in the corresponding
 16 KB chunk of flash. The low 8 KB of that chunk appears at $8000-$9FFF; the
-high 8 KB appears at $A000-$BFFF. This happens on the next CPU cycle — the switch
-is instantaneous.
+high 8 KB appears at $A000-$BFFF. The switch takes effect on the next CPU
+cycle.
 
 Bank 0 is the entry bank: it is active when the cartridge powers on and its
-HIROM (not LOROM, as an earlier version said — see above) contains the reset
+HIROM (not LOROM, as an earlier version said; see above) contains the reset
 vector and the startup and loader stub. The remaining banks hold game
 chapters, level data, music, graphics, or further code segments. The cartridge
 author decides how to partition and use the 64 banks.
@@ -717,7 +710,7 @@ in cartridge ROM ranges but writes still reach RAM, any write to $8000-$BFFF
 (while cartridge ROM is mapped there) actually writes to the underlying RAM.
 This allows a program to maintain RAM buffers at $8000-$BFFF and bank the
 cartridge ROM out ($DE02 = $04) when the program needs to write
-them back, then bank cartridge ROM in for read-only access. Advanced EasyFlash
+them back, then bank cartridge ROM in for read-only access. EasyFlash
 programs use this technique for per-level score tables, save states, and
 configuration data.
 
@@ -728,7 +721,7 @@ or SD card access, but the basic $DE00 bank-switch mechanism is the same.
 ### Cycle budget
 
 No cycle constraints for bank switching itself. The bank latch takes the value
-on the write cycle of the STA $DE00 — the instruction's last cycle — so the STA
+on the write cycle of the STA $DE00 (the instruction's last cycle), so the STA
 itself always completes correctly (its opcode and operand were fetched before the
 write) and a switch can never fall inside an instruction. The hazard is the cycle
 after it: the very next opcode fetch already comes from the new bank. Execute the
@@ -736,7 +729,7 @@ switching code from RAM, or from a region whose bytes are identical in every
 bank, never from the $8000-$BFFF window being switched unless the code that
 follows the STA is present at the same address in the target bank. The same
 applies to $DE02 mode changes, which can swap $E000-$FFFF from HIROM to KERNAL
-under the executing PC — which is why the EasyFlash start-up stub copies itself
+under the executing PC, which is why the EasyFlash start-up stub copies itself
 to RAM before writing $DE02. (An earlier version advised aligning switches to
 instruction boundaries against a mid-instruction switch, which cannot happen.)
 
@@ -763,7 +756,7 @@ With KERNAL ROM banked in ($01 bit 1 = 1), the 8 KB region from $E000 to $FFFF
 reads as ROM. But the underlying RAM at those addresses is still physically
 present and is still written by any STA into that range. Banking KERNAL out
 (bit 1 = 0) exposes that RAM to the CPU, providing 8 KB of additional work RAM
-above and beyond the normal ~38 KB free. This is used for large data buffers,
+beyond the normal ~38 KB free. This is used for large data buffers,
 custom IRQ and NMI handlers that must live at $FFFA-$FFFF, KERNAL replacement,
 and packing maximum data into a 64 KB build.
 
@@ -775,15 +768,15 @@ KERNAL ROM visibility is controlled solely by HIRAM when no cartridge is present
 
 The standard sequence for switching to mode $35 (I/O visible, all ROM banked out):
 
-1. Disable IRQs with SEI (mandatory — KERNAL IRQ handler at $EA31 will be gone).
+1. Disable IRQs with SEI (mandatory: the KERNAL IRQ handler at $EA31 will be gone).
 2. Write the address of the new IRQ handler into RAM at $FFFE/$FFFF. The bytes
    written land in RAM even while KERNAL is still visible on reads.
 3. Write the address of the new NMI handler into RAM at $FFFA/$FFFB.
-4. Write $35 to $01 (LORAM=1, HIRAM=0, CHAREN=1 — I/O visible, no ROM).
+4. Write $35 to $01 (LORAM=1, HIRAM=0, CHAREN=1: I/O visible, no ROM).
 5. Re-enable IRQs with CLI once the new handler is in place.
 
 From this point the $E000-$FFFF range reads back the RAM values written in steps
-2 and 3. The CPU correctly fetches interrupt vectors from $FFFA-$FFFF and they
+2 and 3. The CPU fetches interrupt vectors from $FFFA-$FFFF and they
 point to the program's custom handlers.
 
 If the program needs to call any KERNAL routine (CHROUT, CHKIN, OPEN, etc.),
@@ -800,16 +793,15 @@ underlying RAM regardless of the HIRAM bit. This is the same property that
 applies to BASIC ROM at $A000-$BFFF and char ROM at $D000-$DFFF. The distinction
 is that KERNAL ROM also contains the hardware interrupt vectors at $FFFA-$FFFF,
 so when KERNAL is banked out and the CPU takes an IRQ or NMI, it reads those
-vector addresses from RAM — which must already contain valid handler addresses
+vector addresses from RAM, which must already contain valid handler addresses
 before the bank switch happens.
 
 ### Variations
 
 **KERNAL replacement.** Entire custom KERNAL images can be placed at
 $E000-$FFFF by writing them in while HIRAM is still 1 (ROM wins on reads,
-RAM accepts the writes), then clearing HIRAM to expose the RAM image. This
-technique powers KERNAL replacement cartridges and some fastloader
-implementations. The custom image must provide all jump-table entries at
+RAM accepts the writes), then clearing HIRAM to expose the RAM image. KERNAL
+replacement cartridges and some fastloader implementations use this. The custom image must provide all jump-table entries at
 $FF81-$FFF5 if any downstream code calls KERNAL via the standard jump table.
 
 **RAM at $E000-$FFFF for music and graphics.** In a demo build where KERNAL is
@@ -893,7 +885,7 @@ not after.
 
 Colour RAM at $D800 is not selected by $D018. There is one 1,000-byte
 colour map and both pages share it. A colour written while page A is shown
-changes A's cell now and B's cell after the flip. Three ways to live with
+changes A's cell now and B's cell after the flip. Three ways to handle
 that: keep the colour map fixed and change only characters (the recipe
 sets all 1,000 cells white once); write colour changes in the blank, after
 the flip, so the character and its colour arrive together; or confine
@@ -906,7 +898,7 @@ on NTSC. A 1,000-byte fill does not fit the NTSC figure with a C loop.
 Frame parity. The page being drawn holds what was on screen two frames
 ago, not one. A full redraw does not care. A partial (dirty-cell) update
 does: each change has to be applied to both pages, one frame apart, or the
-page you flip to shows a cell two frames stale. Keep a change list and
+page flipped to shows a cell two frames stale. Keep a change list and
 apply it to `page[hidden]` on two consecutive frames, or redraw everything.
 
 Sprite pointers and libraries. Anything that writes sprite pointers
@@ -917,7 +909,7 @@ the same single pointer. `vspr_screen(char * screen)` re-points them. With
 two pages, either keep both blocks identical by hand after every image
 change, or call `vspr_screen()` with the page about to be shown before the
 update that writes the pointers. The second path is not measured here.
-The cheapest failure is a clear routine that works in whole 1 KB pages:
+One failure is a clear routine that works in whole 1 KB pages:
 bytes 1000 to 1023 hold the pointer block, and a fill that runs to the end
 of the page rewrites it every frame. The companion recipe shows the sprite
 that results.
@@ -945,7 +937,7 @@ bank 0. Not built here.
 
 ### Cycle budget
 
-The flip is one store. The draw has one frame minus nothing: it runs during
+The flip is one store. The draw has at most one frame. It runs during
 the display, so badline and sprite DMA cycles come out of it. Measured in
 VICE x64sc 3.10 with the recipe below at `-O2`: a whole-page fill from a
 256-byte template (`LDA (zp),y` plus four `STA abs,y`, 30 cycles per four
@@ -990,7 +982,7 @@ for all three.
 alignments set by `$D018` and the bank bits of `$DD00`; the CPU sees the
 whole 64 KB and does not care where anything is. Planning the VIC's
 constraints first and letting the CPU's flexible material fill the gaps
-means the constraints are met by construction, not by luck.
+meets the constraints by construction.
 
 **Variations.** Two VIC banks with the assets split between them; data
 under the ROMs for the CPU only (`ram_under_kernal`); a loader that owns
@@ -1021,9 +1013,8 @@ out (`$01` = `$34`, or `$30`). The rule elsewhere on this page and in
 in that state writes its acknowledge and its register updates into RAM.
 That rule is fine for a short poke. It is not fine for a decruncher or
 a loader filling 4 KB of level data, which takes frames: with `SEI` the
-music stops and the raster splits fall apart for the whole depack. The
-answer games and loaders use is to make every interrupt handler put I/O
-back itself, so main code can leave `$01` at `$34` with interrupts on.
+music stops and the raster splits fall apart for the whole depack. Games
+and loaders instead make every interrupt handler put I/O back itself, so main code can leave `$01` at `$34` with interrupts on.
 
 ### How
 
@@ -1277,9 +1268,8 @@ generated `pucrunch.h`) that builds with `cc` on any host; the source's
 version string reads 1.14, dated 22 November 2008. The author's page says
 that the compressor has been under the GNU LGPL since December 2005, and
 that the decompression code is under the wxWindows Library Licence, which
-in short lets the binary decruncher travel with the crunched data. That
-makes it one of the few crunchers whose licence a shipped game does not
-have to think about. The decruncher is small, sits in memory the KERNAL
+lets the binary decruncher ship with the crunched data. That makes it one
+of the few crunchers a shipped game can include without a licence question. The decruncher is small, sits in memory the KERNAL
 does not need at start-up, and expands forwards, so a file crunched with
 it can start as low as `$0258` and reach `$FFFF`. Exomizer is smaller on
 output and, on the two inputs measured here, faster to decrunch as well;
@@ -1304,8 +1294,8 @@ pucrunch -flist                              # every decruncher it can emit
 ```
 
 The output is a PRG at `$0801` with a one-line BASIC stub (`SYS 2061` in
-every run here) followed by the decruncher and the crunched stream. Run,
-the stub copies the decruncher into the zero page from `$F7` upward, the
+every run here) followed by the decruncher and the crunched stream. When
+run, the stub copies the decruncher into the zero page from `$F7` upward, the
 low part of the stack page and the system input buffer at `$0200`, moves
 the crunched stream up in memory so that its last byte sits a computed
 safety margin past the end of the original file, and expands the original
@@ -1319,7 +1309,7 @@ run here).
 
 The raw form has no stub. `-c0` writes a stand-alone stream with a short
 header (18 bytes on the test file, load address and execution address
-inside it) for a decruncher you link yourself; `-d` marks the input as
+inside it) for a separately linked decruncher; `-d` marks the input as
 headerless data with no load address, and `-c64 -d` still emits a C64
 stub for it. The author's page publishes the decruncher source
 (`uncrunch.asm`, DASM-style conditional assembly with switches for the
@@ -1349,8 +1339,8 @@ with a count and one byte; a ranked table of the most common run bytes,
 built by the compressor and shrunk to the values actually used, lets the
 frequent ones cost less. LZ77 replaces a string that already appeared in
 the output with an offset back into it and a length. Anything neither
-covers is a literal, and here is the trick that keeps the decruncher
-small: a literal carries no flag bit of its own. Instead a few of its top
+covers is a literal. The decruncher stays small because a literal carries
+no flag bit of its own. Instead a few of its top
 bits are compared with a running escape code; a literal that happens to
 begin with the escape is written with an extra escape marker, and the
 compressor picks the number of escape bits per file so that this happens
@@ -1478,7 +1468,7 @@ to two hundred bytes, a handful of zero-page bytes, a decrunch loop with
 no tables to build, and a ratio that on the mixed test file below beats
 both of the older tools. Four of them have C64 or generic 6502
 decrunchers with a permissive licence, so a shipped game can carry the
-decruncher without thinking about it:
+decruncher without a licence question:
 
 - **ZX0** by Einar Saukas, an optimal LZ77 cruncher whose repository
   holds the compressor and Z80 decrunchers, under the BSD 3-clause
@@ -1546,7 +1536,7 @@ and uses `--use-prefix` in place of the prefix-file options; it has no
 The self-extractor's layout, read from the two `sfx.asm` sources and
 checked against the bytes of the output: a one-line BASIC stub (`SYS
 2061` in every run here) followed by a copier, the decruncher and the
-stream. Run, the copier moves the decruncher into the zero page, counting
+stream. When run, the copier moves the decruncher into the zero page, counting
 down from `$EC` (Dali) or `$D4` (bitfire) to `$01`; the byte that lands
 at `$01` is the processor port's new value, `$34`, which banks the ROMs
 out so the whole 64 KB is writable. It then copies
@@ -1607,8 +1597,8 @@ and the decoder writes forwards without ever overtaking the input it has
 not read. ZX0 and ZX02 print the margin as `delta` when they crunch
 (3 bytes on the mixed file, 3 on the code file for ZX0); Dali and bitfire
 assume it unless `--no-inplace` is given. The C64 self-extractors go one
-further and copy the stream to the top of RAM first, so the margin is not
-the caller's problem.
+further and copy the stream to the top of RAM first, so the caller need not
+reserve the margin.
 
 **Streaming from disk.** bitfire is a disk loader whose files are all
 Dali-crunched, and it decrunches as sectors arrive; that path was not

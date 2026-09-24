@@ -11,7 +11,7 @@ logical-file layer: SETLFS, SETNAM, OPEN, the CHKIN/CHKOUT redirection
 pair, CHRIN/CHROUT, READST, CLRCHN, CLOSE and LOAD. The register
 contracts for each routine are in `hardware/kernal-routines-reference.md`;
 the drive-side command set and the secondary-address table are in
-`formats/iec-disk-reference.md`; the ways the KERNAL bites are in
+`formats/iec-disk-reference.md`; the KERNAL's failure modes are in
 `pitfalls/kernal-and-io.md`. Every number below that came from an
 instrument says so. The instrument was VICE 3.10 x64sc with true drive
 emulation of a 1541 (the `-default` configuration) and a disk freshly
@@ -47,7 +47,7 @@ BASIC's `OPEN 2,8,2,"NAME,S,W"` / `PRINT#2` / `CLOSE 2` takes.
 
 ### How
 
-1. SETLFS with A = a logical file number of your choosing (1 to 127),
+1. SETLFS with A = any logical file number from 1 to 127,
    X = 8 for the first drive, Y = a secondary address from 2 to 14. The
    secondary address is the drive's channel number; 0 and 1 are LOAD and
    SAVE, 15 is the command channel.
@@ -170,7 +170,7 @@ afterwards was not measured here. Two ways round it:
   linefeed whatever the number; the linefeed-after-CR rule belongs to
   BASIC's PRINT#, as `hardware/kernal-routines-reference.md` measured.
 - **PRG rather than SEQ.** `,P,W` writes a PRG; the two-byte load address
-  is then yours to CHROUT first. Use SAVE instead when the bytes are
+  must then be sent first with CHROUT. Use SAVE instead when the bytes are
   already contiguous in memory.
 - **Text files for other software.** Write `$0D` after each line; the
   drive stores it as an ordinary byte.
@@ -193,7 +193,7 @@ afterwards was not measured here. Two ways round it:
 ### Why
 
 The read half of kernal_file_write_seq. The trap is end-of-file: CHRIN
-delivers the last byte with the carry clear, exactly as it delivered
+delivers the last byte with the carry clear, as it delivered
 every earlier one, and the only signal that the byte was the last is bit
 6 of the status byte. A loop that waits for the carry reads one byte too
 many.
@@ -210,7 +210,7 @@ many.
    looks like, because the drive has nothing to say on that channel
    (measured: `SCORES,S,R` with no such file gave OPEN C=0, CHKIN C=0
    and ST = `$42` on the first CHRIN; VICE 3.10, empty disk).
-4. Bound the loop by your buffer size as well as by ST.
+4. Bound the loop by the buffer size as well as by ST.
 5. CLRCHN, then CLOSE.
 
 ```asm
@@ -317,7 +317,7 @@ interaction with file I/O".
 
 ### Why
 
-The drive keeps one status line and the KERNAL never reads it for you.
+The drive keeps one status line and the KERNAL never reads it.
 A disk OPEN returns C=0 for a name that is not there and for a write to
 a name that is; LOAD reports a missing file as A=4 but says nothing
 about a full or protected disk. The status line is the only place these
@@ -391,7 +391,7 @@ stbuf:  .fill 40, 0              // "62, FILE NOT FOUND,00,00" + CR fits
 ```
 
 The line is `code,message,track,sector` in PETSCII with the two-digit
-code first, so the first byte alone tells you whether to look further.
+code first, so the first byte alone says whether to look further.
 
 ### When to read it
 
@@ -459,7 +459,7 @@ the recipe `../recipes/kickassembler/dos-error-codes.md`.
 ### Why
 
 A loader menu, a level chooser or a save slot picker needs to know
-what is on the disk. The DOS will tell you: the name `$` opens a
+what is on the disk. The DOS provides it: the name `$` opens a
 listing of the directory as if it were a file, and the same CHKIN and
 CHRIN loop that reads a SEQ file reads it. What comes back is not
 text. It is a BASIC program image, with link bytes and line numbers,
@@ -467,7 +467,7 @@ and the block counts live in the line numbers. A parser that knows
 that turns the stream into a table in one pass, and a highlight moved
 by the joystick over that table is the menu.
 
-The trap that makes this worth an entry: `LOAD "$",8` from BASIC puts
+The trap: `LOAD "$",8` from BASIC puts
 that program image where the BASIC program was, so a BASIC program
 that lists the directory that way has replaced itself. Machine code
 and C programs never meet the trap, because OPEN and CHRIN load
@@ -475,7 +475,7 @@ nothing; the bytes go only where the program puts them.
 
 ### How
 
-1. SETLFS with your logical file number, device 8 and secondary
+1. SETLFS with a logical file number, device 8 and secondary
    address 0. SETNAM with the one byte `$`. OPEN. Test the carry:
    C=1 with A=5 is device not present.
 2. CHKIN with X = the logical file number. From here CHRIN reads the
@@ -676,9 +676,9 @@ block from the directory sectors on track 18, sending it on the data
 channel with EOI on the last byte, which is why READST reads `$40`
 there and nowhere earlier. The image is a BASIC program so that
 `LOAD "$",8` followed by `LIST` shows it without any code on the C64
-side. That convenience is the whole reason for the load address, the
+side. That is the reason for the load address, the
 link bytes and the line numbers, and a parser that reads it as a file
-just has to know the shape. The block count sits in the line number
+only has to know the shape. The block count sits in the line number
 because BASIC prints line numbers in decimal for free; the DOS never
 writes it into the text. Each entry costs 32 bytes on the wire (link,
 number, up to 27 bytes of text, zero), so a directory of `n` files is
@@ -753,7 +753,7 @@ SETLFS, not by a LOAD argument.
 ### How
 
 1. SETLFS with any logical file number, X = 8, and Y = 0 or 1. With
-   Y = 0 the address you pass in X/Y to LOAD is used and the file's own
+   Y = 0 the address passed in X/Y to LOAD is used and the file's own
    header is discarded. With Y = 1 the header decides and LOAD's X/Y are
    ignored.
 2. SETNAM with the bare name. No `,P,R` is needed: the drive assumes PRG
@@ -1021,7 +1021,7 @@ memory and load each byte fresh.
   command is a 1-based offset (measured above on a read); a P with
   offset 17 followed by a write of four bytes changes only bytes 17 to
   20 (the DOS rule; the write at an offset was not measured here).
-- **Pre-size the file.** Position on the highest record you will use
+- **Pre-size the file.** Position on the highest record the program will use
   and write one byte to it once, at first run, so later writes never
   extend the file mid-game and pay the block allocation then. The
   extension cost itself was not measured here.
@@ -1052,15 +1052,13 @@ save games therefore go into the cartridge. Two cartridge types built for
 this are in common use. EasyFlash writes to its own flash chips.
 GMod2 writes to a small serial EEPROM beside its flash. The C64 cannot
 write to ROM, so both need their own write protocol, and both are slow
-compared with a RAM store. This technique describes both and when to
-pick which.
+compared with a RAM store.
 
 ### How: EasyFlash
 
 EasyFlash holds two 512 KB Am29F040-type flash chips, one behind ROML
 (`$8000`) and one behind ROMH. Each 8 KB bank register value
-(`$DE00`) selects the upper chip address lines. Three rules decide
-everything.
+(`$DE00`) selects the upper chip address lines. Three rules apply.
 
 1. **Erase is per 64 KB sector, programming is per byte.** Erase sets a
    whole sector to `$FF`. That is 8 banks of one chip: the ROML halves of
@@ -1078,7 +1076,7 @@ everything.
    In Ultimax mode only RAM `$0000-$0FFF` is mapped and the KERNAL is
    gone, so the writing code and its data live below `$1000` (or in the
    cartridge's 256 bytes of RAM at `$DF00`), with interrupts off.
-3. **Use EAPI in anything you release.** EAPI is the EasyFlash flash
+3. **Use EAPI in released software.** EAPI is the EasyFlash flash
    driver. A CRT carries it at bank 0 ROMH offset `$1800` (768 bytes
    reserved). The program copies it to C64 RAM (c64gameframework uses
    `$C000`) and calls EAPIInit, which builds a jump table in the
@@ -1087,7 +1085,7 @@ everything.
    EAPIGetBank `$DF89`, EAPISetPtr `$DF8C`, EAPISetLen `$DF8F`,
    EAPIReadFlashInc `$DF92` and EAPIWriteFlashInc `$DF95`. When EasyProg
    flashes a CRT that has the `eapi` signature there, it swaps in the
-   version for the flash chip actually fitted. Code that sends Am29F040
+   version for the fitted flash chip. Code that sends Am29F040
    commands itself, as the recipe does, works only on that chip. VICE
    emulates it and warns `EF: EAPI not found!` when a CRT has no EAPI.
 
@@ -1210,7 +1208,7 @@ through the job queue.
    executes a JSR to that address from its command parser, with
    interrupts enabled, and returns to its idle loop on the routine's
    RTS. The host's next command is not accepted until then, so a host
-   that sends `M-E` and then `M-R` simply waits.
+   that sends `M-E` and then `M-R` waits.
 5. Inside the routine, to read a sector: put the track in `$08` and the
    sector in `$09`, write `$80` to `$01`, and loop while `$01` has bit 7
    set. The controller, which runs from the drive's timer interrupt,
@@ -1244,7 +1242,7 @@ set, and does that job with the head. `M-W` and `M-R` are ordinary
 commands that read and write the drive's address space; `M-E` is a
 command whose action is a subroutine call. Code started that way runs
 in the file-system role, so it can post jobs for the controller role
-exactly as the DOS does, and the result comes back in the same byte.
+as the DOS does, and the result comes back in the same byte.
 The status line is not involved: after the track-40 job failed with
 `$03` the error channel still read `00, OK,00,00` (measured), because
 only the DOS writes that line and the DOS did not run the job.
@@ -1311,7 +1309,7 @@ The KERNAL's tape format spends twenty pulses on a byte, draws them from
 three lengths, and writes every block twice; measured from a SAVE in
 VICE (`../formats/c64-file-formats.md`, "KERNAL bit encoding") a byte
 costs 9,448 cycles, about 104 bytes a second for one copy and half that
-for the pair the KERNAL actually writes. A turbo loader replaces the
+for the pair the KERNAL writes. A turbo loader replaces the
 stream, not the reading of it: one pulse per bit, two lengths, eight
 pulses to a byte, one copy. The recipe below moves 321 bytes a second on
 PAL and 334 on NTSC (measured, VICE 3.10), three times the KERNAL's one
@@ -1361,7 +1359,7 @@ mastered for, and on a threshold that sits between the two lengths.
 The cassette read line is wired to CIA 1's FLAG input, and the CIA
 records each falling edge as bit 4 of its interrupt control register
 whether or not that source is enabled; VICE raises one such edge per
-TAP entry. The information is entirely in the time between edges, and a
+TAP entry. The information is in the time between edges, and a
 free-running 16-bit timer at the system clock measures it to the cycle
 with no restart cost and no drift, provided the two-byte read is made
 consistent. The threshold turns a continuous measurement into a bit,

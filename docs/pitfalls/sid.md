@@ -177,7 +177,9 @@ cutoff, 4-bit resonance, shared LP/BP/HP modes) but use
 different analog circuit designs for the cutoff cell.
 
 **6581 filter — non-linear and chip-variable.** The 6581 filter is a
-switched-capacitor design. The relationship between the 11-bit cutoff
+continuous-time two-integrator filter whose cutoff resistors are NMOS
+FETs used as voltage-controlled resistors (reSID's `filter.h` in the VICE
+3.10 source; an earlier version called it a switched-capacitor design). The relationship between the 11-bit cutoff
 register value and the resulting cutoff frequency in Hz is
 non-linear, roughly sigmoidal on a logarithmic frequency scale.
 The low end of the register range (roughly $D416 = $00-$30) produces
@@ -194,7 +196,10 @@ chip-specific calibration.
 filter cell for a near-linear cutoff response. A $D416 value of $80
 is roughly half the nominal maximum cutoff (an earlier version said
 $40, which is a quarter of the register's range); a sweep of $D416 from
-$00 to $FF produces a perceptually even frequency sweep. The curve
+$00 to $FF is even in Hz, not in pitch: $80 to $FF is one octave, so a
+linear sweep spends half its range on the top octave. Space table entries
+geometrically for an even-sounding sweep (an earlier version called the
+linear sweep perceptually even). The curve
 is consistent between 8580 chips.
 
 **Resonance.** The 4-bit resonance (RESON, $D417 bits 7-4) controls
@@ -214,9 +219,9 @@ identical on both chips. The approaches:
 calibrated for 6581 and one for 8580. At startup, detect the chip
 revision (see the $D41B detection method below, and
 `sid_8580_vs_6581_differences`) and select the appropriate
-table. GoatTracker implements this with its "chip-select" toggle that
-exports per-chip filter tuning. SidFactory II has similar per-chip
-compensation.
+table. (An earlier version said GoatTracker exports per-chip filter tuning
+through a "chip-select" toggle and that SID Factory II has similar
+compensation; no source for either was found, so the claim is withdrawn.)
 
 **Target one chip explicitly.** For demo or game
 music, choose a target chip and tune all filter patches against that
@@ -275,8 +280,8 @@ chip_is_8580:   .byte 0     ; 0 = 6581, 1 = 8580
 
 ; Filter cutoff tables (simplified; real tables have 64 or more entries)
 cutoff_tbl_6581:
-        ; These values are pre-mapped to produce evenly-spaced Hz steps
-        ; on an average 6581 (they cluster in the $30-$A0 range)
+        ; Illustrative values, not measured on any chip. They run $10-$CC
+        ; (an earlier comment said they cluster in $30-$A0)
         .byte $10, $1A, $26, $34, $44, $58, $6C, $82, $96, $AA, $BC, $CC
 
 cutoff_tbl_8580:
@@ -350,8 +355,9 @@ attack 1 instead gave 27,173 / 27,350; the rate-0 attack itself takes
 version of this paragraph said the 6581's wrap at rate 0 was "close
 to the 2 ms attack time"; that confused the attack duration with the
 wrap. Hard restart works by writing AD/SR = 0 two frames before the
-gate: 2 × 19,705 = 39,410 cycles covers the worst-case wrap, one
-frame (19,705) does not.
+gate: 2 × 19,656 = 39,312 cycles (63 × 312 per PAL frame) covers the
+worst-case wrap, one frame (19,656) does not. (An earlier version used
+19,705, which is φ2 / 50, not the frame.)
 
 **8580 behavior and the reset bug.** The 8580 introduced an internal
 difference in the envelope reset path. On hard restart (the
@@ -537,14 +543,13 @@ regardless of bit 7. This behavior is the same on the 6581 and
 **8580 revision differences on the bypass path.** On 8580 chips
 manufactured after approximately 1990 (typically the R5 revision and
 later), the 3OFF bit's implementation was revised as part of broader
-cost-reduction changes. The bit was originally undocumented and was
-added for the "voice 3 as LFO" use case that had emerged in the C64
-development community. Some 8580 R5 revisions implement 3OFF by
-cutting the voice 3 output from the bypass summing node but do not
-fully isolate the signal path, leaving a small residual. The bleed
-is typically below -40 dB relative to a full-volume voice, but at
-high master volume (VOL=15) and in quiet musical contexts it is
-audible.
+cost-reduction changes. Some 8580 R5 revisions are reported to cut
+voice 3 from the bypass summing node without fully isolating it,
+leaving a small residual audible at VOL=15 in quiet passages. This is
+not measured here, no level is sourced, and reSID models 3OFF as a clean
+cut on both chips. (An earlier version said the bit was originally
+undocumented and added for the LFO use case, and put the bleed below
+-40 dB; neither had a source, and 3OFF is in the SID's register map.)
 
 A secondary mechanism: voice 3 routed through the filter (FILT3=1 in
 $D417) is entirely unaffected by 3OFF on any chip revision. Code
@@ -579,8 +584,8 @@ set voice 3 to TRI or SAW waveform) rather than the envelope output.
 ### Worked example
 
 ```asm
-; FRAGILE: relies only on $D418 bit 7 — fails on 8580 R5 if FILT3 is set,
-; and may have subtle bleed on late 8580 revisions
+; FRAGILE: relies only on $D418 bit 7 — fails on every chip if FILT3 is set
+; (an earlier comment said only on 8580 R5), and may bleed on late 8580s
 
 ; This sets 3OFF but forgets to clear FILT3:
         lda shadow_d417
@@ -644,7 +649,8 @@ lfo_tick:
 
 ### Cross-references
 
-- Register: D418 (bit 7 = 3OFF, bits 4-0 = filter mode and volume)
+- Register: D418 (bit 7 = 3OFF, bits 6-4 = filter mode, bits 3-0 = volume;
+  an earlier version said bits 4-0)
 - Register: D417 (bit 2 = FILT3 — must be clear for 3OFF to work)
 - Technique: `sid_voice_setup` — full voice 3 LFO and modulation patterns
 - Technique: `sid_filter_routing` — filter voice routing and the FILT3 interaction

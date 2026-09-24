@@ -15,7 +15,7 @@ code footprint for 1000 cells), about 24 cycles per cell in a compact
 indexed loop (both measured in VICE x64sc, CIA timer, DEN off). A 40×25
 redraw with colour is therefore 16,000–24,000 cycles against a PAL frame
 of 19,656 cycles, of which the CPU keeps roughly 18,600 once the 25
-badlines have taken their 40-odd cycles each — most of a frame at best,
+badlines have taken their 40-odd cycles each: most of a frame at best,
 more than a frame in the looped form, and far more from a compiled loop
 (see "Cycle budget"). An earlier version of this page said "a 4-cycle
 operation per cell" and "~4000 cycles — about 1/5 of a PAL frame"; 4
@@ -24,13 +24,13 @@ that figure was below the page's own 1000-cell budget further down.
 Redrawing unconditionally does avoid a class of bugs
 (`dirty_cell_skip_leaves_overlay_trail`) that dirty-cell tracking opens,
 but whether the budget allows it depends on the field size and the
-toolchain — read "The frame-budget trap" before choosing.
+toolchain; read "The frame-budget trap" before choosing.
 
-Most C64 games that look like Tetris, Boulder Dash, Sokoban, or any
-top-down puzzle/board game ship a single tight render loop that walks
+Most C64 games like Tetris, Boulder Dash, Sokoban, or any
+top-down puzzle/board game ship a single render loop that walks
 the playfield array each frame (in hand-written assembly, at the costs
 below), then layers the active piece(s) on top as a second pass. The active piece(s) never live in the playfield
-array — they're an overlay drawn last, and the next frame's
+array; they are an overlay drawn last, and the next frame's
 field-redraw is what erases them.
 
 ---
@@ -46,23 +46,23 @@ field-redraw is what erases them.
 
 Tetris-likes, Sokoban-likes, Boulder Dash variants, and most C64
 puzzle / board games need to draw a mostly-static playfield with one
-or more *moving* pieces on top of it. The pieces aren't part of the
-playfield's persistent state — they move every gravity tick — so the
+or more *moving* pieces on top of it. The pieces are not part of the
+playfield's persistent state (they move every gravity tick), so the
 question is how the rendering layer keeps the field cells correct
 while also drawing the piece on top of them. The technique touches no
 VIC or CIA register: it is direct screen and colour RAM writes only.
 
-The answer that "feels professional" is to track dirty cells and
+One answer is to track dirty cells and
 repaint only what changed; the simplest answer that works on a stock
 C64 in text mode is to repaint the whole field every frame and draw the
-piece overlay last — where the budget allows it. In hand assembly a
+piece overlay last, where the budget allows it. In hand assembly a
 400-screen-cell field is 4,800–9,500 cycles a frame (see "Cycle
 budget"), which fits; from an Oscar64 -O2 loop the same field is
 17,100–19,400 cycles (recipe, measured in VICE x64sc), which does not
-fit the blank window and tears — see "The frame-budget trap". An
+fit the blank window and tears; see "The frame-budget trap". An
 earlier version of this section said "the frame budget is more than
 ample" without that qualification, while the trap section below said
-the opposite. The dirty-cell approach has a subtle invariant that's
+the opposite. The dirty-cell approach has an invariant that is
 easy to miss (see `dirty_cell_skip_leaves_overlay_trail` in
 `pitfalls/text-mode-render.md`); the erase-prev/draw-current overlay
 described under the trap avoids both problems.
@@ -70,7 +70,7 @@ described under the trap avoids both problems.
 ### How
 
 Two passes per frame. The piece overlay never writes back to the
-playfield array — it's pure pixels on top of the field's render:
+playfield array; it only draws on top of the field's render:
 
 1. **render_field()** — walk every cell of `field[FIELD_H][FIELD_W]`,
    write its screen code + color to screen / color RAM. Empty cells
@@ -83,10 +83,10 @@ playfield array — it's pure pixels on top of the field's render:
 
 `render_piece` runs second, so its writes win for the cells the piece
 currently occupies. Next frame, `render_field` re-paints every cell
-based on the persistent playfield — which still has those cells as
-empty, so they go back to spaces — and then `render_piece` redraws
-the piece at its new (gravity-advanced) position. The "trail" from
-the previous frame is implicitly cleared by render_field's
+based on the persistent playfield (which still has those cells as
+empty, so they go back to spaces), and then `render_piece` redraws
+the piece at its new (gravity-advanced) position. The trail from
+the previous frame is cleared by render_field's
 unconditional rewrite.
 
 The piece only enters `field[][]` when it locks. From that point the
@@ -99,12 +99,12 @@ drawing the *next* piece.
 empties `render_field` just laid down. Next frame, `render_field`
 re-clears everything from `field[][]` (which doesn't contain the
 moving piece), and `render_piece` re-overlays at the new position.
-The old position is implicitly erased — no per-overlay book-keeping.
+The old position is erased with no per-overlay book-keeping.
 
 ### The frame-budget trap
 
-The naive "unconditional full redraw every frame" pattern WILL exceed
-the PAL vblank window if you do it on a typical Oscar64 build. Empirical
+An unconditional full redraw every frame WILL exceed
+the PAL vblank window on a typical Oscar64 build. Measured
 numbers from puzzle-tetris-c64-kb (DEMO-DOG-T, 2026-05-18):
 
 - 10×20 playfield rendered 2-chars wide = 200 cells × ~92 cycles
@@ -134,12 +134,12 @@ The fix is to NOT call `render_field` every frame. Use the
    state).
 2. Each frame, erase the prev-position cells by repainting them from
    `field[][]` (which now has the locked piece at those cells if the
-   piece just locked, so this "erase" pass correctly redraws a
+   piece just locked, so this erase pass also redraws a
    just-locked piece).
 3. Draw the current-position cells with `$A0` + piece color.
 4. Eight cell writes per frame: about **2,000 cycles** as the Oscar64
    recipe measures it (~33 raster lines; `render_piece` 1,998 cycles on
-   CIA 2 timer A — see `recipes/oscar64/text-overlay-playfield.md`), or
+   CIA 2 timer A; see `recipes/oscar64/text-overlay-playfield.md`), or
    roughly 150–200 cycles in hand assembly with precomputed addresses.
    Either way well inside the 107-line window between raster 256 and
    the display window resuming at line 51. An earlier version said
@@ -160,18 +160,17 @@ brief tearing on those one-frame events is acceptable.
   (measured in VICE x64sc: 9,490 → 11,490 cycles over 400 cells,
   +21 %), and with the matching colour store it is 13,490 cycles,
   +42 % indexed; +50 % fully unrolled (16 → 24 cycles per cell).
-  Budget for roughly one and a half times the single-width cost, not
-  a rounding error. (An earlier version said "under 3 %".) The one
+  Budget for roughly one and a half times the single-width cost. (An earlier version said "under 3 %".) The one
   form that stays cheap is sharing the load: read the field byte once
-  and store it to both columns — see "Cycle budget".
+  and store it to both columns; see "Cycle budget".
 - **Color-only flash for line-clear.** During an animation (e.g.
-  Tetris line clear), don't rewrite screen codes — just toggle the color
+  Tetris line clear), do not rewrite screen codes; toggle the color
   RAM byte per cell on/off per N frames. Skip the screen-RAM write
   pass entirely.
 - **Skip render during state transitions.** When the game flips to a
   non-playing state mid-frame (game-over banner drawn, line-flash
   starting), gate the render_field+render_piece pair on the state so the
-  banner / flash isn't immediately clobbered.
+  banner / flash is not immediately clobbered.
 
 ### Cycle budget
 
@@ -189,13 +188,13 @@ cells), per frame, hand assembly:
   (24 % of a PAL frame, 28 % NTSC). That is the only form in which
   "~12 cycles per screen cell" is true; a cell whose code and colour
   are read individually costs at least 16 (LDA abs / STA abs for the
-  code and again for the colour) — 400 × 16 = 6,400 (33 % PAL, 37 %
+  code and again for the colour); 400 × 16 = 6,400 (33 % PAL, 37 %
   NTSC).
 - The compact indexed loop (LDA field,x / STA screen,x / LDA colr,x /
   STA colour,x / INX / BNE): 23.7 cycles per cell, 9,490 for 400 cells
   (48 % PAL, 56 % NTSC).
 - Oscar64 -O2 in C: about 86–97 cycles per two-wide field cell,
-  17,100–19,400 for 200 cells (recipe; measured in VICE x64sc) — see
+  17,100–19,400 for 200 cells (recipe; measured in VICE x64sc); see
   "The frame-budget trap" above.
 - render_piece: 8 screen cells × 16 cyc = ~128 cycles unrolled, ~190
   looped, ~2,000 in Oscar64 (negligible against the field either way).
@@ -209,9 +208,9 @@ distinct, so no shared load):
 
 - 1000 cells × 16 cyc = 16,000 cycles fully unrolled (81 % of a PAL
   frame, 94 % of an NTSC R8 frame, and ~12 KB of code); the indexed
-  loop is ~23,700 cycles — more than a PAL frame (19,656).
+  loop is ~23,700 cycles, more than a PAL frame (19,656).
 
-That's the point at which dirty-cell tracking or a partial redraw pays
+At this size dirty-cell tracking or a partial redraw pays
 off: a looped 1000-cell screen+colour redraw does not fit in one frame.
 An earlier version of this section said ~12 cycles per cell, 12,000
 cycles for 1000 cells, and that "even a 1000-cell redraw fits inside a
@@ -220,8 +219,8 @@ code and colour are read individually, and holds only for the
 two-column-shared unrolled form (4,800 for 200 field cells, measured as
 above). Fitting inside a frame is not the criterion in any case: unless
 screen RAM is double-buffered via `$D018`, the redraw races the beam,
-so the budget is the blank window — 107 lines from raster 256 through
-the wrap to raster 51, about 6,700 cycles — not the whole frame.
+so the budget is the blank window (107 lines from raster 256 through
+the wrap to raster 51, about 6,700 cycles), not the whole frame.
 
 ### Recipes
 
@@ -249,8 +248,8 @@ x64sc), so 240 water cells would be about 2,880 and a full screen of
 them more than a blank window. The VIC has no copy of a glyph. It fetches
 the 8 bytes for each cell's code from the character base on every raster
 line it draws, so changing those 8 bytes changes every cell that shows
-the code at once, whatever the field holds. That is the whole technique,
-in two forms.
+the code at once, whatever the field holds. The technique has two
+forms.
 
 ### How
 
@@ -355,8 +354,8 @@ A shoot-'em-up or run-and-gun runs out of sprites for bullets first.
 Eight hardware sprites go to the player and the enemies, and a
 multiplexer is a poor fit for dozens of objects a few pixels across
 that share raster lines. A bullet drawn into the character screen costs
-no sprite at all. The naive form, writing a bullet glyph into the cell,
-wipes out the background under it. The form here keeps the background
+no sprite at all. The plain form, writing a bullet glyph into the cell,
+erases the background under it. The form here keeps the background
 visible and puts the bullet at pixel precision inside the cell.
 
 ### How
@@ -605,7 +604,7 @@ not measured here.
 
 A top-down puzzle or action game that wants depth cues without a bitmap mode
 uses an isometric projection: tiles are drawn as 2:1 diamonds, blocks as cubes,
-and the painter's diagonal sort hides the z-buffer. The VIC-II hardware sprite
+and a diagonal painter's sort stands in for a z-buffer. The VIC-II hardware sprite
 depth register (`$D01B`) gives the player figure a single behind-or-in-front
 state relative to the entire playfield, which is enough for most rooms.
 
@@ -664,7 +663,7 @@ computed as `$FF - low_byte` and `$FF - high_byte`.
 
 The VIC-II reads character codes from screen RAM and fetches glyph bytes from
 the charset on every raster line it draws. Writing a code to a screen cell
-instantly changes what that cell shows on the next raster fetch. Painter's
+changes what that cell shows on the next raster fetch. Painter's
 order means the last write wins without a z-buffer. `$D01B` bit 0 swaps sprite
 priority for sprite 0 between two modes without any extra CPU cycle cost per
 frame: one OR or AND to one register.
@@ -673,7 +672,7 @@ frame: one OR or AND to one register.
 
 Measured in VICE x64sc 3.10 (PAL, CIA 1 timer A, one-shot from `$FFFF`):
 
-- Full 8-by-8 room redraw (64 cells, mix of floors and blocks): 42,034 cycles --
+- Full 8-by-8 room redraw (64 cells, mix of floors and blocks): 42,034 cycles,
   about 2.1 PAL frames (19,656 cycles each). A full-screen 40-by-25 hires
   redraw (1,000 cells) is comparably large; see the cycle budget under
   `text_mode_overlay_render`.
@@ -682,7 +681,7 @@ Measured in VICE x64sc 3.10 (PAL, CIA 1 timer A, one-shot from `$FFFF`):
 
 The 42,034-cycle redraw budget is for a room redrawn on state changes only
 (start and after the final player move). A per-frame redraw would need either
-a smaller map or a dirty-cell approach -- see `full_field_redraw_exceeds_vblank`.
+a smaller map or a dirty-cell approach; see `full_field_redraw_exceeds_vblank`.
 
 ### Variations
 
