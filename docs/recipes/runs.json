@@ -2463,5 +2463,25 @@
       "ntsc"
     ],
     "flags": []
+  },
+  "kickassembler/rotozoomer": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/rotozoomer.png",
+      "ntsc": "screenshots/rotozoomer-ntsc.png"
+    }
+  },
+  "kickassembler/rotozoomer@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   }
 }

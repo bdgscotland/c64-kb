@@ -1070,6 +1070,82 @@ only there on NTSC at the shipped padding.
 
 ---
 
+## rotozoomer_charset — Rotozoomer: a texture rotated and scaled into a character set used as a framebuffer
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D016
+**Requires:** mcm_text
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/rotozoomer.md` saw `$D018`'s charset bits change
+once per render. The recipe's zero-page bytes and result bytes are its
+own.
+
+### Why
+
+A rotating, zooming texture needs every pixel of the window redrawn each
+frame from a new mapping. A character set is a small framebuffer the
+VIC can show from anywhere in its bank: with the window's codes laid out
+column by column, every pixel line of a column is one byte at a fixed
+offset, and a second charset is a free double buffer.
+
+### How
+
+Fill the window with codes 8col + row (8 rows, 16 columns: codes 0 to
+127), so column col is the 64 bytes at charset + 64col. For each frame's
+angle a and scale s, take the per-pixel step (du, dv) = (cos a, sin a) /
+s and the per-line step (−sin a, cos a) / s in 8.8 fixed point, and the
+first pixel's (u, v) = centre − 32 × (both steps). For each line, copy
+the line start, then for each pixel add the pixel step and read the
+texel from the integer parts, masked to the texture size; pack four
+multicolour pixels a byte and store at charset + 64col + line. Render
+into the charset not shown, then switch the charset bits of `$D018`
+below the window.
+
+### Why it works
+
+Each code's eight bytes are its pixel rows, so the column-major layout
+makes the window a bitmap whose columns are contiguous; the stored byte
+for column col and line y is at one offset, computed once per line. The
+rotation needs no multiplication per pixel: two 16-bit additions move
+(u, v) one pixel along the rotated axis. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, by `recipes/kickassembler/rotozoomer.md`: all 4,096
+window pixels equal a Python model of the listing's arithmetic for the
+step the program reports on screen, at four pinned captures and five
+more; one render takes 376,000 cycles (about 92 a pixel) on PAL. Built to
+draw into the charset on screen, no capture of ten showed a whole step:
+the render spans about 19 frames.
+
+### Variations
+
+**Speedcode.** Unrolling the pixel loop per column and holding (u, v) in
+self-modified operands cuts the per-pixel cost; not measured here.
+
+**Chunky modes.** The same stepping can feed a screen-matrix framebuffer
+(`chunky_4x4_fli_mode`) instead of a charset, 80 × 50 pixels of 16
+colours; not measured here.
+
+**Aspect.** Multicolour pixels are two hires pixels wide; halving the
+horizontal step (du, dv per pixel doubled) draws the texture square.
+Not measured here.
+
+### Cycle budget
+
+About 92 cycles per multicolour pixel in the recipe's loop, badlines
+included: 376,000 cycles for 4,096 pixels on PAL, 19 frames. The
+render runs outside any interrupt; the switch waits for line 250.
+
+### Recipes
+
+- `recipes/kickassembler/rotozoomer.md` — 64 steps of a 16 × 16 texture
+  in a 64 × 64 window, double-buffered, every capture compared pixel for
+  pixel with a model, PAL and NTSC, with the single-buffer control.
+
+---
+
 ## voxel_landscape — Voxel-space landscape rendering
 
 **Complexity:** scene-tier

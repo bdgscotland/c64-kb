@@ -1169,3 +1169,57 @@ container:
 - Pipeline: `art/asset-pipelines.md`, "Charsets (.ctm from CharPad)",
   the raw export paths
 - Register: `$D018` (`hardware/vic-ii-reference.md`)
+
+---
+
+## charset_framebuffer_drawn_while_shown — A charset redrawn while it is on screen shows parts of two frames
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D018
+**Triggered by techniques:** rotozoomer_charset
+
+### Symptom
+
+A rotozoomer, plasma or other effect drawn into a character set shows a
+picture broken into bands: some lines from the new frame, some from the
+old, the boundary moving from frame to frame. It looks worse the longer
+a frame takes to draw.
+
+### Mechanism
+
+The VIC reads the charset on every g-access, so every store into the
+charset on screen shows from the next line the beam draws. A render that
+takes longer than a frame is always partly shown. Measured in VICE
+x64sc 3.10, PAL c64c and NTSC, with `recipes/kickassembler/rotozoomer.md`
+built `:single=1` (the render goes into the charset on screen): at ten
+captures, 8 to 12 million cycles on both models, the window never equalled
+any one step of the animation: 3,856 to 4,074 of 4,096 pixels matched the
+nearest step, and only 31 to 62 of its 64 lines matched that step whole.
+The render takes about 19 frames.
+
+### Fix
+
+Draw into a second charset and switch `$D018`'s charset bits to it when
+the frame is complete, at a raster line outside the window. The recipe's
+double-buffered build matched one step in all 4,096 pixels at nine
+captures of ten on both models; the tenth was an exit screenshot taken
+while the beam was inside the window, which mixes frames on its own.
+
+### Worked example
+
+From `recipes/kickassembler/rotozoomer.md`:
+
+```text
+    lda which                   // 0: $2000 shown, so draw into $2800
+    beq !+
+    lda #$20
+    jmp !h+
+!:  lda #$28
+!h: sta out + 1
+```
+
+### Cross-references
+
+- Technique: `rotozoomer_charset` in `techniques/effects-vector-3d.md`.
+- Recipe: `recipes/kickassembler/rotozoomer.md`, "One charset, drawn while shown".
