@@ -288,9 +288,9 @@ three-pass design that `vspr_*` does not implement.
 **Uses registers:** D000, D001, D010, D012, D015, D019, D01A, D027
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs, changes_sprite_set
-**Cost:** cycles_per_frame=16600, irq_slots=17
+**Cost:** cycles_per_frame=16600, cycles_per_frame_typical=8995, irq_slots=17
 **Cost basis:** arithmetic
-**Cost measured on:** kickassembler-sprite-multiplex-game (worst frame: a reversed sort)
+**Cost measured on:** kickassembler-sprite-multiplex-game (worst frame: arithmetic, a reversed sort, CPU cycles only; typical: the largest whole frame of sort, build and IRQs in 2,142 frames of play, timed wall-clock by a probe build, NTSC, screen on)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 
@@ -406,6 +406,17 @@ frame is about 8,800 (1,411 + 3,815 + 2,764 + 17 × 47). The Cost line includes 
 reversal a respawn of every actor can cause. `irq_slots=17` is a ceiling: the frame
 IRQ plus 16 single-sprite zones, before the late guard merges any. The
 recipe's frames built 7 to 13 zones.
+
+The typical figure is one whole frame timed in play. A probe build ran
+CIA1 timer A through the main loop's sort and build and through every
+IRQ, and read it once a frame in the frame IRQ. The largest frame was
+8,420 cycles on PAL (1,867 frames) and 8,604 on NTSC (2,142 frames),
+measured in VICE x64sc with the screen on, so the badline and sprite
+stalls inside those stretches are in it. Add 26 cycles per IRQ taken
+outside the sort and build, which the timer cannot see, and 27 at the
+read (arithmetic from the probe): at most 13 IRQs on PAL and 14 on NTSC
+give 8,785 and 8,995. `cycles_per_frame_typical=8995` is the NTSC figure.
+The smallest frame was 6,874 on PAL and 7,039 on NTSC.
 
 ### Sources
 

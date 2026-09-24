@@ -856,6 +856,7 @@ lit run (PAL row = raster line − 16, NTSC row = line − 28).
 | Build of one sorted half | 3,815 cycles | measured |
 | IRQ time per frame | 2,201 to 2,764 cycles in the same 16 shots, with 7 to 13 zones built (10 in the pinned shot) | measured |
 | IRQ time the timer does not see | 31 cycles before the start write (7 for the interrupt, 24 of prologue) and 16 after the stop write, per IRQ taken | arithmetic from the listing |
+| One whole frame in play | A probe build (below) timed the sort, the build and every IRQ together: largest 8,420 cycles on PAL in 1,867 frames, 8,604 on NTSC in 2,142 frames; smallest 6,874 and 7,039. With the IRQ time the timer misses, at most 8,785 and 8,995 | measured in VICE x64sc, screen on (PAL and NTSC at 9.1, 20 and 40 million cycles; the largest was the same in all three); the IRQ allowance is arithmetic from the probe |
 | Late guard | Fired 370 times in 309 PAL frames, in 249 of them; 369 times in 346 NTSC frames, in 266 of them | measured |
 | Late guard overshoot | A probe build recorded the raster on the fall-through path: at most 5 lines past line − 3, so at most 2 lines past the scheduled line and at least 2 lines before the zone's first Y (PAL, 309 frames). An 8-sprite zone under full sprite DMA on a badline was not measured | measured in VICE x64sc |
 | Late guard removed | A build with `bcs on_time` changed to `jmp on_time` showed 11 of 24 boxes in 2 of the 16 swept shots (9,300,000 cycles, PAL and NTSC) and 24 in the other 14 | measured |
@@ -965,6 +966,33 @@ loop also runs `move_actors` and prints, and the VIC takes its badline and
 sprite cycles. Printing all twelve figures every frame was enough to
 overrun on NTSC (MISSED 66 of about 290), which is why the live figures
 are printed half at a time.
+
+One whole frame was timed by a probe build. It adds CIA1 timer A,
+started with `$01` (run, no reload) as the second instruction of the IRQ
+entry and set from a window flag at the exit, so the timer runs through
+every IRQ and, while the flag is set, through the main loop's sort and
+build. The frame IRQ stops it, reads it, and reloads and restarts it.
+The probe prints the frame, the largest and smallest since frame 4, and
+the most IRQs taken in one frame, in a fifth text row; its code grew
+past $1000, so the tables moved to $1100 and $1300. The timer is
+wall-clock with the screen on, so it holds the badline and sprite stalls
+that fall inside the timed stretches, and 5 cycles per IRQ of the probe's
+own count. It misses 26 cycles of each IRQ taken outside the sort and
+build (16 up to the start write, including the 7-cycle interrupt, 1
+before the timer counts, and 9 after the exit write) and 27 at the read
+(arithmetic from the probe listing).
+
+| Model | Frames | Largest | Smallest | Most IRQs | Largest + 26 × IRQs + 27 |
+|---|---|---|---|---|---|
+| PAL | 1,867 | 8,420 | 6,874 | 13 | 8,785 |
+| NTSC | 2,142 | 8,604 | 7,039 | 14 | 8,995 |
+
+The actor paths repeat every 256 frames (256 steps at any speed bring every
+phase back), so these runs cover each arrangement several times.
+With the allowance, the largest frame is 45 % of a PAL frame and 53 % of
+an NTSC one. The NTSC figure, 8,995, is what `sprite_multiplex_game`
+states as `cycles_per_frame_typical`. It is close to the 8,800 cycles the
+technique page adds up from the parts without a reversal.
 
 ### Region
 
