@@ -125,8 +125,25 @@ describe("techniquesFor", () => {
     });
     await f.linkTechniqueRequires("infinite_scroll_h", "soft_scroll_h");
     await f.linkTechniqueRequires("parallax_dual_layer", "infinite_scroll_h");
+    // Named as the live graph names it: SCROLY at $D011, alias D011.
+    await f.addRegister("SCROLY", "$D011", "VIC-II", "RW", ["D011"]);
+    await f.linkTechniqueUsesRegister("stable_raster_irq", "SCROLY");
+    await f.linkTechniqueUsesRegister("raster_bars", "SCROLY");
   });
   afterAll(async () => f.close());
+
+  it("filters by register name, alias or address, in any case (#41)", async () => {
+    for (const register of ["D011", "$D011", "d011", "0xD011", "SCROLY", "scroly"]) {
+      const r = await techniquesFor({ register });
+      expect(r.structured.techniques.map((t) => t.name).sort(), register).toEqual([
+        "raster_bars",
+        "stable_raster_irq",
+      ]);
+    }
+    expect((await techniquesFor({ register: "D016" })).structured.techniques).toEqual([]);
+    const both = await techniquesFor({ register: "D011", category: "raster" });
+    expect(both.structured.techniques).toHaveLength(2);
+  });
 
   it("filters by requires, following the chain", async () => {
     const r = await techniquesFor({ requires: "soft_scroll_h" });

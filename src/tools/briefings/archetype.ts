@@ -143,18 +143,35 @@ export async function routeArchetypeFromBrief(description: string): Promise<Arch
   const result = await fk.roQuery(
     `MATCH (a:Archetype {kind: "game"}) RETURN a.name AS name, a.title AS title, a.kind AS kind, a.starter AS starter, a.brief_words AS brief_words ORDER BY name`,
   );
+  const rows = parseRows(BriefWordsRow, result.data).flatMap((r) =>
+    r.name
+      ? [
+          {
+            row: { name: r.name, title: r.title, kind: r.kind, starter: r.starter },
+            words: r.brief_words ?? [],
+          },
+        ]
+      : [],
+  );
+  const pick = pickByBriefWords(description, rows);
+  if (!pick) return undefined;
+  return { ...(await graphResolution(pick.row.row)), inferred_from: pick.matched };
+}
+
+/** The archetype whose brief words the brief holds most of; undefined on a tie or no match. Pure. */
+export function pickByBriefWords<R extends { words: readonly string[] }>(
+  description: string,
+  rows: readonly R[],
+): { row: R; matched: string[] } | undefined {
   const brief = normaliseBriefText(description);
-  const scored = parseRows(BriefWordsRow, result.data).flatMap((r) => {
-    if (!r.name) return [];
-    const matched = wordsInBrief(brief, r.brief_words ?? []);
-    return matched.length > 0
-      ? [{ row: { name: r.name, title: r.title, kind: r.kind, starter: r.starter }, matched }]
-      : [];
+  const scored = rows.flatMap((row) => {
+    const matched = wordsInBrief(brief, row.words);
+    return matched.length > 0 ? [{ row, matched }] : [];
   });
   scored.sort((a, b) => b.matched.length - a.matched.length);
   const [first, second] = scored;
   if (!first || second?.matched.length === first.matched.length) return undefined;
-  return { ...(await graphResolution(first.row)), inferred_from: first.matched };
+  return first;
 }
 
 // Built-in tables, used ONLY when the graph has no Archetype nodes. With the
@@ -174,13 +191,56 @@ const FALLBACK_FORCED_TECHNIQUES = new Map<string, string[]>([
 // Description-level signals that force specific techniques regardless of
 // archetype (e.g. a demo brief mentioning "text-mode playfield" should
 // still get the rendering pitfall surfaced).
-const FORCED_BY_DESCRIPTION_PATTERN: { pattern: RegExp; techniques: string[] }[] = [
+// The rules after the first came from the #39 starter builds (#41): each is
+// a technique a builder needed that the keyword scorer never proposed.
+const FORCED_BY_DESCRIPTION_PATTERN: { pattern: RegExp; techniques: string[]; reason?: string }[] = [
   {
     pattern:
       /\b(text[- ]mode|petscii|playfield|tetris|tetromino|sokoban|boulder dash|board game|falling (block|piece))\b/i,
     techniques: ["text_mode_overlay_render"],
   },
+  {
+    // A text adventure that saves and loads; a high score saved to disk.
+    pattern: /^(?=[\s\S]*\bsav(?:e|ed|es|ing)\b)(?=[\s\S]*\b(?:disk|disc|drive|file)s?\b)/i,
+    techniques: ["kernal_file_write_seq", "kernal_file_read_seq", "error_channel_check"],
+    reason: "The brief saves to disk: a sequential file written and read back, and the drive's status read",
+  },
+  {
+    pattern: /^(?=[\s\S]*\bPAL\b)(?=[\s\S]*\bNTSC\b)/i,
+    techniques: ["pal_ntsc_detection"],
+    reason: "The brief names PAL and NTSC: detect the machine at start",
+  },
+  {
+    pattern: /\banimat\w* (?:characters?|chars?|tiles?|glyphs?)\b|\b(?:character|charset|tile) animation\b/i,
+    techniques: ["charset_animation"],
+    reason: "The brief animates characters: change the glyph, not the cells",
+  },
+  {
+    pattern: /\banimat\w* sprites?\b|\bsprite animation\b|\banimation frames?\b/i,
+    techniques: ["sprite_animation_table"],
+    reason: "The brief animates sprites: frames and durations from a table",
+  },
 ];
+
+// Every game runs on a frame loop; the keyword scorer found it only when
+// the brief said "frame" (#41: a fighter brief got none).
+const GAME_FRAME_LOOP = "frame_sync_loop";
+const GAME_FRAME_LOOP_REASON = "Every game needs a frame loop: one tick a frame for the rest to run on";
+
+/** The techniques the description rules force, and the frame loop for a game, in rule order. */
+function describedTechniques(description: string, isGame: boolean): string[] {
+  const out = FORCED_BY_DESCRIPTION_PATTERN.filter((r) => r.pattern.test(description)).flatMap(
+    (r) => r.techniques,
+  );
+  return isGame ? [...out, GAME_FRAME_LOOP] : out;
+}
+
+/** The reason a description rule, or the game frame loop, put this technique in the plan; undefined when none did. */
+export function describedReason(name: string, description: string, isGame: boolean): string | undefined {
+  if (isGame && name === GAME_FRAME_LOOP) return GAME_FRAME_LOOP_REASON;
+  return FORCED_BY_DESCRIPTION_PATTERN.find((r) => r.techniques.includes(name) && r.pattern.test(description))
+    ?.reason;
+}
 
 export type Seeds = {
   /** The text the technique search runs on. */
@@ -217,10 +277,7 @@ export function seedsFor(opts: {
     if (terms) searchDescription = `${description} ${terms}`;
     forced.push(...(FALLBACK_FORCED_TECHNIQUES.get(key) ?? []));
   }
-  for (const rule of FORCED_BY_DESCRIPTION_PATTERN) {
-    if (!rule.pattern.test(description)) continue;
-    for (const t of rule.techniques) if (!forced.includes(t)) forced.push(t);
-  }
+  for (const t of describedTechniques(description, isGame)) if (!forced.includes(t)) forced.push(t);
   const archetypeForced = new Set(resolved?.mode === "graph" ? resolved.features : []);
   return { searchDescription, forced, archetypeForced };
 }

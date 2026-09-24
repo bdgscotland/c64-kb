@@ -218,7 +218,7 @@ Multi-event sports games (Summer Games, World Games) are a different problem: ea
 
 **Common pitfalls:** `sprite_dma_overflow`, `sprite_priority_collision_silent`, `sprite_x_high_bit_wrong_register`, `sprite_y_expand_double_register_write`
 
-**Brief words:** sports, football, soccer, tennis, athletics, decathlon, olympic, summer games
+**Brief words:** sports, football, soccer, tennis, athletics, decathlon, olympic, summer games, one on one, combat, karate, joust, duel, knight games
 
 **Reference titles:** Summer Games (1984), International Karate (1985), Summer Games II (1985), World Games (1986), International Karate + (1987)
 

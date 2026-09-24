@@ -12,12 +12,13 @@ import {
   type TechniqueLookupOutput,
 } from "../../schemas/tool-outputs.ts";
 import {
+  describedReason,
   resolveArchetype,
   routeArchetypeFromBrief,
   seedsFor,
   type ArchetypeResolution,
 } from "./archetype.ts";
-import { contradictsBriefAxis, resolveProposedTechniques } from "./discovery.ts";
+import { contradictsBriefAxis, resolveProposedTechniques, unaskedEffect } from "./discovery.ts";
 import { whyProposed } from "./why-proposed.ts";
 import { collectPitfalls } from "./plan-pitfalls.ts";
 import { toolchainSplit } from "./toolchain.ts";
@@ -67,19 +68,27 @@ function selectTechniques(
   });
 }
 
-/** The reason a technique is in the plan: the archetype's fingerprint when it forced it, else the brief. */
-function reasonFor(t: TechniqueLookupOutput, description: string, resolved: ArchetypeResolution | undefined) {
+interface ReasonContext {
+  description: string;
+  resolved: ArchetypeResolution | undefined;
+  isGame: boolean;
+}
+
+/**
+ * The reason a technique is in the plan: the archetype's fingerprint when
+ * it forced it, then a description rule, else the brief's words.
+ */
+function reasonFor(t: TechniqueLookupOutput, ctx: ReasonContext) {
+  const { description, resolved } = ctx;
   if (resolved?.mode === "graph" && resolved.features.includes(t.name)) {
     return `In the ${resolved.archetype.name} archetype's technique fingerprint`;
   }
-  return whyProposed(t.name, t.category, description);
+  return (
+    describedReason(t.name, description, ctx.isGame) ?? whyProposed(t.name, t.category, description, t.title)
+  );
 }
 
-function proposedOf(
-  t: TechniqueLookupOutput,
-  description: string,
-  resolved: ArchetypeResolution | undefined,
-): Proposed {
+function proposedOf(t: TechniqueLookupOutput, ctx: ReasonContext): Proposed {
   // An empty or unknown complexity or region word is left out, as the
   // output schema allows only its enum values.
   const complexity = ComplexitySchema.safeParse(t.complexity || undefined);
@@ -89,7 +98,7 @@ function proposedOf(
     title: t.title,
     category: t.category,
     complexity: complexity.success ? complexity.data : undefined,
-    why_proposed: reasonFor(t, description, resolved),
+    why_proposed: reasonFor(t, ctx),
     uses_registers: t.uses_registers.map((r) => r.name),
     uses_kernal: t.uses_kernal.map((k) => k.name),
     region: region.success ? region.data : undefined,
@@ -136,9 +145,15 @@ async function proposeTechniques(
   }
   const enriched = await Promise.all(techNames.map(async (name) => (await techniqueLookup(name)).structured));
   // A forced technique stays whatever its axis; a found one on the axis the
-  // brief did not ask for goes.
+  // brief did not ask for goes, and so does, in a game plan, a demo effect
+  // the brief does not name.
   const onAxis = enriched.filter(
-    (t) => seeds.forced.includes(t.name) || !contradictsBriefAxis(t, seeds.searchDescription),
+    (t) =>
+      seeds.forced.includes(t.name) ||
+      !(
+        contradictsBriefAxis(t, seeds.searchDescription) ||
+        (isGame && unaskedEffect(t, seeds.searchDescription))
+      ),
   );
   return selectTechniques(onAxis, seeds.archetypeForced, proposalLimit);
 }
@@ -236,7 +251,7 @@ export async function buildBriefing(
   const techs = await proposeTechniques(description, archetype, resolved, isGame);
   const techNames = techs.map((t) => t.name);
 
-  const proposed_techniques = techs.map((t) => proposedOf(t, description, resolved));
+  const proposed_techniques = techs.map((t) => proposedOf(t, { description, resolved, isGame }));
   const { verdict, compatibility } = await compatibilityOf(techs);
   const pitfalls = await collectPitfalls(techNames, resolved?.mode === "graph" ? resolved.risks : []);
   const toolchain_split = await toolchainSplit(techs);

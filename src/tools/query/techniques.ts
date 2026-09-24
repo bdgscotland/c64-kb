@@ -339,11 +339,29 @@ const TECHNIQUE_FILTER_PATTERNS: readonly [keyof TechniquesFilter, string][] = [
   // are not unified: double_irq has no edge to stable_raster_irq.
   ["requires", ` , (t)-[:REQUIRES*1..12]->(req:Technique {name: $requires})`],
   ["region", ` , (t)-[:REQUIRES_REGION]->(reg:Region {name: $region})`],
-  ["register", ` , (t)-[:USES]->(rg:Register {name: $register})`],
+  // A register by name, alias or address (see registerWhere).
+  ["register", ` , (t)-[:USES]->(rg:Register)`],
   ["recipe", ` , (rec:Recipe {name: $recipe})-[:IMPLEMENTS]->(t)`],
   // "Who claims sid_voice_3": a CLAIMS edge to that HardwareUnit, any mode.
   ["claims", ` , (t)-[:CLAIMS]->(hu:HardwareUnit {name: $claims})`],
 ];
+
+/**
+ * The register filter matches the node's name, an alias or its address, in
+ * any case, with or without "$" or "0x": "D011", "$d011" and "SCROLY" are
+ * one register. An earlier version matched the name alone, and the live
+ * nodes are named SCROLY, not D011, so `--register D011` returned no rows
+ * (#41).
+ */
+function registerWhere(register: string, params: Record<string, string>): string {
+  const bare = register
+    .trim()
+    .replace(/^(\$|0x)/i, "")
+    .toUpperCase();
+  params.register = bare;
+  params.registerAddr = `$${bare}`;
+  return `(toUpper(rg.name) = $register OR toUpper(rg.address) = $registerAddr OR any(a IN coalesce(rg.aliases, []) WHERE toUpper(a) = $register))`;
+}
 
 function techniquesForCypher(filter: TechniquesFilter): { cypher: string; params: Record<string, string> } {
   const params: Record<string, string> = {};
@@ -352,12 +370,15 @@ function techniquesForCypher(filter: TechniquesFilter): { cypher: string; params
     const value = filter[key];
     if (!value) continue;
     cypher += pattern;
-    params[key] = value;
+    if (key !== "register") params[key] = value;
   }
+  const where: string[] = [];
+  if (filter.register) where.push(registerWhere(filter.register, params));
   if (filter.category) {
-    cypher += ` WHERE t.category = $category`;
+    where.push(`t.category = $category`);
     params.category = filter.category;
   }
+  if (where.length > 0) cypher += ` WHERE ${where.join(" AND ")}`;
   cypher += ` RETURN DISTINCT t.name AS name, t.title AS title, t.category AS category, t.complexity AS complexity ORDER BY t.category, t.name`;
   return { cypher, params };
 }
