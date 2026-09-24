@@ -5,7 +5,23 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 808, schema 33, tools 2.8.1, package 0.21.1.
+Data 809, schema 34, tools 2.9.0, package 0.22.0.
+
+**Recipe claims in the graph, a listing scan, `c64_claims_watch`, and
+Productions (schema 34, tools 2.9.0, package 0.22.0, data 809; #22 step
+8).** A recipe's `claims:` frontmatter becomes Recipe → HardwareUnit
+CLAIMS edges (Recipe gains `claims_stated`, `claims_basis`; a missing
+key is unknown, `[]` is none). Ingest scans each listing for stores to
+hardware units its claims and its techniques' claims do not declare:
+12 warnings in 5 recipes, 4 real (crt-banked, easyflash-save,
+sparkle-dd02-bank, tape-turbo-loader have no `claims:`), 1 false
+positive (tech-tech). `check_compatibility` gains
+`recipe_zero_page_overlap` (info): soft_scroll_h + sfx_in_player now
+names `$FB-$FE` and 4 recipe pairs. New tool `c64_claims_watch` and CLI
+`claims-watch` run the VICE store trace on a PRG or recipe (the library
+moved to `src/claims/` so it ships). `c64_recipe_lookup` returns claims.
+44 Production nodes with EXEMPLIFIED_BY edges from the sourced archetype
+titles (#40). Devices are #87.
 
 **The #54 content gaps (data 808).** New Oscar64 recipes, each run on
 PAL and NTSC: `fighter-opponent` (a one-on-one opponent from tables:
