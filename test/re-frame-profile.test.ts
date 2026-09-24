@@ -19,29 +19,37 @@ const base: Hit = {
   cycle: 0,
 };
 const st = (a: number, clock: number): Hit => ({ ...base, a, clock });
+/** A hit at a given raster line, for the frame-numbering tests. */
+const stAt = (a: number, clock: number, line: number, cycle = 20): Hit => ({
+  ...base,
+  a,
+  clock,
+  line,
+  cycle,
+});
 const TIMER_B = {
   start: { store: 0xdc0f, value: 0x11 },
   stop: { store: 0xdc0f, value: 0x00 },
 };
-const PAL = REGION_TIMING.PAL.cycles_per_frame;
+const PAL_TIMING = REGION_TIMING.PAL;
 
 describe("region samples", () => {
   it("pairs each start with the next stop and ignores the stop that precedes a start", () => {
     // timer_start writes $00 then $11; timer_stop writes $00.
     const hits = [st(0, 10), st(0x11, 20), st(0, 520), st(0, 19700), st(0x11, 19710), st(0, 20010)];
-    const p = analyseRegion(hits, TIMER_B, PAL, 0);
+    const p = analyseRegion(hits, TIMER_B, PAL_TIMING, 0);
     expect(p.samples.map((s) => s.cycles)).toEqual([500, 300]);
     expect(p.samples.map((s) => s.frame)).toEqual([0, 1]);
     expect(p).toMatchObject({ worst: 500, typical: 300, count: 2, unpaired: 0 });
   });
 
   it("drops a start the run cut off and counts it", () => {
-    const p = analyseRegion([st(0x11, 20), st(0, 520), st(0x11, 900)], TIMER_B, PAL, 0);
+    const p = analyseRegion([st(0x11, 20), st(0, 520), st(0x11, 900)], TIMER_B, PAL_TIMING, 0);
     expect(p).toMatchObject({ count: 1, unpaired: 1, worst: 500 });
   });
 
   it("counts a sample longer than a frame but keeps it", () => {
-    const p = analyseRegion([st(0x11, 0), st(0, 30000)], TIMER_B, PAL, 0);
+    const p = analyseRegion([st(0x11, 0), st(0, 30000)], TIMER_B, PAL_TIMING, 0);
     expect(p).toMatchObject({ over_frame: 1, worst: 30000 });
   });
 
@@ -50,18 +58,18 @@ describe("region samples", () => {
     const p = analyseRegion(
       [ex(0x2000, 0), ex(0x2100, 77)],
       { start: { pc: 0x2000 }, stop: { pc: 0x2100 } },
-      PAL,
+      PAL_TIMING,
       0,
     );
     expect(p.worst).toBe(77);
   });
 
   it("gives null figures when nothing paired", () => {
-    expect(analyseRegion([], TIMER_B, PAL, 0)).toMatchObject({ worst: null, typical: null, count: 0 });
+    expect(analyseRegion([], TIMER_B, PAL_TIMING, 0)).toMatchObject({ worst: null, typical: null, count: 0 });
   });
 
   it("counts a start overwritten by a second start as unpaired", () => {
-    const p = analyseRegion([st(0x11, 10), st(0x11, 50), st(0, 80), st(0x11, 90)], TIMER_B, PAL, 0);
+    const p = analyseRegion([st(0x11, 10), st(0x11, 50), st(0, 80), st(0x11, 90)], TIMER_B, PAL_TIMING, 0);
     expect(p.samples.map((s) => s.cycles)).toEqual([30]);
     expect(p.unpaired).toBe(2);
   });
@@ -69,14 +77,35 @@ describe("region samples", () => {
   it("finds the worst of 200,000 samples without a spread", () => {
     const hits: Hit[] = [];
     for (let i = 0; i < 200_000; i++) hits.push(st(0x11, i * 100), st(0, i * 100 + 10 + (i % 7)));
-    const p = analyseRegion(hits, TIMER_B, PAL, 0);
+    const p = analyseRegion(hits, TIMER_B, PAL_TIMING, 0);
     expect(p).toMatchObject({ count: 200_000, worst: 16 });
   });
 
   it("does not match a load hit at the store marker address", () => {
     const load = (a: number, clock: number): Hit => ({ ...base, kind: "load", a, clock });
-    const p = analyseRegion([load(0x11, 10), st(0, 20)], TIMER_B, PAL, 0);
+    const p = analyseRegion([load(0x11, 10), st(0, 20)], TIMER_B, PAL_TIMING, 0);
     expect(p).toMatchObject({ count: 0, samples: [], worst: null, typical: null });
+  });
+
+  it("numbers frames from raster line 0, not the start clock: a sample near a frame's end no longer splits from one near its start", () => {
+    // Raster lines 30 and 222 are one true frame; line 30 again is the next
+    // (line 0 cycle 0 of that frame is clock 8000, derived below from the
+    // first sample's own line and cycle). The old start-clock scheme split
+    // the first two into frames 0 and 1: floor(9910/19656)=0,
+    // floor(22006/19656)=1. A hit with no logged line (-1) is skipped when
+    // picking the anchor, so the filler below is never it.
+    const filler = { ...st(0x05, 50), line: -1, cycle: -1 }; // matches neither marker; unlogged raster position
+    const hits = [
+      filler,
+      stAt(0x11, 9910, 30),
+      stAt(0x00, 9950, 30),
+      stAt(0x11, 22006, 222),
+      stAt(0x00, 22046, 222),
+      stAt(0x11, 29566, 30),
+      stAt(0x00, 29606, 30),
+    ];
+    const p = analyseRegion(hits, TIMER_B, PAL_TIMING, 0);
+    expect(p.samples.map((s) => s.frame)).toEqual([0, 0, 1]);
   });
 });
 

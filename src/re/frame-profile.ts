@@ -6,6 +6,8 @@
  * sprite stalls included, which is what a CIA timer across the same region
  * counts, give or take the few cycles of the timer writes themselves.
  */
+import type { RegionTiming } from "../domain/timing.ts";
+import { findFrameRef, frameOf } from "./frames.ts";
 import type { Obs } from "./irq-chain.ts";
 import { storedValue, type Hit } from "./monlog.ts";
 
@@ -67,13 +69,21 @@ function largest(xs: number[]): number | null {
 export function analyseRegion(
   hits: Iterable<Hit>,
   region: Region,
-  frameCycles: number,
+  timing: RegionTiming,
   startClock: number,
 ): Profile {
+  const all = [...hits];
+  const ref = findFrameRef(all, startClock);
+  const unknowns: string[] = ref
+    ? []
+    : [
+        `no hit at or after clock ${startClock} logged a raster line and cycle; frames numbered from the start clock`,
+      ];
+  const frameRef = ref ?? { clock: startClock, line: 0, cycle: 0 };
   const samples: Sample[] = [];
   let open: number | null = null;
   let overwritten = 0;
-  for (const h of hits) {
+  for (const h of all) {
     if (matches(h, region.start)) {
       if (open !== null) overwritten++;
       open = h.clock;
@@ -84,7 +94,7 @@ export function analyseRegion(
         rung: 1,
         cycles: h.clock - open,
         start_clock: open,
-        frame: Math.floor((open - startClock) / frameCycles),
+        frame: frameOf(open, frameRef, timing),
       });
       open = null;
     }
@@ -96,7 +106,7 @@ export function analyseRegion(
     typical: median(cycles),
     count: samples.length,
     unpaired: overwritten + (open === null ? 0 : 1),
-    over_frame: cycles.filter((c) => c > frameCycles).length,
-    unknowns: [],
+    over_frame: cycles.filter((c) => c > timing.cycles_per_frame).length,
+    unknowns,
   };
 }

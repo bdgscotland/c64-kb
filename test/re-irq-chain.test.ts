@@ -57,22 +57,27 @@ const irq = (clock: number, sp = 0xf3, mnemonic = "JMP"): Hit => ({
   sp,
   clock,
 });
-const PAL = REGION_TIMING.PAL.cycles_per_frame;
+const PAL_TIMING = REGION_TIMING.PAL;
+const PAL = PAL_TIMING.cycles_per_frame;
 
 describe("vector writes", () => {
   it("reports a vector once both bytes are known, byte by byte", () => {
-    const r = analyseIrqChain([st(0x314, 0x00, 10), st(0x315, 0x20, 20), st(0x314, 0x40, 30)], PAL, 0);
+    const r = analyseIrqChain([st(0x314, 0x00, 10), st(0x315, 0x20, 20), st(0x314, 0x40, 30)], PAL_TIMING, 0);
     expect(r.vectors.map((v) => v.value)).toEqual([null, 0x2000, 0x2040]);
   });
 });
 
 describe("armed lines", () => {
   it("combines $D012 with $D011 bit 7 and recomputes on each write", () => {
-    const r = analyseIrqChain([st(0xd011, 0x1b, 5), st(0xd012, 0x04, 10), st(0xd011, 0x9b, 20)], PAL, 0);
+    const r = analyseIrqChain(
+      [st(0xd011, 0x1b, 5), st(0xd012, 0x04, 10), st(0xd011, 0x9b, 20)],
+      PAL_TIMING,
+      0,
+    );
     expect(r.arms.map((a) => a.line)).toEqual([null, 4, 260]);
   });
   it("leaves a read-modify-write of $D012 unknown", () => {
-    const r = analyseIrqChain([st(0xd011, 0x1b, 5), st(0xd012, 0, 10, "INC")], PAL, 0);
+    const r = analyseIrqChain([st(0xd011, 0x1b, 5), st(0xd012, 0, 10, "INC")], PAL_TIMING, 0);
     expect(r.arms.at(-1)?.line).toBeNull();
     expect(r.unknowns.join(" ")).toMatch(/INC \$D012/);
   });
@@ -87,7 +92,7 @@ describe("armed lines", () => {
         irq(71),
         ex(0x2000, 100, 40),
       ],
-      PAL,
+      PAL_TIMING,
       0,
     );
     expect(r.arms.map((a) => a.line)).toEqual([null, 40]);
@@ -112,7 +117,7 @@ describe("state before the entry clock", () => {
         irq(171),
         ex(0x2000, 200, 260),
       ],
-      PAL,
+      PAL_TIMING,
       50,
     );
     expect(r.arms.map((a) => a.line)).toEqual([260]);
@@ -121,24 +126,24 @@ describe("state before the entry clock", () => {
   it("seeds vector bytes and emits no observation or entry before the entry clock", () => {
     const r = analyseIrqChain(
       [st(0x314, 0x31, 1), st(0x315, 0xea, 2), ex(0xea31, 3, 0), st(0x314, 0x00, 100)],
-      PAL,
+      PAL_TIMING,
       50,
     );
     expect(r.vectors.map((v) => v.value)).toEqual([0xea00]);
     expect(r.entries).toHaveLength(0);
   });
   it("names a vector with only one byte ever written as unknown", () => {
-    const r = analyseIrqChain([st(0xfffe, 0x00, 100)], PAL, 50);
+    const r = analyseIrqChain([st(0xfffe, 0x00, 100)], PAL_TIMING, 50);
     expect(r.vectors.map((v) => v.value)).toEqual([null]);
     expect(r.unknowns.join(" ")).toMatch(/irq_fffe.*\$FFFF never written/);
   });
   it("names an armed line left unknown because $D011 was never written", () => {
-    const r = analyseIrqChain([st(0xd012, 0x40, 100)], PAL, 50);
+    const r = analyseIrqChain([st(0xd012, 0x40, 100)], PAL_TIMING, 50);
     expect(r.arms.map((a) => a.line)).toEqual([null]);
     expect(r.unknowns.join(" ")).toMatch(/\$D011 never written/);
   });
   it("adds no unknown for a vector whose second byte arrives later", () => {
-    const r = analyseIrqChain([st(0x314, 0x00, 100), st(0x315, 0x20, 110)], PAL, 50);
+    const r = analyseIrqChain([st(0x314, 0x00, 100), st(0x315, 0x20, 110)], PAL_TIMING, 50);
     expect(r.unknowns).toEqual([]);
   });
 });
@@ -155,7 +160,7 @@ describe("entries and summary", () => {
       irq(71 + PAL),
       ex(0x2000, 100 + PAL, 41),
     ];
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.entries.map((e) => e.frame)).toEqual([0, 1]);
     expect(r.handlers).toEqual([
       expect.objectContaining({
@@ -168,6 +173,28 @@ describe("entries and summary", () => {
     ]);
     expect(new Set(r.entries.map((e) => e.id)).size).toBe(2);
   });
+  it("numbers frames from raster line 0, not the start clock: an entry near a frame's end no longer splits from one near its start", () => {
+    // Raster lines 30 and 222 are one true frame; line 30 again is the next
+    // (line 0 cycle 0 of that frame is clock 8000, derived below from the
+    // first entry's own line and cycle). The old start-clock scheme split
+    // the first two into frames 0 and 1: floor(9910/19656)=0,
+    // floor(22006/19656)=1. A hit with no logged line (-1) is skipped when
+    // picking the anchor, so the setup writes and pushes below, all left
+    // unlogged, are never it.
+    const noLine = (h: Hit): Hit => ({ ...h, line: -1, cycle: -1 });
+    const hits = [
+      noLine(st(0x314, 0x00, 1)),
+      noLine(st(0x315, 0x20, 2)),
+      noLine(irq(9881)),
+      ex(0x2000, 9910, 30),
+      noLine(irq(21977)),
+      ex(0x2000, 22006, 222),
+      noLine(irq(29537)),
+      ex(0x2000, 29566, 30),
+    ];
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
+    expect(r.entries.map((e) => e.frame)).toEqual([0, 0, 1]);
+  });
   it("handles missing timing (-1) by storing null and recording unknowns", () => {
     const missingTimingHit: Hit = {
       ...base,
@@ -178,7 +205,11 @@ describe("entries and summary", () => {
       line: -1,
       cycle: -1,
     };
-    const r = analyseIrqChain([st(0x314, 0x00, 1), st(0x315, 0x20, 2), irq(71), missingTimingHit], PAL, 0);
+    const r = analyseIrqChain(
+      [st(0x314, 0x00, 1), st(0x315, 0x20, 2), irq(71), missingTimingHit],
+      PAL_TIMING,
+      0,
+    );
     expect(r.entries).toHaveLength(1);
     expect(r.entries[0]).toEqual(
       expect.objectContaining({
@@ -203,7 +234,11 @@ describe("interrupts from the stack pushes", () => {
   });
 
   it("counts an interrupt no traced handler ran as unknown", () => {
-    const r = analyseIrqChain([st(0x314, 0, 1), st(0x315, 0x20, 2), irq(100), ex(0x2000, 400, 40)], PAL, 0);
+    const r = analyseIrqChain(
+      [st(0x314, 0, 1), st(0x315, 0x20, 2), irq(100), ex(0x2000, 400, 40)],
+      PAL_TIMING,
+      0,
+    );
     expect(r.interrupts).toBe(1);
     expect(r.entries).toHaveLength(0);
     expect(r.unknowns.join(" ")).toMatch(/1 of 1 interrupts entered no traced handler/);
@@ -222,7 +257,7 @@ describe("an entry is a dispatch, not an execution of the address", () => {
     // VICE logs a $FFFE handler's first exec before the interrupt's pushes, at the same clock.
     for (const t of [1000, 1000 + PAL, 1000 + 2 * PAL])
       hits.push(ex(0x0af8, t, 112), irq(t), ex(0x0b8c, t + 140, 113));
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.interrupts).toBe(3);
     expect(r.handlers).toEqual([
       expect.objectContaining({ handler: 0x0af8, via: ["irq_fffe"], entries: 3 }),
@@ -250,7 +285,7 @@ describe("an entry is a dispatch, not an execution of the address", () => {
       ex(0x0b00, 3029, 55),
       ex(0x0b04, 3033, 55),
     ];
-    const r = analyseIrqChain(hits, PAL, 5);
+    const r = analyseIrqChain(hits, PAL_TIMING, 5);
     expect(r.handlers.map((h) => [h.handler, h.entries])).toEqual([
       [0x0b00, 1],
       [0x0bcf, 1],
@@ -272,7 +307,7 @@ describe("an entry is a dispatch, not an execution of the address", () => {
       irq(1000),
       ex(0x2000, 1029, 40),
     ];
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.handlers).toEqual([
       expect.objectContaining({ handler: 0x2000, via: ["irq_0314"], entries: 1 }),
       expect.objectContaining({ handler: 0x3000, via: ["irq_fffe"], entries: 0 }),
@@ -308,7 +343,7 @@ describe("a handler that is JMP (pointer) (fixture jmp-indirect.monlog)", () => 
     expect(execCommands([0x0843], [0x033c])).toContain("trace store 033c 033d");
   });
   it("reports each entry against the part the pointer named at that moment", async () => {
-    const r = analyseIrqChain(await fixture("jmp-indirect.monlog"), PAL, ENTRY);
+    const r = analyseIrqChain(await fixture("jmp-indirect.monlog"), PAL_TIMING, ENTRY);
     expect(r.handlers).toEqual([
       expect.objectContaining({
         handler: 0x0843,
@@ -334,19 +369,19 @@ describe("JMP (pointer) edge cases", () => {
   const setup = [st(0x0001, 0x35, 1), st(0xfffe, 0x00, 2), st(0xffff, 0x20, 3)];
   it("reads the high byte from the start of the page for JMP ($xxFF), as the 6502 does", () => {
     const hits = [...setup, st(0x10ff, 0x00, 4), st(0x1000, 0x30, 5), st(0x1100, 0x40, 6)];
-    const r = analyseIrqChain([...hits, jmpInd(0x2000, 0x10ff, 100), irq(100)], PAL, 0);
+    const r = analyseIrqChain([...hits, jmpInd(0x2000, 0x10ff, 100), irq(100)], PAL_TIMING, 0);
     expect(r.entries.map((e) => e.target)).toEqual([0x3000]);
     expect(execCommands([0x2000], [0x10ff])).toContain("trace store 1000 1000");
   });
   it("leaves the target unknown when a pointer byte was read-modify-written", () => {
     const hits = [...setup, st(0x4000, 0x00, 4), st(0x4001, 0x30, 5), st(0x4000, 0, 6, "INC")];
-    const r = analyseIrqChain([...hits, jmpInd(0x2000, 0x4000, 100), irq(100)], PAL, 0);
+    const r = analyseIrqChain([...hits, jmpInd(0x2000, 0x4000, 100), irq(100)], PAL_TIMING, 0);
     expect(r.entries.map((e) => e.target)).toEqual([null]);
     expect(r.handlers[0]?.dispatch).toEqual([]);
     expect(r.unknowns.join(" ")).toMatch(/pointer \$4000 not known at the entry at clock 100/);
   });
   it("gives a handler that is not JMP (pointer) no pointer and no dispatch", () => {
-    const r = analyseIrqChain([...setup, ex(0x2000, 100, 40), irq(100)], PAL, 0);
+    const r = analyseIrqChain([...setup, ex(0x2000, 100, 40), irq(100)], PAL_TIMING, 0);
     expect(r.handlers[0]).toEqual(expect.objectContaining({ pointer: null, dispatch: [] }));
     expect(r.entries[0]?.target).toBeNull();
   });
@@ -361,7 +396,7 @@ describe("stores logged at the interrupt's clock", () => {
     // VICE logs the handler's exec, then the interrupted STA's store, then the pushes, all at one clock.
     const r = analyseIrqChain(
       [...banked, ex(0x3000, 100, 40), st(0xffff, 0x30, 100), irq(100, 0xf3, "STA")],
-      PAL,
+      PAL_TIMING,
       0,
     );
     expect(r.entries.map((e) => e.handler)).toEqual([0x3000]);
@@ -370,7 +405,7 @@ describe("stores logged at the interrupt's clock", () => {
   it("applies them before the interrupt's pushes too, when the push is logged first (discovery)", () => {
     const hits = [...banked, irq(100, 0xf3, "STA"), st(0xffff, 0x30, 100), ex(0x3000, 100, 40)];
     expect(liveHandlers(hits, 0)).toEqual([0x3000]);
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.handlers.map((h) => [h.handler, h.entries])).toEqual([[0x3000, 1]]);
     expect(r.transient).toEqual([{ vector: "irq_fffe", value: 0x2000, writes: 1 }]);
   });
@@ -382,7 +417,7 @@ describe("stores logged at the interrupt's clock", () => {
   it("leaves a stack-page pointer byte unknown when an interrupt's PC-high push overwrites it", () => {
     const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($01F6)" };
     const hits = [...banked, st(0x1f6, 0x00, 4), st(0x1f7, 0x30, 5), jmp, irq(100)];
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.entries.map((e) => e.target)).toEqual([null]);
     expect(r.unknowns.join(" ")).toMatch(/interrupt at clock 100 pushed over pointer byte \$01F6/);
     expect(r.unknowns.join(" ")).toMatch(/pointer \$01F6 not known at the entry at clock 100/);
@@ -392,7 +427,7 @@ describe("stores logged at the interrupt's clock", () => {
     const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($01F4)" };
     const push2: Hit = { ...irq(100, 0xf3, "STA"), addr: 0x1f5, a: 0x99 };
     const hits = [...banked, st(0x1f4, 0x00, 4), st(0x1f5, 0x30, 5), jmp, irq(100, 0xf3, "STA"), push2];
-    expect(analyseIrqChain(hits, PAL, 0).entries.map((e) => e.target)).toEqual([null]);
+    expect(analyseIrqChain(hits, PAL_TIMING, 0).entries.map((e) => e.target)).toEqual([null]);
   });
   it("keeps an ordinary page-1 store at the interrupt's clock, outside its three push addresses", () => {
     // The interrupted STA $0181 writes a known byte; the pushes land on $01F6-$01F4 (SP $F3).
@@ -400,14 +435,14 @@ describe("stores logged at the interrupt's clock", () => {
     const pushes = [2, 1].map((k): Hit => ({ ...irq(100, 0xf3, "STA"), addr: 0x1f3 + k, a: 0x31 }));
     const hits = [...banked, st(0x180, 0x00, 4), st(0x181, 0x30, 5), jmp];
     hits.push(st(0x181, 0x31, 100), irq(100, 0xf3, "STA"), ...pushes);
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.entries.map((e) => e.target)).toEqual([0x3100]);
     expect(r.unknowns.join(" ")).not.toMatch(/pushed over pointer byte/);
   });
   it("reads a pointer written at that clock as the entry's target", () => {
     const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($4000)" };
     const hits = [...banked, st(0x4000, 0x00, 4), st(0x4001, 0x30, 5), jmp, st(0x4001, 0x31, 100), irq(100)];
-    expect(analyseIrqChain(hits, PAL, 0).entries.map((e) => e.target)).toEqual([0x3100]);
+    expect(analyseIrqChain(hits, PAL_TIMING, 0).entries.map((e) => e.target)).toEqual([0x3100]);
   });
 });
 
@@ -417,19 +452,19 @@ describe("KERNAL mapping from $00 and $01", () => {
   const both = [st(0x314, 0x00, 3), st(0x315, 0x20, 4), st(0xfffe, 0x00, 5), st(0xffff, 0x30, 6)];
   it("$01=$35 with $00=$2D leaves HIRAM an input, read high: the KERNAL dispatches through $0314", () => {
     const hits = [st(0x0000, 0x2d, 1), st(0x0001, 0x35, 2), ...both, irq(100), ex(0x3000, 100, 40)];
-    const r = analyseIrqChain([...hits, ex(0x2000, 129, 40)], PAL, 0);
+    const r = analyseIrqChain([...hits, ex(0x2000, 129, 40)], PAL_TIMING, 0);
     expect(r.handlers).toEqual([expect.objectContaining({ handler: 0x2000, via: ["irq_0314"], entries: 1 })]);
     expect(r.unknowns).toEqual([]);
     expect(storeCommands()).toContain("trace store 0000 0001");
   });
   it("$01=$35 with the power-on $00=$2F banks it out: $FFFE's RAM value is the handler", () => {
     const hits = [st(0x0001, 0x35, 2), ...both, irq(100), ex(0x2000, 100, 40), ex(0x3000, 105, 40)];
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.handlers).toEqual([expect.objectContaining({ handler: 0x3000, via: ["irq_fffe"], entries: 1 })]);
   });
   it("names $00/$01 unknown after a read-modify-write and dispatches by what executed", () => {
     const hits = [st(0x0001, 0x37, 1), st(0x0001, 0, 2, "DEC"), ...both, irq(100), ex(0x2000, 129, 40)];
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.handlers[0]).toEqual(
       expect.objectContaining({ handler: 0x2000, via: ["irq_0314"], entries: 1 }),
     );
@@ -442,7 +477,7 @@ describe("$FFFE and $FFFA naming one RAM handler", () => {
   it("lists both in via, neither as transient, and calls IRQ or NMI unknown", () => {
     const banked = [st(0x0001, 0x35, 1), st(0xfffe, 0x00, 2), st(0xffff, 0x20, 3)];
     const hits = [...banked, st(0xfffa, 0x00, 4), st(0xfffb, 0x20, 5), ex(0x2000, 100, 40), irq(100)];
-    const r = analyseIrqChain(hits, PAL, 0);
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.handlers).toEqual([
       expect.objectContaining({ handler: 0x2000, via: ["irq_fffe", "nmi_fffa"], entries: 1 }),
     ]);

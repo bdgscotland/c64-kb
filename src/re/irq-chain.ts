@@ -49,6 +49,8 @@
  * one of them a TAX inside handler 0 (#66).
  */
 import { CpuPort } from "../claims/units.ts";
+import type { RegionTiming } from "../domain/timing.ts";
+import { findFrameRef, frameOf, type FrameRef } from "./frames.ts";
 import { storedValue, type Hit } from "./monlog.ts";
 import {
   candidates,
@@ -206,14 +208,17 @@ class State {
   pending: number[] = [];
   unmatched = 0;
 
-  readonly frameCycles: number;
+  readonly timing: RegionTiming;
   readonly startClock: number;
+  /** The hit that anchors frame 0, or the start clock itself when none qualified. */
+  readonly ref: FrameRef;
   /** Bytes of every pointer a traced `JMP (pointer)` read. */
   readonly ptrBytes: Set<number>;
 
-  constructor(frameCycles: number, startClock: number, pointers: number[]) {
-    this.frameCycles = frameCycles;
+  constructor(timing: RegionTiming, startClock: number, ref: FrameRef, pointers: number[]) {
+    this.timing = timing;
     this.startClock = startClock;
+    this.ref = ref;
     this.ptrBytes = new Set(pointers.flatMap(pointerBytes));
   }
 
@@ -343,7 +348,7 @@ function onExec(s: State, h: Hit): void {
     line,
     cycle,
     clock: h.clock,
-    frame: Math.floor((h.clock - s.startClock) / s.frameCycles),
+    frame: frameOf(h.clock, s.ref, s.timing),
   });
   s.entryArm.push(s.lastArm);
 }
@@ -503,9 +508,22 @@ function* byClock(all: Hit[]): Generator<[number, Hit[]]> {
  * is the one the dispatch used. An earlier version read hits in log order
  * and took the stale value.
  */
-function walk(hits: Iterable<Hit>, frameCycles: number, startClock: number): State {
+/** A dummy timing for passes that discover handlers only: frame numbers go unused. */
+const UNTIMED: RegionTiming = { cycles_per_line: 1, lines_per_frame: 1, cycles_per_frame: 1 };
+
+function walk(hits: Iterable<Hit>, timing: RegionTiming, startClock: number): State {
   const all = [...hits];
-  const s = new State(frameCycles, startClock, indirectPointers(all));
+  const ref = findFrameRef(all, startClock);
+  const s = new State(
+    timing,
+    startClock,
+    ref ?? { clock: startClock, line: 0, cycle: 0 },
+    indirectPointers(all),
+  );
+  if (!ref)
+    s.out.unknowns.push(
+      `no hit at or after clock ${startClock} logged a raster line and cycle; frames numbered from the start clock`,
+    );
   s.pending = all.filter((h) => h.clock >= startClock && isInterruptPush(h)).map((h) => h.clock);
   for (const [clock, hs] of byClock(all)) {
     if (clock >= startClock) observeClock(s, hs);
@@ -519,11 +537,11 @@ function walk(hits: Iterable<Hit>, frameCycles: number, startClock: number): Sta
 
 /** Every handler a vector held at an interrupt: the exec checkpoints of the second pass. */
 export function liveHandlers(hits: Iterable<Hit>, startClock: number): number[] {
-  return sorted(walk(hits, 1, startClock).live.keys());
+  return sorted(walk(hits, UNTIMED, startClock).live.keys());
 }
 
-export function analyseIrqChain(hits: Iterable<Hit>, frameCycles: number, startClock: number): IrqChain {
-  const s = walk(hits, frameCycles, startClock);
+export function analyseIrqChain(hits: Iterable<Hit>, timing: RegionTiming, startClock: number): IrqChain {
+  const s = walk(hits, timing, startClock);
   const unmatched = s.unmatched + s.pending.length;
   if (unmatched)
     s.out.unknowns.push(

@@ -179,7 +179,7 @@ export async function reIrqChain(args: {
 }): Promise<ReResult<IrqChain>> {
   const prg = allowedPrg(args.prg_path);
   if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };
-  const frame = REGION_TIMING[videoRegion(args.model)].cycles_per_frame;
+  const timing = REGION_TIMING[videoRegion(args.model)];
   try {
     const a = await traced(prg, args, storeCommands());
     const handlers = liveHandlers(a.hits, a.start);
@@ -187,7 +187,7 @@ export async function reIrqChain(args: {
     // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
     const pointers = indirectPointers(b.hits);
     if (pointers.length) b = await traced(prg, args, execCommands(handlers, pointers));
-    const result = analyseIrqChain(b.hits, frame, b.start);
+    const result = analyseIrqChain(b.hits, timing, b.start);
     if (b.entry === null) result.unknowns.push(NO_SYS);
     return { ok: true, run: info(prg, args, b), result };
   } catch (e) {
@@ -209,11 +209,11 @@ export async function reFrameProfile(args: {
   const stop = parseMarker(args.stop);
   if (!start || !stop)
     return { ok: false, error: `bad marker: ${!start ? args.start : args.stop}`, reason: "marker" };
-  const frame = REGION_TIMING[videoRegion(args.model)].cycles_per_frame;
+  const timing = REGION_TIMING[videoRegion(args.model)];
   try {
     const t = await traced(prg, args, regionCommands({ start, stop }));
     const hits = t.hits.filter((h) => h.clock >= t.start);
-    const result = analyseRegion(hits, { start, stop }, frame, t.start);
+    const result = analyseRegion(hits, { start, stop }, timing, t.start);
     if (t.entry === null) result.unknowns.push(NO_SYS);
     return { ok: true, run: info(prg, args, t), result };
   } catch (e) {
