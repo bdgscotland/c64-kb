@@ -2431,5 +2431,17 @@
       "ntsc"
     ],
     "flags": []
+  },
+  "kickassembler/chunky-4x4": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/chunky-4x4.png",
+      "ntsc": "screenshots/chunky-4x4-ntsc.png"
+    }
   }
 }

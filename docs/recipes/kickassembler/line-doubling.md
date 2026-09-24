@@ -372,10 +372,12 @@ java -jar KickAss.jar line-doubling.asm -o line-doubling.prg
 ```
 
 The doubling write swept one cycle at a time, keeping the 16-line period
-(PAL; `:t1n=458+d :t3n=370-d` on NTSC), and the write turned off:
+by moving `:t1p` and `:t3p` (`:t1n`, `:t3n` on NTSC) in opposite
+directions, and the write turned off:
 
 ```bash
-java -jar KickAss.jar line-doubling.asm :t1p=442+d :t3p=354-d -o s.prg   # d = -4 to 4: cycles 52 to 60
+java -jar KickAss.jar line-doubling.asm :t1p=438 :t3p=358 -o s.prg   # cycle 52; 446 and 350 give cycle 60 [442, 354: 56]
+java -jar KickAss.jar line-doubling.asm :t1n=454 :t3n=374 -o s.prg   # NTSC, the same range from 458 and 370
 java -jar KickAss.jar line-doubling.asm :nodbl=1 -o nodbl.prg
 ```
 

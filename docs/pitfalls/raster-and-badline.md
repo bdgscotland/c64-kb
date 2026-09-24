@@ -1003,3 +1003,68 @@ screen row 2j + b, so the refill steps 80 bytes a row.
 - Technique: `linecrunch` in `techniques/raster.md`: the one-line crunch that picks the odd rows.
 - Recipe: `recipes/kickassembler/line-doubling.md`, "The doubling write cycle".
 - Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.5.
+
+---
+
+## mid_row_badline_write_off_by_one — A mid-row forced badline one cycle early freezes every row; one cycle late shifts the colours
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** chunky_4x4_fli_mode, fli_image
+
+### Symptom
+
+A 4 × 4 chunky or FLI-style screen that refetches colours halfway down
+each character row shows the same row over and over from the second row
+down; or its leftmost cells show the colours of the half-row above, with
+the light grey FLI-bug cells one or more cells in from the left edge.
+
+### Mechanism
+
+The `$D011` write that forces the mid-row badline must make the
+condition true on cycle 14 exactly. Earlier, the VIC's cycle-14 check
+sees it and resets RC to 0; RC never reaches 7 in that row, VCBASE is not
+moved on in cycle 58, and every later row is fetched from the same
+VCBASE. Later, RC is left alone but the c-accesses start later, so the
+leftmost cells keep the colours already in the buffer. Measured in VICE
+x64sc 3.10, PAL c64c and NTSC alike, with
+`recipes/kickassembler/chunky-4x4.md` (blocks right in cells 3-39 of rows
+1-24, of 3,552):
+
+| Write cycle | Result |
+|---|---|
+| 11, 12, 13 | 444 right: every row from 1 on shows row 1 |
+| 14 | 3,552 right; cells 0-2 of the bottom half light grey (the FLI bug) |
+| 15, 16, 17 | 3,507, 3,462, 3,417: 1, 2, 3 cells keep the top half's colours |
+
+### Fix
+
+Put the write on cycle 14 and confirm it with a store trace of `$D011`
+on every forced line. Enter the loop from a stable raster; the forced
+badline's own stall then re-times each row, so a correct first row keeps
+the rest correct. Write `$D018` for the new screen before cycle 15 of the
+line and restore it after the stall.
+
+### Worked example
+
+From `recipes/kickassembler/chunky-4x4.md`, one row:
+
+```text
+    lda #D18B
+    sta $d018                   // screen B: cycle 8
+    lda #$3f
+    sta $d011                   // YSCROLL 7 on line 55 + 8r: cycle 14
+    lda #D18A
+    sta $d018                   // screen A again after the stall: cycle 60
+    lda #$3b
+    sta $d011
+```
+
+### Cross-references
+
+- Technique: `chunky_4x4_fli_mode` in `techniques/bitmap-modes.md`.
+- Technique: `fli_image` in `techniques/bitmap-modes.md`.
+- Pitfall: `fpp_write_outside_window`, the same cycles for a badline on every line.
+- Recipe: `recipes/kickassembler/chunky-4x4.md`, "The forced write cycle".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.6.

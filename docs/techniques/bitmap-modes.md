@@ -825,6 +825,97 @@ Measured with CIA1 timer A on the recipe, the same on PAL and NTSC: 34 cycles on
 
 ---
 
+## chunky_4x4_fli_mode — 4×4 chunky pixels: a fixed bitmap, two screens, one forced badline per row
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, DD00
+**Uses kernal:** (none)
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** multicolor_bitmap, stable_raster_irq, badline_synchronization
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns), vic_matrix_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/chunky-4x4.md`
+saw `$D011` and the matrix bits of `$D018` change twice in every character
+row, and the raster compare re-armed each frame. The VIC bank and the
+bitmap base are `multicolor_bitmap`'s and the recipe's.
+
+### Why
+
+Plasmas, rotozoomers, fire and tunnel effects want a framebuffer of fat
+pixels in any of the sixteen colours that the CPU can redraw each frame.
+Drawing into a bitmap costs up to eight byte writes per cell; a
+framebuffer in the screen matrix costs one byte per two pixels. Plain
+multicolour bitmap gives 4 × 8 blocks from one screen; a second screen
+fetched halfway down each row makes them 4 × 4: 80 × 50 pixels
+(codebase64 "4x4 FLI chunky mode").
+
+### How
+
+Fill the whole bitmap with `%10100101`: each cell's left half shows the
+screen byte's low nibble and its right half the high nibble. Keep two
+screens in the VIC bank. Screen A holds the top halves of the rows. On
+the fifth line of each row (the line whose low three bits are
+YSCROLL + 4), write `$D018` to screen B before cycle 15, then YSCROLL =
+that line & 7 into `$D011` on cycle 14 exactly. After the badline's stall
+put `$D018` back to A and YSCROLL back for the next row's badline. The
+CPU then writes chunky pixels as nibbles of A and B.
+
+### Why it works
+
+The VIC fetches screen bytes only on a badline and holds them for the
+lines after it (Bauer §3.7.2). A badline condition true on cycle 14 of a
+line inside a row starts a fetch from the current matrix, but RC is
+reset only when the condition already holds in cycle 14's check, so a
+write landing on cycle 14 refetches without resetting RC: the row goes
+on to RC = 7 and VCBASE moves on as normal. The three cells fetched
+before the VIC has the bus read `$FF` (Bauer §3.14.6), the FLI bug.
+
+Measured in VICE x64sc 3.10, PAL c64c and NTSC, by
+`recipes/kickassembler/chunky-4x4.md`: all 4,000 blocks are one colour,
+and 3,859 equal the pattern; the other 141 are the six blocks of cells
+0-2 in each bottom half-row, all light grey (`$FF`). Swept one cycle at a
+time: a write on 11, 12 or 13 resets RC, VCBASE stops, and every row
+repeats row 1 (444 of 3,552 blocks right); on 14 all are right; on 15,
+16 and 17 one, two and three cells at the left keep the top half's
+colours as the grey moves right. The window is one cycle wide in VICE.
+Without the write, each bottom half equals its top half.
+
+### Variations
+
+**Double buffering.** Four screens in the bank, two per frame, swapped
+by the `$D018` values; the codebase64 listing does this. Not measured
+here.
+
+**Timer NMI.** The codebase64 listing takes the write from a CIA2 timer
+NMI every eight lines, corrected for jitter, instead of a loop, so the
+CPU can draw between rows. Not measured here.
+
+**Hiding the bug.** The three grey cells can be covered with sprites or
+left out of the framebuffer (74 × 50). Not measured here.
+
+### Cycle budget
+
+Two badlines per character row, 40 cycles or more each, so about 420 of
+the 504 cycles of a PAL row are left; the recipe's loop spends them
+waiting, from line 48 to 250, and the border time is free.
+
+### Recipes
+
+- `recipes/kickassembler/chunky-4x4.md` — the 80 × 50 test pattern, every
+  block decoded, PAL and NTSC, with the forced-write sweep.
+
+### Sources
+
+- Codebase64, "4x4 FLI chunky mode":
+  https://codebase64.c64.org/doku.php?id=base:4x4_fli_chunky_mode
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.7.2, §3.14.3, §3.14.6:
+  https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+
+---
+
 ## koala_format — Koala Painter format load and display
 
 **Complexity:** low
