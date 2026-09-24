@@ -248,6 +248,7 @@ Public API — virtual (multiplexed) sprites:
 
 - `vspr_init(char * screen)` — initializes the multiplexer (occupies rirq slots 0–8)
 - `vspr_shutdown()` — releases rirq slots
+- `vspr_screen(char * screen)` — re-points the multiplexer at a new screen: sprite pointers are written to `screen + $3F8` from then on, by `vspr_update` and by the raster IRQs that place sprites 8 and up. Call it whenever `$D018` moves the screen (see below)
 - `vspr_set(char sp, int x, int y, char image, char color)` — configures virtual sprite `sp` (0–15)
 - `vspr_move(char sp, int x, int y)` — moves a virtual sprite
 - `vspr_movex(char sp, int x)` / `vspr_movey(char sp, int y)` — single-axis moves
@@ -271,6 +272,34 @@ rirq_wait();
 vspr_update();
 rirq_sort();
 ```
+
+`vspr_init` fixes the screen whose pointer bytes the multiplexer writes. After `vic_setmode` moves the screen, the VIC reads pointers from the new screen and the multiplexer keeps writing the old one. Measured in VICE x64sc 3.10 (PAL c64c and NTSC, `-O2`): sixteen virtual sprites with a solid image in block 13, screen moved from `$0400` to `$3C00`. With the `vspr_screen` call all sixteen 24 by 21 boxes were solid in the sprite's colour (504 of 504 pixels each); built without it, none was (107 of 504 pixels lit: the test had zeroed `$3FF8`-`$3FFF`, so the VIC drew block 0, the zero page).
+
+```c
+#include <c64/vic.h>
+#include <c64/rasterirq.h>
+#include <c64/sprites.h>
+#include <string.h>
+
+int main(void)
+{
+    memset((char *)0x0340, 0xff, 63);                  // block 13: a solid sprite
+    rirq_init(true);
+    vspr_init((char *)0x0400);
+    for (char i = 0; i < 16; i++)
+        vspr_set(i, 40 + 32 * (i & 7), i < 8 ? 60 : 160, 13, i < 8 ? VCOL_WHITE : VCOL_YELLOW);
+    vic_setmode(VICM_TEXT, (char *)0x3c00, (char *)0x1000);
+    vspr_screen((char *)0x3c00);                        // without this, pointers go to $07F8
+    vspr_sort();
+    vspr_update();
+    rirq_sort();
+    rirq_start();
+    for (;;) { vspr_sort(); rirq_wait(); vspr_update(); rirq_sort(); }
+    return 0;
+}
+```
+
+For a double-buffered screen, call `vspr_screen` with the page about to be shown before the `$D018` write (`../techniques/memory-banking.md`).
 
 ## joystick.h — Joystick input
 
@@ -421,6 +450,8 @@ krnio_close(2);
 
 String literals passed to `krnio_setnam` should use the `P` prefix (`P"SCORES"`) to ensure PETSCII encoding, since the KERNAL expects PETSCII filenames.
 
+`krnio_setbnk(char filebank, char namebank)` is declared in `kernalio.h` only under `__C128__`, `__C128B__` or `__C128E__`: it calls the C128 KERNAL's SETBNK at `$FF68`, which the C64 KERNAL does not have. Built with `-tm=c64` a call fails with `error 3005: Unknown identifier 'krnio_setbnk'`; with `-tm=c128` the same file builds (Oscar64 1.32.271, the build on this machine). A C64 program selects the RAM under ROM for LOAD or SAVE with `$01` (`memmap.h`), not with this call.
+
 ## iecbus.h — Low-level IEC serial bus
 
 `iecbus.h` gives direct access to the IEC serial bus at a lower level than the KERNAL wrappers in `kernalio.h`. Use it for custom serial protocols or when the KERNAL overhead is too high. `iec_status` holds the last operation result.
@@ -445,6 +476,43 @@ iec_unlisten();
 ```
 
 Prefer `kernalio.h` for standard file operations. Use `iecbus.h` only for protocol-level control, such as fast loaders or non-standard device protocols.
+
+## flossiec.h — Fast loader for the 1541
+
+`flossiec.h` installs a read-only fast loader in the drive and streams a file by its first track and sector. It comes in two variants that share the read calls: `flosskio_*` runs alongside the KERNAL, `flossiec_*` without it. `#pragma compile("flossiec.c")` pulls in the implementation.
+
+Public API:
+
+- `flosskio_init(char drive)` / `flossiec_init(char drive)` — upload the drive code; true on success
+- `flosskio_shutdown()` / `flossiec_shutdown()` — remove it
+- `flosskio_mapdir(const char * fnames, floss_blk * blks)` / `flossiec_mapdir(...)` — read the directory and fill one `floss_blk { char track, sector; }` per name in a comma-separated list
+- `flosskio_open(char track, char sector)` / `flossiec_open(...)` — start a file; it must be read to the end before `flosskio_close()` / `flossiec_close()`
+- `flossiec_read(char * dp, unsigned size)` — read up to `size` bytes, return the first address after them
+- `flossiec_read_lzo(char * dp, unsigned size)` — the same for a file written LZO-compressed
+- `flossiec_get()`, `flossiec_get_lzo()`, `flossiec_eof()` — byte-at-a-time reads (inline)
+- Build defines: `FLOSSIEC_BORDER=1` flashes the border while loading, `FLOSSIEC_NODISPLAY=1` blanks the screen, `FLOSSIEC_NOIRQ=1` disables IRQs during a load, `FLOSSIEC_CODE` / `FLOSSIEC_BSS` place its code and data in named sections
+
+The read starts at the first byte of the file: a PRG's two load-address bytes come first, and `flossiec_read` does not use them. Measured in VICE x64sc 3.10 with true drive emulation (a 1541 on device 8), PAL c64c and NTSC, `-O2`: a 16-block PRG of 4002 bytes (load address `$4000`, then 4000 pattern bytes) read into `$4000` byte for byte from its first byte, and `flossiec_read` returned `Buf + 4002`. Open, read and close took 2,021,780 cycles on PAL (2.05 s) and 2,039,761 on NTSC; the same file through `krnio_open` / `krnio_read` / `krnio_close` took 10,583,134 and 10,994,407, about 5.2 times as long. Cycle counts are from monitor trace stores on either side of each read. The jiffy clock read 122 and 384 jiffies for the same two reads on PAL: it runs slow while the KERNAL serial routines hold IRQs off, so it is not a timer for disk I/O.
+
+```c
+#include <c64/flossiec.h>
+
+int main(void)
+{
+    floss_blk blks[1];
+    flosskio_init(8);
+    if (flosskio_mapdir(p"data", blks))
+    {
+        flosskio_open(blks[0].track, blks[0].sector);
+        char * end = flossiec_read((char *)0x4000, 4002);   // 2 load-address bytes + 4000
+        flosskio_close();
+    }
+    flosskio_shutdown();
+    return 0;
+}
+```
+
+The Oscar64 tree's `samples/kernalio/hiresfload.c` loads an LZO-compressed hires picture the same way with `flossiec_read_lzo`.
 
 ## easyflash.h — EasyFlash cartridge banking
 
@@ -583,3 +651,47 @@ __asm { jsr codebuf }                    // call it
 As of the 2026-05-19 build, calling a byte buffer through a cast function pointer (`((void (*)(void))codebuf)();`) crashes the compiler (exit 139, no `.prg`, no diagnostic) when the buffer is a local, whether the call is direct or through a pointer variable (build; the same class as the `const` function-pointer segfault in the project gotchas). With a global buffer the same cast call compiles, but at `-O2` the stores into the buffer are dead-store-eliminated and the JSR lands on zeroed BSS, so use the inline-asm `jsr`. And `__asm { jsr codebuf }` on a LOCAL (stack) buffer assembles to `JSR $0000` with only a "nullptr dereferenced" warning, which is why the buffer must be `static` or file-scope. The routine is 6 bytes (`asm_im` 2 + `asm_ab` 3 + `asm_np` 1; bytes measured in VICE); an earlier version of this page said 7 and showed the crashing cast call.
 
 Use `asm6502.h` as a last resort: it bypasses all compiler optimizations and type checking. Prefer `__asm { }` inline blocks for most performance-critical code.
+
+## oscar.h — Decompression and debugging helpers
+
+`oscar.h` sits in `include/`, not `include/c64/`, and is included as `<oscar.h>`. It declares the run-time side of the compressed `#embed` forms and two debugging aids.
+
+Public API:
+
+- `oscar_expand_lzo(char * dp, const char * sp)` — expand an `#embed ... lzo` stream to `dp`. Back-references are copied out of the destination, so `dp` must read back what was written (not I/O, not ROM-shadowed RAM)
+- `oscar_expand_lzo_buf(char * dp, const char * sp)` — the same, keeping its window in a 256-byte stack buffer, for a destination that does not read back
+- `oscar_expand_rle(char * dp, const char * sp)` — expand an `#embed ... rle` stream
+- All three return the address after the stream's terminating zero byte, the start of whatever follows it, not the end of the output (`include/oscar.c`)
+- `breakpoint()` — an intrinsic: it emits one `NOP` and writes `break <address of that NOP>` into the `.lbl` file, a VICE monitor command that sets the breakpoint when the file is passed to `-moncommands`
+- `debugcrash()` — emits opcode `$02`, a JAM: the CPU halts there
+
+Measured in VICE x64sc 3.10, PAL c64c, `-O2`: a 1000-byte screen image compressed by both `#embed` forms expanded to `$0400` and to a buffer byte for byte with all three calls, each returned pointer equalled the array's start plus its `sizeof`, and the border went green. The `.lbl` file of that build held `break 0925`, and the listing has a `NOP` at `$0925`.
+
+```c
+#include <c64/vic.h>
+#include <oscar.h>
+#include <string.h>
+
+static const char lz[] = {
+#embed lzo "pattern.bin"
+};
+static const char rl[] = {
+#embed rle "pattern.bin"
+};
+static const char raw[] = {
+#embed "pattern.bin"
+};
+char buf[1000];
+
+int main(void)
+{
+    const char * e1 = oscar_expand_lzo((char *)0x0400, lz);
+    const char * e2 = oscar_expand_rle(buf, rl);
+    bool ok = memcmp((char *)0x0400, raw, 1000) == 0 && memcmp(buf, raw, 1000) == 0
+           && e1 == lz + sizeof(lz) && e2 == rl + sizeof(rl);
+    breakpoint();                                     // "break <addr>" in the .lbl file
+    vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
+    for (;;) ;
+    return 0;
+}
+```
