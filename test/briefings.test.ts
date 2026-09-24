@@ -1157,7 +1157,8 @@ describe("gameBriefing routes a brief that names no archetype", () => {
       ["racing", "Racing", ["racing", "race", "pseudo 3d"], ["raster_bars"]],
     ];
     for (const [name, title, words, features] of archetypes) {
-      await f.addArchetype({ name, title, kind: "game", source_doc: "a.md", brief_words: words });
+      const starter = name === "vertical_shmup" ? { starter: "shmup-vertical" } : {};
+      await f.addArchetype({ name, title, kind: "game", source_doc: "a.md", brief_words: words, ...starter });
       for (const t of features) await f.linkArchetypeFeatures(name, t);
     }
     expect(await f.linkRecipeScaffolds("oscar64-simple-shmup", "vertical_shmup")).toBe(true);
@@ -1172,6 +1173,9 @@ describe("gameBriefing routes a brief that names no archetype", () => {
     const r = await gameBriefing("Spy Hunter style road shooter");
     expect(r.structured.archetype?.name).toBe("vertical_shmup");
     expect(r.structured.archetype?.inferred_from).toEqual(["road shooter", "road", "spy hunter"]);
+    // A routed archetype keeps its starter; the routing query once dropped it.
+    expect(r.structured.archetype?.starter).toBe("shmup-vertical");
+    expect(r.text).toContain("npm run new-project -- shmup-vertical");
     expect(r.text.split("\n")[0]).toBe("# C64 Game Briefing");
     expect(r.text).toContain("Routed from the brief's words: road shooter, road, spy hunter");
     expect(r.structured.build_order[0]).toEqual({
