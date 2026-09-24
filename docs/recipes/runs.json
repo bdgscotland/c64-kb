@@ -1623,6 +1623,18 @@
       "ntsc": "screenshots/fire-effect-ntsc.png"
     }
   },
+  "kickassembler/plasma": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/plasma.png",
+      "ntsc": "screenshots/plasma-ntsc.png"
+    }
+  },
   "kickassembler/dypp-sprite-scroller": {
     "cycles": 10000000,
     "models": [

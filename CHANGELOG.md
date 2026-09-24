@@ -5,7 +5,9 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 831, schema 39, tools 2.15.0, package 0.28.0.
+Data 832, schema 39, tools 2.15.0, package 0.28.0.
+
+**A plasma recipe, measured, for a technique that had only an estimate (data 832).** `kickassembler/plasma`: a full-screen colour-RAM plasma, one column term and two row terms, a quarter of the rows repainted each frame, run on PAL and NTSC and pinned at the same cycle count with a per-colour cell census. The row loop is 18 cycles a cell against the technique page's estimate of 30 to 40; the worst frame is 6,830 cycles PAL and 7,088 NTSC, the whole screen in one pass 22,574 (1.15 PAL frames), which is why it is a quarter a frame. A control with the row term dropped collapses to vertical stripes and fails the check. The `plasma` technique gains a measured Cost, a Recipes pointer and a Sources line. Built because the MEASURED demo now carries a plasma in its first part and the KB had no recipe behind it; nobody has watched it animate, the emulator is the only witness.
 
 **Double-IRQ sync constants checked frame by frame (data 831; #111).**
 dysp's NTSC padding (12) let the second interrupt enter on cycle 38 in

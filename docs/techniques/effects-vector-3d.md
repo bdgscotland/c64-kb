@@ -414,6 +414,9 @@ The decay pass runs once in four frames, so the average frame is under a frame (
 **Complexity:** medium
 **Region:** both
 **Uses registers:** D011, D018, D021, D022, D023, D024
+**Cost:** cycles_per_frame=6830, cycles_per_frame_typical=5967, bytes_code=575, bytes_data=666
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-plasma (the worst of the 200 frames to the verdict, a seven-row frame of 280 cells, PAL, screen on, from the listing's CIA1 timer A bracket; typical is the six-row frame of 240 cells before the verdict, and three frames in four are six-row frames; the whole screen in one pass is 22,574 and the worst NTSC frame 7,088; bytes_code is the code without the autopilot block; bytes_data is the 239-byte colour map, the 256-byte sine, 100 bytes of row tables, the 40-byte column vector and 14 bytes of state, with 17 bytes of page padding before the sine)
 
 ### Why
 
@@ -466,6 +469,14 @@ Full 16-color plasma (40×25 color RAM update), per frame on PAL:
 - Per-cell: one or two sine lookups, one masking/OR operation, one screen RAM write = approximately 20–25 cycles per cell.
 - 1,000 cells × 22 cycles = approximately 22,000 cycles per frame.
 - Achievable at 25fps (every other PAL frame). Two frames give 39,312 cycles; 50 badlines take 2,150 (43 each), leaving about 15,000 for other work (arithmetic, not measured; an earlier version said ~10,000).
+
+### Recipes
+
+- `recipes/kickassembler/plasma.md`: a full-screen colour-RAM plasma with one column term and two row terms, 18 cycles a cell measured against the 30 to 40 estimated above (the addition is the indexed read; the whole screen in one pass is 22,574 cycles, 1.15 PAL frames), a quarter of the rows repainted each frame, pinned at cycle 10,000,000 on both models with a per-colour cell census, the pictures matched to the model's frame, and a control with the row term dropped.
+
+### Sources
+
+- The measurements on this entry are from the recipe named above, VICE x64sc 3.10, CIA1 timer A; the luminance order is `colour_fade`'s.
 
 ---
 
