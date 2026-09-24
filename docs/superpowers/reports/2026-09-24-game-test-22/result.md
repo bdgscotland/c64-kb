@@ -114,6 +114,11 @@ spawns and row copies on tight frames (the agent's DECISIONS.md 11).
 9. Oscar64: a `bool x = false;` declared inside a `switch` case stopped
    play in the release build; moving it out fixed it. The agent did not
    cut it down to a minimal program, so it is not a confirmed fault.
+   Reduced later (#98): the `bool` was not the cause. The same edit made
+   `if (metering) meter_open();` with `meter_open()` defined empty, and the
+   local Oscar64 build eats the `;` after such a call, so `play_frame` became
+   the `if`'s body. v1.32.273 and upstream compile it correctly
+   (`docs/toolchains/oscar64-reference.md`, #30).
 10. The harness plan gate re-runs `check-compatibility` through
     `npx tsx` against whatever store the environment names. Nothing says
     so.
