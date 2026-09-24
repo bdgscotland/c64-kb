@@ -12,7 +12,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { directoryOf, resolveImage, type Resolved } from "../src/re/image.ts";
+import {
+  directoryOf,
+  hasDirectoryHeader,
+  resolveImage,
+  stderrIsClean,
+  type Resolved,
+} from "../src/re/image.ts";
 import { findC1541, findToolchains } from "../scripts/lib/toolchains.ts";
 import type * as FsModule from "node:fs";
 
@@ -131,6 +137,85 @@ describe("directoryOf", () => {
       .filter((l) => !l.includes('"prog'))
       .join("\n");
     expect(directoryOf(empty)).toEqual([]);
+  });
+});
+
+// Fix round 2 (.superpowers/sdd/2026-09-24-re-step2-commando/task-2-rereview.md):
+// stdout and stderr, captured separately with node:child_process spawnSync
+// (the same call image.ts makes), measured here directly against a real
+// c1541 3.10 (VICE) on a fixture disk built the same way test/re-image.test.ts
+// builds one (`c1541 -format test,01 d64 x.d64 -write prog.prg prog`).
+//
+//   read = spawnSync(c1541, ["-attach", "x.d64", "-read", "prog", "out.prg"], { encoding: "utf8" })
+//   read.status === 0, read.stdout === MEASURED_READ_STDOUT, read.stderr === ""
+//
+//   list = spawnSync(c1541, ["-attach", "x.d64", "-list"], { encoding: "utf8" })
+//   list.status === 0, list.stdout === MEASURED_LIST_STDOUT, list.stderr === ""
+//
+// A successful -format, -read and -list all wrote nothing at all to
+// stderr: the OPENCBM notice and every other narrative line are on stdout.
+const MEASURED_READ_STDOUT = [
+  "\u001b[97;40mOPENCBM\u001b[0m: opening dynamic library libopencbm.dylib failed!",
+  "D64 disk image recognised: /private/tmp/c1541-measure/x.d64, 35 tracks.",
+  "Unit 8 drive 0: D64 disk image attached: /private/tmp/c1541-measure/x.d64.",
+  "reading file `prog' from unit 8",
+  "Unit 8 drive 0: D64 disk image detached: /private/tmp/c1541-measure/x.d64.",
+  "",
+].join("\n");
+const MEASURED_READ_STDERR = "";
+const MEASURED_LIST_STDOUT = [
+  "\u001b[97;40mOPENCBM\u001b[0m: opening dynamic library libopencbm.dylib failed!",
+  "D64 disk image recognised: /private/tmp/c1541-measure/x.d64, 35 tracks.",
+  "Unit 8 drive 0: D64 disk image attached: /private/tmp/c1541-measure/x.d64.",
+  '0 "test            " 01 2a',
+  '1    "prog"             prg ',
+  "663 blocks free.",
+  "Unit 8 drive 0: D64 disk image detached: /private/tmp/c1541-measure/x.d64.",
+  "",
+].join("\n");
+// Measured on a `-read` of a file not on the disk (round 1's probe): the one
+// case where c1541 does write to stderr.
+const MEASURED_MISSING_FILE_STDERR = "cannot read `nope' on unit 8\ninvalid filename\n";
+
+describe("hasDirectoryHeader", () => {
+  it("is true for a real listing's own header row", () => {
+    expect(hasDirectoryHeader(MEASURED_LIST_STDOUT)).toBe(true);
+  });
+
+  it("is false for a real -read transcript's stdout (narrative text, no directory rows at all)", () => {
+    expect(hasDirectoryHeader(MEASURED_READ_STDOUT)).toBe(false);
+  });
+
+  it("is false for a listing whose first row is a file, not the disk-name header (no header at all)", () => {
+    // The exact construction from the re-review: a file-shaped row with no
+    // "0 ..." header before it. The old check (`/^\s*\d+\s+"/m`, any digit)
+    // accepted this; directoryOf would then silently drop "prog" as if it
+    // were the header, and the caller would wrongly conclude "no-file".
+    const headerless = '1    "prog"             prg \n663 blocks free.\n';
+    expect(hasDirectoryHeader(headerless)).toBe(false);
+  });
+
+  it("is false for empty or unparseable text", () => {
+    expect(hasDirectoryHeader("")).toBe(false);
+    expect(hasDirectoryHeader("Error - Cannot read image header.\n")).toBe(false);
+  });
+});
+
+describe("stderrIsClean", () => {
+  it("is true for a real successful run's stderr (measured: always empty)", () => {
+    expect(stderrIsClean(MEASURED_READ_STDERR)).toBe(true);
+  });
+
+  it("is true when stderr holds only the one known-benign notice (defensive: a different c1541 build might route it there)", () => {
+    expect(stderrIsClean("OPENCBM: opening dynamic library libopencbm.dylib failed!\n")).toBe(true);
+  });
+
+  it("is false for a real failure's stderr", () => {
+    expect(stderrIsClean(MEASURED_MISSING_FILE_STDERR)).toBe(false);
+  });
+
+  it("is false for any other unexpected content", () => {
+    expect(stderrIsClean("Segmentation fault\n")).toBe(false);
   });
 });
 
@@ -335,6 +420,79 @@ describe("resolveImage: checks c1541's own subprocess results", () => {
     const before = workDirs();
     const r = await withC1541Env(bin, () => resolveImage({ sha1: imageSha1, file: "prog" }, manifest));
     expect(r).toMatchObject({ ok: false, reason: "no-file" });
+    expect(workDirs()).toEqual(before);
+  });
+
+  // Fix round 2, item 1: a status-0 "-read" that still wrote something
+  // unexpected to stderr used to be accepted outright (existsSync(outPrg)
+  // was the only check). Measured here: a real success never writes to
+  // stderr at all, so any content there means the run cannot be trusted.
+  it("refuses c1541-failed when a status-0 read still wrote unexpected stderr", async () => {
+    const dir = fixtureDir();
+    const { manifest, sha1: imageSha1 } = d64Manifest(dir);
+    const bin = fakeC1541(
+      dir,
+      [
+        'const fs = require("node:fs");',
+        "const args = process.argv.slice(2);",
+        'if (args.includes("-read")) {',
+        "  const out = args[args.length - 1];",
+        "  fs.writeFileSync(out, Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]));",
+        '  process.stderr.write("unexpected: disk error on track 18\\n");',
+        "  process.exit(0); // looks successful: file written, exit 0",
+        "}",
+        "process.exit(1);",
+      ].join("\n"),
+    );
+    const before = workDirs();
+    const r = await withC1541Env(bin, () => resolveImage({ sha1: imageSha1, file: "prog" }, manifest));
+    expect(r).toMatchObject({ ok: false, reason: "c1541-failed" });
+    if (!r.ok) expect(r.error).toMatch(/unexpected stderr/);
+    expect(workDirs()).toEqual(before);
+  });
+
+  it("still accepts a status-0 read whose only stderr is the one known-benign notice", async () => {
+    const dir = fixtureDir();
+    const { manifest, sha1: imageSha1 } = d64Manifest(dir);
+    const bin = fakeC1541(
+      dir,
+      [
+        'const fs = require("node:fs");',
+        "const args = process.argv.slice(2);",
+        'if (args.includes("-read")) {',
+        "  const out = args[args.length - 1];",
+        "  fs.writeFileSync(out, Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]));",
+        '  process.stderr.write("OPENCBM: opening dynamic library libopencbm.dylib failed!\\n");',
+        "  process.exit(0);",
+        "}",
+        "process.exit(1);",
+      ].join("\n"),
+    );
+    const r = keep(await withC1541Env(bin, () => resolveImage({ sha1: imageSha1, file: "prog" }, manifest)));
+    expect(r).toMatchObject({ ok: true });
+  });
+
+  // Fix round 2, item 2: a listing whose first row is a file, not the
+  // disk's own "0 ..." header (a truncated or corrupted listing), used to
+  // pass hasDirectoryHeader (any digit-prefixed row matched) and then have
+  // that file silently dropped by directoryOf as if it were the header —
+  // exactly the construction the re-review reported.
+  it("refuses c1541-failed, not no-file, when the fallback listing has a file row but no disk-name header at all", async () => {
+    const dir = fixtureDir();
+    const { manifest, sha1: imageSha1 } = d64Manifest(dir);
+    const bin = fakeC1541(
+      dir,
+      [
+        "const args = process.argv.slice(2);",
+        'if (args.includes("-read")) process.exit(1);',
+        'if (args.includes("-list")) { process.stdout.write(\'1    "prog"             prg \\n663 blocks free.\\n\'); process.exit(0); }',
+        "process.exit(1);",
+      ].join("\n"),
+    );
+    const before = workDirs();
+    const r = await withC1541Env(bin, () => resolveImage({ sha1: imageSha1, file: "prog" }, manifest));
+    expect(r).toMatchObject({ ok: false, reason: "c1541-failed" });
+    if (!r.ok) expect(r.error).not.toMatch(/is not on the disk/);
     expect(workDirs()).toEqual(before);
   });
 });

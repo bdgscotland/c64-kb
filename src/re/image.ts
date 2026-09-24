@@ -10,12 +10,23 @@
  * original before copying it would leave a window in which the source
  * changes between the check and the copy, so a caller's own D64 or PRG is
  * never opened for write, and a passing hash always describes the bytes the
- * run actually used. c1541's two subprocess results (a failure to launch,
- * and its exit status) are both checked; a run that neither produced the
- * requested file nor cleanly reported it missing is refused as
- * "c1541-failed", never silently accepted because a (possibly partial) file
- * happened to exist, and never misreported as "no-file" when the disk's own
- * directory cannot be trusted.
+ * run actually used. c1541's subprocess results (a failure to launch, its
+ * exit status, and its stderr) are all checked; a run that neither produced
+ * the requested file nor cleanly reported it missing, or that wrote
+ * anything unexpected to stderr, is refused as "c1541-failed", never
+ * silently accepted because a (possibly partial) file happened to exist,
+ * and never misreported as "no-file" when the disk's own directory listing
+ * cannot be trusted (measured: a listing with no `0 "<disk name>" <id>`
+ * header row is not trustworthy, even when it has file-shaped rows).
+ *
+ * Measured directly here (VICE 3.10 c1541, node:child_process spawnSync,
+ * stdout and stderr captured separately) on a successful -format, -read and
+ * -list: stderr is always "" — the OPENCBM notice and every other narrative
+ * line ("D64 disk image recognised: …", "Unit 8 drive 0: … attached/
+ * detached…") go to stdout, not stderr, on this machine. Only that one
+ * notice line is treated as benign if it ever does appear on stderr (a
+ * different c1541 build might route it there); anything else on stderr is
+ * refused. See test/re-image.test.ts for the captured transcripts.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -64,19 +75,29 @@ function readManifest(manifestPath: string): Record<string, ManifestEntry> | nul
   }
 }
 
+/** A `c1541 -list` row: a leading number (block count, or 0 for the disk-name header), then a quoted string. */
+const ROW = /^\s*(\d+)\s+"([^"]*)"/gm;
+
 /**
  * The file names a `c1541 -list` directory printout reports, in order. The
- * first quoted string is always the disk name header, not a file, so it is
- * dropped.
+ * first row is always the disk-name header, not a file, so it is dropped —
+ * call only after `hasDirectoryHeader` has confirmed that first row really
+ * is one.
  */
 export function directoryOf(text: string): string[] {
-  const names = [...text.matchAll(/^\s*\d+\s+"([^"]*)"/gm)].map((m) => (m[1] ?? "").trimEnd());
-  return names.slice(1);
+  return [...text.matchAll(ROW)].slice(1).map((m) => (m[2] ?? "").trimEnd());
 }
 
-/** A real directory listing always starts with a `0 "name..."` header row. */
-function hasDirectoryHeader(text: string): boolean {
-  return /^\s*\d+\s+"/m.test(text);
+/**
+ * True only when the first `c1541 -list` row is the disk-name header
+ * itself: `0 "<disk name>" <id>` (measured: block count 0, never seen on a
+ * real file row). A listing whose first row is a file (no header at all —
+ * a truncated or corrupted listing) is not trustworthy: `directoryOf` would
+ * silently drop that file as if it were the header.
+ */
+export function hasDirectoryHeader(text: string): boolean {
+  const first = [...text.matchAll(ROW)][0];
+  return first?.[1] === "0";
 }
 
 function classify(imagePath: string): "prg" | "d64" | null {
@@ -136,6 +157,17 @@ function diagnostics(r: ProcResult): string {
 }
 
 /**
+ * Measured here (VICE 3.10 c1541): a successful -format/-read/-list writes
+ * nothing at all to stderr. Only the one known-benign notice is tolerated
+ * there (in case a different c1541 build routes it to stderr instead of
+ * stdout); anything else means the run is not trustworthy even if it
+ * otherwise looks like it succeeded.
+ */
+export function stderrIsClean(stderr: string): boolean {
+  return cleanLines(stderr) === "";
+}
+
+/**
  * `-read` neither produced the file nor exited 0: consult the disk's own
  * directory (ground truth) rather than guess a reason from c1541's text.
  */
@@ -143,7 +175,7 @@ function diagnoseMissingRead(c1541: string, copy: string, file: string, read: Pr
   const list = runC1541(c1541, ["-attach", copy, "-list"]);
   if (list.error)
     return { ok: false, reason: "c1541-failed", error: `c1541 -list did not run: ${list.error.message}` };
-  if (list.status !== 0 || !hasDirectoryHeader(list.stdout))
+  if (list.status !== 0 || !hasDirectoryHeader(list.stdout) || !stderrIsClean(list.stderr))
     return { ok: false, reason: "c1541-failed", error: `c1541 could not list ${copy}: ${diagnostics(list)}` };
   const dir = directoryOf(list.stdout);
   if (dir.includes(file))
@@ -172,10 +204,20 @@ function extractFromD64(copy: string, file: string, work: string, imageSha1: str
   const read = runC1541(c1541, ["-attach", copy, "-read", file, outPrg]);
   if (read.error)
     return { ok: false, reason: "c1541-failed", error: `c1541 -read did not run: ${read.error.message}` };
-  // Only a clean exit paired with the file actually landing counts: a
-  // nonzero exit that still left bytes at outPrg (a partial read) is not
-  // accepted just because the file exists.
-  if (read.status === 0 && existsSync(outPrg)) return finish(outPrg, work, { kind: "d64", imageSha1, file });
+  // Only a clean exit, the file actually landing, and no unexpected stderr
+  // counts as success: a nonzero exit that still left bytes at outPrg (a
+  // partial read) is not accepted just because the file exists, and a
+  // "successful" exit that still wrote something to stderr is not trusted
+  // either (measured: a real success writes nothing there at all).
+  if (read.status === 0 && existsSync(outPrg)) {
+    if (!stderrIsClean(read.stderr))
+      return {
+        ok: false,
+        reason: "c1541-failed",
+        error: `c1541 -read exited 0 but wrote unexpected stderr: ${diagnostics(read)}`,
+      };
+    return finish(outPrg, work, { kind: "d64", imageSha1, file });
+  }
   return diagnoseMissingRead(c1541, copy, file, read);
 }
 
