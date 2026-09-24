@@ -5,7 +5,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 819, schema 38, tools 2.13.1, package 0.26.1.
+Data 820, schema 38, tools 2.13.1, package 0.26.1.
+
+**Sprite DMA measured, and four figures the game test lacked (data 820;
+#96).** New recipe `sprite-dma-cost`: a three-band multiplexer whose
+interrupts write the same in every case but `$D015`, with a fixed loop
+timed by CIA2. Eight sprites add 399 cycles a frame (21 lines × 19),
+seventeen add 903, badlines 1,075, with no overlap; PAL and NTSC agree.
+plan-budget's 3 + 2n per line is exact; the game test's 945 came from
+its inputs. A loop under a band of eight sprites runs 1.42 times as
+long (the game test's "about half again"). Cost lines:
+screen_double_buffer_d018 57 (the flip and pointer copy; a page redraw
+is 12,598 PAL), kernal_load_to_address 6,931,765 for 2 KB with the
+drive idle (multi-frame), pal_ntsc_detection 23,032 worst measured
+(23,184 by arithmetic for a line-256 entry; it had only a byte count).
+sfx_in_player claims the three voices and `$D418`.
 
 **REU registers, the rest of Oscar64's wrappers, and reading the
 directory (schema 38, data 819; #92, part of #5).** New
