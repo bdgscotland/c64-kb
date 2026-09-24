@@ -250,7 +250,7 @@ Each address below was checked by reading the bytes of
 | $FD30-$FD4F | 16 vectors, copied to $0314-$0333: `EA31 FE66 FE47 F34A F291 F20E F250 F333 F157 F1CA F6ED F13E F32F FE66 F4A5 F5ED` (IRQ, BRK, NMI, OPEN … ISAVE) |
 | $FF81-$FFF5 | 39 three-byte entries. 29 are `JMP abs`; 10 are `JMP (ind)` through the RAM vectors: $FFC0-$FFD2 via $031A-$0326, $FFE1-$FFE7 via $0328-$032C. First `FF81: 4C 5B FF`, last `FFF3: 4C 00 E5` |
 | $ECB9-$ECE7 | VIC-II power-on values, 47 bytes, copied by `LDX #$2F / LDA $ECB8,X / STA $CFFF,X / DEX / BNE` at $E5A8 to $D000-$D02E. The last byte, $4C, is the "L" of "LOAD\rRUN\r" at $ECE7; it lands in $D02E, which read back $FC (grey) in VICE |
-| $F0BD | The KERNAL's messages, each starting with $0D and ending in a byte with bit 7 set: "I/O ERROR #", "SEARCHING ", "FOR ", "PRESS PLAY ON TAPE" … |
+| $F0BD-$F12A | The KERNAL's ten messages, from "I/O ERROR #" to "OK". Each ends in a byte with bit 7 set. Eight begin with $0D; "FOR " and "PRESS RECORD & PLAY ON TAPE" do not |
 | $E5B6 | Not a table. It is the high operand byte of `LDY $0277` at $E5B4, the keyboard-buffer fetch |
 
 Issue #3 listed "$E5B6 DOS messages". The bytes at $E5B6 are code, and the
@@ -263,8 +263,9 @@ the first and last characters. Repeated words are stored as token bytes
 ## The byte census
 
 The census finds every place a ROM or program names an address, then
-classifies each hit by the opcode before it. It settled several disputes
-in this repo's audits.
+classifies each hit by the opcode before it. It is how
+[c64-memory-map](../hardware/c64-memory-map.md) shows that no ROM write
+touches $02A7-$02FF.
 
 1. Search the image for the address's two bytes, low first.
 2. For each hit, read the byte before it. It is the opcode if the hit is
@@ -392,7 +393,10 @@ What each command gave:
   $08A9-$08AA (`jsr $08D0`, the rewritten operand), $0948 (next slot,
   1), $0949 (frame count, $49 = 73) and $094D.
 - `memmapshow` lists, per address, whether it was read, written or
-  executed (`rwx`) since the run began.
+  executed (`rwx`) since the run began. "(uninitialized read)" means the
+  CPU read that RAM byte before any CPU write to it (`mon_memmap.c` in
+  the VICE 3.10 source). The program's own bytes carry it because
+  `-autostartprgmode 1` injects the PRG into RAM, not through CPU stores.
 
 ### Batch quirks measured here
 
