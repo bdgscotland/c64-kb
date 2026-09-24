@@ -9,6 +9,19 @@
  * Math: standard BM25 (Robertson et al.), k1=1.2, b=0.75. IDF is
  * computed from corpus document frequency.
  *
+ * IDF is applied more than once, on purpose. encode() multiplies it into
+ * stored and query vectors alike, and the collection's `modifier: "idf"`
+ * (qdrant.ts, ensureCollection) makes Qdrant weight each query term by its
+ * own IDF again. Issue #26 measured the alternatives with
+ * scripts/search-recall.ts (36 queries, hybrid search, top 5):
+ *   this encoding                                 recall 0.917  MRR 0.799
+ *   BM25 TF without IDF stored, raw query counts  recall 0.917  MRR 0.794
+ *   raw term counts stored and queried            recall 0.917  MRR 0.778
+ *   dense only 0.889 / 0.782; BM25 only (this encoding) 0.889 / 0.716.
+ * Qdrant's documented pattern (the second row) moved three queries by one
+ * or two ranks and gained nothing, so the encoding stays until a larger
+ * query set shows otherwise.
+ *
  * Persistence: toJSON / fromJSON for vocab + DF + avgDocLen, and
  * loadBM25Vocab for the vocab file every reader shares.
  */
