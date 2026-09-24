@@ -1897,12 +1897,24 @@ grows. The Cost line's `bytes_data` is arithmetic from the table and slot
 sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
 `cycles_per_frame` figure is measured. Before #72 one basis word covered the whole Cost line, so it said `arithmetic`, the bytes' rung, beside measured cycles; the cycles now say `measured-vice` and the bytes keep `arithmetic` on their own line. The frame data is extra.
 
+The same cache in compiled C (`recipes/oscar64/sprite-cache-flip.md`,
+multicolour frames only, CIA1 timer B, screen blanked, PAL and NTSC):
+a miss is 3,692 cycles facing right and 3,902 facing left for a full
+frame, 3,344 and 3,494 with 15 of 21 rows present, and a hit 42. That is
+about 1,250 cycles a miss above the assembly figures; a left-facing
+miss in C is 62 PAL lines. The Cost line stays the assembly figure; a C game
+budgets the C one.
+
 ### Recipes
 
 - `recipes/kickassembler/sprite-cache-flip.md` (both tables built at
   start and checked, four frames depacked into an 8-slot cache facing
   both ways, one eviction, figures and PASS on screen, the mirror
   measured from the screenshot on PAL and NTSC).
+- `recipes/oscar64/sprite-cache-flip.md` (the cache in C: five packed
+  multicolour frames, 8 slots round-robin, an eviction and a refill
+  checked, four frames shown both ways and measured pixel by pixel on
+  PAL and NTSC, cycles per miss and hit).
 - `recipes/oscar64/sprite-mirror-at-load.md` (the mirror-once-at-load
   variation: a multicolour set of six blocks mirrored with the
   pair-preserving table, a three-sprite object turning in place, both

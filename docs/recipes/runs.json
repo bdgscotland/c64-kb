@@ -783,6 +783,18 @@
       "ntsc": "screenshots/sprite-mirror-at-load-ntsc.png"
     }
   },
+  "oscar64/sprite-cache-flip": {
+    "cycles": 6000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-cache-flip.png",
+      "ntsc": "screenshots/sprite-cache-flip-ntsc.png"
+    }
+  },
   "oscar64/charset-parallax": {
     "cycles": 10000000,
     "models": [
