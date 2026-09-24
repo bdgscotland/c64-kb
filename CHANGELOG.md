@@ -5,7 +5,17 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 801, schema 33, tools 2.8.0, package 0.21.0.
+Data 801, schema 33, tools 2.8.1, package 0.21.1.
+
+**ingest_doc takes any spelling of a page's path; lint reads only code
+fences (tools 2.8.1, package 0.21.1; #51, #28).** `ingest_doc` given
+`docs/x.md` from the repo root, `x.md` from docs/, or an absolute path
+now resolves each to one source under docs/; before, some spellings
+created a second source or a `docs/docs/` copy. Paths outside docs/ are
+refused. Linting a Markdown page now blanks everything outside C and
+assembly fences, keeping line numbers: music-sid.md gave 7 findings on
+prose (at wrong line numbers) and now gives none, and a real read put
+into its filter fence is reported at its own line.
 
 **Every CIA1 row in the recipe traces is declared (data 801; #83).** 36
 KickAssembler recipes had undeclared CIA1 stores (the issue counted
