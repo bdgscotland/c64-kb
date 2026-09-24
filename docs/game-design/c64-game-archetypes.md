@@ -162,6 +162,8 @@ Puzzle games are one of the few C64 genres where the SID play routine can share 
 
 **Archetype:** `text_adventure`
 
+**Starter:** `adventure`
+
 Text adventure games present a prose narrative and accept natural-language commands typed at a prompt. Infocom's C64 ports (Zork, Hitchhiker's Guide, etc.) are the commercial standard; homegrown AGT and GAC-built games followed. The defining characteristic is that nearly all CPU time goes to parsing, string matching, and world-state management. Sprites are rare or absent; the display is pure character mode, often rendering 40-column text with no scrolling. KERNAL I/O routines (CHRIN, CHROUT, GETIN) handle keyboard input and terminal output.
 
 The main technical constraint is memory. A large text adventure needs story text (often 50-100 KB), verb/noun tables, object databases, and the parser engine — all crammed into 64 KB with BASIC ROM, KERNAL ROM, and I/O mapped in. Common strategies: bank out BASIC ROM to recover $A000-$BFFF (16 KB), use RAM-under-KERNAL for story data while keeping KERNAL routines accessible via jump table, and compress message text using Huffman or similar schemes. Infocom's Z-machine interpreter demonstrates one approach: the story file is a separate data blob, and the interpreter is a small virtual machine that operates on it, allowing the same parser to run multiple stories.
@@ -249,6 +251,8 @@ Color changes for road stripes, sky gradients, and roadside scenery are all rast
 ## Beat-em-up
 
 **Archetype:** `beat_em_up`
+
+**Starter:** `beat-em-up`
 
 The beat-em-up scrolls horizontally through a sequence of urban or fantasy environments while the player character fights multiple on-screen opponents simultaneously. Renegade (1987) and Target: Renegade (1988) are the defining C64 examples; IK+ (1987) bridges sports and beat-em-up. The genre demands the highest simultaneous sprite count of any non-shmup archetype: a player character (2-3 sprites wide), three to four enemy characters (2 sprites each), health bars and HUD elements, and possibly projectiles — easily twelve to sixteen hardware sprite slots in use, requiring a multiplexer even when enemies are constrained to one plane.
 

@@ -5,7 +5,12 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 769, schema 31, tools 2.3.0, package 0.16.0.
+Data 770, schema 31, tools 2.3.0, package 0.16.0.
+
+**Every #39 starter is named by its archetype.** `**Starter:**` lines for
+`text_adventure` (adventure), `beat_em_up` (beat-em-up) and `demo_intro`
+(demo), now that those starters are on main; `c64_game_briefing` and
+`c64_demo_briefing` print their `new-project` command.
 
 **Issue #39: `shmup-vertical` loses no frames on NTSC.**
 - The lost-frame counter could not see a single late frame: it counted

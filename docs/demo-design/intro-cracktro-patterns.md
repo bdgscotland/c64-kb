@@ -210,6 +210,8 @@ the stable IRQ (`raster_irq_first_line_jitter`), two users of `$D016` on one scr
 
 **Archetype:** `demo_intro`
 
+**Starter:** `demo`
+
 A demo intro is the opening part of a longer multi-part demo, released as a
 standalone production in its own right. Size ceiling is typically 1 KB to 4 KB.
 It may combine the cracktro layout with a simple effect — a plasma, a vector cube,
