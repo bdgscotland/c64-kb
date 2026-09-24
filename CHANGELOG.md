@@ -5,7 +5,24 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 822, schema 39, tools 2.14.0, package 0.27.0.
+Data 823, schema 39, tools 2.14.0, package 0.27.0.
+
+**Kefrens bars, linecrunch and AGSP reproduced (data 823; #16 DEMO-10,
+#19, #5).** Three new techniques with KickAssembler recipes pinned on
+PAL and NTSC. `kefrens_bars`: a test build first proved one fetched
+line re-shown on 129 lines (every band line a badline; #16's plan asked
+for a badline-free region, which cannot re-show it); each line's block
+must be exactly 20 cycles (PAL) or 22 (NTSC), the sweep is the new
+pitfall. `linecrunch`: from Bauer §3.7.2/§3.14.4 and codebase64, a
+one-cycle sweep shows YSCROLL = line & 7 crunches a row only when
+written on cycles 58-62 (PAL) or 58-64 (NTSC); the design that failed on
+2026-09-23 was a late badline and never crunches. `agsp_free_scroll`:
+linecrunch, FLD to a fixed band, a late badline and XSCROLL; sweeps of
+every column, row and fine value match all 200 lines. The VSP column
+shift is the store's cycle minus 14 as a store trace counts it;
+vsp_glitch said minus 15, from VICE's VSP log plus one (vsp_glitch, the
+vsp recipe and vice-reference corrected). scroll.md's misfiled AGSP
+description is corrected.
 
 **Per-item Cost and phased compatibility on a technique list (schema
 39, tools 2.14.0, package 0.27.0, data 822; #94, #95).** New Cost keys
