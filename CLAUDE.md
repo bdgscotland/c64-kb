@@ -102,15 +102,18 @@ outward-facing: tag only when the maintainer asks for one.
 3. Commit, push to `main`, then `git tag v<x.y.z>` and
    `git push origin v<x.y.z>`. The tag must equal package.json's version,
    or `.github/workflows/release.yml` fails.
-4. The workflow runs typecheck, lint and the unit tests, then waits for the
-   maintainer's approval in the GitHub `npm` environment. It then publishes
+4. The workflow's one job declares `environment: npm`, so it first waits
+   for the maintainer's approval in GitHub. It then checks the tag against
+   package.json, runs typecheck, lint and the unit tests, and publishes
    through npm trusted publishing: no token, provenance added by npm. A
    version already on npm is skipped, so re-running a tag is safe.
 5. Check `npm view c64-kb version`. Users upgrade with
    `npm install -g c64-kb` and must run `c64-kb ingest --clean` after it.
 
-The package ships `dist`, `docs`, `templates` and `VERSION` (package.json
-`files`). A doc or starter change reaches users only through a release.
+The package ships `dist`, `docs`, `templates`, `VERSION`, `CHANGELOG.md`
+and `docker-compose.yml` (package.json `files`; `c64-kb services up` needs
+the compose file), and npm adds README and LICENSE. A doc or starter change
+reaches users only through a release.
 
 ## The README
 
