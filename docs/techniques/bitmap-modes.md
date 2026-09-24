@@ -543,20 +543,24 @@ On NTSC the block structure is unchanged: the c-accesses still occupy cycles 15-
 **Uses registers:** D011, D018
 **Uses kernal:** (none)
 **Demands:** cpu_every_line, constant_sprite_set
-**Requires:** fli_image
+**Requires:** stable_raster_irq, standard_bitmap, vic_bank_select
 **Raster band:** 45-251 (fli_image's engine, which How says this reuses unchanged)
-**Claims:** vic_raster_irq (owns)
+**Claims:** vic_raster_irq (owns), cia2_vic_bank (owns), vic_yscroll (owns), vic_matrix_base (owns), vic_char_base (owns)
 **Claims basis:** measured-vice
 
 Store trace (`scripts/claims-watch.ts`, VICE x64sc, PAL) of
-`recipes/kickassembler/afli-image.md`: the units the listing writes (VIC
-bank, matrix base, character base, YSCROLL, raster compare) are the ones
-`fli_image` claims. The raster compare is stated here as well because the
-per-line engine runs from AFLI's own interrupt; without it the check does
-not see that the double IRQ the recipe enters through runs inside it. AFLI's
-own change is `$D016` with MCM clear, a mode bit and not a unit yet. The recipe measures this section's
-model pixel for pixel on PAL, including the `LINE_PAD` 10 row-counter
-reset described under "Cycle budget".
+`recipes/kickassembler/afli-image.md`: the listing writes the VIC bank,
+matrix base, character base, YSCROLL and raster compare, the units
+`fli_image` claims. AFLI's own change is `$D016` = `$C8`, MCM clear, a
+mode bit and not a unit yet. The recipe measures this section's model
+pixel for pixel on PAL, including the `LINE_PAD` 10 row-counter reset
+described under "Cycle budget".
+
+AFLI is a variant of `fli_image`, so it names FLI's prerequisites itself
+with `standard_bitmap` in place of `multicolor_bitmap`. An earlier
+Requires line said `fli_image`, and through it `multicolor_bitmap`, but
+the recipe clears MCM (`$D016` = `$C8`; the fli-image and ifli-image
+listings store `$D8`/`$D9`, MCM set) ([#80](https://github.com/bdgscotland/c64-kb/issues/80)).
 
 ### Why
 
