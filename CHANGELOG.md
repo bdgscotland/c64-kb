@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 828, schema 39, tools 2.15.0, package 0.28.0.
+Data 829, schema 39, tools 2.15.0, package 0.28.0.
+
+**Nine VIC effects measured, and a recipe that read uninitialised RAM
+(data 829; #19 group V, #109).** New KickAssembler recipes pinned on
+PAL and NTSC, each checked by script against a model: FPP in three
+forms (write windows measured: `$D018` by cycle 15, a restart on 54-57,
+a hold on 58-62 PAL / 58-64 NTSC), line doubling with the unread odd
+rows used as a second colour RAM, chunky 4x4 FLI (the forced write must
+land on cycle 14 exactly), a character zoomer by `$D018` (renamed from
+bitmap_zoomer: the item describes a character zoomer), a charset
+rotozoomer (drawing into the charset on screen tore in 10 of 10 shots),
+glenz EOR-filled vectors, a grid raycaster (8.8 steps drop exact
+columns from 2,115 to 930), UFLI with a sprite underlay (NUFLI's layout
+has no specification here). badline_synchronization gains a table of
+every member's measured write cycle; it said the row counter increments
+on each badline. fli-image's forced write lands on cycle 14, not 15
+(20,057 writes traced). trainer-hooks' search read RAM the program
+never wrote, so VICE's random power-on bits made it find 19 candidates
+about once in 38 runs; its pin now clears random RAM, and its timing
+moved off the pinned screen.
 
 **The double buffer's redraw is counted, and briefings drop a found
 technique that conflicts with a forced one (tools 2.15.0, package
