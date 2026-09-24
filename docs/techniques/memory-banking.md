@@ -857,7 +857,7 @@ to the raster and sprite recipes landing in Phase 4+.
 **Requires:** screen_ram_relocation
 **Cost:** cycles_per_frame=13196, cycles_per_item=814, cycles_item_base=57
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-double-buffer (the recipe's whole-page redraw with its caption, 12,598 PAL and 13,165 NTSC, plus the 31-cycle flip; an item is one 40-byte row copied into the hidden page by a C byte loop at -O2, fitted to -dREDRAW_ROWS builds of 0 to 25 rows on PAL and NTSC; the base is the flip, 31, and the sprite-pointer copy, 26; the wait for the blank is not in it)
+**Cost measured on:** oscar64-double-buffer (the recipe's whole-page redraw with its caption, 12,598 PAL and 13,165 NTSC, plus the 31-cycle flip; an item is one 40-byte row copied into the hidden page by a C byte loop at -O2, fitted to -dREDRAW_ROWS builds of 0 to 25 rows on PAL and NTSC; CIA1 timer B, screen on and one sprite, so the stolen cycles are in it; the base is the flip, 31, and the sprite-pointer copy, 26; the wait for line 256 is not in it)
 **Claims:** vic_matrix_base (owns)
 **Claims basis:** measured-vice
 
