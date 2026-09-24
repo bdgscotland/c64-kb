@@ -5,7 +5,7 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 777, schema 31, tools 2.4.0, package 0.17.1.
+Data 778, schema 31, tools 2.5.0, package 0.18.0.
 
 **Plain prose and corrected claims across docs/ (data 777; #56, #67).**
 Every page's prose lost its machine-written wording in six batches;
