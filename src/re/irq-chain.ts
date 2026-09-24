@@ -412,7 +412,6 @@ function onPort(s: State, h: Hit): void {
 function seed(s: State, h: Hit): void {
   if (h.kind !== "store") return;
   if (h.addr <= 0x0001) onPort(s, h);
-  if (s.ptrBytes.has(h.addr)) s.bytes.set(h.addr, storedValue(h));
   if (vectorOf(h.addr)) s.bytes.set(h.addr, storedValue(h));
   else if (h.addr === 0xd011 || h.addr === 0xd012) setArm(s, h);
 }
@@ -432,11 +431,31 @@ function unwrittenBytes(s: State): void {
 
 /** A store that changes the state; an interrupt's push is not one (observeClock handles it). */
 function onStore(s: State, h: Hit): void {
-  if (s.ptrBytes.has(h.addr)) s.bytes.set(h.addr, storedValue(h));
   const v = vectorOf(h.addr);
   if (h.addr <= 0x0001) onPort(s, h);
   else if (v) onVector(s, h, v);
   else if (h.addr === 0xd011 || h.addr === 0xd012) onArm(s, h);
+}
+
+/**
+ * Stores to the bytes of a `JMP (pointer)`, pushes included: a pointer in
+ * the stack page can be overwritten by one. VICE logs an interrupt's three
+ * pushes against the interrupted instruction, so the byte pushed is not
+ * logged (an STA's A is not it): every page-1 store at an interrupt's
+ * clock leaves the byte null. JSR, PHA and PHP pushes are null already
+ * (storedValue). An earlier version skipped the interrupt's push and kept
+ * the stale byte, so the target was wrong and no unknown was named.
+ */
+function trackPointers(s: State, hs: Hit[], interrupt: boolean): void {
+  for (const h of hs) {
+    if (h.kind !== "store" || !s.ptrBytes.has(h.addr)) continue;
+    const pushed = interrupt && h.addr >> 8 === 1;
+    s.bytes.set(h.addr, pushed ? null : storedValue(h));
+    if (pushed && h.clock >= s.startClock)
+      s.out.unknowns.push(
+        `interrupt at clock ${h.clock} pushed over pointer byte $${hex4(h.addr).toUpperCase()}: value not logged`,
+      );
+  }
 }
 
 /**
@@ -449,6 +468,7 @@ function onStore(s: State, h: Hit): void {
  */
 function observeClock(s: State, hs: Hit[]): void {
   const pushes = hs.filter(isInterruptPush);
+  trackPointers(s, hs, pushes.length > 0);
   for (const h of hs) if (h.kind === "store" && !isInterruptPush(h)) onStore(s, h);
   for (const h of pushes) onInterrupt(s, h);
   for (const h of hs) if (h.kind === "exec") onExec(s, h);
@@ -482,8 +502,11 @@ function walk(hits: Iterable<Hit>, frameCycles: number, startClock: number): Sta
   const s = new State(frameCycles, startClock, indirectPointers(all));
   s.pending = all.filter((h) => h.clock >= startClock && isInterruptPush(h)).map((h) => h.clock);
   for (const [clock, hs] of byClock(all)) {
-    if (clock < startClock) for (const h of hs) seed(s, h);
-    else observeClock(s, hs);
+    if (clock >= startClock) observeClock(s, hs);
+    else {
+      trackPointers(s, hs, hs.some(isInterruptPush));
+      for (const h of hs) seed(s, h);
+    }
   }
   return s;
 }

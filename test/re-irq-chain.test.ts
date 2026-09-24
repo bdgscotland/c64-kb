@@ -379,6 +379,21 @@ describe("stores logged at the interrupt's clock", () => {
     hits.push(st(0xffff, 0x30, 6), irq(100), st(0x0001, 0x35, 100), ex(0x3000, 100, 40));
     expect(liveHandlers(hits, 0)).toEqual([0x3000]);
   });
+  it("leaves a stack-page pointer byte unknown when an interrupt's PC-high push overwrites it", () => {
+    const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($01F6)" };
+    const hits = [...banked, st(0x1f6, 0x00, 4), st(0x1f7, 0x30, 5), jmp, irq(100)];
+    const r = analyseIrqChain(hits, PAL, 0);
+    expect(r.entries.map((e) => e.target)).toEqual([null]);
+    expect(r.unknowns.join(" ")).toMatch(/interrupt at clock 100 pushed over pointer byte \$01F6/);
+    expect(r.unknowns.join(" ")).toMatch(/pointer \$01F6 not known at the entry at clock 100/);
+  });
+  it("does not read the interrupted STA's A as the value of the interrupt's other pushes", () => {
+    // VICE logs all three pushes against the interrupted instruction: here an STA, whose A is not the byte pushed.
+    const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($01F4)" };
+    const push2: Hit = { ...irq(100, 0xf3, "STA"), addr: 0x1f5, a: 0x99 };
+    const hits = [...banked, st(0x1f4, 0x00, 4), st(0x1f5, 0x30, 5), jmp, irq(100, 0xf3, "STA"), push2];
+    expect(analyseIrqChain(hits, PAL, 0).entries.map((e) => e.target)).toEqual([null]);
+  });
   it("reads a pointer written at that clock as the entry's target", () => {
     const jmp: Hit = { ...ex(0x2000, 100, 40), mnemonic: "JMP", operand: "($4000)" };
     const hits = [...banked, st(0x4000, 0x00, 4), st(0x4001, 0x30, 5), jmp, st(0x4001, 0x31, 100), irq(100)];
