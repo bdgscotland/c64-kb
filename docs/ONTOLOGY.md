@@ -40,7 +40,9 @@ Source: `hardware/kernal-routines-reference.md` (Phase 1).
 
 ### Register
 
-A C64 hardware register at $D000–$DFFF.
+A C64 hardware register: the I/O chips at $D000–$DFFF, and the 6510's
+processor port at $0000/$0001 (D6510, R6510; chip 6510). An earlier
+version said $D000–$DFFF only; the port had no node until #19.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -52,7 +54,7 @@ A C64 hardware register at $D000–$DFFF.
 | default_value | string | Power-on default |
 | side_effects | string | Strobe / write-only / read-clears semantics |
 
-Source: `hardware/c64-registers-reference.md` (Phase 1).
+Source: `hardware/c64-registers-reference.md` (Phase 1); the port from `hardware/6510-cpu-reference.md`.
 
 ### MemoryRegion
 

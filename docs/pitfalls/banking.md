@@ -21,6 +21,7 @@ section runs into a hardcoded charset/bitmap blit address.
 
 **Severity:** medium
 **Region:** both
+**Triggered by registers:** R6510
 **Triggered by techniques:** char_rom_under_vic, cpu_io_port_bank, big_font_2x2, charset_copy_rom_to_ram
 
 ### Symptom
@@ -157,7 +158,7 @@ over 2048 bytes does the same job.
 
 ### Cross-references
 
-- Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 = LORAM/HIRAM/CHAREN; resolvable via `c64_memory_map 0001`, not `c64_register_lookup` (the KB has no Register node for the CPU port).
+- Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 = LORAM/HIRAM/CHAREN; also the Register R6510 (`c64_lookup_register $01`). An earlier version said the KB had no Register node for the port.
 - Register `D018` — VIC video matrix and charset base; independent of CPU char ROM visibility.
 - Register `DD00` — CIA2 port A; selects the VIC 16 KB bank.
 - Technique `char_rom_under_vic` — char ROM shadow in VIC banks 0 and 2.
@@ -319,6 +320,7 @@ setup_bank1:
 
 **Severity:** medium
 **Region:** both
+**Triggered by registers:** R6510
 **Triggered by techniques:** cpu_io_port_bank, ram_under_kernal, bitmap_relocation, speedcode_generation, irq_owns_processor_port, cartridge_save, cartridge_bank_easyflash, basic_rom_float_calls
 
 ### Symptom
@@ -463,8 +465,8 @@ custom_nmi:
 
 - Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port) — bits 0-2 are LORAM, HIRAM, CHAREN; the
   read-modify-write pattern for bits 3-5 (datasette lines) must be preserved.
-  Resolvable via `c64_memory_map 0001`, not `c64_register_lookup` (the KB has no
-  Register node for the CPU port).
+  Also the Register R6510 (`c64_lookup_register $01`); an earlier version said
+  the KB had no Register node for the port.
 - Technique `cpu_io_port_bank` — the full table of all seven CPU memory
   configurations, including the exact $01 values for each combination of banked
   ROMs. The technique doc has the full discussion of the PLA's write-transparency
@@ -571,7 +573,7 @@ be relocated to wherever the linker has free space.
 
 **Severity:** high
 **Region:** both
-**Triggered by registers:** DC0D, D019
+**Triggered by registers:** R6510, DC0D, D019
 **Triggered by techniques:** charset_copy_rom_to_ram, char_rom_under_vic, cpu_io_port_bank, irq_owns_processor_port
 
 ### Symptom

@@ -525,6 +525,7 @@ sprite_y: .fill 8, i * 21 + 50
 
 **Severity:** high
 **Region:** both
+**Triggered by registers:** R6510
 **Triggered by kernal:** SETLFS, LOAD, SAVE, OPEN, CLOSE
 **Triggered by techniques:** cpu_io_port_bank, kernal_file_write_seq, kernal_file_read_seq, error_channel_check, kernal_load_to_address, kernal_relative_file_io, directory_read_and_select
 
@@ -663,8 +664,8 @@ needs no zero-page scratch byte.
 
 - Memory region [$0000-$0001 — Processor I/O port](../hardware/c64-memory-map.md#0000-0001--processor-io-port)
   — the 6510 processor port data register; bits 0-2 control
-  LORAM/HIRAM/CHAREN. Resolvable via `c64_memory_map 0001`, not
-  `c64_register_lookup` (the KB has no Register node for the CPU port).
+  LORAM/HIRAM/CHAREN. Also the Register R6510 (`c64_lookup_register $01`);
+  an earlier version said the KB had no Register node for the port.
 - KERNAL routines: `SETLFS` ($FFBA), `OPEN` ($FFC0), `CLOSE` ($FFC3),
   `LOAD` ($FFD5), `SAVE` ($FFD8).
 - Pitfall: `kernal_assumes_sei_cleared` — the two pitfalls often occur

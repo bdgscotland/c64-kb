@@ -10,7 +10,15 @@ import type {
   MemoryMapOutput,
   RegisterLookupOutput,
 } from "../../schemas/tool-outputs.ts";
-import { names, parseRows, renderDocBlocks, searchChunks, toDocChunk, type Chunk } from "./shared.ts";
+import {
+  names,
+  parseRows,
+  registerKey,
+  renderDocBlocks,
+  searchChunks,
+  toDocChunk,
+  type Chunk,
+} from "./shared.ts";
 import type { KernalLookupResult, MemoryMapResult, RegisterLookupResult } from "./types.ts";
 
 function hexToInt(addr: string): number {
@@ -80,7 +88,7 @@ function decimalIoToHex(cleaned: string): string | null {
 }
 
 export async function lookupRegister(nameOrAddr: string): Promise<RegisterLookupResult> {
-  const cleaned = nameOrAddr.trim().toUpperCase().replace(/^\$/, "");
+  const cleaned = registerKey(nameOrAddr);
 
   // Guard: single-letter mnemonic queries match the entire register table and
   // produce useless noise. Return early with a helpful hint.

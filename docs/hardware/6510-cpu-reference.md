@@ -1906,6 +1906,32 @@ comparing $01. An earlier version of this paragraph said the two bits
 "behave as if always 0"; measured in VICE, $F7 written to $01 with
 DDR=$EF reads back as $F7.
 
+The two H3 entries below make the port two Register nodes, so a register
+lookup of `$01`, `0001` or `R6510` finds it and a pitfall can name it on a
+`**Triggered by registers:**` line. Until they were added the graph had no
+Register node for the port and a lookup of `$01` found nothing. The names
+D6510 and R6510 are the ones *Mapping the Commodore 64* uses; the ROM
+carries no names (rung 4).
+
+### $0000 — D6510 — Processor port data direction register (RW)
+
+**Chip:** 6510
+
+Bit n = 1 makes port pin n an output; reading returns the register
+itself. A write to $0001 reaches only the pins this register makes
+outputs. The KERNAL's IOINIT writes $2F here (bits 0-3 and 5 outputs,
+bit 4 input) after it writes $E7 to $0001: `A9 E7 85 01 A9 2F 85 00` at
+$FDD5, read from the KERNAL ROM 901227-03 (rung 1).
+
+### $0001 — R6510 — Processor port data register (RW)
+
+**Chip:** 6510
+
+Bits 0-2 (LORAM, HIRAM, CHAREN) select what the CPU sees at $A000,
+$D000 and $E000; bits 3-5 are the Datasette lines. It reads $37 after
+boot. Bits 6 and 7 have no pins: mask with `AND #$3F` before comparing.
+The bit table and the banking modes follow.
+
 ### What each bit controls on the C64
 
 Wired to the C64 board, the six port pins drive the C64's

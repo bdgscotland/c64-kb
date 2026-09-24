@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { getQdrant } from "../src/context.ts";
 import { ingestDoc } from "../src/tools/hydrate.ts";
 import { lookupRegister } from "../src/tools/query.ts";
+import { registerKey } from "../src/tools/query/shared.ts";
 
 // These tests seed just the two registers they need so they are isolated
 // from corpus state. Other test files call clean() which would wipe live data.
@@ -43,6 +44,24 @@ describe("lookupRegister decimal addresses", () => {
     const r = await lookupRegister("A");
     expect(r.structured.found).toBe(false);
     expect(r.text).toMatch(/at least 2 characters/);
+  });
+});
+
+describe("lookupRegister reads a short address as zero page (#19)", () => {
+  it.each(["$01", "01", "1", "$0001", "0001", "r6510"])("%s finds the processor port R6510", async (q) => {
+    await f.addRegister("R6510", "$0001", "6510", "RW", ["0001"]);
+    const r = await lookupRegister(q);
+    expect(r.structured.found).toBe(true);
+    expect(r.structured.name).toBe("R6510");
+  });
+
+  it("keys 'DC00' and 'D011' as before", () => {
+    expect(registerKey("$d011")).toBe("D011");
+    expect(registerKey(" dc00 ")).toBe("DC00");
+    expect(registerKey("$0")).toBe("0000");
+    expect(registerKey("$fe")).toBe("00FE");
+    expect(registerKey("A")).toBe("A");
+    expect(registerKey("FF")).toBe("FF");
   });
 });
 

@@ -124,3 +124,18 @@ export function suggestNames(query: string, all: readonly string[], sep: string)
     })
     .slice(0, 5);
 }
+
+/**
+ * A register query as the graph keys it: upper case, no "$", and a one- or
+ * two-digit address read as a zero-page one ("$01", "01" and "1" are
+ * $0001, the processor port R6510). Letters alone ("A", "FF") stay a name
+ * unless "$" or a leading 0 marks them as an address. Before the port had
+ * Register nodes (#19) no register lived below $D000, so a short address
+ * matched nothing.
+ */
+export function registerKey(query: string): string {
+  const raw = query.trim().toUpperCase();
+  const key = raw.replace(/^\$/, "");
+  const isAddress = raw.startsWith("$") || /^[0-9]/.test(key);
+  return isAddress && /^[0-9A-F]{1,2}$/.test(key) ? key.padStart(4, "0") : key;
+}

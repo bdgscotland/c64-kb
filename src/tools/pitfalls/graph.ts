@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type { FalkorService } from "../../services/falkor.ts";
+import { registerKey } from "../query/shared.ts";
 import type { PitfallsForOutput } from "../../schemas/tool-outputs.ts";
 
 export type EntityKind = "Register" | "KernalRoutine" | "Technique";
@@ -46,7 +47,7 @@ const regionOf = (s: string | null | undefined): Region => {
 };
 
 export function normalizeKey(kind: EntityKind, topic: string): string {
-  if (kind === "Register") return topic.replace(/^\$/, "").toUpperCase();
+  if (kind === "Register") return registerKey(topic);
   if (kind === "KernalRoutine") return topic.toUpperCase();
   return topic.toLowerCase().replace(/[- ]/g, "_");
 }
