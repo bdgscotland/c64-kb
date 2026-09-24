@@ -25,13 +25,17 @@ Design principles:
 
 ### KernalRoutine
 
-A KERNAL ROM jump-table entry ($FF81-$FFF3). An earlier version of this
-line said $FFC0+; the table starts at $FF81 (CINT).
+A KERNAL ROM jump-table entry ($FF81-$FFF3), or one of the tape routines
+inside the ROM that the page lists under "Tape routines inside the ROM",
+at its 901227-03 address and under Commodore's source label (`FAH`,
+`TRD`, `BSIV`). An earlier version of this line said $FFC0+; the table
+starts at $FF81 (CINT). Before the tape section every node was a
+jump-table entry.
 
 | Property | Type | Description |
 |----------|------|-------------|
 | name | string | Routine name (e.g. "CHROUT") |
-| address | string | Hex jump-table address (e.g. "$FFD2") |
+| address | string | Hex jump-table address (e.g. "$FFD2"), or ROM address for a tape routine (e.g. "$F72C") |
 | input_regs | string | Calling convention (e.g. "A=byte to print") |
 | output_regs | string | Return values (e.g. "C=error flag") |
 | description | string | One-line summary |
