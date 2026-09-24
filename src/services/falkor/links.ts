@@ -260,7 +260,7 @@ export class FalkorLinks extends FalkorNodes {
    */
   async linkClaims(c: {
     owner: string;
-    ownerKind: "Technique" | "Recipe";
+    ownerKind: "Technique" | "Recipe" | "Device";
     unit: string;
     mode: string;
     ranges?: string | undefined;
@@ -427,6 +427,16 @@ export class FalkorLinks extends FalkorNodes {
       `[falkor] linkExemplifiedBy: ${e.archetype} -> ${e.production} — archetype or production not found, edge dropped`,
     );
     return false;
+  }
+
+  /** REQUIRES_DEVICE (schema 36): the recipe's run attaches this device. MATCH both. */
+  async linkRequiresDevice(recipe: string, device: string): Promise<boolean> {
+    return this.mergeOrWarn({
+      from: { label: "Recipe", name: recipe },
+      rel: "REQUIRES_DEVICE",
+      to: { label: "Device", name: device },
+      warn: `linkRequiresDevice: ${recipe} -> ${device} (Device) — recipe or device not found`,
+    });
   }
 
   /** REALISED_BY (schema 28): this recipe builds the design. MATCH both. */

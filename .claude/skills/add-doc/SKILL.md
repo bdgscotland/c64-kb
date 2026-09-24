@@ -15,6 +15,7 @@ Announce: "Using add-doc for <path>."
 | pitfall | `docs/pitfalls/<category>.md` (H2 per pitfall) | `CONVENTIONS-pitfalls.md` | `<!-- doc-type: pitfall-reference -->` |
 | recipe | `docs/recipes/<toolchain>/<name>.md` | `CONVENTIONS-recipes.md` | `<!-- doc-type: recipe -->` |
 | hardware | `docs/hardware/*.md` (H3 per register/region/routine) | `CONVENTIONS-hardware-reference.md` | see file |
+| device | `docs/hardware/devices.md` (H2 per device) | `CONVENTIONS-devices.md` | `<!-- doc-type: device-reference -->` |
 | failure pattern | `docs/c64-failure-patterns.md` | `CONVENTIONS-failures.md` | see file |
 | toolchain | `docs/toolchains/*.md` | `CONVENTIONS-toolchain-reference.md` | see file |
 

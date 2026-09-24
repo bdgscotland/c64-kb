@@ -7,6 +7,7 @@ techniques: [kernal_file_write_seq, error_channel_check]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D015, D020, D027, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F]
 uses_kernal: [SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, READST]
+devices: [disk_1541_ii]
 ---
 
 <!-- doc-type: recipe -->

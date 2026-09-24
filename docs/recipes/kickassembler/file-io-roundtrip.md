@@ -7,6 +7,7 @@ techniques: [kernal_file_write_seq, kernal_file_read_seq, error_channel_check]
 file_formats: [PRG]
 uses_registers: [DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: [SETLFS, SETNAM, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, READST]
+devices: [disk_1541_ii]
 harness: [cia2_timer_a, cia2_timer_b]
 ---
 

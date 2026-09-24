@@ -7,6 +7,7 @@ techniques: []
 file_formats: [CRT]
 uses_registers: [DD04, DD05, DD06, DD07, DD0E, DD0F, D020]
 uses_kernal: [IOINIT, RAMTAS, RESTOR, CINT]
+devices: [generic_8k_cartridge]
 ---
 
 <!-- doc-type: recipe -->

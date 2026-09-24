@@ -66,8 +66,23 @@ export type GraphEntity =
       // Recipe claims (schema 34): whether the frontmatter has a claims: key; absent is unknown.
       claims_stated?: "stated" | "none";
       claims_basis?: ClaimsBasis;
+      // Devices (schema 36): whether the frontmatter has a devices: key; absent is unknown.
+      devices_stated?: "stated" | "none";
     }
   | { type: "scaffolds"; recipe: string; archetype: string }
+  // Devices (schema 36, #87): docs/CONVENTIONS-devices.md.
+  | {
+      type: "device";
+      name: string;
+      title: string;
+      kind: string;
+      port: string;
+      vice_attach: string;
+      source_doc: string;
+      claims_stated?: "stated" | "none";
+      claims_basis?: ClaimsBasis;
+    }
+  | { type: "requires_device"; recipe: string; device: string }
   | { type: "recipe_occupies"; recipe: string; start: number; end: number }
   | { type: "technique_demands"; technique: string; resource: string; description: string }
   | { type: "implements"; recipe: string; technique: string }
@@ -95,8 +110,8 @@ export type GraphEntity =
   | {
       type: "claims";
       owner: string;
-      // Recipe since schema 34: a recipe's own claims: frontmatter.
-      ownerKind: "Technique" | "Recipe";
+      // Recipe since schema 34: a recipe's own claims: frontmatter; Device since schema 36.
+      ownerKind: "Technique" | "Recipe" | "Device";
       unit: string;
       mode: ClaimMode;
       ranges?: string;

@@ -57,13 +57,20 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { z } from "zod";
 
+import { parseFrontmatter } from "../src/graph/extract/common.ts";
+import { parseDevices } from "../src/graph/extract/device.ts";
+import { recipeDevices } from "../src/graph/extract/recipe.ts";
 import { resolveX64sc, describeX64sc } from "../src/services/vice-bin.ts";
+import { checkCrtType, checkRunDevices } from "./lib/device-check.ts";
 import { RECIPE_TOOLCHAINS, cListing, errorLines, fences, isRecipePage, walk } from "./lib/markdown.ts";
 import { findC1541, findToolchains, which } from "./lib/toolchains.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const RECIPES = join(ROOT, "docs", "recipes");
 const MANIFEST = join(RECIPES, "runs.json");
+// The device sections a recipe's devices: key names (#87, docs/CONVENTIONS-devices.md).
+const DEVICES_DOC = join(ROOT, "docs", "hardware", "devices.md");
+const DEVICES = parseDevices(readFileSync(DEVICES_DOC, "utf8"), relative(ROOT, DEVICES_DOC));
 const argv = process.argv.slice(2);
 const flag = (name: string) => argv.includes(name);
 const opt = (name: string): string | null => {
@@ -446,7 +453,22 @@ function runModel(job: Job, built: Output, model: string, bins: Bins): void {
   }
 }
 
+/** The recipe's devices: key (null when absent), as the ingest reads it. */
+function declaredDevices(job: Job): string[] | null {
+  return recipeDevices(parseFrontmatter(readFileSync(job.md, "utf8")).fm.devices, job.rel);
+}
+
+/** Report device problems as one failure; true when there were any. */
+function deviceFailure(job: Job, problems: string[]): boolean {
+  if (problems.length === 0) return false;
+  failures++;
+  say(false, `${job.rel} (devices)`, problems.join("; "));
+  return true;
+}
+
 function runOne(job: Job, bins: Bins): void {
+  const declared = declaredDevices(job);
+  if (deviceFailure(job, checkRunDevices(declared, job.run, DEVICES))) return;
   const cart = job.run.cartridge;
   const crt = cart ? join(work, cart.file) : null;
   // A stale cartridge from an earlier --keep run must not stand in for this build's.
@@ -462,6 +484,7 @@ function runOne(job: Job, bins: Bins): void {
     say(false, `${job.rel} (build)`, `runs.json names cartridge ${crt} but the build did not write it`);
     return;
   }
+  if (crt && deviceFailure(job, checkCrtType(crt, declared ?? [], DEVICES))) return;
   for (const model of job.run.models) runModel(job, { prg, crt }, model, bins);
 }
 

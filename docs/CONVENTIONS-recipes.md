@@ -102,6 +102,16 @@ KickAssembler recipe and runs `claims-watch --recipe` on it with the
 cycles, flags and disk of its `runs.json` entry. It fails on any store
 these keys, the techniques' Claims lines and `uses_kernal` do not declare.
 
+`devices` is optional: the Device names (`docs/hardware/devices.md`) the
+recipe's pinned run attaches, `devices: [disk_1541_ii]` for a run with a
+`"disk"`, `devices: [reu_1750]` for `-reu -reusize 512`. Each becomes a
+`Recipe -[:REQUIRES_DEVICE]-> Device` edge (schema 36). `[]` says the
+recipe needs nothing beyond the stock machine; no key is unknown.
+`npm run verify:recipes` fails a recipe whose run attaches a device the
+key does not list, or whose key lists one the run does not attach (a
+joystick, which VICE attaches by default, may be listed either way). The
+rules are in `CONVENTIONS-devices.md`.
+
 ## Section structure
 
 After the frontmatter:

@@ -768,6 +768,10 @@ $DE00 column, gave the KCS Power Cartridge as "$DF00 control" in both
 columns, and grouped the Final Cartridge with Action Replay's $DE00
 control register.
 
+The cartridges and expansions a recipe here attaches (EasyFlash, Magic
+Desk, a generic 8 KB ROM, the REU) have a section each in `devices.md`,
+with the I/O pages they claim.
+
 Software written to be cartridge-agnostic must avoid touching $DE00-$DFFF
 unless it knows what cartridge is plugged in. By the decodes above, a
 stray write can switch a cartridge's ROM bank or turn it off (Action

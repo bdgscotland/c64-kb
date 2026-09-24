@@ -203,6 +203,33 @@ async function fetchRecipeZeroPage(f: FalkorService, techniques: readonly string
   );
 }
 
+const RecipeDeviceRow = z.object({
+  recipe: z.string(),
+  implements: z.array(z.string()),
+  device: z.string(),
+  port: z.string(),
+  owns: z.array(z.string()),
+});
+
+/** Devices every recipe that IMPLEMENTS an input requires, with the units each owns (schema 36). */
+async function fetchRecipeDevices(f: FalkorService, techniques: readonly string[]) {
+  if (techniques.length < 2) return [];
+  return parseRows(
+    RecipeDeviceRow,
+    await f.roQuery(
+      `MATCH (r:Recipe)-[:IMPLEMENTS]->(t:Technique)
+       WHERE t.name IN $techs
+       WITH r, collect(DISTINCT t.name) AS implements
+       MATCH (r)-[:REQUIRES_DEVICE]->(d:Device)
+       OPTIONAL MATCH (d)-[c:CLAIMS {mode: 'owns'}]->(h:HardwareUnit)
+       RETURN r.name AS recipe, implements, d.name AS device, d.port AS port,
+              collect(DISTINCT h.name) AS owns
+       ORDER BY recipe, device`,
+      { techs: techniques },
+    ),
+  );
+}
+
 const ClobberRow = z.object({ routine: z.string(), ranges: z.string().nullable() });
 
 /** The may set of every KERNAL routine the checked techniques USE (schema 26). */
@@ -227,13 +254,16 @@ async function fetchKernalClobbers(
 export async function fetchCompatibilityFacts(techniques: readonly string[]): Promise<CompatibilityFacts> {
   const f = await getFalkor();
   const requires = await fetchRequires(f, techniques);
-  const [facts, sharedRegisters, sharedKernal, recipeUses, recipeZeroPage] = await Promise.all([
-    fetchFacts(f, [...requires.keys()]),
-    fetchShared(f, techniques, "Register"),
-    fetchShared(f, techniques, "KernalRoutine"),
-    fetchRecipeUses(f, techniques),
-    fetchRecipeZeroPage(f, techniques),
-  ]);
+  const [facts, sharedRegisters, sharedKernal, recipeUses, recipeZeroPage, recipeDevices] = await Promise.all(
+    [
+      fetchFacts(f, [...requires.keys()]),
+      fetchShared(f, techniques, "Register"),
+      fetchShared(f, techniques, "KernalRoutine"),
+      fetchRecipeUses(f, techniques),
+      fetchRecipeZeroPage(f, techniques),
+      fetchRecipeDevices(f, techniques),
+    ],
+  );
   await fetchClaims(f, facts);
   const kernalClobbers = await fetchKernalClobbers(f, facts);
   return {
@@ -245,5 +275,6 @@ export async function fetchCompatibilityFacts(techniques: readonly string[]): Pr
     recipeUses,
     kernalClobbers,
     recipeZeroPage,
+    recipeDevices,
   };
 }
