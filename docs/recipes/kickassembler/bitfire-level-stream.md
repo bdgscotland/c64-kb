@@ -7,6 +7,10 @@ techniques: [in_game_level_streaming, bitfire_loader]
 file_formats: [PRG, D64]
 uses_registers: [D000, D001, D011, D012, D015, D018, D019, D01A, D020, D021, D027, DC04, DC05, DC06, DC07, DC0D, DC0E, DC0F, DD0D]
 uses_kernal: [SETLFS, SETNAM, LOAD]
+claims: [cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), sprite_0 (owns), vic_raster_irq (owns), irq_vector_fffe (owns), zero_page $10-$26 (owns)]
+claims_basis: derived-listing
+harness: [cia1_timer_a, cia1_timer_b]
+ram: [screen=$0400-$07FF, sprite=$0340-$037F, play=$4000-$501F, stage=$6000-$701F, colour=$D800-$DBE7]
 ---
 
 <!-- doc-type: recipe -->
@@ -627,6 +631,12 @@ KickAssembler writes the game PRG and, from four `outPrg` segments,
 `$6000`. The levels become Bitfire files 0-3, 17 blocks each. Add
 `-model ntsc` for the NTSC run, and `:block=1` to the KickAssembler line
 for the control; rebuild the disk after it.
+
+The frontmatter's `claims:` is read from the pinned listing
+(`claims_basis: derived-listing`), not from a `claims-watch` trace: the
+watch autostarts a PRG, and this program boots from the disk Bitfire's
+`d64write` writes, which this repository does not build. CIA1 timers A and B
+are `harness:`: they count the frames the interrupt misses.
 
 ## Expected output
 
