@@ -1,8 +1,8 @@
 // src/tools/run-game.ts — c64_run_game MCP tool.
 //
-// Spawns x64sc with -autostart, connects via the bundled vice-mcp,
-// drives the parallel-input-cell harness pattern proven by loop/demo,
-// and returns a state trace + final screen render.
+// Spawns x64sc with -autostart, connects through vice-mcp (VICE_MCP_PATH),
+// drives the parallel-input-cell pattern (the program polls a state struct
+// this tool writes into), and returns a state trace + final screen render.
 //
 // This is the substrate layer the c64-kb MCP exposes for game
 // development. Claude Code calls it from a session to verify a

@@ -378,8 +378,8 @@ command, which the hook never sees.
 When `$(C64KB)/scripts/claims-watch.ts` exists, `make claims` runs it from
 the c64-kb checkout over the AUTOPILOT PRG with the starter's
 `CLAIMS_ARGS`; otherwise it prints that the script is not available and
-exits 0. The script lands with issue #22 step 6 and is not on this branch.
-Run against the copy on the `onto22-watch` branch, hello first failed:
+exits 0. The script landed with issue #22 step 6. Run against it before
+it reached main, hello first failed:
 Oscar64's zero page and the `$FF` store to `$DC00` were undeclared, and so
 was the meter's one `$DD0D` store, which claims-watch counts against
 `cia2_timer_b` and `cia2_tod` as well as `cia2_timer_a`. With

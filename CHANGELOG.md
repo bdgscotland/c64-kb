@@ -5,7 +5,30 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 771, schema 31, tools 2.3.1, package 0.17.1.
+Data 772, schema 31, tools 2.3.2, package 0.17.1.
+
+**Stale pages and tool descriptions found by the README audit (data 772,
+tools 2.3.2).**
+- `docs/ARCHITECTURE.md`: counts removed; the CLI list, node labels,
+  derived edges and analytics location brought up to date; the
+  verification section now covers verify:recipes, claims-watch,
+  verify:templates, CI and releases.
+- Tool descriptions: `c64_search` said the corpus had no cartridge pages
+  (it has cartridges, the REU and the 1541); `c64_recipes_for` called its
+  technique filter a no-op (it matches a Technique name through
+  IMPLEMENTS); `c64_run_game` said it kills any x64sc (only the one on
+  monitor port 6502), assumed x64sc on PATH, and cited a `loop/` directory
+  that does not exist; `c64_report_gap` promised a dashboard nothing
+  tracks.
+- Licence fields: sim6502 is GPL-3.0 on GitHub, not MIT; simen/vice-mcp
+  states no licence, and the page said MIT. The sim6502 page now says its
+  VICE backend's `barryw/vice-mcp` is a VICE fork, not the MCP bridge
+  `c64_run_game` drives.
+- `agent-harness.md` said claims-watch was not on the branch; it is.
+  CLAUDE.md said CI runs every gate but the ingest; it runs neither
+  verify:templates nor anything Oscar64.
+- `docs/figures/fig6-architecture.png` and `fig7-ontology.png` removed:
+  they showed stale counts and nothing linked them.
 
 **Package 0.17.1.** The first release published by
 `.github/workflows/release.yml` through npm trusted publishing, with

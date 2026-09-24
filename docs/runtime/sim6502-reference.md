@@ -2,7 +2,7 @@
 tool: sim6502
 tool_kind: unit-test
 maintainer: barryw
-license: MIT
+license: GPL-3.0
 home_url: https://github.com/barryw/sim6502
 ---
 
@@ -285,7 +285,7 @@ sim6502 supports two backends relevant to C64 work:
 
 ### Using the VICE backend
 
-The VICE backend requires a VICE fork with MCP server support built in (mainstream VICE does not include this):
+The VICE backend requires a VICE fork with MCP server support built in (mainstream VICE does not include this). That fork is `barryw/vice-mcp`, a different project from `simen/vice-mcp`, the Node MCP bridge that `c64_run_game` drives ([vice-mcp-reference](vice-mcp-reference.md)):
 
 ```bash
 git clone -b feature/mcp-server https://github.com/barryw/vice-mcp.git

@@ -44,7 +44,7 @@ export const searchTool = defineTool({
 
 Guidelines: Use for fuzzy intent ("how does badline timing work?", "which chip handles joystick?") or when the user's question doesn't map cleanly to a register, KERNAL routine, or opcode. For known identifiers, prefer c64_lookup_register / c64_lookup_kernal / c64_lookup_opcode which return structured data.
 
-Limitations: Quality depends on Ollama availability. Without Ollama, falls back to Qdrant's full-text index (no semantic similarity). Indexed corpus is stock C64 only (no Mega65 / SuperCPU / cartridge-specific docs).
+Limitations: Quality depends on Ollama availability. Without Ollama, falls back to Qdrant's full-text index (no semantic similarity). Indexed corpus is the stock C64 and its common peripherals (1541, 17xx REU, cartridges including EasyFlash, mouse, paddles, light pen); no C128, Mega65, SuperCPU or Ultimate II+.
 
 Param notes: 'limit' defaults to 5; raise for survey-style queries, lower for tight follow-ups. 'filter_source' is an exact-match source filename (e.g. "vic-ii-reference.md").
 

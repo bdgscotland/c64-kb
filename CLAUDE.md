@@ -87,7 +87,7 @@ npm run ingest:clean       # if any doc changed: rebuild graph + vectors; read t
 npm run health             # live counts; README carries none, so nothing to update there
 ```
 
-`.github/workflows/ci.yml` runs all of these except the ingest; Oscar64 recipes are skipped there until #25. `npx lefthook install` once per clone adds git hooks that run the fast ones on what you stage. In a Claude Code session the hooks format, lint and type-check each edited `.ts` file, and a Stop hook builds `dist/` and runs the unit tests once per turn.
+`.github/workflows/ci.yml` runs the type check, lint, formatting, knip, the unit and integration tests, `check:listings --allow-missing`, and `verify:recipes` for the KickAssembler and cc65 recipes. It does not run `verify:templates`, the ingest, `health` or anything Oscar64: those are skipped there until #25, so run them here. An earlier version of this sentence said CI ran all of these except the ingest. `npx lefthook install` once per clone adds git hooks that run the fast ones on what you stage. In a Claude Code session the hooks format, lint and type-check each edited `.ts` file, and a Stop hook builds `dist/` and runs the unit tests once per turn.
 
 ## Releasing to npm
 
