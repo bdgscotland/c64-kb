@@ -1,0 +1,15 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "title MEASURED", "type": "text", "row": 1, "col": 16, "text": "MEASURED" },
+    { "name": "credit line 1", "type": "text", "row": 3, "col": 0, "text": "BUILT FROM C64-KB" },
+    { "name": "part 1 label", "type": "text", "row": 7, "col": 0, "text": "P1" },
+    { "name": "part 2 label", "type": "text", "row": 8, "col": 0, "text": "P2" },
+    { "name": "part 3 label", "type": "text", "row": 9, "col": 0, "text": "P3" },
+    { "name": "part 4 label", "type": "text", "row": 10, "col": 0, "text": "P4" },
+    { "name": "part 5 label", "type": "text", "row": 11, "col": 0, "text": "P5" },
+    { "name": "parts verdict line", "type": "text", "row": 13, "col": 0, "text": "PARTS 5/5 PASS" },
+    { "name": "frame metre, 200 play frames", "type": "meter", "row": 24, "col": 20, "frames": 200 },
+    { "name": "title and credits same on both models", "type": "same", "cells": [0, 0, 6, 39] }
+  ]
+}

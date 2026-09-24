@@ -1,0 +1,72 @@
+# Plan
+
+Fill this in before any code. `make` (every target that builds) and the
+Claude Code hook refuse to build or write under `src/` while a `FILL:` line
+is left, while the Compatibility and Budget sections lack the tools' whole
+output, or while a technique those outputs name is missing from the table
+below. With C64KB set, `make` also re-runs `check-compatibility` and wants
+the same Verdict line.
+
+Run the tools in the c64-kb checkout: `cd $C64KB && npx tsx src/cli.ts <command>`.
+
+## Concept
+
+FILL: two or three sentences. What the player sees and does. PAL, NTSC or both.
+
+## Briefing
+
+Command: `npx tsx src/cli.ts game-briefing "<concept>" --archetype <name>`
+(`demo-briefing` for a demo).
+
+FILL: the parts of the briefing you are acting on: techniques kept, techniques
+dropped and why, the pitfalls it named that this program meets.
+
+## Techniques
+
+The first cell is the technique's snake_case name as the tools print it.
+
+| Technique | Why | Recipe it starts from | Pitfalls read (`pitfalls-for`) |
+|---|---|---|---|
+| FILL: name | | | |
+
+## Compatibility
+
+Command: `npx tsx src/cli.ts check-compatibility <technique> <technique> ...`
+
+```text
+FILL: paste the whole output here. It starts "# Compatibility:".
+```
+
+What the warnings mean for this program:
+
+FILL: one line per warning, or "none".
+
+## Budget
+
+Command: `npx tsx src/cli.ts plan-budget <technique> ... --region both [--sprites n --sprite-lines n]`,
+on the same techniques as check-compatibility.
+
+```text
+FILL: paste the whole output here. It starts "# Budget plan:".
+```
+
+The frame meter measures the real figure once the loop runs: worst, and
+typical as the median of the autopilot's play frames. Record both here with
+the model and the command (`make shot check` prints them).
+
+FILL: what is unknown in the budget and how the meter will settle it.
+
+## Memory and screen
+
+FILL: where code, the KickAssembler blob, sprites, character set, screen and
+music live. In AUTOPILOT builds the meter owns screen row 24, columns 20 to 39,
+in the power-on character set; CIA2 timer A belongs to the meter.
+
+## Autopilot and checks
+
+FILL: the scripted input, the verdict the program grades itself on ($02FF and
+the border), and the expect.json checks that grade the screenshots.
+
+## Decisions and open questions
+
+FILL: anything settled on the way, with its evidence; anything still open.

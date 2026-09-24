@@ -7,6 +7,16 @@ Entries below start at the first public audit; earlier history is in git.
 
 Data 776, schema 31, tools 2.4.0, package 0.17.1.
 
+**MEASURED, a demo built only from the KB, is checked in under `demos/measured/`.**
+Five parts (a tech-tech logo with a sprite border scroller, a twister with
+vector balls, DYSP side-border sprites over a soft scroller, a fire effect,
+a sprites-only screen with vector balls), each a KB technique with a recipe
+behind it, on a sequencer that grades the parts with a verdict byte and a
+frame meter and pins the end screen on PAL and NTSC; `verify.sh` runs the
+whole battery. The root README links it. The tune is a placeholder; a full
+player and a new score are in progress. Nothing under `docs/` changes, so
+the data version does not move.
+
 **Issue #55: the first new technique, `sid_env3_filter_envelope`, lands
 (data 771).** Voice 3's hardware ADSR drives the filter cutoff: `$D416` =
 (`$D41C` >> 1) + base every frame, with 3OFF set and FILT3 clear, so the

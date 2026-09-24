@@ -1,0 +1,55 @@
+{
+  "note": "Part 5 SPRITES (sprites-only screen, vector balls) inside the demo at an arbitrary frame.  Dropped from expect-p5.json: the verdict check (standalone self-grades at frame 300), the explicit sprite bounding-box sprite checks at specific y coordinates (the balls orbit continuously so their line varies with t), the sprite overlap checks (depth-dependent, changes every frame).  Kept: the black background areas that never have any sprite (extreme left and right of display where sprites never reach given XMID=172 radius=40), the open-border region (top and bottom borders are open in sprites-only mode, making them appear as part of the background), PAL-NTSC same check on a known-black strip.  Added 2026-09-23 (I-008): an ink count over the orbit region.  The black-area checks passed while the demo drew ONE small grey ball at VIC (255, 255) because p5's tables had been assembled under the I/O area; a check that only asserts black cannot see a missing picture.  The orbit region is the tables' own range: px 120..224 and py 35..245 from the module's proj() functions, so vic_x 120 to 247 and lines 36 to 266.  The smallest union of ball pixels over all 256 phases is 1,904 (computed from the same functions: 8 balls of 400 or 176 pixels, at worst 7 distinct positions), the largest 2,264; the fault drew 176.  min 1500 holds at any phase with a 400-pixel margin and fails anything under four balls; max 3000 fails a screen that is not black around the balls.  No colour list: the fade recolours the balls, and the count is phase- and fade-independent until the last fade step turns the sprites off.  Measured windows in which part 5 is on screen and not yet fading: about 75M to 87M cycles PAL, 66M to 74M NTSC; verify.sh shoots inside them.",
+  "checks": [
+    {
+      "name": "verdict absent (mid-demo shot, border is black, program has not reached end screen)",
+      "type": "verdict"
+    },
+    {
+      "name": "border is black (D020=0, D021=0); line 30 not 20: NTSC's picture starts at line 28, and with line 20 check.py refused the whole file and verify.sh read the refusal as a pass (I-008)",
+      "type": "pixel",
+      "vic_x": 4,
+      "line": 30,
+      "colour": 0
+    },
+    {
+      "name": "extreme left of display is black: sprites never reach x<100 at XMID=172 radius=40",
+      "type": "rect",
+      "vic_x": 24,
+      "line": 50,
+      "width": 60,
+      "height": 150,
+      "colour": 0
+    },
+    {
+      "name": "extreme right of display is black: sprites never reach x>260 at XMID=172 radius=40",
+      "type": "rect",
+      "vic_x": 270,
+      "line": 50,
+      "width": 60,
+      "height": 150,
+      "colour": 0
+    },
+    {
+      "name": "extreme-left black strip same on both models",
+      "type": "same",
+      "area": {
+        "vic_x": 24,
+        "line": 50,
+        "width": 60,
+        "height": 150
+      }
+    },
+    {
+      "name": "orbit region vic_x 120-247, lines 36-266 holds the balls: at least 1500 lit pixels at any phase (smallest phase 1904; the I-008 fault drew 176), at most 3000",
+      "type": "ink",
+      "vic_x": 120,
+      "line": 36,
+      "width": 128,
+      "height": 231,
+      "background": 0,
+      "min": 1500,
+      "max": 3000
+    }
+  ]
+}
