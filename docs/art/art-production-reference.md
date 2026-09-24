@@ -36,7 +36,7 @@ For the scene artist, hires text mode is where PETSCII graphics are made: ROM ch
 
 ### Multicolor Text Mode
 
-Setting bit 4 of $D016 switches character cells to 2bpp multicolor rendering. Colors 00 and 01 and 10 are global ($D021, $D022, $D023); color 11 is per-cell from Color RAM. High bit of Color RAM byte selects multicolor mode per character, so hires and multicolor characters can share a screen. It gives detailed bitmap-style characters for less memory than a full bitmap.
+Setting bit 4 of $D016 switches character cells to 2bpp multicolor rendering. Colors 00 and 01 and 10 are global ($D021, $D022, $D023); color 11 is per-cell from Color RAM. Bit 3 of each cell's Color RAM nibble selects multicolor mode per character, so hires and multicolor characters can share a screen; a multicolor cell's color 11 comes from Color RAM bits 0–2, so it is one of colors 0–7 (`../hardware/vic-ii-reference.md`). (An earlier version said the "high bit of Color RAM byte".) It gives detailed bitmap-style characters for less memory than a full bitmap.
 
 ### Extended Color Mode (ECM)
 
@@ -44,11 +44,11 @@ ECM assigns one of four background colors (from $D021–$D024) to each character
 
 ### FLI — Flexible Line Interpretation
 
-FLI is a software technique, not a hardware mode. By using the timing of the VIC-II's video matrix fetch (which occurs on the first cycle of each badline), the CPU can substitute a different 1000-byte screen RAM for every 8-line group within the frame, giving per-row attribute control in bitmap mode. In standard multicolor bitmap the attribute cell is 4×8 pixels (horizontal) by 8 pixels (vertical); FLI breaks the 8-scanline vertical grouping. With one screen RAM per raster row, the color cell shrinks to 4×1 in the limit: any pixel row can have its own per-cell colors.
+FLI is a software technique, not a hardware mode. The VIC-II reads screen RAM, which holds two of a cell's colors, only on a badline, normally every eighth line. FLI writes $D011 on every line so that every line becomes a badline, and writes $D018 on every line to point at a different screen RAM page, eight pages in all (`../recipes/kickassembler/fli-image.md`, measured in VICE). In plain multicolor bitmap the attribute cell is 4×8 multicolor pixels; under FLI it is 4×1, so every pixel row of a cell can have its own two screen RAM colors. Color RAM is one fixed 1 KB, so the color 11 stays per 4×8 cell. (An earlier version said FLI swaps screen RAM once per 8-line group, placed the matrix fetch on the first cycle of a badline, and gave the cell as "4×8 pixels (horizontal) by 8 pixels (vertical)".)
 
-Attribute clash drops sharply for the artist. Colors can change every scanline within a cell column. The cost is an 8-column-wide artifact strip on the left side (the FLI bug, or "FLI bar"): the CPU cannot swap the screen RAM pointer fast enough for the first 3 character columns on each row, which leaves a discolored band. Productions place the FLI bug in a black or off-screen area, cover it with a sprite overlay, or use it as part of the design.
+Attribute clash drops sharply for the artist. Colors can change every scanline within a cell column. The cost is the FLI bug: the three leftmost character columns (24 pixels) of every line show light grey, because the forced badline starts its fetches late and those columns read $FF instead of screen RAM (measured in VICE, `../recipes/kickassembler/fli-image.md`). (An earlier version called the strip 8 columns wide and blamed the CPU's pointer swap speed.) Productions place the FLI bug in a black or off-screen area, cover it with a sprite overlay, or use it as part of the design.
 
-FLI images use more CPU time (the IRQ handler must run on every raster line during the visible frame) and need careful memory layout, but photographic or painted content looks noticeably better than in plain multicolor bitmap. FLI is the standard format for high-quality C64 scene graphics.
+FLI images use more CPU time (an unrolled block of $D018/$D011 writes runs on every display line, entered once per frame from one stable raster interrupt; there is no per-line IRQ, see `../techniques/bitmap-modes.md`) and need careful memory layout, but photographic or painted content looks noticeably better than in plain multicolor bitmap. FLI is the standard format for high-quality C64 scene graphics.
 
 ### AFLI — Advanced FLI (Hires FLI)
 
@@ -56,9 +56,9 @@ AFLI applies the same per-row screen RAM substitution to standard hires bitmap m
 
 ### IFLI — Interlaced FLI
 
-IFLI alternates two FLI frames on successive video fields, using the PAL display's 50 Hz interlace. Because PAL composite monitors blend adjacent fields, two slightly offset FLI images appear as one image with doubled vertical color resolution. The color cell approaches 4×0.5 pixels. On a real PAL monitor or a correctly configured PAL composite display this is the highest color fidelity on unmodified C64 hardware, close to photo quality.
+IFLI shows two FLI pictures on alternate frames, so each is shown at 25 Hz on PAL. The second picture is usually shifted one hires pixel sideways, and the display or the eye blends the pair into more horizontal color detail, towards 320 across instead of 160, with FLI's per-line colors. The C64 does not interlace: each frame is still a 160-wide FLI picture, and a VICE exit screenshot shows one of them (`../techniques/bitmap-modes.md`, `ifli_image`). How well the pair blends depends on the display and the viewer; not measured here. (An earlier version called this 50 Hz interlace with doubled vertical color resolution and a 4×0.5 cell.)
 
-The CPU is almost fully occupied by the dual-frame IRQ work, leaving little time for animation. IFLI is used almost only for standalone art viewers or competition entries where the image is the demo. The artist must paint in a tool that writes the dual-frame format directly (Multipaint supports IFLI export). On NTSC hardware IFLI fails: the interlace phase relationship differs and the fields do not blend correctly. IFLI is a PAL format.
+The FLI engine takes the CPU for the whole display area, as in FLI, leaving little time for animation. IFLI is used almost only for standalone art viewers or competition entries where the image is the demo. The artist must paint in a tool that writes the dual-frame format directly (whether Multipaint exports IFLI is not checked here). On NTSC the same engine works with NTSC line padding, and the pair alternates at 30 Hz (`../techniques/bitmap-modes.md`). (An earlier version said IFLI fails on NTSC and is a PAL format.)
 
 ---
 
@@ -70,11 +70,11 @@ The palette has clear internal structure. The bright colors (yellow, light green
 
 The most reliable contrast pairs differ in luminance rather than hue: black/white, black/yellow, black/light blue, blue/white. Cyan over red is a classic scene combination (high contrast, complementary hue); purple over light green works the same way. Do not place brown next to medium grey: the luminance step is too small to tell apart on composite output.
 
-Dithering relies on the eye averaging adjacent colors. In multicolor mode the 4-pixel-wide pixel pitch is coarse enough that checkerboard patterns read as textures rather than blends at normal viewing distance; on composite, the narrow chroma bandwidth can produce visible fringing. The most effective C64 dithering patterns are horizontal stripes (alternating pixel rows) in hires mode, where composite vertical blending is stronger than horizontal. In FLI and IFLI modes, dithering is a primary way to extend the palette: per-scanline color control lets the artist bring in a new hue every row within a gradient.
+Dithering relies on the eye averaging adjacent colors. In multicolor mode the 2-pixel-wide pixel pitch (160 across; an earlier version said 4) is coarse enough that checkerboard patterns read as textures rather than blends at normal viewing distance; on composite, the narrow chroma bandwidth can produce visible fringing. The most effective C64 dithering patterns are horizontal stripes (alternating pixel rows) in hires mode, where composite vertical blending is stronger than horizontal. In FLI and IFLI modes, dithering is a primary way to extend the palette: per-scanline color control lets the artist bring in a new hue every row within a gradient.
 
 PAL composite output produces chroma artifacts that artists use. Some color transitions produce a colored fringe (chroma phase interference) that adds a third perceived color not in the source palette. The effect depends on monitor and cable and does not appear on HDMI upscalers or clean S-Video. On real PAL hardware it is reliable; in a release meant for emulators it is a liability.
 
-The PAL vs NTSC chroma difference affects palette choice: perceived colors differ between PAL and NTSC machines and between hardware revisions. Two palette references are in wide use: the Pepto palette (derived by Philip "Pepto" Timmermann from real-hardware measurement) and the Colodore palette (derived by Tobias "Colodore" from a different reference set). Pepto has slightly warmer reds; Colodore is cooler. Use Colodore for releases aimed at emulators (it is the default in recent VICE builds) and expect images to look slightly different on real hardware. Do not rely on exact hue relationships between the similar grey pairs or the similar browns; they vary most across chip revisions.
+The PAL vs NTSC chroma difference affects palette choice: perceived colors differ between PAL and NTSC machines and between hardware revisions. Two palette references are in wide use, both by Philip "Pepto" Timmermann: the Pepto palette and the later Colodore palette (https://www.colodore.com/ credits pepto). In the `.vpl` files VICE 3.10 ships, Colodore is the more saturated of the two: red is $96 $28 $2E against Pepto's $68 $37 $2B. Neither is VICE's default: with `-default` VICE 3.10 uses an internally generated palette that matches none of its 27 `.vpl` files (`../runtime/vice-reference.md`, "The default palette"). Expect images to look different on real hardware. (An earlier version credited Colodore to "Tobias", called Pepto warmer and Colodore cooler, and said Colodore is VICE's default.) Do not rely on exact hue relationships between the similar grey pairs or the similar browns; they vary most across chip revisions.
 
 ---
 
@@ -82,7 +82,7 @@ The PAL vs NTSC chroma difference affects palette choice: perceived colors diffe
 
 ### Multipaint
 
-The modern cross-platform standard for C64 bitmap painting. Runs natively on Windows, macOS and Linux. Supports hires bitmap, multicolor bitmap (Koala), FLI, AFLI and IFLI modes. Exports the canonical file formats that assemblers and loaders consume. Its main production feature is live attribute clash display: pixels that would cause a color conflict in the current mode are flagged as the artist paints, so they can be fixed before export. Multipaint is available at multipaint.org. Complexity tier: intermediate (it assumes the mode concepts).
+A cross-platform bitmap painter by Tero Heikkinen, written in Processing for Windows, macOS and Linux. Its homepage (http://multipaint.kameli.net/) shows C64 hires and multicolor work; FLI, AFLI and IFLI support is not checked here (an earlier version listed all three). Exports the canonical file formats that assemblers and loaders consume. Its main production feature is live attribute clash display: pixels that would cause a color conflict in the current mode are flagged as the artist paints, so they can be fixed before export. Multipaint is available at http://multipaint.kameli.net/ (an earlier version gave multipaint.org, which does not resolve). Complexity tier: intermediate (it assumes the mode concepts).
 
 ### Spritemate
 
@@ -90,19 +90,15 @@ A browser-based sprite editor that needs no installation or C64 toolchain. Suppo
 
 ### SpritePad
 
-A native Windows sprite and animation editor, older than Spritemate. Supports up to 96 sprites in one project file, animation sequences, multicolor and hires modes, and preview over a bitmap or character screen. Exports to `.spd` project format and binary or assembly source. SpritePad is the standard tool in Windows-based scene groups. Complexity tier: beginner to intermediate.
+A native Windows sprite and animation editor, older than Spritemate. Holds more than 96 sprites per project file: a version 5 `.spd` stores a two-byte sprite count, and one sample decoded in `../formats/c64-file-formats.md` holds 128 (an earlier version said up to 96). Supports animation sequences, multicolor and hires modes, and preview over a bitmap or character screen. Exports to `.spd` project format and binary or assembly source. SpritePad is the standard tool in Windows-based scene groups. Complexity tier: beginner to intermediate.
 
 ### CharPad
 
 The standard native Windows charset and tilemap editor. Manages the 256-tile budget, paints characters in multicolor or hires mode, assembles tiles into full-screen tilemaps, and exports screen RAM, Color RAM and character data as binary or assembly source. CharPad project files hold all tile and map data together. Complexity tier: intermediate.
 
-### PETSCII Studio
-
-A browser-based PETSCII art editor. The canvas is the ROM charset: the artist picks characters and colors and places them on the 40×25 grid, building images from box-drawing, reverse and symbol characters. Exports to PRG (direct screen memory load), assembly source or plain text. Complexity tier: beginner.
-
 ### ProjectOne
 
-A cross-platform scene tool for building C64 screen layouts that combine sprites, characters, bitmaps and raster splits, mainly demo screens with several VIC-II modes in one frame. It is a layout compositor, not a pixel painter: it takes assets made in other tools and generates the screen RAM, sprite positioning data and raster split timing tables. Complexity tier: scene-tier.
+A PC tool for C64 graphics by the group Resource, released as versions 0.2 to 0.6 in 2005–2010 (CSDb release search). What it does is not checked here. (An earlier version described it as a layout compositor that generates raster split tables, with no source; a "PETSCII Studio" section was removed because no such tool was found on CSDb.)
 
 ### Historical Tools
 
@@ -112,7 +108,7 @@ Koala Painter was the original multicolor bitmap editor on the real C64. Its fil
 
 ## Sprite Art Principles
 
-Each hardware sprite is 24×21 pixels in single-color mode. The pixel is square at the C64's pixel clock rate (approximately 320 pixels across the visible display), so a 24-pixel-wide sprite occupies roughly 18.75% of the display width. In multicolor sprite mode, pixels double in width: the canvas is 12×21 pixels at 2bpp. The two bits per pixel give three foreground colors at half the horizontal resolution.
+Each hardware sprite is 24×21 pixels in single-color mode. The pixel is square at the C64's pixel clock rate (approximately 320 pixels across the visible display), so a 24-pixel-wide sprite occupies 7.5% of the 320-pixel display width (24 / 320; an earlier version said 18.75%). In multicolor sprite mode, pixels double in width: the canvas is 12×21 pixels at 2bpp. The two bits per pixel give three foreground colors at half the horizontal resolution.
 
 In multicolor sprite mode, two global multicolor registers ($D025, $D026) are shared by all sprites, plus one per-sprite color from $D027–$D02E. All multicolor sprites therefore share the same two global colors: one sprite cannot have a red highlight and another a blue one through the multicolor slots. The per-sprite register is the only per-sprite color in this mode.
 
@@ -130,7 +126,7 @@ In hires text mode each tile is one foreground color (from Color RAM) on the glo
 
 Raster IRQs allow per-row changes. Writing $D022/$D023 (the shared multicolor text colors) at scanline boundaries gives different horizontal bands different shared color pairs, multiplying the shared colors by the number of raster splits. The coder implements this, but the artist must design tiles knowing the shared colors may change between rows.
 
-PETSCII art builds recognizable images from the ROM charset alone, with no custom tiles. The ROM charset holds alphanumeric characters, box-drawing characters and symbols that combine in ways their designers did not intend. Conventions: curves are approximated with diagonal box characters, shading comes from character density, and the reverse-video set doubles the available shapes. Tools like PETSCII Studio make this possible without assembly knowledge.
+PETSCII art builds recognizable images from the ROM charset alone, with no custom tiles. The ROM charset holds alphanumeric characters, box-drawing characters and symbols that combine in ways their designers did not intend. Conventions: curves are approximated with diagonal box characters, shading comes from character density, and the reverse-video set doubles the available shapes. A PETSCII editor makes this possible without assembly knowledge.
 
 A custom charset for game tilemaps forces choices within the 256-tile budget. Ways to stretch it: tile mirroring in software (store only left-facing variants, flip sprites for the right-facing case), shared edge tiles (a tile designed to abut two different neighbors reduces the number of unique shapes), and palette rotation (vary Color RAM to reuse one tile shape in different colors). CharPad shows tile usage frequency so the artist can see where the budget goes.
 
@@ -146,7 +142,7 @@ Next the palette assignment is reviewed. Multipaint lets the artist swap which p
 
 Export writes the canonical binary files for the target format. For Koala, this is a single 10003-byte file. For FLI, it is a set of screen RAM pages plus the bitmap, usually managed by the editor. The files go in the project's asset directory and are linked into the build by the assembler or Oscar64's data embedding syntax. See `./asset-pipelines.md` for how assets move from export to ROM or disk.
 
-Koala vs FLI vs IFLI trades quality against complexity. Koala is the default: least CPU overhead, widest compatibility, supported by every tool. FLI fits when Koala's attribute clash is unacceptable and the CPU budget allows the per-line IRQ cost. IFLI is for showcase pieces on PAL hardware where image quality is the only goal. A game almost never uses FLI or IFLI for play-field graphics; the CPU cost rules it out. A demo title screen or loader image may use any of the three, depending on the quality wanted and the group's tools.
+Koala vs FLI vs IFLI trades quality against complexity. Koala is the default: least CPU overhead, widest compatibility, supported by every tool. FLI fits when Koala's attribute clash is unacceptable and the CPU budget allows the per-line CPU cost. IFLI is for showcase pieces on PAL hardware where image quality is the only goal. A game almost never uses FLI or IFLI for play-field graphics; the CPU cost rules it out. A demo title screen or loader image may use any of the three, depending on the quality wanted and the group's tools.
 
 ---
 

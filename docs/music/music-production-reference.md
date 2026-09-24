@@ -52,9 +52,10 @@ tables, ADSR parameters, pulse width sequences, and arpeggio tables.
 
 GoatTracker compiles to SID file format (PSID/RSID), to a raw binary
 player at a configurable load address, or to a relocatable module.
-The bundled player binary (GoatTracker Stereo Player or the mono variant)
-is under 1 KB for the player code alone. Pattern data size depends on the
-composition. The player is interrupt-driven
+The player code is exported with the song; its size is not measured here,
+and pattern data size depends on the composition. (An earlier version
+named a "GoatTracker Stereo Player" and put the player under 1 KB;
+neither is checked.) The player is interrupt-driven
 and expects to be called once per frame.
 
 GoatTracker's instrument table supports multi-frame waveform and pulse
@@ -116,8 +117,11 @@ work.
 
 ### SID Factory II
 
-SID Factory II is Linus Akesson's modern tracker, open-source and
-cross-platform. It is built around a driver model: the tracker compiles
+SID Factory II is a modern tracker, open-source and cross-platform
+(Windows, macOS, Linux). Its README credits main programming to Thomas
+Egeskov Petersen, with Jens-Christian Huus, Michel de Bree and Thomas
+Jansson (https://github.com/Chordian/sidfactory2; an earlier version
+credited Linus Akesson). It is built around a driver model: the tracker compiles
 against a driver binary, and different drivers expose different feature
 sets. The default driver supports multi-frame instrument tables, filter
 automation, and an explicit, controllable gate/hard-restart cycle.
@@ -135,23 +139,22 @@ readable internals; contributors to open-source C64 projects.
 ## The voice-3-as-drum dogma
 
 For most of C64 music history, voice 3 has been the percussion voice.
-The convention exists because the noise waveform — the best available
-approximation of a drum sound — shares the voice with the other
-waveforms. Setting a voice to noise, gating it briefly with a fast attack
+Every SID voice has the noise waveform (`../hardware/sid-reference.md`),
+so the hardware does not force drums onto voice 3; this page does not
+establish why the convention settled there. Setting a voice to noise, gating it briefly with a fast attack
 and fast release, and modulating the filter cutoff around that transient
 produces kick and snare approximations. Hi-hat textures come from short
 noise bursts with high cutoff frequencies.
 
-Voice 3 became the percussion voice mainly because the SID's filter can optionally disconnect voice 3 from the filter output.
-The $D417 FLTX register's bit 7 (FILT3) routes voice 3 through the
-filter, while the $D418 MOLVOL register's bit 7 (3OFF) disconnects voice
-3 from the output entirely. Using 3OFF, a musician can play a gate-based
-waveform on voice 3 for ring modulation or oscillator sync effects
-without that voice appearing in the audio output at all. The percussion
-convention exploits this: voice 3 runs in 3OFF mode except when a drum
-hit fires; then the player briefly enables voice 3 output, triggers the
-noise envelope, and silences it again. The drum hits come through without
-disturbing the melodic voices.
+What is special about voice 3 is its mute. $D418 (SIGVOL) bit 7, 3OFF,
+disconnects voice 3 from the unfiltered output while its oscillator keeps
+running. $D417 (RESON) bit 2, FILT3, routes voice 3 through the filter,
+and 3OFF does not mute a voice routed there (`../hardware/sid-reference.md`).
+With 3OFF set and FILT3 clear, voice 3 can drive ring modulation or sync
+on voice 1, or serve as an LFO read from $D41B/$D41C, without being heard.
+(An earlier version called these registers FLTX and MOLVOL, put FILT3 at
+bit 7, and said players toggle 3OFF around each drum hit; no source here
+shows that scheme.)
 
 With voice 3 reserved for drums, the melody has two voices. Classic C64
 game music from the 1980s (Rob Hubbard, Martin Galway, Jeroen Tel, Chris
@@ -274,11 +277,11 @@ routine once per frame, the tempo of a composition is measured in frames
 per beat — and the absolute tempo in beats per minute differs between PAL
 and NTSC even when the frame count is identical.
 
-A composition written at 6 frames per beat plays at 500 BPM on NTSC
-(60 / 6 * 60) and 500 BPM on PAL (50 / 6 * 60 = 500 BPM). Wait — that
-arithmetic is the same because frames-per-beat is a ratio. The difference
-emerges in absolute time: on PAL, 6 frames is 120 ms per beat; on NTSC,
-6 frames is 100 ms. The music plays noticeably faster on NTSC.
+A composition written at 6 frames per beat plays at about 500 BPM on PAL
+(50 / 6 * 60) and about 600 BPM on NTSC (60 / 6 * 60): 120 ms per beat
+against 100 ms. The music plays 20% faster on NTSC. (An earlier version
+gave 500 BPM for both and called frames per beat a ratio; the frame rates
+are 985248 / (63 * 312) = 50.1 Hz and 1022727 / (65 * 263) = 59.8 Hz.)
 
 Players handle the two regions in one of two ways:
 
@@ -286,7 +289,7 @@ Players handle the two regions in one of two ways:
   calibrates tempo in frames at 50 Hz. On NTSC hardware the music plays
   faster. This is the usual approach in the European scene. Most SID
   files in the HVSC (High Voltage SID Collection) are authored for PAL.
-  NTSC users hear them slightly fast.
+  NTSC users hear them about 20% fast.
 
 - Dual-rate players. Some players detect the hardware region by measuring
   the raster interrupt frequency or by reading CIA timer values against

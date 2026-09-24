@@ -20,9 +20,9 @@ Scope: stock PAL and NTSC C64 hardware only. No C128-specific tricks, no REU scr
 
 **Starter:** `shmup-vertical`
 
-The vertical shooter is one of the oldest C64 archetypes and one of the most demanding. The play field scrolls continuously toward the player, enemies arrive from the top of the screen in waves or patterns, and the player's ship moves freely within a zone near the bottom. Every frame the CPU pays for the scroll, an enemy fleet of a dozen or more sprites at once, and SID music and sound effects that must not drop beats. Uridium and Delta set the benchmark in 1986-87, and Armalyte's vertical mode showed that the hardware could sustain dense sprite populations when the multiplexer was tuned.
+The vertical shooter is one of the oldest C64 archetypes and one of the most demanding. The play field scrolls continuously toward the player, enemies arrive from the top of the screen in waves or patterns, and the player's ship moves freely within a zone near the bottom. Every frame the CPU pays for the scroll, an enemy fleet of a dozen or more sprites at once, and SID music and sound effects that must not drop beats. Commando (1985) is a well-known C64 example; its programmer, Chris Butler, told Zzap!64 it was his first time splitting sprites (`production-planning.md`). (An earlier version named Uridium and Delta as the benchmark and credited "Armalyte's vertical mode"; all three scroll horizontally, and no vertical mode of Armalyte is known here, issue #40.)
 
-Vertical fine scrolling on the C64 is cheap: $D011's fine-scroll field moves the display by up to seven pixels before a coarse row shift is needed. A coarse shift rotates the whole screen RAM buffer. That is CPU-heavy and must finish within the blanking period, or the screen tears. Raster IRQs split the frame into zones: a scroll update zone near the top, a sprite-multiplexer zone through the middle, and a SID service call near the bottom.
+Vertical fine scrolling on the C64 is cheap: $D011's fine-scroll field moves the display by up to seven pixels before a coarse row shift is needed. A coarse shift moves the whole screen: 960 bytes of screen RAM and the same in colour RAM. That does not fit the blanking period (7,680 cycles unrolled for screen RAM alone, against 7,056 off-screen cycles on PAL, `char_scroll_buffer_v` in `techniques/scroll.md`), so it is copied behind the beam or into a second matrix; if the beam crosses the copy, the screen tears. (An earlier version said the shift must finish within the blanking period.) Raster IRQs split the frame into zones: a scroll update zone near the top, a sprite-multiplexer zone through the middle, and a SID service call near the bottom.
 
 Enemy bullets and player missiles are usually sprites in the multiplex pool, not character data, so the active sprite count can exceed eight. The game multiplexer (`sprite_multiplex_game`) repositions by raster: each time the VIC finishes one sprite's scanlines, the handler moves that sprite's Y coordinate to the next object below it. It keeps a persistent sort and a double-buffered table, so sprites can go anywhere on the screen. Collision detection can use the hardware registers `$D01E` (sprite-sprite) and `$D01F` (sprite-background), but both are read-to-clear latches that must be read every frame without a miss, and a multiplexed sprite's bit does not say which object it was showing. Boxes per animation frame, tested by group (`per_frame_hitbox`), say which bullet hit which enemy.
 
@@ -38,7 +38,7 @@ An earlier fingerprint named `raster_bars`, which nothing in this section uses, 
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `sprite_priority_collision_silent`, `raster_irq_first_line_jitter`
 
-**Reference titles:** Uridium (1986), Delta (1987), IO (1987), Nemesis (1987), Zynaps (1987)
+**Reference titles:** Commando (1985), Warhawk (1986), Lightforce (1986). Genre and year from general knowledge, not checked against a source here. (An earlier version listed Uridium, Delta, IO, Nemesis and Zynaps, which are horizontal shooters, issue #40.)
 
 **Modern examples:** Scramble Spirits (scene release 2018, by Saul Cross)
 
@@ -50,7 +50,7 @@ An earlier fingerprint named `raster_bars`, which nothing in this section uses, 
 
 The horizontal shooter scrolls the play field from right to left while the player ship moves vertically against side-scrolling enemy formations. Armalyte (1988) and Katakis (1987) are the canonical C64 examples; R-Type's official conversion (1988) was commercially significant. The defining problem is parallax: depth needs at least two layers scrolling at different rates, which in character mode means two logical screen buffers or sprite tiles over a slower-moving background.
 
-Character mode scrolls horizontally with $D016's fine-scroll field (0-7 pixels), plus a coarse column shift that moves data within screen RAM. The column shift costs more than a row shift because C64 screen RAM is row-major: moving a column touches 25 non-contiguous bytes. The standard optimisation is the infinite scroll: a logical screen buffer wider than 40 columns, a hardware window that shows the right slice via $D016, and a column-rotation step that touches one column per frame.
+Character mode scrolls horizontally with $D016's fine-scroll field (0-7 pixels), plus a coarse column shift that moves data within screen RAM. The coarse step moves every row one column: 39 × 25 = 975 bytes of screen RAM plus the same in colour RAM (`char_scroll_buffer_h` in `techniques/scroll.md`), about as much as a vertical row shift (960). The standard engine is `infinite_scroll_h`: XSCROLL in $D016 moves the display 0-7 pixels, and when it wraps the screen shifts one column and the new right-hand column is filled from a map wider than 40 columns. (An earlier version said a column shift touches only 25 non-contiguous bytes, costs more than a row shift, and that the engine touches one column per frame; the whole screen moves every eighth pixel.)
 
 Enemy formations in a horizontal shmup often span the full height of the screen, so the multiplex scheduler must handle objects spread vertically as well as horizontally. The parallax layer is usually slower-scrolling sprites (or a second character layer via sprite overlay) behind the main play field. Color clash is managed by palette assignment: the C64's per-character-cell color restriction means background art must avoid patterns that look wrong when a sprite passes over them.
 
@@ -70,7 +70,7 @@ Enemy formations in a horizontal shmup often span the full height of the screen,
 
 **Archetype:** `single_screen_platformer`
 
-The single-screen platformer's arena fits entirely on the 40x25 character display. Platforms, ladders and hazards are character tiles; the player and enemies are sprites that obey tile-based collision rules. Bubble Bobble (1987) and Bombuzal (1988) are the clearest examples; Manic Miner (1983) set the template earlier. With no scroll there is no frame split, but collision detection must run for several actors every frame within the character grid.
+The single-screen platformer's arena fits entirely on the 40x25 character display. Platforms, ladders and hazards are character tiles; the player and enemies are sprites that obey tile-based collision rules. Bubble Bobble (1987) is a clear example; Manic Miner (1983) set the template earlier. (An earlier version also named Bombuzal, a puzzle game, not a platformer; genres here are from general knowledge, not a source.) With no scroll there is no frame split, but collision detection must run for several actors every frame within the character grid.
 
 Tile-based collision on the C64 is a CPU operation, not a hardware one. The game converts a sprite's X/Y position to a screen-RAM row and column, reads the character code at that cell, and looks it up in a table of solid tiles. With eight or more actors each checking several points (top-left, top-right, bottom-left, bottom-right), the per-frame cost adds up. Self-modifying code and zero-page burst loads are the common optimisations: the hot collision table is copied into zero page at load time, and the inner check loop uses zero-page addressing to save a cycle per access.
 
@@ -94,7 +94,7 @@ Enemy AI state machines take a large share of the CPU budget in this genre. Each
 
 **Starter:** `platformer`
 
-The scrolling platformer combines continuous horizontal (sometimes also vertical) scroll with multi-layer environments, large tile-based worlds and complex player physics. Mayhem in Monsterland (1993) and Turrican (1990) are the genre peaks on C64. Every frame must advance the scroll, render the new column of tile data at the off-screen buffer edge, update the sprite multiplex for all visible actors, run physics and collision for the player, and call the SID play routine, all within approximately 16,000 cycles on PAL.
+The scrolling platformer combines continuous horizontal (sometimes also vertical) scroll with multi-layer environments, large tile-based worlds and complex player physics. Mayhem in Monsterland (1993) and Turrican (1990) are the genre peaks on C64. Every frame must advance the scroll, render the new column of tile data at the off-screen buffer edge, update the sprite multiplex for all visible actors, run physics and collision for the player, and call the SID play routine, all within one frame. A PAL frame is 19,656 cycles (63 × 312); badlines take about 1,000 of them (25 × 40), and sprite DMA and the IRQ chain take more. The net is not measured here. (An earlier version said approximately 16,000 cycles, with no derivation.)
 
 The tilemap is the central data structure. A world wider than 40 columns is stored as a compressed array of tile indices. Each frame the scroll counter increments, a new column of tile data is decoded into the screen-RAM edge, and the VIC's fine-scroll register advances. When the fine scroll reaches 7, the coarse shift happens and the process repeats. Parallax layers are usually separate character-mode or sprite-mode backgrounds scrolled at half or quarter speed by their own scroll registers, on a raster split below the play field.
 
@@ -116,7 +116,7 @@ Physics (gravity, jumping arcs, enemy movement) must be integer-based and fast. 
 
 **Archetype:** `top_down_adventure`
 
-The top-down adventure shows the world from above, with character tiles for terrain and sprites for the player and NPCs. The Last Ninja (1987) uses an isometric view, treating the tile grid as a diamond layout; Bruce Lee (1984) uses pure top-down; Beyond the Forbidden Forest (1983) mixes vertical scrolling with top-down exploration. The main problem is world representation: a large multi-room or multi-zone world is loaded from disk piece by piece, and the tile art alone must show walkable versus blocked terrain, without a scrolling parallax layer.
+The top-down adventure shows the world from above, with character tiles for terrain and sprites for the player and NPCs. The Last Ninja (1987) uses an isometric view, treating the tile grid as a diamond layout. (An earlier version called Bruce Lee pure top-down and Beyond the Forbidden Forest top-down exploration; both are side-view games, from general knowledge, and are dropped.) The main problem is world representation: a large multi-room or multi-zone world is loaded from disk piece by piece, and the tile art alone must show walkable versus blocked terrain, without a scrolling parallax layer.
 
 Character mode fits. The 40x25 grid can show a detailed environment with careful tile design. Custom character sets replace the char ROM ($D018 points to charset data in RAM) for game-specific tile art. Sprites carry the player and up to seven other actors. Collision is per tile: the game keeps a separate collision attribute map (one byte per cell: passable/solid/hazard/interactable), often compressed and decompressed at room load.
 
@@ -128,7 +128,7 @@ Isometric projection (Last Ninja style) adds a transform: the logical grid is ro
 
 **Brief words:** top down adventure, action adventure, rpg, dungeon, overworld
 
-**Reference titles:** Bruce Lee (1984), Green Beret (1986), The Last Ninja (1987), Zak McKracken (1988), Times of Lore (1988)
+**Reference titles:** Green Beret (1986), The Last Ninja (1987), Zak McKracken (1988), Times of Lore (1988)
 
 **Modern examples:** none widely known
 
@@ -230,7 +230,7 @@ Multi-event sports games (Summer Games, World Games) are a different problem: ea
 
 **Archetype:** `racing`
 
-Racing games show speed and perspective by warping the road ahead of the player. The pseudo-3D road on the C64 uses raster IRQs to change $D016 (horizontal scroll) or character widths per scanline, so the road appears to curve toward a vanishing point. Pitstop II (1984) uses a split-screen view; Buggy Boy (1988) renders a wide, tree-lined track; Outrun-style racers need horizon color changes and road-stripe scheduling. Here the raster IRQ is the rendering primitive.
+Racing games show speed and perspective by warping the road ahead of the player. The pseudo-3D road on the C64 uses raster IRQs to change $D016 (horizontal scroll) per scanline, so the road appears to curve toward a vanishing point. (An earlier version also offered changing "character widths per scanline"; the VIC-II has no character-width setting, only XSCROLL, CSEL and MCM in $D016, `hardware/vic-ii-reference.md`.) Pitstop II (1984) uses a split-screen view; Buggy Boy (1988) renders a wide, tree-lined track; Outrun-style racers need horizon color changes and road-stripe scheduling. Here the raster IRQ is the rendering primitive.
 
 The road is a row of character cells per scanline, not a sprite or bitmap shape. A per-scanline horizontal shift via $D016 fine scroll makes the curve. Wider curves need larger shifts on consecutive lines; hills are approximated by varying the scanline count given to near and far road sections. Sprites represent other cars: a car at the horizon is a small sprite; as it approaches it moves to a larger Y coordinate and may be expanded with $D017 (Y-expand) or $D01D (X-expand). The scaling steps through discrete sizes, not continuously, but with enough sprite frames the illusion holds.
 
@@ -258,7 +258,7 @@ The beat-em-up scrolls horizontally through urban or fantasy environments while 
 
 The play field scrolls horizontally as the player advances. Unlike the scrolling platformer, a beat-em-up uses a pseudo-3D layout: characters walk along a narrow horizontal band, and their Y coordinate is depth as well as screen position (walking toward the bottom of the screen moves the character forward, increasing Y). So the scroll is a modest background pan (walls, buildings, fences), not a tile-engine world map. The background is often a large character-mode scene in screen RAM, scrolled slowly; sprites carry foreground detail.
 
-Enemy AI in beat-em-ups is more complex than in platformers or puzzle games. Each opponent is a state machine (patrol, approach, attack, stunned, knocked-down, getting-up), with stun and recovery timed by frame counters. Enemies must not collide with each other, so inter-enemy distance checks run every frame. The AI pass, the scroll update, the sprite multiplex repositioning and the SID play call must finish within one PAL frame (approximately 16,000 non-IRQ cycles); the raster IRQ chain handles the exact timing of VIC register writes.
+Enemy AI in beat-em-ups is more complex than in platformers or puzzle games. Each opponent is a state machine (patrol, approach, attack, stunned, knocked-down, getting-up), with stun and recovery timed by frame counters. Enemies must not collide with each other, so inter-enemy distance checks run every frame. The AI pass, the scroll update, the sprite multiplex repositioning and the SID play call must finish within one PAL frame: 19,656 cycles (63 × 312), less about 1,000 for badlines and whatever sprite DMA and the IRQ chain take, not measured here (an earlier version said approximately 16,000 non-IRQ cycles); the raster IRQ chain handles the exact timing of VIC register writes.
 
 **Technique fingerprint:** `soft_scroll_h`, `sprite_multiplex_24`, `stable_raster_irq`, `sid_voice_setup`, `sid_play_routine_pattern`, `sprite_collision_detect`, `self_modifying_code`, `zero_page_burst`, `lane_depth_engine`
 

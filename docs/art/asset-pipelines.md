@@ -142,8 +142,9 @@ In Oscar64, these three exports become three `incbin` or `#pragma data` blocks.
 KickAssembler places them with `.import binary` at the appropriate addresses.
 
 **Alignment requirement.** The VIC-II reads character ROM or custom charset data
-from addresses determined by `$D018` bits 1–3 (charset base) and bit 4 (screen
-base). The charset must be aligned to a 2 KB boundary within the current VIC bank
+from addresses determined by `$D018` bits 1–3 (charset base) and bits 4–7 (screen
+base). (An earlier version said bit 4 alone selects the screen base; the video
+matrix field is bits 4–7, per `../hardware/vic-ii-reference.md`.) The charset must be aligned to a 2 KB boundary within the current VIC bank
 (`$DD00` bits 0–1 select the bank). A charset at a misaligned address displays as
 garbage, so enforce the alignment in the build script or the linker config.
 
@@ -154,9 +155,11 @@ garbage, so enforce the alignment in the build script or the linker config.
 A PETSCII screen consists of two 1000-byte arrays:
 
 - **Screen RAM:** 40×25 bytes of character codes (PETSCII or screen codes,
-  depending on the editor). KoalaPad, Marq's PETSCII Editor, and PetMate use
-  screen codes (the VIC-II's native representation); terminal-mode PETSCII uses
-  a different code point mapping.
+  depending on the editor). Marq's PETSCII Editor and PetMate use screen codes
+  (the VIC-II's native representation); terminal-mode PETSCII uses a different
+  code point mapping. (An earlier version also listed KoalaPad here; KoalaPad is
+  a graphics tablet, and its Koala Painter software edits multicolor bitmaps,
+  not PETSCII screens.)
 - **Color RAM:** 40×25 bytes of color nybbles (low 4 bits used, high 4 ignored).
 
 For PetMate and Marq's editor, File → Export → Binary produces a 2000-byte file
@@ -265,18 +268,34 @@ entry when compiled in.
 
 ### Oscar64 native data inclusion
 
-Oscar64's `#pragma data` and `__attribute__((aligned))` place static byte arrays
-at linker-controlled addresses. For small assets that need no VIC-bank alignment,
-embedding the data in the C source saves a conversion step:
+Oscar64 places data with pragmas: `#pragma section` and `#pragma region` fix an
+address, `#pragma data` sends the following globals there, and `#pragma align`
+aligns one symbol (see `../toolchains/oscar64-reference.md`, "Memory layout and
+banking"). Embedding the data in the C source saves a conversion step. This
+block puts a charset at `$2000`, a 2 KB boundary in VIC bank 0:
 
 ```c
-// Declares a byte array placed by the linker in the 'main' region.
-// Address alignment must match VIC bank requirements if applicable.
-__attribute__((section("charset"), aligned(0x800)))
-static const unsigned char charset_data[] = {
+// Split the default main region around $2000-$27FF.
+#pragma region( lower, 0x0880, 0x2000, , , {code, data} )
+#pragma section( charset, 0 )
+#pragma region( charset, 0x2000, 0x2800, , , {charset} )
+#pragma region( main, 0x2800, 0xa000, , , {code, data, bss, heap, stack} )
+
+#pragma data( charset )
+// __export keeps it: the VIC reads it, but no C code names it.
+__export const unsigned char charset_data[2048] = {
 #embed "charset_export.bin"
 };
+#pragma data( data )
 ```
+
+When any 2 KB boundary will do, `#pragma align( charset_data, 2048 )` after the
+declaration lets the linker choose; read the address from the `.map` file.
+Both forms were compiled with Oscar64 (`-tm=c64 -O2 -n`); the `.map` put the
+array at `$2000` and at `$1000`, and the `.prg` held the embedded bytes there.
+(An earlier version wrote this block, and the generated headers below, with
+GCC's `__attribute__((section(...), aligned(...)))`. Oscar64 rejects it:
+`error 3005: Identifier not defined '__attribute__'`.)
 
 Oscar64 supports `#embed` (C23) for importing raw binary files at compile time,
 suitable for assets under a few kilobytes. For larger assets or assets
@@ -324,8 +343,8 @@ print("Wrote bitmap, screen, color, bgcolor to", dest)
 
 The same pattern (read the file, slice at known offsets, write named outputs)
 works for any format with a fixed layout. Extend it to emit a C header with
-`__attribute__((section(...)))` declarations if the Oscar64 build benefits from
-compile-time inclusion.
+`#pragma section` / `#pragma region` / `#pragma data` placement (Example 1
+below) if the Oscar64 build benefits from compile-time inclusion.
 
 ---
 
@@ -442,8 +461,9 @@ each.
 ### Example 1: Koala bitmap → Oscar64 C header
 
 This Makefile target converts a Koala file into a C header that Oscar64 can
-`#include`. The header declares `extern` arrays with section attributes that
-the Oscar64 linker places at the correct VIC-visible addresses.
+`#include`. The header defines the bitmap and screen arrays inside
+`#pragma region` blocks at fixed VIC-visible addresses in bank 1, and moves the
+default main region out of their way.
 
 ```makefile
 # Makefile excerpt
@@ -456,8 +476,8 @@ $(BUILD)/koala.h: art/title.kla tools/koala_to_header.py | $(BUILD)
 """koala_to_header.py — emit an Oscar64-compatible C header from a Koala .kla file."""
 import sys, pathlib
 
-BITMAP_ADDR = 0x6000
-SCREEN_ADDR = 0x5800
+SCREEN_ADDR = 0x5800   # VIC bank 1: screen at +$1800
+BITMAP_ADDR = 0x6000   # bitmap at +$2000, the only 8 KB boundary left in the bank
 src = pathlib.Path(sys.argv[1]).read_bytes()
 out = pathlib.Path(sys.argv[2])
 
@@ -467,25 +487,40 @@ screen  = list(payload[8000:9000])
 color   = list(payload[9000:10000])
 bgcolor = payload[10000]
 
-def array(name, section, align, data):
-    hex_vals = ", ".join(f"0x{b:02X}" for b in data)
+def hexes(data):
+    return ", ".join(f"0x{b:02X}" for b in data)
+
+def placed(name, addr, data):
+    # One section and one region per array, at a fixed address.
+    # __export keeps it: the VIC reads it, no C code names it.
     return (
-        f'__attribute__((section("{section}"), aligned({align})))\n'
-        f"static const unsigned char {name}[] = {{{hex_vals}}};\n\n"
+        f"#pragma section( {name}_sec, 0 )\n"
+        f"#pragma region( {name}_reg, 0x{addr:04X}, 0x{addr + len(data):04X}, , , {{{name}_sec}} )\n"
+        f"#pragma data( {name}_sec )\n"
+        f"__export const unsigned char {name}[{len(data)}] = {{{hexes(data)}}};\n"
+        f"#pragma data( data )\n\n"
     )
 
-lines = ["#pragma once\n\n"]
-lines.append(array("koala_bitmap", "bitmap",  0x2000, bitmap))
-lines.append(array("koala_screen", "screen",  0x0400, screen))
-lines.append(array("koala_color",  "color",   0x0001, color))
+lines = ["#pragma once\n\n",
+         # Move the default main region ($0880-$9000) out of $5800-$7F40.
+         f"#pragma region( lower, 0x0880, 0x{SCREEN_ADDR:04X}, , , {{code, data}} )\n",
+         "#pragma region( main, 0x8000, 0xa000, , , {code, data, bss, heap, stack} )\n\n"]
+lines.append(placed("koala_bitmap", BITMAP_ADDR, bitmap))
+lines.append(placed("koala_screen", SCREEN_ADDR, screen))
+lines.append(f"static const unsigned char koala_color[1000] = {{{hexes(color)}}};\n")
 lines.append(f"static const unsigned char koala_bgcolor = 0x{bgcolor:02X};\n")
 out.write_text("".join(lines))
 ```
 
 In the C source, `#include "koala.h"` makes the arrays available. The linker
-places each at its declared section address. The runtime code copies `koala_color`
+places the bitmap at `$6000` and the screen at `$5800`; `koala_color` stays in
+the default data section because it is copied. The runtime code copies `koala_color`
 to `$D800`, writes `koala_bgcolor` to `$D021`, and enables multicolor bitmap mode
-via `$D011`/`$D016`/`$D018`.
+via `$D011`/`$D016`/`$D018`. The script was run on a 10,003-byte test file
+and the header compiled with Oscar64 (`-tm=c64 -O2 -n`) into a program that
+copies `koala_color`; the `.prg` held the bitmap bytes at `$6000` and the screen
+bytes at `$5800`. The earlier version emitted `__attribute__` declarations
+(rejected by Oscar64, see above) and never used its two address constants.
 
 ---
 
@@ -532,24 +567,34 @@ import sys, pathlib, struct
 
 SPRITE_BYTES = 64
 src_path   = pathlib.Path(sys.argv[1])
-base_addr  = int(sys.argv[2], 16)
+base_addr  = int(sys.argv[2].lstrip("$"), 16)
 out_path   = pathlib.Path(sys.argv[3])
 
 raw   = src_path.read_bytes()
 count = len(raw) // SPRITE_BYTES
+end   = base_addr + count * SPRITE_BYTES
 
 sprites = [raw[i*SPRITE_BYTES:(i+1)*SPRITE_BYTES] for i in range(count)]
 
-# VIC sprite pointer = (base_addr + i*64) / 64
-pointers = [(base_addr // 64) + i for i in range(count)]
+# VIC sprite pointer = offset of the block inside its 16 KB bank / 64
+pointers = [((base_addr & 0x3FFF) // 64) + i for i in range(count)]
 
 lines = ["#pragma once\n\n"]
 lines.append(f"#define SPRITE_COUNT {count}\n\n")
 
+# Place the sheet at base_addr: split the default main region around it.
+lines.append(
+    f"#pragma region( lower, 0x0880, 0x{base_addr:04X}, , , {{code, data}} )\n"
+    f"#pragma section( sprites, 0 )\n"
+    f"#pragma region( sprites, 0x{base_addr:04X}, 0x{end:04X}, , , {{sprites}} )\n"
+    f"#pragma region( main, 0x{end:04X}, 0xa000, , , {{code, data, bss, heap, stack}} )\n\n"
+)
+
 hex_data = ", ".join(f"0x{b:02X}" for sprite in sprites for b in sprite)
 lines.append(
-    f'__attribute__((section("sprites"), aligned(64)))\n'
-    f"static const unsigned char sprite_data[{count * SPRITE_BYTES}] = {{{hex_data}}};\n\n"
+    "#pragma data( sprites )\n"
+    f"__export const unsigned char sprite_data[{count * SPRITE_BYTES}] = {{{hex_data}}};\n"
+    "#pragma data( data )\n\n"
 )
 
 ptr_vals = ", ".join(str(p) for p in pointers)
@@ -561,10 +606,14 @@ out_path.write_text("".join(lines))
 print(f"Converted {count} sprites from {src_path.name}")
 ```
 
-The alignment constraint `aligned(64)` makes the Oscar64 linker place the sprite
-bank at a 64-byte boundary, so the pointer arithmetic (`address / 64`) is exact.
-If the linker does not honor the 64-byte alignment (verify with the `.map` output),
-add a dedicated linker segment with an explicit start address.
+The `sprites` region puts the sheet at the address given on the command line,
+so the pointer table matches it; the address must be a multiple of 64. Run
+with `$3000` on a 512-byte test file and compiled with Oscar64, the `.map` put
+`sprite_data` at `$3000` and the pointers came out 192–199. The earlier version
+only aligned the array to 64 bytes with `__attribute__` (rejected by Oscar64),
+which does not put it at `base_addr`; it also computed pointers as
+`base_addr / 64`, wrong outside bank 0 (a pointer is the offset inside the
+16 KB bank / 64), and could not parse the `$3000` its usage line shows.
 
 ---
 

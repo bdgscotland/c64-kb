@@ -38,9 +38,13 @@ because the offset nibble was set before the bank was switched.
 2. Read $DD00 bits 0–1. Bank = 3 − (bits 0–1). Verify this matches
    where the screen RAM and charset/bitmap data live.
 3. Read $D018. High nibble = screen-RAM offset (×$0400 within bank).
-   Low nibble = charset pointer (×$0800) or bitmap pointer ($08 = bitmap
-   at bank base, $18 = bitmap at bank_base+$2000). Confirm the resolved
-   addresses fall inside the bank.
+   Low nibble = charset pointer (×$0800), or in bitmap mode bit 3 alone
+   picks the bitmap: clear = bank base, set = bank base + $2000. $D018 =
+   $18 puts screen RAM at +$0400 and the bitmap at +$2000 (measured in
+   VICE x64sc: bank 0, $2000–$3FFF filled with $FF gives an all-set
+   display at $18 and 41 % set at $10). An earlier version read $08 as
+   "bitmap at bank base" and $18 as "+$2000"; $08 also has bit 3 set.
+   Confirm the resolved addresses fall inside the bank.
 4. Write a known character code to screen RAM and read it
    back. If the read returns the written value, the RAM is visible but
    the VIC is looking elsewhere.
@@ -102,7 +106,7 @@ The two ranges must not overlap within the VIC bank.
 ## sprite_flicker_random — Sprites flicker randomly across the frame
 
 **Likely causes:** dma_timing_violation, sprite_register_write_during_active
-**Diagnosis steps:** Read $D015 (sprite enable); count enabled sprites; use vice-mcp raster breakpoint to pause mid-frame and inspect $D000-$D00E; check whether sprite register writes occur inside VIC DMA windows (cycles 58-61 on each sprite-active scanline); look for writes to $D015 that toggle bits during visible raster.
+**Diagnosis steps:** Read $D015 (sprite enable); count enabled sprites; use vice-mcp raster breakpoint to pause mid-frame and inspect $D000-$D00E; check whether sprite register writes occur inside VIC DMA windows (each sprite has its own two-cycle slot, PAL cycles 58, 60, 62, 1, 3, 5, 7, 9 for sprites 0–7, ending on cycle 10 of the next line; an earlier version said cycles 58-61 for every sprite); look for writes to $D015 that toggle bits during visible raster.
 **Caused by registers:** D015, D000
 **Caused by techniques:** sprite_multiplex_8
 
@@ -111,8 +115,11 @@ or shifted on others. The pattern differs between runs, which points to
 a race between CPU writes and VIC DMA reads.
 
 The VIC-II reads sprite data from 64-byte blocks in the VIC bank during
-specific DMA windows (typically cycles 58–61 per sprite per active
-scanline). If the CPU writes sprite X/Y position or enable-bit registers
+specific DMA windows: each sprite has its own two-cycle slot, on PAL
+cycles 58, 60, 62, 1, 3, 5, 7 and 9 for sprites 0–7, so the eight slots
+run from cycle 58 to cycle 10 of the next line (measured in VICE x64sc,
+`hardware/vic-ii-reference.md`, "Sprite DMA"; an earlier version said
+cycles 58–61 for every sprite). If the CPU writes sprite X/Y position or enable-bit registers
 during one of those windows, the VIC may see a torn value: the high
 byte of a new position combined with the low byte of the old, or a
 sprite-enable bit that transitions mid-DMA. The result is a sprite that
@@ -213,9 +220,12 @@ drawn.
    also toggles.
 2. Read the sprite's Y register. Values near 0 or 255 on PAL place the
    sprite in the border/blanking region.
-3. On NTSC, the visible Y window is different (41–300 raster lines;
-   sprite Y range 0–249 active). Confirm the Y value is valid for the
-   target region.
+3. On NTSC the frame has 263 lines (0–262). The picture spans lines
+   41–262 then 0–12 (Bauer's figures, not measured here); the 25-row
+   display window is lines 51–250 on both regions, and sprite Y 50–249
+   lands inside it. An earlier version gave the NTSC window as lines
+   41–300, which runs past the end of the frame. Confirm the Y value is
+   valid for the target region.
 4. Check whether the sprite's priority bit ($D01B) is set, which causes
    it to appear behind the background bitmap, so it is hidden on
    non-$D021 pixels.
@@ -248,8 +258,9 @@ display to jump. If the raster IRQ that performs this write fires late
 on some frames (due to a badline, an NMI, or a variable-length preceding
 handler), the write reaches the chip one raster line later and the
 visible pixel shift differs by one scanline. Over multiple frames this
-produces a flickering, unstable image. Badlines steal 40 CPU cycles;
-if the IRQ fires on or just before a badline, the handler's timing
+produces a flickering, unstable image. A badline takes 40 to 43 cycles
+from the CPU, leaving it 20 to 23 of 63 (`hardware/vic-ii-reference.md`;
+an earlier version said a flat 40); if the IRQ fires on or just before a badline, the handler's timing
 budget is silently consumed and the critical write is delayed.
 
 **Diagnosis steps:**
@@ -332,7 +343,8 @@ a small fixed ratio. All three SID voices are affected equally.
 The cause is a CIA timer value hard-coded for PAL running on
 an NTSC machine (or vice versa). CIA1 Timer A drives most SID players:
 a PAL timer value of $4CC7 (19,655 cycles) on an NTSC machine fires
-every 19.2 ms instead of 20.1 ms, 3.8% too fast. SID players that
+every 19.2 ms instead of 19.95 ms, 3.8% too fast (19,656 cycles at
+985,248 Hz PAL and 1,022,727 Hz NTSC; an earlier version said 20.1 ms). SID players that
 use the VIC raster IRQ for timing are affected too: PAL produces
 50 frames/sec, NTSC ~60 frames/sec, a 20% difference that puts the
 music far off on the wrong region.
@@ -465,21 +477,29 @@ to vibrate back and forth by one pixel. On frames that exhibit the
 jitter, the scroll position is off by exactly one step.
 
 Horizontal smooth scrolling is controlled by bits 2–0 of $D016
-(X-scroll, 0–7 pixels). The VIC reads this register at the start of
-each visible character row. If the CPU writes the new X-scroll value
-after the VIC has already latched it for the current row, the update
-takes effect one raster line late: the first row of characters scrolls
-by the old value while the remaining rows use the new value. On the
-next frame the timing may be correct, producing alternating one-off and
-on-target positions: the jitter. Badlines make this worse because they
-steal 40 cycles just as the CPU needs to be writing the scroll register,
-pushing the write past the VIC's sample point.
+(X-scroll, 0–7 pixels). The VIC does not latch this value once per
+character row: a write takes effect on the pixels drawn after it, even
+in the middle of a row or a line (measured in VICE x64sc: a write early
+on line 128, inside the row on lines 123–130, shifted lines 128 onward;
+a write during line 160 shifted that line from its second character
+cell). An earlier version said the VIC reads $D016 at the start of each
+character row. If the CPU writes the new X-scroll value late, the lines
+already drawn keep the old value and the rest of the screen uses the
+new one, so the screen splits at the line where the write landed. On
+the next frame the timing may be correct, producing alternating one-off
+and on-target positions: the jitter. Badlines make this worse because
+they take 40 to 43 cycles (an earlier version said 40) just as the CPU
+needs to be writing the scroll register, pushing the write into the
+visible lines.
 
 **Diagnosis steps:**
 1. Place a vice-mcp raster breakpoint on the line immediately above the
-   first visible character row. Confirm the scroll write happens within
-   the first few cycles of that line, well before cycle 16 where VIC
-   begins character fetch.
+   first visible character row. Confirm the scroll write lands before
+   the first line of that row starts drawing: on the line above, or in
+   the first cycles of the row's first line. (An earlier version named
+   "cycle 16 where VIC begins character fetch"; character-pointer
+   fetches on a badline run on cycles 15–54, and what matters for
+   X-scroll is which pixels are drawn after the write.)
 2. Use a CIA1 timer delta measurement at IRQ entry and at the scroll
    write to confirm the handler has a fixed cycle cost. Any variation
    of more than 2 cycles is enough to cause jitter.
@@ -493,10 +513,12 @@ pushing the write past the VIC's sample point.
 Use the stable double-IRQ pattern: fire the first IRQ several lines
 above the target, set D012 to the exact write line, and write $D016
 in the second IRQ with cycle precision. Adjust the D016 write to
-occur during the horizontal blank portion of the target raster line
-(before cycle 16 on a PAL VIC-II) so the VIC samples the
-new value for all visible rows. If a badline is unavoidable, add a
-compensation of 40 cycles to the stable-IRQ entry wait loop.
+occur in the side border before the target raster line starts drawing,
+so every pixel of the rows below uses the new value. If a badline is
+unavoidable, compensate for the 40 to 43 cycles it takes (the figure
+depends on whether the CPU is reading or writing when BA falls on cycle
+12) in the stable-IRQ entry wait loop; an earlier version said a flat
+40 cycles.
 
 ---
 
@@ -549,10 +571,12 @@ $D025/$D026 which are shared across all multicolor sprites.
 
 ---
 
-## dim_colors_on_8580 — Output is visibly dimmer on 8580 than on 6581
+## quiet_audio_on_8580 — Audio is quieter on 8580 than on 6581
+
+(This pattern was named `dim_colors_on_8580`, "Output is visibly dimmer", although it is about sound.)
 
 **Likely causes:** filter_chip_variation, voice_3_silent_bit_difference
-**Diagnosis steps:** Read $D418 — on the 8580, bit 7 (voice 3 mute) works differently; the 8580 filter cutoff curve is linear vs 6581's sigmoidal, so verify $D415-$D416 cutoff values produce the intended open-filter response; check whether SID digi playback uses volume-register writes calibrated for the 6581's non-linear DAC response.
+**Diagnosis steps:** Read $D418 — bit 7 (3OFF) mutes an unfiltered voice 3 on both chips alike (measured in VICE x64sc reSID; an earlier version said it works differently on the 8580); the 8580 filter cutoff curve is linear vs 6581's sigmoidal, so verify $D415-$D416 cutoff values produce the intended open-filter response; check whether SID digi playback uses volume-register writes calibrated for the 6581's non-linear DAC response.
 **Caused by registers:** D418
 **Caused by techniques:** sid_8580_vs_6581_differences
 
@@ -567,9 +591,13 @@ cutoff curve: on the 6581 it is highly non-linear and varies between
 chips; a cutoff value that opens the filter wide on one 6581 may have
 almost no effect on another. The 8580 has a linear curve. A code path
 tuned for 6581 filter behavior will produce a different tonal character
-on the 8580. Second, the 8580 DAC for digi playback ($D418 used as a
-PWM DAC) has a different step size than the 6581, making samples sound
-clipped or too quiet. Third, the 8580's combined-waveform output
+on the 8580. Second, digis played by writing 4-bit values to the
+$D418 volume nibble are far quieter on the 8580: a $0F/$00 square wave
+written to $D418 with no voice playing measured 4566 RMS on VICE's reSID
+6581 and 708 on its 8580, about 16 dB lower. (An earlier version called
+this a "PWM DAC" with a different step size; it is volume-register
+modulation, not pulse-width modulation, see `hardware/sid-reference.md`.)
+Third, the 8580's combined-waveform output
 levels differ from the 6581's; timbres that work on one may be muted
 on the other.
 
@@ -581,13 +609,17 @@ on the other.
 2. Read $D415-$D416 and compute the cutoff frequency. If the value was
    tuned for the 6581's non-linear curve, recalibrate for the 8580's
    linear response.
-3. Check $D418 bit 7. On the 8580, voice 3 is not truly muted by this
-   bit in the same way; routing behavior differs. Verify that voice 3
-   is not unexpectedly contributing to or stealing from the mix.
-4. If digi playback is used, test the volume-register write range: on
-   the 6581 the effective range for PWM digi is ~$00–$0F with a
-   roughly usable midpoint around $08; on the 8580 the step size is
-   lower and the effective range may require different scaling.
+3. Check $D418 bit 7 and $D417 bit 2. 3OFF mutes voice 3 on both chips
+   (measured in VICE x64sc reSID: voice 3 sawtooth RMS 2638 → 1.5 on
+   the 6581, 2039 → 2.6 on the 8580), but not when voice 3 is routed
+   through the filter (`hardware/sid-reference.md`). An earlier version
+   said the bit behaves differently on the 8580. Verify that voice 3
+   is not unexpectedly contributing to the mix.
+4. If digi playback is used, test the volume-register write range. The
+   same $D418 writes that are loud on a 6581 are about 16 dB quieter on
+   the 8580 (measured in VICE reSID); the software fix is the test-bit
+   DC digi in `hardware/sid-reference.md`. An earlier version called
+   this "PWM digi".
 
 Maintain per-chip filter-cutoff tuning tables and detect the chip at
 runtime using the filter-response heuristic. For music that must sound
@@ -600,7 +632,7 @@ sample scaling factors for each chip variant.
 ## intermittent_load_crash — Load works most of the time but crashes occasionally
 
 **Likely causes:** fastloader_kernal_dependency, gcr_timing_drift
-**Diagnosis steps:** Confirm the fastloader protocol is exiting via the KERNAL UNLISTEN/UNTALK path before returning to user code; check whether the crash occurs only at specific disk sectors (suggesting a GCR timing edge case); test with the KERNAL fastloader disabled (switch to $37 memory map) to isolate whether the crash is in the custom loader or the KERNAL I/O path; count crashes per 100 loads as a timing-sensitivity metric.
+**Diagnosis steps:** Confirm the fastloader protocol is exiting via the KERNAL UNLISTEN/UNTALK path before returning to user code; check whether the crash occurs only at specific disk sectors (suggesting a GCR timing edge case); load once with the stock KERNAL LOAD ($FFD5) instead of the custom loader (an earlier version said to switch to the $37 memory map; $37 is the power-on map with the KERNAL banked in — low bits %111, the same as the ROM's own `LDA #$E7 : STA $01` at $FDD5 — and disables nothing) to isolate whether the crash is in the custom loader or the KERNAL I/O path; count crashes per 100 loads as a timing-sensitivity metric.
 **Caused by kernal:** LOAD
 **Caused by techniques:** krill_loader_integration, sparkle_irq_loader
 
@@ -632,9 +664,11 @@ corruption.
 4. On a real disk setup, try a known-good diskette and compare crash
    rates; GCR drift is drive-specific.
 
-Disable the KERNAL's CIA1 interrupt by reading $DC0D (ICR acknowledge)
-before entering the time-critical receive loop, and re-enable it on
-exit. Widen timing windows where the protocol allows; most fastloaders
+Disable the KERNAL's CIA1 interrupt before entering the time-critical
+receive loop by writing $7F to $DC0D, then read $DC0D to acknowledge
+one already pending; on exit write $81 to re-enable timer A, as the
+KERNAL does ($7F at $FDA3, $81 at $FF6E in the ROM). An earlier version
+said reading $DC0D disables it; a read only acknowledges. Widen timing windows where the protocol allows; most fastloaders
 have a configurable bit-cell width. If crashes correlate with a sector
 boundary, add a retry at sector level. For Krill or Sparkle (IRQs
 enabled during load), verify the installed IRQ handler never calls any
@@ -682,7 +716,8 @@ at a sensitive moment in the main loop.
    restore P).
 
 Add `CLD` as the first instruction of every IRQ handler before any
-arithmetic; one cycle removes the whole decimal-mode class. Save
+arithmetic; two cycles remove the whole decimal-mode class (measured
+with a CIA timer in VICE x64sc; an earlier version said one cycle). Save
 and restore all used registers in the prologue/epilogue. Subroutines
 called from inside the handler must also preserve all registers they
 use. For zero-page variables shared between main and IRQ, write to a

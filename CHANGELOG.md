@@ -5,9 +5,9 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 774, schema 31, tools 2.4.0, package 0.17.1.
+Data 775, schema 31, tools 2.4.0, package 0.17.1.
 
-**Two RE tools and the disassembly-reference page (data 774, tools 2.4.0,
+**Two RE tools and the disassembly-reference page (data 775, tools 2.4.0,
 RE pilot step 1).** `c64_re_irq_chain` and `c64_re_frame_profile` (`src/tools/re.ts`,
 `src/server/tools-re.ts`; CLI `re-irq-chain`/`re-frame-profile`) run a
 `.prg` headless in VICE x64sc and report its interrupt chain and the
@@ -82,6 +82,22 @@ rung 1 — the tools' own trace, not a reading from the recipe pages.
   `simple_shmup_oscar64` "not timed"; this task found the same thing
   independently, from the listing, not the table. Nothing was measured
   here; this is a gap, not a calibration.
+
+**Claims corrected (data 774; #57, #58, #40).** The prose pass of #56
+found about 40 claims that looked wrong; each was settled against VICE,
+the ROM bytes, the assemblers, a measured page or arithmetic, and each
+change says what the page said before. Among them: `CLD` takes 2 cycles
+(timed in VICE), not 1; `$37` is the default memory map, not a way to
+drop the KERNAL (ROM `$FDD5` stores `$E7`); a badline takes 40 to 43
+cycles; sprite DMA uses two-cycle slots from cycle 58 to 10; a multicolour
+pixel is 2 wide and a sprite 7.5 % of the screen width; FILT3 is `$D417`
+bit 2; 6 frames a beat is 500 BPM on PAL and 600 on NTSC; the
+vertical-shooter archetype no longer names horizontal shooters;
+`__attribute__` placement in `art/asset-pipelines.md` was not Oscar64
+syntax (error 3005) and is now `#pragma region`/`section`, compiled and
+checked in the map. The pattern `dim_colors_on_8580` was about sound and
+is now `quiet_audio_on_8580`. Claims no instrument could settle now say
+"not checked here".
 
 **Plain prose, batch 1 of #56 (data 773).** The design, art, music,
 workflow, game-design and root pages lost their machine-written wording:

@@ -31,6 +31,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:unit
+      # npm checks `bin` before prepack builds dist/, and warned "No bin file
+      # found at dist/cli.js" on 0.17.1; build first so the bin always exists.
+      - run: npm run build
       # A version already on npm (the first one is published by hand) is
       # skipped, so re-running a tag's workflow is safe.
       - name: publish unless this version is already on npm

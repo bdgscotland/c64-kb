@@ -222,8 +222,10 @@ greetings scroller both acknowledges relationships within the scene in public an
 group's name on the production for good. Groups like F4CG, Hokuto Force and Resource have kept
 distinctive greeting styles across decades of releases.
 
-**Why scrollers exist.** The hardware scroller emerged from the CIA-timer-driven hardware scroll
-registers as a way to show more text than fits on screen without flicker. A smooth one-pixel-
+**Why scrollers exist.** The scroller is built on the VIC-II's fine scroll bits (`$D016`
+bits 0–2) as a way to show more text than fits on screen without flicker. (An earlier version
+said the scroll registers were CIA-timer-driven; they belong to the VIC-II, and a CIA timer
+plays no part in scrolling.) A smooth one-pixel-
 per-frame left scroll of a character row is nearly free on the 6510 in hardware scroll mode (the
 VIC-II fine scroll register, with a software column shift once per full character width). That
 made scrollers the natural medium for group messages: unlimited text, smooth motion, no
@@ -266,8 +268,7 @@ terms and check CSDb records rather than rely on any static claim here.
 ## 7. Cross-References
 
 - `./intro-cracktro-patterns.md`: the cracktro subset. Intro conventions from cracking culture,
-  boast formatting, loader integration, and the look of the release-group intro. This document is
-  being written in parallel (Phase 6, Task 7).
+  boast formatting, loader integration, and the look of the release-group intro.
 
 - `../techniques/effects-vector-3d.md`: technical implementation of the effects in newschool and
   oldschool demos: plasma, tunnel, voxel, mode 7 perspective, 3D vector rotation. The sections
