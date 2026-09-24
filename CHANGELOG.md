@@ -5,7 +5,21 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 792, schema 33, tools 2.8.0, package 0.21.0.
+Data 793, schema 33, tools 2.8.0, package 0.21.0.
+
+**Racing starter (data 793; #53).** `templates/racing`: a pseudo-3D road
+racer with scaled opponent sprites on the road lines, a lap timer and
+collisions. In VICE it passes 54 of 54 checks on PAL and NTSC, rejects
+its FORCE_FAULT build, rebuilds all 96 road lines from its own raster
+splits pixel-for-pixel (`make roadcheck`) and catches 7 of 7 planted
+mutants. Worst and typical frame: 10,358 / 8,816 cycles PAL, 10,750 /
+9,049 NTSC. The road picture updates every 3.5 frames on PAL and 4.9 on
+NTSC; the game steps every frame. Passes on released Oscar64 v1.32.273.
+A second agent's review found the lost-frame detector blind to a
+late-armed line-105 interrupt (now counted), `make claims` failing on
+the #71 display units (now declared), and the picture rate divided by
+coasting steps (3.6 and 5.1 before). Recipe for the road with sprites
+on its lines: #77.
 
 **pseudo-3d-road curves both ways (data 792; #73).** The curve add
 treated every carry as overflow, so a negative dx pinned cx at 255 and
