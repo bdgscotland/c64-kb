@@ -1928,6 +1928,8 @@ weak spot can take damage and armour not.
 `width_of_sprite - offset - box_width`; keep one table and mirror at
 emit time.
 
+**Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` in `game-design/enemy-behaviour-and-difficulty.md`.
+
 ### Cycle budget
 
 Measured in VICE x64sc 3.10 with CIA1 timer B, interrupts masked, in the
