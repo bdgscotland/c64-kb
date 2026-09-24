@@ -854,9 +854,17 @@ DEN either way; measured in VICE x64sc).
 
 ### Mode-switch timing
 
-The mode bits ECM, BMM, MCM are sampled by the display sequencer every
-cycle. Switching modes mid-line therefore changes pixels mid-row at
-character-cell boundaries; raster splits between modes use this.
+A mode write takes effect on the same line, at a fixed pixel offset from
+the write, so it moves in whole cycles (8 pixels) with the write; raster
+splits between modes use this. Measured in
+VICE x64sc (PAL C64C, 8565), writing each bit on and off once per line on
+200 lines: a `$D016` MCM change lands 4 pixels into a character cell (325
+of 325 edges); setting ECM in `$D011` lands on a cell boundary; clearing
+it gives 16 black pixels from a cell boundary before the text returns.
+On `-model c64` (6569) MCM also lands 4 pixels in, and clearing ECM turns
+black 6 pixels into a cell, for 10 pixels. BMM was not measured. An
+earlier version said all three bits are sampled every cycle and change
+pixels at character-cell boundaries.
 
 FLI (Flexible Line Interpretation) is a different mechanism. It writes
 $D011 on every line so that YSCROLL matches the low three bits of the
@@ -1010,9 +1018,13 @@ exact pattern:
    earlier version said 6569): with sprites 0..k active the CPU
    resumes two cycles after sprite k's slot (60, 1, 3, 9, 11 for
    k = 0, 2, 3, 6, 7). On the 65-cycle 6567R8 the slots are 60, 62, 64,
-   1, 3, 5, 7, 9 (from Bauer's tables; only the relative structure,
-   eight contiguous two-cycle slots ending on cycle 10, was reproduced
-   here). An earlier version of this page listed 58, 60, 62, 64, 1, 3, 5,
+   1, 3, 5, 7, 9, Bauer's numbering, measured in VICE x64sc `-model ntsc`
+   against the `$D012` increment: with all eight sprites on, the CPU
+   stall starts two cycles later than on PAL and ends on the same cycle
+   (the CPU resumes on cycle 11 on both). VICE's source table
+   (`src/viciisc/vicii-chip-model.c`) labels the same slots 59, 61, 63,
+   65, 2, 4, 6, 8; its NTSC cycle labels run one lower than Bauer's, the
+   timing is the same. An earlier version of this page listed 58, 60, 62, 64, 1, 3, 5,
    7, which puts a cycle 64 on a 63-cycle line and sprite 7 two cycles
    early.
 2. Three **s-accesses** (sprite data fetch) per raster line, but only when
@@ -1069,12 +1081,12 @@ Line numbering on a PAL 6569:
 
 | Line range | Region                                          |
 |------------|-------------------------------------------------|
-| 0..15      | Top border (with VBI)                           |
+| 0..15      | Vertical blanking (no video output)             |
 | 16..50     | Top border                                      |
 | 51..250    | Visible 25-row display window (RSEL = 1)        |
 | 55..246    | Visible 24-row display window (RSEL = 0)        |
 | 251..299   | Bottom border                                   |
-| 300..311   | Bottom border (with VBI)                        |
+| 300..311   | Vertical blanking (no video output)             |
 
 NTSC has 263 lines (262 on the 6567R56A). The display window is on the
 same lines as PAL: 51–250 with RSEL = 1, 55–246 with RSEL = 0 (measured
@@ -1184,9 +1196,12 @@ The chip distinguishes two operating states:
   when a badline occurs and the chip is in the visible Y range.
 - **Idle state**: c-accesses are skipped, the video matrix latch is
   zeroed out (so all cells read as 0), and g-accesses fetch from a fixed
-  address ($3FFF, or $39FF if ECM is set). Pixel output is black
-  (or whatever bit pattern is at $3FFF, with the current foreground/
-  background colors).
+  address ($3FFF, or $39FF if ECM is set). Every cell shows that byte:
+  1 bits in colour 0 (black), 0 bits in the background colour. Measured
+  in VICE x64sc with `$3FFF` = `$F0` and YSCROLL 0: the three idle lines
+  248–250 after the last badline show 4 black and 4 `$D021` pixels per
+  cell. An earlier version said the output was black, and in the same
+  sentence that it was the `$3FFF` pattern.
 
 The chip is in idle state whenever no badline has loaded the row buffer:
 outside the display Y range, or for the whole frame when DEN was clear on
@@ -1202,7 +1217,11 @@ The "$3FFF phantom pixels" picture is a whole-frame effect, not a
 mid-frame strip: it appears when DEN is clear on line $30 (no badlines, so
 the frame never leaves idle state) but set again by line 51 (so the
 vertical border opens); the window then shows the byte at $3FFF ($39FF
-with ECM) in colour 0 over $D021 on every line.
+with ECM) in colour 0 over $D021 on every line. That follows from Bauer's idle-state description (§3.7.3.9) but was
+not reproduced here: in VICE x64sc, with `$3FFF` = `$F0`, DEN clear on
+line $30 and set on line 49 (default C64C) or 50 (C64C and `-model
+c64`), the whole window was plain `$D021`, although the monitor showed
+the chip idle and fetching `$F0`. The cause was not found.
 
 ### Light pen latch
 
@@ -1583,35 +1602,41 @@ raster IRQ.
 ### PAL cycle map of a non-badline raster line (6569)
 
 ```
-cycle  bus master     access type
-1      VIC            p3 (sprite 3 pointer)
-2      CPU            phi2
-3      VIC            p4 (sprite 4 pointer)
-4      CPU
-5      VIC            p5 (sprite 5 pointer)
-6      CPU
-7      VIC            p6 (sprite 6 pointer)
-8      CPU
-9      VIC            p7 (sprite 7 pointer); 9-10 s-accesses if active
-11-15  VIC            DRAM refresh (phi1); CPU runs in phi2
-...
-55     VIC            g-access (last one of line)
-56     CPU
-57     VIC            idle access
-58     VIC            p0 (sprite 0 pointer)
-59     CPU
-60     VIC            p1 (sprite 1 pointer)
-61     CPU
-62     VIC            p2 (sprite 2 pointer)
-63     CPU            ; last cycle of line on PAL
+cycle  phi1 (VIC)                  phi2
+1      p3 (sprite 3 pointer)       CPU; s3 if sprite 3 is active
+2      s3 if active, else idle     CPU; s3 if active
+3      p4                          CPU; s4 if active
+4      s4 / idle                   CPU; s4 if active
+5      p5                          CPU; s5 if active
+6      s5 / idle                   CPU; s5 if active
+7      p6                          CPU; s6 if active
+8      s6 / idle                   CPU; s6 if active
+9      p7                          CPU; s7 if active
+10     s7 / idle                   CPU; s7 if active
+11-15  DRAM refresh                CPU (c-access from 15 on a badline)
+16-55  g-access                    CPU (c-access up to 54 on a badline)
+56-57  idle access                 CPU
+58     p0                          CPU; s0 if active
+59     s0 / idle                   CPU; s0 if active
+60     p1                          CPU; s1 if active
+61     s1 / idle                   CPU; s1 if active
+62     p2                          CPU; s2 if active
+63     s2 / idle                   CPU; s2 if active   ; last cycle on PAL
 ```
 
-This picture is simplified; the exact cycle of each access is in the
-appendix of Bauer's article. The pointer cycles match the measured slots
-under [Sprite DMA](#sprite-dma); the refresh and idle cycles are from
-VICE x64sc's PAL cycle table (`src/viciisc/vicii-chip-model.c`), not
-measured. An earlier version labelled the slots p1, p2, p3, p4, p7 and put
-refresh on cycle 57.
+The VIC-II owns phi1 of every cycle. The CPU owns phi2 of every cycle
+except where the VIC takes it: the s-accesses of an active sprite and the
+c-accesses of a badline, each preceded by BA going low three cycles
+earlier (see [Sprite DMA](#sprite-dma)). On a line with no badline and no
+active sprite the CPU runs all 63 cycles. This picture is simplified; the
+exact cycle of each access is in the appendix of Bauer's article. The
+pointer cycles match the measured slots under [Sprite DMA](#sprite-dma);
+the refresh, g-access and idle cycles are from VICE x64sc's PAL cycle
+table (`src/viciisc/vicii-chip-model.c`), not measured. An earlier
+version drew the bus as alternating, VIC on odd cycles and CPU on even
+ones, which is wrong: a p-access is a phi1 access and costs the CPU
+nothing. An earlier version also labelled the slots p1, p2, p3, p4, p7
+and put refresh on cycle 57.
 
 ### PAL badline (40 stolen cycles)
 
@@ -1633,11 +1658,18 @@ or writing when BA went low.
 
 | Y position  | What you see                              |
 |-------------|-------------------------------------------|
-| 0–50        | Top border                                |
+| 0–15        | Vertical blanking (no video output)       |
+| 16–50       | Top border                                |
 | 51–250      | 25-row text display (RSEL = 1)            |
 | 55–246      | 24-row text display (RSEL = 0)            |
-| 251–311     | Bottom border                             |
+| 251–299     | Bottom border                             |
 | 300–311     | Vertical blanking (no video output)       |
+
+The blanking spans (300–15) are Bauer's, as in `pal-ntsc-reference.md`.
+VICE x64sc's screenshot shows lines 16–287 only. An earlier version of
+this table gave 0–50 and 251–311 as border, overlapping the blanking,
+and the line-numbering table above called 0–15 and 300–311 "border
+(with VBI)".
 
 A sprite's first row appears on the line AFTER its Y register value, so
 Y = 50 puts its top edge on line 51, the first line of the visible
@@ -1647,12 +1679,18 @@ display, and the sprite Y range that lands inside the 25-row window is
 ### Effective CPU cycles per second
 
 ```
-PAL  6569:  63 cycles/line * 312 lines * 50 Hz  =  982,800 cycles/s nominal
-NTSC 6567:  65 cycles/line * 263 lines * ~60 Hz =  1,025,700 cycles/s nominal
+PAL  6569:  985,248 cycles/s / (63 * 312 = 19,656 per frame) = 50.12 frames/s
+NTSC 6567:  1,022,727 cycles/s / (65 * 263 = 17,095 per frame) = 59.83 frames/s
 ```
 
-Subtract 25 badlines × 40 stolen cycles × 50 Hz = 50,000 cycles/s for a
-text frame; the CPU gets ~933,000 cycles/s on PAL.
+The clock is the fixed quantity and the frame rate follows from it (clocks
+as in `pal-ntsc-reference.md`; VICE uses 985,248 and 1,022,730). An
+earlier version multiplied the line counts by a round 50 and 60 Hz and
+got 982,800 and 1,025,700 cycles/s, which are not the clocks.
+
+Subtract 25 badlines × 40–43 stolen cycles × 50.12 frames/s, about
+50,000–54,000 cycles/s, for a text frame; the CPU gets about 931,000–935,000
+cycles/s on PAL.
 Sprites can subtract another 50–100K cycles/s if used heavily.
 
 ## Pitfalls
@@ -1717,8 +1755,10 @@ Sprites can subtract another 50–100K cycles/s if used heavily.
 - **Sprite pointer location**: the eight sprite pointers always live at
   video_matrix_base + $3F8 inside the current VIC bank, *not* at a fixed
   CPU address. Moving the screen also moves the sprite pointer table.
-- **Mid-line mode switches**: ECM, BMM, MCM are sampled every cycle.
-  Mid-line switches change pixels at character-cell boundaries; used for
+- **Mid-line mode switches**: a mode write changes pixels on the same
+  line, not always at a character-cell boundary: MCM lands 4 pixels into
+  a cell in VICE x64sc (see [Mode-switch timing](#mode-switch-timing); an
+  earlier version said every switch lands on a cell boundary); used for
   FLI, but a stray write during a badline can rewrite the row buffer in
   unexpected ways.
 - **NTSC R56A oddity**: the rare 6567 R56A NTSC chip has 262 lines and

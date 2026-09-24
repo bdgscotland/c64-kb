@@ -8,7 +8,7 @@ The Commodore IEC serial bus protocol, the 1541 floppy drive's command interface
 
 ## Overview
 
-The IEC bus (serial IEEE-488 bus) is Commodore's cost-reduced adaptation of the IEEE-488/HP-IB parallel bus used on PET computers. Commodore replaced the 16-wire parallel bus with a 3-wire serial bus to save component costs, at a cost in speed: the standard 1541 protocol delivers approximately 300–400 bytes/second, against the PET's ~4 KB/second. The bus connects the C64 to disk drives (1541, 1571, 1581), printers (MPS-801, MPS-803), and other peripherals via a 6-pin DIN connector on the back of the computer.
+The IEC bus (serial IEEE-488 bus) is Commodore's cost-reduced adaptation of the IEEE-488/HP-IB parallel bus used on PET computers. Commodore replaced the 16-wire parallel bus with a 3-wire serial bus to save component costs, at a cost in speed: the standard 1541 protocol delivers about 400 bytes/second (406 measured in VICE, see [Standard IEC Load Speed](#standard-iec-load-speed-about-400-bytessec); an earlier version said 300–400), against the PET's ~4 KB/second. The bus connects the C64 to disk drives (1541, 1571, 1581), printers (MPS-801, MPS-803), and other peripherals via a 6-pin DIN connector on the back of the computer.
 
 The C64 works the IEC bus through five lines of CIA2 port A: three outputs (ATN, CLK, DATA) and two inputs (CLK, DATA). The same CIA2 chip (`$DD00`–`$DD0F`) that controls the VIC-II bank-switching (`$DD00` bits 0–1) also owns the IEC bus lines. Code that manipulates CIA2 for RS-232 or custom bit-banging must therefore allow for IEC bus contention.
 
@@ -106,7 +106,7 @@ Each byte is transferred serially, bit-by-bit, using a two-line handshake on CLK
 5. Repeat for all 8 bits (LSB first)
 6. Listener holds DATA low (ACK) briefly after the last bit
 
-This handshake means transmission speed is limited by the slowest device on the bus. The 1541 adds overhead because it processes bytes in its own 6502 CPU, handling each bit-transfer in a software loop at 1 MHz. The result is the ~300 byte/sec standard-load throughput.
+This handshake means transmission speed is limited by the slowest device on the bus. The 1541 adds overhead because it processes bytes in its own 6502 CPU, handling each bit-transfer in a software loop at 1 MHz. The result is the ~400 byte/sec standard-load throughput (measured below; an earlier version said ~300).
 
 ### EOI (End Or Identify)
 
@@ -519,7 +519,7 @@ The listing itself is at `https://g3sl.github.io/c1541rom.html`; it annotates th
 
 ### Drive RAM and the Parallel Trick
 
-The 1541 has 2 KiB of general-purpose RAM. Because the drive's 6502 operates independently of the C64's 6510, both CPUs can coordinate via the IEC bus for synchronization, enabling **parallel loading**: data is transferred over all 8 bits of the user port (Centronics-style) simultaneously rather than serially over the 1-bit IEC DATA line. Combined with bit-banging on the drive side, this achieves 10–25 KB/sec, 30–80x faster than the standard KERNAL loader.
+The 1541 has 2 KiB of general-purpose RAM. Because the drive's 6502 operates independently of the C64's 6510, both CPUs can coordinate via the IEC bus for synchronization, enabling **parallel loading**: data is transferred over all 8 bits of the user port (Centronics-style) simultaneously rather than serially over the 1-bit IEC DATA line. Combined with bit-banging on the drive side, this achieves 10–25 KB/sec, 25–60x the measured ~406 bytes/s of the standard KERNAL loader (an earlier version said 30–80x, from a 300 bytes/s base).
 
 The technique requires custom code running on the drive CPU. The C64 uploads the drive-side routine via the command channel's `M-W` (Memory Write) command, then starts it with `M-E` (Memory Execute). Once the drive routine is running, both sides enter a handshake loop using the user-port lines for data and the IEC bus for control.
 
@@ -715,7 +715,7 @@ Both devices handle `.D64`, `.D71`, `.D81`, `.T64`, and `.PRG` files from SD car
 
 ## Pitfalls
 
-### Standard IEC Load Speed (~300 bytes/sec)
+### Standard IEC Load Speed (about 400 bytes/sec)
 
 A full 35-track 1541 disk holds 664 blocks × 254 data bytes = 168,656 bytes (about 165 KiB). Measured in VICE x64sc 3.10 (PAL, default 1541-II with true drive emulation), `LOAD"BIG",8,1` of a 50,000-byte file written by `c1541` took 121,174,229 cycles from `JSR $FFD5` at `$E175` to its return, 123 s or about 406 bytes/s including the directory search; at that rate a full disk takes about 7 minutes. (An earlier version said "664 KB usable", over 30 minutes for a full disk and about 2.5 minutes for 50 KB; 664 is the block count.) Nearly every released demo and game therefore uses a custom fastloader. Plan for fastloader integration from the start of any project targeting real hardware.
 

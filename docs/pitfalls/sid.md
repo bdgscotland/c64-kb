@@ -187,8 +187,10 @@ almost no frequency change; the mid-range ($40-$A0) sweeps across
 most of the audible spectrum; the upper range ($A0-$FF) compresses
 back. The curve also varies between individual
 6581 chips from different manufacturing batches. The same $D416 value
-of $60 may produce a cutoff of 800 Hz on one 6581 and 1200 Hz on
-another from a different batch. This inter-chip variation is inherent
+can give a noticeably different cutoff on two 6581s from different
+batches (no figures are sourced here; an earlier version gave 800 Hz
+against 1200 Hz for $60 without a source).
+This inter-chip variation is inherent
 to the analog design and cannot be corrected in software without
 chip-specific calibration.
 
@@ -500,7 +502,7 @@ and the two chips show no difference in reSID, so it has been removed.
 
 ---
 
-## sid_voice3_disable_silent_bit — Bit 7 of $D418 silences voice 3 on 6581 but not all 8580 revisions; relying on it for muted melodic tricks is fragile
+## sid_voice3_disable_silent_bit — Bit 7 of $D418 does not silence voice 3 routed through the filter; relying on it alone is fragile
 
 **Severity:** medium
 **Region:** both
@@ -510,13 +512,10 @@ and the two chips show no difference in reSID, so it has been removed.
 ### Symptom
 
 Code that configures voice 3 as a silent LFO or random-number source
-by setting $D418 bit 7 (the "3OFF" bit) hears voice 3 leaking
-audibly on some 8580 boards. The leak is a faint
-tone or noise, audible in quiet passages. Conversely,
-a "muted melodic" arrangement that intentionally plays a pitched
-voice 3 melody silenced via bit 7 (a known trick on 6581 for adding
-a silent modulator voice) fails on certain 8580 revisions where the
-voice is audible.
+by setting $D418 bit 7 (the "3OFF" bit) still hears voice 3: a tone or
+noise under the music. (An earlier version blamed some 8580 boards and a
+"muted melodic" 6581 trick that fails on certain 8580 revisions; neither
+had a source.)
 
 ### Mechanism
 
@@ -540,23 +539,21 @@ filtered voice 3 still sends its post-filter signal to the DAC
 regardless of bit 7. This behavior is the same on the 6581 and
 8580.
 
-**8580 revision differences on the bypass path.** On 8580 chips
-manufactured after approximately 1990 (typically the R5 revision and
-later), the 3OFF bit's implementation was revised as part of broader
-cost-reduction changes. Some 8580 R5 revisions are reported to cut
-voice 3 from the bypass summing node without fully isolating it,
-leaving a small residual audible at VOL=15 in quiet passages. This is
-not measured here, no level is sourced, and reSID models 3OFF as a clean
-cut on both chips. (An earlier version said the bit was originally
-undocumented and added for the LFO use case, and put the bleed below
--40 dB; neither had a source, and 3OFF is in the SID's register map.)
+**A leak through 3OFF on some 8580s is unsourced.** Accounts that
+late 8580s let a little of voice 3 through 3OFF have no revision, date
+or level behind them here, and reSID (VICE's SID model) cuts voice 3
+cleanly on both chips (`src/resid/filter.cc`, `set_sum_mix`: "voice3off
+... only affects voice 3 if it is routed directly to the mixer"). Treat
+it as unverified. (An earlier version stated it as fact for 8580s made
+after about 1990, "typically the R5 revision"; before that it said the
+bit was originally undocumented and put the bleed below -40 dB. None of
+it had a source, and 3OFF is in the SID's register map.)
 
 A secondary mechanism: voice 3 routed through the filter (FILT3=1 in
 $D417) is entirely unaffected by 3OFF on any chip revision. Code
 that sets FILT3 and 3OFF simultaneously and expects silence will hear
-voice 3 through the filter on all chip revisions. This is the
-more common source of the symptom compared to the 8580 R5 revision
-bypass issue.
+voice 3 through the filter on all chip revisions. This is the only
+cause of the symptom that reSID reproduces.
 
 ### Fix
 
@@ -564,14 +561,12 @@ bypass issue.
 as an LFO or modulation source:
 
 1. Clear FILT3 in $D417 (voice 3 bypasses the filter; bit 7 then
-   works as intended on 6581 and most 8580s).
+   works as intended; reSID cuts it cleanly on both chips).
 2. Set the voice 3 sustain level to 0 (SUSTAIN nibble of $D414
    = 0). With sustain at zero, the envelope decays to zero after
    the attack and decay phases and then holds at zero. Even if
-   the bypass bleed reaches the output on some 8580 R5 chips,
-   zero envelope means zero audio.
-3. Optionally, set $D418 bit 7 as well as extra
-   protection on 6581 (where the bit works reliably).
+   a chip did leak through 3OFF, zero envelope means zero audio.
+3. Set $D418 bit 7 as well.
 
 For the voice-3-as-LFO pattern ($D41B read each frame), the
 oscillator keeps running at zero envelope.
@@ -585,7 +580,7 @@ set voice 3 to TRI or SAW waveform) rather than the envelope output.
 
 ```asm
 ; FRAGILE: relies only on $D418 bit 7 — fails on every chip if FILT3 is set
-; (an earlier comment said only on 8580 R5), and may bleed on late 8580s
+; (an earlier comment said only on 8580 R5); a leak on some 8580s is unsourced
 
 ; This sets 3OFF but forgets to clear FILT3:
         lda shadow_d417
@@ -626,7 +621,7 @@ init_voice3_lfo:
         sta shadow_d417
         sta $D417
 
-        ; Now set 3OFF for belt-and-suspenders on 6581
+        ; Now set 3OFF as well
         lda shadow_d418
         ora #$80            ; 3OFF = 1
         sta shadow_d418

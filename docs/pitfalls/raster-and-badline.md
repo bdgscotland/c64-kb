@@ -275,13 +275,16 @@ set_irq_dynamic:
 ### Symptom
 
 A raster effect that works after the first few frames is unstable on the
-first frame after IRQ enable. Color splits land 1-7 cycles (8-56 pixels; one
-cycle is 8 pixels) to the right on the first frame; an earlier version said
-1-7 pixels. A sprite multiplex update on the first frame puts sprites
+first frame after IRQ enable. Color splits land up to 6 cycles (48 pixels;
+one cycle is 8 pixels) to the right on the first frame; an earlier version
+said 1-7 pixels, then 1-7 cycles. A sprite multiplex update on the first frame puts sprites
 one line too low. The symptom disappears by frame 2. Alternatively, a raster
-effect coded without the stable-raster polling technique shows a permanent 0-7
-cycle wobble that makes split lines look fuzzy: an 8-56 pixel (1-7 cycle) horizontal
-smear on every frame where the interrupted instruction happened to be long.
+effect coded without the stable-raster polling technique shows a permanent 0-6
+cycle wobble that makes split lines look fuzzy: a horizontal smear of up to
+48 pixels on every frame where the interrupted instruction happened to be
+long (0-7 cycles, 56 pixels, if the code uses undocumented 8-cycle opcodes;
+an earlier version said 0-7 and 8-56 pixels for all code, against the
+0-6 window below).
 
 ### Mechanism
 

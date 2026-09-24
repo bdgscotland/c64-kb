@@ -64,7 +64,8 @@ their routing bit set in $D417. The filter has an 11-bit cutoff
 ($D415-$D416), a 4-bit resonance ($D417 high nibble), and three mode
 bits in $D418 selecting low-pass (12 dB/oct), band-pass (6 dB/oct),
 and high-pass (12 dB/oct). Mode bits can be combined (LP+HP produces
-notch; all three on produces a phase-shifted blend). Voices not routed
+notch; all three on gives a flat level with a peak or dip at the cutoff,
+see "Filter mode bits" below). Voices not routed
 to the filter bypass it and go straight to the volume DAC.
 
 ### 6581 vs 8580: what programmers care about
@@ -606,12 +607,18 @@ be audible. Voice 3 routed to the filter (FILT3=1 in $D417) ignores
 3OFF: the mute acts on the bypass path only.
 
 **Filter mode bits.** LP, BP, HP can be combined: LP+HP is a notch
-filter, LP+BP gives a warmer band-pass. BP+HP is not a notch: the sum
-of a high-pass and a band-pass has no zero inside the audio band
-(arithmetic from the two-integrator filter's responses; an earlier
-version called it a notch, against the Filter architecture section).
-Setting all three on simultaneously sums the three responses (rare in
-practice). Setting all three off with $D417 routing bits set produces
+filter. LP+BP is a low-pass, not a band-pass: the sum passes DC at full
+level and falls at 6 dB/oct above the cutoff instead of 12 (an earlier
+version called it "a warmer band-pass"). BP+HP is not a notch: the sum
+of a high-pass and a band-pass has no zero inside the audio band (an
+earlier version called it a notch, against the Filter architecture
+section). All three on gives unity level at low and high frequencies and
+a gain of Q (the resonance) at the cutoff; at Q = 1 it is an all-pass
+that only shifts phase (an earlier version called it "a phase-shifted
+blend"). These responses are arithmetic from reSID's 8580 filter
+equations in VICE's source (`src/resid/filter.h`: HP = BP/Q − LP − input,
+BP and LP each integrate the stage before with a sign inversion), not
+measured; reSID models the 6581 filter with non-linear integrators, so its curves will differ in shape. Setting all three off with $D417 routing bits set produces
 silence for those voices (the filter output is grounded when no mode
 is enabled).
 
