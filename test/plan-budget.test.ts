@@ -588,8 +588,9 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
       "oscar64-frame-sync-loop",
     );
     // tile_map_render 268 + tile_grid_collision 2,345 + object_pool 380 + decimal_print 1,361
-    // + sid_play_routine_pattern 327 + sfx_engine_beside_music 50-258.
-    expect([pal.low, pal.high]).toEqual([4731, 4939]);
+    // + sid_play_routine_pattern 1,198 (kickassembler-music-player's worst call;
+    // 327 until data 779, the stub tune) + sfx_engine_beside_music 50-258.
+    expect([pal.low, pal.high]).toEqual([5602, 5810]);
     expect(pal.fixed_losses.badlines).toBe(1075);
     expect(pal.verdict).toBe("undetermined");
     expect(b.phases.find((p) => p.phase === "transition")?.unknown.length).toBe(3);
@@ -600,7 +601,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // Not measured whole (simple-shmup.md: main loop 123 runs against about 245 music IRQs, "not settled").
     const pal = play(plan(recipeTechniques("oscar64-simple-shmup")));
     expect(pal.unknown).toEqual(["soft_scroll_v"]);
-    expect(pal.high).toBe(5301 + 327);
+    expect(pal.high).toBe(5301 + 1198);
     expect(pal.verdict).toBe("undetermined");
   });
 
@@ -610,7 +611,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // here: char_scroll_buffer_h is a member with no figure (review finding 4).
     const pal = play(plan(recipeTechniques("kickassembler-cracktro-template")));
     expect(pal.excluded.map((e) => [e.name, e.reason])).toEqual([["soft_scroll_h", "multi_frame"]]);
-    expect(pal.high).toBe(990 + 327);
+    expect(pal.high).toBe(990 + 1198);
     expect(pal.unknown).toEqual(["char_scroll_buffer_h"]);
     expect(pal.to_measure.find((t) => t.technique === "char_scroll_buffer_h")?.recipe).not.toBeNull();
     expect(pal.verdict).toBe("undetermined");

@@ -234,11 +234,13 @@ Changing $D416 while voices are playing produces a live filter sweep; SID tracke
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418
 **Requires:** sid_voice_setup
-**Cost:** cycles_per_frame=327, irq_slots=1
+**Cost:** cycles_per_frame=1198, irq_slots=1
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-sfx-engine (the recipe's stub tune; a real player costs several times more)
+**Cost measured on:** kickassembler-music-player (worst of 2,000 calls, PAL, a frame where an effect hands voice 3 back; 1,159 with no effect; NTSC 1,174)
 **Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
 **Claims basis:** estimated
+
+(An earlier version gave 327 cycles, measured on the stub tune of `oscar64-sfx-engine`; a full player with instruments, filter and effects costs 1,198 at worst, measured with CIA1 timer A around every call of `recipes/kickassembler/music-player.md`.)
 
 ### Why
 
@@ -336,6 +338,7 @@ The call sits in a raster IRQ rather than the main loop for timing stability. A 
 ### Recipes
 
 - `recipes/oscar64/sid-music-player.md`
+- `recipes/kickassembler/music-player.md` (a full player: order lists, instruments, wavetable, hard restart, filter, effects on voice 3; worst call measured)
 - `recipes/oscar64/sfx-engine.md` (a table-driven effect borrowing a voice from a play routine that writes all three, and giving it back; register-level checksum, nobody has listened)
 
 ---
@@ -1042,6 +1045,7 @@ runs. 1,200 cycles is 6.1 % of a PAL frame of 19,656 and
 ### Recipes
 
 - `recipes/kickassembler/sfx-in-player.md`
+- `recipes/kickassembler/music-player.md` (six effects on voice 3 beside a full tune; hand-back measured with ENV3)
 
 ### Sources
 
