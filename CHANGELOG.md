@@ -5,7 +5,31 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 790, schema 32, tools 2.7.0, package 0.20.0.
+Data 791, schema 33, tools 2.8.0, package 0.21.0.
+
+**Tools refuse to answer from a half-built graph, and the #41 leftovers
+(schema 33, tools 2.8.0, package 0.21.0, data 791; #41).** A clean
+ingest writes an `IngestRun {name:"rebuild"}` node before it wipes and
+deletes it after its report; while it exists every graph-reading MCP tool
+returns `isError` ("The knowledge base is being rebuilt") and the CLI
+exits 1. Seen live: mid-ingest the graph had 150 Recipe nodes and 0
+IMPLEMENTS edges. `lookup_register` puts the register's own section
+first (DC00 and DC01 led with input pages before). `technique_lookup`
+drops documentation chunks that neither sit under the technique's
+heading, come from a realising recipe nor name it; a technique with no
+recipe says so. Ingest warns when a Cost line names a recipe that does
+not realise its technique. `pal_ntsc_detection` gains a bytes-only Cost
+(339, Oscar64 build here). The `$D016` lint no longer flags the 14
+deliberate whole-value stores in `templates/` and `demos/`. Three
+archetype fingerprints over-proposed techniques their starters do not
+use (`vertical_shmup`, `puzzle`, `text_adventure`); each changed line
+says what it said before.
+
+**KERNAL EOI wait against the old 6526 (data 791; part of #69).** New
+pitfall `kernal_eoi_wait_misses_timer_b_on_old_cia`, seen in VICE. The
+KERNAL's EOI window is $01FF timer counts, about 520 cycles; an earlier
+version of the KERNAL routines page said 256 µs. Real-hardware
+confirmation stays open on #69.
 
 **Display-field units and a per-figure bytes basis (schema 32, tools
 2.7.0, package 0.20.0, data 790; #71, #72).** Four HardwareUnits of a
